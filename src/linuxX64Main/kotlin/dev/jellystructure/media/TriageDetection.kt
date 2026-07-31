@@ -60,14 +60,16 @@ object TriageDetection {
     fun duplicateEpisodeCount(item: MediaItem): Int =
         if (item.kind == MediaKind.TV_SHOW) DuplicateEpisodes.extraCount(item.episodes) else 0
 
-    /** Phase 152: an episode jellystructure could confidently number from its own filename parse
-     *  (episodeNumber != null) but never got a jellyfinId for — neither Jellyfin's own IndexNumber nor
-     *  the Phase 152 path fallback resolved it, usually because Jellyfin's own scanner never numbered
-     *  the file at all. Silent otherwise: this episode drops out of the local playstate overlay,
-     *  next-episode targeting, and (independent of jellystructure) Jellyfin's own NextUp/Resume. */
+    /** Phase 152/153: an episode jellystructure could confidently number from its own filename parse
+     *  (episodeNumber != null) that Jellyfin can't place — either jellystructure never resolved a
+     *  jellyfinId for it, or (the far more common case, Phase 153) Jellyfin holds an item for the file
+     *  but never assigned it an `IndexNumber` and never retries. Either way the episode silently drops
+     *  out of Jellyfin's NextUp/Resume, and so out of Ravilo's Continue Watching. Phase 153's
+     *  write_nfo/sync_jellyfin repair fixes these automatically; this count is the visibility for any
+     *  that persist (e.g. a file jellystructure numbers but Jellyfin keeps rejecting). */
     fun unresolvedJellyfinIdCount(item: MediaItem): Int =
         if (item.kind == MediaKind.TV_SHOW) {
-            item.episodes.count { it.episodeNumber != null && it.jellyfinId == null }
+            item.episodes.count { it.episodeNumber != null && (it.jellyfinId == null || it.jellyfinIndexMissing) }
         } else 0
 
     /** Phase 128: an item/episode with literally zero audio tracks — most often a corrupt/truncated

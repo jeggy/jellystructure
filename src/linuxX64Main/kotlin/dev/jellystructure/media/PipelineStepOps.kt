@@ -86,8 +86,12 @@ object PipelineStepOps {
             // the whole series every cycle. Write the WHOLE file's episode group (every partIndex
             // sibling), not just the unresolved episode, so a multi-episode file's combined NFO stays
             // complete even when only one of its contained episodes failed to join.
+            // Phase 153 correction (FR-SCAN2-6): the original `jellyfinId == null` condition never fired —
+            // every affected episode DOES have a jellyfinId; what's missing is Jellyfin's own IndexNumber
+            // for it (jellyfinIndexMissing). Keep the null-id case too: it's the other way an episode can
+            // be unreachable, and repairing it is the same write.
             val filesNeedingRepair = current.episodes
-                .filter { it.episodeNumber != null && it.jellyfinId == null }
+                .filter { it.episodeNumber != null && (it.jellyfinId == null || it.jellyfinIndexMissing) }
                 .mapTo(mutableSetOf()) { it.path }
             if (filesNeedingRepair.isNotEmpty()) {
                 NfoWriter.writeEpisodeNfos(current.episodes.filter { it.path in filesNeedingRepair }, current.cast)
@@ -107,6 +111,15 @@ object PipelineStepOps {
         if (cfg.apiKeys.jellyfinUrl.isBlank() || cfg.apiKeys.jellyfinToken.isBlank()) return false
         val jid = item.jellyfinId ?: return false
         val ok = jellyfinClient.refreshItem(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken, jid, full = true)
+        // Phase 153 (FR-SCAN2-7) — a series-level refresh is not assumed to re-resolve a child episode's
+        // numbering, so refresh each unnumbered episode's OWN item. This is the exact call verified live
+        // to turn IndexNumber=null into the right number (and to restore the series to Jellyfin's NextUp)
+        // once write_nfo has put a <season>/<episode> NFO next to the file.
+        for (ep in item.episodes.filter { it.jellyfinIndexMissing && it.episodeNumber != null }) {
+            val epId = ep.jellyfinId ?: continue
+            jellyfinClient.refreshItem(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken, epId, full = true)
+            Logger.info("Repaired unnumbered episode in Jellyfin: ${item.title} S${ep.seasonNumber}E${ep.episodeNumber}", "nfo")
+        }
         if (ok) store.updateOne(item.copy(jfSyncedAt = nowEpochSec()))
         return ok
     }
