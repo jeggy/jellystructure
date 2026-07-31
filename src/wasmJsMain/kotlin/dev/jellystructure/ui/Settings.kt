@@ -31,6 +31,7 @@ import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
 import kotlinx.browser.document
+import kotlinx.browser.localStorage
 import kotlinx.browser.window
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
@@ -39,6 +40,7 @@ import kotlinx.coroutines.launch
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import org.w3c.dom.Element
+import org.w3c.dom.events.KeyboardEvent
 import org.w3c.dom.HTMLElement
 import org.w3c.dom.HTMLInputElement
 import org.w3c.dom.HTMLSelectElement
@@ -1934,12 +1936,97 @@ private suspend fun refreshPipelineRunButton() {
 
 /** Shared by the split button's primary face and its "(full)" menu item — full=true bypasses scan_files'
  *  freshness filter (see MediaApi.runPipeline) so every downstream step sees the whole library this run. */
-private suspend fun triggerPipelineRun(full: Boolean) {
+/**
+ * Phase 154 (FR-PIPE1-1..5) — pre-run dialog. Lists the steps that will actually run and lets the operator
+ * untick any of them for THIS run only; nothing here touches [pipelineSteps] (the Settings edit buffer read
+ * by `readForm()` on Save) or persisted config. Reads the pipeline from the SAVED config rather than that
+ * buffer, because the saved config is what the server filters — with an explicit note when the two differ,
+ * so the dialog can never claim a run will do something it won't.
+ */
+private const val PIPE_SKIP_KEY = "js-pipeline-skip"
+
+private fun showPipelineRunDialog(full: Boolean, saved: List<PipelineStep>, hasUnsavedEdits: Boolean, onStart: (List<String>) -> Unit) {
+    val enabled = saved.filter { it.enabled }
+    // FR-PIPE1-5: restore the last choice, but only for steps that still exist and are enabled.
+    val remembered = (localStorage.getItem(PIPE_SKIP_KEY) ?: "").split(",").filter { it.isNotBlank() }.toMutableSet()
+    val skipped = remembered.filterTo(mutableSetOf()) { key -> enabled.any { it.step == key } && key != "scan_files" }
+
+    val back = document.createElement("div") as HTMLElement
+    back.className = "modal-back open"
+    val rows = enabled.joinToString("") { step ->
+        val def = PIPE_BLOCKS[step.step]
+        val name = def?.name ?: step.step
+        val sub = def?.subtitle ?: ""
+        // FR-PIPE1-4: discovery runs regardless of the list it's handed, so its box is ticked and disabled.
+        val locked = step.step == "scan_files"
+        val checked = if (locked || step.step !in skipped) "checked" else ""
+        val note = when {
+            locked -> """<div class="muted" style="font-size:.76rem;margin-top:3px;">Always runs — file discovery can't be skipped.</div>"""
+            // FR-PIPE1-3: the whole point of the dialog — say plainly why this one is usually safe to drop.
+            step.step == "detect_segments" -> """<div style="font-size:.76rem;margin-top:3px;color:var(--warn);">Usually safe to skip — by far the slowest step (hours; it decodes each episode), and it only powers Skip&nbsp;Intro / Skip&nbsp;Credits. Already-detected markers are kept.</div>"""
+            else -> ""
+        }
+        """
+        <label class="row" style="align-items:flex-start;gap:10px;padding:9px 2px;border-bottom:1px solid var(--line);cursor:${if (locked) "default" else "pointer"};">
+          <input type="checkbox" data-step="${step.step}" $checked ${if (locked) "disabled" else ""} style="margin-top:3px;flex:none;accent-color:#7b6ef0;">
+          <span style="min-width:0;">
+            <span style="display:block;font-weight:600;">$name</span>
+            <span class="muted" style="font-size:.8rem;">$sub</span>
+            $note
+          </span>
+        </label>"""
+    }
+    val unsavedNote = if (!hasUnsavedEdits) "" else
+        """<div class="muted" style="font-size:.8rem;color:var(--warn);margin-bottom:10px;">You have unsaved pipeline edits. This run uses the <b>saved</b> pipeline shown below — save first if you want your changes applied.</div>"""
+    back.innerHTML = """
+        <div class="modal">
+          <span class="x" id="prun-x">✕</span>
+          <h3>${if (full) "Run pipeline now (full)" else "Run pipeline now"}</h3>
+          <p class="muted" style="margin:0 0 12px;">
+            ${if (full) "Every step sees the whole library — no freshness filter. " else ""}Untick anything you want to skip <b>this run only</b>; your saved pipeline isn't changed.
+          </p>
+          $unsavedNote
+          <div style="max-height:46vh;overflow:auto;margin-bottom:14px;">$rows</div>
+          <div class="row" style="justify-content:flex-end;gap:8px;">
+            <button id="prun-cancel" class="btn ghost">Cancel</button>
+            <button id="prun-go" class="btn primary">Start run</button>
+          </div>
+        </div>""".trimIndent()
+    document.body?.appendChild(back)
+
+    var escHandler: ((org.w3c.dom.events.Event) -> Unit)? = null
+    fun close() {
+        escHandler?.let { document.removeEventListener("keydown", it) }
+        back.remove()
+    }
+    escHandler = { e -> if ((e as? KeyboardEvent)?.key == "Escape") close() }
+    document.addEventListener("keydown", escHandler)
+    back.querySelector("#prun-x")?.addEventListener("click") { close() }
+    back.querySelector("#prun-cancel")?.addEventListener("click") { close() }
+    back.addEventListener("click") { e -> if (e.target == back) close() }
+    back.querySelector("#prun-go")?.addEventListener("click") {
+        val skip = mutableListOf<String>()
+        val boxes = back.querySelectorAll("input[type=checkbox][data-step]")
+        for (i in 0 until boxes.length) {
+            val box = boxes.item(i) as? HTMLInputElement ?: continue
+            val key = box.getAttribute("data-step") ?: continue
+            if (!box.checked && key != "scan_files") skip.add(key)
+        }
+        localStorage.setItem(PIPE_SKIP_KEY, skip.joinToString(","))
+        close()
+        onStart(skip)
+    }
+}
+
+private suspend fun triggerPipelineRun(full: Boolean, skipSteps: List<String> = emptyList()) {
     val btn = document.getElementById("pipe-run") as? HTMLElement
     btn?.setAttribute("disabled", "")
-    val result = runCatching { MediaApi.runPipeline(full) }.getOrDefault(PipelineRunResult.FAILED)
+    val result = runCatching { MediaApi.runPipeline(full, skipSteps) }.getOrDefault(PipelineRunResult.FAILED)
     when (result) {
-        PipelineRunResult.STARTED -> showPipelineToast(if (full) "Full pipeline run started" else "Pipeline started")
+        PipelineRunResult.STARTED -> showPipelineToast(
+            (if (full) "Full pipeline run started" else "Pipeline started") +
+                if (skipSteps.isEmpty()) "" else " · skipped ${skipSteps.mapNotNull { PIPE_SHORT[it] ?: it }.joinToString(", ")}"
+        )
         PipelineRunResult.ALREADY_RUNNING -> showPipelineToast("A scan/pipeline is already running")
         PipelineRunResult.FAILED -> { btn?.removeAttribute("disabled"); showPipelineToast("Failed to start pipeline") }
     }
@@ -2257,11 +2344,20 @@ private fun wirePipelineBuilder(scope: CoroutineScope) {
         }
     }
     document.getElementById("pipe-at")?.addEventListener("input") { updatePipeCron() }
-    document.getElementById("pipe-run")?.addEventListener("click") { scope.launch { triggerPipelineRun(full = false) } }
+    // Phase 154 (FR-PIPE1-1): both faces open the pre-run dialog instead of starting immediately — each is
+    // a whole-library, multi-hour run ("full" only drops the freshness filter), so the skip choice matters
+    // equally to both. The saved pipeline is fetched here so the dialog lists what the SERVER will run.
+    fun openRunDialog(full: Boolean) = scope.launch {
+        val saved = ConfigApi.get()?.config?.scan?.pipeline ?: pipelineSteps.toList()
+        showPipelineRunDialog(full, saved, hasUnsavedEdits = saved != pipelineSteps.toList()) { skip ->
+            scope.launch { triggerPipelineRun(full, skip) }
+        }
+    }
+    document.getElementById("pipe-run")?.addEventListener("click") { openRunDialog(full = false) }
     document.getElementById("pipe-run-full")?.addEventListener("click") { e ->
         if ((e.currentTarget as? HTMLElement)?.hasAttribute("disabled") == true) return@addEventListener
         (document.getElementById("pipe-run-split") as? HTMLElement)?.classList?.remove("open")
-        scope.launch { triggerPipelineRun(full = true) }
+        openRunDialog(full = true)
     }
     (document.getElementById("pipe-run-split") as? HTMLElement)?.querySelector(".menu-btn")?.let { caret ->
         (caret as? HTMLElement)?.addEventListener("click") { e ->

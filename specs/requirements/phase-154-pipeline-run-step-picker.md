@@ -6,7 +6,7 @@
 > back on. This phase adds a confirmation dialog on the manual run actions that shows what is about to run
 > and lets the operator untick steps **for that run only**, with nothing written to config.
 
-**Status:** Planned.
+**Status:** Implemented. Dialog rendered against the real stylesheets and visually verified; needs a backend restart + frontend rebuild to appear in the running app.
 
 ## Problem
 `▷ Run pipeline now` (and its `Run pipeline now (full)` menu twin) start immediately with no preview and no
@@ -92,6 +92,25 @@ likely to be looked at.
 - Applying a skip to the *scheduled* run (this is a manual-run escape hatch; a permanent change belongs in
   Settings).
 - Cancelling/skipping a step mid-run — `POST /api/scan/cancel` already cancels the whole run.
+
+## Dev-review addendum (2026-07-31 — implementation notes)
+
+1. **The dialog reads the SAVED pipeline, not the Settings edit buffer.** `openRunDialog` fetches
+   `ConfigApi.get()` and passes `scan.pipeline`, because that is exactly what the route filters
+   (`MediaRoutes.kt`). When it differs from the in-memory `pipelineSteps` buffer the dialog shows an
+   explicit "you have unsaved pipeline edits — this run uses the saved pipeline" warning, so it can never
+   claim a run will do something it won't.
+2. **`.muted`, not `.mut`.** First draft used a `.mut` class that doesn't exist in `wf.css`; the muted-text
+   class in this codebase is `.muted` (`design/app/wf.css:131`). Caught by rendering the real markup
+   against the real stylesheets rather than by the compiler — worth remembering that raw-HTML string
+   templates get no class-name checking.
+3. **Checkbox accent** set to `#7b6ef0` (the Aurora accent used by `ravilo.css`/focus rings) — the browser
+   default renders a system blue that reads as foreign against the purple→blue palette.
+4. Verified: `compileKotlinWasmJs`, `compileKotlinLinuxX64`, `linuxX64Test` (full suite) all pass, plus a
+   headless-Chromium screenshot of the exact emitted markup loaded against `wf.css` + `app.css` +
+   `detail.css` (all three are linked by `src/wasmJsMain/resources/index.html`, so `.modal-back`/`.modal`
+   from `detail.css` are available on every admin page, not just detail).
+5. Not click-tested in the running app — that needs a backend restart (operator-run).
 
 ## Source references
 - Dialog + trigger: `src/wasmJsMain/kotlin/dev/jellystructure/ui/Settings.kt` (`triggerPipelineRun`,
