@@ -6,12 +6,18 @@ import dev.jellystructure.config.ConfigStore
 import dev.jellystructure.media.MediaStore
 import dev.jellystructure.model.MediaItem
 import dev.jellystructure.model.MediaKind
+import dev.jellystructure.model.TrackKind
 import dev.jellystructure.model.recencyKey
 import dev.jellystructure.resolver.CertificationResolver
+import dev.jellystructure.shared.tv.BrowseCard
 import dev.jellystructure.shared.tv.BrowseFacets
+import dev.jellystructure.shared.tv.ConditionGroup
 import dev.jellystructure.shared.tv.FacetItem
 import dev.jellystructure.shared.tv.MediaCard
 import dev.jellystructure.shared.tv.SearchResults
+import dev.jellystructure.shared.tv.SeededBrowseResponse
+import dev.jellystructure.shared.tv.TvImdbRating
+import dev.jellystructure.shared.tv.effectiveQuery
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withTimeoutOrNull
@@ -27,7 +33,74 @@ class BrowseService(
     private val mediaStore: MediaStore,
     private val jellyfinClient: JellyfinClient,
     private val configStore: ConfigStore,
+    private val raviloConfigService: RaviloConfigService,
 ) {
+    /**
+     * R187 — resolves a "→ See all" seed (a [Row.seedQuery] condition tree, already channel-ANDed
+     * where relevant, plus [mediaKind]) to the FULL matching set as [BrowseCard]s (genres, audio
+     * languages, quality, channel membership, IMDb rating — everything the browse page's facet bar
+     * needs), device-scoped. Deliberately returns everything in one call rather than a paginated/
+     * narrowed-per-facet API: the live catalog is a few hundred items (confirmed cheap at this scale
+     * during the spec's backend review), so the Ravilo client computes facet counts/filtering/sorting
+     * reactively from this one response with no further round trips as the viewer toggles facets.
+     */
+    suspend fun browseByQuery(device: DeviceData, query: ConditionGroup?, mediaKind: String?): SeededBrowseResponse = coroutineScope {
+        val jellyfinBase = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
+        val tokenDeferred = async { jellyfinClient.tvToken(jellyfinBase, device, configStore.current.apiKeys.jellyfinToken) }
+        val allDeferred = async { mediaStore.liveItems(device) }
+        val cfg = raviloConfigService.getConfig(device.jellyfinUserId)
+        val heroIds = cfg.heroes.map { it.itemId }.toSet()
+        val cascade = configStore.current.metadata.ageRatingCascade
+        val channels = cfg.channels.filter { it.enabled }
+
+        val token = tokenDeferred.await()
+        val all = allDeferred.await()
+        val kindFiltered = when (mediaKind) {
+            "MOVIE"  -> all.filter { it.kind == MediaKind.MOVIE }
+            "SERIES" -> all.filter { it.kind == MediaKind.TV_SHOW }
+            else     -> all
+        }
+        val matched = if (query == null) kindFiltered
+            else kindFiltered.filter { ConditionEvaluator.matches(it, query, heroIds, cascade) }
+
+        val ps = withTimeoutOrNull(HYDRATE_TIMEOUT_MS) {
+            fetchPlaystate(jellyfinClient, jellyfinBase, token, device.jellyfinUserId, matched.map { it.jellyfinId ?: it.id })
+        } ?: emptyMap()
+
+        val items = matched.map { item ->
+            BrowseCard(
+                card = item.toMediaCard().withPlaystate(ps),
+                genres = item.genres,
+                audioLanguages = item.audioLanguages(),
+                quality = item.qualityLabel(),
+                channels = channels.filter { ch -> ConditionEvaluator.matches(item, ch.effectiveQuery(), heroIds, cascade) }.map { it.id },
+                imdbRating = item.imdbRating?.let { TvImdbRating(aggregateRating = it.aggregateRating, voteCount = it.voteCount) },
+            )
+        }
+        SeededBrowseResponse(items = items, total = items.size)
+    }
+
+    /** R187 (Quality facet) — the best (largest, since a scan only probes one file per episode/movie
+     *  today) video track's resolution+HDR flag as one label. Null when no video track was probed yet. */
+    private fun MediaItem.qualityLabel(): String? {
+        val tracks = if (kind == MediaKind.TV_SHOW) episodes.flatMap { it.tracks } else tracks
+        val video = tracks.filter { it.kind == TrackKind.VIDEO }.maxByOrNull { (it.width ?: 0) * (it.height ?: 0) } ?: return null
+        val tier = when {
+            (video.width ?: 0) >= 3840 || (video.height ?: 0) >= 2160 -> "4K"
+            (video.width ?: 0) >= 1920 || (video.height ?: 0) >= 1080 -> "1080p"
+            (video.width ?: 0) >= 1280 || (video.height ?: 0) >= 720  -> "720p"
+            video.width != null || video.height != null -> "SD"
+            else -> return null
+        }
+        return if (video.videoRange == "HDR") "$tier HDR" else tier
+    }
+
+    /** R187 (Audio facet) — distinct, tagged audio languages across every track (episodes flattened for
+     *  a series), matching the same "und"/blank = untagged exclusion [FfprobeRunner] already applies. */
+    private fun MediaItem.audioLanguages(): List<String> {
+        val tracks = if (kind == MediaKind.TV_SHOW) episodes.flatMap { it.tracks } else tracks
+        return tracks.filter { it.kind == TrackKind.AUDIO }.mapNotNull { it.language }.distinct()
+    }
     /** Paged browse grid. kind: "movie" | "series" | "mylist" | null (all). */
     suspend fun browse(
         device: DeviceData,
