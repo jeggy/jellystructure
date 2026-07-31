@@ -72,6 +72,13 @@ data class Track(
     val title: String?,
     val default: Boolean,
     val forced: Boolean,
+    /** R187 (Quality facet) — only set for kind == VIDEO. [videoRange] is a simple "SDR"/"HDR" flag
+     *  (from ffprobe's color_transfer: smpte2084/arib-std-b67 = HDR) — not a full HDR10/HDR10+/DV
+     *  profile breakdown; R183's separate playback-negotiation code already owns that finer distinction
+     *  for streaming decisions. This is display/filtering only. */
+    val width: Int? = null,
+    val height: Int? = null,
+    val videoRange: String? = null,
 )
 
 @Serializable

@@ -265,14 +265,60 @@ project's design/code split.)
   30-item window a Home row ships today.
 
 ## Status
-Design-complete, **`Planned`**, backend-reviewed 2026-07-31. Design lives in `design/ravilo/ravilo-browse.js`
+Backend (§G) implemented 2026-07-31 — see implementation addendum below. Compose UI (facet bar, popovers,
+Maturity range picker, See-all tiles) in progress. Design lives in `design/ravilo/ravilo-browse.js`
 (the whole page + popover engine — a JS prototype, not the implementation target), wired via
 `design/ravilo/ravilo-app.js`, styled in `design/ravilo/ravilo.css`, localized in
 `design/ravilo/ravilo-i18n.js`; exploration in `design/ravilo/Ravilo Browse - Filter UI Directions.html`
-(Direction A chosen). Real implementation target is `ravilo-ui`'s Compose code (§G, Reuse). Depends on
-**Phase 155** and on **§G's backend work landing first or alongside**. `scripts/check-phases.sh` will
+(Direction A chosen). Depends on **Phase 155** (implemented). `scripts/check-phases.sh` will
 flag it for a `STATUS.md` row — **STATUS.md is code-owned; do not add the row from the design side.**
 **Next Ravilo number after this is R188.**
+
+## Implementation addendum (2026-07-31) — backend (§G)
+
+One real design pivot from §G's plan, plus straightforward execution of the rest:
+
+- **Pivoted from "per-facet narrowed-counts endpoint" to "return the full seed-matching set once."**
+  §G originally planned a device-scoped sibling of the admin's `MediaStore.facetsNarrowed`, called once
+  per open popover with a different query each time (seed AND every other active facet). Building that
+  meant reimplementing narrowed-counting for Maturity/Year/Watched/Channel/Quality, none of which exist
+  in `MetaFacets`/`TrackFacets` today. Since the confirmed catalog size (428 items) makes "hand the whole
+  matching set to the client" cheap, and `BrowseCard` (new, additive-only DTO — see below) already needs
+  to carry genres/audio/quality/channels/IMDb per item for display anyway, computing every facet's counts
+  and every sort reactively from that one in-memory list client-side eliminates six separate
+  server-side counting code paths for one network round trip instead of one-per-popover-open. Genre/Type/
+  Maturity/Year/Watched/Audio/Quality/Channel/sort-by-IMDb are ALL client-computed from a single
+  `POST /tv/browse/seeded` response — no facets endpoint exists or is needed.
+- **`BrowseCard`** (`shared/.../tv/Models.kt`) wraps a plain `MediaCard` (unchanged, used everywhere else)
+  with the extra per-item fields the facet bar needs: `genres`, `audioLanguages`, `quality`, `channels`,
+  `imdbRating`. Deliberately not folded into `MediaCard` itself, for the same payload-bloat reason R164
+  kept IMDb rating off it.
+- **Quality facet (G-6) data capture**: `Track` gained `width`/`height`/`videoRange` ("SDR"/"HDR" only,
+  not a full HDR10/HDR10+/DV breakdown — R183's playback-negotiation code already owns that finer
+  distinction for streaming decisions; this is display/filtering only), populated by `FfprobeRunner.probe`
+  from ffprobe's existing full stream JSON (no command change needed, the fields were always in the
+  output, just not parsed). `BrowseService.qualityLabel()` buckets to "4K"/"1080p"/"720p"/"SD" (+" HDR").
+- **Channel facet (G-5)**: computed per-request, per-item, by evaluating every enabled channel's
+  `effectiveQuery()` via the existing `ConditionEvaluator` — exactly the "cheap at this scale, no reverse
+  index needed" approach the spec anticipated.
+- **Row seed threading (G-1)**: `Row` gained `seedQuery: ConditionGroup?` + `seedMediaKind: String?`.
+  `CUSTOM` rows reuse `rowCfg.effectiveQuery()` directly. `GENRE` rows needed one real subtlety: their
+  live substring match (title term "sci" catching "Science Fiction") isn't expressible as
+  `ConditionEvaluator`'s exact-match "genre" facet, so the seed is built from the real genre *strings*
+  that matched in the row's own candidate set, not the search terms — reproducible via the seeded-browse
+  endpoint, correct for that row's actual membership. Channel-scoped rows AND the channel's own
+  `effectiveQuery()` onto the row's query (`withChannelSeed`). `CONTINUE` rows get no seed (G-4, see
+  below). `NEWLY_ADDED` rows were left unseeded too — deliberately out of this pass: a Newly-Added row's
+  natural "see all" is just the Movies/Series nav page, whose default sort is already "Recently added"
+  (FR-RV-BROWSE1-7), so a distinct seeded page for it is redundant.
+- **Continue Watching's own See-all (G-4)**: `HomeFeedService.continueWatchingAll()` reuses
+  `buildContinueRow`'s exact resume/next-up join logic with the Home row's 30-item cap lifted, behind a
+  dedicated `GET /tv/continue/all` (plain `MediaCard`s — no facet bar on this page, per FR-RV-BROWSE1-1's
+  framing of it as "the viewer's full in-progress list," not a filterable catalog view).
+- Verified: `compileKotlinLinuxX64`, `linuxX64Test` (full suite), `compileKotlinWasmJs` (admin),
+  `:ravilo-ui:compileDebugKotlinAndroid` + `:ravilo-ui:compileKotlinWasmJs` (Compose consumers of the
+  changed shared models) all pass. Not yet exercised live (needs the Compose UI to call it, in progress,
+  plus a backend restart).
 
 ## Backend review addendum (2026-07-31)
 
