@@ -165,6 +165,10 @@ data class MediaCard(
     val watched: Boolean = false,
     /** R149: true when Sonarr is enabled, the series is continuing, and a next-airing date exists. */
     @SerialName("upcoming_episode") val upcomingEpisode: String? = null,
+    /** Phase 155 — normalized age 0-18 (CertificationResolver.normalizedAge()); never null, defaults to
+     *  18 for an unmapped or uncertified title. A gate value for filtering/kids-gating, not a label —
+     *  never render this as "18+" on its own; [rating] is still what R153's regional chip displays. */
+    @SerialName("age_rating") val ageRating: Int = 18,
 )
 
 @Serializable

@@ -89,6 +89,42 @@ object CertificationResolver {
         return null
     }
 
+    /** Phase 155 — default cascade-resolved-code -> normalized-age seeding, covering every code in
+     *  [CertificationCatalog]'s 10 regional scales plus the common US TV Parental Guidelines codes
+     *  (which share the "US" country key with MPA movie ratings under a different vocabulary — see
+     *  Media.kt's certifications doc). Real per-title values, not a formula: matches this project's own
+     *  library sample exactly for the codes that appear there. An operator's explicit mapping (via
+     *  MetadataConfig.ageRatingMap) always wins; this only fills gaps (fresh install, or "Suggest
+     *  mappings" for values still unmapped). Named codes only — this phase does not attempt to interpret
+     *  bare numeric certifications (a raw "15" already IS its own age; the numeric regional scales
+     *  DK/SE/NO/BBFC/DE/FR/NL/IE below list themselves for completeness/documentation, not because the
+     *  numeric parse needs help).
+     */
+    val AGE_SEED: Map<String, Int> = mapOf(
+        // All-ages / general
+        "A" to 0, "U" to 0, "G" to 0, "AL" to 0, "L" to 0, "Btl" to 0, "TV-Y" to 0, "TV-G" to 0,
+        // Young child guidance
+        "7" to 7, "TV-Y7" to 7, "Från 7 år" to 7, "PG" to 7, "TV-PG" to 7, "6" to 6,
+        // Pre-teen
+        "9" to 9, "11" to 11, "10" to 10,
+        // Young teen
+        "12" to 12, "12A" to 12, "PG-13" to 13, "TV-14" to 14, "14" to 14,
+        // Older teen
+        "15" to 15, "Från 15 år" to 15, "16" to 16,
+        // Adult
+        "R" to 17, "TV-MA" to 17, "18" to 18, "NC-17" to 18, "R18" to 18,
+    )
+
+    /** Phase 155 (FR-AGE1-2) — the one number Ravilo ever sees: resolve the title's certification via
+     *  the existing cascade, then look it up in the operator's [ageRatingMap]. No cascade match at all
+     *  (raw map empty, or none of the configured regions present) or a match with no table entry -> 18,
+     *  the safe adults-only default — never null, never a lower guess. A gate value, not a label: never
+     *  render this as "18+" for a title that was merely unmapped/uncertified. */
+    fun normalizedAge(cascade: List<String>, ageRatingMap: Map<String, Int>, certifications: Map<String, String>): Int {
+        val resolved = resolve(cascade, certifications) ?: return 18
+        return ageRatingMap[resolved.code] ?: 18
+    }
+
     /** The full cascade trace for the admin detail page: one row per cascade region (used / skipped). */
     fun trace(cascade: List<String>, certifications: Map<String, String>): List<CascadeStep> {
         if (cascade.isEmpty()) return emptyList()
