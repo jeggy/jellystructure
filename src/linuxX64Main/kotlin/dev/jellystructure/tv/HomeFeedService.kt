@@ -453,6 +453,9 @@ class HomeFeedService(
 
         val cards = mutableListOf<MediaCard>()
         val seen = mutableSetOf<String>()
+        // R186 (FR-RV-CW2-3): resolved via one map instead of a linear scan per entry — the candidate
+        // pool is now up to 200 entries (was 20), and this runs on every home/channel load.
+        val byJellyfinId = all.asSequence().mapNotNull { mi -> mi.jellyfinId?.let { it to mi } }.toMap()
 
         for (play in resumeItems) {
             // R185 — Jellyfin's own IsResumable filter is PlaybackPositionTicks > 0 only, with no Played
@@ -461,7 +464,7 @@ class HomeFeedService(
             if (play.userData?.played == true) continue
             val itemId = play.seriesId ?: play.id
             if (!seen.add(itemId)) continue
-            val mediaItem = all.firstOrNull { it.jellyfinId == itemId } ?: continue
+            val mediaItem = byJellyfinId[itemId] ?: continue
             val pct = play.userData?.playedPercentage?.toFloat()?.div(100f)
             // R113: carry the resumed episode's season/episode for the on-image badge (null for movies).
             cards.add(mediaItem.toMediaCard(progressPct = pct, seasonNumber = play.seasonNumber, episodeNumber = play.episodeNumber))
@@ -470,7 +473,7 @@ class HomeFeedService(
         for (play in nextUpItems) {
             val itemId = play.seriesId ?: play.id
             if (!seen.add(itemId)) continue
-            val mediaItem = all.firstOrNull { it.jellyfinId == itemId } ?: continue
+            val mediaItem = byJellyfinId[itemId] ?: continue
             val s = play.seasonNumber; val e = play.episodeNumber
             val label = if (s != null && e != null) "S${s}E${e} · ${play.name}" else play.name
             cards.add(mediaItem.toMediaCard(nextUpLabel = label, seasonNumber = s, episodeNumber = e))
