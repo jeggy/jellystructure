@@ -265,8 +265,10 @@ project's design/code split.)
   30-item window a Home row ships today.
 
 ## Status
-Backend (§G) implemented 2026-07-31 — see implementation addendum below. Compose UI (facet bar, popovers,
-Maturity range picker, See-all tiles) in progress. Design lives in `design/ravilo/ravilo-browse.js`
+Implemented 2026-07-31 — backend (§G) and Compose UI (facet bar, popovers, Maturity range picker, sort,
+See-all tiles) — see the two implementation addenda below. One deliberate scope trim: Movies/Series nav
+still uses the pre-existing `BrowseScreen`/`BrowseKind` flow rather than delegating to the new screen
+(FR-RV-BROWSE1-2) — see the UI addendum. Design lives in `design/ravilo/ravilo-browse.js`
 (the whole page + popover engine — a JS prototype, not the implementation target), wired via
 `design/ravilo/ravilo-app.js`, styled in `design/ravilo/ravilo.css`, localized in
 `design/ravilo/ravilo-i18n.js`; exploration in `design/ravilo/Ravilo Browse - Filter UI Directions.html`
@@ -346,6 +348,43 @@ Corrections folded into the body above; summary of what changed:
    decision the design tool couldn't have known about.
 4. **Surfaced two facets (Channel, Quality) that need genuinely new backend capability**, not just newly
    exposed existing capability — flagged as a plausible fast-follow rather than blocking the other six.
+   **Superseded**: the operator chose to build all 8 in this pass — see the backend addendum's Quality/
+   Channel notes (§G-5/G-6 both implemented, not deferred).
 5. Confirmed accurate and left as-is: catalog size (428 items) makes the whole approach performance-safe;
    R174 grid-columns reuse; the Maturity range-picker UX itself (no code conflicts found); numbering
    (R187/R188 don't collide with this session's R183–R186 work).
+
+## Implementation addendum (2026-07-31) — Compose UI
+
+- **`SeededBrowseScreen.kt`** (new file) implements the facet bar, popovers, and Maturity range picker
+  directly against the backend's "fetch once, compute reactively" design (previous addendum) — `matches()`/
+  `valuesFor()`/`sortedFiltered()` are plain Kotlin over the in-memory `List<BrowseCard>`, recomputed via
+  `remember(...)` keyed on every active filter, matching FR-RV-BROWSE1-5's live-update requirement with
+  zero network round trips per popover interaction.
+- **Popover "owns the remote"**: confirmed live in code (not just theory) that Compose's own focus
+  exclusivity is sufficient — each popover is a `Box` with its own `dpadFocusable` rows, focused via
+  `LaunchedEffect` the moment it opens; no PlayerScreen-style root key interceptor was needed, closing
+  the open question FR-RV-BROWSE1-8 originally flagged.
+- **See-all wiring**: `HomeScreen`'s `onSeeAll` param changed from the dead `(String?) -> Unit` to
+  `(Row) -> Unit`, actually threaded into both `ContentRowItem` calls; `ChannelScreen` gained the same
+  `onSeeAll` param and wiring (not in the original backend-review scope, added for parity — a channel
+  row without a See-all tile would have been a visible gap). Both gate the tile on `row.items.size > 8`
+  AND the row having a resolvable seed (`CONTINUE`, or `seedQuery`/`seedMediaKind` non-null) — Newly-Added
+  rows correctly get no tile (deferred server-side per the backend addendum, not a UI oversight).
+- **Two self-review catches, fixed before commit** (no live device to test against, so this pass leaned
+  on rereading the diff rather than trusting it): the Maturity picker's ▲▼ between "From"/"Up to" were
+  wired as literal no-op stub lambdas (`{ }`) instead of moving focus between the two rows — fixed with a
+  second `FocusRequester`. Separately, `BrowseCardGrid` took an `onGridUp` parameter that was never
+  actually connected to anything inside the function (dead code masquerading as a working bridge) —
+  removed rather than left in, with a comment on why native spatial search is expected to suffice here
+  (the facet bar and grid are both left-anchored at the same offset, unlike the full-width-hero case
+  elsewhere in this app that genuinely needs an explicit bridge).
+- **Deferred**: Movies/Series nav delegating to this screen (FR-RV-BROWSE1-2) — the existing
+  `BrowseScreen`/`BrowseStore`/`BrowseKind` flow has ~10 call sites across the app (every screen's nav
+  bar); re-pointing MOVIES/SERIES to `SeededBrowseScreen` in the same pass as building it fresh was judged
+  higher-risk than shipping the new screen for rows/Continue-Watching first and doing the nav delegation
+  as a follow-up once it's been exercised on a real device. My List keeps its existing plain grid either way.
+- **Verified**: `compileKotlinLinuxX64`, `linuxX64Test`, `compileKotlinWasmJs` (admin), `:ravilo-ui:compileDebugKotlinAndroid`,
+  `:ravilo-ui:compileKotlinWasmJs` all pass. **Not verified**: D-pad focus/key behavior on a real TV —
+  Compose UI can't be screenshotted or exercised the way the admin wasmJs pages were earlier this session;
+  this needs on-device testing (stuetv), which is the operator's own to run.
