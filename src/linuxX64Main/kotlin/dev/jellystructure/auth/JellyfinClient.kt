@@ -270,14 +270,18 @@ class JellyfinClient {
         response.status.value in 200..299
     }.getOrDefault(false)
 
+    /** R186: [limit] is the CANDIDATE pool the Continue row filters from (per-channel membership, dedup),
+     *  not how many cards are shown — keep it well above a realistic in-flight count or a channel row
+     *  silently truncates to "whichever of the global top-N happen to be in it". `IsPlayed=false` excludes
+     *  finished items server-side, so an R185-style played/position desync can't consume the window. */
     suspend fun getResumeItems(
         baseUrl: String,
         userToken: String,
         userId: String,
-        limit: Int = 20,
+        limit: Int = 200,
     ): List<JellyfinPlayItem> = runCatching {
         val url = baseUrl.trimEnd('/') +
-            "/Users/$userId/Items?Filters=IsResumable&Recursive=true" +
+            "/Users/$userId/Items?Filters=IsResumable&Recursive=true&IsPlayed=false" +
             "&IncludeItemTypes=Movie,Episode&Limit=$limit" +
             "&SortBy=DatePlayed&SortOrder=Descending" +
             "&Fields=UserData,SeriesId,SeriesName,SeasonId,IndexNumber,ParentIndexNumber"
@@ -571,11 +575,14 @@ class JellyfinClient {
         }.status.isSuccess()
     }.getOrElse { Logger.warn("Jellyfin closeLiveStream failed: ${it.message}"); false }
 
+    /** R186: see [getResumeItems] — [limit] is the candidate pool the Continue row filters from, not the
+     *  number of cards shown. A live example: this user's NextUp TotalRecordCount was 54 while we fetched
+     *  20, so a series at position 41 was invisible on Home and in every channel row. */
     suspend fun getNextUp(
         baseUrl: String,
         userToken: String,
         userId: String,
-        limit: Int = 20,
+        limit: Int = 200,
     ): List<JellyfinPlayItem> = runCatching {
         val url = baseUrl.trimEnd('/') +
             "/Shows/NextUp?UserId=$userId&Limit=$limit" +

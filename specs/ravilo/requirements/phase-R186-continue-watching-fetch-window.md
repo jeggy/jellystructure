@@ -6,7 +6,7 @@
 > anything ranked 21st or worse globally can never appear — in a channel row **or** on Home. Compounded
 > by R185's played/position desync, whose stale entries occupy slots inside that same 20-item window.
 
-**Status:** Planned.
+**Status:** Implemented; queries verified live (see addendum). Needs a backend restart to take effect.
 
 ## Bug report
 2026-07-31 — "Klågere end du tror" has S01E01 watched, so S01E02 is its next episode, but the series
@@ -71,6 +71,20 @@ against it instead.
 - Paging the Continue row beyond `ROW_ITEM_LIMIT` — the row still shows at most 30 cards by design.
 - The unnumbered-episode class of missing titles (Stormester S10E07 etc.) — different root cause, see
   **Phase 152/153**.
+
+## Dev-review addendum (2026-07-31 — implementation + live verification)
+
+1. **Verified against the live Jellyfin with the exact URLs the code now builds.** The new
+   `getResumeItems` query returns **46 items, `TotalRecordCount: 46`, none `played == true`** — down from
+   115 with 62 desynced, confirming `IsPlayed=false` removes the R185 rows server-side rather than leaving
+   them to consume the window. The new `getNextUp` query returns the **full 54 of 54**, and both
+   "Klågere end du tror" (previously position 41) and Stormester are present.
+2. **`IsPlayed=false` also shrinks the pool**, which is the point: the pool is now entirely real
+   candidates, so the raised limit isn't just fetching more noise.
+3. R185's `played` check in `buildContinueRow` is deliberately left in place as the display-time backstop
+   its spec intended, now that the server-side filter is what actually protects the window.
+4. Verified via `compileKotlinLinuxX64` + `linuxX64Test` (full suite passes). Not yet observed in the
+   running app — needs a backend restart (operator-run).
 
 ## Source references
 - Fetch limits: `src/linuxX64Main/kotlin/dev/jellystructure/auth/JellyfinClient.kt` (`getResumeItems`,
