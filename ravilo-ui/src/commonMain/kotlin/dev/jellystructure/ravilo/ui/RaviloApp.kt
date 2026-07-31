@@ -37,6 +37,8 @@ import dev.jellystructure.ravilo.ui.screens.BrowseScreen
 import dev.jellystructure.ravilo.ui.screens.BrowseStore
 import dev.jellystructure.ravilo.ui.screens.ChannelScreen
 import dev.jellystructure.ravilo.ui.screens.ChannelStore
+import dev.jellystructure.ravilo.ui.screens.SeededBrowseScreen
+import dev.jellystructure.ravilo.ui.screens.SeededBrowseStore
 import dev.jellystructure.ravilo.ui.screens.DiscoverDetailScreen
 import dev.jellystructure.ravilo.ui.screens.DiscoverDetailStore
 import dev.jellystructure.ravilo.ui.screens.DiscoverScreen
@@ -74,6 +76,7 @@ import dev.jellystructure.ravilo.ui.screens.UpcomingScreen
 import dev.jellystructure.ravilo.ui.screens.UpcomingStore
 import dev.jellystructure.ravilo.ui.screens.WatchedBus
 import dev.jellystructure.ravilo.ui.i18n.WithLocale
+import dev.jellystructure.ravilo.ui.i18n.str
 import coil3.compose.LocalPlatformContext
 import dev.jellystructure.ravilo.ui.components.ProfileMenu
 import dev.jellystructure.ravilo.ui.components.ServerMessageHost
@@ -92,6 +95,7 @@ import dev.jellystructure.shared.tv.ServerMessageEnvelope
 import dev.jellystructure.shared.tv.Channel
 import dev.jellystructure.shared.tv.MediaCard
 import dev.jellystructure.shared.tv.MediaKind
+import dev.jellystructure.shared.tv.RowKind
 import dev.jellystructure.shared.tv.TvApiClient
 import dev.jellystructure.shared.tv.tileScale
 import kotlinx.coroutines.CoroutineScope
@@ -155,6 +159,19 @@ private sealed class Dest {
     data class Home(val displayName: String) : Dest()
     data class ChannelView(val channel: Channel, val displayName: String) : Dest()
     data class Browse(val kind: BrowseKind, val displayName: String) : Dest()
+    // R187 — the "→ See all" seeded browse page: [seedQuery]/[seedMediaKind] mirror Row's own fields
+    // (null seedQuery = no additional filter, e.g. a Newly-Added-style kind-only seed). [continueWatching]
+    // routes to the dedicated GET /tv/continue/all path instead (Continue Watching isn't seed-representable
+    // — see the R187 spec's §G-4) and hides the facet bar (FR-RV-BROWSE1-1's "full in-progress list", not
+    // a filterable catalog view). Not deep-linkable (the seed has no URL-safe encoding) — see toRoute().
+    data class SeededBrowse(
+        val seedQuery: dev.jellystructure.shared.tv.ConditionGroup?,
+        val seedMediaKind: String?,
+        val title: String,
+        val breadcrumb: String?,
+        val continueWatching: Boolean,
+        val displayName: String,
+    ) : Dest()
     data class Search(val displayName: String) : Dest()
     // R170 — Coming Soon (the old Upcoming tab) and Request (the old Top-10/Discover tab) are now the
     // two segments of one merged Discover tab; `segment` decides which of UpcomingScreen/DiscoverScreen
@@ -201,6 +218,7 @@ private sealed class Dest {
         is Home           -> "/home"
         is ChannelView    -> "/channel/${channel.id}"
         is Browse         -> "/browse/${kind.name.lowercase()}"
+        is SeededBrowse   -> "/browse-seed" // not deep-linkable — the seed has no URL-safe encoding
         is Search         -> "/search"
         is Discover       -> "/discover"
         is DiscoverItem   -> "/discover/$mediaType/$tmdbId"
@@ -394,7 +412,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
         // currently visible screen is carrying," without an exhaustive `when` at every call site).
         fun destDisplayName(d: Dest?): String = when (d) {
             is Dest.Home -> d.displayName; is Dest.ChannelView -> d.displayName
-            is Dest.Browse -> d.displayName; is Dest.Search -> d.displayName
+            is Dest.Browse -> d.displayName; is Dest.SeededBrowse -> d.displayName; is Dest.Search -> d.displayName
             is Dest.Discover -> d.displayName; is Dest.DiscoverItem -> d.displayName
             is Dest.SeerrSearch -> d.displayName
             is Dest.UpcomingDetail -> d.displayName
@@ -562,6 +580,9 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
             }
 
             is Dest.Home -> {
+                // R187 — str() is @Composable; hoisted here since it's read inside the onSeeAll callback
+                // below, which isn't composable context.
+                val homeLabel = str("nav.home")
                 val store = keptStore("home:${dest.displayName}") { HomeStore(apiClient) }
                 val da by store.discoverAvailable.collectAsState()
                 SideEffect { discoverAvailable = da }
@@ -596,7 +617,16 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                         }
                     },
                     onChannelSelect = { ch -> push(Dest.ChannelView(ch, dest.displayName)) },
-                    onSeeAll = { push(Dest.Browse(BrowseKind.ALL, dest.displayName)) },
+                    // R187 (FR-RV-BROWSE1-1) — seeded to the row that was actually pressed, not the
+                    // whole library; ContentRowItem only offers the tile when the row has a resolvable
+                    // seed (see its canSeeAll check).
+                    onSeeAll = { row ->
+                        push(Dest.SeededBrowse(
+                            seedQuery = row.seedQuery, seedMediaKind = row.seedMediaKind,
+                            title = row.title, breadcrumb = homeLabel,
+                            continueWatching = row.kind == RowKind.CONTINUE, displayName = dest.displayName,
+                        ))
+                    },
                     onLiveTvChannelSelect = { ch -> push(Dest.LiveTv(ch.channelId, dest.displayName)) },
                     onOpenLiveTvGuide = { push(Dest.LiveTvGuide(dest.displayName)) },
                 )
@@ -620,6 +650,30 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                     },
                     onProfile = { profileMenuOpen = true },
                     onSearch = { push(Dest.Search(dest.displayName)) },
+                    onItemSelect = { openDetail(it, dest.displayName) },
+                    onSeeAll = { row ->
+                        push(Dest.SeededBrowse(
+                            seedQuery = row.seedQuery, seedMediaKind = row.seedMediaKind,
+                            title = row.title, breadcrumb = dest.channel.name,
+                            continueWatching = row.kind == RowKind.CONTINUE, displayName = dest.displayName,
+                        ))
+                    },
+                )
+            }
+
+            is Dest.SeededBrowse -> {
+                val storeKey = "seededBrowse:${dest.displayName}:${dest.title}:${dest.continueWatching}"
+                val store = keptStore(storeKey) {
+                    SeededBrowseStore(apiClient, dest.seedQuery, dest.seedMediaKind, dest.continueWatching)
+                }
+                SeededBrowseScreen(
+                    store = store,
+                    title = dest.title,
+                    breadcrumb = dest.breadcrumb,
+                    subtitle = dest.breadcrumb?.let { str("browse.from_row", mapOf("row" to it)) },
+                    showTypeFacet = dest.seedMediaKind == null,
+                    showFacetBar = !dest.continueWatching,
+                    onBack = { pop() },
                     onItemSelect = { openDetail(it, dest.displayName) },
                 )
             }

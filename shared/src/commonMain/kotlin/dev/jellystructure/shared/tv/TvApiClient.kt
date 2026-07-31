@@ -88,6 +88,26 @@ class TvApiClient(
         return json.decodeFromString<BrowseFacets>(r.bodyAsText())
     }
 
+    /** R187 — resolves a "→ See all" seed ([Row.seedQuery]/[Row.seedMediaKind]) to the FULL matching
+     *  set as [BrowseCard]s; the caller computes every facet's counts/filtering/sort reactively from
+     *  this one response — see [SeededBrowseResponse]'s doc comment for why no further round trip. */
+    suspend fun browseSeeded(query: ConditionGroup?, mediaKind: String? = null): SeededBrowseResponse {
+        val r = client.post("$baseUrl/api/tv/browse/seeded") {
+            auth()
+            jsonBody(json.encodeToString(SeededBrowseRequest(query, mediaKind)))
+        }
+        r.assertSuccess()
+        return json.decodeFromString<SeededBrowseResponse>(r.bodyAsText())
+    }
+
+    /** R187 (§G-4) — Continue Watching's own "→ See all": not seed-representable (a live Jellyfin join,
+     *  not a catalog filter), so its own endpoint, plain [MediaCard]s (no facet bar on that page). */
+    suspend fun continueAll(): List<MediaCard> {
+        val r = client.get("$baseUrl/api/tv/continue/all") { auth() }
+        r.assertSuccess()
+        return json.decodeFromString<List<MediaCard>>(r.bodyAsText())
+    }
+
     // ─── Detail ──────────────────────────────────────────────────────────────
 
     suspend fun getMovie(id: String): MovieDetail {

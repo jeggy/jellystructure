@@ -114,6 +114,7 @@ fun ChannelScreen(
     onProfile: () -> Unit,
     onSearch: () -> Unit,
     onItemSelect: (MediaCard) -> Unit,
+    onSeeAll: (dev.jellystructure.shared.tv.Row) -> Unit = {},
 ) {
     val colors = RaviloTheme.colors
 
@@ -232,10 +233,14 @@ fun ChannelScreen(
                             // Content rows
                             items(nonEmpty.size, key = { ri -> nonEmpty[ri].id }) { ri ->
                                 val row = nonEmpty[ri]
+                                // R187 (FR-RV-BROWSE1-1) — see HomeScreen's ContentRowItem for the same check.
+                                val canSeeAll = row.items.size > 8 && (row.kind == RowKind.CONTINUE || row.seedQuery != null || row.seedMediaKind != null)
                                 Spacer(Modifier.height(RaviloDimens.rowGap))
                                 StaticContentRow(
                                     title = row.title,
                                     items = row.items,
+                                    seeAllLabel = if (canSeeAll) dev.jellystructure.ravilo.ui.i18n.str("browse.see_all", mapOf("count" to row.items.size.toString())) else null,
+                                    onSeeAll = if (canSeeAll) ({ onSeeAll(row) }) else null,
                                     itemKey = { card -> card.id },
                                     restoreItemKey = if (store.focusRowKey == row.id) store.focusItemKey else null,  // R139
                                 ) { idx, card, fr ->

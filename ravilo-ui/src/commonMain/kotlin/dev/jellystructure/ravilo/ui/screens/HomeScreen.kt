@@ -81,7 +81,7 @@ fun HomeScreen(
     onItemSelect: (MediaCard) -> Unit = {},
     onItemPlay: (MediaCard) -> Unit = {},
     onChannelSelect: (Channel) -> Unit = {},
-    onSeeAll: (String?) -> Unit = {},
+    onSeeAll: (dev.jellystructure.shared.tv.Row) -> Unit = {},
     onProfile: () -> Unit = {},
     onSearch: () -> Unit = {},
     // Fires when the user signs out from the error state (see HomeErrorState) — a device whose
@@ -142,7 +142,7 @@ private fun HomeLoaded(
     onItemSelect: (MediaCard) -> Unit,
     onItemPlay: (MediaCard) -> Unit,
     onChannelSelect: (Channel) -> Unit,
-    onSeeAll: (String?) -> Unit,
+    onSeeAll: (dev.jellystructure.shared.tv.Row) -> Unit,
     onProfile: () -> Unit,
     onSearch: () -> Unit,
     onLiveTvChannelSelect: (LiveTvChannel) -> Unit,
@@ -300,7 +300,7 @@ private fun HomeLoaded(
         // position (never a top-nav tab — it only ever lives among the Home rows).
         val clampedOnNowIndex = onNowRowIndex.coerceIn(0, feed.rows.size)
         items(clampedOnNowIndex, key = { ri -> feed.rows[ri].id }) { ri ->
-            ContentRowItem(feed.rows[ri], feed, store, onItemSelect, firstItemFR = if (!hasChannels && ri == 0) firstRowFR else null)
+            ContentRowItem(feed.rows[ri], feed, store, onItemSelect, onSeeAll, firstItemFR = if (!hasChannels && ri == 0) firstRowFR else null)
         }
         if (liveTvChannels.isNotEmpty()) {
             item(key = "on_now") {
@@ -310,7 +310,7 @@ private fun HomeLoaded(
         }
         items(feed.rows.size - clampedOnNowIndex, key = { i -> feed.rows[clampedOnNowIndex + i].id }) { i ->
             val isVeryFirstRow = !hasChannels && clampedOnNowIndex == 0 && liveTvChannels.isEmpty() && i == 0
-            ContentRowItem(feed.rows[clampedOnNowIndex + i], feed, store, onItemSelect, firstItemFR = if (isVeryFirstRow) firstRowFR else null)
+            ContentRowItem(feed.rows[clampedOnNowIndex + i], feed, store, onItemSelect, onSeeAll, firstItemFR = if (isVeryFirstRow) firstRowFR else null)
         }
     }
     }
@@ -357,14 +357,21 @@ private fun ContentRowItem(
     feed: dev.jellystructure.shared.tv.HomeFeed,
     store: HomeStore,
     onItemSelect: (MediaCard) -> Unit,
+    onSeeAll: (Row) -> Unit = {},
     firstItemFR: FocusRequester? = null,
 ) {
     // Compute variant here so urlResolver and Tile use the same value.
     val rowVariant = if (row.kind == RowKind.CONTINUE) TileVariant.LANDSCAPE else feed.tileShape.toTileVariant()
     Spacer(Modifier.height(RaviloDimens.rowGap))
+    // R187 (FR-RV-BROWSE1-1) — a "→ See all" tile only when there's more than a screen's worth AND
+    // the row has something to resolve into: CONTINUE has its own dedicated seed-less path (still
+    // navigable, HomeFeedService.continueWatchingAll), everything else needs Row.seedQuery.
+    val canSeeAll = row.items.size > 8 && (row.kind == RowKind.CONTINUE || row.seedQuery != null || row.seedMediaKind != null)
     StaticContentRow(
         title = row.title,
         items = row.items,
+        seeAllLabel = if (canSeeAll) str("browse.see_all", mapOf("count" to row.items.size.toString())) else null,
+        onSeeAll = if (canSeeAll) ({ onSeeAll(row) }) else null,
         itemKey = { card -> card.id },
         urlResolver = { card ->
             val u = if (rowVariant == TileVariant.LANDSCAPE) card.backdropUrl ?: card.posterUrl else card.posterUrl
