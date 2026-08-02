@@ -172,8 +172,10 @@ data class HistoryEntry(
     val beforeSnapshot: String = "",
 )
 
+// R190: [label] is set only for facets whose stored value isn't its own display text — cast_crew's
+// value is a tmdbId string, label is the person's name.
 @Serializable
-data class TrackFacetItem(val value: String, val count: Int, val color: String? = null)
+data class TrackFacetItem(val value: String, val count: Int, val color: String? = null, val label: String? = null)
 
 @Serializable
 data class TrackFacets(
@@ -189,6 +191,7 @@ data class MetaFacets(
     val genres: List<TrackFacetItem> = emptyList(),
     val tags: List<TrackFacetItem> = emptyList(),
     val ageRatings: List<TrackFacetItem> = emptyList(),
+    val castCrew: List<TrackFacetItem> = emptyList(),
 )
 
 // R127: meta + track facet counts narrowed to a condition set (POST /api/media/facets).
@@ -202,6 +205,7 @@ data class NarrowedFacets(
     val audioLanguages: List<TrackFacetItem> = emptyList(),
     val audioCodecs: List<TrackFacetItem> = emptyList(),
     val trackTitles: List<TrackFacetItem> = emptyList(),
+    val castCrew: List<TrackFacetItem> = emptyList(),
 )
 
 @Serializable

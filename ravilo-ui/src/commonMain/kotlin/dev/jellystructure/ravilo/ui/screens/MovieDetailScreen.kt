@@ -83,6 +83,9 @@ fun MovieDetailScreen(
     // originalLanguage into Dest.Player for per-series remembered tracks + the "Dubbed" badge.
     onPlay: (MovieDetail) -> Unit,
     onRelatedSelect: (MediaCard) -> Unit,
+    // R190 §A — OK on a cast/crew face; sourceTitle is this detail's own title (for the person
+    // browse page's breadcrumb, FR-RV-PPL1-3). null = face stays inert (no call site opts in yet).
+    onCastSelect: ((dev.jellystructure.shared.tv.Person, sourceTitle: String) -> Unit)? = null,
     displayName: String = "",
     onNavSelect: (Int) -> Unit = {},
     onProfile: (() -> Unit)? = null,
@@ -108,6 +111,7 @@ fun MovieDetailScreen(
                 onPlay = onPlay,
                 onMarkPlayed = { played -> store.setPlayed(played) },
                 onRelatedSelect = onRelatedSelect,
+                onCastSelect = onCastSelect,
                 displayName = displayName,
                 onNavSelect = onNavSelect,
                 onProfile = onProfile,
@@ -126,6 +130,7 @@ private fun MovieDetailLoaded(
     onPlay: (MovieDetail) -> Unit,
     onMarkPlayed: (Boolean) -> Unit,
     onRelatedSelect: (MediaCard) -> Unit,
+    onCastSelect: ((dev.jellystructure.shared.tv.Person, sourceTitle: String) -> Unit)?,
     displayName: String,
     onNavSelect: (Int) -> Unit,
     onProfile: (() -> Unit)?,
@@ -350,7 +355,8 @@ private fun MovieDetailLoaded(
                         horizontalArrangement = Arrangement.spacedBy(RaviloDimens.itemSpacing),
                     ) {
                         items(detail.cast.size, key = { i -> detail.cast[i].id }) { i ->
-                            CastCircle(person = detail.cast[i])
+                            val person = detail.cast[i]
+                            CastCircle(person = person, onSelect = onCastSelect?.let { { it(person, detail.card.title) } })
                         }
                     }
                 }
