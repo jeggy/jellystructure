@@ -1,6 +1,7 @@
 package dev.jellystructure.auth
 
 import io.ktor.http.HttpStatusCode
+import io.ktor.http.decodeURLPart
 import io.ktor.server.application.Application
 import io.ktor.server.application.ApplicationCallPipeline
 import io.ktor.server.application.call
@@ -35,6 +36,27 @@ private val OPEN_API_PATHS = listOf(
     "/api/webhooks/",
 )
 
+/**
+ * Security fix (2026-08-02 review, finding C1) — [installAuthPlugin] used to prefix-match
+ * `call.request.path()` directly, which is Ktor's RAW, still-percent-encoded request path
+ * (`ApplicationRequestProperties.kt`: `origin.uri.substringBefore('?')`). The routing layer that
+ * actually dispatches the request decodes each `/`-separated segment first
+ * (`RoutingResolveContext.parse` → `String.decodeURLPart()`). The two disagreed: a request to
+ * `/%61pi/config` doesn't start with `/api/` under raw prefix matching, so the old code let it
+ * through with NO auth check at all — while routing decoded it to `/api/config` and dispatched the
+ * fully-privileged handler. Full unauthenticated read/write of the entire config, media library,
+ * and more.
+ *
+ * Decoding each segment here — identically to how routing will decode it — closes that gap:
+ * whichever route ends up serving the request is exactly the route this plugin authorized. A
+ * malformed percent-escape (which routing itself would reject with 400) fails closed here too,
+ * before any auth tier is even considered.
+ */
+private fun decodeRoutingPath(raw: String): String? {
+    if (raw.isEmpty() || raw == "/") return raw
+    return runCatching { raw.split('/').joinToString("/") { it.decodeURLPart() } }.getOrNull()
+}
+
 fun Application.installAuthPlugin(
     sessionService: SessionService,
     validateDeviceToken: ((String) -> DeviceData?)? = null,
@@ -43,7 +65,15 @@ fun Application.installAuthPlugin(
     validateApiKey: ((String) -> ApiKeyData?)? = null,
 ) {
     intercept(ApplicationCallPipeline.Plugins) {
-        val path = call.request.path()
+        val rawPath = call.request.path()
+        val path = decodeRoutingPath(rawPath)
+        if (path == null) {
+            // Same malformed-encoding rejection routing itself would apply — fail closed rather
+            // than falling through to native-path (raw) matching, which is the bug this fixes.
+            call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Malformed request path"))
+            finish()
+            return@intercept
+        }
 
         if (!path.startsWith("/api/")) {
             proceed()
