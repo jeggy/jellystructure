@@ -87,6 +87,41 @@ approval-gating are independent outcomes of this phase, not the same mechanism a
 above. Steps 2–3 of "Operator setup" (default permissions, opting the operator's own account back into
 auto-approve individually) remain correct and become relevant *after* step 1 is done.
 
+## Dev-review addendum 2 (2026-08-02 — better fix found, supersedes the "create a service account" conclusion above)
+
+The previous addendum's fix (swap the configured API key to a separate low-privilege Seerr account) is
+**not what got implemented** — a cleaner mechanism was found by reading Seerr's auth middleware
+(`server/middleware/auth.ts` `checkUser`) directly instead of just the request-creation entity code:
+
+```ts
+if (req.header('X-API-Key') === settings.main.apiKey) {
+  let userId = 1; // Work on original administrator account
+  if (req.header('X-API-User')) userId = Number(req.header('X-API-User'));
+  user = await userRepository.findOne({ where: { id: userId } });
+}
+```
+
+Seerr's `X-Api-Key` is a **single global instance key** (not a per-user credential at all — there is no
+"create another account, get its own key" path via the REST API). Authenticated calls default to
+`req.user` = user id 1, but an **`X-API-User: <id>` header** makes Seerr resolve `req.user` to that user
+**directly**, before `MediaRequest.request()` (or anything else) ever runs. Unlike the body-`userId`
+override (addendum 1's finding), this is a full identity swap — the auto-approve check
+(`user.hasPermission(...)`, `MediaRequest.ts:374`) now reads *that person's own* permissions, genuinely.
+
+**`SeerrClient.createRequest`** now sends `X-API-User: <seerrUserId>` (a header, alongside the existing
+`X-Api-Key`) instead of `userId` in the JSON body. No separate Seerr service account needed — the same
+admin-owned `[seerr]` API key configured today keeps working for every other call in this file (discover,
+search, `resolveUserId`'s lookup/import), since those are unaffected by which user the default (id 1) resolves to.
+
+This **does** still depend on "Operator setup" step 2 (new-Jellyfin-user default permissions in Seerr
+have no `AUTO_APPROVE*` bit) — the mechanism now correctly reads each *individual* Seerr user's own
+permissions, so whatever those default to is what actually happens. Step 1 (moving off the Owner/Admin
+key) is no longer required. Step 3 (opting the operator's own account into auto-approve) still applies if
+wanted.
+
+Live-verified: compiles clean (`compileKotlinLinuxX64`); on-device re-test pending (same TV/Test-Stream
+flow as addendum 1).
+
 ## Out of scope
 - Building any admin UI in jellystructure to view/manage the Jellyfin↔Seerr link — Seerr's own Settings
   → Users page already shows this once accounts exist.
