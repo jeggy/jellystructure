@@ -507,6 +507,12 @@ private fun FacetBar(
                         onFocused = { focused = true }, onBlurred = { focused = false },
                         onSelect = { store.openFacet = if (store.openFacet == key) null else key; store.sortOpen = false },
                         onUp = onBarUp, onDown = { if (store.openFacet == null) onBarDown() },
+                        // Bug fix (live-tested on stue TV): this row sits directly under the AppBar, close
+                        // enough that Right past the LAST chip fell through to native focus search and
+                        // landed on the profile avatar instead of doing nothing -- an unrelated,
+                        // disorienting jump. Left on the FIRST chip has the same risk. No-op both ends
+                        // explicitly; every chip in between is untouched (still pure native search).
+                        onLeft = { }.takeIf { i == 0 },
                     )
                     .padding(horizontal = 14.dp, vertical = 8.dp),
                 contentAlignment = Alignment.Center,
@@ -544,6 +550,9 @@ private fun FacetBar(
                         onFocused = { focused = true }, onBlurred = { focused = false },
                         onSelect = { store.sortOpen = !store.sortOpen; store.openFacet = null },
                         onUp = onBarUp,
+                        // Bug fix -- see the matching comment on the facet chips above: this is always the
+                        // row's true last item, so Right here must no-op rather than escape to the avatar.
+                        onRight = { },
                     )
                     .padding(horizontal = 14.dp, vertical = 8.dp),
                 contentAlignment = Alignment.Center,

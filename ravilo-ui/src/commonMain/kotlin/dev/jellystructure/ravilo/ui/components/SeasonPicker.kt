@@ -74,6 +74,12 @@ fun SeasonPicker(
                     onFocused = { focused = true },
                     onBlurred = { focused = false },
                     onSelect = { onSelect(i) },
+                    // Bug fix (live-tested on stue TV): this row sits directly under the AppBar, same as
+                    // SeededBrowseScreen's facet bar -- Right past the LAST season pill fell through to
+                    // native focus search and could land on the profile avatar instead of doing nothing.
+                    // Left on the FIRST pill has the same risk. No-op both ends explicitly.
+                    onLeft = { }.takeIf { i == 0 },
+                    onRight = { }.takeIf { i == seasons.lastIndex },
                 ),
                 contentAlignment = Alignment.Center,
             ) {
