@@ -3,6 +3,7 @@ package dev.jellystructure.seerr
 import dev.jellystructure.arr.AcquisitionService
 import dev.jellystructure.arr.RequestLanguageService
 import dev.jellystructure.config.ConfigStore
+import dev.jellystructure.log.Logger
 import dev.jellystructure.media.MediaStore
 import dev.jellystructure.model.MediaItem
 import dev.jellystructure.tv.RaviloConfigService
@@ -223,7 +224,14 @@ class SeerrDiscoverService(
                 retryable = true,
             )
         }
-        val result = seerrClient.createRequest(seerr.url, seerr.apiKey, mediaType, tmdbId, profileId, tagIds)
+        // Phase 156 — attribute the request to the actual Jellyfin user's own Seerr account (provisioned
+        // on demand) rather than the shared API-key account, so Seerr's approval UI shows the real
+        // requester and auto-approval depends on that person's own permissions. A resolution failure
+        // (Seerr hiccup, missing MANAGE_USERS on the configured key) degrades to an unattributed request
+        // rather than blocking the viewer.
+        val seerrUserId = seerrClient.resolveUserId(seerr.url, seerr.apiKey, userId)
+        if (seerrUserId == null) Logger.warn("Seerr: couldn't resolve/provision a Seerr account for Jellyfin user $userId — request will be unattributed", "seerr")
+        val result = seerrClient.createRequest(seerr.url, seerr.apiKey, mediaType, tmdbId, profileId, tagIds, seerrUserId)
             ?: return AcquisitionRecord(itemKey, mediaKind, AcquisitionStatus.FAILED, tmdbId, title, reason = "Seerr request failed", retryable = true)
         // Bug fix: this used to save unconditionally *before* createRequest, so a failed Seerr call
         // (network hiccup, Seerr-side rejection, etc.) still left a local "you requested this" row —
