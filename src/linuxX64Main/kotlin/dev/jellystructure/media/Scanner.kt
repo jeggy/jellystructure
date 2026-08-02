@@ -22,6 +22,18 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
 
+// Bug fix (auto-play-next resumes minutes in, on shows with duplicate episode files): when Jellyfin
+// has two items for the same (season, episode) — duplicate physical files each imported separately —
+// `associateBy` keeps whichever one is LAST in the `/Episodes` response, and that response carries no
+// SortBy param, so its order isn't guaranteed stable across scans. A flip hands a later `jellyfinId`
+// lookup a different Jellyfin item than a previous scan did; since resume position is tied to Jellyfin's
+// per-item `PlaybackPositionTicks` and nothing here migrates it across ids, the "new" primary can carry
+// a stale position from whatever it was last played as. Grouping + a path-based tiebreak (rather than
+// response order) makes the winner the same physical file on every scan, independent of API ordering.
+private fun bySeasonEpDeterministic(items: List<JellyfinEpisodeItem>): Map<Pair<Int, Int>, JellyfinEpisodeItem> =
+    items.groupBy { (it.parentIndexNumber ?: 0) to (it.indexNumber ?: 0) }
+        .mapValues { (_, group) -> group.minByOrNull { it.path ?: it.id } ?: group.first() }
+
 private val TITLE_YEAR_RE = Regex("""^(.+?)\s+\((\d{4})\)\s*$""")
 // Season allows up to 4 digits so year-as-season numbering (e.g. S2025E01) parses (Phase 53-C).
 private val SEASON_EP_RE = Regex("""[Ss](\d{1,4})[Ee](\d{1,3})""")
@@ -325,7 +337,7 @@ class Scanner(
         val jfEpsMeta = if (scanBaseUrl.isNotBlank() && scanAdminToken.isNotBlank()) {
             jellyfinClient.getSeriesEpisodesMeta(scanBaseUrl.trimEnd('/'), scanAdminToken, jItem.id)
         } else emptyList()
-        val jfBySeasonEp = jfEpsMeta.associateBy { (it.parentIndexNumber ?: 0) to (it.indexNumber ?: 0) }
+        val jfBySeasonEp = bySeasonEpDeterministic(jfEpsMeta)
         // Phase 152: fallback join for a file Jellyfin's own scanner placed on disk but never numbered
         // (no IndexNumber) — jfBySeasonEp can't key it, but jellystructure's own parseSeasonEpisodes
         // below often still derives the right (season, episode) from the filename. Match by path instead,
@@ -659,8 +671,7 @@ class Scanner(
         ) {
             jellyfinClient.getSeriesEpisodesMeta(scanBaseUrl.trimEnd('/'), scanAdminToken, item.jellyfinId)
         } else emptyList()
-        val jfBySeasonEp: Map<Pair<Int, Int>, JellyfinEpisodeItem> =
-            jfEpsMetaSync.associateBy { (it.parentIndexNumber ?: 0) to (it.indexNumber ?: 0) }
+        val jfBySeasonEp: Map<Pair<Int, Int>, JellyfinEpisodeItem> = bySeasonEpDeterministic(jfEpsMetaSync)
         // Phase 152/153: an unnumbered Jellyfin item keys into jfBySeasonEp under (season, 0) and can
         // only be found by path — same fallback scanSeries uses.
         val jfByPathSync: Map<String, JellyfinEpisodeItem> =
