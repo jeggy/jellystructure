@@ -102,13 +102,28 @@ private fun nowMs(): Long = memScoped {
     ts.tv_sec * 1000L + ts.tv_nsec / 1_000_000L
 }
 
+// Security fix (2026-08-02 review, finding H6) — every secret in this system (admin session tokens,
+// Ravilo device tokens, API keys, the *arr webhook secret) is minted here. The old code never checked
+// open()/read()'s return values: on EMFILE — which this process can legitimately hit, since it runs
+// against a hard 1024-FD ceiling with a documented history of FD-exhaustion incidents — open() returns
+// -1, read(-1, ...) also returns -1, and the ByteArray stays zero-initialized. The old code silently
+// returned the constant 64-zero-character string with no exception, no log: a predictable "secret"
+// minted at exactly the moment load (and likely login attempts) is highest. Fail loudly instead — a
+// thrown exception here is far better than a live security hole with no signal.
 @OptIn(ExperimentalForeignApi::class)
 fun generateSecureToken(): String {
     val bytes = ByteArray(32)
-    bytes.usePinned { pinned ->
+    val bytesRead = bytes.usePinned { pinned ->
         val fd = open("/dev/urandom", O_RDONLY)
-        read(fd, pinned.addressOf(0), 32.convert())
-        close(fd)
+        check(fd >= 0) { "generateSecureToken: failed to open /dev/urandom (fd=$fd)" }
+        try {
+            read(fd, pinned.addressOf(0), 32.convert())
+        } finally {
+            close(fd)
+        }
+    }
+    check(bytesRead == 32L) {
+        "generateSecureToken: short/failed read from /dev/urandom ($bytesRead of 32 bytes) — refusing to mint a weak token"
     }
     return bytes.joinToString("") { (it.toInt() and 0xFF).toString(16).padStart(2, '0') }
 }
