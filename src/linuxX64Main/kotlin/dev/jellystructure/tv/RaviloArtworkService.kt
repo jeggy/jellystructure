@@ -93,6 +93,14 @@ class RaviloArtworkService(
 
     /** Avatar — the one remaining (cached) Jellyfin fetch. Durable cache; 404 when Jellyfin has no image. */
     suspend fun serveAvatar(userId: String): Pair<ByteArray, String>? {
+        // Security fix (2026-08-02 review, finding C2) — this route is intentionally auth-exempt
+        // (AuthPlugin's OPEN_API_PATHS: an <img>/Coil request can't attach a device token) and the
+        // cache read below happens BEFORE any Jellyfin round-trip. Without this guard, a userId of
+        // e.g. "..%2F..%2Fconfig.toml" decodes (Ktor routing decodes path params) to a literal `/`,
+        // turning `$avatarDir/$userId` into a traversal out of the cache directory — confirmed live
+        // during the audit to return config.toml's exact bytes with zero authentication. Same guard
+        // ChannelLogoStore.read already uses correctly.
+        if (".." in userId || "/" in userId || "\\" in userId) return null
         val cachePath = "$avatarDir/$userId"
         val ctPath = "$cachePath.ct"
         readSimple(cachePath, ctPath)?.let { return it }

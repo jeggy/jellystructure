@@ -329,6 +329,11 @@ class LiveTvService(
     // ── Channel logo proxy (Jellyfin ImageTags.Primary — R133 doesn't cover Live TV; addendum E) ──────
 
     suspend fun serveLogo(channelId: String): Pair<ByteArray, String>? {
+        // Security fix (2026-08-02 review, finding C2) — same auth-exempt-route + pre-network-call
+        // cache-read shape as RaviloArtworkService.serveAvatar; without this guard a channelId of
+        // "..%2F..%2Fconfig.toml" traverses out of the cache directory with zero authentication.
+        // Same guard ChannelLogoStore.read already uses correctly.
+        if (".." in channelId || "/" in channelId || "\\" in channelId) return null
         val cachePath = "$logoDir/$channelId"
         val ctPath = "$cachePath.ct"
         readCached(cachePath, ctPath)?.let { return it }
