@@ -27,6 +27,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -172,6 +177,7 @@ fun LoginScreen(
                         enabled = !locked,
                         imeAction = ImeAction.Next,
                         onImeAction = { passwordFR.requestFocus() },
+                        onMoveDown = { passwordFR.requestFocus() },
                     )
                     Spacer(Modifier.height(14.dp))
                     LoginField(
@@ -183,6 +189,8 @@ fun LoginScreen(
                         masked = true,
                         imeAction = ImeAction.Done,
                         onImeAction = { submit() },
+                        onMoveUp = { usernameFR.requestFocus() },
+                        onMoveDown = { signInFR.requestFocus() },
                     )
 
                     if (s is LoginState.Errored) {
@@ -224,6 +232,15 @@ private fun LoginField(
     imeAction: ImeAction,
     onImeAction: () -> Unit,
     masked: Boolean = false,
+    // Bug fix (found via live TV testing) — the on-screen keyboard's own Next/Done glyph moved focus
+    // fine, but with the keyboard dismissed (e.g. a remote's Back key closes it, common muscle memory)
+    // a bare focused BasicTextField swallows Up/Down for cursor movement, so there was no way to reach
+    // the other field with the D-pad alone — the viewer was stuck re-opening the same field's keyboard,
+    // and a second Back press popped the whole Login screen (losing anything typed) instead of doing
+    // nothing. These callbacks fire on a hardware Up/Down key regardless of keyboard visibility, letting
+    // the D-pad move between fields the same way it does everywhere else in this app.
+    onMoveUp: (() -> Unit)? = null,
+    onMoveDown: (() -> Unit)? = null,
 ) {
     val colors = RaviloTheme.colors
     Column(modifier = Modifier.fillMaxWidth()) {
@@ -238,12 +255,23 @@ private fun LoginField(
             contentAlignment = Alignment.CenterStart,
         ) {
             // Native IME text field (matches SearchScreen) — no reusable on-screen keyboard exists in
-            // this codebase, and the OS keyboard already handles D-pad/remote text entry correctly.
+            // this codebase. The OS keyboard handles D-pad/remote text entry while it's shown; the
+            // onPreviewKeyEvent below covers Up/Down once it's dismissed (see the onMoveUp/onMoveDown doc).
             BasicTextField(
                 value = value,
                 onValueChange = onValueChange,
                 enabled = enabled,
-                modifier = Modifier.fillMaxWidth().focusRequester(focusRequester),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .focusRequester(focusRequester)
+                    .onPreviewKeyEvent { ev ->
+                        if (ev.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                        when (ev.key) {
+                            Key.DirectionUp -> onMoveUp?.let { it(); true } ?: false
+                            Key.DirectionDown -> onMoveDown?.let { it(); true } ?: false
+                            else -> false
+                        }
+                    },
                 textStyle = TextStyle(color = colors.text, fontSize = 16.sp),
                 singleLine = true,
                 visualTransformation = if (masked) PasswordVisualTransformation() else androidx.compose.ui.text.input.VisualTransformation.None,
