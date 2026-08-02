@@ -131,6 +131,66 @@ freshly-observed position), never the outgoing episode's.
    `:ravilo-ui:compileDebugKotlinAndroid`, `:ravilo-ui:compileKotlinWasmJs`, `:ravilo-web:compileKotlinWasmJs`,
    `:ravilo-android:compileDebugKotlin`, `:ravilo-phone:compileDebugKotlin` all pass.
 
+## Dev-review addendum (2026-08-02 — third root cause found, still reproducing)
+
+The viewer reported the bug is still occurring (2026-08-02), specifically on a kids show they rewatch
+very often. Re-investigated per this repo's "spec before fix" convention before touching code.
+
+**FR-RV-POS1's fix (client-side race) still holds and is not the cause here** — traced
+`PlayerScreen.kt`'s current state and confirmed the poll-loop gating (`playerLoadedForCurrentItem`,
+`positionKnownForItemId`) and the `LaunchedEffect(itemId)` reset are both intact and correctly close the
+window described above.
+
+**554c7b4's fix (duplicate-episode id collisions causing the advance loop) is also not the cause** — that
+fix stops a *retry loop*, it doesn't touch resume-position state.
+
+**New root cause, upstream of both: `Scanner.kt`'s `(season, episode) → JellyfinEpisodeItem` lookup is
+non-deterministic when Jellyfin holds two items for the same slot** (duplicate physical files, each
+imported by Jellyfin separately — exactly the shape of library a frequently-rewatched, heavily-handled
+kids show tends to accumulate). Both `scanSeries` (`Scanner.kt:328`, pre-fix) and `syncSeriesEpisodes`
+(`Scanner.kt:662-663`, pre-fix) built this map with `jfEpsMeta.associateBy { (season, episode) }`.
+`associateBy` keeps whichever duplicate is **last** in the list, and that list comes from
+`GET /Shows/{id}/Episodes` with no `SortBy` parameter (`JellyfinClient.kt:444-456`) — Jellyfin's response
+order for that endpoint is not documented as stable, so the "winning" duplicate can differ between scans
+of the same show.
+
+This matters because jellystructure's own `Episode.jellyfinId` is reassigned from this map on every scan
+(`Scanner.kt:390`, `:718`). When the winner flips, an episode that previously pointed at Jellyfin item A
+starts pointing at item B — a different physical file with its **own** `PlaybackPositionTicks` in
+Jellyfin's database, entirely unrelated to what the viewer actually watched most recently. Since
+`PlaybackService.startPlayback` fetches that position live per `jellyfinId`
+(`PlaybackService.kt:230-233`) and nothing anywhere migrates position/watched state when a duplicate's
+"primary" changes (checked `DuplicateEpisodes.kt`'s `withUniqueIds()` and both `PlaybackService.kt` and
+`MediaStore.kt` — no such migration exists), the next auto-advance (or any playback of that episode) can
+resume from whatever item B was last stopped at — "a few minutes in," matching the report exactly. A show
+watched on a loop maximizes both preconditions: more scans (more chances for the API order to shift) and
+more distinct stop-position history spread across whichever duplicate happened to be resolved at the time.
+
+Note `DuplicateEpisodes.kt`'s own `PRIMARY_ORDER` comparator (which picks which *local file* is primary
+once duplicates are recognized as such) is itself deterministic — sorted on local `path`, no mtime/order
+dependence. The bug is entirely in the earlier, un-deduplicated `associateBy` join against Jellyfin's own
+item list, before `DuplicateEpisodes` ever runs.
+
+### FR-RV-POS1-4 — Season/episode → Jellyfin item lookup must be deterministic across scans
+When Jellyfin holds more than one item for the same `(season, episode)`, the same one must win on every
+scan, independent of API response order. Implemented as `Scanner.kt`'s new `bySeasonEpDeterministic()`:
+groups by `(season, episode)` (order-independent) and picks `minByOrNull { it.path ?: it.id }` — the
+same tiebreak field (`path`) `DuplicateEpisodes.PRIMARY_ORDER` already uses for local files, so the two
+selections agree in spirit even though they operate on different data. Applied at both existing call
+sites (`scanSeries`, `syncSeriesEpisodes`), replacing the bare `associateBy`.
+
+**Out of scope for this addendum:** retroactively repairing an already-flipped episode's stale
+`PlaybackPositionTicks` in Jellyfin for shows scanned before this fix — the next full watch/mark-watched
+of the affected episode will naturally overwrite it. No migration was written to hunt down and fix
+already-corrupted per-item ticks, since there's no reliable way to know which of the duplicate items'
+positions is the "true" one after the fact. If this proves to matter in practice (report persists after
+the next few rescans), a follow-up could have the admin's duplicate-episode triage flow offer a manual
+"reset position" action.
+
+**Verification:** `compileKotlinLinuxX64` passes. Not re-verified on-device (same constraint as the
+original phase — per-project convention, on-device testing is user-initiated, not run as part of this
+change).
+
 ## Source references
 - Bug: `ravilo-ui/src/commonMain/kotlin/dev/jellystructure/ravilo/ui/screens/PlayerScreen.kt`
   (`positionMs`/`durationMs` state, `LaunchedEffect(itemId)`, `PlayerLifecycleEffect` wiring).
