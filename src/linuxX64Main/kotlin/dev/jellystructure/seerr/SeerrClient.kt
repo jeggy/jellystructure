@@ -204,10 +204,16 @@ class SeerrClient {
      * documented `POST /request` fields (verified against `seerr-api.yml`); omitted (null/empty) they
      * simply aren't sent, reproducing today's plain-request behaviour exactly.
      *
-     * Phase 156 — [seerrUserId], when non-null, attributes the request to that specific Seerr user
-     * (`userId` on `POST /request`) instead of the shared API-key account. Per Seerr's own
-     * `MediaRequest.request()`, this also switches which user's permissions decide auto-approval — so
-     * this one field is how per-person requests avoid a shared account's auto-approve status.
+     * Phase 156 — [seerrUserId], when non-null, sends `X-API-User: <id>` alongside the usual
+     * `X-Api-Key`, which Seerr's own auth middleware (`server/middleware/auth.ts` `checkUser`) resolves
+     * to `req.user = <that user>` **directly** — not the request-body `userId` override this used to
+     * send. Traced live (2026-08-02): the body-`userId` override only reassigns `requestedBy` and the
+     * REQUEST-permission/quota checks; the auto-approve decision (`MediaRequest.ts:374`,
+     * `user.hasPermission([AUTO_APPROVE, AUTO_APPROVE_MOVIE, MANAGE_REQUESTS])`) still reads the
+     * *original* API-key-authenticated `user`, so every request auto-approved regardless of who it was
+     * attributed to. `X-API-User` swaps `req.user` itself before any of that runs, so both attribution
+     * and auto-approval genuinely become that person's — no separate low-privilege service account
+     * needed, and the same shared `[seerr]` API key keeps working for every other call in this file.
      */
     suspend fun createRequest(
         url: String,
@@ -225,10 +231,10 @@ class SeerrClient {
                 if (mediaType == "tv") put("seasons", "all")
                 profileId?.let { put("profileId", it) }
                 if (tagIds.isNotEmpty()) put("tags", buildJsonArray { tagIds.forEach { add(it) } })
-                seerrUserId?.let { put("userId", it) }
             }
             val resp = httpPost(base(url) + "/request", apiKey) {
                 contentType(ContentType.Application.Json); setBody(payload.toString())
+                seerrUserId?.let { header("X-API-User", it.toString()) }
             }
             if (resp.status == HttpStatusCode.Created || resp.status == HttpStatusCode.OK) resp.body<SeerrRequestResult>() else null
         }.getOrNull()
