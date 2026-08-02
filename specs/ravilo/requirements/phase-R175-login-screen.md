@@ -153,3 +153,29 @@ Verified against `ravilo-ui`/`shared`. This section **supersedes** the requireme
 - **Phase R161** (✓ Done — spec pruned, see git history) uses "pairing"/"the pairing this Unpair reverses"
   terminology; `unpair` itself is retained (141 §B7), so this is a wording refresh only, not a
   behavioural break — low priority.
+
+## Dev-review addendum (2026-08-02 — D-pad field navigation bug found via live TV testing)
+
+Found while live-testing the Seerr per-user-attribution phase (156) on a real TV with the physical/ADB
+remote, not on-device-untested code: `LoginScreen.kt`'s `LoginField` wrapped a bare `BasicTextField` with
+only `.focusRequester(...)` — no D-pad key handling of its own, on the (accurate, but incomplete)
+assumption that "the OS keyboard already handles D-pad/remote text entry correctly." That's true **while
+the on-screen keyboard is shown** (its own Next/Done glyph correctly calls `onImeAction`), but once it's
+dismissed — including via a plain Back press, ordinary remote muscle memory — a focused `BasicTextField`
+swallows Up/Down for its own cursor handling and never hands them to Compose's focus search. The viewer
+was then stuck: no D-pad path from Username to Password without reopening the keyboard, and a second
+Back press popped the whole Login screen (losing anything already typed) rather than doing nothing useful.
+
+**Fix:** `LoginField` gained `onMoveUp`/`onMoveDown` callbacks wired via `Modifier.onPreviewKeyEvent` on
+the `BasicTextField`, firing on a hardware Up/Down `KeyDown` regardless of keyboard visibility and
+otherwise passing every other key through untouched (typing, Left/Right cursor movement, Select-to-open-
+keyboard all unaffected). Username → Password → the Sign in button are now reachable by D-pad alone, same
+as every other screen in this app.
+
+**Not changed, considered working as intended:** a Back press with the keyboard already dismissed still
+pops the whole Login screen back to whatever was showing before (Home, when reached via `ProfileMenu →
+Add user`) — that's the same "Back cancels an in-progress add/create flow" pattern used elsewhere in this
+app, not a bug on its own; it only became a trap in combination with the D-pad dead-end above.
+
+Verified via `:ravilo-ui:compileDebugKotlinAndroid` (+ the other targets `LoginScreen.kt` compiles into);
+re-verified live on Soveværelse TV as part of the same testing session.
