@@ -60,6 +60,30 @@ data class ArrTestResult(
     val rootFolders: List<String>? = null,
 )
 
+// Security fix (2026-08-02 review, finding H3) — GET /config used to return AppConfig verbatim,
+// including every stored secret in plaintext (Jellyfin admin token, TMDB key, qBittorrent password,
+// Radarr/Sonarr/Seerr API keys, the *arr webhook secret). One XSS, one leaked browser profile, or one
+// stolen js_session cookie was enough to walk off with the entire credential set. The write path
+// already had a "##KEEP##" sentinel so a Settings save can preserve an unedited secret without the
+// browser ever needing to see it (used by qbittorrent/radarr/sonarr/seerr below) — this masks every
+// non-blank secret with that same sentinel on read, and PUT restores jellyfinToken/tmdbV3Key from it
+// too now (the other four already did). A blank secret stays blank so the UI can still tell
+// "not configured" apart from "configured, value withheld".
+private fun maskSecrets(config: AppConfig): AppConfig {
+    fun mask(s: String) = if (s.isBlank()) s else "##KEEP##"
+    return config.copy(
+        apiKeys = config.apiKeys.copy(
+            jellyfinToken = mask(config.apiKeys.jellyfinToken),
+            tmdbV3Key = mask(config.apiKeys.tmdbV3Key),
+        ),
+        qbittorrent = config.qbittorrent?.copy(password = mask(config.qbittorrent.password)),
+        radarr = config.radarr?.copy(apiKey = mask(config.radarr.apiKey)),
+        sonarr = config.sonarr?.copy(apiKey = mask(config.sonarr.apiKey)),
+        seerr = config.seerr?.copy(apiKey = mask(config.seerr.apiKey)),
+        ingest = config.ingest.copy(webhookSecret = mask(config.ingest.webhookSecret)),
+    )
+}
+
 fun Route.configureConfigRoutes(
     configStore: ConfigStore,
     effectiveScanThreads: Int,
@@ -70,7 +94,7 @@ fun Route.configureConfigRoutes(
     requestLanguageService: dev.jellystructure.arr.RequestLanguageService? = null,
 ) {
     get("/config") {
-        call.respond(ConfigResponse(configStore.current, effectiveScanThreads))
+        call.respond(ConfigResponse(maskSecrets(configStore.current), effectiveScanThreads))
     }
 
     // Phase 139 — Settings ▸ Download tools ▸ Request languages ▸ "Set up profiles". Preview shows what
@@ -91,6 +115,12 @@ fun Route.configureConfigRoutes(
         val stored = configStore.current
         // Blank secrets arrive as the "##KEEP##" sentinel — preserve the stored value rather than wipe it.
         var config = received
+        if (received.apiKeys.jellyfinToken == "##KEEP##") {
+            config = config.copy(apiKeys = config.apiKeys.copy(jellyfinToken = stored.apiKeys.jellyfinToken))
+        }
+        if (received.apiKeys.tmdbV3Key == "##KEEP##") {
+            config = config.copy(apiKeys = config.apiKeys.copy(tmdbV3Key = stored.apiKeys.tmdbV3Key))
+        }
         if (received.qbittorrent?.password == "##KEEP##") {
             config = config.copy(qbittorrent = received.qbittorrent.copy(password = stored.qbittorrent?.password ?: ""))
         }
