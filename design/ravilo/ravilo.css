@@ -539,11 +539,14 @@ body { font-family: 'Sora', sans-serif; }
 .ep-done.on.focused { color: var(--good); }
 
 .cast { width: 152px; flex: none; text-align: center; cursor: pointer; }
-.cast-av { width: 106px; height: 106px; border-radius: 50%; margin: 0 auto; display: flex; align-items: center; justify-content: center;
+.cast-av { width: 106px; height: 106px; border-radius: 50%; margin: 0 auto; position: relative; display: flex; align-items: center; justify-content: center;
   font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 32px; color: #fff; border: 3px solid transparent; transition: transform .18s var(--ease), border-color .2s, box-shadow .2s; box-shadow: 0 8px 20px rgba(0,0,0,.4); }
 .cast-n { font-size: 17px; font-weight: 600; margin-top: 12px; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cast-r { font-size: 14px; color: var(--ink-dim); margin-top: 2px; }
 .cast.focused .cast-av { transform: scale(1.08); border-color: var(--ring); box-shadow: 0 0 0 4px var(--ring), 0 12px 30px rgba(0,0,0,.5); }
+.cast-go { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; border-radius: 50%; background: rgba(0,0,0,.42); font-size: 40px; font-weight: 400; opacity: 0; transition: opacity .18s var(--ease); }
+.cast.focused .cast-go { opacity: 1; }
+.cast.focused .cast-in { opacity: 0; }
 
 /* ---------- browse grid + search ---------- */
 .gridscreen, .searchscreen { padding-top: 120px; }
@@ -567,6 +570,10 @@ body { font-family: 'Sora', sans-serif; }
 .crumb { font-size: 19px; color: var(--ink-dim); margin-bottom: 8px; font-weight: 500; }
 .crumb b { color: var(--ink-soft); font-weight: 600; }
 .gridsub { font-size: 20px; color: var(--ink-soft); margin-top: 10px; max-width: 1100px; }
+.browse .pmeta { font-size: 20px; color: var(--ink-soft); margin-top: 6px; font-weight: 500; }
+.crow.seerrmore { margin-top: 46px; padding-top: 30px; border-top: 1px solid var(--line); }
+.crow.seerrmore .crow-head { align-items: center; }
+.seerrtag { display: inline-flex; align-items: center; gap: 5px; font-size: 15px; font-weight: 700; letter-spacing: .3px; padding: 4px 12px; border-radius: 20px; color: #ffd98a; background: rgba(255,190,60,.14); border: 1px solid rgba(255,190,60,.3); }
 .fbar { display: flex; gap: 12px; padding: 0 64px; margin-bottom: 30px; align-items: center; }
 .facet { display: flex; align-items: center; gap: 9px; padding: 11px 20px; border-radius: 30px; background: var(--chip); color: var(--ink-soft); font-size: 18px; font-weight: 600; white-space: nowrap; border: 2px solid transparent; cursor: pointer; transition: transform .15s var(--ease), background .2s, color .2s, box-shadow .2s; }
 .facet .caret { font-size: 13px; opacity: .55; }
@@ -590,6 +597,8 @@ body { font-family: 'Sora', sans-serif; }
 .fpop .opt.focused .box { border-color: #0a0c13; }
 .fpop .opt.focused.on .box { background: #0a0c13; border-color: #0a0c13; color: #fff; }
 .fpop .cnt-side { margin-left: auto; font-size: 15px; color: var(--ink-dim); }
+.fpop .opt .fpop-flag { flex: none; font-size: 22px; border-radius: 3px; box-shadow: 0 0 0 1px rgba(0,0,0,.25); }
+.fpop .opt .fpop-av { flex: none; width: 32px; height: 32px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-family: 'Space Grotesk', sans-serif; font-size: 13px; font-weight: 700; color: #fff; box-shadow: inset 0 0 0 1px rgba(255,255,255,.14); }
 .fpop .opt.focused .cnt-side { color: #4a4d5e; }
 /* maturity range picker */
 .fpop.wide { width: 480px; }
