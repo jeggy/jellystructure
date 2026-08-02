@@ -44,6 +44,13 @@ class ConfigStore(private val filePath: String) {
         val result = runCatching {
             val content = toml.encodeToString(AppConfig.serializer(), _config)
             FileIo.writeText(Path(tmp), content)   // Phase 134: use{}-scoped
+            // Security fix (2026-08-02 review, finding M7) — config.toml holds every secret this
+            // instance knows (Jellyfin admin token, TMDB/*arr/Seerr keys, qBittorrent password, the
+            // webhook secret) and was created at the platform-default mode (0644/0664 depending on
+            // umask — confirmed world-readable on the live host during the audit). kotlinx-io's
+            // SystemFileSystem.sink() has no way to pass an explicit mode, so set it explicitly after
+            // writing, before the rename makes this the live file — owner read/write only.
+            platform.posix.chmod(tmp, "384".toUInt())  // 0600 octal = 384 decimal (Kotlin has no octal literal)
             // Atomic rename — POSIX guarantees this is atomic on the same filesystem
             platform.posix.rename(tmp, filePath)
         }

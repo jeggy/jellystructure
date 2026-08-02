@@ -200,9 +200,23 @@ fun startServer(
             }
         }
         install(CORS) {
-            // Fully permissive: the Ravilo web client may be served from a different origin than
-            // the backend (e.g. a dev server), so allow any origin, method, header and content type.
-            anyHost()
+            // Security fix (2026-08-02 review, finding M1) — this was `anyHost()` + `allowCredentials
+            // = true`. Verified against the Ktor 3.5.0 CORS plugin source
+            // (`val headerOrigin = if (allowsAnyHost && !allowCredentials) "*" else origin`): with
+            // credentials on, Ktor does NOT send `*` back — it REFLECTS the caller's Origin and adds
+            // `Access-Control-Allow-Credentials: true`. Confirmed live during the audit (an
+            // Origin: https://evil.example.com preflight got that Origin echoed back). The only thing
+            // stopping full cross-origin credentialed access today is `SameSite=Lax` on the js_session
+            // cookie — one attribute away from account takeover, with no CSRF token as a second layer.
+            //
+            // Same-origin requests (the normal deployment: this server serves its own admin/Ravilo-web
+            // frontends) need no CORS headers at all. The only legitimate cross-origin case is a
+            // separately-hosted dev server (webpack/vite) during local development — allow that
+            // explicitly via CORS_ALLOWED_ORIGINS (comma-separated "host:port", e.g.
+            // "localhost:8080,localhost:5173"), never via a blanket wildcard.
+            val extraOrigins = dev.jellystructure.env("CORS_ALLOWED_ORIGINS", "")
+                .split(",").map { it.trim() }.filter { it.isNotBlank() }
+            extraOrigins.forEach { origin -> allowHost(origin, schemes = listOf("http", "https")) }
             allowHeaders { true }              // includes Authorization (Bearer device token), Content-Type, Cookie…
             allowNonSimpleContentTypes = true  // application/json request bodies
             allowMethod(HttpMethod.Get)
@@ -220,6 +234,35 @@ fun startServer(
         // Security fix (2026-08-02 review, finding H4) — shared between /api/auth/login and
         // /api/tv/login; see LoginRateLimiter's doc comment.
         val loginRateLimiter = dev.jellystructure.auth.LoginRateLimiter()
+
+        // Security fix (2026-08-02 review, finding M8) — no security response headers were sent at
+        // all. HSTS is safe to send unconditionally: browsers only ever act on it when it arrives over
+        // an actually-secure connection (RFC 6797), and this server is designed to sit behind a
+        // TLS-terminating reverse proxy anyway (see D1 in the deployment guide) — it's a no-op until
+        // then, not a footgun. The CSP here is deliberately permissive enough for a Kotlin/WASM SPA
+        // (needs 'wasm-unsafe-eval'/'unsafe-eval' to instantiate its own compiled module, and this
+        // codebase's admin UI leans on inline styles) — tighten it once verified against a real
+        // browser session; nothing here should regress the app either way.
+        intercept(ApplicationCallPipeline.Plugins) {
+            call.response.headers.append("X-Content-Type-Options", "nosniff")
+            call.response.headers.append("X-Frame-Options", "DENY")
+            call.response.headers.append("Referrer-Policy", "strict-origin-when-cross-origin")
+            call.response.headers.append("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+            call.response.headers.append(
+                "Content-Security-Policy",
+                "default-src 'self'; " +
+                    "script-src 'self' 'wasm-unsafe-eval' 'unsafe-eval'; " +
+                    "style-src 'self' 'unsafe-inline'; " +
+                    "img-src 'self' data: blob: https:; " +
+                    "font-src 'self' data:; " +
+                    "connect-src 'self' ws: wss: https:; " +
+                    "media-src 'self' blob: https:; " +
+                    "object-src 'none'; " +
+                    "frame-ancestors 'none'; " +
+                    "base-uri 'self'",
+            )
+            proceed()
+        }
 
         installGzipCompression()
 
