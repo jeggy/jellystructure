@@ -132,6 +132,10 @@ class SeerrDiscoverService(
         return (credits.cast + credits.crew)
             .filter { (it.mediaType == "movie" || it.mediaType == "tv") && !libByTmdb.containsKey(it.id) }
             .distinctBy { it.id to it.mediaType }
+            // Newest release first — sorted before the cap so the 12 shown are actually the most
+            // recent, not whatever the cast+crew concatenation happened to list first. Lexicographic
+            // "YYYY-MM-DD" comparison sorts correctly; undated credits (upcoming/unannounced) sort last.
+            .sortedByDescending { it.releaseDate ?: it.firstAirDate ?: "" }
             .take(12)
             .map { toDiscoverEntry(it.toCatalogResult(), libByTmdb) }
     }
