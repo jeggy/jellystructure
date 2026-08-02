@@ -7,6 +7,7 @@ import dev.jellystructure.config.ConfigStore
 import dev.jellystructure.auth.JellyfinItemDetail
 import dev.jellystructure.log.Logger
 import dev.jellystructure.media.MediaStore
+import dev.jellystructure.media.visibleTo
 import dev.jellystructure.shared.tv.AudioTrack
 import dev.jellystructure.shared.tv.CardPlayState
 import dev.jellystructure.shared.tv.ClientCapabilities
@@ -174,11 +175,35 @@ private fun playSessionIdFor(device: DeviceData, jellyfinId: String): String = "
  *  re-authentication error instead of a raw 500. */
 class JellyfinReauthRequiredException(message: String) : Exception(message)
 
+/** Security fix (2026-08-02 review, finding M4) — thrown when a device tries to act on an item its
+ *  own library-allowlist / AllowedTags-BlockedTags policy hides. Routes catch this and respond 403. */
+class PlaybackForbiddenException(message: String) : Exception(message)
+
 class PlaybackService(
     private val mediaStore: MediaStore,
     private val jellyfinClient: JellyfinClient,
     private val configStore: ConfigStore,
 ) {
+    /**
+     * Security fix (2026-08-02 review, finding M4) — Detail/Browse/Home all gate on
+     * `MediaItem.visibleTo(device)` (library allow-list + Jellyfin AllowedTags/BlockedTags), but
+     * playback never did: every function below took the caller-supplied `jellyfinId` straight to
+     * Jellyfin. Normally the device's own Jellyfin user token is the backstop, but [tvToken] can fall
+     * back to the server admin token when that token is stale — so a Kids/library-restricted device
+     * could, in that window, start/stop/mark-played *any* item in the library. Fail closed: an id
+     * outside jellystructure's own catalog (nothing to check a policy against) is rejected too.
+     */
+    private suspend fun requireVisible(device: DeviceData, jellyfinId: String) {
+        // resolveByJellyfinId only indexes top-level (movie/series) ids — playing an EPISODE is the
+        // common case and needs the same series-episode scan MediaStore.resolvePlayTarget already
+        // uses, or every episode play would be wrongly rejected as "not found".
+        val item = mediaStore.resolveByJellyfinId(jellyfinId)
+            ?: mediaStore.allItems().firstOrNull { series -> series.episodes.any { it.jellyfinId == jellyfinId } }
+        if (item == null || !item.visibleTo(device)) {
+            throw PlaybackForbiddenException("Item not visible to this device")
+        }
+    }
+
     /**
      * Resolves a stream ticket for [jellyfinId]. Starts a Jellyfin playback session and
      * returns all the data the Ravilo player needs to stream directly from Jellyfin.
@@ -192,6 +217,7 @@ class PlaybackService(
         jellyfinId: String,
         capabilities: ClientCapabilities,
     ): StreamTicket {
+        requireVisible(device, jellyfinId)
         val jellyfinBase = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
         val token = jellyfinClient.tvTokenForClient(jellyfinBase, device)
             ?: throw JellyfinReauthRequiredException("This device's Jellyfin sign-in has expired — re-pair it to continue watching.")
@@ -254,8 +280,11 @@ class PlaybackService(
     }
 
     suspend fun reportProgress(device: DeviceData, jellyfinId: String, positionMs: Long, isPaused: Boolean) {
-        // A straggling tick for an item that already reported a stop must not be forwarded — see
-        // PlaybackTracker.heartbeat.
+        // No requireVisible() here deliberately — this is a heartbeat for a session startPlayback
+        // already gated; failing a heartbeat because a policy/library edit drifted mid-playback would
+        // only strand a phantom "Now Playing" in Jellyfin, the exact bug class the watchdog above
+        // exists to prevent. A straggling tick for an item that already reported a stop must not be
+        // forwarded either — see PlaybackTracker.heartbeat.
         if (!playbackTracker.heartbeat(device, jellyfinId, positionMs)) {
             Logger.info("Ignoring progress for already-stopped playback item=$jellyfinId device=${device.deviceId}", "tv")
             return
@@ -270,6 +299,11 @@ class PlaybackService(
     }
 
     suspend fun stopPlayback(device: DeviceData, jellyfinId: String, positionMs: Long) {
+        // No requireVisible() here deliberately — same reasoning as reportProgress above: this is
+        // cleanup for a session startPlayback already gated, and it's also called from the stop
+        // watchdog for stale/disconnected devices. Blocking it would risk leaving a phantom "Now
+        // Playing" in Jellyfin forever, which is worse than the (already access-gated-at-start) cost
+        // of letting an in-flight stop go through.
         playbackTracker.stopped(device, jellyfinId)
         val jellyfinBase = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
         val token = jellyfinClient.tvToken(jellyfinBase, device, configStore.current.apiKeys.jellyfinToken)
@@ -303,6 +337,7 @@ class PlaybackService(
     }
 
     suspend fun mark(device: DeviceData, jellyfinId: String, watched: Boolean) {
+        requireVisible(device, jellyfinId)
         val jellyfinBase = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
         val token = jellyfinClient.tvToken(jellyfinBase, device, configStore.current.apiKeys.jellyfinToken)
         if (watched) {
@@ -332,6 +367,7 @@ class PlaybackService(
         played: Boolean,
         episodeIds: List<String> = emptyList(),
     ): Map<String, CardPlayState> {
+        requireVisible(device, itemId)
         val base = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
         val token = jellyfinClient.tvToken(base, device, configStore.current.apiKeys.jellyfinToken)
         val uid = device.jellyfinUserId
@@ -438,6 +474,7 @@ class PlaybackService(
         subtitleStreamIndex: Int,
         positionMs: Long,
     ): StreamTicket {
+        requireVisible(device, jellyfinId)
         val jellyfinBase = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
         val token = jellyfinClient.tvTokenForClient(jellyfinBase, device)
             ?: throw JellyfinReauthRequiredException("This device's Jellyfin sign-in has expired — re-pair it to continue watching.")
