@@ -1,6 +1,7 @@
 package dev.jellystructure.server.routes
 
 import dev.jellystructure.server.respondCachedBytes
+import io.ktor.server.plugins.origin
 import dev.jellystructure.auth.DeviceKey
 import dev.jellystructure.auth.JellyfinClient
 import dev.jellystructure.auth.SessionKey
@@ -194,11 +195,20 @@ fun Route.tvRoutes(
     upcomingService: dev.jellystructure.tv.UpcomingService? = null,
     seerrDiscoverService: dev.jellystructure.seerr.SeerrDiscoverService? = null,
     mediaStore: dev.jellystructure.media.MediaStore? = null,
+    // Security fix (2026-08-02 review, finding H4) — same unbounded-brute-force gap as /api/auth/login.
+    loginRateLimiter: dev.jellystructure.auth.LoginRateLimiter,
 ) {
     // Phase 141 — proxied username/password login, replacing the code+poll+admin-approve pairing flow.
     // No device token exists yet (OPEN_API_PATHS); jellystructure authenticates the credentials against
     // Jellyfin itself and mints a device token bound to the returned user (never the admin, silently).
     post("/tv/login") {
+        val clientKey = dev.jellystructure.auth.LoginRateLimiter.clientKey(
+            call.request.origin.remoteHost, call.request.headers["X-Forwarded-For"],
+        )
+        if (!loginRateLimiter.tryAcquire(clientKey)) {
+            call.respond(HttpStatusCode.TooManyRequests, mapOf("error" to "Too many login attempts — try again in a minute"))
+            return@post
+        }
         val req = runCatching { call.receive<TvLoginRequest>() }.getOrElse {
             call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Invalid request"))
             return@post
@@ -226,12 +236,16 @@ fun Route.tvRoutes(
         }
         val authResult = authAttempt.getOrElse { e ->
             val invalidCredentials = e is IllegalArgumentException
+            // Security fix (H4) — there was no authentication audit trail at all; a compromise left no
+            // trace. Username only, never the password.
+            dev.jellystructure.log.Logger.warn("TV login failed for user '${req.username}' from device ${req.deviceId}", "auth")
             call.respond(
                 if (invalidCredentials) HttpStatusCode.Unauthorized else HttpStatusCode.ServiceUnavailable,
                 mapOf("error" to if (invalidCredentials) "Invalid username or password" else "Could not reach Jellyfin"),
             )
             return@post
         }
+        dev.jellystructure.log.Logger.info("TV login succeeded for user '${authResult.user.name}' on device ${req.deviceId}", "auth")
         val (device, deviceToken) = deviceService.loginDevice(
             deviceId = req.deviceId,
             deviceName = req.deviceName,

@@ -1,6 +1,7 @@
 package dev.jellystructure.server.routes
 
 import dev.jellystructure.auth.JellyfinClient
+import dev.jellystructure.auth.constantTimeEquals
 import dev.jellystructure.config.ConfigStore
 import dev.jellystructure.config.LibraryMapping
 import dev.jellystructure.log.Logger
@@ -65,7 +66,8 @@ private suspend fun handleArrWebhook(
 ) {
     val secret = configStore.current.ingest.webhookSecret
     val provided = call.request.queryParameters["secret"]
-    if (secret.isBlank() || provided != secret) {
+    // Security fix (L5) — constant-time compare (see constantTimeEquals's doc comment).
+    if (secret.isBlank() || provided == null || !constantTimeEquals(provided, secret)) {
         Logger.warn("Webhook rejected: bad secret (${if (isSonarr) "sonarr" else "radarr"})", "ingest")
         call.respond(HttpStatusCode.Forbidden, mapOf("error" to "invalid secret"))
         return

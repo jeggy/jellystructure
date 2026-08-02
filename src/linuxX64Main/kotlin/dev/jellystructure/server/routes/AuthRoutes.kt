@@ -1,6 +1,7 @@
 package dev.jellystructure.server.routes
 
 import dev.jellystructure.auth.JellyfinClient
+import dev.jellystructure.auth.LoginRateLimiter
 import dev.jellystructure.auth.LoginRequest
 import dev.jellystructure.log.Logger
 import dev.jellystructure.auth.SessionKey
@@ -9,6 +10,7 @@ import dev.jellystructure.auth.UserProfile
 import dev.jellystructure.config.ConfigStore
 import io.ktor.http.Cookie
 import io.ktor.http.HttpStatusCode
+import io.ktor.server.plugins.origin
 import io.ktor.server.request.receive
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
@@ -20,11 +22,20 @@ fun Route.authRoutes(
     sessionService: SessionService,
     jellyfinClient: JellyfinClient,
     configStore: ConfigStore,
+    // Security fix (2026-08-02 review, finding H4) — was completely unbounded, letting the internet
+    // brute-force every Jellyfin account through this proxy. See LoginRateLimiter's doc comment.
+    loginRateLimiter: LoginRateLimiter,
 ) {
     route("/auth") {
         post("/login") {
             val creds = call.receive<LoginRequest>()
             val config = configStore.current
+
+            val clientKey = LoginRateLimiter.clientKey(call.request.origin.remoteHost, call.request.headers["X-Forwarded-For"])
+            if (!loginRateLimiter.tryAcquire(clientKey)) {
+                call.respond(HttpStatusCode.TooManyRequests, mapOf("error" to "Too many login attempts — try again in a minute"))
+                return@post
+            }
 
             if (config.apiKeys.jellyfinUrl.isBlank()) {
                 call.respond(
@@ -45,9 +56,14 @@ fun Route.authRoutes(
                 val e = authAttempt.exceptionOrNull()
                 Logger.info("jellyfin: ${config.apiKeys.jellyfinUrl}")
                 Logger.warn("Jellyfin auth error: ${e?.message}")
+                // Security fix (L6) — e?.message used to be forwarded to the client verbatim. Bad
+                // credentials raise IllegalArgumentException (authenticateByName's own contract, same
+                // one /api/tv/login already keys off) with a safe, authored message — anything else is
+                // a transport failure whose exception text can embed the internal Jellyfin URL/host.
+                val safeMessage = if (e is IllegalArgumentException) e.message else null
                 call.respond(
                     HttpStatusCode.Unauthorized,
-                    mapOf("error" to (e?.message ?: "Authentication failed")),
+                    mapOf("error" to (safeMessage ?: "Authentication failed")),
                 )
                 return@post
             }
@@ -60,6 +76,10 @@ fun Route.authRoutes(
                 )
                 return@post
             }
+
+            // Security fix (H4) — there was no authentication audit trail at all; a compromise left no
+            // trace. Username only, never the password/token.
+            Logger.info("Admin login succeeded for user '${authResult.user.name}'", "auth")
 
             val token = sessionService.create(
                 authResult.user.id,
