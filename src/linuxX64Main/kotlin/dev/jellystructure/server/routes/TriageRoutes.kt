@@ -225,8 +225,12 @@ fun Route.triageRoutes(store: MediaStore, jellyfinClient: JellyfinClient, config
 
             val req = call.receive<AssignLanguageRequest>()
             val lang = req.language.trim()
-            if (lang.isBlank()) {
-                call.respond(HttpStatusCode.BadRequest, mapOf("error" to "language is required"))
+            // Security fix (2026-08-02 review, finding L2) — only checked for blank; this value reaches
+            // an UNQUOTED `--set language=$lang` in TrackCommandBuilder (MkvpropeditRunner/FfmpegRunner),
+            // so shell metacharacters here execute. TrackRoutes/MediaRoutes' own language-write routes
+            // already validate the format before it reaches that sink — apply the same check here.
+            if (lang.isBlank() || !lang.matches(Regex("[a-zA-Z]{2,8}(-[a-zA-Z0-9]{2,8})*"))) {
+                call.respond(HttpStatusCode.BadRequest, mapOf("error" to "invalid language code"))
                 return@post
             }
 
@@ -281,8 +285,12 @@ fun Route.triageRoutes(store: MediaStore, jellyfinClient: JellyfinClient, config
 
             val req = call.receive<AssignLanguageRequest>()
             val lang = req.language.trim()
-            if (lang.isBlank()) {
-                call.respond(HttpStatusCode.BadRequest, mapOf("error" to "language is required"))
+            // Security fix (2026-08-02 review, finding L2) — only checked for blank; this value reaches
+            // an UNQUOTED `--set language=$lang` in TrackCommandBuilder (MkvpropeditRunner/FfmpegRunner),
+            // so shell metacharacters here execute. TrackRoutes/MediaRoutes' own language-write routes
+            // already validate the format before it reaches that sink — apply the same check here.
+            if (lang.isBlank() || !lang.matches(Regex("[a-zA-Z]{2,8}(-[a-zA-Z0-9]{2,8})*"))) {
+                call.respond(HttpStatusCode.BadRequest, mapOf("error" to "invalid language code"))
                 return@post
             }
 
