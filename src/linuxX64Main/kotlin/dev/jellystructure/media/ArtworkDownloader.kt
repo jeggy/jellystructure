@@ -188,7 +188,19 @@ class ArtworkDownloader(private val tmdbClient: TmdbClient, private val screengr
         else Logger.warn("Could not remove misplaced artwork $path: ${result.exceptionOrNull()?.message}")
     }
 
-    private suspend fun download(url: String, destPath: String): Boolean = OutboundHttp.withPermit {
+    private suspend fun download(url: String, destPath: String): Boolean {
+        // Security fix (2026-08-02 review, finding M5) — see UrlSafety's doc comment. `source` here can
+        // be an admin-pasted URL (the Artwork manager's "pick from URL" flow); without this check the
+        // server would fetch and WRITE TO DISK, then re-serve via /api/tv/image/**, whatever an
+        // attacker-controlled admin session (or a stolen cookie) pointed it at — a full-read SSRF.
+        if (!dev.jellystructure.util.UrlSafety.isSafeExternalUrl(url)) {
+            Logger.warn("Refusing to download artwork from disallowed URL: $url", "artwork")
+            return false
+        }
+        return downloadUnchecked(url, destPath)
+    }
+
+    private suspend fun downloadUnchecked(url: String, destPath: String): Boolean = OutboundHttp.withPermit {
         val result = runCatching {
             val bytes = http.get(url).readRawBytes()
             if (bytes.isEmpty()) return@withPermit false
