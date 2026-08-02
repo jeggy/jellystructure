@@ -47,7 +47,16 @@ fun createDatabase(dbFile: String): JellystructureDb {
             synchronousFlag = SynchronousFlag.NORMAL,
         ),
     )
-    return JellystructureDb(NativeSqliteDriver(config, maxReaderConnections = 4))
+    val db = JellystructureDb(NativeSqliteDriver(config, maxReaderConnections = 4))
+    // Security fix (2026-08-02 review, finding M7) — jellystructure.db holds every live admin session
+    // token IN PLAINTEXT (directly replayable as a cookie — unlike API keys, which are hashed) and
+    // every device's Jellyfin user token, and was created at the platform-default mode (confirmed
+    // world-readable, 0644, on the live host during the audit). SQLite creates -wal/-shm sidecar files
+    // alongside the main one in WAL mode; lock those down too, ignoring ones that don't exist yet.
+    for (suffix in listOf("", "-wal", "-shm")) {
+        runCatching { platform.posix.chmod("$dbFile$suffix", "384".toUInt()) }  // 0600 octal = 384 decimal
+    }
+    return db
 }
 
 fun JellystructureDb.walCheckpoint() {

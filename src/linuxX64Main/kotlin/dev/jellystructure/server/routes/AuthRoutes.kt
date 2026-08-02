@@ -92,6 +92,18 @@ fun Route.authRoutes(
                     name = "js_session",
                     value = token,
                     httpOnly = true,
+                    // Security fix (2026-08-02 review, finding M2) — was never set (defaults false),
+                    // so a 7-day admin session token would go out in cleartext over any accidental
+                    // plain-HTTP reach (a misconfigured vhost, an http:// bookmark, no HSTS on first
+                    // visit). This server itself only ever speaks plain HTTP (see D1's deployment
+                    // guide for why TLS termination belongs at a reverse proxy, not in-process) — the
+                    // Secure attribute is enforced by the BROWSER based on the page's own origin
+                    // scheme, so it's correct and safe to set even though the Kotlin/Native process
+                    // never sees TLS directly, as long as a proxy is actually terminating it. Default
+                    // off (matches today's LAN-only, no-proxy deployments, where forcing Secure would
+                    // silently break login by having the browser refuse to send the cookie back over
+                    // http://) — set COOKIE_SECURE=1 once a TLS-terminating reverse proxy is in front.
+                    secure = dev.jellystructure.env("COOKIE_SECURE", "0") == "1",
                     path = "/",
                     maxAge = 7 * 24 * 60 * 60,
                     extensions = mapOf("SameSite" to "Lax"),
@@ -104,7 +116,10 @@ fun Route.authRoutes(
             val token = call.request.cookies["js_session"]
             if (token != null) sessionService.revoke(token)
             call.response.cookies.append(
-                Cookie(name = "js_session", value = "", path = "/", maxAge = 0, httpOnly = true),
+                Cookie(
+                    name = "js_session", value = "", path = "/", maxAge = 0, httpOnly = true,
+                    secure = dev.jellystructure.env("COOKIE_SECURE", "0") == "1",
+                ),
             )
             call.respond(HttpStatusCode.NoContent)
         }
