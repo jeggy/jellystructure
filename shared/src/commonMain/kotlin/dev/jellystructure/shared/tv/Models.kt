@@ -260,6 +260,10 @@ data class Row(
      *  equivalent to "the full seed has more than 8 items" — no separate total-count field is needed. */
     val seedQuery: ConditionGroup? = null,
     val seedMediaKind: String? = null,
+    /** R187 — the seed's TRUE match count, before the [items] cap. [items].size alone undercounts once
+     *  a row is actually truncated (ROW_ITEM_LIMIT), which is exactly when a See-all count needs to be
+     *  right. Null alongside a null [seedQuery]/[seedMediaKind] (nothing to count beyond [items]). */
+    val seedTotalCount: Int? = null,
 )
 
 @Serializable

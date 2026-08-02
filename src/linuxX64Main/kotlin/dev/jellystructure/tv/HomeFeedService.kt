@@ -69,6 +69,14 @@ class HomeFeedService(
     private data class PlaystateEntry(val data: Map<String, CardPlayState>, val builtAt: Long)
     private val playstateCache = HashMap<String, PlaystateEntry>()
 
+    /**
+     * R187 fix — just the channel id→name list, for callers that need Ravilo channel display names
+     * (e.g. the seeded-browse page's Channel facet) without a top-level Home/Channel screen having
+     * already loaded a full [HomeFeed] first. Cheap: config-only, no Jellyfin/MediaStore calls.
+     */
+    suspend fun getChannels(device: DeviceData): List<Channel> =
+        buildChannels(configService.getConfig(device.jellyfinUserId))
+
     suspend fun getHomeFeed(device: DeviceData): HomeFeed = coroutineScope {
         val userId = device.jellyfinUserId
         val libVer = mediaStore.libraryVersion
@@ -302,8 +310,8 @@ class HomeFeedService(
             val sys = channelRows.system
             if (sys.cont.show) {
                 val src = if (sys.cont.scope == "channel") all else libraryAll
-                val cards = buildContinueRow(device, src, jellyfinBase, token)
-                if (cards.isNotEmpty()) result.add(Row("continue", "Continue Watching", RowKind.CONTINUE, cards))
+                val cont = buildContinueRow(device, src, jellyfinBase, token)
+                if (cont.cards.isNotEmpty()) result.add(Row("continue", "Continue Watching", RowKind.CONTINUE, cont.cards, seedTotalCount = cont.total))
             }
             if (sys.newly.show) {
                 val src = if (sys.newly.scope == "channel") all else libraryAll
@@ -322,8 +330,8 @@ class HomeFeedService(
             when (rowCfg.kind) {
                 RowKind.CONTINUE -> {
                     if (channelFilter != null) continue // inherit-mode channels keep R59 behaviour (no Continue)
-                    val cards = buildContinueRow(device, all, jellyfinBase, token)
-                    if (cards.isNotEmpty()) result.add(Row(rowCfg.id, rowCfg.title ?: "Continue Watching", RowKind.CONTINUE, cards))
+                    val cont = buildContinueRow(device, all, jellyfinBase, token)
+                    if (cont.cards.isNotEmpty()) result.add(Row(rowCfg.id, rowCfg.title ?: "Continue Watching", RowKind.CONTINUE, cont.cards, seedTotalCount = cont.total))
                 }
 
                 RowKind.NEWLY_ADDED -> {
@@ -404,25 +412,28 @@ class HomeFeedService(
         return ConditionGroup(QueryJoin.AND, children = listOf(channelQuery, query))
     }
 
+    private fun genreTermsOf(rowCfg: RowConfig): List<String> =
+        (rowCfg.title ?: "").split("&", ",").map { it.trim().lowercase() }.filter { it.isNotBlank() }
+
     /** R143: build one GENRE or CUSTOM filter row from [all] (already channel-scoped in channel context).
-     *  R187: also populates [Row.seedQuery]/[Row.seedMediaKind] for the "→ See all" browse page. */
+     *  R187: also populates [Row.seedQuery]/[Row.seedMediaKind]/[Row.seedTotalCount] for the "→ See all"
+     *  browse page — the total is the pre-[ROW_ITEM_LIMIT] match count, not `cards.size`, so a genuinely
+     *  truncated row's tile shows the real number, not the 30-item cap. */
     private fun buildFilterRow(rowCfg: RowConfig, all: List<MediaItem>, heroIds: Set<String>, channelFilter: ChannelConfig? = null): Row? = when (rowCfg.kind) {
         RowKind.GENRE -> {
-            val genreTerms = (rowCfg.title ?: "").split("&", ",").map { it.trim().lowercase() }.filter { it.isNotBlank() }
-            val cards = all
-                .asSequence()
-                .filter { item -> genreTerms.isEmpty() || item.genres.any { g -> genreTerms.any { t -> g.lowercase().contains(t) } } }
+            val matched = all.filter { item -> genreTermsOf(rowCfg).let { it.isEmpty() || item.genres.any { g -> it.any { t -> g.lowercase().contains(t) } } } }
+            val cards = matched
                 .sortedWith(compareByDescending<MediaItem> { it.recencyKey() }.thenBy { it.title })
                 .take(ROW_ITEM_LIMIT)
                 .mapNotNull { it.toMediaCardOrNull() }
                 .distinctBy { it.id }
-                .toList()
             if (cards.isEmpty()) null else {
                 // R187 — the row's own substring match (e.g. title term "sci" catching "Science
                 // Fiction") isn't expressible as ConditionEvaluator's exact-match "genre" facet, so
                 // resolve it down to the real genre STRINGS it actually matched in this candidate set
                 // and seed on those instead — reproducible via the seeded-browse endpoint, and correct
                 // for exactly this row's real membership, not an approximation of the substring rule.
+                val genreTerms = genreTermsOf(rowCfg)
                 val matchedGenreValues = all.asSequence()
                     .flatMap { it.genres }
                     .filter { g -> genreTerms.isEmpty() || genreTerms.any { t -> g.lowercase().contains(t) } }
@@ -430,7 +441,7 @@ class HomeFeedService(
                 val seed = withChannelSeed(channelFilter, ConditionGroup(QueryJoin.AND, children = listOf(
                     Condition(facet = "genre", op = "is_any_of", values = matchedGenreValues),
                 )))
-                Row(rowCfg.id, rowCfg.title ?: "Genre", RowKind.GENRE, cards, seedQuery = seed, seedMediaKind = rowCfg.mediaKind)
+                Row(rowCfg.id, rowCfg.title ?: "Genre", RowKind.GENRE, cards, seedQuery = seed, seedMediaKind = rowCfg.mediaKind, seedTotalCount = matched.size)
             }
         }
         RowKind.CUSTOM -> {
@@ -452,7 +463,7 @@ class HomeFeedService(
                 .distinctBy { it.id }
             if (cards.isEmpty()) null else Row(
                 rowCfg.id, rowCfg.title ?: "Custom", RowKind.CUSTOM, cards,
-                seedQuery = withChannelSeed(channelFilter, query), seedMediaKind = rowCfg.mediaKind,
+                seedQuery = withChannelSeed(channelFilter, query), seedMediaKind = rowCfg.mediaKind, seedTotalCount = filtered.size,
             )
         }
         else -> null
@@ -466,8 +477,13 @@ class HomeFeedService(
         val jellyfinBase = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
         val token = jellyfinClient.tvToken(jellyfinBase, device, configStore.current.apiKeys.jellyfinToken)
         val all = mediaStore.liveItems(device)
-        return buildContinueRow(device, all, jellyfinBase, token, limit = Int.MAX_VALUE)
+        return buildContinueRow(device, all, jellyfinBase, token, limit = Int.MAX_VALUE).cards
     }
+
+    /** R187 — [total] is the pre-[limit] match count, for [Row.seedTotalCount] (the Home-row cap makes
+     *  `cards.size` alone wrong for a See-all tile's count once a viewer genuinely has more than 30
+     *  in-progress/next-up titles). */
+    private data class ContinueRowResult(val cards: List<MediaCard>, val total: Int)
 
     private suspend fun buildContinueRow(
         device: DeviceData,
@@ -475,9 +491,9 @@ class HomeFeedService(
         jellyfinBase: String,
         token: String,
         limit: Int = ROW_ITEM_LIMIT,
-    ): List<MediaCard> = coroutineScope {
+    ): ContinueRowResult = coroutineScope {
         val jellyfinUrl = configStore.current.apiKeys.jellyfinUrl.takeIf { it.isNotBlank() }
-            ?: return@coroutineScope emptyList()
+            ?: return@coroutineScope ContinueRowResult(emptyList(), 0)
 
         // Both calls are independent — fetch in parallel to halve the Jellyfin round-trips.
         // R102: bound the wait so a cold/slow Jellyfin can't hang the whole home response on the 30s
@@ -489,7 +505,7 @@ class HomeFeedService(
                 val nextUpDeferred = async { jellyfinClient.getNextUp(jellyfinUrl, token, device.jellyfinUserId) }
                 resumeDeferred.await() to nextUpDeferred.await()
             }
-        } ?: return@coroutineScope emptyList()
+        } ?: return@coroutineScope ContinueRowResult(emptyList(), 0)
         val (resumeItems, nextUpItems) = fetched
 
         val cards = mutableListOf<MediaCard>()
@@ -520,7 +536,7 @@ class HomeFeedService(
             cards.add(mediaItem.toMediaCard(nextUpLabel = label, seasonNumber = s, episodeNumber = e))
         }
 
-        cards.take(limit)
+        ContinueRowResult(cards.take(limit), cards.size)
     }
 
     // ─── Helpers ──────────────────────────────────────────────────────────────

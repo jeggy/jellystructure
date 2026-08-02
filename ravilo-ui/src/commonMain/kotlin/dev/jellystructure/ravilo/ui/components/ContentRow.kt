@@ -72,9 +72,23 @@ fun <T> StaticContentRow(
     bringRowHeaderIntoView: Boolean = true,
     /** R139: on a Back-return, scroll this row to the item with this key and focus it (the originating tile). */
     restoreItemKey: Any? = null,
+    /** Bug fix: called once the [restoreItemKey] restore actually fires, so the caller can consume it
+     *  (null out whatever store field produced it) — without this, a row that's scrolled out of the
+     *  LazyColumn's composition window and back in gets a BRAND NEW `restoredOnce` (it's plain local
+     *  `remember` state on a disposed-and-recreated composable), so as long as the store still points
+     *  at this row/item — which stays true well after the original Back-return, since nothing else ever
+     *  clears it — every subsequent scroll-past-and-back-into-view fires the restore again, yanking
+     *  focus back into this row out of nowhere. Reported live as focus "getting stuck"/jumping while
+     *  navigating. Callers should clear their `focusRowKey`/`focusItemKey` here. */
+    onRestored: () -> Unit = {},
     /** An extra, non-[T] tile rendered before [items] (e.g. Home's "Open TV Guide" entry point ahead of
      *  the On Now channel tiles) — its own focus target, unrelated to [itemKey]/[restoreItemKey]. */
     leadingItem: (@Composable () -> Unit)? = null,
+    /** R187 — the mirror of [leadingItem], rendered AFTER [items]: a real tile in the row's own focus
+     *  track (e.g. a "→ See all" card), not a header-level action link. Use this instead of
+     *  [seeAllLabel]/[onSeeAll] when the destination should read as one more thing in the row, not a
+     *  page-level action — [seeAllLabel] stays for genuinely link-shaped affordances elsewhere. */
+    trailingItem: (@Composable () -> Unit)? = null,
     /** A small non-focusable accessory before [title] (e.g. Home On Now's live-dot). */
     titleAccessory: (@Composable () -> Unit)? = null,
     /** A plain, non-interactive label at the header's end — shown only when [seeAllLabel]/[onSeeAll]
@@ -116,6 +130,7 @@ fun <T> StaticContentRow(
             if (idx >= 0) {
                 runCatching { listState.scrollToItem(idx) }
                 runCatching { restoreFR.requestFocus() }
+                onRestored()
             }
             restoredOnce = true
         }
@@ -210,6 +225,9 @@ fun <T> StaticContentRow(
                 items(items.size, key = if (itemKey != null) { i -> itemKey(items[i]) } else null) { i ->
                     val fr = if (restoreItemKey != null && itemKey != null && itemKey(items[i]) == restoreItemKey) restoreFR else null
                     itemContent(i, items[i], fr)
+                }
+                if (trailingItem != null) {
+                    item(key = "__trailing") { trailingItem() }
                 }
             }
         }

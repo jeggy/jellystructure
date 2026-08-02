@@ -6,6 +6,8 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -81,6 +83,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import dev.jellystructure.ravilo.ui.focus.dpadFocusable
+import dev.jellystructure.ravilo.ui.focus.requestFocusRetrying
 import dev.jellystructure.shared.tv.CardPlayState
 import dev.jellystructure.shared.tv.Episode
 import dev.jellystructure.shared.tv.MediaCard
@@ -311,6 +314,22 @@ private fun SeriesDetailLoaded(
 
     LaunchedEffect(Unit) { runCatching { playFR.requestFocus() } }
 
+    // Bug fix: pressing UP from the season picker / episode rail / cast / related rows relied entirely
+    // on Compose's native spatial focus search reaching the hero above — but the hero is a full-height
+    // `item(key = "hero")` in this same LazyColumn, so once scrolled a couple of rows past it, the hero
+    // (and every FocusRequester inside it, including the one navBarFR itself bridges through) is
+    // disposed. With nothing composed for native search to land on, the UP key silently did nothing —
+    // reported live as focus "getting stuck" while navigating a series' season/episode area. Snap the
+    // list back to the top (recomposing the hero) and retry focusing Play once it's attached
+    // (`requestFocusRetrying` already exists for exactly this "target not composed yet" race).
+    val upToHero: (androidx.compose.ui.input.key.KeyEvent) -> Boolean = { ev ->
+        if (ev.type == KeyEventType.KeyDown && ev.key == Key.DirectionUp) {
+            scope.launch { runCatching { listState.scrollToItem(0) } }
+            requestFocusRetrying(scope, playFR)
+            true
+        } else false
+    }
+
     // R79: appBarHeight + 24dp top inset so season picker / episode rail title isn't hidden under the bar.
     val detailBivSpec = rememberEdgeBringIntoViewSpec(peekDp = 60.dp, topInsetDp = RaviloDimens.appBarHeight + 24.dp)
     // R109: boolean derivedStateOf (notifies only on threshold cross) — no per-scroll-frame recompose.
@@ -446,6 +465,14 @@ private fun SeriesDetailLoaded(
                         // R72: scroll(UserInput) wins over bring-into-view (Default priority) so
                         // focusing Play/Resume reliably reframes the full backdrop.
                         modifier = Modifier
+                            // Bug fix: this Row lives inside the hero's 60%-width column; once Play +
+                            // My List + Trailer's combined natural width exceeded that column, the Row
+                            // got clamped to the column's maxWidth and the LAST button (Trailer) ended up
+                            // squeezed into an unreadable sliver instead of the whole row simply being
+                            // allowed to scroll. horizontalScroll removes the clamp — every button always
+                            // renders at its full natural size; if there ever isn't room, the row scrolls
+                            // (D-pad focus brings the target into view) instead of corrupting layout.
+                            .horizontalScroll(rememberScrollState())
                             .onFocusChanged {
                                 // R72: focusing Play/Resume reframes the full backdrop. R115: only when the
                                 // hero is actually scrolled — on open the list is already at the top (offset 0),
@@ -519,10 +546,14 @@ private fun SeriesDetailLoaded(
                         )
                         // R163: only when Phase 130 ingested a usable trailer — never a dead affordance.
                         if (detail.trailer != null) {
+                            // Bug fix: with no minimum width this button intermittently measured to a
+                            // ~0-width label (collapsing the whole pill into a tiny near-square sliver,
+                            // completely unreadable) — same defensive fix already applied to Play above.
                             RaviloButton(
                                 label = "▷ ${str("action.trailer")}",
                                 focusRequester = trailerFR,
                                 style = ButtonStyle.GHOST,
+                                modifier = Modifier.widthIn(min = 130.dp),
                                 onSelect = { showTrailer = true },
                             )
                         }
@@ -538,10 +569,17 @@ private fun SeriesDetailLoaded(
                     SeasonPicker(
                         seasons = detail.seasons,
                         selectedIndex = selectedSeasonIdx,
-                        onSelect = { selectedSeasonIdx = it },
+                        // Bug fix: picking a season before the playstate overlay finished its first
+                        // load got silently reverted — LaunchedEffect(overlay, ...) below runs its
+                        // ONE-SHOT auto-select the moment overlay first arrives non-empty, gated only on
+                        // autoSeasonDone; if the viewer picked a season during that window, autoSeasonDone
+                        // was still false and the auto-select stomped their choice right back. Marking it
+                        // done here makes a manual pick permanently win, no matter when it happens.
+                        onSelect = { selectedSeasonIdx = it; autoSeasonDone = true },
                         firstFocusRequester = seasonFirstFR,   // R138
                         watchedSeasons = watchedSeasons,
                         watchedCounts = watchedCounts,
+                        modifier = Modifier.onKeyEvent(upToHero),
                     )
                     Spacer(Modifier.height(16.dp))
                 }
@@ -592,7 +630,12 @@ private fun SeriesDetailLoaded(
                     Spacer(Modifier.height(RaviloDimens.rowHeadPadB))
                     LazyRow(
                         state = epRowState,
-                        modifier = Modifier.focusRestorer(),
+                        // Bug fix: with a single season there's no season picker row above to catch native
+                        // search, so this rail sits directly under the (often-unmounted-once-scrolled)
+                        // hero — same "UP does nothing" gap as the season picker itself. With multiple
+                        // seasons the picker is right above and stays composed, so native search already
+                        // reaches it reliably; no bridge needed there.
+                        modifier = if (detail.seasons.size <= 1) Modifier.focusRestorer().onKeyEvent(upToHero) else Modifier.focusRestorer(),
                         contentPadding = PaddingValues(horizontal = raviloHPad, vertical = RaviloDimens.trackPadV),
                         horizontalArrangement = Arrangement.spacedBy(RaviloDimens.itemSpacing),
                     ) {
@@ -690,7 +733,12 @@ private fun SeriesDetailLoaded(
             activeNav = -1,
             onNavSelect = onNavSelect,
             navFR = navBarFR,
-            onDown = { runCatching { playFR.requestFocus() } },
+            // Bug fix: playFR.requestFocus() used to be called directly here — if the list had been
+            // scrolled down into seasons/episodes/cast/related, the hero (lazy item 0) was disposed and
+            // requestFocus() threw, silently swallowed, stranding focus in the nav bar (D-pad Down did
+            // nothing). Same root cause + fix as HomeScreen's AppBar.onDown. Scroll to the top first so
+            // the hero is back in composition before focusing it.
+            onDown = { scope.launch { runCatching { listState.scrollToItem(0) }; runCatching { playFR.requestFocus() } } },
             userInitials = displayName.take(2).uppercase(),
             onProfile = onProfile,
             onSearch = onSearch,
