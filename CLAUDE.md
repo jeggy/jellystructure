@@ -180,3 +180,12 @@ GitHub is the **source of truth**; we layer designs on top of it.
 `[[libraries]]` are auto-discovered from the Jellyfin API (no static `[paths]`).
 Optional `[qbittorrent]` (cross-seed guard), `[radarr]`/`[sonarr]` (read-only
 root-folder import + best-effort rescan), and per-user Ravilo layout/discover blocks.
+
+## Live TV/device testing convention
+Whenever doing live testing on a real TV, phone, or other device (adb screenshots, driving the D-pad,
+etc.) — always note down anything that doesn't behave as expected along the way, even if it's not what
+you were specifically testing for: UX friction, unclear copy, slow transitions, and **especially any
+focus/navigation behavior that seems off** (focus landing somewhere unexpected, a control that isn't
+reachable by D-pad, a stray key press doing something surprising). Report these back to the user as
+follow-up items rather than silently working around them — they're often real, fixable bugs (see e.g. the
+2026-08-02 LoginScreen D-pad-navigation fix, found this way).
