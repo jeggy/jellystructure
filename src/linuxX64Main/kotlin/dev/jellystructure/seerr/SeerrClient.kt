@@ -84,6 +84,10 @@ data class SeerrRequestResult(
     val media: SeerrMediaInfo = SeerrMediaInfo(),
 )
 
+/** Phase 156 — just enough of Seerr's `User` to resolve a Jellyfin user's Seerr account id. */
+@Serializable
+data class SeerrUser(val id: Int = 0)
+
 @Serializable
 data class SeerrGenre(val name: String = "")
 
@@ -199,6 +203,11 @@ class SeerrClient {
      * request lands on, e.g. a Nordic-scored profile for a Danish-dub pick. Both are Seerr's own
      * documented `POST /request` fields (verified against `seerr-api.yml`); omitted (null/empty) they
      * simply aren't sent, reproducing today's plain-request behaviour exactly.
+     *
+     * Phase 156 — [seerrUserId], when non-null, attributes the request to that specific Seerr user
+     * (`userId` on `POST /request`) instead of the shared API-key account. Per Seerr's own
+     * `MediaRequest.request()`, this also switches which user's permissions decide auto-approval — so
+     * this one field is how per-person requests avoid a shared account's auto-approve status.
      */
     suspend fun createRequest(
         url: String,
@@ -207,6 +216,7 @@ class SeerrClient {
         tmdbId: Int,
         profileId: Int? = null,
         tagIds: List<Int> = emptyList(),
+        seerrUserId: Int? = null,
     ): SeerrRequestResult? =
         runCatching {
             val payload = buildJsonObject {
@@ -215,10 +225,30 @@ class SeerrClient {
                 if (mediaType == "tv") put("seasons", "all")
                 profileId?.let { put("profileId", it) }
                 if (tagIds.isNotEmpty()) put("tags", buildJsonArray { tagIds.forEach { add(it) } })
+                seerrUserId?.let { put("userId", it) }
             }
             val resp = httpPost(base(url) + "/request", apiKey) {
                 contentType(ContentType.Application.Json); setBody(payload.toString())
             }
             if (resp.status == HttpStatusCode.Created || resp.status == HttpStatusCode.OK) resp.body<SeerrRequestResult>() else null
         }.getOrNull()
+
+    /**
+     * Phase 156 — resolves [jellyfinUserId] to its Seerr account id, provisioning one via Jellyfin
+     * import if it doesn't exist yet (never requires the viewer to log into Seerr's own web UI). Tries
+     * the direct lookup first since import only returns *newly created* users — a second call for an
+     * already-linked account would come back empty, not the existing user. Requires the configured API
+     * key's account to hold `MANAGE_USERS` (for the import) and `MANAGE_USERS`/`MANAGE_REQUESTS` (for
+     * [createRequest] to accept a `userId` on someone else's behalf). Returns null on any failure —
+     * callers fall back to an unattributed request rather than blocking on this.
+     */
+    suspend fun resolveUserId(url: String, apiKey: String, jellyfinUserId: String): Int? = runCatching {
+        val existing = httpGet(base(url) + "/user/jellyfin/$jellyfinUserId", apiKey)
+        if (existing.status == HttpStatusCode.OK) return@runCatching existing.body<SeerrUser>().id
+        val payload = buildJsonObject { put("jellyfinUserIds", buildJsonArray { add(jellyfinUserId) }) }
+        val imported = httpPost(base(url) + "/user/import-from-jellyfin", apiKey) {
+            contentType(ContentType.Application.Json); setBody(payload.toString())
+        }
+        if (imported.status == HttpStatusCode.Created) imported.body<List<SeerrUser>>().firstOrNull()?.id else null
+    }.getOrNull()
 }
