@@ -19,7 +19,7 @@ class App(val baseUrl: String) {
     val api = TvApiClient(
         client = httpClient,
         baseUrl = baseUrl,
-        deviceToken = { TokenStore.get() },
+        deviceToken = { MultiTokenStore.getActive()?.deviceToken },
     )
 
     private val backStack = mutableListOf<Screen>()
@@ -28,6 +28,13 @@ class App(val baseUrl: String) {
     fun show(screen: Screen, replaceStack: Boolean = false) {
         if (replaceStack) backStack.clear()
         current?.let { backStack.add(it) }
+        current = screen
+        render(screen)
+    }
+
+    /** Swaps the current screen without pushing it onto the back stack — used for auto-advance
+     *  (episode N -> N+1) so Back from a binge exits the player once, not once per episode watched. */
+    fun replaceTop(screen: Screen) {
         current = screen
         render(screen)
     }
@@ -80,12 +87,16 @@ fun main() {
         false
     }
 
-    app.scope.launch {
-        if (TokenStore.get() != null) {
+    // R189 milestone 2 — mirrors ravilo-ui's exact startup gate: 0 sessions -> Login, 1 -> straight to
+    // Home (auto-activated), 2+ -> the profile picker.
+    val sessions = MultiTokenStore.getAll()
+    when {
+        sessions.isEmpty() -> app.show(LoginScreen(), replaceStack = true)
+        sessions.size == 1 -> {
+            MultiTokenStore.setActive(sessions.first().userId)
             app.show(HomeScreen(), replaceStack = true)
-        } else {
-            app.show(LoginScreen(), replaceStack = true)
         }
+        else -> app.show(ProfilePickerScreen(), replaceStack = true)
     }
 }
 

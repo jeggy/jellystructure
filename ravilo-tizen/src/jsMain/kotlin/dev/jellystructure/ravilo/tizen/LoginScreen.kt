@@ -72,7 +72,14 @@ class LoginScreen : Screen {
             runCatching {
                 app.api.login(username, password, DeviceIdStore.get(), deviceName = "Ravilo Tizen")
             }.onSuccess { result ->
-                TokenStore.set(result.deviceToken)
+                MultiTokenStore.add(LocalSession(
+                    userId = result.session.userId,
+                    displayName = result.session.displayName,
+                    deviceToken = result.deviceToken,
+                    isAdmin = result.session.isAdmin,
+                    isKids = result.session.isKids,
+                    avatarUrl = result.session.avatarUrl,
+                ))
                 app.show(HomeScreen(), replaceStack = true)
             }.onFailure {
                 errorEl.textContent = "Sign-in failed — check your username and password"
