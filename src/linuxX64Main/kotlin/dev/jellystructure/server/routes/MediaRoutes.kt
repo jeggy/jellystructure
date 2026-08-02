@@ -40,8 +40,11 @@ import dev.jellystructure.nfo.NfoWriter
 import dev.jellystructure.tmdb.TmdbClient
 import dev.jellystructure.tmdb.TmdbImage
 import dev.jellystructure.tv.RaviloConfigService
+import io.ktor.client.request.post
+import io.ktor.client.request.setBody
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
+import io.ktor.http.contentType
 import io.ktor.http.encodeURLPathPart
 import io.ktor.http.content.PartData
 import io.ktor.http.content.forEachPart
@@ -58,7 +61,6 @@ import io.ktor.server.routing.route
 import io.ktor.utils.io.readRemaining
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.coroutines.CancellationException
-import platform.posix.system as posixSystem
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.channels.Channel
@@ -2325,12 +2327,26 @@ internal suspend fun runScan(
     return allItems
 }
 
-@OptIn(ExperimentalForeignApi::class)
+// Security fix (2026-08-02 review, finding H5) — this used to shell out via
+// posixSystem("curl ... -d '$safePayload' '$url' &") with a broken single-quote escape
+// (`replace("'", "\\'")` isn't a valid escape inside a POSIX single-quoted string — backslash isn't
+// special there, so a `'` in the payload closes the quote early and anything after it is interpreted
+// by the shell) and NO escaping at all on the admin-configured url. A media filename with an
+// apostrophe (open-file paths reach this via FdWatchdog's census, crash text via CrashResilience) was
+// a real path to command execution once notifications_webhook was configured. Using the existing
+// OutboundHttp client removes the shell entirely — no escaping to get right because there's no shell
+// to escape for.
 internal suspend fun fireWebhook(cfg: dev.jellystructure.config.AppConfig, payload: String) {
     val url = cfg.behavior.notificationsWebhook
     if (url.isBlank()) return
-    val safePayload = payload.replace("'", "\\'")
-    runCatching { posixSystem("""curl -sf --max-time 10 -X POST -H 'Content-Type: application/json' -d '$safePayload' '$url' &""") }
+    runCatching {
+        dev.jellystructure.OutboundHttp.withPermit {
+            dev.jellystructure.OutboundHttp.client.post(url) {
+                contentType(ContentType.Application.Json)
+                setBody(payload)
+            }
+        }
+    }.onFailure { Logger.warn("Webhook delivery failed: ${it.message}", "notify") }
     Logger.info("Webhook fired: $payload", "notify")
 }
 

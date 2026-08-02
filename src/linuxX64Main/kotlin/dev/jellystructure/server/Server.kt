@@ -49,6 +49,9 @@ import dev.jellystructure.tv.ChannelLogoStore
 import dev.jellystructure.tv.RaviloConfigService
 import dev.jellystructure.tv.RaviloDeviceService
 import dev.jellystructure.tv.TvEventBus
+import io.ktor.client.request.get
+import io.ktor.client.request.parameter
+import io.ktor.client.statement.bodyAsText
 import io.ktor.http.CacheControl
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
@@ -286,9 +289,19 @@ fun startServer(
                         }
                     }
                     // TMDB key
+                    // Security fix (2026-08-02 review, finding L11) — this used to shell out via curl
+                    // with the key on the command line (visible in /proc/*/cmdline to any local user for
+                    // the life of the call, and quote-stripped rather than escaped). The shared
+                    // OutboundHttp client needs neither.
                     val tmdbKey = cfg.apiKeys.tmdbV3Key
                     val tmdbOk = if (tmdbKey.isNotBlank()) {
-                        val result = runShell("curl -sf --max-time 5 'https://api.themoviedb.org/3/configuration?api_key=${tmdbKey.replace("'", "")}'")
+                        val result = runCatching {
+                            dev.jellystructure.OutboundHttp.withPermit {
+                                dev.jellystructure.OutboundHttp.client.get("https://api.themoviedb.org/3/configuration") {
+                                    parameter("api_key", tmdbKey)
+                                }.bodyAsText()
+                            }
+                        }.getOrNull()
                         result != null && !result.contains("\"status_code\":7") && !result.contains("\"status_code\":3")
                     } else false
                     checks.add(HealthCheck("TMDB API key", tmdbOk, if (tmdbKey.isBlank()) "Key not configured" else if (tmdbOk) "Valid" else "Invalid or unreachable"))

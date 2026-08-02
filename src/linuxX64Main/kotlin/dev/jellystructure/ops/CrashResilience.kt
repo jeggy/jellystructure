@@ -52,8 +52,15 @@ fun installCrashHook(dataDir: String) {
  */
 fun fireSynchronousWebhook(url: String, payload: String) {
     if (url.isBlank()) return
+    // Security fix (2026-08-02 review, finding H5) — the payload was correctly shell-escaped
+    // ('\'' is the right POSIX idiom, unlike the sibling fireWebhook's now-fixed "\\'" bug), but the
+    // admin-configured url was interpolated with no escaping at all. This function must stay a
+    // blocking system() call (it runs during process shutdown/crash unwind, where a suspend HTTP call
+    // can't be safely awaited), so it can't be switched to OutboundHttp.client the way fireWebhook was
+    // — escape both.
     val safePayload = payload.replace("'", "'\\''")
-    posixSystemBlocking("curl -sf --max-time 5 -X POST -H 'Content-Type: application/json' -d '$safePayload' '$url' >/dev/null 2>&1")
+    val safeUrl = url.replace("'", "'\\''")
+    posixSystemBlocking("curl -sf --max-time 5 -X POST -H 'Content-Type: application/json' -d '$safePayload' '$safeUrl' >/dev/null 2>&1")
 }
 
 /** Phase 118 (FR B.2) — called once at boot, after ConfigStore is loaded but before anything else
