@@ -21,6 +21,23 @@ GitHub is the **source of truth**; we layer designs on top of it.
   nothing, delete nothing), and **`scripts/`**. Never delete repo-side spec files our mirror
   lacks — re-pull first instead. After a push the dev team runs `scripts/check-phases.sh` and
   `scripts/check-mobile-css.sh`; keep both green.
+  **⚠⚠ `design/app/app.css`, `design/app/detail.css`, and `design/app/wf.css` are NOT just
+  mockup styling — the real Kotlin/WASM admin frontend ships these three files' CONTENT
+  VERBATIM** (`syncDesignAssets` copies them byte-for-byte into the served app; there is no
+  separate "real" CSS elsewhere for the classes these define). This export has now **wholesale
+  overwritten these three files with a stale local copy and silently deleted real,
+  hand-authored, in-production bug fixes THREE separate times** (2026-07, 2026-07-31, and again
+  2026-08-02 — each fix even carried a code comment saying "RESTORED after a design-tool sync
+  silently reverted this," and the export still blew it away the next time anyway). Every one
+  of these incidents shipped as a wholesale file replacement with **zero new content in the
+  diff** — i.e. the export tool's local copy of these three files was simply stale, and nothing
+  was gained by overwriting them. **Before exporting, for these three files specifically:** diff
+  them against the jellystructure repo's current committed version first; if the repo's version
+  has content the Cosmos project's local copy doesn't, that content is a real fix made directly
+  in the repo since the last pull — pull it into the Cosmos copy (or just skip re-exporting
+  these three files) rather than overwriting it. When in doubt, don't export these three files
+  at all — a missed *new* design change to them is far cheaper to redo than silently deleting a
+  shipped bug fix for the third time.
 - **`STATUS.md` here is a read-only mirror** (single source of truth for phase status lives at
   the repo root, maintained by the dev team). **Re-pull it (ref `main`) whenever you need
   current status** — never edit locally, never export it.
