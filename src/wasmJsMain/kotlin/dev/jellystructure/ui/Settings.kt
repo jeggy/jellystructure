@@ -80,12 +80,12 @@ fun renderSettings(container: Element, scope: CoroutineScope, query: Map<String,
               </div>
               <div class="field">
                 <label>Jellyfin machine token <span id="jf-token-badge" style="display:none;margin-left:8px"></span></label>
-                <input id="jellyfin-token" class="input" type="password" style="width:100%">
+                <input id="jellyfin-token" class="input" type="password" placeholder="(unchanged)" style="width:100%">
                 <span class="hint">Background jobs — not your login token</span>
               </div>
               <div class="field">
                 <label>TMDB API key (v3) <span id="tmdb-key-badge" style="display:none;margin-left:8px"></span></label>
-                <input id="tmdb-key" class="input" type="password" style="width:100%">
+                <input id="tmdb-key" class="input" type="password" placeholder="(unchanged)" style="width:100%">
               </div>
               <div id="conn-result" style="display:none;margin-top:8px"></div>
             </div>
@@ -580,8 +580,13 @@ private fun populateForm(response: ConfigResponse) {
     effectiveScanThreads = response.effectiveScanThreads
 
     setInputValue("jellyfin-url", config.apiKeys.jellyfinUrl)
-    setInputValue("jellyfin-token", config.apiKeys.jellyfinToken)
-    setInputValue("tmdb-key", config.apiKeys.tmdbV3Key)
+    // Security fix (2026-08-02 review, finding H3) — GET /config now masks secrets with a "##KEEP##"
+    // sentinel rather than sending the real value, so this must NOT be pushed into the input (it'd
+    // show the literal placeholder text instead of the token). Leave the field blank — matching the
+    // qb-password/radarr-key/sonarr-key/seerr-key pattern below — and show a "stored" indicator
+    // instead; readForm() below already treats a blank field as "keep the stored value".
+    setStoredBadgeById("jf-token-badge", config.apiKeys.jellyfinToken.isNotBlank())
+    setArrKeyBadge("tmdb", config.apiKeys.tmdbV3Key.isNotBlank())
     setInputValue("fallback-language", config.languageRules.fallbackLanguage)
 
     ageRatingCascade.clear()
@@ -592,7 +597,9 @@ private fun populateForm(response: ConfigResponse) {
     val seerr = config.seerr
     seerrEnabled = seerr?.enabled ?: false
     updateToggle("seerr-enabled-toggle", seerrEnabled)
-    if (seerr != null) { setInputValue("seerr-url", seerr.url); setInputValue("seerr-key", seerr.apiKey) }
+    // Security fix (H3): the apiKey value is now the "##KEEP##" mask sentinel, not the real key — do
+    // not push it into the input (see the jellyfin-token/tmdb-key comment above for why).
+    if (seerr != null) { setInputValue("seerr-url", seerr.url) }
     setArrKeyBadge("seerr", (seerr?.apiKey ?: "").isNotBlank())
     (document.getElementById("seerr-on") as? HTMLElement)?.style?.display = if (seerrEnabled) "block" else "none"
 
@@ -644,7 +651,8 @@ private fun populateForm(response: ConfigResponse) {
     radarrRescan = radarr?.rescanAfterWrite ?: true
     updateToggle("radarr-enabled-toggle", radarrEnabled)
     updateToggle("radarr-rescan-toggle", radarrRescan)
-    if (radarr != null) { setInputValue("radarr-url", radarr.url); setInputValue("radarr-key", radarr.apiKey) }
+    // Security fix (H3): apiKey is now the "##KEEP##" mask sentinel — do not push it into the input.
+    if (radarr != null) { setInputValue("radarr-url", radarr.url) }
     setArrKeyBadge("radarr", (radarr?.apiKey ?: "").isNotBlank())
     (document.getElementById("radarr-on") as? HTMLElement)?.style?.display = if (radarrEnabled) "block" else "none"
     val sonarr = config.sonarr
@@ -652,7 +660,8 @@ private fun populateForm(response: ConfigResponse) {
     sonarrRescan = sonarr?.rescanAfterWrite ?: true
     updateToggle("sonarr-enabled-toggle", sonarrEnabled)
     updateToggle("sonarr-rescan-toggle", sonarrRescan)
-    if (sonarr != null) { setInputValue("sonarr-url", sonarr.url); setInputValue("sonarr-key", sonarr.apiKey) }
+    // Security fix (H3): apiKey is now the "##KEEP##" mask sentinel — do not push it into the input.
+    if (sonarr != null) { setInputValue("sonarr-url", sonarr.url) }
     setArrKeyBadge("sonarr", (sonarr?.apiKey ?: "").isNotBlank())
     (document.getElementById("sonarr-on") as? HTMLElement)?.style?.display = if (sonarrEnabled) "block" else "none"
 
@@ -1092,8 +1101,11 @@ private fun renderLibraryList() {
 private fun readForm(): AppConfig = AppConfig(
     apiKeys = ApiKeys(
         jellyfinUrl = getInputValue("jellyfin-url"),
-        jellyfinToken = getInputValue("jellyfin-token"),
-        tmdbV3Key = getInputValue("tmdb-key"),
+        // Security fix (H3): these inputs are now always blank unless the admin is actively typing a
+        // new value (populateForm no longer pre-fills them with the real secret) — ifBlank keeps the
+        // stored value via the same "##KEEP##" sentinel qbittorrent/radarr/sonarr/seerr already use.
+        jellyfinToken = getInputValue("jellyfin-token").ifBlank { "##KEEP##" },
+        tmdbV3Key = getInputValue("tmdb-key").ifBlank { "##KEEP##" },
     ),
     languageRules = LanguageRules(
         fallbackLanguage = getInputValue("fallback-language").ifEmpty { "en" },
@@ -1437,8 +1449,12 @@ private suspend fun runRequestLanguagePlan(preview: Boolean) {
 }
 
 // "stored ✓" on load when a key is on file (the field stays masked/blank); "valid/invalid" after a test.
-private fun setArrKeyBadge(kind: String, stored: Boolean) {
-    val b = document.getElementById("$kind-key-badge") as? HTMLElement ?: return
+private fun setArrKeyBadge(kind: String, stored: Boolean) = setStoredBadgeById("$kind-key-badge", stored)
+
+// Security fix (H3) — same "stored ✓ / hidden" indicator as setArrKeyBadge, addressable by the
+// element's literal id for badges that don't follow the "$kind-key-badge" naming (jf-token-badge).
+private fun setStoredBadgeById(badgeId: String, stored: Boolean) {
+    val b = document.getElementById(badgeId) as? HTMLElement ?: return
     if (stored) { b.style.display = "inline"; b.innerHTML = """<span class="badge ok" style="font-size:.72rem">stored ✓</span>""" }
     else { b.style.display = "none"; b.innerHTML = "" }
 }

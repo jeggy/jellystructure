@@ -330,6 +330,22 @@ fun startServer(
             }
 
             webSocket("/ws") {
+                // Security fix (2026-08-02 review, finding H1) — "/ws" doesn't start with "/api/", so
+                // AuthPlugin's intercept never even sees it and it was reachable with zero auth. Every
+                // Logger.info/warn/error call in the backend fans out to it via ActivityLog ->
+                // WsBroadcaster (log/Logger.kt), including full absolute media paths, ffmpeg command
+                // lines, and complete scanned MediaItems (JobEvent.ItemScanned) — a live library/path
+                // leak to anyone on the internet, confirmed live: an anonymous handshake with no
+                // credentials returned 101 Switching Protocols. This socket is only ever opened by the
+                // admin WASM frontend (Dashboard/Activity/Library/Shell/BulkReorderWizard, all
+                // same-origin), so the browser attaches the js_session cookie automatically on the
+                // handshake — validate it exactly like every other admin route.
+                val token = call.request.cookies["js_session"]
+                val session = token?.let { sessionService.validate(it) }
+                if (session == null) {
+                    close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, "Not authenticated"))
+                    return@webSocket
+                }
                 broadcaster.register(this)
                 try {
                     for (frame in incoming) {

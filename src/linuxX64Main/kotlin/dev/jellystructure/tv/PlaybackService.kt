@@ -168,6 +168,12 @@ fun nowPlayingItem(deviceId: String): String? = playbackTracker.nowPlaying(devic
 
 private fun playSessionIdFor(device: DeviceData, jellyfinId: String): String = "${device.deviceId}-$jellyfinId"
 
+/** Security fix (2026-08-02 review, finding H2) — thrown by [PlaybackService.startPlayback] /
+ *  [PlaybackService.restream] instead of falling back to (and leaking) the server admin token when a
+ *  device's paired Jellyfin token has gone stale. Routes catch this and respond with a clear
+ *  re-authentication error instead of a raw 500. */
+class JellyfinReauthRequiredException(message: String) : Exception(message)
+
 class PlaybackService(
     private val mediaStore: MediaStore,
     private val jellyfinClient: JellyfinClient,
@@ -187,7 +193,8 @@ class PlaybackService(
         capabilities: ClientCapabilities,
     ): StreamTicket {
         val jellyfinBase = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
-        val token = jellyfinClient.tvToken(jellyfinBase, device, configStore.current.apiKeys.jellyfinToken)
+        val token = jellyfinClient.tvTokenForClient(jellyfinBase, device)
+            ?: throw JellyfinReauthRequiredException("This device's Jellyfin sign-in has expired — re-pair it to continue watching.")
         // Phase 110: this device's own Jellyfin identity — every call below presents it, so the
         // dashboard shows one correctly-named session per TV instead of one shared "Jellystructure"
         // session for all playback everywhere.
@@ -432,7 +439,8 @@ class PlaybackService(
         positionMs: Long,
     ): StreamTicket {
         val jellyfinBase = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
-        val token = jellyfinClient.tvToken(jellyfinBase, device, configStore.current.apiKeys.jellyfinToken)
+        val token = jellyfinClient.tvTokenForClient(jellyfinBase, device)
+            ?: throw JellyfinReauthRequiredException("This device's Jellyfin sign-in has expired — re-pair it to continue watching.")
         val identity = JellyfinDeviceIdentity.forDevice(device)
         val itemDetail = jellyfinClient.getItemDetail(jellyfinBase, token, device.jellyfinUserId, jellyfinId)
         val subtitles = buildSubtracks(itemDetail, jellyfinId, jellyfinBase, token)
@@ -512,14 +520,14 @@ class PlaybackService(
  * Validity is cached for [TOKEN_VALID_TTL_MS] so we don't pay a round-trip to Jellyfin on every
  * route handler. On a cache hit this returns instantly; on a miss we fall through to isTokenValid().
  */
-internal suspend fun JellyfinClient.tvToken(baseUrl: String, device: DeviceData, serverToken: String): String {
+private suspend fun JellyfinClient.isPairedTokenValid(baseUrl: String, device: DeviceData): Boolean {
     val userToken = device.jellyfinUserToken
     val now = nowMs()
     tokenCacheMutex.withLock {
         // Fast path: token was recently validated — skip the Jellyfin round-trip.
-        tokenValidUntil[userToken]?.let { if (it > now) return userToken }
+        tokenValidUntil[userToken]?.let { if (it > now) return true }
         // Phase 110: negative-cached — known-dead as of a recent check, skip the round-trip too.
-        tokenInvalidUntil[userToken]?.let { if (it > now) return serverToken }
+        tokenInvalidUntil[userToken]?.let { if (it > now) return false }
     }
     // Slow path: check with Jellyfin.
     val valid = isTokenValid(baseUrl, userToken, device.jellyfinUserId)
@@ -536,12 +544,29 @@ internal suspend fun JellyfinClient.tvToken(baseUrl: String, device: DeviceData,
     if (!valid && tokenRejectionLogged.add(userToken)) {
         Logger.warn(
             "TV: paired user token rejected by Jellyfin (401) for user ${device.jellyfinUserId} " +
-                "— negative-cached ${TOKEN_NEGATIVE_TTL_MS / 60_000}min, using server token meanwhile",
+                "— negative-cached ${TOKEN_NEGATIVE_TTL_MS / 60_000}min",
             "tv",
         )
     }
-    return if (valid) userToken else serverToken
+    return valid
 }
+
+internal suspend fun JellyfinClient.tvToken(baseUrl: String, device: DeviceData, serverToken: String): String =
+    if (isPairedTokenValid(baseUrl, device)) device.jellyfinUserToken else serverToken
+
+/**
+ * Security fix (2026-08-02 review, finding H2) — [tvToken] falls back to the long-lived **server**
+ * token when the device's paired token has gone stale, which is fine for calls the server makes on
+ * the device's behalf without ever showing the token to it. It is NOT fine for [startPlayback]/
+ * [restream]: those embed the token directly into a stream URL and return it to the client as
+ * `StreamTicket.accessToken` — so any signed-in device (including a Kids/library-restricted profile)
+ * would receive full Jellyfin **admin** credentials the moment its own token went stale, which the
+ * surrounding negative-cache logic treats as routine. This variant never falls back — it returns
+ * null so the caller can surface a clear "re-pair this device" error instead of silently handing out
+ * server-admin access.
+ */
+internal suspend fun JellyfinClient.tvTokenForClient(baseUrl: String, device: DeviceData): String? =
+    if (isPairedTokenValid(baseUrl, device)) device.jellyfinUserToken else null
 
 /** Phase 110 (FR E.2) — is this device's paired token currently known-dead? Surfaced by the device
  *  list / health panel so "re-pair this user" is visible instead of a silent server-token fallback. */
