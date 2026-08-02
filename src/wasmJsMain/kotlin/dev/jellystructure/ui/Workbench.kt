@@ -89,6 +89,10 @@ private fun condSummary(c: WbCond): String {
     val valTxt = when (c.facet) {
         "content_row" -> c.rows.joinToString(", ") { it.title?.takeIf { t -> t.isNotBlank() } ?: "Untitled row" }
         "hero_item" -> c.values.joinToString(", ") { if (it == "featured") "Featured" else "Not featured" }
+        "cast_crew" -> {
+            val names = wbItemsFor("cast_crew").associate { it.value to (it.label ?: it.value) }
+            c.values.joinToString("\", \"") { names[it] ?: it }.let { if (it.isBlank()) "…" else "\"$it\"" }
+        }
         else -> c.values.joinToString("\", \"").let { if (it.isBlank()) "…" else "\"$it\"" }
     }
     return "$label $opLbl $valTxt"
@@ -114,6 +118,7 @@ internal fun groupSummary(g: WbGroup, top: Boolean): String {
 private val WB_GROUPS = listOf(
     "Metadata" to listOf("studio" to "Studio", "network" to "Network", "genre" to "Genre", "tag" to "Tag", "age_rating" to "Age rating"),
     "Audio track" to listOf("audio_language" to "Audio language", "audio_codec" to "Audio codec", "track_title" to "Audio track title"),
+    "People" to listOf("cast_crew" to "Cast or crew"),
     "Ravilo layout" to listOf("hero_item" to "Hero item"),
 )
 private val WB_FACET_LABELS: Map<String, String> = WB_GROUPS.flatMap { it.second }.toMap() + ("content_row" to "Content row")
@@ -290,6 +295,7 @@ private fun wbItemsFor(facet: String): List<TrackFacetItem> {
         "audio_codec" -> n?.audioCodecs ?: wbTrack?.audioCodecs ?: emptyList()
         "track_title" -> n?.trackTitles ?: wbTrack?.trackTitles ?: emptyList()
         "hero_item" -> listOf(TrackFacetItem("featured", 0), TrackFacetItem("not_featured", 0))
+        "cast_crew" -> n?.castCrew ?: wbMeta?.castCrew ?: emptyList()
         else -> emptyList()
     }
 }
@@ -420,6 +426,23 @@ private fun renderCondRow(c: WbCond, path: List<Int>): String {
                     if (js.isNotEmpty()) append("""<div class="wb-vsection"><div class="wb-vgroup">Jellystructure tags</div><div class="wb-vchips">${js.joinToString("") { tagChip(it) }}</div></div>""")
                     if (other.isNotEmpty()) append("""<div class="wb-vsection"><div class="wb-vgroup">Other tags</div><div class="wb-vchips">${other.joinToString("") { tagChip(it) }}</div></div>""")
                     append("""<div class="wb-vempty muted tiny" style="display:none;">No tags match</div>""")
+                }
+            }
+        }
+        "cast_crew" -> {
+            fun personChip(t: TrackFacetItem): String {
+                val name = t.label ?: t.value
+                val cnt = if (t.count > 0) """<span class="wb-vcount">${t.count}</span>""" else ""
+                return """<span class="wb-vchip${if (c.values.contains(t.value)) " on" else ""}" data-path="$p" data-v="${t.value.esc()}" data-search="${name.lowercase().esc()}">${name.esc()}$cnt</span>"""
+            }
+            val items = wbItemsFor("cast_crew")
+            buildString {
+                if (items.isEmpty()) {
+                    append("""<span class="muted tiny">No cast/crew in scope</span>""")
+                } else {
+                    append("""<input class="input wb-vsearch" placeholder="Search cast or crew…" autocomplete="off">""")
+                    append("""<div class="wb-vchips">${items.joinToString("") { personChip(it) }}</div>""")
+                    append("""<div class="wb-vempty muted tiny" style="display:none;">No cast/crew match</div>""")
                 }
             }
         }

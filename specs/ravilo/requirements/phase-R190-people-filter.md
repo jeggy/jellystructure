@@ -98,10 +98,14 @@ The whole R187 browse engine (facet bar, sort, popover, `buildGridRows`); `rankT
   values, composable in AND/OR/NOT blocks like any other facet. *(Verified in the design build.)*
 
 ## Status
-Design-complete, **`Planned`**. Design lives in `design/ravilo/ravilo-browse.js` (person seed +
-Seerr row), `design/ravilo/ravilo-app.js` (cast face → person browse, `discoverDetail` origin fix),
-`design/ravilo/ravilo.css` (face affordance + Seerr row), `design/ravilo/ravilo-i18n.js`, and
-`design/app/ravilo-builders.js` (the admin workbench **Cast or crew** facet, §D).
+**`Implemented`** (2026-08-02). §A, §B, §C, §D, and the i18n string all built and compile-checked
+end to end (backend, admin Kotlin/WASM workbench, ravilo-ui/Compose, ravilo-tizen); **not yet
+live-tested on real hardware/browser** — see the closing dev-review addendum for exact scope, the
+one deliberate Tizen omission, and what a live pass should check first. Design lives in
+`design/ravilo/ravilo-browse.js` (person seed + Seerr row), `design/ravilo/ravilo-app.js` (cast face
+→ person browse, `discoverDetail` origin fix), `design/ravilo/ravilo.css` (face affordance + Seerr
+row), `design/ravilo/ravilo-i18n.js`, and `design/app/ravilo-builders.js` (the admin workbench
+**Cast or crew** facet, §D).
 
 ## Dev-review addendum (2026-08-02 — backend-reality check before implementation starts)
 
@@ -147,3 +151,59 @@ otherwise-ready §A/§B/§D on an unresearched external dependency.
 exists. The facet itself (§B's index + §D's admin UI) is the one piece of real, shared backend work —
 build it once, both features consume it. §C should be split out or re-scoped pending the Seerr API
 check above, so it doesn't block the rest of R190 shipping.
+
+## Implementation notes (2026-08-02 — end-to-end build)
+
+Built all of §A–§D plus i18n on top of the Seerr-blocker resolution above. Everything compiled clean
+(`compileKotlinLinuxX64`, admin `compileKotlinWasmJs`, `ravilo-ui`/`ravilo-web` `compileKotlinWasmJs`,
+`ravilo-tizen` `compileKotlinJs` + a full production webpack bundle) — **not yet exercised on live
+hardware or a browser**, so treat the wiring as correct-by-construction until someone actually presses
+OK on a cast face.
+
+- **Backend** — `cast_crew` facet in `ConditionEvaluator.kt` (`ItemFacets.castCrew`, drawn from
+  `item.cast + item.crew`, matched on tmdbId — no name matching). `SeerrClient.personCombinedCredits`
+  (`GET /person/{id}/combined_credits`) + `SeerrDiscoverService.getPersonOverflow` (dedupes cast+crew,
+  drops library matches via the existing `libByTmdb` pattern, caps at 12) behind a new
+  `GET /tv/browse/person/{tmdbId}/seerr-overflow` route and a matching `TvApiClient.getPersonOverflow`.
+- **Admin workbench** — new **People** group / **Cast or crew** facet in `Workbench.kt`, backed by a
+  new `MetaFacets.castCrew`/`NarrowedFacets.castCrew` (`MediaStore.buildMetaFacetsFrom`, capped at the
+  library's top 500 most-credited people — a picker, not a full index) threaded through
+  `/api/media/meta-facets` and `/api/media/facets`. `TrackFacetItem` gained an optional `label` field
+  (value = tmdbId, label = person name) since this is the first facet whose stored value isn't its own
+  display text.
+- **ravilo-ui** — `CastCircle` gained `onSelect` + a focused `→` overlay (previously genuinely inert).
+  `RaviloApp.openPersonBrowse` pushes `Dest.SeededBrowse` with a `cast_crew` seed + the new
+  `personRoleLine`/`personTmdbId` fields; `MovieDetailScreen`/`SeriesDetailScreen` thread
+  `onCastSelect` down to each `CastCircle`. `SeededBrowseScreen` renders the role meta line and, when
+  `personTmdbId` is set, a trailing full-grid-span Seerr overflow row (`SeededBrowseStore.seerrOverflow`,
+  fetched independently of the facet-filtered grid, per FR-RV-PPL1-4's "does not react to the facet
+  bar") using the existing `RequestTile`/Seerr request flow. New string `browse.seerr_more` in en/da/fo.
+- **ravilo-tizen** — new `PersonBrowseScreen.kt`: same `cast_crew`-seeded `browseSeeded` call, rendered
+  as a plain poster grid (this client has no facet-bar UI at all, matching `BrowseScreen.kt`'s existing
+  scope). Wired into `DetailScreen`'s previously-dead `"cast"` activate branch.
+  **Deliberately not built on Tizen: §C's Seerr overflow row.** It opens the Seerr request-detail flow,
+  and the entire Discover tab (which owns that flow) was explicitly scoped OUT of the Tizen build
+  (`phase-R189-tizen-samsung-tv-client.md`) — there is nothing on this client for an overflow tile to
+  open. Revisit if/when Discover ever lands on Tizen.
+
+**Before calling this done:** live-test OK-on-a-cast-face on at least one real client (soveværelse TV
+or the Pixel 9 per this project's usual testing convention) — the D-pad focus affordance, the person
+browse page's facet bar, and the Seerr overflow row's request flow are all new interaction surfaces
+that only a compile check cannot verify.
+
+## Dev-review addendum update (2026-08-02 — Seerr blocker resolved, full implementation starting)
+
+Checked the real, live Seerr instance (`stream.example.net`) directly with the configured API key rather
+than relying on the vendored OpenAPI doc:
+
+```
+GET /api/v1/person/500            -> 200, full TMDB-shaped person object (name, biography, ...)
+GET /api/v1/person/500/combined_credits -> 200, { cast: [...], crew: [...] }, each credit carrying
+                                            id (TMDB id), mediaType ("movie"/"tv"), title, posterPath, etc.
+```
+
+Both endpoints exist and work exactly as FR-RV-PPL1-4 assumed. §C is unblocked. Credit entries carry no
+`mediaInfo`/library-match field, so "not already in the library" still needs a client-side (i.e.
+backend-service-side) cross-reference against `mediaStore.allItems()` keyed by `tmdbId` — the same
+`libByTmdb` pattern `SeerrDiscoverService.toDiscoverEntry`/`acquisitionFor` already uses for the regular
+Discover tab. No new unknowns; proceeding with full implementation of §A–§D now.

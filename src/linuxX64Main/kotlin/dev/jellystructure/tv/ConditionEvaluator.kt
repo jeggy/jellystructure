@@ -19,7 +19,9 @@ import dev.jellystructure.shared.tv.migrateFlatQuery
  * per-block NOT and nestable sub-blocks — see `:shared`'s `QueryTree.kt`). Facets mirror the
  * Phase-30 axes (studio/network/genre/tag) plus audio-track facets (audio_language incl. an
  * `untagged` value, audio_codec, track_title contains), the Ravilo-layout `hero_item` membership
- * facet, and the Phase-106 `age_rating` facet (the region-cascade-resolved certification code).
+ * facet, the Phase-106 `age_rating` facet (the region-cascade-resolved certification code), and
+ * the R190 `cast_crew` facet (person tmdbId, drawn from item.cast + item.crew — no name matching,
+ * the client always resolves a person to their tmdbId before building the condition).
  *
  * Phase R86 — WS-I Tier 1: [matches] precomputes a lowercased [ItemFacets] per item before
  * recursing the tree, so [evalOne] uses allocation-free [Set.contains] instead of re-lowercasing
@@ -55,6 +57,7 @@ object ConditionEvaluator {
         val audioLanguages: Set<String>,
         val audioCodecs: Set<String>,
         val ageRating: Set<String>,
+        val castCrew: Set<String>,
     ) {
         companion object {
             fun of(item: MediaItem, ageRatingCascade: List<String>): ItemFacets {
@@ -68,6 +71,7 @@ object ConditionEvaluator {
                     audioLanguages = audio.mapTo(HashSet()) { it.language?.lowercase() ?: "untagged" },
                     audioCodecs    = audio.mapTo(HashSet()) { it.codec.lowercase() },
                     ageRating      = setOfNotNull(resolvedCode?.lowercase()),
+                    castCrew       = (item.cast + item.crew).mapTo(HashSet()) { it.tmdbId.toString() },
                 )
             }
         }
@@ -102,6 +106,7 @@ object ConditionEvaluator {
             "audio_language" -> setMatch(facets.audioLanguages, vals, c.op)
             "audio_codec"    -> setMatch(facets.audioCodecs, vals, c.op)
             "age_rating"     -> setMatch(facets.ageRating, vals, c.op)
+            "cast_crew"      -> setMatch(facets.castCrew, vals, c.op)
             "track_title" -> {
                 val needle = vals.firstOrNull() ?: return c.op == "not_contains"
                 val has = item.tracks.any { it.title?.lowercase()?.contains(needle) == true }

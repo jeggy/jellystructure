@@ -393,6 +393,13 @@ fun Route.tvRoutes(
         call.respond(browseService.browseByQuery(device, req.query, req.mediaKind))
     }
 
+    // R190 §C — the person-browse page's Seerr overflow row: requestable titles featuring this person
+    // that the library doesn't already hold. Empty (not an error) when Seerr is off/unconfigured.
+    get("/tv/browse/person/{tmdbId}/seerr-overflow") {
+        val tmdbId = call.parameters["tmdbId"]?.toIntOrNull() ?: return@get call.respond(HttpStatusCode.BadRequest)
+        call.respond(seerrDiscoverService?.getPersonOverflow(tmdbId) ?: emptyList())
+    }
+
     get("/tv/search") {
         val device = call.attributes[DeviceKey]
         val query = call.request.queryParameters["q"] ?: ""

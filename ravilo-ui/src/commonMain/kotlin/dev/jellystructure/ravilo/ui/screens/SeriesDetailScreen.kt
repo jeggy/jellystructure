@@ -96,6 +96,8 @@ fun SeriesDetailScreen(
     onBack: () -> Unit,
     onPlay: (EpisodePlayContext) -> Unit,
     onRelatedSelect: (MediaCard) -> Unit,
+    // R190 §A — see MovieDetailScreen's identical parameter doc.
+    onCastSelect: ((dev.jellystructure.shared.tv.Person, sourceTitle: String) -> Unit)? = null,
     displayName: String = "",
     onNavSelect: (Int) -> Unit = {},
     onProfile: (() -> Unit)? = null,
@@ -121,6 +123,7 @@ fun SeriesDetailScreen(
                 onPlay = onPlay,
                 onMarkEpisode = { epId, played -> store.setEpisodePlayed(epId, played) },
                 onRelatedSelect = onRelatedSelect,
+                onCastSelect = onCastSelect,
                 displayName = displayName,
                 onNavSelect = onNavSelect,
                 onProfile = onProfile,
@@ -238,6 +241,7 @@ private fun SeriesDetailLoaded(
     onPlay: (EpisodePlayContext) -> Unit,
     onMarkEpisode: (String, Boolean) -> Unit,
     onRelatedSelect: (MediaCard) -> Unit,
+    onCastSelect: ((dev.jellystructure.shared.tv.Person, sourceTitle: String) -> Unit)?,
     displayName: String,
     onNavSelect: (Int) -> Unit,
     onProfile: (() -> Unit)?,
@@ -691,7 +695,8 @@ private fun SeriesDetailLoaded(
                         horizontalArrangement = Arrangement.spacedBy(RaviloDimens.itemSpacing),
                     ) {
                         items(detail.cast.size, key = { i -> detail.cast[i].id }) { i ->
-                            CastCircle(person = detail.cast[i])
+                            val person = detail.cast[i]
+                            CastCircle(person = person, onSelect = onCastSelect?.let { { it(person, detail.card.title) } })
                         }
                     }
                 }

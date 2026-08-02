@@ -694,6 +694,10 @@ class MediaStore(
         val tagCounts     = mutableMapOf<String, Int>()
         val ageRatingCounts = mutableMapOf<String, Int>()
         val cascade = ageRatingCascade()
+        // R190: keyed by tmdbId (a person can appear under slightly different name spellings across
+        // sources; the id is the one thing guaranteed stable) — name is whichever credit we saw first.
+        val castCrewCounts = mutableMapOf<Int, Int>()
+        val castCrewNames = mutableMapOf<Int, String>()
         for (item in items) {
             (listOfNotNull(item.studio) + item.secondaryStudios).distinct().forEach { s -> studioCounts[s] = (studioCounts[s] ?: 0) + 1 }
             item.network?.let { n -> networkCounts[n] = (networkCounts[n] ?: 0) + 1 }
@@ -701,6 +705,10 @@ class MediaStore(
             item.tags.forEach   { t -> tagCounts[t]   = (tagCounts[t]   ?: 0) + 1 }
             CertificationResolver.resolve(cascade, item.certifications)?.let { cert ->
                 ageRatingCounts[cert.code] = (ageRatingCounts[cert.code] ?: 0) + 1
+            }
+            (item.cast + item.crew).distinctBy { it.tmdbId }.forEach { p ->
+                castCrewCounts[p.tmdbId] = (castCrewCounts[p.tmdbId] ?: 0) + 1
+                if (p.tmdbId !in castCrewNames) castCrewNames[p.tmdbId] = p.name
             }
         }
         // JS-tag color by name (lowercased — list() OR-filters tags case-insensitively, so a tag
@@ -718,6 +726,10 @@ class MediaStore(
             ageRatings = ageRatingCounts.entries
                 .sortedWith(compareBy({ CertificationResolver.tierFor(it.key) }, { -it.value }))
                 .map { TrackFacetItem(it.key, it.value) },
+            // R190: capped — an admin workbench picker, not a full people index; a library's most-
+            // credited 500 people covers every realistic "build a channel/row around this actor" use.
+            castCrew = castCrewCounts.entries.sortedByDescending { it.value }.take(500)
+                .map { TrackFacetItem(it.key.toString(), it.value, label = castCrewNames[it.key]) },
         )
     }
 
@@ -803,7 +815,9 @@ class MediaStore(
     }.trim()
 }
 
-data class TrackFacetItem(val value: String, val count: Int, val color: String? = null)
+// R190: [label] is set only for facets whose stored value isn't its own display text — cast_crew's
+// value is a tmdbId string, label is the person's name.
+data class TrackFacetItem(val value: String, val count: Int, val color: String? = null, val label: String? = null)
 data class TrackFacets(
     val audioLanguages: List<TrackFacetItem>,
     val audioCodecs: List<TrackFacetItem>,
@@ -816,6 +830,7 @@ data class MetaFacets(
     val genres: List<TrackFacetItem>,
     val tags: List<TrackFacetItem>,
     val ageRatings: List<TrackFacetItem> = emptyList(),
+    val castCrew: List<TrackFacetItem> = emptyList(),
 )
 
 private fun MediaItem.hasMultiDefaultAudio(): Boolean {
