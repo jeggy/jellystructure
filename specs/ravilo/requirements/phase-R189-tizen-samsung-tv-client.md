@@ -1,4 +1,4 @@
-# Phase R189 — Ravilo: Samsung Tizen TV client, milestone 1 (login + browse + play) (FR-RV-TIZEN1)
+# Phase R189 — Ravilo: Samsung Tizen TV client (FR-RV-TIZEN1)
 
 > The operator wants Ravilo on Samsung TVs too — specifically **2016–2018 Tizen models** (Tizen
 > 2.4/3.0/4.0), not the newest Tizen generation. Preference stated up front: **share as much Kotlin
@@ -6,8 +6,9 @@
 > fallback if sharing isn't feasible. Preceded by a research pass (this session, no spec) that
 > determined the concrete architecture below.
 
-**Status:** Milestone 1 implemented (build-verified only — see "Verification" for what wasn't testable
-in this environment).
+**Status:** Milestone 1 (login/browse/play) and Milestone 2 (everything else except Discover, per the
+operator's explicit "build everything except the Discover tab" instruction) both implemented
+(build-verified only — see "Verification" for what wasn't testable in this environment).
 
 ## Why not reuse `ravilo-web`
 `ravilo-web` targets Kotlin/Wasm (`wasmJs`), which requires WasmGC — Chrome ~119/Safari 18, roughly
@@ -95,10 +96,103 @@ to point at a real backend instead of the dev default), copy the resulting bundl
 `style.css` + this module's `config.xml`/`icon.png` into one staging directory, then `tizen build-web`
 + `tizen package -t wgt` from that directory.
 
+## Requirements (Milestone 2 — "everything except Discover")
+
+The operator's instruction was explicit: build everything except the Discover tab (Upcoming calendar +
+Seerr Request — both live under that one nav tab, confirmed by the app's own "Discover: Request" /
+"Discover: Coming Soon" sub-page switcher) and whatever lives inside it. Everything below reuses the
+same shared `TvApiClient` calls every other Ravilo client makes — no new backend endpoints.
+
+### FR-RV-TIZEN1-6 — Multi-profile session store
+`MultiTokenStore`/`LocalSession` (`TokenStore.kt`) replace the milestone-1 single-token store — same
+field shape/semantics as `ravilo-ui`'s own (hand-written, per-platform, not `shared`) `MultiTokenStore`,
+same hand-rolled localStorage-JSON encoding. Startup gate mirrors `ravilo-ui` exactly: 0 sessions ->
+`LoginScreen`, 1 -> auto-activate straight to `HomeScreen`, 2+ -> `ProfilePickerScreen`.
+
+### FR-RV-TIZEN1-7 — Nav bar + profile menu
+`NavBar.kt` — the persistent Home/Movies/Series/Search/avatar bar shared by every top-level screen, with
+an explicit two-region (nav vs content) D-pad focus handoff contract (see its doc comment — deliberately
+avoids the exact "focus dead end" class of bug the real Ravilo LoginScreen shipped this same session).
+`ProfileMenuScreen` (Switch profile / My List / Settings / Sign out / Unpair this TV) and
+`ProfilePickerScreen` ("Who's watching?") round out the profile system.
+
+### FR-RV-TIZEN1-8 — Home: hero, channel rail, Live TV "On now", rows
+`HomeScreen.kt` rewritten: an auto-advancing hero banner (`feed.heroes`), the channel rail
+(`feed.channels`, opening `ChannelScreen`), a Live TV "On now" row when `feed.liveTvHome.showOnNowRow`
+is set (a live `getLiveTvChannels()` fetch, not embedded in `HomeFeed` itself), and every content row
+with watched/progress/next-up badges. One flat list of D-pad "sections" (on-now -> channels -> rows) so
+Up/Down/Left/Right navigation is uniform regardless of which sections are actually present.
+
+### FR-RV-TIZEN1-9 — Movies/Series browse + channel pages
+`BrowseScreen.kt` (`GET /api/tv/browse` + `GET /api/tv/facets` for a genre sidebar) covers the Movies/
+Series nav tabs; `ChannelScreen.kt` (`GET /api/tv/channel/{id}`) covers a channel button's own page,
+same row-of-tiles shape as Home minus the hero/rail.
+
+### FR-RV-TIZEN1-10 — Search
+`SearchScreen.kt` — a hand-rolled on-screen D-pad keyboard (old Tizen has no reliable native IME
+concept for a self-hosted app; the same reasoning that makes every other screen in this client own its
+own input) driving `GET /api/tv/search` on a debounce, with a live results grid.
+
+### FR-RV-TIZEN1-11 — Full movie/series detail
+`DetailScreen.kt` rewritten to dispatch on `card.kind` to `GET /api/tv/movie/{id}` or
+`GET /api/tv/series/{id}`: backdrop/clearlogo, synopsis, an actions row (Play/Resume, Trailer button
+when present, Mark watched, My List toggle), a cast rail, a related row, and — series only — a season
+tab row + episode list (resume/watched state per episode). "Play" resolves to the series' own
+server-computed resume episode (`SeriesProgress.resumeEpisodeId`) the same way every other client's
+Play/Resume button does.
+
+### FR-RV-TIZEN1-12 — Player: tracks, Skip Intro/Credits, resume, series autoplay
+`PlayerScreen.kt` rewritten around a `PlaybackContext` (which item is actually playing, its
+`TvSegmentMarkers`, and the next episode for autoplay) instead of a bare `MediaCard`: an auto-hiding
+control bar (Play/Pause, ±10s, Tracks, Next episode), an audio/subtitle track picker overlay driven by
+`StreamTicket.audio`/`.subtitles` and AVPlay's `setSelectTrack`, a Skip Intro / Skip Credits pill
+(R182 parity, driven by the item's own segment markers), and — for a series episode with a known next
+episode — an auto-offered "Next: <title>" card near the end that either the viewer confirms or the
+stream's own completion triggers automatically. Auto-advance uses the new `App.replaceTop` (swaps the
+current screen without growing the back stack) so Back exits a binge in one press, not once per episode.
+
+### FR-RV-TIZEN1-13 — Live TV: on-now row, guide, zapping, live player
+`LiveTvGuideScreen.kt` (shown channels + embedded current/next program, no separate guide fetch needed —
+same as every other Ravilo client) and `LiveTvPlayerScreen.kt`, which follows Live TV's distinct
+open-close lifecycle (R177: `tuneLiveTv` -> AVPlay -> a 30s heartbeat -> explicit `stopLiveTv` on exit or
+before re-tuning) rather than VOD's resume-position contract. Channel Up/Down re-tunes within the same
+screen instance (classic remote zapping) instead of pushing a new screen per channel change.
+
+### FR-RV-TIZEN1-14 — My List + viewer Settings
+`WatchlistStore.kt` — client-local (no watchlist/favorite endpoint exists anywhere in jellystructure's
+backend, confirmed by grep; see its doc comment), scoped per profile so switching profiles doesn't leak
+one person's list into another's. `MyListScreen.kt` renders it. `SettingsScreen.kt` covers the
+on-device viewer-tweakable subset of `RaviloConfig` (skin, tile shape, autoplay, progress bars) via
+`getConfig`/`putViewerSettings`, write-through on every change (no separate Save step).
+
+## Verification (updated for Milestone 2)
+`:shared:compileKotlinJs`, `:ravilo-tizen:compileKotlinJs`, and both
+`:ravilo-tizen:jsBrowserDevelopmentWebpack` / `:ravilo-tizen:jsBrowserProductionWebpack` all pass with
+the full Milestone 2 surface in place — the production bundle is **915 KiB minified** (down from
+Milestone 1's ~7.9 MiB *unminified dev* build; not a like-for-like comparison, but a materially more
+TV-hardware-reasonable number for what actually ships). The rest of the repo
+(`compileKotlinLinuxX64`, `:ravilo-ui:compileKotlinWasmJs`, `:ravilo-web:compileKotlinWasmJs`) still
+compiles clean — `shared`'s new `js(IR)` target and this module are additive, nothing else was touched
+by Milestone 2.
+
+Same hardware-verification gap as Milestone 1: **no Tizen Studio in this environment**, so nothing here
+has been packaged, sideloaded, or run on a real 2016–2018 TV. Milestone 2 adds real risk surface beyond
+Milestone 1's — AVPlay's `setSelectTrack`/`getTotalTrackInfo` index-alignment assumption (documented in
+`TizenPlatform.kt`), the Live TV tune/heartbeat/stop lifecycle, and the hand-rolled D-pad focus regions
+across ~13 screens — none of which can be confirmed correct without a real device and remote.
+
 ## Out of scope (future phases)
-- Discover/Seerr request tab, Live TV, kids-mode UI treatment, multi-profile switching UI, Continue
-  Watching row polish, cast & crew, search — Milestone 1 is login + browse + play only, to get a real
-  build in front of actual old-Tizen hardware before investing further.
+- The Discover tab (Upcoming calendar + Seerr Request) — explicitly excluded by the operator's own
+  instruction, not a technical limitation.
+- Kids-mode UI treatment (age-gating badges, restricted browsing chrome) — the backend already gates
+  what a kids device's `visibleTo` calls return (R188, this same session); this client renders whatever
+  it's sent, same as every screen already does, but has no kids-specific *presentation* differences yet.
+- Cast/crew person detail pages (tapping a cast member currently does nothing — noted directly in
+  `DetailScreen.kt`).
+- Trailer playback (the action row's "Trailer" button is inert — AVPlay targets Jellyfin-served streams,
+  not an arbitrary external YouTube/Vimeo URL; would need a second playback path).
+- Continue-Watching-specific "See all" page, browse-page facet parity beyond genre (audio language,
+  quality, channel — `BrowseCard`'s extra fields aren't consumed here yet), portrait/mobile layout.
 - A vanilla-JS/TS fallback (if the Kotlin/JS IR toolchain proves incompatible with 2016 Tizen 2.4's
   WebKit specifically once tested on real hardware) — noted as the documented fallback in the research
   report, not attempted here since the Kotlin/JS path hasn't yet been proven to fail.
