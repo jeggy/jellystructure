@@ -623,13 +623,24 @@ private fun SeriesDetailLoaded(
                     // Scroll to the GROUP containing the first unwatched episode whenever the selected
                     // season or overlay changes. Bug fix: this used to index into the flat `episodes`
                     // list, which no longer matches the rail's item count once episodes are grouped.
+                    //
+                    // Bug fix (live-tested on stue TV): the old `if (scrollTo > 0)` guard skipped the
+                    // scroll whenever the TARGET was index 0 -- exactly the common case (a season that's
+                    // either brand new/never-watched, or fully watched with no "first unwatched" episode
+                    // at all, both resolve to 0). That left the rail showing whatever mid-season slice a
+                    // PREVIOUSLY selected season had scrolled to -- confirmed live: switching from Season 5
+                    // (scrolled to E15) to a completely unwatched Season 6 kept E15-E17 on screen instead
+                    // of resetting to E1, and Down from the season picker landed focus on E17, not E1
+                    // (focusRestorer() falls back to whatever's at the current scroll position once the
+                    // old focused episode's composable is gone). Always scrolling -- including to 0 --
+                    // fixes both: the rail visibly resets, and focus entering it lands on the right episode.
                     LaunchedEffect(selectedSeasonIdx, overlay, episodeGroups) {
                         if (overlay.isEmpty()) return@LaunchedEffect
                         val firstUnwatchedEp = episodes.firstOrNull { ep -> overlay[ep.id]?.played != true }
                         val scrollTo = firstUnwatchedEp
                             ?.let { target -> episodeGroups.indexOfFirst { g -> g.any { it.id == target.id } } }
                             ?.takeIf { it >= 0 } ?: 0
-                        if (scrollTo > 0) epRowState.scrollToItem(scrollTo)
+                        epRowState.scrollToItem(scrollTo)
                     }
                     Spacer(Modifier.height(RaviloDimens.rowHeadPadB))
                     LazyRow(
