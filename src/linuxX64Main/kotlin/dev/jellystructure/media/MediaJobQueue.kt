@@ -124,7 +124,18 @@ class MediaJobQueue(
             "running" -> {
                 cancelRunning = true
                 val tmp = tmpFileFor(row)
-                if (tmp != null) fireAndForget("pkill -f '${tmp.replace("'", "'\\''")}'")
+                // Security fix (2026-08-02 review, finding L1) — `tmp` is shell-quoted correctly, but
+                // pkill -f matches its pattern as an EXTENDED REGEX against the whole process command
+                // line, not a literal string. The path derives from a real media FILENAME (attacker/
+                // user-influenceable — a torrent or download can be named anything), so a name
+                // containing ERE metacharacters (e.g. ".*") widens the match far beyond this one temp
+                // file and can kill unrelated processes, including the server itself. Escape the ERE
+                // metacharacters first (adds literal backslashes, which pkill's regex engine then reads
+                // correctly), THEN shell-quote the result for the single-quoted context.
+                if (tmp != null) {
+                    val ereEscaped = tmp.replace(Regex("""([.^$*+?()\[\]{}|\\])"""), """\\$1""")
+                    fireAndForget("pkill -f '${ereEscaped.replace("'", "'\\''")}'")
+                }
                 true
             }
             else -> false
