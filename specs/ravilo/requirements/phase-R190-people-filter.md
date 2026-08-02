@@ -102,3 +102,48 @@ Design-complete, **`Planned`**. Design lives in `design/ravilo/ravilo-browse.js`
 Seerr row), `design/ravilo/ravilo-app.js` (cast face → person browse, `discoverDetail` origin fix),
 `design/ravilo/ravilo.css` (face affordance + Seerr row), `design/ravilo/ravilo-i18n.js`, and
 `design/app/ravilo-builders.js` (the admin workbench **Cast or crew** facet, §D).
+
+## Dev-review addendum (2026-08-02 — backend-reality check before implementation starts)
+
+Traced every "production: …" and "reuse, don't rebuild" claim above against the actual backend. One
+part holds up cleanly; the rest is more work than the spec implies, and one piece (§C/FR-RV-PPL1-4) is
+blocked on an external unknown that needs research before backend work starts.
+
+**✅ Confirmed correct — the browse-seed mechanism needs no new plumbing.** `BrowseService.browseByQuery`
+(`BrowseService.kt:47-81`) filters via `ConditionEvaluator.matches(item, query, ...)` against *any*
+`ConditionGroup` — `Row.seedQuery` (`Models.kt:246-267`) is just one producer of such trees. A person
+seed is naturally `ConditionGroup(children=[Condition(facet="cast_crew", op="is_any_of",
+values=[tmdbId.toString()])])`, submittable to the existing `POST /api/tv/browse/seeded` unchanged.
+FR-RV-PPL1-2's browse-page mechanics (facets, sort, popover) are genuine reuse, exactly as claimed —
+*conditional on* the new `cast_crew` facet existing (next point).
+
+**⚠️ Person id is right, but there is no person→titles index — needs new backend work.**
+`Person.tmdbId` (`shared`/`model/Media.kt:85-86`, embedded per-item in `MediaItem.cast`/`.crew`,
+`Media.kt:218-219`) is a real, stable TMDB person id, so the spec's core premise holds. But the only
+existing person-keyed structure, `MediaStore.peopleIndexCache: Map<Int, String>`
+(`MediaStore.kt:71`, built by `buildPeopleIndex()` at `:532-542`), is an **image-URL lookup only** —
+first-hit-wins (`!map.containsKey(p.tmdbId)`), so it can't even answer "does item X have person Y", let
+alone enumerate every item a person appears in. FR-RV-PPL1-2's "production: a Jellystructure
+people/credits query keyed by person id" reads as if this already exists; it doesn't. What's actually
+needed (and directly reusable for §D's admin facet too, so build it once): a new
+`ItemFacets.castCrew: Set<String>` (person ids, lowercased/stringified) alongside the existing
+studio/network/genre/tag facet sets in `ConditionEvaluator.kt:50-73`, plus a `"cast_crew"` case in
+`evalOne`'s `when` (`:95-129`) — structurally trivial (the pattern is a straight copy of any existing
+list facet) but it is new code, not "reuse."
+
+**❌ Seerr person-credits: unverified, possibly nonexistent — do this research before backend work
+starts.** `SeerrClient.kt` implements exactly `ping`, `discover`, `search`, `movieDetails`/`tvDetails`,
+`createRequest`, `resolveUserId` (`:155-251`) — no person/credits call, and no comment anywhere
+referencing one. FR-RV-PPL1-4's "production: a Jellyseerr person-credits query" is asserted with no
+existing code support and no confirmation Seerr's public REST API even exposes such an endpoint.
+**Recommend:** before scoping backend work for §C, check Seerr's own OpenAPI spec (`seerr-api.yml` on
+`github.com/seerr-team/seerr` — already used as ground truth for this project's Seerr work this same
+session, e.g. phase 156) for a `/person/{id}` or `/person/{id}/combined_credits`-shaped endpoint. If it
+doesn't exist, §C either needs a different data source (e.g. a direct TMDB person-credits call, since
+jellystructure already has a TMDB client) or should move to a later phase rather than blocking R190's
+otherwise-ready §A/§B/§D on an unresearched external dependency.
+
+**Net effect on scope:** §A (entry point) and the browse-seed half of §B are cheap once the facet
+exists. The facet itself (§B's index + §D's admin UI) is the one piece of real, shared backend work —
+build it once, both features consume it. §C should be split out or re-scoped pending the Seerr API
+check above, so it doesn't block the rest of R190 shipping.
