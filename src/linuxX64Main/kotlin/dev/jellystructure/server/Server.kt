@@ -283,6 +283,28 @@ fun startServer(
             }
         }
 
+        // Security fix (2026-08-02 review, finding M6) — no request body size limit existed anywhere;
+        // unauthenticated handlers (`/api/auth/login`, `/api/tv/login`, `/api/setup`) call
+        // `call.receive<T>()` on an unbounded body, so a multi-GB POST to any of them exhausts memory
+        // pre-auth. Same early Setup phase as the FD-shed check above, so an oversized request is
+        // rejected before routing/auth/handler do any work. This is a Content-Length pre-check (cheap,
+        // catches the realistic "huge declared body" case); it can't catch a request that lies about
+        // Content-Length via chunked transfer — Ktor Native's CIO engine exposes no lower-level
+        // streaming cap to enforce that case here.
+        intercept(ApplicationCallPipeline.Setup) {
+            val path = call.request.path()
+            val limit = if (path == "/api/auth/login" || path == "/api/tv/login" || path == "/api/setup") {
+                16 * 1024L   // credentials/URLs — never legitimately more than a few hundred bytes
+            } else {
+                64 * 1024 * 1024L   // generous global ceiling (largest legitimate body is artwork upload)
+            }
+            val declaredLength = call.request.headers[HttpHeaders.ContentLength]?.toLongOrNull()
+            if (declaredLength != null && declaredLength > limit) {
+                call.respond(HttpStatusCode.PayloadTooLarge, mapOf("error" to "request body too large"))
+                finish()
+            }
+        }
+
         routing {
             route("/api") {
                 get("/health") {
