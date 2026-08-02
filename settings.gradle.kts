@@ -5,6 +5,7 @@ enableFeaturePreview("TYPESAFE_PROJECT_ACCESSORS")
 include(":shared")
 include(":ravilo-ui")
 include(":ravilo-web")
+include(":ravilo-tizen") // R189 — Samsung Tizen TV client (2016-2018 models)
 
 // :ravilo-android requires Android SDK — only include when sdk.dir is configured in
 // local.properties (or ANDROID_HOME is set in the environment).

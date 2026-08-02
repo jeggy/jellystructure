@@ -1,0 +1,171 @@
+/* R189 — deliberately plain CSS: no grid/flex-gap assumptions beyond what old WebKit reliably
+   supports, no custom-property (CSS variable) dependence, since that era's engine support is unverified. */
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body, #app {
+    width: 1920px;
+    height: 1080px;
+    background: #0a0a0f;
+    color: #f0f0f5;
+    font-family: sans-serif;
+    overflow: hidden;
+}
+
+.login-screen {
+    padding: 120px;
+}
+
+.brand {
+    font-size: 48px;
+    color: #7b6ef0;
+    margin-bottom: 16px;
+}
+
+.subtitle {
+    font-size: 20px;
+    color: #a0a0b0;
+    margin-bottom: 32px;
+}
+
+.error {
+    color: #ff6b6b;
+    font-size: 18px;
+    min-height: 24px;
+    margin-bottom: 16px;
+}
+
+.field {
+    display: block;
+    width: 600px;
+    padding: 16px;
+    margin-bottom: 16px;
+    font-size: 22px;
+    background: #1a1a24;
+    border: 3px solid #2a2a38;
+    color: #f0f0f5;
+}
+
+.field.focused {
+    border-color: #7b6ef0;
+}
+
+.button {
+    display: inline-block;
+    padding: 16px 32px;
+    font-size: 22px;
+    background: #1a1a24;
+    border: 3px solid #2a2a38;
+    color: #f0f0f5;
+    cursor: pointer;
+}
+
+.button.focused {
+    border-color: #7b6ef0;
+    background: #7b6ef0;
+}
+
+.home-screen {
+    padding: 60px;
+    overflow-y: auto;
+    height: 100%;
+}
+
+.loading {
+    font-size: 28px;
+    color: #a0a0b0;
+}
+
+.row-title {
+    font-size: 24px;
+    margin: 24px 0 12px;
+}
+
+.row {
+    display: -webkit-box;
+    overflow-x: auto;
+    white-space: nowrap;
+}
+
+.tile {
+    display: inline-block;
+    width: 220px;
+    margin-right: 16px;
+    vertical-align: top;
+    border: 3px solid transparent;
+}
+
+.tile.focused {
+    border-color: #7b6ef0;
+}
+
+.poster {
+    width: 100%;
+    height: 320px;
+    background: #1a1a24;
+    object-fit: cover;
+    display: block;
+}
+
+.tile-title {
+    font-size: 18px;
+    padding: 8px 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.detail-screen {
+    position: relative;
+    height: 100%;
+}
+
+.backdrop {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 1920px;
+    height: 1080px;
+    object-fit: cover;
+    opacity: 0.4;
+    z-index: 0;
+}
+
+.detail-screen .title {
+    position: relative;
+    z-index: 1;
+    font-size: 48px;
+    padding: 400px 120px 0;
+}
+
+.detail-screen .meta {
+    position: relative;
+    z-index: 1;
+    font-size: 20px;
+    color: #a0a0b0;
+    padding: 16px 120px;
+}
+
+.detail-screen .button {
+    position: relative;
+    z-index: 1;
+    margin: 24px 120px;
+}
+
+.player-screen {
+    position: relative;
+    width: 1920px;
+    height: 1080px;
+    background: #000;
+}
+
+.player-title, .player-status {
+    position: absolute;
+    left: 60px;
+    color: #fff;
+    font-size: 22px;
+    text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8);
+}
+
+.player-title { top: 40px; }
+.player-status { top: 80px; }
