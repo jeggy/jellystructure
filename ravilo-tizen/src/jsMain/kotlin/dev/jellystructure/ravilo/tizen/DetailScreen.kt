@@ -228,7 +228,11 @@ class DetailScreen(private val card: MediaCard) : Screen {
                 startPlayback(ep.id)
             }
 
-            "cast" -> {} // Milestone 2 scope: no person detail page yet.
+            "cast" -> {
+                val cast = movie?.cast ?: series?.cast ?: emptyList()
+                val person = cast.getOrNull(castIndex) ?: return
+                app.show(PersonBrowseScreen(person, card.title))
+            }
             "related" -> {
                 val r = (movie?.related ?: series?.related ?: emptyList()).getOrNull(relatedIndex) ?: return
                 app.show(DetailScreen(r))

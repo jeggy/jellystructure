@@ -97,6 +97,30 @@ data class SeerrCastMember(val id: Int = 0, val name: String = "", val character
 @Serializable
 data class SeerrCredits(val cast: List<SeerrCastMember> = emptyList())
 
+/** `GET /person/{id}/combined_credits` — one movie/tv credit for that person. No `mediaInfo`/library-match
+ *  field (verified live 2026-08-02 against `stream.example.net`); callers cross-reference `id` (TMDB id)
+ *  against the local library themselves, same as [SeerrDiscoverService.acquisitionFor] does for Discover. */
+@Serializable
+data class SeerrPersonCredit(
+    val id: Int = 0,
+    val mediaType: String = "",
+    val title: String? = null,
+    val name: String? = null,
+    val posterPath: String? = null,
+    val backdropPath: String? = null,
+    val overview: String? = null,
+    val releaseDate: String? = null,
+    val firstAirDate: String? = null,
+    val voteAverage: Double? = null,
+    val genreIds: List<Int> = emptyList(),
+)
+
+@Serializable
+data class SeerrPersonCombinedCredits(
+    val cast: List<SeerrPersonCredit> = emptyList(),
+    val crew: List<SeerrPersonCredit> = emptyList(),
+)
+
 /** `GET /movie/{id}` — full detail, one call gives genres/runtime/cast/mediaInfo together. */
 @Serializable
 data class SeerrMovieDetails(
@@ -193,6 +217,12 @@ class SeerrClient {
 
     suspend fun tvDetails(url: String, apiKey: String, tmdbId: Int): SeerrTvDetails? = runCatching {
         httpGet(base(url) + "/tv/$tmdbId", apiKey).body<SeerrTvDetails>()
+    }.getOrNull()
+
+    /** R190 §C — deduped cast+crew credits for [personId]'s Seerr overflow row. Verified live
+     *  2026-08-02 (`GET /person/{id}/combined_credits` exists and returns real TMDB-shaped credits). */
+    suspend fun personCombinedCredits(url: String, apiKey: String, personId: Int): SeerrPersonCombinedCredits? = runCatching {
+        httpGet(base(url) + "/person/$personId/combined_credits", apiKey).body<SeerrPersonCombinedCredits>()
     }.getOrNull()
 
     /**

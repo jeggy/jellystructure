@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -121,10 +122,15 @@ class SeededBrowseStore(
     val seedQuery: ConditionGroup?,
     val seedMediaKind: String?,
     val continueWatching: Boolean = false,
+    // R190 §C — set only for a person seed; drives the Seerr overflow row's own fetch, independent of
+    // the facet-filtered grid (the row is person-scoped, not filter-scoped — FR-RV-PPL1-4).
+    val personTmdbId: Int? = null,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val _state = MutableStateFlow<SeededBrowseState>(SeededBrowseState.Loading)
     val state: StateFlow<SeededBrowseState> = _state.asStateFlow()
+    private val _seerrOverflow = MutableStateFlow<List<dev.jellystructure.shared.tv.DiscoverEntry>>(emptyList())
+    val seerrOverflow: StateFlow<List<dev.jellystructure.shared.tv.DiscoverEntry>> = _seerrOverflow.asStateFlow()
     val gridState = LazyGridState()
     var focusItemKey: String? = null
     private var loadJob: Job? = null
@@ -168,6 +174,13 @@ class SeededBrowseStore(
         if (!continueWatching) scope.launch {
             runCatching { apiClient.getChannels() }.getOrNull()?.let { list ->
                 channelNames = list.associate { it.id to it.name }
+            }
+        }
+        // R190 §C — independent of the main items load: empty (Seerr off, or no matches) is a normal,
+        // silent outcome, never surfaced as an error.
+        personTmdbId?.let { pid ->
+            scope.launch {
+                _seerrOverflow.value = runCatching { apiClient.getPersonOverflow(pid) }.getOrElse { emptyList() }
             }
         }
         loadJob = scope.launch {
@@ -316,6 +329,11 @@ fun SeededBrowseScreen(
     onProfile: (() -> Unit)? = null,
     onSearch: (() -> Unit)? = null,
     onItemSelect: (MediaCard) -> Unit,
+    // R190 §B — the role/department meta line under the title, for a person seed only (FR-RV-PPL1-3).
+    personRoleLine: String? = null,
+    // R190 §C — opens the existing Seerr request flow for an overflow-row tile; null when this page
+    // isn't a person seed (the row itself is hidden then too, see [SeededBrowseStore.seerrOverflow]).
+    onRequestSelect: ((dev.jellystructure.shared.tv.DiscoverEntry) -> Unit)? = null,
 ) {
     val colors = RaviloTheme.colors
     LaunchedEffect(Unit) { store.load() }
@@ -356,6 +374,9 @@ fun SeededBrowseScreen(
                     Text(breadcrumb, color = colors.textSecondary, fontSize = 14.sp, fontFamily = Sora)
                 }
                 Text(title, color = colors.text, fontSize = 28.sp, fontFamily = Sora, fontWeight = FontWeight.Bold)
+                if (personRoleLine != null) {
+                    Text(personRoleLine, color = colors.textSecondary, fontSize = 14.sp, fontFamily = Sora)
+                }
                 val count = (state as? SeededBrowseState.Loaded)?.let { sortedFiltered(store, it.items).size }
                 val sub = listOfNotNull(subtitle, count?.let { n -> if (n == 1) str("browse.title_one") else str("browse.titles", mapOf("count" to n.toString())) })
                     .joinToString(" · ")
@@ -409,12 +430,16 @@ fun SeededBrowseScreen(
                         store.focusItemKey = null
                         runCatching { gridState.scrollToItem(0) }
                     }
+                    val seerrOverflow by store.seerrOverflow.collectAsState()
                     BrowseCardGrid(
                         items = filtered.map { it.card },
                         gridState = gridState,
                         firstCellFR = firstCellFR,
                         restoreItemKey = store.focusItemKey,
                         onItemSelect = { card -> store.focusItemKey = card.id; onItemSelect(card) },
+                        seerrOverflow = if (onRequestSelect != null) seerrOverflow else emptyList(),
+                        seerrRowLabel = str("browse.seerr_more", mapOf("name" to title)),
+                        onRequestSelect = onRequestSelect,
                     )
                 }
             }
@@ -795,6 +820,12 @@ private fun BrowseCardGrid(
     firstCellFR: FocusRequester,
     restoreItemKey: String?,
     onItemSelect: (MediaCard) -> Unit,
+    // R190 §C — a person-scoped Seerr row, appended after every grid item as one full-width span (not
+    // a nested scrollable — TV D-pad traversal handles a second scrollable inside a grid poorly, and
+    // this keeps it in the same natural Down-navigation flow as the grid itself).
+    seerrOverflow: List<dev.jellystructure.shared.tv.DiscoverEntry> = emptyList(),
+    seerrRowLabel: String = "",
+    onRequestSelect: ((dev.jellystructure.shared.tv.DiscoverEntry) -> Unit)? = null,
 ) {
     val prefetchUrls = remember(items) { items.map { it.posterUrl.orEmpty() } }
     PrefetchLazyGridEffect(gridState = gridState, urls = prefetchUrls)
@@ -807,7 +838,7 @@ private fun BrowseCardGrid(
         }
     }
     val cols = if (LocalPortrait.current) LocalPortraitGridColumns.current else LocalGridColumns.current
-    if (items.isEmpty()) {
+    if (items.isEmpty() && seerrOverflow.isEmpty()) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Text(str("browse.empty"), color = RaviloTheme.colors.textSecondary, fontSize = 15.sp, fontFamily = Sora)
         }
@@ -832,6 +863,26 @@ private fun BrowseCardGrid(
                 focusRequester = if (card.id == restoreItemKey) restoreFR else if (i == 0) firstCellFR else null,
                 onSelect = { onItemSelect(card) },
             )
+        }
+        if (seerrOverflow.isNotEmpty() && onRequestSelect != null) {
+            item(key = "seerr-overflow", span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) {
+                Column(Modifier.padding(top = RaviloDimens.rowGap)) {
+                    Text(
+                        seerrRowLabel, color = RaviloTheme.colors.text, fontSize = 18.sp,
+                        fontWeight = FontWeight.SemiBold, fontFamily = Sora,
+                    )
+                    Spacer(Modifier.height(RaviloDimens.rowHeadPadB))
+                    LazyRow(
+                        modifier = Modifier.focusRestorer(),
+                        horizontalArrangement = Arrangement.spacedBy(RaviloDimens.itemSpacing),
+                    ) {
+                        items(seerrOverflow.size, key = { i -> "overflow:${seerrOverflow[i].entry.tmdbId}" }) { i ->
+                            val e = seerrOverflow[i]
+                            RequestTile(e) { onRequestSelect(e) }
+                        }
+                    }
+                }
+            }
         }
     }
 }

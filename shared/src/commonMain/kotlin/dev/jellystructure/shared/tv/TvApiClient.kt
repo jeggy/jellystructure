@@ -108,6 +108,14 @@ class TvApiClient(
         return json.decodeFromString<SeededBrowseResponse>(r.bodyAsText())
     }
 
+    /** R190 §C — the person-browse page's Seerr overflow row: requestable titles featuring this person
+     *  not already in the library, capped at 12 server-side. Empty (never an error) with Seerr off. */
+    suspend fun getPersonOverflow(personTmdbId: Int): List<DiscoverEntry> {
+        val r = client.get("$baseUrl/api/tv/browse/person/$personTmdbId/seerr-overflow") { auth() }
+        r.assertSuccess()
+        return json.decodeFromString(r.bodyAsText())
+    }
+
     /** R187 (§G-4) — Continue Watching's own "→ See all": not seed-representable (a live Jellyfin join,
      *  not a catalog filter), so its own endpoint, plain [MediaCard]s (no facet bar on that page). */
     suspend fun continueAll(): List<MediaCard> {

@@ -39,6 +39,9 @@ import dev.jellystructure.shared.tv.Person
 fun CastCircle(
     person: Person,
     focusRequester: FocusRequester? = null,
+    // R190 §A — activating a face opens the person-seeded browse page; null (not offered anywhere
+    // this component is reused for a purely decorative credit list) leaves the face inert as before.
+    onSelect: (() -> Unit)? = null,
 ) {
     val colors = RaviloTheme.colors
     val sora = Sora
@@ -56,6 +59,7 @@ fun CastCircle(
             focusRequester = focusRequester,
             onFocused = { isFocused = true },
             onBlurred = { isFocused = false },
+            onSelect = onSelect,
         ),
     ) {
         // R89: the focus animation runs entirely in the draw phase — scale + shadow in the graphicsLayer
@@ -102,6 +106,12 @@ fun CastCircle(
                     fontWeight = FontWeight.Bold,
                     fontFamily = sora,
                 )
+            }
+            // R190 §A — a focused, activatable face reads as navigable, not just a label.
+            if (isFocused && onSelect != null) {
+                Box(modifier = Modifier.matchParentSize().background(colors.background.copy(alpha = 0.55f)), contentAlignment = Alignment.Center) {
+                    Text(text = "→", color = colors.text, fontSize = 20.sp, fontWeight = FontWeight.Bold, fontFamily = sora)
+                }
             }
         }
         Spacer(Modifier.height(8.dp))

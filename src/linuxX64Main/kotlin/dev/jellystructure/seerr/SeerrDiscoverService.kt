@@ -118,6 +118,30 @@ class SeerrDiscoverService(
         }
     }
 
+    /**
+     * R190 §C — up to 12 requestable titles featuring [personTmdbId] that the library doesn't already
+     * hold, for the person-browse page's Seerr overflow row. Cast + crew credits deduped by (tmdbId,
+     * mediaType) since a person can appear in both lists for the same title (e.g. actor-director); library
+     * matches are filtered out entirely rather than shown as AVAILABLE — the row is "more to request",
+     * not a mixed library+request grid.
+     */
+    suspend fun getPersonOverflow(personTmdbId: Int): List<DiscoverEntry> {
+        val seerr = seerr() ?: return emptyList()
+        val credits = seerrClient.personCombinedCredits(seerr.url, seerr.apiKey, personTmdbId) ?: return emptyList()
+        val libByTmdb = libraryByTmdbId()
+        return (credits.cast + credits.crew)
+            .filter { (it.mediaType == "movie" || it.mediaType == "tv") && !libByTmdb.containsKey(it.id) }
+            .distinctBy { it.id to it.mediaType }
+            .take(12)
+            .map { toDiscoverEntry(it.toCatalogResult(), libByTmdb) }
+    }
+
+    private fun SeerrPersonCredit.toCatalogResult() = SeerrCatalogResult(
+        id = id, mediaType = mediaType, title = title, name = name, posterPath = posterPath,
+        backdropPath = backdropPath, overview = overview, releaseDate = releaseDate,
+        firstAirDate = firstAirDate, voteAverage = voteAverage, genreIds = genreIds, mediaInfo = null,
+    )
+
     suspend fun search(query: String): List<DiscoverEntry> {
         val seerr = seerr() ?: return emptyList()
         if (query.isBlank()) return emptyList()

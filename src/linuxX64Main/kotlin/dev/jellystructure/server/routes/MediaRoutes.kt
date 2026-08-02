@@ -286,13 +286,14 @@ fun Route.mediaRoutes(
         }
 
         get("/meta-facets") {
-            @Serializable data class FacetItem(val value: String, val count: Int, val color: String? = null)
+            @Serializable data class FacetItem(val value: String, val count: Int, val color: String? = null, val label: String? = null)
             @Serializable data class MetaFacetsResponse(
                 val studios: List<FacetItem>,
                 val networks: List<FacetItem>,
                 val genres: List<FacetItem>,
                 val tags: List<FacetItem>,
                 val ageRatings: List<FacetItem>,
+                val castCrew: List<FacetItem> = emptyList(),
             )
             val f = store.metaFacets()
             call.respond(MetaFacetsResponse(
@@ -301,6 +302,7 @@ fun Route.mediaRoutes(
                 genres   = f.genres.map   { FacetItem(it.value, it.count) },
                 tags     = f.tags.map     { FacetItem(it.value, it.count, it.color) },
                 ageRatings = f.ageRatings.map { FacetItem(it.value, it.count) },
+                castCrew = f.castCrew.map { FacetItem(it.value, it.count, label = it.label) },
             ))
         }
 
@@ -326,11 +328,12 @@ fun Route.mediaRoutes(
             // Phase 140 — query (the blocks tree) is the primary carrier; match/conditions (R74) still
             // accepted and migrated, for old callers.
             @Serializable data class FacetReq(val match: String = "ALL", val conditions: List<Condition> = emptyList(), val query: ConditionGroup? = null)
-            @Serializable data class FItem(val value: String, val count: Int, val color: String? = null)
+            @Serializable data class FItem(val value: String, val count: Int, val color: String? = null, val label: String? = null)
             @Serializable data class NarrowedFacetsResponse(
                 val studios: List<FItem>, val networks: List<FItem>, val genres: List<FItem>, val tags: List<FItem>,
                 val ageRatings: List<FItem>,
                 val audioLanguages: List<FItem>, val audioCodecs: List<FItem>, val trackTitles: List<FItem>,
+                val castCrew: List<FItem> = emptyList(),
             )
             val req = call.receive<FacetReq>()
             val tree = req.query ?: migrateFlatQuery(runCatching { MatchMode.valueOf(req.match) }.getOrElse { MatchMode.ALL }, req.conditions)
@@ -344,6 +347,7 @@ fun Route.mediaRoutes(
                 audioLanguages = track.audioLanguages.map { FItem(it.value, it.count) },
                 audioCodecs    = track.audioCodecs.map    { FItem(it.value, it.count) },
                 trackTitles    = track.trackTitles.map    { FItem(it.value, it.count) },
+                castCrew = meta.castCrew.map { FItem(it.value, it.count, label = it.label) },
             ))
         }
 

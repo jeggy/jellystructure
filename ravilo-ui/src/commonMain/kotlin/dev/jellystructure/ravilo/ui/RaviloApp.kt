@@ -174,6 +174,11 @@ private sealed class Dest {
         /** R187 fix — which section tab (if any) this seeded page IS, so the AppBar highlights it;
          *  -1 for a drill-in ("→ See all") page that isn't itself a tab. */
         val activeNav: Int = -1,
+        /** R190 §B/§C — set only for a person seed: [personRoleLine] renders as the meta line under the
+         *  person's name (FR-RV-PPL1-3), [personTmdbId] drives the Seerr overflow row fetch (§C). Both
+         *  null for every other seed source (row/kind/channel). */
+        val personRoleLine: String? = null,
+        val personTmdbId: Int? = null,
     ) : Dest()
     data class Search(val displayName: String) : Dest()
     // R170 — Coming Soon (the old Upcoming tab) and Request (the old Top-10/Discover tab) are now the
@@ -409,6 +414,25 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
             prefetchImage(imageCtx, apiClient.baseUrl, card.backdropUrl)
             if (card.kind == MediaKind.SERIES) push(Dest.SeriesDetail(card.id, displayName))
             else push(Dest.MovieDetail(card.id, displayName))
+        }
+
+        // R190 §A — OK on a cast/crew face opens the browse page seeded to that person's filmography
+        // (FR-RV-PPL1-1/2). [person.id] is already the tmdbId stringified (see Person's doc comment /
+        // DetailService.castFrom) so it round-trips straight into the cast_crew condition unchanged.
+        fun openPersonBrowse(person: dev.jellystructure.shared.tv.Person, sourceTitle: String, displayName: String) {
+            val personTmdbId = person.id.toIntOrNull()
+            push(Dest.SeededBrowse(
+                seedQuery = dev.jellystructure.shared.tv.ConditionGroup(children = listOf(
+                    dev.jellystructure.shared.tv.Condition(facet = "cast_crew", op = "is_any_of", values = listOf(person.id)),
+                )),
+                seedMediaKind = null,
+                title = person.name,
+                breadcrumb = sourceTitle,
+                continueWatching = false,
+                displayName = displayName,
+                personRoleLine = person.role,
+                personTmdbId = personTmdbId,
+            ))
         }
 
         // Shared by the remote-play collector and the R170 ProfileMenu (both need "whatever name the
@@ -667,7 +691,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
             is Dest.SeededBrowse -> {
                 val storeKey = "seededBrowse:${dest.displayName}:${dest.title}:${dest.continueWatching}"
                 val store = keptStore(storeKey) {
-                    SeededBrowseStore(apiClient, dest.seedQuery, dest.seedMediaKind, dest.continueWatching)
+                    SeededBrowseStore(apiClient, dest.seedQuery, dest.seedMediaKind, dest.continueWatching, dest.personTmdbId)
                 }
                 SeededBrowseScreen(
                     store = store,
@@ -691,6 +715,10 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                     onProfile = { profileMenuOpen = true },
                     onSearch = { push(Dest.Search(dest.displayName)) },
                     onItemSelect = { openDetail(it, dest.displayName) },
+                    personRoleLine = dest.personRoleLine,
+                    onRequestSelect = dest.personTmdbId?.let { { e: dev.jellystructure.shared.tv.DiscoverEntry ->
+                        push(Dest.DiscoverItem(if (e.entry.mediaKind == MediaKind.SERIES) "tv" else "movie", e.entry.tmdbId, dest.displayName))
+                    } },
                 )
             }
 
@@ -874,6 +902,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                         ))
                     },
                     onRelatedSelect = { openDetail(it, dest.displayName) },
+                    onCastSelect = { person, sourceTitle -> openPersonBrowse(person, sourceTitle, dest.displayName) },
                     displayName = dest.displayName,
                     discoverAvailable = upcomingAvailable || discoverAvailable,
                     onNavSelect = { idx ->
@@ -912,6 +941,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                         ))
                     },
                     onRelatedSelect = { openDetail(it, dest.displayName) },
+                    onCastSelect = { person, sourceTitle -> openPersonBrowse(person, sourceTitle, dest.displayName) },
                     displayName = dest.displayName,
                     discoverAvailable = upcomingAvailable || discoverAvailable,
                     onNavSelect = { idx ->
