@@ -12,7 +12,7 @@
   function normGenre(tok) { const k = tok.trim().toLowerCase(); return GMAP[k] || (tok.trim().charAt(0).toUpperCase() + tok.trim().slice(1)); }
 
   function create(ctx) {
-    const { R, W, el, esc, scroll, appbar, go, buildGridRows, tracksFor, rowTitle, catalog, stopHero, getView } = ctx;
+    const { R, W, el, esc, scroll, appbar, go, buildGridRows, tracksFor, rowTitle, catalog, stopHero, getView, castFor, seerrEnabled, seerrCatalog, rankTile } = ctx;
     const t = (k, v) => window.t(k, v);
     let v = null;          // current browse view object (state lives on it: filters, sort)
     let pop = null;        // open popover { el, chip, kind:'facet'|'sort', facetId, idx, opts }
@@ -21,6 +21,12 @@
     // normalized age (0–18) — in production this is the jellystructure Metadata → Age ratings
     // mapping (raw certification → number); the viewer never sees “G” / “TV-PG” / “Btl”
     function normAge(it) { if (!it.rating) return 18; return it.rating === 'G' ? 0 : (parseInt(it.rating, 10) || 18); }   // no rating ⇒ 18 (155 FR-AGE1-2)
+    // audio-facet flags: ISO-639-1 → flag-icons country code; label→cc captured as tracks are read
+    const LANG_CC = { en: 'gb', fr: 'fr', de: 'de', es: 'es', da: 'dk', fo: 'fo', is: 'is', no: 'no', sv: 'se', fi: 'fi', nl: 'nl', it: 'it', pt: 'pt', pl: 'pl', ru: 'ru', ja: 'jp', ko: 'kr', zh: 'cn', ar: 'sa', hi: 'in' };
+    const audCc = {};
+    const PEOPLE = ['Sigrun Restorff','Páll Heinason','Marin Klett','Eva Restorff','Tóki á Bø','Lena Björk','Anders Holm','Freya Dahl','Mikkel Sørensen','Ingrid Vold','Johan Máni','Sara Winther','Colin Reeves','Nadia Hassan'];
+    // deterministic 2–3 cast/crew per title so a person spans several titles (demo; prod: credits index)
+    function castOf(it) { const h = hash(it.title); const n = 2 + (h % 2); const out = []; for (let i = 0; i < n; i++) out.push(PEOPLE[(h + i * 5) % PEOPLE.length]); return Array.from(new Set(out)); }
     function genres(it) { return Array.from(new Set((it.genre || '').split(/\s*·\s*/).filter(Boolean).map(normGenre))); }
     function watchedState(it) {
       const ws = W.itemState(it.title);
@@ -29,7 +35,7 @@
     function audioLangs(it) {
       const ts = tracksFor(it);
       const out = []; const seen = new Set();
-      (ts.audio || []).forEach(a => { if (a.lang && !seen.has(a.lang)) { seen.add(a.lang); out.push(a.label); } });
+      (ts.audio || []).forEach(a => { if (a.lang && !seen.has(a.lang)) { seen.add(a.lang); out.push(a.label); if (LANG_CC[a.lang]) audCc[a.label] = LANG_CC[a.lang]; } });
       return out;
     }
     // demo-only: deterministic channel membership (production: Jellystructure channel queries)
@@ -44,6 +50,7 @@
         { id: 'maturity', label: t('br_maturity'), range: true, vals: it => [normAge(it) + '+'] },
         { id: 'year', label: t('br_year'), vals: it => [Math.floor((it.year || 2018) / 10) * 10 + 's'] },
         { id: 'watched', label: t('br_watched'), vals: it => [watchedState(it)] },
+        { id: 'person', label: t('br_person'), vals: it => castOf(it) },
         { id: 'audio', label: t('br_audio'), vals: it => audioLangs(it) },
         { id: 'channel', label: t('br_channel'), vals: it => channelsOf(it) },
         { id: 'quality', label: t('br_quality'), vals: it => [it.badge === '4K' ? '4K' : it.badge === 'HDR' ? 'HDR' : 'HD'] },
@@ -56,10 +63,19 @@
     ];
 
     /* ---- seed + filtering ---- */
+    // person mode: everything featuring this cast/crew member. Production seeds this from a
+    // Jellystructure people query; the demo derives a deterministic filmography from the catalog
+    // (the source title is always in, plus a stable ~1/3 slice + any real cast match).
+    function appearsIn(it, name) {
+      if (v.personFrom && it.title === v.personFrom) return true;
+      if (castFor && (castFor(it) || []).some(c => c && c.n === name)) return true;
+      return hash(name + '|' + it.title) % 100 < 34;
+    }
     function seed() {
       if (v._seed) return v._seed;
       let s;
-      if (v.row) { const seen = new Set(); s = v.row.items.filter(it => it && it.title && !seen.has(it.title) && seen.add(it.title) !== null); }
+      if (v.person) s = catalog().filter(it => appearsIn(it, v.person.n));
+      else if (v.row) { const seen = new Set(); s = v.row.items.filter(it => it && it.title && !seen.has(it.title) && seen.add(it.title) !== null); }
       else if (v.kind) s = catalog().filter(it => it.kind === v.kind || (v.kind === 'film' && it.kind !== 'series'));
       else s = catalog();
       return v._seed = s;
@@ -120,17 +136,39 @@
     function render(view) {
       v = view; v.filters = v.filters || {}; v.sort = v.sort || 'added';
       stopHero(); closePop(); scroll.innerHTML = '';
-      const title = v.row ? rowTitle(v.row) : v.title;
+      const title = v.person ? v.person.n : (v.row ? rowTitle(v.row) : v.title);
       const wrap = el('div', 'gridscreen browse');
-      const crumb = v.row ? `<div class="crumb">◂ ${esc(fromLabel())} · <b>${esc(title)}</b></div>` : '';
-      wrap.innerHTML = `<div class="gridhead browsehead"><div>${crumb}<h1>${esc(title)}</h1><div class="gridsub"></div></div><span class="gridcount"></span></div>`;
+      let crumb = '';
+      if (v.person) crumb = `<div class="crumb">◂ ${esc(v.personFrom || fromLabel())} · <b>${esc(title)}</b></div>`;
+      else if (v.row) crumb = `<div class="crumb">◂ ${esc(fromLabel())} · <b>${esc(title)}</b></div>`;
+      const pmeta = (v.person && v.person.r) ? `<div class="pmeta">${esc(v.person.r)}</div>` : '';
+      wrap.innerHTML = `<div class="gridhead browsehead"><div>${crumb}<h1>${esc(title)}</h1>${pmeta}<div class="gridsub"></div></div><span class="gridcount"></span></div>`;
       const fbar = el('div', 'fbar focus-row');
       wrap.appendChild(fbar);
       const grid = el('div', 'pgrid'); wrap.appendChild(grid);
-      wrap.appendChild(el('div', 'screen-end'));
       scroll.appendChild(wrap);
       refreshBar(); refreshGrid();
+      renderSeerrRow(wrap);
+      wrap.appendChild(el('div', 'screen-end'));
       appbar.querySelectorAll('.navitem').forEach(n => n.classList.toggle('cur', n.dataset.nav === v.nav));
+    }
+    // Seerr row (person pages only): requestable titles featuring this person that Jellystructure
+    // doesn't already have. Appears after all library results, when Seerr is configured.
+    function seerrPeopleItems(name) {
+      if (!seerrCatalog) return [];
+      const inLib = new Set(seed().map(it => it.title));
+      return seerrCatalog().filter(it => it && it.title && !inLib.has(it.title) && hash(name + '|seerr|' + it.title) % 100 < 42).slice(0, 12);
+    }
+    function renderSeerrRow(wrap) {
+      if (!v.person || !(seerrEnabled && seerrEnabled()) || !rankTile) return;
+      const items = seerrPeopleItems(v.person.n);
+      if (!items.length) return;
+      const sec = el('div', 'crow seerrmore');
+      sec.innerHTML = `<div class="crow-head"><h2>${esc(t('br_seerr_more', { name: v.person.n }))}</h2><span class="seerrtag">⚡ Seerr</span></div>`;
+      const tr = el('div', 'track focus-row');
+      items.forEach(it => tr.appendChild(rankTile(it, { scope: 'global', metric: '' })));
+      sec.appendChild(tr);
+      wrap.appendChild(sec);
     }
     function fromLabel() {
       const f = v.from || {};
@@ -223,7 +261,7 @@
         const def = facetDefs().find(d => d.id === pop.facetId);
         pop.opts = facetValues(def);
         p.innerHTML = `<div class="ph">${esc(def.label)} · ${t('br_pick_any')}</div>` + pop.opts.map((o, i) =>
-          `<div class="opt${o.on ? ' on' : ''}${i === pop.idx ? ' focused' : ''}" data-pidx="${i}"><span class="box">${o.on ? '✓' : ''}</span>${esc(o.val)}<span class="cnt-side">${o.n}</span></div>`).join('');
+          `<div class="opt${o.on ? ' on' : ''}${i === pop.idx ? ' focused' : ''}" data-pidx="${i}"><span class="box">${o.on ? '✓' : ''}</span>${pop.facetId === 'person' ? `<span class="fpop-av" style="background:${R.grad(o.val)}">${R.initials(o.val)}</span>` : ''}${pop.facetId === 'audio' && audCc[o.val] ? `<span class="fi fi-${audCc[o.val]} fpop-flag"></span>` : ''}${esc(o.val)}<span class="cnt-side">${o.n}</span></div>`).join('');
       }
     }
     const ALL_AGES = Array.from({ length: 19 }, (_, i) => i);   // any age 0–18

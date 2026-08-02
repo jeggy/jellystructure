@@ -63,8 +63,12 @@ GitHub is the **source of truth**; we layer designs on top of it.
 - **⚠ Repo-side STATUS gap (dev team's to fix, not us):** `STATUS.md` on `main` has no rows for
   admin **152/153/154** or Ravilo **R184/R185/R186** though their spec files exist and read
   *Implemented* — `scripts/check-phases.sh` will flag them. `STATUS.md` is a read-only mirror here.
-- **Next unassigned numbers: 156 / R188** (155 = age-rating normalization, R187 = browse page — both
-  design-authored 2026-07-31, `Planned`, not yet exported to the repo or in `STATUS.md`).
+- **Next unassigned numbers: 157 / R191.** 155 (age-rating normalization) and R187 (browse page)
+  **shipped in code** (Implemented, pulled from repo `main` 2026-08-02). New dev specs pulled this sync:
+  156 (Seerr per-user request attribution, Implemented), R188 (Upcoming-calendar per-device
+  visibility, Implemented), R189 (Samsung Tizen TV client, M1+M2 build-verified). R190 =
+  filter-by-person + Seerr overflow row + admin workbench Cast-or-crew facet (design-authored, was
+  drafted as R188 but the dev team took R188/R189 — renumbered to R190), `Planned`.
 - **2026-07-31 sync:** re-pulled the entire `specs/` tree (68 files) + `STATUS.md` from repo `main`;
   repo was well ahead. Wrote `github.md` as the sync receipt. Design now matches shipped code across
   admin 0–154 / Ravilo R01–R186. See `github.md` for the screen map and details.
@@ -100,7 +104,7 @@ GitHub is the **source of truth**; we layer designs on top of it.
   as 18 in filters/kids gating — never shown as an 18+ badge — and listed when no range is set).
   Feeds Ravilo’s Maturity filter, which shows only numbers
   (`0+ · 7+ · 13+…`, `normAge()` in `ravilo-browse.js`). **Spec: `phase-155-age-rating-normalization.md`
-  (design-authored 2026-07-31, Planned).**
+  (shipped/Implemented in code, synced 2026-08-02).**
 - **Settings** (`settings.html`) — URL-addressable **tabs** (Phase 55): Connections ·
   Libraries · Metadata · **Download tools** (Radarr/Sonarr + cross-seed) ·
   Notifications · Advanced · **Users & devices** (Phase 143 design: per-user Ravilo
@@ -136,11 +140,16 @@ GitHub is the **source of truth**; we layer designs on top of it.
   **Sound described** (SDH) · **Describes action** (audio-description) · **Commentary** — no
   codec names and no delivery-method cues (`ravilo-player.js` `renderPicker`/`PL_KIND`/`plFlag`/
   `plBadges` + `ravilo-player.css`; track data in `ravilo-app.js` `tracksFor()`; exploration in
-  `Audio &amp; Subtitles Picker.html`). **Browse page** (design-complete 2026-07-31, spec authored:
-  `specs/ravilo/requirements/phase-R187-browse-page.md`, Planned; admin half `phase-155`):
+  `Audio &amp; Subtitles Picker.html`). **Browse page** (**shipped/Implemented in code**, spec
+  `specs/ravilo/requirements/phase-R187-browse-page.md`; admin half `phase-155`, also shipped):
   Movies/Series nav + an end-of-row **→ See all** tile (rows with &gt;8
   items, incl. Continue Watching + channel-scoped rows) open a shared browse page
-  (`ravilo-browse.js`, Direction A: top facet bar → checklist popover). Facets Genre · Type ·
+  (`ravilo-browse.js`, Direction A: top facet bar → checklist popover). A **cast/crew face** on a media detail is now a link into this page seeded to that person's
+  filmography (R190, `phase-R190-people-filter.md`, Planned): the browse facets narrow within it, and
+  when Seerr is enabled a single **⚡ Seerr overflow row** ("More with {name} · request on Seerr")
+  sits below all library results, opening the normal Seerr request flow (Back returns to the person
+  page). The same person filter is a **Cast or crew** facet (People group) in the admin
+  workbench (`ravilo-builders.js`, R190 §D). Facets Genre · Type ·
   Maturity · Year · Watched · Audio · Channel · Quality — multi-select OR within a facet, AND
   across facets, stacking on the row seed (breadcrumb + "Úr …" subtitle, no seed chip); popover
   values sort by count desc then A–Z. **Maturity is a D-pad range picker**, not a checklist:
@@ -166,7 +175,8 @@ GitHub is the **source of truth**; we layer designs on top of it.
 - **Shared filter workbench** powers filters everywhere: `app/ravilo-builders.js`
   (+ `ravilo-builders.css`) exposes `window.RaviloBuilders` and is loaded by **both**
   `ravilo-config.html` and `library.html` (R32). Facets = **Studio · Network · Genre ·
-  Tag** only (reuse Phase-30 facets; no parallel taxonomy). Library ↔ Ravilo
+  Tag · Age rating · Audio track · Cast or crew** (People group, R190 §D) plus the contextual
+  Ravilo-layout facets (Hero, Content row). Library ↔ Ravilo
   round-trip: `⚙ Add filter` opens the builder; `Save filter as… → Channel / Content
   row`; per-poster `★ Save as hero item`.
 - **Brand (R62):** the Ravilo **brand** mark/asset pack recolors to a
@@ -180,12 +190,3 @@ GitHub is the **source of truth**; we layer designs on top of it.
 `[[libraries]]` are auto-discovered from the Jellyfin API (no static `[paths]`).
 Optional `[qbittorrent]` (cross-seed guard), `[radarr]`/`[sonarr]` (read-only
 root-folder import + best-effort rescan), and per-user Ravilo layout/discover blocks.
-
-## Live TV/device testing convention
-Whenever doing live testing on a real TV, phone, or other device (adb screenshots, driving the D-pad,
-etc.) — always note down anything that doesn't behave as expected along the way, even if it's not what
-you were specifically testing for: UX friction, unclear copy, slow transitions, and **especially any
-focus/navigation behavior that seems off** (focus landing somewhere unexpected, a control that isn't
-reachable by D-pad, a stray key press doing something surprising). Report these back to the user as
-follow-up items rather than silently working around them — they're often real, fixable bugs (see e.g. the
-2026-08-02 LoginScreen D-pad-navigation fix, found this way).

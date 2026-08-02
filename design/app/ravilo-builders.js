@@ -90,6 +90,20 @@
 
   const HERO = new Set(['Wasteland Kings', 'Quantum Drift']);   // titles currently in the active viewer's hero carousel (demo)
 
+  /* ---- cast & crew (deterministic; the workbench People axis mirrors admin credits) ----
+     Production: the real cast/crew index per title. Demo: a stable 2–3 people per title from a
+     shared pool so a person genuinely spans several titles (the point of a person filter). */
+  const PEOPLE = ['Sigrun Restorff','Páll Heinason','Marin Klett','Eva Restorff','Tóki á Bø',
+    'Lena Björk','Anders Holm','Freya Dahl','Mikkel Sørensen','Ingrid Vold',
+    'Johan Máni','Sara Winther','Colin Reeves','Nadia Hassan'];
+  function castOf(t){
+    const h = hashHue(t.title);
+    const n = 2 + (h % 2);   // 2–3 people
+    const out = [];
+    for (let i = 0; i < n; i++) out.push(PEOPLE[(h + i * 5) % PEOPLE.length]);
+    return Array.from(new Set(out));
+  }
+
   /* ---- resolved age-rating certification (deterministic; mirrors the region cascade) ---- */
   function certCode(t) {
     const h = hashHue(t.title + (t.year || ''));
@@ -105,6 +119,7 @@
     genre:   { label: 'Genre',   type: 'list', options: Object.values(G), get: t => t.genres },
     tag:     { label: 'Tag',     type: 'list', options: ['nordic-noir','dansk-tv','4k','staff-pick','award-winner'], get: t => t.tags },
     ageRating: { label: 'Age rating', type: 'list', options: ['A','7','11','15','G','PG','PG-13','R','NC-17'], get: t => [certCode(t)] },
+    person:  { label: 'Cast or crew', group: 'People', type: 'list', options: PEOPLE.slice().sort(), get: castOf },
     audioLang:  { label: 'Audio language', group: 'Audio track', type: 'list', options: ['English','Danish','Faroese','Spanish','Untagged'], get: audLangs },
     audioCodec: { label: 'Audio codec',    group: 'Audio track', type: 'list', options: ['E-AC-3','AC-3','DTS','AAC','TrueHD'], get: audCodecs },
     audioTitle: { label: 'Audio track title', group: 'Audio track', type: 'text', get: t => audTitles(t).join(' / ') },
@@ -243,6 +258,14 @@
   /* ===================== gradient helper ===================== */
   function hashHue(s){ let h = 0; for (let i=0;i<s.length;i++) h = (h*31 + s.charCodeAt(i)) % 360; return h; }
   function grad(s){ const h = hashHue(s); return `linear-gradient(150deg, hsl(${h} 46% 36%), hsl(${(h+40)%360} 52% 14%))`; }
+  // value-picker glyphs: a person avatar (initials on a stable gradient) + an audio-language flag
+  function personInitials(name){ const p = String(name).trim().split(/\s+/); return (((p[0]||'')[0]||'') + ((p[1]||'')[0]||'')).toUpperCase(); }
+  const AUD_CC = { English:'gb', Danish:'dk', Faroese:'fo', Spanish:'es', Icelandic:'is', Norwegian:'no', Swedish:'se' };
+  function valIcon(facet, v){
+    if (facet === 'person') return `<span class="wb-av" style="background:${grad(v)}">${personInitials(v)}</span>`;
+    if (facet === 'audioLang'){ const cc = AUD_CC[v]; return cc ? `<span class="fi fi-${cc} wb-flag"></span>` : `<span class="wb-flag wb-flag-none">—</span>`; }
+    return '';
+  }
 
   /* ===================== modal plumbing ===================== */
   const root = document.getElementById('cf-modal-root');
@@ -824,7 +847,7 @@
           .filter(x => !scopeSrc || x.n > 0)
           .sort((x, y) => y.n - x.n);
         const inner = counts.map(x =>
-          `<div class="cf-popitem ${cur.includes(x.o)?'on':''}" data-val="${x.o}">${cur.includes(x.o)?'✓ ':''}<span class="wb-vname">${x.o}</span><span class="wb-vcount">${x.n}</span></div>`
+          `<div class="cf-popitem ${cur.includes(x.o)?'on':''}" data-val="${x.o}">${cur.includes(x.o)?'✓ ':''}${valIcon(c.facet, x.o)}<span class="wb-vname">${x.o}</span><span class="wb-vcount">${x.n}</span></div>`
         ).join('') || '<div class="cf-popitem" style="opacity:.6;cursor:default;">No values in scope</div>';
         popover(a, inner, v => {
           if (!cur.includes(v)) cur.push(v); render();
