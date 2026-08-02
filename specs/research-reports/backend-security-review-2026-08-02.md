@@ -5,7 +5,14 @@
 surface, secret handling, and injection/DoS posture.
 **Trigger:** the operator is considering exposing jellystructure to the public internet (Jellyfin itself is
 already exposed).
-**Status:** research only — **nothing in this report has been implemented.**
+**Status (updated 2026-08-02):** all 21 in-app findings (C1/C2, H1-H6, M1-M8, L1/L2/L5/L6/L8) are now
+**fixed and committed** — the user rejected the narrower "publish only Ravilo's API surface" mitigation in
+§Deployment and directed fixing everything so the full API surface can be exposed. **D1** (FD-exhaustion DoS)
+is not fixable in-process; its mitigation is the reverse-proxy config in the companion
+[`backend-deployment-guide-2026-08-02.md`](backend-deployment-guide-2026-08-02.md), which also covers the two
+new env vars (`COOKIE_SECURE`, `CORS_ALLOWED_ORIGINS`) the fixes introduced. **This file is left as-written at
+audit time** (below) as the historical record of what was found; see the deployment guide for current status
+and the post-deploy checklist.
 
 ---
 
