@@ -509,7 +509,7 @@
     }
     function castCircle(c) {
       const t = el('div', 'cast foc'); t._cast = c;
-      t.innerHTML = `<div class="cast-av" style="background:${R.grad(c.n)}">${R.initials(c.n)}</div>
+      t.innerHTML = `<div class="cast-av" style="background:${R.grad(c.n)}"><span class="cast-in">${R.initials(c.n)}</span><span class="cast-go">→</span></div>
         <div class="cast-n">${c.n}</div><div class="cast-r">${c.r}</div>`;
       return t;
     }
@@ -1024,7 +1024,7 @@
     // generic browse page (Movies / Series / row “See all”) — module in ravilo-browse.js
     let _browse = null;
     function browse() {
-      return _browse || (_browse = window.RaviloBrowse.create({ R, W, el, esc, scroll, appbar, go, buildGridRows, tracksFor, rowTitle, catalog, stopHero, getView: () => view }));
+      return _browse || (_browse = window.RaviloBrowse.create({ R, W, el, esc, scroll, appbar, go, buildGridRows, tracksFor, rowTitle, catalog, stopHero, getView: () => view, castFor: R.castFor, seerrEnabled, seerrCatalog, rankTile }));
     }
     let _catalog = null;
     function catalog() {
@@ -1306,9 +1306,9 @@
         return;
       }
       if (f._ep) { const eps = R.episodesFor(view.item, view.season || 0); const idx = eps.findIndex(x => x.n === f._ep.n); openPlayer(episodeCtx(view.item, view.season || 0, eps, Math.max(0, idx))); return; }
-      if (f._cast) { flash(f._cast.n + ' · ' + f._cast.r); return; }
+      if (f._cast) { go({ type: 'browse', person: f._cast, personFrom: view.item ? view.item.title : null, from: view }); return; }
       if (f._src) { if (f._src.enabled) { renderDiscover(); setTimeout(() => focusRowByIndex(firstContentRowIndex()), 20); } else flash(f._src.name + ' · coming soon'); return; }
-      if (f._ditem) { go({ type: 'discoverDetail', item: f._ditem, list: f._dlist, from: { type: 'discover' } }); return; }
+      if (f._ditem) { go({ type: 'discoverDetail', item: f._ditem, list: f._dlist, from: view }); return; }
       if (f._upsrc) { view.upSource = f._upsrc; renderUpcoming(); setTimeout(() => focusRC(1, ['all', 'series', 'movies'].indexOf(f._upsrc)), 20); return; }
       if (f._upjump) {
         const sec = scroll.querySelector('.up-missing');
