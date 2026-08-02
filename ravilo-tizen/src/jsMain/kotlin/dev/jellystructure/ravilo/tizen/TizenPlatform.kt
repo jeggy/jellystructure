@@ -46,6 +46,18 @@ external interface AvPlayObject {
     fun getDuration(): Int
     fun setListener(listener: AvPlayListener)
     fun setStreamingProperty(type: String, value: String)
+    /** Samsung docs: `"AUDIO"` | `"TEXT"` | `"VIDEO"`. Returns the container's own enumerated tracks —
+     *  index alignment with the `StreamTicket.audio`/`.subtitles` Jellyfin metadata is a best-effort
+     *  assumption (both are container-stream-order), unverified against real hardware (see this
+     *  module's other AVPlay doc comments). */
+    fun getTotalTrackInfo(): Array<AvPlayTrackInfo>
+    fun setSelectTrack(type: String, index: Int)
+}
+
+external interface AvPlayTrackInfo {
+    val index: Int
+    val type: String
+    val extra_info: String
 }
 
 external interface AvPlayListener {
