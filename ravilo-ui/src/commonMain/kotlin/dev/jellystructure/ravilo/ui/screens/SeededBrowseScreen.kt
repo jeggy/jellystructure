@@ -1,5 +1,13 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -11,6 +19,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -22,6 +31,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -29,6 +39,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.text.font.FontWeight
@@ -38,11 +49,14 @@ import androidx.compose.ui.unit.sp
 import dev.jellystructure.ravilo.ui.LocalGridColumns
 import dev.jellystructure.ravilo.ui.LocalPortrait
 import dev.jellystructure.ravilo.ui.LocalPortraitGridColumns
+import dev.jellystructure.ravilo.ui.components.AppBar
+import dev.jellystructure.ravilo.ui.components.LANG_CC
 import dev.jellystructure.ravilo.ui.components.Tile
 import dev.jellystructure.ravilo.ui.focus.backToTopOnBack
 import dev.jellystructure.ravilo.ui.focus.dpadFocusable
 import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.seams.PrefetchLazyGridEffect
+import dev.jellystructure.ravilo.ui.seams.languageName
 import dev.jellystructure.ravilo.ui.theme.RaviloDimens
 import dev.jellystructure.ravilo.ui.theme.raviloHPad
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
@@ -59,11 +73,24 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import org.jetbrains.compose.resources.painterResource
 
 // ─── R187 (FR-RV-BROWSE1) — the generic browse page ────────────────────────────
 
 enum class BrowseFacetKey { GENRE, TYPE, MATURITY, YEAR, WATCHED, AUDIO, CHANNEL, QUALITY }
-enum class BrowseSort { RECENT, TITLE_AZ, TITLE_ZA, YEAR, MATURITY, IMDB }
+enum class SortField { RECENT, TITLE, YEAR, MATURITY, IMDB }
+enum class SortDir { ASC, DESC }
+
+/** Each field's "makes sense first" direction when newly selected (FR-RV-BROWSE1-fix: bidirectional
+ *  sort) — e.g. Year defaults to newest-first (DESC), Title to A-Z (ASC). Re-selecting the already-
+ *  active field flips [SortDir] instead of resetting to this default. */
+private fun defaultDirFor(field: SortField): SortDir = when (field) {
+    SortField.RECENT -> SortDir.DESC
+    SortField.TITLE -> SortDir.ASC
+    SortField.YEAR -> SortDir.DESC
+    SortField.MATURITY -> SortDir.ASC
+    SortField.IMDB -> SortDir.DESC
+}
 
 /** null bound = "Any" on that side (FR-RV-BROWSE1-6). Both null = filter off. */
 data class MaturityRange(val from: Int? = null, val upTo: Int? = null) {
@@ -101,6 +128,13 @@ class SeededBrowseStore(
     val gridState = LazyGridState()
     var focusItemKey: String? = null
     private var loadJob: Job? = null
+    /** Channel id -> display name, for the Channel facet's labels — [BrowseCard] only carries ids.
+     *  R187 fix: fetched by the store itself (cheap, config-only) in [load] instead of being threaded
+     *  in by whichever screen happened to have a [dev.jellystructure.shared.tv.HomeFeed] already loaded
+     *  — that left it silently empty (raw ids shown) whenever the seeded page was reached any other way,
+     *  e.g. the Movies/Series tabs. Empty until the fetch resolves. */
+    var channelNames by mutableStateOf(emptyMap<String, String>())
+        private set
 
     // Active facet selections — multi-select OR within a facet (FR-RV-BROWSE1-4).
     var genre by mutableStateOf(setOf<String>())
@@ -111,13 +145,10 @@ class SeededBrowseStore(
     var audio by mutableStateOf(setOf<String>())
     var channel by mutableStateOf(setOf<String>())
     var quality by mutableStateOf(setOf<String>())
-    var sort by mutableStateOf(BrowseSort.RECENT)
+    var sortField by mutableStateOf(SortField.RECENT)
+    var sortDir by mutableStateOf(defaultDirFor(SortField.RECENT))
     var openFacet by mutableStateOf<BrowseFacetKey?>(null)
     var sortOpen by mutableStateOf(false)
-    /** Channel id -> display name, for the Channel facet's labels — set by the caller from whatever
-     *  channel list is already loaded (Home's rail / the channel page's own config), since [BrowseCard]
-     *  only carries ids. Empty (falls back to raw id) when unavailable. */
-    var channelNames: Map<String, String> = emptyMap()
 
     val hasActiveFilters: Boolean
         get() = genre.isNotEmpty() || type.isNotEmpty() || maturity.isActive || year.isNotEmpty() ||
@@ -131,6 +162,14 @@ class SeededBrowseStore(
     fun load() {
         loadJob?.cancel()
         _state.value = SeededBrowseState.Loading
+        // R187 fix — fetch the Channel facet's id->name map here (cheap, config-only) instead of
+        // relying on a caller that may not have one loaded; best-effort, never blocks/fails the main
+        // items load.
+        if (!continueWatching) scope.launch {
+            runCatching { apiClient.getChannels() }.getOrNull()?.let { list ->
+                channelNames = list.associate { it.id to it.name }
+            }
+        }
         loadJob = scope.launch {
             _state.value = runCatching {
                 if (continueWatching) {
@@ -147,6 +186,15 @@ class SeededBrowseStore(
 
 private fun yearDecade(year: Int?): String? = year?.let { "${(it / 10) * 10}s" }
 
+/** Three-state Watched facet (FR-RV-BROWSE1-9 addendum): "in progress" is the same signal Continue
+ *  Watching already uses (unwatched but with playback progress), surfaced here as its own value rather
+ *  than folded into "unwatched". */
+private fun watchedState(c: MediaCard): String = when {
+    c.watched -> "watched"
+    (c.progressPct ?: 0f) > 0f -> "in_progress"
+    else -> "unwatched"
+}
+
 /** Does [card] pass every active facet EXCEPT [excluding] — the "count against the seed with every
  *  other active facet applied" semantics of FR-RV-BROWSE1-5. */
 private fun SeededBrowseStore.matches(card: BrowseCard, excluding: BrowseFacetKey?): Boolean {
@@ -159,10 +207,7 @@ private fun SeededBrowseStore.matches(card: BrowseCard, excluding: BrowseFacetKe
         if (maturity.upTo != null && age > maturity.upTo!!) return false
     }
     if (excluding != BrowseFacetKey.YEAR && year.isNotEmpty() && yearDecade(c.year) !in year) return false
-    if (excluding != BrowseFacetKey.WATCHED && watched.isNotEmpty()) {
-        val w = if (c.watched) "watched" else "unwatched"
-        if (w !in watched) return false
-    }
+    if (excluding != BrowseFacetKey.WATCHED && watched.isNotEmpty() && watchedState(c) !in watched) return false
     if (excluding != BrowseFacetKey.AUDIO && audio.isNotEmpty() && card.audioLanguages.none { it in audio }) return false
     if (excluding != BrowseFacetKey.CHANNEL && channel.isNotEmpty() && card.channels.none { it in channel }) return false
     if (excluding != BrowseFacetKey.QUALITY && quality.isNotEmpty() && card.quality !in quality) return false
@@ -184,7 +229,7 @@ private fun SeededBrowseStore.valuesFor(all: List<BrowseCard>, key: BrowseFacetK
             BrowseFacetKey.GENRE -> card.genres.forEach { bump(it) }
             BrowseFacetKey.TYPE -> bump(c.kind.name)
             BrowseFacetKey.YEAR -> yearDecade(c.year)?.let { bump(it) }
-            BrowseFacetKey.WATCHED -> bump(if (c.watched) "watched" else "unwatched")
+            BrowseFacetKey.WATCHED -> bump(watchedState(c))
             BrowseFacetKey.AUDIO -> card.audioLanguages.forEach { bump(it) }
             BrowseFacetKey.CHANNEL -> card.channels.forEach { bump(it) }
             BrowseFacetKey.QUALITY -> card.quality?.let { bump(it) }
@@ -203,8 +248,13 @@ private fun SeededBrowseStore.valuesFor(all: List<BrowseCard>, key: BrowseFacetK
 @Composable
 private fun facetValueLabel(key: BrowseFacetKey, value: String, channelNames: Map<String, String>): String = when (key) {
     BrowseFacetKey.TYPE -> if (value == "MOVIE") str("browse.type.movie") else str("browse.type.series")
-    BrowseFacetKey.WATCHED -> if (value == "watched") str("browse.watched.watched") else str("browse.watched.unwatched")
+    BrowseFacetKey.WATCHED -> when (value) {
+        "watched" -> str("browse.watched.watched")
+        "in_progress" -> str("browse.watched.in_progress")
+        else -> str("browse.watched.unwatched")
+    }
     BrowseFacetKey.CHANNEL -> channelNames[value] ?: value
+    BrowseFacetKey.AUDIO -> languageName(value) ?: value
     else -> value
 }
 
@@ -228,16 +278,26 @@ private fun SeededBrowseStore.toggle(key: BrowseFacetKey, value: String) {
 
 private fun sortedFiltered(store: SeededBrowseStore, all: List<BrowseCard>): List<BrowseCard> {
     val filtered = all.filter { store.matches(it, null) }
-    return when (store.sort) {
-        BrowseSort.RECENT -> filtered // server order is already newest-first
-        BrowseSort.TITLE_AZ -> filtered.sortedBy { it.card.title.lowercase() }
-        BrowseSort.TITLE_ZA -> filtered.sortedByDescending { it.card.title.lowercase() }
-        BrowseSort.YEAR -> filtered.sortedByDescending { it.card.year ?: 0 }
-        BrowseSort.MATURITY -> filtered.sortedBy { it.card.ageRating }
-        BrowseSort.IMDB -> filtered.sortedWith(compareByDescending<BrowseCard> { it.imdbRating?.aggregateRating ?: -1.0 })
+    // ASC ordering per field; RECENT's "ascending" base is the server's own newest-first order, so
+    // ASC there reads as oldest-first and DESC (the default) as newest-first — both real orders, not
+    // one arbitrary order plus its reverse-for-the-sake-of-it.
+    val ascending = when (store.sortField) {
+        SortField.RECENT -> filtered.asReversed()
+        SortField.TITLE -> filtered.sortedBy { it.card.title.lowercase() }
+        SortField.YEAR -> filtered.sortedBy { it.card.year ?: 0 }
+        SortField.MATURITY -> filtered.sortedBy { it.card.ageRating }
+        SortField.IMDB -> filtered.sortedBy { it.imdbRating?.aggregateRating ?: -1.0 }
     }
+    return if (store.sortDir == SortDir.DESC) ascending.asReversed() else ascending
 }
 
+/**
+ * R187 — the shared browse page (FR-RV-BROWSE1). Movies/Series (predefined [SeededBrowseStore.seedMediaKind]
+ * filters, no [breadcrumb]) and a row's "→ See all" drill-in (arbitrary seed + [breadcrumb] naming the
+ * row it came from) both render through this one composable — matching every other top-level/drill-in
+ * screen in the app (Home, Channel), it always carries the full nav [AppBar], not a page-local back
+ * affordance; system/D-pad Back is handled globally (see [onBack]'s doc on the other screens).
+ */
 @Composable
 fun SeededBrowseScreen(
     store: SeededBrowseStore,
@@ -246,7 +306,15 @@ fun SeededBrowseScreen(
     subtitle: String?,
     showTypeFacet: Boolean,
     showFacetBar: Boolean,
+    displayName: String,
+    discoverAvailable: Boolean = false,
+    /** Which nav tab (if any) to highlight — pass Movies/Series' own index when this IS that tab;
+     *  -1 (default) for a seeded drill-in that isn't itself one of the section tabs. */
+    activeNav: Int = -1,
     onBack: () -> Unit,
+    onNavSelect: (Int) -> Unit = {},
+    onProfile: (() -> Unit)? = null,
+    onSearch: (() -> Unit)? = null,
     onItemSelect: (MediaCard) -> Unit,
 ) {
     val colors = RaviloTheme.colors
@@ -255,9 +323,19 @@ fun SeededBrowseScreen(
     val scope = rememberCoroutineScope()
     val gridState = store.gridState
     val firstCellFR = remember { FocusRequester() }
-    val backFR = remember { FocusRequester() }
-    val firstFacetFR = remember { FocusRequester() }
-    LaunchedEffect(Unit) { runCatching { backFR.requestFocus() } }
+    val navBarFR = remember { FocusRequester() }
+    // R187 fix — one FocusRequester per facet chip (plus sort), so a closed popover can restore focus
+    // to the exact chip that opened it. Without this, Compose's default focus-loss recovery on the
+    // popover's removal was landing focus on the AppBar's Home tab instead — a stray next D-pad press
+    // (a normal "move to the next facet" RIGHT+OK) silently navigated the viewer clean out of the page.
+    val facetChipFRs = remember { BrowseFacetKey.entries.associateWith { FocusRequester() } }
+    val sortChipFR = remember { FocusRequester() }
+    val firstFacetFR = facetChipFRs.getValue(BrowseFacetKey.GENRE)
+    LaunchedEffect(Unit) { if (store.focusItemKey == null) runCatching { navBarFR.requestFocus() } }
+    val barScrolled by remember { derivedStateOf {
+        gridState.firstVisibleItemIndex > 0 || gridState.firstVisibleItemScrollOffset > 0
+    } }
+    val navItems = raviloNavItems(discoverAvailable)
 
     Box(
         modifier = Modifier.fillMaxSize().background(colors.background)
@@ -266,22 +344,16 @@ fun SeededBrowseScreen(
                 onBackToTop = {
                     scope.launch {
                         runCatching { gridState.animateScrollToItem(0) }
-                        runCatching { firstCellFR.requestFocus() }
+                        runCatching { navBarFR.requestFocus() }
                     }
                 },
             ),
     ) {
-        Column(Modifier.fillMaxSize().padding(top = 28.dp)) {
-            // Header: breadcrumb + title + subtitle (FR-RV-BROWSE1-3) — no seed chip, Back leaves the page.
+        Column(Modifier.fillMaxSize().padding(top = RaviloDimens.appBarHeight + 24.dp)) {
+            // Header: breadcrumb + title + subtitle (FR-RV-BROWSE1-3).
             Column(Modifier.padding(horizontal = raviloHPad)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        Modifier.dpadFocusable(focusRequester = backFR, onSelect = onBack, onBack = onBack)
-                            .padding(end = 10.dp),
-                    ) { Text("◂", color = colors.textSecondary, fontSize = 18.sp) }
-                    if (breadcrumb != null) {
-                        Text(breadcrumb, color = colors.textSecondary, fontSize = 14.sp, fontFamily = Sora)
-                    }
+                if (breadcrumb != null) {
+                    Text(breadcrumb, color = colors.textSecondary, fontSize = 14.sp, fontFamily = Sora)
                 }
                 Text(title, color = colors.text, fontSize = 28.sp, fontFamily = Sora, fontWeight = FontWeight.Bold)
                 val count = (state as? SeededBrowseState.Loaded)?.let { sortedFiltered(store, it.items).size }
@@ -302,20 +374,40 @@ fun SeededBrowseScreen(
                     if (showFacetBar) {
                         FacetBar(
                             store = store, all = s.items, showTypeFacet = showTypeFacet,
-                            firstFacetFR = firstFacetFR,
-                            onBarUp = { runCatching { backFR.requestFocus() } },
+                            facetChipFRs = facetChipFRs, sortChipFR = sortChipFR,
+                            onBarUp = { runCatching { navBarFR.requestFocus() } },
                             onBarDown = { runCatching { firstCellFR.requestFocus() } },
                         )
-                        val open = store.openFacet
-                        if (open != null) {
-                            FacetPopover(store = store, all = s.items, key = open, onClose = { store.openFacet = null })
-                        } else if (store.sortOpen) {
-                            SortPopover(store = store, onClose = { store.sortOpen = false })
+                        // R187 fix — small, restrained open/close motion (fade + vertical expand, ~150ms)
+                        // instead of the popover just snapping in; matches AppBar's own tween(180) idiom.
+                        AnimatedVisibility(
+                            visible = store.openFacet != null || store.sortOpen,
+                            enter = fadeIn(tween(150)) + expandVertically(tween(150)),
+                            exit = fadeOut(tween(120)) + shrinkVertically(tween(120)),
+                        ) {
+                            val open = store.openFacet
+                            if (open != null) {
+                                FacetPopover(
+                                    store = store, all = s.items, key = open,
+                                    onClose = { store.openFacet = null; runCatching { facetChipFRs.getValue(open).requestFocus() } },
+                                )
+                            } else if (store.sortOpen) {
+                                SortPopover(store = store, onClose = { store.sortOpen = false; runCatching { sortChipFR.requestFocus() } })
+                            }
                         }
                         Spacer(Modifier.height(14.dp))
                     }
-                    val filtered = remember(s.items, store.genre, store.type, store.maturity, store.year, store.watched, store.audio, store.channel, store.quality, store.sort) {
+                    val filtered = remember(s.items, store.genre, store.type, store.maturity, store.year, store.watched, store.audio, store.channel, store.quality, store.sortField, store.sortDir) {
                         sortedFiltered(store, s.items)
+                    }
+                    // Bug fix — a sort change kept whatever grid position/focus the viewer had before,
+                    // so "A–Z" could open still scrolled halfway down showing unrelated titles with the
+                    // old focused tile silently re-highlighted. A new sort is a new list: drop the stale
+                    // focus target and jump back to the top so the first (now differently-ordered) items
+                    // are what's actually on screen — focus itself stays on the sort chip (unchanged).
+                    LaunchedEffect(store.sortField, store.sortDir) {
+                        store.focusItemKey = null
+                        runCatching { gridState.scrollToItem(0) }
                     }
                     BrowseCardGrid(
                         items = filtered.map { it.card },
@@ -327,6 +419,20 @@ fun SeededBrowseScreen(
                 }
             }
         }
+
+        AppBar(
+            navItems = navItems,
+            activeNav = activeNav,
+            onNavSelect = onNavSelect,
+            navFR = navBarFR,
+            onDown = {
+                runCatching { (if (showFacetBar) firstFacetFR else firstCellFR).requestFocus() }
+            },
+            userInitials = displayName.take(2).uppercase(),
+            onProfile = onProfile,
+            onSearch = onSearch,
+            scrolled = barScrolled,
+        )
     }
 }
 
@@ -335,7 +441,8 @@ private fun FacetBar(
     store: SeededBrowseStore,
     all: List<BrowseCard>,
     showTypeFacet: Boolean,
-    firstFacetFR: FocusRequester,
+    facetChipFRs: Map<BrowseFacetKey, FocusRequester>,
+    sortChipFR: FocusRequester,
     onBarUp: () -> Unit,
     onBarDown: () -> Unit,
 ) {
@@ -361,17 +468,17 @@ private fun FacetBar(
                 BrowseFacetKey.MATURITY -> store.maturity.isActive
                 else -> store.selectionFor(key).isNotEmpty()
             }
-            val badge = when (key) {
-                BrowseFacetKey.MATURITY -> store.maturity.label().takeIf { it.isNotBlank() }
-                else -> store.selectionFor(key).size.takeIf { it > 0 }?.toString()
-            }
+            val badge = facetChipSummary(store, key)
             var focused by remember { mutableStateOf(false) }
+            // R187 fix — was an instant color snap; a short tween reads as one more small, restrained
+            // bit of polish rather than a jarring toggle (same idiom as AppBar's own scrolled-bg tween).
+            val chipBg by animateColorAsState(if (active) colors.accent else colors.surfaceVariant, tween(150), label = "facetChipBg")
             Box(
                 Modifier
-                    .background(if (active) colors.accent else colors.surfaceVariant, chipShape)
+                    .background(chipBg, chipShape)
                     .then(if (focused && !active) Modifier.border(2.dp, colors.focusRing, chipShape) else Modifier)
                     .dpadFocusable(
-                        focusRequester = if (i == 0) firstFacetFR else null,
+                        focusRequester = facetChipFRs[key],
                         onFocused = { focused = true }, onBlurred = { focused = false },
                         onSelect = { store.openFacet = if (store.openFacet == key) null else key; store.sortOpen = false },
                         onUp = onBarUp, onDown = { if (store.openFacet == null) onBarDown() },
@@ -407,12 +514,34 @@ private fun FacetBar(
                 Modifier
                     .background(colors.surfaceVariant, chipShape)
                     .then(if (focused) Modifier.border(2.dp, colors.focusRing, chipShape) else Modifier)
-                    .dpadFocusable(onFocused = { focused = true }, onBlurred = { focused = false }, onSelect = { store.sortOpen = !store.sortOpen; store.openFacet = null }, onUp = onBarUp)
+                    .dpadFocusable(
+                        focusRequester = sortChipFR,
+                        onFocused = { focused = true }, onBlurred = { focused = false },
+                        onSelect = { store.sortOpen = !store.sortOpen; store.openFacet = null },
+                        onUp = onBarUp,
+                    )
                     .padding(horizontal = 14.dp, vertical = 8.dp),
                 contentAlignment = Alignment.Center,
-            ) { Text(str("browse.sort") + ": " + sortLabel(store.sort), color = if (focused) colors.text else colors.textSecondary, fontSize = 14.sp, fontFamily = Sora) }
+            ) {
+                val dirArrow = if (store.sortDir == SortDir.DESC) "▼" else "▲"
+                Text(
+                    str("browse.sort") + ": " + sortLabel(store.sortField) + " " + dirArrow,
+                    color = if (focused) colors.text else colors.textSecondary, fontSize = 14.sp, fontFamily = Sora,
+                )
+            }
         }
     }
+}
+
+/** R187 fix — the active-selection summary shown in a facet chip: the actual value name(s) for 1-2
+ *  selections (e.g. "Action, Comedy"), then "+N" once there are more, instead of a bare count. */
+@Composable
+private fun facetChipSummary(store: SeededBrowseStore, key: BrowseFacetKey): String? {
+    if (key == BrowseFacetKey.MATURITY) return store.maturity.label().takeIf { it.isNotBlank() }
+    val sel = store.selectionFor(key)
+    if (sel.isEmpty()) return null
+    val names = sel.map { facetValueLabel(key, it, store.channelNames) }
+    return if (names.size <= 2) names.joinToString(", ") else names.take(2).joinToString(", ") + " +${names.size - 2}"
 }
 
 @Composable
@@ -424,10 +553,21 @@ private fun facetLabel(key: BrowseFacetKey): String = when (key) {
 }
 
 @Composable
-private fun sortLabel(sort: BrowseSort): String = when (sort) {
-    BrowseSort.RECENT -> str("browse.sort.recent"); BrowseSort.TITLE_AZ -> str("browse.sort.az")
-    BrowseSort.TITLE_ZA -> str("browse.sort.za"); BrowseSort.YEAR -> str("browse.sort.year")
-    BrowseSort.MATURITY -> str("browse.sort.maturity"); BrowseSort.IMDB -> str("browse.sort.imdb")
+private fun sortLabel(field: SortField): String = when (field) {
+    SortField.RECENT -> str("browse.sort.recent"); SortField.TITLE -> str("browse.sort.title")
+    SortField.YEAR -> str("browse.sort.year")
+    SortField.MATURITY -> str("browse.sort.maturity"); SortField.IMDB -> str("browse.sort.imdb")
+}
+
+/** Bidirectional-sort fix — a short, direction-aware sub-label under the field name in the popover
+ *  (e.g. "Newest first" / "Oldest first", "A–Z" / "Z–A") so the arrow isn't the only cue. */
+@Composable
+private fun sortDirLabel(field: SortField, dir: SortDir): String = when (field) {
+    SortField.TITLE -> if (dir == SortDir.ASC) str("browse.sort.az") else str("browse.sort.za")
+    SortField.RECENT -> if (dir == SortDir.DESC) str("browse.sort.newest") else str("browse.sort.oldest")
+    SortField.YEAR -> if (dir == SortDir.DESC) str("browse.sort.newest") else str("browse.sort.oldest")
+    SortField.MATURITY -> if (dir == SortDir.ASC) str("browse.sort.low_first") else str("browse.sort.high_first")
+    SortField.IMDB -> if (dir == SortDir.DESC) str("browse.sort.high_first") else str("browse.sort.low_first")
 }
 
 /**
@@ -438,24 +578,46 @@ private fun sortLabel(sort: BrowseSort): String = when (sort) {
  * single-focus-root architecture, not this grid's native traversal (see the spec's backend-review
  * addendum). onBack closes and returns focus to the facet bar via [onClose].
  */
+/** R187 fix — the popover's width tracks its actual content instead of always spanning the full facet
+ *  bar: a rough char-count heuristic over the (already display-ready, per [facetValueLabel]'s doc
+ *  comment) longest value, clamped to a sane range. Audio gets extra room for its flag glyph. */
+@Composable
+private fun facetPopoverWidth(store: SeededBrowseStore, values: List<FacetValue>, key: BrowseFacetKey): androidx.compose.ui.unit.Dp {
+    val maxLen = remember(values, store.channelNames) {
+        values.maxOfOrNull { v ->
+            when (key) {
+                BrowseFacetKey.CHANNEL -> store.channelNames[v.value]?.length ?: v.value.length
+                BrowseFacetKey.AUDIO -> (languageName(v.value) ?: v.value).length
+                else -> v.value.length
+            }
+        } ?: 8
+    }
+    val flagAllowance = if (key == BrowseFacetKey.AUDIO) 28 else 0
+    return (maxLen * 8 + 110 + flagAllowance).coerceIn(220, 420).dp
+}
+
 @Composable
 private fun FacetPopover(store: SeededBrowseStore, all: List<BrowseCard>, key: BrowseFacetKey, onClose: () -> Unit) {
     val colors = RaviloTheme.colors
     val firstRowFR = remember(key) { FocusRequester() }
     LaunchedEffect(key) { runCatching { firstRowFR.requestFocus() } }
     Box(
-        Modifier.fillMaxWidth().padding(horizontal = raviloHPad)
+        Modifier.padding(horizontal = raviloHPad)
             .dpadFocusable(onBack = onClose)
     ) {
-        Column(
-            Modifier.fillMaxWidth().background(colors.surfaceVariant, RoundedCornerShape(12.dp)).padding(12.dp),
-        ) {
-            if (key == BrowseFacetKey.MATURITY) {
+        if (key == BrowseFacetKey.MATURITY) {
+            Column(
+                Modifier.width(320.dp).background(colors.surfaceVariant, RoundedCornerShape(12.dp)).padding(12.dp),
+            ) {
                 MaturityRangePicker(store, firstRowFR, onClose)
-            } else {
-                val values = remember(all, store.genre, store.type, store.maturity, store.year, store.watched, store.audio, store.channel, store.quality) {
-                    store.valuesFor(all, key)
-                }
+            }
+        } else {
+            val values = remember(all, store.genre, store.type, store.maturity, store.year, store.watched, store.audio, store.channel, store.quality) {
+                store.valuesFor(all, key)
+            }
+            Column(
+                Modifier.width(facetPopoverWidth(store, values, key)).background(colors.surfaceVariant, RoundedCornerShape(12.dp)).padding(12.dp),
+            ) {
                 LazyColumn(Modifier.height(280.dp)) {
                     items(values.size, key = { i -> values[i].value }) { i ->
                         val v = values[i]
@@ -473,7 +635,21 @@ private fun FacetPopover(store: SeededBrowseStore, all: List<BrowseCard>, key: B
                                 .padding(horizontal = 10.dp, vertical = 8.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Text(if (selected) "✓ " else "• ", color = if (selected) colors.accent else colors.textSecondary, fontSize = 14.sp)
+                            // R187 fix — no unselected-row bullet; a fixed-width slot keeps the checkmark
+                            // from shifting the label when a row becomes (un)selected.
+                            Box(Modifier.width(18.dp)) {
+                                if (selected) Text("✓", color = colors.accent, fontSize = 14.sp)
+                            }
+                            if (key == BrowseFacetKey.AUDIO) {
+                                val flag = LANG_CC[v.value.lowercase()]
+                                if (flag != null) {
+                                    Image(
+                                        painterResource(flag), contentDescription = null,
+                                        modifier = Modifier.width(20.dp).height(14.dp).clip(RoundedCornerShape(2.dp)),
+                                    )
+                                    Spacer(Modifier.width(8.dp))
+                                }
+                            }
                             Text(facetValueLabel(key, v.value, store.channelNames), color = colors.text, fontSize = 14.sp, fontFamily = Sora, modifier = Modifier.weight(1f))
                             Text(v.count.toString(), color = colors.textSecondary, fontSize = 13.sp, fontFamily = Sora)
                         }
@@ -558,23 +734,48 @@ private fun SortPopover(store: SeededBrowseStore, onClose: () -> Unit) {
     val colors = RaviloTheme.colors
     val firstFR = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { firstFR.requestFocus() } }
-    Box(Modifier.fillMaxWidth().padding(horizontal = raviloHPad).dpadFocusable(onBack = onClose)) {
-        Column(Modifier.background(colors.surfaceVariant, RoundedCornerShape(12.dp)).padding(12.dp)) {
-            BrowseSort.entries.forEachIndexed { i, opt ->
+    Box(Modifier.padding(horizontal = raviloHPad).dpadFocusable(onBack = onClose)) {
+        Column(Modifier.width(260.dp).background(colors.surfaceVariant, RoundedCornerShape(12.dp)).padding(12.dp)) {
+            SortField.entries.forEachIndexed { i, opt ->
                 var focused by remember { mutableStateOf(false) }
+                val active = store.sortField == opt
                 Row(
                     Modifier.fillMaxWidth()
                         .background(if (focused) colors.surface else androidx.compose.ui.graphics.Color.Transparent, RoundedCornerShape(8.dp))
                         .dpadFocusable(
                             focusRequester = if (i == 0) firstFR else null,
                             onFocused = { focused = true }, onBlurred = { focused = false },
-                            onSelect = { store.sort = opt; onClose() },
+                            // Bug fix (bidirectional sort): picking an already-active field used to be a
+                            // no-op — there was no way to flip newest-first ↔ oldest-first etc. without
+                            // this popover exposing a direction at all. Re-selecting the active field now
+                            // flips it; selecting a different field switches to its sensible default dir.
+                            onSelect = {
+                                if (active) store.sortDir = if (store.sortDir == SortDir.ASC) SortDir.DESC else SortDir.ASC
+                                else { store.sortField = opt; store.sortDir = defaultDirFor(opt) }
+                                onClose()
+                            },
                             onLeft = onClose, onRight = onClose, onBack = onClose,
                         )
                         .padding(horizontal = 10.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(if (store.sort == opt) "✓ " else "• ", color = if (store.sort == opt) colors.accent else colors.textSecondary, fontSize = 14.sp)
-                    Text(sortLabel(opt), color = colors.text, fontSize = 14.sp, fontFamily = Sora)
+                    // R187 fix — same no-dot-when-unselected treatment as FacetPopover's checklist.
+                    Box(Modifier.width(18.dp)) {
+                        if (active) Text("✓", color = colors.accent, fontSize = 14.sp)
+                    }
+                    Column(Modifier.weight(1f)) {
+                        Text(sortLabel(opt), color = colors.text, fontSize = 14.sp, fontFamily = Sora)
+                        Text(
+                            sortDirLabel(opt, if (active) store.sortDir else defaultDirFor(opt)),
+                            color = colors.textSecondary, fontSize = 12.sp, fontFamily = Sora,
+                        )
+                    }
+                    if (active) {
+                        Text(
+                            if (store.sortDir == SortDir.DESC) "▼" else "▲",
+                            color = colors.accent, fontSize = 14.sp, fontFamily = Sora,
+                        )
+                    }
                 }
             }
         }

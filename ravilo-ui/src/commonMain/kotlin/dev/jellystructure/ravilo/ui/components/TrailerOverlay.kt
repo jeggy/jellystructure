@@ -63,13 +63,16 @@ fun TrailerOverlay(trailer: TvTrailer, title: String, onClose: () -> Unit) {
                 str("action.trailer").uppercase(),
                 color = colors.accent, fontSize = 12.sp, fontWeight = FontWeight.Bold,
                 letterSpacing = 1.sp, fontFamily = sora,
+                maxLines = 1, softWrap = false,
             )
-            Box(Modifier.padding(start = 12.dp)) {
+            Box(Modifier.weight(1f, fill = false).padding(start = 12.dp)) {
                 val name = trailer.name?.takeIf { it.isNotBlank() }
                 Text(
                     if (name != null) "$title · $name" else title,
                     color = colors.text, fontSize = 16.sp, fontWeight = FontWeight.SemiBold,
                     fontFamily = spaceGrotesk,
+                    maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                 )
             }
             Box(
@@ -82,6 +85,7 @@ fun TrailerOverlay(trailer: TvTrailer, title: String, onClose: () -> Unit) {
                     if (trailer.site.equals("vimeo", ignoreCase = true)) "Vimeo" else "YouTube",
                     color = colors.textSecondary, fontSize = 11.sp, fontWeight = FontWeight.Bold,
                     fontFamily = sora,
+                    maxLines = 1, softWrap = false,
                 )
             }
             Box(Modifier.weight(1f))
@@ -94,6 +98,7 @@ fun TrailerOverlay(trailer: TvTrailer, title: String, onClose: () -> Unit) {
                 Text(
                     "✕ ${str("action.close")}",
                     color = colors.text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, fontFamily = sora,
+                    maxLines = 1, softWrap = false,
                 )
             }
         }

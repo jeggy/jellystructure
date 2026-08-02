@@ -31,6 +31,7 @@ import androidx.compose.ui.unit.sp
 import dev.jellystructure.ravilo.ui.LocalPortrait
 import dev.jellystructure.ravilo.ui.components.AppBar
 import dev.jellystructure.ravilo.ui.components.HeroCarousel
+import dev.jellystructure.ravilo.ui.components.SeeAllTile
 import dev.jellystructure.ravilo.ui.components.StaticContentRow
 import dev.jellystructure.ravilo.ui.components.Tile
 import dev.jellystructure.ravilo.ui.components.TileVariant
@@ -235,17 +236,23 @@ fun ChannelScreen(
                                 val row = nonEmpty[ri]
                                 // R187 (FR-RV-BROWSE1-1) — see HomeScreen's ContentRowItem for the same check.
                                 val canSeeAll = row.items.size > 8 && (row.kind == RowKind.CONTINUE || row.seedQuery != null || row.seedMediaKind != null)
+                                val rowVariant = if (row.kind == RowKind.CONTINUE) TileVariant.LANDSCAPE
+                                                  else s.feed.tileShape.toTileVariant()
                                 Spacer(Modifier.height(RaviloDimens.rowGap))
                                 StaticContentRow(
                                     title = row.title,
                                     items = row.items,
-                                    seeAllLabel = if (canSeeAll) dev.jellystructure.ravilo.ui.i18n.str("browse.see_all", mapOf("count" to row.items.size.toString())) else null,
-                                    onSeeAll = if (canSeeAll) ({ onSeeAll(row) }) else null,
+                                    trailingItem = if (canSeeAll) ({
+                                        SeeAllTile(count = row.seedTotalCount ?: row.items.size, variant = rowVariant, onSelect = { onSeeAll(row) })
+                                    }) else null,
                                     itemKey = { card -> card.id },
                                     restoreItemKey = if (store.focusRowKey == row.id) store.focusItemKey else null,  // R139
+                                    // Bug fix: consume the restore once it fires — else scrolling this row
+                                    // out of the LazyColumn's composed window and back in re-triggers it
+                                    // and yanks focus back here.
+                                    onRestored = { store.focusRowKey = null; store.focusItemKey = null },
                                 ) { idx, card, fr ->
-                                    val variant = if (row.kind == RowKind.CONTINUE) TileVariant.LANDSCAPE
-                                                  else s.feed.tileShape.toTileVariant()
+                                    val variant = rowVariant
                                     Tile(
                                         title = card.title,
                                         subtitle = card.nextUpLabel,
@@ -270,7 +277,20 @@ fun ChannelScreen(
                     onNavSelect = onNavSelect,
                     navFR = channelBarFR,
                     onDown = {
-                        runCatching { if (hasHero) heroFR.requestFocus() else firstTileFR.requestFocus() }
+                        // Bug fix: heroFR.requestFocus() used to be called directly here — if the list had
+                        // been scrolled down, the hero (lazy item 0) was disposed and requestFocus() threw,
+                        // silently swallowed, stranding focus in the nav bar (D-pad Down did nothing).
+                        // Same root cause + fix as HomeScreen's identical AppBar.onDown bridge. Scroll to
+                        // the top first (same idiom as this screen's own backToTopOnBack above) so the hero
+                        // is back in composition before focusing it.
+                        if (hasHero) {
+                            scope.launch {
+                                runCatching { listState.scrollToItem(0) }
+                                runCatching { heroFR.requestFocus() }
+                            }
+                        } else {
+                            runCatching { firstTileFR.requestFocus() }
+                        }
                     },
                     userInitials = displayName.take(2).uppercase(),
                     onProfile = onProfile,

@@ -38,6 +38,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.jellystructure.ravilo.ui.focus.dpadFocusable
+import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.seams.RemoteImage
 import dev.jellystructure.ravilo.ui.theme.RaviloMotion
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
@@ -352,5 +353,94 @@ fun Tile(
                 modifier = Modifier.width(w),
             )
         }
+    }
+}
+
+/**
+ * R187 (FR-RV-BROWSE1-1) — the "→ See all" end-of-row tile: a real tile in the row's own focus track,
+ * matching [Tile]'s size/shape/focus-animation language exactly (same [variant] dimensions, the same
+ * focus scale/ring/shadow spring) so it reads as one more card, not a bolted-on link. [count] is the
+ * seed's true total (see [dev.jellystructure.shared.tv.Row.seedTotalCount]) — shown as-is once known;
+ * pass null while it's still loading rather than a wrong/stale number.
+ */
+@Composable
+fun SeeAllTile(
+    count: Int?,
+    variant: TileVariant = TileVariant.POSTER,
+    focusRequester: FocusRequester? = null,
+    onSelect: () -> Unit,
+) {
+    val colors = RaviloTheme.colors
+    val sora = Sora
+    var focused by remember { mutableStateOf(false) }
+    val focusSpec = remember { RaviloMotion.focusSpring<Float>() }
+    val dpSpec    = remember { RaviloMotion.focusSpring<Dp>() }
+    val scale         by animateFloatAsState(if (focused) RaviloMotion.TILE_FOCUS_SCALE else 1f, focusSpec, label = "seeAllScale")
+    val ringWidth     by animateDpAsState(if (focused) 3.dp else 0.dp, dpSpec, label = "seeAllBorder")
+    val glowElevation by animateDpAsState(if (focused) 24.dp else 0.dp, dpSpec, label = "seeAllShadow")
+    val tileShape = remember(colors.tileRadius) { RoundedCornerShape(colors.tileRadius) }
+
+    val tileScale = dev.jellystructure.ravilo.ui.LocalTileScale.current
+    val (w, h) = when (variant) {
+        TileVariant.POSTER -> POSTER_W to POSTER_H
+        TileVariant.LANDSCAPE -> LANDSCAPE_W to LANDSCAPE_H
+        TileVariant.SQUARE -> SQUARE_W to SQUARE_H
+    }.let { (bw, bh) -> bw * tileScale to bh * tileScale }
+
+    Column(
+        modifier = Modifier
+            .width(w)
+            .dpadFocusable(
+                focusRequester = focusRequester,
+                onFocused = { focused = true },
+                onBlurred = { focused = false },
+                onSelect = onSelect,
+            ),
+    ) {
+        Box(
+            modifier = Modifier
+                .width(w).height(h)
+                .graphicsLayer {
+                    scaleX = scale; scaleY = scale
+                    this.shadowElevation = glowElevation.toPx()
+                    shape = tileShape
+                    clip = true
+                    ambientShadowColor = colors.focusGlow
+                    spotShadowColor = colors.focusGlow
+                }
+                .drawWithCache {
+                    val radius = CornerRadius(colors.tileRadius.toPx())
+                    onDrawWithContent {
+                        drawContent()
+                        val bw = ringWidth.toPx()
+                        if (bw > 0f) drawRoundRect(
+                            color = colors.focusRing,
+                            cornerRadius = radius,
+                            style = Stroke(width = bw),
+                            topLeft = Offset(bw / 2f, bw / 2f),
+                            size = Size(size.width - bw, size.height - bw),
+                        )
+                    }
+                }
+                .background(if (focused) colors.surfaceVariant else colors.surface),
+            contentAlignment = Alignment.Center,
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text("→", color = colors.accent, fontSize = 26.sp, fontFamily = sora, fontWeight = FontWeight.SemiBold)
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    text = str("browse.see_all_short"),
+                    color = colors.text, fontSize = 14.sp, fontFamily = sora, fontWeight = FontWeight.SemiBold,
+                )
+                if (count != null) {
+                    Spacer(Modifier.height(2.dp))
+                    Text(text = count.toString(), color = colors.textDim, fontSize = 12.sp, fontFamily = sora)
+                }
+            }
+        }
+        // Blank label lines so the tile's total height matches its poster/landscape siblings exactly
+        // (Tile always reserves a title line below the image) — keeps the row's baseline aligned.
+        Spacer(Modifier.height(2.dp))
+        Text(text = "", fontSize = 15.sp, fontFamily = sora, modifier = Modifier.width(w))
     }
 }
