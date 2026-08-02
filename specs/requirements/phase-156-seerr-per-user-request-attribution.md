@@ -59,6 +59,34 @@ intermittent Seerr hiccup must never block a request the viewer is actively wait
    account after it's been imported (first request, or a manual import) — otherwise everyone's requests,
    including the operator's own, land pending for manual approval.
 
+## Dev-review addendum (2026-08-02 — auto-approve claim was wrong, verified live)
+
+Live-tested end to end on Soveværelse TV: signed in as a real non-admin Jellyfin user ("Test Stream"),
+submitted a request for a title via Ravilo's Discover ▸ Request tab, then checked Seerr directly
+(`GET /request`, `GET /request/{id}`) with the admin API key.
+
+**Attribution is confirmed correct** — the request's `requestedBy` is genuinely the Test Stream Seerr
+account (id 6, `jellyfinUserId` matching), not the shared API-key account (id 1, jogvan). FR-SEERR1-1/2
+work exactly as specced.
+
+**The auto-approve claim in the Background section above is wrong.** Re-read `MediaRequest.ts` more
+carefully (lines 366–401, not just 58–74): the request's `status` (and `modifiedBy`) are decided by
+`user.hasPermission([AUTO_APPROVE, AUTO_APPROVE_MOVIE, MANAGE_REQUESTS])` — **`user` is the original
+API-key-authenticated caller, not `requestUser`** (the `userId`-impersonated target). Only the
+REQUEST-permission and quota checks earlier in the function switch to `requestUser`; the approval
+decision does not. Confirmed live: Test Stream's own permission bitmask is `32` (`REQUEST` only, no
+`AUTO_APPROVE*` bits) and the request still auto-approved (`status: 2`, `modifiedBy` = jogvan) — because
+jellystructure's configured API key belongs to jogvan's own **Owner/Admin** account, and `ADMIN`
+short-circuits every `hasPermission` check regardless of which user is impersonated in the payload.
+
+**Practical effect: FR-SEERR1 code needs no fix — the pre-existing "Operator setup" step 1 above (swap
+the configured API key off the Owner/Admin account onto a plain, non-privileged service account) is not
+optional polish, it is the actual gate.** As long as jellystructure authenticates to Seerr with an
+Owner/Admin key, *every* request auto-approves no matter who it's attributed to — attribution and
+approval-gating are independent outcomes of this phase, not the same mechanism as originally written
+above. Steps 2–3 of "Operator setup" (default permissions, opting the operator's own account back into
+auto-approve individually) remain correct and become relevant *after* step 1 is done.
+
 ## Out of scope
 - Building any admin UI in jellystructure to view/manage the Jellyfin↔Seerr link — Seerr's own Settings
   → Users page already shows this once accounts exist.
