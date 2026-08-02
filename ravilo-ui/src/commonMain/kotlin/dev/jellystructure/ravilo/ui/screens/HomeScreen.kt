@@ -49,6 +49,7 @@ import dev.jellystructure.ravilo.ui.components.AppBar
 import dev.jellystructure.ravilo.ui.components.ChannelCard
 import dev.jellystructure.ravilo.ui.components.HeroCarousel
 import dev.jellystructure.ravilo.ui.components.HomeLoadingShell
+import dev.jellystructure.ravilo.ui.components.SeeAllTile
 import dev.jellystructure.ravilo.ui.components.StaticContentRow
 import dev.jellystructure.ravilo.ui.components.Tile
 import dev.jellystructure.ravilo.ui.focus.dpadFocusable
@@ -283,6 +284,9 @@ private fun HomeLoaded(
                     urlResolver = { ch -> ch.logoUrl },
                     bringRowHeaderIntoView = false,  // R108: spec topInset already shows the title
                     restoreItemKey = if (store.focusRowKey == "channels") store.focusItemKey else null,  // R139
+                    // Bug fix: consume the restore once it fires — else scrolling this row out of the
+                    // LazyColumn's composed window and back in re-triggers it and yanks focus back here.
+                    onRestored = { store.focusRowKey = null; store.focusItemKey = null },
                 ) { i, ch, fr ->
                     ChannelCard(
                         name = ch.name,
@@ -363,15 +367,17 @@ private fun ContentRowItem(
     // Compute variant here so urlResolver and Tile use the same value.
     val rowVariant = if (row.kind == RowKind.CONTINUE) TileVariant.LANDSCAPE else feed.tileShape.toTileVariant()
     Spacer(Modifier.height(RaviloDimens.rowGap))
-    // R187 (FR-RV-BROWSE1-1) — a "→ See all" tile only when there's more than a screen's worth AND
-    // the row has something to resolve into: CONTINUE has its own dedicated seed-less path (still
-    // navigable, HomeFeedService.continueWatchingAll), everything else needs Row.seedQuery.
+    // R187 (FR-RV-BROWSE1-1) — a "→ See all" TILE (not a header link — see SeeAllTile's doc comment)
+    // only when there's more than a screen's worth AND the row has something to resolve into: CONTINUE
+    // has its own dedicated seed-less path (still navigable, HomeFeedService.continueWatchingAll),
+    // everything else needs Row.seedQuery.
     val canSeeAll = row.items.size > 8 && (row.kind == RowKind.CONTINUE || row.seedQuery != null || row.seedMediaKind != null)
     StaticContentRow(
         title = row.title,
         items = row.items,
-        seeAllLabel = if (canSeeAll) str("browse.see_all", mapOf("count" to row.items.size.toString())) else null,
-        onSeeAll = if (canSeeAll) ({ onSeeAll(row) }) else null,
+        trailingItem = if (canSeeAll) ({
+            SeeAllTile(count = row.seedTotalCount ?: row.items.size, variant = rowVariant, onSelect = { onSeeAll(row) })
+        }) else null,
         itemKey = { card -> card.id },
         urlResolver = { card ->
             val u = if (rowVariant == TileVariant.LANDSCAPE) card.backdropUrl ?: card.posterUrl else card.posterUrl
@@ -381,6 +387,9 @@ private fun ContentRowItem(
         },
         bringRowHeaderIntoView = false,  // R108: spec topInset already shows the title
         restoreItemKey = if (store.focusRowKey == row.id) store.focusItemKey else null,  // R139
+        // Bug fix: consume the restore once it fires — else scrolling this row out of the LazyColumn's
+        // composed window and back in re-triggers it and yanks focus back here.
+        onRestored = { store.focusRowKey = null; store.focusItemKey = null },
     ) { i, card, fr ->
         // R113: in Continue Watching, show the season/episode as a small on-image badge for TV
         // shows and leave just the series title below (was "S1E3 · Episode" as the subtitle).
@@ -425,6 +434,9 @@ private fun OnNowRow(
         urlResolver = { it.logoUrl },
         bringRowHeaderIntoView = false,
         restoreItemKey = if (store.focusRowKey == "on_now") store.focusItemKey else null,
+        // Bug fix: consume the restore once it fires — else scrolling this row out of the LazyColumn's
+        // composed window and back in re-triggers it and yanks focus back here.
+        onRestored = { store.focusRowKey = null; store.focusItemKey = null },
         // The guide tile is now the row's first item, so the hero-down focus bridge lands there
         // instead of on the first channel tile.
         leadingItem = { LiveTvGuideTile(onClick = onOpenLiveTvGuide, focusRequester = firstItemFR) },

@@ -303,6 +303,12 @@ fun Route.tvRoutes(
         call.respond(homeFeedService.getHomeFeed(device))
     }
 
+    // R187 fix — channel id->name list for the seeded-browse page's Channel facet.
+    get("/tv/channels") {
+        val device = call.attributes[DeviceKey]
+        call.respond(homeFeedService.getChannels(device))
+    }
+
     get("/tv/channel/{id}") {
         val device = call.attributes[DeviceKey]
         val channelId = call.parameters["id"] ?: run {

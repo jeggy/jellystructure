@@ -3,6 +3,8 @@ package dev.jellystructure.ravilo.ui.screens
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -250,6 +252,14 @@ private fun MovieDetailLoaded(
                         // R72: scroll(UserInput) wins over bring-into-view (Default priority) so
                         // focusing Play/Resume reliably reframes the full backdrop.
                         modifier = Modifier
+                            // Bug fix: this Row lives inside the hero's 60%-width column; once Play +
+                            // Watched + My List + Trailer's combined natural width exceeded that column,
+                            // the Row got clamped to the column's maxWidth and the LAST button (Trailer)
+                            // ended up squeezed into an unreadable sliver instead of the whole row simply
+                            // being allowed to scroll. horizontalScroll removes the clamp — every button
+                            // always renders at its full natural size; if there ever isn't room, the row
+                            // scrolls (D-pad focus brings the target into view) instead of corrupting layout.
+                            .horizontalScroll(rememberScrollState())
                             .onFocusChanged {
                                 // R72: focusing Play/Resume reframes the full backdrop. R115: only when the
                                 // hero is actually scrolled — on open the list is already at the top (offset 0),
@@ -310,10 +320,14 @@ private fun MovieDetailLoaded(
                         )
                         // R163: only when Phase 130 ingested a usable trailer — never a dead affordance.
                         if (detail.trailer != null) {
+                            // Bug fix: with no minimum width this button intermittently measured to a
+                            // ~0-width label (collapsing the whole pill into a tiny near-square sliver,
+                            // completely unreadable) — same defensive fix already applied to Play above.
                             RaviloButton(
                                 label = "▷ ${str("action.trailer")}",
                                 focusRequester = trailerFR,
                                 style = ButtonStyle.GHOST,
+                                modifier = Modifier.widthIn(min = 130.dp),
                                 onSelect = { showTrailer = true },
                             )
                         }
@@ -378,7 +392,12 @@ private fun MovieDetailLoaded(
             activeNav = -1,
             onNavSelect = onNavSelect,
             navFR = navBarFR,
-            onDown = { runCatching { playFR.requestFocus() } },
+            // Bug fix: playFR.requestFocus() used to be called directly here — if the list had been
+            // scrolled down into cast/related, the hero (lazy item 0) was disposed and requestFocus()
+            // threw, silently swallowed, stranding focus in the nav bar (D-pad Down did nothing). Same
+            // root cause + fix as HomeScreen's AppBar.onDown. Scroll to the top first so the hero is
+            // back in composition before focusing it.
+            onDown = { scope.launch { runCatching { listState.scrollToItem(0) }; runCatching { playFR.requestFocus() } } },
             userInitials = displayName.take(2).uppercase(),
             onProfile = onProfile,
             onSearch = onSearch,

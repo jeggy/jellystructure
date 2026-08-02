@@ -109,6 +109,13 @@ fun RaviloButton(
             fontSize = 15.sp,
             fontWeight = FontWeight.SemiBold,
             fontFamily = sora,
+            // Bug fix: an unbounded label inside a Row that runs short on remaining width (e.g. a
+            // sibling with a very long, uncapped title) collapsed into a one-character-per-line,
+            // near-unreadable sliver instead of overflowing gracefully — a button label must never
+            // wrap; degrade to an ellipsis, never a vertical stack of letters.
+            maxLines = 1,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+            softWrap = false,
         )
     }
     }

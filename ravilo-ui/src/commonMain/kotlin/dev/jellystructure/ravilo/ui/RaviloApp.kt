@@ -171,6 +171,9 @@ private sealed class Dest {
         val breadcrumb: String?,
         val continueWatching: Boolean,
         val displayName: String,
+        /** R187 fix — which section tab (if any) this seeded page IS, so the AppBar highlights it;
+         *  -1 for a drill-in ("→ See all") page that isn't itself a tab. */
+        val activeNav: Int = -1,
     ) : Dest()
     data class Search(val displayName: String) : Dest()
     // R170 — Coming Soon (the old Upcoming tab) and Request (the old Top-10/Discover tab) are now the
@@ -673,12 +676,63 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                     subtitle = dest.breadcrumb?.let { str("browse.from_row", mapOf("row" to it)) },
                     showTypeFacet = dest.seedMediaKind == null,
                     showFacetBar = !dest.continueWatching,
+                    displayName = dest.displayName,
+                    discoverAvailable = upcomingAvailable || discoverAvailable,
+                    activeNav = dest.activeNav,
                     onBack = { pop() },
+                    onNavSelect = { idx ->
+                        when (raviloNavTarget(idx, upcomingAvailable || discoverAvailable)) {
+                            RaviloNavTarget.HOME -> resetTo(Dest.Home(dest.displayName))
+                            RaviloNavTarget.MOVIES -> push(Dest.Browse(BrowseKind.MOVIES, dest.displayName))
+                            RaviloNavTarget.SERIES -> push(Dest.Browse(BrowseKind.SERIES, dest.displayName))
+                            RaviloNavTarget.DISCOVER -> push(Dest.Discover(dest.displayName, defaultDiscoverSegment(upcomingAvailable, discoverAvailable)))
+                        }
+                    },
+                    onProfile = { profileMenuOpen = true },
+                    onSearch = { push(Dest.Search(dest.displayName)) },
                     onItemSelect = { openDetail(it, dest.displayName) },
                 )
             }
 
-            is Dest.Browse -> {
+            // R187 fix (issue #1) — Movies/Series are no longer their own bespoke grid: they're
+            // SeededBrowseScreen with a fixed seedMediaKind and no other seed, the SAME shared component
+            // as a row's "→ See all" drill-in — full facet bar, sort, everything. My List keeps the old
+            // BrowseStore/BrowseScreen: it isn't expressible as a ConditionGroup seed (it's per-user saved-
+            // list membership, a different backend query shape entirely), so unifying it isn't a same-day change.
+            is Dest.Browse -> if (dest.kind == BrowseKind.MOVIES || dest.kind == BrowseKind.SERIES) {
+                val storeKey = "seededTab:${dest.displayName}:${dest.kind}"
+                // /tv/browse/seeded's mediaKind matches MediaKind's enum name ("MOVIE"/"SERIES", see
+                // BrowseService.browseByQuery) — NOT BrowseKind.apiKey's "movie"/"series", which is the
+                // OLD plain /tv/browse endpoint's own (different) convention.
+                val seedKind = if (dest.kind == BrowseKind.MOVIES) "MOVIE" else "SERIES"
+                val store = keptStore(storeKey) {
+                    SeededBrowseStore(apiClient, seedQuery = null, seedMediaKind = seedKind, continueWatching = false)
+                }
+                val tabTitle = if (dest.kind == BrowseKind.MOVIES) str("nav.movies") else str("nav.series")
+                SeededBrowseScreen(
+                    store = store,
+                    title = tabTitle,
+                    breadcrumb = null,
+                    subtitle = null,
+                    showTypeFacet = false,
+                    showFacetBar = true,
+                    displayName = dest.displayName,
+                    discoverAvailable = upcomingAvailable || discoverAvailable,
+                    activeNav = if (dest.kind == BrowseKind.MOVIES) 1 else 2,
+                    onBack = { pop() },
+                    onNavSelect = { idx ->
+                        when (raviloNavTarget(idx, upcomingAvailable || discoverAvailable)) {
+                            RaviloNavTarget.HOME -> resetTo(Dest.Home(dest.displayName))
+                            RaviloNavTarget.MOVIES -> replaceTop(Dest.Browse(BrowseKind.MOVIES, dest.displayName))
+                            RaviloNavTarget.SERIES -> replaceTop(Dest.Browse(BrowseKind.SERIES, dest.displayName))
+                            RaviloNavTarget.DISCOVER -> push(Dest.Discover(dest.displayName, defaultDiscoverSegment(upcomingAvailable, discoverAvailable)))
+                        }
+                    },
+                    onProfile = { profileMenuOpen = true },
+                    onSearch = { push(Dest.Search(dest.displayName)) },
+                    onItemSelect = { openDetail(it, dest.displayName) },
+                )
+            } else {
                 val store = keptStore("browse:${dest.displayName}:${dest.kind}") { BrowseStore(apiClient) }
                 BrowseScreen(
                     kind = dest.kind,

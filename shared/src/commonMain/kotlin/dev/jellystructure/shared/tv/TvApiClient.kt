@@ -55,6 +55,14 @@ class TvApiClient(
         return json.decodeFromString<HomeFeed>(r.bodyAsText())
     }
 
+    /** R187 fix — just the channel id->name list, for the seeded-browse page's Channel facet when it's
+     *  opened from an entry point (e.g. the Movies/Series tab) that never loaded a full [HomeFeed]. */
+    suspend fun getChannels(): List<Channel> {
+        val r = client.get("$baseUrl/api/tv/channels") { auth() }
+        r.assertSuccess()
+        return json.decodeFromString<List<Channel>>(r.bodyAsText())
+    }
+
     // ─── Browse + search ─────────────────────────────────────────────────────
 
     // R118: pageSize null ⇒ server returns the full filtered set (no 40-item cap).
