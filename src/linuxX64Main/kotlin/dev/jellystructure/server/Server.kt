@@ -214,6 +214,10 @@ fun startServer(
 
         installAuthPlugin(sessionService, validateDeviceToken = { deviceService.validateDeviceToken(it) }, validateApiKey = { apiKeyStore.validate(it) })
 
+        // Security fix (2026-08-02 review, finding H4) — shared between /api/auth/login and
+        // /api/tv/login; see LoginRateLimiter's doc comment.
+        val loginRateLimiter = dev.jellystructure.auth.LoginRateLimiter()
+
         installGzipCompression()
 
         // Phase 129 (FR-OPS1 §B.2) — global load shed, earliest pipeline phase so a shed response
@@ -318,7 +322,7 @@ fun startServer(
                     call.respond(mapOf("checks" to checks))
                 }
 
-                authRoutes(sessionService, jellyfinClient, configStore)
+                authRoutes(sessionService, jellyfinClient, configStore, loginRateLimiter)
                 configureConfigRoutes(configStore, effectiveScanThreads, qbClient, arrClient, seerrClient, tmdbClient, requestLanguageService)
                 setupRoutes(configStore, jellyfinClient)
                 jellyfinRoutes(configStore, jellyfinClient)
@@ -335,7 +339,7 @@ fun startServer(
                 // R171 — the TV Request tab's Seerr-backed discover/search/request service; null (tab
                 // reports unavailable) until a SeerrClient is wired, exactly like the other optional *arr services above.
                 val seerrDiscoverService = seerrClient?.let { dev.jellystructure.seerr.SeerrDiscoverService(configStore, it, raviloConfigService, mediaStore, requestLanguageService, requestIntentStore, acquisitionService) }
-                tvRoutes(deviceService, raviloConfigService, homeFeedService, browseService, detailService, playbackService, sessionService, jellyfinClient, configStore, channelLogoStore, imageProxyService, tvEventBus, upcomingService, seerrDiscoverService, mediaStore)
+                tvRoutes(deviceService, raviloConfigService, homeFeedService, browseService, detailService, playbackService, sessionService, jellyfinClient, configStore, channelLogoStore, imageProxyService, tvEventBus, upcomingService, seerrDiscoverService, mediaStore, loginRateLimiter)
                 liveTvRoutes(liveTvService)
             }
 

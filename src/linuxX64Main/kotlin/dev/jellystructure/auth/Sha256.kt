@@ -1,5 +1,20 @@
 package dev.jellystructure.auth
 
+/**
+ * Security fix (2026-08-02 review, finding L5) — a plain `a != b` comparison on a secret short-
+ * circuits at the first mismatched character, which leaks a (small, but nonzero) timing signal an
+ * attacker could in principle use to recover a secret byte-by-byte. Used for the *arr webhook secret
+ * compare (`WebhookRoutes.kt`); session/device tokens are compared via a SQLite index lookup instead
+ * (B-tree timing, not a simple linear scan) and API keys via their SHA-256 hash, so this is the one
+ * remaining plain-string secret comparison in the codebase.
+ */
+fun constantTimeEquals(a: String, b: String): Boolean {
+    if (a.length != b.length) return false
+    var diff = 0
+    for (i in a.indices) diff = diff or (a[i].code xor b[i].code)
+    return diff == 0
+}
+
 // Phase 111 — a small, dependency-free SHA-256 (FIPS 180-4) for API-key hashing: the plaintext key is
 // shown once at creation and never stored; only this hash is persisted, so a DB leak alone can't be
 // used to authenticate as an API key. No existing crypto dependency in this Kotlin/Native target
