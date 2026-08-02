@@ -395,11 +395,7 @@ fun Route.tvRoutes(
     post("/tv/playback/start") {
         val device = call.attributes[DeviceKey]
         val req = call.receive<PlaybackStartRequest>()
-        try {
-            call.respond(playbackService.startPlayback(device, req.itemId, req.capabilities))
-        } catch (e: dev.jellystructure.tv.JellyfinReauthRequiredException) {
-            call.respond(HttpStatusCode.Conflict, mapOf("error" to (e.message ?: "Re-authentication required")))
-        }
+        call.respond(playbackService.startPlayback(device, req.itemId, req.capabilities))
     }
 
     post("/tv/playback/progress") {
@@ -424,11 +420,7 @@ fun Route.tvRoutes(
     post("/tv/playback/restream") {
         val device = call.attributes[DeviceKey]
         val req = call.receive<PlaybackRestreamRequest>()
-        try {
-            call.respond(playbackService.restream(device, req.itemId, req.subtitleStreamIndex, req.positionMs))
-        } catch (e: dev.jellystructure.tv.JellyfinReauthRequiredException) {
-            call.respond(HttpStatusCode.Conflict, mapOf("error" to (e.message ?: "Re-authentication required")))
-        }
+        call.respond(playbackService.restream(device, req.itemId, req.subtitleStreamIndex, req.positionMs))
     }
 
     post("/tv/mark") {
