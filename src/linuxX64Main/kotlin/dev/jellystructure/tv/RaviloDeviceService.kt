@@ -175,6 +175,13 @@ class RaviloDeviceService(private val db: JellystructureDb) {
 
     /** Removes a specific user's session from [deviceId] without affecting others. */
     fun removeSession(deviceId: String, jellyfinUserId: String) {
+        // Security fix (2026-08-02 review, finding M3) — this deleted the DB row but never touched
+        // tokenCache, so a revoked device token kept passing validateDeviceToken() (served from cache)
+        // for up to TOKEN_CACHE_TTL_MS (5 minutes) after the operator removed it. unpair() already got
+        // this right; this one and deleteAllForUser below didn't. Look the token up before the DB row
+        // is gone so the cache entry can be dropped too.
+        db.raviloDeviceQueries.getByDeviceAndUser(device_id = deviceId, jellyfin_user_id = jellyfinUserId)
+            .executeAsOneOrNull()?.let { tokenCache.remove(it.device_token) }
         db.raviloDeviceQueries.deleteByDeviceAndUser(device_id = deviceId, jellyfin_user_id = jellyfinUserId)
     }
 
@@ -200,6 +207,11 @@ class RaviloDeviceService(private val db: JellystructureDb) {
 
     /** Phase 143 — "sign out everywhere": every device row this Jellyfin user has ever signed into. */
     fun deleteAllForUser(jellyfinUserId: String) {
+        // Security fix (2026-08-02 review, finding M3) — same tokenCache gap as removeSession above:
+        // "sign out everywhere" reported success while every signed-out device token kept working for
+        // up to 5 more minutes, served straight from the cache.
+        db.raviloDeviceQueries.getByUser(jellyfin_user_id = jellyfinUserId).executeAsList()
+            .forEach { tokenCache.remove(it.device_token) }
         db.raviloDeviceQueries.deleteByUser(jellyfin_user_id = jellyfinUserId)
     }
 

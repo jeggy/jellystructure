@@ -174,6 +174,16 @@ fun startServer(
         // Phase 118 (FR A.1) — CIO already isolates a handler exception from crashing the process; this
         // makes it observable and consistent instead of a bare connection drop.
         install(StatusPages) {
+            // Security fix (2026-08-02 review, findings H2/M4) — these two are expected, "the request
+            // isn't allowed" outcomes from PlaybackService, not bugs; give them their own status codes
+            // instead of falling through to the generic 500 below (which is what the try/catch blocks
+            // this replaced would have produced too, just duplicated at every call site).
+            exception<dev.jellystructure.tv.JellyfinReauthRequiredException> { call, cause ->
+                call.respond(HttpStatusCode.Conflict, mapOf("error" to (cause.message ?: "Re-authentication required")))
+            }
+            exception<dev.jellystructure.tv.PlaybackForbiddenException> { call, cause ->
+                call.respond(HttpStatusCode.Forbidden, mapOf("error" to (cause.message ?: "Forbidden")))
+            }
             exception<Throwable> { call, cause ->
                 // Logger.error writes both the log line and the Activity entry in one call.
                 Logger.error("Unhandled route exception on ${call.request.path()}: ${cause.message}", "http")
