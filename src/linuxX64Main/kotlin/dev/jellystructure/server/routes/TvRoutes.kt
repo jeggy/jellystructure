@@ -485,20 +485,21 @@ fun Route.tvRoutes(
         call.respond(seerrDiscoverService?.getMyRequests(device.jellyfinUserId) ?: emptyList())
     }
 
-    // R160 — the calendar is the same for every viewer (no per-user scoping), server-cached with a
-    // short TTL (UpcomingService) so opening the tab never fans out a live Sonarr/Radarr round-trip.
+    // R160 — server-cached with a short TTL (UpcomingService) so opening the tab never fans out a live
+    // Sonarr/Radarr round-trip; R188 — the cached feed is then filtered per device (library/kids
+    // restrictions) before it's returned, same as every other device-facing catalog read.
     get("/tv/upcoming") {
-        call.attributes[DeviceKey]  // auth only; no per-device personalization
-        call.respond(upcomingService?.getUpcoming() ?: dev.jellystructure.shared.tv.UpcomingFeed(enabled = false))
+        val device = call.attributes[DeviceKey]
+        call.respond(upcomingService?.getUpcoming(device) ?: dev.jellystructure.shared.tv.UpcomingFeed(enabled = false))
     }
 
     // R167 — not-held-item detail (Discover-detail parity: live TMDB genres/runtime/cast). Best-effort:
     // a lookup miss still returns 404 so the client falls back to the plain feed item it already has,
-    // never a blank screen.
+    // never a blank screen. R188 — also 404s for an item the device isn't allowed to see.
     get("/tv/upcoming/item/{id}") {
-        call.attributes[DeviceKey]  // auth only
+        val device = call.attributes[DeviceKey]
         val id = call.parameters["id"] ?: return@get call.respond(HttpStatusCode.BadRequest)
-        val detail = upcomingService?.getDetail(id) ?: return@get call.respond(HttpStatusCode.NotFound)
+        val detail = upcomingService?.getDetail(device, id) ?: return@get call.respond(HttpStatusCode.NotFound)
         call.respond(detail)
     }
 

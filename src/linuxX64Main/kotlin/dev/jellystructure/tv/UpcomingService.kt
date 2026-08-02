@@ -5,8 +5,10 @@ import dev.jellystructure.arr.ArrCalendarImage
 import dev.jellystructure.arr.ArrCalendarMovie
 import dev.jellystructure.arr.ArrClient
 import dev.jellystructure.arr.ArrQueueItem
+import dev.jellystructure.auth.DeviceData
 import dev.jellystructure.config.ConfigStore
 import dev.jellystructure.media.MediaStore
+import dev.jellystructure.media.visibleTo
 import dev.jellystructure.shared.tv.Person
 import dev.jellystructure.shared.tv.UpcomingDetail
 import dev.jellystructure.shared.tv.UpcomingFeed
@@ -41,19 +43,47 @@ class UpcomingService(
     /** R167 — the tmdb/tvdb id behind one feed item, kept alongside the cache so [getDetail] can do
      *  a live TMDB enrichment (genres/runtime/cast) without a second *arr round-trip. */
     private data class DetailKey(val tmdbId: Int?, val tvdbId: Int?, val isSeries: Boolean)
-    private data class CacheEntry(val feed: UpcomingFeed, val builtAt: Long, val keys: Map<String, DetailKey>)
+    private data class CacheEntry(
+        val feed: UpcomingFeed,
+        val builtAt: Long,
+        val keys: Map<String, DetailKey>,
+        // R188 — the MediaItem an item resolved to (null = not yet held), kept so a per-device filter
+        // can run against the already-cached feed instead of re-fetching/rebuilding per request.
+        val matched: Map<String, dev.jellystructure.model.MediaItem?>,
+    )
     private var cache: CacheEntry? = null
 
-    suspend fun getUpcoming(): UpcomingFeed {
-        cache?.let { if (nowMs() - it.builtAt < UPCOMING_TTL_MS) return it.feed }
-        return buildAndCache().feed
+    /**
+     * R188 — held items (a real [dev.jellystructure.model.MediaItem] behind them) go through the same
+     * [dev.jellystructure.media.visibleTo] check every other device-facing read path uses. Not-yet-held
+     * items (pure *arr calendar data, no library/tags to check yet) are hidden from any restricted
+     * device outright — there's no reliable per-item signal to check them against pre-scan, so the safe
+     * default is to only show that half of the feed to unrestricted (non-kids, full-library) profiles.
+     */
+    suspend fun getUpcoming(device: DeviceData): UpcomingFeed {
+        val entry = cache?.takeIf { nowMs() - it.builtAt < UPCOMING_TTL_MS } ?: buildAndCache()
+        return entry.feed.copy(
+            items = entry.feed.items.filter { visibleToDevice(it.id, entry.matched, device) },
+            missing = entry.feed.missing.filter { visibleToDevice(it.id, entry.matched, device) },
+        )
+    }
+
+    private fun visibleToDevice(itemId: String, matched: Map<String, dev.jellystructure.model.MediaItem?>, device: DeviceData): Boolean {
+        val item = matched[itemId]
+        if (item != null) return item.visibleTo(device)
+        return device.allowedLibraries == null && !device.isKids
     }
 
     /** R167 FR-R167-2 — Discover-detail parity: a live TMDB lookup (by tmdbId, resolving tvdb→tmdb
      *  for series) for genres/runtime/cast, best-effort (never throws; empty on any miss/failure so
-     *  the client still has [UpcomingDetail.item] to render). */
-    suspend fun getDetail(id: String): UpcomingDetail? {
+     *  the client still has [UpcomingDetail.item] to render).
+     *
+     *  R188 — mirrors [getUpcoming]'s visibility filter: a restricted device asking for an item it
+     *  couldn't see in the list gets the same 404 an unknown id would, not a data leak via direct
+     *  id-guessing. */
+    suspend fun getDetail(device: DeviceData, id: String): UpcomingDetail? {
         val entry = cache?.takeIf { nowMs() - it.builtAt < UPCOMING_TTL_MS } ?: buildAndCache()
+        if (!visibleToDevice(id, entry.matched, device)) return null
         val item = (entry.feed.items + entry.feed.missing).firstOrNull { it.id == id } ?: return null
         val key = entry.keys[id]
         var genres = emptyList<String>()
@@ -84,17 +114,17 @@ class UpcomingService(
     )
 
     private suspend fun buildAndCache(): CacheEntry {
-        val (feed, keys) = build()
-        val entry = CacheEntry(feed, nowMs(), keys)
+        val (feed, keys, matched) = build()
+        val entry = CacheEntry(feed, nowMs(), keys, matched)
         cache = entry
         return entry
     }
 
-    private suspend fun build(): Pair<UpcomingFeed, Map<String, DetailKey>> {
+    private suspend fun build(): Triple<UpcomingFeed, Map<String, DetailKey>, Map<String, dev.jellystructure.model.MediaItem?>> {
         val cfg = configStore.current
         val sonarr = cfg.sonarr?.takeIf { it.enabled && it.url.isNotBlank() }
         val radarr = cfg.radarr?.takeIf { it.enabled && it.url.isNotBlank() }
-        if (sonarr == null && radarr == null) return UpcomingFeed(enabled = false) to emptyMap()
+        if (sonarr == null && radarr == null) return Triple(UpcomingFeed(enabled = false), emptyMap(), emptyMap())
 
         val today = todayUtcDateString()
         val start = shiftDate(today, -LOOKBACK_DAYS)
@@ -120,6 +150,9 @@ class UpcomingService(
 
         val all = mutableListOf<UpcomingItem>()
         val keys = mutableMapOf<String, DetailKey>()
+        // R188 — MediaItem behind each item (null = not yet held), so getUpcoming/getDetail can apply
+        // the per-device visibility filter against the already-cached feed.
+        val matchedItems = mutableMapOf<String, dev.jellystructure.model.MediaItem?>()
 
         if (sonarr != null) {
             val episodes = runCatching { arrClient.getSonarrCalendar(sonarr.url, sonarr.apiKey, start, end) }.getOrElse { emptyList() }
@@ -142,6 +175,7 @@ class UpcomingService(
                 }
                 val itemIdStr = "ep-${ep.seriesId}-${ep.seasonNumber}-${ep.episodeNumber}"
                 keys[itemIdStr] = DetailKey(tmdbId = series.tmdbId.takeIf { it != 0 }, tvdbId = series.tvdbId.takeIf { it != 0 }, isSeries = true)
+                matchedItems[itemIdStr] = matched
                 all += UpcomingItem(
                     id = itemIdStr,
                     kind = TvMediaKind.SERIES,
@@ -180,6 +214,7 @@ class UpcomingService(
                 val itemId = matched?.let { it.jellyfinId ?: it.id }
                 val itemIdStr = "mv-${mv.id}"
                 keys[itemIdStr] = DetailKey(tmdbId = mv.tmdbId.takeIf { it != 0 }, tvdbId = null, isSeries = false)
+                matchedItems[itemIdStr] = matched
                 all += UpcomingItem(
                     id = itemIdStr,
                     kind = TvMediaKind.MOVIE,
@@ -208,7 +243,7 @@ class UpcomingService(
         val items = all.filter { it.date >= today || it.status == UpcomingStatus.DOWNLOADING }.sortedBy { it.date }
         val missing = all.filter { it.date < today && it.status == UpcomingStatus.MISSING }
             .sortedByDescending { it.date }
-        return UpcomingFeed(enabled = true, items = items, missing = missing) to keys
+        return Triple(UpcomingFeed(enabled = true, items = items, missing = missing), keys, matchedItems)
     }
 
     private fun pickImage(images: List<ArrCalendarImage>, coverType: String): String? =
