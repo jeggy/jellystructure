@@ -422,6 +422,20 @@ class JellyfinClient {
         }
     }.let { if (it.isFailure) Logger.warn("Jellyfin markUnplayed failed: ${it.exceptionOrNull()?.message}") }
 
+    // Bug fix — Ravilo's "My List": mirrors markPlayed/markUnplayed exactly, same REST shape
+    // (`/Users/{id}/FavoriteItems/{itemId}`), for a feature whose write-through call never existed.
+    suspend fun markFavorite(baseUrl: String, userToken: String, userId: String, jellyfinId: String) = runCatching {
+        httpPost(baseUrl.trimEnd('/') + "/Users/$userId/FavoriteItems/$jellyfinId") {
+            jellyfinAuth(userToken)
+        }
+    }.let { if (it.isFailure) Logger.warn("Jellyfin markFavorite failed: ${it.exceptionOrNull()?.message}") }
+
+    suspend fun unmarkFavorite(baseUrl: String, userToken: String, userId: String, jellyfinId: String) = runCatching {
+        httpDelete(baseUrl.trimEnd('/') + "/Users/$userId/FavoriteItems/$jellyfinId") {
+            jellyfinAuth(userToken)
+        }
+    }.let { if (it.isFailure) Logger.warn("Jellyfin unmarkFavorite failed: ${it.exceptionOrNull()?.message}") }
+
     suspend fun getItemDetail(
         baseUrl: String,
         userToken: String,

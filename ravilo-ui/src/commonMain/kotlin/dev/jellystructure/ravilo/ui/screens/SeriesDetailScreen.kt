@@ -122,6 +122,7 @@ fun SeriesDetailScreen(
                 onBack = onBack,
                 onPlay = onPlay,
                 onMarkEpisode = { epId, played -> store.setEpisodePlayed(epId, played) },
+                onMarkFavorite = { favorite -> store.setFavorite(favorite) },
                 onRelatedSelect = onRelatedSelect,
                 onCastSelect = onCastSelect,
                 displayName = displayName,
@@ -240,6 +241,7 @@ private fun SeriesDetailLoaded(
     onBack: () -> Unit,
     onPlay: (EpisodePlayContext) -> Unit,
     onMarkEpisode: (String, Boolean) -> Unit,
+    onMarkFavorite: (Boolean) -> Unit,
     onRelatedSelect: (MediaCard) -> Unit,
     onCastSelect: ((dev.jellystructure.shared.tv.Person, sourceTitle: String) -> Unit)?,
     displayName: String,
@@ -544,9 +546,15 @@ private fun SeriesDetailLoaded(
                                 }
                             },
                         )
+                        // Bug fix: this button had no `onSelect` at all -- pressing OK did nothing, and
+                        // there was no backend call anywhere to add/remove a Jellyfin favorite (only a
+                        // read path existed, for the My List browse grid's own filter). My List/Favorite
+                        // is series-level, keyed by the series' own id (not any one episode).
+                        val favorite = overlay[detail.card.id]?.favorite == true
                         RaviloButton(
-                            label = "+ ${str("nav.my_list")}",
+                            label = if (favorite) "− ${str("nav.my_list")}" else "+ ${str("nav.my_list")}",
                             style = ButtonStyle.GHOST,
+                            onSelect = { onMarkFavorite(!favorite) },
                         )
                         // R163: only when Phase 130 ingested a usable trailer — never a dead affordance.
                         if (detail.trailer != null) {
