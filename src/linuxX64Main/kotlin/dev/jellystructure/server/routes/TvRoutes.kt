@@ -10,6 +10,7 @@ import dev.jellystructure.config.ConfigStore
 import dev.jellystructure.shared.tv.DiscoverResponse
 import dev.jellystructure.shared.tv.ChannelLogoUpload
 import dev.jellystructure.shared.tv.CardPlayState
+import dev.jellystructure.shared.tv.FavoriteRequest
 import dev.jellystructure.shared.tv.MarkRequest
 import dev.jellystructure.shared.tv.PlayedRequest
 import dev.jellystructure.shared.tv.RaviloConfig
@@ -460,6 +461,15 @@ fun Route.tvRoutes(
         call.respond(playbackService.setPlayed(device, req.itemId, req.played, req.episodeIds))
         // A finished episode must leave (and its successor enter) the Continue row now, not in 5 minutes.
         homeFeedService.invalidatePlaystate(device)  // see /tv/playback/stop
+    }
+
+    // Bug fix — "My List" write-through: the detail screens' "+ My List" button had no backend call
+    // behind it at all (only a read path existed, for the My List browse grid's own filter).
+    put("/tv/favorite") {
+        val device = call.attributes[DeviceKey]
+        val req = call.receive<FavoriteRequest>()
+        val state = playbackService.setFavorite(device, req.itemId, req.favorite)
+        if (state != null) call.respond(state) else call.respond(HttpStatusCode.NotFound)
     }
 
     // ── Per-user config ──────────────────────────────────────────────────────

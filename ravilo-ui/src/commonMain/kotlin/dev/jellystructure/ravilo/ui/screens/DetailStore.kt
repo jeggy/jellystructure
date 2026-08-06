@@ -78,6 +78,15 @@ class MovieDetailStore(private val apiClient: TvApiClient) {
             }
         }
     }
+
+    /** Bug fix — "My List": the button existed with no write-through behind it at all. Same
+     *  read-after-write pattern as [setPlayed]. */
+    fun setFavorite(favorite: Boolean) {
+        val id = currentId ?: return
+        scope.launch {
+            runCatching { apiClient.setFavorite(id, favorite) }.getOrNull()?.let { _playstateOverlay.value += (id to it) }
+        }
+    }
 }
 
 class SeriesDetailStore(private val apiClient: TvApiClient) {
@@ -102,8 +111,10 @@ class SeriesDetailStore(private val apiClient: TvApiClient) {
             val detail = result.getOrNull()
             if (detail != null) {
                 _state.value = SeriesDetailState.Loaded(detail)
-                // Phase 2: fetch per-episode playstate after catalog paints; keyed by episode Jellyfin id
-                val epIds = detail.seasons.flatMap { it.episodes }.map { it.id }
+                // Phase 2: fetch per-episode playstate after catalog paints; keyed by episode Jellyfin id.
+                // Bug fix: the series' OWN id was never included here, so its series-level `favorite` flag
+                // (My List) had nowhere to come from — added alongside the episodes in the same bulk call.
+                val epIds = detail.seasons.flatMap { it.episodes }.map { it.id } + detail.card.id
                 if (epIds.isNotEmpty()) {
                     runCatching { apiClient.getPlaystate(epIds) }.getOrNull()
                         ?.let { _playstateOverlay.value = it }
@@ -120,7 +131,7 @@ class SeriesDetailStore(private val apiClient: TvApiClient) {
         loadJob = scope.launch {
             val detail = runCatching { apiClient.getSeries(id) }.getOrNull() ?: return@launch
             _state.value = SeriesDetailState.Loaded(detail)
-            val epIds = detail.seasons.flatMap { it.episodes }.map { it.id }
+            val epIds = detail.seasons.flatMap { it.episodes }.map { it.id } + detail.card.id
             if (epIds.isNotEmpty()) {
                 runCatching { apiClient.getPlaystate(epIds) }.getOrNull()
                     ?.let { _playstateOverlay.value = it }
@@ -135,6 +146,15 @@ class SeriesDetailStore(private val apiClient: TvApiClient) {
                 _playstateOverlay.value += it
                 WatchedBus.publish(it)  // R147: also flips the series tile if this completes/uncompletes it
             }
+        }
+    }
+
+    /** Bug fix — "My List": My List/Favorite is series-level, not per-episode — always writes
+     *  [currentId] (the series' own id), same read-after-write pattern as [setEpisodePlayed]. */
+    fun setFavorite(favorite: Boolean) {
+        val id = currentId ?: return
+        scope.launch {
+            runCatching { apiClient.setFavorite(id, favorite) }.getOrNull()?.let { _playstateOverlay.value += (id to it) }
         }
     }
 }

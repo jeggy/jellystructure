@@ -122,6 +122,10 @@ data class JellyfinUserData(
     // Phase 143 — ISO-8601 UTC; when this item was last played, for the Users & Devices "Recently
     // watched" history (sorted server-side via SortBy=DatePlayed).
     @SerialName("LastPlayedDate") val lastPlayedDate: String? = null,
+    // Bug fix — Ravilo's "My List"/Favorite state: this field already came back on every UserData
+    // response (bulk playstate + item detail) but was never modeled, so the detail screens' "+ My
+    // List" button had no state to read and was never wired to write it either.
+    @SerialName("IsFavorite") val isFavorite: Boolean = false,
 )
 
 @Serializable

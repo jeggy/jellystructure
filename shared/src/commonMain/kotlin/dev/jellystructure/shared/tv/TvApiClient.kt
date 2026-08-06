@@ -215,6 +215,18 @@ class TvApiClient(
         return json.decodeFromString(r.bodyAsText())
     }
 
+    // Bug fix — "My List" write-through (see FavoriteRequest's doc comment). Null on a 404 (item not
+    // visible to this device) — the caller should treat that like any other failed write.
+    suspend fun setFavorite(itemId: String, favorite: Boolean): CardPlayState? {
+        val r = client.put("$baseUrl/api/tv/favorite") {
+            auth()
+            jsonBody(json.encodeToString(FavoriteRequest(itemId, favorite)))
+        }
+        if (r.status.value == 404) return null
+        r.assertSuccess()
+        return json.decodeFromString(r.bodyAsText())
+    }
+
     // ─── Config ──────────────────────────────────────────────────────────────
 
     suspend fun getConfig(): RaviloConfig {

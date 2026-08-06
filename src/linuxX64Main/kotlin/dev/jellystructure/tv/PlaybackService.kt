@@ -411,11 +411,35 @@ class PlaybackService(
                         // Skip a vacuous series ✓ (empty Jellyfin child rollup → Played=true of 0). See PlaystateHydrator.
                         played    = ud.played && !(jf.type == "Series" && jf.recursiveItemCount == 0),
                         playedPct = (ud.playedPercentage?.toFloat() ?: 0f) / 100f,
+                        favorite  = ud.isFavorite,
                     )
                 }
             }
         }
         return out
+    }
+
+    /**
+     * Bug fix — Ravilo's "My List": mirrors [mark] exactly (single item, write then done — no episode
+     * fan-out needed since My List/Favorite is a per-title toggle, unlike watched state). Returns the
+     * re-read authoritative CardPlayState so the client renders from the server result, matching every
+     * other write-through in this file.
+     */
+    suspend fun setFavorite(device: DeviceData, jellyfinId: String, favorite: Boolean): CardPlayState? {
+        requireVisible(device, jellyfinId)
+        val base = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
+        val token = jellyfinClient.tvToken(base, device, configStore.current.apiKeys.jellyfinToken)
+        val uid = device.jellyfinUserId
+        if (favorite) jellyfinClient.markFavorite(base, token, uid, jellyfinId)
+        else jellyfinClient.unmarkFavorite(base, token, uid, jellyfinId)
+        val jf = jellyfinClient.getUserDataBulk(base, token, uid, listOf(jellyfinId)).firstOrNull() ?: return null
+        val ud = jf.userData ?: return null
+        return CardPlayState(
+            resumeMs  = ud.playbackPositionTicks / TICKS_PER_MS,
+            played    = ud.played && !(jf.type == "Series" && jf.recursiveItemCount == 0),
+            playedPct = (ud.playedPercentage?.toFloat() ?: 0f) / 100f,
+            favorite  = ud.isFavorite,
+        )
     }
 
     // ─── Helpers ──────────────────────────────────────────────────────────────
