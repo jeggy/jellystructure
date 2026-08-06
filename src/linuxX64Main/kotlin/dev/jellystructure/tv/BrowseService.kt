@@ -60,8 +60,16 @@ class BrowseService(
             "SERIES" -> all.filter { it.kind == MediaKind.TV_SHOW }
             else     -> all
         }
-        val matched = if (query == null) kindFiltered
-            else kindFiltered.filter { ConditionEvaluator.matches(it, query, heroIds, cascade) }
+        // Bug fix: this endpoint never sorted its result at all -- items came back in raw DB scan
+        // order (SELECT with no ORDER BY), which happens to read as roughly alphabetical, so the
+        // client's RECENT sort (SeededBrowseScreen.sortedFiltered's `filtered.asReversed()`, which
+        // trusts the incoming order is already newest-first) silently sorted alphabetically instead
+        // of by recency. Every other "recently added" surface (Newly Added rows, the old plain
+        // browse()/search() below) already uses this same recencyKey() -- this endpoint was the one
+        // gap, since it backs the Movies/Series tabs and every "-> See all" page in ravilo-ui.
+        val matched = (if (query == null) kindFiltered
+            else kindFiltered.filter { ConditionEvaluator.matches(it, query, heroIds, cascade) })
+            .sortedByDescending { it.recencyKey() }
 
         val ps = withTimeoutOrNull(HYDRATE_TIMEOUT_MS) {
             fetchPlaystate(jellyfinClient, jellyfinBase, token, device.jellyfinUserId, matched.map { it.jellyfinId ?: it.id })
