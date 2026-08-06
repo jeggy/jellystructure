@@ -312,6 +312,9 @@ data class CardPlayState(
     @SerialName("resume_ms") val resumeMs: Long = 0,
     val played: Boolean = false,
     @SerialName("played_pct") val playedPct: Float = 0f,
+    // Bug fix — "My List": carried on the same playstate overlay as `played` (same Jellyfin UserData
+    // bulk fetch, no extra round trip) so the detail screens' "+ My List" button has real state.
+    val favorite: Boolean = false,
 )
 
 /** Phase 150: the client-facing mirror of `dev.jellystructure.model.Stinger` — a mid/post-credits
@@ -907,6 +910,14 @@ data class PlayedRequest(
     @SerialName("item_id") val itemId: String,
     val played: Boolean,
     @SerialName("episode_ids") val episodeIds: List<String> = emptyList(),
+)
+
+// Bug fix — Ravilo's "My List" write-through (the button existed on both detail screens with no
+// backend call behind it at all).
+@Serializable
+data class FavoriteRequest(
+    @SerialName("item_id") val itemId: String,
+    val favorite: Boolean,
 )
 
 // ─── Browse facets ────────────────────────────────────────────────────────────

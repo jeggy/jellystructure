@@ -110,6 +110,7 @@ fun MovieDetailScreen(
                 onBack = onBack,
                 onPlay = onPlay,
                 onMarkPlayed = { played -> store.setPlayed(played) },
+                onMarkFavorite = { favorite -> store.setFavorite(favorite) },
                 onRelatedSelect = onRelatedSelect,
                 onCastSelect = onCastSelect,
                 displayName = displayName,
@@ -129,6 +130,7 @@ private fun MovieDetailLoaded(
     onBack: () -> Unit,
     onPlay: (MovieDetail) -> Unit,
     onMarkPlayed: (Boolean) -> Unit,
+    onMarkFavorite: (Boolean) -> Unit,
     onRelatedSelect: (MediaCard) -> Unit,
     onCastSelect: ((dev.jellystructure.shared.tv.Person, sourceTitle: String) -> Unit)?,
     displayName: String,
@@ -319,9 +321,15 @@ private fun MovieDetailLoaded(
                             style = ButtonStyle.GHOST,
                             onSelect = { onMarkPlayed(!played) },
                         )
+                        // Bug fix: this button had no `onSelect` at all -- pressing OK did nothing, and
+                        // there was no backend call anywhere to add/remove a Jellyfin favorite (only a
+                        // read path existed, for the My List browse grid's own filter). Now a real
+                        // write-through toggle, same pattern as Mark Watched just above.
+                        val favorite = ps?.favorite == true
                         RaviloButton(
-                            label = "+ ${str("nav.my_list")}",
+                            label = if (favorite) "− ${str("nav.my_list")}" else "+ ${str("nav.my_list")}",
                             style = ButtonStyle.GHOST,
+                            onSelect = { onMarkFavorite(!favorite) },
                         )
                         // R163: only when Phase 130 ingested a usable trailer — never a dead affordance.
                         if (detail.trailer != null) {

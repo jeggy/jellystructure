@@ -49,6 +49,7 @@ internal suspend fun fetchPlaystate(
                 // aggregation is stale (verified: Unanimous). Don't paint a false ✓ on the tile.
                 played    = ud.played && !(jf.type == "Series" && jf.recursiveItemCount == 0),
                 playedPct = (ud.playedPercentage?.toFloat() ?: 0f) / 100f,
+                favorite  = ud.isFavorite,
             )
         }
     }

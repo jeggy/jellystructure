@@ -184,6 +184,7 @@ class DetailService(
                         // Skip a vacuous series ✓ (empty Jellyfin child rollup → Played=true of 0). See PlaystateHydrator.
                         played    = ud.played && !(jfItem.type == "Series" && jfItem.recursiveItemCount == 0),
                         playedPct = pct,
+                        favorite  = ud.isFavorite,
                     )
                 }
             }
