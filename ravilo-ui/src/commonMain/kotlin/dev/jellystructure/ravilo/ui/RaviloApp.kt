@@ -525,7 +525,17 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
         // which stay on the platform default) — see rememberExitAction's doc comment.
         val exitApp = rememberExitAction()
         val atHomeRoot = stack.size == 1 && stack.last() is Dest.Home
-        PlatformBackHandler(enabled = stack.size > 1 || atHomeRoot) {
+        // Bug fix (live-tested on soveværelse TV): the Player/LiveTv screens own a deliberate two-step
+        // Back (chrome visible -> hide it; chrome already hidden -> exit, PlayerScreen.kt's onBack doc
+        // comment at R112). Both PlatformBackHandler here AND this root onKeyEvent block used to run
+        // UNCONDITIONALLY regardless of which screen was on top, racing the player's own onBack for the
+        // exact same physical Back press. Confirmed live: with the player's chrome visibly on screen, one
+        // Back press exited straight to the previous screen instead of just hiding the chrome first --
+        // this root-level pop() was winning the race and skipping the player's hide-first step entirely.
+        // Excluding Player/LiveTv here lets their own dpadFocusable onBack be the single source of truth
+        // for what Back does while one of them is on screen.
+        val ownsItsOwnBack = dest is Dest.Player || dest is Dest.LiveTv
+        PlatformBackHandler(enabled = !ownsItsOwnBack && (stack.size > 1 || atHomeRoot)) {
             if (stack.size > 1) pop() else exitApp()
         }
         Box(
@@ -536,6 +546,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                     when {
                         ev.type != KeyEventType.KeyDown -> false
                         ev.key == Key.F5 -> { fpsOverlay = !fpsOverlay; true }  // R94 debug toggle
+                        ownsItsOwnBack -> false
                         (ev.key == Key.Back || ev.key == Key.Escape || ev.key == Key.Backspace) && stack.size > 1 ->
                             { pop(); true }
                         // Bug fix: same root-exit treatment as PlatformBackHandler above, for the TV
