@@ -73,16 +73,20 @@ GitHub is the **source of truth**; we layer designs on top of it.
   across backend, admin WASM workbench, ravilo-ui/Compose and ravilo-tizen — compile-clean, not yet
   live-tested; one deliberate Tizen omission (§C Seerr overflow row, since Discover is out of the
   Tizen build). Pulled the canonical Implemented spec over our stale `Planned` draft 2026-08-07.**
-- **Bazarr subtitle integration — design-authored `phase-157-bazarr-subtitles.md` (`Planned`, 2026-08-07).**
-  Optional Bazarr connection so subtitles never need Bazarr's own UI. Principle: **JS stores nothing**
-  — reads Bazarr live and issues commands; Bazarr keeps owning providers, scoring and language
-  profiles (mirrored read-only). Surfaces: Settings → Download tools **Bazarr** card (`[bazarr]` TOML,
-  path-matched like *arr); a new sidebar **Subtitles** page (`app/subtitles.html` — live queue, wanted
-  list, history, providers, read-only profiles) + a dashboard summary card; per-title Bazarr sections
-  on the movie **Tracks & subtitles** tab (renamed from "Tracks & order") and the series **Seasons &
-  episodes** tab. Actions driven through Bazarr: manual search/download, auto-search, sync-to-audio,
-  upgrade, delete, full scan. Not yet dev-reviewed — open question is the exact Bazarr command API +
-  how a JS item resolves to a Bazarr radarrId/sonarrId (confirm live before build).
+- **Bazarr subtitle integration — `phase-157-bazarr-subtitles.md`, `Implemented` (2026-08-07, same-day
+  dev-review + build).** Optional Bazarr connection so subtitles never need Bazarr's own UI. Principle:
+  **JS stores nothing** — reads Bazarr live and issues commands; Bazarr keeps owning providers, scoring
+  and language profiles (mirrored read-only). Surfaces: Settings → Download tools **Bazarr** card
+  (`[bazarr]` TOML); a new **Subtitles** page reached only from the dashboard (no left-nav item,
+  `/subtitles` — live wanted list/history/providers/profiles) + a dashboard summary card; per-title
+  Bazarr sections on the movie **Tracks & subtitles** tab (renamed from "Tracks & order") and the
+  series **Seasons & episodes** tab (season-scoped). Actions driven through Bazarr: manual
+  search/download, auto-search, sync-to-audio, upgrade (composed — Bazarr's own upgrade task is
+  library-wide, not per-item), delete, full scan. Matching is an **imdbId/tvdbId id-join** against
+  Bazarr's own `/api/movies`/`/api/series`, not path-matching — resolved live against a real Bazarr
+  instance during dev-review, see the spec's addendum. `compileKotlinLinuxX64`/`compileKotlinWasmJs`
+  clean; not yet live-tested in a running admin session. Series per-title History merge intentionally
+  not built (movies only — see the spec's Status section).
 - **2026-07-31 sync:** re-pulled the entire `specs/` tree (68 files) + `STATUS.md` from repo `main`;
   repo was well ahead. Wrote `github.md` as the sync receipt. Design now matches shipped code across
   admin 0–154 / Ravilo R01–R186. See `github.md` for the screen map and details.
