@@ -357,6 +357,7 @@ class MediaStore(
                 "cover_as_video" -> items = items.filter { TriageDetection.coverAsVideoCount(it) > 0 }  // Phase 144
                 "segments_lowconf" -> items = items.filter { TriageDetection.lowConfidenceSegmentsCount(it) > 0 }  // Phase 150
                 "no_segments" -> items = items.filter { TriageDetection.hasNoSegments(it) }  // Phase 150
+                "unresolved_jellyfin_id" -> items = items.filter { TriageDetection.unresolvedJellyfinIdCount(it) > 0 }  // Phase 152/153
             }
             items
         }.let { items ->
