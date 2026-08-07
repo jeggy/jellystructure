@@ -128,6 +128,11 @@ object BazarrApi {
         httpClient.get("/api/bazarr/profiles").body<List<BazarrLanguageProfile>>()
     }.getOrDefault(emptyList())
 
+    /** Movies only (see BazarrRoutes.kt) — for the title's History tab to merge at render time only. */
+    suspend fun titleHistory(mediaId: String): List<BazarrHistoryEvent> = runCatching {
+        httpClient.get("/api/media/$mediaId/bazarr/history").body<List<BazarrHistoryEvent>>()
+    }.getOrDefault(emptyList())
+
     suspend fun titleState(mediaId: String): BazarrTitleState? = runCatching {
         httpClient.get("/api/media/$mediaId/bazarr").body<BazarrTitleState>()
     }.getOrNull()

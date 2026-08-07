@@ -2602,11 +2602,29 @@ private fun openEpisodeTrackModal(
     )
 }
 
+// Phase 157 — Bazarr's per-title log is merged into this tab at RENDER TIME ONLY, never written to
+// mediaHistoryQueries (jellystructure's own persisted, revertable audit log) — see the phase-157
+// addendum on FR-BZ1-1. Fetched fresh on every History tab open/refresh, movies only (see BazarrApi).
+private fun bazarrHistoryRowHtml(ev: dev.jellystructure.api.BazarrHistoryEvent): String {
+    val actionLabel = when (ev.action) { 0 -> "Downloaded"; 1 -> "Deleted"; 2 -> "Manually uploaded"; 3 -> "Upgraded"; else -> "Subtitle event" }
+    return """<div style="display:flex;gap:10px;padding:6px 0;border-bottom:1px solid var(--border);align-items:center;">
+             <span class="muted tiny" style="width:160px;flex-shrink:0;">${(ev.timestamp ?: "").esc()}</span>
+             <div style="flex:1;">
+               <span class="chip" style="font-size:.72rem;">Bazarr · $actionLabel</span>
+               <span class="muted tiny" style="margin-left:6px;">${(ev.language ?: "").esc()}${ev.provider?.let { " · ${it.esc()}" } ?: ""}${ev.score?.let { " · score $it" } ?: ""}</span>
+             </div>
+           </div>"""
+}
+
 private suspend fun loadHistory(id: String, container: Element? = null, scope: CoroutineScope? = null) {
     val listEl = document.getElementById("history-list") as? HTMLElement ?: return
     val entries = MediaApi.getHistory(id)
+    val bazarrEvents = dev.jellystructure.api.BazarrApi.titleHistory(id)
+    val bazarrHtml = if (bazarrEvents.isNotEmpty())
+        """<div class="tiny muted" style="margin:14px 0 4px;">Subtitles (Bazarr — live, not stored here)</div>""" + bazarrEvents.joinToString("") { bazarrHistoryRowHtml(it) }
+    else ""
     if (entries.isEmpty()) {
-        listEl.innerHTML = """<span class="muted tiny">No history yet — write an NFO or change a track default to create entries.</span>"""
+        listEl.innerHTML = """<span class="muted tiny">No history yet — write an NFO or change a track default to create entries.</span>$bazarrHtml"""
         return
     }
     listEl.innerHTML = entries.joinToString("") { entry ->
@@ -2632,7 +2650,7 @@ private suspend fun loadHistory(id: String, container: Element? = null, scope: C
              </div>
              $revertBtn
            </div>"""
-    }
+    } + bazarrHtml
     // Wire revert buttons if container + scope are available
     if (container != null && scope != null) {
         val btns = listEl.querySelectorAll(".history-revert-btn")
