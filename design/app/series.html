@@ -8,6 +8,15 @@
 <link rel="stylesheet" href="app.css">
 <link rel="stylesheet" href="seeding.css">
 <link rel="stylesheet" href="detail.css">
+<style>
+  #sbz-card .sbz-cols{display:grid;grid-template-columns:120px 1fr 1fr auto;gap:12px;font-size:.68rem;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-soft);font-weight:600;padding:0 2px 8px;}
+  #sbz-card .sbz-row{display:grid;grid-template-columns:120px 1fr 1fr auto;gap:12px;align-items:center;padding:10px 2px;border-top:1px solid var(--line);font-size:.85rem;}
+  #sbz-card .sbz-row .num{font-family:'JetBrains Mono',monospace;font-size:.74rem;color:var(--ink-soft);}
+  #sbz-card .sbz-have{display:flex;gap:5px;flex-wrap:wrap;}
+  #sbz-card .sbz-want{display:flex;gap:5px;flex-wrap:wrap;}
+  #sbz-card .sbz-w{border:1px dashed var(--warn);color:var(--warn);border-radius:999px;padding:1px 7px;font-size:.72rem;display:inline-flex;gap:4px;align-items:center;}
+  #sbz-card .sbz-ok{color:var(--ok);font-size:.72rem;}
+</style>
 </head>
 <body class="wf-body app-body">
 
@@ -162,6 +171,16 @@
 
       <!-- SEASONS & EPISODES PANEL -->
       <div class="tabpanel" data-panel="episodes">
+      <div class="card" id="sbz-card">
+        <div class="row center"><h4 style="margin:0;white-space:nowrap;">Subtitles — Bazarr</h4><span class="badge info" style="margin-left:9px;">sidecar files</span><span class="spacer"></span><span class="chk"><span class="dot ok"></span><span class="tiny muted">profile <b>Nordic default</b> · wants <span class="lang">da</span> <span class="lang">fo</span> <span class="lang">en</span></span></span></div>
+        <div class="tiny muted" style="margin:7px 0 0;line-height:1.6;">Per-episode external subtitles Bazarr manages — separate from the embedded tracks in each episode's editor. <b>Season 1</b>: 14 present, <b style="color:var(--warn);">7 wanted</b> across 8 episodes. All actions run through Bazarr; Jellystructure stores nothing.</div>
+        <hr class="dash" style="margin:12px 0 4px;">
+        <div class="sbz-cols"><span>episode</span><span>have</span><span>wanted</span><span style="text-align:right;">action</span></div>
+        <div id="sbz-body"></div>
+        <hr class="dash" style="margin:6px 0 12px;">
+        <div class="row center" style="gap:9px;flex-wrap:wrap;"><span class="btn sm" id="sbz-all">⌕ Search all wanted in Season 1</span><span class="btn sm ghost" id="sbz-sync">⟲ Sync all to audio</span><span class="spacer"></span><a class="tiny" href="subtitles.html">Subtitles overview →</a></div>
+      </div>
+
       <div class="card">
         <div class="row center"><h4 style="margin:0;white-space:nowrap;">Season 1</h4><span class="chip">8 episodes</span><span class="spacer"></span><span class="seg"><span class="on">Season 1</span><span>Season 2</span></span></div>
         <hr class="dash" style="margin:12px 0;">
@@ -763,6 +782,32 @@
 })();
 </script>
 <script src="series-cast.js"></script>
+<script>
+(function(){
+  var toast = function(m){ return window.toast ? window.toast(m) : console.log(m); };
+  var EPS = [
+    { ep:'S01E01', have:['fo','da'], want:[] },
+    { ep:'S01E02', have:['fo'], want:['da'] },
+    { ep:'S01E03', have:['da'], want:['fo'] },
+    { ep:'S01E04', have:['fo','en'], want:[] },
+    { ep:'S01E05', have:['da'], want:['fo'] },
+    { ep:'S01E06', have:['fo','da','en'], want:[] },
+    { ep:'S01E07', have:['en'], want:['da','fo'] },
+    { ep:'S01E08', have:['fo','da'], want:[] },
+  ];
+  var body = document.getElementById('sbz-body'); if(!body) return;
+  var lang = function(l){ return '<span class="lang">'+l+'</span>'; };
+  body.innerHTML = EPS.map(function(e){
+    var have = e.have.length ? '<div class="sbz-have">'+e.have.map(lang).join('')+'</div>' : '<span class="tiny muted">none</span>';
+    var want = e.want.length ? '<div class="sbz-want">'+e.want.map(function(l){return '<span class="sbz-w">'+lang(l)+'</span>';}).join('')+'</div>' : '<span class="sbz-ok">\u2713 complete</span>';
+    var act = e.want.length ? '<span class="btn sm sbz-search">\u2315 Search</span>' : '<span class="btn sm ghost sbz-search">\u27f2 Sync</span>';
+    return '<div class="sbz-row"><span class="num">'+e.ep+'</span>'+have+want+'<span style="text-align:right;">'+act+'</span></div>';
+  }).join('');
+  body.querySelectorAll('.sbz-search').forEach(function(b){ b.addEventListener('click', function(){ b.classList.add('ghost'); b.textContent='\u2026 queued'; toast('Queued a Bazarr job for this episode.'); }); });
+  var all=document.getElementById('sbz-all'); if(all) all.addEventListener('click', function(){ toast('Searching all wanted subtitles in Season 1 through Bazarr\u2026'); });
+  var sync=document.getElementById('sbz-sync'); if(sync) sync.addEventListener('click', function(){ toast('Syncing every present subtitle to its audio via Bazarr\u2026'); });
+})();
+</script>
 <!-- per-episode timestamps + newest-episode side panel (CreatedAt drives Ravilo Newly Added) -->
 <script>
 (function () {

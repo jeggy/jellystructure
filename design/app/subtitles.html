@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jellystructure — Subtitles</title>
+<link rel="stylesheet" href="wf.css">
+<link rel="stylesheet" href="app.css">
+<link rel="stylesheet" href="../flags.css">
+<style>
+  .sub-stat .v small { font-size:.9rem;font-weight:600;color:var(--ink-soft); }
+  /* live queue */
+  .qrow { display:grid; grid-template-columns: 22px 1fr auto; gap:11px; align-items:center; padding:10px 0; border-bottom:1px solid var(--line); }
+  .qrow:last-child { border-bottom:0; }
+  .qrow .qic { width:22px;height:22px;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;font-size:.72rem;background:var(--hi-soft);color:var(--hi); }
+  .qrow .qt b { font-family:'Space Grotesk',sans-serif;font-size:.9rem;font-weight:600; }
+  .qrow .qt .qs { font-size:.72rem;color:var(--ink-soft);margin-top:1px; }
+  .qbar { height:5px;border-radius:3px;background:var(--fill-2);overflow:hidden;margin-top:6px;max-width:340px; }
+  .qbar i { display:block;height:100%;background:var(--hi);border-radius:3px;transition:width .5s ease; }
+  /* wanted table */
+  .wtab { width:100%; border-collapse:collapse; }
+  .wtab th { text-align:left;font-size:.68rem;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-soft);font-weight:600;padding:0 10px 9px;border-bottom:1px solid var(--line); }
+  .wtab td { padding:11px 10px;border-bottom:1px solid var(--line);vertical-align:middle;font-size:.86rem; }
+  .wtab tr:last-child td { border-bottom:0; }
+  .wtab tr.wrow:hover { background:var(--fill-2); }
+  .wtab .wtitle { font-weight:600; }
+  .wtab .wtitle .wsub { font-size:.72rem;color:var(--ink-soft);font-weight:400;margin-top:1px; }
+  .want-badge { display:inline-flex;align-items:center;gap:5px;padding:2px 8px;border-radius:999px;border:1px dashed var(--warn);color:var(--warn);font-size:.72rem; }
+  .have-badge { display:inline-flex;align-items:center;gap:5px;padding:2px 8px;border-radius:999px;border:1px solid var(--ok);color:var(--ok);font-size:.72rem;background:var(--ok-soft); }
+  /* history feed */
+  .hfeed { display:flex;flex-direction:column; }
+  .hitem { display:grid;grid-template-columns:22px 1fr auto;gap:11px;align-items:center;padding:10px 0;border-bottom:1px solid var(--line); }
+  .hitem:last-child { border-bottom:0; }
+  .hic { width:22px;height:22px;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;font-size:.72rem; }
+  .hic.dl { background:var(--ok-soft);color:var(--ok); }
+  .hic.sy { background:var(--hi-soft);color:var(--hi); }
+  .hic.up { background:var(--warn-soft);color:var(--warn); }
+  .hic.rm { background:var(--bad-soft);color:var(--bad); }
+  .hitem .ht b { font-size:.86rem;font-weight:600; }
+  .hitem .ht .hs { font-size:.72rem;color:var(--ink-soft);margin-top:1px; }
+  .score { font-family:'JetBrains Mono',monospace;font-size:.74rem;font-weight:600; }
+  .score.hi { color:var(--ok); } .score.mid { color:var(--warn); }
+  .prov { display:flex;align-items:center;gap:9px;padding:8px 0;border-bottom:1px solid var(--line);font-size:.82rem; }
+  .prov:last-child { border-bottom:0; }
+  .prov .spacer { flex:1; }
+  .lp-langs { display:flex;gap:5px;flex-wrap:wrap;margin-top:7px; }
+  .side-col { width:308px;flex:none; }
+  @media (max-width: 1080px){ .side-col{ width:100%; } .subwrap{ flex-direction:column; } }
+</style>
+</head>
+<body class="wf-body app-body">
+
+<main class="app-main2 wide" data-page="subtitles" data-screen-label="Subtitles">
+  <div class="pagebar">
+    <h1>Subtitles</h1>
+    <span class="badge info" style="margin-left:2px;">Bazarr</span>
+    <span class="chk" style="margin-left:8px;"><span class="dot ok"></span><span class="badge ok">v1.4.3 · connected</span></span>
+    <span class="spacer"></span>
+    <span class="btn sm ghost" id="refresh-btn">↻ Refresh from Bazarr</span>
+    <span class="btn primary" id="searchall-btn">⌕ Search all wanted (5,231)</span>
+  </div>
+  <p class="page-sub">Everything Bazarr is doing, in one place — so you never have to open Bazarr. Jellystructure reads this live over the API and drives searches, syncs and upgrades; <b>Bazarr owns the providers, scoring and language profiles</b>.</p>
+
+  <div class="statgrid">
+    <a class="stat" href="#wanted" style="text-decoration:none;"><div class="k">Wanted</div><div class="v" style="color:var(--warn);">5,231</div></a>
+    <a class="stat alert" href="#wanted" style="text-decoration:none;"><div class="k">No subs at all</div><div class="v">612</div></a>
+    <div class="stat"><div class="k">Downloaded today</div><div class="v" style="color:var(--ok);">37</div></div>
+    <div class="stat"><div class="k">In queue</div><div class="v" id="stat-queue">6</div></div>
+    <div class="stat"><div class="k">Providers</div><div class="v">5<small style="font-size:.9rem;font-weight:600;color:var(--ink-soft);">/5</small></div></div>
+  </div>
+
+  <div class="row subwrap" style="margin-top:18px;align-items:stretch;">
+    <div class="col fill">
+
+      <!-- LIVE QUEUE / TASKS -->
+      <div class="card">
+        <div class="row center"><h3 style="margin:0;font-size:1.1rem;">Queue &amp; tasks</h3><span class="spacer"></span><span class="badge info" id="queue-count">6 active</span><span class="btn sm ghost" id="scan-btn">Run full Bazarr scan</span></div>
+        <div class="tiny muted" style="margin:6px 0 4px;">Live from Bazarr — searches, sync jobs and scans in flight. Progress mirrors Bazarr's task engine.</div>
+        <hr class="dash" style="margin:8px 0 4px;">
+        <div id="queue-list">
+          <div class="qrow"><span class="qic">⌕</span><div class="qt"><b>Nordvest · S01E05</b><div class="qs">Searching <span class="lang">fo</span> Faroese · 3 providers · OpenSubtitles ✓ Podnapisi …</div><div class="qbar"><i style="width:62%"></i></div></div><span class="tiny muted mono">62%</span></div>
+          <div class="qrow"><span class="qic">⟲</span><div class="qt"><b>Babel Fish · S02E05</b><div class="qs">Syncing <span class="lang">da</span> to audio · ffsubsync offset −1.2s</div><div class="qbar"><i style="width:40%"></i></div></div><span class="tiny muted mono">40%</span></div>
+          <div class="qrow"><span class="qic">⌕</span><div class="qt"><b>Sintel (2010)</b><div class="qs">Searching <span class="lang">en</span> English · upgrade (better score available)</div><div class="qbar"><i style="width:18%"></i></div></div><span class="tiny muted mono">18%</span></div>
+          <div class="qrow"><span class="qic" style="background:var(--fill-2);color:var(--ink-soft);">⋯</span><div class="qt"><b>3 more queued</b><div class="qs">Caminandes 3 · The Daily Show S01E02 · Big Buck Bunny — waiting for a search slot</div></div><span class="tiny muted">queued</span></div>
+        </div>
+      </div>
+
+      <!-- WANTED -->
+      <div class="card" id="wanted">
+        <div class="row center"><h3 style="margin:0;font-size:1.1rem;">Wanted subtitles</h3><span class="badge warn" style="margin-left:8px;" id="want-total">5,231</span><span class="spacer"></span>
+          <span class="seg" id="want-kind"><span class="on" data-k="all">All</span><span data-k="movie">Movies</span><span data-k="series">Series</span></span>
+        </div>
+        <div class="tiny muted" style="margin:6px 0 2px;">Titles missing a language their <b>Bazarr language profile</b> asks for. This list is <b>large</b> — filter and search to find what matters; results and counts come straight from Bazarr, a page at a time.</div>
+        <div class="row center" style="gap:9px;margin:11px 0 2px;flex-wrap:wrap;">
+          <input class="input" id="want-search" placeholder="⌕ Search wanted titles…" style="flex:1;min-width:200px;">
+          <span class="select" id="want-sort" style="width:170px;"><span>Sort: newest wanted</span></span>
+        </div>
+        <div class="pill-row" style="margin:8px 0 4px;">
+          <span class="chip on" data-lang="all">All languages</span>
+          <span class="chip" data-lang="da"><span class="lang">da</span> Danish · 2,481</span>
+          <span class="chip" data-lang="fo"><span class="lang">fo</span> Faroese · 1,904</span>
+          <span class="chip" data-lang="en"><span class="lang">en</span> English · 846</span>
+        </div>
+        <hr class="dash" style="margin:6px 0 2px;">
+        <table class="wtab">
+          <thead><tr><th>Title</th><th>Have</th><th>Wanted</th><th style="text-align:right;">Action</th></tr></thead>
+          <tbody id="want-body"></tbody>
+        </table>
+        <div class="row center" style="margin-top:13px;gap:10px;flex-wrap:wrap;">
+          <span class="tiny muted" id="want-range">Showing 1–25 of 5,231</span>
+          <span class="spacer"></span>
+          <span class="btn sm ghost" id="want-more">Load 25 more</span>
+        </div>
+      </div>
+
+      <!-- HISTORY -->
+      <div class="card">
+        <div class="row center"><h3 style="margin:0;font-size:1.1rem;">Recent history</h3><span class="spacer"></span>
+          <span class="seg" id="hist-kind"><span class="on" data-h="all">All</span><span data-h="download">Downloads</span><span data-h="sync">Syncs</span><span data-h="upgrade">Upgrades</span></span>
+        </div>
+        <div class="tiny muted" style="margin:6px 0 4px;">What Bazarr has done, newest first — provider, language, match score and when. The same log shows on each title's <b>History</b> tab.</div>
+        <hr class="dash" style="margin:8px 0 2px;">
+        <div class="hfeed" id="hist-feed"></div>
+        <div class="tiny muted" style="margin-top:12px;"><a href="activity.html">See full activity log →</a></div>
+      </div>
+    </div>
+
+    <!-- SIDE -->
+    <div class="col side-col">
+      <div class="card">
+        <div class="row center"><h3 style="margin:0;font-size:1.05rem;">Language profiles</h3><span class="badge" style="margin-left:6px;">read-only</span></div>
+        <div class="tiny muted" style="margin:6px 0 10px;">Defined in Bazarr. Jellystructure assigns one per title but never edits them here — <a href="http://bazarr:6767/settings/languages" class="mono">edit in Bazarr</a>.</div>
+        <div class="box flat" style="padding:11px 12px;">
+          <div class="row center"><b style="font-size:.9rem;">Nordic default</b><span class="spacer"></span><span class="tiny muted">201 titles</span></div>
+          <div class="lp-langs"><span class="chip"><span class="lang">da</span> Danish</span><span class="chip"><span class="lang">fo</span> Faroese</span><span class="chip"><span class="lang">en</span> English</span></div>
+          <div class="tiny muted" style="margin-top:8px;">Cutoff score 90 · HI allowed · forced: separate</div>
+        </div>
+        <div class="box flat" style="padding:11px 12px;margin-top:9px;">
+          <div class="row center"><b style="font-size:.9rem;">English only</b><span class="spacer"></span><span class="tiny muted">1,641 titles</span></div>
+          <div class="lp-langs"><span class="chip"><span class="lang">en</span> English</span></div>
+          <div class="tiny muted" style="margin-top:8px;">Cutoff score 95 · HI allowed</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3 style="margin:0 0 4px;font-size:1.05rem;">Providers</h3>
+        <div class="tiny muted" style="margin-bottom:6px;">Health as Bazarr last reported it.</div>
+        <div class="prov"><span class="dot ok"></span><b>OpenSubtitles</b><span class="spacer"></span><span class="tiny muted">312 today</span></div>
+        <div class="prov"><span class="dot ok"></span><b>Podnapisi</b><span class="spacer"></span><span class="tiny muted">88 today</span></div>
+        <div class="prov"><span class="dot ok"></span><b>Addic7ed</b><span class="spacer"></span><span class="tiny muted">41 today</span></div>
+        <div class="prov"><span class="dot ok"></span><b>Subscene</b><span class="spacer"></span><span class="tiny muted">17 today</span></div>
+        <div class="prov"><span class="dot warn"></span><b>BSplayer</b><span class="spacer"></span><span class="tiny" style="color:var(--warn);">throttled</span></div>
+      </div>
+
+      <div class="card">
+        <h3 style="margin:0 0 8px;font-size:1.05rem;">This week</h3>
+        <div class="tiny" style="line-height:2;">
+          <div class="row center"><span class="dot ok"></span> 241 downloaded</div>
+          <div class="row center"><span class="dot" style="background:var(--hi);"></span> 63 synced to audio</div>
+          <div class="row center"><span class="dot warn"></span> 29 upgraded</div>
+          <div class="row center"><span class="dot bad"></span> 4 removed (bad match)</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<script src="app-shell.js"></script>
+<script>
+  const toast = (m) => (window.toast ? window.toast(m) : console.log(m));
+
+  // ---- wanted list (large: filter + search + paged, like Bazarr's own wanted view) ----
+  const WANT_TOTAL = 5231;
+  const SAMPLE = [
+    { title:'Nordvest', sub:'S01E05 · Faroese drama', kind:'series', have:['da'], want:['fo'] },
+    { title:'Babel Fish', sub:'S02E05', kind:'series', have:['en'], want:['da','fo'] },
+    { title:'Sintel', sub:'2010 · short', kind:'movie', have:[], want:['en','da'] },
+    { title:'Caminandes 3', sub:'2016 · short', kind:'movie', have:['en'], want:['da'] },
+    { title:'The Daily Show', sub:'S01E02', kind:'series', have:[], want:['en'] },
+    { title:'Big Buck Bunny', sub:'2008', kind:'movie', have:['da'], want:['fo'] },
+    { title:'Tinderbox', sub:'S03E11', kind:'series', have:['da'], want:['fo','en'] },
+    { title:'Elephants Dream', sub:'2006 · short', kind:'movie', have:[], want:['da','fo'] },
+  ];
+  const PAGE = 25;
+  const langChip = (l) => '<span class="lang">'+l+'</span>';
+  const wbody = document.getElementById('want-body');
+  const nf = (n) => n.toLocaleString('en-US');
+  let wKind = 'all', wLang = 'all', wSearch = '', wShown = PAGE;
+  // deterministic pseudo-total for the active filter (so counts feel real without a backend)
+  function filteredTotal() {
+    let t = WANT_TOTAL;
+    if (wKind === 'movie') t = 2963; else if (wKind === 'series') t = 2268;
+    if (wLang === 'da') t = Math.round(t*0.47); else if (wLang === 'fo') t = Math.round(t*0.36); else if (wLang === 'en') t = Math.round(t*0.16);
+    if (wSearch) t = Math.max(1, Math.round(t*0.02));
+    return t;
+  }
+  function pageRows(n) {
+    const src = SAMPLE.filter(r => (wKind==='all'||r.kind===wKind) && (wLang==='all'||r.want.includes(wLang)) && (!wSearch || (r.title+' '+r.sub).toLowerCase().includes(wSearch)));
+    const pool = src.length ? src : SAMPLE;
+    const out = [];
+    for (let i=0;i<n;i++){ const r=pool[i%pool.length]; out.push(r); }
+    return out;
+  }
+  function renderWanted() {
+    const total = filteredTotal();
+    wShown = Math.min(wShown, total);
+    const rows = pageRows(wShown);
+    wbody.innerHTML = rows.map((r,i) => {
+      const have = r.have.length ? '<span class="have-badge">✓ '+r.have.map(langChip).join(' ')+'</span>' : '<span class="tiny muted">none</span>';
+      const want = (wLang==='all'?r.want:r.want.filter(l=>l===wLang)).map(l => '<span class="want-badge">'+langChip(l)+'</span>').join(' ');
+      return '<tr class="wrow"><td class="wtitle">'+r.title+'<div class="wsub">'+r.sub+'</div></td>'+
+        '<td>'+have+'</td><td><div class="row" style="gap:5px;flex-wrap:wrap;">'+want+'</div></td>'+
+        '<td style="text-align:right;white-space:nowrap;"><span class="btn sm search-one" data-i="'+i+'">⌕ Search</span></td></tr>';
+    }).join('') || '<tr><td colspan="4" class="tiny muted" style="padding:16px;text-align:center;">Nothing wanted for this filter — all caught up.</td></tr>';
+    wbody.querySelectorAll('.search-one').forEach(b => b.addEventListener('click', () => { b.textContent='… queued'; b.classList.add('ghost'); toast('Asked Bazarr to search subtitles — watch it in the queue above.'); }));
+    document.getElementById('want-total').textContent = nf(total);
+    document.getElementById('want-range').textContent = 'Showing 1–'+nf(wShown)+' of '+nf(total);
+    document.getElementById('want-more').style.display = wShown < total ? '' : 'none';
+  }
+  function resetWanted(){ wShown = PAGE; renderWanted(); }
+  document.getElementById('want-kind').addEventListener('click', e => { const s=e.target.closest('[data-k]'); if(!s)return; document.querySelectorAll('#want-kind span').forEach(x=>x.classList.toggle('on',x===s)); wKind=s.dataset.k; resetWanted(); });
+  document.querySelectorAll('.pill-row .chip[data-lang]').forEach(c => c.addEventListener('click', () => { document.querySelectorAll('.pill-row .chip[data-lang]').forEach(x=>x.classList.toggle('on',x===c)); wLang=c.dataset.lang; resetWanted(); }));
+  let wsTimer; document.getElementById('want-search').addEventListener('input', e => { clearTimeout(wsTimer); wsTimer=setTimeout(()=>{ wSearch=e.target.value.trim().toLowerCase(); resetWanted(); }, 220); });
+  document.getElementById('want-more').addEventListener('click', () => { wShown += PAGE; renderWanted(); });
+  renderWanted();
+
+  // ---- history feed ----
+  const HIST = [
+    { t:'download', title:'Nordvest · S01E03', s:'OpenSubtitles · Faroese', lang:'fo', score:98, when:'3m ago' },
+    { t:'sync', title:'Babel Fish · S02E04', s:'ffsubsync · offset +0.4s', lang:'da', score:97, when:'11m ago' },
+    { t:'download', title:'Caminandes 2', s:'Podnapisi · Danish', lang:'da', score:92, when:'26m ago' },
+    { t:'upgrade', title:'Sintel (2010)', s:'Addic7ed · replaced score 78 → 96', lang:'en', score:96, when:'1h ago' },
+    { t:'download', title:'The Daily Show · S01E01', s:'OpenSubtitles · English', lang:'en', score:88, when:'2h ago' },
+    { t:'remove', title:'Wing It!', s:'bad match removed · re-queued search', lang:'da', score:0, when:'3h ago' },
+    { t:'sync', title:'Nordvest · S01E01', s:'ffsubsync · offset −1.1s', lang:'fo', score:95, when:'5h ago' },
+  ];
+  const HIC = { download:['dl','⤓'], sync:['sy','⟲'], upgrade:['up','▲'], remove:['rm','✕'] };
+  const feed = document.getElementById('hist-feed');
+  let hKind = 'all';
+  function renderHist() {
+    const rows = HIST.filter(h => hKind==='all'||h.t===hKind);
+    feed.innerHTML = rows.map(h => {
+      const [cls,ic] = HIC[h.t];
+      const sc = h.score ? '<span class="score '+(h.score>=90?'hi':'mid')+'">'+h.score+'%</span>' : '';
+      return '<div class="hitem"><span class="hic '+cls+'">'+ic+'</span><div class="ht"><b>'+h.title+'</b><div class="hs"><span class="lang">'+h.lang+'</span> · '+h.s+'</div></div><div style="text-align:right;">'+sc+'<div class="tiny muted">'+h.when+'</div></div></div>';
+    }).join('');
+  }
+  document.getElementById('hist-kind').addEventListener('click', e => { const s=e.target.closest('[data-h]'); if(!s)return; document.querySelectorAll('#hist-kind span').forEach(x=>x.classList.toggle('on',x===s)); hKind=s.dataset.h; renderHist(); });
+  renderHist();
+
+  // ---- live queue tick (bars creep, count drains) ----
+  document.getElementById('searchall-btn').addEventListener('click', () => { if (confirm('Queue a subtitle search for all 5,231 wanted items?\n\nThis is a large sweep — Bazarr will work through them in the background, respecting provider rate limits. You can keep using Jellystructure meanwhile.')) toast('Sweeping all 5,231 wanted through Bazarr — jobs will appear in the queue as slots free up.'); });
+  document.getElementById('refresh-btn').addEventListener('click', () => toast('Pulled the latest state from Bazarr.'));
+  document.getElementById('scan-btn').addEventListener('click', () => toast('Full Bazarr disk scan started — refresh in a minute.'));
+  setInterval(() => {
+    document.querySelectorAll('.qbar i').forEach(b => { let w = parseInt(b.style.width) || 0; if (w < 96) b.style.width = Math.min(96, w + Math.random()*7) + '%'; });
+  }, 1400);
+</script>
+</body>
+</html>

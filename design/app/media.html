@@ -10,6 +10,16 @@
 <link rel="stylesheet" href="seeding.css">
 <link rel="stylesheet" href="../flags.css">
 <link rel="stylesheet" href="detail.css">
+<style>
+  #bazarr-card .bz-cols{display:grid;grid-template-columns:40px 1fr auto auto;gap:12px;font-size:.68rem;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-soft);font-weight:600;padding:0 2px 8px;}
+  #bazarr-card .bz-row{display:grid;grid-template-columns:40px 1fr auto auto;gap:12px;align-items:center;padding:11px 2px;border-top:1px solid var(--line);}
+  #bazarr-card .bz-mid{display:flex;flex-direction:column;gap:2px;min-width:0;}
+  #bazarr-card .bz-mid b{font-size:.88rem;}
+  #bazarr-card .bz-act{display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap;}
+  #bazarr-card .score{font-family:'JetBrains Mono',monospace;font-size:.78rem;font-weight:600;}
+  #bazarr-card .score.hi{color:var(--ok);}
+  #bazarr-card .bz-want{opacity:.92;}
+</style>
 </head>
 <body class="wf-body app-body">
 
@@ -88,7 +98,7 @@
 
   <div class="tabs2" id="tabbar">
     <span class="on" data-tab="overview">Overview</span>
-    <span data-tab="tracks">Tracks &amp; order</span>
+    <span data-tab="tracks">Tracks &amp; subtitles</span>
     <span data-tab="seeding">Seeding</span>
     <span data-tab="artwork">Artwork</span>
     <span data-tab="cast">Cast &amp; crew</span>
@@ -305,6 +315,20 @@
           <div class="row center" style="gap:10px;"><span class="op-ic" style="width:22px;height:22px;flex:none;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;font-size:.7rem;background:var(--ok-soft);color:var(--ok);">✓</span><span class="tiny">Track edits are <b>written to disk immediately</b>.</span></div>
           <hr class="dash" style="margin:10px 0;">
           <div class="tiny muted" style="line-height:1.6;">Flag &amp; language changes use <b>mkvpropedit</b> in place (~40ms, no re-encode). Re-ordering streams needs an <b>ffmpeg -c copy</b> remux (no re-encode, but rewrites the file) — so <b>Apply</b> <b>queues a background job</b> on the single media worker (one at a time; watch it in <a href="activity.html">Activity ▸ Jobs</a>) instead of blocking. Jellyfin picks the change up on its next scan, or when the job finishes if you chose <b>Save &amp; sync</b>.</div>
+        </div>
+
+        <!-- BAZARR SIDECAR SUBTITLES (Phase 157) -->
+        <div class="card" id="bazarr-card">
+          <div class="row center"><h4 style="margin:0;white-space:nowrap;">Subtitles — Bazarr</h4><span class="badge info" style="margin-left:9px;">sidecar files</span><span class="spacer"></span><span class="chk"><span class="dot ok"></span><span class="tiny muted">profile <b>Nordic default</b></span></span></div>
+          <div class="tiny muted" style="margin:7px 0 0;line-height:1.6;">External <span class="mono">.srt</span> / <span class="mono">.ass</span> files Bazarr manages beside <span class="mono">Sintel (2010).mkv</span> — separate from the embedded subtitle tracks above. This title's profile wants <span class="lang">da</span> <span class="lang">fo</span> <span class="lang">en</span>. Everything here runs through Bazarr; Jellystructure stores nothing.</div>
+          <hr class="dash" style="margin:12px 0;">
+          <div class="bz-cols"><span>lang</span><span>subtitle</span><span>score</span><span style="text-align:right;">actions</span></div>
+          <div class="bz-row"><span class="lang">en</span><div class="bz-mid"><b>English</b><span class="mono tiny muted">Sintel.en.srt · Addic7ed · HI</span></div><span class="score hi">96%</span><div class="bz-act"><span class="btn sm ghost bz-a" data-a="Syncing English to audio…">⟲ Sync</span><span class="btn sm ghost bz-a" data-a="Searching a better English match…">▲ Upgrade</span><span class="btn sm ghost bz-del">Delete</span></div></div>
+          <div class="bz-row bz-want"><span class="lang">da</span><div class="bz-mid"><b>Danish</b><span class="tiny" style="color:var(--warn);">wanted · not downloaded</span></div><span class="tiny muted">—</span><div class="bz-act"><span class="btn sm bz-a" data-a="Searching Danish subtitles…">⌕ Search</span></div></div>
+          <div class="bz-row bz-want"><span class="lang">fo</span><div class="bz-mid"><b>Faroese</b><span class="tiny" style="color:var(--warn);">wanted · not downloaded</span></div><span class="tiny muted">—</span><div class="bz-act"><span class="btn sm bz-a" data-a="Searching Faroese subtitles…">⌕ Search</span></div></div>
+          <hr class="dash" style="margin:12px 0;">
+          <div class="row center" style="gap:9px;flex-wrap:wrap;"><span class="btn sm" id="bz-search-all">⌕ Search all wanted</span><span class="btn sm ghost" id="bz-upload">↑ Upload a file…</span><span class="spacer"></span><a class="tiny" href="subtitles.html">Subtitles overview →</a></div>
+          <div class="tiny muted" style="margin-top:11px;">Latest · <span class="lang">en</span> upgraded 78% → 96% via Addic7ed · 1h ago — full log on the <a href="#tab=history" id="bz-hist-link">History</a> tab.</div>
         </div>
       </div>
     </div>
@@ -1263,6 +1287,16 @@
       (window.__toast || function(){})('Restored “' + name + '” — TMDB won’t re-add it on the next sync');
     });
   })();
+</script>
+<script>
+(function(){
+  var toast = function(m){ return window.toast ? window.toast(m) : console.log(m); };
+  var card = document.getElementById('bazarr-card'); if(!card) return;
+  card.querySelectorAll('.bz-a').forEach(function(b){ b.addEventListener('click', function(){ toast(b.dataset.a || 'Working with Bazarr…'); }); });
+  card.querySelectorAll('.bz-del').forEach(function(b){ b.addEventListener('click', function(){ var r=b.closest('.bz-row'); r.style.opacity=.4; b.textContent='removed'; toast('Deleted subtitle via Bazarr · language is now wanted again.'); }); });
+  var sa=document.getElementById('bz-search-all'); if(sa) sa.addEventListener('click', function(){ toast('Searching all wanted languages through Bazarr…'); });
+  var up=document.getElementById('bz-upload'); if(up) up.addEventListener('click', function(){ toast('Pick a .srt/.ass to upload to Bazarr for this title.'); });
+})();
 </script>
 </body>
 </html>
