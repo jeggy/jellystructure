@@ -51,6 +51,16 @@ data class SeerrConfig(
     @SerialName("api_key") val apiKey: String = "",
 )
 
+// Phase 157 — Bazarr subtitle connection.
+@Serializable
+data class BazarrConfig(
+    val enabled: Boolean = false,
+    val url: String = "",
+    @SerialName("api_key") val apiKey: String = "",
+    @SerialName("auto_search_on_add") val autoSearchOnAdd: Boolean = false,
+    @SerialName("show_history_on_title") val showHistoryOnTitle: Boolean = true,
+)
+
 @Serializable
 data class PipelineStep(
     val step: String = "",
@@ -112,6 +122,7 @@ data class AppConfig(
     val radarr: ArrConfig? = null,
     val sonarr: ArrConfig? = null,
     val seerr: SeerrConfig? = null,
+    val bazarr: BazarrConfig? = null,
     @SerialName("scan_schedule") val scanSchedule: String = "",
     val scan: ScanConfig = ScanConfig(),
     val trackers: List<TrackerConfig> = emptyList(),
@@ -230,6 +241,7 @@ object ConfigApi {
     suspend fun testRadarr(url: String, apiKey: String): ArrTestResult? = testArr("radarr", url, apiKey)
     suspend fun testSonarr(url: String, apiKey: String): ArrTestResult? = testArr("sonarr", url, apiKey)
     suspend fun testSeerr(url: String, apiKey: String): ArrTestResult? = testArr("seerr", url, apiKey)
+    suspend fun testBazarr(url: String, apiKey: String): ArrTestResult? = testArr("bazarr", url, apiKey)
 
     // Phase 139 — "Set up profiles in Radarr/Sonarr": preview shows what would be created/updated
     // (read-only), provision actually does it (idempotent — safe to re-run).
