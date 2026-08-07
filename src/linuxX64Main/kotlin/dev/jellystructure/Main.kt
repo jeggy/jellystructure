@@ -202,6 +202,7 @@ fun main() = runBlocking {
     val seedingSnapshot = SeedingSnapshot(configStore, qbClient)
     val seedingGuard = SeedingGuard(seedingSnapshot)
     val seerrClient = dev.jellystructure.seerr.SeerrClient()
+    val bazarrClient = dev.jellystructure.bazarr.BazarrClient()
     val arrRescan = ArrRescanService(configStore, arrClient, rootScope)
     val sonarrEnrich = SonarrEnrichService(mediaStore, arrClient, configStore)
     val upcomingService = dev.jellystructure.tv.UpcomingService(configStore, arrClient, mediaStore, tmdbClient)
@@ -243,7 +244,7 @@ fun main() = runBlocking {
     val shutdown = startServer(
         configStore, sessionService, raviloDeviceService, raviloConfigService, channelLogoStore, homeFeedService, browseService, detailService, playbackService, jellyfinClient, mediaStore, scanner,
         artworkDownloader, tmdbClient, scanTracker, mediaHistory, activityLog, broadcaster,
-        frontendDir, raviloWebDir = raviloWebDir, port = port, scanDispatcher = scanDispatcher, effectiveScanThreads = effectiveScanThreads, jsTagStore = jsTagStore, seedingGuard = seedingGuard, seedingSnapshot = seedingSnapshot, logoDownloader = logoDownloader, qbClient = qbClient, arrClient = arrClient, arrRescan = arrRescan, sonarrEnrich = sonarrEnrich, acquisitionService = acquisitionService, seerrClient = seerrClient, tvEventBus = tvEventBus, imageProxyService = imageProxyService, mediaJobQueue = mediaJobQueue, sessionBridge = sessionBridge, apiKeyStore = apiKeyStore, realtimeIngest = realtimeIngest, libraryListener = libraryListener, fdWatchdog = fdWatchdog, imdbClient = imdbClient, upcomingService = upcomingService, requestLanguageService = requestLanguageService, requestIntentStore = requestIntentStore, liveTvService = liveTvService, fingerprintService = fingerprintService,
+        frontendDir, raviloWebDir = raviloWebDir, port = port, scanDispatcher = scanDispatcher, effectiveScanThreads = effectiveScanThreads, jsTagStore = jsTagStore, seedingGuard = seedingGuard, seedingSnapshot = seedingSnapshot, logoDownloader = logoDownloader, qbClient = qbClient, arrClient = arrClient, arrRescan = arrRescan, sonarrEnrich = sonarrEnrich, acquisitionService = acquisitionService, seerrClient = seerrClient, bazarrClient = bazarrClient, tvEventBus = tvEventBus, imageProxyService = imageProxyService, mediaJobQueue = mediaJobQueue, sessionBridge = sessionBridge, apiKeyStore = apiKeyStore, realtimeIngest = realtimeIngest, libraryListener = libraryListener, fdWatchdog = fdWatchdog, imdbClient = imdbClient, upcomingService = upcomingService, requestLanguageService = requestLanguageService, requestIntentStore = requestIntentStore, liveTvService = liveTvService, fingerprintService = fingerprintService,
     )
 
     // R149: populate Sonarr next-airing data for all TV shows on startup (background, non-blocking).
