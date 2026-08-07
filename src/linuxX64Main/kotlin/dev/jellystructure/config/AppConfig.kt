@@ -16,6 +16,8 @@ data class AppConfig(
     val acquisition: AcquisitionConfig? = null,
     // Phase 136 — Jellyseerr/Overseerr connection (replaces the retired chart/Discover-charts subsystem)
     val seerr: SeerrConfig? = null,
+    // Phase 157 — Bazarr subtitle integration
+    val bazarr: BazarrConfig? = null,
     // Phase 91 — scan pipeline
     @SerialName("scan_schedule") val scanSchedule: String = "",
     val scan: ScanConfig = ScanConfig(),
@@ -78,6 +80,18 @@ data class SeerrConfig(
     val enabled: Boolean = false,
     val url: String = "",
     @SerialName("api_key") val apiKey: String = "",
+)
+
+// Phase 157 — Bazarr subtitle connection. Mirrors SeerrConfig's shape (no root-folder/rescan concept,
+// same as Seerr — Bazarr isn't a library-mapping source either): enabled/url/api_key, plus
+// auto_search_on_add. Absent or enabled=false ⇒ every subtitle surface in the admin UI disappears.
+@Serializable
+data class BazarrConfig(
+    val enabled: Boolean = false,
+    val url: String = "",
+    @SerialName("api_key") val apiKey: String = "",
+    @SerialName("auto_search_on_add") val autoSearchOnAdd: Boolean = false,
+    @SerialName("show_history_on_title") val showHistoryOnTitle: Boolean = true,
 )
 
 // Phase 56 — acquisition engine settings. Absent or enabled=false ⇒ no requests/polling.

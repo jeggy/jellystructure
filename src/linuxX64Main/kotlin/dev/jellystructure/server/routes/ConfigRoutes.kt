@@ -1,6 +1,7 @@
 package dev.jellystructure.server.routes
 
 import dev.jellystructure.arr.ArrClient
+import dev.jellystructure.bazarr.BazarrClient
 import dev.jellystructure.config.AppConfig
 import dev.jellystructure.config.ConfigStore
 import dev.jellystructure.config.QBittorrentConfig
@@ -80,6 +81,7 @@ private fun maskSecrets(config: AppConfig): AppConfig {
         radarr = config.radarr?.copy(apiKey = mask(config.radarr.apiKey)),
         sonarr = config.sonarr?.copy(apiKey = mask(config.sonarr.apiKey)),
         seerr = config.seerr?.copy(apiKey = mask(config.seerr.apiKey)),
+        bazarr = config.bazarr?.copy(apiKey = mask(config.bazarr.apiKey)),
         ingest = config.ingest.copy(webhookSecret = mask(config.ingest.webhookSecret)),
     )
 }
@@ -90,6 +92,7 @@ fun Route.configureConfigRoutes(
     qbClient: QBittorrentClient? = null,
     arrClient: ArrClient? = null,
     seerrClient: SeerrClient? = null,
+    bazarrClient: BazarrClient? = null,
     tmdbClient: dev.jellystructure.tmdb.TmdbClient? = null,
     requestLanguageService: dev.jellystructure.arr.RequestLanguageService? = null,
 ) {
@@ -132,6 +135,9 @@ fun Route.configureConfigRoutes(
         }
         if (received.seerr?.apiKey == "##KEEP##") {
             config = config.copy(seerr = received.seerr.copy(apiKey = stored.seerr?.apiKey ?: ""))
+        }
+        if (received.bazarr?.apiKey == "##KEEP##") {
+            config = config.copy(bazarr = received.bazarr.copy(apiKey = stored.bazarr?.apiKey ?: ""))
         }
         // The frontend AppConfig model omits acquisition (config-file-only, not exposed in the Settings
         // UI). Preserve the stored value so a Settings save never wipes it.
@@ -178,6 +184,15 @@ fun Route.configureConfigRoutes(
         if (seerrClient == null) { call.respond(ArrTestResult(false, "Seerr client not available")); return@post }
         if (req.url.isBlank()) { call.respond(ArrTestResult(false, "URL not configured")); return@post }
         val ping = seerrClient.ping(req.url, req.apiKey)
+        call.respond(ArrTestResult(ping.ok, if (ping.ok) "Connected" + (ping.version?.let { " · v$it" } ?: "") else ping.detail, ping.version))
+    }
+    // Phase 157 — Bazarr connection test (temporary creds, never persisted). Reuses TestArrRequest/
+    // ArrTestResult, same as Seerr's test route.
+    post("/config/test-bazarr") {
+        val req = call.receive<TestArrRequest>()
+        if (bazarrClient == null) { call.respond(ArrTestResult(false, "Bazarr client not available")); return@post }
+        if (req.url.isBlank()) { call.respond(ArrTestResult(false, "URL not configured")); return@post }
+        val ping = bazarrClient.ping(req.url, req.apiKey)
         call.respond(ArrTestResult(ping.ok, if (ping.ok) "Connected" + (ping.version?.let { " · v$it" } ?: "") else ping.detail, ping.version))
     }
     // Import root folders → pre-fill [[libraries]] local paths (uses the stored, saved creds).
