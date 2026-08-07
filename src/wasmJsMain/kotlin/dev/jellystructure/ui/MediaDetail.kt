@@ -414,7 +414,7 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
     } else {
         listOf(
             "overview" to "Overview",
-            "tracks" to "Tracks &amp; order",
+            "tracks" to "Tracks &amp; subtitles",
             "seeding" to "Seeding",
             "artwork" to "Artwork",
             "cast" to "Cast &amp; crew",
@@ -499,7 +499,7 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
            </div>"""
     } else ""
 
-    val tracksHtml = if (!isTvShow) buildUnifiedTrackEditorShell("trk", item.path) + buildSegmentEditor(item.segments, item.runtime, item.id, null, null) else ""
+    val tracksHtml = if (!isTvShow) buildUnifiedTrackEditorShell("trk", item.path) + buildSegmentEditor(item.segments, item.runtime, item.id, null, null) + bazarrMovieCardShellHtml() else ""
 
     val resolverTraceHtml = buildResolverTrace(item, fallbackLang, tmdbLangs)
     val ageRatingTraceHtml = buildAgeRatingTrace(item, ageRatingCascade)
@@ -966,6 +966,7 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
                     if (tab == "artwork") scope.launch { loadArtworkTab(item, scope) }
                     if (tab == "tracks" && !isTvShow) {
                         wireUnifiedTrackEditor("trk", item.tracks, item.id, null, scope, item.resolvedLanguage, item.path)
+                        scope.launch { loadBazarrMovieCard(item.id, scope) }
                     }
                     if (tab == "seeding") scope.launch { loadSeedingTab(item.id, item.kind == MediaKind.TV_SHOW) }
                     if (tab == "nfo") scope.launch { loadNfoTab(item, scope) }
@@ -983,6 +984,7 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
     scope.launch { loadSeedingReport(item.id, item.kind == MediaKind.TV_SHOW) }
     if (activeTab == "tracks" && !isTvShow) {
         wireUnifiedTrackEditor("trk", item.tracks, item.id, null, scope, item.resolvedLanguage, item.path)
+        scope.launch { loadBazarrMovieCard(item.id, scope) }
     }
     if (activeTab == "seeding") scope.launch { loadSeedingTab(item.id, item.kind == MediaKind.TV_SHOW) }
     if (activeTab == "history") scope.launch { loadHistory(item.id, container, scope) }
@@ -1682,6 +1684,87 @@ private fun fmtConfidence(c: Double): String {
  * illustrative timeline bar, but the mm:ss fields (backed by exact millisecond markers) are the real
  * source of truth for editing, not the bar. [epFilename]/[epNumber] are null for a movie.
  */
+// Phase 157 — movie "Subtitles — Bazarr" card (FR-BZ1-4). Shell renders immediately; the card
+// fetches live state and hides itself entirely if Bazarr isn't connected/matched, per the spec's
+// "off ⇒ no subtitle surfaces appear anywhere" rule.
+private fun bazarrMovieCardShellHtml(): String = """
+    <div class="card" id="bazarr-movie-card" style="display:none;margin-top:16px;">
+      <div class="row center"><h3 style="font-size:1.02rem;margin:0;">Subtitles — Bazarr</h3><span class="tiny muted" style="margin-left:8px;">sidecar files, not embedded tracks</span></div>
+      <div id="bazarr-movie-rows" style="margin-top:10px;"><span class="muted tiny">Loading…</span></div>
+      <div class="row center" style="margin-top:10px;gap:8px;">
+        <button class="btn sm ghost" id="bazarr-movie-search-all">Search all wanted</button>
+        <span class="spacer"></span>
+        <a href="#" id="bazarr-movie-history-link" class="tiny">View in History →</a>
+      </div>
+    </div>
+""".trimIndent()
+
+private fun bazarrLangRowHtml(mediaId: String, row: dev.jellystructure.api.BazarrLanguageRow): String {
+    val present = row.present
+    val badges = buildString {
+        if (row.forced) append("""<span class="badge info" style="margin-left:6px;">Signs only</span>""")
+        if (row.hi) append("""<span class="badge info" style="margin-left:6px;">Sound described</span>""")
+    }
+    val dataAttrs = """data-lang="${row.code2}" data-forced="${row.forced}" data-hi="${row.hi}" data-path="${(present?.path ?: "").esc()}""""
+    return if (present != null) {
+        """<div class="crew-row" $dataAttrs>
+             <span class="lang">${row.code2.uppercase()}</span>
+             <span style="flex:1;min-width:0;">${row.language.esc()}$badges<span class="tiny muted" style="display:block;">${present.name.esc()}</span></span>
+             <button class="btn sm ghost bz-act" data-act="sync">Sync</button>
+             <button class="btn sm ghost bz-act" data-act="upgrade">Upgrade</button>
+             <button class="btn sm ghost bz-act" data-act="delete">Delete</button>
+           </div>"""
+    } else {
+        """<div class="crew-row" $dataAttrs>
+             <span class="lang">${row.code2.uppercase()}</span>
+             <span style="flex:1;min-width:0;">${row.language.esc()}$badges<span class="tiny muted" style="display:block;">Wanted — no subtitle yet</span></span>
+             <button class="btn sm ghost bz-act" data-act="download">Search</button>
+           </div>"""
+    }
+}
+
+private suspend fun loadBazarrMovieCard(mediaId: String, scope: CoroutineScope) {
+    val card = document.getElementById("bazarr-movie-card") as? HTMLElement ?: return
+    val state = dev.jellystructure.api.BazarrApi.titleState(mediaId)
+    if (state == null || !state.connected) { card.style.display = "none"; return }
+    if (!state.matched) {
+        card.style.display = "block"
+        document.getElementById("bazarr-movie-rows")?.innerHTML = """<span class="muted tiny">Not matched in Bazarr yet — it may not have imported this title from Radarr.</span>"""
+        return
+    }
+    card.style.display = "block"
+    val rowsEl = document.getElementById("bazarr-movie-rows") ?: return
+    rowsEl.innerHTML = if (state.languages.isEmpty()) """<span class="muted tiny">No language profile configured in Bazarr.</span>"""
+        else state.languages.joinToString("") { bazarrLangRowHtml(mediaId, it) }
+
+    val bzActNodes = rowsEl.querySelectorAll(".bz-act")
+    for (i in 0 until bzActNodes.length) {
+        val btn = bzActNodes.item(i) as? HTMLElement ?: continue
+        btn.addEventListener("click") { _ ->
+            val row = btn.closest(".crew-row") as? HTMLElement ?: return@addEventListener
+            val lang = row.getAttribute("data-lang") ?: return@addEventListener
+            val forced = row.getAttribute("data-forced") == "true"
+            val hi = row.getAttribute("data-hi") == "true"
+            val path = row.getAttribute("data-path") ?: ""
+            val act = btn.getAttribute("data-act")
+            btn.setAttribute("disabled", "true")
+            scope.launch {
+                val ok = when (act) {
+                    "download" -> dev.jellystructure.api.BazarrApi.download(mediaId, lang, forced, hi)
+                    "sync" -> dev.jellystructure.api.BazarrApi.sync(mediaId, lang, path)
+                    "upgrade" -> dev.jellystructure.api.BazarrApi.upgrade(mediaId, lang, forced, hi)
+                    "delete" -> dev.jellystructure.api.BazarrApi.delete(mediaId, lang, forced, hi, path)
+                    else -> false
+                }
+                if (ok) loadBazarrMovieCard(mediaId, scope) else btn.removeAttribute("disabled")
+            }
+        }
+    }
+    document.getElementById("bazarr-movie-search-all")?.addEventListener("click") { _ ->
+        scope.launch { dev.jellystructure.api.BazarrApi.search(mediaId); loadBazarrMovieCard(mediaId, scope) }
+    }
+}
+
 private fun buildSegmentEditor(segments: SegmentMarkers, runtimeMinutes: Int?, mediaId: String, epFilename: String?, epNumber: Int?): String {
     val idAttrs = buildString {
         append(""" data-media-id="$mediaId"""")
