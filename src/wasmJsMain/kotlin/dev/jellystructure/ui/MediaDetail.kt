@@ -1704,7 +1704,7 @@ private fun bazarrMovieCardShellHtml(): String = """
       <div class="row center" style="margin-top:10px;gap:8px;">
         <button class="btn sm ghost" id="bazarr-movie-search-all">Search all wanted</button>
         <span class="spacer"></span>
-        <a href="#" id="bazarr-movie-history-link" class="tiny">View in History →</a>
+        <a href="javascript:void(0)" id="bazarr-movie-history-link" class="tiny">View in History →</a>
       </div>
     </div>
 """.trimIndent()
@@ -1737,12 +1737,22 @@ private suspend fun loadBazarrMovieCard(mediaId: String, scope: CoroutineScope) 
     val card = document.getElementById("bazarr-movie-card") as? HTMLElement ?: return
     val state = dev.jellystructure.api.BazarrApi.titleState(mediaId)
     if (state == null || !state.connected) { card.style.display = "none"; return }
+    card.style.display = "block"
+    // Wired unconditionally (match-state independent) but guarded against re-binding — this function
+    // re-runs after every action, and the link/button are static shell markup, never re-rendered.
+    val historyLink = document.getElementById("bazarr-movie-history-link") as? HTMLElement
+    if (historyLink?.getAttribute("data-wired") != "true") {
+        historyLink?.setAttribute("data-wired", "true")
+        historyLink?.addEventListener("click") { e ->
+            e.preventDefault()
+            (document.querySelector("#detail-tabs span[data-tab='history']") as? HTMLElement)?.click()
+        }
+    }
     if (!state.matched) {
-        card.style.display = "block"
         document.getElementById("bazarr-movie-rows")?.innerHTML = """<span class="muted tiny">Not matched in Bazarr yet — it may not have imported this title from Radarr.</span>"""
+        document.getElementById("bazarr-movie-search-all")?.setAttribute("disabled", "true")
         return
     }
-    card.style.display = "block"
     val rowsEl = document.getElementById("bazarr-movie-rows") ?: return
     rowsEl.innerHTML = if (state.languages.isEmpty()) """<span class="muted tiny">No language profile configured in Bazarr.</span>"""
         else state.languages.joinToString("") { bazarrLangRowHtml(mediaId, it) }
@@ -1770,8 +1780,12 @@ private suspend fun loadBazarrMovieCard(mediaId: String, scope: CoroutineScope) 
             }
         }
     }
-    document.getElementById("bazarr-movie-search-all")?.addEventListener("click") { _ ->
-        scope.launch { dev.jellystructure.api.BazarrApi.search(mediaId); loadBazarrMovieCard(mediaId, scope) }
+    val searchAllBtn = document.getElementById("bazarr-movie-search-all") as? HTMLElement
+    if (searchAllBtn?.getAttribute("data-wired") != "true") {
+        searchAllBtn?.setAttribute("data-wired", "true")
+        searchAllBtn?.addEventListener("click") { _ ->
+            scope.launch { dev.jellystructure.api.BazarrApi.search(mediaId); loadBazarrMovieCard(mediaId, scope) }
+        }
     }
 }
 
