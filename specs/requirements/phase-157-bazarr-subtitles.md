@@ -114,12 +114,25 @@ Path-matched to the same library roots Radarr/Sonarr import. No subtitle state p
   subtitles with Search/Sync/Upgrade/Delete driven through Bazarr. *(Verified.)*
 
 ## Status
-Design-complete, **`Planned`** (2026-08-07). Design lives in `design/app/settings.html` (Bazarr card
-+ `[bazarr]` TOML), `design/app/subtitles.html` (overview page), `design/app/app-shell.js` (Subtitles
-nav + icon), `design/app/index.html` (dashboard card), `design/app/media.html` (Tracks & subtitles
-Bazarr section) and `design/app/series.html` (season-scoped Bazarr card). Dev-reviewed 2026-08-07
-(addendum below) — the API-surface open question is resolved against this environment's live Bazarr
-instance (`localhost:7007`, real Radarr/Sonarr-backed library, 1.6.0).
+**`Implemented`** (2026-08-07) — built end to end following the dev-review addendum below:
+`BazarrConfig`/`BazarrClient`/`BazarrService` (imdbId/tvdbId id-join matching, no path-matching) +
+`BazarrRoutes` on the backend; the Settings card, movie Tracks & subtitles card, series season-scoped
+card, History tab render-time merge, Subtitles overview page (`/subtitles`, no NAV entry), and
+Dashboard summary card on the admin frontend. `compileKotlinLinuxX64` + `compileKotlinWasmJs` both
+clean. **Not yet live-tested** against a real admin session (only the underlying Bazarr API calls
+were live-verified against `localhost:7007` during the addendum). Two spec gaps the addendum flagged
+were implemented as designed: per-title History merges Bazarr's log at render time only (never
+written to `mediaHistoryQueries`), and per-title "Upgrade" is composed (re-search + auto-pick the
+top-scoring result) since Bazarr's own `upgrade_subtitles` is a library-wide task, not per-item.
+Series per-title History merge was **not** built (movies only) — aggregating would need one Bazarr
+history call per episode, which doesn't scale; noted as a known limitation, not a bug.
+
+Design lives in `design/app/settings.html` (Bazarr card + `[bazarr]` TOML), `design/app/subtitles.html`
+(overview page), `design/app/app-shell.js` (Subtitles nav + icon), `design/app/index.html` (dashboard
+card), `design/app/media.html` (Tracks & subtitles Bazarr section) and `design/app/series.html`
+(season-scoped Bazarr card). Dev-reviewed 2026-08-07 (addendum below) — the API-surface open question
+is resolved against this environment's live Bazarr instance (`localhost:7007`, real Radarr/Sonarr-backed
+library, 1.6.0).
 
 ## Dev-review addendum (2026-08-07 — backend-reality check before implementation starts)
 
