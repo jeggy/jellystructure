@@ -1,11 +1,29 @@
 repo: jeggy/jellystructure
 branch: main
 path: specs/   (plus root STATUS.md — both mirrored read-only from the repo)
-tree: 6145f6fc7854   (previous-sync github tree hash; base of this sync's compare — not a commit sha)
+tree: 6145f6fc7854   (2026-08-02 sync tree hash; base of the 2026-08-07 compare — not a commit sha)
 
 ## Last sync
-date: 2026-08-02T17:47Z
+date: 2026-08-07T11:26Z
 direction: pull (repo → this project)
+- Compared `6145f6fc7854...main` (135 files across 35 commits). All of it was either (a) our own
+  `design/**` export echoing back, or (b) specs already pulled on 2026-08-02 (155, 156, R175, R184,
+  R187, R188, R189 + the 2 research reports) whose "modified/added" flags just reflect the older
+  compare base. **The one genuinely new thing: R190 flipped `Planned → Implemented` in the repo.**
+- **The dev team shipped our R190 design.** They adopted the people-filter spec we authored, added a
+  full dev-review addendum (backend-reality check: no person→titles index existed; Seerr
+  person-credits endpoint verified live against `stream.example.net`) and end-to-end implementation
+  notes, then built §A–§D + i18n across backend (`ConditionEvaluator` `cast_crew` facet, Seerr
+  `getPersonOverflow`), admin WASM workbench (`Workbench.kt` People group), ravilo-ui/Compose
+  (`CastCircle`/`SeededBrowseScreen`/`PersonBrowseStore`) and ravilo-tizen (`PersonBrowseScreen.kt`).
+  Compile-clean, **not yet live-tested**; one deliberate Tizen omission (§C Seerr overflow row —
+  Discover is scoped out of the Tizen client). Pulled the canonical Implemented spec over our local
+  `Planned` draft.
+- Also visible in the diff (code, not pulled — no design work): the full **ravilo-tizen** module
+  landed (R189 Samsung Tizen client) and `ravilo-ui` gained `SeededBrowseScreen.kt` + `CastCircle`
+  select wiring. STATUS.md was **not** in the diff — unchanged since the base tree.
+
+### Previous sync — 2026-08-02T17:47Z (pull; base 6145f6fc7854 predates it)
 - Compared `6145f6fc7854...main` (116 files across 27 commits). Pulled only the `specs/` +
   research-report changes into our mirror; **`design/**` was NOT pulled** (design flows out to the
   repo, not back — our working `ravilo/`+`app/` files are ahead with the R190 people-filter work).
@@ -35,12 +53,13 @@ direction: pull (repo → this project)
 ## Screen map
 | Design file(s) | Repo spec(s) |
 |---|---|
-| ravilo/Ravilo TV.html, ravilo/ravilo-app.js, ravilo/ravilo-browse.js, ravilo/ravilo.css, ravilo/ravilo-i18n.js | R187 (browse page — shipped), R190 (filter by person + Seerr overflow — design) |
-| app/ravilo-builders.js, app/library.html, app/ravilo-config.html | phase-140 (workbench query blocks), R190 §D (Cast-or-crew workbench facet — design) |
+| ravilo/Ravilo TV.html, ravilo/ravilo-app.js, ravilo/ravilo-browse.js, ravilo/ravilo.css, ravilo/ravilo-i18n.js | R187 (browse page — shipped), R190 (filter by person + Seerr overflow — shipped/Implemented) |
+| app/ravilo-builders.js, app/library.html, app/ravilo-config.html | phase-140 (workbench query blocks), R190 §D (Cast-or-crew workbench facet — shipped/Implemented) |
 | app/metadata.html, app/metadata.css | phase-155 (age-rating normalization — shipped) |
 | app/index.html | phase-146 (dashboard breakdown), phase-138 (mobile) |
 | app/series-simpsons.html, app/series-johnnybravo.html, app/detail.css | phase-149 (multi-episode files), phase-150 (segment scrubber), phase-151 (artwork lock) |
-| app/settings.html | phase-150 (settings toggles), phase-154 (per-run step picker), phase-156 (Seerr per-user attribution — shipped) |
+| app/settings.html | phase-150 (settings toggles), phase-154 (per-run step picker), phase-156 (Seerr per-user attribution — shipped), phase-157 (Bazarr connection — design) |
+| app/subtitles.html, app/app-shell.js (Subtitles nav) | phase-157 (Bazarr subtitle overview — design) |
 | app/livetv.html | phase-147 (Live TV admin config) |
 | ravilo/Ravilo Mobile.html, ravilo-player.js/.css | R177 (Live TV), R179 (combined card), R180 (A&S picker), R181 (remembered tracks), R182 (skip intro/credits) |
 | ravilo/ assets/brand, Barna TV Channel Logo.html | R62 brand (Barna Sjónvarp channel branding — no spec yet) |
