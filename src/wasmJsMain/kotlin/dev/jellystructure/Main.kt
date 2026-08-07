@@ -14,6 +14,7 @@ import dev.jellystructure.ui.renderRaviloConfig
 import dev.jellystructure.ui.renderRaviloUsers
 import dev.jellystructure.ui.renderSettings
 import dev.jellystructure.ui.renderShell
+import dev.jellystructure.ui.renderSubtitles
 import dev.jellystructure.ui.updateActiveNav
 import kotlinx.browser.document
 import kotlinx.browser.window
@@ -74,6 +75,7 @@ object App {
                 else renderLibrary(container, scope, query)
             }
             path == "/activity" -> renderActivity(container, scope, query)
+            path == "/subtitles" -> renderSubtitles(container, scope)
             path.startsWith("/ravilo-users") -> renderRaviloUsers(container, scope)
             path.startsWith("/ravilo") -> renderRaviloConfig(container, scope)
             path.startsWith("/livetv") -> renderLiveTv(container, scope)
