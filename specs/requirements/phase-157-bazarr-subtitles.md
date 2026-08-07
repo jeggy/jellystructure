@@ -117,7 +117,129 @@ Path-matched to the same library roots Radarr/Sonarr import. No subtitle state p
 Design-complete, **`Planned`** (2026-08-07). Design lives in `design/app/settings.html` (Bazarr card
 + `[bazarr]` TOML), `design/app/subtitles.html` (overview page), `design/app/app-shell.js` (Subtitles
 nav + icon), `design/app/index.html` (dashboard card), `design/app/media.html` (Tracks & subtitles
-Bazarr section) and `design/app/series.html` (season-scoped Bazarr card). Not yet dev-reviewed; the
-one open backend question is the exact Bazarr API surface for the command endpoints (search/sync/
-upgrade) and how path-matching resolves a Bazarr `radarrId`/`sonarrId` from a Jellystructure item —
-to confirm against a live Bazarr instance before implementation, as was done for Seerr in R190.
+Bazarr section) and `design/app/series.html` (season-scoped Bazarr card). Dev-reviewed 2026-08-07
+(addendum below) — the API-surface open question is resolved against this environment's live Bazarr
+instance (`localhost:7007`, real Radarr/Sonarr-backed library, 1.6.0).
+
+## Dev-review addendum (2026-08-07 — backend-reality check before implementation starts)
+
+Traced every backend-adjacent claim above against the actual Kotlin/Ktor backend (`src/linuxX64Main`)
+and the actual admin frontend (`src/wasmJsMain` — **not** `design/app/*.html`, which is a static
+mockup, not shipped code), and against a live Bazarr instance running on this host (port 7007, real
+data: 161 series / hundreds of movies, 4,999 episodes + 35 movies currently wanted). Style/rigor
+calibrated against the R190 addendum (`c72cf500`).
+
+**✅ Confirmed — `[bazarr]` config shape is structurally trivial to add**, but one file-name nit.
+`AppConfig` (`config/AppConfig.kt:7-28`) declares `radarr`/`sonarr`/`seerr` as nullable top-level
+fields, each decoded via one `toml.decodeFromString` call (`ConfigStore.kt:19,32`,
+`ignoreUnknownNames = true`) — a new `bazarr: BazarrConfig? = null` is "a fourth of the same shape,"
+exactly as claimed. The `##KEEP##` secret-masking round-trip (`ConfigRoutes.kt:73-83,127-133`) already
+covers exactly this quartet and extends the same way. Correction: the spec's "Current state" cites
+`SettingsScreen.kt` — **that file doesn't exist in the admin app** (it's a *Ravilo player* settings
+screen in `ravilo-ui`/`ravilo-tizen`). The real file is `src/wasmJsMain/.../ui/Settings.kt`.
+
+**⚠️ Corrected — no path-matching needed at all; ID-based matching is simpler and already available.**
+The spec assumes Bazarr resolution mirrors "how Radarr/Sonarr already are" matched by path. Two
+independent problems with that: (1) per the R190-style check on this codebase's own Arr matching,
+Radarr resolution is **tmdbId-only everywhere** (`ArrClient.kt:91-99`, `ArrRescanService.kt:62`) —
+there is no Radarr-by-path lookup to imitate; only one Sonarr call site (`ArrRescanService.kt:67`) is
+path-based. (2) More importantly, **querying the live Bazarr API directly shows path-matching isn't
+needed for Bazarr resolution regardless of what Arr does**: `GET /api/movies` returns `imdbId` +
+`path` + `radarrId` per movie; `GET /api/series` returns `tvdbId` + `path` + `sonarrSeriesId` per
+series; `GET /api/episodes?seriesid[]=` returns `season`/`episode`/`sonarrEpisodeId` per episode.
+`MediaItem` already carries both `imdbId: String?` (`model/Media.kt:220`) and `tvdbId: Int?`
+(`Media.kt:221`) today. So the real, more robust matching plan is: **movies → equality on `imdbId`;
+series → equality on `tvdbId`; episodes → season+episode number once the series is resolved** — a
+clean id-join against Bazarr's own listing endpoints, no path string comparison anywhere, and no new
+Jellystructure-side field needed. (Bazarr's own `path` field can still serve as a fallback/sanity
+check, and IS the only usable key for movies if `imdbId` is ever null, which happens for some
+titles.) Path-matching is not just avoidable, it would have been strictly worse (fragile against
+Bazarr/Jellystructure library-root path-mapping mismatches) than the id-join Bazarr's API already
+supports directly. This resolves the spec's own flagged open question, and does so with a simpler
+answer than either the spec or the Radarr precedent assumed.
+
+**✅ Confirmed — `BazarrClient` follows the existing `ArrClient`/`SeerrClient` template**, and the full
+command surface is now confirmed against Bazarr's live `/api/swagger.json` (fetched from the running
+instance), not assumed from general docs:
+- Auth: `X-API-KEY` header (Bazarr's own casing; same idiom as `ArrClient`'s `X-Api-Key`).
+- **Search & download (auto-pick)**: `PATCH /api/movies/subtitles?radarrid&language&forced&hi` /
+  `PATCH /api/episodes/subtitles?seriesid&episodeid&language&forced&hi`.
+- **Manual search + pick a specific result** (FR-BZ1-6's "manual search & download"):
+  `GET /api/providers/movies?radarrid` / `GET /api/providers/episodes?...` to list candidates, then
+  `POST /api/providers/movies?radarrid&hi&forced&original_format&provider&subtitle` to download the
+  chosen one.
+- **Sync/re-time** (ffsubsync, exactly as the spec says): `PATCH /api/subtitles?action=sync&type=
+  [movie|episode]&id=&language=&path=&reference=&max_offset_seconds=` — confirms FR-BZ1-6's "sync/
+  re-time to audio" maps to a real, single endpoint with a `reference` param (video track or another
+  subtitle file) worth surfacing if the UI ever needs to pick a reference track.
+- **Delete**: `DELETE /api/movies/subtitles?radarrid&language&forced&hi&path` / episode equivalent.
+- **Upload**: `POST /api/movies/subtitles` / `POST /api/episodes/subtitles` (both already in the API,
+  matching FR-BZ1-4's "Upload a file…").
+- **Per-item "search all wanted" sweep** (movie/series card level, FR-BZ1-4/5): `PATCH /api/movies?
+  radarrid=&action=search-wanted` / `PATCH /api/series?radarrid=&action=search-wanted` (also exposes
+  `scan-disk` and a plain `sync` action per item).
+- **⚠️ Corrected — per-title "Upgrade" has no matching single-item Bazarr endpoint.** `GET /api/system/
+  tasks` on the live instance lists Bazarr's actual task ids: `upgrade_subtitles` ("Upgrade Previously
+  Downloaded Subtitles") is a **global, library-wide** scheduled task (`POST /api/system/tasks?
+  taskid=upgrade_subtitles`), not scoped to one movie/episode. FR-BZ1-4/5's per-title **Upgrade**
+  button therefore has no 1:1 backend call to proxy — it needs to be *composed* client-side/
+  server-side as "search this item's providers again, then download whichever result now scores
+  higher than what's on disk" (the same `GET`+`POST /api/providers/{movies,episodes}` pair as manual
+  search, just auto-picking the top-scoring result instead of prompting). Worth stating explicitly in
+  the requirements before implementation so it isn't scoped as a single passthrough call.
+- **Full Bazarr scan** (FR-BZ1-6/overview page): also task-based, and **split in two** —
+  `movies_full_scan_subtitles` and `series_full_scan_subtitles` are separate task ids; "Run full
+  Bazarr scan" needs to fire both (`POST /api/system/tasks` twice) to match its own description.
+- **Auto-search-on-add sweep** (the Settings toggle, FR-BZ1-1) maps to `wanted_search_missing_
+  subtitles_movies` / `_series` task ids, or the per-item `search-wanted` action above if scoped to
+  just the newly-added title (cheaper, and avoids re-sweeping the whole wanted queue on every import).
+
+**✅ Confirmed and validated — the "thousands of wanted items" scale claim is not hypothetical.** The
+live instance currently has **4,999 wanted episodes and 35 wanted movies** (`GET /api/episodes/wanted`
+`"total": 4999`) — right at the spec's own "5,000+ is normal" framing. This directly validates FR-BZ1-2's
+insistence on server-side paging + counts rather than flat rendering; a flat render on this exact,
+real dataset would already be rendering ~5,000 DOM rows on first paint. No change needed here — flagging
+as a claim that checked out, not just ones that didn't.
+
+**✅ Confirmed — providers/language-profiles read-only mirror is straightforward.** `GET /api/providers`
+returns live per-provider status/retry-after (including real throttle state observed on this
+instance: `opensubtitlescom` mid-`DownloadLimitExceeded`, `tvsubtitles` mid-retry-backoff — exactly
+the "provider health" signal FR-BZ1-2's side rail wants). `GET /api/system/languages/profiles` returns
+full profile definitions (id, name, per-language hi/forced/audio-only flags) — enough to render the
+read-only mirror with zero interpretation needed.
+
+**⚠️ Corrected — folding Bazarr history into the title History tab, as literally written, would
+break the spec's own "stores nothing" principle.** `MediaHistory` (`media/MediaHistory.kt:7-38`) is a
+**jellystructure-owned, SQLite-persisted, revertable** audit log (`HistoryEntry.beforeSnapshot`,
+`MediaApi.revertHistoryEntry`), not a passive display surface — `record()` is called from real
+mutation paths (e.g. `MediaRoutes.kt:709`). FR-BZ1-1's "fold Bazarr's per-title log into the title
+History tab" has two readings: (1) merge Bazarr's `GET /api/movies/history` /`/episodes/history` at
+render time only (keeps "stores nothing about subtitles" intact, zero backend writes) vs. (2) write
+Bazarr events through `mediaHistory.record()` (persists subtitle state jellystructure said it
+wouldn't, and makes no sense against `revertable`/`beforeSnapshot` — there's nothing to revert a
+Bazarr download to). The spec's own design principle demands (1); the prose as written reads like
+(2). **Needs one sentence added before implementation:** "merged at render time only, never written
+to `mediaHistoryQueries`."
+
+**⚠️ Corrected — "Subtitles page reached only via dashboard card, no left-nav" has no precedent in
+the real app** (only in the design mockup). Real nav is `Shell.kt:94-107`'s `NAV` array; every real
+top-level route has an entry except two Library drill-down/leaf pages, and the closest "featureless
+in the nav" precedent (Triage) is explicitly a floating dock, not a page (`Shell.kt:192-193`). This is
+fine to build, but it's **novel real-app plumbing** (a new `Main.kt` route deliberately absent from
+`NAV`), not "the established pattern."
+
+**⚠️ Corrected — no existing Radarr/Sonarr/Seerr status card exists on the Dashboard today.**
+`Dashboard.kt:26-77` has exactly three cards (attention breakdown, recently processed, quick actions);
+grep for `radarr|sonarr|seerr` in that file is empty. FR-BZ1-3 would be the **first** external-service
+status card on the Dashboard, not a fourth of an established kind — the `.dash-sidecol` card *layout*
+is reusable scaffolding, but the mini-stat content pattern has nothing to confirm against.
+
+**Net effect on scope:** §A (config) is cheap, confirmed reuse. §D (the action set) is now fully
+mapped to real, live-verified endpoints — cheaper than expected for search/download/sync/delete/
+upload, but "Upgrade" and "full scan" both need small composition/fan-out logic the spec's 1-button-
+1-call framing glosses over. The matching layer (needed by every other requirement) is simpler and
+more robust than either the spec or the Arr precedent suggested: a straight `imdbId`/`tvdbId` join,
+no path-matching code to write at all. §B/§C's own scope is otherwise as described. Two things need a
+one-line spec fix before implementation: the History-tab persistence question (§6) and stating the
+full-scan/upgrade composition explicitly (§D) — everything else is either confirmed reuse or novel-
+but-modest frontend plumbing (§7/§8).
