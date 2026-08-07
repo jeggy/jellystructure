@@ -921,7 +921,16 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
     // Wire up episode row toggles, still uploads, editing, and season sync buttons
     if (isTvShow) {
         wireEpisodeToggles()
-        wireSeasonSelector()
+        wireSeasonSelector(item.id, scope)
+        // Load the Bazarr card for whichever season block starts visible (works for both the
+        // multi-season picker and the single-season case, which has no picker at all).
+        val visibleSeasonBlock = document.querySelectorAll(".ep-season-block").let { nl ->
+            (0 until nl.length).map { nl.item(it) as HTMLElement }
+                .firstOrNull { it.style.display != "none" }
+        }
+        visibleSeasonBlock?.getAttribute("data-season-block")?.toIntOrNull()?.let { s ->
+            scope.launch { loadBazarrSeasonCard(item.id, s, scope) }
+        }
         wireEpisodeStillUploads(scope)
         wireEpisodeEditing(item, container, scope)
         val seasonSyncBtns = document.querySelectorAll(".season-sync-btn")
@@ -1375,6 +1384,7 @@ private fun buildEpisodesTab(item: MediaItem): String {
                    ${if (season != null) """<button class="btn sm ghost season-sync-btn" $seasonAttr style="padding:3px 9px;font-size:.75rem;" title="Sync season $season">↻</button>""" else ""}
                  </div>
                  $rows
+                 ${if (season != null) bazarrSeasonCardShellHtml(season) else ""}
                </div>"""
         }
 
@@ -1763,6 +1773,58 @@ private suspend fun loadBazarrMovieCard(mediaId: String, scope: CoroutineScope) 
     document.getElementById("bazarr-movie-search-all")?.addEventListener("click") { _ ->
         scope.launch { dev.jellystructure.api.BazarrApi.search(mediaId); loadBazarrMovieCard(mediaId, scope) }
     }
+}
+
+// Phase 157 — series season-scoped "Subtitles — Bazarr" card (FR-BZ1-5). One shell per season block;
+// loaded lazily when its season becomes the visible one (see wireSeasonSelector / the initial-load
+// call in renderMediaDetail), not eagerly for every season up front.
+private fun bazarrSeasonCardShellHtml(season: Int): String = """
+    <div class="card" id="bazarr-season-card-$season" data-bazarr-season="$season" style="display:none;margin-top:10px;">
+      <div class="row center"><h4 style="margin:0;font-size:.95rem;">Subtitles — Bazarr</h4></div>
+      <div id="bazarr-season-rows-$season" style="margin-top:8px;"><span class="muted tiny">Loading…</span></div>
+      <div class="row center" style="margin-top:8px;gap:8px;">
+        <button class="btn sm ghost bz-season-search-all" data-season="$season">Search all wanted</button>
+      </div>
+    </div>
+""".trimIndent()
+
+private fun bazarrEpisodeRowHtml(mediaId: String, season: Int, row: dev.jellystructure.api.BazarrEpisodeRow): String {
+    val presentLangs = row.subtitles.joinToString(", ") { it.code2.uppercase() }.ifBlank { "—" }
+    val wantedLangs = row.missingSubtitles.joinToString(", ") { it.code2.uppercase() }
+    val dataAttrs = """data-season="$season" data-episode="${row.episode}""""
+    return """<div class="crew-row" $dataAttrs>
+        <span class="mono" style="min-width:34px;">E${row.episode.toString().padStart(2, '0')}</span>
+        <span style="flex:1;min-width:0;">${row.title.esc()}<span class="tiny muted" style="display:block;">have: $presentLangs${if (wantedLangs.isNotBlank()) " · wanted: $wantedLangs" else ""}</span></span>
+        ${if (wantedLangs.isNotBlank()) """<button class="btn sm ghost bz-ep-act" data-act="download" data-lang="${row.missingSubtitles.first().code2}">Search</button>""" else ""}
+      </div>"""
+}
+
+private suspend fun loadBazarrSeasonCard(mediaId: String, season: Int, scope: CoroutineScope) {
+    val card = document.getElementById("bazarr-season-card-$season") as? HTMLElement ?: return
+    val state = dev.jellystructure.api.BazarrApi.titleState(mediaId)
+    if (state == null || !state.connected || !state.matched) { card.style.display = "none"; return }
+    card.style.display = "block"
+    val rows = dev.jellystructure.api.BazarrApi.seasonEpisodes(mediaId, season)
+    val rowsEl = document.getElementById("bazarr-season-rows-$season") ?: return
+    rowsEl.innerHTML = if (rows.isEmpty()) """<span class="muted tiny">No episode data from Bazarr for this season.</span>"""
+        else rows.sortedBy { it.episode }.joinToString("") { bazarrEpisodeRowHtml(mediaId, season, it) }
+
+    val epActNodes = rowsEl.querySelectorAll(".bz-ep-act")
+    for (i in 0 until epActNodes.length) {
+        val btn = epActNodes.item(i) as? HTMLElement ?: continue
+        btn.addEventListener("click") { _ ->
+            val row = btn.closest(".crew-row") as? HTMLElement ?: return@addEventListener
+            val ep = row.getAttribute("data-episode")?.toIntOrNull() ?: return@addEventListener
+            val lang = btn.getAttribute("data-lang") ?: return@addEventListener
+            btn.setAttribute("disabled", "true")
+            scope.launch {
+                dev.jellystructure.api.BazarrApi.download(mediaId, lang, forced = false, hi = false, episodeSeason = season, episodeNumber = ep)
+                loadBazarrSeasonCard(mediaId, season, scope)
+            }
+        }
+    }
+    document.getElementById("bazarr-season-card-$season")?.querySelector(".bz-season-search-all")
+        ?.addEventListener("click") { _ -> scope.launch { dev.jellystructure.api.BazarrApi.search(mediaId); loadBazarrSeasonCard(mediaId, season, scope) } }
 }
 
 private fun buildSegmentEditor(segments: SegmentMarkers, runtimeMinutes: Int?, mediaId: String, epFilename: String?, epNumber: Int?): String {
@@ -2222,7 +2284,7 @@ private fun wireEpisodeToggles() {
     }
 }
 
-private fun wireSeasonSelector() {
+private fun wireSeasonSelector(mediaId: String, scope: CoroutineScope) {
     // Season picker: prev/next step buttons + dropdown with search.
     val spMenu = document.getElementById("sp-menu") as? HTMLElement ?: return
     val spBtn = document.getElementById("sp-btn") as? HTMLElement ?: return
@@ -2260,6 +2322,7 @@ private fun wireSeasonSelector() {
             block.style.display = if (block.getAttribute("data-season-block") == sel) "" else "none"
         }
         spMenu.classList.remove("open")
+        sel.toIntOrNull()?.let { scope.launch { loadBazarrSeasonCard(mediaId, it, scope) } }
     }
 
     spBtn.addEventListener("click") { _ ->
