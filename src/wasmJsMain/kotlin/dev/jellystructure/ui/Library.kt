@@ -77,6 +77,7 @@ private val ISSUE_FILTER_LABELS = mapOf(
     "duplicate_episode" to "Duplicate episode files",
     "zero_audio" to "No audio tracks",
     "cover_as_video" to "Cover art muxed as video",   // Phase 144
+    "unresolved_jellyfin_id" to "Unresolved Jellyfin ID",   // Phase 152/153
 )
 private var libSearch: String? = null
 private var libSort: String? = null
