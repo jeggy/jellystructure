@@ -15,6 +15,7 @@ import dev.jellystructure.api.PipelineRunResult
 import dev.jellystructure.api.ArrConfig
 import dev.jellystructure.api.QBittorrentConfig
 import dev.jellystructure.api.QBittorrentPathMapping
+import dev.jellystructure.api.BazarrConfig
 import dev.jellystructure.api.SeerrConfig
 import dev.jellystructure.api.RequestLanguageConfig
 import dev.jellystructure.api.RequestLanguageIntent
@@ -316,6 +317,27 @@ fun renderSettings(container: Element, scope: CoroutineScope, query: Map<String,
               </div>
             </div>
 
+            <div class="card set-section" id="sect-bazarr" data-tab="downloads">
+              <div class="row center"><h3 style="font-size:1.05rem;margin:0;">Bazarr</h3><span class="badge info" style="margin-left:8px;">subtitles</span><span class="spacer"></span><span class="muted tiny">enable</span><span id="bazarr-enabled-toggle" class="toggle" style="cursor:pointer"></span></div>
+              <div class="tiny muted" style="margin:8px 0 0;">Optional. Jellystructure <strong>stores nothing about subtitles</strong> — it reads Bazarr live and issues commands to it. Bazarr keeps owning providers, scoring and language profiles; matched to titles by IMDb/TVDB id, same as Radarr/Sonarr.</div>
+              <div id="bazarr-on" style="display:none;margin-top:14px">
+                <div class="field"><label>Bazarr URL</label><input id="bazarr-url" class="input" type="url" placeholder="http://bazarr:6767" style="width:100%"></div>
+                <div class="field"><label>API key <span id="bazarr-key-badge" style="display:none;margin-left:8px"></span></label>
+                  <div style="display:flex;gap:8px;align-items:center">
+                    <input id="bazarr-key" class="input" type="password" style="flex:1;min-width:0">
+                    <button id="bazarr-key-reveal" type="button" class="btn sm ghost" style="flex:none">Show</button>
+                  </div>
+                  <span class="hint">Bazarr → Settings → General → Security → API Key. The saved key is pre-filled — clear it to remove.</span>
+                </div>
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+                  <button id="bazarr-test-btn" class="btn sm ghost">Test connection</button>
+                  <span id="chk-bazarr" class="tiny muted"></span>
+                </div>
+                <div class="row center" style="margin-top:2px"><span class="tiny">Auto-search when new media is added</span><span class="spacer"></span><span id="bazarr-autosearch-toggle" class="toggle" style="cursor:pointer"></span></div>
+                <div class="row center" style="margin-top:8px"><span class="tiny">Show subtitle history on title pages</span><span class="spacer"></span><span id="bazarr-history-toggle" class="toggle" style="cursor:pointer"></span></div>
+              </div>
+            </div>
+
             <div class="card set-section" id="sect-request-lang" data-tab="downloads">
               <div class="row center"><h3 style="font-size:1.05rem;margin:0;">Request languages</h3><span class="badge info" style="margin-left:8px;">Nordic / Danish etc.</span></div>
               <div class="tiny muted" style="margin:8px 0 14px;">Lets a viewer request a title in a chosen language (e.g. <b>Dansk / Nordic</b> vs <b>Original</b>) — Jellystructure auto-creates a matching custom format + quality profile in Radarr/Sonarr so the grab lands the right release. See the Ravilo config editor's Request tab for each viewer's default.</div>
@@ -491,6 +513,7 @@ private val SECTION_TAB = mapOf(
     "sect-crossseed" to "downloads",
     "sect-arr" to "downloads",
     "sect-seerr" to "downloads",
+    "sect-bazarr" to "downloads",
     "sect-request-lang" to "downloads",
     "sect-notifications" to "notifications",
     "sect-advanced" to "advanced",
@@ -555,6 +578,9 @@ private var radarrRescan = true
 private var sonarrEnabled = false
 private var sonarrRescan = true
 private var seerrEnabled = false
+private var bazarrEnabled = false
+private var bazarrAutoSearch = false
+private var bazarrShowHistory = true
 // Phase 139 — request-language intents (rebuilt into the DOM on every change; simple list, no
 // drag-reorder — order doesn't affect behaviour here the way it does for content rows/feeds).
 private val requestLanguageIntents: MutableList<RequestLanguageIntent> = mutableListOf()
@@ -602,6 +628,18 @@ private fun populateForm(response: ConfigResponse) {
     if (seerr != null) { setInputValue("seerr-url", seerr.url) }
     setArrKeyBadge("seerr", (seerr?.apiKey ?: "").isNotBlank())
     (document.getElementById("seerr-on") as? HTMLElement)?.style?.display = if (seerrEnabled) "block" else "none"
+
+    // Phase 157 — Bazarr (same "##KEEP##"-mask + blank-key pattern as Seerr above).
+    val bazarr = config.bazarr
+    bazarrEnabled = bazarr?.enabled ?: false
+    bazarrAutoSearch = bazarr?.autoSearchOnAdd ?: false
+    bazarrShowHistory = bazarr?.showHistoryOnTitle ?: true
+    updateToggle("bazarr-enabled-toggle", bazarrEnabled)
+    updateToggle("bazarr-autosearch-toggle", bazarrAutoSearch)
+    updateToggle("bazarr-history-toggle", bazarrShowHistory)
+    if (bazarr != null) { setInputValue("bazarr-url", bazarr.url) }
+    setArrKeyBadge("bazarr", (bazarr?.apiKey ?: "").isNotBlank())
+    (document.getElementById("bazarr-on") as? HTMLElement)?.style?.display = if (bazarrEnabled) "block" else "none"
 
     // Phase 139 — request-language intents (Original/Dansk-Nordic etc.)
     requestLanguageIntents.clear()
@@ -810,6 +848,7 @@ private fun attachListeners(scope: CoroutineScope) {
     wireArr(scope, "radarr")
     wireArr(scope, "sonarr")
     wireSeerr(scope)
+    wireBazarr(scope)
     wireRequestLanguage(scope)
 
     document.getElementById("notif-scan-done-toggle")?.addEventListener("click") {
@@ -1156,6 +1195,13 @@ private fun readForm(): AppConfig = AppConfig(
         url = getInputValue("seerr-url"),
         apiKey = getInputValue("seerr-key").ifBlank { "##KEEP##" },
     ) else null,
+    bazarr = if (bazarrEnabled) BazarrConfig(
+        enabled = true,
+        url = getInputValue("bazarr-url"),
+        apiKey = getInputValue("bazarr-key").ifBlank { "##KEEP##" },
+        autoSearchOnAdd = bazarrAutoSearch,
+        showHistoryOnTitle = bazarrShowHistory,
+    ) else null,
     scanSchedule = if (pipelineEnabled) computePipeCron() else "",
     scan = ScanConfig(pipeline = if (pipelineEnabled) pipelineSteps.toList() else emptyList()),
     requestLanguage = RequestLanguageConfig(intents = requestLanguageIntents.toList(), kidsDefault = requestLanguageKidsDefault?.takeIf { it.isNotBlank() }),
@@ -1268,6 +1314,15 @@ private fun buildToml(c: AppConfig): String = buildString {
         appendLine("""url = "${sr.url}"""")
         appendLine("""api_key = "***"""")
     }
+    c.bazarr?.let { bz ->
+        appendLine()
+        appendLine("[bazarr]")
+        appendLine("enabled = ${bz.enabled}")
+        appendLine("""url = "${bz.url}"""")
+        appendLine("""api_key = "***"""")
+        appendLine("auto_search_on_add = ${bz.autoSearchOnAdd}")
+        appendLine("show_history_on_title = ${bz.showHistoryOnTitle}")
+    }
 }
 
 // Phase 54 — wire one Radarr/Sonarr box (enable + rescan toggles, inputs, test, import root folders).
@@ -1347,6 +1402,52 @@ private fun wireSeerr(scope: CoroutineScope) {
     document.getElementById("seerr-key-reveal")?.addEventListener("click") {
         val inp = document.getElementById("seerr-key") as? HTMLInputElement ?: return@addEventListener
         val btn = document.getElementById("seerr-key-reveal") as? HTMLElement
+        if (inp.type == "password") { inp.type = "text"; btn?.textContent = "Hide" }
+        else { inp.type = "password"; btn?.textContent = "Show" }
+    }
+}
+
+// Phase 157 — wire the Bazarr card. Same shape as wireSeerr (no rescan/root-folder — Bazarr isn't a
+// library-mapping source either), plus the two plain-boolean service toggles.
+private fun wireBazarr(scope: CoroutineScope) {
+    document.getElementById("bazarr-enabled-toggle")?.addEventListener("click") {
+        bazarrEnabled = !bazarrEnabled
+        updateToggle("bazarr-enabled-toggle", bazarrEnabled)
+        (document.getElementById("bazarr-on") as? HTMLElement)?.style?.display = if (bazarrEnabled) "block" else "none"
+        refreshTomlPreview(readForm())
+    }
+    document.getElementById("bazarr-autosearch-toggle")?.addEventListener("click") {
+        bazarrAutoSearch = !bazarrAutoSearch
+        updateToggle("bazarr-autosearch-toggle", bazarrAutoSearch)
+        refreshTomlPreview(readForm())
+    }
+    document.getElementById("bazarr-history-toggle")?.addEventListener("click") {
+        bazarrShowHistory = !bazarrShowHistory
+        updateToggle("bazarr-history-toggle", bazarrShowHistory)
+        refreshTomlPreview(readForm())
+    }
+    listOf("bazarr-url", "bazarr-key").forEach { id ->
+        document.getElementById(id)?.addEventListener("input") { refreshTomlPreview(readForm()) }
+    }
+    document.getElementById("bazarr-test-btn")?.addEventListener("click") {
+        scope.launch {
+            val el = document.getElementById("chk-bazarr") as? HTMLElement ?: return@launch
+            if (getInputValue("bazarr-key").isBlank()) {
+                el.innerHTML = """<span class="badge" style="font-size:.72rem">Key hidden — Save, then use “Test connections” (top) to verify the stored key</span>"""
+                return@launch
+            }
+            el.textContent = "Testing…"
+            val r = ConfigApi.testBazarr(getInputValue("bazarr-url"), getInputValue("bazarr-key"))
+            when {
+                r == null -> el.innerHTML = """<span class="badge bad">Request failed</span>"""
+                r.ok -> el.innerHTML = """<span class="badge ok">${r.detail.esc()}</span>"""
+                else -> el.innerHTML = """<span class="badge bad">${r.detail.esc()}</span>"""
+            }
+        }
+    }
+    document.getElementById("bazarr-key-reveal")?.addEventListener("click") {
+        val inp = document.getElementById("bazarr-key") as? HTMLInputElement ?: return@addEventListener
+        val btn = document.getElementById("bazarr-key-reveal") as? HTMLElement
         if (inp.type == "password") { inp.type = "text"; btn?.textContent = "Hide" }
         else { inp.type = "password"; btn?.textContent = "Show" }
     }
