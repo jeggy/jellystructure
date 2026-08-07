@@ -60,6 +60,11 @@ fun renderDashboard(container: Element, scope: CoroutineScope) {
               <h3 style="margin:0 0 8px;font-size:1.05rem">Recently processed</h3>
               <div id="recent-list" class="tiny" style="line-height:2"><span class="muted">Loading…</span></div>
             </div>
+            <div class="card" id="dash-subtitles-card" style="display:none">
+              <div class="row center"><h3 style="margin:0;font-size:1.05rem">Subtitles</h3><span class="badge info" style="margin-left:8px;font-size:.66rem;">Bazarr</span></div>
+              <div id="dash-subtitles-body" class="tiny" style="line-height:1.8;margin-top:6px"><span class="muted">Loading…</span></div>
+              <a href="#/subtitles" class="tiny" style="display:inline-block;margin-top:6px;">Open Subtitles →</a>
+            </div>
             <div class="card">
               <h3 style="font-size:1rem;margin:0 0 12px">Quick actions</h3>
               <div class="pill-row" style="display:flex;gap:8px;flex-wrap:wrap">
@@ -127,6 +132,7 @@ fun renderDashboard(container: Element, scope: CoroutineScope) {
         loadDashboardStats()
         loadAttentionBreakdown()
         loadRecentActivity()
+        loadDashSubtitlesCard()
         val status = MediaApi.scanStatus()
         when (status?.status) {
             "RUNNING" -> {
@@ -343,4 +349,21 @@ private fun setDashScanCancelled(processedCount: Int, scope: CoroutineScope) {
     document.getElementById("new-scan-btn")?.addEventListener("click") {
         scope.launch { triggerDashboardScan(scope, resume = false) }
     }
+}
+
+// Phase 157 (FR-BZ1-3) — first external-service status card on the Dashboard (no prior Radarr/Sonarr/
+// Seerr card existed here, per the addendum). Hidden entirely when Bazarr is off, same as every other
+// subtitle surface.
+private suspend fun loadDashSubtitlesCard() {
+    val card = document.getElementById("dash-subtitles-card") as? HTMLElement ?: return
+    val overview = dev.jellystructure.api.BazarrApi.overview()
+    if (overview == null || !overview.connected) { card.style.display = "none"; return }
+    card.style.display = "block"
+    val latest = dev.jellystructure.api.BazarrApi.history(0, 1).firstOrNull()
+    val latestLine = latest?.let { "Latest: ${(it.language ?: "").uppercase()} ${(it.provider ?: "")}" } ?: "No recent activity"
+    document.getElementById("dash-subtitles-body")?.innerHTML = """
+        <div>Wanted: <b>${overview.wantedMovies + overview.wantedEpisodes}</b></div>
+        <div>Providers: <b>${overview.providersHealthy}/${overview.providersTotal}</b> healthy</div>
+        <div class="muted">${latestLine}</div>
+    """.trimIndent()
 }
