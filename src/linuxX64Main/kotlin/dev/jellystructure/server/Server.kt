@@ -16,6 +16,7 @@ import dev.jellystructure.media.Scanner
 import dev.jellystructure.media.ScanTracker
 import dev.jellystructure.server.routes.activityRoutes
 import dev.jellystructure.server.routes.authRoutes
+import dev.jellystructure.server.routes.bazarrRoutes
 import dev.jellystructure.server.routes.configureConfigRoutes
 import dev.jellystructure.server.routes.jellyfinRoutes
 import dev.jellystructure.server.routes.jobsRoutes
@@ -133,6 +134,7 @@ fun startServer(
     sonarrEnrich: dev.jellystructure.arr.SonarrEnrichService? = null,
     acquisitionService: AcquisitionService? = null,
     seerrClient: dev.jellystructure.seerr.SeerrClient? = null,
+    bazarrClient: dev.jellystructure.bazarr.BazarrClient? = null,
     tvEventBus: TvEventBus,
     imageProxyService: RaviloArtworkService? = null,
     mediaJobQueue: dev.jellystructure.media.MediaJobQueue,
@@ -391,6 +393,10 @@ fun startServer(
                         val p = if (arrClient != null && s.url.isNotBlank()) arrClient.ping(s.url, s.apiKey) else ArrPing(false, "URL not configured")
                         checks.add(HealthCheck("Sonarr", p.ok, if (p.ok) "Connected" + (p.version?.let { " · v$it" } ?: "") else p.detail))
                     }
+                    cfg.bazarr?.takeIf { it.enabled }?.let { b ->
+                        val p = if (bazarrClient != null && b.url.isNotBlank()) bazarrClient.ping(b.url, b.apiKey) else ArrPing(false, "URL not configured")
+                        checks.add(HealthCheck("Bazarr", p.ok, if (p.ok) "Connected" + (p.version?.let { " · v$it" } ?: "") else p.detail))
+                    }
                     // Phase 114 (FR B.3) — the Jellyfin LibraryChanged listener's own connection state.
                     if (cfg.ingest.realtime) {
                         val connected = libraryListener.connected
@@ -401,7 +407,7 @@ fun startServer(
                 }
 
                 authRoutes(sessionService, jellyfinClient, configStore, loginRateLimiter)
-                configureConfigRoutes(configStore, effectiveScanThreads, qbClient, arrClient, seerrClient, tmdbClient, requestLanguageService)
+                configureConfigRoutes(configStore, effectiveScanThreads, qbClient, arrClient, seerrClient, bazarrClient, tmdbClient, requestLanguageService)
                 setupRoutes(configStore, jellyfinClient)
                 jellyfinRoutes(configStore, jellyfinClient)
                 mediaRoutes(mediaStore, scanner, artworkDownloader, tmdbClient, appScope, scanTracker, broadcaster, jellyfinClient, configStore, mediaHistory, scanDispatcher, seedingGuard, seedingSnapshot, raviloConfigService, logoDownloader, arrRescan, sonarrEnrich, mediaJobQueue, imdbClient, fingerprintService)
@@ -414,6 +420,10 @@ fun startServer(
                 apiKeyManagementRoutes(apiKeyStore)
                 webhookRoutes(configStore, jellyfinClient, realtimeIngest, appScope, libraryListener)
                 acquisitionService?.let { acquisitionRoutes(it) }
+                bazarrClient?.let { bc ->
+                    val bazarrService = dev.jellystructure.bazarr.BazarrService(configStore, bc)
+                    bazarrRoutes(mediaStore, bazarrService, bc)
+                }
                 // R171 — the TV Request tab's Seerr-backed discover/search/request service; null (tab
                 // reports unavailable) until a SeerrClient is wired, exactly like the other optional *arr services above.
                 val seerrDiscoverService = seerrClient?.let { dev.jellystructure.seerr.SeerrDiscoverService(configStore, it, raviloConfigService, mediaStore, requestLanguageService, requestIntentStore, acquisitionService) }
