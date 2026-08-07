@@ -295,6 +295,23 @@
         </div>
       </div>
 
+      <!-- BAZARR (subtitles) — Phase 157 -->
+      <div class="card set-section" id="sect-bazarr" data-tab="downloads">
+        <div class="row center"><h3 style="font-size:1.05rem;margin:0;">Bazarr</h3><span class="badge info" style="margin-left:8px;">subtitles</span><span class="spacer"></span><span class="muted tiny">enable</span><span class="toggle on" id="bazarr-enable"></span></div>
+        <div class="tiny muted" style="margin:8px 0 0;line-height:1.6;">Optional. The <b>connection</b> to your Bazarr server — Jellystructure searches, downloads, syncs and upgrades subtitles through it, so you never open Bazarr directly. <b>Bazarr stays the source of truth</b>: it owns the providers, scoring and <b>language profiles</b>; Jellystructure stores nothing about subtitles itself and reads live over the API. See everything at a glance on the <a href="subtitles.html">Subtitles</a> page, and act per title on a movie's <b>Tracks &amp; subtitles</b> tab.</div>
+        <div id="bazarr-on" class="box flat" style="padding:14px 15px;margin-top:14px;">
+          <div class="row" style="gap:12px;flex-wrap:wrap;">
+            <div class="field fill" style="margin:0;min-width:220px;"><label>Bazarr URL</label><div class="input mono">http://bazarr:6767</div><span class="hint">Reachable from the Jellystructure container.</span></div>
+            <div class="field fill" style="margin:0;min-width:200px;"><label>API key</label><div class="input">••••••••••••••7c14 <span class="chk" id="chk-bazarr" style="margin-left:auto;"><span class="dot ok"></span><span class="badge ok">v1.4.3 · 24ms</span></span></div><span class="hint">Settings → General → API Key in Bazarr.</span></div>
+          </div>
+          <div class="row center" style="gap:9px;margin-top:8px;flex-wrap:wrap;"><span class="badge ok">connected</span><span class="tiny muted">5 providers healthy · 2 language profiles · matched by path to Radarr / Sonarr</span><span class="spacer"></span><a class="btn sm ghost" href="subtitles.html">Open Subtitles overview →</a><span class="btn sm ghost">Test connection</span></div>
+          <hr class="dash" style="margin:12px 0;">
+          <div class="row center" style="padding:2px 0;"><div><b>Auto-search when new media is added</b><div class="tiny muted">On scan / *arr import, ask Bazarr to search wanted languages for the new title. Off = manual search only.</div></div><span class="spacer"></span><span class="toggle on" id="bazarr-autosearch"></span></div>
+          <hr class="dash" style="margin:6px 0;">
+          <div class="row center" style="padding:2px 0;"><div><b>Show subtitle history on title pages</b><div class="tiny muted">Read Bazarr's per-title download / sync log into the title's <b>History</b> and the Subtitles page.</div></div><span class="spacer"></span><span class="toggle on"></span></div>
+        </div>
+      </div>
+
       <!-- SCANNING (new — Phase 16) -->
       <div class="card set-section" id="sect-scanning" data-tab="libraries">
         <div class="row center" style="margin-bottom:10px;"><h3 style="font-size:1.05rem;margin:0;">Scanning</h3><span class="spacer"></span><span class="muted tiny">media tooling:</span><span class="chk" id="chk-tools"><span class="dot ok"></span><span class="badge ok">ffmpeg · ffprobe · mkvpropedit</span></span></div>
@@ -503,6 +520,12 @@
         <div>api_key = "•••9d41"</div>
         <div>rescan_after_write = <span class="okc">true</span></div>
         <div>&nbsp;</div>
+        <div class="muted">[bazarr]</div>
+        <div>enabled = <span class="okc">true</span></div>
+        <div>url = "http://bazarr:6767"</div>
+        <div>api_key = "•••7c14"</div>
+        <div>auto_search_on_add = <span class="okc">true</span></div>
+        <div>&nbsp;</div>
         <div class="muted">[seerr]</div>
         <div>enabled = <span class="okc">true</span></div>
         <div>url = "http://jellyseerr:5055"</div>
@@ -649,7 +672,7 @@
     });
   })();
   // radarr / sonarr enable toggles reveal their config
-  [['radarr-enable','radarr-on'],['sonarr-enable','sonarr-on']].forEach(([t,c]) => {
+  [['radarr-enable','radarr-on'],['sonarr-enable','sonarr-on'],['bazarr-enable','bazarr-on']].forEach(([t,c]) => {
     const tog = document.getElementById(t);
     tog.addEventListener('click', () => { document.getElementById(c).style.display = tog.classList.contains('on') ? '' : 'none'; });
   });

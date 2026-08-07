@@ -21,23 +21,6 @@ GitHub is the **source of truth**; we layer designs on top of it.
   nothing, delete nothing), and **`scripts/`**. Never delete repo-side spec files our mirror
   lacks — re-pull first instead. After a push the dev team runs `scripts/check-phases.sh` and
   `scripts/check-mobile-css.sh`; keep both green.
-  **⚠⚠ `design/app/app.css`, `design/app/detail.css`, and `design/app/wf.css` are NOT just
-  mockup styling — the real Kotlin/WASM admin frontend ships these three files' CONTENT
-  VERBATIM** (`syncDesignAssets` copies them byte-for-byte into the served app; there is no
-  separate "real" CSS elsewhere for the classes these define). This export has now **wholesale
-  overwritten these three files with a stale local copy and silently deleted real,
-  hand-authored, in-production bug fixes THREE separate times** (2026-07, 2026-07-31, and again
-  2026-08-02 — each fix even carried a code comment saying "RESTORED after a design-tool sync
-  silently reverted this," and the export still blew it away the next time anyway). Every one
-  of these incidents shipped as a wholesale file replacement with **zero new content in the
-  diff** — i.e. the export tool's local copy of these three files was simply stale, and nothing
-  was gained by overwriting them. **Before exporting, for these three files specifically:** diff
-  them against the jellystructure repo's current committed version first; if the repo's version
-  has content the Cosmos project's local copy doesn't, that content is a real fix made directly
-  in the repo since the last pull — pull it into the Cosmos copy (or just skip re-exporting
-  these three files) rather than overwriting it. When in doubt, don't export these three files
-  at all — a missed *new* design change to them is far cheaper to redo than silently deleting a
-  shipped bug fix for the third time.
 - **`STATUS.md` here is a read-only mirror** (single source of truth for phase status lives at
   the repo root, maintained by the dev team). **Re-pull it (ref `main`) whenever you need
   current status** — never edit locally, never export it.
@@ -80,12 +63,26 @@ GitHub is the **source of truth**; we layer designs on top of it.
 - **⚠ Repo-side STATUS gap (dev team's to fix, not us):** `STATUS.md` on `main` has no rows for
   admin **152/153/154** or Ravilo **R184/R185/R186** though their spec files exist and read
   *Implemented* — `scripts/check-phases.sh` will flag them. `STATUS.md` is a read-only mirror here.
-- **Next unassigned numbers: 157 / R191.** 155 (age-rating normalization) and R187 (browse page)
+- **Next unassigned numbers: 158 / R191.** 155 (age-rating normalization) and R187 (browse page)
   **shipped in code** (Implemented, pulled from repo `main` 2026-08-02). New dev specs pulled this sync:
   156 (Seerr per-user request attribution, Implemented), R188 (Upcoming-calendar per-device
   visibility, Implemented), R189 (Samsung Tizen TV client, M1+M2 build-verified). R190 =
   filter-by-person + Seerr overflow row + admin workbench Cast-or-crew facet (design-authored, was
-  drafted as R188 but the dev team took R188/R189 — renumbered to R190), `Planned`.
+  drafted as R188 but the dev team took R188/R189 — renumbered to R190). **Now `Implemented`
+  (2026-08-02): the dev team adopted our design, dev-reviewed it, and built §A–§D + i18n end to end
+  across backend, admin WASM workbench, ravilo-ui/Compose and ravilo-tizen — compile-clean, not yet
+  live-tested; one deliberate Tizen omission (§C Seerr overflow row, since Discover is out of the
+  Tizen build). Pulled the canonical Implemented spec over our stale `Planned` draft 2026-08-07.**
+- **Bazarr subtitle integration — design-authored `phase-157-bazarr-subtitles.md` (`Planned`, 2026-08-07).**
+  Optional Bazarr connection so subtitles never need Bazarr's own UI. Principle: **JS stores nothing**
+  — reads Bazarr live and issues commands; Bazarr keeps owning providers, scoring and language
+  profiles (mirrored read-only). Surfaces: Settings → Download tools **Bazarr** card (`[bazarr]` TOML,
+  path-matched like *arr); a new sidebar **Subtitles** page (`app/subtitles.html` — live queue, wanted
+  list, history, providers, read-only profiles) + a dashboard summary card; per-title Bazarr sections
+  on the movie **Tracks & subtitles** tab (renamed from "Tracks & order") and the series **Seasons &
+  episodes** tab. Actions driven through Bazarr: manual search/download, auto-search, sync-to-audio,
+  upgrade, delete, full scan. Not yet dev-reviewed — open question is the exact Bazarr command API +
+  how a JS item resolves to a Bazarr radarrId/sonarrId (confirm live before build).
 - **2026-07-31 sync:** re-pulled the entire `specs/` tree (68 files) + `STATUS.md` from repo `main`;
   repo was well ahead. Wrote `github.md` as the sync receipt. Design now matches shipped code across
   admin 0–154 / Ravilo R01–R186. See `github.md` for the screen map and details.
@@ -111,6 +108,12 @@ GitHub is the **source of truth**; we layer designs on top of it.
   and ⌘K command palette.
 
 ## Admin screen set (current)
+- **Subtitles** (`subtitles.html`, Phase 157 design) — global **Bazarr** overview (**no left-nav item**;
+  reached from the dashboard summary card): live queue/tasks, wanted list (filter by kind + language),
+  download/sync/
+  upgrade/remove history, provider health, read-only language profiles. Companion: a dashboard summary
+  card + per-title Bazarr sections on `media.html` (Tracks & subtitles tab) and `series.html` (Seasons
+  & episodes). Bazarr connection lives in Settings → Download tools. JS persists no subtitle state.
 - **Dashboard** (`index.html`) · **Library** (`library.html` — audio-track filter,
   multi-axis filters, multi-language search, infinite scroll, shared filter
   workbench) · **Activity** (`activity.html`).
@@ -123,7 +126,7 @@ GitHub is the **source of truth**; we layer designs on top of it.
   (`0+ · 7+ · 13+…`, `normAge()` in `ravilo-browse.js`). **Spec: `phase-155-age-rating-normalization.md`
   (shipped/Implemented in code, synced 2026-08-02).**
 - **Settings** (`settings.html`) — URL-addressable **tabs** (Phase 55): Connections ·
-  Libraries · Metadata · **Download tools** (Radarr/Sonarr + cross-seed) ·
+  Libraries · Metadata · **Download tools** (Radarr/Sonarr + Seerr + **Bazarr** subtitles + cross-seed) ·
   Notifications · Advanced · **Users & devices** (Phase 143 design: per-user Ravilo
   devices + admin web sessions, revoke / sign-out-everywhere).
 - **Live TV** (`livetv.html`, Phase 147) — surfaces Jellyfin's Live TV into Ravilo: master
