@@ -199,6 +199,18 @@ fun Route.bazarrRoutes(mediaStore: MediaStore, service: BazarrService, client: B
             call.respond(bazarrEpisodes)
         }
 
+        // Per-title history, for the title's History tab to merge at render time only — nothing here
+        // is ever written to mediaHistoryQueries, per the phase-157 addendum's fix to FR-BZ1-1.
+        // Movies only: a series would need one call per episode to aggregate, which doesn't scale.
+        get("/history") {
+            val id = call.parameters["id"]!!
+            val item = mediaStore.get(id) ?: return@get call.respond(HttpStatusCode.NotFound)
+            val cfg = cfgOrNull() ?: return@get call.respond(emptyList<BazarrHistoryEvent>())
+            if (item.kind != MediaKind.MOVIE) return@get call.respond(emptyList<BazarrHistoryEvent>())
+            val movie = service.resolveMovie(item) ?: return@get call.respond(emptyList<BazarrHistoryEvent>())
+            call.respond(client.movieHistory(cfg.url, cfg.apiKey, radarrId = movie.radarrId, length = 20))
+        }
+
         post("/search") {
             val id = call.parameters["id"]!!
             val item = mediaStore.get(id) ?: return@post call.respond(HttpStatusCode.NotFound)
