@@ -215,6 +215,8 @@ object PipelineStepOps {
         if (afterChapterHeuristic.kind == MediaKind.TV_SHOW && detectFingerprint && fingerprintService != null) {
             for (seasonEpisodes in eligibleSeasons(afterChapterHeuristic)) {
                 detectIntroFingerprintsForSeason(afterChapterHeuristic, store, fingerprintService, seasonEpisodes, reportDetail)
+                // Phase 159 (FR-159-3) — outro/credits counterpart, same per-season worker-pool shape.
+                detectOutroFingerprintsForSeason(afterChapterHeuristic, store, fingerprintService, seasonEpisodes, reportDetail)
             }
         }
     }
@@ -372,5 +374,113 @@ object PipelineStepOps {
             store.updateOne(fresh.copy(episodes = mergedEpisodes))
         }
         Logger.info("detect_segments: '${item.title}' S$seasonLabel — fingerprinting done, ${updates.size} episode(s) updated", "pipeline", item.id)
+    }
+
+    /**
+     * Phase 159 (FR-159-3) — cross-episode OUTRO/credits fingerprinting for a series' `creditsStartMs`,
+     * mirroring [detectIntroFingerprintsForSeason]'s structure and season-wide-consensus reasoning
+     * exactly (same pairwise-correlation-then-[SegmentDetection.aggregateIntroCandidates] shape — that
+     * function is generic over "a cluster of (startMs, endMs, confidence) candidates," it doesn't care
+     * whether they represent an intro or an outro). The one real difference from the intro pass: an
+     * outro fingerprint is taken from the TAIL of the file
+     * ([FingerprintService.getOrComputeOutro]'s `windowStartMs`), so a raw match position from
+     * [SegmentDetection.findIntroMatch] must be shifted by that episode's own window offset before it's
+     * a real absolute file timestamp — the intro pass never needs this since its window starts at file
+     * position 0.
+     */
+    suspend fun detectOutroFingerprintsForSeason(
+        item: MediaItem,
+        store: MediaStore,
+        fingerprintService: FingerprintService,
+        seasonEpisodes: List<Episode>,
+        reportDetail: suspend (String?) -> Unit = {},
+    ) {
+        fun key(ep: Episode) = "${ep.filename}#${ep.episodeNumber}"
+        val updates = mutableMapOf<String, SegmentMarkers>()
+        fun segmentsFor(ep: Episode) = updates[key(ep)] ?: ep.segments
+        fun eligible(ep: Episode) = segmentsFor(ep).let { !it.manuallyConfirmed && it.creditsStartMs == null }
+        fun epLabel(ep: Episode): String {
+            val s = ep.seasonNumber?.toString()?.padStart(2, '0') ?: "??"
+            val e = ep.episodeNumber?.toString()?.padStart(2, '0') ?: "??"
+            return "S${s}E$e"
+        }
+
+        if (seasonEpisodes.size < 2) return
+        val sorted = seasonEpisodes.sortedBy { it.episodeNumber ?: Int.MAX_VALUE }
+
+        val pairs = buildList {
+            for (i in sorted.indices) for (j in i + 1 until sorted.size) {
+                if (eligible(sorted[i]) || eligible(sorted[j])) add(sorted[i] to sorted[j])
+            }
+        }
+        if (pairs.isEmpty()) return
+
+        val touchedEpisodes = pairs.flatMap { listOf(it.first, it.second) }.distinctBy { key(it) }
+        val seasonLabel = sorted.first().seasonNumber?.toString()?.padStart(2, '0') ?: "??"
+        Logger.info(
+            "detect_segments: outro-fingerprinting '${item.title}' S$seasonLabel — ${touchedEpisodes.size} episode(s), ${pairs.size} pair(s) to correlate",
+            "pipeline", item.id,
+        )
+
+        // Phase A — warm the tail-fingerprint cache. Needs each episode's duration (to know the tail
+        // window's absolute file offset), fetched once per episode alongside the fingerprint itself.
+        val fpCache = mutableMapOf<String, FingerprintService.TailFingerprint?>()
+        val failedEpisodes = mutableSetOf<String>()
+        for ((i, ep) in touchedEpisodes.withIndex()) {
+            reportDetail("outro-fingerprinting ${epLabel(ep)} (${i + 1}/${touchedEpisodes.size})")
+            val duration = FfprobeRunner.duration(ep.path)
+            val fp = duration?.let { fingerprintService.getOrComputeOutro(item.id, ep, it) }
+            fpCache[key(ep)] = fp
+            if (fp == null) {
+                failedEpisodes += key(ep)
+                Logger.warn("detect_segments: '${item.title}' ${epLabel(ep)} — outro fpcalc failed, excluded from correlation", "pipeline", item.id)
+            }
+        }
+
+        // Phase B — correlate every kept pair, shifting each side's match position by its own tail
+        // window's absolute file offset before it becomes a candidate.
+        val candidates = mutableMapOf<String, MutableList<SegmentDetection.IntroCandidate>>()
+        fun addCandidate(ep: Episode, c: SegmentDetection.IntroCandidate) {
+            candidates.getOrPut(key(ep)) { mutableListOf() }.add(c)
+        }
+        for ((i, pair) in pairs.withIndex()) {
+            val (epA, epB) = pair
+            reportDetail("correlating outro ${i + 1}/${pairs.size} (${epLabel(epA)} × ${epLabel(epB)})")
+            if (key(epA) in failedEpisodes || key(epB) in failedEpisodes) continue
+            val fpA = fpCache[key(epA)] ?: continue
+            val fpB = fpCache[key(epB)] ?: continue
+            val match = SegmentDetection.findIntroMatch(fpA.frames, fpB.frames) ?: continue
+            if (eligible(epA)) addCandidate(epA, SegmentDetection.IntroCandidate(match.aStartMs + fpA.windowStartMs, match.aEndMs + fpA.windowStartMs, match.confidence))
+            if (eligible(epB)) addCandidate(epB, SegmentDetection.IntroCandidate(match.bStartMs + fpB.windowStartMs, match.bEndMs + fpB.windowStartMs, match.confidence))
+        }
+
+        // Phase C — reconcile each episode's candidates; only creditsStartMs is a real field on
+        // SegmentMarkers (no creditsEndMs — the player's existing end-of-file fallback covers the tail),
+        // so the consensus's startMs is all that's written.
+        for (ep in sorted) {
+            if (!eligible(ep)) continue
+            val epCandidates = candidates[key(ep)] ?: continue
+            val consensus = SegmentDetection.aggregateIntroCandidates(epCandidates) ?: continue
+            Logger.info(
+                "detect_segments: '${item.title}' ${epLabel(ep)} — outro consensus from ${epCandidates.size} pairwise " +
+                    "match(es) (confidence ${(consensus.confidence * 100).toInt()}%)",
+                "pipeline", item.id,
+            )
+            updates[key(ep)] = segmentsFor(ep).copy(
+                creditsStartMs = consensus.startMs,
+                source = "fingerprint", confidence = consensus.confidence,
+            )
+        }
+
+        if (updates.isEmpty()) {
+            Logger.info("detect_segments: '${item.title}' S$seasonLabel — outro fingerprinting found no new credits matches", "pipeline", item.id)
+            return
+        }
+        segmentWriteMutex.withLock {
+            val fresh = store.get(item.id) ?: return@withLock
+            val mergedEpisodes = fresh.episodes.map { ep -> updates[key(ep)]?.let { ep.copy(segments = it) } ?: ep }
+            store.updateOne(fresh.copy(episodes = mergedEpisodes))
+        }
+        Logger.info("detect_segments: '${item.title}' S$seasonLabel — outro fingerprinting done, ${updates.size} episode(s) updated", "pipeline", item.id)
     }
 }

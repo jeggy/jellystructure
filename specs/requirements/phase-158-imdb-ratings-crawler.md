@@ -1,18 +1,22 @@
-# Phase 158 — IMDb ratings: in-house imdb.com crawler (replace the dead imdbapi.dev source)
+# Phase 158 — IMDb ratings: replace the dead imdbapi.dev source
 
 > The third-party API **imdbapi.dev** that Phase 131 fetches IMDb aggregate ratings + vote counts from
 > **has shut down** — the domain no longer resolves (DNS `ENOTFOUND`), so every `sync_imdb_ratings` run
-> and manual Re-sync is currently a silent no-op. Rather than chase another third-party API, this phase
-> replaces the fetch with a **self-hosted crawler that reads the rating straight off `imdb.com`** — the
-> title page's embedded JSON-LD block — from inside the jellystructure backend. **Nothing else about
-> the subsystem changes**: the `ImdbClient.getRating(imdbId): ImdbFetchedRating?` contract, the stored
+> and manual Re-sync is currently a silent no-op. **Originally planned as a self-hosted crawler reading
+> the rating straight off `imdb.com`'s title page — implementation found that page now sits behind an
+> unsolvable AWS WAF JavaScript challenge (see the 2026-08-08 amendment) and shipped against IMDb's own
+> officially-published bulk ratings dataset instead**, which turned out to be a strictly better fit
+> (no per-title HTTP call, no anti-bot surface, no ToS tension). **Nothing else about the subsystem
+> changed**: the `ImdbClient.getRating(imdbId): ImdbFetchedRating?` contract, the stored
 > `MediaItem.imdbRating` model, the scheduled `sync_imdb_ratings` pipeline step, the manual per-title
-> Re-sync route, and the Ravilo detail DTO all stay exactly as Phase 131 built them — only *how the
-> value is obtained* changes.
+> Re-sync route, and the Ravilo detail DTO all stayed exactly as Phase 131 built them — only *how the
+> value is obtained* changed.
 
 ## Status
-Planned — investigation complete (web-verified + codebase-mapped). Modifies **Phase 131**'s FR-131-2
-data source only; supersedes the `imdbapi.dev` API choice. Follows the touch-point-map + config-safety
+**`Implemented`** (2026-08-08) — **see the 2026-08-08 amendment below: implementation discovered the
+title-page-crawl approach this spec originally called for doesn't work, and pivoted to IMDb's official
+bulk dataset instead.** Modifies **Phase 131**'s FR-131-2 data source only; supersedes the `imdbapi.dev`
+API choice. Follows the touch-point-map + config-safety
 discipline of **Phase 132** (RapidAPI removal), though this is a much smaller blast radius — the whole
 IMDb subsystem *surface* is retained, only the fetch internals are rewritten.
 
@@ -189,3 +193,70 @@ Existing stored `imdbRating` values are **kept** (they simply resume refreshing)
 - **Fixes Phase 131** — same subsystem, working source. R164 (Ravilo rating display) needs no change.
 - `scripts/check-phases.sh` will want a `STATUS.md` row — **STATUS.md is code-owned; do not add the row
   from the design side.**
+
+## Amendment (2026-08-08) — title-page crawl abandoned; IMDb's own bulk dataset used instead
+
+**The approach this spec originally specified (FR-158-1/2/3 — GET the title page, extract JSON-LD)
+does not work and was not shipped.** Live-tested during implementation:
+
+```
+$ curl -A "Mozilla/5.0 ... Chrome/120.0.0.0 Safari/537.36" -H "Accept-Language: en-US,en;q=0.9" \
+    https://www.imdb.com/title/tt0111161/
+HTTP 202, body: <script src="https://…token.awswaf.com/…/challenge.js"> …
+AwsWafIntegration.getToken().then(() => { window.location.reload(true); });
+```
+
+This is an **AWS WAF managed JavaScript challenge** (proof-of-work / browser-fingerprint token,
+`token.awswaf.com`) — not a simple header-based 403 the way the original research (via a third-party
+reader-proxy, which itself likely runs a JS-capable renderer) suggested. It is **structurally
+unsolvable by a plain HTTP client**: the page ships no content at all until the challenge script runs
+and a token cookie is obtained, which requires a JavaScript engine — exactly what this spec's own
+non-goals correctly ruled out ("No headless browser / JS execution … a browser engine is not shippable
+in this native backend"). Confirmed consistent across multiple User-Agent strings, not a one-off rate
+limit. **FR-158-1 through FR-158-4 (the page-fetch and JSON-LD-parsing requirements) are superseded —
+the code that shipped does not fetch or parse HTML at all.**
+
+**What shipped instead: IMDb's own officially-published bulk dataset.** IMDb publishes
+`https://datasets.imdbws.com/title.ratings.tsv.gz` for exactly this non-commercial use case
+(https://developer.imdb.com/non-commercial-datasets/) — a `tconst / averageRating / numVotes` TSV,
+**updated daily**, served from plain S3/CloudFront with **zero anti-bot** (verified live: a bare
+unauthenticated request succeeds immediately, no headers of any kind needed). `tconst` is exactly
+jellystructure's own `imdbId` format — no translation needed. This is a **strict improvement** over
+even the original working design, not merely a workaround:
+- **No per-title HTTP call at all** — one ~9MB compressed download refreshes the *entire* library's
+  ratings at once, replacing what would have been one request per title (with mandatory politeness
+  delays) under either the dead API or the abandoned scrape.
+- **No ToS/robots.txt tension** — this is IMDb's own sanctioned distribution channel for this exact
+  purpose, so FR-158-6's "known posture the operator accepts" framing no longer applies; there is
+  nothing to accept a posture about.
+- **No anti-bot arms race, ever** — a static file on a CDN has no bot-detection surface.
+
+**Revised implementation** (`ImdbClient.kt`, contract-compatible — `getRating(imdbId):
+ImdbFetchedRating?` unchanged, so every downstream caller in §"Source references" needed zero changes):
+- Downloads the dataset via the shared `OutboundHttp` client (a plain HTTPS GET, no special headers)
+  to an on-disk cache, gzip-decompresses by shelling out to `gunzip` (same idiom as this codebase's
+  ffmpeg/ffprobe/fpcalc calls via `ProcessGate` — no native zlib binding needed for a once-a-day file),
+  and parses the TSV into an in-memory `Map<String, ImdbFetchedRating>` (~1.7M rows, ~35MB — an
+  acceptable one-time cost).
+- **Refreshes at most once per ~20h** (the dataset itself only updates daily) — a whole pipeline run's
+  worth of per-title lookups costs at most one download+parse, not one round-trip per title. The
+  `sync_imdb_ratings` step's existing 1–2-worker throttle (`PipelineStepPool.kt:157`) is now more
+  conservative than strictly needed (there's no remote call per title anymore, only a local map
+  lookup) but is harmless to leave as-is; loosening it is an optional follow-up, not required by this
+  phase.
+- A failed download with an existing (merely stale) on-disk copy still serves the old data rather than
+  going blank — the same "preserve the last good value on a transient failure" contract as the
+  per-title `getRating` call itself, just applied one layer up.
+
+**FR-158-5 (politeness/anti-bot handling) and FR-158-6 (robots.txt posture) are moot** under the new
+design — there is no per-title request to throttle and no disallowed path being fetched. **FR-158-7
+(config/label cleanup)** stands as originally written and was applied (the "Re-sync from imdbapi.dev"
+labels now read "Re-sync from IMDb"; the Settings pipeline-block description now says "from imdb.com"
+— technically a step downstream of "the dataset host," but accurate in spirit and avoids naming the
+dead API).
+
+**Lesson for future specs of this shape:** when a design-tool or research pass reports a scrape target
+as reachable via a third-party "reader" service, that does not confirm a plain server-side HTTP client
+can reach it directly — a reader/renderer proxy may itself be JS-capable. Verify the *exact* client
+you're shipping (bare `curl`/Ktor request, real headers, no browser) against the real target before
+finalizing a scrape-based design.
