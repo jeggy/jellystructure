@@ -117,7 +117,23 @@ object SegmentDetection {
     private const val HAMMING_THRESHOLD = 6          // out of 32 bits (~19% bit-error tolerance/frame)
     private const val MAX_GAP_FRAMES = 2             // tolerate up to 2 consecutive non-matching frames in a run
     private const val MIN_RUN_FRAMES = 65            // ~8s — filters out short coincidental matches
-    private const val MAX_OFFSET_SEARCH_SEC = 120.0  // search ±2 minutes of misalignment between episodes
+
+    // Phase 159 (FR-159-1) — widened from the original ±120s now that the offset-histogram pre-pass
+    // below (not full run-tracking) is what pays for the wider range, and the reported failure case
+    // (Severance-style long, variable-length cold opens before the theme proper starts) needs more than
+    // ±2 minutes of tolerable misalignment between two episodes' intro positions.
+    private const val MAX_OFFSET_SEARCH_SEC = 300.0
+
+    // Phase 159 (FR-159-1) — after the histogram pass narrows candidates by total correlation strength,
+    // only the strongest few offsets get the expensive exact run-extraction pass.
+    private const val HISTOGRAM_TOP_K = 5
+
+    // Phase 159 (FR-159-2) — guardrails: a matched "intro" run longer than this, or starting later than
+    // this, is far more likely to be a coincidental audio match (e.g. two similar ambient-score scenes)
+    // than a real shared intro/theme. 6 minutes covers real-world long theme songs with margin; 20
+    // minutes gives generous headroom past the Severance example (theme starts as late as ~5 minutes in).
+    private const val MAX_INTRO_DURATION_SEC = 360.0
+    private const val MAX_INTRO_START_SEC = 1200.0
 
     private fun popcount(x: Int): Int {
         var v = x
@@ -149,61 +165,89 @@ object SegmentDetection {
         if (a.isEmpty() || b.isEmpty()) return null
         val maxOffsetFrames = (MAX_OFFSET_SEARCH_SEC / FRAME_SEC).toInt()
 
-        var best: RunCandidate? = null
+        fun frameMatches(offset: Int, i: Int): Boolean {
+            val ai = if (offset >= 0) i + offset else i
+            val bi = if (offset >= 0) i else i - offset
+            return popcount(a[ai] xor b[bi]) <= HAMMING_THRESHOLD
+        }
+
+        // Phase 159 (FR-159-1) — pass 1: a cheap match-density histogram over every offset in the
+        // (now much wider) search range. This replaces "whichever offset happens to contain the single
+        // longest contiguous run" with "which offset has the strongest OVERALL correlation" — the old
+        // approach could be fooled by a coincidentally long spurious run at the wrong offset
+        // outcompeting the true (but shorter, or broken up by a quiet passage) intro alignment, exactly
+        // the failure mode reported for shows with a long or variable-length intro/cold-open.
+        val densityByOffset = HashMap<Int, Int>(2 * maxOffsetFrames + 1)
         for (offset in -maxOffsetFrames..maxOffsetFrames) {
             val n = if (offset >= 0) minOf(a.size - offset, b.size) else minOf(a.size, b.size + offset)
             if (n <= 0) continue
+            var matches = 0
+            for (i in 0 until n) if (frameMatches(offset, i)) matches++
+            if (matches > 0) densityByOffset[offset] = matches
+        }
+        if (densityByOffset.isEmpty()) return null
 
-            fun matches(i: Int): Boolean {
-                val ai = if (offset >= 0) i + offset else i
-                val bi = if (offset >= 0) i else i - offset
-                return popcount(a[ai] xor b[bi]) <= HAMMING_THRESHOLD
-            }
+        // Pass 2: exact gap-tolerant longest-run extraction, but only around the strongest histogram
+        // peaks — cheap, since there are only a handful of these rather than the whole search range.
+        val topOffsets = densityByOffset.entries.sortedByDescending { it.value }.take(HISTOGRAM_TOP_K).map { it.key }
+
+        var best: RunCandidate? = null
+        var bestDensity = 0.0
+        for (offset in topOffsets) {
+            val n = if (offset >= 0) minOf(a.size - offset, b.size) else minOf(a.size, b.size + offset)
+            if (n <= 0) continue
 
             var i = 0
             while (i < n) {
-                if (!matches(i)) { i++; continue }
+                if (!frameMatches(offset, i)) { i++; continue }
                 val start = i
                 var last = i
                 var gap = 0
+                var runMatches = 0
                 var j = i
                 while (j < n) {
-                    if (matches(j)) { last = j; gap = 0 } else { gap++; if (gap > MAX_GAP_FRAMES) break }
+                    if (frameMatches(offset, j)) { last = j; gap = 0; runMatches++ } else { gap++; if (gap > MAX_GAP_FRAMES) break }
                     j++
                 }
-                val current = best
-                if (current == null || (last - start) > (current.end - current.start)) {
-                    best = RunCandidate(offset, start, last)
+                val length = last - start + 1
+                if (length >= MIN_RUN_FRAMES) {
+                    val density = runMatches.toDouble() / length
+                    val current = best
+                    // Best-density run wins (tie-broken by length) — a shorter, near-perfect match (the
+                    // real intro) now beats a longer but noisier spurious run at some other offset.
+                    if (current == null || density > bestDensity || (density == bestDensity && length > (current.end - current.start + 1))) {
+                        best = RunCandidate(offset, start, last)
+                        bestDensity = density
+                    }
                 }
                 i = j
             }
         }
 
         val candidate = best ?: return null
-        val length = candidate.end - candidate.start + 1
-        if (length < MIN_RUN_FRAMES) return null
 
         // candidate.start/.end are LOGICAL loop positions, not directly either array's own index — the
-        // same offset-dependent mapping `matches()` used above (ai = i+offset / bi = i when offset≥0,
-        // ai = i / bi = i-offset when offset<0) must convert them back to each array's real coordinates.
+        // same offset-dependent mapping `frameMatches()` used above (ai = i+offset / bi = i when
+        // offset≥0, ai = i / bi = i-offset when offset<0) must convert them back to each array's real
+        // coordinates.
         fun aIndex(i: Int) = if (candidate.offset >= 0) i + candidate.offset else i
         fun bIndex(i: Int) = if (candidate.offset >= 0) i else i - candidate.offset
         fun toMs(frame: Int) = ((FRAME_OFFSET_SEC + frame * FRAME_SEC) * 1000).toLong()
 
-        var matchCount = 0
-        for (k in candidate.start..candidate.end) {
-            val ai = aIndex(k); val bi = bIndex(k)
-            if (ai in a.indices && bi in b.indices && popcount(a[ai] xor b[bi]) <= HAMMING_THRESHOLD) matchCount++
-        }
+        val aStartMs = toMs(aIndex(candidate.start)); val aEndMs = toMs(aIndex(candidate.end))
+        val bStartMs = toMs(bIndex(candidate.start)); val bEndMs = toMs(bIndex(candidate.end))
+
+        // Phase 159 (FR-159-2) — position/duration guardrails: reject implausible matches outright
+        // rather than writing a confidently-wrong marker.
+        val durationSec = (aEndMs - aStartMs) / 1000.0
+        if (durationSec > MAX_INTRO_DURATION_SEC) return null
+        if (aStartMs / 1000.0 > MAX_INTRO_START_SEC || bStartMs / 1000.0 > MAX_INTRO_START_SEC) return null
+
         // Match density within the run scaled into the same [0.3, 0.9] presentation range the ffmpeg
         // heuristic uses, so both auto-detected sources read comparably in the admin scrubber.
-        val confidence = (0.3 + (matchCount.toDouble() / length) * 0.6).coerceIn(0.3, 0.9)
+        val confidence = (0.3 + bestDensity * 0.6).coerceIn(0.3, 0.9)
 
-        return FingerprintIntroMatch(
-            aStartMs = toMs(aIndex(candidate.start)), aEndMs = toMs(aIndex(candidate.end)),
-            bStartMs = toMs(bIndex(candidate.start)), bEndMs = toMs(bIndex(candidate.end)),
-            confidence = confidence,
-        )
+        return FingerprintIntroMatch(aStartMs = aStartMs, aEndMs = aEndMs, bStartMs = bStartMs, bEndMs = bEndMs, confidence = confidence)
     }
 
     // ── FR-SEG1-4 amendment (2026-07-14) — season-wide consensus ───────────────────────────────────
