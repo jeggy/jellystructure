@@ -105,13 +105,16 @@ class SettingsStore(private val apiClient: TvApiClient) {
     /** R161 — "Unpair this TV". Delegates to [unpairAllSessions] (also used by R170's avatar
      *  ProfileMenu, which unpairs without loading the rest of Settings' state). */
     suspend fun unpairDevice() = unpairAllSessions(apiClient)
+
+    /** R191 — "Sign out" (this profile only). Delegates to [signOutActiveSession]. */
+    suspend fun signOutActiveSession() = dev.jellystructure.ravilo.ui.screens.signOutActiveSession(apiClient)
 }
 
 /**
  * R161/R170 — revokes every session this device holds (not just the active one), then clears the
- * local store. Distinct from per-session Sign out. Best-effort per token — a failed revoke for one
- * session doesn't stop the others; the local store is cleared regardless so the device always ends
- * up back at the pairing gate.
+ * local store. Distinct from per-session Sign out ([signOutActiveSession]). Best-effort per token —
+ * a failed revoke for one session doesn't stop the others; the local store is cleared regardless so
+ * the device always ends up back at the pairing gate.
  */
 suspend fun unpairAllSessions(apiClient: TvApiClient) {
     val sessions = MultiTokenStore.getAll()
@@ -120,6 +123,23 @@ suspend fun unpairAllSessions(apiClient: TvApiClient) {
     }
     MultiTokenStore.clear()
     sessions.forEach { PlaybackPrefsStore.clearProfile(it.userId) }   // R181 — local playback memory
+}
+
+/**
+ * R191 — signs out ONLY the currently active profile: best-effort revokes its session server-side
+ * (`TvApiClient.signOutSession`) and forgets it locally, leaving every other cached profile on this
+ * device untouched — unlike [unpairAllSessions], which tears down every profile. The revoke is
+ * best-effort (mirroring [unpairAllSessions]'s own `runCatching`): a network failure never blocks
+ * the local sign-out, it just leaves a stale token to be cleaned up later (e.g. by the Phase 143
+ * admin console). Returns whether any other profile is still cached locally, so the caller can
+ * route to the profile picker instead of all the way back to the login gate.
+ */
+suspend fun signOutActiveSession(apiClient: TvApiClient): Boolean {
+    val active = MultiTokenStore.getActive() ?: return MultiTokenStore.getAll().isNotEmpty()
+    runCatching { apiClient.signOutSession(active.userId) }
+    MultiTokenStore.remove(active.userId)
+    PlaybackPrefsStore.clearProfile(active.userId)   // R181 — local playback memory doesn't outlive the profile
+    return MultiTokenStore.getAll().isNotEmpty()
 }
 
 @Composable
@@ -192,13 +212,16 @@ fun SettingsScreen(
         // Cancel choice.
         if (showSignOutConfirm) {
             ConfirmOverlay(
-                title = str("settings.sign_out_confirm"),
-                description = str("settings.sign_out_desc"),
+                title = str("settings.sign_out_confirm", mapOf("name" to displayName)),
+                description = str("settings.sign_out_desc", mapOf("name" to displayName)),
                 confirmLabel = str("settings.sign_out_yes"),
                 onCancel = { showSignOutConfirm = false },
                 onConfirm = {
                     showSignOutConfirm = false
-                    onSignOut()
+                    // R191 — revoke + forget only this profile before navigating (mirrors onUnpair's
+                    // "store.unpairDevice() then onUnpair()" shape); onSignOut decides Login vs
+                    // ProfilePicker based on whether any session remains.
+                    scope.launch { store.signOutActiveSession(); onSignOut() }
                 },
             )
         }
@@ -285,6 +308,19 @@ fun UnpairConfirmOverlay(onCancel: () -> Unit, onConfirm: () -> Unit) {
         title = str("settings.unpair_confirm"),
         description = str("settings.unpair_desc"),
         confirmLabel = str("settings.unpair_yes"),
+        onCancel = onCancel,
+        onConfirm = onConfirm,
+    )
+}
+
+/** R191 — non-private: reused by R170's avatar ProfileMenu, same shape as [UnpairConfirmOverlay]
+ *  but for the single-profile "Sign out" action; names the profile being signed out. */
+@Composable
+fun SignOutConfirmOverlay(displayName: String, onCancel: () -> Unit, onConfirm: () -> Unit) {
+    ConfirmOverlay(
+        title = str("settings.sign_out_confirm", mapOf("name" to displayName)),
+        description = str("settings.sign_out_desc", mapOf("name" to displayName)),
+        confirmLabel = str("settings.sign_out_yes"),
         onCancel = onCancel,
         onConfirm = onConfirm,
     )

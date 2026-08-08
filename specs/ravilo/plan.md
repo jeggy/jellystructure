@@ -113,7 +113,9 @@ surface is untouched.)
 | Method · path | Purpose | Notes |
 |---|---|---|
 | `POST /api/tv/login` | Sign in a device (username + password) | proxied to Jellyfin `AuthenticateByName` under a per-`(device,user)` identity; → `PairResult` (device token + `TvSession`). Retires the code+poll+approve pairing flow (Phase 141 / R175) |
-| `POST /api/tv/unpair` | Sign a device/profile out | removes its `ravilo_device` row; the client drops that `LocalSession` |
+| `POST /api/tv/pair/unpair` | Unpair this TV (every profile) | revokes every `ravilo_device` row this device holds; the client loops this once per cached token, then clears its whole local store. **Doc fix (R191): this table previously said `POST /api/tv/unpair`, which never existed server-side — the client itself called the wrong path too until R191 fixed it** |
+| `GET  /api/tv/sessions` | List profiles signed into this device | one `TvSession` per `ravilo_device` row sharing this device's `deviceId` |
+| `DELETE /api/tv/sessions/{userId}` | Sign out ONE profile (R191) | removes exactly the `(deviceId, userId)` row for the calling device — every other profile on this device is untouched |
 | `GET  /api/tv/home` | The composed home feed | server-composes hero/channels/rows from user config |
 | `GET  /api/tv/channel/{id}` | A channel's scoped feed | same row set, filtered to studio/network/genre/tag |
 | `GET  /api/tv/browse` | Movies / Series / My List grids | `kind`, paging, reuses Phase 30 facets/filters |

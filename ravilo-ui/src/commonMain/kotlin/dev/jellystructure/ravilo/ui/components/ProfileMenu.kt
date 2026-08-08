@@ -30,7 +30,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.jellystructure.ravilo.ui.focus.dpadFocusable
 import dev.jellystructure.ravilo.ui.i18n.str
+import dev.jellystructure.ravilo.ui.screens.MultiTokenStore
+import dev.jellystructure.ravilo.ui.screens.SignOutConfirmOverlay
 import dev.jellystructure.ravilo.ui.screens.UnpairConfirmOverlay
+import dev.jellystructure.ravilo.ui.screens.signOutActiveSession
 import dev.jellystructure.ravilo.ui.screens.unpairAllSessions
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import dev.jellystructure.ravilo.ui.theme.Sora
@@ -41,11 +44,11 @@ private val DANGER_RED = Color(0xFFE0393A)
 
 /**
  * R170 — the avatar opens this dropdown instead of the full "Who's watching" grid: My List, Settings,
- * Unpair this TV, plus a Switch-profile action in the header. Render-only re-routing of existing
- * destinations/actions (constitution: no new server state) — modeled on the detail screen's modal
- * overlay pattern (one focusable column, Back closes). [apiClient] is only needed for the Unpair
- * action ([unpairAllSessions] — the same logic `SettingsStore` uses, called directly so opening this
- * menu doesn't have to load all of Settings' state).
+ * Sign out, Unpair this TV, plus a Switch-profile action in the header. Render-only re-routing of
+ * existing destinations/actions (constitution: no new server state) — modeled on the detail screen's
+ * modal overlay pattern (one focusable column, Back closes). [apiClient] is needed for the Sign out
+ * ([signOutActiveSession]) and Unpair ([unpairAllSessions]) actions — the same logic `SettingsStore`
+ * uses, called directly so opening this menu doesn't have to load all of Settings' state.
  */
 @Composable
 fun ProfileMenu(
@@ -55,11 +58,28 @@ fun ProfileMenu(
     onSettings: () -> Unit,
     onSwitchProfile: () -> Unit,
     onAddUser: () -> Unit,
+    // R191 — fires after this ONE profile's session is revoked/forgotten; distinct from [onUnpaired],
+    // which fires after every profile on the device is gone. The caller decides Login vs
+    // ProfilePicker based on whether any session remains locally.
+    onSignedOut: () -> Unit,
     onUnpaired: () -> Unit,
 ) {
     val colors = RaviloTheme.colors
     val scope = rememberCoroutineScope()
+    var showSignOutConfirm by remember { mutableStateOf(false) }
     var showUnpairConfirm by remember { mutableStateOf(false) }
+
+    if (showSignOutConfirm) {
+        SignOutConfirmOverlay(
+            displayName = MultiTokenStore.getActive()?.displayName.orEmpty(),
+            onCancel = { showSignOutConfirm = false },
+            onConfirm = {
+                showSignOutConfirm = false
+                scope.launch { signOutActiveSession(apiClient); onSignedOut() }
+            },
+        )
+        return
+    }
 
     if (showUnpairConfirm) {
         UnpairConfirmOverlay(
@@ -76,6 +96,7 @@ fun ProfileMenu(
     val myListFR = remember { FocusRequester() }
     val settingsFR = remember { FocusRequester() }
     val addUserFR = remember { FocusRequester() }
+    val signOutFR = remember { FocusRequester() }
     val unpairFR = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { switchFR.requestFocus() } }
 
@@ -125,14 +146,22 @@ fun ProfileMenu(
                 label = str("pm.add_user"),
                 focusRequester = addUserFR,
                 onUp = { settingsFR.requestFocus() },
-                onDown = { unpairFR.requestFocus() },
+                onDown = { signOutFR.requestFocus() },
                 onSelect = onAddUser,
+                onBack = onClose,
+            )
+            ProfileMenuRow(
+                label = str("pm.sign_out"),
+                focusRequester = signOutFR,
+                onUp = { addUserFR.requestFocus() },
+                onDown = { unpairFR.requestFocus() },
+                onSelect = { showSignOutConfirm = true },
                 onBack = onClose,
             )
             ProfileMenuRow(
                 label = str("pm.unpair"),
                 focusRequester = unpairFR,
-                onUp = { addUserFR.requestFocus() },
+                onUp = { signOutFR.requestFocus() },
                 onDown = { switchFR.requestFocus() },
                 onSelect = { showUnpairConfirm = true },
                 onBack = onClose,
