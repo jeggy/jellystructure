@@ -1,0 +1,91 @@
+import { test, expect, Page } from "@playwright/test";
+
+/**
+ * Regression coverage for the phase-157 Bazarr dashboard-card bug report: "the Settings/media-detail
+ * Bazarr surfaces work but the Dashboard summary card never appears." Root cause turned out to be a
+ * stale browser tab, not a code bug (verified live 2026-08-08 by exercising BazarrService/BazarrClient
+ * directly against the real config.toml, and by inspecting the served .wasm for the card markup) --
+ * this test exists so a REAL regression in either half (backend connectivity plumbing or the
+ * frontend's show/hide logic) fails CI instead of relying on manual verification again.
+ *
+ * Reads Jellyfin credentials from env so real creds are never committed (same convention as
+ * auth.spec.ts). Bazarr credentials are optional -- the "enabled" test skips itself if they're not
+ * provided, since a reachable Bazarr instance is an external dependency, not something CI should need.
+ */
+const JF_USER = process.env.JELLYFIN_USER ?? "admin";
+const JF_PASS = process.env.JELLYFIN_PASS ?? "password";
+const BAZARR_URL = process.env.BAZARR_URL ?? "";
+const BAZARR_API_KEY = process.env.BAZARR_API_KEY ?? "";
+
+async function login(page: Page) {
+  await page.goto("/login");
+  await page.fill('input[type="text"]', JF_USER);
+  await page.fill('input[type="password"]', JF_PASS);
+  await page.click('button[type="submit"], button:has-text("Sign in"), button:has-text("Login")');
+  await expect(page.locator('.statgrid, h1:has-text("Dashboard")')).toBeVisible({ timeout: 15_000 });
+}
+
+async function openBazarrSettings(page: Page) {
+  await page.goto("/#/settings?tab=downloads");
+  await expect(page.locator("#sect-bazarr")).toBeVisible();
+}
+
+async function saveSettings(page: Page) {
+  await page.click("#save-settings");
+  // #settings-msg is the save-feedback element (success or error) -- wait for it rather than a
+  // fixed timeout so this doesn't flake under load.
+  await expect(page.locator("#settings-msg")).toBeVisible({ timeout: 10_000 });
+}
+
+test.describe("Bazarr subtitles — Dashboard summary card", () => {
+  test("card is hidden when Bazarr is disabled", async ({ page }) => {
+    await login(page);
+    await openBazarrSettings(page);
+
+    // Force the disabled state regardless of whatever a previous run left behind.
+    const toggle = page.locator("#bazarr-enabled-toggle");
+    if (await toggle.evaluate((el) => el.classList.contains("on"))) {
+      await toggle.click();
+    }
+    await saveSettings(page);
+
+    await page.goto("/#/dashboard");
+    await expect(page.locator(".statgrid")).toBeVisible();
+    await expect(page.locator("#dash-subtitles-card")).toBeHidden();
+  });
+
+  test("card shows live data when Bazarr is enabled and reachable", async ({ page }) => {
+    test.skip(!BAZARR_URL || !BAZARR_API_KEY, "BAZARR_URL/BAZARR_API_KEY not set — skipping (needs a real reachable Bazarr instance)");
+
+    await login(page);
+    await openBazarrSettings(page);
+
+    const toggle = page.locator("#bazarr-enabled-toggle");
+    if (!(await toggle.evaluate((el) => el.classList.contains("on")))) {
+      await toggle.click();
+    }
+    await page.fill("#bazarr-url", BAZARR_URL);
+    await page.fill("#bazarr-key", BAZARR_API_KEY);
+
+    // Prove connectivity BEFORE saving, exactly like an admin would in the real UI.
+    await page.click("#bazarr-test-btn");
+    await expect(page.locator("#chk-bazarr .badge.ok")).toBeVisible({ timeout: 15_000 });
+
+    await saveSettings(page);
+
+    await page.goto("/#/dashboard");
+    await expect(page.locator(".statgrid")).toBeVisible();
+    await expect(page.locator("#dash-subtitles-card")).toBeVisible({ timeout: 15_000 });
+    // Not just "visible" -- assert the placeholder ("Loading…") resolved to real content, so a
+    // regression where the card un-hides but never populates (e.g. a silently-failing overview()
+    // call) still fails this test.
+    await expect(page.locator("#dash-subtitles-body")).not.toContainText("Loading", { timeout: 15_000 });
+    await expect(page.locator("#dash-subtitles-body")).toContainText("Wanted:");
+    await expect(page.locator("#dash-subtitles-body")).toContainText("Providers:");
+
+    // Clean up so this test doesn't leave Bazarr enabled for every other suite that runs after it.
+    await openBazarrSettings(page);
+    await page.locator("#bazarr-enabled-toggle").click();
+    await saveSettings(page);
+  });
+});
