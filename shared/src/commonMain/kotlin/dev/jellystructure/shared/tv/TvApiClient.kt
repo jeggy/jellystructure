@@ -261,12 +261,26 @@ class TvApiClient(
      * the caller iterates `MultiTokenStore.getAll()` and calls this once per stored token (an
      * explicit [tokenOverride], since each session's token is a different Bearer identity — not
      * necessarily the one [deviceToken] currently resolves to), then clears the local store.
-     * Distinct from per-session "Sign out", which only ends the active session client-side.
+     * Distinct from per-session "Sign out" ([signOutSession]), which only ends one session.
+     *
+     * Bug fix (R191): this posted to `/api/tv/unpair`, but the server only ever registered
+     * `/api/tv/pair/unpair` (`TvRoutes.kt`) — every call 404'd, silently, since the response was
+     * never surfaced anywhere a user would notice (the local store was cleared regardless).
      */
     suspend fun unpair(tokenOverride: String) {
-        client.post("$baseUrl/api/tv/unpair") {
+        client.post("$baseUrl/api/tv/pair/unpair") {
             headers { append(HttpHeaders.Authorization, "Bearer $tokenOverride") }
         }.assertSuccess()
+    }
+
+    /**
+     * R191 — signs out exactly ONE profile's session (`DELETE /api/tv/sessions/{userId}`), leaving
+     * every other profile signed into this device untouched. Authenticated with the caller's own
+     * (active) token via [auth] — the route resolves `deviceId` from that token, so this can only
+     * ever remove a session on the device making the call, never an arbitrary one.
+     */
+    suspend fun signOutSession(userId: String) {
+        client.delete("$baseUrl/api/tv/sessions/$userId") { auth() }.assertSuccess()
     }
 
     // ─── Request / Seerr discover (R171, replaces the retired R48 chart Top 10) ──────────────

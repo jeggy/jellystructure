@@ -1071,7 +1071,12 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                     store = store,
                     displayName = dest.displayName,
                     onSkinChange = { themeState.skin = it },
-                    onSignOut = { resetTo(Dest.Login) },
+                    // R191 — SettingsScreen already revoked/forgot just the active profile
+                    // (store.signOutActiveSession()) before this fires; route to the profile picker
+                    // if another cached profile remains, else all the way back to Login.
+                    onSignOut = {
+                        resetTo(if (MultiTokenStore.getAll().isEmpty()) Dest.Login else Dest.ProfilePicker)
+                    },
                     onBack = { pop() },
                     // R161: unpair revokes every session this device holds (store.unpairDevice() has
                     // already cleared MultiTokenStore by the time this fires) — always lands on the
@@ -1094,6 +1099,12 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                 // R175 — "Add user" opens the same LoginScreen; a successful sign-in resets the stack
                 // to the new profile's Home (see the Dest.Login branch above).
                 onAddUser = { profileMenuOpen = false; push(Dest.Login) },
+                // R191 — mirrors onUnpair's shape but only one profile was revoked/forgotten; go to
+                // the picker if another cached profile remains, else all the way to Login.
+                onSignedOut = {
+                    profileMenuOpen = false
+                    resetTo(if (MultiTokenStore.getAll().isEmpty()) Dest.Login else Dest.ProfilePicker)
+                },
                 onUnpaired = { profileMenuOpen = false; resetTo(Dest.Login) },
             )
         }

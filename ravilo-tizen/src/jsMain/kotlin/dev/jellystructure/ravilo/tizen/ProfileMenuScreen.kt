@@ -51,12 +51,19 @@ class ProfileMenuScreen : Screen {
         }
     }
 
+    // R191 — best-effort server-side revoke added alongside the existing local-only removal: this
+    // used to forget the profile client-side without ever telling the backend, leaving its device
+    // token live indefinitely (only `ravilo-ui`'s equivalent action revoked it). Mirrors
+    // `unpairAll`'s own `runCatching`-then-proceed shape — a failed revoke never blocks sign-out.
     private fun signOut() {
         val session = active ?: return
-        MultiTokenStore.remove(session.userId)
-        val remaining = MultiTokenStore.getAll()
-        if (remaining.isEmpty()) app.show(LoginScreen(), replaceStack = true)
-        else app.show(ProfilePickerScreen(), replaceStack = true)
+        app.scope.launch {
+            runCatching { app.api.signOutSession(session.userId) }
+            MultiTokenStore.remove(session.userId)
+            val remaining = MultiTokenStore.getAll()
+            if (remaining.isEmpty()) app.show(LoginScreen(), replaceStack = true)
+            else app.show(ProfilePickerScreen(), replaceStack = true)
+        }
     }
 
     private fun unpairAll() {
