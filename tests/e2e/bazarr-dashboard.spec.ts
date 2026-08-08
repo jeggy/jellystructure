@@ -8,10 +8,11 @@ import { test, expect, Page, Browser } from "@playwright/test";
  * this test exists so a REAL regression in either half (backend connectivity plumbing or the
  * frontend's show/hide logic) fails CI instead of relying on manual verification again.
  *
- * Reads Jellyfin credentials from env so real creds are never committed (same convention as
- * auth.spec.ts). Bazarr credentials are optional -- the enabled/live-data step skips itself if
- * they're not provided, since a reachable Bazarr instance is an external dependency, not something
- * CI should need.
+ * Everything here is mocked, same as the rest of this suite -- tests/mock-bazarr/server.js, wired up
+ * via docker-compose.test.yml as `bazarr-mock` alongside jellyfin-mock/tmdb-mock. No real external
+ * service is ever required to run this file. Reads BAZARR_URL/BAZARR_API_KEY/JELLYFIN_USER/PASS from
+ * env (same convention as auth.spec.ts) purely so a local run against a differently-wired stack can
+ * override them -- the defaults below already match the mock's own defaults.
  *
  * Serial + one shared login: the app's login-rate-limiter (a few attempts/minute) means logging in
  * fresh per test trips it under any retry or re-run within the same window. Both scenarios share one
@@ -19,8 +20,8 @@ import { test, expect, Page, Browser } from "@playwright/test";
  */
 const JF_USER = process.env.JELLYFIN_USER ?? "admin";
 const JF_PASS = process.env.JELLYFIN_PASS ?? "password";
-const BAZARR_URL = process.env.BAZARR_URL ?? "";
-const BAZARR_API_KEY = process.env.BAZARR_API_KEY ?? "";
+const BAZARR_URL = process.env.BAZARR_URL ?? "http://bazarr-mock:6767";
+const BAZARR_API_KEY = process.env.BAZARR_API_KEY ?? "mock-bazarr-key";
 
 async function login(page: Page) {
   await page.goto("/login");
@@ -74,8 +75,6 @@ test.describe.serial("Bazarr subtitles — Dashboard summary card", () => {
   });
 
   test("card shows live data when Bazarr is enabled and reachable", async () => {
-    test.skip(!BAZARR_URL || !BAZARR_API_KEY, "BAZARR_URL/BAZARR_API_KEY not set — skipping (needs a real reachable Bazarr instance)");
-
     await setBazarrEnabled(page, true);
     await page.fill("#bazarr-url", BAZARR_URL);
     await page.fill("#bazarr-key", BAZARR_API_KEY);

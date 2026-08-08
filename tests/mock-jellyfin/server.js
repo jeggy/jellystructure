@@ -4,6 +4,7 @@
 "use strict";
 
 const http = require("http");
+const crypto = require("crypto");
 const PORT = process.env.PORT ?? 8096;
 const ADMIN_USER = process.env.JELLYFIN_USER ?? "admin";
 const ADMIN_PASS = process.env.JELLYFIN_PASS ?? "password";
@@ -64,7 +65,7 @@ const ITEMS = [
   },
 ];
 
-http.createServer(async (req, res) => {
+const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://localhost:${PORT}`);
   const path = url.pathname;
   const method = req.method;
@@ -109,7 +110,30 @@ http.createServer(async (req, res) => {
     return send(res, 200, { Id: "user-id-1", Name: ADMIN_USER, Policy: { IsAdministrator: true } });
   }
 
+  // GET /LiveTv/Info and /LiveTv/Channels — jellystructure's LiveTvService.sync() calls both
+  // unconditionally at startup; mocking clean 200s instead of a 404 keeps CI logs quiet.
+  if (method === "GET" && path === "/LiveTv/Info") {
+    return send(res, 200, { IsEnabled: false });
+  }
+  if (method === "GET" && path === "/LiveTv/Channels") {
+    return send(res, 200, { Items: [], TotalRecordCount: 0 });
+  }
+
   send(res, 404, { message: "endpoint not mocked" });
 }).listen(PORT, () => {
   console.log(`[jellyfin-mock] listening on :${PORT}`);
+});
+
+// jellystructure's JellyfinLibraryListener opens a WS to /socket for realtime LibraryChanged
+// events. Accepting the handshake (rather than 404ing it) avoids noisy reconnect-warning spam in
+// CI logs — no real events are ever pushed over it, tests don't need any.
+server.on("upgrade", (req, socket) => {
+  const key = req.headers["sec-websocket-key"];
+  const accept = crypto.createHash("sha1").update(key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").digest("base64");
+  socket.write(
+    "HTTP/1.1 101 Switching Protocols\r\n" +
+    "Upgrade: websocket\r\n" +
+    "Connection: Upgrade\r\n" +
+    `Sec-WebSocket-Accept: ${accept}\r\n\r\n`
+  );
 });
