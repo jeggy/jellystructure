@@ -253,27 +253,61 @@ object FfmpegRunner {
 
         val blackStarts = Regex("""black_start:([\d.]+)""").findAll(output)
             .mapNotNull { it.groupValues[1].toDoubleOrNull() }.toList()
+        val blackEnds = Regex("""black_end:([\d.]+)""").findAll(output)
+            .mapNotNull { it.groupValues[1].toDoubleOrNull() }.toList()
         val silenceStarts = Regex("""silence_start:\s*([\d.]+)""").findAll(output)
             .mapNotNull { it.groupValues[1].toDoubleOrNull() }.toList()
         if (blackStarts.isEmpty() || silenceStarts.isEmpty()) return null
 
-        // blackStarts is already in ffmpeg's (ascending) emission order, so the first black event with
-        // ANY silence event within tolerance is the earliest such coincidence — the genuine
-        // "scene ends, credits begin" transition, not a later pause within the credits themselves.
-        var bestBlack: Double? = null
-        var bestSilence: Double? = null
-        for (b in blackStarts) {
-            val s = silenceStarts.firstOrNull { kotlin.math.abs(it - b) <= BLACK_SILENCE_TOLERANCE_SEC } ?: continue
-            bestBlack = b; bestSilence = s
-            break
-        }
-        if (bestBlack == null || bestSilence == null) return null
+        val windowLenSec = durationSec - windowStartSec
 
-        val gap = kotlin.math.abs(bestSilence - bestBlack)
-        val relativeSec = minOf(bestBlack, bestSilence)
-        val confidence = (1.0 - gap / BLACK_SILENCE_TOLERANCE_SEC).coerceIn(0.3, 0.9)
-        return CreditsHeuristicResult(startMs = ((windowStartSec + relativeSec) * 1000).toLong(), confidence = confidence)
+        // Phase 159 (FR-159-4) — the pre-159 code took the FIRST black+silence coincidence in the
+        // window unconditionally. That's wrong whenever the window contains an earlier false-positive:
+        // a dramatic fade-to-black-and-quiet within the final act (a single brief cut, normal picture
+        // and sound resume right after) fires the exact same signal as genuine rolling credits, and
+        // being first in time, it used to win outright regardless of what followed it.
+        //
+        // Real credits are a *sustained* black/quiet stretch running to the end of the window — a
+        // scene-cut fade is not. So for every candidate coincidence, score it by how much of the
+        // remaining window (candidate -> window end) is actually covered by black-frame runs; a
+        // one-off cut leaves most of the tail non-black (normal footage resumed), while genuine
+        // credits leave most of it black. Pick the EARLIEST candidate whose tail-black-coverage clears
+        // a floor (i.e. the true transition point into a sustained black stretch), not just the
+        // earliest coincidence of any kind.
+        data class Candidate(val timeSec: Double, val gap: Double)
+        val candidates = blackStarts.mapNotNull { b ->
+            val s = silenceStarts.firstOrNull { kotlin.math.abs(it - b) <= BLACK_SILENCE_TOLERANCE_SEC } ?: return@mapNotNull null
+            Candidate(minOf(b, s), kotlin.math.abs(s - b))
+        }
+        if (candidates.isEmpty()) return null
+
+        fun blackCoverageAfter(timeSec: Double): Double {
+            val tailLen = durationSec - (windowStartSec + timeSec)
+            if (tailLen <= 0) return 0.0
+            var covered = 0.0
+            for (i in blackStarts.indices) {
+                val bs = blackStarts[i]
+                if (bs < timeSec) continue
+                val be = blackEnds.getOrNull(i) ?: windowLenSec
+                covered += (be - bs).coerceIn(0.0, tailLen)
+            }
+            return (covered / tailLen).coerceIn(0.0, 1.0)
+        }
+
+        val accepted = candidates
+            .sortedBy { it.timeSec }
+            .firstOrNull { blackCoverageAfter(it.timeSec) >= CREDITS_TAIL_BLACK_COVERAGE_MIN }
+            ?: return null // no coincidence looked like a sustained credits stretch — refuse rather than guess
+
+        val confidence = (1.0 - accepted.gap / BLACK_SILENCE_TOLERANCE_SEC).coerceIn(0.3, 0.9)
+        return CreditsHeuristicResult(startMs = ((windowStartSec + accepted.timeSec) * 1000).toLong(), confidence = confidence)
     }
+
+    // Phase 159 (FR-159-4) — a genuine rolling-credits stretch is black/dark for most of its duration;
+    // a one-off scene fade is not. 35% is a deliberately loose floor (credits often include lit studio
+    // logos, colored text-on-image cards, etc., so 100% black is not expected) chosen to reject only the
+    // clear false-positive case: a brief cut with normal, non-black footage resuming right after it.
+    private const val CREDITS_TAIL_BLACK_COVERAGE_MIN = 0.35
 
     // Phase 150 (FR-SEG1-4) — Chromaprint fingerprint for cross-episode intro matching, via the
     // `fpcalc` CLI (Chromaprint's own command-line tool; must be present on PATH — the
@@ -281,7 +315,9 @@ object FfmpegRunner {
     // -length bounds decoded/analyzed audio to the first [windowSec] of the file — the intro is always
     // near the start, and a full-episode fingerprint (many thousands of frames) would be needless
     // compute and cache size for content this tier never looks at.
-    private const val FINGERPRINT_WINDOW_SEC = 600
+    // Phase 159 (FR-159-5) — widened 600s->900s: a variable-length cold open (Offboarding: up to ~5 min)
+    // plus the title theme itself only left a thin margin at 600s; 900s covers that with real headroom.
+    const val FINGERPRINT_WINDOW_SEC = 900
 
     /**
      * Raw Chromaprint fingerprint (one 32-bit value per ~0.124s of audio, verified empirically 2026-07-13
@@ -296,6 +332,31 @@ object FfmpegRunner {
         // Same nice/ionice treatment as detectCreditsStart — fpcalc shells out to libavcodec for audio
         // decode, and up to 16 of these can run concurrently under ProcessGate.
         val output = captureCommand("nice -n 19 ionice -c3 fpcalc -raw -length $windowSec '$escaped' 2>&1") ?: return null
+        val match = Regex("""FINGERPRINT=([\d,]+)""").find(output) ?: return null
+        return match.groupValues[1].split(",").mapNotNull { it.trim().toLongOrNull()?.toInt() }.takeIf { it.isNotEmpty() }
+    }
+
+    // Phase 159 (FR-159-3) — cross-episode OUTRO/credits fingerprinting, mirroring the intro fingerprint
+    // above. fpcalc's own CLI only supports "-length SECS from the start of the file", not an offset, so
+    // the tail window is carved out with ffmpeg's `-sseof` (seek-from-end-of-file) flag and piped to
+    // fpcalc as WAV on stdin — verified live 2026-08-08 against a synthetic sine-wave WAV before writing
+    // this. 300s covers the vast majority of real end-credits rolls without fingerprinting the whole file.
+    const val OUTRO_FINGERPRINT_WINDOW_SEC = 300
+
+    /**
+     * Raw Chromaprint fingerprint for the last [windowSec] of [filePath]'s audio (see [computeFingerprint]
+     * for the frame format). Frame index 0 of the returned list corresponds to file time
+     * `durationSec - windowSec`, NOT file time 0 — callers converting a match position back to an
+     * absolute file timestamp must add that offset themselves (this function has no way to know
+     * [windowSec] was actually available, e.g. on a file shorter than the window; ffmpeg just clamps
+     * `-sseof` to the start of the file in that case, so callers must derive the real analyzed offset
+     * from the file's own duration, not assume `durationSec - windowSec`).
+     */
+    suspend fun computeOutroFingerprint(filePath: String, windowSec: Int = OUTRO_FINGERPRINT_WINDOW_SEC): List<Int>? {
+        val escaped = filePath.replace("'", "'\\''")
+        val cmd = "nice -n 19 ionice -c3 ffmpeg -sseof -$windowSec -i '$escaped' -f wav - 2>/dev/null | " +
+            "nice -n 19 ionice -c3 fpcalc -raw -length $windowSec - 2>&1"
+        val output = captureCommand(cmd) ?: return null
         val match = Regex("""FINGERPRINT=([\d,]+)""").find(output) ?: return null
         return match.groupValues[1].split(",").mapNotNull { it.trim().toLongOrNull()?.toInt() }.takeIf { it.isNotEmpty() }
     }

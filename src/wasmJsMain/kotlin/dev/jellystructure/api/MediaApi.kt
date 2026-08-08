@@ -620,7 +620,7 @@ object MediaApi {
         }
     }.getOrNull()
 
-    // Phase 131: manual per-title IMDb rating re-sync against imdbapi.dev.
+    // Phase 131/158: manual per-title IMDb rating re-sync (crawled from imdb.com).
     suspend fun syncImdbRating(id: String): MediaItem? = runCatching {
         val response = httpClient.post("/api/media/$id/imdb-rating/sync")
         if (response.status == HttpStatusCode.OK) response.body<MediaItem>() else null

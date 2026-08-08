@@ -103,8 +103,8 @@ fun main() = runBlocking {
     val sessionService = SessionService(db)
     val jellyfinClient = JellyfinClient()
     val tmdbClient = TmdbClient(configStore, tmdbBaseUrl)
-    val imdbClient = dev.jellystructure.imdb.ImdbClient()  // Phase 131
     val dataDir = dbFile.substringBeforeLast('/')
+    val imdbClient = dev.jellystructure.imdb.ImdbClient(dataDir)  // Phase 131/158
     val jsTagStore = dev.jellystructure.media.JsTagStore("$dataDir/js-tags.json")
     jsTagStore.load()
     val mediaStore = MediaStore(db, jsTagStore, configStore)
@@ -691,6 +691,9 @@ suspend fun executePipeline(
                         scanTracker, broadcaster, labelOf = { "${it.item.title} S${it.seasonEpisodes.first().seasonNumber?.toString()?.padStart(2, '0') ?: "??"}" },
                     ) { workItem, reportDetail ->
                         dev.jellystructure.media.PipelineStepOps.detectIntroFingerprintsForSeason(workItem.item, store, fingerprintService, workItem.seasonEpisodes, reportDetail)
+                        // Phase 159 (FR-159-3) — outro/credits counterpart, same season-scoped work item
+                        // so a 10-season show's outro pass also spreads across up to 10 worker slots.
+                        dev.jellystructure.media.PipelineStepOps.detectOutroFingerprintsForSeason(workItem.item, store, fingerprintService, workItem.seasonEpisodes, reportDetail)
                     }
                 }
             }

@@ -224,7 +224,7 @@ private fun buildImdbCard(item: MediaItem): String {
           <hr class="dash" style="margin:10px 0 14px;">
           <div class="tiny muted">Not synced yet.</div>
           <div class="pill-row" style="margin-top:11px;">
-            <span class="btn sm ghost" id="imdb-resync">Re-sync from imdbapi.dev</span>
+            <span class="btn sm ghost" id="imdb-resync">Re-sync from IMDb</span>
           </div>
         </div>"""
     }
@@ -243,7 +243,7 @@ private fun buildImdbCard(item: MediaItem): String {
         <span><span class="muted">id</span> <a href="https://www.imdb.com/title/$imdbId/" target="_blank" rel="noopener" class="mono">$imdbId</a></span>
         <span class="muted">synced $syncedAgo</span>
       </div>
-      <div class="pill-row" style="margin-top:10px;"><span class="btn sm fill" id="imdb-resync" style="justify-content:center;">Re-sync from imdbapi.dev</span></div>
+      <div class="pill-row" style="margin-top:10px;"><span class="btn sm fill" id="imdb-resync" style="justify-content:center;">Re-sync from IMDb</span></div>
     </div>"""
 }
 

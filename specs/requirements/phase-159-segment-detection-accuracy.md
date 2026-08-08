@@ -10,10 +10,52 @@
 > admin editor, or player changes; only *how good the numbers are* changes.
 
 ## Status
-Planned — investigation complete, backend-grounded. Supersedes the specific algorithm constants and
-tier behaviour of **Phase 150** FR-SEG1-3 (credits heuristic) and FR-SEG1-4 (intro fingerprinting);
-the Phase 150 data model (`SegmentMarkers`), resolution precedence, triage, settings gating, and §F
-DTO trip all stand unchanged.
+Implemented (2026-08-08). Supersedes the specific algorithm constants and tier behaviour of
+**Phase 150** FR-SEG1-3 (credits heuristic) and FR-SEG1-4 (intro fingerprinting); the Phase 150 data
+model (`SegmentMarkers`), resolution precedence, triage, settings gating, and §F DTO trip all stand
+unchanged, as designed.
+
+### Implementation notes (2026-08-08)
+- **§A/§B (`SegmentDetection.findIntroMatch`):** implemented the recommended two-pass approach — a
+  cheap match-density histogram across the widened `±300s` (`MAX_OFFSET_SEARCH_SEC`) search range picks
+  the strongest-correlation offset(s) (`HISTOGRAM_TOP_K = 5`), then exact gap-tolerant run extraction
+  runs only around those peaks and the best-density run (not merely the longest) wins. Guardrails added:
+  `MAX_INTRO_DURATION_SEC = 360`, `MAX_INTRO_START_SEC = 1200` — a match violating either is rejected
+  (returns null) rather than written.
+- **§C (outro fingerprinting):** added `FfmpegRunner.computeOutroFingerprint` (tail-of-file via
+  `ffmpeg -sseof` piped to `fpcalc`, verified live before implementation), `FingerprintService
+  .getOrComputeOutro`/`TailFingerprint` (distinct cache key, carries the tail window's absolute file
+  offset since match positions are otherwise relative to the wrong end of the file), and
+  `PipelineStepOps.detectOutroFingerprintsForSeason` — reuses `findIntroMatch` and
+  `aggregateIntroCandidates` unchanged (both are generic over "a pair of correlated audio windows" /
+  "a cluster of candidates," not intro-specific), shifting each side's match position by its own
+  episode's tail-window offset before it becomes a candidate. Wired into both `PipelineStepOps
+  .detectSegments` (single-item path) and `Main.kt`'s per-season `detect_segments` worker pool
+  (same `SeasonWorkItem`, so intro and outro fingerprinting for a season share one worker slot).
+- **§D (`FfmpegRunner.detectCreditsStart`):** replaced "first black+silence coincidence wins" with
+  "earliest coincidence whose remaining-window black-frame coverage clears `CREDITS_TAIL_BLACK_COVERAGE_MIN
+  = 0.35`" — a one-off scene-fade leaves normal (non-black) footage after it and is rejected; a genuine
+  rolling-credits stretch is black for most of its remaining duration and is accepted.
+- **§E (window sizing):** `FINGERPRINT_WINDOW_SEC` widened 600s → 900s (more margin behind a long cold
+  open); new `OUTRO_FINGERPRINT_WINDOW_SEC = 300` for the tail. `FingerprintService`'s cache key now
+  includes the window size (`-w<seconds>`), so a widened window can never silently reuse a stale
+  smaller-window cache entry — it's simply orphaned on disk instead (FR-159-7's cache-bust requirement).
+- **§F (confidence/observability):** intro confidence is now the winning run's own match density (not a
+  separate re-derived count); rejected guardrail/coverage-floor cases already flow through each tier's
+  existing "return null → caller logs/reports nothing new for this item" path, which the pre-existing
+  `reportDetail` plumbing in `detectIntroFingerprintsForSeason`/`detectOutroFingerprintsForSeason` surfaces
+  per-pair either way (a pair that fails to correlate simply produces no candidate, visible as this
+  episode's candidate/consensus log line never firing).
+- **§G (re-detect):** unchanged `eligible()` gates (`!manuallyConfirmed && field == null`) in both
+  fingerprinting passes mean `scope = "all"`'s existing clear-then-rescan flow re-runs the new algorithms
+  automatically; no separate migration path was needed.
+- **Open decisions resolved pragmatically rather than by exhaustive tuning** (§ Open in the original
+  spec): histogram anchoring uses the same per-frame Hamming comparison as before (no separate
+  hash/anchor scheme) — the histogram's value-add here is selecting candidate OFFSETS by total
+  correlation before the expensive run search, not a fundamentally different frame-comparison primitive;
+  this was sufficient to remove the ±120s ceiling without a further anchoring layer. Guardrail bounds,
+  the credits coverage floor, and both window sizes are the reasoned defaults above, not values tuned
+  against a labeled corpus (none exists — consistent with this phase's own non-goals).
 
 ## Problem — three concrete, verified failure modes
 
