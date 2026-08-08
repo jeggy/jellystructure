@@ -3,11 +3,12 @@
 #   ./scripts/build-fixtures.sh
 #   docker compose -f docker-compose.test.yml up --build --abort-on-container-exit
 #
-# No external secrets needed — all API calls go to the bundled mocks.
+# No external secrets needed — all API calls go to the bundled mocks (Jellyfin, TMDB, Bazarr).
 # Optional env overrides:
-#   FIXTURE_DIR   — path to fixture MKVs on the host (default: /tmp/jellystructure-fixtures)
-#   JELLYFIN_USER — Jellyfin admin username used by Playwright login test (default: admin)
-#   JELLYFIN_PASS — Jellyfin admin password used by Playwright login test (default: password)
+#   FIXTURE_DIR      — path to fixture MKVs on the host (default: /tmp/jellystructure-fixtures)
+#   JELLYFIN_USER    — Jellyfin admin username used by Playwright login test (default: admin)
+#   JELLYFIN_PASS    — Jellyfin admin password used by Playwright login test (default: password)
+#   BAZARR_API_KEY   — key the bazarr-mock service expects (default: mock-bazarr-key)
 
 services:
   jellyfin-mock:
@@ -43,6 +44,22 @@ services:
     networks:
       - testnet
 
+  bazarr-mock:
+    image: node:20-alpine
+    command: node /mock/server.js
+    volumes:
+      - ./tests/mock-bazarr:/mock:ro
+    environment:
+      PORT: 6767
+      BAZARR_API_KEY: ${BAZARR_API_KEY:-mock-bazarr-key}
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "--header=X-API-KEY: ${BAZARR_API_KEY:-mock-bazarr-key}", "http://localhost:6767/api/system/status"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+    networks:
+      - testnet
+
   app:
     build: .
     user: "0:0"
@@ -63,6 +80,8 @@ services:
         condition: service_healthy
       tmdb-mock:
         condition: service_healthy
+      bazarr-mock:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:9505/api/health"]
       interval: 5s
@@ -82,6 +101,10 @@ services:
       FIXTURE_DIR: ${FIXTURE_DIR:-/tmp/jellystructure-fixtures}
       JELLYFIN_USER: ${JELLYFIN_USER:-admin}
       JELLYFIN_PASS: ${JELLYFIN_PASS:-password}
+      # Reachable from the "app" container over the shared testnet network — Bazarr's mock is
+      # always up in this stack, so bazarr-dashboard.spec.ts never needs a real instance.
+      BAZARR_URL: http://bazarr-mock:6767
+      BAZARR_API_KEY: ${BAZARR_API_KEY:-mock-bazarr-key}
     command: >
       sh -c "apt-get update -qq && apt-get install -y --no-install-recommends ffmpeg && npm ci && npx playwright install chromium && npx playwright test"
     depends_on:
