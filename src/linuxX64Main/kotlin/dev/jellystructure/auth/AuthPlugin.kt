@@ -80,6 +80,16 @@ fun Application.installAuthPlugin(
             return@intercept
         }
 
+        // Exact match, not prefix — the lightweight liveness probe (fd_count/high_water_mark only,
+        // see Server.kt's own "for a monitoring scraper" comment) is meant to be hit by container/
+        // orchestration health checks that can't carry a session cookie. /api/health/full is a
+        // DIFFERENT, deliberately admin-only endpoint (exposes *arr/TMDB connectivity + config state)
+        // and must NOT be swept in by a prefix match here.
+        if (path == "/api/health") {
+            proceed()
+            return@intercept
+        }
+
         if (OPEN_API_PATHS.any { path.startsWith(it) }) {
             proceed()
             return@intercept
