@@ -110,6 +110,23 @@ internal fun parseSeasonEpisodes(path: String): Pair<Int?, List<Int>> {
     return Pair(season, listOf(firstEp))
 }
 
+/**
+ * Phase 160 (FR-SCAN2): when [filenameParsed] found no episode numbers at all — a filename
+ * convention `parseSeasonEpisodes` doesn't recognize (e.g. La Curva's bare `SEE` scheme,
+ * `La Curva - 101.mkv`) — fall back to the season/episode Jellyfin's own scanner already
+ * assigned to the same file (matched by path via `jfByPath`, upstream). Jellyfin's numbers are
+ * naming-convention-agnostic (folder structure + its own broader heuristics), so this recovers a
+ * number for any file Jellyfin placed correctly even when our regexes can't parse the filename at
+ * all. Never overrides a filename parse that found at least one episode — the filename is the
+ * more specific signal when it succeeds.
+ */
+internal fun resolveSeasonEpisode(filenameParsed: Pair<Int?, List<Int>>, jfSeason: Int?, jfEpisode: Int?): Pair<Int?, List<Int>> =
+    if (filenameParsed.second.isEmpty() && jfSeason != null && jfEpisode != null) {
+        Pair(jfSeason, listOf(jfEpisode))
+    } else {
+        filenameParsed
+    }
+
 class Scanner(
     private val configStore: ConfigStore,
     private val tmdb: TmdbClient,
@@ -374,7 +391,12 @@ class Scanner(
                     val audioLangs = tracks.filter { it.kind == TrackKind.AUDIO }.map { it.language }
                     val epLangPriority = LanguageResolver.priorityList(audioLangs, fallback)
                     val epResolvedLang = epLangPriority.firstOrNull()
-                    val (seasonNum, epNums) = parseSeasonEpisodes(file)
+                    val translatedJfPath = if (lib.jellyfinPath.isNotBlank()) file.replaceFirst(lib.localPath, lib.jellyfinPath) else file
+                    val jfPathMatch = jfByPath[translatedJfPath]
+                    // Phase 160: when our own filename regexes find nothing (e.g. a bare `SEE` scheme like
+                    // "La Curva - 101.mkv"), fall back to the season/episode Jellyfin's own scanner already
+                    // assigned this same file — see resolveSeasonEpisode.
+                    val (seasonNum, epNums) = resolveSeasonEpisode(parseSeasonEpisodes(file), jfPathMatch?.parentIndexNumber, jfPathMatch?.indexNumber)
                     // Phase 149: a multi-episode file (`S01E01E02E03.mkv`) yields >1 contained episode number.
                     // An unparseable filename still yields exactly one Episode (episodeNumber = null), matching
                     // pre-149 behaviour — partCount is 1 either way.
@@ -400,7 +422,7 @@ class Scanner(
                         // R82: map (season, ep) → Jellyfin id from the pre-fetched meta. Phase 152: fall
                         // back to a path match when Jellyfin never numbered this file — see jfByPath above.
                         val jfEp = (if (seasonNum != null && epNum != null) jfBySeasonEp[seasonNum to epNum] else null)
-                            ?: jfByPath[if (lib.jellyfinPath.isNotBlank()) file.replaceFirst(lib.localPath, lib.jellyfinPath) else file]
+                            ?: jfPathMatch
 
                         Episode(
                             filename = file.substringAfterLast('/'),
@@ -686,7 +708,9 @@ class Scanner(
             val epIssueCount = tracks.count { (it.kind == TrackKind.AUDIO || it.kind == TrackKind.SUBTITLE) && it.language == null }
             val audioLangs = tracks.filter { it.kind == TrackKind.AUDIO }.map { it.language }
             val epLangPriority = LanguageResolver.priorityList(audioLangs, fallback)
-            val (seasonNum, epNums) = parseSeasonEpisodes(file)
+            val jfPathMatchSync = jfByPathSync[toJellyfinPath(file)]
+            // Phase 160: same filename-parse fallback scanSeries uses — see resolveSeasonEpisode.
+            val (seasonNum, epNums) = resolveSeasonEpisode(parseSeasonEpisodes(file), jfPathMatchSync?.parentIndexNumber, jfPathMatchSync?.indexNumber)
             val partCount = epNums.size.coerceAtLeast(1)
             val partEpisodeNums: List<Int?> = if (epNums.isEmpty()) listOf(null) else epNums
             val chapterMarkers = if (partCount > 1) FfprobeRunner.chapters(file) else emptyList()
