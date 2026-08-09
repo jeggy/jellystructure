@@ -56,4 +56,34 @@ class ScannerFilenameParsingTest {
         assertEquals(null, season)
         assertEquals(emptyList(), episodes)
     }
+
+    // Phase 160 — resolveSeasonEpisode: Jellyfin-numbering fallback when our own filename regexes miss.
+
+    @Test
+    fun `resolveSeasonEpisode falls back to Jellyfin numbering when the filename parse found nothing`() {
+        val (season, episodes) = resolveSeasonEpisode(Pair(null, emptyList()), jfSeason = 1, jfEpisode = 3)
+        assertEquals(1, season)
+        assertEquals(listOf(3), episodes)
+    }
+
+    @Test
+    fun `resolveSeasonEpisode never overrides a successful filename parse`() {
+        val (season, episodes) = resolveSeasonEpisode(Pair(2, listOf(4)), jfSeason = 9, jfEpisode = 9)
+        assertEquals(2, season)
+        assertEquals(listOf(4), episodes)
+    }
+
+    @Test
+    fun `resolveSeasonEpisode stays unresolved when Jellyfin has no numbering either`() {
+        val (season, episodes) = resolveSeasonEpisode(Pair(null, emptyList()), jfSeason = null, jfEpisode = null)
+        assertEquals(null, season)
+        assertEquals(emptyList(), episodes)
+    }
+
+    @Test
+    fun `resolveSeasonEpisode requires both season and episode from Jellyfin not just one`() {
+        val (season, episodes) = resolveSeasonEpisode(Pair(null, emptyList()), jfSeason = 1, jfEpisode = null)
+        assertEquals(null, season)
+        assertEquals(emptyList(), episodes)
+    }
 }
