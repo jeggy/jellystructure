@@ -185,6 +185,7 @@
     let ctx = null, pos = 0, playing = false, ended = false;
     let open = false, scrubbing = false, scrubPos = 0;
     let pickerTab = 'audio', pickIdx = 0, sel = { audio: 0, subs: 0 };
+    let pickLevel = 'lang', pickGroup = 0;   // R195: two-level picker
     let focus = 'play';           // current focusable id in transport
     let epIdx = 0;                // focused episode in the rail
     let countdown = COUNTDOWN;
@@ -342,9 +343,40 @@
       els.pausemark.innerHTML = sec > 0 ? I.fwd10 : I.back10; // brief glyph reuse
     }
 
-    /* ---------- track picker ---------- */
-    function openPicker() { root.classList.add('picker'); showChrome(); pickerTab = 'audio'; pickIdx = sel.audio; renderPicker(); }
-    function closePicker() { root.classList.remove('picker'); scheduleHide(); }
+    /* ---------- track picker (R195: language first, versions inside) ---------- */
+    function plGroups(list) {
+      const g = [], by = {};
+      list.forEach((o, i) => {
+        const key = o.off ? '__off' : (o.lang || ('x' + (o.kind || o.label)));
+        if (!by[key]) { by[key] = { key, lang: o.lang, off: o.off, label: o.label, items: [] }; g.push(by[key]); }
+        by[key].items.push({ o, i });
+      });
+      return g;
+    }
+    // true when nothing but stream order tells these apart
+    function plSameSig(items) {
+      const sig = x => [x.o.label, x.o.kind || '', x.o.sub || '', x.o.region || ''].join('|');
+      return items.length > 1 && items.every(x => sig(x) === sig(items[0]));
+    }
+    function plVarName(g, o) {
+      if (o.kind === 'commentary') return 'Commentary';
+      return o.sub ? `${g.label} <span class="on-sub">${o.sub}</span>` : g.label;
+    }
+    function plBlurb(o) {
+      if (o.kind === 'sdh') return 'Adds speaker names and sound-effect notes.';
+      if (o.kind === 'forced') return 'Only the on-screen text and foreign lines.';
+      if (o.kind === 'describe') return 'Narrates what happens on screen.';
+      if (o.kind === 'commentary') return 'A recorded commentary on this title.';
+      if (o.sub) return `The ${o.sub} version.`;
+      return 'The full version of everything spoken.';
+    }
+    function openPicker() { root.classList.add('picker'); showChrome(); pickerTab = 'audio'; pickLevel = 'lang'; pickIdx = plLevelIndexOf(sel.audio); renderPicker(); }
+    function closePicker() { root.classList.remove('picker'); pickLevel = 'lang'; scheduleHide(); }
+    function plLevelIndexOf(trackIdx) {
+      const gs = plGroups(pickerTab === 'audio' ? ctx.audio : ctx.subs);
+      const n = gs.findIndex(g => g.items.some(x => x.i === trackIdx));
+      return n < 0 ? 0 : n;
+    }
     // flag shown inside a tab for the currently-selected track (real language only)
     function plTabFlag(o) {
       if (!o || o.off || !o.lang || !PL_CC[o.lang]) return '';
@@ -359,12 +391,35 @@
       const isAudio = pickerTab === 'audio';
       const list = isAudio ? ctx.audio : ctx.subs;
       const selIdx = isAudio ? sel.audio : sel.subs;
-      els.pickCols.innerHTML = list.map((o, i) =>
-        `<div class="pl-opt foc${i === selIdx ? ' sel' : ''}${i === pickIdx ? ' focused' : ''}" data-oi="${i}">
-           <span class="tick">✓</span>
-           ${plFlag(o)}
-           <span class="ol"><span class="on2">${o.label}${o.sub ? ` <span class="on-sub">${o.sub}</span>` : ''}</span>${plBadges(o, isAudio)}</span>
-         </div>`).join('');
+      const groups = plGroups(list);
+      root.classList.toggle('pk-sub-level', pickLevel === 'var');
+      if (pickLevel === 'var') {
+        const g = groups[Math.min(pickGroup, groups.length - 1)];
+        const ord = plSameSig(g.items);
+        els.pickCols.innerHTML =
+          `<div class="pl-crumb">${plFlag(g.items[0].o)}<span class="cr-t">${g.label}</span>` +
+          `<span class="cr-s">${g.items.length} versions</span></div>` +
+          g.items.map((x, n) => {
+            const o = x.o, rgn = o.region && PL_CC[o.lang] !== o.region;
+            return `<div class="pl-opt pl-var foc${x.i === selIdx ? ' sel' : ''}${n === pickIdx ? ' focused' : ''}" data-oi="${n}">
+               <span class="tick">✓</span>
+               ${rgn ? `<span class="fi fi-${o.region} pl-rgn"></span>` : '<span class="pl-rgn ghost"></span>'}
+               <span class="ol"><span class="on2">${plVarName(g, o)}</span>` +
+               plBadges(Object.assign({}, o, ord ? { note: `Version ${n + 1} of ${g.items.length}` } : {}), isAudio) +
+               `<span class="pl-vh">${plBlurb(o)}</span></span></div>`;
+          }).join('');
+      } else {
+        els.pickCols.innerHTML = groups.map((g, n) => {
+          const multi = g.items.length > 1;
+          const isSel = g.items.some(x => x.i === selIdx);
+          return `<div class="pl-opt foc${isSel ? ' sel' : ''}${n === pickIdx ? ' focused' : ''}" data-oi="${n}">
+             <span class="tick">✓</span>
+             ${plFlag(g.items[0].o)}
+             <span class="ol"><span class="on2">${g.label}</span>${multi ? '' : plBadges(g.items[0].o, isAudio)}</span>
+             ${multi ? `<span class="pl-more">${g.items.length} versions ›</span>` : ''}
+           </div>`;
+        }).join('');
+      }
       scrollFocusIntoView();
     }
     function scrollFocusIntoView() {
@@ -376,18 +431,32 @@
       if (top - pad < box.scrollTop) box.scrollTop = Math.max(0, top - pad);
       else if (bottom + pad > box.scrollTop + box.clientHeight) box.scrollTop = bottom + pad - box.clientHeight;
     }
+    function plLevelLen() {
+      const groups = plGroups(pickerTab === 'audio' ? ctx.audio : ctx.subs);
+      return pickLevel === 'var' ? groups[Math.min(pickGroup, groups.length - 1)].items.length : groups.length;
+    }
     function pickerNav(d) {
-      const list = pickerTab === 'audio' ? ctx.audio : ctx.subs;
-      pickIdx = Math.max(0, Math.min(list.length - 1, pickIdx + d));
+      pickIdx = Math.max(0, Math.min(plLevelLen() - 1, pickIdx + d));
       root.querySelectorAll('.pl-opt').forEach((e, i) => e.classList.toggle('focused', i === pickIdx));
       scrollFocusIntoView();
     }
-    function pickerSwitchTab(tab) { if (tab === pickerTab) return; pickerTab = tab; pickIdx = tab === 'audio' ? sel.audio : sel.subs; renderPicker(); }
+    function pickerSwitchTab(tab) { if (tab === pickerTab) return; pickerTab = tab; pickLevel = 'lang'; pickIdx = plLevelIndexOf(tab === 'audio' ? sel.audio : sel.subs); renderPicker(); }
+    function pickerBack() { if (pickLevel === 'var') { pickLevel = 'lang'; pickIdx = pickGroup; renderPicker(); } else closePicker(); }
     function pickerChoose() {
-      if (pickerTab === 'audio') sel.audio = pickIdx; else sel.subs = pickIdx;
+      const isAudio = pickerTab === 'audio';
+      const groups = plGroups(isAudio ? ctx.audio : ctx.subs);
+      if (pickLevel === 'lang') {
+        const g = groups[pickIdx];
+        if (g.items.length > 1) { pickGroup = pickIdx; pickLevel = 'var'; pickIdx = 0; renderPicker(); return; }
+        if (isAudio) sel.audio = g.items[0].i; else sel.subs = g.items[0].i;
+        renderPicker(); renderSub();
+        flash((isAudio ? '🔊 Audio · ' : '💬 Subtitles · ') + g.label);
+        return;
+      }
+      const g = groups[pickGroup], x = g.items[pickIdx];
+      if (isAudio) sel.audio = x.i; else sel.subs = x.i;
       renderPicker(); renderSub();
-      const o = (pickerTab === 'audio' ? ctx.audio : ctx.subs)[pickIdx];
-      flash((pickerTab === 'audio' ? '🔊 Audio · ' : '💬 Subtitles · ') + o.label);
+      flash((isAudio ? '🔊 Audio · ' : '💬 Subtitles · ') + g.label + (x.o.kind ? ' · ' + (PL_KIND[x.o.kind] || '') : ''));
     }
 
     /* ---------- episode rail (series only) ---------- */
@@ -585,7 +654,7 @@
         else if (k === 'ArrowLeft') pickerSwitchTab('audio');
         else if (k === 'ArrowRight') pickerSwitchTab('subs');
         else if (k === 'Enter' || k === ' ') pickerChoose();
-        else if (k === 'Backspace' || k === 'Escape') closePicker();
+        else if (k === 'Backspace' || k === 'Escape') pickerBack();
         return;
       }
       // SCRUBBING on the bar
