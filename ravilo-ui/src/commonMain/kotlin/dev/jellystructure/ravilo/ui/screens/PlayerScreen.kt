@@ -614,6 +614,21 @@ fun PlayerScreen(
         wake()
     }
 
+    // R195 bug fix — the exact same tab-switch logic the D-pad's onLeft/onRight already run,
+    // extracted so a touch tap on a PickerTab pill (which has no D-pad to trigger onLeft/onRight)
+    // can reach it too. Always resets to level 1 (§D) and re-targets the new tab's group containing
+    // the live selection for that axis.
+    fun pickerTapTab(tab: Int) {
+        pickerTab = tab
+        pickerLevel = 0
+        pickerIdx = if (tab == 0) {
+            audioGroups.indexOfFirst { g -> g.versions.any { it.flatIndex == selectedAudio } }.coerceAtLeast(0)
+        } else {
+            subGroupsWithOff.indexOfFirst { g -> g.versions.any { it.flatIndex == selectedSub } }.coerceAtLeast(0)
+        }
+        wake()
+    }
+
     fun scrubStep() = SKIP_BACK_MS.coerceAtMost(maxOf(5_000L, (durationMs * 0.012).toLong()))
 
     // Single place that arms a playback session, shared by the initial start and by the return-from-
@@ -993,11 +1008,7 @@ fun PlayerScreen(
                         epRailOpen -> focusedEpIdx = (focusedEpIdx - 1).coerceAtLeast(0)
                         // R195 §D — switching tab always resets to level 1, focused on whichever
                         // group currently contains the live selection.
-                        pickerOpen -> {
-                            pickerTab = 0
-                            pickerLevel = 0
-                            pickerIdx = audioGroups.indexOfFirst { g -> g.versions.any { it.flatIndex == selectedAudio } }.coerceAtLeast(0)
-                        }
+                        pickerOpen -> pickerTapTab(0)
                         focus == PlFocus.SEEK_BAR -> {
                             if (!scrubbing) { scrubbing = true; scrubPos = positionMs }
                             scrubPos = (scrubPos - scrubStep()).coerceAtLeast(0L)
@@ -1014,11 +1025,7 @@ fun PlayerScreen(
                     when {
                         nextUpVisible -> nuFocus = NuFocus.STAY
                         epRailOpen -> episodes?.let { focusedEpIdx = (focusedEpIdx + 1).coerceAtMost(it.size - 1) }
-                        pickerOpen -> {
-                            pickerTab = 1
-                            pickerLevel = 0
-                            pickerIdx = subGroupsWithOff.indexOfFirst { g -> g.versions.any { it.flatIndex == selectedSub } }.coerceAtLeast(0)
-                        }
+                        pickerOpen -> pickerTapTab(1)
                         focus == PlFocus.SEEK_BAR -> {
                             if (!scrubbing) { scrubbing = true; scrubPos = positionMs }
                             scrubPos = (scrubPos + scrubStep()).coerceAtMost(durationMs)
@@ -1353,6 +1360,23 @@ fun PlayerScreen(
         }
 
         // ── Track picker popup (Audio / Subtitles) ────────────────────────────
+        // R195 bug fix: on touch (phone/web), there was no way to dismiss the picker without making
+        // a selection — no D-pad Back reaches this screen's key handler on a phone (no hardware D-pad),
+        // and nothing else called pickerBack(). A full-screen scrim behind the picker gives touch users
+        // the same "tap away to back out" a modal is expected to have; tapping it runs the exact same
+        // pickerBack() Back already uses (steps out of level 2 first, closes from level 1), so touch and
+        // D-pad still can't diverge in behaviour. No ripple — a screen-spanning tap target shouldn't show one.
+        AnimatedVisibility(visible = pickerOpen, enter = fadeIn(tween(200)), exit = fadeOut(tween(200))) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = { pickerBack() },
+                    ),
+            )
+        }
         AnimatedVisibility(
             visible = pickerOpen,
             enter = fadeIn(tween(200)),
@@ -1375,6 +1399,7 @@ fun PlayerScreen(
                 onTapLanguage = { idx -> pickerIdx = idx; pickerSelect() },
                 onTapVersion  = { idx -> pickerVersionIdx = idx; pickerSelect() },
                 onTapBack     = { pickerBack() },
+                onTapTab      = { tab -> pickerTapTab(tab) },
             )
         }
 
@@ -1952,6 +1977,11 @@ private fun TrackPicker(
     onTapLanguage: (Int) -> Unit,
     onTapVersion: (Int) -> Unit,
     onTapBack: () -> Unit,
+    // R195 bug fix: PickerTab had no touch handling at all — Left/Right only ever reached this via a
+    // D-pad, so a phone (no D-pad) could never switch to the Subtitles tab. A tap now runs the exact
+    // same tab-switch logic Left/Right already use (reset to level 1, re-target the new tab's group
+    // containing the live selection).
+    onTapTab: (Int) -> Unit,
 ) {
     val lang = LocalLang.current
     val groups = if (pickerTab == 0) audioGroups else subGroups
@@ -1972,8 +2002,8 @@ private fun TrackPicker(
             if (pickerLevel == 0) {
                 // Tabs — only shown at level 1 (§D: switching tab always resets to level 1 anyway).
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    PickerTab(str("player.tab_audio"), pickerTab == 0, audioFlag)
-                    PickerTab(str("player.tab_subtitles"), pickerTab == 1, subFlag)
+                    PickerTab(str("player.tab_audio"), pickerTab == 0, audioFlag, onTap = { onTapTab(0) })
+                    PickerTab(str("player.tab_subtitles"), pickerTab == 1, subFlag, onTap = { onTapTab(1) })
                 }
                 Spacer(Modifier.height(14.dp))
             }
@@ -2090,7 +2120,7 @@ private fun PickerCrumbHeader(group: PickerLanguage, colors: RaviloColors, onBac
 }
 
 @Composable
-private fun PickerTab(label: String, active: Boolean, flagRes: DrawableResource? = null) {
+private fun PickerTab(label: String, active: Boolean, flagRes: DrawableResource? = null, onTap: (() -> Unit)? = null) {
     val colors = RaviloTheme.colors
     Box(
         modifier = Modifier
@@ -2102,6 +2132,7 @@ private fun PickerTab(label: String, active: Boolean, flagRes: DrawableResource?
                 color = if (active) colors.accent else Color.White.copy(0.18f),
                 shape = RoundedCornerShape(30.dp),
             )
+            .then(if (onTap != null) Modifier.clickable(onClick = onTap) else Modifier)
             .padding(horizontal = 18.dp),
         contentAlignment = Alignment.Center,
     ) {
