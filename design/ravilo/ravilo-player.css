@@ -192,6 +192,20 @@
 .pl-chip.def { color: var(--accent-2); border-color: rgba(63,182,245,.32); background: rgba(63,182,245,.10); }
 .pl-chip.tag { color: var(--ink); }
 .pl-opt.focused { background: rgba(255,255,255,.10); box-shadow: 0 0 0 3px var(--ring); transform: translateX(2px); }
+/* R195 — two-level picker: languages first, versions inside */
+.pl-more { margin-left: auto; flex: none; display: flex; align-items: center; gap: 8px; font-size: 17px; font-weight: 600; color: var(--ink-soft); }
+.pl-opt.focused .pl-more { color: var(--ink); }
+.pl-crumb { display: flex; align-items: center; gap: 14px; padding: 2px 4px 16px; }
+.pl-crumb .pl-flag { font-size: 34px; flex: none; border-radius: 6px; box-shadow: 0 0 0 1px rgba(255,255,255,.16), 0 6px 16px rgba(0,0,0,.45); }
+.pl-crumb .pl-flag.off, .pl-crumb .pl-flag.none { position: relative; width: 1.72em; height: 1.3em; font-size: 28px; display: inline-flex; align-items: center; justify-content: center; background: rgba(255,255,255,.07); box-shadow: inset 0 0 0 1px var(--line); color: var(--ink-dim); }
+.pl-crumb .pl-flag.off svg, .pl-crumb .pl-flag.none svg { width: 56%; height: 56%; }
+.pl-crumb .cr-t { font-family: 'Space Grotesk', sans-serif; font-size: 27px; font-weight: 700; color: var(--ink); }
+.pl-crumb .cr-s { font-size: 15px; color: var(--ink-dim); }
+.pl-var { align-items: flex-start; }
+.pl-var .tick { margin-top: 2px; }
+.pl-var .pl-rgn { font-size: 22px; flex: none; align-self: flex-start; margin-top: 2px; border-radius: 4px; box-shadow: 0 0 0 1px rgba(255,255,255,.16), 0 3px 9px rgba(0,0,0,.4); }
+.pl-var .pl-rgn.ghost { display: inline-block; width: 1.3333em; height: 1em; box-shadow: none; background: none; }
+.pl-vh { display: block; margin-top: 6px; font-size: 16px; line-height: 1.4; color: var(--ink-soft); }
 
 /* ============================================================
    NEXT-UP card (end-of-episode auto-advance) + film end card
