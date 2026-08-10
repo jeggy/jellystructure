@@ -20,7 +20,7 @@ Three findings from the first draft were wrong or unverifiable; all three are no
 
 | First draft said | Verified reality |
 |---|---|
-| Claude Code's **Remote Control** might be embeddable in a custom site — "worth a spike" | **It is not.** Remote Control is Anthropic-built, tied to claude.ai auth, and explicitly not a public API for third-party apps. But it's a real, capable product in its own right — see §2, because it may make building anything unnecessary. |
+| Claude Code's **Remote Control** might be embeddable in a custom site — "worth a spike" | **It is not**, and this is now a closed question: it's Anthropic-built, claude.ai-auth-bound, and explicitly not a public API. A custom website can never attach to a `remote-control` session. The Agent SDK is the supported path and loses nothing — see §2. |
 | Quota exhaustion detection "needs verifying — don't guess at the event shape" | **Settled.** A `rate_limit_event` message carries `status`, `resetsAt` (unix epoch), and `rateLimitType` (`five_hour` / `seven_day` / …). This is the exact primitive auto-resume needs. See §5. |
 | Control plane needs "its own database indexing sessions" and would read Claude's JSONL files | **Mostly unnecessary.** The SDK exposes first-class `listSessions()` / `getSessionMessages()` / `getSessionInfo()` / `renameSession()` / `tagSession()` / `forkSession()` / `deleteSession()`. And the on-disk JSONL format is **explicitly not a stable interface** ("changes between versions, scripts that parse these files directly can break on any release") — so the earlier instinct to parse it was actively wrong. |
 
@@ -31,38 +31,38 @@ something to engineer. See §4.3.
 
 ---
 
-## 2 — Decide this first: do you need to build anything?
+## 2 — Decision: build on the Agent SDK. Remote Control is a dead end for this.
 
-**Claude Code ships a server mode that already does most of the literal ask.**
+**Settled, so the design pass doesn't reopen it.** Claude Code ships `claude remote-control
+--capacity 32 --spawn same-dir`, which superficially looks like the whole feature: it runs on your
+machine against your real checkouts, is HTTPS-outbound-only, and handles many concurrent sessions.
 
-```bash
-claude remote-control --capacity 32 --spawn same-dir
-```
+**But it can only ever be driven by claude.ai and the Claude mobile apps.** It is not exposed as a
+public API, the protocol is undocumented, and it's bound to claude.ai OAuth. A custom website cannot
+attach to a `remote-control` session — so "suggest the user paste `claude remote-control` and then
+control it from our tool" **is not achievable**, no matter how the UI is arranged. It's strictly
+either/or: use Remote Control and accept claude.ai as the UI, or build your own UI and don't use
+Remote Control at all.
 
-Verified properties:
-- Runs on **your** machine against **your** real checkouts; code execution stays local.
-- **HTTPS outbound only** — no inbound ports, no NAT/firewall work. This solves the "webserver in
-  Docker on a different machine" problem outright.
-- Drives **multiple concurrent sessions** (`--capacity`, default 32), and `--spawn` chooses whether
-  each new session lands in the same directory, a fresh git worktree, or a single shared session.
-- Resumable: `-c` / `--session-id`.
-- Optional `--sandbox` for filesystem/network isolation.
+**The good news: nothing is lost.** Every property that made Remote Control attractive is
+reproducible with your own runner daemon, because the **Agent SDK is Anthropic's supported path for
+exactly this** — the hosting guide documents a "long-running sessions" pattern (a container exposing
+an HTTP/WebSocket endpoint, mapping each active session to a long-lived `query()` and its
+subprocess) that is precisely this product. This is not a workaround.
 
-**The catch, and the whole decision:** the UI is claude.ai / the Claude mobile apps. You cannot point
-your own website at it. Also requires a claude.ai subscription (Pro/Max/Team/Enterprise) — **not
-available with an API key**, and not on Bedrock/Vertex/Foundry. Transcripts are stored on Anthropic's
-servers during a Remote Control session (execution stays local).
+| Property you wanted from Remote Control | Your own runner |
+|---|---|
+| One copy-paste command per host | ✅ your own enrollment command (§4.4) |
+| No inbound ports / firewall changes | ✅ runner dials **out** over WSS |
+| Agents rooted anywhere (`~/`, `~/IdeaProjects/jellystructure`) | ✅ workspace allow-list (§4.4) |
+| Many concurrent sessions | ✅ one subprocess per session (§3.1) |
+| Web tool can actually view + control it | ✅ — **only** on this path |
 
-So:
-
-- **If the real need is "control my agents from my phone/anywhere"** → Remote Control already does it,
-  today, for zero engineering. Try it before building.
-- **If the real need is genuinely your own UI** — custom dashboards, your own auth, workspace
-  grouping, embedding it in an existing site, automation beyond what the official client exposes —
-  → build on the **Agent SDK**, which is what the rest of this report specifies.
-
-Worth stating plainly because the rest of this document is a meaningful amount of work, and a short
-experiment could make it unnecessary.
+One related correction worth designing around: **your web tool also cannot authenticate Claude Code
+on the host's behalf.** Claude's own auth (`claude /login` OAuth, or `ANTHROPIC_API_KEY`) lives on the
+machine where it runs. Your control plane never holds it. That's a security feature, not a gap — a
+compromised control plane can't leak Claude credentials — but it does mean onboarding has a
+"Claude isn't signed in on this runner yet" state the UI must handle (§4.4.4).
 
 ---
 
@@ -180,6 +180,55 @@ Why this matters a lot here:
 - Constraints: cannot combine with `persistSession: false` (TS throws) or `enableFileCheckpointing`.
   Deduplicate by `entry.uuid` in `append()` (retries can re-deliver).
 
+### 4.4 Runner distribution and pairing — the copy-paste onboarding flow
+
+This is the UX the Remote Control idea was really reaching for, rebuilt on your own runner. It is a
+first-class design surface, not an implementation detail.
+
+#### 4.4.1 The flow
+1. Web UI → **Add a runner** → names it ("dev box") → backend mints a **short-lived, single-use
+   enrollment token** (~15 min TTL).
+2. UI renders a paste-able command with the token baked in, plus a "waiting for runner to
+   connect…" state that resolves live.
+3. User pastes it on the target host.
+4. Runner starts, dials out, exchanges the enrollment token for a **long-lived runner credential**
+   stored in its own config file, and reports its hostname, OS, SDK version, allowed roots, and
+   Claude auth status.
+5. UI flips to connected and shows the runner's workspaces.
+
+#### 4.4.2 Distribution options (offer the first, upsell the second)
+
+| Form | Command | Trade-off |
+|---|---|---|
+| **npx** (recommended first-run) | `npx @yourtool/runner --token rt_8f3a… --root ~` | Zero install, instant. Dies when the terminal closes. |
+| **Installer + systemd** (recommended permanent) | `curl -fsSL https://yourtool.dev/install.sh \| sh -s -- --token rt_8f3a…` | Survives reboots. The "make this permanent" upgrade path after npx. |
+| **Docker** | `docker run -d -v ~:/workspaces …` | ⚠️ Caveat worth surfacing in the UI: the runner then sees a *container* filesystem, and Claude's auth + your real checkouts must both be mounted in. Usually the wrong choice for "run against my actual working copies." |
+
+The two-step (npx to try → installer to keep) is a genuinely nice onboarding arc and worth designing
+deliberately.
+
+#### 4.4.3 Token model
+Do **not** put a long-lived secret in a command the user pastes into a terminal — it lands in shell
+history, screenshots, and screen shares. Use the standard device-enrollment shape (same as GitHub
+Actions runners and Tailscale auth keys): **short-lived single-use enrollment token in the visible
+command → exchanged on first connect for a long-lived credential that is never displayed.** Enrollment
+tokens expire, are revocable, and are per-runner.
+
+#### 4.4.4 Workspace roots and the states the UI must handle
+The runner starts with one or more **allowed roots** (`--root ~`, repeatable). The UI may then create
+a workspace at any path *under* an allowed root; the runner validates every request against them.
+This keeps the control plane unable to point a session at `/etc` (§9.3) while still letting you add
+`~/IdeaProjects/jellystructure` from the browser without touching the host again.
+
+Onboarding states worth explicit design:
+- **Waiting for runner** (token issued, nothing connected yet) — with the token's expiry visible.
+- **Connected, but Claude Code not signed in** — must tell the user to run `claude /login` **on that
+  host**; your UI cannot do it for them (§2). Likely the single most common onboarding stumble.
+- **Connected, signed in, no workspaces yet** — prompt to add the first one.
+- **Runner offline** — sessions become read-only (history still renders from the SessionStore, §4.3);
+  reconnect is automatic.
+- **Version skew** — runner's SDK version vs. what the control plane expects.
+
 ---
 
 ## 5 — Quota exhaustion: the actual mechanism
@@ -266,9 +315,15 @@ existing.
 
 ### REST
 ```
-GET    /api/runners                          → [{id, name, status, lastSeenAt, quota:{type,status,resetsAt,utilization}}]
+POST   /api/runners/enroll                   ← {name}
+                                             → {enrollmentToken, expiresAt, commands:{npx,installer,docker}}
+GET    /api/runners                          → [{id, name, status, lastSeenAt, os, sdkVersion,
+                                                 claudeAuth:"ok"|"missing", allowedRoots[],
+                                                 quota:{type,status,resetsAt,utilization}}]
+DELETE /api/runners/:id                                                  (revoke credential)
+
 GET    /api/workspaces                       → [{id, runnerId, name, path}]
-POST   /api/workspaces                       ← {runnerId, name}         (validated against runner allow-list)
+POST   /api/workspaces                       ← {runnerId, name, path}   (runner validates path ⊆ allowedRoots)
 
 GET    /api/sessions?workspaceId=&status=    → [{id, title, workspace, status, resumeAt, lastActivityAt, costUsd}]
 POST   /api/sessions                         ← {workspaceId, prompt, permissionProfile?, model?, effort?, maxTurns?, maxBudgetUsd?}
@@ -300,7 +355,8 @@ One multiplexed stream; every event carries `sessionId`.
 | `permission.resolved` | `{requestId, decision}` | clear the card |
 | `session.result` | `{subtype, costUsd, numTurns}` | turn/session finished |
 | `quota.updated` | `{runnerId, type, status, resetsAt, utilization?}` | quota widget |
-| `runner.status` | `{runnerId, status}` | runner online/offline |
+| `runner.status` | `{runnerId, status, claudeAuth}` | runner online/offline; drives the "not signed in" banner |
+| `runner.enrolled` | `{runnerId, name}` | resolves the "waiting for runner…" onboarding state live |
 | `mirror_error` | `{sessionId}` | transcript-durability warning (§4.3) |
 
 ---
@@ -396,21 +452,27 @@ A named preset the UI exposes (this is a real design surface, not just config):
 
 1. **Dashboard** — runners (online/offline), quota widget per runner (`resets at HH:MM`, utilization
    when present), sessions grouped by workspace, count of pending approvals.
-2. **Workspace list / picker** — add a workspace, choose one to start a session in.
-3. **New-session composer** — workspace, prompt, permission profile, model/effort, optional
+2. **Add-a-runner onboarding** (§4.4) — name it → copy-paste command with per-form tabs
+   (npx / installer / Docker) and a visible token expiry → live "waiting for runner…" → connected.
+   Plus the follow-on states: **"Claude Code not signed in on this host — run `claude /login` there"**,
+   "no workspaces yet", "runner offline", version skew.
+3. **Runner detail** — allowed roots, workspaces, SDK version, quota, revoke.
+4. **Workspace list / picker** — add a workspace (path under an allowed root), choose one to start a
+   session in.
+5. **New-session composer** — workspace, prompt, permission profile, model/effort, optional
    `maxTurns` / `maxBudgetUsd`.
-4. **Session view** (the main screen) — chat-style transcript from the WS event stream:
+6. **Session view** (the main screen) — chat-style transcript from the WS event stream:
    text blocks, tool-call cards (name + collapsed input), tool-result cards (collapsed, error state),
    subagent progress, cost/turn footer, a message composer, and an interrupt button.
-5. **Status chips** — `running` / `idle` / `awaiting permission` / **`paused: quota — resumes 18:42`** /
+7. **Status chips** — `running` / `idle` / `awaiting permission` / **`paused: quota — resumes 18:42`** /
    `errored` / `done`. The paused-quota state deserves genuine design attention; it's the headline
    feature and must not read as "broken."
-6. **Approval card / modal** — tool name, human-readable input summary, Allow / Deny (+ reason),
+8. **Approval card / modal** — tool name, human-readable input summary, Allow / Deny (+ reason),
    ideally reachable from a push notification without opening the full session.
-7. **Session list** — filter by workspace/status, resume / fork / rename / tag / delete.
-8. **Limit-hit recovery affordances** — "resume with more turns" / "raise budget" for
-   `error_max_turns` / `error_max_budget_usd`.
-9. **Notification settings** — which transitions notify, and where.
+9. **Session list** — filter by workspace/status, resume / fork / rename / tag / delete.
+10. **Limit-hit recovery affordances** — "resume with more turns" / "raise budget" for
+    `error_max_turns` / `error_max_budget_usd`.
+11. **Notification settings** — which transitions notify, and where.
 
 ---
 
@@ -444,15 +506,21 @@ A named preset the UI exposes (this is a real design surface, not just config):
 
 ## 12 — Suggested build order
 
-1. **Spike Remote Control (§2)** — half a day. It may end the project.
-2. **Runner v1**: SDK host + workspace allow-list + one session, streaming to stdout. No control
-   plane yet.
-3. **Capture a real `rate_limit_event`** and pin the parser (§11.2).
-4. **Control plane v1**: outbound WS, session index, `/api/sessions` + `/api/stream`.
-5. **`SessionStore` (Postgres)** — unlocks transcript history in the website and cross-runner resume.
-6. **Auto-resume state machine** (§8) + notifications.
-7. **`canUseTool` remote approval** (§9) — the piece that makes unattended operation actually safe.
+1. **Runner v1**: Agent SDK host + `--root` allow-list, one hardcoded session, streaming to stdout.
+   No control plane, no auth. Proves the SDK integration in isolation.
+2. **Capture a real `rate_limit_event`** and pin the parser (§11.2) — do this early, the whole
+   headline feature depends on its real shape.
+3. **Control plane v1**: outbound WS transport, session index, `POST /api/sessions` +
+   `/api/stream`. Runner and control plane now talk.
+4. **Enrollment + pairing** (§4.4) — token mint/exchange, `npx` distribution. This is what makes it
+   feel like a product rather than a script.
+5. **`SessionStore` (Postgres)** — transcript history in the website, survives runner restarts,
+   unlocks cross-runner resume.
+6. **Auto-resume state machine** (§8) + notifications — the headline feature.
+7. **`canUseTool` remote approval** (§9) — what makes unattended operation actually safe.
 8. UI, against the §7 contract.
+
+Steps 1–3 are the risk-retiring core; if those work, the rest is conventional product engineering.
 
 ---
 
