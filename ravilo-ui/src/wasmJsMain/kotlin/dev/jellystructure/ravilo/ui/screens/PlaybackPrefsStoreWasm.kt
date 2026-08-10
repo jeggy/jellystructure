@@ -8,9 +8,12 @@ private fun jsSet(key: String, value: String): Unit = js("localStorage.setItem(k
 private fun jsRemove(key: String): Unit = js("localStorage.removeItem(key)")
 
 // Simple JSON-ish serialization without kotlinx.serialization in wasm actual (same convention as
-// MultiTokenStoreWasm). Global format: {"a":audioLanguage,"s":subtitleLanguage,"o":subtitlesOff}.
+// MultiTokenStoreWasm). Global format: {"a":audioLanguage,"s":subtitleLanguage,"o":subtitlesOff,
+// "av":audioVariant,"sv":subtitleVariant}. R195 (FR-RV §5.4) — variant signatures are constrained
+// to never contain ',' or ':' (see RememberedChoice's doc) precisely because this hand-rolled parser
+// splits on both.
 private fun encodeChoice(c: RememberedChoice): String =
-    """{"a":"${c.audioLanguage ?: ""}","s":"${c.subtitleLanguage ?: ""}","o":${c.subtitlesOff}}"""
+    """{"a":"${c.audioLanguage ?: ""}","s":"${c.subtitleLanguage ?: ""}","o":${c.subtitlesOff},"av":"${c.audioVariant ?: ""}","sv":"${c.subtitleVariant ?: ""}"}"""
 
 private fun decodeChoice(raw: String): RememberedChoice? = runCatching {
     val map = raw.removePrefix("{").removeSuffix("}")
@@ -23,13 +26,16 @@ private fun decodeChoice(raw: String): RememberedChoice? = runCatching {
         audioLanguage    = map["a"]?.ifEmpty { null },
         subtitleLanguage = map["s"]?.ifEmpty { null },
         subtitlesOff     = map["o"] == "true",
+        audioVariant     = map["av"]?.ifEmpty { null },
+        subtitleVariant  = map["sv"]?.ifEmpty { null },
     )
 }.getOrNull()
 
-// Series map format: JSON array of {"k":seriesKey,"a":audioLanguage,"s":subtitleLanguage,"o":subtitlesOff}
+// Series map format: JSON array of {"k":seriesKey,"a":audioLanguage,"s":subtitleLanguage,
+// "o":subtitlesOff,"av":audioVariant,"sv":subtitleVariant}
 private fun encodeSeriesMap(list: List<Pair<String, RememberedChoice>>): String =
     list.joinToString(",", "[", "]") { (key, c) ->
-        """{"k":"$key","a":"${c.audioLanguage ?: ""}","s":"${c.subtitleLanguage ?: ""}","o":${c.subtitlesOff}}"""
+        """{"k":"$key","a":"${c.audioLanguage ?: ""}","s":"${c.subtitleLanguage ?: ""}","o":${c.subtitlesOff},"av":"${c.audioVariant ?: ""}","sv":"${c.subtitleVariant ?: ""}"}"""
     }
 
 private fun decodeSeriesMap(raw: String): List<Pair<String, RememberedChoice>> =
@@ -47,6 +53,8 @@ private fun decodeSeriesMap(raw: String): List<Pair<String, RememberedChoice>> =
                 audioLanguage    = map["a"]?.ifEmpty { null },
                 subtitleLanguage = map["s"]?.ifEmpty { null },
                 subtitlesOff     = map["o"] == "true",
+                audioVariant     = map["av"]?.ifEmpty { null },
+                subtitleVariant  = map["sv"]?.ifEmpty { null },
             )
         }
 

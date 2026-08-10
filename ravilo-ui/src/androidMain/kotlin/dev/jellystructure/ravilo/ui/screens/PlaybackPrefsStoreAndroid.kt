@@ -9,6 +9,8 @@ private data class StoredSeriesChoice(
     val audioLanguage: String?,
     val subtitleLanguage: String?,
     val subtitlesOff: Boolean,
+    val audioVariant: String?,
+    val subtitleVariant: String?,
 )
 
 actual object PlaybackPrefsStore {
@@ -19,12 +21,16 @@ actual object PlaybackPrefsStore {
         if (c.audioLanguage != null) put("audioLanguage", c.audioLanguage)
         if (c.subtitleLanguage != null) put("subtitleLanguage", c.subtitleLanguage)
         put("subtitlesOff", c.subtitlesOff)
+        if (c.audioVariant != null) put("audioVariant", c.audioVariant)
+        if (c.subtitleVariant != null) put("subtitleVariant", c.subtitleVariant)
     }
 
     private fun choiceFromJson(o: JSONObject): RememberedChoice = RememberedChoice(
         audioLanguage = o.optString("audioLanguage").ifEmpty { null },
         subtitleLanguage = o.optString("subtitleLanguage").ifEmpty { null },
         subtitlesOff = o.optBoolean("subtitlesOff", false),
+        audioVariant = o.optString("audioVariant").ifEmpty { null },
+        subtitleVariant = o.optString("subtitleVariant").ifEmpty { null },
     )
 
     private fun loadSeriesMap(profileId: String): List<StoredSeriesChoice> {
@@ -38,6 +44,8 @@ actual object PlaybackPrefsStore {
                     audioLanguage    = o.optString("audioLanguage").ifEmpty { null },
                     subtitleLanguage = o.optString("subtitleLanguage").ifEmpty { null },
                     subtitlesOff     = o.optBoolean("subtitlesOff", false),
+                    audioVariant     = o.optString("audioVariant").ifEmpty { null },
+                    subtitleVariant  = o.optString("subtitleVariant").ifEmpty { null },
                 )
             }
         }.getOrDefault(emptyList())
@@ -51,6 +59,8 @@ actual object PlaybackPrefsStore {
                 if (s.audioLanguage != null) put("audioLanguage", s.audioLanguage)
                 if (s.subtitleLanguage != null) put("subtitleLanguage", s.subtitleLanguage)
                 put("subtitlesOff", s.subtitlesOff)
+                if (s.audioVariant != null) put("audioVariant", s.audioVariant)
+                if (s.subtitleVariant != null) put("subtitleVariant", s.subtitleVariant)
             })
         }
         prefs.edit().putString("series_$profileId", arr.toString()).apply()
@@ -58,12 +68,12 @@ actual object PlaybackPrefsStore {
 
     actual fun getSeriesChoice(profileId: String, seriesKey: String): RememberedChoice? {
         val stored = loadSeriesMap(profileId).firstOrNull { it.seriesKey == seriesKey } ?: return null
-        return RememberedChoice(stored.audioLanguage, stored.subtitleLanguage, stored.subtitlesOff)
+        return RememberedChoice(stored.audioLanguage, stored.subtitleLanguage, stored.subtitlesOff, stored.audioVariant, stored.subtitleVariant)
     }
 
     actual fun setSeriesChoice(profileId: String, seriesKey: String, choice: RememberedChoice) {
         val list = loadSeriesMap(profileId).filter { it.seriesKey != seriesKey }.toMutableList()
-        list.add(StoredSeriesChoice(seriesKey, choice.audioLanguage, choice.subtitleLanguage, choice.subtitlesOff))
+        list.add(StoredSeriesChoice(seriesKey, choice.audioLanguage, choice.subtitleLanguage, choice.subtitlesOff, choice.audioVariant, choice.subtitleVariant))
         saveSeriesMap(profileId, list)
     }
 

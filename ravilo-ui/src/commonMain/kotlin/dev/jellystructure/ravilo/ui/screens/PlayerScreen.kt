@@ -22,6 +22,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.HoverInteraction
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -273,7 +274,11 @@ fun PlayerScreen(
     // Track picker
     var pickerOpen by remember { mutableStateOf(false) }
     var pickerTab  by remember { mutableIntStateOf(0) }   // 0=audio, 1=subs
+    // R195 — two levels: pickerIdx indexes PickerLanguage groups (level 1); pickerVersionIdx indexes
+    // groups[pickerIdx].versions (level 2, only meaningful while pickerLevel == 1).
     var pickerIdx  by remember { mutableIntStateOf(0) }
+    var pickerLevel by remember { mutableIntStateOf(0) }        // 0 = language list, 1 = version list
+    var pickerVersionIdx by remember { mutableIntStateOf(0) }
     var selectedAudio by remember { mutableIntStateOf(0) }
     var selectedSub   by remember { mutableIntStateOf(-1) } // -1 = off
     // R181 — which itemId the layered resolver has already run for; compared against currentItemId
@@ -347,6 +352,29 @@ fun PlayerScreen(
     val subOptions: List<PlayerSubtitleTrack?> = remember(subtitleTracks, encodeSubTracks) {
         listOf(null) + subtitleTracks + encodeSubTracks
     }
+
+    // R195 §3 — language groups for the two-level picker. `flatIndex` on each PickerVersion is an
+    // index into `audioTracks` (audio) or `subtitleTracks + encodeSubTracks` starting at 0 (subtitles —
+    // Off is its own pseudo-language, never grouped, matching subOptions' existing "index 0 = Off, then
+    // native+encode" scheme so choosePick/resolveTrackSelection keep working off the same indices).
+    val pickerLang = LocalLang.current
+    val audioGroups: List<PickerLanguage> = remember(audioTracks, originalLanguage, pickerLang) {
+        val effectiveAudio = audioTracks.ifEmpty { listOf(PlayerAudioTrack(0, "Default", null)) }
+        buildLanguageGroups(effectiveAudio.map {
+            PickerEntryInput(it.language, it.label, forced = false, isDefault = it.isDefault, badges = audioBadges(it, originalLanguage, pickerLang))
+        })
+    }
+    val subVersionOptions: List<PlayerSubtitleTrack> = remember(subtitleTracks, encodeSubTracks) { subtitleTracks + encodeSubTracks }
+    val subGroups: List<PickerLanguage> = remember(subVersionOptions, pickerLang) {
+        buildLanguageGroups(subVersionOptions.map {
+            PickerEntryInput(it.language, it.label, forced = it.forced, isDefault = it.isDefault, badges = subtitleBadges(it, pickerLang))
+        })
+    }
+    // Off is a permanent, always-single-version pseudo-language ahead of every real group (§A: "Off is
+    // the first row, as today"). flatIndex -1 is a sentinel `group.isOff`/choosePick() checks for.
+    val offVersion = PickerVersion(flatIndex = -1, kind = VariantKind.PLAIN, region = null, badges = emptyList(), forced = false, isDefault = false, hadTitleText = false, ordinal = 0)
+    val subGroupsWithOff: List<PickerLanguage> = listOf(PickerLanguage(language = null, isOff = true, versions = listOf(offVersion), isUnnamed = false)) + subGroups
+    val pickerGroups: List<PickerLanguage> = if (pickerTab == 0) audioGroups else subGroupsWithOff
 
     // ─── Helper functions ───────────────────────────────────────────────────
 
@@ -453,7 +481,13 @@ fun PlayerScreen(
     // write against whatever's already persisted so an audio-only (or subtitle-only) pick doesn't
     // clobber the other axis's remembered choice. Off is a real persisted state (subtitlesOff = true),
     // not "no preference" (null subtitleLanguage with subtitlesOff = false).
-    fun persistChoice(newAudioLanguage: String? = null, newSubtitleLanguage: String? = null, newSubtitlesOff: Boolean? = null) {
+    fun persistChoice(
+        newAudioLanguage: String? = null, newSubtitleLanguage: String? = null, newSubtitlesOff: Boolean? = null,
+        // R195 (FR-RV §5.4) — which same-language VERSION, not just the language. Cleared/carried
+        // forward alongside its own axis's language (a stale signature must never survive onto a
+        // DIFFERENT language than the one it was computed for).
+        newAudioVariant: String? = null, newSubtitleVariant: String? = null,
+    ) {
         val profileId = MultiTokenStore.getActive()?.userId ?: return
         val seriesKey = currentSeriesId ?: currentItemId
         val existing = PlaybackPrefsStore.getSeriesChoice(profileId, seriesKey) ?: PlaybackPrefsStore.getGlobalChoice(profileId)
@@ -461,6 +495,8 @@ fun PlayerScreen(
             audioLanguage = newAudioLanguage ?: existing?.audioLanguage,
             subtitleLanguage = if (newSubtitlesOff == true) null else (newSubtitleLanguage ?: existing?.subtitleLanguage),
             subtitlesOff = newSubtitlesOff ?: existing?.subtitlesOff ?: false,
+            audioVariant = if (newAudioLanguage != null) newAudioVariant else existing?.audioVariant,
+            subtitleVariant = if (newSubtitlesOff == true) null else if (newSubtitleLanguage != null) newSubtitleVariant else existing?.subtitleVariant,
         )
         PlaybackPrefsStore.setSeriesChoice(profileId, seriesKey, choice)
         PlaybackPrefsStore.setGlobalChoice(profileId, choice)
@@ -481,8 +517,16 @@ fun PlayerScreen(
         val seriesChoice = profileId?.let { PlaybackPrefsStore.getSeriesChoice(it, seriesKey) }
         val globalChoice = profileId?.let { PlaybackPrefsStore.getGlobalChoice(it) }
 
-        fun tierAudio(choice: RememberedChoice?): Int? =
-            choice?.audioLanguage?.let { lang -> audioTracks.firstOrNull { it.language.equals(lang, ignoreCase = true) }?.index }
+        // R195 (FR-RV §5.4) — prefer the exact remembered VERSION (language + signature) over a bare
+        // language match, so "always pick SDH" survives to the next episode/file. Falls through to
+        // the language's first version when the signature isn't present in this file at all — a
+        // different release may simply not carry the exact same variant.
+        fun tierAudio(choice: RememberedChoice?): Int? {
+            val lang = choice?.audioLanguage ?: return null
+            val group = audioGroups.firstOrNull { it.language.equals(lang, ignoreCase = true) } ?: return null
+            val bySignature = choice.audioVariant?.let { sig -> group.versions.firstOrNull { it.signature() == sig } }
+            return (bySignature ?: group.versions.firstOrNull())?.flatIndex
+        }
 
         val audioIdx = tierAudio(seriesChoice) ?: tierAudio(globalChoice)
             ?: audioTracks.firstOrNull { it.isDefault }?.index
@@ -491,10 +535,19 @@ fun PlayerScreen(
         player.selectAudioTrack(audioIdx)
         selectedAudio = audioIdx
 
+        // Scope note (unchanged from pre-R195): only matches against native/external subtitleTracks,
+        // never encodeSubTracks (PGS burn-in) — a remembered language that exists only as a PGS track
+        // in this file falls through instead of silently triggering an autoplay transcode.
         fun tierSub(choice: RememberedChoice?): Int? = when {
             choice == null -> null
             choice.subtitlesOff -> -1
-            else -> choice.subtitleLanguage?.let { lang -> subtitleTracks.firstOrNull { it.language.equals(lang, ignoreCase = true) }?.index }
+            else -> {
+                val lang = choice.subtitleLanguage ?: return null
+                val group = subGroups.firstOrNull { it.language.equals(lang, ignoreCase = true) } ?: return null
+                val native = group.versions.filter { it.flatIndex < subtitleTracks.size }
+                val bySignature = choice.subtitleVariant?.let { sig -> native.firstOrNull { it.signature() == sig } }
+                (bySignature ?: native.firstOrNull())?.flatIndex
+            }
         }
 
         val subIdx = tierSub(seriesChoice) ?: tierSub(globalChoice)
@@ -505,29 +558,59 @@ fun PlayerScreen(
         selectedSub = subIdx
     }
 
+    // R195 §3 — applies whichever version is currently targeted (level-1's implicit single version,
+    // or level-2's focused pickerVersionIdx). Never touches pickerOpen/pickerLevel itself — callers
+    // (pickerSelect(), touch taps) decide whether picking should close the picker or leave it open.
     fun choosePick() {
+        val group = pickerGroups.getOrNull(pickerIdx) ?: return
+        val version = group.versions.getOrNull(if (pickerLevel == 1) pickerVersionIdx else 0) ?: return
         if (pickerTab == 0) {
-            selectedAudio = pickerIdx
-            player.selectAudioTrack(pickerIdx)
-            persistChoice(newAudioLanguage = audioTracks.getOrNull(pickerIdx)?.language)
+            selectedAudio = version.flatIndex
+            player.selectAudioTrack(version.flatIndex)
+            persistChoice(newAudioLanguage = group.language, newAudioVariant = version.signature())
+        } else if (group.isOff) {
+            selectedSub = -1
+            player.selectSubtitleTrack(-1)
+            persistChoice(newSubtitlesOff = true)
         } else {
-            val sub = subOptions.getOrNull(pickerIdx)
+            val sub = subVersionOptions.getOrNull(version.flatIndex)
             if (sub != null && sub.deliveryMethod == "encode") {
                 // R56: PGS burn-in — restream with subtitle index baked into the Jellyfin transcode.
                 store.restreamWithSub(itemId, sub.jellyfinStreamIndex, player.positionMs)
-                // R181 — still worth remembering the language (helps other titles' global tier and a
-                // rewatch of this series where the language exists as a native track), even though the
-                // resolver above never auto-selects a PGS track back in.
-                persistChoice(newSubtitleLanguage = sub.language, newSubtitlesOff = false)
             } else {
-                val subIdx = pickerIdx - 1   // option 0 = Off
-                selectedSub = subIdx
-                player.selectSubtitleTrack(subIdx)
-                if (subIdx < 0) persistChoice(newSubtitlesOff = true)
-                else persistChoice(newSubtitleLanguage = subtitleTracks.getOrNull(subIdx)?.language, newSubtitlesOff = false)
+                selectedSub = version.flatIndex
+                player.selectSubtitleTrack(version.flatIndex)
             }
+            // R181 — still worth remembering even for the PGS/encode branch (helps other titles'
+            // global tier and a rewatch where the language exists as a native track), even though the
+            // resolver above never auto-selects a PGS track back in.
+            persistChoice(newSubtitleLanguage = group.language, newSubtitlesOff = false, newSubtitleVariant = version.signature())
         }
-        pickerOpen = false
+    }
+
+    // R195 §A/§D — OK on a level-1 row: a single-version language selects immediately and closes,
+    // exactly like today's one-press behaviour; a multi-version language instead ENTERS level 2,
+    // focused on whichever version is already playing. OK on a level-2 row: select, stay open (§D) —
+    // a viewer can keep comparing versions without reopening the picker each time.
+    fun pickerSelect() {
+        val group = pickerGroups.getOrNull(pickerIdx) ?: return
+        if (pickerLevel == 0 && group.versions.size > 1) {
+            pickerLevel = 1
+            val currentFlat = if (pickerTab == 0) selectedAudio else selectedSub
+            pickerVersionIdx = group.versions.indexOfFirst { it.flatIndex == currentFlat }.coerceAtLeast(0)
+            wake()
+            return
+        }
+        if (pickerLevel == 0) pickerVersionIdx = 0
+        choosePick()
+        if (pickerLevel == 0) pickerOpen = false
+        wake()
+    }
+
+    // R195 §D — Back in level 2 returns to level 1 (must NOT close the picker); level 1 closes it,
+    // unchanged from pre-R195.
+    fun pickerBack() {
+        if (pickerLevel == 1) pickerLevel = 0 else pickerOpen = false
         wake()
     }
 
@@ -908,7 +991,13 @@ fun PlayerScreen(
                     when {
                         nextUpVisible -> nuFocus = NuFocus.PLAY
                         epRailOpen -> focusedEpIdx = (focusedEpIdx - 1).coerceAtLeast(0)
-                        pickerOpen -> { pickerTab = 0; pickerIdx = selectedAudio }
+                        // R195 §D — switching tab always resets to level 1, focused on whichever
+                        // group currently contains the live selection.
+                        pickerOpen -> {
+                            pickerTab = 0
+                            pickerLevel = 0
+                            pickerIdx = audioGroups.indexOfFirst { g -> g.versions.any { it.flatIndex == selectedAudio } }.coerceAtLeast(0)
+                        }
                         focus == PlFocus.SEEK_BAR -> {
                             if (!scrubbing) { scrubbing = true; scrubPos = positionMs }
                             scrubPos = (scrubPos - scrubStep()).coerceAtLeast(0L)
@@ -927,7 +1016,8 @@ fun PlayerScreen(
                         epRailOpen -> episodes?.let { focusedEpIdx = (focusedEpIdx + 1).coerceAtMost(it.size - 1) }
                         pickerOpen -> {
                             pickerTab = 1
-                            pickerIdx = if (selectedSub < 0) 0 else (selectedSub + 1).coerceAtMost(subOptions.lastIndex)
+                            pickerLevel = 0
+                            pickerIdx = subGroupsWithOff.indexOfFirst { g -> g.versions.any { it.flatIndex == selectedSub } }.coerceAtLeast(0)
                         }
                         focus == PlFocus.SEEK_BAR -> {
                             if (!scrubbing) { scrubbing = true; scrubPos = positionMs }
@@ -944,7 +1034,9 @@ fun PlayerScreen(
                     wake()
                     when {
                         epRailOpen -> { epRailOpen = false; scheduleHide() }
-                        pickerOpen -> if (pickerIdx > 0) pickerIdx--
+                        // R195 §D — Up/Down moves within whichever level is active.
+                        pickerOpen -> if (pickerLevel == 1) { if (pickerVersionIdx > 0) pickerVersionIdx-- }
+                                      else { if (pickerIdx > 0) pickerIdx-- }
                         nextUpVisible -> {}
                         focus != PlFocus.SEEK_BAR -> focus = PlFocus.SEEK_BAR
                         else -> {}
@@ -955,9 +1047,11 @@ fun PlayerScreen(
                     when {
                         nextUpVisible -> {}
                         epRailOpen -> {}
-                        pickerOpen -> {
-                            val size = if (pickerTab == 0) audioTracks.size.coerceAtLeast(1) else subOptions.size
-                            if (pickerIdx < size - 1) pickerIdx++
+                        pickerOpen -> if (pickerLevel == 1) {
+                            val vsize = pickerGroups.getOrNull(pickerIdx)?.versions?.size ?: 1
+                            if (pickerVersionIdx < vsize - 1) pickerVersionIdx++
+                        } else {
+                            if (pickerIdx < pickerGroups.size - 1) pickerIdx++
                         }
                         focus == PlFocus.SEEK_BAR -> {
                             if (scrubbing) commitScrub()
@@ -998,7 +1092,7 @@ fun PlayerScreen(
                             }
                         }
                         epRailOpen -> chooseEpisode()
-                        pickerOpen -> choosePick()
+                        pickerOpen -> pickerSelect()
                         focus == PlFocus.SKIP_INTRO -> skipIntro()
                         focus == PlFocus.SEEK_BAR -> {
                             if (scrubbing) commitScrub() else { scrubbing = true; scrubPos = positionMs }
@@ -1008,8 +1102,9 @@ fun PlayerScreen(
                         focus == PlFocus.SKIP_FWD  -> skip(SKIP_FWD_MS)
                         focus == PlFocus.TRACKS    -> {
                             pickerOpen = true
-                            pickerIdx = if (pickerTab == 0) selectedAudio
-                                        else (selectedSub + 1).coerceIn(0, subOptions.lastIndex)
+                            pickerLevel = 0
+                            val currentFlat = if (pickerTab == 0) selectedAudio else selectedSub
+                            pickerIdx = pickerGroups.indexOfFirst { g -> g.versions.any { it.flatIndex == currentFlat } }.coerceAtLeast(0)
                         }
                         focus == PlFocus.NEXT_EP   -> advanceNext()
                         focus == PlFocus.BACK      -> onBack()
@@ -1018,7 +1113,7 @@ fun PlayerScreen(
                 },
                 onBack = {
                     when {
-                        pickerOpen    -> { pickerOpen = false; wake() }
+                        pickerOpen    -> pickerBack()
                         epRailOpen    -> { epRailOpen = false; wake() }
                         nextUpVisible -> stayThrough()
                         scrubbing     -> { scrubbing = false; wake() }
@@ -1224,7 +1319,9 @@ fun PlayerScreen(
                         PlFocus.SKIP_FWD  -> skip(SKIP_FWD_MS)
                         PlFocus.TRACKS    -> {
                             pickerOpen = true
-                            pickerIdx = if (pickerTab == 0) selectedAudio else (selectedSub + 1).coerceIn(0, subOptions.lastIndex)
+                            pickerLevel = 0
+                            val currentFlat = if (pickerTab == 0) selectedAudio else selectedSub
+                            pickerIdx = pickerGroups.indexOfFirst { g -> g.versions.any { it.flatIndex == currentFlat } }.coerceAtLeast(0)
                         }
                         PlFocus.NEXT_EP   -> advanceNext()
                         else -> {}
@@ -1263,15 +1360,21 @@ fun PlayerScreen(
             modifier = Modifier.align(Alignment.BottomEnd),
         ) {
             TrackPicker(
-                colors        = colors,
-                pickerTab     = pickerTab,
-                pickerIdx     = pickerIdx,
-                audioTracks   = audioTracks,
-                subOptions    = subOptions,
-                nativeSubtitleTracks = subtitleTracks,
-                selectedAudio = selectedAudio,
-                selectedSub   = selectedSub,
-                originalLanguage = currentOriginalLanguage,
+                colors           = colors,
+                pickerTab        = pickerTab,
+                pickerLevel      = pickerLevel,
+                audioGroups      = audioGroups,
+                subGroups        = subGroupsWithOff,
+                pickerIdx        = pickerIdx,
+                pickerVersionIdx = pickerVersionIdx,
+                selectedAudio    = selectedAudio,
+                selectedSub      = selectedSub,
+                // R195 — touch parity with the D-pad: a tap just moves the target index then runs the
+                // EXACT SAME pickerSelect()/pickerBack() logic Select/Back already use, so touch (phone)
+                // and D-pad (TV) can never diverge in behaviour.
+                onTapLanguage = { idx -> pickerIdx = idx; pickerSelect() },
+                onTapVersion  = { idx -> pickerVersionIdx = idx; pickerSelect() },
+                onTapBack     = { pickerBack() },
             )
         }
 
@@ -1827,28 +1930,34 @@ private fun EpisodeChip(colors: RaviloColors) {
 
 // R180 (FR-RV-ASP1-1) — one row's presentation data, resolved once per recomposition from either a
 // PlayerAudioTrack or a PlayerSubtitleTrack (or neither, for the synthetic Off row).
-private data class PickerRow(
-    val language: String?,
-    val fallbackLabel: String,
-    val isOff: Boolean,
-    val badges: List<String>,
-)
-
+/**
+ * R195 §3 — the picker is two levels: [pickerLevel] 0 shows one row per [PickerLanguage] in the
+ * active tab's group list; [pickerLevel] 1 shows the [pickerIdx]-selected group's own
+ * [PickerLanguage.versions]. [onTapLanguage]/[onTapVersion] give touch (phone/web) exact parity with
+ * the D-pad — both just move the target index then run through PlayerScreen's SAME pickerSelect() the
+ * Select key already uses (see the call site). [audioGroups]/[subGroups] are BOTH needed (not just the
+ * active tab's) because the tab bar shows both tabs' flags regardless of which is active.
+ */
 @Composable
 private fun TrackPicker(
     colors: RaviloColors,
     pickerTab: Int,
+    pickerLevel: Int,
+    audioGroups: List<PickerLanguage>,
+    subGroups: List<PickerLanguage>,
     pickerIdx: Int,
-    audioTracks: List<PlayerAudioTrack>,
-    subOptions: List<PlayerSubtitleTrack?>,
-    nativeSubtitleTracks: List<PlayerSubtitleTrack>,
+    pickerVersionIdx: Int,
     selectedAudio: Int,
     selectedSub: Int,
-    originalLanguage: String?,
+    onTapLanguage: (Int) -> Unit,
+    onTapVersion: (Int) -> Unit,
+    onTapBack: () -> Unit,
 ) {
     val lang = LocalLang.current
-    val audioFlag = audioTracks.getOrNull(selectedAudio)?.language?.lowercase()?.let { LANG_CC[it] }
-    val subFlag = if (selectedSub >= 0) nativeSubtitleTracks.getOrNull(selectedSub)?.language?.lowercase()?.let { LANG_CC[it] } else null
+    val groups = if (pickerTab == 0) audioGroups else subGroups
+    val selectedFlat = if (pickerTab == 0) selectedAudio else selectedSub
+    val audioFlag = audioGroups.firstOrNull { g -> g.versions.any { it.flatIndex == selectedAudio } }?.language?.lowercase()?.let { LANG_CC[it] }
+    val subFlag = subGroups.firstOrNull { g -> g.versions.any { it.flatIndex == selectedSub } }?.language?.lowercase()?.let { LANG_CC[it] }
 
     Box(
         modifier = Modifier
@@ -1860,48 +1969,35 @@ private fun TrackPicker(
             .padding(22.dp),
     ) {
         Column {
-            // Tabs
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                PickerTab(str("player.tab_audio"), pickerTab == 0, audioFlag)
-                PickerTab(str("player.tab_subtitles"), pickerTab == 1, subFlag)
-            }
-            Spacer(Modifier.height(14.dp))
-
-            // Options — R180: every row leads with a flag/glyph and a plain endonym name; badges are
-            // a fixed jargon-free vocabulary derived in audioBadges()/subtitleBadges(), never a codec
-            // or delivery-method string.
-            // Bug fix: this used to recompute on every recomposition — including the per-track title
-            // regex matching inside audioBadges()/subtitleBadges() — even though TrackPicker
-            // recomposes on every single D-pad Up/Down while the picker is open (pickerIdx is a
-            // parameter). remember() so it only re-runs when the tab or the underlying track data
-            // actually changes.
-            val rows: List<PickerRow> = remember(pickerTab, audioTracks, subOptions, originalLanguage, lang) {
-                if (pickerTab == 0) {
-                    val effectiveAudio = audioTracks.ifEmpty { listOf(PlayerAudioTrack(0, "Default", null)) }
-                    effectiveAudio.map { PickerRow(it.language, it.label, false, audioBadges(it, originalLanguage, lang)) }
-                } else {
-                    subOptions.map { sub ->
-                        if (sub == null) PickerRow(null, "", true, emptyList())
-                        else PickerRow(sub.language, sub.label, false, subtitleBadges(sub, lang))
-                    }
+            if (pickerLevel == 0) {
+                // Tabs — only shown at level 1 (§D: switching tab always resets to level 1 anyway).
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    PickerTab(str("player.tab_audio"), pickerTab == 0, audioFlag)
+                    PickerTab(str("player.tab_subtitles"), pickerTab == 1, subFlag)
                 }
+                Spacer(Modifier.height(14.dp))
             }
-            val selectedInTab = if (pickerTab == 0) selectedAudio else selectedSub + 1
-            val lastIdx = (rows.size - 1).coerceAtLeast(0)
-            val listState = rememberLazyListState()
 
-            // R180 — open pre-scrolled to the active row (jump, no animation). Keyed on pickerTab: it
-            // "changes" (from unset) on TrackPicker's first composition — i.e. every time the picker
-            // freshly opens, since AnimatedVisibility disposes this composable on close — and again on
-            // every later tab switch, both of which should reset scroll position outright rather than
-            // animate from wherever the other tab happened to be scrolled.
-            LaunchedEffect(pickerTab) {
-                listState.scrollToItem(pickerIdx.coerceIn(0, lastIdx))
+            val group = groups.getOrNull(pickerIdx)
+            if (pickerLevel == 1 && group != null) {
+                PickerCrumbHeader(group = group, colors = colors, onBack = onTapBack)
+                Spacer(Modifier.height(10.dp))
+            }
+
+            val listState = rememberLazyListState()
+            val rowCount = if (pickerLevel == 0) groups.size else (group?.versions?.size ?: 0)
+            val focusedIdx = if (pickerLevel == 0) pickerIdx else pickerVersionIdx
+            val lastIdx = (rowCount - 1).coerceAtLeast(0)
+
+            // R180 — open pre-scrolled to the active row (jump, no animation); R195 — also whenever the
+            // level itself changes (entering/leaving level 2 always starts scrolled to the top row).
+            LaunchedEffect(pickerTab, pickerLevel) {
+                listState.scrollToItem(focusedIdx.coerceIn(0, lastIdx))
             }
             // R180 — keep the D-pad-focused row visible as it moves (10+ track titles genuinely
             // overflow a fixed-height list — verified: a real title has 7 audio + 13 subtitle tracks).
-            LaunchedEffect(pickerIdx) {
-                listState.animateScrollToItem(pickerIdx.coerceIn(0, lastIdx))
+            LaunchedEffect(focusedIdx) {
+                listState.animateScrollToItem(focusedIdx.coerceIn(0, lastIdx))
             }
 
             LazyColumn(
@@ -1909,20 +2005,88 @@ private fun TrackPicker(
                 modifier = Modifier.heightIn(max = 400.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                itemsIndexed(rows) { i, row ->
-                    PickerOption(
-                        language      = row.language,
-                        fallbackLabel = row.fallbackLabel,
-                        isOff         = row.isOff,
-                        badges        = row.badges,
-                        selected      = i == selectedInTab,
-                        focused       = i == pickerIdx,
-                        colors        = colors,
-                    )
+                if (pickerLevel == 0) {
+                    itemsIndexed(groups) { i, g ->
+                        val active = g.versions.any { it.flatIndex == selectedFlat }
+                        PickerLanguageRow(
+                            group = g,
+                            selected = active,
+                            focused = i == pickerIdx,
+                            colors = colors,
+                            lang = lang,
+                            onTap = { onTapLanguage(i) },
+                        )
+                    }
+                } else if (group != null) {
+                    // §E — the tail: moving down previews each one (a subtitle/audio change applies
+                    // instantly), so an Unnamed cluster's footer hint matters more than a normal group's.
+                    if (group.isUnnamed) {
+                        item {
+                            Text(
+                                str("player.picker_preview_hint"),
+                                color = colors.textSecondary,
+                                fontSize = 11.sp,
+                                modifier = Modifier.padding(bottom = 6.dp),
+                            )
+                        }
+                    }
+                    itemsIndexed(group.versions) { i, v ->
+                        PickerVersionRow(
+                            group = group,
+                            version = v,
+                            selected = v.flatIndex == selectedFlat,
+                            focused = i == pickerVersionIdx,
+                            colors = colors,
+                            lang = lang,
+                            onTap = { onTapVersion(i) },
+                        )
+                    }
                 }
             }
         }
     }
+}
+
+/** §B — level 2's header bar: the flag sits ONCE here (never repeated per version row), with the
+ *  language name and version count. Also hosts the touch Back affordance (§D: hardware Back already
+ *  returns to level 1 via PlayerLifecycleEffect/dpadFocusable's onBack; this is the tap equivalent for
+ *  a phone/web viewer with no hardware Back key in reach). */
+@Composable
+private fun PickerCrumbHeader(group: PickerLanguage, colors: RaviloColors, onBack: () -> Unit) {
+    val lang = LocalLang.current
+    val flagRes = group.language?.lowercase()?.let { LANG_CC[it] }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .clickable(onClick = onBack)
+            .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Text("‹", color = colors.textSecondary, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+        if (flagRes != null && !group.isUnnamed) {
+            Image(
+                painter = painterResource(flagRes),
+                contentDescription = null,
+                modifier = Modifier
+                    .size(width = 28.dp, height = 20.dp)
+                    .clip(RoundedCornerShape(4.dp))
+                    .border(1.dp, Color.White.copy(0.18f), RoundedCornerShape(4.dp)),
+            )
+        }
+        Column {
+            Text(
+                if (group.isUnnamed) str("player.unnamed") else groupDisplayName(group, lang),
+                color = colors.text, fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                t("player.versions_count", lang, mapOf("n" to group.versions.size.toString())),
+                color = colors.textSecondary, fontSize = 11.sp,
+            )
+        }
+    }
+    Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(Color.White.copy(0.10f)))
 }
 
 @Composable
@@ -1968,16 +2132,40 @@ private fun PickerTab(label: String, active: Boolean, flagRes: DrawableResource?
 private fun pickerName(language: String?, fallbackLabel: String): String =
     endonym(language) ?: languageName(language) ?: fallbackLabel
 
+/**
+ * R195 §A/§B — a [PickerLanguage] group's own display name (level-1 row / level-2 crumb header).
+ * `group.language` covers the overwhelming majority of groups; a null-language cluster (untagged
+ * tracks — real, e.g. a commentary track with no language tag, per R180's own `pickerName` doc) has
+ * no language to name itself after, so falls back to its dominant [VariantKind] as a clean word
+ * (never the raw title text — R180's FR-RV-ASP1-2 "never echo raw title/codec text" non-goal still
+ * applies here). [isOff]/[isUnnamed] groups are named by their caller (str("off")/str("player.unnamed"))
+ * — this function is only for a real, language-or-kind-identifiable group.
+ */
+private fun groupDisplayName(group: PickerLanguage, lang: String): String = when {
+    group.language != null -> pickerName(group.language, "")
+    group.versions.all { it.kind == VariantKind.COMMENTARY } -> t("player.badge_commentary", lang)
+    group.versions.all { it.kind == VariantKind.DESCRIBE } -> t("player.badge_describes_action", lang)
+    else -> t("player.unnamed", lang)
+}
+
+/** R195 §A — one row per language. No arrow + no count when there's exactly one version (OK selects
+ *  it outright, matching R180's original one-press behaviour); a count + arrow otherwise. Badges
+ *  belong to the single version, or — with several — to whichever one is currently playing. */
 @Composable
-private fun PickerOption(
-    language: String?,
-    fallbackLabel: String,
-    isOff: Boolean,
-    badges: List<String>,
+private fun PickerLanguageRow(
+    group: PickerLanguage,
     selected: Boolean,
     focused: Boolean,
     colors: RaviloColors,
+    lang: String,
+    onTap: () -> Unit,
 ) {
+    val single = group.versions.size <= 1
+    // §A — badges belong to the single version, or (with several) to whichever one is CURRENTLY
+    // playing; a language with several versions that ISN'T the active one shows no badges at all
+    // (there's no single version to attribute them to until the viewer descends into level 2).
+    val activeVersion = group.versions.firstOrNull { it.flatIndex >= 0 && (single || selected) }
+    val badges = if (group.isOff) emptyList() else activeVersion?.badges ?: emptyList()
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -1988,67 +2176,151 @@ private fun PickerOption(
                 color = if (focused) colors.focusRing.copy(0.7f) else Color.Transparent,
                 shape = RoundedCornerShape(10.dp),
             )
+            .clickable(onClick = onTap)
             .padding(horizontal = 14.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        // Radio tick
-        Box(
-            modifier = Modifier
-                .size(22.dp)
-                .clip(CircleShape)
-                .background(if (selected) colors.accent else Color.Transparent)
-                .border(2.dp, if (selected) colors.accent else Color.White.copy(0.35f), CircleShape),
-            contentAlignment = Alignment.Center,
-        ) {
-            if (selected) Text("✓", color = colors.onAccent, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-        }
-
-        // Flag / glyph — never a codec or delivery-method cue (FR-RV-ASP1-2).
-        val flagRes = if (!isOff) language?.lowercase()?.let { LANG_CC[it] } else null
-        Box(modifier = Modifier.size(width = 40.dp, height = 30.dp), contentAlignment = Alignment.Center) {
-            when {
-                flagRes != null -> Image(
-                    painter = painterResource(flagRes),
-                    contentDescription = null,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .clip(RoundedCornerShape(5.dp))
-                        .border(1.dp, Color.White.copy(0.18f), RoundedCornerShape(5.dp)),
-                )
-                else -> Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .clip(RoundedCornerShape(7.dp))
-                        .background(Color.White.copy(0.07f)),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    val tint = Color.White.copy(0.55f)
-                    if (isOff) PickerGlyphOff(Modifier.size(20.dp), tint) else PickerGlyphMic(Modifier.size(20.dp), tint)
-                }
-            }
-        }
-
+        PickerTick(selected = selected, colors = colors)
+        PickerGlyphBox(language = group.language, isOff = group.isOff, isUnnamed = group.isUnnamed)
         Column(modifier = Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                val name = if (isOff) str("off") else pickerName(language, fallbackLabel)
+                val name = if (group.isOff) str("off") else if (group.isUnnamed) str("player.unnamed") else groupDisplayName(group, lang)
                 Text(name, color = colors.text, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-                val suffix = if (isOff) null else regionSuffix(fallbackLabel)
-                if (suffix != null) Text(suffix, color = colors.textSecondary, fontSize = 12.sp)
             }
-            if (badges.isNotEmpty()) {
-                Row(modifier = Modifier.padding(top = 5.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    badges.forEach { badge ->
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(6.dp))
-                                .background(Color.White.copy(0.06f))
-                                .border(1.dp, Color.White.copy(0.14f), RoundedCornerShape(6.dp))
-                                .padding(horizontal = 8.dp, vertical = 3.dp),
-                        ) {
-                            Text(badge, color = colors.textSecondary, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
-                        }
-                    }
+            if (badges.isNotEmpty()) PickerBadgeRow(badges, colors)
+        }
+        if (!single) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    t("player.versions_count", lang, mapOf("n" to group.versions.size.toString())),
+                    color = colors.textSecondary, fontSize = 11.sp,
+                )
+                Text("›", color = colors.textSecondary, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+            }
+        }
+    }
+}
+
+/** R195 §B/§C/§E — one version row inside level 2. The header already carries the language's own flag
+ *  (§B: never repeated here); a REGION flag shows only when it differs from the header's language flag
+ *  (§C) — a same-flag region (e.g. Português→Portugal, both flag_pt) shows no flag, relying on the
+ *  header. Unnamed-group rows (§E) are numbered "Version N" instead of the language name. */
+@Composable
+private fun PickerVersionRow(
+    group: PickerLanguage,
+    version: PickerVersion,
+    selected: Boolean,
+    focused: Boolean,
+    colors: RaviloColors,
+    lang: String,
+    onTap: () -> Unit,
+) {
+    val headerFlag = group.language?.lowercase()?.let { LANG_CC[it] }
+    val regionFlag = version.region?.flag?.takeIf { it != headerFlag }
+    val name = if (group.isUnnamed) t("player.version_n", lang, mapOf("n" to (version.ordinal + 1).toString()))
+        else groupDisplayName(group, lang)
+    val badges = version.badges + listOfNotNull(
+        version.region?.name?.takeIf { version.kind == VariantKind.PLAIN || version.region.flag != null },
+        if (selected) t("player.now_showing", lang).takeIf { group.isUnnamed } else null,
+    )
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(if (focused) Color.White.copy(alpha = 0.10f) else Color.Transparent)
+            .border(
+                width = if (focused) 2.dp else 0.dp,
+                color = if (focused) colors.focusRing.copy(0.7f) else Color.Transparent,
+                shape = RoundedCornerShape(10.dp),
+            )
+            .clickable(onClick = onTap)
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        PickerTick(selected = selected, colors = colors)
+        // §C — a fixed-width slot even when this row has no flag, so text stays aligned when SOME
+        // sibling rows do carry a region flag.
+        Box(modifier = Modifier.size(width = 28.dp, height = 20.dp), contentAlignment = Alignment.Center) {
+            if (regionFlag != null) Image(
+                painter = painterResource(regionFlag),
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(4.dp)).border(1.dp, Color.White.copy(0.18f), RoundedCornerShape(4.dp)),
+            )
+        }
+        Column(modifier = Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(name, color = colors.text, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+            }
+            if (badges.isNotEmpty()) PickerBadgeRow(badges, colors)
+            Text(
+                versionSentence(version, group.isUnnamed, lang),
+                color = colors.textSecondary, fontSize = 11.sp,
+                modifier = Modifier.padding(top = 3.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun PickerTick(selected: Boolean, colors: RaviloColors) {
+    Box(
+        modifier = Modifier
+            .size(22.dp)
+            .clip(CircleShape)
+            .background(if (selected) colors.accent else Color.Transparent)
+            .border(2.dp, if (selected) colors.accent else Color.White.copy(0.35f), CircleShape),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (selected) Text("✓", color = colors.onAccent, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+    }
+}
+
+@Composable
+private fun PickerBadgeRow(badges: List<String>, colors: RaviloColors) {
+    Row(modifier = Modifier.padding(top = 5.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        badges.forEach { badge ->
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(Color.White.copy(0.06f))
+                    .border(1.dp, Color.White.copy(0.14f), RoundedCornerShape(6.dp))
+                    .padding(horizontal = 8.dp, vertical = 3.dp),
+            ) {
+                Text(badge, color = colors.textSecondary, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
+            }
+        }
+    }
+}
+
+// Flag / glyph — never a codec or delivery-method cue (FR-RV-ASP1-2). §E — Unnamed gets a neutral
+// globe placeholder where the flag would be, distinct from Off's crossed-out glyph.
+@Composable
+private fun PickerGlyphBox(language: String?, isOff: Boolean, isUnnamed: Boolean) {
+    val flagRes = if (!isOff && !isUnnamed) language?.lowercase()?.let { LANG_CC[it] } else null
+    Box(modifier = Modifier.size(width = 40.dp, height = 30.dp), contentAlignment = Alignment.Center) {
+        when {
+            flagRes != null -> Image(
+                painter = painterResource(flagRes),
+                contentDescription = null,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clip(RoundedCornerShape(5.dp))
+                    .border(1.dp, Color.White.copy(0.18f), RoundedCornerShape(5.dp)),
+            )
+            else -> Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clip(RoundedCornerShape(7.dp))
+                    .background(Color.White.copy(0.07f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                val tint = Color.White.copy(0.55f)
+                when {
+                    isOff -> PickerGlyphOff(Modifier.size(20.dp), tint)
+                    isUnnamed -> PickerGlyphGlobe(Modifier.size(20.dp), tint)
+                    else -> PickerGlyphMic(Modifier.size(20.dp), tint)
                 }
             }
         }
@@ -2098,6 +2370,25 @@ private fun PickerGlyphMic(modifier: Modifier, tint: Color) {
             style = Stroke(strokeW, cap = StrokeCap.Round),
         )
         drawLine(tint, Offset(w * 0.5f, h * 0.68f), Offset(w * 0.5f, h * 0.88f), strokeW, StrokeCap.Round)
+    }
+}
+
+/** R195 §E — neutral globe glyph for an "Unnamed" language group (tracks fully indistinguishable by
+ *  any metadata this system has). A circle + one meridian ellipse + one equator line — deliberately
+ *  distinct from both PickerGlyphOff (crossed-out) and PickerGlyphMic (a real, just untagged track). */
+@Composable
+private fun PickerGlyphGlobe(modifier: Modifier, tint: Color) {
+    Canvas(modifier) {
+        val w = size.width; val h = size.height
+        val strokeW = w * 0.09f
+        drawCircle(color = tint, radius = w * 0.42f, center = Offset(w * 0.5f, h * 0.5f), style = Stroke(strokeW))
+        drawOval(
+            color = tint,
+            topLeft = Offset(w * 0.28f, h * 0.08f),
+            size = Size(w * 0.44f, h * 0.84f),
+            style = Stroke(strokeW * 0.8f),
+        )
+        drawLine(tint, Offset(w * 0.10f, h * 0.5f), Offset(w * 0.90f, h * 0.5f), strokeW * 0.8f, StrokeCap.Round)
     }
 }
 
@@ -2514,7 +2805,10 @@ private enum class TrackVariant { SDH, DESCRIBES_ACTION, COMMENTARY, NONE }
 
 // (FR-RV-ASP1-3) — derived from a track's own label/DisplayTitle, verified against the real library DB
 // during the R180 dev review (audio titles carry these too, e.g. "Synstolkning", "Commentary by…").
-private val SDH_RE = Regex("""\bsdh\b|hard of hearing""", RegexOption.IGNORE_CASE)
+// R195 (FR-RV §5.1) — widened to also catch a bare "HI" token and the word "hearing" alone (was only
+// "sdh" or the full phrase "hard of hearing"); still title-text only — an untitled SDH track needs the
+// Bazarr `hi` flag plumbing this phase's dev-review addendum scoped as separate backend work.
+private val SDH_RE = Regex("""\bsdh\b|\bhi\b|hard of hearing|hearing impaired|\bhearing\b""", RegexOption.IGNORE_CASE)
 private val AD_RE = Regex("""synstolkning|audio description|\bad\b|\bdescribed\b""", RegexOption.IGNORE_CASE)
 private val COMMENTARY_RE = Regex("""commentary""", RegexOption.IGNORE_CASE)
 // DB-verified low-coverage "this track is the source's own original" marker (~20 tracks in the library,
@@ -2601,4 +2895,154 @@ private fun subtitleBadges(track: PlayerSubtitleTrack, lang: String): List<Strin
         else -> {}
     }
     return badges
+}
+
+// ─── R195 — same-language disambiguation: kind/region classification, grouping, provenance suppression ───
+//
+// Dev-review addendum (2026-08-10) findings this builds on: SDH/region title-text detection already
+// existed (SDH_RE/REGION_MARKERS, R180 stage 3) — this section EXTENDS that infrastructure rather than
+// replacing it. `trackVariant`/`REGION_MARKERS`/`regionSuffix` above stay as-is (still used for the
+// flat single-version case's muted suffix); the grouping/kind/region types below are the new,
+// two-level-picker-specific layer.
+
+private enum class VariantKind { PLAIN, SDH, FORCED, DESCRIBE, COMMENTARY }
+
+private fun variantKind(title: String?, forced: Boolean): VariantKind = when {
+    title != null && COMMENTARY_RE.containsMatchIn(title) -> VariantKind.COMMENTARY
+    title != null && SDH_RE.containsMatchIn(title) -> VariantKind.SDH
+    title != null && AD_RE.containsMatchIn(title) -> VariantKind.DESCRIBE
+    forced -> VariantKind.FORCED
+    else -> VariantKind.PLAIN
+}
+
+/**
+ * R195 (FR-RV §5.2) — region synonym table: extends [REGION_MARKERS] (which only ever produced a muted
+ * TEXT suffix) with an actual flag + a stable region code for the two-level picker's §C region flags.
+ * `flag = null` is a deliberate, honest gap for Brazil/Taiwan: no `flag_br`/`flag_tw` drawable asset
+ * exists in this module yet (checked: `composeResources/drawable/flag_*.png` has no br/tw entry) —
+ * falls through to "no region flag shown, name text only" rather than show a WRONG flag or block this
+ * phase on new artwork. `\b`-bounded, first-match-wins, same discipline as `REGION_MARKERS`.
+ */
+private data class RegionInfo(val code: String, val name: String, val flag: DrawableResource?)
+
+private val REGION_TABLE: List<Pair<Regex, RegionInfo>> = listOf(
+    Regex("""\bcastilian\b|\bspain\b|\bes[- ]es\b""", RegexOption.IGNORE_CASE) to RegionInfo("es", "España", LANG_CC["es"]),
+    Regex("""\blatin american?\b|\bes[- ]419\b""", RegexOption.IGNORE_CASE) to RegionInfo("419", "Latinoamérica", null),
+    Regex("""\bbrazil(ian)?\b|\bpt[- ]br\b""", RegexOption.IGNORE_CASE) to RegionInfo("br", "Brasil", null),
+    Regex("""\bportugal\b|\biberian\b|\bpt[- ]pt\b""", RegexOption.IGNORE_CASE) to RegionInfo("pt", "Portugal", LANG_CC["pt"]),
+    Regex("""\bsimplified\b|\bzh[- ]hans\b|\bzh[- ]cn\b""", RegexOption.IGNORE_CASE) to RegionInfo("cn", "简体", LANG_CC["zh"]),
+    Regex("""\btraditional\b|\bzh[- ]hant\b|\bzh[- ]tw\b""", RegexOption.IGNORE_CASE) to RegionInfo("tw", "繁體", null),
+    Regex("""\bcanad(a|ian)\b""", RegexOption.IGNORE_CASE) to RegionInfo("ca", "Canada", null),
+    Regex("""\beuropean\b""", RegexOption.IGNORE_CASE) to RegionInfo("eu", "European", null),
+)
+
+private fun resolveRegion(title: String?): RegionInfo? {
+    if (title.isNullOrBlank()) return null
+    for ((re, info) in REGION_TABLE) if (re.containsMatchIn(title)) return info
+    return null
+}
+
+/** R195 (FR-RV §5.3) — release-provenance tokens that are never a viewer-meaningful choice on their
+ *  own. Used ONLY to detect a collapse-worthy duplicate in [buildLanguageGroups] (positive evidence
+ *  the difference between two otherwise-identical tracks is release plumbing) — never to classify a
+ *  track's [VariantKind]. */
+private val PROVENANCE_RE = Regex("""\b(bluray|blu-ray|web-?dl|webrip|itunes|amzn|netflix|hdtv|remux|dvdrip)\b""", RegexOption.IGNORE_CASE)
+private fun hasProvenanceMarker(title: String?): Boolean = title != null && PROVENANCE_RE.containsMatchIn(title)
+
+/** Per-row input to [buildLanguageGroups] — the shape both audio and subtitle tracks flatten to, so
+ *  the grouping logic stays generic over R195's "audio gets the identical treatment for free" non-goal. */
+private data class PickerEntryInput(
+    val language: String?,
+    val title: String?,
+    val forced: Boolean,
+    val isDefault: Boolean,
+    val badges: List<String>,
+)
+
+/** One selectable version within a language group. [flatIndex] is this version's index into the
+ *  underlying audioTracks/subtitleTracks list (Off is its own pseudo-group, never a PickerVersion —
+ *  see [buildLanguageGroups]'s caller). [ordinal] is this version's position within its own (kind,
+ *  region) cluster — feeds both "Recording {ordinal+1}"-style numbering and the remembered variant
+ *  signature ([signature]). */
+private data class PickerVersion(
+    val flatIndex: Int,
+    val kind: VariantKind,
+    val region: RegionInfo?,
+    val badges: List<String>,
+    val forced: Boolean,
+    val isDefault: Boolean,
+    val hadTitleText: Boolean,
+    val ordinal: Int,
+)
+
+/** R195 (FR-RV §5.4) — the opaque signature a [PickerVersion] resolves to for [RememberedChoice].
+ *  Never contains `:` or `,` — see [RememberedChoice]'s doc (the wasm actual's hand-rolled parser
+ *  splits on both). Format: `"<kind>|<regionCode>|<ordinal>"`. */
+private fun PickerVersion.signature(): String = "${kind.name.lowercase()}|${region?.code ?: ""}|$ordinal"
+
+private data class PickerLanguage(
+    val language: String?,
+    val isOff: Boolean,
+    val versions: List<PickerVersion>,
+    /** §E — every version in this language is fully indistinguishable (same kind=PLAIN, no region, no
+     *  title text at all — the only way that can genuinely happen). Level 1 shows "Unnamed" + a neutral
+     *  globe glyph instead of a flag; level 2 numbers them "Version 1"…"Version n". */
+    val isUnnamed: Boolean,
+)
+
+/**
+ * R195 §3 — groups a flat per-track list into one row per language. [entries] is index-aligned with
+ * the underlying audioTracks/subtitleTracks list; the returned [PickerVersion.flatIndex] values are
+ * exactly the indices [choosePick] already knows how to select with — this function only regroups,
+ * never renumbers the underlying tracks.
+ */
+private fun buildLanguageGroups(entries: List<PickerEntryInput>): List<PickerLanguage> {
+    val byLanguage = entries.withIndex().groupBy { (_, e) -> e.language?.lowercase() }
+    // Group order = each language's first-occurrence position in the original track list (not
+    // alphabetical) — preserves the pre-R195 flat picker's stream order, which callers/track
+    // authoring already treat as meaningful (e.g. the source's own primary-language-first ordering).
+    return byLanguage.entries.sortedBy { (_, indexed) -> indexed.first().index }.map { (_, indexed) ->
+        val language = indexed.first().value.language
+        val withMeta = indexed.map { (flatIdx, e) ->
+            Triple(flatIdx, e, variantKind(e.title, e.forced) to resolveRegion(e.title))
+        }
+        // §5.3 — collapse a (kind, region) cluster to ONE only when at least one member carries a
+        // provenance marker (positive evidence the only difference is release plumbing) AND every
+        // member has SOME title text (never blind-merge untitled tracks — that's §3.8's hard floor,
+        // handled by `isUnnamed` below instead, not by merging).
+        val collapsed = withMeta.groupBy { it.third }.values.flatMap { cluster ->
+            val anyProvenance = cluster.any { hasProvenanceMarker(it.second.title) }
+            val allHaveTitles = cluster.all { !it.second.title.isNullOrBlank() }
+            if (cluster.size > 1 && anyProvenance && allHaveTitles) listOf(cluster.first()) else cluster
+        }
+        val versions = collapsed.mapIndexed { ordinal, (flatIdx, e, kindRegion) ->
+            PickerVersion(
+                flatIndex = flatIdx,
+                kind = kindRegion.first,
+                region = kindRegion.second,
+                badges = e.badges,
+                forced = e.forced,
+                isDefault = e.isDefault,
+                hadTitleText = !e.title.isNullOrBlank(),
+                ordinal = ordinal,
+            )
+        }
+        val isUnnamed = versions.size > 1 && versions.all {
+            it.kind == VariantKind.PLAIN && it.region == null && !it.hadTitleText
+        }
+        PickerLanguage(language, isOff = false, versions = versions, isUnnamed = isUnnamed)
+    }
+}
+
+/** R195 §B — the one-sentence plain-language line under a level-2 version row. A specific kind always
+ *  wins over region for the sentence (a track can be both, e.g. Brazilian+SDH — region still shows via
+ *  its own flag+text on the row per §C, just not duplicated into the sentence too). */
+private fun versionSentence(v: PickerVersion, isUnnamedGroup: Boolean, lang: String): String = when {
+    isUnnamedGroup -> t("player.variant_no_distinguishing_data", lang)
+    v.kind == VariantKind.SDH -> t("player.variant_sdh", lang)
+    v.kind == VariantKind.FORCED -> t("player.variant_forced", lang)
+    v.kind == VariantKind.DESCRIBE -> t("player.variant_describe", lang)
+    v.kind == VariantKind.COMMENTARY -> t("player.variant_commentary", lang)
+    v.region != null -> t("player.variant_region", lang, mapOf("region" to v.region.name))
+    else -> t("player.variant_plain", lang)
 }
