@@ -4,8 +4,22 @@ path: specs/   (plus root STATUS.md — both mirrored read-only from the repo)
 tree: 86722e4b38b0   (2026-08-10 resolved tree hash — not a commit sha)
 
 ## Last sync
-date: 2026-08-10T09:21:46Z
+date: 2026-08-10T14:03:52Z
 direction: pull (repo → this project)
+- **R195 shipped.** Our same-language subtitle-picker spec was dev-reviewed and built the same day it was
+  renumbered — repo status is now `Implemented` / ✓ Done. Pulled the canonical version over our `Planned`
+  draft. Shipped with the design intact; deltas worth knowing: audio picker got the same two-level
+  treatment (was a non-goal), no `flag_br`/`flag_tw` assets yet (text fallback), `groupDisplayName()`
+  added for null-language clusters, and rows gained tap/touch handling (R180 shipped D-pad-only).
+- **New: phase 161** (✓ Done) — embedded text subtitles were being delivered twice on direct play
+  (sideloaded VTT + in-container). Found *through* R195's picker, which surfaced it as two identical
+  "English" rows; the bug predates the picker.
+- Pulled `specs/research-reports/claude-code-remote-agent-management-2026-08-10.md` — a **standalone**
+  design brief for a personal Claude Code remote-management website. Not a jellystructure feature; its
+  design work belongs in its own project, not `design/`.
+- Next unassigned numbers: **162 / R196**.
+
+### Sync 2026-08-10 (earlier, numbering collision)
 - **Numbering collision resolved:** the dev team took **R192/R193/R194** (MediaSession trio) while our
   same-language subtitle-picker draft sat at R192. Our spec renumbered **R192 → R195**
   (`phase-R195-same-language-subtitle-picker.md`); every R192 reference in `CLAUDE.md`,
@@ -82,6 +96,7 @@ direction: pull (repo → this project)
 | (none — backend/platform only) | R192/R193/R194 (MediaSession lifecycle, metadata, season artwork — shipped, no design change), phase-160 (scanner numbering fallback) |
 
 ## Sync history
+- 2026-08-10 (#2): R195 shipped; pulled phase 161 + the Claude Code remote-agent research report.
 - 2026-08-10: pulled R192/R193/R194 + 160; renumbered our subtitle-picker draft R192 → R195.
 - 2026-08-07: confirmed R190 shipped; no other genuinely new content.
 - 2026-08-02: pulled 155/156/R187/R188/R189; renumbered our people-filter draft to R190.

@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Towo — When it stops on a limit</title>
+<link rel="stylesheet" href="wf.css">
+<link rel="stylesheet" href="app.css">
+<link rel="stylesheet" href="towo.css">
+<style>
+.tcol{max-width:1000px}
+.compare{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px}
+.stopcard{padding:19px 20px;border-radius:var(--radius);background:var(--fill-2);border:1px solid var(--line)}
+.stopcard.turns{border-color:rgba(255,111,97,.32)}
+.stopcard.nap{background:rgba(123,110,240,.06);border-color:rgba(123,110,240,.24)}
+.stopcard h3{font-size:16px;margin-top:12px}
+.stopcard p{font-size:12.5px;color:var(--ink-soft);line-height:1.6;margin:9px 0 0}
+.stopcard .acts{display:flex;gap:9px;margin-top:16px;padding-top:15px;border-top:1px solid var(--line)}
+.mstage{position:relative;margin-top:34px;border-radius:var(--radius);border:1px solid var(--line);background:linear-gradient(180deg,rgba(38,42,55,.5),rgba(22,24,31,.5));display:grid;justify-items:center;padding:52px 0 28px}
+.mstage .slbl{position:absolute;top:14px;left:18px;z-index:10;font-size:10.5px;font-weight:700;letter-spacing:.13em;text-transform:uppercase;color:var(--ink-dim)}
+.towo .modal{position:relative;top:0;left:0;transform:none;width:min(560px,100%)}
+.stepper{display:flex;align-items:center;gap:0;border:1px solid var(--line-2);border-radius:11px;background:var(--fill-2);width:fit-content;overflow:hidden}
+.stepper button{width:38px;height:40px;border:none;background:transparent;color:var(--ink);font:inherit;font-size:16px;cursor:pointer}
+.stepper button:hover{background:var(--fill-3)}
+.stepper .v{width:78px;text-align:center;font-family:'JetBrains Mono',monospace;font-size:16px;font-weight:600;border-left:1px solid var(--line);border-right:1px solid var(--line);height:40px;line-height:40px}
+.presets{display:flex;gap:7px;margin-top:11px}
+.presets span{padding:5px 11px;border-radius:8px;background:var(--fill-2);border:1px solid var(--line);font-size:12px;font-family:'JetBrains Mono',monospace;color:var(--ink-soft);cursor:pointer}
+.presets span.on{background:var(--hi-soft);border-color:rgba(123,110,240,.5);color:#dcd6ff}
+.spent{display:flex;align-items:flex-end;gap:14px;margin-top:6px}
+.spent .big{font-family:'Space Grotesk';font-size:30px;font-weight:600;letter-spacing:-.01em}
+.note{margin-top:15px;padding:12px 14px;border-radius:11px;background:var(--fill-2);border:1px solid var(--line);font-size:12.5px;color:var(--ink-soft);line-height:1.6}
+.lastturn{margin-top:14px;padding:13px 15px;border-radius:11px;background:rgba(0,0,0,.24);border:1px solid var(--line)}
+.lastturn .t{font-size:12.5px;color:var(--ink-soft);line-height:1.6}
+</style>
+</head>
+<body class="wf-body app-body">
+<main class="app-main2 wide towo" data-page="towo-overview" data-screen-label="Towo · Limit recovery">
+<div class="crumb"><a href="towo-sessions.html">Sessions</a> › <span style="color:var(--ink-soft)">Stopped on a limit</span></div>
+<div class="top"><div><h1>When it stops on a limit</h1><div class="sub" style="margin-top:5px">Three ways a session can stop early. Only one of them is Towo’s to fix on its own.</div></div></div>
+
+<div class="tcol">
+<div class="compare">
+<div class="stopcard nap"><span class="chip st-nap"><span class="dot"></span>Paused · quota</span><h3>Towo handles this one</h3><p>The window ran out. Nothing is wrong, nothing is lost — if the session is armed, it carries on by itself at <b class="mono" style="color:var(--acc-ink)">18:42</b>. You’ll get a note when it wakes up.</p><div class="acts"><button class="btn sm">Resume now anyway</button><span class="ac" style="margin-left:auto"><div class="sw on"></div>Continues</span></div></div>
+<div class="stopcard turns"><span class="chip st-err"><span class="dot"></span>Stopped · max turns</span><h3>This one is your call</h3><p>It reached the ceiling <i>you</i> set, mid-task. Towo never raises your own cap on its own — that’s a decision about scope, not a retry.</p><div class="acts"><button class="btn pri sm">Resume with more turns</button><button class="btn sm">Leave it</button></div></div>
+</div>
+
+<div class="mstage"><div class="slbl">Resume with more turns</div><div class="scrim"></div>
+<div class="modal">
+<div class="mh"><span class="chip st-err"><span class="dot"></span>Stopped · max turns</span><h2 style="font-size:19px;margin-top:12px">Tizen build verification pass</h2><div class="sub" style="margin-top:6px;font-size:12.5px">ravilo-tizen · macbook · Autonomous profile</div></div>
+<div class="mb">
+<div class="note" style="margin-top:0">A <b style="color:var(--ink)">turn</b> is one round-trip: Claude thinks, runs whatever tools it needs, then comes back with an answer. It’s Claude’s own unit of work, not something Towo invented. You set a ceiling of 30; it used all 30 before finishing.</div>
+<div class="lastturn"><div class="lbl">Where it got to</div><div class="t" style="margin-top:7px">Turn 30 of 30 — had just rebuilt the Tizen target and was reading the failing <span class="mono">appinfo.json</span> check. It did not finish.</div></div>
+<div class="field" style="margin-top:17px"><div class="lbl">Give it more turns</div>
+<div class="stepper"><button>−</button><div class="v">+20</div><button>＋</button></div>
+<div class="presets"><span>+10</span><span class="on">+20</span><span>+50</span><span>no cap</span></div>
+<div class="hint" style="margin-top:10px">New ceiling: <b style="color:var(--ink)">50 turns</b>. At its current rate that’s about <b style="color:var(--ink)">6%</b> more of the 5-hour window.</div></div>
+<div class="note">It picks up where it stopped, with the same transcript and the same permissions. Nothing is re-run.</div>
+</div>
+<div class="mf"><button class="btn pri">Resume with 50 turns</button><button class="btn ghost">Cancel</button><span class="hint" style="margin-left:auto">macbook is offline — this queues until it reconnects</span></div>
+</div></div>
+
+<div class="mstage"><div class="slbl">The weekly window, not the 5-hour one</div><div class="scrim"></div>
+<div class="modal">
+<div class="mh"><span class="chip st-nap"><span class="dot"></span>Paused · weekly window</span><h2 style="font-size:19px;margin-top:12px">Migrate systemd units to quadlet</h2><div class="sub" style="margin-top:6px;font-size:12.5px">dotfiles · dev box · Autonomous profile</div></div>
+<div class="mb">
+<div class="spent"><div><div class="lbl">Weekly window</div><div class="big">100%</div></div><div class="sub" style="padding-bottom:6px">used · resets <b class="mono" style="color:var(--acc-ink)">Sunday 09:00</b></div></div>
+<div class="gauge" style="margin-top:11px"><i style="width:100%;background:var(--bad)"></i></div>
+<div class="note" style="margin-top:16px">The 5-hour window is nearly empty (<b style="color:var(--ink)">8%</b>) — it’s the <b style="color:var(--ink)">weekly</b> allowance that ran out, so waiting an afternoon won’t help. Towo reads which window it was from Claude, never a guess.</div>
+<div class="field" style="margin-top:18px"><div class="lbl">What happens next</div>
+<div class="pickrow" style="flex-direction:column;gap:9px">
+<div class="pick on"><div class="t">Wait for Sunday <span class="chip st-nap" style="height:20px"><span class="dot"></span>armed</span></div><div class="d">Stays exactly where it is and continues itself when the week rolls over. You get a note both times.</div></div>
+<div class="pick"><div class="t">Move it to another runner</div><div class="d">home server signs in as a different Claude account, so it has its own windows. The transcript comes along — nothing is re-run.</div></div>
+<div class="pick"><div class="t">Stop here</div><div class="d">Leave it paused and unarmed. You can pick it up by hand whenever.</div></div>
+</div></div>
+</div>
+<div class="mf"><button class="btn pri">Keep waiting for Sunday</button><button class="btn ghost">Cancel</button><span class="hint" style="margin-left:auto">Nothing you set caused this — it’s the account’s allowance</span></div>
+</div></div>
+
+<div class="note" style="margin-top:18px;max-width:760px">Third case, for completeness: a genuine <b style="color:#ffb3aa">error</b> — a crashed tool, a lost connection mid-turn. Towo shows it, keeps the transcript, and offers one retry. It never loops on its own.</div>
+</div>
+</main>
+<script src="app-shell.js"></script>
+</body>
+</html>

@@ -1,0 +1,84 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>Relay — Dashboard (Direction B: Attention queue)</title><link rel="stylesheet" href="console.css"><style>
+.page{width:1440px;min-height:1020px;position:relative;background:var(--bg);overflow:hidden}
+.tbar{position:relative;z-index:3;height:58px;border-bottom:1px solid var(--line);background:rgba(22,24,31,.86);backdrop-filter:var(--blur);display:flex;align-items:center;gap:26px;padding:0 30px}
+.brand{display:flex;align-items:center;gap:9px}
+.brand .mk{width:24px;height:24px;border-radius:7px;background:var(--grad);box-shadow:0 4px 14px rgba(123,110,240,.4)}
+.brand .nm{font-family:'Space Grotesk';font-weight:700;font-size:16.5px;letter-spacing:-.02em}
+.tnav{display:flex;gap:4px}
+.tnav a{height:31px;padding:0 13px;border-radius:8px;display:flex;align-items:center;font-size:13.5px;font-weight:500;color:var(--ink-soft)}
+.tnav a.on{background:var(--fill);color:var(--ink);font-weight:600}
+.tnav a:hover{color:var(--ink)}
+.strip{position:relative;z-index:3;display:flex;align-items:stretch;gap:0;border-bottom:1px solid var(--line);background:var(--bg-2)}
+.rn{flex:1;padding:13px 22px;display:flex;align-items:center;gap:13px;border-right:1px solid var(--line)}
+.rn:last-child{border-right:none}
+.rn .nm{font-family:'Space Grotesk';font-weight:600;font-size:14px}
+.rn .g{flex:1;max-width:140px}
+.wrap{position:relative;z-index:2;padding:30px 30px 54px;display:flex;justify-content:center}
+.col{width:1000px}
+.hero{display:flex;align-items:flex-end;gap:20px;margin-bottom:24px}
+.qgroup{margin-bottom:26px}
+.qhd{display:flex;align-items:center;gap:12px;margin-bottom:11px}
+.qhd h2{font-size:14px;letter-spacing:.02em}
+.qhd .ct{font-size:11.5px;font-weight:700;color:var(--ink-dim);font-family:'JetBrains Mono',monospace}
+.item{padding:17px 20px;border-radius:14px;background:var(--fill-2);border:1px solid var(--line);display:flex;gap:20px;align-items:center;margin-bottom:9px}
+.item .body{flex:1;min-width:0}
+.item .ttl{font-size:15.5px;font-weight:600;font-family:'Space Grotesk'}
+.item .whr{display:flex;align-items:center;gap:9px;margin-top:6px;font-size:12.5px;color:var(--ink-soft)}
+.item .whr b{font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--ink)}
+.item.need{background:linear-gradient(120deg,rgba(123,110,240,.16),rgba(0,164,220,.06));border-color:rgba(123,110,240,.44);box-shadow:0 8px 26px rgba(60,45,140,.28)}
+.cmd{font-family:'JetBrains Mono',monospace;font-size:13px;background:rgba(0,0,0,.34);border:1px solid var(--line);border-radius:8px;padding:8px 12px;color:#e6e1ff;margin-top:11px;display:inline-block}
+.item.rest{background:rgba(123,110,240,.055);border-color:rgba(123,110,240,.2)}
+.clock{text-align:right;flex:none;width:186px}
+.clock .t{font-family:'Space Grotesk';font-size:25px;font-weight:600;color:#cfd4e6;letter-spacing:-.01em}
+.clock .u{font-size:11.5px;color:var(--ink-dim);margin-top:3px;font-family:'JetBrains Mono',monospace}
+.acbox{display:flex;align-items:center;gap:10px;padding:9px 13px;border-radius:10px;background:rgba(0,0,0,.2);border:1px solid var(--line);font-size:12.5px;color:var(--ink-soft);flex:none}
+.acbox b{color:#cbc4f7;font-weight:600}
+.tick{height:5px;border-radius:999px;background:var(--fill-3);overflow:hidden;margin-top:11px}
+.tick i{display:block;height:100%;width:31%;background:linear-gradient(90deg,rgba(123,110,240,.4),var(--hi));border-radius:999px}
+.acts{display:flex;gap:8px;flex:none}
+.kpis{display:flex;gap:14px;margin-left:auto}
+.kp{padding:11px 17px;border-radius:12px;background:var(--fill-2);border:1px solid var(--line);min-width:104px}
+.kp .v{font-family:'Space Grotesk';font-size:20px;font-weight:600;margin-top:3px}
+.settled{display:flex;gap:9px;flex-wrap:wrap}
+.pill{display:flex;align-items:center;gap:10px;padding:11px 14px;border-radius:12px;background:var(--fill-2);border:1px solid var(--line);font-size:13.5px;font-weight:500}
+.pill .m{font-size:11.5px;color:var(--ink-dim);font-family:'JetBrains Mono',monospace}
+</style></head><body>
+<div class="page"><div class="aurora"></div>
+<div class="tbar"><div class="brand"><div class="mk"></div><div class="nm">Relay</div></div>
+<div class="tnav"><a href="#" class="on">Queue</a><a href="#">Sessions</a><a href="#">Runners</a><a href="#">Notifications</a></div>
+<div style="margin-left:auto;display:flex;align-items:center;gap:13px"><span class="chip st-nap"><span class="dot"></span>Sweep every 6 h · last 12:04</span><button class="btn pri">＋ New session</button></div></div>
+
+<div class="strip">
+<div class="rn"><span class="chip st-done"><span class="dot"></span>Online</span><div class="nm">dev box</div><div class="g"><div class="gauge"><i style="width:62%"></i></div></div><span class="sub" style="font-size:11.5px">62% · resets <b class="mono">18:42</b></span></div>
+<div class="rn"><span class="chip st-done"><span class="dot"></span>Online</span><div class="nm">home server</div><span class="chip" style="color:#f7ce85;background:var(--warn-soft);border-color:rgba(245,181,66,.3)">⚠ not signed in</span><a href="#" style="font-size:12px">Fix</a></div>
+<div class="rn" style="opacity:.66"><span class="chip"><span class="dot" style="background:#6b7288"></span>Offline</span><div class="nm">macbook</div><span class="sub" style="font-size:11.5px">last seen 2 h ago · read-only</span></div>
+</div>
+
+<div class="wrap"><div class="col">
+<div class="hero"><div><h1 style="font-size:28px">Good afternoon</h1><div class="sub" style="margin-top:6px">One session needs a decision. One is napping until quota comes back.</div></div>
+<div class="kpis"><div class="kp"><div class="lbl">Running</div><div class="v">1</div></div><div class="kp"><div class="lbl">Spend today</div><div class="v">$4.12</div></div></div></div>
+
+<div class="qgroup"><div class="qhd"><h2>Needs you</h2><span class="ct">1</span><div class="divider" style="flex:1"></div></div>
+<div class="item need"><div class="body"><div class="ttl">Fix R195 null-language cluster</div><div class="whr"><span class="chip st-ask"><span class="dot"></span>Bash</span>wants to run · asked 40s ago</div><div class="cmd">git push origin main</div><div class="whr" style="margin-top:11px">in <b>jellystructure</b> on <b>dev box</b> · Normal profile</div></div><div class="acts" style="flex-direction:column"><button class="btn pri" style="width:118px">Allow</button><button class="btn" style="width:118px">Deny…</button></div></div></div>
+
+<div class="qgroup"><div class="qhd"><h2>Resting</h2><span class="ct">1</span><div class="divider" style="flex:1"></div><span class="sub" style="font-size:12px">picks itself back up</span></div>
+<div class="item rest"><div class="body"><div class="ttl">Migrate systemd units to quadlet</div><div class="whr">in <b>dotfiles</b> on <b>dev box</b> · 23 turns · $2.06 · Autonomous</div><div class="tick"><i></i></div><div class="whr" style="margin-top:9px;font-size:12px">Hit the <b>5-hour</b> window at 13:37 — nothing is wrong, it’s waiting for the reset.</div></div>
+<div class="acbox"><div class="sw on"></div><div>Auto-continue<br><b>armed</b></div></div>
+<div class="clock"><span class="chip st-nap"><span class="dot"></span>Paused · quota</span><div class="t">18:42</div><div class="u">in 4 h 12 m</div></div></div></div>
+
+<div class="qgroup"><div class="qhd"><h2>Working</h2><span class="ct">1</span><div class="divider" style="flex:1"></div></div>
+<div class="item"><div class="body"><div class="ttl">Wire Bazarr wanted-list pagination</div><div class="whr">in <b>jellystructure</b> on <b>dev box</b> · 12 turns · $1.84</div><div class="whr" style="margin-top:7px;font-size:12px;color:var(--ink-dim)">↳ reading <span class="mono">src/subtitles/WantedList.kt</span></div></div>
+<div class="acbox"><div class="sw"></div>Auto-continue</div>
+<div class="clock"><span class="chip st-run"><span class="dot"></span>Running</span><div class="u" style="margin-top:8px">active now</div></div>
+<div class="acts"><button class="btn sm">Interrupt</button><button class="btn sm">Open</button></div></div></div>
+
+<div class="qgroup"><div class="qhd"><h2>Needs a decision from you later</h2><span class="ct">1</span><div class="divider" style="flex:1"></div></div>
+<div class="item" style="border-color:rgba(255,111,97,.3)"><div class="body"><div class="ttl">Tizen build verification pass</div><div class="whr">in <b>ravilo-tizen</b> on <b>macbook</b> · stopped at its 30-turn cap · $3.40</div><div class="whr" style="margin-top:7px;font-size:12px;color:var(--ink-dim)">Not a quota pause — auto-continue won’t touch this one.</div></div>
+<div class="clock"><span class="chip st-err"><span class="dot"></span>Stopped · max turns</span><div class="u" style="margin-top:8px">1 h ago</div></div>
+<div class="acts"><button class="btn sm">Raise cap</button><button class="btn sm">Resume +20</button></div></div></div>
+
+<div class="qgroup"><div class="qhd"><h2>Settled</h2><span class="ct">1</span><div class="divider" style="flex:1"></div><a href="#" style="font-size:12.5px">All sessions →</a></div>
+<div class="settled"><div class="pill"><span class="chip st-done"><span class="dot"></span>Done</span>Audit WireGuard peer config<span class="m">homelab-infra · 9 turns · $0.42 · yesterday</span><button class="btn sm ghost">Fork</button></div></div></div>
+</div></div>
+</div>
+</body></html>
