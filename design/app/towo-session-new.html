@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Towo — New session</title>
+<link rel="stylesheet" href="wf.css">
+<link rel="stylesheet" href="app.css">
+<link rel="stylesheet" href="towo.css">
+<style>
+.wrap{display:grid;grid-template-columns:1fr 316px;gap:20px;max-width:1060px}
+.panel{padding:24px 26px;border-radius:var(--radius);background:var(--card-bg);border:1px solid var(--line);backdrop-filter:var(--blur);box-shadow:var(--shadow-s)}
+.stack{display:flex;flex-direction:column;gap:20px}
+.wsrow{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.wsp{padding:12px 14px;border-radius:12px;background:var(--fill-2);border:1px solid var(--line);cursor:pointer}
+.wsp.on{border-color:rgba(123,110,240,.55);background:rgba(123,110,240,.1)}
+.wsp .t{font-family:'JetBrains Mono',monospace;font-size:12.5px;font-weight:600}
+.wsp .d{font-size:12px;color:var(--ink-soft);margin-top:4px}
+.wsp.dis{opacity:.7;cursor:not-allowed}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.cap{display:flex;align-items:center;gap:10px;padding:11px 13px;border-radius:11px;background:var(--fill-2);border:1px solid var(--line)}
+.cap input{width:66px;background:transparent;border:none;color:var(--ink);font:inherit;font-family:'JetBrains Mono',monospace;font-size:14px;text-align:right}
+.armbox{padding:16px 18px;border-radius:14px;background:var(--fill-2);border:1px solid var(--line)}
+.armbox.on{background:rgba(123,110,240,.09);border-color:rgba(123,110,240,.4)}
+.side2 .blk{padding:16px 17px;border-radius:14px;background:var(--fill-2);border:1px solid var(--line);margin-bottom:12px}
+.side2 .blk h3{font-size:13.5px;margin-bottom:9px}
+.side2 p{font-size:12.5px;color:var(--ink-soft);line-height:1.6;margin:0}
+.rule{display:flex;gap:9px;align-items:baseline;font-size:12.5px;color:var(--ink-soft);padding:5px 0}
+.rule .mono{color:var(--ink);font-size:11.5px}
+</style>
+</head>
+<body class="wf-body app-body">
+<main class="app-main2 wide towo" data-page="towo-overview" data-screen-label="Towo · New session">
+<div class="crumb"><a href="towo-sessions.html">Sessions</a> › <span style="color:var(--ink-soft)">New</span></div>
+<div class="top"><div><h1>Start a session</h1><div class="sub" style="margin-top:5px">It runs on the host, in the folder you pick, under the rules you pick.</div></div></div>
+
+<div class="wrap"><div class="panel stack">
+<div class="field"><div class="lbl">Where it runs</div>
+<div class="wsrow">
+<div class="wsp on"><div class="t">jellystructure</div><div class="d">dev box · ~/IdeaProjects/jellystructure</div></div>
+<div class="wsp"><div class="t">dotfiles</div><div class="d">dev box · ~</div></div>
+<div class="wsp"><div class="t">homelab-infra</div><div class="d">dev box · ~/infra</div></div>
+<div class="wsp dis"><div class="t">ravilo-tizen</div><div class="d">macbook · offline — can’t start here</div></div>
+</div></div>
+
+<div class="field"><div class="lbl">What it should do</div>
+<textarea class="ta" placeholder="Describe the task the way you'd tell a colleague…">Finish the Bazarr wanted-list pagination: debounce the search, page the fetch at 200 items, and keep the facet counts accurate. Run the linuxX64 tests before you call it done.</textarea>
+<div class="hint">You can keep talking to it while it works.</div></div>
+
+<div class="field"><div class="lbl">Permission profile</div>
+<div class="pickrow" style="flex-wrap:wrap">
+<div class="pick" style="flex:1 1 46%"><div class="t">Read-only</div><div class="d">Reads, greps, globs. Never asks, never writes.</div></div>
+<div class="pick on" style="flex:1 1 46%"><div class="t">Normal <span class="chip st-ask" style="height:20px">default</span></div><div class="d">Scoped allows for tests and status; writes and pushes ask you.</div></div>
+<div class="pick" style="flex:1 1 46%"><div class="t">Autonomous</div><div class="d">Accepts its own edits; asks only on destructive commands.</div></div>
+<div class="pick" style="flex:1 1 46%"><div class="t" style="color:#ffb3aa">Unrestricted</div><div class="d">Never asks. Deliberate opt-in, one session at a time.</div></div>
+</div></div>
+
+<div class="two">
+<div class="field"><div class="lbl">Model</div><select class="sel"><option>Sonnet — default</option><option>Opus</option><option>Haiku</option></select></div>
+<div class="field"><div class="lbl">Effort</div><div class="seg" style="width:100%"><button>Low</button><button class="on">Medium</button><button>High</button></div></div>
+<div class="field" style="grid-column:span 2"><div class="lbl">Stop after</div><div class="cap"><span class="sub" style="flex:1">turns</span><input value="40"></div><div class="hint" style="margin-top:6px">Prefilled from the global default in <a href="settings.html?tab=towo">Settings → Towo</a>. Change it here and it applies to this session only — and you can still change it mid-run from the session itself.</div><div class="hint" style="margin-top:7px">A <b style="color:var(--ink)">turn</b> is one round-trip: Claude thinks, runs whatever tools it needs, then comes back with an answer. It’s Claude’s own unit of work, not something Towo invented. A task like this one usually takes 10–20. The cap only exists so a session that gets stuck in a loop stops and asks you instead of running all night — you can always give it more.</div></div>
+</div>
+
+<div class="armbox"><div style="display:flex;align-items:center;gap:13px"><div class="sw"></div><div style="flex:1"><div style="font-size:14px;font-weight:600">Continue after a quota reset</div><div class="hint" style="margin-top:5px">Off. If the 5-hour or weekly window runs out mid-task, the session waits and you decide when it picks back up.</div></div></div>
+<div class="divider" style="margin:14px 0"></div>
+<div class="hint">Turn it on and Towo checks every <b style="color:var(--ink)">6 hours</b>, finds sessions paused on quota, and tells each one to carry on — using the reset time Claude reported, not a guess. It never touches a session that stopped for any other reason.</div></div>
+
+<div style="display:flex;gap:10px;align-items:center"><a class="btn pri" style="height:42px;padding:0 22px" href="towo-session.html">Start session</a><button class="btn" style="height:42px">Save as a preset</button><span class="hint" style="margin-left:auto">Runs on <b style="color:var(--ink)">dev box</b> · 62% of the 5-hour window used · 41% of the week</span></div>
+</div>
+
+<div class="side2">
+<div class="blk"><h3>What “Normal” actually permits</h3>
+<div class="rule"><span class="chip st-done" style="height:20px">auto</span><span><span class="mono">Read · Glob · Grep</span> — never asks</span></div>
+<div class="rule"><span class="chip st-done" style="height:20px">auto</span><span class="mono">Bash(git status), Bash(./gradlew test)</span></div>
+<div class="rule"><span class="chip st-ask" style="height:20px">asks</span><span class="mono">Edit(src/**), Write</span></div>
+<div class="rule"><span class="chip st-ask" style="height:20px">asks</span><span class="mono">Bash(git push *), Bash(rm *)</span></div>
+<p style="margin-top:10px">Anything not listed asks. Approvals reach your phone.</p></div>
+<div class="blk"><h3>Runner health</h3><p><b style="color:var(--ink)">dev box</b> · online · SDK 2.1.49<br>5-hour window resets <b class="mono" style="color:var(--acc-ink)">18:42</b></p><div class="gauge" style="margin-top:11px"><i style="width:62%"></i></div></div>
+<div class="blk"><h3>Where the transcript lives</h3><p>Towo keeps its own copy, so this session stays readable if dev box goes offline — and can be resumed from another runner later.</p></div>
+</div></div>
+</main>
+<script src="app-shell.js"></script>
+</body>
+</html>
