@@ -439,3 +439,30 @@ non-goal intact.
 
 Verified via all 5 Ravilo compile targets. Still not live-retested on the Pixel 9 after this fix
 (deploy is user-initiated).
+
+### A real §3.8 gap found via live testing on stue TV (fixed same day)
+Reported live with a photo: level 2 for "It's Always Sunny in Philadelphia" S03E03's English audio
+showed **two identical rows** — both named "English", both reading "The full version of everything
+spoken.", no way to tell them apart. This is exactly the §3.8 hard-floor case the spec calls out — but
+`isUnnamed` (the flag meant to catch it) never fired, because `isUnnamed` required **no title text at
+all** on every version. These two tracks evidently both carry SOME non-blank title (just not
+informative enough to classify a `kind`/region) — so `hadTitleText` was true for both, `isUnnamed`
+stayed false, and nothing downstream ever disambiguated them.
+
+Root cause: `ordinal`/cluster membership were computed across the **entire flattened group**, not per
+`(kind, region)` cluster — so there was no reliable "these N versions are genuinely indistinguishable"
+signal available at the row level, only the too-narrow whole-group `isUnnamed` flag.
+
+Fixed: `PickerVersion` gained `clusterSize` (previously `ordinal` was miscounted across the whole
+group, not scoped to its own cluster — fixed in the same pass, since `clusterSize` needs a correctly
+cluster-scoped `ordinal` to mean anything). Any version whose `(kind, region)` cluster has 2+ members
+— independent of the whole-group `isUnnamed` flag, which only covers the narrower "nothing at all is
+knowable" case — now gets an explicit `" · {ordinal+1}/{clusterSize}"` suffix appended to its name
+(new string `player.variant_ordinal_suffix`), and the selected one in an ambiguous cluster also earns
+the "Now showing" badge (previously `isUnnamed`-only). This generalizes cleanly to any kind, not just
+plain tracks — two indistinguishable commentary tracks would hit the identical bug and get the same
+fix. The kind-specific sentence (e.g. "A recorded commentary on this title.") is deliberately left
+as-is rather than swapped for a generic one — it's still accurate for an ambiguous version, the
+ordinal is what was missing, not the sentence.
+
+Verified via all 5 Ravilo compile targets. Not yet live-retested (deploy is user-initiated).

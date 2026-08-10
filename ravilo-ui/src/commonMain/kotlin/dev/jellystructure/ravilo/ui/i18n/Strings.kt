@@ -225,6 +225,7 @@ private val EN = mapOf(
     "player.variant_region" to "The {region} version.",
     "player.variant_no_distinguishing_data" to "This one carries no name of its own — pick it to see it.",
     "player.picker_preview_hint" to "Moving down the list previews each one",
+    "player.variant_ordinal_suffix" to "{name} · {n}/{total}",
     // R182 — Skip Intro / Skip Credits
     "player.skip_intro"   to "Skip Intro",
     "player.credits_kicker" to "Credits",
@@ -466,6 +467,7 @@ private val DA = mapOf(
     "player.variant_region" to "{region}-versionen.",
     "player.variant_no_distinguishing_data" to "Denne har intet navn — vælg den for at se den.",
     "player.picker_preview_hint" to "At bevæge sig ned ad listen forhåndsviser hver enkelt",
+    "player.variant_ordinal_suffix" to "{name} · {n}/{total}",
     // R182 — Skip Intro / Skip Credits
     "player.skip_intro"   to "Spring intro over",
     "player.credits_kicker" to "Rulletekster",
@@ -707,6 +709,7 @@ private val FO = mapOf(
     "player.variant_region" to "{region}-útgávan.",
     "player.variant_no_distinguishing_data" to "Hendan hevur einki navn — vel hana fyri at síggja hana.",
     "player.picker_preview_hint" to "At flyta niður listan forsýnir hvørja fyri seg",
+    "player.variant_ordinal_suffix" to "{name} · {n}/{total}",
     // R182 — Skip Intro / Skip Credits
     "player.skip_intro"   to "Sleppa intro",
     "player.credits_kicker" to "Eftirtekstir",
