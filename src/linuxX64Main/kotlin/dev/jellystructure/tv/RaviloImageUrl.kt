@@ -17,4 +17,7 @@ object RaviloImageUrl {
         return if (epNum != null) "$base?ep=$epNum" else base
     }
     fun avatar(userId: String)   = "/api/tv/image/user/$userId/avatar"
+    /** R194 — a season's own poster; 404s when the season has no poster on disk (client falls back to
+     *  [poster], the series' own). */
+    fun seasonPoster(seriesId: String, season: Int) = "/api/tv/image/$seriesId/season/$season/poster"
 }

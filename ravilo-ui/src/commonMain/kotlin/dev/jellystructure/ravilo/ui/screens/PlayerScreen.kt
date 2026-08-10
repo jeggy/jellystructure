@@ -1,6 +1,7 @@
 package dev.jellystructure.ravilo.ui.screens
 
 import dev.jellystructure.ravilo.ui.LocalPlaystateCommands
+import dev.jellystructure.ravilo.ui.LocalServerBaseUrl
 import dev.jellystructure.ravilo.ui.components.EpisodeTriptych
 import dev.jellystructure.ravilo.ui.components.LANG_CC
 import androidx.compose.animation.AnimatedVisibility
@@ -192,6 +193,12 @@ fun PlayerScreen(
 ) {
     val colors = RaviloTheme.colors
     val sessionState by store.state.collectAsState()
+    // R194 — resolves a relative /api/tv/image/... path (season/series poster) against the server base
+    // URL, same rule RemoteImage applies for on-screen art. Needed here separately because the OS media
+    // session's artwork URI is handed straight to the platform player, bypassing Coil entirely.
+    val serverBaseUrl = LocalServerBaseUrl.current
+    fun resolveImageUrl(url: String?): String? =
+        url?.let { if (it.startsWith("/") && serverBaseUrl.isNotBlank()) "$serverBaseUrl$it" else it }
 
     // Bug fix: the poll loop below is a LaunchedEffect(Unit) that's deliberately never restarted
     // across an episode transition (see loadedForItemId's comment — same underlying `player`
@@ -598,10 +605,13 @@ fun PlayerScreen(
         val s = sessionState as? PlayerSessionState.Ready ?: return@LaunchedEffect
         val streamUrl = s.ticket.hlsUrl
             ?: "${s.ticket.jellyfinBaseUrl}/Videos/${s.ticket.itemId}/stream.${s.ticket.container}?api_key=${s.ticket.accessToken}"
-        // R192 — feed title/episode-kicker/artwork into the OS media session (TV-only; see
-        // RaviloPlayer.load doc). `episodes[currentEpIndex]`'s still takes priority over `posterUrl`
-        // (a movie has no `episodes` list at all, so falls straight through to `posterUrl`).
-        val artworkUrl = episodes?.getOrNull(currentEpIndex)?.stillUrls?.firstOrNull() ?: posterUrl
+        // R192/R194 — feed title/episode-kicker/artwork into the OS media session (TV-only; see
+        // RaviloPlayer.load doc). Artwork prefers the current episode's SEASON poster over an episode
+        // still (season art reads better at media-session size); falls back to the series' own poster
+        // when this season has none, then the movie-path `posterUrl` (no `episodes` list at all).
+        // `posterUrl` already carries the series' own poster for episodes (threaded from
+        // EpisodePlayContext.seriesPosterUrl) or the movie's poster for movies — a single fallback.
+        val artworkUrl = resolveImageUrl(episodes?.getOrNull(currentEpIndex)?.seasonPosterUrl ?: posterUrl)
         player.load(streamUrl, s.ticket.startPositionMs, s.ticket.subtitles, s.ticket.audio, title = itemTitle, subtitle = itemKicker, artworkUrl = artworkUrl)
         player.play()
         isPlaying = true

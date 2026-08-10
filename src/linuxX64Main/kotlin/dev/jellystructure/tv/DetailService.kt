@@ -3,6 +3,7 @@ package dev.jellystructure.tv
 import dev.jellystructure.auth.DeviceData
 import dev.jellystructure.auth.JellyfinClient
 import dev.jellystructure.config.ConfigStore
+import dev.jellystructure.media.ArtworkDownloader
 import dev.jellystructure.media.DuplicateEpisodes
 import dev.jellystructure.media.MediaStore
 import dev.jellystructure.media.visibleTo
@@ -39,6 +40,7 @@ class DetailService(
     private val mediaStore: MediaStore,
     private val jellyfinClient: JellyfinClient,
     private val configStore: ConfigStore,
+    private val artwork: ArtworkDownloader,
 ) {
     suspend fun getMovieDetail(device: DeviceData, jellyfinId: String): MovieDetail? {
         val item = mediaStore.resolveByJellyfinId(jellyfinId) ?: return null
@@ -118,7 +120,15 @@ class DetailService(
             }
             // Last line of defence: whatever the metadata says, two episodes with the same id can never
             // reach a client — that is exactly what made the player's next-up card re-fire forever.
-            Season(index = seasonNum, name = seasonName, episodes = tvEpisodes.distinctBy { it.id })
+            Season(
+                index = seasonNum,
+                name = seasonName,
+                episodes = tvEpisodes.distinctBy { it.id },
+                // R194: null (not a URL that would 404) when this season has no poster on disk, so the
+                // client can do a plain `season.posterUrl ?: card.posterUrl` fallback — same pattern as
+                // every other image field here — with no need to speculatively probe for a 404.
+                posterUrl = if (artwork.checkSeasonPoster(item, seasonNum)) RaviloImageUrl.seasonPoster(item.id, seasonNum) else null,
+            )
         }
 
         // Use the first episode's scanned tracks for flag strips (no extra Jellyfin round-trip).

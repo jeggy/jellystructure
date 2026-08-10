@@ -190,7 +190,8 @@ private fun buildEpisodeContext(
     epId: String,
     overlay: Map<String, CardPlayState> = emptyMap(),
 ): EpisodePlayContext {
-    val sNum = detail.seasons.getOrNull(seasonIdx)?.index ?: (seasonIdx + 1)
+    val season = detail.seasons.getOrNull(seasonIdx)
+    val sNum = season?.index ?: (seasonIdx + 1)
     val groups = episodeGroups(episodes)
     val groupIdx = groups.indexOfFirst { g -> g.any { it.id == epId } }.coerceAtLeast(0)
     val group = groups.getOrElse(groupIdx) { groups.firstOrNull() ?: episodes.take(1) }
@@ -225,12 +226,14 @@ private fun buildEpisodeContext(
                 // entirely (PipelineStepOps.detectSegments), so this is empty/default in practice today —
                 // forward-compatible for whenever that scope limitation is lifted.
                 segments      = g.last().segments,
+                seasonPosterUrl = season?.posterUrl,  // R194
             )
         },
         currentEpIndex = groupIdx,
         seriesId = detail.card.id,
         originalLanguage = detail.originalLanguage,
         segments = ep.segments,  // Phase 150 — the CURRENTLY PLAYING episode's own segments
+        seriesPosterUrl = detail.card.posterUrl,  // R194
     )
 }
 

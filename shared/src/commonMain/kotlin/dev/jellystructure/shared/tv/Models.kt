@@ -373,6 +373,9 @@ data class Season(
     val index: Int,
     val name: String,
     val episodes: List<Episode>,
+    /** R194 — this season's own poster URL. The client 404s through to the series' own [MediaCard.posterUrl]
+     *  when this season has none on disk (never guaranteed non-null/non-404, unlike other image URLs here). */
+    @SerialName("poster_url") val posterUrl: String? = null,
 )
 
 @Serializable
