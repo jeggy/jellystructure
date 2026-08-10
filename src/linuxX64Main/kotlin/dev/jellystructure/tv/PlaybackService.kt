@@ -235,19 +235,11 @@ class PlaybackService(
         // Start a Jellyfin playback session so the server tracks Now Playing + resume
         jellyfinClient.startPlaybackSession(jellyfinBase, token, jellyfinId, startPositionTicks, jellyfinId, identity, playSessionId)
 
-        // Build the external-subtitle list from Jellyfin's MediaStreams for THIS playable item
-        // (works for movies + episodes; embedded subs are discovered in-container by the player).
-        val subtitles = buildSubtracks(itemDetail, jellyfinId, jellyfinBase, token)
-
-        // Audio-track metadata (R46): the player labels embedded audio from the container, which often
-        // lacks a track title — so carry Jellyfin's rich DisplayTitle (e.g. "Synstolkning") through the
-        // ticket. Order matches the container's audio-stream order so the player can map by index.
-        val audio = buildAudioTracks(itemDetail)
-
         // R56: negotiate delivery via PlaybackInfo + DeviceProfile. Jellyfin tells us whether the item
         // can direct-play; if not, it hands back a TranscodingUrl. Fall back to a direct-play URL.
         // Bug fix: [capabilities] used to be discarded here — an HDR10/HLG source always direct-played
         // regardless of what the device could actually display correctly (see deviceProfile()'s doc).
+        // Phase 161: moved before buildSubtracks() below — it now needs to know `needsTranscode`.
         val source = jellyfinClient.getPlaybackInfo(jellyfinBase, token, device.jellyfinUserId, jellyfinId, capabilities = capabilities, identity = identity)
             ?.mediaSources?.firstOrNull()
         val needsTranscode = source != null && !source.supportsDirectPlay && source.transcodingUrl != null
@@ -255,6 +247,21 @@ class PlaybackService(
             "PlaybackInfo: item=$jellyfinId directPlay=${source?.supportsDirectPlay} transcode=$needsTranscode",
             "tv",
         )
+
+        // Build the subtitle list from Jellyfin's MediaStreams for THIS playable item. Phase 161: only
+        // sideload a text subtitle (SRT/ASS/SSA) as an extracted VTT when the file is actually
+        // transcoding OR the client hasn't confirmed it can render embedded text subs in-container —
+        // on a direct-played file, a client that CAN (embedTextSubs=true) already gets that exact
+        // stream natively from the container (MatroskaExtractor), so sideloading it too used to
+        // double-deliver every text subtitle (see buildSubtracks' own doc).
+        val embedTextSubs = !needsTranscode && capabilities.supportsEmbeddedTextSubs
+        val subtitles = buildSubtracks(itemDetail, jellyfinId, jellyfinBase, token, embedTextSubs)
+
+        // Audio-track metadata (R46): the player labels embedded audio from the container, which often
+        // lacks a track title — so carry Jellyfin's rich DisplayTitle (e.g. "Synstolkning") through the
+        // ticket. Order matches the container's audio-stream order so the player can map by index.
+        val audio = buildAudioTracks(itemDetail)
+
         val streamUrl = if (needsTranscode) {
             val tu = source.transcodingUrl
             if (tu.startsWith("http")) tu else "$jellyfinBase$tu"
@@ -444,11 +451,23 @@ class PlaybackService(
 
     // ─── Helpers ──────────────────────────────────────────────────────────────
 
+    /**
+     * Phase 161: [embedTextSubs] — when true, a text subtitle (SRT/ASS/SSA) is declared `"embed"`
+     * (`url = null`) instead of sideloaded, because the caller has already confirmed BOTH that the
+     * file is direct-playing (so the container the client receives genuinely still carries this exact
+     * stream) AND that the client can render it natively from there (`ClientCapabilities.
+     * supportsEmbeddedTextSubs`). Bug fix: R55 originally sideloaded every text subtitle
+     * unconditionally — correct when the player had no in-container text-track rendering at all, but
+     * once a client's `MatroskaExtractor` also parses the same embedded stream, sideloading it too
+     * double-delivers it (visible in R195's picker as e.g. two identical "English" rows; R183 also
+     * attributed a multi-minute Jellyfin ffmpeg VTT-extraction stall to this on large titles).
+     */
     private fun buildSubtracks(
         itemDetail: JellyfinItemDetail?,
         jellyfinId: String,
         jellyfinBase: String,
         token: String,
+        embedTextSubs: Boolean,
     ): List<SubTrack> {
         val streams = itemDetail?.mediaStreams ?: return emptyList()
         return streams
@@ -456,6 +475,17 @@ class PlaybackService(
             .mapNotNull { s ->
                 val codec = s.codec?.lowercase()
                 when {
+                    // Phase 161: this exact stream is already natively available in-container — never
+                    // ALSO sideload it (see this function's own doc).
+                    (s.isTextSubtitleStream || isTextSubCodec(s.codec)) && embedTextSubs -> SubTrack(
+                        index = s.index,
+                        language = s.language,
+                        label = s.displayTitle ?: s.title,
+                        forced = s.isForced,
+                        isDefault = s.isDefault,
+                        url = null,
+                        deliveryMethod = "embed",
+                    )
                     // R55: text subs (SRT/ASS/SSA/VTT/muxed) — sideloaded via Jellyfin's VTT extractor.
                     s.isTextSubtitleStream || isTextSubCodec(s.codec) -> SubTrack(
                         index = s.index,
@@ -504,7 +534,10 @@ class PlaybackService(
             ?: throw JellyfinReauthRequiredException("This device's Jellyfin sign-in has expired — re-pair it to continue watching.")
         val identity = JellyfinDeviceIdentity.forDevice(device)
         val itemDetail = jellyfinClient.getItemDetail(jellyfinBase, token, device.jellyfinUserId, jellyfinId)
-        val subtitles = buildSubtracks(itemDetail, jellyfinId, jellyfinBase, token)
+        // Phase 161: always false here — restream() forces a transcode (directPlay = false below), and
+        // a transcoded output doesn't carry the source's original embedded subtitle streams, so there's
+        // nothing to double by sideloading; this path's text subs were never affected by the bug.
+        val subtitles = buildSubtracks(itemDetail, jellyfinId, jellyfinBase, token, embedTextSubs = false)
         val audio = buildAudioTracks(itemDetail)
         // R56: ask Jellyfin (PlaybackInfo + DeviceProfile, with the sub index for Encode burn-in) for the
         // real TranscodingUrl; fall back to a hand-built HLS burn-in URL if PlaybackInfo is unavailable.
