@@ -1,8 +1,9 @@
 # Phase 162 — Towo: a self-hosted control plane for Claude Code sessions (FR-TOWO1)
 
-**Status:** Planned — design-complete 2026-08-10, **dev-reviewed 2026-08-11** (see the addendum at the
-end: three real build-config/incident-precedent gaps found and closed, two protocol details made
-explicit, two open questions added). Not yet implemented.
+**Status:** Planned → **implementation started 2026-08-11** (`towo-runner/` v1: build-order steps 1–2
+done — see §9). Dev-reviewed 2026-08-11 (see the addendum at the end: three real build-config/
+incident-precedent gaps found and closed, two protocol details made explicit). Open questions §10.1–2
+resolved the same day against the pinned SDK's real types; not yet implemented beyond the runner.
 **Date:** 2026-08-10
 **Research basis:** `specs/research-reports/claude-code-remote-agent-management-2026-08-10.md`
 (doc-verified; §11 of that report lists the integration unknowns that must be pinned before build).
@@ -293,9 +294,14 @@ asked. Keep Direction B on file if session counts ever grow past a screenful.
 
 ## 9. Build order
 
-1. Runner v1: Agent SDK host + `--root` allow-list, one hardcoded session, streaming to stdout.
-2. **Capture a real `rate_limit_event`** and pin the parser to its actual shape — the whole headline
-   feature depends on it.
+1. ✅ **Done 2026-08-11.** Runner v1 (`towo-runner/`): Agent SDK host + `--root` allow-list + folder
+   discovery, one hardcoded session, streaming to stdout, `canUseTool` deny-all — all confirmed live
+   against this machine's real Claude Code auth (folder discovery, streamed assistant text, a real
+   `Write` call correctly denied and the file confirmed never created).
+2. ✅ **Done 2026-08-11**, opportunistically, as part of step 1. Captured a real `rate_limit_event` and
+   pinned the parser to its actual shape (§10.2) — every event is now logged verbatim to
+   `~/.towo-runner/rate-limit-events.jsonl` on every run, so more real payloads accumulate as the
+   runner gets used.
 3. Control plane v1: outbound WS transport, session index, create-session + stream.
 4. Enrollment and pairing (token mint/exchange, `npx` distribution).
 5. `SessionStore` — history in the UI, survives runner restarts, unlocks cross-runner resume.
@@ -309,13 +315,28 @@ Steps 1–3 retire the risk; the rest is conventional product work.
 
 ## 10. Open questions (must be settled before building the marked parts)
 
-1. **`canUseTool`'s signature differs between doc sources** (`(request,{signal})` vs
-   `(toolName,input,{signal,suggestions})`) — almost certainly an SDK-version difference. **Pin the SDK
-   version and verify against its own `.d.ts` before writing this callback.** It is the most important
-   integration point in the design (§D).
-2. **`rate_limit_event` is undocumented in the official reference.** Field names are community-verified
-   from real payloads and may drift; a Python-SDK bug class made it terminate the message generator in
-   some versions. Blocks §E until a real event is captured.
+1. ~~**`canUseTool`'s signature differs between doc sources**~~ **RESOLVED 2026-08-11.** Pinned to
+   `@anthropic-ai/claude-agent-sdk@0.3.227`, read directly from its `sdk.d.ts`, and confirmed live via
+   `towo-runner` v1: `(toolName, input, {signal, suggestions?, blockedPath?, decisionReason?, title?,
+   displayName?, description?, toolUseID, agentID?, requestId}) => PermissionResult | null`. `title`/
+   `displayName`/`requestId` are real and populated exactly as documented — confirmed live against a
+   `Write` call. **Design upgrade found in the process**: returning `null` tells the SDK the
+   `control_response` was already sent out-of-band (echoing `requestId`) — this is a first-class
+   supported mechanism for §D's remote/phone approval, not something the runner needs to fake by
+   holding the callback's promise open. **No built-in timeout** — an accidental `null` with nothing
+   sent leaves the tool blocked forever; §D's "long timeout that denies" is entirely the runner's own
+   responsibility. Full facts: [[reference-claude-agent-sdk-facts]] memory / `towo-runner/README.md`.
+2. ~~**`rate_limit_event` is undocumented in the official reference**~~ **RESOLVED 2026-08-11.**
+   Confirmed real, camelCase (`resetsAt`/`rateLimitType`, not the snake_case first guessed from
+   WebSearch), part of the stable `SDKMessage` union, and captured live from a real session:
+   `{"status":"allowed_warning","resetsAt":1786604400,"rateLimitType":"seven_day","utilization":0.83,
+   "isUsingOverage":false,"surpassedThreshold":0.75}`. `resetsAt` is unix-seconds; `utilization` is a
+   **0–1 fraction, not 0–100** (correction from the first pass). This capture is itself a live
+   confirmation that the currently-active bucket is `seven_day`, not `five_hour` — the "never hardcode
+   5 hours" principle in §E is not hypothetical for this account. A separate, richer per-bucket
+   snapshot method now exists (`usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET`) but is
+   explicitly marked unstable by its own name — §E's quota widgets should stay built on the pushed
+   `rate_limit_event`, not that method, until it graduates out of the experimental name.
 3. **Subscription vs API key** (§A) — decides whether §E exists at all.
 4. **Unattended OAuth on a headless host.** Subscription auth is an interactive login; how it behaves
    over long periods on a server (refresh/expiry) is a genuine operational unknown and a plausible
