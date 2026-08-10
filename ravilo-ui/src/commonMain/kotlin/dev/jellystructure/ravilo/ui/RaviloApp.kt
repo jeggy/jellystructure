@@ -953,6 +953,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                             seriesId      = ctx.seriesId,
                             originalLanguage = ctx.originalLanguage,
                             segments      = ctx.segments,  // Phase 150
+                            posterUrl     = ctx.seriesPosterUrl,  // R194
                         ))
                     },
                     onRelatedSelect = { openDetail(it, dest.displayName) },
@@ -1027,6 +1028,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                             // must NOT inherit the outgoing episode's (a stale credits marker would fire
                             // the next-up countdown from the start of the new stream).
                             segments         = newEp?.segments ?: dev.jellystructure.shared.tv.TvSegmentMarkers(),
+                            posterUrl        = dest.posterUrl,  // R194 — same series poster fallback for the whole binge
                         ))
                     },
                 )

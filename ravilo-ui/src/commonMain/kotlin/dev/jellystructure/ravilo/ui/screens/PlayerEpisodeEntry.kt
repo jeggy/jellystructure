@@ -19,6 +19,10 @@ data class PlayerEpisodeEntry(
     val stillUrls: List<String?>,
     /** Phase 150 — this entry's own intro/credits segments (R182 Skip Intro / Skip Credits). */
     val segments: TvSegmentMarkers = TvSegmentMarkers(),
+    /** R194 — this entry's season's own poster URL (relative, like [stillUrls] — resolved against the
+     *  server base URL by the caller), for the player's OS media-session artwork. Null when the season
+     *  has no poster on disk; PlayerScreen falls back to the series' own poster in that case. */
+    val seasonPosterUrl: String? = null,
 )
 
 /** Context built by SeriesDetailScreen when the user selects Play on an episode. */
@@ -37,4 +41,7 @@ data class EpisodePlayContext(
     val originalLanguage: String? = null,
     /** Phase 150 — the CURRENTLY PLAYING episode's own segments (R182 Skip Intro / Skip Credits). */
     val segments: TvSegmentMarkers = TvSegmentMarkers(),
+    /** R194 — the series' own poster, for the player's OS media-session artwork fallback when the
+     *  current episode's season has no poster of its own (see PlayerEpisodeEntry.seasonPosterUrl). */
+    val seriesPosterUrl: String? = null,
 )
