@@ -1,6 +1,8 @@
 # Phase 162 — Towo: a self-hosted control plane for Claude Code sessions (FR-TOWO1)
 
-**Status:** Planned — design-complete 2026-08-10, **not yet dev-reviewed**.
+**Status:** Planned — design-complete 2026-08-10, **dev-reviewed 2026-08-11** (see the addendum at the
+end: three real build-config/incident-precedent gaps found and closed, two protocol details made
+explicit, two open questions added). Not yet implemented.
 **Date:** 2026-08-10
 **Research basis:** `specs/research-reports/claude-code-remote-agent-management-2026-08-10.md`
 (doc-verified; §11 of that report lists the integration unknowns that must be pinned before build).
@@ -324,3 +326,89 @@ Steps 1–3 retire the risk; the rest is conventional product work.
 ## Relationships
 **Standalone within this repo.** Depends on no phase and is depended on by none. Only shared
 surfaces are `app/app-shell.js` (one flag-gated nav group) and `app/settings.html` (one tab).
+
+---
+
+## Dev-review addendum (2026-08-11 — backend reality check before implementation starts)
+
+Reviewed against the real Ktor/linuxX64 backend and the wasmJs build pipeline, not just the design
+mockups. Three items are build-config gaps that have bitten this exact class of feature before and
+are fixed here pre-emptively; two are protocol details the design left implicit; two are new open
+questions.
+
+**1. `towo.css` is not in `syncDesignAssets`'s copy list — would ship with zero styling.**
+`build.gradle.kts`'s `syncDesignAssets` task (used by `runDev`) and the `wasmJsBrowserDistribution`
+`doLast` copy (used by Docker/production) both hardcode the same file list:
+`include("wf.css", "app.css", "detail.css", "metadata.css", "seeding.css", "seeding.js")`
+(`build.gradle.kts:267` and `:296`). `towo.css` is a **new** file and isn't in either list. This is
+the exact same gap that silently shipped Settings' age-rating cascade editor and the dashboard
+attention-breakdown grid with **zero CSS** in past phases (see the restoration comments in
+`design/app/wf.css` itself). **Fix required at build time, in both places** — missing one causes a
+dev/prod split where Towo looks fine locally and unstyled in the Docker image.
+
+**2. The runner↔control-plane WebSocket has no name or auth story in §6.** The API contract lists
+REST + the browser-facing `/api/towo/stream`, but §3's "runner dials out and keeps a reconnecting
+WebSocket open" names no endpoint. Needs an explicit route (e.g. `webSocket("/api/towo/runner")`)
+authenticated by the **runner's own long-lived credential** (§B), never the admin session cookie —
+mirroring how `/api/tv/events` authenticates TV devices on a separate identity from the admin app
+(`Server.kt:470`, via `tvEventBus.tryRegister`).
+
+**3. Both new WS handlers must follow this codebase's existing crash-safety shape from the first
+commit, not as a follow-up hardening pass.** An exception escaping a Ktor Native `webSocket{}` block
+crashes the *entire process* — not just that connection — on this server (a real prior incident, not
+a theoretical concern). The fix is already established practice here: `Server.kt:434` (`/ws`) and
+`Server.kt:470` (`/api/tv/events`) both wrap their whole read loop in
+`try { … } catch (e: CancellationException) { … } catch (e: Throwable) { … }`. `/api/towo/stream` and
+the new runner-transport endpoint (item 2) must be written the same way from day one — a Towo session
+misbehaving must never be able to take down media playback for every other user.
+
+**4. The runner's outbound connection needs an explicit infinite/long timeout — the shared
+`HttpClient` default will silently truncate it.** This codebase hit this exact bug once already:
+the shared client's blanket `HttpTimeout` (10s, meant for ordinary REST calls) also quietly bounded
+`/api/tv/events`, a long-lived WS, causing TVs to reconnect and drop playback roughly every 10
+seconds until a per-request `INFINITE_TIMEOUT_MS` override was added. The runner's connection to the
+control plane is architecturally identical — a long-lived socket riding infrastructure sized for
+short calls — and needs the same explicit override from the start, on whichever client library the
+runner daemon uses.
+
+**5. Confirmed: the runner must stay a fully separate process from `linuxX64Main`, never folded in
+"for simplicity."** §3 already implies this and nothing here changes that — recorded as an explicit
+guard rail because the failure mode is a known one on this backend: ffmpeg/ffprobe `popen()` calls
+once shared the same dispatcher as API request-handling and could stall the entire admin site under
+load, fixed by moving them to their own thread pool. One `claude` CLI subprocess per session is the
+same shape of risk (long-lived, I/O-heavy child processes) and must never compete with jellystructure's
+own request handling for a dispatcher.
+
+**6. `quota_status` and the live message stream must not be built as rewrite-the-whole-file-per-event
+persistence.** `rate_limit_event` fires continuously per §E, and the session view streams per-turn —
+both are high-frequency-write shapes. This codebase already found, the hard way, that an unthrottled
+full-file rewrite per log line (`ActivityLog.log()`) was the single dominant cause of a real
+site-wide slowness incident during a heavy scan. Whatever backs `quota_status` and the live
+transcript needs append/indexed writes, not that pattern.
+
+**7. Towo's REST/WS routes sit behind the existing admin-session auth, not a new auth layer.** §2
+already says "same session as the admin app" as a non-goal boundary (not multi-user); this just makes
+explicit that `/api/towo/*` should reuse the same auth middleware protecting the rest of `/api/*`
+rather than anything bespoke.
+
+**8. Permission-decision delivery path made explicit, plus a genuinely unaddressed edge case.** §D
+describes the runner suspending `canUseTool` and awaiting a decision, but not how the decision
+physically gets there: a phone's `POST /api/towo/permissions/:id` must be forwarded down the *same*
+already-open runner-transport connection (item 2), keyed by session + request id, to unblock that
+specific suspended call — it cannot be resolved control-plane-side, since the SDK process only exists
+on the runner. **Left open by the design:** if the runner disconnects while a request is pending
+(host reboot, network blip), should that request keep counting down the same long ignored-timeout as
+"nobody answered," or fail immediately since nothing can be delivered once the runner is gone? These
+read very differently in the UI (a countdown vs. an instant "runner dropped" state) — needs a design
+decision, not just a backend default.
+
+**9. New open question: what does an auto-continue actually resume?** Report §8 frames resume as
+`query({ prompt: <continuation>, options: { resume: sessionId, … } })` — i.e. conventionally paired
+with a *new* turn, not a bare reconnect. Neither the data model (§5) nor §E specify what continuation
+text an armed auto-continue sends, and it's not yet known whether a quota cutoff lands *mid-turn*
+(interrupting an in-flight tool call, which "picks up where it left off" would need to literally
+resume) or always after the current turn finishes cleanly (in which case auto-continue only needs to
+send something to start the *next* turn). This changes both correctness and the UX copy in §E/§G, and
+can only be answered by capturing a real quota cutoff — bundle it into the existing build-order step 2
+(`specs/requirements/phase-162-towo-agent-control-plane.md` §9) rather than treating it as a separate
+investigation.
