@@ -9,6 +9,7 @@ import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.SubtitleView
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MediaMetadata
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.Player
 import androidx.media3.common.TrackSelectionOverride
@@ -58,9 +59,14 @@ actual class RaviloPlayer actual constructor() {
     // R192: a plain nullable ref, not `by lazy` — Media3's MediaSession has no public `isActive`
     // setter (only `release()`), so "deactivate without releasing" is implemented as release-and-
     // recreate-on-demand instead of a flag toggle. `lazy` can't be reset, hence the manual ref.
+    // TV-only (RaviloAppContext.isTelevision): the TV's session is meant to be visible/controllable
+    // from a household member's phone; a phone's own playback must never be advertised the same way
+    // to other devices, so the phone build never creates a session in the first place.
     private var mediaSessionRef: MediaSession? = null
-    private fun ensureMediaSession(): MediaSession =
-        mediaSessionRef ?: MediaSession.Builder(ctx, exo).setId("ravilo-player").build().also { mediaSessionRef = it }
+    private fun ensureMediaSession(): MediaSession? {
+        if (!RaviloAppContext.isTelevision) return null
+        return mediaSessionRef ?: MediaSession.Builder(ctx, exo).setId("ravilo-player").build().also { mediaSessionRef = it }
+    }
 
     // R77: video geometry for automatic aspect-ratio correction in PlayerVideoSurface.
     private val _videoSize = MutableStateFlow(VideoSize.UNKNOWN)
@@ -69,7 +75,7 @@ actual class RaviloPlayer actual constructor() {
     // R46: server-derived audio metadata (Jellyfin DisplayTitle, in container audio-stream order).
     private var audioMeta: List<AudioTrack> = emptyList()
 
-    actual fun load(streamUrl: String, startPositionMs: Long, subtitles: List<SubTrack>, audio: List<AudioTrack>) {
+    actual fun load(streamUrl: String, startPositionMs: Long, subtitles: List<SubTrack>, audio: List<AudioTrack>, title: String, subtitle: String?, artworkUrl: String?) {
         audioMeta = audio
         val subConfigs = subtitles.mapNotNull { sub ->
             val url = sub.url ?: return@mapNotNull null
@@ -91,9 +97,18 @@ actual class RaviloPlayer actual constructor() {
                 .setSelectionFlags(flags)
                 .build()
         }
+        // R192 — feeds the OS media session (TV only): title + the caller's own "S1 · E3"-style
+        // kicker text as subtitle (Media3 has no separate numeric season/episode fields) + a
+        // poster/still image. Harmless to set even when no session is ever created (phone).
+        val mediaMetadata = MediaMetadata.Builder()
+            .setTitle(title)
+            .setSubtitle(subtitle)
+            .setArtworkUri(artworkUrl?.let { Uri.parse(it) })
+            .build()
         val mediaItem = MediaItem.Builder()
             .setUri(streamUrl)
             .setSubtitleConfigurations(subConfigs)
+            .setMediaMetadata(mediaMetadata)
             .build()
         exo.setMediaItem(mediaItem)
         exo.seekTo(startPositionMs)

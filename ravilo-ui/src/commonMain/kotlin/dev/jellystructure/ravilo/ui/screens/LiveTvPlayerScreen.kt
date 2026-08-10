@@ -96,7 +96,11 @@ fun LiveTvPlayerScreen(
     LaunchedEffect(state) {
         val s = state
         if (s is LiveTvPlayerState.Ready) {
-            player.load(s.ticket.hlsUrl, startPositionMs = 0L, subtitles = emptyList(), audio = emptyList())
+            // R192 — feed the channel/current-program into the OS media session (TV-only; see RaviloPlayer.load doc).
+            player.load(
+                s.ticket.hlsUrl, startPositionMs = 0L, subtitles = emptyList(), audio = emptyList(),
+                title = s.channel.name, subtitle = s.channel.currentProgram?.name, artworkUrl = s.channel.logoUrl,
+            )
             player.play()
             wake()
         }

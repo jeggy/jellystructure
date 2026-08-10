@@ -37,8 +37,15 @@ expect class RaviloPlayer() {
      * Load a stream URL starting at [startPositionMs]. Subtitle tracks may be added as external
      * tracks. [audio] carries server-derived per-track metadata (R46) so the picker can show the
      * Jellyfin DisplayTitle (e.g. "Synstolkning") rather than a bare code.
+     *
+     * R192 — [title]/[subtitle]/[artworkUrl] feed the OS-level media session's metadata (e.g. what a
+     * TV's household member sees on their phone's system Cast/media card): [title] is the movie or
+     * episode title, [subtitle] the existing "S1 · E3"-style kicker text (already computed by
+     * callers for on-screen chrome — reused as-is, since Media3 has no separate numeric
+     * season/episode fields), and [artworkUrl] a poster/still image URL. All three are cosmetic —
+     * never required for playback to work.
      */
-    fun load(streamUrl: String, startPositionMs: Long, subtitles: List<SubTrack>, audio: List<AudioTrack>)
+    fun load(streamUrl: String, startPositionMs: Long, subtitles: List<SubTrack>, audio: List<AudioTrack>, title: String, subtitle: String? = null, artworkUrl: String? = null)
     fun play()
     fun pause()
     fun seekTo(positionMs: Long)

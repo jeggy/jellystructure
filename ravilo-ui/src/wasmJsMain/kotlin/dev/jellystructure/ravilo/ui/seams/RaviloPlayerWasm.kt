@@ -41,7 +41,12 @@ actual class RaviloPlayer actual constructor() {
     private var loadedSubtitles: List<SubTrack> = emptyList()
     private var loadedAudio: List<AudioTrack> = emptyList()
 
-    actual fun load(streamUrl: String, startPositionMs: Long, subtitles: List<SubTrack>, audio: List<AudioTrack>) {
+    // R192 — title/subtitle/artworkUrl are accepted but unused: this only feeds the browser's own local
+    // Media Session API (`wireMediaSession` below), which isn't mirrored to other devices the way
+    // Android's cross-device layer surfaces a native MediaSession, so there's no privacy concern to gate
+    // here. Wiring `navigator.mediaSession.metadata` for a nicer browser lock-screen/OS overlay is a
+    // reasonable future enhancement, just not the scope of this phase (Android-native controls only).
+    actual fun load(streamUrl: String, startPositionMs: Long, subtitles: List<SubTrack>, audio: List<AudioTrack>, title: String, subtitle: String?, artworkUrl: String?) {
         loadedSubtitles = subtitles
         loadedAudio = audio
         // Remove existing <track> children
