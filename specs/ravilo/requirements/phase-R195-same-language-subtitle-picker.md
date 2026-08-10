@@ -1,7 +1,8 @@
 # Phase R195 — Telling apart subtitle tracks that share a language
 
-**Status:** Planned — design-complete, **dev-reviewed 2026-08-10** (see addendum below; two corrections
-to §5.1/§5.2's framing, one open plumbing decision resolved, sequencing recommended). Not yet built.
+**Status:** Implemented (2026-08-10) — see the implementation-notes addendum at the end for what
+landed, real scoping simplifications, and known gaps (no `flag_br`/`flag_tw` assets; audio gets the
+same two-level treatment, per §2's non-goal). Not yet live-tested on-device.
 **Date:** 2026-08-09
 **Supersedes nothing. Extends:** R75/R78/R134 (merged flag line), **R180** (flag-forward Audio &
 Subtitles picker), **R181** (default and remembered tracks).
@@ -338,3 +339,82 @@ today's behavior, per §3.8's own `Unnamed`/"no distinguishing data" handling).
 
 Verified via reading only (no code changes this pass, per "spec before fix" — this addendum is the
 dev-review step, matching phase-157/R190's pattern of a reviewed-then-later-implemented spec).
+
+## Implementation-notes addendum (2026-08-10 — built same day as the dev review)
+
+Built the whole spec in one pass, all in `ravilo-ui/src/commonMain/kotlin/dev/jellystructure/ravilo/ui/screens/PlayerScreen.kt`
+(+ `PlaybackPrefsStore.kt` and its Android/wasm actuals, + `i18n/Strings.kt` en/da/fo). Verified via
+`:ravilo-ui:compileDebugKotlinAndroid`, `:ravilo-ui:compileKotlinWasmJs`, `:ravilo-web:compileKotlinWasmJs`,
+`:ravilo-android:compileDebugKotlin`, `:ravilo-phone:compileDebugKotlin`, `compileKotlinLinuxX64`,
+`linuxX64Test` — all pass. **Not yet live-tested on-device** (deploy is user-initiated).
+
+### Touch parity (explicit requirement: TV-first, but must also work on touch/mobile)
+Pre-existing gap found while implementing: the shipped R180 `PickerOption` had **no touch/tap handling
+at all** — the flat picker was 100% D-pad/keyboard-driven, selectable only via the global key
+dispatcher's `pickerIdx` state. Fixed for both levels: every row (`PickerLanguageRow`/`PickerVersionRow`/
+`PickerCrumbHeader`'s back affordance) now carries `Modifier.clickable`, wired to the exact same
+`pickerSelect()`/`pickerBack()` functions the D-pad's Select/Back already call — a tap just moves the
+target index (`pickerIdx`/`pickerVersionIdx`) then runs identical logic, so touch (phone/web) and D-pad
+(TV) can never diverge in behaviour by construction.
+
+### FR-by-FR
+- **§3/§A/§B/§C/§D/§E (two-level UI)** — built. New state: `pickerLevel` (0/1), `pickerVersionIdx`,
+  alongside the existing `pickerIdx` (now indexes `PickerLanguage` groups at level 0, kept as the
+  group index while `pickerVersionIdx` indexes `versions` at level 1). `buildLanguageGroups()` groups
+  a flat per-track list by language; `Off` is a permanent single-version pseudo-group prepended to the
+  subtitle tab only (audio has no Off). Group order = each language's first-occurrence position in the
+  original track list (stream order), not alphabetical — preserves pre-R195 ordering, which the
+  research report's own scenarios treat as meaningful (source's primary-language-first convention).
+- **§5.1 (SDH)** — `SDH_RE` widened to also match bare `hi`/`hearing` (was only `sdh`/"hard of
+  hearing"), per the dev-review's finding that title-regex detection already existed. Bazarr `hi`-flag
+  plumbing for untitled tracks — confirmed genuinely new backend work in the dev-review — **not**
+  built this pass; scoped out as its own follow-up (needs a sidecar record + `PlaybackService.buildSubtracks`
+  wiring, per the dev-review's finding).
+- **§5.2 (region)** — `REGION_TABLE` extends `REGION_MARKERS` with actual flags. **Known asset gap,
+  by design, not oversight**: no `flag_br` (Brazil) or `flag_tw` (Taiwan) drawable exists in this
+  module's `composeResources` — those regions get `flag = null` and show text-only ("Brasil"/"繁體"
+  with no flag), never a wrong flag. Sourcing/adding those two PNG assets is the one remaining piece
+  to fully match §C's mockup.
+- **§5.3 (provenance suppression)** — implemented conservatively per the dev-review's caution: a
+  `(kind, region)` cluster collapses to one row only when at least one member has a `PROVENANCE_RE`
+  match (`bluray`/`web-dl`/`itunes`/etc.) **and** every member has some title text at all — an
+  untitled cluster is never blind-merged, it falls through to `isUnnamed` numbering instead (§3.8's
+  hard floor stays distinct from §5.3's provenance case, as the spec's own wording implies).
+- **§5.4 (remembered variant)** — `RememberedChoice` gained `audioVariant`/`subtitleVariant`: an
+  opaque `"<kind>|<regionCode>|<ordinal>"` signature (never `:`/`,` — the wasm actual's hand-rolled
+  parser splits on both). `resolveTrackSelection()` now tries the exact signature within the matched
+  language first, falling back to that language's first version (old behaviour) when the signature
+  isn't present in the new file.
+- **Non-goal "audio gets the identical treatment for free"** — honoured: `buildLanguageGroups`/
+  `PickerLanguageRow`/`PickerVersionRow` are generic over `PickerEntryInput`, fed from both
+  `audioBadges`/`subtitleBadges` call sites, not subtitle-only.
+
+### Real scoping simplifications (flagged here, not silently dropped)
+- **"Last used" level-1 badge (§A mockup: "Default · Last used")** — not built. Would need
+  `RememberedChoice` threaded into `TrackPicker` just to compare a version's signature against the
+  stored one for display purposes; a single-version/selected-version row already shows its own
+  `Default` badge (existing R180 behavior) — "Last used" specifically is a nicety, not load-bearing,
+  deferred rather than adding a new prop just for it.
+- **§B's "Commentary" promoted to the row's primary name with "Recording N" as suffix** — rendered
+  differently: the language endonym (or a kind-derived name for a null-language cluster — see below)
+  stays the primary name in all cases, with the kind/ordinal info in the badge row instead. Same
+  information, different visual arrangement than the ASCII mockup's aspirational layout.
+- **§E's "moving down the list previews each one"** — implemented as OK-applies-and-stays-open
+  (§D's own table literally says this for level 2), **not** live-apply-on-every-focus-move. Treating
+  bare focus movement as an implicit selection is a bigger, riskier UX behavior change (every
+  Up/Down in level 2 would trigger a real track switch) that this pass chose not to speculate into
+  without dedicated UX iteration — the footer hint text still ships (`player.picker_preview_hint`),
+  describing the OK-to-apply flow rather than a move-to-apply one.
+- **Region name shown as a badge pill, not inline plain text** — §C's mockup shows region as plain
+  text next to the language name (`Português  Brasil`); it renders here as a small pill in the badge
+  row instead, reusing the existing badge-pill component rather than adding a third text style.
+
+### A gap found and fixed mid-implementation, not in the original design
+A null-language cluster (untagged tracks with no ISO code — a real case per R180's own `pickerName`
+doc, e.g. an untitled commentary track) has no language to name its level-1/crumb row after.
+`pickerName(null, "")` alone resolves to an **empty string** — a real blank-row bug the two-level
+regrouping would have introduced (the old flat picker sidestepped this by falling back to each row's
+own raw label text). Fixed via `groupDisplayName()`: falls back to the cluster's dominant `VariantKind`
+as a clean word (`"Commentary"`/`"Describes action"`) when every version shares one kind, else
+`"Unnamed"` — never the raw title text, keeping R180's FR-RV-ASP1-2 "never echo raw title/codec text"
+non-goal intact.
