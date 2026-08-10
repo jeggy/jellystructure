@@ -342,8 +342,9 @@ class ArtworkDownloader(private val tmdbClient: TmdbClient, private val screengr
         return ok
     }
 
-    /** Jellyfin local naming for a season poster at the series root. */
-    private fun seasonPosterPath(item: MediaItem, season: Int): String {
+    /** Jellyfin local naming for a season poster at the series root. R194: `internal`, not `private` —
+     *  `RaviloArtworkService` (same module, `dev.jellystructure.tv`) needs it to serve season posters. */
+    internal fun seasonPosterPath(item: MediaItem, season: Int): String {
         val name = if (season == 0) "season-specials-poster.jpg"
         else "season${season.toString().padStart(2, '0')}-poster.jpg"
         return "${mediaDir(item)}/$name"

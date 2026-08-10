@@ -91,6 +91,20 @@ class RaviloArtworkService(
         return resizeServe("$seriesId-still-${epFilename.hashCode().toUInt()}$epSuffix$wSuffix", source, "still", width)
     }
 
+    /**
+     * R194 — a season's own poster (`seasonNN-poster.jpg`, R126/Phase 151's manual-lock asset), for the
+     * player's OS media-session artwork: seasons read better there than an individual episode still.
+     * Same resize/cache treatment as [serve]'s `"poster"` type; 404s (via [resizeServe]'s existing
+     * missing-source guard) when the season simply has no poster on disk — the client falls back to the
+     * series' own poster in that case (R193's existing `posterUrl` fallback chain).
+     */
+    suspend fun serveSeasonPoster(itemId: String, season: Int, width: Int? = null): Pair<ByteArray, String>? {
+        val item = store.resolve(itemId) ?: return null
+        val source = artwork.seasonPosterPath(item, season)
+        val wSuffix = width?.takeIf { it > 0 && it != 320 }?.let { "-$it" } ?: ""
+        return resizeServe("$itemId-season$season-poster$wSuffix", source, "poster", width)
+    }
+
     /** Avatar — the one remaining (cached) Jellyfin fetch. Durable cache; 404 when Jellyfin has no image. */
     suspend fun serveAvatar(userId: String): Pair<ByteArray, String>? {
         // Security fix (2026-08-02 review, finding C2) — this route is intentionally auth-exempt

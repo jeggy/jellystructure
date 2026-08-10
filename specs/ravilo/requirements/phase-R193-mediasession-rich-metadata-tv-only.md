@@ -15,6 +15,13 @@
 
 **Status:** Implemented.
 
+> **Correction (2026-08-10, R194):** FR-RV-SESS2-3's artwork priority ("current episode's still,
+> falling back to the series/movie poster") is superseded for series playback — the user's actual
+> intent, raised right after this phase landed, was season poster → series poster, with an episode
+> still **never** used for session artwork. R194 changes `PlayerScreen`'s resolution accordingly and
+> adds the backend/DTO plumbing a season poster URL needed (there was none before). The
+> title/subtitle/TV-only-scoping parts of this phase (FR-RV-SESS2-1/2/4) are unaffected.
+
 ## Requirements
 
 ### FR-RV-SESS2-1 — Runtime TV detection, not a build flavor

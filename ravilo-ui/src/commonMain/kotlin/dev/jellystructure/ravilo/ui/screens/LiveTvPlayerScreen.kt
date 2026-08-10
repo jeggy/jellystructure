@@ -45,6 +45,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
+import dev.jellystructure.ravilo.ui.LocalServerBaseUrl
 import dev.jellystructure.ravilo.ui.focus.dpadFocusable
 import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.seams.PlayerVideoSurface
@@ -80,6 +81,10 @@ fun LiveTvPlayerScreen(
     val colors = RaviloTheme.colors
     val state by store.state.collectAsState()
     val player = remember { RaviloPlayer() }
+    // R194 — same relative-URL resolution PlayerScreen uses for the OS media session's artwork.
+    val serverBaseUrl = LocalServerBaseUrl.current
+    fun resolveImageUrl(url: String?): String? =
+        url?.let { if (it.startsWith("/") && serverBaseUrl.isNotBlank()) "$serverBaseUrl$it" else it }
     val scope = rememberCoroutineScope()
     val rootFR = remember { FocusRequester() }
 
@@ -99,7 +104,7 @@ fun LiveTvPlayerScreen(
             // R192 — feed the channel/current-program into the OS media session (TV-only; see RaviloPlayer.load doc).
             player.load(
                 s.ticket.hlsUrl, startPositionMs = 0L, subtitles = emptyList(), audio = emptyList(),
-                title = s.channel.name, subtitle = s.channel.currentProgram?.name, artworkUrl = s.channel.logoUrl,
+                title = s.channel.name, subtitle = s.channel.currentProgram?.name, artworkUrl = resolveImageUrl(s.channel.logoUrl),
             )
             player.play()
             wake()

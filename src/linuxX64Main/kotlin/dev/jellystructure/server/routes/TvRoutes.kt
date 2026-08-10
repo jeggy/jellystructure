@@ -843,6 +843,16 @@ fun Route.tvRoutes(
         val result = svc.serveStill(itemId, epFilename, epNum, width) ?: return@get call.respond(HttpStatusCode.NotFound)
         call.respondCachedBytes(result.first, ContentType.parse(result.second))
     }
+    // R194: a season's own poster — for the player's OS media-session artwork (R193). 404s (no auth
+    // fallback needed) when the season has no poster on disk; the client falls back to the series poster.
+    get("/tv/image/{itemId}/season/{season}/poster") {
+        val itemId = call.parameters["itemId"] ?: return@get call.respond(HttpStatusCode.BadRequest)
+        val season = call.parameters["season"]?.toIntOrNull() ?: return@get call.respond(HttpStatusCode.BadRequest)
+        val svc = imageProxyService ?: return@get call.respond(HttpStatusCode.ServiceUnavailable)
+        val width = call.request.queryParameters["w"]?.toIntOrNull()
+        val result = svc.serveSeasonPoster(itemId, season, width) ?: return@get call.respond(HttpStatusCode.NotFound)
+        call.respondCachedBytes(result.first, ContentType.parse(result.second))
+    }
     // R133: user avatar — the one remaining (cached) Jellyfin fetch; reused by the admin pairing UI.
     get("/tv/image/user/{userId}/avatar") {
         val userId = call.parameters["userId"] ?: return@get call.respond(HttpStatusCode.BadRequest)
