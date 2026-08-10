@@ -9,6 +9,16 @@ data class RememberedChoice(
     val audioLanguage: String? = null,
     val subtitleLanguage: String? = null,
     val subtitlesOff: Boolean = false,
+    /** R195 (FR-RV §5.4) — which same-language VERSION was picked, not just the language, so a viewer
+     *  who always chooses SDH keeps getting SDH rather than whichever same-language track happens to
+     *  sit first in stream order next time. Opaque signature `"<kind>|<regionCode>|<ordinal>"` (e.g.
+     *  `"sdh||0"`, `"plain|br|1"`) — built/matched by `variantSignature()` in PlayerScreen.kt. Never
+     *  colons/commas (the wasm actual's hand-rolled parser splits on both). Falls back to a
+     *  language-only match when the signature finds nothing in the next file (a different release may
+     *  not carry the exact same variant at all).
+     */
+    val audioVariant: String? = null,
+    val subtitleVariant: String? = null,
 )
 
 /**
