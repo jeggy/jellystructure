@@ -1,0 +1,382 @@
+<!doctype html>
+<html lang="en" data-skin="aurora">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="design_doc_mode" content="canvas">
+<title>Ravilo — Same-language subtitle picker directions</title>
+<link rel="stylesheet" href="../flags.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Sora:wght@300;400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap');
+:root{--bg:#0a0c13;--ink:#f3f4fb;--ink-soft:#aeb4cb;--ink-dim:#6b7290;--line:rgba(255,255,255,.09);--accent:#7b6ef0;--accent-2:#3fb6f5;--grad:linear-gradient(120deg,#7b6ef0,#3fb6f5);--ring:#8e82ff;--chip:rgba(255,255,255,.10);--good:#2dd49a;--warm:#f5b542;--ease:cubic-bezier(.22,.61,.36,1)}
+*{box-sizing:border-box}
+body{margin:0;font-family:'Sora',sans-serif;color:var(--ink);-webkit-font-smoothing:antialiased}
+a{color:var(--accent-2)}a:hover{color:var(--accent)}
+.frame-label{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:24px;color:#0f1117;margin:0 0 6px}
+.frame-note{font-size:14.5px;color:#5b6070;margin:0 0 16px;max-width:1000px;line-height:1.5}
+.frame-note b{color:#2b2f3a;font-weight:600}
+.surf-tag{display:inline-block;font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.5px;text-transform:uppercase;color:#7a8091;background:#eef0f4;border:1px solid #e0e3ea;border-radius:6px;padding:3px 9px;margin:0 0 10px}
+/* TV backdrop */
+.tv{position:relative;width:1040px;height:640px;border-radius:20px;overflow:hidden;background:#000;box-shadow:0 30px 90px rgba(10,12,25,.5)}
+.tv-still{position:absolute;inset:0}
+.tv-grain{position:absolute;inset:0;opacity:.3;mix-blend-mode:overlay;background-image:radial-gradient(rgba(255,255,255,.10) 1px,transparent 1px);background-size:4px 4px}
+.tv-vig{position:absolute;inset:0;background:radial-gradient(120% 90% at 50% 42%,transparent 40%,rgba(0,0,0,.55) 100%)}
+.tv-dim{position:absolute;inset:0;background:rgba(4,5,9,.5)}
+.tv-ctx{position:absolute;left:40px;right:40px;bottom:30px;opacity:.42}
+.tv-ctx .k{font-size:14px;letter-spacing:2px;text-transform:uppercase;color:var(--ink-soft)}
+.tv-ctx .t{font-family:'Space Grotesk',sans-serif;font-size:28px;font-weight:700;margin-top:4px}
+.tv-ctx .barrow{display:flex;align-items:center;gap:14px;margin-top:14px;font-size:13px;color:var(--ink-soft);font-variant-numeric:tabular-nums}
+.tv-ctx .bar{flex:1;height:5px;border-radius:3px;background:rgba(255,255,255,.18);position:relative}
+.tv-ctx .bar i{position:absolute;left:0;top:0;bottom:0;width:38%;border-radius:3px;background:var(--grad)}
+/* picker shell */
+.pk{position:absolute;right:26px;bottom:24px;width:648px;z-index:12;background:rgba(14,17,27,.94);-webkit-backdrop-filter:blur(22px);backdrop-filter:blur(22px);border:1px solid var(--line);border-radius:22px;box-shadow:0 40px 120px rgba(0,0,0,.7);padding:24px 24px 20px}
+.pk.wide{width:930px}
+.pk-title{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:15px;letter-spacing:.4px;text-transform:uppercase;color:var(--ink-dim);margin:0 0 12px;display:flex;align-items:center;justify-content:space-between}
+.pk-title .cnt{font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--ink-dim);text-transform:none;letter-spacing:0}
+.pk-tabs{display:flex;gap:10px;margin-bottom:16px}
+.pk-tab{display:flex;align-items:center;gap:9px;padding:9px 20px;border-radius:28px;background:var(--chip);color:var(--ink-soft);font-size:17px;font-weight:600}
+.pk-tab .fi{font-size:15px;border-radius:3px;flex:none}
+.pk-tab.cur{color:var(--ink);box-shadow:inset 0 0 0 2px var(--accent)}
+/* flags */
+.pk-flag{font-size:30px;border-radius:5px;box-shadow:0 0 0 1px rgba(255,255,255,.16),0 5px 14px rgba(0,0,0,.45);flex:none}
+.pk-flag.off,.pk-flag.none{position:relative;width:1.3333em;height:1em;display:inline-flex;align-items:center;justify-content:center;background:rgba(255,255,255,.07);box-shadow:inset 0 0 0 1px var(--line);color:var(--ink-dim);flex:none}
+.pk-flag.off svg,.pk-flag.none svg{width:62%;height:62%}
+.pk-flag.stack{position:relative;display:inline-flex}
+.pk-flag.stack .sub{position:absolute;right:-7px;bottom:-6px;font-size:.46em;border-radius:3px;box-shadow:0 0 0 2px #10131f}
+/* rows */
+.pk-list{display:flex;flex-direction:column;gap:6px}
+.pk-row{display:flex;align-items:center;gap:14px;padding:11px 14px;border-radius:14px;border:2px solid transparent}
+.pk-row.focused{background:rgba(255,255,255,.10);box-shadow:0 0 0 3px var(--ring)}
+.pk-row.sel{background:rgba(123,110,240,.12)}
+.pk-tick{width:24px;height:24px;flex:none;border-radius:50%;border:2px solid var(--ink-dim);display:flex;align-items:center;justify-content:center;color:transparent}
+.pk-tick svg{width:14px;height:14px}
+.pk-row.sel .pk-tick,.pk-var.sel .pk-tick{border-color:var(--accent);background:var(--accent);color:#0a0c13}
+.pk-main{flex:1;min-width:0}
+.pk-name{font-size:20px;font-weight:600;color:var(--ink);display:flex;align-items:baseline;gap:9px;flex-wrap:wrap}
+.pk-name .pk-sub{font-size:14.5px;font-weight:500;color:var(--ink-dim)}
+.pk-badges{display:flex;align-items:center;gap:6px;margin-top:5px;flex-wrap:wrap}
+.pk-chip{display:inline-flex;align-items:center;gap:5px;font-size:12.5px;font-weight:600;letter-spacing:.2px;padding:3px 9px;border-radius:8px;background:rgba(255,255,255,.06);border:1px solid var(--line);color:var(--ink-soft);white-space:nowrap}
+.pk-chip.def{color:var(--accent-2);border-color:rgba(63,182,245,.32);background:rgba(63,182,245,.10)}
+.pk-chip.sdh{color:var(--good);border-color:rgba(45,212,154,.32);background:rgba(45,212,154,.10)}
+.pk-chip.last{color:var(--warm);border-color:rgba(245,181,66,.34);background:rgba(245,181,66,.10)}
+.pk-chip.neutral{font-family:'JetBrains Mono',monospace;font-weight:500;color:var(--ink-dim)}
+.pk-more{margin-left:auto;display:flex;align-items:center;gap:9px;color:var(--ink-soft);font-size:15px;font-weight:600;flex:none}
+.pk-more svg{width:18px;height:18px}
+.pk-instant{margin-left:auto;display:flex;align-items:center;gap:7px;font-size:12.5px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--good);flex:none}
+.pk-instant i{width:7px;height:7px;border-radius:50%;background:var(--good);display:block}
+.pk-row.direct{box-shadow:inset 3px 0 0 rgba(45,212,154,.55)}
+.pk-row.direct.focused{box-shadow:inset 3px 0 0 var(--good),0 0 0 3px var(--ring)}
+.pk-foot{margin-top:14px;padding-top:12px;border-top:1px solid var(--line);display:block;font-size:14.5px;line-height:1.45;color:var(--ink-soft)}
+.pk-foot b{color:var(--ink);font-weight:600}
+.pk-foot .ic{color:var(--accent-2);display:inline-flex;vertical-align:-3px;margin-right:8px}.pk-foot .ic svg{width:17px;height:17px}
+/* A: drill-in header */
+.pk-crumb{display:flex;align-items:center;gap:12px;margin-bottom:14px}
+.pk-crumb .back{width:34px;height:34px;border-radius:10px;background:var(--chip);display:flex;align-items:center;justify-content:center;color:var(--ink-soft)}
+.pk-crumb .back svg{width:17px;height:17px}
+.pk-crumb .h{font-family:'Space Grotesk',sans-serif;font-size:24px;font-weight:700;display:flex;align-items:center;gap:12px}
+.pk-crumb .sub{font-size:14px;color:var(--ink-dim);margin-top:2px}
+.pk-var{display:flex;align-items:flex-start;gap:13px;padding:12px 14px;border-radius:13px;border:2px solid transparent}
+.pk-var.focused{background:rgba(255,255,255,.10);box-shadow:0 0 0 3px var(--ring)}
+.pk-var.sel{background:rgba(123,110,240,.12)}
+.pk-var .vn{font-size:19px;font-weight:600;color:var(--ink);display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.pk-flag.rgn{font-size:21px;align-self:center}
+.pk-flag.rgn.ghost{display:inline-block;width:1.3333em;height:1em;box-shadow:none;background:none}
+.pk-var .pk-tick{margin-top:1px}
+.pk-var .vh{font-size:14px;color:var(--ink-soft);margin-top:4px;line-height:1.4}
+/* B: cluster tint */
+.cluster{border-radius:16px;padding:3px;background:rgba(255,255,255,.028);box-shadow:inset 0 0 0 1px rgba(255,255,255,.05)}
+.cluster+.cluster{margin-top:4px}
+.pk-list.clip{-webkit-mask-image:linear-gradient(#000 84%,rgba(0,0,0,.15));mask-image:linear-gradient(#000 84%,rgba(0,0,0,.15))}
+.cluster .pk-row{padding:10px 12px}
+.cluster-h{display:flex;align-items:center;gap:9px;padding:8px 13px 3px;font-size:12.5px;letter-spacing:.6px;text-transform:uppercase;color:var(--ink-dim);font-weight:600}
+/* C: two pane */
+.panes{display:grid;grid-template-columns:288px 1fr;gap:18px}
+.langcol{display:flex;flex-direction:column;gap:5px;padding-right:16px;border-right:1px solid var(--line);max-height:404px;overflow:hidden}
+.lang{display:flex;align-items:center;gap:12px;padding:9px 11px;border-radius:12px;border:2px solid transparent}
+.lang .ln{flex:1;font-size:18px;font-weight:600;color:var(--ink-soft)}
+.lang .cnt{font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--ink-dim)}
+.lang.cur{background:rgba(255,255,255,.05)}.lang.cur .ln{color:var(--ink)}
+.lang.focused{background:#fff;box-shadow:0 0 0 3px var(--ring)}
+.lang.focused .ln,.lang.focused .cnt{color:#0a0c13}
+.lang .dot{width:7px;height:7px;border-radius:50%;background:var(--accent);flex:none}
+.pane-h{display:flex;align-items:center;gap:13px;margin-bottom:12px}
+.pane-h .hn{font-family:'Space Grotesk',sans-serif;font-size:24px;font-weight:700}
+.pane-h .hs{font-size:13.5px;color:var(--ink-dim);margin-top:2px}
+/* numbered grid (unlabelled tracks) */
+.numgrid{display:grid;grid-template-columns:repeat(8,1fr);gap:8px}
+.num{height:46px;border-radius:11px;background:rgba(255,255,255,.05);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:16px;color:var(--ink-soft)}
+.num.sel{background:rgba(123,110,240,.18);border-color:var(--accent);color:var(--ink)}
+.num.focused{background:#fff;color:#0a0c13;box-shadow:0 0 0 3px var(--ring);border-color:transparent}
+.num.last{border-color:rgba(245,181,66,.5);color:var(--warm)}
+.overflow svg{width:18px;height:18px;flex:none}
+.overflow{display:flex;align-items:center;justify-content:center;gap:9px;padding:12px;border-radius:13px;border:1px dashed var(--line);color:var(--ink-dim);font-size:15px;font-weight:600;margin-top:6px}
+/* white panels */
+.panel{position:absolute;background:#fff;border:1px solid #e6e8ee;border-radius:22px;padding:32px 38px;box-shadow:0 20px 60px rgba(20,24,40,.10)}
+.panel h1{font-family:'Space Grotesk',sans-serif;font-size:33px;font-weight:700;margin:0 0 8px;color:#12141c}
+.panel h2{font-family:'Space Grotesk',sans-serif;font-size:22px;font-weight:700;margin:0 0 14px;color:#12141c}
+.panel .lede{font-size:16.5px;line-height:1.55;color:#454a5a;margin:0 0 22px;max-width:1240px}
+.panel .lede b{color:#12141c}
+.stats{display:flex;gap:12px;flex-wrap:wrap}
+.stat{background:#0a0c13;border-radius:14px;padding:14px 16px;min-width:190px;flex:1}
+.stat .n{font-family:'Space Grotesk',sans-serif;font-size:27px;font-weight:700;color:var(--ink)}
+.stat p{margin:4px 0 0;font-size:13px;line-height:1.45;color:var(--ink-soft)}
+.stat p b{color:var(--ink);font-weight:600}
+.cards{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+.card{background:#f7f8fb;border:1px solid #e6e8ee;border-radius:16px;padding:18px 20px}
+.card h3{font-family:'Space Grotesk',sans-serif;font-size:17px;margin:0 0 8px;color:#12141c}
+.card p{margin:0;font-size:14px;line-height:1.5;color:#4b5162}
+.card p b{color:#12141c}
+.card code{font-family:'JetBrains Mono',monospace;font-size:12.5px;background:#e9ecf3;border-radius:4px;padding:1px 5px;color:#333a4b}
+.verdict{display:inline-flex;align-items:center;gap:7px;font-size:13px;font-weight:600;border-radius:999px;padding:5px 12px;margin-bottom:10px}
+.verdict.good{background:#e6f8f1;color:#1b7a58;border:1px solid #bfe9d9}
+.verdict.mid{background:#fff4e2;color:#8a5b12;border:1px solid #f3ddb5}
+</style>
+</head>
+<body>
+<div class="panel" style="left:80px;top:60px;width:3400px">
+  <h1>Subtitles — telling apart tracks that share a language</h1>
+  <p class="lede">R180's flag-forward picker assumes one row per language reads as one choice. In this library it usually doesn't:
+  <b>almost half of all movies and series carry a file where the same language appears on two or more subtitle tracks</b> — plain vs. SDH, forced,
+  dialects, dub-titles, commentary, release-provenance duplicates, and in the worst case whole sets of unnamed image subtitles. Three directions below, each shown
+  on a title that exercises the real cases, plus how each survives the library's hardest file. Shared vocabulary and the underlying data fixes are at the bottom.</p>
+  <div class="stats">
+    <div class="stat"><div class="n">46.5%</div><p>of <b>movies</b> have a file with 2+ same-language subtitle tracks</p></div>
+    <div class="stat"><div class="n">47.5%</div><p>of <b>series</b> likewise — 1,668 episode files</p></div>
+    <div class="stat"><div class="n">251</div><p>file-instances where tracks are <b>identical on every field</b> we store</p></div>
+    <div class="stat"><div class="n">32</div><p>largest cluster: one file's <b>unnamed image-subtitle set</b> — no language, no title</p></div>
+    <div class="stat"><div class="n">489</div><p>distinct <code>title</code> strings across ~24,900 tracks — <b>no usable vocabulary</b></p></div>
+  </div>
+</div>
+<div id="cols"></div>
+<script>
+var I={
+ chev:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5 8 12l7 7"/></svg>',
+ chevr:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg>',
+ tick:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12.5 9.5 18 20 6.5"/></svg>',
+ cc:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="M9.5 10.2A2.2 2.2 0 0 0 7.8 13.4 2.2 2.2 0 0 0 9.5 14M16 10.2a2.2 2.2 0 0 0-1.7 3.2 2.2 2.2 0 0 0 1.7.6"/></svg>',
+ audio:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9v6h4l5 4V5L8 9z"/><path d="M17 8a5 5 0 0 1 0 8"/></svg>',
+ off:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="M7 14h4M15 14h2"/><path d="M4 4l16 16"/></svg>',
+ globe:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 0 1 0 18 15 15 0 0 1 0-18"/></svg>',
+ info:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 7.6v.2"/></svg>',
+ eye:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.8-6.5 10-6.5S22 12 22 12s-3.8 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="2.6"/></svg>'
+};
+/* ---- sample title: exercises SDH, forced, dialects, commentary dupes, provenance dupes, indistinguishable ---- */
+var LANGS=[
+ {lang:'da',cc:'dk',name:'Dansk',en:'Danish',vars:[
+   {k:'plain',def:true},
+   {k:'forced'}]},
+ {lang:'en',cc:'gb',name:'English',en:'English',vars:[
+   {k:'plain',src:'WEB-DL',last:true},
+   {k:'sdh',src:'BluRay',dupes:2},
+   {k:'commentary',n:1},
+   {k:'commentary',n:2}]},
+ {lang:'es',cc:'es',name:'Español',en:'Spanish',vars:[
+   {k:'plain',rcc:'es',rname:'España'},
+   {k:'plain',rglobe:true,rname:'Latinoamérica'}]},
+ {lang:'pt',cc:'pt',name:'Português',en:'Portuguese',vars:[
+   {k:'plain',rcc:'br',rname:'Brasil'},
+   {k:'sdh',rcc:'br',rname:'Brasil'},
+   {k:'forced',rcc:'br',rname:'Brasil'},
+   {k:'plain',rcc:'pt',rname:'Portugal'}]},
+ {lang:'zh',cc:'cn',name:'中文',en:'Chinese',vars:[
+   {k:'plain',rcc:'cn',rname:'简体'},
+   {k:'plain',rcc:'tw',rname:'繁體'}]},
+ {lang:'fr',cc:'fr',name:'Français',en:'French',vars:[
+   {k:'plain',n:1},{k:'plain',n:2},{k:'plain',n:3},{k:'plain',n:4}]},
+ {lang:'fi',cc:'fi',name:'Suomi',en:'Finnish',vars:[{k:'plain'}]},
+ {lang:'fo',cc:'fo',name:'Føroyskt',en:'Faroese',vars:[{k:'forced'}]}
+];
+var KIND={plain:'',forced:'Signs only',sdh:'Sound described',commentary:'Commentary'};
+function flag(cc,sub){ if(!cc) return '<span class="pk-flag none">'+I.globe+'</span>';
+  return sub? '<span class="pk-flag stack"><span class="fi fi-'+cc+' pk-flag"></span><span class="fi fi-'+sub+' sub"></span></span>'
+            : '<span class="fi fi-'+cc+' pk-flag"></span>'; }
+function chip(t,c){ return '<span class="pk-chip '+(c||'')+'">'+t+'</span>'; }
+function tick(){ return '<span class="pk-tick">'+I.tick+'</span>'; }
+/* human one-liners used by A + C */
+function blurb(v){
+  if(v.k==='sdh') return 'Adds speaker names and sound-effect notes.';
+  if(v.k==='forced') return 'Only the on-screen text and foreign lines — not the whole film.';
+  if(v.k==='commentary') return v.n===1?'The director and the lead, recorded together.':'A second commentary recorded for this release.';
+  if(v.rname) return 'The '+v.rname+' translation.';
+  if(v.n) return 'This one carries no name of its own — pick it to see it.';
+  return 'The full translation of everything spoken.';
+}
+function vflag(L,v){ return (v.rcc&&v.rcc!==L.cc)?'<span class="fi fi-'+v.rcc+' pk-flag rgn"></span>':(L.vars.some(function(x){return x.rcc&&x.rcc!==L.cc})?'<span class="pk-flag rgn ghost"></span>':''); }
+function vname(L,v){
+  var t=[]; if(v.rname) t.push('<span class="pk-sub">'+v.rname+'</span>');
+  var main=v.k==='commentary'?'Commentary':(v.rname?L.name:L.name);
+  return main+(t.length?' '+t.join(''):'');
+}
+function vbadges(v,opts){
+  opts=opts||{}; var b=[];
+  if(v.def) b.push(chip('Default','def'));
+  if(v.k==='sdh') b.push(chip('Sound described','sdh'));
+  if(v.k==='forced') b.push(chip(KIND.forced));
+  if(v.k==='commentary'&&opts.ord!==false) b.push(chip('Recording '+v.n,'neutral'));
+  if(v.last) b.push(chip('Last used','last'));
+  if(v.n&&v.k!=='commentary') b.push(chip('Version '+v.n+' of 4','neutral'));
+  if(v.dupes&&opts.dupes!==false) b.push(chip(v.dupes+' sources merged','neutral'));
+  return b.length?'<span class="pk-badges">'+b.join('')+'</span>':'';
+}
+function tvShell(inner,label,h){
+  return '<div class="tv" style="height:'+(h||640)+'px"><div class="tv-still" style="background:radial-gradient(120% 100% at 24% 26%,#3a4b7a,#141a2c 55%,#080a12)"></div>'+
+    '<div class="tv-grain"></div><div class="tv-vig"></div><div class="tv-dim"></div>'+
+    '<div class="tv-ctx"><div class="k">Now playing</div><div class="t">'+(label||'Dream Scenario')+'</div>'+
+    '<div class="barrow"><span>41:12</span><span class="bar"><i></i></span><span>1:42:08</span></div></div>'+inner+'</div>';
+}
+function tabs(subFlag){
+  return '<div class="pk-tabs"><div class="pk-tab">'+I.audio+' Audio <span class="fi fi-dk"></span></div>'+
+    '<div class="pk-tab cur">'+I.cc+' Subtitles '+(subFlag||'')+'</div></div>';
+}
+/* ============ DIRECTION A — language first, versions inside ============ */
+function dirA_list(){
+  var rows=LANGS.map(function(L,i){
+    var multi=L.vars.length>1, sel=L.lang==='en';
+    var right=multi?'<span class="pk-more">'+L.vars.length+' versions '+I.chevr+'</span>':'';
+    var badges='';
+    if(!multi) badges=vbadges(L.vars[0]);
+    else if(sel) badges='<span class="pk-badges">'+chip('Now: English','def')+chip('Last used','last')+'</span>';
+    return '<div class="pk-row'+(sel?' sel':'')+(i===1?' focused':'')+'">'+tick()+flag(L.cc)+
+      '<span class="pk-main"><span class="pk-name">'+L.name+(L.name!==L.en?'<span class="pk-sub">'+L.en+'</span>':'')+'</span>'+badges+'</span>'+right+'</div>';
+  }).join('');
+  var off='<div class="pk-row">'+tick()+'<span class="pk-flag off">'+I.off+'</span><span class="pk-main"><span class="pk-name">Off</span></span></div>';
+  return '<div class="pk"><div class="pk-title">Subtitles<span class="cnt">8 languages · 20 tracks</span></div>'+tabs('<span class="fi fi-gb"></span>')+
+    '<div class="pk-list">'+off+rows+'</div>'+
+    '<div class="pk-foot"><span class="ic">'+I.info+'</span>One row per language, each with its own flag. <b>No arrow means one press turns it on</b>; an arrow means that language holds several versions.</div></div>';
+}
+function dirA_detail(){
+  var L=LANGS[1];
+  var vars=L.vars.map(function(v,i){
+    return '<div class="pk-var'+(i===0?' sel':'')+(i===1?' focused':'')+'">'+tick()+vflag(L,v)+
+      '<span class="pk-main"><span class="vn">'+(v.k==='commentary'?'Commentary':'English')+vbadges(v,{})+'</span>'+
+      '<span class="vh">'+blurb(v)+'</span></span></div>';
+  }).join('');
+  return '<div class="pk"><div class="pk-crumb"><span class="back">'+I.chev+'</span>'+flag('gb')+
+    '<span><span class="h">English</span><div class="sub">4 versions in this file</div></span></div>'+
+    '<div class="pk-list">'+vars+'</div>'+
+    '<div class="pk-foot"><span class="ic">'+I.info+'</span>The flag sits once, in the bar at the top — inside the list it only reappears when a version speaks for a <b>different region</b>.</div></div>';
+}
+function dirA_region(){
+  var L=LANGS[3];
+  var vars=L.vars.map(function(v,i){
+    return '<div class="pk-var'+(i===0?' sel':'')+(i===3?' focused':'')+'">'+tick()+vflag(L,v)+
+      '<span class="pk-main"><span class="vn">Português<span class="pk-sub">'+v.rname+'</span>'+vbadges(v,{})+'</span>'+
+      '<span class="vh">'+blurb(v)+'</span></span></div>';
+  }).join('');
+  return '<div class="pk"><div class="pk-crumb"><span class="back">'+I.chev+'</span>'+flag('pt')+
+    '<span><span class="h">Português</span><div class="sub">4 versions · two regions</div></span></div>'+
+    '<div class="pk-list">'+vars+'</div>'+
+    '<div class="pk-foot"><span class="ic">'+I.info+'</span>Only the rows that differ from the header carry a flag — 🇧🇷 for Brasil, nothing for Portugal, which the header bar already shows.</div></div>';
+}
+function dirA_hard(){
+  var nums=''; for(var i=1;i<=8;i++){ nums+='<div class="pk-var'+(i===2?' focused':'')+(i===1?' sel':'')+'">'+tick()+
+    '<span class="pk-main"><span class="vn">Version '+i+'<span class="pk-chip neutral">of 32</span>'+(i===1?chip('Now showing','def'):'')+'</span>'+
+    '<span class="vh">'+(i===1?'On screen now — move down and it changes as you go.':'No language name came with this track.')+'</span></span></div>'; }
+  return '<div class="pk"><div class="pk-crumb"><span class="back">'+I.chev+'</span><span class="pk-flag none">'+I.globe+'</span>'+
+    '<span><span class="h">Unnamed subtitles</span><div class="sub">32 tracks · nothing in this file names them</div></span></div>'+
+    '<div class="pk-list">'+nums+'</div>'+
+    '<div class="pk-foot"><span class="ic">'+I.eye+'</span>Each pick shows on screen immediately, so <b>moving down the list is the preview</b>.</div></div>';
+}
+/* ============ DIRECTION B — flat list, honest variants ============ */
+function dirB(){
+  var out=[];
+  out.push('<div class="cluster"><div class="pk-row">'+tick()+'<span class="pk-flag off">'+I.off+'</span><span class="pk-main"><span class="pk-name">Off</span></span></div></div>');
+  LANGS.forEach(function(L,li){
+    var rows=L.vars.map(function(v,i){
+      var sel=(L.lang==='en'&&i===0), foc=(L.lang==='en'&&i===1);
+      var f=(v.rcc&&v.rcc!==L.cc)?flag(L.cc,v.rcc):flag(L.cc);
+      var nm=(v.k==='commentary')?'Commentary':L.name;
+      var sub=v.rname?'<span class="pk-sub">'+v.rname+'</span>':'';
+      return '<div class="pk-row'+(sel?' sel':'')+(foc?' focused':'')+'">'+tick()+f+
+        '<span class="pk-main"><span class="pk-name">'+nm+sub+'</span>'+vbadges(v,{})+'</span></div>';
+    }).join('');
+    var head=L.vars.length>1?'<div class="cluster-h">'+L.en+' · '+L.vars.length+' versions</div>':'';
+    out.push('<div class="cluster">'+head+rows+'</div>');
+  });
+  return '<div class="pk"><div class="pk-title">Subtitles<span class="cnt">20 tracks</span></div>'+tabs('<span class="fi fi-gb"></span>')+
+    '<div class="pk-list clip" style="max-height:392px;overflow:hidden">'+out.join('')+'</div>'+
+    '<div class="pk-foot"><span class="ic">'+I.info+'</span>Every track keeps its own row — same-language ones are <b>tinted into one block</b> and always carry a difference.</div></div>';
+}
+function dirB_hard(){
+  var rows=''; for(var i=1;i<=5;i++){ rows+='<div class="pk-row'+(i===1?' sel':'')+(i===2?' focused':'')+'">'+tick()+'<span class="pk-flag none">'+I.globe+'</span>'+
+    '<span class="pk-main"><span class="pk-name">Unnamed<span class="pk-sub">no language on this track</span></span>'+
+    '<span class="pk-badges"><span class="pk-chip neutral">Version '+i+' of 32</span>'+(i===1?chip('Now showing','def'):'')+'</span></span></div>'; }
+  return '<div class="pk"><div class="pk-title">Subtitles<span class="cnt">32 tracks</span></div>'+tabs()+
+    '<div class="pk-list">'+rows+'<div class="overflow">Show the remaining 27 '+I.chevr+'</div></div>'+
+    '<div class="pk-foot"><span class="ic">'+I.info+'</span>The honest cost: a 32-row scroll of near-identical rows, or an overflow that <b>bends R180\'s "nothing hidden"</b>.</div></div>';
+}
+/* ============ DIRECTION C — language rail + versions pane ============ */
+function dirC(){
+  var rail='<div class="lang">'+'<span class="pk-flag off" style="font-size:19px">'+I.off+'</span><span class="ln">Off</span></div>'+
+    LANGS.map(function(L,i){
+      var cur=L.lang==='en';
+      return '<div class="lang'+(cur?' focused':'')+'">'+'<span class="fi fi-'+L.cc+' pk-flag" style="font-size:21px"></span>'+
+        '<span class="ln">'+L.name+'</span>'+(L.vars.length>1?'<span class="cnt">'+L.vars.length+'</span>':'')+(cur?'<span class="dot"></span>':'')+'</div>';
+    }).join('');
+  var L=LANGS[1];
+  var opts=L.vars.map(function(v,i){
+    return '<div class="pk-var'+(i===0?' sel':'')+'">'+tick()+'<span class="pk-main"><span class="vn">'+(v.k==='commentary'?'Commentary':'English')+vbadges(v,{})+'</span>'+
+      '<span class="vh">'+blurb(v)+'</span></span></div>';
+  }).join('');
+  return '<div class="pk wide"><div class="pk-title">Subtitles<span class="cnt">8 languages · 20 tracks</span></div>'+tabs('<span class="fi fi-gb"></span>')+
+    '<div class="panes"><div class="langcol">'+rail+'</div>'+
+    '<div><div class="pane-h">'+flag('gb')+'<span><span class="hn">English</span><div class="hs">4 versions · last used: the plain one</div></span></div>'+opts+'</div></div>'+
+    '<div class="pk-foot"><span class="ic">'+I.info+'</span>Left/right moves between language and its versions — <b>both halves stay on screen</b>, nothing is a hidden mode.</div></div>';
+}
+function dirC_hard(){
+  var nums=''; for(var i=1;i<=32;i++){ nums+='<div class="num'+(i===1?' sel':'')+(i===4?' focused':'')+(i===9?' last':'')+'">'+i+'</div>'; }
+  var rail='<div class="lang"><span class="pk-flag off" style="font-size:19px">'+I.off+'</span><span class="ln">Off</span></div>'+
+    '<div class="lang focused"><span class="pk-flag none" style="font-size:16px">'+I.globe+'</span><span class="ln">Unnamed</span><span class="cnt">32</span><span class="dot"></span></div>';
+  return '<div class="pk wide"><div class="pk-title">Subtitles<span class="cnt">32 tracks · no language data</span></div>'+tabs()+
+    '<div class="panes"><div class="langcol">'+rail+'</div>'+
+    '<div><div class="pane-h"><span class="pk-flag none">'+I.globe+'</span><span><span class="hn">Unnamed subtitles</span>'+
+    '<div class="hs">Nothing in this file names them. Pick a number — it shows instantly.</div></span></div>'+
+    '<div class="numgrid">'+nums+'</div>'+
+    '<div style="margin-top:14px;font-size:14px;color:var(--ink-soft)">Amber = the one you used last time on this title.</div></div></div>'+
+    '<div class="pk-foot"><span class="ic">'+I.eye+'</span>All 32 fit without scrolling, and D-pad reaches any of them in <b>four presses</b>.</div></div>';
+}
+/* ---------- layout ---------- */
+var COLS=[
+ {x:80,title:'Direction A — language first, versions inside · chosen',
+  note:'One row per language, flag first. A language holding several versions carries a count and an arrow into a second list where each version gets a plain-language line; <b>a language with a single version has no arrow</b> and is turned on with one press — the absence of the arrow is the whole cue, no extra labelling.',
+  frames:[
+   {tag:'TV · step 1 — languages',tvh:900,h:'Eight rows for twenty tracks. Suomi and Føroyskt hold one version each, so they carry no arrow — OK turns them straight on. The rest state how many versions they hold.',html:dirA_list()},
+   {tag:'TV · step 2 — regions',tvh:700,h:'The one case where a version keeps its own flag: when it speaks for a different region than the header. 🇧🇷 marks the three Brasil versions; the Portugal one needs none. Same rule for España / Latinoamérica and 简体 / 繁體.',html:dirA_region()},
+   {tag:'TV · step 2 — versions of English',h:'Inside a language the flag is not repeated — it sits once in the header bar. One sentence per version does the work 489 inconsistent title strings could not; “Recording 1 / 2” is the honest label for two identically-named commentaries.',html:dirA_detail()},
+   {tag:'TV · worst case — 32 unnamed tracks',tvh:880,h:'The same screen, degraded gracefully: a numbered list with an explicit “nothing here names them” line rather than 32 pixel-identical rows in the main list.',html:dirA_hard()}]},
+ {x:1260,title:'Direction B — flat list, honest variants',
+  note:'The smallest change from what shipped: still one row per track, still flag-forward, but same-language tracks are tinted into a block, SDH becomes a real badge, dialects get a corner flag, provenance duplicates merge, and anything genuinely indistinguishable is numbered instead of silently repeated.',
+  frames:[
+   {tag:'TV · the sample title',h:'Corner flags carry the dialect (🇧🇷 on 🇵🇹, 简体 vs 繁體); “2 sources merged” collapses BluRay/iTunes rips of the same subtitle into one choice; French’s four unlabelled tracks are numbered.',html:dirB()},
+   {tag:'TV · worst case — 32 unnamed tracks',tvh:740,h:'Where this direction strains. 32 rows that differ only by number either scroll forever or need an overflow — which is exactly the invariant R180 wrote against.',html:dirB_hard()}]},
+ {x:2440,title:'Direction C — language rail + versions pane',
+  note:'Two columns: languages on the left, the focused language’s versions on the right. Nothing is hidden and nothing is a separate screen — left/right is the only new gesture. Scales to the tail cases the other two struggle with.',
+  frames:[
+   {tag:'TV · the sample title',h:'Moving down the rail re-renders the right pane live, so a viewer sees what “English, 4 versions” actually means before committing.',html:dirC()},
+   {tag:'TV · worst case — 32 unnamed tracks',h:'The pane becomes a number grid. All 32 visible at once, four D-pad presses to the farthest one, and last-used marked so the guesswork happens only once per title.',html:dirC_hard()}]}
+];
+var html='';
+COLS.forEach(function(c){
+  var y=640;
+  html+='<div style="position:absolute;left:'+c.x+'px;top:440px;width:1040px"><p class="frame-label">'+c.title+'</p><p class="frame-note">'+c.note+'</p></div>';
+  c.frames.forEach(function(f){
+    html+='<div style="position:absolute;left:'+c.x+'px;top:'+y+'px;width:1040px">'+
+      '<span class="surf-tag">'+f.tag+'</span><p class="frame-note">'+f.h+'</p>'+tvShell(f.html,null,f.tvh)+'</div>';
+    y+=(f.tvh||640)+190;
+  });
+});
+document.getElementById('cols').innerHTML=html;
+</script>
+<div class="panel" style="left:80px;top:4510px;width:3400px">
+  <h2>What has to change underneath, whichever direction wins</h2>
+  <div class="cards">
+    <div class="card"><h3>SDH becomes a real, detected badge</h3><p>It is the single most common variant (1,300+ raw “SDH” title occurrences) and today nothing sets it. Detect from title text <code>SDH / HI / hearing</code> <b>and</b> from Bazarr's own <code>hi</code> flag — the picker keeps the shipped word <b>Sound described</b>.</p></div>
+    <div class="card"><h3>A region synonym table, not string matching</h3><p><code>Castilian</code>, <code>Spanish (Spain)</code> → 🇪🇸; <code>Latin American</code>, <code>Latin America</code> → a neutral globe; <code>Brazilian</code> → 🇧🇷; <code>Simplified/Traditional</code> → 🇨🇳/🇹🇼. Unconfident match falls back to the plain language flag — never a wrong flag.</p></div>
+    <div class="card"><h3>Provenance is noise — suppress it</h3><p><code>BluRay</code> / <code>iTunes</code> / <code>WEB-DL</code> variants of the same language and kind are one viewer choice. Merge them into a single row (keep the best-scoring file) rather than offering a release name as if it were a decision.</p></div>
+    <div class="card"><h3>Remember the version, not the language</h3><p><code>RememberedChoice</code> stores only a language today, so a viewer who always picks SDH gets whatever track sits first in stream order next time. It must store the resolved variant signature — a prerequisite for any of these designs to feel trustworthy.</p></div>
+  </div>
+  <p class="frame-note" style="margin:18px 0 0;max-width:none">Open question for the spec: R180's <b>“nothing hidden or merged”</b> invariant is directly in tension with the provenance merge and with A's second screen. Recommendation — keep it for <i>tracks a viewer could meaningfully choose between</i>, and let it yield where the difference is release plumbing rather than content.</p>
+</div>
+</body>
+</html>

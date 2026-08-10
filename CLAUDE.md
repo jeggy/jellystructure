@@ -63,7 +63,12 @@ GitHub is the **source of truth**; we layer designs on top of it.
 - **⚠ Repo-side STATUS gap (dev team's to fix, not us):** `STATUS.md` on `main` has no rows for
   admin **152/153/154** or Ravilo **R184/R185/R186** though their spec files exist and read
   *Implemented* — `scripts/check-phases.sh` will flag them. `STATUS.md` is a read-only mirror here.
-- **Next unassigned numbers: 158 / R191.** 155 (age-rating normalization) and R187 (browse page)
+- **Next unassigned numbers: 161 / R196.** (2026-08-10 sync: dev took 158/159/160 and R192/R193/R194 — the
+  MediaSession trio: R192 release-on-background, R193 rich metadata TV-only, R194 season-poster artwork,
+  all Implemented; 158 IMDb ratings dataset, 159 segment-detection accuracy, 160 scanner Jellyfin
+  numbering fallback, all Implemented. Our same-language subtitle-picker spec was renumbered
+  **R192 → R195**.)
+- (previous sync) 155 (age-rating normalization) and R187 (browse page)
   **shipped in code** (Implemented, pulled from repo `main` 2026-08-02). New dev specs pulled this sync:
   156 (Seerr per-user request attribution, Implemented), R188 (Upcoming-calendar per-device
   visibility, Implemented), R189 (Samsung Tizen TV client, M1+M2 build-verified). R190 =
@@ -73,20 +78,32 @@ GitHub is the **source of truth**; we layer designs on top of it.
   across backend, admin WASM workbench, ravilo-ui/Compose and ravilo-tizen — compile-clean, not yet
   live-tested; one deliberate Tizen omission (§C Seerr overflow row, since Discover is out of the
   Tizen build). Pulled the canonical Implemented spec over our stale `Planned` draft 2026-08-07.**
-- **Bazarr subtitle integration — `phase-157-bazarr-subtitles.md`, `Implemented` (2026-08-07, same-day
-  dev-review + build).** Optional Bazarr connection so subtitles never need Bazarr's own UI. Principle:
-  **JS stores nothing** — reads Bazarr live and issues commands; Bazarr keeps owning providers, scoring
-  and language profiles (mirrored read-only). Surfaces: Settings → Download tools **Bazarr** card
-  (`[bazarr]` TOML); a new **Subtitles** page reached only from the dashboard (no left-nav item,
-  `/subtitles` — live wanted list/history/providers/profiles) + a dashboard summary card; per-title
-  Bazarr sections on the movie **Tracks & subtitles** tab (renamed from "Tracks & order") and the
-  series **Seasons & episodes** tab (season-scoped). Actions driven through Bazarr: manual
-  search/download, auto-search, sync-to-audio, upgrade (composed — Bazarr's own upgrade task is
-  library-wide, not per-item), delete, full scan. Matching is an **imdbId/tvdbId id-join** against
-  Bazarr's own `/api/movies`/`/api/series`, not path-matching — resolved live against a real Bazarr
-  instance during dev-review, see the spec's addendum. `compileKotlinLinuxX64`/`compileKotlinWasmJs`
-  clean; not yet live-tested in a running admin session. Series per-title History merge intentionally
-  not built (movies only — see the spec's Status section).
+- **Same-language subtitle picker — design-authored `phase-R195-same-language-subtitle-picker.md`
+  (`Planned`, 2026-08-09).** R180 assumed one row per language = one choice; the live library says
+  otherwise (46.5% of movies / 47.5% of series have a file with 2+ same-language subtitle tracks;
+  251 file-instances are identical on every stored field; worst case 32 unnamed tracks in one file).
+  Picker becomes **two levels**: level 1 is one row per language, flag beside the native name, with
+  a count + **›** arrow only when the language holds several versions — **no arrow means OK selects
+  it outright** (the absence of the arrow is the whole cue; no extra badge). Level 2 lists the
+  versions with the **flag shown once in the header bar**, never repeated per row, each version
+  carrying a one-sentence plain-language line instead of a raw track title; a version shows its own
+  flag **only** when its region differs from the header (🇧🇷 on 🇵🇹). Indistinguishable tracks are
+  numbered under an **Unnamed** group — copy never says "disc". Backend prerequisites: detect SDH
+  (title text + Bazarr `hi`), a region **synonym table** (never substring matching), suppress
+  release-provenance duplicates, and **remember the variant, not the language** (fixes R181's
+  always-picks-SDH-then-loses-it bug). Exploration: `ravilo/Audio & Subtitles Picker - Same-Language
+  Directions.html` (Direction A chosen; B and C recorded as rejected). Not yet dev-reviewed — open
+  question is whether R180's "nothing hidden or merged" invariant yields for provenance merging.
+- **Bazarr subtitle integration — design-authored `phase-157-bazarr-subtitles.md` (`Planned`, 2026-08-07).**
+  Optional Bazarr connection so subtitles never need Bazarr's own UI. Principle: **JS stores nothing**
+  — reads Bazarr live and issues commands; Bazarr keeps owning providers, scoring and language
+  profiles (mirrored read-only). Surfaces: Settings → Download tools **Bazarr** card (`[bazarr]` TOML,
+  path-matched like *arr); a new sidebar **Subtitles** page (`app/subtitles.html` — live queue, wanted
+  list, history, providers, read-only profiles) + a dashboard summary card; per-title Bazarr sections
+  on the movie **Tracks & subtitles** tab (renamed from "Tracks & order") and the series **Seasons &
+  episodes** tab. Actions driven through Bazarr: manual search/download, auto-search, sync-to-audio,
+  upgrade, delete, full scan. Not yet dev-reviewed — open question is the exact Bazarr command API +
+  how a JS item resolves to a Bazarr radarrId/sonarrId (confirm live before build).
 - **2026-07-31 sync:** re-pulled the entire `specs/` tree (68 files) + `STATUS.md` from repo `main`;
   repo was well ahead. Wrote `github.md` as the sync receipt. Design now matches shipped code across
   admin 0–154 / Ravilo R01–R186. See `github.md` for the screen map and details.
@@ -164,7 +181,8 @@ GitHub is the **source of truth**; we layer designs on top of it.
   **Sound described** (SDH) · **Describes action** (audio-description) · **Commentary** — no
   codec names and no delivery-method cues (`ravilo-player.js` `renderPicker`/`PL_KIND`/`plFlag`/
   `plBadges` + `ravilo-player.css`; track data in `ravilo-app.js` `tracksFor()`; exploration in
-  `Audio &amp; Subtitles Picker.html`). **Browse page** (**shipped/Implemented in code**, spec
+  `Audio &amp; Subtitles Picker.html`). **R195 (Planned) makes it two-level** — languages first,
+  versions inside — see the phase list above. **Browse page** (**shipped/Implemented in code**, spec
   `specs/ravilo/requirements/phase-R187-browse-page.md`; admin half `phase-155`, also shipped):
   Movies/Series nav + an end-of-row **→ See all** tile (rows with &gt;8
   items, incl. Continue Watching + channel-scoped rows) open a shared browse page
