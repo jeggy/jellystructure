@@ -372,7 +372,7 @@ fun PlayerScreen(
     }
     // Off is a permanent, always-single-version pseudo-language ahead of every real group (§A: "Off is
     // the first row, as today"). flatIndex -1 is a sentinel `group.isOff`/choosePick() checks for.
-    val offVersion = PickerVersion(flatIndex = -1, kind = VariantKind.PLAIN, region = null, badges = emptyList(), forced = false, isDefault = false, hadTitleText = false, ordinal = 0)
+    val offVersion = PickerVersion(flatIndex = -1, kind = VariantKind.PLAIN, region = null, badges = emptyList(), forced = false, isDefault = false, hadTitleText = false, ordinal = 0, clusterSize = 1)
     val subGroupsWithOff: List<PickerLanguage> = listOf(PickerLanguage(language = null, isOff = true, versions = listOf(offVersion), isUnnamed = false)) + subGroups
     val pickerGroups: List<PickerLanguage> = if (pickerTab == 0) audioGroups else subGroupsWithOff
 
@@ -2249,11 +2249,24 @@ private fun PickerVersionRow(
 ) {
     val headerFlag = group.language?.lowercase()?.let { LANG_CC[it] }
     val regionFlag = version.region?.flag?.takeIf { it != headerFlag }
-    val name = if (group.isUnnamed) t("player.version_n", lang, mapOf("n" to (version.ordinal + 1).toString()))
+    val baseName = if (group.isUnnamed) t("player.version_n", lang, mapOf("n" to (version.ordinal + 1).toString()))
         else groupDisplayName(group, lang)
+    // Bug fix (live report, 2026-08-10): two same-language, same-kind tracks can both carry SOME
+    // non-blank title text (so neither trips isUnnamed's "no title at all" case) yet still be
+    // genuinely indistinguishable — two "English" rows both reading the identical sentence, no way
+    // to tell them apart. `clusterSize > 1` catches this independent of isUnnamed (which only covers
+    // the narrower "nothing at all is knowable" case) — append an explicit ordinal so this can never
+    // render as two identical rows again, whatever the kind.
+    val ambiguous = !group.isUnnamed && version.clusterSize > 1
+    val name = if (ambiguous) {
+        t("player.variant_ordinal_suffix", lang, mapOf("name" to baseName, "n" to (version.ordinal + 1).toString(), "total" to version.clusterSize.toString()))
+    } else baseName
     val badges = version.badges + listOfNotNull(
         version.region?.name?.takeIf { version.kind == VariantKind.PLAIN || version.region.flag != null },
-        if (selected) t("player.now_showing", lang).takeIf { group.isUnnamed } else null,
+        // "Now showing" also earns its keep on an ambiguous-but-named cluster (e.g. two ordinally-
+        // suffixed "English" rows) — not just the whole-group Unnamed case — since the ordinal alone
+        // doesn't say WHICH of "English · 1/2" / "English · 2/2" is currently playing.
+        if (selected) t("player.now_showing", lang).takeIf { group.isUnnamed || ambiguous } else null,
     )
     Row(
         modifier = Modifier
@@ -2994,7 +3007,12 @@ private data class PickerEntryInput(
  *  underlying audioTracks/subtitleTracks list (Off is its own pseudo-group, never a PickerVersion —
  *  see [buildLanguageGroups]'s caller). [ordinal] is this version's position within its own (kind,
  *  region) cluster — feeds both "Recording {ordinal+1}"-style numbering and the remembered variant
- *  signature ([signature]). */
+ *  signature ([signature]). [clusterSize] is that cluster's total size — bug fix (live report,
+ *  2026-08-10): a same-language, same-kind, no-region pair can both carry SOME non-blank title text
+ *  (so neither is `isUnnamed`'s "no title at all" case) yet still be genuinely indistinguishable —
+ *  two "English" rows both reading "The full version of everything spoken." with no way to tell them
+ *  apart. `clusterSize > 1` flags exactly this, independent of the whole-group `isUnnamed` flag,
+ *  which only covers the narrower case where NOTHING in the group has any name/kind/region at all. */
 private data class PickerVersion(
     val flatIndex: Int,
     val kind: VariantKind,
@@ -3004,6 +3022,7 @@ private data class PickerVersion(
     val isDefault: Boolean,
     val hadTitleText: Boolean,
     val ordinal: Int,
+    val clusterSize: Int,
 )
 
 /** R195 (FR-RV §5.4) — the opaque signature a [PickerVersion] resolves to for [RememberedChoice].
@@ -3039,25 +3058,28 @@ private fun buildLanguageGroups(entries: List<PickerEntryInput>): List<PickerLan
         }
         // §5.3 — collapse a (kind, region) cluster to ONE only when at least one member carries a
         // provenance marker (positive evidence the only difference is release plumbing) AND every
-        // member has SOME title text (never blind-merge untitled tracks — that's §3.8's hard floor,
-        // handled by `isUnnamed` below instead, not by merging).
-        val collapsed = withMeta.groupBy { it.third }.values.flatMap { cluster ->
+        // member has SOME title text (never blind-merge untitled tracks — that's §3.8's hard floor).
+        // `ordinal`/`clusterSize` are scoped PER CLUSTER (not the whole group) — bug fix: this used to
+        // number across the entire flattened group, which both mislabeled "Recording N" and made
+        // `clusterSize` impossible to compute at all (see PickerVersion's doc).
+        val versions = withMeta.groupBy { it.third }.values.flatMap { cluster ->
             val anyProvenance = cluster.any { hasProvenanceMarker(it.second.title) }
             val allHaveTitles = cluster.all { !it.second.title.isNullOrBlank() }
-            if (cluster.size > 1 && anyProvenance && allHaveTitles) listOf(cluster.first()) else cluster
-        }
-        val versions = collapsed.mapIndexed { ordinal, (flatIdx, e, kindRegion) ->
-            PickerVersion(
-                flatIndex = flatIdx,
-                kind = kindRegion.first,
-                region = kindRegion.second,
-                badges = e.badges,
-                forced = e.forced,
-                isDefault = e.isDefault,
-                hadTitleText = !e.title.isNullOrBlank(),
-                ordinal = ordinal,
-            )
-        }
+            val effective = if (cluster.size > 1 && anyProvenance && allHaveTitles) listOf(cluster.first()) else cluster
+            effective.mapIndexed { ordinal, (flatIdx, e, kindRegion) ->
+                PickerVersion(
+                    flatIndex = flatIdx,
+                    kind = kindRegion.first,
+                    region = kindRegion.second,
+                    badges = e.badges,
+                    forced = e.forced,
+                    isDefault = e.isDefault,
+                    hadTitleText = !e.title.isNullOrBlank(),
+                    ordinal = ordinal,
+                    clusterSize = effective.size,
+                )
+            }
+        }.sortedBy { it.flatIndex } // preserve original stream order within the group after re-flattening clusters
         val isUnnamed = versions.size > 1 && versions.all {
             it.kind == VariantKind.PLAIN && it.region == null && !it.hadTitleText
         }
