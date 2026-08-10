@@ -1,0 +1,326 @@
+# Phase 162 — Towo: a self-hosted control plane for Claude Code sessions (FR-TOWO1)
+
+**Status:** Planned — design-complete 2026-08-10, **not yet dev-reviewed**.
+**Date:** 2026-08-10
+**Research basis:** `specs/research-reports/claude-code-remote-agent-management-2026-08-10.md`
+(doc-verified; §11 of that report lists the integration unknowns that must be pinned before build).
+**Supersedes nothing. Extends nothing** — this is a new, self-contained surface bolted onto the
+existing admin shell. No media, scanner, NFO, Jellyfin or Ravilo behaviour changes.
+
+---
+
+## 1. Problem
+
+Claude Code runs on a machine with the checkouts on it. Once you walk away from that machine you
+lose three things: you can't see what a session is doing, you can't answer the permission prompt it
+is blocked on, and when the usage window runs out the session simply stops until you come back
+hours later and notice.
+
+Claude Code's own **Remote Control** solves the first two — but only for claude.ai and the Claude
+mobile apps. It is not a public API, the protocol is undocumented, and it is bound to claude.ai
+OAuth, so *no* custom UI can ever attach to a `remote-control` session (report §2 — settled, do not
+reopen). The supported path for our own UI is the **Agent SDK**, whose documented "long-running
+sessions" hosting pattern is exactly this product.
+
+**Towo** is that UI: an admin section that lists the machines running Claude Code, shows what each
+session is doing, answers its permission prompts from wherever you are, and — the headline —
+**continues a session by itself once the usage window refills**, if you armed it to.
+
+### Why it lives in the jellystructure admin
+Towo has nothing to do with media management, and the research report says as much. It lives here
+purely because this is the only always-on operator UI we run, it already has the shell, the theme,
+the auth and the notification webhook — and the machine it manages is the same dev host. It is
+**feature-flagged off by default** (§A) and is a strictly additive section: nothing outside
+`app/towo-*` and the Settings tab is touched.
+
+---
+
+## 2. Goals / non-goals
+
+**Goals**
+- See every runner, every session, and each session's live transcript.
+- Approve or deny a suspended tool call from a phone.
+- Understand *why* a session stopped, and have exactly one of those reasons resolve itself.
+- Start a session in any folder a runner is allowed to touch, without touching the host again.
+- Idle sessions are a normal resting state you can pick back up by typing.
+
+**Non-goals**
+- **No orchestration.** Claude spawns and manages its own subagents; Towo displays them (report §3.3).
+- **No transcript parsing off disk.** The JSONL layout is explicitly not a stable interface. Session
+  listing/reading goes through the SDK's session functions and our `SessionStore`.
+- **No Claude authentication.** Claude's own sign-in lives on the host; Towo never holds it, never
+  forwards it, and cannot perform it. This is a security property, not a gap.
+- **No money anywhere.** Usage is Claude's two self-refilling allowances — 100% per 5-hour window,
+  100% per week. Towo shows how much is left and when it resets. There is nothing to buy, budget,
+  cap in currency, or top up, and no cost figure appears in any screen.
+- **Not multi-user.** Single operator, same session as the admin app. If that ever changes,
+  isolation must be designed in, not retrofitted.
+
+---
+
+## 3. Architecture (three tiers)
+
+```
+Control plane (this admin app + its API)  ⇄ WSS (outbound from runner) ⇄  Runner daemon  ⇄ stdio ⇄  claude CLI
+   session index · quota cache                                             one per host              1 subprocess per session
+   SessionStore (transcripts)                                              Agent SDK host
+   approvals · notifications                                               owns Claude auth locally
+```
+
+- The **runner dials out** and keeps a reconnecting WebSocket open. No inbound port, no firewall
+  change. (Both ends already sit on the WireGuard mesh, so a direct private-IP call is a valid
+  simplification for our own deployment; the outbound WS stays the portable default.)
+- The runner holds a **root allow-list** (`--root`, repeatable) and resolves every path itself. The
+  API only ever names a folder; a compromised control plane cannot point a session at `/etc`.
+- The runner owns the **auto-continue state machine** (§E) because it is closest to the process.
+- `SessionStore` mirrors transcripts into our own storage, so history renders when a runner is
+  offline and a session can later resume on a different runner. It is a mirror, not a replacement —
+  a `mirror_error` after retries means silent transcript loss and must surface in the UI (§B).
+
+---
+
+## 4. Requirements
+
+### §A Settings → Towo (feature flag + global defaults)
+New URL-addressable Settings tab (`settings.html?tab=towo`), following the Phase-55 tab contract.
+
+- **Master enable toggle**, default **off**. Enabling adds the **Towo** group to the sidebar;
+  disabling hides the group and every route, leaving runners and sessions untouched — the UI is
+  hidden, nothing is stopped. Persisted as `js-towo` (`'0'` = off) and read by `app-shell.js` when it
+  builds the nav.
+- **Where runners connect** — the WSS endpoint baked into the enrollment command.
+- **How the hosts sign in to Claude** — subscription (`claude /login`) or API key. Copy must state
+  plainly that usage is the two refilling allowances. **This choice gates §E**: with an API key there
+  are no session/weekly allowances, 429s are ordinary rate limits already retried by the SDK, and
+  auto-continue is moot — the UI must say so rather than offering a scheduler that can never fire.
+- **Quota watch** — on/off plus interval (default **6 hours**), with the plain-language explanation
+  that it continues only sessions you armed, at the reset time Claude reported.
+- **Arm new sessions automatically** — default **off**. A session only ever resumes itself because
+  someone said so per session.
+- **Global defaults**: permission profile (default *Normal*) and **turn cap** (default 40). Copy must
+  say this is a starting value that every session can override (§F).
+- **Notify me when**: a tool needs approval · a session pauses on quota · it picks back up ·
+  a session errors · a window drops below 20%. Reuses the existing Notifications webhook.
+
+### §B Runners
+- **List** — name, online/offline, host label, and per-runner quota.
+- **Detail** — live 5-hour and weekly gauges with reset times; allowed roots shown as
+  **host-owned and read-only** (`--root`, changed on the host, not here); the folders the runner
+  reported under those roots; host facts (Claude sign-in state, SDK version, OS, how it runs);
+  a `mirror_error` warning when transcript mirroring failed; revoke.
+- **Folders are discovered, not declared.** `--root ~` *is* the configuration. The runner reports its
+  roots and the repos it found beneath them; a session may run in any folder under a root. Naming a
+  folder or pinning it only affects labelling and the order it appears in the composer — **there is no
+  "add a workspace" step anywhere in the product.**
+- **Enrollment** (`towo-runner-new.html`) — name it → paste one command → it reports what it can see.
+  Distribution: `npx` (try it now) → installer + systemd (make it permanent) → Docker, with the
+  container caveat surfaced in the UI (a containerised runner sees the container's filesystem; the
+  real checkouts and Claude's auth must both be mounted in — usually the wrong choice).
+- **Token model**: the visible command carries a **short-lived, single-use enrollment token**
+  (~15 min TTL, expiry shown, revocable, per runner) which is exchanged on first connect for a
+  long-lived credential that is never displayed. A long-lived secret must never appear in a command
+  the user pastes into a terminal.
+- States that must be designed, not improvised: waiting for the runner (resolves live) ·
+  **connected but Claude isn't signed in** (tell them to run `claude /login` *on that host*; the most
+  likely stumble) · ready with nothing to configure · runner offline (sessions read-only, history
+  still renders, reconnects itself) · version skew — **explicitly "Not available yet"**, so the UI
+  never implies a check that doesn't exist.
+
+### §C Sessions
+- **Overview** (`towo.html`) groups sessions by folder under their runner, with the pending-approval
+  banner first and the runner shelf above. There is no Sessions item in the sidebar — the count is
+  small enough that the overview plus "All sessions" is enough.
+- **List** (`towo-sessions.html`) — filter by folder and status, sort by recent/turns/folder, per-row
+  overflow (open · fork · rename · tag · export · delete).
+- **Statuses**: `running` · `awaiting_permission` · **`idle`** · `paused_quota` (+ resume time) ·
+  `stopped_max_turns` · `errored` · `done`.
+- **Idle is a normal resting state**, not a problem: an idle session costs nothing, keeps its whole
+  context, and starts a new turn the moment you type. Copy must say so — the composer is the primary
+  affordance on an idle session, and both the list and the overview must read as "fine" for idle rows.
+- **Session view** (`towo-session.html`) — chat-shaped transcript from the event stream: text turns,
+  **one-line tool cards** (tool name + a human summary + result, expandable to the payload), subagent
+  progress lines, the streaming partial of the current turn, a composer, and interrupt. The rail
+  carries runner/folder/profile/model, turns used, the editable cap (§F), runner quota, subagents and
+  session actions.
+- A **turn** must be explained wherever it appears: one round-trip in which Claude thinks, uses tools
+  and comes back. It is Claude's unit, not ours.
+
+### §D Remote approval
+- `canUseTool` is async and receives an `AbortSignal`, so the runner suspends the call, pushes it up,
+  and awaits the decision. Nothing else in that session proceeds meanwhile; an ignored request stays
+  suspended (with a long timeout that denies with an editable reason).
+- **The trap to design around**: auto-approved tools never reach `canUseTool`. A bare
+  `allowedTools: ["Bash"]` silently bypasses the entire approval UI. Correct mechanisms are **`ask`
+  rules** (which fall through to `canUseTool` even under `bypassPermissions`) or a **`PreToolUse`
+  hook**. A profile must never be expressed as a naked allow-list of dangerous tools.
+- **Permission profiles** are a first-class UI object, not raw config: **Read-only** ·
+  **Normal** (default: scoped allows, `ask` on writes and pushes) · **Autonomous** (accepts its own
+  edits, asks on destructive commands) · **Unrestricted** (`bypassPermissions`, deliberate opt-in).
+  Each profile screen must show what it actually permits, in words.
+- The approval surface must be answerable **from a phone notification** without opening the session:
+  the notification carries Allow/Deny; the sheet carries the command, the plain-language summary, the
+  reason it was asked, and an "always allow this here" option.
+
+### §E Quota pauses and auto-continue (the headline)
+- The signal is Claude's **`rate_limit_event`**, which fires continuously as an informational status
+  (not only when limited): `status`, `resetsAt` (unix), `rateLimitType`, and sometimes `utilization`.
+  Treat the latest event per runner as a **live gauge** — that alone drives the quota widgets.
+- `utilization` is only populated after a warning threshold is crossed, so every gauge must degrade
+  gracefully to "resets at HH:MM" when the percentage is absent.
+- Buckets are `five_hour`, `seven_day`, `seven_day_opus`, `seven_day_sonnet`. **Never hardcode 5
+  hours**: key the scheduler off the returned `rateLimitType` + `resetsAt`, or an auto-continue loop
+  will spin pointlessly against a weekly limit.
+- **`resetsAt` is authoritative.** Wake a minute or two after it and re-check the quota event on
+  resume rather than assuming.
+- Per session, **Continue after reset**, default **off**. Every `quotaWatchInterval` (default 6 h) the
+  runner looks for sessions in `paused_quota` whose reset has passed and continues the armed ones via
+  `query({ resume: sessionId, … })` in the same folder.
+- **Only `paused_quota` reschedules.** `stopped_max_turns` and errors are never auto-retried.
+  `worker_shutting_down` is a clean pause, not an error. Transient 429/5xx retries are the SDK's own
+  business (`api_retry`) and must not be confused with a quota pause in the state machine.
+- **Notify on both edges** — a multi-hour silent gap with no "it came back" defeats the point.
+- The paused state must read as **calm and deliberate**: a nap with a countdown and a reset time,
+  never an error colour, never anything that reads as broken.
+
+### §F Turn caps — two levels
+- **Global default** in Settings (§A), used to prefill every new session.
+- **Per session at start**, in the composer, prefilled from the global default with the override
+  stated in words.
+- **Per session while it runs**, from the session rail: adjust the cap in steps, see whether the
+  session is on the default or overriding it, and reset back to the default. A change applies from
+  the session's next turn; it never rewrites the global default.
+- After a `stopped_max_turns`, raising the cap is offered as recovery (§G) and is always a **user
+  decision** — Towo never raises a ceiling you set.
+
+### §G When a session stops early (`towo-limits.html`)
+Three cases, told apart explicitly so the automatic one is legible:
+1. **Paused on quota** — Towo's to fix. Countdown, and it continues itself if armed.
+2. **Stopped at your turn cap** — your call. Offer "resume with more turns" (steps + presets), showing
+   where it got to and that it resumes with the same transcript and permissions; nothing is re-run.
+3. **Paused on the weekly window** — a genuinely different shape: waiting out the afternoon won't
+   help. Offer wait-for-the-reset (armed), move it to a runner signed in as another account (the
+   transcript travels), or stop.
+Plus a plain error: shown, transcript kept, one retry offered, **never looped**.
+
+---
+
+## 5. Data model (control plane — thin; content lives in the SessionStore)
+
+```
+runner        id, name, host_label, status(online|offline), last_seen_at, auth_mode,
+              agent_sdk_version, allowed_roots[]
+folder        id, runner_id, name, abs_path, pinned, default_permission_profile, discovered_at
+session       id (= Claude session_id), runner_id, folder_id, title, tag,
+              status(starting|running|idle|awaiting_permission|paused_quota|
+                     stopped_max_turns|errored|done),
+              max_turns, max_turns_source(default|override), num_turns,
+              continue_after_reset (bool, default false),
+              resume_at (nullable), last_error_subtype, created_at, last_activity_at
+permission_request  id, session_id, tool_name, input_json, requested_at,
+                    decided_at, decision(allow|deny|timeout), reason
+quota_status  runner_id, rate_limit_type, status, resets_at, utilization (nullable), observed_at
+```
+
+`session.status` is the single field the whole UI keys off. `paused_quota` + `resume_at` is what makes
+the headline feature legible. **No cost or currency column exists anywhere.**
+
+---
+
+## 6. API contract (the UI is built against this)
+
+```
+POST   /api/towo/runners/enroll        ← {name} → {enrollmentToken, expiresAt, commands:{npx,installer,docker}}
+GET    /api/towo/runners               → [{id,name,status,lastSeenAt,os,sdkVersion,
+                                           claudeAuth:"ok"|"missing",allowedRoots[],folders[],
+                                           quota:[{type,status,resetsAt,utilization?}]}]
+DELETE /api/towo/runners/:id                                   (revoke credential)
+GET    /api/towo/sessions?folderId=&status=
+POST   /api/towo/sessions              ← {folderId|path, prompt, permissionProfile?, model?, effort?, maxTurns?}
+GET    /api/towo/sessions/:id          → record + latest quota context
+GET    /api/towo/sessions/:id/messages?cursor=
+POST   /api/towo/sessions/:id/messages ← {text}                 (streamInput; starts a turn on an idle session)
+POST   /api/towo/sessions/:id/interrupt
+POST   /api/towo/sessions/:id/resume
+PATCH  /api/towo/sessions/:id          ← {title?, tag?, maxTurns?, continueAfterReset?}
+POST   /api/towo/sessions/:id/fork     → {newSessionId}
+DELETE /api/towo/sessions/:id
+GET    /api/towo/permissions?status=pending
+POST   /api/towo/permissions/:id       ← {decision:"allow"|"deny", reason?, always?}
+```
+
+**WebSocket `/api/towo/stream`** (server → client), every event carrying `sessionId` where relevant:
+`session.status` · `message.assistant` · `message.partial` · `message.tool_result` ·
+`permission.requested` · `permission.resolved` · `session.result` · `quota.updated` ·
+`runner.status` · `runner.enrolled` · `mirror_error`.
+
+---
+
+## 7. Security requirements
+
+- Root allow-list lives on the runner; the API names a folder, the runner resolves the path.
+- Per-runner credential on the transport; enrollment tokens short-lived, single-use, revocable.
+- Claude auth never leaves the host; Towo cannot sign in on its behalf and must not try.
+- `bypassPermissions` requires a deliberate per-session opt-in and must be visually distinct.
+- Alert on `mirror_error` — otherwise transcript loss is silent.
+
+---
+
+## 8. Design (all under `design/app/`)
+
+| Screen | File |
+|---|---|
+| Settings → Towo tab | `settings.html?tab=towo` (`#sect-towo`) |
+| Overview | `towo.html` |
+| Session list | `towo-sessions.html` |
+| Session view (live, with idle/approval/paused/resumed states) | `towo-session.html` |
+| New session composer | `towo-session-new.html` |
+| Approvals — desktop queue + phone notification/sheet | `towo-approvals.html` |
+| Runners list + detail | `towo-runners.html` |
+| Runner enrollment | `towo-runner-new.html` |
+| Stopped-early recovery | `towo-limits.html` |
+| Towo component styles (scoped under `.towo`, on wf.css tokens) | `towo.css` |
+| Sidebar group (flag-gated) | `app-shell.js` |
+
+Rejected direction, recorded: an **attention-queue** overview (one column ordered
+Needs you → Resting → Working → Settled, runners demoted to a strip) —
+`design/claude-console/Dashboard - Direction B.html`. The machine-floor grouping was chosen because
+at this scale (a handful of sessions on 2–3 hosts) "which machine" is the question actually being
+asked. Keep Direction B on file if session counts ever grow past a screenful.
+
+---
+
+## 9. Build order
+
+1. Runner v1: Agent SDK host + `--root` allow-list, one hardcoded session, streaming to stdout.
+2. **Capture a real `rate_limit_event`** and pin the parser to its actual shape — the whole headline
+   feature depends on it.
+3. Control plane v1: outbound WS transport, session index, create-session + stream.
+4. Enrollment and pairing (token mint/exchange, `npx` distribution).
+5. `SessionStore` — history in the UI, survives runner restarts, unlocks cross-runner resume.
+6. Auto-continue state machine + notifications.
+7. `canUseTool` remote approval.
+8. The rest of the UI against §6.
+
+Steps 1–3 retire the risk; the rest is conventional product work.
+
+---
+
+## 10. Open questions (must be settled before building the marked parts)
+
+1. **`canUseTool`'s signature differs between doc sources** (`(request,{signal})` vs
+   `(toolName,input,{signal,suggestions})`) — almost certainly an SDK-version difference. **Pin the SDK
+   version and verify against its own `.d.ts` before writing this callback.** It is the most important
+   integration point in the design (§D).
+2. **`rate_limit_event` is undocumented in the official reference.** Field names are community-verified
+   from real payloads and may drift; a Python-SDK bug class made it terminate the message generator in
+   some versions. Blocks §E until a real event is captured.
+3. **Subscription vs API key** (§A) — decides whether §E exists at all.
+4. **Unattended OAuth on a headless host.** Subscription auth is an interactive login; how it behaves
+   over long periods on a server (refresh/expiry) is a genuine operational unknown and a plausible
+   3am failure.
+5. Does Towo belong in this admin app long-term, or should it graduate to its own deployment once the
+   runner exists? The feature flag keeps that door open.
+
+## Relationships
+**Standalone within this repo.** Depends on no phase and is depended on by none. Only shared
+surfaces are `app/app-shell.js` (one flag-gated nav group) and `app/settings.html` (one tab).

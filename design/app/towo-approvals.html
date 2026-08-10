@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Towo — Approvals</title>
+<link rel="stylesheet" href="wf.css">
+<link rel="stylesheet" href="app.css">
+<link rel="stylesheet" href="towo.css">
+<style>
+.split{display:grid;grid-template-columns:300px 1fr;gap:18px}
+.qlist{display:flex;flex-direction:column;gap:8px}
+.qi{padding:13px 14px;border-radius:12px;background:var(--fill-2);border:1px solid var(--line);cursor:pointer}
+.qi.on{border-color:rgba(123,110,240,.5);background:rgba(123,110,240,.1)}
+.qi .t{font-size:13px;font-weight:600;margin-top:8px}
+.qi .m{font-size:11.5px;color:var(--ink-dim);margin-top:4px;font-family:'JetBrains Mono',monospace}
+.detail{padding:24px 26px;border-radius:var(--radius);background:var(--card-bg);border:1px solid var(--line);backdrop-filter:var(--blur);box-shadow:var(--shadow-s)}
+.plain{font-size:19px;font-family:'Space Grotesk';font-weight:600;line-height:1.4}
+.payload{margin-top:15px}
+.pl{display:flex;align-items:center;gap:10px;font-size:12.5px;color:var(--ink-soft);cursor:pointer}
+.why{margin-top:16px;padding:13px 15px;border-radius:12px;background:var(--fill-2);border:1px solid var(--line);font-size:12.5px;color:var(--ink-soft);line-height:1.6}
+.why b{color:var(--ink)}
+.acts{display:flex;align-items:center;gap:10px;margin-top:20px;padding-top:18px;border-top:1px solid var(--line)}
+.always{display:flex;align-items:center;gap:9px;font-size:12.5px;color:var(--ink-soft);margin-top:14px}
+.cb{width:17px;height:17px;border-radius:5px;border:1px solid var(--line-2);background:var(--fill-2);flex:none}
+.timeout{margin-top:14px;font-size:12px;color:var(--ink-dim)}
+.pstrip{margin-top:38px;display:flex;gap:26px;align-items:flex-start}
+.pcap{width:220px}
+.notif{margin:64px 10px 0;padding:14px 15px;border-radius:20px;background:rgba(40,44,58,.92);backdrop-filter:blur(20px);border:1px solid rgba(255,255,255,.1);box-shadow:0 12px 30px rgba(0,0,0,.4)}
+.notif .h{display:flex;align-items:center;gap:9px;font-size:12px;color:#c3bafa;font-weight:600}
+.notif .mk{width:17px;height:17px;border-radius:5px;background:var(--grad)}
+.sheet{position:absolute;left:0;right:0;bottom:0;background:#232734;border-top:1px solid var(--line-2);border-radius:26px 26px 0 0;padding:22px 20px 30px;box-shadow:0 -20px 50px rgba(0,0,0,.5)}
+.grab{width:38px;height:4px;border-radius:999px;background:rgba(255,255,255,.22);margin:0 auto 18px}
+.bigbtn{height:52px;border-radius:14px;font-size:15.5px;font-weight:600;display:flex;align-items:center;justify-content:center;border:1px solid var(--line-2);background:var(--fill-2);color:var(--ink)}
+.bigbtn.pri{background:var(--grad);border:none;color:#fff;box-shadow:0 8px 22px rgba(123,110,240,.36)}
+</style>
+</head>
+<body class="wf-body app-body">
+<main class="app-main2 wide towo" data-page="towo-approvals" data-screen-label="Towo · Approvals">
+<div class="top"><div><h1>Approvals</h1><div class="sub" style="margin-top:5px">One tool call is suspended, waiting for you. The session isn’t doing anything else until you answer.</div></div></div>
+
+<div class="split">
+<div><div class="lbl" style="margin-bottom:10px">Pending · 1</div>
+<div class="qlist">
+<div class="qi on"><span class="chip st-ask"><span class="dot"></span>Bash</span><div class="t">git push origin main</div><div class="m">40s · jellystructure</div></div>
+<div class="qi" style="opacity:.55"><span class="chip st-done"><span class="dot"></span>Allowed</span><div class="t">Edit src/subtitles/…</div><div class="m">6 m ago · you</div></div>
+<div class="qi" style="opacity:.55"><span class="chip st-err"><span class="dot"></span>Denied</span><div class="t">Bash rm -rf build/</div><div class="m">22 m ago · “do it yourself”</div></div>
+</div>
+<div class="hint" style="margin-top:14px">Safe tools are pre-approved by the workspace profile and never land here. Writes and pushes always do.</div>
+</div>
+
+<div class="detail">
+<div style="display:flex;align-items:center;gap:11px"><span class="chip st-ask"><span class="dot"></span>Bash</span><span class="sub">asked 40 s ago · Normal profile</span><span class="sub" style="margin-left:auto">Fix R195 null-language cluster</span></div>
+<div class="plain" style="margin-top:15px">Push the current branch to <span class="mono" style="font-size:17px;color:var(--acc-ink)">origin/main</span>.</div>
+<div class="sub" style="margin-top:9px">in <span class="ws"><b>jellystructure</b></span> on <b>dev box</b> · 7 turns so far</div>
+<div class="payload"><div class="pl">▾ The exact command<div class="divider" style="flex:1"></div></div><div class="code" style="margin-top:9px">cd /home/jeggy/IdeaProjects/jellystructure
+git push origin main</div></div>
+<div class="why">Why you’re seeing this: the workspace profile pre-approves <b>Bash(git status)</b> and <b>Bash(./gradlew test)</b>, and has an <b>ask</b> rule on anything that pushes. Read, Glob and Grep never ask.</div>
+<div class="always"><div class="cb"></div>Always allow <b class="mono" style="color:var(--ink);font-size:12px">git push origin main</b> in jellystructure</div>
+<div class="acts"><button class="btn pri" style="height:42px;padding:0 22px">Allow once</button><button class="btn" style="height:42px">Deny…</button><span class="timeout" style="margin-left:auto">Nothing happens if you ignore it — it stays suspended. Denies after <b>2 h</b> with a reason you can edit.</span></div>
+</div>
+</div>
+
+<div class="pstrip">
+<div class="pcap"><div class="lbl">On the phone</div><h2 style="font-size:17px;margin-top:8px">Answer without opening the session</h2><p class="sub" style="line-height:1.65;margin-top:10px">This is the surface that matters at 23:00. The notification carries the decision; the sheet carries the reason you’d want before saying yes.</p></div>
+<div class="phone"><div class="nub"></div><div class="sb"><span>23:04</span><span>▮▮ ⌁</span></div><div class="pbody" style="background:radial-gradient(120% 80% at 20% 0%,rgba(123,110,240,.22),transparent 60%)">
+<div class="notif"><div class="h"><div class="mk"></div>TOWO<span style="margin-left:auto;color:var(--ink-dim);font-weight:500">now</span></div><div style="font-size:14.5px;font-weight:600;margin-top:9px">Wants to run git push origin main</div><div style="font-size:13px;color:var(--ink-soft);margin-top:4px">jellystructure · dev box</div><div style="display:flex;gap:8px;margin-top:13px"><div class="bigbtn pri" style="flex:1;height:40px;font-size:14px">Allow</div><div class="bigbtn" style="flex:1;height:40px;font-size:14px">Deny</div></div></div>
+<div style="text-align:center;margin-top:32px;font-size:12.5px;color:var(--ink-dim)">Long-press to see the command first</div>
+</div><div class="hb"></div></div>
+<div class="phone"><div class="nub"></div><div class="sb"><span>23:04</span><span>▮▮ ⌁</span></div><div class="pbody" style="padding:0">
+<div style="padding:56px 18px 0"><div class="lbl">Waiting on you</div><div style="font-family:'Space Grotesk';font-size:20px;font-weight:600;margin-top:7px;line-height:1.35">Fix R195 null-language cluster</div><div class="sub" style="margin-top:7px;font-size:12.5px">jellystructure · dev box · 7 turns</div></div>
+<div class="sheet"><div class="grab"></div>
+<span class="chip st-ask"><span class="dot"></span>Bash</span>
+<div style="font-family:'Space Grotesk';font-size:19px;font-weight:600;margin-top:12px;line-height:1.35">Push the current branch to origin/main.</div>
+<div class="code" style="margin-top:14px;font-size:12px;white-space:pre-wrap">git push origin main</div>
+<div class="why" style="font-size:12px;margin-top:13px">Pre-approved here: reads, <b>git status</b>, <b>gradlew test</b>. Pushes always ask.</div>
+<div style="display:flex;flex-direction:column;gap:9px;margin-top:16px"><div class="bigbtn pri">Allow once</div><div class="bigbtn">Deny with a note</div></div>
+<div style="display:flex;align-items:center;gap:9px;margin-top:14px;font-size:12.5px;color:var(--ink-soft)"><div class="cb"></div>Always allow this here</div>
+</div></div><div class="hb"></div></div>
+</div>
+</main>
+<script src="app-shell.js"></script>
+</body>
+</html>

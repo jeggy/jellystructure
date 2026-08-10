@@ -63,7 +63,10 @@ GitHub is the **source of truth**; we layer designs on top of it.
 - **⚠ Repo-side STATUS gap (dev team's to fix, not us):** `STATUS.md` on `main` has no rows for
   admin **152/153/154** or Ravilo **R184/R185/R186** though their spec files exist and read
   *Implemented* — `scripts/check-phases.sh` will flag them. `STATUS.md` is a read-only mirror here.
-- **Next unassigned numbers: 161 / R196.** (2026-08-10 sync: dev took 158/159/160 and R192/R193/R194 — the
+- **Next unassigned numbers: 163 / R196.** (2026-08-10 sync #2: **R195 shipped** — dev-reviewed and built
+  the same day; and new **161** — stop double-delivering embedded text subtitles on direct play, ✓ Done —
+  which was found *because* R195's two-level picker made the duplication visible as two identical
+  "English" rows. Earlier that day: dev took 158/159/160 and R192/R193/R194 — the
   MediaSession trio: R192 release-on-background, R193 rich metadata TV-only, R194 season-poster artwork,
   all Implemented; 158 IMDb ratings dataset, 159 segment-detection accuracy, 160 scanner Jellyfin
   numbering fallback, all Implemented. Our same-language subtitle-picker spec was renumbered
@@ -78,8 +81,13 @@ GitHub is the **source of truth**; we layer designs on top of it.
   across backend, admin WASM workbench, ravilo-ui/Compose and ravilo-tizen — compile-clean, not yet
   live-tested; one deliberate Tizen omission (§C Seerr overflow row, since Discover is out of the
   Tizen build). Pulled the canonical Implemented spec over our stale `Planned` draft 2026-08-07.**
-- **Same-language subtitle picker — design-authored `phase-R195-same-language-subtitle-picker.md`
-  (`Planned`, 2026-08-09).** R180 assumed one row per language = one choice; the live library says
+- **Same-language subtitle picker — `phase-R195-same-language-subtitle-picker.md` (✓ Done / Implemented
+  2026-08-10; design-authored 2026-08-09, dev-reviewed and built the same day, not yet on-device tested).**
+  Shipped as designed, with three notes: no `flag_br`/`flag_tw` assets yet (text-only fallback, never a
+  wrong flag); **audio got the same two-level treatment** (was a §2 non-goal); a null-language cluster
+  needed `groupDisplayName()` to fall back to the dominant kind word; and every picker row gained real
+  tap/touch handling for the first time (shipped R180 was D-pad-only). Bazarr `hi`-flag plumbing deferred.
+  Follow-on: **161** (below). Original brief: R180 assumed one row per language = one choice; the live library says
   otherwise (46.5% of movies / 47.5% of series have a file with 2+ same-language subtitle tracks;
   251 file-instances are identical on every stored field; worst case 32 unnamed tracks in one file).
   Picker becomes **two levels**: level 1 is one row per language, flag beside the native name, with
@@ -129,6 +137,24 @@ GitHub is the **source of truth**; we layer designs on top of it.
   and ⌘K command palette.
 
 ## Admin screen set (current)
+- **Towo** (`towo*.html`, Phase 162 design — `Planned`, not yet dev-reviewed) — a control plane for
+  **Claude Code** sessions running on machines we own; unrelated to media. Feature-flagged **off by
+  default** in Settings → **Towo** (`js-towo` in localStorage, read by `app-shell.js`, which shows/hides
+  the sidebar **Towo** group: Overview · Approvals · Runners). Screens: `towo.html` (overview — runner
+  shelf + quota + sessions grouped by folder), `towo-sessions.html`, `towo-session.html` (live
+  transcript: one-line tool cards, streaming turn, composer, editable turn cap, and idle / awaiting-
+  approval / paused-on-quota / picked-back-up states), `towo-session-new.html`, `towo-approvals.html`
+  (desktop queue + phone notification and sheet), `towo-runners.html`, `towo-runner-new.html`
+  (enrollment: one pasted `npx` command), `towo-limits.html`. Styles in `app/towo.css`, scoped under
+  `.towo` over `wf.css` tokens. **Principles:** usage is Claude's own two refilling allowances (100% per
+  5 hours, 100% weekly) — **no money, budgets or cost anywhere**; the runner's `--root` *is* the
+  configuration, so folders are **discovered, never declared**; Claude's sign-in stays on the host;
+  **idle is a normal resting state** you continue by typing; only quota pauses ever auto-resume, and
+  only when armed per session (default off, 6-hour sweep). Turn caps are two-level: a global default in
+  Settings, overridable per session at start and mid-run. Spec:
+  `specs/requirements/phase-162-towo-agent-control-plane.md`; research report
+  `specs/research-reports/claude-code-remote-agent-management-2026-08-10.md`; rejected overview
+  direction kept at `claude-console/Dashboard - Direction B.html`.
 - **Subtitles** (`subtitles.html`, Phase 157 design) — global **Bazarr** overview (**no left-nav item**;
   reached from the dashboard summary card): live queue/tasks, wanted list (filter by kind + language),
   download/sync/

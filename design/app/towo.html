@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Towo — Overview</title>
+<link rel="stylesheet" href="wf.css">
+<link rel="stylesheet" href="app.css">
+<link rel="stylesheet" href="towo.css">
+<style>
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.rc{padding:16px 17px;display:flex;flex-direction:column;gap:13px}
+.rc .hd{display:flex;align-items:center;gap:9px}
+.rc .hd .nm{font-family:'Space Grotesk';font-weight:600;font-size:15.5px}
+.rc .host{font-size:11.5px;color:var(--ink-dim);font-family:'JetBrains Mono',monospace}
+.q{display:flex;flex-direction:column;gap:7px}
+.qrow{display:flex;justify-content:space-between;align-items:baseline;font-size:12.5px}
+.warnbar{display:flex;align-items:center;gap:9px;padding:9px 11px;border-radius:10px;background:var(--warn-soft);border:1px solid rgba(245,181,66,.3);font-size:12.5px;color:#f7ce85;line-height:1.45}
+.ask{margin-bottom:16px;padding:17px 19px;border-radius:var(--radius);background:linear-gradient(120deg,rgba(123,110,240,.17),rgba(0,164,220,.08));border:1px solid rgba(123,110,240,.42);display:flex;align-items:center;gap:18px}
+.ask .cmd{font-family:'JetBrains Mono',monospace;font-size:13px;background:rgba(0,0,0,.32);border:1px solid var(--line);border-radius:8px;padding:7px 11px;color:#e6e1ff}
+.sec{margin-top:26px}
+.wsgrp{margin-top:14px}
+.wshd{display:flex;align-items:center;gap:12px;padding:0 4px 9px}
+.rw{grid-template-columns:1fr 176px 136px 128px 96px}
+.nap .t{font-size:12.5px;color:#b9bfd4}
+.kpi{display:flex;gap:26px;margin-left:auto;align-items:center}
+.kpi div{text-align:right}
+.kpi .v{font-family:'Space Grotesk';font-size:21px;font-weight:600}
+</style>
+</head>
+<body class="wf-body app-body">
+<main class="app-main2 wide towo" data-page="towo-overview" data-screen-label="Towo · Overview">
+<div class="top"><div><h1>Overview</h1><div class="sub" style="margin-top:5px">3 runners · 7 sessions · 2 idle and waiting · <a href="towo-approvals.html">1 waiting on you</a></div></div>
+<div class="kpi"><div><div class="lbl">5-hour window</div><div class="v">62%</div></div><div><div class="lbl">Weekly</div><div class="v">41%</div></div><a class="btn pri" href="towo-session-new.html">＋ New session</a></div></div>
+
+<div class="ask"><div style="flex:1"><div class="lbl" style="color:#c3bafa">Waiting on you · 40s</div><div style="display:flex;align-items:center;gap:11px;margin-top:9px"><span class="chip st-ask"><span class="dot"></span>Bash</span><span class="cmd">git push origin main</span></div><div class="sub" style="margin-top:9px">Fix R195 null-language cluster · <span class="ws"><b>jellystructure</b></span> on dev box</div></div><div style="display:flex;gap:9px"><a class="btn" href="towo-approvals.html">Deny</a><a class="btn pri" href="towo-approvals.html">Allow</a></div></div>
+
+<div class="grid3">
+<a class="card rc" href="towo-runners.html"><div class="hd"><span class="chip st-done"><span class="dot"></span>Online</span><div class="nm" style="margin-left:2px;color:var(--ink)">dev box</div></div><div class="host">arch-linux · sdk 2.1.49 · 3 workspaces</div><div class="q"><div class="qrow"><span class="lbl">5-hour window</span><span class="mono" style="color:#c6bcfb">62%</span></div><div class="gauge"><i style="width:62%"></i></div><div class="qrow"><span class="sub">Resets <b class="mono">18:42</b></span><span class="sub">Weekly 41%</span></div></div></a>
+<div class="card rc"><div class="hd"><span class="chip st-done"><span class="dot"></span>Online</span><div class="nm" style="margin-left:2px">home server</div></div><div class="host">debian 13 · sdk 2.1.49 · 1 workspace</div><div class="warnbar">⚠ Claude Code isn’t signed in here — run <span class="mono">claude /login</span> on that host</div></div>
+<div class="card rc" style="opacity:.72"><div class="hd"><span class="chip"><span class="dot" style="background:#6b7288"></span>Offline</span><div class="nm" style="margin-left:2px">macbook</div></div><div class="host">macos 15 · sdk 2.1.44 · 2 workspaces</div><div class="q"><div class="qrow"><span class="sub">Last seen 2 h ago · reconnects automatically</span></div><div class="sub" style="font-size:12px">History still readable · sessions read-only</div></div></div>
+</div>
+
+<div class="sec"><div style="display:flex;align-items:center;gap:14px"><h2 style="font-size:17px">Sessions</h2><span class="sub">grouped by workspace</span><div class="divider" style="flex:1"></div><a class="btn sm ghost" href="towo-sessions.html">All sessions →</a></div>
+
+<div class="wsgrp"><div class="wshd"><span class="ws">◱ <b>jellystructure</b></span><span class="sub">/home/jeggy/IdeaProjects/jellystructure · dev box</span></div>
+<div class="rows">
+<div class="rw"><div><div class="ttl"><a href="towo-session.html" style="color:inherit">Wire Bazarr wanted-list pagination</a></div><div class="meta">12 turns · Normal profile</div></div><span class="chip st-run"><span class="dot"></span>Running</span><div class="sub">active now</div><div class="ac"><div class="sw on"></div>Continue after reset</div><a class="btn sm" href="towo-session.html">Open</a></div>
+<div class="rw" style="border-color:rgba(123,110,240,.42);background:rgba(123,110,240,.08)"><div><div class="ttl">Fix R195 null-language cluster</div><div class="meta">7 turns · Normal profile</div></div><span class="chip st-ask"><span class="dot"></span>Awaiting permission</span><div class="sub">40s</div><div class="ac"><div class="sw"></div>Continue after reset</div><a class="btn sm" href="towo-approvals.html">Review</a></div>
+</div></div>
+
+<div class="wsgrp"><div class="wshd"><span class="ws">◱ <b>dotfiles</b></span><span class="sub">/home/jeggy · dev box</span></div>
+<div class="rows">
+<div class="rw"><div><div class="ttl">Migrate systemd units to quadlet</div><div class="meta">23 turns · Autonomous profile</div></div><div class="nap"><span class="chip st-nap"><span class="dot"></span>Paused · quota</span></div><div class="nap"><div class="t">Resumes <b class="mono">18:42</b></div><div class="sub" style="font-size:11.5px">in 4 h 12 m · 5-hour window</div></div><div class="ac"><div class="sw on"></div>Continue after reset</div><a class="btn sm" href="towo-session.html">Open</a></div>
+</div></div>
+
+<div class="wsgrp"><div class="wshd"><span class="ws">◱ <b>ravilo-tizen</b></span><span class="sub">/home/jeggy/IdeaProjects/ravilo-tizen · macbook</span></div>
+<div class="rows">
+<div class="rw"><div><div class="ttl">Tizen build verification pass</div><div class="meta">30 turns · hit the turn cap</div></div><span class="chip st-err"><span class="dot"></span>Stopped · max turns</span><div class="sub">1 h ago</div><div class="ac"><div class="sw"></div>Continue after reset</div><a class="btn sm" href="towo-limits.html">Resume…</a></div>
+<div class="rw"><div><div class="ttl">Audit WireGuard peer config</div><div class="meta">9 turns · nothing pending</div></div><span class="chip st-idle"><span class="dot" style="background:#7f88a3"></span>Idle</span><div class="sub">yesterday</div><div class="ac"><div class="sw"></div>Continue after reset</div><a class="btn sm" href="towo-session.html">Open</a></div>
+<div class="rw"><div><div class="ttl">Poke at the scanner’s NFO writer</div><div class="meta">14 turns · context kept</div></div><span class="chip st-idle"><span class="dot" style="background:#7f88a3"></span>Idle</span><div class="sub">3 days ago</div><div class="ac"><div class="sw"></div>Continue after reset</div><a class="btn sm" href="towo-session.html">Open</a></div>
+</div></div>
+</div>
+</main>
+<script src="app-shell.js"></script>
+</body>
+</html>

@@ -34,7 +34,11 @@
     livetv:    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M8 3.5 12 6l4-2.5" stroke-linecap="round"/></svg>',
     requests:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4h14v16l-7-4-7 4z"/><path d="M12 8v5M9.5 10.5h5"/></svg>',
     prefs:     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><line x1="6" y1="4" x2="6" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/><line x1="18" y1="4" x2="18" y2="20"/><circle cx="6" cy="9" r="2.3" fill="var(--fill-2)"/><circle cx="12" cy="15" r="2.3" fill="var(--fill-2)"/><circle cx="18" cy="8" r="2.3" fill="var(--fill-2)"/></svg>',
-    users:     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 19a5.5 5.5 0 0 1 11 0"/><path d="M16 5.3a3.2 3.2 0 0 1 0 6M18.6 19a5.5 5.5 0 0 0-3-4.9"/></svg>'
+    users:     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 19a5.5 5.5 0 0 1 11 0"/><path d="M16 5.3a3.2 3.2 0 0 1 0 6M18.6 19a5.5 5.5 0 0 0-3-4.9"/></svg>',
+    towo:      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="7" width="16" height="12" rx="3"/><path d="M12 4v3"/><circle cx="9.3" cy="13" r="1.2" fill="currentColor" stroke="none"/><circle cx="14.7" cy="13" r="1.2" fill="currentColor" stroke="none"/></svg>',
+    towoq:     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><path d="M12 8v4.4l3 1.8"/></svg>',
+    towoask:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.5a2.5 2.5 0 0 1-2.5 2.5H8l-4 3.5V6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5z"/><path d="M12 13.2V12c1.3 0 2.2-.8 2.2-1.9S13.3 8.2 12 8.2c-1.1 0-1.9.6-2.1 1.5"/><circle cx="12" cy="15.4" r=".9" fill="currentColor" stroke="none"/></svg>',
+    towohost:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="4.5" width="17" height="6" rx="1.8"/><rect x="3.5" y="13.5" width="17" height="6" rx="1.8"/><path d="M7 7.5h.01M7 16.5h.01"/></svg>'
   };
 
   /* ---- brand mark: “Quartet Play” (structure tile with the open slot as a play) ---- */
@@ -68,6 +72,10 @@
     { href: 'ravilo-config.html?tab=requests',    label: 'Requests',        icon: 'requests', page: 'ravilo-requests'    },
     { href: 'ravilo-users.html',                  label: 'Users & devices', icon: 'users',    page: 'ravilo-users'       },
     { href: 'ravilo-config.html?tab=preferences', label: 'Preferences',     icon: 'prefs',    page: 'ravilo-preferences' },
+    { group: 'Towo' },
+    { href: 'towo.html',    label: 'Overview',        icon: 'towo',     page: 'towo-overview'      },
+    { href: 'towo-approvals.html',   label: 'Approvals',       icon: 'towoask',  page: 'towo-approvals'     },
+    { href: 'towo-runners.html',label: 'Runners',         icon: 'towohost', page: 'towo-runners'       },
   ];
   const here = (location.pathname.split('/').pop() || 'index.html');
   const main = document.querySelector('.app-main2');
@@ -102,8 +110,9 @@
       var pre = [], groups = [], cur = null;
       NAV.forEach(function (item) { if (item.group) { cur = { label: item.group, items: [] }; groups.push(cur); } else if (cur) cur.items.push(item); else pre.push(item); });
       var collapsed = function (g) { try { return localStorage.getItem('js-nav-collapsed:' + g) === '1'; } catch (e) { return false; } };
+      var hidden = function (g) { return g === 'Towo' && (function () { try { return localStorage.getItem('js-towo') === '0'; } catch (e) { return false; } })(); };
       return pre.map(navA).join('') + groups.map(function (g) {
-        return '<div class="nav-group' + (collapsed(g.label) ? ' collapsed' : '') + '" data-group="' + g.label + '">' +
+        return '<div class="nav-group' + (collapsed(g.label) ? ' collapsed' : '') + '" data-group="' + g.label + '"' + (hidden(g.label) ? ' style="display:none"' : '') + '>' +
           '<button type="button" class="group-label group-toggle" data-group="' + g.label + '" aria-label="Toggle ' + g.label + '">' + g.label + CHEV + '</button>' +
           '<div class="nav-group-items">' + g.items.map(navA).join('') + '</div>' +
         '</div>';

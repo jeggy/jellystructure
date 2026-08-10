@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Towo — Sessions</title>
+<link rel="stylesheet" href="wf.css">
+<link rel="stylesheet" href="app.css">
+<link rel="stylesheet" href="towo.css">
+<style>
+.tbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:12px 14px;border-radius:14px;background:var(--fill-2);border:1px solid var(--line);margin-bottom:16px}
+.search{flex:1 1 260px;min-width:190px;max-width:290px}
+.fchip{display:inline-flex;align-items:center;gap:7px;height:30px;padding:0 12px;border-radius:9px;font-size:12.5px;font-weight:600;border:1px solid var(--line);background:var(--fill-2);color:var(--ink-soft);cursor:pointer}
+.fchip.on{background:var(--hi-soft);border-color:rgba(123,110,240,.5);color:#dcd6ff}
+.fchip .c{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--ink-dim)}
+.hdr{display:grid;grid-template-columns:1fr 168px 150px 128px 116px 34px;gap:14px;padding:0 16px 8px}
+.rw{grid-template-columns:1fr 168px 150px 128px 116px 34px}
+.kebab{width:28px;height:28px;border-radius:8px;border:1px solid transparent;background:transparent;color:var(--ink-soft);cursor:pointer;font-size:15px;line-height:1}
+.kebab:hover{background:var(--fill-3);border-color:var(--line)}
+.menu{display:block;position:absolute;right:0;top:34px;width:214px;background:#232734;border:1px solid var(--line-2);border-radius:12px;box-shadow:0 22px 50px rgba(0,0,0,.55);padding:6px;z-index:6}
+.menu a{display:flex;align-items:center;gap:10px;height:33px;padding:0 11px;border-radius:8px;font-size:13px;color:var(--ink)}
+.menu a:hover{background:var(--fill-3)}
+.menu a.bad{color:#ffb3aa}
+.menu .divider{margin:5px 4px}
+.menu .k{margin-left:auto;font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--ink-dim)}
+.tagedit{display:flex;align-items:center;gap:7px}
+</style>
+</head>
+<body class="wf-body app-body">
+<main class="app-main2 wide towo" data-page="towo-overview" data-screen-label="Towo · Sessions">
+<div class="top"><div><h1>Sessions</h1><div class="sub" style="margin-top:5px">7 sessions · 2 idle and waiting · 2 set to continue after a quota reset</div></div><a class="btn pri" style="margin-left:auto" href="towo-session-new.html">＋ New session</a></div>
+
+<div class="tbar">
+<input class="input search" placeholder="Search titles and prompts…">
+<select class="sel" style="width:184px"><option>All workspaces</option><option>jellystructure</option><option>dotfiles</option><option>ravilo-tizen</option><option>homelab-infra</option></select>
+<div class="divider" style="width:1px;height:24px"></div>
+<div style="display:flex;gap:7px"><span class="fchip on">All <span class="c">7</span></span><span class="fchip">Running <span class="c">1</span></span><span class="fchip">Needs you <span class="c">1</span></span><span class="fchip">Idle <span class="c">2</span></span><span class="fchip">Paused <span class="c">1</span></span><span class="fchip">Stopped <span class="c">1</span></span><span class="fchip">Done <span class="c">1</span></span></div>
+<div class="seg" style="margin-left:auto"><button class="on">Recent</button><button>Turns</button><button>Workspace</button></div>
+</div>
+
+<div><div class="hdr lbl"><div>Session</div><div>Status</div><div>Last activity</div><div>After quota reset</div><div>Turns<span class="mono" style="text-transform:none;letter-spacing:0;font-weight:400"> ⓘ</span></div><div></div></div>
+<div class="rows">
+<div class="rw"><div><div class="ttl"><a href="towo-session.html" style="color:inherit">Wire Bazarr wanted-list pagination</a></div><div class="meta">jellystructure · dev box</div></div><span class="chip st-run"><span class="dot"></span>Running</span><div class="sub">active now</div><div class="ac"><div class="sw on"></div>Continues</div><div class="meta" style="margin:0">12</div><button class="kebab">⋯</button></div>
+
+<div class="rw" style="border-color:rgba(123,110,240,.42);background:rgba(123,110,240,.08);position:relative"><div><div class="ttl">Fix R195 null-language cluster <span class="tag">picker</span></div><div class="meta">jellystructure · dev box</div></div><span class="chip st-ask"><span class="dot"></span>Awaiting permission</span><div class="sub">40s</div><div class="ac"><div class="sw"></div>Stays paused</div><div class="meta" style="margin:0">7</div><button class="kebab" style="background:var(--fill-3);border-color:var(--line)">⋯</button>
+<div class="menu"><a href="towo-approvals.html">◈ Review the request<span class="k">↵</span></a><div class="divider"></div><a href="towo-session.html">▷ Open the session</a><a href="#">⑃ Fork from here</a><a href="#">✎ Rename</a><a href="#">◫ Tag…</a><a href="#">⇩ Export transcript</a><div class="divider"></div><a href="#" class="bad">🗑 Delete session</a></div></div>
+
+<div class="rw"><div><div class="ttl"><a href="towo-session.html" style="color:inherit">Migrate systemd units to quadlet</a> <span class="tag">infra</span></div><div class="meta">dotfiles · dev box</div></div><span class="chip st-nap"><span class="dot"></span>Paused · quota</span><div><div class="sub" style="color:#b9bfd4">Resumes <b class="mono">18:42</b></div><div class="meta" style="margin-top:2px">in 4 h 12 m</div></div><div class="ac"><div class="sw on"></div>Continues</div><div class="meta" style="margin:0">23</div><button class="kebab">⋯</button></div>
+
+<div class="rw"><div><div class="ttl"><a href="towo-limits.html" style="color:inherit">Tizen build verification pass</a></div><div class="meta">ravilo-tizen · macbook <span style="color:#f7ce85">· runner offline</span></div></div><span class="chip st-err"><span class="dot"></span>Stopped · max turns</span><div class="sub">1 h ago</div><div class="ac" style="color:var(--ink-dim)"><div class="sw" style="opacity:.5"></div>Not a quota pause</div><div class="meta" style="margin:0">30 · capped</div><button class="kebab">⋯</button></div>
+
+<div class="rw"><div><div class="ttl"><a href="towo-session.html" style="color:inherit">Audit WireGuard peer config</a> <span class="tag">infra</span></div><div class="meta">homelab-infra · dev box</div></div><span class="chip st-idle"><span class="dot" style="background:#7f88a3"></span>Idle</span><div class="sub">yesterday</div><div class="ac"><div class="sw"></div>—</div><div class="meta" style="margin:0">9</div><button class="kebab">⋯</button></div>
+<div class="rw"><div><div class="ttl"><a href="towo-session.html" style="color:inherit">Poke at the scanner’s NFO writer</a></div><div class="meta">jellystructure · dev box · nothing pending</div></div><span class="chip st-idle"><span class="dot" style="background:#7f88a3"></span>Idle</span><div class="sub">3 days ago</div><div class="ac"><div class="sw"></div>—</div><div class="meta" style="margin:0">14</div><button class="kebab">⋯</button></div>
+<div class="rw"><div><div class="ttl"><a href="towo-session.html" style="color:inherit">Quadlet notes — scratch</a></div><div class="meta">dotfiles · dev box · nothing pending</div></div><span class="chip st-done"><span class="dot"></span>Done</span><div class="sub">last week</div><div class="ac"><div class="sw"></div>—</div><div class="meta" style="margin:0">4</div><button class="kebab">⋯</button></div>
+</div>
+
+<div style="display:flex;align-items:center;gap:14px;margin-top:20px"><div class="hint" style="max-width:760px">A <b style="color:var(--ink)">turn</b> is one round-trip: Claude thinks, runs whatever tools it needs, then comes back with an answer. It’s Claude’s own unit of work, not something Towo invented. The number here is how many a session has taken so far.<br><br><b style="color:var(--ink)">Idle is fine.</b> A session that finished sits here keeping its context — open it, type, and it carries on rather than starting cold. The <b style="color:var(--ink)">After quota reset</b> switch is per session and starts off. Towo checks every 6 hours and only continues sessions you armed — never a session that stopped for any other reason.</div></div>
+</div>
+</main>
+<script src="app-shell.js"></script>
+</body>
+</html>
