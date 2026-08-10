@@ -90,6 +90,11 @@ data class ClientCapabilities(
     @SerialName("max_h264_height") val maxH264Height: Int = 0,
     /** H.264 level ×10, Jellyfin's own encoding (e.g. `51` = level 5.1). */
     @SerialName("max_h264_level") val maxH264Level: Int = 0,
+    /** Phase 161 — can this client render an embedded text subtitle (SRT/ASS/SSA) natively from the
+     *  container on a direct-played file, without the server sideloading it as an extracted VTT? False
+     *  (the pre-existing behavior) unless a client actively confirms it — see
+     *  `PlaybackService.buildSubtracks()`'s `embedTextSubs` doc for why this must stay conservative. */
+    @SerialName("supports_embedded_text_subs") val supportsEmbeddedTextSubs: Boolean = false,
 )
 
 @Serializable

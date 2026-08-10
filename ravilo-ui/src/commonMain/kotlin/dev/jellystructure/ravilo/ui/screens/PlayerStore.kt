@@ -2,6 +2,7 @@ package dev.jellystructure.ravilo.ui.screens
 
 import dev.jellystructure.ravilo.ui.seams.detectAvcDecoderLimits
 import dev.jellystructure.ravilo.ui.seams.detectHdrSupport
+import dev.jellystructure.ravilo.ui.seams.supportsEmbeddedTextSubtitles
 import dev.jellystructure.shared.tv.CardPlayState
 import dev.jellystructure.shared.tv.ClientCapabilities
 import dev.jellystructure.shared.tv.RaviloConfig
@@ -79,6 +80,11 @@ class PlayerStore(private val apiClient: TvApiClient) {
                     // R183: Dolby Vision + the real H.264 decode ceiling, so DV profile-8 titles
                     // direct-play and any fallback transcode is one this device can actually decode.
                     val avc = detectAvcDecoderLimits()
+                    // Phase 161: whether this client renders embedded text subs (SRT/ASS/SSA) natively
+                    // in-container on a direct-played file, so the server can skip a redundant VTT
+                    // sideload of the same stream (bug: it used to always sideload, double-delivering
+                    // every text subtitle on a direct-played title — see PlaybackService.buildSubtracks).
+                    val embeddedSubs = supportsEmbeddedTextSubtitles()
                     val ticket = apiClient.startPlayback(
                         itemId = itemId,
                         capabilities = ClientCapabilities(
@@ -93,6 +99,7 @@ class PlayerStore(private val apiClient: TvApiClient) {
                             maxH264Width = avc.maxWidth,
                             maxH264Height = avc.maxHeight,
                             maxH264Level = avc.maxLevel,
+                            supportsEmbeddedTextSubs = embeddedSubs,
                         ),
                     )
                     ticket
