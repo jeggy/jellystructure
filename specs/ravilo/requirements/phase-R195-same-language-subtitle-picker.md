@@ -418,3 +418,24 @@ own raw label text). Fixed via `groupDisplayName()`: falls back to the cluster's
 as a clean word (`"Commentary"`/`"Describes action"`) when every version shares one kind, else
 `"Unnamed"` — never the raw title text, keeping R180's FR-RV-ASP1-2 "never echo raw title/codec text"
 non-goal intact.
+
+### Two real touch bugs found via live testing on the Pixel 9 (fixed same day)
+1. **The Audio/Subtitles tab pills had zero touch handling.** `PickerTab` never accepted an `onTap`
+   at all — tab switching only ever worked via the D-pad's `onLeft`/`onRight`, which a phone (no
+   D-pad) never triggers. Reported live as "can't navigate to the subtitles tab, so can't even see
+   it there." Fixed: `PickerTab` gained an optional `onTap`, wired to a new `pickerTapTab(tab: Int)`
+   function that's the exact same tab-switch logic `onLeft`/`onRight` already ran (extracted, not
+   duplicated — both call sites now share it, so they can't drift apart).
+2. **The picker had no way to dismiss via touch at all**, in any state — no backdrop, no close
+   button. On a TV, D-pad Back reaches `pickerBack()`; on a phone there's no hardware D-pad key
+   that does. Reported live as "can't get out of the popup when there's only one audio track" — with
+   a single track the picker still requires an explicit dismiss action distinct from "select this
+   track" (retapping the same track works, but isn't the expected mobile-modal gesture). Fixed: a
+   full-screen invisible scrim behind the picker (its own `AnimatedVisibility`, added as an earlier
+   sibling so it renders behind, never intercepting taps on the picker itself) that calls the exact
+   same `pickerBack()` Back already uses — tapping outside the picker now steps out of level 2 or
+   closes from level 1, matching standard mobile modal behaviour, and still can't diverge from the
+   D-pad path since it's the same function.
+
+Verified via all 5 Ravilo compile targets. Still not live-retested on the Pixel 9 after this fix
+(deploy is user-initiated).
