@@ -1,0 +1,62 @@
+import { query, type CanUseTool, type PermissionResult } from "@anthropic-ai/claude-agent-sdk";
+import { logRateLimitEvent } from "./quotaLog.js";
+
+export type RunSessionOptions = {
+  cwd: string;
+  prompt: string;
+  quotaLogPath: string;
+};
+
+/**
+ * Spec build-order step 1: one hardcoded session, streaming to stdout.
+ * canUseTool denies everything -- this proof-of-concept only needs to prove
+ * the SDK/auth/streaming loop works end to end, and a deny-all callback is
+ * both the safest possible first run and a real exercise of the exact
+ * callback Towo's remote-approval UI (§D) will be built on. The fields
+ * logged here (title/displayName/requestId) are the SDK's own ready-made
+ * approval-prompt text -- confirmed by reading the installed .d.ts, not
+ * assumed from docs.
+ */
+export async function runOneSession(opts: RunSessionOptions): Promise<void> {
+  const denyAll: CanUseTool = async (toolName, input, options): Promise<PermissionResult> => {
+    console.log(`\n[towo-runner] canUseTool fired -- ${options.title ?? toolName}`);
+    console.log(`  displayName: ${options.displayName ?? "(none)"}`);
+    console.log(`  requestId:   ${options.requestId}`);
+    console.log(`  input:       ${JSON.stringify(input)}`);
+    console.log(`  -> denying (proof-of-concept runner never auto-approves)\n`);
+    return { behavior: "deny", message: "towo-runner v1 is a read-only proof of concept; nothing is approved yet." };
+  };
+
+  const q = query({
+    prompt: opts.prompt,
+    options: {
+      cwd: opts.cwd,
+      canUseTool: denyAll,
+      permissionMode: "default",
+    },
+  });
+
+  for await (const message of q) {
+    switch (message.type) {
+      case "assistant": {
+        for (const block of message.message.content) {
+          if (block.type === "text") {
+            process.stdout.write(block.text);
+          }
+        }
+        break;
+      }
+      case "rate_limit_event": {
+        logRateLimitEvent(opts.quotaLogPath, message);
+        console.log(`\n[towo-runner] rate_limit_event: status=${message.rate_limit_info.status} type=${message.rate_limit_info.rateLimitType ?? "?"} resetsAt=${message.rate_limit_info.resetsAt ?? "?"}`);
+        break;
+      }
+      case "result": {
+        console.log(`\n\n[towo-runner] session ${message.session_id} finished: ${message.subtype}`);
+        break;
+      }
+      default:
+        break;
+    }
+  }
+}
