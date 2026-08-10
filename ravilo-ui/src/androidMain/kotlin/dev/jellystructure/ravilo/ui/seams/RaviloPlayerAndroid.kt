@@ -55,10 +55,12 @@ actual class RaviloPlayer actual constructor() {
     // Stop/FF/Rew/Next/Prev) to us and external controllers (Assistant/Bluetooth/Now-Playing) work.
     // ExoPlayer maps the standard session commands to play/pause/seek; the shared chrome stays the
     // source of truth for position polling.
-    private val mediaSessionLazy: Lazy<MediaSession> = lazy {
-        MediaSession.Builder(ctx, exo).setId("ravilo-player").build()
-    }
-    private val mediaSession: MediaSession by mediaSessionLazy
+    // R192: a plain nullable ref, not `by lazy` — Media3's MediaSession has no public `isActive`
+    // setter (only `release()`), so "deactivate without releasing" is implemented as release-and-
+    // recreate-on-demand instead of a flag toggle. `lazy` can't be reset, hence the manual ref.
+    private var mediaSessionRef: MediaSession? = null
+    private fun ensureMediaSession(): MediaSession =
+        mediaSessionRef ?: MediaSession.Builder(ctx, exo).setId("ravilo-player").build().also { mediaSessionRef = it }
 
     // R77: video geometry for automatic aspect-ratio correction in PlayerVideoSurface.
     private val _videoSize = MutableStateFlow(VideoSize.UNKNOWN)
@@ -96,7 +98,7 @@ actual class RaviloPlayer actual constructor() {
         exo.setMediaItem(mediaItem)
         exo.seekTo(startPositionMs)
         exo.prepare()
-        mediaSession // touch the lazy session so it's active for the OS while this item plays (R44)
+        ensureMediaSession() // touch/recreate the session so it's active for the OS while this item plays (R44)
     }
 
     fun setVideoSurfaceView(sv: SurfaceView) { exo.setVideoSurfaceView(sv) }
@@ -176,8 +178,23 @@ actual class RaviloPlayer actual constructor() {
     }
 
     actual fun release() {
-        if (mediaSessionLazy.isInitialized()) mediaSession.release()
+        mediaSessionRef?.release()
+        mediaSessionRef = null
         exo.release()
+    }
+
+    // R192: release (not just pause) on backgrounding, so the session stops being advertised to
+    // Android's cross-device media surfacing; recreated on demand when foregrounded/reactivated, bound
+    // to the SAME still-alive `exo` instance, so an in-app resume doesn't need a full player rebuild.
+    // A `false` on an already-released session is a no-op — never forces one into existence just to
+    // tear it right back down.
+    actual fun setSessionActive(active: Boolean) {
+        if (active) {
+            ensureMediaSession()
+        } else {
+            mediaSessionRef?.release()
+            mediaSessionRef = null
+        }
     }
 
     // No-op — the video surface is already in-scene via a normal (non-Z-order-on-top) SurfaceView

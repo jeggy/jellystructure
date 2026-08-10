@@ -52,6 +52,15 @@ expect class RaviloPlayer() {
     fun release()
 
     /**
+     * R192 — toggle the OS-level media session's visibility (e.g. Android's `MediaSession.isActive`)
+     * without releasing the underlying player/session objects. Android backgrounding (TV sleep,
+     * remote/HDMI-CEC power-off) should deactivate the session so it stops being advertised to other
+     * devices signed into the same account, while still allowing an in-app foreground return to
+     * resume without a full player rebuild. No-op on platforms with no such OS concept (web).
+     */
+    fun setSessionActive(active: Boolean)
+
+    /**
      * R157 (FR-R157-1.3, the documented fallback) — on web, the Compose canvas has no accessible
      * alpha/transparency toggle in this Compose Multiplatform version's `CanvasBasedWindow` API
      * (verified: no such parameter exists), so the video can't simply show through a transparent

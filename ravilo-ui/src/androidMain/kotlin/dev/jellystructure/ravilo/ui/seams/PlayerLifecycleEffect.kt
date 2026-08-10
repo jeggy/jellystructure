@@ -36,15 +36,20 @@ actual fun PlayerLifecycleEffect(
                 }
                 // ON_STOP, not ON_PAUSE: the player is genuinely off-screen now, and this is the last
                 // callback we are guaranteed to get before a swipe-kill/OOM. End the session here so
-                // Jellyfin stops listing us as streaming and the resume position is final.
+                // Jellyfin stops listing us as streaming and the resume position is final. R192: also
+                // deactivate the OS MediaSession here — TV sleep/power-off never reaches player.release()
+                // (that only fires when the Compose screen itself leaves composition), so without this the
+                // session keeps being advertised to Android's cross-device media surfacing indefinitely.
                 Lifecycle.Event.ON_STOP -> {
                     backgrounded = true
                     currentOnBackground()
+                    player.setSessionActive(false)
                 }
                 Lifecycle.Event.ON_START -> {
                     if (backgrounded) {
                         backgrounded = false
                         currentOnForeground()
+                        player.setSessionActive(true)
                     }
                 }
                 Lifecycle.Event.ON_RESUME -> {
