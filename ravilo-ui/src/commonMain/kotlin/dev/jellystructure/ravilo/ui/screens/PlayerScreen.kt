@@ -180,6 +180,9 @@ fun PlayerScreen(
     // choices; R181/R180 — the title's original-audio language for the "Dubbed" audio badge.
     seriesId: String? = null,
     originalLanguage: String? = null,
+    // R192 — poster fallback for the OS media session's artwork when there's no `episodes` list to
+    // pull a still from (movies). Ignored when `episodes`/`currentEpIndex` resolves a still.
+    posterUrl: String? = null,
     // Phase 150 — this title's own intro/credits segments (R182 Skip Intro / Skip Credits consumes
     // this; this stage only threads it in).
     segments: dev.jellystructure.shared.tv.TvSegmentMarkers = dev.jellystructure.shared.tv.TvSegmentMarkers(),
@@ -595,7 +598,11 @@ fun PlayerScreen(
         val s = sessionState as? PlayerSessionState.Ready ?: return@LaunchedEffect
         val streamUrl = s.ticket.hlsUrl
             ?: "${s.ticket.jellyfinBaseUrl}/Videos/${s.ticket.itemId}/stream.${s.ticket.container}?api_key=${s.ticket.accessToken}"
-        player.load(streamUrl, s.ticket.startPositionMs, s.ticket.subtitles, s.ticket.audio)
+        // R192 — feed title/episode-kicker/artwork into the OS media session (TV-only; see
+        // RaviloPlayer.load doc). `episodes[currentEpIndex]`'s still takes priority over `posterUrl`
+        // (a movie has no `episodes` list at all, so falls straight through to `posterUrl`).
+        val artworkUrl = episodes?.getOrNull(currentEpIndex)?.stillUrls?.firstOrNull() ?: posterUrl
+        player.load(streamUrl, s.ticket.startPositionMs, s.ticket.subtitles, s.ticket.audio, title = itemTitle, subtitle = itemKicker, artworkUrl = artworkUrl)
         player.play()
         isPlaying = true
         loadedForItemId = itemId   // Bug fix: see loadedForItemId's declaration comment above.

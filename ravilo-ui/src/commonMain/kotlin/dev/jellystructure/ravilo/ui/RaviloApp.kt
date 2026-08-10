@@ -208,6 +208,9 @@ private sealed class Dest {
         val seriesId: String? = null,
         /** R181/R180 — the title's original-audio language, for the player's "Dubbed" audio badge. */
         val originalLanguage: String? = null,
+        /** R192 — poster fallback for the OS media session's artwork (movies; series derive a still
+         *  from [episodes] instead, so this is left null on that path). */
+        val posterUrl: String? = null,
         /** Phase 150 — this title's own intro/credits segments (R182 Skip Intro / Skip Credits). */
         val segments: dev.jellystructure.shared.tv.TvSegmentMarkers = dev.jellystructure.shared.tv.TvSegmentMarkers(),
     ) : Dest()
@@ -651,7 +654,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                             // A series needs episode-resolution (resume point + rail) that only the
                             // detail screen has, so Play opens it; a movie plays directly.
                             card.kind == MediaKind.SERIES -> push(Dest.SeriesDetail(card.id, dest.displayName))
-                            else -> push(Dest.Player(card.id, card.title, displayName = dest.displayName, seriesId = card.id))
+                            else -> push(Dest.Player(card.id, card.title, displayName = dest.displayName, seriesId = card.id, posterUrl = card.posterUrl))  // R192
                         }
                     },
                     onChannelSelect = { ch -> push(Dest.ChannelView(ch, dest.displayName)) },
@@ -910,6 +913,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                             seriesId = detail.card.id,   // R181 — a movie is its own remembered bucket
                             originalLanguage = detail.originalLanguage,
                             segments = detail.segments,  // Phase 150
+                            posterUrl = detail.card.posterUrl,  // R192
                         ))
                     },
                     onRelatedSelect = { openDetail(it, dest.displayName) },
@@ -990,6 +994,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                     seriesId         = dest.seriesId,
                     originalLanguage = dest.originalLanguage,
                     segments         = dest.segments,  // Phase 150
+                    posterUrl        = dest.posterUrl,  // R192
                     store            = store,
                     onBack           = { pop() },
                     onNavigateToEpisode = { nextId ->
