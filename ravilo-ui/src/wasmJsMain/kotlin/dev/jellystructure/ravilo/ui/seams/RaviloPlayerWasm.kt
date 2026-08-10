@@ -94,6 +94,9 @@ actual class RaviloPlayer actual constructor() {
         runCatching { document.body?.removeChild(video) }
     }
 
+    // R192: no OS-level MediaSession/cross-device surfacing on web — nothing to toggle.
+    actual fun setSessionActive(active: Boolean) {}
+
     actual val positionMs: Long get() = (video.currentTime * 1000).toLong()
     actual val durationMs: Long get() {
         val d = video.duration
