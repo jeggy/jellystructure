@@ -1,0 +1,25 @@
+{
+  "name": "towo-runner",
+  "version": "0.1.0",
+  "description": "Towo (Phase 162) runner daemon -- hosts the Claude Agent SDK on a machine with real checkouts, exposes it to the Towo control plane running inside jellystructure's admin app.",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "towo-runner": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc && node dist/index.js",
+    "start": "node dist/index.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "0.3.227"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.7.0"
+  }
+}
