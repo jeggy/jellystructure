@@ -7,12 +7,16 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
-private const val DEFAULT_INTERVAL_MS = 6L * 60 * 60 * 1000  // spec §A's default quota-watch interval
+// A disabled watch still re-checks periodically (not a tight loop) so re-enabling from Settings
+// takes effect promptly rather than waiting out whatever the last-configured interval was.
+private const val DISABLED_RECHECK_MS = 60_000L
 
 /**
- * Phase 162 (Towo), build-order step 6 — the headline feature. Every [intervalMs] (default 6h, per
- * spec §A), looks for sessions sitting in `paused_quota` with `continue_after_reset` armed whose
- * `resume_at` has passed, and resumes each one via ControlToRunner.ResumeSession.
+ * Phase 162 (Towo), build-order step 6 — the headline feature. Every `quotaWatchIntervalMs` (spec
+ * §A, backend-owned in `towo_settings` — re-read every tick, so a Settings change takes effect on
+ * the next wake rather than needing a restart), looks for sessions sitting in `paused_quota` with
+ * `continue_after_reset` armed whose `resume_at` has passed, and resumes each one via
+ * ControlToRunner.ResumeSession.
  *
  * Deliberately control-plane-owned, not runner-owned (see the dev-review addendum / TowoProtocol.kt's
  * ResumeSession doc) -- this process already persists continue_after_reset/resume_at and already runs
@@ -27,15 +31,19 @@ class TowoAutoContinueScheduler(
     private val store: TowoStore,
     private val service: TowoService,
     private val scope: CoroutineScope,
-    private val intervalMs: Long = DEFAULT_INTERVAL_MS,
 ) {
     fun start() {
         scope.launch {
             while (isActive) {
-                runCatching { tick() }.onFailure {
-                    Logger.warn("Towo auto-continue tick failed: ${it.message}", "towo")
+                val settings = store.getSettings()
+                if (settings.quotaWatchEnabled) {
+                    runCatching { tick() }.onFailure {
+                        Logger.warn("Towo auto-continue tick failed: ${it.message}", "towo")
+                    }
+                    delay(settings.quotaWatchIntervalMs)
+                } else {
+                    delay(DISABLED_RECHECK_MS)
                 }
-                delay(intervalMs)
             }
         }
     }

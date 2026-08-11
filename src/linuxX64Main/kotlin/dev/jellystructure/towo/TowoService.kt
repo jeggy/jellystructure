@@ -50,7 +50,7 @@ class TowoService(
     // Touched from both REST-call coroutines (createSession) and the runner-link receive loop
     // (onRunnerMessage) concurrently -- unlike the JVM, Kotlin/Native has no free happens-before
     // guarantee across threads here, so this needs a real lock, not just "single-threaded in practice".
-    private data class PendingStart(val folderId: String?, val folderPath: String)
+    private data class PendingStart(val folderId: String?, val folderPath: String, val maxTurns: Long)
     private val pendingStartsMutex = Mutex()
     private val pendingStarts = mutableMapOf<String, PendingStart>()
 
@@ -95,7 +95,7 @@ class TowoService(
             }
             is RunnerToControl.SessionStarted -> {
                 val pending = pendingStartsMutex.withLock { pendingStarts.remove(msg.commandId) }
-                store.createSession(msg.sessionId, runnerId, pending?.folderId, pending?.folderPath, title = null, maxTurns = 40)
+                store.createSession(msg.sessionId, runnerId, pending?.folderId, pending?.folderPath, title = null, maxTurns = pending?.maxTurns ?: store.getSettings().defaultMaxTurns)
                 events.broadcast(TowoEvent.SessionStatus(msg.sessionId, "running"))
             }
             is RunnerToControl.SessionMessage -> onSessionMessage(runnerId, msg.sessionId, msg.message)
@@ -182,10 +182,15 @@ class TowoService(
 
     // ===== REST-backing operations =====
 
-    suspend fun createSession(runnerId: String, folderId: String?, folderPath: String, prompt: String, maxTurns: Long?, permissionProfile: String): Boolean {
+    /** [maxTurns]/[permissionProfile] null = caller didn't specify, fall back to towo_settings'
+     *  defaults (spec §A/§F: "a starting value that every session can override"). */
+    suspend fun createSession(runnerId: String, folderId: String?, folderPath: String, prompt: String, maxTurns: Long?, permissionProfile: String?): Boolean {
+        val settings = store.getSettings()
+        val resolvedMaxTurns = maxTurns ?: settings.defaultMaxTurns
+        val resolvedProfile = permissionProfile ?: settings.defaultPermissionProfile
         val commandId = generateSecureToken()
-        pendingStartsMutex.withLock { pendingStarts[commandId] = PendingStart(folderId, folderPath) }
-        val sent = runners.send(runnerId, ControlToRunner.StartSession(commandId, folderPath, prompt, maxTurns, permissionProfile))
+        pendingStartsMutex.withLock { pendingStarts[commandId] = PendingStart(folderId, folderPath, resolvedMaxTurns) }
+        val sent = runners.send(runnerId, ControlToRunner.StartSession(commandId, folderPath, prompt, resolvedMaxTurns, resolvedProfile))
         if (!sent) pendingStartsMutex.withLock { pendingStarts.remove(commandId) }
         return sent
     }

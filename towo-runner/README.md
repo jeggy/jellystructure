@@ -53,10 +53,22 @@ itself a git repo counts as one folder; otherwise every git repo one level below
 down this same connection — confirmed live: a `Write` call suspended, was approved via
 `POST /api/towo/permissions/:id`, and the file was actually written.
 
-**Not yet supported**: `send_message` (posting into an already-idle session) — multi-turn needs
-streaming-input mode (an `AsyncIterable` prompt) from session start, which `startManagedSession`
-doesn't use yet. Logged as a warning, not silently dropped. The composer UI exists and calls it; the
-button just won't do anything useful on an idle session until this lands.
+Multi-turn (`send_message`, posting into an already-idle session) is handled by `asyncQueue.ts`'s
+`AsyncQueue` — every managed session's `prompt` is this queue from the start, not a plain string, so
+the underlying process stays alive indefinitely rather than exiting once the first turn completes.
+**`Query.streamInput()` alone is not reliable for this** — confirmed live it either throws
+`"ProcessTransport is not ready for writing"` or silently produces no response when called from a
+genuinely separate later context (a WS message handler firing seconds after the session went idle); it
+only works when called synchronously within the same tick as the generator's own message processing,
+which "message an idle session" can never guarantee. `pushMessage()` on the retained session handle
+was confirmed live across a real multi-second gap (browser composer → REST → runner → a second real
+Claude turn, the actual reply text landing in the transcript) and is what auto-continue's resume
+also uses internally now (the resumed session's continuation prompt is just the queue's first item).
+
+Killing the runner process does **not** clean up its child `claude` CLI subprocesses — they're left
+orphaned, still holding their sessions "active" from the CLI's own perspective with nothing left to
+relay them anywhere. Known gap, not yet fixed: a graceful-shutdown handler (SIGTERM/SIGINT) that calls
+`.close()` on every active `Query` before exiting.
 
 ## Rate-limit event capture
 

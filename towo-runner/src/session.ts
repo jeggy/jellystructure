@@ -1,5 +1,23 @@
-import { query, type CanUseTool, type PermissionResult, type Query, type SessionStore } from "@anthropic-ai/claude-agent-sdk";
+import { query, type CanUseTool, type PermissionMode, type PermissionResult, type Query, type SDKUserMessage, type SessionStore } from "@anthropic-ai/claude-agent-sdk";
 import { logRateLimitEvent } from "./quotaLog.js";
+import { AsyncQueue } from "./asyncQueue.js";
+
+/**
+ * Spec §D — named permission profiles, never a naked allow-list of dangerous tools. Read-only uses
+ * `dontAsk` (canUseTool never fires per the SDK; anything off the allow-list is auto-denied, no
+ * relay to the control plane at all). Unrestricted requires deliberate per-session opt-in in the UI
+ * (composer), enforced there, not here -- this map just knows how to run whatever profile it's given.
+ */
+export const PERMISSION_PROFILES: Record<string, { permissionMode: PermissionMode; allowedTools?: string[] }> = {
+  read_only: { permissionMode: "dontAsk", allowedTools: ["Read", "Glob", "Grep"] },
+  normal: { permissionMode: "default" },
+  autonomous: { permissionMode: "acceptEdits" },
+  unrestricted: { permissionMode: "bypassPermissions" },
+};
+
+function resolveProfile(name: string | undefined) {
+  return PERMISSION_PROFILES[name ?? "normal"] ?? PERMISSION_PROFILES.normal;
+}
 
 export type RunSessionOptions = {
   cwd: string;
@@ -90,27 +108,49 @@ export type StartManagedSessionOptions = {
    *  open question on what an auto-continue actually resumes with; "Continue." is a placeholder
    *  until real usage data settles what this should say. */
   resumeSessionId?: string;
+  /** One of PERMISSION_PROFILES' keys (spec §D); defaults to "normal" (relay everything). */
+  permissionProfile?: string;
 };
+
+export type ManagedSession = {
+  query: Query;
+  /** Feeds a new turn into this session at any point in its life, including long after it went
+   *  idle. Backed by an AsyncQueue the session's prompt IS, from the start -- see asyncQueue.ts's
+   *  doc comment for why Query.streamInput() alone is not safe for this (confirmed live). */
+  pushMessage: (text: string) => void;
+};
+
+function userMessage(text: string): SDKUserMessage {
+  return { type: "user", message: { role: "user", content: text }, parent_tool_use_id: null };
+}
 
 /**
  * Build-order step 3+ — a session driven by the control plane rather than a hardcoded local prompt.
- * Returns the live Query handle immediately (before the message loop finishes) so the caller can
- * index it by session id for interrupt()/streamInput() once the first message reveals that id.
+ * Always runs in streaming-input mode (the prompt is an AsyncQueue, not a plain string) so the
+ * underlying process stays alive indefinitely rather than exiting once the first turn completes --
+ * required for send_message to reach a session that's been sitting idle. Returns the live handle
+ * immediately (before the message loop finishes) so the caller can index it by session id for
+ * interrupt()/pushMessage() once the first message reveals that id.
  */
-export function startManagedSession(opts: StartManagedSessionOptions): Query {
-  const { cwd, prompt, quotaLogPath, callbacks, maxTurns, sessionStore, resumeSessionId } = opts;
+export function startManagedSession(opts: StartManagedSessionOptions): ManagedSession {
+  const { cwd, prompt, quotaLogPath, callbacks, maxTurns, sessionStore, resumeSessionId, permissionProfile } = opts;
   const canUseTool: CanUseTool = async (toolName, input, options) =>
     callbacks.onPermissionRequest(toolName, input, {
       requestId: options.requestId,
       title: options.title,
       displayName: options.displayName,
     });
+  const profile = resolveProfile(permissionProfile);
 
-  console.log(`[towo-runner] starting managed session: cwd=${cwd} resume=${resumeSessionId ?? "(new)"} maxTurns=${maxTurns ?? "(default)"}`);
+  const inputQueue = new AsyncQueue<SDKUserMessage>();
+  inputQueue.push(userMessage(prompt));
+
+  console.log(`[towo-runner] starting managed session: cwd=${cwd} resume=${resumeSessionId ?? "(new)"} maxTurns=${maxTurns ?? "(default)"} profile=${permissionProfile ?? "normal"}`);
   const q = query({
-    prompt,
+    prompt: inputQueue,
     options: {
-      cwd, canUseTool, permissionMode: "default",
+      cwd, canUseTool, permissionMode: profile.permissionMode,
+      ...(profile.allowedTools ? { allowedTools: profile.allowedTools } : {}),
       ...(maxTurns != null ? { maxTurns } : {}),
       ...(sessionStore ? { sessionStore } : {}),
       ...(resumeSessionId ? { resume: resumeSessionId } : {}),
@@ -130,5 +170,5 @@ export function startManagedSession(opts: StartManagedSessionOptions): Query {
     }
   })();
 
-  return q;
+  return { query: q, pushMessage: (text: string) => inputQueue.push(userMessage(text)) };
 }

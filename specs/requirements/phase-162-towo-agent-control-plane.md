@@ -1,11 +1,12 @@
 # Phase 162 — Towo: a self-hosted control plane for Claude Code sessions (FR-TOWO1)
 
-**Status:** Planned → **all 8 build-order steps implemented, 2026-08-11**, and verified end-to-end
-against a real Claude account (see §9) — a first functional slice, not full parity with every design
-detail in §4–§8 (see the addendum's "What's genuinely done vs. simplified" note). Dev-reviewed
-2026-08-11 (see the addendum: three real build-config/incident-precedent gaps found and closed, two
-protocol details made explicit, plus two real runtime bugs found and fixed via live browser testing).
-Open questions §10.1–2 resolved against the pinned SDK's real types.
+**Status:** Planned → **all 8 build-order steps implemented, 2026-08-11, plus a completeness pass the
+same day** — settings §A's remaining fields, permission profiles actually enforced, a real composer,
+and true multi-turn (`send_message`) all now real, not simplified-away (see the second addendum).
+Dev-reviewed 2026-08-11 (see the first addendum: three real build-config/incident-precedent gaps found
+and closed, two protocol details made explicit; the second addendum: a settings-tab whitelist bug, a
+double-submit bug, and a real `Query.streamInput()` reliability finding, all found and fixed via live
+browser testing). Open questions §10.1–2 resolved against the pinned SDK's real types.
 **Date:** 2026-08-10
 **Research basis:** `specs/research-reports/claude-code-remote-agent-management-2026-08-10.md`
 (doc-verified; §11 of that report lists the integration unknowns that must be pinned before build).
@@ -211,6 +212,11 @@ Plus a plain error: shown, transcript kept, one retry offered, **never looped**.
 
 ## 5. Data model (control plane — thin; content lives in the SessionStore)
 
+As designed (the actual built schema, `src/commonMain/sqldelight/dev/jellystructure/db/Towo.sq`,
+matches this closely — see migrations 22–25 for the exact DDL, and dev-review addendum #2 for the one
+addition this design didn't anticipate: a `towo_settings` single-row table for spec §A's fields, since
+the auto-continue scheduler is server-side and has no browser to read localStorage from):
+
 ```
 runner        id, name, host_label, status(online|offline), last_seen_at, auth_mode,
               agent_sdk_version, allowed_roots[]
@@ -224,6 +230,9 @@ session       id (= Claude session_id), runner_id, folder_id, title, tag,
 permission_request  id, session_id, tool_name, input_json, requested_at,
                     decided_at, decision(allow|deny|timeout), reason
 quota_status  runner_id, rate_limit_type, status, resets_at, utilization (nullable), observed_at
+settings      (single row) quota_watch_enabled, quota_watch_interval_ms, arm_new_sessions_default,
+              default_permission_profile, default_max_turns, notify_permission_requested,
+              notify_paused_quota, notify_resumed, notify_errored
 ```
 
 `session.status` is the single field the whole UI keys off. `paused_quota` + `resume_at` is what makes
@@ -339,24 +348,23 @@ asked. Keep Direction B on file if session counts ever grow past a screenful.
    tool call, clicking **Allow** in the browser sent the real `POST /permissions/:id`, the decision was
    relayed down the runner's own connection, the file was actually written to disk, and the UI updated
    to `idle` live via the WS stream with the banner clearing automatically.
-8. ✅ **Done 2026-08-11** — a first functional slice, not full parity with §8's screen table. Built:
-   Settings → Towo tab (enable toggle only, localStorage-based like `js-theme`); the sidebar Towo group
-   (flag-gated, matching spec §A); Overview (runners + sessions, real data); Runners list + enrollment;
-   Sessions list; **the live session view** (WS-driven transcript, inline approval banner, composer,
-   interrupt, and §G's recovery affordances — arm-toggle/resume-now/raise-cap/retry — folded into the
-   same page rather than a separate `towo-limits.html`); Approvals queue. **Not built**: Settings §A's
-   other fields (quota-watch interval, default permission profile/turn cap, notify-preferences — all
-   have working backend defaults, just no UI to change them yet), permission **profiles** as a chosen
-   concept in the composer (sessions always run in SDK `permissionMode: "default"`), and `send_message`
-   (posting into an idle session — needs streaming-input mode, logged as unsupported not silently
-   dropped). Verified live end-to-end in a real headless-browser session (Playwright) against the real
-   production webpack bundle, not just compiled: Settings toggle applies and persists, sidebar renders
-   conditionally, all five pages load real data, enrollment generates and tab-switches real commands,
-   and the full approve-a-real-permission click-through works with live status updates.
+8. ✅ **Done 2026-08-11, completed further the same day** (see the second addendum). Settings → Towo
+   tab now covers all of §A's fields (quota-watch on/off + interval, arm-new-sessions default, default
+   permission profile + turn cap, notify preferences), backend-owned in `towo_settings` (not
+   localStorage — the auto-continue scheduler has no browser to read from). Permission **profiles are
+   really enforced**: Read-only/Normal/Autonomous/Unrestricted map to real SDK `permissionMode` +
+   `allowedTools`, chosen per session in a real composer (`towo-session-new.html`'s counterpart, with a
+   settings-driven default pre-selected). `send_message` **actually works** — every managed session's
+   prompt is a live async queue from the start, not a plain string, so an idle session can be messaged
+   again reliably (see the second addendum for why the first attempt at this, `Query.streamInput()`,
+   was not reliable). Overview, Runners list + enrollment, Sessions list, the live session view (WS
+   transcript, inline approval banner, composer, interrupt, §G's recovery affordances folded into the
+   same page), Approvals queue — all as before, all still real and browser-verified.
 
-All 8 steps are now implemented and verified live. What's left is polish and completeness against the
-full spec (§4's untouched Settings fields, permission profiles as a real choice, multi-turn composing,
-notifications) — not new architecture.
+All 8 steps are implemented and verified live, including the settings/profiles/composer/multi-turn
+completeness pass. What's left is narrower polish (notification delivery is stored as a preference but
+nothing sends one yet; a resumed session's permission profile isn't preserved, always falls back to
+Normal) — not new architecture.
 
 ### Live verification, 2026-08-11
 Run against an isolated scratch instance (port 19505, throwaway config/DB — the real backend on 9505
@@ -522,3 +530,63 @@ send something to start the *next* turn). This changes both correctness and the 
 can only be answered by capturing a real quota cutoff — bundle it into the existing build-order step 2
 (`specs/requirements/phase-162-towo-agent-control-plane.md` §9) rather than treating it as a separate
 investigation.
+
+---
+
+## Dev-review addendum #2 (2026-08-11 — completeness pass: settings, profiles, composer, real multi-turn)
+
+Extends the first addendum's findings with three more real bugs, all found only by testing live in a
+real browser (Playwright) against the real production webpack bundle — none of them were catchable by
+`tsc`/Kotlin compiling clean, same lesson as addendum #1.
+
+**1. The Settings → Towo tab was completely unreachable — `showTab()` silently fell back to
+Connections.** `Settings.kt`'s `showTab(name)` gates the requested tab against a hardcoded whitelist
+(`SETTINGS_TABS`) before showing it; `"towo"` was never added to that list, so `?tab=towo` silently
+rendered Connections instead — the section existed in the DOM (`display:none`) but was permanently
+unreachable through the UI. A first Playwright pass worked around this with `state: 'attached'`
+instead of the default `state: 'visible'` and treated the mismatch as a Playwright quirk rather than
+investigating — **that was the wrong call**; always investigate an unexpected `element is not visible`
+rather than loosening the check to route around it. Fixed by adding `"towo"` to `SETTINGS_TABS`.
+
+**2. A single click on "Start session" created two real sessions.** Confirmed via `GET /sessions`
+showing two rows with identical `folderPath`/`maxTurns`/`profile` from one composer submission, and
+the runner log showing two back-to-back `<- start_session` lines. Root cause not fully isolated
+(plausibly a Playwright click-retry double-dispatching the DOM event, though a genuine JS-side double
+handler can't be fully ruled out) — but the fix is correct regardless of cause: the "Start session" and
+"Generate command" (enrollment) buttons now guard against re-entry with a boolean flag + `disabled`
+while their request is in flight, standard double-submit prevention. Worth remembering for any future
+button that starts a real, non-idempotent backend action.
+
+**3. `Query.streamInput()` is not a reliable mechanism for messaging an already-idle session — this
+required redesigning how every managed session is started, not just a bug fix.** The very first
+`send_message` implementation (addendum #1 era) called `activeQueries.get(sessionId)?.query.streamInput(...)`
+on the retained `Query` from a plain single-shot-string-prompted session, and an isolated probe
+appeared to confirm this worked. It does not hold up under realistic conditions: a live end-to-end test
+(browser composer → REST → runner, several seconds after the session went idle) produced
+`Error: ProcessTransport is not ready for writing` from inside the SDK every time. A second, more
+faithful probe (matching production's `SessionStore` config, called from an independent `setTimeout`
+rather than synchronously within the generator's own tick) reproduced a *different* failure mode with
+no thrown error at all — `streamInput()` resolved successfully, but the second turn's response never
+appeared and the session's `for await` loop had already ended. Both point to the same conclusion:
+**`streamInput()` only reliably works when called synchronously within the same tick as the `Query`'s
+own message processing** — which "message a session someone stepped away from" can never guarantee.
+The original probe's apparent success was a timing coincidence (near-zero gap between turn 1 ending and
+`streamInput()` being called), not a supported pattern.
+
+The real fix: every managed session's `prompt` is now a hand-rolled `AsyncQueue<SDKUserMessage>`
+(`towo-runner/src/asyncQueue.ts`) from the moment it starts — including resumed sessions — not a plain
+string. This keeps the underlying `claude` process genuinely alive indefinitely, the same way an
+interactive REPL never exits after one command; `send_message` becomes a `push()` onto that queue via
+a `pushMessage()` function on the session handle (`ManagedSession`, replacing the bare `Query` that
+`startManagedSession` used to return), not a bolted-on `streamInput()` call. Verified live, twice: over
+raw REST with a deliberate 5-second gap before the second message (real "TWO" landed in the transcript,
+correct `numTurns`), and through the actual browser composer end to end (typed a message, clicked Send,
+the real reply — "CONFIRMED" — appeared in the live transcript). Auto-continue's resume path was
+re-verified after this change too (a forced `paused_quota` session correctly resumed to `idle`), since
+it uses the same `startManagedSession` code path.
+
+**Known gap, not yet fixed, found in the process**: killing the runner process does not clean up its
+child `claude` CLI subprocesses — confirmed live, `ps aux` showed orphaned `claude` processes still
+running (holding their sessions "active" from the CLI's own perspective) after the parent `towo-runner`
+Node process was killed during testing. A graceful-shutdown handler (SIGTERM/SIGINT calling `.close()`
+on every active `Query`) would fix this; not built yet.
