@@ -58,6 +58,7 @@ class TowoAutoContinueScheduler(
             val resumed = service.resumeSession(session.id, "Continue.")
             if (resumed) {
                 Logger.info("Towo auto-continue: resumed session ${session.id}", "towo")
+                service.notifyResumed(session.id)
             } else {
                 Logger.info("Towo auto-continue: session ${session.id}'s runner is offline or has no known folder — will retry next tick", "towo")
             }

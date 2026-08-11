@@ -1,7 +1,10 @@
 package dev.jellystructure.towo
 
 import dev.jellystructure.auth.generateSecureToken
+import dev.jellystructure.config.ConfigStore
 import dev.jellystructure.log.Logger
+import dev.jellystructure.server.routes.fireWebhook
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.Json
@@ -34,8 +37,16 @@ class TowoService(
     private val store: TowoStore,
     private val runners: TowoRunnerRegistry,
     private val events: TowoEventBus,
+    private val configStore: ConfigStore,
 ) {
     private val json = Json { ignoreUnknownKeys = true }
+
+    // (runnerId, rateLimitType) -> the resetsAt we already notified for, so a low-quota warning
+    // fires once per window rather than on every subsequent rate_limit_event above the threshold.
+    private val lowQuotaNotifiedMutex = Mutex()
+    private val lowQuotaNotifiedFor = mutableMapOf<Pair<String, String>, Long?>()
+
+    private suspend fun notify(payload: String) = fireWebhook(configStore.current, payload)
 
     /** Build-order step 5 — the real durable transcript (towo_transcript_entry), not the in-memory
      *  capped placeholder v1 shipped with. This is SDKMessages broadcast for the live browser stream
@@ -50,7 +61,7 @@ class TowoService(
     // Touched from both REST-call coroutines (createSession) and the runner-link receive loop
     // (onRunnerMessage) concurrently -- unlike the JVM, Kotlin/Native has no free happens-before
     // guarantee across threads here, so this needs a real lock, not just "single-threaded in practice".
-    private data class PendingStart(val folderId: String?, val folderPath: String, val maxTurns: Long)
+    private data class PendingStart(val folderId: String?, val folderPath: String, val maxTurns: Long, val permissionProfile: String)
     private val pendingStartsMutex = Mutex()
     private val pendingStarts = mutableMapOf<String, PendingStart>()
 
@@ -84,18 +95,33 @@ class TowoService(
 
     // ===== Runner-link inbound message handling =====
 
+    /** Spec §7's disconnect-while-pending handling — called from Server.kt's runner-link `finally`
+     *  block. Sessions/requests are deliberately left untouched here: a disconnect is often a
+     *  transient reconnect (RECONNECT_DELAY_MS), not proof the runner's underlying claude subprocess
+     *  died, so nothing is auto-failed. This just makes the runner's live state visible immediately
+     *  rather than only after the browser's next poll of the runners list. */
+    suspend fun onRunnerDisconnected(runnerId: String) {
+        events.broadcast(TowoEvent.RunnerStatus(runnerId, "offline"))
+    }
+
     suspend fun onRunnerMessage(runnerId: String, msg: RunnerToControl) {
         when (msg) {
             is RunnerToControl.Hello -> {
                 store.updateRunnerHello(runnerId, msg.hostLabel, msg.authMode, msg.agentSdkVersion, msg.os, msg.claudeAuthOk, msg.allowedRoots)
                 events.broadcast(TowoEvent.RunnerStatus(runnerId, "online", if (msg.claudeAuthOk) "ok" else "missing"))
+                redeliverQueuedDecisions(runnerId)
             }
             is RunnerToControl.Folders -> {
                 store.upsertFolders(runnerId, msg.folders.map { it.name to it.absPath })
             }
             is RunnerToControl.SessionStarted -> {
                 val pending = pendingStartsMutex.withLock { pendingStarts.remove(msg.commandId) }
-                store.createSession(msg.sessionId, runnerId, pending?.folderId, pending?.folderPath, title = null, maxTurns = pending?.maxTurns ?: store.getSettings().defaultMaxTurns)
+                val settings = store.getSettings()
+                store.createSession(
+                    msg.sessionId, runnerId, pending?.folderId, pending?.folderPath,
+                    permissionProfile = pending?.permissionProfile ?: settings.defaultPermissionProfile,
+                    title = null, maxTurns = pending?.maxTurns ?: settings.defaultMaxTurns,
+                )
                 events.broadcast(TowoEvent.SessionStatus(msg.sessionId, "running"))
             }
             is RunnerToControl.SessionMessage -> onSessionMessage(runnerId, msg.sessionId, msg.message)
@@ -107,11 +133,14 @@ class TowoService(
                 store.updateSessionStatus(msg.sessionId, "awaiting_permission")
                 events.broadcast(TowoEvent.SessionStatus(msg.sessionId, "awaiting_permission"))
                 events.broadcast(TowoEvent.PermissionRequested(msg.requestId, msg.sessionId, msg.toolName, msg.input, msg.title, msg.displayName))
+                if (store.getSettings().notifyPermissionRequested) {
+                    notify("""{"event":"towo_permission_requested","sessionId":"${msg.sessionId}","toolName":"${msg.toolName}","requestId":"${msg.requestId}"}""")
+                }
             }
             is RunnerToControl.TranscriptAppend -> {
                 for (entry in msg.entries) {
                     val entryUuid = (entry as? JsonObject)?.get("uuid")?.jsonPrimitive?.contentOrNull
-                    store.appendTranscriptEntry(msg.sessionId, msg.subpath, entryUuid, entry.toString())
+                    appendTranscriptEntryWithRetry(runnerId, msg.sessionId, msg.subpath, entryUuid, entry.toString())
                 }
             }
             is RunnerToControl.TranscriptLoadRequest -> {
@@ -119,7 +148,42 @@ class TowoService(
                     ?.mapNotNull { runCatching { json.parseToJsonElement(it) }.getOrNull() }
                 runners.send(runnerId, ControlToRunner.TranscriptLoadResponse(msg.requestId, entries))
             }
+            is RunnerToControl.PermissionTimeout -> {
+                // The runner already resolved canUseTool locally (deny) — this is a report, not a
+                // decision to deliver, so it goes straight to decidePermissionRequest ("timeout" per
+                // spec §5's decision(allow|deny|timeout)), never through queuePermissionDecision.
+                store.decidePermissionRequest(msg.requestId, "timeout", msg.reason)
+                store.updateSessionStatus(msg.sessionId, "running")
+                events.broadcast(TowoEvent.PermissionResolved(msg.requestId, "timeout"))
+                events.broadcast(TowoEvent.SessionStatus(msg.sessionId, "running"))
+                if (store.getSettings().notifyErrored) {
+                    notify("""{"event":"towo_permission_timeout","sessionId":"${msg.sessionId}","requestId":"${msg.requestId}"}""")
+                }
+            }
         }
+    }
+
+    /** Spec §7/§B: "a `mirror_error` after retries means silent transcript loss and must surface in
+     *  the UI" / "Alert on `mirror_error` — otherwise transcript loss is silent." A local write
+     *  failure (locked/full DB) is usually transient, hence 3 short-backed-off attempts before this
+     *  gives up; success after a prior runner failure clears the sticky warning. Unconditional
+     *  webhook (no settings toggle) — this is data loss, not a preference. */
+    private suspend fun appendTranscriptEntryWithRetry(runnerId: String, sessionId: String, subpath: String?, entryUuid: String?, entryJson: String) {
+        var lastError: Throwable? = null
+        for (attempt in 1..3) {
+            val result = runCatching { store.appendTranscriptEntry(sessionId, subpath, entryUuid, entryJson) }
+            if (result.isSuccess) {
+                if (attempt > 1) store.clearRunnerMirrorError(runnerId)
+                return
+            }
+            lastError = result.exceptionOrNull()
+            if (attempt < 3) delay(200L * attempt)
+        }
+        val message = lastError?.message ?: "unknown error"
+        Logger.warn("Towo: transcript mirror failed for session $sessionId after 3 attempts: $message", "towo")
+        store.setRunnerMirrorError(runnerId, message)
+        events.broadcast(TowoEvent.MirrorError(runnerId, sessionId, message))
+        notify("""{"event":"towo_mirror_error","runnerId":"$runnerId","sessionId":"$sessionId","message":${JsonPrimitive(message)}}""")
     }
 
     /** Inspects a raw, opaque SDKMessage only for the handful of fields Towo's index needs (spec §E's
@@ -138,12 +202,31 @@ class TowoService(
                 val utilization = info["utilization"]?.jsonPrimitive?.doubleOrNull
                 store.recordQuotaStatus(runnerId, rateLimitType, status, resetsAt, utilization)
                 events.broadcast(TowoEvent.QuotaUpdated(runnerId, rateLimitType, status, resetsAt, utilization))
+                maybeNotifyLowQuota(runnerId, rateLimitType, resetsAt, utilization)
             }
             "result" -> onSessionResult(runnerId, sessionId, obj["subtype"]?.jsonPrimitive?.contentOrNull ?: "success")
             "assistant" -> {
                 store.getSession(sessionId)?.let { store.updateSessionTurns(sessionId, it.numTurns + 1) }
             }
         }
+    }
+
+    /** Spec §A's 5th notify type. `utilization` is a 0-1 fraction (confirmed live, not 0-100 — see
+     *  reference-claude-agent-sdk-facts memory); fires once per reset window, not on every event
+     *  that stays above the threshold, tracked by (runnerId, rateLimitType) -> the resetsAt already
+     *  notified for. */
+    private suspend fun maybeNotifyLowQuota(runnerId: String, rateLimitType: String, resetsAt: Long?, utilization: Double?) {
+        val settings = store.getSettings()
+        if (!settings.notifyLowQuota || utilization == null) return
+        val remainingPct = (1.0 - utilization) * 100
+        if (remainingPct >= settings.lowQuotaThresholdPct) return
+        val key = runnerId to rateLimitType
+        val alreadyNotified = lowQuotaNotifiedMutex.withLock {
+            val last = lowQuotaNotifiedFor[key]
+            if (last == resetsAt) true else { lowQuotaNotifiedFor[key] = resetsAt; false }
+        }
+        if (alreadyNotified) return
+        notify("""{"event":"towo_low_quota","runnerId":"$runnerId","rateLimitType":"$rateLimitType","remainingPct":${remainingPct.toInt()}}""")
     }
 
     /** Spec §8's state diagram: rate_limit_event is the primary quota signal, a ResultMessage is only
@@ -168,15 +251,33 @@ class TowoService(
                 if (recentlyRejected != null) {
                     store.updateSessionStatus(sessionId, "paused_quota", resumeAt = recentlyRejected.resetsAt, lastErrorSubtype = subtype)
                     events.broadcast(TowoEvent.SessionStatus(sessionId, "paused_quota", resumeAt = recentlyRejected.resetsAt))
+                    if (store.getSettings().notifyPausedQuota) {
+                        notify("""{"event":"towo_session_paused_quota","sessionId":"$sessionId","resumeAt":${recentlyRejected.resetsAt}}""")
+                    }
                 } else {
                     store.updateSessionStatus(sessionId, "errored", lastErrorSubtype = subtype)
                     events.broadcast(TowoEvent.SessionStatus(sessionId, "errored", errorSubtype = subtype))
+                    notifyErrored(sessionId, subtype)
                 }
             }
             else -> {
                 store.updateSessionStatus(sessionId, "errored", lastErrorSubtype = subtype)
                 events.broadcast(TowoEvent.SessionStatus(sessionId, "errored", errorSubtype = subtype))
+                notifyErrored(sessionId, subtype)
             }
+        }
+    }
+
+    private suspend fun notifyErrored(sessionId: String, subtype: String) {
+        if (store.getSettings().notifyErrored) {
+            notify("""{"event":"towo_session_errored","sessionId":"$sessionId","subtype":"$subtype"}""")
+        }
+    }
+
+    /** Called by [TowoAutoContinueScheduler] after it successfully resumes a paused_quota session. */
+    suspend fun notifyResumed(sessionId: String) {
+        if (store.getSettings().notifyResumed) {
+            notify("""{"event":"towo_session_resumed","sessionId":"$sessionId"}""")
         }
     }
 
@@ -189,8 +290,8 @@ class TowoService(
         val resolvedMaxTurns = maxTurns ?: settings.defaultMaxTurns
         val resolvedProfile = permissionProfile ?: settings.defaultPermissionProfile
         val commandId = generateSecureToken()
-        pendingStartsMutex.withLock { pendingStarts[commandId] = PendingStart(folderId, folderPath, resolvedMaxTurns) }
-        val sent = runners.send(runnerId, ControlToRunner.StartSession(commandId, folderPath, prompt, resolvedMaxTurns, resolvedProfile))
+        pendingStartsMutex.withLock { pendingStarts[commandId] = PendingStart(folderId, folderPath, resolvedMaxTurns, resolvedProfile) }
+        val sent = runners.send(runnerId, ControlToRunner.StartSession(commandId, folderPath, prompt, resolvedMaxTurns, resolvedProfile, settings.permissionTimeoutMs, settings.permissionTimeoutReason))
         if (!sent) pendingStartsMutex.withLock { pendingStarts.remove(commandId) }
         return sent
     }
@@ -211,7 +312,8 @@ class TowoService(
     suspend fun resumeSession(sessionId: String, prompt: String): Boolean {
         val session = store.getSession(sessionId) ?: return false
         val folderPath = session.folderPath ?: return false
-        val sent = runners.send(session.runnerId, ControlToRunner.ResumeSession(sessionId, folderPath, prompt))
+        val settings = store.getSettings()
+        val sent = runners.send(session.runnerId, ControlToRunner.ResumeSession(sessionId, folderPath, prompt, session.permissionProfile, settings.permissionTimeoutMs, settings.permissionTimeoutReason))
         if (sent) {
             store.updateSessionStatus(sessionId, "running")
             events.broadcast(TowoEvent.SessionStatus(sessionId, "running"))
@@ -234,18 +336,45 @@ class TowoService(
         return true
     }
 
-    suspend fun decidePermission(requestId: String, decision: String, reason: String?): Boolean {
-        val request = store.getPermissionRequest(requestId) ?: return false
-        val session = store.getSession(request.sessionId) ?: return false
-        store.decidePermissionRequest(requestId, decision, reason)
-        val sent = runners.send(session.runnerId, ControlToRunner.PermissionDecision(requestId, decision, reason))
+    /** Spec §7's disconnect-while-pending handling: the decision is always durably queued first
+     *  ([TowoStore.queuePermissionDecision] — decision set, decided_at still null), so a runner that's
+     *  offline right now never loses it; delivery is retried the moment that runner's next `hello`
+     *  arrives (see [onRunnerMessage]'s Hello branch → [redeliverQueuedDecisions]). [PermissionOutcome]
+     *  distinguishes "no such request" from "queued but the runner is offline", which the REST layer
+     *  needs to tell those apart (404 vs a retry-will-happen response) — see TowoRoutes.kt. */
+    enum class PermissionOutcome { NOT_FOUND, DELIVERED, RUNNER_OFFLINE }
+
+    suspend fun decidePermission(requestId: String, decision: String, reason: String?): PermissionOutcome {
+        val request = store.getPermissionRequest(requestId) ?: return PermissionOutcome.NOT_FOUND
+        if (request.decision != null) return PermissionOutcome.NOT_FOUND
+        val session = store.getSession(request.sessionId) ?: return PermissionOutcome.NOT_FOUND
+        store.queuePermissionDecision(requestId, decision, reason)
+        val delivered = deliverPermissionDecision(session.runnerId, requestId, decision, reason)
+        return if (delivered) PermissionOutcome.DELIVERED else PermissionOutcome.RUNNER_OFFLINE
+    }
+
+    private suspend fun deliverPermissionDecision(runnerId: String, requestId: String, decision: String, reason: String?): Boolean {
+        val sent = runners.send(runnerId, ControlToRunner.PermissionDecision(requestId, decision, reason))
         if (sent) {
-            store.updateSessionStatus(request.sessionId, "running")
-            events.broadcast(TowoEvent.PermissionResolved(requestId, decision))
-            events.broadcast(TowoEvent.SessionStatus(request.sessionId, "running"))
+            store.markPermissionDelivered(requestId)
+            val request = store.getPermissionRequest(requestId)
+            if (request != null) {
+                store.updateSessionStatus(request.sessionId, "running")
+                events.broadcast(TowoEvent.PermissionResolved(requestId, decision))
+                events.broadcast(TowoEvent.SessionStatus(request.sessionId, "running"))
+            }
         } else {
-            Logger.warn("Towo: permission $requestId decided but runner ${session.runnerId} is offline — decision recorded, not yet delivered", "towo")
+            Logger.warn("Towo: permission $requestId decision queued but runner $runnerId is offline — will retry on reconnect", "towo")
         }
         return sent
+    }
+
+    /** Called from the Hello branch on every runner connect (first connect and every reconnect) —
+     *  redelivers any decision an admin made while this runner was offline. */
+    private suspend fun redeliverQueuedDecisions(runnerId: String) {
+        for (queued in store.queuedUndeliveredDecisions(runnerId)) {
+            val decision = queued.decision ?: continue
+            deliverPermissionDecision(runnerId, queued.id, decision, queued.reason)
+        }
     }
 }

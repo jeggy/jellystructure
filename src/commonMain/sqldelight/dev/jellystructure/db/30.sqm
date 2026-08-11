@@ -1,0 +1,5 @@
+-- Phase 162 (Towo) — spec §A's "where runners connect" override, closing the gap flagged inline in
+-- TowoRoutes.kt: without this, the enrollment command's wsBase was always derived from the admin
+-- browser's own request Host header, which is wrong behind a reverse proxy / different external
+-- hostname than the one runners should actually dial. Empty string = keep auto-deriving.
+ALTER TABLE towo_settings ADD COLUMN runner_connect_url TEXT NOT NULL DEFAULT '';

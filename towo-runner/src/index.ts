@@ -60,7 +60,23 @@ async function main() {
       console.error("[towo-runner] no --enroll-token given and no saved credential found -- pass the token from the enrollment command shown in Towo's UI.");
       process.exit(1);
     }
-    connectToControlPlane(connect, token, roots);
+    const { activeSessions } = connectToControlPlane(connect, token, roots);
+    // Killing this process used to orphan its child claude subprocesses -- confirmed live via `ps aux`
+    // after a test run, nothing ever called Query.close() on them. Graceful shutdown closes every
+    // session's live process before this one exits.
+    const shutdown = (signal: string) => {
+      console.log(`[towo-runner] ${signal} received -- closing ${activeSessions.size} active session(s)`);
+      for (const session of activeSessions.values()) {
+        try {
+          session.query.close();
+        } catch (err) {
+          console.error("[towo-runner] error closing a session during shutdown:", err);
+        }
+      }
+      process.exit(0);
+    };
+    process.on("SIGTERM", () => shutdown("SIGTERM"));
+    process.on("SIGINT", () => shutdown("SIGINT"));
     return; // connectToControlPlane keeps the process alive via its WS event listeners + reconnect loop
   }
 

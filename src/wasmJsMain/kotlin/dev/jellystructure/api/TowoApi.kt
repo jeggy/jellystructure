@@ -24,6 +24,11 @@ data class TowoSettings(
     val notifyPausedQuota: Boolean = true,
     val notifyResumed: Boolean = true,
     val notifyErrored: Boolean = true,
+    val notifyLowQuota: Boolean = true,
+    val lowQuotaThresholdPct: Long = 20,
+    val permissionTimeoutMs: Long = 30L * 60 * 1000,
+    val permissionTimeoutReason: String = "No response within the timeout — auto-denied by Towo.",
+    val runnerConnectUrl: String = "",
 )
 
 @Serializable
@@ -38,6 +43,8 @@ data class TowoRunner(
     val allowedRoots: List<String> = emptyList(),
     val createdAt: Long = 0,
     val lastSeenAt: Long? = null,
+    val mirrorErrorAt: Long? = null,
+    val mirrorErrorMessage: String? = null,
 )
 
 @Serializable
@@ -57,6 +64,7 @@ data class TowoSession(
     val runnerId: String,
     val folderId: String? = null,
     val folderPath: String? = null,
+    val permissionProfile: String = "normal",
     val title: String? = null,
     val tag: String? = null,
     val status: String = "starting",

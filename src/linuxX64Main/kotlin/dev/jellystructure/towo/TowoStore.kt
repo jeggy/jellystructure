@@ -23,6 +23,8 @@ data class TowoRunner(
     val allowedRoots: List<String>,
     val createdAt: Long,
     val lastSeenAt: Long?,
+    val mirrorErrorAt: Long? = null,
+    val mirrorErrorMessage: String? = null,
 )
 
 @Serializable
@@ -42,6 +44,7 @@ data class TowoSession(
     val runnerId: String,
     val folderId: String?,
     val folderPath: String?,
+    val permissionProfile: String,
     val title: String?,
     val tag: String?,
     val status: String,
@@ -92,6 +95,13 @@ data class TowoSettings(
     val notifyPausedQuota: Boolean = true,
     val notifyResumed: Boolean = true,
     val notifyErrored: Boolean = true,
+    val notifyLowQuota: Boolean = true,
+    val lowQuotaThresholdPct: Long = 20,
+    val permissionTimeoutMs: Long = 30L * 60 * 1000,
+    val permissionTimeoutReason: String = "No response within the timeout — auto-denied by Towo.",
+    /** Spec §A's "where runners connect" override — empty = keep auto-deriving the enrollment
+     *  command's wsBase from the admin request's own Host header (wrong behind a reverse proxy). */
+    val runnerConnectUrl: String = "",
 )
 
 data class TowoEnrollmentToken(val token: String, val expiresAt: Long)
@@ -172,6 +182,13 @@ class TowoStore(private val db: JellystructureDb) {
 
     fun touchRunnerLastSeen(id: String) = db.towoQueries.touchRunnerLastSeen(nowEpochSec(), id)
 
+    /** Spec §7/§B — sticky until [clearRunnerMirrorError], so the Runner detail page still shows the
+     *  warning after the live WS event that first reported it is long gone. */
+    fun setRunnerMirrorError(id: String, message: String) =
+        db.towoQueries.setRunnerMirrorError(nowEpochSec(), message, id)
+
+    fun clearRunnerMirrorError(id: String) = db.towoQueries.clearRunnerMirrorError(id)
+
     fun deleteRunner(id: String) {
         db.towoQueries.deleteFoldersForRunner(id)
         db.towoQueries.deleteRunner(id)
@@ -204,10 +221,11 @@ class TowoStore(private val db: JellystructureDb) {
 
     // ===== Sessions =====
 
-    fun createSession(id: String, runnerId: String, folderId: String?, folderPath: String?, title: String?, maxTurns: Long) {
+    fun createSession(id: String, runnerId: String, folderId: String?, folderPath: String?, permissionProfile: String, title: String?, maxTurns: Long) {
         val now = nowEpochSec()
         db.towoQueries.insertSession(
-            id = id, runner_id = runnerId, folder_id = folderId, folder_path = folderPath, title = title,
+            id = id, runner_id = runnerId, folder_id = folderId, folder_path = folderPath,
+            permission_profile = permissionProfile, title = title,
             max_turns = maxTurns, created_at = now, last_activity_at = now,
         )
     }
@@ -262,6 +280,16 @@ class TowoStore(private val db: JellystructureDb) {
     fun decidePermissionRequest(id: String, decision: String, reason: String?) =
         db.towoQueries.decidePermissionRequest(nowEpochSec(), decision, reason, id)
 
+    /** Records the admin's decision without marking it delivered — see [markPermissionDelivered] /
+     *  [queuedUndeliveredDecisions] (spec §7's disconnect-while-pending handling). */
+    fun queuePermissionDecision(id: String, decision: String, reason: String?) =
+        db.towoQueries.queuePermissionDecision(decision, reason, id)
+
+    fun markPermissionDelivered(id: String) = db.towoQueries.markPermissionDelivered(nowEpochSec(), id)
+
+    fun queuedUndeliveredDecisions(runnerId: String): List<TowoPermissionRequest> =
+        db.towoQueries.queuedUndeliveredDecisions(runnerId).executeAsList().map { it.toModel() }
+
     // ===== Quota =====
 
     fun recordQuotaStatus(runnerId: String, rateLimitType: String, status: String, resetsAt: Long?, utilization: Double?) {
@@ -308,6 +336,11 @@ class TowoStore(private val db: JellystructureDb) {
             notify_paused_quota = if (settings.notifyPausedQuota) 1L else 0L,
             notify_resumed = if (settings.notifyResumed) 1L else 0L,
             notify_errored = if (settings.notifyErrored) 1L else 0L,
+            notify_low_quota = if (settings.notifyLowQuota) 1L else 0L,
+            low_quota_threshold_pct = settings.lowQuotaThresholdPct,
+            permission_timeout_ms = settings.permissionTimeoutMs,
+            permission_timeout_reason = settings.permissionTimeoutReason,
+            runner_connect_url = settings.runnerConnectUrl,
         )
     }
 }
@@ -322,6 +355,11 @@ private fun dev.jellystructure.db.Towo_settings.toModel() = TowoSettings(
     notifyPausedQuota = notify_paused_quota != 0L,
     notifyResumed = notify_resumed != 0L,
     notifyErrored = notify_errored != 0L,
+    notifyLowQuota = notify_low_quota != 0L,
+    lowQuotaThresholdPct = low_quota_threshold_pct,
+    permissionTimeoutMs = permission_timeout_ms,
+    permissionTimeoutReason = permission_timeout_reason,
+    runnerConnectUrl = runner_connect_url,
 )
 
 private fun dev.jellystructure.db.Towo_runner.toModel() = TowoRunner(
@@ -329,6 +367,7 @@ private fun dev.jellystructure.db.Towo_runner.toModel() = TowoRunner(
     os = os, claudeAuthOk = claude_auth_ok != 0L,
     allowedRoots = runCatching { json.decodeFromString<List<String>>(allowed_roots) }.getOrDefault(emptyList()),
     createdAt = created_at, lastSeenAt = last_seen_at,
+    mirrorErrorAt = mirror_error_at, mirrorErrorMessage = mirror_error_message,
 )
 
 private fun dev.jellystructure.db.Towo_folder.toModel() = TowoFolder(
@@ -337,13 +376,19 @@ private fun dev.jellystructure.db.Towo_folder.toModel() = TowoFolder(
 )
 
 private fun dev.jellystructure.db.Towo_session.toModel() = TowoSession(
-    id = id, runnerId = runner_id, folderId = folder_id, folderPath = folder_path, title = title, tag = tag, status = status,
+    id = id, runnerId = runner_id, folderId = folder_id, folderPath = folder_path,
+    permissionProfile = permission_profile, title = title, tag = tag, status = status,
     maxTurns = max_turns, maxTurnsSource = max_turns_source, numTurns = num_turns,
     continueAfterReset = continue_after_reset != 0L, resumeAt = resume_at, lastErrorSubtype = last_error_subtype,
     createdAt = created_at, lastActivityAt = last_activity_at,
 )
 
 private fun dev.jellystructure.db.Towo_permission_request.toModel() = TowoPermissionRequest(
+    id = id, sessionId = session_id, toolName = tool_name, inputJson = input_json, title = title,
+    displayName = display_name, requestedAt = requested_at, decidedAt = decided_at, decision = decision, reason = reason,
+)
+
+private fun dev.jellystructure.db.QueuedUndeliveredDecisions.toModel() = TowoPermissionRequest(
     id = id, sessionId = session_id, toolName = tool_name, inputJson = input_json, title = title,
     displayName = display_name, requestedAt = requested_at, decidedAt = decided_at, decision = decision, reason = reason,
 )

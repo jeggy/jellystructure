@@ -1,0 +1,6 @@
+-- Phase 162 (Towo) — spec §D: "an ignored request stays suspended (with a long timeout that denies
+-- with an editable reason)... entirely the runner's own responsibility." Backend-owned so it's
+-- configurable from Settings → Towo like every other cross-cutting default (quota watch interval,
+-- default profile/turn cap) rather than a runner-local constant.
+ALTER TABLE towo_settings ADD COLUMN permission_timeout_ms INTEGER NOT NULL DEFAULT 1800000;
+ALTER TABLE towo_settings ADD COLUMN permission_timeout_reason TEXT NOT NULL DEFAULT 'No response within the timeout — auto-denied by Towo.';
