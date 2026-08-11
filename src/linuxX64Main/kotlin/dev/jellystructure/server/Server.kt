@@ -571,6 +571,7 @@ fun startServer(
                     Logger.warn("WS /api/towo/runner-link runner $runnerId connection dropped: ${e.message}", "towo")
                 } finally {
                     towoRunnerRegistry.unregister(runnerId, this)
+                    runCatching { towoService.onRunnerDisconnected(runnerId) }
                 }
             }
 

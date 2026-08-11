@@ -190,6 +190,7 @@ private suspend fun loadRunnersList(container: Element, scope: CoroutineScope) {
           <div>
             <div class="ttl">${r.name.esc()}</div>
             <div class="meta">${(r.hostLabel ?: "").esc()} ${r.os?.let { "· $it" } ?: ""} ${r.agentSdkVersion?.let { "· sdk $it" } ?: ""}</div>
+            ${if (r.mirrorErrorAt != null) """<div class="chip st-err" style="margin-top:6px"><span class="dot"></span>Transcript mirror failing${r.mirrorErrorMessage?.let { " — ${it.esc()}" } ?: ""}</div>""" else ""}
           </div>
           ${runnerOnlineHtml(r)}
           <button class="btn sm danger" data-delete-runner="${r.id}">Remove</button>
@@ -415,6 +416,7 @@ fun renderTowoSessionNew(container: Element, scope: CoroutineScope) {
 // ===== Session view (live) =====
 
 private var sessionViewCurrentId: String? = null
+private var sessionViewRunnerId: String? = null
 
 fun renderTowoSession(container: Element, scope: CoroutineScope, sessionId: String) {
     sessionViewCurrentId = sessionId
@@ -424,10 +426,12 @@ fun renderTowoSession(container: Element, scope: CoroutineScope, sessionId: Stri
             <a href="#/towo" class="btn sm ghost">← Towo</a>
             <h1 id="towo-sess-title" style="margin-left:8px">Session</h1>
             <span class="spacer"></span>
+            <span id="towo-sess-profile" class="tag"></span>
             <span id="towo-sess-status"></span>
             <button id="towo-sess-interrupt" class="btn sm danger" style="display:none">Interrupt</button>
           </div>
           <div id="towo-sess-recovery"></div>
+          <div id="towo-sess-runner-offline" style="display:none" class="chip st-err"><span class="dot"></span>Runner offline — waiting to reconnect. Any decision you make now is queued and will be delivered once it's back.</div>
           <div id="towo-sess-approval"></div>
           <div class="card" id="towo-sess-transcript" style="padding:16px;min-height:200px;max-height:60vh;overflow-y:auto;font-size:.88rem;line-height:1.6"></div>
           <div class="row" style="gap:8px;margin-top:12px">
@@ -466,8 +470,11 @@ private suspend fun loadSession(sessionId: String, scope: CoroutineScope) {
 }
 
 private fun updateSessionHeader(session: TowoSession) {
+    sessionViewRunnerId = session.runnerId
     (document.getElementById("towo-sess-title") as? HTMLElement)?.textContent =
         session.title ?: session.folderPath?.substringAfterLast('/') ?: session.id.take(8)
+    (document.getElementById("towo-sess-profile") as? HTMLElement)?.textContent =
+        PROFILE_OPTIONS.firstOrNull { it.key == session.permissionProfile }?.title ?: session.permissionProfile
     (document.getElementById("towo-sess-status") as? HTMLElement)?.innerHTML = statusChipHtml(session.status, session.resumeAt)
     (document.getElementById("towo-sess-interrupt") as? HTMLElement)?.style?.display =
         if (session.status == "running") "" else "none"
@@ -579,6 +586,13 @@ private fun handleSessionEvent(sessionId: String, event: JsonObject, scope: Coro
             showApprovalBanner(req, scope)
         }
         "permission.resolved" -> clearApprovalBanner()
+        "runner.status" -> {
+            val runnerId = event["runnerId"]?.jsonPrimitive?.contentOrNull ?: return
+            if (runnerId != sessionViewRunnerId) return
+            val status = event["status"]?.jsonPrimitive?.contentOrNull ?: return
+            (document.getElementById("towo-sess-runner-offline") as? HTMLElement)?.style?.display =
+                if (status == "offline") "" else "none"
+        }
     }
 }
 

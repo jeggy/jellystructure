@@ -72,10 +72,14 @@ fun Route.towoRoutes(service: TowoService, store: TowoStore) {
 
         post("/runners/enroll") {
             val req = call.receive<EnrollRequest>()
-            // Settings' "where runners connect" field (spec §A) isn't built yet (that's build-order
-            // step 8's territory) -- derive it from the request itself as a reasonable v1 default.
-            val scheme = if (call.request.origin.scheme == "https") "wss" else "ws"
-            val publicWsBase = "$scheme://${call.request.host()}:${call.request.port()}"
+            // Settings' "where runners connect" override (spec §A) — falls back to deriving it from
+            // the admin's own request when unset, which is wrong behind a reverse proxy or a
+            // different external hostname than the one runners should actually dial.
+            val override = store.getSettings().runnerConnectUrl.trim()
+            val publicWsBase = override.ifEmpty {
+                val scheme = if (call.request.origin.scheme == "https") "wss" else "ws"
+                "$scheme://${call.request.host()}:${call.request.port()}"
+            }
             val minted = service.mintEnrollment(req.name, publicWsBase)
             call.respond(EnrollResponse(minted.token, minted.expiresAt, minted.commands))
         }
@@ -185,8 +189,14 @@ fun Route.towoRoutes(service: TowoService, store: TowoStore) {
             if (req.decision != "allow" && req.decision != "deny") {
                 return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "decision must be allow or deny"))
             }
-            val ok = service.decidePermission(id, req.decision, req.reason)
-            if (ok) call.respond(HttpStatusCode.NoContent) else call.respond(HttpStatusCode.NotFound)
+            when (service.decidePermission(id, req.decision, req.reason)) {
+                TowoService.PermissionOutcome.DELIVERED -> call.respond(HttpStatusCode.NoContent)
+                TowoService.PermissionOutcome.RUNNER_OFFLINE -> call.respond(
+                    HttpStatusCode.Accepted,
+                    mapOf("error" to "runner_offline", "message" to "Recorded — the runner is offline and will receive it as soon as it reconnects."),
+                )
+                TowoService.PermissionOutcome.NOT_FOUND -> call.respond(HttpStatusCode.NotFound)
+            }
         }
     }
 }
