@@ -137,7 +137,10 @@ CREATE TABLE towo_settings (
     permission_timeout_reason TEXT NOT NULL DEFAULT 'No response within the timeout — auto-denied by Towo.',
     -- v29->v30 addition — spec §A's "where runners connect" override; empty = keep auto-deriving
     -- from the admin request's own Host header (wrong behind a reverse proxy).
-    runner_connect_url TEXT NOT NULL DEFAULT ''
+    runner_connect_url TEXT NOT NULL DEFAULT '',
+    -- v30->v31 addition — a GitHub PAT so the enrollment command can pull towo-runner's source from
+    -- this private repo's authenticated tarball API. See 31.sqm / mintEnrollment's doc comment.
+    github_token TEXT NOT NULL DEFAULT ''
 );
 
 -- ===== towo_runner =====
@@ -301,11 +304,11 @@ INSERT OR REPLACE INTO towo_settings(
     default_permission_profile, default_max_turns,
     notify_permission_requested, notify_paused_quota, notify_resumed, notify_errored,
     notify_low_quota, low_quota_threshold_pct, permission_timeout_ms, permission_timeout_reason,
-    runner_connect_url
+    runner_connect_url, github_token
 ) VALUES (
     1, :quota_watch_enabled, :quota_watch_interval_ms, :arm_new_sessions_default,
     :default_permission_profile, :default_max_turns,
     :notify_permission_requested, :notify_paused_quota, :notify_resumed, :notify_errored,
     :notify_low_quota, :low_quota_threshold_pct, :permission_timeout_ms, :permission_timeout_reason,
-    :runner_connect_url
+    :runner_connect_url, :github_token
 );
