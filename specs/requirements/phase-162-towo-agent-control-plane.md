@@ -1,9 +1,11 @@
 # Phase 162 — Towo: a self-hosted control plane for Claude Code sessions (FR-TOWO1)
 
-**Status:** Planned → **implementation started 2026-08-11** (`towo-runner/` v1: build-order steps 1–2
-done — see §9). Dev-reviewed 2026-08-11 (see the addendum at the end: three real build-config/
-incident-precedent gaps found and closed, two protocol details made explicit). Open questions §10.1–2
-resolved the same day against the pinned SDK's real types; not yet implemented beyond the runner.
+**Status:** Planned → **implementation in progress, 2026-08-11** (build-order steps 1, 2, 3, 4-backend,
+and 7 done and verified live end-to-end against a real Claude account — see §9). Dev-reviewed
+2026-08-11 (see the addendum at the end: three real build-config/incident-precedent gaps found and
+closed, two protocol details made explicit). Open questions §10.1–2 resolved the same day against the
+pinned SDK's real types. Not yet built: SessionStore (step 5), auto-continue (step 6), the admin UI
+(step 8) — Settings §A, and every screen in §8's table, still only exist as design mockups.
 **Date:** 2026-08-10
 **Research basis:** `specs/research-reports/claude-code-remote-agent-management-2026-08-10.md`
 (doc-verified; §11 of that report lists the integration unknowns that must be pinned before build).
@@ -302,14 +304,41 @@ asked. Keep Direction B on file if session counts ever grow past a screenful.
    pinned the parser to its actual shape (§10.2) — every event is now logged verbatim to
    `~/.towo-runner/rate-limit-events.jsonl` on every run, so more real payloads accumulate as the
    runner gets used.
-3. Control plane v1: outbound WS transport, session index, create-session + stream.
-4. Enrollment and pairing (token mint/exchange, `npx` distribution).
-5. `SessionStore` — history in the UI, survives runner restarts, unlocks cross-runner resume.
-6. Auto-continue state machine + notifications.
-7. `canUseTool` remote approval.
-8. The rest of the UI against §6.
+3. ✅ **Done 2026-08-11.** Control plane v1: `towo_runner`/`towo_folder`/`towo_session`/
+   `towo_permission_request`/`towo_quota_status` tables (migration 22), `TowoStore`/`TowoRunnerRegistry`/
+   `TowoEventBus`/`TowoService`, the runner-link + browser-stream WS endpoints in `Server.kt` (following
+   the established Ktor-Native crash-safety + auth patterns per the dev-review addendum), and the REST
+   surface in `TowoRoutes.kt`. `compileKotlinLinuxX64` + `linuxX64Test` clean.
+4. ✅ **Backend done 2026-08-11**, UI not started. Enrollment: `POST /towo/runners/enroll` mints a
+   short-lived single-use token and returns real paste-able `npx`/installer/Docker commands (spec §B);
+   `/api/towo/runner-link?token=…` exchanges it for a long-lived credential, sent exactly once over
+   `ControlToRunner.Enrolled` — confirmed live: the runner persisted it to `~/.towo-runner/
+   credential.json` and reconnected using it (no token) on the very next run.
+5. `SessionStore` — not started. v1 uses an explicit placeholder (`TowoService`'s in-memory, capped,
+   non-durable transcript buffer) so `GET /sessions/:id/messages` has something to return meanwhile.
+6. Auto-continue state machine + notifications — not started.
+7. ✅ **Done 2026-08-11**, ahead of its build-order slot (cheap once the WS transport existed). Full
+   remote-approval loop **verified live against a real Claude session**: a `Write` call suspended the
+   session (`awaiting_permission`), `POST /permissions/:id {"decision":"allow"}` was relayed down the
+   runner's own connection, the write actually happened on disk, and the session returned to `idle`.
+8. The rest of the UI against §6 — not started. Every screen in §8's table is still a design mockup only.
 
-Steps 1–3 retire the risk; the rest is conventional product work.
+Steps 1–3 retired the risk; step 7 landing this early was a bonus of the transport already existing.
+Real remaining work: SessionStore, auto-continue, and the UI.
+
+### Live verification, 2026-08-11
+Run against an isolated scratch instance (port 19505, throwaway config/DB — the real backend on 9505
+was never touched) with the real `towo-runner` and this machine's real Claude Code auth:
+1. Enrolled a runner via REST → pasted the real generated `npx` command shape → runner connected,
+   received its credential, reconnected on a second run using only the saved credential.
+2. Folder discovery (`repo-a` under a scratch root) landed correctly via `GET /runners/:id/folders`.
+3. `POST /sessions` with a plain prompt → real Claude session ran end to end → `GET /sessions` showed
+   `status: idle, numTurns: 1` → `GET /sessions/:id/messages` returned the real transcript (`rate_limit_
+   event`, `system`, `assistant`, `result`) → quota utilization ticked from 0.83 to 0.85 between calls,
+   `rateLimitType: seven_day` (still, correctly, not `five_hour`).
+4. `POST /sessions` with a prompt requiring a `Write` → session correctly went `awaiting_permission` →
+   `GET /permissions?status=pending` showed the real tool call (`file_path`, `content`) → approving it
+   via REST caused the file to actually be written and the session to resume to `idle`.
 
 ---
 

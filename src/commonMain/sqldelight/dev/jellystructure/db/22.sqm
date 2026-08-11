@@ -1,0 +1,81 @@
+-- Phase 162 (Towo) — a self-hosted control plane for Claude Code sessions (v22 -> v23).
+-- See Towo.sq for the full column documentation; DDL here must match it exactly.
+
+CREATE TABLE towo_runner (
+    id TEXT NOT NULL PRIMARY KEY,
+    name TEXT NOT NULL,
+    host_label TEXT,
+    credential_hash TEXT NOT NULL,
+    auth_mode TEXT,
+    agent_sdk_version TEXT,
+    os TEXT,
+    claude_auth_ok INTEGER NOT NULL DEFAULT 0,
+    allowed_roots TEXT NOT NULL DEFAULT '[]',
+    created_at INTEGER NOT NULL,
+    last_seen_at INTEGER
+);
+
+CREATE TABLE towo_enrollment (
+    token TEXT NOT NULL PRIMARY KEY,
+    name TEXT NOT NULL,
+    expires_at INTEGER NOT NULL,
+    consumed INTEGER NOT NULL DEFAULT 0,
+    runner_id TEXT
+);
+
+CREATE TABLE towo_folder (
+    id TEXT NOT NULL PRIMARY KEY,
+    runner_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    abs_path TEXT NOT NULL,
+    pinned INTEGER NOT NULL DEFAULT 0,
+    default_permission_profile TEXT NOT NULL DEFAULT 'normal',
+    discovered_at INTEGER NOT NULL
+);
+
+CREATE INDEX towo_folder_runner ON towo_folder(runner_id);
+
+CREATE TABLE towo_session (
+    id TEXT NOT NULL PRIMARY KEY,
+    runner_id TEXT NOT NULL,
+    folder_id TEXT,
+    title TEXT,
+    tag TEXT,
+    status TEXT NOT NULL DEFAULT 'starting',
+    max_turns INTEGER NOT NULL DEFAULT 40,
+    max_turns_source TEXT NOT NULL DEFAULT 'default',
+    num_turns INTEGER NOT NULL DEFAULT 0,
+    continue_after_reset INTEGER NOT NULL DEFAULT 0,
+    resume_at INTEGER,
+    last_error_subtype TEXT,
+    created_at INTEGER NOT NULL,
+    last_activity_at INTEGER NOT NULL
+);
+
+CREATE INDEX towo_session_runner ON towo_session(runner_id);
+CREATE INDEX towo_session_status ON towo_session(status);
+
+CREATE TABLE towo_permission_request (
+    id TEXT NOT NULL PRIMARY KEY,
+    session_id TEXT NOT NULL,
+    tool_name TEXT NOT NULL,
+    input_json TEXT NOT NULL,
+    title TEXT,
+    display_name TEXT,
+    requested_at INTEGER NOT NULL,
+    decided_at INTEGER,
+    decision TEXT,
+    reason TEXT
+);
+
+CREATE INDEX towo_permission_request_session ON towo_permission_request(session_id);
+
+CREATE TABLE towo_quota_status (
+    runner_id TEXT NOT NULL,
+    rate_limit_type TEXT NOT NULL,
+    status TEXT NOT NULL,
+    resets_at INTEGER,
+    utilization REAL,
+    observed_at INTEGER NOT NULL,
+    PRIMARY KEY (runner_id, rate_limit_type)
+);

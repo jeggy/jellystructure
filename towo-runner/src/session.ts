@@ -1,4 +1,4 @@
-import { query, type CanUseTool, type PermissionResult } from "@anthropic-ai/claude-agent-sdk";
+import { query, type CanUseTool, type PermissionResult, type Query } from "@anthropic-ai/claude-agent-sdk";
 import { logRateLimitEvent } from "./quotaLog.js";
 
 export type RunSessionOptions = {
@@ -59,4 +59,59 @@ export async function runOneSession(opts: RunSessionOptions): Promise<void> {
         break;
     }
   }
+}
+
+export type ManagedSessionCallbacks = {
+  /** Every SDKMessage, forwarded opaquely -- the control plane inspects only what it needs
+   *  (spec build-order step 3's "session index"), same principle as the report's SessionStore design. */
+  onMessage: (raw: unknown) => void;
+  /** Mirrors the real canUseTool shape (title/displayName/requestId confirmed live against the
+   *  pinned SDK -- see reference-claude-agent-sdk-facts memory). Held open in-process until the
+   *  control plane relays a decision back down this same connection; the SDK's own out-of-band
+   *  null-return mechanism is a possible future optimization, not needed for this to be correct. */
+  onPermissionRequest: (
+    toolName: string,
+    input: Record<string, unknown>,
+    meta: { requestId: string; title?: string; displayName?: string },
+  ) => Promise<PermissionResult>;
+};
+
+/**
+ * Build-order step 3+ — a session driven by the control plane rather than a hardcoded local prompt.
+ * Returns the live Query handle immediately (before the message loop finishes) so the caller can
+ * index it by session id for interrupt()/streamInput() once the first message reveals that id.
+ */
+export function startManagedSession(
+  cwd: string,
+  prompt: string,
+  quotaLogPath: string,
+  callbacks: ManagedSessionCallbacks,
+  maxTurns?: number,
+): Query {
+  const canUseTool: CanUseTool = async (toolName, input, options) =>
+    callbacks.onPermissionRequest(toolName, input, {
+      requestId: options.requestId,
+      title: options.title,
+      displayName: options.displayName,
+    });
+
+  const q = query({
+    prompt,
+    options: { cwd, canUseTool, permissionMode: "default", maxTurns },
+  });
+
+  (async () => {
+    try {
+      for await (const message of q) {
+        if (message.type === "rate_limit_event") {
+          logRateLimitEvent(quotaLogPath, message);
+        }
+        callbacks.onMessage(message);
+      }
+    } catch (err) {
+      console.error("[towo-runner] managed session iteration failed:", err);
+    }
+  })();
+
+  return q;
 }
