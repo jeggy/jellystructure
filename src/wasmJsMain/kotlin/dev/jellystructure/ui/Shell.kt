@@ -87,11 +87,14 @@ private val ICONS = mapOf(
     "requests"  to """<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>""",
     "users"     to """<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>""",
     "prefs"     to """<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>""",
+    // Phase 162 (Towo) — a lighthouse-adjacent radio/signal mark; deliberately not a robot/chat icon
+    // since Towo isn't chat UI, it's an operator control plane.
+    "towo"      to """<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M9 10V7a3 3 0 0 1 6 0v3"/><circle cx="12" cy="15" r="1.6"/></svg>""",
 )
 
 // Phase 148 — "Ravilo" section: one shared editor (ravilo-config, tab-addressable) plus the
 // standalone Live TV and Users & devices pages.
-private val NAV: List<NavEntry> = listOf(
+private val BASE_NAV: List<NavEntry> = listOf(
     NavLink("/dashboard", "Dashboard", "dashboard"),
     NavLink("/library", "Library", "library"),
     NavLink("/activity", "Activity", "activity"),
@@ -105,6 +108,19 @@ private val NAV: List<NavEntry> = listOf(
     NavLink("/ravilo-users", "Users & devices", "users"),
     NavLink("/ravilo?tab=preferences", "Preferences", "prefs"),
 )
+
+private val TOWO_NAV: List<NavEntry> = listOf(
+    NavGroup("Towo"),
+    NavLink("/towo", "Overview", "towo"),
+    NavLink("/towo/sessions", "Sessions", "activity"),
+    NavLink("/towo/runners", "Runners", "tv"),
+    NavLink("/towo/approvals", "Approvals", "requests"),
+)
+
+// Phase 162 (Towo) — feature-flagged, off by default (Settings → Towo). Read once at shell render
+// (matching js-theme's own "apply persisted state once at load" pattern) — toggling requires a reload.
+private fun navEntries(): List<NavEntry> =
+    if (window.localStorage.getItem("js-towo") == "1") BASE_NAV + TOWO_NAV else BASE_NAV
 
 fun renderShell(user: UserProfile) {
     val body = document.body ?: return
@@ -732,7 +748,7 @@ private fun navHtml(): String {
         )
         groupItems = StringBuilder()
     }
-    for (entry in NAV) {
+    for (entry in navEntries()) {
         when (entry) {
             is NavGroup -> { flushGroup(); groupLabel = entry.label }
             is NavLink -> {

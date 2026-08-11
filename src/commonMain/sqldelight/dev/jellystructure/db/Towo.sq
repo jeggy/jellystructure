@@ -44,6 +44,11 @@ CREATE TABLE towo_session (
     id TEXT NOT NULL PRIMARY KEY,
     runner_id TEXT NOT NULL,
     folder_id TEXT,
+    -- Denormalized copy of the folder's abs_path at creation time (v23->v24 addition) — auto-continue
+    -- (build-order step 6) resumes a session by cwd, and a session created via a raw `path` (§6's
+    -- POST /sessions folderId|path) or whose towo_folder row was later deleted would otherwise have
+    -- no way to recover its working directory for resume.
+    folder_path TEXT,
     title TEXT,
     tag TEXT,
     status TEXT NOT NULL DEFAULT 'starting',
@@ -84,6 +89,23 @@ CREATE TABLE towo_quota_status (
     observed_at INTEGER NOT NULL,
     PRIMARY KEY (runner_id, rate_limit_type)
 );
+
+-- Build-order step 5 (SessionStore) — the durable mirror of a session's SDK-native JSONL transcript.
+-- entry_json is opaque (a JSON-safe POJO per the SDK's own SessionStoreEntry contract); dedup relies
+-- on entry_uuid where the SDK provides one (partial unique index below), matching the SDK docs'
+-- "treat uuid as an idempotency key" guidance. subpath is null for the main transcript, set for a
+-- subagent's (spec: SessionKey.subpath).
+CREATE TABLE towo_transcript_entry (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id TEXT NOT NULL,
+    subpath TEXT,
+    entry_uuid TEXT,
+    entry_json TEXT NOT NULL,
+    appended_at INTEGER NOT NULL
+);
+
+CREATE INDEX towo_transcript_entry_session ON towo_transcript_entry(session_id, subpath);
+CREATE UNIQUE INDEX towo_transcript_entry_dedup ON towo_transcript_entry(session_id, subpath, entry_uuid) WHERE entry_uuid IS NOT NULL;
 
 -- ===== towo_runner =====
 
@@ -148,8 +170,8 @@ DELETE FROM towo_folder WHERE runner_id = :runner_id;
 -- ===== towo_session =====
 
 insertSession:
-INSERT INTO towo_session(id, runner_id, folder_id, title, max_turns, created_at, last_activity_at)
-VALUES (:id, :runner_id, :folder_id, :title, :max_turns, :created_at, :last_activity_at);
+INSERT INTO towo_session(id, runner_id, folder_id, folder_path, title, max_turns, created_at, last_activity_at)
+VALUES (:id, :runner_id, :folder_id, :folder_path, :title, :max_turns, :created_at, :last_activity_at);
 
 getSession:
 SELECT * FROM towo_session WHERE id = :id;
@@ -201,3 +223,15 @@ VALUES (:runner_id, :rate_limit_type, :status, :resets_at, :utilization, :observ
 
 quotaForRunner:
 SELECT * FROM towo_quota_status WHERE runner_id = :runner_id;
+
+-- ===== towo_transcript_entry =====
+
+appendTranscriptEntry:
+INSERT OR IGNORE INTO towo_transcript_entry(session_id, subpath, entry_uuid, entry_json, appended_at)
+VALUES (:session_id, :subpath, :entry_uuid, :entry_json, :appended_at);
+
+loadTranscriptEntries:
+SELECT entry_json FROM towo_transcript_entry WHERE session_id = :session_id AND subpath IS :subpath ORDER BY id ASC;
+
+deleteTranscriptForSession:
+DELETE FROM towo_transcript_entry WHERE session_id = :session_id;

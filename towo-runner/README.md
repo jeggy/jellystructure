@@ -10,13 +10,14 @@ stay a separate process.
 
 ## Status
 
-Build-order steps 1–4(backend)+7 are done and verified live end to end against a real Claude
-account (see the spec's "Live verification, 2026-08-11" note): the Agent SDK integration, folder
-discovery, enrollment (token → long-lived credential, persisted and reused across reconnects), a
-full session round-trip through the real control plane, and the complete remote-approval loop (a
-suspended tool call, approved over REST, actually executing on disk). Not yet built: `SessionStore`
-(a real transcript persistence layer — v1 uses a capped in-memory placeholder on the control-plane
-side), the auto-continue state machine, and the admin UI.
+All 8 build-order steps are implemented and verified live end to end against a real Claude account,
+including through the real admin UI in a real browser (see the spec's "Live verification" notes):
+the Agent SDK integration, folder discovery, enrollment (token → long-lived credential, persisted and
+reused across reconnects), a full session round-trip through the real control plane with a durable
+transcript (a real `SessionStore` implementation — `append`/`load` relayed over the runner-link
+connection, survives a control-plane restart), the complete remote-approval loop (a suspended tool
+call, approved via REST or the browser UI, actually executing on disk), and auto-continue (a
+`resume_session` command resumes a paused session with its real history via `sessionStore.load()`).
 
 ## Usage
 
@@ -54,8 +55,8 @@ down this same connection — confirmed live: a `Write` call suspended, was appr
 
 **Not yet supported**: `send_message` (posting into an already-idle session) — multi-turn needs
 streaming-input mode (an `AsyncIterable` prompt) from session start, which `startManagedSession`
-doesn't use yet. Logged as a warning, not silently dropped. Deferred to build-order step 8, when the
-composer UI actually needs it.
+doesn't use yet. Logged as a warning, not silently dropped. The composer UI exists and calls it; the
+button just won't do anything useful on an idle session until this lands.
 
 ## Rate-limit event capture
 

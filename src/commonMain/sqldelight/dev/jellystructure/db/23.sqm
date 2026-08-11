@@ -1,0 +1,13 @@
+-- Phase 162 (Towo) — SessionStore transcript durability (v23 -> v24). See Towo.sq for docs.
+
+CREATE TABLE towo_transcript_entry (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id TEXT NOT NULL,
+    subpath TEXT,
+    entry_uuid TEXT,
+    entry_json TEXT NOT NULL,
+    appended_at INTEGER NOT NULL
+);
+
+CREATE INDEX towo_transcript_entry_session ON towo_transcript_entry(session_id, subpath);
+CREATE UNIQUE INDEX towo_transcript_entry_dedup ON towo_transcript_entry(session_id, subpath, entry_uuid) WHERE entry_uuid IS NOT NULL;

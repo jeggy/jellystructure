@@ -1,7 +1,8 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { homedir, hostname, platform } from "node:os";
-import type { PermissionResult, Query } from "@anthropic-ai/claude-agent-sdk";
+import { randomUUID } from "node:crypto";
+import type { PermissionResult, Query, SessionStore, SessionStoreEntry } from "@anthropic-ai/claude-agent-sdk";
 import { discoverFolders } from "./roots.js";
 import { startManagedSession } from "./session.js";
 import type { ControlToRunner, RunnerToControl } from "./protocol.js";
@@ -50,9 +51,74 @@ export function connectToControlPlane(wsBase: string, tokenOrCredential: string,
     // commandId -> Query handle, until the first message reveals the real Claude session_id.
     const pendingByCommand = new Map<string, Query>();
     const pendingPermissions = new Map<string, (result: PermissionResult) => void>();
+    // Build-order step 5 -- requestId -> resolver for a load() call awaiting the control plane's reply.
+    const pendingLoads = new Map<string, (entries: SessionStoreEntry[] | null) => void>();
 
     function send(msg: RunnerToControl) {
       ws.send(JSON.stringify(msg));
+    }
+
+    // Build-order step 5 -- the SDK's SessionStore, implemented by relaying append()/load() over this
+    // same connection so the control plane becomes the durable transcript mirror (spec §4.3). One
+    // instance per connection since it closes over `send`/`pendingLoads`, which are connection-scoped.
+    const sessionStore: SessionStore = {
+      async append(key, entries) {
+        send({ type: "transcript_append", sessionId: key.sessionId, subpath: key.subpath, entries });
+      },
+      load(key) {
+        return new Promise<SessionStoreEntry[] | null>((resolve) => {
+          const requestId = randomUUID();
+          pendingLoads.set(requestId, resolve);
+          send({ type: "transcript_load_request", requestId, sessionId: key.sessionId, subpath: key.subpath });
+        });
+      },
+    };
+
+    function runSession(
+      folderPath: string,
+      prompt: string,
+      maxTurns: number | undefined,
+      resumeSessionId: string | undefined,
+      commandId: string | undefined,
+      onStarted: (q: Query) => void,
+    ) {
+      let sawSessionId: string | undefined = resumeSessionId;
+      const q = startManagedSession({
+        cwd: folderPath,
+        prompt,
+        quotaLogPath,
+        maxTurns,
+        sessionStore,
+        resumeSessionId,
+        callbacks: {
+          onMessage: (raw) => {
+            const sessionId = (raw as { session_id?: string }).session_id;
+            if (sessionId && sawSessionId === undefined) {
+              sawSessionId = sessionId;
+              activeQueries.set(sessionId, q);
+              // Only a genuinely new session (start_session, carrying a commandId) needs to tell the
+              // control plane its real Claude session id -- a resume already has a towo_session row.
+              if (commandId) send({ type: "session_started", commandId, sessionId });
+            }
+            if (sawSessionId) send({ type: "session_message", sessionId: sawSessionId, message: raw });
+          },
+          onPermissionRequest: (toolName, input, meta) =>
+            new Promise<PermissionResult>((resolve) => {
+              pendingPermissions.set(meta.requestId, resolve);
+              send({
+                type: "permission_request",
+                sessionId: sawSessionId ?? "",
+                requestId: meta.requestId,
+                toolName,
+                input,
+                title: meta.title,
+                displayName: meta.displayName,
+              });
+            }),
+        },
+      });
+      if (resumeSessionId) activeQueries.set(resumeSessionId, q);
+      onStarted(q);
     }
 
     ws.addEventListener("open", () => {
@@ -78,6 +144,7 @@ export function connectToControlPlane(wsBase: string, tokenOrCredential: string,
         console.error("[towo-runner] malformed message from control plane:", err);
         return;
       }
+      console.log(`[towo-runner] <- ${msg.type}`);
 
       switch (msg.type) {
         case "enrolled": {
@@ -87,42 +154,16 @@ export function connectToControlPlane(wsBase: string, tokenOrCredential: string,
           break;
         }
         case "start_session": {
-          let sawSessionId: string | undefined;
-          const q = startManagedSession(
-            msg.folderPath,
-            msg.prompt,
-            quotaLogPath,
-            {
-              onMessage: (raw) => {
-                const sessionId = (raw as { session_id?: string }).session_id;
-                if (sessionId && sawSessionId === undefined) {
-                  sawSessionId = sessionId;
-                  const pending = pendingByCommand.get(msg.commandId);
-                  if (pending) {
-                    activeQueries.set(sessionId, pending);
-                    pendingByCommand.delete(msg.commandId);
-                  }
-                  send({ type: "session_started", commandId: msg.commandId, sessionId });
-                }
-                if (sawSessionId) send({ type: "session_message", sessionId: sawSessionId, message: raw });
-              },
-              onPermissionRequest: (toolName, input, meta) =>
-                new Promise<PermissionResult>((resolve) => {
-                  pendingPermissions.set(meta.requestId, resolve);
-                  send({
-                    type: "permission_request",
-                    sessionId: sawSessionId ?? "",
-                    requestId: meta.requestId,
-                    toolName,
-                    input,
-                    title: meta.title,
-                    displayName: meta.displayName,
-                  });
-                }),
-            },
-            msg.maxTurns,
-          );
-          pendingByCommand.set(msg.commandId, q);
+          runSession(msg.folderPath, msg.prompt, msg.maxTurns, undefined, msg.commandId, (q) => {
+            pendingByCommand.set(msg.commandId, q);
+          });
+          break;
+        }
+        case "resume_session": {
+          // Build-order step 6 -- TowoAutoContinueScheduler's command once a paused session's quota
+          // window has reset. The SDK resumes by session id; sessionStore.load() supplies the history.
+          console.log(`[towo-runner] resuming session ${msg.sessionId} after quota reset`);
+          runSession(msg.folderPath, msg.prompt, undefined, msg.sessionId, undefined, () => {});
           break;
         }
         case "interrupt": {
@@ -133,11 +174,21 @@ export function connectToControlPlane(wsBase: string, tokenOrCredential: string,
           const resolve = pendingPermissions.get(msg.requestId);
           if (!resolve) break;
           pendingPermissions.delete(msg.requestId);
+          // Same lesson as startManagedSession's options object: an explicitly-present key with an
+          // undefined value (not simply omitted) previously made the SDK hang rather than proceed --
+          // never include a key here unless there's a real value for it.
           resolve(
             msg.decision === "allow"
-              ? { behavior: "allow", updatedInput: undefined as never }
+              ? { behavior: "allow" }
               : { behavior: "deny", message: msg.reason ?? "Denied via Towo" },
           );
+          break;
+        }
+        case "transcript_load_response": {
+          const resolve = pendingLoads.get(msg.requestId);
+          if (!resolve) break;
+          pendingLoads.delete(msg.requestId);
+          resolve((msg.entries as SessionStoreEntry[] | null) ?? null);
           break;
         }
         case "send_message": {
@@ -147,6 +198,8 @@ export function connectToControlPlane(wsBase: string, tokenOrCredential: string,
           console.warn(`[towo-runner] send_message for ${msg.sessionId} not yet supported in v1`);
           break;
         }
+        default:
+          console.warn(`[towo-runner] unrecognized message type from control plane:`, msg);
       }
     });
 
