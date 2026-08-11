@@ -15,6 +15,12 @@ import dev.jellystructure.ui.renderRaviloUsers
 import dev.jellystructure.ui.renderSettings
 import dev.jellystructure.ui.renderShell
 import dev.jellystructure.ui.renderSubtitles
+import dev.jellystructure.ui.renderTowoApprovals
+import dev.jellystructure.ui.renderTowoOverview
+import dev.jellystructure.ui.renderTowoRunnerNew
+import dev.jellystructure.ui.renderTowoRunners
+import dev.jellystructure.ui.renderTowoSession
+import dev.jellystructure.ui.renderTowoSessions
 import dev.jellystructure.ui.updateActiveNav
 import kotlinx.browser.document
 import kotlinx.browser.window
@@ -80,6 +86,15 @@ object App {
             path.startsWith("/ravilo") -> renderRaviloConfig(container, scope)
             path.startsWith("/livetv") -> renderLiveTv(container, scope)
             path == "/settings" -> renderSettings(container, scope, query)
+            path == "/towo/runners/new" -> renderTowoRunnerNew(container, scope)
+            path == "/towo/runners" -> renderTowoRunners(container, scope)
+            path == "/towo/sessions" -> renderTowoSessions(container, scope, query)
+            path.startsWith("/towo/session/") -> {
+                val id = path.removePrefix("/towo/session/").substringBefore('?')
+                if (id.isNotEmpty()) renderTowoSession(container, scope, id) else renderTowoOverview(container, scope)
+            }
+            path == "/towo/approvals" -> renderTowoApprovals(container, scope)
+            path == "/towo" -> renderTowoOverview(container, scope)
             path.startsWith("/metadata") -> renderMetadata(container, scope, query["tab"] ?: "studios")
             else -> renderDashboard(container, scope)
         }

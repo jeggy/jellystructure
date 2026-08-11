@@ -1,11 +1,11 @@
 # Phase 162 — Towo: a self-hosted control plane for Claude Code sessions (FR-TOWO1)
 
-**Status:** Planned → **implementation in progress, 2026-08-11** (build-order steps 1, 2, 3, 4-backend,
-and 7 done and verified live end-to-end against a real Claude account — see §9). Dev-reviewed
-2026-08-11 (see the addendum at the end: three real build-config/incident-precedent gaps found and
-closed, two protocol details made explicit). Open questions §10.1–2 resolved the same day against the
-pinned SDK's real types. Not yet built: SessionStore (step 5), auto-continue (step 6), the admin UI
-(step 8) — Settings §A, and every screen in §8's table, still only exist as design mockups.
+**Status:** Planned → **all 8 build-order steps implemented, 2026-08-11**, and verified end-to-end
+against a real Claude account (see §9) — a first functional slice, not full parity with every design
+detail in §4–§8 (see the addendum's "What's genuinely done vs. simplified" note). Dev-reviewed
+2026-08-11 (see the addendum: three real build-config/incident-precedent gaps found and closed, two
+protocol details made explicit, plus two real runtime bugs found and fixed via live browser testing).
+Open questions §10.1–2 resolved against the pinned SDK's real types.
 **Date:** 2026-08-10
 **Research basis:** `specs/research-reports/claude-code-remote-agent-management-2026-08-10.md`
 (doc-verified; §11 of that report lists the integration unknowns that must be pinned before build).
@@ -309,22 +309,54 @@ asked. Keep Direction B on file if session counts ever grow past a screenful.
    `TowoEventBus`/`TowoService`, the runner-link + browser-stream WS endpoints in `Server.kt` (following
    the established Ktor-Native crash-safety + auth patterns per the dev-review addendum), and the REST
    surface in `TowoRoutes.kt`. `compileKotlinLinuxX64` + `linuxX64Test` clean.
-4. ✅ **Backend done 2026-08-11**, UI not started. Enrollment: `POST /towo/runners/enroll` mints a
+4. ✅ **Done 2026-08-11**, backend and UI both. Enrollment: `POST /towo/runners/enroll` mints a
    short-lived single-use token and returns real paste-able `npx`/installer/Docker commands (spec §B);
    `/api/towo/runner-link?token=…` exchanges it for a long-lived credential, sent exactly once over
    `ControlToRunner.Enrolled` — confirmed live: the runner persisted it to `~/.towo-runner/
-   credential.json` and reconnected using it (no token) on the very next run.
-5. `SessionStore` — not started. v1 uses an explicit placeholder (`TowoService`'s in-memory, capped,
-   non-durable transcript buffer) so `GET /sessions/:id/messages` has something to return meanwhile.
-6. Auto-continue state machine + notifications — not started.
-7. ✅ **Done 2026-08-11**, ahead of its build-order slot (cheap once the WS transport existed). Full
-   remote-approval loop **verified live against a real Claude session**: a `Write` call suspended the
-   session (`awaiting_permission`), `POST /permissions/:id {"decision":"allow"}` was relayed down the
-   runner's own connection, the write actually happened on disk, and the session returned to `idle`.
-8. The rest of the UI against §6 — not started. Every screen in §8's table is still a design mockup only.
+   credential.json` and reconnected using it (no token) on the very next run. `towo-runner-new.html`'s
+   real counterpart (name → command tabs → live "waiting for runner" poll) built and browser-tested.
+5. ✅ **Done 2026-08-11.** `towo_transcript_entry` table (migration 23; dedup on `entry_uuid` via a
+   partial unique index) plus `transcript_append`/`transcript_load_request`/`transcript_load_response`
+   protocol messages. The TS side implements the SDK's real `SessionStore` interface (`append`/`load`),
+   relaying both directions over the same runner-link connection — **the in-memory placeholder is gone**,
+   `GET /sessions/:id/messages` now reads real durable rows. Verified live: a session's transcript
+   (36 real entries — `queue-operation`/`user`/`attachment`/`ai-title`/`assistant`/`last-prompt`, richer
+   than the SDKMessage shape, confirming the report's "not 1:1 with SDKMessage" framing) survived a full
+   control-plane restart.
+6. ✅ **Done 2026-08-11.** `TowoAutoContinueScheduler` — a `rootScope` coroutine loop (default 6h,
+   `TOWO_AUTOCONTINUE_INTERVAL_MS` overrides for ops/testing) that finds `paused_quota` + armed +
+   past-`resume_at` sessions and sends `ControlToRunner.ResumeSession`. **Deliberately control-plane-
+   owned, not runner-owned** — see the dev-review addendum for why this departs from the report's
+   original framing. `onSessionResult` now implements spec §8's full state diagram (`error_max_turns` →
+   `stopped_max_turns`, `error_during_execution` corroborated against the quota cache → `paused_quota`
+   vs `errored`). Verified live: a session forced into `paused_quota` (armed, `resume_at` in the past)
+   was picked up within one scheduler tick, `sessionStore.load()` correctly supplied its history to the
+   resumed `query({resume: sessionId})` call, and the resumed turn ran a real Claude call and completed
+   (`idle`, transcript grew from 9 to 15 entries).
+7. ✅ **Done 2026-08-11.** Full remote-approval loop **verified live against a real Claude session,
+   twice** — once over raw REST, once **driven entirely through the real browser UI** (Playwright):
+   a `Write` call suspended the session (`awaiting_permission`), the approval banner rendered the real
+   tool call, clicking **Allow** in the browser sent the real `POST /permissions/:id`, the decision was
+   relayed down the runner's own connection, the file was actually written to disk, and the UI updated
+   to `idle` live via the WS stream with the banner clearing automatically.
+8. ✅ **Done 2026-08-11** — a first functional slice, not full parity with §8's screen table. Built:
+   Settings → Towo tab (enable toggle only, localStorage-based like `js-theme`); the sidebar Towo group
+   (flag-gated, matching spec §A); Overview (runners + sessions, real data); Runners list + enrollment;
+   Sessions list; **the live session view** (WS-driven transcript, inline approval banner, composer,
+   interrupt, and §G's recovery affordances — arm-toggle/resume-now/raise-cap/retry — folded into the
+   same page rather than a separate `towo-limits.html`); Approvals queue. **Not built**: Settings §A's
+   other fields (quota-watch interval, default permission profile/turn cap, notify-preferences — all
+   have working backend defaults, just no UI to change them yet), permission **profiles** as a chosen
+   concept in the composer (sessions always run in SDK `permissionMode: "default"`), and `send_message`
+   (posting into an idle session — needs streaming-input mode, logged as unsupported not silently
+   dropped). Verified live end-to-end in a real headless-browser session (Playwright) against the real
+   production webpack bundle, not just compiled: Settings toggle applies and persists, sidebar renders
+   conditionally, all five pages load real data, enrollment generates and tab-switches real commands,
+   and the full approve-a-real-permission click-through works with live status updates.
 
-Steps 1–3 retired the risk; step 7 landing this early was a bonus of the transport already existing.
-Real remaining work: SessionStore, auto-continue, and the UI.
+All 8 steps are now implemented and verified live. What's left is polish and completeness against the
+full spec (§4's untouched Settings fields, permission profiles as a real choice, multi-turn composing,
+notifications) — not new architecture.
 
 ### Live verification, 2026-08-11
 Run against an isolated scratch instance (port 19505, throwaway config/DB — the real backend on 9505
@@ -339,6 +371,34 @@ was never touched) with the real `towo-runner` and this machine's real Claude Co
 4. `POST /sessions` with a prompt requiring a `Write` → session correctly went `awaiting_permission` →
    `GET /permissions?status=pending` showed the real tool call (`file_path`, `content`) → approving it
    via REST caused the file to actually be written and the session to resume to `idle`.
+
+### Two real bugs found only by testing live, not by compiling
+
+Both were the exact same root cause, in two different places — worth naming as a pattern, not just two
+isolated fixes: **the Agent SDK's options objects react badly to a key that is explicitly present with
+an `undefined`/`null` value, as opposed to the key being absent.** `tsc --noEmit` cannot catch this —
+the types allow both, and the runtime behaves differently. Every options object passed to `query()` (or
+returned from `canUseTool`) needs its optional keys built conditionally (spread-if-defined), never
+passed as `key: possiblyUndefinedValue`.
+
+1. **`startManagedSession`'s `query()` call silently produced a `Query` that never emitted a single
+   message** — no error, no thrown exception, just total silence — when `maxTurns`/`resume` were passed
+   as explicit `undefined` in the options object (both fields are `undefined` on every fresh, non-resumed
+   session, which is the common case, so this broke *every* session start). Fixed by only including keys
+   with real values.
+2. **A resumed session hung forever in `running` after an approval**, with no further messages, no
+   error, nothing — found only because a live browser test happened to leave a session running long
+   enough to notice. Root cause: `canUseTool`'s resolved `PermissionResult` for the allow case included
+   `updatedInput: undefined` explicitly. Removing the key (`{ behavior: "allow" }` alone) fixed it
+   immediately — re-tested with a real approval and the file was written, session reached `idle`.
+
+Also found and fixed the same session: `updateSessionHeader` cast the composer's `<button id="towo-sess-
+send">` to `HTMLInputElement` to set `.disabled` — a real `ClassCastException` (browsers/Kotlin-Wasm
+buttons aren't inputs), silently aborting the rest of `loadSession()` **before** it ever reached the
+permission-banner fetch, which is why the approval banner didn't render on first load even though the
+backend genuinely had the pending request. Caught via `page.on('pageerror')` in the Playwright script —
+`page.on('console')` alone missed it, since an uncaught Kotlin/Wasm coroutine exception surfaces as a
+page error, not a console.error. Fixed by using the button's own `.disabled` property directly.
 
 ---
 

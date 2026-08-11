@@ -11,6 +11,7 @@ import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.delete
 import io.ktor.server.routing.get
+import io.ktor.server.routing.patch
 import io.ktor.server.routing.post
 import io.ktor.server.routing.route
 import kotlinx.serialization.Serializable
@@ -35,6 +36,17 @@ private data class SendMessageRequest(val text: String)
 
 @Serializable
 private data class DecidePermissionRequest(val decision: String, val reason: String? = null)
+
+@Serializable
+private data class UpdateSessionRequest(
+    val title: String? = null,
+    val tag: String? = null,
+    val maxTurns: Long? = null,
+    val continueAfterReset: Boolean? = null,
+)
+
+@Serializable
+private data class ResumeSessionRequest(val prompt: String = "Continue.")
 
 /**
  * Phase 162 (Towo) — REST surface (spec §6). The two WebSocket endpoints (/api/towo/runner-link,
@@ -125,6 +137,22 @@ fun Route.towoRoutes(service: TowoService, store: TowoStore) {
             val id = call.parameters["id"]!!
             val ok = service.interrupt(id)
             if (ok) call.respond(HttpStatusCode.Accepted) else call.respond(HttpStatusCode.ServiceUnavailable)
+        }
+
+        patch("/sessions/{id}") {
+            val id = call.parameters["id"]!!
+            val req = call.receive<UpdateSessionRequest>()
+            val ok = service.updateSessionMeta(id, req.title, req.tag, req.maxTurns, req.continueAfterReset)
+            if (ok) call.respond(HttpStatusCode.NoContent) else call.respond(HttpStatusCode.NotFound)
+        }
+
+        // Manual "resume now" (spec §G's recovery affordances) -- the same mechanism
+        // TowoAutoContinueScheduler uses, just user-triggered instead of timer-triggered.
+        post("/sessions/{id}/resume") {
+            val id = call.parameters["id"]!!
+            val req = runCatching { call.receive<ResumeSessionRequest>() }.getOrDefault(ResumeSessionRequest())
+            val ok = service.resumeSession(id, req.prompt)
+            if (ok) call.respond(HttpStatusCode.Accepted) else call.respond(HttpStatusCode.ServiceUnavailable, mapOf("error" to "runner is offline or session has no known folder path"))
         }
 
         delete("/sessions/{id}") {

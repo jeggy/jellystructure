@@ -247,6 +247,16 @@ fun main() = runBlocking {
     val towoRunnerRegistry = dev.jellystructure.towo.TowoRunnerRegistry()
     val towoEventBus = dev.jellystructure.towo.TowoEventBus()
     val towoService = dev.jellystructure.towo.TowoService(towoStore, towoRunnerRegistry, towoEventBus)
+    // Build-order step 6 — armed sessions past their quota reset are resumed automatically, checked
+    // every 6h (spec §A's default; TOWO_AUTOCONTINUE_INTERVAL_MS overrides for testing/ops until
+    // Settings' quota-watch-interval field, §A, is built and takes over). Runs unconditionally like
+    // the rest of Towo's backend; the Settings flag only gates the UI, never whether armed sessions
+    // actually get resumed.
+    val towoAutoContinueIntervalMs = env("TOWO_AUTOCONTINUE_INTERVAL_MS", "").toLongOrNull()
+    dev.jellystructure.towo.TowoAutoContinueScheduler(
+        towoStore, towoService, rootScope,
+        intervalMs = towoAutoContinueIntervalMs ?: (6L * 60 * 60 * 1000),
+    ).start()
     val shutdown = startServer(
         configStore, sessionService, raviloDeviceService, raviloConfigService, channelLogoStore, homeFeedService, browseService, detailService, playbackService, jellyfinClient, mediaStore, scanner,
         artworkDownloader, tmdbClient, scanTracker, mediaHistory, activityLog, broadcaster,

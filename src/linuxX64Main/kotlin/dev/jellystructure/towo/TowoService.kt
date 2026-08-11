@@ -37,30 +37,22 @@ class TowoService(
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
-    // sessionId -> recent raw SDKMessages, capped. A placeholder until build-order step 5 wires a real
-    // SessionStore -- v1 needs SOMETHING for GET /sessions/:id/messages to return so the session view
-    // is testable end to end; this is explicitly not durable (lost on restart, capped, no pagination).
-    private val transcriptsMutex = Mutex()
-    private val transcripts = mutableMapOf<String, MutableList<JsonElement>>()
-    private val maxTranscriptPerSession = 500
+    /** Build-order step 5 — the real durable transcript (towo_transcript_entry), not the in-memory
+     *  capped placeholder v1 shipped with. This is SDKMessages broadcast for the live browser stream
+     *  (session_message), kept for history purposes; the SDK's own SessionStore.append() entries
+     *  (transcript_append, handled below) are what actually back this table now. */
+    fun getMessages(sessionId: String): List<JsonElement> =
+        store.loadTranscriptEntries(sessionId, subpath = null)
+            ?.mapNotNull { runCatching { json.parseToJsonElement(it) }.getOrNull() }
+            ?: emptyList()
 
-    suspend fun getMessages(sessionId: String): List<JsonElement> =
-        transcriptsMutex.withLock { transcripts[sessionId]?.toList() ?: emptyList() }
-
-    private suspend fun appendTranscript(sessionId: String, message: JsonElement) {
-        transcriptsMutex.withLock {
-            val list = transcripts.getOrPut(sessionId) { mutableListOf() }
-            list.add(message)
-            if (list.size > maxTranscriptPerSession) list.removeAt(0)
-        }
-    }
-
-    // commandId -> the folderId a start_session call targeted, so onSessionStarted can attach it.
+    // commandId -> the folder a start_session call targeted, so onSessionStarted can attach it.
     // Touched from both REST-call coroutines (createSession) and the runner-link receive loop
     // (onRunnerMessage) concurrently -- unlike the JVM, Kotlin/Native has no free happens-before
     // guarantee across threads here, so this needs a real lock, not just "single-threaded in practice".
+    private data class PendingStart(val folderId: String?, val folderPath: String)
     private val pendingStartsMutex = Mutex()
-    private val pendingStarts = mutableMapOf<String, String?>()
+    private val pendingStarts = mutableMapOf<String, PendingStart>()
 
     // ===== Enrollment / runner-link auth =====
 
@@ -102,8 +94,8 @@ class TowoService(
                 store.upsertFolders(runnerId, msg.folders.map { it.name to it.absPath })
             }
             is RunnerToControl.SessionStarted -> {
-                val folderId = pendingStartsMutex.withLock { pendingStarts.remove(msg.commandId) }
-                store.createSession(msg.sessionId, runnerId, folderId, title = null, maxTurns = 40)
+                val pending = pendingStartsMutex.withLock { pendingStarts.remove(msg.commandId) }
+                store.createSession(msg.sessionId, runnerId, pending?.folderId, pending?.folderPath, title = null, maxTurns = 40)
                 events.broadcast(TowoEvent.SessionStatus(msg.sessionId, "running"))
             }
             is RunnerToControl.SessionMessage -> onSessionMessage(runnerId, msg.sessionId, msg.message)
@@ -116,6 +108,17 @@ class TowoService(
                 events.broadcast(TowoEvent.SessionStatus(msg.sessionId, "awaiting_permission"))
                 events.broadcast(TowoEvent.PermissionRequested(msg.requestId, msg.sessionId, msg.toolName, msg.input, msg.title, msg.displayName))
             }
+            is RunnerToControl.TranscriptAppend -> {
+                for (entry in msg.entries) {
+                    val entryUuid = (entry as? JsonObject)?.get("uuid")?.jsonPrimitive?.contentOrNull
+                    store.appendTranscriptEntry(msg.sessionId, msg.subpath, entryUuid, entry.toString())
+                }
+            }
+            is RunnerToControl.TranscriptLoadRequest -> {
+                val entries = store.loadTranscriptEntries(msg.sessionId, msg.subpath)
+                    ?.mapNotNull { runCatching { json.parseToJsonElement(it) }.getOrNull() }
+                runners.send(runnerId, ControlToRunner.TranscriptLoadResponse(msg.requestId, entries))
+            }
         }
     }
 
@@ -124,7 +127,6 @@ class TowoService(
      *  unexamined via message.raw. Field names/casing are ground truth from the pinned SDK's own
      *  sdk.d.ts (see reference-claude-agent-sdk-facts memory), not the docs' snake_case guess. */
     private suspend fun onSessionMessage(runnerId: String, sessionId: String, raw: JsonElement) {
-        appendTranscript(sessionId, raw)
         events.broadcast(TowoEvent.MessageRaw(sessionId, raw))
         val obj = raw as? JsonObject ?: return
         when (obj["type"]?.jsonPrimitive?.contentOrNull) {
@@ -137,15 +139,43 @@ class TowoService(
                 store.recordQuotaStatus(runnerId, rateLimitType, status, resetsAt, utilization)
                 events.broadcast(TowoEvent.QuotaUpdated(runnerId, rateLimitType, status, resetsAt, utilization))
             }
-            "result" -> {
-                val subtype = obj["subtype"]?.jsonPrimitive?.contentOrNull ?: "success"
-                val status = if (subtype == "success") "idle" else "errored"
-                store.updateSessionStatus(sessionId, status, lastErrorSubtype = subtype.takeIf { it != "success" })
-                events.broadcast(TowoEvent.SessionResult(sessionId, subtype))
-                events.broadcast(TowoEvent.SessionStatus(sessionId, status, errorSubtype = subtype.takeIf { it != "success" }))
-            }
+            "result" -> onSessionResult(runnerId, sessionId, obj["subtype"]?.jsonPrimitive?.contentOrNull ?: "success")
             "assistant" -> {
                 store.getSession(sessionId)?.let { store.updateSessionTurns(sessionId, it.numTurns + 1) }
+            }
+        }
+    }
+
+    /** Spec §8's state diagram: rate_limit_event is the primary quota signal, a ResultMessage is only
+     *  corroboration. error_max_turns is a user decision (stopped_max_turns), never auto-retried.
+     *  error_during_execution is checked against the quota cache to tell a genuine quota pause apart
+     *  from an ordinary error -- only the former ever reschedules (TowoAutoContinueScheduler, step 6). */
+    private suspend fun onSessionResult(runnerId: String, sessionId: String, subtype: String) {
+        events.broadcast(TowoEvent.SessionResult(sessionId, subtype))
+        when (subtype) {
+            "success" -> {
+                store.updateSessionStatus(sessionId, "idle")
+                events.broadcast(TowoEvent.SessionStatus(sessionId, "idle"))
+            }
+            "error_max_turns" -> {
+                store.updateSessionStatus(sessionId, "stopped_max_turns", lastErrorSubtype = subtype)
+                events.broadcast(TowoEvent.SessionStatus(sessionId, "stopped_max_turns", errorSubtype = subtype))
+            }
+            "error_during_execution" -> {
+                val recentlyRejected = store.quotaForRunner(runnerId)
+                    .filter { it.status == "rejected" }
+                    .maxByOrNull { it.observedAt }
+                if (recentlyRejected != null) {
+                    store.updateSessionStatus(sessionId, "paused_quota", resumeAt = recentlyRejected.resetsAt, lastErrorSubtype = subtype)
+                    events.broadcast(TowoEvent.SessionStatus(sessionId, "paused_quota", resumeAt = recentlyRejected.resetsAt))
+                } else {
+                    store.updateSessionStatus(sessionId, "errored", lastErrorSubtype = subtype)
+                    events.broadcast(TowoEvent.SessionStatus(sessionId, "errored", errorSubtype = subtype))
+                }
+            }
+            else -> {
+                store.updateSessionStatus(sessionId, "errored", lastErrorSubtype = subtype)
+                events.broadcast(TowoEvent.SessionStatus(sessionId, "errored", errorSubtype = subtype))
             }
         }
     }
@@ -154,7 +184,7 @@ class TowoService(
 
     suspend fun createSession(runnerId: String, folderId: String?, folderPath: String, prompt: String, maxTurns: Long?, permissionProfile: String): Boolean {
         val commandId = generateSecureToken()
-        pendingStartsMutex.withLock { pendingStarts[commandId] = folderId }
+        pendingStartsMutex.withLock { pendingStarts[commandId] = PendingStart(folderId, folderPath) }
         val sent = runners.send(runnerId, ControlToRunner.StartSession(commandId, folderPath, prompt, maxTurns, permissionProfile))
         if (!sent) pendingStartsMutex.withLock { pendingStarts.remove(commandId) }
         return sent
@@ -168,6 +198,35 @@ class TowoService(
     suspend fun interrupt(sessionId: String): Boolean {
         val session = store.getSession(sessionId) ?: return false
         return runners.send(session.runnerId, ControlToRunner.Interrupt(sessionId))
+    }
+
+    /** Build-order step 6 — resumes a paused_quota session, whether triggered by
+     *  TowoAutoContinueScheduler or a user's manual "resume now". [prompt] is the resume-turn's
+     *  continuation text; see the spec's open question on what this should actually say. */
+    suspend fun resumeSession(sessionId: String, prompt: String): Boolean {
+        val session = store.getSession(sessionId) ?: return false
+        val folderPath = session.folderPath ?: return false
+        val sent = runners.send(session.runnerId, ControlToRunner.ResumeSession(sessionId, folderPath, prompt))
+        if (sent) {
+            store.updateSessionStatus(sessionId, "running")
+            events.broadcast(TowoEvent.SessionStatus(sessionId, "running"))
+        }
+        return sent
+    }
+
+    /** Spec §F's per-session "Continue after reset" toggle -- the switch TowoAutoContinueScheduler
+     *  reads. Also accepts title/tag/maxTurns since they ride the same PATCH (spec §6). */
+    fun updateSessionMeta(sessionId: String, title: String?, tag: String?, maxTurns: Long?, continueAfterReset: Boolean?): Boolean {
+        val session = store.getSession(sessionId) ?: return false
+        store.updateSessionMeta(
+            id = sessionId,
+            title = title ?: session.title,
+            tag = tag ?: session.tag,
+            maxTurns = maxTurns ?: session.maxTurns,
+            maxTurnsSource = if (maxTurns != null) "override" else session.maxTurnsSource,
+            continueAfterReset = continueAfterReset ?: session.continueAfterReset,
+        )
+        return true
     }
 
     suspend fun decidePermission(requestId: String, decision: String, reason: String?): Boolean {
