@@ -29,6 +29,7 @@ data class TowoSettings(
     val permissionTimeoutMs: Long = 30L * 60 * 1000,
     val permissionTimeoutReason: String = "No response within the timeout — auto-denied by Towo.",
     val runnerConnectUrl: String = "",
+    val githubToken: String = "",
 )
 
 @Serializable

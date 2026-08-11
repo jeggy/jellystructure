@@ -1,0 +1,7 @@
+-- Phase 162 (Towo) — a GitHub fine-grained PAT (Contents: Read-only on this repo) so the enrollment
+-- command can download towo-runner's source from the private repo's authenticated tarball API.
+-- Backend-owned (an operator-supplied setting, not a hardcoded string) so it can be set/rotated from
+-- Settings without a code change; every enrollment command embeds whatever value is current at mint
+-- time (spec §7: a long-lived secret in a pasted command is a real, accepted tradeoff here, not an
+-- oversight -- see mintEnrollment's doc comment).
+ALTER TABLE towo_settings ADD COLUMN github_token TEXT NOT NULL DEFAULT '';

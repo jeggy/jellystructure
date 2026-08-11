@@ -28,8 +28,9 @@ sealed class RunnerLinkAuth {
 
 data class MintedEnrollment(val token: String, val expiresAt: Long, val commands: Map<String, String>)
 
-/** Built by `.github/workflows/towo-runner-release.yml` on every push touching `towo-runner/`. */
-private const val TOWO_RUNNER_TARBALL_URL = "https://github.com/jeggy/jellystructure/releases/download/towo-runner-latest/towo-runner.tgz"
+/** GitHub's per-repo tarball API — see [TowoService.mintEnrollment]'s doc comment for why this,
+ *  not a Release asset (this repo is private) or the npm registry (towo-runner was never published). */
+private const val TOWO_REPO_TARBALL_URL = "https://api.github.com/repos/jeggy/jellystructure/tarball/main"
 
 /**
  * Phase 162 (Towo) — orchestration: turns inbound runner-link messages into TowoStore writes +
@@ -70,21 +71,40 @@ class TowoService(
 
     // ===== Enrollment / runner-link auth =====
 
-    /** [publicWsBase] e.g. "wss://192.0.2.10:9505" — derived by the caller from the inbound request
-     *  (Settings' "where runners connect" field, §A, isn't built yet; this is a reasonable default
-     *  until it is). */
+    /** [publicWsBase] e.g. "wss://192.0.2.10:9505" — derived by the caller from the inbound request,
+     *  or Settings' "where runners connect" override when set (spec §A).
+     *
+     *  The "npx" command downloads towo-runner from this repo directly rather than installing a
+     *  published package, because it was never one: `towo-runner/package.json` has `"private": true`
+     *  and no scope under `@jellystructure` was ever registered — the very first version of this
+     *  command 404'd for the user immediately. A GitHub *Release* asset was the first fix attempted,
+     *  but this repo is private, and a private repo's release assets need their own asset-id lookup
+     *  to download with a token (the plain `releases/download/...` URL only works unauthenticated on
+     *  a public repo, or in a browser session) — real but avoidable complexity. GitHub's per-repo
+     *  *tarball* API (`GET /repos/{owner}/{repo}/tarball/{ref}`) needs only one Authorization header
+     *  and no asset-id resolution, so the command downloads the whole repo, extracts it, and builds
+     *  towo-runner on the target machine itself (confirmed working end to end against a local stand-in
+     *  of this exact pipeline: download → extract → `npm install` → `npm run build` → `node
+     *  dist/index.js` printed the real usage text). [githubToken] is a real long-lived secret sitting
+     *  in a pasted command — spec §7 explicitly says that must never happen for the *enrollment*
+     *  token, but there is no other way to authenticate against a private repo's API from a bare
+     *  `curl`, and the user chose this over making the repo public or self-hosting the tarball. Empty
+     *  token = the npx command is left as an explanatory placeholder rather than one that would just
+     *  fail with a 401. */
     fun mintEnrollment(name: String, publicWsBase: String): MintedEnrollment {
         val minted = store.mintEnrollment(name)
         val url = "$publicWsBase/api/towo/runner-link?token=${minted.token}"
+        val githubToken = store.getSettings().githubToken.trim()
+        val npxCommand = if (githubToken.isNotEmpty()) {
+            "curl -fsSL -H \"Authorization: Bearer $githubToken\" -H \"Accept: application/vnd.github+json\" " +
+                "-L \"$TOWO_REPO_TARBALL_URL\" -o /tmp/towo-src.tar.gz && rm -rf /tmp/towo-src && mkdir -p /tmp/towo-src && " +
+                "tar -xzf /tmp/towo-src.tar.gz -C /tmp/towo-src --strip-components=1 && cd /tmp/towo-src/towo-runner && " +
+                "npm install && npm run build && node dist/index.js --connect \"$url\" --root ~"
+        } else {
+            "# Set a GitHub token in Settings → Towo first (Contents: Read-only on this repo) — needed to download towo-runner from this private repo. Then re-generate this command."
+        }
         val commands = mapOf(
-            // towo-runner is "private": true (never meant for the public npm registry) and its
-            // dist/ is gitignored, so this installs from a tarball a GitHub Actions workflow
-            // (.github/workflows/towo-runner-release.yml) builds on every push to towo-runner/ and
-            // republishes to a rolling "towo-runner-latest" release -- npx supports a tarball URL
-            // directly, no npm account or registry publish needed. Confirmed working live 2026-08-11
-            // after the previous placeholder (`npx @jellystructure/towo-runner`, a package that was
-            // never published) 404'd for the user.
-            "npx" to "npx $TOWO_RUNNER_TARBALL_URL --connect \"$url\" --root ~",
+            "npx" to npxCommand,
             // installer/docker are still placeholders -- towo.local doesn't resolve and the
             // jellystructure/towo-runner Docker image was never built or pushed anywhere.
             "installer" to "curl -fsSL https://towo.local/install.sh | sh -s -- --connect \"$url\" --root ~",

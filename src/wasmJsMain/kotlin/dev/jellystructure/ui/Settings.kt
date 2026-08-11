@@ -438,6 +438,12 @@ fun renderSettings(container: Element, scope: CoroutineScope, query: Map<String,
                 <span class="hint">Leave blank to derive it from how you're viewing this page. Set it if that's wrong — e.g. behind a reverse proxy, or a different external hostname than the one runners should dial. Affects new enrollment commands only.</span>
               </div>
 
+              <div class="field" style="max-width:420px;margin-bottom:14px">
+                <label>GitHub token (for the npx enrollment command)</label>
+                <input id="towo-github-token" class="input" type="password" placeholder="github_pat_…">
+                <span class="hint">A fine-grained personal access token with <b>Contents: Read-only</b> on this repo — needed because this is a private repo and the npx command downloads towo-runner's source from it. Embedded in plain text into every new enrollment command; rotate it here if it leaks.</span>
+              </div>
+
               <hr class="dash">
 
               <div style="display:flex;align-items:center;justify-content:space-between;margin:14px 0 8px">
@@ -1974,6 +1980,7 @@ private fun towoSettingsFromForm(): TowoSettings = TowoSettings(
     permissionTimeoutReason = (document.getElementById("towo-permission-timeout-reason") as? HTMLInputElement)?.value?.trim()?.takeIf { it.isNotEmpty() }
         ?: "No response within the timeout — auto-denied by Towo.",
     runnerConnectUrl = (document.getElementById("towo-runner-connect-url") as? HTMLInputElement)?.value?.trim().orEmpty(),
+    githubToken = (document.getElementById("towo-github-token") as? HTMLInputElement)?.value?.trim().orEmpty(),
 )
 
 private fun wireTowoSettings(scope: CoroutineScope) {
@@ -1993,6 +2000,7 @@ private fun wireTowoSettings(scope: CoroutineScope) {
         setInputValue("towo-permission-timeout-min", (settings.permissionTimeoutMs / 60_000).toString())
         setInputValue("towo-permission-timeout-reason", settings.permissionTimeoutReason)
         setInputValue("towo-runner-connect-url", settings.runnerConnectUrl)
+        setInputValue("towo-github-token", settings.githubToken)
     }
 
     for (id in listOf(
