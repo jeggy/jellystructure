@@ -96,25 +96,32 @@ private fun nowEpochSecJs(): Long = (nowMsJs() / 1000).toLong()
 private fun formatTimeShortMs(epochSec: Double): String = js("new Date(epochSec * 1000).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})")
 private fun formatTimeShort(epochSec: Long): String = formatTimeShortMs(epochSec.toDouble())
 
-private val RATE_LIMIT_LABELS = mapOf("five_hour" to "5-hour window", "seven_day" to "Weekly")
+private val RATE_LIMIT_LABELS = linkedMapOf("five_hour" to "5-hour window", "seven_day" to "Weekly")
 
-/** Spec §B: "live 5-hour and weekly gauges with reset times" — one row per rate-limit window this
- *  runner has ever reported (none until its first real session runs a turn; the SDK doesn't emit
- *  rate_limit_event until then). */
+/** Spec §B: "live 5-hour and weekly gauges with reset times" — always both rows, not just whichever
+ *  rate-limit types happen to have a recorded event yet: the SDK only emits rate_limit_event once a
+ *  window crosses a real threshold (confirmed live: the one captured event was already at 83%
+ *  utilization with surpassedThreshold set), so a freshly-enrolled runner can easily have a five_hour
+ *  row and no seven_day one for a while — showing nothing for weekly read as "weekly isn't tracked"
+ *  rather than "no data yet". Any rateLimitType this map doesn't know about still gets its own row
+ *  (labelled with the raw string) rather than being silently dropped. */
 private fun quotaHtml(quota: List<TowoQuotaStatus>): String {
-    if (quota.isEmpty()) return ""
+    val byType = quota.associateBy { it.rateLimitType }
+    val extraTypes = quota.map { it.rateLimitType }.filter { it !in RATE_LIMIT_LABELS }.sorted()
+    val orderedTypes = RATE_LIMIT_LABELS.keys + extraTypes
     return buildString {
         append("""<div style="margin-bottom:10px;display:flex;flex-direction:column;gap:8px">""")
-        for (q in quota.sortedBy { it.rateLimitType }) {
-            val pct = q.utilization?.let { (it * 100).toInt().coerceIn(0, 100) }
-            val label = RATE_LIMIT_LABELS[q.rateLimitType] ?: q.rateLimitType.esc()
+        for (type in orderedTypes) {
+            val q = byType[type]
+            val pct = q?.utilization?.let { (it * 100).toInt().coerceIn(0, 100) }
+            val label = RATE_LIMIT_LABELS[type] ?: type.esc()
             append("""<div>""")
             append("""<div class="row" style="justify-content:space-between;margin-bottom:3px">""")
             append("""<span class="tiny muted">${label}</span>""")
-            append("""<span class="mono tiny">${pct?.let { "$it%" } ?: q.status.esc()}</span>""")
+            append("""<span class="mono tiny">${pct?.let { "$it%" } ?: q?.status?.esc() ?: "No data yet"}</span>""")
             append("</div>")
-            if (pct != null) append("""<div class="gauge"><i style="width:${pct}%"></i></div>""")
-            if (q.resetsAt != null) append("""<div class="tiny muted" style="margin-top:3px">Resets ${formatTimeShort(q.resetsAt)}</div>""")
+            append("""<div class="gauge"><i style="width:${pct ?: 0}%"></i></div>""")
+            if (q?.resetsAt != null) append("""<div class="tiny muted" style="margin-top:3px">Resets ${formatTimeShort(q.resetsAt)}</div>""")
             append("</div>")
         }
         append("</div>")
