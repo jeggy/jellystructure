@@ -525,9 +525,7 @@ fun renderSettings(container: Element, scope: CoroutineScope, query: Map<String,
                   <input id="towo-permission-timeout-reason" class="input">
                 </div>
               </div>
-
-              <button id="towo-save-settings" class="btn primary sm">Save Towo settings</button>
-              <span id="towo-save-result" class="tiny muted" style="margin-left:8px"></span>
+              <p class="tiny muted" style="margin:0">Saved with the page's main <b>Save</b> button, above.</p>
             </div>
 
             <div class="card set-section" id="sect-advanced" data-tab="advanced">
@@ -1025,7 +1023,10 @@ private fun attachListeners(scope: CoroutineScope) {
         scope.launch {
             val config = readForm()
             val ok = ConfigApi.save(config)
-            showSettingsMsg(if (ok) "Saved." else "Save failed.", ok)
+            // Towo settings live in their own backend table (not config.toml) but ride this same
+            // button rather than getting a second one — see towoSettingsFromForm's doc comment.
+            val towoOk = TowoApi.updateSettings(towoSettingsFromForm())
+            showSettingsMsg(if (ok && towoOk) "Saved." else "Save failed.", ok && towoOk)
             if (ok) { renderPathCheckInline(ConfigApi.pathCheck()); refreshNextRun() }   // 93e: reflect the saved schedule
         }
     }
@@ -1951,9 +1952,31 @@ private fun updateToggle(id: String, on: Boolean) {
  *  from config.toml: TowoAutoContinueScheduler is a server-side loop with no browser to read
  *  localStorage from, so this section gets its own load + its own "Save Towo settings" button
  *  rather than riding the page's main config-save flow. */
-private fun wireTowoSettings(scope: CoroutineScope) {
-    fun toggleOn(id: String): Boolean = (document.getElementById(id) as? HTMLElement)?.className?.contains("on") == true
+private fun towoToggleOn(id: String): Boolean = (document.getElementById(id) as? HTMLElement)?.className?.contains("on") == true
 
+/** Reads the Towo tab's fields into a [TowoSettings] — shared by [wireTowoSettings]'s toggle wiring
+ *  and the page's single global "Save" button (Towo settings live in their own backend table, not
+ *  `config.toml`, but ride the same one-button save UX as everything else on this page rather than
+ *  getting a second save button). */
+private fun towoSettingsFromForm(): TowoSettings = TowoSettings(
+    quotaWatchEnabled = towoToggleOn("towo-quota-watch-toggle"),
+    quotaWatchIntervalMs = (document.getElementById("towo-quota-interval") as? HTMLSelectElement)?.value?.toLongOrNull() ?: (6L * 60 * 60 * 1000),
+    armNewSessionsDefault = towoToggleOn("towo-arm-default-toggle"),
+    defaultPermissionProfile = (document.getElementById("towo-default-profile") as? HTMLSelectElement)?.value ?: "normal",
+    defaultMaxTurns = (document.getElementById("towo-default-max-turns") as? HTMLInputElement)?.value?.toLongOrNull() ?: 40,
+    notifyPermissionRequested = towoToggleOn("towo-notify-permission-toggle"),
+    notifyPausedQuota = towoToggleOn("towo-notify-paused-toggle"),
+    notifyResumed = towoToggleOn("towo-notify-resumed-toggle"),
+    notifyErrored = towoToggleOn("towo-notify-errored-toggle"),
+    notifyLowQuota = towoToggleOn("towo-notify-low-quota-toggle"),
+    lowQuotaThresholdPct = (document.getElementById("towo-low-quota-threshold") as? HTMLInputElement)?.value?.toLongOrNull()?.coerceIn(1, 99) ?: 20,
+    permissionTimeoutMs = (((document.getElementById("towo-permission-timeout-min") as? HTMLInputElement)?.value?.toLongOrNull()?.coerceAtLeast(1)) ?: 30) * 60_000,
+    permissionTimeoutReason = (document.getElementById("towo-permission-timeout-reason") as? HTMLInputElement)?.value?.trim()?.takeIf { it.isNotEmpty() }
+        ?: "No response within the timeout — auto-denied by Towo.",
+    runnerConnectUrl = (document.getElementById("towo-runner-connect-url") as? HTMLInputElement)?.value?.trim().orEmpty(),
+)
+
+private fun wireTowoSettings(scope: CoroutineScope) {
     scope.launch {
         val settings = TowoApi.getSettings()
         updateToggle("towo-quota-watch-toggle", settings.quotaWatchEnabled)
@@ -1977,33 +2000,7 @@ private fun wireTowoSettings(scope: CoroutineScope) {
         "towo-notify-paused-toggle", "towo-notify-resumed-toggle", "towo-notify-errored-toggle",
         "towo-notify-low-quota-toggle",
     )) {
-        document.getElementById(id)?.addEventListener("click") { updateToggle(id, !toggleOn(id)) }
-    }
-
-    document.getElementById("towo-save-settings")?.addEventListener("click") {
-        val resultEl = document.getElementById("towo-save-result") as? HTMLElement
-        val settings = TowoSettings(
-            quotaWatchEnabled = toggleOn("towo-quota-watch-toggle"),
-            quotaWatchIntervalMs = (document.getElementById("towo-quota-interval") as? HTMLSelectElement)?.value?.toLongOrNull() ?: (6L * 60 * 60 * 1000),
-            armNewSessionsDefault = toggleOn("towo-arm-default-toggle"),
-            defaultPermissionProfile = (document.getElementById("towo-default-profile") as? HTMLSelectElement)?.value ?: "normal",
-            defaultMaxTurns = (document.getElementById("towo-default-max-turns") as? HTMLInputElement)?.value?.toLongOrNull() ?: 40,
-            notifyPermissionRequested = toggleOn("towo-notify-permission-toggle"),
-            notifyPausedQuota = toggleOn("towo-notify-paused-toggle"),
-            notifyResumed = toggleOn("towo-notify-resumed-toggle"),
-            notifyErrored = toggleOn("towo-notify-errored-toggle"),
-            notifyLowQuota = toggleOn("towo-notify-low-quota-toggle"),
-            lowQuotaThresholdPct = (document.getElementById("towo-low-quota-threshold") as? HTMLInputElement)?.value?.toLongOrNull()?.coerceIn(1, 99) ?: 20,
-            permissionTimeoutMs = (((document.getElementById("towo-permission-timeout-min") as? HTMLInputElement)?.value?.toLongOrNull()?.coerceAtLeast(1)) ?: 30) * 60_000,
-            permissionTimeoutReason = (document.getElementById("towo-permission-timeout-reason") as? HTMLInputElement)?.value?.trim()?.takeIf { it.isNotEmpty() }
-                ?: "No response within the timeout — auto-denied by Towo.",
-            runnerConnectUrl = (document.getElementById("towo-runner-connect-url") as? HTMLInputElement)?.value?.trim().orEmpty(),
-        )
-        scope.launch {
-            val ok = TowoApi.updateSettings(settings)
-            resultEl?.textContent = if (ok) "Saved." else "Failed to save."
-            resultEl?.let { it.style.color = if (ok) "var(--ok)" else "var(--bad)" }
-        }
+        document.getElementById(id)?.addEventListener("click") { updateToggle(id, !towoToggleOn(id)) }
     }
 }
 
