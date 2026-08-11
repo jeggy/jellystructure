@@ -102,6 +102,10 @@ data class TowoSettings(
     /** Spec §A's "where runners connect" override — empty = keep auto-deriving the enrollment
      *  command's wsBase from the admin request's own Host header (wrong behind a reverse proxy). */
     val runnerConnectUrl: String = "",
+    /** A GitHub fine-grained PAT (Contents: Read-only on this repo) — see [TowoService.mintEnrollment]'s
+     *  doc comment for why the enrollment command needs one. Empty = the npx-tab command is left
+     *  unusable (no way to authenticate against the private repo) rather than silently broken. */
+    val githubToken: String = "",
 )
 
 data class TowoEnrollmentToken(val token: String, val expiresAt: Long)
@@ -341,6 +345,7 @@ class TowoStore(private val db: JellystructureDb) {
             permission_timeout_ms = settings.permissionTimeoutMs,
             permission_timeout_reason = settings.permissionTimeoutReason,
             runner_connect_url = settings.runnerConnectUrl,
+            github_token = settings.githubToken,
         )
     }
 }
@@ -360,6 +365,7 @@ private fun dev.jellystructure.db.Towo_settings.toModel() = TowoSettings(
     permissionTimeoutMs = permission_timeout_ms,
     permissionTimeoutReason = permission_timeout_reason,
     runnerConnectUrl = runner_connect_url,
+    githubToken = github_token,
 )
 
 private fun dev.jellystructure.db.Towo_runner.toModel() = TowoRunner(
