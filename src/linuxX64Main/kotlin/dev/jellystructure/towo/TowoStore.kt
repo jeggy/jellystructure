@@ -79,6 +79,21 @@ data class TowoQuotaStatus(
     val observedAt: Long,
 )
 
+/** Spec §A — backend-owned (not localStorage like js-towo's enable flag): TowoAutoContinueScheduler
+ *  is a server-side loop with no browser to read from. Defaults match the spec's stated defaults. */
+@Serializable
+data class TowoSettings(
+    val quotaWatchEnabled: Boolean = true,
+    val quotaWatchIntervalMs: Long = 6L * 60 * 60 * 1000,
+    val armNewSessionsDefault: Boolean = false,
+    val defaultPermissionProfile: String = "normal",
+    val defaultMaxTurns: Long = 40,
+    val notifyPermissionRequested: Boolean = true,
+    val notifyPausedQuota: Boolean = true,
+    val notifyResumed: Boolean = true,
+    val notifyErrored: Boolean = true,
+)
+
 data class TowoEnrollmentToken(val token: String, val expiresAt: Long)
 
 /** The plaintext credential is returned exactly once, at exchange time — never stored, never
@@ -276,7 +291,38 @@ class TowoStore(private val db: JellystructureDb) {
     }
 
     fun deleteTranscriptForSession(sessionId: String) = db.towoQueries.deleteTranscriptForSession(sessionId)
+
+    // ===== Settings =====
+
+    fun getSettings(): TowoSettings =
+        db.towoQueries.getSettings().executeAsOneOrNull()?.toModel() ?: TowoSettings()
+
+    fun updateSettings(settings: TowoSettings) {
+        db.towoQueries.upsertSettings(
+            quota_watch_enabled = if (settings.quotaWatchEnabled) 1L else 0L,
+            quota_watch_interval_ms = settings.quotaWatchIntervalMs,
+            arm_new_sessions_default = if (settings.armNewSessionsDefault) 1L else 0L,
+            default_permission_profile = settings.defaultPermissionProfile,
+            default_max_turns = settings.defaultMaxTurns,
+            notify_permission_requested = if (settings.notifyPermissionRequested) 1L else 0L,
+            notify_paused_quota = if (settings.notifyPausedQuota) 1L else 0L,
+            notify_resumed = if (settings.notifyResumed) 1L else 0L,
+            notify_errored = if (settings.notifyErrored) 1L else 0L,
+        )
+    }
 }
+
+private fun dev.jellystructure.db.Towo_settings.toModel() = TowoSettings(
+    quotaWatchEnabled = quota_watch_enabled != 0L,
+    quotaWatchIntervalMs = quota_watch_interval_ms,
+    armNewSessionsDefault = arm_new_sessions_default != 0L,
+    defaultPermissionProfile = default_permission_profile,
+    defaultMaxTurns = default_max_turns,
+    notifyPermissionRequested = notify_permission_requested != 0L,
+    notifyPausedQuota = notify_paused_quota != 0L,
+    notifyResumed = notify_resumed != 0L,
+    notifyErrored = notify_errored != 0L,
+)
 
 private fun dev.jellystructure.db.Towo_runner.toModel() = TowoRunner(
     id = id, name = name, hostLabel = host_label, authMode = auth_mode, agentSdkVersion = agent_sdk_version,

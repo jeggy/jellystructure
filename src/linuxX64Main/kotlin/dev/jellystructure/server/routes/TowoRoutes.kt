@@ -1,6 +1,7 @@
 package dev.jellystructure.server.routes
 
 import dev.jellystructure.towo.TowoService
+import dev.jellystructure.towo.TowoSettings
 import dev.jellystructure.towo.TowoStore
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.plugins.origin
@@ -13,6 +14,7 @@ import io.ktor.server.routing.delete
 import io.ktor.server.routing.get
 import io.ktor.server.routing.patch
 import io.ktor.server.routing.post
+import io.ktor.server.routing.put
 import io.ktor.server.routing.route
 import kotlinx.serialization.Serializable
 
@@ -27,7 +29,9 @@ private data class CreateSessionRequest(
     val folderId: String? = null,
     val path: String? = null,
     val prompt: String,
-    val permissionProfile: String = "normal",
+    // null = "use towo_settings' default" (spec §A/§F), resolved in TowoService.createSession --
+    // not defaulted here, so the service can tell "caller didn't specify" from "caller chose normal".
+    val permissionProfile: String? = null,
     val maxTurns: Long? = null,
 )
 
@@ -56,6 +60,16 @@ private data class ResumeSessionRequest(val prompt: String = "Continue.")
  */
 fun Route.towoRoutes(service: TowoService, store: TowoStore) {
     route("/towo") {
+        get("/settings") {
+            call.respond(store.getSettings())
+        }
+
+        put("/settings") {
+            val settings = call.receive<TowoSettings>()
+            store.updateSettings(settings)
+            call.respond(HttpStatusCode.NoContent)
+        }
+
         post("/runners/enroll") {
             val req = call.receive<EnrollRequest>()
             // Settings' "where runners connect" field (spec §A) isn't built yet (that's build-order

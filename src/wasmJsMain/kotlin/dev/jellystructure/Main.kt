@@ -20,6 +20,7 @@ import dev.jellystructure.ui.renderTowoOverview
 import dev.jellystructure.ui.renderTowoRunnerNew
 import dev.jellystructure.ui.renderTowoRunners
 import dev.jellystructure.ui.renderTowoSession
+import dev.jellystructure.ui.renderTowoSessionNew
 import dev.jellystructure.ui.renderTowoSessions
 import dev.jellystructure.ui.updateActiveNav
 import kotlinx.browser.document
@@ -88,6 +89,7 @@ object App {
             path == "/settings" -> renderSettings(container, scope, query)
             path == "/towo/runners/new" -> renderTowoRunnerNew(container, scope)
             path == "/towo/runners" -> renderTowoRunners(container, scope)
+            path == "/towo/sessions/new" -> renderTowoSessionNew(container, scope)
             path == "/towo/sessions" -> renderTowoSessions(container, scope, query)
             path.startsWith("/towo/session/") -> {
                 val id = path.removePrefix("/towo/session/").substringBefore('?')
