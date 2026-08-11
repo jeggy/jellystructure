@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { discoverFolders } from "./roots.js";
