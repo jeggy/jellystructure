@@ -2,20 +2,25 @@ import { join } from "node:path";
 import { homedir } from "node:os";
 import { discoverFolders } from "./roots.js";
 import { runOneSession } from "./session.js";
+import { connectToControlPlane, loadSavedCredential } from "./connect.js";
 
 /**
- * towo-runner v1 -- spec build-order step 1. Parses repeatable --root flags,
- * discovers folders under them (git repos found at the root or one level
- * below -- spec §B: "folders are discovered, not declared"), and runs one
- * hardcoded session against the first discovered folder to prove the Agent
- * SDK + local Claude Code auth + message streaming work end to end.
+ * towo-runner -- the per-host runner daemon for Towo (Phase 162). Two modes:
  *
- * No control plane, no WebSocket transport, no persistence beyond the
- * quota-event log yet -- those are later build-order steps.
+ *   --root <path> [--root <path> ...] [--prompt "..."]
+ *     Build-order step 1's proof-of-concept: one hardcoded local session, streaming to stdout.
+ *     No control plane involved. See session.ts's runOneSession.
+ *
+ *   --connect <wsBase> [--enroll-token <token>] --root <path> [--root <path> ...]
+ *     Build-order step 3+: dials the control plane's runner-link WS and stays connected,
+ *     running whatever sessions it's told to start. --enroll-token is required only on first
+ *     connect (spec §B) -- every reconnect after that uses the credential saved locally.
  */
-function parseArgs(argv: string[]): { roots: string[]; prompt: string } {
+function parseArgs(argv: string[]): { roots: string[]; prompt: string; connect?: string; enrollToken?: string } {
   const roots: string[] = [];
   let prompt = "Reply with a single short sentence confirming you can see this folder. Do not use any tools.";
+  let connect: string | undefined;
+  let enrollToken: string | undefined;
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === "--root") {
       const value = argv[++i];
@@ -25,16 +30,38 @@ function parseArgs(argv: string[]): { roots: string[]; prompt: string } {
       const value = argv[++i];
       if (!value) throw new Error("--prompt requires a value");
       prompt = value;
+    } else if (argv[i] === "--connect") {
+      const value = argv[++i];
+      if (!value) throw new Error("--connect requires a WebSocket base URL, e.g. wss://host:9505");
+      connect = value.replace(/\/$/, "");
+    } else if (argv[i] === "--enroll-token") {
+      const value = argv[++i];
+      if (!value) throw new Error("--enroll-token requires a value");
+      enrollToken = value;
     }
   }
-  return { roots, prompt };
+  return { roots, prompt, connect, enrollToken };
 }
 
 async function main() {
-  const { roots, prompt } = parseArgs(process.argv.slice(2));
+  const { roots, prompt, connect, enrollToken } = parseArgs(process.argv.slice(2));
   if (roots.length === 0) {
-    console.error("usage: towo-runner --root <path> [--root <path> ...] [--prompt \"...\"]");
+    console.error(
+      "usage:\n" +
+        '  towo-runner --root <path> [--root <path> ...] [--prompt "..."]\n' +
+        "  towo-runner --connect <wsBase> [--enroll-token <token>] --root <path> [--root <path> ...]",
+    );
     process.exit(1);
+  }
+
+  if (connect) {
+    const token = enrollToken ?? loadSavedCredential();
+    if (!token) {
+      console.error("[towo-runner] no --enroll-token given and no saved credential found -- pass the token from the enrollment command shown in Towo's UI.");
+      process.exit(1);
+    }
+    connectToControlPlane(connect, token, roots);
+    return; // connectToControlPlane keeps the process alive via its WS event listeners + reconnect loop
   }
 
   const folders = discoverFolders(roots);

@@ -1,0 +1,203 @@
+-- Phase 162 (Towo) — a self-hosted control plane for Claude Code sessions. See
+-- specs/requirements/phase-162-towo-agent-control-plane.md §5 for the data model this mirrors.
+-- Thin by design: session/transcript content lives with a SessionStore (build-order step 5), not here.
+
+CREATE TABLE towo_runner (
+    id TEXT NOT NULL PRIMARY KEY,
+    name TEXT NOT NULL,
+    host_label TEXT,
+    -- Hash only — never the plaintext credential (same principle as api_key in ApiKey.sq).
+    credential_hash TEXT NOT NULL,
+    auth_mode TEXT,
+    agent_sdk_version TEXT,
+    os TEXT,
+    claude_auth_ok INTEGER NOT NULL DEFAULT 0,
+    -- JSON array of strings. "Online/offline" is NOT a column here — it's derived from whether a
+    -- live WS connection is held in TowoRunnerRegistry (in-memory), never trusted from the DB alone.
+    allowed_roots TEXT NOT NULL DEFAULT '[]',
+    created_at INTEGER NOT NULL,
+    last_seen_at INTEGER
+);
+
+CREATE TABLE towo_enrollment (
+    -- Short-lived, single-use (spec §B) — same shape as ravilo_pairing's code/poll_token pair.
+    token TEXT NOT NULL PRIMARY KEY,
+    name TEXT NOT NULL,
+    expires_at INTEGER NOT NULL,
+    consumed INTEGER NOT NULL DEFAULT 0,
+    runner_id TEXT
+);
+
+CREATE TABLE towo_folder (
+    id TEXT NOT NULL PRIMARY KEY,
+    runner_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    abs_path TEXT NOT NULL,
+    pinned INTEGER NOT NULL DEFAULT 0,
+    default_permission_profile TEXT NOT NULL DEFAULT 'normal',
+    discovered_at INTEGER NOT NULL
+);
+
+CREATE INDEX towo_folder_runner ON towo_folder(runner_id);
+
+CREATE TABLE towo_session (
+    id TEXT NOT NULL PRIMARY KEY,
+    runner_id TEXT NOT NULL,
+    folder_id TEXT,
+    title TEXT,
+    tag TEXT,
+    status TEXT NOT NULL DEFAULT 'starting',
+    max_turns INTEGER NOT NULL DEFAULT 40,
+    max_turns_source TEXT NOT NULL DEFAULT 'default',
+    num_turns INTEGER NOT NULL DEFAULT 0,
+    continue_after_reset INTEGER NOT NULL DEFAULT 0,
+    resume_at INTEGER,
+    last_error_subtype TEXT,
+    created_at INTEGER NOT NULL,
+    last_activity_at INTEGER NOT NULL
+);
+
+CREATE INDEX towo_session_runner ON towo_session(runner_id);
+CREATE INDEX towo_session_status ON towo_session(status);
+
+CREATE TABLE towo_permission_request (
+    id TEXT NOT NULL PRIMARY KEY,
+    session_id TEXT NOT NULL,
+    tool_name TEXT NOT NULL,
+    input_json TEXT NOT NULL,
+    title TEXT,
+    display_name TEXT,
+    requested_at INTEGER NOT NULL,
+    decided_at INTEGER,
+    decision TEXT,
+    reason TEXT
+);
+
+CREATE INDEX towo_permission_request_session ON towo_permission_request(session_id);
+
+CREATE TABLE towo_quota_status (
+    runner_id TEXT NOT NULL,
+    rate_limit_type TEXT NOT NULL,
+    status TEXT NOT NULL,
+    resets_at INTEGER,
+    utilization REAL,
+    observed_at INTEGER NOT NULL,
+    PRIMARY KEY (runner_id, rate_limit_type)
+);
+
+-- ===== towo_runner =====
+
+insertRunner:
+INSERT INTO towo_runner(id, name, credential_hash, allowed_roots, created_at)
+VALUES (:id, :name, :credential_hash, :allowed_roots, :created_at);
+
+getRunner:
+SELECT * FROM towo_runner WHERE id = :id;
+
+getRunnerByCredentialHash:
+SELECT * FROM towo_runner WHERE credential_hash = :credential_hash;
+
+allRunners:
+SELECT * FROM towo_runner ORDER BY created_at DESC;
+
+updateRunnerHello:
+UPDATE towo_runner
+SET host_label = :host_label, auth_mode = :auth_mode, agent_sdk_version = :agent_sdk_version,
+    os = :os, claude_auth_ok = :claude_auth_ok, allowed_roots = :allowed_roots, last_seen_at = :last_seen_at
+WHERE id = :id;
+
+touchRunnerLastSeen:
+UPDATE towo_runner SET last_seen_at = :last_seen_at WHERE id = :id;
+
+deleteRunner:
+DELETE FROM towo_runner WHERE id = :id;
+
+-- ===== towo_enrollment =====
+
+insertEnrollment:
+INSERT INTO towo_enrollment(token, name, expires_at)
+VALUES (:token, :name, :expires_at);
+
+getEnrollment:
+SELECT * FROM towo_enrollment WHERE token = :token AND consumed = 0 AND expires_at > :now;
+
+consumeEnrollment:
+UPDATE towo_enrollment SET consumed = 1, runner_id = :runner_id WHERE token = :token;
+
+deleteExpiredEnrollments:
+DELETE FROM towo_enrollment WHERE expires_at < :now;
+
+-- ===== towo_folder =====
+
+upsertFolder:
+INSERT OR REPLACE INTO towo_folder(id, runner_id, name, abs_path, pinned, default_permission_profile, discovered_at)
+VALUES (:id, :runner_id, :name, :abs_path,
+    COALESCE((SELECT pinned FROM towo_folder WHERE id = :id), 0),
+    COALESCE((SELECT default_permission_profile FROM towo_folder WHERE id = :id), 'normal'),
+    COALESCE((SELECT discovered_at FROM towo_folder WHERE id = :id), :discovered_at));
+
+foldersForRunner:
+SELECT * FROM towo_folder WHERE runner_id = :runner_id ORDER BY pinned DESC, name ASC;
+
+getFolder:
+SELECT * FROM towo_folder WHERE id = :id;
+
+deleteFoldersForRunner:
+DELETE FROM towo_folder WHERE runner_id = :runner_id;
+
+-- ===== towo_session =====
+
+insertSession:
+INSERT INTO towo_session(id, runner_id, folder_id, title, max_turns, created_at, last_activity_at)
+VALUES (:id, :runner_id, :folder_id, :title, :max_turns, :created_at, :last_activity_at);
+
+getSession:
+SELECT * FROM towo_session WHERE id = :id;
+
+allSessions:
+SELECT * FROM towo_session ORDER BY last_activity_at DESC;
+
+sessionsForRunner:
+SELECT * FROM towo_session WHERE runner_id = :runner_id ORDER BY last_activity_at DESC;
+
+sessionsByStatus:
+SELECT * FROM towo_session WHERE status = :status ORDER BY last_activity_at DESC;
+
+updateSessionStatus:
+UPDATE towo_session
+SET status = :status, resume_at = :resume_at, last_error_subtype = :last_error_subtype, last_activity_at = :last_activity_at
+WHERE id = :id;
+
+updateSessionTurns:
+UPDATE towo_session SET num_turns = :num_turns, last_activity_at = :last_activity_at WHERE id = :id;
+
+updateSessionMeta:
+UPDATE towo_session SET title = :title, tag = :tag, max_turns = :max_turns, max_turns_source = :max_turns_source, continue_after_reset = :continue_after_reset
+WHERE id = :id;
+
+deleteSession:
+DELETE FROM towo_session WHERE id = :id;
+
+-- ===== towo_permission_request =====
+
+insertPermissionRequest:
+INSERT INTO towo_permission_request(id, session_id, tool_name, input_json, title, display_name, requested_at)
+VALUES (:id, :session_id, :tool_name, :input_json, :title, :display_name, :requested_at);
+
+getPermissionRequest:
+SELECT * FROM towo_permission_request WHERE id = :id;
+
+pendingPermissionRequests:
+SELECT * FROM towo_permission_request WHERE decision IS NULL ORDER BY requested_at ASC;
+
+decidePermissionRequest:
+UPDATE towo_permission_request SET decided_at = :decided_at, decision = :decision, reason = :reason WHERE id = :id;
+
+-- ===== towo_quota_status =====
+
+upsertQuotaStatus:
+INSERT OR REPLACE INTO towo_quota_status(runner_id, rate_limit_type, status, resets_at, utilization, observed_at)
+VALUES (:runner_id, :rate_limit_type, :status, :resets_at, :utilization, :observed_at);
+
+quotaForRunner:
+SELECT * FROM towo_quota_status WHERE runner_id = :runner_id;
