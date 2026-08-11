@@ -590,3 +590,69 @@ child `claude` CLI subprocesses — confirmed live, `ps aux` showed orphaned `cl
 running (holding their sessions "active" from the CLI's own perspective) after the parent `towo-runner`
 Node process was killed during testing. A graceful-shutdown handler (SIGTERM/SIGINT calling `.close()`
 on every active `Query`) would fix this; not built yet.
+
+---
+
+## Dev-review addendum #3 (2026-08-11 — bug fixes + remaining gap closure)
+
+Fixes addendum #2's one open gap plus closes every gap the spec itself had flagged as outstanding
+(§7's "alert on mirror_error", §7 item 8's disconnect-while-pending question, §D's "entirely the
+runner's own responsibility" timeout, and the "where runners connect" override the enrollment route's
+own inline comment pointed at). Compiled clean (`compileKotlinLinuxX64`, `compileKotlinWasmJs`,
+`linuxX64Test`, `verifySqlDelightMigration`, `tsc --noEmit`) but not yet re-verified live in a browser —
+unlike addenda #1/#2, this pass did not have a running scratch backend available to test against.
+
+**1. Graceful runner shutdown (closing addendum #2's known gap).** SIGTERM/SIGINT now call
+`.close()` on every entry in `connectToControlPlane`'s returned `activeSessions` map before the
+process exits — the map moved from `open()`'s local scope to the outer function scope so it survives
+reconnects and is visible to `index.ts`'s shutdown handler.
+
+**2. All 5 settings-driven notifications now actually fire.** They existed as toggles in Settings but
+nothing ever called the webhook. Wired at each real event site: `notifyPermissionRequested` (a
+`PermissionRequest` arrives), `notifyPausedQuota`/`notifyErrored` (`onSessionResult`'s three status
+branches), `notifyResumed` (`TowoAutoContinueScheduler` after a successful resume), and the previously
+entirely-missing `notifyLowQuota` + `lowQuotaThresholdPct` (new settings fields + UI, migration 27) —
+fires once per reset window via a `(runnerId, rateLimitType) -> resetsAt already notified for` map, not
+on every `rate_limit_event` that stays above the threshold.
+
+**3. `mirror_error` alerting (§7: "otherwise transcript loss is silent").** A `SessionStore.append()`
+write now retries up to 3 times (200ms/400ms backoff) before giving up; on final failure it sets a
+sticky per-runner `mirror_error_at`/`mirror_error_message` (migration 28, cleared on the next
+successful write), broadcasts a new `mirror_error` WS event, and fires the webhook unconditionally —
+this is data loss, not a preference, so there's no settings toggle to suppress it. Surfaced as a warning
+chip on the runners list (no separate runner-detail screen exists yet — see the Phase 162 screen-set
+notes — so this rides the existing list row rather than the §B mockup's dedicated detail page).
+
+**4. Disconnect-while-permission-pending, resolving §7 item 8's open question** ("should that request
+keep counting down... or fail immediately? — needs a design decision"). Chose "keep counting down":
+a decision the admin makes is now always durably queued first (`decision` column set, `decided_at`
+left null — new `queuePermissionDecision`/`markPermissionDelivered`/`queuedUndeliveredDecisions`
+queries, no schema change) rather than being marked fully decided only on successful delivery as
+before — the previous code called `decidePermissionRequest` (which sets `decided_at`) unconditionally
+*before* even attempting delivery, so a decision made while the runner was offline was silently
+discarded: the request vanished from the pending queue but the runner's `canUseTool` call stayed
+blocked forever with nothing coming to unblock it. Now redelivered automatically the moment that
+runner's next `hello` arrives (covers both a reconnecting process and a fresh one — the runner's own
+`pendingPermissions` map is already reconnect-safe per addendum #2's fix, moved to outer scope). The
+runner-link WS's `finally` block now also broadcasts `runner.status: offline` (previously only ever
+broadcast `online`, on `hello` — a disconnect was invisible to any open browser tab until its next
+poll), surfaced as a live "runner offline" banner on the session view if that's the runner it's
+watching. Deliberately does *not* auto-fail or auto-transition any session's status on disconnect — a
+disconnect is usually just `RECONNECT_DELAY_MS` (5s), not proof the underlying `claude` subprocess died.
+
+**5. Permission-request timeout, per §D and the resolved-open-question note ("no built-in timeout ...
+entirely the runner's own responsibility").** `pendingPermissions`' map value grew a `timer` alongside
+its `resolve`; a `permission_timeout_ms`/`permission_timeout_reason` pair (new backend-owned settings,
+default 30 minutes, migration 29) rides the existing `start_session`/`resume_session` commands the same
+way `maxTurns`/`permissionProfile` already do. On timeout the runner denies locally (the only place
+that *can* resolve the suspended `canUseTool` call — no control-plane round trip is possible after
+already waiting out the timeout) and reports it via a new `permission_timeout` protocol message; the
+control plane records `decision = "timeout"` (the third value §5's data model already specified —
+`decision(allow|deny|timeout)` — but nothing had ever written) directly via `decidePermissionRequest`,
+never through the disconnect-handling queue above, since the runner's report already *is* the
+delivered outcome, not something waiting to be delivered.
+
+**6. "Where runners connect" override, closing the gap `TowoRoutes.kt`'s own enrollment-route comment
+flagged** ("isn't built yet -- derive it from the request itself as a reasonable v1 default"). New
+`runnerConnectUrl` setting (migration 30, empty = keep auto-deriving from the admin's request Host
+header) plus a Settings field; wrong-behind-a-reverse-proxy was the concrete failure mode this closes.
