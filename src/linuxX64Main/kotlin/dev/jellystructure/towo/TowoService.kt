@@ -28,6 +28,9 @@ sealed class RunnerLinkAuth {
 
 data class MintedEnrollment(val token: String, val expiresAt: Long, val commands: Map<String, String>)
 
+/** Built by `.github/workflows/towo-runner-release.yml` on every push touching `towo-runner/`. */
+private const val TOWO_RUNNER_TARBALL_URL = "https://github.com/jeggy/jellystructure/releases/download/towo-runner-latest/towo-runner.tgz"
+
 /**
  * Phase 162 (Towo) — orchestration: turns inbound runner-link messages into TowoStore writes +
  * TowoEvent broadcasts, and backs the REST surface (spec §6). Kept separate from TowoRoutes.kt the
@@ -74,7 +77,16 @@ class TowoService(
         val minted = store.mintEnrollment(name)
         val url = "$publicWsBase/api/towo/runner-link?token=${minted.token}"
         val commands = mapOf(
-            "npx" to "npx @jellystructure/towo-runner --connect \"$url\" --root ~",
+            // towo-runner is "private": true (never meant for the public npm registry) and its
+            // dist/ is gitignored, so this installs from a tarball a GitHub Actions workflow
+            // (.github/workflows/towo-runner-release.yml) builds on every push to towo-runner/ and
+            // republishes to a rolling "towo-runner-latest" release -- npx supports a tarball URL
+            // directly, no npm account or registry publish needed. Confirmed working live 2026-08-11
+            // after the previous placeholder (`npx @jellystructure/towo-runner`, a package that was
+            // never published) 404'd for the user.
+            "npx" to "npx $TOWO_RUNNER_TARBALL_URL --connect \"$url\" --root ~",
+            // installer/docker are still placeholders -- towo.local doesn't resolve and the
+            // jellystructure/towo-runner Docker image was never built or pushed anywhere.
             "installer" to "curl -fsSL https://towo.local/install.sh | sh -s -- --connect \"$url\" --root ~",
             "docker" to "docker run -d -v ~:/workspaces jellystructure/towo-runner --connect \"$url\" --root /workspaces",
         )
