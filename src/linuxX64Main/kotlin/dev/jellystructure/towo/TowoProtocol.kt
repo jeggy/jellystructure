@@ -50,6 +50,18 @@ sealed class RunnerToControl {
     // that already arrive via SessionMessage's raw passthrough. TowoService inspects the raw JSON's
     // own "type" field for the handful of fields it needs (see onSessionMessage) rather than the
     // runner re-deriving and re-sending them as a second, parallel message.
+
+    // ===== Build-order step 5 — SessionStore (spec §4.3 / report §4.3) =====
+    // The SDK's own SessionStore.append()/load() calls, relayed opaquely over this same connection so
+    // the control plane becomes the durable mirror. Entries are NOT the same thing as SessionMessage
+    // above: SessionMessage is the live SDKMessage stream (for indexing + browser broadcast);
+    // these are the SDK's own JSONL-line entries (for durability + resume).
+
+    @Serializable @SerialName("transcript_append")
+    data class TranscriptAppend(val sessionId: String, val subpath: String? = null, val entries: List<JsonElement>) : RunnerToControl()
+
+    @Serializable @SerialName("transcript_load_request")
+    data class TranscriptLoadRequest(val requestId: String, val sessionId: String, val subpath: String? = null) : RunnerToControl()
 }
 
 @Serializable
@@ -80,4 +92,20 @@ sealed class ControlToRunner {
 
     @Serializable @SerialName("permission_decision")
     data class PermissionDecision(val requestId: String, val decision: String, val reason: String? = null) : ControlToRunner()
+
+    /** Response to RunnerToControl.TranscriptLoadRequest. [entries] null = never written (SDK
+     *  SessionStore.load() contract: distinguish "never written" from "emptied" isn't required,
+     *  both may return null). */
+    @Serializable @SerialName("transcript_load_response")
+    data class TranscriptLoadResponse(val requestId: String, val entries: List<JsonElement>? = null) : ControlToRunner()
+
+    /** Build-order step 6 (auto-continue, spec §E) — the control plane, not the runner, owns the
+     *  paused_quota/continue_after_reset schedule (TowoAutoContinueScheduler): it already persists
+     *  that state and already runs a periodic coroutine loop (matching this codebase's existing
+     *  scheduled-scan pattern in Main.kt), so re-deriving arming state on the runner side would just
+     *  be a second, harder-to-keep-consistent copy of the same state. Deliberate deviation from the
+     *  report's "runner owns it because it's closest to the process" framing -- noted in the spec's
+     *  dev-review addendum. */
+    @Serializable @SerialName("resume_session")
+    data class ResumeSession(val sessionId: String, val folderPath: String, val prompt: String) : ControlToRunner()
 }

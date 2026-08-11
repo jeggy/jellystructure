@@ -1,4 +1,4 @@
-import { query, type CanUseTool, type PermissionResult, type Query } from "@anthropic-ai/claude-agent-sdk";
+import { query, type CanUseTool, type PermissionResult, type Query, type SessionStore } from "@anthropic-ai/claude-agent-sdk";
 import { logRateLimitEvent } from "./quotaLog.js";
 
 export type RunSessionOptions = {
@@ -76,18 +76,29 @@ export type ManagedSessionCallbacks = {
   ) => Promise<PermissionResult>;
 };
 
+export type StartManagedSessionOptions = {
+  cwd: string;
+  prompt: string;
+  quotaLogPath: string;
+  callbacks: ManagedSessionCallbacks;
+  maxTurns?: number;
+  /** Build-order step 5 -- when provided, every session (new or resumed) mirrors its transcript
+   *  through here, making the control plane the durable copy (spec §4.3). */
+  sessionStore?: SessionStore;
+  /** Build-order step 6 -- set only for TowoAutoContinueScheduler's resume_session command. Resume
+   *  conventionally pairs with a NEW prompt (a continuation), not a bare reconnect -- see the spec's
+   *  open question on what an auto-continue actually resumes with; "Continue." is a placeholder
+   *  until real usage data settles what this should say. */
+  resumeSessionId?: string;
+};
+
 /**
  * Build-order step 3+ — a session driven by the control plane rather than a hardcoded local prompt.
  * Returns the live Query handle immediately (before the message loop finishes) so the caller can
  * index it by session id for interrupt()/streamInput() once the first message reveals that id.
  */
-export function startManagedSession(
-  cwd: string,
-  prompt: string,
-  quotaLogPath: string,
-  callbacks: ManagedSessionCallbacks,
-  maxTurns?: number,
-): Query {
+export function startManagedSession(opts: StartManagedSessionOptions): Query {
+  const { cwd, prompt, quotaLogPath, callbacks, maxTurns, sessionStore, resumeSessionId } = opts;
   const canUseTool: CanUseTool = async (toolName, input, options) =>
     callbacks.onPermissionRequest(toolName, input, {
       requestId: options.requestId,
@@ -95,9 +106,15 @@ export function startManagedSession(
       displayName: options.displayName,
     });
 
+  console.log(`[towo-runner] starting managed session: cwd=${cwd} resume=${resumeSessionId ?? "(new)"} maxTurns=${maxTurns ?? "(default)"}`);
   const q = query({
     prompt,
-    options: { cwd, canUseTool, permissionMode: "default", maxTurns },
+    options: {
+      cwd, canUseTool, permissionMode: "default",
+      ...(maxTurns != null ? { maxTurns } : {}),
+      ...(sessionStore ? { sessionStore } : {}),
+      ...(resumeSessionId ? { resume: resumeSessionId } : {}),
+    },
   });
 
   (async () => {

@@ -67,6 +67,7 @@ fun renderSettings(container: Element, scope: CoroutineScope, query: Map<String,
               ${settingsNavItemHtml("metadata", "Metadata")}
               ${settingsNavItemHtml("downloads", "Download tools")}
               ${settingsNavItemHtml("notifications", "Notifications")}
+              ${settingsNavItemHtml("towo", "Towo")}
               ${settingsNavItemHtml("advanced", "Advanced")}
             </div>
           </nav>
@@ -413,6 +414,19 @@ fun renderSettings(container: Element, scope: CoroutineScope, query: Map<String,
                 <span style="font-size:.9rem">Server recovered from a crash</span>
                 <span id="notif-crash-toggle" class="toggle" style="cursor:pointer"></span>
               </div>
+            </div>
+
+            <div class="card set-section" id="sect-towo" data-tab="towo">
+              <h3 style="font-size:1rem;margin:0 0 6px">Towo</h3>
+              <p class="hint" style="margin:0 0 14px">A control plane for <b>Claude Code</b> sessions running on machines you own — unrelated to media management. Off by default.</p>
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+                <div>
+                  <span style="font-size:.9rem;font-weight:500">Enable Towo</span>
+                  <div class="hint" style="margin-top:2px">Adds a <b>Towo</b> group to the sidebar. Runners and sessions are untouched either way — this only hides/shows the UI.</div>
+                </div>
+                <span id="towo-enable-toggle" class="toggle" style="cursor:pointer;flex-shrink:0;margin-left:12px"></span>
+              </div>
+              <p class="tiny muted" style="margin-top:10px">Takes effect on next page load.</p>
             </div>
 
             <div class="card set-section" id="sect-advanced" data-tab="advanced">
@@ -843,6 +857,15 @@ private fun attachListeners(scope: CoroutineScope) {
         qbPathMappings.add(QBittorrentPathMapping())
         renderQbPathMappings()
         refreshTomlPreview(readForm())
+    }
+
+    // Phase 162 (Towo) — independent of config.toml, same localStorage-only/immediate-apply pattern
+    // as js-theme; app-shell.js reads this key to decide whether to render the sidebar Towo group.
+    updateToggle("towo-enable-toggle", window.localStorage.getItem("js-towo") == "1")
+    document.getElementById("towo-enable-toggle")?.addEventListener("click") {
+        val newState = window.localStorage.getItem("js-towo") != "1"
+        window.localStorage.setItem("js-towo", if (newState) "1" else "0")
+        updateToggle("towo-enable-toggle", newState)
     }
 
     wireArr(scope, "radarr")

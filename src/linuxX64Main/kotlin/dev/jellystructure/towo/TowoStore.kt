@@ -41,6 +41,7 @@ data class TowoSession(
     val id: String,
     val runnerId: String,
     val folderId: String?,
+    val folderPath: String?,
     val title: String?,
     val tag: String?,
     val status: String,
@@ -188,10 +189,10 @@ class TowoStore(private val db: JellystructureDb) {
 
     // ===== Sessions =====
 
-    fun createSession(id: String, runnerId: String, folderId: String?, title: String?, maxTurns: Long) {
+    fun createSession(id: String, runnerId: String, folderId: String?, folderPath: String?, title: String?, maxTurns: Long) {
         val now = nowEpochSec()
         db.towoQueries.insertSession(
-            id = id, runner_id = runnerId, folder_id = folderId, title = title,
+            id = id, runner_id = runnerId, folder_id = folderId, folder_path = folderPath, title = title,
             max_turns = maxTurns, created_at = now, last_activity_at = now,
         )
     }
@@ -223,7 +224,10 @@ class TowoStore(private val db: JellystructureDb) {
         )
     }
 
-    fun deleteSession(id: String) = db.towoQueries.deleteSession(id)
+    fun deleteSession(id: String) {
+        db.towoQueries.deleteTranscriptForSession(id)
+        db.towoQueries.deleteSession(id)
+    }
 
     // ===== Permission requests =====
 
@@ -254,6 +258,24 @@ class TowoStore(private val db: JellystructureDb) {
 
     fun quotaForRunner(runnerId: String): List<TowoQuotaStatus> =
         db.towoQueries.quotaForRunner(runnerId).executeAsList().map { it.toModel() }
+
+    // ===== Transcript (SessionStore durability, build-order step 5) =====
+
+    fun appendTranscriptEntry(sessionId: String, subpath: String?, entryUuid: String?, entryJson: String) {
+        db.towoQueries.appendTranscriptEntry(
+            session_id = sessionId, subpath = subpath, entry_uuid = entryUuid,
+            entry_json = entryJson, appended_at = nowEpochSec(),
+        )
+    }
+
+    /** Raw JSON strings, oldest first — null (not empty list) if nothing was ever appended, matching
+     *  the SDK's SessionStore.load() "never written" contract. */
+    fun loadTranscriptEntries(sessionId: String, subpath: String?): List<String>? {
+        val rows = db.towoQueries.loadTranscriptEntries(sessionId, subpath).executeAsList()
+        return rows.ifEmpty { null }
+    }
+
+    fun deleteTranscriptForSession(sessionId: String) = db.towoQueries.deleteTranscriptForSession(sessionId)
 }
 
 private fun dev.jellystructure.db.Towo_runner.toModel() = TowoRunner(
@@ -269,7 +291,7 @@ private fun dev.jellystructure.db.Towo_folder.toModel() = TowoFolder(
 )
 
 private fun dev.jellystructure.db.Towo_session.toModel() = TowoSession(
-    id = id, runnerId = runner_id, folderId = folder_id, title = title, tag = tag, status = status,
+    id = id, runnerId = runner_id, folderId = folder_id, folderPath = folder_path, title = title, tag = tag, status = status,
     maxTurns = max_turns, maxTurnsSource = max_turns_source, numTurns = num_turns,
     continueAfterReset = continue_after_reset != 0L, resumeAt = resume_at, lastErrorSubtype = last_error_subtype,
     createdAt = created_at, lastActivityAt = last_activity_at,

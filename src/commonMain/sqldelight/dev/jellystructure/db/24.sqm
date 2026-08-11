@@ -1,0 +1,3 @@
+-- Phase 162 (Towo) — denormalized folder_path on towo_session, so auto-continue (build-order step 6)
+-- can always resume by cwd even if the folder's towo_folder row is gone or was never known (v24 -> v25).
+ALTER TABLE towo_session ADD COLUMN folder_path TEXT;
