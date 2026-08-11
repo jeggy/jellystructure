@@ -14,6 +14,12 @@ config.devServer.proxy = [
     {
         context: ["/api"],
         target: "http://localhost:9505",
+        // Without this, any WebSocket endpoint nested under /api (/api/towo/runner-link,
+        // /api/towo/stream, /api/tv/events) silently never reaches the backend when accessed
+        // through this dev proxy -- the upgrade request just isn't handled, no error either side.
+        // Confirmed live: a towo-runner enrolling via ws://<devserver>/api/towo/runner-link never
+        // showed up as connected backend-side even though the runner itself logged "connecting".
+        ws: true,
     },
     {
         context: ["/ws"],
