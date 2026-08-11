@@ -2,9 +2,9 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { homedir, hostname, platform } from "node:os";
 import { randomUUID } from "node:crypto";
-import type { PermissionResult, Query, SessionStore, SessionStoreEntry } from "@anthropic-ai/claude-agent-sdk";
+import type { PermissionResult, SessionStore, SessionStoreEntry } from "@anthropic-ai/claude-agent-sdk";
 import { discoverFolders } from "./roots.js";
-import { startManagedSession } from "./session.js";
+import { startManagedSession, type ManagedSession } from "./session.js";
 import type { ControlToRunner, RunnerToControl } from "./protocol.js";
 
 const SDK_VERSION = "0.3.227"; // pinned -- see towo-runner/README.md
@@ -46,10 +46,12 @@ export function connectToControlPlane(wsBase: string, tokenOrCredential: string,
     console.log(`[towo-runner] connecting to ${wsBase} ...`);
     const ws = new WebSocket(url);
 
-    // sessionId -> live Query handle, so interrupt()/future streamInput() can reach a running session.
-    const activeQueries = new Map<string, Query>();
-    // commandId -> Query handle, until the first message reveals the real Claude session_id.
-    const pendingByCommand = new Map<string, Query>();
+    // sessionId -> live session handle, so interrupt()/pushMessage() can reach a running session --
+    // reliably, at any later time, because the session's own prompt is a live queue (asyncQueue.ts),
+    // not a one-shot string (confirmed live: Query.streamInput() alone is not safe for this).
+    const activeQueries = new Map<string, ManagedSession>();
+    // commandId -> session handle, until the first message reveals the real Claude session_id.
+    const pendingByCommand = new Map<string, ManagedSession>();
     const pendingPermissions = new Map<string, (result: PermissionResult) => void>();
     // Build-order step 5 -- requestId -> resolver for a load() call awaiting the control plane's reply.
     const pendingLoads = new Map<string, (entries: SessionStoreEntry[] | null) => void>();
@@ -80,22 +82,24 @@ export function connectToControlPlane(wsBase: string, tokenOrCredential: string,
       maxTurns: number | undefined,
       resumeSessionId: string | undefined,
       commandId: string | undefined,
-      onStarted: (q: Query) => void,
+      permissionProfile: string | undefined,
+      onStarted: (session: ManagedSession) => void,
     ) {
       let sawSessionId: string | undefined = resumeSessionId;
-      const q = startManagedSession({
+      const session = startManagedSession({
         cwd: folderPath,
         prompt,
         quotaLogPath,
         maxTurns,
         sessionStore,
         resumeSessionId,
+        permissionProfile,
         callbacks: {
           onMessage: (raw) => {
             const sessionId = (raw as { session_id?: string }).session_id;
             if (sessionId && sawSessionId === undefined) {
               sawSessionId = sessionId;
-              activeQueries.set(sessionId, q);
+              activeQueries.set(sessionId, session);
               // Only a genuinely new session (start_session, carrying a commandId) needs to tell the
               // control plane its real Claude session id -- a resume already has a towo_session row.
               if (commandId) send({ type: "session_started", commandId, sessionId });
@@ -117,8 +121,8 @@ export function connectToControlPlane(wsBase: string, tokenOrCredential: string,
             }),
         },
       });
-      if (resumeSessionId) activeQueries.set(resumeSessionId, q);
-      onStarted(q);
+      if (resumeSessionId) activeQueries.set(resumeSessionId, session);
+      onStarted(session);
     }
 
     ws.addEventListener("open", () => {
@@ -154,8 +158,8 @@ export function connectToControlPlane(wsBase: string, tokenOrCredential: string,
           break;
         }
         case "start_session": {
-          runSession(msg.folderPath, msg.prompt, msg.maxTurns, undefined, msg.commandId, (q) => {
-            pendingByCommand.set(msg.commandId, q);
+          runSession(msg.folderPath, msg.prompt, msg.maxTurns, undefined, msg.commandId, msg.permissionProfile, (session) => {
+            pendingByCommand.set(msg.commandId, session);
           });
           break;
         }
@@ -163,11 +167,13 @@ export function connectToControlPlane(wsBase: string, tokenOrCredential: string,
           // Build-order step 6 -- TowoAutoContinueScheduler's command once a paused session's quota
           // window has reset. The SDK resumes by session id; sessionStore.load() supplies the history.
           console.log(`[towo-runner] resuming session ${msg.sessionId} after quota reset`);
-          runSession(msg.folderPath, msg.prompt, undefined, msg.sessionId, undefined, () => {});
+          // Profile isn't persisted/relayed across auto-continue yet -- resumes fall back to "normal".
+          // Known simplification, not a regression: the pre-resume flow had no profile concept at all.
+          runSession(msg.folderPath, msg.prompt, undefined, msg.sessionId, undefined, undefined, () => {});
           break;
         }
         case "interrupt": {
-          activeQueries.get(msg.sessionId)?.interrupt();
+          activeQueries.get(msg.sessionId)?.query.interrupt();
           break;
         }
         case "permission_decision": {
@@ -192,10 +198,16 @@ export function connectToControlPlane(wsBase: string, tokenOrCredential: string,
           break;
         }
         case "send_message": {
-          // Multi-turn requires streaming input mode (an AsyncIterable prompt) from session start --
-          // v1's startManagedSession takes a single string prompt. Deferred to build-order step 8
-          // (the composer needs this for an idle session); logging rather than silently dropping it.
-          console.warn(`[towo-runner] send_message for ${msg.sessionId} not yet supported in v1`);
+          // pushMessage() feeds the session's own live input queue (asyncQueue.ts) -- reliable at
+          // any later time, unlike a bolted-on Query.streamInput() call (confirmed live: that either
+          // throws "ProcessTransport is not ready for writing" or silently produces no response once
+          // called from a genuinely separate later context, e.g. this WS handler).
+          const session = activeQueries.get(msg.sessionId);
+          if (!session) {
+            console.warn(`[towo-runner] send_message for unknown/inactive session ${msg.sessionId}`);
+            break;
+          }
+          session.pushMessage(msg.text);
           break;
         }
         default:

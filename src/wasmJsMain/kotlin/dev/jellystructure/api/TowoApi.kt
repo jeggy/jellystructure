@@ -5,12 +5,26 @@ import io.ktor.client.request.delete
 import io.ktor.client.request.get
 import io.ktor.client.request.patch
 import io.ktor.client.request.post
+import io.ktor.client.request.put
 import io.ktor.client.request.setBody
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
+
+@Serializable
+data class TowoSettings(
+    val quotaWatchEnabled: Boolean = true,
+    val quotaWatchIntervalMs: Long = 6L * 60 * 60 * 1000,
+    val armNewSessionsDefault: Boolean = false,
+    val defaultPermissionProfile: String = "normal",
+    val defaultMaxTurns: Long = 40,
+    val notifyPermissionRequested: Boolean = true,
+    val notifyPausedQuota: Boolean = true,
+    val notifyResumed: Boolean = true,
+    val notifyErrored: Boolean = true,
+)
 
 @Serializable
 data class TowoRunner(
@@ -85,6 +99,17 @@ data class TowoEnrollResponse(val enrollmentToken: String, val expiresAt: Long, 
 
 /** Phase 162 (Towo) — client for the control-plane REST surface (spec §6). */
 object TowoApi {
+    suspend fun getSettings(): TowoSettings = runCatching {
+        httpClient.get("/api/towo/settings").body<TowoSettings>()
+    }.getOrDefault(TowoSettings())
+
+    suspend fun updateSettings(settings: TowoSettings): Boolean = runCatching {
+        httpClient.put("/api/towo/settings") {
+            contentType(ContentType.Application.Json)
+            setBody(settings)
+        }.status == HttpStatusCode.NoContent
+    }.getOrDefault(false)
+
     suspend fun runners(): List<TowoRunner> = runCatching {
         httpClient.get("/api/towo/runners").body<List<TowoRunner>>()
     }.getOrDefault(emptyList())
@@ -96,6 +121,10 @@ object TowoApi {
     suspend fun runnerFolders(id: String): List<TowoFolder> = runCatching {
         httpClient.get("/api/towo/runners/$id/folders").body<List<TowoFolder>>()
     }.getOrDefault(emptyList())
+
+    /** No dedicated "all folders" REST endpoint — aggregated client-side across runners, fine at
+     *  the spec's stated scale ("a handful of sessions on 2-3 hosts"). */
+    suspend fun allFolders(): List<TowoFolder> = runners().flatMap { runnerFolders(it.id) }
 
     suspend fun runnerQuota(id: String): List<TowoQuotaStatus> = runCatching {
         httpClient.get("/api/towo/runners/$id/quota").body<List<TowoQuotaStatus>>()

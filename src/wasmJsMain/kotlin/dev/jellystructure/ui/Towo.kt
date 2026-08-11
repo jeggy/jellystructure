@@ -96,17 +96,13 @@ fun renderTowoOverview(container: Element, scope: CoroutineScope) {
           <div class="pagebar">
             <h1>Towo</h1>
             <span class="spacer"></span>
-            <button id="towo-new-session-btn" class="btn sm">New session</button>
+            <a href="#/towo/sessions/new" class="btn sm">New session</a>
             <a href="#/towo/runners/new" class="btn sm pri">Add a runner</a>
           </div>
           <p class="page-sub">A control plane for Claude Code sessions running on machines you own.</p>
           <div id="towo-body">Loading…</div>
         </div>
     """.trimIndent()
-
-    document.getElementById("towo-new-session-btn")?.addEventListener("click") {
-        App.navigate("/towo/sessions?new=1")
-    }
 
     scope.launch { loadOverview(container, scope) }
 }
@@ -229,9 +225,13 @@ fun renderTowoRunnerNew(container: Element, scope: CoroutineScope) {
         </div>
     """.trimIndent()
 
+    var minting = false
     document.getElementById("towo-runner-mint-btn")?.addEventListener("click") {
+        if (minting) return@addEventListener
         val name = (document.getElementById("towo-runner-name") as? HTMLInputElement)?.value?.trim().orEmpty()
         if (name.isEmpty()) return@addEventListener
+        minting = true
+        (document.getElementById("towo-runner-mint-btn") as? HTMLButtonElement)?.disabled = true
         scope.launch { mintAndShowEnrollment(name, scope) }
     }
 }
@@ -283,7 +283,11 @@ private suspend fun mintAndShowEnrollment(name: String, scope: CoroutineScope) {
 fun renderTowoSessions(container: Element, scope: CoroutineScope, query: Map<String, String>) {
     container.innerHTML = """
         <div class="towo">
-          <div class="pagebar"><h1>Sessions</h1></div>
+          <div class="pagebar">
+            <h1>Sessions</h1>
+            <span class="spacer"></span>
+            <a href="#/towo/sessions/new" class="btn sm pri">New session</a>
+          </div>
           <div id="towo-sessions-body">Loading…</div>
         </div>
     """.trimIndent()
@@ -298,6 +302,112 @@ fun renderTowoSessions(container: Element, scope: CoroutineScope, query: Map<Str
         forEachEl(body.querySelectorAll(".rw[data-session]")) { el ->
             val id = el.getAttribute("data-session") ?: return@forEachEl
             el.addEventListener("click") { App.navigate("/towo/session/$id") }
+        }
+    }
+}
+
+// ===== New-session composer =====
+
+private data class ProfileOption(val key: String, val title: String, val description: String)
+
+private val PROFILE_OPTIONS = listOf(
+    ProfileOption("read_only", "Read-only", "Can look around — read, search, list. Nothing outside that is even asked; it's auto-denied."),
+    ProfileOption("normal", "Normal", "Everything routes through you — every tool call waits for Allow or Deny here first."),
+    ProfileOption("autonomous", "Autonomous", "Accepts its own edits automatically; still asks before anything destructive (like a risky shell command)."),
+    ProfileOption("unrestricted", "Unrestricted", "Approves almost everything automatically. Deliberate choice — use for a session you trust completely."),
+)
+
+fun renderTowoSessionNew(container: Element, scope: CoroutineScope) {
+    container.innerHTML = """
+        <div class="towo">
+          <div class="pagebar"><h1>New session</h1></div>
+          <div class="card" style="padding:22px;max-width:680px">
+            <div class="field" style="margin-bottom:14px">
+              <label class="lbl">Folder</label>
+              <select id="towo-new-folder" class="input"><option value="">Loading…</option></select>
+            </div>
+            <div class="field" style="margin-bottom:14px">
+              <label class="lbl">Prompt</label>
+              <textarea id="towo-new-prompt" class="ta" placeholder="What should this session do?"></textarea>
+            </div>
+            <div class="field" style="margin-bottom:14px">
+              <label class="lbl">Permission profile</label>
+              <div class="pickrow" id="towo-new-profiles">
+                ${PROFILE_OPTIONS.joinToString("") { p ->
+                    """<div class="pick" data-profile="${p.key}"><div class="t">${p.title.esc()}</div><div class="d">${p.description.esc()}</div></div>"""
+                }}
+              </div>
+            </div>
+            <div class="field" style="max-width:160px;margin-bottom:18px">
+              <label class="lbl">Turn cap</label>
+              <input id="towo-new-max-turns" class="input" type="number" min="1" step="1" placeholder="Settings default">
+            </div>
+            <button id="towo-new-start-btn" class="btn pri">Start session</button>
+            <span id="towo-new-result" class="tiny muted" style="margin-left:8px"></span>
+          </div>
+        </div>
+    """.trimIndent()
+
+    var selectedProfile = "normal"
+
+    scope.launch {
+        val settings = TowoApi.getSettings()
+        selectedProfile = settings.defaultPermissionProfile
+        forEachEl(document.querySelectorAll("#towo-new-profiles .pick")) { el ->
+            el.className = if (el.getAttribute("data-profile") == selectedProfile) "pick on" else "pick"
+        }
+        (document.getElementById("towo-new-max-turns") as? HTMLElement)?.setAttribute("placeholder", "Settings default (${settings.defaultMaxTurns})")
+
+        val folders = TowoApi.allFolders()
+        val select = document.getElementById("towo-new-folder") as? org.w3c.dom.HTMLSelectElement
+        if (folders.isEmpty()) {
+            select?.innerHTML = """<option value="">No folders yet — add a runner first</option>"""
+        } else {
+            val runners = TowoApi.runners().associateBy { it.id }
+            select?.innerHTML = folders.joinToString("") { f ->
+                val runnerName = runners[f.runnerId]?.name ?: f.runnerId.take(8)
+                """<option value="${f.id}">${runnerName.esc()} / ${f.name.esc()}</option>"""
+            }
+        }
+    }
+
+    forEachEl(document.querySelectorAll("#towo-new-profiles .pick")) { el ->
+        el.addEventListener("click") {
+            selectedProfile = el.getAttribute("data-profile") ?: "normal"
+            forEachEl(document.querySelectorAll("#towo-new-profiles .pick")) { p ->
+                p.className = if (p === el) "pick on" else "pick"
+            }
+        }
+    }
+
+    var submitting = false
+    document.getElementById("towo-new-start-btn")?.addEventListener("click") {
+        if (submitting) return@addEventListener
+        val folderId = (document.getElementById("towo-new-folder") as? org.w3c.dom.HTMLSelectElement)?.value?.takeIf { it.isNotBlank() }
+        val prompt = (document.getElementById("towo-new-prompt") as? HTMLTextAreaElement)?.value?.trim().orEmpty()
+        val maxTurns = (document.getElementById("towo-new-max-turns") as? HTMLInputElement)?.value?.toLongOrNull()
+        val resultEl = document.getElementById("towo-new-result") as? HTMLElement
+        if (folderId == null || prompt.isEmpty()) {
+            resultEl?.textContent = "Pick a folder and write a prompt first."
+            resultEl?.let { it.style.color = "var(--bad)" }
+            return@addEventListener
+        }
+        submitting = true
+        (document.getElementById("towo-new-start-btn") as? HTMLButtonElement)?.disabled = true
+        scope.launch {
+            resultEl?.textContent = "Starting…"
+            resultEl?.let { it.style.color = "" }
+            val ok = TowoApi.createSession(folderId, null, prompt, selectedProfile, maxTurns)
+            if (ok) {
+                resultEl?.textContent = "Started — opening the session list…"
+                delay(1200)
+                App.navigate("/towo/sessions")
+            } else {
+                resultEl?.textContent = "Failed to start — is the runner online?"
+                resultEl?.let { it.style.color = "var(--bad)" }
+                submitting = false
+                (document.getElementById("towo-new-start-btn") as? HTMLButtonElement)?.disabled = false
+            }
         }
     }
 }

@@ -1,0 +1,15 @@
+-- Phase 162 (Towo) — backend-owned settings (spec §A), needed because TowoAutoContinueScheduler is a
+-- server-side loop with no browser to read localStorage from (v25 -> v26). See Towo.sq for docs.
+
+CREATE TABLE towo_settings (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    quota_watch_enabled INTEGER NOT NULL DEFAULT 1,
+    quota_watch_interval_ms INTEGER NOT NULL DEFAULT 21600000,
+    arm_new_sessions_default INTEGER NOT NULL DEFAULT 0,
+    default_permission_profile TEXT NOT NULL DEFAULT 'normal',
+    default_max_turns INTEGER NOT NULL DEFAULT 40,
+    notify_permission_requested INTEGER NOT NULL DEFAULT 1,
+    notify_paused_quota INTEGER NOT NULL DEFAULT 1,
+    notify_resumed INTEGER NOT NULL DEFAULT 1,
+    notify_errored INTEGER NOT NULL DEFAULT 1
+);
