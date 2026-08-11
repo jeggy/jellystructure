@@ -1,0 +1,5 @@
+-- Phase 162 (Towo) — spec §7/§B: "Alert on mirror_error — otherwise transcript loss is silent."
+-- Sticky per-runner state so the Runner detail page can show a mirror_error warning even after the
+-- live WS event that first reported it is long gone; cleared on the next successful transcript append.
+ALTER TABLE towo_runner ADD COLUMN mirror_error_at INTEGER;
+ALTER TABLE towo_runner ADD COLUMN mirror_error_message TEXT;

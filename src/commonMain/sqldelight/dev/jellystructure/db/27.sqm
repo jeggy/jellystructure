@@ -1,0 +1,4 @@
+-- Phase 162 (Towo) — spec §A's 5th notify type ("a window drops below 20%"), missed in the original
+-- settings pass (dev-review addendum #2's remaining-gaps list). v27 -> v28.
+ALTER TABLE towo_settings ADD COLUMN notify_low_quota INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE towo_settings ADD COLUMN low_quota_threshold_pct INTEGER NOT NULL DEFAULT 20;

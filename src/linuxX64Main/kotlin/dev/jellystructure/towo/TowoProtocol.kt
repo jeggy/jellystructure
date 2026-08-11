@@ -62,6 +62,14 @@ sealed class RunnerToControl {
 
     @Serializable @SerialName("transcript_load_request")
     data class TranscriptLoadRequest(val requestId: String, val sessionId: String, val subpath: String? = null) : RunnerToControl()
+
+    /** Spec §D — "an ignored request stays suspended (with a long timeout that denies with an
+     *  editable reason)... entirely the runner's own responsibility." The runner resolved canUseTool
+     *  locally (no control-plane round trip possible — the tool call can't wait on one more hop after
+     *  already waiting out the timeout), this just reports what it decided so the control plane's
+     *  record and the browser stop showing it as pending. */
+    @Serializable @SerialName("permission_timeout")
+    data class PermissionTimeout(val sessionId: String, val requestId: String, val reason: String) : RunnerToControl()
 }
 
 @Serializable
@@ -82,6 +90,8 @@ sealed class ControlToRunner {
         val prompt: String,
         val maxTurns: Long? = null,
         val permissionProfile: String = "normal",
+        val permissionTimeoutMs: Long = 30L * 60 * 1000,
+        val permissionTimeoutReason: String = "No response within the timeout — auto-denied by Towo.",
     ) : ControlToRunner()
 
     @Serializable @SerialName("send_message")
@@ -107,5 +117,12 @@ sealed class ControlToRunner {
      *  report's "runner owns it because it's closest to the process" framing -- noted in the spec's
      *  dev-review addendum. */
     @Serializable @SerialName("resume_session")
-    data class ResumeSession(val sessionId: String, val folderPath: String, val prompt: String) : ControlToRunner()
+    data class ResumeSession(
+        val sessionId: String,
+        val folderPath: String,
+        val prompt: String,
+        val permissionProfile: String = "normal",
+        val permissionTimeoutMs: Long = 30L * 60 * 1000,
+        val permissionTimeoutReason: String = "No response within the timeout — auto-denied by Towo.",
+    ) : ControlToRunner()
 }

@@ -33,7 +33,11 @@ export type RunnerToControl =
   // (the live SDKMessage stream, for indexing + browser broadcast) -- these are the SDK's own
   // JSONL-line entries, for durability + resume.
   | { type: "transcript_append"; sessionId: string; subpath?: string; entries: unknown[] }
-  | { type: "transcript_load_request"; requestId: string; sessionId: string; subpath?: string };
+  | { type: "transcript_load_request"; requestId: string; sessionId: string; subpath?: string }
+  // Spec §D -- an ignored canUseTool request stays suspended forever with "no built-in timeout";
+  // the runner denies it locally after permissionTimeoutMs and reports that decision here (never a
+  // decision to *deliver* -- it's already resolved).
+  | { type: "permission_timeout"; sessionId: string; requestId: string; reason: string };
 
 export type ControlToRunner =
   | { type: "enrolled"; runnerId: string; credential: string }
@@ -44,6 +48,8 @@ export type ControlToRunner =
       prompt: string;
       maxTurns?: number;
       permissionProfile: string;
+      permissionTimeoutMs?: number;
+      permissionTimeoutReason?: string;
     }
   | { type: "send_message"; sessionId: string; text: string }
   | { type: "interrupt"; sessionId: string }
@@ -52,4 +58,12 @@ export type ControlToRunner =
   // Build-order step 6 -- the control plane owns the paused_quota/continue_after_reset schedule
   // (it already persists that state and already runs a periodic scheduler), so it tells the runner
   // when to resume rather than the runner re-deriving arming state itself.
-  | { type: "resume_session"; sessionId: string; folderPath: string; prompt: string };
+  | {
+      type: "resume_session";
+      sessionId: string;
+      folderPath: string;
+      prompt: string;
+      permissionProfile?: string;
+      permissionTimeoutMs?: number;
+      permissionTimeoutReason?: string;
+    };

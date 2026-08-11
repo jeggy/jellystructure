@@ -432,6 +432,14 @@ fun renderSettings(container: Element, scope: CoroutineScope, query: Map<String,
 
               <hr class="dash">
 
+              <div class="field" style="max-width:420px;margin-bottom:14px">
+                <label>Where runners connect</label>
+                <input id="towo-runner-connect-url" class="input" placeholder="auto-detected from this page, e.g. wss://jellystructure.example.com">
+                <span class="hint">Leave blank to derive it from how you're viewing this page. Set it if that's wrong — e.g. behind a reverse proxy, or a different external hostname than the one runners should dial. Affects new enrollment commands only.</span>
+              </div>
+
+              <hr class="dash">
+
               <div style="display:flex;align-items:center;justify-content:space-between;margin:14px 0 8px">
                 <div>
                   <span style="font-size:.9rem;font-weight:500">Quota watch</span>
@@ -490,9 +498,32 @@ fun renderSettings(container: Element, scope: CoroutineScope, query: Map<String,
                 <span style="font-size:.9rem">It picks back up</span>
                 <span id="towo-notify-resumed-toggle" class="toggle" style="cursor:pointer"></span>
               </div>
-              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
                 <span style="font-size:.9rem">A session errors</span>
                 <span id="towo-notify-errored-toggle" class="toggle" style="cursor:pointer"></span>
+              </div>
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+                <span style="font-size:.9rem">A window drops low</span>
+                <span id="towo-notify-low-quota-toggle" class="toggle" style="cursor:pointer"></span>
+              </div>
+              <div class="field" style="max-width:160px;margin-bottom:14px">
+                <label>Low-quota threshold (% remaining)</label>
+                <input id="towo-low-quota-threshold" class="input" type="number" min="1" max="99" step="1">
+              </div>
+
+              <hr class="dash">
+
+              <div style="font-size:.83rem;font-weight:500;margin:14px 0 8px;color:var(--ink-soft)">Permission timeout</div>
+              <div class="row" style="gap:14px;margin-bottom:14px;flex-wrap:wrap">
+                <div class="field" style="max-width:160px">
+                  <label>Auto-deny after (minutes)</label>
+                  <input id="towo-permission-timeout-min" class="input" type="number" min="1" step="1">
+                  <span class="hint">An ignored approval blocks the session forever otherwise.</span>
+                </div>
+                <div class="field" style="max-width:340px;flex:1">
+                  <label>Reason shown to Claude</label>
+                  <input id="towo-permission-timeout-reason" class="input">
+                </div>
               </div>
 
               <button id="towo-save-settings" class="btn primary sm">Save Towo settings</button>
@@ -1931,14 +1962,20 @@ private fun wireTowoSettings(scope: CoroutineScope) {
         updateToggle("towo-notify-paused-toggle", settings.notifyPausedQuota)
         updateToggle("towo-notify-resumed-toggle", settings.notifyResumed)
         updateToggle("towo-notify-errored-toggle", settings.notifyErrored)
+        updateToggle("towo-notify-low-quota-toggle", settings.notifyLowQuota)
         (document.getElementById("towo-quota-interval") as? HTMLSelectElement)?.value = settings.quotaWatchIntervalMs.toString()
         (document.getElementById("towo-default-profile") as? HTMLSelectElement)?.value = settings.defaultPermissionProfile
         setInputValue("towo-default-max-turns", settings.defaultMaxTurns.toString())
+        setInputValue("towo-low-quota-threshold", settings.lowQuotaThresholdPct.toString())
+        setInputValue("towo-permission-timeout-min", (settings.permissionTimeoutMs / 60_000).toString())
+        setInputValue("towo-permission-timeout-reason", settings.permissionTimeoutReason)
+        setInputValue("towo-runner-connect-url", settings.runnerConnectUrl)
     }
 
     for (id in listOf(
         "towo-quota-watch-toggle", "towo-arm-default-toggle", "towo-notify-permission-toggle",
         "towo-notify-paused-toggle", "towo-notify-resumed-toggle", "towo-notify-errored-toggle",
+        "towo-notify-low-quota-toggle",
     )) {
         document.getElementById(id)?.addEventListener("click") { updateToggle(id, !toggleOn(id)) }
     }
@@ -1955,6 +1992,12 @@ private fun wireTowoSettings(scope: CoroutineScope) {
             notifyPausedQuota = toggleOn("towo-notify-paused-toggle"),
             notifyResumed = toggleOn("towo-notify-resumed-toggle"),
             notifyErrored = toggleOn("towo-notify-errored-toggle"),
+            notifyLowQuota = toggleOn("towo-notify-low-quota-toggle"),
+            lowQuotaThresholdPct = (document.getElementById("towo-low-quota-threshold") as? HTMLInputElement)?.value?.toLongOrNull()?.coerceIn(1, 99) ?: 20,
+            permissionTimeoutMs = (((document.getElementById("towo-permission-timeout-min") as? HTMLInputElement)?.value?.toLongOrNull()?.coerceAtLeast(1)) ?: 30) * 60_000,
+            permissionTimeoutReason = (document.getElementById("towo-permission-timeout-reason") as? HTMLInputElement)?.value?.trim()?.takeIf { it.isNotEmpty() }
+                ?: "No response within the timeout — auto-denied by Towo.",
+            runnerConnectUrl = (document.getElementById("towo-runner-connect-url") as? HTMLInputElement)?.value?.trim().orEmpty(),
         )
         scope.launch {
             val ok = TowoApi.updateSettings(settings)

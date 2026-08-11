@@ -30,4 +30,9 @@ sealed class TowoEvent {
 
     @Serializable @SerialName("runner.enrolled")
     data class RunnerEnrolled(val runnerId: String, val name: String) : TowoEvent()
+
+    /** Spec §7/§B — SessionStore.append() failed after retries, meaning transcript loss for this
+     *  session's most recent turn(s). Must never be silent. */
+    @Serializable @SerialName("mirror_error")
+    data class MirrorError(val runnerId: String, val sessionId: String, val message: String) : TowoEvent()
 }

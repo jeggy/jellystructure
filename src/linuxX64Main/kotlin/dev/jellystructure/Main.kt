@@ -246,7 +246,7 @@ fun main() = runBlocking {
     val towoStore = dev.jellystructure.towo.TowoStore(db)
     val towoRunnerRegistry = dev.jellystructure.towo.TowoRunnerRegistry()
     val towoEventBus = dev.jellystructure.towo.TowoEventBus()
-    val towoService = dev.jellystructure.towo.TowoService(towoStore, towoRunnerRegistry, towoEventBus)
+    val towoService = dev.jellystructure.towo.TowoService(towoStore, towoRunnerRegistry, towoEventBus, configStore)
     // Build-order step 6 — armed sessions past their quota reset are resumed automatically. Interval
     // and on/off live in towo_settings (spec §A), re-read every tick -- runs unconditionally like the
     // rest of Towo's backend; the Settings sidebar flag only gates the UI, never whether armed

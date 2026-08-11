@@ -16,7 +16,10 @@ CREATE TABLE towo_runner (
     -- live WS connection is held in TowoRunnerRegistry (in-memory), never trusted from the DB alone.
     allowed_roots TEXT NOT NULL DEFAULT '[]',
     created_at INTEGER NOT NULL,
-    last_seen_at INTEGER
+    last_seen_at INTEGER,
+    -- v27->v28 addition — spec §7/§B "Alert on mirror_error"; sticky until the next successful append.
+    mirror_error_at INTEGER,
+    mirror_error_message TEXT
 );
 
 CREATE TABLE towo_enrollment (
@@ -49,6 +52,9 @@ CREATE TABLE towo_session (
     -- POST /sessions folderId|path) or whose towo_folder row was later deleted would otherwise have
     -- no way to recover its working directory for resume.
     folder_path TEXT,
+    -- v25->v26 addition — without this, an auto-continue resume had no way to know what profile the
+    -- session was actually started with and always fell back to Normal (dev-review addendum #2).
+    permission_profile TEXT NOT NULL DEFAULT 'normal',
     title TEXT,
     tag TEXT,
     status TEXT NOT NULL DEFAULT 'starting',
@@ -119,7 +125,19 @@ CREATE TABLE towo_settings (
     notify_permission_requested INTEGER NOT NULL DEFAULT 1,
     notify_paused_quota INTEGER NOT NULL DEFAULT 1,
     notify_resumed INTEGER NOT NULL DEFAULT 1,
-    notify_errored INTEGER NOT NULL DEFAULT 1
+    notify_errored INTEGER NOT NULL DEFAULT 1,
+    -- v26->v27 addition — spec §A's 5th notify type ("a window drops below 20%") was missed in the
+    -- original settings pass (dev-review addendum #2's remaining-gaps list).
+    notify_low_quota INTEGER NOT NULL DEFAULT 1,
+    low_quota_threshold_pct INTEGER NOT NULL DEFAULT 20,
+    -- v28->v29 addition — spec §D's "long timeout that denies with an editable reason", entirely the
+    -- runner's own responsibility per the dev-review addendum; backend-owned so it's configurable
+    -- from Settings like every other cross-cutting default.
+    permission_timeout_ms INTEGER NOT NULL DEFAULT 1800000,
+    permission_timeout_reason TEXT NOT NULL DEFAULT 'No response within the timeout — auto-denied by Towo.',
+    -- v29->v30 addition — spec §A's "where runners connect" override; empty = keep auto-deriving
+    -- from the admin request's own Host header (wrong behind a reverse proxy).
+    runner_connect_url TEXT NOT NULL DEFAULT ''
 );
 
 -- ===== towo_runner =====
@@ -145,6 +163,12 @@ WHERE id = :id;
 
 touchRunnerLastSeen:
 UPDATE towo_runner SET last_seen_at = :last_seen_at WHERE id = :id;
+
+setRunnerMirrorError:
+UPDATE towo_runner SET mirror_error_at = :mirror_error_at, mirror_error_message = :mirror_error_message WHERE id = :id;
+
+clearRunnerMirrorError:
+UPDATE towo_runner SET mirror_error_at = NULL, mirror_error_message = NULL WHERE id = :id;
 
 deleteRunner:
 DELETE FROM towo_runner WHERE id = :id;
@@ -185,8 +209,8 @@ DELETE FROM towo_folder WHERE runner_id = :runner_id;
 -- ===== towo_session =====
 
 insertSession:
-INSERT INTO towo_session(id, runner_id, folder_id, folder_path, title, max_turns, created_at, last_activity_at)
-VALUES (:id, :runner_id, :folder_id, :folder_path, :title, :max_turns, :created_at, :last_activity_at);
+INSERT INTO towo_session(id, runner_id, folder_id, folder_path, permission_profile, title, max_turns, created_at, last_activity_at)
+VALUES (:id, :runner_id, :folder_id, :folder_path, :permission_profile, :title, :max_turns, :created_at, :last_activity_at);
 
 getSession:
 SELECT * FROM towo_session WHERE id = :id;
@@ -230,6 +254,21 @@ SELECT * FROM towo_permission_request WHERE decision IS NULL ORDER BY requested_
 decidePermissionRequest:
 UPDATE towo_permission_request SET decided_at = :decided_at, decision = :decision, reason = :reason WHERE id = :id;
 
+-- Spec §7's disconnect-while-pending handling: the admin's decision is recorded (decision set) but
+-- decided_at stays NULL until it's actually delivered to the runner, so a decision made while the
+-- runner is offline is never silently lost -- it's redelivered on the runner's next `hello` (see
+-- queuedUndeliveredDecisions) instead of the request quietly vanishing from the pending queue.
+queuePermissionDecision:
+UPDATE towo_permission_request SET decision = :decision, reason = :reason WHERE id = :id;
+
+markPermissionDelivered:
+UPDATE towo_permission_request SET decided_at = :decided_at WHERE id = :id;
+
+queuedUndeliveredDecisions:
+SELECT pr.* FROM towo_permission_request pr
+JOIN towo_session s ON s.id = pr.session_id
+WHERE s.runner_id = :runner_id AND pr.decision IS NOT NULL AND pr.decided_at IS NULL;
+
 -- ===== towo_quota_status =====
 
 upsertQuotaStatus:
@@ -260,9 +299,13 @@ upsertSettings:
 INSERT OR REPLACE INTO towo_settings(
     id, quota_watch_enabled, quota_watch_interval_ms, arm_new_sessions_default,
     default_permission_profile, default_max_turns,
-    notify_permission_requested, notify_paused_quota, notify_resumed, notify_errored
+    notify_permission_requested, notify_paused_quota, notify_resumed, notify_errored,
+    notify_low_quota, low_quota_threshold_pct, permission_timeout_ms, permission_timeout_reason,
+    runner_connect_url
 ) VALUES (
     1, :quota_watch_enabled, :quota_watch_interval_ms, :arm_new_sessions_default,
     :default_permission_profile, :default_max_turns,
-    :notify_permission_requested, :notify_paused_quota, :notify_resumed, :notify_errored
+    :notify_permission_requested, :notify_paused_quota, :notify_resumed, :notify_errored,
+    :notify_low_quota, :low_quota_threshold_pct, :permission_timeout_ms, :permission_timeout_reason,
+    :runner_connect_url
 );

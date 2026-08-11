@@ -1,0 +1,4 @@
+-- Phase 162 (Towo) — persist the permission profile a session actually started with, so an
+-- auto-continue resume can pass it back through instead of always falling back to Normal
+-- (dev-review addendum #2, v26 -> v27).
+ALTER TABLE towo_session ADD COLUMN permission_profile TEXT NOT NULL DEFAULT 'normal';
