@@ -5,6 +5,7 @@ package dev.jellystructure.ui
 import dev.jellystructure.App
 import dev.jellystructure.api.TowoApi
 import dev.jellystructure.api.TowoPermissionRequest
+import dev.jellystructure.api.TowoQuotaStatus
 import dev.jellystructure.api.TowoRunner
 import dev.jellystructure.api.TowoSession
 import kotlinx.browser.document
@@ -72,7 +73,11 @@ private fun statusChipHtml(status: String, resumeAt: Long? = null): String {
     return """<span class="chip $cls"><span class="dot"></span>$label</span>"""
 }
 
-private fun formatEpochSec(epochSec: Long): String = js("new Date(epochSec * 1000).toLocaleString()")
+// Kotlin/Wasm's Long maps to a JS BigInt, and `BigInt * 1000` throws "Cannot mix BigInt and other
+// types" -- convert to Double before the js() call (matching MediaDetail.kt's formatTimestamp
+// pattern) rather than doing the arithmetic on the Long itself.
+private fun formatEpochSec(epochSec: Long): String = formatEpochSecMs(epochSec.toDouble())
+private fun formatEpochSecMs(epochSec: Double): String = js("new Date(epochSec * 1000).toLocaleString()")
 
 private fun runnerOnlineHtml(runner: TowoRunner): String {
     val lastSeen = runner.lastSeenAt
@@ -87,6 +92,34 @@ private fun runnerOnlineHtml(runner: TowoRunner): String {
 
 private fun nowMsJs(): Double = js("Date.now()")
 private fun nowEpochSecJs(): Long = (nowMsJs() / 1000).toLong()
+
+private fun formatTimeShortMs(epochSec: Double): String = js("new Date(epochSec * 1000).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})")
+private fun formatTimeShort(epochSec: Long): String = formatTimeShortMs(epochSec.toDouble())
+
+private val RATE_LIMIT_LABELS = mapOf("five_hour" to "5-hour window", "seven_day" to "Weekly")
+
+/** Spec §B: "live 5-hour and weekly gauges with reset times" — one row per rate-limit window this
+ *  runner has ever reported (none until its first real session runs a turn; the SDK doesn't emit
+ *  rate_limit_event until then). */
+private fun quotaHtml(quota: List<TowoQuotaStatus>): String {
+    if (quota.isEmpty()) return ""
+    return buildString {
+        append("""<div style="margin-bottom:10px;display:flex;flex-direction:column;gap:8px">""")
+        for (q in quota.sortedBy { it.rateLimitType }) {
+            val pct = q.utilization?.let { (it * 100).toInt().coerceIn(0, 100) }
+            val label = RATE_LIMIT_LABELS[q.rateLimitType] ?: q.rateLimitType.esc()
+            append("""<div>""")
+            append("""<div class="row" style="justify-content:space-between;margin-bottom:3px">""")
+            append("""<span class="tiny muted">${label}</span>""")
+            append("""<span class="mono tiny">${pct?.let { "$it%" } ?: q.status.esc()}</span>""")
+            append("</div>")
+            if (pct != null) append("""<div class="gauge"><i style="width:${pct}%"></i></div>""")
+            if (q.resetsAt != null) append("""<div class="tiny muted" style="margin-top:3px">Resets ${formatTimeShort(q.resetsAt)}</div>""")
+            append("</div>")
+        }
+        append("</div>")
+    }
+}
 
 // ===== Overview =====
 
@@ -124,6 +157,7 @@ private suspend fun loadOverview(container: Element, scope: CoroutineScope) {
     }
 
     val sessionsByRunner = sessions.groupBy { it.runnerId }
+    val quotaByRunner = runners.associate { it.id to TowoApi.runnerQuota(it.id) }
     body.innerHTML = buildString {
         for (runner in runners) {
             append("""<div class="card" style="padding:18px;margin-bottom:14px">""")
@@ -134,6 +168,7 @@ private suspend fun loadOverview(container: Element, scope: CoroutineScope) {
             append("""<span class="spacer"></span>""")
             append("""<a href="#/towo/runners" class="tiny muted">manage runners →</a>""")
             append("</div>")
+            append(quotaHtml(quotaByRunner[runner.id].orEmpty()))
             val rows = sessionsByRunner[runner.id].orEmpty()
             if (rows.isEmpty()) {
                 append("""<p class="sub">No sessions on this runner yet.</p>""")
