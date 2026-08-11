@@ -93,13 +93,20 @@ class TowoService(
      *  fail with a 401. */
     fun mintEnrollment(name: String, publicWsBase: String): MintedEnrollment {
         val minted = store.mintEnrollment(name)
-        val url = "$publicWsBase/api/towo/runner-link?token=${minted.token}"
+        // The runner's own CLI contract (index.ts's parseArgs / connect.ts's connectToControlPlane)
+        // takes --connect as the BARE origin and builds "$wsBase/api/towo/runner-link?token=..."
+        // itself from a SEPARATE --enroll-token flag — it does NOT accept the full path+token as one
+        // --connect value. A prior version of this function baked them together into one URL, which
+        // parsed fine as a --connect value but left the runner with no token at all, confirmed live:
+        // "no --enroll-token given and no saved credential found" after everything up to that point
+        // (download, build) had worked.
+        val connectArgs = "--connect \"$publicWsBase\" --enroll-token \"${minted.token}\""
         val githubToken = store.getSettings().githubToken.trim()
         val npxCommand = if (githubToken.isNotEmpty()) {
             "curl -fsSL -H \"Authorization: Bearer $githubToken\" -H \"Accept: application/vnd.github+json\" " +
                 "-L \"$TOWO_REPO_TARBALL_URL\" -o /tmp/towo-src.tar.gz && rm -rf /tmp/towo-src && mkdir -p /tmp/towo-src && " +
                 "tar -xzf /tmp/towo-src.tar.gz -C /tmp/towo-src --strip-components=1 && cd /tmp/towo-src/towo-runner && " +
-                "npm install && npm run build && node dist/index.js --connect \"$url\" --root ~"
+                "npm install && npm run build && node dist/index.js $connectArgs --root ~"
         } else {
             "# Set a GitHub token in Settings → Towo first (Contents: Read-only on this repo) — needed to download towo-runner from this private repo. Then re-generate this command."
         }
@@ -107,8 +114,8 @@ class TowoService(
             "npx" to npxCommand,
             // installer/docker are still placeholders -- towo.local doesn't resolve and the
             // jellystructure/towo-runner Docker image was never built or pushed anywhere.
-            "installer" to "curl -fsSL https://towo.local/install.sh | sh -s -- --connect \"$url\" --root ~",
-            "docker" to "docker run -d -v ~:/workspaces jellystructure/towo-runner --connect \"$url\" --root /workspaces",
+            "installer" to "curl -fsSL https://towo.local/install.sh | sh -s -- $connectArgs --root ~",
+            "docker" to "docker run -d -v ~:/workspaces jellystructure/towo-runner $connectArgs --root /workspaces",
         )
         return MintedEnrollment(minted.token, minted.expiresAt, commands)
     }
