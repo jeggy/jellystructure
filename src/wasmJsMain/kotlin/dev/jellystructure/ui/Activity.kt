@@ -264,6 +264,11 @@ fun renderActivity(container: Element, scope: CoroutineScope, query: Map<String,
             scanRunning = true
             jobItemCount = st.processedCount
             jobDoneCount = st.processedCount
+            // Without this, jobStartMs stays at its 0.0 default on a page (re)load mid-scan, so the
+            // "~T remaining" estimate's elapsed-time math computes nowMs() - 0 -- decades, not minutes.
+            // startedAt is the real job start (epoch seconds); nowMs() is only a fallback for an old
+            // backend/response shape that never sent it.
+            jobStartMs = st.startedAt?.let { it.toDouble() * 1000 } ?: nowMs()
             showJobUI(container)
             (container.querySelector("#act-cancel-btn") as? HTMLElement)?.style?.display = ""
             (container.querySelector("#act-crumb") as? HTMLElement)?.let { it.textContent = "Scanning"; it.style.display = "" }
