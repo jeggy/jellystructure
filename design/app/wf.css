@@ -213,6 +213,12 @@ hr.dash { border: none; border-top: 1px solid var(--line); margin: 18px 0; }
 .chip.sugg:hover, .chip.ghost:hover { border-color: var(--hi); color: var(--ink); }
 /* accent-filled chips (markup uses inline background:var(--hi)) need light ink */
 .chip[style*="--hi)"]:not([style*="soft"]) { color: #fff; border-color: transparent; }
+/* Selected-filter-chip state — used by Library's ".active-chip" and Activity's ".act"
+   modifiers. Neither had a design reference (not in any mockup) — matches the same
+   selected treatment as .theme-seg button.on / .seg-pill button.on elsewhere.
+   RESTORED 2026-07-31, again 2026-08-11 (6th occurrence total) after a design-tool sync silently reverted this — see
+   the reference memory note on diffing design/app/*.css after every sync. */
+.chip.active-chip, .chip.act { background: var(--hi-soft); color: var(--acc-ink); border-color: var(--hi); }
 
 .badge { display: inline-flex; align-items:center; gap:5px; font-size: .72rem; font-weight: 600;
   padding: 3px 9px; border-radius: 7px; border:1px solid transparent; white-space: nowrap; }
@@ -224,6 +230,26 @@ hr.dash { border: none; border-top: 1px solid var(--line); margin: 18px 0; }
 [data-theme="light"] .badge.ok   { color: #128a5f; }
 [data-theme="light"] .badge.warn { color: #9a6a06; }
 [data-theme="light"] .badge.info { color: #1f7fb8; }
+
+/* Phase 117/146 — dashboard "Needs your attention" breakdown grid. Same gap as .nav-group:
+   the mockup's inline <style> (index.html) never made it into the shipped CSS files, so these
+   rows rendered with zero styling — no card background/border, no hover, no severity coloring.
+   RE-ADDED 2026-07 after a design-tool sync overwrote this file and silently dropped it, RESTORED
+   AGAIN 2026-07-31, and AGAIN 2026-08-11 (6th sync-wipe event overall) — see the reference memory
+   note on syncing before touching this block again. */
+.attn-breakdown { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 10px; margin: 4px 0 2px; }
+.abk { display: flex; align-items: center; gap: 10px; padding: 9px 11px; border-radius: 9px;
+  border: 1px solid var(--line); background: var(--fill-2); text-decoration: none; color: var(--ink);
+  cursor: pointer; transition: border-color .15s ease, background .15s ease, transform .1s ease; }
+.abk:hover { border-color: var(--hi); background: var(--hi-soft); text-decoration: none; }
+.abk:active { transform: translateY(1px); }
+.abk .abk-l { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
+.abk .abk-l b { font-family: 'Space Grotesk', sans-serif; font-size: .92rem; font-weight: 600; }
+.abk .abk-l .d { font-size: .72rem; color: var(--ink-soft); line-height: 1.3; }
+.abk .badge { flex: none; }
+.abk.zero { opacity: .5; }
+.abk.zero:hover { opacity: .8; }
+@media (max-width: 640px) { .attn-breakdown { grid-template-columns: 1fr; } }
 
 .lang { font-family: 'JetBrains Mono', monospace; font-weight: 600; text-transform: uppercase; letter-spacing: .02em; }
 
@@ -280,6 +306,95 @@ hr.dash { border: none; border-top: 1px solid var(--line); margin: 18px 0; }
 [data-theme="light"] .log .muted { color: #8d93a8; }
 .log .ts { color: var(--ink-soft); } .log .warnc { color: var(--warn); } .log .badc { color: var(--bad); } .log .okc { color: var(--ok); }
 
+/* Activity page — media-worker status dot + job-queue rows (design/app/activity.html,
+   never shipped). Verified against the real markup directly: the mockup's .runpick/
+   .rp-dot/.run-sel searchable-run-picker isn't implemented in the real Kotlin page at
+   all, so those are intentionally NOT ported (nothing uses them — porting would be dead
+   CSS, not a fix). RESTORED 2026-07-31, again 2026-08-11, after a design-tool sync silently reverted this. */
+.wk-dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+.wk-dot.busy { background: var(--warn); box-shadow: 0 0 0 4px var(--warn-soft); }
+.wk-dot.idle { background: var(--ink-dim); }
+.jobs-count {
+  display: inline-flex; align-items: center; justify-content: center; min-width: 16px; height: 16px;
+  padding: 0 5px; border-radius: 20px; background: var(--warn); color: #1a1204;
+  font-size: .62rem; font-weight: 800; margin-left: 6px;
+}
+.jobrow { display: flex; align-items: center; gap: 12px; padding: 11px 4px; border-top: 1px dashed var(--line); }
+.jobrow:first-child { border-top: none; }
+.jobrow.leaving { opacity: 0; transform: translateX(10px); transition: opacity .25s, transform .25s; }
+.jq-pos {
+  width: 22px; height: 22px; flex: none; border-radius: 6px; background: var(--fill-3); color: var(--ink-soft);
+  font-size: .72rem; font-weight: 700; display: flex; align-items: center; justify-content: center;
+}
+.jq-ic { width: 22px; flex: none; text-align: center; font-weight: 800; }
+.jq-ic.ok { color: var(--ok); } .jq-ic.bad { color: var(--bad); }
+.jq-main { flex: 1; min-width: 0; }
+.jq-title { font-size: .86rem; }
+.jq-sub { font-size: .72rem; color: var(--ink-dim); margin-top: 2px; }
+
+/* Ravilo config's hero-carousel row thumbnail (design/app/ravilo-config.html) — the
+   element's own dynamic style= only sets `background`, so the box shape/overlay-label
+   positioning still needs this. */
+.hero-thumb { width: 92px; height: 52px; border-radius: 8px; flex: none; position: relative; overflow: hidden; }
+.hero-thumb .t { position: absolute; left: 8px; bottom: 6px; font-family: 'Space Grotesk',sans-serif; font-weight: 700; font-size: .72rem; color: #fff; text-shadow: 0 1px 4px rgba(0,0,0,.6); }
+
+/* Settings > Metadata's age-rating region-cascade editor (#rc-list/.rc-add/.rc-menu) — reorder
+   (drag or ▲▼), remove, add-from-catalog. Never had a design pass at all (no mockup, no shipped
+   CSS) despite Phase 106 shipping the feature — related to but distinct from detail.css's
+   .rc-trace/.rc-tr (the per-title cascade-resolution trace card on the media detail page; same
+   "rc-" family/concept, different page and markup shape). ADDED 2026-07-31 — Settings.kt has no
+   dedicated CSS file in syncDesignAssets' copy list, so this lives here alongside the dashboard/
+   activity components above. */
+.rc-list { display: flex; flex-direction: column; gap: 8px; margin: 10px 0 12px; padding: 0; list-style: none; }
+.rc-item {
+  display: flex; align-items: center; gap: 10px; padding: 10px 12px;
+  background: var(--card-bg); border: var(--card-bd); border-radius: var(--radius-s);
+  box-shadow: var(--shadow-s); cursor: grab; transition: border-color .15s ease, opacity .15s ease;
+}
+.rc-item.top { border-color: var(--hi); background: var(--hi-soft); }
+.rc-item.dragging { opacity: .4; cursor: grabbing; }
+.rc-item.drag-over { border-color: var(--hi); box-shadow: 0 0 0 2px var(--hi); }
+.rc-grip { color: var(--ink-dim); font-size: 1.05rem; letter-spacing: -2px; flex: none; cursor: grab; }
+.rc-item:active .rc-grip { cursor: grabbing; }
+.rc-ord {
+  width: 22px; height: 22px; flex: none; border-radius: 50%; background: var(--fill-3); color: var(--ink-soft);
+  font-family: 'JetBrains Mono', monospace; font-size: .72rem; font-weight: 700;
+  display: flex; align-items: center; justify-content: center;
+}
+.rc-item.top .rc-ord { background: var(--hi); color: #fff; }
+.rc-item .rc-cc {
+  font-family: 'JetBrains Mono', monospace; font-size: .74rem; font-weight: 700; text-transform: uppercase;
+  background: var(--fill-3); color: var(--ink); padding: 2px 7px; border-radius: 5px; flex: none;
+}
+.rc-name { font-weight: 600; font-size: .88rem; flex: none; white-space: nowrap; }
+.rc-sys { font-size: .74rem; color: var(--ink-soft); flex: none; white-space: nowrap; }
+.rc-scale { display: flex; gap: 4px; flex-wrap: wrap; margin-left: 2px; }
+.rc-scale span {
+  font-family: 'JetBrains Mono', monospace; font-size: .66rem; color: var(--ink-dim);
+  background: var(--fill-2); padding: 1px 6px; border-radius: 4px;
+}
+.rc-top-tag {
+  font-size: .66rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
+  color: var(--acc-ink); background: var(--hi-soft); padding: 2px 8px; border-radius: 20px; flex: none;
+  white-space: nowrap;
+}
+.rc-actions { display: flex; align-items: center; gap: 2px; margin-left: auto; flex: none; }
+.rc-btn {
+  width: 24px; height: 24px; display: flex; align-items: center; justify-content: center;
+  border-radius: 6px; color: var(--ink-soft); font-size: .74rem; cursor: pointer; user-select: none;
+  transition: background .15s ease, color .15s ease;
+}
+.rc-btn:hover { background: var(--fill-3); color: var(--ink); }
+.rc-btn.dis { opacity: .3; pointer-events: none; }
+.rc-btn.rm:hover { background: var(--bad-soft); color: var(--bad); }
+
+.rc-add { position: relative; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.rc-menu { display: none; position: absolute; top: calc(100% + 6px); left: 0; z-index: 30; min-width: 260px; max-height: 320px; overflow: auto; padding: 6px; }
+.rc-add.open .rc-menu { display: block; }
+.rc-mi { display: flex; align-items: center; gap: 10px; padding: 8px 9px; border-radius: 7px; cursor: pointer; transition: background .15s ease; }
+.rc-mi:hover { background: var(--fill-3); }
+.rc-mi .rc-name { flex: 1; }
+
 /* ---------- info note / callout ---------- */
 .note {
   font-family: 'Sora', sans-serif; font-size: .9rem; line-height: 1.45;
@@ -289,6 +404,14 @@ hr.dash { border: none; border-top: 1px solid var(--line); margin: 18px 0; }
 .note.blue { background: var(--info-soft); border-color: rgba(63,182,245,.35); }
 .note.red  { background: var(--bad-soft); border-color: rgba(255,111,97,.35); }
 .note-row { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; margin: 10px 0; }
+/* RaviloConfig's upload-failure notice — same red-alert treatment as .note.red, no
+   reference anywhere (not in the mockup either); this is new, not a port.
+   RESTORED 2026-07-31, again 2026-08-11, after a design-tool sync silently reverted this. */
+.alert-bad {
+  font-family: 'Sora', sans-serif; font-size: .85rem; line-height: 1.4;
+  background: var(--bad-soft); color: var(--bad); padding: 10px 12px;
+  border-radius: var(--radius-s); border: 1px solid rgba(255,111,97,.35);
+}
 
 /* floating toast (created by page scripts) */
 .toast {
