@@ -1,31 +1,85 @@
 #!/usr/bin/env bash
-# Phase 138 (FR-DB1) — regression fence for mobile-only CSS rules that a design-sync silently strips.
-# design/app/app.css is exported wholesale by the separate design-mockup project on every "updated
-# designs" sync (see CLAUDE.md "Watch the loop") — a rule added here, in the repo, with no matching
-# source in that project gets clobbered on the next export with no warning (this exact thing happened
-# to the Phase 138 dashboard mobile-hide rule the very next sync after it landed).
+# Regression fence for hand-authored CSS that a design-sync silently strips.
 #
-# Each line below is one rule this repo depends on that a sync has no way to know about. Add a line
-# whenever a design-sync-fragile CSS fix lands. Exits non-zero if any listed selector/declaration pair
-# is missing from design/app/app.css.
+# design/app/*.css is exported wholesale by the separate design-mockup project on every "updated
+# designs" sync (see CLAUDE.md "Watch the loop") — a rule added here, in the repo, with no matching
+# source in that project gets clobbered on the next export with no warning.
+#
+# This has now happened EIGHT times (2026-07-13, 07-31, 08-02, 08-07, 08-10 ×2, 08-11, 08-13), wiping
+# the same blocks over and over. Prose warnings did not stop it: the CLAUDE.md warning added after the
+# 3rd incident was followed by four more. This script is the technical fence instead — it was created
+# after the 2nd incident (Phase 138) but only ever tracked ONE rule, so it kept passing while
+# everything else was being wiped. It now covers every block a sync has actually destroyed.
+#
+# ADD A LINE HERE whenever a design-sync-fragile CSS fix lands in this repo. That is the whole point of
+# this file; a fix that isn't listed here is one sync away from silently disappearing again.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-CSS="design/app/app.css"
 fail=0
 
+# check <file> <description> <literal-substring-that-must-be-present>
 check() {
-  local desc="$1" pattern="$2"
-  if ! grep -qF "$pattern" "$CSS"; then
-    echo "MISSING      $desc  (pattern not found in $CSS: $pattern)"
+  local file="$1" desc="$2" pattern="$3"
+  if ! grep -qF "$pattern" "$file"; then
+    echo "MISSING      $desc"
+    echo "             (not found in $file: $pattern)"
     fail=1
   fi
 }
 
+APP="design/app/app.css"
+DETAIL="design/app/detail.css"
+WF="design/app/wf.css"
+
+# ---- app.css -------------------------------------------------------------------------------------
 # Phase 138 — "Recently processed" + "Quick actions" are desktop-only on the Dashboard.
-check "dashboard mobile-hide (.dash-sidecol)" ".dash-sidecol { display: none; }"
+check "$APP" "dashboard mobile-hide (.dash-sidecol)" \
+  ".dash-sidecol { display: none; }"
+# minmax(0, 1fr), not bare 1fr: without it any unwrapped long string (a series title, a raw filename)
+# becomes the main column's automatic minimum and blows the whole page wider than the viewport.
+check "$APP" "shell grid width fix, desktop (.shell minmax)" \
+  "grid-template-columns: 248px minmax(0, 1fr)"
+check "$APP" "shell grid width fix, mobile (.shell minmax)" \
+  ".shell { grid-template-columns: minmax(0, 1fr); }"
+# Phase 148 — collapsible sidebar nav groups (.group-label doubles as a <button>).
+check "$APP" "sidebar collapsible nav groups (.nav-group)" \
+  ".app-side .nav-group { display: flex; flex-direction: column; }"
+check "$APP" "sidebar nav group toggle (.group-toggle)" \
+  ".app-side .group-label.group-toggle"
+check "$APP" "sidebar nav group chevron (.grp-chev)" \
+  ".app-side .nav-group.collapsed .grp-chev"
+
+# ---- detail.css ----------------------------------------------------------------------------------
+# Phase 44 — the NFO raw viewer (tree + pane) on media/series detail.
+check "$DETAIL" "NFO raw viewer layout (.nfo-layout)" ".nfo-layout {"
+check "$DETAIL" "NFO raw viewer tree (.nfo-tree)"     ".nfo-tree {"
+check "$DETAIL" "NFO raw viewer caret (.nfo-caret)"   ".nfo-caret {"
+
+# ---- wf.css --------------------------------------------------------------------------------------
+# Phase 117/146 — dashboard "Needs your attention" breakdown grid.
+check "$WF" "dashboard attention breakdown (.attn-breakdown)" ".attn-breakdown {"
+check "$WF" "dashboard attention breakdown item (.abk)"       ".abk {"
+# Selected-filter-chip state — Library's .active-chip and Activity's .act.
+check "$WF" "selected filter chip (.active-chip / .act)" ".chip.active-chip, .chip.act"
+# Activity — worker dots + job rows + the job-queue block.
+check "$WF" "activity worker dot (.wk-dot)" ".wk-dot {"
+check "$WF" "activity job row (.jobrow)"    ".jobrow {"
+check "$WF" "activity job-queue block (.jq-*)" ".jq-"
+# Dashboard/Library hero thumbnail.
+check "$WF" "hero thumbnail (.hero-thumb)" ".hero-thumb {"
+# Settings — age-rating cascade editor (Phase 155).
+check "$WF" "age-rating cascade list (.rc-list)" ".rc-list {"
+check "$WF" "age-rating cascade item (.rc-item)" ".rc-item {"
+# Error/alert banner.
+check "$WF" "alert banner (.alert-bad)" ".alert-bad {"
 
 if [ "$fail" -eq 0 ]; then
-  echo "OK — every design-sync-fragile CSS rule tracked here is present in $CSS."
+  echo "OK — every design-sync-fragile CSS rule tracked here is present."
+else
+  echo
+  echo "A design sync has almost certainly clobbered hand-authored CSS again."
+  echo "Fix: git diff <pre-sync-ref> <sync-ref> -- design/app/{app,detail,wf}.css to confirm it is pure"
+  echo "regression, then restore with:  git diff <sync-ref> <pre-sync-ref> -- design/app/*.css | git apply"
 fi
 exit "$fail"
