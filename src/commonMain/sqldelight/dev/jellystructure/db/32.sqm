@@ -1,0 +1,34 @@
+-- Phase 163 (Intro & credits editor) — replaces the flat SegmentMarkers blob field with a real
+-- per-kind table, plus a table for the raw detection evidence (black frames, silences, fingerprint
+-- match spans, losing chapter candidates) that detect_segments already computes internally today but
+-- discards after collapsing to one final answer. See MediaSegment.sq for the full column docs.
+CREATE TABLE media_segment (
+    item_id TEXT NOT NULL,
+    episode_key TEXT NOT NULL DEFAULT '',
+    episode_number INTEGER NOT NULL DEFAULT 0,
+    kind TEXT NOT NULL,
+    start_ms INTEGER NOT NULL,
+    end_ms INTEGER,
+    source TEXT,
+    confidence REAL,
+    locked INTEGER NOT NULL DEFAULT 0,
+    checked_at INTEGER,
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY (item_id, episode_key, episode_number, kind)
+);
+CREATE INDEX media_segment_item ON media_segment(item_id);
+
+CREATE TABLE segment_evidence (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    item_id TEXT NOT NULL,
+    episode_key TEXT NOT NULL DEFAULT '',
+    episode_number INTEGER NOT NULL DEFAULT 0,
+    kind TEXT NOT NULL,
+    evidence_type TEXT NOT NULL,
+    start_ms INTEGER NOT NULL,
+    end_ms INTEGER,
+    detail TEXT,
+    accepted INTEGER NOT NULL DEFAULT 0,
+    recorded_at INTEGER NOT NULL
+);
+CREATE INDEX segment_evidence_lookup ON segment_evidence(item_id, episode_key, episode_number);

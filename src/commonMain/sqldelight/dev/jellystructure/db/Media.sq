@@ -72,6 +72,17 @@ UPDATE media SET last_checked = :last_checked WHERE id = :id;
 updateSearchText:
 UPDATE media SET search_text = :search_text WHERE id = :id;
 
+-- Phase 163 — a cheap point-update for has_segments, called by MediaSegmentStore after every write/
+-- delete to media_segment, instead of decoding+re-encoding the whole JSON blob just to flip one flag.
+updateHasSegments:
+UPDATE media SET has_segments = :has_segments WHERE id = :id;
+
+-- Phase 163 — read the current has_segments value so upsertItemDbOnly can carry it forward on an
+-- unrelated item write instead of recomputing it from the now-stale SegmentMarkers blob (which would
+-- silently stomp MediaSegmentStore's own point-update the next time anything else touches this item).
+getHasSegments:
+SELECT has_segments FROM media WHERE id = :id;
+
 walCheckpoint:
 PRAGMA wal_checkpoint(TRUNCATE);
 

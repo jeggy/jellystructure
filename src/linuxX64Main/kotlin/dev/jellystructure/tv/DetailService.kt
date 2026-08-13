@@ -5,12 +5,14 @@ import dev.jellystructure.auth.JellyfinClient
 import dev.jellystructure.config.ConfigStore
 import dev.jellystructure.media.ArtworkDownloader
 import dev.jellystructure.media.DuplicateEpisodes
+import dev.jellystructure.media.MediaSegmentStore
 import dev.jellystructure.media.MediaStore
+import dev.jellystructure.media.SegmentKind
 import dev.jellystructure.media.visibleTo
 import dev.jellystructure.model.Episode
 import dev.jellystructure.model.MediaItem
 import dev.jellystructure.model.MediaKind
-import dev.jellystructure.model.SegmentMarkers
+import dev.jellystructure.model.Stinger
 import dev.jellystructure.shared.tv.CardPlayState
 import dev.jellystructure.shared.tv.MediaCard
 import dev.jellystructure.shared.tv.MovieDetail
@@ -41,6 +43,7 @@ class DetailService(
     private val jellyfinClient: JellyfinClient,
     private val configStore: ConfigStore,
     private val artwork: ArtworkDownloader,
+    private val segmentStore: MediaSegmentStore,
 ) {
     suspend fun getMovieDetail(device: DeviceData, jellyfinId: String): MovieDetail? {
         val item = mediaStore.resolveByJellyfinId(jellyfinId) ?: return null
@@ -69,7 +72,7 @@ class DetailService(
             trailer            = item.tvTrailer(),  // Phase 130
             imdbRating         = item.tvImdbRating(),  // Phase 131
             originalLanguage   = item.originalLanguage,  // R181 — player's "Dubbed" audio badge
-            segments           = item.segments.toTv(),  // Phase 150
+            segments           = toTv(item.id, "", 0, item.segments.stinger),  // Phase 150/163
         )
     }
 
@@ -115,7 +118,7 @@ class DetailService(
                     partCount = ep.partCount,
                     chapterStartMs = ep.chapterStartMs,
                     hasChapters = ep.hasChapters,
-                    segments = ep.segments.toTv(),  // Phase 150
+                    segments = toTv(item.id, ep.filename, ep.episodeNumber ?: 0, ep.segments.stinger),  // Phase 150/163
                 )
             }
             // Last line of defence: whatever the metadata says, two episodes with the same id can never
@@ -253,15 +256,30 @@ class DetailService(
     private fun MediaItem.tvImdbRating(): TvImdbRating? =
         imdbRating?.let { TvImdbRating(aggregateRating = it.aggregateRating, voteCount = it.voteCount) }
 
-    /** Phase 150: catalog-only — the stored segment markers (Episode's own or a movie's), straight off
-     *  the in-memory model. An extension on the server-side [SegmentMarkers] itself (not [MediaItem])
-     *  since it's shared by both the per-episode and per-movie mapping call sites above. */
-    private fun SegmentMarkers.toTv(): TvSegmentMarkers = TvSegmentMarkers(
-        introStartMs = introStartMs,
-        introEndMs = introEndMs,
-        creditsStartMs = creditsStartMs,
-        stinger = stinger?.let { TvStinger(atMs = it.atMs, kind = it.kind) },
-    )
+    /** Phase 150, rewritten Phase 163 — the resolved intro/credits markers off `media_segment`
+     *  (`episodeKey`/`episodeNumber` = `""`/`0` for a movie, matching the table's own sentinel
+     *  convention), shared by both the per-episode and per-movie mapping call sites above. `stinger`
+     *  prefers a real timed `media_segment(kind='stinger')` row — nothing writes one yet, this phase
+     *  doesn't add a stinger detector, but the trim view's manual edit path (kind is one of
+     *  [SegmentKind.ALL]) can create one — and falls back to the legacy TMDB-keyword presence flag
+     *  ([legacyStinger], `atMs == null`) untouched since Phase 150. */
+    private fun toTv(itemId: String, episodeKey: String, episodeNumber: Int, legacyStinger: Stinger?): TvSegmentMarkers {
+        val rows = segmentStore.segmentsForEpisode(itemId, episodeKey, episodeNumber)
+        val intro = rows.firstOrNull { it.kind == SegmentKind.INTRO }
+        val credits = rows.firstOrNull { it.kind == SegmentKind.CREDITS }
+        val stingerRow = rows.firstOrNull { it.kind == SegmentKind.STINGER }
+        val stinger = when {
+            stingerRow != null -> TvStinger(atMs = stingerRow.startMs, kind = legacyStinger?.kind ?: "after")
+            legacyStinger != null -> TvStinger(atMs = legacyStinger.atMs, kind = legacyStinger.kind)
+            else -> null
+        }
+        return TvSegmentMarkers(
+            introStartMs = intro?.startMs,
+            introEndMs = intro?.endMs,
+            creditsStartMs = credits?.startMs,
+            stinger = stinger,
+        )
+    }
 }
 
 private const val CAST_LIMIT = 20

@@ -29,6 +29,13 @@ val DEFAULT_CHAPTER_KEYWORDS: List<ChapterKeyword> = listOf(
     ChapterKeyword("previously", ChapterSegmentKind.INTRO),
 )
 
+/** Phase 163 (dev-review addendum §2) — one chapter that matched a keyword, kept whether or not it won
+ *  (the two winners aside, every other keyword-matching chapter used to be discarded the moment
+ *  [SegmentDetection.fromChapters] picked its `firstOrNull`). */
+data class ChapterEvidencePoint(val kind: ChapterSegmentKind, val startMs: Long, val endMs: Long?, val title: String?, val accepted: Boolean)
+
+data class ChapterDetectionResult(val markers: SegmentMarkers, val evidence: List<ChapterEvidencePoint>)
+
 object SegmentDetection {
     /**
      * FR-SEG1-2 — pattern-match chapter titles against [keywords]. Near-zero cost: the chapters are
@@ -42,7 +49,7 @@ object SegmentDetection {
      *
      * Returns null when nothing matched (the caller falls through to the ffmpeg heuristic).
      */
-    fun fromChapters(chapters: List<ChapterMarker>, keywords: List<ChapterKeyword> = DEFAULT_CHAPTER_KEYWORDS): SegmentMarkers? {
+    fun fromChapters(chapters: List<ChapterMarker>, keywords: List<ChapterKeyword> = DEFAULT_CHAPTER_KEYWORDS): ChapterDetectionResult? {
         if (chapters.isEmpty()) return null
 
         fun matches(title: String?, kind: ChapterSegmentKind): Boolean {
@@ -54,12 +61,27 @@ object SegmentDetection {
         val introChapter = chapters.firstOrNull { matches(it.title, ChapterSegmentKind.INTRO) }
         if (creditsChapter == null && introChapter == null) return null
 
-        return SegmentMarkers(
-            introStartMs = introChapter?.startMs,
-            introEndMs = introChapter?.endMs,
-            creditsStartMs = creditsChapter?.startMs,
-            source = "chapter",
-            confidence = null,  // an exact marker needs no confidence score (see SegmentMarkers doc)
+        // Phase 163 — every OTHER keyword-matching chapter (both kinds), tagged accepted only for the
+        // two that actually won. Rejected credits matches inside the first minute are included too —
+        // they're exactly the kind of near-miss an operator would want to see in the evidence lane.
+        val evidence = chapters.mapNotNull { ch ->
+            val kind = when {
+                matches(ch.title, ChapterSegmentKind.CREDITS) -> ChapterSegmentKind.CREDITS
+                matches(ch.title, ChapterSegmentKind.INTRO) -> ChapterSegmentKind.INTRO
+                else -> return@mapNotNull null
+            }
+            ChapterEvidencePoint(kind, ch.startMs, ch.endMs, ch.title, accepted = ch === creditsChapter || ch === introChapter)
+        }
+
+        return ChapterDetectionResult(
+            markers = SegmentMarkers(
+                introStartMs = introChapter?.startMs,
+                introEndMs = introChapter?.endMs,
+                creditsStartMs = creditsChapter?.startMs,
+                source = "chapter",
+                confidence = null,  // an exact marker needs no confidence score (see SegmentMarkers doc)
+            ),
+            evidence = evidence,
         )
     }
 
@@ -69,14 +91,8 @@ object SegmentDetection {
      * needed). Returns null when nothing coincides in the scanned window — the caller leaves
      * `creditsStartMs` unset, so the player keeps today's end-of-file fallback.
      */
-    suspend fun fromCreditsHeuristic(filePath: String, durationSec: Double): SegmentMarkers? {
-        val hit = FfmpegRunner.detectCreditsStart(filePath, durationSec) ?: return null
-        return SegmentMarkers(
-            creditsStartMs = hit.startMs,
-            source = "heuristic",
-            confidence = hit.confidence,
-        )
-    }
+    suspend fun fromCreditsHeuristic(filePath: String, durationSec: Double): FfmpegRunner.CreditsHeuristicResult? =
+        FfmpegRunner.detectCreditsStart(filePath, durationSec)
 
     /**
      * FR-SEG1-6 — TMDB's `duringcreditsstinger`/`aftercreditsstinger` keywords, matched by NAME (TMDB
@@ -256,7 +272,10 @@ object SegmentDetection {
     // are already frame-quantized (~124ms) by findIntroMatch; this only needs to absorb small
     // offset-search jitter between different pairings of the same episode, not distinguish a
     // genuinely different intro.
-    private const val CLUSTER_TOLERANCE_MS = 5_000L
+    // internal (not private): Phase 163's evidence capture reconstructs winning-cluster membership in
+    // PipelineStepOps using this same tolerance, rather than changing aggregateIntroCandidates's return
+    // shape just to carry membership out explicitly.
+    internal const val CLUSTER_TOLERANCE_MS = 5_000L
 
     /** One episode's intro-bounds guess from a single successful pairwise comparison — that
      *  episode's own `aStartMs/aEndMs` or `bStartMs/bEndMs` (whichever side it was) from a

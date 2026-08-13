@@ -1,0 +1,106 @@
+-- Phase 163 (Intro & credits editor) — one row per (item, episode, kind): Recap · Intro · Preview
+-- (next time) · Credits (Outro) · Stinger (After-credits, Outro-protected). Replaces the old flat
+-- SegmentMarkers blob field embedded per Episode/MediaItem, which could only hold one intro+one
+-- credits value for a whole title with one shared source/confidence/lock — see the phase-163 dev-review
+-- addendum for why that's the thing being fixed. item_id = media.id (the slug), never jellyfinId.
+-- episode_key = Episode.filename, '' for a movie; episode_number disambiguates a shared multi-episode
+-- filename, 0 for a movie. No nullable PK columns — SQLite's NULL-in-PK uniqueness gotcha (NULL != NULL
+-- in a rowid table's uniqueness check) is avoided entirely by these '' / 0 sentinels rather than NULL.
+--
+-- Stinger stays OUT of this table when it's only a TMDB-keyword presence flag with no known time
+-- (Stinger.atMs = null in the MediaItem/Episode blob, unchanged since phase 150) — a kind='stinger' row
+-- here only exists once a real time is known (detected or hand-placed).
+CREATE TABLE media_segment (
+    item_id TEXT NOT NULL,
+    episode_key TEXT NOT NULL DEFAULT '',
+    episode_number INTEGER NOT NULL DEFAULT 0,
+    kind TEXT NOT NULL,             -- recap | intro | preview | credits | stinger
+    start_ms INTEGER NOT NULL,
+    end_ms INTEGER,
+    source TEXT,                    -- fingerprint | heuristic | chapter | jellyfin | tmdb | manual
+    confidence REAL,
+    locked INTEGER NOT NULL DEFAULT 0,
+    checked_at INTEGER,
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY (item_id, episode_key, episode_number, kind)
+);
+CREATE INDEX media_segment_item ON media_segment(item_id);
+
+-- Raw detection evidence — the black-frame/silence intervals, fingerprint match spans (with the paired
+-- episode's identity), and losing chapter-keyword candidates that detect_segments already computes
+-- internally before collapsing to one final answer. Recorded alongside every detect run (cleared for
+-- that (item, episode, kind) first, so re-detecting doesn't accumulate stale rows) so the trim view's
+-- evidence lane can show *why* the detector said what it said, not just the final number.
+CREATE TABLE segment_evidence (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    item_id TEXT NOT NULL,
+    episode_key TEXT NOT NULL DEFAULT '',
+    episode_number INTEGER NOT NULL DEFAULT 0,
+    kind TEXT NOT NULL,
+    evidence_type TEXT NOT NULL,    -- black_frame | silence | fingerprint_match | chapter_candidate
+    start_ms INTEGER NOT NULL,
+    end_ms INTEGER,
+    detail TEXT,                    -- free-form JSON, e.g. {"pairedEpisode":"S05E12"} / {"title":"Recap"}
+    accepted INTEGER NOT NULL DEFAULT 0,   -- did this evidence point become the actual segment?
+    recorded_at INTEGER NOT NULL
+);
+CREATE INDEX segment_evidence_lookup ON segment_evidence(item_id, episode_key, episode_number);
+
+-- ===== media_segment =====
+
+upsertSegment:
+INSERT OR REPLACE INTO media_segment(item_id, episode_key, episode_number, kind, start_ms, end_ms, source, confidence, locked, checked_at, updated_at)
+VALUES (:item_id, :episode_key, :episode_number, :kind, :start_ms, :end_ms, :source, :confidence, :locked, :checked_at, :updated_at);
+
+segmentsForItem:
+SELECT * FROM media_segment WHERE item_id = :item_id;
+
+segmentsForEpisode:
+SELECT * FROM media_segment WHERE item_id = :item_id AND episode_key = :episode_key AND episode_number = :episode_number;
+
+getSegment:
+SELECT * FROM media_segment WHERE item_id = :item_id AND episode_key = :episode_key AND episode_number = :episode_number AND kind = :kind;
+
+isLocked:
+SELECT locked FROM media_segment WHERE item_id = :item_id AND episode_key = :episode_key AND episode_number = :episode_number AND kind = :kind;
+
+setLocked:
+UPDATE media_segment SET locked = :locked, updated_at = :updated_at
+WHERE item_id = :item_id AND episode_key = :episode_key AND episode_number = :episode_number AND kind = :kind;
+
+setChecked:
+UPDATE media_segment SET checked_at = :checked_at, updated_at = :updated_at
+WHERE item_id = :item_id AND episode_key = :episode_key AND episode_number = :episode_number;
+
+deleteSegment:
+DELETE FROM media_segment WHERE item_id = :item_id AND episode_key = :episode_key AND episode_number = :episode_number AND kind = :kind;
+
+deleteSegmentsForItem:
+DELETE FROM media_segment WHERE item_id = :item_id;
+
+deleteSegmentsForEpisode:
+DELETE FROM media_segment WHERE item_id = :item_id AND episode_key = :episode_key AND episode_number = :episode_number;
+
+anyUsableSegment:
+SELECT EXISTS(SELECT 1 FROM media_segment WHERE item_id = :item_id AND kind IN ('intro', 'credits')) AS has_segments;
+
+countAll:
+SELECT COUNT(*) FROM media_segment;
+
+lowConfidenceSegments:
+SELECT * FROM media_segment WHERE source = 'heuristic' AND confidence IS NOT NULL AND confidence < :threshold;
+
+-- ===== segment_evidence =====
+
+insertEvidence:
+INSERT INTO segment_evidence(item_id, episode_key, episode_number, kind, evidence_type, start_ms, end_ms, detail, accepted, recorded_at)
+VALUES (:item_id, :episode_key, :episode_number, :kind, :evidence_type, :start_ms, :end_ms, :detail, :accepted, :recorded_at);
+
+evidenceForEpisode:
+SELECT * FROM segment_evidence WHERE item_id = :item_id AND episode_key = :episode_key AND episode_number = :episode_number ORDER BY start_ms;
+
+clearEvidenceForKind:
+DELETE FROM segment_evidence WHERE item_id = :item_id AND episode_key = :episode_key AND episode_number = :episode_number AND kind = :kind;
+
+clearEvidenceForItem:
+DELETE FROM segment_evidence WHERE item_id = :item_id;

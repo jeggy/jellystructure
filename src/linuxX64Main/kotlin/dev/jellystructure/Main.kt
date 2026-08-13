@@ -109,6 +109,10 @@ fun main() = runBlocking {
     jsTagStore.load()
     val mediaStore = MediaStore(db, jsTagStore, configStore)
     mediaStore.load()
+    // Phase 163 (Intro & credits editor) — one row per (item, episode, kind), replacing the old flat
+    // SegmentMarkers blob field. Backfilled from mediaStore's already-loaded items just below.
+    val mediaSegmentStore = dev.jellystructure.media.MediaSegmentStore(db)
+    dev.jellystructure.media.backfillMediaSegments(mediaStore, mediaSegmentStore)
     // Catch exceptions escaping fire-and-forget coroutines so one failure can't abort the whole
     // Kotlin/Native process (unhandled → SIGABRT/134); log and keep running. See Server.appScope.
     val rootScope = CoroutineScope(SupervisorJob() + CoroutineExceptionHandler { _, e ->
@@ -192,7 +196,7 @@ fun main() = runBlocking {
     raviloConfigService.migrateAllLegacyBehaviourFields()  // R162: one-time, idempotent
     val homeFeedService = HomeFeedService(mediaStore, raviloConfigService, jellyfinClient, configStore, tvEventBus)
     val browseService = BrowseService(mediaStore, jellyfinClient, configStore, raviloConfigService)
-    val detailService = DetailService(mediaStore, jellyfinClient, configStore, artworkDownloader)
+    val detailService = DetailService(mediaStore, jellyfinClient, configStore, artworkDownloader, mediaSegmentStore)
     val playbackService = PlaybackService(mediaStore, jellyfinClient, configStore)
     val mediaHistory = MediaHistory(db)
     val logoDownloader = LogoDownloader(dataDir, tmdbClient)
@@ -219,7 +223,7 @@ fun main() = runBlocking {
     if (configStore.current.ingest.webhookSecret.isBlank()) {
         rootScope.launch { configStore.update(configStore.current.copy(ingest = configStore.current.ingest.copy(webhookSecret = dev.jellystructure.auth.generateSecureToken()))) }
     }
-    val realtimeIngest = dev.jellystructure.media.RealtimeIngestService(scanner, mediaStore, jellyfinClient, configStore, artworkDownloader, rootScope, broadcaster, mediaHistory, arrRescan, sonarrEnrich, imdbClient, fingerprintService)
+    val realtimeIngest = dev.jellystructure.media.RealtimeIngestService(scanner, mediaStore, jellyfinClient, configStore, artworkDownloader, rootScope, broadcaster, mediaHistory, arrRescan, sonarrEnrich, imdbClient, fingerprintService, mediaSegmentStore)
     val libraryListener = dev.jellystructure.tv.JellyfinLibraryListener(configStore, jellyfinClient, mediaStore, realtimeIngest, rootScope)
     libraryListener.start()
     // Phase 118 (FR C.4) — FD telemetry: the durable defense against the unfixable Ktor Native
@@ -255,7 +259,7 @@ fun main() = runBlocking {
     val shutdown = startServer(
         configStore, sessionService, raviloDeviceService, raviloConfigService, channelLogoStore, homeFeedService, browseService, detailService, playbackService, jellyfinClient, mediaStore, scanner,
         artworkDownloader, tmdbClient, scanTracker, mediaHistory, activityLog, broadcaster,
-        frontendDir, raviloWebDir = raviloWebDir, port = port, scanDispatcher = scanDispatcher, effectiveScanThreads = effectiveScanThreads, jsTagStore = jsTagStore, seedingGuard = seedingGuard, seedingSnapshot = seedingSnapshot, logoDownloader = logoDownloader, qbClient = qbClient, arrClient = arrClient, arrRescan = arrRescan, sonarrEnrich = sonarrEnrich, acquisitionService = acquisitionService, seerrClient = seerrClient, bazarrClient = bazarrClient, tvEventBus = tvEventBus, imageProxyService = imageProxyService, mediaJobQueue = mediaJobQueue, sessionBridge = sessionBridge, apiKeyStore = apiKeyStore, realtimeIngest = realtimeIngest, libraryListener = libraryListener, fdWatchdog = fdWatchdog, imdbClient = imdbClient, upcomingService = upcomingService, requestLanguageService = requestLanguageService, requestIntentStore = requestIntentStore, liveTvService = liveTvService, fingerprintService = fingerprintService,
+        frontendDir, raviloWebDir = raviloWebDir, port = port, scanDispatcher = scanDispatcher, effectiveScanThreads = effectiveScanThreads, jsTagStore = jsTagStore, seedingGuard = seedingGuard, seedingSnapshot = seedingSnapshot, logoDownloader = logoDownloader, qbClient = qbClient, arrClient = arrClient, arrRescan = arrRescan, sonarrEnrich = sonarrEnrich, acquisitionService = acquisitionService, seerrClient = seerrClient, bazarrClient = bazarrClient, tvEventBus = tvEventBus, imageProxyService = imageProxyService, mediaJobQueue = mediaJobQueue, sessionBridge = sessionBridge, apiKeyStore = apiKeyStore, realtimeIngest = realtimeIngest, libraryListener = libraryListener, fdWatchdog = fdWatchdog, imdbClient = imdbClient, upcomingService = upcomingService, requestLanguageService = requestLanguageService, requestIntentStore = requestIntentStore, liveTvService = liveTvService, fingerprintService = fingerprintService, mediaSegmentStore = mediaSegmentStore,
         towoStore = towoStore, towoRunnerRegistry = towoRunnerRegistry, towoEventBus = towoEventBus, towoService = towoService,
     )
 
@@ -303,7 +307,7 @@ fun main() = runBlocking {
                 "▶ Scheduled ${if (active != null) "pipeline" else "scan"} run started", scanTracker,
             ) {
                 if (active != null) {
-                    executePipeline(active, jobId, mediaStore, scanner, scanTracker, broadcaster, configStore, jellyfinClient, scanDispatcher, artworkDownloader, arrRescan, sonarrEnrich, imdbClient, fingerprintService)
+                    executePipeline(active, jobId, mediaStore, scanner, scanTracker, broadcaster, configStore, jellyfinClient, scanDispatcher, artworkDownloader, arrRescan, sonarrEnrich, imdbClient, fingerprintService, mediaSegmentStore)
                 } else {
                     runScan(jobId, emptySet(), mediaStore, scanner, scanTracker, broadcaster, configStore, jellyfinClient, scanDispatcher, artworkDownloader = if (cfg.behavior.fetchImages) artworkDownloader else null)
                 }
@@ -430,6 +434,7 @@ suspend fun executePipeline(
     sonarrEnrich: SonarrEnrichService? = null,
     imdbClient: dev.jellystructure.imdb.ImdbClient? = null,
     fingerprintService: dev.jellystructure.media.FingerprintService? = null,
+    mediaSegmentStore: dev.jellystructure.media.MediaSegmentStore,
     // "Run pipeline now (full)" — every step downstream of scan_files (pull_tmdb, fetch_artwork,
     // sync_imdb_ratings, write_nfo, sync_jellyfin, …) only ever sees `workingSet`, i.e. whatever
     // scan_files' freshness filter let through. That's correct for "keep already-scanned metadata
@@ -649,25 +654,20 @@ suspend fun executePipeline(
                 }
             }
             "detect_segments" -> {
-                // Phase 150 (FR-SEG1-2/3/5) — "missing":
-                // - Movie: both fields still null (the chapter/heuristic tier's own guard —
-                //   `detectForPath` below — already stops once EITHER is set, and fingerprinting is
-                //   series-only per FR-SEG1-4, so a movie with just creditsStartMs filled has nothing
-                //   left any tier will ever fill; including it here would reprocess it every scan for no
-                //   reason).
-                // - Series: any non-grouped episode still missing EITHER field — an OR, since the
-                //   chapter/heuristic tier usually fills creditsStartMs long before the separate, heavier
-                //   fingerprint tier fills introStartMs, so a series can't be dropped from "missing" the
-                //   moment just one of the two fields is set on its episodes.
-                // PipelineStepOps itself re-checks per-field (and, for fingerprinting, per-episode)
-                // before doing any work, so "all" scope safely re-runs detection only where a field is
-                // still actually empty — it never re-detects (or overwrites) something a
-                // chapter/heuristic/fingerprint/manual source already filled.
-                fun needsDetection(item: dev.jellystructure.model.MediaItem): Boolean = when (item.kind) {
-                    dev.jellystructure.model.MediaKind.MOVIE ->
-                        item.segments.introStartMs == null && item.segments.creditsStartMs == null
-                    dev.jellystructure.model.MediaKind.TV_SHOW -> item.episodes.any {
-                        it.partCount == 1 && (it.segments.introStartMs == null || it.segments.creditsStartMs == null)
+                // Phase 150 (FR-SEG1-2/3/5), rewritten Phase 163 for the per-kind media_segment table —
+                // "missing": a movie/episode with a real gap (a writable-if-not-locked kind with no row
+                // yet). PipelineStepOps itself re-checks per-kind lock/existence (and, for
+                // fingerprinting, per-episode) before doing any work with force=false, so "all" scope
+                // safely re-runs detection only where a kind is still actually empty — it never
+                // re-detects (or overwrites) something a chapter/heuristic/fingerprint/manual source, or
+                // a lock, already covers.
+                fun needsDetection(item: dev.jellystructure.model.MediaItem): Boolean {
+                    fun missing(episodeKey: String, episodeNumber: Int) =
+                        mediaSegmentStore.getSegment(item.id, episodeKey, episodeNumber, dev.jellystructure.media.SegmentKind.INTRO) == null ||
+                        mediaSegmentStore.getSegment(item.id, episodeKey, episodeNumber, dev.jellystructure.media.SegmentKind.CREDITS) == null
+                    return when (item.kind) {
+                        dev.jellystructure.model.MediaKind.MOVIE -> missing("", 0)
+                        dev.jellystructure.model.MediaKind.TV_SHOW -> item.episodes.any { it.partCount == 1 && missing(it.filename, it.episodeNumber ?: 0) }
                     }
                 }
                 val toProcess = if (step.scope == "all") workingSet else workingSet.filter(::needsDetection)
@@ -690,7 +690,7 @@ suspend fun executePipeline(
                 runPipelineStepPool(
                     jobId, step.step, toProcess, { pipelineStepConcurrency(step.step, configStore.current.behavior.scanWorkers) },
                     scanTracker, broadcaster, labelOf = { it.title },
-                ) { item, _ -> dev.jellystructure.media.PipelineStepOps.detectChapterAndHeuristic(item, store, step.chapterKeywords) }
+                ) { item, _ -> dev.jellystructure.media.PipelineStepOps.detectChapterAndHeuristic(item, mediaSegmentStore, step.chapterKeywords) }
 
                 if (step.detectFingerprint && fingerprintService != null) {
                     val freshItems = toProcess.mapNotNull { store.get(it.id) }
@@ -702,10 +702,10 @@ suspend fun executePipeline(
                         jobId, step.step, seasonWorkItems, { pipelineStepConcurrency(step.step, configStore.current.behavior.scanWorkers) },
                         scanTracker, broadcaster, labelOf = { "${it.item.title} S${it.seasonEpisodes.first().seasonNumber?.toString()?.padStart(2, '0') ?: "??"}" },
                     ) { workItem, reportDetail ->
-                        dev.jellystructure.media.PipelineStepOps.detectIntroFingerprintsForSeason(workItem.item, store, fingerprintService, workItem.seasonEpisodes, reportDetail)
+                        dev.jellystructure.media.PipelineStepOps.detectIntroFingerprintsForSeason(workItem.item, mediaSegmentStore, fingerprintService, workItem.seasonEpisodes, reportDetail = reportDetail)
                         // Phase 159 (FR-159-3) — outro/credits counterpart, same season-scoped work item
                         // so a 10-season show's outro pass also spreads across up to 10 worker slots.
-                        dev.jellystructure.media.PipelineStepOps.detectOutroFingerprintsForSeason(workItem.item, store, fingerprintService, workItem.seasonEpisodes, reportDetail)
+                        dev.jellystructure.media.PipelineStepOps.detectOutroFingerprintsForSeason(workItem.item, mediaSegmentStore, fingerprintService, workItem.seasonEpisodes, reportDetail = reportDetail)
                     }
                 }
             }
