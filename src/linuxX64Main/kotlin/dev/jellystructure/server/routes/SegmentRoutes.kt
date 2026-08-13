@@ -118,6 +118,50 @@ data class SegmentApplyRequest(val series: String, val season: Int, val kind: St
 @kotlinx.serialization.Serializable
 data class SegmentRedetectRequest(val series: String? = null, val season: Int? = null, val movie: String? = null, val items: List<SegmentEpisodeRef> = emptyList())
 
+@kotlinx.serialization.Serializable
+data class SegmentEvidenceDto(
+    val evidenceType: String,
+    val startMs: Long,
+    val endMs: Long? = null,
+    val detail: String? = null,
+    val accepted: Boolean = false,
+)
+
+/** One other episode in the same season, for the trim view's queue rail. */
+@kotlinx.serialization.Serializable
+data class SegmentRailItem(
+    val episodeKey: String = "",
+    val episodeNumber: Int = 0,
+    val code: String,
+    val title: String,
+    val durationSec: Double,
+    val segments: List<SegmentDto> = emptyList(),
+    val checked: Boolean = false,
+    val outlier: Boolean = false,
+)
+
+/** Step 4 — one title's (or one episode's) full detail for the trim view: its own segments + raw
+ *  detection evidence, plus (TV only) the rest of its season for the queue rail. */
+@kotlinx.serialization.Serializable
+data class SegmentTrimResponse(
+    val mediaId: String,
+    val itemTitle: String,
+    val seasonNumber: Int = 0,
+    val episodeKey: String = "",
+    val episodeNumber: Int = 0,
+    val code: String,
+    val title: String,
+    val durationSec: Double,
+    val kind: String,   // "tv" | "movie"
+    val partCount: Int = 1,
+    val segments: List<SegmentDto> = emptyList(),
+    val evidence: List<SegmentEvidenceDto> = emptyList(),
+    val checked: Boolean = false,
+    val rail: List<SegmentRailItem> = emptyList(),
+    val checkedCount: Int = 0,
+    val totalCount: Int = 0,
+)
+
 fun Route.segmentRoutes(store: MediaStore, segmentStore: MediaSegmentStore, configStore: ConfigStore, fingerprintService: FingerprintService?, appScope: CoroutineScope) {
     route("/segments") {
         get {
@@ -190,6 +234,25 @@ fun Route.segmentRoutes(store: MediaStore, segmentStore: MediaSegmentStore, conf
             val applied = applyConsensusToTargets(item, body.season, body.kind, body.targets, body.lock, segmentStore)
             if (!applied) return@post call.respond(HttpStatusCode.UnprocessableEntity)
             call.respond(HttpStatusCode.NoContent)
+        }
+
+        // Step 4 — the trim view's full detail. Movie: the title itself. TV: one episode + the rest of
+        // its season for the queue rail. Kept as distinct paths (not folded into the query-param GET
+        // above) since the response shape genuinely differs — a sheet row vs one title's full detail.
+        get("/{itemId}") {
+            val itemId = call.parameters["itemId"] ?: return@get call.respond(HttpStatusCode.BadRequest)
+            val item = store.get(itemId) ?: return@get call.respond(HttpStatusCode.NotFound)
+            if (item.kind != MediaKind.MOVIE) return@get call.respond(HttpStatusCode.BadRequest)
+            call.respond(movieTrim(item, segmentStore))
+        }
+
+        get("/{itemId}/episode") {
+            val itemId = call.parameters["itemId"] ?: return@get call.respond(HttpStatusCode.BadRequest)
+            val key = call.request.queryParameters["key"] ?: return@get call.respond(HttpStatusCode.BadRequest)
+            val n = call.request.queryParameters["n"]?.toIntOrNull() ?: 0
+            val item = store.get(itemId) ?: return@get call.respond(HttpStatusCode.NotFound)
+            val ep = item.episodes.firstOrNull { it.filename == key && (it.episodeNumber ?: 0) == n } ?: return@get call.respond(HttpStatusCode.NotFound)
+            call.respond(episodeTrim(item, ep, segmentStore))
         }
 
         // Fire-and-forget — detection can take a while (ffmpeg/fpcalc, throttled by ProcessGate like
@@ -356,6 +419,36 @@ private fun seasonSheet(item: MediaItem, season: Int, segmentStore: MediaSegment
 private fun movieSheet(item: MediaItem, segmentStore: MediaSegmentStore): SegmentSheetResponse {
     val row = movieRow(item, null, segmentStore)
     return SegmentSheetResponse(itemId = item.id, title = item.title, kind = "movie", episodes = listOf(row), stats = computeStats(listOf(row)))
+}
+
+private fun List<dev.jellystructure.media.SegmentEvidenceRow>.toEvidenceDtos(): List<SegmentEvidenceDto> =
+    map { SegmentEvidenceDto(evidenceType = it.evidenceType, startMs = it.startMs, endMs = it.endMs, detail = it.detail, accepted = it.accepted) }
+
+private fun movieTrim(item: MediaItem, segmentStore: MediaSegmentStore): SegmentTrimResponse {
+    val rows = segmentStore.segmentsForItem(item.id)
+    val evidence = segmentStore.evidenceForEpisode(item.id, "", 0)
+    val checked = rows.any { it.checkedAt != null }
+    return SegmentTrimResponse(
+        mediaId = item.id, itemTitle = item.title, code = item.title, title = item.title,
+        durationSec = durationSecOf(item.runtime, rows), kind = "movie", partCount = 1,
+        segments = rows.toDtos(), evidence = evidence.toEvidenceDtos(), checked = checked,
+        checkedCount = if (checked) 1 else 0, totalCount = 1,
+    )
+}
+
+private fun episodeTrim(item: MediaItem, ep: Episode, segmentStore: MediaSegmentStore): SegmentTrimResponse {
+    val season = ep.seasonNumber ?: 0
+    val seasonEpisodes = DuplicateEpisodes.deduped(item.episodes).filter { (it.seasonNumber ?: 0) == season }.sortedBy { it.episodeNumber ?: 0 }
+    val railRows = markOutliers(seasonEpisodes.map { episodeRow(item.id, null, it, segmentStore) })
+    val ownRow = railRows.first { it.episodeKey == ep.filename && it.episodeNumber == (ep.episodeNumber ?: 0) }
+    val evidence = segmentStore.evidenceForEpisode(item.id, ep.filename, ep.episodeNumber ?: 0)
+    return SegmentTrimResponse(
+        mediaId = item.id, itemTitle = item.title, seasonNumber = season, episodeKey = ep.filename, episodeNumber = ep.episodeNumber ?: 0,
+        code = ownRow.code, title = ep.title ?: ownRow.code, durationSec = ownRow.durationSec, kind = "tv", partCount = ep.partCount,
+        segments = ownRow.segments, evidence = evidence.toEvidenceDtos(), checked = ownRow.checked,
+        rail = railRows.map { SegmentRailItem(it.episodeKey, it.episodeNumber, it.code, it.title, it.durationSec, it.segments, it.checked, it.outlier) },
+        checkedCount = railRows.count { it.checked }, totalCount = railRows.size,
+    )
 }
 
 private fun matchesCrossLibraryFilter(row: SegmentEpisodeRow, filter: String): Boolean = when (filter) {

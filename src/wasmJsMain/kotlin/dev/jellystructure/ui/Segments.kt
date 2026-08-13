@@ -1,17 +1,24 @@
 package dev.jellystructure.ui
 
 import dev.jellystructure.Router
+import dev.jellystructure.api.EvType
 import dev.jellystructure.api.SegKind
 import dev.jellystructure.api.SegSource
 import dev.jellystructure.api.SegmentApi
+import dev.jellystructure.api.SegmentDto
 import dev.jellystructure.api.SegmentEpisodeRef
 import dev.jellystructure.api.SegmentEpisodeRow
+import dev.jellystructure.api.SegmentEvidenceDto
+import dev.jellystructure.api.SegmentRailItem
 import dev.jellystructure.api.SegmentSheetResponse
+import dev.jellystructure.api.SegmentTrimResponse
 import kotlinx.browser.document
 import kotlinx.browser.window
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
+import org.w3c.dom.Element
 import org.w3c.dom.HTMLElement
+import org.w3c.dom.events.KeyboardEvent
 import kotlin.math.roundToInt
 
 /**
@@ -64,14 +71,17 @@ private fun segBarsHtml(row: SegmentEpisodeRow): String {
     }
 }
 
-private fun statusFor(row: SegmentEpisodeRow): Pair<String, String> = when {
-    row.segments.isEmpty() -> "d-bad" to "nothing found — needs a look"
-    row.outlier -> "d-bad" to "disagrees with the season"
-    row.segments.any { it.source == SegSource.HEURISTIC && (it.confidence ?: 1.0) < 0.60 } && !row.checked ->
+private fun statusFrom(segments: List<SegmentDto>, checked: Boolean, outlier: Boolean): Pair<String, String> = when {
+    segments.isEmpty() -> "d-bad" to "nothing found — needs a look"
+    outlier -> "d-bad" to "disagrees with the season"
+    segments.any { it.source == SegSource.HEURISTIC && (it.confidence ?: 1.0) < 0.60 } && !checked ->
         "d-warn" to "guessed, not checked yet"
-    row.checked -> "d-ok" to "checked" + (if (row.segments.any { it.locked }) " · locked" else "")
+    checked -> "d-ok" to "checked" + (if (segments.any { it.locked }) " · locked" else "")
     else -> "d-idle" to "matched, not checked"
 }
+
+private fun statusFor(row: SegmentEpisodeRow) = statusFrom(row.segments, row.checked, row.outlier)
+private fun statusForRail(r: SegmentRailItem) = statusFrom(r.segments, r.checked, r.outlier)
 
 private var openIndex = 0
 private val picked = mutableSetOf<Int>()
@@ -86,22 +96,39 @@ private fun toast(msg: String) {
     window.setTimeout({ t.remove(); null }, 3100)
 }
 
+// Step 4 — trim-view state + the keydown listener are page-lifetime module state, not per-render
+// locals: the listener is attached once (document.body is replaced wholesale on every /segments visit,
+// but `document` itself never is) and always reads the latest currentTrimData/trimState rather than
+// closing over a stale render's data. currentTrimData is nulled outside the trim view so a stray
+// keypress on any other page (sheet, or after navigating away entirely) is always a safe no-op.
+private var currentTrimData: SegmentTrimResponse? = null
+private var currentTrimScope: CoroutineScope? = null
+private var keydownWired = false
+private var trimSelectedKind: String? = null
+private var trimLastEdge = "b"   // "a" | "b" — which edge , / . nudges next
+private var trimPlayheadMs = 0L
+
 fun renderSegments(scope: CoroutineScope, query: Map<String, String>) {
     val body = document.body ?: return
     body.innerHTML = """<div class="sx" id="seg-root"><div class="sxbar"><span class="sxsub">Loading…</span></div></div><div id="toasts"></div>"""
     openIndex = 0
     picked.clear()
+    currentTrimData = null
+    wireKeydownOnce()
 
     val series = query["series"]
     val season = query["season"]?.toIntOrNull()
     val movie = query["movie"]
     val filter = query["filter"]
     val episodeKey = query["episode"]
+    val episodeNumber = query["episodeNumber"]?.toIntOrNull() ?: 0
 
     scope.launch {
         when {
-            // TV episode trim view (step 4/5) — placeholder until that step lands later in this build.
-            series != null && episodeKey != null -> renderTrimPlaceholder()
+            series != null && episodeKey != null -> {
+                val data = SegmentApi.episodeTrim(series, episodeKey, episodeNumber)
+                if (data == null) renderSegmentsError() else renderTrim(data, scope)
+            }
             filter != null -> {
                 val sheet = SegmentApi.crossLibrarySheet(filter)
                 if (sheet == null) renderSegmentsError() else renderSheet(sheet, scope)
@@ -112,8 +139,8 @@ fun renderSegments(scope: CoroutineScope, query: Map<String, String>) {
             }
             // Movies have no season sheet (spec §A) — a bare ?movie= opens straight into the trim view.
             movie != null -> {
-                val sheet = SegmentApi.movieSheet(movie)
-                if (sheet == null) renderSegmentsError() else renderTrimPlaceholder(sheet)
+                val data = SegmentApi.movieTrim(movie)
+                if (data == null) renderSegmentsError() else renderTrim(data, scope)
             }
             else -> renderSegmentsError()
         }
@@ -128,6 +155,419 @@ private fun renderSegmentsError() {
           <p class="sxhint">Couldn't load this title's segments — it may have been removed from the library.</p>
         </div></div>
     """.trimIndent()
+}
+
+private val SRC_META = mapOf(
+    SegSource.FINGERPRINT to ("fp" to "matched across episodes"),
+    SegSource.HEURISTIC to ("he" to "guessed from black frames"),
+    SegSource.CHAPTER to ("ch" to "from a chapter mark"),
+    SegSource.JELLYFIN to ("jf" to "from Jellyfin"),
+    SegSource.TMDB to ("jf" to "from TMDB"),
+    SegSource.MANUAL to ("me" to "set by you"),
+)
+
+private fun fmtConf(c: Double): String {
+    val scaled = (c * 100).roundToInt().coerceIn(0, 999)
+    return "${scaled / 100}.${(scaled % 100).toString().padStart(2, '0')}"
+}
+
+private fun srcChipHtml(s: SegmentDto): String {
+    val (cls, label) = SRC_META[s.source] ?: return ""
+    val conf = s.confidence?.let { " · ${fmtConf(it)}" } ?: ""
+    return """<span class="src $cls">$label$conf</span>"""
+}
+
+/** Extracts one string field out of a segment_evidence `detail` JSON blob (e.g. `{"pairedEpisode":"S05E12"}`)
+ *  without pulling in a full JSON parser for a single-field, server-controlled payload. */
+private fun extractJsonField(json: String?, field: String): String? {
+    if (json == null) return null
+    val marker = "\"$field\":\""
+    val idx = json.indexOf(marker)
+    if (idx < 0) return null
+    val start = idx + marker.length
+    val end = json.indexOf('"', start)
+    return if (end < 0) null else json.substring(start, end)
+}
+
+private fun miniHtml(durationSec: Double, segments: List<SegmentDto>): String {
+    if (durationSec <= 0 || segments.isEmpty()) return """<div class="mini"></div>"""
+    val bars = segments.joinToString("") { s ->
+        val startSec = s.startMs / 1000.0
+        val endSec = (s.endMs ?: s.startMs) / 1000.0
+        val left = startSec / durationSec * 100
+        val width = ((endSec - startSec) / durationSec * 100).coerceAtLeast(1.2)
+        """<i style="left:${left}%;width:${width}%;background:${kindOf(s.kind).color}"></i>"""
+    }
+    return """<div class="mini">$bars</div>"""
+}
+
+private fun buildRuler(durationSec: Double): String {
+    if (durationSec <= 0) return """<div class="ruler"></div>"""
+    val marks = StringBuilder()
+    var t = 0.0
+    while (t <= durationSec) {
+        val pct = t / durationSec * 100
+        marks.append("""<i style="left:${pct}%"></i><u style="left:${pct}%">${fmt(t)}</u>""")
+        t += 120.0
+    }
+    return """<div class="ruler">$marks</div>"""
+}
+
+private fun buildTrack(segments: List<SegmentDto>, durationSec: Double, selectedKind: String?): String {
+    if (durationSec <= 0) return ""
+    return segments.joinToString("") { s ->
+        val startSec = s.startMs / 1000.0
+        val endSec = (s.endMs ?: s.startMs) / 1000.0
+        val left = startSec / durationSec * 100
+        val width = ((endSec - startSec) / durationSec * 100).coerceAtLeast(0.5)
+        val m = kindOf(s.kind)
+        val lockCls = if (s.locked) " lk" else ""
+        val onCls = if (s.kind == selectedKind) " on" else ""
+        val handles = if (!s.locked) """<i class="h l" data-e="a"></i><i class="h r" data-e="b"></i>""" else ""
+        """<div class="seg ${m.cls}$lockCls$onCls" data-s="${s.kind}" style="left:${left}%;width:${width}%">${if (width > 6) m.label else ""}$handles</div>"""
+    }
+}
+
+private fun buildEvidenceLane(evidence: List<SegmentEvidenceDto>, durationSec: Double): String {
+    if (durationSec <= 0 || evidence.isEmpty()) return ""
+    val bars = evidence.joinToString("") { e ->
+        val startSec = e.startMs / 1000.0
+        val endSec = (e.endMs ?: e.startMs) / 1000.0
+        val left = startSec / durationSec * 100
+        val width = ((endSec - startSec) / durationSec * 100).coerceAtLeast(0.4)
+        when (e.evidenceType) {
+            EvType.BLACK_FRAME -> """<span class="b blk" style="left:${left}%;width:${width}%" title="black frames"></span>"""
+            EvType.SILENCE -> """<span class="b blk" style="left:${left}%;width:${width}%" title="silence"></span>"""
+            EvType.FINGERPRINT_MATCH -> {
+                val label = extractJsonField(e.detail, "pairedEpisode")?.let { "matches $it" } ?: "fingerprint match"
+                """<span class="b fp" style="left:${left}%;width:${width}%">$label</span>"""
+            }
+            EvType.CHAPTER_CANDIDATE -> {
+                val title = extractJsonField(e.detail, "title") ?: "chapter mark"
+                """<span class="ch" style="left:${left}%" title="$title"></span>"""
+            }
+            else -> ""
+        }
+    }
+    return """<div class="ev"><span class="evlbl">why</span>$bars</div>"""
+}
+
+private fun buildMarkRow(s: SegmentDto, selected: Boolean): String {
+    val m = kindOf(s.kind)
+    val startSec = s.startMs / 1000.0
+    val endSec = (s.endMs ?: s.startMs) / 1000.0
+    return """<div class="mk${if (selected) " sel" else ""}${if (s.locked) " lkd" else ""}" data-m="${s.kind}">
+        <span class="sw" style="background:${m.color}"></span><span class="nm">${m.label}</span>
+        <span class="tc"><span class="stp"><button data-d="-1" data-e="a" data-k="${s.kind}">−</button><button data-d="1" data-e="a" data-k="${s.kind}">+</button></span>${fmtl(startSec)}
+          <s>→</s>${fmtl(endSec)}<span class="stp"><button data-d="-1" data-e="b" data-k="${s.kind}">−</button><button data-d="1" data-e="b" data-k="${s.kind}">+</button></span>
+          <s class="len">${fmt(endSec - startSec)} long</s>${srcChipHtml(s)}</span>
+        <span class="acts"><button class="btn sm ghost" data-p="${s.kind}" disabled title="playback lands in step 5">▶ play the cut</button>
+          <button class="lockb${if (s.locked) " on" else ""}" data-l="${s.kind}">${if (s.locked) "🔒 locked" else "🔓 lock"}</button></span>
+      </div>"""
+}
+
+private fun buildAddRow(missing: List<String>, mediaKind: String): String {
+    if (missing.isEmpty()) return ""
+    val unit = if (mediaKind == "movie") "film — normal for one" else "episode"
+    val names = missing.joinToString(", ") { kindOf(it).label.lowercase() }
+    val buttons = missing.joinToString("") { k -> """<button class="btn sm ghost" data-add="$k">＋ ${kindOf(k).label}</button>""" }
+    return """<div class="mk add"><span class="sw" style="background:var(--fill-3)"></span>
+        <span class="sxhint">No $names in this $unit.</span>
+        <span class="acts">$buttons</span></div>"""
+}
+
+private fun buildRail(data: SegmentTrimResponse): String {
+    val rows = data.rail.joinToString("") { r ->
+        val (dotCls, statusTxt) = statusForRail(r)
+        val onCls = if (r.episodeKey == data.episodeKey && r.episodeNumber == data.episodeNumber) " on" else ""
+        """<div class="qr$onCls" data-q="${r.episodeKey}␟${r.episodeNumber}"><span class="id">${r.code}</span>
+             <div><div class="t">${r.title}</div><div class="st">$statusTxt</div>${miniHtml(r.durationSec, r.segments)}</div>
+             <span class="dot $dotCls"></span></div>"""
+    }
+    return """<div class="rh"><b>Season</b><span class="sxsp"></span><span class="lbl">${data.checkedCount} of ${data.totalCount} checked</span></div>
+        <div class="q">$rows</div>
+        <div class="qfoot"><div class="keys">
+          <div><span class="kbd">I</span><span class="kbd">O</span>set in / out at the playhead</div>
+          <div><span class="kbd">,</span><span class="kbd">.</span>nudge a frame · <span class="kbd">⇧</span> for a second</div>
+          <div><span class="kbd">L</span>lock the selected marker</div>
+          <div><span class="kbd">↵</span>save and open the next episode</div></div>
+          <div class="sxhint">A locked marker survives every future <b>detect_segments</b> run — that is the whole point of the lock.</div>
+          <a class="sxlink" href="#/settings?tab=libraries">Detection settings →</a></div>"""
+}
+
+private fun renderTrim(data: SegmentTrimResponse, scope: CoroutineScope) {
+    val root = document.getElementById("seg-root") ?: return
+    val isNewTitle = currentTrimData?.mediaId != data.mediaId || currentTrimData?.episodeKey != data.episodeKey || currentTrimData?.episodeNumber != data.episodeNumber
+    if (isNewTitle) {
+        trimSelectedKind = data.segments.firstOrNull()?.kind
+        trimLastEdge = "b"
+        trimPlayheadMs = 0L
+    } else if (trimSelectedKind != null && data.segments.none { it.kind == trimSelectedKind }) {
+        trimSelectedKind = data.segments.firstOrNull()?.kind
+    }
+    currentTrimData = data
+    currentTrimScope = scope
+
+    val selected = data.segments.firstOrNull { it.kind == trimSelectedKind }
+    val missing = SegKind.ORDER.filterNot { k -> data.segments.any { it.kind == k } }
+
+    val backHtml = if (data.kind == "movie") """<a class="sxback" href="#/media/${data.mediaId}">‹ ${data.itemTitle}</a>"""
+        else """<a class="sxback" href="#" data-a="back">‹ Season ${data.seasonNumber}</a>"""
+    val confirmChip = if (data.checked) """<span class="src me">confirmed</span>""" else """<span class="src he">not confirmed — Jellyfin will not get it yet</span>"""
+    val nextLabel = if (data.kind == "movie") "Save &amp; next film →" else "Save &amp; next episode →"
+    val playPill = selected?.let { s -> val m = kindOf(s.kind); """<span class="vpill" style="color:${m.color};border-color:${m.color}44">▍${m.label}</span>""" } ?: ""
+    val playheadSec = trimPlayheadMs / 1000.0
+    val phLabel = selected?.let { "${kindOf(it.kind).label.lowercase()} selected" } ?: "click the timeline to move the playhead"
+
+    root.innerHTML = """
+        <div class="sxbar">$backHtml
+          <span class="num">${data.code}</span><h1>${data.title}</h1><span class="sxsub">${fmtl(data.durationSec)}</span>
+          <span class="sxsp"></span>$confirmChip
+          <button class="btn sm" data-a="redetect-one">↻ Re-detect</button>
+          <button class="btn sm pri" data-a="next">$nextLabel</button></div>
+        <div class="sxmain" style="grid-template-columns:1fr${if (data.kind == "tv") " 322px" else ""}"><div class="sxstage">
+          <div class="vid"><div class="ph"><em>${fmtl(playheadSec)}</em>$phLabel</div>
+            <div class="tag">$playPill</div>
+            <div class="tag2"><span class="vpill">real playback lands in step 5</span></div></div>
+          <div class="tl"><div class="tlh"><span class="lbl">Timeline</span>${legendHtml()}</div>
+            ${buildRuler(data.durationSec)}
+            <div class="track" id="seg-track">
+              <div class="grid"></div>${buildTrack(data.segments, data.durationSec, trimSelectedKind)}
+              <div class="play" id="seg-playhead" style="left:${if (data.durationSec > 0) playheadSec / data.durationSec * 100 else 0}%"></div>
+            </div>
+            ${buildEvidenceLane(data.evidence, data.durationSec)}
+          </div>
+          <div class="mks">${data.segments.joinToString("") { buildMarkRow(it, it.kind == trimSelectedKind) }}${buildAddRow(missing, data.kind)}</div>
+        </div>
+        ${if (data.kind == "tv") """<div class="sxrail">${buildRail(data)}</div>""" else ""}
+        </div>
+    """.trimIndent()
+
+    wireTrim(root, data, scope)
+}
+
+private fun refreshTrim(scope: CoroutineScope) {
+    val data = currentTrimData ?: return
+    scope.launch {
+        val fresh = if (data.kind == "movie") SegmentApi.movieTrim(data.mediaId) else SegmentApi.episodeTrim(data.mediaId, data.episodeKey, data.episodeNumber)
+        if (fresh != null) renderTrim(fresh, scope)
+    }
+}
+
+private fun wireTrim(root: Element, data: SegmentTrimResponse, scope: CoroutineScope) {
+    if (data.kind == "tv") {
+        root.querySelector("[data-a='back']")?.addEventListener("click") { ev ->
+            ev.preventDefault()
+            Router.navigate("/segments", mapOf("series" to data.mediaId, "season" to data.seasonNumber.toString()))
+        }
+        root.querySelectorAll("[data-q]").let { nodes ->
+            for (i in 0 until nodes.length) {
+                val el = nodes.item(i) as? HTMLElement ?: continue
+                el.addEventListener("click") {
+                    val parts = (el.getAttribute("data-q") ?: return@addEventListener).split("␟")
+                    Router.navigate("/segments", mapOf("series" to data.mediaId, "episode" to parts[0], "episodeNumber" to parts.getOrElse(1) { "0" }))
+                }
+            }
+        }
+    }
+
+    // Select a marker (click the row, not one of its buttons).
+    root.querySelectorAll("[data-m]").let { nodes ->
+        for (i in 0 until nodes.length) {
+            val el = nodes.item(i) as? HTMLElement ?: continue
+            el.addEventListener("click") { ev ->
+                val target = ev.target as? Element
+                if (target?.closest("button") != null) return@addEventListener
+                trimSelectedKind = el.getAttribute("data-m")
+                renderTrim(data, scope)
+            }
+        }
+    }
+    // Select a marker by clicking its bar on the track (not a resize handle).
+    root.querySelectorAll(".seg[data-s]").let { nodes ->
+        for (i in 0 until nodes.length) {
+            val el = nodes.item(i) as? HTMLElement ?: continue
+            el.addEventListener("mousedown") { ev ->
+                val target = ev.target as? Element
+                if (target?.classList?.contains("h") == true) return@addEventListener
+                trimSelectedKind = el.getAttribute("data-s")
+                renderTrim(data, scope)
+            }
+        }
+    }
+    // Click empty track space (ruler included) to move the playhead.
+    (root.querySelector("#seg-track") as? HTMLElement)?.addEventListener("click") { ev ->
+        val target = ev.target as? Element
+        if (target?.classList?.contains("grid") != true) return@addEventListener
+        val box = (ev.target as HTMLElement).getBoundingClientRect()
+        val me = ev as org.w3c.dom.events.MouseEvent
+        val frac = ((me.clientX - box.left) / box.width).coerceIn(0.0, 1.0)
+        trimPlayheadMs = (frac * data.durationSec * 1000).toLong()
+        renderTrim(data, scope)
+    }
+
+    root.querySelectorAll("[data-l]").let { nodes ->
+        for (i in 0 until nodes.length) {
+            val el = nodes.item(i) as? HTMLElement ?: continue
+            el.addEventListener("click") {
+                val kind = el.getAttribute("data-l") ?: return@addEventListener
+                val seg = data.segments.firstOrNull { it.kind == kind } ?: return@addEventListener
+                scope.launch {
+                    SegmentApi.setLock(data.mediaId, kind, data.episodeKey, data.episodeNumber, !seg.locked)
+                    toast(if (!seg.locked) "${kindOf(kind).label} locked — detection will not touch it" else "${kindOf(kind).label} unlocked")
+                    refreshTrim(scope)
+                }
+            }
+        }
+    }
+    root.querySelectorAll(".stp button").let { nodes ->
+        for (i in 0 until nodes.length) {
+            val el = nodes.item(i) as? HTMLElement ?: continue
+            el.addEventListener("click") {
+                val kind = el.getAttribute("data-k") ?: return@addEventListener
+                val edge = el.getAttribute("data-e") ?: return@addEventListener
+                val delta = el.getAttribute("data-d")?.toIntOrNull() ?: return@addEventListener
+                nudgeSegment(data, scope, kind, edge, delta * 40L)
+            }
+        }
+    }
+    root.querySelectorAll("[data-add]").let { nodes ->
+        for (i in 0 until nodes.length) {
+            val el = nodes.item(i) as? HTMLElement ?: continue
+            el.addEventListener("click") {
+                val kind = el.getAttribute("data-add") ?: return@addEventListener
+                val endAnchored = kind == SegKind.CREDITS || kind == SegKind.STINGER || kind == SegKind.PREVIEW
+                val durMs = (data.durationSec * 1000).toLong()
+                val start = if (endAnchored) (durMs - 60_000).coerceAtLeast(0) else 30_000L
+                val end = (start + 40_000).coerceAtMost(durMs)
+                scope.launch {
+                    SegmentApi.editSegment(data.mediaId, kind, data.episodeKey, data.episodeNumber, start, end)
+                    trimSelectedKind = kind
+                    toast("${kindOf(kind).label} added — drag the handles or nudge the timecodes")
+                    refreshTrim(scope)
+                }
+            }
+        }
+    }
+    root.querySelector("[data-a='redetect-one']")?.addEventListener("click") {
+        scope.launch {
+            if (data.kind == "movie") SegmentApi.redetect(movie = data.mediaId)
+            else SegmentApi.redetect(items = listOf(SegmentEpisodeRef(data.mediaId, data.episodeKey, data.episodeNumber)))
+            toast("Queued <b>detect_segments</b> for ${data.code} — locked markers are skipped")
+        }
+    }
+    root.querySelector("[data-a='next']")?.addEventListener("click") { goNext(data, scope) }
+
+    wireDragHandles(root, data, scope)
+}
+
+private fun nudgeSegment(data: SegmentTrimResponse, scope: CoroutineScope, kind: String, edge: String, deltaMs: Long) {
+    val seg = data.segments.firstOrNull { it.kind == kind } ?: return
+    if (seg.locked) return
+    trimLastEdge = edge
+    val start = seg.startMs
+    val end = seg.endMs ?: seg.startMs
+    val newStart = if (edge == "a") (start + deltaMs).coerceIn(0, end - 100) else start
+    val newEnd = if (edge == "b") (end + deltaMs).coerceAtLeast(newStart + 100) else end
+    scope.launch {
+        SegmentApi.editSegment(data.mediaId, kind, data.episodeKey, data.episodeNumber, newStart, newEnd)
+        refreshTrim(scope)
+    }
+}
+
+private fun goNext(data: SegmentTrimResponse, scope: CoroutineScope) {
+    scope.launch {
+        SegmentApi.setChecked(listOf(SegmentEpisodeRef(data.mediaId, data.episodeKey, data.episodeNumber)))
+        if (data.kind == "movie") {
+            toast("${data.title} confirmed")
+            Router.navigate("/media/${data.mediaId}")
+            return@launch
+        }
+        val next = data.rail.firstOrNull { !it.checked && (it.episodeKey != data.episodeKey || it.episodeNumber != data.episodeNumber) }
+        if (next != null) {
+            toast("${data.code} confirmed · opened ${next.code}")
+            Router.navigate("/segments", mapOf("series" to data.mediaId, "episode" to next.episodeKey, "episodeNumber" to next.episodeNumber.toString()))
+        } else {
+            toast("Every episode in the season is checked")
+            Router.navigate("/segments", mapOf("series" to data.mediaId, "season" to data.seasonNumber.toString()))
+        }
+    }
+}
+
+private fun wireDragHandles(root: Element, data: SegmentTrimResponse, scope: CoroutineScope) {
+    val track = document.getElementById("seg-track") as? HTMLElement ?: return
+    track.querySelectorAll(".h").let { nodes ->
+        for (i in 0 until nodes.length) {
+            val handle = nodes.item(i) as? HTMLElement ?: continue
+            handle.addEventListener("mousedown") { downEv ->
+                downEv.preventDefault()
+                val segEl = handle.closest(".seg") as? HTMLElement ?: return@addEventListener
+                val kind = segEl.getAttribute("data-s") ?: return@addEventListener
+                val edge = handle.getAttribute("data-e") ?: return@addEventListener
+                val seg = data.segments.firstOrNull { it.kind == kind } ?: return@addEventListener
+                if (seg.locked) return@addEventListener
+                trimSelectedKind = kind
+                val box = track.getBoundingClientRect()
+                var liveStartMs = seg.startMs
+                var liveEndMs = seg.endMs ?: seg.startMs
+
+                lateinit var moveHandler: (org.w3c.dom.events.Event) -> Unit
+                lateinit var upHandler: (org.w3c.dom.events.Event) -> Unit
+                moveHandler = handler@{ mv ->
+                    val me = mv as org.w3c.dom.events.MouseEvent
+                    val frac = ((me.clientX - box.left) / box.width).coerceIn(0.0, 1.0)
+                    val tMs = (frac * data.durationSec * 1000).toLong()
+                    if (edge == "a") liveStartMs = tMs.coerceAtMost(liveEndMs - 100) else liveEndMs = tMs.coerceAtLeast(liveStartMs + 100)
+                    val left = liveStartMs / 1000.0 / data.durationSec * 100
+                    val width = (liveEndMs - liveStartMs) / 1000.0 / data.durationSec * 100
+                    segEl.style.left = "$left%"
+                    segEl.style.width = "$width%"
+                    (document.getElementById("seg-playhead") as? HTMLElement)?.style?.left = "${(if (edge == "a") liveStartMs else liveEndMs) / 1000.0 / data.durationSec * 100}%"
+                }
+                upHandler = handler@{
+                    document.removeEventListener("mousemove", moveHandler)
+                    document.removeEventListener("mouseup", upHandler)
+                    trimLastEdge = edge
+                    trimPlayheadMs = if (edge == "a") liveStartMs else liveEndMs
+                    scope.launch {
+                        SegmentApi.editSegment(data.mediaId, kind, data.episodeKey, data.episodeNumber, liveStartMs, liveEndMs)
+                        toast("${kindOf(kind).label} now ${fmtl(liveStartMs / 1000.0)} → ${fmtl(liveEndMs / 1000.0)} · saved")
+                        refreshTrim(scope)
+                    }
+                }
+                document.addEventListener("mousemove", moveHandler)
+                document.addEventListener("mouseup", upHandler)
+            }
+        }
+    }
+}
+
+private fun wireKeydownOnce() {
+    if (keydownWired) return
+    keydownWired = true
+    document.addEventListener("keydown") { ev ->
+        val kev = ev as? KeyboardEvent ?: return@addEventListener
+        if (Router.currentPath() != "/segments") return@addEventListener
+        val data = currentTrimData ?: return@addEventListener
+        val scope = currentTrimScope ?: return@addEventListener
+        val target = kev.target
+        if (target is HTMLElement && (target.tagName.equals("input", true) || target.tagName.equals("textarea", true))) return@addEventListener
+        val kind = trimSelectedKind ?: return@addEventListener
+        val seg = data.segments.firstOrNull { it.kind == kind }
+        when (kev.key.lowercase()) {
+            "," -> if (seg != null && !seg.locked) { kev.preventDefault(); nudgeSegment(data, scope, kind, trimLastEdge, if (kev.shiftKey) -1000L else -40L) }
+            "." -> if (seg != null && !seg.locked) { kev.preventDefault(); nudgeSegment(data, scope, kind, trimLastEdge, if (kev.shiftKey) 1000L else 40L) }
+            "i" -> if (seg != null && !seg.locked) { kev.preventDefault(); trimLastEdge = "a"; scope.launch { SegmentApi.editSegment(data.mediaId, kind, data.episodeKey, data.episodeNumber, trimPlayheadMs, seg.endMs ?: seg.startMs); refreshTrim(scope) } }
+            "o" -> if (seg != null && !seg.locked) { kev.preventDefault(); trimLastEdge = "b"; scope.launch { SegmentApi.editSegment(data.mediaId, kind, data.episodeKey, data.episodeNumber, seg.startMs, trimPlayheadMs); refreshTrim(scope) } }
+            "l" -> if (seg != null) { kev.preventDefault(); scope.launch { SegmentApi.setLock(data.mediaId, kind, data.episodeKey, data.episodeNumber, !seg.locked); refreshTrim(scope) } }
+            "enter" -> { kev.preventDefault(); goNext(data, scope) }
+            "escape" -> {
+                kev.preventDefault()
+                if (data.kind == "tv") Router.navigate("/segments", mapOf("series" to data.mediaId, "season" to data.seasonNumber.toString()))
+                else Router.navigate("/media/${data.mediaId}")
+            }
+        }
+    }
 }
 
 /** Step 4/5 placeholder — replaced with the real trim view (timeline, handles, evidence, playback)
