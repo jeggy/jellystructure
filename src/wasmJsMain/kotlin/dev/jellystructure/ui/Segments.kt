@@ -346,9 +346,11 @@ private fun renderTrim(data: SegmentTrimResponse, scope: CoroutineScope) {
               <div class="grid"></div>${buildTrack(data.segments, data.durationSec, trimSelectedKind)}
               <div class="play" id="seg-playhead" style="left:${if (data.durationSec > 0) playheadSec / data.durationSec * 100 else 0}%"></div>
             </div>
+            <div class="wave" id="seg-wave"></div>
             ${buildEvidenceLane(data.evidence, data.durationSec)}
           </div>
           <div class="mks">${data.segments.joinToString("") { buildMarkRow(it, it.kind == trimSelectedKind) }}${buildAddRow(missing, data.kind)}</div>
+          <div id="seg-jf-candidates"></div>
         </div>
         ${if (data.kind == "tv") """<div class="sxrail">${buildRail(data)}</div>""" else ""}
         </div>
@@ -489,6 +491,50 @@ private fun wireTrim(root: Element, data: SegmentTrimResponse, scope: CoroutineS
 
     wireDragHandles(root, data, scope)
     wireVideo(data, scope)
+    wireWaveform(data, scope)
+    wireJellyfinCandidates(data, scope)
+}
+
+/** Step 6 — fetched once per render (not per timeupdate tick — the peaks don't change during playback),
+ *  so a plain targeted innerHTML update is fine here, unlike the playhead. */
+private fun wireWaveform(data: SegmentTrimResponse, scope: CoroutineScope) {
+    if (data.durationSec <= 0) return
+    scope.launch {
+        val peaks = SegmentApi.waveform(data.mediaId, data.episodeKey, data.episodeNumber, 0, (data.durationSec * 1000).toLong())
+        if (peaks != null) {
+            document.getElementById("seg-wave")?.innerHTML = peaks.joinToString("") { p -> """<i style="height:${p.coerceAtLeast(1)}%"></i>""" }
+        }
+    }
+}
+
+/** Step 6 — Jellyfin's own markers, offered as candidates only. Empty (no provider plugin installed) is
+ *  the normal case on this server, not an error — the section just renders nothing. */
+private fun wireJellyfinCandidates(data: SegmentTrimResponse, scope: CoroutineScope) {
+    scope.launch {
+        val candidates = SegmentApi.jellyfinCandidates(data.mediaId, data.episodeKey, data.episodeNumber)
+        val container = document.getElementById("seg-jf-candidates") ?: return@launch
+        if (candidates.isEmpty()) return@launch
+        container.innerHTML = """<div class="mk add"><span class="sw" style="background:var(--info)"></span>
+            <span class="sxhint">Jellyfin has its own marker${if (candidates.size == 1) "" else "s"} for this title — never applied automatically.</span>
+            <span class="acts">${candidates.joinToString("") { c ->
+                """<button class="btn sm ghost" data-jf-apply="${c.kind}" data-jf-start="${c.startMs}" data-jf-end="${c.endMs ?: c.startMs}">Use Jellyfin's ${kindOf(c.kind).label} →</button>"""
+            }}</span></div>"""
+        container.querySelectorAll("[data-jf-apply]").let { nodes ->
+            for (i in 0 until nodes.length) {
+                val el = nodes.item(i) as? HTMLElement ?: continue
+                el.addEventListener("click") {
+                    val kind = el.getAttribute("data-jf-apply") ?: return@addEventListener
+                    val start = el.getAttribute("data-jf-start")?.toLongOrNull() ?: return@addEventListener
+                    val end = el.getAttribute("data-jf-end")?.toLongOrNull()
+                    scope.launch {
+                        SegmentApi.editSegment(data.mediaId, kind, data.episodeKey, data.episodeNumber, start, end)
+                        toast("${kindOf(kind).label} set from Jellyfin")
+                        refreshTrim(scope)
+                    }
+                }
+            }
+        }
+    }
 }
 
 private fun currentTrimSelectedLabel(): String? = trimSelectedKind?.let { "${kindOf(it).label.lowercase()} selected" }

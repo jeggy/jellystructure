@@ -1,8 +1,10 @@
 package dev.jellystructure.server.routes
 
+import dev.jellystructure.auth.JellyfinClient
 import dev.jellystructure.auth.SessionKey
 import dev.jellystructure.config.ConfigStore
 import dev.jellystructure.media.DuplicateEpisodes
+import dev.jellystructure.media.FfmpegRunner
 import dev.jellystructure.media.FingerprintService
 import dev.jellystructure.media.MediaSegmentStore
 import dev.jellystructure.media.MediaStore
@@ -121,6 +123,9 @@ data class SegmentApplyRequest(val series: String, val season: Int, val kind: St
 data class SegmentRedetectRequest(val series: String? = null, val season: Int? = null, val movie: String? = null, val items: List<SegmentEpisodeRef> = emptyList())
 
 @kotlinx.serialization.Serializable
+data class SegmentJellyfinCandidate(val kind: String, val startMs: Long, val endMs: Long?)
+
+@kotlinx.serialization.Serializable
 data class SegmentEvidenceDto(
     val evidenceType: String,
     val startMs: Long,
@@ -164,7 +169,7 @@ data class SegmentTrimResponse(
     val totalCount: Int = 0,
 )
 
-fun Route.segmentRoutes(store: MediaStore, segmentStore: MediaSegmentStore, configStore: ConfigStore, fingerprintService: FingerprintService?, appScope: CoroutineScope) {
+fun Route.segmentRoutes(store: MediaStore, segmentStore: MediaSegmentStore, configStore: ConfigStore, fingerprintService: FingerprintService?, appScope: CoroutineScope, jellyfinClient: JellyfinClient) {
     route("/segments") {
         get {
             val seriesId = call.request.queryParameters["series"]
@@ -269,13 +274,48 @@ fun Route.segmentRoutes(store: MediaStore, segmentStore: MediaSegmentStore, conf
             val item = store.get(itemId) ?: return@get call.respond(HttpStatusCode.NotFound)
             val episodeKey = call.request.queryParameters["episode"]
             val episodeNumber = call.request.queryParameters["n"]?.toIntOrNull() ?: 0
-            val jellyfinId = if (episodeKey != null) {
-                item.episodes.firstOrNull { it.filename == episodeKey && (it.episodeNumber ?: 0) == episodeNumber }?.jellyfinId
-            } else item.jellyfinId
-            if (jellyfinId == null) return@get call.respond(HttpStatusCode.NotFound, mapOf("error" to "not matched in Jellyfin yet"))
+            val jellyfinId = resolveJellyfinId(item, episodeKey, episodeNumber)
+                ?: return@get call.respond(HttpStatusCode.NotFound, mapOf("error" to "not matched in Jellyfin yet"))
             val base = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
             val url = "$base/Videos/$jellyfinId/stream?Static=true&MediaSourceId=$jellyfinId&DeviceId=$SEGMENTS_STREAM_DEVICE_ID&api_key=${session.jellyfinUserToken}"
             call.respond(mapOf("url" to url))
+        }
+
+        // Step 6 — [buckets] peak amplitudes for the trim view's waveform, decoded on demand (never
+        // cached/persisted — this is a display aid, not detection data). Bounded to a sane window so a
+        // malformed request can't ask ffmpeg to decode an unbounded amount of audio.
+        get("/{itemId}/waveform") {
+            val itemId = call.parameters["itemId"] ?: return@get call.respond(HttpStatusCode.BadRequest)
+            val item = store.get(itemId) ?: return@get call.respond(HttpStatusCode.NotFound)
+            val episodeKey = call.request.queryParameters["episode"]
+            val episodeNumber = call.request.queryParameters["n"]?.toIntOrNull() ?: 0
+            val startMs = call.request.queryParameters["startMs"]?.toLongOrNull() ?: 0L
+            val endMs = call.request.queryParameters["endMs"]?.toLongOrNull()
+            val buckets = call.request.queryParameters["buckets"]?.toIntOrNull()?.coerceIn(10, 600) ?: 150
+            val path = if (episodeKey != null) {
+                item.episodes.firstOrNull { it.filename == episodeKey && (it.episodeNumber ?: 0) == episodeNumber }?.path
+            } else item.path
+            if (path == null) return@get call.respond(HttpStatusCode.NotFound)
+            val startSec = (startMs / 1000.0).coerceAtLeast(0.0)
+            val windowSec = ((endMs?.let { it / 1000.0 } ?: (startSec + 1_800)) - startSec).coerceIn(0.0, 14_400.0)
+            val peaks = FfmpegRunner.computeWaveform(path, startSec, windowSec, buckets)
+            if (peaks == null) call.respond(HttpStatusCode.UnprocessableEntity, mapOf("error" to "couldn't decode audio")) else call.respond(peaks)
+        }
+
+        // Step 6 — Jellyfin's own MediaSegments, offered as read-only candidates (never auto-applied —
+        // the admin reviews and, if they want it, PUTs it through the normal manual-edit route). Expect
+        // an empty list on a server with no segment-provider plugin installed; that's normal.
+        get("/{itemId}/jellyfin") {
+            val session = runCatching { call.attributes[SessionKey] }.getOrNull() ?: return@get call.respond(HttpStatusCode.Unauthorized)
+            val itemId = call.parameters["itemId"] ?: return@get call.respond(HttpStatusCode.BadRequest)
+            val item = store.get(itemId) ?: return@get call.respond(HttpStatusCode.NotFound)
+            val episodeKey = call.request.queryParameters["episode"]
+            val episodeNumber = call.request.queryParameters["n"]?.toIntOrNull() ?: 0
+            val jellyfinId = resolveJellyfinId(item, episodeKey, episodeNumber)
+            if (jellyfinId == null) return@get call.respond(emptyList<SegmentJellyfinCandidate>())
+            val base = configStore.current.apiKeys.jellyfinUrl
+            val segments = jellyfinClient.getMediaSegments(base, session.jellyfinUserToken, jellyfinId)
+            call.respond(segments.mapNotNull { it.toCandidate() })
         }
 
         // Fire-and-forget — detection can take a while (ffmpeg/fpcalc, throttled by ProcessGate like
@@ -442,6 +482,21 @@ private fun seasonSheet(item: MediaItem, season: Int, segmentStore: MediaSegment
 private fun movieSheet(item: MediaItem, segmentStore: MediaSegmentStore): SegmentSheetResponse {
     val row = movieRow(item, null, segmentStore)
     return SegmentSheetResponse(itemId = item.id, title = item.title, kind = "movie", episodes = listOf(row), stats = computeStats(listOf(row)))
+}
+
+private fun resolveJellyfinId(item: MediaItem, episodeKey: String?, episodeNumber: Int): String? =
+    if (episodeKey != null) item.episodes.firstOrNull { it.filename == episodeKey && (it.episodeNumber ?: 0) == episodeNumber }?.jellyfinId
+    else item.jellyfinId
+
+private fun dev.jellystructure.auth.JellyfinMediaSegment.toCandidate(): SegmentJellyfinCandidate? {
+    val kind = when (type) {
+        "Intro" -> SegmentKind.INTRO
+        "Outro" -> SegmentKind.CREDITS
+        "Recap" -> SegmentKind.RECAP
+        "Preview" -> SegmentKind.PREVIEW
+        else -> return null   // Commercial/Unknown — deliberately unmapped, see SegmentKind's own doc
+    }
+    return SegmentJellyfinCandidate(kind, startTicks / 10_000, endTicks / 10_000)
 }
 
 private fun List<dev.jellystructure.media.SegmentEvidenceRow>.toEvidenceDtos(): List<SegmentEvidenceDto> =
