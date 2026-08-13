@@ -1,18 +1,26 @@
 package dev.jellystructure.server.routes
 
+import dev.jellystructure.config.ConfigStore
 import dev.jellystructure.media.DuplicateEpisodes
+import dev.jellystructure.media.FingerprintService
 import dev.jellystructure.media.MediaSegmentStore
 import dev.jellystructure.media.MediaStore
+import dev.jellystructure.media.PipelineStepOps
 import dev.jellystructure.media.SegmentKind
 import dev.jellystructure.media.SegmentSource
 import dev.jellystructure.model.Episode
 import dev.jellystructure.model.MediaItem
 import dev.jellystructure.model.MediaKind
 import io.ktor.http.HttpStatusCode
+import io.ktor.server.request.receive
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.get
+import io.ktor.server.routing.post
+import io.ktor.server.routing.put
 import io.ktor.server.routing.route
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.launch
 import kotlin.math.abs
 
 /** Phase 163 (step 2) — REST surface for the intro/credits editor. Standard admin cookie auth
@@ -86,7 +94,31 @@ data class SegmentSheetResponse(
     val stats: SegmentStats,
 )
 
-fun Route.segmentRoutes(store: MediaStore, segmentStore: MediaSegmentStore) {
+@kotlinx.serialization.Serializable
+data class SegmentEditRequest(val startMs: Long, val endMs: Long? = null)
+
+@kotlinx.serialization.Serializable
+data class SegmentLockRequest(val locked: Boolean)
+
+@kotlinx.serialization.Serializable
+data class SegmentEpisodeRef(val itemId: String, val episodeKey: String = "", val episodeNumber: Int = 0)
+
+@kotlinx.serialization.Serializable
+data class SegmentCheckedRequest(val items: List<SegmentEpisodeRef>)
+
+@kotlinx.serialization.Serializable
+data class SegmentBulkLockRequest(val items: List<SegmentEpisodeRef>, val locked: Boolean)
+
+@kotlinx.serialization.Serializable
+data class SegmentApplyRequest(val series: String, val season: Int, val kind: String, val targets: List<SegmentEpisodeRef>, val lock: Boolean = false)
+
+/** [series]+[season] re-detects a whole season (chapter/heuristic tier + fingerprint tier); [movie] a
+ *  single film; [items] a specific episode/movie list (chapter/heuristic tier only — see [redetectEpisodes]
+ *  for why the fingerprint tier can't be scoped to an arbitrary subset). */
+@kotlinx.serialization.Serializable
+data class SegmentRedetectRequest(val series: String? = null, val season: Int? = null, val movie: String? = null, val items: List<SegmentEpisodeRef> = emptyList())
+
+fun Route.segmentRoutes(store: MediaStore, segmentStore: MediaSegmentStore, configStore: ConfigStore, fingerprintService: FingerprintService?, appScope: CoroutineScope) {
     route("/segments") {
         get {
             val seriesId = call.request.queryParameters["series"]
@@ -106,6 +138,138 @@ fun Route.segmentRoutes(store: MediaStore, segmentStore: MediaSegmentStore) {
                 else -> call.respond(HttpStatusCode.BadRequest)
             }
         }
+
+        // Manual edit (drag/stepper in the trim view, step 4) — write-through, preserves whatever lock
+        // state the row already had (editing a value and locking it are independent actions).
+        put("/{itemId}/{kind}") {
+            val itemId = call.parameters["itemId"] ?: return@put call.respond(HttpStatusCode.BadRequest)
+            val kind = call.parameters["kind"] ?: return@put call.respond(HttpStatusCode.BadRequest)
+            val episodeKey = call.request.queryParameters["episode"] ?: ""
+            val episodeNumber = call.request.queryParameters["n"]?.toIntOrNull() ?: 0
+            val body = runCatching { call.receive<SegmentEditRequest>() }.getOrNull() ?: return@put call.respond(HttpStatusCode.BadRequest)
+            val existing = segmentStore.getSegment(itemId, episodeKey, episodeNumber, kind)
+            segmentStore.upsertSegment(itemId, episodeKey, episodeNumber, kind, body.startMs, body.endMs, SegmentSource.MANUAL, null, locked = existing?.locked ?: false)
+            call.respond(HttpStatusCode.NoContent)
+        }
+
+        put("/{itemId}/{kind}/lock") {
+            val itemId = call.parameters["itemId"] ?: return@put call.respond(HttpStatusCode.BadRequest)
+            val kind = call.parameters["kind"] ?: return@put call.respond(HttpStatusCode.BadRequest)
+            val episodeKey = call.request.queryParameters["episode"] ?: ""
+            val episodeNumber = call.request.queryParameters["n"]?.toIntOrNull() ?: 0
+            val body = runCatching { call.receive<SegmentLockRequest>() }.getOrNull() ?: return@put call.respond(HttpStatusCode.BadRequest)
+            segmentStore.setLocked(itemId, episodeKey, episodeNumber, kind, body.locked)
+            call.respond(HttpStatusCode.NoContent)
+        }
+
+        // "Checked" is episode-scoped (spec §5) — stamps every kind row currently present for the
+        // episode; MediaSegmentStore.setChecked already implements that.
+        post("/checked") {
+            val body = runCatching { call.receive<SegmentCheckedRequest>() }.getOrNull() ?: return@post call.respond(HttpStatusCode.BadRequest)
+            for (ref in body.items) segmentStore.setChecked(ref.itemId, ref.episodeKey, ref.episodeNumber)
+            call.respond(HttpStatusCode.NoContent)
+        }
+
+        // Bulk lock/unlock — every kind row currently present for each episode (mirrors the sheet's
+        // single "Lock" button locking whatever that episode already has, not one specific kind).
+        post("/lock") {
+            val body = runCatching { call.receive<SegmentBulkLockRequest>() }.getOrNull() ?: return@post call.respond(HttpStatusCode.BadRequest)
+            for (ref in body.items) {
+                segmentStore.segmentsForEpisode(ref.itemId, ref.episodeKey, ref.episodeNumber).forEach { row ->
+                    segmentStore.setLocked(ref.itemId, ref.episodeKey, ref.episodeNumber, row.kind, body.locked)
+                }
+            }
+            call.respond(HttpStatusCode.NoContent)
+        }
+
+        // "Give them the season's intro/credits" — recomputes consensus fresh server-side (never trusts
+        // a client-supplied value) and writes+checks each target episode.
+        post("/apply") {
+            val body = runCatching { call.receive<SegmentApplyRequest>() }.getOrNull() ?: return@post call.respond(HttpStatusCode.BadRequest)
+            val item = store.get(body.series) ?: return@post call.respond(HttpStatusCode.NotFound)
+            val applied = applyConsensusToTargets(item, body.season, body.kind, body.targets, body.lock, segmentStore)
+            if (!applied) return@post call.respond(HttpStatusCode.UnprocessableEntity)
+            call.respond(HttpStatusCode.NoContent)
+        }
+
+        // Fire-and-forget — detection can take a while (ffmpeg/fpcalc, throttled by ProcessGate like
+        // every other caller); the sheet re-fetches afterward rather than this request blocking on it.
+        post("/redetect") {
+            val body = runCatching { call.receive<SegmentRedetectRequest>() }.getOrNull() ?: return@post call.respond(HttpStatusCode.BadRequest)
+            val pipelineStep = configStore.current.scan.pipeline.firstOrNull { it.step == "detect_segments" }
+            val chapterKeywords = pipelineStep?.chapterKeywords ?: emptyList()
+            val detectFingerprint = pipelineStep?.detectFingerprint ?: false
+            appScope.launch {
+                when {
+                    body.series != null && body.season != null -> {
+                        val item = store.get(body.series) ?: return@launch
+                        redetectSeason(item, body.season, segmentStore, chapterKeywords, detectFingerprint, fingerprintService)
+                    }
+                    body.movie != null -> {
+                        val item = store.get(body.movie) ?: return@launch
+                        PipelineStepOps.detectSegments(item, segmentStore, chapterKeywords, fingerprintService, detectFingerprint, force = true)
+                    }
+                    body.items.isNotEmpty() -> redetectEpisodes(body.items, store, segmentStore, chapterKeywords)
+                }
+            }
+            call.respond(HttpStatusCode.Accepted)
+        }
+    }
+}
+
+private fun applyConsensusToTargets(item: MediaItem, season: Int, kind: String, targets: List<SegmentEpisodeRef>, lock: Boolean, segmentStore: MediaSegmentStore): Boolean {
+    val eps = DuplicateEpisodes.deduped(item.episodes).filter { (it.seasonNumber ?: 0) == season }.sortedBy { it.episodeNumber ?: 0 }
+    val rows = markOutliers(eps.map { episodeRow(item.id, null, it, segmentStore) })
+    val consensus = computeConsensus(rows).firstOrNull { it.kind == kind } ?: return false
+    for (ref in targets) {
+        val ep = eps.firstOrNull { it.filename == ref.episodeKey && (it.episodeNumber ?: 0) == ref.episodeNumber } ?: continue
+        when (kind) {
+            SegmentKind.INTRO -> {
+                val start = consensus.startMs ?: continue
+                val end = consensus.endMs ?: start
+                segmentStore.upsertSegment(item.id, ep.filename, ep.episodeNumber ?: 0, SegmentKind.INTRO, start, end, SegmentSource.MANUAL, null, locked = lock)
+            }
+            SegmentKind.CREDITS -> {
+                val lead = consensus.leadMs ?: continue
+                val durMs = (durationSecOf(ep.runtime, segmentStore.segmentsForEpisode(item.id, ep.filename, ep.episodeNumber ?: 0)) * 1000).toLong()
+                if (durMs <= 0) continue
+                val start = (durMs - lead).coerceAtLeast(0)
+                segmentStore.upsertSegment(item.id, ep.filename, ep.episodeNumber ?: 0, SegmentKind.CREDITS, start, null, SegmentSource.MANUAL, null, locked = lock)
+            }
+            else -> continue
+        }
+        segmentStore.setChecked(item.id, ep.filename, ep.episodeNumber ?: 0)
+    }
+    return true
+}
+
+private suspend fun redetectSeason(
+    item: MediaItem, season: Int, segmentStore: MediaSegmentStore,
+    chapterKeywords: List<String>, detectFingerprint: Boolean, fingerprintService: FingerprintService?,
+) {
+    val seasonEpisodes = item.episodes.filter { (it.seasonNumber ?: 0) == season && it.partCount == 1 }
+    if (seasonEpisodes.isEmpty()) return
+    PipelineStepOps.detectChapterAndHeuristic(item.copy(episodes = seasonEpisodes), segmentStore, chapterKeywords, force = true)
+    if (detectFingerprint && fingerprintService != null && seasonEpisodes.size >= 2) {
+        PipelineStepOps.detectIntroFingerprintsForSeason(item, segmentStore, fingerprintService, seasonEpisodes, force = true)
+        PipelineStepOps.detectOutroFingerprintsForSeason(item, segmentStore, fingerprintService, seasonEpisodes, force = true)
+    }
+}
+
+// Selected-episode redetect deliberately skips the fingerprint tier: it's a pairwise, whole-season
+// consensus algorithm (see PipelineStepOps.detectIntroFingerprintsForSeason's own doc) — dropping the
+// unselected siblings from comparison would degrade the consensus for everyone, not just narrow the
+// work. Only redetectSeason (the season-wide action) re-runs it.
+private suspend fun redetectEpisodes(items: List<SegmentEpisodeRef>, store: MediaStore, segmentStore: MediaSegmentStore, chapterKeywords: List<String>) {
+    for ((itemId, refs) in items.groupBy { it.itemId }) {
+        val item = store.get(itemId) ?: continue
+        if (item.kind == MediaKind.MOVIE) {
+            PipelineStepOps.detectChapterAndHeuristic(item, segmentStore, chapterKeywords, force = true)
+            continue
+        }
+        val keys = refs.mapTo(mutableSetOf()) { it.episodeKey to it.episodeNumber }
+        val scoped = item.copy(episodes = item.episodes.filter { (it.filename to (it.episodeNumber ?: 0)) in keys })
+        if (scoped.episodes.isNotEmpty()) PipelineStepOps.detectChapterAndHeuristic(scoped, segmentStore, chapterKeywords, force = true)
     }
 }
 
