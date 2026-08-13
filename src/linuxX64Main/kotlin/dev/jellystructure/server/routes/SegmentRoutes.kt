@@ -1,5 +1,6 @@
 package dev.jellystructure.server.routes
 
+import dev.jellystructure.auth.SessionKey
 import dev.jellystructure.config.ConfigStore
 import dev.jellystructure.media.DuplicateEpisodes
 import dev.jellystructure.media.FingerprintService
@@ -31,6 +32,7 @@ import kotlin.math.abs
 // not the better part of a minute. Matches the "odd one out" concept the design mockup calls out.
 private const val OUTLIER_THRESHOLD_MS = 45_000L
 private const val LOW_CONFIDENCE_THRESHOLD = 0.60
+private const val SEGMENTS_STREAM_DEVICE_ID = "jellystructure-segments-editor"
 
 @kotlinx.serialization.Serializable
 data class SegmentDto(
@@ -253,6 +255,27 @@ fun Route.segmentRoutes(store: MediaStore, segmentStore: MediaSegmentStore, conf
             val item = store.get(itemId) ?: return@get call.respond(HttpStatusCode.NotFound)
             val ep = item.episodes.firstOrNull { it.filename == key && (it.episodeNumber ?: 0) == n } ?: return@get call.respond(HttpStatusCode.NotFound)
             call.respond(episodeTrim(item, ep, segmentStore))
+        }
+
+        // Step 5 — a direct-play stream URL for the trim view's <video>, exactly the shape
+        // PlaybackService.kt already mints for Ravilo, but using the admin's OWN Jellyfin session
+        // (jellystructure Auth *is* Jellyfin Auth — every cookie session already carries a real
+        // jellyfinUserToken) rather than a device token. Never transcodes: this is a scrub/preview tool,
+        // not a client that needs HDR tone-mapping or codec negotiation — if the browser can't decode
+        // the file directly, the trim view falls back to timecode-only editing (no video).
+        get("/{itemId}/stream") {
+            val session = runCatching { call.attributes[SessionKey] }.getOrNull() ?: return@get call.respond(HttpStatusCode.Unauthorized)
+            val itemId = call.parameters["itemId"] ?: return@get call.respond(HttpStatusCode.BadRequest)
+            val item = store.get(itemId) ?: return@get call.respond(HttpStatusCode.NotFound)
+            val episodeKey = call.request.queryParameters["episode"]
+            val episodeNumber = call.request.queryParameters["n"]?.toIntOrNull() ?: 0
+            val jellyfinId = if (episodeKey != null) {
+                item.episodes.firstOrNull { it.filename == episodeKey && (it.episodeNumber ?: 0) == episodeNumber }?.jellyfinId
+            } else item.jellyfinId
+            if (jellyfinId == null) return@get call.respond(HttpStatusCode.NotFound, mapOf("error" to "not matched in Jellyfin yet"))
+            val base = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
+            val url = "$base/Videos/$jellyfinId/stream?Static=true&MediaSourceId=$jellyfinId&DeviceId=$SEGMENTS_STREAM_DEVICE_ID&api_key=${session.jellyfinUserToken}"
+            call.respond(mapOf("url" to url))
         }
 
         // Fire-and-forget — detection can take a while (ffmpeg/fpcalc, throttled by ProcessGate like

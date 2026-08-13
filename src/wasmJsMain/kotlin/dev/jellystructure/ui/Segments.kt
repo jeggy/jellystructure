@@ -18,6 +18,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import org.w3c.dom.Element
 import org.w3c.dom.HTMLElement
+import org.w3c.dom.HTMLVideoElement
 import org.w3c.dom.events.KeyboardEvent
 import kotlin.math.roundToInt
 
@@ -261,7 +262,7 @@ private fun buildMarkRow(s: SegmentDto, selected: Boolean): String {
         <span class="tc"><span class="stp"><button data-d="-1" data-e="a" data-k="${s.kind}">−</button><button data-d="1" data-e="a" data-k="${s.kind}">+</button></span>${fmtl(startSec)}
           <s>→</s>${fmtl(endSec)}<span class="stp"><button data-d="-1" data-e="b" data-k="${s.kind}">−</button><button data-d="1" data-e="b" data-k="${s.kind}">+</button></span>
           <s class="len">${fmt(endSec - startSec)} long</s>${srcChipHtml(s)}</span>
-        <span class="acts"><button class="btn sm ghost" data-p="${s.kind}" disabled title="playback lands in step 5">▶ play the cut</button>
+        <span class="acts"><button class="btn sm ghost" data-p="${s.kind}">▶ play the cut</button>
           <button class="lockb${if (s.locked) " on" else ""}" data-l="${s.kind}">${if (s.locked) "🔒 locked" else "🔓 lock"}</button></span>
       </div>"""
 }
@@ -326,9 +327,19 @@ private fun renderTrim(data: SegmentTrimResponse, scope: CoroutineScope) {
           <button class="btn sm" data-a="redetect-one">↻ Re-detect</button>
           <button class="btn sm pri" data-a="next">$nextLabel</button></div>
         <div class="sxmain" style="grid-template-columns:1fr${if (data.kind == "tv") " 322px" else ""}"><div class="sxstage">
-          <div class="vid"><div class="ph"><em>${fmtl(playheadSec)}</em>$phLabel</div>
+          <div class="vid" id="seg-vid">
+            <video id="seg-video" style="width:100%;height:100%;object-fit:contain;display:none" preload="metadata"></video>
+            <div class="ph" id="seg-ph"><em>${fmtl(playheadSec)}</em>$phLabel</div>
             <div class="tag">$playPill</div>
-            <div class="tag2"><span class="vpill">real playback lands in step 5</span></div></div>
+            <div class="tag2" id="seg-vid-tag2"><span class="vpill">checking playback…</span></div>
+            <div class="foot">
+              <span class="vbtn pri" id="seg-play-btn">▶</span>
+              <span class="vbtn" data-a="fb">◂◂</span>
+              <span class="vbtn" data-a="ff">▸▸</span>
+              <span class="sxsp"></span>
+              <span class="vpill mono" id="seg-timecode">${fmtl(playheadSec)} / ${fmtl(data.durationSec)}</span>
+            </div>
+          </div>
           <div class="tl"><div class="tlh"><span class="lbl">Timeline</span>${legendHtml()}</div>
             ${buildRuler(data.durationSec)}
             <div class="track" id="seg-track">
@@ -395,7 +406,8 @@ private fun wireTrim(root: Element, data: SegmentTrimResponse, scope: CoroutineS
             }
         }
     }
-    // Click empty track space (ruler included) to move the playhead.
+    // Click empty track space (ruler included) to move the playhead — a lightweight DOM update, not a
+    // full re-render: re-rendering would tear down and recreate <video>, restarting the stream.
     (root.querySelector("#seg-track") as? HTMLElement)?.addEventListener("click") { ev ->
         val target = ev.target as? Element
         if (target?.classList?.contains("grid") != true) return@addEventListener
@@ -403,7 +415,8 @@ private fun wireTrim(root: Element, data: SegmentTrimResponse, scope: CoroutineS
         val me = ev as org.w3c.dom.events.MouseEvent
         val frac = ((me.clientX - box.left) / box.width).coerceIn(0.0, 1.0)
         trimPlayheadMs = (frac * data.durationSec * 1000).toLong()
-        renderTrim(data, scope)
+        seekVideoTo(trimPlayheadMs)
+        updatePlayheadDom(trimPlayheadMs, data.durationSec, currentTrimSelectedLabel())
     }
 
     root.querySelectorAll("[data-l]").let { nodes ->
@@ -457,8 +470,105 @@ private fun wireTrim(root: Element, data: SegmentTrimResponse, scope: CoroutineS
         }
     }
     root.querySelector("[data-a='next']")?.addEventListener("click") { goNext(data, scope) }
+    root.querySelectorAll("[data-p]").let { nodes ->
+        for (i in 0 until nodes.length) {
+            val el = nodes.item(i) as? HTMLElement ?: continue
+            el.addEventListener("click") {
+                val kind = el.getAttribute("data-p") ?: return@addEventListener
+                val seg = data.segments.firstOrNull { it.kind == kind } ?: return@addEventListener
+                playCut(seg)
+            }
+        }
+    }
+    root.querySelector("[data-a='fb']")?.addEventListener("click") { seekRelative(data, -10_000) }
+    root.querySelector("[data-a='ff']")?.addEventListener("click") { seekRelative(data, 10_000) }
+    root.querySelector("#seg-play-btn")?.addEventListener("click") {
+        val video = document.getElementById("seg-video") as? HTMLVideoElement ?: return@addEventListener
+        if (video.paused) video.play() else video.pause()
+    }
 
     wireDragHandles(root, data, scope)
+    wireVideo(data, scope)
+}
+
+private fun currentTrimSelectedLabel(): String? = trimSelectedKind?.let { "${kindOf(it).label.lowercase()} selected" }
+
+/** Updates only the playhead marker + timecode DOM directly — never a full renderTrim(), which would
+ *  tear down and recreate <video>, restarting the stream. Used by the video's own timeupdate listener
+ *  (fires ~4x/sec during playback) and every playhead-only interaction (track click, seek buttons). */
+private fun updatePlayheadDom(ms: Long, durationSec: Double, phLabel: String?) {
+    val pct = if (durationSec > 0) (ms / 1000.0 / durationSec * 100) else 0.0
+    (document.getElementById("seg-playhead") as? HTMLElement)?.style?.left = "$pct%"
+    document.getElementById("seg-timecode")?.textContent = "${fmtl(ms / 1000.0)} / ${fmtl(durationSec)}"
+    val ph = document.getElementById("seg-ph") as? HTMLElement
+    if (ph != null && ph.style.display != "none") {
+        ph.innerHTML = "<em>${fmtl(ms / 1000.0)}</em>${phLabel ?: "click the timeline to move the playhead"}"
+    }
+}
+
+private fun seekVideoTo(ms: Long) {
+    (document.getElementById("seg-video") as? HTMLVideoElement)?.currentTime = ms / 1000.0
+}
+
+private fun seekRelative(data: SegmentTrimResponse, deltaMs: Long) {
+    trimPlayheadMs = (trimPlayheadMs + deltaMs).coerceIn(0L, (data.durationSec * 1000).toLong())
+    seekVideoTo(trimPlayheadMs)
+    updatePlayheadDom(trimPlayheadMs, data.durationSec, currentTrimSelectedLabel())
+}
+
+/** "▶ play the cut" — seeks 3s before the marker's start, plays, and auto-pauses 3s after its end via
+ *  a one-shot timeupdate listener (removed the moment it fires, so repeated plays don't stack listeners). */
+private fun playCut(seg: SegmentDto) {
+    val video = document.getElementById("seg-video") as? HTMLVideoElement
+    if (video == null || video.style.display == "none") {
+        toast("Playback isn't available for this title yet — it may not be matched in Jellyfin, or this browser can't direct-play it")
+        return
+    }
+    val startSec = (seg.startMs / 1000.0 - 3.0).coerceAtLeast(0.0)
+    val endSec = (seg.endMs ?: seg.startMs) / 1000.0 + 3.0
+    video.currentTime = startSec
+    video.play()
+    lateinit var stopHandler: (org.w3c.dom.events.Event) -> Unit
+    stopHandler = {
+        if (video.currentTime >= endSec) {
+            video.pause()
+            video.removeEventListener("timeupdate", stopHandler)
+        }
+    }
+    video.addEventListener("timeupdate", stopHandler)
+}
+
+private fun wireVideo(data: SegmentTrimResponse, scope: CoroutineScope) {
+    val video = document.getElementById("seg-video") as? HTMLVideoElement ?: return
+    val tag2 = document.getElementById("seg-vid-tag2")
+    val ph = document.getElementById("seg-ph") as? HTMLElement
+    val playBtn = document.getElementById("seg-play-btn") as? HTMLElement
+
+    video.addEventListener("loadedmetadata") {
+        video.style.display = "block"
+        ph?.style?.display = "none"
+        tag2?.innerHTML = """<span class="vpill ok">direct play · no transcode</span>"""
+        video.currentTime = trimPlayheadMs / 1000.0
+    }
+    video.addEventListener("error") {
+        video.style.display = "none"
+        tag2?.innerHTML = """<span class="vpill warn">can't direct play here — use the timecodes below</span>"""
+    }
+    video.addEventListener("timeupdate") {
+        trimPlayheadMs = (video.currentTime * 1000).toLong()
+        updatePlayheadDom(trimPlayheadMs, data.durationSec, currentTrimSelectedLabel())
+    }
+    video.addEventListener("play") { playBtn?.textContent = "❚❚" }
+    video.addEventListener("pause") { playBtn?.textContent = "▶" }
+
+    scope.launch {
+        val url = SegmentApi.streamUrl(data.mediaId, data.episodeKey.ifEmpty { null }, data.episodeNumber)
+        if (url == null) {
+            tag2?.innerHTML = """<span class="vpill warn">not matched in Jellyfin yet</span>"""
+            return@launch
+        }
+        video.src = url
+    }
 }
 
 private fun nudgeSegment(data: SegmentTrimResponse, scope: CoroutineScope, kind: String, edge: String, deltaMs: Long) {
@@ -568,20 +678,6 @@ private fun wireKeydownOnce() {
             }
         }
     }
-}
-
-/** Step 4/5 placeholder — replaced with the real trim view (timeline, handles, evidence, playback)
- *  later in this same build. Movies open straight into the trim view (no season sheet behind them). */
-private fun renderTrimPlaceholder(movieSheet: SegmentSheetResponse? = null) {
-    val root = document.getElementById("seg-root") ?: return
-    val back = if (movieSheet != null) """<a class="sxback" href="#/media/${movieSheet.itemId}">‹ ${movieSheet.title}</a>"""
-        else """<a class="sxback" href="javascript:history.back()">‹ Back</a>"""
-    root.innerHTML = """
-        <div class="sxbar">$back<h1>${movieSheet?.title ?: "Trim view"}</h1></div>
-        <div class="sxmain" style="grid-template-columns:1fr"><div class="sxstage">
-          <p class="sxhint">The full trim editor (timeline, playback, evidence) lands later in this build.</p>
-        </div></div>
-    """.trimIndent()
 }
 
 private fun renderSheet(sheet: SegmentSheetResponse, scope: CoroutineScope) {

@@ -226,4 +226,16 @@ object SegmentApi {
             url { parameters.append("key", episodeKey); parameters.append("n", episodeNumber.toString()) }
         }.body<SegmentTrimResponse>()
     }.getOrNull()
+
+    @Serializable
+    private data class StreamUrlResponse(val url: String)
+
+    /** Direct-play only — never transcodes (see SegmentRoutes.kt's doc). Null when the title/episode
+     *  isn't matched in Jellyfin yet, or on any other failure; the trim view falls back to timecode-only
+     *  editing rather than showing a broken video element. */
+    suspend fun streamUrl(mediaId: String, episodeKey: String?, episodeNumber: Int?): String? = runCatching {
+        httpClient.get("/api/segments/$mediaId/stream") {
+            url { episodeKey?.let { parameters.append("episode", it) }; episodeNumber?.let { parameters.append("n", it.toString()) } }
+        }.body<StreamUrlResponse>().url
+    }.getOrNull()
 }
