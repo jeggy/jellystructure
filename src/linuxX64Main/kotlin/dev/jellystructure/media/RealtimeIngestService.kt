@@ -39,6 +39,7 @@ class RealtimeIngestService(
     private val sonarrEnrich: SonarrEnrichService? = null,
     private val imdbClient: dev.jellystructure.imdb.ImdbClient? = null,   // Phase 145
     private val fingerprintService: FingerprintService? = null,          // Phase 150 (FR-SEG1-4)
+    private val mediaSegmentStore: MediaSegmentStore? = null,             // Phase 163
 ) {
     private val queueScope = CoroutineScope(SupervisorJob() + Dispatchers.Default.limitedParallelism(2))
 
@@ -142,7 +143,9 @@ class RealtimeIngestService(
                 when (step.step) {
                     "scan_files", "pull_tmdb" -> Unit  // already done by scanItem
                     "fetch_artwork" -> PipelineStepOps.fetchArtwork(current, store, artwork)
-                    "detect_segments" -> PipelineStepOps.detectSegments(current, store, step.chapterKeywords, fingerprintService, step.detectFingerprint)
+                    "detect_segments" -> mediaSegmentStore?.let {
+                        PipelineStepOps.detectSegments(current, it, step.chapterKeywords, fingerprintService, step.detectFingerprint)
+                    }
                     "sync_imdb_ratings" -> PipelineStepOps.syncImdb(current, store, imdbClient)
                     "write_nfo" -> PipelineStepOps.writeNfo(
                         current, store, cfg.apiKeys.jellyfinUrl, cfg.metadata.ageRatingCascade,

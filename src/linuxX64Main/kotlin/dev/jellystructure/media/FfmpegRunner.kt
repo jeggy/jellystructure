@@ -224,7 +224,14 @@ object FfmpegRunner {
     // must have windowStartSec added back before it means anything against the file's real timeline.
     private const val BLACK_SILENCE_TOLERANCE_SEC = 2.0
 
-    data class CreditsHeuristicResult(val startMs: Long, val confidence: Double)
+    /** Phase 163 (dev-review addendum §2's "full raw evidence" decision) — one black-frame or silence
+     *  interval the credits heuristic scanned, in absolute file ms. [accepted] marks the specific
+     *  interval pair that became the returned [CreditsHeuristicResult] — everything else here is a
+     *  rejected/unrelated candidate, kept so the trim view's evidence lane can show *why* the winner
+     *  won, not just the final number. */
+    data class HeuristicEvidencePoint(val type: String, val startMs: Long, val endMs: Long?, val accepted: Boolean)
+
+    data class CreditsHeuristicResult(val startMs: Long, val confidence: Double, val evidence: List<HeuristicEvidencePoint> = emptyList())
 
     /**
      * FR-SEG1-3 — the credits heuristic: scans only the file's own last few minutes (sized from
@@ -257,6 +264,10 @@ object FfmpegRunner {
             .mapNotNull { it.groupValues[1].toDoubleOrNull() }.toList()
         val silenceStarts = Regex("""silence_start:\s*([\d.]+)""").findAll(output)
             .mapNotNull { it.groupValues[1].toDoubleOrNull() }.toList()
+        // Phase 163 — ffmpeg already emits silence_end in the same stderr text (no new invocation); it
+        // was simply never parsed before evidence capture needed it.
+        val silenceEnds = Regex("""silence_end:\s*([\d.]+)""").findAll(output)
+            .mapNotNull { it.groupValues[1].toDoubleOrNull() }.toList()
         if (blackStarts.isEmpty() || silenceStarts.isEmpty()) return null
 
         val windowLenSec = durationSec - windowStartSec
@@ -274,10 +285,10 @@ object FfmpegRunner {
         // credits leave most of it black. Pick the EARLIEST candidate whose tail-black-coverage clears
         // a floor (i.e. the true transition point into a sustained black stretch), not just the
         // earliest coincidence of any kind.
-        data class Candidate(val timeSec: Double, val gap: Double)
+        data class Candidate(val timeSec: Double, val gap: Double, val blackStartSec: Double, val silenceStartSec: Double)
         val candidates = blackStarts.mapNotNull { b ->
             val s = silenceStarts.firstOrNull { kotlin.math.abs(it - b) <= BLACK_SILENCE_TOLERANCE_SEC } ?: return@mapNotNull null
-            Candidate(minOf(b, s), kotlin.math.abs(s - b))
+            Candidate(minOf(b, s), kotlin.math.abs(s - b), b, s)
         }
         if (candidates.isEmpty()) return null
 
@@ -300,7 +311,28 @@ object FfmpegRunner {
             ?: return null // no coincidence looked like a sustained credits stretch — refuse rather than guess
 
         val confidence = (1.0 - accepted.gap / BLACK_SILENCE_TOLERANCE_SEC).coerceIn(0.3, 0.9)
-        return CreditsHeuristicResult(startMs = ((windowStartSec + accepted.timeSec) * 1000).toLong(), confidence = confidence)
+
+        // Phase 163 — every black/silence interval the window scanned, in absolute file ms, tagged with
+        // whether it's the specific pair that won. Only built once a result is actually returned (the
+        // several `return null` branches above have nothing to attach evidence to).
+        fun toAbsMs(sec: Double) = ((windowStartSec + sec) * 1000).toLong()
+        val evidence = buildList {
+            for (i in blackStarts.indices) {
+                val bs = blackStarts[i]
+                add(HeuristicEvidencePoint(
+                    type = "black_frame", startMs = toAbsMs(bs), endMs = blackEnds.getOrNull(i)?.let(::toAbsMs),
+                    accepted = kotlin.math.abs(bs - accepted.blackStartSec) < 0.01,
+                ))
+            }
+            for (i in silenceStarts.indices) {
+                val ss = silenceStarts[i]
+                add(HeuristicEvidencePoint(
+                    type = "silence", startMs = toAbsMs(ss), endMs = silenceEnds.getOrNull(i)?.let(::toAbsMs),
+                    accepted = kotlin.math.abs(ss - accepted.silenceStartSec) < 0.01,
+                ))
+            }
+        }
+        return CreditsHeuristicResult(startMs = toAbsMs(accepted.timeSec), confidence = confidence, evidence = evidence)
     }
 
     // Phase 159 (FR-159-4) — a genuine rolling-credits stretch is black/dark for most of its duration;

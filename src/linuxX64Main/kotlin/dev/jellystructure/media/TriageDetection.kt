@@ -108,30 +108,35 @@ object TriageDetection {
         return videos.firstOrNull { it.codec.lowercase() in IMAGE_VIDEO_CODECS }?.specifier
     }
 
-    // Phase 150 (FR-SEG1-8): two triage rows for Skip Intro/Credits — "worth an eyeball" (a heuristic
-    // guess below the trust threshold) and "nothing detected at all" (Ravilo falls back to its
-    // fixed end-of-file heuristic). Mirrors the has_segments indexed column's own definition of "any
-    // usable segment marker" (MediaStore.upsertItem) — kept in lockstep by construction, both read
-    // straight off SegmentMarkers.introStartMs/creditsStartMs.
+    // Phase 150 (FR-SEG1-8), rewritten Phase 163 off the media_segment table — two triage rows for
+    // Skip Intro/Credits: "worth an eyeball" (a heuristic guess below the trust threshold) and
+    // "nothing detected at all" (Ravilo falls back to its fixed end-of-file heuristic).
     private const val LOW_CONFIDENCE_THRESHOLD = 0.60
 
-    /** Single-episode/movie-level check — also used directly by TriageRoutes' per-episode dock entries. */
-    fun isLowConfidenceSegments(s: SegmentMarkers): Boolean =
-        s.source == "heuristic" && (s.confidence ?: 1.0) < LOW_CONFIDENCE_THRESHOLD
+    private fun isLowConfidenceRow(row: MediaSegmentRow): Boolean =
+        row.source == SegmentSource.HEURISTIC && (row.confidence ?: 1.0) < LOW_CONFIDENCE_THRESHOLD
+
+    /** True if any of this episode's/movie's own segment rows is a heuristic guess below the trust
+     *  threshold — the per-episode/per-movie triage-row check (pass the result of
+     *  [MediaSegmentStore.segmentsForEpisode]/[MediaSegmentStore.segmentsForItem]). */
+    fun isLowConfidenceSegments(rows: List<MediaSegmentRow>): Boolean = rows.any(::isLowConfidenceRow)
 
     /** Episode/movie-level count of heuristic segment guesses below the trust threshold. */
-    fun lowConfidenceSegmentsCount(item: MediaItem): Int = if (item.kind == MediaKind.TV_SHOW) {
-        item.episodes.count { isLowConfidenceSegments(it.segments) }
-    } else if (isLowConfidenceSegments(item.segments)) 1 else 0
+    fun lowConfidenceSegmentsCount(item: MediaItem, segmentStore: MediaSegmentStore): Int = if (item.kind == MediaKind.TV_SHOW) {
+        item.episodes.count { ep -> isLowConfidenceSegments(segmentStore.segmentsForEpisode(item.id, ep.filename, ep.episodeNumber ?: 0)) }
+    } else if (isLowConfidenceSegments(segmentStore.segmentsForItem(item.id))) 1 else 0
 
-    private fun hasSegmentData(s: SegmentMarkers): Boolean = s.introStartMs != null || s.creditsStartMs != null
+    private fun hasSegmentData(rows: List<MediaSegmentRow>): Boolean =
+        rows.any { it.kind == SegmentKind.INTRO || it.kind == SegmentKind.CREDITS }
 
     /** True once ANY usable marker exists anywhere on the title — the whole series for a TV show (one
      *  episode with data is enough; per-episode granularity isn't useful for a title-level flag), or the
-     *  movie itself. Also backs the has_segments indexed column. */
-    fun hasAnySegments(item: MediaItem): Boolean = if (item.kind == MediaKind.TV_SHOW) {
-        item.episodes.any { hasSegmentData(it.segments) }
-    } else hasSegmentData(item.segments)
+     *  movie itself. Also what `media.has_segments` mirrors — see [MediaSegmentStore]'s own
+     *  point-update, which is the actual source of truth for that column now, not this function
+     *  (kept here only for triage's own live per-item checks, which don't touch the DB column). */
+    fun hasAnySegments(item: MediaItem, segmentStore: MediaSegmentStore): Boolean = if (item.kind == MediaKind.TV_SHOW) {
+        item.episodes.any { ep -> hasSegmentData(segmentStore.segmentsForEpisode(item.id, ep.filename, ep.episodeNumber ?: 0)) }
+    } else hasSegmentData(segmentStore.segmentsForItem(item.id))
 
-    fun hasNoSegments(item: MediaItem): Boolean = !hasAnySegments(item)
+    fun hasNoSegments(item: MediaItem, segmentStore: MediaSegmentStore): Boolean = !hasAnySegments(item, segmentStore)
 }

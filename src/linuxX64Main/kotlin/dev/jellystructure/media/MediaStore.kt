@@ -65,6 +65,10 @@ class MediaStore(
     private val json = Json { ignoreUnknownKeys = true }
     private fun ageRatingCascade(): List<String> = configStore.current.metadata.ageRatingCascade
 
+    // Phase 163 — same `db`, so a thin wrapper here rather than threading a second constructor param
+    // through MediaStore's one call site.
+    private val segmentStore = MediaSegmentStore(db)
+
     // Phase 78: cached tmdbPersonId -> profilePath index for the /api/people/{id}/image endpoint,
     // so a cache miss is O(1) instead of deserialising the whole library per request. Invalidated
     // on any write (upsertItem). null = not built yet.
@@ -355,8 +359,8 @@ class MediaStore(
                 "duplicate_episode" -> items = items.filter { TriageDetection.duplicateEpisodeCount(it) > 0 }
                 "zero_audio" -> items = items.filter { TriageDetection.zeroAudioCount(it) > 0 }
                 "cover_as_video" -> items = items.filter { TriageDetection.coverAsVideoCount(it) > 0 }  // Phase 144
-                "segments_lowconf" -> items = items.filter { TriageDetection.lowConfidenceSegmentsCount(it) > 0 }  // Phase 150
-                "no_segments" -> items = items.filter { TriageDetection.hasNoSegments(it) }  // Phase 150
+                "segments_lowconf" -> items = items.filter { TriageDetection.lowConfidenceSegmentsCount(it, segmentStore) > 0 }  // Phase 150/163
+                "no_segments" -> items = items.filter { TriageDetection.hasNoSegments(it, segmentStore) }  // Phase 150/163
                 "unresolved_jellyfin_id" -> items = items.filter { TriageDetection.unresolvedJellyfinIdCount(it) > 0 }  // Phase 152/153
             }
             items
@@ -767,6 +771,10 @@ class MediaStore(
         libraryVersion++
         val now = nowMs()
         lastCheckedMap[item.id] = now
+        // Phase 163: has_segments' source of truth is now MediaSegmentStore's own point-update, not this
+        // item's (now-stale) SegmentMarkers blob — INSERT OR REPLACE still touches every column on every
+        // write, so this carries the currently-stored value forward instead of recomputing it wrong.
+        val hasSegments = db.mediaQueries.getHasSegments(item.id).executeAsOneOrNull() ?: 0L
         db.mediaQueries.upsert(
             id = item.id,
             json = json.encodeToString(MediaItem.serializer(), item),
@@ -777,7 +785,7 @@ class MediaStore(
             network = item.network,
             issue_count = item.issueCount.toLong(),
             language_mix = if (item.languageMix) 1L else 0L,
-            has_segments = if (TriageDetection.hasAnySegments(item)) 1L else 0L,
+            has_segments = hasSegments,
             scanned_at = item.scannedAt,
             tmdb_id = item.tmdbId?.toLong(),
             poster_path = item.posterPath,
