@@ -1,6 +1,7 @@
 package dev.jellystructure
 
 import dev.jellystructure.api.AuthApi
+import dev.jellystructure.api.UserProfile
 import dev.jellystructure.ui.renderActivity
 import dev.jellystructure.ui.renderDashboard
 import dev.jellystructure.ui.renderLibrary
@@ -8,6 +9,7 @@ import dev.jellystructure.ui.renderLogin
 import dev.jellystructure.ui.renderBulkReorderWizard
 import dev.jellystructure.ui.renderMediaDetail
 import dev.jellystructure.ui.renderMetadata
+import dev.jellystructure.ui.renderSegments
 import dev.jellystructure.ui.renderSetup
 import dev.jellystructure.ui.renderLiveTv
 import dev.jellystructure.ui.renderRaviloConfig
@@ -38,6 +40,13 @@ fun main() {
 object App {
     private val scope = MainScope()
 
+    // Phase 163 — /segments is a fullscreen, chrome-less route (same technique as Login/Setup: it
+    // replaces document.body wholesale, tearing down the sidebar/topbar). shellMounted tracks whether
+    // the shell currently exists so handleRoute() knows to rebuild it before dispatching into
+    // #page-content again once the user navigates away.
+    private var shellMounted = false
+    private var currentUser: UserProfile? = null
+
     suspend fun start() {
         if (AuthApi.isSetupNeeded()) {
             renderSetup { start() }
@@ -49,8 +58,10 @@ object App {
             renderLogin { start() }
             return
         }
+        currentUser = user
 
         renderShell(user)
+        shellMounted = true
         Router.init { _ -> handleRoute() }
         if (window.location.hash.isEmpty()) {
             Router.navigate("/dashboard")
@@ -64,9 +75,18 @@ object App {
     }
 
     private fun handleRoute() {
-        val container = document.getElementById("page-content") ?: return
         val path = Router.currentPath()
         val query = Router.currentQuery()
+        if (path == "/segments") {
+            shellMounted = false
+            renderSegments(scope, query)
+            return
+        }
+        if (!shellMounted) {
+            currentUser?.let { renderShell(it) }
+            shellMounted = true
+        }
+        val container = document.getElementById("page-content") ?: return
         updateActiveNav(Router.current())
         when {
             path == "/" || path.isEmpty() || path == "/dashboard" -> renderDashboard(container, scope)
