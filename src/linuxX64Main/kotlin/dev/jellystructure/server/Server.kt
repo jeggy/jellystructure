@@ -28,6 +28,7 @@ import dev.jellystructure.server.routes.trackRoutes
 import dev.jellystructure.media.JsTagStore
 import dev.jellystructure.media.LogoDownloader
 import dev.jellystructure.server.routes.metadataRoutes
+import dev.jellystructure.server.routes.segmentRoutes
 import dev.jellystructure.server.routes.triageRoutes
 import dev.jellystructure.server.routes.tvRoutes
 import dev.jellystructure.server.routes.towoRoutes
@@ -431,6 +432,7 @@ fun startServer(
                 mediaRoutes(mediaStore, scanner, artworkDownloader, tmdbClient, appScope, scanTracker, broadcaster, jellyfinClient, configStore, mediaHistory, scanDispatcher, seedingGuard, seedingSnapshot, raviloConfigService, logoDownloader, arrRescan, sonarrEnrich, mediaJobQueue, imdbClient, fingerprintService, mediaSegmentStore)
                 activityRoutes(activityLog)
                 triageRoutes(mediaStore, jellyfinClient, configStore, mediaHistory, seedingGuard, mediaSegmentStore)
+                segmentRoutes(mediaStore, mediaSegmentStore)
                 metadataRoutes(mediaStore, jsTagStore, logoDownloader, seedingSnapshot, configStore)
                 trackRoutes(mediaStore, configStore, jellyfinClient, mediaHistory, seedingGuard, arrRescan, appScope, broadcaster, mediaJobQueue)
                 jobsRoutes(mediaJobQueue)
