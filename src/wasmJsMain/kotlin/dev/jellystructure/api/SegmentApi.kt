@@ -2,6 +2,12 @@ package dev.jellystructure.api
 
 import io.ktor.client.call.body
 import io.ktor.client.request.get
+import io.ktor.client.request.put
+import io.ktor.client.request.post
+import io.ktor.client.request.setBody
+import io.ktor.http.ContentType
+import io.ktor.http.HttpStatusCode
+import io.ktor.http.contentType
 import kotlinx.serialization.Serializable
 
 /** Mirrors `dev.jellystructure.media.SegmentKind` (linuxX64Main — a different source set, so this is a
@@ -80,6 +86,27 @@ data class SegmentSheetResponse(
     val stats: SegmentStats,
 )
 
+@Serializable
+data class SegmentEditRequest(val startMs: Long, val endMs: Long? = null)
+
+@Serializable
+data class SegmentLockRequest(val locked: Boolean)
+
+@Serializable
+data class SegmentEpisodeRef(val itemId: String, val episodeKey: String = "", val episodeNumber: Int = 0)
+
+@Serializable
+data class SegmentCheckedRequest(val items: List<SegmentEpisodeRef>)
+
+@Serializable
+data class SegmentBulkLockRequest(val items: List<SegmentEpisodeRef>, val locked: Boolean)
+
+@Serializable
+data class SegmentApplyRequest(val series: String, val season: Int, val kind: String, val targets: List<SegmentEpisodeRef>, val lock: Boolean = false)
+
+@Serializable
+data class SegmentRedetectRequest(val series: String? = null, val season: Int? = null, val movie: String? = null, val items: List<SegmentEpisodeRef> = emptyList())
+
 /** Phase 163 — client for the intro/credits editor's REST surface (SegmentRoutes.kt). */
 object SegmentApi {
     suspend fun seasonSheet(seriesId: String, season: Int): SegmentSheetResponse? = runCatching {
@@ -96,4 +123,48 @@ object SegmentApi {
     suspend fun crossLibrarySheet(filter: String): SegmentSheetResponse? = runCatching {
         httpClient.get("/api/segments") { url { parameters.append("filter", filter) } }.body<SegmentSheetResponse>()
     }.getOrNull()
+
+    suspend fun editSegment(itemId: String, kind: String, episodeKey: String, episodeNumber: Int, startMs: Long, endMs: Long?): Boolean = runCatching {
+        httpClient.put("/api/segments/$itemId/$kind") {
+            url { parameters.append("episode", episodeKey); parameters.append("n", episodeNumber.toString()) }
+            contentType(ContentType.Application.Json)
+            setBody(SegmentEditRequest(startMs, endMs))
+        }.status == HttpStatusCode.NoContent
+    }.getOrDefault(false)
+
+    suspend fun setLock(itemId: String, kind: String, episodeKey: String, episodeNumber: Int, locked: Boolean): Boolean = runCatching {
+        httpClient.put("/api/segments/$itemId/$kind/lock") {
+            url { parameters.append("episode", episodeKey); parameters.append("n", episodeNumber.toString()) }
+            contentType(ContentType.Application.Json)
+            setBody(SegmentLockRequest(locked))
+        }.status == HttpStatusCode.NoContent
+    }.getOrDefault(false)
+
+    suspend fun setChecked(items: List<SegmentEpisodeRef>): Boolean = runCatching {
+        httpClient.post("/api/segments/checked") {
+            contentType(ContentType.Application.Json)
+            setBody(SegmentCheckedRequest(items))
+        }.status == HttpStatusCode.NoContent
+    }.getOrDefault(false)
+
+    suspend fun bulkLock(items: List<SegmentEpisodeRef>, locked: Boolean): Boolean = runCatching {
+        httpClient.post("/api/segments/lock") {
+            contentType(ContentType.Application.Json)
+            setBody(SegmentBulkLockRequest(items, locked))
+        }.status == HttpStatusCode.NoContent
+    }.getOrDefault(false)
+
+    suspend fun applyConsensus(series: String, season: Int, kind: String, targets: List<SegmentEpisodeRef>, lock: Boolean = false): Boolean = runCatching {
+        httpClient.post("/api/segments/apply") {
+            contentType(ContentType.Application.Json)
+            setBody(SegmentApplyRequest(series, season, kind, targets, lock))
+        }.status == HttpStatusCode.NoContent
+    }.getOrDefault(false)
+
+    suspend fun redetect(series: String? = null, season: Int? = null, movie: String? = null, items: List<SegmentEpisodeRef> = emptyList()): Boolean = runCatching {
+        httpClient.post("/api/segments/redetect") {
+            contentType(ContentType.Application.Json)
+            setBody(SegmentRedetectRequest(series, season, movie, items))
+        }.status == HttpStatusCode.Accepted
+    }.getOrDefault(false)
 }
