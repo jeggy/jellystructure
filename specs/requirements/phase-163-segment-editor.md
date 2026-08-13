@@ -127,6 +127,8 @@ keys off. It no longer gates anything leaving the system.
 
 ### §F Streaming inside the admin
 - The player uses the **admin's existing Jellyfin session**; no new auth surface, no public URL.
+  Confirmed available (addendum §2): admin login *is* Jellyfin login, and the logged-in user's own
+  Jellyfin access token is on the session — `call.attributes[SessionKey].jellyfinUserToken`.
 - **Direct play or nothing.** We request the original stream and, when the browser cannot decode it,
   say so plainly and offer the frame-accurate fallback (timecode entry + evidence lane) rather than
   transcoding. Transcoding a 4K remux so someone can find an intro would put ffmpeg load on the box
@@ -194,7 +196,7 @@ what happened. There is no staged/apply model here.
 2. REST surface (§6) + the sheet view, read-only.
 3. Bulk apply / lock / checked, and season consensus.
 4. Trim view without video: timeline, handles, steppers, evidence lane, keyboard.
-5. Playback via Jellyfin (§F) — **settle the credential question first** (addendum §2), then the
+5. Playback via Jellyfin (§F) using the session's own `jellyfinUserToken` (addendum §2), then the
    loop-the-cut control.
 6. Jellyfin read-in as a candidate source (expect empty until a provider plugin exists).
 7. Movie entry point; dashboard deep links.
@@ -225,8 +227,8 @@ on top of it.
    provider/source field to scope one by even if there were. Verified live against 10.11.11 — see
    addendum §1.
 3. **Seek behaviour on direct play** for the 3-second loop (§F) — confirm against the real server
-   before building the control rather than after. Blocked on the §F credential decision (addendum §2):
-   there is no stream URL to seek against until that is settled.
+   before building the control rather than after. **Not blocked** (the credential exists, addendum §2);
+   answerable as soon as step 5's stream URL is minted.
 4. ~~**Multi-episode files (phase-149)**~~ **PARTLY ANSWERED 2026-08-13** — `detect_segments` skips
    `partCount > 1` episodes **entirely** today (addendum §7), so those rows are permanently empty
    regardless of layout. The remaining decision is only presentational: render them as **not supported
@@ -292,24 +294,43 @@ no Intro Skipper or equivalent), and `GET /MediaSegments/{a real episode id}` re
 will return empty — and the "cheapest confidence signal we have" will not exist — until some provider
 is installed. Not blocking; just don't let its emptiness read as a bug during testing.
 
-### 2. ⚠ **There is no "admin's existing Jellyfin session" for §F to use.**
+### 2. ✅ **§F's "admin's existing Jellyfin session" is real and already available.**
 
-The admin app authenticates with our own `js_session` cookie; it holds no Jellyfin credential. The only
-Jellyfin credential on the server is `apiKeys.jellyfinToken` — a **full admin API key**. Ravilo's
-existing precedent (`PlaybackService.kt:269`) mints
-`{base}/Videos/{id}/stream?Static=true&…&api_key={token}` for the client to fetch directly, but with a
-**per-device/per-user** token (`device.jellyfinUserToken`, R175 login), not the admin key.
+> **Corrected 2026-08-13.** This item originally claimed no such session existed and that §F would have
+> to fall back on the shared admin API key. **That was wrong** — it was written from the Ravilo playback
+> path and `apiKeys.jellyfinToken` without checking the admin login path. §F is right as written and
+> needs no decision. The corrected finding follows.
 
-Reusing that shape in the admin browser would put the admin API key in a URL in the page — visible in
-DevTools, browser history and any proxy log, granting far more than playback. That contradicts §F's own
-"no new auth surface" and is a materially wider exposure than Ravilo's per-user tokens.
+Jellystructure's own admin auth **is** Jellyfin auth:
 
-**Do not solve it by proxying the video through this backend.** Ktor Native's CIO server uses `select()`
-and dies fatally on FD ≥ 1024 (see the FD_SETSIZE incidents behind phase 134), and pumping long-lived
-range requests on the request-serving dispatcher is precisely the ProcessGate class of incident that
-took the admin site down during scans. Prefer a **short-lived, single-item, backend-minted signed URL**,
-or a dedicated limited-scope Jellyfin key used only by the editor. Decide explicitly; §F currently
-under-specifies this as already-solved.
+- `AuthRoutes.kt:49` authenticates the admin against Jellyfin with `authenticateByName` — there is no
+  separate jellystructure credential — and rejects any account that isn't a Jellyfin administrator.
+- `sessionService.create(user.id, user.name, authResult.accessToken)` stores that user's **own Jellyfin
+  access token** on the session row (`session.jellyfin_user_token`).
+- `AuthPlugin.kt:155` puts the resulting `SessionData` into `call.attributes[SessionKey]` on **every**
+  cookie-authed request.
+
+So a `/api/segments/*` handler reaches the logged-in admin's personal Jellyfin token with
+`call.attributes[SessionKey].jellyfinUserToken`, and §F's "uses the admin's existing Jellyfin session;
+no new auth surface" is literally true. It is a **per-user** token, not the shared server key: it
+inherits the session's 7-day TTL, and both `revoke` and phase-143's "sign out everywhere"
+(`revokeAllForUser`) already invalidate it.
+
+Build it the way Ravilo already does — the backend hands the client a direct Jellyfin URL and the
+browser streams from Jellyfin, exactly as `PlaybackService.kt:269` does for the TV
+(`{base}/Videos/{id}/stream?Static=true&…&api_key={token}`). Two notes for implementation:
+
+- The token has to ride the **URL**, because a `<video src>` cannot set an `Authorization` header. That
+  puts it in browser history and any intermediary log. It is the operator's *own* token in their *own*
+  browser — a session they already hold — so this is acceptable, but prefer minting the URL per item on
+  demand rather than embedding it in the sheet payload for every episode at once.
+- **Do not proxy the video through this backend instead.** Ktor Native's CIO server uses `select()` and
+  dies fatally on FD ≥ 1024 (the FD_SETSIZE incidents behind phase 134), and pumping long-lived range
+  requests on the request-serving dispatcher is precisely the ProcessGate class of incident that took
+  the admin site down during scans.
+
+This unblocks build-order step 5 and open question 3 — there is a stream URL to test seek behaviour
+against as soon as the route exists.
 
 ### 3. ⚠ **The back-fill in build-order step 1 silently unprotects every existing manual correction.**
 
@@ -386,6 +407,6 @@ itself is windowed per part. The sheet should render them as **not supported yet
 Steps 1–5 and 7 are sound as written, with §3/§4/§5/§6 above folded into step 1 and the projection
 rebuild added. **Step 6 is now read-in only** — buildable, but it will return empty until some
 provider plugin exists on the server; its publish half was dropped (see §1's decision). §7's dashboard
-deep links are unaffected. The one genuine sequencing constraint left is §2: step 5 (playback) cannot
-start until the credential question is settled, and open question 3 (seek behaviour) cannot be
-answered until step 5 has a stream URL to test against.
+deep links are unaffected. **No sequencing constraint remains** — §2's credential question turned out to
+be already answered (the admin's Jellyfin token is on the session), so step 5 can start whenever step 4
+is done, and open question 3 is answerable as soon as it mints a URL.
