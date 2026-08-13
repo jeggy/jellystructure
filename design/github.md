@@ -1,24 +1,39 @@
 repo: jeggy/jellystructure
 branch: main
 path: specs/   (plus root STATUS.md — both mirrored read-only from the repo)
-tree: 86722e4b38b0   (2026-08-10 resolved tree hash — not a commit sha)
+tree: 023eff89cbea   (2026-08-13 resolved tree hash — not a commit sha)
 
 ## Last sync
-date: 2026-08-10T14:03:52Z
+date: 2026-08-13T08:47:34Z
 direction: pull (repo → this project)
-- **R195 shipped.** Our same-language subtitle-picker spec was dev-reviewed and built the same day it was
-  renumbered — repo status is now `Implemented` / ✓ Done. Pulled the canonical version over our `Planned`
-  draft. Shipped with the design intact; deltas worth knowing: audio picker got the same two-level
-  treatment (was a non-goal), no `flag_br`/`flag_tw` assets yet (text fallback), `groupDisplayName()`
-  added for null-language clusters, and rows gained tap/touch handling (R180 shipped D-pad-only).
-- **New: phase 161** (✓ Done) — embedded text subtitles were being delivered twice on direct play
-  (sideloaded VTT + in-container). Found *through* R195's picker, which surfaced it as two identical
-  "English" rows; the bug predates the picker.
-- Pulled `specs/research-reports/claude-code-remote-agent-management-2026-08-10.md` — a **standalone**
-  design brief for a personal Claude Code remote-management website. Not a jellystructure feature; its
-  design work belongs in its own project, not `design/`.
-- Next unassigned numbers: **162 / R196**.
+- **Towo (Phase 162) shipped — our design spec is now `✓ Done`.** Authored here 2026-08-10 as `Planned,
+  not yet dev-reviewed`; the dev team reviewed and built **all 8 build-order steps on 2026-08-11**, plus a
+  same-day completeness pass, and verified it live end to end (real Claude account, real browser via
+  Playwright, isolated scratch backend on port 19505 — the real backend was never touched). Pulled the
+  canonical 49 KB spec (three dev-review addenda) over our 20 KB draft.
+- **Only one spec file changed repo-side this sync** — a byte-for-byte compare of all 89 mirrored files
+  found no additions, deletions or other edits. `STATUS.md` mirror refreshed. No new dev-authored phases.
+- **What the build changed vs. our design** (all additive; **mockups updated the same day** — new Settings
+  fields, the runners-list `mirror_error` chip, and a "runner offline" preview state on the session view):
+  Towo settings are **backend-owned in `towo_settings`, not localStorage** (the auto-continue scheduler
+  has no browser to read from) — only the `js-towo` feature flag stays client-side; new settings fields
+  we never designed: **low-quota threshold %**, **permission-request timeout + reason** (default 30 min),
+  **"where runners connect" URL** override, and the five notification toggles now actually fire.
+  Auto-continue is **control-plane-owned**, not runner-owned. There is **no runner-detail screen** in the
+  build, so the new `mirror_error` warning rides the runners **list row** instead of §B's detail page.
+  Session view gained a live **"runner offline" banner**; a permission decision made while the runner is
+  down is durably **queued and redelivered** (chosen over fail-fast, closing our open question); a
+  timed-out request records `decision = "timeout"`.
+- Both SDK unknowns we flagged are **resolved**: `canUseTool`'s signature is pinned
+  (`@anthropic-ai/claude-agent-sdk@0.3.227`; returning `null` is a first-class out-of-band-approval
+  mechanism, and there is **no built-in timeout**), and `rate_limit_event` is real + camelCase with
+  `utilization` a **0–1 fraction, not 0–100** — the live account's active bucket is `seven_day`.
+- Still open in the spec: subscription-vs-API-key, unattended OAuth on a headless host, and whether Towo
+  eventually graduates out of this admin app. Remaining build polish: a resumed session loses its
+  permission profile (falls back to Normal).
+- Next unassigned numbers: **163 / R196** (unchanged).
 
+### Sync 2026-08-10 (#2)
 ### Sync 2026-08-10 (earlier, numbering collision)
 - **Numbering collision resolved:** the dev team took **R192/R193/R194** (MediaSession trio) while our
   same-language subtitle-picker draft sat at R192. Our spec renumbered **R192 → R195**
@@ -90,12 +105,20 @@ direction: pull (repo → this project)
 | app/subtitles.html, app/app-shell.js (Subtitles nav) | phase-157 (Bazarr subtitle overview — shipped) |
 | app/media.html, app/series.html | phase-157 (Tracks & subtitles / season Bazarr cards — shipped), phase-158 (IMDb re-sync label fix — shipped) |
 | app/livetv.html | phase-147 (Live TV admin config) |
+| app/segments.html, app/segments.js, app/segments.css, app/series-simpsons.js (entry points), app/Segment Editor - Directions.html | **phase-163** (intro & credits editor + publish to Jellyfin — design-authored, Planned) |
 | ravilo/Ravilo Mobile.html, ravilo-player.js/.css | R177, R179, R180, R181, R182, R184 (autoplay stale position fix — shipped), R188 (Upcoming visibility — shipped, no design change), R191 (single-user sign-out — shipped, no design change) |
 | ravilo/ assets/brand, Barna TV Channel Logo.html | R62 brand (no spec yet) |
-| ravilo/ravilo-player.js, ravilo-player.css, ravilo-app.js, ravilo/Audio & Subtitles Picker - Same-Language Directions.html | **R195** (same-language subtitle picker — design-authored, Planned; was drafted as R192) |
+| ravilo/ravilo-player.js, ravilo-player.css, ravilo-app.js, ravilo/Audio & Subtitles Picker - Same-Language Directions.html | R195 (same-language subtitle picker — shipped) |
+| app/towo*.html, app/towo.css, app/settings.html (Towo tab), app/app-shell.js (Towo nav group), claude-console/Dashboard - Direction B.html | **phase-162** (Towo agent control plane — design-authored, shipped 2026-08-11; mockups predate the build's extra settings fields) |
 | (none — backend/platform only) | R192/R193/R194 (MediaSession lifecycle, metadata, season artwork — shipped, no design change), phase-160 (scanner numbering fallback) |
 
+## Pending export (design-authored since the last sync)
+- **phase-163 — intro & credits editor** (`Planned`, 2026-08-13): `specs/requirements/phase-163-segment-editor.md`
+  + `design/app/segments.html`/`segments.js`/`segments.css`, the `Segment Editor - Directions.html`
+  exploration, and the series-page entry points in `series-simpsons.js`. Not pushed yet.
+
 ## Sync history
+- 2026-08-13: Towo/phase-162 shipped — pulled the canonical spec (3 dev-review addenda) + STATUS.md; no other repo-side spec changes.
 - 2026-08-10 (#2): R195 shipped; pulled phase 161 + the Claude Code remote-agent research report.
 - 2026-08-10: pulled R192/R193/R194 + 160; renumbered our subtitle-picker draft R192 → R195.
 - 2026-08-07: confirmed R190 shipped; no other genuinely new content.
