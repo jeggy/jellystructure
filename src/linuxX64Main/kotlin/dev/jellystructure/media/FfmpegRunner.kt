@@ -6,6 +6,7 @@ import kotlinx.cinterop.ByteVar
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.allocArray
 import kotlinx.cinterop.memScoped
+import kotlinx.cinterop.readBytes
 import kotlinx.cinterop.toKString
 import platform.posix.fgets
 import platform.posix.pclose
@@ -197,6 +198,69 @@ object FfmpegRunner {
         val inEsc = input.replace("'", "'\\''")
         val outEsc = output.replace("'", "'\\''")
         return runCommand("ffmpeg -y -ss $atSeconds -i '$inEsc' -frames:v 1 -q:v 3 '$outEsc' 2>&1")
+    }
+
+    // Phase 163 (step 6) — binary-safe stdout capture. captureCommand/runCommand above read via
+    // fgets()+toKString(), which is text-only: fgets stops at every newline byte (common in raw PCM) and
+    // toKString() truncates at the first embedded NUL. This reads raw bytes via fread() instead, growing
+    // a chunk list rather than one big pre-sized buffer since ffmpeg's output length isn't known upfront.
+    @OptIn(ExperimentalForeignApi::class)
+    private suspend fun captureBinaryCommand(cmd: String): ByteArray? = dev.jellystructure.ops.ProcessGate.withPermit {
+        memScoped {
+            val pipe = popen(cmd, "r")
+            if (pipe == null) {
+                null
+            } else {
+                val chunkSize = 65536
+                val buf = allocArray<ByteVar>(chunkSize)
+                val chunks = mutableListOf<ByteArray>()
+                var total = 0
+                while (true) {
+                    val n = platform.posix.fread(buf, 1u, chunkSize.toULong(), pipe).toInt()
+                    if (n <= 0) break
+                    chunks.add(buf.readBytes(n))
+                    total += n
+                }
+                pclose(pipe)
+                val out = ByteArray(total)
+                var offset = 0
+                for (chunk in chunks) {
+                    chunk.copyInto(out, offset)
+                    offset += chunk.size
+                }
+                out
+            }
+        }
+    }
+
+    // Peak-per-bucket amplitude only needs coarse temporal resolution (a handful of buckets per minute at
+    // most) — 8kHz mono is already generous for that, keeping a full movie's raw PCM in the tens-of-MB
+    // range rather than hundreds.
+    private const val WAVEFORM_SAMPLE_RATE = 8000
+
+    /** Phase 163 (step 6) — [buckets] peak amplitudes (0-100) across [startSec]..[startSec]+[windowSec]
+     *  of [filePath]'s audio, for the trim view's waveform. Null on any ffmpeg failure (no audio track,
+     *  corrupt file, etc.) — the frontend renders no waveform rather than a fake flat one. */
+    suspend fun computeWaveform(filePath: String, startSec: Double, windowSec: Double, buckets: Int): List<Int>? {
+        if (windowSec <= 0 || buckets <= 0) return null
+        val escaped = filePath.replace("'", "'\\''")
+        val cmd = "nice -n 19 ionice -c3 ffmpeg -ss $startSec -i '$escaped' -t $windowSec -vn -ac 1 -ar $WAVEFORM_SAMPLE_RATE -f s16le - 2>/dev/null"
+        val bytes = captureBinaryCommand(cmd) ?: return null
+        val sampleCount = bytes.size / 2
+        if (sampleCount == 0) return List(buckets) { 0 }
+        val samplesPerBucket = (sampleCount / buckets).coerceAtLeast(1)
+        return IntArray(buckets) { b ->
+            val startIdx = b * samplesPerBucket
+            val endIdx = (startIdx + samplesPerBucket).coerceAtMost(sampleCount)
+            var peak = 0
+            for (i in startIdx until endIdx) {
+                val lo = bytes[i * 2].toInt() and 0xFF
+                val hi = bytes[i * 2 + 1].toInt()
+                val sample = kotlin.math.abs((hi shl 8) or lo)
+                if (sample > peak) peak = sample
+            }
+            (peak / 32768.0 * 100).toInt().coerceIn(0, 100)
+        }.toList()
     }
 
     /** R133: resize [input] into [output] for the Ravilo artwork service. Pass [width] OR [height] (the

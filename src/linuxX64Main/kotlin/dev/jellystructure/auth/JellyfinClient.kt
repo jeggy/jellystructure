@@ -211,6 +211,16 @@ class JellyfinClient {
         httpGet(url) { jellyfinAuth(token) }.bodyOrNull<JellyfinItemsResponse>("getItemByPath")?.items?.firstOrNull()
     }.getOrElse { Logger.warn("Jellyfin getItemByPath failed: ${it.message}"); null }
 
+    /** Phase 163 (step 6) — Jellyfin's own MediaSegments API (`GetItemSegments`), confirmed live against
+     *  this server's OpenAPI: no provider field, `Type` one of Unknown/Intro/Outro/Recap/Preview/
+     *  Commercial. Read-only — the caller offers these as `source=jellyfin` candidates, never applies
+     *  them automatically. Expect this to come back empty on a server with no segment-provider plugin
+     *  installed (confirmed live 2026-08); that's normal, not an error. */
+    suspend fun getMediaSegments(baseUrl: String, token: String, jellyfinId: String): List<JellyfinMediaSegment> = runCatching {
+        val url = baseUrl.trimEnd('/') + "/MediaSegments/$jellyfinId"
+        httpGet(url) { jellyfinAuth(token) }.bodyOrNull<JellyfinMediaSegmentsResponse>("getMediaSegments")?.items ?: emptyList()
+    }.getOrElse { Logger.warn("Jellyfin getMediaSegments failed: ${it.message}"); emptyList() }
+
     /** Phase 145 — reliable path→item resolution. This Jellyfin **ignores** the `?Path=` filter
      *  ([getItemByPath] then returns an arbitrary item), so instead pull the most-recently-added
      *  Movie/Episode items and match the path **ourselves**. Bounded (last [limit] additions) and safe to

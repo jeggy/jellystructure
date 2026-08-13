@@ -114,6 +114,20 @@ data class JellyfinItemsResponse(
     @SerialName("Items") val items: List<JellyfinItem> = emptyList(),
 )
 
+/** Phase 163 (step 6) — Jellyfin's own `GetItemSegments` shape. Ticks are 100ns units (Jellyfin's usual
+ *  convention, matching this codebase's own TICKS_PER_MS constant elsewhere). */
+@Serializable
+data class JellyfinMediaSegment(
+    @SerialName("Type") val type: String = "Unknown",
+    @SerialName("StartTicks") val startTicks: Long = 0,
+    @SerialName("EndTicks") val endTicks: Long = 0,
+)
+
+@Serializable
+data class JellyfinMediaSegmentsResponse(
+    @SerialName("Items") val items: List<JellyfinMediaSegment> = emptyList(),
+)
+
 @Serializable
 data class JellyfinUserData(
     @SerialName("PlayedPercentage") val playedPercentage: Double? = null,

@@ -137,6 +137,9 @@ data class SegmentRailItem(
 )
 
 @Serializable
+data class SegmentJellyfinCandidate(val kind: String, val startMs: Long, val endMs: Long? = null)
+
+@Serializable
 data class SegmentTrimResponse(
     val mediaId: String,
     val itemTitle: String,
@@ -226,6 +229,23 @@ object SegmentApi {
             url { parameters.append("key", episodeKey); parameters.append("n", episodeNumber.toString()) }
         }.body<SegmentTrimResponse>()
     }.getOrNull()
+
+    suspend fun waveform(mediaId: String, episodeKey: String, episodeNumber: Int, startMs: Long, endMs: Long, buckets: Int = 150): List<Int>? = runCatching {
+        httpClient.get("/api/segments/$mediaId/waveform") {
+            url {
+                if (episodeKey.isNotEmpty()) { parameters.append("episode", episodeKey); parameters.append("n", episodeNumber.toString()) }
+                parameters.append("startMs", startMs.toString())
+                parameters.append("endMs", endMs.toString())
+                parameters.append("buckets", buckets.toString())
+            }
+        }.body<List<Int>>()
+    }.getOrNull()
+
+    suspend fun jellyfinCandidates(mediaId: String, episodeKey: String, episodeNumber: Int): List<SegmentJellyfinCandidate> = runCatching {
+        httpClient.get("/api/segments/$mediaId/jellyfin") {
+            url { if (episodeKey.isNotEmpty()) { parameters.append("episode", episodeKey); parameters.append("n", episodeNumber.toString()) } }
+        }.body<List<SegmentJellyfinCandidate>>()
+    }.getOrDefault(emptyList())
 
     @Serializable
     private data class StreamUrlResponse(val url: String)
