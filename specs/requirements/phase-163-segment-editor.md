@@ -1,6 +1,7 @@
 # Phase 163 — Intro &amp; credits editor, and segments in Jellyfin (FR-SEG2)
 
-**Status:** Planned — design-complete 2026-08-13, **not yet dev-reviewed**.
+**Status:** Planned — design-complete 2026-08-13, **dev-reviewed 2026-08-13** (see the addendum at the
+end; §E's publish half is **blocked** — Jellyfin has no Media Segments write API, verified live).
 **Date:** 2026-08-13
 **Builds on:** phase-150 (segment detection), phase-159 (detection accuracy), R182 (Skip Intro /
 Skip Credits in Ravilo).
@@ -206,3 +207,148 @@ what happened. There is no staged/apply model here.
 ## Relationships
 Consumes phase-150/159. Extends phase-151's lock guarantee to segments. Feeds R182 unchanged.
 No Ravilo work.
+
+---
+
+## Dev-review addendum (2026-08-13 — backend reality check before implementation starts)
+
+Reviewed against the real backend and the **live Jellyfin server** (probed directly, not assumed).
+One finding is blocking and changes a headline goal; the rest are gaps to close during build.
+
+### 1. ⛔ **Jellyfin has no Media Segments *write* API. §E's "Write" half is not implementable as specified.**
+
+Verified live against this house's server (**Jellyfin 10.11.11**, comfortably past §E's 10.10
+assumption) by reading its own `/api-docs/openapi.json` and probing the endpoint:
+
+- `GET /MediaSegments/{itemId}` is the **only** MediaSegments operation in the entire OpenAPI document
+  (`operationId: GetItemSegments`, tag `MediaSegments`). There is no POST, PUT, PATCH or DELETE.
+- `POST /MediaSegments/{itemId}` returns **HTTP 405 Method Not Allowed** — the route is GET-only, not
+  merely undocumented.
+- `MediaSegmentDto` carries only `Id · ItemId · Type · StartTicks · EndTicks`. **There is no provider
+  or source field**, so open question 2 ("does the API let us delete only our own segments?") is moot
+  in both directions: there is no delete, and nothing to scope one by even if there were.
+
+In Jellyfin, media segments are supplied by **server-side plugins implementing `IMediaSegmentProvider`**;
+the server owns the store and exposes it read-only. That makes goal 3 ("Publish confirmed markers to
+Jellyfin so every Jellyfin client skips them"), §E's Write bullets, and the second half of build-order
+step 6 rest on an API that does not exist. **This needs a product decision before step 6 is scheduled:**
+
+- **(a) Ship our own Jellyfin plugin** implementing `IMediaSegmentProvider`, backed by a
+  jellystructure endpoint. This is the only *supported* way to get our markers into every Jellyfin
+  client. It is also a genuinely new deliverable: a C#/.NET artifact, a toolchain this repo does not
+  have, versioned against Jellyfin's plugin ABI and re-tested on every server upgrade.
+- **(b) Publish through a third-party plugin's own REST API.** Nothing suitable is installable from the
+  repos this server has configured — the catalog (41 packages across Jellyfin Stable + two private
+  repos) contains exactly one segment provider, **"Chapter Segments Provider"**, which derives segments
+  from chapter marks and accepts no external input. This route means adding an unvetted third-party
+  repo and taking a dependency on that plugin's API.
+- **(c) Drop publishing**, keep the editor, the locks and the read-in. Ravilo already consumes our
+  markers; this loses only the "every other Jellyfin client" benefit, which is a real loss but leaves
+  the phase's main body of work (a proper editing tool) fully intact and independently valuable.
+
+Recommendation: **build steps 1–5 and 7 as specified and defer step 6's publish half behind this
+decision**, rather than blocking the whole phase on it. The editor is the valuable part and does not
+depend on publishing.
+
+**Also: §E's "Read" currently yields nothing here.** No segment-provider plugin is installed on this
+server (`GET /Plugins`: AudioDB, File Transformation, Moonfin, MusicBrainz, OMDb, Studio Images, TMDb —
+no Intro Skipper or equivalent), and `GET /MediaSegments/{a real episode id}` returns
+`{"Items":[],"TotalRecordCount":0}`. Reading Jellyfin as a candidate source is worth building, but it
+will return empty — and the "cheapest confidence signal we have" will not exist — until some provider
+is installed. Not blocking; just don't let its emptiness read as a bug during testing.
+
+### 2. ⚠ **There is no "admin's existing Jellyfin session" for §F to use.**
+
+The admin app authenticates with our own `js_session` cookie; it holds no Jellyfin credential. The only
+Jellyfin credential on the server is `apiKeys.jellyfinToken` — a **full admin API key**. Ravilo's
+existing precedent (`PlaybackService.kt:269`) mints
+`{base}/Videos/{id}/stream?Static=true&…&api_key={token}` for the client to fetch directly, but with a
+**per-device/per-user** token (`device.jellyfinUserToken`, R175 login), not the admin key.
+
+Reusing that shape in the admin browser would put the admin API key in a URL in the page — visible in
+DevTools, browser history and any proxy log, granting far more than playback. That contradicts §F's own
+"no new auth surface" and is a materially wider exposure than Ravilo's per-user tokens.
+
+**Do not solve it by proxying the video through this backend.** Ktor Native's CIO server uses `select()`
+and dies fatally on FD ≥ 1024 (see the FD_SETSIZE incidents behind phase 134), and pumping long-lived
+range requests on the request-serving dispatcher is precisely the ProcessGate class of incident that
+took the admin site down during scans. Prefer a **short-lived, single-item, backend-minted signed URL**,
+or a dedicated limited-scope Jellyfin key used only by the editor. Decide explicitly; §F currently
+under-specifies this as already-solved.
+
+### 3. ⚠ **The back-fill in build-order step 1 silently unprotects every existing manual correction.**
+
+Today's model is one flat `SegmentMarkers` embedded in the media JSON blob (`model/Media.kt:52`):
+`introStartMs · introEndMs · creditsStartMs · stinger · source · confidence · manuallyConfirmed`.
+Critically, **`manuallyConfirmed` is today's lock** — it is the single flag guarding every detection
+write path (`PipelineStepOps.kt:146`, `:292`, `:401`; `Scanner.kt:660`, `:956`).
+
+§D says manual edits set `source = manual` but are **not** automatically locked, and §5 makes
+`checked_at` explicitly "not `locked`". So if back-fill maps `manuallyConfirmed = true` onto
+`checked_at`, **every marker the operator has already hand-corrected becomes overwritable by the next
+`detect_segments` run** — a data-loss-class regression on exactly the data this phase exists to protect.
+Back-fill must set **`locked = 1`** for every kind on a `manuallyConfirmed` record. State this in step 1.
+
+Three further back-fill gaps with no source value in the old model:
+- **`creditsEndMs` does not exist today** (only `creditsStartMs`). §5's `end_ms` needs a rule — runtime,
+  null, or a nullable column.
+- **`source`/`confidence` are per-marker-*set*, not per kind.** Both back-filled rows inherit the same
+  value even when the intro came from the fingerprint and the credits from the heuristic — the
+  evidence lane will attribute one of them wrongly. Consider back-filling `source` only where it is
+  unambiguous and leaving the other null.
+- **`stinger.atMs` is null in practice** (TMDB flags the *existence* of a stinger, not its time — see
+  the phase-150 build notes). An after-credits row back-filled from a stinger has no `start_ms`.
+
+### 4. ⚠ **"Detection writes only where `locked = 0`" is a wider rule than today's, and changes scan behaviour.**
+
+Today detection additionally refuses to overwrite an **already-filled** field
+(`PipelineStepOps.kt:147`: `if (current.introStartMs != null || current.creditsStartMs != null) return null`)
+— an automatic value is sticky until an explicit re-scan clears it. Under §D, any unlocked value is
+re-derived on every run. That is probably the intent (it lets phase-159's better detection improve old
+guesses) but it silently changes what a *scheduled* scan does to existing data, and it interacts with
+§B's "disagrees with the season" outline, which will move under the operator. Confirm deliberately
+rather than inheriting it as a side effect of the remodel.
+
+### 5. `has_segments` is a denormalized column that the new table would strand.
+
+`media.has_segments` (indexed, `Media.sq:17`/`:23`) is recomputed from the blob on every
+`MediaStore.updateOne` (`MediaStore.kt:780`, via `TriageDetection.hasAnySegments`). It backs the triage
+rows and the dashboard "no segments detected" filter that §G deep-links into. With segments in their own
+table, that flag must be recomputed **on segment writes** — not just on item writes — or those rows and
+§G's deep links go stale exactly while the editor is in use.
+
+### 6. Ravilo's serving path has to be rebuilt, even though Ravilo itself doesn't change.
+
+§2's "R182 already consumes our markers unchanged" is true of the *client*, but `DetailService.kt:118`
+projects `TvSegmentMarkers` from `ep.segments` — the blob. With the table as source of truth that
+projection must be rebuilt from rows, including the existing resolution precedence (manual > chapter >
+numeric confidence, never a null-vs-number comparison — phase-150 addendum §4). Name it in the build
+order so it isn't discovered at step 6; a regression here silently breaks Skip Intro on the TV.
+
+### 7. Open question 4 already has a concrete answer in the current code.
+
+Multi-episode files aren't only a layout question: `detect_segments` **skips `partCount > 1` episodes
+entirely** (`PipelineStepOps.kt:188`, and they're excluded from the fingerprint grouping at `:230`), a
+documented phase-150 scope limitation. Those rows will therefore be permanently empty until detection
+itself is windowed per part. The sheet should render them as **not supported yet**, not as
+"nothing found" — the latter reads as a detector failure and will send the operator hunting.
+
+### 8. Smaller notes for build time
+
+- `POST /api/segments/detect` fanning out over a season must go through the **existing**
+  `detect_segments` step/pool. That work is `nice`/`ionice`'d and thread-capped after the CPU-starvation
+  incident (16 ProcessGate slots could saturate 32 cores and starve the API server); an editor button
+  must not spawn ad-hoc ffmpeg outside those gates.
+- The sheet payload (`GET /api/segments?series=&season=`) must **not** go through
+  `MediaStore.allItems()` — full-library JSON-blob decode per request was the root cause of the
+  backend-performance work; query the new table (or one series) directly.
+- Keep `/api/segments/*` out of `OPEN_API_PATHS` so AuthPlugin covers it like the rest of `/api/*`.
+- §F's short seek loops (open question 3) can only be answered once a stream URL exists — sequence it
+  after the §2 auth decision, not before.
+
+### Build-order impact
+
+Steps 1–5 and 7 are sound as written, with §3/§4/§5/§6 above folded into step 1 and the projection
+rebuild added. **Step 6 splits**: "read Jellyfin as a source" is buildable now (and will return empty
+until a provider plugin exists); "diff-based publish + publish-failure triage row" is **blocked on the
+decision in §1** and should not be scheduled until that is settled.
