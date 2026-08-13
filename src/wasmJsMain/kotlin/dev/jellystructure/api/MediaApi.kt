@@ -87,16 +87,6 @@ data class SeasonStatus(val season: Int, val posterExists: Boolean = false)
 @Serializable
 data class EpisodeStillStatus(val filename: String, val stillExists: Boolean = false, val stillPath: String = "", val source: String? = null, val episodeNumber: Int? = null)
 
-// Phase 150 — manual segment-marker edit. Omitted fields keep their current value server-side (the
-// same no-explicit-null-clear convention as other write-through PATCH endpoints); "Re-scan" clears.
-@Serializable
-data class SegmentMarkersUpdate(
-    val introStartMs: Long? = null,
-    val introEndMs: Long? = null,
-    val creditsStartMs: Long? = null,
-    val locked: Boolean? = null,
-)
-
 @Serializable
 data class NfoWriteResult(val path: String)
 
@@ -919,35 +909,6 @@ object MediaApi {
     suspend fun fetchEpisodeCastFromTmdb(id: String, filename: String): MediaItem? = runCatching {
         val encoded = encodeURIComponent(filename)
         httpClient.post("/api/media/$id/episodes/$encoded/cast/fetch").body<MediaItem>()
-    }.getOrNull()
-
-    // Phase 150 — Skip Intro / Skip Credits segment markers
-
-    suspend fun patchSegments(id: String, update: SegmentMarkersUpdate): MediaItem? = runCatching {
-        httpClient.patch("/api/media/$id/segments") {
-            contentType(ContentType.Application.Json)
-            setBody(update)
-        }.body<MediaItem>()
-    }.getOrNull()
-
-    suspend fun rescanSegments(id: String): MediaItem? = runCatching {
-        httpClient.post("/api/media/$id/segments/rescan").body<MediaItem>()
-    }.getOrNull()
-
-    suspend fun patchEpisodeSegments(id: String, filename: String, episodeNumber: Int?, update: SegmentMarkersUpdate): MediaItem? = runCatching {
-        val encoded = encodeURIComponent(filename)
-        httpClient.patch("/api/media/$id/episodes/$encoded/segments") {
-            if (episodeNumber != null) parameter("episodeNumber", episodeNumber)
-            contentType(ContentType.Application.Json)
-            setBody(update)
-        }.body<MediaItem>()
-    }.getOrNull()
-
-    suspend fun rescanEpisodeSegments(id: String, filename: String, episodeNumber: Int?): MediaItem? = runCatching {
-        val encoded = encodeURIComponent(filename)
-        httpClient.post("/api/media/$id/episodes/$encoded/segments/rescan") {
-            if (episodeNumber != null) parameter("episodeNumber", episodeNumber)
-        }.body<MediaItem>()
     }.getOrNull()
 
     suspend fun searchPeople(query: String): List<PersonSearchResult> = runCatching {

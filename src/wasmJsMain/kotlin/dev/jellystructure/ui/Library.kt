@@ -78,6 +78,8 @@ private val ISSUE_FILTER_LABELS = mapOf(
     "zero_audio" to "No audio tracks",
     "cover_as_video" to "Cover art muxed as video",   // Phase 144
     "unresolved_jellyfin_id" to "Unresolved Jellyfin ID",   // Phase 152/153
+    "segments_lowconf" to "Low-confidence segments",   // Phase 150/163
+    "no_segments" to "No intro/credits detected",   // Phase 150/163
 )
 private var libSearch: String? = null
 private var libSort: String? = null

@@ -200,7 +200,13 @@ private suspend fun loadAttentionBreakdown() {
             val row = nodes.item(i) as? HTMLElement ?: continue
             row.addEventListener("click") {
                 val key = row.getAttribute("data-issue-filter") ?: return@addEventListener
-                App.navigate("/library?filter=$key")
+                // Phase 163: these two now open the segment editor's cross-library sheet, not Library —
+                // Library has nothing to show for them (no per-episode row, no bulk action).
+                when (key) {
+                    "segments_lowconf" -> App.navigate("/segments?filter=lowconf")
+                    "no_segments" -> App.navigate("/segments?filter=none")
+                    else -> App.navigate("/library?filter=$key")
+                }
             }
         }
     }
