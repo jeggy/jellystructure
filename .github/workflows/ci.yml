@@ -13,6 +13,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Check CSS scoping
+        run: ./scripts/check-css-scoping.sh
+
       - name: Install system dependencies
         run: |
           sudo apt-get update -qq
