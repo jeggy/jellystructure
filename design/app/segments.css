@@ -24,7 +24,16 @@
    matching, so they stay bare on purpose (their names don't collide with
    anything else, so nothing is at risk leaving them unscoped).
    ============================================================ */
-.sx{font-family:'Sora',sans-serif;color:var(--ink);background:var(--bg);box-sizing:border-box}
+/* .sx is the whole page's root (Main.kt replaces document.body with just this) — it needs to actually
+   BE the viewport-bounded flex column .sxbar/.sxmain below assume, or their flex:1/min-height:0 are
+   no-ops (a flex property only does anything inside a flex container) and everything just stacks in
+   normal block flow instead: .sxmain grows to fit its content instead of the reverse, and the trim
+   view's <video style="height:100%"> — with no definite parent height to resolve that percentage
+   against — falls back to its own intrinsic pixel size, which is how it ballooned to fill the whole
+   screen and pushed the timeline/marker rows below the fold on a big monitor (found live 2026-08-13).
+   height:100dvh (dynamic viewport height) wins over the 100vh fallback in browsers that support it —
+   100vh alone can include space a mobile browser's own chrome later reclaims. */
+.sx{height:100vh;height:100dvh;display:flex;flex-direction:column;overflow:hidden;font-family:'Sora',sans-serif;color:var(--ink);background:var(--bg);box-sizing:border-box}
 .sx *{box-sizing:border-box}
 .sx .sxframe{position:absolute;display:flex;flex-direction:column;overflow:hidden;border:1px solid var(--line-2);border-radius:14px;box-shadow:var(--shadow)}
 .sx .sxcap{position:absolute;font-family:'Space Grotesk',sans-serif;color:#e9ecf5}

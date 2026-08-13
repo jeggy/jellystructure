@@ -111,6 +111,9 @@ private var trimPlayheadMs = 0L
 
 fun renderSegments(scope: CoroutineScope, query: Map<String, String>) {
     val body = document.body ?: return
+    // The default UA body margin would otherwise leave a few px of unreachable scroll around .sx even
+    // once .sx itself is correctly bounded to the viewport (see segments.css's .sx rule).
+    body.style.margin = "0"
     body.innerHTML = """<div class="sx" id="seg-root"><div class="sxbar"><span class="sxsub">Loading…</span></div></div><div id="toasts"></div>"""
     openIndex = 0
     picked.clear()
