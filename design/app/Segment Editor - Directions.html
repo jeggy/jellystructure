@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="design_doc_mode" content="canvas">
+<title>Jellystructure — Segment editor directions</title>
+<link rel="stylesheet" href="wf.css">
+<link rel="stylesheet" href="segments.css">
+<style>
+body{margin:0;background:#0f1116}
+a{color:var(--acc-ink)}a:hover{color:#e0d9ff}
+.note{position:absolute;font-family:'Sora',sans-serif;color:#9aa0b4;font-size:13px;line-height:1.6;width:520px}
+.note b{color:#e9ecf5}
+.note h2{font-family:'Space Grotesk',sans-serif;font-size:26px;color:#f2f4fa;margin:0 0 10px;letter-spacing:-.02em}
+.note ul{margin:9px 0 0;padding-left:17px}
+.note li{margin-bottom:6px}
+</style>
+</head>
+<body>
+
+<div class="note" style="left:80px;top:70px;width:900px">
+<h2>Intro &amp; credits — three ways to edit segments</h2>
+<p style="margin:0">All three are the same fullscreen editor opened from an episode row (or a movie’s detail page) and returning you there. All three edit the five kinds — <b>recap · intro · next-time preview · credits · after-credits scene</b> — carry a <b>per-marker lock</b> that <b>detect_segments</b> will never overwrite, and treat <b>Jellyfin’s own segments</b> as one source among ours, publishing what you confirm back to Jellyfin so every Jellyfin client skips too, not only Ravilo. What differs is the <i>question the screen asks you</i>.</p>
+</div>
+
+<div class="sxcap" style="left:80px;top:250px"><b>A · Watch and trim</b><span>The obvious one, done properly: real playback from Jellyfin, one timeline, drag the handles. Waveform and the detector’s own evidence sit under the bar so you can see <i>why</i> it guessed that. Best when a boundary is genuinely wrong and you need to find the right one.</span></div>
+<div class="sx sxframe" id="dirA" style="left:80px;top:340px;width:1460px;height:900px"></div>
+
+<div class="sxcap" style="left:1620px;top:250px"><b>B · Confirm the cuts</b><span>Never scrub. Each boundary becomes a card with the last frame before and the first frame after, and you answer <b>looks right</b> or nudge it. Fastest possible pass over a season, and the shape that suits “the detector is usually right, I’m spot-checking it”.</span></div>
+<div class="sx sxframe" id="dirB" style="left:1620px;top:340px;width:1460px;height:900px"></div>
+
+<div class="sxcap" style="left:3160px;top:250px"><b>C · Season sheet</b><span>The whole season on one shared timeline, so the episode whose intro starts three minutes in is visible without opening anything. Multi-select for bulk apply, lock and publish; clicking a row opens the player beneath. Best for the 200-episode grind.</span></div>
+<div class="sx sxframe" id="dirC" style="left:3160px;top:340px;width:1460px;height:900px"></div>
+
+<div class="note" style="left:80px;top:1300px;width:1460px">
+<h2>What I’d ship</h2>
+<p style="margin:0"><b>C as the front door, A as the room behind it, and B’s two-frame confirm folded into A</b> as the way you accept a boundary. That gives one editor, not three: the season sheet is where you land from a series (it answers “what needs me?” in one look), a click drops into the trim view for the episode that needs real work, and the frame-pair + <b>Looks right</b> control lives at the bottom of the trim view so a confident pass is still two keystrokes per episode. A movie opens straight into the trim view — there is no season to sheet.</p>
+<ul>
+<li><b>Locks are per marker, not per title</b> — you almost always trust the credits and doubt the intro.</li>
+<li><b>Jellyfin is both a source and a destination.</b> Its own segments (Intro Skipper) come in as a proposal you accept or override; anything you confirm is published to its Media Segments API, so Jellyfin clients skip too. Worth deciding: do we publish everything, or only what a human confirmed?</li>
+<li><b>Never say “fingerprint” or “heuristic” to the operator.</b> Every source reads as plain language here — “matched across episodes”, “guessed from black frames”, “from Jellyfin”, “set by you” — while the numeric confidence stays visible for the doubtful cases.</li>
+</ul>
+</div>
+
+<template id="__bundler_thumbnail">
+<svg viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg"><rect width="120" height="120" fill="#16181f"/><rect x="18" y="26" width="84" height="42" rx="5" fill="#0a0c12" stroke="#2f3441"/><polygon points="55,40 68,47 55,54" fill="#c6bcfb"/><rect x="18" y="80" width="84" height="14" rx="4" fill="#20242f" stroke="#2f3441"/><rect x="26" y="80" width="22" height="14" rx="3" fill="#7b6ef0"/><rect x="84" y="80" width="14" height="14" rx="3" fill="#f5b542"/></svg>
+</template>
+<script src="segments-directions.js"></script>
+</body>
+</html>

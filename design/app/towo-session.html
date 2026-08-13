@@ -65,10 +65,11 @@
 <div class="smeta"><span class="chip st-run" id="st-chip"><span class="dot"></span>Running</span><span class="ws">◱ <b>jellystructure</b></span><span class="sub">on <b style="color:var(--ink)">dev box</b></span><span class="tag">bazarr</span></div></div>
 <div style="margin-left:auto;display:flex;align-items:center;gap:10px"><button class="btn sm" id="btn-interrupt">■ Interrupt</button><button class="btn sm ghost">⋯</button></div></div>
 
-<div class="demo"><span class="lbl">Preview</span><div class="seg" id="states"><button class="on" data-s="run">Running</button><button data-s="ask">Needs approval</button><button data-s="idle">Idle</button><button data-s="nap">Paused on quota</button><button data-s="back">Picked back up</button></div><span class="hint" id="demo-note" style="margin-left:auto">Watching it work — text streams in as the turn happens.</span></div>
+<div class="demo"><span class="lbl">Preview</span><div class="seg" id="states"><button class="on" data-s="run">Running</button><button data-s="ask">Needs approval</button><button data-s="idle">Idle</button><button data-s="nap">Paused on quota</button><button data-s="back">Picked back up</button><button data-s="off">Runner offline</button></div><span class="hint" id="demo-note" style="margin-left:auto">Watching it work — text streams in as the turn happens.</span></div>
 
 <div class="stage">
 <div class="pane">
+<div class="inline-nap hidden" id="offbar" style="background:var(--warn-soft);border-style:solid;border-color:rgba(245,181,66,.3);margin-bottom:12px"><div style="flex:1"><span class="chip" style="color:#f7ce85;background:rgba(245,181,66,.14);border-color:rgba(245,181,66,.3)"><span class="dot" style="background:var(--warn)"></span>dev box is offline</span><div style="font-size:13.5px;font-weight:600;margin-top:10px">Lost contact with the host — usually for a few seconds.</div><div class="hint" style="margin-top:6px">The session is left exactly as it was: Towo does not declare it dead over a dropped connection, because the work on the host is almost always still running. Anything you decide here is <b style="color:var(--ink)">kept and delivered</b> the moment the host is back.</div></div><div style="text-align:right"><div class="lbl">Last heard from</div><div class="clk" style="font-size:19px">14 s ago</div><div class="hint mono">retrying every 5 s</div></div></div>
 <div class="scroll" id="scroll">
 <div class="turn me"><div class="av">JE</div><div class="bub">Finish the Bazarr wanted-list pagination: debounce the search, page the fetch at 200 items, and keep the facet counts accurate. Run the linuxX64 tests before you call it done.</div></div>
 <div class="turn ai"><div class="av">◈</div><div class="bub"><p>Looking at how the wanted list fetches today, then I’ll page it.</p></div></div>
@@ -92,6 +93,7 @@
 <div class="inline-ask hidden" id="ask"><div class="lbl" style="color:#c3bafa">Waiting on you · 40s</div>
 <div style="display:flex;align-items:center;gap:11px;margin-top:10px"><span class="chip st-ask"><span class="dot"></span>Bash</span><span class="code" style="padding:7px 11px;font-size:12.5px">git push origin main</span></div>
 <div class="hint" style="margin-top:11px">Tests pass, so it wants to push the branch. Pre-approved here: reads, <b style="color:var(--ink)">git status</b>, <b style="color:var(--ink)">gradlew test</b> — pushes always ask.</div>
+<div class="hint" style="margin-top:7px">No answer within <b style="color:var(--ink)">30 minutes</b> and the host declines it for you, telling Claude why so it carries on. Answer while the host is offline and your decision waits for it.</div>
 <div style="display:flex;gap:9px;margin-top:14px"><button class="btn pri sm" id="ask-allow">Allow once</button><button class="btn sm" id="ask-deny">Deny…</button><a class="btn sm ghost" href="towo-approvals.html" style="margin-left:auto">Open in Approvals →</a></div></div>
 
 <div class="inline-nap hidden" id="nap"><div style="flex:1"><span class="chip st-nap"><span class="dot"></span>Paused · quota</span><div style="font-size:13.5px;font-weight:600;margin-top:10px">The 5-hour window ran out mid-turn.</div><div class="hint" style="margin-top:6px">Nothing is lost — the transcript and its place in the task are kept. It will carry on by itself, because this session is set to continue.</div></div>
@@ -128,6 +130,7 @@
   var live = document.getElementById('live'), typing = document.getElementById('typing');
   var ask = document.getElementById('ask'), nap = document.getElementById('nap');
   var backline = document.getElementById('backline'), backturn = document.getElementById('backturn'), idle = document.getElementById('idle');
+  var offbar = document.getElementById('offbar');
   var arm = document.getElementById('arm'), armtxt = document.getElementById('armtxt'), foot = document.getElementById('foot');
   var interrupt = document.getElementById('btn-interrupt');
   var LINE = 'Facet counts now come from the server totals, so they stay right on every page. Re-running the suite to be sure nothing regressed.';
@@ -152,8 +155,9 @@
   function show(el, on) { el.classList.toggle('hidden', !on); }
   function set(s) {
     state = s; clearTimeout(t1); clearInterval(t2);
-    show(live, s === 'run'); show(ask, s === 'ask'); show(nap, s === 'nap'); show(idle, s === 'idle');
+    show(live, s === 'run' || s === 'off'); show(ask, s === 'ask'); show(nap, s === 'nap'); show(idle, s === 'idle');
     show(backline, s === 'back'); show(backturn, s === 'back');
+    show(offbar, s === 'off');
     interrupt.disabled = (s !== 'run' && s !== 'back');
     interrupt.style.opacity = interrupt.disabled ? '.45' : '';
     if (s === 'run') { chipSet('st-run', 'Running'); note.textContent = 'Watching it work — text streams in as the turn happens.'; type(); foot.textContent = '12 turns · context 38%'; }
@@ -161,6 +165,7 @@
     if (s === 'nap') { chipSet('st-nap', 'Paused · quota'); note.textContent = 'The calm state: it stopped because the window ran out, not because anything broke.'; typing.textContent = ''; countdown(); foot.textContent = '13 turns · waiting for 18:42'; }
     if (s === 'idle') { chipSet('st-idle', 'Idle'); note.textContent = 'Nothing is wrong — it is just waiting. Write in the box and it starts a new turn.'; typing.textContent = ''; foot.textContent = '14 turns · idle 3 days · context 44%'; }
     if (s === 'back') { chipSet('st-run', 'Running'); note.textContent = 'Towo woke it a minute after the reset and told it to carry on.'; typing.textContent = ''; foot.textContent = '14 turns · context 44%'; }
+    if (s === 'off') { chipSet('st-run', 'Running'); note.textContent = 'The host dropped off. Nothing about the session changes — Towo waits rather than guessing.'; typing.textContent = 'Facet counts now come from the server totals, so they stay right on every page.'; foot.textContent = '12 turns · host unreachable'; }
     try { localStorage.setItem('towo-demo-state', s); } catch (e) {}
   }
   document.querySelectorAll('#states button').forEach(function (b) {

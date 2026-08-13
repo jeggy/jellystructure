@@ -17,6 +17,7 @@
   #sbz-card .sbz-w{border:1px dashed var(--warn);color:var(--warn);border-radius:999px;padding:1px 7px;font-size:.72rem;display:inline-flex;gap:4px;align-items:center;}
   #sbz-card .sbz-ok{color:var(--ok);font-size:.72rem;}
 </style>
+<style>.scard-lite{flex:1;min-width:150px;border:1px solid var(--line);border-radius:10px;background:var(--fill-2);padding:9px 12px}.scard-lite b{display:block;font-family:'Space Grotesk',sans-serif;font-size:19px;font-weight:600;margin-bottom:2px}.scard-lite span{font-size:11.5px;color:var(--ink-soft)}</style>
 </head>
 <body class="wf-body app-body">
 
@@ -377,6 +378,22 @@
           </div>
         </div>
       </div>
+      </div>
+
+      <!-- INTRO & CREDITS PANEL (Phase 163) -->
+      <div class="tabpanel" data-panel="segments" style="display:none;">
+        <div class="card">
+          <div class="row center"><h4 style="margin:0;">Intro &amp; credits</h4><span class="spacer"></span><span class="tiny muted">detected by <b>detect_segments</b> · confirmed markers publish to Jellyfin</span></div>
+          <hr class="dash" style="margin:10px 0 14px;">
+          <div class="row" style="gap:16px;flex-wrap:wrap;">
+            <div class="scard-lite"><b>6 / 8</b><span>episodes with intro &amp; credits found</span></div>
+            <div class="scard-lite"><b style="color:var(--warn)">1</b><span>guessed, not checked yet</span></div>
+            <div class="scard-lite"><b style="color:var(--ok)">2</b><span>locked by you</span></div>
+            <div class="scard-lite"><b>0:38 → 1:46</b><span>what the season agrees on</span></div>
+          </div>
+          <div class="tiny muted" style="margin:12px 0 14px;line-height:1.6;">Every episode on one aligned timeline, so an outlier is visible without opening anything — bulk-apply the season's intro, lock what's right, and publish what you've confirmed to Jellyfin so every Jellyfin client skips it, not just Ravilo.</div>
+          <a class="btn pri" href="segments.html">◧ Open the season editor →</a>
+        </div>
       </div>
 
       <!-- ARTWORK PANEL -->

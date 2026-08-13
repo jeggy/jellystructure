@@ -63,7 +63,12 @@ GitHub is the **source of truth**; we layer designs on top of it.
 - **⚠ Repo-side STATUS gap (dev team's to fix, not us):** `STATUS.md` on `main` has no rows for
   admin **152/153/154** or Ravilo **R184/R185/R186** though their spec files exist and read
   *Implemented* — `scripts/check-phases.sh` will flag them. `STATUS.md` is a read-only mirror here.
-- **Next unassigned numbers: 163 / R196.** (2026-08-10 sync #2: **R195 shipped** — dev-reviewed and built
+- **Next unassigned numbers: 164 / R196.** **New design-authored spec: `phase-163-segment-editor.md`**
+  (`Planned`, 2026-08-13, not yet dev-reviewed) — the intro & credits editor + segments published to
+  Jellyfin; see the Segments entry in the screen set. (2026-08-13 sync: **Phase 162 / Towo shipped** — dev-reviewed and
+  built in full 2026-08-11 with three dev-review addenda, verified live against a real Claude account. Only
+  spec change repo-side this sync; nothing else new. The build is backend-owned settings, not localStorage,
+  and added fields our mockups don't have yet — see the Towo entry below.) (2026-08-10 sync #2: **R195 shipped** — dev-reviewed and built
   the same day; and new **161** — stop double-delivering embedded text subtitles on direct play, ✓ Done —
   which was found *because* R195's two-level picker made the duplication visible as two identical
   "English" rows. Earlier that day: dev took 158/159/160 and R192/R193/R194 — the
@@ -137,7 +142,8 @@ GitHub is the **source of truth**; we layer designs on top of it.
   and ⌘K command palette.
 
 ## Admin screen set (current)
-- **Towo** (`towo*.html`, Phase 162 design — `Planned`, not yet dev-reviewed) — a control plane for
+- **Towo** (`towo*.html`, Phase 162 — **✓ Done / shipped 2026-08-11**; our mockups are the visual target
+  but now lag the build, see the delta note at the end of this entry) — a control plane for
   **Claude Code** sessions running on machines we own; unrelated to media. Feature-flagged **off by
   default** in Settings → **Towo** (`js-towo` in localStorage, read by `app-shell.js`, which shows/hides
   the sidebar **Towo** group: Overview · Approvals · Runners). Screens: `towo.html` (overview — runner
@@ -155,6 +161,33 @@ GitHub is the **source of truth**; we layer designs on top of it.
   `specs/requirements/phase-162-towo-agent-control-plane.md`; research report
   `specs/research-reports/claude-code-remote-agent-management-2026-08-10.md`; rejected overview
   direction kept at `claude-console/Dashboard - Direction B.html`.
+  **Design caught up to the shipped build 2026-08-13** (settings fields, `mirror_error` chip, offline banner — all drawn). **Deltas the build introduced:** Towo settings are
+  **backend-owned** (`towo_settings`), not localStorage — only `js-towo` stays client-side; Settings gained a
+  **low-quota threshold %**, a **permission-request timeout + reason** (default 30 min) and a **"where runners
+  connect" URL** override, and the five notification toggles now genuinely fire. Auto-continue is
+  control-plane-owned. **No runner-detail screen was built**, so the new `mirror_error` (transcript-mirror
+  failure) warning chip rides the **runners list row**, not §B's detail page (drawn there too). The session
+  view gained a live **"runner offline" banner** (drawn, with its own preview state); a decision made while the runner is down is **queued and redelivered** rather
+  than failing; a timed-out request records `decision = "timeout"`. Remaining code polish: a resumed session
+  loses its permission profile (falls back to Normal).
+- **Intro & credits editor** (`segments.html` + `segments.js` + `segments.css`, Phase 163 design) — one
+  fullscreen tool, no sidebar, opened from a season / episode row / **movie detail** and returning there.
+  Reached via a dedicated **Intro & credits** tab — its own tab, not a card in Overview or a link in a
+  toolbar — on both `media.html` (→ `segments.html?movie=<slug>`, straight into the trim view with a
+  films-to-check rail and Publish in the header) and every series page (→ the season sheet).
+  **Season sheet** (front door): every episode on one aligned timeline so an outlier sticks out, season
+  stats incl. **what the season agrees on** (median intro), multi-select bulk apply/lock/re-detect,
+  drawer with player per row. **Trim view** (behind it): Jellyfin playback in the admin (direct play or
+  nothing — never transcode for this), timeline with draggable handles, **waveform + evidence lane**
+  (black frames, silences, the fingerprint's matched span, chapter marks, Jellyfin's own segments),
+  per-marker rows with steppers/loop-the-cut/**per-marker lock**, review-queue rail, keyboard
+  (`I`/`O`/`,`/`.`/`L`/`↵`). Five kinds: recap · intro · next time · credits · after-credits.
+  Jellyfin is **both source and destination** — its own segments read in as a candidate, ours published
+  to its Media Segments API so every Jellyfin client skips — **only human-confirmed markers (checked or
+  locked) are ever published**, decided 2026-08-13, not a setting.
+  Locks are per marker and `detect_segments` never overwrites them (phase-151's guarantee, extended).
+  Exploration: `Segment Editor - Directions.html` (A+C shipped as one tool; **Direction B rejected** —
+  its CSS is kept in `segments.css` under an exploration-only comment so the directions file still renders).
 - **Subtitles** (`subtitles.html`, Phase 157 design) — global **Bazarr** overview (**no left-nav item**;
   reached from the dashboard summary card): live queue/tasks, wanted list (filter by kind + language),
   download/sync/

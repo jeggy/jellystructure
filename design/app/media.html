@@ -99,6 +99,7 @@
   <div class="tabs2" id="tabbar">
     <span class="on" data-tab="overview">Overview</span>
     <span data-tab="tracks">Tracks &amp; subtitles</span>
+    <span data-tab="segments">Intro &amp; credits</span>
     <span data-tab="seeding">Seeding</span>
     <span data-tab="artwork">Artwork</span>
     <span data-tab="cast">Cast &amp; crew</span>
@@ -269,6 +270,31 @@
       </div>
     </div>
   </div>
+  </div>
+
+  <!-- ================= INTRO & CREDITS TAB (Phase 163) ================= -->
+  <div class="tabpanel" data-panel="segments" style="display:none;">
+    <div class="card">
+      <div class="row center"><h4 style="margin:0;">Intro &amp; credits</h4><span class="badge info" style="margin-left:8px;">detect_segments</span><span class="spacer"></span><span class="tiny muted">published to Jellyfin once you confirm it — every Jellyfin client skips it, not just Ravilo</span></div>
+      <hr class="dash" style="margin:10px 0 14px;">
+      <div class="segwrap" style="margin-top:0;">
+        <div class="seg-head"><span class="seg-lbl">14:48 runtime</span><span class="seg-legend"><span><i class="sw sw-c"></i>Credits</span></span></div>
+        <div class="segbar">
+          <div class="seg-ticks"></div>
+          <div class="seg-cred" style="left:77.5%"><i class="h"></i></div>
+        </div>
+        <div class="seg-foot">
+          <span class="chip mono">Credits 11:28</span>
+          <span class="badge seg-src-fp">matched the outro · 0.91</span>
+          <span class="badge warn">not confirmed</span>
+          <span class="spacer"></span>
+          <a class="btn sm" href="segments.html?movie=sintel">✎ Open the editor</a>
+          <span class="btn sm ghost">↻ Re-detect</span>
+          <span class="btn sm ghost">🔓 Lock</span>
+        </div>
+      </div>
+      <div class="tiny muted" style="margin-top:11px;line-height:1.6;">No intro was found, which is normal for a film — Ravilo uses the credits marker for its <b>Skip credits</b> card. Open the editor to watch the cut, adjust it, add an after-credits scene, or lock it so the next scan leaves it alone.</div>
+    </div>
   </div>
 
   <!-- ================= TRACKS & ORDER TAB ================= -->
