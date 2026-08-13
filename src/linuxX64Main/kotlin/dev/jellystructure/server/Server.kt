@@ -162,6 +162,7 @@ fun startServer(
     requestIntentStore: dev.jellystructure.seerr.RequestIntentStore? = null,
     liveTvService: LiveTvService,
     fingerprintService: dev.jellystructure.media.FingerprintService,
+    mediaSegmentStore: dev.jellystructure.media.MediaSegmentStore,
     towoStore: TowoStore,
     towoRunnerRegistry: TowoRunnerRegistry,
     towoEventBus: TowoEventBus,
@@ -427,9 +428,9 @@ fun startServer(
                 configureConfigRoutes(configStore, effectiveScanThreads, qbClient, arrClient, seerrClient, bazarrClient, tmdbClient, requestLanguageService)
                 setupRoutes(configStore, jellyfinClient)
                 jellyfinRoutes(configStore, jellyfinClient)
-                mediaRoutes(mediaStore, scanner, artworkDownloader, tmdbClient, appScope, scanTracker, broadcaster, jellyfinClient, configStore, mediaHistory, scanDispatcher, seedingGuard, seedingSnapshot, raviloConfigService, logoDownloader, arrRescan, sonarrEnrich, mediaJobQueue, imdbClient, fingerprintService)
+                mediaRoutes(mediaStore, scanner, artworkDownloader, tmdbClient, appScope, scanTracker, broadcaster, jellyfinClient, configStore, mediaHistory, scanDispatcher, seedingGuard, seedingSnapshot, raviloConfigService, logoDownloader, arrRescan, sonarrEnrich, mediaJobQueue, imdbClient, fingerprintService, mediaSegmentStore)
                 activityRoutes(activityLog)
-                triageRoutes(mediaStore, jellyfinClient, configStore, mediaHistory, seedingGuard)
+                triageRoutes(mediaStore, jellyfinClient, configStore, mediaHistory, seedingGuard, mediaSegmentStore)
                 metadataRoutes(mediaStore, jsTagStore, logoDownloader, seedingSnapshot, configStore)
                 trackRoutes(mediaStore, configStore, jellyfinClient, mediaHistory, seedingGuard, arrRescan, appScope, broadcaster, mediaJobQueue)
                 jobsRoutes(mediaJobQueue)

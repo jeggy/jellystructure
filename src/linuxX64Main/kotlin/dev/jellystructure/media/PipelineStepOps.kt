@@ -9,11 +9,8 @@ import dev.jellystructure.model.Episode
 import dev.jellystructure.model.ImdbRating
 import dev.jellystructure.model.MediaItem
 import dev.jellystructure.model.MediaKind
-import dev.jellystructure.model.SegmentMarkers
 import dev.jellystructure.nfo.NfoWriter
 import dev.jellystructure.nowEpochSec
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 
 /**
  * Phase 145 — the per-item core of each pipeline step, extracted so the **event path**
@@ -128,23 +125,33 @@ object PipelineStepOps {
     fun rescanArr(item: MediaItem, arrRescan: ArrRescanService) = arrRescan.nudge(item)
 
     /**
-     * `detect_segments` (Phase 150, FR-SEG1-2/3/5) — chapter-title match, falling back to the ffmpeg
-     * credits heuristic, for a movie or (per-episode) a series that doesn't already have segment data.
-     * Never touches a `manuallyConfirmed` record, and skips a field that's already filled — the
-     * resolution precedence is manual > chapter > numeric confidence (dev-review addendum §4), so once
-     * something is set, only an explicit re-scan (which the admin scrubber's Re-scan button drives by
-     * clearing the fields first) re-runs detection for it.
+     * `detect_segments` (Phase 150, FR-SEG1-2/3/5; rewritten Phase 163 for the per-kind `media_segment`
+     * table) — chapter-title match, falling back to the ffmpeg credits heuristic, for one movie or
+     * episode path. Never writes over a LOCKED row (phase-151's guarantee, extended to segments —
+     * dev-review addendum §3/§D — locking is now per KIND, not per title). [force] tells a routine
+     * scheduled pass (false) from an explicit re-detect (true): false skips a kind that already has an
+     * unlocked value (same cost-avoidance the old blob model always had — re-running the ffmpeg
+     * heuristic for every item on every scheduled scan would reintroduce the CPU-starvation class of
+     * incident this project has already hit twice from unthrottled per-item ffmpeg calls); true
+     * re-derives even over an existing unlocked value, never a locked one.
      *
-     * Known scope limitation for this pass: a multi-episode file's episodes (`partCount > 1`) are
-     * skipped entirely. Credits only make sense at the very end of the shared FILE (after the last
-     * contained episode), and an intro/recap chapter only at its very start (before the first) — properly
-     * windowing detection per-position within one shared file is real extra work deferred to a later
-     * iteration; these files are the minority of a library, and skipping them leaves their episodes with
-     * no segment data, exactly like every episode today.
+     * Known scope limitation, unchanged from phase 150: a multi-episode file's episodes (`partCount >
+     * 1`) are skipped entirely by the caller ([detectChapterAndHeuristic]) — see its own doc.
+     *
+     * Records the raw detection evidence alongside every write (dev-review addendum §2's "full raw
+     * evidence" decision) — every keyword-matching chapter (not just the two winners), and every
+     * black-frame/silence interval the heuristic scanned (not just the accepted pair) — so the trim
+     * view's evidence lane can show *why*, not just the final number.
      */
-    private suspend fun detectForPath(path: String, current: SegmentMarkers, extraChapterKeywords: List<String>): SegmentMarkers? {
-        if (current.manuallyConfirmed) return null
-        if (current.introStartMs != null || current.creditsStartMs != null) return null
+    private suspend fun detectForPath(
+        itemId: String, episodeKey: String, episodeNumber: Int, path: String,
+        segmentStore: MediaSegmentStore, extraChapterKeywords: List<String>, force: Boolean,
+    ): Boolean {
+        val existingIntro = segmentStore.getSegment(itemId, episodeKey, episodeNumber, SegmentKind.INTRO)
+        val existingCredits = segmentStore.getSegment(itemId, episodeKey, episodeNumber, SegmentKind.CREDITS)
+        val introWritable = existingIntro?.locked != true && (force || existingIntro == null)
+        val creditsWritable = existingCredits?.locked != true && (force || existingCredits == null)
+        if (!introWritable && !creditsWritable) return false
 
         // Phase 150 dev-review addendum §2 / settings card: admin-added words extend (never replace)
         // the built-in list, classified as CREDITS — the settings card exposes one flat keyword list
@@ -153,70 +160,91 @@ object PipelineStepOps {
         val keywords = if (extraChapterKeywords.isEmpty()) DEFAULT_CHAPTER_KEYWORDS
         else DEFAULT_CHAPTER_KEYWORDS + extraChapterKeywords.filter { it.isNotBlank() }.map { ChapterKeyword(it, ChapterSegmentKind.CREDITS) }
 
-        SegmentDetection.fromChapters(FfprobeRunner.chapters(path), keywords)?.let { hit ->
-            return current.copy(
-                introStartMs = hit.introStartMs,
-                introEndMs = hit.introEndMs,
-                creditsStartMs = hit.creditsStartMs,
-                source = hit.source,
-                confidence = hit.confidence,
-            )
+        var wrote = false
+        val chapterHit = SegmentDetection.fromChapters(FfprobeRunner.chapters(path), keywords)
+        if (chapterHit != null) {
+            if (introWritable && chapterHit.markers.introStartMs != null) {
+                segmentStore.clearEvidenceForKind(itemId, episodeKey, episodeNumber, SegmentKind.INTRO)
+                for (ev in chapterHit.evidence) if (ev.kind == ChapterSegmentKind.INTRO) {
+                    segmentStore.recordEvidence(itemId, episodeKey, episodeNumber, SegmentKind.INTRO, EvidenceType.CHAPTER_CANDIDATE, ev.startMs, ev.endMs, chapterEvidenceDetail(ev.title), ev.accepted)
+                }
+                segmentStore.upsertSegment(itemId, episodeKey, episodeNumber, SegmentKind.INTRO, chapterHit.markers.introStartMs, chapterHit.markers.introEndMs, SegmentSource.CHAPTER, null)
+                wrote = true
+            }
+            if (creditsWritable && chapterHit.markers.creditsStartMs != null) {
+                segmentStore.clearEvidenceForKind(itemId, episodeKey, episodeNumber, SegmentKind.CREDITS)
+                for (ev in chapterHit.evidence) if (ev.kind == ChapterSegmentKind.CREDITS) {
+                    segmentStore.recordEvidence(itemId, episodeKey, episodeNumber, SegmentKind.CREDITS, EvidenceType.CHAPTER_CANDIDATE, ev.startMs, ev.endMs, chapterEvidenceDetail(ev.title), ev.accepted)
+                }
+                segmentStore.upsertSegment(itemId, episodeKey, episodeNumber, SegmentKind.CREDITS, chapterHit.markers.creditsStartMs, null, SegmentSource.CHAPTER, null)
+                wrote = true
+            }
+            // A chapter match (of EITHER kind) means the file has real chapter data — matches the old
+            // behavior of stopping here rather than also running the (much more expensive) ffmpeg
+            // heuristic on top.
+            return wrote
         }
 
-        val duration = FfprobeRunner.duration(path) ?: return null
-        val hit = SegmentDetection.fromCreditsHeuristic(path, duration) ?: return null
-        return current.copy(creditsStartMs = hit.creditsStartMs, source = hit.source, confidence = hit.confidence)
+        if (!creditsWritable) return false
+        val duration = FfprobeRunner.duration(path) ?: return false
+        val hit = SegmentDetection.fromCreditsHeuristic(path, duration) ?: return false
+        segmentStore.clearEvidenceForKind(itemId, episodeKey, episodeNumber, SegmentKind.CREDITS)
+        for (ev in hit.evidence) {
+            val type = if (ev.type == "black_frame") EvidenceType.BLACK_FRAME else EvidenceType.SILENCE
+            segmentStore.recordEvidence(itemId, episodeKey, episodeNumber, SegmentKind.CREDITS, type, ev.startMs, ev.endMs, null, ev.accepted)
+        }
+        segmentStore.upsertSegment(itemId, episodeKey, episodeNumber, SegmentKind.CREDITS, hit.startMs, null, SegmentSource.HEURISTIC, hit.confidence)
+        return true
     }
+
+    private fun chapterEvidenceDetail(title: String?): String? =
+        title?.let { """{"title":${kotlinx.serialization.json.JsonPrimitive(it)}}""" }
 
     /** Cheap tier only (chapter-title match + the ffmpeg credits heuristic) — extracted from
      *  [detectSegments] so the pipeline can run it as its own pass over every item at the pool's
      *  normal per-item granularity, ahead of the much heavier per-season fingerprint pass (see
-     *  [detectIntroFingerprintsForSeason]). Returns the (possibly updated) item so a caller chaining
-     *  straight into fingerprinting has the fresh episode-segments state without a re-fetch. */
+     *  [detectIntroFingerprintsForSeason]). No longer takes/returns a [MediaStore]/[MediaItem] to
+     *  persist — [detectForPath] writes each kind's row straight to [MediaSegmentStore], so there's
+     *  nothing left to merge back into the item blob. */
     suspend fun detectChapterAndHeuristic(
         item: MediaItem,
-        store: MediaStore,
+        segmentStore: MediaSegmentStore,
         extraChapterKeywords: List<String> = emptyList(),
-    ): MediaItem = when (item.kind) {
-        MediaKind.MOVIE -> {
-            val updated = detectForPath(item.path, item.segments, extraChapterKeywords)
-            if (updated == null) item else item.copy(segments = updated).also { store.updateOne(it) }
-        }
-        MediaKind.TV_SHOW -> {
-            var changed = false
-            val updatedEpisodes = item.episodes.map { ep ->
-                if (ep.partCount > 1) return@map ep
-                val updated = detectForPath(ep.path, ep.segments, extraChapterKeywords) ?: return@map ep
-                changed = true
-                ep.copy(segments = updated)
+        force: Boolean = false,
+    ) {
+        when (item.kind) {
+            MediaKind.MOVIE -> detectForPath(item.id, "", 0, item.path, segmentStore, extraChapterKeywords, force)
+            MediaKind.TV_SHOW -> for (ep in item.episodes) {
+                if (ep.partCount > 1) continue
+                detectForPath(item.id, ep.filename, ep.episodeNumber ?: 0, ep.path, segmentStore, extraChapterKeywords, force)
             }
-            if (!changed) item else item.copy(episodes = updatedEpisodes).also { store.updateOne(it) }
         }
     }
 
     /** Single-item convenience wrapper (chapter/heuristic tier, then — for a series — the fingerprint
      *  tier across every season) for callers that process one item at a time outside the bulk pipeline's
-     *  worker pool: the segment rescan routes ([dev.jellystructure.server.routes.MediaRoutes]) and
+     *  worker pool: the segment REST routes ([dev.jellystructure.server.routes.SegmentRoutes]) and
      *  [RealtimeIngestService]. The bulk `detect_segments` pipeline step does NOT call this — it runs
      *  the two tiers as separate `runPipelineStepPool` passes at different work-item granularities (see
      *  `Main.kt`'s `detect_segments` case) so a series with many seasons spreads its fingerprint work
      *  across the worker pool instead of running every season sequentially in one worker slot. */
     suspend fun detectSegments(
         item: MediaItem,
-        store: MediaStore,
+        segmentStore: MediaSegmentStore,
         extraChapterKeywords: List<String> = emptyList(),
         fingerprintService: FingerprintService? = null,
         detectFingerprint: Boolean = false,
+        force: Boolean = false,
         reportDetail: suspend (String?) -> Unit = {},
     ) {
-        val afterChapterHeuristic = detectChapterAndHeuristic(item, store, extraChapterKeywords)
+        detectChapterAndHeuristic(item, segmentStore, extraChapterKeywords, force)
         // FR-SEG1-4 — cross-episode audio fingerprinting (Skip Intro), gated on the detect_fingerprint
         // pipeline-step toggle: heavier (an fpcalc decode per episode) than the tier above.
-        if (afterChapterHeuristic.kind == MediaKind.TV_SHOW && detectFingerprint && fingerprintService != null) {
-            for (seasonEpisodes in eligibleSeasons(afterChapterHeuristic)) {
-                detectIntroFingerprintsForSeason(afterChapterHeuristic, store, fingerprintService, seasonEpisodes, reportDetail)
+        if (item.kind == MediaKind.TV_SHOW && detectFingerprint && fingerprintService != null) {
+            for (seasonEpisodes in eligibleSeasons(item)) {
+                detectIntroFingerprintsForSeason(item, segmentStore, fingerprintService, seasonEpisodes, force, reportDetail)
                 // Phase 159 (FR-159-3) — outro/credits counterpart, same per-season worker-pool shape.
-                detectOutroFingerprintsForSeason(afterChapterHeuristic, store, fingerprintService, seasonEpisodes, reportDetail)
+                detectOutroFingerprintsForSeason(item, segmentStore, fingerprintService, seasonEpisodes, force, reportDetail)
             }
         }
     }
@@ -229,15 +257,20 @@ object PipelineStepOps {
     fun eligibleSeasons(item: MediaItem): List<List<Episode>> =
         item.episodes.filter { it.partCount == 1 }.groupBy { it.seasonNumber }.values.filter { it.size >= 2 }
 
-    // Guards the read-current-state → merge-this-season's-updates → write-back sequence for every
-    // fingerprint-tier write, series-wide (not keyed per item): when a series' seasons are dispatched to
-    // different workers (`Main.kt`'s bulk pipeline step), two seasons of the SAME series can finish and
-    // want to write around the same time, each starting from its own snapshot of `MediaItem.episodes` —
-    // without serializing the read-merge-write, whichever writes second would silently overwrite the
-    // first's just-persisted season with its own (older) copy of every OTHER season's data. The critical
-    // section is a single cheap DB row read + in-memory merge + write (no fpcalc/network calls inside
-    // it), so one global lock across every series costs negligible contention for real correctness.
-    private val segmentWriteMutex = Mutex()
+    /** One pairwise fingerprint candidate plus which OTHER episode it came from — Phase 163's evidence
+     *  capture needs the paired episode's identity, which the old blob-merge design discarded the
+     *  moment it collapsed a pair's match into a bare (startMs, endMs, confidence) candidate. Both
+     *  episodes are already known at the [SegmentDetection.findIntroMatch] call site below; this just
+     *  stops throwing that away. */
+    private data class PairedCandidate(val candidate: SegmentDetection.IntroCandidate, val pairedEpisodeLabel: String)
+
+    private fun episodeLabel(ep: Episode): String {
+        val s = ep.seasonNumber?.toString()?.padStart(2, '0') ?: "??"
+        val e = ep.episodeNumber?.toString()?.padStart(2, '0') ?: "??"
+        return "S${s}E$e"
+    }
+
+    private fun pairedEpisodeDetail(label: String) = """{"pairedEpisode":${kotlinx.serialization.json.JsonPrimitive(label)}}"""
 
     /**
      * FR-SEG1-4, amended 2026-07-14 — cross-episode audio fingerprinting for a series' Skip Intro
@@ -265,12 +298,19 @@ object PipelineStepOps {
      * however long all ten take sequentially). [seasonEpisodes] is exactly one season's `partCount == 1`
      * episodes (≥2 of them — see [eligibleSeasons]); pairwise correlation never crosses a season
      * boundary regardless of caller, so scoping the work item this way changes nothing about the
-     * result, only how it's scheduled. The final write re-reads the item fresh and merges in only this
-     * season's episodes under [segmentWriteMutex], so concurrent sibling-season writes for the same
-     * series can never clobber each other.
+     * result, only how it's scheduled.
      *
-     * An already-filled/`manuallyConfirmed` episode is never a write target but remains a valid
-     * comparison partner for every other episode's own pairs (more data, better consensus).
+     * Phase 163 — the old design staged every season's writes into an in-memory map and merged them
+     * into a freshly re-read `MediaItem` under a global mutex, because two sibling seasons of the same
+     * series writing their own copies of the *same shared JSON blob* around the same time could
+     * silently clobber each other. With one real row per (item, episode, kind) in `media_segment`, that
+     * whole class of conflict is gone — each episode's row has its own primary key, so two sibling
+     * seasons' writes never touch the same row and SQLite's own per-row write handles the rest. Each
+     * episode's consensus is written directly as soon as it's computed, no staging/mutex needed.
+     *
+     * A non-writable (locked, or already filled with `force=false`) episode is never a write target but
+     * remains a valid comparison partner for every other episode's own pairs (more data, better
+     * consensus).
      *
      * Progress reporting is deliberately two different scales: [reportDetail] (live, ephemeral, feeds
      * the Activity page's per-worker "Workers" card only) fires once per pair — honest about scale,
@@ -281,27 +321,25 @@ object PipelineStepOps {
      */
     suspend fun detectIntroFingerprintsForSeason(
         item: MediaItem,
-        store: MediaStore,
+        segmentStore: MediaSegmentStore,
         fingerprintService: FingerprintService,
         seasonEpisodes: List<Episode>,
+        force: Boolean = false,
         reportDetail: suspend (String?) -> Unit = {},
     ) {
         fun key(ep: Episode) = "${ep.filename}#${ep.episodeNumber}"
-        val updates = mutableMapOf<String, SegmentMarkers>()
-        fun segmentsFor(ep: Episode) = updates[key(ep)] ?: ep.segments
-        fun eligible(ep: Episode) = segmentsFor(ep).let { !it.manuallyConfirmed && it.introStartMs == null }
-        fun epLabel(ep: Episode): String {
-            val s = ep.seasonNumber?.toString()?.padStart(2, '0') ?: "??"
-            val e = ep.episodeNumber?.toString()?.padStart(2, '0') ?: "??"
-            return "S${s}E$e"
+        fun epNum(ep: Episode) = ep.episodeNumber ?: 0
+        fun eligible(ep: Episode): Boolean {
+            val existing = segmentStore.getSegment(item.id, ep.filename, epNum(ep), SegmentKind.INTRO)
+            return existing?.locked != true && (force || existing == null)
         }
 
         if (seasonEpisodes.size < 2) return
         val sorted = seasonEpisodes.sortedBy { it.episodeNumber ?: Int.MAX_VALUE }
 
         // Every unordered pair within this season, kept only when at least one side still needs a
-        // result — a pair between two already-filled/manually-confirmed episodes would produce a
-        // candidate nobody writes, so it's not worth correlating.
+        // result — a pair between two non-writable episodes would produce a candidate nobody writes,
+        // so it's not worth correlating.
         val pairs = buildList {
             for (i in sorted.indices) for (j in i + 1 until sorted.size) {
                 if (eligible(sorted[i]) || eligible(sorted[j])) add(sorted[i] to sorted[j])
@@ -322,62 +360,66 @@ object PipelineStepOps {
         val fpCache = mutableMapOf<String, List<Int>?>()
         val failedEpisodes = mutableSetOf<String>()
         for ((i, ep) in touchedEpisodes.withIndex()) {
-            reportDetail("fingerprinting ${epLabel(ep)} (${i + 1}/${touchedEpisodes.size})")
+            reportDetail("fingerprinting ${episodeLabel(ep)} (${i + 1}/${touchedEpisodes.size})")
             val fp = fingerprintService.getOrCompute(item.id, ep)
             fpCache[key(ep)] = fp
             if (fp == null) {
                 failedEpisodes += key(ep)
-                Logger.warn("detect_segments: '${item.title}' ${epLabel(ep)} — fpcalc failed, excluded from correlation", "pipeline", item.id)
+                Logger.warn("detect_segments: '${item.title}' ${episodeLabel(ep)} — fpcalc failed, excluded from correlation", "pipeline", item.id)
             }
         }
 
         // Phase B — correlate every kept pair; each eligible side of a successful match contributes
-        // one IntroCandidate towards that episode's eventual consensus.
-        val candidates = mutableMapOf<String, MutableList<SegmentDetection.IntroCandidate>>()
-        fun addCandidate(ep: Episode, c: SegmentDetection.IntroCandidate) {
-            candidates.getOrPut(key(ep)) { mutableListOf() }.add(c)
+        // one candidate (with its paired episode's identity, for evidence) towards that episode's
+        // eventual consensus.
+        val candidates = mutableMapOf<String, MutableList<PairedCandidate>>()
+        fun addCandidate(ep: Episode, pairedLabel: String, c: SegmentDetection.IntroCandidate) {
+            candidates.getOrPut(key(ep)) { mutableListOf() }.add(PairedCandidate(c, pairedLabel))
         }
         for ((i, pair) in pairs.withIndex()) {
             val (epA, epB) = pair
-            reportDetail("correlating ${i + 1}/${pairs.size} (${epLabel(epA)} × ${epLabel(epB)})")
+            reportDetail("correlating ${i + 1}/${pairs.size} (${episodeLabel(epA)} × ${episodeLabel(epB)})")
             if (key(epA) in failedEpisodes || key(epB) in failedEpisodes) continue
             val fpA = fpCache[key(epA)] ?: continue
             val fpB = fpCache[key(epB)] ?: continue
             val match = SegmentDetection.findIntroMatch(fpA, fpB) ?: continue
-            if (eligible(epA)) addCandidate(epA, SegmentDetection.IntroCandidate(match.aStartMs, match.aEndMs, match.confidence))
-            if (eligible(epB)) addCandidate(epB, SegmentDetection.IntroCandidate(match.bStartMs, match.bEndMs, match.confidence))
+            if (eligible(epA)) addCandidate(epA, episodeLabel(epB), SegmentDetection.IntroCandidate(match.aStartMs, match.aEndMs, match.confidence))
+            if (eligible(epB)) addCandidate(epB, episodeLabel(epA), SegmentDetection.IntroCandidate(match.bStartMs, match.bEndMs, match.confidence))
         }
 
-        // Phase C — reconcile each episode's candidates into one consensus answer and stage the write.
+        // Phase C — reconcile each episode's candidates into one consensus answer and write it
+        // directly (see this function's doc — no staging map, no mutex, needed anymore).
+        var wroteCount = 0
         for (ep in sorted) {
             if (!eligible(ep)) continue
             val epCandidates = candidates[key(ep)] ?: continue
-            val consensus = SegmentDetection.aggregateIntroCandidates(epCandidates) ?: continue
+            val consensus = SegmentDetection.aggregateIntroCandidates(epCandidates.map { it.candidate }) ?: continue
             Logger.info(
-                "detect_segments: '${item.title}' ${epLabel(ep)} — consensus from ${epCandidates.size} pairwise " +
+                "detect_segments: '${item.title}' ${episodeLabel(ep)} — consensus from ${epCandidates.size} pairwise " +
                     "match(es), ${(consensus.endMs - consensus.startMs) / 1000}s intro (confidence ${(consensus.confidence * 100).toInt()}%)",
                 "pipeline", item.id,
             )
-            updates[key(ep)] = segmentsFor(ep).copy(
-                introStartMs = consensus.startMs, introEndMs = consensus.endMs,
-                source = "fingerprint", confidence = consensus.confidence,
-            )
+            segmentStore.clearEvidenceForKind(item.id, ep.filename, epNum(ep), SegmentKind.INTRO)
+            for (pc in epCandidates) {
+                val accepted = kotlin.math.abs(pc.candidate.startMs - consensus.startMs) <= SegmentDetection.CLUSTER_TOLERANCE_MS
+                segmentStore.recordEvidence(
+                    item.id, ep.filename, epNum(ep), SegmentKind.INTRO, EvidenceType.FINGERPRINT_MATCH,
+                    pc.candidate.startMs, pc.candidate.endMs, pairedEpisodeDetail(pc.pairedEpisodeLabel), accepted,
+                )
+            }
+            segmentStore.upsertSegment(item.id, ep.filename, epNum(ep), SegmentKind.INTRO, consensus.startMs, consensus.endMs, SegmentSource.FINGERPRINT, consensus.confidence)
+            wroteCount++
         }
 
-        if (updates.isEmpty()) {
+        if (wroteCount == 0) {
             Logger.info("detect_segments: '${item.title}' S$seasonLabel — fingerprinting found no new intro matches", "pipeline", item.id)
-            return
+        } else {
+            Logger.info("detect_segments: '${item.title}' S$seasonLabel — fingerprinting done, $wroteCount episode(s) updated", "pipeline", item.id)
         }
-        segmentWriteMutex.withLock {
-            val fresh = store.get(item.id) ?: return@withLock
-            val mergedEpisodes = fresh.episodes.map { ep -> updates[key(ep)]?.let { ep.copy(segments = it) } ?: ep }
-            store.updateOne(fresh.copy(episodes = mergedEpisodes))
-        }
-        Logger.info("detect_segments: '${item.title}' S$seasonLabel — fingerprinting done, ${updates.size} episode(s) updated", "pipeline", item.id)
     }
 
     /**
-     * Phase 159 (FR-159-3) — cross-episode OUTRO/credits fingerprinting for a series' `creditsStartMs`,
+     * Phase 159 (FR-159-3) — cross-episode OUTRO/credits fingerprinting for a series' credits marker,
      * mirroring [detectIntroFingerprintsForSeason]'s structure and season-wide-consensus reasoning
      * exactly (same pairwise-correlation-then-[SegmentDetection.aggregateIntroCandidates] shape — that
      * function is generic over "a cluster of (startMs, endMs, confidence) candidates," it doesn't care
@@ -390,19 +432,17 @@ object PipelineStepOps {
      */
     suspend fun detectOutroFingerprintsForSeason(
         item: MediaItem,
-        store: MediaStore,
+        segmentStore: MediaSegmentStore,
         fingerprintService: FingerprintService,
         seasonEpisodes: List<Episode>,
+        force: Boolean = false,
         reportDetail: suspend (String?) -> Unit = {},
     ) {
         fun key(ep: Episode) = "${ep.filename}#${ep.episodeNumber}"
-        val updates = mutableMapOf<String, SegmentMarkers>()
-        fun segmentsFor(ep: Episode) = updates[key(ep)] ?: ep.segments
-        fun eligible(ep: Episode) = segmentsFor(ep).let { !it.manuallyConfirmed && it.creditsStartMs == null }
-        fun epLabel(ep: Episode): String {
-            val s = ep.seasonNumber?.toString()?.padStart(2, '0') ?: "??"
-            val e = ep.episodeNumber?.toString()?.padStart(2, '0') ?: "??"
-            return "S${s}E$e"
+        fun epNum(ep: Episode) = ep.episodeNumber ?: 0
+        fun eligible(ep: Episode): Boolean {
+            val existing = segmentStore.getSegment(item.id, ep.filename, epNum(ep), SegmentKind.CREDITS)
+            return existing?.locked != true && (force || existing == null)
         }
 
         if (seasonEpisodes.size < 2) return
@@ -427,60 +467,62 @@ object PipelineStepOps {
         val fpCache = mutableMapOf<String, FingerprintService.TailFingerprint?>()
         val failedEpisodes = mutableSetOf<String>()
         for ((i, ep) in touchedEpisodes.withIndex()) {
-            reportDetail("outro-fingerprinting ${epLabel(ep)} (${i + 1}/${touchedEpisodes.size})")
+            reportDetail("outro-fingerprinting ${episodeLabel(ep)} (${i + 1}/${touchedEpisodes.size})")
             val duration = FfprobeRunner.duration(ep.path)
             val fp = duration?.let { fingerprintService.getOrComputeOutro(item.id, ep, it) }
             fpCache[key(ep)] = fp
             if (fp == null) {
                 failedEpisodes += key(ep)
-                Logger.warn("detect_segments: '${item.title}' ${epLabel(ep)} — outro fpcalc failed, excluded from correlation", "pipeline", item.id)
+                Logger.warn("detect_segments: '${item.title}' ${episodeLabel(ep)} — outro fpcalc failed, excluded from correlation", "pipeline", item.id)
             }
         }
 
         // Phase B — correlate every kept pair, shifting each side's match position by its own tail
         // window's absolute file offset before it becomes a candidate.
-        val candidates = mutableMapOf<String, MutableList<SegmentDetection.IntroCandidate>>()
-        fun addCandidate(ep: Episode, c: SegmentDetection.IntroCandidate) {
-            candidates.getOrPut(key(ep)) { mutableListOf() }.add(c)
+        val candidates = mutableMapOf<String, MutableList<PairedCandidate>>()
+        fun addCandidate(ep: Episode, pairedLabel: String, c: SegmentDetection.IntroCandidate) {
+            candidates.getOrPut(key(ep)) { mutableListOf() }.add(PairedCandidate(c, pairedLabel))
         }
         for ((i, pair) in pairs.withIndex()) {
             val (epA, epB) = pair
-            reportDetail("correlating outro ${i + 1}/${pairs.size} (${epLabel(epA)} × ${epLabel(epB)})")
+            reportDetail("correlating outro ${i + 1}/${pairs.size} (${episodeLabel(epA)} × ${episodeLabel(epB)})")
             if (key(epA) in failedEpisodes || key(epB) in failedEpisodes) continue
             val fpA = fpCache[key(epA)] ?: continue
             val fpB = fpCache[key(epB)] ?: continue
             val match = SegmentDetection.findIntroMatch(fpA.frames, fpB.frames) ?: continue
-            if (eligible(epA)) addCandidate(epA, SegmentDetection.IntroCandidate(match.aStartMs + fpA.windowStartMs, match.aEndMs + fpA.windowStartMs, match.confidence))
-            if (eligible(epB)) addCandidate(epB, SegmentDetection.IntroCandidate(match.bStartMs + fpB.windowStartMs, match.bEndMs + fpB.windowStartMs, match.confidence))
+            if (eligible(epA)) addCandidate(epA, episodeLabel(epB), SegmentDetection.IntroCandidate(match.aStartMs + fpA.windowStartMs, match.aEndMs + fpA.windowStartMs, match.confidence))
+            if (eligible(epB)) addCandidate(epB, episodeLabel(epA), SegmentDetection.IntroCandidate(match.bStartMs + fpB.windowStartMs, match.bEndMs + fpB.windowStartMs, match.confidence))
         }
 
-        // Phase C — reconcile each episode's candidates; only creditsStartMs is a real field on
-        // SegmentMarkers (no creditsEndMs — the player's existing end-of-file fallback covers the tail),
-        // so the consensus's startMs is all that's written.
+        // Phase C — reconcile each episode's candidates and write directly. Only a start time is a real
+        // field for credits (no end — the player's existing end-of-file fallback covers the tail), so
+        // the consensus's endMs is discarded, matching the old behavior exactly.
+        var wroteCount = 0
         for (ep in sorted) {
             if (!eligible(ep)) continue
             val epCandidates = candidates[key(ep)] ?: continue
-            val consensus = SegmentDetection.aggregateIntroCandidates(epCandidates) ?: continue
+            val consensus = SegmentDetection.aggregateIntroCandidates(epCandidates.map { it.candidate }) ?: continue
             Logger.info(
-                "detect_segments: '${item.title}' ${epLabel(ep)} — outro consensus from ${epCandidates.size} pairwise " +
+                "detect_segments: '${item.title}' ${episodeLabel(ep)} — outro consensus from ${epCandidates.size} pairwise " +
                     "match(es) (confidence ${(consensus.confidence * 100).toInt()}%)",
                 "pipeline", item.id,
             )
-            updates[key(ep)] = segmentsFor(ep).copy(
-                creditsStartMs = consensus.startMs,
-                source = "fingerprint", confidence = consensus.confidence,
-            )
+            segmentStore.clearEvidenceForKind(item.id, ep.filename, epNum(ep), SegmentKind.CREDITS)
+            for (pc in epCandidates) {
+                val accepted = kotlin.math.abs(pc.candidate.startMs - consensus.startMs) <= SegmentDetection.CLUSTER_TOLERANCE_MS
+                segmentStore.recordEvidence(
+                    item.id, ep.filename, epNum(ep), SegmentKind.CREDITS, EvidenceType.FINGERPRINT_MATCH,
+                    pc.candidate.startMs, pc.candidate.endMs, pairedEpisodeDetail(pc.pairedEpisodeLabel), accepted,
+                )
+            }
+            segmentStore.upsertSegment(item.id, ep.filename, epNum(ep), SegmentKind.CREDITS, consensus.startMs, null, SegmentSource.FINGERPRINT, consensus.confidence)
+            wroteCount++
         }
 
-        if (updates.isEmpty()) {
+        if (wroteCount == 0) {
             Logger.info("detect_segments: '${item.title}' S$seasonLabel — outro fingerprinting found no new credits matches", "pipeline", item.id)
-            return
+        } else {
+            Logger.info("detect_segments: '${item.title}' S$seasonLabel — outro fingerprinting done, $wroteCount episode(s) updated", "pipeline", item.id)
         }
-        segmentWriteMutex.withLock {
-            val fresh = store.get(item.id) ?: return@withLock
-            val mergedEpisodes = fresh.episodes.map { ep -> updates[key(ep)]?.let { ep.copy(segments = it) } ?: ep }
-            store.updateOne(fresh.copy(episodes = mergedEpisodes))
-        }
-        Logger.info("detect_segments: '${item.title}' S$seasonLabel — outro fingerprinting done, ${updates.size} episode(s) updated", "pipeline", item.id)
     }
 }
