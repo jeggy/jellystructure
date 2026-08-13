@@ -31,6 +31,14 @@ object SegSource {
     const val MANUAL = "manual"
 }
 
+/** Mirrors `dev.jellystructure.media.EvidenceType`. */
+object EvType {
+    const val BLACK_FRAME = "black_frame"
+    const val SILENCE = "silence"
+    const val FINGERPRINT_MATCH = "fingerprint_match"
+    const val CHAPTER_CANDIDATE = "chapter_candidate"
+}
+
 @Serializable
 data class SegmentDto(
     val kind: String,
@@ -107,6 +115,47 @@ data class SegmentApplyRequest(val series: String, val season: Int, val kind: St
 @Serializable
 data class SegmentRedetectRequest(val series: String? = null, val season: Int? = null, val movie: String? = null, val items: List<SegmentEpisodeRef> = emptyList())
 
+@Serializable
+data class SegmentEvidenceDto(
+    val evidenceType: String,
+    val startMs: Long,
+    val endMs: Long? = null,
+    val detail: String? = null,
+    val accepted: Boolean = false,
+)
+
+@Serializable
+data class SegmentRailItem(
+    val episodeKey: String = "",
+    val episodeNumber: Int = 0,
+    val code: String,
+    val title: String,
+    val durationSec: Double,
+    val segments: List<SegmentDto> = emptyList(),
+    val checked: Boolean = false,
+    val outlier: Boolean = false,
+)
+
+@Serializable
+data class SegmentTrimResponse(
+    val mediaId: String,
+    val itemTitle: String,
+    val seasonNumber: Int = 0,
+    val episodeKey: String = "",
+    val episodeNumber: Int = 0,
+    val code: String,
+    val title: String,
+    val durationSec: Double,
+    val kind: String,
+    val partCount: Int = 1,
+    val segments: List<SegmentDto> = emptyList(),
+    val evidence: List<SegmentEvidenceDto> = emptyList(),
+    val checked: Boolean = false,
+    val rail: List<SegmentRailItem> = emptyList(),
+    val checkedCount: Int = 0,
+    val totalCount: Int = 0,
+)
+
 /** Phase 163 — client for the intro/credits editor's REST surface (SegmentRoutes.kt). */
 object SegmentApi {
     suspend fun seasonSheet(seriesId: String, season: Int): SegmentSheetResponse? = runCatching {
@@ -167,4 +216,14 @@ object SegmentApi {
             setBody(SegmentRedetectRequest(series, season, movie, items))
         }.status == HttpStatusCode.Accepted
     }.getOrDefault(false)
+
+    suspend fun movieTrim(movieId: String): SegmentTrimResponse? = runCatching {
+        httpClient.get("/api/segments/$movieId").body<SegmentTrimResponse>()
+    }.getOrNull()
+
+    suspend fun episodeTrim(seriesId: String, episodeKey: String, episodeNumber: Int): SegmentTrimResponse? = runCatching {
+        httpClient.get("/api/segments/$seriesId/episode") {
+            url { parameters.append("key", episodeKey); parameters.append("n", episodeNumber.toString()) }
+        }.body<SegmentTrimResponse>()
+    }.getOrNull()
 }
