@@ -105,7 +105,7 @@
     if (iss.multi) chips.push('<span class="chip"><span class="dot bad"></span> '+iss.multi+' multiple-default</span>');
     if (iss.miss) chips.push('<span class="chip"><span class="dot warn"></span> '+iss.miss+' missing still/overview</span>');
     if (!iss.total) chips.push('<span class="chip"><span class="dot ok"></span> all complete</span>');
-    chips.push('<span class="spacer" style="flex:1"></span><span class="btn sm ghost" id="expand-issues">Expand all issues</span>');
+    chips.push('<span class="spacer" style="flex:1"></span><a class="btn sm" href="segments.html">◧ Intro &amp; credits for the season →</a><span class="btn sm ghost" id="expand-issues">Expand all issues</span>');
     bar.innerHTML = chips.join('');
     bar.querySelector('#expand-issues').addEventListener('click', () => document.querySelectorAll('.ep.attn').forEach(e => e.classList.add('open')));
   }
@@ -126,6 +126,7 @@
         '<div class="seg-head"><span class="seg-lbl">Intro &amp; credits</span><span class="badge bad" style="margin-left:8px;">not detected</span></div>' +
         '<div class="segbar empty"><span class="seg-empty">No markers — Ravilo falls back to a Next-Up card 34s before the file ends.</span></div>' +
         '<div class="seg-foot"><span class="muted tiny">Run detection to enable Skip Intro / Skip Credits here.</span><span class="spacer"></span>' +
+          '<a class="btn sm ghost" href="segments.html">✎ Mark them by hand</a>' +
           '<span class="btn sm seg-rescan" data-ep="' + id + '">↻ Detect segments</span></div>' +
       '</div>';
     }
@@ -150,6 +151,7 @@
         '<span class="chip mono">Credits ' + fmt(cS) + '</span>' + srcBadge +
         (stinger ? '<span class="badge seg-stinger" title="TMDB tag: aftercreditsstinger">★ scene after credits</span>' : '') +
         '<span class="spacer"></span>' +
+        '<a class="btn sm ghost" href="segments.html">✎ Open the editor</a>' +
         '<span class="btn sm ghost seg-rescan" data-ep="' + id + '">↻ Re-scan</span>' +
         '<span class="btn sm ghost seg-lock" data-ep="' + id + '">🔓 Lock</span>' +
       '</div>' +
