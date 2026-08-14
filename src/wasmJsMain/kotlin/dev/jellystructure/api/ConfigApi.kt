@@ -202,18 +202,52 @@ data class LibraryPathDiag(
     val localExists: Boolean,
 )
 
+// Phase 166 (FR-166-4/5) — save-path validation error + the Custom cron field's live-preview shape.
+@Serializable
+data class SaveConfigResult(val ok: Boolean, val field: String? = null, val error: String? = null)
+
+@Serializable
+private data class ScheduleCheckRequest(val cron: String)
+
+@Serializable
+private data class ConfigErrorBody(val field: String? = null, val error: String? = null)
+
+@Serializable
+data class ScheduleCheckResponse(
+    val valid: Boolean,
+    val description: String? = null,
+    val error: String? = null,
+    val nextRuns: List<Long> = emptyList(),
+)
+
 object ConfigApi {
     suspend fun get(): ConfigResponse? = runCatching {
         httpClient.get("/api/config").body<ConfigResponse>()
     }.getOrNull()
 
-    suspend fun save(config: AppConfig): Boolean = runCatching {
+    suspend fun save(config: AppConfig): SaveConfigResult = runCatching {
         val response = httpClient.put("/api/config") {
             contentType(ContentType.Application.Json)
             setBody(config)
         }
-        response.status == HttpStatusCode.NoContent
-    }.getOrDefault(false)
+        when (response.status) {
+            HttpStatusCode.NoContent -> SaveConfigResult(ok = true)
+            HttpStatusCode.UnprocessableEntity -> {
+                val body = runCatching { response.body<ConfigErrorBody>() }.getOrNull()
+                SaveConfigResult(ok = false, field = body?.field, error = body?.error ?: "Invalid configuration.")
+            }
+            else -> SaveConfigResult(ok = false, error = "Save failed (${response.status.value}).")
+        }
+    }.getOrDefault(SaveConfigResult(ok = false, error = "Save failed — couldn't reach the server."))
+
+    /** Live validation + next-5-runs preview for the Settings Custom cron field, computed by the exact
+     *  backend code [save] itself will validate against — see ScheduleCheckResponse's doc. */
+    suspend fun validateSchedule(cron: String): ScheduleCheckResponse? = runCatching {
+        httpClient.post("/api/config/validate-schedule") {
+            contentType(ContentType.Application.Json)
+            setBody(ScheduleCheckRequest(cron))
+        }.body<ScheduleCheckResponse>()
+    }.getOrNull()
 
     suspend fun testConnections(): ConnectionTestResult? = runCatching {
         httpClient.post("/api/connections/test").body<ConnectionTestResult>()
