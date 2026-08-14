@@ -3,6 +3,7 @@ package dev.jellystructure.server.routes
 import dev.jellystructure.auth.JellyfinClient
 import dev.jellystructure.auth.SessionKey
 import dev.jellystructure.config.ConfigStore
+import dev.jellystructure.jobs.MediaJobParams
 import dev.jellystructure.media.DuplicateEpisodes
 import dev.jellystructure.media.FfmpegRunner
 import dev.jellystructure.media.FingerprintService
@@ -118,10 +119,18 @@ data class SegmentBulkLockRequest(val items: List<SegmentEpisodeRef>, val locked
 data class SegmentApplyRequest(val series: String, val season: Int, val kind: String, val targets: List<SegmentEpisodeRef>, val lock: Boolean = false)
 
 /** [series]+[season] re-detects a whole season (chapter/heuristic tier + fingerprint tier); [movie] a
- *  single film; [items] a specific episode/movie list (chapter/heuristic tier only — see [redetectEpisodes]
- *  for why the fingerprint tier can't be scoped to an arbitrary subset). */
+ *  single film; [items] a specific episode/movie list (chapter/heuristic tier only — the fingerprint
+ *  tier is a pairwise, whole-season consensus algorithm; dropping the unselected siblings from
+ *  comparison would degrade the consensus for everyone, not just narrow the work — see
+ *  MediaJobQueue.kt's `runSegmentsEpisodes` doc). */
 @kotlinx.serialization.Serializable
 data class SegmentRedetectRequest(val series: String? = null, val season: Int? = null, val movie: String? = null, val items: List<SegmentEpisodeRef> = emptyList())
+
+/** Phase 164 (FR-164-7) — one or more job ids were enqueued (a multi-series/multi-season [items]
+ *  selection can produce several); [deduped] is how many of those were already queued/running under the
+ *  same dedupe key rather than newly inserted. */
+@kotlinx.serialization.Serializable
+data class SegmentRedetectResponse(val jobIds: List<String> = emptyList(), val enqueued: Int = 0, val deduped: Int = 0)
 
 @kotlinx.serialization.Serializable
 data class SegmentJellyfinCandidate(val kind: String, val startMs: Long, val endMs: Long?)
@@ -170,7 +179,7 @@ data class SegmentTrimResponse(
     val totalCount: Int = 0,
 )
 
-fun Route.segmentRoutes(store: MediaStore, segmentStore: MediaSegmentStore, configStore: ConfigStore, fingerprintService: FingerprintService?, appScope: CoroutineScope, jellyfinClient: JellyfinClient) {
+fun Route.segmentRoutes(store: MediaStore, segmentStore: MediaSegmentStore, configStore: ConfigStore, fingerprintService: FingerprintService?, appScope: CoroutineScope, jellyfinClient: JellyfinClient, mediaJobQueue: dev.jellystructure.media.MediaJobQueue) {
     route("/segments") {
         get {
             val seriesId = call.request.queryParameters["series"]
@@ -330,27 +339,63 @@ fun Route.segmentRoutes(store: MediaStore, segmentStore: MediaSegmentStore, conf
             call.respond(segments.mapNotNull { it.toCandidate() })
         }
 
-        // Fire-and-forget — detection can take a while (ffmpeg/fpcalc, throttled by ProcessGate like
-        // every other caller); the sheet re-fetches afterward rather than this request blocking on it.
+        // Phase 164 (FR-164-7) — enqueues onto the segments lane instead of a bare appScope.launch: real
+        // dedup (a double-click, or a redetect racing an already-queued pipeline pass for the same
+        // season, reports back "already queued" rather than running twice), visibility on the Jobs page,
+        // and cancel. Every unit here is force=true — an explicit "detect again" always re-derives even
+        // over an existing unlocked value (PipelineStepOps' own per-kind lock check still applies).
         post("/redetect") {
             val body = runCatching { call.receive<SegmentRedetectRequest>() }.getOrNull() ?: return@post call.respond(HttpStatusCode.BadRequest)
-            val pipelineStep = configStore.current.scan.pipeline.firstOrNull { it.step == "detect_segments" }
-            val chapterKeywords = pipelineStep?.chapterKeywords ?: emptyList()
-            val detectFingerprint = pipelineStep?.detectFingerprint ?: false
-            appScope.launch {
-                when {
-                    body.series != null && body.season != null -> {
-                        val item = store.get(body.series) ?: return@launch
-                        redetectSeason(item, body.season, segmentStore, chapterKeywords, detectFingerprint, fingerprintService)
+            val jobIds = mutableListOf<String>()
+            var deduped = 0
+            fun record(result: dev.jellystructure.media.SegmentEnqueueResult) {
+                jobIds += result.snapshot.id
+                if (result.deduped) deduped++
+            }
+            when {
+                body.series != null && body.season != null -> {
+                    val item = store.get(body.series) ?: return@post call.respond(HttpStatusCode.NotFound)
+                    val eps = item.episodes.count { (it.seasonNumber ?: 0) == body.season && it.partCount == 1 }
+                    record(mediaJobQueue.enqueueSegments(
+                        "segments_season", item.id, "${item.title} S${body.season.toString().padStart(2, '0')}",
+                        MediaJobParams(segmentSeason = body.season, segmentForce = true), eps.coerceAtLeast(1),
+                        "seg:season:${item.id}:${body.season}",
+                    ))
+                }
+                body.movie != null -> {
+                    val item = store.get(body.movie) ?: return@post call.respond(HttpStatusCode.NotFound)
+                    record(mediaJobQueue.enqueueSegments(
+                        "segments_movie", item.id, item.title, MediaJobParams(segmentForce = true), 1, "seg:movie:${item.id}",
+                    ))
+                }
+                body.items.isNotEmpty() -> {
+                    // Selected-episode redetect skips the fingerprint tier — see runSegmentsEpisodes'
+                    // own doc in MediaJobQueue.kt. Grouped by (series, season): in practice the editor
+                    // only ever multi-selects within one season, but grouping defensively means a
+                    // hypothetical cross-season selection still produces correct, separately-dedupable
+                    // per-season units rather than one job silently spanning seasons.
+                    for ((itemId, refs) in body.items.groupBy { it.itemId }) {
+                        val item = store.get(itemId) ?: continue
+                        if (item.kind == MediaKind.MOVIE) {
+                            record(mediaJobQueue.enqueueSegments(
+                                "segments_movie", item.id, item.title, MediaJobParams(segmentForce = true), 1, "seg:movie:${item.id}",
+                            ))
+                            continue
+                        }
+                        val wanted = refs.mapTo(mutableSetOf()) { it.episodeKey to it.episodeNumber }
+                        val matched = item.episodes.filter { (it.filename to (it.episodeNumber ?: 0)) in wanted }
+                        for ((season, seasonEps) in matched.groupBy { it.seasonNumber ?: 0 }) {
+                            val keys = seasonEps.map { "${it.filename}#${it.episodeNumber}" }
+                            record(mediaJobQueue.enqueueSegments(
+                                "segments_episodes", item.id, "${item.title} S${season.toString().padStart(2, '0')} (${keys.size} episode${if (keys.size == 1) "" else "s"})",
+                                MediaJobParams(segmentSeason = season, segmentEpisodeKeys = keys, segmentForce = true), keys.size,
+                                "seg:episodes:${item.id}:$season:${keys.sorted().joinToString(",")}",
+                            ))
+                        }
                     }
-                    body.movie != null -> {
-                        val item = store.get(body.movie) ?: return@launch
-                        PipelineStepOps.detectSegments(item, segmentStore, chapterKeywords, fingerprintService, detectFingerprint, force = true)
-                    }
-                    body.items.isNotEmpty() -> redetectEpisodes(body.items, store, segmentStore, chapterKeywords)
                 }
             }
-            call.respond(HttpStatusCode.Accepted)
+            call.respond(HttpStatusCode.Accepted, SegmentRedetectResponse(jobIds = jobIds, enqueued = jobIds.size - deduped, deduped = deduped))
         }
     }
 }
@@ -381,35 +426,6 @@ private fun applyConsensusToTargets(item: MediaItem, season: Int, kind: String, 
     return true
 }
 
-private suspend fun redetectSeason(
-    item: MediaItem, season: Int, segmentStore: MediaSegmentStore,
-    chapterKeywords: List<String>, detectFingerprint: Boolean, fingerprintService: FingerprintService?,
-) {
-    val seasonEpisodes = item.episodes.filter { (it.seasonNumber ?: 0) == season && it.partCount == 1 }
-    if (seasonEpisodes.isEmpty()) return
-    PipelineStepOps.detectChapterAndHeuristic(item.copy(episodes = seasonEpisodes), segmentStore, chapterKeywords, force = true)
-    if (detectFingerprint && fingerprintService != null && seasonEpisodes.size >= 2) {
-        PipelineStepOps.detectIntroFingerprintsForSeason(item, segmentStore, fingerprintService, seasonEpisodes, force = true)
-        PipelineStepOps.detectOutroFingerprintsForSeason(item, segmentStore, fingerprintService, seasonEpisodes, force = true)
-    }
-}
-
-// Selected-episode redetect deliberately skips the fingerprint tier: it's a pairwise, whole-season
-// consensus algorithm (see PipelineStepOps.detectIntroFingerprintsForSeason's own doc) — dropping the
-// unselected siblings from comparison would degrade the consensus for everyone, not just narrow the
-// work. Only redetectSeason (the season-wide action) re-runs it.
-private suspend fun redetectEpisodes(items: List<SegmentEpisodeRef>, store: MediaStore, segmentStore: MediaSegmentStore, chapterKeywords: List<String>) {
-    for ((itemId, refs) in items.groupBy { it.itemId }) {
-        val item = store.get(itemId) ?: continue
-        if (item.kind == MediaKind.MOVIE) {
-            PipelineStepOps.detectChapterAndHeuristic(item, segmentStore, chapterKeywords, force = true)
-            continue
-        }
-        val keys = refs.mapTo(mutableSetOf()) { it.episodeKey to it.episodeNumber }
-        val scoped = item.copy(episodes = item.episodes.filter { (it.filename to (it.episodeNumber ?: 0)) in keys })
-        if (scoped.episodes.isNotEmpty()) PipelineStepOps.detectChapterAndHeuristic(scoped, segmentStore, chapterKeywords, force = true)
-    }
-}
 
 private fun episodeRow(mediaId: String, itemTitle: String?, ep: Episode, segmentStore: MediaSegmentStore): SegmentEpisodeRow {
     val rows = segmentStore.segmentsForEpisode(mediaId, ep.filename, ep.episodeNumber ?: 0)

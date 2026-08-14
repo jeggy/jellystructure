@@ -97,17 +97,26 @@ data class NfoWritableResult(val writable: Boolean, val path: String, val error:
 // renders every type). `instances` is episode/track-level for untagged/missingStill, title-level
 // for the rest; `titles` is always how many Library rows the type will show.
 // Phase 109 — media worker (ffmpeg remux) job queue, mirrors dev.jellystructure.jobs.MediaJobSnapshot.
+// Phase 164 — widened for the two-lane queue: `lane` distinguishes "media" (concurrency-1 FIFO) from
+// "segments" (concurrency N, off the pipeline's critical path).
 @Serializable
 data class MediaJobSnapshot(
     val id: String, val type: String, val mediaId: String, val label: String, val state: String,
     val enqueuedBy: String, val createdAt: Long, val startedAt: Long? = null, val finishedAt: Long? = null,
     val error: String? = null, val fileCount: Int = 1, val filesDone: Int = 0, val pct: Double = 0.0, val speed: String? = null,
-    val etaSeconds: Long? = null,
+    val etaSeconds: Long? = null, val lane: String = "media",
+)
+
+// Phase 164 — one worker-line summary chip's worth of data, mirrors dev.jellystructure.jobs.LaneSummary.
+@Serializable
+data class LaneSummary(
+    val lane: String, val runningCount: Int, val queuedCount: Int, val doneToday: Int, val configuredWorkers: Int,
 )
 
 @Serializable
 data class JobsSummary(
-    val busy: Boolean, val doneToday: Int, val running: MediaJobSnapshot? = null,
+    val busy: Boolean, val doneToday: Int, val lanes: List<LaneSummary> = emptyList(),
+    val running: List<MediaJobSnapshot> = emptyList(),
     val queued: List<MediaJobSnapshot> = emptyList(), val recent: List<MediaJobSnapshot> = emptyList(),
 )
 

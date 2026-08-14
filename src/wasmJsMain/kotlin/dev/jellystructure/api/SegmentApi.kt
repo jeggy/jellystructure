@@ -116,6 +116,12 @@ data class SegmentApplyRequest(val series: String, val season: Int, val kind: St
 @Serializable
 data class SegmentRedetectRequest(val series: String? = null, val season: Int? = null, val movie: String? = null, val items: List<SegmentEpisodeRef> = emptyList())
 
+// Phase 164 — mirrors dev.jellystructure.server.routes.SegmentRedetectResponse.
+@Serializable
+private data class SegmentRedetectResponseDto(val jobIds: List<String> = emptyList(), val enqueued: Int = 0, val deduped: Int = 0)
+
+data class SegmentRedetectResult(val ok: Boolean, val enqueued: Int = 0, val deduped: Int = 0)
+
 @Serializable
 data class SegmentEvidenceDto(
     val evidenceType: String,
@@ -220,12 +226,19 @@ object SegmentApi {
         }.status == HttpStatusCode.NoContent
     }.getOrDefault(false)
 
-    suspend fun redetect(series: String? = null, season: Int? = null, movie: String? = null, items: List<SegmentEpisodeRef> = emptyList()): Boolean = runCatching {
-        httpClient.post("/api/segments/redetect") {
+    /** Phase 164 (FR-164-7) — now enqueues onto the segments job lane (dedup-aware) instead of a bare
+     *  fire-and-forget launch; the response says how many units were newly queued vs. already
+     *  queued/running under the same dedupe key, so the caller's toast can be honest about which. */
+    suspend fun redetect(series: String? = null, season: Int? = null, movie: String? = null, items: List<SegmentEpisodeRef> = emptyList()): SegmentRedetectResult = runCatching {
+        val response = httpClient.post("/api/segments/redetect") {
             contentType(ContentType.Application.Json)
             setBody(SegmentRedetectRequest(series, season, movie, items))
-        }.status == HttpStatusCode.Accepted
-    }.getOrDefault(false)
+        }
+        if (response.status == HttpStatusCode.Accepted) {
+            val body = response.body<SegmentRedetectResponseDto>()
+            SegmentRedetectResult(ok = true, enqueued = body.enqueued, deduped = body.deduped)
+        } else SegmentRedetectResult(ok = false)
+    }.getOrDefault(SegmentRedetectResult(ok = false))
 
     suspend fun movieTrim(movieId: String): SegmentTrimResponse? = runCatching {
         httpClient.get("/api/segments/$movieId").body<SegmentTrimResponse>()

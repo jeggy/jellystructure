@@ -148,6 +148,11 @@ fun renderSettings(container: Element, scope: CoroutineScope, query: Map<String,
                 <span class="hint">Number of items processed concurrently. Changing this during a scan takes effect immediately.</span>
               </div>
               <div class="field">
+                <label>Segment detection workers</label>
+                <input id="segment-workers" class="input" type="number" min="1" max="8" style="width:90px">
+                <span class="hint">Phase 164 — intro/credits detection runs in its own queue (Activity ▸ Jobs &amp; workers), concurrently with everything else, so a slow scan no longer holds up the rest of the pipeline. Takes effect on the next job dispatch, no restart needed.</span>
+              </div>
+              <div class="field">
                 <label>Scan thread pool size</label>
                 <input id="scan-threads" class="input" type="number" min="1" max="100" style="width:90px">
                 <span class="hint">Thread pool the workers run on. <strong>Requires an application restart.</strong></span>
@@ -693,6 +698,7 @@ private var overwriteNfo = false
 private var fetchImages = true
 private var tellJellyfin = true
 private var scanWorkers = 1
+private var segmentWorkers = 2
 private var scanThreads = 4
 private var scanEpisodeCap = 0
 private var tvImageCacheMb = 2048
@@ -779,6 +785,7 @@ private fun populateForm(response: ConfigResponse) {
     fetchImages = config.behavior.fetchImages
     tellJellyfin = config.behavior.tellJellyfin
     scanWorkers = config.behavior.scanWorkers
+    segmentWorkers = config.behavior.segmentWorkers
     scanThreads = config.behavior.scanThreads
     scanEpisodeCap = config.behavior.scanEpisodeCap
     tvImageCacheMb = config.behavior.tvImageCacheMb
@@ -786,6 +793,7 @@ private fun populateForm(response: ConfigResponse) {
     updateToggle("fetch-images-toggle", fetchImages)
     updateToggle("tell-jellyfin-toggle", tellJellyfin)
     setInputValue("scan-workers", scanWorkers.toString())
+    setInputValue("segment-workers", segmentWorkers.toString())
     setInputValue("scan-threads", scanThreads.toString())
     setInputValue("scan-episode-cap", scanEpisodeCap.toString())
     setInputValue("tv-image-cache", tvImageCacheMb.toString())
@@ -930,6 +938,10 @@ private fun attachListeners(scope: CoroutineScope) {
 
     document.getElementById("scan-workers")?.addEventListener("input") {
         scanWorkers = (document.getElementById("scan-workers") as? HTMLInputElement)?.value?.toIntOrNull()?.coerceIn(1, 100) ?: 1
+        refreshTomlPreview(readForm())
+    }
+    document.getElementById("segment-workers")?.addEventListener("input") {
+        segmentWorkers = (document.getElementById("segment-workers") as? HTMLInputElement)?.value?.toIntOrNull()?.coerceIn(1, 8) ?: 2
         refreshTomlPreview(readForm())
     }
     document.getElementById("scan-threads")?.addEventListener("input") {
@@ -1322,6 +1334,7 @@ private fun readForm(): AppConfig = AppConfig(
         fetchImages = fetchImages,
         tellJellyfin = tellJellyfin,
         scanWorkers = scanWorkers,
+        segmentWorkers = segmentWorkers,
         scanThreads = scanThreads,
         scanEpisodeCap = scanEpisodeCap,
         tvImageCacheMb = tvImageCacheMb,
@@ -1394,6 +1407,7 @@ private fun buildToml(c: AppConfig): String = buildString {
     appendLine("fetch_images = ${c.behavior.fetchImages}")
     appendLine("tell_jellyfin = ${c.behavior.tellJellyfin}")
     appendLine("scan_workers = ${c.behavior.scanWorkers}")
+    appendLine("segment_workers = ${c.behavior.segmentWorkers}")
     appendLine("scan_threads = ${c.behavior.scanThreads}")
     appendLine("tv_image_cache_mb = ${c.behavior.tvImageCacheMb}")
     if (c.scanSchedule.isNotBlank()) {

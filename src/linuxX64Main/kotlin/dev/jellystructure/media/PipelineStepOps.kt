@@ -211,12 +211,28 @@ object PipelineStepOps {
         segmentStore: MediaSegmentStore,
         extraChapterKeywords: List<String> = emptyList(),
         force: Boolean = false,
+        // Phase 164 (FR-164-5) — the segments job queue's only cooperative-cancel hook: checked between
+        // episodes (there is no mid-episode cancel point — one detectForPath call is seconds long at
+        // most). onEpisodeDone feeds the job row's files_done/file_count so "episode 7 of 12" is real.
+        // Both default to no-ops so every pre-164 call site (the bulk pipeline step, the segment REST
+        // routes, RealtimeIngestService) is unaffected.
+        isCancelled: () -> Boolean = { false },
+        onEpisodeDone: suspend (done: Int, total: Int) -> Unit = { _, _ -> },
     ) {
         when (item.kind) {
-            MediaKind.MOVIE -> detectForPath(item.id, "", 0, item.path, segmentStore, extraChapterKeywords, force)
-            MediaKind.TV_SHOW -> for (ep in item.episodes) {
-                if (ep.partCount > 1) continue
-                detectForPath(item.id, ep.filename, ep.episodeNumber ?: 0, ep.path, segmentStore, extraChapterKeywords, force)
+            MediaKind.MOVIE -> {
+                detectForPath(item.id, "", 0, item.path, segmentStore, extraChapterKeywords, force)
+                onEpisodeDone(1, 1)
+            }
+            MediaKind.TV_SHOW -> {
+                val eligible = item.episodes.filter { it.partCount == 1 }
+                var done = 0
+                for (ep in eligible) {
+                    if (isCancelled()) break
+                    detectForPath(item.id, ep.filename, ep.episodeNumber ?: 0, ep.path, segmentStore, extraChapterKeywords, force)
+                    done++
+                    onEpisodeDone(done, eligible.size)
+                }
             }
         }
     }
@@ -326,6 +342,10 @@ object PipelineStepOps {
         seasonEpisodes: List<Episode>,
         force: Boolean = false,
         reportDetail: suspend (String?) -> Unit = {},
+        // Phase 164 (FR-164-5) — checked between episodes in Phase A below, the one part of this
+        // function with real I/O (an fpcalc decode); Phase B/C are fast in-memory work not worth
+        // interrupting mid-way. Defaults to a no-op so every pre-164 call site is unaffected.
+        isCancelled: () -> Boolean = { false },
     ) {
         fun key(ep: Episode) = "${ep.filename}#${ep.episodeNumber}"
         fun epNum(ep: Episode) = ep.episodeNumber ?: 0
@@ -360,6 +380,7 @@ object PipelineStepOps {
         val fpCache = mutableMapOf<String, List<Int>?>()
         val failedEpisodes = mutableSetOf<String>()
         for ((i, ep) in touchedEpisodes.withIndex()) {
+            if (isCancelled()) return
             reportDetail("fingerprinting ${episodeLabel(ep)} (${i + 1}/${touchedEpisodes.size})")
             val fp = fingerprintService.getOrCompute(item.id, ep)
             fpCache[key(ep)] = fp
@@ -437,6 +458,9 @@ object PipelineStepOps {
         seasonEpisodes: List<Episode>,
         force: Boolean = false,
         reportDetail: suspend (String?) -> Unit = {},
+        // Phase 164 (FR-164-5) — same shape as detectIntroFingerprintsForSeason's own parameter; see
+        // that function's doc.
+        isCancelled: () -> Boolean = { false },
     ) {
         fun key(ep: Episode) = "${ep.filename}#${ep.episodeNumber}"
         fun epNum(ep: Episode) = ep.episodeNumber ?: 0
@@ -467,6 +491,7 @@ object PipelineStepOps {
         val fpCache = mutableMapOf<String, FingerprintService.TailFingerprint?>()
         val failedEpisodes = mutableSetOf<String>()
         for ((i, ep) in touchedEpisodes.withIndex()) {
+            if (isCancelled()) return
             reportDetail("outro-fingerprinting ${episodeLabel(ep)} (${i + 1}/${touchedEpisodes.size})")
             val duration = FfprobeRunner.duration(ep.path)
             val fp = duration?.let { fingerprintService.getOrComputeOutro(item.id, ep, it) }

@@ -52,7 +52,7 @@ sealed class JobEvent {
 @Serializable
 data class MediaJobSnapshot(
     val id: String,
-    val type: String,           // reorder | remove | bulk_reorder
+    val type: String,           // reorder | remove | bulk_reorder | segments_movie | segments_season | segments_episodes
     val mediaId: String,
     val label: String,
     val state: String,          // queued | running | done | failed | cancelled
@@ -66,4 +66,17 @@ data class MediaJobSnapshot(
     val pct: Double = 0.0,
     val speed: String? = null,
     val etaSeconds: Long? = null,
+    val lane: String = "media",  // Phase 164 — "media" | "segments"
+)
+
+/** Phase 164 (FR-164-6) — one worker-line summary chip's worth of data for the Jobs & workers page:
+ *  busy/running/queued/done-today, per lane. Shared shape (not duplicated frontend/backend) like
+ *  [MediaJobSnapshot] above. */
+@Serializable
+data class LaneSummary(
+    val lane: String,
+    val runningCount: Int,
+    val queuedCount: Int,
+    val doneToday: Int,
+    val configuredWorkers: Int,
 )
