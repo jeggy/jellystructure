@@ -2052,17 +2052,18 @@ private fun renderIngestCard(status: IngestStatus) {
                 </div>
                 <div class="tiny muted" style="margin-top:4px">${if (status.lastEventAt != null) "Last event received ${dev.jellystructure.formatStoredTs(status.lastEventAt.toString())}" else "No events received yet"}</div>
                 <div class="tiny" id="ingest-setup-msg" style="margin-top:6px"></div>"""
+            // Bug fix (live report, 2026-08-14): this used to POST directly from the browser to the
+            // absolute destination URL — CORS-blocked the moment that URL wasn't the same origin the
+            // admin page was served from (this app deliberately locks CORS to same-origin; see the
+            // backend route's own doc). Runs server-side now via a same-origin call instead.
             document.getElementById("ingest-test-url")?.addEventListener("click") {
                 settingsScope?.launch {
                     val msgEl = document.getElementById("ingest-setup-msg") as? HTMLElement
                     msgEl?.textContent = "Sending…"
                     val ok = runCatching {
-                        httpClient.post(jf.destinationUrl!!) {
-                            contentType(ContentType.Application.Json)
-                            setBody("""{"ItemId":"test","ItemType":"Movie"}""")
-                        }.status.value in 200..299
+                        httpClient.post("/api/settings/ingest/test-destination").status.value in 200..299
                     }.getOrDefault(false)
-                    msgEl?.textContent = if (ok) "Reachable ✓ (this only tests the URL itself, not Jellyfin's own delivery)" else "Couldn't reach that URL"
+                    msgEl?.textContent = if (ok) "Reachable ✓ (this only tests the URL itself, not Jellyfin's own delivery)" else "Couldn't reach that URL from the server"
                 }
             }
         }
