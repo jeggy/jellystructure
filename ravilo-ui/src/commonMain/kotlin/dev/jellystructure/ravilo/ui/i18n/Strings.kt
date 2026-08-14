@@ -224,7 +224,10 @@ private val EN = mapOf(
     "player.variant_commentary" to "A recorded commentary on this title.",
     "player.variant_region" to "The {region} version.",
     "player.variant_no_distinguishing_data" to "This one carries no name of its own — pick it to see it.",
-    "player.picker_preview_hint" to "Moving down the list previews each one",
+    // R197 — reworded: R195 originally described a "moving down the list previews each one" flow that
+    // was never actually built (OK/tap always applied-and-stayed-open, never previewed on focus move);
+    // now OK/tap applies and closes, same as every other row.
+    "player.picker_preview_hint" to "Select one to switch instantly",
     "player.variant_ordinal_suffix" to "{name} · {n}/{total}",
     // R182 — Skip Intro / Skip Credits
     "player.skip_intro"   to "Skip Intro",
@@ -466,7 +469,7 @@ private val DA = mapOf(
     "player.variant_commentary" to "En optaget kommentar til denne titel.",
     "player.variant_region" to "{region}-versionen.",
     "player.variant_no_distinguishing_data" to "Denne har intet navn — vælg den for at se den.",
-    "player.picker_preview_hint" to "At bevæge sig ned ad listen forhåndsviser hver enkelt",
+    "player.picker_preview_hint" to "Vælg en for at skifte med det samme",
     "player.variant_ordinal_suffix" to "{name} · {n}/{total}",
     // R182 — Skip Intro / Skip Credits
     "player.skip_intro"   to "Spring intro over",
@@ -708,7 +711,7 @@ private val FO = mapOf(
     "player.variant_commentary" to "Ein tikin upp kommentar til hesa tittulinn.",
     "player.variant_region" to "{region}-útgávan.",
     "player.variant_no_distinguishing_data" to "Hendan hevur einki navn — vel hana fyri at síggja hana.",
-    "player.picker_preview_hint" to "At flyta niður listan forsýnir hvørja fyri seg",
+    "player.picker_preview_hint" to "Vel eina fyri at skifta beinanvegin",
     "player.variant_ordinal_suffix" to "{name} · {n}/{total}",
     // R182 — Skip Intro / Skip Credits
     "player.skip_intro"   to "Sleppa intro",

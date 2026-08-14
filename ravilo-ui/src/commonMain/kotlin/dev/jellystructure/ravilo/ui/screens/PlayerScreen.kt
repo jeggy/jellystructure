@@ -376,6 +376,19 @@ fun PlayerScreen(
     val subGroupsWithOff: List<PickerLanguage> = listOf(PickerLanguage(language = null, isOff = true, versions = listOf(offVersion), isUnnamed = false)) + subGroups
     val pickerGroups: List<PickerLanguage> = if (pickerTab == 0) audioGroups else subGroupsWithOff
 
+    // R196 (FR-RV-TRK2-1) — same staleness risk as itemId/seriesId/segments above (see that comment):
+    // resolveTrackSelection() runs from the LaunchedEffect(Unit) poll loop's closure, captured once at
+    // first composition and never restarted. audioGroups/subGroups are plain remember(...) vals, not
+    // snapshot state, so that closure permanently saw the FIRST composition's values — an empty
+    // subGroups and a single null-language placeholder audioGroups (both tracks lists start empty) —
+    // and the remembered-choice tiers always returned null and fell through to the source default,
+    // even once real tracks (and a real stored choice) existed. Bug: this made "remember my subtitle
+    // language" silently stop working entirely (not just for auto-advance) the moment R195 rerouted
+    // the tiers through these groups instead of the raw (snapshot-state) track lists. rememberUpdatedState
+    // gives the poll loop's closure a live reference, matching the established fix for itemId etc.
+    val currentAudioGroups by rememberUpdatedState(audioGroups)
+    val currentSubGroups by rememberUpdatedState(subGroups)
+
     // ─── Helper functions ───────────────────────────────────────────────────
 
     fun wake() { chromeVisible = true; chromeRevision++ }
@@ -504,58 +517,32 @@ fun PlayerScreen(
 
     // R181 (FR-RV-TRK1) — layered resolution, run once per item the first tick after track discovery
     // completes (see the call site in the poll loop below): per-series remembered choice → learned
-    // global-language preference → source default → first-track/Off. Each tier's lookup returns null
-    // when it can't be satisfied in THIS title (e.g. a remembered language absent from this file's
-    // tracks), falling through to the next via `?:` rather than a hard-coded index. Matches by
-    // language, never by ExoPlayer track index (indices differ across episodes/files). Scope note:
-    // only matches against native/external subtitleTracks, never encodeSubTracks (PGS burn-in) — a
-    // remembered language that exists only as a PGS track in this file falls through instead of
-    // silently triggering an autoplay transcode; PGS stays a manual pick, same as today.
+    // global-language preference → source default → first-track/Off. Matches by language (and, since
+    // R195, by exact remembered variant signature first — see resolveTrackChoice's doc), never by
+    // ExoPlayer track index (indices differ across episodes/files). Scope note: only matches against
+    // native/external subtitleTracks, never encodeSubTracks (PGS burn-in) — a remembered language that
+    // exists only as a PGS track in this file falls through instead of silently triggering an autoplay
+    // transcode; PGS stays a manual pick, same as today.
+    //
+    // R196 (FR-RV-TRK2-1/2/4) — the actual tier logic now lives in the pure, unit-tested top-level
+    // resolveTrackChoice() (near buildLanguageGroups below), and reads currentAudioGroups/
+    // currentSubGroups (rememberUpdatedState) rather than the plain audioGroups/subGroups vals — this
+    // function is called from the poll loop's LaunchedEffect(Unit) closure, which is captured once and
+    // never restarted (see that comment on currentItemId etc.), and a plain remember(...) val read from
+    // inside it stays frozen at whatever it was on the FIRST composition. That silently disabled every
+    // remembered-choice tier (audio and subtitles, first episode and every later one) from the moment
+    // R195 rerouted them through audioGroups/subGroups instead of the raw (snapshot-state) track lists.
     fun resolveTrackSelection() {
         val profileId = MultiTokenStore.getActive()?.userId
         val seriesKey = currentSeriesId ?: currentItemId
         val seriesChoice = profileId?.let { PlaybackPrefsStore.getSeriesChoice(it, seriesKey) }
         val globalChoice = profileId?.let { PlaybackPrefsStore.getGlobalChoice(it) }
 
-        // R195 (FR-RV §5.4) — prefer the exact remembered VERSION (language + signature) over a bare
-        // language match, so "always pick SDH" survives to the next episode/file. Falls through to
-        // the language's first version when the signature isn't present in this file at all — a
-        // different release may simply not carry the exact same variant.
-        fun tierAudio(choice: RememberedChoice?): Int? {
-            val lang = choice?.audioLanguage ?: return null
-            val group = audioGroups.firstOrNull { it.language.equals(lang, ignoreCase = true) } ?: return null
-            val bySignature = choice.audioVariant?.let { sig -> group.versions.firstOrNull { it.signature() == sig } }
-            return (bySignature ?: group.versions.firstOrNull())?.flatIndex
-        }
-
-        val audioIdx = tierAudio(seriesChoice) ?: tierAudio(globalChoice)
-            ?: audioTracks.firstOrNull { it.isDefault }?.index
-            ?: audioTracks.firstOrNull()?.index
-            ?: 0
-        player.selectAudioTrack(audioIdx)
-        selectedAudio = audioIdx
-
-        // Scope note (unchanged from pre-R195): only matches against native/external subtitleTracks,
-        // never encodeSubTracks (PGS burn-in) — a remembered language that exists only as a PGS track
-        // in this file falls through instead of silently triggering an autoplay transcode.
-        fun tierSub(choice: RememberedChoice?): Int? = when {
-            choice == null -> null
-            choice.subtitlesOff -> -1
-            else -> {
-                val lang = choice.subtitleLanguage ?: return null
-                val group = subGroups.firstOrNull { it.language.equals(lang, ignoreCase = true) } ?: return null
-                val native = group.versions.filter { it.flatIndex < subtitleTracks.size }
-                val bySignature = choice.subtitleVariant?.let { sig -> native.firstOrNull { it.signature() == sig } }
-                (bySignature ?: native.firstOrNull())?.flatIndex
-            }
-        }
-
-        val subIdx = tierSub(seriesChoice) ?: tierSub(globalChoice)
-            ?: subtitleTracks.firstOrNull { it.isDefault }?.index
-            ?: subtitleTracks.firstOrNull { it.forced }?.index
-            ?: -1
-        player.selectSubtitleTrack(subIdx)
-        selectedSub = subIdx
+        val result = resolveTrackChoice(seriesChoice, globalChoice, currentAudioGroups, currentSubGroups, audioTracks, subtitleTracks)
+        player.selectAudioTrack(result.audioIndex)
+        selectedAudio = result.audioIndex
+        player.selectSubtitleTrack(result.subIndex)
+        selectedSub = result.subIndex
     }
 
     // R195 §3 — applies whichever version is currently targeted (level-1's implicit single version,
@@ -588,10 +575,14 @@ fun PlayerScreen(
         }
     }
 
-    // R195 §A/§D — OK on a level-1 row: a single-version language selects immediately and closes,
-    // exactly like today's one-press behaviour; a multi-version language instead ENTERS level 2,
-    // focused on whichever version is already playing. OK on a level-2 row: select, stay open (§D) —
-    // a viewer can keep comparing versions without reopening the picker each time.
+    // R195 §A / R197 (FR-RV-PICK1-1) — OK on a level-1 row: a single-version language selects
+    // immediately and closes; a multi-version language instead ENTERS level 2, focused on whichever
+    // version is already playing. OK on a level-2 row: select AND CLOSE, same as level 1. R195
+    // originally shipped level 2 as "select, stay open" so a viewer could audition versions without
+    // reopening the picker — reversed by R197 (live report: with the video still covered and nothing
+    // on screen distinguishing "applied, still open" from "didn't take", a many-version language felt
+    // broken next to a one-version language, which dismisses on the same press). See R195 §D's amended
+    // table for the superseded decision.
     fun pickerSelect() {
         val group = pickerGroups.getOrNull(pickerIdx) ?: return
         if (pickerLevel == 0 && group.versions.size > 1) {
@@ -603,7 +594,8 @@ fun PlayerScreen(
         }
         if (pickerLevel == 0) pickerVersionIdx = 0
         choosePick()
-        if (pickerLevel == 0) pickerOpen = false
+        pickerOpen = false
+        pickerLevel = 0
         wake()
     }
 
@@ -2048,8 +2040,9 @@ private fun TrackPicker(
                         )
                     }
                 } else if (group != null) {
-                    // §E — the tail: moving down previews each one (a subtitle/audio change applies
-                    // instantly), so an Unnamed cluster's footer hint matters more than a normal group's.
+                    // §E — the tail: an Unnamed cluster has no name to tell its versions apart by, so
+                    // the footer hint (R197: "select one to switch instantly") matters more here than
+                    // for a normal group, where the version rows' own sentences already do the job.
                     if (group.isUnnamed) {
                         item {
                             Text(
@@ -2949,7 +2942,7 @@ private fun subtitleBadges(track: PlayerSubtitleTrack, lang: String): List<Strin
 // flat single-version case's muted suffix); the grouping/kind/region types below are the new,
 // two-level-picker-specific layer.
 
-private enum class VariantKind { PLAIN, SDH, FORCED, DESCRIBE, COMMENTARY }
+internal enum class VariantKind { PLAIN, SDH, FORCED, DESCRIBE, COMMENTARY }
 
 private fun variantKind(title: String?, forced: Boolean): VariantKind = when {
     title != null && COMMENTARY_RE.containsMatchIn(title) -> VariantKind.COMMENTARY
@@ -2967,7 +2960,7 @@ private fun variantKind(title: String?, forced: Boolean): VariantKind = when {
  * falls through to "no region flag shown, name text only" rather than show a WRONG flag or block this
  * phase on new artwork. `\b`-bounded, first-match-wins, same discipline as `REGION_MARKERS`.
  */
-private data class RegionInfo(val code: String, val name: String, val flag: DrawableResource?)
+internal data class RegionInfo(val code: String, val name: String, val flag: DrawableResource?)
 
 private val REGION_TABLE: List<Pair<Regex, RegionInfo>> = listOf(
     Regex("""\bcastilian\b|\bspain\b|\bes[- ]es\b""", RegexOption.IGNORE_CASE) to RegionInfo("es", "España", LANG_CC["es"]),
@@ -3013,7 +3006,7 @@ private data class PickerEntryInput(
  *  two "English" rows both reading "The full version of everything spoken." with no way to tell them
  *  apart. `clusterSize > 1` flags exactly this, independent of the whole-group `isUnnamed` flag,
  *  which only covers the narrower case where NOTHING in the group has any name/kind/region at all. */
-private data class PickerVersion(
+internal data class PickerVersion(
     val flatIndex: Int,
     val kind: VariantKind,
     val region: RegionInfo?,
@@ -3028,9 +3021,9 @@ private data class PickerVersion(
 /** R195 (FR-RV §5.4) — the opaque signature a [PickerVersion] resolves to for [RememberedChoice].
  *  Never contains `:` or `,` — see [RememberedChoice]'s doc (the wasm actual's hand-rolled parser
  *  splits on both). Format: `"<kind>|<regionCode>|<ordinal>"`. */
-private fun PickerVersion.signature(): String = "${kind.name.lowercase()}|${region?.code ?: ""}|$ordinal"
+internal fun PickerVersion.signature(): String = "${kind.name.lowercase()}|${region?.code ?: ""}|$ordinal"
 
-private data class PickerLanguage(
+internal data class PickerLanguage(
     val language: String?,
     val isOff: Boolean,
     val versions: List<PickerVersion>,
@@ -3039,6 +3032,68 @@ private data class PickerLanguage(
      *  globe glyph instead of a flag; level 2 numbers them "Version 1"…"Version n". */
     val isUnnamed: Boolean,
 )
+
+/** R196 (FR-RV-TRK2-4) — result of [resolveTrackChoice]: the flat index to hand to
+ *  `RaviloPlayer.selectAudioTrack`/`selectSubtitleTrack` (subtitle `-1` = off). */
+internal data class TrackSelectionResult(val audioIndex: Int, val subIndex: Int)
+
+/**
+ * R181/R195/R196 (FR-RV-TRK1, FR-RV §5.4, FR-RV-TRK2-4) — the pure, unit-testable core of
+ * [PlayerScreen]'s `resolveTrackSelection()`. Layered resolution: per-series remembered choice (exact
+ * variant signature first, then the language's first version) → learned global choice (same) → the
+ * source's own default track → first track / forced / off. Each tier's lookup returns null when it
+ * can't be satisfied in THIS title (e.g. a remembered language absent from this file's tracks), falling
+ * through to the next via `?:` rather than a hard-coded index. Matches by language, never by ExoPlayer
+ * track index (indices differ across episodes/files).
+ *
+ * Extracted from the composable specifically so the R196 regression — a call site inside a
+ * `LaunchedEffect(Unit)` poll loop that only ever sees the FIRST composition's [audioGroups]/
+ * [subGroups] (both empty/placeholder at that point) because they were plain `remember(...)` vals, not
+ * snapshot state — has a test that can actually catch a recurrence. [PlayerScreen] itself is
+ * responsible for supplying LIVE group data (via `rememberUpdatedState`); this function has no opinion
+ * on how its inputs stay fresh, only on what to do with them.
+ *
+ * Scope note (unchanged since R181): only matches against native/external [subtitleTracks], never
+ * PGS/encode burn-in subs — a remembered language that exists only as a PGS track in this file falls
+ * through instead of silently triggering an autoplay transcode; PGS stays a manual pick.
+ */
+internal fun resolveTrackChoice(
+    seriesChoice: RememberedChoice?,
+    globalChoice: RememberedChoice?,
+    audioGroups: List<PickerLanguage>,
+    subGroups: List<PickerLanguage>,
+    audioTracks: List<PlayerAudioTrack>,
+    subtitleTracks: List<PlayerSubtitleTrack>,
+): TrackSelectionResult {
+    fun tierAudio(choice: RememberedChoice?): Int? {
+        val lang = choice?.audioLanguage ?: return null
+        val group = audioGroups.firstOrNull { it.language.equals(lang, ignoreCase = true) } ?: return null
+        val bySignature = choice.audioVariant?.let { sig -> group.versions.firstOrNull { it.signature() == sig } }
+        return (bySignature ?: group.versions.firstOrNull())?.flatIndex
+    }
+    val audioIdx = tierAudio(seriesChoice) ?: tierAudio(globalChoice)
+        ?: audioTracks.firstOrNull { it.isDefault }?.index
+        ?: audioTracks.firstOrNull()?.index
+        ?: 0
+
+    fun tierSub(choice: RememberedChoice?): Int? = when {
+        choice == null -> null
+        choice.subtitlesOff -> -1
+        else -> {
+            val lang = choice.subtitleLanguage ?: return null
+            val group = subGroups.firstOrNull { it.language.equals(lang, ignoreCase = true) } ?: return null
+            val native = group.versions.filter { it.flatIndex < subtitleTracks.size }
+            val bySignature = choice.subtitleVariant?.let { sig -> native.firstOrNull { it.signature() == sig } }
+            (bySignature ?: native.firstOrNull())?.flatIndex
+        }
+    }
+    val subIdx = tierSub(seriesChoice) ?: tierSub(globalChoice)
+        ?: subtitleTracks.firstOrNull { it.isDefault }?.index
+        ?: subtitleTracks.firstOrNull { it.forced }?.index
+        ?: -1
+
+    return TrackSelectionResult(audioIdx, subIdx)
+}
 
 /**
  * R195 §3 — groups a flat per-track list into one row per language. [entries] is index-aligned with
