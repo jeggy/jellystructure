@@ -266,7 +266,8 @@ private fun buildMarkRow(s: SegmentDto, selected: Boolean): String {
           <s>→</s>${fmtl(endSec)}<span class="stp"><button data-d="-1" data-e="b" data-k="${s.kind}">−</button><button data-d="1" data-e="b" data-k="${s.kind}">+</button></span>
           <s class="len">${fmt(endSec - startSec)} long</s>${srcChipHtml(s)}</span>
         <span class="acts"><button class="btn sm ghost" data-p="${s.kind}">▶ play the cut</button>
-          <button class="lockb${if (s.locked) " on" else ""}" data-l="${s.kind}">${if (s.locked) "🔒 locked" else "🔓 lock"}</button></span>
+          <button class="lockb${if (s.locked) " on" else ""}" data-l="${s.kind}">${if (s.locked) "🔒 locked" else "🔓 lock"}</button>
+          <button class="btn sm ghost" data-remove="${s.kind}" title="Remove this marker">✕ Remove</button></span>
       </div>"""
 }
 
@@ -433,6 +434,19 @@ private fun wireTrim(root: Element, data: SegmentTrimResponse, scope: CoroutineS
                 scope.launch {
                     SegmentApi.setLock(data.mediaId, kind, data.episodeKey, data.episodeNumber, !seg.locked)
                     toast(if (!seg.locked) "${kindOf(kind).label} locked — detection will not touch it" else "${kindOf(kind).label} unlocked")
+                    refreshTrim(scope)
+                }
+            }
+        }
+    }
+    root.querySelectorAll("[data-remove]").let { nodes ->
+        for (i in 0 until nodes.length) {
+            val el = nodes.item(i) as? HTMLElement ?: continue
+            el.addEventListener("click") {
+                val kind = el.getAttribute("data-remove") ?: return@addEventListener
+                scope.launch {
+                    SegmentApi.deleteSegment(data.mediaId, kind, data.episodeKey, data.episodeNumber)
+                    toast("${kindOf(kind).label} removed")
                     refreshTrim(scope)
                 }
             }
