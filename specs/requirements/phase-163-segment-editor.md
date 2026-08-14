@@ -410,3 +410,26 @@ provider plugin exists on the server; its publish half was dropped (see §1's de
 deep links are unaffected. **No sequencing constraint remains** — §2's credential question turned out to
 be already answered (the admin's Jellyfin token is on the session), so step 5 can start whenever step 4
 is done, and open question 3 is answerable as soon as it mints a URL.
+
+## Amendment 2026-08-14 — trim view timeline capped at the TMDB-runtime estimate, never corrected
+
+**Reported live**: playing Big Buck Bunny in the trim view, the timeline/ruler/waveform/timecode
+denominator all showed a total duration far shorter than the real file, and the playhead kept advancing
+past the declared end while still playing (e.g. `08:10 / 08:00`).
+
+**Root cause**: `SegmentRoutes.kt`'s `durationSecOf()` is, by design (see its own doc comment), only a
+*rough initial estimate* — TMDB's whole-minute `runtime` field, used purely so the timeline has
+something to draw before playback exists; the doc comment explicitly says the trim view is meant to get
+"the frame-accurate figure from the real `<video>` element once playback exists." That correction never
+actually happened: `Segments.kt`'s `wireVideo()` handled the `<video>`'s `loadedmetadata` event to reveal
+the player, but never read `video.duration` or propagated it anywhere, so every duration-derived render
+(ruler ticks, segment/evidence bar positions, the duration label, the timecode's `/ total` denominator)
+stayed frozen at the wrong TMDB-minutes figure for the whole session.
+
+**Fix**: `wireVideo()`'s `loadedmetadata` handler now calls a new `correctDuration(video.duration)`,
+which — once metadata has genuinely loaded, so this fires before any real playback/editing has
+happened — patches `currentTrimData` and the duration-dependent DOM pieces (ruler, track, evidence lane,
+duration label, playhead/timecode) in place. Deliberately **not** a full `renderTrim()` re-invocation,
+which would recreate the `<video>` element and restart the stream/re-buffer for no reason — this was the
+lighter, playback-preserving fix. `buildRuler`/`buildEvidenceLane` gained stable ids
+(`seg-ruler`/`seg-evidence`) so they can be targeted individually.
