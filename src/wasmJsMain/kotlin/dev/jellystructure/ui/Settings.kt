@@ -375,24 +375,23 @@ fun renderSettings(container: Element, scope: CoroutineScope, query: Map<String,
             <div class="card set-section" id="sect-ingest" data-tab="downloads">
               <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
                 <h3 style="font-size:1rem;margin:0">Realtime ingest</h3>
-                <span id="ingest-listener-badge" class="badge" style="font-size:.7rem;background:var(--fill-2)">…</span>
+                <span id="ingest-status-badge" class="badge" style="font-size:.7rem;background:var(--fill-2)">…</span>
               </div>
-              <p class="hint" style="margin:0 0 14px">New imports reach Ravilo within minutes instead of waiting for the next scheduled scan. In Radarr/Sonarr open <strong>Settings → Connect</strong>, click <strong>+</strong> and add a <strong>Webhook</strong> — paste the matching URL below, keep the method on <strong>POST</strong>, and enable only <strong>On Import</strong> and <strong>On Upgrade</strong> (leave everything else off). The URL uses this page's address, so make sure it points at a host your Radarr/Sonarr can reach.</p>
-              <div class="field">
-                <label>Sonarr webhook URL</label>
+              <p class="hint" style="margin:0 0 12px">New imports reach Ravilo within minutes instead of waiting for the next scheduled scan — driven by Jellyfin's own <b>Webhook plugin</b>, whose <span class="mono">ItemAdded</span> event fires only once Jellyfin has actually finished identifying the item (Phase 165 — replaces the old Radarr/Sonarr webhook setup, which fired too early and had no way to know when Jellyfin had caught up).</p>
+
+              <div id="ingest-jellyfin-card"><span class="muted tiny">Loading…</span></div>
+
+              <div class="field" style="margin-top:14px">
+                <label>Where Jellyfin should reach this install</label>
                 <div style="display:flex;gap:8px">
-                  <input id="ingest-url-sonarr" class="input mono" type="text" readonly style="width:100%;font-size:.78rem">
-                  <button class="btn sm ghost ingest-copy-btn" data-target="ingest-url-sonarr">Copy</button>
+                  <input id="ingest-reach-url" class="input mono" type="text" placeholder="http://192.0.2.10:9505" style="width:100%;font-size:.78rem">
+                  <button id="ingest-reach-url-save" class="btn sm ghost">Save</button>
                 </div>
+                <span class="hint">The address <b>Jellyfin itself</b> can reach — not necessarily what your browser sees here. Required before "Set up Jellyfin webhook" can complete.</span>
+                <span class="tiny" id="ingest-reach-url-msg" style="margin-left:8px"></span>
               </div>
-              <div class="field">
-                <label>Radarr webhook URL</label>
-                <div style="display:flex;gap:8px">
-                  <input id="ingest-url-radarr" class="input mono" type="text" readonly style="width:100%;font-size:.78rem">
-                  <button class="btn sm ghost ingest-copy-btn" data-target="ingest-url-radarr">Copy</button>
-                </div>
-              </div>
-              <div class="hint" id="ingest-listener-detail" style="margin-top:2px"></div>
+
+              <div class="hint" id="ingest-listener-detail" style="margin-top:10px"></div>
             </div>
 
             <div class="card set-section" id="sect-notifications" data-tab="notifications">
@@ -1953,46 +1952,145 @@ private fun refreshApiKeyList() {
 }
 
 // Phase 114 — Settings ▸ Download tools ▸ "Realtime ingest" card.
+// Phase 165 — mirrors dev.jellystructure.server.routes.JellyfinWebhookStatus/IngestStatus.
+@Serializable
+private data class JellyfinWebhookStatus(
+    val reachable: Boolean,
+    @SerialName("plugin_installed") val pluginInstalled: Boolean = false,
+    @SerialName("plugin_version") val pluginVersion: String? = null,
+    @SerialName("plugin_available_version") val pluginAvailableVersion: String? = null,
+    @SerialName("destination_configured") val destinationConfigured: Boolean = false,
+    @SerialName("destination_url") val destinationUrl: String? = null,
+    @SerialName("restart_pending") val restartPending: Boolean = false,
+)
+
 @Serializable
 private data class IngestStatus(
     @SerialName("webhook_secret") val webhookSecret: String,
     val realtime: Boolean,
     @SerialName("listener_connected") val listenerConnected: Boolean,
     @SerialName("last_event_at") val lastEventAt: Long? = null,
+    @SerialName("jellyfin_reach_url") val jellyfinReachUrl: String = "",
+    val jellyfin: JellyfinWebhookStatus? = null,
 )
 
 private suspend fun loadIngestCard() {
     val status = runCatching { httpClient.get("/api/settings/ingest-status").body<IngestStatus>() }.getOrNull() ?: return
-    val origin = "${window.location.protocol}//${window.location.host}"
-    (document.getElementById("ingest-url-sonarr") as? HTMLInputElement)?.value = "$origin/api/webhooks/sonarr?secret=${status.webhookSecret}"
-    (document.getElementById("ingest-url-radarr") as? HTMLInputElement)?.value = "$origin/api/webhooks/radarr?secret=${status.webhookSecret}"
+    renderIngestCard(status)
+    (document.getElementById("ingest-reach-url") as? HTMLInputElement)?.value = status.jellyfinReachUrl
 
-    val badge = document.getElementById("ingest-listener-badge") as? HTMLElement
-    if (!status.realtime) {
-        badge?.textContent = "Off"
-    } else if (status.listenerConnected) {
-        badge?.textContent = "Connected"
-        badge?.setAttribute("style", "font-size:.7rem;background:var(--ok-soft,rgba(45,212,154,.15));color:var(--ok,#2dd49a)")
-    } else {
-        badge?.textContent = "Reconnecting…"
-        badge?.setAttribute("style", "font-size:.7rem;background:var(--warn-soft,rgba(240,180,60,.15));color:var(--warn,#f0b43c)")
-    }
     (document.getElementById("ingest-listener-detail") as? HTMLElement)?.textContent =
-        if (status.realtime) "Also listening for manual library changes on Jellyfin's own change feed" + (if (status.lastEventAt != null) " — has seen at least one event" else " — no events seen yet")
+        if (status.realtime) "Fallback: also listening for library changes on Jellyfin's own change feed" +
+            (if (status.listenerConnected) " (connected" else " (reconnecting") +
+            (if (status.lastEventAt != null) ", has seen at least one event)" else ", no events seen yet)")
         else "Realtime ingest is off — new media only appears on the next scheduled scan"
 
-    document.querySelectorAll(".ingest-copy-btn").let { nodes ->
-        for (i in 0 until nodes.length) {
-            val btn = nodes.item(i) as? HTMLElement ?: continue
-            btn.addEventListener("click") {
-                val targetId = btn.getAttribute("data-target") ?: return@addEventListener
-                val value = (document.getElementById(targetId) as? HTMLInputElement)?.value ?: return@addEventListener
-                dev.jellystructure.copyToClipboard(value)
-                val original = btn.textContent
-                btn.textContent = "Copied!"
-                window.setTimeout({ btn.textContent = original; null }, 1500)
+    document.getElementById("ingest-reach-url-save")?.addEventListener("click") {
+        settingsScope?.launch {
+            val url = (document.getElementById("ingest-reach-url") as? HTMLInputElement)?.value?.trim() ?: return@launch
+            val msgEl = document.getElementById("ingest-reach-url-msg") as? HTMLElement
+            msgEl?.textContent = "Saving…"
+            val ok = runCatching {
+                httpClient.post("/api/settings/ingest/reach-url") {
+                    contentType(ContentType.Application.Json)
+                    setBody(mapOf("url" to url))
+                }.status == HttpStatusCode.NoContent
+            }.getOrDefault(false)
+            msgEl?.textContent = if (ok) "Saved ✓" else "Failed"
+            if (ok) loadIngestCard()
+        }
+    }
+}
+
+/** Phase 165 (FR-165-4) — the five states, each with its own single next action. */
+private fun renderIngestCard(status: IngestStatus) {
+    val badge = document.getElementById("ingest-status-badge") as? HTMLElement
+    val card = document.getElementById("ingest-jellyfin-card") as? HTMLElement ?: return
+    val jf = status.jellyfin
+
+    fun setBadge(text: String, cls: String) {
+        badge?.textContent = text
+        badge?.setAttribute("style", "font-size:.7rem;$cls")
+    }
+
+    when {
+        jf == null || !jf.reachable -> {
+            setBadge("Jellyfin unreachable", "background:var(--bad-soft,rgba(240,80,80,.15));color:var(--bad,#f05050)")
+            card.innerHTML = """<p class="hint" style="margin:0">Connect Jellyfin first — see the <a href="#/settings?tab=connections">Connections</a> tab.</p>"""
+        }
+        !jf.pluginInstalled -> {
+            setBadge("Plugin not installed", "background:var(--warn-soft,rgba(240,180,60,.15));color:var(--warn,#f0b43c)")
+            card.innerHTML = """
+                <p class="hint" style="margin:0 0 8px">The Jellyfin <b>Webhook</b> plugin isn't installed${jf.pluginAvailableVersion?.let { " (v$it available)" } ?: " — and isn't offered by this server's repositories; install it manually in Jellyfin's own Dashboard ▸ Plugins ▸ Catalog"}.</p>
+                ${if (jf.pluginAvailableVersion != null) """<button id="ingest-install-plugin" class="btn sm primary">Install the Webhook plugin</button>""" else ""}
+                <div class="tiny" id="ingest-setup-msg" style="margin-top:6px"></div>"""
+            document.getElementById("ingest-install-plugin")?.addEventListener("click") { runIngestSetup() }
+        }
+        jf.restartPending -> {
+            setBadge("Restart pending", "background:var(--warn-soft,rgba(240,180,60,.15));color:var(--warn,#f0b43c)")
+            card.innerHTML = """
+                <p class="hint" style="margin:0 0 8px">The plugin is installed (v${jf.pluginVersion?.esc() ?: "?"}) but Jellyfin hasn't loaded it yet — it needs a restart. Every stream on the household drops for a moment.</p>
+                <button id="ingest-restart-jellyfin" class="btn sm bad">Restart Jellyfin now</button>
+                <span class="tiny muted" style="margin-left:8px">or restart it yourself, whenever's convenient</span>
+                <div class="tiny" id="ingest-setup-msg" style="margin-top:6px"></div>"""
+            document.getElementById("ingest-restart-jellyfin")?.addEventListener("click") { runIngestRestart() }
+        }
+        !jf.destinationConfigured -> {
+            setBadge("Not configured", "background:var(--warn-soft,rgba(240,180,60,.15));color:var(--warn,#f0b43c)")
+            card.innerHTML = """
+                <p class="hint" style="margin:0 0 8px">Plugin v${jf.pluginVersion?.esc() ?: "?"} is installed but has no destination pointed at this install yet.</p>
+                <button id="ingest-setup-jellyfin" class="btn sm primary">Set up Jellyfin webhook</button>
+                <div class="tiny" id="ingest-setup-msg" style="margin-top:6px"></div>"""
+            document.getElementById("ingest-setup-jellyfin")?.addEventListener("click") { runIngestSetup() }
+        }
+        else -> {
+            setBadge("Configured", "background:var(--ok-soft,rgba(45,212,154,.15));color:var(--ok,#2dd49a)")
+            card.innerHTML = """
+                <div class="row center" style="gap:8px;flex-wrap:wrap">
+                  <span class="mono tiny">${jf.destinationUrl?.esc() ?: ""}</span>
+                  <button class="btn sm ghost" id="ingest-test-url">Test this URL</button>
+                </div>
+                <div class="tiny muted" style="margin-top:4px">${if (status.lastEventAt != null) "Last event received ${dev.jellystructure.formatStoredTs(status.lastEventAt.toString())}" else "No events received yet"}</div>
+                <div class="tiny" id="ingest-setup-msg" style="margin-top:6px"></div>"""
+            document.getElementById("ingest-test-url")?.addEventListener("click") {
+                settingsScope?.launch {
+                    val msgEl = document.getElementById("ingest-setup-msg") as? HTMLElement
+                    msgEl?.textContent = "Sending…"
+                    val ok = runCatching {
+                        httpClient.post(jf.destinationUrl!!) {
+                            contentType(ContentType.Application.Json)
+                            setBody("""{"ItemId":"test","ItemType":"Movie"}""")
+                        }.status.value in 200..299
+                    }.getOrDefault(false)
+                    msgEl?.textContent = if (ok) "Reachable ✓ (this only tests the URL itself, not Jellyfin's own delivery)" else "Couldn't reach that URL"
+                }
             }
         }
+    }
+}
+
+private fun runIngestSetup() {
+    settingsScope?.launch {
+        val msgEl = document.getElementById("ingest-setup-msg") as? HTMLElement
+        msgEl?.textContent = "Working…"
+        val response = runCatching { httpClient.post("/api/settings/ingest/setup-jellyfin") }.getOrNull()
+        if (response != null && response.status.value in 200..299) {
+            msgEl?.textContent = "Done ✓"
+            loadIngestCard()
+        } else {
+            val body = response?.let { runCatching { it.body<Map<String, String>>() }.getOrNull() }
+            msgEl?.textContent = body?.get("error") ?: "Failed — set it up manually in Jellyfin's own Dashboard ▸ Plugins ▸ Webhook"
+        }
+    }
+}
+
+private fun runIngestRestart() {
+    settingsScope?.launch {
+        val msgEl = document.getElementById("ingest-setup-msg") as? HTMLElement
+        msgEl?.textContent = "Restarting…"
+        val ok = runCatching { httpClient.post("/api/settings/ingest/restart-jellyfin").status.value in 200..299 }.getOrDefault(false)
+        msgEl?.textContent = if (ok) "Restart requested — checking again in a moment…" else "Failed — restart it yourself"
+        if (ok) { kotlinx.coroutines.delay(15_000); loadIngestCard() }
     }
 }
 
