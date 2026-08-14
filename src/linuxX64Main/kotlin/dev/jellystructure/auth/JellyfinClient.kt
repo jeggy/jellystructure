@@ -221,6 +221,65 @@ class JellyfinClient {
         httpGet(url) { jellyfinAuth(token) }.bodyOrNull<JellyfinMediaSegmentsResponse>("getMediaSegments")?.items ?: emptyList()
     }.getOrElse { Logger.warn("Jellyfin getMediaSegments failed: ${it.message}"); emptyList() }
 
+    // ── Phase 165 — plugin management for the Webhook-plugin ingest path ───────
+
+    /** Every INSTALLED plugin (`GET /Plugins`), used to check whether the Webhook plugin is present and
+     *  which version, and to find its live `Id` (needed for the Configuration calls below — never
+     *  assume it equals the catalog GUID; Jellyfin mints its own plugin instance id). */
+    suspend fun getPlugins(baseUrl: String, token: String): List<JellyfinPluginInfo>? = runCatching {
+        httpGet(baseUrl.trimEnd('/') + "/Plugins") { jellyfinAuth(token) }.bodyOrNull<List<JellyfinPluginInfo>>("getPlugins")
+    }.getOrElse { Logger.warn("Jellyfin getPlugins failed: ${it.message}"); null }
+
+    /** The default repository's plugin catalog (`GET /Packages`) — used to find the Webhook plugin's
+     *  latest installable version when it isn't installed yet. */
+    suspend fun getAvailablePackages(baseUrl: String, token: String): List<JellyfinPackageInfo>? = runCatching {
+        httpGet(baseUrl.trimEnd('/') + "/Packages") { jellyfinAuth(token) }.bodyOrNull<List<JellyfinPackageInfo>>("getAvailablePackages")
+    }.getOrElse { Logger.warn("Jellyfin getAvailablePackages failed: ${it.message}"); null }
+
+    /** `POST /Packages/Installed/{name}` — installs a plugin from the catalog by name + assembly GUID.
+     *  Takes effect after Jellyfin's next restart (never triggered automatically — see [restartServer]'s
+     *  own doc on why this stays a separate, explicit, user-initiated action). */
+    suspend fun installPlugin(baseUrl: String, token: String, name: String, assemblyGuid: String, version: String? = null): Boolean = runCatching {
+        val url = buildString {
+            append(baseUrl.trimEnd('/')); append("/Packages/Installed/"); append(name.encodeURLParameter())
+            append("?assemblyGuid=").append(assemblyGuid)
+            if (version != null) append("&version=").append(version.encodeURLParameter())
+        }
+        httpPost(url) { jellyfinAuth(token) }.status.isSuccess()
+    }.getOrElse { Logger.warn("Jellyfin installPlugin failed: ${it.message}"); false }
+
+    /** `POST /System/Restart` — restarts the whole Jellyfin server (every household stream drops).
+     *  Callers must treat this as its own explicit, separately-confirmed action, never a side effect of
+     *  installing/configuring a plugin (Phase 165 spec FR-165-3). */
+    suspend fun restartServer(baseUrl: String, token: String): Boolean = runCatching {
+        httpPost(baseUrl.trimEnd('/') + "/System/Restart") { jellyfinAuth(token) }.status.isSuccess()
+    }.getOrElse { Logger.warn("Jellyfin restartServer failed: ${it.message}"); false }
+
+    /** Raw JSON passthrough (`GET /Plugins/{pluginId}/Configuration`) — deliberately NOT a typed DTO.
+     *  The Webhook plugin's configuration shape is confirmed from its C# source (`ServerUrl`,
+     *  `GenericOptions[]` among 9 destination-type arrays, each `WebhookName`/`WebhookUri`/
+     *  `NotificationTypes[]`/`EnableMovies`/`EnableEpisodes`/`EnableSeries`/`Template`/...) but its exact
+     *  runtime JSON casing has NOT been verified live (the plugin isn't installed on this deployment as
+     *  of this writing) — a generic [kotlinx.serialization.json.JsonObject] read-modify-write survives a
+     *  casing/shape mismatch far better than a strict typed decode would (which could silently drop
+     *  fields this code doesn't know about on re-serialize). Callers MUST treat any parse/shape failure
+     *  as "fall back to manual setup instructions," never as a reason to guess. */
+    suspend fun getPluginConfiguration(baseUrl: String, token: String, pluginId: String): kotlinx.serialization.json.JsonObject? = runCatching {
+        httpGet(baseUrl.trimEnd('/') + "/Plugins/$pluginId/Configuration") { jellyfinAuth(token) }
+            .bodyOrNull<kotlinx.serialization.json.JsonObject>("getPluginConfiguration")
+    }.getOrElse { Logger.warn("Jellyfin getPluginConfiguration failed: ${it.message}"); null }
+
+    /** `POST /Plugins/{pluginId}/Configuration` — writes back the WHOLE configuration document. Callers
+     *  must read-modify-write (never construct one from scratch) so an admin's other destinations
+     *  (Discord, Slack, ...) survive untouched. */
+    suspend fun updatePluginConfiguration(baseUrl: String, token: String, pluginId: String, config: kotlinx.serialization.json.JsonObject): Boolean = runCatching {
+        httpPost(baseUrl.trimEnd('/') + "/Plugins/$pluginId/Configuration") {
+            jellyfinAuth(token)
+            contentType(ContentType.Application.Json)
+            setBody(config)
+        }.status.isSuccess()
+    }.getOrElse { Logger.warn("Jellyfin updatePluginConfiguration failed: ${it.message}"); false }
+
     /** Phase 145 — reliable path→item resolution. This Jellyfin **ignores** the `?Path=` filter
      *  ([getItemByPath] then returns an arbitrary item), so instead pull the most-recently-added
      *  Movie/Episode items and match the path **ourselves**. Bounded (last [limit] additions) and safe to

@@ -31,11 +31,19 @@ data class AppConfig(
 
 // Phase 114 — realtime ingest. `realtime` defaults on when a Jellyfin token is configured (checked at
 // call sites, not here — this class has no access to the rest of AppConfig). `webhookSecret` gates
-// POST /api/webhooks/{sonarr,radarr}; generated once and shown in Settings ▸ Download tools.
+// POST /api/webhooks/{sonarr,radarr,jellyfin} (Phase 165 adds the third); generated once and shown in
+// Settings ▸ Download tools.
 @Serializable
 data class IngestConfig(
     val realtime: Boolean = true,
     @SerialName("webhook_secret") val webhookSecret: String = "",
+    // Phase 165 (FR-165-3, open question 2) — where JELLYFIN should reach THIS jellystructure install
+    // to deliver its webhook (e.g. "http://192.0.2.10:9505") — cannot be inferred (the value a browser
+    // sees as this page's own address is not necessarily reachable from Jellyfin's own network
+    // position). Blank until the admin sets it; the one-click setup refuses to proceed without it
+    // rather than guessing wrong and silently never delivering. Same "explicit override, not derived"
+    // shape as Towo's own "where runners connect" URL (Phase 162).
+    @SerialName("jellyfin_reach_url") val jellyfinReachUrl: String = "",
 )
 
 // Phase 91 — scan pipeline config: [[scan.pipeline]] array of steps

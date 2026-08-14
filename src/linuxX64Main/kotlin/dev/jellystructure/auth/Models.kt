@@ -300,3 +300,26 @@ data class JellyfinUserDataItem(
 data class JellyfinUserDataItemsResponse(
     @SerialName("Items") val items: List<JellyfinUserDataItem> = emptyList(),
 )
+
+// Phase 165 — GET /Plugins (installed plugins) and GET /Packages (the default repository's catalog),
+// used to detect whether the Webhook plugin is installed and, if not, whether it's installable.
+@Serializable
+data class JellyfinPluginInfo(
+    @SerialName("Name") val name: String,
+    @SerialName("Version") val version: String? = null,
+    @SerialName("Id") val id: String? = null,
+    @SerialName("Status") val status: String? = null,   // "Active" | "Restart" | "Superseded" | ...
+)
+
+@Serializable
+data class JellyfinPackageVersion(
+    @SerialName("version") val version: String? = null,
+    @SerialName("targetAbi") val targetAbi: String? = null,
+)
+
+@Serializable
+data class JellyfinPackageInfo(
+    @SerialName("name") val name: String,
+    @SerialName("guid") val guid: String? = null,
+    @SerialName("versions") val versions: List<JellyfinPackageVersion> = emptyList(),
+)
