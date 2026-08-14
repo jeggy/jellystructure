@@ -1,6 +1,7 @@
 package dev.jellystructure.api
 
 import io.ktor.client.call.body
+import io.ktor.client.request.delete
 import io.ktor.client.request.get
 import io.ktor.client.request.put
 import io.ktor.client.request.post
@@ -181,6 +182,12 @@ object SegmentApi {
             url { parameters.append("episode", episodeKey); parameters.append("n", episodeNumber.toString()) }
             contentType(ContentType.Application.Json)
             setBody(SegmentEditRequest(startMs, endMs))
+        }.status == HttpStatusCode.NoContent
+    }.getOrDefault(false)
+
+    suspend fun deleteSegment(itemId: String, kind: String, episodeKey: String, episodeNumber: Int): Boolean = runCatching {
+        httpClient.delete("/api/segments/$itemId/$kind") {
+            url { parameters.append("episode", episodeKey); parameters.append("n", episodeNumber.toString()) }
         }.status == HttpStatusCode.NoContent
     }.getOrDefault(false)
 

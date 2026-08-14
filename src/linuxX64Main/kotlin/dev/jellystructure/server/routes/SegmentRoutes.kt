@@ -18,6 +18,7 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.server.request.receive
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
+import io.ktor.server.routing.delete
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import io.ktor.server.routing.put
@@ -200,6 +201,17 @@ fun Route.segmentRoutes(store: MediaStore, segmentStore: MediaSegmentStore, conf
             val body = runCatching { call.receive<SegmentEditRequest>() }.getOrNull() ?: return@put call.respond(HttpStatusCode.BadRequest)
             val existing = segmentStore.getSegment(itemId, episodeKey, episodeNumber, kind)
             segmentStore.upsertSegment(itemId, episodeKey, episodeNumber, kind, body.startMs, body.endMs, SegmentSource.MANUAL, null, locked = existing?.locked ?: false)
+            call.respond(HttpStatusCode.NoContent)
+        }
+
+        // Remove a marker entirely (the "＋ Kind" add flow's undo — a marker added by mistake, or one an
+        // operator decides shouldn't exist for this title, wasn't otherwise removable once added).
+        delete("/{itemId}/{kind}") {
+            val itemId = call.parameters["itemId"] ?: return@delete call.respond(HttpStatusCode.BadRequest)
+            val kind = call.parameters["kind"] ?: return@delete call.respond(HttpStatusCode.BadRequest)
+            val episodeKey = call.request.queryParameters["episode"] ?: ""
+            val episodeNumber = call.request.queryParameters["n"]?.toIntOrNull() ?: 0
+            segmentStore.deleteSegment(itemId, episodeKey, episodeNumber, kind)
             call.respond(HttpStatusCode.NoContent)
         }
 
