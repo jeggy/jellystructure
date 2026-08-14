@@ -97,6 +97,18 @@ fun renderSettings(container: Element, scope: CoroutineScope, query: Map<String,
             <div class="card set-section" id="sect-apikeys" data-tab="connections">
               <h3 style="font-size:1rem;margin:0 0 14px">API keys</h3>
               <p class="hint" style="margin:0 0 12px">For external tools (Home Assistant etc.) to control Ravilo devices via <span class="mono">/api/remote/**</span> — a key acts as one Jellyfin user and can list/play/command that user's paired TVs.</p>
+              <details style="margin-bottom:12px;font-size:.82rem;color:var(--ink-soft)">
+                <summary style="cursor:pointer;user-select:none;color:var(--ink-soft)">What can an API key do?</summary>
+                <div style="margin:6px 0 0;line-height:1.5">
+                  <p style="margin:0 0 6px">A key is scoped to <b>one Jellyfin user</b> and only ever sees that user's own paired Ravilo devices — never anyone else's, and never the rest of jellystructure's admin/media surface. Send it as either <span class="mono">Authorization: Bearer &lt;key&gt;</span> or <span class="mono">X-JS-Api-Key: &lt;key&gt;</span>. Three endpoints:</p>
+                  <ul style="margin:0 0 6px;padding-left:18px">
+                    <li><span class="mono">GET /api/remote/devices</span> — this user's paired devices: name, online/offline, what's currently playing.</li>
+                    <li><span class="mono">POST /api/remote/play</span> — start a Jellyfin item on one of those devices, optionally at a start position.</li>
+                    <li><span class="mono">POST /api/remote/command</span> — send <span class="mono">stop</span> / <span class="mono">pause</span> / <span class="mono">unpause</span> / <span class="mono">home</span> to one of those devices.</li>
+                  </ul>
+                  <p style="margin:0">The target device must already be online (connected over its own live socket to jellystructure) — playing/commanding an offline device fails rather than queuing. The key itself is shown once at creation and can't be retrieved again; revoke and re-create if it's lost.</p>
+                </div>
+              </details>
               <div class="row" style="gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:10px">
                 <div class="field" style="flex:1;min-width:160px;margin:0">
                   <label>Key name</label>
@@ -1892,7 +1904,7 @@ private suspend fun loadApiKeysCard(scope: CoroutineScope) {
     apiKeyUsers = runCatching { dev.jellystructure.api.RaviloApi.getUsers() }.getOrDefault(emptyList())
     (document.getElementById("apikey-user") as? HTMLSelectElement)?.innerHTML =
         apiKeyUsers.joinToString("") { u -> """<option value="${u.id}" data-name="${u.displayName.esc()}">${u.displayName.esc()}</option>""" }
-    refreshApiKeyList()
+    refreshApiKeyList(scope)
 
     document.getElementById("apikey-create-btn")?.addEventListener("click") {
         scope.launch {
@@ -1901,7 +1913,11 @@ private suspend fun loadApiKeysCard(scope: CoroutineScope) {
             val userId = userSel?.value.orEmpty()
             val userName = apiKeyUsers.firstOrNull { it.id == userId }?.displayName.orEmpty()
             if (name.isBlank() || userId.isBlank()) return@launch
-            val body = """{"name":"${name.replace("\"", "")}","jellyfin_user_id":"$userId","jellyfin_username":"${userName.replace("\"", "")}"}"""
+            // Bug fix: this used to hand-build the JSON body via string interpolation, stripping only
+            // `"` — a name/username containing a backslash or control character would still produce
+            // malformed JSON. A same-type Map<String, String> serializes safely (matches the
+            // reach-url-save pattern elsewhere on this page).
+            val body = mapOf("name" to name, "jellyfin_user_id" to userId, "jellyfin_username" to userName)
             val token = runCatching {
                 val resp = httpClient.post("/api/settings/api-keys") { contentType(ContentType.Application.Json); setBody(body) }
                 if (resp.status.value in 200..299) resp.body<Map<String, String>>()["token"] else null
@@ -1912,15 +1928,18 @@ private suspend fun loadApiKeysCard(scope: CoroutineScope) {
                     it.innerHTML = """<b>Key created — copy it now, it won't be shown again:</b><div class="input mono" style="margin-top:6px;user-select:all;word-break:break-all;">${token.esc()}</div>"""
                 }
                 (document.getElementById("apikey-name") as? HTMLInputElement)?.value = ""
-                refreshApiKeyList()
+                refreshApiKeyList(scope)
             }
         }
     }
 }
 
-private fun refreshApiKeyList() {
+// Bug fix: this used to spin up its own throwaway kotlinx.coroutines.MainScope() on every call instead
+// of reusing the page's own scope — every other async action on this page (and the rest of Settings.kt)
+// launches on the scope handed to it by the tab's own load function, which gets cancelled when the admin
+// navigates away. Now consistent with that.
+private fun refreshApiKeyList(scope: CoroutineScope) {
     val listEl = document.getElementById("apikey-list") as? HTMLElement ?: return
-    val scope = kotlinx.coroutines.MainScope()
     scope.launch {
         val keys = runCatching { httpClient.get("/api/settings/api-keys").body<List<ApiKeySummary>>() }.getOrDefault(emptyList())
         if (keys.isEmpty()) {
@@ -1944,7 +1963,7 @@ private fun refreshApiKeyList() {
                     val id = btn.getAttribute("data-id") ?: return@addEventListener
                     scope.launch {
                         runCatching { httpClient.delete("/api/settings/api-keys/$id") }
-                        refreshApiKeyList()
+                        refreshApiKeyList(scope)
                     }
                 }
             }
