@@ -200,3 +200,87 @@ and `ArrRescanService` is outbound-only. Verified.
   and no other destination was modified.
 - Confirm the Settings card renders each of the five states correctly against a Jellyfin with the
   plugin absent, present-but-unconfigured, and configured.
+
+## 7. Amendment 2026-08-14 — live delivery failure found, "Test this URL" replaced with a real E2E probe
+
+**Reported live:** a full season of *Mickey Mouse Clubhouse* imported via Sonarr and appeared in Jellyfin
+normally, but never reached jellystructure — no `/api/webhooks/jellyfin` hit at all, and no entry logged
+by jellystructure (not even the "no ItemId" warning `handleJellyfinWebhook` logs on a malformed body).
+
+**Investigation (this session), all confirmed live:**
+- Network path Jellyfin → jellystructure: confirmed working — `docker exec` into the `jellyfin`
+  container and curling the exact configured destination URL succeeded (`200`), and jellystructure
+  logged the hit.
+- The plugin's own saved configuration (`GET /Plugins/{id}/Configuration`): confirmed correct —
+  `WebhookName=jellystructure`, right `WebhookUri`+secret, `EnableWebhook=true`,
+  `EnableMovies`/`EnableEpisodes`/`EnableSeries=true`, `NotificationTypes=["ItemAdded"]`.
+- A full Jellyfin restart (`POST /System/Restart`) did not fix it.
+- **Decisive test**: temporarily added `TaskCompleted` (fires immediately on any scheduled-task
+  completion — no `ItemAdded` batching/retry involved, same `WebhookSender`/`GenericClient` send path)
+  to the `jellystructure` destination's `NotificationTypes`, then manually triggered the plugin's own
+  "Webhook Item Added Notifier" task (`POST /ScheduledTasks/Running/{id}`, confirmed via `GET
+  /ScheduledTasks` to run automatically every 30s regardless). Real, automatic completions of that task
+  fired dozens of times over ~2 hours (both before and after the restart) with the destination correctly
+  subscribed — **zero deliveries ever reached jellystructure**. Reverted the temporary `NotificationTypes`
+  change afterward; permanent config untouched.
+- Read the plugin's actual source (`ItemAddedManager.cs`, `WebhookSender.cs` on
+  `jellyfin/jellyfin-plugin-webhook`) to rule out config-shape mistakes: dispatch only silently drops an
+  item on `GetItemById` returning null (not our case — items were correctly identified in Jellyfin) or
+  after 10 failed provider-id retries (also not our case); `SendNotification` only requires
+  `NotificationTypes.Contains(type)` + `EnableWebhook` + the matching `Enable*` flag, all of which our
+  config satisfies, and logs (doesn't silently swallow) any send exception.
+- Attempted to decompile the installed plugin DLL (`monodis`/`ikdasm`) to find the actual defect;
+  blocked by missing reference assemblies in this environment. **Root cause inside the plugin binary
+  could not be pinned down further** — everything on jellystructure's side is demonstrably correct and
+  reachable, but the plugin, as installed on this specific server, does not deliver.
+
+**Separately found while investigating — a real UI gap, worth fixing regardless of the above:** the
+Settings card's only "last event received" signal (`IngestStatus.lastEventAt` / `last_event_at`) is
+sourced **exclusively** from [[JellyfinLibraryListener]] — the *fallback* WS change-feed listener (FR-165-5)
+— never from the primary `/api/webhooks/jellyfin` route itself. An admin has had **no way to tell
+whether the primary Jellyfin-plugin path has ever actually delivered anything**, since the fallback's
+own occasional traffic could read as "ingest is working" even while the primary path is silently dead —
+exactly the confusion that let this go unnoticed.
+
+**Decision, given the live report "we want to catch this as part of our own setup process, not require
+manual forensics every time":**
+
+### FR-165-7 — Track the primary webhook's own delivery, separately from the fallback
+
+`RealtimeIngestService` gains an in-memory `@Volatile var lastWebhookReceivedAt: Long? = null`, set by
+`handleJellyfinWebhook` the instant a request passes the secret check — **before** the item-type filter,
+so even a probe/test payload that gets filtered out downstream still counts as "the plugin reached us."
+`IngestStatus` gains `last_webhook_received_at` alongside the existing (renamed in the UI, not the wire
+field) fallback `last_event_at`, and the Settings card shows both, clearly labelled: "Jellyfin webhook: …"
+vs "Fallback (change feed): …" — so this exact blind spot can never recur.
+
+### FR-165-8 — "Test this URL" becomes a real end-to-end probe, not a self-loop
+
+The existing test (jellystructure curling its own configured destination URL) proves only that the URL
+is well-formed and that jellystructure can reach *itself* — it cannot catch the failure mode found live
+above, where the network and config are both fine but Jellyfin's plugin still never delivers. Replace it
+with `POST /api/settings/ingest/test-live`, using the exact technique that found the bug:
+
+1. Require Jellyfin reachable + plugin installed + destination configured (else `400` with a clear
+   "set up the webhook first" message — this is a *live delivery* test, not a setup step).
+2. Record `before = realtimeIngest.lastWebhookReceivedAt`.
+3. Read-modify-write the plugin configuration: if `TaskCompleted` isn't already in the destination's
+   `NotificationTypes`, add it (keep every other field and every other destination untouched).
+4. Look up the plugin's own "Webhook Item Added Notifier" task via `GET /ScheduledTasks` (match on
+   `Key == "WebhookItemAdded"`, never hardcode the task's `Id` — it is not guaranteed stable across
+   installs) and trigger it (`POST /ScheduledTasks/Running/{id}`) — cheap, harmless, always completes.
+5. Poll `realtimeIngest.lastWebhookReceivedAt` for up to 10s for a change from `before`.
+6. **Always** revert `NotificationTypes` to its exact original value (even on failure/timeout) —
+   never leave the admin's config in a different state than they started with.
+7. Report the honest, specific result: delivered → "Jellyfin successfully delivered a live webhook to
+   this address." / not delivered → "Jellyfin's Webhook plugin did not deliver anything, even though the
+   configuration and network path both look correct — this may be a plugin issue on the Jellyfin side.
+   The fallback change-feed listener below will still eventually pick up new items."
+
+### Non-goals (this amendment)
+
+- Does not attempt to fix the plugin itself (out of jellystructure's control) or work around it with a
+  from-scratch webhook re-implementation.
+- Does not add a periodic *automatic* re-probe (e.g. daily) — this amendment adds the tooling to check
+  on demand and to see the primary path's own freshness at a glance; an unprompted background probe that
+  mutates Jellyfin's plugin config on a schedule is a bigger step than what was asked for here.

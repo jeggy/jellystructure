@@ -323,3 +323,13 @@ data class JellyfinPackageInfo(
     @SerialName("guid") val guid: String? = null,
     @SerialName("versions") val versions: List<JellyfinPackageVersion> = emptyList(),
 )
+
+// Phase 165 amendment (2026-08-14, FR-165-8) — GET /ScheduledTasks, used to find the Webhook plugin's
+// own "Webhook Item Added Notifier" task by its stable Key (never assume the Id is stable across
+// installs) so the live delivery probe can trigger it.
+@Serializable
+data class JellyfinTaskInfo(
+    @SerialName("Id") val id: String,
+    @SerialName("Key") val key: String? = null,
+    @SerialName("Name") val name: String? = null,
+)

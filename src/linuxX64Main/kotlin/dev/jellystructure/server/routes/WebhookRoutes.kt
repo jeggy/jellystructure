@@ -1,6 +1,5 @@
 package dev.jellystructure.server.routes
 
-import dev.jellystructure.OutboundHttp
 import dev.jellystructure.auth.JellyfinClient
 import dev.jellystructure.auth.constantTimeEquals
 import dev.jellystructure.config.AppConfig
@@ -9,11 +8,7 @@ import dev.jellystructure.config.LibraryMapping
 import dev.jellystructure.log.Logger
 import dev.jellystructure.media.RealtimeIngestService
 import dev.jellystructure.tv.JellyfinLibraryListener
-import io.ktor.client.request.header
-import io.ktor.client.request.post as httpPost
-import io.ktor.client.request.setBody
 import io.ktor.http.HttpStatusCode
-import io.ktor.http.isSuccess
 import io.ktor.server.request.receive
 import io.ktor.server.request.receiveText
 import io.ktor.server.response.respond
@@ -70,15 +65,25 @@ data class JellyfinSetupResult(
 @Serializable
 private data class ReachUrlRequest(val url: String)
 
+// Phase 165 amendment (2026-08-14, FR-165-8)
+@Serializable
+data class TestLiveResult(val delivered: Boolean, val message: String)
+
 @Serializable
 data class IngestStatus(
     @SerialName("webhook_secret") val webhookSecret: String,
     val realtime: Boolean,
     @SerialName("listener_connected") val listenerConnected: Boolean,
+    // Fallback change-feed listener's own last event — NOT the primary Jellyfin-plugin webhook (see
+    // last_webhook_received_at below). Kept separate per the 2026-08-14 amendment: conflating the two
+    // let a dead primary path hide behind the fallback's own traffic.
     @SerialName("last_event_at") val lastEventAt: Long?,
     // Phase 165
     @SerialName("jellyfin_reach_url") val jellyfinReachUrl: String = "",
     val jellyfin: JellyfinWebhookStatus? = null,
+    // FR-165-7 (2026-08-14 amendment) — the primary /api/webhooks/jellyfin route's own last-received
+    // timestamp, set the instant a request passes the secret check, independent of the fallback above.
+    @SerialName("last_webhook_received_at") val lastWebhookReceivedAt: Long? = null,
 )
 
 /**
@@ -113,7 +118,7 @@ fun Route.webhookRoutes(
         val jellyfinStatus = computeJellyfinWebhookStatus(cfg, jellyfinClient)
         call.respond(IngestStatus(
             cfg.ingest.webhookSecret, cfg.ingest.realtime, libraryListener?.connected ?: false, libraryListener?.lastEventAt,
-            cfg.ingest.jellyfinReachUrl, jellyfinStatus,
+            cfg.ingest.jellyfinReachUrl, jellyfinStatus, realtimeIngest.lastWebhookReceivedAt,
         ))
     }
 
@@ -197,31 +202,78 @@ fun Route.webhookRoutes(
         else call.respond(HttpStatusCode.BadGateway, mapOf("error" to "Couldn't write the plugin configuration — set it up manually"))
     }
 
-    // Bug fix (live report, 2026-08-14) — this used to run client-side (the browser POSTing straight to
-    // the absolute destinationUrl), which is only ever same-origin by coincidence and was blocked by
-    // this server's own CORS policy the moment it wasn't (Settings served via a separately-hosted dev
-    // proxy port, or a reach URL that differs from whatever origin the admin actually browsed from) —
-    // "Couldn't reach that URL" every time, regardless of whether the URL was actually fine. CORS here
-    // is deliberately locked to same-origin (2026-08-02 security review, finding M1 — credential
-    // exposure via a permissive cross-origin policy); loosening it just to make this button work would
-    // reopen exactly that hole. Running the test server-side sidesteps CORS entirely (it's a browser-
-    // only concept) and the frontend now calls this same-origin route instead of the destination URL
-    // directly.
-    post("/settings/ingest/test-destination") {
+    // Phase 165 amendment (2026-08-14, FR-165-8) — replaces the old self-loop test (jellystructure
+    // curling its own destination URL), which could only ever prove "this server can reach itself" and
+    // demonstrably missed a real live failure: a fully-correct config + reachable network where Jellyfin's
+    // Webhook plugin still never delivered anything (see the phase-165 spec amendment for the live
+    // incident this was found from). This probe instead asks JELLYFIN ITSELF to send a real webhook
+    // through its own runtime and watches for it to actually arrive — the only way to genuinely rule the
+    // failure mode above in or out.
+    post("/settings/ingest/test-live") {
         val cfg = configStore.current
-        val url = "${cfg.ingest.jellyfinReachUrl.trimEnd('/')}/api/webhooks/jellyfin?secret=${cfg.ingest.webhookSecret}"
-        if (cfg.ingest.jellyfinReachUrl.isBlank() || cfg.ingest.webhookSecret.isBlank()) {
-            return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Set the reach URL first"))
+        val baseUrl = cfg.apiKeys.jellyfinUrl
+        val token = cfg.apiKeys.jellyfinToken
+        if (baseUrl.isBlank() || token.isBlank()) {
+            return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Connect Jellyfin first (Settings ▸ Connections)"))
         }
-        val ok = runCatching {
-            OutboundHttp.withPermit {
-                OutboundHttp.client.httpPost(url) {
-                    header("Content-Type", "application/json")
-                    setBody("""{"ItemId":"test","ItemType":"Movie"}""")
-                }.status.isSuccess()
+        val status = computeJellyfinWebhookStatus(cfg, jellyfinClient)
+        if (!status.reachable) return@post call.respond(HttpStatusCode.BadGateway, mapOf("error" to "Couldn't reach Jellyfin"))
+        if (!status.pluginInstalled) return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Install the Webhook plugin first"))
+        if (!status.destinationConfigured) return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Set up the Jellyfin webhook first"))
+
+        val plugins = jellyfinClient.getPlugins(baseUrl, token)
+        val pluginId = plugins?.firstOrNull { it.name.equals(WEBHOOK_PLUGIN_NAME, ignoreCase = true) }?.id
+            ?: return@post call.respond(HttpStatusCode.BadGateway, mapOf("error" to "Couldn't reach Jellyfin's plugin list"))
+        val config = jellyfinClient.getPluginConfiguration(baseUrl, token, pluginId)
+            ?: return@post call.respond(HttpStatusCode.BadGateway, mapOf("error" to "Couldn't read the plugin's configuration"))
+        val existingGeneric = (config["GenericOptions"] as? JsonArray) ?: JsonArray(emptyList())
+        val ourEntry = existingGeneric.firstOrNull {
+            (it as? JsonObject)?.get("WebhookName")?.jsonPrimitive?.contentOrNull == OUR_DESTINATION_NAME
+        } as? JsonObject
+            ?: return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Set up the Jellyfin webhook first"))
+        val originalTypes = (ourEntry["NotificationTypes"] as? JsonArray) ?: JsonArray(emptyList())
+        val originalTypeStrings = originalTypes.mapNotNull { it.jsonPrimitive.contentOrNull }
+
+        suspend fun writeNotificationTypes(types: List<String>): Boolean {
+            val updatedEntry = JsonObject(ourEntry.toMutableMap().apply {
+                put("NotificationTypes", buildJsonArray { types.forEach { add(kotlinx.serialization.json.JsonPrimitive(it)) } })
+            })
+            val updatedGeneric = existingGeneric.map {
+                if ((it as? JsonObject)?.get("WebhookName")?.jsonPrimitive?.contentOrNull == OUR_DESTINATION_NAME) updatedEntry else it
             }
-        }.getOrElse { Logger.warn("Ingest test-destination failed: ${it.message}", "ingest"); false }
-        if (ok) call.respond(mapOf("ok" to true)) else call.respond(HttpStatusCode.BadGateway, mapOf("error" to "Couldn't reach that URL from this server"))
+            val updatedConfig = JsonObject(config.toMutableMap().apply { put("GenericOptions", JsonArray(updatedGeneric)) })
+            return jellyfinClient.updatePluginConfiguration(baseUrl, token, pluginId, updatedConfig)
+        }
+
+        val before = realtimeIngest.lastWebhookReceivedAt
+        var result: TestLiveResult
+        try {
+            if ("TaskCompleted" !in originalTypeStrings) {
+                if (!writeNotificationTypes(originalTypeStrings + "TaskCompleted")) {
+                    return@post call.respond(HttpStatusCode.BadGateway, mapOf("error" to "Couldn't temporarily update the plugin configuration"))
+                }
+            }
+            val tasks = jellyfinClient.getScheduledTasks(baseUrl, token)
+            val taskId = tasks?.firstOrNull { it.key == "WebhookItemAdded" }?.id
+            if (taskId == null || !jellyfinClient.runScheduledTask(baseUrl, token, taskId)) {
+                result = TestLiveResult(delivered = false, message = "Couldn't trigger Jellyfin's own webhook task — try again, or check the fallback listener below")
+            } else {
+                var delivered = false
+                for (i in 1..10) {
+                    kotlinx.coroutines.delay(1_000L)
+                    if (realtimeIngest.lastWebhookReceivedAt != before) { delivered = true; break }
+                }
+                result = if (delivered) {
+                    TestLiveResult(delivered = true, message = "Jellyfin successfully delivered a live webhook to this address.")
+                } else {
+                    TestLiveResult(delivered = false, message = "Jellyfin's Webhook plugin did not deliver anything, even though the configuration and network path both look correct — this may be a plugin issue on the Jellyfin side. The fallback change-feed listener below will still eventually pick up new items.")
+                }
+            }
+        } finally {
+            // Always revert — never leave the admin's config in a different state than they started with.
+            if ("TaskCompleted" !in originalTypeStrings) writeNotificationTypes(originalTypeStrings)
+        }
+        call.respond(result)
     }
 
     // Explicit, separately-confirmed, destructive-labelled — restarting Jellyfin drops every household
@@ -284,6 +336,9 @@ private suspend fun handleJellyfinWebhook(
         call.respond(HttpStatusCode.Forbidden, mapOf("error" to "invalid secret"))
         return
     }
+    // FR-165-7 — the plugin reached us; record this BEFORE any item-type filtering below, so a probe
+    // payload (e.g. a TaskCompleted test, which has no ItemId/ItemType) still counts as a live delivery.
+    realtimeIngest.lastWebhookReceivedAt = dev.jellystructure.nowEpochSec()
 
     val raw = runCatching { call.receiveText() }.getOrNull()
     val json = raw?.let { runCatching { Json.parseToJsonElement(it).jsonObject }.getOrNull() }
