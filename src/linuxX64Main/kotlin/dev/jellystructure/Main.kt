@@ -203,7 +203,7 @@ fun main() = runBlocking {
     val upcomingService = dev.jellystructure.tv.UpcomingService(configStore, arrClient, mediaStore, tmdbClient)
     // Phase 109: single-worker persistent queue for heavy media edits (ffmpeg remuxes) — see the class
     // doc for why enqueue-then-drain replaces running ffmpeg inline on the request thread.
-    val mediaJobQueue = dev.jellystructure.media.MediaJobQueue(db, mediaStore, broadcaster, jellyfinClient, configStore, mediaHistory, seedingGuard, arrRescan, rootScope)
+    val mediaJobQueue = dev.jellystructure.media.MediaJobQueue(db, mediaStore, broadcaster, jellyfinClient, configStore, mediaHistory, seedingGuard, arrRescan, rootScope, mediaSegmentStore, fingerprintService)
     mediaJobQueue.start()
     // Phase 110 — one outbound Jellyfin WS per connected Ravilo TV (dashboard messages, remote control).
     val sessionBridge = dev.jellystructure.tv.JellyfinSessionBridge(configStore, tvEventBus, rootScope, mediaStore)
@@ -214,7 +214,7 @@ fun main() = runBlocking {
     if (configStore.current.ingest.webhookSecret.isBlank()) {
         rootScope.launch { configStore.update(configStore.current.copy(ingest = configStore.current.ingest.copy(webhookSecret = dev.jellystructure.auth.generateSecureToken()))) }
     }
-    val realtimeIngest = dev.jellystructure.media.RealtimeIngestService(scanner, mediaStore, jellyfinClient, configStore, artworkDownloader, rootScope, broadcaster, mediaHistory, arrRescan, sonarrEnrich, imdbClient, fingerprintService, mediaSegmentStore)
+    val realtimeIngest = dev.jellystructure.media.RealtimeIngestService(scanner, mediaStore, jellyfinClient, configStore, artworkDownloader, rootScope, broadcaster, mediaHistory, arrRescan, sonarrEnrich, imdbClient, mediaJobQueue)
     val libraryListener = dev.jellystructure.tv.JellyfinLibraryListener(configStore, jellyfinClient, mediaStore, realtimeIngest, rootScope)
     libraryListener.start()
     // Phase 118 (FR C.4) — FD telemetry: the durable defense against the unfixable Ktor Native
@@ -298,7 +298,7 @@ fun main() = runBlocking {
                 "▶ Scheduled ${if (active != null) "pipeline" else "scan"} run started", scanTracker,
             ) {
                 if (active != null) {
-                    executePipeline(active, jobId, mediaStore, scanner, scanTracker, broadcaster, configStore, jellyfinClient, scanDispatcher, artworkDownloader, arrRescan, sonarrEnrich, imdbClient, fingerprintService, mediaSegmentStore)
+                    executePipeline(active, jobId, mediaStore, scanner, scanTracker, broadcaster, configStore, jellyfinClient, scanDispatcher, artworkDownloader, arrRescan, sonarrEnrich, imdbClient, mediaSegmentStore, mediaJobQueue)
                 } else {
                     runScan(jobId, emptySet(), mediaStore, scanner, scanTracker, broadcaster, configStore, jellyfinClient, scanDispatcher, artworkDownloader = if (cfg.behavior.fetchImages) artworkDownloader else null)
                 }
@@ -340,6 +340,17 @@ fun main() = runBlocking {
                 .onSuccess { Logger.info("WAL checkpoint: TRUNCATE complete") }
                 .onFailure { Logger.info("WAL checkpoint failed (non-fatal): ${it.message}") }
             delay(6 * 3_600_000L)
+        }
+    }
+
+    // Phase 164 (FR-164-8) — daily media_job retention sweep (14 days of terminal-state rows kept).
+    // deleteOld existed since Phase 109 but was never called from anywhere; the segments lane adds one
+    // row per season per full pipeline run, so this now needed wiring for real.
+    rootScope.launch {
+        while (shutdownRequested.value == 0) {
+            runCatching { mediaJobQueue.pruneOld() }
+                .onFailure { Logger.warn("media_job retention sweep failed (non-fatal): ${it.message}") }
+            delay(24 * 3_600_000L)
         }
     }
 
@@ -397,8 +408,10 @@ suspend fun executePipeline(
     arrRescan: ArrRescanService,
     sonarrEnrich: SonarrEnrichService? = null,
     imdbClient: dev.jellystructure.imdb.ImdbClient? = null,
-    fingerprintService: dev.jellystructure.media.FingerprintService? = null,
     mediaSegmentStore: dev.jellystructure.media.MediaSegmentStore,
+    // Phase 164 — detect_segments enqueues onto this instead of running inline (the job runner gets its
+    // own FingerprintService reference at MediaJobQueue construction — this function no longer needs one).
+    mediaJobQueue: dev.jellystructure.media.MediaJobQueue,
     // "Run pipeline now (full)" — every step downstream of scan_files (pull_tmdb, fetch_artwork,
     // sync_imdb_ratings, write_nfo, sync_jellyfin, …) only ever sees `workingSet`, i.e. whatever
     // scan_files' freshness filter let through. That's correct for "keep already-scanned metadata
@@ -618,60 +631,60 @@ suspend fun executePipeline(
                 }
             }
             "detect_segments" -> {
-                // Phase 150 (FR-SEG1-2/3/5), rewritten Phase 163 for the per-kind media_segment table —
-                // "missing": a movie/episode with a real gap (a writable-if-not-locked kind with no row
-                // yet). PipelineStepOps itself re-checks per-kind lock/existence (and, for
-                // fingerprinting, per-episode) before doing any work with force=false, so "all" scope
-                // safely re-runs detection only where a kind is still actually empty — it never
-                // re-detects (or overwrites) something a chapter/heuristic/fingerprint/manual source, or
-                // a lock, already covers.
-                fun needsDetection(item: dev.jellystructure.model.MediaItem): Boolean {
-                    fun missing(episodeKey: String, episodeNumber: Int) =
-                        mediaSegmentStore.getSegment(item.id, episodeKey, episodeNumber, dev.jellystructure.media.SegmentKind.INTRO) == null ||
-                        mediaSegmentStore.getSegment(item.id, episodeKey, episodeNumber, dev.jellystructure.media.SegmentKind.CREDITS) == null
-                    return when (item.kind) {
-                        dev.jellystructure.model.MediaKind.MOVIE -> missing("", 0)
-                        dev.jellystructure.model.MediaKind.TV_SHOW -> item.episodes.any { it.partCount == 1 && missing(it.filename, it.episodeNumber ?: 0) }
-                    }
+                // Phase 150 (FR-SEG1-2/3/5) → Phase 163 (per-kind media_segment table) → Phase 164
+                // (FR-164-3): this step is now ENQUEUE-ONLY. Detection itself runs on the segments lane
+                // (Activity ▸ Jobs & workers, MediaJobQueue's segmentsSupervisorLoop), off this run's
+                // critical path — see the phase spec for why (by far the slowest step; held the whole
+                // pipeline/scheduler open for its duration; the scheduler skipped the next scheduled run
+                // outright while it ran). "missing": a movie/season with a real gap (a writable-if-
+                // not-locked kind with no row yet). The job runner re-checks per-kind lock/existence
+                // (force=false) before writing anything, so "all" scope safely enqueues even an
+                // already-complete item — it just does no writable work when it runs.
+                fun missing(itemId: String, episodeKey: String, episodeNumber: Int) =
+                    mediaSegmentStore.getSegment(itemId, episodeKey, episodeNumber, dev.jellystructure.media.SegmentKind.INTRO) == null ||
+                    mediaSegmentStore.getSegment(itemId, episodeKey, episodeNumber, dev.jellystructure.media.SegmentKind.CREDITS) == null
+                fun needsDetection(item: dev.jellystructure.model.MediaItem): Boolean = when (item.kind) {
+                    dev.jellystructure.model.MediaKind.MOVIE -> missing(item.id, "", 0)
+                    dev.jellystructure.model.MediaKind.TV_SHOW -> item.episodes.any { it.partCount == 1 && missing(item.id, it.filename, it.episodeNumber ?: 0) }
                 }
                 val toProcess = if (step.scope == "all") workingSet else workingSet.filter(::needsDetection)
-                Logger.info("detect_segments: ${toProcess.size} items (scope=${step.scope})")
+                scanTracker.setActiveStep(step.step)
+                broadcaster.broadcast(JobEvent.StepStarted(jobId, step.step, toProcess.size))
 
-                // One work item per season (not per series) for the fingerprint pass below — the unit
-                // PipelineStepOps.eligibleSeasons already computes, so this just carries it alongside
-                // the owning series through the worker pool.
-                data class SeasonWorkItem(val item: dev.jellystructure.model.MediaItem, val seasonEpisodes: List<dev.jellystructure.model.Episode>)
-
-                // Bug fix — a large, many-season show used to monopolize one worker slot for its
-                // *entire* fingerprint run (every season processed sequentially inside one item's
-                // detectSegments call), leaving the rest of the configured worker pool idle once fewer
-                // series than workers remained. Phase A (cheap chapter/heuristic tier, unchanged
-                // per-item granularity) runs to completion first — Phase B's season work items need its
-                // results (an episode chapter-matching just filled may no longer be fingerprint-eligible)
-                // and there'd be nothing to correlate before it's done anyway. Phase B then dispatches
-                // one work item PER SEASON, not per series, so a 10-season show spreads across up to 10
-                // worker slots concurrently instead of one.
-                runPipelineStepPool(
-                    jobId, step.step, toProcess, { pipelineStepConcurrency(step.step, configStore.current.behavior.scanWorkers) },
-                    scanTracker, broadcaster, labelOf = { it.title },
-                ) { item, _ -> dev.jellystructure.media.PipelineStepOps.detectChapterAndHeuristic(item, mediaSegmentStore, step.chapterKeywords) }
-
-                if (step.detectFingerprint && fingerprintService != null) {
-                    val freshItems = toProcess.mapNotNull { store.get(it.id) }
-                    val seasonWorkItems = freshItems
-                        .filter { it.kind == dev.jellystructure.model.MediaKind.TV_SHOW }
-                        .flatMap { item -> dev.jellystructure.media.PipelineStepOps.eligibleSeasons(item).map { season -> SeasonWorkItem(item, season) } }
-                    Logger.info("detect_segments: ${seasonWorkItems.size} season(s) to fingerprint")
-                    runPipelineStepPool(
-                        jobId, step.step, seasonWorkItems, { pipelineStepConcurrency(step.step, configStore.current.behavior.scanWorkers) },
-                        scanTracker, broadcaster, labelOf = { "${it.item.title} S${it.seasonEpisodes.first().seasonNumber?.toString()?.padStart(2, '0') ?: "??"}" },
-                    ) { workItem, reportDetail ->
-                        dev.jellystructure.media.PipelineStepOps.detectIntroFingerprintsForSeason(workItem.item, mediaSegmentStore, fingerprintService, workItem.seasonEpisodes, reportDetail = reportDetail)
-                        // Phase 159 (FR-159-3) — outro/credits counterpart, same season-scoped work item
-                        // so a 10-season show's outro pass also spreads across up to 10 worker slots.
-                        dev.jellystructure.media.PipelineStepOps.detectOutroFingerprintsForSeason(workItem.item, mediaSegmentStore, fingerprintService, workItem.seasonEpisodes, reportDetail = reportDetail)
+                var enqueued = 0
+                var deduped = 0
+                for (item in toProcess) {
+                    when (item.kind) {
+                        dev.jellystructure.model.MediaKind.MOVIE -> {
+                            val result = mediaJobQueue.enqueueSegments(
+                                "segments_movie", item.id, item.title,
+                                dev.jellystructure.jobs.MediaJobParams(), 1, "seg:movie:${item.id}",
+                            )
+                            if (result.deduped) deduped++ else enqueued++
+                        }
+                        // One job per SEASON, not per series — a 10-season show's detection spreads
+                        // across the segments lane's worker pool instead of monopolizing one slot for
+                        // however long all ten seasons take sequentially (the same reasoning the old
+                        // inline per-season worker-pool dispatch used, now expressed as separate queue
+                        // rows instead of separate coroutine work items).
+                        dev.jellystructure.model.MediaKind.TV_SHOW -> {
+                            val seasons = item.episodes.filter { it.partCount == 1 }.groupBy { it.seasonNumber ?: 0 }
+                            for ((season, eps) in seasons) {
+                                if (step.scope != "all" && eps.none { missing(item.id, it.filename, it.episodeNumber ?: 0) }) continue
+                                val result = mediaJobQueue.enqueueSegments(
+                                    "segments_season", item.id, "${item.title} S${season.toString().padStart(2, '0')}",
+                                    dev.jellystructure.jobs.MediaJobParams(segmentSeason = season), eps.size,
+                                    "seg:season:${item.id}:$season",
+                                )
+                                if (result.deduped) deduped++ else enqueued++
+                            }
+                        }
                     }
                 }
+                val summary = "enqueued $enqueued detection job${if (enqueued == 1) "" else "s"}" +
+                    if (deduped > 0) " ($deduped already queued)" else ""
+                Logger.info("detect_segments: $summary", "pipeline")
+                broadcaster.broadcast(JobEvent.StepFinished(jobId, step.step, summary))
             }
             "sync_imdb_ratings" -> {
                 // Phase 131: keyed by imdbId; a title without one has no rating to sync. A *small* pool

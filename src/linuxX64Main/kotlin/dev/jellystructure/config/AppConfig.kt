@@ -187,6 +187,10 @@ data class Behavior(
     @SerialName("fetch_images") val fetchImages: Boolean = true,
     @SerialName("tell_jellyfin") val tellJellyfin: Boolean = true,
     @SerialName("scan_workers") val scanWorkers: Int = 1,
+    // Phase 164 — the detect_segments job queue's own worker lane, deliberately a separate (smaller)
+    // knob from scan_workers: this lane runs CONCURRENTLY with normal request serving and every other
+    // pipeline step now, not sequentially inside a scan/pipeline run — see MediaJobQueue.kt.
+    @SerialName("segment_workers") val segmentWorkers: Int = 2,
     @SerialName("scan_threads") val scanThreads: Int = 4,
     @SerialName("scan_interval_hours") val scanIntervalHours: Int = 0,
     @SerialName("scan_episode_cap") val scanEpisodeCap: Int = 0, // 0 = unlimited (probe every episode); Phase 49

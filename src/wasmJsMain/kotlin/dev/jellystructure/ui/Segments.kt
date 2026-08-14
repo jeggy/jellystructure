@@ -97,6 +97,17 @@ private fun toast(msg: String) {
     window.setTimeout({ t.remove(); null }, 3100)
 }
 
+/** Phase 164 (FR-164-7) — the redetect toast is now literally true: detection is enqueued onto the
+ *  segments job lane (Activity ▸ Jobs & workers), not started inline, and a double-click (or a
+ *  redetect racing an already-queued pipeline sweep for the same unit) reports back as already-queued
+ *  rather than silently starting a second run. */
+private fun redetectToast(subject: String, result: dev.jellystructure.api.SegmentRedetectResult): String = when {
+    !result.ok -> "Couldn't queue detection for $subject — try again"
+    result.enqueued > 0 && result.deduped > 0 -> "Queued detection for $subject (${result.deduped} already queued) — see Activity ▸ Jobs &amp; workers"
+    result.enqueued > 0 -> "Queued detection for $subject — see Activity ▸ Jobs &amp; workers"
+    else -> "Already queued for $subject"
+}
+
 // Step 4 — trim-view state + the keydown listener are page-lifetime module state, not per-render
 // locals: the listener is attached once (document.body is replaced wholesale on every /segments visit,
 // but `document` itself never is) and always reads the latest currentTrimData/trimState rather than
@@ -483,9 +494,9 @@ private fun wireTrim(root: Element, data: SegmentTrimResponse, scope: CoroutineS
     }
     root.querySelector("[data-a='redetect-one']")?.addEventListener("click") {
         scope.launch {
-            if (data.kind == "movie") SegmentApi.redetect(movie = data.mediaId)
+            val result = if (data.kind == "movie") SegmentApi.redetect(movie = data.mediaId)
             else SegmentApi.redetect(items = listOf(SegmentEpisodeRef(data.mediaId, data.episodeKey, data.episodeNumber)))
-            toast("Queued <b>detect_segments</b> for ${data.code} — locked markers are skipped")
+            toast(redetectToast(data.code, result) + " — locked markers are skipped")
         }
     }
     root.querySelector("[data-a='next']")?.addEventListener("click") { goNext(data, scope) }
@@ -888,14 +899,14 @@ private fun wireBulkActions(root: org.w3c.dom.Element, sheet: SegmentSheetRespon
         if (picked.isEmpty()) return@addEventListener
         val targets = picked.map { ref(sheet.episodes[it]) }
         scope.launch {
-            SegmentApi.redetect(items = targets)
-            toast("Queued <b>detect_segments</b> for ${targets.size} episode${if (targets.size == 1) "" else "s"} — locked markers are skipped")
+            val result = SegmentApi.redetect(items = targets)
+            toast(redetectToast("${targets.size} episode${if (targets.size == 1) "" else "s"}", result) + " — locked markers are skipped")
         }
     }
     root.querySelector("[data-a='redetect-season']")?.addEventListener("click") {
         scope.launch {
-            SegmentApi.redetect(series = sheet.itemId, season = sheet.seasonNumber)
-            toast("Queued <b>detect_segments</b> for the season — locked markers are skipped")
+            val result = SegmentApi.redetect(series = sheet.itemId, season = sheet.seasonNumber)
+            toast(redetectToast("the season", result) + " — locked markers are skipped")
         }
     }
 }
@@ -922,8 +933,8 @@ private fun wireDrawerActions(root: org.w3c.dom.Element, sheet: SegmentSheetResp
     }
     root.querySelector("[data-a='redetect-one']")?.addEventListener("click") {
         scope.launch {
-            SegmentApi.redetect(items = listOf(ref(open)))
-            toast("Queued <b>detect_segments</b> for ${open.code} — locked markers are skipped")
+            val result = SegmentApi.redetect(items = listOf(ref(open)))
+            toast(redetectToast(open.code, result) + " — locked markers are skipped")
         }
     }
 }

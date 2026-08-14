@@ -6,6 +6,7 @@ import dev.jellystructure.config.ConfigStore
 import dev.jellystructure.db.JellystructureDb
 import dev.jellystructure.db.Media_job
 import dev.jellystructure.jobs.JobEvent
+import dev.jellystructure.jobs.LaneSummary
 import dev.jellystructure.jobs.MediaJobParams
 import dev.jellystructure.jobs.MediaJobSnapshot
 import dev.jellystructure.jobs.WsBroadcaster
@@ -25,6 +26,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.Json
 import platform.posix.fgets
 import platform.posix.pclose
@@ -43,6 +45,10 @@ import platform.posix.popen
  * mutual-exclusion the single-file jobs get, so a bulk run and a single reorder can never remux in
  * parallel and double the disk I/O.
  */
+/** Phase 164 — [enqueueSegments]'s return: the snapshot plus whether this call actually inserted a new
+ *  row or found an existing active one under the same [MediaJobSnapshot.id]'s dedupe key instead. */
+data class SegmentEnqueueResult(val snapshot: MediaJobSnapshot, val deduped: Boolean)
+
 class MediaJobQueue(
     private val db: JellystructureDb,
     private val store: MediaStore,
@@ -53,6 +59,10 @@ class MediaJobQueue(
     private val seedingGuard: SeedingGuard,
     private val arrRescan: ArrRescanService?,
     private val appScope: CoroutineScope,
+    // Phase 164 — the segments lane's own dependencies. Nullable so this class stays constructible
+    // (and the media lane fully functional) in any test/bootstrap context that doesn't wire segments.
+    private val segmentStore: MediaSegmentStore? = null,
+    private val fingerprintService: FingerprintService? = null,
 ) {
     private val dispatcher = Dispatchers.Default.limitedParallelism(1)
     private val json = Json { ignoreUnknownKeys = true }
@@ -65,11 +75,33 @@ class MediaJobQueue(
     // instant must not both observe bulkRunning=false and both start (a plain @Volatile flag alone races).
     private val bulkClaimMutex = kotlinx.coroutines.sync.Mutex()
 
-    /** Boots the worker: any row left `running` from a prior crash/restart is re-queued (the temp copy,
-     *  if any, is simply overwritten or ignored on the retry — the original file was never touched). */
+    // Phase 164 — the segments lane: concurrency > 1 (behavior.segment_workers), unlike the media lane's
+    // FIFO-1. targetWorkers is re-polled live by segmentsSupervisorLoop (matching runPipelineStepPool's
+    // own live-rescale pattern) so a Settings change takes effect on the next dispatch, not a restart.
+    // AtomicInt (not a plain @Volatile var) — unlike runningJobId/cancelRunning above (only ever written
+    // by one coroutine at a time), segmentsActiveWorkers is decremented by up to N worker coroutines
+    // exiting concurrently; @Volatile only guarantees visibility, not atomicity of `--`'s read-modify-
+    // write, so concurrent decrements could lose updates. Matches ScanTracker.activeWorkers/targetWorkers'
+    // own AtomicInt usage for the identical pattern (PipelineStepPool.kt).
+    private val segmentsActiveWorkers = kotlin.concurrent.AtomicInt(0)
+    private val segmentsTargetWorkers = kotlin.concurrent.AtomicInt(1)
+    // segmentsClaimMutex serializes "pick the next queued row + mark it running" across the N concurrent
+    // workers — without it, two workers could both read the same queued row before either claims it.
+    private val segmentsClaimMutex = kotlinx.coroutines.sync.Mutex()
+    // Cooperative cancel (FR-164-5) — there is no temp file to pkill for a segments job (it's ffmpeg/
+    // fpcalc calls reading, never writing, the source file), so cancellation is a per-job-id flag the
+    // running worker's PipelineStepOps isCancelled callback polls between episodes. @Volatile + whole-set
+    // replacement (never mutated in place) gives safe publication across worker threads without a mutex
+    // on the hot read path, matching this class's existing cancelRunning/runningJobId convention.
+    @Volatile private var segmentsCancelledIds: Set<String> = emptySet()
+
+    /** Boots the workers: any row left `running` from a prior crash/restart is re-queued (a media-lane
+     *  row's temp copy, if any, is simply overwritten or ignored on the retry — the original file was
+     *  never touched; a segments-lane row is idempotent to re-run outright). */
     fun start() {
         queries.requeueRunning()
         appScope.launch(dispatcher) { workerLoop() }
+        appScope.launch { segmentsSupervisorLoop() }
     }
 
     fun isBusy(): Boolean = runningJobId != null || bulkRunning
@@ -78,10 +110,37 @@ class MediaJobQueue(
 
     suspend fun enqueue(type: String, mediaId: String, label: String, params: MediaJobParams, fileCount: Int = 1): MediaJobSnapshot {
         val id = "mj-${genId()}"
-        queries.insert(id, type, mediaId, label, json.encodeToString(MediaJobParams.serializer(), params), "queued", "admin", epochSeconds(), fileCount.toLong())
+        queries.insert(id, type, mediaId, label, json.encodeToString(MediaJobParams.serializer(), params), "queued", "admin", epochSeconds(), fileCount.toLong(), "media", null)
         val snap = snapshotOf(id)!!
         broadcaster.broadcast(JobEvent.MediaJobUpdate(snap))
         return snap
+    }
+
+    /** Phase 164 (FR-164-1/7) — the segments lane's own enqueue: dedup-aware via the partial unique
+     *  index on `dedupe_key` (`media_job_dedupe_active`), not a check-then-insert (two concurrent
+     *  enqueues — a pipeline run and an operator clicking "detect again" — must not both observe "not
+     *  present" and both insert). A unique-constraint violation on the insert is not an error: it means
+     *  this exact work unit is already queued or running, and [SegmentEnqueueResult.deduped] tells the
+     *  caller so (the redetect endpoint uses it for "already queued" vs "queued" toast copy). */
+    suspend fun enqueueSegments(type: String, mediaId: String, label: String, params: MediaJobParams, fileCount: Int, dedupeKey: String): SegmentEnqueueResult {
+        val id = "mj-${genId()}"
+        val inserted = runCatching {
+            queries.insert(id, type, mediaId, label, json.encodeToString(MediaJobParams.serializer(), params), "queued", "admin", epochSeconds(), fileCount.toLong(), "segments", dedupeKey)
+        }.isSuccess
+        if (inserted) {
+            val snap = snapshotOf(id)!!
+            broadcaster.broadcast(JobEvent.MediaJobUpdate(snap))
+            return SegmentEnqueueResult(snap, deduped = false)
+        }
+        val existing = queries.findByDedupeKeyActive(dedupeKey).executeAsOneOrNull()?.let { toSnapshot(it) }
+        // Vanishingly unlikely (the row that lost the race to us finished between our insert failing and
+        // this lookup) but must not crash the request — fall back to a synthetic not-yet-persisted
+        // snapshot so the caller still gets an honest "it's spoken for" answer.
+        val snap = existing ?: MediaJobSnapshot(
+            id = "", type = type, mediaId = mediaId, label = label, state = "queued", enqueuedBy = "admin",
+            createdAt = epochSeconds(), fileCount = fileCount, lane = "segments",
+        )
+        return SegmentEnqueueResult(snap, deduped = true)
     }
 
     /** Registers a job row for a bulk-reorder run that executes via its own existing code path — see
@@ -110,9 +169,12 @@ class MediaJobQueue(
         broadcastSnapshot(jobId)
     }
 
-    /** Cancels a queued job outright, or best-effort kills a running one (by matching its unique temp
-     *  output path in the process list — see class doc on why this is simpler and safer than tracking a
-     *  PID through a nested shell/nice/ionice invocation). Returns false if the job wasn't cancellable. */
+    /** Cancels a queued job outright, or best-effort stops a running one. The media lane kills its
+     *  ffmpeg child by matching its unique temp output path in the process list (see class doc on why
+     *  that's simpler/safer than tracking a PID through a nested shell/nice/ionice invocation). The
+     *  segments lane has no such child to kill (its ffmpeg/fpcalc calls only ever READ the source file)
+     *  — cancellation there is cooperative (FR-164-5): the job stops after the episode currently in
+     *  flight, not instantly. Returns false if the job wasn't cancellable. */
     suspend fun cancel(jobId: String): Boolean {
         val row = queries.findById(jobId).executeAsOneOrNull() ?: return false
         return when (row.state) {
@@ -122,6 +184,10 @@ class MediaJobQueue(
                 true
             }
             "running" -> {
+                if (row.lane == "segments") {
+                    segmentsCancelledIds = segmentsCancelledIds + jobId
+                    return true
+                }
                 cancelRunning = true
                 val tmp = tmpFileFor(row)
                 // Security fix (2026-08-02 review, finding L1) — `tmp` is shell-quoted correctly, but
@@ -146,25 +212,62 @@ class MediaJobQueue(
         val row = queries.findById(jobId).executeAsOneOrNull() ?: return null
         if (row.state != "failed" && row.state != "cancelled") return null
         val params = runCatching { json.decodeFromString(MediaJobParams.serializer(), row.params) }.getOrNull() ?: return null
-        return enqueue(row.type, row.media_id, row.label, params, row.file_count.toInt())
+        return if (row.lane == "segments") {
+            // dedupe_key survives a retry unchanged — a retried job is still "this exact work unit",
+            // and the same partial-unique-index guarantee must keep applying to it.
+            val key = row.dedupe_key ?: "seg:retry:${row.id}"
+            enqueueSegments(row.type, row.media_id, row.label, params, row.file_count.toInt(), key).snapshot
+        } else {
+            enqueue(row.type, row.media_id, row.label, params, row.file_count.toInt())
+        }
     }
 
     // ── Read model for the Jobs page ──────────────────────────────────────────
 
-    fun running(): MediaJobSnapshot? = queries.listRunning().executeAsList().firstOrNull()?.let { toSnapshot(it) }
+    /** Every currently-running job across BOTH lanes — the media lane has at most one (its FIFO-1
+     *  guarantee), the segments lane can have up to `behavior.segment_workers`. */
+    fun running(): List<MediaJobSnapshot> = queries.listRunning().executeAsList().map { toSnapshot(it) }
     fun queued(): List<MediaJobSnapshot> = queries.listQueued().executeAsList().map { toSnapshot(it) }
     fun recent(limit: Int = 20): List<MediaJobSnapshot> = queries.listRecent(limit.toLong()).executeAsList().map { toSnapshot(it) }
-    fun doneToday(): Int {
+
+    /** Phase 164 (FR-164-6) — the two worker-line summary chips: busy/running/queued/done-today, split
+     *  by lane, so the Jobs page can show "Media worker" and "Segment detection" as independent lines
+     *  rather than one combined (and therefore misleading, given the very different concurrency models)
+     *  count. */
+    fun laneSummaries(): List<LaneSummary> {
         val midnightToday = epochSeconds() - (epochSeconds() % 86_400L)
-        return queries.countDoneToday(midnightToday).executeAsOne().toInt()
+        val counts = queries.countByLaneState().executeAsList().associate { (it.lane to it.state) to it.n.toInt() }
+        val doneToday = queries.countDoneTodayByLane(midnightToday).executeAsList().associate { it.lane to it.n.toInt() }
+        fun summary(lane: String, configuredWorkers: Int) = LaneSummary(
+            lane = lane,
+            runningCount = counts[lane to "running"] ?: 0,
+            queuedCount = counts[lane to "queued"] ?: 0,
+            doneToday = doneToday[lane] ?: 0,
+            configuredWorkers = configuredWorkers,
+        )
+        return listOf(
+            summary("media", 1),
+            summary("segments", segmentsTargetWorkers.value),
+        )
     }
 
-    // ── Worker loop ────────────────────────────────────────────────────────────
+    /** Phase 164 (FR-164-8) — `deleteOld` existed in the `.sq` from Phase 109 but was never called from
+     *  anywhere; with a segments-lane row added per season per full run, the table now grows fast enough
+     *  that this needed wiring for real. Called from a daily sweep in Main.kt (same background-launcher
+     *  family as the WAL checkpoint). */
+    fun pruneOld(olderThanDays: Int = 14) {
+        val cutoff = epochSeconds() - olderThanDays * 86_400L
+        queries.deleteOld(cutoff)
+    }
+
+    // ── Media lane worker loop (unchanged concurrency-1 FIFO) ───────────────────
 
     private suspend fun workerLoop() {
         while (true) {
             if (bulkRunning) { delay(500); continue }
-            val next = queries.listQueued().executeAsList().firstOrNull()
+            // Phase 164: listQueued() is now COMBINED across both lanes (feeds the Jobs page's one
+            // interleaved queue view) — this lane must only ever pick up its own "media" rows.
+            val next = queries.listQueuedByLane("media").executeAsList().firstOrNull()
             if (next == null) { delay(1500); continue }
             runJob(next)
         }
@@ -199,6 +302,167 @@ class MediaJobQueue(
         }
         broadcastSnapshot(row.id)
         runningJobId = null
+    }
+
+    // ── Segments lane: N-concurrent worker pool (Phase 164) ─────────────────────
+
+    /** Supervises the segments lane's worker count, re-polled live every 500ms (matching
+     *  `runPipelineStepPool`'s own live-rescale pattern) so a `behavior.segment_workers` change in
+     *  Settings takes effect on the next dispatch, not a restart. Workers launched here drain
+     *  themselves (see [segmentsWorkerLoop]) when scaled down; new ones spin up live when scaled up. */
+    private suspend fun segmentsSupervisorLoop() {
+        segmentsTargetWorkers.value = currentSegmentWorkers()
+        repeat(segmentsTargetWorkers.value) { launchSegmentsWorker() }
+        while (true) {
+            delay(500)
+            val newTarget = currentSegmentWorkers()
+            if (newTarget != segmentsTargetWorkers.value) {
+                Logger.info("segments lane: workers ${segmentsTargetWorkers.value} → $newTarget", "jobs")
+                segmentsTargetWorkers.value = newTarget
+            }
+            val active = segmentsActiveWorkers.value
+            val target = segmentsTargetWorkers.value
+            if (target > active) {
+                repeat(target - active) { launchSegmentsWorker() }
+            }
+        }
+    }
+
+    private fun currentSegmentWorkers(): Int = configStore.current.behavior.segmentWorkers.coerceIn(1, 8)
+
+    private fun launchSegmentsWorker() {
+        segmentsActiveWorkers.incrementAndGet()
+        appScope.launch { segmentsWorkerLoop() }
+    }
+
+    private suspend fun segmentsWorkerLoop() {
+        try {
+            while (true) {
+                if (segmentsActiveWorkers.value > segmentsTargetWorkers.value) {
+                    Logger.info("segments lane: worker draining (scale-down)", "jobs")
+                    return
+                }
+                // segmentsClaimMutex: see its declaration doc — atomically "pick next queued + mark
+                // running" so two concurrent workers can never claim the same row.
+                val row = segmentsClaimMutex.withLock {
+                    val next = queries.listQueuedByLane("segments").executeAsList().firstOrNull() ?: return@withLock null
+                    queries.markRunning(epochSeconds(), next.id)
+                    next
+                }
+                if (row == null) { delay(1500); continue }
+                broadcastSnapshot(row.id)
+                runSegmentsJob(row)
+            }
+        } finally {
+            segmentsActiveWorkers.decrementAndGet()
+        }
+    }
+
+    private suspend fun runSegmentsJob(row: Media_job) {
+        fun isCancelled() = row.id in segmentsCancelledIds
+        val segStore = segmentStore
+        val item = store.resolve(row.media_id)
+        val params = runCatching { json.decodeFromString(MediaJobParams.serializer(), row.params) }.getOrNull()
+
+        val outcome = try {
+            when {
+                segStore == null -> Failure("Segments store not available")
+                item == null -> Failure("Media item no longer exists")
+                params == null -> Failure("Corrupt job parameters")
+                isCancelled() -> Cancelled
+                row.type == "segments_movie" -> runSegmentsMovie(row, item, params, segStore, isCancelled = ::isCancelled)
+                row.type == "segments_season" -> runSegmentsSeason(row, item, params, segStore, isCancelled = ::isCancelled)
+                row.type == "segments_episodes" -> runSegmentsEpisodes(row, item, params, segStore, isCancelled = ::isCancelled)
+                else -> Failure("Unknown segments job type '${row.type}'")
+            }
+        } catch (e: Exception) {
+            Logger.error("segments job ${row.id} threw: ${e.message}", "jobs")
+            Failure(e.message ?: "unexpected error")
+        }
+
+        val fresh = queries.findById(row.id).executeAsOneOrNull() ?: row
+        when (outcome) {
+            is Success -> queries.markFinished("done", epochSeconds(), null, fresh.files_done, row.id)
+            is Cancelled -> queries.markFinished("cancelled", epochSeconds(), "Cancelled after the current episode", fresh.files_done, row.id)
+            is Failure -> {
+                queries.markFinished("failed", epochSeconds(), outcome.reason, fresh.files_done, row.id)
+                Logger.warn("segments job ${row.id} (${row.type} on ${row.media_id}) failed: ${outcome.reason}", "jobs")
+            }
+        }
+        segmentsCancelledIds = segmentsCancelledIds - row.id
+        broadcastSnapshot(row.id)
+    }
+
+    private fun segmentPipelineSettings(): Pair<List<String>, Boolean> {
+        val step = configStore.current.scan.pipeline.firstOrNull { it.step == "detect_segments" }
+        return (step?.chapterKeywords ?: emptyList()) to (step?.detectFingerprint ?: false)
+    }
+
+    private suspend fun segmentsProgress(jobId: String, done: Int, total: Int) {
+        val pct = if (total > 0) (done.toDouble() / total * 100.0) else 100.0
+        queries.updateProgress(pct, null, done.toLong(), null, jobId)
+        broadcastSnapshot(jobId)
+    }
+
+    private suspend fun segmentsDetail(jobId: String, filesDone: Int, detail: String?) {
+        queries.updateProgress(100.0, detail, filesDone.toLong(), null, jobId)
+        broadcastSnapshot(jobId)
+    }
+
+    private suspend fun runSegmentsMovie(row: Media_job, item: dev.jellystructure.model.MediaItem, params: MediaJobParams, segmentStore: MediaSegmentStore, isCancelled: () -> Boolean): Outcome {
+        val (chapterKeywords, _) = segmentPipelineSettings()
+        // A movie's only detection tier is chapter/heuristic — detectSegments' fingerprint tier is
+        // gated on MediaKind.TV_SHOW and would be a no-op here anyway; calling this directly (instead
+        // of detectSegments) is what gives this job real progress/cancel granularity.
+        PipelineStepOps.detectChapterAndHeuristic(item, segmentStore, chapterKeywords, force = params.segmentForce, isCancelled = isCancelled) { done, total ->
+            segmentsProgress(row.id, done, total)
+        }
+        return if (isCancelled()) Cancelled else Success
+    }
+
+    private suspend fun runSegmentsSeason(row: Media_job, item: dev.jellystructure.model.MediaItem, params: MediaJobParams, segmentStore: MediaSegmentStore, isCancelled: () -> Boolean): Outcome {
+        val season = params.segmentSeason ?: return Failure("Missing season")
+        val seasonEpisodes = item.episodes.filter { (it.seasonNumber ?: 0) == season && it.partCount == 1 }
+        if (seasonEpisodes.isEmpty()) return Failure("No eligible episodes in this season")
+        val (chapterKeywords, detectFingerprint) = segmentPipelineSettings()
+        val force = params.segmentForce
+
+        PipelineStepOps.detectChapterAndHeuristic(item.copy(episodes = seasonEpisodes), segmentStore, chapterKeywords, force = force, isCancelled = isCancelled) { done, total ->
+            segmentsProgress(row.id, done, total)
+        }
+        if (isCancelled()) return Cancelled
+
+        if (detectFingerprint && fingerprintService != null && seasonEpisodes.size >= 2) {
+            PipelineStepOps.detectIntroFingerprintsForSeason(
+                item, segmentStore, fingerprintService, seasonEpisodes, force = force,
+                reportDetail = { detail -> segmentsDetail(row.id, seasonEpisodes.size, detail) },
+                isCancelled = isCancelled,
+            )
+            if (isCancelled()) return Cancelled
+            // Phase 159 (FR-159-3) — outro/credits counterpart, same season-scoped shape.
+            PipelineStepOps.detectOutroFingerprintsForSeason(
+                item, segmentStore, fingerprintService, seasonEpisodes, force = force,
+                reportDetail = { detail -> segmentsDetail(row.id, seasonEpisodes.size, detail) },
+                isCancelled = isCancelled,
+            )
+        }
+        return if (isCancelled()) Cancelled else Success
+    }
+
+    /** Episodes redetect deliberately skips the fingerprint tier — it's a pairwise, whole-season
+     *  consensus algorithm; dropping the unselected siblings from comparison would degrade the
+     *  consensus for everyone, not just narrow the work (matches `SegmentRoutes.kt`'s existing
+     *  `redetectEpisodes` behavior, which this job type replaces the direct-launch version of). */
+    private suspend fun runSegmentsEpisodes(row: Media_job, item: dev.jellystructure.model.MediaItem, params: MediaJobParams, segmentStore: MediaSegmentStore, isCancelled: () -> Boolean): Outcome {
+        val keys = params.segmentEpisodeKeys?.toSet() ?: return Failure("Missing episode selection")
+        val selected = item.episodes.filter { it.partCount == 1 && "${it.filename}#${it.episodeNumber}" in keys }
+        if (selected.isEmpty()) return Failure("No matching episodes")
+        val (chapterKeywords, _) = segmentPipelineSettings()
+
+        PipelineStepOps.detectChapterAndHeuristic(item.copy(episodes = selected), segmentStore, chapterKeywords, force = params.segmentForce, isCancelled = isCancelled) { done, total ->
+            segmentsProgress(row.id, done, total)
+        }
+        return if (isCancelled()) Cancelled else Success
     }
 
     private sealed class Outcome
@@ -375,6 +639,7 @@ class MediaJobQueue(
         enqueuedBy = row.enqueued_by, createdAt = row.created_at, startedAt = row.started_at,
         finishedAt = row.finished_at, error = row.error, fileCount = row.file_count.toInt(),
         filesDone = row.files_done.toInt(), pct = row.pct, speed = row.speed, etaSeconds = row.eta_seconds,
+        lane = row.lane,
     )
 
     @OptIn(ExperimentalForeignApi::class)

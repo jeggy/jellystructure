@@ -1,0 +1,13 @@
+-- Phase 164 — detect_segments off the pipeline's critical path, into a de-duplicated second lane on
+-- the Phase 109 media_job queue (concurrency > 1, unlike the media lane's FIFO-1). `dedupe_key` is
+-- non-null only for segments-lane rows; the partial unique index enforces "the same item is never
+-- queued/running twice" as a database guarantee, not a racy check-then-insert (two concurrent enqueues
+-- — a pipeline run and an operator clicking "detect again" — must not both observe "not present" and
+-- both insert). See MediaJob.sq for the full column docs and MediaJobQueue.kt for the worker loop.
+ALTER TABLE media_job ADD COLUMN lane TEXT NOT NULL DEFAULT 'media';
+ALTER TABLE media_job ADD COLUMN dedupe_key TEXT;
+
+CREATE INDEX media_job_lane_state ON media_job(lane, state);
+CREATE UNIQUE INDEX media_job_dedupe_active
+    ON media_job(dedupe_key)
+    WHERE dedupe_key IS NOT NULL AND state IN ('queued', 'running');
