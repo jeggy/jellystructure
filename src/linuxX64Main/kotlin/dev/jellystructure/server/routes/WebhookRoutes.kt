@@ -119,8 +119,9 @@ fun Route.webhookRoutes(
 
     post("/settings/ingest/reach-url") {
         val body = runCatching { call.receive<ReachUrlRequest>() }.getOrNull() ?: return@post call.respond(HttpStatusCode.BadRequest)
-        configStore.update(configStore.current.copy(ingest = configStore.current.ingest.copy(jellyfinReachUrl = body.url.trim())))
-        call.respond(HttpStatusCode.NoContent)
+        val ok = configStore.update(configStore.current.copy(ingest = configStore.current.ingest.copy(jellyfinReachUrl = body.url.trim())))
+        if (ok) call.respond(HttpStatusCode.NoContent)
+        else call.respond(HttpStatusCode.InternalServerError, mapOf("error" to "Couldn't save — check the server log"))
     }
 
     // Phase 165 (FR-165-3) — the one-click "Set up Jellyfin webhook" action: installs the plugin if

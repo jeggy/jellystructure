@@ -394,7 +394,7 @@ private fun renderAgeRatingsTab(data: AgeRatingsResponse): String = buildString 
         return@buildString
     }
 
-    append("""<div class="row center" style="margin-bottom:10px;"><h3 style="margin:0;font-size:1.15rem;">Normalized scale</h3><span class="tiny muted" style="margin-left:10px;">what viewers see in Ravilo</span><span class="spacer"></span><span class="btn sm ghost" id="age-suggest">Suggest mappings</span></div>""")
+    append("""<div class="row center" style="margin-bottom:10px;"><h3 style="margin:0;font-size:1.15rem;">Normalized scale</h3><span class="tiny muted" style="margin-left:10px;">what viewers see in Ravilo</span><span class="spacer"></span><span class="tiny" id="age-msg" style="margin-right:10px;"></span><span class="btn sm ghost" id="age-suggest">Suggest mappings</span></div>""")
     append(renderAgeLadder(data.mapped, data.unmapped.size))
 
     append("""<div class="row center" style="margin:22px 0 10px;"><h3 style="margin:0;font-size:1.05rem;">Certification mappings</h3><span class="tiny muted" style="margin-left:10px;">${data.mapped.size} mapped${if (data.unmapped.isNotEmpty()) " &middot; ${data.unmapped.size} unmapped" else ""}</span></div>""")
@@ -421,6 +421,16 @@ private fun renderAgeRatingsTab(data: AgeRatingsResponse): String = buildString 
 private fun wireAgeRatingsTab(content: HTMLElement, scope: CoroutineScope) {
     fun reload() { loadTab(content.parentElement ?: content, scope, "ages", "count") }
 
+    // Bug fix (live report, 2026-08-14) — these write-through calls used to ignore their result and
+    // always reload as if the save had worked; a persist failure (e.g. the ktoml age_rating_map bug,
+    // see ConfigStore.fixAgeRatingMapKeys) was invisible — the page just silently looked unchanged.
+    // On failure, show why instead of reloading (a reload would just re-render the same stale state).
+    fun showSaveError() {
+        val msg = content.querySelector("#age-msg") as? HTMLElement ?: return
+        msg.textContent = "Couldn't save — check the server log"
+        msg.setAttribute("style", "margin-right:10px;color:var(--bad);")
+    }
+
     // Mapped rows: +/- stepper, write-through on every click.
     val rows = content.querySelectorAll("#age-table .age-row")
     for (i in 0 until rows.length) {
@@ -436,8 +446,7 @@ private fun wireAgeRatingsTab(content: HTMLElement, scope: CoroutineScope) {
                 val newAge = (current + delta).coerceIn(0, 18)
                 if (newAge == current) return@addEventListener
                 scope.launch {
-                    MetadataApi.setAgeRating(code, newAge)
-                    reload()
+                    if (MetadataApi.setAgeRating(code, newAge)) reload() else showSaveError()
                 }
             }
         }
@@ -461,16 +470,14 @@ private fun wireAgeRatingsTab(content: HTMLElement, scope: CoroutineScope) {
         row.querySelector("[data-map]")?.addEventListener("click") { _ ->
             val age = valEl.textContent?.toIntOrNull() ?: 18
             scope.launch {
-                MetadataApi.setAgeRating(code, age)
-                reload()
+                if (MetadataApi.setAgeRating(code, age)) reload() else showSaveError()
             }
         }
     }
 
     content.querySelector("#age-suggest")?.addEventListener("click") { _ ->
         scope.launch {
-            MetadataApi.suggestAgeRatings()
-            reload()
+            if (MetadataApi.suggestAgeRatings() != null) reload() else showSaveError()
         }
     }
 }
