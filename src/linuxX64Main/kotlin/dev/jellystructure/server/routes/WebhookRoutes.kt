@@ -47,6 +47,21 @@ data class JellyfinWebhookStatus(
     @SerialName("restart_pending") val restartPending: Boolean = false,
 )
 
+// Bug fix (live report, 2026-08-14) — /settings/ingest/setup-jellyfin used to call.respond(mapOf(...))
+// with mixed Boolean+String values in one map on both its success paths. A bare Map<String, Any> has no
+// single, uniform value type kotlinx.serialization can infer a serializer for, so BOTH calls crashed
+// with "Serializing collections of different element types is not yet supported" — a 500 that fired
+// AFTER the Jellyfin-side write had already succeeded (confirmed live: the destination was correctly
+// configured in Jellyfin's own plugin config despite the browser seeing "internal server error"). A
+// real typed DTO, matching every other response in this codebase, can't have this bug class at all.
+@Serializable
+data class JellyfinSetupResult(
+    val installed: Boolean = false,
+    val restartNeeded: Boolean = false,
+    val configured: Boolean = false,
+    val destinationUrl: String? = null,
+)
+
 @Serializable
 private data class ReachUrlRequest(val url: String)
 
@@ -136,7 +151,7 @@ fun Route.webhookRoutes(
             val installOk = jellyfinClient.installPlugin(baseUrl, token, WEBHOOK_PLUGIN_NAME, WEBHOOK_PLUGIN_GUID, available.versions.firstOrNull()?.version)
             if (!installOk) return@post call.respond(HttpStatusCode.BadGateway, mapOf("error" to "Plugin install failed"))
             Logger.info("Jellyfin Webhook plugin installed — Jellyfin must restart before it loads", "ingest")
-            return@post call.respond(mapOf("installed" to true, "restartNeeded" to true))
+            return@post call.respond(JellyfinSetupResult(installed = true, restartNeeded = true))
         }
 
         val pluginId = installed.id
@@ -172,7 +187,7 @@ fun Route.webhookRoutes(
         })
 
         val writeOk = jellyfinClient.updatePluginConfiguration(baseUrl, token, pluginId, updatedConfig)
-        if (writeOk) call.respond(mapOf("configured" to true, "destinationUrl" to destinationUrl))
+        if (writeOk) call.respond(JellyfinSetupResult(configured = true, destinationUrl = destinationUrl))
         else call.respond(HttpStatusCode.BadGateway, mapOf("error" to "Couldn't write the plugin configuration — set it up manually"))
     }
 
