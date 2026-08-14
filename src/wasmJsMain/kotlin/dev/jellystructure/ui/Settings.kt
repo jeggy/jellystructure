@@ -98,15 +98,53 @@ fun renderSettings(container: Element, scope: CoroutineScope, query: Map<String,
               <h3 style="font-size:1rem;margin:0 0 14px">API keys</h3>
               <p class="hint" style="margin:0 0 12px">For external tools (Home Assistant etc.) to control Ravilo devices via <span class="mono">/api/remote/**</span> — a key acts as one Jellyfin user and can list/play/command that user's paired TVs.</p>
               <details style="margin-bottom:12px;font-size:.82rem;color:var(--ink-soft)">
-                <summary style="cursor:pointer;user-select:none;color:var(--ink-soft)">What can an API key do?</summary>
-                <div style="margin:6px 0 0;line-height:1.5">
-                  <p style="margin:0 0 6px">A key is scoped to <b>one Jellyfin user</b> and only ever sees that user's own paired Ravilo devices — never anyone else's, and never the rest of jellystructure's admin/media surface. Send it as either <span class="mono">Authorization: Bearer &lt;key&gt;</span> or <span class="mono">X-JS-Api-Key: &lt;key&gt;</span>. Three endpoints:</p>
-                  <ul style="margin:0 0 6px;padding-left:18px">
-                    <li><span class="mono">GET /api/remote/devices</span> — this user's paired devices: name, online/offline, what's currently playing.</li>
-                    <li><span class="mono">POST /api/remote/play</span> — start a Jellyfin item on one of those devices, optionally at a start position.</li>
-                    <li><span class="mono">POST /api/remote/command</span> — send <span class="mono">stop</span> / <span class="mono">pause</span> / <span class="mono">unpause</span> / <span class="mono">home</span> to one of those devices.</li>
-                  </ul>
-                  <p style="margin:0">The target device must already be online (connected over its own live socket to jellystructure) — playing/commanding an offline device fails rather than queuing. The key itself is shown once at creation and can't be retrieved again; revoke and re-create if it's lost.</p>
+                <summary style="cursor:pointer;user-select:none;color:var(--ink-soft)">What can an API key do? (full reference + curl examples)</summary>
+                <div style="margin:8px 0 0;line-height:1.55">
+                  <p style="margin:0 0 10px">A key is scoped to <b>one Jellyfin user</b> and can only ever see and control <b>that user's own paired Ravilo devices</b> — never anyone else's devices, and never any other part of jellystructure (no media, no config, no other admin surface). Everything below assumes this install is reachable at <span class="mono">http://YOUR-JELLYSTRUCTURE-HOST:9505</span> — swap in the real host/port (this is the same "where Jellyfin should reach this install" address used elsewhere on this page, or your reverse-proxy hostname if you've put one in front).</p>
+
+                  <h4 style="margin:0 0 4px;font-size:.85rem;color:var(--ink)">Authentication</h4>
+                  <p style="margin:0 0 6px">Every <span class="mono">/api/remote/**</span> request needs the key in <b>one</b> of these two headers — pick whichever's easier for your tool:</p>
+                  <pre class="log" style="margin:0 0 10px;font-size:.72rem;padding:8px 10px;max-height:none">Authorization: Bearer jsk_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+# — or —
+X-JS-Api-Key: jsk_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx</pre>
+                  <p style="margin:0 0 10px">A missing or invalid key gets a plain <span class="mono">401 Unauthorized</span>. The key is only ever shown once, right after you click "Create key" above — jellystructure stores just a hash of it, the same way a password would be stored, so if you lose it there's no way to retrieve it; revoke it and create a new one.</p>
+
+                  <h4 style="margin:0 0 4px;font-size:.85rem;color:var(--ink)">1. List this user's paired devices</h4>
+                  <p style="margin:0 0 4px"><span class="mono">GET /api/remote/devices</span> — every Ravilo device paired to the key's Jellyfin user, whether it's currently online, when it was last seen, and the title it's playing right now (if any). Use this first to find a device's <span class="mono">device_id</span> for the two endpoints below.</p>
+                  <pre class="log" style="margin:0 0 6px;font-size:.72rem;padding:8px 10px;max-height:none">curl http://YOUR-JELLYSTRUCTURE-HOST:9505/api/remote/devices \
+  -H "Authorization: Bearer jsk_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"</pre>
+                  <p style="margin:0 0 2px;color:var(--ink-soft)">Response — <span class="mono">200</span>, one row per paired device:</p>
+                  <pre class="log" style="margin:0 0 10px;font-size:.72rem;padding:8px 10px;max-height:none">[
+  {
+    "device_id": "55f68c48-deb6-5fac-a200-f76d353cada3",
+    "name": "Living Room TV",
+    "connected": true,
+    "last_seen": 1786724159,
+    "now_playing": "Big Buck Bunny"
+  }
+]</pre>
+
+                  <h4 style="margin:0 0 4px;font-size:.85rem;color:var(--ink)">2. Start playback on a device</h4>
+                  <p style="margin:0 0 4px"><span class="mono">POST /api/remote/play</span> — starts one Jellyfin item on one of this user's devices. <span class="mono">jellyfin_item_id</span> is <b>Jellyfin's own item id</b> (not a jellystructure id) — the same GUID you'd see in Jellyfin's own web UI's URL when you open that title (<span class="mono">…/details?id=&lt;jellyfin_item_id&gt;</span>). <span class="mono">start_position_ms</span> is optional and defaults to <span class="mono">0</span> (start from the beginning).</p>
+                  <pre class="log" style="margin:0 0 6px;font-size:.72rem;padding:8px 10px;max-height:none">curl -X POST http://YOUR-JELLYSTRUCTURE-HOST:9505/api/remote/play \
+  -H "Authorization: Bearer jsk_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "device_id": "55f68c48-deb6-5fac-a200-f76d353cada3",
+    "jellyfin_item_id": "571b3d22-344d-4984-53c2-fa8ea89fafaf",
+    "start_position_ms": 0
+  }'</pre>
+                  <p style="margin:0 0 2px;color:var(--ink-soft)">Response — <span class="mono">202 Accepted</span>: <span class="mono">{"ok": true}</span></p>
+                  <p style="margin:0 0 10px;color:var(--ink-soft)">Errors: <span class="mono">404</span> if that <span class="mono">device_id</span> isn't paired to this key's user, <span class="mono">409</span> (<span class="mono">device_offline</span>) if it's not currently connected — this endpoint never queues, so an offline TV needs to come back online before retrying.</p>
+
+                  <h4 style="margin:0 0 4px;font-size:.85rem;color:var(--ink)">3. Send a playback command</h4>
+                  <p style="margin:0 0 4px"><span class="mono">POST /api/remote/command</span> — <span class="mono">command</span> is one of <span class="mono">stop</span>, <span class="mono">pause</span>, <span class="mono">unpause</span>, or <span class="mono">home</span> (backs out to the Ravilo home screen).</p>
+                  <pre class="log" style="margin:0 0 6px;font-size:.72rem;padding:8px 10px;max-height:none">curl -X POST http://YOUR-JELLYSTRUCTURE-HOST:9505/api/remote/command \
+  -H "Authorization: Bearer jsk_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" \
+  -H "Content-Type: application/json" \
+  -d '{"device_id": "55f68c48-deb6-5fac-a200-f76d353cada3", "command": "pause"}'</pre>
+                  <p style="margin:0 0 2px;color:var(--ink-soft)">Response — <span class="mono">202 Accepted</span>: <span class="mono">{"ok": true}</span></p>
+                  <p style="margin:0;color:var(--ink-soft)">Errors: same <span class="mono">404</span>/<span class="mono">409</span> as above, plus <span class="mono">400</span> if <span class="mono">command</span> isn't one of the four listed.</p>
                 </div>
               </details>
               <div class="row" style="gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:10px">
