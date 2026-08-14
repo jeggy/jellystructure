@@ -17,4 +17,16 @@ data class MediaJobParams(
     val bulkScope: String? = null,           // bulk_reorder: "series" | "season-N"
     val bulkOptIn: List<String>? = null,     // bulk_reorder: partial-match episode filenames to include
     val bulkSetDefault: Boolean? = null,     // bulk_reorder: also flip disposition:default post-reorder
+
+    // Phase 164 — segments_movie/segments_season/segments_episodes (the segments lane). mediaId (the
+    // media_job row's own media_id column) is always the owning movie/series id; these carry the rest
+    // of the work unit. segments_movie needs neither field. segments_episodes' keys are the same
+    // "filename#episodeNumber" composite PipelineStepOps.detectIntroFingerprintsForSeason's own `key(ep)`
+    // uses, so a job runner can match them straight back to Episode objects with no extra lookup shape.
+    val segmentSeason: Int? = null,          // segments_season: which season (0 = specials)
+    val segmentEpisodeKeys: List<String>? = null, // segments_episodes: "filename#episodeNumber" composite keys
+    // false (routine scheduled pass, from the pipeline's own enqueue): re-derive only a still-empty,
+    // unlocked kind. true (an operator's explicit "detect again" in the segment editor): re-derive even
+    // over an existing unlocked value — PipelineStepOps' own per-kind lock check still applies either way.
+    val segmentForce: Boolean = false,
 )

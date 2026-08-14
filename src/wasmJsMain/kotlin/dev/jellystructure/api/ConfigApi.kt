@@ -153,6 +153,7 @@ data class Behavior(
     @SerialName("fetch_images") val fetchImages: Boolean = true,
     @SerialName("tell_jellyfin") val tellJellyfin: Boolean = true,
     @SerialName("scan_workers") val scanWorkers: Int = 1,
+    @SerialName("segment_workers") val segmentWorkers: Int = 2,
     @SerialName("scan_threads") val scanThreads: Int = 4,
     @SerialName("scan_interval_hours") val scanIntervalHours: Int = 0,
     @SerialName("scan_episode_cap") val scanEpisodeCap: Int = 0,

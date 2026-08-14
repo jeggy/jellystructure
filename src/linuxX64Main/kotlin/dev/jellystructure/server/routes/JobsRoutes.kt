@@ -9,24 +9,32 @@ import io.ktor.server.routing.post
 import io.ktor.server.routing.route
 import kotlinx.serialization.Serializable
 
+// Phase 164 — widened for the two-lane queue: `running` is now every currently-running job across BOTH
+// lanes (the media lane has at most one; the segments lane can have up to behavior.segment_workers), and
+// `lanes` carries each lane's own busy/queued/done-today counts for the Jobs page's two worker lines.
+// `busy`/`doneToday` are KEPT (not removed) for one release so an old cached frontend build doesn't
+// crash on a missing field; the new UI reads `lanes` instead.
 @Serializable
 data class JobsSummary(
     val busy: Boolean,
     val doneToday: Int,
-    val running: dev.jellystructure.jobs.MediaJobSnapshot? = null,
+    val lanes: List<dev.jellystructure.jobs.LaneSummary> = emptyList(),
+    val running: List<dev.jellystructure.jobs.MediaJobSnapshot> = emptyList(),
     val queued: List<dev.jellystructure.jobs.MediaJobSnapshot> = emptyList(),
     val recent: List<dev.jellystructure.jobs.MediaJobSnapshot> = emptyList(),
 )
 
-/** Phase 109 — Activity ▸ Jobs & workers: read the media-worker queue and cancel/retry a job. Live
- *  progress streams over the existing `/ws` connection as `media_job` JobEvents; this is just the
- *  initial-load snapshot + the two mutating actions. */
+/** Phase 109 (widened Phase 164) — Activity ▸ Jobs & workers: read the media-worker + segments-lane
+ *  queues and cancel/retry a job. Live progress streams over the existing `/ws` connection as
+ *  `media_job` JobEvents; this is just the initial-load snapshot + the two mutating actions. */
 fun Route.jobsRoutes(mediaJobQueue: MediaJobQueue) {
     route("/jobs") {
         get {
+            val lanes = mediaJobQueue.laneSummaries()
             call.respond(JobsSummary(
                 busy = mediaJobQueue.isBusy(),
-                doneToday = mediaJobQueue.doneToday(),
+                doneToday = lanes.sumOf { it.doneToday },
+                lanes = lanes,
                 running = mediaJobQueue.running(),
                 queued = mediaJobQueue.queued(),
                 recent = mediaJobQueue.recent(),

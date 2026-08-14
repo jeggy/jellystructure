@@ -101,15 +101,17 @@ fun renderActivity(container: Element, scope: CoroutineScope, query: Map<String,
         <div id="view-jobs" style="display:none;">
           <div class="note blue" style="margin-bottom:14px;display:flex;gap:11px;align-items:flex-start;">
             <span style="flex:none;">ℹ</span>
-            <div class="tiny" style="line-height:1.6;">Heavy media edits — an audio <b>re-order</b> is an <span class="mono">ffmpeg</span> remux (a full stream copy, 4K included) — are queued through a <b>single media worker</b> and run <b>one at a time</b>. Clicking <b>Apply</b> on several titles, or two admins re-ordering at once, can't saturate CPU/disk or stall the API. Scanning keeps its own parallel workers.</div>
+            <div class="tiny" style="line-height:1.6;">Two independent worker lanes. Heavy media edits — an audio <b>re-order</b> is an <span class="mono">ffmpeg</span> remux (a full stream copy, 4K included) — are queued through a <b>single media worker</b> and run <b>one at a time</b>, so several <b>Apply</b> clicks (or two admins at once) can't saturate CPU/disk or stall the API. <b>Intro &amp; credits detection</b> (Phase 164) runs on its own concurrent lane instead — off the pipeline's critical path, so a slow library no longer holds up scans, TMDB, artwork or anything else.</div>
           </div>
           <div class="card" style="margin-bottom:14px;">
-            <div class="row center" style="gap:10px;flex-wrap:wrap;" id="jobs-worker-line">
-              <span class="muted tiny">Loading…</span>
+            <div id="jobs-worker-lines">
+              <div class="row center" style="gap:10px;flex-wrap:wrap;" id="jobs-worker-line-media"><span class="muted tiny">Loading…</span></div>
+              <hr class="dash" style="margin:10px 0;">
+              <div class="row center" style="gap:10px;flex-wrap:wrap;" id="jobs-worker-line-segments"><span class="muted tiny">Loading…</span></div>
             </div>
           </div>
           <div class="card" id="jobs-running-card" style="margin-bottom:14px;display:none;">
-            <div class="row center"><h4 style="margin:0;">Running now</h4><span class="spacer"></span><span class="mono tiny" id="jobs-running-title"></span></div>
+            <div class="row center"><h4 style="margin:0;">Running now</h4></div>
             <hr class="dash" style="margin:10px 0;">
             <div id="jobs-running-body"></div>
           </div>
@@ -438,41 +440,68 @@ private fun jobTypeLabel(type: String): String = when (type) {
     "reorder" -> "audio/subtitle re-order"
     "remove" -> "track removal"
     "bulk_reorder" -> "bulk re-order"
+    // Phase 164
+    "segments_movie" -> "intro & credits detection"
+    "segments_season" -> "intro & credits detection (season)"
+    "segments_episodes" -> "intro & credits detection (episodes)"
     else -> type
 }
 
+private fun laneBadge(lane: String): String =
+    if (lane == "segments") """<span class="badge" style="background:var(--fill-2);font-size:.68rem;">segments</span>"""
+    else """<span class="badge" style="background:var(--fill-2);font-size:.68rem;">media</span>"""
+
 private fun renderJobsPanel(container: Element, s: dev.jellystructure.api.JobsSummary) {
     (container.querySelector("#jobs-count-badge") as? HTMLElement)?.let {
-        val n = s.queued.size + (if (s.running != null) 1 else 0)
+        val n = s.queued.size + s.running.size
         it.textContent = n.toString()
         it.style.display = if (n > 0) "" else "none"
     }
 
-    (container.querySelector("#jobs-worker-line") as? HTMLElement)?.innerHTML = """
-        <span class="wk-dot ${if (s.busy) "busy" else "idle"}"></span><b>Media worker</b>
-        <span class="badge ${if (s.busy) "warn" else ""}">${if (s.busy) "busy" else "idle"}</span>
+    val media = s.lanes.firstOrNull { it.lane == "media" }
+    val segments = s.lanes.firstOrNull { it.lane == "segments" }
+    (container.querySelector("#jobs-worker-line-media") as? HTMLElement)?.innerHTML = """
+        <span class="wk-dot ${if ((media?.runningCount ?: 0) > 0) "busy" else "idle"}"></span><b>Media worker</b>
+        <span class="badge ${if ((media?.runningCount ?: 0) > 0) "warn" else ""}">${if ((media?.runningCount ?: 0) > 0) "busy" else "idle"}</span>
         <span class="muted tiny">concurrency 1 · FIFO queue · remux runs at low I/O priority</span>
         <span class="spacer"></span>
-        <span class="chip"><b>${if (s.running != null) 1 else 0}</b> running</span>
-        <span class="chip"><b>${s.queued.size}</b> queued</span>
-        <span class="chip ok" style="background:var(--ok-soft);">${s.doneToday} done today</span>"""
+        <span class="chip"><b>${media?.runningCount ?: 0}</b> running</span>
+        <span class="chip"><b>${media?.queuedCount ?: 0}</b> queued</span>
+        <span class="chip ok" style="background:var(--ok-soft);">${media?.doneToday ?: 0} done today</span>"""
+    (container.querySelector("#jobs-worker-line-segments") as? HTMLElement)?.innerHTML = """
+        <span class="wk-dot ${if ((segments?.runningCount ?: 0) > 0) "busy" else "idle"}"></span><b>Segment detection</b>
+        <span class="badge ${if ((segments?.runningCount ?: 0) > 0) "warn" else ""}">${if ((segments?.runningCount ?: 0) > 0) "busy" else "idle"}</span>
+        <span class="muted tiny">concurrency ${segments?.configuredWorkers ?: 1} · runs alongside the pipeline · low CPU/IO priority</span>
+        <span class="spacer"></span>
+        <span class="chip"><b>${segments?.runningCount ?: 0}</b> running</span>
+        <span class="chip"><b>${segments?.queuedCount ?: 0}</b> queued</span>
+        <span class="chip ok" style="background:var(--ok-soft);">${segments?.doneToday ?: 0} done today</span>"""
 
     val runningCard = container.querySelector("#jobs-running-card") as? HTMLElement
-    if (s.running != null) {
-        val r = s.running
+    if (s.running.isNotEmpty()) {
         runningCard?.style?.display = ""
-        (container.querySelector("#jobs-running-title") as? HTMLElement)?.textContent = r.label
-        val startedStr = r.startedAt?.let { dev.jellystructure.formatStoredTs(it.toString()) } ?: "?"
-        (container.querySelector("#jobs-running-body") as? HTMLElement)?.innerHTML = """
-            <div class="row center" style="gap:8px;flex-wrap:wrap;">
-              <span class="badge warn">${jobTypeLabel(r.type).esc()}</span>
-              <span class="muted tiny mono">ffmpeg -map 0 -c copy (remux)</span>
-              <span class="spacer"></span>
-              <span class="tiny muted">queued by <b>${r.enqueuedBy.esc()}</b> · started $startedStr</span>
-              <span class="btn sm bad" id="jobs-cancel-running" data-job-id="${r.id}">Cancel</span>
-            </div>
-            <div class="bar" style="margin-top:10px;"><i style="width:${r.pct.coerceIn(0.0, 100.0)}%"></i></div>
-            <div class="tiny muted mono" style="margin-top:6px;">${if (r.speed != null) "speed=${r.speed.esc()} · " else ""}${r.pct.toInt()}%${if (r.fileCount > 1) " · file ${r.filesDone + 1} of ${r.fileCount}" else ""}${r.etaSeconds?.let { " · ~${formatRemaining(it * 1000.0)} left" } ?: ""}</div>"""
+        (container.querySelector("#jobs-running-body") as? HTMLElement)?.innerHTML = s.running.joinToString("""<hr class="dash" style="margin:10px 0;">""") { r ->
+            val startedStr = r.startedAt?.let { dev.jellystructure.formatStoredTs(it.toString()) } ?: "?"
+            // Phase 164 (FR-164-5) — segments-lane cancel is cooperative (no temp file to kill); say so
+            // rather than implying an instant stop the media lane's own Cancel genuinely provides.
+            val cancelLabel = if (r.lane == "segments") "Stop after this episode" else "Cancel"
+            val detailLine = if (r.lane == "segments") {
+                val progress = if (r.fileCount > 1) "episode ${r.filesDone.coerceAtMost(r.fileCount)} of ${r.fileCount}" else "${r.pct.toInt()}%"
+                (r.speed?.let { "${it.esc()} · " } ?: "") + progress
+            } else {
+                "${if (r.speed != null) "speed=${r.speed.esc()} · " else ""}${r.pct.toInt()}%${if (r.fileCount > 1) " · file ${r.filesDone + 1} of ${r.fileCount}" else ""}${r.etaSeconds?.let { " · ~${formatRemaining(it * 1000.0)} left" } ?: ""}"
+            }
+            """<div class="row center" style="gap:8px;flex-wrap:wrap;">
+                 ${laneBadge(r.lane)}
+                 <span class="badge warn">${jobTypeLabel(r.type).esc()}</span>
+                 <span class="mono tiny">${r.label.esc()}</span>
+                 <span class="spacer"></span>
+                 <span class="tiny muted">queued by <b>${r.enqueuedBy.esc()}</b> · started $startedStr</span>
+                 <span class="btn sm bad jobs-cancel-running" data-job-id="${r.id}">$cancelLabel</span>
+               </div>
+               <div class="bar" style="margin-top:10px;"><i style="width:${r.pct.coerceIn(0.0, 100.0)}%"></i></div>
+               <div class="tiny muted mono" style="margin-top:6px;">$detailLine</div>"""
+        }
     } else {
         runningCard?.style?.display = "none"
     }
@@ -483,7 +512,7 @@ private fun renderJobsPanel(container: Element, s: dev.jellystructure.api.JobsSu
         s.queued.mapIndexed { idx, j ->
             """<div class="jobrow" data-job="${j.id}">
                  <span class="jq-pos">${idx + 1}</span>
-                 <div class="jq-main"><div class="jq-title">${j.label.esc()}</div><div class="jq-sub">${jobTypeLabel(j.type).esc()} · queued by ${j.enqueuedBy.esc()} · ${dev.jellystructure.formatStoredTs(j.createdAt.toString())}</div></div>
+                 <div class="jq-main"><div class="jq-title">${laneBadge(j.lane)} ${j.label.esc()}</div><div class="jq-sub">${jobTypeLabel(j.type).esc()} · queued by ${j.enqueuedBy.esc()} · ${dev.jellystructure.formatStoredTs(j.createdAt.toString())}</div></div>
                  <span class="badge">queued</span>
                  <span class="btn sm ghost jq-cancel" data-job-id="${j.id}">Cancel</span>
                </div>"""
@@ -496,7 +525,7 @@ private fun renderJobsPanel(container: Element, s: dev.jellystructure.api.JobsSu
             val took = if (j.startedAt != null && j.finishedAt != null) "took ${(j.finishedAt - j.startedAt).coerceAtLeast(0)}s" else ""
             val sub = when (j.state) {
                 "done" -> "${jobTypeLabel(j.type)} · $took · by ${j.enqueuedBy}"
-                "cancelled" -> "cancelled"
+                "cancelled" -> j.error ?: "cancelled"
                 else -> "failed · ${j.error ?: "unknown error"}"
             }
             val badgeCls = if (j.state == "done") "badge ok" else "badge bad"
@@ -504,14 +533,14 @@ private fun renderJobsPanel(container: Element, s: dev.jellystructure.api.JobsSu
                 """<span class="btn sm ghost jq-retry" data-job-id="${j.id}">Retry</span>""" else ""
             """<div class="jobrow">
                  $ic
-                 <div class="jq-main"><div class="jq-title">${j.label.esc()}</div><div class="jq-sub">${sub.esc()}</div></div>
+                 <div class="jq-main"><div class="jq-title">${laneBadge(j.lane)} ${j.label.esc()}</div><div class="jq-sub">${sub.esc()}</div></div>
                  <span class="$badgeCls">${j.state.esc()}</span>
                  $retryBtn
                </div>"""
         }
 
     // Wire cancel/retry buttons fresh each render (innerHTML was just replaced).
-    container.querySelectorAll(".jq-cancel, #jobs-cancel-running").let { nodes ->
+    container.querySelectorAll(".jq-cancel, .jobs-cancel-running").let { nodes ->
         for (i in 0 until nodes.length) {
             val btn = nodes.item(i) as? HTMLElement ?: continue
             btn.addEventListener("click") {

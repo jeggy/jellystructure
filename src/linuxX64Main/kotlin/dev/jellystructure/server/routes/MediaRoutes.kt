@@ -1785,7 +1785,7 @@ fun Route.mediaRoutes(
                 "▶ Pipeline run started (manual)${if (full) " (full)" else ""}$skipSuffix", scanTracker,
             ) {
                 if (runsPipeline) {
-                    executePipeline(pipeline, jobId, store, scanner, scanTracker, broadcaster, configStore, jellyfinClient, scanDispatcher, artwork, arrRescan, sonarrEnrich, imdbClient, fingerprintService, mediaSegmentStore, fullRun = full)
+                    executePipeline(pipeline, jobId, store, scanner, scanTracker, broadcaster, configStore, jellyfinClient, scanDispatcher, artwork, arrRescan, sonarrEnrich, imdbClient, mediaSegmentStore, mediaJobQueue, fullRun = full)
                 } else {
                     runScan(jobId, emptySet(), store, scanner, scanTracker, broadcaster, configStore, jellyfinClient, scanDispatcher, artworkDownloader = if (configStore.current.behavior.fetchImages) artwork else null)
                 }

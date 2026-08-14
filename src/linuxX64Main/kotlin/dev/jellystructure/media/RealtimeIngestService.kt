@@ -38,8 +38,10 @@ class RealtimeIngestService(
     private val arrRescan: ArrRescanService? = null,
     private val sonarrEnrich: SonarrEnrichService? = null,
     private val imdbClient: dev.jellystructure.imdb.ImdbClient? = null,   // Phase 145
-    private val fingerprintService: FingerprintService? = null,          // Phase 150 (FR-SEG1-4)
-    private val mediaSegmentStore: MediaSegmentStore? = null,             // Phase 163
+    // Phase 164 — detect_segments enqueues here instead of calling PipelineStepOps.detectSegments
+    // inline; this class no longer needs its own FingerprintService/MediaSegmentStore references
+    // (MediaJobQueue's segments-lane job runner has its own).
+    private val mediaJobQueue: MediaJobQueue? = null,
 ) {
     private val queueScope = CoroutineScope(SupervisorJob() + Dispatchers.Default.limitedParallelism(2))
 
@@ -143,8 +145,28 @@ class RealtimeIngestService(
                 when (step.step) {
                     "scan_files", "pull_tmdb" -> Unit  // already done by scanItem
                     "fetch_artwork" -> PipelineStepOps.fetchArtwork(current, store, artwork)
-                    "detect_segments" -> mediaSegmentStore?.let {
-                        PipelineStepOps.detectSegments(current, it, step.chapterKeywords, fingerprintService, step.detectFingerprint)
+                    // Phase 164 (FR-164 open question 1) — enqueued, not run inline: a freshly-ingested
+                    // item's detection now dedupes against (and shares the worker pool with) any
+                    // concurrent pipeline-triggered sweep for the same movie/season, instead of racing
+                    // it as a second inline caller. chapterKeywords/detectFingerprint are read live from
+                    // config by the job runner itself, so they're not threaded through here.
+                    "detect_segments" -> mediaJobQueue?.let { queue ->
+                        when (current.kind) {
+                            dev.jellystructure.model.MediaKind.MOVIE -> queue.enqueueSegments(
+                                "segments_movie", current.id, current.title,
+                                dev.jellystructure.jobs.MediaJobParams(), 1, "seg:movie:${current.id}",
+                            )
+                            dev.jellystructure.model.MediaKind.TV_SHOW -> {
+                                val seasons = current.episodes.filter { it.partCount == 1 }.groupBy { it.seasonNumber ?: 0 }
+                                for ((season, eps) in seasons) {
+                                    queue.enqueueSegments(
+                                        "segments_season", current.id, "${current.title} S${season.toString().padStart(2, '0')}",
+                                        dev.jellystructure.jobs.MediaJobParams(segmentSeason = season), eps.size,
+                                        "seg:season:${current.id}:$season",
+                                    )
+                                }
+                            }
+                        }
                     }
                     "sync_imdb_ratings" -> PipelineStepOps.syncImdb(current, store, imdbClient)
                     "write_nfo" -> PipelineStepOps.writeNfo(
