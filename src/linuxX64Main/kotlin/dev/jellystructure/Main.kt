@@ -39,13 +39,8 @@ import dev.jellystructure.tv.RaviloConfigService
 import dev.jellystructure.tv.RaviloDeviceService
 import dev.jellystructure.tmdb.TmdbClient
 import kotlinx.cinterop.ExperimentalForeignApi
-import kotlinx.cinterop.alloc
-import kotlinx.cinterop.convert
-import kotlinx.cinterop.memScoped
-import kotlinx.cinterop.ptr
 import kotlinx.cinterop.staticCFunction
 import kotlinx.cinterop.toKString
-import kotlinx.cinterop.value
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CoroutineExceptionHandler
@@ -61,12 +56,8 @@ import platform.posix.SIGPIPE
 import platform.posix.SIGTERM
 import platform.posix.SIG_IGN
 import platform.posix.getenv
-import platform.posix.localtime_r
-import platform.posix.mktime
 import platform.posix.signal
 import platform.posix.time
-import platform.posix.time_tVar
-import platform.posix.tm
 import kotlin.concurrent.AtomicInt
 
 private val shutdownRequested = AtomicInt(0)
@@ -366,44 +357,17 @@ fun env(name: String, default: String): String =
 @OptIn(ExperimentalForeignApi::class)
 fun nowEpochSec(): Long = time(null)
 
-/** ms until the next LOCAL wall-clock occurrence of the schedule, or null if it isn't understood.
- *  Honors the three cron patterns the Settings schedule UI emits — daily at H:00 (`0 H * * *`),
- *  weekly on Sunday at H:00 (`0 H * * 0`), and the every-N-hours form (hour field `[star]/N`) —
- *  computed against the host's local timezone (the same clock the admin reads). Returns null on
- *  anything else so the caller can warn instead of silently running every 24h. */
-@OptIn(ExperimentalForeignApi::class)
-fun nextRunDelayMs(cron: String, nowEpochSec: Long): Long? = memScoped {
-    val f = cron.trim().split(Regex("\\s+"))
-    if (f.size < 5) return@memScoped null
-    val minF = f[0]; val hourF = f[1]; val dowF = f[4]
-
-    val nowVar = alloc<time_tVar>().apply { value = nowEpochSec.convert() }
-    val tm = alloc<tm>()
-    if (localtime_r(nowVar.ptr, tm.ptr) == null) return@memScoped null
-    tm.tm_isdst = -1  // let mktime resolve DST for the (possibly future) target
-
-    // every-N-hours at minute 0: "0 */N * * *"
-    if (hourF.startsWith("*/")) {
-        val step = hourF.removePrefix("*/").toIntOrNull()?.takeIf { it in 1..23 } ?: return@memScoped null
-        tm.tm_min = 0; tm.tm_sec = 0
-        tm.tm_hour = ((tm.tm_hour / step) + 1) * step  // strictly-next boundary; mktime normalizes >23 into the next day
-        return@memScoped (mktime(tm.ptr).convert<Long>() - nowEpochSec) * 1_000L
-    }
-
-    val hour = hourF.toIntOrNull()?.takeIf { it in 0..23 } ?: return@memScoped null
-    val minute = minF.toIntOrNull()?.takeIf { it in 0..59 } ?: 0
-    val targetDow = if (dowF == "*") null else dowF.toIntOrNull()?.takeIf { it in 0..6 }  // 0 = Sunday
-
-    tm.tm_hour = hour; tm.tm_min = minute; tm.tm_sec = 0
-    var target = mktime(tm.ptr).convert<Long>()  // today at H:MM local; mktime refreshes tm_wday
-    var guard = 0
-    while (target <= nowEpochSec || (targetDow != null && tm.tm_wday != targetDow)) {
-        tm.tm_mday += 1
-        tm.tm_isdst = -1
-        target = mktime(tm.ptr).convert<Long>()
-        if (++guard > 8) return@memScoped null
-    }
-    (target - nowEpochSec) * 1_000L
+/** ms until the next LOCAL wall-clock occurrence of the schedule, or null if it isn't understood or
+ *  never fires. Phase 166: thin wrapper over the shared `dev.jellystructure.cron` parser/evaluator
+ *  (replacing this function's old hand-rolled three-shapes-only matcher — see the phase spec for the
+ *  defects that motivated it), computed against the host's local timezone (the same clock the admin
+ *  reads). Signature kept exactly as-is so both existing call sites (the scheduler loop below and
+ *  `MediaRoutes.kt`'s `/scan/status`) are untouched. */
+fun nextRunDelayMs(cron: String, nowEpochSec: Long): Long? {
+    val parsed = dev.jellystructure.cron.parseCron(cron)
+    if (parsed !is dev.jellystructure.cron.CronParse.Ok) return null
+    val next = dev.jellystructure.cron.nextFireEpochSec(parsed.expr, nowEpochSec) ?: return null
+    return (next - nowEpochSec) * 1_000L
 }
 
 /** ms duration for a freshness cadence string: "daily", "weekly", "monthly", "6months", "yearly", "never" */
