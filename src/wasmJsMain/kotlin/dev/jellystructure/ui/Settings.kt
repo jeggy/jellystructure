@@ -150,7 +150,7 @@ fun renderSettings(container: Element, scope: CoroutineScope, query: Map<String,
               <div class="field">
                 <label>Segment detection workers</label>
                 <input id="segment-workers" class="input" type="number" min="1" max="8" style="width:90px">
-                <span class="hint">Phase 164 — intro/credits detection runs in its own queue (Activity ▸ Jobs &amp; workers), concurrently with everything else, so a slow scan no longer holds up the rest of the pipeline. Takes effect on the next job dispatch, no restart needed.</span>
+                <span class="hint">Intro/credits detection runs in its own queue (Activity ▸ Jobs &amp; workers), concurrently with everything else, so a slow scan no longer holds up the rest of the pipeline. Takes effect on the next job dispatch, no restart needed.</span>
               </div>
               <div class="field">
                 <label>Scan thread pool size</label>
@@ -377,7 +377,7 @@ fun renderSettings(container: Element, scope: CoroutineScope, query: Map<String,
                 <h3 style="font-size:1rem;margin:0">Realtime ingest</h3>
                 <span id="ingest-status-badge" class="badge" style="font-size:.7rem;background:var(--fill-2)">…</span>
               </div>
-              <p class="hint" style="margin:0 0 12px">New imports reach Ravilo within minutes instead of waiting for the next scheduled scan — driven by Jellyfin's own <b>Webhook plugin</b>, whose <span class="mono">ItemAdded</span> event fires only once Jellyfin has actually finished identifying the item (Phase 165 — replaces the old Radarr/Sonarr webhook setup, which fired too early and had no way to know when Jellyfin had caught up).</p>
+              <p class="hint" style="margin:0 0 12px">New imports reach Ravilo within minutes instead of waiting for the next scheduled scan. Jellyfin's own <b>Webhook plugin</b> notifies this install the moment it has finished identifying a new movie or episode.</p>
 
               <div id="ingest-jellyfin-card"><span class="muted tiny">Loading…</span></div>
 
