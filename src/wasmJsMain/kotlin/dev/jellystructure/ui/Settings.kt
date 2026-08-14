@@ -168,13 +168,21 @@ fun renderSettings(container: Element, scope: CoroutineScope, query: Map<String,
               <div id="pipe-fields" style="display:none;margin-top:14px">
                 <div class="pipe-sched">
                   <div class="field" style="margin:0"><label>Runs</label>
-                    <span class="seg" id="pipe-freq"><span data-f="daily" class="on">Daily</span><span data-f="weekly">Weekly</span><span data-f="6h">Every 6h</span></span>
+                    <span class="seg" id="pipe-freq"><span data-f="daily" class="on">Daily</span><span data-f="weekly">Weekly</span><span data-f="everyN">Every N hours</span><span data-f="custom">Custom</span></span>
                   </div>
                   <div class="field" style="margin:0;width:104px" id="pipe-at-field"><label>At</label>
                     <input id="pipe-at" class="input" type="time" value="03:00">
                   </div>
-                  <div class="field" style="margin:0;min-width:130px"><label>Cron <span class="muted">(derived)</span></label>
-                    <div class="input mono" id="pipe-cron" style="padding:5px 10px">0 3 * * *</div>
+                  <div class="field" style="margin:0;display:none" id="pipe-everyn-field">
+                    <label>Every</label>
+                    <div class="row" style="gap:4px;align-items:center">
+                      <input id="pipe-everyn-hours" class="input" type="number" min="1" max="23" value="6" style="width:56px">
+                      <span class="tiny muted">h · min</span>
+                      <input id="pipe-everyn-min" class="input" type="number" min="0" max="59" value="0" style="width:52px">
+                    </div>
+                  </div>
+                  <div class="field" style="margin:0;min-width:160px;flex:1"><label>Cron <span class="muted" id="pipe-cron-label-hint">(derived)</span></label>
+                    <input id="pipe-cron" class="input mono" style="padding:5px 10px;width:100%" value="0 3 * * *" readonly>
                   </div>
                   <span class="badge ok" id="pipe-next" style="align-self:flex-end">next · tonight 03:00</span>
                   <span class="split" id="pipe-run-split" style="align-self:flex-end">
@@ -185,6 +193,7 @@ fun renderSettings(container: Element, scope: CoroutineScope, query: Map<String,
                     </div>
                   </span>
                 </div>
+                <div class="tiny" id="pipe-cron-check" style="margin-top:6px"></div>
                 <div class="pipe-recipe" id="pipe-recipe" style="margin-top:12px"></div>
                 <div class="pipe-canvas" id="pipe-canvas" style="margin-top:14px"></div>
               </div>
@@ -859,7 +868,20 @@ private fun populateForm(response: ConfigResponse) {
             val h = config.scanSchedule.split(" ")[1].toIntOrNull() ?: 3
             setInputValue("pipe-at", "${h.toString().padStart(2, '0')}:00")
         }
-        config.scanSchedule.contains("*/6") -> pipelineFreq = "6h"
+        config.scanSchedule.matches(Regex("(\\d+) \\*/(\\d+) \\* \\* \\*")) -> {
+            pipelineFreq = "everyN"
+            val parts = config.scanSchedule.split(" ")
+            setInputValue("pipe-everyn-min", (parts[0].toIntOrNull() ?: 0).toString())
+            setInputValue("pipe-everyn-hours", (parts[1].removePrefix("*/").toIntOrNull() ?: 6).toString())
+        }
+        config.scanSchedule.isNotBlank() -> {
+            // Phase 166 bug fix: a schedule this page didn't recognise used to be silently rewritten to
+            // "0 3 * * *" on the next Save (every unmatched case fell through to the daily preset). Round-
+            // trip it verbatim as Custom instead — a hand-edited config.toml schedule must never be
+            // destroyed by an unrelated visit to Settings.
+            pipelineFreq = "custom"
+            setInputValue("pipe-cron", config.scanSchedule)
+        }
         else -> pipelineFreq = "daily"
     }
     renderPipelineFreq()
@@ -1028,11 +1050,22 @@ private fun attachListeners(scope: CoroutineScope) {
     document.getElementById("save-settings")?.addEventListener("click") {
         scope.launch {
             val config = readForm()
-            val ok = ConfigApi.save(config)
+            val result = ConfigApi.save(config)
             // Towo settings live in their own backend table (not config.toml) but ride this same
             // button rather than getting a second one — see towoSettingsFromForm's doc comment.
-            val towoOk = TowoApi.updateSettings(towoSettingsFromForm())
-            showSettingsMsg(if (ok && towoOk) "Saved." else "Save failed.", ok && towoOk)
+            val towoOk = if (result.ok) TowoApi.updateSettings(towoSettingsFromForm()) else true
+            val ok = result.ok && towoOk
+            // Phase 166 (FR-166-4) — the save-path backstop: surface the backend's own rejection reason
+            // rather than a bare "Save failed" if an invalid schedule somehow reached PUT /api/config
+            // (the live check above should already have caught it and disabled this button, but a stale
+            // client-side check must never leave the admin without an explanation).
+            showSettingsMsg(if (ok) "Saved." else (result.error ?: "Save failed."), ok)
+            if (result.field == "scan_schedule") {
+                pipeCronValid = false
+                (document.getElementById("pipe-cron-check") as? HTMLElement)?.innerHTML =
+                    """<span class="badge bad">${(result.error ?: "Invalid schedule").esc()}</span>"""
+                updateSaveEnabledForSchedule()
+            }
             if (ok) { renderPathCheckInline(ConfigApi.pathCheck()); refreshNextRun() }   // 93e: reflect the saved schedule
         }
     }
@@ -2193,17 +2226,77 @@ private fun renderPipelineFreq() {
     updatePipeCron()
 }
 
+/** Phase 166 — recomputes the derived cron for the three preset modes (daily/weekly/everyN) into the
+ *  (now-editable) #pipe-cron input; Custom mode leaves whatever the admin typed there alone. Every call
+ *  re-triggers the debounced live-validation check (FR-166-5) so the description/next-runs preview and
+ *  Save's enabled state stay in sync with whatever's actually in the field. */
 private fun updatePipeCron() {
-    val atVal  = (document.getElementById("pipe-at") as? HTMLInputElement)?.value ?: "03:00"
-    val h      = atVal.split(":")[0].toIntOrNull() ?: 3
-    val show6h = pipelineFreq == "6h"
-    val cron   = when (pipelineFreq) { "weekly" -> "0 $h * * 0"; "6h" -> "0 */6 * * *"; else -> "0 $h * * *" }
-    (document.getElementById("pipe-at-field") as? HTMLElement)?.style?.display = if (show6h) "none" else ""
-    document.getElementById("pipe-cron")?.textContent = cron
+    val atField     = document.getElementById("pipe-at-field") as? HTMLElement
+    val everyNField = document.getElementById("pipe-everyn-field") as? HTMLElement
+    val cronInput   = document.getElementById("pipe-cron") as? HTMLInputElement
+    val cronHint    = document.getElementById("pipe-cron-label-hint") as? HTMLElement
+
+    atField?.style?.display     = if (pipelineFreq == "daily" || pipelineFreq == "weekly") "" else "none"
+    everyNField?.style?.display = if (pipelineFreq == "everyN") "" else "none"
+    cronInput?.readOnly = pipelineFreq != "custom"
+    cronHint?.textContent = if (pipelineFreq == "custom") "" else "(derived)"
+
+    if (pipelineFreq != "custom") cronInput?.value = computePipeCron()
+
     // 93e: the real next-run is computed by the backend (wall-clock) and shown by refreshNextRun();
     // while the schedule is being edited it's not applied yet, so say so rather than guess a time.
     document.getElementById("pipe-next")?.textContent = "next · save to apply"
     refreshTomlPreview(readForm())
+    scheduleLiveCronCheck()
+}
+
+// Phase 166 (FR-166-5) — debounce idiom matches MediaDetail.kt's checkDirty()/metaSaveJob: cancel any
+// in-flight check and relaunch after a short pause, so a burst of keystrokes in Custom mode doesn't fire
+// one request per character.
+private var pipeCronCheckJob: kotlinx.coroutines.Job? = null
+private var pipeCronValid = true
+
+private fun scheduleLiveCronCheck() {
+    pipeCronCheckJob?.cancel()
+    val cron = (document.getElementById("pipe-cron") as? HTMLInputElement)?.value ?: ""
+    pipeCronCheckJob = settingsScope?.launch { delay(400); applyCronCheck(cron) }
+}
+
+private suspend fun applyCronCheck(cron: String) {
+    val checkEl = document.getElementById("pipe-cron-check") as? HTMLElement
+    if (cron.isBlank()) {
+        pipeCronValid = true
+        checkEl?.innerHTML = ""
+        updateSaveEnabledForSchedule()
+        return
+    }
+    val result = ConfigApi.validateSchedule(cron)
+    if (result == null) {
+        // Couldn't reach the server — don't block Save on a transient network hiccup; PUT /api/config
+        // (FR-166-4) still rejects an actually-invalid schedule at save time as the real backstop.
+        pipeCronValid = true
+        checkEl?.innerHTML = """<span class="muted tiny">Couldn't check the schedule right now — it'll still be validated on save.</span>"""
+        updateSaveEnabledForSchedule()
+        return
+    }
+    pipeCronValid = result.valid
+    checkEl?.innerHTML = if (result.valid) {
+        val preview = result.nextRuns.joinToString(" · ") { dev.jellystructure.formatStoredTs(it.toString()) }
+        """<span class="badge ok" style="margin-right:6px">✓ ${(result.description ?: "Valid").esc()}</span>""" +
+            (if (preview.isNotBlank()) """<div class="tiny muted" style="margin-top:4px">Next: $preview</div>""" else "")
+    } else {
+        """<span class="badge bad">${(result.error ?: "Invalid schedule").esc()}</span>"""
+    }
+    updateSaveEnabledForSchedule()
+}
+
+/** Phase 166 (FR-166-5) — "Save disabled while invalid". Only the schedule's own validity gates this;
+ *  an unrelated Settings edit made while the cron field happens to be mid-typing is still blocked until
+ *  it resolves, matching the spec's literal requirement rather than scoping the disable to just the
+ *  pipeline card. */
+private fun updateSaveEnabledForSchedule() {
+    val btn = document.getElementById("save-settings") as? HTMLElement ?: return
+    if (pipelineEnabled && !pipeCronValid) btn.setAttribute("disabled", "") else btn.removeAttribute("disabled")
 }
 
 /** 93e: show the backend's actual next scheduled run (or "scheduling off") in the pipe-next badge. */
@@ -2342,10 +2435,21 @@ private suspend fun triggerPipelineRun(full: Boolean, skipSteps: List<String> = 
     if (result != PipelineRunResult.FAILED) refreshPipelineRunButton()
 }
 
+/** Phase 166 — the derived cron for daily/weekly/everyN; Custom returns whatever's typed into
+ *  #pipe-cron verbatim (that input IS the source of truth in that mode, not something to recompute). */
 private fun computePipeCron(): String {
     val atVal = (document.getElementById("pipe-at") as? HTMLInputElement)?.value ?: "03:00"
     val h = atVal.split(":")[0].toIntOrNull() ?: 3
-    return when (pipelineFreq) { "weekly" -> "0 $h * * 0"; "6h" -> "0 */6 * * *"; else -> "0 $h * * *" }
+    return when (pipelineFreq) {
+        "weekly" -> "0 $h * * 0"
+        "everyN" -> {
+            val hours = (document.getElementById("pipe-everyn-hours") as? HTMLInputElement)?.value?.toIntOrNull()?.coerceIn(1, 23) ?: 6
+            val min = (document.getElementById("pipe-everyn-min") as? HTMLInputElement)?.value?.toIntOrNull()?.coerceIn(0, 59) ?: 0
+            "$min */$hours * * *"
+        }
+        "custom" -> (document.getElementById("pipe-cron") as? HTMLInputElement)?.value ?: ""
+        else -> "0 $h * * *"
+    }
 }
 
 private fun renderPipeline() {
@@ -2638,6 +2742,7 @@ private fun wirePipelineBuilder(scope: CoroutineScope) {
         updateToggle("pipe-enable", pipelineEnabled)
         (document.getElementById("pipe-fields") as? HTMLElement)?.style?.display = if (pipelineEnabled) "" else "none"
         refreshTomlPreview(readForm())
+        updateSaveEnabledForSchedule() // turning the pipeline off must never leave Save stuck disabled
     }
     document.getElementById("pipe-freq")?.let { freqEl ->
         val nodes = freqEl.childNodes
@@ -2651,6 +2756,15 @@ private fun wirePipelineBuilder(scope: CoroutineScope) {
         }
     }
     document.getElementById("pipe-at")?.addEventListener("input") { updatePipeCron() }
+    // Phase 166 — Every N hours' two numeric inputs recompute the derived cron the same way "At" does.
+    document.getElementById("pipe-everyn-hours")?.addEventListener("input") { updatePipeCron() }
+    document.getElementById("pipe-everyn-min")?.addEventListener("input") { updatePipeCron() }
+    // Phase 166 (FR-166-5) — Custom mode: the cron field IS the input now (not a derived read-only
+    // display), so typing in it must re-run live validation the same way changing a preset does.
+    document.getElementById("pipe-cron")?.addEventListener("input") {
+        refreshTomlPreview(readForm())
+        scheduleLiveCronCheck()
+    }
     // Phase 154 (FR-PIPE1-1): both faces open the pre-run dialog instead of starting immediately — each is
     // a whole-library, multi-hour run ("full" only drops the freshness filter), so the skip choice matters
     // equally to both. The saved pipeline is fetched here so the dialog lists what the SERVER will run.

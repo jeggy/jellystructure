@@ -24,6 +24,18 @@ data class ConfigResponse(
     val effectiveScanThreads: Int,
 )
 
+// Phase 166 (FR-166-5) — request/response shape for the Settings Custom cron field's live validation.
+@Serializable
+data class ScheduleCheckRequest(val cron: String)
+
+@Serializable
+data class ScheduleCheckResponse(
+    val valid: Boolean,
+    val description: String? = null,
+    val error: String? = null,
+    val nextRuns: List<Long> = emptyList(),
+)
+
 @Serializable
 data class LibraryPathDiag(
     val name: String,
@@ -146,8 +158,40 @@ fun Route.configureConfigRoutes(
         // config-file-only — the Settings form (readForm) sends neither, so without this a Settings save
         // would wipe the operator's tracker registry and reset the ingest webhook secret/realtime flag.
         config = config.copy(trackers = stored.trackers, ingest = stored.ingest)
+
+        // Phase 166 (FR-166-4) — the save-path backstop: a blank schedule means "scheduling off" and is
+        // always valid; anything else must parse, actually fire within the search horizon, and not fire
+        // more often than every 15 minutes. Rejects with 422 rather than silently persisting a schedule
+        // that leaves the scheduler idle with nothing but a repeating log warning (the bug this closes).
+        if (config.scanSchedule.isNotBlank()) {
+            val check = dev.jellystructure.cron.validateSchedule(config.scanSchedule, dev.jellystructure.nowEpochSec())
+            if (check is dev.jellystructure.cron.ScheduleCheck.Invalid) {
+                call.respond(HttpStatusCode.UnprocessableEntity, mapOf("field" to "scan_schedule", "error" to check.message))
+                return@put
+            }
+        }
+
         configStore.update(config)
         call.respond(HttpStatusCode.NoContent)
+    }
+
+    // Phase 166 (FR-166-5) — live validation + next-5-runs preview for the Settings Custom cron field,
+    // computed by the exact same dev.jellystructure.cron code the save path (above) and the scheduler
+    // (Main.kt) use, so the frontend can never disagree with the server about what a schedule means or
+    // whether it's acceptable. Cookie-gated like every other /api/config route (not open).
+    post("/config/validate-schedule") {
+        val body = runCatching { call.receive<ScheduleCheckRequest>() }.getOrNull()
+            ?: return@post call.respond(HttpStatusCode.BadRequest)
+        if (body.cron.isBlank()) {
+            call.respond(ScheduleCheckResponse(valid = true, description = "Scheduling is off."))
+            return@post
+        }
+        when (val check = dev.jellystructure.cron.validateSchedule(body.cron, dev.jellystructure.nowEpochSec())) {
+            is dev.jellystructure.cron.ScheduleCheck.Ok ->
+                call.respond(ScheduleCheckResponse(valid = true, description = check.description, nextRuns = check.nextRuns))
+            is dev.jellystructure.cron.ScheduleCheck.Invalid ->
+                call.respond(ScheduleCheckResponse(valid = false, error = check.message))
+        }
     }
     post("/config/test-qbittorrent") {
         if (qbClient == null) {
