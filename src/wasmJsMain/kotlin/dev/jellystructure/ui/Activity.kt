@@ -101,7 +101,7 @@ fun renderActivity(container: Element, scope: CoroutineScope, query: Map<String,
         <div id="view-jobs" style="display:none;">
           <div class="note blue" style="margin-bottom:14px;display:flex;gap:11px;align-items:flex-start;">
             <span style="flex:none;">ℹ</span>
-            <div class="tiny" style="line-height:1.6;">Two independent worker lanes. Heavy media edits — an audio <b>re-order</b> is an <span class="mono">ffmpeg</span> remux (a full stream copy, 4K included) — are queued through a <b>single media worker</b> and run <b>one at a time</b>, so several <b>Apply</b> clicks (or two admins at once) can't saturate CPU/disk or stall the API. <b>Intro &amp; credits detection</b> (Phase 164) runs on its own concurrent lane instead — off the pipeline's critical path, so a slow library no longer holds up scans, TMDB, artwork or anything else.</div>
+            <div class="tiny" style="line-height:1.6;">Two independent worker lanes. Heavy media edits — an audio <b>re-order</b> is an <span class="mono">ffmpeg</span> remux (a full stream copy, 4K included) — are queued through a <b>single media worker</b> and run <b>one at a time</b>, so several <b>Apply</b> clicks (or two admins at once) can't saturate CPU/disk or stall the API. <b>Intro &amp; credits detection</b> runs on its own concurrent lane instead — off the pipeline's critical path, so a slow library no longer holds up scans, TMDB, artwork or anything else.</div>
           </div>
           <div class="card" style="margin-bottom:14px;">
             <div id="jobs-worker-lines">
