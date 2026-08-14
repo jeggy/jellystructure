@@ -32,14 +32,48 @@ class ConfigStore(private val filePath: String) {
             _config = toml.decodeFromString(AppConfig.serializer(), content)
         }
         if (result.isFailure) Logger.warn("Failed to parse config, using defaults: ${result.exceptionOrNull()?.message}")
+        else fixAgeRatingMapKeys()
     }
 
-    suspend fun update(config: AppConfig) = mutex.withLock {
+    /** Bug fix (live report, 2026-08-14) — ktoml 0.7.1 has a genuine decode bug for a QUOTED TOML table
+     *  key (needed whenever a certification string contains a space, e.g. Swedish `"Från 7 år"`): it
+     *  retains the surrounding `"` characters as part of the resulting Kotlin string instead of
+     *  stripping them (confirmed via a direct decode test — `map["Från 7 år"]` came back null while the
+     *  map actually held the 11-character key `"Från 7 år"`, quotes included). Two visible symptoms from
+     *  one root cause: (1) Metadata ▸ Age ratings looked completely unmapped, because every lookup by
+     *  the real (unquoted) certification string failed; (2) every `configStore.update()` afterward threw
+     *  on re-encode ("Not able to parse the key"), since ktoml's encoder can't figure out how to
+     *  (re-)quote a string that already contains embedded quote characters — silently, since
+     *  [persist]'s failure is logged, never surfaced to the API caller (a `PUT /api/config` still 204s).
+     *
+     *  This is deterministic and reproduces on EVERY decode of a quoted key, not a one-time corruption —
+     *  verified: re-encoding a cleaned map and decoding it back reproduces the exact same corruption. So
+     *  this must run after every [load], not just once. `ageRatingMap` is the only `Map<String, _>`
+     *  field in [AppConfig] (verified), so no other field needs the same treatment. */
+    private suspend fun fixAgeRatingMapKeys() {
+        val map = _config.metadata.ageRatingMap
+        fun isMangled(k: String) = k.length >= 2 && k.first() == '"' && k.last() == '"'
+        val mangledCount = map.keys.count(::isMangled)
+        if (mangledCount == 0) return
+        val fixed = map.mapKeys { (k, _) -> if (isMangled(k)) k.substring(1, k.length - 1) else k }
+        Logger.warn("Config: repaired $mangledCount ktoml-mangled age_rating_map key(s)", "config")
+        _config = _config.copy(metadata = _config.metadata.copy(ageRatingMap = fixed))
+    }
+
+    /** Bug fix (live report, 2026-08-14) — now returns whether the write to disk actually succeeded.
+     *  Previously `Unit`: every caller (including `PUT /api/config`) treated the in-memory assignment as
+     *  the whole story and responded success regardless of whether [persist] failed — [persist]'s own
+     *  failure was logged but never propagated. The ktoml age_rating_map bug above is exactly what
+     *  surfaced this: a real "Saved ✓" in the Settings UI whose write had silently never happened.
+     *  Existing callers that don't check the return value are unaffected (Kotlin doesn't require using
+     *  a return value) — this is purely additive; see `ConfigRoutes.kt`/`WebhookRoutes.kt`/
+     *  `MetadataRoutes.kt` for the call sites now surfacing it. */
+    suspend fun update(config: AppConfig): Boolean = mutex.withLock {
         _config = config
         persist()
     }
 
-    private suspend fun persist() {
+    private suspend fun persist(): Boolean {
         val tmp = "$filePath.tmp"
         val result = runCatching {
             val content = toml.encodeToString(AppConfig.serializer(), _config)
@@ -55,5 +89,6 @@ class ConfigStore(private val filePath: String) {
             platform.posix.rename(tmp, filePath)
         }
         if (result.isFailure) Logger.error("Failed to persist config: ${result.exceptionOrNull()?.message}")
+        return result.isSuccess
     }
 }

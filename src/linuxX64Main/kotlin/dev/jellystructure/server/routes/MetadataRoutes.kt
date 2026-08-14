@@ -316,8 +316,12 @@ fun Route.metadataRoutes(store: MediaStore, tagStore: JsTagStore, logoDownloader
                 if (req.code.isBlank()) return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "code required"))
                 val age = req.age.coerceIn(0, 18)
                 val config = cs.current
-                cs.update(config.copy(metadata = config.metadata.copy(ageRatingMap = config.metadata.ageRatingMap + (req.code to age))))
-                call.respond(AgeRatingRow(code = req.code, system = null, itemCount = 0, age = age))
+                // Bug fix (live report, 2026-08-14) — cs.update()'s write-to-disk result is now checked;
+                // a failed persist (the ktoml age_rating_map bug above was exactly this) used to respond
+                // success anyway, so the write-through pulse looked fine but nothing was actually saved.
+                val ok = cs.update(config.copy(metadata = config.metadata.copy(ageRatingMap = config.metadata.ageRatingMap + (req.code to age))))
+                if (ok) call.respond(AgeRatingRow(code = req.code, system = null, itemCount = 0, age = age))
+                else call.respond(HttpStatusCode.InternalServerError, mapOf("error" to "Couldn't save — check the server log"))
             }
             // FR-AGE1-3 "Suggest mappings" — fills every still-unmapped code from
             // CertificationResolver.AGE_SEED; never overwrites an operator's existing explicit choice.
@@ -325,8 +329,9 @@ fun Route.metadataRoutes(store: MediaStore, tagStore: JsTagStore, logoDownloader
                 val cs = configStore ?: return@post call.respond(HttpStatusCode.ServiceUnavailable)
                 val config = cs.current
                 val seeded = CertificationResolver.AGE_SEED.filterKeys { it !in config.metadata.ageRatingMap }
-                cs.update(config.copy(metadata = config.metadata.copy(ageRatingMap = config.metadata.ageRatingMap + seeded)))
-                call.respond(computeAgeRatings(store, cs.current))
+                val ok = cs.update(config.copy(metadata = config.metadata.copy(ageRatingMap = config.metadata.ageRatingMap + seeded)))
+                if (ok) call.respond(computeAgeRatings(store, cs.current))
+                else call.respond(HttpStatusCode.InternalServerError, mapOf("error" to "Couldn't save — check the server log"))
             }
         }
     }
