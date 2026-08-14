@@ -53,6 +53,15 @@ kotlin {
                 implementation(libs.coil.network.ktor)
             }
         }
+        // R196 (FR-RV-TRK2-4) — this module's first tests. commonTest's kotlin("test") auto-wires to
+        // androidUnitTest (plain JVM, no emulator — the one we actually run) via the default source set
+        // hierarchy; wasmJsTest would need a headless browser this sandbox doesn't reliably support, so
+        // it's left unconfigured rather than shipping a test task nobody can run.
+        commonTest {
+            dependencies {
+                implementation(kotlin("test"))
+            }
+        }
         val androidMain by getting {
             dependencies {
                 implementation(libs.coil.svg) // SVG channel logos
