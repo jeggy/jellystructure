@@ -1,5 +1,6 @@
 package dev.jellystructure.server.routes
 
+import dev.jellystructure.OutboundHttp
 import dev.jellystructure.auth.JellyfinClient
 import dev.jellystructure.auth.constantTimeEquals
 import dev.jellystructure.config.AppConfig
@@ -8,7 +9,11 @@ import dev.jellystructure.config.LibraryMapping
 import dev.jellystructure.log.Logger
 import dev.jellystructure.media.RealtimeIngestService
 import dev.jellystructure.tv.JellyfinLibraryListener
+import io.ktor.client.request.header
+import io.ktor.client.request.post as httpPost
+import io.ktor.client.request.setBody
 import io.ktor.http.HttpStatusCode
+import io.ktor.http.isSuccess
 import io.ktor.server.request.receive
 import io.ktor.server.request.receiveText
 import io.ktor.server.response.respond
@@ -189,6 +194,33 @@ fun Route.webhookRoutes(
         val writeOk = jellyfinClient.updatePluginConfiguration(baseUrl, token, pluginId, updatedConfig)
         if (writeOk) call.respond(JellyfinSetupResult(configured = true, destinationUrl = destinationUrl))
         else call.respond(HttpStatusCode.BadGateway, mapOf("error" to "Couldn't write the plugin configuration — set it up manually"))
+    }
+
+    // Bug fix (live report, 2026-08-14) — this used to run client-side (the browser POSTing straight to
+    // the absolute destinationUrl), which is only ever same-origin by coincidence and was blocked by
+    // this server's own CORS policy the moment it wasn't (Settings served via a separately-hosted dev
+    // proxy port, or a reach URL that differs from whatever origin the admin actually browsed from) —
+    // "Couldn't reach that URL" every time, regardless of whether the URL was actually fine. CORS here
+    // is deliberately locked to same-origin (2026-08-02 security review, finding M1 — credential
+    // exposure via a permissive cross-origin policy); loosening it just to make this button work would
+    // reopen exactly that hole. Running the test server-side sidesteps CORS entirely (it's a browser-
+    // only concept) and the frontend now calls this same-origin route instead of the destination URL
+    // directly.
+    post("/settings/ingest/test-destination") {
+        val cfg = configStore.current
+        val url = "${cfg.ingest.jellyfinReachUrl.trimEnd('/')}/api/webhooks/jellyfin?secret=${cfg.ingest.webhookSecret}"
+        if (cfg.ingest.jellyfinReachUrl.isBlank() || cfg.ingest.webhookSecret.isBlank()) {
+            return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Set the reach URL first"))
+        }
+        val ok = runCatching {
+            OutboundHttp.withPermit {
+                OutboundHttp.client.httpPost(url) {
+                    header("Content-Type", "application/json")
+                    setBody("""{"ItemId":"test","ItemType":"Movie"}""")
+                }.status.isSuccess()
+            }
+        }.getOrElse { Logger.warn("Ingest test-destination failed: ${it.message}", "ingest"); false }
+        if (ok) call.respond(mapOf("ok" to true)) else call.respond(HttpStatusCode.BadGateway, mapOf("error" to "Couldn't reach that URL from this server"))
     }
 
     // Explicit, separately-confirmed, destructive-labelled — restarting Jellyfin drops every household
