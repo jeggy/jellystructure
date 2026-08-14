@@ -13,6 +13,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlin.concurrent.Volatile
 import kotlinx.coroutines.sync.withLock
 
 /**
@@ -44,6 +45,14 @@ class RealtimeIngestService(
     private val mediaJobQueue: MediaJobQueue? = null,
 ) {
     private val queueScope = CoroutineScope(SupervisorJob() + Dispatchers.Default.limitedParallelism(2))
+
+    // Phase 165 amendment (2026-08-14, FR-165-7) — set by handleJellyfinWebhook the instant a request
+    // passes the secret check, before any item-type filtering. This is the ONLY signal that the PRIMARY
+    // webhook path (the Jellyfin plugin) itself ever reached jellystructure — the pre-existing
+    // IngestStatus.lastEventAt only ever reflected the fallback JellyfinLibraryListener change-feed, so a
+    // dead primary path could hide behind the fallback's own occasional traffic. See the live incident
+    // this amendment documents in phase-165's spec.
+    @Volatile var lastWebhookReceivedAt: Long? = null
 
     // Phase 145 — coalesce bursts: a season import fires one event per episode, each of which resolves
     // to (and re-scans) the same parent series. Skip a target whose full ingest ran within this window

@@ -391,7 +391,8 @@ fun renderSettings(container: Element, scope: CoroutineScope, query: Map<String,
                 <span class="tiny" id="ingest-reach-url-msg" style="margin-left:8px"></span>
               </div>
 
-              <div class="hint" id="ingest-listener-detail" style="margin-top:10px"></div>
+              <div class="hint" id="ingest-webhook-detail" style="margin-top:10px"></div>
+              <div class="hint" id="ingest-listener-detail" style="margin-top:4px"></div>
             </div>
 
             <div class="card set-section" id="sect-notifications" data-tab="notifications">
@@ -1969,10 +1970,17 @@ private data class IngestStatus(
     @SerialName("webhook_secret") val webhookSecret: String,
     val realtime: Boolean,
     @SerialName("listener_connected") val listenerConnected: Boolean,
+    // Fallback change-feed listener's own last event — see last_webhook_received_at below for the
+    // primary Jellyfin-plugin path (2026-08-14 amendment: these used to be conflated on this page,
+    // which let a dead primary path hide behind the fallback's own traffic).
     @SerialName("last_event_at") val lastEventAt: Long? = null,
     @SerialName("jellyfin_reach_url") val jellyfinReachUrl: String = "",
     val jellyfin: JellyfinWebhookStatus? = null,
+    @SerialName("last_webhook_received_at") val lastWebhookReceivedAt: Long? = null,
 )
+
+@Serializable
+private data class TestLiveResult(val delivered: Boolean, val message: String)
 
 private suspend fun loadIngestCard() {
     val status = runCatching { httpClient.get("/api/settings/ingest-status").body<IngestStatus>() }.getOrNull() ?: return
@@ -1984,6 +1992,13 @@ private suspend fun loadIngestCard() {
             (if (status.listenerConnected) " (connected" else " (reconnecting") +
             (if (status.lastEventAt != null) ", has seen at least one event)" else ", no events seen yet)")
         else "Realtime ingest is off — new media only appears on the next scheduled scan"
+
+    // 2026-08-14 amendment (FR-165-7) — the fallback line above only ever reflected the change-feed
+    // listener; this is the primary Jellyfin-webhook path's own signal, shown separately so a dead
+    // primary path can never again hide behind the fallback's own traffic.
+    (document.getElementById("ingest-webhook-detail") as? HTMLElement)?.textContent =
+        if (status.lastWebhookReceivedAt != null) "Jellyfin webhook: last received ${dev.jellystructure.formatStoredTs(status.lastWebhookReceivedAt.toString())}"
+        else "Jellyfin webhook: nothing received yet"
 
     document.getElementById("ingest-reach-url-save")?.addEventListener("click") {
         settingsScope?.launch {
@@ -2048,22 +2063,27 @@ private fun renderIngestCard(status: IngestStatus) {
             card.innerHTML = """
                 <div class="row center" style="gap:8px;flex-wrap:wrap">
                   <span class="mono tiny">${jf.destinationUrl?.esc() ?: ""}</span>
-                  <button class="btn sm ghost" id="ingest-test-url">Test this URL</button>
+                  <button class="btn sm ghost" id="ingest-test-url">Test delivery now</button>
                 </div>
-                <div class="tiny muted" style="margin-top:4px">${if (status.lastEventAt != null) "Last event received ${dev.jellystructure.formatStoredTs(status.lastEventAt.toString())}" else "No events received yet"}</div>
                 <div class="tiny" id="ingest-setup-msg" style="margin-top:6px"></div>"""
-            // Bug fix (live report, 2026-08-14): this used to POST directly from the browser to the
-            // absolute destination URL — CORS-blocked the moment that URL wasn't the same origin the
-            // admin page was served from (this app deliberately locks CORS to same-origin; see the
-            // backend route's own doc). Runs server-side now via a same-origin call instead.
+            // 2026-08-14 amendment (FR-165-8) — replaces the old self-loop test (this server curling its
+            // own destination URL, which only ever proved the URL was reachable FROM ITSELF and missed a
+            // real live failure where Jellyfin's plugin never delivered despite a correct, reachable
+            // config). This asks Jellyfin to send a real webhook through its own runtime and watches for
+            // it to actually arrive — see the phase-165 spec amendment for the incident this replaced it.
             document.getElementById("ingest-test-url")?.addEventListener("click") {
                 settingsScope?.launch {
                     val msgEl = document.getElementById("ingest-setup-msg") as? HTMLElement
-                    msgEl?.textContent = "Sending…"
-                    val ok = runCatching {
-                        httpClient.post("/api/settings/ingest/test-destination").status.value in 200..299
-                    }.getOrDefault(false)
-                    msgEl?.textContent = if (ok) "Reachable ✓ (this only tests the URL itself, not Jellyfin's own delivery)" else "Couldn't reach that URL from the server"
+                    msgEl?.textContent = "Asking Jellyfin to send a live webhook — this can take up to 10 seconds…"
+                    val response = runCatching { httpClient.post("/api/settings/ingest/test-live") }.getOrNull()
+                    val result = response?.let { runCatching { it.body<TestLiveResult>() }.getOrNull() }
+                    if (result != null) {
+                        msgEl?.textContent = (if (result.delivered) "✓ " else "✗ ") + result.message
+                        if (result.delivered) loadIngestCard()
+                    } else {
+                        val err = response?.let { runCatching { it.body<Map<String, String>>() }.getOrNull() }
+                        msgEl?.textContent = err?.get("error") ?: "Couldn't run the test"
+                    }
                 }
             }
         }

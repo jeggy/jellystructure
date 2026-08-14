@@ -280,6 +280,18 @@ class JellyfinClient {
         }.status.isSuccess()
     }.getOrElse { Logger.warn("Jellyfin updatePluginConfiguration failed: ${it.message}"); false }
 
+    // Phase 165 amendment (2026-08-14, FR-165-8) — `GET /ScheduledTasks` + `POST
+    // /ScheduledTasks/Running/{id}`, used by the live delivery probe to trigger the Webhook plugin's own
+    // "Webhook Item Added Notifier" task on demand (a cheap, harmless task that always completes).
+
+    suspend fun getScheduledTasks(baseUrl: String, token: String): List<JellyfinTaskInfo>? = runCatching {
+        httpGet(baseUrl.trimEnd('/') + "/ScheduledTasks") { jellyfinAuth(token) }.bodyOrNull<List<JellyfinTaskInfo>>("getScheduledTasks")
+    }.getOrElse { Logger.warn("Jellyfin getScheduledTasks failed: ${it.message}"); null }
+
+    suspend fun runScheduledTask(baseUrl: String, token: String, taskId: String): Boolean = runCatching {
+        httpPost(baseUrl.trimEnd('/') + "/ScheduledTasks/Running/$taskId") { jellyfinAuth(token) }.status.isSuccess()
+    }.getOrElse { Logger.warn("Jellyfin runScheduledTask failed: ${it.message}"); false }
+
     /** Phase 145 — reliable path→item resolution. This Jellyfin **ignores** the `?Path=` filter
      *  ([getItemByPath] then returns an arbitrary item), so instead pull the most-recently-added
      *  Movie/Episode items and match the path **ourselves**. Bounded (last [limit] additions) and safe to
