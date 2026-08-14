@@ -20,6 +20,7 @@ import org.w3c.dom.Element
 import org.w3c.dom.HTMLElement
 import org.w3c.dom.HTMLVideoElement
 import org.w3c.dom.events.KeyboardEvent
+import kotlin.math.abs
 import kotlin.math.roundToInt
 
 /**
@@ -225,7 +226,7 @@ private fun buildRuler(durationSec: Double): String {
         marks.append("""<i style="left:${pct}%"></i><u style="left:${pct}%">${fmt(t)}</u>""")
         t += 120.0
     }
-    return """<div class="ruler">$marks</div>"""
+    return """<div class="ruler" id="seg-ruler">$marks</div>"""
 }
 
 private fun buildTrack(segments: List<SegmentDto>, durationSec: Double, selectedKind: String?): String {
@@ -264,7 +265,7 @@ private fun buildEvidenceLane(evidence: List<SegmentEvidenceDto>, durationSec: D
             else -> ""
         }
     }
-    return """<div class="ev"><span class="evlbl">why</span>$bars</div>"""
+    return """<div class="ev" id="seg-evidence"><span class="evlbl">why</span>$bars</div>"""
 }
 
 private fun buildMarkRow(s: SegmentDto, selected: Boolean): String {
@@ -337,7 +338,7 @@ private fun renderTrim(data: SegmentTrimResponse, scope: CoroutineScope) {
 
     root.innerHTML = """
         <div class="sxbar">$backHtml
-          <span class="num">${data.code}</span><h1>${data.title}</h1><span class="sxsub">${fmtl(data.durationSec)}</span>
+          <span class="num">${data.code}</span><h1>${data.title}</h1><span class="sxsub" id="seg-duration-label">${fmtl(data.durationSec)}</span>
           <span class="sxsp"></span>$confirmChip
           <button class="btn sm" data-a="redetect-one">↻ Re-detect</button>
           <button class="btn sm pri" data-a="next">$nextLabel</button></div>
@@ -623,6 +624,7 @@ private fun wireVideo(data: SegmentTrimResponse, scope: CoroutineScope) {
         ph?.style?.display = "none"
         tag2?.innerHTML = """<span class="vpill ok">direct play · no transcode</span>"""
         video.currentTime = trimPlayheadMs / 1000.0
+        correctDuration(video.duration)
     }
     video.addEventListener("error") {
         video.style.display = "none"
@@ -643,6 +645,26 @@ private fun wireVideo(data: SegmentTrimResponse, scope: CoroutineScope) {
         }
         video.src = url
     }
+}
+
+// The backend's durationSec is only a rough estimate (TMDB's whole-minute runtime, or the furthest
+// known segment edge — see SegmentRoutes.kt's durationSecOf) used so the timeline has something to draw
+// before playback exists. Once the real <video> loads, its duration is the frame-accurate truth — patch
+// the duration-dependent pieces of the DOM in place rather than a full renderTrim (which would recreate
+// the <video> element and restart the stream).
+private fun correctDuration(newDurationSec: Double) {
+    val data = currentTrimData ?: return
+    if (newDurationSec.isNaN() || !newDurationSec.isFinite() || newDurationSec <= 0) return
+    if (abs(newDurationSec - data.durationSec) < 1.0) return
+    val corrected = data.copy(durationSec = newDurationSec)
+    currentTrimData = corrected
+
+    document.getElementById("seg-duration-label")?.textContent = fmtl(newDurationSec)
+    document.getElementById("seg-ruler")?.outerHTML = buildRuler(newDurationSec)
+    document.getElementById("seg-track")?.innerHTML =
+        """<div class="grid"></div>${buildTrack(corrected.segments, newDurationSec, trimSelectedKind)}<div class="play" id="seg-playhead"></div>"""
+    document.getElementById("seg-evidence")?.outerHTML = buildEvidenceLane(corrected.evidence, newDurationSec)
+    updatePlayheadDom(trimPlayheadMs, newDurationSec, currentTrimSelectedLabel())
 }
 
 private fun nudgeSegment(data: SegmentTrimResponse, scope: CoroutineScope, kind: String, edge: String, deltaMs: Long) {
