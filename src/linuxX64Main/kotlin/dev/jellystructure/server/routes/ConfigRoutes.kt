@@ -171,8 +171,12 @@ fun Route.configureConfigRoutes(
             }
         }
 
-        configStore.update(config)
-        call.respond(HttpStatusCode.NoContent)
+        // Bug fix (live report, 2026-08-14) — configStore.update()'s write-to-disk result is now
+        // checked; a failed persist used to still respond 204, so a Settings "Saved ✓" could be a lie
+        // (the ktoml age_rating_map decode bug produced exactly this — see ConfigStore.fixAgeRatingMapKeys).
+        val ok = configStore.update(config)
+        if (ok) call.respond(HttpStatusCode.NoContent)
+        else call.respond(HttpStatusCode.InternalServerError, mapOf("error" to "Couldn't save — check the server log"))
     }
 
     // Phase 166 (FR-166-5) — live validation + next-5-runs preview for the Settings Custom cron field,
