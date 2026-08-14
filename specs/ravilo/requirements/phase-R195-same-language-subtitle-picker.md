@@ -136,11 +136,19 @@ Region resolution is a **synonym table, never string matching** (§5.2).
 |---|---|---|
 | ↑ ↓ | move between languages | move between versions |
 | ← → | switch Audio / Subtitles tab | switch Audio / Subtitles tab (returns to level 1) |
-| OK | one version → select · several → **enter level 2** | select, stay open |
+| OK | one version → select · several → **enter level 2** | select, close *(superseded — see below)* |
 | Back | close picker | **return to level 1** |
 
 Entering level 2 focuses the first version. Returning to level 1 restores focus to the language
 row you came from. Switching tab always resets to level 1.
+
+**Superseded by [R197](phase-R197-picker-close-on-version-select.md), 2026-08-14:** OK/tap on a level-2
+row originally shipped as "select, stay open", so a viewer could audition versions without reopening
+the picker (over the riskier live-apply-on-focus-move design §E had sketched — never built; see §E's
+note below). Reported live as reading like the picker not responding: a one-version language dismisses
+on the same press, and nothing on screen distinguished "applied, still open" from "didn't take". R197
+reverses it — OK/tap on a level-2 row now selects **and closes**, same as level 1. Back's semantics
+(level 2 → level 1, level 1 → close) are unchanged.
 
 ### §E The tail: tracks with nothing to tell them apart
 
@@ -151,8 +159,10 @@ worst case **32**):
   and the count.
 - Level 2 numbers them: **`Version 1`** … **`Version n`**, each with the "carries no name of its
   own" line, the currently-showing one badged **`Now showing`**.
-- Because a subtitle change applies instantly, **moving down the list is the preview** — the
-  footer says so.
+- *(Superseded by R197 — never built as written.)* This originally read "moving down the list is
+  the preview". That live-apply-on-focus-move behavior was never implemented (see the implementation
+  notes below); OK/tap has always been required to apply a version, and per R197 now also closes the
+  picker. The footer hint (`player.picker_preview_hint`) was reworded accordingly.
 
 **Wording constraint (settled in review):** never say *disc*. Nothing in this library is a disc.
 The copy is "nothing in this file names them", "no language name came with this track".
@@ -400,11 +410,13 @@ target index (`pickerIdx`/`pickerVersionIdx`) then runs identical logic, so touc
   stays the primary name in all cases, with the kind/ordinal info in the badge row instead. Same
   information, different visual arrangement than the ASCII mockup's aspirational layout.
 - **§E's "moving down the list previews each one"** — implemented as OK-applies-and-stays-open
-  (§D's own table literally says this for level 2), **not** live-apply-on-every-focus-move. Treating
+  (§D's own table literally said this for level 2), **not** live-apply-on-every-focus-move. Treating
   bare focus movement as an implicit selection is a bigger, riskier UX behavior change (every
   Up/Down in level 2 would trigger a real track switch) that this pass chose not to speculate into
-  without dedicated UX iteration — the footer hint text still ships (`player.picker_preview_hint`),
-  describing the OK-to-apply flow rather than a move-to-apply one.
+  without dedicated UX iteration. **Closed off for good by R197** (2026-08-14): OK-applies-and-stays-open
+  itself read as broken next to level 1's one-press dismissal, so level 2 now applies-and-closes
+  instead — live-apply-on-focus-move is no longer under consideration at all, not just deferred. The
+  footer hint text (`player.picker_preview_hint`) was reworded to match.
 - **Region name shown as a badge pill, not inline plain text** — §C's mockup shows region as plain
   text next to the language name (`Português  Brasil`); it renders here as a small pill in the badge
   row instead, reusing the existing badge-pill component rather than adding a third text style.
