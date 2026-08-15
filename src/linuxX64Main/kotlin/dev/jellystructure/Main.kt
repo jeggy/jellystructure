@@ -581,7 +581,16 @@ suspend fun executePipeline(
                 // Phase 115 (FR C) — full import (not the old ValidationOnly, which never re-reads NFOs),
                 // scoped to items that actually have something new to import (nfoWrittenAt > jfSyncedAt)
                 // so an unchanged library doesn't hammer Jellyfin with hundreds of full refreshes a night.
-                val toSync = workingSet.filter { (it.nfoWrittenAt ?: 0L) > (it.jfSyncedAt ?: 0L) && !it.jellyfinId.isNullOrBlank() }
+                // Bug fix (live report, 2026-08-16) — `workingSet` is one snapshot taken at scan_files,
+                // before write_nfo (the immediately-preceding step) runs. Filtering it directly compared
+                // each item's PRE-write_nfo nfoWrittenAt, so an item whose NFO was just rewritten THIS
+                // run never qualified for toSync — jfSyncedAt then never advanced, and the item kept
+                // reporting "Jellyfin hasn't re-read the NFO yet" indefinitely whenever its NFO content
+                // legitimately changes every run (e.g. sync_imdb_ratings pulling a new vote count
+                // upstream of write_nfo). Re-fetch each item's current DB state before filtering —
+                // matches the pattern detect_drift already uses for the same reason.
+                val fresh = workingSet.mapNotNull { store.get(it.id) }
+                val toSync = fresh.filter { (it.nfoWrittenAt ?: 0L) > (it.jfSyncedAt ?: 0L) && !it.jellyfinId.isNullOrBlank() }
                 val jellyfinReady = cfg.apiKeys.jellyfinUrl.isNotBlank() && cfg.apiKeys.jellyfinToken.isNotBlank()
                 Logger.info("sync_jellyfin: ${toSync.size} of ${workingSet.size} items have unsynced NFO changes")
                 runPipelineStepPool(
