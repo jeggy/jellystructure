@@ -91,9 +91,18 @@ object TrackCommandBuilder {
             "-map 0:v $specificMaps -map 0:s? -map 0:d?"
         else
             "-map 0:v -map 0:a $specificMaps -map 0:d?"
+        // Bug fix (live report, 2026-08-16) — ffmpeg's own Matroska muxer writes Cues (the seek index)
+        // at the END of the file by default, unlike mkvmerge (what most original releases are muxed
+        // with), which writes them near the front. Confirmed live: a title reordered through this path
+        // took ~7.6s of silent buffering before ExoPlayer would start playback (it was reading almost
+        // the entire file first) versus <800ms for an otherwise-identical never-reordered file — the
+        // ENCODER tag was the tell (`Lavf...` vs `libmatroska`). -cues_to_front moves Cues back near
+        // the front, matching mkvmerge's layout and restoring normal fast playback start. Matroska-only
+        // flag — output keeps the input's extension (tmpPath), so only add it for an actual .mkv target.
+        val cuesFix = if (filePath.substringAfterLast('.').lowercase() == "mkv") " -cues_to_front 1" else ""
         return "ffmpeg -y -i '$escaped' \\\n" +
             "  $maps \\\n" +
-            "  -c copy \\\n" +
+            "  -c copy$cuesFix \\\n" +
             "  '$escapedTmp' && mv '$escapedTmp' '$escaped'"
     }
 }
