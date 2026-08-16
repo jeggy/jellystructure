@@ -268,7 +268,9 @@ fun Route.trackRoutes(
 
             val cfg = configStore.current
             if (!item.jellyfinId.isNullOrBlank() && cfg.apiKeys.jellyfinUrl.isNotBlank()) {
-                jellyfinClient.refreshItem(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken, item.jellyfinId)
+                // Bug fix (live report, 2026-08-16) — full=true; see MediaJobQueue.postWriteSync's doc
+                // comment for why a stream-metadata edit can't rely on ValidationOnly's recency skip.
+                jellyfinClient.refreshItem(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken, item.jellyfinId, full = true)
             }
             arrRescan?.nudge(item)  // Phase 54 — refresh the *arr's MediaInfo after a track edit (best-effort)
 
@@ -314,6 +316,12 @@ fun Route.trackRoutes(
             val updated = item.copy(tracks = newTracks, issueCount = newIssueCount)
             store.updateOne(updated)
             mediaHistory.record(id, "set_forced", "specifier=${req.specifier} forced=${req.forced}")
+            // Bug fix (live report, 2026-08-16) — this route edited the file but, unlike every other
+            // track-editing route on this page, never told Jellyfin to re-read it at all.
+            val cfg = configStore.current
+            if (!item.jellyfinId.isNullOrBlank() && cfg.apiKeys.jellyfinUrl.isNotBlank()) {
+                jellyfinClient.refreshItem(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken, item.jellyfinId, full = true)
+            }
             arrRescan?.nudge(item)  // Phase 54 — refresh the *arr's MediaInfo after a track edit (best-effort)
             call.respond(mapOf("ok" to true))
         }
@@ -380,8 +388,10 @@ fun Route.trackRoutes(
             mediaHistory.record(id, "set_language", "specifier=${req.specifier} language=$probed")
 
             val cfg = configStore.current
+            // Bug fix (live report, 2026-08-16) — full=true; see MediaJobQueue.postWriteSync's doc
+            // comment for why a stream-metadata edit can't rely on ValidationOnly's recency skip.
             if (!item.jellyfinId.isNullOrBlank() && cfg.apiKeys.jellyfinUrl.isNotBlank()) {
-                jellyfinClient.refreshItem(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken, item.jellyfinId)
+                jellyfinClient.refreshItem(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken, item.jellyfinId, full = true)
             }
             arrRescan?.nudge(item)  // Phase 54 — refresh the *arr's MediaInfo after a track edit (best-effort)
 
@@ -624,8 +634,13 @@ fun Route.trackRoutes(
                 }
                 mediaHistory.record(id, "bulk_reorder_tracks", "kind=${req.kind} scope=${req.scope} succeeded=$succeeded failed=$failed")
                 val cfg = configStore.current
+                // Bug fix (live report, 2026-08-16) — full=true; this reported "succeeded" for every
+                // remuxed episode, but the auto-refresh below used ValidationOnly (default), which
+                // "skips the re-read if the item was recently refreshed" (JellyfinClient.refreshItem's
+                // own doc) — the reordered stream layout could stay uncached until an unrelated later
+                // full sync caught up. See MediaJobQueue.postWriteSync's doc comment for the full story.
                 if (!item.jellyfinId.isNullOrBlank() && cfg.apiKeys.jellyfinUrl.isNotBlank())
-                    jellyfinClient.refreshItem(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken, item.jellyfinId)
+                    jellyfinClient.refreshItem(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken, item.jellyfinId, full = true)
 
                 broadcaster.broadcast(JobEvent.Finished(jobId, succeeded, failed))
                 mediaJobQueue.markBulkFinished(jobId, ok = failed == 0, error = if (failed > 0) "$failed of $total episode(s) failed" else null, filesDone = succeeded)
