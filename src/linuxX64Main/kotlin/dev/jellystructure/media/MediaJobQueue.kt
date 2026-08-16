@@ -570,7 +570,13 @@ class MediaJobQueue(
     private suspend fun postWriteSync(item: dev.jellystructure.model.MediaItem) {
         val cfg = configStore.current
         if (!item.jellyfinId.isNullOrBlank() && cfg.apiKeys.jellyfinUrl.isNotBlank()) {
-            jellyfinClient.refreshItem(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken, item.jellyfinId)
+            // Bug fix (live report, 2026-08-16) — this ran after a reorder/remove job had just physically
+            // remuxed the file (its actual stream layout on disk changed), but used the default
+            // ValidationOnly mode, which "skips the re-read if the item was recently refreshed"
+            // (JellyfinClient.refreshItem's own doc). A remux is exactly the case that must force a
+            // real re-read regardless of recency — otherwise Jellyfin's cached MediaStreams can stay
+            // stale relative to the new on-disk layout until some unrelated later full sync catches up.
+            jellyfinClient.refreshItem(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken, item.jellyfinId, full = true)
         }
         arrRescan?.nudge(item)
     }
