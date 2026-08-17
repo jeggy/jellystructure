@@ -61,7 +61,18 @@ services:
       - testnet
 
   app:
-    build: .
+    build:
+      context: .
+      # CI perf fix (2026-08-18) — ci.yml's old BUILDX_CACHE_FROM/BUILDX_CACHE_TO env vars were never
+      # actually consumed by anything: `docker compose build` doesn't read those as a recognized
+      # convention, so Docker layer caching has been a complete no-op since it was introduced — every
+      # CI run has always done a full cold rebuild. cache_from/cache_to here are the real, Compose
+      # Specification-supported way to wire this. Distinct cache scope per image (this repo now builds
+      # two) so a webpack/Dockerfile change to one doesn't thrash the other's cache.
+      cache_from:
+        - type=local,src=${BUILDX_CACHE_DIR:-/tmp/.buildx-cache}/app
+      cache_to:
+        - type=local,dest=${BUILDX_CACHE_DIR:-/tmp/.buildx-cache}/app-new,mode=max
     user: "0:0"
     ports:
       - "9505:9505"
@@ -98,6 +109,10 @@ services:
     build:
       context: .
       dockerfile: ravilo-web/Dockerfile
+      cache_from:
+        - type=local,src=${BUILDX_CACHE_DIR:-/tmp/.buildx-cache}/ravilo-web
+      cache_to:
+        - type=local,dest=${BUILDX_CACHE_DIR:-/tmp/.buildx-cache}/ravilo-web-new,mode=max
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:8080/"]
       interval: 3s

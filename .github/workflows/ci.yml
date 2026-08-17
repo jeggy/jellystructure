@@ -8,7 +8,16 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    # 2026-08-18: measured locally that `app` alone spends ~9.5 of its ~10.4 total build minutes in
+    # the two gradlew RUN steps (linkReleaseExecutableLinuxX64 + wasmJsBrowserDistribution) even with
+    # cache_from/cache_to correctly wired -- BuildKit never layer-caches a RUN step that uses
+    # `--mount=type=cache` (the gradle/konan/npm mounts here), so those steps always re-execute from
+    # cold regardless of caching. That's on a many-core dev box; GitHub's 2-core ubuntu-latest runners
+    # are meaningfully slower for CPU-bound Kotlin/Wasm compilation, and this job now builds two full
+    # Kotlin/Wasm images (app + ravilo-web) plus the mock stack + Playwright run. 60min was cutting a
+    # genuinely-slow-but-not-hung run too close; the actual hang risk (headless Chromium/WebGL) is
+    # already fixed at the test level, so a generous ceiling here is just headroom, not risk.
+    timeout-minutes: 120
 
     steps:
       - uses: actions/checkout@v4
@@ -33,7 +42,11 @@ jobs:
         uses: actions/cache@v4
         with:
           path: /tmp/.buildx-cache
-          key: ${{ runner.os }}-buildx-${{ hashFiles('Dockerfile', 'build.gradle.kts', 'gradle/libs.versions.toml') }}
+          # Hashes both Dockerfiles (app + ravilo-web) and the webpack loaders that patch the
+          # generated wasm bootstrap, since a change to either invalidates only that image's cache
+          # scope (docker-compose.test.yml gives app/ and ravilo-web/ each their own subdirectory
+          # under this path).
+          key: ${{ runner.os }}-buildx-${{ hashFiles('Dockerfile', 'ravilo-web/Dockerfile', 'build.gradle.kts', 'gradle/libs.versions.toml', 'ravilo-web/webpack.config.d/**') }}
           restore-keys: ${{ runner.os }}-buildx-
 
       - name: Run test stack
@@ -46,14 +59,18 @@ jobs:
           FIXTURE_DIR: /tmp/jellystructure-fixtures
           JELLYFIN_USER: admin
           JELLYFIN_PASS: password
-          BUILDX_CACHE_FROM: type=local,src=/tmp/.buildx-cache
-          BUILDX_CACHE_TO: type=local,dest=/tmp/.buildx-cache-new,mode=max
+          # Consumed directly by docker-compose.test.yml's cache_from/cache_to build keys (the
+          # Compose Specification's real mechanism for this) -- the old BUILDX_CACHE_FROM/
+          # BUILDX_CACHE_TO env vars here were never read by anything and made caching a no-op.
+          BUILDX_CACHE_DIR: /tmp/.buildx-cache
 
       - name: Move Docker cache
         if: always()
         run: |
-          rm -rf /tmp/.buildx-cache
-          mv /tmp/.buildx-cache-new /tmp/.buildx-cache 2>/dev/null || true
+          for img in app ravilo-web; do
+            rm -rf "/tmp/.buildx-cache/$img"
+            mv "/tmp/.buildx-cache/$img-new" "/tmp/.buildx-cache/$img" 2>/dev/null || true
+          done
 
       - name: Upload Playwright report
         if: always()
