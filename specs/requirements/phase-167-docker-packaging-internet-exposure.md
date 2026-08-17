@@ -322,3 +322,43 @@ operational task with no code shape:
 - Push a real `v1.0` tag against a throwaway branch/fork first if possible, or dry-run the workflow
   (`workflow_dispatch`) before trusting the real tag push, to confirm both images actually land in GHCR
   with the right two tags each and the package is private.
+
+## 6. Real-world outcome (2026-08-17)
+
+Pushed to `main` and tagged `v1.0` — both images built and landed in GHCR with all three tags
+(`1.0`/`latest`/commit-SHA) each, confirmed via the workflow's own run logs (`gh` didn't have
+package-read scope locally, so this was verified from the `docker/build-push-action` push-manifest
+lines directly rather than a separate registry query).
+
+**`ci.yml` broke on the same two commits** — traced to two issues, neither in scope of this spec's FRs
+but found and fixed while getting CI green again:
+
+1. **The Playwright golden snapshots (`shell-dark-chromium-linux.png`/`shell-light-chromium-linux.png`)
+   went stale.** Self-hosting the fonts (FR-167-3) shifted text metrics just enough (~4% of pixels) to
+   exceed `shell-layout.spec.ts`'s `maxDiffPixelRatio: 0.02` — confirmed by viewing the actual diff image
+   (overlapping ghost text at every label, the classic signature of a font-metrics change, not a layout
+   bug). Regenerated both snapshots (`playwright test --update-snapshots`) against the corrected
+   rendering.
+2. **`shell-layout.spec.ts` logs in fresh in all 3 of its tests**, unlike `scan-fixture.spec.ts` and
+   `bazarr-dashboard.spec.ts`, which already share one `beforeAll` login specifically because — per their
+   own comments — the app's login-rate-limiter (5/60s) is shared across the *whole* Playwright run, not
+   per file. A full-suite run makes 7 login POSTs (auth ×2 + bazarr-dashboard ×1 + scan-fixture ×1 +
+   shell-layout ×3) well inside one rate-limit window, tripping it — confirmed live via the
+   `error-context.md` page snapshot literally showing "Too many login attempts — try again in a minute"
+   on the login form. This bug predates this phase (the file was added 2026-08-13, the shared-login
+   pattern already existed elsewhere by then) and was only ever exposed because (1)'s extra retries
+   pushed the cumulative count over the edge in the specific CI runs this phase's commits triggered.
+   Fixed `shell-layout.spec.ts` to match the established `test.describe.serial` + `beforeAll` pattern —
+   one login, theme/viewport switches via `localStorage` + `page.reload()` instead of a fresh login per
+   test.
+
+Both fixes verified against a real local Docker Compose test stack (not just re-reading CI logs) —
+matching [[feedback-test-docker-images-as-nonroot]]'s spirit of checking real behavior, not configuration.
+One dead end worth recording: an initial local repro attempt gave misleading results because (a) running
+Playwright from the host instead of the `playwright` service in `docker-compose.test.yml` breaks Docker
+DNS resolution (`jellyfin-mock` doesn't resolve outside the `testnet` network), and (b) repeated local
+runs against the same bind-mounted `config-test/`/fixture directories accumulate real state (the test
+suite's own file mutations, e.g. `scan-fixture.spec.ts` actually calls `mkvpropedit` on the fixture MKV)
+that a real CI run never has, since CI always starts from a clean checkout. Both are testing-environment
+artifacts, not real bugs — resolved by running the actual `playwright` compose service and rebuilding
+fixtures fresh between attempts.

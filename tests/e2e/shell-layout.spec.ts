@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, Page, Browser } from "@playwright/test";
 
 // Regression coverage for the app shell (sidebar nav + topbar) — added 2026-08-13 after a live
 // report of the sidebar rendering as a blank column (nav links/logo invisible, only the theme
@@ -8,7 +8,7 @@ import { test, expect } from "@playwright/test";
 const JF_USER = process.env.JELLYFIN_USER ?? "admin";
 const JF_PASS = process.env.JELLYFIN_PASS ?? "password";
 
-async function login(page: import("@playwright/test").Page) {
+async function login(page: Page) {
   await page.goto("/login");
   await page.fill('[id="username"], input[name="username"], input[type="text"]', JF_USER);
   await page.fill('[id="password"], input[name="password"], input[type="password"]', JF_PASS);
@@ -16,11 +16,38 @@ async function login(page: import("@playwright/test").Page) {
   await expect(page.locator('.statgrid, h1:has-text("Dashboard")').first()).toBeVisible({ timeout: 10_000 });
 }
 
-test.describe("App shell layout", () => {
+// Fix (2026-08-17) — one shared login (beforeAll/afterAll) instead of one per test, same fix
+// scan-fixture.spec.ts and bazarr-dashboard.spec.ts already apply and document: the app's
+// login-rate-limiter (5 attempts/60s) is shared across the WHOLE Playwright run, not per file. This
+// spec alone used to log in 3 times; combined with auth.spec.ts's 2 + bazarr-dashboard.spec.ts's 1 +
+// scan-fixture.spec.ts's 1, a clean full-suite run makes 7 login POSTs well inside one rate-limit
+// window and trips it — confirmed live via the error-context page snapshot showing "Too many login
+// attempts — try again in a minute" on the login form. Theme/viewport switches between tests now set
+// localStorage directly and reload() (the session cookie survives a reload) instead of re-logging in
+// via addInitScript + a fresh page.
+async function setLocalStorageAndReload(page: Page, entries: Record<string, string>) {
+  await page.evaluate((e) => {
+    for (const [k, v] of Object.entries(e)) window.localStorage.setItem(k, v);
+  }, entries);
+  await page.reload();
+  await expect(page.locator('.statgrid, h1:has-text("Dashboard")').first()).toBeVisible({ timeout: 10_000 });
+}
+
+test.describe.serial("App shell layout", () => {
+  let page: Page;
+
+  test.beforeAll(async ({ browser }: { browser: Browser }) => {
+    page = await browser.newPage();
+    await login(page);
+  });
+
+  test.afterAll(async () => {
+    await page.close();
+  });
+
   for (const theme of ["dark", "light"] as const) {
-    test(`sidebar nav + logo are visible in ${theme} mode`, async ({ page }) => {
-      await page.addInitScript((t) => window.localStorage.setItem("js-theme", t), theme);
-      await login(page);
+    test(`sidebar nav + logo are visible in ${theme} mode`, async () => {
+      await setLocalStorageAndReload(page, { "js-theme": theme });
 
       await expect(page.locator(".app-side")).toBeVisible();
       await expect(page.locator(".app-side .logo")).toBeVisible();
@@ -57,10 +84,9 @@ test.describe("App shell layout", () => {
     });
   }
 
-  test("sidebar nav stays visible on a short viewport (Towo nav enabled)", async ({ page }) => {
-    await page.addInitScript(() => window.localStorage.setItem("js-towo", "1"));
+  test("sidebar nav stays visible on a short viewport (Towo nav enabled)", async () => {
     await page.setViewportSize({ width: 1400, height: 640 });
-    await login(page);
+    await setLocalStorageAndReload(page, { "js-towo": "1" });
 
     await expect(page.locator('.app-side a.nav[href="#/dashboard"]')).toBeVisible();
     const navBox = await page.locator('.app-side a.nav[href="#/dashboard"]').boundingBox();
