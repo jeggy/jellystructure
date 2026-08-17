@@ -514,7 +514,14 @@ class HomeFeedService(
         // pool is now up to 200 entries (was 20), and this runs on every home/channel load.
         val byJellyfinId = all.asSequence().mapNotNull { mi -> mi.jellyfinId?.let { it to mi } }.toMap()
 
-        for (play in resumeItems) {
+        // R198 — Jellyfin's `SortBy=DatePlayed&SortOrder=Descending` on this endpoint is a request, not a
+        // guarantee (confirmed live: two adjacent items came back out of that order while the surrounding
+        // ~90 were fine). Never trust the upstream order for recency — own it here, the same way
+        // TvRoutes.kt's watch-history merge already does. Null/unparseable LastPlayedDate sorts last.
+        val resumeItemsSorted = resumeItems.sortedByDescending { play ->
+            play.userData?.lastPlayedDate?.let { dev.jellystructure.util.isoToEpochSeconds(it) } ?: 0L
+        }
+        for (play in resumeItemsSorted) {
             // R185 — Jellyfin's own IsResumable filter is PlaybackPositionTicks > 0 only, with no Played
             // check; the two can disagree (stale/leaked position outliving a played flag — see the spec)
             // regardless of what caused it. Never show an already-watched title as in-progress.
