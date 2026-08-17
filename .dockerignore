@@ -1,0 +1,26 @@
+# FR-167-1 — the build context was 3.4GB and included config/ (live secrets: Jellyfin admin token,
+# TMDB key, *arr keys, plus jellystructure.db holding plaintext session tokens). Not leaking today
+# (Dockerfile only COPYs specific paths, never config/), but one future `COPY . .` would bake it into a
+# published image layer permanently. This also just makes local `docker build` not ship 3.4GB up front.
+config/
+build/
+.git/
+.gradle/
+.kotlin/
+node_modules/
+**/build/
+**/node_modules/
+
+# Android-only modules — no Android SDK in the build container, and the Dockerfile's builder stage
+# never COPYs these.
+ravilo-android/
+ravilo-phone/
+
+# Unrelated to the backend/frontend images.
+towo-runner/
+tests/
+
+*.log
+backend.log
+qodana-baseline.sarif.json
+.qodana/
