@@ -1,18 +1,18 @@
 name: Publish Docker images
 
-# FR-167-6/7 — publish-only, deliberately gated behind a real version tag. ci.yml already builds and
-# tests the Docker image on every push/PR; this workflow never runs on a plain push to main, so `latest`
-# only ever moves on a deliberate tagged release, not on every commit.
+# FR-167-6/7 — publish-only, gated behind a real GitHub Release, not a bare tag push. ci.yml already
+# builds and tests the Docker image on every push/PR; this workflow only runs when someone deliberately
+# publishes a release (GitHub UI: Releases -> Draft a new release -> Publish release), so `latest` only
+# ever moves on that action, never on every commit or even every tag push.
 #
 # Versioning is a plain two-part number (MAJOR.MINOR), NOT SemVer — no patch segment, no pre-release/
-# build metadata. Starts at 1.0. The git tag is the single source of truth (no VERSION file to keep in
-# sync); tag shape is validated below and anything outside v<digits>.<digits> fails the job rather than
-# silently no-op'ing or publishing something unexpected.
+# build metadata. Starts at 1.0. The release's tag is the single source of truth (no VERSION file to keep
+# in sync); tag shape is validated below and anything outside v<digits>.<digits> fails the job rather
+# than silently no-op'ing or publishing something unexpected.
 
 on:
-  push:
-    tags:
-      - "v*"
+  release:
+    types: [published]
   workflow_dispatch:
     inputs:
       version:
@@ -28,20 +28,23 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.resolve.outputs.version }}
+      tag: ${{ steps.resolve.outputs.tag }}
     steps:
       - name: Resolve and validate version
         id: resolve
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            RAW="${{ inputs.version }}"
+            TAG="v${{ inputs.version }}"
           else
-            RAW="${GITHUB_REF_NAME#v}"
+            TAG="${{ github.event.release.tag_name }}"
           fi
+          RAW="${TAG#v}"
           if ! [[ "$RAW" =~ ^[0-9]+\.[0-9]+$ ]]; then
-            echo "::error::Version '$RAW' is not a plain MAJOR.MINOR number (e.g. 1.0) — refusing to publish."
+            echo "::error::Version '$RAW' (from tag '$TAG') is not a plain MAJOR.MINOR number (e.g. 1.0) — refusing to publish."
             exit 1
           fi
           echo "version=$RAW" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
   publish:
     needs: version
@@ -56,8 +59,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          # workflow_dispatch re-publishes an existing tag's commit, not whatever's on the default branch.
-          ref: ${{ github.event_name == 'workflow_dispatch' && format('v{0}', inputs.version) || github.ref }}
+          ref: ${{ needs.version.outputs.tag }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
