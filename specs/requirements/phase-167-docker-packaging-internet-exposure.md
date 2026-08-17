@@ -236,14 +236,19 @@ shape (e.g. an accidental `v1.0.1` or `v1.0-beta`) does not trigger a publish �
 
 New `.github/workflows/publish.yml`:
 
-- **Trigger:** `push: tags: ['v*']`, filtered in-job to the `v[0-9]+.[0-9]+` shape (FR-167-6) so a
-  malformed tag fails loudly instead of silently no-op'ing or silently publishing something wrong.
-  Also `workflow_dispatch` with a required `version` input (same shape, validated the same way), for
-  re-publishing an existing tag's images without cutting a new tag.
-- **Does not trigger on every push to `main`.** `ci.yml`'s existing build-and-test-only Docker build
-  (via `docker-compose.test.yml`) already validates every commit builds; this workflow is publish-only
-  and deliberately gated behind a deliberate version tag, per the user's "not always just pushing at
-  latest" instruction.
+- **Trigger — revised mid-implementation (2026-08-17), per explicit correction**: `release: types:
+  [published]`, not a bare tag push. *"I think we should change it, so the building images and storing
+  them in github, will only be a part of a github release. So I should manually go in and create a
+  release and then the CI will do it's work."* The version is read from `github.event.release.tag_name`,
+  filtered to the `v[0-9]+.[0-9]+` shape (FR-167-6) so a malformed tag fails loudly instead of silently
+  no-op'ing or publishing something wrong. Also `workflow_dispatch` with a required `version` input (same
+  shape, validated the same way, checks out `v<version>`), for re-publishing an existing release's images
+  without cutting a new one. A bare `git tag` + `git push` no longer triggers anything — only actually
+  publishing a release through the GitHub UI (or `gh release create`) does.
+- **Does not trigger on every push to `main`, or on a tag push alone.** `ci.yml`'s existing
+  build-and-test-only Docker build (via `docker-compose.test.yml`) already validates every commit builds;
+  this workflow is publish-only and gated behind a deliberate release action, per the user's "not always
+  just pushing at latest" instruction, tightened further from "any version tag" to "a published release."
 - **Two images built and pushed, both from this one workflow:**
   - `ghcr.io/jeggy/jellystructure` (existing `Dockerfile`)
   - `ghcr.io/jeggy/ravilo-web` (new `ravilo-web/Dockerfile`, FR-167-5)
