@@ -265,6 +265,9 @@ tasks.register<Copy>("syncDesignAssets") {
     group = "application"
     from(rootProject.layout.projectDirectory.dir("design/app")) {
         include("wf.css", "app.css", "detail.css", "metadata.css", "seeding.css", "seeding.js", "towo.css", "segments.css")
+        // FR-167-3 — self-hosted Space Grotesk/Sora/JetBrains Mono woff2 files wf.css now references
+        // via relative @font-face url()s, replacing the old Google Fonts @import.
+        include("fonts/**")
     }
     from(rootProject.layout.projectDirectory.dir("design")) {
         include("flags.css")
@@ -294,6 +297,8 @@ tasks.named("wasmJsBrowserDistribution") {
         copy {
             from(rootProject.layout.projectDirectory.dir("design/app")) {
                 include("wf.css", "app.css", "detail.css", "metadata.css", "seeding.css", "seeding.js", "towo.css", "segments.css")
+                // FR-167-3 — see syncDesignAssets above.
+                include("fonts/**")
             }
             from(rootProject.layout.projectDirectory.dir("design")) {
                 include("flags.css")

@@ -262,8 +262,17 @@ fun startServer(
         // TLS-terminating reverse proxy anyway (see D1 in the deployment guide) — it's a no-op until
         // then, not a footgun. The CSP here is deliberately permissive enough for a Kotlin/WASM SPA
         // (needs 'wasm-unsafe-eval'/'unsafe-eval' to instantiate its own compiled module, and this
-        // codebase's admin UI leans on inline styles) — tighten it once verified against a real
-        // browser session; nothing here should regress the app either way.
+        // codebase's admin UI leans on inline styles).
+        //
+        // Security fix (FR-167-3/4, 2026-08-17) — this CSP was never checked in a real browser and was
+        // wrong in two ways, both confirmed live: (1) wf.css used to @import Space Grotesk/Sora/
+        // JetBrains Mono from fonts.googleapis.com/fonts.gstatic.com, which style-src/font-src 'self'
+        // silently blocked — the admin UI's entire type system was falling back to system fonts with no
+        // visible error. Fixed by self-hosting the fonts (design/app/fonts/, wf.css) instead of
+        // allowlisting the external host — one fewer third-party dependency for an internet-facing
+        // service, and style-src/font-src stay 'self'. (2) No frame-src meant it inherited default-src
+        // 'self', which blocks Ravilo's YouTube/Vimeo trailer <iframe> (TrailerEmbed.kt, R163) — added
+        // below, scoped to exactly the two origins trailerEmbedUrl() ever constructs.
         intercept(ApplicationCallPipeline.Plugins) {
             call.response.headers.append("X-Content-Type-Options", "nosniff")
             call.response.headers.append("X-Frame-Options", "DENY")
@@ -278,6 +287,7 @@ fun startServer(
                     "font-src 'self' data:; " +
                     "connect-src 'self' ws: wss: https:; " +
                     "media-src 'self' blob: https:; " +
+                    "frame-src https://www.youtube-nocookie.com https://player.vimeo.com; " +
                     "object-src 'none'; " +
                     "frame-ancestors 'none'; " +
                     "base-uri 'self'",

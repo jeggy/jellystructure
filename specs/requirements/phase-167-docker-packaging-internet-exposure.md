@@ -87,6 +87,14 @@ In the existing `Dockerfile`, runtime stage:
      CMD wget -qO- http://127.0.0.1:9505/api/health || exit 1
    ```
    (`wget` is already installed for this exact purpose in `docker-compose.test.yml`'s healthcheck.)
+4. **Real defect found live-testing this image** (running it as its own non-root `USER jellystructure`
+   — the default, and what `docker-compose.yml`'s `user: "${PUID:-1000}:${PGID:-1000}"` runs as, unlike
+   `docker-compose.test.yml`'s `user: "0:0"`): `DB_FILE` had no env default set here, so it fell back to
+   `Main.kt`'s `./data/jellystructure.db` — relative to `WORKDIR /app`, root-owned, not writable by
+   uid 1000. First boot crashed outright (`mkdir failed: Permission denied`) before the HTTP listener
+   ever came up — the CI test stack never caught it because it runs as root. Add
+   `ENV DB_FILE=/config/jellystructure.db` alongside the existing `CONFIG_FILE`/`SESSIONS_FILE` — this
+   also fixes `ACTIVITY_LOG_FILE`, which derives its own default from `DB_FILE`'s directory.
 
 Not doing in this pass (explicitly out of scope, see §3): multi-arch builds, distroless/smaller base
 image, stripping the ffmpeg dependency tree down.
@@ -125,15 +133,45 @@ frame-src https://www.youtube-nocookie.com https://player.vimeo.com;
 
 Matching exactly the two origins `TrailerEmbed.kt`'s `trailerEmbedUrl()` ever constructs.
 
-### FR-167-5 — New `ravilo-web` Dockerfile
+### FR-167-5 — New `ravilo-web` image: a plain Kotlin service, no baked-in reverse proxy
 
-New `ravilo-web/Dockerfile`, static-file image:
+**Revised mid-implementation (2026-08-17)**, per explicit correction: *"instead of caddy, we just want
+simple Kotlin services that people on their own can put behind caddy or whatever."* Both images are
+Kotlin services with no reverse-proxy technology baked in — the operator fronts them with whatever they
+already run (Caddy, nginx, a tunnel, nothing). The original Caddy-based sketch below is **superseded**;
+kept struck through for the record rather than deleted, since the reasoning ("self-contained bundle,
+verified live") still stands and just moves to a different server.
+
+New minimal module **`:web-static-server`** — linuxX64 only, Ktor CIO, no dependency on the root
+project's backend (which would drag in SQLDelight/sqlite, `ktor-client-curl`, config/media logic — far
+too heavy for "serve some static files"). Reuses the exact serving logic already proven in
+`Server.kt`'s `serveFrontendFile`/`serveStaticBytes`/`contentTypeFor` (path-traversal guard, ETag,
+per-extension content type, `no-cache` on `index.html` vs. `max-age=3600, must-revalidate` elsewhere) —
+duplicated rather than shared, deliberately: this new module's whole point is having no dependency on the
+big root project, and ~70 lines of stable, already-tested logic is a reasonable place to accept
+duplication over that coupling.
+
+```kotlin
+// web-static-server/src/linuxX64Main/kotlin/dev/jellystructure/webstatic/Main.kt (shape, not final)
+fun main() {
+    val dir = env("STATIC_DIR", "/srv")
+    val port = env("SERVER_PORT", "8080").toIntOrNull() ?: 8080
+    embeddedServer(CIO, configure = { connectors.add(EngineConnectorBuilder().apply { this.port = port }) }) {
+        routing { get("{...}") { call.serveStaticFile(dir, call.request.path()) } }
+    }.start(wait = true)
+}
+```
+
+Generic on purpose (`STATIC_DIR`/`SERVER_PORT` env vars, same naming convention as the main backend) —
+not hardcoded to Ravilo, so the same tiny binary is reusable if another static bundle ever needs the same
+treatment.
+
+`ravilo-web/Dockerfile` becomes two-stage, both stages plain Kotlin/JDK, no `caddy:2-alpine`:
 
 ```dockerfile
 # syntax=docker/dockerfile:1
 FROM eclipse-temurin:21-jdk AS builder
 WORKDIR /app
-# same node/libatomic1 setup as the main Dockerfile's builder stage, minus the linuxX64-only deps
 RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates libatomic1 && \
     curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
     apt-get install -y --no-install-recommends nodejs && \
@@ -145,44 +183,43 @@ COPY shared ./shared
 COPY ravilo-ui ./ravilo-ui
 COPY ravilo-web ./ravilo-web
 COPY ravilo-tizen ./ravilo-tizen
+COPY web-static-server ./web-static-server
 COPY design ./design
 COPY src ./src
-RUN --mount=type=cache,target=/root/.gradle --mount=type=cache,target=/root/.konan \
-    --mount=type=cache,target=/root/.npm \
-    ./gradlew :ravilo-web:wasmJsBrowserDistribution --no-daemon
+RUN --mount=type=cache,id=gradle-ravilo-web,target=/root/.gradle \
+    --mount=type=cache,id=konan-ravilo-web,target=/root/.konan \
+    --mount=type=cache,id=npm-ravilo-web,target=/root/.npm \
+    ./gradlew :ravilo-web:wasmJsBrowserDistribution :web-static-server:linkReleaseExecutableLinuxX64 --no-daemon
 
-FROM caddy:2-alpine
-COPY --from=builder /app/ravilo-web/build/dist/wasmJs/productionExecutable/ /srv/
-COPY ravilo-web/Caddyfile /etc/caddy/Caddyfile
-EXPOSE 80
+FROM debian:bookworm-slim
+RUN adduser --system --uid 1000 webstatic
+COPY --from=builder --chmod=755 --chown=webstatic \
+    /app/web-static-server/build/bin/linuxX64/releaseExecutable/web-static-server.kexe /app/web-static-server
+COPY --from=builder --chown=webstatic /app/ravilo-web/build/dist/wasmJs/productionExecutable/ /srv/
+USER webstatic
+EXPOSE 8080
+ENV STATIC_DIR=/srv
+ENV SERVER_PORT=8080
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD wget -qO- http://127.0.0.1:8080/ || exit 1
+CMD ["/app/web-static-server"]
 ```
 
-`ravilo-web/Caddyfile`:
+No `wget` needed in the runtime base beyond what `debian:bookworm-slim` — matching the main Dockerfile,
+add it explicitly (`apt-get install wget`) since the healthcheck needs it and the slim base doesn't ship
+one.
 
-```
-:80 {
-    root * /srv
-    encode gzip zstd
-    @hashed path_regexp \.(wasm|js)$
-    header @hashed Cache-Control "public, max-age=31536000, immutable"
-    header /index.html Cache-Control "no-cache"
-    header Content-Type "application/wasm" {
-        match path *.wasm
-    }
-    file_server
-    try_files {path} /index.html
-}
-```
+This stays **standalone-servable** — the whole reason the investigation checked the bundle has no
+external refs — independent of whether it ends up deployed standalone or the existing `RAVILO_WEB_DIR`
+in-backend path is used instead. That remains a deployment-time choice (§3).
 
-This is intentionally **standalone-servable** (matches how the investigation verified the bundle has no
-external refs), independent of whether it ends up deployed standalone or the existing `RAVILO_WEB_DIR`
-in-backend path is used instead — that's a deployment-time choice, not something this spec decides (see
-§3).
+~~Caddy-based sketch (superseded, kept for the record):~~ a `caddy:2-alpine` runtime stage with a baked-in
+`ravilo-web/Caddyfile` doing gzip/zstd + immutable caching + `Content-Type: application/wasm`. Dropped
+because it bakes a specific reverse-proxy technology into the image, which the operator should own.
 
-Drop `ravilo.js.map` (1.7 MB source map) from what ships — add `-Pkotlin.wasm.sourceMapsEnabled=false` (or
-equivalent Gradle property; confirm the exact flag against the Kotlin/Wasm plugin version pinned in
-`gradle/libs.versions.toml` during implementation) to the production build, or `RUN rm` it in the builder
-stage as a fallback if no build-time flag exists.
+Drop `ravilo.js.map` (1.7 MB source map) from what ships — added a
+`ravilo-web/webpack.config.d/production-no-sourcemap.js` override (`config.devtool = false` when
+`config.mode === 'production'`), scoped so `./gradlew runDev`'s dev server keeps source maps.
 
 ### FR-167-6 — Two-part version numbers, not SemVer
 
@@ -247,11 +284,10 @@ operational task with no code shape:
 
 ## 4. Open questions
 
-1. **`caddy:2-alpine` vs `nginx:alpine` for the ravilo-web runtime image.** Caddy was picked in FR-167-5
-   for automatic gzip/zstd and a much shorter Caddyfile than an equivalent nginx config, and because the
-   deployment host already runs Caddy (one less server technology in play). nginx is the more
-   conventional choice for "serve a static SPA" and has a smaller base image. Recommendation: Caddy, for
-   the config-brevity and homogeneity reasons above; author's call if that's wrong.
+1. ~~`caddy:2-alpine` vs `nginx:alpine` for the ravilo-web runtime image~~ — **resolved by explicit
+   correction**: neither. Both images are plain Kotlin services (FR-167-5's `:web-static-server`); no
+   reverse-proxy technology is baked into either image, so operators front them with whatever they
+   already run.
 2. **Should `publish.yml` also attach the git tag's own commit SHA as a third image tag** (alongside
    `<version>` and `latest`), for exact provenance? Low cost, no real downside. Recommendation: yes, add
    it, but it's not load-bearing for anything in this spec.

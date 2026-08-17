@@ -73,6 +73,10 @@ check "$WF" "age-rating cascade list (.rc-list)" ".rc-list {"
 check "$WF" "age-rating cascade item (.rc-item)" ".rc-item {"
 # Error/alert banner.
 check "$WF" "alert banner (.alert-bad)" ".alert-bad {"
+# FR-167-3 — self-hosted fonts (design/app/fonts/*.woff2), replacing the Google Fonts @import the CSP
+# was silently blocking. A design sync reverting this to the @import breaks admin typography again with
+# no visible error, so it's fenced the same as everything else here.
+check "$WF" "self-hosted fonts, not the Google Fonts @import" "url('fonts/jetbrains-mono.woff2')"
 
 if [ "$fail" -eq 0 ]; then
   echo "OK — every design-sync-fragile CSS rule tracked here is present."
