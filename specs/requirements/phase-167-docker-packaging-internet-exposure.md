@@ -417,9 +417,20 @@ not after.
   `ravilo-web` service running the real `ravilo-web/Dockerfile` image) and therefore `ci.yml`. Verified
   green against the real compose stack end to end, alongside the rest of the suite (10 passed, 2
   pre-existing skips) — not run in isolation.
-- The test asserts on the Compose canvas actually resizing off its default dimensions plus zero page
-  errors, **not** DOM text content — this is a Compose Canvas (WebGL/Skia) app, not DOM-based UI, so
-  "Sign in" is rendered pixels, not accessible DOM text; a `getByText("Sign in")` assertion was tried
-  first and correctly failed with "element(s) not found" even while a screenshot taken at that exact
-  moment showed the text plainly on screen — confirms this is the wrong locator strategy for this
-  rendering technology, not a rendering bug, and was removed from the final test.
+- **The test does not check DOM text or poll the canvas's bounding box — both were tried and rejected.**
+  A `getByText("Sign in")` assertion failed with "element(s) not found" even while a screenshot taken at
+  that exact moment showed the text plainly on screen: this is a Compose Canvas (WebGL/Skia) app, not
+  DOM-based UI, so rendered text is pixels, not accessible DOM content — wrong locator strategy for this
+  rendering technology, not a bug. A follow-up version polled `#ComposeTarget`'s bounding box (waiting
+  for it to resize off its 300×150 default) instead — this one made it past local verification (10
+  passed, including headed-Chromium screenshot proof) but **hung the real GitHub Actions job for over an
+  hour** with no error and no timeout ever firing; cancelled manually. Headless Chromium's WebGL/
+  compositor behavior on an actual CI runner (no GPU) is evidently unreliable in ways this project's own
+  local Docker testing didn't surface, and in a way that didn't respect Playwright's own `expect.poll`
+  timeout — a bounded *failure* would have been fine, an unbounded *hang* is not. Final test: a single
+  `page.goto()` with an explicit timeout, then a fixed `page.waitForTimeout()` (no browser round-trip,
+  can't hang), then a plain check of `pageerror` events collected passively during that wait — the only
+  browser-protocol call in the whole test is the `goto()`, which has its own timeout; everything after it
+  is local. `test.setTimeout(30_000)` as a hard backstop regardless. This deliberately gives up verifying
+  that Compose actually renders (confirmed separately, once, via the local headed-Chromium screenshot
+  above) in exchange for a test that can fail but never hang the pipeline — the right tradeoff for CI.
