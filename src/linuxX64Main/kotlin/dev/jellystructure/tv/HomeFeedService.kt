@@ -531,14 +531,17 @@ class HomeFeedService(
             val mediaItem = byJellyfinId[itemId] ?: continue
             val pct = play.userData?.playedPercentage?.toFloat()?.div(100f)
             // R113: carry the resumed episode's season/episode for the on-image badge (null for movies).
-            cards.add(mediaItem.toMediaCard(progressPct = pct, seasonNumber = play.seasonNumber, episodeNumber = play.episodeNumber))
+            // R199: fall back to jellystructure's own scanned episode number (Phase 152) whenever
+            // Jellyfin's own IndexNumber/ParentIndexNumber parse fails on the file's name.
+            val (s, e) = resolvedEpisodeNumbers(mediaItem, play.id, play.seasonNumber, play.episodeNumber)
+            cards.add(mediaItem.toMediaCard(progressPct = pct, seasonNumber = s, episodeNumber = e))
         }
 
         for (play in nextUpItems) {
             val itemId = play.seriesId ?: play.id
             if (!seen.add(itemId)) continue
             val mediaItem = byJellyfinId[itemId] ?: continue
-            val s = play.seasonNumber; val e = play.episodeNumber
+            val (s, e) = resolvedEpisodeNumbers(mediaItem, play.id, play.seasonNumber, play.episodeNumber)
             val label = if (s != null && e != null) "S${s}E${e} · ${play.name}" else play.name
             cards.add(mediaItem.toMediaCard(nextUpLabel = label, seasonNumber = s, episodeNumber = e))
         }
@@ -547,6 +550,16 @@ class HomeFeedService(
     }
 
     // ─── Helpers ──────────────────────────────────────────────────────────────
+
+    /** R199 — Jellyfin's IndexNumber/ParentIndexNumber parse can fail on scene-release filenames even
+     *  when jellystructure's own scanner already resolved the episode via Phase 152's filename fallback.
+     *  Each field falls back independently to the matching local [Episode] (by jellyfinId) so a badge
+     *  isn't suppressed just because Jellyfin's own metadata is incomplete for that one file. */
+    private fun resolvedEpisodeNumbers(mediaItem: MediaItem, jellyfinItemId: String, season: Int?, episode: Int?): Pair<Int?, Int?> {
+        if (season != null && episode != null) return season to episode
+        val local = mediaItem.episodes.firstOrNull { it.jellyfinId == jellyfinItemId } ?: return season to episode
+        return (season ?: local.seasonNumber) to (episode ?: local.episodeNumber)
+    }
 
     private fun MediaItem.toMediaCardOrNull(): MediaCard? {
         jellyfinId ?: return null
