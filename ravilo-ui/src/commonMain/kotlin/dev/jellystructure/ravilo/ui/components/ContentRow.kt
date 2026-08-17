@@ -130,8 +130,13 @@ fun <T> StaticContentRow(
             if (idx >= 0) {
                 runCatching { listState.scrollToItem(idx) }
                 runCatching { restoreFR.requestFocus() }
-                onRestored()
             }
+            // R200 — onRestored() must fire whether or not the target was found: it's the only thing
+            // that clears the caller's focusRowKey/focusItemKey, and a not-found item (this row's own
+            // composable freshly recreated after scrolling out of the LazyColumn's window and back in,
+            // most likely) used to leave that pointer dangling forever, permanently re-arming this row's
+            // restoreItemKey on every future recomposition with nothing to resolve it.
+            onRestored()
             restoredOnce = true
         }
     }

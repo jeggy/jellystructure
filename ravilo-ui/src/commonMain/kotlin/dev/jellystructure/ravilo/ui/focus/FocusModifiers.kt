@@ -33,15 +33,23 @@ enum class MediaKey { PLAY_PAUSE, PLAY, PAUSE, STOP, FAST_FORWARD, REWIND, NEXT,
  * `runCatching { fr.requestFocus() }` — if the target was mid-recomposition at the exact moment the
  * key press fired (a lazy-list item just got replaced/rekeyed, or scrolled back into range),
  * `requestFocus()` throws because the requester isn't attached to any focus target yet, and the
- * swallowed exception left the user stuck with the key press silently doing nothing. One retry after
- * the next frame (giving the new composable time to attach) covers that transient window without any
- * visible delay on the overwhelmingly common immediate-success path.
+ * swallowed exception left the user stuck with the key press silently doing nothing.
+ *
+ * R200: a single next-frame retry isn't always enough — reported live as a *permanent* stuck-on-hero/
+ * nav-bar state (confirmed via adb: the same bridge failed on every subsequent Down press across
+ * seconds, only an app restart recovered it), traced to a target composable that took more than one
+ * frame to (re)attach after a live feed refresh reordered rows. Retries once per frame for up to
+ * [maxFrames] frames, covering any recomposition slower than a single frame without adding visible
+ * delay on the overwhelmingly common immediate-success path (the loop exits the instant a retry
+ * succeeds).
  */
-fun requestFocusRetrying(scope: CoroutineScope, focusRequester: FocusRequester) {
+fun requestFocusRetrying(scope: CoroutineScope, focusRequester: FocusRequester, maxFrames: Int = 30) {
     if (runCatching { focusRequester.requestFocus() }.isSuccess) return
     scope.launch {
-        withFrameNanos {}
-        runCatching { focusRequester.requestFocus() }
+        repeat(maxFrames) {
+            withFrameNanos {}
+            if (runCatching { focusRequester.requestFocus() }.isSuccess) return@launch
+        }
     }
 }
 
