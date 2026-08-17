@@ -21,15 +21,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certifi
 COPY gradlew ./
 COPY gradle ./gradle
 COPY build.gradle.kts settings.gradle.kts gradle.properties ./
-# settings.gradle.kts unconditionally includes :shared, :ravilo-ui, :ravilo-web, and :ravilo-tizen
-# (the Android-only modules stay out since no Android SDK is present here) -- Gradle configures
-# the WHOLE project graph before running any task, so every included module's directory has to
-# exist before even a dependency-resolution pass, let alone the real build below. Without these,
-# ./gradlew fails immediately with "Configuring project ':shared' without an existing directory".
+# settings.gradle.kts unconditionally includes :shared, :ravilo-ui, :ravilo-web, :ravilo-tizen, and
+# (FR-167-5) :web-static-server (the Android-only modules stay out since no Android SDK is present
+# here) -- Gradle configures the WHOLE project graph before running any task, so every included
+# module's directory has to exist before even a dependency-resolution pass, let alone the real build
+# below. Without these, ./gradlew fails immediately with "Configuring project ':shared' without an
+# existing directory".
 COPY shared ./shared
 COPY ravilo-ui ./ravilo-ui
 COPY ravilo-web ./ravilo-web
 COPY ravilo-tizen ./ravilo-tizen
+COPY web-static-server ./web-static-server
 # wasmJsBrowserDistribution's doLast block (build.gradle.kts) copies wf.css/app.css/detail.css/
 # metadata.css/seeding.css/seeding.js + flags.css/flags/** from design/ into the production dist
 # so the admin frontend ships styled -- Gradle's Copy task silently no-ops when its `from` source
@@ -37,19 +39,23 @@ COPY ravilo-tizen ./ravilo-tizen
 # unstyled (every settings-tab section visible at once, since the CSS that hides inactive tabs
 # never loads) with no build-time error to point at the cause.
 COPY design ./design
-RUN --mount=type=cache,target=/root/.gradle \
-    --mount=type=cache,target=/root/.konan \
-    --mount=type=cache,target=/root/.npm \
+# FR-167-5 — explicit cache mount `id=`s (not just `target=`) so building this image and
+# ravilo-web/Dockerfile concurrently doesn't collide on the same shared BuildKit cache storage: two
+# Gradle processes writing the same unnamed /root/.gradle cache hit Gradle's own file lock
+# (journal-1.lock) and one build fails outright. Confirmed live building both images at once.
+RUN --mount=type=cache,id=gradle-jellystructure,target=/root/.gradle \
+    --mount=type=cache,id=konan-jellystructure,target=/root/.konan \
+    --mount=type=cache,id=npm-jellystructure,target=/root/.npm \
     ./gradlew dependencies --no-daemon 2>/dev/null || true
 
 COPY src ./src
-RUN --mount=type=cache,target=/root/.gradle \
-    --mount=type=cache,target=/root/.konan \
-    --mount=type=cache,target=/root/.npm \
+RUN --mount=type=cache,id=gradle-jellystructure,target=/root/.gradle \
+    --mount=type=cache,id=konan-jellystructure,target=/root/.konan \
+    --mount=type=cache,id=npm-jellystructure,target=/root/.npm \
     ./gradlew linkReleaseExecutableLinuxX64 --no-daemon
-RUN --mount=type=cache,target=/root/.gradle \
-    --mount=type=cache,target=/root/.konan \
-    --mount=type=cache,target=/root/.npm \
+RUN --mount=type=cache,id=gradle-jellystructure,target=/root/.gradle \
+    --mount=type=cache,id=konan-jellystructure,target=/root/.konan \
+    --mount=type=cache,id=npm-jellystructure,target=/root/.npm \
     ./gradlew wasmJsBrowserDistribution --no-daemon
 
 FROM debian:bookworm-slim
@@ -57,16 +63,20 @@ WORKDIR /app
 
 # libsqlite3-0 (runtime library, not the -dev package needed only at link time in the builder
 # stage) -- the binary dynamically links libsqlite3.so.0 and fails to even start without it.
+# libchromaprint-tools (fpcalc) -- FR-167-2. FfmpegRunner.computeFingerprint shells out to fpcalc for
+# cross-episode intro/credits fingerprinting (Phase 150/159) and documents it as "must be present on
+# PATH", but it was missing here. It fails closed (returns null, never throws), so without this the
+# feature doesn't error -- it just silently stops detecting anything, with zero symptoms.
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends ffmpeg mkvtoolnix wget libsqlite3-0 && \
+    apt-get install -y --no-install-recommends ffmpeg mkvtoolnix wget libsqlite3-0 libchromaprint-tools && \
     rm -rf /var/lib/apt/lists/*
 
 RUN adduser --system --uid 1000 jellystructure
 
-COPY --from=builder /app/build/bin/linuxX64/releaseExecutable/jellystructure.kexe /app/jellystructure
-COPY --from=builder /app/build/dist/wasmJs/productionExecutable/ /app/frontend/
-
-RUN chmod +x /app/jellystructure && chown -R jellystructure /app
+# --chmod/--chown on the COPY itself (FR-167-2) instead of a separate RUN chmod/chown layer -- the old
+# form duplicated the whole copied content (33MB) into a second layer just to flip permissions.
+COPY --from=builder --chmod=755 --chown=jellystructure /app/build/bin/linuxX64/releaseExecutable/jellystructure.kexe /app/jellystructure
+COPY --from=builder --chown=jellystructure /app/build/dist/wasmJs/productionExecutable/ /app/frontend/
 
 USER jellystructure
 EXPOSE 9505
@@ -74,6 +84,19 @@ EXPOSE 9505
 ENV FRONTEND_DIR=/app/frontend
 ENV CONFIG_FILE=/config/config.toml
 ENV SESSIONS_FILE=/config/sessions.json
+# FR-167-2 — real bug found live-testing this image as its own non-root USER (the default; also what
+# docker-compose.yml's `user: "${PUID:-1000}:${PGID:-1000}"` runs as): DB_FILE had no default here,
+# so it fell back to Main.kt's "./data/jellystructure.db" -- relative to WORKDIR /app, which is owned
+# by root and not writable by uid 1000. First boot crashed outright on `mkdir failed: Permission
+# denied` before ever reaching the HTTP listener. docker-compose.test.yml never caught this because it
+# runs the container as root (`user: "0:0"`). ACTIVITY_LOG_FILE derives its own default from DB_FILE's
+# directory (Main.kt), so this one variable fixes both.
+ENV DB_FILE=/config/jellystructure.db
 ENV SERVER_PORT=9505
+
+# /api/health is deliberately unauthenticated (a liveness probe for exactly this) -- see
+# AuthPlugin.kt's exact-match carve-out.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+    CMD wget -qO- http://127.0.0.1:9505/api/health || exit 1
 
 CMD ["/app/jellystructure"]
