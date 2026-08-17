@@ -362,3 +362,64 @@ suite's own file mutations, e.g. `scan-fixture.spec.ts` actually calls `mkvprope
 that a real CI run never has, since CI always starts from a clean checkout. Both are testing-environment
 artifacts, not real bugs — resolved by running the actual `playwright` compose service and rebuilding
 fixtures fresh between attempts.
+
+## 7. Live bug (2026-08-17): Ravilo web crashed on every load, both dev and production
+
+Reported live: opening `ravilo-web` (dev server, port 8082) threw
+`org_jetbrains_skiko_node_RenderNodeContextKt_RenderNodeContext_1nMake is not a function` on every load.
+Confirmed the same crash in the production build (`:ravilo-web:wasmJsBrowserDistribution`, minified to
+`Jk is not a function`) — not dev-only.
+
+**Root cause, traced with file:line precision, not guessed:**
+
+1. `ravilo-web/webpack.config.d/skiko.js` (dated before the Compose Multiplatform 1.8.1→1.9.3 bump,
+   commit `fda96349`, 2026-06-30) force-redirected `skiko.mjs` imports to a separate npm package copy —
+   stale since CMP 1.7+, where skiko's web runtime ships bundled directly inside the compiled app JS, no
+   redirect needed. Removed — legitimate cleanup, but (confirmed by testing) not sufficient alone; the
+   redirect's own target didn't even resolve to an existing path, so it was already inert.
+2. **The actual bug**: Kotlin/Wasm's *generated* bootstrap entry (`<module>.mjs`, not our code — verified
+   directly in `ravilo-web/build/compileSync/wasmJs/main/productionExecutable/optimized/
+   jellystructure-ravilo-web.mjs`) does `await WebAssembly.instantiateStreaming(...)` for the app's own
+   wasm, then calls `exports._start()` immediately — with **no wait at all** for skiko's separately-loaded
+   wasm to finish instantiating. Confirmed with Node's own `WebAssembly.Module.exports()` that the called
+   function genuinely exists in skiko.wasm's export table (1010 exports total) — this isn't a version
+   mismatch, it's a pure race. Since skiko.wasm (~8MB) is larger than the app's own wasm (~6MB) here, the
+   app routinely finishes loading first and calls into skiko's still-unset lazy-binding export stubs
+   (skiko.mjs's own pattern: `export let X = (...a) => (X = loadedWasm._[X])(...a)`, which throws exactly
+   this "is not a function" the instant `loadedWasm._` isn't populated yet). Verified via network-request
+   tracing that this ordering (app wasm's response arriving before skiko wasm's) is exactly what happens.
+
+skiko.mjs already exports a promise for exactly this purpose — `export const awaitSkiko =
+loadSkikoWASM().then(...)` — literally named for it. The generated bootstrap just never awaits it.
+
+**Fix**: a new webpack loader (`ravilo-web/webpack.config.d/await-skiko.js` +
+`await-skiko-loader.cjs`) patches the generated bootstrap file at build time: imports `awaitSkiko` from
+`./skiko.mjs` and awaits it immediately before `exports._start()`. Content-matched (looks for the literal
+`exports._start();` call), not filename-matched, since the generated module name is derived from Gradle
+project coordinates and isn't guaranteed stable. A source-level fix isn't possible since this file is
+regenerated fresh every build; a post-bundle patch was considered and rejected — tree-shaking could have
+already dropped `awaitSkiko`'s implementation if nothing in the original unmodified source graph
+references it, so the transform has to happen before webpack's own analysis sees the final module graph,
+not after.
+
+**Verification, not just "seems fixed":**
+- 3 consecutive fresh page loads in headless Chromium: zero `pageerror` events (was: fired every time).
+- Temporary console.log instrumentation (removed before commit) confirmed the actual sequence:
+  `awaitSkiko` resolves, `_start()` is called, `_start()` returns — full successful bootstrap, not just
+  "no crash because nothing ran."
+- Headless Chromium's own screenshot/evaluate calls hung independently of the fix (low, declining CPU
+  during the hang — ruled out an infinite loop) — traced to a headless-Chromium WebGL/compositor
+  limitation in this specific local test environment, not the app. Confirmed by re-running under `xvfb`
+  (real display, headed Chromium): canvas correctly resized to the real viewport (1280×720, not the
+  browser's 300×150 default), zero errors, and a real screenshot showing the actual rendered sign-in
+  screen — proof this is a genuine, working fix, not just an absence-of-error illusion.
+- New regression test `tests/e2e/ravilo-web.spec.ts` added, wired into `docker-compose.test.yml` (new
+  `ravilo-web` service running the real `ravilo-web/Dockerfile` image) and therefore `ci.yml`. Verified
+  green against the real compose stack end to end, alongside the rest of the suite (10 passed, 2
+  pre-existing skips) — not run in isolation.
+- The test asserts on the Compose canvas actually resizing off its default dimensions plus zero page
+  errors, **not** DOM text content — this is a Compose Canvas (WebGL/Skia) app, not DOM-based UI, so
+  "Sign in" is rendered pixels, not accessible DOM text; a `getByText("Sign in")` assertion was tried
+  first and correctly failed with "element(s) not found" even while a screenshot taken at that exact
+  moment showed the text plainly on screen — confirms this is the wrong locator strategy for this
+  rendering technology, not a rendering bug, and was removed from the final test.

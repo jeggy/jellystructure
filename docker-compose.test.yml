@@ -90,6 +90,22 @@ services:
     networks:
       - testnet
 
+  # Phase 167/168 follow-up — standalone Ravilo web image (:web-static-server + ravilo-web's wasm
+  # bundle). Separate from "app" (the admin backend) entirely: no Jellyfin/TMDB config, just the
+  # static bundle, since ravilo-web.spec.ts only needs to confirm the app boots and renders (the
+  # 2026-08-17 live crash this covers happened before any login attempt).
+  ravilo-web:
+    build:
+      context: .
+      dockerfile: ravilo-web/Dockerfile
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/"]
+      interval: 3s
+      timeout: 3s
+      retries: 15
+    networks:
+      - testnet
+
   playwright:
     image: mcr.microsoft.com/playwright:v1.45.0-noble
     working_dir: /tests
@@ -98,6 +114,7 @@ services:
       - ${FIXTURE_DIR:-/tmp/jellystructure-fixtures}:${FIXTURE_DIR:-/tmp/jellystructure-fixtures}:ro
     environment:
       APP_URL: http://app:9505
+      RAVILO_WEB_URL: http://ravilo-web:8080
       FIXTURE_DIR: ${FIXTURE_DIR:-/tmp/jellystructure-fixtures}
       JELLYFIN_USER: ${JELLYFIN_USER:-admin}
       JELLYFIN_PASS: ${JELLYFIN_PASS:-password}
@@ -106,9 +123,11 @@ services:
       BAZARR_URL: http://bazarr-mock:6767
       BAZARR_API_KEY: ${BAZARR_API_KEY:-mock-bazarr-key}
     command: >
-      sh -c "apt-get update -qq && apt-get install -y --no-install-recommends ffmpeg && npm ci && npx playwright install chromium && npx playwright test"
+      sh -c "apt-get update -qq && apt-get install -y --no-install-recommends ffmpeg && npm ci && npx playwright install --with-deps chromium && npx playwright test"
     depends_on:
       app:
+        condition: service_healthy
+      ravilo-web:
         condition: service_healthy
     networks:
       - testnet
