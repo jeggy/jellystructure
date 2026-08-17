@@ -13,9 +13,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -54,7 +56,16 @@ fun SeasonPicker(
     val focusSpec = remember { RaviloMotion.softSpring<Float>() }
     val dpSpec    = remember { RaviloMotion.softSpring<Dp>() }
 
+    // R201 — a series whose auto-selected season (e.g. the last season, for a fully-watched show) sits
+    // outside this row's initial composition window left `firstFocusRequester` attached to nothing: a
+    // LazyRow only composes items near its current scroll position, and this row never scrolled itself
+    // to the selected pill. Fires on first composition too (not just later changes), so the selected
+    // pill is always at least brought into composition before anything tries to focus it.
+    val listState = rememberLazyListState()
+    LaunchedEffect(selectedIndex) { runCatching { listState.scrollToItem(selectedIndex) } }
+
     LazyRow(
+        state = listState,
         modifier = modifier.focusRestorer(),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
         contentPadding = PaddingValues(horizontal = raviloHPad),

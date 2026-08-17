@@ -507,8 +507,11 @@ private fun SeriesDetailLoaded(
                                     Key.DirectionDown -> if (detail.seasons.size > 1) {
                                         scope.launch {
                                             runCatching { listState.animateScrollToItem(1) }   // hero=0, seasons=1
-                                            runCatching { seasonFirstFR.requestFocus() }        // BIV reveals it below the AppBar
                                         }
+                                        // R201: requestFocusRetrying (not a single runCatching) — the
+                                        // picker's own self-scroll-to-selected (SeasonPicker.kt) may still
+                                        // take a frame to attach the pill's FocusRequester.
+                                        requestFocusRetrying(scope, seasonFirstFR)          // BIV reveals it below the AppBar
                                         true
                                     } else false
                                     else -> false
