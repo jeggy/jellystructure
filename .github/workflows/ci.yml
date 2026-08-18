@@ -8,14 +8,14 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    # 2026-08-18: measured locally that `app` alone spends ~9.5 of its ~10.4 total build minutes in
-    # the two gradlew RUN steps (linkReleaseExecutableLinuxX64 + wasmJsBrowserDistribution) even with
-    # cache_from/cache_to correctly wired -- BuildKit never layer-caches a RUN step that uses
-    # `--mount=type=cache` (the gradle/konan/npm mounts here), so those steps always re-execute from
-    # cold regardless of caching. That's on a many-core dev box; GitHub's 2-core ubuntu-latest runners
-    # are meaningfully slower for CPU-bound Kotlin/Wasm compilation, and this job now builds two full
-    # Kotlin/Wasm images (app + ravilo-web) plus the mock stack + Playwright run. 60min was cutting a
-    # genuinely-slow-but-not-hung run too close; the actual hang risk (headless Chromium/WebGL) is
+    # 2026-08-18: on a cold cache, `app` alone spent ~9.5 of its ~10.4 total build minutes locally in
+    # the two gradlew RUN steps (linkReleaseExecutableLinuxX64 + wasmJsBrowserDistribution) -- on a
+    # warm cache (unchanged source since the last successful run), real CI evidence showed those same
+    # steps hit CACHED and the whole build+test step dropped from 34m13s to 3m40s. But the FIRST build
+    # after any source change is always cold, and GitHub's 2-core ubuntu-latest runners (private repo
+    # tier) are meaningfully slower than a dev box for CPU-bound Kotlin/Wasm compilation, building two
+    # full images (app + ravilo-web) plus the mock stack + Playwright run. 60min was cutting a
+    # genuinely-slow-but-not-hung cold run too close; the actual hang risk (headless Chromium/WebGL) is
     # already fixed at the test level, so a generous ceiling here is just headroom, not risk.
     timeout-minutes: 120
 
