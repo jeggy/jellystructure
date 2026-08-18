@@ -22,6 +22,24 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Free disk space
+        # 2026-08-18: the last two runs both died mid-"Run test stack" with conclusion=failure but no
+        # completion timestamp on the active step and no logs ever captured -- the signature of the
+        # whole runner process dying, not a clean script failure (see the "Run test stack" comment
+        # below for the memory half of this; this step addresses the other likely culprit). This
+        # repo's runner (private repo) has only ~14GB of SSD, and ubuntu-latest ships several GB of
+        # preinstalled toolchains this project never touches (Android SDK, .NET, GHC) -- combined with
+        # two full multi-stage Kotlin/Wasm Docker builds (JDK + Gradle + Node in the builder stage) and
+        # a mode=max cache export that captures every intermediate layer, disk exhaustion is at least
+        # as plausible a cause as memory. This is the standard, low-risk mitigation for it.
+        run: |
+          echo "Disk space before cleanup:"
+          df -h /
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL /usr/local/.ghcup /opt/az 2>/dev/null || true
+          sudo docker image prune -af 2>/dev/null || true
+          echo "Disk space after cleanup:"
+          df -h /
+
       - name: Check CSS scoping
         run: ./scripts/check-css-scoping.sh
 
@@ -52,15 +70,19 @@ jobs:
       - name: Run test stack
         run: |
           # 2026-08-18: `up --build` builds app + ravilo-web concurrently by default, each spinning up
-          # its own Gradle/Kotlin-Native/Kotlin-Wasm toolchain -- on the previous run, that appears to
-          # have OOM-killed the runner VM outright rather than failing cleanly: conclusion=failure, but
-          # the active step never recorded a completion timestamp and every later `if: always()` step
-          # (including "Move Docker cache", which is supposed to run no matter what) never even
-          # started. That signature means the runner process itself died, not a script exiting
-          # nonzero. This repo is private, so its runner is the 2-core/8GB tier -- building the two
-          # images one at a time keeps peak memory to one Kotlin toolchain's worth instead of two.
+          # its own Gradle/Kotlin-Native/Kotlin-Wasm toolchain -- two Gradle daemons at
+          # org.gradle.jvmargs=-Xmx4g each already want 8GB of heap alone, before Docker/buildkit/the
+          # OS need anything, on this private repo's 2-core/8GB runner tier. Building one at a time
+          # keeps peak memory to one Kotlin toolchain's worth. `docker buildx prune` between them
+          # reclaims the first build's intermediate builder-stage layers (JDK+Gradle+Node, several GB)
+          # before the second build starts -- it only touches BuildKit's build cache, never the tagged
+          # app image itself, so the later `up` step still finds it without rebuilding.
           docker compose -f docker-compose.test.yml build app
+          docker buildx prune -f
           docker compose -f docker-compose.test.yml build ravilo-web
+          docker buildx prune -f
+          echo "Disk space before starting stack:"
+          df -h /
           docker compose -f docker-compose.test.yml up \
             --abort-on-container-exit \
             --exit-code-from playwright
