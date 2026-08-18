@@ -51,8 +51,17 @@ jobs:
 
       - name: Run test stack
         run: |
+          # 2026-08-18: `up --build` builds app + ravilo-web concurrently by default, each spinning up
+          # its own Gradle/Kotlin-Native/Kotlin-Wasm toolchain -- on the previous run, that appears to
+          # have OOM-killed the runner VM outright rather than failing cleanly: conclusion=failure, but
+          # the active step never recorded a completion timestamp and every later `if: always()` step
+          # (including "Move Docker cache", which is supposed to run no matter what) never even
+          # started. That signature means the runner process itself died, not a script exiting
+          # nonzero. This repo is private, so its runner is the 2-core/8GB tier -- building the two
+          # images one at a time keeps peak memory to one Kotlin toolchain's worth instead of two.
+          docker compose -f docker-compose.test.yml build app
+          docker compose -f docker-compose.test.yml build ravilo-web
           docker compose -f docker-compose.test.yml up \
-            --build \
             --abort-on-container-exit \
             --exit-code-from playwright
         env:
