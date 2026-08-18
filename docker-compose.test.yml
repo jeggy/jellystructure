@@ -72,7 +72,11 @@ services:
       cache_from:
         - type=local,src=${BUILDX_CACHE_DIR:-/tmp/.buildx-cache}/app
       cache_to:
-        - type=local,dest=${BUILDX_CACHE_DIR:-/tmp/.buildx-cache}/app-new,mode=max
+        # mode=max (every intermediate layer, incl. the discarded multi-stage builder stage) was
+        # ~669MB locally; default mode (final-image layers only) trades away caching a few cheap
+        # seconds-long builder-stage COPY steps in exchange for a much smaller export on a runner
+        # that may be disk-constrained (2026-08-18).
+        - type=local,dest=${BUILDX_CACHE_DIR:-/tmp/.buildx-cache}/app-new
     user: "0:0"
     ports:
       - "9505:9505"
@@ -112,7 +116,7 @@ services:
       cache_from:
         - type=local,src=${BUILDX_CACHE_DIR:-/tmp/.buildx-cache}/ravilo-web
       cache_to:
-        - type=local,dest=${BUILDX_CACHE_DIR:-/tmp/.buildx-cache}/ravilo-web-new,mode=max
+        - type=local,dest=${BUILDX_CACHE_DIR:-/tmp/.buildx-cache}/ravilo-web-new
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:8080/"]
       interval: 3s
