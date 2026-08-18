@@ -329,8 +329,13 @@ class HomeFeedService(
         for (rowCfg in enabledRows) {
             when (rowCfg.kind) {
                 RowKind.CONTINUE -> {
-                    if (channelFilter != null) continue // inherit-mode channels keep R59 behaviour (no Continue)
-                    val cont = buildContinueRow(device, all, jellyfinBase, token)
+                    // R202: inherit mode means "Same as Home" (R59) — Continue Watching is Home's own
+                    // row, library-wide, not a channel-filtered variant of it. Built from libraryAll
+                    // (== `all` on the Home call site, so this is a no-op there) rather than `all` (which
+                    // is channel-filtered for a channel call). Previously skipped entirely for any
+                    // channel view — an R05 leftover from before inherit/custom existed, never actually
+                    // fixed by R59 despite a misleading comment claiming otherwise.
+                    val cont = buildContinueRow(device, libraryAll, jellyfinBase, token)
                     if (cont.cards.isNotEmpty()) result.add(Row(rowCfg.id, rowCfg.title ?: "Continue Watching", RowKind.CONTINUE, cont.cards, seedTotalCount = cont.total))
                 }
 
