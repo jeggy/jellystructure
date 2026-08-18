@@ -417,6 +417,61 @@ not after.
   `ravilo-web` service running the real `ravilo-web/Dockerfile` image) and therefore `ci.yml`. Verified
   green against the real compose stack end to end, alongside the rest of the suite (10 passed, 2
   pre-existing skips) — not run in isolation.
+- **2026-08-18 postscript: adding the `ravilo-web` build to `ci.yml` then broke CI itself, for reasons
+  unrelated to the crash fix above** — three real root causes found and fixed in sequence, documented
+  here because each one was genuinely non-obvious and the debugging path is worth keeping:
+  1. **`BUILDX_CACHE_FROM`/`BUILDX_CACHE_TO` env vars in `ci.yml` were dead on arrival.** `docker compose
+     build`/`up --build` never reads those as a recognized convention — confirmed via
+     `grep -n "BUILDX_CACHE\|cache_from\|cache_to" docker-compose.test.yml` returning zero matches.
+     Docker layer caching had been a complete no-op since it was introduced; every run did a full cold
+     rebuild. Fixed with the Compose Specification's real `build.cache_from`/`build.cache_to` keys,
+     verified locally against a `docker-container` buildx builder (the default `docker` driver doesn't
+     support `type=local` cache export — confirmed via `docker buildx ls`). Note on a wrong intermediate
+     conclusion: a local re-build test (reusing the same builder container across both attempts) showed
+     the `RUN --mount=type=cache` gradle/konan/npm steps always re-executing despite `cache_from`
+     pointing at a full prior export, which looked like proof BuildKit can never cache those steps — but
+     the real CI evidence (below) contradicts that: a same-commit rerun against a genuine actions/cache
+     upload from the prior green run showed **every** layer, including the two gradlew `RUN` steps, hit
+     as `CACHED`, taking the whole "Run test stack" step from 34m13s down to 3m40s. The local test wasn't
+     representative — likely because reusing one builder container across both local attempts let the
+     mount's own *ephemeral* content stay warm regardless of `cache_from`, muddying what was actually
+     being measured. Bottom line: the fix is more effective than the local test suggested — a real cache
+     hit (unchanged source between runs) skips the dominant cost entirely, not just the cheap layers.
+  2. **Two consecutive real CI runs then died with the same signature**: `conclusion=failure`, but the
+     active "Run test stack" step never recorded a completion timestamp, and every later `if: always()`
+     step — including "Move Docker cache", which is supposed to run no matter what — never even started.
+     That pattern means the *runner process itself* died mid-step, not a script exiting nonzero; per-job
+     log fetches (`gh api .../jobs/{id}/logs`) came back `BlobNotFound` both times, consistent with a
+     runner that never got to flush/upload logs. First hypothesis: `docker compose up --build` builds
+     `app` and `ravilo-web` **concurrently** by default, each spinning up its own Gradle daemon at
+     `org.gradle.jvmargs=-Xmx4g` — two at once already want 8GB of heap alone, and this repo (private) is
+     capped at the 2-core/8GB runner tier (public repos get 4-core/16GB). Fixed by serializing the two
+     `docker compose build` calls ahead of `up`. This alone was **not sufficient** — the very next run
+     died with the identical signature, faster (~26min vs ~58min), which is actually evidence *against*
+     pure memory pressure (serializing should reduce peak memory, not shrink time-to-crash). Second,
+     complementary hypothesis: disk. Added a "Free disk space" step (removes `ubuntu-latest`'s
+     preinstalled Android SDK/.NET/GHC, none of which this project uses) and dropped `cache_to`'s
+     `mode=max` (which caches every intermediate layer, including the entire discarded multi-stage
+     builder stage — ~669MB/455MB locally) down to default mode, plus a `docker buildx prune -f` between
+     the two builds to reclaim the first build's intermediate layers before the second starts (touches
+     only BuildKit's build cache, never the tagged image the later `up` step needs).
+  3. **Correction to a working assumption made during this debugging**: GitHub's own runner-spec docs
+     state private-repo `ubuntu-latest` gets "14GB SSD" storage; the actual observed root filesystem in a
+     live run was **72GB** (`df -h /` showed 58G used / 72G total, 81%, before cleanup; 34G used / 72G
+     after — 1.787GB reclaimed by the image prune alone). So disk was tighter than ideal but not
+     catastrophically constrained the way the 14GB figure implied — meaning the exact decisive factor
+     among (memory serialization / disk cleanup / cache-mode change / plain non-determinism in shared
+     runner infrastructure) isn't pinned down with certainty. What's certain: the run immediately after
+     all three fixes landed together went fully green (`32088719529`, all 16 steps `success`, 35m37s,
+     real Playwright report artifact uploaded, traces-on-failure step correctly `skipped`) — confirmed via
+     a same-commit rerun rather than trusted as a one-off. **The rerun (attempt 2) went further and
+     confirmed the cache fix works better than believed above**: it hit a genuine cache import from
+     attempt 1's upload, took "Run test stack" from 34m13s down to 3m40s, and the log showed `CACHED` on
+     every layer including the two gradlew `RUN --mount=type=cache` steps — not just the cheap ones. Real
+     Playwright output confirmed genuine test execution both times, not a short-circuit: 12 tests found,
+     10 passed / 2 pre-existing skips, including `ravilo-web.spec.ts` (the regression guard for §7's
+     crash fix) passing in both runs. **CI is genuinely green as of this sync, two consecutive runs, real
+     tests actually executing.**
 - **The test does not check DOM text or poll the canvas's bounding box — both were tried and rejected.**
   A `getByText("Sign in")` assertion failed with "element(s) not found" even while a screenshot taken at
   that exact moment showed the text plainly on screen: this is a Compose Canvas (WebGL/Skia) app, not
