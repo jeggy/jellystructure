@@ -189,7 +189,7 @@ class SeedingSnapshot(
         val norm = (localPath ?: translateRemoteToLocal(t.contentPath, qbConfig)).trimEnd('/')
         // Primary: path-prefix matching (works when qBittorrent saves directly into the media tree)
         val directMatch = when (item.kind) {
-            MediaKind.MOVIE -> item.path == norm || item.path.startsWith("$norm/") || norm.startsWith(item.path.substringBeforeLast("/"))
+            MediaKind.MOVIE, MediaKind.MUSIC_VIDEO -> item.path == norm || item.path.startsWith("$norm/") || norm.startsWith(item.path.substringBeforeLast("/"))
             MediaKind.TV_SHOW ->
                 item.episodes.any { ep -> ep.path == norm || ep.path.startsWith("$norm/") } ||
                 norm.startsWith(item.path.trimEnd('/'))
@@ -204,7 +204,7 @@ class SeedingSnapshot(
     @OptIn(ExperimentalForeignApi::class)
     private fun filenameMatch(contentPath: String, item: MediaItem): Boolean {
         val targetNames: Set<String> = when (item.kind) {
-            MediaKind.MOVIE -> setOf(item.path.substringAfterLast("/"))
+            MediaKind.MOVIE, MediaKind.MUSIC_VIDEO -> setOf(item.path.substringAfterLast("/"))
             MediaKind.TV_SHOW -> item.episodes.mapTo(mutableSetOf()) { it.path.substringAfterLast("/") }
         }
         if (targetNames.isEmpty() || targetNames.all { it.isBlank() }) return false

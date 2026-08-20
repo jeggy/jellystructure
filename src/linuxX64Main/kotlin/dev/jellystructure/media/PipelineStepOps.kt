@@ -234,6 +234,8 @@ object PipelineStepOps {
                     onEpisodeDone(done, eligible.size)
                 }
             }
+            // Phase 168 (FR-168-6): never enqueued for detection — no-op if ever reached directly.
+            MediaKind.MUSIC_VIDEO -> {}
         }
     }
 

@@ -3,7 +3,7 @@ package dev.jellystructure.model
 import kotlinx.serialization.Serializable
 
 @Serializable
-enum class MediaKind { MOVIE, TV_SHOW }
+enum class MediaKind { MOVIE, TV_SHOW, MUSIC_VIDEO }
 
 /** Phase 130: one official trailer reference per title (YouTube/Vimeo) — a reference only, no
  *  hosting/download. `thumb` is Vimeo-only (resolved once at ingest via oEmbed); YouTube thumbnails
@@ -272,7 +272,7 @@ data class MediaItem(
  *  sorts by its most-recently-added EPISODE (max(episode.createdAt)) so a new episode re-floats it —
  *  not by the series record's own createdAt. Falls back to scannedAt for pre-backfill legacy rows. */
 fun MediaItem.recencyKey(): Long = when (kind) {
-    MediaKind.MOVIE -> createdAt ?: scannedAt
+    MediaKind.MOVIE, MediaKind.MUSIC_VIDEO -> createdAt ?: scannedAt
     MediaKind.TV_SHOW -> episodes.mapNotNull { it.createdAt }.maxOrNull() ?: createdAt ?: scannedAt
 }
 

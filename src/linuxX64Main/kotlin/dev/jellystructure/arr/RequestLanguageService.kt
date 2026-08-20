@@ -72,9 +72,13 @@ class RequestLanguageService(
      */
     suspend fun profileFor(intentId: String?, mediaKind: MediaKind): Pair<Int?, List<Int>> {
         val i = intent(intentId) ?: return null to emptyList()
+        // Phase 168: a music video is never requested via Seerr (no tmdbId, filename-only) — this
+        // function should never actually be called with mediaKind == MUSIC_VIDEO.
+        if (mediaKind == MediaKind.MUSIC_VIDEO) return null to emptyList()
         val cfg = when (mediaKind) {
             MediaKind.MOVIE -> configStore.current.radarr
             MediaKind.SERIES -> configStore.current.sonarr
+            MediaKind.MUSIC_VIDEO -> null
         }?.takeIf { it.enabled } ?: return (if (mediaKind == MediaKind.MOVIE) i.radarrProfileId else i.sonarrProfileId) to emptyList()
         val arrKind = if (mediaKind == MediaKind.MOVIE) "radarr" else "sonarr"
         var storedProfileId = if (mediaKind == MediaKind.MOVIE) i.radarrProfileId else i.sonarrProfileId
@@ -196,6 +200,8 @@ class RequestLanguageService(
                 arrClient.setSeriesQualityProfile(sonarr.url, sonarr.apiKey, seriesId, profileId) &&
                     arrClient.searchSeriesNow(sonarr.url, sonarr.apiKey, seriesId)
             }
+            // Phase 168: a music video is never a Radarr/Sonarr entity — nothing to re-point.
+            MediaKind.MUSIC_VIDEO -> false
         }
     }
 }
