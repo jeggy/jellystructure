@@ -1,6 +1,6 @@
 # Phase 163 — Intro &amp; credits editor (FR-SEG2)
 
-**Status:** Planned — design-complete 2026-08-13, **dev-reviewed 2026-08-13**, **amended 2026-08-13**.
+**Status:** Implemented 2026-08-13/14 (see STATUS.md row 163) — design-complete 2026-08-13, **dev-reviewed 2026-08-13**, **amended 2026-08-13**. Doc gap (this line + STATUS.md both lagged the build) closed 2026-08-21.
 **Publishing to Jellyfin has been dropped from this phase** (decided 2026-08-13, after the dev review
 found Jellyfin has no Media Segments write API — verified live; see addendum §1). What remains is the
 editor, the per-marker locks, and reading Jellyfin's segments as one more detection source.

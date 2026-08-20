@@ -113,7 +113,7 @@ import org.jetbrains.compose.resources.painterResource
 
 private const val CHROME_HIDE_MS = 3_600L
 private const val CURSOR_HIDE_MS = 2_000L // R157 FR-R157-3.2
-private const val EPRAIL_HIDE_MS = 30_000L // R196: auto-close the episode rail after inactivity
+private const val EPRAIL_HIDE_MS = 30_000L // R208: auto-close the episode rail after inactivity
 private const val NEXTUP_AT_MS   = 20_000L    // R111: show next-up card when this many ms remain (was 34s — too early)
 // R182 — replaces the old hardcoded COUNTDOWN_SECS = 8: the "Skip button countdown" viewer setting
 // (RaviloConfig.skipSecs, one of 4/6/8) now governs both the Skip Intro pill and this next-up/credits
@@ -820,7 +820,7 @@ fun PlayerScreen(
         if (!pickerOpen && !nextUpVisible && !epRailOpen) hideChrome()
     }
 
-    // R196 — auto-close the episode rail after inactivity. chromeRevision bumps on every D-pad input
+    // R208 — auto-close the episode rail after inactivity. chromeRevision bumps on every D-pad input
     // via wake() (onLeft/onRight/onUp/onDown/onSelect all call it first, including rail nav), so this
     // naturally restarts while the viewer is actively browsing episodes and only fires after a real
     // idle stretch. Mirrors onUp's own manual-close behavior (epRailOpen = false; scheduleHide()) so
