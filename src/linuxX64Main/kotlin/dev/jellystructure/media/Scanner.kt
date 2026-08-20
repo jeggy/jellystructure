@@ -761,71 +761,78 @@ class Scanner(
         fun toJellyfinPath(localFile: String): String =
             if (lib != null && lib.jellyfinPath.isNotBlank()) localFile.replaceFirst(lib.localPath, lib.jellyfinPath)
             else localFile
-        val episodes = mutableListOf<Episode>()
-        for (file in episodeFiles) {
-            val tracks = FfprobeRunner.probe(file)
-            val epIssueCount = tracks.count { (it.kind == TrackKind.AUDIO || it.kind == TrackKind.SUBTITLE) && it.language == null }
-            val audioLangs = tracks.filter { it.kind == TrackKind.AUDIO }.map { it.language }
-            val epLangPriority = LanguageResolver.priorityList(audioLangs, fallback)
-            val jfPathMatchSync = jfByPathSync[toJellyfinPath(file)]
-            // Phase 160: same filename-parse fallback scanSeries uses — see resolveSeasonEpisode.
-            val (seasonNum, epNums) = resolveSeasonEpisode(parseSeasonEpisodes(file), jfPathMatchSync?.parentIndexNumber, jfPathMatchSync?.indexNumber)
-            val partCount = epNums.size.coerceAtLeast(1)
-            val partEpisodeNums: List<Int?> = if (epNums.isEmpty()) listOf(null) else epNums
-            val chapterMarkers = if (partCount > 1) FfprobeRunner.chapters(file) else emptyList()
-            val hasMatchingChapters = chapterMarkers.size == partCount
+        // Phase 169: was a plain sequential `for` loop — one ffprobe + TMDB round trip per episode file,
+        // one after another, unlike scanSeries's already-concurrent dispatch (Scanner.kt:436-517). Same
+        // fix here: dispatch every file's independent work concurrently under one coroutineScope, bounded
+        // by the existing ProcessGate (ffprobe)/OutboundHttp (TMDB) gates — no new concurrency knob.
+        val episodes = coroutineScope {
+            episodeFiles.map { file ->
+                async {
+                    val tracks = FfprobeRunner.probe(file)
+                    val epIssueCount = tracks.count { (it.kind == TrackKind.AUDIO || it.kind == TrackKind.SUBTITLE) && it.language == null }
+                    val audioLangs = tracks.filter { it.kind == TrackKind.AUDIO }.map { it.language }
+                    val epLangPriority = LanguageResolver.priorityList(audioLangs, fallback)
+                    val jfPathMatchSync = jfByPathSync[toJellyfinPath(file)]
+                    // Phase 160: same filename-parse fallback scanSeries uses — see resolveSeasonEpisode.
+                    val (seasonNum, epNums) = resolveSeasonEpisode(parseSeasonEpisodes(file), jfPathMatchSync?.parentIndexNumber, jfPathMatchSync?.indexNumber)
+                    val partCount = epNums.size.coerceAtLeast(1)
+                    val partEpisodeNums: List<Int?> = if (epNums.isEmpty()) listOf(null) else epNums
+                    val chapterMarkers = if (partCount > 1) FfprobeRunner.chapters(file) else emptyList()
+                    val hasMatchingChapters = chapterMarkers.size == partCount
 
-            partEpisodeNums.forEachIndexed { partIdx, epNum ->
-                // Bug fix (dev-review addendum §2, Phase 149): this used to match by filename equality,
-                // which collapses every episode of a multi-episode file (they share one filename) onto
-                // the SAME stale match — corrupting all but one of them on every rescan. Match by
-                // (season, episode) instead, which is unique per contained episode; only fall back to
-                // filename equality for the (rare) unparseable-filename case, preserving the old behaviour
-                // there since there's no (season, episode) identity to match on.
-                val existingEp = if (epNum != null)
-                    item.episodes.firstOrNull { it.seasonNumber == seasonNum && it.episodeNumber == epNum }
-                else
-                    item.episodes.firstOrNull { it.filename == file.substringAfterLast('/') }
-                val epDetails = if (seriesTmdbId != null && seasonNum != null && epNum != null) {
-                    tmdb.getEpisodeDetailsLocalized(seriesTmdbId, seasonNum, epNum, epLangPriority)
-                } else null
-                // Phase 76: preserve existing guest stars/crew; re-fetch from TMDB if available
-                val (epGuests, epCrew) = if (seriesTmdbId != null && seasonNum != null && epNum != null) {
-                    fetchEpisodeCredits(seriesTmdbId, seasonNum, epNum)
-                } else Pair(existingEp?.guestStars ?: emptyList(), existingEp?.crew ?: emptyList())
-                episodes += Episode(
-                    filename = file.substringAfterLast('/'),
-                    path = file,
-                    seasonNumber = seasonNum,
-                    episodeNumber = epNum,
-                    tracks = tracks,
-                    issueCount = epIssueCount,
-                    // Phase 128: honest per-episode display language — see the scanMovie comment above.
-                    resolvedLanguage = epLangPriority.firstOrNull().takeIf { audioLangs.isNotEmpty() },
-                    title = epDetails?.name?.takeIf { it.isNotBlank() } ?: existingEp?.title,
-                    overview = epDetails?.overview?.takeIf { it.isNotBlank() } ?: existingEp?.overview,
-                    stillPath = epDetails?.stillPath ?: existingEp?.stillPath,
-                    tmdbEpisodeId = epDetails?.id ?: existingEp?.tmdbEpisodeId,
-                    guestStars = epGuests,
-                    crew = epCrew,
-                    jellyfinId = existingEp?.jellyfinId
-                        ?: (if (seasonNum != null && epNum != null) jfBySeasonEp[seasonNum to epNum]?.id else null),
-                    runtime = epDetails?.runtime ?: existingEp?.runtime,
-                    airDate = epDetails?.airDate?.takeIf { it.isNotBlank() } ?: existingEp?.airDate,  // R148
-                    jellyfinCreatedAt = existingEp?.jellyfinCreatedAt
-                        ?: (if (seasonNum != null && epNum != null) jfBySeasonEp[seasonNum to epNum]?.dateCreated?.let { isoToEpochSeconds(it) } else null),  // Phase 108
-                    partIndex = partIdx,
-                    partCount = partCount,
-                    chapterStartMs = if (hasMatchingChapters) chapterMarkers[partIdx].startMs else existingEp?.chapterStartMs,
-                    chapterEndMs = if (hasMatchingChapters) chapterMarkers[partIdx].endMs else existingEp?.chapterEndMs,
-                    hasChapters = hasMatchingChapters || (existingEp?.hasChapters ?: false),
-                    // Phase 153 (FR-SCAN2-5/8) — re-derived from Jellyfin whenever we refetched its meta,
-                    // so a landed repair clears the flag; otherwise keep whatever the last scan recorded.
-                    jellyfinIndexMissing = if (jfEpsMetaSync.isEmpty()) (existingEp?.jellyfinIndexMissing ?: false)
-                        else epNum != null && jfByPathSync[toJellyfinPath(file)]?.indexNumber == null &&
-                            jfByPathSync.containsKey(toJellyfinPath(file)),
-                )
-            }
+                    partEpisodeNums.mapIndexed { partIdx, epNum ->
+                        // Bug fix (dev-review addendum §2, Phase 149): this used to match by filename equality,
+                        // which collapses every episode of a multi-episode file (they share one filename) onto
+                        // the SAME stale match — corrupting all but one of them on every rescan. Match by
+                        // (season, episode) instead, which is unique per contained episode; only fall back to
+                        // filename equality for the (rare) unparseable-filename case, preserving the old behaviour
+                        // there since there's no (season, episode) identity to match on.
+                        val existingEp = if (epNum != null)
+                            item.episodes.firstOrNull { it.seasonNumber == seasonNum && it.episodeNumber == epNum }
+                        else
+                            item.episodes.firstOrNull { it.filename == file.substringAfterLast('/') }
+                        val epDetails = if (seriesTmdbId != null && seasonNum != null && epNum != null) {
+                            tmdb.getEpisodeDetailsLocalized(seriesTmdbId, seasonNum, epNum, epLangPriority)
+                        } else null
+                        // Phase 76: preserve existing guest stars/crew; re-fetch from TMDB if available
+                        val (epGuests, epCrew) = if (seriesTmdbId != null && seasonNum != null && epNum != null) {
+                            fetchEpisodeCredits(seriesTmdbId, seasonNum, epNum)
+                        } else Pair(existingEp?.guestStars ?: emptyList(), existingEp?.crew ?: emptyList())
+                        Episode(
+                            filename = file.substringAfterLast('/'),
+                            path = file,
+                            seasonNumber = seasonNum,
+                            episodeNumber = epNum,
+                            tracks = tracks,
+                            issueCount = epIssueCount,
+                            // Phase 128: honest per-episode display language — see the scanMovie comment above.
+                            resolvedLanguage = epLangPriority.firstOrNull().takeIf { audioLangs.isNotEmpty() },
+                            title = epDetails?.name?.takeIf { it.isNotBlank() } ?: existingEp?.title,
+                            overview = epDetails?.overview?.takeIf { it.isNotBlank() } ?: existingEp?.overview,
+                            stillPath = epDetails?.stillPath ?: existingEp?.stillPath,
+                            tmdbEpisodeId = epDetails?.id ?: existingEp?.tmdbEpisodeId,
+                            guestStars = epGuests,
+                            crew = epCrew,
+                            jellyfinId = existingEp?.jellyfinId
+                                ?: (if (seasonNum != null && epNum != null) jfBySeasonEp[seasonNum to epNum]?.id else null),
+                            runtime = epDetails?.runtime ?: existingEp?.runtime,
+                            airDate = epDetails?.airDate?.takeIf { it.isNotBlank() } ?: existingEp?.airDate,  // R148
+                            jellyfinCreatedAt = existingEp?.jellyfinCreatedAt
+                                ?: (if (seasonNum != null && epNum != null) jfBySeasonEp[seasonNum to epNum]?.dateCreated?.let { isoToEpochSeconds(it) } else null),  // Phase 108
+                            partIndex = partIdx,
+                            partCount = partCount,
+                            chapterStartMs = if (hasMatchingChapters) chapterMarkers[partIdx].startMs else existingEp?.chapterStartMs,
+                            chapterEndMs = if (hasMatchingChapters) chapterMarkers[partIdx].endMs else existingEp?.chapterEndMs,
+                            hasChapters = hasMatchingChapters || (existingEp?.hasChapters ?: false),
+                            // Phase 153 (FR-SCAN2-5/8) — re-derived from Jellyfin whenever we refetched its meta,
+                            // so a landed repair clears the flag; otherwise keep whatever the last scan recorded.
+                            jellyfinIndexMissing = if (jfEpsMetaSync.isEmpty()) (existingEp?.jellyfinIndexMissing ?: false)
+                                else epNum != null && jfByPathSync[toJellyfinPath(file)]?.indexNumber == null &&
+                                    jfByPathSync.containsKey(toJellyfinPath(file)),
+                        )
+                    }
+                }
+            }.awaitAll().flatten()
         }
         val sortedEpisodes = episodes.sortedWith(compareBy({ it.seasonNumber ?: 999 }, { it.episodeNumber ?: 999 }))
         val audioSets = sortedEpisodes.map { ep -> ep.tracks.filter { it.kind == TrackKind.AUDIO }.map { it.language }.toSet() }
