@@ -414,7 +414,7 @@ class MediaJobQueue(
         // A movie's only detection tier is chapter/heuristic — detectSegments' fingerprint tier is
         // gated on MediaKind.TV_SHOW and would be a no-op here anyway; calling this directly (instead
         // of detectSegments) is what gives this job real progress/cancel granularity.
-        PipelineStepOps.detectChapterAndHeuristic(item, segmentStore, chapterKeywords, force = params.segmentForce, isCancelled = isCancelled) { done, total ->
+        PipelineStepOps.detectChapterAndHeuristic(item, segmentStore, chapterKeywords, force = params.segmentForce, isCancelled = isCancelled, mediaHistory = mediaHistory) { done, total ->
             segmentsProgress(row.id, done, total)
         }
         return if (isCancelled()) Cancelled else Success
@@ -427,7 +427,7 @@ class MediaJobQueue(
         val (chapterKeywords, detectFingerprint) = segmentPipelineSettings()
         val force = params.segmentForce
 
-        PipelineStepOps.detectChapterAndHeuristic(item.copy(episodes = seasonEpisodes), segmentStore, chapterKeywords, force = force, isCancelled = isCancelled) { done, total ->
+        PipelineStepOps.detectChapterAndHeuristic(item.copy(episodes = seasonEpisodes), segmentStore, chapterKeywords, force = force, isCancelled = isCancelled, mediaHistory = mediaHistory) { done, total ->
             segmentsProgress(row.id, done, total)
         }
         if (isCancelled()) return Cancelled
@@ -436,14 +436,14 @@ class MediaJobQueue(
             PipelineStepOps.detectIntroFingerprintsForSeason(
                 item, segmentStore, fingerprintService, seasonEpisodes, force = force,
                 reportDetail = { detail -> segmentsDetail(row.id, seasonEpisodes.size, detail) },
-                isCancelled = isCancelled,
+                isCancelled = isCancelled, mediaHistory = mediaHistory,
             )
             if (isCancelled()) return Cancelled
             // Phase 159 (FR-159-3) — outro/credits counterpart, same season-scoped shape.
             PipelineStepOps.detectOutroFingerprintsForSeason(
                 item, segmentStore, fingerprintService, seasonEpisodes, force = force,
                 reportDetail = { detail -> segmentsDetail(row.id, seasonEpisodes.size, detail) },
-                isCancelled = isCancelled,
+                isCancelled = isCancelled, mediaHistory = mediaHistory,
             )
         }
         return if (isCancelled()) Cancelled else Success
@@ -459,7 +459,7 @@ class MediaJobQueue(
         if (selected.isEmpty()) return Failure("No matching episodes")
         val (chapterKeywords, _) = segmentPipelineSettings()
 
-        PipelineStepOps.detectChapterAndHeuristic(item.copy(episodes = selected), segmentStore, chapterKeywords, force = params.segmentForce, isCancelled = isCancelled) { done, total ->
+        PipelineStepOps.detectChapterAndHeuristic(item.copy(episodes = selected), segmentStore, chapterKeywords, force = params.segmentForce, isCancelled = isCancelled, mediaHistory = mediaHistory) { done, total ->
             segmentsProgress(row.id, done, total)
         }
         return if (isCancelled()) Cancelled else Success

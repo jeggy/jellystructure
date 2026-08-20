@@ -109,17 +109,28 @@ object FfmpegRunner {
     // inline, so a non-local return isn't allowed there; a nullable pipe + if/else avoids it.
     @OptIn(ExperimentalForeignApi::class)
     private suspend fun captureCommand(cmd: String): String? = dev.jellystructure.ops.ProcessGate.withPermit {
-        memScoped {
-            val pipe = popen(cmd, "r")
-            if (pipe == null) {
-                null
-            } else {
-                val sb = StringBuilder()
-                val buf = allocArray<ByteVar>(4096)
-                while (fgets(buf, 4096, pipe) != null) sb.append(buf.toKString())
-                pclose(pipe)
-                sb.toString()
-            }
+        captureCommandRaw(cmd)
+    }
+
+    // Phase 170 — same popen/read logic as [captureCommand], but through the segment-detection lane's
+    // own dedicated (smaller) SegmentProcessGate instead of the shared ProcessGate — see that gate's
+    // doc comment. Used only by the three heavy-decode segment-detection calls below.
+    @OptIn(ExperimentalForeignApi::class)
+    private suspend fun captureCommandSegments(cmd: String): String? = dev.jellystructure.ops.SegmentProcessGate.withPermit {
+        captureCommandRaw(cmd)
+    }
+
+    @OptIn(ExperimentalForeignApi::class)
+    private fun captureCommandRaw(cmd: String): String? = memScoped {
+        val pipe = popen(cmd, "r")
+        if (pipe == null) {
+            null
+        } else {
+            val sb = StringBuilder()
+            val buf = allocArray<ByteVar>(4096)
+            while (fgets(buf, 4096, pipe) != null) sb.append(buf.toKString())
+            pclose(pipe)
+            sb.toString()
         }
     }
 
@@ -204,8 +215,10 @@ object FfmpegRunner {
     // fgets()+toKString(), which is text-only: fgets stops at every newline byte (common in raw PCM) and
     // toKString() truncates at the first embedded NUL. This reads raw bytes via fread() instead, growing
     // a chunk list rather than one big pre-sized buffer since ffmpeg's output length isn't known upfront.
+    // Phase 170 — through the segment-detection lane's dedicated SegmentProcessGate (see its doc
+    // comment): this is only ever used by [computeWaveform], the trim view's own heavy-decode call.
     @OptIn(ExperimentalForeignApi::class)
-    private suspend fun captureBinaryCommand(cmd: String): ByteArray? = dev.jellystructure.ops.ProcessGate.withPermit {
+    private suspend fun captureBinaryCommand(cmd: String): ByteArray? = dev.jellystructure.ops.SegmentProcessGate.withPermit {
         memScoped {
             val pipe = popen(cmd, "r")
             if (pipe == null) {
@@ -320,7 +333,7 @@ object FfmpegRunner {
         // server (same fix shape as runRemuxTracked's "protects API/playback from a big remux").
         val cmd = "nice -n 19 ionice -c3 ffmpeg -ss $windowStartSec -i '$escaped' -t ${durationSec - windowStartSec} " +
             "-threads 2 -vf blackdetect=d=0.5:pic_th=0.98:pix_th=0.10 -af silencedetect=noise=-60dB:d=0.5 -f null - 2>&1"
-        val output = captureCommand(cmd) ?: return null
+        val output = captureCommandSegments(cmd) ?: return null
 
         val blackStarts = Regex("""black_start:([\d.]+)""").findAll(output)
             .mapNotNull { it.groupValues[1].toDoubleOrNull() }.toList()
@@ -427,7 +440,7 @@ object FfmpegRunner {
         val escaped = filePath.replace("'", "'\\''")
         // Same nice/ionice treatment as detectCreditsStart — fpcalc shells out to libavcodec for audio
         // decode, and up to 16 of these can run concurrently under ProcessGate.
-        val output = captureCommand("nice -n 19 ionice -c3 fpcalc -raw -length $windowSec '$escaped' 2>&1") ?: return null
+        val output = captureCommandSegments("nice -n 19 ionice -c3 fpcalc -raw -length $windowSec '$escaped' 2>&1") ?: return null
         val match = Regex("""FINGERPRINT=([\d,]+)""").find(output) ?: return null
         return match.groupValues[1].split(",").mapNotNull { it.trim().toLongOrNull()?.toInt() }.takeIf { it.isNotEmpty() }
     }
@@ -452,7 +465,7 @@ object FfmpegRunner {
         val escaped = filePath.replace("'", "'\\''")
         val cmd = "nice -n 19 ionice -c3 ffmpeg -sseof -$windowSec -i '$escaped' -f wav - 2>/dev/null | " +
             "nice -n 19 ionice -c3 fpcalc -raw -length $windowSec - 2>&1"
-        val output = captureCommand(cmd) ?: return null
+        val output = captureCommandSegments(cmd) ?: return null
         val match = Regex("""FINGERPRINT=([\d,]+)""").find(output) ?: return null
         return match.groupValues[1].split(",").mapNotNull { it.trim().toLongOrNull()?.toInt() }.takeIf { it.isNotEmpty() }
     }

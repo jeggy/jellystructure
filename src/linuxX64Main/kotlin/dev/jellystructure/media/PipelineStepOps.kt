@@ -160,10 +160,16 @@ object PipelineStepOps {
         val keywords = if (extraChapterKeywords.isEmpty()) DEFAULT_CHAPTER_KEYWORDS
         else DEFAULT_CHAPTER_KEYWORDS + extraChapterKeywords.filter { it.isNotBlank() }.map { ChapterKeyword(it, ChapterSegmentKind.CREDITS) }
 
+        // Phase 170 (§2) — a force re-detect must never let a lower-precedence source clobber a
+        // higher-precedence existing row (see SegmentSource.precedence's doc comment).
+        val introOverwriteOk = SegmentSource.precedence(SegmentSource.CHAPTER) >= SegmentSource.precedence(existingIntro?.source)
+        val creditsChapterOverwriteOk = SegmentSource.precedence(SegmentSource.CHAPTER) >= SegmentSource.precedence(existingCredits?.source)
+        val creditsHeuristicOverwriteOk = SegmentSource.precedence(SegmentSource.HEURISTIC) >= SegmentSource.precedence(existingCredits?.source)
+
         var wrote = false
         val chapterHit = SegmentDetection.fromChapters(FfprobeRunner.chapters(path), keywords)
         if (chapterHit != null) {
-            if (introWritable && chapterHit.markers.introStartMs != null) {
+            if (introWritable && introOverwriteOk && chapterHit.markers.introStartMs != null) {
                 segmentStore.clearEvidenceForKind(itemId, episodeKey, episodeNumber, SegmentKind.INTRO)
                 for (ev in chapterHit.evidence) if (ev.kind == ChapterSegmentKind.INTRO) {
                     segmentStore.recordEvidence(itemId, episodeKey, episodeNumber, SegmentKind.INTRO, EvidenceType.CHAPTER_CANDIDATE, ev.startMs, ev.endMs, chapterEvidenceDetail(ev.title), ev.accepted)
@@ -171,7 +177,7 @@ object PipelineStepOps {
                 segmentStore.upsertSegment(itemId, episodeKey, episodeNumber, SegmentKind.INTRO, chapterHit.markers.introStartMs, chapterHit.markers.introEndMs, SegmentSource.CHAPTER, null)
                 wrote = true
             }
-            if (creditsWritable && chapterHit.markers.creditsStartMs != null) {
+            if (creditsWritable && creditsChapterOverwriteOk && chapterHit.markers.creditsStartMs != null) {
                 segmentStore.clearEvidenceForKind(itemId, episodeKey, episodeNumber, SegmentKind.CREDITS)
                 for (ev in chapterHit.evidence) if (ev.kind == ChapterSegmentKind.CREDITS) {
                     segmentStore.recordEvidence(itemId, episodeKey, episodeNumber, SegmentKind.CREDITS, EvidenceType.CHAPTER_CANDIDATE, ev.startMs, ev.endMs, chapterEvidenceDetail(ev.title), ev.accepted)
@@ -185,7 +191,7 @@ object PipelineStepOps {
             return wrote
         }
 
-        if (!creditsWritable) return false
+        if (!creditsWritable || !creditsHeuristicOverwriteOk) return false
         val duration = FfprobeRunner.duration(path) ?: return false
         val hit = SegmentDetection.fromCreditsHeuristic(path, duration) ?: return false
         segmentStore.clearEvidenceForKind(itemId, episodeKey, episodeNumber, SegmentKind.CREDITS)
@@ -217,22 +223,31 @@ object PipelineStepOps {
         // Both default to no-ops so every pre-164 call site (the bulk pipeline step, the segment REST
         // routes, RealtimeIngestService) is unaffected.
         isCancelled: () -> Boolean = { false },
+        // Phase 170 (§3) — the segments lane never recorded anything to a title's own History tab, so
+        // an auto-written marker was invisible there even though the ephemeral Activity/pipeline log
+        // mentions it in passing. One roll-up entry per run (not per episode — a season's worth of
+        // per-episode rows would flood a 2000-row-capped, revertable-edit-oriented log), only when
+        // something was actually written. Defaults to null so no history is unavailable to a caller.
+        mediaHistory: MediaHistory? = null,
         onEpisodeDone: suspend (done: Int, total: Int) -> Unit = { _, _ -> },
     ) {
         when (item.kind) {
             MediaKind.MOVIE -> {
-                detectForPath(item.id, "", 0, item.path, segmentStore, extraChapterKeywords, force)
+                val wrote = detectForPath(item.id, "", 0, item.path, segmentStore, extraChapterKeywords, force)
                 onEpisodeDone(1, 1)
+                if (wrote) mediaHistory?.record(item.id, "detect_segments", "chapter/heuristic detection wrote a marker")
             }
             MediaKind.TV_SHOW -> {
                 val eligible = item.episodes.filter { it.partCount == 1 }
                 var done = 0
+                var wroteCount = 0
                 for (ep in eligible) {
                     if (isCancelled()) break
-                    detectForPath(item.id, ep.filename, ep.episodeNumber ?: 0, ep.path, segmentStore, extraChapterKeywords, force)
+                    if (detectForPath(item.id, ep.filename, ep.episodeNumber ?: 0, ep.path, segmentStore, extraChapterKeywords, force)) wroteCount++
                     done++
                     onEpisodeDone(done, eligible.size)
                 }
+                if (wroteCount > 0) mediaHistory?.record(item.id, "detect_segments", "chapter/heuristic detection wrote $wroteCount of ${eligible.size} episode(s)")
             }
             // Phase 168 (FR-168-6): never enqueued for detection — no-op if ever reached directly.
             MediaKind.MUSIC_VIDEO -> {}
@@ -348,12 +363,18 @@ object PipelineStepOps {
         // function with real I/O (an fpcalc decode); Phase B/C are fast in-memory work not worth
         // interrupting mid-way. Defaults to a no-op so every pre-164 call site is unaffected.
         isCancelled: () -> Boolean = { false },
+        // Phase 170 (§3) — one roll-up History entry per season run, only when something was written —
+        // see detectChapterAndHeuristic's doc comment for why this is per-run, not per-episode.
+        mediaHistory: MediaHistory? = null,
     ) {
         fun key(ep: Episode) = "${ep.filename}#${ep.episodeNumber}"
         fun epNum(ep: Episode) = ep.episodeNumber ?: 0
         fun eligible(ep: Episode): Boolean {
             val existing = segmentStore.getSegment(item.id, ep.filename, epNum(ep), SegmentKind.INTRO)
-            return existing?.locked != true && (force || existing == null)
+            // Phase 170 (§2) — never let a force re-detect's fingerprint consensus clobber a higher-
+            // precedence existing row (e.g. an exact chapter-title match) — see SegmentSource.precedence.
+            val overwriteOk = SegmentSource.precedence(SegmentSource.FINGERPRINT) >= SegmentSource.precedence(existing?.source)
+            return existing?.locked != true && overwriteOk && (force || existing == null)
         }
 
         if (seasonEpisodes.size < 2) return
@@ -437,6 +458,7 @@ object PipelineStepOps {
         if (wroteCount == 0) {
             Logger.info("detect_segments: '${item.title}' S$seasonLabel — fingerprinting found no new intro matches", "pipeline", item.id)
         } else {
+            mediaHistory?.record(item.id, "detect_segments", "fingerprint detection wrote $wroteCount intro marker(s) in S$seasonLabel")
             Logger.info("detect_segments: '${item.title}' S$seasonLabel — fingerprinting done, $wroteCount episode(s) updated", "pipeline", item.id)
         }
     }
@@ -463,12 +485,16 @@ object PipelineStepOps {
         // Phase 164 (FR-164-5) — same shape as detectIntroFingerprintsForSeason's own parameter; see
         // that function's doc.
         isCancelled: () -> Boolean = { false },
+        // Phase 170 (§3) — same one-roll-up-per-run shape as detectIntroFingerprintsForSeason's own.
+        mediaHistory: MediaHistory? = null,
     ) {
         fun key(ep: Episode) = "${ep.filename}#${ep.episodeNumber}"
         fun epNum(ep: Episode) = ep.episodeNumber ?: 0
         fun eligible(ep: Episode): Boolean {
             val existing = segmentStore.getSegment(item.id, ep.filename, epNum(ep), SegmentKind.CREDITS)
-            return existing?.locked != true && (force || existing == null)
+            // Phase 170 (§2) — same precedence guard as detectIntroFingerprintsForSeason's eligible().
+            val overwriteOk = SegmentSource.precedence(SegmentSource.FINGERPRINT) >= SegmentSource.precedence(existing?.source)
+            return existing?.locked != true && overwriteOk && (force || existing == null)
         }
 
         if (seasonEpisodes.size < 2) return
@@ -549,6 +575,7 @@ object PipelineStepOps {
         if (wroteCount == 0) {
             Logger.info("detect_segments: '${item.title}' S$seasonLabel — outro fingerprinting found no new credits matches", "pipeline", item.id)
         } else {
+            mediaHistory?.record(item.id, "detect_segments", "fingerprint detection wrote $wroteCount credits marker(s) in S$seasonLabel")
             Logger.info("detect_segments: '${item.title}' S$seasonLabel — outro fingerprinting done, $wroteCount episode(s) updated", "pipeline", item.id)
         }
     }
