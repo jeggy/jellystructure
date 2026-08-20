@@ -43,7 +43,7 @@ data class EpisodeStillStatus(
  *  so it counts manually-added artwork and excludes TMDB-matched items whose poster never downloaded. */
 fun posterArtworkExists(item: MediaItem): Boolean {
     val dir = when (item.kind) {
-        MediaKind.MOVIE -> item.path.substringBeforeLast('/')
+        MediaKind.MOVIE, MediaKind.MUSIC_VIDEO -> item.path.substringBeforeLast('/')
         MediaKind.TV_SHOW -> item.path
     }
     return SystemFileSystem.exists(Path("$dir/poster.jpg"))
@@ -306,7 +306,7 @@ class ArtworkDownloader(private val tmdbClient: TmdbClient, private val screengr
     }
 
     private fun mediaDir(item: MediaItem) = when (item.kind) {
-        MediaKind.MOVIE -> item.path.substringBeforeLast('/')
+        MediaKind.MOVIE, MediaKind.MUSIC_VIDEO -> item.path.substringBeforeLast('/')
         MediaKind.TV_SHOW -> item.path  // item.path IS the series directory
     }
 

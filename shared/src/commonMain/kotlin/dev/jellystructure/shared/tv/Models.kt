@@ -5,7 +5,7 @@ import kotlinx.serialization.Serializable
 
 // ─── Enums ────────────────────────────────────────────────────────────────────
 
-enum class MediaKind { MOVIE, SERIES }
+enum class MediaKind { MOVIE, SERIES, MUSIC_VIDEO }
 enum class RowKind { CONTINUE, NEWLY_ADDED, GENRE, CUSTOM }
 enum class ChannelStyle { LOGO, TEXT }
 enum class TileShape { POSTER, LANDSCAPE, SQUARE }

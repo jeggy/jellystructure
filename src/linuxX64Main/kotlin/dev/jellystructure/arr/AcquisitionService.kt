@@ -90,6 +90,9 @@ class AcquisitionService(
                 val seriesId = client.findSeriesIdByTmdbId(s.url, s.apiKey, tmdbId) ?: return@withLock
                 store.save(rec, "sonarr", seriesId, now)
             }
+            // Phase 168: a music video is never TMDB-matched, so it never reaches acquisition —
+            // this call site only fires for items that already have a tmdbId (Seerr/Discover).
+            MediaKind.MUSIC_VIDEO -> return@withLock
         }
     }
 
@@ -142,6 +145,8 @@ class AcquisitionService(
                     Logger.info("acquisition: requested series tmdb=$tmdbId tvdb=$tvdb '$title' (sonarr seriesId=$id)")
                     rec
                 }
+                // Phase 168: acquisition never applies to a music video (no tmdbId, ever).
+                MediaKind.MUSIC_VIDEO -> fail(itemKey, mediaKind, tmdbId, title, "acquisition not supported for music videos", requestedBy, now)
             }
         }
 
@@ -207,6 +212,9 @@ class AcquisitionService(
                     val eps = if (s != null && a.arrId != null) client.getSeriesEpisodes(s.url, s.apiKey, a.arrId) else emptyList()
                     reconcileSeries(prior, sonarrQueue.filter { it.refId == a.arrId }, eps, libId)
                 }
+                // Phase 168: never a real active record (request() rejects it before one is ever
+                // saved) — kept as-is defensively rather than reconciled.
+                MediaKind.MUSIC_VIDEO -> prior
             }
             store.save(next, a.arrKind, a.arrId, now)
             if (shouldEmit(prior, next, now)) emit(next)

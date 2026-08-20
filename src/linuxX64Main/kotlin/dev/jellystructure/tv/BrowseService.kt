@@ -240,8 +240,11 @@ class BrowseService(
         val sonarrEnabled = configStore.current.sonarr?.enabled == true
         return MediaCard(
             id = jId ?: id,
-            kind = if (kind == MediaKind.TV_SHOW) dev.jellystructure.shared.tv.MediaKind.SERIES
-                   else dev.jellystructure.shared.tv.MediaKind.MOVIE,
+            kind = when (kind) {
+                MediaKind.TV_SHOW -> dev.jellystructure.shared.tv.MediaKind.SERIES
+                MediaKind.MUSIC_VIDEO -> dev.jellystructure.shared.tv.MediaKind.MUSIC_VIDEO
+                MediaKind.MOVIE -> dev.jellystructure.shared.tv.MediaKind.MOVIE
+            },
             title = title,
             year = year,
             genre = genres.firstOrNull(),

@@ -184,6 +184,8 @@ fun Route.bazarrRoutes(mediaStore: MediaStore, service: BazarrService, client: B
                     if (series == null) { call.respond(BazarrTitleState(connected = true, matched = false)); return@get }
                     call.respond(BazarrTitleState(connected = true, matched = true, sonarrSeriesId = series.sonarrSeriesId))
                 }
+                // Phase 168: a music video is never matched to a Bazarr movie/series (no tmdbId).
+                MediaKind.MUSIC_VIDEO -> call.respond(BazarrTitleState(connected = true, matched = false))
             }
         }
 
@@ -218,6 +220,7 @@ fun Route.bazarrRoutes(mediaStore: MediaStore, service: BazarrService, client: B
             val ok = when (item.kind) {
                 MediaKind.MOVIE -> service.resolveMovie(item)?.let { client.movieAction(cfg.url, cfg.apiKey, it.radarrId, "search-wanted") } ?: false
                 MediaKind.TV_SHOW -> service.resolveSeries(item)?.let { client.seriesAction(cfg.url, cfg.apiKey, it.sonarrSeriesId, "search-wanted") } ?: false
+                MediaKind.MUSIC_VIDEO -> false
             }
             call.respond(if (ok) HttpStatusCode.NoContent else HttpStatusCode.BadGateway)
         }
@@ -237,6 +240,7 @@ fun Route.bazarrRoutes(mediaStore: MediaStore, service: BazarrService, client: B
                     val bazarrEp = service.resolveEpisode(series.sonarrSeriesId, episode) ?: return@post call.respond(HttpStatusCode.NotFound)
                     client.syncSubtitle(cfg.url, cfg.apiKey, "episode", bazarrEp.sonarrEpisodeId, req.language, req.path)
                 }
+                MediaKind.MUSIC_VIDEO -> false
             }
             call.respond(if (ok) HttpStatusCode.NoContent else HttpStatusCode.BadGateway)
         }
@@ -268,6 +272,7 @@ fun Route.bazarrRoutes(mediaStore: MediaStore, service: BazarrService, client: B
                         ?: return@post call.respond(HttpStatusCode.NotFound)
                     client.downloadProviderEpisodeSubtitle(cfg.url, cfg.apiKey, bazarrEp.sonarrEpisodeId, req.hi, req.forced, best.provider, best.subtitle)
                 }
+                MediaKind.MUSIC_VIDEO -> false
             }
             call.respond(if (ok) HttpStatusCode.NoContent else HttpStatusCode.BadGateway)
         }
@@ -287,6 +292,7 @@ fun Route.bazarrRoutes(mediaStore: MediaStore, service: BazarrService, client: B
                     val bazarrEp = service.resolveEpisode(series.sonarrSeriesId, episode) ?: return@post call.respond(HttpStatusCode.NotFound)
                     client.downloadEpisodeSubtitle(cfg.url, cfg.apiKey, series.sonarrSeriesId, bazarrEp.sonarrEpisodeId, req.language, req.forced, req.hi)
                 }
+                MediaKind.MUSIC_VIDEO -> false
             }
             call.respond(if (ok) HttpStatusCode.NoContent else HttpStatusCode.BadGateway)
         }
@@ -306,6 +312,7 @@ fun Route.bazarrRoutes(mediaStore: MediaStore, service: BazarrService, client: B
                     val bazarrEp = service.resolveEpisode(series.sonarrSeriesId, episode) ?: return@delete call.respond(HttpStatusCode.NotFound)
                     client.deleteEpisodeSubtitle(cfg.url, cfg.apiKey, series.sonarrSeriesId, bazarrEp.sonarrEpisodeId, req.language, req.forced, req.hi, req.path)
                 }
+                MediaKind.MUSIC_VIDEO -> false
             }
             call.respond(if (ok) HttpStatusCode.NoContent else HttpStatusCode.BadGateway)
         }

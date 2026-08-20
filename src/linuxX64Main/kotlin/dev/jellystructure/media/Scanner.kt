@@ -127,6 +127,21 @@ internal fun resolveSeasonEpisode(filenameParsed: Pair<Int?, List<Int>>, jfSeaso
         filenameParsed
     }
 
+/**
+ * Phase 168 (FR-168-3): filename-only metadata for a music video, matching Jellyfin's own recognized
+ * `Artist - Title.ext` convention. Split on the *first* " - " only: left side → artist, right side
+ * (extension stripped) → title. No separator found → the whole filename (minus extension) becomes the
+ * title, artist stays null. Deliberately does not parse album/track/year — filename-only, nothing else.
+ */
+internal fun parseMusicVideoArtistTitle(filename: String): Pair<String?, String> {
+    val base = filename.substringBeforeLast('.')
+    val sepIdx = base.indexOf(" - ")
+    if (sepIdx < 0) return Pair(null, base)
+    val artist = base.substring(0, sepIdx).trim()
+    val title = base.substring(sepIdx + 3).trim()
+    return Pair(artist.ifBlank { null }, title.ifBlank { base })
+}
+
 class Scanner(
     private val configStore: ConfigStore,
     private val tmdb: TmdbClient,
@@ -181,6 +196,7 @@ class Scanner(
         return when (jItem.type) {
             "Movie" -> scanMovie(jItem, localPath, effectiveFallback, libraryId)
             "Series" -> scanSeries(jItem, localPath, effectiveFallback, libraryId, lib)
+            "MusicVideo" -> scanMusicVideo(jItem, localPath, libraryId)
             else -> null
         }
     }
@@ -311,6 +327,49 @@ class Scanner(
             runtime = details?.runtime,
             certifications = certifications,
             trailer = trailer,
+            libraryId = libraryId,
+        )
+    }
+
+    /**
+     * Phase 168 (FR-168-2/168-3): structurally closer to [scanMovie] than [scanSeries] — one file, no
+     * episodes, no season handling — but filename-only, never TMDB (FR-168-3): no search, no id lookup,
+     * no localized details, no cast/crew/certifications/trailer. `director` is reused for the artist
+     * name (FR-168-1) rather than adding a new column.
+     */
+    private suspend fun scanMusicVideo(jItem: JellyfinItem, localPath: String, libraryId: String?): MediaItem? {
+        if (!SystemFileSystem.exists(Path(localPath))) {
+            Logger.warn("Music video file not found on disk: $localPath")
+            return null
+        }
+        val (artist, title) = parseMusicVideoArtistTitle(localPath.substringAfterLast('/'))
+        Logger.info("Scanning music video: $title${artist?.let { " — $it" } ?: ""}", "scan")
+
+        val tracks = FfprobeRunner.probe(localPath)
+        val issueCount = tracks.count {
+            (it.kind == TrackKind.AUDIO || it.kind == TrackKind.SUBTITLE) && it.language == null
+        }
+        return MediaItem(
+            id = itemId(title, jItem.year, jItem.id),
+            title = title,
+            year = jItem.year,
+            kind = MediaKind.MUSIC_VIDEO,
+            path = localPath,
+            jellyfinId = jItem.id,
+            tmdbId = null,
+            originalLanguage = null,
+            posterPath = null,
+            overview = null,
+            director = artist,
+            tracks = tracks,
+            issueCount = issueCount,
+            languageMix = false,
+            scannedAt = epochSeconds(),
+            addedAt = jItem.dateCreated?.let { isoToEpochSeconds(it) },
+            jellyfinUpdatedAt = jItem.dateLastSaved?.let { isoToEpochSeconds(it) },
+            jellyfinLockData = jItem.lockData,
+            jellyfinLockedFields = jItem.lockedFields,
+            tags = jItem.tags,
             libraryId = libraryId,
         )
     }
@@ -1023,6 +1082,10 @@ class Scanner(
                     libraryId = lib?.jellyfinId?.ifBlank { null } ?: item.libraryId,   // Phase 142: self-heal
                 )
             }
+            // Phase 168 (FR-168-1/168-4): no-op — a music video is never TMDB-matched, so there is
+            // nothing to re-fetch. `pull_tmdb` already fully excludes MUSIC_VIDEO from its working set
+            // (FR-168-5), so this branch should rarely if ever actually run.
+            MediaKind.MUSIC_VIDEO -> item
         }
     }
 
@@ -1088,7 +1151,7 @@ class Scanner(
      * mirrors the early returns of scanItem/scanMovie/scanSeries without probing or hitting TMDB.
      */
     fun classifySkip(jItem: JellyfinItem): String {
-        if (jItem.type != "Movie" && jItem.type != "Series") return "unsupported-type"
+        if (jItem.type != "Movie" && jItem.type != "Series" && jItem.type != "MusicVideo") return "unsupported-type"
         val config = configStore.current
         val libraries = config.libraries.filter { !it.skip && it.localPath.isNotBlank() }
         val jellyfinPath = jItem.path ?: return "no-path"
@@ -1099,7 +1162,7 @@ class Scanner(
         val localPath = if (lib.jellyfinPath.isNotBlank())
             jellyfinPath.replaceFirst(lib.jellyfinPath, lib.localPath) else jellyfinPath
         if (!SystemFileSystem.exists(Path(localPath)))
-            return if (jItem.type == "Movie") "file-not-found" else "dir-not-found"
+            return if (jItem.type == "Series") "dir-not-found" else "file-not-found"
         if (jItem.type == "Series" && findEpisodeFiles(localPath).isEmpty()) return "no-episode-files"
         return "other"
     }

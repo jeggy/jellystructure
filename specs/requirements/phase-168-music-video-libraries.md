@@ -9,7 +9,7 @@
 > excluded… neither movies or series \[but\] no new tab added… \[pull_tmdb\] fully skip… \[segment
 > detection\] no."*
 
-**Status:** Planned — dev-authored, not yet built.
+**Status:** Implemented 2026-08-21 (see STATUS.md row 168) — dev-authored, built the same sync.
 
 ## 1. What's there now
 

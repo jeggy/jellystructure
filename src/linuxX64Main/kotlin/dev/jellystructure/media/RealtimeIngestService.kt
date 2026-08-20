@@ -175,6 +175,8 @@ class RealtimeIngestService(
                                     )
                                 }
                             }
+                            // Phase 168 (FR-168-6): a music video is never enqueued for detection.
+                            dev.jellystructure.model.MediaKind.MUSIC_VIDEO -> {}
                         }
                     }
                     "sync_imdb_ratings" -> PipelineStepOps.syncImdb(current, store, imdbClient)
