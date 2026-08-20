@@ -49,6 +49,8 @@ class ArrRescanService(
                     }.onFailure { Logger.warn("arr: Sonarr rescan nudge failed for '${item.id}': ${it.message}") }
                 }
             }
+            // Phase 168: a music video is never Radarr/Sonarr-managed (no tmdbId, filename-only).
+            MediaKind.MUSIC_VIDEO -> {}
         }
     }
 
@@ -66,6 +68,7 @@ class ArrRescanService(
                 if (!s.enabled || s.url.isBlank()) return null
                 runCatching { client.findSeriesIdByPath(s.url, s.apiKey, item.path) }.getOrNull()
             }
+            MediaKind.MUSIC_VIDEO -> null
         }
     }
 
@@ -85,6 +88,7 @@ class ArrRescanService(
             when (item.kind) {
                 MediaKind.MOVIE -> cfg.radarr?.let { client.rescanMovie(it.url, it.apiKey, id) } ?: false
                 MediaKind.TV_SHOW -> cfg.sonarr?.let { client.rescanSeries(it.url, it.apiKey, id) } ?: false
+                MediaKind.MUSIC_VIDEO -> false
             }
         }.getOrDefault(false)
         return Triple(true, ok, if (ok) "Rescan triggered" else "Rescan request failed")

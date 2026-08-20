@@ -17,6 +17,7 @@ object NfoWriter {
     fun buildXml(item: MediaItem, serverUrl: String? = null, ageRatingCascade: List<String> = emptyList()): String = when (item.kind) {
         MediaKind.MOVIE -> buildMovieXml(item, serverUrl, ageRatingCascade)
         MediaKind.TV_SHOW -> buildTvShowXml(item, serverUrl, ageRatingCascade)
+        MediaKind.MUSIC_VIDEO -> buildMusicVideoXml(item)
     }
 
     // Phase 115: a stable content hash for the item-level NFO — used to tell "we haven't written this
@@ -41,15 +42,8 @@ object NfoWriter {
 
     suspend fun write(item: MediaItem, serverUrl: String? = null, ageRatingCascade: List<String> = emptyList()): Result<String> {
         return runCatching {
-            val dir = when (item.kind) {
-                MediaKind.MOVIE -> item.path.substringBeforeLast('/')
-                MediaKind.TV_SHOW -> item.path  // item.path IS the series directory
-            }
-            val filename = when (item.kind) {
-                MediaKind.MOVIE -> "movie.nfo"
-                MediaKind.TV_SHOW -> "tvshow.nfo"
-            }
-            val nfoPath = "$dir/$filename"
+            val nfoPath = nfoPath(item)
+            val dir = nfoPath.substringBeforeLast('/')
             Logger.info("NfoWriter.write: id='${item.id}' kind=${item.kind} item.path='${item.path}' nfoPath='$nfoPath'")
             val dirExists = SystemFileSystem.exists(Path(dir))
             Logger.info("NfoWriter.write: dir exists=$dirExists")
@@ -60,17 +54,12 @@ object NfoWriter {
         }
     }
 
-    /** On-disk path of the item-level NFO (movie.nfo / tvshow.nfo). Display only. */
-    fun nfoPath(item: MediaItem): String {
-        val dir = when (item.kind) {
-            MediaKind.MOVIE -> item.path.substringBeforeLast('/')
-            MediaKind.TV_SHOW -> item.path
-        }
-        val filename = when (item.kind) {
-            MediaKind.MOVIE -> "movie.nfo"
-            MediaKind.TV_SHOW -> "tvshow.nfo"
-        }
-        return "$dir/$filename"
+    /** On-disk path of the item-level NFO (movie.nfo / tvshow.nfo / `<basename>.nfo` for a music
+     *  video — FR-168-4: same-basename-as-video-file, not a fixed `musicvideo.nfo` name). Display only. */
+    fun nfoPath(item: MediaItem): String = when (item.kind) {
+        MediaKind.MOVIE -> "${item.path.substringBeforeLast('/')}/movie.nfo"
+        MediaKind.TV_SHOW -> "${item.path}/tvshow.nfo"
+        MediaKind.MUSIC_VIDEO -> "${item.path.substringBeforeLast('.')}.nfo"
     }
 
     /** On-disk path of an episode's `episodedetails.nfo` (basename.nfo next to the video). */
@@ -80,28 +69,10 @@ object NfoWriter {
         return "$dir/$baseName.nfo"
     }
 
-    fun exists(item: MediaItem): Boolean {
-        val dir = when (item.kind) {
-            MediaKind.MOVIE -> item.path.substringBeforeLast('/')
-            MediaKind.TV_SHOW -> item.path
-        }
-        val filename = when (item.kind) {
-            MediaKind.MOVIE -> "movie.nfo"
-            MediaKind.TV_SHOW -> "tvshow.nfo"
-        }
-        return SystemFileSystem.exists(Path("$dir/$filename"))
-    }
+    fun exists(item: MediaItem): Boolean = SystemFileSystem.exists(Path(nfoPath(item)))
 
     fun readRaw(item: MediaItem): String? {
-        val dir = when (item.kind) {
-            MediaKind.MOVIE -> item.path.substringBeforeLast('/')
-            MediaKind.TV_SHOW -> item.path
-        }
-        val filename = when (item.kind) {
-            MediaKind.MOVIE -> "movie.nfo"
-            MediaKind.TV_SHOW -> "tvshow.nfo"
-        }
-        val path = Path("$dir/$filename")
+        val path = Path(nfoPath(item))
         if (!SystemFileSystem.exists(path)) return null
         return runCatching {
             SystemFileSystem.source(path).buffered().use { it.readString() }
@@ -345,6 +316,20 @@ object NfoWriter {
             appendLine("  </actor>")
         }
         appendLine("</tvshow>")
+    }
+
+    /** FR-168-4: the real Kodi/Jellyfin `<musicvideo>` schema — title + artist only. No
+     *  `<tmdbid>`/`<uniqueid type="tmdb">` block ever (a music video is never TMDB-matched, by
+     *  construction — FR-168-3), and deliberately no album/track/year (not derivable from a
+     *  filename-only source). */
+    private fun buildMusicVideoXml(item: MediaItem): String = buildString {
+        appendLine("""<?xml version="1.0" encoding="utf-8" standalone="yes"?>""")
+        appendLine("<musicvideo>")
+        appendLine("  <title>${item.title.esc()}</title>")
+        if (!item.director.isNullOrBlank()) {
+            appendLine("  <artist>${item.director.esc()}</artist>")
+        }
+        appendLine("</musicvideo>")
     }
 
     private fun String.esc() =

@@ -473,7 +473,9 @@ suspend fun executePipeline(
         if (cfg.behavior.notifyOnScanDone)
             fireWebhook(cfg, """{"event":"scan_complete","jobId":"$jobId","items":${items.size}}""")
         if (cfg.behavior.notifyOnNoMatch) {
-            val unmatched = items.count { it.tmdbId == null }
+            // Phase 168 (FR-168-5): a music video is never TMDB-matched by construction — excluded
+            // entirely from the count, not surfaced at all.
+            val unmatched = items.count { it.tmdbId == null && it.kind != dev.jellystructure.model.MediaKind.MUSIC_VIDEO }
             if (unmatched > 0)
                 fireWebhook(cfg, """{"event":"no_tmdb_match","jobId":"$jobId","unmatched":$unmatched}""")
         }
@@ -529,8 +531,11 @@ suspend fun executePipeline(
         // the very next poll tick, not just on the next scan/step.
         when (step.step) {
             "pull_tmdb" -> {
-                val toProcess = if (step.scope == "all") workingSet
-                    else workingSet.filter { it.tmdbId == null }
+                // Phase 168 (FR-168-5): a music video is never TMDB-searched, ever — fully skip it from
+                // the working set regardless of scope, or "missing" would retry it forever for nothing.
+                val tmdbEligible = workingSet.filter { it.kind != dev.jellystructure.model.MediaKind.MUSIC_VIDEO }
+                val toProcess = if (step.scope == "all") tmdbEligible
+                    else tmdbEligible.filter { it.tmdbId == null }
                 Logger.info("pull_tmdb: ${toProcess.size} items (scope=${step.scope})")
                 runPipelineStepPool(
                     jobId, step.step, toProcess, { pipelineStepConcurrency(step.step, configStore.current.behavior.scanWorkers) },
@@ -655,6 +660,8 @@ suspend fun executePipeline(
                 fun needsDetection(item: dev.jellystructure.model.MediaItem): Boolean = when (item.kind) {
                     dev.jellystructure.model.MediaKind.MOVIE -> missing(item.id, "", 0)
                     dev.jellystructure.model.MediaKind.TV_SHOW -> item.episodes.any { it.partCount == 1 && missing(item.id, it.filename, it.episodeNumber ?: 0) }
+                    // Phase 168 (FR-168-6): a music video is never enqueued for intro/credits detection.
+                    dev.jellystructure.model.MediaKind.MUSIC_VIDEO -> false
                 }
                 val toProcess = if (step.scope == "all") workingSet else workingSet.filter(::needsDetection)
                 scanTracker.setActiveStep(step.step)
@@ -688,6 +695,10 @@ suspend fun executePipeline(
                                 if (result.deduped) deduped++ else enqueued++
                             }
                         }
+                        // Phase 168 (FR-168-6): unreachable in practice — needsDetection() always
+                        // returns false for a music video, so it never survives into toProcess except
+                        // under scope="all", where this is the correct no-op.
+                        dev.jellystructure.model.MediaKind.MUSIC_VIDEO -> {}
                     }
                 }
                 val summary = "enqueued $enqueued detection job${if (enqueued == 1) "" else "s"}" +

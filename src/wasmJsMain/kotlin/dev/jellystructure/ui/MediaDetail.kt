@@ -355,8 +355,13 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
              </div>
            </div>"""
 
+    val directorFieldLabel = when (item.kind) {
+        MediaKind.TV_SHOW -> "Network"
+        MediaKind.MUSIC_VIDEO -> "Artist"  // Phase 168 (FR-168-1): still writes to `director` — no schema change
+        MediaKind.MOVIE -> "Director"
+    }
     val directorHtml = """<div class="field">
-      <label>${if (item.kind == MediaKind.TV_SHOW) "Network" else "Director"} <button class="diff-trigger" id="diff-edit-director">≠</button></label>
+      <label>$directorFieldLabel <button class="diff-trigger" id="diff-edit-director">≠</button></label>
       <input id="edit-director" class="input" value="${(if (item.kind == MediaKind.TV_SHOW) item.network else item.director)?.esc() ?: ""}" style="width:100%;" placeholder="—">
     </div>
     <div class="field">

@@ -492,7 +492,7 @@ fun Route.mediaRoutes(
                     val item = store.resolve(id)
                         ?: return@get call.respond(HttpStatusCode.NotFound)
                     val dir = when (item.kind) {
-                        MediaKind.MOVIE -> item.path.substringBeforeLast('/')
+                        MediaKind.MOVIE, MediaKind.MUSIC_VIDEO -> item.path.substringBeforeLast('/')
                         MediaKind.TV_SHOW -> item.path
                     }
                     val testFile = "$dir/.jellystructure-write-test.tmp"
@@ -1487,6 +1487,9 @@ fun Route.mediaRoutes(
                     "series" -> scanner.rescanMetadata(item)
                     else -> scanner.syncSeriesEpisodes(item)
                 }
+                // Phase 168: no TMDB to re-fetch, ever — this button is a no-op for a music video
+                // rather than an error (out of FR-168's scope to build a real re-probe path here).
+                MediaKind.MUSIC_VIDEO -> item
             }?.let { artwork.stampHasStill(it) }
             if (updated == null) {
                 call.respond(HttpStatusCode.InternalServerError, mapOf("error" to "sync failed — file not found or no TMDB match"))
@@ -2212,7 +2215,9 @@ internal suspend fun runScan(
             if (cfg.behavior.notifyOnScanDone)
                 fireWebhook(cfg, """{"event":"scan_complete","jobId":"$jobId","items":${succeeded.value}}""")
             if (cfg.behavior.notifyOnNoMatch) {
-                val unmatched = allItems.count { it.tmdbId == null }
+                // Phase 168 (FR-168-5): a music video is never TMDB-matched by construction — excluded
+                // entirely from the count, not surfaced at all.
+                val unmatched = allItems.count { it.tmdbId == null && it.kind != dev.jellystructure.model.MediaKind.MUSIC_VIDEO }
                 if (unmatched > 0)
                     fireWebhook(cfg, """{"event":"no_tmdb_match","jobId":"$jobId","unmatched":$unmatched}""")
             }
