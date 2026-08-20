@@ -63,7 +63,14 @@ GitHub is the **source of truth**; we layer designs on top of it.
 - **⚠ Repo-side STATUS gap (dev team's to fix, not us):** `STATUS.md` on `main` has no rows for
   admin **152/153/154** or Ravilo **R184/R185/R186** though their spec files exist and read
   *Implemented* — `scripts/check-phases.sh` will flag them. `STATUS.md` is a read-only mirror here.
-- **Next unassigned numbers: 164 / R196.** **New design-authored spec: `phase-163-segment-editor.md`**
+- **Next unassigned numbers: 164 / R197.** **R196 shipped same-day (2026-08-20):**
+  `phase-R196-episode-rail-autohide.md` — the in-player episode rail (R14) gets a 30s-inactivity
+  auto-hide, reusing the existing slide-down close transition both implementations already have for
+  every other dismiss path (JS: `closeEpRail()`'s class toggle; Compose: `epRailOpen = false` already
+  drives `AnimatedVisibility`'s `slideOutVertically`) — no new animation code needed either side. The
+  Live TV Now/Next guide overlay has the same never-times-out gap but is out of scope here. Compiles
+  clean (`:ravilo-ui:compileKotlinWasmJs`/`compileDebugKotlinAndroid`); not yet on-device verified.
+- **New design-authored spec: `phase-163-segment-editor.md`**
   (`Planned`, 2026-08-13, not yet dev-reviewed) — the intro & credits editor + segments published to
   Jellyfin; see the Segments entry in the screen set. (2026-08-13 sync: **Phase 162 / Towo shipped** — dev-reviewed and
   built in full 2026-08-11 with three dev-review addenda, verified live against a real Claude account. Only
