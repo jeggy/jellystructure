@@ -14,7 +14,7 @@
   const NEXTUP_AT = 34;     // seconds remaining → next-up card appears
   const COUNTDOWN = 8;      // next-up auto-advance countdown
   const HIDE_MS = 3600;     // auto-hide chrome after inactivity while playing
-  const EPRAIL_HIDE_MS = 30000;   // R196: auto-close the episode rail after inactivity
+  const EPRAIL_HIDE_MS = 30000;   // R208: auto-close the episode rail after inactivity
   const SKIP_BACK = 10, SKIP_FWD = 30;   // -10s / +30s
 
   // simple inline icons
