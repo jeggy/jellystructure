@@ -34,6 +34,11 @@ class MovieDetailStore(private val apiClient: TvApiClient) {
     val playstateOverlay: StateFlow<Map<String, CardPlayState>> = _playstateOverlay.asStateFlow()
     private var loadJob: Job? = null
     private var currentId: String? = null
+    // R207 — a cancelled loadJob's `runCatching` catches its own CancellationException and keeps
+    // running, so without this guard a stale job's Error/Loaded write can land AFTER a newer job's
+    // and silently clobber it. Bump on every load(); a coroutine only writes _state if its own
+    // generation is still current when it resumes.
+    private var loadGen = 0
 
     /** R40/R84: when this id is already loaded (retained store, re-entry), keep it on screen and
      *  refresh silently — no Loading flash. First load (or a new id) shows Loading normally. */
@@ -41,10 +46,12 @@ class MovieDetailStore(private val apiClient: TvApiClient) {
         if (currentId == id && _state.value is MovieDetailState.Loaded) { refreshSilent(id); return }
         currentId = id
         loadJob?.cancel()
+        val gen = ++loadGen
         _playstateOverlay.value = emptyMap()
         _state.value = MovieDetailState.Loading
         loadJob = scope.launch {
             val result = runCatching { apiClient.getMovie(id) }
+            if (gen != loadGen) return@launch
             val detail = result.getOrNull()
             if (detail != null) {
                 _state.value = MovieDetailState.Loaded(detail)
@@ -56,6 +63,9 @@ class MovieDetailStore(private val apiClient: TvApiClient) {
             }
         }
     }
+
+    /** R207 — retry from the Error state's Retry button. */
+    fun retry() { currentId?.let { load(it) } }
 
     private fun refreshSilent(id: String) {
         loadJob?.cancel()
@@ -98,16 +108,21 @@ class SeriesDetailStore(private val apiClient: TvApiClient) {
     val playstateOverlay: StateFlow<Map<String, CardPlayState>> = _playstateOverlay.asStateFlow()
     private var loadJob: Job? = null
     private var currentId: String? = null
+    // R207 — see MovieDetailStore's identical doc comment: guards against a stale cancelled job's
+    // write landing after a newer job's and clobbering it.
+    private var loadGen = 0
 
     /** R40/R84: re-entry with the same id keeps the cached detail and refreshes silently (no flash). */
     fun load(id: String) {
         if (currentId == id && _state.value is SeriesDetailState.Loaded) { refreshSilent(id); return }
         currentId = id
         loadJob?.cancel()
+        val gen = ++loadGen
         _playstateOverlay.value = emptyMap()
         _state.value = SeriesDetailState.Loading
         loadJob = scope.launch {
             val result = runCatching { apiClient.getSeries(id) }
+            if (gen != loadGen) return@launch
             val detail = result.getOrNull()
             if (detail != null) {
                 _state.value = SeriesDetailState.Loaded(detail)
@@ -124,6 +139,9 @@ class SeriesDetailStore(private val apiClient: TvApiClient) {
             }
         }
     }
+
+    /** R207 — retry from the Error state's Retry button. */
+    fun retry() { currentId?.let { load(it) } }
 
     private fun refreshSilent(id: String) {
         loadJob?.cancel()

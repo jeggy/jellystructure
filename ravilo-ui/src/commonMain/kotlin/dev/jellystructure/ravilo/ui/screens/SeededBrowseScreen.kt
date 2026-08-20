@@ -385,10 +385,10 @@ fun SeededBrowseScreen(
             Spacer(Modifier.height(16.dp))
 
             when (val s = state) {
-                is SeededBrowseState.Loading -> Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                is SeededBrowseState.Loading -> Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
                     Text(str("loading"), color = colors.textSecondary, fontSize = 16.sp)
                 }
-                is SeededBrowseState.Error -> Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                is SeededBrowseState.Error -> Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
                     Text(s.message, color = colors.textSecondary, fontSize = 14.sp)
                 }
                 is SeededBrowseState.Loaded -> {

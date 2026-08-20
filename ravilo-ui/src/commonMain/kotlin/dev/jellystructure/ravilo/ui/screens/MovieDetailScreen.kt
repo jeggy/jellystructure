@@ -55,6 +55,7 @@ import dev.jellystructure.ravilo.ui.components.AudioSubtitleFlagLine
 import dev.jellystructure.ravilo.ui.components.ButtonStyle
 import dev.jellystructure.ravilo.ui.components.CastCircle
 import dev.jellystructure.ravilo.ui.components.CertBadge
+import dev.jellystructure.ravilo.ui.components.DetailErrorState
 import dev.jellystructure.ravilo.ui.components.DetailLoadingShell
 import dev.jellystructure.ravilo.ui.components.DetailSynopsis
 import dev.jellystructure.ravilo.ui.components.ImdbChip
@@ -101,9 +102,7 @@ fun MovieDetailScreen(
     Box(modifier = Modifier.fillMaxSize().background(colors.background)) {
         when (val s = state) {
             is MovieDetailState.Loading -> DetailLoadingShell()
-            is MovieDetailState.Error -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text(s.message, color = colors.textSecondary, fontSize = 14.sp)
-            }
+            is MovieDetailState.Error -> DetailErrorState(message = s.message, onRetry = { store.retry() })
             is MovieDetailState.Loaded -> MovieDetailLoaded(
                 detail = s.detail,
                 overlay = overlay,
