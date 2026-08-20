@@ -1,4 +1,10 @@
-# Phase R196 — Ravilo TV: episode rail auto-hides after 30s inactivity (FR-RV-EPRAIL-1/2)
+# Phase R208 — Ravilo TV: episode rail auto-hides after 30s inactivity (FR-RV-EPRAIL-1/2)
+
+> **Renumbered from R196 2026-08-21**: the design side authored this spec as R196 without knowing
+> the dev tracker had already spent that number on `phase-R196-remembered-track-regression.md`
+> (✓ Done, landed 2026-08-14). STATUS.md's Ravilo table was dense/sequential through R207 at the
+> time this was pulled in, so R208 is the real next-free number. The code (commit `3f9ce337`) and
+> this file are updated to match; no functional change.
 
 > The in-player episode rail (opened via the "Episodes" chip while watching a series episode, shipped
 > in R14) has no inactivity timeout of its own — `openEpRail()`/`epRailOpen` are explicitly excluded
