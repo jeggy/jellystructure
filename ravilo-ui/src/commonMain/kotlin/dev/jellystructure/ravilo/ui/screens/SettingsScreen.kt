@@ -328,7 +328,7 @@ fun SignOutConfirmOverlay(displayName: String, onCancel: () -> Unit, onConfirm: 
 
 // R161 — endonyms, not translated (a language picker names languages in themselves regardless of
 // the currently active UI language, same convention the admin editor's language list already uses).
-private val UI_LANGUAGES = listOf("en" to "English", "da" to "Dansk", "fo" to "Foroyskt")
+private val UI_LANGUAGES = listOf("en" to "English", "da" to "Dansk", "fo" to "Føroyskt")
 
 @Composable
 private fun SettingsContent(

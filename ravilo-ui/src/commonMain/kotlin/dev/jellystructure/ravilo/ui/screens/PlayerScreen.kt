@@ -2165,11 +2165,20 @@ private fun pickerName(language: String?, fallbackLabel: String): String =
  * applies here). [isOff]/[isUnnamed] groups are named by their caller (str("off")/str("player.unnamed"))
  * — this function is only for a real, language-or-kind-identifiable group.
  */
-private fun groupDisplayName(group: PickerLanguage, lang: String): String = when {
-    group.language != null -> pickerName(group.language, "")
-    group.versions.all { it.kind == VariantKind.COMMENTARY } -> t("player.badge_commentary", lang)
-    group.versions.all { it.kind == VariantKind.DESCRIBE } -> t("player.badge_describes_action", lang)
-    else -> t("player.unnamed", lang)
+private fun groupDisplayName(group: PickerLanguage, lang: String): String {
+    // R206 — a non-null `group.language` unrecognized by BOTH endonym() and languageName() used to
+    // fall through to a hardcoded "" here, rendering the row with a glyph and no text at all. Fall
+    // through to the same kind-word logic used for a null-language cluster instead, and failing that,
+    // show the raw code rather than nothing — a picker row is never rendered with no name.
+    if (group.language != null) {
+        pickerName(group.language, "").takeIf { it.isNotBlank() }?.let { return it }
+    }
+    return when {
+        group.versions.all { it.kind == VariantKind.COMMENTARY } -> t("player.badge_commentary", lang)
+        group.versions.all { it.kind == VariantKind.DESCRIBE } -> t("player.badge_describes_action", lang)
+        group.language != null -> group.language.uppercase()
+        else -> t("player.unnamed", lang)
+    }
 }
 
 /** R195 §A — one row per language. No arrow + no count when there's exactly one version (OK selects

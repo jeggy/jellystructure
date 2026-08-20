@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyRow
@@ -239,7 +240,7 @@ fun BrowseScreen(
     ) {
         Column(modifier = Modifier.fillMaxSize().padding(top = RaviloDimens.appBarHeight + 24.dp)) {
             when (val s = state) {
-                is BrowseState.Loading -> Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                is BrowseState.Loading -> Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
                     Text(str("loading"), color = colors.textSecondary, fontSize = 16.sp)
                 }
                 is BrowseState.Error -> Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
@@ -257,6 +258,20 @@ fun BrowseScreen(
                             onChipDown = { runCatching { firstCellFR.requestFocus() } },
                         )
                         Spacer(Modifier.height(16.dp))
+                    }
+                    // R204 — Movies/Series/All get their page identity from the still-visible nav-bar
+                    // tab label (AppBar renders every tab's text regardless of active state); My List
+                    // has no nav-bar tab at all since R170 moved it into the avatar's ProfileMenu, so
+                    // it needs its own heading here or the page says nothing about what it is.
+                    if (kind == BrowseKind.MY_LIST) {
+                        Text(
+                            str("nav.my_list"),
+                            color = colors.text,
+                            fontSize = 24.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = raviloHPad),
+                        )
+                        Spacer(Modifier.height(8.dp))
                     }
                     // Count + grid
                     // Bug fix: "1 titles" read wrong — found during general mobile exploration testing.
