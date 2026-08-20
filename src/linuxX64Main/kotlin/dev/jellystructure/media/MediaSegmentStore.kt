@@ -25,6 +25,24 @@ object SegmentSource {
     const val JELLYFIN = "jellyfin"
     const val TMDB = "tmdb"
     const val MANUAL = "manual"
+
+    /**
+     * Phase 170 (detect_segments follow-ups, §2) — a `force=true` re-detect only checked [locked], never
+     * [source], so an unlocked exact chapter-title match could be silently clobbered by a later, merely-
+     * good-guess fingerprint or heuristic pass, or a heuristic pass could clobber a fingerprint season
+     * consensus. Higher number wins: an incoming detection may only overwrite an existing row whose
+     * precedence is ≤ its own (`precedence(incoming) >= precedence(existing.source)`) — equal-tier
+     * overwrites (a fresh chapter hit replacing an older one, a fresh fingerprint pass replacing an older
+     * one) stay allowed, matching the pre-fix behavior for same-source re-detection. `null`/unrecognized
+     * sources (a legacy pre-source row, or no row at all) rank lowest so they never block anything.
+     */
+    fun precedence(source: String?): Int = when (source) {
+        MANUAL -> 4
+        CHAPTER -> 3
+        FINGERPRINT -> 2
+        HEURISTIC -> 1
+        else -> 0  // JELLYFIN/TMDB (candidate-only, never written by a detection tier) and null/unknown
+    }
 }
 
 @Serializable
