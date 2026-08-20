@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -18,14 +19,21 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.runtime.LaunchedEffect
+import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.theme.RaviloDimens
 import dev.jellystructure.ravilo.ui.theme.raviloHPad
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
+import androidx.compose.material3.Text
 
 /**
  * Returns a moving shimmer brush. Must NOT be wrapped in remember(progress) — the
@@ -145,6 +153,25 @@ fun DetailLoadingShell() {
         ) {
             ShimmerBox(modifier = Modifier.width(160.dp).height(60.dp), brush = brush, radius = 12f)
             ShimmerBox(modifier = Modifier.width(140.dp).height(60.dp), brush = brush, radius = 12f)
+        }
+    }
+}
+
+/** R207 — shared movie/series detail Error state: message + a focusable Retry button, so a failed
+ *  load is never a dead end. Mirrors HomeScreen's HomeErrorState, minus its Sign-out action (specific
+ *  to Home's auth-invalidation case, not applicable to a single title's detail fetch). */
+@Composable
+fun DetailErrorState(message: String, onRetry: () -> Unit) {
+    val colors = RaviloTheme.colors
+    val retryFR = remember { FocusRequester() }
+    LaunchedEffect(Unit) { runCatching { retryFR.requestFocus() } }
+    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(str("error.generic"), color = colors.text, fontSize = 20.sp)
+            Spacer(Modifier.height(12.dp))
+            Text(message, color = colors.textSecondary, fontSize = 14.sp)
+            Spacer(Modifier.height(24.dp))
+            RaviloButton(str("action.retry"), focusRequester = retryFR, onSelect = onRetry)
         }
     }
 }
