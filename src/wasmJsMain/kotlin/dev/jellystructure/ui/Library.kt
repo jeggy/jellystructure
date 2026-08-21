@@ -26,6 +26,7 @@ import kotlinx.serialization.json.Json
 import org.w3c.dom.Element
 import org.w3c.dom.HTMLButtonElement
 import org.w3c.dom.HTMLElement
+import org.w3c.dom.HTMLImageElement
 import org.w3c.dom.HTMLInputElement
 import org.w3c.dom.HTMLSelectElement
 import org.w3c.dom.WebSocket
@@ -226,6 +227,18 @@ fun renderLibrary(container: Element, scope: CoroutineScope, query: Map<String, 
         val id = target.getAttribute("data-id") ?: return@addEventListener
         App.navigate("/media/$id")
     }
+    // Bug fix: a card with no stored posterPath (see posterCardHtml) falls back to attempting the real
+    // artwork route rather than assuming there's nothing to show — a genuine miss (item truly has no
+    // poster on disk) needs to swap that broken `<img>` for the plain placeholder. `error` events don't
+    // bubble, so this delegated listener must run in the capture phase to see them at all.
+    document.getElementById("poster-grid")?.addEventListener("error", { ev: Event ->
+        val img = ev.target as? HTMLImageElement ?: return@addEventListener
+        if (!img.classList.contains("poster-fallback")) return@addEventListener
+        val slot = img.parentElement ?: return@addEventListener
+        val title = img.alt
+        slot.innerHTML = """<div class="x"></div><span></span>"""
+        (slot.querySelector("span") as? HTMLElement)?.textContent = title
+    }, true)
 
     // R101: gate the observer so an early reset=false load can't run before the canonical reset=true load
     // completes — the initial observer fire sees initialLoadDone=false and skips (closes the race).
@@ -668,7 +681,15 @@ private fun posterCardHtml(item: MediaItem): String {
         """<img src="${posterSrc(item.posterPath, TMDB_IMG)}" alt="${item.title.esc()}" loading="lazy"
              style="width:100%;height:100%;object-fit:cover;border-radius:4px 4px 0 0;">"""
     } else {
-        """<div class="x"></div><span>${item.title.esc()}</span>"""
+        // Bug fix: posterPath is only ever set from a TMDB match or a manual Artwork-tab save — a real
+        // on-disk poster that arrived any other way (bundled with the original download, or Phase 171's
+        // per-basename music-video convention) leaves this null even though art genuinely exists. Fall
+        // back to the real serving route (the same one the Artwork tab's own "on disk" status comes
+        // from) instead of assuming null means missing; a genuine miss swaps to the placeholder via the
+        // delegated "error" listener wired in renderLibrary() (img error events don't bubble, only
+        // capture, hence the capture-phase listener there rather than a plain click-style one here).
+        """<img class="poster-fallback" src="/api/tv/image/${item.jellyfinId ?: item.id}/poster?w=320" alt="${item.title.esc()}" loading="lazy"
+             style="width:100%;height:100%;object-fit:cover;border-radius:4px 4px 0 0;">"""
     }
     return """
         <div class="poster" data-id="${item.jellyfinId ?: item.id}" style="cursor:pointer;">
