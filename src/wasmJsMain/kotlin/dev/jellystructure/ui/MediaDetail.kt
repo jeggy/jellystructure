@@ -2717,7 +2717,7 @@ private class ArtTarget(
 )
 
 private var artId = ""
-private var artStillBust = 0   // R131: cache-buster so the still preview reloads after a regenerate
+private var artStillBust = 0   // R131: cache-buster so the current-artwork preview (still or item asset) reloads after a save
 private var artItem: MediaItem? = null
 private var artScope: CoroutineScope? = null
 private var artTargets: List<ArtTarget> = emptyList()
@@ -2980,6 +2980,13 @@ private fun renderArtGallery() {
 
     val canUpload = t.kind == "asset" || t.kind == "episode"
     // R131: current on-disk still preview + provenance badge (episodes only).
+    // Bug fix (Phase 172 follow-up): item-level assets (poster/backdrop/clearlogo) had no equivalent —
+    // the gallery below only ever renders TMDB candidates, so a title with zero TMDB candidates (the
+    // routine case for a MUSIC_VIDEO, which never gets a TMDB match search unless matched — Phase 168/171)
+    // showed a totally empty panel even when the on-disk asset (correctly reported "on disk" by the rail
+    // dot) was perfectly real and correct — no way to actually SEE it. Reuses Ravilo's own public
+    // `/api/tv/image/{id}/{type}` (RaviloArtworkService — already resolves the same fixed per-kind path
+    // this rail's "on disk" status itself comes from) rather than adding a new admin-only serving route.
     val currentPreview = if (t.kind == "episode" && t.onDisk) {
         val (badgeCls, badgeTxt) = when (t.source) {
             "screengrab" -> "warn" to "Screen grab · placeholder (a TMDB still will replace it automatically)"
@@ -2989,6 +2996,12 @@ private fun renderArtGallery() {
         """<div class="row center" style="margin-bottom:10px;gap:10px;">
              <img src="/api/media/$artId/episodes/${encodeURIComponent(t.epFilename)}/still/file?b=$artStillBust${if (t.epNum != null) "&ep=${t.epNum}" else ""}" style="height:64px;aspect-ratio:16/9;object-fit:cover;border-radius:6px;border:1px solid var(--line)" alt="current still">
              <div><div class="tiny" style="font-weight:600;margin-bottom:2px;">Current still on disk</div><span class="badge $badgeCls" style="font-size:.62rem;">${badgeTxt.esc()}</span></div>
+           </div>"""
+    } else if (t.kind == "asset" && t.onDisk) {
+        val routeType = if (t.asset == "clearlogo") "logo" else t.asset
+        """<div class="row center" style="margin-bottom:10px;gap:10px;">
+             <img src="/api/tv/image/$artId/$routeType?w=200&b=$artStillBust" style="height:64px;aspect-ratio:${t.aspect};object-fit:cover;border-radius:6px;border:1px solid var(--line)" alt="current ${t.asset}">
+             <div><div class="tiny" style="font-weight:600;margin-bottom:2px;">Currently in use</div><span class="tiny muted">On disk — not necessarily sourced from TMDB</span></div>
            </div>"""
     } else ""
     gallery.innerHTML = """
@@ -3054,7 +3067,7 @@ private fun wireArtGallery() {
                     el.style.opacity = ""
                     if (ok) {
                         showDetailMsg("${t.label} saved to disk.", true)
-                        t.onDisk = true; renderArtRail(); wireArtRail(); selectArtTarget(artSel)
+                        t.onDisk = true; artStillBust++; renderArtRail(); wireArtRail(); selectArtTarget(artSel)
                     } else {
                         val perm = MediaApi.checkNfoWritable(artId)
                         if (perm != null && !perm.writable) {
@@ -3086,7 +3099,7 @@ private fun wireArtGallery() {
                 val ok = gallerySave(t, url)
                 if (ok) {
                     showDetailMsg("${t.label} saved to disk.", true)
-                    t.onDisk = true; renderArtRail(); wireArtRail(); selectArtTarget(artSel)
+                    t.onDisk = true; artStillBust++; renderArtRail(); wireArtRail(); selectArtTarget(artSel)
                 } else {
                     showDetailMsg("Save failed.", false)
                 }
@@ -3123,7 +3136,7 @@ private fun wireArtGallery() {
         val input = document.getElementById("art-upload-file") as? HTMLInputElement ?: return@addEventListener
         val file = input.files?.item(0) ?: return@addEventListener
         jsUpload(uploadUrl, t.asset, file)
-        scope.launch { delay(2200); showDetailMsg("Upload submitted.", true); t.onDisk = true; renderArtRail(); wireArtRail(); selectArtTarget(artSel) }
+        scope.launch { delay(2200); showDetailMsg("Upload submitted.", true); t.onDisk = true; artStillBust++; renderArtRail(); wireArtRail(); selectArtTarget(artSel) }
     }
     val dz = document.getElementById("art-dropzone") as? HTMLElement
     dz?.addEventListener("click") { (document.getElementById("art-upload-btn") as? HTMLElement)?.click() }
@@ -3133,7 +3146,7 @@ private fun wireArtGallery() {
         e.preventDefault(); dz.classList.remove("over")
         val file = (e as? org.w3c.dom.DragEvent)?.dataTransfer?.files?.item(0) ?: return@addEventListener
         jsUpload(uploadUrl, t.asset, file)
-        scope.launch { delay(2200); showDetailMsg("Upload submitted.", true); t.onDisk = true; renderArtRail(); wireArtRail(); selectArtTarget(artSel) }
+        scope.launch { delay(2200); showDetailMsg("Upload submitted.", true); t.onDisk = true; artStillBust++; renderArtRail(); wireArtRail(); selectArtTarget(artSel) }
     }
 }
 
@@ -3185,7 +3198,7 @@ private fun openArtLightbox(startIdx: Int, t: ArtTarget, scope: CoroutineScope, 
                     if (ok) {
                         overlay.remove()
                         showDetailMsg("${t.label} saved to disk.", true)
-                        t.onDisk = true; renderArtRail(); wireArtRail(); selectArtTarget(artSel)
+                        t.onDisk = true; artStillBust++; renderArtRail(); wireArtRail(); selectArtTarget(artSel)
                     } else {
                         val perm = MediaApi.checkNfoWritable(artId)
                         if (perm != null && !perm.writable) {
