@@ -473,8 +473,9 @@ suspend fun executePipeline(
         if (cfg.behavior.notifyOnScanDone)
             fireWebhook(cfg, """{"event":"scan_complete","jobId":"$jobId","items":${items.size}}""")
         if (cfg.behavior.notifyOnNoMatch) {
-            // Phase 168 (FR-168-5): a music video is never TMDB-matched by construction — excluded
-            // entirely from the count, not surfaced at all.
+            // Phase 168/171: a music video IS searched (Phase 171 reversed the "never" rule), but a
+            // miss stays unflagged here — unlike a movie/series a music video routinely and
+            // legitimately has no TMDB entry, so counting it as "unmatched" would just be noise.
             val unmatched = items.count { it.tmdbId == null && it.kind != dev.jellystructure.model.MediaKind.MUSIC_VIDEO }
             if (unmatched > 0)
                 fireWebhook(cfg, """{"event":"no_tmdb_match","jobId":"$jobId","unmatched":$unmatched}""")
@@ -531,11 +532,11 @@ suspend fun executePipeline(
         // the very next poll tick, not just on the next scan/step.
         when (step.step) {
             "pull_tmdb" -> {
-                // Phase 168 (FR-168-5): a music video is never TMDB-searched, ever — fully skip it from
-                // the working set regardless of scope, or "missing" would retry it forever for nothing.
-                val tmdbEligible = workingSet.filter { it.kind != dev.jellystructure.model.MediaKind.MUSIC_VIDEO }
-                val toProcess = if (step.scope == "all") tmdbEligible
-                    else tmdbEligible.filter { it.tmdbId == null }
+                // Phase 171 (reverses Phase 168 FR-168-5): a music video is now searched like any
+                // other kind — a miss is common and expected (never flagged, see notifyOnNoMatch
+                // below), but a real match should be found and kept up to date the same as a movie's.
+                val toProcess = if (step.scope == "all") workingSet
+                    else workingSet.filter { it.tmdbId == null }
                 Logger.info("pull_tmdb: ${toProcess.size} items (scope=${step.scope})")
                 runPipelineStepPool(
                     jobId, step.step, toProcess, { pipelineStepConcurrency(step.step, configStore.current.behavior.scanWorkers) },

@@ -16,6 +16,7 @@ import dev.jellystructure.log.Logger
 import dev.jellystructure.log.WorkerId
 import dev.jellystructure.media.ArtworkAsset
 import dev.jellystructure.media.ArtworkDownloader
+import dev.jellystructure.media.assetFilePath
 import dev.jellystructure.media.FfmpegRunner
 import dev.jellystructure.media.FfprobeRunner
 import dev.jellystructure.media.ProbeDiagnosis
@@ -575,8 +576,10 @@ fun Route.mediaRoutes(
                         return@post
                     }
 
-                    val dir = item.kind.let { if (it == MediaKind.TV_SHOW) item.path else item.path.substringBeforeLast('/') }
-                    val destPath = "$dir/$filename"
+                    // Phase 168 follow-up fix: a music video shares its folder with siblings, so it
+                    // needs the same per-basename convention as everything else in ArtworkDownloader —
+                    // see assetFilePath's doc comment.
+                    val destPath = assetFilePath(item, filename)
                     val tmpPath = "$destPath.tmp"
                     // Phase 129 (FR-OPS1 §C) — use{} so a mid-write throw still closes the sink.
                     SystemFileSystem.sink(Path(tmpPath)).buffered().use { sink ->
@@ -1487,9 +1490,12 @@ fun Route.mediaRoutes(
                     "series" -> scanner.rescanMetadata(item)
                     else -> scanner.syncSeriesEpisodes(item)
                 }
-                // Phase 168: no TMDB to re-fetch, ever — this button is a no-op for a music video
-                // rather than an error (out of FR-168's scope to build a real re-probe path here).
-                MediaKind.MUSIC_VIDEO -> item
+                // Phase 171 (reverses Phase 168): a music video can have a real TMDB match now, so
+                // route this through the same metadata-only rescan TV_SHOW's "series" scope uses —
+                // no per-file re-probe path exists for music videos (out of scope; filename parsing
+                // doesn't need a fresh ffprobe to redo), but a manually-set or freshly-searched tmdbId
+                // should actually get fetched, not silently dropped.
+                MediaKind.MUSIC_VIDEO -> scanner.rescanMetadata(item)
             }?.let { artwork.stampHasStill(it) }
             if (updated == null) {
                 call.respond(HttpStatusCode.InternalServerError, mapOf("error" to "sync failed — file not found or no TMDB match"))
@@ -2215,8 +2221,8 @@ internal suspend fun runScan(
             if (cfg.behavior.notifyOnScanDone)
                 fireWebhook(cfg, """{"event":"scan_complete","jobId":"$jobId","items":${succeeded.value}}""")
             if (cfg.behavior.notifyOnNoMatch) {
-                // Phase 168 (FR-168-5): a music video is never TMDB-matched by construction — excluded
-                // entirely from the count, not surfaced at all.
+                // Phase 168/171: a music video IS searched (Phase 171 reversed the "never" rule), but
+                // a miss stays unflagged — routinely and legitimately has no TMDB entry.
                 val unmatched = allItems.count { it.tmdbId == null && it.kind != dev.jellystructure.model.MediaKind.MUSIC_VIDEO }
                 if (unmatched > 0)
                     fireWebhook(cfg, """{"event":"no_tmdb_match","jobId":"$jobId","unmatched":$unmatched}""")
