@@ -48,5 +48,42 @@ just-saved asset's preview doesn't show a stale cached thumbnail.
 - Confirmed on disk directly: `Ranvá_Christmas_Show_Download-poster.jpg` exists at the exact path
   `assetFilePath()` computes; no bare `poster.jpg` exists in that shared artist folder (ruling out the
   pre-171 movie-shaped convention as an alternate explanation for the rail's "on disk" status).
-- Not yet re-verified in a live browser (needs a backend restart to pick up this admin-frontend change,
-  and per standing session rules a restart requires the user's explicit go-ahead).
+- Live-verified in the browser the same day (backend restarted, user confirmed): the "Currently in use"
+  preview rendered correctly. Two follow-up rounds of feedback below.
+
+## 2026-08-21 amendment #1 — move the preview into the candidate grid; generalize beyond music videos
+
+**User feedback, live screenshot:** "Doesn't look so good yet. Would be nice to show it in the list as
+well, maybe just a badge showing that it's not from tmdb." Separately: the same on-disk-but-
+never-TMDB-touched gap "also [happens] in rare cases for normal movies/series, because the image was
+included originally alongside the actual media file" — i.e. this was never a music-video-only bug, it's
+any item whose poster arrived on disk without ever going through a TMDB fetch or a manual Artwork-tab
+save.
+
+- **Visual integration**: the small side-by-side preview strip is gone. The current on-disk asset is now
+  a real tile inside the candidate grid itself (`localTile`, prepended to `cards`) — same `.art-card`
+  box, same aspect ratio, badged **"NOT FROM TMDB"** (`.art-ribbon.local`, accent-purple, distinct from
+  the existing green "ON DISK" ribbon a *matched* TMDB candidate gets) instead of a green on/off dot with
+  no visual context. `shown.isEmpty() && localTile.isEmpty()` is now the actual empty-state condition (a
+  title with a local asset but zero TMDB candidates no longer shows "No candidates for this filter" next
+  to a tile that contradicts it).
+- **A second, separate, wider bug surfaced by the same investigation**: `item.posterPath` — the field
+  `Library.kt`'s grid cards (`posterCardHtml`) and `MediaDetail.kt`'s Overview-tab hero poster both use to
+  decide whether to render an `<img>` at all — is **only ever set** by a TMDB match or a manual
+  Artwork-tab save (`MediaRoutes.kt:607`, the Phase 133 `/tv/image/{id}/poster` sentinel convention). It
+  is **never** back-filled when the scanner or a pipeline step merely finds a pre-existing on-disk poster
+  with no TMDB source — exactly the case the user just described for ordinary movies/series, and the
+  Ranvá case too. So even after this fix made the Artwork tab correctly show the asset, the **Library
+  grid card and the item's own Overview-tab poster still rendered a blank placeholder** for the exact
+  same title, because both gate on a field that was never the real "does art exist" signal — only a
+  record of *how* it got there.
+  - Fixed the same way Ravilo's own `toMediaCard()` already does it (`BrowseService.kt` —
+    `posterUrl = RaviloImageUrl.poster(id)`, always set, never gated on a stored field): when
+    `posterPath == null`, both `posterCardHtml` and the Overview poster now still render an `<img>`
+    pointing at the real serving route (`/api/tv/image/{id}/poster`) instead of jumping straight to the
+    "no poster" placeholder — a genuine miss 404s and swaps to the placeholder via an error handler
+    (Library: one capture-phase listener delegated on `#poster-grid`, since `error` events don't bubble;
+    Overview: a single listener, one poster per page). No backend/data-layer change — this is purely
+    "stop trusting a provenance field as an existence field" on the two remaining UI call sites that did.
+- Verified: `compileKotlinWasmJs` clean. Not yet re-verified live (this amendment landed after the
+  live-verified state above; needs another restart).
