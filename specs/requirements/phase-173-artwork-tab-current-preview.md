@@ -87,3 +87,21 @@ save.
     "stop trusting a provenance field as an existence field" on the two remaining UI call sites that did.
 - Verified: `compileKotlinWasmJs` clean. Not yet re-verified live (this amendment landed after the
   live-verified state above; needs another restart).
+
+## 2026-08-21 amendment #2 — soften the badge
+
+**User feedback**, comparing a live side-by-side screenshot (jellystructure's Artwork tab vs. Jellyfin's
+own player showing the same image cleanly): asked for design ideas, then scoped the response down to
+just one — soften the badge. `"NOT FROM TMDB"` read like a warning/error for what is usually the
+correct, expected state (especially for a music video, which never TMDB-searches by default) — a strong
+accent-purple ribbon and border gave it unwarranted visual weight.
+- Ribbon text: `"NOT FROM TMDB"` → `"Local"`.
+- `.art-ribbon.local`: solid `var(--acc)` background → the same muted translucent `#000a` treatment
+  `.art-pill` already uses elsewhere in this same grid, `color:var(--muted)` instead of white, no longer
+  bold-white-on-accent.
+- `.art-card.local`: border color `var(--acc)` (matching the "ON DISK" ribbon's visual weight) →
+  `var(--line)`, the same neutral border every other UI element in this codebase uses for "nothing
+  special here."
+- The other two ideas offered (fix the `cover`→`contain` crop; give the Overview-tab poster a bigger
+  hero treatment) were explicitly NOT chosen this round — left for a future pass if wanted.
+- `compileKotlinWasmJs` clean. Not yet re-verified live.

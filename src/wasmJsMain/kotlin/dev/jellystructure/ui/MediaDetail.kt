@@ -2985,7 +2985,7 @@ private fun renderArtGallery() {
         val routeType = if (t.asset == "clearlogo") "logo" else t.asset
         """<div class="art-card local" style="aspect-ratio:${t.aspect};">
               <img src="/api/tv/image/$artId/$routeType?w=200&b=$artStillBust" loading="lazy" alt="current ${t.asset}">
-              <span class="art-ribbon local">NOT FROM TMDB</span>
+              <span class="art-ribbon local">Local</span>
            </div>"""
     } else ""
 
@@ -3296,11 +3296,11 @@ private fun injectArtworkStyles() {
         .art-card { position:relative; border-radius:10px; overflow:hidden; cursor:pointer; border:2px solid transparent; background:#0006; transition:opacity .15s; }
         .art-card img { width:100%; height:100%; object-fit:cover; display:block; }
         .art-card.ondisk { border-color:var(--ok,#22c55e); }
-        .art-card.local { border-color:var(--acc,#7b6ef0); cursor:default; }
+        .art-card.local { border-color:var(--line,#2a2a3d); cursor:default; }
         .art-card:hover .art-zoom { opacity:1; }
         .art-zoom { position:absolute; top:5px; right:5px; background:#000b; color:#fff; border:none; border-radius:5px; padding:2px 5px; font-size:.72rem; cursor:pointer; opacity:0; transition:opacity .15s; line-height:1.3; }
         .art-ribbon { position:absolute; top:6px; left:6px; background:var(--ok,#22c55e); color:#04210f; font-size:.62rem; font-weight:700; padding:1px 6px; border-radius:5px; }
-        .art-ribbon.local { background:var(--acc,#7b6ef0); color:#fff; }
+        .art-ribbon.local { background:#000a; color:var(--muted,#9ca3af); font-weight:600; }
         .art-card-meta { position:absolute; bottom:0; left:0; right:0; display:flex; gap:4px; flex-wrap:wrap; padding:5px; background:linear-gradient(transparent, #000b); }
         .art-pill { font-size:.6rem; background:#000a; padding:1px 5px; border-radius:5px; }
         #art-lightbox { position:fixed; inset:0; background:#000c; display:flex; align-items:center; justify-content:center; z-index:9999; outline:none; }
