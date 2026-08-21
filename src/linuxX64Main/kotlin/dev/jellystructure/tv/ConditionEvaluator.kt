@@ -141,6 +141,7 @@ object ConditionEvaluator {
         when (row.mediaKind) {
             "MOVIE"  -> if (item.kind != MediaKind.MOVIE) return false
             "SERIES" -> if (item.kind != MediaKind.TV_SHOW) return false
+            "MUSIC_VIDEO" -> if (item.kind != MediaKind.MUSIC_VIDEO) return false
         }
         return evalGroup(item, facets, row.effectiveQuery(), heroIds)
     }

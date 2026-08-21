@@ -1553,7 +1553,7 @@ private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx
             baseQuery = chBaseQuery(),
             onApply = { query, include ->
                 val label = query.firstValueOrNull() ?: "Custom row"
-                val mediaKind = when (include) { "movies" -> "MOVIE"; "series" -> "SERIES"; else -> null }
+                val mediaKind = when (include) { "movies" -> "MOVIE"; "series" -> "SERIES"; "musicvideos" -> "MUSIC_VIDEO"; else -> null }
                 val newRow = RowConfig(id = genId("row"), kind = RowKind.CUSTOM, title = label, mediaKind = mediaKind, query = query)
                 val list = currentConfig.channels.toMutableList()
                 val cur = list[idx]
@@ -1569,13 +1569,13 @@ private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx
     for (ri in chRowItems.indices) {
         container.querySelector("[data-row-ch-edit='$ri']")?.addEventListener("click") { _ ->
             val row = currentConfig.channels.getOrNull(idx)?.rows?.items?.getOrNull(ri) ?: return@addEventListener
-            val inc = when (row.mediaKind) { "MOVIE" -> "movies"; "SERIES" -> "series"; else -> "all" }
+            val inc = when (row.mediaKind) { "MOVIE" -> "movies"; "SERIES" -> "series"; "MUSIC_VIDEO" -> "musicvideos"; else -> "all" }
             openWorkbench(scope, "Edit row — ${(row.title ?: "Custom row").htmlEsc()}", viewer = currentUserId,
                 initialQuery = row.effectiveQuery(), initialInclude = inc,
                 applyLabel = "Update row",
                 baseQuery = chBaseQuery(),
                 onApply = { query, inc2 ->
-                    val mediaKind = when (inc2) { "movies" -> "MOVIE"; "series" -> "SERIES"; else -> null }
+                    val mediaKind = when (inc2) { "movies" -> "MOVIE"; "series" -> "SERIES"; "musicvideos" -> "MUSIC_VIDEO"; else -> null }
                     val list = currentConfig.channels.toMutableList()
                     val cur = list[idx]
                     val items = cur.rows?.items?.toMutableList() ?: return@openWorkbench
@@ -1822,6 +1822,7 @@ private fun systemRowSource(r: RowConfig): String = when (r.kind) {
     RowKind.NEWLY_ADDED -> when (r.mediaKind) {
         "MOVIE" -> "kind = movie · sort newest"
         "SERIES" -> "kind = series · sort newest"
+        "MUSIC_VIDEO" -> "kind = music video · sort newest"
         else -> "movies + series combined · sort newest"
     }
     else -> ""
@@ -1944,7 +1945,7 @@ private fun renderRows(container: Element) {
         openWorkbench(scope, "New content row", viewer = currentUserId, applyLabel = "Add row",
             onApply = { query, include ->
                 val label = query.firstValueOrNull() ?: "Custom row"
-                val mediaKind = when (include) { "movies" -> "MOVIE"; "series" -> "SERIES"; else -> null }
+                val mediaKind = when (include) { "movies" -> "MOVIE"; "series" -> "SERIES"; "musicvideos" -> "MUSIC_VIDEO"; else -> null }
                 structural(container, {
                     currentConfig = currentConfig.copy(rows = currentConfig.rows +
                         RowConfig(id = genId("row"), kind = RowKind.CUSTOM, title = label, mediaKind = mediaKind, query = query))
@@ -1980,11 +1981,11 @@ private fun renderRows(container: Element) {
         sect.querySelector("[data-row-edit='$i']")?.addEventListener("click") { _ ->
             val scope = rcScope ?: return@addEventListener
             val r = currentConfig.rows.find { it.id == rowId } ?: return@addEventListener
-            val include = when (r.mediaKind) { "MOVIE" -> "movies"; "SERIES" -> "series"; else -> "all" }
+            val include = when (r.mediaKind) { "MOVIE" -> "movies"; "SERIES" -> "series"; "MUSIC_VIDEO" -> "musicvideos"; else -> "all" }
             openWorkbench(scope, "Edit row — ${(r.title ?: "custom row")}", viewer = currentUserId,
                 initialQuery = r.effectiveQuery(), initialInclude = include, applyLabel = "Update row",
                 onApply = { query, inc ->
-                    val mediaKind = when (inc) { "movies" -> "MOVIE"; "series" -> "SERIES"; else -> null }
+                    val mediaKind = when (inc) { "movies" -> "MOVIE"; "series" -> "SERIES"; "musicvideos" -> "MUSIC_VIDEO"; else -> null }
                     structural(container, {
                         currentConfig = currentConfig.copy(rows = currentConfig.rows.map {
                             if (it.id == rowId) it.copy(kind = RowKind.CUSTOM, query = query, mediaKind = mediaKind) else it
@@ -2617,6 +2618,7 @@ private fun defaultRowTitle(kind: RowKind, mediaKind: String? = null) = when (ki
     RowKind.NEWLY_ADDED -> when (mediaKind) {
         "MOVIE"  -> "Movies — Newly Added"
         "SERIES" -> "Series — Newly Added"
+        "MUSIC_VIDEO" -> "Music videos — Newly Added"
         else     -> "Newly Added"
     }
     RowKind.GENRE       -> "Genre"
