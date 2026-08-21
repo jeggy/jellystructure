@@ -260,7 +260,11 @@ private fun SeededBrowseStore.valuesFor(all: List<BrowseCard>, key: BrowseFacetK
  *  configured name (threaded in from the already-loaded Home/channel data by the caller). */
 @Composable
 private fun facetValueLabel(key: BrowseFacetKey, value: String, channelNames: Map<String, String>): String = when (key) {
-    BrowseFacetKey.TYPE -> if (value == "MOVIE") str("browse.type.movie") else str("browse.type.series")
+    BrowseFacetKey.TYPE -> when (value) {
+        "MOVIE" -> str("browse.type.movie")
+        "MUSIC_VIDEO" -> str("browse.type.musicvideo")
+        else -> str("browse.type.series")
+    }
     BrowseFacetKey.WATCHED -> when (value) {
         "watched" -> str("browse.watched.watched")
         "in_progress" -> str("browse.watched.in_progress")

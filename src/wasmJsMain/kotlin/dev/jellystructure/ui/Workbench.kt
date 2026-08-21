@@ -239,6 +239,7 @@ fun openWorkbench(
               <span class="${if (wbInclude == "all") "on" else ""}" data-inc="all">All</span>
               <span class="${if (wbInclude == "movies") "on" else ""}" data-inc="movies">Movies</span>
               <span class="${if (wbInclude == "series") "on" else ""}" data-inc="series">Series</span>
+              <span class="${if (wbInclude == "musicvideos") "on" else ""}" data-inc="musicvideos">Music videos</span>
             </span>
             <span class="wb-x" id="wb-close" style="margin-left:12px;cursor:pointer;">✕</span>
           </div>
@@ -657,7 +658,7 @@ internal suspend fun countMatching(
     viewer: String? = null,
     pageSize: Int = 1,
 ): MediaPage? = MediaApi.list(
-    kind = when (include) { "movies" -> MediaKind.MOVIE; "series" -> MediaKind.TV_SHOW; else -> null },
+    kind = when (include) { "movies" -> MediaKind.MOVIE; "series" -> MediaKind.TV_SHOW; "musicvideos" -> MediaKind.MUSIC_VIDEO; else -> null },
     pageSize = pageSize,
     viewer = viewer,
     query = query,

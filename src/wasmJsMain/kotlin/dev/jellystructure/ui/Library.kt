@@ -185,6 +185,7 @@ fun renderLibrary(container: Element, scope: CoroutineScope, query: Map<String, 
             <span id="k-all" class="on">All</span>
             <span id="k-movie">Movies</span>
             <span id="k-tv">TV</span>
+            <span id="k-mv">Music videos</span>
           </span>
         </div>
         <p class="page-sub">Everything Jellystructure manages. A red corner means at least one untagged track; an orange one means a mixed-language series. Click any title to open its detail page.</p>
@@ -259,8 +260,8 @@ private fun syncFilterUiToState(scope: CoroutineScope) {
         (document.getElementById(id) as? HTMLElement)?.className =
             if (id == filterActive) "chip active-chip" else "chip"
     }
-    val kindActive = when (libKind) { MediaKind.MOVIE -> "k-movie"; MediaKind.TV_SHOW -> "k-tv"; else -> "k-all" }
-    listOf("k-all", "k-movie", "k-tv").forEach { id ->
+    val kindActive = when (libKind) { MediaKind.MOVIE -> "k-movie"; MediaKind.TV_SHOW -> "k-tv"; MediaKind.MUSIC_VIDEO -> "k-mv"; else -> "k-all" }
+    listOf("k-all", "k-movie", "k-tv", "k-mv").forEach { id ->
         (document.getElementById(id) as? HTMLElement)?.className = if (id == kindActive) "on" else ""
     }
     (document.getElementById("lib-search") as? HTMLInputElement)?.value = libSearch ?: ""
@@ -311,10 +312,11 @@ private fun attachLibraryListeners(scope: CoroutineScope) {
         "k-all"   to { libKind = null },
         "k-movie" to { libKind = MediaKind.MOVIE },
         "k-tv"    to { libKind = MediaKind.TV_SHOW },
+        "k-mv"    to { libKind = MediaKind.MUSIC_VIDEO },
     ).forEach { (id, setter) ->
         document.getElementById(id)?.addEventListener("click") {
             setter()
-            listOf("k-all", "k-movie", "k-tv").forEach { btnId ->
+            listOf("k-all", "k-movie", "k-tv", "k-mv").forEach { btnId ->
                 (document.getElementById(btnId) as? HTMLElement)?.className = if (btnId == id) "on" else ""
             }
             reload()
@@ -705,7 +707,7 @@ private fun libEffectiveQuery(): ConditionGroup? {
 }
 
 private fun libInclude(): String = when (libKind) {
-    MediaKind.MOVIE -> "movies"; MediaKind.TV_SHOW -> "series"; else -> "all"
+    MediaKind.MOVIE -> "movies"; MediaKind.TV_SHOW -> "series"; MediaKind.MUSIC_VIDEO -> "musicvideos"; else -> "all"
 }
 
 // Phase 105: channel/content-row authoring now lives in the Ravilo config editor (per-user & global
@@ -733,7 +735,7 @@ private fun applyWorkbenchToLibrary(query: ConditionGroup, include: String) {
     libAudioLangs = emptyList(); libUntaggedAudio = false; libAudioCodec = null; libTrackTitle = null
     libCoverageCond = null; libMatch = "ALL"
     val params = buildList {
-        when (include) { "movies" -> add("kind=MOVIE"); "series" -> add("kind=TV_SHOW") }
+        when (include) { "movies" -> add("kind=MOVIE"); "series" -> add("kind=TV_SHOW"); "musicvideos" -> add("kind=MUSIC_VIDEO") }
         if (query.isLive()) add("query=${dev.jellystructure.encodeURIComponent(libCovJson.encodeToString(ConditionGroup.serializer(), query))}")
     }
     App.navigate(if (params.isEmpty()) "/library" else "/library?${params.joinToString("&")}")

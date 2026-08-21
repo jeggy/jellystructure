@@ -58,6 +58,7 @@ class BrowseService(
         val kindFiltered = when (mediaKind) {
             "MOVIE"  -> all.filter { it.kind == MediaKind.MOVIE }
             "SERIES" -> all.filter { it.kind == MediaKind.TV_SHOW }
+            "MUSIC_VIDEO" -> all.filter { it.kind == MediaKind.MUSIC_VIDEO }
             else     -> all
         }
         // Bug fix: this endpoint never sorted its result at all -- items came back in raw DB scan
