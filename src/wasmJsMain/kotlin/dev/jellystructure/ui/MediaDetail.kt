@@ -325,7 +325,13 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
         """<img src="${posterSrc(item.posterPath, TMDB_IMG_LG)}" alt="${item.title.esc()}"
              style="width:100%;height:auto;border-radius:4px;">"""
     } else {
-        """<div class="imgslot" style="height:260px;"><div class="x"></div><span>No poster</span></div>"""
+        // Bug fix: posterPath is only ever set from a TMDB match or a manual Artwork-tab save — a real
+        // on-disk poster that arrived any other way (bundled with the download, or Phase 171's
+        // per-basename music-video convention) leaves this null even though art genuinely exists. Fall
+        // back to the real serving route rather than assuming null means missing; a genuine miss swaps
+        // to "No poster" via the error handler wired below.
+        """<img id="detail-poster-fallback" src="/api/tv/image/${item.id}/poster?w=220" alt="${item.title.esc()}"
+             style="width:100%;height:auto;border-radius:4px;">"""
     }
 
     // Phase 94: genre provenance, derived from the TMDB baseline (item.tmdbGenres). A user-added genre
@@ -989,6 +995,14 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
                 }
             }
         }
+    }
+
+    // Bug fix: a poster with no stored posterPath (see posterHtml above) falls back to attempting the
+    // real artwork route rather than assuming there's nothing to show — a genuine miss needs to swap
+    // that broken `<img>` for the plain "No poster" placeholder.
+    document.getElementById("detail-poster-fallback")?.addEventListener("error") {
+        document.getElementById("detail-poster-fallback")?.outerHTML =
+            """<div class="imgslot" style="height:260px;"><div class="x"></div><span>No poster</span></div>"""
     }
 
     if (activeTab == "artwork") scope.launch { loadArtworkTab(item, scope) }
@@ -2957,11 +2971,29 @@ private fun renderArtGallery() {
         else -> """Showing ${artFilterLabel(artLang)} (${shown.size}).${if (hidden > 0) " <a class=\"art-showall\">$hidden hidden — show all →</a>" else ""}"""
     }
 
-    val cards = if (shown.isEmpty()) {
+    // Bug fix (Phase 173 follow-up): item-level assets (poster/backdrop/clearlogo) never had a way to
+    // show the actual current on-disk file — the grid below only ever rendered TMDB candidates, so a
+    // title with zero candidates (the routine case for a MUSIC_VIDEO, which never TMDB-searches unless
+    // matched — Phase 168/171 — but the same gap hits an ordinary movie/series whenever its artwork
+    // arrived bundled with the download rather than through a TMDB fetch or a manual Artwork-tab save)
+    // showed a totally empty panel even when the on-disk asset (correctly reported "on disk" by the rail
+    // dot) was perfectly real. First cut was a small preview strip above the grid — moved INTO the grid
+    // itself as a real tile, badged distinctly, so it reads as part of "the list" rather than a bolted-on
+    // extra: reuses Ravilo's own public `/api/tv/image/{id}/{type}` (RaviloArtworkService — already
+    // resolves the same fixed per-kind path the rail's "on disk" status itself comes from).
+    val localTile = if (t.kind == "asset" && t.onDisk) {
+        val routeType = if (t.asset == "clearlogo") "logo" else t.asset
+        """<div class="art-card local" style="aspect-ratio:${t.aspect};">
+              <img src="/api/tv/image/$artId/$routeType?w=200&b=$artStillBust" loading="lazy" alt="current ${t.asset}">
+              <span class="art-ribbon local">NOT FROM TMDB</span>
+           </div>"""
+    } else ""
+
+    val cards = if (shown.isEmpty() && localTile.isEmpty()) {
         """<div class="muted tiny" style="padding:18px 0;">No candidates for this filter.</div>"""
     } else {
         lbCandidates = shown
-        shown.mapIndexed { idx, c ->
+        localTile + shown.mapIndexed { idx, c ->
             val onDisk = c.onDisk
             val cls = "art-card" + (if (onDisk) " ondisk" else "")
             """<div class="$cls" data-path="${c.filePath.esc()}" data-lbidx="$idx" style="aspect-ratio:${t.aspect};">
@@ -2979,14 +3011,8 @@ private fun renderArtGallery() {
     val footer = ""
 
     val canUpload = t.kind == "asset" || t.kind == "episode"
-    // R131: current on-disk still preview + provenance badge (episodes only).
-    // Bug fix (Phase 172 follow-up): item-level assets (poster/backdrop/clearlogo) had no equivalent —
-    // the gallery below only ever renders TMDB candidates, so a title with zero TMDB candidates (the
-    // routine case for a MUSIC_VIDEO, which never gets a TMDB match search unless matched — Phase 168/171)
-    // showed a totally empty panel even when the on-disk asset (correctly reported "on disk" by the rail
-    // dot) was perfectly real and correct — no way to actually SEE it. Reuses Ravilo's own public
-    // `/api/tv/image/{id}/{type}` (RaviloArtworkService — already resolves the same fixed per-kind path
-    // this rail's "on disk" status itself comes from) rather than adding a new admin-only serving route.
+    // R131: current on-disk still preview + provenance badge (episodes only — item-level assets now
+    // get their own equivalent as a grid tile, see localTile above).
     val currentPreview = if (t.kind == "episode" && t.onDisk) {
         val (badgeCls, badgeTxt) = when (t.source) {
             "screengrab" -> "warn" to "Screen grab · placeholder (a TMDB still will replace it automatically)"
@@ -2996,12 +3022,6 @@ private fun renderArtGallery() {
         """<div class="row center" style="margin-bottom:10px;gap:10px;">
              <img src="/api/media/$artId/episodes/${encodeURIComponent(t.epFilename)}/still/file?b=$artStillBust${if (t.epNum != null) "&ep=${t.epNum}" else ""}" style="height:64px;aspect-ratio:16/9;object-fit:cover;border-radius:6px;border:1px solid var(--line)" alt="current still">
              <div><div class="tiny" style="font-weight:600;margin-bottom:2px;">Current still on disk</div><span class="badge $badgeCls" style="font-size:.62rem;">${badgeTxt.esc()}</span></div>
-           </div>"""
-    } else if (t.kind == "asset" && t.onDisk) {
-        val routeType = if (t.asset == "clearlogo") "logo" else t.asset
-        """<div class="row center" style="margin-bottom:10px;gap:10px;">
-             <img src="/api/tv/image/$artId/$routeType?w=200&b=$artStillBust" style="height:64px;aspect-ratio:${t.aspect};object-fit:cover;border-radius:6px;border:1px solid var(--line)" alt="current ${t.asset}">
-             <div><div class="tiny" style="font-weight:600;margin-bottom:2px;">Currently in use</div><span class="tiny muted">On disk — not necessarily sourced from TMDB</span></div>
            </div>"""
     } else ""
     gallery.innerHTML = """
@@ -3276,9 +3296,11 @@ private fun injectArtworkStyles() {
         .art-card { position:relative; border-radius:10px; overflow:hidden; cursor:pointer; border:2px solid transparent; background:#0006; transition:opacity .15s; }
         .art-card img { width:100%; height:100%; object-fit:cover; display:block; }
         .art-card.ondisk { border-color:var(--ok,#22c55e); }
+        .art-card.local { border-color:var(--acc,#7b6ef0); cursor:default; }
         .art-card:hover .art-zoom { opacity:1; }
         .art-zoom { position:absolute; top:5px; right:5px; background:#000b; color:#fff; border:none; border-radius:5px; padding:2px 5px; font-size:.72rem; cursor:pointer; opacity:0; transition:opacity .15s; line-height:1.3; }
         .art-ribbon { position:absolute; top:6px; left:6px; background:var(--ok,#22c55e); color:#04210f; font-size:.62rem; font-weight:700; padding:1px 6px; border-radius:5px; }
+        .art-ribbon.local { background:var(--acc,#7b6ef0); color:#fff; }
         .art-card-meta { position:absolute; bottom:0; left:0; right:0; display:flex; gap:4px; flex-wrap:wrap; padding:5px; background:linear-gradient(transparent, #000b); }
         .art-pill { font-size:.6rem; background:#000a; padding:1px 5px; border-radius:5px; }
         #art-lightbox { position:fixed; inset:0; background:#000c; display:flex; align-items:center; justify-content:center; z-index:9999; outline:none; }
