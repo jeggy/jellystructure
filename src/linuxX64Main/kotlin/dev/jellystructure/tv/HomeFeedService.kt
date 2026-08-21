@@ -349,6 +349,7 @@ class HomeFeedService(
                     val filtered = when (rowCfg.mediaKind) {
                         "MOVIE"  -> all.filter { it.kind == MediaKind.MOVIE }
                         "SERIES" -> all.filter { it.kind == MediaKind.TV_SHOW }
+                        "MUSIC_VIDEO" -> all.filter { it.kind == MediaKind.MUSIC_VIDEO }
                         else     -> all
                     }
                     val cards = filtered
@@ -459,6 +460,7 @@ class HomeFeedService(
             val filtered = when (rowCfg.mediaKind) {
                 "MOVIE"  -> matched.filter { it.kind == MediaKind.MOVIE }
                 "SERIES" -> matched.filter { it.kind == MediaKind.TV_SHOW }
+                "MUSIC_VIDEO" -> matched.filter { it.kind == MediaKind.MUSIC_VIDEO }
                 else     -> matched
             }
             val cards = filtered
