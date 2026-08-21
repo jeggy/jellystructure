@@ -196,7 +196,7 @@ class Scanner(
         return when (jItem.type) {
             "Movie" -> scanMovie(jItem, localPath, effectiveFallback, libraryId)
             "Series" -> scanSeries(jItem, localPath, effectiveFallback, libraryId, lib)
-            "MusicVideo" -> scanMusicVideo(jItem, localPath, libraryId)
+            "MusicVideo" -> scanMusicVideo(jItem, localPath, effectiveFallback, libraryId)
             else -> null
         }
     }
@@ -332,12 +332,18 @@ class Scanner(
     }
 
     /**
-     * Phase 168 (FR-168-2/168-3): structurally closer to [scanMovie] than [scanSeries] — one file, no
-     * episodes, no season handling — but filename-only, never TMDB (FR-168-3): no search, no id lookup,
-     * no localized details, no cast/crew/certifications/trailer. `director` is reused for the artist
-     * name (FR-168-1) rather than adding a new column.
+     * Phase 168 (FR-168-2/168-3) → Phase 171 (a concert-film/live-DVD music video CAN have a real
+     * TMDB movie entry — reported live: "Vesper Orbit Tour" filename-searches to nothing, but the real
+     * concert film is TMDB movie 25352, "Vesper: ORBIT - Live from Parken Stadium"). Structurally
+     * closer to [scanMovie] than [scanSeries] — one file, no episodes — and now genuinely mirrors
+     * [scanMovie]'s TMDB fetch when a match exists: title/overview/poster/backdrop/genres/cast/crew/
+     * certifications/trailer/imdbId. **Never required** — filename-only metadata is still the floor,
+     * a search miss is normal for a short clip with no formal release, and (FR-168-5, unchanged) a
+     * miss is never flagged in `notifyOnNoMatch`. `director` always stays the filename-parsed artist
+     * (FR-168-1) regardless of a TMDB match — the "Artist" field is about who performs, not TMDB's
+     * own director/crew credit for the film.
      */
-    private suspend fun scanMusicVideo(jItem: JellyfinItem, localPath: String, libraryId: String?): MediaItem? {
+    private suspend fun scanMusicVideo(jItem: JellyfinItem, localPath: String, fallback: String, libraryId: String?): MediaItem? {
         if (!SystemFileSystem.exists(Path(localPath))) {
             Logger.warn("Music video file not found on disk: $localPath")
             return null
@@ -346,20 +352,47 @@ class Scanner(
         Logger.info("Scanning music video: $title${artist?.let { " — $it" } ?: ""}", "scan")
 
         val tracks = FfprobeRunner.probe(localPath)
+        val audioLangs = tracks.filter { it.kind == TrackKind.AUDIO }.map { it.language }
+        val langPriority = LanguageResolver.priorityList(audioLangs, fallback)
+
+        // Phase 171: search combines artist + title when both are known — TMDB concert-film titles
+        // routinely include the artist name (e.g. "Vesper: ORBIT"), so the bare filename title alone
+        // under-searches. Still just a best-effort search: providerIds first, like every other kind.
+        val searchQuery = if (artist != null) "$artist $title" else title
+        val tmdbId = jItem.providerIds?.tmdb?.toIntOrNull() ?: tmdb.searchMovie(searchQuery, jItem.year)?.id
+        val localized = tmdbId?.let { tmdb.getMovieDetailsLocalized(it, langPriority) }
+        val details = localized?.details
+        val resolvedLang = localized?.let { it.language ?: langPriority.lastOrNull() }
+
         val issueCount = tracks.count {
             (it.kind == TrackKind.AUDIO || it.kind == TrackKind.SUBTITLE) && it.language == null
         }
+        val primaryCompany = details?.productionCompanies?.firstOrNull()
+        val tmdbFinalId = details?.id ?: tmdbId
+        val storedYear = details?.releaseDate?.take(4)?.toIntOrNull() ?: jItem.year
+        val (cast, crew) = tmdbFinalId?.let { fetchCredits(it, isMovie = true) } ?: Pair(emptyList(), emptyList())
+        val extIds = tmdbFinalId?.let { tmdb.getExternalIds(it, isMovie = true) }
+        val certifications = tmdbFinalId?.let { tmdb.getMovieCertifications(it) } ?: emptyMap()
+        val trailer = tmdbFinalId?.let { buildTrailer(tmdb.getMovieVideos(it, details?.originalLanguage.orEmpty())) }
         return MediaItem(
             id = itemId(title, jItem.year, jItem.id),
-            title = title,
-            year = jItem.year,
+            title = details?.title ?: title,
+            year = storedYear,
             kind = MediaKind.MUSIC_VIDEO,
             path = localPath,
             jellyfinId = jItem.id,
-            tmdbId = null,
-            originalLanguage = null,
-            posterPath = null,
-            overview = null,
+            tmdbId = tmdbFinalId,
+            originalLanguage = details?.originalLanguage?.takeIf { it.isNotBlank() },
+            resolvedLanguage = resolvedLang.takeIf { audioLangs.isNotEmpty() },
+            posterPath = details?.posterPath,
+            backdropPath = details?.backdropPath,
+            overview = details?.overview?.takeIf { it.isNotBlank() },
+            genres = details?.genres?.map { it.name } ?: emptyList(),
+            tmdbGenres = details?.genres?.map { it.name } ?: emptyList(),
+            studio = primaryCompany?.name,
+            studioTmdbId = primaryCompany?.id,
+            studioLogoPath = primaryCompany?.logoPath,
+            secondaryStudios = details?.productionCompanies?.drop(1)?.map { it.name }?.filter { it.isNotBlank() }?.distinct() ?: emptyList(),
             director = artist,
             tracks = tracks,
             issueCount = issueCount,
@@ -370,6 +403,12 @@ class Scanner(
             jellyfinLockData = jItem.lockData,
             jellyfinLockedFields = jItem.lockedFields,
             tags = jItem.tags,
+            cast = cast,
+            crew = crew,
+            imdbId = extIds?.imdbId?.takeIf { it.isNotBlank() },
+            runtime = details?.runtime,
+            certifications = certifications,
+            trailer = trailer,
             libraryId = libraryId,
         )
     }
@@ -1089,10 +1128,49 @@ class Scanner(
                     libraryId = lib?.jellyfinId?.ifBlank { null } ?: item.libraryId,   // Phase 142: self-heal
                 )
             }
-            // Phase 168 (FR-168-1/168-4): no-op — a music video is never TMDB-matched, so there is
-            // nothing to re-fetch. `pull_tmdb` already fully excludes MUSIC_VIDEO from its working set
-            // (FR-168-5), so this branch should rarely if ever actually run.
-            MediaKind.MUSIC_VIDEO -> item
+            // Phase 171: reverses Phase 168's "never TMDB, ever" call — a concert-film/live-DVD music
+            // video CAN have a real TMDB movie entry (reported live: TMDB 25352 for "Vesper: ORBIT -
+            // Live from Parken Stadium"), so this now mirrors the MOVIE branch above once a match
+            // exists — via an existing/manually-set tmdbId (the admin's `PATCH .../tmdb-id` route
+            // already works for any kind) or a fresh search. Unlike MOVIE, a miss is never a failure
+            // — `item` unchanged, not `return null` — since a miss is the *expected*, common case
+            // (FR-168-5's notifyOnNoMatch exclusion is unchanged and still applies). `director` always
+            // stays the filename-parsed artist (FR-168-1) — TMDB's own director/crew credit for the
+            // film is a different concept, folded into `crew` instead, never overwriting it.
+            MediaKind.MUSIC_VIDEO -> {
+                val tmdbId = item.tmdbId ?: tmdb.searchMovie(item.title, item.year)?.id
+                val localized = tmdbId?.let { tmdb.getMovieDetailsLocalized(it, langPriority) }
+                if (localized == null) item else {
+                    val details = localized.details
+                    val rescanCompany = details.productionCompanies.firstOrNull()
+                    val rescanMvExtIds = tmdb.getExternalIds(details.id, isMovie = true)
+                    val rescanMvCertifications = tmdb.getMovieCertifications(details.id)
+                    val rescanMvTrailer = buildTrailer(tmdb.getMovieVideos(details.id, details.originalLanguage))
+                    val (rescanMvCast, rescanMvCrew) = fetchCredits(details.id, isMovie = true)
+                    item.copy(
+                        title = details.title,
+                        tmdbId = details.id,
+                        year = details.releaseDate.take(4).toIntOrNull() ?: item.year,
+                        originalLanguage = details.originalLanguage.takeIf { it.isNotBlank() },
+                        posterPath = details.posterPath,
+                        backdropPath = details.backdropPath,
+                        overview = details.overview.takeIf { it.isNotBlank() },
+                        genres = details.genres.map { it.name },
+                        tmdbGenres = details.genres.map { it.name },
+                        studio = rescanCompany?.name,
+                        studioTmdbId = rescanCompany?.id,
+                        studioLogoPath = rescanCompany?.logoPath,
+                        secondaryStudios = details.productionCompanies.drop(1).map { it.name }.filter { it.isNotBlank() }.distinct(),
+                        imdbId = rescanMvExtIds?.imdbId?.takeIf { it.isNotBlank() } ?: item.imdbId,
+                        cast = rescanMvCast,
+                        crew = rescanMvCrew,
+                        runtime = details.runtime,
+                        certifications = rescanMvCertifications.ifEmpty { item.certifications },
+                        trailer = rescanMvTrailer,
+                        libraryId = lib?.jellyfinId?.ifBlank { null } ?: item.libraryId,
+                    )
+                }
+            }
         }
     }
 

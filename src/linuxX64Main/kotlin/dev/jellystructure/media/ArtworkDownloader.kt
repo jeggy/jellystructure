@@ -38,30 +38,44 @@ data class EpisodeStillStatus(
     val manual: Boolean = false, // Phase 151: operator-chosen — never auto-replaced (`.manual` marker)
 )
 
+/**
+ * Phase 168 follow-up fix: a MOVIE/TV_SHOW keeps a fixed filename (`poster.jpg` etc.) inside the
+ * item's own directory — safe, since each normally has its own folder. A MUSIC_VIDEO usually
+ * **shares** its folder with sibling files (confirmed against a real library: an artist's folder
+ * held 4+ music videos), so a fixed `poster.jpg` there is either nobody's poster or the wrong one.
+ * Real pre-existing artwork for these files was already sitting on disk under the same per-basename
+ * convention `episodeStillPath`/`NfoWriter.nfoPath` use elsewhere in this codebase (and that this
+ * house's own library already had files named exactly this way) — `<video-basename>-poster.jpg` —
+ * but nothing in this file ever looked there before this fix, so it was invisible to jellystructure
+ * (and to Ravilo, which serves artwork from this exact path via `RaviloArtworkService`).
+ */
+internal fun assetFilePath(item: MediaItem, filename: String): String = when (item.kind) {
+    MediaKind.MUSIC_VIDEO -> "${item.path.substringBeforeLast('.')}-$filename"
+    MediaKind.MOVIE -> "${item.path.substringBeforeLast('/')}/$filename"
+    MediaKind.TV_SHOW -> "${item.path}/$filename"
+}
+
 /** R122: true when a `poster.jpg` artwork file exists on disk for [item] — the real (Jellyfin) poster
  *  image, as opposed to the TMDB `posterPath` metadata. Drives the Library "missing artwork" filter,
  *  so it counts manually-added artwork and excludes TMDB-matched items whose poster never downloaded. */
-fun posterArtworkExists(item: MediaItem): Boolean {
-    val dir = when (item.kind) {
-        MediaKind.MOVIE, MediaKind.MUSIC_VIDEO -> item.path.substringBeforeLast('/')
-        MediaKind.TV_SHOW -> item.path
-    }
-    return SystemFileSystem.exists(Path("$dir/poster.jpg"))
-}
+fun posterArtworkExists(item: MediaItem): Boolean =
+    SystemFileSystem.exists(Path(assetFilePath(item, "poster.jpg")))
 
 class ArtworkDownloader(private val tmdbClient: TmdbClient, private val screengrabber: Screengrabber) {
     // Phase 129 (FR-OPS1 §B.1) — shared client, one idle connection pool for all outbound callers.
     private val http = OutboundHttp.client
 
     fun check(item: MediaItem): ArtworkStatus {
-        val dir = mediaDir(item)
+        val poster = assetFilePath(item, "poster.jpg")
+        val fanart = assetFilePath(item, "fanart.jpg")
+        val logo = assetFilePath(item, "clearlogo.png")
         return ArtworkStatus(
-            posterExists = SystemFileSystem.exists(Path("$dir/poster.jpg")),
-            fanartExists = SystemFileSystem.exists(Path("$dir/fanart.jpg")),
-            logoExists = SystemFileSystem.exists(Path("$dir/clearlogo.png")),
-            posterManual = isManual("$dir/poster.jpg"),
-            fanartManual = isManual("$dir/fanart.jpg"),
-            logoManual = isManual("$dir/clearlogo.png"),
+            posterExists = SystemFileSystem.exists(Path(poster)),
+            fanartExists = SystemFileSystem.exists(Path(fanart)),
+            logoExists = SystemFileSystem.exists(Path(logo)),
+            posterManual = isManual(poster),
+            fanartManual = isManual(fanart),
+            logoManual = isManual(logo),
         )
     }
 
@@ -99,21 +113,23 @@ class ArtworkDownloader(private val tmdbClient: TmdbClient, private val screengr
     fun isEpisodeStillManual(episode: Episode): Boolean = isManual(episodeStillPath(episode))
 
     suspend fun fetch(item: MediaItem): ArtworkStatus {
-        val dir = mediaDir(item)
+        val poster = assetFilePath(item, "poster.jpg")
+        val fanart = assetFilePath(item, "fanart.jpg")
+        val logo = assetFilePath(item, "clearlogo.png")
         // Skip-if-present is what protects an operator's chosen image here: a file already on disk is
         // never re-downloaded, manual or not (Phase 151 additionally records WHY it must stay).
-        val posterExists = SystemFileSystem.exists(Path("$dir/poster.jpg"))
-        val fanartExists = SystemFileSystem.exists(Path("$dir/fanart.jpg"))
-        val logoExists = SystemFileSystem.exists(Path("$dir/clearlogo.png"))
+        val posterExists = SystemFileSystem.exists(Path(poster))
+        val fanartExists = SystemFileSystem.exists(Path(fanart))
+        val logoExists = SystemFileSystem.exists(Path(logo))
 
         val posterOk: Boolean
         val fanartOk: Boolean
         coroutineScope {
             val posterJob = if (!posterExists && !item.posterPath.isNullOrBlank()) {
-                async { download("$TMDB_ORIGINAL${item.posterPath}", "$dir/poster.jpg") }
+                async { download("$TMDB_ORIGINAL${item.posterPath}", poster) }
             } else null
             val fanartJob = if (!fanartExists && !item.backdropPath.isNullOrBlank()) {
-                async { download("$TMDB_ORIGINAL${item.backdropPath}", "$dir/fanart.jpg") }
+                async { download("$TMDB_ORIGINAL${item.backdropPath}", fanart) }
             } else null
             posterOk = posterJob?.await() ?: posterExists
             fanartOk = fanartJob?.await() ?: fanartExists
@@ -127,7 +143,7 @@ class ArtworkDownloader(private val tmdbClient: TmdbClient, private val screengr
             // Phase 151: never sweep away an image an operator placed/picked deliberately — `oldDir` is
             // the PARENT of the series directory, i.e. usually the library root, where a hand-picked
             // library-level image can legitimately live.
-            if (oldDir != dir) {
+            if (oldDir != item.path) {
                 if (posterOk && !isManual("$oldDir/poster.jpg")) deleteIfExists("$oldDir/poster.jpg")
                 if (fanartOk && !isManual("$oldDir/fanart.jpg")) deleteIfExists("$oldDir/fanart.jpg")
                 if (logoExists && !isManual("$oldDir/clearlogo.png")) deleteIfExists("$oldDir/clearlogo.png")
@@ -156,9 +172,9 @@ class ArtworkDownloader(private val tmdbClient: TmdbClient, private val screengr
             posterExists = posterOk,
             fanartExists = fanartOk,
             logoExists = logoExists,
-            posterManual = isManual("$dir/poster.jpg"),
-            fanartManual = isManual("$dir/fanart.jpg"),
-            logoManual = isManual("$dir/clearlogo.png"),
+            posterManual = isManual(poster),
+            fanartManual = isManual(fanart),
+            logoManual = isManual(logo),
         )
     }
 
@@ -321,7 +337,7 @@ class ArtworkDownloader(private val tmdbClient: TmdbClient, private val screengr
     }
 
     fun assetPath(item: MediaItem, asset: String): String? =
-        assetFilename(asset)?.let { "${mediaDir(item)}/$it" }
+        assetFilename(asset)?.let { assetFilePath(item, it) }
 
     /** Read the TMDB file_path recorded when a clearlogo candidate was picked, or null. */
     fun readAssetSrc(item: MediaItem, asset: String): String? =

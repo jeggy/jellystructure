@@ -17,7 +17,7 @@ object NfoWriter {
     fun buildXml(item: MediaItem, serverUrl: String? = null, ageRatingCascade: List<String> = emptyList()): String = when (item.kind) {
         MediaKind.MOVIE -> buildMovieXml(item, serverUrl, ageRatingCascade)
         MediaKind.TV_SHOW -> buildTvShowXml(item, serverUrl, ageRatingCascade)
-        MediaKind.MUSIC_VIDEO -> buildMusicVideoXml(item)
+        MediaKind.MUSIC_VIDEO -> buildMusicVideoXml(item, serverUrl, ageRatingCascade)
     }
 
     // Phase 115: a stable content hash for the item-level NFO — used to tell "we haven't written this
@@ -318,16 +318,64 @@ object NfoWriter {
         appendLine("</tvshow>")
     }
 
-    /** FR-168-4: the real Kodi/Jellyfin `<musicvideo>` schema — title + artist only. No
-     *  `<tmdbid>`/`<uniqueid type="tmdb">` block ever (a music video is never TMDB-matched, by
-     *  construction — FR-168-3), and deliberately no album/track/year (not derivable from a
-     *  filename-only source). */
-    private fun buildMusicVideoXml(item: MediaItem): String = buildString {
+    /** FR-168-4, extended by Phase 171: the real Kodi/Jellyfin `<musicvideo>` schema. `<title>` +
+     *  `<artist>` always come from the filename parse (FR-168-1's `director` reuse — never
+     *  overwritten by a TMDB match, since "who performs" isn't TMDB's own director/crew credit for
+     *  the film). Everything else — `<tmdbid>`/`<uniqueid>`, `<plot>`, `<mpaa>`, `<genre>`, `<tag>`,
+     *  `<studio>`, `<director>`/`<writer>` (the film's own crew, a different concept from `<artist>`),
+     *  `<actor>` — mirrors `buildMovieXml` exactly and is written only when Phase 171's TMDB match
+     *  actually found something (still deliberately no `<album>`/`<track>` — not TMDB fields either).
+     */
+    private fun buildMusicVideoXml(item: MediaItem, serverUrl: String? = null, ageRatingCascade: List<String> = emptyList()): String = buildString {
         appendLine("""<?xml version="1.0" encoding="utf-8" standalone="yes"?>""")
         appendLine("<musicvideo>")
         appendLine("  <title>${item.title.esc()}</title>")
         if (!item.director.isNullOrBlank()) {
             appendLine("  <artist>${item.director.esc()}</artist>")
+        }
+        if (item.year != null) appendLine("  <year>${item.year}</year>")
+        if (!item.overview.isNullOrBlank()) {
+            appendLine("  <plot>${item.overview.esc()}</plot>")
+        }
+        CertificationResolver.resolve(ageRatingCascade, item.certifications)?.let {
+            check(!it.fallback) { "Phase 119: resolve() must never return a fallback certification" }
+            appendLine("  <mpaa>${it.code.esc()}</mpaa>")
+        }
+        if (item.tmdbId != null) {
+            appendLine("  <tmdbid>${item.tmdbId}</tmdbid>")
+            appendLine("""  <uniqueid type="tmdb" default="true">${item.tmdbId}</uniqueid>""")
+        }
+        if (!item.imdbId.isNullOrBlank()) {
+            appendLine("  <imdbid>${item.imdbId.esc()}</imdbid>")
+            appendLine("""  <uniqueid type="imdb">${item.imdbId.esc()}</uniqueid>""")
+        }
+        if (!item.originalLanguage.isNullOrBlank()) {
+            appendLine("  <originallanguage>${item.originalLanguage.esc()}</originallanguage>")
+        }
+        for (genre in item.genres) {
+            appendLine("  <genre>${genre.esc()}</genre>")
+        }
+        for (tag in item.tags) {
+            appendLine("  <tag>${tag.esc()}</tag>")
+        }
+        for (p in item.crew.filter { it.department?.lowercase() == "directing" && it.job?.lowercase() == "director" }) {
+            appendLine("  <director>${p.name.esc()}</director>")
+        }
+        for (p in item.crew.filter { it.department?.lowercase() == "writing" }) {
+            appendLine("  <writer>${p.name.esc()}</writer>")
+        }
+        if (!item.studio.isNullOrBlank()) {
+            appendLine("  <studio>${item.studio.esc()}</studio>")
+        }
+        for (p in item.cast.sortedBy { it.order }) {
+            appendLine("  <actor>")
+            appendLine("    <name>${p.name.esc()}</name>")
+            val roleText = p.role?.takeIf { it.isNotBlank() } ?: p.character?.takeIf { it.isNotBlank() }
+            if (!roleText.isNullOrBlank()) appendLine("    <role>${roleText.esc()}</role>")
+            appendLine("    <order>${p.order}</order>")
+            appendLine("    <type>${p.type.esc()}</type>")
+            if (serverUrl != null && p.tmdbId != 0) appendLine("    <thumb>${serverUrl}/api/people/${p.tmdbId}/image</thumb>")
+            appendLine("  </actor>")
         }
         appendLine("</musicvideo>")
     }
