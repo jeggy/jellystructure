@@ -127,6 +127,33 @@ action name for anything unmapped).
   the detail view from the returned item. While locked, a 🔒 note explains that scans won't re-search
   until an explicit re-match.
 
+## 2026-08-24 amendment — year couldn't actually be cleared, and a dead menu item
+
+**User feedback, live:**
+
+1. Manually clearing the pagebar's Year field after a `Clear TMDB match` (the field is deliberately left
+   untouched by FR-174-1) silently did nothing. Root cause, pre-existing and unrelated to Phase 174 but
+   surfaced by it: `PATCH /{id}/metadata`'s handler did `year = req.year ?: item.year`, and the client
+   (`MediaApi.editMetadata`) omitted the `"year"` JSON key entirely whenever the field parsed to `null`
+   — so "the operator cleared the field" and "the field was never sent" were indistinguishable both on
+   the wire and in the handler, and the fallback always won. `saveMetaNow` (`MediaDetail.kt`) is this
+   route's **only** caller and always sends the form's full current state, so — unlike `director`/
+   `studio`/`network`, which are genuinely conditional on item kind and must stay preserve-if-omitted —
+   `year` never needed that semantics. Fixed by always including the `"year"` key client-side
+   (`year ?: "null"`, never gated on `year != null`) and having the handler just assign `req.year`
+   directly, no `?:` fallback.
+2. The pagebar's **Re-pull ▾ → From TMDB** menu item was still live and clickable on a locked item —
+   clicking it hits `scanner.rescanMetadata`, which FR-174-2 makes return `null` for a locked item, so
+   the button was functionally dead but looked identical to a working one (and would have shown a
+   misleading "no TMDB match found" error, as if the lock didn't exist). Fixed: the menu item renders
+   grayed out (`opacity:.45`) with an accurate reason ("🔒 Locked — use Find/fix match… to re-enable")
+   when `item.tmdbMatchLocked`, and its click handler short-circuits to an explanatory message instead of
+   calling `handleRepull`, as a second guard against the disabled styling being bypassed somehow.
+
+Neither fix has been re-verified live yet — `compileKotlinLinuxX64`/`compileKotlinWasmJs` clean, but a
+backend restart (the owner's call, deliberately not done as part of this fix) is needed to pick either
+one up.
+
 ## Explicitly out of scope
 
 - No bulk/library-wide "clear all matches" action.
