@@ -573,9 +573,22 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
                     <button id="tmdb-id-save-btn" class="btn sm ghost">Save</button>
                     <span id="tmdb-id-msg" class="tiny muted"></span>
                   </div>
-                  <div style="margin-top:6px;">
+                  <div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap;">
                     <button id="find-tmdb-match-btn" class="btn sm ghost" style="font-size:.8rem;">Find / fix match…</button>
+                    ${
+                      // Phase 174: only meaningful once there's something to undo — a real match, or a
+                      // prior clear's lock (the id is already null then, but the lock still needs a way
+                      // to be inspected/lifted without going through Find/fix match).
+                      if (item.tmdbId != null || item.tmdbMatchLocked)
+                        """<button id="clear-tmdb-match-btn" class="btn sm bad" style="font-size:.8rem;">Clear TMDB match</button>"""
+                      else ""
+                    }
                   </div>
+                  ${
+                    if (item.tmdbMatchLocked)
+                      """<div class="tiny muted" style="margin-top:6px;">🔒 No match — an operator cleared TMDB data for this item. Scans won't re-search until it's re-matched below.</div>"""
+                    else ""
+                  }
                 </div>
                 <div class="field" style="margin:0 0 6px;">
                   <label>Original language</label>
@@ -820,6 +833,34 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
 
     document.getElementById("find-tmdb-match-btn")?.addEventListener("click") {
         showTmdbMatchModal(item, container, scope, fallbackLang, jellyfinUrl, tmdbLangs)
+    }
+
+    // Phase 174: undo a wrong/unwanted match — nulls every TMDB-owned field (overview, genres,
+    // cast/crew, studio, poster/backdrop incl. the downloaded files, imdbId, runtime, certifications,
+    // trailer, imdbRating), and locks the item against every automatic re-search until an explicit
+    // re-match (Find/fix match…, or Save above with a real id).
+    document.getElementById("clear-tmdb-match-btn")?.addEventListener("click") {
+        val ok = kotlinx.browser.window.confirm(
+            "Clear the TMDB match for \"${item.title}\"? This removes the matched overview, genres, " +
+                "cast, studio, and the downloaded poster/backdrop, and stops scans from re-matching it " +
+                "automatically. This can be undone from the History tab right after.",
+        )
+        if (!ok) return@addEventListener
+        scope.launch {
+            showDetailMsg("Clearing TMDB match…", true)
+            val updated = MediaApi.clearTmdbMatch(item.id)
+            if (updated == null) {
+                showDetailMsg("Clear failed.", false)
+            } else {
+                val config = ConfigApi.get()
+                val fallback = config?.config?.languageRules?.fallbackLanguage ?: "en"
+                val jellyfinUrl2 = config?.config?.apiKeys?.jellyfinUrl?.trimEnd('/') ?: ""
+                val ageRatingCascade2 = config?.config?.metadata?.ageRatingCascade ?: emptyList()
+                val jsTags2 = dev.jellystructure.api.MetadataApi.getAllJsTags() ?: emptyList()
+                renderDetailView(container, updated, scope, fallback, jellyfinUrl2, null, jsTags = jsTags2, ageRatingCascade = ageRatingCascade2)
+                showDetailMsg("TMDB match cleared.", true)
+            }
+        }
     }
 
     // Bug/feature: permanently remove an item Jellyfin no longer has (Phase 95 triage's "review &
@@ -3033,6 +3074,7 @@ private fun renderArtGallery() {
         ${if (t.kind == "episode") """<button id="art-screengrab-btn" class="btn sm ghost" title="Grab a frame from the video file as a placeholder still">&#9635; Generate frame</button>""" else ""}
         ${if (canUpload) """<button id="art-upload-btn" class="btn sm ghost">Upload</button>""" else ""}
         <button id="art-url-btn" class="btn sm ghost">Paste URL</button>
+        ${if (t.kind == "asset" && t.onDisk) """<button id="art-clear-btn" class="btn sm bad" title="Delete the on-disk ${t.label.lowercase()} — cannot be undone">Clear</button>""" else ""}
       </div>
       $currentPreview
       <div class="art-explain ${if (fellBack) "warn" else ""}">$explainer</div>
@@ -3125,6 +3167,29 @@ private fun wireArtGallery() {
                 } else {
                     showDetailMsg("Save failed.", false)
                 }
+            }
+        }
+    }
+    // Phase 174: delete the on-disk asset. Item-level only (poster/backdrop/clearlogo) — season
+    // posters and episode stills weren't part of the reported gap and keep their existing behavior.
+    document.getElementById("art-clear-btn")?.addEventListener("click") {
+        val ok = kotlinx.browser.window.confirm(
+            "Delete the on-disk ${t.label.lowercase()}? This removes the file — it can't be undone here.",
+        )
+        if (!ok) return@addEventListener
+        scope.launch {
+            val status = MediaApi.clearArtworkAsset(artId, t.asset)
+            if (status != null) {
+                showDetailMsg("${t.label} cleared.", true)
+                t.onDisk = when (t.asset) {
+                    "poster" -> status.posterExists
+                    "backdrop" -> status.fanartExists
+                    else -> status.logoExists
+                }
+                artStillBust++
+                renderArtRail(); wireArtRail(); renderArtGallery(); wireArtGallery()
+            } else {
+                showDetailMsg("Clear failed.", false)
             }
         }
     }

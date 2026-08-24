@@ -356,6 +356,14 @@ object MediaApi {
         }.body<MediaItem>()
     }.getOrNull()
 
+    /** Phase 174: fully undo a wrong/unwanted TMDB match — nulls every TMDB-owned field, deletes the
+     *  downloaded poster/backdrop, and sets [MediaItem.tmdbMatchLocked] so a future scan can't re-apply
+     *  the same match. Only an explicit re-match ([setTmdbId] with a non-null id) lifts the lock. */
+    suspend fun clearTmdbMatch(id: String): MediaItem? = runCatching {
+        val response = httpClient.post("/api/media/$id/tmdb-match/clear")
+        if (response.status == HttpStatusCode.OK) response.body<MediaItem>() else null
+    }.getOrNull()
+
     /** Re-fetches the item from Jellyfin and re-runs a full scan (ffprobe + TMDB). */
     suspend fun repullFromJellyfin(id: String): MediaItem? = runCatching {
         httpClient.post("/api/media/$id/repull-jellyfin").body<MediaItem>()
@@ -456,6 +464,12 @@ object MediaApi {
             contentType(ContentType.Application.Json)
             setBody("""{"asset":${jsonStr(asset)},"source":${jsonStr(source)}}""")
         }
+        if (response.status == HttpStatusCode.OK) response.body<ArtworkStatus>() else null
+    }.getOrNull()
+
+    /** Phase 174: remove an on-disk item-level asset entirely (file + its .manual/.src sidecars). */
+    suspend fun clearArtworkAsset(id: String, asset: String): ArtworkStatus? = runCatching {
+        val response = httpClient.post("/api/media/$id/artwork/$asset/clear")
         if (response.status == HttpStatusCode.OK) response.body<ArtworkStatus>() else null
     }.getOrNull()
 
