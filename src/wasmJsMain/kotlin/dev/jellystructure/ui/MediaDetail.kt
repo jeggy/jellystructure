@@ -2487,6 +2487,8 @@ private suspend fun loadHistory(id: String, container: Element? = null, scope: C
             "assign_language" -> "Language assigned"
             "metadata_edit" -> "Metadata edited"
             "set_tmdb_id" -> "TMDB ID changed"
+            "tmdb_match_clear" -> "TMDB match cleared"   // Phase 174
+            "artwork_clear" -> "Artwork removed"         // Phase 174
             "language_override" -> "Language override"
             "revert" -> "Reverted"
             else -> entry.action

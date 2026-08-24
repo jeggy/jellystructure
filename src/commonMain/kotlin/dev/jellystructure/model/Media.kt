@@ -265,6 +265,13 @@ data class MediaItem(
     /** Phase 150: this item's own intro/credits segments (movies only in practice — a TV_SHOW's
      *  episodes each carry their own via [Episode.segments]; see [SegmentMarkers]). */
     val segments: SegmentMarkers = SegmentMarkers(),
+    /** Phase 174: set by the explicit "Clear TMDB match" admin action — an operator has decided this
+     *  item genuinely has no correct TMDB match (or the auto-match was wrong), so `pull_tmdb`'s
+     *  scope=missing/all working set must never re-attempt a search for it, the way a bulk pipeline
+     *  run otherwise would the moment `tmdbId` goes back to null. Cleared only by an explicit re-match
+     *  (Find/fix match…, or manually setting a tmdbId again) — same "operator decision beats
+     *  automation" precedent as [lockedArtwork]/segment locks. */
+    val tmdbMatchLocked: Boolean = false,
 )
 
 /** Phase 108: the sort key every "recently added" surface uses (Ravilo's Newly Added, Browse default,
