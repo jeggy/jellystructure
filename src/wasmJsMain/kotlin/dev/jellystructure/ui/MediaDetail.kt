@@ -746,7 +746,16 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
             <span class="btn sm ghost menu-btn">Re-pull <span class="caret">▾</span></span>
             <div class="menu">
               <div class="menu-item" id="repull-jellyfin-btn"><span class="mi-ic">⟲</span><span>From Jellyfin…<span class="mi-sub">Re-discover name, path, IDs &amp; tracks</span></span></div>
-              <div class="menu-item" id="repull-btn"><span class="mi-ic">⟲</span><span>From TMDB<span class="mi-sub">Re-fetch metadata &amp; artwork</span></span></div>
+              ${
+                // Phase 174 follow-up: a locked item's rescanMetadata now returns null (by design — see
+                // the Clear TMDB match button), so this menu item would just fail with a misleading
+                // "no TMDB match found" error. Gray it out with an accurate reason instead of leaving a
+                // live-looking button that can't do anything.
+                if (item.tmdbMatchLocked)
+                  """<div class="menu-item" id="repull-btn" style="opacity:.45;cursor:not-allowed;"><span class="mi-ic">⟲</span><span>From TMDB<span class="mi-sub">🔒 Locked — use Find/fix match… to re-enable</span></span></div>"""
+                else
+                  """<div class="menu-item" id="repull-btn"><span class="mi-ic">⟲</span><span>From TMDB<span class="mi-sub">Re-fetch metadata &amp; artwork</span></span></div>"""
+              }
             </div>
           </span>
           ${if (nfoDisabled) """<button id="write-nfo-refresh-btn" class="btn primary" disabled title="${nfoDisabledReason.esc()}">Save &amp; sync to Jellyfin ↻</button>""" else """
@@ -919,7 +928,11 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
     }
 
     document.getElementById("repull-btn")?.addEventListener("click") {
-        scope.launch { handleRepull(item, container, scope, fallbackLang, jellyfinUrl, prevTmdbLangs = tmdbLangs) }
+        if (item.tmdbMatchLocked) {
+            showDetailMsg("TMDB match is locked — use Find/fix match… to re-match first.", false)
+        } else {
+            scope.launch { handleRepull(item, container, scope, fallbackLang, jellyfinUrl, prevTmdbLangs = tmdbLangs) }
+        }
     }
 
     document.getElementById("repull-jellyfin-btn")?.addEventListener("click") {
