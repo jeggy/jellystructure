@@ -576,6 +576,10 @@ class MediaStore(
         // Phase 151: key the artwork lock off `old`, not `existing`, so a slug rename (id change) keeps
         // the operator's locked poster instead of silently falling back to the fresh TMDB default.
         merged = preserveLockedArtwork(merged, old)
+        // Phase 174: same idea one field over — a scan-fresh item carries `tmdbMatchLocked = false` and
+        // has already re-run the search the operator rejected, so the flag AND the match it suppresses
+        // both have to come from `old`.
+        merged = preserveTmdbMatchLock(merged, old)
         if (existing != null && existing.titlesByLang.isNotEmpty()) {
             merged = merged.copy(titlesByLang = existing.titlesByLang + item.titlesByLang)
         }
@@ -596,13 +600,20 @@ class MediaStore(
      * `POST /{id}/repull-jellyfin` and `pushToJellyfin` — persist a *freshly scanned* item whose
      * posterPath/backdropPath were just reset to TMDB's default. Only the explicit artwork routes (an
      * operator picking/uploading a new image, which deliberately changes the locked value) pass false.
+     *
+     * Phase 174: [respectTmdbMatchLock] is the same contract for [MediaItem.tmdbMatchLocked] — it must
+     * be false on exactly the routes that deliberately *change* the lock (`PATCH /{id}/tmdb-id` setting
+     * a real id, and a `tmdb_match_clear` revert), or the guard would strip the very match they just
+     * restored. Every other caller leaves it true, including the clear route itself (whose stored
+     * predecessor isn't locked yet, so the guard no-ops there).
      */
-    suspend fun updateOne(item: MediaItem, respectArtworkLock: Boolean = true) {
+    suspend fun updateOne(item: MediaItem, respectArtworkLock: Boolean = true, respectTmdbMatchLock: Boolean = true) {
         val existing = get(item.id)
         var merged = if (existing != null && existing.titlesByLang.isNotEmpty()) {
             item.copy(titlesByLang = existing.titlesByLang + item.titlesByLang)
         } else item
         if (respectArtworkLock) merged = preserveLockedArtwork(merged, existing)
+        if (respectTmdbMatchLock) merged = preserveTmdbMatchLock(merged, existing)
         merged = merged.copy(episodes = stampEpisodeCreatedAt(merged.episodes, existing?.episodes))
         merged = stampTimestamps(merged, existing)
         upsertItem(merged)
