@@ -1399,7 +1399,13 @@ fun Route.mediaRoutes(
             val updated = item.copy(
                 title = newTitle,
                 overview = req.overview ?: item.overview,
-                year = req.year ?: item.year,
+                // Bug fix: this is the ONE caller of this route (MediaDetail.kt's `saveMetaNow`), and it
+                // always sends the form's actual current year — including an explicit `null` when the
+                // operator clears the Year field. `req.year ?: item.year` could never distinguish
+                // "cleared on purpose" from "not sent", so the field could never be cleared at all.
+                // `year` (unlike `director`/`studio`/`network`) has no kind-conditional "not applicable"
+                // case that needs the old preserve-if-null behavior.
+                year = req.year,
                 originalTitle = if (req.originalTitle != null) req.originalTitle.ifBlank { null } else item.originalTitle,
                 tags = req.tags ?: item.tags,
                 genres = req.genres ?: item.genres,

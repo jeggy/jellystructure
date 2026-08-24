@@ -569,7 +569,11 @@ object MediaApi {
         val parts = buildList {
             if (title != null) add(""""title":"${title.replace("\"", "\\\"").replace("\n", "")}"""")
             if (overview != null) add(""""overview":"${overview.replace("\"", "\\\"")}"""")
-            if (year != null) add(""""year":$year""")
+            // Bug fix: unlike the other optional params here, `year` has no "not applicable to this
+            // item kind" case — its null means "the operator cleared the field" and must always reach
+            // the backend as an explicit `null`, not be silently omitted (which reads there as "leave
+            // it unchanged" and made the Year field impossible to clear).
+            add(""""year":${year ?: "null"}""")
             if (originalTitle != null) add(""""originalTitle":"${originalTitle.replace("\"", "\\\"")}"""")
             if (tags != null) add(""""tags":[${tags.joinToString(",") { "\"${it.replace("\"", "\\\"")}\"" }}]""")
             if (genres != null) add(""""genres":[${genres.joinToString(",") { "\"${it.replace("\"", "\\\"")}\"" }}]""")
