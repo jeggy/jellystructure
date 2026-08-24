@@ -6,7 +6,7 @@
 > its **downloaded poster/backdrop** stayed on the item permanently — and the next scheduled
 > `pull_tmdb` would re-run the same search and re-apply the same wrong match anyway.
 
-**Status:** Implemented 2026-08-24.
+**Status:** Implemented 2026-08-24 (backend + admin UI). Not yet live-tested (needs a backend restart).
 
 ## Root cause
 
@@ -114,19 +114,32 @@ provenance record to re-derive them from. It is recorded for the audit trail onl
 The admin History tab gains labels for both new actions (previously it rendered the raw snake_case
 action name for anything unmapped).
 
+### FR-174-6 — Admin UI
+
+- **Artwork tab** (`MediaDetail.kt`'s `renderArtGallery`): item-level asset targets (`t.kind == "asset"`)
+  that are currently on disk get a **Clear** button (`.btn.bad`, next to Upload/Paste URL) alongside the
+  existing "Currently in use" tile. Confirms, calls `MediaApi.clearArtworkAsset`, then refreshes the rail
+  and gallery from the response's fresh `ArtworkStatus`. Season posters and episode stills are unchanged
+  — not part of the reported gap.
+- **Pagebar Identity card**: a **Clear TMDB match** button (`.btn.bad`) next to "Find / fix match…",
+  shown whenever there's something to undo (`tmdbId != null`, or the item is already locked from a prior
+  clear). Confirms (mentioning the History-tab revert), calls `MediaApi.clearTmdbMatch`, then re-renders
+  the detail view from the returned item. While locked, a 🔒 note explains that scans won't re-search
+  until an explicit re-match.
+
 ## Explicitly out of scope
 
-- **No admin UI yet.** Both endpoints are backend-only in this phase; nothing in `MediaDetail.kt` calls
-  them. The Artwork tab's per-asset "Clear" affordance and the pagebar's "Clear TMDB match" action are a
-  follow-up.
 - No bulk/library-wide "clear all matches" action.
 - Season posters and episode stills keep their existing behaviour — `clearAsset` is item-level only.
 
 ## Verification
 
 - `compileKotlinLinuxX64` + `compileKotlinWasmJs` clean.
-- `linuxX64Test` — new `TmdbMatchLockTest` covers: `clearTmdbMatch` leaves `title`/`year`/`tags` alone,
-  the guard restores a locked item's cleared state over a freshly-matched scan result, and an unlocked
-  item passes through the guard untouched.
-- Not yet live-tested against the reported "Tina Dico - Drifting" item (needs a backend restart, which
-  is the owner's call).
+- `linuxX64Test` 143/143, incl. new `TmdbMatchLockTest` (8 cases): `clearTmdbMatch` leaves
+  `title`/`year`/`tags` alone; the guard restores a locked item's cleared state over a freshly-matched
+  scan result, keeps an operator's own edit on an id-less (ordinary) write, and passes an unlocked item
+  through untouched.
+- `scripts/check-mobile-css.sh` — OK (no new CSS rule needed; both new buttons reuse the existing
+  `.btn.bad` class).
+- Not yet live-tested against the reported "Tina Dico - Drifting" item, and neither UI affordance has
+  been clicked in a real browser yet (needs a backend restart, which is the owner's call).
