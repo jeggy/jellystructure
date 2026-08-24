@@ -248,14 +248,14 @@ class PlaybackService(
             "tv",
         )
 
-        // Build the subtitle list from Jellyfin's MediaStreams for THIS playable item. Phase 161: only
-        // sideload a text subtitle (SRT/ASS/SSA) as an extracted VTT when the file is actually
-        // transcoding OR the client hasn't confirmed it can render embedded text subs in-container —
-        // on a direct-played file, a client that CAN (embedTextSubs=true) already gets that exact
-        // stream natively from the container (MatroskaExtractor), so sideloading it too used to
-        // double-deliver every text subtitle (see buildSubtracks' own doc).
-        val embedTextSubs = !needsTranscode && capabilities.supportsEmbeddedTextSubs
-        val subtitles = buildSubtracks(itemDetail, jellyfinId, jellyfinBase, token, embedTextSubs)
+        // Build the subtitle list from Jellyfin's MediaStreams for THIS playable item. Phase 161 / R209:
+        // only sideload/burn a text-or-PGS subtitle when the file is actually transcoding OR the client
+        // hasn't confirmed it can render embedded container subs — on a direct-played file, a client
+        // that CAN (embedContainerSubs=true) already gets that exact stream natively from the container
+        // (MatroskaExtractor), so sideloading/burning it too used to double-deliver it (see
+        // buildSubtracks' own doc).
+        val embedContainerSubs = !needsTranscode && capabilities.supportsEmbeddedTextSubs
+        val subtitles = buildSubtracks(itemDetail, jellyfinId, jellyfinBase, token, embedContainerSubs)
 
         // Audio-track metadata (R46): the player labels embedded audio from the container, which often
         // lacks a track title — so carry Jellyfin's rich DisplayTitle (e.g. "Synstolkning") through the
@@ -452,22 +452,35 @@ class PlaybackService(
     // ─── Helpers ──────────────────────────────────────────────────────────────
 
     /**
-     * Phase 161: [embedTextSubs] — when true, a text subtitle (SRT/ASS/SSA) is declared `"embed"`
-     * (`url = null`) instead of sideloaded, because the caller has already confirmed BOTH that the
-     * file is direct-playing (so the container the client receives genuinely still carries this exact
-     * stream) AND that the client can render it natively from there (`ClientCapabilities.
-     * supportsEmbeddedTextSubs`). Bug fix: R55 originally sideloaded every text subtitle
-     * unconditionally — correct when the player had no in-container text-track rendering at all, but
-     * once a client's `MatroskaExtractor` also parses the same embedded stream, sideloading it too
-     * double-delivers it (visible in R195's picker as e.g. two identical "English" rows; R183 also
-     * attributed a multi-minute Jellyfin ffmpeg VTT-extraction stall to this on large titles).
+     * Phase 161 / R209: [embedContainerSubs] (renamed from `embedTextSubs` by R209) — when true, a
+     * subtitle stream the client can decode straight from the container (text via `MatroskaExtractor`'s
+     * SRT/ASS/SSA parsing, *and* PGS via the same extractor's PGS parsing — R209) is declared `"embed"`
+     * (`url = null`) instead of sideloaded/burned, because the caller has already confirmed BOTH that
+     * the file is direct-playing (so the container the client receives genuinely still carries this
+     * exact stream) AND that the client renders it natively from there (`ClientCapabilities.
+     * supportsEmbeddedTextSubs` — one flag covers both codec families since Android's "yes" answer
+     * comes from `MatroskaExtractor`, which decodes both the same way). Bug fix (R55 origin, text):
+     * R55 originally sideloaded every text subtitle unconditionally — correct when the player had no
+     * in-container text-track rendering at all, but once a client's `MatroskaExtractor` also parses the
+     * same embedded stream, sideloading it too double-delivers it (visible in R195's picker as e.g. two
+     * identical "English" rows; R183 also attributed a multi-minute Jellyfin ffmpeg VTT-extraction stall
+     * to this on large titles). Bug fix (R209, PGS): the PGS branch below used to route to `"encode"`
+     * (burn-in) unconditionally regardless of native in-container support, so a PGS track a client could
+     * already render natively showed up TWICE (once native, once as a burn-in candidate) — picking the
+     * duplicate forced a real transcode that permanently baked that subtitle into the video for the rest
+     * of the session. Every branch below also now excludes `s.isExternal` streams (R209): an external
+     * (sidecar-file) subtitle was never actually muxed into the container, so `MatroskaExtractor` can
+     * never substitute for it — marking it "embed" silently dropped it (`RaviloPlayerAndroid.load()`'s
+     * `subConfigs` drops any `SubTrack` with a `null` url), which is exactly how a live report ("Pinocchio")
+     * lost its external English/Danish subtitles entirely while Italian/German (embedded PGS) still
+     * showed up twice.
      */
     private fun buildSubtracks(
         itemDetail: JellyfinItemDetail?,
         jellyfinId: String,
         jellyfinBase: String,
         token: String,
-        embedTextSubs: Boolean,
+        embedContainerSubs: Boolean,
     ): List<SubTrack> {
         val streams = itemDetail?.mediaStreams ?: return emptyList()
         return streams
@@ -475,9 +488,10 @@ class PlaybackService(
             .mapNotNull { s ->
                 val codec = s.codec?.lowercase()
                 when {
-                    // Phase 161: this exact stream is already natively available in-container — never
-                    // ALSO sideload it (see this function's own doc).
-                    (s.isTextSubtitleStream || isTextSubCodec(s.codec)) && embedTextSubs -> SubTrack(
+                    // Phase 161 / R209: this exact stream is already natively available in-container —
+                    // never ALSO sideload it (see this function's own doc). Never true for an external
+                    // (sidecar-file) stream — R209 — since it was never muxed in to begin with.
+                    (s.isTextSubtitleStream || isTextSubCodec(s.codec)) && embedContainerSubs && !s.isExternal -> SubTrack(
                         index = s.index,
                         language = s.language,
                         label = s.displayTitle ?: s.title,
@@ -486,7 +500,8 @@ class PlaybackService(
                         url = null,
                         deliveryMethod = "embed",
                     )
-                    // R55: text subs (SRT/ASS/SSA/VTT/muxed) — sideloaded via Jellyfin's VTT extractor.
+                    // R55: text subs (SRT/ASS/SSA/VTT/muxed, or external — R209) — sideloaded via
+                    // Jellyfin's VTT extractor.
                     s.isTextSubtitleStream || isTextSubCodec(s.codec) -> SubTrack(
                         index = s.index,
                         language = s.language,
@@ -506,7 +521,22 @@ class PlaybackService(
                         url = null,
                         deliveryMethod = "embed",
                     )
-                    // R56: PGS — burn-in via Jellyfin HLS transcode (encode path).
+                    // R209: PGS a direct-playing, capability-confirmed, non-external client already
+                    // decodes natively via MatroskaExtractor — same treatment as VobSub/DVDSub above,
+                    // no burn-in candidate needed (was unconditional "encode" before this phase, causing
+                    // the native track to be listed a second time as a redundant burn-in duplicate).
+                    codec != null && isPgsSubCodec(codec) && embedContainerSubs && !s.isExternal -> SubTrack(
+                        index = s.index,
+                        language = s.language,
+                        label = s.displayTitle ?: s.title,
+                        forced = s.isForced,
+                        isDefault = s.isDefault,
+                        url = null,
+                        deliveryMethod = "embed",
+                    )
+                    // R56: PGS — burn-in via Jellyfin HLS transcode (encode path). Reached whenever the
+                    // client hasn't confirmed native in-container PGS support, the file is transcoding,
+                    // or the stream is external.
                     codec != null && isPgsSubCodec(codec) -> SubTrack(
                         index = s.index,
                         language = s.language,
@@ -534,10 +564,11 @@ class PlaybackService(
             ?: throw JellyfinReauthRequiredException("This device's Jellyfin sign-in has expired — re-pair it to continue watching.")
         val identity = JellyfinDeviceIdentity.forDevice(device)
         val itemDetail = jellyfinClient.getItemDetail(jellyfinBase, token, device.jellyfinUserId, jellyfinId)
-        // Phase 161: always false here — restream() forces a transcode (directPlay = false below), and
-        // a transcoded output doesn't carry the source's original embedded subtitle streams, so there's
-        // nothing to double by sideloading; this path's text subs were never affected by the bug.
-        val subtitles = buildSubtracks(itemDetail, jellyfinId, jellyfinBase, token, embedTextSubs = false)
+        // Phase 161 / R209: always false here — restream() forces a transcode (directPlay = false
+        // below), and a transcoded output doesn't carry the source's original embedded subtitle
+        // streams (text or PGS), so there's nothing to double by sideloading/burning; this path's subs
+        // were never affected by either bug.
+        val subtitles = buildSubtracks(itemDetail, jellyfinId, jellyfinBase, token, embedContainerSubs = false)
         val audio = buildAudioTracks(itemDetail)
         // R56: ask Jellyfin (PlaybackInfo + DeviceProfile, with the sub index for Encode burn-in) for the
         // real TranscodingUrl; fall back to a hand-built HLS burn-in URL if PlaybackInfo is unavailable.
