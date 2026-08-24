@@ -358,6 +358,21 @@ class ArtworkDownloader(private val tmdbClient: TmdbClient, private val screengr
         return ok
     }
 
+    /** Phase 174: removes an on-disk asset entirely — the image itself, its `.manual` lock marker (if
+     *  any) and its `.src` provenance sidecar (if any), so nothing is left to re-appear or confuse a
+     *  later "is this manual" check. Used by the "Clear TMDB match" action (a wrong match's downloaded
+     *  poster/backdrop had no removal path at all before this) and available standalone for any asset
+     *  an operator simply wants gone. Returns true when an image was actually there to remove (the
+     *  sidecars are best-effort either way), so a caller can tell a real removal from a no-op. */
+    suspend fun clearAsset(item: MediaItem, asset: String): Boolean {
+        val dest = assetPath(item, asset) ?: return false
+        val existed = SystemFileSystem.exists(Path(dest))
+        deleteIfExists(dest)
+        deleteIfExists(manualMarkerPath(dest))
+        deleteIfExists("$dest.src")
+        return existed
+    }
+
     /** Jellyfin local naming for a season poster at the series root. R194: `internal`, not `private` —
      *  `RaviloArtworkService` (same module, `dev.jellystructure.tv`) needs it to serve season posters. */
     internal fun seasonPosterPath(item: MediaItem, season: Int): String {

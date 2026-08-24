@@ -979,6 +979,16 @@ class Scanner(
     // Re-fetches TMDB metadata for an already-scanned item without re-probing
     // the file. Keeps existing tracks, path, and Jellyfin IDs.
     suspend fun rescanMetadata(item: MediaItem): MediaItem? {
+        // Phase 174: an operator has decided this item has no correct TMDB entry. Every branch below
+        // reads `item.tmdbId ?: tmdb.searchXxx(...)` — a null id is exactly what triggers a fresh
+        // search — so without this guard the rejected match would come straight back on the next
+        // `pull_tmdb`/Sync/Re-pull (same title+year ⇒ same top hit). Null means "nothing pulled";
+        // every caller already writes nothing on null. Only an explicit re-match (`PATCH .../tmdb-id`
+        // with a real id) lifts the lock.
+        if (item.tmdbMatchLocked) {
+            Logger.info("Skipping TMDB re-pull for '${item.id}' — match cleared by an operator", "scan")
+            return null
+        }
         val config = configStore.current
         val globalFallback = config.languageRules.fallbackLanguage
         val lib = config.libraries.firstOrNull { lib ->

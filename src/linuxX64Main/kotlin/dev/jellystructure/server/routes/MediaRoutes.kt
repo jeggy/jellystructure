@@ -17,6 +17,7 @@ import dev.jellystructure.log.WorkerId
 import dev.jellystructure.media.ArtworkAsset
 import dev.jellystructure.media.ArtworkDownloader
 import dev.jellystructure.media.assetFilePath
+import dev.jellystructure.media.clearTmdbMatch
 import dev.jellystructure.media.FfmpegRunner
 import dev.jellystructure.media.FfprobeRunner
 import dev.jellystructure.media.ProbeDiagnosis
@@ -407,9 +408,43 @@ fun Route.mediaRoutes(
                             ?: return@post call.respond(HttpStatusCode.UnprocessableEntity, mapOf("error" to "corrupt snapshot"))
                         item.copy(resolvedLanguage = snap.language?.ifBlank { null })
                     }
+                    // Phase 174 (FR-174-5): restore ONLY the fields `clearTmdbMatch` owns, out of a
+                    // whole-item snapshot — a wholesale item restore would also resurrect unrelated
+                    // fields edited since the clear. The deleted poster/backdrop FILES aren't restored;
+                    // posterPath/backdropPath are TMDB file_paths, so the next fetch_artwork
+                    // re-downloads them from the paths restored here.
+                    "tmdb_match_clear" -> {
+                        val snap = runCatching { json.decodeFromString(MediaItem.serializer(), entry.beforeSnapshot) }.getOrNull()
+                            ?: return@post call.respond(HttpStatusCode.UnprocessableEntity, mapOf("error" to "corrupt snapshot"))
+                        item.copy(
+                            tmdbId = snap.tmdbId,
+                            posterPath = snap.posterPath,
+                            backdropPath = snap.backdropPath,
+                            overview = snap.overview,
+                            genres = snap.genres,
+                            tmdbGenres = snap.tmdbGenres,
+                            studio = snap.studio,
+                            studioTmdbId = snap.studioTmdbId,
+                            studioLogoPath = snap.studioLogoPath,
+                            secondaryStudios = snap.secondaryStudios,
+                            originalTitle = snap.originalTitle,
+                            originalLanguage = snap.originalLanguage,
+                            cast = snap.cast,
+                            crew = snap.crew,
+                            imdbId = snap.imdbId,
+                            runtime = snap.runtime,
+                            certifications = snap.certifications,
+                            trailer = snap.trailer,
+                            imdbRating = snap.imdbRating,
+                            lockedArtwork = snap.lockedArtwork,
+                            tmdbMatchLocked = false,
+                        )
+                    }
                     else -> return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "unknown action type"))
                 }
-                store.updateOne(reverted)
+                // respectTmdbMatchLock = false: reverting a `tmdb_match_clear` is an explicit operator
+                // decision to take the match back, so the guard must not re-strip what it just restored.
+                store.updateOne(reverted, respectTmdbMatchLock = false)
                 mediaHistory.record(id, "revert", "reverted entry $entryId (${entry.action})")
                 call.respond(reverted)
             }
@@ -618,6 +653,42 @@ fun Route.mediaRoutes(
                         jellyfinClient.refreshItem(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken, item.jellyfinId)
                     }
 
+                    call.respond(artwork.check(updated))
+                }
+
+                // POST /api/media/{id}/artwork/{asset}/clear — Phase 174 (FR-174-4): remove an on-disk
+                // asset entirely (file + its .manual/.src sidecars). No removal path existed before this
+                // — reported live: a wrong TMDB match downloaded a backdrop with no way to get rid of it.
+                post("/{asset}/clear") {
+                    val id = call.parameters["id"] ?: return@post call.respond(HttpStatusCode.BadRequest)
+                    val assetName = call.parameters["asset"] ?: return@post call.respond(HttpStatusCode.BadRequest)
+                    // Validate like /upload does, rather than letting an unknown name fall through
+                    // clearAsset's null assetPath and report success for a no-op.
+                    if (!ArtworkAsset.isLockable(assetName)) {
+                        call.respond(HttpStatusCode.BadRequest, mapOf("error" to "asset must be poster, backdrop, or clearlogo"))
+                        return@post
+                    }
+                    val item = store.resolve(id) ?: return@post call.respond(HttpStatusCode.NotFound)
+                    val removed = artwork.clearAsset(item, assetName)
+                    // Phase 151 interaction: releasing the lock is not optional. `preserveLockedArtwork`
+                    // restores the STORED posterPath/backdropPath for every locked asset on each
+                    // scan-derived write — leave the lock in place and the now-null path is pinned null
+                    // forever, so fetch_artwork can re-download the file but nothing can ever point at
+                    // it again (and the UI keeps badging a lock on an image that no longer exists).
+                    val unlocked = item.lockedArtwork.filterNot { it == assetName }
+                    val updated = when (assetName) {
+                        ArtworkAsset.POSTER -> item.copy(posterPath = null, lockedArtwork = unlocked)
+                        ArtworkAsset.BACKDROP -> item.copy(backdropPath = null, lockedArtwork = unlocked)
+                        else -> item.copy(lockedArtwork = unlocked)  // clearlogo has no MediaItem field
+                    }
+                    store.updateOne(updated, respectArtworkLock = false)
+                    mediaHistory.record(id, "artwork_clear", "asset=$assetName${if (removed) "" else " (nothing on disk)"}")
+                    // Same reason /upload refreshes: Jellyfin otherwise keeps serving its cached copy of
+                    // an image that is no longer on disk.
+                    val cfg = configStore.current
+                    if (!item.jellyfinId.isNullOrBlank() && cfg.apiKeys.jellyfinUrl.isNotBlank()) {
+                        jellyfinClient.refreshItem(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken, item.jellyfinId)
+                    }
                     call.respond(artwork.check(updated))
                 }
 
@@ -1353,9 +1424,48 @@ fun Route.mediaRoutes(
             @Serializable data class TmdbIdReq(val tmdbId: Int? = null)
             val req = call.receive<TmdbIdReq>()
             val tmdbSnap = """{"tmdbId":${item.tmdbId ?: "null"}}"""
-            val updated = item.copy(tmdbId = req.tmdbId)
-            store.updateOne(updated)
+            // Phase 174 (FR-174-3): setting a real id IS the explicit re-match that lifts a cleared
+            // match's lock — and the guard has to stand down for this one write, or it would strip the
+            // id straight back out. Setting the id to null is NOT an unlock: clearing an id says
+            // nothing about whether a correct match exists.
+            val updated = item.copy(tmdbId = req.tmdbId, tmdbMatchLocked = item.tmdbMatchLocked && req.tmdbId == null)
+            store.updateOne(updated, respectTmdbMatchLock = req.tmdbId == null)
             mediaHistory.record(id, "set_tmdb_id", "tmdbId=${req.tmdbId}", revertable = true, beforeSnapshot = tmdbSnap)
+            call.respond(updated)
+        }
+
+        // POST /api/media/{id}/tmdb-match/clear — Phase 174 (FR-174-1): fully undo a TMDB match (wrong
+        // or simply unwanted). PATCH /tmdb-id above only ever touches the id itself — every OTHER field
+        // a match populated (posterPath/backdropPath and the downloaded files themselves, overview,
+        // genres, cast/crew, studio, originalTitle/originalLanguage, imdbId, runtime, certifications,
+        // trailer, imdbRating) had no removal path at all, so clearing just the id left a wrong match's
+        // residue permanently stuck with nothing on screen to fix it. Reported live: a music video
+        // ("Tina Varde - Lowtide") got matched to an unrelated 1923 film of the same one-word title,
+        // with no way to fully undo it and no way to stop `pull_tmdb` from re-attempting (and
+        // re-producing) the same wrong match on the next scheduled scan.
+        //
+        // The field set lives in `clearTmdbMatch` (TmdbMatchLock.kt), not here, so this route and the
+        // store-write guard that keeps a full scan from re-applying the match can't drift apart. Fields
+        // it deliberately leaves alone — `title`, `year`, `tags`, `titlesByLang` — are documented there.
+        post("/{id}/tmdb-match/clear") {
+            val id = call.parameters["id"] ?: return@post call.respond(HttpStatusCode.BadRequest)
+            val item = store.resolve(id) ?: return@post call.respond(HttpStatusCode.NotFound)
+            artwork.clearAsset(item, ArtworkAsset.POSTER)
+            artwork.clearAsset(item, ArtworkAsset.BACKDROP)
+            // Snapshot minus `episodes` — they're the bulk of a series' JSON and hold no TMDB-owned
+            // item field, and the revert below restores named fields only, never the whole item.
+            val snap = Json.encodeToString(MediaItem.serializer(), item.copy(episodes = emptyList()))
+            // Release the poster/backdrop locks along with the files (see the artwork clear route's
+            // comment — a lock on a deleted image pins its path null forever).
+            val updated = clearTmdbMatch(item).copy(
+                lockedArtwork = item.lockedArtwork.filterNot { it == ArtworkAsset.POSTER || it == ArtworkAsset.BACKDROP },
+            )
+            store.updateOne(updated, respectArtworkLock = false)
+            mediaHistory.record(id, "tmdb_match_clear", "cleared TMDB match (was tmdbId=${item.tmdbId ?: "none"})", revertable = true, beforeSnapshot = snap)
+            val cfg = configStore.current
+            if (!item.jellyfinId.isNullOrBlank() && cfg.apiKeys.jellyfinUrl.isNotBlank()) {
+                jellyfinClient.refreshItem(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken, item.jellyfinId)
+            }
             call.respond(updated)
         }
 
