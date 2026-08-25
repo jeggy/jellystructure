@@ -43,6 +43,11 @@ class RealtimeIngestService(
     // inline; this class no longer needs its own FingerprintService/MediaSegmentStore references
     // (MediaJobQueue's segments-lane job runner has its own).
     private val mediaJobQueue: MediaJobQueue? = null,
+    // Phase 175 — needed to construct a fresh, non-DB-persisting ScanTracker per ingest (see
+    // runConfiguredSteps' doc comment) so this service can run every item through the same
+    // runPipeline() step loop the scheduled/manual pipeline uses, instead of its own hand-written copy.
+    private val db: dev.jellystructure.db.JellystructureDb,
+    private val mediaSegmentStore: MediaSegmentStore,
 ) {
     private val queueScope = CoroutineScope(SupervisorJob() + Dispatchers.Default.limitedParallelism(2))
 
@@ -135,61 +140,35 @@ class RealtimeIngestService(
         store.addOrUpdate(enriched)
         broadcaster.broadcast(JobEvent.ItemScanned("realtime-ingest-${enriched.id}", enriched))
         mediaHistory.record(enriched.id, "realtime_ingest", "jellyfinId=${jItem.id}")
-        // Phase 145 — run the operator's *configured* [[scan.pipeline]] downstream steps for this one item
-        // (scan_files + pull_tmdb already covered by scanItem above), so an event-ingested item gets the
-        // exact same treatment as a scheduled run — artwork, IMDb ratings, NFO, Jellyfin — driven by config
-        // rather than the old hard-coded flow (which omitted IMDb + ignored the pipeline config entirely).
-        runConfiguredSteps(enriched.id)
-        return true
-    }
-
-    /** Phase 145 — the per-item downstream pipeline for a freshly-scanned item, driven by the configured
-     *  [[scan.pipeline]] and dispatched through the same [PipelineStepOps] the scheduled run uses (so no
-     *  drift). Runs under this service's own activity — it never touches the global [ScanTracker]. */
-    private suspend fun runConfiguredSteps(itemId: String) {
-        val cfg = configStore.current
-        for (step in cfg.scan.pipeline) {
-            val current = store.get(itemId) ?: return   // gone mid-flight (e.g. deleted)
-            runCatching {
-                when (step.step) {
-                    "scan_files", "pull_tmdb" -> Unit  // already done by scanItem
-                    "fetch_artwork" -> PipelineStepOps.fetchArtwork(current, store, artwork)
-                    // Phase 164 (FR-164 open question 1) — enqueued, not run inline: a freshly-ingested
-                    // item's detection now dedupes against (and shares the worker pool with) any
-                    // concurrent pipeline-triggered sweep for the same movie/season, instead of racing
-                    // it as a second inline caller. chapterKeywords/detectFingerprint are read live from
-                    // config by the job runner itself, so they're not threaded through here.
-                    "detect_segments" -> mediaJobQueue?.let { queue ->
-                        when (current.kind) {
-                            dev.jellystructure.model.MediaKind.MOVIE -> queue.enqueueSegments(
-                                "segments_movie", current.id, current.title,
-                                dev.jellystructure.jobs.MediaJobParams(), 1, "seg:movie:${current.id}",
-                            )
-                            dev.jellystructure.model.MediaKind.TV_SHOW -> {
-                                val seasons = current.episodes.filter { it.partCount == 1 }.groupBy { it.seasonNumber ?: 0 }
-                                for ((season, eps) in seasons) {
-                                    queue.enqueueSegments(
-                                        "segments_season", current.id, "${current.title} S${season.toString().padStart(2, '0')}",
-                                        dev.jellystructure.jobs.MediaJobParams(segmentSeason = season), eps.size,
-                                        "seg:season:${current.id}:$season",
-                                    )
-                                }
-                            }
-                            // Phase 168 (FR-168-6): a music video is never enqueued for detection.
-                            dev.jellystructure.model.MediaKind.MUSIC_VIDEO -> {}
-                        }
-                    }
-                    "sync_imdb_ratings" -> PipelineStepOps.syncImdb(current, store, imdbClient)
-                    "write_nfo" -> PipelineStepOps.writeNfo(
-                        current, store, cfg.apiKeys.jellyfinUrl, cfg.metadata.ageRatingCascade,
-                        allowForeign = step.overwrite || cfg.behavior.overwriteNfo,
-                        includeEpisodes = true,   // a fresh series' episodes each need their NFO (as pushToJellyfin did)
-                    )
-                    "sync_jellyfin" -> PipelineStepOps.syncJellyfin(current, store, jellyfinClient, cfg)
-                    "rescan_arr" -> arrRescan?.let { PipelineStepOps.rescanArr(current, it) }
-                    else -> Unit  // detect_drift etc. — bulk monitoring steps, not part of a single-item ingest
-                }
-            }.onFailure { Logger.warn("Realtime ingest: step '${step.step}' failed for $itemId: ${it.message}", "ingest") }
+        // Phase 145 (unified onto the shared engine, Phase 175) — run the operator's *configured*
+        // [[scan.pipeline]] downstream steps for this one item (scan_files + pull_tmdb already covered
+        // by scanItem above — runPipeline skips pull_tmdb for a SingleItem target for exactly that
+        // reason) through the SAME step loop the scheduled/manual pipeline uses, instead of this
+        // service's own hand-written, independently-drifting copy of "which steps exist and what they
+        // do". A fresh, non-DB-persisting ScanTracker (see its own doc comment) drives the run's
+        // StepStarted/StepProgress/StepFinished events without touching the global scan_state row a
+        // concurrent bulk scan might be using.
+        val queue = mediaJobQueue
+        if (queue == null) {
+            Logger.warn("Realtime ingest: no MediaJobQueue configured — downstream steps skipped for ${enriched.id}", "ingest")
+            return true
         }
+        val deps = PipelineDeps(
+            store = store, scanner = scanner, broadcaster = broadcaster, configStore = configStore,
+            jellyfinClient = jellyfinClient, scanDispatcher = kotlinx.coroutines.Dispatchers.Default,
+            artworkDownloader = artwork, arrRescan = arrRescan, sonarrEnrich = sonarrEnrich,
+            imdbClient = imdbClient, mediaSegmentStore = mediaSegmentStore, mediaJobQueue = queue,
+        )
+        runCatching {
+            runPipeline(
+                target = RunTarget.SingleItem(enriched),
+                pipeline = effectivePipeline(configStore.current),
+                jobId = "realtime-ingest-${enriched.id}",
+                scanTracker = ScanTracker(db, persistToDb = false),
+                deps = deps,
+                signalCompletion = false,
+            )
+        }.onFailure { Logger.warn("Realtime ingest: downstream pipeline failed for ${enriched.id}: ${it.message}", "ingest") }
+        return true
     }
 }

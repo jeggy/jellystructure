@@ -214,7 +214,7 @@ fun main() = runBlocking {
     if (configStore.current.ingest.webhookSecret.isBlank()) {
         rootScope.launch { configStore.update(configStore.current.copy(ingest = configStore.current.ingest.copy(webhookSecret = dev.jellystructure.auth.generateSecureToken()))) }
     }
-    val realtimeIngest = dev.jellystructure.media.RealtimeIngestService(scanner, mediaStore, jellyfinClient, configStore, artworkDownloader, rootScope, broadcaster, mediaHistory, arrRescan, sonarrEnrich, imdbClient, mediaJobQueue)
+    val realtimeIngest = dev.jellystructure.media.RealtimeIngestService(scanner, mediaStore, jellyfinClient, configStore, artworkDownloader, rootScope, broadcaster, mediaHistory, arrRescan, sonarrEnrich, imdbClient, mediaJobQueue, db, mediaSegmentStore)
     val libraryListener = dev.jellystructure.tv.JellyfinLibraryListener(configStore, jellyfinClient, mediaStore, realtimeIngest, rootScope)
     libraryListener.start()
     // Phase 118 (FR C.4) — FD telemetry: the durable defense against the unfixable Ktor Native
@@ -258,6 +258,15 @@ fun main() = runBlocking {
     // After enriching, nudge all connected Ravilo clients to silently re-pull their home feed.
     rootScope.launch { sonarrEnrich.enrichAll(); tvEventBus.notifyGlobalConfigChanged() }
 
+    // Phase 175 — shared collaborator bundle for every dev.jellystructure.media.runPipeline() call this
+    // process makes (scheduler + SCAN_ON_START below; route handlers build their own in MediaRoutes.kt).
+    val pipelineDeps = dev.jellystructure.media.PipelineDeps(
+        store = mediaStore, scanner = scanner, broadcaster = broadcaster, configStore = configStore,
+        jellyfinClient = jellyfinClient, scanDispatcher = scanDispatcher, artworkDownloader = artworkDownloader,
+        arrRescan = arrRescan, sonarrEnrich = sonarrEnrich, imdbClient = imdbClient,
+        mediaSegmentStore = mediaSegmentStore, mediaJobQueue = mediaJobQueue,
+    )
+
     // Scheduled scan / pipeline (Phase 91 / 93b). Fires at the LOCAL WALL-CLOCK time the admin set
     // (the cron the Settings schedule UI emits), not "interval since boot". Re-reads config every poll
     // chunk so edits apply within a minute, and publishes the next-run time for the admin indicator.
@@ -290,18 +299,21 @@ fun main() = runBlocking {
             if (scanTracker.running) { Logger.info("Scheduled run skipped — a scan is already running"); delay(60_000L); continue }
             if (schedule.isBlank() && legacyHours > 0) legacyNextSec = nowEpochSec() + legacyHours * 3_600L
 
-            val active = pipeline.ifEmpty { null }
+            // Phase 175 — one engine for both branches: `effectivePipeline` reproduces the old
+            // plain-scan fallback (scan_files + inline TMDB + gap-fill artwork) as steps, so a
+            // no-pipeline-configured scheduled run and a configured-pipeline run both go through
+            // runPipeline() now instead of runScan()-vs-executePipeline() diverging.
+            val active = pipeline.isNotEmpty()
             val jobId = scanTracker.startNew()
             runTagged(
-                jobId, "scheduled", if (active != null) "pipeline" else "library",
-                if (active != null) "normal" else null,
-                "▶ Scheduled ${if (active != null) "pipeline" else "scan"} run started", scanTracker,
+                jobId, "scheduled", if (active) "pipeline" else "library",
+                if (active) "normal" else null,
+                "▶ Scheduled ${if (active) "pipeline" else "scan"} run started", scanTracker,
             ) {
-                if (active != null) {
-                    executePipeline(active, jobId, mediaStore, scanner, scanTracker, broadcaster, configStore, jellyfinClient, scanDispatcher, artworkDownloader, arrRescan, sonarrEnrich, imdbClient, mediaSegmentStore, mediaJobQueue)
-                } else {
-                    runScan(jobId, emptySet(), mediaStore, scanner, scanTracker, broadcaster, configStore, jellyfinClient, scanDispatcher, artworkDownloader = if (cfg.behavior.fetchImages) artworkDownloader else null)
-                }
+                dev.jellystructure.media.runPipeline(
+                    dev.jellystructure.media.RunTarget.Library(), dev.jellystructure.media.effectivePipeline(cfg),
+                    jobId, scanTracker, pipelineDeps, fullRun = false,
+                )
             }
         }
     }
@@ -312,8 +324,14 @@ fun main() = runBlocking {
         rootScope.launch {
             val jobId = scanTracker.startNew()
             runTagged(jobId, "startup", "library", null, "▶ Startup scan (SCAN_ON_START=1)", scanTracker) {
-                // Items-only (no artwork fetch) — fast + FD-safe; on-disk posters are still served by R133.
-                runScan(jobId, emptySet(), mediaStore, scanner, scanTracker, broadcaster, configStore, jellyfinClient, scanDispatcher, artworkDownloader = null)
+                // Items-only (no artwork fetch) — fast + FD-safe; on-disk posters are still served by
+                // R133. fullRun=true — a startup rebuild-after-incident always means "check everything",
+                // matching this trigger's pre-Phase-175 behavior (it never had a freshness filter).
+                dev.jellystructure.media.runPipeline(
+                    dev.jellystructure.media.RunTarget.Library(),
+                    listOf(dev.jellystructure.config.PipelineStep(step = "scan_files"), dev.jellystructure.config.PipelineStep(step = "pull_tmdb", scope = "all")),
+                    jobId, scanTracker, pipelineDeps, fullRun = true,
+                )
             }
         }
     }
@@ -381,336 +399,6 @@ fun nextRunDelayMs(cron: String, nowEpochSec: Long): Long? {
     return (next - nowEpochSec) * 1_000L
 }
 
-/** Execute a scan pipeline: scan_files (trigger, always first) then action blocks sequentially. */
-@OptIn(ExperimentalForeignApi::class)
-suspend fun executePipeline(
-    pipeline: List<PipelineStep>,
-    jobId: String,
-    store: MediaStore,
-    scanner: Scanner,
-    scanTracker: ScanTracker,
-    broadcaster: WsBroadcaster,
-    configStore: ConfigStore,
-    jellyfinClient: JellyfinClient,
-    scanDispatcher: kotlinx.coroutines.CoroutineDispatcher,
-    artworkDownloader: ArtworkDownloader,
-    arrRescan: ArrRescanService,
-    sonarrEnrich: SonarrEnrichService? = null,
-    imdbClient: dev.jellystructure.imdb.ImdbClient? = null,
-    mediaSegmentStore: dev.jellystructure.media.MediaSegmentStore,
-    // Phase 164 — detect_segments enqueues onto this instead of running inline (the job runner gets its
-    // own FingerprintService reference at MediaJobQueue construction — this function no longer needs one).
-    mediaJobQueue: dev.jellystructure.media.MediaJobQueue,
-    // "Run pipeline now (full)" — every step downstream of scan_files (pull_tmdb, fetch_artwork,
-    // sync_imdb_ratings, write_nfo, sync_jellyfin, …) only ever sees `workingSet`, i.e. whatever
-    // scan_files' freshness filter let through. That's correct for "keep already-scanned metadata
-    // fresh", but wrong for a step whose own "does this need doing" condition is independent of scan
-    // freshness — sync_imdb_ratings backfilling a brand-new field across the whole library, or
-    // write_nfo catching a stored-vs-disk hash mismatch from an edit or a TMDB re-pull. Those items
-    // otherwise wait for their unrelated metadata-recheck cadence to come due, which can take weeks.
-    // fullRun=true skips the freshness filter outright so worklist == the whole library for this run.
-    fullRun: Boolean = false,
-) {
-    val scanStep = pipeline.firstOrNull { it.step == "scan_files" }
-        ?: PipelineStep(step = "scan_files")
-
-    Logger.info("Pipeline starting: ${pipeline.joinToString(" → ") { it.step }}${if (fullRun) " (full — no freshness filter)" else ""}")
-
-    // Phase 175 — freshness filter now lives in FreshnessFilter.kt so every RunTarget.Library trigger
-    // (not just a configured pipeline run) can honor it; see that file's doc comment.
-    val freshnessFilter = dev.jellystructure.media.computeFreshnessFilter(
-        scanStep, store, fullRun, dev.jellystructure.media.RunTarget.Library(),
-    )
-
-    // Bug fix (2026-07-03): runScan's own completion (scanTracker.complete(), which resets
-    // activeWorkers to 0 and flips running=false) must NOT fire after just this scan_files sub-step —
-    // it previously did, so "Run pipeline now" could race to a false "already running" 409 on a second
-    // click and the Activity page's worker count froze at 0/N for the rest of the run while pull_tmdb/
-    // fetch_artwork/etc. were still actually going. This pipeline signals completion itself, once, after
-    // every step has truly finished (or on the early "nothing to do" return right below).
-    suspend fun signalPipelineComplete(items: List<dev.jellystructure.model.MediaItem>) {
-        if (scanTracker.cancelRequested) {
-            broadcaster.broadcast(JobEvent.Finished(jobId, items.size, 0))
-            return
-        }
-        scanTracker.complete()
-        broadcaster.broadcast(JobEvent.Finished(jobId, items.size, 0))
-        val cfg = configStore.current
-        if (cfg.apiKeys.jellyfinUrl.isNotBlank() && cfg.apiKeys.jellyfinToken.isNotBlank()) {
-            jellyfinClient.triggerLibraryRefresh(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken)
-        }
-        if (cfg.behavior.notifyOnScanDone)
-            fireWebhook(cfg, """{"event":"scan_complete","jobId":"$jobId","items":${items.size}}""")
-        if (cfg.behavior.notifyOnNoMatch) {
-            // Phase 168/171: a music video IS searched (Phase 171 reversed the "never" rule), but a
-            // miss stays unflagged here — unlike a movie/series a music video routinely and
-            // legitimately has no TMDB entry, so counting it as "unmatched" would just be noise.
-            val unmatched = items.count { it.tmdbId == null && it.kind != dev.jellystructure.model.MediaKind.MUSIC_VIDEO }
-            if (unmatched > 0)
-                fireWebhook(cfg, """{"event":"no_tmdb_match","jobId":"$jobId","unmatched":$unmatched}""")
-        }
-    }
-
-    // Phase 135 (FR-135-2 item 4) — emit the whole ordered step plan up front, before scan_files itself
-    // runs, so the client can draw every step chip immediately instead of discovering steps one at a
-    // time. scan_files is listed first but keeps its own existing Started/ItemScanned/FileProgress
-    // events untouched below — the client infers "scan_files is active" from ScanStatusResponse.activeStep.
-    val orderedSteps = listOf("scan_files") + pipeline.filter { it.step != "scan_files" }.map { it.step }
-    scanTracker.setStepPlan(orderedSteps)
-    broadcaster.broadcast(JobEvent.PipelinePlan(jobId, orderedSteps))
-    scanTracker.setActiveStep("scan_files")
-
-    val workingSet = withContext(RunContext(jobId, "scan_files")) {
-        runScan(
-            jobId, emptySet(), store, scanner, scanTracker, broadcaster,
-            configStore, jellyfinClient, scanDispatcher,
-            freshnessFilter = freshnessFilter,
-            signalCompletion = false,
-        )
-    }
-
-    sonarrEnrich?.enrichAll()
-
-    if (workingSet.isEmpty()) {
-        Logger.info("Pipeline scan_files: no items in working set, skipping action steps")
-        signalPipelineComplete(workingSet)
-        return
-    }
-
-    Logger.info("Pipeline scan_files complete: ${workingSet.size} items in working set")
-
-    val cfg = configStore.current
-    try {
-    for (step in pipeline) {
-        if (step.step == "scan_files") continue
-        withContext(RunContext(jobId, step.step)) {
-        Logger.info("Pipeline step: ${step.step}")
-        // Phase 135 (FR-135-1) — every step below now runs its per-item work through
-        // runPipelineStepPool: a bounded worker pool (reusing scan_files' pattern) sized off
-        // behavior.scanWorkers (clamped per-step by pipelineStepConcurrency), so ScanTracker's
-        // activeWorkers/targetWorkers reflect this step's live pool and the work is concurrent instead
-        // of one item at a time. Real per-item concurrency stays bounded by each item's own existing
-        // gate (OutboundHttp/ProcessGate/the artwork downloader's semaphore/the imdb throttle) — the
-        // pool only controls dispatch, not a new ceiling. The pool wraps every item in runCatching
-        // uniformly (matching most steps' pre-existing per-item error handling; rescan_arr/detect_drift
-        // previously had none at the top level — an item failure there now degrades gracefully instead
-        // of aborting the rest of the run, which is strictly safer under concurrent dispatch).
-        // Bug fix: each step's target worker count is now a supplier re-polled live by
-        // runPipelineStepPool's own supervisor (matching runScan's scan_files pattern) instead of a
-        // fixed count snapshotted here once — a worker-count change in Settings now takes effect on
-        // the very next poll tick, not just on the next scan/step.
-        when (step.step) {
-            "pull_tmdb" -> {
-                // Phase 171 (reverses Phase 168 FR-168-5): a music video is now searched like any
-                // other kind — a miss is common and expected (never flagged, see notifyOnNoMatch
-                // below), but a real match should be found and kept up to date the same as a movie's.
-                val toProcess = if (step.scope == "all") workingSet
-                    else workingSet.filter { it.tmdbId == null }
-                Logger.info("pull_tmdb: ${toProcess.size} items (scope=${step.scope})")
-                runPipelineStepPool(
-                    jobId, step.step, toProcess, { pipelineStepConcurrency(step.step, configStore.current.behavior.scanWorkers) },
-                    scanTracker, broadcaster, labelOf = { it.title },
-                ) { item, _ -> dev.jellystructure.media.PipelineStepOps.pullTmdb(item, scanner, store) }
-            }
-            "fetch_artwork" -> {
-                // R125/R126: "missing" scope = anything fetch() can fill is absent — poster/fanart, plus
-                // episode stills + season posters for series.
-                val toProcess = if (step.scope == "all") workingSet
-                    else workingSet.filter { artworkDownloader.isArtworkIncomplete(it) }
-                Logger.info("fetch_artwork: ${toProcess.size} items (scope=${step.scope})")
-                runPipelineStepPool(
-                    jobId, step.step, toProcess, { pipelineStepConcurrency(step.step, configStore.current.behavior.scanWorkers) },
-                    scanTracker, broadcaster, labelOf = { it.title },
-                ) { item, _ -> dev.jellystructure.media.PipelineStepOps.fetchArtwork(item, store, artworkDownloader) }
-            }
-            "write_nfo" -> {
-                // Phase 115 (FR B) — content-aware: the old `overwrite`-gated write meant an NFO
-                // written once was never updated again by the pipeline (default overwrite=false), so
-                // every later DB change (a TMDB freshness re-pull, an operator edit) diverged from the
-                // NFO forever. Now: always regenerate + compare by hash. If our own last-written hash
-                // changed, rewrite regardless of the flag — that's just keeping our own file current,
-                // not "overwriting". If the on-disk file isn't ours (foreign/hand-edited — its hash
-                // doesn't match nfoHash), only `overwrite`/`overwriteNfo` may replace it; otherwise skip
-                // and count it for a once-per-run summary line (Phase 53 skip-summary pattern).
-                val serverUrl = cfg.apiKeys.jellyfinUrl
-                val written = AtomicInt(0)
-                val unchanged = AtomicInt(0)
-                val foreignSkipped = AtomicInt(0)
-                runPipelineStepPool(
-                    jobId, step.step, workingSet, { pipelineStepConcurrency(step.step, configStore.current.behavior.scanWorkers) },
-                    scanTracker, broadcaster, labelOf = { it.title },
-                ) { item, _ ->
-                    when (dev.jellystructure.media.PipelineStepOps.writeNfo(
-                        item, store, serverUrl, cfg.metadata.ageRatingCascade,
-                        allowForeign = step.overwrite || cfg.behavior.overwriteNfo,
-                    )) {
-                        dev.jellystructure.media.PipelineStepOps.NfoResult.WRITTEN -> written.incrementAndGet()
-                        dev.jellystructure.media.PipelineStepOps.NfoResult.UNCHANGED -> unchanged.incrementAndGet()
-                        dev.jellystructure.media.PipelineStepOps.NfoResult.FOREIGN_SKIPPED -> foreignSkipped.incrementAndGet()
-                    }
-                }
-                Logger.info("write_nfo: ${written.value} written, ${unchanged.value} unchanged" +
-                    if (foreignSkipped.value > 0) ", ${foreignSkipped.value} foreign NFO(s) skipped (set overwrite to replace)" else "")
-            }
-            "sync_jellyfin" -> {
-                // Phase 115 (FR C) — full import (not the old ValidationOnly, which never re-reads NFOs),
-                // scoped to items that actually have something new to import (nfoWrittenAt > jfSyncedAt)
-                // so an unchanged library doesn't hammer Jellyfin with hundreds of full refreshes a night.
-                // Bug fix (live report, 2026-08-16) — `workingSet` is one snapshot taken at scan_files,
-                // before write_nfo (the immediately-preceding step) runs. Filtering it directly compared
-                // each item's PRE-write_nfo nfoWrittenAt, so an item whose NFO was just rewritten THIS
-                // run never qualified for toSync — jfSyncedAt then never advanced, and the item kept
-                // reporting "Jellyfin hasn't re-read the NFO yet" indefinitely whenever its NFO content
-                // legitimately changes every run (e.g. sync_imdb_ratings pulling a new vote count
-                // upstream of write_nfo). Re-fetch each item's current DB state before filtering —
-                // matches the pattern detect_drift already uses for the same reason.
-                val fresh = workingSet.mapNotNull { store.get(it.id) }
-                val toSync = fresh.filter { (it.nfoWrittenAt ?: 0L) > (it.jfSyncedAt ?: 0L) && !it.jellyfinId.isNullOrBlank() }
-                val jellyfinReady = cfg.apiKeys.jellyfinUrl.isNotBlank() && cfg.apiKeys.jellyfinToken.isNotBlank()
-                Logger.info("sync_jellyfin: ${toSync.size} of ${workingSet.size} items have unsynced NFO changes")
-                runPipelineStepPool(
-                    jobId, step.step, if (jellyfinReady) toSync else emptyList(),
-                    { pipelineStepConcurrency(step.step, configStore.current.behavior.scanWorkers) }, scanTracker, broadcaster, labelOf = { it.title },
-                ) { item, _ -> dev.jellystructure.media.PipelineStepOps.syncJellyfin(item, store, jellyfinClient, cfg) }
-            }
-            "rescan_arr" -> {
-                Logger.info("rescan_arr: ${workingSet.size} items")
-                runPipelineStepPool(
-                    jobId, step.step, workingSet, { pipelineStepConcurrency(step.step, configStore.current.behavior.scanWorkers) },
-                    scanTracker, broadcaster, labelOf = { it.title },
-                ) { item, _ -> arrRescan.nudge(item) }
-            }
-            "detect_drift" -> {
-                // Phase 115 (FR F) — real state evaluation across the working set, replacing the no-op.
-                // Phase 175: per-item body extracted to PipelineStepOps.detectDrift, shared with a
-                // future realtime single-item dispatch.
-                val converged = AtomicInt(0); val nfoStale = AtomicInt(0)
-                val jfBehind = AtomicInt(0); val external = AtomicInt(0)
-                runPipelineStepPool(
-                    jobId, step.step, workingSet, { pipelineStepConcurrency(step.step, configStore.current.behavior.scanWorkers) },
-                    scanTracker, broadcaster, labelOf = { it.title },
-                ) { item, _ ->
-                    when (dev.jellystructure.media.PipelineStepOps.detectDrift(item, store, jellyfinClient, cfg, step.autoReassert)) {
-                        dev.jellystructure.media.PipelineStepOps.DriftOutcome.NFO_STALE -> nfoStale.incrementAndGet()
-                        dev.jellystructure.media.PipelineStepOps.DriftOutcome.JELLYFIN_BEHIND -> jfBehind.incrementAndGet()
-                        dev.jellystructure.media.PipelineStepOps.DriftOutcome.EXTERNAL_DRIFT -> external.incrementAndGet()
-                        dev.jellystructure.media.PipelineStepOps.DriftOutcome.CONVERGED -> converged.incrementAndGet()
-                    }
-                }
-                Logger.info("detect_drift: ${converged.value} converged, ${nfoStale.value} NFO stale, ${jfBehind.value} Jellyfin behind" +
-                    (if (step.autoReassert) " (auto-reassert attempted)" else "") + ", ${external.value} external drift")
-                if (external.value > 0 && cfg.behavior.notifyOnDrift) {
-                    runCatching { fireWebhook(cfg, """{"event":"drift_detected","pipeline":true,"items":${external.value}}""") }
-                        .onFailure { Logger.warn("detect_drift notify webhook failed: ${it.message}") }
-                }
-            }
-            "detect_segments" -> {
-                // Phase 150 (FR-SEG1-2/3/5) → Phase 163 (per-kind media_segment table) → Phase 164
-                // (FR-164-3): this step is now ENQUEUE-ONLY. Detection itself runs on the segments lane
-                // (Activity ▸ Jobs & workers, MediaJobQueue's segmentsSupervisorLoop), off this run's
-                // critical path — see the phase spec for why (by far the slowest step; held the whole
-                // pipeline/scheduler open for its duration; the scheduler skipped the next scheduled run
-                // outright while it ran). "missing": a movie/season with a real gap (a writable-if-
-                // not-locked kind with no row yet). The job runner re-checks per-kind lock/existence
-                // (force=false) before writing anything, so "all" scope safely enqueues even an
-                // already-complete item — it just does no writable work when it runs.
-                fun missing(itemId: String, episodeKey: String, episodeNumber: Int) =
-                    mediaSegmentStore.getSegment(itemId, episodeKey, episodeNumber, dev.jellystructure.media.SegmentKind.INTRO) == null ||
-                    mediaSegmentStore.getSegment(itemId, episodeKey, episodeNumber, dev.jellystructure.media.SegmentKind.CREDITS) == null
-                fun needsDetection(item: dev.jellystructure.model.MediaItem): Boolean = when (item.kind) {
-                    dev.jellystructure.model.MediaKind.MOVIE -> missing(item.id, "", 0)
-                    dev.jellystructure.model.MediaKind.TV_SHOW -> item.episodes.any { it.partCount == 1 && missing(item.id, it.filename, it.episodeNumber ?: 0) }
-                    // Phase 168 (FR-168-6): a music video is never enqueued for intro/credits detection.
-                    dev.jellystructure.model.MediaKind.MUSIC_VIDEO -> false
-                }
-                val toProcess = if (step.scope == "all") workingSet else workingSet.filter(::needsDetection)
-                scanTracker.setActiveStep(step.step)
-                broadcaster.broadcast(JobEvent.StepStarted(jobId, step.step, toProcess.size))
-
-                var enqueued = 0
-                var deduped = 0
-                for (item in toProcess) {
-                    when (item.kind) {
-                        dev.jellystructure.model.MediaKind.MOVIE -> {
-                            val result = mediaJobQueue.enqueueSegments(
-                                "segments_movie", item.id, item.title,
-                                dev.jellystructure.jobs.MediaJobParams(), 1, "seg:movie:${item.id}",
-                            )
-                            if (result.deduped) deduped++ else enqueued++
-                        }
-                        // One job per SEASON, not per series — a 10-season show's detection spreads
-                        // across the segments lane's worker pool instead of monopolizing one slot for
-                        // however long all ten seasons take sequentially (the same reasoning the old
-                        // inline per-season worker-pool dispatch used, now expressed as separate queue
-                        // rows instead of separate coroutine work items).
-                        dev.jellystructure.model.MediaKind.TV_SHOW -> {
-                            val seasons = item.episodes.filter { it.partCount == 1 }.groupBy { it.seasonNumber ?: 0 }
-                            for ((season, eps) in seasons) {
-                                if (step.scope != "all" && eps.none { missing(item.id, it.filename, it.episodeNumber ?: 0) }) continue
-                                val result = mediaJobQueue.enqueueSegments(
-                                    "segments_season", item.id, "${item.title} S${season.toString().padStart(2, '0')}",
-                                    dev.jellystructure.jobs.MediaJobParams(segmentSeason = season), eps.size,
-                                    "seg:season:${item.id}:$season",
-                                )
-                                if (result.deduped) deduped++ else enqueued++
-                            }
-                        }
-                        // Phase 168 (FR-168-6): unreachable in practice — needsDetection() always
-                        // returns false for a music video, so it never survives into toProcess except
-                        // under scope="all", where this is the correct no-op.
-                        dev.jellystructure.model.MediaKind.MUSIC_VIDEO -> {}
-                    }
-                }
-                val summary = "enqueued $enqueued detection job${if (enqueued == 1) "" else "s"}" +
-                    if (deduped > 0) " ($deduped already queued)" else ""
-                Logger.info("detect_segments: $summary", "pipeline")
-                broadcaster.broadcast(JobEvent.StepFinished(jobId, step.step, summary))
-            }
-            "sync_imdb_ratings" -> {
-                // Phase 131: keyed by imdbId; a title without one has no rating to sync. A *small* pool
-                // (pipelineStepConcurrency caps this step at 2) preserves the intended per-call throttle
-                // (imdbapi.dev has no verified batch endpoint) instead of multiplying it by scanWorkers.
-                val toSync = workingSet.filter { !it.imdbId.isNullOrBlank() }
-                Logger.info("sync_imdb_ratings: ${toSync.size} of ${workingSet.size} items have an IMDb id")
-                val updated = AtomicInt(0)
-                runPipelineStepPool(
-                    jobId, step.step, toSync, { pipelineStepConcurrency(step.step, configStore.current.behavior.scanWorkers) },
-                    scanTracker, broadcaster, labelOf = { it.title },
-                ) { item, _ ->
-                    if (dev.jellystructure.media.PipelineStepOps.syncImdb(item, store, imdbClient)) updated.incrementAndGet()
-                    delay(250)
-                }
-                Logger.info("sync_imdb_ratings: ${updated.value} of ${toSync.size} ratings updated")
-            }
-            "wait" -> {
-                // No per-item fan-out — still bracket with step events (FR-135-1 item 3) so the chip
-                // shows active + a result summary instead of a silent gap.
-                Logger.info("wait: ${step.minutes} min")
-                scanTracker.setActiveStep(step.step)
-                broadcaster.broadcast(JobEvent.StepStarted(jobId, step.step, 1))
-                delay(step.minutes * 60_000L)
-                broadcaster.broadcast(JobEvent.StepFinished(jobId, step.step, "${step.minutes} min elapsed"))
-            }
-            "notify" -> {
-                scanTracker.setActiveStep(step.step)
-                broadcaster.broadcast(JobEvent.StepStarted(jobId, step.step, 1))
-                val payload = """{"event":"pipeline_complete","items":${workingSet.size},"on":"${step.on}"}"""
-                runCatching { fireWebhook(cfg, payload) }
-                    .onFailure { Logger.warn("notify webhook failed: ${it.message}") }
-                broadcaster.broadcast(JobEvent.StepFinished(jobId, step.step, "notified"))
-            }
-        }
-        }
-    }
-    Logger.info("Pipeline complete — ${workingSet.size} items processed")
-    } finally {
-        // Guarantees scanTracker is always released — even if a step above threw (runTagged's own
-        // catch just logs "Run failed" and never touches scanTracker, which is exactly how a stuck
-        // "0/N workers" / phantom-running pipeline could happen from any step-level exception).
-        signalPipelineComplete(workingSet)
-    }
-}
-
 /** 93g: run a scan/pipeline run inside a [RunContext] so every log line it emits is tagged with the run
  *  id (and therefore filterable in the Activity page), record it in the runs index for the run picker,
  *  and bracket it with start/finish log lines. Non-cancellation failures are logged and swallowed so the
@@ -722,9 +410,9 @@ suspend fun executePipeline(
  *  [scanTracker] is null for a run that shouldn't touch the live scan-status bookkeeping (realtime
  *  ingest runs alongside a possibly-in-progress real scan on its own small dispatcher — writing to the
  *  same tracker would corrupt that scan's live activeStep/worker display). [stepPlan] seeds
- *  ScanTracker's live status for pollers — `executePipeline` immediately supersedes it with the real
- *  plan once `block` runs it; the default `["scan_files"]` is correct as-is for every runScan-only
- *  call site. */
+ *  ScanTracker's live status for pollers — `runPipeline` (Phase 175, formerly `executePipeline`)
+ *  immediately supersedes it with the real plan once `block` runs it; the default `["scan_files"]` is
+ *  correct as-is for every plain-scan call site. */
 suspend fun runTagged(
     jobId: String, trigger: String, scope: String, type: String?,
     startMsg: String, scanTracker: ScanTracker? = null,

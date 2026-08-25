@@ -35,7 +35,17 @@ data class ScanStatusResponse(
 @Serializable
 data class ActiveScanItem(val label: String, val startedAt: Long, val detail: String? = null)
 
-class ScanTracker(private val db: JellystructureDb) {
+/**
+ * [persistToDb] — Phase 175: false for the ephemeral, per-call tracker a realtime/webhook single-item
+ * ingest constructs (`ScanTracker(db, persistToDb = false)`) so it can drive [runPipelineStepPool]'s
+ * `StepStarted`/`StepProgress`/`StepFinished` events (same live visibility a bulk run gets) without a
+ * second concurrent writer touching the single-row, DB-backed `scan_state` table the real global tracker
+ * owns — two realtime ingests running at once, or one running alongside a bulk scan, would otherwise
+ * clobber each other's `scan_state` row. Every `db.scanStateQueries.*` call below is guarded on this
+ * flag; the in-memory counters/maps (targetWorkers/activeWorkers/activeItemsMap/stepPlan/activeStep) are
+ * unaffected and work identically either way.
+ */
+class ScanTracker(private val db: JellystructureDb, private val persistToDb: Boolean = true) {
     // In-memory fast-read flags; authoritative state persisted in DB
     private var _status: String = "IDLE"
     private var _jobId: String = ""
@@ -99,9 +109,10 @@ class ScanTracker(private val db: JellystructureDb) {
         private set
 
     val processedIdsSnapshot: Set<String>
-        get() = db.scanStateQueries.getProcessedIds(_jobId).executeAsList().toSet()
+        get() = if (persistToDb) db.scanStateQueries.getProcessedIds(_jobId).executeAsList().toSet() else emptySet()
 
     suspend fun load() {
+        if (!persistToDb) return
         val row = db.scanStateQueries.getState().executeAsOneOrNull() ?: return
         _jobId = row.job_id
         _startedAt = row.started_at
@@ -121,7 +132,7 @@ class ScanTracker(private val db: JellystructureDb) {
 
     fun startNew(): String {
         val jobId = "scan-${epochSeconds()}"
-        db.scanStateQueries.clearOldProcessed(jobId)
+        if (persistToDb) db.scanStateQueries.clearOldProcessed(jobId)
         cancelRequested = false
         activeWorkers.value = 0
         _activeStep = null
@@ -130,7 +141,7 @@ class ScanTracker(private val db: JellystructureDb) {
         _status = "RUNNING"
         _jobId = jobId
         _startedAt = epochSeconds()
-        db.scanStateQueries.upsertState(
+        if (persistToDb) db.scanStateQueries.upsertState(
             status = "RUNNING",
             job_id = jobId,
             started_at = _startedAt,
@@ -146,7 +157,7 @@ class ScanTracker(private val db: JellystructureDb) {
         _stepPlan = emptyList()
         activeItemsMap.clear()
         _status = "RUNNING"
-        db.scanStateQueries.upsertState(
+        if (persistToDb) db.scanStateQueries.upsertState(
             status = "RUNNING",
             job_id = _jobId,
             started_at = _startedAt,
@@ -156,6 +167,7 @@ class ScanTracker(private val db: JellystructureDb) {
     }
 
     suspend fun recordProcessed(jellyfinId: String) {
+        if (!persistToDb) return
         recordMutex.withLock {
             db.scanStateQueries.insertProcessed(job_id = _jobId, jellyfin_id = jellyfinId)
         }
@@ -167,7 +179,7 @@ class ScanTracker(private val db: JellystructureDb) {
         if (_status == "RUNNING") {
             cancelRequested = true
             _status = "CANCELLED"
-            db.scanStateQueries.upsertState(
+            if (persistToDb) db.scanStateQueries.upsertState(
                 status = "CANCELLED",
                 job_id = _jobId,
                 started_at = _startedAt,
@@ -179,13 +191,15 @@ class ScanTracker(private val db: JellystructureDb) {
     fun complete() {
         _status = "COMPLETE"
         activeWorkers.value = 0
-        db.scanStateQueries.clearProcessed(_jobId)
-        db.scanStateQueries.upsertState(
-            status = "COMPLETE",
-            job_id = _jobId,
-            started_at = _startedAt,
-            updated_at = epochSeconds(),
-        )
+        if (persistToDb) {
+            db.scanStateQueries.clearProcessed(_jobId)
+            db.scanStateQueries.upsertState(
+                status = "COMPLETE",
+                job_id = _jobId,
+                started_at = _startedAt,
+                updated_at = epochSeconds(),
+            )
+        }
     }
 
     fun reset() {
@@ -193,7 +207,7 @@ class ScanTracker(private val db: JellystructureDb) {
         _jobId = ""
         _startedAt = 0L
         activeWorkers.value = 0
-        db.scanStateQueries.clearOldProcessed("")
+        if (persistToDb) db.scanStateQueries.clearOldProcessed("")
     }
 
     suspend fun status() = ScanStatusResponse(
@@ -201,7 +215,7 @@ class ScanTracker(private val db: JellystructureDb) {
         status = _status,
         jobId = _jobId.ifBlank { null },
         startedAt = _startedAt.takeIf { it > 0L },
-        processedCount = db.scanStateQueries.countProcessed(_jobId).executeAsOne().toInt(),
+        processedCount = if (persistToDb) db.scanStateQueries.countProcessed(_jobId).executeAsOne().toInt() else 0,
         activeWorkers = activeWorkers.value,
         configuredWorkers = targetWorkers.value,
         nextScheduledRun = nextScheduledRunSec.value.takeIf { it > 0L },

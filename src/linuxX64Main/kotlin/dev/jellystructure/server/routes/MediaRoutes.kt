@@ -2,7 +2,6 @@ package dev.jellystructure.server.routes
 
 import dev.jellystructure.server.respondCachedBytes
 import dev.jellystructure.arr.ArrRescanService
-import dev.jellystructure.executePipeline
 import dev.jellystructure.nextRunDelayMs
 import dev.jellystructure.nowEpochSec
 import dev.jellystructure.runTagged
@@ -25,7 +24,11 @@ import dev.jellystructure.media.LogoDownloader
 import dev.jellystructure.media.MediaHistory
 import dev.jellystructure.media.MediaStore
 import dev.jellystructure.media.MkvpropeditRunner
+import dev.jellystructure.media.PipelineDeps
 import dev.jellystructure.media.PipelineStepOps
+import dev.jellystructure.media.RunTarget
+import dev.jellystructure.media.effectivePipeline
+import dev.jellystructure.media.runPipeline
 import dev.jellystructure.media.Scanner
 import dev.jellystructure.media.ScanTracker
 import dev.jellystructure.model.Episode
@@ -192,6 +195,13 @@ fun Route.mediaRoutes(
     fingerprintService: dev.jellystructure.media.FingerprintService,
     mediaSegmentStore: dev.jellystructure.media.MediaSegmentStore,
 ) {
+    // Phase 175 — shared collaborator bundle for every runPipeline() call these routes make.
+    val pipelineDeps = PipelineDeps(
+        store = store, scanner = scanner, broadcaster = broadcaster, configStore = configStore,
+        jellyfinClient = jellyfinClient, scanDispatcher = scanDispatcher, artworkDownloader = artwork,
+        arrRescan = arrRescan, sonarrEnrich = sonarrEnrich, imdbClient = imdbClient,
+        mediaSegmentStore = mediaSegmentStore, mediaJobQueue = mediaJobQueue,
+    )
     route("/media") {
         get {
             val kindStr = call.request.queryParameters["kind"]
@@ -1873,9 +1883,16 @@ fun Route.mediaRoutes(
             return@post
         }
         val libraryId = call.request.queryParameters["library"]?.takeIf { it.isNotBlank() }
+        // Phase 175 — new: this trigger now honors the freshness/cooldown filter like every other one
+        // (previously it always processed the whole library unconditionally). `?full=true` bypasses it,
+        // mirroring /pipeline/run's existing "Run pipeline now (full)" pattern.
+        val full = call.request.queryParameters["full"] == "true"
         val jobId = scanTracker.startNew()
-        val scanArtwork = if (configStore.current.behavior.fetchImages) artwork else null
-        appScope.launch { runTagged(jobId, "manual", "library", null, "▶ Library scan started", scanTracker) { runScan(jobId, emptySet(), store, scanner, scanTracker, broadcaster, configStore, jellyfinClient, scanDispatcher, libraryId, artworkDownloader = scanArtwork); sonarrEnrich?.enrichAll() } }
+        appScope.launch {
+            runTagged(jobId, "manual", "library", null, "▶ Library scan started${if (full) " (full)" else ""}", scanTracker) {
+                runPipeline(RunTarget.Library(libraryId), effectivePipeline(configStore.current), jobId, scanTracker, pipelineDeps, fullRun = full)
+            }
+        }
         call.respond(HttpStatusCode.Accepted, mapOf("status" to "started", "library" to (libraryId ?: "all")))
     }
 
@@ -1893,13 +1910,17 @@ fun Route.mediaRoutes(
         // Phase 154 (FR-PIPE1-6): optional per-run step skip from the pre-run dialog. Read defensively so
         // a bodyless call (the pre-154 client, curl, the command palette) keeps working unchanged. This is
         // a ONE-RUN filter — nothing is written to config, and the scheduled path never sees it.
-        // scan_files is never skippable: executePipeline runs discovery regardless of whether it's in the
-        // list (Main.kt's default-PipelineStep fallback), so honouring it here would be a lie (FR-PIPE1-4).
+        // scan_files is never skippable: runPipeline runs discovery regardless of whether it's in the
+        // list (its own default-PipelineStep fallback), so honouring it here would be a lie (FR-PIPE1-4).
         val skipSteps = runCatching { call.receive<PipelineRunRequest>() }.getOrDefault(PipelineRunRequest())
             .skipSteps.filterNot { it == "scan_files" }.toSet()
-        val pipeline = configStore.current.scan.pipeline.filter { it.enabled && it.step !in skipSteps }
+        // Phase 175: runsPipeline is now purely a display label (Activity's "pipeline" vs "library" scope
+        // chip) — a real configured pipeline always runs in full even without arrRescan configured, since
+        // runPipeline's rescan_arr case degrades gracefully (no-op + a "no arr configured" step chip)
+        // instead of silently downgrading the WHOLE run to a bare scan the way the old null-check did.
+        val runsPipeline = configStore.current.scan.pipeline.any { it.enabled }
+        val pipeline = effectivePipeline(configStore.current).filter { it.step !in skipSteps }
         val jobId = scanTracker.startNew()
-        val runsPipeline = pipeline.isNotEmpty() && arrRescan != null
         // FR-PIPE1-7: record the skip on the run descriptor Activity already renders, so a suspiciously
         // fast run is self-explanatory days later.
         val skipSuffix = if (skipSteps.isEmpty()) "" else " · skipped: ${skipSteps.sorted().joinToString(", ")}"
@@ -1909,11 +1930,7 @@ fun Route.mediaRoutes(
                 if (runsPipeline) ((if (full) "full" else "normal") + skipSuffix) else null,
                 "▶ Pipeline run started (manual)${if (full) " (full)" else ""}$skipSuffix", scanTracker,
             ) {
-                if (runsPipeline) {
-                    executePipeline(pipeline, jobId, store, scanner, scanTracker, broadcaster, configStore, jellyfinClient, scanDispatcher, artwork, arrRescan, sonarrEnrich, imdbClient, mediaSegmentStore, mediaJobQueue, fullRun = full)
-                } else {
-                    runScan(jobId, emptySet(), store, scanner, scanTracker, broadcaster, configStore, jellyfinClient, scanDispatcher, artworkDownloader = if (configStore.current.behavior.fetchImages) artwork else null)
-                }
+                runPipeline(RunTarget.Library(), pipeline, jobId, scanTracker, pipelineDeps, fullRun = full)
             }
         }
         // Bug fix (2026-07-03): mapOf("status" to "started", "steps" to pipeline.size) mixes a
@@ -1935,8 +1952,13 @@ fun Route.mediaRoutes(
         }
         val skipIds = scanTracker.processedIdsSnapshot
         val jobId = scanTracker.startResume()
-        val scanArtwork = if (configStore.current.behavior.fetchImages) artwork else null
-        appScope.launch { runTagged(jobId, "manual", "library", null, "▶ Library scan resumed", scanTracker) { runScan(jobId, skipIds, store, scanner, scanTracker, broadcaster, configStore, jellyfinClient, scanDispatcher, artworkDownloader = scanArtwork); sonarrEnrich?.enrichAll() } }
+        // fullRun=true — finishing an interrupted run means the SAME scope it started with, not a fresh
+        // freshness computation; this trigger never had a freshness filter pre-Phase-175 either.
+        appScope.launch {
+            runTagged(jobId, "manual", "library", null, "▶ Library scan resumed", scanTracker) {
+                runPipeline(RunTarget.Library(resumeSkipIds = skipIds), effectivePipeline(configStore.current), jobId, scanTracker, pipelineDeps, fullRun = true)
+            }
+        }
         Logger.info("Scan resumed jobId=$jobId, skipping ${skipIds.size} already-processed items")
         call.respond(HttpStatusCode.Accepted, mapOf("status" to "resumed"))
     }
@@ -2321,6 +2343,15 @@ internal suspend fun runScan(
         if (unexpected.isNotEmpty()) {
             Logger.warn("Scan: ${unexpected.size} item(s) unexpectedly skipped:", "scan")
             unexpected.forEach { (j, r) -> Logger.warn("  • '${j.name}' [${j.path ?: "no path"}] — $r", "scan") }
+        }
+        // Phase 175 (§9) — "no-matching-library" is expected/benign (a real, common config gap: a new
+        // library folder Settings hasn't been told about yet), but was previously only ever counted, not
+        // named — an admin had no way to see WHICH items it applied to short of grepping raw logs. Named
+        // at INFO (not WARN — it's not an error) so it's discoverable from the Activity page's own log.
+        val noLibraryMatch = reasons.filterValues { it == "no-matching-library" }
+        if (noLibraryMatch.isNotEmpty()) {
+            Logger.info("Scan: ${noLibraryMatch.size} item(s) skipped — no configured library matches their path:", "scan")
+            noLibraryMatch.forEach { (j, _) -> Logger.info("  • '${j.name}' [${j.path ?: "no path"}]", "scan") }
         }
     }
 
