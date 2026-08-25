@@ -29,6 +29,7 @@ import dev.jellystructure.media.ArtworkDownloader
 import dev.jellystructure.jobs.JobEvent
 import dev.jellystructure.nfo.NfoWriter
 import dev.jellystructure.server.routes.fireWebhook
+import dev.jellystructure.server.routes.launchScanRun
 import dev.jellystructure.server.routes.runScan
 import dev.jellystructure.server.startServer
 import dev.jellystructure.tv.BrowseService
@@ -274,7 +275,6 @@ fun main() = runBlocking {
         var legacyNextSec = 0L  // armed lazily for the legacy scanIntervalHours fallback
         while (shutdownRequested.value == 0) {
             val cfg = configStore.current
-            val pipeline = cfg.scan.pipeline.filter { it.enabled }
             val schedule = cfg.scanSchedule
             val legacyHours = cfg.behavior.scanIntervalHours
             val nowSec = nowEpochSec()
@@ -299,41 +299,22 @@ fun main() = runBlocking {
             if (scanTracker.running) { Logger.info("Scheduled run skipped — a scan is already running"); delay(60_000L); continue }
             if (schedule.isBlank() && legacyHours > 0) legacyNextSec = nowEpochSec() + legacyHours * 3_600L
 
-            // Phase 175 — one engine for both branches: `effectivePipeline` reproduces the old
-            // plain-scan fallback (scan_files + inline TMDB + gap-fill artwork) as steps, so a
-            // no-pipeline-configured scheduled run and a configured-pipeline run both go through
-            // runPipeline() now instead of runScan()-vs-executePipeline() diverging.
-            val active = pipeline.isNotEmpty()
+            // Phase 175 (follow-up) — launchScanRun() is the ONE place every trigger (this scheduler,
+            // every manual button, resume, SCAN_ON_START) launches a run; no bespoke step list or
+            // descriptor logic lives here anymore.
             val jobId = scanTracker.startNew()
-            runTagged(
-                jobId, "scheduled", if (active) "pipeline" else "library",
-                if (active) "normal" else null,
-                "▶ Scheduled ${if (active) "pipeline" else "scan"} run started", scanTracker,
-            ) {
-                dev.jellystructure.media.runPipeline(
-                    dev.jellystructure.media.RunTarget.Library(), dev.jellystructure.media.effectivePipeline(cfg),
-                    jobId, scanTracker, pipelineDeps, fullRun = false,
-                )
-            }
+            launchScanRun(jobId, "scheduled", scanTracker, rootScope, configStore, pipelineDeps)
         }
     }
 
     // Ops hook (Phase 95): a full library scan on startup when SCAN_ON_START=1 — e.g. to rebuild the
     // catalog after an incident. The scanner is non-destructive (adds/updates, flags gone items for triage).
+    // Phase 175 (follow-up): runs the operator's actual configured pipeline via launchScanRun(), like
+    // every other trigger — previously this ran its own bespoke reduced step list (scan_files+pull_tmdb
+    // only, deliberately skipping fetch_artwork/write_nfo/etc. for speed), a special case that's gone now.
     if (getenv("SCAN_ON_START")?.toKString() == "1") {
-        rootScope.launch {
-            val jobId = scanTracker.startNew()
-            runTagged(jobId, "startup", "library", null, "▶ Startup scan (SCAN_ON_START=1)", scanTracker) {
-                // Items-only (no artwork fetch) — fast + FD-safe; on-disk posters are still served by
-                // R133. fullRun=true — a startup rebuild-after-incident always means "check everything",
-                // matching this trigger's pre-Phase-175 behavior (it never had a freshness filter).
-                dev.jellystructure.media.runPipeline(
-                    dev.jellystructure.media.RunTarget.Library(),
-                    listOf(dev.jellystructure.config.PipelineStep(step = "scan_files"), dev.jellystructure.config.PipelineStep(step = "pull_tmdb", scope = "all")),
-                    jobId, scanTracker, pipelineDeps, fullRun = true,
-                )
-            }
-        }
+        val jobId = scanTracker.startNew()
+        launchScanRun(jobId, "startup", scanTracker, rootScope, configStore, pipelineDeps, full = true)
     }
 
     // Phase 110 (FR B.2) — stop watchdog: catches a playback whose client stopped heartbeating without
