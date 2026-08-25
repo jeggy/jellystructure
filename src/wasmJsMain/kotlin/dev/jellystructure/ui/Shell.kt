@@ -267,7 +267,10 @@ private fun buildPaletteCommands(): List<PaletteCmd> = listOf(
     },
     PaletteCmd("Go to Dashboard", "Overview and stats") { App.navigate("/") },
     PaletteCmd("Start full scan", "Re-scan all Jellyfin items") {
-        MainScope().launch { MediaApi.startScan() }
+        // Phase 175: startScan() now honors the freshness/cooldown filter by default — this command's
+        // own label promises a FULL rescan, so it must pass full=true or it'd silently stop doing what
+        // it says the moment the cooldown is turned on.
+        MainScope().launch { MediaApi.startScan(full = true) }
     },
     PaletteCmd("Triage: next item", "n key") {
         if (triageDockItems.isNotEmpty()) {
