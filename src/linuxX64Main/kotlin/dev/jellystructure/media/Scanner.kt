@@ -13,7 +13,9 @@ import dev.jellystructure.model.MediaTrailer
 import dev.jellystructure.model.Person
 import dev.jellystructure.model.TrackKind
 import dev.jellystructure.resolver.LanguageResolver
+import dev.jellystructure.tmdb.Localized
 import dev.jellystructure.tmdb.TmdbClient
+import dev.jellystructure.tmdb.TmdbMovieDetails
 import dev.jellystructure.util.isoToEpochSeconds
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.coroutines.async
@@ -253,6 +255,36 @@ class Scanner(
         return fresh.copy(tags = (fresh.tags + existing.tags).distinct())
     }
 
+    /** Phase 175 (§8) — the movie/music-video-shaped TMDB fetch (localized details, credits, external
+     *  ids, certifications, trailer), extracted so [scanMovie]/[scanMusicVideo]'s fresh-scan fetch and
+     *  [rescanMetadata]'s MOVIE/MUSIC_VIDEO branches share one implementation instead of two
+     *  independently hand-maintained copies (which had already, live, drifted — see the Phase 175 spec).
+     *  [tmdbId] is always populated when an id was resolved, even if the details fetch itself then
+     *  failed (matches the pre-175 behavior of still storing a bare id in that case) — check
+     *  [TmdbMovieFetch.localized] for whether real metadata came back. */
+    private data class TmdbMovieFetch(
+        val tmdbId: Int?,
+        val localized: Localized<TmdbMovieDetails>?,
+        val cast: List<Person>,
+        val crew: List<Person>,
+        val imdbId: String?,
+        val certifications: Map<String, String>,
+        val trailer: MediaTrailer?,
+    )
+
+    private suspend fun fetchTmdbMovieMetadata(
+        tmdbIdHint: Int?, searchTitle: String, searchYear: Int?, langPriority: List<String>,
+    ): TmdbMovieFetch {
+        val tmdbId = tmdbIdHint ?: tmdb.searchMovie(searchTitle, searchYear)?.id
+        val localized = tmdbId?.let { tmdb.getMovieDetailsLocalized(it, langPriority) }
+        val details = localized?.details
+        val (cast, crew) = if (details != null) fetchCredits(details.id, isMovie = true) else Pair(emptyList(), emptyList())
+        val extIds = details?.let { tmdb.getExternalIds(it.id, isMovie = true) }
+        val certifications = details?.let { tmdb.getMovieCertifications(it.id) } ?: emptyMap()
+        val trailer = details?.let { buildTrailer(tmdb.getMovieVideos(it.id, it.originalLanguage)) }
+        return TmdbMovieFetch(tmdbId, localized, cast, crew, extIds?.imdbId?.takeIf { it.isNotBlank() }, certifications, trailer)
+    }
+
     private suspend fun scanMovie(jItem: JellyfinItem, localPath: String, fallback: String, libraryId: String?): MediaItem? {
         if (!SystemFileSystem.exists(Path(localPath))) {
             Logger.warn("Movie file not found on disk: $localPath")
@@ -269,25 +301,23 @@ class Scanner(
         val audioLangs = tracks.filter { it.kind == TrackKind.AUDIO }.map { it.language }
         val langPriority = LanguageResolver.priorityList(audioLangs, fallback)
 
-        val tmdbId = jItem.providerIds?.tmdb?.toIntOrNull()
-            ?: tmdb.searchMovie(title, searchYear)?.id
-        val localized = tmdbId?.let { tmdb.getMovieDetailsLocalized(it, langPriority) }
-        val details = localized?.details
-        val resolvedLang = localized?.let { it.language ?: langPriority.lastOrNull() }
+        val fetch = fetchTmdbMovieMetadata(jItem.providerIds?.tmdb?.toIntOrNull(), title, searchYear, langPriority)
+        val details = fetch.localized?.details
+        val resolvedLang = fetch.localized?.let { it.language ?: langPriority.lastOrNull() }
 
         val issueCount = tracks.count {
             (it.kind == TrackKind.AUDIO || it.kind == TrackKind.SUBTITLE) && it.language == null
         }
 
         val primaryCompany = details?.productionCompanies?.firstOrNull()
-        val tmdbFinalId = details?.id ?: tmdbId
+        val tmdbFinalId = details?.id ?: fetch.tmdbId
         // Stored/display year prefers TMDB's release year, then the search year.
         val storedYear = details?.releaseDate?.take(4)?.toIntOrNull() ?: searchYear
         val titlesByLang = buildTitlesByLang(tmdbFinalId, isMovie = true, details?.title, details?.originalLanguage, details?.originalTitle)
-        val (cast, crew) = tmdbFinalId?.let { fetchCredits(it, isMovie = true) } ?: Pair(emptyList(), emptyList())
-        val extIds = tmdbFinalId?.let { tmdb.getExternalIds(it, isMovie = true) }
-        val certifications = tmdbFinalId?.let { tmdb.getMovieCertifications(it) } ?: emptyMap()
-        val trailer = tmdbFinalId?.let { buildTrailer(tmdb.getMovieVideos(it, details?.originalLanguage.orEmpty())) }
+        val cast = fetch.cast
+        val crew = fetch.crew
+        val certifications = fetch.certifications
+        val trailer = fetch.trailer
         return MediaItem(
             id = itemId(title, searchYear, jItem.id),
             title = details?.title ?: title,
@@ -323,7 +353,7 @@ class Scanner(
             titlesByLang = titlesByLang,
             cast = cast,
             crew = crew,
-            imdbId = extIds?.imdbId?.takeIf { it.isNotBlank() },
+            imdbId = fetch.imdbId,
             runtime = details?.runtime,
             certifications = certifications,
             trailer = trailer,
@@ -359,21 +389,20 @@ class Scanner(
         // routinely include the artist name (e.g. "Muse: HAARP"), so the bare filename title alone
         // under-searches. Still just a best-effort search: providerIds first, like every other kind.
         val searchQuery = if (artist != null) "$artist $title" else title
-        val tmdbId = jItem.providerIds?.tmdb?.toIntOrNull() ?: tmdb.searchMovie(searchQuery, jItem.year)?.id
-        val localized = tmdbId?.let { tmdb.getMovieDetailsLocalized(it, langPriority) }
-        val details = localized?.details
-        val resolvedLang = localized?.let { it.language ?: langPriority.lastOrNull() }
+        val fetch = fetchTmdbMovieMetadata(jItem.providerIds?.tmdb?.toIntOrNull(), searchQuery, jItem.year, langPriority)
+        val details = fetch.localized?.details
+        val resolvedLang = fetch.localized?.let { it.language ?: langPriority.lastOrNull() }
 
         val issueCount = tracks.count {
             (it.kind == TrackKind.AUDIO || it.kind == TrackKind.SUBTITLE) && it.language == null
         }
         val primaryCompany = details?.productionCompanies?.firstOrNull()
-        val tmdbFinalId = details?.id ?: tmdbId
+        val tmdbFinalId = details?.id ?: fetch.tmdbId
         val storedYear = details?.releaseDate?.take(4)?.toIntOrNull() ?: jItem.year
-        val (cast, crew) = tmdbFinalId?.let { fetchCredits(it, isMovie = true) } ?: Pair(emptyList(), emptyList())
-        val extIds = tmdbFinalId?.let { tmdb.getExternalIds(it, isMovie = true) }
-        val certifications = tmdbFinalId?.let { tmdb.getMovieCertifications(it) } ?: emptyMap()
-        val trailer = tmdbFinalId?.let { buildTrailer(tmdb.getMovieVideos(it, details?.originalLanguage.orEmpty())) }
+        val cast = fetch.cast
+        val crew = fetch.crew
+        val certifications = fetch.certifications
+        val trailer = fetch.trailer
         return MediaItem(
             id = itemId(title, jItem.year, jItem.id),
             title = details?.title ?: title,
@@ -405,7 +434,7 @@ class Scanner(
             tags = jItem.tags,
             cast = cast,
             crew = crew,
-            imdbId = extIds?.imdbId?.takeIf { it.isNotBlank() },
+            imdbId = fetch.imdbId,
             runtime = details?.runtime,
             certifications = certifications,
             trailer = trailer,
@@ -1018,14 +1047,17 @@ class Scanner(
 
         return when (item.kind) {
             MediaKind.MOVIE -> {
-                val tmdbId = item.tmdbId ?: tmdb.searchMovie(item.title, item.year)?.id
-                val localized = tmdbId?.let { tmdb.getMovieDetailsLocalized(it, langPriority) }
-                    ?: return null
+                // Phase 175 (§8): the id-resolve/localized-details/credits/extIds/certs/trailer sequence
+                // is now shared with scanMovie via fetchTmdbMovieMetadata — this branch keeps its own
+                // rescan-only extras (the sophisticated resolvedLang below, stinger/keyword detection)
+                // exactly as before, on top of the shared fetch.
+                val fetch = fetchTmdbMovieMetadata(item.tmdbId, item.title, item.year, langPriority)
+                val localized = fetch.localized ?: return null
                 val details = localized.details
                 // Resolve the stored language through the SAME shared resolver the UI uses, fed with
                 // the languages TMDB actually has — so resolvedLanguage and the on-screen trace always
                 // agree. Falls back to the language we actually fetched content in.
-                val available = tmdb.getTranslationLanguages(tmdbId, isMovie = true).toSet()
+                val available = tmdb.getTranslationLanguages(details.id, isMovie = true).toSet()
                 val resolvedLang = LanguageResolver.resolve(sourceTracks, fallback, available).language
                     ?: localized.language
                 val rescanCompany = details.productionCompanies.firstOrNull()
@@ -1035,10 +1067,6 @@ class Scanner(
                 // each episode carries its own — see SegmentMarkers' doc comment).
                 val trustStingers = config.scan.pipeline.firstOrNull { it.step == "detect_segments" }?.trustStingerTags != false
                 val rescanStinger = if (trustStingers) SegmentDetection.stingerFromTmdbKeywords(rescanTmdbTags) else null
-                val rescanMovieExtIds = tmdb.getExternalIds(details.id, isMovie = true)
-                val rescanCertifications = tmdb.getMovieCertifications(details.id)
-                val rescanTrailer = buildTrailer(tmdb.getMovieVideos(details.id, details.originalLanguage))
-                val (rescanCast, rescanCrew) = fetchCredits(details.id, isMovie = true)
                 item.copy(
                     title = details.title,
                     originalTitle = details.originalTitle.takeIf { it.isNotBlank() },
@@ -1057,12 +1085,12 @@ class Scanner(
                     studioLogoPath = rescanCompany?.logoPath,
                     secondaryStudios = details.productionCompanies.drop(1).map { it.name }.filter { it.isNotBlank() }.distinct(),
                     tags = mergeRepullTags(rescanTmdbTags, item),
-                    imdbId = rescanMovieExtIds?.imdbId?.takeIf { it.isNotBlank() } ?: item.imdbId,
-                    cast = rescanCast,
-                    crew = rescanCrew,
+                    imdbId = fetch.imdbId ?: item.imdbId,
+                    cast = fetch.cast,
+                    crew = fetch.crew,
                     runtime = details.runtime,
-                    certifications = rescanCertifications.ifEmpty { item.certifications },
-                    trailer = rescanTrailer,
+                    certifications = fetch.certifications.ifEmpty { item.certifications },
+                    trailer = fetch.trailer,
                     libraryId = lib?.jellyfinId?.ifBlank { null } ?: item.libraryId,   // Phase 142: self-heal
                     // Phase 150: never touch a manually-confirmed record; otherwise only ADD a stinger
                     // TMDB currently reports — never clear one an earlier fetch found but this one omits
@@ -1148,15 +1176,13 @@ class Scanner(
             // stays the filename-parsed artist (FR-168-1) — TMDB's own director/crew credit for the
             // film is a different concept, folded into `crew` instead, never overwriting it.
             MediaKind.MUSIC_VIDEO -> {
-                val tmdbId = item.tmdbId ?: tmdb.searchMovie(item.title, item.year)?.id
-                val localized = tmdbId?.let { tmdb.getMovieDetailsLocalized(it, langPriority) }
-                if (localized == null) item else {
-                    val details = localized.details
+                // Phase 175 (§8): shares fetchTmdbMovieMetadata with scanMusicVideo — see the MOVIE
+                // branch's comment above. This branch never had the movie branch's extras (stinger
+                // detection, the sophisticated resolvedLang) — that asymmetry is unchanged.
+                val fetch = fetchTmdbMovieMetadata(item.tmdbId, item.title, item.year, langPriority)
+                val details = fetch.localized?.details
+                if (details == null) item else {
                     val rescanCompany = details.productionCompanies.firstOrNull()
-                    val rescanMvExtIds = tmdb.getExternalIds(details.id, isMovie = true)
-                    val rescanMvCertifications = tmdb.getMovieCertifications(details.id)
-                    val rescanMvTrailer = buildTrailer(tmdb.getMovieVideos(details.id, details.originalLanguage))
-                    val (rescanMvCast, rescanMvCrew) = fetchCredits(details.id, isMovie = true)
                     item.copy(
                         title = details.title,
                         tmdbId = details.id,
@@ -1171,12 +1197,12 @@ class Scanner(
                         studioTmdbId = rescanCompany?.id,
                         studioLogoPath = rescanCompany?.logoPath,
                         secondaryStudios = details.productionCompanies.drop(1).map { it.name }.filter { it.isNotBlank() }.distinct(),
-                        imdbId = rescanMvExtIds?.imdbId?.takeIf { it.isNotBlank() } ?: item.imdbId,
-                        cast = rescanMvCast,
-                        crew = rescanMvCrew,
+                        imdbId = fetch.imdbId ?: item.imdbId,
+                        cast = fetch.cast,
+                        crew = fetch.crew,
                         runtime = details.runtime,
-                        certifications = rescanMvCertifications.ifEmpty { item.certifications },
-                        trailer = rescanMvTrailer,
+                        certifications = fetch.certifications.ifEmpty { item.certifications },
+                        trailer = fetch.trailer,
                         libraryId = lib?.jellyfinId?.ifBlank { null } ?: item.libraryId,
                     )
                 }
