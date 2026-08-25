@@ -756,9 +756,15 @@ fun Route.mediaRoutes(
                     // this the old image stays flagged and the new one can never take over. Only TMDB
                     // paths ("/x.jpg") map to those fields; a custom http(s) URL is written to disk but
                     // isn't a TMDB path, so leave the field untouched (it's rendered via the TMDB CDN).
-                    if (req.source.startsWith("/") && req.asset == "clearlogo") {
-                        artwork.writeAssetSrc(item, "clearlogo", req.source)
-                    }
+                    //
+                    // Phase 176: this sidecar is also what lets fetch()/isArtworkIncomplete() detect a
+                    // poster/backdrop left over from a superseded match — previously only clearlogo wrote
+                    // it here, so an explicit poster/backdrop pick had no provenance to compare against
+                    // either. A non-TMDB source still gets a sentinel, so a later automatic re-match
+                    // doesn't mistake this operator pick's `.src`-less state for "safe to leave alone"
+                    // forever — though `saveAsset`'s `.manual` marker (below) already protects the file
+                    // itself regardless.
+                    artwork.writeAssetSrc(item, req.asset, if (req.source.startsWith("/")) req.source else "upload")
                     var updated = if (req.source.startsWith("/")) when (req.asset) {
                         "poster" -> item.copy(posterPath = req.source)
                         "backdrop" -> item.copy(backdropPath = req.source)
