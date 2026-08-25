@@ -381,17 +381,6 @@ fun nextRunDelayMs(cron: String, nowEpochSec: Long): Long? {
     return (next - nowEpochSec) * 1_000L
 }
 
-/** ms duration for a freshness cadence string: "daily", "weekly", "monthly", "6months", "yearly", "never" */
-fun cadenceMs(cadence: String): Long? = when (cadence.trim().lowercase()) {
-    "daily"   -> 24 * 3_600_000L
-    "weekly"  -> 7  * 24 * 3_600_000L
-    "monthly" -> 30 * 24 * 3_600_000L
-    "6months" -> 180 * 24 * 3_600_000L
-    "yearly"  -> 365 * 24 * 3_600_000L
-    "never"   -> null  // never recheck
-    else      -> 30 * 24 * 3_600_000L  // default monthly
-}
-
 /** Execute a scan pipeline: scan_files (trigger, always first) then action blocks sequentially. */
 @OptIn(ExperimentalForeignApi::class)
 suspend fun executePipeline(
@@ -427,31 +416,11 @@ suspend fun executePipeline(
 
     Logger.info("Pipeline starting: ${pipeline.joinToString(" → ") { it.step }}${if (fullRun) " (full — no freshness filter)" else ""}")
 
-    // Build freshness filter: compute the set of JellyfinItem IDs that are NOT due (→ skip them).
-    // Items with no lastChecked or no release year are always included.
-    val freshnessFilter: ((dev.jellystructure.auth.JellyfinItem) -> Boolean)? =
-        if (fullRun || !scanStep.recheckUnchanged) null
-        else {
-            val now = store.nowMs()
-            // Approximate current calendar year from epoch ms (leap-year-agnostic, ±1 day error OK)
-            val currentYear = ((now / 1000L) / 31_557_600L + 1970).toInt()
-            val skipJellyfinIds = store.allItems().mapNotNull { item ->
-                val jid = item.jellyfinId ?: return@mapNotNull null
-                val lc = store.lastChecked(item.id) ?: return@mapNotNull null
-                val ry = item.year ?: return@mapNotNull null
-                val cadenceStr = when {
-                    ry >= currentYear            -> scanStep.refreshThisYear
-                    (currentYear - ry) <= 5     -> scanStep.refresh1To5y
-                    else                         -> scanStep.refreshOlder
-                }
-                val thresh = cadenceMs(cadenceStr) ?: return@mapNotNull jid  // "never" → always skip
-                if ((now - lc) < thresh) jid else null  // not due → skip
-            }.toSet()
-            val filter: (dev.jellystructure.auth.JellyfinItem) -> Boolean = { jItem ->
-                jItem.id !in skipJellyfinIds
-            }
-            filter
-        }
+    // Phase 175 — freshness filter now lives in FreshnessFilter.kt so every RunTarget.Library trigger
+    // (not just a configured pipeline run) can honor it; see that file's doc comment.
+    val freshnessFilter = dev.jellystructure.media.computeFreshnessFilter(
+        scanStep, store, fullRun, dev.jellystructure.media.RunTarget.Library(),
+    )
 
     // Bug fix (2026-07-03): runScan's own completion (scanTracker.complete(), which resets
     // activeWorkers to 0 and flips running=false) must NOT fire after just this scan_files sub-step —
@@ -613,29 +582,19 @@ suspend fun executePipeline(
             }
             "detect_drift" -> {
                 // Phase 115 (FR F) — real state evaluation across the working set, replacing the no-op.
+                // Phase 175: per-item body extracted to PipelineStepOps.detectDrift, shared with a
+                // future realtime single-item dispatch.
                 val converged = AtomicInt(0); val nfoStale = AtomicInt(0)
                 val jfBehind = AtomicInt(0); val external = AtomicInt(0)
                 runPipelineStepPool(
                     jobId, step.step, workingSet, { pipelineStepConcurrency(step.step, configStore.current.behavior.scanWorkers) },
                     scanTracker, broadcaster, labelOf = { it.title },
                 ) { item, _ ->
-                    val current = store.get(item.id) ?: item
-                    val result = dev.jellystructure.nfo.DriftEvaluator.evaluate(current, jellyfinClient, cfg)
-                    when (result.state) {
-                        dev.jellystructure.nfo.DriftState.NFO_STALE.name.lowercase() -> nfoStale.incrementAndGet()
-                        dev.jellystructure.nfo.DriftState.JELLYFIN_BEHIND.name.lowercase() -> {
-                            jfBehind.incrementAndGet()
-                            if (step.autoReassert) {
-                                runCatching { NfoWriter.writeTracked(current, cfg.apiKeys.jellyfinUrl, cfg.metadata.ageRatingCascade).getOrThrow() }
-                                    .onSuccess { r -> store.updateOne(current.copy(nfoWrittenAt = r.writtenAt, nfoHash = r.hash)) }
-                                current.jellyfinId?.let { jid ->
-                                    val ok = runCatching { jellyfinClient.refreshItem(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken, jid, full = true) }.getOrDefault(false)
-                                    if (ok) store.updateOne(current.copy(jfSyncedAt = nowEpochSec()))
-                                }
-                            }
-                        }
-                        dev.jellystructure.nfo.DriftState.EXTERNAL_DRIFT.name.lowercase() -> external.incrementAndGet()
-                        else -> converged.incrementAndGet()
+                    when (dev.jellystructure.media.PipelineStepOps.detectDrift(item, store, jellyfinClient, cfg, step.autoReassert)) {
+                        dev.jellystructure.media.PipelineStepOps.DriftOutcome.NFO_STALE -> nfoStale.incrementAndGet()
+                        dev.jellystructure.media.PipelineStepOps.DriftOutcome.JELLYFIN_BEHIND -> jfBehind.incrementAndGet()
+                        dev.jellystructure.media.PipelineStepOps.DriftOutcome.EXTERNAL_DRIFT -> external.incrementAndGet()
+                        dev.jellystructure.media.PipelineStepOps.DriftOutcome.CONVERGED -> converged.incrementAndGet()
                     }
                 }
                 Logger.info("detect_drift: ${converged.value} converged, ${nfoStale.value} NFO stale, ${jfBehind.value} Jellyfin behind" +

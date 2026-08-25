@@ -124,6 +124,33 @@ object PipelineStepOps {
     /** `rescan_arr` — nudge Radarr/Sonarr to rescan the item's folder. */
     fun rescanArr(item: MediaItem, arrRescan: ArrRescanService) = arrRescan.nudge(item)
 
+    enum class DriftOutcome { CONVERGED, NFO_STALE, JELLYFIN_BEHIND, EXTERNAL_DRIFT }
+
+    /** `detect_drift` (Phase 115 FR F) — per-item state evaluation, extracted (Phase 175) out of
+     *  `executePipeline`'s inline `when` block so the bulk pipeline loop and a realtime single-item run
+     *  share one implementation. When [autoReassert] and the item is JELLYFIN_BEHIND, silently
+     *  re-asserts NFO → Jellyfin (write NFO if needed, then a full refresh) instead of just reporting it. */
+    suspend fun detectDrift(item: MediaItem, store: MediaStore, jellyfinClient: JellyfinClient, cfg: AppConfig, autoReassert: Boolean): DriftOutcome {
+        val current = store.get(item.id) ?: item
+        val result = dev.jellystructure.nfo.DriftEvaluator.evaluate(current, jellyfinClient, cfg)
+        return when (result.state) {
+            dev.jellystructure.nfo.DriftState.NFO_STALE.name.lowercase() -> DriftOutcome.NFO_STALE
+            dev.jellystructure.nfo.DriftState.JELLYFIN_BEHIND.name.lowercase() -> {
+                if (autoReassert) {
+                    runCatching { NfoWriter.writeTracked(current, cfg.apiKeys.jellyfinUrl, cfg.metadata.ageRatingCascade).getOrThrow() }
+                        .onSuccess { r -> store.updateOne(current.copy(nfoWrittenAt = r.writtenAt, nfoHash = r.hash)) }
+                    current.jellyfinId?.let { jid ->
+                        val ok = runCatching { jellyfinClient.refreshItem(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken, jid, full = true) }.getOrDefault(false)
+                        if (ok) store.updateOne(current.copy(jfSyncedAt = nowEpochSec()))
+                    }
+                }
+                DriftOutcome.JELLYFIN_BEHIND
+            }
+            dev.jellystructure.nfo.DriftState.EXTERNAL_DRIFT.name.lowercase() -> DriftOutcome.EXTERNAL_DRIFT
+            else -> DriftOutcome.CONVERGED
+        }
+    }
+
     /**
      * `detect_segments` (Phase 150, FR-SEG1-2/3/5; rewritten Phase 163 for the per-kind `media_segment`
      * table) — chapter-title match, falling back to the ffmpeg credits heuristic, for one movie or
