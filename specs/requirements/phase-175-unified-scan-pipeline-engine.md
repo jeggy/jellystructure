@@ -13,7 +13,7 @@
 > vs. `Scanner.rescanMetadata`, used by the `pull_tmdb` step) that have already visibly diverged — e.g.
 > stinger/keyword detection exists in one but not the other.
 
-**Status:** Implemented 2026-08-25 (all 4 stages: engine unification, freshness-filter fix, TMDB-fetch dedup, UI). Not yet live-tested (needs a backend restart + browser check). See STATUS.md row 175 for the full implementation summary, including two deliberate scope-narrowings from this doc's original §8 (the TV_SHOW per-episode TMDB fetch and rescanMetadata's MOVIE-only resolvedLang/stinger extras were left un-unified — both are real product decisions, not mechanical dedup, and out of scope for this pass).
+**Status:** Implemented 2026-08-25 (all 4 stages: engine unification, freshness-filter fix, TMDB-fetch dedup, UI) **+ a same-day addendum below (full trigger unification — no per-trigger branch left in any of the 5 launch sites)**. Not yet live-tested (needs a backend restart + browser check). See STATUS.md row 175 for the full implementation summary, including two deliberate scope-narrowings from this doc's original §8 (the TV_SHOW per-episode TMDB fetch and rescanMetadata's MOVIE-only resolvedLang/stinger extras were left un-unified — both are real product decisions, not mechanical dedup, and out of scope for this pass).
 
 ## 1. Problem
 
@@ -263,3 +263,43 @@ logic.
   empty-pipeline case wasn't regressed). Check the newly-surfaced `no-matching-library` item names
   against this deployment's real 3 currently-skipped items.
 - `compileKotlinWasmJs` clean for the Stage-4 UI change.
+
+## Addendum (2026-08-25) — full trigger unification: no per-trigger branch left, anywhere
+
+**User feedback after the 4 stages above shipped:** "make it all share everything. so no different
+branch if it was triggered automatically or via manual on the browse page or within the settings page."
+Stages 1–4 already had every trigger calling `runPipeline()` with the same step-resolution logic
+(`effectivePipeline`), but the *route/trigger-level* code around that call was still five separately
+hand-written blocks — `POST /api/scan`, `POST /api/pipeline/run`, `POST /api/scan/resume`
+(`MediaRoutes.kt`), the scheduler, and `SCAN_ON_START` (`Main.kt`) — each computing its own `runsPipeline`
+label, building its own `runTagged` descriptor/message, and (for `SCAN_ON_START` specifically) still using
+a **bespoke hardcoded step list** (`[scan_files, pull_tmdb(scope=all)]`, no artwork) instead of
+`effectivePipeline(cfg)` like every other trigger — the one real remaining behavioral branch.
+
+**Fix:** new `internal fun launchScanRun(jobId, triggerKind, scanTracker, appScope, configStore,
+pipelineDeps, libraryId, full, skipSteps, resumeSkipIds): List<PipelineStep>` in `MediaRoutes.kt` — the
+one place any run is launched. It resolves the step list, the `runsPipeline` display label, and a
+uniformly-generated `startMsg` (`"▶ ${trigger} ${scan|pipeline} started${suffix}"`, suffix built from
+`full`/`resumeSkipIds`/`skipSteps` — no more per-caller freeform message strings) then does the
+`runTagged` + `runPipeline` call. All 5 sites now call this one function with only their own
+trigger-specific *parameters* (which query params exist, whether it's a resume) — none of them contain
+run-launching logic of their own anymore:
+
+- `POST /api/scan` → `launchScanRun(jobId, "manual", ..., libraryId, full)`
+- `POST /api/pipeline/run` → `launchScanRun(jobId, "manual", ..., full, skipSteps)` (Phase 154's one-run
+  skip is still route-specific — it's a per-request override, not a trigger-identity branch)
+- `POST /api/scan/resume` → `launchScanRun(jobId, "manual", ..., full = true, resumeSkipIds)`
+- scheduler → `launchScanRun(jobId, "scheduled", ...)` — now fire-and-forget via `appScope.launch`
+  internally, matching every other trigger, instead of the scheduler loop awaiting the run inline; the
+  loop's own `scanTracker.running` guard on its next iteration already covers the "don't double-fire"
+  case, so this changes nothing observable.
+- `SCAN_ON_START` → `launchScanRun(jobId, "startup", ..., full = true)` — **behavior change, deliberate
+  and explicit per this request**: startup now runs whatever pipeline the operator actually has
+  configured (in this deployment: scan_files, pull_tmdb, fetch_artwork, sync_imdb_ratings, rescan_arr,
+  write_nfo, sync_jellyfin, detect_segments), not the old fast/no-artwork reduced set. `SCAN_ON_START` is
+  an ops incident-recovery hook (rebuild the catalog after something went wrong), so a slower-but-complete
+  startup run is the right tradeoff once "no per-trigger branch" is the explicit goal — flagged here since
+  it's the one concrete behavior change this addendum makes, not just a refactor.
+
+Verified: `compileKotlinLinuxX64` + `compileKotlinWasmJs` clean, `linuxX64Test` 148/148 (same pre-existing
+Gradle test-report-writer flake noted above, non-fatal, unrelated). Not yet live-tested.
