@@ -9,6 +9,7 @@ import dev.jellystructure.auth.JellyfinClient
 import dev.jellystructure.auth.JellyfinItem
 import dev.jellystructure.io.FileIo
 import dev.jellystructure.config.ConfigStore
+import dev.jellystructure.config.PipelineStep
 import dev.jellystructure.jobs.JobEvent
 import dev.jellystructure.jobs.WsBroadcaster
 import dev.jellystructure.log.Logger
@@ -1883,29 +1884,22 @@ fun Route.mediaRoutes(
             return@post
         }
         val libraryId = call.request.queryParameters["library"]?.takeIf { it.isNotBlank() }
-        // Phase 175 — new: this trigger now honors the freshness/cooldown filter like every other one
-        // (previously it always processed the whole library unconditionally). `?full=true` bypasses it,
-        // mirroring /pipeline/run's existing "Run pipeline now (full)" pattern.
+        // Phase 175 — honors the freshness/cooldown filter like every other trigger (previously it
+        // always processed the whole library unconditionally). `?full=true` bypasses it.
         val full = call.request.queryParameters["full"] == "true"
         val jobId = scanTracker.startNew()
-        appScope.launch {
-            runTagged(jobId, "manual", "library", null, "▶ Library scan started${if (full) " (full)" else ""}", scanTracker) {
-                runPipeline(RunTarget.Library(libraryId), effectivePipeline(configStore.current), jobId, scanTracker, pipelineDeps, fullRun = full)
-            }
-        }
+        launchScanRun(jobId, "manual", scanTracker, appScope, configStore, pipelineDeps, libraryId = libraryId, full = full)
         call.respond(HttpStatusCode.Accepted, mapOf("status" to "started", "library" to (libraryId ?: "all")))
     }
 
-    // Phase 93c: run the composed automation (the saved scan pipeline) on demand — same path the scheduler
-    // uses, unlike POST /scan which is file-discovery only. Falls back to a plain scan if no steps configured.
+    // Phase 93c / 175 — runs through the exact same launchScanRun() every other trigger uses now
+    // (manual click on any page, scheduler, startup); the only thing specific to this route is Phase
+    // 154's optional one-run step skip from the pre-run dialog.
     post("/pipeline/run") {
         if (scanTracker.running) {
             call.respond(HttpStatusCode.Conflict, mapOf("error" to "scan already running"))
             return@post
         }
-        // "Run pipeline now (full)" — bypasses scan_files' freshness filter so every downstream step
-        // (sync_imdb_ratings, write_nfo, …) sees the whole library this run, not just whatever's due
-        // for an unrelated metadata recheck.
         val full = call.request.queryParameters["full"] == "true"
         // Phase 154 (FR-PIPE1-6): optional per-run step skip from the pre-run dialog. Read defensively so
         // a bodyless call (the pre-154 client, curl, the command palette) keeps working unchanged. This is
@@ -1914,25 +1908,8 @@ fun Route.mediaRoutes(
         // list (its own default-PipelineStep fallback), so honouring it here would be a lie (FR-PIPE1-4).
         val skipSteps = runCatching { call.receive<PipelineRunRequest>() }.getOrDefault(PipelineRunRequest())
             .skipSteps.filterNot { it == "scan_files" }.toSet()
-        // Phase 175: runsPipeline is now purely a display label (Activity's "pipeline" vs "library" scope
-        // chip) — a real configured pipeline always runs in full even without arrRescan configured, since
-        // runPipeline's rescan_arr case degrades gracefully (no-op + a "no arr configured" step chip)
-        // instead of silently downgrading the WHOLE run to a bare scan the way the old null-check did.
-        val runsPipeline = configStore.current.scan.pipeline.any { it.enabled }
-        val pipeline = effectivePipeline(configStore.current).filter { it.step !in skipSteps }
         val jobId = scanTracker.startNew()
-        // FR-PIPE1-7: record the skip on the run descriptor Activity already renders, so a suspiciously
-        // fast run is self-explanatory days later.
-        val skipSuffix = if (skipSteps.isEmpty()) "" else " · skipped: ${skipSteps.sorted().joinToString(", ")}"
-        appScope.launch {
-            runTagged(
-                jobId, "manual", if (runsPipeline) "pipeline" else "library",
-                if (runsPipeline) ((if (full) "full" else "normal") + skipSuffix) else null,
-                "▶ Pipeline run started (manual)${if (full) " (full)" else ""}$skipSuffix", scanTracker,
-            ) {
-                runPipeline(RunTarget.Library(), pipeline, jobId, scanTracker, pipelineDeps, fullRun = full)
-            }
-        }
+        val pipeline = launchScanRun(jobId, "manual", scanTracker, appScope, configStore, pipelineDeps, full = full, skipSteps = skipSteps)
         // Bug fix (2026-07-03): mapOf("status" to "started", "steps" to pipeline.size) mixes a
         // String and an Int, inferring Map<String, Any> — kotlinx.serialization's default Json can't
         // serialize Any without a polymorphic module, so respond() threw here on every successful
@@ -1954,11 +1931,7 @@ fun Route.mediaRoutes(
         val jobId = scanTracker.startResume()
         // fullRun=true — finishing an interrupted run means the SAME scope it started with, not a fresh
         // freshness computation; this trigger never had a freshness filter pre-Phase-175 either.
-        appScope.launch {
-            runTagged(jobId, "manual", "library", null, "▶ Library scan resumed", scanTracker) {
-                runPipeline(RunTarget.Library(resumeSkipIds = skipIds), effectivePipeline(configStore.current), jobId, scanTracker, pipelineDeps, fullRun = true)
-            }
-        }
+        launchScanRun(jobId, "manual", scanTracker, appScope, configStore, pipelineDeps, full = true, resumeSkipIds = skipIds)
         Logger.info("Scan resumed jobId=$jobId, skipping ${skipIds.size} already-processed items")
         call.respond(HttpStatusCode.Accepted, mapOf("status" to "resumed"))
     }
@@ -2135,6 +2108,52 @@ internal suspend fun pushToJellyfin(
     // the Jellyfin refresh above). No-op unless the matching *arr is enabled with rescan_after_write.
     arrRescan?.nudge(item)
     return refreshOk
+}
+
+/**
+ * Phase 175 (follow-up, 2026-08-25) — the ONE place any scan/pipeline run is launched, no matter which
+ * trigger asked for it: a manual click on any admin page (Dashboard/Library "Scan library", Settings
+ * "Run pipeline now"), a resume, the scheduler, or `SCAN_ON_START`. Every trigger resolves its step list
+ * the exact same way — [effectivePipeline], minus a one-run [skipSteps] override — and launches through
+ * the same [runTagged] + [runPipeline] call. There is no separate "plain scan" vs "pipeline run" vs
+ * "startup scan" code path left — only different arguments to this one function, including
+ * `SCAN_ON_START`, which previously ran its own bespoke reduced step list (`[scan_files, pull_tmdb]`,
+ * no artwork) instead of whatever the operator actually has configured.
+ *
+ * Returns the resolved step list — callers that report a step count in their HTTP response (e.g.
+ * `POST /pipeline/run`) read it off the return value instead of recomputing it themselves.
+ */
+internal fun launchScanRun(
+    jobId: String,
+    triggerKind: String,   // "manual" | "scheduled" | "startup"
+    scanTracker: ScanTracker,
+    appScope: CoroutineScope,
+    configStore: ConfigStore,
+    pipelineDeps: PipelineDeps,
+    libraryId: String? = null,
+    full: Boolean = false,
+    skipSteps: Set<String> = emptySet(),
+    resumeSkipIds: Set<String> = emptySet(),
+): List<PipelineStep> {
+    val runsPipeline = configStore.current.scan.pipeline.any { it.enabled }
+    val pipeline = effectivePipeline(configStore.current).filter { it.step !in skipSteps }
+    val kindWord = if (runsPipeline) "pipeline" else "scan"
+    val suffix = buildString {
+        if (full) append(" (full)")
+        if (resumeSkipIds.isNotEmpty()) append(" (resumed)")
+        if (skipSteps.isNotEmpty()) append(" · skipped: ${skipSteps.sorted().joinToString(", ")}")
+    }
+    val startMsg = "▶ ${triggerKind.replaceFirstChar { it.uppercase() }} $kindWord started$suffix"
+    appScope.launch {
+        runTagged(
+            jobId, triggerKind, if (runsPipeline) "pipeline" else "library",
+            if (runsPipeline) (if (full) "full" else "normal") else null,
+            startMsg, scanTracker,
+        ) {
+            runPipeline(RunTarget.Library(libraryId, resumeSkipIds), pipeline, jobId, scanTracker, pipelineDeps, fullRun = full)
+        }
+    }
+    return pipeline
 }
 
 @OptIn(kotlinx.coroutines.DelicateCoroutinesApi::class) // channel.isClosedForReceive — best-effort worker-pool guard
