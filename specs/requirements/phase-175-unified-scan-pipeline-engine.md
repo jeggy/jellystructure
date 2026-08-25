@@ -13,7 +13,7 @@
 > vs. `Scanner.rescanMetadata`, used by the `pull_tmdb` step) that have already visibly diverged — e.g.
 > stinger/keyword detection exists in one but not the other.
 
-**Status:** Planned 2026-08-25.
+**Status:** Implemented 2026-08-25 (all 4 stages: engine unification, freshness-filter fix, TMDB-fetch dedup, UI). Not yet live-tested (needs a backend restart + browser check). See STATUS.md row 175 for the full implementation summary, including two deliberate scope-narrowings from this doc's original §8 (the TV_SHOW per-episode TMDB fetch and rescanMetadata's MOVIE-only resolvedLang/stinger extras were left un-unified — both are real product decisions, not mechanical dedup, and out of scope for this pass).
 
 ## 1. Problem
 
