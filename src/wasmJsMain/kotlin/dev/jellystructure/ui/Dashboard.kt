@@ -28,7 +28,13 @@ fun renderDashboard(container: Element, scope: CoroutineScope) {
           <h1>Dashboard</h1>
           <span class="spacer"></span>
           <button id="dash-browse" class="btn sm ghost">Browse library</button>
-          <button id="dash-scan" class="btn primary">▶ Scan library</button>
+          <span class="split" id="dash-scan-split">
+            <button id="dash-scan" class="btn primary" title="Skips items not due for a recheck yet (Settings ▸ scan_files' cooldown), same as a scheduled run">▶ Scan library</button>
+            <span class="btn primary split-caret menu-btn"><span class="caret">▾</span></span>
+            <div class="menu">
+              <div class="menu-item" id="dash-scan-full"><span class="mi-ic">⟳</span><span>Scan library (full rescan)<span class="mi-sub">No freshness filter — every item is reprocessed</span></span></div>
+            </div>
+          </span>
         </div>
         <p class="page-sub">Single source of truth for your media metadata. Jellyfin just reads what Jellystructure writes — you never touch its built-in scraper. <span id="dash-next-run" class="badge" style="margin-left:6px"></span></p>
 
@@ -87,6 +93,18 @@ fun renderDashboard(container: Element, scope: CoroutineScope) {
     document.getElementById("dash-scan")?.addEventListener("click") {
         scope.launch { triggerDashboardScan(scope, resume = false) }
     }
+    document.getElementById("dash-scan-full")?.addEventListener("click") { e ->
+        if ((e.currentTarget as? HTMLElement)?.hasAttribute("disabled") == true) return@addEventListener
+        (document.getElementById("dash-scan-split") as? HTMLElement)?.classList?.remove("open")
+        scope.launch { triggerDashboardScan(scope, resume = false, full = true) }
+    }
+    (document.getElementById("dash-scan-split") as? HTMLElement)?.querySelector(".menu-btn")?.let { caret ->
+        (caret as? HTMLElement)?.addEventListener("click") { e ->
+            e.stopPropagation()
+            (document.getElementById("dash-scan-split") as? HTMLElement)?.classList?.toggle("open")
+        }
+    }
+    document.addEventListener("click") { (document.getElementById("dash-scan-split") as? HTMLElement)?.classList?.remove("open") }
     document.getElementById("dash-triage")?.addEventListener("click") { App.navigate("/library?filter=attention") }
     document.getElementById("dash-browse-all-footer")?.addEventListener("click") { App.navigate("/library?filter=attention") }
     document.getElementById("stat-issues-cell")?.addEventListener("click") { App.navigate("/library") }
@@ -250,11 +268,11 @@ private suspend fun loadRecentActivity() {
     }
 }
 
-private suspend fun triggerDashboardScan(scope: CoroutineScope, resume: Boolean) {
+private suspend fun triggerDashboardScan(scope: CoroutineScope, resume: Boolean, full: Boolean = false) {
     val btn = document.getElementById("dash-scan") as? HTMLButtonElement ?: return
     if (btn.disabled) return
 
-    val started = if (resume) MediaApi.resumeScan() else MediaApi.startScan()
+    val started = if (resume) MediaApi.resumeScan() else MediaApi.startScan(full)
     if (!started) {
         val banner = document.getElementById("dash-scan-banner") as? HTMLElement ?: return
         banner.innerHTML = """<span class="badge bad">Scan failed to start — check server connection.</span>"""
@@ -321,17 +339,31 @@ private fun setQaFeedback(msg: String, cls: String = "badge") {
         """<span class="$cls" style="font-size:.75rem">$msg</span>"""
 }
 
+/** The split button's caret + "full rescan" menu item aren't `<button>`s, so [HTMLButtonElement.disabled]
+ *  doesn't reach them — set/clear the `disabled` attribute by hand so the click handlers' own
+ *  `hasAttribute("disabled")` guard (matching the pipe-run split button's pattern) actually blocks them
+ *  while a scan is running. */
+private fun setDashScanSplitDisabled(disabled: Boolean) {
+    val menuBtn = (document.getElementById("dash-scan-split") as? HTMLElement)?.querySelector(".menu-btn") as? HTMLElement
+    val fullItem = document.getElementById("dash-scan-full") as? HTMLElement
+    for (el in listOfNotNull(menuBtn, fullItem)) {
+        if (disabled) el.setAttribute("disabled", "") else el.removeAttribute("disabled")
+    }
+}
+
 private fun setDashScanIdle() {
     val btn = document.getElementById("dash-scan") as? HTMLButtonElement ?: return
     btn.disabled = false
     btn.textContent = "▶ Scan library"
     btn.onclick = null
+    setDashScanSplitDisabled(false)
 }
 
 private fun setDashScanRunning(processedCount: Int) {
     val btn = document.getElementById("dash-scan") as? HTMLButtonElement ?: return
     btn.disabled = true
     btn.textContent = "Scanning…"
+    setDashScanSplitDisabled(true)
     val banner = document.getElementById("dash-scan-banner") as? HTMLElement ?: return
     val countNote = if (processedCount > 0) "Scanning — $processedCount item${if (processedCount != 1) "s" else ""} processed so far…" else "Scanning — items appear in Library as they are processed."
     banner.innerHTML = """<span class="badge">$countNote</span> <button id="cancel-scan-btn" class="btn sm ghost" style="margin-left:8px">Cancel</button>"""
@@ -342,6 +374,7 @@ private fun setDashScanCancelled(processedCount: Int, scope: CoroutineScope) {
     btn.disabled = false
     btn.textContent = "▶ New scan"
     btn.onclick = null
+    setDashScanSplitDisabled(false)
     val banner = document.getElementById("dash-scan-banner") as? HTMLElement ?: return
     banner.innerHTML = """
         <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">

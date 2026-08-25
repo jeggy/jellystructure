@@ -2790,7 +2790,7 @@ private fun pipeScanCfgEl(step: PipelineStep, idx: Int): Element {
         cell.appendChild(cad); tbl.appendChild(age); tbl.appendChild(cell)
     }
     val note = document.createElement("div"); note.className = "sc-state"
-    note.innerHTML = "<b>How it works:</b> Jellystructure stores each title's last-checked date and re-processes only titles whose interval is due — new &amp; changed files are always processed immediately."
+    note.innerHTML = "<b>How it works:</b> Jellystructure stores each title's last-checked date and re-processes only titles whose interval is due — new &amp; changed files are always processed immediately. This now governs every scan trigger, not just a scheduled/manual pipeline run — including the Dashboard's <b>Scan library</b> button (its split-button menu has a <b>Scan library (full rescan)</b> option to bypass this for one run)."
     box.appendChild(head); box.appendChild(sub); box.appendChild(tbl); box.appendChild(note)
     return box
 }

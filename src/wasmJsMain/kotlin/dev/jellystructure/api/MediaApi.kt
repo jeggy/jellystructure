@@ -375,8 +375,11 @@ object MediaApi {
         response.status.value == 202
     }.getOrDefault(false)
 
-    suspend fun startScan(): Boolean = runCatching {
-        val response = httpClient.post("/api/scan")
+    // Phase 175: this trigger now honors the freshness/cooldown filter like every other one (previously
+    // it always processed the whole library unconditionally). full=true bypasses it for this one run —
+    // "Scan library (full rescan)" in the Dashboard's split button.
+    suspend fun startScan(full: Boolean = false): Boolean = runCatching {
+        val response = httpClient.post(if (full) "/api/scan?full=true" else "/api/scan")
         response.status == HttpStatusCode.Accepted
     }.getOrDefault(false)
 
