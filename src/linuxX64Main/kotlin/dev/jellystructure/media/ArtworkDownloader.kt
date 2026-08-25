@@ -61,6 +61,18 @@ internal fun assetFilePath(item: MediaItem, filename: String): String = when (it
 fun posterArtworkExists(item: MediaItem): Boolean =
     SystemFileSystem.exists(Path(assetFilePath(item, "poster.jpg")))
 
+/**
+ * Phase 176: pure staleness decision, split out from [ArtworkDownloader] so it's testable without a
+ * real filesystem/TmdbClient/Screengrabber — same shape as [preserveLockedArtwork] and `clearTmdbMatch`.
+ *
+ * A file is stale when it is NOT manually locked, DOES carry a recorded `.src`, and that recorded value
+ * disagrees with the item's current expected source (`posterPath`/`backdropPath`). A manual file is never
+ * stale (Phase 151 always wins); a file with no `.src` at all (pre-dates this phase) is trusted, not
+ * flagged — this deliberately avoids a mass one-time re-download across an existing library.
+ */
+fun isStaleArtworkSrc(recordedSrc: String?, expectedSrc: String?, manual: Boolean): Boolean =
+    !manual && recordedSrc != null && expectedSrc != null && recordedSrc != expectedSrc
+
 class ArtworkDownloader(private val tmdbClient: TmdbClient, private val screengrabber: Screengrabber) {
     // Phase 129 (FR-OPS1 §B.1) — shared client, one idle connection pool for all outbound callers.
     private val http = OutboundHttp.client
@@ -116,20 +128,32 @@ class ArtworkDownloader(private val tmdbClient: TmdbClient, private val screengr
         val poster = assetFilePath(item, "poster.jpg")
         val fanart = assetFilePath(item, "fanart.jpg")
         val logo = assetFilePath(item, "clearlogo.png")
-        // Skip-if-present is what protects an operator's chosen image here: a file already on disk is
-        // never re-downloaded, manual or not (Phase 151 additionally records WHY it must stay).
-        val posterExists = SystemFileSystem.exists(Path(poster))
-        val fanartExists = SystemFileSystem.exists(Path(fanart))
+        var posterExists = SystemFileSystem.exists(Path(poster))
+        var fanartExists = SystemFileSystem.exists(Path(fanart))
         val logoExists = SystemFileSystem.exists(Path(logo))
+
+        // Phase 176: skip-if-present alone only protects an operator's chosen image (Phase 151's
+        // `.manual` marker) — it can't tell a file left over from a SUPERSEDED match from a genuinely
+        // current one, since presence is all it ever checked. A non-manual file whose recorded `.src`
+        // (the TMDB file_path it was downloaded from) disagrees with the item's CURRENT posterPath/
+        // backdropPath is stale: delete it first so the block below re-downloads from the new path,
+        // exactly as if the slot had been empty. A file with no `.src` sidecar (pre-dates this phase)
+        // is trusted as-is — see the spec for why this deliberately isn't a mass one-time re-download.
+        if (posterExists && isStaleAutoAsset(item, "poster", item.posterPath)) {
+            deleteIfExists(poster); deleteIfExists("$poster.src"); posterExists = false
+        }
+        if (fanartExists && isStaleAutoAsset(item, "backdrop", item.backdropPath)) {
+            deleteIfExists(fanart); deleteIfExists("$fanart.src"); fanartExists = false
+        }
 
         val posterOk: Boolean
         val fanartOk: Boolean
         coroutineScope {
             val posterJob = if (!posterExists && !item.posterPath.isNullOrBlank()) {
-                async { download("$TMDB_ORIGINAL${item.posterPath}", poster) }
+                async { download("$TMDB_ORIGINAL${item.posterPath}", poster).also { if (it) writeAssetSrc(item, "poster", item.posterPath) } }
             } else null
             val fanartJob = if (!fanartExists && !item.backdropPath.isNullOrBlank()) {
-                async { download("$TMDB_ORIGINAL${item.backdropPath}", fanart) }
+                async { download("$TMDB_ORIGINAL${item.backdropPath}", fanart).also { if (it) writeAssetSrc(item, "backdrop", item.backdropPath) } }
             } else null
             posterOk = posterJob?.await() ?: posterExists
             fanartOk = fanartJob?.await() ?: fanartExists
@@ -183,6 +207,12 @@ class ArtworkDownloader(private val tmdbClient: TmdbClient, private val screengr
     fun isArtworkIncomplete(item: MediaItem): Boolean {
         val st = check(item)
         if (!st.posterExists || !st.fanartExists) return true
+        // Phase 176: a poster/backdrop left over from a SUPERSEDED TMDB match is present but wrong —
+        // without this, a "Download artwork (missing)" scoped run would never even look at the item,
+        // since presence alone made it look complete. Same "the fix reaches every trigger" concern
+        // fetch()'s own stale check (above) exists for.
+        if (isStaleAutoAsset(item, "poster", item.posterPath)) return true
+        if (isStaleAutoAsset(item, "backdrop", item.backdropPath)) return true
         if (item.kind != MediaKind.TV_SHOW) return false
         // R131: a still is "incomplete" when missing OR a screen-grab that TMDB can now upgrade — so the
         // next scheduled "Download artwork (missing)" run re-processes the series and swaps in the real still.
@@ -339,14 +369,25 @@ class ArtworkDownloader(private val tmdbClient: TmdbClient, private val screengr
     fun assetPath(item: MediaItem, asset: String): String? =
         assetFilename(asset)?.let { assetFilePath(item, it) }
 
-    /** Read the TMDB file_path recorded when a clearlogo candidate was picked, or null. */
+    /** Read the TMDB file_path (or upload/URL sentinel) recorded for [asset]'s current on-disk file,
+     *  or null if no `.src` sidecar exists — either nothing is on disk yet, or the file pre-dates
+     *  Phase 176 (poster/backdrop) / Phase 47 (clearlogo) provenance tracking. */
     fun readAssetSrc(item: MediaItem, asset: String): String? =
         assetPath(item, asset)?.let { p -> runCatching { FileIo.readText(Path("$p.src")).trim() }.getOrNull()?.takeIf { it.isNotBlank() } }
 
-    /** Record the TMDB file_path for the chosen clearlogo. */
-    fun writeAssetSrc(item: MediaItem, asset: String, source: String) {
+    /** Record the source (TMDB file_path, or an "upload"/pasted-URL sentinel) that produced [asset]'s
+     *  current on-disk file — Phase 176 extended this from clearlogo-only to poster/backdrop too, so
+     *  staleness (a file left over from a superseded TMDB match) can be detected. */
+    fun writeAssetSrc(item: MediaItem, asset: String, source: String?) {
+        if (source.isNullOrBlank()) return
         assetPath(item, asset)?.let { p -> runCatching { FileIo.writeText(Path("$p.src"), source) } }
     }
+
+    /** Phase 176: true when [asset]'s on-disk file is non-manual and its recorded `.src` no longer
+     *  matches [expectedSrc] (the item's CURRENT posterPath/backdropPath) — i.e. it belongs to a match
+     *  this item no longer has. No `.src` sidecar (pre-dates this phase) is trusted, not flagged stale. */
+    private fun isStaleAutoAsset(item: MediaItem, asset: String, expectedSrc: String?): Boolean =
+        isStaleArtworkSrc(readAssetSrc(item, asset), expectedSrc, isAssetManual(item, asset))
 
     /** `source` is either a TMDB file_path (leading "/") or a full http(s) URL.
      *  Phase 151: [manual] marks the result operator-chosen (the default — every caller is an explicit
