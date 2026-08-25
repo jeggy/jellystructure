@@ -83,9 +83,6 @@ UPDATE media SET has_segments = :has_segments WHERE id = :id;
 getHasSegments:
 SELECT has_segments FROM media WHERE id = :id;
 
-walCheckpoint:
-PRAGMA wal_checkpoint(TRUNCATE);
-
 deleteById:
 DELETE FROM media WHERE id = :id;
 

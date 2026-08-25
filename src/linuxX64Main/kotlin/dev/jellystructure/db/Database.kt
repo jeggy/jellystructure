@@ -1,11 +1,17 @@
 package dev.jellystructure.db
 
+import app.cash.sqldelight.db.QueryResult
+import app.cash.sqldelight.db.SqlDriver
 import app.cash.sqldelight.driver.native.NativeSqliteDriver
 import app.cash.sqldelight.driver.native.wrapConnection
 import co.touchlab.sqliter.DatabaseConfiguration
 import co.touchlab.sqliter.SynchronousFlag
 import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
+
+// Set once by createDatabase() (called exactly once at startup) — see walCheckpoint()'s doc comment for
+// why this is needed instead of going through the generated MediaQueries.walCheckpoint().
+private lateinit var rawDriver: SqlDriver
 
 fun createDatabase(dbFile: String): JellystructureDb {
     val parentDir = dbFile.substringBeforeLast('/', missingDelimiterValue = "")
@@ -47,7 +53,9 @@ fun createDatabase(dbFile: String): JellystructureDb {
             synchronousFlag = SynchronousFlag.NORMAL,
         ),
     )
-    val db = JellystructureDb(NativeSqliteDriver(config, maxReaderConnections = 4))
+    val driver = NativeSqliteDriver(config, maxReaderConnections = 4)
+    rawDriver = driver
+    val db = JellystructureDb(driver)
     // Security fix (2026-08-02 review, finding M7) — jellystructure.db holds every live admin session
     // token IN PLAINTEXT (directly replayable as a cookie — unlike API keys, which are hashed) and
     // every device's Jellyfin user token, and was created at the platform-default mode (confirmed
@@ -59,6 +67,25 @@ fun createDatabase(dbFile: String): JellystructureDb {
     return db
 }
 
+/**
+ * Live bug found in production logs (2026-08-25) — this has been broken since it was introduced (Phase
+ * 90, commit `42e01511`), unrelated to any recent change. `PRAGMA wal_checkpoint(TRUNCATE)` returns a
+ * result row (busy/log/checkpointed), but the generated `MediaQueries.walCheckpoint()` (from a plain,
+ * non-`SELECT` `.sq` statement) runs it through SQLDelight's non-query `execute()`/`executeUpdateDelete`
+ * path — which touchlab-sqliter's native driver explicitly rejects for any statement that returns a
+ * result set, throwing "Queries can be performed using SQLiteDatabase query or rawQuery methods only"
+ * every single time this ran (caught by the caller's own `runCatching`, logged as "non-fatal", so it
+ * silently never actually checkpointed). Confirmed via the `sqlite3` CLI against a copy of the real DB:
+ * the PRAGMA itself is fine (`PRAGMA wal_checkpoint(TRUNCATE);` → `0|0|0`); this SQLite build also has no
+ * `pragma_wal_checkpoint()` table-valued function to route around it that way (`SELECT * FROM
+ * pragma_wal_checkpoint(...)` → "no such table"). Fixed by dropping the broken generated query (removed
+ * from `Media.sq`) and running the PRAGMA through the driver's real query path instead — a plain
+ * `executeQuery` call, consuming (and discarding) the one result row, exactly what SQLDelight's own
+ * generated query methods do internally for a real `SELECT`.
+ */
 fun JellystructureDb.walCheckpoint() {
-    mediaQueries.walCheckpoint()
+    rawDriver.executeQuery(null, "PRAGMA wal_checkpoint(TRUNCATE)", { cursor ->
+        while (cursor.next().value) { /* one row: busy, log, checkpointed — nothing to read */ }
+        QueryResult.Value(Unit)
+    }, 0)
 }
