@@ -178,7 +178,13 @@ fun renderLibrary(container: Element, scope: CoroutineScope, query: Map<String, 
         <div class="pagebar">
           <h1>Library</h1>
           <span class="spacer"></span>
-          <button id="scan-btn" class="btn primary">▶ Scan library</button>
+          <span class="split" id="scan-split">
+            <button id="scan-btn" class="btn primary" title="Skips items not due for a recheck yet (Settings ▸ scan_files' cooldown), same as a scheduled run">▶ Scan library</button>
+            <span class="btn primary split-caret menu-btn"><span class="caret">▾</span></span>
+            <div class="menu">
+              <div class="menu-item" id="scan-full"><span class="mi-ic">⟳</span><span>Scan library (full rescan)<span class="mi-sub">No freshness filter — every item is reprocessed</span></span></div>
+            </div>
+          </span>
           <span class="searchwrap" id="searchwrap">
             <input id="lib-search" class="input" type="search" placeholder="⌕ search title…" style="width:200px;flex-shrink:0;">
           </span>
@@ -290,6 +296,18 @@ private fun attachLibraryListeners(scope: CoroutineScope) {
     document.getElementById("scan-btn")?.addEventListener("click") {
         scope.launch { triggerScan(scope) }
     }
+    document.getElementById("scan-full")?.addEventListener("click") { e ->
+        if ((e.currentTarget as? HTMLElement)?.hasAttribute("disabled") == true) return@addEventListener
+        (document.getElementById("scan-split") as? HTMLElement)?.classList?.remove("open")
+        scope.launch { triggerScan(scope, full = true) }
+    }
+    (document.getElementById("scan-split") as? HTMLElement)?.querySelector(".menu-btn")?.let { caret ->
+        (caret as? HTMLElement)?.addEventListener("click") { e ->
+            e.stopPropagation()
+            (document.getElementById("scan-split") as? HTMLElement)?.classList?.toggle("open")
+        }
+    }
+    document.addEventListener("click") { (document.getElementById("scan-split") as? HTMLElement)?.classList?.remove("open") }
 
     document.getElementById("lib-search")?.addEventListener("input") {
         val v = (document.getElementById("lib-search") as? HTMLInputElement)?.value?.trim()
@@ -416,10 +434,10 @@ private fun updateActiveChips(scope: CoroutineScope? = null) {
 
 // -- Scan -----------------------------------------------------------------
 
-private suspend fun triggerScan(scope: CoroutineScope) {
+private suspend fun triggerScan(scope: CoroutineScope, full: Boolean = false) {
     val btn = document.getElementById("scan-btn") as? HTMLButtonElement ?: return
     if (btn.disabled) return
-    val started = MediaApi.startScan()
+    val started = MediaApi.startScan(full)
     if (!started) {
         val banner = document.getElementById("scan-banner") as? HTMLElement ?: return
         banner.style.display = "block"
@@ -515,6 +533,13 @@ private fun updateScanBannerWithPending(total: Int, pending: Int, scope: Corouti
 private fun setScanRunning(running: Boolean) {
     val btn = document.getElementById("scan-btn") as? HTMLButtonElement
     val banner = document.getElementById("scan-banner") as? HTMLElement
+    // The split button's caret + "full rescan" menu item aren't <button>s, so HTMLButtonElement.disabled
+    // doesn't reach them — set/clear the disabled attribute by hand, matching Dashboard's split button.
+    val menuBtn = (document.getElementById("scan-split") as? HTMLElement)?.querySelector(".menu-btn") as? HTMLElement
+    val fullItem = document.getElementById("scan-full") as? HTMLElement
+    for (el in listOfNotNull(menuBtn, fullItem)) {
+        if (running) el.setAttribute("disabled", "") else el.removeAttribute("disabled")
+    }
     if (running) {
         btn?.disabled = true
         btn?.textContent = "Scanning…"
