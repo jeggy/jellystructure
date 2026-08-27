@@ -17,9 +17,17 @@ actual object MultiTokenStore {
     private val prefs get() = RaviloAppContext.get()
         .getSharedPreferences("ravilo_sessions", android.content.Context.MODE_PRIVATE)
 
+    // R211 — in-memory cache of the parsed session list. Every getAll()/getActive() call used to
+    // re-read + re-parse the whole SharedPreferences JSON blob from scratch, hit redundantly during
+    // just the first composition of RaviloApp plus once per API call for the device token. The list
+    // only ever changes through this object's own add/remove/setActive/clear, so a simple
+    // invalidate-on-write cache is correct with no merge logic needed.
+    private var cache: List<StoredSession>? = null
+
     private fun loadAll(): List<StoredSession> {
-        val raw = prefs.getString("sessions", null) ?: return emptyList()
-        return runCatching {
+        cache?.let { return it }
+        val raw = prefs.getString("sessions", null)
+        val parsed = if (raw == null) emptyList() else runCatching {
             val arr = JSONArray(raw)
             (0 until arr.length()).map { i ->
                 val o = arr.getJSONObject(i)
@@ -33,6 +41,8 @@ actual object MultiTokenStore {
                 )
             }
         }.getOrDefault(emptyList())
+        cache = parsed
+        return parsed
     }
 
     private fun saveAll(list: List<StoredSession>) {
@@ -48,6 +58,7 @@ actual object MultiTokenStore {
             })
         }
         prefs.edit().putString("sessions", arr.toString()).apply()
+        cache = null // invalidate; the next loadAll() re-reads and re-populates it
     }
 
     actual fun getAll(): List<LocalSession> = loadAll().map { it.toLocal() }
@@ -78,6 +89,7 @@ actual object MultiTokenStore {
 
     actual fun clear() {
         prefs.edit().remove("sessions").remove("active_user").apply()
+        cache = null
     }
 
     private fun StoredSession.toLocal() = LocalSession(userId, displayName, deviceToken, isAdmin, isKids, avatarUrl)

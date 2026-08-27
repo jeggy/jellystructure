@@ -6,7 +6,7 @@
 > low-risk fix not worth its own number — the same pattern as R203–R207's bundled screenshot-audit
 > fixes.
 
-**Status:** Planned.
+**Status:** Implemented.
 
 ## FR-RV-R211-1 — `MultiTokenStore` caches its parsed session list instead of re-reading on every call
 
@@ -103,6 +103,33 @@ purely a change inside the property getter.
   `remember` block only runs once per composer per the standard Compose contract).
 - Both fixes verified via `:ravilo-ui:compileDebugKotlinAndroid` + `:ravilo-ui:compileKotlinWasmJs`
   at minimum; on-device confirmation is not required for either (neither changes visible behavior).
+
+## Dev-review addendum (2026-08-27 — implementation notes)
+1. **FR-RV-R211-2's sample code doesn't compile as written — corrected during implementation.**
+   `Font()` (`org.jetbrains.compose.resources.Font`) is itself `@Composable`, and `remember`'s
+   calculation lambda is annotated `@DisallowComposableCalls` — a composable function genuinely
+   cannot be called from inside it. The actual fix calls both `Font(...)`s directly in the property
+   getter (unavoidable — they need `@Composable` context to resolve the resource) and only wraps the
+   **`FontFamily(...)` construction** in `remember(a, b) { FontFamily(a, b) }`, keyed on the two
+   `Font` results. This still removes the wrapper-object (+ internal list) churn on every
+   recomposition — the actual measured cost per the investigation — but the two `Font()` calls
+   themselves still execute on every recomposition (a cheap resource-id/weight lookup per the type's
+   own semantics, not a file read). The spec's original "wrap the whole thing in remember{}" framing
+   was wrong; corrected here rather than silently shipping different code than what's written above.
+2. **No unit test added for either fix** — `MultiTokenStore`'s Android actual needs a real
+   `android.content.Context` (`RaviloAppContext.get().getSharedPreferences(...)`), which isn't
+   available in a plain JVM unit test without Robolectric (not set up in this module); the Wasm actual
+   needs a `localStorage` this test environment doesn't provide either. The `FontFamily` fix needs a
+   Compose UI test harness to observe recomposition counts, which also doesn't exist here (same
+   limitation [[phase-R196-remembered-track-regression]]'s test file documents for Compose-lifecycle
+   bugs). Both fixes are mechanical enough that a careful read of the diff is the practical
+   verification; a genuine correctness check is compile + (for the FontFamily fix) that the two
+   targets that actually exercise Home's composables — `:ravilo-ui:compileDebugKotlinAndroid` and
+   `:ravilo-ui:compileKotlinWasmJs` — still compile clean.
+3. Verified via `:ravilo-ui:compileKotlinWasmJs`, `:ravilo-ui:compileDebugKotlinAndroid`,
+   `:ravilo-android:compileDebugKotlin`, `:ravilo-phone:compileDebugKotlin`. Not on-device verified —
+   neither fix changes visible behavior, so there's nothing an on-device pass would additionally catch
+   beyond what compiling already confirms.
 
 ## Source references
 - `ravilo-ui/src/androidMain/kotlin/dev/jellystructure/ravilo/ui/screens/MultiTokenStoreAndroid.kt`
