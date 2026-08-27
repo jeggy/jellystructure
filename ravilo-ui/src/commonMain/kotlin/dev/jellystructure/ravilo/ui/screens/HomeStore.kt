@@ -26,10 +26,18 @@ sealed class HomeState {
     data class Error(val message: String) : HomeState()
 }
 
-class HomeStore(private val apiClient: TvApiClient) {
+class HomeStore(
+    private val apiClient: TvApiClient,
+    // R212 — a cached feed to show immediately instead of the Loading shimmer; see loadSeeded().
+    private val seedFeed: HomeFeed? = null,
+) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-    private val _state = MutableStateFlow<HomeState>(HomeState.Loading)
+    private val _state = MutableStateFlow<HomeState>(seedFeed?.let { HomeState.Loaded(it) } ?: HomeState.Loading)
     val state: StateFlow<HomeState> = _state.asStateFlow()
+    // R212 — true while a seeded/stale snapshot is shown and the background refresh has exhausted
+    // its retries with no success yet; cleared the instant any getHome() call succeeds.
+    private val _showingStaleContent = MutableStateFlow(false)
+    val showingStaleContent: StateFlow<Boolean> = _showingStaleContent.asStateFlow()
     // R137: scroll state lives in the retained store (not remembered per-composition), so navigate→back
     // restores the feed's scroll position instead of resetting to the top.
     val listState = LazyListState()
@@ -51,7 +59,9 @@ class HomeStore(private val apiClient: TvApiClient) {
     private var liveTvPollJob: Job? = null
 
     init {
-        load()
+        // R212 — a seeded feed already has something reasonable on screen; run the first load quietly
+        // (never a Loading flash, never a hard Error takeover) instead of the normal visible sequence.
+        if (seedFeed != null) loadSeeded() else load()
         // R147: patch tiles in place when a watched-state change is broadcast (instant, no re-fetch).
         scope.launch {
             WatchedBus.patches.collect { patch ->
@@ -63,31 +73,52 @@ class HomeStore(private val apiClient: TvApiClient) {
         }
     }
 
+    /**
+     * Bug fix: the error screen showed up too often for blips that would have cleared on their own
+     * (flaky TV wifi, backend mid-restart). Retry with exponential backoff — 1 s, 2 s, 4 s, 8 s,
+     * 16 s, ... doubling each time — for up to 10 attempts. Applies [HomeState.Loaded] + live-TV
+     * setup on any success and returns null; returns the last error message if every attempt failed,
+     * leaving the caller to decide what that means (a visible Error vs a quiet staleness flag).
+     */
+    private suspend fun retryGetHome(): String? {
+        var lastErr = "Unknown error"
+        var delayMs = 1_000L
+        repeat(10) { attempt ->
+            val result = runCatching { apiClient.getHome() }
+            if (result.isSuccess) {
+                val feed = result.getOrThrow().deduped()
+                _state.value = HomeState.Loaded(feed)
+                _showingStaleContent.value = false
+                setUpLiveTvPolling(feed)
+                return null
+            }
+            lastErr = result.exceptionOrNull()?.message ?: "Unknown error"
+            if (attempt < 9) {
+                delay(delayMs)
+                delayMs *= 2
+            }
+        }
+        return lastErr
+    }
+
     fun load() {
         loadJob?.cancel()
         _state.value = HomeState.Loading
         loadJob = scope.launch {
-            // Bug fix: the error screen showed up too often for blips that would have cleared on
-            // their own (flaky TV wifi, backend mid-restart). Retry with exponential backoff — 1 s,
-            // 2 s, 4 s, 8 s, 16 s, ... doubling each time — for up to 10 attempts before giving up and
-            // showing the error screen (manual Retry / Sign out from there).
-            var lastErr = "Unknown error"
-            var delayMs = 1_000L
-            repeat(10) { attempt ->
-                val result = runCatching { apiClient.getHome() }
-                if (result.isSuccess) {
-                    val feed = result.getOrThrow().deduped()
-                    _state.value = HomeState.Loaded(feed)
-                    setUpLiveTvPolling(feed)
-                    return@launch
-                }
-                lastErr = result.exceptionOrNull()?.message ?: "Unknown error"
-                if (attempt < 9) {
-                    delay(delayMs)
-                    delayMs *= 2
-                }
-            }
-            _state.value = HomeState.Error(lastErr)
+            val err = retryGetHome()
+            if (err != null) _state.value = HomeState.Error(err)
+        }
+        refreshDiscoverAvailable()
+        refreshUpcomingAvailable()
+    }
+
+    /** R212 — same bounded backoff as [load], but never disturbs the seeded feed already on screen:
+     *  no Loading flash, no Error takeover. Exhausting every attempt flips [showingStaleContent]
+     *  instead, which the WS reconnect / R141 poll loops' periodic [refresh] calls will clear the
+     *  next time either one succeeds — no separate retry loop needed here. */
+    private fun loadSeeded() {
+        loadJob = scope.launch {
+            if (retryGetHome() != null) _showingStaleContent.value = true
         }
         refreshDiscoverAvailable()
         refreshUpcomingAvailable()
@@ -140,6 +171,7 @@ class HomeStore(private val apiClient: TvApiClient) {
         loadJob = scope.launch {
             runCatching { apiClient.getHome() }.getOrNull()?.deduped()?.let {
                 _state.value = HomeState.Loaded(it)
+                _showingStaleContent.value = false
                 setUpLiveTvPolling(it)
             }
         }

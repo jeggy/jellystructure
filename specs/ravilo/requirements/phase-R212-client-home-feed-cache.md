@@ -13,7 +13,7 @@
 > Raised explicitly during scoping: **on-device storage on a TV is often scarce.** This spec commits
 > to a concrete, checkable size bound (see "Storage guardrails") rather than an open-ended cache.
 
-**Status:** Planned.
+**Status:** Implemented.
 
 ## Goal
 A viewer who has used this device before sees their **last-known Home feed and display settings
@@ -153,6 +153,45 @@ instant a refresh succeeds. This is connectivity/freshness *metadata* the client
 - Snapshot file size stays within the documented bound on a real library-sized Home feed (spot-check
   during implementation, not an automated size regression test).
 
+## Dev-review addendum (2026-08-27 — implementation notes)
+1. **Persistence is centralized in `RaviloApp`, not `HomeStore`.** `HomeStore` only accepts an
+   optional `seedFeed: HomeFeed?` (seeds `_state` and drives the quiet first-load path) and exposes
+   `showingStaleContent: StateFlow<Boolean>` — it has no knowledge of display settings or of
+   `HomeSnapshotCache` at all. `RaviloApp` owns the combined `HomeSnapshot` (feed + skin/tileScale/
+   gridColumns/lang) — it reads it once at cold start (`initialSnapshot`, seeding the same bare-
+   `remember{}` vars that already existed for `lang`/`tileScale`/`gridColumns`/`themeState`) and
+   writes it back via a `LaunchedEffect` keyed on `(homeState, lang, themeState.skin, tileScale,
+   gridColumns, portraitGridColumns)` inside the `Dest.Home` branch, firing whenever `HomeState`
+   is `Loaded` and any of those values change. This was a deliberate deviation from a design that
+   would have threaded config into `HomeStore`'s constructor — RaviloApp already owns every one of
+   these values, so persisting from there needs no new plumbing across the store/screen boundary.
+2. **The bounded-backoff retry loop was factored into a shared `retryGetHome(): String?`** used by
+   both `load()` (visible Loading/Error) and the new `loadSeeded()` (quiet, flips
+   `showingStaleContent` instead of `Error` on exhaustion) — avoids duplicating the exact 10-attempt/
+   exponential-backoff logic FR-RV-R212-2 would otherwise have required copy-pasting.
+3. **Staleness (FR-RV-R212-4) and the size cap (Storage guardrails) were factored into two pure,
+   `internal` top-level functions in `HomeSnapshotCache.kt`** — `isSnapshotFresh(snapshot, nowEpochMs)`
+   and `exceedsSnapshotSizeCap(json)` — specifically so they're unit-testable from `commonTest`
+   without needing either platform actual's file/localStorage I/O. Both actuals call them instead of
+   inlining the check twice. A `savedAtEpochMs` in the future (clock skew) is treated as **stale**,
+   not fresh — the spec didn't specify this edge case explicitly; this was the safer default and is
+   now a regression-guarded test case.
+4. **`HomeSnapshotCache.save()`'s over-cap path does not log** (the spec's Storage-guardrails bullet
+   says "skips writing (logs and leaves the previous snapshot in place)") — there's no cross-platform
+   logging seam in `ravilo-ui` client code to hang this off; it silently no-ops, which still satisfies
+   the actual invariant (never write an oversized file, never disrupt Home). Logging can be added if
+   this ever needs debugging, but wasn't invented speculatively here.
+5. **Unit tests added**: `ravilo-ui/src/commonTest/.../HomeSnapshotCacheTest.kt`, 6 cases covering
+   fresh/exactly-at-cutoff/stale/clock-skew for `isSnapshotFresh` and under/over-cap for
+   `exceedsSnapshotSizeCap` — all passing via `:ravilo-ui:testDebugUnitTest` (this module's `commonTest`
+   only runs against the Android JVM target, same limitation documented in
+   [[phase-R196-remembered-track-regression]]'s test file).
+6. Verified via `:ravilo-ui:compileKotlinWasmJs`, `:ravilo-ui:compileDebugKotlinAndroid`,
+   `:ravilo-android:compileDebugKotlin`, `:ravilo-phone:compileDebugKotlin`, and
+   `:ravilo-ui:testDebugUnitTest` (6/6 new tests passing). **Not yet on-device verified** — a fresh
+   APK build + install is a separate, explicit-permission step not taken this session
+   ([[feedback-no-tv-deploy]]).
+
 ## Source references
 - `ravilo-ui/src/commonMain/kotlin/dev/jellystructure/ravilo/ui/screens/HomeStore.kt` — `HomeState`,
   `load()`, `refresh(silent)` (the swap pattern this phase reuses for the seeded case).
@@ -162,4 +201,17 @@ instant a refresh succeeds. This is connectivity/freshness *metadata* the client
   existing 150MB image disk cache, explicitly untouched by this phase.
 - `shared/src/commonMain/kotlin/dev/jellystructure/shared/tv/Models.kt:274` — `HomeFeed`, already
   `@Serializable`.
+- `ravilo-ui/src/commonMain/kotlin/dev/jellystructure/ravilo/ui/screens/HomeSnapshotCache.kt` — the
+  `HomeSnapshot` model, the `expect` cache object, and the pure `isSnapshotFresh`/
+  `exceedsSnapshotSizeCap` helpers.
+- `ravilo-ui/src/androidMain/.../screens/HomeSnapshotCacheAndroid.kt` (`filesDir` JSON file,
+  write-then-rename) and `ravilo-ui/src/wasmJsMain/.../screens/HomeSnapshotCacheWasm.kt`
+  (`localStorage`) — the two platform actuals.
+- `ravilo-ui/src/commonTest/kotlin/dev/jellystructure/ravilo/ui/screens/HomeSnapshotCacheTest.kt` —
+  the regression tests.
+- `ravilo-ui/src/commonMain/kotlin/dev/jellystructure/ravilo/ui/screens/ProfilePickerScreen.kt`
+  (`removeSession`) and `SettingsScreen.kt` (`signOutActiveSession`, `unpairAllSessions`) —
+  `HomeSnapshotCache.clear()` call sites.
+- `ravilo-ui/src/commonMain/kotlin/dev/jellystructure/ravilo/ui/screens/HomeScreen.kt` — the
+  `StaleContentBanner` (FR-RV-R212-5) and its `home.showing_saved` string (`Strings.kt`, en/da/fo).
 - Investigation: [[project-ravilo-tv-startup-investigation-2026-08]].

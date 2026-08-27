@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
@@ -151,6 +152,8 @@ private fun HomeLoaded(
 ) {
     val listState = store.listState   // R137
     val liveTvChannels by store.liveTvChannels.collectAsState()
+    // R212 — true while showing a cached/stale snapshot and the background refresh keeps failing.
+    val showingStale by store.showingStaleContent.collectAsState()
     val onNowRowIndex = feed.liveTvHome?.onNowRowPosition?.coerceAtLeast(0) ?: 0
     val scope = rememberCoroutineScope()
 
@@ -352,6 +355,27 @@ private fun HomeLoaded(
         onSearch = onSearch,
         scrolled = appBarScrolled,
     )
+    // R212 — small, non-blocking: a cached snapshot is on screen and the background refresh keeps
+    // failing. Never takes over the screen (no Loading/Error state change) and disappears the
+    // instant any refresh succeeds (HomeStore clears the flag on every successful getHome()).
+    if (showingStale) {
+        StaleContentBanner(modifier = Modifier.align(Alignment.TopCenter).padding(top = RaviloDimens.appBarHeight + 12.dp))
+    }
+    }
+}
+
+@Composable
+private fun StaleContentBanner(modifier: Modifier = Modifier) {
+    val colors = RaviloTheme.colors
+    Row(
+        modifier = modifier
+            .background(colors.surface.copy(alpha = 0.9f), RoundedCornerShape(20.dp))
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Box(modifier = Modifier.size(8.dp).background(colors.textSecondary, CircleShape))
+        Text(str("home.showing_saved"), color = colors.textSecondary, fontSize = 13.sp)
     }
 }
 
