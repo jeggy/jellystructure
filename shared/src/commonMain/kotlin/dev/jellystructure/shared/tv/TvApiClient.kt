@@ -20,11 +20,19 @@ private const val PLAYSTATE_ID_BATCH = 100
  * no ContentNegotiation plugin is required — this client handles serialization internally
  * via the [json] instance). [deviceToken] is called per request and may return null before
  * the device has been paired.
+ *
+ * R210 — [wsClient] is a separate [HttpClient] used only by [connectEvents]'s WebSocket upgrade;
+ * every other method still goes through [client]. Defaults to [client] (a single-engine setup,
+ * e.g. wasmJs/Tizen's `ktor-client-js`, which supports both plain REST and WebSockets fine) —
+ * Android is the only platform that passes a different one, routing REST calls off CIO to work
+ * around a live client-side CIO connect bug ([[bug-ravilo-tv-cio-connect-timeout]]) while keeping
+ * CIO for the WebSocket (the Android engine has no WS support at all).
  */
 class TvApiClient(
     private val client: HttpClient,
     val baseUrl: String,
     private val deviceToken: () -> String?,
+    private val wsClient: HttpClient = client,
     private val json: Json = Json { ignoreUnknownKeys = true; isLenient = true },
 ) {
 
@@ -435,7 +443,9 @@ class TvApiClient(
         // over as a healthy reconnect (held open well past its own 2s "was it real" threshold),
         // producing a live connect/disconnect/force-stop-playback cycle every ~10s indefinitely.
         // Exempt only this call from the client-wide REST bound; regular requests are unaffected.
-        client.webSocket(wsUrl, request = {
+        // R210 — wsClient (not client): on Android this is the CIO-backed client, kept solely for
+        // this WebSocket upgrade after REST calls moved to a different engine.
+        wsClient.webSocket(wsUrl, request = {
             timeout {
                 requestTimeoutMillis = HttpTimeoutConfig.INFINITE_TIMEOUT_MS
                 socketTimeoutMillis = HttpTimeoutConfig.INFINITE_TIMEOUT_MS

@@ -65,7 +65,8 @@ kotlin {
         val androidMain by getting {
             dependencies {
                 implementation(libs.coil.svg) // SVG channel logos
-                implementation(libs.ktor.client.cio) // CIO supports WebSockets (the Android engine does not)
+                implementation(libs.ktor.client.cio) // WebSocket-only client now (R210) — CIO supports WS, the Android engine does not
+                implementation(libs.ktor.client.android) // R210 — REST-only client; routes around a CIO connect bug seen on Android
                 implementation(libs.androidx.media3.exoplayer)
                 implementation(libs.androidx.media3.exoplayer.hls)
                 implementation(libs.androidx.media3.session) // R44: MediaSession for hardware transport keys
