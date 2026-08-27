@@ -6,34 +6,50 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.platform.LocalContext
 import io.ktor.client.HttpClient
+import io.ktor.client.engine.android.Android
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.HttpTimeout
+import io.ktor.client.plugins.HttpTimeoutConfig
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.plugins.websocket.WebSockets
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.json.Json
 import dev.jellystructure.shared.tv.TvApiClient
 
+private val httpTimeoutConfig: HttpTimeoutConfig.() -> Unit = {
+    // Bug fix: with no HttpTimeout plugin, Ktor enforces no client-side timeout at all — a
+    // genuinely unreachable/slow server (phone off the home network, a TV whose WiFi hasn't
+    // reconnected after sleep) fell through to the OS's raw TCP connect timeout, often 60-120+s.
+    // HomeStore retries failed loads 4x, so this could compound into minutes of an apparently
+    // "stuck forever" shimmer skeleton with no feedback. Bound every REST call so a real failure
+    // surfaces (with retry) in well under 30s.
+    connectTimeoutMillis = 5_000L
+    requestTimeoutMillis = 10_000L
+    socketTimeoutMillis = 10_000L
+}
+
 actual fun createTvApiClient(baseUrl: String, deviceTokenProvider: () -> String?): TvApiClient {
-    // CIO engine: supports the WebSocket client used for live config push (R33); Android engine does not.
-    val httpClient = HttpClient(CIO) {
+    // R210 — REST calls (everything except the WebSocket) go through the Android engine
+    // (`HttpURLConnection`-based), not CIO: CIO's connect step was found to intermittently
+    // fail/hang on real Android devices even when the same network path is instantly reachable via
+    // a raw shell request from the same device at the same moment
+    // (see bug-ravilo-tv-cio-connect-timeout). Combined with HomeStore's 10-attempt exponential
+    // backoff, that made a client-side connect bug look exactly like "the app just hangs on
+    // launch." The Android engine has no WebSocket support, which is fine here — it's never asked
+    // to open one.
+    val restClient = HttpClient(Android) {
         install(ContentNegotiation) {
             json(Json { ignoreUnknownKeys = true; isLenient = true })
         }
-        install(WebSockets)
-        // Bug fix: with no HttpTimeout plugin, Ktor enforces no client-side timeout at all — a
-        // genuinely unreachable/slow server (phone off the home network, a TV whose WiFi hasn't
-        // reconnected after sleep) fell through to the OS's raw TCP connect timeout, often 60-120+s.
-        // HomeStore retries failed loads 4x, so this could compound into minutes of an apparently
-        // "stuck forever" shimmer skeleton with no feedback. Bound every REST call so a real failure
-        // surfaces (with retry) in well under 30s.
-        install(HttpTimeout) {
-            connectTimeoutMillis = 5_000L
-            requestTimeoutMillis = 10_000L
-            socketTimeoutMillis = 10_000L
-        }
+        install(HttpTimeout, httpTimeoutConfig)
     }
-    return TvApiClient(httpClient, baseUrl, deviceTokenProvider)
+    // CIO engine: kept solely for the WebSocket client used for live config push (R33); the
+    // Android engine above has no WebSocket support at all.
+    val wsClient = HttpClient(CIO) {
+        install(WebSockets)
+        install(HttpTimeout, httpTimeoutConfig)
+    }
+    return TvApiClient(restClient, baseUrl, deviceTokenProvider, wsClient = wsClient)
 }
 
 private fun prefs() = RaviloAppContext.get()

@@ -9,7 +9,7 @@
 > *"try swapping to the Android/OkHttp engine for the plain-REST client (keep CIO only for the WS
 > client)."* This phase does exactly that.
 
-**Status:** Planned.
+**Status:** Implemented.
 
 ## Problem
 
@@ -94,6 +94,31 @@ them as `TvApiClient(restClient, baseUrl, deviceTokenProvider, wsClient = cioCli
   instruction ([[feedback-no-tv-deploy]]/[[feedback-no-auto-deploy]]); this phase's own build/compile
   checks cannot prove the fix, only that it compiles and doesn't regress the WS path.**
 
+## Dev-review addendum (2026-08-27 — implementation notes)
+1. **`wsClient` was inserted as the 4th constructor parameter, before `json`** (not appended after
+   it) — `TvApiClient(client, baseUrl, deviceToken, wsClient = client, json = default)`. Confirmed
+   every existing call site is unaffected: the wasmJs actual and `ravilo-tizen/App.kt` both use 3
+   positional/named args and never touch `json`, so both still resolve `wsClient`/`json` to their
+   defaults unchanged.
+2. **`HttpTimeout`'s config lambda type is `HttpTimeoutConfig`, not `HttpTimeout.
+   HttpTimeoutCapabilityConfiguration`** (a wrong guess corrected during implementation, found by
+   inspecting the actual `ktor-client-core` jar) — the shared `httpTimeoutConfig:
+   HttpTimeoutConfig.() -> Unit` lambda applies the same three timeout values to both the REST and
+   WS clients via `install(HttpTimeout, httpTimeoutConfig)`, avoiding writing the three `...Millis`
+   lines out twice.
+3. **`ktor-client-android`'s engine object is `io.ktor.client.engine.android.Android`** — confirmed
+   by compiling, not guessed from memory.
+4. Verified via `:ravilo-ui:compileKotlinWasmJs`, `:ravilo-ui:compileDebugKotlinAndroid`,
+   `:ravilo-android:compileDebugKotlin`, `:ravilo-phone:compileDebugKotlin`,
+   `:ravilo-tizen:compileKotlinJs`, `:ravilo-ui:testDebugUnitTest`, and `compileKotlinLinuxX64`
+   (the `shared` module's constructor change reaches every target that depends on it, including the
+   backend, even though the backend never constructs a `TvApiClient` itself). All clean.
+5. **Not on-device verified** — the whole point of this phase is a fix for a bug that only manifests
+   on real hardware under real network conditions; a compile-clean build cannot prove the CIO connect
+   issue is actually gone, only that the split itself is structurally sound and doesn't regress the
+   WS path. On-device verification (repeating the [[bug-ravilo-tv-cio-connect-timeout]] repro on
+   soveværelse TV) is the real test, and is user-initiated per standing instruction.
+
 ## Source references
 - `ravilo-ui/src/androidMain/kotlin/dev/jellystructure/ravilo/ui/RaviloRootActuals.kt:17-37` —
   `createTvApiClient()`, the single `HttpClient(CIO)` to be split.
@@ -101,8 +126,10 @@ them as `TvApiClient(restClient, baseUrl, deviceTokenProvider, wsClient = cioCli
   constructor and `connectEvents()`.
 - `ravilo-ui/src/wasmJsMain/kotlin/dev/jellystructure/ravilo/ui/RaviloRootActuals.kt:36-53` — the
   other `createTvApiClient()` actual, confirmed unaffected.
-- `gradle/libs.versions.toml:35` — `ktor-client-android`, already cataloged, currently unused
-  anywhere in the project.
+- `gradle/libs.versions.toml:35` — `ktor-client-android`, already cataloged before this phase, now
+  actually used via `ravilo-ui/build.gradle.kts`'s `androidMain` dependencies block.
+- `ravilo-tizen/src/jsMain/kotlin/dev/jellystructure/ravilo/tizen/App.kt:19-23` — the other direct
+  `TvApiClient(...)` construction site, confirmed unaffected (named args, doesn't touch `wsClient`).
 - `ravilo-ui/src/commonMain/kotlin/dev/jellystructure/ravilo/ui/screens/HomeStore.kt:66-94` — the
   retry/backoff this phase leaves unchanged but whose worst-case masking this phase aims to prevent.
 - Prior investigation: [[bug-ravilo-tv-cio-connect-timeout]] (root-cause narrowing, 2026-08-21).
