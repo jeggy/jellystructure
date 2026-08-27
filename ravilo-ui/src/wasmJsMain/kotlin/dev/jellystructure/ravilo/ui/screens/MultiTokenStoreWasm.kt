@@ -45,10 +45,22 @@ private fun encodeAll(list: List<LocalSession>): String =
     }
 
 actual object MultiTokenStore {
-    actual fun getAll(): List<LocalSession> {
+    // R211 — in-memory cache; see MultiTokenStoreAndroid.kt's identical rationale comment. Here the
+    // uncached path was even more redundant: an extra localStorage read PER session just for its
+    // avatar URL, on every single getAll()/getActive() call.
+    private var cache: List<LocalSession>? = null
+
+    private fun loadAllUncached(): List<LocalSession> {
         val raw = loadRaw() ?: return emptyList()
         return runCatching { parseAll(raw) }.getOrDefault(emptyList())
             .map { it.copy(avatarUrl = loadAvatar(it.userId)) }
+    }
+
+    actual fun getAll(): List<LocalSession> {
+        cache?.let { return it }
+        val list = loadAllUncached()
+        cache = list
+        return list
     }
 
     actual fun add(session: LocalSession) {
@@ -56,6 +68,7 @@ actual object MultiTokenStore {
         list.add(session)
         saveRaw(encodeAll(list.map { it.copy(avatarUrl = null) }))
         saveAvatar(session.userId, session.avatarUrl)
+        cache = null
         setActive(session.userId)
     }
 
@@ -63,6 +76,7 @@ actual object MultiTokenStore {
         val list = getAll().filter { it.userId != userId }
         saveRaw(encodeAll(list.map { it.copy(avatarUrl = null) }))
         saveAvatar(userId, null)
+        cache = null
         if (loadActiveId() == userId) saveActiveId(list.firstOrNull()?.userId)
     }
 
@@ -73,5 +87,5 @@ actual object MultiTokenStore {
 
     actual fun setActive(userId: String) { saveActiveId(userId) }
 
-    actual fun clear() { jsRemove("ravilo_sessions"); jsRemove("ravilo_active_user") }
+    actual fun clear() { jsRemove("ravilo_sessions"); jsRemove("ravilo_active_user"); cache = null }
 }
