@@ -489,3 +489,19 @@ not after.
   is local. `test.setTimeout(30_000)` as a hard backstop regardless. This deliberately gives up verifying
   that Compose actually renders (confirmed separately, once, via the local headed-Chromium screenshot
   above) in exchange for a test that can fail but never hang the pipeline — the right tradeoff for CI.
+
+## 7. Amendment (2026-08-27) — publish on every push to main, not release-only
+
+FR-167-6/7 originally gated `publish.yml` behind a real GitHub Release, deliberately, so `latest` only
+moved on a conscious action. **User-directed reversal**: `publish.yml` now also runs on every push to
+`main`, pushing `latest` + a commit-SHA tag for both images with no version tag (there is no release
+version to attach on a plain push). Release publishing is unchanged and additive — a release still adds
+the versioned `MAJOR.MINOR` tag alongside `latest` + SHA. `workflow_dispatch` (re-publish an existing
+version) is unchanged.
+
+Net effect: `latest` in GHCR now tracks `main` continuously, the same as `ci.yml`'s own build (which
+still only builds+tests, never pushes). Known cost, flagged but not blocking: this doubles the
+Docker-build load on every `main` push on the same 2-core/8GB private-repo runner that needed disk-
+exhaustion and build-serialization fixes in §6 above — not yet re-verified under this new load. If it
+resurfaces runner instability, the fix is sharing/consolidating the two workflows' Buildx cache scopes
+or dropping `ci.yml`'s redundant image build in favor of this workflow's.
