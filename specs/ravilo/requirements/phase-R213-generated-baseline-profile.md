@@ -15,7 +15,8 @@
 > fulfilling the constitution's own "if ever distributed" clause — it is not fixing an active,
 > currently-felt problem the way R210 is.
 
-**Status:** Planned.
+**Status:** Planned (infrastructure built and wired 2026-08-27; generation itself blocked this
+session — see dev-review addendum).
 
 ## Problem
 `ravilo-android/src/main/baseline-prof.txt` is hand-authored with two blanket wildcards:
@@ -105,12 +106,70 @@ changes meaningfully, not on every commit.
   separate, user-initiated on-device verification pass, per standing instruction) — this phase's own
   acceptance is "profile is real/generated/wired," not "jank measurably improved."
 
+## Dev-review addendum (2026-08-27 — infrastructure built, generation blocked)
+
+**Built and compiling clean**: the `:ravilo-android-benchmark` `com.android.test` module
+(`BaselineProfileGenerator.kt`, a cold-start/scroll/detail-nav journey via
+`BaselineProfileRule.collect`), `androidx.baselineprofile` applied to both `:ravilo-android`
+(consumer) and `:ravilo-android-benchmark` (producer — needed on both sides, not just the app, or
+the producer has no outgoing `baselineProfile`-usage variant to match against), the version-catalog
+entries, and `settings.gradle.kts`'s conditional inclusion. Several real Gradle/AGP-9.0.1-specific
+wiring issues were hit and fixed along the way (all now reflected in the module's own code
+comments): `com.android.test` and `kotlin("android")` must be applied **without an explicit
+version** here (`id("com.android.test")` / `kotlin("android")`, not `alias(libs.plugins...)`) since
+those plugin artifacts are already on the buildscript classpath via `:ravilo-android`'s own aliased
+application, and requesting an explicit version for the same artifact through a different plugin ID
+produces "already on the classpath with an unknown version"; `HttpTimeout`'s config type turned out
+to be `HttpTimeoutConfig`, not the guessed `HttpTimeout.HttpTimeoutCapabilityConfiguration` (unrelated
+fix from R210, noted here only because it was found in the same session); `kotlin { jvmToolchain(11) }`
+fails in this environment (no JDK 11 installed, toolchain auto-download not configured) — used the
+same `tasks.withType<KotlinCompile>` `jvmTarget` pattern `:ravilo-android` already uses instead; the
+benchmark module needs an explicit empty `buildTypes { create("release") {} }` (a fresh
+`com.android.test` module only has "debug" by default, and the consumer side specifically wants a
+producer variant attributed `BuildTypeAttr=release`).
+
+**Generation itself did not complete this session — blocked by real device constraints, not a code
+bug**:
+1. **Stue TV (`10.0.0.11`, Android 12 / API 31, unrooted) cannot run Baseline Profile collection
+   at all.** `androidx.benchmark.macro` requires either API 33+, or a rooted device on API 28+
+   (`BaselineProfilesKt.buildMacrobenchmarkScope`'s own `IllegalArgumentException` states this
+   directly). This is a hard AOSP-level requirement, not something fixable in this module — FR-RV-
+   R213-3's original text anticipated exactly this ("generally works on an unrooted API 33+ emulator
+   ... this repo's CI has no such target") but the phase was scoped assuming an emulator or a newer
+   personal device would be available, not tested against the actual TV hardware until this session.
+2. **A Pixel 9 Pro (API 33+, confirmed installing and displaying the app successfully — `Displayed
+   dev.jellystructure.ravilo/.android.MainActivity for user 0: +189ms` in logcat) hit a different,
+   likely-fixable error**: `IllegalStateException: Unable to confirm activity launch completion`
+   from `MacrobenchmarkScope.amStartAndWait`, which polls `dumpsys gfxinfo <pkg> framestats` to
+   confirm rendering — despite the activity visibly displaying per the system's own
+   `ActivityTaskManager` log. Not root-caused (a gfxinfo-format/timing mismatch between
+   `androidx.benchmark:1.3.4` and this device's Android version is the leading theory, but unverified)
+   — **not pursued further this session** after the phone's repeated automated launches were flagged
+   as disruptive; per explicit instruction, R213 generation is deferred rather than continuing to
+   iterate against a personal device without a fresh, in-the-moment go-ahead each time.
+
+**What's left to actually finish this phase**: root-cause and fix (or work around) the
+`amStartAndWait` failure on an API 33+ device, OR set up a real Android emulator (none configured in
+this environment today) as a device that isn't anyone's personal phone or a household TV, then run
+`generateBaselineProfile` and commit the resulting `baseline-prof.txt`.
+
+Verified via `:ravilo-android-benchmark:compileNonMinifiedReleaseKotlin`,
+`:ravilo-android:compileDebugKotlin`, `:ravilo-phone:compileDebugKotlin`, and
+`:ravilo-android:tasks --all` (confirms `generateBaselineProfile`/`generateReleaseBaselineProfile`
+are real, correctly-wired tasks). The hand-authored `baseline-prof.txt` is untouched — this phase
+has not yet replaced it with anything.
+
 ## Source references
 - `specs/ravilo/constitution.md`, "Technology Mandates" — the existing mandate this phase fulfills.
 - `ravilo-android/src/main/baseline-prof.txt` — file to be replaced.
 - `ravilo-android/build.gradle.kts:97-100` — `androidx.profileinstaller` dependency + its rationale
   comment (kept, unaffected).
-- `settings.gradle.kts:14-28` — the conditional-inclusion block the new module joins.
+- `settings.gradle.kts:14-30` — the conditional-inclusion block the new module joins.
+- `ravilo-android-benchmark/build.gradle.kts`, `ravilo-android-benchmark/src/main/java/dev/
+  jellystructure/ravilo/benchmark/BaselineProfileGenerator.kt`, `ravilo-android-benchmark/README.md`
+  — the new module itself.
+- `gradle/libs.versions.toml` — `androidx-benchmark-macro-junit4`, `androidx-test-*`,
+  `androidx.baselineprofile` plugin entries.
 - `specs/research-reports/ravilo-tv-navigation-jank-aot-2026-06-27.md`,
   `specs/research-reports/ravilo-tv-jank-measurement-2026-06-27.md` — prior on-device measurements
   this phase's journey design is grounded in.
