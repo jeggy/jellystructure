@@ -113,11 +113,18 @@ them as `TvApiClient(restClient, baseUrl, deviceTokenProvider, wsClient = cioCli
    `:ravilo-tizen:compileKotlinJs`, `:ravilo-ui:testDebugUnitTest`, and `compileKotlinLinuxX64`
    (the `shared` module's constructor change reaches every target that depends on it, including the
    backend, even though the backend never constructs a `TvApiClient` itself). All clean.
-5. **Not on-device verified** — the whole point of this phase is a fix for a bug that only manifests
-   on real hardware under real network conditions; a compile-clean build cannot prove the CIO connect
-   issue is actually gone, only that the split itself is structurally sound and doesn't regress the
-   WS path. On-device verification (repeating the [[bug-ravilo-tv-cio-connect-timeout]] repro on
-   soveværelse TV) is the real test, and is user-initiated per standing instruction.
+5. **Partially on-device verified 2026-08-27** — deployed the release build + full AOT compile to
+   stue TV (`10.0.0.11`) and launched it: clean launch (`Displayed
+   dev.jellystructure.ravilo/.android.MainActivity: +491ms` in logcat, no exceptions/crashes in the
+   captured log), and entering the real backend's address (`10.0.0.10:9505`) on the
+   `ServerSetupScreen` and connecting transitioned cleanly to the sign-in screen with no hang or
+   delay — the `ktor-client-android` REST path genuinely reached the server. This is real evidence
+   the split works, though it doesn't reproduce (or rule out) the original intermittent CIO failure
+   itself, since that bug was never reliably reproducible on demand in the first place — this session
+   didn't hit a hang either before or after the fix on this device. **Not verified**: full sign-in →
+   Home render (no test credentials available to the agent this session) or the original
+   [[bug-ravilo-tv-cio-connect-timeout]] repro conditions specifically (soveværelse TV, different
+   device).
 
 ## Source references
 - `ravilo-ui/src/androidMain/kotlin/dev/jellystructure/ravilo/ui/RaviloRootActuals.kt:17-37` —
