@@ -3,6 +3,7 @@ package dev.jellystructure.tv
 import dev.jellystructure.auth.DeviceData
 import dev.jellystructure.auth.JellyfinClient
 import dev.jellystructure.config.ConfigStore
+import dev.jellystructure.media.ArtworkDownloader
 import dev.jellystructure.media.MediaStore
 import dev.jellystructure.model.MediaItem
 import dev.jellystructure.model.MediaKind
@@ -34,6 +35,7 @@ class BrowseService(
     private val jellyfinClient: JellyfinClient,
     private val configStore: ConfigStore,
     private val raviloConfigService: RaviloConfigService,
+    private val artwork: ArtworkDownloader,
 ) {
     /**
      * R187 — resolves a "→ See all" seed (a [Row.seedQuery] condition tree, already channel-ANDed
@@ -251,8 +253,8 @@ class BrowseService(
             genre = genres.firstOrNull(),
             rating = CertificationResolver.resolve(configStore.current.metadata.ageRatingCascade, certifications)?.code,
             ageRating = CertificationResolver.normalizedAge(configStore.current.metadata.ageRatingCascade, configStore.current.metadata.ageRatingMap, certifications),
-            posterUrl = RaviloImageUrl.poster(id),     // R133: keyed by MediaItem.id (on-disk artwork)
-            backdropUrl = RaviloImageUrl.backdrop(id),
+            posterUrl = RaviloImageUrl.poster(id, artwork.assetVersion(this, "poster")),     // R133/R214
+            backdropUrl = RaviloImageUrl.backdrop(id, artwork.assetVersion(this, "backdrop")),
             upcomingEpisode = if (sonarrEnabled && kind == MediaKind.TV_SHOW &&
                 sonarrStatus != "ended" && sonarrNextAiringDate != null &&
                 sonarrNextAiringSeason != null && sonarrNextAiringEpisode != null)

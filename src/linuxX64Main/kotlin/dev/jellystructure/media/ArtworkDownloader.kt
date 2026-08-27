@@ -369,6 +369,19 @@ class ArtworkDownloader(private val tmdbClient: TmdbClient, private val screengr
     fun assetPath(item: MediaItem, asset: String): String? =
         assetFilename(asset)?.let { assetFilePath(item, it) }
 
+    /** R214: a cheap version stamp for [asset]'s current on-disk bytes — its file size, the same signal
+     *  [RaviloArtworkService]'s own resize-cache already trusts to detect a changed source file (R133's
+     *  doc comment: "any artwork rewrite... changes the compressed size, so a cache entry auto-invalidates
+     *  with no explicit hooks to miss"). Read fresh from disk at call time rather than a counter some
+     *  writer has to remember to bump — Phase 176 already showed that kind of "remember to invalidate"
+     *  gap is exactly how a stale image survives a fix. 0 when the asset doesn't exist yet. */
+    fun assetVersion(item: MediaItem, asset: String): Long =
+        assetPath(item, asset)?.let { SystemFileSystem.metadataOrNull(Path(it))?.size } ?: 0L
+
+    /** R214: same version stamp as [assetVersion], for a season's own poster (R194). */
+    fun seasonPosterVersion(item: MediaItem, season: Int): Long =
+        SystemFileSystem.metadataOrNull(Path(seasonPosterPath(item, season)))?.size ?: 0L
+
     /** Read the TMDB file_path (or upload/URL sentinel) recorded for [asset]'s current on-disk file,
      *  or null if no `.src` sidecar exists — either nothing is on disk yet, or the file pre-dates
      *  Phase 176 (poster/backdrop) / Phase 47 (clearlogo) provenance tracking. */
