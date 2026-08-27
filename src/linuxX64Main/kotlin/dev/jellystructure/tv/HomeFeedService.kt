@@ -3,6 +3,7 @@ package dev.jellystructure.tv
 import dev.jellystructure.auth.DeviceData
 import dev.jellystructure.auth.JellyfinClient
 import dev.jellystructure.config.ConfigStore
+import dev.jellystructure.media.ArtworkDownloader
 import dev.jellystructure.media.MediaStore
 import dev.jellystructure.model.MediaItem
 import dev.jellystructure.model.MediaKind
@@ -52,6 +53,7 @@ class HomeFeedService(
     private val jellyfinClient: JellyfinClient,
     private val configStore: ConfigStore,
     private val tvEventBus: TvEventBus,
+    private val artwork: ArtworkDownloader,
 ) {
     private val json = Json { encodeDefaults = true }
 
@@ -221,8 +223,8 @@ class HomeFeedService(
                 Hero(
                     item = item.toMediaCard(),
                     taglineKicker = null,
-                    backdropUrl = RaviloImageUrl.heroBackdrop(item.id),
-                    logoUrl = RaviloImageUrl.logo(item.id),
+                    backdropUrl = RaviloImageUrl.heroBackdrop(item.id, artwork.assetVersion(item, "backdrop")),
+                    logoUrl = RaviloImageUrl.logo(item.id, artwork.assetVersion(item, "clearlogo")),
                     badge = null,
                     synopsis = item.overview,
                 )
@@ -239,8 +241,8 @@ class HomeFeedService(
                 Hero(
                     item = item.toMediaCard(),
                     taglineKicker = hc.tagline,
-                    backdropUrl = RaviloImageUrl.heroBackdrop(item.id),
-                    logoUrl = if (hc.clearlogoOverlay) RaviloImageUrl.logo(item.id) else null,
+                    backdropUrl = RaviloImageUrl.heroBackdrop(item.id, artwork.assetVersion(item, "backdrop")),
+                    logoUrl = if (hc.clearlogoOverlay) RaviloImageUrl.logo(item.id, artwork.assetVersion(item, "clearlogo")) else null,
                     badge = hc.badge,
                     synopsis = item.overview,
                 )
@@ -258,8 +260,8 @@ class HomeFeedService(
                 Hero(
                     item = item.toMediaCard(),
                     taglineKicker = hc.tagline,
-                    backdropUrl = RaviloImageUrl.heroBackdrop(item.id),
-                    logoUrl = if (hc.clearlogoOverlay) RaviloImageUrl.logo(item.id) else null,
+                    backdropUrl = RaviloImageUrl.heroBackdrop(item.id, artwork.assetVersion(item, "backdrop")),
+                    logoUrl = if (hc.clearlogoOverlay) RaviloImageUrl.logo(item.id, artwork.assetVersion(item, "clearlogo")) else null,
                     badge = hc.badge,
                     synopsis = item.overview,
                 )
@@ -594,8 +596,8 @@ class HomeFeedService(
             genre = genres.firstOrNull(),
             rating = CertificationResolver.resolve(configStore.current.metadata.ageRatingCascade, certifications)?.code,
             ageRating = CertificationResolver.normalizedAge(configStore.current.metadata.ageRatingCascade, configStore.current.metadata.ageRatingMap, certifications),
-            posterUrl = RaviloImageUrl.poster(id),     // R133: keyed by MediaItem.id (on-disk artwork)
-            backdropUrl = RaviloImageUrl.backdrop(id),
+            posterUrl = RaviloImageUrl.poster(id, artwork.assetVersion(this, "poster")),     // R133/R214
+            backdropUrl = RaviloImageUrl.backdrop(id, artwork.assetVersion(this, "backdrop")),
             progressPct = progressPct,
             nextUpLabel = nextUpLabel,
             seasonNumber = seasonNumber,

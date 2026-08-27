@@ -86,13 +86,19 @@ private fun resolveUrl(url: String, baseUrl: String): String =
     if (url.startsWith("/") && baseUrl.isNotBlank()) "$baseUrl$url" else url
 
 /**
- * R96: append `?w=` to a proxy (/api/tv/image/...) URL so the backend serves a device-appropriate
- * size; returns the URL unchanged for absolute/non-proxy URLs or a null/zero width. Used by BOTH the
- * display path (RemoteImage) and the row prefetch resolver so a tile and its prefetch share ONE cache
- * key — otherwise the prefetch warms the full-size image and the tile then cache-misses on `?w=`.
+ * R96: append a `w=` size param to a proxy (/api/tv/image/...) URL so the backend serves a
+ * device-appropriate size; returns the URL unchanged for absolute/non-proxy URLs or a null/zero width.
+ * Used by BOTH the display path (RemoteImage) and the row prefetch resolver so a tile and its prefetch
+ * share ONE cache key — otherwise the prefetch warms the full-size image and the tile then cache-misses
+ * on `?w=`. R214: the server may already have appended its own `?v=<version>` cache-buster — appending
+ * another bare `?w=` after one would build an invalid `...?v=1?w=200` URL, so join with `&` once a `?`
+ * is already present.
  */
-fun sizedProxyUrl(url: String, width: Int?): String =
-    if (width != null && width > 0 && url.startsWith("/api/tv/image/")) "$url?w=$width" else url
+fun sizedProxyUrl(url: String, width: Int?): String {
+    if (width == null || width <= 0 || !url.startsWith("/api/tv/image/")) return url
+    val sep = if ('?' in url) '&' else '?'
+    return "$url${sep}w=$width"
+}
 
 /**
  * R100: warm a single image (e.g. a detail backdrop) ahead of navigating to it, so it is a

@@ -67,7 +67,7 @@ class DetailService(
             playback           = null,  // R83: hydrated by /api/tv/playstate (R84 overlays it)
             audioLanguages     = movieAudioLangs,
             subtitleLanguages  = movieSubLangs,
-            logoUrl            = RaviloImageUrl.logo(item.id),  // R130/R133
+            logoUrl            = RaviloImageUrl.logo(item.id, artwork.assetVersion(item, "clearlogo")),  // R130/R133/R214
             ratingBadge        = item.ratingBadge(),  // Phase 106
             trailer            = item.tvTrailer(),  // Phase 130
             imdbRating         = item.tvImdbRating(),  // Phase 131
@@ -130,7 +130,8 @@ class DetailService(
                 // R194: null (not a URL that would 404) when this season has no poster on disk, so the
                 // client can do a plain `season.posterUrl ?: card.posterUrl` fallback — same pattern as
                 // every other image field here — with no need to speculatively probe for a 404.
-                posterUrl = if (artwork.checkSeasonPoster(item, seasonNum)) RaviloImageUrl.seasonPoster(item.id, seasonNum) else null,
+                posterUrl = if (artwork.checkSeasonPoster(item, seasonNum))
+                    RaviloImageUrl.seasonPoster(item.id, seasonNum, artwork.seasonPosterVersion(item, seasonNum)) else null,
             )
         }
 
@@ -162,7 +163,7 @@ class DetailService(
             progress          = null,  // R83: hydrated by /api/tv/playstate (R84 overlays it)
             audioLanguages    = seriesAudioLangs,
             subtitleLanguages = seriesSubLangs,
-            logoUrl           = RaviloImageUrl.logo(item.id),  // R130/R133
+            logoUrl           = RaviloImageUrl.logo(item.id, artwork.assetVersion(item, "clearlogo")),  // R130/R133/R214
             nextAiring        = nextAiring,
             ratingBadge       = item.ratingBadge(),  // Phase 106
             trailer           = item.tvTrailer(),  // Phase 130
@@ -235,8 +236,8 @@ class DetailService(
             genre = genres.firstOrNull(),
             rating = ratingBadge()?.code,  // Phase 106
             ageRating = CertificationResolver.normalizedAge(configStore.current.metadata.ageRatingCascade, configStore.current.metadata.ageRatingMap, certifications),  // Phase 155
-            posterUrl = RaviloImageUrl.poster(id),     // R133: keyed by MediaItem.id (on-disk artwork)
-            backdropUrl = RaviloImageUrl.backdrop(id),
+            posterUrl = RaviloImageUrl.poster(id, artwork.assetVersion(this, "poster")),     // R133/R214
+            backdropUrl = RaviloImageUrl.backdrop(id, artwork.assetVersion(this, "backdrop")),
             upcomingEpisode = if (sonarrEnabled && kind == MediaKind.TV_SHOW &&
                 sonarrStatus != "ended" && sonarrNextAiringDate != null &&
                 sonarrNextAiringSeason != null && sonarrNextAiringEpisode != null)
