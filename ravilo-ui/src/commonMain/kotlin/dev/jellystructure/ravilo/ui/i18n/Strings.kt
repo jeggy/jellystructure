@@ -242,6 +242,8 @@ private val EN = mapOf(
     "loading"             to "Loading...",
     "error.generic"       to "Something went wrong",
     "action.retry"        to "Retry",
+    // R212 — shown on Home when a cached snapshot is displayed and the background refresh keeps failing.
+    "home.showing_saved"  to "Showing saved content — trying to reconnect",
     "off"                 to "Off",
     "on"                  to "On",
     // R149: Sonarr next-airing
@@ -485,6 +487,8 @@ private val DA = mapOf(
     "loading"             to "Indlaeder...",
     "error.generic"       to "Noget gik galt",
     "action.retry"        to "Prøv igen",
+    // R212 — shown on Home when a cached snapshot is displayed and the background refresh keeps failing.
+    "home.showing_saved"  to "Viser gemt indhold — prøver at genoprette forbindelse",
     "off"                 to "Fra",
     "on"                  to "Til",
     // R149: Sonarr next-airing
@@ -728,6 +732,8 @@ private val FO = mapOf(
     "loading"             to "Ledur inn...",
     "error.generic"       to "Nakad gjekk skeivt",
     "action.retry"        to "Royn aftur",
+    // R212 — shown on Home when a cached snapshot is displayed and the background refresh keeps failing.
+    "home.showing_saved"  to "Vísir goymt innihald — royna aftur at knýta samband",
     "off"                 to "Av",
     "on"                  to "A",
     // R149: Sonarr next-airing

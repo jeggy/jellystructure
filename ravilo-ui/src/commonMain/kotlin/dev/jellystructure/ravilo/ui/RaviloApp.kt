@@ -46,6 +46,9 @@ import dev.jellystructure.ravilo.ui.screens.DiscoverSegment
 import dev.jellystructure.ravilo.ui.screens.DiscoverStore
 import dev.jellystructure.ravilo.ui.screens.defaultDiscoverSegment
 import dev.jellystructure.ravilo.ui.screens.HomeScreen
+import dev.jellystructure.ravilo.ui.screens.HomeSnapshot
+import dev.jellystructure.ravilo.ui.screens.HomeSnapshotCache
+import dev.jellystructure.ravilo.ui.screens.HomeState
 import dev.jellystructure.ravilo.ui.screens.HomeStore
 import dev.jellystructure.ravilo.ui.screens.LiveTvGuideScreen
 import dev.jellystructure.ravilo.ui.screens.LiveTvGuideStore
@@ -96,6 +99,7 @@ import dev.jellystructure.shared.tv.Channel
 import dev.jellystructure.shared.tv.MediaCard
 import dev.jellystructure.shared.tv.MediaKind
 import dev.jellystructure.shared.tv.RowKind
+import dev.jellystructure.shared.tv.Skin
 import dev.jellystructure.shared.tv.TvApiClient
 import dev.jellystructure.shared.tv.tileScale
 import kotlinx.coroutines.CoroutineScope
@@ -248,12 +252,18 @@ private sealed class Dest {
 
 @Composable
 fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeServer: () -> Unit = {}) {
-    var lang by remember { mutableStateOf("en") }
-    var tileScale by remember { mutableStateOf(1f) }
+    // R212 — the last-known Home feed + display settings for this device's single cached session
+    // (if any), read once at cold start. Mirrors initialDest's own bare `remember{}` below: it only
+    // ever matters for the single-session fast path — a profile switch mid-session is already
+    // handled live by refreshConfig(), independent of this seed.
+    val initialSnapshot = remember { MultiTokenStore.getActive()?.userId?.let { HomeSnapshotCache.load(it) } }
+
+    var lang by remember { mutableStateOf(initialSnapshot?.uiLanguage ?: "en") }
+    var tileScale by remember { mutableStateOf(initialSnapshot?.tileScale ?: 1f) }
     // R174 — grid columns, server-pushed on the config; portrait falls back to the built-in 2.
-    var gridColumns by remember { mutableStateOf(6) }
-    var portraitGridColumns by remember { mutableStateOf(2) }
-    val themeState = rememberRaviloTheme()
+    var gridColumns by remember { mutableStateOf(initialSnapshot?.gridColumns ?: 6) }
+    var portraitGridColumns by remember { mutableStateOf(initialSnapshot?.portraitGridColumns ?: 2) }
+    val themeState = rememberRaviloTheme(initial = initialSnapshot?.skin ?: Skin.AURORA)
 
     // Fetch the active user's config and apply server-owned interface prefs (language + skin)
     val configScope = remember { CoroutineScope(SupervisorJob() + Dispatchers.Default) }
@@ -624,7 +634,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                 // R187 — str() is @Composable; hoisted here since it's read inside the onSeeAll callback
                 // below, which isn't composable context.
                 val homeLabel = str("nav.home")
-                val store = keptStore("home:${dest.displayName}") { HomeStore(apiClient) }
+                val store = keptStore("home:${dest.displayName}") { HomeStore(apiClient, seedFeed = initialSnapshot?.feed) }
                 val da by store.discoverAvailable.collectAsState()
                 SideEffect { discoverAvailable = da }
                 val ua by store.upcomingAvailable.collectAsState()
@@ -633,6 +643,23 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                 // does a silent re-pull. HomeStore.refresh(silent=true) keeps the current content visible
                 // and swaps in the new feed when it arrives — no Loading flash.
                 LaunchedEffect(Unit) { liveConfig.emit(0L) }
+                // R212 — write through the combined feed + display-settings snapshot whenever Home has
+                // fresh content, so the next cold start can seed instantly instead of a bare shimmer.
+                // Always an exact copy of what's already on screen — never computed/derived.
+                val homeState by store.state.collectAsState()
+                LaunchedEffect(homeState, lang, themeState.skin, tileScale, gridColumns, portraitGridColumns) {
+                    val loaded = homeState as? HomeState.Loaded ?: return@LaunchedEffect
+                    val uid = activeUserId ?: return@LaunchedEffect
+                    HomeSnapshotCache.save(uid, HomeSnapshot(
+                        feed = loaded.feed,
+                        uiLanguage = lang,
+                        skin = themeState.skin,
+                        tileScale = tileScale,
+                        gridColumns = gridColumns,
+                        portraitGridColumns = portraitGridColumns,
+                        savedAtEpochMs = Clock.System.now().toEpochMilliseconds(),
+                    ))
+                }
                 HomeScreen(
                     store = store,
                     apiClient = apiClient,
