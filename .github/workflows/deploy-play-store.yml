@@ -1,0 +1,119 @@
+name: Deploy Ravilo TV to Play Store
+
+# R215 — ships :ravilo-android to the Play Store "internal" testing track whenever a GitHub Release is
+# published, mirroring publish.yml's vMAJOR.MINOR tag convention (Phase 167) so cutting a release ships
+# Docker images AND a Play Console build from the same action. Deliberately a separate workflow file
+# from publish.yml: different deploy target, different secrets, different failure domain.
+#
+# Internal track only, never production/beta — promoting a build is a deliberate Play Console action,
+# not an implicit side effect of tagging a release. Google also requires a closed test with 12+ opted-in
+# testers for 14+ continuous days before a new developer account can publish to production at all.
+#
+# ⚠ Known trigger gap (see R215 spec §4 / publish.yml's header comment): `release: published` did not
+# fire when the release was created via `gh release create` under a fine-grained PAT — workflow_dispatch
+# worked immediately under the same token. Publish releases via the GitHub web UI until that's resolved,
+# or fall back to workflow_dispatch below.
+#
+# One-time manual setup required before this can upload anything — see R215 spec §3:
+#   1. Create the "Ravilo" app in Play Console (reserves dev.jellystructure.ravilo) + complete the store
+#      listing/content rating/data safety/privacy policy.
+#   2. Play Console -> Setup -> API access -> create/link a service account, grant it Release manager
+#      access to the Testing tracks.
+#   3. Upload one build to the internal track manually first — the API can't create the first release.
+#   4. Generate a real upload keystore (never the shared debug keystore) for the five secrets below.
+#
+# Required repo secrets:
+#   PLAY_SERVICE_ACCOUNT_JSON  - full JSON key file contents from step 2
+#   ANDROID_KEYSTORE_BASE64    - `base64 -w0 upload.keystore`
+#   ANDROID_KEYSTORE_PASSWORD
+#   ANDROID_KEY_ALIAS
+#   ANDROID_KEY_PASSWORD
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to (re-)deploy, e.g. 1.0 — must match an existing vX.Y release tag"
+        required: true
+      track:
+        description: "Play Store track to upload to"
+        required: true
+        default: internal
+        type: choice
+        options: [internal, alpha, beta, production]
+
+permissions:
+  contents: read
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.resolve.outputs.tag }}
+      versionName: ${{ steps.resolve.outputs.versionName }}
+      versionCode: ${{ steps.resolve.outputs.versionCode }}
+      track: ${{ steps.resolve.outputs.track }}
+    steps:
+      - name: Resolve and validate version
+        id: resolve
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="v${{ inputs.version }}"
+            TRACK="${{ inputs.track }}"
+          else
+            TAG="${{ github.event.release.tag_name }}"
+            TRACK="internal"
+          fi
+          RAW="${TAG#v}"
+          if ! [[ "$RAW" =~ ^([0-9]+)\.([0-9]+)$ ]]; then
+            echo "::error::Version '$RAW' (from tag '$TAG') is not a plain MAJOR.MINOR number (e.g. 1.0) — refusing to deploy."
+            exit 1
+          fi
+          MAJOR="${BASH_REMATCH[1]}"
+          MINOR="${BASH_REMATCH[2]}"
+          if [ "$MINOR" -gt 999 ]; then
+            echo "::error::Minor version '$MINOR' exceeds 999 — the versionCode scheme (MAJOR*1000+MINOR) can't represent it."
+            exit 1
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "versionName=$RAW" >> "$GITHUB_OUTPUT"
+          echo "versionCode=$((MAJOR * 1000 + MINOR))" >> "$GITHUB_OUTPUT"
+          echo "track=$TRACK" >> "$GITHUB_OUTPUT"
+
+  deploy:
+    needs: version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.version.outputs.tag }}
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Decode upload keystore
+        run: echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > "${{ runner.temp }}/upload.keystore"
+
+      - name: Build release AAB
+        run: |
+          ./gradlew :ravilo-android:bundleRelease \
+            -Pravilo.versionCode=${{ needs.version.outputs.versionCode }} \
+            -Pravilo.versionName=${{ needs.version.outputs.versionName }} \
+            -Pravilo.keystore.file="${{ runner.temp }}/upload.keystore" \
+            -Pravilo.keystore.password="${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" \
+            -Pravilo.keystore.alias="${{ secrets.ANDROID_KEY_ALIAS }}" \
+            -Pravilo.keystore.keyPassword="${{ secrets.ANDROID_KEY_PASSWORD }}"
+
+      - name: Upload to Play Store
+        uses: r0adkll/upload-google-play@v1
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: dev.jellystructure.ravilo
+          releaseFiles: ravilo-android/build/outputs/bundle/release/*.aab
+          track: ${{ needs.version.outputs.track }}
+          status: completed

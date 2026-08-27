@@ -15,14 +15,17 @@ android {
         applicationId = "dev.jellystructure.ravilo"
         minSdk = 21
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0"
+        // R215: deploy-play-store.yml overrides both via -Pravilo.versionCode/-Pravilo.versionName,
+        // derived from the release tag. Unset for local/sideload builds, which keep 1 / "1.0".
+        versionCode = (project.findProperty("ravilo.versionCode") as String?)?.toInt() ?: 1
+        versionName = (project.findProperty("ravilo.versionName") as String?) ?: "1.0"
     }
 
     signingConfigs {
-        // release config: reads from local.properties; falls back to the well-known debug key
-        // so `assembleRelease` works out-of-the-box for sideloading without manual keystore setup.
-        // To use a real keystore add these four lines to local.properties:
+        // release config: reads from (in priority order) Gradle project properties — CI, see R215's
+        // deploy-play-store.yml — then local.properties, then falls back to the well-known debug key
+        // so `assembleRelease` works out-of-the-box for sideloading without any keystore setup at all.
+        // To use a real keystore locally add these four lines to local.properties:
         //   keystore.file=<absolute path to .keystore / .jks>
         //   keystore.password=<store password>
         //   keystore.alias=<key alias>
@@ -31,11 +34,14 @@ android {
             val lp = Properties().also { p ->
                 rootProject.file("local.properties").takeIf { it.exists() }?.let { p.load(it.reader()) }
             }
-            val ksFile = (lp["keystore.file"] as? String)?.let { file(it) }
+            fun keystoreProp(ciKey: String, localKey: String): String? =
+                (project.findProperty(ciKey) as String?) ?: (lp[localKey] as? String)
+
+            val ksFile = keystoreProp("ravilo.keystore.file", "keystore.file")?.let { file(it) }
             storeFile     = ksFile ?: file("${System.getProperty("user.home")}/.android/debug.keystore")
-            storePassword = (lp["keystore.password"]    as? String) ?: "android"
-            keyAlias      = (lp["keystore.alias"]       as? String) ?: "androiddebugkey"
-            keyPassword   = (lp["keystore.keyPassword"] as? String) ?: "android"
+            storePassword = keystoreProp("ravilo.keystore.password", "keystore.password") ?: "android"
+            keyAlias      = keystoreProp("ravilo.keystore.alias", "keystore.alias") ?: "androiddebugkey"
+            keyPassword   = keystoreProp("ravilo.keystore.keyPassword", "keystore.keyPassword") ?: "android"
         }
     }
 
