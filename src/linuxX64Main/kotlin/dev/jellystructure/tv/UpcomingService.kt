@@ -7,6 +7,7 @@ import dev.jellystructure.arr.ArrClient
 import dev.jellystructure.arr.ArrQueueItem
 import dev.jellystructure.auth.DeviceData
 import dev.jellystructure.config.ConfigStore
+import dev.jellystructure.media.ArtworkDownloader
 import dev.jellystructure.media.MediaStore
 import dev.jellystructure.media.visibleTo
 import dev.jellystructure.shared.tv.Person
@@ -39,6 +40,7 @@ class UpcomingService(
     private val arrClient: ArrClient,
     private val mediaStore: MediaStore,
     private val tmdbClient: TmdbClient,
+    private val artwork: ArtworkDownloader,
 ) {
     /** R167 — the tmdb/tvdb id behind one feed item, kept alongside the cache so [getDetail] can do
      *  a live TMDB enrichment (genres/runtime/cast) without a second *arr round-trip. */
@@ -186,7 +188,7 @@ class UpcomingService(
                     year = series.year,
                     genre = matched?.genres?.firstOrNull() ?: series.genres.firstOrNull(),
                     itemId = itemId,
-                    posterUrl = matched?.let { RaviloImageUrl.poster(it.id) },
+                    posterUrl = matched?.let { RaviloImageUrl.poster(it.id, artwork.assetVersion(it, "poster")) },
                     date = date,
                     time = extractTime(ep.airDateUtc),
                     season = ep.seasonNumber,
@@ -225,7 +227,7 @@ class UpcomingService(
                     year = mv.year,
                     genre = matched?.genres?.firstOrNull() ?: mv.genres.firstOrNull(),
                     itemId = itemId,
-                    posterUrl = matched?.let { RaviloImageUrl.poster(it.id) },
+                    posterUrl = matched?.let { RaviloImageUrl.poster(it.id, artwork.assetVersion(it, "poster")) },
                     date = date,
                     releaseType = releaseType,
                     status = resolveMovieStatus(date, today, itemId != null, queued != null, mv.isAvailable),

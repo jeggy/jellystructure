@@ -186,8 +186,8 @@ fun main() = runBlocking {
     val requestIntentStore = dev.jellystructure.seerr.RequestIntentStore(db)
     val raviloConfigService = RaviloConfigService(db, tvEventBus, requestLanguageService)
     raviloConfigService.migrateAllLegacyBehaviourFields()  // R162: one-time, idempotent
-    val homeFeedService = HomeFeedService(mediaStore, raviloConfigService, jellyfinClient, configStore, tvEventBus)
-    val browseService = BrowseService(mediaStore, jellyfinClient, configStore, raviloConfigService)
+    val homeFeedService = HomeFeedService(mediaStore, raviloConfigService, jellyfinClient, configStore, tvEventBus, artworkDownloader)
+    val browseService = BrowseService(mediaStore, jellyfinClient, configStore, raviloConfigService, artworkDownloader)
     val detailService = DetailService(mediaStore, jellyfinClient, configStore, artworkDownloader, mediaSegmentStore)
     val playbackService = PlaybackService(mediaStore, jellyfinClient, configStore)
     val mediaHistory = MediaHistory(db)
@@ -201,7 +201,7 @@ fun main() = runBlocking {
     val bazarrClient = dev.jellystructure.bazarr.BazarrClient()
     val arrRescan = ArrRescanService(configStore, arrClient, rootScope)
     val sonarrEnrich = SonarrEnrichService(mediaStore, arrClient, configStore)
-    val upcomingService = dev.jellystructure.tv.UpcomingService(configStore, arrClient, mediaStore, tmdbClient)
+    val upcomingService = dev.jellystructure.tv.UpcomingService(configStore, arrClient, mediaStore, tmdbClient, artworkDownloader)
     // Phase 109: single-worker persistent queue for heavy media edits (ffmpeg remuxes) — see the class
     // doc for why enqueue-then-drain replaces running ffmpeg inline on the request thread.
     val mediaJobQueue = dev.jellystructure.media.MediaJobQueue(db, mediaStore, broadcaster, jellyfinClient, configStore, mediaHistory, seedingGuard, arrRescan, rootScope, mediaSegmentStore, fingerprintService)
