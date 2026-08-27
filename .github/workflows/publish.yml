@@ -1,9 +1,11 @@
 name: Publish Docker images
 
-# FR-167-6/7 — publish-only, gated behind a real GitHub Release, not a bare tag push. ci.yml already
-# builds and tests the Docker image on every push/PR; this workflow only runs when someone deliberately
-# publishes a release (GitHub UI: Releases -> Draft a new release -> Publish release), so `latest` only
-# ever moves on that action, never on every commit or even every tag push.
+# FR-167-6/7, extended 2026-08-27 — pushes to GHCR on two occasions:
+#  - every push to main: unversioned continuous build, tagged `latest` + the commit SHA. This is what
+#    keeps `latest` following main day to day.
+#  - a GitHub Release being published (Releases -> Draft a new release -> Publish release): versioned
+#    build, additionally tagged with the release's own MAJOR.MINOR version.
+# workflow_dispatch re-publishes an existing released version on demand.
 #
 # Versioning is a plain two-part number (MAJOR.MINOR), NOT SemVer — no patch segment, no pre-release/
 # build metadata. Starts at 1.0. The release's tag is the single source of truth (no VERSION file to keep
@@ -11,6 +13,8 @@ name: Publish Docker images
 # than silently no-op'ing or publishing something unexpected.
 
 on:
+  push:
+    branches: [main]
   release:
     types: [published]
   workflow_dispatch:
@@ -33,6 +37,12 @@ jobs:
       - name: Resolve and validate version
         id: resolve
         run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            # Continuous main-push build: no release version, tags are latest + commit SHA only.
+            echo "version=" >> "$GITHUB_OUTPUT"
+            echo "tag=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             TAG="v${{ inputs.version }}"
           else
@@ -59,7 +69,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ needs.version.outputs.tag }}
+          ref: ${{ needs.version.outputs.tag || github.sha }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -71,6 +81,21 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Compute tags
+        id: tags
+        run: |
+          IMAGE="ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}"
+          VERSION="${{ needs.version.outputs.version }}"
+          TAGS="$IMAGE:latest"$'\n'"$IMAGE:${{ github.sha }}"
+          if [ -n "$VERSION" ]; then
+            TAGS="$IMAGE:$VERSION"$'\n'"$TAGS"
+          fi
+          {
+            echo "tags<<TAGEOF"
+            echo "$TAGS"
+            echo "TAGEOF"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
@@ -78,9 +103,6 @@ jobs:
           file: ${{ matrix.dockerfile }}
           platforms: linux/amd64
           push: true
-          tags: |
-            ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:${{ needs.version.outputs.version }}
-            ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:latest
-            ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:${{ github.sha }}
+          tags: ${{ steps.tags.outputs.tags }}
           cache-from: type=gha,scope=${{ matrix.image }}
           cache-to: type=gha,mode=max,scope=${{ matrix.image }}
