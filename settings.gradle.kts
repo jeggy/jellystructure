@@ -26,6 +26,7 @@ if (hasAndroidSdk) {
     include(":ravilo-player")
     include(":ravilo-android")
     include(":ravilo-phone") // R60 — Android phone (mobile) target
+    include(":ravilo-android-benchmark") // R213 — generates ravilo-android's Baseline Profile
 }
 
 pluginManagement {

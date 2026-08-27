@@ -4,6 +4,7 @@ plugins {
     alias(libs.plugins.android.application)
     kotlin("android")
     alias(libs.plugins.kotlin.plugin.compose)
+    alias(libs.plugins.androidx.baselineprofile) // R213
 }
 
 android {
@@ -82,6 +83,16 @@ android {
     }
 }
 
+// R213 — ./gradlew :ravilo-android:generateBaselineProfile drives :ravilo-android-benchmark's
+// journey against a connected device and writes the result to src/main/baseline-prof.txt. No
+// managed-device is configured (none of this environment's Android SDK setups include one), so this
+// runs against whatever real device/emulator is connected via adb — plugin default behavior.
+baselineProfile {
+    warnings {
+        maxAgpVersion = false // this plugin predates AGP 9.0.1; the mismatch is a known, accepted gap
+    }
+}
+
 tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
     compilerOptions {
         jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_11)
@@ -105,4 +116,5 @@ dependencies {
     implementation(libs.compose.ui)
     implementation(libs.compose.material3)
     implementation(libs.compose.foundation)
+    baselineProfile(project(":ravilo-android-benchmark")) // R213
 }
