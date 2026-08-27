@@ -86,6 +86,7 @@ class ProfilePickerStore {
     fun removeSession(userId: String) {
         MultiTokenStore.remove(userId)
         PlaybackPrefsStore.clearProfile(userId)   // R181 — local playback memory doesn't outlive the profile
+        HomeSnapshotCache.clear(userId)           // R212 — cached Home snapshot doesn't outlive the profile either
         _state.value = ProfilePickerState.Picking(MultiTokenStore.getAll())
     }
 }

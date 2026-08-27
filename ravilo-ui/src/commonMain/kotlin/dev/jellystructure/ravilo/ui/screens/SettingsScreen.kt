@@ -122,7 +122,10 @@ suspend fun unpairAllSessions(apiClient: TvApiClient) {
         runCatching { apiClient.unpair(session.deviceToken) }
     }
     MultiTokenStore.clear()
-    sessions.forEach { PlaybackPrefsStore.clearProfile(it.userId) }   // R181 — local playback memory
+    sessions.forEach {
+        PlaybackPrefsStore.clearProfile(it.userId)   // R181 — local playback memory
+        HomeSnapshotCache.clear(it.userId)           // R212 — cached Home snapshot
+    }
 }
 
 /**
@@ -139,6 +142,7 @@ suspend fun signOutActiveSession(apiClient: TvApiClient): Boolean {
     runCatching { apiClient.signOutSession(active.userId) }
     MultiTokenStore.remove(active.userId)
     PlaybackPrefsStore.clearProfile(active.userId)   // R181 — local playback memory doesn't outlive the profile
+    HomeSnapshotCache.clear(active.userId)           // R212 — cached Home snapshot doesn't outlive the profile either
     return MultiTokenStore.getAll().isNotEmpty()
 }
 
