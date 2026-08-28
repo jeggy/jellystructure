@@ -8,10 +8,10 @@
 > 30 came from the resume list and zero came from next-up** — every slot was full before next-up ever got
 > a turn.
 
-**Status:** Implemented (2026-08-29). Design-authored and deferred 2026-08-28; user re-reported the same
+**Status:** ✓ Done (2026-08-29). Design-authored and deferred 2026-08-28; user re-reported the same
 symptom live the next day ("Two and a half men" missing from Continue Watching) and asked for the fix.
-Re-verified the exact same root cause against live data before writing code (see Build notes) — not yet
-restarted on the dev backend to confirm the live row output, pending the user's go-ahead.
+Re-verified the exact same root cause against live data before writing code, then confirmed live again
+after restarting the dev backend — see Build notes.
 
 ## Build notes (2026-08-29)
 
@@ -33,9 +33,10 @@ restarted on the dev backend to confirm the live row output, pending the user's 
   harness for `HomeFeedService`; correctness verified by re-deriving the exact live scenario above by
   hand (Three and a Half Uncles at next-up position 1 → merged position 2, comfortably inside any reasonable
   cap) rather than a mocked unit test. Worth adding a real test harness if this class gets touched again.
-- **Not yet on-device/live verified** — the dev backend (bare `.kexe`, tmux session
-  `jellystructure-backend`) was not restarted with this code; doing so needs the user's go-ahead per
-  standing practice.
+- **Live-verified after restart (2026-08-29):** re-queried `/api/tv/home` as the stue TV device against
+  the restarted dev backend — Three and a Half Uncles now sits at **merged position 2** (Offboarding, Three and a Half Uncles, Ruffy, …), exactly matching the by-hand prediction above. Several other titles absent from
+  the pre-fix row also now appear (Pratarna, Fristelsens Ø Danmark, The Crash of Flight 88,
+  Klettarnir, Mintys Træhus, Beacon Watch, Muldvarpen, Kulsort, Danmarks klogeste, Mark og mage, La Curva) — all next-up entries the old concatenate-then-cap order was silently dropping.
 
 ## Root cause
 
