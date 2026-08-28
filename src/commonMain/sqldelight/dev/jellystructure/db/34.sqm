@@ -1,0 +1,22 @@
+-- Phase 177 (FR-177-5) — playback quality-of-experience reports. See PlaybackQoe.sq for the full column
+-- docs; this migration must stay byte-for-byte in sync with that file's CREATE TABLE/CREATE INDEX
+-- statements (this repo's SQLDelight setup applies .sqm files sequentially against an existing database —
+-- Schema.create() alone, used only for a brand-new database, would otherwise be the only place this table
+-- exists).
+CREATE TABLE playback_qoe (
+    device_id TEXT NOT NULL,
+    jellyfin_id TEXT NOT NULL,
+    play_session_id TEXT NOT NULL,
+    dropped_frames INTEGER NOT NULL DEFAULT 0,
+    rebuffer_count INTEGER NOT NULL DEFAULT 0,
+    rebuffer_ms INTEGER NOT NULL DEFAULT 0,
+    bandwidth_estimate_bps INTEGER,
+    video_decoder TEXT,
+    direct_play INTEGER NOT NULL DEFAULT 0,
+    link_kind TEXT NOT NULL DEFAULT 'unknown',
+    link_mbps INTEGER NOT NULL DEFAULT 0,
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY (device_id, jellyfin_id, play_session_id)
+);
+CREATE INDEX playback_qoe_device ON playback_qoe(device_id);
+CREATE INDEX playback_qoe_updated ON playback_qoe(updated_at);
