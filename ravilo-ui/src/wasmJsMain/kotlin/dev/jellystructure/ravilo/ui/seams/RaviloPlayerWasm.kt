@@ -125,6 +125,10 @@ actual class RaviloPlayer actual constructor() {
             val label = s.label ?: languageName(s.language) ?: s.language ?: "Track ${i + 1}"
             PlayerSubtitleTrack(i, label, s.language, s.forced, s.isDefault)
         }
+
+    // R216 — out of scope for the web target (no browser API for dropped-frame/rebuffer counters
+    // comparable to Media3's AnalyticsListener); reports "nothing observed" honestly.
+    actual fun qoeSnapshot(): PlayerQoeSnapshot = PlayerQoeSnapshot()
 }
 
 /**

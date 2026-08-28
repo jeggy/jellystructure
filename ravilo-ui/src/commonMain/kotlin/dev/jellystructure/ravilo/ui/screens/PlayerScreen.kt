@@ -634,6 +634,7 @@ fun PlayerScreen(
             positionProvider = { positionMs },
             isPausedProvider = { !isPlaying },
             durationProvider = { durationMs },
+            qoeSnapshotProvider = { player.qoeSnapshot() },  // R216 (FR-R216-4)
         )
     }
 
