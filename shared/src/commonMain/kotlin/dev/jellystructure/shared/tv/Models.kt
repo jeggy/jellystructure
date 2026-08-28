@@ -129,6 +129,10 @@ data class PlaybackQoeReport(
     @SerialName("direct_play") val directPlay: Boolean = false,
     @SerialName("link_kind") val linkKind: String = "unknown",
     @SerialName("link_mbps") val linkMbps: Int = 0,
+    /** Phase 179 (FR-179-3) — count of sideloaded text-subtitle load errors this session (e.g. the
+     *  `.../Subtitles/{index}/...` sideload racing Jellyfin's own concurrent extraction — see
+     *  phase-179's Root cause). Diagnostic only, so a repeat doesn't need another live logcat pull. */
+    @SerialName("subtitle_load_errors") val subtitleLoadErrors: Int = 0,
 )
 
 @Serializable

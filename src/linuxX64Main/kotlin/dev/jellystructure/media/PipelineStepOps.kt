@@ -39,6 +39,45 @@ object PipelineStepOps {
         store.updateOne(artwork.stampHasStill(current))
     }
 
+    /**
+     * `prewarm_subtitles` (Phase 179, FR-179-1) — hit Jellyfin's `.../Subtitles/{index}/0/Stream.vtt`
+     * extraction endpoint for every embedded text-subtitle stream ahead of any real playback, so its own
+     * ffmpeg extraction cache is warm by the time a client asks (R183 measured a 4m37s cold extraction on
+     * a 26 GB file; today it can additionally lose the race against a concurrent transcode reading the
+     * same source file and hit a client-side HTTP timeout — see the phase's Root cause §4). Every text
+     * stream, not just ones likely to transcode: which files transcode now depends on the *playing
+     * device's* decode ceiling (Phase 177), not just the file, so there's no reliable narrower filter —
+     * matches `detect_segments`/`fetch_artwork`'s existing "touch everything in the working set" pattern.
+     * `isExternal` streams are skipped: a sidecar `.srt` is served as-is, never ffmpeg-extracted, so
+     * there is nothing to warm. Returns the count of subtitle streams actually warmed, for the step's
+     * summary log line. Movies pre-warm their own playable id; a TV_SHOW pre-warms every episode that has
+     * one (episodes scanned before R82 have `jellyfinId = null` and are skipped — the next scan fills it
+     * in). Silently a no-op with no Jellyfin connection configured (mirrors `sync_jellyfin`'s own guard).
+     */
+    suspend fun prewarmSubtitles(item: MediaItem, jellyfinClient: JellyfinClient, cfg: AppConfig): Int {
+        val base = cfg.apiKeys.jellyfinUrl
+        val token = cfg.apiKeys.jellyfinToken
+        if (base.isBlank() || token.isBlank()) return 0
+
+        suspend fun warmPlayable(jellyfinId: String?): Int {
+            val id = jellyfinId?.takeIf { it.isNotBlank() } ?: return 0
+            val detail = jellyfinClient.getItemMediaStreams(base, token, id) ?: return 0
+            val textSubs = detail.mediaStreams.filter {
+                it.type.equals("Subtitle", ignoreCase = true) &&
+                    !it.isExternal &&
+                    (it.isTextSubtitleStream || dev.jellystructure.tv.isTextSubCodec(it.codec))
+            }
+            for (s in textSubs) jellyfinClient.warmSubtitleExtraction(base, token, id, s.index)
+            return textSubs.size
+        }
+
+        return when (item.kind) {
+            MediaKind.MOVIE -> warmPlayable(item.jellyfinId)
+            MediaKind.TV_SHOW -> item.episodes.sumOf { warmPlayable(it.jellyfinId) }
+            MediaKind.MUSIC_VIDEO -> 0
+        }
+    }
+
     /** `sync_imdb_ratings` — fetch + store the IMDb rating for an item that has an imdbId. Returns true
      *  when a rating was written. (The scheduled run throttles between items itself; this doesn't.) */
     suspend fun syncImdb(item: MediaItem, store: MediaStore, imdbClient: ImdbClient?): Boolean {

@@ -1,0 +1,1 @@
+ALTER TABLE playback_qoe ADD COLUMN subtitle_load_errors INTEGER NOT NULL DEFAULT 0;

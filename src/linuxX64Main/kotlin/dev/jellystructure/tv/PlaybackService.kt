@@ -690,15 +690,20 @@ class PlaybackService(
             }
     }
 
-    private fun isTextSubCodec(c: String?): Boolean =
-        (c?.lowercase()) in setOf("subrip", "srt", "ass", "ssa", "webvtt", "vtt", "mov_text", "text")
-
     private fun isEmbedImageSubCodec(c: String): Boolean =
         c in setOf("dvd_subtitle", "dvdsub", "vobsub", "dvbsub", "dvb_subtitle")
 
     private fun isPgsSubCodec(c: String): Boolean =
         c in setOf("hdmv_pgs_subtitle", "pgssub", "pgs")
 }
+
+/**
+ * Phase 179 — moved out of [PlaybackService] (was `private`) so [dev.jellystructure.media.PipelineStepOps]
+ * can reuse the exact same text-subtitle predicate [buildSubtracks] uses, rather than a second,
+ * possibly-diverging copy. `internal`: visible module-wide, not exported past this Gradle target.
+ */
+internal fun isTextSubCodec(c: String?): Boolean =
+    (c?.lowercase()) in setOf("subrip", "srt", "ass", "ssa", "webvtt", "vtt", "mov_text", "text")
 
 /**
  * The token the TV should use for Jellyfin reads/streaming: the paired user token when Jellyfin still

@@ -604,6 +604,40 @@ class JellyfinClient {
     }
 
     /**
+     * Phase 179 (FR-179-1) — like [getItemDetail], but no `/Users/{userId}` context: only `MediaStreams`
+     * is needed to find text-subtitle streams to pre-warm, and the pipeline has no per-device user to
+     * scope the call to (it runs once for the library, not once per viewer). Uses the admin token, same
+     * pattern as [getSeriesEpisodesMeta].
+     */
+    suspend fun getItemMediaStreams(
+        baseUrl: String,
+        token: String,
+        jellyfinId: String,
+    ): JellyfinItemDetail? = runCatching {
+        val url = baseUrl.trimEnd('/') + "/Items/$jellyfinId?Fields=MediaStreams"
+        httpGet(url) { jellyfinAuth(token) }
+            .bodyOrNull<JellyfinItemDetail>("getItemMediaStreams")
+    }.let { result ->
+        if (result.isFailure) Logger.warn("Jellyfin getItemMediaStreams failed: ${result.exceptionOrNull()?.message}")
+        result.getOrNull()
+    }
+
+    /**
+     * Phase 179 (FR-179-1) — hits the exact URL [dev.jellystructure.tv.PlaybackService.buildSubtracks]
+     * builds for a real sideloaded text-subtitle track (`.../Subtitles/{index}/0/Stream.vtt`), ahead of
+     * any real playback, so Jellyfin's own ffmpeg extraction (R183: measured 4m37s cold on a 26 GB file)
+     * has already run and cached by the time a client actually asks — see the phase's Root cause §4 for
+     * why a live client request can lose the race against Jellyfin extracting the same file a real
+     * transcode is concurrently reading. The response body is discarded; only the side effect (Jellyfin's
+     * own cache getting warmed) matters here.
+     */
+    suspend fun warmSubtitleExtraction(baseUrl: String, token: String, jellyfinId: String, streamIndex: Int) {
+        val url = baseUrl.trimEnd('/') + "/Videos/$jellyfinId/$jellyfinId/Subtitles/$streamIndex/0/Stream.vtt?api_key=$token"
+        runCatching { httpGet(url) }
+            .onFailure { Logger.warn("Jellyfin subtitle pre-warm failed (item=$jellyfinId index=$streamIndex): ${it.message}") }
+    }
+
+    /**
      * R82: Fetch per-episode static metadata (id, runtime, season name) without a user context —
      * uses the admin token so this can be called at scan time without a paired user session.
      */

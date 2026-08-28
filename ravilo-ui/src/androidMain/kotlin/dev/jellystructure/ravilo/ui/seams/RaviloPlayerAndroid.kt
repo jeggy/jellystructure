@@ -45,7 +45,16 @@ actual class RaviloPlayer actual constructor() {
     private val exo: ExoPlayer by lazy {
         // R56: Media3's MatroskaExtractor already parses embedded VobSub/DVDSub and PGS tracks
         // from MKV containers by default; no custom ExtractorsFactory is needed.
-        val builder = ExoPlayer.Builder(ctx)
+        // Phase 179 (FR-179-2) — a sideloaded text-subtitle track (the `.../Subtitles/{index}/0/
+        // Stream.vtt` URL PlaybackService.buildSubtracks() builds) used Media3's plain default policy,
+        // which gave up and permanently disabled the track on the first load failure — observed live as
+        // `Disabling track due to error: ... SocketTimeoutException` mid-session, with no further attempt
+        // for the rest of playback. SubtitleRetryingLoadErrorHandlingPolicy only widens the retry
+        // allowance for that one URL pattern; every other load (video/audio HLS segments, manifests)
+        // delegates straight through to Media3's own DefaultLoadErrorHandlingPolicy, unchanged.
+        val mediaSourceFactory = androidx.media3.exoplayer.source.DefaultMediaSourceFactory(ctx)
+            .setLoadErrorHandlingPolicy(SubtitleRetryingLoadErrorHandlingPolicy())
+        val builder = ExoPlayer.Builder(ctx, mediaSourceFactory)
         RaviloPlayerEngine.renderersFactoryProvider?.invoke(ctx)?.let { builder.setRenderersFactory(it) }
         // R216 (FR-R216-3) — an explicit LoadControl instead of inheriting DefaultLoadControl's stock
         // bufferForPlaybackAfterRebufferMs: on a link that dips mid-playback, resuming on a thin buffer
@@ -84,6 +93,11 @@ actual class RaviloPlayer actual constructor() {
     @Volatile private var qoeRebufferMs: Long = 0
     @Volatile private var qoeBandwidthEstimateBps: Long? = null
     @Volatile private var qoeVideoDecoder: String? = null
+    // Phase 179 (FR-179-3) — counts every failed load whose URI matches PlaybackService.buildSubtracks()'
+    // sideload pattern, retried or not; a nonzero count is itself the useful signal (something raced
+    // Jellyfin's extraction this session), same "badge only when non-clean" philosophy as the other
+    // counters here.
+    @Volatile private var qoeSubtitleLoadErrors: Int = 0
     // Rebuffer bookkeeping: only counted once the first frame has rendered (excludes initial buffering)
     // and only when the buffering wasn't itself caused by a seek (excludes user-initiated seeks) — see
     // the phase's FR-R216-4 doc.
@@ -129,6 +143,18 @@ actual class RaviloPlayer actual constructor() {
         }
         override fun onVideoDecoderInitialized(eventTime: AnalyticsListener.EventTime, decoderName: String, initializedTimestampMs: Long, initializationDurationMs: Long) {
             qoeVideoDecoder = decoderName
+        }
+        // Phase 179 (FR-179-3) — fires for every failed load attempt, including ones SubtitleRetryingLoad-
+        // ErrorHandlingPolicy will go on to retry; counts attempts, not just terminal failures, since
+        // "how many times did this stumble" is itself diagnostic value here (see this field's own doc).
+        override fun onLoadError(
+            eventTime: AnalyticsListener.EventTime,
+            loadEventInfo: androidx.media3.exoplayer.source.LoadEventInfo,
+            mediaLoadData: androidx.media3.exoplayer.source.MediaLoadData,
+            error: java.io.IOException,
+            wasCanceled: Boolean,
+        ) {
+            if (loadEventInfo.uri.toString().contains("/Subtitles/")) qoeSubtitleLoadErrors++
         }
     }
 
@@ -362,7 +388,47 @@ actual class RaviloPlayer actual constructor() {
         rebufferMs = qoeRebufferMs,
         bandwidthEstimateBps = qoeBandwidthEstimateBps,
         videoDecoder = qoeVideoDecoder,
+        subtitleLoadErrors = qoeSubtitleLoadErrors,
     )
+}
+
+/**
+ * Phase 179 (FR-179-2) — widens the retry allowance for a sideloaded text-subtitle load (the
+ * `.../Subtitles/{index}/0/Stream.vtt` URL PlaybackService.buildSubtracks() builds) only. Every other
+ * load type — video/audio HLS segments, manifests, everything else — delegates straight through to
+ * Media3's own [DefaultLoadErrorHandlingPolicy], completely unchanged: this must never make a genuinely
+ * dead video/audio connection wait longer to fail, only give a subtitle sideload — which a live incident
+ * showed racing Jellyfin's own concurrent ffmpeg extraction of the same source file (see phase-179's
+ * Root cause §4) — more patience than Media3's plain default (one attempt, no retry) gave it.
+ */
+private class SubtitleRetryingLoadErrorHandlingPolicy(
+    private val default: androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy =
+        androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy(),
+) : androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy {
+
+    private fun isSubtitleLoad(loadErrorInfo: androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy.LoadErrorInfo): Boolean =
+        loadErrorInfo.loadEventInfo.uri.toString().contains("/Subtitles/")
+
+    override fun getFallbackSelectionFor(
+        fallbackOptions: androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy.FallbackOptions,
+        loadErrorInfo: androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy.LoadErrorInfo,
+    ) = default.getFallbackSelectionFor(fallbackOptions, loadErrorInfo)
+
+    override fun getRetryDelayMsFor(
+        loadErrorInfo: androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy.LoadErrorInfo,
+    ): Long {
+        if (isSubtitleLoad(loadErrorInfo) && loadErrorInfo.errorCount <= SUBTITLE_MAX_RETRIES) {
+            return SUBTITLE_RETRY_DELAY_MS
+        }
+        return default.getRetryDelayMsFor(loadErrorInfo)
+    }
+
+    override fun getMinimumLoadableRetryCount(dataType: Int): Int = default.getMinimumLoadableRetryCount(dataType)
+
+    private companion object {
+        const val SUBTITLE_MAX_RETRIES = 2
+        const val SUBTITLE_RETRY_DELAY_MS = 3_000L
+    }
 }
 
 /** R216 (FR-R216-3) — raised from DefaultLoadControl's stock 5s so a recovered stall resumes with a
