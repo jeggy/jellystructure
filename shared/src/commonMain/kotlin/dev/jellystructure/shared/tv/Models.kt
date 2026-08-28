@@ -95,6 +95,40 @@ data class ClientCapabilities(
      *  it in via transcode? False (the pre-existing behavior) unless a client actively confirms it — see
      *  `PlaybackService.buildSubtracks()`'s `embedContainerSubs` doc for why this must stay conservative. */
     @SerialName("supports_embedded_text_subs") val supportsEmbeddedTextSubs: Boolean = false,
+    // R216/Phase 177 — the client's real video-decode bitrate ceilings (bits/s), from
+    // ravilo-ui's detectDecoderLimits() (generalised from the H.264-only detectAvcDecoderLimits()).
+    // 0 = unknown — Phase 177's per-codec `VideoBitrate` condition is then never emitted (never invent
+    // a ceiling; see JellyfinClient.deviceProfile()'s FR-177-2 doc). Investigation:
+    // stue-tv-4k-playback-stutter-2026-08-28.md found the TV's decoders both cap at 60 Mbps while the
+    // server never asked, letting a 93 Mbps remux direct-play into them unchanged for two hours.
+    @SerialName("max_video_bitrate") val maxVideoBitrate: Int = 0,
+    @SerialName("max_hevc_bitrate") val maxHevcBitrate: Int = 0,
+    @SerialName("max_h264_bitrate") val maxH264Bitrate: Int = 0,
+    // R216/Phase 177 — this device's own network link, sampled once at startPlayback (detectLinkState()).
+    // "unknown"/0 ⇒ Phase 177's link-derived MaxStreamingBitrate cap never applies (today's behaviour).
+    @SerialName("link_kind") val linkKind: String = "unknown",
+    @SerialName("link_mbps") val linkMbps: Int = 0,
+)
+
+/**
+ * R216/Phase 177 (FR-R216-4/FR-177-5) — one playback-quality report, posted by the client at session end
+ * (and on a long-session interval) to `POST /api/tv/playback/qoe`. `deviceId`/`playSessionId` are NOT
+ * carried here — the server derives them from the authenticated device + [itemId] (the same
+ * `playSessionIdFor()` every other playback call already uses), so a compromised/spoofed report can never
+ * claim to be a different device. Fire-and-forget on the client: a failed POST must never affect
+ * playback (see the phase's invariant) and is simply dropped, not retried.
+ */
+@Serializable
+data class PlaybackQoeReport(
+    @SerialName("item_id") val itemId: String,
+    @SerialName("dropped_frames") val droppedFrames: Int = 0,
+    @SerialName("rebuffer_count") val rebufferCount: Int = 0,
+    @SerialName("rebuffer_ms") val rebufferMs: Long = 0,
+    @SerialName("bandwidth_estimate_bps") val bandwidthEstimateBps: Long? = null,
+    @SerialName("video_decoder") val videoDecoder: String? = null,
+    @SerialName("direct_play") val directPlay: Boolean = false,
+    @SerialName("link_kind") val linkKind: String = "unknown",
+    @SerialName("link_mbps") val linkMbps: Int = 0,
 )
 
 @Serializable

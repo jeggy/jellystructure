@@ -2,6 +2,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- R216 — see ravilo-android's manifest doc: both normal (install-time), no runtime prompt. -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
 
     <!-- R60: phone target — touch required, leanback optional, no TV launcher. -->
     <uses-feature android:name="android.software.leanback" android:required="false" />

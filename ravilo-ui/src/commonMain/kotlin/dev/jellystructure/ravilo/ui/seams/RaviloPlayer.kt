@@ -90,7 +90,30 @@ expect class RaviloPlayer() {
 
     /** Subtitle track list, discovered from the stream after load (embedded + sideloaded externals). */
     val subtitleTracks: List<PlayerSubtitleTrack>
+
+    /** R216 (FR-R216-4) — this session's accumulated playback-quality counters so far. Cheap/synchronous
+     *  (a snapshot of counters the player already maintains, not a fresh measurement) — callable from
+     *  PlayerStore's existing 10s heartbeat tick and at session end with no extra cost. Every field
+     *  defaults to "nothing observed" on a platform/state with no real signal (see [PlayerQoeSnapshot]). */
+    fun qoeSnapshot(): PlayerQoeSnapshot
 }
+
+/**
+ * R216 (FR-R216-4) — one player's accumulated playback-quality counters for the current session, read by
+ * [RaviloPlayer.qoeSnapshot] and posted via `TvApiClient.postPlaybackQoe`. Nothing here is ever surfaced
+ * in the Ravilo UI (the product principle: viewers never see bitrates/buffers/quality) — this exists
+ * purely so `POST /api/tv/playback/qoe` (Phase 177 §FR-177-5) has real evidence instead of yet another
+ * after-the-fact forensic reconstruction from router/Jellyfin logs.
+ */
+data class PlayerQoeSnapshot(
+    val droppedFrames: Int = 0,
+    val rebufferCount: Int = 0,
+    val rebufferMs: Long = 0,
+    /** The player's own live bandwidth estimate, when the platform exposes one. Null = unknown. */
+    val bandwidthEstimateBps: Long? = null,
+    /** The selected video decoder's name, when the platform exposes one (diagnostic only). */
+    val videoDecoder: String? = null,
+)
 
 /**
  * Map a 2- or 3-letter language code to an English display name (R46); null when unknown so callers

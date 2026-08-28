@@ -14,13 +14,16 @@ import androidx.media3.common.MimeTypes
 import androidx.media3.common.Player
 import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.VideoSize
+import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.analytics.AnalyticsListener
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import androidx.media3.session.MediaSession
 import dev.jellystructure.ravilo.ui.RaviloAppContext
 import dev.jellystructure.shared.tv.AudioTrack
 import dev.jellystructure.shared.tv.SubTrack
+import kotlin.concurrent.Volatile
 
 /** Strip ASS/SSA override tags from VTT cue text (R68). */
 internal fun cleanCueText(text: String): String =
@@ -44,11 +47,88 @@ actual class RaviloPlayer actual constructor() {
         // from MKV containers by default; no custom ExtractorsFactory is needed.
         val builder = ExoPlayer.Builder(ctx)
         RaviloPlayerEngine.renderersFactoryProvider?.invoke(ctx)?.let { builder.setRenderersFactory(it) }
+        // R216 (FR-R216-3) — an explicit LoadControl instead of inheriting DefaultLoadControl's stock
+        // bufferForPlaybackAfterRebufferMs: on a link that dips mid-playback, resuming on a thin buffer
+        // turns one stall into a train of them. Only that one value is raised — min/max buffer and
+        // bufferForPlaybackMs (start latency, R211/R212) are left at their defaults on purpose: the
+        // reported TV's dalvik.vm.heapgrowthlimit (192 MB) leaves less headroom above Media3's own
+        // 128 MB default video buffer than the time-based defaults suggest (see the phase's own doc) —
+        // enlarging buffer SIZE needs FR-R216-4's telemetry to validate first, not a blind bump here.
+        builder.setLoadControl(
+            DefaultLoadControl.Builder()
+                .setBufferDurationsMs(
+                    DefaultLoadControl.DEFAULT_MIN_BUFFER_MS,
+                    DefaultLoadControl.DEFAULT_MAX_BUFFER_MS,
+                    DefaultLoadControl.DEFAULT_BUFFER_FOR_PLAYBACK_MS,
+                    QOE_BUFFER_FOR_PLAYBACK_AFTER_REBUFFER_MS,
+                )
+                .build()
+        )
         builder.build().also { player ->
             // R77: capture video geometry so PlayerVideoSurface can apply the correct aspect ratio.
             player.addListener(object : Player.Listener {
                 override fun onVideoSizeChanged(size: VideoSize) { _videoSize.value = size }
             })
+            player.addAnalyticsListener(qoeListener)
+        }
+    }
+
+    // R216 (FR-R216-4) — accumulated playback-quality counters for this session; read by [qoeSnapshot].
+    // @Volatile: read from PlayerStore's coroutine, written from whichever thread Media3 dispatches
+    // analytics events on — plain field writes here are always whole-value replacements, never a
+    // read-modify-write race (each field is only ever touched inside the single-threaded qoeListener
+    // callbacks Media3 itself serializes), so @Volatile alone (no mutex) is sufficient for cross-thread
+    // visibility, matching this file's other cross-thread state (_videoSize).
+    @Volatile private var qoeDroppedFrames: Int = 0
+    @Volatile private var qoeRebufferCount: Int = 0
+    @Volatile private var qoeRebufferMs: Long = 0
+    @Volatile private var qoeBandwidthEstimateBps: Long? = null
+    @Volatile private var qoeVideoDecoder: String? = null
+    // Rebuffer bookkeeping: only counted once the first frame has rendered (excludes initial buffering)
+    // and only when the buffering wasn't itself caused by a seek (excludes user-initiated seeks) — see
+    // the phase's FR-R216-4 doc.
+    private var qoeFirstFrameRendered = false
+    private var qoeRebufferStartMs: Long = -1L
+    private var qoeSuppressNextBuffering = false
+
+    private val qoeListener = object : AnalyticsListener {
+        override fun onRenderedFirstFrame(eventTime: AnalyticsListener.EventTime, output: Any, renderTimeMs: Long) {
+            qoeFirstFrameRendered = true
+        }
+        override fun onDroppedVideoFrames(eventTime: AnalyticsListener.EventTime, droppedFrames: Int, elapsedMs: Long) {
+            qoeDroppedFrames += droppedFrames
+        }
+        override fun onBandwidthEstimate(eventTime: AnalyticsListener.EventTime, totalLoadTimeMs: Int, totalBytesLoaded: Long, bitrateEstimate: Long) {
+            qoeBandwidthEstimateBps = bitrateEstimate
+        }
+        override fun onPositionDiscontinuity(
+            eventTime: AnalyticsListener.EventTime,
+            oldPosition: Player.PositionInfo,
+            newPosition: Player.PositionInfo,
+            reason: Int,
+        ) {
+            if (reason == Player.DISCONTINUITY_REASON_SEEK) qoeSuppressNextBuffering = true
+        }
+        override fun onPlaybackStateChanged(eventTime: AnalyticsListener.EventTime, state: Int) {
+            when (state) {
+                Player.STATE_BUFFERING -> {
+                    if (qoeFirstFrameRendered && !qoeSuppressNextBuffering) {
+                        qoeRebufferStartMs = eventTime.realtimeMs
+                    }
+                    qoeSuppressNextBuffering = false
+                }
+                Player.STATE_READY -> {
+                    if (qoeRebufferStartMs >= 0) {
+                        qoeRebufferCount++
+                        qoeRebufferMs += (eventTime.realtimeMs - qoeRebufferStartMs).coerceAtLeast(0)
+                        qoeRebufferStartMs = -1L
+                    }
+                }
+                else -> {}
+            }
+        }
+        override fun onVideoDecoderInitialized(eventTime: AnalyticsListener.EventTime, decoderName: String, initializedTimestampMs: Long, initializationDurationMs: Long) {
+            qoeVideoDecoder = decoderName
         }
     }
 
@@ -275,4 +355,16 @@ actual class RaviloPlayer actual constructor() {
             }
             return result
         }
+
+    actual fun qoeSnapshot(): PlayerQoeSnapshot = PlayerQoeSnapshot(
+        droppedFrames = qoeDroppedFrames,
+        rebufferCount = qoeRebufferCount,
+        rebufferMs = qoeRebufferMs,
+        bandwidthEstimateBps = qoeBandwidthEstimateBps,
+        videoDecoder = qoeVideoDecoder,
+    )
 }
+
+/** R216 (FR-R216-3) — raised from DefaultLoadControl's stock 5s so a recovered stall resumes with a
+ *  real cushion instead of re-stalling seconds later; see this file's `setBufferDurationsMs` call site. */
+private const val QOE_BUFFER_FOR_PLAYBACK_AFTER_REBUFFER_MS = 10_000

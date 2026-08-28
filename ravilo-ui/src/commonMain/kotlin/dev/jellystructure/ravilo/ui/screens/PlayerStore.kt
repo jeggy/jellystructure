@@ -1,10 +1,13 @@
 package dev.jellystructure.ravilo.ui.screens
 
-import dev.jellystructure.ravilo.ui.seams.detectAvcDecoderLimits
+import dev.jellystructure.ravilo.ui.seams.PlayerQoeSnapshot
+import dev.jellystructure.ravilo.ui.seams.detectDecoderLimits
 import dev.jellystructure.ravilo.ui.seams.detectHdrSupport
+import dev.jellystructure.ravilo.ui.seams.detectLinkState
 import dev.jellystructure.ravilo.ui.seams.supportsEmbeddedTextSubtitles
 import dev.jellystructure.shared.tv.CardPlayState
 import dev.jellystructure.shared.tv.ClientCapabilities
+import dev.jellystructure.shared.tv.PlaybackQoeReport
 import dev.jellystructure.shared.tv.RaviloConfig
 import dev.jellystructure.shared.tv.StreamTicket
 import dev.jellystructure.shared.tv.TvApiClient
@@ -28,6 +31,9 @@ sealed class PlayerSessionState {
 }
 
 private const val PROGRESS_INTERVAL_MS = 10_000L
+// R216 (FR-R216-4) — "a long-session interval" for QoE reporting so an abandoned/crashed session isn't
+// lost entirely; 60 heartbeat ticks × PROGRESS_INTERVAL_MS = 10 minutes.
+private const val QOE_REPORT_EVERY_N_TICKS = 60
 
 class PlayerStore(private val apiClient: TvApiClient) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -49,16 +55,27 @@ class PlayerStore(private val apiClient: TvApiClient) {
     // teardown paths order-independent: whichever runs first does the real stop, the other no-ops.
     private var positionProvider: (() -> Long)? = null
     private var durationProvider: (() -> Long)? = null
+    // R216 (FR-R216-4) — supplied by the caller (PlayerScreen owns the RaviloPlayer instance; the store
+    // deliberately doesn't) so QoE reporting can reuse the exact same lambda-injection pattern as
+    // position/duration above instead of coupling this store to a concrete player type.
+    private var qoeSnapshotProvider: (() -> PlayerQoeSnapshot)? = null
+    private var qoeLinkKind: String = "unknown"
+    private var qoeLinkMbps: Int = 0
+    private var qoeDirectPlay: Boolean = false
+    private var qoeTicksSinceReport = 0
 
     fun startSession(
         itemId: String,
         positionProvider: () -> Long,
         isPausedProvider: () -> Boolean,
         durationProvider: () -> Long = { 0L },
+        qoeSnapshotProvider: () -> PlayerQoeSnapshot = { PlayerQoeSnapshot() },
     ) {
         currentItemId = itemId
         this.positionProvider = positionProvider
         this.durationProvider = durationProvider
+        this.qoeSnapshotProvider = qoeSnapshotProvider
+        qoeTicksSinceReport = 0
         _state.value = PlayerSessionState.Loading
         scope.launch {
             // Bug fix: a failed startPlayback (e.g. a transient network blip during an auto-advance to
@@ -79,7 +96,13 @@ class PlayerStore(private val apiClient: TvApiClient) {
                     val hdr = detectHdrSupport()
                     // R183: Dolby Vision + the real H.264 decode ceiling, so DV profile-8 titles
                     // direct-play and any fallback transcode is one this device can actually decode.
-                    val avc = detectAvcDecoderLimits()
+                    // R216 generalises this probe to also report the device's real decode-bitrate
+                    // ceilings (see DecoderLimits' doc).
+                    val decoderLimits = detectDecoderLimits()
+                    // R216 (FR-R216-2) — this device's own network link, sampled once here (not
+                    // continuously — see the phase's Out-of-scope section). Reused below for the QoE
+                    // reports this same session posts, so it isn't re-sampled per report.
+                    val link = detectLinkState()
                     // Phase 161: whether this client renders embedded text subs (SRT/ASS/SSA) natively
                     // in-container on a direct-played file, so the server can skip a redundant VTT
                     // sideload of the same stream (bug: it used to always sideload, double-delivering
@@ -96,17 +119,26 @@ class PlayerStore(private val apiClient: TvApiClient) {
                             supportsHlg = hdr.hlg,
                             supportsDolbyVision = hdr.dolbyVision,
                             supportsDolbyVisionEl = hdr.dolbyVisionEl,
-                            maxH264Width = avc.maxWidth,
-                            maxH264Height = avc.maxHeight,
-                            maxH264Level = avc.maxLevel,
+                            maxH264Width = decoderLimits.maxWidth,
+                            maxH264Height = decoderLimits.maxHeight,
+                            maxH264Level = decoderLimits.maxLevel,
                             supportsEmbeddedTextSubs = embeddedSubs,
+                            maxVideoBitrate = decoderLimits.maxVideoBitrate,
+                            maxHevcBitrate = decoderLimits.maxHevcBitrate,
+                            maxH264Bitrate = decoderLimits.maxH264Bitrate,
+                            linkKind = link.kind,
+                            linkMbps = link.mbps,
                         ),
                     )
+                    qoeLinkKind = link.kind
+                    qoeLinkMbps = link.mbps
                     ticket
                 }
                 if (result.isSuccess) {
+                    val ticket = result.getOrThrow()
+                    qoeDirectPlay = ticket.directPlay
                     startHeartbeat(itemId, positionProvider, isPausedProvider)
-                    _state.value = PlayerSessionState.Ready(result.getOrThrow())
+                    _state.value = PlayerSessionState.Ready(ticket)
                     return@launch
                 }
                 lastErr = result.exceptionOrNull()?.message ?: lastErr
@@ -139,6 +171,10 @@ class PlayerStore(private val apiClient: TvApiClient) {
         progressJob = null
         val itemId = currentItemId ?: return
         currentItemId = null
+        // R216 (FR-R216-4) — "posted once at session end". Reads the snapshot before the provider is
+        // cleared below, same ordering as positionProvider/durationProvider's own final-read use in close().
+        postQoeNow(itemId)
+        qoeSnapshotProvider = null
         exitScope.launch {
             runCatching { apiClient.stopPlayback(itemId, positionMs) }
             // R142: finishing (≥90%) marks the item played so its tiles flip to ✓ and a series episode
@@ -149,6 +185,28 @@ class PlayerStore(private val apiClient: TvApiClient) {
             }
         }
         _state.value = PlayerSessionState.Idle
+    }
+
+    /** R216 (FR-R216-4) — fire-and-forget; a failed/slow report must never affect playback, so this runs
+     *  on [exitScope] (survives the caller's own scope being torn down, same reasoning as stopSession's
+     *  terminal writes) and is never awaited by the caller. */
+    private fun postQoeNow(itemId: String) {
+        val snapshot = qoeSnapshotProvider?.invoke() ?: return
+        exitScope.launch {
+            apiClient.postPlaybackQoe(
+                PlaybackQoeReport(
+                    itemId = itemId,
+                    droppedFrames = snapshot.droppedFrames,
+                    rebufferCount = snapshot.rebufferCount,
+                    rebufferMs = snapshot.rebufferMs,
+                    bandwidthEstimateBps = snapshot.bandwidthEstimateBps,
+                    videoDecoder = snapshot.videoDecoder,
+                    directPlay = qoeDirectPlay,
+                    linkKind = qoeLinkKind,
+                    linkMbps = qoeLinkMbps,
+                ),
+            )
+        }
     }
 
     /**
@@ -202,6 +260,12 @@ class PlayerStore(private val apiClient: TvApiClient) {
                 delay(PROGRESS_INTERVAL_MS)
                 runCatching {
                     apiClient.reportProgress(itemId, positionProvider(), isPausedProvider())
+                }
+                // R216 (FR-R216-4) — "a long-session interval, so an abandoned/crashed session is not
+                // lost" alongside the end-of-session report in stopSession().
+                if (++qoeTicksSinceReport >= QOE_REPORT_EVERY_N_TICKS) {
+                    qoeTicksSinceReport = 0
+                    postQoeNow(itemId)
                 }
             }
         }

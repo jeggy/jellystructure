@@ -192,6 +192,18 @@ class TvApiClient(
         }.assertSuccess()
     }
 
+    /** R216/Phase 177 (FR-R216-4) — fire-and-forget playback-quality report. Never throws: a failed post
+     *  must not affect playback (the phase's own invariant) — the caller doesn't need to runCatching this
+     *  itself. */
+    suspend fun postPlaybackQoe(report: PlaybackQoeReport) {
+        runCatching {
+            client.post("$baseUrl/api/tv/playback/qoe") {
+                auth()
+                jsonBody(json.encodeToString(report))
+            }
+        }
+    }
+
     /** R56 — re-stream with a subtitle burned in via Jellyfin HLS transcode (encode/PGS path). */
     suspend fun restream(itemId: String, subtitleStreamIndex: Int, positionMs: Long): StreamTicket {
         val r = client.post("$baseUrl/api/tv/playback/restream") {
