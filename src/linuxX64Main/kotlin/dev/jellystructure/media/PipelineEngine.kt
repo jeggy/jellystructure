@@ -60,6 +60,31 @@ class PipelineDeps(
  * steps through the shared engine, so there's no capability regression for admins who never built a
  * pipeline in Settings.
  */
+/**
+ * Phase 178 §FR-178-2 — waits out an active playback before letting a deferrable step/run proceed,
+ * broadcasting [JobEvent.Deferred] once when it starts waiting (not on every poll) and [JobEvent.Resumed]
+ * once it clears, so the dashboard's ambient dock (FR-178-4) can show "Paused — TV is watching {name}"
+ * instead of looking stalled. Governed by `[pipeline] defer_while_playing` (checked by the caller via
+ * [deferEligible] — this function doesn't re-read config so a mid-wait config flip takes effect on the
+ * NEXT deferral check, not by aborting one already in progress). A no-op (returns immediately) when
+ * [deferEligible] is false or nothing is playing.
+ */
+private suspend fun awaitPlaybackClear(deferEligible: Boolean, jobId: String, broadcaster: WsBroadcaster) {
+    if (!deferEligible) return
+    if (!dev.jellystructure.tv.isPlaybackActive()) return
+    var announced = false
+    while (dev.jellystructure.tv.isPlaybackActive()) {
+        if (!announced) {
+            val devices = dev.jellystructure.tv.activePlaybackDeviceNames()
+            Logger.info("Pipeline deferred — TV playing (${devices.joinToString(", ")})", "pipeline")
+            broadcaster.broadcast(JobEvent.Deferred(jobId, devices))
+            announced = true
+        }
+        delay(15_000L)
+    }
+    if (announced) broadcaster.broadcast(JobEvent.Resumed(jobId))
+}
+
 fun effectivePipeline(cfg: AppConfig): List<PipelineStep> =
     cfg.scan.pipeline.filter { it.enabled }.ifEmpty {
         buildList {
@@ -95,6 +120,12 @@ suspend fun runPipeline(
     deps: PipelineDeps,
     fullRun: Boolean = false,
     signalCompletion: Boolean = true,
+    // Phase 178 §FR-178-2 — true for a scheduled or event-driven (realtime ingest) run; false for an
+    // operator-initiated one (a manual click, SCAN_ON_START), which per the phase's invariant is never
+    // silently deferred. Gates scan_files' probe-heavy work (the whole run start, for RunTarget.Library)
+    // and the fetch_artwork step; detect_segments defers separately at its own queue (see
+    // MediaJobParams.deferWhilePlaying / MediaJobQueue.segmentsWorkerLoop).
+    deferEligible: Boolean = false,
 ): List<MediaItem> {
     val store = deps.store
     val scanner = deps.scanner
@@ -144,6 +175,11 @@ suspend fun runPipeline(
     broadcaster.broadcast(JobEvent.PipelinePlan(jobId, orderedSteps))
     scanTracker.setActiveStep("scan_files")
 
+    // Phase 178 §FR-178-2 — defer the whole run's start (covers scan_files' probe-heavy work, which
+    // isn't itself a skippable step — see RunTarget.Library below) rather than starting it only to have
+    // it compete with a TV for disk I/O the moment it begins.
+    awaitPlaybackClear(deferEligible, jobId, broadcaster)
+
     val workingSet: List<MediaItem> = when (target) {
         is RunTarget.Library -> {
             val freshnessFilter = computeFreshnessFilter(scanStep, store, fullRun, target)
@@ -192,6 +228,9 @@ suspend fun runPipeline(
                 ) { item, _ -> PipelineStepOps.pullTmdb(item, scanner, store) }
             }
             "fetch_artwork" -> {
+                // Phase 178 §FR-178-2 — re-checked here (not just at the run's start above): playback
+                // may have started after this run began but before its turn came.
+                awaitPlaybackClear(deferEligible, jobId, broadcaster)
                 val toProcess = if (step.scope == "all") workingSet
                     else workingSet.filter { artworkDownloader.isArtworkIncomplete(it) }
                 Logger.info("fetch_artwork: ${toProcess.size} items (scope=${step.scope})")
@@ -291,9 +330,13 @@ suspend fun runPipeline(
                 for (item in toProcess) {
                     when (item.kind) {
                         dev.jellystructure.model.MediaKind.MOVIE -> {
+                            // Phase 178 §FR-178-2 — deferWhilePlaying mirrors this run's own deferEligible:
+                            // a scheduled/event-driven pipeline's detect_segments jobs defer while a TV
+                            // plays; an operator's own pipeline run (or the segment editor's "detect
+                            // again", which never goes through this enqueue path at all) never does.
                             val result = mediaJobQueue.enqueueSegments(
                                 "segments_movie", item.id, item.title,
-                                dev.jellystructure.jobs.MediaJobParams(), 1, "seg:movie:${item.id}",
+                                dev.jellystructure.jobs.MediaJobParams(deferWhilePlaying = deferEligible), 1, "seg:movie:${item.id}",
                             )
                             if (result.deduped) deduped++ else enqueued++
                         }
@@ -303,7 +346,7 @@ suspend fun runPipeline(
                                 if (step.scope != "all" && eps.none { missing(item.id, it.filename, it.episodeNumber ?: 0) }) continue
                                 val result = mediaJobQueue.enqueueSegments(
                                     "segments_season", item.id, "${item.title} S${season.toString().padStart(2, '0')}",
-                                    dev.jellystructure.jobs.MediaJobParams(segmentSeason = season), eps.size,
+                                    dev.jellystructure.jobs.MediaJobParams(segmentSeason = season, deferWhilePlaying = deferEligible), eps.size,
                                     "seg:season:${item.id}:$season",
                                 )
                                 if (result.deduped) deduped++ else enqueued++

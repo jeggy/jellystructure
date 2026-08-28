@@ -345,7 +345,13 @@ class MediaJobQueue(
                 // segmentsClaimMutex: see its declaration doc — atomically "pick next queued + mark
                 // running" so two concurrent workers can never claim the same row.
                 val row = segmentsClaimMutex.withLock {
-                    val next = queries.listQueuedByLane("segments").executeAsList().firstOrNull() ?: return@withLock null
+                    val queued = queries.listQueuedByLane("segments").executeAsList()
+                    // Phase 178 §FR-178-2 — a deferrable job (MediaJobParams.deferWhilePlaying) is
+                    // skipped while a TV is playing, in FIFO order otherwise: the first candidate that
+                    // either isn't deferrable or finds no active playback wins, so a non-deferrable job
+                    // (an operator's explicit "detect again") queued behind a deferred one still runs.
+                    val playing = if (queued.any { it.deferWhilePlaying() }) dev.jellystructure.tv.isPlaybackActive() else false
+                    val next = queued.firstOrNull { !playing || !it.deferWhilePlaying() } ?: return@withLock null
                     queries.markRunning(epochSeconds(), next.id)
                     next
                 }
@@ -357,6 +363,11 @@ class MediaJobQueue(
             segmentsActiveWorkers.decrementAndGet()
         }
     }
+
+    /** Phase 178 §FR-178-2 — a corrupt/unparseable params blob (should never happen; every enqueue path
+     *  writes valid JSON) defaults to non-deferrable rather than silently starving the queue. */
+    private fun Media_job.deferWhilePlaying(): Boolean =
+        runCatching { json.decodeFromString(MediaJobParams.serializer(), params).deferWhilePlaying }.getOrDefault(false)
 
     private suspend fun runSegmentsJob(row: Media_job) {
         fun isCancelled() = row.id in segmentsCancelledIds

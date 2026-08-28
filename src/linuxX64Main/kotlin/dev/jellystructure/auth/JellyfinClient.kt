@@ -39,8 +39,79 @@ private const val AUTH_HEADER =
 //
 // R183 splits the two moving parts out into [allowedVideoRangeTypes] (which Dolby Vision variants may
 // direct-play) and [h264TargetConditions] (an honest, decodable transcode target) — see their docs.
-internal fun deviceProfile(capabilities: ClientCapabilities): String =
-    """{"MaxStreamingBitrate":120000000,"DirectPlayProfiles":[{"Container":"mkv,mp4,webm,mov,avi,ts,m2ts,flv,3gp,mpegts","Type":"Video","VideoCodec":"h264,hevc,vp8,vp9,av1,mpeg4,mpeg2video,vc1","AudioCodec":"aac,ac3,eac3,mp3,flac,vorbis,opus,dts,truehd,pcm,mp2,alac"}],"CodecProfiles":[{"Type":"Video","Codec":"hevc,h264,vp9,av1","Conditions":[{"Condition":"EqualsAny","Property":"VideoRangeType","Value":"${allowedVideoRangeTypes(capabilities).joinToString("|")}","IsRequired":true}]},{"Type":"Video","Codec":"h264","Conditions":${h264TargetConditions(capabilities)}}],"TranscodingProfiles":[{"Container":"ts","Type":"Video","VideoCodec":"h264","AudioCodec":"aac,ac3,mp3","Protocol":"hls","Context":"Streaming"}],"SubtitleProfiles":[{"Format":"vtt","Method":"External"},{"Format":"srt","Method":"External"},{"Format":"subrip","Method":"External"},{"Format":"ass","Method":"External"},{"Format":"ssa","Method":"External"},{"Format":"vobsub","Method":"Embed"},{"Format":"dvdsub","Method":"Embed"},{"Format":"dvbsub","Method":"Embed"},{"Format":"pgssub","Method":"Encode"},{"Format":"pgs","Method":"Encode"}]}"""
+// Phase 177 adds [videoBitrateConditions] (a per-codec direct-play REQUIREMENT — different from
+// h264TargetConditions' declarative, non-required target, see that function's doc for why a blanket
+// version of this was previously rejected), folds [capabilities.audioCodecs]/[maxAudioChannels] into
+// AudioCodec/a new audio CodecProfile (previously always discarded), and replaces the fixed
+// MaxStreamingBitrate with [maxStreamingBitrate] (device decode ceiling + link-derived cap).
+internal fun deviceProfile(capabilities: ClientCapabilities): String {
+    val audioCodecs = capabilities.audioCodecs.takeIf { it.isNotEmpty() }
+        ?.joinToString(",") ?: "aac,ac3,eac3,mp3,flac,vorbis,opus,dts,truehd,pcm,mp2,alac"
+    val codecProfiles = buildList {
+        add("""{"Type":"Video","Codec":"hevc,h264,vp9,av1","Conditions":[{"Condition":"EqualsAny","Property":"VideoRangeType","Value":"${allowedVideoRangeTypes(capabilities).joinToString("|")}","IsRequired":true}]}""")
+        add("""{"Type":"Video","Codec":"h264","Conditions":${h264TargetConditions(capabilities)}}""")
+        addAll(videoBitrateConditions(capabilities))
+        audioChannelCondition(capabilities)?.let { add(it) }
+    }.joinToString(",")
+    return """{"MaxStreamingBitrate":${maxStreamingBitrate(capabilities)},"DirectPlayProfiles":[{"Container":"mkv,mp4,webm,mov,avi,ts,m2ts,flv,3gp,mpegts","Type":"Video","VideoCodec":"h264,hevc,vp8,vp9,av1,mpeg4,mpeg2video,vc1","AudioCodec":"$audioCodecs"}],"CodecProfiles":[$codecProfiles],"TranscodingProfiles":[{"Container":"ts","Type":"Video","VideoCodec":"h264","AudioCodec":"aac,ac3,mp3","Protocol":"hls","Context":"Streaming"}],"SubtitleProfiles":[{"Format":"vtt","Method":"External"},{"Format":"srt","Method":"External"},{"Format":"subrip","Method":"External"},{"Format":"ass","Method":"External"},{"Format":"ssa","Method":"External"},{"Format":"vobsub","Method":"Embed"},{"Format":"dvdsub","Method":"Embed"},{"Format":"dvbsub","Method":"Embed"},{"Format":"pgssub","Method":"Encode"},{"Format":"pgs","Method":"Encode"}]}"""
+}
+
+/**
+ * Phase 177 §FR-177-2 — a per-codec `VideoBitrate` **requirement**, unlike [h264TargetConditions]'
+ * declarative `IsRequired:false` target: above the device's own reported decode ceiling, the device
+ * cannot be trusted to decode, so this makes Jellyfin transcode instead of direct-playing into a wall
+ * the investigation found (stue TV's decoders cap at 60 Mbps on both the Dolby Vision and plain-HEVC
+ * paths — Jellyfin still keys a DV profile-8 file's Codec as "hevc", so one hevc condition covers both).
+ *
+ * Only ever emitted when [capabilities] actually reported a ceiling — a client that sends nothing
+ * negotiates exactly as before (never invent a number, per `JellyfinClient.kt`'s existing live finding
+ * against a *blanket* bitrate condition, see [h264TargetConditions]'s doc). [BITRATE_SAFETY_MARGIN]
+ * leaves headroom for container/audio overhead `VideoBitrate` doesn't account for, and for short peaks a
+ * rolling average hides (Severance averages 24 Mbps but peaks at 88.9 Mbps over 1s).
+ */
+private fun videoBitrateConditions(capabilities: ClientCapabilities): List<String> = buildList {
+    capabilities.maxHevcBitrate.takeIf { it > 0 }?.let { ceiling ->
+        val safe = (ceiling * BITRATE_SAFETY_MARGIN).toLong()
+        add("""{"Type":"Video","Codec":"hevc","Conditions":[{"Condition":"LessThanEqual","Property":"VideoBitrate","Value":"$safe","IsRequired":true}]}""")
+    }
+    capabilities.maxH264Bitrate.takeIf { it > 0 }?.let { ceiling ->
+        val safe = (ceiling * BITRATE_SAFETY_MARGIN).toLong()
+        add("""{"Type":"Video","Codec":"h264","Conditions":[{"Condition":"LessThanEqual","Property":"VideoBitrate","Value":"$safe","IsRequired":true}]}""")
+    }
+}
+
+/** Phase 177 §FR-177-3 — the second half of honouring [ClientCapabilities.maxAudioChannels] (the first
+ *  half is the plain default of 8, already threaded through unconditionally today); only emitted when
+ *  the client asked for something narrower, so a client that never set it keeps today's behaviour. */
+private fun audioChannelCondition(capabilities: ClientCapabilities): String? =
+    capabilities.maxAudioChannels.takeIf { it in 1 until 8 }?.let {
+        """{"Type":"Audio","Conditions":[{"Condition":"LessThanEqual","Property":"AudioChannels","Value":"$it","IsRequired":true}]}"""
+    }
+
+/**
+ * Phase 177 §FR-177-4 — `MaxStreamingBitrate` as the minimum of the fixed 120 Mbps ceiling, the device's
+ * own decode ceiling (so this can never disagree with [videoBitrateConditions]), and a link-derived
+ * allowance when the client reported one: Wi-Fi's PHY rate runs roughly double real achievable TCP
+ * throughput under good conditions (worse under load), so it gets a conservative 50%; Ethernet is
+ * deterministic and gets 90%. A client reporting no link info is unaffected — this only ever narrows the
+ * cap, and doing so makes Jellyfin choose a transcode rather than a direct play the link can't feed,
+ * which is strictly better than today's outcome (see the phase's own invariant).
+ */
+private fun maxStreamingBitrate(capabilities: ClientCapabilities): Long {
+    var cap = 120_000_000L
+    capabilities.maxVideoBitrate.takeIf { it > 0 }?.let { cap = minOf(cap, it.toLong()) }
+    capabilities.linkMbps.takeIf { it > 0 }?.let { mbps ->
+        val fraction = when (capabilities.linkKind) {
+            "ethernet" -> 0.9
+            "wifi" -> 0.5
+            else -> null
+        } ?: return@let
+        cap = minOf(cap, (mbps.toLong() * 1_000_000L * fraction).toLong())
+    }
+    return cap
+}
+
+private const val BITRATE_SAFETY_MARGIN = 0.9
 
 /**
  * R183 — the `VideoRangeType`s this client may direct-play, mirroring how Jellyfin's own Android TV

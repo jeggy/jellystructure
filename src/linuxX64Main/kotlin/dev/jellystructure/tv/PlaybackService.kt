@@ -11,6 +11,7 @@ import dev.jellystructure.media.visibleTo
 import dev.jellystructure.shared.tv.AudioTrack
 import dev.jellystructure.shared.tv.CardPlayState
 import dev.jellystructure.shared.tv.ClientCapabilities
+import dev.jellystructure.shared.tv.PlaybackQoeReport
 import dev.jellystructure.shared.tv.StreamTicket
 import dev.jellystructure.shared.tv.SubTrack
 import kotlinx.cinterop.ExperimentalForeignApi
@@ -95,11 +96,21 @@ internal class PlaybackTracker(private val clock: () -> Long = ::nowMs) {
     @Volatile
     private var snapshot: Map<PlaybackKey, TrackedPlayback> = emptyMap()
 
+    // Phase 178 §FR-178-1 — when each key was last seen playing (started/heartbeated) OR stopped, kept
+    // (not removed) for PLAYBACK_DEFER_GRACE_MS so [anyActive] bridges a between-episode gap or a brief
+    // pause without immediately unleashing a deferred background job the next episode then has to fight.
+    // A distinct grace window from stoppedUntilMs above — that one guards a race (a late in-flight
+    // progress tick resurrecting an already-stopped session) and is tuned for that, not for this.
+    private val lastSeen = HashMap<PlaybackKey, Pair<DeviceData, Long>>()
+    @Volatile
+    private var lastSeenSnapshot: Map<PlaybackKey, Pair<DeviceData, Long>> = emptyMap()
+
     suspend fun started(device: DeviceData, jellyfinId: String, positionMs: Long) {
         val key = PlaybackKey(device.deviceId, jellyfinId)
         mutex.withLock {
             stoppedUntilMs.remove(key)  // an explicit new start ends the post-stop grace window
             active[key] = TrackedPlayback(device, jellyfinId, positionMs, clock())
+            lastSeen[key] = device to clock()
             publish()
         }
     }
@@ -116,6 +127,7 @@ internal class PlaybackTracker(private val clock: () -> Long = ::nowMs) {
                 false
             } else {
                 active[key] = TrackedPlayback(device, jellyfinId, positionMs, clock())
+                lastSeen[key] = device to clock()
                 publish()
                 true
             }
@@ -131,6 +143,7 @@ internal class PlaybackTracker(private val clock: () -> Long = ::nowMs) {
         mutex.withLock {
             active.remove(key)
             stoppedUntilMs[key] = clock() + STOP_GRACE_MS
+            lastSeen[key] = device to clock()  // Phase 178 — keeps this stop visible to anyActive()'s grace window
             publish()
         }
     }
@@ -140,7 +153,28 @@ internal class PlaybackTracker(private val clock: () -> Long = ::nowMs) {
     suspend fun tracked(): List<TrackedPlayback> = mutex.withLock {
         val now = clock()
         stoppedUntilMs.entries.removeAll { it.value <= now }
+        lastSeen.entries.removeAll { (_, v) -> now - v.second > PLAYBACK_DEFER_GRACE_MS }
         active.values.toList()
+    }
+
+    /** Phase 178 §FR-178-1 — true while any device is actively playing, or was within the last
+     *  [PLAYBACK_DEFER_GRACE_MS] (bridges a between-episode auto-advance gap or a brief pause so a
+     *  deferred background job doesn't immediately unleash a burst the next episode then has to fight).
+     *  Non-suspend — reads the same published snapshots [nowPlaying] does, so it's cheap to poll from
+     *  anywhere (the pipeline step loop, the segments-lane worker, the `GET /api/playback/active` route). */
+    fun anyActive(): Boolean {
+        if (snapshot.isNotEmpty()) return true
+        val now = clock()
+        return lastSeenSnapshot.values.any { (_, ts) -> now - ts <= PLAYBACK_DEFER_GRACE_MS }
+    }
+
+    /** The display names of every device [anyActive] currently covers (active + within grace) — for a
+     *  "Paused — TV is watching {name}" UI (FR-178-4) without a second device-store lookup. */
+    fun activeDevices(): List<String> {
+        val now = clock()
+        val active = snapshot.values.map { it.device }
+        val grace = lastSeenSnapshot.values.filter { (_, ts) -> now - ts <= PLAYBACK_DEFER_GRACE_MS }.map { it.first }
+        return (active + grace).distinctBy { it.deviceId }.map { it.displayName.ifBlank { it.deviceId } }
     }
 
     /** Has [playback] gone [STOP_WATCHDOG_MS] without a heartbeat (app kill / network drop / HDMI-off)? */
@@ -158,14 +192,28 @@ internal class PlaybackTracker(private val clock: () -> Long = ::nowMs) {
     /** Must be called while holding [mutex]. */
     private fun publish() {
         snapshot = active.toMap()
+        lastSeenSnapshot = lastSeen.toMap()
     }
 }
+
+// Phase 178 §FR-178-1 — 120s: long enough to bridge a between-episode auto-advance gap or a brief pause,
+// short enough that an evening of viewing doesn't starve deferred background work indefinitely.
+private const val PLAYBACK_DEFER_GRACE_MS = 120_000L
 
 internal val playbackTracker = PlaybackTracker()
 
 /** Phase 111 (FR B.1) — the Jellyfin item id this device is actively playing, or null. Used by the
  *  remote-control device list; reads the same tracking the stop watchdog does, no separate state. */
 fun nowPlayingItem(deviceId: String): String? = playbackTracker.nowPlaying(deviceId)
+
+/** Phase 178 §FR-178-1 — is any device actively playing right now (or within its grace window)? The one
+ *  signal every deferral check (pipeline steps, the segments-lane worker, `GET /api/playback/active`)
+ *  consults — see [PlaybackTracker.anyActive]'s doc. */
+fun isPlaybackActive(): Boolean = playbackTracker.anyActive()
+
+/** The display names behind [isPlaybackActive] — for naming the device in a "Paused — TV is watching"
+ *  UI state (FR-178-4). */
+fun activePlaybackDeviceNames(): List<String> = playbackTracker.activeDevices()
 
 private fun playSessionIdFor(device: DeviceData, jellyfinId: String): String = "${device.deviceId}-$jellyfinId"
 
@@ -183,6 +231,7 @@ class PlaybackService(
     private val mediaStore: MediaStore,
     private val jellyfinClient: JellyfinClient,
     private val configStore: ConfigStore,
+    private val playbackQoeStore: PlaybackQoeStore,
 ) {
     /**
      * Security fix (2026-08-02 review, finding M4) — Detail/Browse/Home all gate on
@@ -319,6 +368,22 @@ class PlaybackService(
             positionMs * TICKS_PER_MS, jellyfinId,
             JellyfinDeviceIdentity.forDevice(device), playSessionIdFor(device, jellyfinId),
         )
+    }
+
+    /**
+     * Phase 177 §FR-177-5 / R216 §FR-R216-4 — record one playback-quality report. `deviceId` and
+     * `playSessionId` are both server-resolved (never taken from the request body) — [device] comes from
+     * the caller's own Bearer token and [playSessionIdFor] is the exact same derivation every other
+     * playback call uses, so a report can never claim to be a different device or session.
+     *
+     * No [requireVisible] check here deliberately, same reasoning as [reportProgress]/[stopPlayback]:
+     * this is diagnostics for a session `startPlayback` already gated, and per the phase's own invariant
+     * a QoE report must never affect playback — failing it closed would only risk losing the one signal
+     * that explains a stutter, for no real security benefit (the row is keyed to the caller's own
+     * authenticated device id regardless).
+     */
+    fun recordQoe(device: DeviceData, report: PlaybackQoeReport) {
+        playbackQoeStore.record(device.deviceId, playSessionIdFor(device, report.itemId), report)
     }
 
     /** Phase 110 (FR B.2) — force-stops any playback whose last heartbeat is older than

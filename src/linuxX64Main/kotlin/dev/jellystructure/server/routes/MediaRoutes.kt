@@ -2150,13 +2150,16 @@ internal fun launchScanRun(
         if (skipSteps.isNotEmpty()) append(" · skipped: ${skipSteps.sorted().joinToString(", ")}")
     }
     val startMsg = "▶ ${triggerKind.replaceFirstChar { it.uppercase() }} $kindWord started$suffix"
+    // Phase 178 §FR-178-2 — only a "scheduled" trigger defers; "manual" (any admin-page button) and
+    // "startup" (SCAN_ON_START, itself an explicit operator action) always proceed immediately.
+    val deferEligible = triggerKind == "scheduled" && configStore.current.scan.deferWhilePlaying
     appScope.launch {
         runTagged(
             jobId, triggerKind, if (runsPipeline) "pipeline" else "library",
             if (runsPipeline) (if (full) "full" else "normal") else null,
             startMsg, scanTracker,
         ) {
-            runPipeline(RunTarget.Library(libraryId, resumeSkipIds), pipeline, jobId, scanTracker, pipelineDeps, fullRun = full)
+            runPipeline(RunTarget.Library(libraryId, resumeSkipIds), pipeline, jobId, scanTracker, pipelineDeps, fullRun = full, deferEligible = deferEligible)
         }
     }
     return pipeline
