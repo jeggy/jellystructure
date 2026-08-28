@@ -5,22 +5,6 @@ This Cosmos project holds the **HTML/CSS design mockups** for **jellystructure**
 (`wireframes/`). These mirror the `design/` folder of the repo
 **github.com/jeggy/jellystructure**.
 
-## Production hosting (self-hosted, separate from this checkout)
-The public deployment is **not** this repo. It's a separate self-hosted Docker Compose stack at
-`~/jellystructure` on this same machine (a different directory from this
-`IdeaProjects/jellystructure` dev checkout) — see `~/jellystructure/AGENTS.md` for the full
-setup. It runs the **released GHCR images**, built/pushed by the repo's own
-`.github/workflows/publish.yml` (Phase 167) on every push to `main`, plus version tags on a
-GitHub Release:
-- `jelly.example.net` — backend + admin UI (`ghcr.io/jeggy/jellystructure`)
-- `ravilo.example.net` — Ravilo web app (`ghcr.io/jeggy/ravilo-web`)
-- `jellystructure.example.net` — public info site, plain HTML/CSS/JS at `~/jellystructure/site/`
-  (also the Play Store privacy-policy URL for Ravilo)
-
-This is distinct from the ad hoc dev instance that runs bare-metal in tmux on this dev host
-(`jellystructure-backend` session, :9505) for TV pairing/testing during active development —
-that one stays as-is; it's not what the public domains point at.
-
 ## How this project syncs with the repo (2-way)
 GitHub is the **source of truth**; we layer designs on top of it.
 
@@ -52,6 +36,116 @@ GitHub is the **source of truth**; we layer designs on top of it.
 - `specs/research-reports/` — dated deep-dives (research, not spec; may go stale).
 
 ## Where the work stands (read the repo `STATUS.md` for the live table)
+- **2026-08-27 sync — 15 new dev-authored specs (admin 169–176, Ravilo R208–R214), all shipped, plus three
+  amended specs that change *our* mockups.** Next unassigned numbers: **177 / R215**. Counts now:
+  158 admin rows + 164 Ravilo rows = **322 numbered phases**; 46 + 53 phase files + 14 research reports;
+  328 Kotlin files; 10 Gradle modules (new: `ravilo-android-benchmark`, `ravilo-web`, `web-static-server`).
+  - **Phase 163 (our segment editor) is `✓ Done` — and its §E "publish to Jellyfin" was dropped entirely.**
+    The 2026-08-13 dev review probed this house's Jellyfin **10.11.11** live: `GET /MediaSegments/{itemId}`
+    is the only MediaSegments operation in its whole OpenAPI document, `POST` returns **405**, and Jellyfin
+    takes segments only from server plugins implementing `IMediaSegmentProvider`. Jellyfin *read-in* as a
+    candidate source stays (returns empty until such a plugin exists; none is installed).
+    **`app/segments.js` updated 2026-08-27** — the Publish button, the "in Jellyfin" column and the
+    `pub` state are gone; the sheet's last column is now **Confirmed** (checked-by-me · locked-by-me ·
+    a guess), the header chip counts what still waits on you, and the primary action is
+    "Take me to what needs me". The deck's segments slide tells the same story. Build notes: `media_segment`
+    table replaced the flat blob, `manuallyConfirmed` back-filled onto **`locked`** (not `checked_at`),
+    multi-episode files (`partCount > 1`) are permanently unsupported and read "not supported yet".
+  - **Admin 169–176, all `✓ Done`:** **169** parallelises `syncSeriesEpisodes`'s per-episode probes to match
+    `scanSeries`. **170** gives `detect_segments` its own process-slot pool (`SegmentProcessGate`), makes
+    `force=true` respect marker **source precedence**, and logs segment writes to a title's own History.
+    **171** fixes music-video artwork paths (`<basename>-poster.jpg` per file, since an artist folder holds
+    several) and lets a music video match TMDB like anything else. **172 — filter support everywhere:**
+    `"musicvideos"` is now a third value at every binary Movie/Series type-filter site — **updated here in
+    `app/library.html`'s top-right picker and `app/ravilo-builders.js`'s Include segment**. **173** — the
+    Artwork tab now shows the **asset actually on disk**, not only TMDB candidates (a music video routinely
+    has zero); **drawn in `app/media.html` as a "Currently in use" block**. **174 — Clear a wrong TMDB
+    match:** clears id + every TMDB-written field + the poster/backdrop **files**, then **locks** the item so
+    the next `pull_tmdb` can't re-apply it; **drawn in `app/media.html`** (pagebar `Clear TMDB match`,
+    per-asset `Clear`, and the Re-pull ▾ → From TMDB item greying out when locked). **175** unifies plain
+    scan / pipeline / webhook ingest onto one engine and makes the freshness cooldown apply to the manual
+    Scan button for the first time (567s → 11–60s for the equivalent window); `SCAN_ON_START` now runs the
+    full configured pipeline. **176** guarantees an on-disk poster can never disagree with the current match.
+  - **Ravilo R208–R214:** **R208** is our episode-rail 30s auto-hide, **renumbered from R196** repo-side
+    (the dev tracker had already spent R196) — the stale local `phase-R196-episode-rail-autohide.md` is
+    deleted. **R209** external text subs were dropped and PGS double-delivered (161's follow-on).
+    **R210–R213 are the 2026-08-26/27 startup-performance cluster:** CIO kept for the WebSocket only with
+    `ktor-client-android` for REST (routes around a live "loads forever" bug), session-store caching +
+    FontFamily churn, a bounded-size **client-side Home-feed + display-settings cache** (no more shimmer
+    or wrong-skin flash on cold start), and a generated Baseline Profile (**R213 is the only `Planned` row**
+    — infra built, generation blocked). **R214** — Ravilo's image cache outliving a corrected poster.
+  - **No design work is outstanding from this sync** beyond the four mockup updates above; everything else
+    is backend/platform.
+- **2026-08-28 — two design-authored specs written for the player wait states (both `Planned`, not yet
+  dev-reviewed).** Triggered by `specs/research-reports/ravilo-player-buffering-loading-states-2026-08-28.md`,
+  which catalogued **four waiting moments** and found only one of them drawn.
+  - **`phase-R218-player-loading-buffering-states.md` (client)** — moment A (session negotiation) unchanged;
+    **B (cold start)** gets **Direction B "Grounded"**: black, three-dot brand pulse, title context
+    (series · episode title · S/E), indeterminate sweep, the existing `"Loading…"` string; **C (stall)**
+    keeps the frozen frame and **raises the transport chrome by itself**, spinner standing in the play
+    button's place, so the viewer keeps their position — no centre overlay, no text; **D (seek)** is
+    lightest: a spinner inside the scrub tile only. **~400 ms debounce on all three** (a direct play must
+    never flash), deepen at **60 s** without changing a word, **one already-translated string**, and
+    **no escape hatch** — Back is always available, never prompted, and ends the session.
+    Binding constraint: **R180 FR-RV-ASP1-2**, nothing may vary by delivery method.
+  - **`phase-180-playback-session-teardown.md` (backend)** — leaving must actually stop the work.
+    `stopPlayback` (`tv/PlaybackService.kt:357`) reports the stop but nothing releases an in-flight
+    transcode, so Back during a 20 s spin-up leaves NVENC encoding for nobody — invisible background I/O
+    that Phase 178's `anyActive()` can't even see. Teardown keyed on the existing per-item
+    `playSessionId` (`:218`), converging the client stop, the Phase 110 watchdog and session-supersede
+    on one routine, plus a **queued stop** for the abandon-during-negotiation race. **Open first:** confirm
+    an active-encoding stop actually exists in Jellyfin **10.11.11**'s OpenAPI before building — phase 163's
+    405 is the standing reminder.
+  - Design file: `ravilo/Player Loading and Buffering - Directions.html` (canvas; A/B/C cold-start
+    directions, chosen stall + seek frames, two phone frames, and a panel answering the report's seven
+    open questions). **Direction C "Title card" rejected**, **A "Quiet"** kept as the fallback if copy
+    ever fails locale review. Next unassigned numbers now **181 / R219**. (Our teardown spec was **renumbered 179 → 180** on 2026-08-28: the dev team took **179** the same evening for `phase-179-subtitle-sideload-transcode-stall.md` — R183/161's deferred half, reactivated because phase 177 made the highest-bitrate tier transcode far more often; ✓ Implemented. Same collision shape as R196 → R208.)
+- **2026-08-20 sync — large pull, 26 new spec files + a new `presentation/` directory we're taking
+  over.** Next unassigned numbers: **169 / R208**.
+  - **New admin specs (164–168, all `Planned`, dev-authored):** **164** takes `detect_segments` off
+    the pipeline's critical path into a de-duplicated two-lane job queue (extends the Phase 109 media
+    job queue rather than a second system). **165** replaces the *arr webhook ingest with Jellyfin's
+    own Webhook plugin (id-based, fires only once Jellyfin has matched the item — no more 5-min path
+    poll); a live delivery failure found mid-implementation added a real end-to-end delivery probe
+    (FR-165-7/8) instead of a self-loop test. **166** makes the pipeline schedule any valid cron
+    (Daily/Weekly/Every N hours/Custom), shared-parser validated on both save and while typing, with a
+    15-min safety floor. **167** ships Docker packaging for internet exposure: `.dockerignore`,
+    `fpcalc` in the runtime image, self-hosted fonts (fixes a real CSP break), a new plain-Kotlin
+    `ravilo-web` static-server image, and versioned (`MAJOR.MINOR`, starting `1.0`) GHCR publishing
+    gated on a GitHub Release — shipped 2026-08-17 with three rounds of real CI/runtime bugs found and
+    fixed (a skiko-wasm race, dead Docker layer caching, CI runner OOM/disk). **168** adds filename-only
+    Music Video library support (new `MediaKind.MUSIC_VIDEO`, no TMDB ever, no new UI surface — folded
+    into the existing "all kinds" views since Movies/Series tabs are slated for removal later anyway).
+  - **New Ravilo specs (R196–R207)** — mostly bug fixes from a live screenshot-capture session on
+    2026-08-14/18: **R196** is a numbering collision (episode-rail 30s auto-hide, *and* a dev-found
+    regression where R195 broke the entire remembered audio/subtitle tier via a stale Compose closure
+    — both kept as R196, disambiguated by filename). **R197** reverses an R195 decision: picking a
+    version in the picker's level 2 now closes the picker (was deliberately stay-open; felt broken).
+    **R198** re-sorts Continue Watching by actual `LastPlayedDate` instead of trusting Jellyfin's own
+    sort. **R199** falls back to jellystructure's own scanned episode number when Jellyfin's filename
+    parse fails (found immediately after deploying R198). **R200/R201** fix the same underlying focus-
+    bridge failure shape (a `FocusRequester` never attached because its target composable was off-
+    screen/torn down) — R200 in content-row back-return restore (could permanently strand Down-nav,
+    only an app restart recovered), R201 in the season picker (Fjollerne's 11-season, fully-watched case
+    auto-selected the last season, which the picker never scrolled itself to reach). **R202** is the
+    project's own case-study bug: a misleading code comment attributed an inherit-mode channel's missing
+    Continue Watching row to R59; the user pushed back, `git log -S` traced it to an R05 leftover R143
+    mislabeled — now fixed, and written up in `presentation-context.md` as the talk's centerpiece.
+    **R203–R207** are small triage fixes (Faroese label typo, My List's missing heading, Loading-text
+    not centered, a blank/mic-icon picker row for an unmapped language, and generation-guard + Retry
+    hardening on the detail-screen Loading state) — two other triaged items turned out NOT to be bugs
+    on closer inspection (TV Guide row-height/blank-row claim, Back-inside-a-channel behavior) and are
+    recorded as such rather than silently dropped.
+  - **New `presentation/` directory — we will be taking this over.** Mirrored in full:
+    `presentation-context.md` (raw material for a talk on the project + its spec-driven method — the
+    R202 story is its centerpiece) and `observed-issues-2026-08-18.md` (the triage log behind
+    R203–R207), plus `presentation/screenshots/` (57 real 1920×1080 PNGs captured over adb from the
+    live Android TV — home, channels, browse/filter, detail, the audio/subtitle picker, Discover, Live
+    TV, settings). Not yet built into anything here — next step when we pick this up is turning
+    `presentation-context.md`'s suggested structure into an actual HTML deck.
+  - **New research reports pulled:** `internet-exposure-docker-packaging-2026-08-17.md` (phase-167's
+    investigation), `music-video-support-investigation-2026-08-17.md` (phase-168's).
+  - **STATUS.md mirror refreshed** (551 lines now; read-only here per CLAUDE.md).
 - **All admin phases through 151 and Ravilo through R183 are ✓ Done** in code (per repo
   `STATUS.md`, ref `main`, synced 2026-07-31). Everything we designed has now shipped:
   **149/R179** (multi-episode files/combined card), **R180/R181** (flag-forward Audio &
@@ -79,16 +173,8 @@ GitHub is the **source of truth**; we layer designs on top of it.
 - **⚠ Repo-side STATUS gap (dev team's to fix, not us):** `STATUS.md` on `main` has no rows for
   admin **152/153/154** or Ravilo **R184/R185/R186** though their spec files exist and read
   *Implemented* — `scripts/check-phases.sh` will flag them. `STATUS.md` is a read-only mirror here.
-- **Next unassigned numbers: 164 / R197.** **R196 shipped same-day (2026-08-20):**
-  `phase-R196-episode-rail-autohide.md` — the in-player episode rail (R14) gets a 30s-inactivity
-  auto-hide, reusing the existing slide-down close transition both implementations already have for
-  every other dismiss path (JS: `closeEpRail()`'s class toggle; Compose: `epRailOpen = false` already
-  drives `AnimatedVisibility`'s `slideOutVertically`) — no new animation code needed either side. The
-  Live TV Now/Next guide overlay has the same never-times-out gap but is out of scope here. Compiles
-  clean (`:ravilo-ui:compileKotlinWasmJs`/`compileDebugKotlinAndroid`); not yet on-device verified.
-- **New design-authored spec: `phase-163-segment-editor.md`**
-  (`Planned`, 2026-08-13, not yet dev-reviewed) — the intro & credits editor + segments published to
-  Jellyfin; see the Segments entry in the screen set. (2026-08-13 sync: **Phase 162 / Towo shipped** — dev-reviewed and
+- (superseded — see the 2026-08-27 entry above) Next unassigned numbers were 164 / R196; `phase-163-segment-editor.md`
+  was then design-authored and `Planned`. (2026-08-13 sync: **Phase 162 / Towo shipped** — dev-reviewed and
   built in full 2026-08-11 with three dev-review addenda, verified live against a real Claude account. Only
   spec change repo-side this sync; nothing else new. The build is backend-owned settings, not localStorage,
   and added fields our mockups don't have yet — see the Towo entry below.) (2026-08-10 sync #2: **R195 shipped** — dev-reviewed and built
@@ -197,7 +283,7 @@ GitHub is the **source of truth**; we layer designs on top of it.
   fullscreen tool, no sidebar, opened from a season / episode row / **movie detail** and returning there.
   Reached via a dedicated **Intro & credits** tab — its own tab, not a card in Overview or a link in a
   toolbar — on both `media.html` (→ `segments.html?movie=<slug>`, straight into the trim view with a
-  films-to-check rail and Publish in the header) and every series page (→ the season sheet).
+  films-to-check rail) and every series page (→ the season sheet).
   **Season sheet** (front door): every episode on one aligned timeline so an outlier sticks out, season
   stats incl. **what the season agrees on** (median intro), multi-select bulk apply/lock/re-detect,
   drawer with player per row. **Trim view** (behind it): Jellyfin playback in the admin (direct play or
@@ -205,9 +291,9 @@ GitHub is the **source of truth**; we layer designs on top of it.
   (black frames, silences, the fingerprint's matched span, chapter marks, Jellyfin's own segments),
   per-marker rows with steppers/loop-the-cut/**per-marker lock**, review-queue rail, keyboard
   (`I`/`O`/`,`/`.`/`L`/`↵`). Five kinds: recap · intro · next time · credits · after-credits.
-  Jellyfin is **both source and destination** — its own segments read in as a candidate, ours published
-  to its Media Segments API so every Jellyfin client skips — **only human-confirmed markers (checked or
-  locked) are ever published**, decided 2026-08-13, not a setting.
+  Jellyfin is a **source only** — its own segments read in as one candidate; **publishing was dropped**
+  in the 2026-08-13 dev review (Jellyfin 10.11.11: `POST /MediaSegments` → 405, plugins only). What a human
+  confirms (checked or locked) is still the thing that matters — it just never leaves jellystructure.
   Locks are per marker and `detect_segments` never overwrites them (phase-151's guarantee, extended).
   Exploration: `Segment Editor - Directions.html` (A+C shipped as one tool; **Direction B rejected** —
   its CSS is kept in `segments.css` under an exploration-only comment so the directions file still renders).

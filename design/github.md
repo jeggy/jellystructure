@@ -1,11 +1,103 @@
 repo: jeggy/jellystructure
 branch: main
-path: specs/   (plus root STATUS.md — both mirrored read-only from the repo)
-tree: 023eff89cbea   (2026-08-13 resolved tree hash — not a commit sha)
+path: specs/   (plus root STATUS.md — both mirrored read-only from the repo); presentation/ (full mirror, ours to build on)
+tree: main (2026-08-28 sync, compared 4a2675f524cd...main)
 
-## Last sync
-date: 2026-08-13T08:47:34Z
+## Last sync (2026-08-28, second pull — numbering collision resolved)
+date: 2026-08-28T21:20:19Z
 direction: pull (repo → this project)
+- **New repo-side spec: `phase-179-subtitle-sideload-transcode-stall.md` (✓ Implemented, same evening).**
+  R183/161's deferred half: phase 177 made the top bitrate tier transcode far more often, which forces
+  `embedContainerSubs = false` and routes text subs onto Jellyfin's on-demand VTT extraction — the path
+  R183 once measured at 4m37s. Adds a `prewarm_subtitles` pipeline step, a subtitle-only retry policy on
+  the Android player, and `subtitle_load_errors` in the QoE report.
+- **Collision:** our design-authored teardown spec also claimed 179. Renumbered **ours** to **180**
+  (dev tracker wins, as with R196 → R208); all cross-references in R218, CLAUDE.md and this file updated.
+- **R218 is uncontested** — no repo-side R218 exists. Next unassigned: **181 / R219**.
+- STATUS.md mirror refreshed.
+
+## Previous sync
+date: 2026-08-28T16:08:36Z
+direction: pull (repo → this project), no design work required
+- **10 commits / 51 files since last sync, all backend/platform + CI + specs — nothing under `design/`.**
+  New specs pulled: **phase-177** (delivery-aware playback negotiation — per-codec decode-bitrate
+  ceiling, honour client audio-codec list for audio-only transcode, link-derived bitrate cap, QoE
+  ingest endpoint; ✓ Done), **phase-178** (playback-aware background I/O — defer segment
+  detection/artwork fetch and throttle qBittorrent while a TV is watching, "Paused — TV is watching"
+  dashboard banner + Run anyway; ✓ Done), **R215** (Play Store internal-track auto-deploy on GitHub
+  Release, CI-overridable signing/version; Planned — Play Console setup is manual), **R216** (client
+  half of 177: real decoder bitrate ceilings, Wi-Fi link state, hardened `LoadControl`, ExoPlayer QoE
+  capture; ✓ Done), **R217** (Continue Watching starvation fix — round-robin merge of resume+next-up
+  before capping, not concatenate-then-cap; **Planned, implementation deliberately deferred** per user
+  request). **phase-167 amended**: `publish.yml` now also fires on every push to `main` (not
+  release-only), pushing `latest` + commit-SHA tags continuously; release publishing unchanged/additive.
+  New research report `stue-tv-4k-playback-stutter-2026-08-28.md` — disproves a third-party DV-demux/
+  lossless-audio/24p-matching briefing for the reported title, finds the real causes (60 Mbps decoder
+  ceiling, 18.6% Wi-Fi retry ratio + 2.4GHz band-steering, shared-spindle I/O contention) → adopted as
+  177/178/R216.
+- **STATUS.md mirror refreshed** (read-only). **Deleted locally**: `presentation/observed-issues-
+  2026-08-18.md` (removed repo-side).
+- No screen map changes — nothing here touches a design file.
+- Next unassigned numbers: **179 / R218** (per phase-178's/R217's own numbering — confirm on next sync).
+
+### Design-authored 2026-08-28 (local, not yet pushed)
+- `specs/ravilo/requirements/phase-R218-player-loading-buffering-states.md` — client buffering/loading
+  states (Direction B cold start · chrome-up stall · scrub-tile seek · 400 ms debounce · no escape hatch).
+- `specs/requirements/phase-180-playback-session-teardown.md` — server releases an in-flight transcode
+  when a viewer leaves; keyed on the existing `playSessionId`. **Renumbered 179 → 180** on 2026-08-28 —
+  the dev team took 179 the same evening (subtitle-sideload transcode stall).
+- `ravilo/Player Loading and Buffering - Directions.html` — the design reference both specs cite.
+- Mirrored `specs/research-reports/ravilo-player-buffering-loading-states-2026-08-28.md`.
+
+### Sync 2026-08-27
+direction: pull (repo → this project) + design catch-up here
+- **15 new dev-authored specs pulled** — admin **169–176** (all `✓ Done`) and Ravilo **R208–R214**
+  (R213 the only `Planned`). **3 changed specs re-pulled**: `phase-163-segment-editor.md` (12.9 KB
+  design draft → 30.5 KB canonical, now `✓ Done` with the publish half **dropped**), `phase-168`,
+  `phase-R195`. **STATUS.md mirror refreshed** (269 KB). `presentation/` re-pulled — both markdown
+  files unchanged, still 57 screenshots.
+- **Stale local file deleted:** `phase-R196-episode-rail-autohide.md` — our episode-rail spec was
+  **renumbered R196 → R208** repo-side (the dev tracker had already spent R196 on the
+  remembered-track regression).
+- **Design updated here to match the shipped code** (4 files): `app/segments.js` — publishing to
+  Jellyfin removed end to end (no Publish button, no `pub` state, no "in Jellyfin" column; last
+  column is now **Confirmed**, primary action "Take me to what needs me"), because Jellyfin 10.11.11
+  answers `POST /MediaSegments` with **405** and accepts segments only from provider plugins.
+  `app/library.html` + `app/ravilo-builders.js` — **Music videos** added as a third type-filter value
+  (phase 172). `app/media.html` — Artwork tab **"Currently in use"** on-disk block (173) and
+  **Clear TMDB match** / per-asset **Clear** / locked Re-pull ▾ item (174).
+- **Deck refreshed** (`presentation/Jellystructure & Ravilo - Spec-Driven Development.html`): 322
+  numbered phases (158 admin + 164 Ravilo), 113 spec/research documents, 328 Kotlin files, 10 Gradle
+  modules, arc endpoint 176 · R214, next free 177 / R215 — and the segments slide now tells the
+  publish-was-dropped story instead of claiming markers reach Jellyfin.
+- Next unassigned numbers: **177 / R215**.
+
+### Sync 2026-08-21
+date: 2026-08-21T07:45:05Z
+direction: read-only (repo → this project) — no new mirror files
+- **Read `initial-idea.md`** (repo root, 1,865 bytes, the project's founding brief) as source material
+  for the deck. Not mirrored into this project — it is a historical document, not a spec, and the deck
+  quotes it directly.
+- Confirmed the codebase statistics quoted on the deck's "in numbers" slide against the repo tree at
+  `main`: **311 `.kt` files**, **9 Gradle modules** (`settings.gradle.kts`), 18 route files, 15 Kotlin
+  unit-test files, 13 Playwright specs.
+- No spec, `STATUS.md` or `presentation/` changes pulled this turn — the 2026-08-20 mirror is still current.
+- **Design-authored this turn:** `presentation/Jellystructure & Ravilo - Spec-Driven Development.html`
+  (23-slide dev-audience deck) + `presentation/admin/*.png` (6 captures of our own admin mockups, since
+  the repo has no Jellystructure screenshots) + `presentation/scratchpad.md` (outline). Pending export.
+
+### Sync 2026-08-20
+direction: pull (repo → this project)
+- **26 new spec files pulled** (admin 164–168, Ravilo R196–R207 — R196 is a filename-disambiguated
+  numbering collision) **+ STATUS.md refresh + a brand-new `presentation/` directory (59 files)** —
+  see `CLAUDE.md`'s "Where the work stands" for the per-spec summary. `presentation/` is new ground:
+  we don't own it yet but are about to (per the user), so it's mirrored in full rather than skipped —
+  `presentation-context.md` (talk material), `observed-issues-2026-08-18.md` (triage log), and
+  `presentation/screenshots/*.png` (57 real on-device captures).
+- No `design/**` changes on the repo side this sync (only specs/STATUS/presentation moved).
+- Next unassigned numbers: **169 / R208**.
+
+### Sync 2026-08-13
 - **Towo (Phase 162) shipped — our design spec is now `✓ Done`.** Authored here 2026-08-10 as `Planned,
   not yet dev-reviewed`; the dev team reviewed and built **all 8 build-order steps on 2026-08-11**, plus a
   same-day completeness pass, and verified it live end to end (real Claude account, real browser via
@@ -105,12 +197,16 @@ direction: pull (repo → this project)
 | app/subtitles.html, app/app-shell.js (Subtitles nav) | phase-157 (Bazarr subtitle overview — shipped) |
 | app/media.html, app/series.html | phase-157 (Tracks & subtitles / season Bazarr cards — shipped), phase-158 (IMDb re-sync label fix — shipped) |
 | app/livetv.html | phase-147 (Live TV admin config) |
-| app/segments.html, app/segments.js, app/segments.css, app/series-simpsons.js (entry points), app/Segment Editor - Directions.html | **phase-163** (intro & credits editor + publish to Jellyfin — design-authored, Planned) |
+| app/segments.html, app/segments.js, app/segments.css, app/series-simpsons.js (entry points), app/Segment Editor - Directions.html | **phase-163** (intro & credits editor — shipped 2026-08-13/14; publishing to Jellyfin dropped in dev review, mockups updated 2026-08-27) |
+| app/library.html, app/ravilo-builders.js (Include segment) | phase-172 (music-video filter support — shipped, drawn 2026-08-27) |
+| app/media.html (Artwork tab, pagebar Identity card) | phase-173 (current on-disk asset), phase-174 (clear a wrong TMDB match) — both shipped, drawn 2026-08-27 |
+| (none — backend/platform only) | 169, 170, 171, 175, 176, R209–R214 (parallel probes, segment process pool, music-video artwork/TMDB, unified scan engine, stale-artwork guards, subtitle delivery, startup performance, image cache busting) |
 | ravilo/Ravilo Mobile.html, ravilo-player.js/.css | R177, R179, R180, R181, R182, R184 (autoplay stale position fix — shipped), R188 (Upcoming visibility — shipped, no design change), R191 (single-user sign-out — shipped, no design change) |
 | ravilo/ assets/brand, Barna TV Channel Logo.html | R62 brand (no spec yet) |
 | ravilo/ravilo-player.js, ravilo-player.css, ravilo-app.js, ravilo/Audio & Subtitles Picker - Same-Language Directions.html | R195 (same-language subtitle picker — shipped) |
 | app/towo*.html, app/towo.css, app/settings.html (Towo tab), app/app-shell.js (Towo nav group), claude-console/Dashboard - Direction B.html | **phase-162** (Towo agent control plane — design-authored, shipped 2026-08-11; mockups predate the build's extra settings fields) |
 | (none — backend/platform only) | R192/R193/R194 (MediaSession lifecycle, metadata, season artwork — shipped, no design change), phase-160 (scanner numbering fallback) |
+| presentation/presentation-context.md, presentation/observed-issues-2026-08-18.md, presentation/screenshots/ | (not a spec — talk source material; documents R202 as its centerpiece and the R203–R207 triage) |
 
 ## Pending export (design-authored since the last sync)
 - **phase-163 — intro & credits editor** (`Planned`, 2026-08-13): `specs/requirements/phase-163-segment-editor.md`
@@ -118,6 +214,9 @@ direction: pull (repo → this project)
   exploration, and the series-page entry points in `series-simpsons.js`. Not pushed yet.
 
 ## Sync history
+- 2026-08-27: pulled admin 169–176 + Ravilo R208–R214 + 3 amended specs + STATUS.md; deleted the stale R196 episode-rail file; updated segments/library/media/builders mockups and the deck.
+- 2026-08-21: read-only — `initial-idea.md` + repo tree stats for the deck; nothing new mirrored.
+- 2026-08-20: pulled 26 new spec files (admin 164–168, Ravilo R196–R207) + STATUS.md + new `presentation/` directory (59 files, taking over).
 - 2026-08-13: Towo/phase-162 shipped — pulled the canonical spec (3 dev-review addenda) + STATUS.md; no other repo-side spec changes.
 - 2026-08-10 (#2): R195 shipped; pulled phase 161 + the Claude Code remote-agent research report.
 - 2026-08-10: pulled R192/R193/R194 + 160; renumbered our subtitle-picker draft R192 → R195.

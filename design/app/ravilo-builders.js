@@ -464,6 +464,7 @@
                   <span class="${state.include==='all'?'on':''}" data-inc="all">All</span>
                   <span class="${state.include==='movie'?'on':''}" data-inc="movie">Movies</span>
                   <span class="${state.include==='series'?'on':''}" data-inc="series">Series</span>
+                  <span class="${state.include==='musicvideo'?'on':''}" data-inc="musicvideo">Music videos</span>
                 </div></div>
               <div style="flex:1;min-width:160px;${isLibrary?'display:none;':''}"><span class="cf-eyebrow">${isChannel?'Channel name':'Row title'}</span>
                 <input class="input cf-title" style="margin-top:7px;" value="${titleVal.replace(/"/g,'&quot;')}" placeholder="${autoTitle()}"></div>
