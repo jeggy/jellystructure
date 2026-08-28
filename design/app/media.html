@@ -138,6 +138,8 @@
           <a href="https://www.themoviedb.org/search?query=Sintel%202010" target="_blank" rel="noopener" class="tiny">Search TMDB ↗</a>
         </div>
         <div class="pill-row" style="margin-top:9px;"><span class="btn sm fill" id="find-match-btn" style="justify-content:center;">Find / fix match…</span></div>
+        <div class="pill-row" style="margin-top:6px;"><span class="btn sm bad fill" id="clear-match-btn" style="justify-content:center;">Clear TMDB match</span></div>
+        <div class="tiny muted" style="margin-top:6px;line-height:1.5;">Clearing removes the id <b>and</b> everything it wrote — overview, genres, cast, certifications, poster and backdrop files — then <b>locks</b> the item so the next <span class="mono">pull_tmdb</span> can’t re-apply the same wrong match. Reversible from History.</div>
       </div>
 
       <!-- Ravilo TV — feature this title in a viewer's hero carousel -->
@@ -401,6 +403,17 @@
             <input type="file" accept="image/*" id="aw-file" style="display:none;">
           </div>
 
+          <!-- Phase 173/174 — the asset actually on disk, shown whether or not TMDB has candidates -->
+          <div class="row" id="aw-current" style="margin-top:16px;gap:14px;align-items:stretch;">
+            <div class="imgslot" style="width:98px;height:147px;flex:none;"><span style="font-size:.5rem;">on disk</span></div>
+            <div class="col fill" style="gap:7px;min-width:0;justify-content:center;">
+              <div class="row center" style="gap:8px;"><b>Currently in use</b><span class="badge ok" style="font-size:.62rem;">on disk</span><span class="tiny muted" id="aw-cur-src">from TMDB · <span class="mono">/t/p/original/qGQf2…jpg</span></span></div>
+              <div class="tiny muted mono" id="aw-cur-path">Sintel (2010)/poster.jpg · 1000×1500 · 214 KB</div>
+              <div class="tiny muted" style="line-height:1.5;">This is the file Jellyfin and Ravilo read. A music video routinely has <b>no</b> TMDB candidates at all — the panel still shows what is really there.</div>
+              <div class="pill-row"><span class="btn sm ghost" id="aw-cur-open">Open full size</span><span class="btn sm bad" id="aw-clear">Clear this asset</span></div>
+            </div>
+          </div>
+
           <div class="row center" id="aw-filterbar" style="margin-top:16px;gap:14px;flex-wrap:wrap;align-items:flex-end;"></div>
           <div id="aw-explain-wrap" style="margin-top:12px;"></div>
           <div id="aw-grid" style="margin-top:16px;"></div>
@@ -608,6 +621,15 @@
 
   /* ---- TMDB id editable ---- */
   document.getElementById('tmdb-save').addEventListener('click', () => toast('TMDB id saved — press Re-pull from TMDB to fetch'));
+
+  /* ---- clear a wrong TMDB match (Phase 174) — id, fields, artwork files, then lock ---- */
+  document.getElementById('clear-match-btn').addEventListener('click', () => {
+    toast('TMDB match cleared · poster.jpg and fanart.jpg deleted · <b>locked</b> — use Find / fix match… to re-enable');
+    const mi = document.getElementById('repull-tmdb-btn');
+    if (mi) { mi.style.opacity = '.45'; mi.querySelector('.mi-sub') && (mi.querySelector('.mi-sub').textContent = '🔒 Locked — use Find / fix match… to re-enable'); }
+  });
+  document.getElementById('aw-clear').addEventListener('click', () => toast('poster.jpg removed from disk — the rail now reads “missing”'));
+  document.getElementById('aw-cur-open').addEventListener('click', () => toast('Opening the file that is really on disk — not a TMDB candidate'));
 
   /* ---- metadata fields: write-through to the library DB (no staging) ---- */
   // Edits commit to the database on change; the top "Save & sync to Jellyfin / Save → disk"

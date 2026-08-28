@@ -3,8 +3,11 @@
    Two views in one fullscreen tool:
      SHEET — the whole season on one aligned timeline (front door)
      TRIM  — one title: Jellyfin playback, timeline, waveform, evidence
-   Write-through (Phases 71/74): every edit lands immediately; Publish
-   pushes the confirmed markers to Jellyfin's Media Segments API.
+   Write-through (Phases 71/74): every edit lands immediately. Jellyfin's own
+   segments read in as one more candidate — never written back: the 2026-08-13
+   dev review probed this house's Jellyfin 10.11.11 live (GET /MediaSegments is
+   its only MediaSegments operation, POST returns 405), so publishing was
+   dropped from phase-163 entirely. Confirmation is for us, not for Jellyfin.
    ============================================================ */
 (function () {
   var K = {
@@ -42,20 +45,20 @@
       if (i % 9 === 4) segs.push({ k: 'stinger', a: dur - 22, b: dur - 3, src: 'tmdb' });
     }
     segs.sort(function (x, y) { return x.a - y.a; });
-    var checked = i < 3, locked = segs.some(function (s) { return s.lock; });
-    /* published == confirmed by a human (checked or locked) — nothing else reaches Jellyfin */
-    return { i: i, id: 'S05E' + pad(i + 1), t: TITLES[i], dur: dur, kind: kind, segs: segs, checked: checked, pub: (checked || locked) && kind !== 'none' };
+    var checked = i < 3;
+    /* confirmed == a human said so (checked or locked); a detector's guess never counts */
+    return { i: i, id: 'S05E' + pad(i + 1), t: TITLES[i], dur: dur, kind: kind, segs: segs, checked: checked };
   }
   var EPS = TITLES.map(function (_, i) { return build(i); });
 
   /* Movies: same tool, no season to sheet — the rail becomes "films to check". */
   var MOVIES = [
-    { slug: 'sintel', id: '2010', t: 'Sintel', dur: 888, segs: [{ k: 'credits', a: 688, b: 888, src: 'fp', conf: .91 }], checked: false, pub: false },
-    { slug: 'tears-of-steel', id: '2012', t: 'Tears of Steel', dur: 734, segs: [{ k: 'intro', a: 0, b: 26, src: 'he', conf: .58 }, { k: 'credits', a: 610, b: 734, src: 'he', conf: .55 }], checked: false, pub: false },
-    { slug: 'big-buck-bunny', id: '2008', t: 'Big Buck Bunny', dur: 596, segs: [{ k: 'credits', a: 452, b: 596, src: 'jf' }, { k: 'stinger', a: 566, b: 590, src: 'tmdb' }], checked: true, pub: true },
-    { slug: 'cosmos-laundromat', id: '2015', t: 'Cosmos Laundromat', dur: 731, segs: [], checked: false, pub: false },
-    { slug: 'spring', id: '2019', t: 'Spring', dur: 462, segs: [{ k: 'credits', a: 372, b: 462, src: 'fp', conf: .93, lock: true }], checked: true, pub: true },
-    { slug: 'agent-327', id: '2017', t: 'Agent 327: Operation Barbershop', dur: 232, segs: [{ k: 'credits', a: 196, b: 232, src: 'he', conf: .61 }], checked: false, pub: false }
+    { slug: 'sintel', id: '2010', t: 'Sintel', dur: 888, segs: [{ k: 'credits', a: 688, b: 888, src: 'fp', conf: .91 }], checked: false },
+    { slug: 'tears-of-steel', id: '2012', t: 'Tears of Steel', dur: 734, segs: [{ k: 'intro', a: 0, b: 26, src: 'he', conf: .58 }, { k: 'credits', a: 610, b: 734, src: 'he', conf: .55 }], checked: false },
+    { slug: 'big-buck-bunny', id: '2008', t: 'Big Buck Bunny', dur: 596, segs: [{ k: 'credits', a: 452, b: 596, src: 'jf' }, { k: 'stinger', a: 566, b: 590, src: 'tmdb' }], checked: true },
+    { slug: 'cosmos-laundromat', id: '2015', t: 'Cosmos Laundromat', dur: 731, segs: [], checked: false },
+    { slug: 'spring', id: '2019', t: 'Spring', dur: 462, segs: [{ k: 'credits', a: 372, b: 462, src: 'fp', conf: .93, lock: true }], checked: true },
+    { slug: 'agent-327', id: '2017', t: 'Agent 327: Operation Barbershop', dur: 232, segs: [{ k: 'credits', a: 196, b: 232, src: 'he', conf: .61 }], checked: false }
   ].map(function (m, i) { m.i = i; m.kind = m.segs.length ? (m.segs.some(function (s) { return s.conf && s.conf < .7; }) ? 'low' : 'ok') : 'none'; return m; });
 
   var Q = new URLSearchParams(location.search);
@@ -167,21 +170,20 @@ if (s.src === 'fp') h += '<span class="b fp" style="left:' + (s.a / e.dur * 100)
       return '<i style="left:' + (s.a / e.dur * 100) + '%;width:' + Math.max(1.2, (s.b - s.a) / e.dur * 100) + '%;background:' + K[s.k].c + '"></i>';
     }).join('') + '</div>';
   }
-  /* Only what a human confirmed is published (decided 2026-08-13): a detector's
-     guess is not something to broadcast to every Jellyfin client in the house. */
+  /* Confirmation is a human act (decided 2026-08-13): a detector's guess is a
+     candidate, not a decision — and it stays inside jellystructure either way. */
   function confirmed(e) { return e.segs.length && (e.checked || e.segs.some(function (s) { return s.lock; })); }
-  function ready() { return EPS.filter(function (e) { return confirmed(e) && !e.pub; }); }
   function waiting() { return EPS.filter(function (e) { return e.segs.length && !confirmed(e); }); }
-  function pubChip() {
-    var r = ready().length;
-    return r ? '<span class="src he">' + r + ' confirmed, not published</span>'
-             : '<span class="src jf">Jellyfin is up to date</span>';
+  function confChip() {
+    var w = waiting().length;
+    return w ? '<span class="src he">' + w + ' still waiting on me</span>'
+             : '<span class="src me">every marker confirmed</span>';
   }
-  function pubCell(e) {
-    if (!e.segs.length) return '<span class="src">nothing to publish</span>';
-    if (e.pub) return '<span class="src jf">in Jellyfin</span>';
-    if (confirmed(e)) return '<span class="src me">ready to publish</span>';
-    return '<span class="src he">not confirmed</span>';
+  function confCell(e) {
+    if (!e.segs.length) return '<span class="src">nothing marked</span>';
+    if (e.segs.some(function (s) { return s.lock; })) return '<span class="src me">locked by me</span>';
+    if (e.checked) return '<span class="src me">checked by me</span>';
+    return '<span class="src he">a guess</span>';
   }
   function dirty(n) { S.dirty += (n === undefined ? 1 : n); }
 
@@ -201,13 +203,13 @@ if (s.src === 'fp') h += '<span class="b fp" style="left:' + (s.a / e.dur * 100)
         }).join('') : '<span class="lane-empty">nothing marked</span>') + '</div>' +
         '<span class="stt"><span class="dot ' + s.dot + '"></span>' + s.txt + '</span>' +
         '<span class="pubc">' + (e.segs.some(function (g) { return g.lock; }) ? '<span class="src me" title="locked — detection will not touch it">🔒</span>' : '') +
-        pubCell(e) + '</span></div>';
+        confCell(e) + '</span></div>';
     }).join('');
     var e = EPS[S.open];
     return '<div class="sxbar"><a class="sxback" href="series-simpsons.html">‹ The Simpsons</a><h1>Intro &amp; credits</h1>' +
-      '<span class="sxsub">season 5 · 22 episodes</span><span class="sxsp"></span>' + pubChip() +
+      '<span class="sxsub">season 5 · 22 episodes</span><span class="sxsp"></span>' + confChip() +
       '<button class="btn sm" data-a="redetect-season">↻ Re-detect the season</button>' +
-      '<button class="btn sm pri" data-a="publish"' + (ready().length ? '' : ' disabled') + '>' + (ready().length ? 'Publish ' + ready().length + ' confirmed →' : 'Nothing new to publish') + '</button></div>' +
+      '<button class="btn sm pri" data-a="pick-attn"' + (waiting().length ? '' : ' disabled') + '>' + (waiting().length ? 'Take me to what needs me' : 'Nothing left to check') + '</button></div>' +
       '<div class="sxmain" style="grid-template-columns:1fr"><div class="sxstage">' +
         '<div class="stat">' +
           '<div class="scard"><b>' + st.found + ' / 22</b><span>intro and credits found</span></div>' +
@@ -218,10 +220,10 @@ if (s.src === 'fp') h += '<span class="b fp" style="left:' + (s.a / e.dur * 100)
         '</div>' +
         '<div class="sheet"><div class="sh"><span></span><span class="lbl">Ep</span><span class="lbl thead">Title</span>' +
           '<div class="shl"><span class="lbl">Aligned on one timeline — an odd one out sticks out</span>' + legend() + '</div>' +
-          '<span class="lbl">State</span><span class="lbl">Jellyfin</span></div>' +
+          '<span class="lbl">State</span><span class="lbl">Confirmed</span></div>' +
           '<div class="srows">' + rows + '</div>' +
           '<div class="bulk"><span class="sxhint"><b>' + (nPick || 'No') + '</b> episode' + (nPick === 1 ? '' : 's') + ' selected</span>' +
-            '<span class="sxhint" style="color:var(--ink-dim)">· only what you confirm reaches Jellyfin' + (waiting().length ? ' — <b>' + waiting().length + '</b> still unconfirmed' : '') + '</span>' +
+            '<span class="sxhint" style="color:var(--ink-dim)">· a detector’s guess is not a decision' + (waiting().length ? ' — <b>' + waiting().length + '</b> still unconfirmed' : '') + '</span>' +
             '<button class="btn sm ghost" data-a="pick-attn">Select everything that needs me</button><span class="sxsp"></span>' +
             '<button class="btn sm" data-a="apply"' + (nPick ? '' : ' disabled') + '>Give them the season’s intro</button>' +
             '<button class="btn sm" data-a="lock"' + (nPick ? '' : ' disabled') + '>🔒 Lock</button>' +
@@ -265,11 +267,8 @@ if (s.src === 'fp') h += '<span class="b fp" style="left:' + (s.a / e.dur * 100)
     return '<div class="sxbar">' + C.back +
       '<span class="num">' + e.id + '</span><h1>' + e.t + '</h1><span class="sxsub">' + fmtl(e.dur) + '</span>' +
       '<span class="sxsp"></span>' +
-      (confirmed(e)
-        ? (e.pub ? '<span class="src jf">in Jellyfin</span>'
-                 : (MOVIE ? '<button class="btn sm" data-a="publish-one">Publish to Jellyfin →</button>'
-                          : '<span class="src me">confirmed — publishes on the season sheet</span>'))
-        : '<span class="src he">not confirmed — Jellyfin will not get it yet</span>') +
+      (confirmed(e) ? '<span class="src me">confirmed by me</span>'
+                    : '<span class="src he">still a guess — check it or lock it</span>') +
       '<button class="btn sm" data-a="redetect-one">↻ Re-detect</button>' +
       '<button class="btn sm pri" data-a="next">' + C.next + '</button></div>' +
       '<div class="sxmain" style="grid-template-columns:1fr 322px"><div class="sxstage">' +
@@ -343,12 +342,6 @@ if (s.src === 'fp') h += '<span class="b fp" style="left:' + (s.a / e.dur * 100)
         toast('Queued <b>detect_segments</b> ' + (a === 'redetect-season' ? 'for the season' : a === 'redetect' ? 'for ' + picks.length + ' episodes' : 'for ' + EPS[S.cur].id) + ' — locked markers are skipped');
       }
       if (a === 'ok-one') { EPS[S.open].checked = true; render(); toast(EPS[S.open].id + ' marked as checked'); }
-      if (a === 'publish') {
-        var r = ready(); r.forEach(function (x) { x.pub = true; }); S.dirty = 0; render();
-        toast(r.length
-          ? 'Pushed ' + r.length + ' confirmed episode' + (r.length === 1 ? '' : 's') + ' to Jellyfin — every Jellyfin client skips them now'
-          : 'Nothing confirmed yet — check or lock an episode first');
-      }
     });
   }
   function applyConsensus(e, ci) {
@@ -361,7 +354,7 @@ if (s.src === 'fp') h += '<span class="b fp" style="left:' + (s.a / e.dur * 100)
       if (cc) e.segs.push({ k: 'credits', a: e.dur - (cc[1] - cc[0]), b: e.dur, src: 'me' });
     }
     e.segs.sort(function (x, y) { return x.a - y.a; });
-    e.kind = 'ok'; e.checked = true; e.pub = false; dirty();
+    e.kind = 'ok'; e.checked = true; dirty();
   }
 
   function wireTrim() {
@@ -381,7 +374,7 @@ if (s.src === 'fp') h += '<span class="b fp" style="left:' + (s.a / e.dur * 100)
     root.querySelectorAll('.stp button').forEach(function (b) {
       b.addEventListener('click', function () {
         var s = e.segs[+b.closest('[data-m]').dataset.m], f = b.dataset.e;
-        s[f] = Math.max(0, Math.min(e.dur, s[f] + +b.dataset.d)); s.src = 'me'; delete s.conf; e.pub = false; dirty();
+        s[f] = Math.max(0, Math.min(e.dur, s[f] + +b.dataset.d)); s.src = 'me'; delete s.conf; dirty();
         S.sel = +b.closest('[data-m]').dataset.m; render();
       });
     });
@@ -393,7 +386,7 @@ if (s.src === 'fp') h += '<span class="b fp" style="left:' + (s.a / e.dur * 100)
         var k = b.dataset.add, at = k === 'credits' || k === 'stinger' || k === 'preview' ? e.dur - 60 : 30;
         e.segs.push({ k: k, a: at, b: at + 40, src: 'me' });
         e.segs.sort(function (x, y) { return x.a - y.a; });
-        S.sel = e.segs.findIndex(function (s) { return s.k === k; }); e.pub = false; dirty(); render();
+        S.sel = e.segs.findIndex(function (s) { return s.k === k; }); dirty(); render();
         toast(K[k].n + ' added — drag the handles or nudge the timecodes');
       });
     });
@@ -408,7 +401,6 @@ if (s.src === 'fp') h += '<span class="b fp" style="left:' + (s.a / e.dur * 100)
         else { S.view = 'sheet'; render(); toast('Every episode in the season is checked'); }
       }
       if (a === 'redetect-one') toast('Queued <b>detect_segments</b> for ' + (MOVIE ? e.t : e.id) + ' — locked markers are skipped');
-      if (a === 'publish-one') { e.checked = true; e.pub = true; render(); toast(e.t + ' published to Jellyfin — every Jellyfin client skips it now'); }
     });
     dragHandles(e);
   }
@@ -429,7 +421,7 @@ if (s.src === 'fp') h += '<span class="b fp" style="left:' + (s.a / e.dur * 100)
         }
         function up() {
           document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up);
-          document.body.style.cursor = ''; s.src = 'me'; delete s.conf; e.pub = false; dirty(); render();
+          document.body.style.cursor = ''; s.src = 'me'; delete s.conf; dirty(); render();
           toast(K[s.k].n + ' now ' + fmtl(s.a) + ' → ' + fmtl(s.b) + ' · saved');
         }
         document.addEventListener('mousemove', move); document.addEventListener('mouseup', up);
