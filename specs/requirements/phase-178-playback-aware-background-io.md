@@ -1,0 +1,154 @@
+# Phase 178 — Background work must not storm the disk a TV is streaming from
+
+> Two of the three stue TV stutter investigations traced back to disk contention, not to the app. On
+> 2026-08-20/21 a qBittorrent download was writing to `/mnt/series` while the Offboarding file was being
+> streamed **off that same spindle**. Measured again during the 2026-08-28 investigation, the mechanism
+> is unambiguous: `sda` read latency goes from **8.17 ms idle to 73.43 ms** under a 154 MB/s concurrent
+> write (`%util` 4 → 56, `/proc/pressure/io` avg300 = 23.29). Meanwhile Jellyfin runs its own heavy
+> passes over the same disk on its own schedule — on the evening of 2026-08-27 a 65-minute tone-mapped
+> 4K trickplay job (16:00:22→17:05:30 UTC) over a 10.4 GB DV file on `sda`.
+>
+> jellystructure already knows, precisely and in real time, when a TV is playing. Nothing consults it.
+
+**Status:** Planned — design-authored 2026-08-28, not yet dev-reviewed. Independent of Phase 177 / R216;
+they address the negotiation and the client, this addresses the server's own housekeeping.
+
+## Root cause
+
+`PlaybackTracker` (`tv/PlaybackService.kt:88-162`) maintains an authoritative live map of every active
+playback — `started()` / `heartbeat()` / `stopped()` plus a watchdog that force-stops sessions whose TV
+disconnected (Phase 110). It exists to keep Jellyfin's "Now Playing" honest, and it is exposed to exactly
+one consumer: `nowPlayingItem(deviceId)` for the remote-control device list (`:168`).
+
+So the server has a perfect signal for *"is anyone watching right now"* and spends it on a UI label.
+Every heavy background activity ignores it:
+
+1. **jellystructure's own pipeline.** `detect_segments` (`fpcalc` + `blackdetect`/`silencedetect`) and
+   `fetch_artwork` read media files at full tilt. Phase 170 gave segment detection its own `ProcessGate`
+   and Phase 145's CPU work added `nice`/`ionice` + `-threads 2`, which fixed *CPU* starvation — but
+   nothing throttles or defers on the basis that a TV is mid-episode.
+2. **Jellyfin's scheduled tasks.** Trickplay and chapter-image generation are configured inside Jellyfin
+   and run on its schedule, blind to our playback state. The 2026-08-27 trickplay pass is the concrete
+   example.
+3. **qBittorrent.** `QBittorrentClient` (`torrent/QBittorrentClient.kt`) already authenticates
+   (`login()`) and reads torrent state (`getTorrents()`) against a configured instance
+   (`[qbittorrent]`, `AppConfig.kt`) — the connection, credentials and path mappings all exist today for
+   the cross-seed guard. It has never been asked to *change* anything.
+
+The aggravating factor is topology, and it is worth stating plainly because a code fix alone will not
+remove it: on this host `/mnt/series` (`sda`, 23.6 TB) holds TV series **and** qBittorrent's download
+target **and** the cross-seed hardlink tree. The streamed Offboarding file has link count 2 — it is
+simultaneously a library file and a seeded torrent. Playback reads, seeding reads and download writes
+all land on one spindle by construction.
+
+## Requirements
+
+### FR-178-1 — A single authoritative "playback is live" signal
+
+Promote the existing tracker to a first-class, queryable server signal:
+
+- `playbackTracker` gains `anyActive(): Boolean` and `activeDevices(): List<String>`, alongside the
+  existing `nowPlaying()`. No new state, no new bookkeeping — these read the same `snapshot` the class
+  already publishes.
+- A short **grace window** (proposed 120 s) after the last stop before the server considers playback
+  finished, so a between-episodes gap or a brief pause does not immediately unleash a download burst
+  that the next episode then has to fight.
+- Exposed read-only at `GET /api/playback/active` for the admin UI and for FR-178-4's manual override.
+
+### FR-178-2 — Defer jellystructure's own heavy steps while a TV is watching
+
+Steps that read media files at volume — `detect_segments`, `fetch_artwork`, and the probe-heavy portion
+of `scan_files` — consult FR-178-1 before starting a **new** item.
+
+- **Deferral, not cancellation.** An in-flight item finishes; the runner simply does not pick up the
+  next one while playback is live, and resumes when the grace window expires. A pipeline run that
+  defers reports it as such in the scan log rather than looking stalled.
+- Applies to **scheduled and event-driven** runs only. An operator who clicks "Scan library" or "Run
+  pipeline now" while a TV is playing gets their run — an explicit human action is never silently
+  deferred; it warns instead (FR-178-4).
+- Governed by one config flag, `[pipeline] defer_while_playing` (default **on**), because a single-user
+  household and a many-viewer one want opposite answers.
+
+### FR-178-3 — Throttle qBittorrent while a TV is watching
+
+Using the existing authenticated client and connection:
+
+- On the first active playback, apply qBittorrent's **alternative speed limits** (its own built-in
+  mechanism — `/api/v2/transfer/setSpeedLimitsMode`) rather than rewriting the user's configured rate
+  numbers. This is deliberate: it is one reversible toggle, it is what the alternative-limit feature
+  exists for, and it cannot corrupt the operator's real settings if we crash mid-flight.
+- On the grace window expiring with nothing playing, restore the previous mode — **only if we were the
+  one who changed it**, tracked by remembering the pre-change mode. If the operator toggled it manually
+  in the meantime, leave it alone.
+- **Restore must be crash-safe.** The pre-change mode is persisted, not held in memory, and the restore
+  is attempted on startup — otherwise a backend restart mid-playback leaves the household's downloads
+  throttled forever with no visible cause.
+- Governed by `[qbittorrent] throttle_while_playing` (default **off** — this reaches into a service the
+  operator owns, and must be opted into, not assumed).
+
+### FR-178-4 — Make the deferral visible, and overridable
+
+Invisible automation that slows things down is worse than no automation.
+
+- The dashboard's ambient scan dock shows a **"Paused — TV is watching"** state, naming the device,
+  whenever a run is deferred by FR-178-2. It is a normal resting state, not an error.
+- The same state offers **"Run anyway"**, which sets a one-run override — matching Phase 154's
+  established pattern of a pre-run choice that is not written to config.
+- An operator-initiated run started while playback is live proceeds, with a non-blocking notice that a
+  TV is watching.
+- Settings → Advanced surfaces both new flags with copy explaining the tradeoff.
+
+## Invariants
+
+- **Deferral never drops work.** Nothing is skipped, cancelled or marked done because a TV was on; the
+  work is postponed and picked up afterwards. A deferred pipeline must converge to the same end state as
+  an undeferred one.
+- **We only ever restore what we changed.** Every external mutation (FR-178-3) records its prior value
+  and is reverted only from that record — never to a value we assumed.
+- **An explicit human action always wins.** Operator-initiated runs are never silently deferred.
+- **Defaults are conservative in opposite directions on purpose:** deferring our *own* work defaults on
+  (it is ours to schedule); mutating a *third-party service* defaults off (it is not).
+- **This phase changes no playback path.** Nothing here touches negotiation, streaming or the player.
+
+## Out of scope
+
+- **Moving qBittorrent's download target off `sda`, splitting the SSID, or wiring the TV to Ethernet.**
+  These are the highest-leverage fixes for the reported problem and they are all infrastructure, not
+  code. Recorded in the research report; deliberately not automated here, because the server should not
+  be rearranging the operator's storage layout.
+- **Jellyfin's own scheduled tasks.** Deferring those means driving Jellyfin's task scheduler over its
+  API, which is a real integration with its own failure modes (and its own risk of fighting the
+  operator's configuration). Worth doing, but only once FR-178-1 has proven itself on our own work
+  first — see Open questions.
+- **I/O priority tuning** (`ionice` beyond what Phase 145 already applies). Deferral is a blunter and
+  more predictable instrument; if it proves insufficient, priority tuning is the follow-up.
+- **Per-disk awareness.** This phase treats "a TV is watching" as global. Deferring work on `sdc` while
+  a stream is served from `sda` is unnecessary but harmless, and modelling which file lives on which
+  spindle is a large amount of machinery for a three-disk host.
+
+## Source references
+
+- `tv/PlaybackService.kt:88-162` — `PlaybackTracker` (the existing signal FR-178-1 promotes); `:168`
+  `nowPlayingItem` (its sole current consumer); `:324+` `stopWatchdogTick` (the precedent for
+  server-side reasoning about liveness, including disconnected TVs).
+- `torrent/QBittorrentClient.kt` — existing authenticated client (`login`, `getTorrents`), extended by
+  FR-178-3 with its first mutating call.
+- `config/AppConfig.kt` — `[qbittorrent]` block (url/credentials/path mappings already present).
+- `media/PipelineEngine.kt` — Phase 175's single step dispatcher; FR-178-2's deferral belongs at its one
+  step loop, not scattered across triggers.
+- Related: **Phase 154** (one-run-only pre-run choice — the pattern FR-178-4's override follows),
+  **Phase 170** (`SegmentProcessGate`), **Phase 145** (`nice`/`ionice`/`-threads 2` — the CPU-side
+  precedent this extends to I/O scheduling), **Phase 110** (the stop watchdog).
+- `specs/research-reports/stue-tv-4k-playback-stutter-2026-08-28.md` §4.2 — the latency measurements.
+
+## Open questions (dev review)
+
+1. **Is 120 s the right grace window?** Long enough to bridge auto-advance between episodes, short
+   enough that an evening of viewing doesn't starve the pipeline indefinitely. Untested.
+2. **Should Jellyfin's scheduled tasks be driven too?** The 2026-08-27 trickplay pass is exactly the kind
+   of load this phase exists to prevent, and it is the one heavy reader we would still not control. The
+   argument against doing it now is blast radius, not value.
+3. **Does throttling qBittorrent help enough on its own,** given the seeding reads (which the alternative
+   speed limits do cover) and the fact that the streamed file is itself a seeded torrent? Phase 177's
+   QoE telemetry is what would answer this — consider sequencing this phase after it so the effect is
+   measurable rather than assumed.
