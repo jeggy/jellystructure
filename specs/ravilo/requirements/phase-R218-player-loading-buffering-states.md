@@ -9,8 +9,15 @@
 > viewer the picture.
 
 **Status:** Implemented (2026-08-28), Android/Compose only. Built the same day it was spec'd, compiles
-clean on the Android and wasmJs targets; not yet dev-reviewed or on-device verified — none of the timing
-constants have been tuned against a real TV (see Open questions #1/#2/#4, all still open).
+clean on the Android and wasmJs targets. **On-device verified 2026-08-29** on the stue TV (real
+household Jellyfin, real 4K content, Severance S2E4 resume): moment B renders correctly (pulse, kicker/
+title, sweep, "Loading…"), transitions cleanly into normal playback once the first frame renders, a seek
+and a Back-out both worked with no crash and clean logcat (`AudioMediaPlayerWrapper: The session was
+destroyed` — the expected teardown, not an error). Timing constants (400ms debounce, 60s deepen) are
+still untuned/unobserved — moments C and D weren't naturally triggered by this pass (a local direct-play
+resume has no real network stall to show, and the one seek tested resolved too fast to observe D's
+spinner) — see Open questions #1/#2/#4, still open. Phase 180's server-side encode release was NOT
+verified live in this pass — the dev backend wasn't restarted with it (no build/restart without asking).
 
 ## Build notes (2026-08-28)
 
@@ -53,6 +60,14 @@ constants have been tuned against a real TV (see Open questions #1/#2/#4, all st
   `store.close()`, leaving `PlayerStore.scope` — and the coroutine behind `startSession()`'s retry
   loop — running for up to ~15s after Back was pressed. Fixed by switching to `close()` (whose own doc
   comment, unchanged since before this phase existed, already said this was the intended path).
+- **A second bug found live on-device (2026-08-29), not caught by compiling clean:** `chromeVisible`
+  defaults to `true`, so without an explicit guard the moment B overlay (declared earlier/underneath in
+  the same root `Box`) rendered simultaneously WITH the normal transport chrome layered on top of it —
+  the top bar and bottom transport were visible around the pulse/title/sweep on the real TV, directly
+  contradicting "full-screen on black." Fixed by adding `&& !coldActive` to the chrome
+  `AnimatedVisibility`'s condition — moment C's chrome-forcing and moment B's chrome-suppression are
+  opposite instincts (C has a position to protect, B doesn't yet) and both needed to be explicit.
+  Re-verified on-device after the fix: clean full-black takeover, no chrome bleed-through.
 
 **Design reference:** `design/ravilo/Player Loading and Buffering - Directions.html` — the built,
 reviewed exploration. Direction **B (Grounded)** chosen for the cold start; the stall treatment is the
