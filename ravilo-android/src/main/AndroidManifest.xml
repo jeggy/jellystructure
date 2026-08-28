@@ -2,6 +2,11 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- R216 — normal (install-time) permissions read at startPlayback to report the network link
+         (ConnectivityManager/WifiInfo.linkSpeed); neither is runtime-gated, so this adds no permission
+         prompt (see HdrCapabilities.kt's detectLinkState() doc). -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
 
     <uses-feature android:name="android.software.leanback" android:required="true" />
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />

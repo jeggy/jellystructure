@@ -1,9 +1,15 @@
 package dev.jellystructure.ravilo.ui.seams
 
+import android.content.Context
+import android.media.MediaCodecInfo
 import android.media.MediaCodecInfo.CodecProfileLevel
 import android.media.MediaCodecList
 import android.media.MediaFormat
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
+import android.net.wifi.WifiManager
 import android.os.Build
+import dev.jellystructure.ravilo.ui.RaviloAppContext
 
 /**
  * Decoder-capability-based HDR detection, ported from Jellyfin's own Android TV client
@@ -70,27 +76,88 @@ actual fun detectHdrSupport(): HdrSupport {
 
 /**
  * R183 — the real H.264 decode ceiling of this device, reported so Jellyfin can declare a transcode
- * target the player will accept (see [AvcDecoderLimits]). Takes the widest-area AVC decoder's own
+ * target the player will accept (see [DecoderLimits]). Takes the widest-area AVC decoder's own
  * `VideoCapabilities` bounds and the highest level any of its High/Main/Baseline profile entries
- * advertises; nothing detected → [AvcDecoderLimits.UNKNOWN] and the server picks a safe 1080p target.
+ * advertises; nothing detected → [DecoderLimits.UNKNOWN] and the server picks a safe 1080p target.
+ *
+ * R216 (renamed from `detectAvcDecoderLimits`) additionally reads each relevant codec's own
+ * `VideoCapabilities.getBitrateRange()` — an API this probe already calls for width/height/level, never
+ * previously read for bitrate — restricted to **hardware-accelerated decoders only** ([isHardwareDecoder]):
+ * a software fallback decoder (`OMX.google.*` / `c2.android.*`) can advertise a much higher, unreal
+ * bitrate ceiling that would mask the hardware decoder actually selected for playback, which is exactly
+ * the failure this field exists to prevent (see the type's own doc).
  */
-actual fun detectAvcDecoderLimits(): AvcDecoderLimits {
-    val avc = MediaCodecList(MediaCodecList.ALL_CODECS).codecInfos
-        .filter { !it.isEncoder }
-        .mapNotNull { runCatching { it.getCapabilitiesForType(MediaFormat.MIMETYPE_VIDEO_AVC) }.getOrNull() }
-    if (avc.isEmpty()) return AvcDecoderLimits.UNKNOWN
+actual fun detectDecoderLimits(): DecoderLimits {
+    val decoders = MediaCodecList(MediaCodecList.ALL_CODECS).codecInfos.filter { !it.isEncoder }
+    val hwDecoders = decoders.filter { isHardwareDecoder(it) }
+
+    fun maxBitrateFor(mime: String): Int =
+        hwDecoders.mapNotNull { runCatching { it.getCapabilitiesForType(mime) }.getOrNull()?.videoCapabilities }
+            .mapNotNull { it.bitrateRange?.upper }
+            .maxOrNull() ?: 0
+
+    val avc = hwDecoders.mapNotNull { runCatching { it.getCapabilitiesForType(MediaFormat.MIMETYPE_VIDEO_AVC) }.getOrNull() }
+        .ifEmpty { decoders.mapNotNull { runCatching { it.getCapabilitiesForType(MediaFormat.MIMETYPE_VIDEO_AVC) }.getOrNull() } }
+    if (avc.isEmpty()) return DecoderLimits.UNKNOWN
 
     val widest = avc.mapNotNull { it.videoCapabilities }
         .maxByOrNull { it.supportedWidths.upper.toLong() * it.supportedHeights.upper.toLong() }
     val level = avc.flatMap { it.profileLevels.orEmpty().toList() }
         .mapNotNull { AVC_LEVELS[it.level] }
         .maxOrNull()
-    return AvcDecoderLimits(
+
+    val h264Bitrate = maxBitrateFor(MediaFormat.MIMETYPE_VIDEO_AVC)
+    val hevcBitrate = maxBitrateFor(MediaFormat.MIMETYPE_VIDEO_HEVC)
+    val dvBitrate = maxBitrateFor(MediaFormat.MIMETYPE_VIDEO_DOLBY_VISION)
+    return DecoderLimits(
         maxWidth = widest?.supportedWidths?.upper ?: 0,
         maxHeight = widest?.supportedHeights?.upper ?: 0,
         maxLevel = level ?: 0,
+        maxVideoBitrate = maxOf(h264Bitrate, hevcBitrate, dvBitrate),
+        maxHevcBitrate = hevcBitrate,
+        maxH264Bitrate = h264Bitrate,
     )
 }
+
+/** R216 — `isHardwareAccelerated()` is API 29+; below that, fall back to the same name-prefix heuristic
+ *  Jellyfin's own Android TV client and AOSP's CTS use to identify a software (`OMX.google.*` /
+ *  `c2.android.*`) decoder, since Android has no other pre-Q signal for this. */
+private fun isHardwareDecoder(info: MediaCodecInfo): Boolean {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) return info.isHardwareAccelerated
+    val name = info.name.lowercase()
+    return !(name.startsWith("omx.google.") || name.startsWith("c2.android."))
+}
+
+/**
+ * R216 — this device's own network link, read at `startPlayback` time only (see [LinkState]'s doc).
+ * `ConnectivityManager`/`WifiManager` are gated by the normal (install-time, non-runtime) `ACCESS_NETWORK_
+ * STATE`/`ACCESS_WIFI_STATE` permissions only — `WifiInfo.getLinkSpeed()`/`getFrequency()` do NOT require
+ * `ACCESS_FINE_LOCATION` (unlike `getSSID()`/`getBSSID()`), so this never triggers a runtime permission
+ * prompt, matching FR-R216-2's invariant. Falls back to `unknown` on any failure rather than guessing.
+ */
+actual fun detectLinkState(): LinkState = runCatching {
+    val ctx: Context = RaviloAppContext.get()
+    val cm = ctx.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+        ?: return LinkState.UNKNOWN
+    val network = cm.activeNetwork ?: return LinkState.UNKNOWN
+    val caps = cm.getNetworkCapabilities(network) ?: return LinkState.UNKNOWN
+    when {
+        caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> {
+            val mbps = caps.linkDownstreamBandwidthKbps.takeIf { it > 0 }?.div(1000) ?: 0
+            LinkState(kind = "ethernet", mbps = mbps)
+        }
+        caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> {
+            // The real PHY link speed (e.g. 130 vs 585 Mbps) is what distinguishes a 2.4 GHz association
+            // from a 5 GHz one — exactly the signal that would have caught 2026-08-27's `f=2462` case.
+            // WifiInfo (not the capabilities' own bandwidth estimate) is the authoritative source for it.
+            val wifi = ctx.applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
+            val linkSpeed = wifi?.connectionInfo?.linkSpeed?.takeIf { it > 0 }
+            val mbps = linkSpeed ?: (caps.linkDownstreamBandwidthKbps.takeIf { it > 0 }?.div(1000) ?: 0)
+            LinkState(kind = "wifi", mbps = mbps)
+        }
+        else -> LinkState.UNKNOWN
+    }
+}.getOrDefault(LinkState.UNKNOWN)
 
 /** `CodecProfileLevel.AVCLevel*` → the level ×10 Jellyfin's `VideoLevel` condition expects (`51` = 5.1).
  *  Written out as a map because the AOSP constants are an unordered bit-flag set, not an ordinal scale
