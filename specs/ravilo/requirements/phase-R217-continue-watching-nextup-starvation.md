@@ -40,6 +40,34 @@ after restarting the dev backend — see Build notes.
   Klumparnir, Mickeys Klubhus, Lanterns, Forræder, Helt sort, Danmarks dummeste, Landmand søger
   kærlighed, La Linea) — all next-up entries the old concatenate-then-cap order was silently dropping.
 
+- **A second bug found the same day, by the user, from the live fix above** — the interleave itself
+  introduced a NEW failure mode the original concatenate-then-cap order had accidentally avoided.
+  Reported live: on the DanskTV channel page, "Vi drukner i rod" showed as the very first Continue
+  Watching card, which the user correctly flagged as wrong ("very long ago this was played"). Root
+  cause, confirmed against live Jellyfin data: the household has a genuine RESUME entry for this series
+  (S5E1, `PlaybackPositionTicks` > 0, `Played: false`, last played 2026-07-07 — exactly the "long ago"
+  the user remembered) sitting at **resume position 63**. But Jellyfin's own `/Shows/NextUp` *also*
+  suggests this series — wrongly, suggesting **S1E1** (`PlayCount: 0`, never watched at all) — at
+  **next-up position 46**. A plain interleave-then-cap reaches next-up's round 46 long before resume's
+  round 63 ever places the correct entry, so stream *position* let the wrong next-up suggestion win the
+  per-series dedup over the genuinely-correct resume entry — worse than before this phase, since the old
+  code's strict resume-then-next-up concatenation had always given resume unconditional priority
+  regardless of its own position within the resume list.
+  - **User's own fix direction, implemented exactly:** "load everything and then merge together
+    everything and then only after that we can do filters on it or add a cap." Rebuilt as three
+    explicit phases: (1) build the full resume-candidate list and the full next-up-candidate list, each
+    completely, nothing capped; (2) **merge** — drop any next-up candidate whose series already has a
+    resume candidate, *before* interleaving, so stream position can never again decide the winner, only
+    whether genuine in-progress state exists; (3) interleave the now non-overlapping streams and cap.
+  - **Live-verified after a second restart:** DanskTV's Continue row now shows "Vi drukner i rod" with
+    `season_number: 5, episode_number: 1, progress_pct: 0.36` (the real resume state) instead of the
+    wrong S1E1 suggestion. It still sits at position 0 within the DanskTV-filtered subset specifically —
+    confirmed this is correct, not a residual bug: it is genuinely the most-recently-watched *Danish*
+    title among this channel's resume candidates, even though it ranks far lower (outside the top 30)
+    in the *global* Home row once compared against the household's non-Danish viewing. Channel-scoped
+    rows reuse the same globally-computed resume-recency order, filtered to channel membership — a
+    correct, if initially surprising, relative ordering.
+
 ## Root cause
 
 `buildContinueRow()` (`tv/HomeFeedService.kt:497-559`, the single function backing Home's Continue row,
