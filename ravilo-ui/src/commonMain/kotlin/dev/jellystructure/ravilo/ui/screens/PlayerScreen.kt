@@ -1433,9 +1433,19 @@ fun PlayerScreen(
         // (displayedBufferMoment leaves STALL) rather than needing its own separate hide timer. A chrome
         // the viewer had already raised manually is unaffected either way — this only ever ADDS
         // visibility, never removes it.
+        //
+        // R218 moment B, bug fix found live on-device (2026-08-29): chromeVisible defaults to true, so
+        // without the extra condition below the cold-start overlay (drawn earlier/underneath in this
+        // same Box) showed simultaneously WITH the normal transport chrome layered on top of it — top
+        // bar and bottom transport visible around the pulse/title/sweep, contradicting "full-screen on
+        // black" (moment C's chrome-forcing is the opposite intent: RAISE chrome over a stall so the
+        // viewer keeps their position; moment B has no position to keep yet, so it suppresses chrome
+        // instead). Moment A (unrelated, out of scope, unchanged) has the same underlying layering but
+        // was not reported as a problem and its own overlay is small/centered, not full-black.
         val stallActive = displayedBufferMoment == PlBufferMoment.STALL
+        val coldActive = displayedBufferMoment == PlBufferMoment.COLD
         AnimatedVisibility(
-            visible = chromeVisible || stallActive,
+            visible = (chromeVisible || stallActive) && !coldActive,
             enter = fadeIn(tween(RaviloMotion.CHROME_FADE_IN_MS)),
             exit = fadeOut(tween(RaviloMotion.CHROME_FADE_OUT_MS)),
         ) {
