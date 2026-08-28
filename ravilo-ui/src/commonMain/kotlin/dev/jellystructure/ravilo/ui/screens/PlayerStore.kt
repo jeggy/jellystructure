@@ -176,7 +176,19 @@ class PlayerStore(private val apiClient: TvApiClient) {
         postQoeNow(itemId)
         qoeSnapshotProvider = null
         exitScope.launch {
-            runCatching { apiClient.stopPlayback(itemId, positionMs) }
+            // Phase 180 — found live 2026-08-29 on real stue TV hardware: a single failed attempt here
+            // permanently orphans whatever Jellyfin is doing for this session, up to and including a
+            // real GPU transcode — confirmed live, an NVENC job survived 20+ seconds after Back with
+            // no retry. Unlike postPlaybackQoe below (explicitly fine to lose — diagnostics only),
+            // losing this call has a real resource cost, so it gets a short bounded retry. Still
+            // fire-and-forget on exitScope, still never blocks the UI (this phase's own "teardown
+            // never blocks a user action" invariant) — just no longer a single roll of the dice on one
+            // transient network hiccup (this TV has documented WiFi flakiness).
+            var delayMs = 1_000L
+            for (attempt in 0 until 3) {
+                if (runCatching { apiClient.stopPlayback(itemId, positionMs) }.isSuccess) break
+                if (attempt < 2) { delay(delayMs); delayMs *= 2 }
+            }
             // R142: finishing (≥90%) marks the item played so its tiles flip to ✓ and a series episode
             // advances up-next — no manual toggle. Below threshold it stays in-progress (resume preserved).
             if (durationMs > 0 && positionMs >= durationMs * 90 / 100) {

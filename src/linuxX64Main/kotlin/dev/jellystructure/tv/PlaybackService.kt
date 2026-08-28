@@ -164,13 +164,24 @@ internal class PlaybackTracker(private val clock: () -> Long = ::nowMs) {
      * stop — bug fix: such a tick used to re-register the playback AND get pushed to Jellyfin,
      * resurrecting a finished session and overwriting the final resume position we had just written.
      */
+    /**
+     * Phase 180 bug fix — found live 2026-08-29: this used to construct a fresh [TrackedPlayback] with
+     * [TrackedPlayback.jellyfinPlaySessionId] defaulting to null, silently wiping out whatever [started]
+     * had recorded. Every real session's first progress heartbeat (~10s in, see PlayerStore's poll
+     * interval) erased the id [stopped] needs to release the encode — confirmed live: a real NVENC
+     * transcode survived 40+ seconds after an explicit stop because this was the only path in the whole
+     * request lifecycle that touched the tracked entry between [started] and [stopped], and it dropped
+     * the one field FR-180-2 exists for. A trivial test that stops immediately after starting (no
+     * heartbeat in between) never hit this — which is exactly why it looked like it worked at first.
+     */
     suspend fun heartbeat(device: DeviceData, jellyfinId: String, positionMs: Long): Boolean {
         val key = PlaybackKey(device.deviceId, jellyfinId)
         return mutex.withLock {
             if ((stoppedUntilMs[key] ?: 0L) > clock()) {
                 false
             } else {
-                active[key] = TrackedPlayback(device, jellyfinId, positionMs, clock())
+                val existingPlaySessionId = active[key]?.jellyfinPlaySessionId
+                active[key] = TrackedPlayback(device, jellyfinId, positionMs, clock(), existingPlaySessionId)
                 lastSeen[key] = device to clock()
                 publish()
                 true
@@ -747,8 +758,8 @@ class PlaybackService(
         // `capabilities` parameter slot — named args here since burn-in restream doesn't have the
         // original session's capabilities on hand; ClientCapabilities()'s conservative SDR-only default
         // is fine since this path already forces a transcode for the subtitle burn-in regardless.
-        val negotiated = jellyfinClient.getPlaybackInfo(jellyfinBase, token, device.jellyfinUserId, jellyfinId, subtitleStreamIndex = subtitleStreamIndex, identity = identity)
-            ?.mediaSources?.firstOrNull()?.transcodingUrl
+        val playbackInfo = jellyfinClient.getPlaybackInfo(jellyfinBase, token, device.jellyfinUserId, jellyfinId, subtitleStreamIndex = subtitleStreamIndex, identity = identity)
+        val negotiated = playbackInfo?.mediaSources?.firstOrNull()?.transcodingUrl
             ?.let { if (it.startsWith("http")) it else "$jellyfinBase$it" }
         Logger.info("PlaybackInfo(burn-in): item=$jellyfinId sub=$subtitleStreamIndex negotiated=${negotiated != null}", "tv")
         val transcodingUrl = negotiated ?: ("$jellyfinBase/Videos/$jellyfinId/master.m3u8" +
@@ -760,6 +771,31 @@ class PlaybackService(
             "&SubtitleMethod=Encode" +
             "&SubtitleStreamIndex=$subtitleStreamIndex" +
             "&api_key=$token")
+
+        // Phase 180 — found live 2026-08-29: this path forces a transcode on EVERY call (burn-in always
+        // transcodes) yet never registered with playbackTracker at all, so its own real Jellyfin
+        // playSessionId (playbackInfo?.playSessionId — same distinct-from-playSessionIdFor() namespace
+        // as startPlayback's, see stopActiveEncoding's doc) was silently discarded and stopPlayback()
+        // could never release it: confirmed with a real NVENC HDR tonemap transcode left running for
+        // minutes after an explicit stop. restream() always supersedes whatever startPlayback() already
+        // registered for this exact key (same device, same item — R56 restream is mid-session, not a
+        // new item), so this is the FR-180-1 supersede path, not a fresh started() call conceptually;
+        // reusing started() here is still correct — it releases the entry being replaced (the original
+        // direct-play/transcode session's own encode, if it had one) exactly the same way a genuine new
+        // session would.
+        val startResult = playbackTracker.started(device, jellyfinId, positionMs, playbackInfo?.playSessionId)
+        startResult.superseded?.let { old ->
+            withContext(NonCancellable) {
+                releaseSession(device, jellyfinId, old.positionMs, old.jellyfinPlaySessionId)
+            }
+        }
+        if (startResult.stopAlreadyArrived) {
+            withContext(NonCancellable) {
+                playbackTracker.stopped(device, jellyfinId)
+                releaseSession(device, jellyfinId, positionMs, playbackInfo?.playSessionId)
+            }
+        }
+
         return StreamTicket(
             jellyfinBaseUrl = jellyfinBase,
             accessToken = token,
