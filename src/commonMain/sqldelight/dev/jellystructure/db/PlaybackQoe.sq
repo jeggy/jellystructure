@@ -17,6 +17,9 @@ CREATE TABLE playback_qoe (
     direct_play INTEGER NOT NULL DEFAULT 0,
     link_kind TEXT NOT NULL DEFAULT 'unknown',
     link_mbps INTEGER NOT NULL DEFAULT 0,
+    -- Phase 179 (FR-179-3) — count of sideloaded text-subtitle load errors this session (see
+    -- specs/requirements/phase-179-subtitle-sideload-transcode-stall.md). Diagnostic only.
+    subtitle_load_errors INTEGER NOT NULL DEFAULT 0,
     updated_at INTEGER NOT NULL,
     PRIMARY KEY (device_id, jellyfin_id, play_session_id)
 );
@@ -24,8 +27,8 @@ CREATE INDEX playback_qoe_device ON playback_qoe(device_id);
 CREATE INDEX playback_qoe_updated ON playback_qoe(updated_at);
 
 upsertQoe:
-INSERT OR REPLACE INTO playback_qoe(device_id, jellyfin_id, play_session_id, dropped_frames, rebuffer_count, rebuffer_ms, bandwidth_estimate_bps, video_decoder, direct_play, link_kind, link_mbps, updated_at)
-VALUES (:device_id, :jellyfin_id, :play_session_id, :dropped_frames, :rebuffer_count, :rebuffer_ms, :bandwidth_estimate_bps, :video_decoder, :direct_play, :link_kind, :link_mbps, :updated_at);
+INSERT OR REPLACE INTO playback_qoe(device_id, jellyfin_id, play_session_id, dropped_frames, rebuffer_count, rebuffer_ms, bandwidth_estimate_bps, video_decoder, direct_play, link_kind, link_mbps, subtitle_load_errors, updated_at)
+VALUES (:device_id, :jellyfin_id, :play_session_id, :dropped_frames, :rebuffer_count, :rebuffer_ms, :bandwidth_estimate_bps, :video_decoder, :direct_play, :link_kind, :link_mbps, :subtitle_load_errors, :updated_at);
 
 recentForDevice:
 SELECT * FROM playback_qoe WHERE device_id = :device_id ORDER BY updated_at DESC LIMIT :result_limit;

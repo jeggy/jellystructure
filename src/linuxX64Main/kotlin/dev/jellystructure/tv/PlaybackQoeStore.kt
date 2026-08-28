@@ -26,9 +26,11 @@ data class QoeSummary(
     @SerialName("direct_play") val directPlay: Boolean,
     @SerialName("link_kind") val linkKind: String,
     @SerialName("link_mbps") val linkMbps: Int,
+    // Phase 179 (FR-179-3).
+    @SerialName("subtitle_load_errors") val subtitleLoadErrors: Int = 0,
     @SerialName("updated_at") val updatedAt: Long,
 ) {
-    val hasIssue: Boolean get() = rebufferCount > 0 || droppedFrames > 0
+    val hasIssue: Boolean get() = rebufferCount > 0 || droppedFrames > 0 || subtitleLoadErrors > 0
 }
 
 private const val QOE_RETENTION_DAYS = 90L
@@ -57,6 +59,7 @@ class PlaybackQoeStore(private val db: JellystructureDb) {
             direct_play = if (report.directPlay) 1L else 0L,
             link_kind = report.linkKind,
             link_mbps = report.linkMbps.toLong(),
+            subtitle_load_errors = report.subtitleLoadErrors.toLong(),
             updated_at = nowEpochSec(),
         )
     }
@@ -86,5 +89,6 @@ private fun Playback_qoe.toSummary() = QoeSummary(
     directPlay = direct_play == 1L,
     linkKind = link_kind,
     linkMbps = link_mbps.toInt(),
+    subtitleLoadErrors = subtitle_load_errors.toInt(),
     updatedAt = updated_at,
 )
