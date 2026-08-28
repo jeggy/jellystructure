@@ -5,11 +5,16 @@
 # designs" sync (see CLAUDE.md "Watch the loop") — a rule added here, in the repo, with no matching
 # source in that project gets clobbered on the next export with no warning.
 #
-# This has now happened EIGHT times (2026-07-13, 07-31, 08-02, 08-07, 08-10 ×2, 08-11, 08-13), wiping
-# the same blocks over and over. Prose warnings did not stop it: the CLAUDE.md warning added after the
-# 3rd incident was followed by four more. This script is the technical fence instead — it was created
-# after the 2nd incident (Phase 138) but only ever tracked ONE rule, so it kept passing while
-# everything else was being wiped. It now covers every block a sync has actually destroyed.
+# This has now happened NINE times (2026-07-13, 07-31, 08-02, 08-07, 08-10 ×2, 08-11, 08-13, 08-28),
+# wiping the same blocks over and over. Prose warnings did not stop it: the CLAUDE.md warning added
+# after the 3rd incident was followed by five more. This script is the technical fence instead — it
+# was created after the 2nd incident (Phase 138) but only ever tracked ONE rule, so it kept passing
+# while everything else was being wiped. It now covers every block a sync has actually destroyed.
+#
+# The 9th incident (08-28) also hit two files this script didn't cover at all: it reverted the
+# 2026-08-13 .sx-scoping fix in segments.css wholesale (caught by check-css-scoping.sh, run alongside
+# this script) AND quietly dropped ravilo-player.js's R208 episode-rail auto-hide, which no fence
+# caught since that file isn't CSS. Both are now tracked below.
 #
 # ADD A LINE HERE whenever a design-sync-fragile CSS fix lands in this repo. That is the whole point of
 # this file; a fix that isn't listed here is one sync away from silently disappearing again.
@@ -77,6 +82,19 @@ check "$WF" "alert banner (.alert-bad)" ".alert-bad {"
 # was silently blocking. A design sync reverting this to the @import breaks admin typography again with
 # no visible error, so it's fenced the same as everything else here.
 check "$WF" "self-hosted fonts, not the Google Fonts @import" "url('fonts/jetbrains-mono.woff2')"
+
+# ---- segments.css / ravilo-player.js --------------------------------------------------------------
+SEGCSS="design/app/segments.css"
+PLAYER="design/ravilo/ravilo-player.js"
+
+# 2026-08-13 — .sx must actually BE the viewport-bounded flex column its children's flex:1/min-height:0
+# assume, or the trim view's <video style="height:100%"> falls back to its intrinsic size and balloons
+# to fill the whole screen. Scoping-only checks (check-css-scoping.sh) don't catch this since .sx's own
+# rule body losing content doesn't change its selector.
+check "$SEGCSS" "trim-view viewport-bounded flex column (.sx height:100dvh)" \
+  "height:100vh;height:100dvh;display:flex;flex-direction:column;overflow:hidden;font-family:'Sora'"
+# R208 (ex-R196) — episode rail auto-closes after 30s of inactivity.
+check "$PLAYER" "episode-rail 30s auto-hide (EPRAIL_HIDE_MS)" "EPRAIL_HIDE_MS = 30000"
 
 if [ "$fail" -eq 0 ]; then
   echo "OK — every design-sync-fragile CSS rule tracked here is present."
