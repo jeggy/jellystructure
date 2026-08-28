@@ -87,7 +87,7 @@
     <span class="searchwrap" id="searchwrap">
       <input class="input" id="lib-search" placeholder="⌕ search title…" style="width:240px;" autocomplete="off">
     </span>
-    <span class="seg" id="kindseg"><span class="on" data-kind="movies">Movies</span><span data-kind="tv">TV</span></span>
+    <span class="seg" id="kindseg"><span class="on" data-kind="movies">Movies</span><span data-kind="tv">TV</span><span data-kind="mv">Music videos</span></span>
   </div>
   <p class="page-sub">Everything Jellystructure manages — and the bridge to Ravilo. Build a <b>filter</b> with the same workbench used for TV rows &amp; channels, then save it straight into a viewer's layout, or feature any title in their hero carousel.</p>
 
@@ -276,8 +276,9 @@
   }
   function totalLabel() {
     const filtered = !browsing();
-    const n = filtered ? order.length : (kind === 'movie' ? 1842 : 312);
-    totalEl.textContent = n.toLocaleString() + (kind === 'movie' ? ' films' : ' series') + (filtered ? ' · filtered' : '');
+    const n = filtered ? order.length : (kind === 'movie' ? 1842 : kind === 'series' ? 312 : 22);
+    const noun = kind === 'movie' ? ' films' : kind === 'series' ? ' series' : ' music videos';
+    totalEl.textContent = n.toLocaleString() + noun + (filtered ? ' · filtered' : '');
   }
   function skeleton(n) {
     const frag = document.createDocumentFragment();
@@ -368,7 +369,7 @@
   kindseg.addEventListener('click', e => {
     const s = e.target.closest('[data-kind]'); if (!s) return;
     [...kindseg.children].forEach(x => x.classList.toggle('on', x === s));
-    kind = s.dataset.kind === 'tv' ? 'series' : 'movie';
+    kind = s.dataset.kind === 'tv' ? 'series' : s.dataset.kind === 'mv' ? 'musicvideo' : 'movie';
     renderAll();
   });
 
