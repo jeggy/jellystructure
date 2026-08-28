@@ -128,6 +128,23 @@ class PlaybackTrackerTest {
     }
 
     @Test
+    fun aHeartbeatMustNotWipeTheJellyfinPlaySessionId() = runBlocking {
+        // Found live 2026-08-29: heartbeat() used to construct a fresh TrackedPlayback with
+        // jellyfinPlaySessionId defaulting to null, silently erasing what started() recorded. Every
+        // real session's first progress report (~10s in) hit this — a real NVENC transcode survived
+        // 40+ seconds after an explicit stop because of it. A trivial start-then-immediately-stop test
+        // (no heartbeat in between) can't catch this; this test heartbeats first, on purpose.
+        val t = tracker()
+        val tv = device()
+        t.started(tv, "movie", 0L, jellyfinPlaySessionId = "jf-abc")
+
+        now += 10_000
+        assertTrue(t.heartbeat(tv, "movie", 42_000L))
+
+        assertEquals("jf-abc", t.stopped(tv, "movie"))
+    }
+
+    @Test
     fun stoppingSomethingNeverStartedReturnsNull() = runBlocking {
         val t = tracker()
         val tv = device()
