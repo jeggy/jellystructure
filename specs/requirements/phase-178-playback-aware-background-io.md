@@ -10,8 +10,16 @@
 >
 > jellystructure already knows, precisely and in real time, when a TV is playing. Nothing consults it.
 
-**Status:** Planned — design-authored 2026-08-28, not yet dev-reviewed. Independent of Phase 177 / R216;
-they address the negotiation and the client, this addresses the server's own housekeeping.
+**Status:** Implemented (2026-08-28, same day as design) — built end to end: `PlaybackTracker.anyActive()`/
+`activeDevices()` (120s grace window) + `GET /api/playback/active`; `runPipeline()`'s new `deferEligible`
+gates scan_files' run-start and fetch_artwork via `awaitPlaybackClear`, broadcasting `JobEvent.Deferred`/
+`Resumed`; `MediaJobParams.deferWhilePlaying` gates the segments-lane worker per-job; `PlaybackThrottleStore`/
+`Service` apply/restore qBittorrent's alternative speed limits (crash-safe, restore-only-if-still-ours);
+`[scan] defer_while_playing` / `[qbittorrent] throttle_while_playing` config flags + Settings UI;
+Dashboard's "Paused — TV is watching {name}" banner + "Run anyway" (`PipelineDeferOverride`,
+`POST /api/pipeline/{jobId}/run-anyway`). Compiles clean. Independent of Phase 177 / R216; they address
+the negotiation and the client, this addresses the server's own housekeeping. **Not yet verified live**
+— no real scheduled run has actually collided with real playback under this code; see Open questions.
 
 ## Root cause
 
@@ -141,14 +149,24 @@ Invisible automation that slows things down is worse than no automation.
   precedent this extends to I/O scheduling), **Phase 110** (the stop watchdog).
 - `specs/research-reports/stue-tv-4k-playback-stutter-2026-08-28.md` §4.2 — the latency measurements.
 
-## Open questions (dev review)
+## Open questions
 
-1. **Is 120 s the right grace window?** Long enough to bridge auto-advance between episodes, short
-   enough that an evening of viewing doesn't starve the pipeline indefinitely. Untested.
-2. **Should Jellyfin's scheduled tasks be driven too?** The 2026-08-27 trickplay pass is exactly the kind
-   of load this phase exists to prevent, and it is the one heavy reader we would still not control. The
-   argument against doing it now is blast radius, not value.
-3. **Does throttling qBittorrent help enough on its own,** given the seeding reads (which the alternative
-   speed limits do cover) and the fact that the streamed file is itself a seeded torrent? Phase 177's
-   QoE telemetry is what would answer this — consider sequencing this phase after it so the effect is
-   measurable rather than assumed.
+1. **Is 120s the right grace window?** Long enough to bridge auto-advance between episodes, short enough
+   that an evening of viewing doesn't starve the pipeline indefinitely. Still untested — no real
+   between-episode gap has exercised this yet.
+2. **Should Jellyfin's scheduled tasks be driven too?** Unchanged — still out of scope; the 2026-08-27
+   trickplay pass remains the one heavy reader this phase doesn't control.
+3. **Does throttling qBittorrent help enough on its own?** Unchanged — Phase 177's QoE telemetry
+   (now built and recording) is what should eventually answer this; no data has accumulated yet.
+4. **Implementation note — a known simplification against the spec's literal wording.** FR-178-2 reads
+   "does not pick up the next one" (per-item). `scan_files`' probe-heavy work isn't itself a skippable
+   step in Phase 175's engine (it runs unconditionally to resolve the working set before the step loop
+   starts) — deferral there is coarser than per-item: the whole run's start is gated once, before
+   `scan_files` begins, and `fetch_artwork` is re-checked once at its own step's start. `detect_segments`
+   is the one step gated at true per-item (per-job) granularity, since MediaJobQueue's segments lane
+   already dequeues one job at a time. Real value either way (no burst competes with a live stream), but
+   worth knowing before assuming scan_files can be interrupted mid-item.
+5. **Not yet done — live verification.** No real scheduled/event-driven run has actually collided with
+   real playback under this code yet: the "Paused — TV is watching" banner, "Run anyway", the
+   qBittorrent throttle-and-restore cycle, and the crash-safe startup recovery are all compile-verified
+   only. The user has authorized stue TV access for this work.

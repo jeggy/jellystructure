@@ -9,8 +9,15 @@
 > populated by the client and **never read by anything** since they were introduced, so 417 of 6798
 > library files hand a lossless track to a software decoder on the TV's CPU whatever the client said.
 
-**Status:** Planned — design-authored 2026-08-28, not yet dev-reviewed. Depends on **R216** for the new
-capability fields; ships inert (identical behaviour to today) against any client that doesn't send them.
+**Status:** Implemented (2026-08-28, same day as design) — built end to end: `ClientCapabilities`
+extended, `JellyfinClient.deviceProfile()` gains the per-codec bitrate condition + audio codec/channel
+honouring + link-derived `MaxStreamingBitrate`, `playback_qoe` table + `POST /api/tv/playback/qoe` +
+90-day retention sweep, Activity/Users & devices surfacing. Compiles clean
+(`compileKotlinLinuxX64`/`compileKotlinWasmJs`). Depends on **R216** for the new capability fields; ships
+inert (identical behaviour to today) against any client that doesn't send them. FR-177-3's and FR-177-2's
+core assumptions were verified live against the real Jellyfin 10.11.11 instance the same day (see Open
+questions below) — not yet verified against a real Ravilo client end to end (needs an on-device TV test
+with a live TrueHD/DTS-HD MA title, not yet done).
 
 ## Root cause
 
@@ -168,13 +175,25 @@ link state at the time).
   **Phase 178** (the I/O half), **Phase 161** (the last time a capability flag had to be added to keep
   direct play honest).
 
-## Open questions (dev review)
+## Open questions
 
-1. **Does Jellyfin 10.11.11 actually produce a video-copy/audio-transcode stream** when only the audio
-   codec fails the profile, or does it fall back to a full transcode? FR-177-3's entire value rests on
-   this. Confirm live against a real TrueHD title before building.
-2. **Is `VideoBitrate` evaluated against the source's average or peak bitrate?** Offboarding averages
-   24 Mbps and peaks at 88.9 Mbps over 1 s; if Jellyfin compares against a nominal average, the FR-177-2
-   margin is doing more work than it appears and may want to be larger.
-3. **Is 0.9 the right margin, and 50 % the right Wi-Fi link fraction?** Both are proposed, not measured.
-   FR-177-5's telemetry is what should eventually set them.
+1. **RESOLVED (2026-08-28, live).** Posted `PlaybackInfo` directly at the real Jellyfin 10.11.11 instance
+   for the library's own Spindlelegs (HEVC 93.3 Mbps HDR10 + DTS-HD MA 6ch) with a `DeviceProfile` matching
+   this phase's shape (audio codec list excluding `dts`/`truehd`, a `hevc` `TranscodingProfile` target
+   alongside `h264` so Jellyfin has a copy path to choose). Result: `TranscodeReasons=
+   AudioCodecNotSupported`, and the resulting HLS master playlist declared `CODECS="hvc1.2.4.L153.B0,
+   mp4a.40.2"` at `BANDWIDTH=94015771` (native 4K, ~source bitrate) — video copied verbatim as HEVC,
+   only audio transcoded to AAC. FR-177-3's central assumption holds.
+2. **RESOLVED (2026-08-28, live, same test run).** Re-ran with the `hevc` `VideoBitrate` condition set to
+   60 Mbps (below Spindlelegs' own probed `BitRate` of 93,375,771) and got a REAL video re-encode this time
+   (`CODECS="avc1.424029..."`, the same Baseline/L4.1 signature `h264TargetConditions`' own doc already
+   names) — confirming Jellyfin compares `VideoBitrate` against the source's stored nominal/average
+   `BitRate` field, not a rolling peak. This validates FR-177-2's stated concern (a rolling average hides
+   a short peak) rather than resolving it away — the 0.9 margin is doing real, necessary work, not
+   redundant caution.
+3. **Still open.** Is 0.9 the right margin, and 50% the right Wi-Fi link fraction? Both remain proposed,
+   not measured — FR-177-5's telemetry (now built and recording) is what should eventually set them.
+4. **New, from the live test.** The verification above used a hand-built `DeviceProfile` matching this
+   phase's *intended shape*, not an actual Ravilo client — end-to-end verification with a real Ravilo TV
+   reporting genuine `audioCodecs`/`maxHevcBitrate` against a live TrueHD/DTS-HD MA title is still
+   outstanding (needs an on-device test, not yet done this session).
