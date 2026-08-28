@@ -548,6 +548,42 @@ class JellyfinClient {
         }
     }.let { if (it.isFailure) Logger.warn("Jellyfin stopPlaybackSession failed: ${it.exceptionOrNull()?.message}") }
 
+    /**
+     * Phase 180 (FR-180-2) — releases an in-flight transcode for [playSessionId], which must be
+     * Jellyfin's OWN play-session id (the top-level `PlaySessionId` [getPlaybackInfo] returns,
+     * carried through from [JellyfinPlaybackInfoResponse.playSessionId]) — NOT jellystructure's
+     * deterministic bookkeeping id ([dev.jellystructure.tv.playSessionIdFor]), which is a different
+     * namespace Jellyfin's transcode manager never sees. [deviceId] must likewise be the
+     * `identity.deviceId` used for the stream/PlaybackInfo request that produced this play session, not
+     * the raw jellystructure device id.
+     *
+     * Confirmed against the live 10.11.11 OpenAPI document (2026-08-28): `DELETE
+     * /Videos/ActiveEncodings` (operationId `StopEncodingProcess`) takes exactly these two query params,
+     * both required, and returns 204 with no body — including, per its own C# implementation, when no
+     * matching encode is found (a direct-play session, or one already torn down), so this is safe to call
+     * unconditionally and needs no "was this actually transcoding" check upstream. Failure is logged and
+     * swallowed, never surfaced to the caller — see this function's callers for why (a release must never
+     * block or fail the user-visible stop).
+     *
+     * Takes [identity] rather than a bare device-id string: the query param must be byte-identical to
+     * the `identity.deviceId` the original stream/PlaybackInfo request used, so deriving it here (instead
+     * of trusting a second caller-supplied copy) removes an entire class of mismatch bug.
+     */
+    suspend fun stopActiveEncoding(
+        baseUrl: String,
+        userToken: String,
+        identity: JellyfinDeviceIdentity,
+        playSessionId: String,
+    ) = runCatching {
+        httpDelete(
+            baseUrl.trimEnd('/') +
+                "/Videos/ActiveEncodings?deviceId=${identity.deviceId.encodeURLParameter()}" +
+                "&playSessionId=${playSessionId.encodeURLParameter()}",
+        ) {
+            jellyfinAuth(userToken, identity)
+        }
+    }.let { if (it.isFailure) Logger.warn("Jellyfin stopActiveEncoding failed: ${it.exceptionOrNull()?.message}") }
+
     /** Phase 110 (FR C.2) — registers this device as a remote-control target: makes the dashboard
      *  message button and cast/remote-control menu appear for its session, and Home Assistant's
      *  Jellyfin integration list it as a controllable media_player. Only takes effect while paired
