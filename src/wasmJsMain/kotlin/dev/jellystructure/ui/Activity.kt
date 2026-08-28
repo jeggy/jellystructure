@@ -120,10 +120,16 @@ fun renderActivity(container: Element, scope: CoroutineScope, query: Map<String,
             <hr class="dash" style="margin:10px 0 4px;">
             <div id="jobqueue"><span class="muted tiny">Queue is empty.</span></div>
           </div>
-          <div class="card">
+          <div class="card" style="margin-bottom:14px;">
             <div class="row center"><h4 style="margin:0;">Recent</h4></div>
             <hr class="dash" style="margin:10px 0 4px;">
             <div id="jobrecent"><span class="muted tiny">Nothing yet.</span></div>
+          </div>
+          <div class="card">
+            <div class="row center"><h4 style="margin:0;">Playback quality</h4><span class="badge info" style="margin-left:8px;font-size:.68rem;">Phase 177</span></div>
+            <div class="tiny muted" style="margin-top:4px">Recent Ravilo sessions across every device. Only sessions with a rebuffer or dropped frame are badged — a clean session isn't flagged at all.</div>
+            <hr class="dash" style="margin:10px 0 4px;">
+            <div id="qoe-recent"><span class="muted tiny">Loading…</span></div>
           </div>
         </div>
 
@@ -209,7 +215,10 @@ fun renderActivity(container: Element, scope: CoroutineScope, query: Map<String,
         (container.querySelector("#view-console") as? HTMLElement)?.style?.display = if (jobs) "none" else ""
         (container.querySelector("#view-jobs") as? HTMLElement)?.style?.display = if (jobs) "" else "none"
         jobsPollActive = jobs
-        if (jobs) scope.launch { pollJobsPanel(container) }
+        if (jobs) {
+            scope.launch { pollJobsPanel(container) }
+            scope.launch { loadRecentPlaybackQuality(container) }
+        }
     }
 
     container.querySelector("#clear-log-btn")?.addEventListener("click") {
@@ -289,6 +298,37 @@ fun renderActivity(container: Element, scope: CoroutineScope, query: Map<String,
  *  both as the source of truth for a page that (re)loads mid-run (before any WS event arrives) and as a
  *  periodic supplement in [pollWorkers], since a plain (non-pipeline) `/scan` run never broadcasts a
  *  `pipeline_plan`/`step_started` WS event — polling is the only way its chip/badge ever populate. */
+/** Phase 177 §FR-177-5 — "Playback quality" card (Jobs & workers view). Loaded once when that view is
+ *  first shown, same as [pollJobsPanel]'s own one-shot load — this isn't a live-ticking surface. */
+private suspend fun loadRecentPlaybackQuality(container: Element) {
+    val el = container.querySelector("#qoe-recent") as? HTMLElement ?: return
+    val rows = dev.jellystructure.api.RaviloApi.getRecentPlaybackQuality()
+    if (rows == null) {
+        el.innerHTML = """<span class="tiny" style="color:var(--bad)">Couldn't load playback quality.</span>"""
+        return
+    }
+    if (rows.isEmpty()) {
+        el.innerHTML = """<span class="muted tiny">No playback reported yet.</span>"""
+        return
+    }
+    el.innerHTML = rows.joinToString("") { q ->
+        val bits = buildList {
+            if (q.rebufferCount > 0) add("${q.rebufferCount} rebuffer${if (q.rebufferCount != 1) "s" else ""} (${q.rebufferMs / 1000}s)")
+            if (q.droppedFrames > 0) add("${q.droppedFrames} dropped frames")
+        }
+        // A clean session is never badged — only a rebuffer or dropped frame is (FR-177-5's own wording).
+        val badge = if (bits.isEmpty()) "" else """<span class="badge warn" style="margin-left:6px">${bits.joinToString(", ")}</span>"""
+        val link = "${q.linkKind}${if (q.linkMbps > 0) " ${q.linkMbps} Mbps" else ""}"
+        val mode = if (q.directPlay) "direct play" else "transcoding"
+        """<div class="row center" style="padding:7px 0;border-top:1px solid var(--line)">
+             <div style="flex:1;min-width:0">
+               <b class="tiny">${q.deviceName.esc()}</b> · <span class="tiny">${q.title.esc()}</span>$badge
+               <div class="tiny muted">$link · $mode · ${dev.jellystructure.formatRelativeAgo(q.updatedAt.toString())}</div>
+             </div>
+           </div>"""
+    }
+}
+
 private fun applyScanStatus(container: Element, st: dev.jellystructure.api.ScanStatus) {
     if (st.stepPlan.isNotEmpty() && stepPlan != st.stepPlan) {
         stepPlan = st.stepPlan

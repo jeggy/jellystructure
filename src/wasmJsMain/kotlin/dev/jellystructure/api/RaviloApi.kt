@@ -48,6 +48,42 @@ data class OverviewDevice(
     @SerialName("created_at") val createdAt: Long,
     @SerialName("last_seen") val lastSeen: Long,
     @SerialName("now_playing") val nowPlaying: String? = null,
+    // Phase 177 §FR-177-5 — this device's most recent playback-quality report, if any.
+    @SerialName("recent_quality") val recentQuality: QoeSummary? = null,
+)
+
+/** Phase 177 §FR-177-5 — mirrors the backend's `dev.jellystructure.tv.QoeSummary`. [hasIssue] matches
+ *  the backend's own field-for-field so a clean session is never badged, same rule both places. */
+@Serializable
+data class QoeSummary(
+    @SerialName("device_id") val deviceId: String = "",
+    @SerialName("jellyfin_id") val jellyfinId: String,
+    @SerialName("play_session_id") val playSessionId: String,
+    @SerialName("dropped_frames") val droppedFrames: Int,
+    @SerialName("rebuffer_count") val rebufferCount: Int,
+    @SerialName("rebuffer_ms") val rebufferMs: Long,
+    @SerialName("bandwidth_estimate_bps") val bandwidthEstimateBps: Long? = null,
+    @SerialName("video_decoder") val videoDecoder: String? = null,
+    @SerialName("direct_play") val directPlay: Boolean = false,
+    @SerialName("link_kind") val linkKind: String = "unknown",
+    @SerialName("link_mbps") val linkMbps: Int = 0,
+    @SerialName("updated_at") val updatedAt: Long,
+) {
+    val hasIssue: Boolean get() = rebufferCount > 0 || droppedFrames > 0
+}
+
+/** Phase 177 §FR-177-5 — mirrors the backend's `QoeActivityRow` (device/title already resolved). */
+@Serializable
+data class QoeActivityRow(
+    @SerialName("device_name") val deviceName: String,
+    val title: String,
+    @SerialName("dropped_frames") val droppedFrames: Int,
+    @SerialName("rebuffer_count") val rebufferCount: Int,
+    @SerialName("rebuffer_ms") val rebufferMs: Long,
+    @SerialName("direct_play") val directPlay: Boolean,
+    @SerialName("link_kind") val linkKind: String,
+    @SerialName("link_mbps") val linkMbps: Int,
+    @SerialName("updated_at") val updatedAt: Long,
 )
 
 @Serializable
@@ -179,6 +215,11 @@ object RaviloApi {
     // Phase 143 — Users & Devices Settings tab.
     suspend fun getOverview(): List<OverviewUser> =
         httpClient.get("/api/tv/admin/overview").body()
+
+    /** Phase 177 §FR-177-5 — the Activity page's "Playback quality" card. */
+    suspend fun getRecentPlaybackQuality(): List<QoeActivityRow>? = runCatching {
+        httpClient.get("/api/tv/admin/playback-qoe/recent").body<List<QoeActivityRow>>()
+    }.getOrNull()
 
     suspend fun revokeDevice(deviceId: String, userId: String) {
         httpClient.delete("/api/tv/admin/devices/$deviceId") { parameter("userId", userId) }

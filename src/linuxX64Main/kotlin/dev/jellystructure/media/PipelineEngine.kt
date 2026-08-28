@@ -19,6 +19,7 @@ import dev.jellystructure.server.routes.runScan
 import kotlin.concurrent.AtomicInt
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 /**
@@ -61,6 +62,22 @@ class PipelineDeps(
  * pipeline in Settings.
  */
 /**
+ * Phase 178 §FR-178-4 — "Run anyway": a one-run, not-written-to-config override for a run currently
+ * sitting in [awaitPlaybackClear] (matching Phase 154's established "pre-run choice, not a config
+ * change" pattern, just applied to a run already waiting rather than one about to start). Deliberately
+ * an in-memory set, not persisted — a jobId is only ever meaningful while its run is live.
+ */
+object PipelineDeferOverride {
+    private val mutex = kotlinx.coroutines.sync.Mutex()
+    private val forced = mutableSetOf<String>()
+
+    suspend fun runAnyway(jobId: String) = mutex.withLock { forced.add(jobId) }
+
+    /** Consumes the override (at most once per request) — called from [awaitPlaybackClear]'s poll loop. */
+    suspend fun consume(jobId: String): Boolean = mutex.withLock { forced.remove(jobId) }
+}
+
+/**
  * Phase 178 §FR-178-2 — waits out an active playback before letting a deferrable step/run proceed,
  * broadcasting [JobEvent.Deferred] once when it starts waiting (not on every poll) and [JobEvent.Resumed]
  * once it clears, so the dashboard's ambient dock (FR-178-4) can show "Paused — TV is watching {name}"
@@ -74,13 +91,14 @@ private suspend fun awaitPlaybackClear(deferEligible: Boolean, jobId: String, br
     if (!dev.jellystructure.tv.isPlaybackActive()) return
     var announced = false
     while (dev.jellystructure.tv.isPlaybackActive()) {
+        if (PipelineDeferOverride.consume(jobId)) break  // FR-178-4 "Run anyway"
         if (!announced) {
             val devices = dev.jellystructure.tv.activePlaybackDeviceNames()
             Logger.info("Pipeline deferred — TV playing (${devices.joinToString(", ")})", "pipeline")
             broadcaster.broadcast(JobEvent.Deferred(jobId, devices))
             announced = true
         }
-        delay(15_000L)
+        delay(2_000L)  // short enough that "Run anyway" feels immediate
     }
     if (announced) broadcaster.broadcast(JobEvent.Resumed(jobId))
 }
