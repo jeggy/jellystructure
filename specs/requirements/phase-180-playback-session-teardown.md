@@ -6,9 +6,60 @@
 > flight. On a 20-second 4K transcode spin-up — precisely the wait R218 exists to make survivable —
 > walking away leaves the encode running for a viewer who has gone to watch something else.
 
-**Status:** Implemented (2026-08-28). Built the same day it was spec'd — the Jellyfin-side call in
-FR-180-2 was confirmed live against 10.11.11's own OpenAPI document before any code was written (see
-Build notes); not yet on-device verified against a real transcode/NVENC slot.
+**Status:** ✓ Done (2026-08-29). Built 2026-08-28 — the Jellyfin-side call in FR-180-2 was confirmed
+live against 10.11.11's own OpenAPI document before any code was written. **On-device verified
+2026-08-29 on stue TV with a real forced 4K/DV/HDR NVENC transcode** (Till Daybreak — direct play refused,
+`TranscodeReasons=VideoRangeTypeNotSupported`) — including finding and fixing a genuine bug that would
+have broken this feature for every real playback session (see the 2026-08-29 entry below).
+
+## Build notes (2026-08-29) — a critical bug found only by real, sustained on-device testing
+
+**The first live test looked like a pass and wasn't.** Called `/tv/playback/restream` directly via curl
+(forces a transcode), fetched a real HLS segment to start actual NVENC encoding, called
+`/tv/playback/stop` immediately after — ffmpeg died within 2 seconds. Declared victory. **This was
+wrong**: a curl-only test that stops immediately after starting never sends a progress heartbeat, so it
+could never have exercised the actual bug.
+
+Testing through the **real app on real stue TV hardware** (start playback of a title that genuinely
+needs to transcode, let it play a few seconds, press Back) told a different story: the transcode
+survived 40+ seconds after Back, across three separate clean repro attempts (with a seek, without a
+seek, and again after adding a client-side retry — none of which fixed it, because none of them were
+the actual bug).
+
+**Root cause, found by checking what Jellyfin's own dashboard recorded**: `stopPlaybackSession` (the
+"Now Playing" report) was reaching Jellyfin successfully every time (`PlayCount` incrementing, session
+clearing) — proving the client's HTTP call and the server's route handler were both fine. The actual
+bug was in `PlaybackTracker.heartbeat()` (`tv/PlaybackService.kt`), called every ~10s by every real
+session's own progress reporting: it constructed a **fresh** `TrackedPlayback` with
+`jellyfinPlaySessionId` defaulting to `null`, silently erasing whatever `started()` had recorded. By
+the time `stopped()` ran, the id FR-180-2 needs was already gone — `releaseSession()`'s
+`if (jellyfinPlaySessionId != null)` guard correctly, silently, did nothing. **Every session that ran
+past one heartbeat interval — which is virtually all real playback — was affected**; the whole feature
+would have shipped looking tested and working while doing nothing in practice for anyone who actually
+watched something for more than 10 seconds.
+
+Fixed by having `heartbeat()` preserve the existing entry's `jellyfinPlaySessionId` instead of
+defaulting it away. New regression test (`aHeartbeatMustNotWipeTheJellyfinPlaySessionId`) heartbeats
+before stopping, on purpose — 13/13 `PlaybackTrackerTest` cases passing. **Re-verified live after the
+fix**: played Till Daybreak (forced transcode), waited past a heartbeat (12s), pressed Back — ffmpeg died
+within 2 seconds. Confirmed clean on Jellyfin's own session list afterward (`NowPlaying: None`, no
+orphaned entry).
+
+**A second, smaller gap found and fixed in the same investigation:** `restream()` (the R56 PGS burn-in
+path, which *always* forces a transcode) never called `playbackTracker.started()` at all, so its own
+Jellyfin play-session id was never captured in the first place — a second, independent way this phase
+could no-op. Fixed by having `restream()` call `started()` too (it supersedes whatever `startPlayback()`
+already registered for the same key, which is the correct FR-180-1 semantics for a mid-session restream).
+
+**A third, unresolved gap noted but not chased further this session:** the client's stop request
+reported `positionMs` as raw `0` in every live test here (Jellyfin's `PlaybackPositionTicks` stayed 0
+across all attempts, despite real elapsed playback time). This affects resume-position accuracy, not
+encode release — Phase 180's own actual scope — and predates this phase. Added a bounded 3-attempt
+retry with backoff to `PlayerStore.stopSession()`'s `apiClient.stopPlayback()` call regardless (it had
+zero retry and zero failure diagnostics before, which is fragile on hardware with this TV's own
+documented WiFi flakiness) — this did not turn out to be what was failing here, but is a reasonable
+hardening on its own merits and this phase's own "a failed release is a log line, not an error state"
+invariant already implied *some* resilience should exist.
 
 ## Build notes (2026-08-28)
 

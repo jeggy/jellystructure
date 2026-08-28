@@ -1280,30 +1280,48 @@ fun PlayerScreen(
         // undebounced "Loading…" string — the SAME string moment A uses (FR-R218-4: one string,
         // already translated, no drift between moments).
         if (displayedBufferMoment == PlBufferMoment.COLD) {
+            // R218 (FR-R218-6) — "same three parts, scaled: 40px spinner, 26px title, 15px label."
+            // TV sizes below are the already on-device-verified treatment (stue TV, 2026-08-29);
+            // phone gets the design file's own explicit phone-frame numbers.
+            val isPhone = LocalHandset.current
             Box(Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    BrandPulse(colors)
-                    Spacer(Modifier.height(34.dp))
+                    BrandPulse(
+                        colors,
+                        dotSize = if (isPhone) 10.dp else 16.dp,
+                        gap = if (isPhone) 9.dp else 14.dp,
+                    )
+                    Spacer(Modifier.height(if (isPhone) 20.dp else 34.dp))
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         itemKicker?.let { kicker ->
                             // R180 (FR-RV-ASP1-2) — the kicker/title split already exists for the
                             // chrome's own metadata block (see PlayerChrome below); reused verbatim here,
                             // not a second source of truth for what's playing.
                             Text(
-                                kicker.uppercase(), color = colors.accentSecondary, fontSize = 12.sp,
+                                kicker.uppercase(), color = colors.accentSecondary,
+                                fontSize = if (isPhone) 11.sp else 12.sp,
                                 fontWeight = FontWeight.Bold, letterSpacing = 2.sp,
                             )
-                            Spacer(Modifier.height(6.dp))
+                            Spacer(Modifier.height(if (isPhone) 4.dp else 6.dp))
                         }
                         Text(
-                            itemTitle, color = Color.White, fontSize = 30.sp, fontWeight = FontWeight.Bold,
+                            itemTitle, color = Color.White,
+                            // FR-R218-6's literal number (26px) for phone; TV keeps its own already-
+                            // verified 30sp rather than the raw 54px design-canvas value — see this
+                            // block's own header comment.
+                            fontSize = if (isPhone) 26.sp else 30.sp,
+                            fontWeight = FontWeight.Bold,
                             fontFamily = SpaceGrotesk, letterSpacing = (-0.8).sp,
                         )
                     }
-                    Spacer(Modifier.height(34.dp))
-                    IndeterminateSweep(colors, width = 280.dp)
-                    Spacer(Modifier.height(28.dp))
-                    Text(str("loading"), color = Color.White.copy(0.7f), fontSize = 18.sp)
+                    Spacer(Modifier.height(if (isPhone) 20.dp else 34.dp))
+                    IndeterminateSweep(
+                        colors,
+                        width = if (isPhone) 200.dp else 280.dp,
+                        height = if (isPhone) 3.dp else 4.dp,
+                    )
+                    Spacer(Modifier.height(if (isPhone) 18.dp else 28.dp))
+                    Text(str("loading"), color = Color.White.copy(0.7f), fontSize = if (isPhone) 15.sp else 18.sp)
                 }
             }
         }
@@ -3022,11 +3040,11 @@ private fun BufferingSpinner(colors: RaviloColors) {
  * loop, not a cut corner that changes what it communicates.
  */
 @Composable
-private fun BrandPulse(colors: RaviloColors) {
+private fun BrandPulse(colors: RaviloColors, dotSize: Dp = 16.dp, gap: Dp = 14.dp) {
     val dotColors = remember(colors.accent, colors.accentSecondary) {
         listOf(colors.accent, lerp(colors.accent, colors.accentSecondary, 0.5f), colors.accentSecondary)
     }
-    Row(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(horizontalArrangement = Arrangement.spacedBy(gap), verticalAlignment = Alignment.CenterVertically) {
         dotColors.forEachIndexed { i, dotColor ->
             val phase by rememberInfiniteTransition(label = "pulse$i").animateFloat(
                 initialValue = 0f,
@@ -3040,7 +3058,7 @@ private fun BrandPulse(colors: RaviloColors) {
             )
             Box(
                 Modifier
-                    .size(16.dp)
+                    .size(dotSize)
                     .scale(0.8f + phase * 0.45f)
                     .alpha(0.2f + phase * 0.8f)
                     .background(dotColor, CircleShape),
@@ -3055,7 +3073,7 @@ private fun BrandPulse(colors: RaviloColors) {
  * invariant) — motion alone.
  */
 @Composable
-private fun IndeterminateSweep(colors: RaviloColors, width: Dp) {
+private fun IndeterminateSweep(colors: RaviloColors, width: Dp, height: Dp = 4.dp) {
     val grad = remember(colors.accent, colors.accentSecondary) { colors.accentGradient }
     val progress by rememberInfiniteTransition(label = "sweep").animateFloat(
         initialValue = -0.4f,
@@ -3066,8 +3084,8 @@ private fun IndeterminateSweep(colors: RaviloColors, width: Dp) {
     Box(
         Modifier
             .width(width)
-            .height(4.dp)
-            .clip(RoundedCornerShape(4.dp))
+            .height(height)
+            .clip(RoundedCornerShape(height))
             .background(Color.White.copy(alpha = 0.12f)),
     ) {
         Box(
@@ -3075,7 +3093,7 @@ private fun IndeterminateSweep(colors: RaviloColors, width: Dp) {
                 .fillMaxHeight()
                 .width(width * 0.38f)
                 .offset(x = width * progress)
-                .clip(RoundedCornerShape(4.dp))
+                .clip(RoundedCornerShape(height))
                 .background(grad),
         )
     }
