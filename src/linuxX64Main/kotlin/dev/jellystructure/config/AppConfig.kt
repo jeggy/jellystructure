@@ -50,6 +50,12 @@ data class IngestConfig(
 @Serializable
 data class ScanConfig(
     val pipeline: List<PipelineStep> = emptyList(),
+    // Phase 178 §FR-178-2 — defer scan_files' probe-heavy work and fetch_artwork (plus detect_segments'
+    // own queue, gated the same way) while a TV is playing, for SCHEDULED and event-driven (realtime
+    // ingest) runs only — an operator's own manual "Scan library"/"Run pipeline now" click always
+    // proceeds (FR-178-4). Default true: a single-user household and a many-viewer one want opposite
+    // answers, but "don't compete with the TV for disk" is the safer default either way.
+    @SerialName("defer_while_playing") val deferWhilePlaying: Boolean = true,
 )
 
 @Serializable
@@ -224,6 +230,10 @@ data class QBittorrentConfig(
     @SerialName("path_mappings") val pathMappings: List<QBittorrentPathMapping> = emptyList(),
     // Phase 99 — snapshot TTL in seconds (default 10 min)
     @SerialName("seeding_cache_ttl") val seedingCacheTtl: Long = 600L,
+    // Phase 178 §FR-178-3 — apply qBittorrent's own alternative speed limits while a TV is playing.
+    // Default false: unlike deferring our OWN pipeline work, this reaches into a service the operator
+    // owns and mutates its live state, so it must be opted into, not assumed.
+    @SerialName("throttle_while_playing") val throttleWhilePlaying: Boolean = false,
 )
 
 // Phase 98 — tracker registry entry

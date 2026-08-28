@@ -189,7 +189,8 @@ fun main() = runBlocking {
     val homeFeedService = HomeFeedService(mediaStore, raviloConfigService, jellyfinClient, configStore, tvEventBus, artworkDownloader)
     val browseService = BrowseService(mediaStore, jellyfinClient, configStore, raviloConfigService, artworkDownloader)
     val detailService = DetailService(mediaStore, jellyfinClient, configStore, artworkDownloader, mediaSegmentStore)
-    val playbackService = PlaybackService(mediaStore, jellyfinClient, configStore)
+    val playbackQoeStore = dev.jellystructure.tv.PlaybackQoeStore(db)
+    val playbackService = PlaybackService(mediaStore, jellyfinClient, configStore, playbackQoeStore)
     val mediaHistory = MediaHistory(db)
     val logoDownloader = LogoDownloader(dataDir, tmdbClient)
     val imageProxyService = dev.jellystructure.tv.RaviloArtworkService(dataDir, configStore, mediaStore, artworkDownloader)
@@ -197,6 +198,11 @@ fun main() = runBlocking {
     val qbClient = QBittorrentClient()
     val seedingSnapshot = SeedingSnapshot(configStore, qbClient)
     val seedingGuard = SeedingGuard(seedingSnapshot)
+    // Phase 178 §FR-178-3 — qBittorrent alternative-speed-limits throttle while a TV plays.
+    val playbackThrottleStore = dev.jellystructure.torrent.PlaybackThrottleStore("$dataDir/qbt_throttle.json")
+    playbackThrottleStore.load()
+    val playbackThrottleService = dev.jellystructure.torrent.PlaybackThrottleService(configStore, qbClient, playbackThrottleStore)
+    rootScope.launch { playbackThrottleService.recoverOnStartup() }
     val seerrClient = dev.jellystructure.seerr.SeerrClient()
     val bazarrClient = dev.jellystructure.bazarr.BazarrClient()
     val arrRescan = ArrRescanService(configStore, arrClient, rootScope)
@@ -328,6 +334,9 @@ fun main() = runBlocking {
             // Phase 147 — same watchdog shape for an open live-TV stream (its own tracking, see LiveTvService).
             runCatching { liveTvService.stopWatchdogTick { deviceId -> tvEventBus.isConnected(deviceId) } }
                 .onFailure { Logger.warn("Live TV stop watchdog tick failed: ${it.message}", "livetv") }
+            // Phase 178 §FR-178-3 — same 30s cadence is plenty for "did playback just start/stop".
+            runCatching { playbackThrottleService.tick() }
+                .onFailure { Logger.warn("Playback throttle tick failed: ${it.message}", "qbittorrent") }
         }
     }
 
@@ -349,6 +358,15 @@ fun main() = runBlocking {
         while (shutdownRequested.value == 0) {
             runCatching { mediaJobQueue.pruneOld() }
                 .onFailure { Logger.warn("media_job retention sweep failed (non-fatal): ${it.message}") }
+            delay(24 * 3_600_000L)
+        }
+    }
+
+    // Phase 177 §FR-177-5 — daily playback_qoe retention sweep (90 days kept; diagnostic, not a ledger).
+    rootScope.launch {
+        while (shutdownRequested.value == 0) {
+            runCatching { playbackQoeStore.pruneOld() }
+                .onFailure { Logger.warn("playback_qoe retention sweep failed (non-fatal): ${it.message}") }
             delay(24 * 3_600_000L)
         }
     }

@@ -17,6 +17,7 @@ import dev.jellystructure.shared.tv.RaviloConfig
 import dev.jellystructure.shared.tv.PairResult
 import dev.jellystructure.shared.tv.TvLoginRequest
 import dev.jellystructure.shared.tv.PlaybackProgressRequest
+import dev.jellystructure.shared.tv.PlaybackQoeReport
 import dev.jellystructure.shared.tv.PlaybackRestreamRequest
 import dev.jellystructure.shared.tv.PlaybackStartRequest
 import dev.jellystructure.shared.tv.PlaybackStopRequest
@@ -436,6 +437,16 @@ fun Route.tvRoutes(
         // (5 min) kept serving the pre-stop Continue row, so a correct stop could stay invisible on
         // Home for minutes. Runs after responding so the client's stop ack isn't delayed by it.
         homeFeedService.invalidatePlaystate(device)
+    }
+
+    // Phase 177 §FR-177-5 / R216 §FR-R216-4 — fire-and-forget playback-quality report; see
+    // PlaybackService.recordQoe's doc for why deviceId/playSessionId are server-resolved, not
+    // client-supplied. Always 200s (this is diagnostics — never a reason to surface an error to a player).
+    post("/tv/playback/qoe") {
+        val device = call.attributes[DeviceKey]
+        val req = runCatching { call.receive<PlaybackQoeReport>() }.getOrNull()
+        if (req != null) playbackService.recordQoe(device, req)
+        call.respond(mapOf("status" to "ok"))
     }
 
     // R56: restream with a subtitle burned in (PGS encode path)

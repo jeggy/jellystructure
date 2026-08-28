@@ -1,0 +1,37 @@
+-- Phase 177 (FR-177-5) — playback quality-of-experience reports, posted by the client (R216 FR-R216-4)
+-- at session end and on a long-session (10 min) interval. Each report carries the session's RUNNING
+-- totals (dropped frames / rebuffer count+duration accumulate for the whole session, never reset
+-- between posts — see PlayerStore.kt), so this is an UPSERT keyed by the same
+-- (device_id, jellyfin_id, play_session_id) triple PlaybackTracker already uses (playSessionIdFor()) —
+-- a mid-session report simply advances the same row to its latest cumulative state, rather than growing
+-- one row per report. Diagnostic, not a ledger: retention-pruned (deleteOlderThan), not append-only.
+CREATE TABLE playback_qoe (
+    device_id TEXT NOT NULL,
+    jellyfin_id TEXT NOT NULL,
+    play_session_id TEXT NOT NULL,
+    dropped_frames INTEGER NOT NULL DEFAULT 0,
+    rebuffer_count INTEGER NOT NULL DEFAULT 0,
+    rebuffer_ms INTEGER NOT NULL DEFAULT 0,
+    bandwidth_estimate_bps INTEGER,
+    video_decoder TEXT,
+    direct_play INTEGER NOT NULL DEFAULT 0,
+    link_kind TEXT NOT NULL DEFAULT 'unknown',
+    link_mbps INTEGER NOT NULL DEFAULT 0,
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY (device_id, jellyfin_id, play_session_id)
+);
+CREATE INDEX playback_qoe_device ON playback_qoe(device_id);
+CREATE INDEX playback_qoe_updated ON playback_qoe(updated_at);
+
+upsertQoe:
+INSERT OR REPLACE INTO playback_qoe(device_id, jellyfin_id, play_session_id, dropped_frames, rebuffer_count, rebuffer_ms, bandwidth_estimate_bps, video_decoder, direct_play, link_kind, link_mbps, updated_at)
+VALUES (:device_id, :jellyfin_id, :play_session_id, :dropped_frames, :rebuffer_count, :rebuffer_ms, :bandwidth_estimate_bps, :video_decoder, :direct_play, :link_kind, :link_mbps, :updated_at);
+
+recentForDevice:
+SELECT * FROM playback_qoe WHERE device_id = :device_id ORDER BY updated_at DESC LIMIT :result_limit;
+
+recent:
+SELECT * FROM playback_qoe ORDER BY updated_at DESC LIMIT :result_limit;
+
+deleteOlderThan:
+DELETE FROM playback_qoe WHERE updated_at < :cutoff;
