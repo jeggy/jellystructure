@@ -859,6 +859,7 @@ private fun stepLabel(step: String): String = when (step) {
     // Phase 154 (FR-PIPE1-8): was missing, so this fell through to the raw step id in the step chips —
     // the one step most likely to be looked for, now that it can be skipped per run.
     "detect_segments" -> "Segments"
+    "prewarm_subtitles" -> "Subtitles"
     "wait" -> "Wait"
     "notify" -> "Notify"
     else -> step

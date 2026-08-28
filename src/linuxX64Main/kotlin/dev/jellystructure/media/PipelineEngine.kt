@@ -257,6 +257,19 @@ suspend fun runPipeline(
                     scanTracker, broadcaster, labelOf = { it.title },
                 ) { item, _ -> PipelineStepOps.fetchArtwork(item, store, artworkDownloader) }
             }
+            "prewarm_subtitles" -> {
+                // Phase 178 §FR-178-2 — same re-check fetch_artwork already does: this step hits
+                // Jellyfin's own ffmpeg extraction, real disk/CPU work on the same media files a TV
+                // might now be reading.
+                awaitPlaybackClear(deferEligible, jobId, broadcaster)
+                val warmed = AtomicInt(0)
+                Logger.info("prewarm_subtitles: ${workingSet.size} items")
+                runPipelineStepPool(
+                    jobId, step.step, workingSet, { pipelineStepConcurrency(step.step, configStore.current.behavior.scanWorkers) },
+                    scanTracker, broadcaster, labelOf = { it.title },
+                ) { item, _ -> repeat(PipelineStepOps.prewarmSubtitles(item, jellyfinClient, cfg)) { warmed.incrementAndGet() } }
+                Logger.info("prewarm_subtitles: ${warmed.value} subtitle stream(s) warmed")
+            }
             "write_nfo" -> {
                 val serverUrl = cfg.apiKeys.jellyfinUrl
                 val written = AtomicInt(0)

@@ -113,6 +113,9 @@ data class PlayerQoeSnapshot(
     val bandwidthEstimateBps: Long? = null,
     /** The selected video decoder's name, when the platform exposes one (diagnostic only). */
     val videoDecoder: String? = null,
+    /** Phase 179 (FR-179-3) — count of sideloaded text-subtitle load errors this session. Always 0 on a
+     *  platform with no equivalent signal (honest "nothing observed", matching this class's own rule). */
+    val subtitleLoadErrors: Int = 0,
 )
 
 /**

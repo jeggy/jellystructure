@@ -67,9 +67,11 @@ data class QoeSummary(
     @SerialName("direct_play") val directPlay: Boolean = false,
     @SerialName("link_kind") val linkKind: String = "unknown",
     @SerialName("link_mbps") val linkMbps: Int = 0,
+    // Phase 179 (FR-179-3).
+    @SerialName("subtitle_load_errors") val subtitleLoadErrors: Int = 0,
     @SerialName("updated_at") val updatedAt: Long,
 ) {
-    val hasIssue: Boolean get() = rebufferCount > 0 || droppedFrames > 0
+    val hasIssue: Boolean get() = rebufferCount > 0 || droppedFrames > 0 || subtitleLoadErrors > 0
 }
 
 /** Phase 177 §FR-177-5 — mirrors the backend's `QoeActivityRow` (device/title already resolved). */

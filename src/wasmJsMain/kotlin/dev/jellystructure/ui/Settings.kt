@@ -2404,6 +2404,7 @@ private const val PIPE_NOTIFY_IC="""<svg viewBox="0 0 16 16" fill="none" stroke=
 private const val PIPE_WAIT_IC = """<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8.8" r="5.1"/><line x1="8" y1="8.8" x2="8" y2="5.8"/><line x1="8" y1="8.8" x2="10" y2="9.8"/><line x1="6.2" y1="1.9" x2="9.8" y2="1.9"/></svg>"""
 private const val PIPE_IMDB_IC = """<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1.6 9.6 5.9l4.5.2-3.6 2.8 1.3 4.4L8 10.6l-3.8 2.7 1.3-4.4-3.6-2.8 4.5-.2Z"/></svg>"""
 private const val PIPE_SEG_IC  = """<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3.2v9.6l6-4.8Z"/><line x1="11" y1="3.2" x2="11" y2="12.8"/><line x1="13.4" y1="3.2" x2="13.4" y2="12.8"/></svg>"""
+private const val PIPE_SUB_IC  = """<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="1.6" y="3.6" width="12.8" height="8.8" rx="1.6"/><line x1="4" y1="7" x2="7" y2="7"/><line x1="4" y1="9.4" x2="9.4" y2="9.4"/><line x1="9" y1="7" x2="12" y2="7"/></svg>"""
 
 private val PIPE_BLOCKS = mapOf(
     "scan_files"    to PipeBlockDef("Scan media files",          "New & changed files + stale re-checks by release age.", "#7b6ef0", PIPE_SCAN_IC),
@@ -2415,11 +2416,12 @@ private val PIPE_BLOCKS = mapOf(
     "rescan_arr"    to PipeBlockDef("Rescan in Radarr / Sonarr", "Nudge the *arr that manages each touched title.",       "#f5b542", PIPE_ARR_IC, needsArr = true),
     "detect_drift"  to PipeBlockDef("Detect drift",              "Compare Jellyfin ⇄ NFO and flag differences.",          "#ff6f61", PIPE_DRIFT_IC),
     "sync_imdb_ratings" to PipeBlockDef("Sync IMDb ratings",     "Refresh aggregate rating · votes from imdb.com.",    "#f5c518", PIPE_IMDB_IC),
+    "prewarm_subtitles" to PipeBlockDef("Pre-warm subtitles",    "Ask Jellyfin to extract embedded text subtitles ahead of playback (Phase 179).", "#6fd0c8", PIPE_SUB_IC),
     "notify"        to PipeBlockDef("Send notification",         "Ping your webhook when the run reaches here.",          "#e0639a", PIPE_NOTIFY_IC),
     "wait"          to PipeBlockDef("Wait",                      "Pause before the next step (let Jellyfin settle).",     "#9aa0b4", PIPE_WAIT_IC),
 )
-private val PIPE_PALETTE = listOf("pull_tmdb","fetch_artwork","detect_segments","write_nfo","sync_jellyfin","rescan_arr","detect_drift","sync_imdb_ratings","wait","notify")
-private val PIPE_SHORT   = mapOf("scan_files" to "Scan","pull_tmdb" to "TMDB","fetch_artwork" to "Artwork","detect_segments" to "Segments","write_nfo" to "NFO","sync_jellyfin" to "Jellyfin","rescan_arr" to "*arr","detect_drift" to "Drift","sync_imdb_ratings" to "IMDb","notify" to "Notify","wait" to "Wait")
+private val PIPE_PALETTE = listOf("pull_tmdb","fetch_artwork","detect_segments","write_nfo","sync_jellyfin","rescan_arr","detect_drift","sync_imdb_ratings","prewarm_subtitles","wait","notify")
+private val PIPE_SHORT   = mapOf("scan_files" to "Scan","pull_tmdb" to "TMDB","fetch_artwork" to "Artwork","detect_segments" to "Segments","write_nfo" to "NFO","sync_jellyfin" to "Jellyfin","rescan_arr" to "*arr","detect_drift" to "Drift","sync_imdb_ratings" to "IMDb","prewarm_subtitles" to "Subtitles","notify" to "Notify","wait" to "Wait")
 private val CAD_VALS     = listOf("daily","weekly","monthly","6months","yearly","never")
 private val CAD_LABELS   = listOf("every day","every week","every month","every 6 months","every year","never")
 private val WAIT_MINS    = listOf(5, 10, 15, 30, 60)

@@ -204,6 +204,7 @@ class PlayerStore(private val apiClient: TvApiClient) {
                     directPlay = qoeDirectPlay,
                     linkKind = qoeLinkKind,
                     linkMbps = qoeLinkMbps,
+                    subtitleLoadErrors = snapshot.subtitleLoadErrors,
                 ),
             )
         }

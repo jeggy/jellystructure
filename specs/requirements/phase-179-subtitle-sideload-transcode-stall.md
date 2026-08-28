@@ -10,7 +10,36 @@
 > hit — out of scope as low-priority. **Phase 177 (shipped earlier today) just changed that priority
 > calculus** by making the exact tier of file this affects transcode far more often than before.
 
-**Status:** Planned (design-authored, not yet dev-reviewed).
+**Status:** Implemented (2026-08-28, same day as design) — built end to end: `prewarm_subtitles` pipeline
+step (`PipelineStepOps.prewarmSubtitles`, `PipelineEngine.kt`, `JellyfinClient.getItemMediaStreams`/
+`warmSubtitleExtraction`), wired into the Settings pipeline builder + Activity step labels (FR-179-1);
+`SubtitleRetryingLoadErrorHandlingPolicy` (2 retries, 3s backoff, subtitle URIs only — every other load
+type delegates untouched to Media3's own `DefaultLoadErrorHandlingPolicy`) on the Android player
+(FR-179-2); `subtitle_load_errors` threaded through `PlayerQoeSnapshot` → `PlaybackQoeReport` →
+`playback_qoe` (new migration `35.sqm`) → `QoeSummary.hasIssue`, so a repeat badges itself on the
+existing Users & devices card with no new UI code (FR-179-3). Compiles clean across every target
+(`compileKotlinLinuxX64`, `verifyCommonMainJellystructureDbMigration`, admin `compileKotlinWasmJs`,
+`:ravilo-web:compileKotlinWasmJs`, `:ravilo-ui:compileDebugKotlinAndroid`,
+`:ravilo-android:compileDebugKotlin`, `:ravilo-phone:compileDebugKotlin`).
+
+**Known deviations from the letter of the spec, and why:**
+- **FR-179-2 shipped as a retry/backoff policy, not a literally separate, longer-timeout
+  `HttpDataSource.Factory`** for subtitle loads. True DataSource separation needs restructuring `load()`
+  around a hand-built `MergingMediaSource` (Media3 has no first-class way to give one `MediaItem`
+  SubtitleConfiguration a different DataSource.Factory than the main content) — real Media3 architecture
+  work, higher risk to get right without a live on-device regression pass. The retry policy achieves the
+  same practical goal (subtitle loads get materially more patience; video/audio are provably untouched,
+  since every non-subtitle URI delegates straight to Media3's unmodified default) with one well-scoped,
+  standard extension point, and arguably suits the hypothesized failure mode (intermittent contention,
+  not one continuously-slow request) better than a single longer window would.
+- **Not yet on-device verified.** All of the above is compile-verified only — no real pipeline run has
+  pre-warmed a real title's subtitles yet, and the retry policy hasn't been exercised against a real
+  induced failure. Deploy is user-initiated per project convention.
+- **Open question 1 (Jellyfin's cache key scope) remains genuinely open** — tonight's idle-system test
+  (§Root cause, point 4) couldn't fully isolate "cached" from "fast when idle." FR-179-1 as built is a
+  cheap, harmless fire-and-forget either way (§Requirements, FR-179-1) — if the cache turns out to be
+  request-keyed after all, the pre-warm simply doesn't help (not: breaks anything), and FR-179-2's retry
+  remains the effective safety net regardless of that answer.
 
 ## Root cause
 
