@@ -5,6 +5,22 @@ This Cosmos project holds the **HTML/CSS design mockups** for **jellystructure**
 (`wireframes/`). These mirror the `design/` folder of the repo
 **github.com/jeggy/jellystructure**.
 
+## Production hosting (self-hosted, separate from this checkout)
+The public deployment is **not** this repo. It's a separate self-hosted Docker Compose stack at
+`~/jellystructure` on this same machine (a different directory from this
+`IdeaProjects/jellystructure` dev checkout) — see `~/jellystructure/AGENTS.md` for the full
+setup. It runs the **released GHCR images**, built/pushed by the repo's own
+`.github/workflows/publish.yml` (Phase 167) on every push to `main`, plus version tags on a
+GitHub Release:
+- `jelly.example.net` — backend + admin UI (`ghcr.io/jeggy/jellystructure`)
+- `ravilo.example.net` — Ravilo web app (`ghcr.io/jeggy/ravilo-web`)
+- `jellystructure.example.net` — public info site, plain HTML/CSS/JS at `~/jellystructure/site/`
+  (also the Play Store privacy-policy URL for Ravilo)
+
+This is distinct from the ad hoc dev instance that runs bare-metal in tmux on this dev host
+(`jellystructure-backend` session, :9505) for TV pairing/testing during active development —
+that one stays as-is; it's not what the public domains point at.
+
 ## How this project syncs with the repo (2-way)
 GitHub is the **source of truth**; we layer designs on top of it.
 
