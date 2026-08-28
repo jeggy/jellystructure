@@ -85,6 +85,25 @@ expect class RaviloPlayer() {
     val isPlaying: Boolean
     val isEnded: Boolean
 
+    /** R218 (FR-R218-1) — false from [load] until the first frame of THIS item actually renders; resets
+     *  on every [load] call (unlike [qoeSnapshot]'s counters, which deliberately persist across a
+     *  binge's episode-to-episode player reuse). Distinguishes moment B (cold start) from moment C
+     *  (mid-playback stall) — the wait before this is B, any wait after it is C or D. */
+    val hasRenderedFirstFrame: Boolean
+
+    /** R218 (FR-R218-1) — true while the player is buffering for any reason. Combine with
+     *  [hasRenderedFirstFrame] and [isSeeking] to pick a presentation; never render straight off this
+     *  alone (a seek's buffering must show moment D, not C). */
+    val isBuffering: Boolean
+
+    /** R218 (FR-R218-1) — true from a seek's `DISCONTINUITY_REASON_SEEK` until playback is ready again,
+     *  so a seek's own buffering reads as moment D ("the scrub tile carries a spinner") rather than
+     *  moment C ("the chrome comes up on its own") — "a seek is an answer to the viewer's own input, not
+     *  an interruption of it." Reuses the same signal [qoeSnapshot]'s rebuffer counting already consumes
+     *  for the analogous suppression, per this phase's "do not add a second listener" instruction — see
+     *  the Android actual's single `qoeListener`. */
+    val isSeeking: Boolean
+
     /** Audio track list, discovered from the stream after load. May be empty until media is ready. */
     val audioTracks: List<PlayerAudioTrack>
 

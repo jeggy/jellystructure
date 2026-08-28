@@ -8,6 +8,8 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.StartOffset
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
@@ -36,6 +38,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -61,6 +64,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
@@ -73,8 +77,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.jellystructure.ravilo.ui.focus.MediaKey
@@ -134,10 +140,28 @@ private const val ADVANCE_TIMEOUT_MS = 5_000L
 // of the duration the marker is ignored and the NEXTUP_AT_MS end-of-file heuristic is used instead.
 private const val CREDITS_MARKER_MIN_FRACTION = 0.5
 
+// R218 (FR-R218-2) — "no buffering presentation may appear before ~400ms of continuous waiting, for B,
+// C and D alike... a spinner that flashes for 200ms is itself a defect." Untested on a real TV per the
+// phase's own Open question #1 — tune against R216's rebuffer telemetry once data accumulates, not
+// guessed at again.
+private const val BUFFER_MOMENT_DEBOUNCE_MS = 400L
+// R218 (FR-R218-3) — "a wait that passes 60 seconds is pathological... at that point Moment C dims
+// further and raises the centre spinner." Stall only — cold start and seek don't deepen.
+private const val BUFFER_MOMENT_DEEPEN_MS = 60_000L
+
 // ─── Focus model ──────────────────────────────────────────────────────────────
 
 private enum class PlFocus { SKIP_INTRO, SEEK_BAR, SKIP_BACK, PLAY, SKIP_FWD, TRACKS, NEXT_EP, BACK }
 private enum class NuFocus { PLAY, STAY }
+
+// R218 (FR-R218-1) — "PlayerStore exposes a single derived buffering state, not three booleans." This
+// enum IS that single state; it lives here (Compose-side, in PlayerScreen) rather than inside
+// PlayerStore itself — PlayerStore is deliberately decoupled from any concrete RaviloPlayer instance
+// (see R216's own comment on qoeSnapshotProvider, injected rather than owned, for the same reason), and
+// deriving this from the player's own polled signals would break that. The requirement's real substance
+// — one state, not three independently-racing overlays — is what this enum (and the single
+// LaunchedEffect debouncing it below) delivers.
+private enum class PlBufferMoment { NONE, COLD, STALL, SEEK }
 
 // R182 (FR-RV-SKIP1-2) — the credits card's ONE primary action, chosen by priority: a stinger (from
 // Phase 150 §C) always wins (never auto-skip past it); else a real next episode; else a plain
@@ -249,6 +273,11 @@ fun PlayerScreen(
     var isPlaying    by remember { mutableStateOf(false) }
     var audioTracks  by remember { mutableStateOf<List<PlayerAudioTrack>>(emptyList()) }
     var subtitleTracks by remember { mutableStateOf<List<PlayerSubtitleTrack>>(emptyList()) }
+
+    // R218 — the same poll loop's signal for the four buffering moments (see PlayerBufferMoment below).
+    var hasRenderedFirstFrame by remember { mutableStateOf(false) }
+    var isBuffering    by remember { mutableStateOf(false) }
+    var isSeeking      by remember { mutableStateOf(false) }
 
     // Chrome visibility — bumping chromeRevision restarts the auto-hide timer
     var chromeVisible  by remember { mutableStateOf(true) }
@@ -677,6 +706,9 @@ fun PlayerScreen(
         positionMs = 0L
         durationMs = 0L
         positionKnownForItemId = null
+        hasRenderedFirstFrame = false  // R218 — the new episode's own cold start, not the outgoing one's
+        isBuffering = false
+        isSeeking = false
         armSession(itemId)
     }
 
@@ -736,6 +768,12 @@ fun PlayerScreen(
                     positionMs = player.positionMs
                     durationMs = player.durationMs
                     positionKnownForItemId = currentItemId
+                    // R218 — same staleness guard as positionMs/durationMs above: only read the live
+                    // player's signal once it is actually loaded for THIS item, or a stale
+                    // hasRenderedFirstFrame=true from the outgoing episode could suppress moment B here.
+                    hasRenderedFirstFrame = player.hasRenderedFirstFrame
+                    isBuffering = player.isBuffering
+                    isSeeking = player.isSeeking
                 }
                 bufferedMs  = player.bufferedMs
                 isPlaying   = player.isPlaying
@@ -831,6 +869,42 @@ fun PlayerScreen(
         delay(EPRAIL_HIDE_MS)
         epRailOpen = false
         scheduleHide()
+    }
+
+    // R218 (FR-R218-1) — the one derived buffering moment; see PlBufferMoment's own doc for why this
+    // lives here rather than inside PlayerStore. Priority order matters: a wait BEFORE any first frame
+    // is always COLD even if isSeeking/isBuffering also happen to be true (there is no "last frame" yet
+    // for a seek's lighter treatment to make sense against), then SEEK (a seek's own buffering must
+    // never read as an organic STALL), then plain STALL.
+    val rawBufferMoment = when {
+        sessionState !is PlayerSessionState.Ready -> PlBufferMoment.NONE  // moment A owns this wait
+        !hasRenderedFirstFrame -> PlBufferMoment.COLD
+        isSeeking -> PlBufferMoment.SEEK
+        isBuffering -> PlBufferMoment.STALL
+        else -> PlBufferMoment.NONE
+    }
+    var displayedBufferMoment by remember { mutableStateOf(PlBufferMoment.NONE) }
+    // R218 (FR-R218-2) — ~400ms debounce before ANY presentation appears (a direct play that starts
+    // immediately must show nothing at all); clearing is immediate — a wait that just ended should stop
+    // being shown right away, not linger for its own debounce. Keyed on the raw (undebounced) moment so
+    // a rapid COLD→SEEK→COLD flicker restarts the delay each time rather than showing a stale one.
+    LaunchedEffect(rawBufferMoment) {
+        if (rawBufferMoment == PlBufferMoment.NONE) {
+            displayedBufferMoment = PlBufferMoment.NONE
+        } else {
+            delay(BUFFER_MOMENT_DEBOUNCE_MS)
+            displayedBufferMoment = rawBufferMoment
+        }
+    }
+    // R218 (FR-R218-3) — "a wait that passes 60 seconds is pathological... at that point Moment C dims
+    // further and raises the centre spinner. The wording does NOT change." Stall only.
+    var stallDeepened by remember { mutableStateOf(false) }
+    LaunchedEffect(displayedBufferMoment) {
+        stallDeepened = false
+        if (displayedBufferMoment == PlBufferMoment.STALL) {
+            delay(BUFFER_MOMENT_DEEPEN_MS)
+            stallDeepened = true
+        }
     }
 
     // R182 (FR-RV-SKIP1-1) — derived every recomposition (the composable body always sees the latest
@@ -981,8 +1055,20 @@ fun PlayerScreen(
     // even mark-playing it when episode 5 happened to be ≥90% — while episode 5's own session was never
     // stopped at all. Keying on `store` makes this fire once per episode with that episode's own
     // playhead, which is also what makes the resume point (and Continue Watching) correct.
+    //
+    // Phase 180/R218 bug fix: this called stopSession() directly, which reports the stop but leaves
+    // PlayerStore's own `scope` running — the coroutine backing startSession()'s up-to-5-attempt retry
+    // loop (~15s worst case) was never cancelled. Pressing Back during that window (R218's abandon-
+    // during-negotiation case, exactly what a cold-start wait makes more likely to happen) let a late
+    // retry complete AFTER the stop had already been sent and forgotten, silently minting a fresh
+    // orphaned Jellyfin session with its own heartbeat loop reading position from an already-released
+    // player. close() already does the right thing — armSession's own comment above has said so since
+    // before this call site existed (see armSession's durationProvider doc) — it just was never called
+    // from here. close() calls stopSession() itself using the same positionProvider/durationProvider
+    // (which close over these same positionMs/durationMs, so behaviour for an established session is
+    // unchanged) AND cancels `scope`, which is what actually closes the race.
     DisposableEffect(store) {
-        onDispose { store.stopSession(positionMs, durationMs) }  // R142: ≥90% → mark played
+        onDispose { store.close() }  // R142: ≥90% → mark played (inside stopSession, called by close())
     }
 
     // Release the player engine only when the screen itself goes away — the engine is remembered per
@@ -1174,14 +1260,58 @@ fun PlayerScreen(
         // ── Platform video surface (SurfaceView on Android, <video> element on WASM) ───
         PlayerVideoSurface(player, Modifier.fillMaxSize())
 
-        // ── Dim scrim (deepens when chrome is up or paused) ──────────────────
+        // ── Dim scrim (deepens when chrome is up, paused, or R218's moment C stalls) ──
         val dimAlpha = when {
+            // R218 (FR-R218-3) — "Moment C dims further... because the chrome alone stops being enough
+            // of a signal" past the 60s deepen threshold; ~38% before that, per the chosen direction.
+            displayedBufferMoment == PlBufferMoment.STALL && stallDeepened -> 0.55f
+            displayedBufferMoment == PlBufferMoment.STALL                 -> 0.38f
             chromeVisible && !isPlaying -> 0.50f
             chromeVisible               -> 0.34f
             else                        -> 0f
         }
         if (dimAlpha > 0f) {
             Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = dimAlpha)))
+        }
+
+        // ── R218 moment B: cold start (ticket in hand, no first frame yet) ────
+        // Direction B "Grounded": pulse + title context (already-seen catalog data, no delivery
+        // information) + an indeterminate sweep so a long wait never looks frozen + the existing
+        // undebounced "Loading…" string — the SAME string moment A uses (FR-R218-4: one string,
+        // already translated, no drift between moments).
+        if (displayedBufferMoment == PlBufferMoment.COLD) {
+            Box(Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    BrandPulse(colors)
+                    Spacer(Modifier.height(34.dp))
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        itemKicker?.let { kicker ->
+                            // R180 (FR-RV-ASP1-2) — the kicker/title split already exists for the
+                            // chrome's own metadata block (see PlayerChrome below); reused verbatim here,
+                            // not a second source of truth for what's playing.
+                            Text(
+                                kicker.uppercase(), color = colors.accentSecondary, fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold, letterSpacing = 2.sp,
+                            )
+                            Spacer(Modifier.height(6.dp))
+                        }
+                        Text(
+                            itemTitle, color = Color.White, fontSize = 30.sp, fontWeight = FontWeight.Bold,
+                            fontFamily = SpaceGrotesk, letterSpacing = (-0.8).sp,
+                        )
+                    }
+                    Spacer(Modifier.height(34.dp))
+                    IndeterminateSweep(colors, width = 280.dp)
+                    Spacer(Modifier.height(28.dp))
+                    Text(str("loading"), color = Color.White.copy(0.7f), fontSize = 18.sp)
+                }
+            }
+        }
+
+        // R218 moment C (deepened, 60s+): the chrome-up spinner (PlayerChrome's play button, forced
+        // visible below) stops being enough of a signal on its own — raise a second, centre spinner too.
+        if (displayedBufferMoment == PlBufferMoment.STALL && stallDeepened) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { BufferingSpinner(colors) }
         }
 
         // ── Loading overlay ───────────────────────────────────────────────────
@@ -1297,8 +1427,15 @@ fun PlayerScreen(
 
         // ── Player chrome (auto-hiding transport + metadata) ──────────────────
         // R90: 300ms fade-in / 200ms fade-out matches the CSS spec (was enter=200/exit=300, reversed).
+        // R218 (FR-R218-1, moment C, Open question #2) — "the chrome comes up on its own" during a
+        // stall; forced visible here WITHOUT touching chromeVisible/chromeRevision themselves, so R208's
+        // 30s auto-hide timer is never armed or reset by it, and it retracts the instant the stall clears
+        // (displayedBufferMoment leaves STALL) rather than needing its own separate hide timer. A chrome
+        // the viewer had already raised manually is unaffected either way — this only ever ADDS
+        // visibility, never removes it.
+        val stallActive = displayedBufferMoment == PlBufferMoment.STALL
         AnimatedVisibility(
-            visible = chromeVisible,
+            visible = chromeVisible || stallActive,
             enter = fadeIn(tween(RaviloMotion.CHROME_FADE_IN_MS)),
             exit = fadeOut(tween(RaviloMotion.CHROME_FADE_OUT_MS)),
         ) {
@@ -1320,6 +1457,8 @@ fun PlayerScreen(
                 nextUpVisible   = nextUpVisible,
                 directPlay      = (sessionState as? PlayerSessionState.Ready)?.ticket?.directPlay ?: true,
                 container       = (sessionState as? PlayerSessionState.Ready)?.ticket?.container ?: "",
+                stallActive      = stallActive,
+                seekMomentActive = displayedBufferMoment == PlBufferMoment.SEEK,
                 // R157 — PlayerChrome is a stateless presentational composable; it reports which
                 // logical control was clicked/hovered and this dispatcher (which has wake/skip/
                 // togglePlay/etc in scope) does the actual work, mirroring the root's onSelect dispatch.
@@ -1475,6 +1614,11 @@ private fun PlayerChrome(
     nextUpVisible: Boolean,
     directPlay: Boolean,
     container: String,
+    // R218 (FR-R218-1, moment C) — the chrome is forced up while this is true (see this composable's
+    // call site) and the play button shows a spinner in place of its glyph instead of the usual icon.
+    stallActive: Boolean = false,
+    // R218 (FR-R218-1, moment D) — forwarded straight to SeekRow's own spinner; see that param's doc.
+    seekMomentActive: Boolean = false,
     onControlClick: (PlFocus) -> Unit,
     onControlHover: (PlFocus) -> Unit,
     onSeekStart: (Long) -> Unit,
@@ -1554,6 +1698,7 @@ private fun PlayerChrome(
                 scrubbing  = scrubbing,
                 scrubPos   = scrubPos,
                 barFocused = focus == PlFocus.SEEK_BAR,
+                isSeeking  = seekMomentActive,
                 // R157 (FR-R157-2.3) — click-to-seek / drag-to-scrub; forwarded from PlayerScreen,
                 // which owns the actual scrub state and commitScrub().
                 onSeekStart = onSeekStart,
@@ -1577,6 +1722,7 @@ private fun PlayerChrome(
                     isPlaying = isPlaying, focused = focus == PlFocus.PLAY,
                     onClick = { onControlClick(PlFocus.PLAY) },
                     onHover = { onControlHover(PlFocus.PLAY) },
+                    isBuffering = stallActive,
                 )
                 SkipButton(
                     label = "+30s", focused = focus == PlFocus.SKIP_FWD,
@@ -1616,6 +1762,13 @@ private fun SeekRow(
     scrubbing: Boolean,
     scrubPos: Long,
     barFocused: Boolean,
+    // R218 (FR-R218-1, moment D) — "lightest of the four: no overlay, no words." There is no trickplay
+    // scrub tile yet (StreamTicket.trickplayUrl is always null — see PlaybackService; that's its own
+    // future phase per this phase's own Out-of-scope section), so this is the nearest real surface to
+    // the design's "spinner inside the scrub tile": a small spinner beside the position timestamp,
+    // which — like the design's tile — sits right where the viewer is already looking while a seek
+    // resolves, and never blanks the transport.
+    isSeeking: Boolean = false,
     onSeekStart: (Long) -> Unit = {},
     onSeekDrag: (Long) -> Unit = {},
     onSeekEnd: () -> Unit = {},
@@ -1630,6 +1783,19 @@ private fun SeekRow(
             fontFamily = FontFamily.Monospace,
             fontWeight = FontWeight.SemiBold,
         )
+        if (isSeeking) {
+            val rotation by rememberInfiniteTransition(label = "seekBuf")
+                .animateFloat(0f, 360f, infiniteRepeatable(tween(900, easing = LinearEasing), RepeatMode.Restart), label = "seekBufRot")
+            Canvas(Modifier.size(14.dp)) {
+                drawArc(
+                    color = colors.accent,
+                    startAngle = rotation,
+                    sweepAngle = 270f,
+                    useCenter = false,
+                    style = Stroke(2.dp.toPx(), cap = StrokeCap.Round),
+                )
+            }
+        }
         Box(modifier = Modifier.weight(1f)) {
             SeekBar(
                 colors      = colors,
@@ -1744,7 +1910,17 @@ private fun SeekBar(
 // ─── Control buttons ──────────────────────────────────────────────────────────
 
 @Composable
-private fun PlayPauseButton(isPlaying: Boolean, focused: Boolean, onClick: () -> Unit = {}, onHover: () -> Unit = {}) {
+private fun PlayPauseButton(
+    isPlaying: Boolean,
+    focused: Boolean,
+    onClick: () -> Unit = {},
+    onHover: () -> Unit = {},
+    // R218 (FR-R218-1, moment C) — "a spinner standing in the play button's place." A boolean, not a
+    // third icon state: buffering wins over play/pause visually (the glyph underneath is irrelevant
+    // while it's true), and clears the instant playback resumes since the caller derives this from the
+    // same debounced moment state driving the rest of the stall treatment.
+    isBuffering: Boolean = false,
+) {
     val colors = RaviloTheme.colors
     val grad = remember(colors.accent, colors.accentSecondary) { colors.accentGradient }
     val size by animateDpAsState(if (focused) 50.dp else 44.dp, label = "ppScale")
@@ -1768,25 +1944,39 @@ private fun PlayPauseButton(isPlaying: Boolean, focused: Boolean, onClick: () ->
             .hoverToCall(onHover),
         contentAlignment = Alignment.Center,
     ) {
-        Canvas(modifier = Modifier.size(if (isPlaying) 16.dp else 14.dp)) {
-            val cw = this.size.width
-            val ch = this.size.height
-            if (isPlaying) {
-                // Two vertical bars (pause)
-                val bw = cw * 0.28f
-                val gap = cw * 0.16f
-                val cx = cw / 2
-                drawRect(glyphColor, topLeft = Offset(cx - gap / 2 - bw, 0f), size = Size(bw, ch))
-                drawRect(glyphColor, topLeft = Offset(cx + gap / 2, 0f), size = Size(bw, ch))
-            } else {
-                // Right-pointing triangle (play)
-                val path = Path().apply {
-                    moveTo(cw * 0.15f, 0f)
-                    lineTo(cw, ch / 2)
-                    lineTo(cw * 0.15f, ch)
-                    close()
+        if (isBuffering) {
+            val rotation by rememberInfiniteTransition(label = "ppBuf")
+                .animateFloat(0f, 360f, infiniteRepeatable(tween(900, easing = LinearEasing), RepeatMode.Restart), label = "ppBufRot")
+            Canvas(Modifier.size(size * 0.6f)) {
+                drawArc(
+                    color = glyphColor,
+                    startAngle = rotation,
+                    sweepAngle = 270f,
+                    useCenter = false,
+                    style = Stroke(2.5.dp.toPx(), cap = StrokeCap.Round),
+                )
+            }
+        } else {
+            Canvas(modifier = Modifier.size(if (isPlaying) 16.dp else 14.dp)) {
+                val cw = this.size.width
+                val ch = this.size.height
+                if (isPlaying) {
+                    // Two vertical bars (pause)
+                    val bw = cw * 0.28f
+                    val gap = cw * 0.16f
+                    val cx = cw / 2
+                    drawRect(glyphColor, topLeft = Offset(cx - gap / 2 - bw, 0f), size = Size(bw, ch))
+                    drawRect(glyphColor, topLeft = Offset(cx + gap / 2, 0f), size = Size(bw, ch))
+                } else {
+                    // Right-pointing triangle (play)
+                    val path = Path().apply {
+                        moveTo(cw * 0.15f, 0f)
+                        lineTo(cw, ch / 2)
+                        lineTo(cw * 0.15f, ch)
+                        close()
+                    }
+                    drawPath(path, glyphColor)
                 }
-                drawPath(path, glyphColor)
             }
         }
     }
@@ -2809,6 +2999,74 @@ private fun BufferingSpinner(colors: RaviloColors) {
             sweepAngle = 270f,
             useCenter  = false,
             style      = Stroke(4.dp.toPx(), cap = StrokeCap.Round),
+        )
+    }
+}
+
+/**
+ * R218 (FR-R218-1, moment B) — Direction B's "pulsing brand dot cluster": three dots breathing in
+ * scale+opacity, staggered 180ms apart, across the accent→accentSecondary gradient (skin-aware, unlike
+ * the design file's hardcoded Aurora hex values — the same gradient [PlayPauseButton]'s focus ring and
+ * [PlayerScreen]'s progress fill already use). Approximates the design's asymmetric 45%-peak keyframe
+ * with a simple symmetric breathe (RepeatMode.Reverse) — visually equivalent for a continuous ambient
+ * loop, not a cut corner that changes what it communicates.
+ */
+@Composable
+private fun BrandPulse(colors: RaviloColors) {
+    val dotColors = remember(colors.accent, colors.accentSecondary) {
+        listOf(colors.accent, lerp(colors.accent, colors.accentSecondary, 0.5f), colors.accentSecondary)
+    }
+    Row(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
+        dotColors.forEachIndexed { i, dotColor ->
+            val phase by rememberInfiniteTransition(label = "pulse$i").animateFloat(
+                initialValue = 0f,
+                targetValue = 1f,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(1400, easing = FastOutSlowInEasing),
+                    repeatMode = RepeatMode.Reverse,
+                    initialStartOffset = StartOffset(i * 180),
+                ),
+                label = "pulsePhase$i",
+            )
+            Box(
+                Modifier
+                    .size(16.dp)
+                    .scale(0.8f + phase * 0.45f)
+                    .alpha(0.2f + phase * 0.8f)
+                    .background(dotColor, CircleShape),
+            )
+        }
+    }
+}
+
+/**
+ * R218 (FR-R218-1, moment B) — Direction B's indeterminate sweep: a gradient segment crossing the bar
+ * on a loop, "so a long wait never looks frozen." No numbers, no percentage (this phase's own
+ * invariant) — motion alone.
+ */
+@Composable
+private fun IndeterminateSweep(colors: RaviloColors, width: Dp) {
+    val grad = remember(colors.accent, colors.accentSecondary) { colors.accentGradient }
+    val progress by rememberInfiniteTransition(label = "sweep").animateFloat(
+        initialValue = -0.4f,
+        targetValue = 1.02f,
+        animationSpec = infiniteRepeatable(tween(1900, easing = FastOutSlowInEasing), RepeatMode.Restart),
+        label = "sweepX",
+    )
+    Box(
+        Modifier
+            .width(width)
+            .height(4.dp)
+            .clip(RoundedCornerShape(4.dp))
+            .background(Color.White.copy(alpha = 0.12f)),
+    ) {
+        Box(
+            Modifier
+                .fillMaxHeight()
+                .width(width * 0.38f)
+                .offset(x = width * progress)
+                .clip(RoundedCornerShape(4.dp))
+                .background(grad),
         )
     }
 }

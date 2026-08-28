@@ -8,7 +8,51 @@
 > app is alive. R216's QoE capture landed the same week and gives us the counters; this phase gives the
 > viewer the picture.
 
-**Status:** Planned (design-authored 2026-08-28). Not yet dev-reviewed.
+**Status:** Implemented (2026-08-28), Android/Compose only. Built the same day it was spec'd, compiles
+clean on the Android and wasmJs targets; not yet dev-reviewed or on-device verified — none of the timing
+constants have been tuned against a real TV (see Open questions #1/#2/#4, all still open).
+
+## Build notes (2026-08-28)
+
+- **The three signals FR-R218-1 needs** (`hasRenderedFirstFrame`, `isBuffering`, `isSeeking`) were added
+  to the common `RaviloPlayer` interface and wired into the Android actual's existing single
+  `qoeListener` (`onRenderedFirstFrame`/`onPlaybackStateChanged`/`onPositionDiscontinuity`), per this
+  phase's own "consume that, do not add a second listener" instruction — no new `AnalyticsListener`.
+  They are deliberately **separate fields** from R216's `qoeFirstFrameRendered`/`qoeSuppressNextBuffering`
+  rather than reusing them: those persist across a binge's episode-to-episode player-instance reuse by
+  design (cumulative QoE counters), which would silently suppress moment B on every episode after the
+  first. These three reset in `load()` instead.
+- **Where PlBufferMoment actually lives — a deliberate, documented deviation from the spec's literal
+  text.** FR-R218-1 says "PlayerStore exposes a single derived buffering state." It's implemented in
+  `PlayerScreen.kt` (Compose-side) instead: `PlayerStore` is architecturally decoupled from any concrete
+  `RaviloPlayer` instance on purpose (see R216's own `qoeSnapshotProvider` injection pattern), and
+  deriving a player-state-based enum inside the store would break that. The requirement's actual
+  substance — one derived state, not three independently-racing overlays — is delivered by
+  `PlBufferMoment` + a single debouncing `LaunchedEffect`, just one architectural layer up from where the
+  spec's prose puts it.
+- **wasmJs (FR-R218-6):** `hasRenderedFirstFrame`/`isBuffering`/`isSeeking` are hardcoded
+  `true`/`false`/`false` — the documented fallback ("where it cannot [wire waiting/playing], falls back
+  to moment A's behaviour"), not a bug. No `<video>` event wiring exists for these yet.
+- **Moment D's "scrub tile"** doesn't exist as a UI element yet — `StreamTicket.trickplayUrl` is always
+  null (its own future phase, per this phase's Out-of-scope section). Implemented as the nearest real
+  equivalent instead: a small spinner beside the position timestamp in the seek row.
+- **Moment C's chrome-forcing (Open question #2)** resolved as: force `PlayerChrome`'s `AnimatedVisibility`
+  visible via `chromeVisible || stallActive` without touching `chromeVisible`/`chromeRevision`
+  themselves, so R208's 30s auto-hide timer is never armed or reset by a stall and the chrome retracts
+  the instant `displayedBufferMoment` leaves `STALL`. Not verified against a chrome the viewer had
+  already raised manually before the stall began — should behave correctly (visibility is
+  OR'd, never subtracted) but wasn't specifically exercised.
+- **Not yet done / known gaps:** phone-specific scaled sizing (FR-R218-6's "40px spinner / 26px title /
+  15px label") — the phone target (`:ravilo-phone`, which shares this same `PlayerScreen.kt`) currently
+  renders moment B at the same fixed sizes as TV; functionally correct, not yet visually tuned per-form-
+  factor. Open questions #1 (400ms debounce), #3 (frozen-frame-survives-rebuffer per decoder), and #4
+  (seek debounce feel) are all still genuinely open — none of this was tested on real hardware before
+  landing in this pass.
+- **A related bug found and fixed in the same pass** (see phase 180's own build notes for the server
+  half): `PlayerScreen.kt`'s `onDispose` called `store.stopSession(...)` directly instead of
+  `store.close()`, leaving `PlayerStore.scope` — and the coroutine behind `startSession()`'s retry
+  loop — running for up to ~15s after Back was pressed. Fixed by switching to `close()` (whose own doc
+  comment, unchanged since before this phase existed, already said this was the intended path).
 
 **Design reference:** `design/ravilo/Player Loading and Buffering - Directions.html` — the built,
 reviewed exploration. Direction **B (Grounded)** chosen for the cold start; the stall treatment is the

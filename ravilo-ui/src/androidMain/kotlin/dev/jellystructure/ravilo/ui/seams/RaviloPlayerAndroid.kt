@@ -105,9 +105,20 @@ actual class RaviloPlayer actual constructor() {
     private var qoeRebufferStartMs: Long = -1L
     private var qoeSuppressNextBuffering = false
 
+    // R218 (FR-R218-1) — fed by this same qoeListener's callbacks below, but distinct fields from the
+    // qoe* ones above: those deliberately persist across a binge's episode-to-episode player reuse
+    // (never reset), which is correct for cumulative QoE counters but wrong here — moment B (cold start)
+    // needs to reappear for episode 2 even though qoeFirstFrameRendered is already true from episode 1.
+    // These three reset in load() instead. @Volatile for the same cross-thread-visibility reason as the
+    // qoe* fields (read from PlayerScreen's poll loop, written from Media3's analytics thread).
+    @Volatile private var _hasRenderedFirstFrame = false
+    @Volatile private var _isBuffering = false
+    @Volatile private var _isSeeking = false
+
     private val qoeListener = object : AnalyticsListener {
         override fun onRenderedFirstFrame(eventTime: AnalyticsListener.EventTime, output: Any, renderTimeMs: Long) {
             qoeFirstFrameRendered = true
+            _hasRenderedFirstFrame = true
         }
         override fun onDroppedVideoFrames(eventTime: AnalyticsListener.EventTime, droppedFrames: Int, elapsedMs: Long) {
             qoeDroppedFrames += droppedFrames
@@ -121,17 +132,23 @@ actual class RaviloPlayer actual constructor() {
             newPosition: Player.PositionInfo,
             reason: Int,
         ) {
-            if (reason == Player.DISCONTINUITY_REASON_SEEK) qoeSuppressNextBuffering = true
+            if (reason == Player.DISCONTINUITY_REASON_SEEK) {
+                qoeSuppressNextBuffering = true
+                _isSeeking = true
+            }
         }
         override fun onPlaybackStateChanged(eventTime: AnalyticsListener.EventTime, state: Int) {
             when (state) {
                 Player.STATE_BUFFERING -> {
+                    _isBuffering = true
                     if (qoeFirstFrameRendered && !qoeSuppressNextBuffering) {
                         qoeRebufferStartMs = eventTime.realtimeMs
                     }
                     qoeSuppressNextBuffering = false
                 }
                 Player.STATE_READY -> {
+                    _isBuffering = false
+                    _isSeeking = false
                     if (qoeRebufferStartMs >= 0) {
                         qoeRebufferCount++
                         qoeRebufferMs += (eventTime.realtimeMs - qoeRebufferStartMs).coerceAtLeast(0)
@@ -183,6 +200,11 @@ actual class RaviloPlayer actual constructor() {
 
     actual fun load(streamUrl: String, startPositionMs: Long, subtitles: List<SubTrack>, audio: List<AudioTrack>, title: String, subtitle: String?, artworkUrl: String?) {
         audioMeta = audio
+        // R218 — a new item is its own cold start; see these fields' own doc for why they reset here
+        // and the qoe* counters above deliberately don't.
+        _hasRenderedFirstFrame = false
+        _isBuffering = false
+        _isSeeking = false
         val subConfigs = subtitles.mapNotNull { sub ->
             val url = sub.url ?: return@mapNotNull null
             val mime = when {
@@ -327,6 +349,9 @@ actual class RaviloPlayer actual constructor() {
     actual val bufferedMs: Long get() = exo.bufferedPosition.coerceAtLeast(0)
     actual val isPlaying: Boolean get() = exo.isPlaying
     actual val isEnded: Boolean get() = exo.playbackState == Player.STATE_ENDED
+    actual val hasRenderedFirstFrame: Boolean get() = _hasRenderedFirstFrame
+    actual val isBuffering: Boolean get() = _isBuffering
+    actual val isSeeking: Boolean get() = _isSeeking
 
     actual val audioTracks: List<PlayerAudioTrack>
         get() {

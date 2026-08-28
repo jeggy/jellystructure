@@ -18,6 +18,7 @@ import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.alloc
 import kotlinx.cinterop.memScoped
 import kotlinx.cinterop.ptr
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -25,6 +26,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.withContext
 import kotlin.concurrent.Volatile
 import platform.posix.CLOCK_REALTIME
 import platform.posix.clock_gettime
@@ -64,11 +66,22 @@ private val playedGate = Semaphore(4)
 // session, not just the last one.
 internal data class PlaybackKey(val deviceId: String, val jellyfinId: String)
 
+/** See [PlaybackTracker.started]'s doc. [superseded] is the full still-active earlier entry for the
+ *  same key, if any, so the caller can run it through the same complete teardown (stop report + encode
+ *  release) as any other exit path, not just release its encode. */
+internal data class StartResult(val stopAlreadyArrived: Boolean, val superseded: TrackedPlayback?)
+
 internal class TrackedPlayback(
     val device: DeviceData,
     val jellyfinId: String,
     val positionMs: Long,
     val heartbeatMs: Long,
+    // Phase 180 — Jellyfin's OWN play-session id (JellyfinPlaybackInfoResponse.playSessionId), the one
+    // its transcode manager actually keys an active encode on. Distinct from playSessionIdFor()'s
+    // deterministic bookkeeping id used for /Sessions/Playing* — see stopActiveEncoding's doc. Null when
+    // PlaybackInfo was unavailable and startPlayback fell back to a plain direct-play URL (no encode to
+    // ever release).
+    val jellyfinPlaySessionId: String? = null,
 )
 
 private const val STOP_WATCHDOG_MS = 90_000L
@@ -76,6 +89,13 @@ private const val STOP_WATCHDOG_MS = 90_000L
 // A stopped playback stays "stopped" for this long so a progress tick that was already in flight when
 // the stop landed can't resurrect the session. Comfortably longer than the client's 10s tick.
 private const val STOP_GRACE_MS = 60_000L
+
+// Phase 180 (FR-180-3) — a stop that arrives for a key startPlayback hasn't reached started() for yet is
+// held this long, not discarded as "unknown". Bounded well past the ~15s worst-case client retry backoff
+// (PlayerStore.startSession: 1+2+4+8s between 5 attempts) so a late-succeeding retry still finds its
+// abandonment recorded, but well short of STOP_WATCHDOG_MS — this is bridging one in-flight request pair,
+// not covering a dead client.
+private const val PENDING_STOP_TTL_MS = 30_000L
 
 /**
  * The in-memory register of what is playing where, backing the Phase 110 (FR B.2) stop watchdog and the
@@ -91,6 +111,11 @@ internal class PlaybackTracker(private val clock: () -> Long = ::nowMs) {
     private val active = HashMap<PlaybackKey, TrackedPlayback>()
     private val stoppedUntilMs = HashMap<PlaybackKey, Long>()
 
+    // Phase 180 (FR-180-3) — key -> when the stop was requested. Present only while a stop has arrived
+    // for a key that startPlayback hasn't called started() for yet (the abandon-during-negotiation race
+    // R218 introduces real traffic for). Pruned by TTL alongside stoppedUntilMs in tracked().
+    private val pendingStops = HashMap<PlaybackKey, Long>()
+
     // Non-suspend readers (nowPlaying, called from route handlers) can't take the mutex, so they read an
     // immutable snapshot republished on every mutation instead of iterating the live map.
     @Volatile
@@ -105,13 +130,32 @@ internal class PlaybackTracker(private val clock: () -> Long = ::nowMs) {
     @Volatile
     private var lastSeenSnapshot: Map<PlaybackKey, Pair<DeviceData, Long>> = emptyMap()
 
-    suspend fun started(device: DeviceData, jellyfinId: String, positionMs: Long) {
+    /**
+     * Phase 180 — [jellyfinPlaySessionId] is Jellyfin's own play-session id for this start (carried
+     * through to [stopped] so a later teardown can release the right encode). Returns a [StartResult]:
+     * [StartResult.stopAlreadyArrived] is true when a stop for this exact key was already recorded by
+     * [stopped] before this start finished negotiating (FR-180-3) — the caller must tear the session it
+     * just minted down immediately, since the viewer already left. [StartResult.supersededPlaySessionId]
+     * carries a still-active EARLIER session's own play-session id when one existed for this exact key
+     * (FR-180-1's "a new session for the same device superseding an older one") — the caller must
+     * release that one too, since a second start for the same key without an intervening stop otherwise
+     * leaks the first session's encode forever.
+     */
+    suspend fun started(
+        device: DeviceData,
+        jellyfinId: String,
+        positionMs: Long,
+        jellyfinPlaySessionId: String? = null,
+    ): StartResult {
         val key = PlaybackKey(device.deviceId, jellyfinId)
-        mutex.withLock {
+        return mutex.withLock {
             stoppedUntilMs.remove(key)  // an explicit new start ends the post-stop grace window
-            active[key] = TrackedPlayback(device, jellyfinId, positionMs, clock())
+            val stopAlreadyArrived = pendingStops.remove(key) != null
+            val superseded = active[key]
+            active[key] = TrackedPlayback(device, jellyfinId, positionMs, clock(), jellyfinPlaySessionId)
             lastSeen[key] = device to clock()
             publish()
+            StartResult(stopAlreadyArrived, superseded)
         }
     }
 
@@ -137,14 +181,22 @@ internal class PlaybackTracker(private val clock: () -> Long = ::nowMs) {
     /**
      * Bug fix: the entry used to be removed by deviceId regardless of which item stopped, so a late stop
      * for episode 1 dropped the tracking for the episode actually playing.
+     *
+     * Phase 180 — returns the removed entry's `jellyfinPlaySessionId` (null if there was nothing active
+     * for this key, or the active entry never got one) so the caller can release the right encode. When
+     * nothing was active, records a [pendingStops] entry instead (FR-180-3) — a stop for a key that
+     * hasn't reached [started] yet is a real race ([R218]'s abandon-during-negotiation case), not proof
+     * there was nothing to stop.
      */
-    suspend fun stopped(device: DeviceData, jellyfinId: String) {
+    suspend fun stopped(device: DeviceData, jellyfinId: String): String? {
         val key = PlaybackKey(device.deviceId, jellyfinId)
-        mutex.withLock {
-            active.remove(key)
+        return mutex.withLock {
+            val existing = active.remove(key)
             stoppedUntilMs[key] = clock() + STOP_GRACE_MS
             lastSeen[key] = device to clock()  // Phase 178 — keeps this stop visible to anyActive()'s grace window
+            if (existing == null) pendingStops[key] = clock()
             publish()
+            existing?.jellyfinPlaySessionId
         }
     }
 
@@ -153,6 +205,7 @@ internal class PlaybackTracker(private val clock: () -> Long = ::nowMs) {
     suspend fun tracked(): List<TrackedPlayback> = mutex.withLock {
         val now = clock()
         stoppedUntilMs.entries.removeAll { it.value <= now }
+        pendingStops.entries.removeAll { (_, requestedAt) -> now - requestedAt > PENDING_STOP_TTL_MS }
         lastSeen.entries.removeAll { (_, v) -> now - v.second > PLAYBACK_DEFER_GRACE_MS }
         active.values.toList()
     }
@@ -289,9 +342,13 @@ class PlaybackService(
         // Bug fix: [capabilities] used to be discarded here — an HDR10/HLG source always direct-played
         // regardless of what the device could actually display correctly (see deviceProfile()'s doc).
         // Phase 161: moved before buildSubtracks() below — it now needs to know `needsTranscode`.
-        val source = jellyfinClient.getPlaybackInfo(jellyfinBase, token, device.jellyfinUserId, jellyfinId, capabilities = capabilities, identity = identity)
-            ?.mediaSources?.firstOrNull()
+        val playbackInfo = jellyfinClient.getPlaybackInfo(jellyfinBase, token, device.jellyfinUserId, jellyfinId, capabilities = capabilities, identity = identity)
+        val source = playbackInfo?.mediaSources?.firstOrNull()
         val needsTranscode = source != null && !source.supportsDirectPlay && source.transcodingUrl != null
+        // Phase 180 (FR-180-2) — Jellyfin's OWN play-session id, distinct from playSessionIdFor()'s
+        // bookkeeping id below; this is the one stopActiveEncoding needs. Null when PlaybackInfo itself
+        // was unavailable (source == null, plain direct-play-URL fallback) — nothing to ever release.
+        val jellyfinPlaySessionId = playbackInfo?.playSessionId
         Logger.info(
             "PlaybackInfo: item=$jellyfinId directPlay=${source?.supportsDirectPlay} transcode=$needsTranscode",
             "tv",
@@ -318,7 +375,35 @@ class PlaybackService(
             "$jellyfinBase/Videos/$jellyfinId/stream?Static=true&MediaSourceId=$jellyfinId&DeviceId=${identity.deviceId}&api_key=$token"
         }
 
-        playbackTracker.started(device, jellyfinId, startPositionMs)
+        val startResult = playbackTracker.started(device, jellyfinId, startPositionMs, jellyfinPlaySessionId)
+
+        // Phase 180 (FR-180-1) — a still-active earlier session for this exact (device, item) key is
+        // being replaced without an intervening stop; release it too, or its encode leaks forever (this
+        // is the "new session superseding an older one" convergence path). NonCancellable: this request's
+        // own connection is alive and its response doesn't depend on this, but it must still complete
+        // even if something upstream tears the request coroutine down before we return.
+        startResult.superseded?.let { old ->
+            withContext(NonCancellable) {
+                releaseSession(device, jellyfinId, old.positionMs, old.jellyfinPlaySessionId)
+            }
+        }
+
+        if (startResult.stopAlreadyArrived) {
+            // Phase 180 (FR-180-3) — a stop for this exact key already arrived while we were still
+            // negotiating (R218's abandon-during-negotiation case): the viewer already left. Tear down
+            // what we just minted immediately rather than leaving it live for however long it takes
+            // something else to notice. NonCancellable because the client that would have awaited this
+            // response is, by definition, already gone — its connection may already be closing.
+            //
+            // FR-180-4 — started() above already wrote this session into `active` (that write is what
+            // lets a LATER started() call detect a genuine supersede); undo it via the same stopped()
+            // every other exit path uses, or the abandoned session would briefly read as live to
+            // anyActive()/nowPlaying() despite already being known-abandoned.
+            withContext(NonCancellable) {
+                playbackTracker.stopped(device, jellyfinId)
+                releaseSession(device, jellyfinId, startPositionMs, jellyfinPlaySessionId)
+            }
+        }
 
         return StreamTicket(
             jellyfinBaseUrl = jellyfinBase,
@@ -360,14 +445,35 @@ class PlaybackService(
         // watchdog for stale/disconnected devices. Blocking it would risk leaving a phantom "Now
         // Playing" in Jellyfin forever, which is worse than the (already access-gated-at-start) cost
         // of letting an in-flight stop go through.
-        playbackTracker.stopped(device, jellyfinId)
+        val jellyfinPlaySessionId = playbackTracker.stopped(device, jellyfinId)
+        releaseSession(device, jellyfinId, positionMs, jellyfinPlaySessionId)
+    }
+
+    /**
+     * Phase 180 (FR-180-1/FR-180-2) — the one teardown routine every exit path converges on: the
+     * existing Jellyfin stop report, now followed by releasing the encode (idempotent and
+     * failure-tolerant per [dev.jellystructure.auth.JellyfinClient.stopActiveEncoding]'s own doc — a
+     * release for a session that was never transcoding, or already ended, is a success, not an error).
+     * [jellyfinPlaySessionId] is Jellyfin's own id (from [getPlaybackInfo]'s response), not
+     * [playSessionIdFor]'s bookkeeping id — null skips the release outright (nothing was ever minted to
+     * release, e.g. PlaybackInfo was unavailable at start time).
+     */
+    private suspend fun releaseSession(
+        device: DeviceData,
+        jellyfinId: String,
+        positionMs: Long,
+        jellyfinPlaySessionId: String?,
+    ) {
         val jellyfinBase = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
         val token = jellyfinClient.tvToken(jellyfinBase, device, configStore.current.apiKeys.jellyfinToken)
+        val identity = JellyfinDeviceIdentity.forDevice(device)
         jellyfinClient.stopPlaybackSession(
             jellyfinBase, token, jellyfinId,
-            positionMs * TICKS_PER_MS, jellyfinId,
-            JellyfinDeviceIdentity.forDevice(device), playSessionIdFor(device, jellyfinId),
+            positionMs * TICKS_PER_MS, jellyfinId, identity, playSessionIdFor(device, jellyfinId),
         )
+        if (jellyfinPlaySessionId != null) {
+            jellyfinClient.stopActiveEncoding(jellyfinBase, token, identity, jellyfinPlaySessionId)
+        }
     }
 
     /**
