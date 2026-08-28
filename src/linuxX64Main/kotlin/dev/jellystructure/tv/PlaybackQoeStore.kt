@@ -15,6 +15,7 @@ import kotlinx.serialization.Serializable
  */
 @Serializable
 data class QoeSummary(
+    @SerialName("device_id") val deviceId: String,
     @SerialName("jellyfin_id") val jellyfinId: String,
     @SerialName("play_session_id") val playSessionId: String,
     @SerialName("dropped_frames") val droppedFrames: Int,
@@ -74,6 +75,7 @@ class PlaybackQoeStore(private val db: JellystructureDb) {
 }
 
 private fun Playback_qoe.toSummary() = QoeSummary(
+    deviceId = device_id,
     jellyfinId = jellyfin_id,
     playSessionId = play_session_id,
     droppedFrames = dropped_frames.toInt(),

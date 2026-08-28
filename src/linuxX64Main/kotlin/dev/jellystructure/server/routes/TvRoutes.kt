@@ -60,6 +60,10 @@ private data class OverviewDevice(
     @SerialName("created_at") val createdAt: Long,
     @SerialName("last_seen") val lastSeen: Long,
     @SerialName("now_playing") val nowPlaying: String? = null,
+    // Phase 177 §FR-177-5 — this device's most recent playback-quality report, if any. Null when the
+    // device has never posted one (an un-updated client, or simply no playback yet) — never badged in
+    // that case, same as a clean (no-issue) report; see QoeSummary.hasIssue.
+    @SerialName("recent_quality") val recentQuality: dev.jellystructure.tv.QoeSummary? = null,
 )
 
 @Serializable
@@ -84,6 +88,21 @@ private data class OverviewPolicy(
     @SerialName("allowed_tags") val allowedTags: List<String> = emptyList(),
     @SerialName("blocked_tags") val blockedTags: List<String> = emptyList(),
     @SerialName("max_rating") val maxRating: Int? = null,
+)
+
+/** Phase 177 §FR-177-5 — one row for the Activity page's "Playback quality" card; device/title are
+ *  resolved here (never raw ids) so the frontend renders server-pushed state only. */
+@Serializable
+private data class QoeActivityRow(
+    @SerialName("device_name") val deviceName: String,
+    val title: String,
+    @SerialName("dropped_frames") val droppedFrames: Int,
+    @SerialName("rebuffer_count") val rebufferCount: Int,
+    @SerialName("rebuffer_ms") val rebufferMs: Long,
+    @SerialName("direct_play") val directPlay: Boolean,
+    @SerialName("link_kind") val linkKind: String,
+    @SerialName("link_mbps") val linkMbps: Int,
+    @SerialName("updated_at") val updatedAt: Long,
 )
 
 @Serializable
@@ -199,6 +218,8 @@ fun Route.tvRoutes(
     mediaStore: dev.jellystructure.media.MediaStore? = null,
     // Security fix (2026-08-02 review, finding H4) — same unbounded-brute-force gap as /api/auth/login.
     loginRateLimiter: dev.jellystructure.auth.LoginRateLimiter,
+    // Phase 177 §FR-177-5 — per-device recent-quality summary for the Users & devices overview.
+    playbackQoeStore: dev.jellystructure.tv.PlaybackQoeStore,
 ) {
     // Phase 141 — proxied username/password login, replacing the code+poll+admin-approve pairing flow.
     // No device token exists yet (OPEN_API_PATHS); jellystructure authenticates the credentials against
@@ -670,6 +691,7 @@ fun Route.tvRoutes(
                         lastSeen = d.lastSeen,
                         // Bug fix: this used to be the raw Jellyfin item id (a hex UUID) — resolve to a title.
                         nowPlaying = dev.jellystructure.tv.nowPlayingItem(d.deviceId)?.let { id -> mediaStore?.titleForJellyfinId(id) ?: id },
+                        recentQuality = playbackQoeStore.recentForDevice(d.deviceId, limit = 1).firstOrNull(),
                     )
                 },
                 sessions = userSessions.map { s ->
@@ -684,6 +706,29 @@ fun Route.tvRoutes(
             )
         }
         call.respond(users)
+    }
+
+    // Phase 177 §FR-177-5 — the Activity page's "Playback quality" card: recent sessions across every
+    // device, device/title already resolved server-side (constitution: frontend renders server-pushed
+    // state only, never derives it from raw ids).
+    get("/tv/admin/playback-qoe/recent") {
+        runCatching { call.attributes[SessionKey] }.getOrNull()
+            ?: return@get call.respond(HttpStatusCode.Unauthorized, mapOf("error" to "Not logged in"))
+        val devicesById = deviceService.allDevices().associateBy { it.deviceId }
+        val rows = playbackQoeStore.recent(30).map { q ->
+            QoeActivityRow(
+                deviceName = devicesById[q.deviceId]?.displayName?.ifBlank { q.deviceId } ?: q.deviceId,
+                title = mediaStore?.titleForJellyfinId(q.jellyfinId) ?: q.jellyfinId,
+                droppedFrames = q.droppedFrames,
+                rebufferCount = q.rebufferCount,
+                rebufferMs = q.rebufferMs,
+                directPlay = q.directPlay,
+                linkKind = q.linkKind,
+                linkMbps = q.linkMbps,
+                updatedAt = q.updatedAt,
+            )
+        }
+        call.respond(rows)
     }
 
     // Phase 143 — revoke one admin web session by its wire-safe id prefix (never the raw token; see

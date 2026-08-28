@@ -417,6 +417,13 @@ object MediaApi {
         response.status.value in 200..299
     }.getOrDefault(false)
 
+    /** Phase 178 §FR-178-4 — "Run anyway" override for a run currently deferred (waiting for a TV to
+     *  stop playing before its heavy steps proceed). One-run only; nothing is written to config. */
+    suspend fun runPipelineAnyway(jobId: String): Boolean = runCatching {
+        val response = httpClient.post("/api/pipeline/$jobId/run-anyway")
+        response.status.value in 200..299
+    }.getOrDefault(false)
+
     suspend fun stats(): StatsResponse? = runCatching {
         httpClient.get("/api/stats").body<StatsResponse>()
     }.getOrNull()
