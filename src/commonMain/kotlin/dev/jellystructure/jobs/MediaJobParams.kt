@@ -29,4 +29,11 @@ data class MediaJobParams(
     // unlocked kind. true (an operator's explicit "detect again" in the segment editor): re-derive even
     // over an existing unlocked value — PipelineStepOps' own per-kind lock check still applies either way.
     val segmentForce: Boolean = false,
+    // Phase 178 §FR-178-2 — true for a segments job enqueued by a scheduled/event-driven pipeline run;
+    // the segments-lane worker (MediaJobQueue.segmentsWorkerLoop) skips claiming it while a TV is
+    // playing (dev.jellystructure.tv.isPlaybackActive()), picking the next non-deferrable queued job
+    // instead. False (the default) for every OTHER enqueue path — most importantly an operator's
+    // explicit "detect again" in the segment editor — which per the phase's invariant must never be
+    // silently deferred.
+    val deferWhilePlaying: Boolean = false,
 )

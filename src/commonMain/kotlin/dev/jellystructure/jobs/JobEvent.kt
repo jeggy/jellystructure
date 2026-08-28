@@ -45,6 +45,16 @@ sealed class JobEvent {
     // progress tick — the Jobs page just re-renders from the latest snapshot, no client-side diffing.
     @Serializable @SerialName("media_job")
     data class MediaJobUpdate(val job: MediaJobSnapshot) : JobEvent()
+
+    // Phase 178 §FR-178-2/FR-178-4 — a scheduled/event-driven pipeline run is deferring its start (or a
+    // step) because a TV is playing. [devices] names who (PlaybackTracker.activeDevices()) for the
+    // dashboard's "Paused — TV is watching {name}" state; [Deferred] fires once when waiting begins,
+    // [Resumed] once when it clears and the run actually proceeds — never on every poll tick.
+    @Serializable @SerialName("pipeline_deferred")
+    data class Deferred(val jobId: String, val devices: List<String>) : JobEvent()
+
+    @Serializable @SerialName("pipeline_resumed")
+    data class Resumed(val jobId: String) : JobEvent()
 }
 
 /** Phase 109 — everything the Activity ▸ Jobs page needs to render one row, in one shape shared by the

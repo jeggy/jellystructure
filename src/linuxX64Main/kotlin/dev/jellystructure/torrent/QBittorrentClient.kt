@@ -79,4 +79,32 @@ class QBittorrentClient {
         }
         return response.body()
     }
+
+    /** Phase 178 §FR-178-3 — the CURRENT alternative-speed-limits mode (0 = normal, 1 = alternative/
+     *  throttled), read before we change it so [PlaybackThrottleService] can restore exactly that value
+     *  rather than assuming "normal". */
+    suspend fun getSpeedLimitsMode(config: QBittorrentConfig, sid: String): Int {
+        val url = config.url.trimEnd('/') + "/api/v2/transfer/speedLimitsMode"
+        val response = httpGet(url) {
+            if (sid.isNotBlank()) header("Cookie", "SID=$sid")
+        }
+        if (response.status != HttpStatusCode.OK) {
+            throw IllegalStateException("qBittorrent getSpeedLimitsMode failed: HTTP ${response.status.value}")
+        }
+        return response.body<String>().trim().toIntOrNull() ?: 0
+    }
+
+    /** Phase 178 §FR-178-3 — explicitly SETS the mode (not `toggleSpeedLimitsMode`) so a restore can
+     *  target an exact remembered value without an intervening read-then-toggle race. */
+    suspend fun setSpeedLimitsMode(config: QBittorrentConfig, sid: String, mode: Int) {
+        val url = config.url.trimEnd('/') + "/api/v2/transfer/setSpeedLimitsMode"
+        val response = httpPost(url) {
+            if (sid.isNotBlank()) header("Cookie", "SID=$sid")
+            contentType(ContentType.Application.FormUrlEncoded)
+            setBody("mode=$mode")
+        }
+        if (response.status != HttpStatusCode.OK) {
+            throw IllegalStateException("qBittorrent setSpeedLimitsMode failed: HTTP ${response.status.value}")
+        }
+    }
 }
