@@ -517,8 +517,6 @@ class HomeFeedService(
         } ?: return@coroutineScope ContinueRowResult(emptyList(), 0)
         val (resumeItems, nextUpItems) = fetched
 
-        val cards = mutableListOf<MediaCard>()
-        val seen = mutableSetOf<String>()
         // R186 (FR-RV-CW2-3): resolved via one map instead of a linear scan per entry — the candidate
         // pool is now up to 200 entries (was 20), and this runs on every home/channel load.
         val byJellyfinId = all.asSequence().mapNotNull { mi -> mi.jellyfinId?.let { it to mi } }.toMap()
@@ -530,29 +528,56 @@ class HomeFeedService(
         val resumeItemsSorted = resumeItems.sortedByDescending { play ->
             play.userData?.lastPlayedDate?.let { dev.jellystructure.util.isoToEpochSeconds(it) } ?: 0L
         }
-        for (play in resumeItemsSorted) {
+
+        // R217 (FR-R217-1) — build each stream's candidate cards separately, in their own already-sorted
+        // order, THEN interleave the two streams before applying [limit]. Concatenating (resume, then
+        // next-up) and capping afterward — the old shape — meant a next-up entry could never survive the
+        // cap once the resume list alone reached [limit], no matter how recent: confirmed live, a
+        // household with 92 resumable + 73 next-up candidates had ALL 30 Home slots filled from resume
+        // alone, silently dropping a next-up entry sitting at position 1 of its own list (Two and a Half
+        // Men — an episode finished mid-scan, waiting on the next one).
+        data class RowCandidate(val itemId: String, val card: MediaCard)
+
+        val resumeCandidates = resumeItemsSorted.mapNotNull { play ->
             // R185 — Jellyfin's own IsResumable filter is PlaybackPositionTicks > 0 only, with no Played
             // check; the two can disagree (stale/leaked position outliving a played flag — see the spec)
             // regardless of what caused it. Never show an already-watched title as in-progress.
-            if (play.userData?.played == true) continue
+            if (play.userData?.played == true) return@mapNotNull null
             val itemId = play.seriesId ?: play.id
-            if (!seen.add(itemId)) continue
-            val mediaItem = byJellyfinId[itemId] ?: continue
+            val mediaItem = byJellyfinId[itemId] ?: return@mapNotNull null
             val pct = play.userData?.playedPercentage?.toFloat()?.div(100f)
             // R113: carry the resumed episode's season/episode for the on-image badge (null for movies).
             // R199: fall back to jellystructure's own scanned episode number (Phase 152) whenever
             // Jellyfin's own IndexNumber/ParentIndexNumber parse fails on the file's name.
             val (s, e) = resolvedEpisodeNumbers(mediaItem, play.id, play.seasonNumber, play.episodeNumber)
-            cards.add(mediaItem.toMediaCard(progressPct = pct, seasonNumber = s, episodeNumber = e))
+            RowCandidate(itemId, mediaItem.toMediaCard(progressPct = pct, seasonNumber = s, episodeNumber = e))
         }
 
-        for (play in nextUpItems) {
+        val nextUpCandidates = nextUpItems.mapNotNull { play ->
             val itemId = play.seriesId ?: play.id
-            if (!seen.add(itemId)) continue
-            val mediaItem = byJellyfinId[itemId] ?: continue
+            val mediaItem = byJellyfinId[itemId] ?: return@mapNotNull null
             val (s, e) = resolvedEpisodeNumbers(mediaItem, play.id, play.seasonNumber, play.episodeNumber)
             val label = if (s != null && e != null) "S${s}E${e} · ${play.name}" else play.name
-            cards.add(mediaItem.toMediaCard(nextUpLabel = label, seasonNumber = s, episodeNumber = e))
+            RowCandidate(itemId, mediaItem.toMediaCard(nextUpLabel = label, seasonNumber = s, episodeNumber = e))
+        }
+
+        // Round-robin: one from resume, one from next-up, repeating; once a stream is exhausted the other
+        // keeps going alone. `seen` preserves the existing per-item dedup exactly — a series present in
+        // both streams (shouldn't normally happen; Jellyfin models a series as either in-progress or
+        // waiting-on-next, not both) still shows once, keeping whichever copy is placed first.
+        val cards = mutableListOf<MediaCard>()
+        val seen = mutableSetOf<String>()
+        var ri = 0
+        var ni = 0
+        while (ri < resumeCandidates.size || ni < nextUpCandidates.size) {
+            if (ri < resumeCandidates.size) {
+                val c = resumeCandidates[ri++]
+                if (seen.add(c.itemId)) cards.add(c.card)
+            }
+            if (ni < nextUpCandidates.size) {
+                val c = nextUpCandidates[ni++]
+                if (seen.add(c.itemId)) cards.add(c.card)
+            }
         }
 
         ContinueRowResult(cards.take(limit), cards.size)
