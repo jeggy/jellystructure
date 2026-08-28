@@ -529,13 +529,24 @@ class HomeFeedService(
             play.userData?.lastPlayedDate?.let { dev.jellystructure.util.isoToEpochSeconds(it) } ?: 0L
         }
 
-        // R217 (FR-R217-1) — build each stream's candidate cards separately, in their own already-sorted
-        // order, THEN interleave the two streams before applying [limit]. Concatenating (resume, then
-        // next-up) and capping afterward — the old shape — meant a next-up entry could never survive the
-        // cap once the resume list alone reached [limit], no matter how recent: confirmed live, a
-        // household with 92 resumable + 73 next-up candidates had ALL 30 Home slots filled from resume
-        // alone, silently dropping a next-up entry sitting at position 1 of its own list (Two and a Half
-        // Men — an episode finished mid-scan, waiting on the next one).
+        // R217 (FR-R217-1) + live fix (2026-08-29) — build BOTH streams' full candidate sets first
+        // (nothing filtered by position, nothing capped), merge them into one deduped collection, and
+        // only THEN interleave + cap. Two invariants the merge upholds, in order:
+        //
+        //  1. A series with a genuine RESUME candidate always wins over a next-up suggestion for the
+        //     same series — regardless of where either sits in its own list. Found live: Jellyfin's own
+        //     /Shows/NextUp can suggest a series' very FIRST unplayed episode (PlayCount 0, never
+        //     watched) even while the household has a real in-progress episode deep in a later season
+        //     ("Vi drukner i rod": next-up wrongly suggested S1E1, while the real resume point was
+        //     S5E1, last played 2026-07-07 — genuinely long ago, exactly what the user reported). The
+        //     wrong suggestion sat at next-up position 46, the correct resume entry at resume position
+        //     63 — a plain interleave-then-cap reaches next-up's round 46 long before resume's round 63,
+        //     so position alone let the wrong entry win the per-series dedup. Resolved by removing any
+        //     next-up candidate whose series already has a resume candidate BEFORE interleaving, so
+        //     stream position can never decide the winner — only whether real in-progress state exists.
+        //  2. Once that precedence is settled, interleave the two (now non-overlapping) streams before
+        //     applying [limit] — R217's original starvation fix — so a large resume backlog still can't
+        //     push every next-up entry out regardless of true recency.
         data class RowCandidate(val itemId: String, val card: MediaCard)
 
         val resumeCandidates = resumeItemsSorted.mapNotNull { play ->
@@ -552,19 +563,21 @@ class HomeFeedService(
             val (s, e) = resolvedEpisodeNumbers(mediaItem, play.id, play.seasonNumber, play.episodeNumber)
             RowCandidate(itemId, mediaItem.toMediaCard(progressPct = pct, seasonNumber = s, episodeNumber = e))
         }
+        val resumeIds = resumeCandidates.mapTo(mutableSetOf()) { it.itemId }
 
         val nextUpCandidates = nextUpItems.mapNotNull { play ->
             val itemId = play.seriesId ?: play.id
+            // Invariant 1 above — a real resume candidate for this exact series already exists.
+            if (itemId in resumeIds) return@mapNotNull null
             val mediaItem = byJellyfinId[itemId] ?: return@mapNotNull null
             val (s, e) = resolvedEpisodeNumbers(mediaItem, play.id, play.seasonNumber, play.episodeNumber)
             val label = if (s != null && e != null) "S${s}E${e} · ${play.name}" else play.name
             RowCandidate(itemId, mediaItem.toMediaCard(nextUpLabel = label, seasonNumber = s, episodeNumber = e))
         }
 
-        // Round-robin: one from resume, one from next-up, repeating; once a stream is exhausted the other
-        // keeps going alone. `seen` preserves the existing per-item dedup exactly — a series present in
-        // both streams (shouldn't normally happen; Jellyfin models a series as either in-progress or
-        // waiting-on-next, not both) still shows once, keeping whichever copy is placed first.
+        // Round-robin: one from resume, one from next-up, repeating; once a stream is exhausted the
+        // other keeps going alone. `seen` is a defensive backstop only — each stream is already unique
+        // internally (one card per itemId) and the two streams no longer overlap after the filter above.
         val cards = mutableListOf<MediaCard>()
         val seen = mutableSetOf<String>()
         var ri = 0
