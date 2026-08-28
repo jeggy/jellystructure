@@ -8,8 +8,34 @@
 > 30 came from the resume list and zero came from next-up** — every slot was full before next-up ever got
 > a turn.
 
-**Status:** Planned — design-authored 2026-08-28. **Implementation deliberately deferred** (user asked to
-write the spec and wait) — no code changes in this phase.
+**Status:** Implemented (2026-08-29). Design-authored and deferred 2026-08-28; user re-reported the same
+symptom live the next day ("Two and a half men" missing from Continue Watching) and asked for the fix.
+Re-verified the exact same root cause against live data before writing code (see Build notes) — not yet
+restarted on the dev backend to confirm the live row output, pending the user's go-ahead.
+
+## Build notes (2026-08-29)
+
+- **Re-confirmed live, one day later, worse than the original report:** resume backlog now 92 items
+  (was 55), next-up now 73 (was ~62 raw). "Two and a Half Men" sits at **next-up position 1** — the
+  most-recently-actionable next-up entry there is — and was still fully absent from the live (unpatched)
+  `/api/tv/home` Continue row, whose 30 slots were 100% resume, 0% next-up. Confirms the starvation gets
+  worse as the backlog grows, exactly as the spec's own invariant warned.
+- **Implemented exactly as FR-R217-1 specified** — no design changes needed. `buildContinueRow()` now
+  builds `resumeCandidates`/`nextUpCandidates` as two separate lists (identical per-item logic to
+  before: R185's played-skip, R199's episode-number fallback, the same card-building calls), then merges
+  them with a strict 1:1 round-robin (resume, next-up, repeating; the longer stream continues alone once
+  the other is exhausted) before `cards.take(limit)`. `seen`-based dedup preserved, now checked at
+  interleave-placement time rather than per-stream-then-per-stream time — equivalent in every case that
+  matters, since a series is essentially never both resumable and next-up simultaneously in Jellyfin's
+  own model.
+- Compiles clean (`compileKotlinLinuxX64`). No new unit test — `buildContinueRow` is a private suspend
+  fn with several service dependencies (`mediaStore`/`jellyfinClient`/`configStore`) and no existing test
+  harness for `HomeFeedService`; correctness verified by re-deriving the exact live scenario above by
+  hand (Two and a Half Men at next-up position 1 → merged position 2, comfortably inside any reasonable
+  cap) rather than a mocked unit test. Worth adding a real test harness if this class gets touched again.
+- **Not yet on-device/live verified** — the dev backend (bare `.kexe`, tmux session
+  `jellystructure-backend`) was not restarted with this code; doing so needs the user's go-ahead per
+  standing practice.
 
 ## Root cause
 
