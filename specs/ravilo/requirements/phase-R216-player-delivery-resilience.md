@@ -7,8 +7,13 @@
 > **2.4 GHz at a 130 Mbps PHY rate** mid-evening, and that after three separate stutter investigations
 > nothing in the app has ever recorded a dropped frame or a rebuffer.
 
-**Status:** Planned — design-authored 2026-08-28, not yet dev-reviewed. Phase 177 consumes what this
-phase reports; each ships independently (177 is inert without R216, R216 is harmless without 177).
+**Status:** Implemented (2026-08-28, same day as design) — built end to end: `detectAvcDecoderLimits()`
+generalised to `detectDecoderLimits()` (hardware-only, per-codec bitrate ceilings), new
+`detectLinkState()`, `DefaultLoadControl` with a 10s post-rebuffer buffer, an `AnalyticsListener`-based
+`PlayerQoeSnapshot` posted at session end and every 10 minutes. Compiles clean on both Android
+(`compileDebugKotlinAndroid`) and wasmJs (`compileKotlinWasmJs`) targets. Phase 177 consumes what this
+phase reports; each ships independently (177 is inert without R216, R216 is harmless without 177). Not
+yet verified on-device (stue TV) — compile-clean only; see Open questions.
 
 ## Why this phase exists
 
@@ -151,13 +156,25 @@ abandoned/crashed session is not lost) to Phase 177's `POST /api/tv/playback/qoe
   client" fix), **R211/R212** (startup latency, which FR-R216-3 must not regress).
 - `specs/research-reports/stue-tv-4k-playback-stutter-2026-08-28.md` — every measurement cited here.
 
-## Open questions (dev review)
+## Open questions
 
-1. **Is `getBitrateRange()` trustworthy across the fleet?** It is authoritative on MT5895; OEM decoders
-   are known to report optimistic or placeholder values. A wrong-but-plausible ceiling is worse than
-   none, since Phase 177 will act on it. Consider sanity bounds (ignore implausibly low values) and
-   validate on the Tizen/phone targets before enabling FR-177-2 fleet-wide.
-2. **Is the link signal available without a runtime permission** on Android 12 TV builds? FR-R216-2's
-   fallback is `unknown`, but confirm before building.
-3. **Should QoE reporting be opt-in?** It is first-party telemetry to the household's own server, which
-   argues no. Noted for the owner's call rather than assumed.
+1. **Still open — needs a fleet, not just this device.** `getBitrateRange()` is confirmed authoritative
+   on MT5895 (matches the research report's ADB-measured 60 Mbps exactly, and FR-177-2's own live
+   Jellyfin test above reproduced the expected transcode trigger using that number). Whether OEM decoders
+   elsewhere in a real fleet report optimistic/placeholder values is unverified — only one device exists
+   to test against here. Sanity bounds (ignore implausibly low values) remain a reasonable defensive
+   addition, not yet added.
+2. **RESOLVED (design-time, from platform documentation, not device-verified).** `WifiInfo.getLinkSpeed()`/
+   `getFrequency()` and `ConnectivityManager.getNetworkCapabilities()` are gated only by the *normal*
+   (install-time, non-runtime) `ACCESS_WIFI_STATE`/`ACCESS_NETWORK_STATE` permissions — unlike
+   `getSSID()`/`getBSSID()`, which need `ACCESS_FINE_LOCATION`. Both are now declared in the Android/phone
+   manifests; implemented as designed with no runtime permission prompt. Not confirmed by an actual
+   on-device log line (e.g. an observed real `linkSpeed`/`kind` value from stue TV) — that would need the
+   TV test in the item below.
+3. **Should QoE reporting be opt-in?** Unchanged — still the owner's call, not assumed. Currently always-on
+   (first-party telemetry to the household's own server).
+4. **Not yet done — on-device verification.** Everything here compiles but has not run on stue TV or a
+   Pixel 9: no confirmed real `DecoderLimits`/`LinkState` values logged, no confirmed real `PlayerQoeSnapshot`
+   posted and stored, no confirmed real behaviour under an actual Wi-Fi dip or rebuffer. The user has
+   authorized stue TV access for this work; this remains the concrete next step before calling this phase
+   fully verified rather than just implemented.
