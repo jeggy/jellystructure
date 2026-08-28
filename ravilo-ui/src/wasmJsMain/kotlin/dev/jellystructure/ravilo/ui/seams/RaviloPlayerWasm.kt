@@ -113,6 +113,14 @@ actual class RaviloPlayer actual constructor() {
     }
     actual val isPlaying: Boolean get() = !video.paused && !video.ended
     actual val isEnded: Boolean get() = video.ended
+    // R218 (FR-R218-6) — "the wasm player needs its own waiting/playing wiring; where it cannot, falls
+    // back to moment A's behaviour rather than inventing one." No `waiting`/`playing`/`seeking` event
+    // wiring exists on this <video> element yet, so these three constants keep B/C/D permanently
+    // inactive here — only moment A (the existing pre-ticket Loading state) ever shows on web, exactly
+    // the documented fallback, not a bug.
+    actual val hasRenderedFirstFrame: Boolean get() = true
+    actual val isBuffering: Boolean get() = false
+    actual val isSeeking: Boolean get() = false
     // R46: the browser doesn't expose rich embedded-audio metadata, so surface the server-derived
     // labels for the picker. (Switching multi-audio still needs an hls.js bridge — display only.)
     actual val audioTracks: List<PlayerAudioTrack> get() =

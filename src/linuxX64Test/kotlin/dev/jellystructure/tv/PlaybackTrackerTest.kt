@@ -115,4 +115,81 @@ class PlaybackTrackerTest {
         assertEquals("movie", t.nowPlaying(livingRoom.deviceId))
         assertNull(t.nowPlaying(bedroom.deviceId))
     }
+
+    // ─── Phase 180 ────────────────────────────────────────────────────────────
+
+    @Test
+    fun stoppedReturnsTheJellyfinPlaySessionIdSoTheEncodeCanBeReleased() = runBlocking {
+        val t = tracker()
+        val tv = device()
+        t.started(tv, "movie", 0L, jellyfinPlaySessionId = "jf-abc")
+
+        assertEquals("jf-abc", t.stopped(tv, "movie"))
+    }
+
+    @Test
+    fun stoppingSomethingNeverStartedReturnsNull() = runBlocking {
+        val t = tracker()
+        val tv = device()
+
+        assertNull(t.stopped(tv, "movie"))
+    }
+
+    @Test
+    fun aStopThatArrivesBeforeStartedFlagsTheNextStartedCall() = runBlocking {
+        // FR-180-3 — Back pressed during negotiation: the client's stop reaches the server before
+        // startPlayback's own started() call does.
+        val t = tracker()
+        val tv = device()
+
+        t.stopped(tv, "movie")
+        val result = t.started(tv, "movie", 0L, jellyfinPlaySessionId = "jf-abc")
+
+        assertTrue(result.stopAlreadyArrived)
+        assertNull(result.superseded)  // nothing else was active for this key
+    }
+
+    @Test
+    fun aStopThatArrivesBeforeStartedIsConsumedOnce() = runBlocking {
+        // The pending-stop flag must not leak into a LATER, unrelated start for the same key.
+        val t = tracker()
+        val tv = device()
+
+        t.stopped(tv, "movie")
+        t.started(tv, "movie", 0L, jellyfinPlaySessionId = "jf-abc")
+        t.stopped(tv, "movie")  // the abandon-teardown's own stopped() call, per PlaybackService
+        val result = t.started(tv, "movie", 0L, jellyfinPlaySessionId = "jf-xyz")
+
+        assertFalse(result.stopAlreadyArrived)
+    }
+
+    @Test
+    fun aPendingStopExpiresAfterItsTtl() = runBlocking {
+        // Bounded per FR-180-3's own open question — a start that never completes must not leave a
+        // stop pending forever.
+        val t = tracker()
+        val tv = device()
+
+        t.stopped(tv, "movie")
+        now += 31_000  // > PENDING_STOP_TTL_MS (30s)
+        t.tracked()  // the janitor tick that prunes it (mirrors the watchdog's own cadence)
+        val result = t.started(tv, "movie", 0L)
+
+        assertFalse(result.stopAlreadyArrived)
+    }
+
+    @Test
+    fun aSecondStartForTheSameKeyReportsTheSupersededSession() = runBlocking {
+        // FR-180-1 — a re-play without an intervening stop must not leak the first session's encode.
+        val t = tracker()
+        val tv = device()
+
+        t.started(tv, "movie", 0L, jellyfinPlaySessionId = "jf-first")
+        val result = t.started(tv, "movie", 5_000L, jellyfinPlaySessionId = "jf-second")
+
+        assertEquals("jf-first", result.superseded?.jellyfinPlaySessionId)
+        assertFalse(result.stopAlreadyArrived)
+        // The tracker itself now reflects only the new session.
+        assertEquals("jf-second", t.stopped(tv, "movie"))
+    }
 }

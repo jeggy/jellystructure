@@ -6,8 +6,55 @@
 > flight. On a 20-second 4K transcode spin-up — precisely the wait R218 exists to make survivable —
 > walking away leaves the encode running for a viewer who has gone to watch something else.
 
-**Status:** Planned (design-authored 2026-08-28; renumbered 179 → 180 the same day — the dev team took 179 for the subtitle-sideload transcode stall). Not yet dev-reviewed — the Jellyfin-side call in
-FR-180-2 must be confirmed live against 10.11.11 before build (see Open questions).
+**Status:** Implemented (2026-08-28). Built the same day it was spec'd — the Jellyfin-side call in
+FR-180-2 was confirmed live against 10.11.11's own OpenAPI document before any code was written (see
+Build notes); not yet on-device verified against a real transcode/NVENC slot.
+
+## Build notes (2026-08-28)
+
+- **Open question #1 resolved before build, as required:** `DELETE /Videos/ActiveEncodings`
+  (`operationId: StopEncodingProcess`) exists on the live 10.11.11 OpenAPI document, takes `deviceId`
+  and `playSessionId` as required query params, returns 204 (including — per Jellyfin's own
+  `StopEncodingProcess`/`KillTrancodingJobs` implementation — when no matching job is found, so it's
+  safe to call unconditionally with no upstream "was this actually transcoding" check).
+- **A real bug found reading the code for FR-180-2, not anticipated by this spec's own text:** the
+  `playSessionId` this spec's line 49 pointed at (`playSessionIdFor()`, `PlaybackService.kt:218`) is
+  jellystructure's own deterministic `"${deviceId}-${jellyfinId}"` bookkeeping string, used for
+  `/Sessions/Playing*` — a **different id than the one `StopEncodingProcess` needs**, which is
+  Jellyfin's own server-minted `PlaySessionId` from the `PlaybackInfo` response
+  (`JellyfinPlaybackInfoResponse.playSessionId`, the same id embedded in `TranscodingUrl`). That field
+  was already being fetched by `startPlayback()` and silently discarded. Built correctly: the real
+  Jellyfin id is now carried through `TrackedPlayback.jellyfinPlaySessionId` and used for the release
+  call; `playSessionIdFor()`'s id is unchanged for everything it already did.
+- **FR-180-3's "does not begin streaming at all where it can be avoided" reconciled against this
+  phase's own "no playback path changes" invariant** (a real internal tension, not resolved by the
+  spec text as written): implemented as "tear down immediately after minting, not before" —
+  `startPlayback()`'s negotiation itself is untouched and still always returns a normal `StreamTicket`;
+  a pending stop is instead consumed the instant `PlaybackTracker.started()` runs, and the just-minted
+  session/encode is released before the response's caller (already gone, by definition) would ever see
+  it. `PENDING_STOP_TTL_MS = 30_000` — bounded well past the client's own worst-case retry backoff
+  (~15s, see `PlayerStore.startSession`), well short of the 90s stop watchdog.
+- **FR-180-1's third convergence path** ("a new session for the same device superseding an older one")
+  needed `PlaybackTracker.started()` to report the still-active earlier entry it's about to overwrite,
+  not just accept a new one — added as `StartResult.superseded`.
+- **FR-180-4 turned out to already be true** — `stopPlayback()` already called `playbackTracker.stopped()`
+  before this phase; no new work needed there beyond making sure the FR-180-3 abandon path also calls it
+  (`started()` writes the entry to `active` to detect a *future* supersede, so the abandon branch has to
+  explicitly `stopped()` it back out or it would briefly read as live to `anyActive()`/`nowPlaying()`).
+- All Jellyfin-facing release calls wrapped in `withContext(NonCancellable)` — the abandon-during-
+  negotiation case is, by construction, running in a request coroutine whose client connection may
+  already be closing.
+- 6 new `PlaybackTrackerTest` cases (12/12 passing): stopped() returns the right id, stopping something
+  never started returns null, a stop-before-started flags the next started() call, that flag is
+  consumed exactly once, it expires after its TTL, and a second start for an unstopped key reports the
+  superseded session.
+- **A related client-side bug found and fixed in the same pass, not originally scoped to either phase:**
+  `PlayerStore.close()` — which cancels the coroutine backing `startSession()`'s retry loop — was never
+  actually called anywhere in `PlayerScreen.kt`; only `stopSession()` was, which left that coroutine
+  running for up to ~15s after Back was pressed. A late-succeeding retry during that window could mint
+  an entirely new orphaned session after the "real" stop had already been sent and forgotten — the
+  concrete, reachable cause behind this phase's FR-180-3, not just a theoretical id-not-minted-yet race.
+  Fixed in `PlayerScreen.kt`'s `onDispose` (now calls `close()`); see R218's own build notes.
 
 ## Root cause
 
