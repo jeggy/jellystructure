@@ -26,6 +26,8 @@ data class QBittorrentConfig(
     @SerialName("no_auth") val noAuth: Boolean = false,
     @SerialName("path_mappings") val pathMappings: List<QBittorrentPathMapping> = emptyList(),
     @SerialName("seeding_cache_ttl") val seedingCacheTtl: Long = 600L,
+    // Phase 178 §FR-178-3
+    @SerialName("throttle_while_playing") val throttleWhilePlaying: Boolean = false,
 )
 
 @Serializable
@@ -80,7 +82,11 @@ data class PipelineStep(
 )
 
 @Serializable
-data class ScanConfig(val pipeline: List<PipelineStep> = emptyList())
+data class ScanConfig(
+    val pipeline: List<PipelineStep> = emptyList(),
+    // Phase 178 §FR-178-2
+    @SerialName("defer_while_playing") val deferWhilePlaying: Boolean = true,
+)
 
 // Phase 139 — request-language steering (Original vs Nordic/Danish etc.). Mirrors the backend
 // dev.jellystructure.config.RequestLanguageIntent field-for-field, including the provisioned-state

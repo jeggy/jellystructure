@@ -111,11 +111,20 @@ private suspend fun refreshUsersList(scope: CoroutineScope) {
         val deviceRows = if (u.devices.isEmpty()) """<div class="tiny muted" style="padding:6px 0">No Ravilo devices.</div>""" else u.devices.joinToString("") { d ->
             val connBadge = if (d.connected) """<span class="badge ok" style="margin-left:6px">connected</span>""" else ""
             val playing = d.nowPlaying?.let { """<div class="tiny" style="color:var(--acc-ink)">▶ playing ${it.esc()}</div>""" } ?: ""
+            // Phase 177 §FR-177-5 — a clean session is never badged; only rebuffers/dropped frames are.
+            val quality = d.recentQuality?.takeIf { it.hasIssue }?.let { q ->
+                val bits = buildList {
+                    if (q.rebufferCount > 0) add("${q.rebufferCount} rebuffer${if (q.rebufferCount != 1) "s" else ""} (${q.rebufferMs / 1000}s)")
+                    if (q.droppedFrames > 0) add("${q.droppedFrames} dropped frames")
+                }.joinToString(", ")
+                """<div class="tiny" style="margin-top:2px"><span class="badge warn">quality</span> $bits · ${q.linkKind}${if (q.linkMbps > 0) " ${q.linkMbps} Mbps" else ""}${if (!q.directPlay) " · transcoding" else ""}</div>"""
+            } ?: ""
             """<div class="row center" style="padding:7px 0;border-top:1px solid var(--line)">
                  <div style="flex:1;min-width:0">
                    <b class="tiny">${d.name.esc()}</b>$connBadge
                    <div class="tiny muted">created ${usersAt(d.createdAt)} · last seen ${usersAgo(d.lastSeen)}</div>
                    $playing
+                   $quality
                  </div>
                  <button class="btn sm ghost users-revoke-device" data-device="${d.deviceId}" data-user="${u.userId}">Revoke</button>
                </div>"""

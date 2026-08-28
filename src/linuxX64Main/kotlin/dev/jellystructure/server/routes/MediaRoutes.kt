@@ -1927,6 +1927,16 @@ fun Route.mediaRoutes(
         call.respond(HttpStatusCode.Accepted, mapOf("status" to "started", "steps" to pipeline.size.toString()))
     }
 
+    // Phase 178 §FR-178-4 — "Run anyway" for a run currently sitting in PipelineEngine.awaitPlaybackClear
+    // because a TV is playing. [jobId] comes from the JobEvent.Deferred payload the dashboard already
+    // received over the WS — this is a one-run override (never written to config), matching Phase 154's
+    // pre-run-dialog pattern.
+    post("/pipeline/{jobId}/run-anyway") {
+        val jobId = call.parameters["jobId"] ?: return@post call.respond(HttpStatusCode.BadRequest)
+        dev.jellystructure.media.PipelineDeferOverride.runAnyway(jobId)
+        call.respond(mapOf("status" to "ok"))
+    }
+
     post("/scan/resume") {
         val currentStatus = scanTracker.status().status
         if (currentStatus != "CANCELLED") {

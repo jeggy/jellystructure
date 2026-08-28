@@ -316,6 +316,21 @@ private fun connectDashScanSocket(scope: CoroutineScope, baseCount: Int = 0) {
                     banner?.innerHTML = """<span class="badge ok">Scan complete — $n new item${if (n != 1) "s" else ""} processed.</span>"""
                     scope.launch { loadDashboardStats() }
                 }
+                // Phase 178 §FR-178-2/FR-178-4 — a scheduled/event-driven run is waiting for a TV to
+                // stop playing before its heavy steps proceed. "Run anyway" is a one-run override —
+                // nothing is written to config.
+                is JobEvent.Deferred -> {
+                    val who = event.devices.joinToString(", ").ifBlank { "a device" }
+                    val banner = document.getElementById("dash-scan-banner") as? HTMLElement
+                    banner?.innerHTML = """<span class="badge warn">Paused — TV is watching (${who.esc()})</span> <button id="run-anyway-btn" class="btn sm ghost" style="margin-left:8px">Run anyway</button>"""
+                    document.getElementById("run-anyway-btn")?.addEventListener("click") {
+                        scope.launch { MediaApi.runPipelineAnyway(event.jobId) }
+                    }
+                }
+                is JobEvent.Resumed -> {
+                    val banner = document.getElementById("dash-scan-banner") as? HTMLElement
+                    banner?.innerHTML = """<span class="badge">Resumed — scanning…</span>"""
+                }
                 else -> {}
             }
         }

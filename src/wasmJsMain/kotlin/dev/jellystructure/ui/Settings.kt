@@ -350,6 +350,14 @@ X-JS-Api-Key: jsk_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx</pre>
                     <span class="muted tiny">seconds (default 600 = 10 min). The seeding surface reads this shared snapshot — lower = fresher data, more load.</span>
                   </div>
                 </div>
+                <hr class="dash">
+                <div style="display:flex;align-items:center;justify-content:space-between">
+                  <div>
+                    <span style="font-size:.9rem">Throttle while a TV is playing</span>
+                    <div class="hint" style="margin-top:2px">Flips qBittorrent's own <b>alternative speed limits</b> on while any Ravilo device is playing, and restores whatever mode it was in beforehand once playback stops (Phase 178). Off by default — this mutates a service you own, so it's opt-in, unlike deferring Jellystructure's own scans above.</div>
+                  </div>
+                  <span id="qb-throttle-toggle" class="toggle" style="cursor:pointer;flex-shrink:0;margin-left:12px"></span>
+                </div>
                 <div class="hint" style="margin-top:12px;color:var(--warn)">When enabled but unreachable, edits are blocked until qBittorrent responds or the guard is disabled.</div>
               </div>
             </div>
@@ -605,6 +613,15 @@ X-JS-Api-Key: jsk_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx</pre>
                 <input id="tv-image-cache" class="input" type="number" min="0" max="1000000" style="width:110px">
                 <span class="hint">Disk cache for Ravilo TV artwork (the image proxy). <strong>0 = unlimited.</strong> Once over the cap the oldest images are evicted. Applies live — no restart.</span>
               </div>
+              <hr class="dash">
+              <div style="font-size:.83rem;font-weight:500;margin:14px 0 8px;color:var(--ink-soft)">Playback-aware background work (Phase 178)</div>
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:2px">
+                <div>
+                  <span style="font-size:.9rem">Defer scans while a TV is watching</span>
+                  <div class="hint" style="margin-top:2px">Scheduled scans/pipeline runs and realtime ingest (never a manual "Scan library" click) wait for playback to stop before starting the heavy steps (file probing, artwork fetch, intro/credits detection) — so they don't compete with a TV for disk I/O. A single-user household and a many-viewer one may want opposite answers.</div>
+                </div>
+                <span id="defer-while-playing-toggle" class="toggle" style="cursor:pointer;flex-shrink:0;margin-left:12px"></span>
+              </div>
               <div style="border:1px solid var(--bad);border-radius:8px;padding:14px 16px">
                 <div style="font-size:.9rem;font-weight:600;color:var(--bad);margin-bottom:4px">Danger zone</div>
                 <p class="hint" style="margin:0 0 12px">Permanently deletes all scanned media data and resets scan state. Your media files and NFOs on disk are not touched. You will need to run a full scan afterwards.</p>
@@ -756,6 +773,8 @@ private var effectiveScanThreads = 4
 private var libraryMappings: MutableList<LibraryMapping> = mutableListOf()
 private var qbEnabled = false
 private var qbNoAuth = false
+private var qbThrottleWhilePlaying = false
+private var deferWhilePlaying = true
 private var qbPathMappings: MutableList<QBittorrentPathMapping> = mutableListOf()
 private var radarrEnabled = false
 private var radarrRescan = true
@@ -848,6 +867,8 @@ private fun populateForm(response: ConfigResponse) {
     setInputValue("scan-episode-cap", scanEpisodeCap.toString())
     setInputValue("tv-image-cache", tvImageCacheMb.toString())
     updateRestartBanner()
+    deferWhilePlaying = config.scan.deferWhilePlaying
+    updateToggle("defer-while-playing-toggle", deferWhilePlaying)
 
     libraryMappings = config.libraries.toMutableList()
     if (libraryMappings.isNotEmpty()) renderLibraryList()
@@ -855,9 +876,11 @@ private fun populateForm(response: ConfigResponse) {
     val qb = config.qbittorrent
     qbEnabled = qb?.enabled ?: false
     qbNoAuth = qb?.noAuth ?: false
+    qbThrottleWhilePlaying = qb?.throttleWhilePlaying ?: false
     qbPathMappings = (qb?.pathMappings ?: emptyList()).toMutableList()
     updateToggle("qb-enabled-toggle", qbEnabled)
     updateToggle("qb-no-auth-toggle", qbNoAuth)
+    updateToggle("qb-throttle-toggle", qbThrottleWhilePlaying)
     if (qb != null) {
         setInputValue("qb-url", qb.url)
         setInputValue("qb-username", qb.username)
@@ -978,6 +1001,11 @@ private fun attachListeners(scope: CoroutineScope) {
         updateToggle("tell-jellyfin-toggle", tellJellyfin)
         refreshTomlPreview(readForm())
     }
+    document.getElementById("defer-while-playing-toggle")?.addEventListener("click") {
+        deferWhilePlaying = !deferWhilePlaying
+        updateToggle("defer-while-playing-toggle", deferWhilePlaying)
+        refreshTomlPreview(readForm())
+    }
     wireAgeRatingCascade()
 
     listOf("jellyfin-url", "jellyfin-token", "tmdb-key", "fallback-language").forEach { id ->
@@ -1020,6 +1048,11 @@ private fun attachListeners(scope: CoroutineScope) {
         updateToggle("qb-no-auth-toggle", qbNoAuth)
         val qbCredFields = document.getElementById("qb-credential-fields") as? HTMLElement
         qbCredFields?.style?.display = if (qbNoAuth) "none" else "block"
+        refreshTomlPreview(readForm())
+    }
+    document.getElementById("qb-throttle-toggle")?.addEventListener("click") {
+        qbThrottleWhilePlaying = !qbThrottleWhilePlaying
+        updateToggle("qb-throttle-toggle", qbThrottleWhilePlaying)
         refreshTomlPreview(readForm())
     }
     listOf("qb-url", "qb-username", "qb-password", "qb-cache-ttl").forEach { id ->
@@ -1405,6 +1438,7 @@ private fun readForm(): AppConfig = AppConfig(
         password = if (qbNoAuth) "" else getInputValue("qb-password").ifBlank { "##KEEP##" },
         pathMappings = qbPathMappings.toList(),
         seedingCacheTtl = getInputValue("qb-cache-ttl").toLongOrNull()?.coerceIn(30L, 86400L) ?: 600L,
+        throttleWhilePlaying = qbThrottleWhilePlaying,
     ) else null,
     radarr = if (radarrEnabled) ArrConfig(
         enabled = true,
@@ -1431,7 +1465,7 @@ private fun readForm(): AppConfig = AppConfig(
         showHistoryOnTitle = bazarrShowHistory,
     ) else null,
     scanSchedule = if (pipelineEnabled) computePipeCron() else "",
-    scan = ScanConfig(pipeline = if (pipelineEnabled) pipelineSteps.toList() else emptyList()),
+    scan = ScanConfig(pipeline = if (pipelineEnabled) pipelineSteps.toList() else emptyList(), deferWhilePlaying = deferWhilePlaying),
     requestLanguage = RequestLanguageConfig(intents = requestLanguageIntents.toList(), kidsDefault = requestLanguageKidsDefault?.takeIf { it.isNotBlank() }),
 )
 
@@ -1463,6 +1497,7 @@ private fun buildToml(c: AppConfig): String = buildString {
     if (c.scanSchedule.isNotBlank()) {
         appendLine("scan_schedule = \"${c.scanSchedule}\"")
     }
+    appendLine("defer_while_playing = ${c.scan.deferWhilePlaying}")
     for (step in c.scan.pipeline) {
         appendLine()
         appendLine("[[scan.pipeline]]")
@@ -1513,6 +1548,7 @@ private fun buildToml(c: AppConfig): String = buildString {
             appendLine("""username = "${qb.username}"""")
             appendLine("""password = "***"""")
         }
+        appendLine("throttle_while_playing = ${qb.throttleWhilePlaying}")
         for (m in qb.pathMappings) {
             appendLine()
             appendLine("[[qbittorrent.path_mappings]]")

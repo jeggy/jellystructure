@@ -168,6 +168,7 @@ fun startServer(
     towoRunnerRegistry: TowoRunnerRegistry,
     towoEventBus: TowoEventBus,
     towoService: TowoService,
+    playbackQoeStore: dev.jellystructure.tv.PlaybackQoeStore,
 ): suspend () -> Unit {
     // Fire-and-forget work (scans, NFO/artwork pushes, image fetches) runs as appScope.launch{}.
     // On Kotlin/Native an exception escaping a launched coroutine reaches the global handler and
@@ -469,7 +470,7 @@ fun startServer(
                 // R171 — the TV Request tab's Seerr-backed discover/search/request service; null (tab
                 // reports unavailable) until a SeerrClient is wired, exactly like the other optional *arr services above.
                 val seerrDiscoverService = seerrClient?.let { dev.jellystructure.seerr.SeerrDiscoverService(configStore, it, raviloConfigService, mediaStore, requestLanguageService, requestIntentStore, acquisitionService) }
-                tvRoutes(deviceService, raviloConfigService, homeFeedService, browseService, detailService, playbackService, sessionService, jellyfinClient, configStore, channelLogoStore, imageProxyService, tvEventBus, upcomingService, seerrDiscoverService, mediaStore, loginRateLimiter)
+                tvRoutes(deviceService, raviloConfigService, homeFeedService, browseService, detailService, playbackService, sessionService, jellyfinClient, configStore, channelLogoStore, imageProxyService, tvEventBus, upcomingService, seerrDiscoverService, mediaStore, loginRateLimiter, playbackQoeStore)
                 liveTvRoutes(liveTvService)
                 towoRoutes(towoService, towoStore)
             }

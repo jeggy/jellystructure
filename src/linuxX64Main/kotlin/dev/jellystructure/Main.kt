@@ -259,6 +259,7 @@ fun main() = runBlocking {
         artworkDownloader, tmdbClient, scanTracker, mediaHistory, activityLog, broadcaster,
         frontendDir, raviloWebDir = raviloWebDir, port = port, scanDispatcher = scanDispatcher, effectiveScanThreads = effectiveScanThreads, jsTagStore = jsTagStore, seedingGuard = seedingGuard, seedingSnapshot = seedingSnapshot, logoDownloader = logoDownloader, qbClient = qbClient, arrClient = arrClient, arrRescan = arrRescan, sonarrEnrich = sonarrEnrich, acquisitionService = acquisitionService, seerrClient = seerrClient, bazarrClient = bazarrClient, tvEventBus = tvEventBus, imageProxyService = imageProxyService, mediaJobQueue = mediaJobQueue, sessionBridge = sessionBridge, apiKeyStore = apiKeyStore, realtimeIngest = realtimeIngest, libraryListener = libraryListener, fdWatchdog = fdWatchdog, imdbClient = imdbClient, upcomingService = upcomingService, requestLanguageService = requestLanguageService, requestIntentStore = requestIntentStore, liveTvService = liveTvService, fingerprintService = fingerprintService, mediaSegmentStore = mediaSegmentStore,
         towoStore = towoStore, towoRunnerRegistry = towoRunnerRegistry, towoEventBus = towoEventBus, towoService = towoService,
+        playbackQoeStore = playbackQoeStore,
     )
 
     // R149: populate Sonarr next-airing data for all TV shows on startup (background, non-blocking).
