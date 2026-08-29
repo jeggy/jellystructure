@@ -42,6 +42,13 @@ private const val ROW_ITEM_LIMIT = 30
 private const val HERO_AUTO_COUNT = 5
 private const val FEED_TTL_MS = 5 * 60_000L  // Continue row freshness window
 private const val CONTINUE_TIMEOUT_MS = 6_000L  // R102: cap the live Jellyfin resume/next-up wait
+// R217 (2026-08-29) — how deep to look for "when did I last finish an episode of this series", the
+// sort key next-up entries have no timestamp of their own for. 500 balances coverage against payload:
+// measured live on this household (1185 finished plays total), 400 covered the 13 most recent next-up
+// series and ~650 KB, while fetching all 1185 still only reached 24 of 34 (the rest were sampled-and-
+// abandoned, invisible to any played/resume query) for ~2 MB — a poor trade on a backend already
+// sensitive to large JSON decodes. Everything past this depth falls back to carry-forward ordering.
+private const val CONTINUE_RECENCY_POOL = 500
 private const val WATCHED_TIMEOUT_MS = 2_500L  // R142: cap the played-state overlay so it never hangs the feed
 // Bug fix: shorter than FEED_TTL_MS on purpose — watched/in-progress state changes far more often than
 // the structural feed (rows/heroes/channels), so it needs its own, tighter freshness window.
@@ -512,10 +519,18 @@ class HomeFeedService(
             coroutineScope {
                 val resumeDeferred = async { jellyfinClient.getResumeItems(jellyfinUrl, token, device.jellyfinUserId) }
                 val nextUpDeferred = async { jellyfinClient.getNextUp(jellyfinUrl, token, device.jellyfinUserId) }
-                resumeDeferred.await() to nextUpDeferred.await()
+                // R217 (2026-08-29) — a next-up entry carries no timestamp of its own (the episode it
+                // points at is unwatched), so without this there is nothing to sort it against the
+                // resume stream by. This gives every series a real "when did I last finish an episode
+                // of this" instant. Third parallel call, so it costs no extra wall-clock; the whole
+                // block still shares CONTINUE_TIMEOUT_MS and the R86-A SWR cache.
+                val recencyDeferred = async {
+                    jellyfinClient.getRecentlyPlayed(jellyfinUrl, token, device.jellyfinUserId, limit = CONTINUE_RECENCY_POOL)
+                }
+                Triple(resumeDeferred.await(), nextUpDeferred.await(), recencyDeferred.await())
             }
         } ?: return@coroutineScope ContinueRowResult(emptyList(), 0)
-        val (resumeItems, nextUpItems) = fetched
+        val (resumeItems, nextUpItems, recentlyPlayed) = fetched
 
         // R186 (FR-RV-CW2-3): resolved via one map instead of a linear scan per entry — the candidate
         // pool is now up to 200 entries (was 20), and this runs on every home/channel load.
@@ -544,10 +559,13 @@ class HomeFeedService(
         //     so position alone let the wrong entry win the per-series dedup. Resolved by removing any
         //     next-up candidate whose series already has a resume candidate BEFORE interleaving, so
         //     stream position can never decide the winner — only whether real in-progress state exists.
-        //  2. Once that precedence is settled, interleave the two (now non-overlapping) streams before
-        //     applying [limit] — R217's original starvation fix — so a large resume backlog still can't
-        //     push every next-up entry out regardless of true recency.
-        data class RowCandidate(val itemId: String, val card: MediaCard)
+        //  2. Once that precedence is settled, sort the two (now non-overlapping) streams together by
+        //     **actual last-watched time** and only then apply [limit] — so a large resume backlog
+        //     still can't push every next-up entry out (R217's original starvation fix), AND the row
+        //     reads in true chronological order rather than the 1:1 round-robin this replaced, which
+        //     alternated regardless of recency and could seat a three-week-old next-up entry at
+        //     position 2 above something watched yesterday.
+        data class RowCandidate(val itemId: String, val card: MediaCard, val lastWatchedAt: Long)
 
         val resumeCandidates = resumeItemsSorted.mapNotNull { play ->
             // R185 — Jellyfin's own IsResumable filter is PlaybackPositionTicks > 0 only, with no Played
@@ -561,36 +579,51 @@ class HomeFeedService(
             // R199: fall back to jellystructure's own scanned episode number (Phase 152) whenever
             // Jellyfin's own IndexNumber/ParentIndexNumber parse fails on the file's name.
             val (s, e) = resolvedEpisodeNumbers(mediaItem, play.id, play.seasonNumber, play.episodeNumber)
-            RowCandidate(itemId, mediaItem.toMediaCard(progressPct = pct, seasonNumber = s, episodeNumber = e))
+            val ts = play.userData?.lastPlayedDate?.let { dev.jellystructure.util.isoToEpochSeconds(it) } ?: 0L
+            RowCandidate(itemId, mediaItem.toMediaCard(progressPct = pct, seasonNumber = s, episodeNumber = e), ts)
         }
         val resumeIds = resumeCandidates.mapTo(mutableSetOf()) { it.itemId }
+
+        // "When did I last finish an episode of this series", keyed by series — the only timestamp a
+        // next-up entry can be sorted by, since the episode it points at is by definition unwatched and
+        // carries none of its own. [recentlyPlayed] is already DatePlayed-descending, so the first hit
+        // per series is its most recent finish.
+        val lastFinishedBySeries = HashMap<String, Long>()
+        for (p in recentlyPlayed) {
+            val sid = p.seriesId ?: p.id
+            val ts = p.userData?.lastPlayedDate?.let { dev.jellystructure.util.isoToEpochSeconds(it) } ?: continue
+            if (sid !in lastFinishedBySeries) lastFinishedBySeries[sid] = ts
+        }
+
+        // Carry-forward for the tail: a series whose last finish predates [CONTINUE_RECENCY_POOL], or
+        // that was only ever *sampled* (an episode opened and abandoned — `Played=false` with a zero
+        // position, so it appears in neither the played list nor the resume list), has no timestamp of
+        // its own. Rather than collapsing all of those to "equally ancient" and shuffling them
+        // arbitrarily, inherit the previous entry's instant so Jellyfin's own next-up ordering — which
+        // is itself recency-biased (verified live: its order matched real timestamps for 13 of 14
+        // consecutive entries that had them) — still decides their relative places. Seeded with the
+        // first known value so an unknown entry ahead of any known one doesn't sort above everything.
+        var carriedTs = nextUpItems.firstNotNullOfOrNull { lastFinishedBySeries[it.seriesId ?: it.id] } ?: 0L
 
         val nextUpCandidates = nextUpItems.mapNotNull { play ->
             val itemId = play.seriesId ?: play.id
             // Invariant 1 above — a real resume candidate for this exact series already exists.
             if (itemId in resumeIds) return@mapNotNull null
+            lastFinishedBySeries[itemId]?.let { carriedTs = it }
             val mediaItem = byJellyfinId[itemId] ?: return@mapNotNull null
             val (s, e) = resolvedEpisodeNumbers(mediaItem, play.id, play.seasonNumber, play.episodeNumber)
             val label = if (s != null && e != null) "S${s}E${e} · ${play.name}" else play.name
-            RowCandidate(itemId, mediaItem.toMediaCard(nextUpLabel = label, seasonNumber = s, episodeNumber = e))
+            RowCandidate(itemId, mediaItem.toMediaCard(nextUpLabel = label, seasonNumber = s, episodeNumber = e), carriedTs)
         }
 
-        // Round-robin: one from resume, one from next-up, repeating; once a stream is exhausted the
-        // other keeps going alone. `seen` is a defensive backstop only — each stream is already unique
-        // internally (one card per itemId) and the two streams no longer overlap after the filter above.
+        // One chronological order across both streams. sortedByDescending is stable, so entries sharing
+        // an instant (notably a carry-forward run) keep the relative order they were built in — resume
+        // first, then Jellyfin's own next-up sequence. `seen` is a defensive backstop only: each stream
+        // is already unique internally and the two no longer overlap after the precedence filter above.
         val cards = mutableListOf<MediaCard>()
         val seen = mutableSetOf<String>()
-        var ri = 0
-        var ni = 0
-        while (ri < resumeCandidates.size || ni < nextUpCandidates.size) {
-            if (ri < resumeCandidates.size) {
-                val c = resumeCandidates[ri++]
-                if (seen.add(c.itemId)) cards.add(c.card)
-            }
-            if (ni < nextUpCandidates.size) {
-                val c = nextUpCandidates[ni++]
-                if (seen.add(c.itemId)) cards.add(c.card)
-            }
+        for (c in (resumeCandidates + nextUpCandidates).sortedByDescending { it.lastWatchedAt }) {
+            if (seen.add(c.itemId)) cards.add(c.card)
         }
 
         ContinueRowResult(cards.take(limit), cards.size)

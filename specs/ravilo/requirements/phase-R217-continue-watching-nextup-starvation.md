@@ -33,7 +33,7 @@ after restarting the dev backend — see Build notes.
   harness for `HomeFeedService`; correctness verified by re-deriving the exact live scenario above by
   hand (Two and a Half Men at next-up position 1 → merged position 2, comfortably inside any reasonable
   cap) rather than a mocked unit test. Worth adding a real test harness if this class gets touched again.
-- **Live-verified after restart (2026-08-29):** re-queried `/api/tv/home` as the stue TV device against
+- **Live-verified after restart (2026-08-29, before FR-R217-3):** re-queried `/api/tv/home` as the stue TV device against
   the restarted dev backend — Two and a Half Men now sits at **merged position 2** (Severance, Two and a
   Half Men, Bluey, …), exactly matching the by-hand prediction above. Several other titles absent from
   the pre-fix row also now appear (Babblarna, Temptation Island Danmark, The Bombing of Pan Am 103,
@@ -121,6 +121,43 @@ per-item dedup by `seriesId ?: id` stays exactly as it is), and apply `ROW_ITEM_
   dropped, but ordering was equally wrong cosmetically — this fix corrects that too, for free, from the
   same code path).
 
+### FR-R217-3 — Sort the merged row by actual last-watched time (added 2026-08-29)
+
+**Supersedes FR-R217-1's round-robin.** The 1:1 alternation fixed starvation but produced an order that
+is not chronological: it alternates streams regardless of recency, so a three-week-old next-up entry
+lands at position 2 above something watched yesterday. User-reported after the interleave shipped.
+
+Every candidate gets a real **last-watched instant** and the merged list is sorted by it, descending,
+before `limit` is applied:
+
+- **Resume candidates** already carry one — `UserData.LastPlayedDate` on the in-progress episode.
+- **Next-up candidates carry none of their own** (the episode they point at is by definition unwatched),
+  so they take "when did I last *finish* an episode of this series", from one additional
+  `getRecentlyPlayed` call (`Filters=IsPlayed&SortBy=DatePlayed`, first hit per `SeriesId` wins).
+  Issued as a **third parallel** call inside the existing `CONTINUE_TIMEOUT_MS` block, so it adds no
+  wall-clock time and rides the same R86-A SWR cache.
+- **Tail fallback — carry-forward.** A series whose last finish predates the fetch depth, or that was
+  only ever *sampled* (an episode opened then abandoned: `Played=false` with a zero position, so it
+  appears in neither the played list nor the resume list), has no timestamp anywhere. Rather than
+  collapsing all of those to "equally ancient" and shuffling them arbitrarily, each inherits the
+  previous next-up entry's instant, so Jellyfin's own next-up ordering decides their relative places.
+  This is sound because that ordering is itself recency-biased — verified live: it matched real
+  timestamps for 13 of 14 consecutive entries that had them (the one inversion is consistent with
+  R198's standing finding that Jellyfin's sort is a request, not a guarantee).
+- The sort is **stable**, so entries sharing an instant (notably a carry-forward run) keep their
+  build order: resume first, then Jellyfin's next-up sequence.
+
+**Depth is deliberately bounded** (`CONTINUE_RECENCY_POOL = 500`). Measured live on this household
+(1185 finished plays): 400 covered the 13 most recent next-up series for ~650 KB, while fetching all
+1185 still reached only 24 of 34 — the remainder being the sampled-and-abandoned case above, which no
+played/resume query can see at any depth — for ~2 MB, a poor trade on a backend already sensitive to
+large JSON decodes (see the perf-incident history). Past this depth, carry-forward takes over.
+
+> This revises the original spec's Out-of-scope entry, which rejected real timestamps for next-up on the
+> assumption they would cost "up to ~70 extra per-item Jellyfin round trips." That assumption was wrong:
+> one bulk `DatePlayed`-sorted query returns them all at once. The *conclusion* it drew (don't pay
+> per-item round trips) still stands; the premise did not.
+
 ### FR-R217-2 — Preserve every existing invariant this function already carries
 
 The R185 already-watched skip (`play.userData?.played == true` → never resurrect a finished item as
@@ -179,3 +216,24 @@ in-progress), the R199 episode-number fallback (`resolvedEpisodeNumbers`), and t
    the household never returned to shouldn't necessarily keep contesting fresh slots forever alongside a
    next-up entry from last night. Out of scope for the immediate fix; worth a follow-up if it turns out to
    matter in practice.
+
+## Build notes — FR-R217-3 (chronological sort), 2026-08-29
+
+Third live-reported issue in the same session, after the precedence fix shipped: *"it needs to be
+sorted by time properly."* Correct — the round-robin put the right **items** in the row but in the
+wrong **order**, alternating streams regardless of recency.
+
+- Implemented exactly as FR-R217-3 above: real `LastPlayedDate` for resume, bulk per-series
+  last-finished lookup for next-up, carry-forward for the tail, one stable descending sort, then cap.
+- **Live-verified** against the real backend, both surfaces:
+  - **Home:** predicted the exact expected order by hand from raw Jellyfin data first, then compared —
+    the live row matched item-for-item (Severance 08-28 22:10 → Two and a Half Men 08-28 19:02 →
+    Babblarna 08-28 06:40 → Temptation Island 08-27 22:20 → …). The only prediction/live differences
+    were two titles absent from the device's own visible catalog, which `byJellyfinId` correctly filters
+    — pre-existing, unrelated behaviour.
+  - **DanskTV channel row** (where the ordering problem was originally reported): now leads with
+    Temptation Island Danmark (08-27) instead of Vi drukner i rod, which has moved to position 10 —
+    matching its genuine 2026-07-07 last-played date, and still correctly showing its real S5E1/36%
+    resume state rather than the wrong S1E1 next-up suggestion.
+- `CONTINUE_RECENCY_POOL = 500` chosen from measured coverage-vs-payload on live data; see the constant's
+  own comment in `HomeFeedService.kt` and FR-R217-3's rationale.
