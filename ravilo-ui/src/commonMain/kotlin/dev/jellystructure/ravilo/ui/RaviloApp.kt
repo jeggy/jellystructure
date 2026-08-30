@@ -183,6 +183,9 @@ private sealed class Dest {
          *  null for every other seed source (row/kind/channel). */
         val personRoleLine: String? = null,
         val personTmdbId: Int? = null,
+        /** R219 (FR-R219-6) — set only alongside [continueWatching] == true, when reached from a
+         *  channel's own Continue row; forwarded to [SeededBrowseStore] unchanged. */
+        val channelId: String? = null,
     ) : Dest()
     data class Search(val displayName: String) : Dest()
     // R170 — Coming Soon (the old Upcoming tab) and Request (the old Top-10/Discover tab) are now the
@@ -724,15 +727,22 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                             seedQuery = row.seedQuery, seedMediaKind = row.seedMediaKind,
                             title = row.title, breadcrumb = dest.channel.name,
                             continueWatching = row.kind == RowKind.CONTINUE, displayName = dest.displayName,
+                            // R219 (FR-R219-6) — dest.channel was already in scope here and simply
+                            // unused for this case; only meaningful for the Continue row (a non-Continue
+                            // row's seedQuery is already channel-aware via withChannelSeed server-side).
+                            channelId = if (row.kind == RowKind.CONTINUE) dest.channel.id else null,
                         ))
                     },
                 )
             }
 
             is Dest.SeededBrowse -> {
-                val storeKey = "seededBrowse:${dest.displayName}:${dest.title}:${dest.continueWatching}"
+                // R219 (FR-R219-6): channelId is part of the key too — Home's and a channel's Continue
+                // See-all otherwise share the same title ("Continue Watching") and would wrongly reuse
+                // each other's cached store/result.
+                val storeKey = "seededBrowse:${dest.displayName}:${dest.title}:${dest.continueWatching}:${dest.channelId}"
                 val store = keptStore(storeKey) {
-                    SeededBrowseStore(apiClient, dest.seedQuery, dest.seedMediaKind, dest.continueWatching, dest.personTmdbId)
+                    SeededBrowseStore(apiClient, dest.seedQuery, dest.seedMediaKind, dest.continueWatching, dest.personTmdbId, dest.channelId)
                 }
                 SeededBrowseScreen(
                     store = store,

@@ -158,6 +158,9 @@ data class JellyfinPlayItem(
 @Serializable
 data class JellyfinPlayItemsResponse(
     @SerialName("Items") val items: List<JellyfinPlayItem> = emptyList(),
+    // R219 (FR-R219-2) — reported independently of Limit; the only reliable guard against a paged fetch
+    // silently stopping short. See the merge-completeness rule at the top of phase-R219's spec.
+    @SerialName("TotalRecordCount") val totalRecordCount: Int = 0,
 )
 
 @Serializable
