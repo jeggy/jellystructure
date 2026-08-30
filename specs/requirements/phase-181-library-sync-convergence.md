@@ -99,6 +99,41 @@ Both halves of that replacement are non-functional in this deployment:
 The fallback was silently dead for 23 days (and structurally dead since it was written) and nothing
 surfaced it, because "connected" was mistaken for "working".
 
+### 2.4 `DateCreated` is the file's mtime — so no timestamp-ordered sweep can be trusted
+
+This was found while pressure-testing an earlier draft of FR-181-1, which proposed a
+`SortBy=DateCreated` watermark. **That design was invalid and has been replaced.** The measurements:
+
+- Jellyfin's `DateCreated` **is the file's mtime**, matched to the nanosecond:
+  `Klovn S11E07` → file mtime `2026-08-30 04:09:01.982425580 UTC`, Jellyfin
+  `DateCreated 2026-08-30T04:09:01.9824255Z`.
+- Scene releases routinely carry junk mtimes. Across the two libraries, **3 947 of 7 947 files (50%)
+  have an mtime more than 7 days older than their ctime**, some by more than 26 years.
+- Confirmed end-to-end against Jellyfin for a currently-airing show. Every one of these is a **2026**
+  Simpsons episode added on 2026-07-08:
+
+  ```
+  DateCreated 2000-11-03  The.Simpsons.S37E09.1080p.WEB.h264-EDITH.mkv
+  DateCreated 2003-04-14  The.Simpsons.S37E10.1080p.WEB.h264-EDITH.mkv
+  DateCreated 2005-08-17  The.Simpsons.S37E07.1080p.WEB.h264-EDITH.mkv
+  DateCreated 2005-08-26  The.Simpsons.S37E08.1080p.WEB.h264-EDITH.mkv
+  DateCreated 2012-08-05  The.Simpsons.S37E06.1080p.WEB.h264-EDITH.mkv
+  DateCreated 2017-03-07  The.Simpsons.S37E12.1080p.WEB.h264-EDITH.mkv
+  ```
+
+  **7 of the 15 EDITH-release episodes in that season would sort behind any watermark** — among items
+  from 2000–2017, thousands of positions back — and would therefore be invisible to a
+  `DateCreated`-ordered sweep, permanently.
+
+The tell is the precision: `.0000000Z` (whole-second) is a preserved junk mtime; sub-second precision is
+a real copy time. Both shapes are present throughout the library, so a timestamp sweep would appear to
+work for some releases (Klovn's STROMPEBUKSER release sorted correctly, second in the list) while
+silently failing for others — the worst available failure mode.
+
+**Consequence for the design:** the only sound basis for convergence is a comparison that does not
+involve timestamps at all. FR-181-1 is therefore a **set difference on ids**, and FR-181-3's drift
+detection is promoted from safety-net to a first-class part of the same mechanism.
+
 ## 3. Design principle
 
 > **Correctness must come from converging on Jellyfin's actual state, not from predicting which items
@@ -111,32 +146,43 @@ of that need to swap roles.
 
 ## 4. Functional requirements
 
-### FR-181-1 — Watermark sweep: "what is new since I last looked" (the backstop)
+### FR-181-1 — Set-difference sweep: "what does Jellyfin have that I don't" (the backstop)
 
-Every scan cycle, before the freshness filter runs, query Jellyfin newest-first and walk down until
-reaching items older than a persisted watermark:
+Every scan cycle, before the freshness filter runs, enumerate Jellyfin's item ids and diff them against
+the set of Jellyfin ids jellystructure already holds:
 
 ```
-GET /Items?Recursive=true&IncludeItemTypes=Episode,Movie&SortBy=DateCreated&SortOrder=Descending
-          &Limit=<page>&Fields=DateCreated,Path
+GET /Items?Recursive=true&IncludeItemTypes=Episode,Movie&EnableImages=false&EnableUserData=false&Limit=<all>
 ```
 
-Verified live: this returns the whole library newest-first, and **Klovn S11E07 is the second result**.
-Anything newer than the watermark that jellystructure does not already hold is fed into the existing
-ingest path (for an `Episode`, that resolves to its parent series exactly as `RealtimeIngestService`
-already does). Cost is O(new items), not O(library) — one paged call in the common case.
+Anything Jellyfin has that we do not is fed into the existing ingest path (for an `Episode`, that
+resolves to its parent series exactly as `RealtimeIngestService` already does).
 
-The watermark advances **only after** the items ahead of it have been successfully processed. A failure
-leaves it where it is, so the next cycle retries rather than stepping over the gap. This is what makes
-accumulated drift structurally impossible rather than merely unlikely.
+**This must be a set difference on ids, not a timestamp watermark** — see §2.4 for the measured reason.
+Measured cost of the full enumeration on this deployment: **2.0 s, 5.4 MB, 7 946 items**, once per cycle.
+That is O(library) rather than O(new), but it is affordable at this scale and, crucially, it is
+*immune to timestamp semantics entirely*. Correctness beats cleverness here: a cheaper sweep that
+silently skips half the library is worth nothing.
 
-> ⚠ **Implementation trap, verified live — do not use server-side date filters.** Both
-> `MinDateCreated` and `MinDateLastSaved` are **silently ignored** by this Jellyfin: they return the
-> entire unfiltered library (7 946 and 8 123 items respectively) in name order, with no error. Code
-> written against them would appear to work while filtering nothing. The sweep must be
-> sort + limit + walk-until-older-than-watermark. Likewise `DateLastMediaAdded`, `ChildCount`,
-> `RecursiveItemCount` and `DateLastSaved` all came back `null` on a series item here and must not be
-> relied on.
+An item is only removed from the "needs work" set once it has been successfully processed (FR-181-5), so
+a failure retries on the next cycle rather than being stepped over.
+
+> ⚠ **Implementation traps, all verified live — three separate Jellyfin behaviours that make the
+> "obvious" implementations silently wrong:**
+> - `MinDateCreated` and `MinDateLastSaved` are **silently ignored**: they return the entire unfiltered
+>   library (7 946 / 8 123 items) in name order, with no error. Code written against them appears to
+>   work while filtering nothing.
+> - `DateLastMediaAdded`, `ChildCount`, `RecursiveItemCount` and `DateLastSaved` all return `null` on a
+>   series item even when requested via `Fields=`.
+> - **`DateCreated` is the file's mtime, not Jellyfin's ingestion time** — §2.4. Any design that orders
+>   or filters by it is unsound on this library.
+
+### FR-181-1a — Deletion/replacement detection (the other half of the diff)
+
+The same enumeration yields the reverse difference for free: ids jellystructure holds that Jellyfin no
+longer has. Under Phase 95's non-destructive invariant this must **not** auto-delete; it marks the item
+for review and surfaces it, so a replaced or re-imported file is reconciled rather than leaving a stale
+row that silently disagrees with Jellyfin forever.
 
 ### FR-181-2 — Activity-based freshness, replacing premiere-year bucketing
 
@@ -155,12 +201,19 @@ so no config migration is required.
 `isDueForRecheck`'s existing pure-function shape (and `FreshnessFilterTest`) should be preserved — this
 is a change of inputs, not of structure.
 
-### FR-181-3 — Episode-count drift detector
+### FR-181-3 — Per-series count reconciliation (cheap continuous check)
 
-Compare stored `media.episode_count` against Jellyfin's episode count per series, in bulk. A mismatch
-marks the series dirty (FR-181-5) and forces a rescan irrespective of cadence. This is cheap, and unlike
-FR-181-1 it also catches **deletions, replacements and re-imports** — cases where nothing is "new" but
-the two sides still disagree. It is the first mechanism in the system that can answer *"am I in sync?"*
+FR-181-1's id diff is authoritative and already catches everything this would, so this is **not** the
+primary detector — it is the cheap check that can run more often than a full enumeration if FR-181-1
+turns out to be too heavy to run at the desired frequency (see §6 Q2).
+
+Compare stored `media.episode_count` against Jellyfin's per-series episode count. A mismatch marks the
+series dirty (FR-181-5) and forces a rescan irrespective of cadence. Klovn was `100` vs Jellyfin's `101`
+at the time of the report.
+
+Note the known weakness that stops this from replacing FR-181-1: **counts miss same-size changes** — one
+episode deleted and another added nets to an identical count while the two sides genuinely disagree.
+Only the id diff catches that, which is why FR-181-1 is the backstop and this is the optimisation.
 
 ### FR-181-4 — Realtime path: fix, or fail loudly
 
@@ -179,7 +232,7 @@ the two sides still disagree. It is the first mechanism in the system that can a
 
 Today the worklist is recomputed from heuristics on every run, so an item that *should* have been
 processed but was not is simply forgotten — there is no record that work is outstanding. Introduce a
-persistent "needs work" set, written by every signal (watermark sweep, drift detector, webhook, manual
+persistent "needs work" set, written by every signal (set-difference sweep, count reconciliation, webhook, manual
 action, and a failed pipeline step), cleared **only on success**.
 
 This is the architectural correction behind the other FRs: it gives the system memory of outstanding
@@ -192,28 +245,42 @@ interface rather than around it.
 
 ## 5. Non-goals
 
-- **Reinstating *arr webhooks as an ingest trigger.** Excluded by explicit instruction this session.
-  ⚠ Flagged for the dev review, because the evidence gathered *after* that decision bears on it: the
-  Sonarr webhook fired correctly at **04:09:02Z**, one second after the import, and is currently the
-  **only realtime signal in this deployment that has ever actually delivered anything** (§2.3). Phase 165
-  downgraded it to a nudge because its *path-mapping* was fragile — but a dirty-marking hint (FR-181-5)
-  needs no path mapping at all. Reconsider only if FR-181-4's investigation cannot revive a Jellyfin-side
-  path.
+- **Reinstating *arr webhooks as an ingest trigger.** Excluded, and the reasoning is sound: an *arr
+  `Download` event fires when **Sonarr** finishes importing, which is *before* Jellyfin has scanned and
+  identified the file. Acting on it means racing Jellyfin — which is exactly why the pre-165 path
+  carried a **5-minute settle-time poll**, and why Phase 165's own rationale prefers the plugin's
+  `ItemAdded` ("fires only once Jellyfin has actually identified the item… needs neither a path→id
+  mapping nor a settle-time poll"). A signal that arrives before the data it refers to is not a usable
+  ingest trigger.
+
+  Timing measured for the reported case: Sonarr's webhook hit jellystructure at **04:09:02Z**; the file's
+  own mtime was 04:09:01.98Z. The two are ~1 s apart *for this release*, but that says nothing about when
+  **Jellyfin** identified it, which is the event that actually matters and which nothing here observes.
+
+  Residual value, for dev review only: as a **dirty-marking hint** (FR-181-5) rather than an ingest
+  trigger, it needs no path mapping and no settle poll — mark the series dirty, let FR-181-1's diff
+  ingest it whenever Jellyfin is actually ready. That preserves the low-latency signal without the race.
+  Worth considering only if FR-181-4 cannot revive a Jellyfin-side event path.
 - Changing Jellyfin's own scanning, monitoring or plugin configuration.
 - Reworking the pipeline steps themselves (`scan_files`, `pull_tmdb`, …) — this phase changes *which
   items reach them* and *how that set is decided*, not what they do.
-- Removal detection remains scan-only (Phase 95's non-destructive invariant is unchanged); FR-181-3
-  detects a count mismatch and rescans, it does not delete.
+- Removal detection remains scan-only (Phase 95's non-destructive invariant is unchanged); FR-181-1a
+  surfaces a disappearance for review, it does not delete.
 
 ## 6. Open questions for dev review
 
 1. Does Jellyfin 10.11.11 expose **any** subscribable library-change WS listener? If not, FR-181-4.1
    becomes a deletion and the webhook plugin is the only Jellyfin-side event path — which is itself
    known-broken here, which in turn strengthens the non-goal caveat above.
-2. Sweep cadence: reuse the hourly `scan_schedule`, or run the sweep on its own faster timer? It is
-   cheap enough (one paged request) to run every few minutes, which would close most of the latency gap
-   that realtime ingest was supposed to cover.
-3. FR-181-3 needs one bulk call for per-series episode counts on a server where `ChildCount` /
+2. Sweep cadence. The full FR-181-1 enumeration measured **2.0 s / 5.4 MB / 7 946 items**. Hourly
+   (reusing `scan_schedule`) is clearly fine. Running it every few minutes — which would close most of
+   the latency gap realtime ingest was supposed to cover — means ~5 MB per run against Jellyfin; decide
+   whether that is acceptable, or whether FR-181-3's lighter per-series counts should carry the fast
+   cadence with the full id diff hourly.
+3. Can the enumeration payload be slimmed? `EnableImages=false&EnableUserData=false` still returned
+   `ImageBlurHashes` and a dozen other fields per item. If Jellyfin can be made to return ids alone the
+   sweep gets materially cheaper and Q2 mostly answers itself.
+4. FR-181-3 needs one bulk call for per-series episode counts on a server where `ChildCount` /
    `RecursiveItemCount` returned `null` — confirm the working shape live before building.
-4. Should the watermark be global, or per-library? Per-library is more robust if one library's scanning
+5. Should the diff be global, or per-library? Per-library is more robust if one library's scanning
    stalls, at the cost of more state.
