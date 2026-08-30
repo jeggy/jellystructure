@@ -125,6 +125,10 @@ class SeededBrowseStore(
     // R190 §C — set only for a person seed; drives the Seerr overflow row's own fetch, independent of
     // the facet-filtered grid (the row is person-scoped, not filter-scoped — FR-RV-PPL1-4).
     val personTmdbId: Int? = null,
+    // R219 (FR-R219-6) — set only alongside [continueWatching] == true, when this page was reached from
+    // a channel's own Continue row; forwarded as-is to continueAll(), which is the sole authority on
+    // whether it ends up filtering anything (see HomeFeedService.continueWatchingAll's doc comment).
+    val channelId: String? = null,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val _state = MutableStateFlow<SeededBrowseState>(SeededBrowseState.Loading)
@@ -186,7 +190,7 @@ class SeededBrowseStore(
         loadJob = scope.launch {
             _state.value = runCatching {
                 if (continueWatching) {
-                    val items = apiClient.continueAll()
+                    val items = apiClient.continueAll(channelId)
                     SeededBrowseState.Loaded(items.map { BrowseCard(card = it) })
                 } else {
                     val resp = apiClient.browseSeeded(seedQuery, seedMediaKind)

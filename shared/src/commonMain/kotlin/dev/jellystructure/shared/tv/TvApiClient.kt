@@ -125,9 +125,13 @@ class TvApiClient(
     }
 
     /** R187 (§G-4) — Continue Watching's own "→ See all": not seed-representable (a live Jellyfin join,
-     *  not a catalog filter), so its own endpoint, plain [MediaCard]s (no facet bar on that page). */
-    suspend fun continueAll(): List<MediaCard> {
-        val r = client.get("$baseUrl/api/tv/continue/all") { auth() }
+     *  not a catalog filter), so its own endpoint, plain [MediaCard]s (no facet bar on that page).
+     *  R219 (FR-R219-6) — [channelId], when set, mirrors the originating row's own configured scope
+     *  (server-decided; the client just forwards the id it's already standing in — see
+     *  HomeFeedService.continueWatchingAll's doc comment for the exact rule). */
+    suspend fun continueAll(channelId: String? = null): List<MediaCard> {
+        val url = if (channelId != null) "$baseUrl/api/tv/continue/all?channel=$channelId" else "$baseUrl/api/tv/continue/all"
+        val r = client.get(url) { auth() }
         r.assertSuccess()
         return json.decodeFromString<List<MediaCard>>(r.bodyAsText())
     }

@@ -402,9 +402,12 @@ fun Route.tvRoutes(
     // HomeFeedService.continueWatchingAll's doc comment), so it's a dedicated endpoint, not a
     // /tv/browse/seeded call. Plain MediaCards, not BrowseCard — Continue Watching's own See-all page
     // doesn't offer the catalog facet bar (genre/quality/etc.), just the viewer's full in-progress list.
+    // R219 (FR-R219-6) — optional ?channel= mirrors the originating row's scope; see
+    // HomeFeedService.continueWatchingAll's doc comment for the exact rule.
     get("/tv/continue/all") {
         val device = call.attributes[DeviceKey]
-        call.respond(homeFeedService.continueWatchingAll(device))
+        val channelId = call.request.queryParameters["channel"]
+        call.respond(homeFeedService.continueWatchingAll(device, channelId))
     }
 
     // R187 — the "→ See all" browse page's seed resolver: POST (not GET) because the seed is a
