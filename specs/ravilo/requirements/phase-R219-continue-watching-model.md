@@ -14,6 +14,47 @@ record of why this phase exists. Not yet built.
 
 ---
 
+# ⚠ THE RULE THAT KEEPS GETTING BROKEN
+
+> **jellystructure does the merging, sorting, filtering and capping. Jellyfin does none of it.**
+>
+> **Therefore: every Jellyfin fetch must be COMPLETE. `Limit` is never a cap, a filter, or a shortcut.**
+
+Jellyfin splits this feature across **two unrelated endpoints that know nothing about each other**
+(`/Users/{id}/Items/Resume` and `/Shows/NextUp`). To Jellyfin they are not one list, so Jellyfin
+**cannot** sort across them, filter across them, rank across them, or cap them. Only we can, and only
+after we have both halves in full.
+
+That makes any Jellyfin-side `Limit` a **pre-merge truncation**: it throws away candidates *before
+their rank in the merged list is knowable*. A candidate cut at that stage is not "low priority" — it is
+invisible, and no amount of correct sorting afterwards can bring it back.
+
+**This exact mistake has now caused four bugs:**
+
+| # | What was truncated / cut early | Symptom |
+|---|---|---|
+| 1 | R186 — `getResumeItems`/`getNextUp` capped at 20 | channel rows starved of entries |
+| 2 | R217 — cap applied *after concatenating*, before merging | next-up entries could never survive; "Two and a Half Men" absent despite being next-up #1 |
+| 3 | R217 fix — per-series dedup decided by *stream position* | Jellyfin's wrong S1E1 suggestion beat real S5E1 progress ("Vi drukner i rod") |
+| 4 | R217 fix — `CONTINUE_RECENCY_POOL = 500` bounded the history lookup | titles whose last finish fell outside the window silently lost their sort key |
+
+Every one was the same error in a new place: **deciding something before all the inputs were in.**
+
+**Consequences that are non-negotiable in this phase:**
+
+- Page every Jellyfin input to completion, using `TotalRecordCount` as the guard (both endpoints report
+  it independently of `Limit`, and both support `StartIndex` — verified live).
+- A constant that merely "looks generous" (200, 500, …) is **not** a guard. If it can be exceeded, it
+  will be, and the failure is silent.
+- The **only** legitimate cap is the final per-view one (Home/channel = 20), applied **last**, after
+  membership, conflict resolution, ordering and filtering are all complete.
+- The one bounded fetch in this phase (FR-R219-3's recent-touch window) is bounded **by time**, not by
+  a row count, and stops when it crosses the window edge — it can never cut a ranked candidate.
+- Reducing payload is fine and encouraged (`EnableImages=false`, minimal `Fields`); reducing
+  *completeness* is not. Those are different things.
+
+---
+
 ## Why the old shape kept failing
 
 Jellyfin does not have a "continue watching" concept. It has **two unrelated endpoints**:
@@ -25,11 +66,8 @@ Jellyfin does not have a "continue watching" concept. It has **two unrelated end
 
 Everything hard about this feature follows from that split:
 
-1. **The merge is ours.** Jellyfin cannot sort, filter, page or cap across the two lists, because to
-   Jellyfin they are not one list. Therefore **any `Limit` on either call is a pre-merge truncation** —
-   it drops candidates *before* we can know how they'd rank in the merged order. This is the same
-   mistake as R186 (window too small) and R217 (cap before merge), one layer further down, and it is
-   the reason FR-R219-2 below insists on completeness rather than a generous-looking constant.
+1. **The merge is ours** — with all the consequences set out in *The rule that keeps getting broken*
+   above. This is the source of the whole problem and of four bugs so far.
 2. **Only one of the two sides carries a time.** A next-up entry has no timestamp at all, so the two
    lists cannot be ordered against each other without jellystructure supplying the missing one.
 3. **The two sides can disagree about the same series**, in both directions — see the conflict rule.
