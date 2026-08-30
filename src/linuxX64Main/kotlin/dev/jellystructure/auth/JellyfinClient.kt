@@ -18,6 +18,10 @@ import io.ktor.http.contentType
 import io.ktor.http.encodeURLParameter
 import io.ktor.http.isSuccess
 
+// R219 (FR-R219-2) — page size for the "page to completion" fetches Continue Watching's canonical list
+// needs. Not a cap: every paged fetch below loops until TotalRecordCount is reached.
+private const val JF_PAGE_SIZE = 200
+
 private const val DEVICE_ID = "jellystructure-server-v01"
 private const val AUTH_HEADER =
     """MediaBrowser Client="Jellystructure", Device="Server", DeviceId="$DEVICE_ID", Version="0.1.0""""
@@ -469,6 +473,95 @@ class JellyfinClient {
         result.getOrDefault(emptyList())
     }
 
+    /**
+     * R219 (FR-R219-2) — [getResumeItems] in FULL, not the bounded preview Phase 143's device-history
+     * card uses. Continue Watching's canonical list must never truncate this pre-merge (see the rule at
+     * the top of phase-R219's spec) — pages until the collected count reaches `TotalRecordCount`.
+     * `EnableImages=false` halves the payload; these images are never shown (jellystructure's own
+     * catalog artwork is used instead).
+     */
+    suspend fun getResumeItemsAll(baseUrl: String, userToken: String, userId: String): List<JellyfinPlayItem> = runCatching {
+        val acc = mutableListOf<JellyfinPlayItem>()
+        var startIndex = 0
+        while (true) {
+            val url = baseUrl.trimEnd('/') +
+                "/Users/$userId/Items?Filters=IsResumable&Recursive=true&IsPlayed=false" +
+                "&IncludeItemTypes=Movie,Episode&Limit=$JF_PAGE_SIZE&StartIndex=$startIndex" +
+                "&SortBy=DatePlayed&SortOrder=Descending&EnableImages=false" +
+                "&Fields=UserData,SeriesId,SeriesName,SeasonId,IndexNumber,ParentIndexNumber"
+            val resp = httpGet(url) { jellyfinAuth(userToken) }.bodyOrNull<JellyfinPlayItemsResponse>("getResumeItemsAll") ?: break
+            if (resp.items.isEmpty()) break
+            acc += resp.items
+            startIndex += resp.items.size
+            if (startIndex >= resp.totalRecordCount) break
+        }
+        acc
+    }.let { result ->
+        if (result.isFailure) Logger.warn("Jellyfin getResumeItemsAll failed: ${result.exceptionOrNull()?.message}")
+        result.getOrDefault(emptyList())
+    }
+
+    /**
+     * R219 (FR-R219-2) — [getRecentlyPlayed] in FULL, not one bounded history page. Continue Watching's
+     * conflict rule (§3, "most recent activity wins") needs the true last-finished instant for every
+     * series, not just the ones within an arbitrary pool — see the rule at the top of phase-R219's spec
+     * (this replaced the `CONTINUE_RECENCY_POOL` constant that violated it). `EnableImages=false` halves
+     * the payload (measured live: 1.89 MB → 0.97 MB for 1104 episodes).
+     */
+    suspend fun getRecentlyPlayedAll(baseUrl: String, userToken: String, userId: String): List<JellyfinPlayItem> = runCatching {
+        val acc = mutableListOf<JellyfinPlayItem>()
+        var startIndex = 0
+        while (true) {
+            val url = baseUrl.trimEnd('/') +
+                "/Users/$userId/Items?Filters=IsPlayed&Recursive=true" +
+                "&IncludeItemTypes=Movie,Episode&Limit=$JF_PAGE_SIZE&StartIndex=$startIndex" +
+                "&SortBy=DatePlayed&SortOrder=Descending&EnableImages=false" +
+                "&Fields=UserData,SeriesId,SeriesName,SeasonId,IndexNumber,ParentIndexNumber"
+            val resp = httpGet(url) { jellyfinAuth(userToken) }.bodyOrNull<JellyfinPlayItemsResponse>("getRecentlyPlayedAll") ?: break
+            if (resp.items.isEmpty()) break
+            acc += resp.items
+            startIndex += resp.items.size
+            if (startIndex >= resp.totalRecordCount) break
+        }
+        acc
+    }.let { result ->
+        if (result.isFailure) Logger.warn("Jellyfin getRecentlyPlayedAll failed: ${result.exceptionOrNull()?.message}")
+        result.getOrDefault(emptyList())
+    }
+
+    /**
+     * R219 (FR-R219-3) — membership rule §2(c): an item touched (played at least once) within
+     * [sinceEpochSeconds], even with no saved position and no finish. No Jellyfin filter expresses "has
+     * been played" directly (verified against the live OpenAPI: `minDateLastSaved` exists,
+     * `minDateLastPlayed` does not), so this reads `SortBy=DatePlayed&SortOrder=Descending` with NO
+     * played filter and stops as soon as a page's DatePlayed crosses the window edge (or is null/absent,
+     * meaning everything with real playback data has already been seen) — bounded by the window, not by
+     * a row-count guess, per the rule at the top of phase-R219's spec.
+     */
+    suspend fun getRecentlyTouched(baseUrl: String, userToken: String, userId: String, sinceEpochSeconds: Long): List<JellyfinPlayItem> = runCatching {
+        val acc = mutableListOf<JellyfinPlayItem>()
+        var startIndex = 0
+        outer@ while (true) {
+            val url = baseUrl.trimEnd('/') +
+                "/Users/$userId/Items?Recursive=true&IncludeItemTypes=Movie,Episode" +
+                "&Limit=$JF_PAGE_SIZE&StartIndex=$startIndex&SortBy=DatePlayed&SortOrder=Descending" +
+                "&EnableImages=false&Fields=UserData,SeriesId,SeriesName,SeasonId,IndexNumber,ParentIndexNumber"
+            val resp = httpGet(url) { jellyfinAuth(userToken) }.bodyOrNull<JellyfinPlayItemsResponse>("getRecentlyTouched") ?: break
+            if (resp.items.isEmpty()) break
+            for (item in resp.items) {
+                val ts = item.userData?.lastPlayedDate?.let { dev.jellystructure.util.isoToEpochSeconds(it) }
+                if (ts == null || ts < sinceEpochSeconds) break@outer
+                acc += item
+            }
+            startIndex += resp.items.size
+            if (startIndex >= resp.totalRecordCount) break
+        }
+        acc
+    }.let { result ->
+        if (result.isFailure) Logger.warn("Jellyfin getRecentlyTouched failed: ${result.exceptionOrNull()?.message}")
+        result.getOrDefault(emptyList())
+    }
+
     suspend fun startPlaybackSession(
         baseUrl: String,
         userToken: String,
@@ -811,20 +904,25 @@ class JellyfinClient {
         }.status.isSuccess()
     }.getOrElse { Logger.warn("Jellyfin closeLiveStream failed: ${it.message}"); false }
 
-    /** R186: see [getResumeItems] — [limit] is the candidate pool the Continue row filters from, not the
-     *  number of cards shown. A live example: this user's NextUp TotalRecordCount was 54 while we fetched
-     *  20, so a series at position 41 was invisible on Home and in every channel row. */
-    suspend fun getNextUp(
-        baseUrl: String,
-        userToken: String,
-        userId: String,
-        limit: Int = 200,
-    ): List<JellyfinPlayItem> = runCatching {
-        val url = baseUrl.trimEnd('/') +
-            "/Shows/NextUp?UserId=$userId&Limit=$limit" +
-            "&Fields=UserData,SeriesId,SeriesName,SeasonId,IndexNumber,ParentIndexNumber"
-        httpGet(url) { jellyfinAuth(userToken) }
-            .bodyOrNull<JellyfinPlayItemsResponse>("getNextUp")?.items.orEmpty()
+    /** R219 (FR-R219-2, was R186): pages to `TotalRecordCount` — a bounded `Limit` here is a pre-merge
+     *  truncation (see the rule at the top of phase-R219's spec). Live example that motivated the
+     *  original R186 fix: this user's NextUp TotalRecordCount was 54 while a `Limit=20` fetch returned
+     *  20, so a series at position 41 was invisible on Home and in every channel row.
+     *  `EnableImages=false` halves the payload; these images are never shown. */
+    suspend fun getNextUp(baseUrl: String, userToken: String, userId: String): List<JellyfinPlayItem> = runCatching {
+        val acc = mutableListOf<JellyfinPlayItem>()
+        var startIndex = 0
+        while (true) {
+            val url = baseUrl.trimEnd('/') +
+                "/Shows/NextUp?UserId=$userId&Limit=$JF_PAGE_SIZE&StartIndex=$startIndex&EnableImages=false" +
+                "&Fields=UserData,SeriesId,SeriesName,SeasonId,IndexNumber,ParentIndexNumber"
+            val resp = httpGet(url) { jellyfinAuth(userToken) }.bodyOrNull<JellyfinPlayItemsResponse>("getNextUp") ?: break
+            if (resp.items.isEmpty()) break
+            acc += resp.items
+            startIndex += resp.items.size
+            if (startIndex >= resp.totalRecordCount) break
+        }
+        acc
     }.let { result ->
         if (result.isFailure) Logger.warn("Jellyfin getNextUp failed: ${result.exceptionOrNull()?.message}")
         result.getOrDefault(emptyList())

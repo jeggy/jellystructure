@@ -8,9 +8,27 @@
 > model: **jellystructure owns a single canonical Continue Watching list**, complete and correctly
 > ordered, and every surface is a *view* over it.
 
-**Status:** Planned — design-authored 2026-08-30, jointly with the owner. Supersedes **FR-R217-1**,
-**FR-R217-2** and **FR-R217-3**; R217's root-cause analysis and its live findings remain the historical
-record of why this phase exists. Not yet built.
+**Status:** Implemented — design-authored 2026-08-30, jointly with the owner; built the same day.
+Supersedes **FR-R217-1**, **FR-R217-2** and **FR-R217-3**; R217's root-cause analysis and its live
+findings remain the historical record of why this phase exists.
+
+**Build notes (2026-08-30):**
+- Backend + client compile clean; all 161 existing backend unit tests pass unchanged (no test yet
+  exercises the new merge logic directly — `HomeFeedService` needs substantial DI mocking this session
+  didn't invest in; verification so far is compile/type-level plus the design review below, not a live
+  Jellyfin round trip).
+- `CONTINUE_RECENCY_POOL` is gone. `getResumeItemsAll`/`getRecentlyPlayedAll`/`getNextUp` all page to
+  `TotalRecordCount`; `getRecentlyTouched` is the new bounded-by-time FR-R219-3 fetch.
+- The old "carry-forward" timestamp hack (R217) is gone too — no longer needed, because a candidate can
+  no longer lack a timestamp: paging `finished` to completion (not a 500-item pool) plus the new
+  `touched` fetch means every membership path now carries a real `lastActivityAt`.
+- FR-R219-6 (channel-scoped See-all) surfaced one bug beyond the spec's own scope while wiring the
+  client through: `Dest.SeededBrowse`'s `keptStore` cache key was `displayName:title:continueWatching`
+  only — Home's Continue See-all and a channel's Continue See-all share the exact title ("Continue
+  Watching"), so without adding `channelId` to that key the two would have silently reused each other's
+  cached store/result. Fixed alongside the plumbing (`RaviloApp.kt`).
+- **Not yet live-verified** — per the standing "no TV testing without approval" rule, live verification
+  (real household data, the R217 predict-then-compare methodology) is pending a fresh testing go-ahead.
 
 ---
 

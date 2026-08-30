@@ -42,13 +42,15 @@ private const val ROW_ITEM_LIMIT = 30
 private const val HERO_AUTO_COUNT = 5
 private const val FEED_TTL_MS = 5 * 60_000L  // Continue row freshness window
 private const val CONTINUE_TIMEOUT_MS = 6_000L  // R102: cap the live Jellyfin resume/next-up wait
-// R217 (2026-08-29) — how deep to look for "when did I last finish an episode of this series", the
-// sort key next-up entries have no timestamp of their own for. 500 balances coverage against payload:
-// measured live on this household (1185 finished plays total), 400 covered the 13 most recent next-up
-// series and ~650 KB, while fetching all 1185 still only reached 24 of 34 (the rest were sampled-and-
-// abandoned, invisible to any played/resume query) for ~2 MB — a poor trade on a backend already
-// sensitive to large JSON decodes. Everything past this depth falls back to carry-forward ordering.
-private const val CONTINUE_RECENCY_POOL = 500
+// R219 (FR-R219-5) — Continue Watching's own per-view cap (Home row, channel row). Down from the old
+// ROW_ITEM_LIMIT=30: with a genuinely time-sorted canonical list the row's head is always the most
+// recent entries, so a shorter row costs nothing and scans faster on a remote. See-all stays uncapped.
+private const val CONTINUE_ROW_LIMIT = 20
+// R219 (FR-R219-3) — membership rule §2(c): an item touched (played, no position, no finish) within this
+// many days still counts as "genuinely started". 7 days, not the 30 first proposed — owner's call
+// (2026-08-30): the household's newest such item was 3 days old, so a shorter window still keeps it
+// while shedding the stale tail (6 weeks–6 months for the rest).
+private const val CONTINUE_TOUCHED_WINDOW_DAYS = 7L
 private const val WATCHED_TIMEOUT_MS = 2_500L  // R142: cap the played-state overlay so it never hangs the feed
 // Bug fix: shorter than FEED_TTL_MS on purpose — watched/in-progress state changes far more often than
 // the structural feed (rows/heroes/channels), so it needs its own, tighter freshness window.
@@ -77,6 +79,14 @@ class HomeFeedService(
     // feed's own row ids as its candidate list; fetching for the whole catalog removes that dependency).
     private data class PlaystateEntry(val data: Map<String, CardPlayState>, val builtAt: Long)
     private val playstateCache = HashMap<String, PlaystateEntry>()
+
+    // R219 (FR-R219-1) — the ONE canonical Continue Watching list, keyed by (user, visibility scope),
+    // reused by every view (Home row, every channel row, See-all) instead of each re-deriving it. Same
+    // staleness/invalidation shape as [feedCache]: TTL = FEED_TTL_MS, dropped immediately on a reported
+    // playback stop (see [invalidatePlaystate]). Never keyed by channel — channel membership is a filter
+    // *over* this list (FR-R219-6), not a reason to rebuild it.
+    private data class ContinueListEntry(val list: List<ContinueEntry>, val builtAt: Long, val libVer: Long, val allowedHash: Int)
+    private val continueListCache = HashMap<String, ContinueListEntry>()
 
     /**
      * R187 fix — just the channel id→name list, for callers that need Ravilo channel display names
@@ -125,6 +135,7 @@ class HomeFeedService(
         val userId = device.jellyfinUserId
         feedCache.remove(userId)
         playstateCache.remove(userId)
+        continueListCache.remove(userId)  // R219 (FR-R219-1) — a stop must correct the row at once
         runCatching { playstateFor(device, nowMs()) }
     }
 
@@ -318,8 +329,11 @@ class HomeFeedService(
         if (channelRows?.mode == "custom") {
             val sys = channelRows.system
             if (sys.cont.show) {
-                val src = if (sys.cont.scope == "channel") all else libraryAll
-                val cont = buildContinueRow(device, src, jellyfinBase, token)
+                // R219 (FR-R219-6): the row and continueWatchingAll's See-all must apply this exact same
+                // branch, or the two silently disagree about membership — see the model note in the spec.
+                val canonical = canonicalContinueList(device, libraryAll, jellyfinBase, token)
+                val scoped = if (sys.cont.scope == "channel") canonical.filter { it.mediaItem.matchesChannel(channelFilter!!, heroIds) } else canonical
+                val cont = scoped.capped()
                 if (cont.cards.isNotEmpty()) result.add(Row("continue", "Continue Watching", RowKind.CONTINUE, cont.cards, seedTotalCount = cont.total))
             }
             if (sys.newly.show) {
@@ -344,7 +358,7 @@ class HomeFeedService(
                     // is channel-filtered for a channel call). Previously skipped entirely for any
                     // channel view — an R05 leftover from before inherit/custom existed, never actually
                     // fixed by R59 despite a misleading comment claiming otherwise.
-                    val cont = buildContinueRow(device, libraryAll, jellyfinBase, token)
+                    val cont = canonicalContinueList(device, libraryAll, jellyfinBase, token).capped()
                     if (cont.cards.isNotEmpty()) result.add(Row(rowCfg.id, rowCfg.title ?: "Continue Watching", RowKind.CONTINUE, cont.cards, seedTotalCount = cont.total))
                 }
 
@@ -488,145 +502,179 @@ class HomeFeedService(
     /** R187 (§G-4) — Continue Watching's own "→ See all" path: Continue Watching isn't expressible as a
      *  [dev.jellystructure.shared.tv.ConditionGroup] (it's a live Jellyfin resume/next-up join, not a
      *  catalog filter), so it can't reuse [BrowseService.browseByQuery] — this is its dedicated
-     *  resolution, identical to [buildContinueRow] but without the Home row's [ROW_ITEM_LIMIT] cap. */
-    suspend fun continueWatchingAll(device: DeviceData): List<MediaCard> {
+     *  resolution. R219 (FR-R219-6): [channelId], when present, mirrors that channel's own configured
+     *  Continue row scope (see [buildRows]'s identical branch) — filtered only for a custom-mode channel
+     *  whose `cont.scope == "channel"`; every other case (inherit mode, `scope == "all"`, unknown
+     *  channel) returns the same list Home's See-all does. Always uncapped (FR-R219-5). */
+    suspend fun continueWatchingAll(device: DeviceData, channelId: String?): List<MediaCard> {
         val jellyfinBase = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
         val token = jellyfinClient.tvToken(jellyfinBase, device, configStore.current.apiKeys.jellyfinToken)
-        val all = mediaStore.liveItems(device)
-        return buildContinueRow(device, all, jellyfinBase, token, limit = Int.MAX_VALUE).cards
+        val libraryAll = mediaStore.liveItems(device)
+        val canonical = canonicalContinueList(device, libraryAll, jellyfinBase, token)
+        val config = configService.getConfig(device.jellyfinUserId)
+        val channelCfg = channelId?.let { id -> config.channels.find { it.id == id } }
+        val channelRows = channelCfg?.rows  // local val: cross-module smart-cast on the property itself doesn't work
+        val scopedToChannel = channelRows?.mode == "custom" && channelRows.system.cont.scope == "channel"
+        val scoped = if (scopedToChannel && channelCfg != null) {
+            val heroIds = config.heroes.map { it.itemId }.toSet()
+            canonical.filter { it.mediaItem.matchesChannel(channelCfg, heroIds) }
+        } else canonical
+        return scoped.map { it.card }
     }
 
-    /** R187 — [total] is the pre-[limit] match count, for [Row.seedTotalCount] (the Home-row cap makes
-     *  `cards.size` alone wrong for a See-all tile's count once a viewer genuinely has more than 30
-     *  in-progress/next-up titles). */
-    private data class ContinueRowResult(val cards: List<MediaCard>, val total: Int)
-
-    private suspend fun buildContinueRow(
+    /** R219 (FR-R219-1) — get-or-build wrapper around [buildCanonicalContinueList]: SWR-cached per user
+     *  (see [continueListCache]'s doc comment) so a Home row, every channel row and the See-all page —
+     *  in one feed build, or across builds within [FEED_TTL_MS] — share one set of Jellyfin round trips
+     *  instead of each re-deriving the list. */
+    private suspend fun canonicalContinueList(
         device: DeviceData,
-        all: List<MediaItem>,
+        libraryAll: List<MediaItem>,
         jellyfinBase: String,
         token: String,
-        limit: Int = ROW_ITEM_LIMIT,
-    ): ContinueRowResult = coroutineScope {
-        val jellyfinUrl = configStore.current.apiKeys.jellyfinUrl.takeIf { it.isNotBlank() }
-            ?: return@coroutineScope ContinueRowResult(emptyList(), 0)
+    ): List<ContinueEntry> {
+        val userId = device.jellyfinUserId
+        val libVer = mediaStore.libraryVersion
+        val allowedHash = (device.allowedLibraries.hashCode() * 31 + device.allowedTags.hashCode()) * 31 + device.blockedTags.hashCode()
+        val now = nowMs()
+        continueListCache[userId]?.takeIf {
+            it.libVer == libVer && it.allowedHash == allowedHash && (now - it.builtAt) < FEED_TTL_MS
+        }?.let { return it.list }
+        val built = buildCanonicalContinueList(device, libraryAll, jellyfinBase, token)
+        continueListCache[userId] = ContinueListEntry(built, now, libVer, allowedHash)
+        return built
+    }
 
-        // Both calls are independent — fetch in parallel to halve the Jellyfin round-trips.
+    /** R219 — one canonical, uncapped, unfiltered-by-channel Continue Watching entry: [mediaItem] (so a
+     *  caller can channel-filter via [MediaItem.matchesChannel] without a second lookup), the [card] to
+     *  display, and [lastActivityAt] (§4's sort key — the same value §3's conflict rule picked). */
+    private data class ContinueEntry(val mediaItem: MediaItem, val card: MediaCard, val lastActivityAt: Long)
+
+    /** R187's total/cap split, still needed at each capped view (Home row, channel row): [total] is the
+     *  pre-cap match count, for [Row.seedTotalCount] (FR-R219-5) — `cards.size` alone would be wrong for
+     *  a See-all tile's count once a viewer has more than [CONTINUE_ROW_LIMIT] in-progress/next-up titles. */
+    private data class ContinueRowResult(val cards: List<MediaCard>, val total: Int)
+
+    private fun List<ContinueEntry>.capped(limit: Int = CONTINUE_ROW_LIMIT): ContinueRowResult =
+        ContinueRowResult(cards = take(limit).map { it.card }, total = size)
+
+    /**
+     * R219 — builds the canonical Continue Watching list per the spec's §2 (membership), §3 (conflict
+     * rule) and §4 (order). [libraryAll] must be the FULL device-visible library (never a channel-
+     * filtered subset) — channel scoping is a filter callers apply afterwards (FR-R219-6), never baked
+     * in here, so this one build is shareable by every view.
+     *
+     * THE RULE (top of phase-R219's spec): every Jellyfin input below is fetched to completion before
+     * anything is filtered, ranked or capped. No candidate is ever excluded by a bounded `Limit`.
+     */
+    private suspend fun buildCanonicalContinueList(
+        device: DeviceData,
+        libraryAll: List<MediaItem>,
+        jellyfinBase: String,
+        token: String,
+    ): List<ContinueEntry> = coroutineScope {
+        val jellyfinUrl = configStore.current.apiKeys.jellyfinUrl.takeIf { it.isNotBlank() } ?: return@coroutineScope emptyList()
+        val sinceTouched = nowMs() / 1000L - CONTINUE_TOUCHED_WINDOW_DAYS * 86_400L
+
         // R102: bound the wait so a cold/slow Jellyfin can't hang the whole home response on the 30s
-        // HttpTimeout. On timeout the asyncs are cancelled and home ships WITHOUT the Continue row —
-        // a missing row is atomic-safe (no reflow), and the R86-A SWR cache refreshes it next load.
+        // HttpTimeout. On timeout the asyncs are cancelled and Continue Watching ships EMPTY for this
+        // build — an empty row is atomic-safe (no reflow), and the cache above refreshes it next load.
+        // All four fetches are independent — run them in parallel.
         val fetched = withTimeoutOrNull(CONTINUE_TIMEOUT_MS) {
             coroutineScope {
-                val resumeDeferred = async { jellyfinClient.getResumeItems(jellyfinUrl, token, device.jellyfinUserId) }
-                val nextUpDeferred = async { jellyfinClient.getNextUp(jellyfinUrl, token, device.jellyfinUserId) }
-                // R217 (2026-08-29) — a next-up entry carries no timestamp of its own (the episode it
-                // points at is unwatched), so without this there is nothing to sort it against the
-                // resume stream by. This gives every series a real "when did I last finish an episode
-                // of this" instant. Third parallel call, so it costs no extra wall-clock; the whole
-                // block still shares CONTINUE_TIMEOUT_MS and the R86-A SWR cache.
-                val recencyDeferred = async {
-                    jellyfinClient.getRecentlyPlayed(jellyfinUrl, token, device.jellyfinUserId, limit = CONTINUE_RECENCY_POOL)
-                }
-                Triple(resumeDeferred.await(), nextUpDeferred.await(), recencyDeferred.await())
+                val resumeDeferred   = async { jellyfinClient.getResumeItemsAll(jellyfinUrl, token, device.jellyfinUserId) }
+                val nextUpDeferred   = async { jellyfinClient.getNextUp(jellyfinUrl, token, device.jellyfinUserId) }
+                val finishedDeferred = async { jellyfinClient.getRecentlyPlayedAll(jellyfinUrl, token, device.jellyfinUserId) }
+                val touchedDeferred  = async { jellyfinClient.getRecentlyTouched(jellyfinUrl, token, device.jellyfinUserId, sinceTouched) }
+                listOf(resumeDeferred.await(), nextUpDeferred.await(), finishedDeferred.await(), touchedDeferred.await())
             }
-        } ?: return@coroutineScope ContinueRowResult(emptyList(), 0)
-        val (resumeItems, nextUpItems, recentlyPlayed) = fetched
+        } ?: return@coroutineScope emptyList()
+        val (resumeItems, nextUpItems, finishedItems, touchedItems) = fetched
 
-        // R186 (FR-RV-CW2-3): resolved via one map instead of a linear scan per entry — the candidate
-        // pool is now up to 200 entries (was 20), and this runs on every home/channel load.
-        val byJellyfinId = all.asSequence().mapNotNull { mi -> mi.jellyfinId?.let { it to mi } }.toMap()
+        val byJellyfinId = libraryAll.asSequence().mapNotNull { mi -> mi.jellyfinId?.let { it to mi } }.toMap()
 
-        // R198 — Jellyfin's `SortBy=DatePlayed&SortOrder=Descending` on this endpoint is a request, not a
-        // guarantee (confirmed live: two adjacent items came back out of that order while the surrounding
-        // ~90 were fine). Never trust the upstream order for recency — own it here, the same way
-        // TvRoutes.kt's watch-history merge already does. Null/unparseable LastPlayedDate sorts last.
-        val resumeItemsSorted = resumeItems.sortedByDescending { play ->
+        // R198 — never trust an upstream SortBy as a guarantee (confirmed live: two adjacent Resume
+        // items came back out of order while the surrounding ~90 were fine). Own the ordering here.
+        val resumeSorted = resumeItems.sortedByDescending { play ->
             play.userData?.lastPlayedDate?.let { dev.jellystructure.util.isoToEpochSeconds(it) } ?: 0L
         }
 
-        // R217 (FR-R217-1) + live fix (2026-08-29) — build BOTH streams' full candidate sets first
-        // (nothing filtered by position, nothing capped), merge them into one deduped collection, and
-        // only THEN interleave + cap. Two invariants the merge upholds, in order:
-        //
-        //  1. A series with a genuine RESUME candidate always wins over a next-up suggestion for the
-        //     same series — regardless of where either sits in its own list. Found live: Jellyfin's own
-        //     /Shows/NextUp can suggest a series' very FIRST unplayed episode (PlayCount 0, never
-        //     watched) even while the household has a real in-progress episode deep in a later season
-        //     ("Vi kvæles i nips": next-up wrongly suggested S1E1, while the real resume point was
-        //     S5E1, last played 2026-07-07 — genuinely long ago, exactly what the user reported). The
-        //     wrong suggestion sat at next-up position 46, the correct resume entry at resume position
-        //     63 — a plain interleave-then-cap reaches next-up's round 46 long before resume's round 63,
-        //     so position alone let the wrong entry win the per-series dedup. Resolved by removing any
-        //     next-up candidate whose series already has a resume candidate BEFORE interleaving, so
-        //     stream position can never decide the winner — only whether real in-progress state exists.
-        //  2. Once that precedence is settled, sort the two (now non-overlapping) streams together by
-        //     **actual last-watched time** and only then apply [limit] — so a large resume backlog
-        //     still can't push every next-up entry out (R217's original starvation fix), AND the row
-        //     reads in true chronological order rather than the 1:1 round-robin this replaced, which
-        //     alternated regardless of recency and could seat a three-week-old next-up entry at
-        //     position 2 above something watched yesterday.
-        data class RowCandidate(val itemId: String, val card: MediaCard, val lastWatchedAt: Long)
+        // §3/§4 need "when did I last finish an episode of THIS title" and "when was THIS title last
+        // touched at all" — both sources are already DatePlayed-descending from the client, so the
+        // first hit per key is the most recent.
+        val lastFinishedByKey = HashMap<String, Long>()
+        for (p in finishedItems) {
+            val key = p.seriesId ?: p.id
+            val ts = p.userData?.lastPlayedDate?.let { dev.jellystructure.util.isoToEpochSeconds(it) } ?: continue
+            if (key !in lastFinishedByKey) lastFinishedByKey[key] = ts
+        }
+        val lastTouchedByKey = HashMap<String, Long>()
+        for (p in touchedItems) {
+            val key = p.seriesId ?: p.id
+            val ts = p.userData?.lastPlayedDate?.let { dev.jellystructure.util.isoToEpochSeconds(it) } ?: continue
+            if (key !in lastTouchedByKey) lastTouchedByKey[key] = ts
+        }
 
-        val resumeCandidates = resumeItemsSorted.mapNotNull { play ->
-            // R185 — Jellyfin's own IsResumable filter is PlaybackPositionTicks > 0 only, with no Played
-            // check; the two can disagree (stale/leaked position outliving a played flag — see the spec)
-            // regardless of what caused it. Never show an already-watched title as in-progress.
-            if (play.userData?.played == true) return@mapNotNull null
-            val itemId = play.seriesId ?: play.id
-            val mediaItem = byJellyfinId[itemId] ?: return@mapNotNull null
+        // §2(a) / resume candidate — one per title, the MOST RECENT in-progress episode if several
+        // (FR-R219-4: e.g. Tellytots shows S1E5/88%, never a stale S1E3).
+        data class ResumeCandidate(val mediaItem: MediaItem, val card: MediaCard, val ts: Long)
+        val resumeByKey = LinkedHashMap<String, ResumeCandidate>()
+        for (play in resumeSorted) {
+            // R185 — an item flagged Played is never resurrected as in-progress, whatever a leaked
+            // position says. getResumeItemsAll's own IsPlayed=false already excludes this server-side;
+            // this is the defensive backstop for when the two can disagree.
+            if (play.userData?.played == true) continue
+            val key = play.seriesId ?: play.id
+            if (key in resumeByKey) continue  // already holding this key's newest episode (list is sorted)
+            val mediaItem = byJellyfinId[key] ?: continue
             val pct = play.userData?.playedPercentage?.toFloat()?.div(100f)
             // R113: carry the resumed episode's season/episode for the on-image badge (null for movies).
             // R199: fall back to jellystructure's own scanned episode number (Phase 152) whenever
             // Jellyfin's own IndexNumber/ParentIndexNumber parse fails on the file's name.
             val (s, e) = resolvedEpisodeNumbers(mediaItem, play.id, play.seasonNumber, play.episodeNumber)
             val ts = play.userData?.lastPlayedDate?.let { dev.jellystructure.util.isoToEpochSeconds(it) } ?: 0L
-            RowCandidate(itemId, mediaItem.toMediaCard(progressPct = pct, seasonNumber = s, episodeNumber = e), ts)
-        }
-        val resumeIds = resumeCandidates.mapTo(mutableSetOf()) { it.itemId }
-
-        // "When did I last finish an episode of this series", keyed by series — the only timestamp a
-        // next-up entry can be sorted by, since the episode it points at is by definition unwatched and
-        // carries none of its own. [recentlyPlayed] is already DatePlayed-descending, so the first hit
-        // per series is its most recent finish.
-        val lastFinishedBySeries = HashMap<String, Long>()
-        for (p in recentlyPlayed) {
-            val sid = p.seriesId ?: p.id
-            val ts = p.userData?.lastPlayedDate?.let { dev.jellystructure.util.isoToEpochSeconds(it) } ?: continue
-            if (sid !in lastFinishedBySeries) lastFinishedBySeries[sid] = ts
+            resumeByKey[key] = ResumeCandidate(mediaItem, mediaItem.toMediaCard(progressPct = pct, seasonNumber = s, episodeNumber = e), ts)
         }
 
-        // Carry-forward for the tail: a series whose last finish predates [CONTINUE_RECENCY_POOL], or
-        // that was only ever *sampled* (an episode opened and abandoned — `Played=false` with a zero
-        // position, so it appears in neither the played list nor the resume list), has no timestamp of
-        // its own. Rather than collapsing all of those to "equally ancient" and shuffling them
-        // arbitrarily, inherit the previous entry's instant so Jellyfin's own next-up ordering — which
-        // is itself recency-biased (verified live: its order matched real timestamps for 13 of 14
-        // consecutive entries that had them) — still decides their relative places. Seeded with the
-        // first known value so an unknown entry ahead of any known one doesn't sort above everything.
-        var carriedTs = nextUpItems.firstNotNullOfOrNull { lastFinishedBySeries[it.seriesId ?: it.id] } ?: 0L
-
-        val nextUpCandidates = nextUpItems.mapNotNull { play ->
-            val itemId = play.seriesId ?: play.id
-            // Invariant 1 above — a real resume candidate for this exact series already exists.
-            if (itemId in resumeIds) return@mapNotNull null
-            lastFinishedBySeries[itemId]?.let { carriedTs = it }
-            val mediaItem = byJellyfinId[itemId] ?: return@mapNotNull null
+        // "Something left to watch" half of §2 — next-up candidate per title.
+        data class NextUpCandidate(val mediaItem: MediaItem, val card: MediaCard)
+        val nextUpByKey = LinkedHashMap<String, NextUpCandidate>()
+        for (play in nextUpItems) {
+            val key = play.seriesId ?: play.id
+            if (key in nextUpByKey) continue
+            val mediaItem = byJellyfinId[key] ?: continue
             val (s, e) = resolvedEpisodeNumbers(mediaItem, play.id, play.seasonNumber, play.episodeNumber)
             val label = if (s != null && e != null) "S${s}E${e} · ${play.name}" else play.name
-            RowCandidate(itemId, mediaItem.toMediaCard(nextUpLabel = label, seasonNumber = s, episodeNumber = e), carriedTs)
+            nextUpByKey[key] = NextUpCandidate(mediaItem, mediaItem.toMediaCard(nextUpLabel = label, seasonNumber = s, episodeNumber = e))
         }
 
-        // One chronological order across both streams. sortedByDescending is stable, so entries sharing
-        // an instant (notably a carry-forward run) keep the relative order they were built in — resume
-        // first, then Jellyfin's own next-up sequence. `seen` is a defensive backstop only: each stream
-        // is already unique internally and the two no longer overlap after the precedence filter above.
-        val cards = mutableListOf<MediaCard>()
-        val seen = mutableSetOf<String>()
-        for (c in (resumeCandidates + nextUpCandidates).sortedByDescending { it.lastWatchedAt }) {
-            if (seen.add(c.itemId)) cards.add(c.card)
+        // §2 membership: "genuinely started" (a: resume, b: finished, c: touched within the window) AND
+        // "something left to watch" (resume or next-up). The union of (a)/(b)/(c) is the started set;
+        // intersecting it with (resume ∪ next-up) is the actual membership test.
+        val startedKeys = resumeByKey.keys + lastFinishedByKey.keys + lastTouchedByKey.keys
+        val candidateKeys = startedKeys.filter { it in resumeByKey || it in nextUpByKey }
+
+        // §3 — the conflict rule: most recent activity wins. Resume is newer, or there's no next-up →
+        // resume card. The finish is newer and a next-up exists → next-up card. A next-up-only title
+        // (§2(c): no resume, no finish, genuinely just "touched") falls to its own touched timestamp —
+        // this branch can never lack a timestamp, because membership above required it to be in
+        // startedKeys, and the only way in without a resume/finish is via lastTouchedByKey.
+        val entries = candidateKeys.mapNotNull { key ->
+            val resume = resumeByKey[key]
+            val nextUp = nextUpByKey[key]
+            val finishedTs = lastFinishedByKey[key]
+            when {
+                resume != null && nextUp != null && finishedTs != null && finishedTs > resume.ts ->
+                    ContinueEntry(nextUp.mediaItem, nextUp.card, finishedTs)
+                resume != null -> ContinueEntry(resume.mediaItem, resume.card, resume.ts)
+                nextUp != null -> ContinueEntry(nextUp.mediaItem, nextUp.card, finishedTs ?: lastTouchedByKey[key] ?: 0L)
+                else -> null  // unreachable — candidateKeys already required resume or nextUp present
+            }
         }
 
-        ContinueRowResult(cards.take(limit), cards.size)
+        // §4 — one chronological order across the whole merged list. sortedByDescending is stable, so
+        // ties keep the order they were built in. R198: unparseable/missing (the ts = 0L sentinels
+        // above) sorts last, never first.
+        entries.sortedByDescending { it.lastActivityAt }
     }
 
     // ─── Helpers ──────────────────────────────────────────────────────────────
