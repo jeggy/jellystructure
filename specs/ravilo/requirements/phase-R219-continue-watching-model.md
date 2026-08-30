@@ -155,12 +155,20 @@ Filtering always precedes capping, so a channel row shows the 20 most recent tit
 not "whatever survived a library-wide cut and happens to be in this channel."
 
 **"Same as its originating row" means mirroring that row's configured scope, not the page it happens to
-be reached from.** A channel's Continue row is independently configured `cont.scope = "channel"` or
-`"library"` (§F of the Ravilo config editor). If it's `"library"`, the row on that channel page **is**
-Home's row — same source, same order, same membership. Its See-all must therefore also be Home's See-all
-(full library, unfiltered), even though the user opened it while standing inside a channel. Filtering by
-"whatever channel I'm currently looking at" would silently disagree with what the row itself just showed.
-See FR-R219-6 for the concrete mechanism.
+be reached from.** Concretely, a channel's Continue row is library-wide (identical to Home's row) in two
+distinct configurations, and channel-scoped in one:
+
+- **inherit-mode channel** (`ChannelConfig.rows == null`, or `rows.mode != "custom"`) — always
+  library-wide. This mode has no `cont.scope` at all; the channel simply reuses Home's row (R59/R202).
+- **custom-mode channel, `rows.system.cont.scope == "all"`** — the explicit opt-out (§F of the Ravilo
+  config editor: **"All titles"** vs **"This collection"**); library-wide by choice.
+- **custom-mode channel, `rows.system.cont.scope == "channel"`** (the default) — filtered to that
+  channel's own titles via `matchesChannel`.
+
+Only the third case scopes See-all to the channel. The first two must produce Home's exact See-all list,
+even though the user opened it while standing inside a channel — filtering by "whatever channel I'm
+currently looking at" would silently disagree with what the row itself just showed. See FR-R219-6 for the
+concrete mechanism.
 
 ---
 
@@ -237,12 +245,15 @@ row shows a channel-filtered set, See-all shows everything. This requirement clo
 
 **Server** (`HomeFeedService`):
 - `continueWatchingAll(device: DeviceData, channelId: String?)` gains the parameter. When `channelId` is
-  non-null: resolve that channel's config the same way `getChannelFeed()` already does, and —
-  - if `cont.scope == "channel"` → filter the canonical list with the existing
-    `matchesChannel(channelCfg, heroIds)` predicate (the same one `getChannelFeed()` uses for every
-    other row), then return uncapped;
-  - if `cont.scope == "library"` (or the channel isn't found) → return the canonical list unfiltered,
-    identical to the `channelId == null` case.
+  non-null: resolve that channel's config the same way `getChannelFeed()` already does, then apply the
+  exact three-way decision `buildRows()` already makes for the row itself (see the model note above) —
+  - `rows == null` or `rows.mode != "custom"` (inherit) → unfiltered;
+  - `rows.mode == "custom"` and `rows.system.cont.scope == "all"` → unfiltered;
+  - `rows.mode == "custom"` and `rows.system.cont.scope == "channel"` (default) → filter the canonical
+    list with the existing `matchesChannel(channelCfg, heroIds)` predicate (the same one
+    `getChannelFeed()` uses for every other row);
+  - channel not found → unfiltered (defensive; same as `channelId == null`).
+  Result is always returned uncapped, whichever branch applies.
 - No new fetch, no new merge logic — this is a filter stage over the one canonical list from FR-R219-1,
   exactly as that requirement's caching note already anticipated ("channel membership is a filter over
   the same list"). The list itself is still computed/cached once per user+visibility-scope; `channelId`
@@ -300,8 +311,9 @@ row shows a channel-filtered set, See-all shows everything. This requirement clo
 | Jellyfin slow/unreachable | Row omitted (R102); previous cached value continues to serve. |
 | Rewatching a completed series | Re-enters naturally: starting S1E1 creates a resume position. |
 | `LastPlayedDate` missing/unparseable | Sorts last, never first (R198). |
-| See-all opened from a channel with `cont.scope = "channel"` | Filtered to that channel (`matchesChannel`), uncapped — matches the row it came from. |
-| See-all opened from a channel with `cont.scope = "library"` | Unfiltered — identical to Home's See-all, even though reached from inside a channel page. |
+| See-all opened from a custom-mode channel, `cont.scope = "channel"` (default) | Filtered to that channel (`matchesChannel`), uncapped — matches the row it came from. |
+| See-all opened from a custom-mode channel, `cont.scope = "all"` (opt-out) | Unfiltered — identical to Home's See-all, even though reached from inside a channel page. |
+| See-all opened from an inherit-mode channel | Unfiltered — this mode has no `cont.scope`; the row was already Home's row (R59/R202), so See-all is too. |
 
 ---
 
