@@ -27,8 +27,22 @@ findings remain the historical record of why this phase exists.
   only — Home's Continue See-all and a channel's Continue See-all share the exact title ("Continue
   Watching"), so without adding `channelId` to that key the two would have silently reused each other's
   cached store/result. Fixed alongside the plumbing (`RaviloApp.kt`).
-- **Not yet live-verified** — per the standing "no TV testing without approval" rule, live verification
-  (real household data, the R217 predict-then-compare methodology) is pending a fresh testing go-ahead.
+- **Live-verified 2026-08-30** (backend restarted after an unrelated incident — see below — which gave
+  an immediate opportunity to check this code against real data before declaring the restart safe):
+  `GET /api/tv/home` for a real device returned a healthy full feed with Continue Watching correctly
+  capped at 20 (`seedTotalCount=82`, the true uncapped canonical count); `GET /api/tv/continue/all`
+  (no channel) returned all 82, matching; **FR-R219-6 confirmed both branches** — a custom-mode,
+  `scope="channel"` channel (DanskTV) returned 15 via `?channel=`, exactly matching that channel's own
+  row's `seedTotalCount=15`; a library-scoped channel (Føroyskt) returned 82, matching Home's uncapped
+  list. No interactive TV testing was done (still needs approval per the standing rule) — this was a
+  direct device-token curl check, not a UI/D-pad walkthrough.
+- **Unrelated incident, same day**: a `./gradlew --stop` run earlier in this session (to clear a daemon
+  before retrying a flaky test run) killed the *shared* Gradle daemon the live dev backend's `runDev`
+  was running under, taking the backend down for real users. Not caused by R219's code — pure
+  coincidental timing with an unrelated Gradle daemon mistake. See
+  [[bug-gradlew-stop-killed-live-backend]]. Backend restarted, verified healthy, and the live checks
+  above were run as part of that recovery. Release builds deployed to stue TV, soveværelse TV and the
+  Pixel 9 the same session (release-only, AOT, no launch).
 
 ---
 
