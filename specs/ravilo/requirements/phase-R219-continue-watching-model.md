@@ -154,6 +154,14 @@ Ties keep a stable order. An unparseable/missing date sorts last, never first (R
 Filtering always precedes capping, so a channel row shows the 20 most recent titles *of that channel*,
 not "whatever survived a library-wide cut and happens to be in this channel."
 
+**"Same as its originating row" means mirroring that row's configured scope, not the page it happens to
+be reached from.** A channel's Continue row is independently configured `cont.scope = "channel"` or
+`"library"` (§F of the Ravilo config editor). If it's `"library"`, the row on that channel page **is**
+Home's row — same source, same order, same membership. Its See-all must therefore also be Home's See-all
+(full library, unfiltered), even though the user opened it while standing inside a channel. Filtering by
+"whatever channel I'm currently looking at" would silently disagree with what the row itself just showed.
+See FR-R219-6 for the concrete mechanism.
+
 ---
 
 ## Requirements
@@ -220,6 +228,37 @@ Implement §5. The cap is a single constant per surface; Home and channel rows u
 shorter row costs nothing and scans faster on a remote), and See-all stays uncapped.
 `Row.seedTotalCount` continues to report the **pre-cap** match count so the "→ See all" tile is honest.
 
+### FR-R219-6 — Continue Watching's "See all" mirrors the row's own scope
+
+Today `continueWatchingAll()` / `GET /tv/continue/all` takes no channel context at all — it is always
+the full, unfiltered canonical list, even when opened from a channel whose Continue row is
+`cont.scope = "channel"`. That's a real gap (confirmed by code reading 2026-08-30, not yet fixed): the
+row shows a channel-filtered set, See-all shows everything. This requirement closes it.
+
+**Server** (`HomeFeedService`):
+- `continueWatchingAll(device: DeviceData, channelId: String?)` gains the parameter. When `channelId` is
+  non-null: resolve that channel's config the same way `getChannelFeed()` already does, and —
+  - if `cont.scope == "channel"` → filter the canonical list with the existing
+    `matchesChannel(channelCfg, heroIds)` predicate (the same one `getChannelFeed()` uses for every
+    other row), then return uncapped;
+  - if `cont.scope == "library"` (or the channel isn't found) → return the canonical list unfiltered,
+    identical to the `channelId == null` case.
+- No new fetch, no new merge logic — this is a filter stage over the one canonical list from FR-R219-1,
+  exactly as that requirement's caching note already anticipated ("channel membership is a filter over
+  the same list"). The list itself is still computed/cached once per user+visibility-scope; `channelId`
+  never becomes part of that cache key.
+- Route: `GET /tv/continue/all` accepts an optional `?channel=<channelId>` query param and forwards it.
+
+**Client** (the one client change this phase permits — see revised Invariants below):
+- `Dest.SeededBrowse` gains `channelId: String? = null`.
+- `TvApiClient.continueWatchingAll()` gains an optional `channelId` parameter, sent as `?channel=`.
+- `ChannelView`'s `onSeeAll` (`RaviloApp.kt`) passes `dest.channel.id` when `row.kind == RowKind.CONTINUE`
+  — `dest.channel` is already in scope there today and is simply unused for this case currently.
+  Home's `onSeeAll` continues to pass no channel id.
+- The client never inspects or forwards `cont.scope` itself — it always sends the channel id it's
+  standing in, and the server alone decides (via config it already owns) whether that translates into an
+  actual filter. This keeps scope logic server-side, per the frontend/backend split in the constitution.
+
 ---
 
 ## Invariants
@@ -233,8 +272,11 @@ shorter row costs nothing and scans faster on a remote), and See-all stays uncap
   compute, and never keep a persisted copy that could disagree with it.
 - **The row is atomic** (R102 / no-flicker rule): on a Jellyfin timeout the row is omitted entirely
   rather than shipped half-built, and the SWR cache serves the previous good value.
-- **Frontend renders server-pushed state only** (constitution) — this is entirely a backend change; no
-  client change is required or permitted by this phase.
+- **Frontend renders server-pushed state only** (constitution) — the model itself (membership, conflict,
+  order, caps) is entirely backend. FR-R219-6 permits exactly one bounded client change: forwarding a
+  value the client already has (`dest.channel.id`) through to the See-all request. The client computes
+  no scope decision of its own — the server alone decides, from config it owns, whether that id ends up
+  filtering anything. No other client change is required or permitted by this phase.
 
 ---
 
@@ -258,6 +300,8 @@ shorter row costs nothing and scans faster on a remote), and See-all stays uncap
 | Jellyfin slow/unreachable | Row omitted (R102); previous cached value continues to serve. |
 | Rewatching a completed series | Re-enters naturally: starting S1E1 creates a resume position. |
 | `LastPlayedDate` missing/unparseable | Sorts last, never first (R198). |
+| See-all opened from a channel with `cont.scope = "channel"` | Filtered to that channel (`matchesChannel`), uncapped — matches the row it came from. |
+| See-all opened from a channel with `cont.scope = "library"` | Unfiltered — identical to Home's See-all, even though reached from inside a channel page. |
 
 ---
 
@@ -268,7 +312,9 @@ shorter row costs nothing and scans faster on a remote), and See-all stays uncap
   it is built later it becomes a *filter stage over the canonical list*, which this design already
   leaves room for — no re-architecture needed.
 - **Persisting the merged list.** See FR-R219-1's rationale.
-- **Any client/UI change.** Card layout, badges and the "→ See all" tile are unchanged.
+- **Any client visual/UI change.** Card layout, badges and the "→ See all" tile itself are unchanged.
+  (FR-R219-6's plumbing — passing an already-in-scope channel id one hop further — is the one exception,
+  and is not a UI change.)
 - **A staleness cutoff for started titles.** Rejected: sorting + the cap already sink old entries, and
   See-all is meant to be complete. (The 7-day window in rule (c) is a *membership* test for the
   weakest evidence class, not a general expiry.)
@@ -284,6 +330,12 @@ shorter row costs nothing and scans faster on a remote), and See-all stays uncap
   FR-R219-2's completeness requirement).
 - `auth/JellyfinClient.kt` — `getResumeItems` / `getNextUp` (both currently `Limit = 200`, to be paged),
   `getRecentlyPlayed` (the finished-history source; needs `EnableImages=false` and paging).
+- `tv/HomeFeedService.kt` — `getChannelFeed()`'s `matchesChannel(channelCfg, heroIds)` filter, the
+  mechanism FR-R219-6 reuses for channel-scoped See-all.
+- `server/routes/TvRoutes.kt` — `GET /tv/continue/all` (gains `?channel=`, FR-R219-6).
+- `shared/.../tv/TvApiClient.kt` — `continueWatchingAll()` (gains optional `channelId`, FR-R219-6).
+- `ravilo-ui/.../ui/RaviloApp.kt` — `Dest.SeededBrowse` (gains `channelId`), `ChannelView`'s `onSeeAll`
+  (FR-R219-6).
 - Related: **R217** (superseded requirements; its analysis stands), **R186** (fetch window — the same
   truncation class), **R185** (played/position desync, preserved), **R198** (never trust upstream sort),
   **R199** (episode-number fallback, preserved), **R102** (atomic row on timeout), **R86-A** (SWR cache).
