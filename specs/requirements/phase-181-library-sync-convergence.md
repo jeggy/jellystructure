@@ -5,7 +5,8 @@
 > up with a proper solution to this and spec it out properly… remember this is not a one time example,
 > this is something that happens alot."*
 
-**Status:** Planned — design-authored 2026-08-30, not yet dev-reviewed.
+**Status:** Partially implemented. **FR-181-2 built and test-verified 2026-08-31.** FR-181-1, FR-181-1a,
+FR-181-3, FR-181-4, FR-181-5 remain Planned. Not yet dev-reviewed.
 
 ## 1. The reported case
 
@@ -184,22 +185,42 @@ longer has. Under Phase 95's non-destructive invariant this must **not** auto-de
 for review and surfaces it, so a replaced or re-imported file is reconciled rather than leaving a stale
 row that silently disagrees with Jellyfin forever.
 
-### FR-181-2 — Activity-based freshness, replacing premiere-year bucketing
+### FR-181-2 — Activity-based freshness, replacing premiere-year bucketing — ✅ Built 2026-08-31
 
-The cadence tier must be chosen from **whether the title is active**, not when it premiered. A title is
-*hot* when any of the following hold:
+The cadence tier must be chosen from **whether the title is active**, not when it premiered. Three hot
+signals were named in the original draft:
 
-- it has a `sonarrNextAiringDate` in the future (already stored — see §2.1);
-- it gained an episode within the last N days;
-- Jellyfin reports a child count differing from ours (FR-181-3).
+- it has a `sonarrNextAiringDate` in the future (already stored — see §2.1) — **implemented**;
+- it gained an episode within the last N days — **not implemented**, see below;
+- Jellyfin reports a child count differing from ours (FR-181-3) — deferred with FR-181-3 itself.
 
-Hot titles take the `refresh_this_year` cadence regardless of premiere year; genuinely dormant titles
-keep the existing age tiers. Fjollerne — premiered 2005, next episode 2026-09-06 — must land in the fast
-bucket. The existing `[[scan.pipeline]]` cadence keys stay as they are; only tier *selection* changes,
-so no config migration is required.
+**Shipped:** `isDueForRecheck` (`FreshnessFilter.kt`) gained an `isActivelyAiring: Boolean = false`
+parameter, `true || releaseYear >= currentYear -> refreshThisYear` — the override sits ahead of the
+premiere-year check so an active title always takes the fast tier regardless of age. `false` is a real
+default, not a compat shim: a title with no Sonarr signal (movies; series Sonarr doesn't cover) correctly
+falls through to the unchanged age-tiered behavior. `computeFreshnessFilter` computes it from
+`item.sonarrNextAiringDate >= today` — **ISO date strings compare correctly lexicographically, so no date
+parsing is needed** for the comparison itself; `today` still needs deriving from `store.nowMs()`, done via
+a new file-private `dateStringFromEpochMs`, the same civil-calendar algorithm already duplicated in
+`SonarrEnrichService.todayUtcDateString`/`UpcomingService`, parameterized on the injected epoch instead of
+the wall clock so it stays testable (verified against Python's UTC-aware `datetime` across leap-day,
+year-boundary and epoch-zero cases before compiling — the wall-clock version would have been correct too,
+but not unit-testable). `isDueForRecheck`'s existing pure-function shape and all five pre-existing
+`FreshnessFilterTest` cases are unchanged (all 7 tests pass — 5 original + 2 new). No config migration:
+the existing `[[scan.pipeline]]` cadence keys are untouched, only tier *selection* changed.
 
-`isDueForRecheck`'s existing pure-function shape (and `FreshnessFilterTest`) should be preserved — this
-is a change of inputs, not of structure.
+**Verified against real data** (`config/jellystructure.db`, 2026-08-31): all **9 of the 9** series that
+were stuck in `refresh_older` purely from premiere year despite a stored future `sonarrNextAiringDate`
+are now correctly bucketed `refresh_this_year` — Fjollerne (2005), The Simpsons (1989), North Ridge (1997),
+It's Always Rainy in Pittsburgh (2005), Blå Blink (2009), Chore Captain (2015), Kulsort (2019),
+Beliggenhed beliggenhed beliggenhed (2014), Mark og mage (2015).
+
+**Not implemented — "gained an episode within the last N days":** no reliable per-series signal for this
+exists today. `updatedAt` bumps on *any* stored-content change (title edits, artwork, tags — Phase 108),
+far more often than genuine episode additions, so it would flood most of the library into "hot"
+permanently rather than narrowly targeting recent growth. This signal is better served by FR-181-1's
+ingest events (a real "new episode arrived" marker) than by inventing a second, noisier proxy here — left
+for when FR-181-1 lands rather than worked around now.
 
 ### FR-181-3 — Per-series count reconciliation (cheap continuous check)
 
