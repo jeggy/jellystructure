@@ -135,6 +135,12 @@ data class PlayerQoeSnapshot(
     /** Phase 179 (FR-179-3) — count of sideloaded text-subtitle load errors this session. Always 0 on a
      *  platform with no equivalent signal (honest "nothing observed", matching this class's own rule). */
     val subtitleLoadErrors: Int = 0,
+    /** Phase R220 (FR-R220-6) — count of times this session's video-output-loss recovery ladder fired
+     *  (any rung). Android-only signal; always 0 elsewhere (honest "nothing observed", same rule as
+     *  every other field here). A nonzero count on a title is itself the useful signal — if this stays
+     *  at 0 across the fleet, the recovery ladder was never needed and phase-R220's rungs 1-3 are dead
+     *  weight; if it's never 0, rung 4 (or prevention, FR-R220-4) needs another look. */
+    val videoOutputRecoveries: Int = 0,
 )
 
 /**

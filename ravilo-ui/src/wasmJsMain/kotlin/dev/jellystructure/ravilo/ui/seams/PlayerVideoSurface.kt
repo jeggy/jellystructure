@@ -5,6 +5,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 
 @Composable
-actual fun PlayerVideoSurface(player: RaviloPlayer, modifier: Modifier) {
+actual fun PlayerVideoSurface(player: RaviloPlayer, modifier: Modifier, onVideoOutputStuck: () -> Unit) {
     Box(modifier) // <video> element is fixed-positioned behind the skiko canvas via CSS
 }

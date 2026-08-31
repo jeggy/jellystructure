@@ -98,6 +98,11 @@ actual class RaviloPlayer actual constructor() {
     // Jellyfin's extraction this session), same "badge only when non-clean" philosophy as the other
     // counters here.
     @Volatile private var qoeSubtitleLoadErrors: Int = 0
+    // Phase R220 (FR-R220-6) — bumped once per recovery-ladder firing (any rung) by
+    // PlayerVideoSurface's detector; deliberately persists across the whole session like the other
+    // qoe* counters (not the R218 per-item ones below), since "did this happen at all this session" is
+    // the useful signal.
+    @Volatile private var qoeVideoOutputRecoveries: Int = 0
     // Rebuffer bookkeeping: only counted once the first frame has rendered (excludes initial buffering)
     // and only when the buffering wasn't itself caused by a seek (excludes user-initiated seeks) — see
     // the phase's FR-R216-4 doc.
@@ -414,7 +419,33 @@ actual class RaviloPlayer actual constructor() {
         bandwidthEstimateBps = qoeBandwidthEstimateBps,
         videoDecoder = qoeVideoDecoder,
         subtitleLoadErrors = qoeSubtitleLoadErrors,
+        videoOutputRecoveries = qoeVideoOutputRecoveries,
     )
+
+    /**
+     * Phase R220 (FR-R220-2) — a real frame COUNT, not a boolean, so the "playing but not rendering"
+     * detector in [PlayerVideoSurface] can tell "no new frames since I last polled" from "genuinely
+     * nothing rendered yet" (the latter is [hasRenderedFirstFrame]'s job, unaffected by this). 0 before
+     * a video decoder exists yet or if the counters are ever unavailable — never throws.
+     * `ensureUpdated()` is required by [DecoderCounters]'s own contract before a cross-thread read.
+     */
+    fun renderedVideoFrameCount(): Long = try {
+        exo.videoDecoderCounters?.let { counters ->
+            counters.ensureUpdated()
+            counters.renderedOutputBufferCount.toLong()
+        } ?: 0L
+    } catch (e: Exception) {
+        0L
+    }
+
+    /** Phase R220 (FR-R220-4) — explicit, deterministic pair to [setVideoSurfaceView]: detach on
+     *  backgrounding so re-attach on foreground is always a real re-attach, never a no-op Media3
+     *  silently skips because it still thinks the (possibly now-invalid) surface is already bound. */
+    fun clearVideoSurfaceView(sv: SurfaceView) { exo.clearVideoSurfaceView(sv) }
+
+    /** Phase R220 (FR-R220-6) — called by [PlayerVideoSurface]'s recovery ladder every time it fires,
+     *  whichever rung ends up working. */
+    fun recordVideoOutputRecovery() { qoeVideoOutputRecoveries++ }
 }
 
 /**
