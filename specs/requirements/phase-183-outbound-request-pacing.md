@@ -5,8 +5,12 @@
 > just goes ahead and starts it's own concurrency or something. So let's figure out a good approach to
 > tackle this."*
 
-**Status:** Planned. Design-authored 2026-08-31 from a source read of the live tree; **not yet
-dev-reviewed**. The user's diagnosis is correct and is confirmed below by the logs they supplied.
+**Status:** ✓ Built 2026-08-31, same session as the spec, after Phase 182's FR-182-2. `compileKotlinLinuxX64`
+clean; `linuxX64Test` 163/163 green. **Not yet dev-reviewed and not yet live-measured** — FR-183-7's
+before/after table needs a real scan against the reported series, which needs a live backend restart
+this session was not authorized to do. The user's diagnosis is correct and is confirmed below by the
+logs they supplied. See the build note after §4 for what shipped, including one deliberate architectural
+deviation (FR-183-1 scoped to `TmdbClient` rather than generically inside `OutboundHttp`).
 
 Related: **Phase 182** makes the server survive a scan. This phase removes the load that makes a scan
 dangerous in the first place — the two are independent fixes for one incident. Phase 182 §2.4's
@@ -247,6 +251,62 @@ every time".
 | Episodes written with null title/overview | | (target: 0) |
 
 Wall-clock is expected to move in the wrong direction and that is acceptable; the last row is not.
+
+**Not run this session** — needs a live scan against the reported series (Jellyfin id 2777) with a
+backend restart, out of scope for this implementation pass.
+
+---
+
+## Build note (2026-08-31)
+
+Implemented in one pass, same session as the spec, after Phase 182's FR-182-2 landed (as required).
+What shipped, and one deliberate scope decision:
+
+- **Architectural deviation from FR-183-1's literal wording**: the spec describes a rate limiter "applied
+  INSIDE `OutboundHttp`", i.e. generic across every outbound host. Implemented instead as a limiter
+  scoped to `TmdbClient` specifically (`TmdbRateLimiter`, one instance per client = one instance for the
+  one TMDB host in practice). Reasoning: `OutboundHttp.withPermit` has no host parameter today, and
+  threading one through would touch every caller (`JellyfinClient`, `SeerrClient`, `BazarrClient`,
+  `ArrClient`, artwork downloaders) for a problem that is, on the evidence, TMDB-specific. A future phase
+  can generalize this into `OutboundHttp` if a second host needs the same treatment; nothing here blocks
+  that.
+- **FR-183-1/FR-183-2**: `TmdbRateLimiter` — a token bucket (seeded at 4 req/s, burst 10, floor 0.5/s,
+  ceiling 20/s — a stated starting guess per the spec's own instruction not to assert a fact TMDB doesn't
+  publish) that halves its rate on every 429 and nudges back up after 50 consecutive successes.
+  `TmdbClient.httpGet` acquires a token before every request (in addition to, not instead of,
+  `OutboundHttp`'s concurrency permit), honours a `Retry-After` header when TMDB sends one, otherwise
+  backs off exponentially (base 1s, capped 20s), and every wait is **full jitter**
+  (`Random.nextLong(backoffMs)`) — the direct fix for the supplied log's 18-requests-in-one-second
+  evidence.
+- **FR-183-3**: `Scanner.episodeFanoutGate` (new `Semaphore`, sized to `scan_workers × 3` clamped to
+  `[3, 24]`, fixed at Scanner construction — not live-rescalable like `runPipelineStepPool`'s worker
+  count, a documented simplification) now bounds the two TMDB call sites inside `scanSeries`'s and
+  `syncSeriesEpisodes`'s per-episode `async` blocks. ffprobe is left ungated here since `ProcessGate`
+  already bounds it separately.
+- **FR-183-4**: `Scanner` gained a `store: MediaStore?` constructor param (defaulted null so existing
+  test construction sites don't need updating). `scanSeries` now looks up the previous episode via
+  `store.resolveByJellyfinId` and skips the TMDB details/credits fetch when the existing episode already
+  has both (title+overview) or (guest stars/crew) respectively — deliberately conservative, never treats
+  a genuinely-empty TMDB response as "already fetched." `syncSeriesEpisodes` got the same skip (it
+  already had the merge-fallback for the *result*, just not the skip for the *call*). **Found and fixed
+  a real latent data-loss bug as a side effect**: `scanSeries`'s episode fields (title/overview/
+  stillPath/tmdbEpisodeId/runtime/airDate) had NO fallback to the existing value at all before this —
+  any transient TMDB failure (rate-limit or otherwise) on a re-scan silently blanked already-good data.
+  Both functions now fall back to `existingEp` on every one of those fields, matching the pattern
+  `syncSeriesEpisodes` already had.
+- **FR-183-5**: `httpGet` now throws `TmdbRateLimitExhaustedException` on exhaustion instead of
+  returning the raw 429 `HttpResponse` for a caller to fail to deserialize — every call site already
+  wraps `httpGet` in `runCatching {}.getOrNull()` (confirmed all ~29 sites), so this only makes the
+  *cause* distinguishable in the log, not the caller-visible outcome. **Not done**: the deeper DB-level
+  half — marking an item whose scan hit exhaustion as not-fully-checked so Phase 181's freshness filter
+  revisits it, rather than treating the gap as settled. That needs new persisted state on `MediaItem`/
+  `MediaStore` and was judged out of scope for this pass; flagged here rather than silently dropped.
+- **FR-183-6**: substantially free — every rate-limit `Logger.warn` already flows into the Activity feed
+  (`Logger.emit` → `activityLog?.log(...)`), so the improved log lines (now including the limiter's
+  current rate) are visible there without new code. **Not done**: a dedicated per-run aggregate counter/
+  UI card; the per-event log lines are the mechanism that shipped.
+
+Verification: `compileKotlinLinuxX64` clean; `linuxX64Test` 163/163 green (no regressions).
 
 ---
 

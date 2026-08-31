@@ -1957,7 +1957,9 @@ fun Route.mediaRoutes(
             call.respond(HttpStatusCode.Conflict, mapOf("error" to "no scan running"))
             return@post
         }
-        scanTracker.cancel()
+        // Phase 182 (FR-182-5) — cancelRun actually cancels the run's Job (not just the cooperative
+        // flag) and force-frees its slots if it doesn't wind down within a bounded grace period.
+        scanTracker.cancelRun(appScope)
         call.respond(mapOf("status" to "cancel requested"))
     }
 
@@ -2163,7 +2165,11 @@ internal fun launchScanRun(
     // Phase 178 §FR-178-2 — only a "scheduled" trigger defers; "manual" (any admin-page button) and
     // "startup" (SCAN_ON_START, itself an explicit operator action) always proceed immediately.
     val deferEligible = triggerKind == "scheduled" && configStore.current.scan.deferWhilePlaying
-    appScope.launch {
+    // Phase 182 (FR-182-6/FR-182-5) — GateClass.BACKGROUND tags this coroutine and everything launched
+    // under it (every runPipelineStepPool worker, every per-episode async{} inside Scanner) so
+    // OutboundHttp/ProcessGate never let this run starve an interactive request; attachJob lets
+    // ScanTracker.cancelRun actually cancel this Job instead of only flipping a cooperative flag.
+    val job = appScope.launch(dev.jellystructure.ops.GateClass.BACKGROUND) {
         runTagged(
             jobId, triggerKind, if (runsPipeline) "pipeline" else "library",
             if (runsPipeline) (if (full) "full" else "normal") else null,
@@ -2172,6 +2178,7 @@ internal fun launchScanRun(
             runPipeline(RunTarget.Library(libraryId, resumeSkipIds), pipeline, jobId, scanTracker, pipelineDeps, fullRun = full, deferEligible = deferEligible)
         }
     }
+    scanTracker.attachJob(job)
     return pipeline
 }
 
@@ -2255,7 +2262,22 @@ internal suspend fun runScan(
                         for (jItem in channel) {
                             if (scanTracker.cancelRequested) break
                             val activeToken = scanTracker.beginItem(jItem.name)
-                            val item = try { scanner.scanItem(jItem)?.let { artworkDownloader?.stampHasStill(it) ?: it } } catch (e: Exception) {
+                            // Phase 182 (FR-182-4/FR-182-5) — same fix as runPipelineStepPool: bounded per-
+                            // item deadline (a hung scanItem used to occupy this worker forever, matching
+                            // the reported incident's shape exactly), and `catch (e: Exception)` alone is a
+                            // real bug — CancellationException IS an Exception subtype in Kotlin, so a
+                            // genuinely cancelled worker (ScanTracker.cancelRun) used to have its own
+                            // cancellation silently swallowed here and keep looping instead of stopping.
+                            val item = try {
+                                kotlinx.coroutines.withTimeout(dev.jellystructure.media.pipelineStepItemDeadlineMs("scan_files")) {
+                                    scanner.scanItem(jItem)?.let { artworkDownloader?.stampHasStill(it) ?: it }
+                                }
+                            } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
+                                Logger.error("scanItem timed out for '${jItem.name}' — abandoning this item", "scan")
+                                null
+                            } catch (e: kotlinx.coroutines.CancellationException) {
+                                throw e   // real outer cancellation (ScanTracker.cancelRun) — must propagate
+                            } catch (e: Exception) {
                                 Logger.error("scanItem failed for '${jItem.name}': ${e.message}", "scan")
                                 null
                             } finally {

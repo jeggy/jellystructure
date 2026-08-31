@@ -2,19 +2,105 @@ package dev.jellystructure.tmdb
 
 import dev.jellystructure.config.ConfigStore
 import dev.jellystructure.log.Logger
+import dev.jellystructure.ops.SpinLock
 import io.ktor.client.call.body
 import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.client.request.get
 import io.ktor.client.request.parameter
 import io.ktor.client.statement.HttpResponse
+import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import dev.jellystructure.OutboundHttp
 import kotlinx.coroutines.delay
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlin.random.Random
+import kotlin.time.TimeSource
 
 /** Cap on [TmdbClient]'s internal 429 retry loop — see the `httpGet` doc comment. */
 private const val MAX_429_RETRIES = 5
+
+/**
+ * Phase 183 (FR-183-1/FR-183-2) — TMDB publishes no current numeric rate limit (the historical
+ * 40-requests-per-10-seconds figure was withdrawn in 2019; what remains is an undocumented per-IP
+ * ceiling), so these are a conservative STARTING point, not a researched fact — [TmdbRateLimiter]
+ * adjusts the real rate down on every 429 and back up on sustained success, so the effective ceiling is
+ * discovered empirically rather than guessed once and left wrong. [OutboundHttp.withPermit] bounds
+ * *concurrency* (how many requests may be in flight); this bounds *rate* (how many may START per
+ * second) — the two are different things, and OutboundHttp's 64-permit concurrency cap alone allowed a
+ * burst approaching 64 requests / (one round-trip latency), far above anything TMDB would tolerate.
+ */
+private const val TMDB_INITIAL_RATE_PER_SEC = 4.0
+private const val TMDB_MIN_RATE_PER_SEC = 0.5
+private const val TMDB_MAX_RATE_PER_SEC = 20.0
+private const val TMDB_BURST = 10.0
+private const val TMDB_SUCCESS_STREAK_TO_RECOVER = 50
+private const val RETRY_BASE_BACKOFF_MS = 1_000L
+private const val RETRY_MAX_BACKOFF_MS = 20_000L
+
+/** Phase 183 (FR-183-5) — thrown instead of returning the raw 429 response once retries are exhausted,
+ *  so a caller's `runCatching { … }.getOrNull()` (the established pattern at every httpGet call site in
+ *  this file) can no longer accidentally succeed at deserializing an error body into a false "TMDB has
+ *  no data for this" null. Every existing caller already treats a thrown exception as "this field is
+ *  unavailable" — this only makes the CAUSE distinguishable in the log, not the caller-visible outcome. */
+class TmdbRateLimitExhaustedException(url: String, attempts: Int) :
+    Exception("TMDB rate-limited $attempts times, giving up: $url")
+
+/**
+ * Phase 183 (FR-183-1/FR-183-2) — a simple token bucket, AIMD-adjusted: halves its rate on a 429
+ * (multiplicative decrease, floored) and nudges it back up after a run of consecutive successes
+ * (additive increase, capped) — so a genuinely stricter or looser real-world ceiling than the seeded
+ * default is found by observation instead of asserted. Guarded by [SpinLock] (not
+ * `kotlinx.coroutines.sync.Mutex`) purely for consistency with this codebase's other low-level gates;
+ * nothing here is called from a non-suspend context, a plain Mutex would have worked equally well.
+ */
+private class TmdbRateLimiter {
+    private val lock = SpinLock()
+    private var tokens = TMDB_BURST
+    private var ratePerSec = TMDB_INITIAL_RATE_PER_SEC
+    private var lastRefill = TimeSource.Monotonic.markNow()
+    private var consecutiveSuccesses = 0
+
+    /** Blocks (via [delay], never busy-spins across the wait) until a token is available. */
+    suspend fun acquire() {
+        while (true) {
+            val waitMs = lock.withLock {
+                refillLocked()
+                if (tokens >= 1.0) {
+                    tokens -= 1.0
+                    0L
+                } else {
+                    (((1.0 - tokens) / ratePerSec) * 1000).toLong().coerceAtLeast(10L)
+                }
+            }
+            if (waitMs <= 0L) return
+            delay(waitMs)
+        }
+    }
+
+    fun onRateLimited() = lock.withLock {
+        ratePerSec = (ratePerSec / 2).coerceAtLeast(TMDB_MIN_RATE_PER_SEC)
+        consecutiveSuccesses = 0
+    }
+
+    fun currentRate(): Double = lock.withLock { ratePerSec }
+
+    fun onSuccess() = lock.withLock {
+        consecutiveSuccesses++
+        if (consecutiveSuccesses >= TMDB_SUCCESS_STREAK_TO_RECOVER) {
+            consecutiveSuccesses = 0
+            ratePerSec = (ratePerSec + 1.0).coerceAtMost(TMDB_MAX_RATE_PER_SEC)
+        }
+    }
+
+    private fun refillLocked() {
+        val now = TimeSource.Monotonic.markNow()
+        val elapsedSec = (now - lastRefill).inWholeMilliseconds / 1000.0
+        if (elapsedSec <= 0.0) return
+        tokens = (tokens + elapsedSec * ratePerSec).coerceAtMost(TMDB_BURST)
+        lastRefill = now
+    }
+}
 
 @Serializable
 data class TmdbSearchResponse(
@@ -325,6 +411,10 @@ class TmdbClient(
     // Phase 129 (FR-OPS1 §B.1) — shared client, one idle connection pool for all outbound callers.
     private val http = OutboundHttp.client
 
+    // Phase 182 (FR-182-2): plain mutableMapOf, hit from hundreds of concurrent per-episode coroutines
+    // across the real 4-thread scan pool with NO synchronization — the same unsynchronized-shared-
+    // mutable-state shape MediaStore's caches had, and hotter here (a per-episode call site, not a
+    // per-item one). Guarded by [cacheLock], a SpinLock so it works from both suspend call sites here.
     private val detailsCache = mutableMapOf<Int, TmdbMovieDetails>()
 
     // Bug fix: getRegionedLanguageTags returns series-level data (the show's /translations) but used
@@ -332,6 +422,12 @@ class TmdbClient(
     // 300-episode series that's up to 300 redundant identical requests in one pull_tmdb run. Cached
     // per (tmdbId, isMovie), same idiom as [detailsCache].
     private val regionTagsCache = mutableMapOf<Pair<Int, Boolean>, Map<String, String>>()
+
+    private val cacheLock = SpinLock()
+
+    // Phase 183 (FR-183-1) — one bucket per TmdbClient instance (one TMDB host), acquired before every
+    // outbound call below, in addition to (not instead of) OutboundHttp's concurrency permit.
+    private val rateLimiter = TmdbRateLimiter()
 
     private fun apiKey(): String = configStore.current.apiKeys.tmdbV3Key
 
@@ -346,19 +442,45 @@ class TmdbClient(
      * outside this looked exactly like the whole backend hanging. Centralizing the retry here (a)
      * caps it at [MAX_429_RETRIES] instead of forever, and (b) finally logs every occurrence, so a
      * future incident shows "TMDB rate-limited" in the activity log instead of just going quiet.
+     *
+     * Phase 183 (FR-183-1/FR-183-2) — three further fixes to the SAME bug, evidenced live by a supplied
+     * log where 18 requests all hit 429 within one second, all retrying at an identical flat 3s delay
+     * (converging, not scattering): (a) [rateLimiter] paces the request RATE, not just concurrency — the
+     * actual mechanism the flat-3s retry alone could never fix, since every retry just re-entered the
+     * same burst; (b) the retry honours the response's own `Retry-After` header when TMDB sends one,
+     * falling back to exponential backoff (not flat) otherwise; (c) every wait carries FULL JITTER
+     * (`Random.nextLong`), which is the direct fix for "18 requests retrying at the exact same instant."
+     * Exhaustion now THROWS [TmdbRateLimitExhaustedException] instead of returning the raw error
+     * response — see that class's own doc for why silently returning it was a real data-loss bug.
      */
     private suspend fun httpGet(url: String, block: HttpRequestBuilder.() -> Unit = {}): HttpResponse {
         var attempt = 0
         while (true) {
+            rateLimiter.acquire()
             val response = OutboundHttp.withPermit { http.get(url, block) }
-            if (response.status != HttpStatusCode.TooManyRequests) return response
+            if (response.status != HttpStatusCode.TooManyRequests) {
+                rateLimiter.onSuccess()
+                return response
+            }
+            rateLimiter.onRateLimited()
             attempt++
             if (attempt > MAX_429_RETRIES) {
                 Logger.warn("TMDB rate-limited (429) $attempt times, giving up: $url", "tmdb")
-                return response
+                throw TmdbRateLimitExhaustedException(url, attempt)
             }
-            Logger.warn("TMDB rate-limited (429), retrying in 3s (attempt $attempt/$MAX_429_RETRIES): $url", "tmdb")
-            delay(3000)
+            val retryAfterMs = response.headers[HttpHeaders.RetryAfter]?.toLongOrNull()?.times(1000L)
+            val backoffMs = retryAfterMs
+                ?: (RETRY_BASE_BACKOFF_MS * (1L shl (attempt - 1))).coerceAtMost(RETRY_MAX_BACKOFF_MS)
+            // Full jitter (not "backoff ± a bit"): a wait uniformly random in [0, backoffMs) — the
+            // specific fix for a batch that got 429'd together retrying together, which the log evidence
+            // (18 identical timestamps) showed the old flat delay(3000) produced every time.
+            val jitteredMs = Random.nextLong(backoffMs.coerceAtLeast(1L))
+            Logger.warn(
+                "TMDB rate-limited (429), retrying in ${jitteredMs}ms (attempt $attempt/$MAX_429_RETRIES, " +
+                    "rate now ${rateLimiter.currentRate()}/s): $url",
+                "tmdb",
+            )
+            delay(jitteredMs)
         }
     }
 
@@ -378,7 +500,7 @@ class TmdbClient(
     }
 
     suspend fun getMovieDetails(tmdbId: Int, language: String? = null): TmdbMovieDetails? {
-        if (language == null) detailsCache[tmdbId]?.let { return it }
+        if (language == null) cacheLock.withLock { detailsCache[tmdbId] }?.let { return it }
         val key = apiKey()
         if (key.isBlank()) return null
         val result = runCatching {
@@ -387,7 +509,7 @@ class TmdbClient(
                 if (!language.isNullOrBlank()) parameter("language", language)
             }
             val details = response.body<TmdbMovieDetails>()
-            if (language == null) detailsCache[tmdbId] = details
+            if (language == null) cacheLock.withLock { detailsCache[tmdbId] = details }
             details
         }
         if (result.isFailure) Logger.warn("TMDB details failed for id=$tmdbId lang=$language: ${result.exceptionOrNull()?.message}")
@@ -652,7 +774,7 @@ class TmdbClient(
      */
     suspend fun getRegionedLanguageTags(tmdbId: Int, isMovie: Boolean): Map<String, String> {
         val cacheKey = tmdbId to isMovie
-        regionTagsCache[cacheKey]?.let { return it }
+        cacheLock.withLock { regionTagsCache[cacheKey] }?.let { return it }
         val key = apiKey()
         if (key.isBlank()) return emptyMap()
         val path = if (isMovie) "movie/$tmdbId/translations" else "tv/$tmdbId/translations"
@@ -674,7 +796,7 @@ class TmdbClient(
             return emptyMap()
         }
         val tags = result.getOrThrow()
-        regionTagsCache[cacheKey] = tags
+        cacheLock.withLock { regionTagsCache[cacheKey] = tags }
         return tags
     }
 

@@ -100,8 +100,11 @@ class MediaJobQueue(
      *  never touched; a segments-lane row is idempotent to re-run outright). */
     fun start() {
         queries.requeueRunning()
-        appScope.launch(dispatcher) { workerLoop() }
-        appScope.launch { segmentsSupervisorLoop() }
+        // Phase 182 (FR-182-6) — background work (ffmpeg remuxes, segment detection), never request-
+        // serving; tags this coroutine and everything launched under it so OutboundHttp/ProcessGate
+        // reserve interactive capacity it can never consume. See GateClass's own doc.
+        appScope.launch(dev.jellystructure.ops.GateClass.BACKGROUND + dispatcher) { workerLoop() }
+        appScope.launch(dev.jellystructure.ops.GateClass.BACKGROUND) { segmentsSupervisorLoop() }
     }
 
     fun isBusy(): Boolean = runningJobId != null || bulkRunning
@@ -332,7 +335,11 @@ class MediaJobQueue(
 
     private fun launchSegmentsWorker() {
         segmentsActiveWorkers.incrementAndGet()
-        appScope.launch { segmentsWorkerLoop() }
+        // Phase 182 (FR-182-6) — explicit, not inherited: appScope is a stored field, so a plain
+        // appScope.launch{} here does NOT pick up segmentsSupervisorLoop's own BACKGROUND tag (context
+        // propagation only flows through the calling coroutine's OWN scope, e.g. coroutineScope{}'s
+        // receiver — never through a captured CoroutineScope field).
+        appScope.launch(dev.jellystructure.ops.GateClass.BACKGROUND) { segmentsWorkerLoop() }
     }
 
     private suspend fun segmentsWorkerLoop() {
