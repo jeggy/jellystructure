@@ -10,6 +10,7 @@ import dev.jellystructure.model.MediaPage
 import dev.jellystructure.model.TrackKind
 import dev.jellystructure.model.recencyKey
 import dev.jellystructure.nfo.NfoWriter
+import dev.jellystructure.ops.SpinLock
 import dev.jellystructure.resolver.CertificationResolver
 import dev.jellystructure.resolver.LanguageResolver
 import dev.jellystructure.shared.tv.ConditionGroup
@@ -23,6 +24,8 @@ import kotlinx.cinterop.ptr
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.Json
+import kotlin.concurrent.AtomicLong
+import kotlin.concurrent.AtomicReference
 import platform.posix.CLOCK_REALTIME
 import platform.posix.clock_gettime
 import platform.posix.timespec
@@ -72,16 +75,22 @@ class MediaStore(
     // Phase 78: cached tmdbPersonId -> profilePath index for the /api/people/{id}/image endpoint,
     // so a cache miss is O(1) instead of deserialising the whole library per request. Invalidated
     // on any write (upsertItem). null = not built yet.
-    private var peopleIndexCache: Map<Int, String>? = null
+    // Phase 182 (FR-182-2): AtomicReference, not a bare `var` — these fields are read/invalidated from
+    // every concurrent scan-pool thread (upsertItem/addOrUpdate/deleteItem all run there), and a plain
+    // reference field has no cross-thread visibility guarantee on Kotlin/Native. The check-then-build
+    // read below can still race two threads into computing the same index redundantly (benign — both
+    // compute the same correct answer from the same underlying data); what this fixes is a torn/stale
+    // read of the reference itself, not that redundant-build race.
+    private val peopleIndexCache = AtomicReference<Map<Int, String>?>(null)
 
     // jellyfinId → MediaItem index so TV detail routes avoid a full table scan + JSON deserialise
     // on every page open. Built on first use, invalidated on any write.
-    private var jellyfinIdIndex: Map<String, MediaItem>? = null
+    private val jellyfinIdIndex = AtomicReference<Map<String, MediaItem>?>(null)
 
     // R100: genre → items index so a detail page's "related" list is gathered from just the source's
     // genre buckets instead of scanning the whole library per open. Built on first use, invalidated on
     // any write — same pattern as jellyfinIdIndex.
-    private var genreIndexCache: Map<String, List<MediaItem>>? = null
+    private val genreIndexCache = AtomicReference<Map<String, List<MediaItem>>?>(null)
 
     // Phase 88: decoded-library cache — skip JSON deserialisation on every read path.
     // Invalidated synchronously on every write (upsertItem). Rebuilt lazily on next allItems() call.
@@ -96,18 +105,33 @@ class MediaStore(
 
     // Phase R86: monotonic counter incremented on every write. Used by HomeFeedService as a cache
     // invalidation key — if libraryVersion hasn't changed, the home feed is still valid.
-    var libraryVersion: Long = 0
-        private set
+    // Phase 182 (FR-182-2): AtomicLong, not a bare `var` + `libraryVersion++` — the increment used to be
+    // a non-atomic read-modify-write executed from every scan thread via upsertItemDbOnly, so concurrent
+    // writers could race and lose an increment. A lost increment here is a real correctness bug, not just
+    // a benign redundant rebuild: HomeFeedService trusts this number as a cache-invalidation key, so a
+    // lost bump can serve a stale home feed after a real write.
+    private val libraryVersionAtomic = AtomicLong(0L)
+    val libraryVersion: Long get() = libraryVersionAtomic.value
 
     // Phase 89: memoize computed results keyed on libraryVersion so repeated reads between writes are O(1).
     // The Pair<Long, T> carries the version the result was built against; a version change auto-invalidates.
-    private var trackFacetsCache:  Pair<Long, TrackFacets>? = null
-    private var metaFacetsCache:   Pair<Long, MetaFacets>? = null
-    private var nfoCoveredCache:   Pair<Long, Int>? = null
+    // Phase 182 (FR-182-2): AtomicReference — same cross-thread-visibility reasoning as the index caches above.
+    private val trackFacetsCache = AtomicReference<Pair<Long, TrackFacets>?>(null)
+    private val metaFacetsCache  = AtomicReference<Pair<Long, MetaFacets>?>(null)
+    private val nfoCoveredCache  = AtomicReference<Pair<Long, Int>?>(null)
 
     // Phase 91: per-item last_checked timestamps (item.id → epoch ms). Loaded from DB on startup,
     // updated on upsertItem. Used by the pipeline freshness policy to skip recently-checked items.
+    // Phase 182 (FR-182-2): this is the one cache here that is genuinely MUTATED in place (not
+    // replaced wholesale like the Map caches above), from every scan thread via the non-suspend
+    // upsertItemDbOnly (called synchronously inside SQLDelight's db.transaction{} — a kotlinx.coroutines
+    // Mutex cannot guard it, its withLock is suspend-only). Concurrent unsynchronized `put`s into a plain
+    // MutableMap is a real data race that can corrupt the map's internal structure; this was the leading
+    // hypothesis for the reported "4 items stuck on 4 scan threads, forever, uncancellably" incident —
+    // see phase-182's §2.4. Guarded by [lastCheckedLock], a SpinLock so it works from upsertItemDbOnly's
+    // non-suspend context too.
     private val lastCheckedMap: MutableMap<String, Long> = mutableMapOf()
+    private val lastCheckedLock = SpinLock()
 
     // Jellystructure-defined tags (those in the JS-tag store) always survive a re-scan, which
     // otherwise replaces an item's tags with the fresh Jellyfin set (constitution invariant #6).
@@ -154,7 +178,7 @@ class MediaStore(
         val count = db.mediaQueries.count().executeAsOne()
         Logger.info("MediaStore: DB has $count media items")
         db.mediaQueries.allLastChecked().executeAsList().forEach { row ->
-            lastCheckedMap[row.id] = row.last_checked
+            lastCheckedLock.withLock { lastCheckedMap[row.id] = row.last_checked }
         }
         backfillSearchText()
         backfillTimestamps()
@@ -212,7 +236,7 @@ class MediaStore(
         Logger.info("MediaStore: backfilled createdAt/updatedAt for ${toBackfill.size} rows")
     }
 
-    fun lastChecked(id: String): Long? = lastCheckedMap[id]
+    fun lastChecked(id: String): Long? = lastCheckedLock.withLock { lastCheckedMap[id] }
 
     @OptIn(ExperimentalForeignApi::class)
     fun nowMs(): Long = memScoped {
@@ -432,10 +456,10 @@ class MediaStore(
 
     /** O(1) lookup by Jellyfin UUID via a lazy-built in-memory index. */
     suspend fun resolveByJellyfinId(jellyfinId: String): MediaItem? {
-        val index = jellyfinIdIndex ?: allItems()
+        val index = jellyfinIdIndex.value ?: allItems()
             .associateBy { it.jellyfinId ?: "" }
             .filterKeys { it.isNotEmpty() }
-            .also { jellyfinIdIndex = it }
+            .also { jellyfinIdIndex.value = it }
         return index[jellyfinId]
     }
 
@@ -507,7 +531,7 @@ class MediaStore(
      */
     suspend fun relatedByGenre(source: MediaItem, limit: Int): List<MediaItem> {
         if (source.genres.isEmpty()) return emptyList()
-        val index = genreIndexCache ?: buildGenreIndex().also { genreIndexCache = it }
+        val index = genreIndexCache.value ?: buildGenreIndex().also { genreIndexCache.value = it }
         val byId = LinkedHashMap<String, MediaItem>()
         for (g in source.genres) {
             val bucket = index[g] ?: continue
@@ -530,7 +554,7 @@ class MediaStore(
      * first non-blank profilePath found, or null if the person isn't in the library.
      */
     suspend fun personProfilePath(tmdbId: Int): String? {
-        val index = peopleIndexCache ?: buildPeopleIndex().also { peopleIndexCache = it }
+        val index = peopleIndexCache.value ?: buildPeopleIndex().also { peopleIndexCache.value = it }
         return index[tmdbId]
     }
 
@@ -560,9 +584,9 @@ class MediaStore(
         if (twins.isNotEmpty()) {
             // A real deletion (not the common upsertItem patch path below) — full invalidate.
             allItemsMutex.withLock { allItemsCache = null }
-            peopleIndexCache = null
-            jellyfinIdIndex  = null
-            genreIndexCache  = null
+            peopleIndexCache.value = null
+            jellyfinIdIndex.value  = null
+            genreIndexCache.value  = null
             for (t in twins) {
                 db.mediaQueries.deleteById(t.id)
                 println("[INFO] MediaStore: removed stale duplicate ${t.id} → replaced by ${item.id}")
@@ -632,11 +656,11 @@ class MediaStore(
         if (!item.missingFromSource) return false
         // A real deletion (not the common upsertItem patch path) — full invalidate.
         allItemsMutex.withLock { allItemsCache = null }
-        peopleIndexCache = null
-        jellyfinIdIndex  = null
-        genreIndexCache  = null
-        libraryVersion++
-        lastCheckedMap.remove(item.id)
+        peopleIndexCache.value = null
+        jellyfinIdIndex.value  = null
+        genreIndexCache.value  = null
+        libraryVersionAtomic.incrementAndGet()
+        lastCheckedLock.withLock { lastCheckedMap.remove(item.id) }
         db.mediaQueries.deleteById(item.id)
         return true
     }
@@ -651,8 +675,8 @@ class MediaStore(
 
     suspend fun nfoCoveredCount(): Int {
         val ver = libraryVersion
-        nfoCoveredCache?.let { (v, c) -> if (v == ver) return c }
-        return allItems().count { NfoWriter.exists(it) }.also { nfoCoveredCache = Pair(ver, it) }
+        nfoCoveredCache.value?.let { (v, c) -> if (v == ver) return c }
+        return allItems().count { NfoWriter.exists(it) }.also { nfoCoveredCache.value = Pair(ver, it) }
     }
 
     suspend fun nfoCoveragePercent(): Int {
@@ -663,8 +687,8 @@ class MediaStore(
 
     suspend fun trackFacets(): TrackFacets {
         val ver = libraryVersion
-        trackFacetsCache?.let { (v, f) -> if (v == ver) return f }
-        return buildTrackFacets().also { trackFacetsCache = Pair(ver, it) }
+        trackFacetsCache.value?.let { (v, f) -> if (v == ver) return f }
+        return buildTrackFacets().also { trackFacetsCache.value = Pair(ver, it) }
     }
 
     private suspend fun buildTrackFacets(): TrackFacets = buildTrackFacetsFrom(allItems())
@@ -697,8 +721,8 @@ class MediaStore(
 
     suspend fun metaFacets(): MetaFacets {
         val ver = libraryVersion
-        metaFacetsCache?.let { (v, f) -> if (v == ver) return f }
-        return buildMetaFacets().also { metaFacetsCache = Pair(ver, it) }
+        metaFacetsCache.value?.let { (v, f) -> if (v == ver) return f }
+        return buildMetaFacets().also { metaFacetsCache.value = Pair(ver, it) }
     }
 
     private suspend fun buildMetaFacets(): MetaFacets = buildMetaFacetsFrom(allItems())
@@ -779,9 +803,9 @@ class MediaStore(
     // once for the whole batch, rather than patching per item — they're either one-time startup work or
     // an already-wholesale replace, not the hot per-item path upsertItem's cache patch exists for.
     private fun upsertItemDbOnly(item: MediaItem) {
-        libraryVersion++
+        libraryVersionAtomic.incrementAndGet()
         val now = nowMs()
-        lastCheckedMap[item.id] = now
+        lastCheckedLock.withLock { lastCheckedMap[item.id] = now }
         // Phase 163: has_segments' source of truth is now MediaSegmentStore's own point-update, not this
         // item's (now-stale) SegmentMarkers blob — INSERT OR REPLACE still touches every column on every
         // write, so this carries the currently-stored value forward instead of recomputing it wrong.
@@ -822,9 +846,9 @@ class MediaStore(
                 if (idx >= 0) cache.toMutableList().also { it[idx] = item } else cache + item
             }
         }
-        peopleIndexCache = null
-        jellyfinIdIndex  = null
-        genreIndexCache  = null
+        peopleIndexCache.value = null
+        jellyfinIdIndex.value  = null
+        genreIndexCache.value  = null
         upsertItemDbOnly(item)
     }
 

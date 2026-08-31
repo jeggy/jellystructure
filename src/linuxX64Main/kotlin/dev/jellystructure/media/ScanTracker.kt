@@ -3,11 +3,23 @@ package dev.jellystructure.media
 import dev.jellystructure.db.JellystructureDb
 import dev.jellystructure.log.Logger
 import kotlinx.cinterop.ExperimentalForeignApi
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.Serializable
 import kotlin.concurrent.AtomicInt
 import kotlin.concurrent.AtomicLong
+import kotlin.concurrent.Volatile
+
+/** Phase 182 (FR-182-5) — how long [ScanTracker.cancelRun] waits for a genuinely well-behaved run to
+ *  wind down after cancellation before giving up and forcibly freeing its slots. Long enough to absorb
+ *  a real in-flight HTTP round-trip unwinding; short enough that "Cancel" still feels like it did
+ *  something within one admin-page refresh. */
+private const val CANCEL_GRACE_MS = 15_000L
 
 @Serializable
 data class ScanStatusResponse(
@@ -108,6 +120,16 @@ class ScanTracker(private val db: JellystructureDb, private val persistToDb: Boo
     var cancelRequested: Boolean = false
         private set
 
+    // Phase 182 (FR-182-5) — the Job backing the currently running scan/pipeline coroutine tree, set by
+    // whoever launches it (launchScanRun). Lets cancelRun() actually cancel instead of only flipping the
+    // cooperative [cancelRequested] boolean, which runPipelineStepPool's worker loop only ever checked
+    // BETWEEN items — an item already inside perItem (in particular a hung one, see phase-182 §2) could
+    // never be interrupted that way, and pressing Cancel in the admin UI silently did nothing beyond
+    // relabel the status.
+    @Volatile private var runJob: Job? = null
+
+    fun attachJob(job: Job) { runJob = job }
+
     val processedIdsSnapshot: Set<String>
         get() = if (persistToDb) db.scanStateQueries.getProcessedIds(_jobId).executeAsList().toSet() else emptySet()
 
@@ -175,6 +197,9 @@ class ScanTracker(private val db: JellystructureDb, private val persistToDb: Boo
 
     fun flush() {}
 
+    /** The cooperative-only half of cancellation, kept for the one internal caller (`runScan`'s own
+     *  exception handler in `MediaRoutes.kt`, which is already unwinding on its own and needs no Job to
+     *  cancel). The operator-facing "Cancel scan" action must call [cancelRun] instead — see its doc. */
     fun cancel() {
         if (_status == "RUNNING") {
             cancelRequested = true
@@ -188,9 +213,45 @@ class ScanTracker(private val db: JellystructureDb, private val persistToDb: Boo
         }
     }
 
+    /**
+     * Phase 182 (FR-182-5) — the operator-facing "Cancel scan" action. Does everything [cancel] does,
+     * plus actually cancels [runJob] instead of relying solely on [cancelRequested].
+     *
+     * Real cancellation still has a hard limit, stated here rather than re-derived at the call site: if
+     * phase-182 §2.4's leading hang hypothesis holds (a corrupted shared hash map spinning a real OS
+     * thread with NO suspension point), kotlinx.coroutines cancellation is cooperative and CANNOT
+     * interrupt that spin — cancelling the Job unparks every well-behaved coroutine, but a truly wedged
+     * thread stays wedged regardless. So this also arms a bounded grace-period watcher (launched on
+     * [appScope], since this function itself is not suspend and must return immediately to the HTTP
+     * handler that called it): if the run has not wound down within [CANCEL_GRACE_MS], its slots are
+     * forcibly forfeited via [reset] so a NEW run is permitted to start even though the old, wedged
+     * coroutines may still be alive underneath holding stale state. A genuinely wedged run therefore
+     * blocks Ravilo (phase-182 §B is the real fix for that) but can no longer also block every future
+     * scan forever, which — before this — it did.
+     */
+    fun cancelRun(appScope: CoroutineScope) {
+        if (_status != "RUNNING") return
+        val job = runJob
+        cancel()
+        job?.cancel(CancellationException("Scan cancelled by operator"))
+        appScope.launch {
+            val woundDownCleanly = job == null ||
+                withTimeoutOrNull(CANCEL_GRACE_MS) { job.join(); true } == true
+            if (!woundDownCleanly) {
+                Logger.warn(
+                    "ScanTracker: run did not wind down within ${CANCEL_GRACE_MS}ms of cancel — " +
+                        "forcing its slots free so the next run can start",
+                    "scan",
+                )
+                reset()
+            }
+        }
+    }
+
     fun complete() {
         _status = "COMPLETE"
         activeWorkers.value = 0
+        runJob = null
         if (persistToDb) {
             db.scanStateQueries.clearProcessed(_jobId)
             db.scanStateQueries.upsertState(
@@ -207,6 +268,7 @@ class ScanTracker(private val db: JellystructureDb, private val persistToDb: Boo
         _jobId = ""
         _startedAt = 0L
         activeWorkers.value = 0
+        runJob = null
         if (persistToDb) db.scanStateQueries.clearOldProcessed("")
     }
 
