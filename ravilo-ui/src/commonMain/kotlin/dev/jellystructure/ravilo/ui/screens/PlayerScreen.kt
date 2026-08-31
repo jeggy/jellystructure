@@ -1258,7 +1258,11 @@ fun PlayerScreen(
             )
     ) {
         // ── Platform video surface (SurfaceView on Android, <video> element on WASM) ───
-        PlayerVideoSurface(player, Modifier.fillMaxSize())
+        // Phase R220 (FR-R220-3 rung 4) — the Android actual's recovery ladder calls this only after
+        // re-attach/seek-flush/surface-recreate have all failed while the player is genuinely still
+        // playing. Re-arming mirrors PlayerLifecycleEffect's own onForeground path exactly (same
+        // re-negotiate-without-a-full-player-rebuild shape) rather than inventing a second one.
+        PlayerVideoSurface(player, Modifier.fillMaxSize(), onVideoOutputStuck = { armSession(currentItemId) })
 
         // ── Dim scrim (deepens when chrome is up, paused, or R218's moment C stalls) ──
         val dimAlpha = when {
