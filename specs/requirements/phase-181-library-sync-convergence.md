@@ -6,7 +6,9 @@
 > this is something that happens alot."*
 
 **Status:** Partially implemented. **FR-181-2 built and test-verified 2026-08-31.** FR-181-1, FR-181-1a,
-FR-181-3, FR-181-4, FR-181-5 remain Planned. Not yet dev-reviewed.
+FR-181-3, FR-181-4, FR-181-5 remain Planned — and a second live case (§2.5, 2026-08-31) confirms the gap
+FR-181-1 exists to close is still open in production: a new episode inside an already-known, correctly
+"hot"-bucketed series is *still* invisible for up to a day. Not yet dev-reviewed.
 
 ## 1. The reported case
 
@@ -134,6 +136,51 @@ silently failing for others — the worst available failure mode.
 **Consequence for the design:** the only sound basis for convergence is a comparison that does not
 involve timestamps at all. FR-181-1 is therefore a **set difference on ids**, and FR-181-3's drift
 detection is promoted from safety-net to a first-class part of the same mechanism.
+
+### 2.5 — confirmed live again 2026-08-31 (Lanterns S01E03): the series-level skip blocks *local file
+discovery*, not just the expensive steps
+
+Reported as *"i cant see lanterns in my newly added section"*. Investigation found the show itself was a
+red herring — Lanterns S01E01/E02 were already scanned and the series correctly ranked #15/30 in the live
+`newly-all-series` row, so "not visible in Newly Added" was really "hasn't scrolled that far". The real
+finding is what happened to **S01E03**, which had already finished downloading (size-stable, confirmed via
+`lsof`) and which **Jellyfin had already noticed** — its trickplay folder existed on disk, proof Jellyfin
+itself had scanned and identified the file — while jellystructure's `media` row for Lanterns still held
+only 2 episodes.
+
+This is not a Jellyfin-lag case like Klovn (§2.1) was — Jellyfin was not the bottleneck here.
+FR-181-2 (✅ built) worked exactly as designed: `sonarrNextAiringDate = 2026-09-07` correctly bucketed
+Lanterns into `refresh_this_year` (daily), not the old monthly archive tier. **And it still didn't help**,
+because of a mechanism neither this spec nor FR-181-2's build note previously called out:
+
+`computeFreshnessFilter`'s skip-set (`FreshnessFilter.kt:93-101`) is built by iterating
+`store.allItems()` — one entry **per series**, not per episode, for a `TV_SHOW`. That skip-set is then
+applied in `runScan` (`MediaRoutes.kt:2230-2232`) as a filter over `jellyfinItems`, which for a TV library
+is Jellyfin's **Series**-type listing, not episodes — so a series inside its cadence window is dropped
+from the worklist *before* `scanner.scanItem()`/`scanSeries()` is ever called on it. Confirmed live:
+Lanterns' series row had `last_checked` ≈20 minutes before S01E03 finished downloading, so the very next
+scan cycle (and the one after, up to 24h out under the daily "hot" cadence) skips the series entirely.
+
+The part worth being explicit about: **`scanSeries` is also where the cheap, local, no-network step
+lives** — walking the on-disk episode files and diffing them against what jellystructure already has is
+not an expensive TMDB-shaped operation, but it never runs either, because the skip happens one level
+above it, at the per-series Jellyfin-item filter. The freshness cooldown was designed to save expensive
+re-enrichment work (§1's `refresh_this_year`/`refresh_1_5y`/`refresh_older` cadences all originally gate
+TMDB/artwork/NFO-shaped steps), but as wired today it also gates the one step that's supposed to be the
+correctness backstop for "did a new file show up".
+
+**This reconfirms FR-181-1 is the correct fix, not a new one.** FR-181-1's enumeration is explicitly
+`IncludeItemTypes=Episode,Movie` (§4) — it diffs at the *episode* level against Jellyfin, so it runs
+**independently of, and prior to,** the per-series freshness skip described above; a new episode inside an
+already-known series is exactly the shape of gap it closes. FR-181-1 remains fully unbuilt, so as of this
+second live occurrence the gap is confirmed still open, not hypothetical.
+
+**Confirmed workaround, no code needed:** `POST /api/media/{id}/sync` (`MediaRoutes.kt:1611`, admin
+per-item Re-sync) calls `scanner.syncSeriesEpisodes` directly under `RunTarget.SingleItem`, which
+`computeFreshnessFilter` explicitly bypasses (§ its own doc comment: *"target is a RunTarget.SingleItem …
+'is it due for a periodic recheck' doesn't apply to it"*). A manual per-item Re-sync on the series page
+always picks up new episodes regardless of cadence; the **manual "Scan library" button does not**, since
+Phase 175 made it share this same cooldown.
 
 ## 3. Design principle
 
