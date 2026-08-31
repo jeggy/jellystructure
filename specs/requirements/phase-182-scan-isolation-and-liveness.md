@@ -7,9 +7,14 @@
 > so Ravilo always works no matter if it's doing heavy scanning etc. Other thing that needs fixing, is
 > that it shouldn't get stuck in the first place."*
 
-**Status:** Planned. Design-authored 2026-08-31 from a source read of the live tree; **not yet
-dev-reviewed**, and §A's leading root-cause hypothesis is explicitly gated on a live confirmation step
-(FR-182-1) before any code is written.
+**Status:** ✓ Built 2026-08-31, same session as the spec. `compileKotlinLinuxX64` clean; `linuxX64Test`
+163/163 green. **Not yet dev-reviewed and not yet verified against the live deployment** — this session
+was explicitly instructed not to restart or deploy anything, so FR-182-10's acceptance test (before/after
+p95 under a live scan, via device-token curl) has not been run. FR-182-1's live confirmation (attach a
+debugger to a genuinely hung process) also could not run — there was no live incident to attach to.
+FR-182-2/3/4/5/6/7/8/9 are implemented as designed below; treat FR-182-1's hash-map-corruption hypothesis
+as still unconfirmed even though FR-182-2 fixes it defensively either way. See the build note at the end
+of §4 for what shipped vs. what's still open.
 
 Closely related: **Phase 183** (outbound request pacing) removes the load that *triggers* this failure.
 182 makes the system survive it. They are separable and should ship in the order **§B → §A → 183**, but
@@ -336,6 +341,60 @@ Use the device-token curl method (a real `device_token` from `ravilo_device` in
 `config/jellystructure.db`, calling `/api/tv/**` directly) — the same technique that found R217 — so
 this is verifiable without a TV, an app build or a deploy. **The measurement must be taken before the
 fix as well**, so the improvement is a number and not an impression.
+
+**Not run this session** — requires a live backend restart, out of scope for this implementation pass
+(no deploy/restart authorized). Run this before closing the phase out.
+
+---
+
+## Build note (2026-08-31)
+
+Implemented in one pass, same session as the spec, per explicit instruction to implement without
+deploying. What shipped:
+
+- **FR-182-2**: `dev.jellystructure.ops.SpinLock` (new, non-suspend mutual exclusion usable from
+  `MediaStore.upsertItemDbOnly`'s synchronous `db.transaction{}` context) guards `MediaStore`'s
+  `lastCheckedMap`. `libraryVersion` and the five `Map`-typed index/facet caches
+  (`peopleIndexCache`/`jellyfinIdIndex`/`genreIndexCache`/`trackFacetsCache`/`metaFacetsCache`/
+  `nfoCoveredCache`) moved to `AtomicLong`/`AtomicReference`. `TmdbClient.detailsCache`/`regionTagsCache`
+  got the same `SpinLock` treatment (hotter there — per-episode, not per-item).
+- **FR-182-3**: `runPipelineStepPool`'s watchdog now logs a one-time diagnostic snapshot per item at
+  120s (gate saturation + worker counts), on top of the unchanged repeating 20s WARN.
+- **FR-182-4**: every `runPipelineStepPool` item and `runScan`'s `scanItem` call now run under
+  `withTimeout` (one uniform 10-minute default — the steps that route through this pool turned out to
+  all be short I/O work; `detect_segments`, the one genuinely-hours-long step, is enqueue-only via
+  `MediaJobQueue` and never touches this pool at all, so a per-step table wasn't needed). Found and
+  fixed a real bug in the same code while doing this: both loops used `catch (e: Exception)`/
+  `runCatching {}`, which in Kotlin also catches `CancellationException` — a genuinely cancelled worker
+  was logging its own cancellation as an ordinary per-item failure and continuing the loop instead of
+  stopping. Both now distinguish `TimeoutCancellationException` (per-item failure) from a plain
+  `CancellationException` (rethrown).
+- **FR-182-5**: `ScanTracker.cancelRun(appScope)` (new) cancels the run's actual `Job` (attached via
+  `attachJob`, set at every launch site) and arms a 15s grace-period watcher that force-resets the
+  tracker if the run hasn't wound down — so a wedged run can no longer also block the *next* scan.
+  `POST /scan/cancel` now calls this instead of the old cooperative-only `cancel()`.
+- **FR-182-6/7**: new `dev.jellystructure.ops.GateClass` (`INTERACTIVE`/`BACKGROUND` `CoroutineContext`
+  element, absent = INTERACTIVE). Tagged at every background launch site found:
+  `launchScanRun`'s `appScope.launch`, `MediaJobQueue`'s three worker/supervisor launches, and
+  `RealtimeIngestService`'s `queueScope`. `OutboundHttp` (64 permits) and `ProcessGate` (16 permits)
+  each split into a `BACKGROUND`-only-reachable shared pool plus an `INTERACTIVE`-reserved pool
+  (16/4 respectively) that background work can never draw from.
+- **FR-182-8**: both gates now use a polling `acquireWithTimeout` (not `withTimeout` wrapping
+  `Semaphore.acquire()` — that has a real permit-leak hazard on a cancellation racing the exact instant
+  `acquire()` returns) — 1.5s for INTERACTIVE (shorter than every existing read-path hydration timeout,
+  per the spec's own requirement), 30s for BACKGROUND. Expiry throws `GateTimeoutException`; a new
+  `StatusPages` handler turns that into 503 + `Retry-After: 2` for any request-path caller that didn't
+  already have its own degrade path.
+- **FR-182-9**: `GET /api/health` now includes `outbound_http_gate`/`process_gate` blocks (permits,
+  in-flight, waiting, timeout counts for both classes). **Not done**: the Activity-page UI banner
+  ("Ravilo requests are queuing behind background work") — the backend data exists, the frontend
+  surface doesn't yet. Left as a follow-up rather than rushed without the ability to visually verify a
+  WASM UI change against a live backend this session.
+- **FR-182-1/FR-182-10**: not run — both require a live process (a hung one to attach to; a running one
+  to curl against). See their own sections above.
+
+Verification this session: `compileKotlinLinuxX64` clean throughout; `linuxX64Test` 163/163 green after
+the final change (no regressions from the pre-existing 163). No backend restart, no deploy.
 
 ---
 

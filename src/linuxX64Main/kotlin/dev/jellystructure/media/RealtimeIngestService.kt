@@ -49,7 +49,13 @@ class RealtimeIngestService(
     private val db: dev.jellystructure.db.JellystructureDb,
     private val mediaSegmentStore: MediaSegmentStore,
 ) {
-    private val queueScope = CoroutineScope(SupervisorJob() + Dispatchers.Default.limitedParallelism(2))
+    // Phase 182 (FR-182-6, open question #5) — tagged BACKGROUND: a webhook-triggered ingest is an
+    // internal reaction to an already-acknowledged request, not a live inbound one a viewer is
+    // waiting on, and it runs the same TMDB/Jellyfin outbound work a scan does. Baked into the scope's
+    // own context (not passed per-launch) so the single call site below inherits it automatically.
+    private val queueScope = CoroutineScope(
+        SupervisorJob() + Dispatchers.Default.limitedParallelism(2) + dev.jellystructure.ops.GateClass.BACKGROUND
+    )
 
     // Phase 165 amendment (2026-08-14, FR-165-7) — set by handleJellyfinWebhook the instant a request
     // passes the secret check, before any item-type filtering. This is the ONLY signal that the PRIMARY

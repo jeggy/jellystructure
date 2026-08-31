@@ -21,6 +21,8 @@ import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
 
@@ -149,7 +151,26 @@ class Scanner(
     private val tmdb: TmdbClient,
     private val jellyfinClient: JellyfinClient,
     private val jsTagStore: JsTagStore,
+    // Phase 183 (FR-183-4) — lets scanSeries skip a per-episode TMDB re-fetch when the previous scan
+    // already holds good data for that episode (the single largest lever against the reported rate-
+    // limit incident: a re-scan of an already-fully-fetched series drops from ~1,500-2,000 requests to
+    // ~0). Nullable + defaulted so any test construction that doesn't care about this optimization
+    // doesn't need a MediaStore just to compile; a null store simply never skips (today's behavior).
+    private val store: MediaStore? = null,
 ) {
+    // Phase 183 (FR-183-3) — bounds concurrent per-episode dispatch (ffprobe + TMDB) across EVERY
+    // series this Scanner processes, not per-series. Without this, one worker scanning a single large
+    // series could alone dispatch hundreds of concurrent per-episode TMDB fetches — exactly what the
+    // reported incident's log proved was happening (18 simultaneous requests, all one worker id). Sized
+    // off the operator's own scan_workers so "N workers" means something end to end, not "N items, each
+    // fanning out unboundedly underneath." Fixed at construction, not live-rescalable like
+    // runPipelineStepPool's worker count — kotlinx.coroutines.sync.Semaphore has no resize API, and a
+    // live-rescalable version of this specific gate wasn't judged worth the extra complexity; a
+    // scan_workers config change takes effect on this gate at the next process restart.
+    private val episodeFanoutGate = Semaphore(
+        (configStore.current.behavior.scanWorkers.coerceIn(1, 100) * 3).coerceIn(3, 24)
+    )
+
     /**
      * TMDB re-pull tag rule (Phase 19 §15): TMDB keywords become the non-JS tags, and any
      * Jellystructure-defined tags on the item always survive. Jellyfin-sourced tags that are
@@ -493,6 +514,16 @@ class Scanner(
             .mapValues { (_, eps) -> eps.firstOrNull()?.seasonName ?: "" }
             .filterValues { it.isNotBlank() }
 
+        // Phase 183 (FR-183-4) — the previously-stored episode for each (season, episode), so the loop
+        // below can skip a per-episode TMDB re-fetch when we already hold good data for it (the single
+        // largest lever against the reported rate-limit incident) instead of unconditionally re-fetching
+        // every episode of every series on every scan, matched or not. Built once, not per-episode.
+        val existingBySeasonEp: Map<Pair<Int, Int>, dev.jellystructure.model.Episode> =
+            store?.resolveByJellyfinId(jItem.id)?.episodes
+                ?.filter { it.seasonNumber != null && it.episodeNumber != null }
+                ?.associateBy { it.seasonNumber!! to it.episodeNumber!! }
+                ?: emptyMap()
+
         // Bug fix: this was a plain sequential `for` loop — one ffprobe + TMDB round trip per episode,
         // one after another. A big show (e.g. a 300+-episode series) monopolized its entire worker slot
         // for however long that took in total, while every other worker sat idle once the rest of the
@@ -535,16 +566,37 @@ class Scanner(
                     val hasMatchingChapters = chapterMarkers.size == partCount
 
                     partEpisodeNums.mapIndexed { partIdx, epNum ->
+                        // Phase 183 (FR-183-4) — the episode this same (season, episode) resolved to last
+                        // scan, if any. `existingEp != null` also means "not this file's first scan," which
+                        // is exactly the condition under which skipping a re-fetch is safe.
+                        val existingEp = if (seasonNum != null && epNum != null) existingBySeasonEp[seasonNum to epNum] else null
+
                         // Fetch per-episode TMDB details in the episode's own resolved language — independent
-                        // per contained episode, exactly like a normal single-episode file.
-                        val epDetails = if (seriesTmdbId != null && seasonNum != null && epNum != null) {
-                            tmdb.getEpisodeDetailsLocalized(seriesTmdbId, seasonNum, epNum, epLangPriority)
+                        // per contained episode, exactly like a normal single-episode file. Skipped when the
+                        // previous scan already has both a title and an overview for this episode — TMDB
+                        // details for an already-matched episode don't change on their own, so a re-scan
+                        // gains nothing by re-asking every time (this was the ~1,500-2,000-request-per-series
+                        // storm's largest single contributor).
+                        val hasGoodDetails = existingEp != null &&
+                            !existingEp.title.isNullOrBlank() && !existingEp.overview.isNullOrBlank()
+                        val epDetails = if (!hasGoodDetails && seriesTmdbId != null && seasonNum != null && epNum != null) {
+                            // Phase 183 (FR-183-3) — bounded, not one coroutine per episode unconditionally.
+                            episodeFanoutGate.withPermit {
+                                tmdb.getEpisodeDetailsLocalized(seriesTmdbId, seasonNum, epNum, epLangPriority)
+                            }
                         } else null
 
-                        // Phase 76: fetch guest stars + episode crew from TMDB
-                        val (epGuests, epCrew) = if (seriesTmdbId != null && seasonNum != null && epNum != null) {
-                            fetchEpisodeCredits(seriesTmdbId, seasonNum, epNum)
-                        } else Pair(emptyList(), emptyList())
+                        // Phase 76: fetch guest stars + episode crew from TMDB. Phase 183 (FR-183-4): same
+                        // skip — an episode already carrying cast/crew from a prior fetch isn't re-asked.
+                        // An episode TMDB genuinely has no credits for (guestStars/crew both empty) is NOT
+                        // "good" by this check, so it keeps being retried every scan exactly as before —
+                        // deliberately conservative: this only skips a call proven to have returned data,
+                        // never risks mistaking "TMDB has none" for "not fetched yet".
+                        val hasGoodCredits = existingEp != null &&
+                            (existingEp.guestStars.isNotEmpty() || existingEp.crew.isNotEmpty())
+                        val (epGuests, epCrew) = if (!hasGoodCredits && seriesTmdbId != null && seasonNum != null && epNum != null) {
+                            episodeFanoutGate.withPermit { fetchEpisodeCredits(seriesTmdbId, seasonNum, epNum) }
+                        } else Pair(existingEp?.guestStars ?: emptyList(), existingEp?.crew ?: emptyList())
 
                         // R82: map (season, ep) → Jellyfin id from the pre-fetched meta. Phase 152: fall
                         // back to a path match when Jellyfin never numbered this file — see jfByPath above.
@@ -560,15 +612,19 @@ class Scanner(
                             issueCount = epIssueCount,
                             // Phase 128: honest per-episode display language — see the scanMovie comment above.
                             resolvedLanguage = epResolvedLang.takeIf { audioLangs.isNotEmpty() },
-                            title = epDetails?.name?.takeIf { it.isNotBlank() },
-                            overview = epDetails?.overview?.takeIf { it.isNotBlank() },
-                            stillPath = epDetails?.stillPath,
-                            tmdbEpisodeId = epDetails?.id,
+                            // Phase 183: fall back to the existing value when the fetch was skipped (or TMDB
+                            // genuinely returned nothing) instead of overwriting good data with null — this
+                            // was a real latent data-loss bug independent of the skip itself: a transient TMDB
+                            // failure/rate-limit used to blank these fields outright on the very next scan.
+                            title = epDetails?.name?.takeIf { it.isNotBlank() } ?: existingEp?.title,
+                            overview = epDetails?.overview?.takeIf { it.isNotBlank() } ?: existingEp?.overview,
+                            stillPath = epDetails?.stillPath ?: existingEp?.stillPath,
+                            tmdbEpisodeId = epDetails?.id ?: existingEp?.tmdbEpisodeId,
                             guestStars = epGuests,
                             crew = epCrew,
                             jellyfinId = jfEp?.id,
-                            runtime = epDetails?.runtime,
-                            airDate = epDetails?.airDate?.takeIf { it.isNotBlank() },  // R148
+                            runtime = epDetails?.runtime ?: existingEp?.runtime,
+                            airDate = epDetails?.airDate?.takeIf { it.isNotBlank() } ?: existingEp?.airDate,  // R148
                             jellyfinCreatedAt = jfEp?.dateCreated?.let { isoToEpochSeconds(it) },  // Phase 108
                             partIndex = partIdx,
                             partCount = partCount,
@@ -859,12 +915,23 @@ class Scanner(
                             item.episodes.firstOrNull { it.seasonNumber == seasonNum && it.episodeNumber == epNum }
                         else
                             item.episodes.firstOrNull { it.filename == file.substringAfterLast('/') }
-                        val epDetails = if (seriesTmdbId != null && seasonNum != null && epNum != null) {
-                            tmdb.getEpisodeDetailsLocalized(seriesTmdbId, seasonNum, epNum, epLangPriority)
+                        // Phase 183 (FR-183-4) — same skip as scanSeries: don't re-ask TMDB for data this
+                        // episode already has. See scanSeries's hasGoodDetails/hasGoodCredits comments for
+                        // the full reasoning (deliberately conservative — only skips a call proven to have
+                        // returned data, never mistakes "TMDB has none" for "not fetched yet").
+                        val hasGoodDetails = existingEp != null &&
+                            !existingEp.title.isNullOrBlank() && !existingEp.overview.isNullOrBlank()
+                        val epDetails = if (!hasGoodDetails && seriesTmdbId != null && seasonNum != null && epNum != null) {
+                            // Phase 183 (FR-183-3) — bounded, not one coroutine per episode unconditionally.
+                            episodeFanoutGate.withPermit {
+                                tmdb.getEpisodeDetailsLocalized(seriesTmdbId, seasonNum, epNum, epLangPriority)
+                            }
                         } else null
                         // Phase 76: preserve existing guest stars/crew; re-fetch from TMDB if available
-                        val (epGuests, epCrew) = if (seriesTmdbId != null && seasonNum != null && epNum != null) {
-                            fetchEpisodeCredits(seriesTmdbId, seasonNum, epNum)
+                        val hasGoodCredits = existingEp != null &&
+                            (existingEp.guestStars.isNotEmpty() || existingEp.crew.isNotEmpty())
+                        val (epGuests, epCrew) = if (!hasGoodCredits && seriesTmdbId != null && seasonNum != null && epNum != null) {
+                            episodeFanoutGate.withPermit { fetchEpisodeCredits(seriesTmdbId, seasonNum, epNum) }
                         } else Pair(existingEp?.guestStars ?: emptyList(), existingEp?.crew ?: emptyList())
                         Episode(
                             filename = file.substringAfterLast('/'),

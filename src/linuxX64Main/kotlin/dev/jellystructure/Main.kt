@@ -116,7 +116,7 @@ fun main() = runBlocking {
     val activityLog = ActivityLog(activityLogFile, broadcaster, rootScope)
     activityLog.load()
     Logger.activityLog = activityLog
-    val scanner = Scanner(configStore, tmdbClient, jellyfinClient, jsTagStore)
+    val scanner = Scanner(configStore, tmdbClient, jellyfinClient, jsTagStore, store = mediaStore)
     val artworkDownloader = ArtworkDownloader(tmdbClient, dev.jellystructure.media.Screengrabber())
     // Phase 150 (FR-SEG1-4) — on-disk Chromaprint fingerprint cache, keyed like RaviloArtworkService's
     // own per-episode still cache; never embedded in the MediaItem JSON blob (Phase 78 blob-bloat).

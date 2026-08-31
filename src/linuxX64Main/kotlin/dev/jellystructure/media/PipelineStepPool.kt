@@ -1,13 +1,18 @@
 package dev.jellystructure.media
 
+import dev.jellystructure.OutboundHttp
 import dev.jellystructure.jobs.JobEvent
 import dev.jellystructure.jobs.WsBroadcaster
 import dev.jellystructure.log.Logger
 import dev.jellystructure.nowEpochSec
+import dev.jellystructure.ops.ProcessGate
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeout
 import kotlin.concurrent.AtomicInt
 
 /** Bug fix: a pipeline run that goes quiet (e.g. one item's per-episode TMDB fetches taking many
@@ -15,9 +20,34 @@ import kotlin.concurrent.AtomicInt
  *  — an incident could only be diagnosed by attaching a debugger/profiler to the live process. Any
  *  item still running past this threshold gets a WARN logged (repeating every [STUCK_ITEM_LOG_INTERVAL_SEC]
  *  while it stays stuck), so the activity log / DB shows exactly which item and how long, even if the
- *  process is otherwise unresponsive by the time anyone looks. */
+ *  process is otherwise unresponsive by the time anyone looks.
+ *
+ *  Phase 182 (FR-182-3) — that WARN alone turned out to be a post-mortem aid only: a 21-minute-long real
+ *  incident produced 65 identical log lines and no action. [STUCK_ITEM_ESCALATE_SEC] adds a second rung:
+ *  once, per item, a DIAGNOSTIC snapshot (this item + step, both gates' saturation, worker counts) is
+ *  logged — the artefact a live debugger session would otherwise be needed to capture. [FR-182-4]'s
+ *  per-item deadline is the third rung — the item is actually abandoned, not just reported on. */
 private const val STUCK_ITEM_WARN_SEC = 20L
 private const val STUCK_ITEM_LOG_INTERVAL_SEC = 20L
+private const val STUCK_ITEM_ESCALATE_SEC = 120L
+
+/** Phase 182 (FR-182-4) — per-step ceiling on how long a single item may occupy a worker slot inside
+ *  [runPipelineStepPool] (and, via [pipelineStepItemDeadlineMs], `runScan`'s equivalent per-item call).
+ *  Every step routed through this pool is I/O-bound HTTP/NFO work expected to complete in seconds; none
+ *  of them do genuinely-hours-long per-item work here — `detect_segments` (the one step that legitimately
+ *  runs for hours) is enqueue-only in [PipelineEngine] (Phase 164) and hands off to its own
+ *  [MediaJobQueue]-owned worker/gate, never [runPipelineStepPool]'s loop — so one generous, uniform
+ *  default is deliberately chosen over a per-step table. Blowing the deadline fails the ITEM (via the
+ *  normal [onItemFailure] path, same as any other exception) and moves on; it does not abort the step. */
+private const val DEFAULT_ITEM_DEADLINE_MS = 10 * 60_000L
+
+/** Known limitation, stated once rather than at every call site: `withTimeout` is cooperative — it
+ *  relies on the timed-out coroutine passing through a suspension point to be interrupted. If phase-182
+ *  §2.4's leading hang hypothesis holds (a corrupted shared hash map spinning a real OS thread with NO
+ *  suspension point), this deadline CANNOT interrupt it; FR-182-2's synchronization fix is the actual
+ *  remedy for that case, and this deadline is the safety net for every I/O-shaped hang instead — a slow
+ *  or wedged peer, a gate that never grants a permit, a response that never arrives. */
+fun pipelineStepItemDeadlineMs(step: String): Long = DEFAULT_ITEM_DEADLINE_MS
 
 /**
  * Phase 135 (FR-135-1/FR-135-2) — run [items] through a bounded worker pool (mirrors `runScan`'s
@@ -40,6 +70,16 @@ private const val STUCK_ITEM_LOG_INTERVAL_SEC = 20L
  * `runScan`) supported live rescaling. Workers launched here now drain (exit after finishing their
  * current item) when scaled down, and new workers spin up live when scaled up — identical semantics
  * to `runScan`'s worker factory, just generalized to any item type.
+ *
+ * Phase 182 (FR-182-4/FR-182-5) — [perItem] used to run under a plain `runCatching { … }`, which is
+ * a real bug in its own right: `runCatching` catches `CancellationException` too, so a worker whose Job
+ * was genuinely cancelled (an operator pressing "Cancel scan") silently swallowed that cancellation,
+ * logged it as an ordinary per-item failure, and carried on to the NEXT item instead of stopping — the
+ * coroutine actively resisted being cancelled. Every item now runs under [withTimeout] (FR-182-4's
+ * deadline) with the three outcomes kept properly distinct: a genuine timeout is a per-item failure (the
+ * item is abandoned, the step continues); a genuine outer cancellation is RE-THROWN, not swallowed, so
+ * `ScanTracker`'s real Job-cancel (FR-182-5) actually stops the loop; anything else is an ordinary
+ * per-item failure exactly as before.
  */
 @OptIn(kotlinx.coroutines.DelicateCoroutinesApi::class) // channel.isClosedForReceive — same accepted usage as runScan (MediaRoutes.kt)
 suspend fun <T> runPipelineStepPool(
@@ -70,6 +110,7 @@ suspend fun <T> runPipelineStepPool(
     val processed = AtomicInt(0)
     scanTracker.targetWorkers.value = targetWorkers().coerceAtLeast(1)
     scanTracker.activeWorkers.value = 0
+    val itemDeadlineMs = pipelineStepItemDeadlineMs(step)
 
     coroutineScope {
         val channel = Channel<T>(Channel.UNLIMITED)
@@ -80,13 +121,35 @@ suspend fun <T> runPipelineStepPool(
             }
             channel.close()
         }
+        // Phase 182 (FR-182-3): escalated items tracked locally — this run's own diagnostic state, not
+        // shared across runs. `ActiveScanItem` exposes no durable per-item token, so escalation keys on
+        // (label, startedAt) — unique enough for one run's diagnostic purposes. Each item escalates at
+        // most once; the plain WARN at STUCK_ITEM_WARN_SEC keeps repeating every tick exactly as before.
+        val escalated = mutableSetOf<Pair<String, Long>>()
         val watchdog = launch {
             while (true) {
                 delay(STUCK_ITEM_LOG_INTERVAL_SEC * 1000)
                 val now = nowEpochSec()
-                val stuck = scanTracker.activeItemsSnapshot().filter { now - it.startedAt >= STUCK_ITEM_WARN_SEC }
-                for (item in stuck) {
-                    Logger.warn("$step: '${item.label}' still running after ${now - item.startedAt}s", "pipeline")
+                for (item in scanTracker.activeItemsSnapshot()) {
+                    val elapsed = now - item.startedAt
+                    if (elapsed < STUCK_ITEM_WARN_SEC) continue
+                    Logger.warn("$step: '${item.label}' still running after ${elapsed}s", "pipeline")
+                    val key = item.label to item.startedAt
+                    if (elapsed >= STUCK_ITEM_ESCALATE_SEC && escalated.add(key)) {
+                        val http = OutboundHttp.stats()
+                        val proc = ProcessGate.stats()
+                        Logger.warn(
+                            "$step: '${item.label}' stuck ${elapsed}s — diagnostic snapshot: " +
+                                "workers=${scanTracker.activeWorkers.value}/${scanTracker.targetWorkers.value} " +
+                                "outboundHttp(shared=${http.sharedInFlight}/${http.sharedCapacity} " +
+                                "reserved=${http.reservedInFlight}/${http.interactiveReserved} " +
+                                "waiting=i${http.interactiveWaiting}+b${http.backgroundWaiting}) " +
+                                "processGate(shared=${proc.sharedInFlight}/${proc.sharedCapacity} " +
+                                "reserved=${proc.reservedInFlight}/${proc.interactiveReserved} " +
+                                "waiting=i${proc.interactiveWaiting}+b${proc.backgroundWaiting})",
+                            "pipeline",
+                        )
+                    }
                 }
             }
         }
@@ -99,11 +162,20 @@ suspend fun <T> runPipelineStepPool(
                         if (scanTracker.cancelRequested) break
                         val label = labelOf(item)
                         val token = scanTracker.beginItem(label)
-                        runCatching { perItem(item) { detail -> scanTracker.updateItemDetail(token, detail) } }
-                            .onFailure { e ->
-                                Logger.warn("$step failed for '$label': ${e.message}")
-                                onItemFailure(item, e)
+                        try {
+                            withTimeout(itemDeadlineMs) {
+                                perItem(item) { detail -> scanTracker.updateItemDetail(token, detail) }
                             }
+                        } catch (e: TimeoutCancellationException) {
+                            Logger.warn("$step: '$label' exceeded its ${itemDeadlineMs}ms deadline — abandoning this item", "pipeline")
+                            onItemFailure(item, e)
+                        } catch (e: CancellationException) {
+                            scanTracker.endItem(token)
+                            throw e   // real outer cancellation (ScanTracker.cancelRun) — must propagate
+                        } catch (e: Throwable) {
+                            Logger.warn("$step failed for '$label': ${e.message}")
+                            onItemFailure(item, e)
+                        }
                         scanTracker.endItem(token)
                         val done = processed.incrementAndGet().coerceAtMost(total)
                         broadcaster.broadcast(JobEvent.StepProgress(jobId, step, label, done, total))

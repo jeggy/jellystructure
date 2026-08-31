@@ -209,6 +209,19 @@ fun startServer(
             exception<dev.jellystructure.tv.PlaybackForbiddenException> { call, cause ->
                 call.respond(HttpStatusCode.Forbidden, mapOf("error" to (cause.message ?: "Forbidden")))
             }
+            // Phase 182 (FR-182-8) — a request-path caller that hit OutboundHttp/ProcessGate's bounded
+            // interactive-acquire timeout and had no withTimeoutOrNull of its own to degrade through
+            // (most do — HomeFeedService/DetailService/BrowseService's existing hydration timeouts).
+            // 503 + Retry-After, not the generic 500 below: this is "the server is busy, try again
+            // shortly," not an application bug.
+            exception<dev.jellystructure.OutboundHttp.GateTimeoutException> { call, cause ->
+                call.response.headers.append(HttpHeaders.RetryAfter, "2")
+                call.respond(HttpStatusCode.ServiceUnavailable, mapOf("error" to (cause.message ?: "server busy")))
+            }
+            exception<dev.jellystructure.ops.ProcessGate.GateTimeoutException> { call, cause ->
+                call.response.headers.append(HttpHeaders.RetryAfter, "2")
+                call.respond(HttpStatusCode.ServiceUnavailable, mapOf("error" to (cause.message ?: "server busy")))
+            }
             exception<Throwable> { call, cause ->
                 // Logger.error writes both the log line and the Activity entry in one call.
                 Logger.error("Unhandled route exception on ${call.request.path()}: ${cause.message}", "http")
@@ -345,8 +358,14 @@ fun startServer(
                     // Phase 129 (FR-OPS1 §A.2) — the last-computed census (only recomputed at/above the
                     // 700 warn threshold, so this stays cheap on a healthy server) rides along too.
                     val census = fdWatchdog.lastCensus
+                    // Phase 182 (FR-182-9) — gate saturation, so "Ravilo requests are queuing behind
+                    // background work" is an observable fact, not something only inferrable from a TV
+                    // that does nothing. Cheap (plain atomic reads, no lock) — safe on every /health hit.
+                    val outboundHttp = dev.jellystructure.OutboundHttp.stats()
+                    val processGate = dev.jellystructure.ops.ProcessGate.stats()
                     call.respondText(
-                        """{"status":"ok","fd_count":${fdWatchdog.currentCount},"fd_high_water_mark":${fdWatchdog.highWaterMark},"fd_census":${census?.toJson() ?: "null"}}""",
+                        """{"status":"ok","fd_count":${fdWatchdog.currentCount},"fd_high_water_mark":${fdWatchdog.highWaterMark},"fd_census":${census?.toJson() ?: "null"},""" +
+                            """"outbound_http_gate":${outboundHttp.toJson()},"process_gate":${processGate.toJson()}}""",
                         ContentType.Application.Json,
                     )
                 }
