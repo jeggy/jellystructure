@@ -57,4 +57,27 @@ class FreshnessFilterTest {
         assertEquals(false, isDueForRecheck(now, 0L, 2026, 2026, s))
         assertEquals(false, isDueForRecheck(now, now - 10_000 * DAY, 2026, 2026, s))
     }
+
+    // Phase 181/FR-181-2 — the Klovn bug: a 2005 premiere with a Sonarr-reported next episode was
+    // landing in the monthly `refreshOlder` tier purely from its premiere year.
+
+    @Test
+    fun `actively airing overrides an old premiere year to the this-year tier`() {
+        val s = step(thisYear = "daily", older = "monthly")
+        val now = 1_000_000L * DAY
+        // 21 years old, but actively airing: due after 1 day, same as a brand-new release —
+        // NOT the 30-day threshold its premiere year alone would imply.
+        assertEquals(false, isDueForRecheck(now, now - (DAY - 1), 2005, 2026, s, isActivelyAiring = true))
+        assertEquals(true, isDueForRecheck(now, now - DAY, 2005, 2026, s, isActivelyAiring = true))
+    }
+
+    @Test
+    fun `not actively airing falls back to the age-tiered behavior unchanged`() {
+        val s = step(older = "monthly")
+        val now = 1_000_000L * DAY
+        // isActivelyAiring defaults to false — identical to the pre-181 behavior.
+        assertEquals(false, isDueForRecheck(now, now - (30 * DAY - 1), 2005, 2026, s))
+        assertEquals(true, isDueForRecheck(now, now - 30 * DAY, 2005, 2026, s))
+        assertEquals(false, isDueForRecheck(now, now - (30 * DAY - 1), 2005, 2026, s, isActivelyAiring = false))
+    }
 }
