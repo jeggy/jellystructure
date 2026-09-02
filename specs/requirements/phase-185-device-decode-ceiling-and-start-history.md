@@ -8,9 +8,11 @@
 > starts have actually taken on that device), and resolves the whole verdict server-side. **R222** renders
 > it; this phase decides it.
 
-**Status:** ✓ Built 2026-09-02 (not yet dev-reviewed, not yet live-verified against a real playback
-session — compiles clean backend, `linuxX64Test` green incl. new `PlaybackNoteResolverTest`, backend
-`GET`/`PATCH` routes not exercised against a live Ravilo client this session).
+**Status:** ✓ Built 2026-09-02, all FRs including the client-side timer (not yet dev-reviewed, not yet
+live-verified against a real playback session — compiles clean backend and every Ravilo target,
+`linuxX64Test` green incl. `PlaybackNoteResolverTest`, `:ravilo-ui:testDebugUnitTest` green; backend
+`GET`/`PATCH` routes and the client timer itself not exercised against a live Ravilo client this
+session — no device access, and live TVs are now off-limits entirely per standing instruction).
 
 **Build summary — one real deviation from the drafted schema, made before writing code:** FR-185-1 as
 drafted stores one `decode_max_bitrate`/`decode_codec` pair. Built instead as **two** columns,
@@ -37,14 +39,32 @@ the admin device-row second line (FR-185-8), reading the exact same `RaviloDevic
 call the detail payload resolution uses (FR-185-10 — one persisted fact, one representation, literally
 the same function call from both call sites).
 
-**Not built:** the Android/Compose client-side instrumentation that measures negotiation-to-first-frame
-and actually sends `startupMs` on stop. The backend is fully ready to receive and store it (a client that
-never sends it simply never produces `measured` samples — `basis` stays `"expected"` forever, which is a
-safe, honest degradation, not a broken state) — this needs `ravilo-android`/`ravilo-ui` changes (measuring
-from `PlaybackService.startPlayback`'s call to `RaviloPlayerAndroid`'s `hasRenderedFirstFrame` flipping
-true) that were time-boxed out of this pass. Whoever picks this up next: the wire format
-(`startup_ms` on `PlaybackStopRequest`) and the storage/read side are both done and tested; only the
-client-side timer + wiring it into the stop call remain.
+**Client-side timer — built 2026-09-02.** `PlayerScreen` (commonMain, so it covers `ravilo-android` and
+`ravilo-phone` alike — Live TV and wasmJs are unaffected, see below) stamps `negotiationStartMs` inside
+`armSession()` itself, the single existing chokepoint both the initial per-episode start and the
+background/foreground re-arm already shared (both trigger a real `StreamTicket` negotiation and a player
+reload — `RaviloPlayerAndroid.load()` resets `_hasRenderedFirstFrame` internally on every call). The
+existing 500ms poll loop, which already reads `player.hasRenderedFirstFrame` into local state every tick,
+now also detects that flag's false→true transition, computes the elapsed time, and stores it as
+`measuredStartupMs` — consuming (nulling) `negotiationStartMs` so a later re-arm's own transition is
+never double-counted. `PlayerStore.startSession` gained a `startupMsProvider: () -> Long? = { null }`
+parameter — the exact same lambda-injection shape `qoeSnapshotProvider` (R216) already established —
+read once in `stopSession` (before the provider is cleared, same ordering as the QoE snapshot) and
+threaded through the new `TvApiClient.stopPlayback(itemId, positionMs, startupMs)` parameter into the
+already-built `PlaybackStopRequest.startupMs` wire field. `measuredStartupMs` resets to `null` alongside
+`hasRenderedFirstFrame` in the per-episode `LaunchedEffect(itemId)` block, so a stop before the new
+episode's own first frame renders reports nothing rather than a stale prior episode's number — matching
+FR-185-4's "never mid-session, never from a session abandoned before first frame" requirement by
+construction (a null provider result is simply never sent).
+
+**Not covered**, matching R220's own precedent for a shared composable that some screens opt out of:
+`LiveTvPlayerScreen` has its own separate `PlayerVideoSurface` call and no `armSession`/`PlayerStore`
+equivalent of its own, so it was never in scope for this timer either — Live TV has no per-file
+`playbackNote` concept (FR-185-9 is keyed by VOD `file`). `ravilo-web`'s `PlayerVideoSurface` actual is a
+plain `<video>` element with no `RaviloPlayerAndroid`-style frame counter; its `hasRenderedFirstFrame`
+plumbing is unaffected by this change (the poll loop's transition-detection is inert when the flag never
+flips, same as it always was), and Ravilo Web sessions correctly stay in FR-185-2's "not measured — the
+browser never tells us" bucket forever, matching FR-185-8's admin copy exactly.
 
 Research: `specs/research-reports/ravilo-per-device-decode-ceiling-warning-2026-09-02.md`
 Design: `design/ravilo/Decode Ceiling Warning - Directions.html` (A + B′ chosen; C and D recorded as
@@ -133,7 +153,8 @@ tell a measured bitrate from a container-level estimate.
 `null` after all three rungs means *no note* — but per the sample that should be no file at all, and if
 it starts happening it is a scanner bug, not a normal state.
 
-**FR-185-4 — Record how long starts take.** ✅ Built server-side; client-side startupMs measurement NOT built (see build summary). A new append-only `playback_start_sample`
+**FR-185-4 — Record how long starts take.** ✅ Built, server-side and client-side (client timer added
+2026-09-02 — see the build summary above). A new append-only `playback_start_sample`
 (`device_id`, `item_id`, `file_id`, `seconds`, `recorded_at`), written **only on session completion** —
 never mid-session, never from a session that was abandoned before first frame. `seconds` is
 negotiation-to-first-frame as the client reports it. Retention: the most recent N per

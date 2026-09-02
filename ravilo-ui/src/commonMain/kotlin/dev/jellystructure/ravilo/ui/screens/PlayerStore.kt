@@ -59,6 +59,11 @@ class PlayerStore(private val apiClient: TvApiClient) {
     // deliberately doesn't) so QoE reporting can reuse the exact same lambda-injection pattern as
     // position/duration above instead of coupling this store to a concrete player type.
     private var qoeSnapshotProvider: (() -> PlayerQoeSnapshot)? = null
+    // Phase 185/R222 (FR-185-4 client half) — same lambda-injection shape as qoeSnapshotProvider: the
+    // caller (PlayerScreen) owns the actual negotiation-to-first-frame timing, this store just reads the
+    // result once at stop time. Null whenever the caller never measured one (no startSession call this
+    // store's lifetime supplied it, or the measurement itself came back null — see the provider's own doc).
+    private var startupMsProvider: (() -> Long?)? = null
     private var qoeLinkKind: String = "unknown"
     private var qoeLinkMbps: Int = 0
     private var qoeDirectPlay: Boolean = false
@@ -70,11 +75,13 @@ class PlayerStore(private val apiClient: TvApiClient) {
         isPausedProvider: () -> Boolean,
         durationProvider: () -> Long = { 0L },
         qoeSnapshotProvider: () -> PlayerQoeSnapshot = { PlayerQoeSnapshot() },
+        startupMsProvider: () -> Long? = { null },
     ) {
         currentItemId = itemId
         this.positionProvider = positionProvider
         this.durationProvider = durationProvider
         this.qoeSnapshotProvider = qoeSnapshotProvider
+        this.startupMsProvider = startupMsProvider
         qoeTicksSinceReport = 0
         _state.value = PlayerSessionState.Loading
         scope.launch {
@@ -175,6 +182,11 @@ class PlayerStore(private val apiClient: TvApiClient) {
         // cleared below, same ordering as positionProvider/durationProvider's own final-read use in close().
         postQoeNow(itemId)
         qoeSnapshotProvider = null
+        // Phase 185/R222 (FR-185-4 client half) — read before the provider is cleared, same ordering as
+        // qoeSnapshotProvider's own final-read above; null is a legitimate, honest answer (see the field's
+        // own doc), not an error to work around.
+        val startupMs = startupMsProvider?.invoke()
+        startupMsProvider = null
         exitScope.launch {
             // Phase 180 — found live 2026-08-29 on real stue TV hardware: a single failed attempt here
             // permanently orphans whatever Jellyfin is doing for this session, up to and including a
@@ -186,7 +198,7 @@ class PlayerStore(private val apiClient: TvApiClient) {
             // transient network hiccup (this TV has documented WiFi flakiness).
             var delayMs = 1_000L
             for (attempt in 0 until 3) {
-                if (runCatching { apiClient.stopPlayback(itemId, positionMs) }.isSuccess) break
+                if (runCatching { apiClient.stopPlayback(itemId, positionMs, startupMs) }.isSuccess) break
                 if (attempt < 2) { delay(delayMs); delayMs *= 2 }
             }
             // R142: finishing (≥90%) marks the item played so its tiles flip to ✓ and a series episode
