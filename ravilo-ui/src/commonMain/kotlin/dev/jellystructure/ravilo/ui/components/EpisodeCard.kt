@@ -229,6 +229,14 @@ fun EpisodeCard(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
+            // R222 (Phase 185, FR-R222-5) — the episode row's own line; a series hero never carries it
+            // (a ceiling is per device, a bitrate is per file, and the hero has no single file to speak
+            // for). One file, one line — a Phase 149 combined S01E01–E03 card shows this once per group,
+            // not once per contained episode (every episode in the group resolves the identical note).
+            episode.playbackNote?.let {
+                Spacer(Modifier.height(6.dp))
+                PlaybackNoteLine(note = it, compact = true)
+            }
         }
     }
     }
