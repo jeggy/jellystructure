@@ -607,7 +607,28 @@
     return { id: 'tt' + (1000000 + h % 8999999), rating, votes };
   }
 
+  // ---- per-device "slow to start" note (prospective R222) ----
+  // PRODUCTION: this object arrives ON THE DETAIL PAYLOAD, already decided by the backend for
+  // THIS device — the device's recorded decode ceiling vs this file's bitrate, corroborated
+  // against that device's own session history. The client never computes it, never re-checks it
+  // and never sees a bitrate, a ceiling or a delivery method (R180 FR-RV-ASP1-2); it renders the
+  // sentence the server pushed, or nothing at all. Per FILE, so a series carries it on episode
+  // rows, never on the hero.
+  //   playbackNote: { device: 'Stue TV', basis: 'measured' | 'expected', seconds: 20 }
+  //   'measured' — this device has started this file before and the backend timed it.
+  //   'expected' — the ceiling predicate says it will re-encode, but nobody has played it here.
+  //   absent     — under the threshold, ceiling not measured yet, or bitrate unknown. Say nothing.
+  const PLAY_NOTES = {
+    'Cosmos Laundromat': { device: 'Bedroom TV', basis: 'measured', seconds: 20 },
+    'Iron Veil':         { device: 'Bedroom TV', basis: 'expected' },
+  };
+  function playbackNoteFor(item) {
+    if (!item || !item.title) return null;
+    const n = PLAY_NOTES[item.title];
+    return n ? Object.assign({}, n) : null;
+  }
+
   const watched = { itemState, setItem, setItemWatched, epState, setEpWatched, setEpPct };
 
-  window.RAVILO = { studios, hero, rows, mergedNew, profiles, discover, upcoming, upcomingByDay, overdue, grad, initials, genresFor, normGenre, episodesFor, seasonsFor, castFor, relatedFor, nextAiringFor, trailerFor, imdbFor, ratingFor, itemCerts, CERT_SYS, config, watched };
+  window.RAVILO = { studios, hero, rows, mergedNew, profiles, discover, upcoming, upcomingByDay, overdue, grad, initials, genresFor, normGenre, playbackNoteFor, episodesFor, seasonsFor, castFor, relatedFor, nextAiringFor, trailerFor, imdbFor, ratingFor, itemCerts, CERT_SYS, config, watched };
 })();

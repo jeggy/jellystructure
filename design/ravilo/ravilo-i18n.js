@@ -121,6 +121,15 @@
   Object.assign(STR.da, { genre_one: 'Genre', genre_many: 'Genrer' });
   Object.assign(STR.fo, { genre_one: 'Sjangur', genre_many: 'Sjangrar' });
 
+  // ---- R222: per-device slow-start note. Three strings, split so the lead sentence can be
+  // emphasised structurally instead of with markup inside a translatable string. ----
+  Object.assign(STR.en, { slow_lead: 'Slow to start on {device}.', slow_tail_expected: 'Give it a moment after you press play.',
+    slow_tail_measured: 'The last few times it took about {n} seconds.', this_tv: 'this TV', this_phone: 'this phone' });
+  Object.assign(STR.da, { slow_lead: 'Langsom at starte p\u00e5 {device}.', slow_tail_expected: 'Giv den et \u00f8jeblik, n\u00e5r du trykker afspil.',
+    slow_tail_measured: 'De sidste par gange tog det omkring {n} sekunder.', this_tv: 'dette tv', this_phone: 'denne telefon' });
+  Object.assign(STR.fo, { slow_lead: 'Seint at byrja \u00e1 {device}.', slow_tail_expected: 'Gev t\u00ed eitt eygnabrag\u00f0, t\u00e1 t\u00fa tr\u00fdstir sp\u00e6l.',
+    slow_tail_measured: 'Seinastu fer\u00f0irnar t\u00f3k ta\u00f0 uml\u00ed\u00f0 {n} sekund.', this_tv: 'hesum sj\u00f3nvarpinum', this_phone: 'hesi telefonini' });
+
   // ---- watched-state (R07) ----
   Object.assign(STR.en, {
     mark_watched: 'Mark Watched', watched: 'Watched', play_again: 'Play Again',

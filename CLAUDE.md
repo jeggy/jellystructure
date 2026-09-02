@@ -87,6 +87,67 @@ GitHub is the **source of truth**; we layer designs on top of it.
   - **This sync's design items, resolved 2026-08-31:** the **Outbound pacing** card and frame **E** are
     drawn; the **Capacity** card stays as read-only reporting; FR-182-9's banner was **dropped** (see
     above). Everything else is backend/platform. Nothing exported to the repo yet.
+- **2026-09-02 — research pulled, design pass done, no spec yet.** New repo report
+  `specs/research-reports/ravilo-per-device-decode-ceiling-warning-2026-09-02.md`: *Until Dawn (2025)*, an
+  82 Mbps 4K DV/HDR10+ REMUX, stuttered on stue TV (decoder rated 60 Mbps) and was abandoned — third
+  stutter on that TV in three weeks. The owner wants a per-device "this might not play well" warning on the
+  Ravilo detail page. The report finds the measuring half already shipped (**177 + R216**) but three
+  blockers: the failing session was **Wholphin** (third-party client, architecturally unreachable), nothing
+  persists the ceiling at rest, and the ask reverses **R216**'s "no user-visible setting, ever" plus **R180
+  FR-RV-ASP1-2**. Design: `ravilo/Decode Ceiling Warning - Directions.html` — **A + B′ recommended**
+  (persist the ceiling and show it on `app/ravilo-users.html` as "picture it can take"; one plain line above
+  Play in Ravilo). **Reframe that drives it:** with 177/R216 live the file doesn't stutter, it re-encodes and
+  takes ~20 s to start, so the copy is an expectation not a warning — *"Slow to start on Stue TV. Give it a
+  moment after you press play."* Badge inputs are the recorded ceiling × the file's bitrate on 177's own 0.9
+  predicate and nothing else (QoE/link never feed it, so it can't flicker); per **file** so it rides episode
+  rows not the series hero, one badge per Phase 149 combined row; Noir drops the amber tint per R221's
+  precedent; no action, not focusable, not dismissible. **C (confirm gate) and D (real numbers) drawn and
+  rejected.** Blocked on three answers before a spec: where the file bitrate comes from (`Track` has no
+  bitrate field), whether other OEM decoders report honest ceilings, and whether the R216 build is actually
+  installed on the stue TV. Prospective **185** (admin) / **R222** (Ravilo).
+  **Owner decision same day — the note is backend-computed and history-informed, and B′ is now built into
+  the mockups.** The client gets one resolved `playbackNote { device, basis, seconds }` per file per device
+  on the detail payload and renders a sentence or nothing — no thresholds, bitrates or ceilings cross into
+  Ravilo (R180's rule and the constitution's *server-pushed state only*). Split responsibility keeps the
+  flicker out: **the ceiling decides whether the note shows** (deterministic, 177's own 0.9 predicate),
+  **that device's own history decides how sure** — `basis:"measured"` yields *"Slow to start on Stue TV.
+  The last few times it took about 20 seconds."* (median over that device's recent starts of that file,
+  5 s steps, re-derived only on session completion), `basis:"expected"` yields *"…Give it a moment after
+  you press play."* History may **never** toggle the note on or off, only choose the sentence. Built into
+  `ravilo-data.js` (`playbackNoteFor`), `ravilo-app.js` (`playNoteHTML`, above `.dactions`), `ravilo.css`
+  (`.dplaynote` + Noir ink/weight override), `ravilo-i18n.js` (3 strings × en/da/fo) and
+  `Ravilo Mobile.html`. **Admin half (A) drawn 2026-09-02** — `app/ravilo-users.html` shows the persisted
+  ceiling as a **second line inside each device row** ("picture it can take · up to 60 Mbps · measured
+  yesterday"), not a sixth column, because that table is shared with the Admin web sessions and Recently
+  watched sections; two honest unknown states (`not measured yet` = no Ravilo session since the update,
+  `not measured` = browser never reports), and `.usr-cap` styles. Device names now agree across both
+  mockups (Bedroom TV · Chromecast HD is the constrained one, Pixel 8 the phone).
+  **Owner answers 2026-09-02:** start-timing history does **not** exist and will be built backend-side;
+  the file bitrate should come from jellystructure and will be added if `Track` lacks it — so both are in
+  scope for **185** rather than blockers. **Both specs written 2026-09-02, `Planned`, neither dev-reviewed
+  — next unassigned numbers are now 186 / R223.**
+  - **185 — remember what each device can take, and how long it actually took**
+    (`specs/requirements/phase-185-device-decode-ceiling-and-start-history.md`). Three small gaps that
+    together make the sentence impossible: the R216 ceiling is computed inside one `PlaybackInfo` call and
+    thrown away, `Track` has no video bitrate, and nothing times a start. Adds `decode_max_bitrate` /
+    `decode_codec` / `decode_measured_at` on `ravilo_device`, `video_bitrate` on `Track` (from Jellyfin's
+    `MediaStreams[].BitRate` via Phase 175's unified ingest, backfilled on next scan), an append-only
+    `playback_start_sample` written **only on session completion**, and the resolved `playbackNote` on the
+    detail payload. **FR-185-6: one predicate, two consumers** — the note fires on exactly 177's
+    0.9 × ceiling comparison. **FR-185-7: history chooses the sentence, never toggles the note** —
+    `measured` needs **≥3** samples, `seconds` is their median rounded to 5 s, re-derived only on session
+    completion so two page views can't disagree. Two permanent unknown states, and `NULL` ceiling ⇒ no
+    note ever. Admin half is FR-185-8.
+  - **R222 — one plain line: "slow to start on this TV"**
+    (`specs/ravilo/requirements/phase-R222-slow-to-start-note.md`). Render-never-compute; absent field ⇒
+    nothing renders, no reserved space, no layout shift. Three strings (`slow_lead`,
+    `slow_tail_measured`, `slow_tail_expected`) × en/da/fo, with the three rejected copy candidates
+    recorded so they aren't re-proposed. Above `.dactions`, never the meta row; Play must not move;
+    episode rows not the series hero; not focusable, no action, no dismissal; Noir drops the tint.
+  - **Still open (both specs):** whether the R216 build is actually installed on the living-room TV — if
+    it isn't, the transcode fallback isn't live there either, the file genuinely stutters, and "slow to
+    start" is a false sentence. Also: whether other OEM decoders report honest ceilings, per-codec vs
+    per-device keying of the ceiling, and retention N for start samples.
 - **2026-09-01 — two design-authored specs written, both `Planned`, neither dev-reviewed.**
   Next unassigned numbers: **185 / R222**.
   - **184 — choose the TMDB metadata language for a single title** (`specs/requirements/phase-184-choose-metadata-language.md`).
