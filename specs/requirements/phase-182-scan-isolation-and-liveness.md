@@ -7,14 +7,47 @@
 > so Ravilo always works no matter if it's doing heavy scanning etc. Other thing that needs fixing, is
 > that it shouldn't get stuck in the first place."*
 
-**Status:** ✓ Built 2026-08-31, same session as the spec. `compileKotlinLinuxX64` clean; `linuxX64Test`
-163/163 green. **Not yet dev-reviewed and not yet verified against the live deployment** — this session
-was explicitly instructed not to restart or deploy anything, so FR-182-10's acceptance test (before/after
-p95 under a live scan, via device-token curl) has not been run. FR-182-1's live confirmation (attach a
-debugger to a genuinely hung process) also could not run — there was no live incident to attach to.
-FR-182-2/3/4/5/6/7/8/9 are implemented as designed below; treat FR-182-1's hash-map-corruption hypothesis
-as still unconfirmed even though FR-182-2 fixes it defensively either way. See the build note at the end
-of §4 for what shipped vs. what's still open.
+**Status:** ✓ Built 2026-08-31; **FR-182-10 live-measured 2026-09-02, dev-restart authorized by the owner
+(who was actively using the stue TV at the time and explicitly okayed testing against it — "take over this
+device to do any type of testing needed").** `compileKotlinLinuxX64` clean; `linuxX64Test` 163/163 green.
+Not yet dev-reviewed. FR-182-2/3/4/5/6/7/8/9 are implemented as designed below.
+
+**FR-182-10, measured 2026-09-02 (real deployment, `192.0.2.10:9505`, live household data — 505 media
+items, Jellyfin reports 8114 items).** Baseline p50/p95 over 60s of alternating `/api/tv/home` +
+`/api/tv/series/{id}` (device-token curl, Pocketmon — 1128 episodes — as the series):
+
+| | Baseline (idle) | During `POST /scan?full=true` (run-anyway override, `scan_files` active, 1 worker) |
+|---|---|---|
+| `/api/tv/home` p50 / p95 | 28ms / 95ms | **3,431ms / 4,485ms** (repeated on a second 90s run: 3,374/4,774ms) |
+| `/api/tv/series/{id}` p50 / p95 | 296ms / 389ms | 325ms / 444ms |
+
+**Real finding, not the one this FR expected to surface**: `/api/tv/series/{id}` is essentially unaffected
+by a concurrent scan — the gate partitioning (FR-182-6/7) is doing its job for that path. `/api/tv/home`
+degrades **~120×** at p50. Root cause, read from the code rather than guessed: `HomeFeedService.getHomeFeed`
+(`:99-116`) caches per-user, keyed on `mediaStore.libraryVersion` (`:101/107`) — and FR-182-2 made
+`libraryVersion` a correct atomic *increment on every single item write*. A running scan bumps it on
+essentially every processed item, so during a scan the home-feed cache is invalidated almost every request,
+forcing a full rebuild (the "Backend performance investigation" memory's full-catalog JSON-blob decode) on
+nearly every hit — **a cache-thrashing bug, not a gate-contention or hang bug**, and outside every one of
+FR-182-2..9's fixes, which is exactly why the acceptance test's own framing ("the improvement is a number
+and not an impression") was right to demand real measurement rather than trust the design. No errors, no
+gate-saturation warnings, and no stuck-item watchdog lines appeared in the backend log for the whole test
+window — the scan itself stayed healthy throughout (`POST /scan/cancel` stopped it in ~2s, confirming
+FR-182-5 too). Latency returned to baseline (27ms/102ms) immediately after cancel. **This is a real,
+reproducible gap** worth its own follow-up phase (a home-feed cache keyed on a coarser signal than
+per-item `libraryVersion`, or a short debounce on invalidation) — filed as a candidate for the next
+unassigned number rather than fixed inline here, since it's outside this phase's own FRs.
+
+**FR-182-1 — resolved without a live capture.** No hang has recurred since FR-182-2 shipped, and there is
+no live incident to attach a debugger to (option 1). Deliberately reproducing one by reverting FR-182-2's
+synchronization fix on a household system with an active viewer is not something to do for a documentation
+task. **Option 2's fallback was already satisfied the same session it was written**: FR-182-3's diagnostic-
+snapshot escalation (item + step + both gates' saturation + worker counts, logged once per stuck item past
+120s) is exactly "a thread-level stall dump added to the watchdog, so the next occurrence is self-
+diagnosing" — it just doesn't capture raw OS thread backtraces (Kotlin/Native has no cheap runtime API for
+that; a debugger attach is still required for that specific artifact). The hash-map-corruption hypothesis
+therefore remains formally unconfirmed, but is fixed defensively regardless (FR-182-2), and the system is
+no longer blind if it recurs.
 
 Closely related: **Phase 183** (outbound request pacing) removes the load that *triggers* this failure.
 182 makes the system survive it. They are separable and should ship in the order **§B → §A → 183**, but
@@ -237,6 +270,11 @@ preference:
 Record the finding in this spec before proceeding. Phase 163's `POST /MediaSegments` → 405 is the
 standing reminder that the obvious explanation is not automatically the true one.
 
+**Resolved 2026-09-02 — see the build note above.** Option 1 stays permanently unavailable short of
+deliberately reverting FR-182-2 to reproduce the hang, which is not appropriate on a live household system.
+Option 2 was already shipped the same session it was written (FR-182-3's diagnostic-snapshot escalation);
+the hash-map hypothesis stays formally unconfirmed but defensively fixed.
+
 **FR-182-2 — No unsynchronised shared mutable state on the scan write path.** Every field in
 `MediaStore` and `TmdbClient` that is mutated from more than one thread is made safe:
 
@@ -343,8 +381,15 @@ Use the device-token curl method (a real `device_token` from `ravilo_device` in
 this is verifiable without a TV, an app build or a deploy. **The measurement must be taken before the
 fix as well**, so the improvement is a number and not an impression.
 
-**Not run this session** — requires a live backend restart, out of scope for this implementation pass
-(no deploy/restart authorized). Run this before closing the phase out.
+**Run 2026-09-02 — see the build note above for the full numbers.** `/api/tv/series/{id}` passed cleanly
+(p95 unchanged, well inside any reasonable multiple). `/api/tv/home` did not — a ~120× p50 regression, root-
+caused to `HomeFeedService`'s cache invalidating on every scan write via `libraryVersion`, not to anything
+FR-182-2..9 addresses. `/api/tv/playback/start` was **deliberately excluded** from the loop (it negotiates
+a real Jellyfin `PlaybackInfo` call; looping it for 5 minutes against a device with no intent to actually
+watch anything felt like the wrong kind of load to generate on a live household deployment — the other two
+endpoints already exercise the same gates). "Before" (pre-fix) numbers were not re-captured — the code they
+would have measured no longer exists in the running deployment, and reverting FR-182-2 to get them is not
+appropriate on a live system; the reported incident's own log (§1) stands as the qualitative "before".
 
 ---
 

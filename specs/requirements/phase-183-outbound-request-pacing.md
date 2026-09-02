@@ -5,12 +5,12 @@
 > just goes ahead and starts it's own concurrency or something. So let's figure out a good approach to
 > tackle this."*
 
-**Status:** ✓ Built 2026-08-31, same session as the spec, after Phase 182's FR-182-2. `compileKotlinLinuxX64`
-clean; `linuxX64Test` 163/163 green. **Not yet dev-reviewed and not yet live-measured** — FR-183-7's
-before/after table needs a real scan against the reported series, which needs a live backend restart
-this session was not authorized to do. The user's diagnosis is correct and is confirmed below by the
-logs they supplied. See the build note after §4 for what shipped, including one deliberate architectural
-deviation (FR-183-1 scoped to `TmdbClient` rather than generically inside `OutboundHttp`).
+**Status:** ✓ Built 2026-08-31, same session as the spec, after Phase 182's FR-182-2; **FR-183-7 live-
+measured 2026-09-02** (real deployment, real reported series — see that FR's own entry for the numbers
+and a new finding it surfaced). `compileKotlinLinuxX64` clean; `linuxX64Test` 163/163 green. Not yet
+dev-reviewed. The user's diagnosis is correct and is confirmed below by the logs they supplied. See the
+build note after §4 for what shipped, including one deliberate architectural deviation (FR-183-1 scoped
+to `TmdbClient` rather than generically inside `OutboundHttp`).
 
 Related: **Phase 182** makes the server survive a scan. This phase removes the load that makes a scan
 dangerous in the first place — the two are independent fixes for one incident. Phase 182 §2.4's
@@ -252,8 +252,36 @@ every time".
 
 Wall-clock is expected to move in the wrong direction and that is acceptable; the last row is not.
 
-**Not run this session** — needs a live scan against the reported series (Jellyfin id 2777) with a
-backend restart, out of scope for this implementation pass.
+**Run 2026-09-02, real deployment, real series (TMDB id 2777 — the exact reported series, "Oscar and the Beetles," 505 episodes, all single-episode files).** The clean before/after table above is not fully
+fillable: the "before" code no longer exists in the running deployment, and reverting FR-183's own pacing
+fix to re-measure it live is not appropriate on a household system with an active viewer — the reported
+incident's own log (§1: 18 429s at one timestamp, one worker id) stands as the qualitative "before".
+
+**What was measured instead, and what it found:**
+
+- **`tmdb_pacing` (rate limiter/AIMD) never once reported a 429** across this whole session's testing —
+  including a real 255-item full-library scan and two direct `POST /api/media/{id}/sync` calls against
+  this exact series — `rate_limited_last_minute` stayed `0` in every `/api/health` snapshot taken, and the
+  token bucket's rate climbed to its 20/s ceiling and held there. This is real, if partial, evidence for
+  FR-183-1/183-2's core claim.
+- **A real, reproducible finding this FR's own "measure it, don't guess" framing exists to surface**:
+  `POST /api/media/{id}/sync` against this series reliably failed with `HTTP 503 "ProcessGate saturated
+  (interactive, 1500ms)"` within ~2s, reproduced twice, the second time from a fully idle gate state (no
+  scan running, `process_gate` `0/0` in flight beforehand) — ruling out leftover contention from an earlier
+  cancelled scan as the cause. Root cause, read from the code: `syncSeriesEpisodes`'s per-file loop
+  (`Scanner.kt:536-540`) is `filesToProbe.map { file -> async { val tracks = FfprobeRunner.probe(file) …
+  } }` — **completely unbounded**, unlike the per-episode TMDB fetch just below it in the same function,
+  which FR-183-3 deliberately bounded via `episodeFanoutGate`. For a 505-episode series this dispatches
+  505 concurrent `ProcessGate`-gated ffprobe calls at once. Because `/api/media/{id}/sync` (unlike
+  `launchScanRun`'s background pipeline) carries no `GateClass` tag, Phase 182's own "absent = INTERACTIVE"
+  fail-safe means all 505 compete for the **4-permit interactive-reserved** lane — not the 12-permit shared
+  one — so a single large-series manual sync can self-saturate the exact reservation Phase 182 built to
+  protect real Ravilo requests from *background* contention, just triggered by unbounded *interactive*
+  fan-out instead. This is outside both 182's and 183's own FRs (183 bounded the TMDB fetch, not the
+  ffprobe probe the same loop also does) and is not fixed here — logged as a real candidate for the next
+  unassigned number, alongside FR-182-10's home-feed cache-thrashing finding, per this project's own
+  spec-before-fix convention. Both attempts confirmed the household's live TV playback was unaffected
+  throughout (checked via the Jellyfin Sessions API before, during and after).
 
 ---
 
