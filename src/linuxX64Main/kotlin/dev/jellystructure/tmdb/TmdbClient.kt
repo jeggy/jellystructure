@@ -46,6 +46,34 @@ private const val RETRY_MAX_BACKOFF_MS = 20_000L
 class TmdbRateLimitExhaustedException(url: String, attempts: Int) :
     Exception("TMDB rate-limited $attempts times, giving up: $url")
 
+/** Phase 183 (FR-183-6) — the Activity page's "Outbound pacing" card. TMDB is the only host this phase
+ *  paces (FR-183-1's own deviation note: scoped to `TmdbClient`, not generic inside `OutboundHttp`), so
+ *  there is exactly one of these today, not a per-host list. */
+@Serializable
+data class TmdbPacingStats(
+    @SerialName("rate_per_sec") val ratePerSec: Double,
+    @SerialName("ceiling_per_sec") val ceilingPerSec: Double,
+    @SerialName("floor_per_sec") val floorPerSec: Double,
+    @SerialName("rate_limited_last_minute") val rateLimitedLastMinute: Int,
+)
+
+/**
+ * Phase 183 (FR-183-5, the deferred DB-level half — built 2026-09-02) — a `CoroutineContext` element a
+ * caller installs around one item's whole TMDB pull, so `httpGet` can record an exhaustion even though
+ * every existing call site swallows the thrown exception via `runCatching { … }.getOrNull()` (confirmed
+ * ~29 sites, none of which this phase touches). The same pattern `WorkerId` already uses for "which
+ * worker" — this is "did THIS item's scan hit exhaustion", inherited by every child coroutine the item's
+ * scan launches. Absent from the context (a caller that never installs one) is a silent no-op — existing
+ * behavior for every call site outside the one that now wraps `PipelineStepOps.pullTmdb`.
+ */
+class TmdbExhaustionTracker : kotlin.coroutines.CoroutineContext.Element {
+    companion object Key : kotlin.coroutines.CoroutineContext.Key<TmdbExhaustionTracker>
+    override val key get() = Key
+    private val count = kotlin.concurrent.AtomicInt(0)
+    internal fun mark() { count.incrementAndGet() }
+    val hitCount: Int get() = count.value
+}
+
 /**
  * Phase 183 (FR-183-1/FR-183-2) — a simple token bucket, AIMD-adjusted: halves its rate on a 429
  * (multiplicative decrease, floored) and nudges it back up after a run of consecutive successes
@@ -60,6 +88,9 @@ private class TmdbRateLimiter {
     private var ratePerSec = TMDB_INITIAL_RATE_PER_SEC
     private var lastRefill = TimeSource.Monotonic.markNow()
     private var consecutiveSuccesses = 0
+    // Phase 183 (FR-183-6) — a plain rolling window (prune-on-read, no timer): 429s are rare enough
+    // relative to normal traffic that a list this small is cheaper than any fancier structure.
+    private val recent429s = ArrayDeque<Long>()
 
     /** Blocks (via [delay], never busy-spins across the wait) until a token is available. */
     suspend fun acquire() {
@@ -81,9 +112,19 @@ private class TmdbRateLimiter {
     fun onRateLimited() = lock.withLock {
         ratePerSec = (ratePerSec / 2).coerceAtLeast(TMDB_MIN_RATE_PER_SEC)
         consecutiveSuccesses = 0
+        recent429s.addLast(dev.jellystructure.nowEpochSec())
+        while (recent429s.isNotEmpty() && dev.jellystructure.nowEpochSec() - recent429s.first() > 60L) recent429s.removeFirst()
     }
 
     fun currentRate(): Double = lock.withLock { ratePerSec }
+
+    /** Phase 183 (FR-183-6) — pruned on every read too, so a quiet period doesn't need its own timer to
+     *  eventually reflect zero. */
+    fun rateLimitedLastMinute(): Int = lock.withLock {
+        val now = dev.jellystructure.nowEpochSec()
+        while (recent429s.isNotEmpty() && now - recent429s.first() > 60L) recent429s.removeFirst()
+        recent429s.size
+    }
 
     fun onSuccess() = lock.withLock {
         consecutiveSuccesses++
@@ -429,6 +470,15 @@ class TmdbClient(
     // Phase 129 (FR-OPS1 §B.1) — shared client, one idle connection pool for all outbound callers.
     private val http = OutboundHttp.client
 
+    /** Phase 183 (FR-183-6) — read by `GET /api/health` for the Activity page's pacing card. Plain
+     *  spin-locked reads, cheap enough for a probe endpoint hit every few seconds. */
+    fun pacingStats(): TmdbPacingStats = TmdbPacingStats(
+        ratePerSec = rateLimiter.currentRate(),
+        ceilingPerSec = TMDB_MAX_RATE_PER_SEC,
+        floorPerSec = TMDB_MIN_RATE_PER_SEC,
+        rateLimitedLastMinute = rateLimiter.rateLimitedLastMinute(),
+    )
+
     // Phase 182 (FR-182-2): plain mutableMapOf, hit from hundreds of concurrent per-episode coroutines
     // across the real 4-thread scan pool with NO synchronization — the same unsynchronized-shared-
     // mutable-state shape MediaStore's caches had, and hotter here (a per-episode call site, not a
@@ -484,6 +534,9 @@ class TmdbClient(
             attempt++
             if (attempt > MAX_429_RETRIES) {
                 Logger.warn("TMDB rate-limited (429) $attempt times, giving up: $url", "tmdb")
+                // Phase 183 (FR-183-5) — recorded even though every existing caller is about to swallow
+                // the exception below via runCatching{}.getOrNull(); see TmdbExhaustionTracker's own doc.
+                kotlin.coroutines.coroutineContext[TmdbExhaustionTracker.Key]?.mark()
                 throw TmdbRateLimitExhaustedException(url, attempt)
             }
             val retryAfterMs = response.headers[HttpHeaders.RetryAfter]?.toLongOrNull()?.times(1000L)

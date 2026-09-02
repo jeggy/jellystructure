@@ -222,7 +222,7 @@ Expected effect on the reported series: a re-scan drops from ~1 500-2 000 reques
 zero. **This is the single largest lever in the phase** — pacing makes the storm survivable, but not
 issuing the requests makes it not happen.
 
-**FR-183-5 — A rate-limited fetch must never be recorded as a successful one.** When a request is
+**FR-183-5 — A rate-limited fetch must never be recorded as a successful one.** ✅ Built (both halves, 2026-09-02 — see the build note below for the DB-level mechanism). When a request is
 abandoned after exhausting retries, the caller must be able to tell that apart from "TMDB has no data".
 At minimum:
 
@@ -233,7 +233,7 @@ At minimum:
 - the run summary and the Activity page state the count plainly — "N fields not fetched: TMDB rate
   limit" — instead of the current silence.
 
-**FR-183-6 — Rate-limiting is visible while it is happening.** The Activity page shows, for a run in
+**FR-183-6 — Rate-limiting is visible while it is happening.** ✅ Built (the Activity page's Outbound pacing card, 2026-09-02). The Activity page shows, for a run in
 flight: current outbound rate per host, the limiter's current ceiling, and 429s in the last minute. A
 run that ends having been rate-limited says so in its summary. Today the only evidence is a wall of
 identical WARN lines in the process log, which is how this went unnoticed long enough to become "almost
@@ -297,16 +297,26 @@ What shipped, and one deliberate scope decision:
 - **FR-183-5**: `httpGet` now throws `TmdbRateLimitExhaustedException` on exhaustion instead of
   returning the raw 429 `HttpResponse` for a caller to fail to deserialize — every call site already
   wraps `httpGet` in `runCatching {}.getOrNull()` (confirmed all ~29 sites), so this only makes the
-  *cause* distinguishable in the log, not the caller-visible outcome. **Not done**: the deeper DB-level
-  half — marking an item whose scan hit exhaustion as not-fully-checked so Phase 181's freshness filter
-  revisits it, rather than treating the gap as settled. That needs new persisted state on `MediaItem`/
-  `MediaStore` and was judged out of scope for this pass; flagged here rather than silently dropped.
+  *cause* distinguishable in the log, not the caller-visible outcome. **DB-level half built 2026-09-02**:
+  since ~29 call sites already swallow the exception via `runCatching{}.getOrNull()` several layers below
+  `pull_tmdb`, marking the item can't rely on the exception propagating there. New
+  `TmdbExhaustionTracker` (`TmdbClient.kt`) — a `CoroutineContext.Element`, the same shape `WorkerId`
+  already uses for "which worker", here answering "did THIS item's scan hit exhaustion" — is installed by
+  `PipelineStepOps.pullTmdb` around the whole `rescanMetadata` call; `httpGet` marks it at the exact throw
+  site regardless of how many `runCatching` layers later swallow the exception. When the tracker recorded
+  at least one hit, `pullTmdb` marks the item dirty via **Phase 181's own persistent dirty-set**
+  (`DirtyItemStore`, reason `"tmdb_rate_limited"`) — the next `RunTarget.Library` cycle retries it
+  automatically, no new retry mechanism needed since 181 already built one this same day.
 - **FR-183-6**: substantially free — every rate-limit `Logger.warn` already flows into the Activity feed
   (`Logger.emit` → `activityLog?.log(...)`), so the improved log lines (now including the limiter's
-  current rate) are visible there without new code. **Not done**: a dedicated per-run aggregate counter/
-  UI card; the per-event log lines are the mechanism that shipped.
+  current rate) are visible there without new code. **Aggregate card built 2026-09-02**: new
+  `TmdbClient.pacingStats()` (current rate, ceiling, floor, a rolling 429-count over the last minute via
+  a prune-on-read timestamp deque) rides the existing `GET /api/health` probe response
+  (`tmdb_pacing` field) rather than a new endpoint; the Activity page's Jobs & workers view polls it
+  every 5s into a new "Outbound pacing" card, alongside the existing Playback quality card.
 
-Verification: `compileKotlinLinuxX64` clean; `linuxX64Test` 163/163 green (no regressions).
+Verification: `compileKotlinLinuxX64`/`compileKotlinWasmJs` clean; `linuxX64Test` green (no regressions).
+Not run against a live backend this session (no restart/deploy authorized).
 
 ---
 
