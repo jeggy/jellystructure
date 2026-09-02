@@ -1,9 +1,13 @@
-name: Deploy Ravilo TV to Play Store
+name: Deploy Ravilo to Play Store
 
 # R215 — ships :ravilo-android to the Play Store "internal" testing track whenever a GitHub Release is
 # published, mirroring publish.yml's vMAJOR.MINOR tag convention (Phase 167) so cutting a release ships
 # Docker images AND a Play Console build from the same action. Deliberately a separate workflow file
 # from publish.yml: different deploy target, different secrets, different failure domain.
+#
+# R224 — :ravilo-android is now a universal app (one AAB, one dev.jellystructure.ravilo Play listing,
+# both a TV/leanback entry point and a phone entry point). Nothing below changed for that merge — the
+# same bundleRelease task and upload now simply ships both experiences at once.
 #
 # Internal track only, never production/beta — promoting a build is a deliberate Play Console action,
 # not an implicit side effect of tagging a release. Google also requires a closed test with 12+ opted-in
