@@ -289,7 +289,7 @@ suspend fun runPipeline(
                 runPipelineStepPool(
                     jobId, step.step, toProcess, { pipelineStepConcurrency(step.step, configStore.current.behavior.scanWorkers) },
                     scanTracker, broadcaster, labelOf = { it.title },
-                ) { item, _ -> PipelineStepOps.pullTmdb(item, scanner, store) }
+                ) { item, _ -> PipelineStepOps.pullTmdb(item, scanner, store, dirtyItemStore) }
             }
             "fetch_artwork" -> {
                 // Phase 178 §FR-178-2 — re-checked here (not just at the run's start above): playback

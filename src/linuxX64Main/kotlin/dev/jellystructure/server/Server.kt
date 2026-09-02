@@ -10,6 +10,7 @@ import dev.jellystructure.config.ConfigStore
 import dev.jellystructure.jobs.WsBroadcaster
 import dev.jellystructure.media.ArtworkDownloader
 import dev.jellystructure.tmdb.TmdbClient
+import dev.jellystructure.tmdb.TmdbPacingStats
 import dev.jellystructure.media.MediaHistory
 import dev.jellystructure.media.MediaStore
 import dev.jellystructure.media.Scanner
@@ -363,9 +364,13 @@ fun startServer(
                     // that does nothing. Cheap (plain atomic reads, no lock) — safe on every /health hit.
                     val outboundHttp = dev.jellystructure.OutboundHttp.stats()
                     val processGate = dev.jellystructure.ops.ProcessGate.stats()
+                    // Phase 183 (FR-183-6) — the Activity page's "Outbound pacing" card; same cheap-probe
+                    // reasoning as the gate stats above (plain spin-locked reads, safe on every hit).
+                    val tmdbPacing = tmdbClient.pacingStats()
                     call.respondText(
                         """{"status":"ok","fd_count":${fdWatchdog.currentCount},"fd_high_water_mark":${fdWatchdog.highWaterMark},"fd_census":${census?.toJson() ?: "null"},""" +
-                            """"outbound_http_gate":${outboundHttp.toJson()},"process_gate":${processGate.toJson()}}""",
+                            """"outbound_http_gate":${outboundHttp.toJson()},"process_gate":${processGate.toJson()},""" +
+                            """"tmdb_pacing":${Json.encodeToString(TmdbPacingStats.serializer(), tmdbPacing)}}""",
                         ContentType.Application.Json,
                     )
                 }

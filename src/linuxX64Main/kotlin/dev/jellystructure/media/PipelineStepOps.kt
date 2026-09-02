@@ -23,9 +23,25 @@ import dev.jellystructure.nowEpochSec
  */
 object PipelineStepOps {
 
-    /** `pull_tmdb` — re-pull TMDB metadata and store it. */
-    suspend fun pullTmdb(item: MediaItem, scanner: Scanner, store: MediaStore) {
-        scanner.rescanMetadata(item)?.let { store.addOrUpdate(it) }
+    /**
+     * `pull_tmdb` — re-pull TMDB metadata and store it.
+     *
+     * Phase 183 (FR-183-5) — wraps the whole pull in a [dev.jellystructure.tmdb.TmdbExhaustionTracker]:
+     * every TMDB call this item's scan makes funnels through `TmdbClient`'s one `httpGet`, so a rate-limit
+     * exhaustion anywhere inside `rescanMetadata` (even one swallowed by an inner `runCatching{}` three
+     * calls deep) is still visible here. When it fires, this item is marked dirty (Phase 181's own
+     * persistent "needs work" set) so the next `RunTarget.Library` cycle retries it, instead of the gap
+     * being silently treated as "TMDB genuinely has nothing" and settling forever.
+     */
+    suspend fun pullTmdb(item: MediaItem, scanner: Scanner, store: MediaStore, dirtyItemStore: DirtyItemStore) {
+        val tracker = dev.jellystructure.tmdb.TmdbExhaustionTracker()
+        val result = kotlinx.coroutines.withContext(tracker) { scanner.rescanMetadata(item) }
+        result?.let { store.addOrUpdate(it) }
+        val jellyfinId = item.jellyfinId
+        if (tracker.hitCount > 0 && jellyfinId != null) {
+            Logger.warn("pull_tmdb: '${item.id}' hit ${tracker.hitCount} TMDB rate-limit exhaustion(s) — marking dirty for retry", "tmdb")
+            dirtyItemStore.markDirty(jellyfinId, "tmdb_rate_limited", store.nowMs())
+        }
     }
 
     /** `fetch_artwork` — download any missing poster/backdrop/logo/stills (reads the freshest copy).
