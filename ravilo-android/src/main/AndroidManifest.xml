@@ -8,7 +8,10 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
 
-    <uses-feature android:name="android.software.leanback" android:required="true" />
+    <!-- R224 — universal app: neither feature is required, so Play distributes this one listing to
+         both Android TV (leanback launcher, below) and phones/tablets (standard launcher, below).
+         Was leanback required="true" (TV-only distribution) until the TV and phone apps merged. -->
+    <uses-feature android:name="android.software.leanback" android:required="false" />
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
 
     <application
@@ -20,6 +23,8 @@
         android:allowBackup="false"
         android:usesCleartextTraffic="true">
 
+        <!-- TV entry point — leanback/D-pad UI, full-screen immersive. Only the TV launcher sees this
+             (LEANBACK_LAUNCHER); the phone launcher uses the separate activity below instead. -->
         <activity
             android:name=".android.MainActivity"
             android:exported="true"
@@ -28,6 +33,18 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- Phone/tablet entry point — touch UI, portrait, standard system-bar windowing. R60/R224. -->
+        <activity
+            android:name=".phone.MainActivity"
+            android:exported="true"
+            android:screenOrientation="portrait"
+            android:configChanges="keyboard|keyboardHidden|navigation|screenSize|orientation|uiMode"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>

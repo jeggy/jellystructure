@@ -10,10 +10,11 @@ import dev.jellystructure.ravilo.ui.RaviloRoot
 import dev.jellystructure.ravilo.ui.seams.RaviloPlayerEngine
 
 /**
- * R60 — phone entry point. Identical wiring to the TV [dev.jellystructure.ravilo.android.MainActivity]
- * but tuned for a handset: portrait (set in the manifest), **standard window fitting** (system bars
- * reserved + visible, normal back button/gesture nav, no leanback immersive hide), and no global
- * keep-screen-on. The shared :ravilo-ui renders the same screens via touch —
+ * R60/R224 — phone entry point, now living in the same module/APK as the TV
+ * [dev.jellystructure.ravilo.android.MainActivity] (one universal Play Store listing). Identical wiring
+ * to the TV activity but tuned for a handset: portrait (set in the manifest), **standard window fitting**
+ * (system bars reserved + visible, normal back button/gesture nav, no leanback immersive hide), and no
+ * global keep-screen-on. The shared :ravilo-ui renders the same screens via touch —
  * `Modifier.dpadFocusable` already attaches tap gestures, so no UI fork is needed.
  *
  * Bug fix: this used to call `WindowCompat.setDecorFitsSystemWindows(window, false)` here too (edge-

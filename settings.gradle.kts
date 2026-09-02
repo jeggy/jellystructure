@@ -24,8 +24,7 @@ val hasAndroidSdk: Boolean = run {
 }
 if (hasAndroidSdk) {
     include(":ravilo-player")
-    include(":ravilo-android")
-    include(":ravilo-phone") // R60 — Android phone (mobile) target
+    include(":ravilo-android") // R224 — universal app: TV (leanback) + phone entry points, one APK/listing
     include(":ravilo-android-benchmark") // R213 — generates ravilo-android's Baseline Profile
 }
 
