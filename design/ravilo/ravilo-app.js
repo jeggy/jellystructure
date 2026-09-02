@@ -441,7 +441,7 @@
       if (isNaN(d)) return iso;
       return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' });
     }
-    function episodeCard(e, st, idx) {
+    function episodeCard(e, st, idx, item, season) {
       st = st || {};
       const cls = 'ep-card' + (st.watched ? ' watched' : '') + (st.inprogress ? ' inprogress' : '') + (st.upnext ? ' upnext' : '');
       const card = el('div', cls);
@@ -453,7 +453,7 @@
         ${st.watched ? '<span class="ep-check">✓</span>' : ''}
         <div class="play"><span>▶</span></div>
         ${(st.inprogress || st.watched) ? `<div class="ep-prog"><i style="width:${pct}%"></i></div>` : ''}</div>
-        <div class="ep-info"><div class="ep-t">${e.n}. ${e.title}${st.watched ? ` <span class="ep-tag">${t('watched')}</span>` : ''}</div>${e.air ? `<div class="ep-date">${epAirLabel(e.air)}</div>` : ''}<div class="ep-d">${e.desc}</div></div>`;
+        <div class="ep-info"><div class="ep-t">${e.n}. ${e.title}${st.watched ? ` <span class="ep-tag">${t('watched')}</span>` : ''}</div>${e.air ? `<div class="ep-date">${epAirLabel(e.air)}</div>` : ''}<div class="ep-d">${e.desc}</div>${epNoteHTML(item, season, e)}</div>`;
       const done = el('div', 'ep-done foc' + (st.watched ? ' on' : '')); done._epdone = true; done._epn = e.n; done._epidx = idx; done.setAttribute('data-epidx', idx);
       done.innerHTML = `<span class="ep-done-ic">${st.watched ? '✓' : ''}</span><span class="ep-done-tx">${st.watched ? t('watched') : t('mark_watched')}</span>`;
       card.appendChild(play); card.appendChild(done);
@@ -492,7 +492,8 @@
         <span class="ep-rng">Episodes ${first}–${last}</span></div>
         <div class="ep-info"><div class="ep-t">Episodes ${first}–${last}${allW ? ` <span class="ep-tag">${t('watched')}</span>` : ''}</div>
           <div class="combo-list">${eps.map(e => `<div class="combo-row"><span class="cn">${padN(e.n)}</span><span class="ct">${e.title}</span><span class="cd">${e.dur}</span></div>`).join('')}</div>
-          <div class="combo-file">▤ 1 file · ${eps.length} episodes · ${durSum}m</div></div>`;
+          <div class="combo-file">▤ 1 file · ${eps.length} episodes · ${durSum}m</div>
+          ${epNoteHTML(item, season, eps[0])}</div>`;
       const done = el('div', 'ep-done foc' + (allW ? ' on' : '')); done._epfile = u; done._epidx = idxs[0]; done.setAttribute('data-epidx', idxs[0]);
       done.innerHTML = `<span class="ep-done-ic">${allW ? '✓' : ''}</span><span class="ep-done-tx">${allW ? t('watched') : t('mark_watched')}</span>`;
       card.appendChild(play); card.appendChild(done);
@@ -562,15 +563,30 @@
       return `<div class="dhero-genres focus-row"><span class="g-label">${t(gs.length === 1 ? 'genre_one' : 'genre_many')}</span><span class="g-row">${chips.join('')}</span></div>`;
     }
     // ---- R222: per-device "slow to start" note. Server-pushed verdict, rendered as-is:
-    // no thresholds, no numbers and no decision logic live on the client. ----
-    function playNoteHTML(item) {
-      const n = R.playbackNoteFor ? R.playbackNoteFor(item) : null;
-      if (!n) return '';
+    // no thresholds, no numbers and no decision logic live on the client. Absent ⇒ nothing
+    // renders — no empty slot, no reserved space, no layout shift (FR-R222-1). ----
+    function slowSentence(n) {
       const lead = t('slow_lead', { device: esc(n.device || t('this_tv')) });
       const tail = (n.basis === 'measured' && n.seconds)
         ? t('slow_tail_measured', { n: n.seconds })
         : t('slow_tail_expected');
-      return `<div class="dplaynote"><span class="pn-bar"></span><span class="pn-txt"><b>${lead}</b> ${tail}</span></div>`;
+      return `<b>${lead}</b> ${tail}`;
+    }
+    // FR-R222-4 — movie detail only. A ceiling is per device and a bitrate is per file, so a
+    // SERIES hero never carries the line (its episodes are different files); it rides the
+    // episode row instead — see epNoteHTML below (FR-R222-5).
+    function playNoteHTML(item) {
+      if (item.kind === 'series') return '';
+      const n = R.playbackNoteFor ? R.playbackNoteFor(item) : null;
+      if (!n) return '';
+      return `<div class="dplaynote"><span class="pn-bar"></span><span class="pn-txt">${slowSentence(n)}</span></div>`;
+    }
+    // FR-R222-5 — the episode row's own line. One file ⇒ one line, so a Phase 149 combined
+    // S01E01–E03 card renders this once, not once per episode.
+    function epNoteHTML(item, season, ep) {
+      const n = (R.playbackNoteFor && item && ep) ? R.playbackNoteFor(item, season, ep) : null;
+      if (!n) return '';
+      return `<div class="ep-playnote">${slowSentence(n)}</div>`;
     }
     // ---- IMDb rating chip (detail hero) — data from imdbapi.dev, stored + synced (R164) ----
     function fmtVotes(n) { return n >= 1e6 ? (n / 1e6).toFixed(1).replace(/\.0$/, '') + 'M' : n >= 1e3 ? (n / 1e3).toFixed(1).replace(/\.0$/, '') + 'K' : String(n); }
@@ -667,7 +683,7 @@
         track.dataset.def = def;
         units.forEach(u => {
           if (u.type === 'file') { track.appendChild(comboCard(item, season, u, states)); }
-          else { const i = u.idx; track.appendChild(episodeCard(eps[i], { watched: states[i].watched, inprogress: states[i].pct > 0 && !states[i].watched, upnext: i === prog.idx, pct: states[i].pct }, i)); }
+          else { const i = u.idx; track.appendChild(episodeCard(eps[i], { watched: states[i].watched, inprogress: states[i].pct > 0 && !states[i].watched, upnext: i === prog.idx, pct: states[i].pct }, i, item, season)); }
         });
         epRow.appendChild(track);
         d.appendChild(epRow);

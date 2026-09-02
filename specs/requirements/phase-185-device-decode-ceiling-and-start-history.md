@@ -51,17 +51,50 @@ both honest:
 A `NULL` ceiling means *no note, ever*, for every file. Unknown must never be treated as unlimited, and
 must never be treated as constrained.
 
-**FR-185-3 — Carry the file's video bitrate.** `Track` gains `video_bitrate` (bps), read from Jellyfin's
-`MediaStreams[].BitRate` at scan time and written by the same engine that writes the rest of the track
-row (Phase 175's unified ingest). Backfilled on the next scan of an existing item; `NULL` where Jellyfin
-reports nothing, which also means *no note*.
+**FR-185-3 — Carry the file's video bitrate.** `Track` (`model/Media.kt`) gains
+`videoBitrate: Int?` (bps), set only for `kind == VIDEO`, alongside the existing `width`/`height`/
+`videoRange`. It is **not** a database column: `Track` is serialized inside the item's own record, so
+this rides the existing blob and needs no migration — but it does mean an existing item only gains the
+field when it is re-probed, i.e. backfilled on the next scan.
+
+**The source is ffprobe, not Jellyfin.** `Track` is built entirely by `FfprobeRunner.probe()`
+(`media/FfprobeRunner.kt:102`); `JellyfinMediaStream` (`auth/Models.kt:176`) carries no `BitRate` field
+at all and is only used for playback negotiation, never for track ingest. A single-source read is not
+enough either — measured over a 30-file random sample of this library:
+
+| where the video bitrate actually is | share |
+| --- | --- |
+| `streams[].bit_rate` | 33% (mp4/mov, some others) |
+| absent on the stream, present as the container tag `BPS` / `BPS-eng` | 50% (matroska) |
+| neither — only `format.bit_rate` | 17% |
+| nothing at all | 0% |
+
+Matroska does not store a per-stream bitrate, so `streams[].bit_rate` is `null` for two thirds of the
+library — including exactly the 4K REMUXes this phase exists for. Read it as a ladder, first hit wins:
+
+1. `streams[].bit_rate` on the video stream.
+2. the video stream's `BPS` tag — key match is **case-insensitive prefix `BPS`**, since both `BPS` and
+   the language-suffixed `BPS-eng` occur live (19 vs 4 in a 25-file matroska sample). `@SerialName`
+   cannot express a prefix, so `FfprobeTags` needs the tag map read generically rather than one field
+   per spelling.
+3. `format.bit_rate` as the floor — it includes audio and subtitles, so it over-states the video
+   stream, but on a heavy file the video dominates and an over-estimate is the safe direction here: it
+   can only make the note fire slightly early, never suppress it.
+
+This requires `FfprobeRunner.probe()`'s command to gain `-show_format` (today it is `-show_streams`
+only) and `FfprobeStream` to gain `bit_rate`. Record which rung supplied the value, so the admin can
+tell a measured bitrate from a container-level estimate.
+
+`null` after all three rungs means *no note* — but per the sample that should be no file at all, and if
+it starts happening it is a scanner bug, not a normal state.
 
 **FR-185-4 — Record how long starts take.** A new append-only `playback_start_sample`
 (`device_id`, `item_id`, `file_id`, `seconds`, `recorded_at`), written **only on session completion** —
 never mid-session, never from a session that was abandoned before first frame. `seconds` is
 negotiation-to-first-frame as the client reports it. Retention: the most recent N per
 (device, file) — older samples pruned, because a firmware update or a network change makes ancient
-samples misleading.
+samples misleading. **N ≥ 3**, or FR-185-7's `measured` basis is unreachable by construction and the
+softer sentence is the only one that can ever ship.
 
 **FR-185-5 — Resolve the verdict server-side.** The Ravilo detail payload carries, per file, for the
 requesting device:
@@ -77,7 +110,12 @@ delivery method (R180 FR-RV-ASP1-2, and the constitution's *frontend renders ser
 **FR-185-6 — One predicate, two consumers.** Whether the note exists is decided by exactly the
 comparison Phase 177 already makes to force a transcode — the file's video bitrate against
 **0.9 × the recorded ceiling** — and by nothing else. If that margin is ever retuned, both move
-together. A note without a re-encode behind it, or a re-encode with no note, is a bug in this phase.
+together. A note without a re-encode behind it, or a re-encode with no note, is a bug in this phase —
+with exactly one legitimate exception: Phase 177 compares against the ceiling the device reports **in
+that session's negotiation**, while the note compares against the **last recorded** one. A firmware
+update that moves the ceiling therefore makes them disagree for exactly one play, after which FR-185-1's
+overwrite reconciles them. Do not add a second measurement path to close that window; it is one wrong
+sentence, once, per firmware change.
 
 **FR-185-7 — History chooses the sentence; it can never toggle the note.** This is the rule that keeps
 the flicker out:
@@ -130,5 +168,6 @@ read the same column. They cannot drift.
    everything (the feature dies of distrust). Only testable as more devices join.
 3. **Key the ceiling per codec, or one value per device?** FR-185-1 stores the codec alongside the value;
    whether a device needs several rows (HEVC vs AV1) depends on how far apart real decoders are.
-4. **Retention N for start samples**, and whether a firmware change (detectable via a changed ceiling)
-   should discard the history for that device.
+4. **Retention N for start samples** — bounded below at 3 by FR-185-4, but the actual value is open.
+   And whether a firmware change (detectable via a changed ceiling) should discard the history for that
+   device: the samples were measured against a decoder that no longer exists, which argues yes.

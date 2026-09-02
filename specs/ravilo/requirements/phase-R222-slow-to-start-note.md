@@ -37,14 +37,17 @@ detail payload (Phase 185 FR-185-5) and renders the corresponding sentence. It n
 the payload, re-checks or second-guesses the field. **Absent ⇒ nothing renders** — not an empty slot, not
 a placeholder, no reserved space and no layout shift.
 
-**FR-R222-2 — Two sentences, three strings.** Split so the lead can be emphasised structurally rather
-than with markup inside a translatable string:
+**FR-R222-2 — Two sentences, five strings.** Split so the lead can be emphasised structurally rather
+than with markup inside a translatable string. Three carry the sentence; the last two are FR-R222-3's
+fallback device names, which are copy in their own right and must not be assembled in code:
 
 | key | en |
 | --- | --- |
 | `slow_lead` | `Slow to start on {device}.` |
 | `slow_tail_measured` | `The last few times it took about {n} seconds.` |
 | `slow_tail_expected` | `Give it a moment after you press play.` |
+| `this_tv` | `this TV` |
+| `this_phone` | `this phone` |
 
 `basis: "measured"` uses the lead + `slow_tail_measured`; `basis: "expected"` uses the lead +
 `slow_tail_expected`. Full en/da/fo at ship, like every string since R180. Deliberately rejected copy,

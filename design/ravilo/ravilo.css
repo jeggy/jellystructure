@@ -290,6 +290,15 @@ body { font-family: 'Sora', sans-serif; }
    R221 genre tint hit, solved the same way: keep the ink and the weight, drop the colour. */
 [data-skin="noir"] .dplaynote .pn-bar { background: var(--ink); }
 [data-skin="noir"] .dplaynote b { color: var(--ink); font-weight: 700; }
+/* FR-R222-5 — the same sentence on an episode row, since a ceiling is per device and a
+   bitrate is per file: the series hero can't speak for episodes that are different files.
+   Scaled to the card's own type and marked with a left rule instead of a bar element, so an
+   episode card gains no extra DOM and no extra focus target. */
+.ep-playnote { margin-top: 8px; padding-left: 9px; border-left: 3px solid var(--warn);
+  font-size: 15px; line-height: 1.35; color: var(--ink-soft); }
+.ep-playnote b { font-weight: 600; color: color-mix(in oklch, var(--warn) 74%, var(--ink)); }
+[data-skin="noir"] .ep-playnote { border-left-color: var(--ink); }
+[data-skin="noir"] .ep-playnote b { color: var(--ink); font-weight: 700; }
 
 /* ---- request-language picker (R172) — flags-first Original vs Dansk/Nordic ---- */
 .rv-lang { position: absolute; inset: 0; z-index: 96; display: flex; align-items: center; justify-content: center;
