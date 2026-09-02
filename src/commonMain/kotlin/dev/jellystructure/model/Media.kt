@@ -79,6 +79,16 @@ data class Track(
     val width: Int? = null,
     val height: Int? = null,
     val videoRange: String? = null,
+    /** Phase 185 (FR-185-3): only set for kind == VIDEO, in bits/sec. From `FfprobeRunner`'s three-rung
+     *  ladder (`streams[].bit_rate` → the video stream's `BPS`/`BPS-eng` tag → `format.bit_rate` as a
+     *  floor) — never from Jellyfin, which carries no per-stream bitrate field at all. `null` after all
+     *  three rungs means no video bitrate could be determined (should not happen on a real video file per
+     *  the ladder's own live measurement — a scanner bug if it starts occurring, not a normal state). */
+    val videoBitrate: Int? = null,
+    /** Phase 185: which rung of the ladder supplied [videoBitrate] — `"stream"` (exact) / `"tag"`
+     *  (exact, container-tagged) / `"format"` (a floor that includes audio/subtitle overhead) — so the
+     *  admin can tell a measured bitrate from a container-level estimate. Null iff [videoBitrate] is. */
+    val videoBitrateSource: String? = null,
 )
 
 @Serializable

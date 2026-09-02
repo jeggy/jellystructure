@@ -188,9 +188,11 @@ fun main() = runBlocking {
     raviloConfigService.migrateAllLegacyBehaviourFields()  // R162: one-time, idempotent
     val homeFeedService = HomeFeedService(mediaStore, raviloConfigService, jellyfinClient, configStore, tvEventBus, artworkDownloader)
     val browseService = BrowseService(mediaStore, jellyfinClient, configStore, raviloConfigService, artworkDownloader)
-    val detailService = DetailService(mediaStore, jellyfinClient, configStore, artworkDownloader, mediaSegmentStore)
+    // Phase 185 (FR-185-4) — needed by DetailService below, for playbackNote resolution.
+    val playbackStartSampleStore = dev.jellystructure.tv.PlaybackStartSampleStore(db)
+    val detailService = DetailService(mediaStore, jellyfinClient, configStore, artworkDownloader, mediaSegmentStore, raviloDeviceService, playbackStartSampleStore)
     val playbackQoeStore = dev.jellystructure.tv.PlaybackQoeStore(db)
-    val playbackService = PlaybackService(mediaStore, jellyfinClient, configStore, playbackQoeStore)
+    val playbackService = PlaybackService(mediaStore, jellyfinClient, configStore, playbackQoeStore, playbackStartSampleStore, raviloDeviceService)
     val mediaHistory = MediaHistory(db)
     val logoDownloader = LogoDownloader(dataDir, tmdbClient)
     val imageProxyService = dev.jellystructure.tv.RaviloArtworkService(dataDir, configStore, mediaStore, artworkDownloader)

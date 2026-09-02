@@ -409,6 +409,28 @@ data class Episode(
     @SerialName("has_chapters") val hasChapters: Boolean = false,
     /** Phase 150: this episode's own intro/credits segments (R182 Skip Intro / Skip Credits). */
     val segments: TvSegmentMarkers = TvSegmentMarkers(),
+    /** R222 (Phase 185 FR-185-9): resolved server-side, per file, for the requesting device. Null ⇒
+     *  render nothing (FR-R222-1) — never derive, never re-check client-side. A Phase 149 combined file
+     *  carries this on every episode in the group, but the value is identical across them (one file, one
+     *  note) — R222's client groups them into one card and shows it once, not per episode. */
+    @SerialName("playback_note") val playbackNote: PlaybackNote? = null,
+)
+
+/**
+ * Phase 185 (FR-185-5) — the whole resolved verdict for one (device, file): whether tonight's playback
+ * will be slow to start here, and how sure the server is. R222 renders the two sentences this maps to
+ * and nothing else — no bitrate, ceiling, margin or delivery method ever crosses to the client (R180
+ * FR-RV-ASP1-2, and the constitution's frontend-renders-server-pushed-state-only rule).
+ */
+@Serializable
+data class PlaybackNote(
+    /** The user-set device name this note is FOR (e.g. "Bedroom TV") — the server owns this string too,
+     *  so a model name never has a path to a viewer (FR-R222-3). */
+    val device: String,
+    /** `"measured"` (≥3 start samples for this device+file — [seconds] is their median) or `"expected"`
+     *  (the predicate fired but there's no history yet — no [seconds]). */
+    val basis: String,
+    val seconds: Int? = null,
 )
 
 @Serializable
@@ -476,6 +498,11 @@ data class MovieDetail(
      *  same reasoning as [BrowseCard.genres]/R164's IMDb-rating precedent: every other card-consuming
      *  surface (Home rows, search, Continue Watching) would pay for a field only the detail page renders. */
     val genres: List<String> = emptyList(),
+    /** R222 (Phase 185 FR-185-5): resolved server-side, for the requesting device, from this movie's own
+     *  file. Null ⇒ render nothing. See [Episode.playbackNote]'s doc — same field, same contract; a
+     *  series carries it per-episode instead of here (FR-R222-5: a ceiling is per device, a bitrate is
+     *  per file, and a series hero has no single file to speak for). */
+    @SerialName("playback_note") val playbackNote: PlaybackNote? = null,
 )
 
 @Serializable
@@ -920,6 +947,11 @@ data class PlaybackProgressRequest(
 data class PlaybackStopRequest(
     @SerialName("item_id") val itemId: String,
     @SerialName("position_ms") val positionMs: Long,
+    /** Phase 185 (FR-185-4) — negotiation-to-first-frame, as the client itself measured it for THIS
+     *  session. Null whenever the client can't honestly report one: first frame never rendered (an
+     *  abandoned/failed start), or the session ended some other way the client didn't instrument. Never
+     *  guessed or backfilled server-side — an absent value here simply means no sample is recorded. */
+    @SerialName("startup_ms") val startupMs: Long? = null,
 )
 
 /** R56 — Re-request a stream ticket with a subtitle burned in (encode / PGS path). */

@@ -33,6 +33,26 @@ private suspend fun loadUsersCard(scope: CoroutineScope) {
     }
 }
 
+/**
+ * Phase 185 (FR-185-8) — "what this device can take", plain words. Both ceilings null ⇒ the one unknown
+ * state this admin card distinguishes (FR-185-2 also has a structurally-distinct "not measured" for a
+ * client that can never report one, e.g. Ravilo Web — not surfaced separately here: stored state alone
+ * can't tell the two apart, and "not measured yet" is honest either way — no Ravilo session on the R216
+ * build has told us).
+ */
+private fun decodeCapabilityLine(d: dev.jellystructure.api.OverviewDevice): String {
+    val hevc = d.decodeMaxBitrateHevc
+    val h264 = d.decodeMaxBitrateH264
+    if (hevc == null && h264 == null) return "picture it can take · not measured yet"
+    fun mbps(bps: Long) = "${bps / 1_000_000} Mbps"
+    val parts = buildList {
+        hevc?.let { add("up to ${mbps(it)} HEVC") }
+        h264?.let { add("up to ${mbps(it)} H.264") }
+    }
+    val whenPart = d.decodeMeasuredAt?.let { " · measured ${usersAgo(it)}" } ?: ""
+    return "picture it can take · ${parts.joinToString(" · ")}$whenPart"
+}
+
 private fun usersAgo(epochMs: Long): String = if (epochMs <= 0) "never" else dev.jellystructure.formatRelativeAgo((epochMs / 1000).toString())
 private fun usersAt(epochMs: Long): String = if (epochMs <= 0) "—" else dev.jellystructure.formatStoredTs((epochMs / 1000).toString())
 
@@ -123,6 +143,7 @@ private suspend fun refreshUsersList(scope: CoroutineScope) {
                  <div style="flex:1;min-width:0">
                    <b class="tiny">${d.name.esc()}</b>$connBadge
                    <div class="tiny muted">created ${usersAt(d.createdAt)} · last seen ${usersAgo(d.lastSeen)}</div>
+                   <div class="tiny muted usr-cap">${decodeCapabilityLine(d)}</div>
                    $playing
                    $quality
                  </div>

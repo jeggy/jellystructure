@@ -44,6 +44,9 @@ class DetailService(
     private val configStore: ConfigStore,
     private val artwork: ArtworkDownloader,
     private val segmentStore: MediaSegmentStore,
+    // Phase 185 (FR-185-5) — playbackNote resolution.
+    private val raviloDeviceService: RaviloDeviceService,
+    private val playbackStartSampleStore: PlaybackStartSampleStore,
 ) {
     suspend fun getMovieDetail(device: DeviceData, jellyfinId: String): MovieDetail? {
         val item = mediaStore.resolveByJellyfinId(jellyfinId) ?: return null
@@ -58,6 +61,16 @@ class DetailService(
         val movieSubLangs = item.tracks
             .filter { it.kind == dev.jellystructure.model.TrackKind.SUBTITLE }
             .mapNotNull { it.language?.lowercase()?.takeIf { l -> l.isNotBlank() } }
+        // Phase 185 (FR-185-5) — resolved for THIS requesting device, from THIS movie's own file.
+        val movieVideoTrack = item.tracks.firstOrNull { it.kind == dev.jellystructure.model.TrackKind.VIDEO }
+        val playbackNote = resolvePlaybackNote(
+            videoTrack = movieVideoTrack,
+            capabilities = raviloDeviceService.decodeCapabilities(device.deviceId, device.jellyfinUserId),
+            deviceId = device.deviceId,
+            deviceDisplayName = device.displayName,
+            fileId = item.path,
+            startSampleStore = playbackStartSampleStore,
+        )
         return MovieDetail(
             card               = item.toMediaCard(),
             synopsis           = item.overview,
@@ -74,6 +87,7 @@ class DetailService(
             originalLanguage   = item.originalLanguage,  // R181 — player's "Dubbed" audio badge
             segments           = toTv(item.id, "", 0, item.segments.stinger),  // Phase 150/163
             genres             = item.genres,  // R221 — TMDB's own order preserved (see Models.kt doc)
+            playbackNote       = playbackNote,  // R222 (Phase 185)
         )
     }
 
@@ -92,6 +106,11 @@ class DetailService(
         val uniqueEpisodes = DuplicateEpisodes.deduped(item.episodes)
         val seasonNums = uniqueEpisodes.map { it.seasonNumber ?: 0 }.distinct().sorted()
 
+        // Phase 185 (FR-185-5/FR-185-9) — one DB lookup for the whole series (not per episode); the
+        // note itself is per FILE, resolved fresh per episode below since each episode may be a
+        // different file (or share one, per Phase 149 — same file, same resolved note either way).
+        val seriesDecodeCapabilities = raviloDeviceService.decodeCapabilities(device.deviceId, device.jellyfinUserId)
+
         val seasons = seasonNums.map { seasonNum ->
             val eps: List<Episode> = uniqueEpisodes
                 .filter { (it.seasonNumber ?: 0) == seasonNum }
@@ -102,6 +121,15 @@ class DetailService(
                 // Bug fix (Phase 149): episodes sharing a file also share filename — pass episodeNumber
                 // so the image route serves THIS episode's still, not always the group's first one.
                 val stillUrl = RaviloImageUrl.still(item.id, ep.filename, ep.episodeNumber)
+                val epVideoTrack = ep.tracks.firstOrNull { it.kind == dev.jellystructure.model.TrackKind.VIDEO }
+                val epPlaybackNote = resolvePlaybackNote(
+                    videoTrack = epVideoTrack,
+                    capabilities = seriesDecodeCapabilities,
+                    deviceId = device.deviceId,
+                    deviceDisplayName = device.displayName,
+                    fileId = ep.path,
+                    startSampleStore = playbackStartSampleStore,
+                )
                 TvEpisode(
                     // Bug fix (Phase 149): episodes sharing a file also share `path`, so the jellyfinId
                     // fallback used to collapse a whole group onto the SAME id — the episodeNumber
@@ -120,6 +148,7 @@ class DetailService(
                     chapterStartMs = ep.chapterStartMs,
                     hasChapters = ep.hasChapters,
                     segments = toTv(item.id, ep.filename, ep.episodeNumber ?: 0, ep.segments.stinger),  // Phase 150/163
+                    playbackNote = epPlaybackNote,  // R222 (Phase 185, FR-185-9)
                 )
             }
             // Last line of defence: whatever the metadata says, two episodes with the same id can never
