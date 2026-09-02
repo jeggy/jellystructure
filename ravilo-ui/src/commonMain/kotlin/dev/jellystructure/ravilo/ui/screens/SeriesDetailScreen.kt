@@ -344,6 +344,22 @@ private fun SeriesDetailLoaded(
         } else false
     }
 
+    // R223 FR-2: every path that sends focus to the nav bar from inside the hero must also guarantee the
+    // list is at item 0 — never a bare navBarFR.requestFocus() that assumes some OTHER path already
+    // scrolled there. Bug fix (live-tested on stue TV): a fast burst of Up presses could outrun upToHero's
+    // async scrollToItem(0) — a later Up event, processed once focus already reached the Play row, took
+    // the "just move focus, we must already be at the top" branch straight to navBarFR, landing focus on
+    // the always-visible AppBar overlay while the LazyColumn itself never finished catching up. Since the
+    // AppBar sits outside the LazyColumn, nothing about focusing it brings the list back into view, so it
+    // stayed stuck exactly where the race left it — title and top of the backdrop hidden, with no further
+    // Up press able to fix it (only AppBar's own onDown, a non-obvious reverse gesture, recovered it).
+    // Reissuing scrollToItem(0) unconditionally on every call, rather than relying on an earlier call from
+    // a different code path, means the LAST Up event in any burst always converges on the correct state.
+    val goToNavBar: () -> Unit = {
+        scope.launch { runCatching { listState.scrollToItem(0) } }
+        runCatching { navBarFR.requestFocus() }
+    }
+
     // R79: appBarHeight + 24dp top inset so season picker / episode rail title isn't hidden under the bar.
     val detailBivSpec = rememberEdgeBringIntoViewSpec(peekDp = 60.dp, topInsetDp = RaviloDimens.appBarHeight + 24.dp)
     // R109: boolean derivedStateOf (notifies only on threshold cross) — no per-scroll-frame recompose.
@@ -410,7 +426,7 @@ private fun SeriesDetailLoaded(
                             genres = detail.genres,
                             onGenreSelect = onGenreSelect?.let { cb -> { values: List<String> -> cb(values, detail.card.title) } },
                             entryFocusRequester = genreFR,
-                            onUp = { navBarFR.requestFocus() },
+                            onUp = goToNavBar,
                             onDown = { if (detail.synopsis != null) runCatching { synopsisFR.requestFocus() } else runCatching { playFR.requestFocus() } },
                         )
                     }
@@ -438,7 +454,7 @@ private fun SeriesDetailLoaded(
                             collapsedMaxLines = 2,
                             focusRequester = synopsisFR,
                             // R221: Up from synopsis reaches the genre row (its lead chip) when present.
-                            onUp = { if (detail.genres.isNotEmpty()) runCatching { genreFR.requestFocus() } else navBarFR.requestFocus() },
+                            onUp = { if (detail.genres.isNotEmpty()) runCatching { genreFR.requestFocus() } else goToNavBar() },
                             onDown = { runCatching { playFR.requestFocus() } },
                         )
                     }
@@ -519,7 +535,7 @@ private fun SeriesDetailLoaded(
                                         when {
                                             detail.synopsis != null -> runCatching { synopsisFR.requestFocus() }
                                             detail.genres.isNotEmpty() -> runCatching { genreFR.requestFocus() }
-                                            else -> navBarFR.requestFocus()
+                                            else -> goToNavBar()
                                         }
                                         true
                                     }
