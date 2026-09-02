@@ -44,12 +44,20 @@ actual fun PlayerLifecycleEffect(
                     backgrounded = true
                     currentOnBackground()
                     player.setSessionActive(false)
+                    // Phase R220 (FR-R220-4) — deterministic detach instead of leaving it entirely to
+                    // Media3's own SurfaceHolder.Callback (§2.3's original finding); pairs with the
+                    // re-attach below.
+                    player.detachVideoSurfaceForBackground()
                 }
                 Lifecycle.Event.ON_START -> {
                     if (backgrounded) {
                         backgrounded = false
                         currentOnForeground()
                         player.setSessionActive(true)
+                        // Phase R220 (FR-R220-4) — the deterministic re-attach paired with ON_STOP's
+                        // detach above; the recovery ladder (FR-R220-2/3) remains a full safety net
+                        // underneath this for whatever it doesn't catch.
+                        player.reattachVideoSurfaceForForeground()
                     }
                 }
                 Lifecycle.Event.ON_RESUME -> {
