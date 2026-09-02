@@ -98,9 +98,13 @@ carries the line on a TV may carry nothing on the phone — that is correct, not
 
 ## Open questions
 
-1. **Copy hangs on 185's open question #1.** If the R216 build is not live on the living-room TV, the
-   file still stutters there and "slow to start" is a false statement — the sentence would have to be
-   about picture instead, i.e. the copy this phase explicitly rejects. Confirm before translation.
+1. ~~**Copy hangs on 185's open question #1.**~~ **Resolved on-device 2026-09-02 — the copy is correct
+   and translation is unblocked.** R216 has been live on the living-room TV since 2026-08-30, proven by
+   105 `playback_qoe` rows carrying R216's own fields, `direct_play = 0` on the heavy sessions (the
+   transcode fallback is firing) and `dropped_frames = 0` on every row. Through Ravilo the file
+   re-encodes and starts slowly rather than stuttering, which is exactly what `slow_lead` says. The
+   *Until Dawn* stutter was a **Wholphin** session that never touches this path. See 185's open
+   question 1 for the full evidence.
 2. **At launch nothing is measured**, so every note starts as `expected` and the `measured` sentence
    appears only once a device has actually started that file three times (185 FR-185-7). Worth stating in
    release notes so the softer sentence isn't read as the feature being broken.
