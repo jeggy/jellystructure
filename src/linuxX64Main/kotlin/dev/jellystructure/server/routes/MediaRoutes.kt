@@ -422,6 +422,17 @@ fun Route.mediaRoutes(
                             ?: return@post call.respond(HttpStatusCode.UnprocessableEntity, mapOf("error" to "corrupt snapshot"))
                         item.copy(resolvedLanguage = snap.language?.ifBlank { null })
                     }
+                    // Phase 184 (FR-184-8) — unlike tmdb_match_clear's revert (which restores a named
+                    // field set), this snapshot is the FULL pre-change item, episodes included: a
+                    // metadataLanguage change re-pulls title/overview/artwork/genres/cast/… (and, for a
+                    // series, every episode's own title/overview/still) through the ordinary rescan
+                    // path, so undoing it needs the whole prior state back, not just the field that
+                    // triggered it. This is also what "restores all three" (the language, the NFO, the
+                    // artwork) means in practice — the snapshot already reflects last write's outcome.
+                    "metadata_language_set" -> {
+                        runCatching { json.decodeFromString(MediaItem.serializer(), entry.beforeSnapshot) }.getOrNull()
+                            ?: return@post call.respond(HttpStatusCode.UnprocessableEntity, mapOf("error" to "corrupt snapshot"))
+                    }
                     // Phase 174 (FR-174-5): restore ONLY the fields `clearTmdbMatch` owns, out of a
                     // whole-item snapshot — a wholesale item restore would also resurrect unrelated
                     // fields edited since the clear. The deleted poster/backdrop FILES aren't restored;
@@ -458,7 +469,10 @@ fun Route.mediaRoutes(
                 }
                 // respectTmdbMatchLock = false: reverting a `tmdb_match_clear` is an explicit operator
                 // decision to take the match back, so the guard must not re-strip what it just restored.
-                store.updateOne(reverted, respectTmdbMatchLock = false)
+                // respectMetadataLanguageLock = false: same reasoning for a `metadata_language_set`
+                // revert — the guard would otherwise re-force the currently-stored (about-to-be-undone)
+                // language straight back over whatever the snapshot restored.
+                store.updateOne(reverted, respectTmdbMatchLock = false, respectMetadataLanguageLock = false)
                 mediaHistory.record(id, "revert", "reverted entry $entryId (${entry.action})")
                 call.respond(reverted)
             }
@@ -1540,7 +1554,10 @@ fun Route.mediaRoutes(
             }
         }
 
-        // GET /api/media/{id}/tmdb-languages — language codes TMDB has translations for
+        // GET /api/media/{id}/tmdb-languages — every language TMDB holds something for this title,
+        // each with enough to judge it (title? overview? how many posters?) — Phase 184's picker
+        // (FR-184-4) reads this directly; the resolver-trace visualization (buildResolverTrace) reads
+        // just the codes off it, same as before this phase enriched the response.
         get("/{id}/tmdb-languages") {
             val id = call.parameters["id"]
                 ?: return@get call.respond(HttpStatusCode.BadRequest)
@@ -1548,11 +1565,77 @@ fun Route.mediaRoutes(
                 ?: return@get call.respond(HttpStatusCode.NotFound)
             val tmdbId = item.tmdbId
             if (tmdbId == null) {
-                call.respond(emptyList<String>())
+                call.respond(emptyList<dev.jellystructure.tmdb.TmdbLanguageCoverage>())
                 return@get
             }
-            val langs = scanner.translationLanguages(tmdbId, item.kind == MediaKind.MOVIE)
-            call.respond(langs)
+            val coverage = scanner.translationCoverage(tmdbId, item.kind == MediaKind.MOVIE)
+            call.respond(coverage)
+        }
+
+        // PATCH /api/media/{id}/metadata-language — Phase 184: an operator's manual choice of which
+        // language to fetch TMDB metadata in. `language: null` means "Back to automatic" — the same
+        // route handles both directions, matching PATCH /{id}/tmdb-id's null-clears convention.
+        //
+        // FR-184-2: no new fetch/fallback logic — this is the ORDINARY rescanMetadata path, with
+        // metadataLanguage set first so Scanner's own overrideLang logic picks it up. FR-184-6: for a
+        // series this naturally re-pulls every episode too, since rescanMetadata's TV_SHOW branch
+        // already does that for any language change.
+        patch("/{id}/metadata-language") {
+            val id = call.parameters["id"] ?: return@patch call.respond(HttpStatusCode.BadRequest)
+            val item = store.resolve(id) ?: return@patch call.respond(HttpStatusCode.NotFound)
+            @Serializable data class MetaLangReq(val language: String? = null)
+            val req = runCatching { call.receive<MetaLangReq>() }.getOrElse {
+                return@patch call.respond(HttpStatusCode.BadRequest, mapOf("error" to "invalid request"))
+            }
+            val chosen = req.language?.trim()?.lowercase()?.ifBlank { null }
+            if (item.tmdbId == null) {
+                return@patch call.respond(HttpStatusCode.BadRequest, mapOf("error" to "item has no TMDB match"))
+            }
+
+            // FR-184-8 — the full pre-change item (episodes included), so the revert below can restore
+            // everything the rescan is about to touch, not just this one field. See the revert handler's
+            // own comment for why a named-field restore (tmdb_match_clear's shape) isn't enough here.
+            val snap = Json.encodeToString(MediaItem.serializer(), item)
+            val now = dev.jellystructure.nowEpochSec()
+            val withChoice = item.copy(
+                metadataLanguage = chosen,
+                metadataLanguageSetAt = if (chosen != null) now else null,
+            )
+            store.updateOne(withChoice, respectMetadataLanguageLock = false)
+            mediaHistory.record(
+                id, "metadata_language_set",
+                if (chosen != null) "language=$chosen (was ${item.metadataLanguage ?: "automatic"})"
+                else "back to automatic (was ${item.metadataLanguage})",
+                revertable = true, beforeSnapshot = snap,
+            )
+
+            val rescanned = scanner.rescanMetadata(withChoice)
+            if (rescanned == null) {
+                Logger.warn("metadata-language: re-pull failed for $id (no TMDB match or API error)", "scan")
+                call.respond(withChoice)
+                return@patch
+            }
+            val enriched = sonarrEnrich?.enrichOne(rescanned) ?: rescanned
+            store.updateOne(enriched, respectMetadataLanguageLock = false)
+
+            NfoWriter.writeTracked(enriched, configStore.current.apiKeys.jellyfinUrl, configStore.current.metadata.ageRatingCascade)
+                .onSuccess { result ->
+                    mediaHistory.record(id, "nfo_write", result.path)
+                    store.updateOne(enriched.copy(nfoWrittenAt = result.writtenAt, nfoHash = result.hash), respectMetadataLanguageLock = false)
+                }
+                .onFailure { Logger.warn("metadata-language: NFO write failed for $id: ${it.message}", "scan") }
+
+            val artStatus = artwork.fetch(enriched)
+            store.updateOne(artwork.stampHasStill(enriched), respectMetadataLanguageLock = false)
+            if (artStatus.posterExists || artStatus.fanartExists) {
+                mediaHistory.record(id, "artwork_fetch", "poster=${artStatus.posterExists} fanart=${artStatus.fanartExists}")
+            }
+
+            val cfg = configStore.current
+            if (!enriched.jellyfinId.isNullOrBlank() && cfg.apiKeys.jellyfinUrl.isNotBlank()) {
+                jellyfinClient.refreshItem(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken, enriched.jellyfinId, full = true)
+            }
+            call.respond(enriched)
         }
 
         // GET /api/media/{id}/seeding — full SeedingReport for the seeding surface (Phase 97)
