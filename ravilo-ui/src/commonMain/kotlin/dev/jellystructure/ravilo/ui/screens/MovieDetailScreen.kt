@@ -171,6 +171,18 @@ private fun MovieDetailLoaded(
     var showTrailer by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { runCatching { playFR.requestFocus() } }
 
+    // R223 FR-2: every path that sends focus to the nav bar from inside the hero must also guarantee the
+    // list is at item 0 — never a bare navBarFR.requestFocus() that assumes it's already there. Bug fix
+    // (found live-testing the identical structure on SeriesDetailScreen, on stue TV): a fast burst of Up
+    // presses can land focus on the nav bar — an overlay outside the LazyColumn — while the list is stuck
+    // mid-scroll, hiding the title and top of the backdrop with no further Up press able to fix it.
+    // Reissuing scrollToItem(0) unconditionally on every call means the LAST Up event in any burst always
+    // converges on the correct state, regardless of timing.
+    val goToNavBar: () -> Unit = {
+        scope.launch { runCatching { listState.scrollToItem(0) } }
+        runCatching { navBarFR.requestFocus() }
+    }
+
     // R79: appBarHeight + 24dp top inset so cast/related rows aren't hidden under the overlay bar.
     val detailBivSpec = rememberEdgeBringIntoViewSpec(peekDp = 60.dp, topInsetDp = RaviloDimens.appBarHeight + 24.dp)
     // R109: boolean derivedStateOf (notifies only on threshold cross) — avoids recomposing on every
@@ -253,7 +265,7 @@ private fun MovieDetailLoaded(
                             genres = detail.genres,
                             onGenreSelect = onGenreSelect?.let { cb -> { values: List<String> -> cb(values, detail.card.title) } },
                             entryFocusRequester = genreFR,
-                            onUp = { navBarFR.requestFocus() },
+                            onUp = goToNavBar,
                             onDown = { if (detail.synopsis != null) runCatching { synopsisFR.requestFocus() } else runCatching { playFR.requestFocus() } },
                         )
                     }
@@ -269,7 +281,7 @@ private fun MovieDetailLoaded(
                             focusRequester = synopsisFR,
                             // R221: Up from synopsis reaches the genre row (its lead chip) when present,
                             // preserving the existing title → genres → synopsis → actions order.
-                            onUp = { if (detail.genres.isNotEmpty()) runCatching { genreFR.requestFocus() } else navBarFR.requestFocus() },
+                            onUp = { if (detail.genres.isNotEmpty()) runCatching { genreFR.requestFocus() } else goToNavBar() },
                             onDown = { runCatching { playFR.requestFocus() } },
                         )
                     }
@@ -310,7 +322,7 @@ private fun MovieDetailLoaded(
                                     when {
                                         detail.synopsis != null -> runCatching { synopsisFR.requestFocus() }
                                         detail.genres.isNotEmpty() -> runCatching { genreFR.requestFocus() }
-                                        else -> navBarFR.requestFocus()
+                                        else -> goToNavBar()
                                     }
                                     true
                                 } else false

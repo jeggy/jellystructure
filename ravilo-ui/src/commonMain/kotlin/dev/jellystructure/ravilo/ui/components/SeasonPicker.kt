@@ -74,7 +74,13 @@ fun SeasonPicker(
             val isSelected = i == selectedIndex
             var focused by remember { mutableStateOf(false) }
             val scale        by animateFloatAsState(if (focused) RaviloMotion.PILL_FOCUS_SCALE else 1f, focusSpec, label = "pillScale$i")
-            val borderWidth  by animateDpAsState(if (focused && !isSelected) 2.dp else 0.dp, dpSpec, label = "pillBorder$i")
+            // R223 FR-1: a focused pill is always visibly focused, selected or not. `focusRing` sits
+            // deliberately close to `accent` in hue/lightness in every skin, so a focusRing border drawn
+            // over the selected pill's accent fill would itself be near-invisible — use `onAccent` there
+            // instead (the same token the pill's own label/badge text already switch to for this exact
+            // contrast problem, see `badgeText` below).
+            val borderWidth  by animateDpAsState(if (focused) 2.dp else 0.dp, dpSpec, label = "pillBorder$i")
+            val borderColor  = if (isSelected) colors.onAccent else colors.focusRing
             val glowElevation by animateDpAsState(if (focused) 14.dp else 0.dp, dpSpec, label = "pillShadow$i")
 
             // Focusable outer keeps a constant layout size; the scale + glow run draw-only on the inner
@@ -108,7 +114,7 @@ fun SeasonPicker(
                         if (isSelected) colors.accent else colors.surfaceVariant,
                         pillShape,
                     )
-                    .border(borderWidth, colors.focusRing, pillShape)
+                    .border(borderWidth, borderColor, pillShape)
                     .padding(horizontal = 18.dp, vertical = 8.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
