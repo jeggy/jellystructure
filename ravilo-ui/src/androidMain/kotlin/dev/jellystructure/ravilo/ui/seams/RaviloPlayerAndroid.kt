@@ -249,7 +249,37 @@ actual class RaviloPlayer actual constructor() {
         ensureMediaSession() // touch/recreate the session so it's active for the OS while this item plays (R44)
     }
 
-    fun setVideoSurfaceView(sv: SurfaceView) { exo.setVideoSurfaceView(sv) }
+    // Phase R220 (FR-R220-4) — tracked here (not just in PlayerVideoSurface's own Compose state) so
+    // PlayerLifecycleEffect's ON_STOP/ON_START can detach/reattach deterministically without reaching
+    // into another composable's state; every caller that (re)binds a surface goes through this same
+    // setter, so this stays in sync with whichever SurfaceView PlayerVideoSurface currently owns.
+    @Volatile private var currentSurfaceView: SurfaceView? = null
+
+    fun setVideoSurfaceView(sv: SurfaceView) {
+        currentSurfaceView = sv
+        exo.setVideoSurfaceView(sv)
+    }
+
+    /** Phase R220 (FR-R220-4) — mirrors PlayerVideoSurface's own onRelease nulling: once a SurfaceView
+     *  is torn down it must never be the one a later background/foreground transition acts on. */
+    fun forgetVideoSurfaceView(sv: SurfaceView) {
+        if (currentSurfaceView === sv) currentSurfaceView = null
+    }
+
+    /** Phase R220 (FR-R220-4) — explicit detach for PlayerLifecycleEffect's ON_STOP: the deterministic
+     *  version of what used to be left entirely to Media3's own SurfaceHolder.Callback (see phase-R220
+     *  §2.3). A no-op if the surface was already torn down (view released before the lifecycle event). */
+    fun detachVideoSurfaceForBackground() {
+        currentSurfaceView?.let { exo.clearVideoSurfaceView(it) }
+    }
+
+    /** Phase R220 (FR-R220-4) — paired explicit re-attach for ON_START, so returning from the background
+     *  is always a real re-attach rather than a Media3-internal no-op it silently skips because it still
+     *  thinks the (possibly now-invalid) surface is already bound — the exact failure this phase exists
+     *  to guard against. */
+    fun reattachVideoSurfaceForForeground() {
+        currentSurfaceView?.let { exo.setVideoSurfaceView(it) }
+    }
 
     /** R55 — attach a SubtitleView so ExoPlayer's text renderer can forward cues to the UI. */
     fun setSubtitleView(view: SubtitleView) {
@@ -438,9 +468,10 @@ actual class RaviloPlayer actual constructor() {
         0L
     }
 
-    /** Phase R220 (FR-R220-4) — explicit, deterministic pair to [setVideoSurfaceView]: detach on
-     *  backgrounding so re-attach on foreground is always a real re-attach, never a no-op Media3
-     *  silently skips because it still thinks the (possibly now-invalid) surface is already bound. */
+    /** Used directly by [PlayerVideoSurface]'s recovery-ladder rung 1 (detach immediately followed by
+     *  re-[setVideoSurfaceView] on the same instance); background/foreground detach goes through
+     *  [detachVideoSurfaceForBackground]/[reattachVideoSurfaceForForeground] instead, which don't
+     *  require the caller to hold its own surface reference. */
     fun clearVideoSurfaceView(sv: SurfaceView) { exo.clearVideoSurfaceView(sv) }
 
     /** Phase R220 (FR-R220-6) — called by [PlayerVideoSurface]'s recovery ladder every time it fires,

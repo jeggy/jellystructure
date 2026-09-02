@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.seams
 
+import android.view.SurfaceHolder
 import android.view.SurfaceView
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.aspectRatio
@@ -44,7 +45,12 @@ private const val RUNG_SETTLE_MS = 1_500L
 private const val COOLDOWN_AFTER_LADDER_MS = 5_000L
 
 @Composable
-actual fun PlayerVideoSurface(player: RaviloPlayer, modifier: Modifier, onVideoOutputStuck: () -> Unit) {
+actual fun PlayerVideoSurface(
+    player: RaviloPlayer,
+    modifier: Modifier,
+    onVideoOutputStuck: () -> Unit,
+    onVideoOutputRecovering: (Boolean) -> Unit,
+) {
     // R77: collect video geometry and compute display aspect ratio (DAR).
     // pixelWidthHeightRatio (SAR) corrects anamorphic encoding (e.g. DVD 720×480 @ SAR 32:27 → 16:9).
     // ExoPlayer applies rotation itself, so width/height already reflect the on-screen orientation —
@@ -64,6 +70,7 @@ actual fun PlayerVideoSurface(player: RaviloPlayer, modifier: Modifier, onVideoO
     // factory below, so the watchdog can detach-then-reattach it without going through Compose.
     val currentSurface = remember { mutableStateOf<SurfaceView?>(null) }
     val onVideoOutputStuckState = rememberUpdatedState(onVideoOutputStuck)
+    val onVideoOutputRecoveringState = rememberUpdatedState(onVideoOutputRecovering)
 
     Box(modifier = modifier, contentAlignment = Alignment.Center) {
         key(surfaceGeneration) {
@@ -76,9 +83,33 @@ actual fun PlayerVideoSurface(player: RaviloPlayer, modifier: Modifier, onVideoO
                     // the display tone-maps correctly, with no app-level color-mode API needed — verified
                     // against Jellyfin's own Android TV client, which does exactly this (a bare SurfaceView
                     // wired via `ExoPlayer.setVideoSurfaceView`, nothing else).
-                    val surface = SurfaceView(ctx)
+                    // Phase R220 (FR-R220-4) — onWindowVisibilityChanged override is a second, independent
+                    // re-attach trigger alongside the SurfaceHolder.Callback below, for the TV-standby case
+                    // (§2.4) where neither surfaceCreated/surfaceDestroyed may fire at all. Not confirmed
+                    // this device actually needs it (FR-R220-1's own on-device capture never ran — no
+                    // device access this session, and TVs are off-limits now) — shipped as a cheap,
+                    // idempotent bet the same way rungs 1-4 of the ladder were.
+                    val surface = object : SurfaceView(ctx) {
+                        override fun onWindowVisibilityChanged(visibility: Int) {
+                            super.onWindowVisibilityChanged(visibility)
+                            if (visibility == VISIBLE) player.setVideoSurfaceView(this)
+                        }
+                    }
                     player.setVideoSurfaceView(surface)
                     currentSurface.value = surface
+                    // Phase R220 (FR-R220-4) — a second line of defence alongside Media3's own internal
+                    // SurfaceHolder.Callback (the one this whole phase exists because it can silently fail
+                    // to re-attach on): re-attach independently on surfaceCreated too. A redundant
+                    // setVideoSurfaceView when Media3 already re-attached fine is the one risk the spec
+                    // itself flags as needing on-device verification (phase-R220 §5 open question 2) — not
+                    // verified this session, shipped per the spec's explicit instruction regardless.
+                    surface.holder.addCallback(object : SurfaceHolder.Callback {
+                        override fun surfaceCreated(holder: SurfaceHolder) {
+                            player.setVideoSurfaceView(surface)
+                        }
+                        override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {}
+                        override fun surfaceDestroyed(holder: SurfaceHolder) {}
+                    })
                     surface
                 },
                 // R77: constrain to DAR when known — Compose fits the view inside the available space
@@ -89,6 +120,7 @@ actual fun PlayerVideoSurface(player: RaviloPlayer, modifier: Modifier, onVideoO
                     // Phase R220 (FR-R220-4) — don't leave a stale reference behind a torn-down surface;
                     // a subsequent watchdog tick must not try to detach/reattach a view that's already gone.
                     if (currentSurface.value === sv) currentSurface.value = null
+                    player.forgetVideoSurfaceView(sv)
                 },
             )
         }
@@ -146,6 +178,10 @@ actual fun PlayerVideoSurface(player: RaviloPlayer, modifier: Modifier, onVideoO
             // outcome — a busy loop re-diagnosing the same stall every tick would just fight itself.
             stalledTicks = 0
             Log.w(TAG, "video output stalled (playing, frame count stuck at $frameCount) — starting recovery ladder")
+            // Phase R220 (FR-R220-5) — force R218's STALL presentation on for the ladder's duration past
+            // its own ~400ms debounce (PlayerScreen wires this into rawBufferMoment), so a rung that takes
+            // longer than a flash never leaves a viewer on a frozen frame with no chrome change.
+            onVideoOutputRecoveringState.value(true)
 
             // Rung 1: detach + reattach the existing surface — cheapest, and the one most likely to be
             // exactly what Media3's own SurfaceHolder.Callback failed to do on its own.
@@ -183,8 +219,11 @@ actual fun PlayerVideoSurface(player: RaviloPlayer, modifier: Modifier, onVideoO
                 // PlayerScreen's own responsibility from here; this ladder's job ends at handing off).
                 player.recordVideoOutputRecovery()
                 Log.w(TAG, "video output did not recover after rungs 1-3 — handing off to onVideoOutputStuck (rung 4)")
-                onVideoOutputStuckState.value()
             }
+            // FR-R220-5 — clear the forced STALL before handing off rung 4: a re-prepare (armSession)
+            // drives its own fresh COLD moment from here, not a continuation of this one.
+            onVideoOutputRecoveringState.value(false)
+            if (!recovered) onVideoOutputStuckState.value()
             lastFrameCount = player.renderedVideoFrameCount()
             cooldownUntil = elapsedMs + COOLDOWN_AFTER_LADDER_MS
         }

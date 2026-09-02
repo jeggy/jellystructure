@@ -5,16 +5,17 @@
 > Then the video continues (which is correct). But while audio works perfectly, the video is just black
 > instead of continuing showing the movie."*
 
-**Status:** ✓ Built 2026-08-31, same session as the spec — built ahead of FR-R220-1's on-device
-confirmation rather than gated behind it, since this session had no device access to reproduce with;
-the full ladder (rungs 1-4) shipped as designed rather than narrowed to a confirmed subset. Compiles
-clean across every affected target (`:ravilo-ui:compileDebugKotlinAndroid`,
-`:ravilo-ui:compileKotlinWasmJs`, `:ravilo-web:compileKotlinWasmJs`, `:ravilo-android:compileDebugKotlin`,
+**Status:** ✓ Built 2026-09-02 (FR-R220-4/5 closed; FR-R220-1/2/3/6 were already built 2026-08-31, same
+session as the spec) — built ahead of FR-R220-1's on-device confirmation rather than gated behind it,
+since neither session had device access to reproduce with; the full ladder (rungs 1-4) shipped as
+designed rather than narrowed to a confirmed subset. Compiles clean across every affected target
+(`:ravilo-ui:compileDebugKotlinAndroid`, `:ravilo-ui:compileKotlinWasmJs`,
+`:ravilo-web:compileKotlinWasmJs`, `:ravilo-android:compileDebugKotlin`,
 `:ravilo-phone:compileDebugKotlin`) and `:ravilo-ui:testDebugUnitTest` passes. **Not dev-reviewed, not
-reproduced on-device, and not deployed anywhere** — this session was explicitly instructed not to
-deploy to any device. FR-R220-1's own on-device capture (which of the three surface-callback cases
-actually applies) is still the right next step; the shipped ladder is a reasoned bet across all three
-cases, not a confirmed-necessary one. See the build note after §4.
+reproduced on-device, and not deployed anywhere** — no device access, and live TVs are now off-limits
+entirely per standing instruction. FR-R220-1's own on-device capture (which of the three surface-callback
+cases actually applies) is still the right next step; the shipped ladder — and now the shipped prevention
+— is a reasoned bet across all three cases, not a confirmed-necessary one. See the build note after §4.
 
 Scope: the **Android** target (`ravilo-ui/src/androidMain`, shared by `:ravilo-android` and
 `:ravilo-phone`). `ravilo-web` uses a DOM `<video>` element and `ravilo-tizen` its own player; neither
@@ -251,13 +252,33 @@ reasoned, compiling implementation of the spec's design — not a confirmed fix 
   (default no-op, so `wasmJs`/other call sites are unaffected); `PlayerScreen` wires it to
   `armSession(currentItemId)` — the exact same re-arm `PlayerLifecycleEffect`'s own `onForeground` already
   uses, not a new mechanism.
-- **FR-R220-4 (prevention)**: partially built. `AndroidView`'s `onRelease` callback nulls the captured
-  surface reference so a stale watchdog tick can't act on a torn-down view. **Not built**: a dedicated
-  `SurfaceHolder.Callback` registered alongside Media3's own, and explicit detach/attach wired into
-  `PlayerLifecycleEffect`'s `ON_STOP`/`ON_START` (today those still only call `setSessionActive`, per
-  §2.3's original finding). The detection+recovery ladder (FR-R220-2/3) is a full safety net regardless
-  of whether prevention lands, so this gap doesn't leave the bug unaddressed — it leaves the *cheapest*
-  fix (rung 1 always available for free) un-taken.
+- **FR-R220-4 (prevention) — closed 2026-09-02.** `AndroidView`'s `onRelease` callback still nulls the
+  captured surface reference (`onRelease` now also calls the new `RaviloPlayer.forgetVideoSurfaceView`,
+  below, so the Android actual's own tracked reference can't go stale either). Added: (1) a
+  `SurfaceHolder.Callback` registered on the `SurfaceView` right where it's created, alongside Media3's
+  own — `surfaceCreated` re-calls `setVideoSurfaceView` on the same instance, a redundant call the FR
+  itself calls harmless (open question 2, still not on-device-verified — see below); (2) the deterministic
+  `ON_STOP`/`ON_START` detach/attach pair, wired into `PlayerLifecycleEffect`'s androidMain actual as
+  `player.detachVideoSurfaceForBackground()` / `player.reattachVideoSurfaceForForeground()` — two new
+  `RaviloPlayer` methods that read a `currentSurfaceView` ref the actual now maintains itself (set inside
+  `setVideoSurfaceView`, cleared by `forgetVideoSurfaceView`), so `PlayerLifecycleEffect` never needs to
+  reach into `PlayerVideoSurface`'s own Compose state to do this; (3) belt-and-suspenders for the case
+  FR-R220-1 was meant to confirm before deciding whether it's needed (§2.4, neither callback firing at
+  all): the `SurfaceView` is now an anonymous subclass overriding `onWindowVisibilityChanged`, re-attaching
+  on `VISIBLE` the same idempotent way. All three are harmless-if-redundant by design, matching how the
+  rest of this phase already shipped ahead of FR-R220-1's confirmation.
+- **FR-R220-5 (never sit silently black) — closed 2026-09-02.** `PlayerVideoSurface`'s `expect`/`actual`
+  gained a fourth parameter, `onVideoOutputRecovering: (Boolean) -> Unit = {}` (no-op on wasmJs, same
+  pattern as `onVideoOutputStuck`). The Android actual's ladder calls it `true` the instant the stall
+  threshold is crossed (before rung 1) and `false` once a rung recovers or right before the rung-4
+  hand-off. `PlayerScreen` threads it into a new `videoOutputRecovering` state var and folds it into
+  `rawBufferMoment`'s `when` — ahead of `isSeeking`/`isBuffering`, so a rung 2 no-op seek flipping
+  `isSeeking` mid-ladder can't downgrade the presentation to SEEK — meaning any rung still running past
+  R218's own ~400ms debounce shows the existing STALL treatment with no new copy or visual language, per
+  the FR's own wording. `LiveTvPlayerScreen`'s separate `PlayerVideoSurface` call site does not pass this
+  callback (Live TV has no R218 buffer-moment machinery — see open question 4's answer below), so it still
+  inherits FR-R220-2/3/4 for free but not this one; building STALL presentation for Live TV from scratch
+  is out of this phase's scope (R218 never covered Live TV either).
 - **FR-R220-6 (telemetry)**: `PlayerQoeSnapshot` gained `videoOutputRecoveries: Int = 0` (additive,
   every other platform stays at the default 0). `RaviloPlayerAndroid.recordVideoOutputRecovery()`
   increments a session-total counter, called once per full ladder run regardless of which rung actually
@@ -265,12 +286,10 @@ reasoned, compiling implementation of the spec's design — not a confirmed fix 
   time-to-recover) the FR describes — a lighter, still-useful subset given the no-device-testing
   constraint; a fuller breakdown is a reasonable follow-up once real field data says the mechanism is
   worth investing further in.
-- **FR-R220-1**: not run (no device access this session). **FR-R220-5**'s presentation half was not
-  touched — no new overlay was added, and the existing R218 STALL treatment is what a viewer would see
-  during the ~1.5s×(up to 3) rung window if the app's own `isBuffering`/`isSeeking` signals happen to be
-  true at the same time, but the ladder itself does not currently force R218's STALL state on for its
-  own duration. That is a real gap against the spec's literal wording (rungs past the 400ms debounce
-  should show STALL) — flagged here rather than silently claimed as done.
+- **FR-R220-1**: still not run (no device access either session, and TVs are now off-limits entirely per
+  standing instruction — trigger 2, TV standby, may be TV-only per the FR's own note, so this may stay
+  unconfirmed indefinitely absent a policy change). **FR-R220-5 was closed 2026-09-02** — see the build
+  note above; this bullet is kept for the historical record of the 2026-08-31 gap.
 
 Verification: `compileKotlinLinuxX64`-equivalent for Ravilo —
 `:ravilo-ui:compileDebugKotlinAndroid`, `:ravilo-ui:compileKotlinWasmJs`, `:ravilo-web:compileKotlinWasmJs`,
@@ -296,10 +315,15 @@ question this raises below). No device, no deploy.
 4. **Should the detector run outside the player screen?** As built, it lives inside
    `PlayerVideoSurface`'s Android actual (not `PlayerScreen`'s common poll loop — a deviation from this
    spec's original text, made because the surface-level rungs need Android-only types anyway; see the
-   build note). If Live TV's player (`LiveTvPlayerScreen`) renders through the same `PlayerVideoSurface`
-   composable, it already inherits this fix for free; if it has its own separate video-surface
-   composable, it has the same defect and needs the same fix applied there too — worth checking, not
-   yet checked this session.
+   build note). **Checked 2026-09-02: `LiveTvPlayerScreen.kt:179` calls the same shared
+   `PlayerVideoSurface` composable** (`PlayerVideoSurface(player, Modifier.fillMaxSize())`, default
+   params), so it already inherits the detector, the rung 1-3 ladder, and FR-R220-4's prevention
+   (SurfaceHolder.Callback + onWindowVisibilityChanged) for free, with zero Live TV-specific code. It does
+   **not** get rung 4 (no `onVideoOutputStuck` wired — there is no Live TV equivalent of `armSession` to
+   call) or FR-R220-5's forced STALL (no `onVideoOutputRecovering` wired, and Live TV has no R218
+   buffer-moment machinery at all to force into a state) or FR-R220-4's `ON_STOP`/`ON_START` detach/attach
+   (`LiveTvPlayerScreen` has no `PlayerLifecycleEffect` call of its own). Extending any of those three to
+   Live TV is new scope this phase doesn't ask for — R218 itself never covered Live TV either.
 5. **Interaction with Phase 180's session teardown.** `onBackground` → `store.stopSession(...)` now
    genuinely releases an in-flight transcode (Phase 180, FR-180-2). For a **direct play** that is a
    no-op and this phase's analysis holds unchanged. For a **transcoded** stream, the encode backing the
@@ -313,11 +337,8 @@ question this raises below). No device, no deploy.
    `LaunchedEffect` logic, and building one (a fake `RaviloPlayer`/`SurfaceView` harness) felt like
    scope creep on top of an already-unverified implementation — better to get real on-device signal
    first (FR-R220-1) and write tests against what's actually confirmed to matter.
-7. **FR-R220-5's "show STALL past the debounce" is not actually wired.** The ladder runs for up to
-   ~4.5s (three 1.5s rungs) with no explicit presentation change of its own — whatever `isBuffering`/
-   `isSeeking`/`hasRenderedFirstFrame` already say drives R218's existing moment, and none of those
-   necessarily go true just because the recovery ladder is running (the player may still report
-   `isPlaying=true, isBuffering=false` throughout, since audio is fine). A viewer could see several
-   seconds of the frozen black frame with no chrome change before rung 4 hands off. Needs a real signal
-   threaded from the ladder into `PlayerScreen`'s buffer-moment logic (a boolean flip, not a new visual
-   language) — not built this session.
+7. **Resolved 2026-09-02.** FR-R220-5's "show STALL past the debounce" is now wired: `PlayerVideoSurface`
+   gained `onVideoOutputRecovering: (Boolean) -> Unit`, true for the ladder's duration, threaded into
+   `PlayerScreen`'s `rawBufferMoment` ahead of `isSeeking`/`isBuffering` so it can't be pre-empted by a
+   rung's own side effects (rung 2's no-op seek). Not on-device-verified — the same standing caveat as the
+   rest of this phase.
