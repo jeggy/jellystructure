@@ -60,6 +60,7 @@ import dev.jellystructure.ravilo.ui.components.DetailLoadingShell
 import dev.jellystructure.ravilo.ui.components.DetailSynopsis
 import dev.jellystructure.ravilo.ui.components.GenreChipRow
 import dev.jellystructure.ravilo.ui.components.ImdbChip
+import dev.jellystructure.ravilo.ui.components.PlaybackNoteLine
 import dev.jellystructure.ravilo.ui.components.RaviloButton
 import dev.jellystructure.ravilo.ui.components.Tile
 import dev.jellystructure.ravilo.ui.components.TitleLogoOrText
@@ -271,6 +272,13 @@ private fun MovieDetailLoaded(
                             onUp = { if (detail.genres.isNotEmpty()) runCatching { genreFR.requestFocus() } else navBarFR.requestFocus() },
                             onDown = { runCatching { playFR.requestFocus() } },
                         )
+                    }
+                    // R222 (Phase 185, FR-R222-4) — directly above the actions, never the meta row: a
+                    // fact about tonight, not about the film. Play must not move — this takes its own
+                    // slot and never reflows the button row below it.
+                    detail.playbackNote?.let {
+                        Spacer(Modifier.height(10.dp))
+                        PlaybackNoteLine(note = it, compact = LocalCompact.current)
                     }
                     Spacer(Modifier.height(18.dp))
                     Row(
