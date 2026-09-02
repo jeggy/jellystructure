@@ -1,0 +1,12 @@
+-- Phase 181 (FR-181-5) — persistent "needs work" set. See DirtyItem.sq for the full column docs; this
+-- migration must stay byte-for-byte in sync with that file's CREATE TABLE/CREATE INDEX statements (this
+-- repo's SQLDelight setup applies .sqm files sequentially against an existing database — Schema.create()
+-- alone, used only for a brand-new database, would otherwise be the only place this table exists).
+CREATE TABLE dirty_item (
+    id INTEGER NOT NULL PRIMARY KEY,
+    jellyfin_id TEXT NOT NULL UNIQUE,
+    reason TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+);
+
+CREATE INDEX dirty_item_created ON dirty_item(created_at);

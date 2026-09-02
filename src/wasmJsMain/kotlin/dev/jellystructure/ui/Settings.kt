@@ -2062,14 +2062,14 @@ private data class JellyfinWebhookStatus(
 private data class IngestStatus(
     @SerialName("webhook_secret") val webhookSecret: String,
     val realtime: Boolean,
-    @SerialName("listener_connected") val listenerConnected: Boolean,
-    // Fallback change-feed listener's own last event — see last_webhook_received_at below for the
-    // primary Jellyfin-plugin path (2026-08-14 amendment: these used to be conflated on this page,
-    // which let a dead primary path hide behind the fallback's own traffic).
-    @SerialName("last_event_at") val lastEventAt: Long? = null,
     @SerialName("jellyfin_reach_url") val jellyfinReachUrl: String = "",
     val jellyfin: JellyfinWebhookStatus? = null,
     @SerialName("last_webhook_received_at") val lastWebhookReceivedAt: Long? = null,
+    // Phase 181 — replaces the deleted change-feed listener's listener_connected/last_event_at (that
+    // socket never delivered a usable event on this Jellyfin version). last_successful_ingest_at covers
+    // every realtime-ingest path (webhook, library sweep, dirty-set retry) uniformly.
+    @SerialName("last_successful_ingest_at") val lastSuccessfulIngestAt: Long? = null,
+    @SerialName("outstanding_retry_count") val outstandingRetryCount: Long = 0,
 )
 
 @Serializable
@@ -2080,11 +2080,15 @@ private suspend fun loadIngestCard() {
     renderIngestCard(status)
     (document.getElementById("ingest-reach-url") as? HTMLInputElement)?.value = status.jellyfinReachUrl
 
-    (document.getElementById("ingest-listener-detail") as? HTMLElement)?.textContent =
-        if (status.realtime) "Fallback: also listening for library changes on Jellyfin's own change feed" +
-            (if (status.listenerConnected) " (connected" else " (reconnecting") +
-            (if (status.lastEventAt != null) ", has seen at least one event)" else ", no events seen yet)")
-        else "Realtime ingest is off — new media only appears on the next scheduled scan"
+    // Phase 181 — every scan cycle also converges on Jellyfin's actual catalog directly (a set-difference
+    // sweep), independent of the webhook plugin above and of whether "Realtime ingest" itself is on; this
+    // line reports THAT backstop, not a second live listener (the old change-feed socket never worked and
+    // was removed).
+    (document.getElementById("ingest-listener-detail") as? HTMLElement)?.textContent = buildString {
+        append("Backstop: every scan also checks Jellyfin's catalog directly, so a missed item is never permanently lost")
+        if (status.lastSuccessfulIngestAt != null) append(" — last successful ingest ${dev.jellystructure.formatStoredTs(status.lastSuccessfulIngestAt.toString())}")
+        if (status.outstandingRetryCount > 0) append(" · ${status.outstandingRetryCount} item(s) awaiting retry")
+    }
 
     // 2026-08-14 amendment (FR-165-7) — the fallback line above only ever reflected the change-feed
     // listener; this is the primary Jellyfin-webhook path's own signal, shown separately so a dead

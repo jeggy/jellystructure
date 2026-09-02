@@ -169,8 +169,9 @@ object OutboundHttp {
      * caller needed (artwork/logo downloads: 10s connect, 120s socket/request) — safe for callers
      * that used a shorter timeout (Jellyfin, Sonarr/Radarr, TMDB: 5-10s connect, 30-60s socket),
      * since a longer timeout only waits longer on a truly-hung peer, never a premature failure.
-     * The two long-lived WebSocket clients (`JellyfinLibraryListener`, `JellyfinSessionBridge`)
-     * are NOT stateless request/response callers and stay on their own dedicated clients.
+     * The long-lived WebSocket client (`JellyfinSessionBridge`) is NOT a stateless request/response
+     * caller and stays on its own dedicated client. (Phase 181 removed the other one,
+     * `JellyfinLibraryListener` — it never delivered a usable event on this Jellyfin version.)
      */
     val client: HttpClient by lazy {
         HttpClient(Curl) {

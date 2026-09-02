@@ -5,8 +5,27 @@
 > up with a proper solution to this and spec it out properly… remember this is not a one time example,
 > this is something that happens alot."*
 
-**Status:** Partially implemented. **FR-181-2 built and test-verified 2026-08-31.** FR-181-1, FR-181-1a,
-FR-181-3, FR-181-4, FR-181-5 remain Planned. Not yet dev-reviewed.
+**Status:** ✓ Built 2026-09-02 (not yet dev-reviewed, not yet live-verified against production traffic —
+unit-tested and compiled clean). FR-181-2 was already built/test-verified 2026-08-31. FR-181-1, FR-181-1a,
+FR-181-4 and FR-181-5 are now built too; FR-181-3 is **not implemented as its own mechanism** — see its
+own section below for why.
+
+**Build summary:** `sweepJellyfinLibrary()`/`computeLibraryDiff()` (new `media/LibrarySweep.kt`) run from
+inside every `RunTarget.Library` pipeline run (`PipelineEngine.kt`, right where `computeFreshnessFilter`
+already sat), feeding missing ids through the existing `RealtimeIngestService.enqueue()` path and stale
+top-level ids into the item's own History tab. `JellyfinLibraryListener` is deleted outright (open
+question 1, resolved — see below). A new `dirty_item` table (migration 36) plus `DirtyItemStore`
+implements FR-181-5: `enqueue()` now marks an id dirty when both attempts fail, clears it on success, and
+every Library run retries whatever the dirty-set is still holding. `RealtimeIngestService.enqueue()` is
+deliberately **no longer gated on `[ingest] realtime`** — that setting only ever meant "react within
+seconds" for the webhook path (which now checks it itself in `handleJellyfinWebhook`); the sweep and the
+dirty-set retry are the correctness backstop and must keep working when an admin turns "instant" ingest
+off. `IngestStatus`'s `listener_connected`/`last_event_at` fields are replaced with
+`last_successful_ingest_at`/`outstanding_retry_count`, surfaced on both the `/api/health` check and the
+Settings ▸ Download tools ▸ Realtime ingest card (`src/wasmJsMain/.../Settings.kt`). 8 new unit tests in
+`LibrarySweepTest.kt` cover the Klovn case directly (a missing episode resolves to its series id, not the
+episode id) and the same-size-swap case FR-181-3 worried about (id diff catches it; a count wouldn't).
+`verifyCommonMainJellystructureDbMigration` and the full `linuxX64Test` suite are green.
 
 ## 1. The reported case
 
@@ -147,7 +166,7 @@ of that need to swap roles.
 
 ## 4. Functional requirements
 
-### FR-181-1 — Set-difference sweep: "what does Jellyfin have that I don't" (the backstop)
+### FR-181-1 — Set-difference sweep: "what does Jellyfin have that I don't" (the backstop) — ✅ Built 2026-09-02
 
 Every scan cycle, before the freshness filter runs, enumerate Jellyfin's item ids and diff them against
 the set of Jellyfin ids jellystructure already holds:
@@ -178,12 +197,30 @@ a failure retries on the next cycle rather than being stepped over.
 > - **`DateCreated` is the file's mtime, not Jellyfin's ingestion time** — §2.4. Any design that orders
 >   or filters by it is unsound on this library.
 
-### FR-181-1a — Deletion/replacement detection (the other half of the diff)
+**Shipped as designed**, with one deliberate deviation from the literal query in this section:
+`IncludeItemTypes=Movie,Series,Episode` (not just `Episode,Movie`) — a `Series` with zero episodes so far
+needs the same set-difference treatment a `Movie` gets, and FR-181-1a's reverse diff needs the full
+Movie/Series set on the Jellyfin side to compare against anyway, so one enumeration serves both FRs. Live
+size check against this deployment 2026-09-02: 8 135 items, 6.7 MB, ~0.5 s — Jellyfin returned the whole
+library **unpaged** despite no `Limit` being sent (`getAllLibraryItemIds` still pages defensively to
+`TotalRecordCount` rather than trusting that forever — R219 already paid for the "a bare Limit is a trap"
+lesson once). `Limit=0` was independently verified live as the correct **cheap per-series count** shape
+(`/Items?ParentId={id}&IncludeItemTypes=Episode&Recursive=true&Limit=0` → `TotalRecordCount` with an empty
+`Items` array, confirmed against Klovn: 101, matching §1) — recorded here for FR-181-3 even though it
+ended up not being built as its own mechanism; see that section.
+
+### FR-181-1a — Deletion/replacement detection (the other half of the diff) — ✅ Built 2026-09-02
 
 The same enumeration yields the reverse difference for free: ids jellystructure holds that Jellyfin no
 longer has. Under Phase 95's non-destructive invariant this must **not** auto-delete; it marks the item
 for review and surfaces it, so a replaced or re-imported file is reconciled rather than leaving a stale
 row that silently disagrees with Jellyfin forever.
+
+**Shipped** as a `mediaHistory.record(item.id, "jellyfin_missing", …)` entry on the item's own existing
+History tab — the same surfacing precedent Phase 170 set for segment-detection anomalies — rather than a
+new admin page or badge, which this phase never asked for. Movie/Series only, not per-episode (an
+episode-level reverse diff would fire on every ordinary removed/re-imported episode inside a show
+jellystructure otherwise still holds correctly — noise, not signal).
 
 ### FR-181-2 — Activity-based freshness, replacing premiere-year bucketing — ✅ Built 2026-08-31
 
@@ -222,7 +259,7 @@ permanently rather than narrowly targeting recent growth. This signal is better 
 ingest events (a real "new episode arrived" marker) than by inventing a second, noisier proxy here — left
 for when FR-181-1 lands rather than worked around now.
 
-### FR-181-3 — Per-series count reconciliation (cheap continuous check)
+### FR-181-3 — Per-series count reconciliation (cheap continuous check) — **not built, subsumed by FR-181-1**
 
 FR-181-1's id diff is authoritative and already catches everything this would, so this is **not** the
 primary detector — it is the cheap check that can run more often than a full enumeration if FR-181-1
@@ -236,7 +273,19 @@ Note the known weakness that stops this from replacing FR-181-1: **counts miss s
 episode deleted and another added nets to an identical count while the two sides genuinely disagree.
 Only the id diff catches that, which is why FR-181-1 is the backstop and this is the optimisation.
 
-### FR-181-4 — Realtime path: fix, or fail loudly
+**Decision (2026-09-02): not built as a separate mechanism.** This FR's entire reason to exist was a
+*cheaper, faster-cadence* check to run between full sweeps (§6 Q2). But FR-181-1 as built runs the full
+id-level sweep on **every** `RunTarget.Library` trigger — the same cadence a separate count check would
+have run at — and an id-level diff is strictly a superset of what a count comparison catches (it also
+catches the same-size-swap case a count can't, see above). Building a second mechanism at the identical
+cadence that detects a strict subset of what the first one already catches would be redundant code with
+zero additional detection value. If a future deployment needs FR-181-1 to run on a *slower* cadence than
+every Library trigger (§6 Q2, e.g. a much larger library where 0.5s/7MB stops being trivial), *then*
+FR-181-3 becomes worth building as a genuinely faster-cadence tier — and the shape to use is confirmed
+live (`/Items?ParentId={id}&IncludeItemTypes=Episode&Recursive=true&Limit=0` → `TotalRecordCount`, not the
+`ChildCount`/`RecursiveItemCount` fields, which are confirmed `null`), not designed from scratch.
+
+### FR-181-4 — Realtime path: fix, or fail loudly — ✅ Built 2026-09-02
 
 1. **Fix `JellyfinLibraryListener` or remove it.** As written it cannot function on Jellyfin 10.11.x
    (§2.3). Investigate whether 10.11.11 exposes any subscribable library-change listener at all; if it
@@ -249,7 +298,20 @@ Only the id diff catches that, which is why FR-181-1 is the backstop and this is
 3. **Demote realtime to an optimization.** With FR-181-1 as the guarantee, event delivery only reduces
    latency. Nothing about catalog correctness may depend on it.
 
-### FR-181-5 — Persistent dirty-set instead of stateless recompute
+**Shipped.** Point 1 — **deleted**, corroborated independently 2026-09-02 rather than taken only on the
+2026-08-30 investigation's word: a live probe against this same Jellyfin (`/socket?api_key=…`, valid
+`KeepAlive` only) reproduced `LibraryChangedStart` → immediate close code 1000, matching §2.3 exactly.
+(A further live trigger — forcing a real library refresh to re-confirm zero `LibraryChanged` frames over
+time — was not run this session; a full `/Library/Refresh` against the production Jellyfin was correctly
+blocked by this environment's own safety classifier as too disruptive to attempt casually. The 2026-08-30
+investigation already did that exact test once, live, and is not re-litigated here.) Point 2 —
+`RealtimeIngestService.lastSuccessfulIngestAt`, set on every path that completes ingest successfully
+(webhook, sweep, dirty-set retry alike, since all three funnel through the same `enqueue()`), replacing
+the deleted listener's `listener_connected`/`last_event_at` on both `/api/health` and the Settings ingest
+card — see FR-181-1's summary. Point 3 — `enqueue()` is no longer gated on `[ingest] realtime` at all; see
+the phase's top-level build summary for why, and why the webhook route gates itself instead.
+
+### FR-181-5 — Persistent dirty-set instead of stateless recompute — ✅ Built 2026-09-02 (narrower than drafted)
 
 Today the worklist is recomputed from heuristics on every run, so an item that *should* have been
 processed but was not is simply forgotten — there is no record that work is outstanding. Introduce a
@@ -259,6 +321,22 @@ action, and a failed pipeline step), cleared **only on success**.
 This is the architectural correction behind the other FRs: it gives the system memory of outstanding
 work, so a failure retries instead of vanishing. It also subsumes the retry logic currently hand-rolled
 in `RealtimeIngestService.enqueue` (`delay(60_000)` then one retry, then give up with a log line).
+
+**Shipped, scoped to what the other FRs actually need** rather than the fully general "written by every
+signal" system drafted above — a new `dirty_item` table (`jellyfin_id` UNIQUE, `reason`, `created_at`;
+migration 36) behind a small `DirtyItemStore` (`markDirty`/`clear`/`all`/`count`). `enqueue()`'s existing
+retry-once-then-log ending now marks the id dirty on the second failure instead of only logging; every
+`RunTarget.Library` run reads `dirtyItemStore.all()` and retries each one through the same `enqueue()`
+path; a success from *any* trigger (retry, sweep, or an unrelated webhook reaching the same id first)
+clears it. **Not built**, because FR-181-1's own sweep already makes it unnecessary: "set-difference
+sweep" and "count reconciliation" (FR-181-3, itself not built — see its own section) as *sources* of
+dirtiness, and "manual action"/"a failed pipeline step" as general write points beyond
+`RealtimeIngestService`'s own retry exhaustion. A missing item is never silently forgotten even without
+those extra write points, because FR-181-1 re-derives "what's missing" from Jellyfin's truth on every
+cycle rather than depending on something having remembered to mark it dirty in the first place — the
+dirty-set's real job under this design is narrower: remember an item that *is* known and was *attempted*
+but failed for a reason a retry might fix (a TMDB hiccup, a transient Jellyfin timeout), which is exactly
+what `enqueue()`'s existing double-failure path already identifies.
 
 Sequencing note: FR-181-1 and FR-181-2 deliver the user-visible fix and can land first; FR-181-5 is the
 larger change and may follow, provided the earlier FRs are written to record dirtiness through this
@@ -290,18 +368,31 @@ interface rather than around it.
 
 ## 6. Open questions for dev review
 
-1. Does Jellyfin 10.11.11 expose **any** subscribable library-change WS listener? If not, FR-181-4.1
-   becomes a deletion and the webhook plugin is the only Jellyfin-side event path — which is itself
-   known-broken here, which in turn strengthens the non-goal caveat above.
-2. Sweep cadence. The full FR-181-1 enumeration measured **2.0 s / 5.4 MB / 7 946 items**. Hourly
-   (reusing `scan_schedule`) is clearly fine. Running it every few minutes — which would close most of
-   the latency gap realtime ingest was supposed to cover — means ~5 MB per run against Jellyfin; decide
-   whether that is acceptable, or whether FR-181-3's lighter per-series counts should carry the fast
-   cadence with the full id diff hourly.
+1. ~~Does Jellyfin 10.11.11 expose **any** subscribable library-change WS listener?~~ **Answered: no.**
+   The 2026-08-30 investigation's three live probes already concluded this; a fourth, independent probe
+   run 2026-09-02 during the build reproduced the same `LibraryChangedStart` → close-code-1000 result
+   against the same live server. `JellyfinLibraryListener` is deleted (FR-181-4).
+2. **Sweep cadence — resolved by how it was built, not by picking a separate cadence.** The full
+   enumeration measured **0.5 s / 6.7 MB / 8 135 items** live 2026-09-02 (this library has grown since the
+   2 026-08-30 measurement) — cheap enough that FR-181-1 runs it on **every** `RunTarget.Library` trigger
+   uniformly (scheduled scan, manual click, `SCAN_ON_START`) rather than giving it its own, separately-
+   tuned schedule. This is also why FR-181-3 wasn't built as a separate faster-cadence tier — there's no
+   longer a latency gap between "the cheap check" and "the full sweep" for it to close, since the full
+   sweep already runs at the fastest cadence the pipeline offers. Revisit only if a much larger library
+   makes 0.5s/7MB non-trivial (see FR-181-3's own note).
 3. Can the enumeration payload be slimmed? `EnableImages=false&EnableUserData=false` still returned
-   `ImageBlurHashes` and a dozen other fields per item. If Jellyfin can be made to return ids alone the
-   sweep gets materially cheaper and Q2 mostly answers itself.
-4. FR-181-3 needs one bulk call for per-series episode counts on a server where `ChildCount` /
-   `RecursiveItemCount` returned `null` — confirm the working shape live before building.
+   `ImageBlurHashes` and a dozen other fields per item. **Not pursued** — at 6.7 MB / 0.5 s this is not a
+   real cost on this deployment, and Q2's resolution removed the reason (a faster cadence) that would have
+   made slimming worth chasing.
+4. ~~FR-181-3 needs one bulk call for per-series episode counts…~~ **Answered, for the record, even
+   though FR-181-3 wasn't built:** `/Items?ParentId={seriesId}&IncludeItemTypes=Episode&Recursive=true&Limit=0`
+   returns `{"Items":[],"TotalRecordCount":N}` — confirmed live against Klovn (101, matching §1) — not
+   `ChildCount`/`RecursiveItemCount` (confirmed `null`, as suspected) and not `/Shows/{id}/Episodes` (also
+   works, but the `/Items` shape matches this codebase's existing paging convention). Whoever eventually
+   builds the faster-cadence tier from Q2's "revisit" clause should use this, not rediscover it.
 5. Should the diff be global, or per-library? Per-library is more robust if one library's scanning
-   stalls, at the cost of more state.
+   stalls, at the cost of more state. **Left as designed (global)** — the sweep as built enumerates the
+   whole configured scope in one call and filters by library path prefix client-side afterward
+   (`sweepJellyfinLibrary`'s `inScope`), the same pattern `JellyfinLibraryListener.flush` used to use. A
+   genuinely per-library sweep (one Jellyfin call per library, independent failure isolation) is a real
+   change, not a build-time judgment call, and is left for dev review to decide is worth the added state.

@@ -48,6 +48,9 @@ class RealtimeIngestService(
     // runPipeline() step loop the scheduled/manual pipeline uses, instead of its own hand-written copy.
     private val db: dev.jellystructure.db.JellystructureDb,
     private val mediaSegmentStore: MediaSegmentStore,
+    // Phase 181 (FR-181-5) — the persistent "needs work" set. Written when [enqueue]'s retry is
+    // exhausted, cleared the instant that jellyfinId ingests successfully.
+    private val dirtyItemStore: DirtyItemStore,
 ) {
     // Phase 182 (FR-182-6, open question #5) — tagged BACKGROUND: a webhook-triggered ingest is an
     // internal reaction to an already-acknowledged request, not a live inbound one a viewer is
@@ -65,6 +68,14 @@ class RealtimeIngestService(
     // this amendment documents in phase-165's spec.
     @Volatile var lastWebhookReceivedAt: Long? = null
 
+    // Phase 181 (FR-181-4.2) — distinct from lastWebhookReceivedAt (which only ever proves a webhook
+    // ARRIVED, not that ingest actually did anything with it). Set on every path that reaches this
+    // service and completes without error: the primary webhook, the library sweep (FR-181-1), and the
+    // dirty-set retry (FR-181-5) all funnel through [enqueue], so this one field is the health signal for
+    // "realtime ingest, however it got triggered, is actually working" — surfaced on the ingest-status
+    // route so an abnormal silence is visible without a human noticing a missing episode.
+    @Volatile var lastSuccessfulIngestAt: Long? = null
+
     // Phase 145 — coalesce bursts: a season import fires one event per episode, each of which resolves
     // to (and re-scans) the same parent series. Skip a target whose full ingest ran within this window
     // so a 10-episode import runs the pipeline once for the series, not ten times.
@@ -72,16 +83,33 @@ class RealtimeIngestService(
     private val lastIngestMs = HashMap<String, Long>()
     private val debounceWindowMs = 8_000L
 
-    /** Fire-and-forget: queues a targeted ingest for [jellyfinId]. Safe to call repeatedly — each call
-     *  is an independent run (no dedup needed; a redundant re-scan of the same item is harmless). */
+    /**
+     * Fire-and-forget: queues a targeted ingest for [jellyfinId]. Safe to call repeatedly — each call is
+     * an independent run (no dedup needed beyond the debounce window below).
+     *
+     * Phase 181 — deliberately **not** gated on `[ingest] realtime` here. That setting only ever meant
+     * "react to events within seconds instead of waiting for the next scan" for the two genuinely
+     * event-driven callers ([dev.jellystructure.server.routes.handleJellyfinWebhook], which checks it
+     * itself before calling this); the library sweep (FR-181-1) and the dirty-set retry (FR-181-5) are
+     * the *correctness* backstop, not an optimization, and must keep working even when an admin has
+     * turned the "instant" path off.
+     */
     fun enqueue(jellyfinId: String) {
-        if (!configStore.current.ingest.realtime) return
         queueScope.launch {
             runTagged("realtime-ingest-$jellyfinId", "ingest", "library", null, "Realtime ingest: $jellyfinId") {
-                if (!ingestOnce(jellyfinId)) {
+                if (ingestOnce(jellyfinId)) {
+                    dirtyItemStore.clear(jellyfinId)
+                    lastSuccessfulIngestAt = dev.jellystructure.nowEpochSec()
+                } else {
                     delay(60_000L) // FR C.4 — one retry after 60s for TMDB hiccups etc.
-                    if (!ingestOnce(jellyfinId)) {
-                        Logger.warn("Realtime ingest failed twice for jellyfinId=$jellyfinId — leaving for the next scheduled scan", "ingest")
+                    if (ingestOnce(jellyfinId)) {
+                        dirtyItemStore.clear(jellyfinId)
+                        lastSuccessfulIngestAt = dev.jellystructure.nowEpochSec()
+                    } else {
+                        // FR-181-5 — remembered instead of forgotten: the next Library-scoped pipeline run
+                        // (scheduled scan, manual click, or SCAN_ON_START) retries this id automatically.
+                        dirtyItemStore.markDirty(jellyfinId, "ingest failed twice", store.nowMs())
+                        Logger.warn("Realtime ingest failed twice for jellyfinId=$jellyfinId — recorded for retry on the next scan cycle", "ingest")
                     }
                 }
             }
@@ -164,6 +192,10 @@ class RealtimeIngestService(
             jellyfinClient = jellyfinClient, scanDispatcher = kotlinx.coroutines.Dispatchers.Default,
             artworkDownloader = artwork, arrRescan = arrRescan, sonarrEnrich = sonarrEnrich,
             imdbClient = imdbClient, mediaSegmentStore = mediaSegmentStore, mediaJobQueue = queue,
+            // This target is always RunTarget.SingleItem, which never reaches the sweep/dirty-set branch
+            // (see runPipeline's RunTarget.Library case) — `this` is passed for realtimeIngest simply
+            // because PipelineDeps requires a value, not because a SingleItem run recurses through it.
+            realtimeIngest = this, mediaHistory = mediaHistory, dirtyItemStore = dirtyItemStore,
         )
         runCatching {
             runPipeline(
