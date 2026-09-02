@@ -258,6 +258,26 @@ body { font-family: 'Sora', sans-serif; }
 .dhero-flags .aflag-more { font-size: 15px; font-weight: 600; color: var(--ink); padding: 3px 10px; border-radius: 30px; background: var(--chip); line-height: 1; }
 .dhero-flags .aflag-div { width: 1px; align-self: stretch; min-height: 22px; background: var(--line); }
 
+/* R221 — genre row on the detail hero. Deliberately built from the .dhero-flags
+   audio/subtitle strip above: same 13px dim caps label, same gap, same row rhythm. */
+.dhero-genres { display: flex; align-items: center; gap: 14px; margin-bottom: 20px; }
+.dhero-genres .g-label { flex: none; font-size: 13px; font-weight: 600; letter-spacing: 2px; text-transform: uppercase; color: var(--ink-dim); }
+.dhero-genres .g-row { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.gchip2 { display: inline-flex; align-items: center; height: 42px; padding: 0 20px; border-radius: 21px; font-size: 19px; font-weight: 500;
+  color: var(--ink); background: var(--chip); border: 2px solid transparent; white-space: nowrap; cursor: pointer;
+  transition: transform .15s var(--ease), background .2s, color .2s, box-shadow .2s; }
+/* the primary genre — TMDB's first, which is the only signal we have about what the title *is* */
+.gchip2.lead { background: color-mix(in oklch, var(--accent) 22%, transparent); border-color: color-mix(in oklch, var(--accent) 45%, transparent); font-weight: 600; }
+.gchip2.rest { background: rgba(255,255,255,.05); color: var(--ink-soft); }
+.gchip2 .g-arrow { margin-left: 9px; font-size: 15px; opacity: 0; transition: opacity .2s; }
+.gchip2.focused { background: var(--ink); color: var(--bg); border-color: transparent;
+  box-shadow: 0 0 0 4px var(--ring), 0 14px 34px rgba(0,0,0,.5); transform: translateY(-2px); }
+.gchip2.focused .g-arrow { opacity: .75; }
+/* Noir's accent is amber — a tinted chip there reads as a warning state, so the primary
+   genre is marked by weight and ink instead of by fill. */
+[data-skin="noir"] .gchip2.lead { background: var(--chip); border-color: transparent; color: var(--ink); font-weight: 700; }
+[data-skin="noir"] .gchip2.focused { color: var(--bg); }
+
 /* ---- request-language picker (R172) — flags-first Original vs Dansk/Nordic ---- */
 .rv-lang { position: absolute; inset: 0; z-index: 96; display: flex; align-items: center; justify-content: center;
   background: rgba(6,8,14,.72); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }

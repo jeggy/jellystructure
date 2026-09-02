@@ -29,6 +29,88 @@
     { id: 'paramount',name: 'Paramount+',wm: 'Paramount+',bg: 'linear-gradient(135deg,#0064ff,#00204d)' },
   ];
 
+  // R221 — genre naming lives here so the chip, the browse facet and the browse page header
+  // can never disagree. Row/pool keys ('nordic', 'scifi') are internal, never display strings.
+  const GMAP = { nordic: 'Crime', docs: 'Documentary', scifi: 'Sci-Fi', 'sci-fi': 'Sci-Fi',
+    drama: 'Drama', action: 'Action', comedy: 'Comedy', family: 'Family', series: '', film: '' };
+  function normGenre(tok) {
+    const raw = String(tok == null ? '' : tok).trim();
+    if (!raw) return '';
+    const k = raw.toLowerCase();
+    if (k in GMAP) return GMAP[k];
+    return raw.charAt(0).toUpperCase() + raw.slice(1);
+  }
+  // Titles outside the hand-written map still have several genres in the real library, so the
+  // demo derives a stable set from the primary one rather than showing a lone chip.
+  const COMPANION = {
+    'Crime': ['Drama', 'Mystery', 'Thriller'],
+    'Drama': ['Mystery', 'Romance', 'History'],
+    'Action': ['Thriller', 'Adventure', 'Crime'],
+    'Sci-Fi': ['Adventure', 'Thriller', 'Drama'],
+    'Comedy': ['Drama', 'Family', 'Romance'],
+    'Documentary': ['Nature', 'History'],
+    'Family': ['Animation', 'Adventure', 'Comedy'],
+    'Animation': ['Family', 'Adventure', 'Comedy'],
+    'Thriller': ['Crime', 'Mystery'],
+    'Horror': ['Thriller', 'Mystery'],
+    'Fantasy': ['Adventure', 'Family'],
+    'Romance': ['Drama'],
+  };
+
+  // R221 — canonical genre list per title, in TMDB's order (first = primary).
+  // Production reads these off the item; the demo needs one source of truth because the same
+  // title is constructed in several rows and used to drift to a single genre.
+  const GENRES = {
+    'Nordvest': 'Crime · Drama · Mystery',
+    'Havets Hjarta': 'Drama · Family',
+    'Big Buck Bunny': 'Animation · Comedy · Family · Short',
+    'Cosmos Laundromat': 'Sci-Fi · Adventure · Animation · Comedy · Drama',
+    'Klovn í Nord': 'Comedy · Drama',
+    'Arvur': 'Drama · Mystery · Thriller',
+    'Jarnvegur': 'Thriller · Crime',
+    'Havets Fólk': 'Documentary',
+    'Iron Veil': 'Action · Sci-Fi · Thriller',
+    'Midnight Sun Patrol': 'Action · Crime · Drama',
+    'Phantom Circuit': 'Thriller · Mystery · Sci-Fi',
+    'Mýrin': 'Crime · Drama · Mystery',
+    'Frostbarn': 'Crime · Drama',
+    'Glasberget': 'Drama',
+    'Tórshavn 1918': 'Drama · History',
+    'Sintel': 'Animation · Fantasy · Adventure · Short · Drama · Action · Family',
+  };
+  let _poolIndex = null;
+  function poolGenreFor(title) {
+    if (!_poolIndex) {
+      _poolIndex = {};
+      Object.keys(pool).forEach(key => { pool[key].forEach(t => { if (!(t in _poolIndex)) _poolIndex[t] = normGenre(key); }); });
+    }
+    return _poolIndex[title] || '';
+  }
+  function genresFor(item) {
+    if (!item) return [];
+    const listed = GENRES[item.title];
+    if (listed) return listed.split(/\s*·\s*/).map(s => s.trim()).filter(Boolean);
+    // fall back to whatever the row carried — often an internal key, or a kind word from
+    // relatedFor() — normalize it and drop anything that isn't actually a genre
+    const seen = [];
+    String(item.genre || '').split(/\s*·\s*/).forEach(tok => {
+      const g = normGenre(tok);
+      if (g && !seen.includes(g)) seen.push(g);
+    });
+    // relatedFor() and similar synthesize items with a kind word ('Series') instead of a genre —
+    // resolve by title so the same title never presents differently by entry path
+    if (!seen.length) { const p = poolGenreFor(item.title); if (p) seen.push(p); }
+    if (!seen.length) return [];
+    const extras = COMPANION[seen[0]] || [];
+    const h = hash(item.title + '|g');
+    const want = 1 + (h % 3);   // 2–4 genres total, stable per title
+    for (let i = 0; i < extras.length && seen.length < 1 + want; i++) {
+      const g = extras[(h + i) % extras.length];
+      if (!seen.includes(g)) seen.push(g);
+    }
+    return seen;
+  }
+
   // helper to build a title
   function T(title, year, genre, rating, kind) {
     return { title, year, genre, rating: rating || '12', kind: kind || 'film', grad: grad(title), initials: initials(title) };
@@ -174,7 +256,7 @@
   function castFor(item) { return CAST[item.title] || CAST._default; }
   function relatedFor(item) {
     const key = item.genre && /noir|crime|drama/i.test(item.genre) ? 'drama' : 'scifi';
-    return pool[key].slice(0, 9).map((t, i) => T(t, 2014 + i, item.kind === 'series' ? 'Series' : 'Drama', ['7', '12', '16'][i % 3], item.kind));
+    return pool[key].slice(0, 9).map((t, i) => T(t, 2014 + i, poolGenreFor(t) || normGenre(key), ['7', '12', '16'][i % 3], item.kind));
   }
 
   // Ravilo users on this TV — each is a Jellyfin user with a cached device token (per the
@@ -527,5 +609,5 @@
 
   const watched = { itemState, setItem, setItemWatched, epState, setEpWatched, setEpPct };
 
-  window.RAVILO = { studios, hero, rows, mergedNew, profiles, discover, upcoming, upcomingByDay, overdue, grad, initials, episodesFor, seasonsFor, castFor, relatedFor, nextAiringFor, trailerFor, imdbFor, ratingFor, itemCerts, CERT_SYS, config, watched };
+  window.RAVILO = { studios, hero, rows, mergedNew, profiles, discover, upcoming, upcomingByDay, overdue, grad, initials, genresFor, normGenre, episodesFor, seasonsFor, castFor, relatedFor, nextAiringFor, trailerFor, imdbFor, ratingFor, itemCerts, CERT_SYS, config, watched };
 })();

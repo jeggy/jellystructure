@@ -148,21 +148,34 @@
         <div class="tiny muted" style="margin:8px 0 10px;line-height:1.5;">Add this title to a viewer's <b>hero carousel</b> on their TV home screen.</div>
         <div class="pill-row"><span class="btn sm fill" id="feature-hero" style="justify-content:center;">★ Add to hero carousel…</span></div>
       </div>
-      <!-- Resolved metadata language (read-only trace) -->
-      <div class="override">
-        <div class="row center"><h4 style="margin:0;">Resolved metadata language</h4><span class="spacer"></span><span class="badge info">automatic</span></div>
-        <div class="tiny" style="margin-top:8px;">
+      <!-- Metadata language — resolved automatically, overridable per title (phase 184 design) -->
+      <div class="override mlang-wrap" id="mlang-card">
+        <div class="row center"><h4 style="margin:0;">Metadata language</h4><span class="spacer"></span><span class="badge info" id="mlang-badge">automatic</span></div>
+        <div class="tiny" style="margin-top:8px;" id="mlang-blurb">
           The resolver walks this title's audio tracks in physical order and fetches TMDB metadata in the first language that returns a result. Track flags are never touched by this.
         </div>
-        <div class="box flat" style="margin-top:10px;background:var(--bg-2);">
-          <div class="mono tiny" style="line-height:2;">
+        <div class="mlang-band" id="mlang-band" style="display:none;">
+          <div class="mb-top"><span class="lang" id="mlang-band-code">en</span><b id="mlang-band-name">English</b></div>
+          <span class="tiny muted mb-when" id="mlang-band-when">chosen by you</span>
+        </div>
+        <div class="pill-row" style="margin-top:8px;display:none;" id="mlang-change-row"><span class="btn sm fill" id="mlang-change" style="justify-content:center;">Change language…</span></div>
+        <div class="box flat" style="margin-top:10px;background:var(--bg-2);" id="mlang-tracebox">
+          <div class="mlang-trace-hd" id="mlang-trace-hd" style="display:none;">Resolver would pick</div>
+          <div class="mono tiny mlang-trace" style="line-height:2;">
             <div>0:a:0 <span class="lang">en</span> <span class="okc">✓ TMDB result → winner</span></div>
             <div class="muted">0:a:1 <span class="lang">fr</span> → not needed</div>
           </div>
-          <hr class="dash" style="margin:9px 0;">
-          <div class="row center"><span class="tiny">Fetching metadata in</span><span class="spacer"></span><span class="badge ok lang">en</span></div>
+          <hr class="dash" style="margin:9px 0;" id="mlang-hr">
+          <div class="row center" id="mlang-fetchrow"><span class="tiny">Fetching metadata in</span><span class="spacer"></span><span class="badge ok lang">en</span></div>
         </div>
-        <div class="tiny muted" style="margin-top:8px;">Global fallback is <span class="lang">en</span> · <a href="settings.html">Settings → Metadata →</a></div>
+        <div class="pill-row" style="margin-top:10px;"><span class="btn sm fill" id="mlang-open" style="justify-content:center;">Choose another language…</span></div>
+        <div class="pill-row" style="margin-top:6px;display:none;" id="mlang-revert-row"><span class="btn sm ghost fill" id="mlang-revert" style="justify-content:center;">Back to automatic (<span class="lang">en</span>)</span></div>
+        <div class="tiny muted" style="margin-top:8px;" id="mlang-foot">Global fallback is <span class="lang">en</span> · <a href="settings.html">Settings → Metadata →</a></div>
+        <div class="lmenu" id="mlang-menu">
+          <div class="lm-s"><span class="muted">⌕</span><input id="mlang-search" placeholder="Search the languages TMDB has…" autocomplete="off"></div>
+          <div class="lm-list" id="mlang-list"></div>
+          <div class="lm-ft"><b>Aa</b> title · <b>¶</b> overview · <b>▣</b> posters. Hollow means TMDB doesn't hold it — the usual fallback applies, same as any other title.</div>
+        </div>
       </div>
       <!-- Resolved age rating (region cascade trace) -->
       <div class="override">
@@ -889,6 +902,98 @@
     document.querySelectorAll('#tmdb-cands .cand').forEach(x => x.classList.remove('sel')); c.classList.add('sel');
   }));
   document.getElementById('tmdb-use').addEventListener('click', () => { tmdbModal.classList.remove('open'); toast('TMDB match set — re-pulling metadata…'); });
+
+  /* ---- metadata language: choose a winner for this title (phase 184 design) ---- */
+  (function () {
+    const card = document.getElementById('mlang-card');
+    if (!card) return;
+    const menu = document.getElementById('mlang-menu'), list = document.getElementById('mlang-list'),
+      search = document.getElementById('mlang-search'), band = document.getElementById('mlang-band'),
+      openBtn = document.getElementById('mlang-open'), revertRow = document.getElementById('mlang-revert-row'),
+      badge = document.getElementById('mlang-badge'), blurb = document.getElementById('mlang-blurb'),
+      traceHd = document.getElementById('mlang-trace-hd'), hr = document.getElementById('mlang-hr'),
+      changeRow = document.getElementById('mlang-change-row'),
+      fetchRow = document.getElementById('mlang-fetchrow');
+    const RESOLVED = { code: 'en', name: 'English', native: 'English' };
+    /* what TMDB currently holds for this title — title / overview / poster count */
+    const AVAIL = [
+      { code: 'en', name: 'English', native: 'English', t: 1, o: 1, p: 34 },
+      { code: 'fr', name: 'French', native: 'Français', t: 1, o: 1, p: 5 },
+      { code: 'de', name: 'German', native: 'Deutsch', t: 1, o: 1, p: 4 },
+      { code: 'es', name: 'Spanish', native: 'Español', t: 1, o: 1, p: 6 },
+      { code: 'it', name: 'Italian', native: 'Italiano', t: 1, o: 1, p: 2 },
+      { code: 'ja', name: 'Japanese', native: '日本語', t: 1, o: 1, p: 3 },
+      { code: 'ko', name: 'Korean', native: '한국어', t: 1, o: 1, p: 12 },
+      { code: 'nl', name: 'Dutch', native: 'Nederlands', t: 1, o: 1, p: 1 },
+      { code: 'pt', name: 'Portuguese', native: 'Português', t: 1, o: 1, p: 3 },
+      { code: 'ru', name: 'Russian', native: 'Русский', t: 1, o: 1, p: 4 },
+      { code: 'sv', name: 'Swedish', native: 'Svenska', t: 1, o: 0, p: 0 },
+      { code: 'da', name: 'Danish', native: 'Dansk', t: 1, o: 0, p: 0 },
+      { code: 'fo', name: 'Faroese', native: 'Føroyskt', t: 1, o: 0, p: 0 },
+      { code: 'zh', name: 'Chinese', native: '中文', t: 1, o: 1, p: 2 }
+    ];
+    let chosen = null;
+
+    const pips = l => '<span class="pips">' +
+      `<span class="pip${l.t ? '' : ' no'}">Aa</span>` +
+      `<span class="pip${l.o ? '' : ' no'}">¶</span>` +
+      (l.p ? `<span class="pip n">${l.p}</span>` : '<span class="pip no">▣</span>') + '</span>';
+
+    function render(q) {
+      const term = (q || '').trim().toLowerCase();
+      const hit = l => !term || l.name.toLowerCase().includes(term) || l.native.toLowerCase().includes(term) || l.code.includes(term);
+      const cur = AVAIL.filter(l => l.code === RESOLVED.code && hit(l));
+      const rest = AVAIL.filter(l => l.code !== RESOLVED.code && hit(l));
+      let html = '';
+      if (cur.length) html += '<div class="lm-hd">Resolved automatically</div>' + cur.map(l =>
+        `<div class="lm-r" data-code="${l.code}"><span class="lang">${l.code}</span><span class="lm-nm">${l.name}<i>${l.native} · current winner</i></span>${pips(l)}</div>`).join('');
+      if (rest.length) html += '<div class="lm-hd">Also available for this title</div>' + rest.map(l =>
+        `<div class="lm-r" data-code="${l.code}"><span class="lang">${l.code}</span><span class="lm-nm">${l.name}<i>${l.native}</i></span>${pips(l)}</div>`).join('');
+      list.innerHTML = html || '<div class="lm-empty">No language matches — TMDB holds 14 for this title.</div>';
+    }
+
+    const close = () => { menu.classList.remove('open'); };
+    const open = () => { render(search.value = ''); menu.classList.add('open'); search.focus(); };
+
+    openBtn.addEventListener('click', e => { e.stopPropagation(); menu.classList.contains('open') ? close() : open(); });
+    document.getElementById('mlang-change').addEventListener('click', e => { e.stopPropagation(); menu.classList.contains('open') ? close() : open(); });
+    search.addEventListener('input', () => render(search.value));
+    search.addEventListener('keydown', e => { if (e.key === 'Escape') { close(); } });
+    document.addEventListener('click', e => { if (!card.contains(e.target)) close(); });
+
+    list.addEventListener('click', e => {
+      const r = e.target.closest('[data-code]'); if (!r) return;
+      const l = AVAIL.find(x => x.code === r.dataset.code);
+      close();
+      if (l.code === RESOLVED.code) { setAuto(); return; }
+      chosen = l;
+      card.classList.add('chosen');
+      badge.textContent = 'chosen'; badge.className = 'badge';
+      badge.style.cssText = 'background:var(--hi-soft);border-color:rgba(123,110,240,.45);color:var(--acc-ink);';
+      blurb.style.display = 'none';
+      band.style.display = ''; traceHd.style.display = '';
+      hr.style.display = 'none'; fetchRow.style.display = 'none';
+      document.getElementById('mlang-band-code').textContent = l.code;
+      document.getElementById('mlang-band-name').textContent = l.name;
+      document.getElementById('mlang-band-when').textContent = 'chosen by you · just now';
+      openBtn.parentElement.style.display = 'none';
+      changeRow.style.display = ''; revertRow.style.display = '';
+      document.getElementById('mlang-foot').innerHTML = 'Locked — <span class="mono">pull_tmdb</span> and re-scans can’t move it.';
+      toast(`Metadata language → ${l.name} · re-pulling this title from TMDB…`);
+    });
+
+    function setAuto() {
+      chosen = null;
+      card.classList.remove('chosen');
+      badge.textContent = 'automatic'; badge.className = 'badge info'; badge.style.cssText = '';
+      blurb.style.display = ''; band.style.display = 'none'; traceHd.style.display = 'none';
+      hr.style.display = ''; fetchRow.style.display = '';
+      openBtn.parentElement.style.display = ''; changeRow.style.display = 'none'; revertRow.style.display = 'none';
+      document.getElementById('mlang-foot').innerHTML = 'Global fallback is <span class="lang">en</span> · <a href="settings.html">Settings → Metadata →</a>';
+      toast('Back to automatic — the resolved winner (en) applies again');
+    }
+    document.getElementById('mlang-revert').addEventListener('click', setAuto);
+  })();
 
   /* ---- drift banner + modal (Phase 33) ---- */
   const driftModal = document.getElementById('drift-modal');
