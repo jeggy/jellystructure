@@ -93,6 +93,8 @@ private fun condSummary(c: WbCond): String {
             val names = wbItemsFor("cast_crew").associate { it.value to (it.label ?: it.value) }
             c.values.joinToString("\", \"") { names[it] ?: it }.let { if (it.isBlank()) "…" else "\"$it\"" }
         }
+        "metadata_language" -> c.values.joinToString("\", \"") { if (it == "automatic") "Automatic" else it.uppercase() }
+            .let { if (it.isBlank()) "…" else "\"$it\"" }
         else -> c.values.joinToString("\", \"").let { if (it.isBlank()) "…" else "\"$it\"" }
     }
     return "$label $opLbl $valTxt"
@@ -116,7 +118,7 @@ internal fun groupSummary(g: WbGroup, top: Boolean): String {
 }
 
 private val WB_GROUPS = listOf(
-    "Metadata" to listOf("studio" to "Studio", "network" to "Network", "genre" to "Genre", "tag" to "Tag", "age_rating" to "Age rating"),
+    "Metadata" to listOf("studio" to "Studio", "network" to "Network", "genre" to "Genre", "tag" to "Tag", "age_rating" to "Age rating", "metadata_language" to "Metadata language"),
     "Audio track" to listOf("audio_language" to "Audio language", "audio_codec" to "Audio codec", "track_title" to "Audio track title"),
     "People" to listOf("cast_crew" to "Cast or crew"),
     "Ravilo layout" to listOf("hero_item" to "Hero item"),
@@ -297,6 +299,7 @@ private fun wbItemsFor(facet: String): List<TrackFacetItem> {
         "track_title" -> n?.trackTitles ?: wbTrack?.trackTitles ?: emptyList()
         "hero_item" -> listOf(TrackFacetItem("featured", 0), TrackFacetItem("not_featured", 0))
         "cast_crew" -> n?.castCrew ?: wbMeta?.castCrew ?: emptyList()
+        "metadata_language" -> n?.metadataLanguages ?: wbMeta?.metadataLanguages ?: emptyList()
         else -> emptyList()
     }
 }
@@ -458,7 +461,13 @@ private fun renderCondRow(c: WbCond, path: List<Int>): String {
         else -> {
             val chips = wbItemsFor(c.facet).take(80).joinToString("") { t ->
                 val on = c.values.contains(t.value)
-                val lbl = if (c.facet == "hero_item") (if (t.value == "featured") "Featured" else "Not featured") else t.value
+                val lbl = when {
+                    c.facet == "hero_item" -> if (t.value == "featured") "Featured" else "Not featured"
+                    // Phase 184 (FR-184-8) — "automatic" is the synthetic not-hand-set value (see
+                    // ConditionEvaluator's doc); every other value is a real ISO-639-1 code.
+                    c.facet == "metadata_language" -> if (t.value == "automatic") "Automatic" else t.value.uppercase()
+                    else -> t.value
+                }
                 val cnt = if (t.count > 0) """<span class="wb-vcount">${t.count}</span>""" else ""
                 """<span class="wb-vchip${if (on) " on" else ""}" data-path="$p" data-v="${t.value.esc()}">${lbl.esc()}$cnt</span>"""
             }

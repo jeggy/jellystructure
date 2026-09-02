@@ -58,6 +58,13 @@ object ConditionEvaluator {
         val audioCodecs: Set<String>,
         val ageRating: Set<String>,
         val castCrew: Set<String>,
+        // Phase 184 (FR-184-8) — a singleton set so the existing setMatch() helper works unchanged;
+        // "automatic" is a synthetic value (never a real ISO-639-1 code) standing in for a null
+        // metadataLanguage, so `is_any_of [automatic]` finds every title that was never hand-set and
+        // `is_any_of [en, automatic]` finds "chosen English, or left automatic" in one condition —
+        // covering the spec's "is any of / is none of plus a chosen/automatic distinction" with the
+        // existing checklist-facet UI, no second control needed.
+        val metadataLanguage: Set<String>,
     ) {
         companion object {
             fun of(item: MediaItem, ageRatingCascade: List<String>): ItemFacets {
@@ -72,6 +79,7 @@ object ConditionEvaluator {
                     audioCodecs    = audio.mapTo(HashSet()) { it.codec.lowercase() },
                     ageRating      = setOfNotNull(resolvedCode?.lowercase()),
                     castCrew       = (item.cast + item.crew).mapTo(HashSet()) { it.tmdbId.toString() },
+                    metadataLanguage = setOf(item.metadataLanguage?.lowercase() ?: "automatic"),
                 )
             }
         }
@@ -107,6 +115,7 @@ object ConditionEvaluator {
             "audio_codec"    -> setMatch(facets.audioCodecs, vals, c.op)
             "age_rating"     -> setMatch(facets.ageRating, vals, c.op)
             "cast_crew"      -> setMatch(facets.castCrew, vals, c.op)
+            "metadata_language" -> setMatch(facets.metadataLanguage, vals, c.op)
             "track_title" -> {
                 val needle = vals.firstOrNull() ?: return c.op == "not_contains"
                 val has = item.tracks.any { it.title?.lowercase()?.contains(needle) == true }
