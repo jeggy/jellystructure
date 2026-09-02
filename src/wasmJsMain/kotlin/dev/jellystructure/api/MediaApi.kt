@@ -46,6 +46,17 @@ private inline fun <T> runCatching(block: () -> T): Result<T> = try {
     Result.failure(e)
 }
 
+// Phase 184 — mirrors dev.jellystructure.tmdb.TmdbLanguageCoverage.
+@Serializable
+data class TmdbLanguageCoverage(
+    val code: String,
+    val englishName: String? = null,
+    val nativeName: String? = null,
+    val hasTitle: Boolean = false,
+    val hasOverview: Boolean = false,
+    val posterCount: Int = 0,
+)
+
 @Serializable
 data class StatsResponse(
     val movies: Int,
@@ -598,9 +609,25 @@ object MediaApi {
         if (response.status == HttpStatusCode.OK) response.body<MediaItem>() else null
     }.getOrNull()
 
+    // Phase 184 — sets (or, when [language] is null, clears back to automatic) the operator's chosen
+    // TMDB metadata-fetch language. Triggers the ordinary re-pull path server-side; the returned item
+    // already reflects the new title/overview/artwork/genres.
+    suspend fun setMetadataLanguage(id: String, language: String?): MediaItem? = runCatching {
+        httpClient.patch("/api/media/$id/metadata-language") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"language":${language?.let { "\"$it\"" } ?: "null"}}""")
+        }.body<MediaItem>()
+    }.getOrNull()
+
     suspend fun getTmdbLanguages(id: String): Set<String> = runCatching {
-        httpClient.get("/api/media/$id/tmdb-languages").body<List<String>>().toSet()
+        httpClient.get("/api/media/$id/tmdb-languages").body<List<TmdbLanguageCoverage>>().map { it.code }.toSet()
     }.getOrElse { emptySet() }
+
+    // Phase 184 (FR-184-4) — the picker's own coverage read-out (title? overview? poster count?), not
+    // just the bare codes [getTmdbLanguages] extracts for the resolver-trace visualization.
+    suspend fun getTmdbLanguageCoverage(id: String): List<TmdbLanguageCoverage> = runCatching {
+        httpClient.get("/api/media/$id/tmdb-languages").body<List<TmdbLanguageCoverage>>()
+    }.getOrElse { emptyList() }
 
     suspend fun syncMedia(id: String, scope: String? = null): MediaItem? = runCatching {
         val body = if (scope != null) """{"scope":"$scope"}""" else "{}"

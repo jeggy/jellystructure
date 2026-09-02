@@ -295,9 +295,15 @@ class Scanner(
 
     private suspend fun fetchTmdbMovieMetadata(
         tmdbIdHint: Int?, searchTitle: String, searchYear: Int?, langPriority: List<String>,
+        // Phase 184 — true only when [langPriority]'s first entry is an operator's explicit
+        // metadataLanguage choice (rescanMetadata's own overrideLang != null): accept a title-only TMDB
+        // result in that language rather than falling through the rest of the priority list, mirroring
+        // getTvDetailsLocalized's existing acceptTitleOnly behavior for the series case. A fresh scan
+        // (scanMovie/scanMusicVideo) never sets this — it has no operator override to honour.
+        acceptTitleOnly: Boolean = false,
     ): TmdbMovieFetch {
         val tmdbId = tmdbIdHint ?: tmdb.searchMovie(searchTitle, searchYear)?.id
-        val localized = tmdbId?.let { tmdb.getMovieDetailsLocalized(it, langPriority) }
+        val localized = tmdbId?.let { tmdb.getMovieDetailsLocalized(it, langPriority, acceptTitleOnly) }
         val details = localized?.details
         val (cast, crew) = if (details != null) fetchCredits(details.id, isMovie = true) else Pair(emptyList(), emptyList())
         val extIds = details?.let { tmdb.getExternalIds(it.id, isMovie = true) }
@@ -1099,15 +1105,22 @@ class Scanner(
         else item.tracks
         val audioLangs = sourceTracks.filter { it.kind == TrackKind.AUDIO }.map { it.language }
         val basePriority = LanguageResolver.priorityList(audioLangs, fallback)
-        // Series have an explicit language override (the language-mix control writes it to
-        // resolvedLanguage); honour it as the first TMDB query language. Movies have NO manual
-        // override — their resolvedLanguage is always auto-derived from the audio order — so treating
-        // a movie's stale resolvedLanguage as an override would pin the old language forever and make
-        // reordering audio (or changing the fallback) unable to ever change the fetched language.
-        // For movies, follow the current audio order instead.
-        val overrideLang = if (item.kind == MediaKind.TV_SHOW)
-            item.resolvedLanguage?.ifBlank { null }?.let { LanguageResolver.normalize(it) }
-        else null
+        // Phase 184 (FR-184-1) — an operator's explicit metadataLanguage choice is consulted here,
+        // ABOVE everything else: it wins over both the series-only resolvedLanguage override below and
+        // the ordinary audio-cascade order, for either MOVIE or TV_SHOW alike. The resolver itself is
+        // untouched — this only decides which language goes first in the list it's handed.
+        //
+        // Series ALSO have a pre-existing, narrower override (the language-mix control writes it to
+        // resolvedLanguage); honoured as the first TMDB query language when no explicit metadataLanguage
+        // is set. Movies have no such override outside Phase 184 — their resolvedLanguage is always
+        // auto-derived from the audio order, so treating a movie's stale resolvedLanguage as an
+        // override would pin the old language forever and make reordering audio (or changing the
+        // fallback) unable to ever change the fetched language. For movies with no metadataLanguage,
+        // follow the current audio order instead.
+        val overrideLang = item.metadataLanguage?.ifBlank { null }?.let { LanguageResolver.normalize(it) }
+            ?: if (item.kind == MediaKind.TV_SHOW)
+                item.resolvedLanguage?.ifBlank { null }?.let { LanguageResolver.normalize(it) }
+            else null
         val langPriority = if (overrideLang != null && basePriority.firstOrNull() != overrideLang)
             listOf(overrideLang) + basePriority.filter { it != overrideLang }
         else basePriority
@@ -1118,7 +1131,7 @@ class Scanner(
                 // is now shared with scanMovie via fetchTmdbMovieMetadata — this branch keeps its own
                 // rescan-only extras (the sophisticated resolvedLang below, stinger/keyword detection)
                 // exactly as before, on top of the shared fetch.
-                val fetch = fetchTmdbMovieMetadata(item.tmdbId, item.title, item.year, langPriority)
+                val fetch = fetchTmdbMovieMetadata(item.tmdbId, item.title, item.year, langPriority, acceptTitleOnly = overrideLang != null)
                 val localized = fetch.localized ?: return null
                 val details = localized.details
                 // Resolve the stored language through the SAME shared resolver the UI uses, fed with
@@ -1246,7 +1259,7 @@ class Scanner(
                 // Phase 175 (§8): shares fetchTmdbMovieMetadata with scanMusicVideo — see the MOVIE
                 // branch's comment above. This branch never had the movie branch's extras (stinger
                 // detection, the sophisticated resolvedLang) — that asymmetry is unchanged.
-                val fetch = fetchTmdbMovieMetadata(item.tmdbId, item.title, item.year, langPriority)
+                val fetch = fetchTmdbMovieMetadata(item.tmdbId, item.title, item.year, langPriority, acceptTitleOnly = overrideLang != null)
                 val details = fetch.localized?.details
                 if (details == null) item else {
                     val rescanCompany = details.productionCompanies.firstOrNull()
@@ -1461,6 +1474,10 @@ class Scanner(
 
     suspend fun translationLanguages(tmdbId: Int, isMovie: Boolean): List<String> =
         tmdb.getTranslationLanguages(tmdbId, isMovie)
+
+    /** Phase 184 (FR-184-4) — the picker's coverage list; see [dev.jellystructure.tmdb.TmdbClient.getTranslationCoverage]. */
+    suspend fun translationCoverage(tmdbId: Int, isMovie: Boolean): List<dev.jellystructure.tmdb.TmdbLanguageCoverage> =
+        tmdb.getTranslationCoverage(tmdbId, isMovie)
 
     suspend fun searchMovieTmdb(query: String, year: Int?) =
         tmdb.searchMovieAll(query, year)

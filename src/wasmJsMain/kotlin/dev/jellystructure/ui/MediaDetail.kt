@@ -69,13 +69,13 @@ fun renderMediaDetail(container: Element, scope: CoroutineScope, mediaId: String
     }
 }
 
-private fun buildResolverTrace(item: MediaItem, fallbackLang: String, tmdbLangs: Set<String>?): String {
+/** Phase 184 — the bare resolver trace box, independent of [MediaItem.metadataLanguage]: this is
+ *  always "what the automatic cascade would pick", used both for the automatic-state card as-is and
+ *  (dimmed) inside the chosen-state card so an operator can always see what the automation wanted. */
+private fun buildResolverTraceBox(item: MediaItem, fallbackLang: String, tmdbLangs: Set<String>?): String {
     if (item.kind == MediaKind.TV_SHOW) return ""
     if (item.tracks.none { it.kind == TrackKind.AUDIO }) return ""
-    // One shared resolver drives both the real backend decision and this visualisation, fed with the
-    // languages TMDB actually has (tmdbLangs) so the trace matches what a re-pull will fetch.
     val resolution = LanguageResolver.resolve(item.tracks, fallbackLang, tmdbLangs)
-    val resolved = resolution.language
     val traceLines = resolution.steps.filter { !it.fallback }.joinToString("") { step ->
         val spec = (step.specifier ?: "").esc()
         val lang = (step.language ?: "").esc()
@@ -100,12 +100,45 @@ private fun buildResolverTrace(item: MediaItem, fallbackLang: String, tmdbLangs:
             """<div class="muted">fallback <span class="lang">${(fallbackStep.language ?: "").esc()}</span> → no TMDB match</div>"""
         else -> ""
     }
+    val resolved = resolution.language
     val resolvedBadge = if (resolved != null)
         """<span class="badge ok lang">${resolved.esc()}</span>"""
     else
         """<span class="badge warn">not resolved</span>"""
     return """
-        <div class="override" style="margin-top:16px;">
+        <div class="box flat" style="margin-top:10px;background:var(--fill-2);">
+          <div class="mono tiny" style="line-height:2.1;">
+            $traceLines
+            $fallbackLine
+          </div>
+          <hr class="dash" style="margin:9px 0;">
+          <div class="row center"><span class="tiny">Fetching metadata in</span><span class="spacer"></span>$resolvedBadge</div>
+        </div>""".trimIndent()
+}
+
+/** Phase 184 (FR-184-7) — the right-rail card: automatic state (today's trace + "Choose another
+ *  language…") or chosen state (accent border, chosen badge, the SAME trace dimmed underneath headed
+ *  "Resolver would pick", "Change language…" / "Back to automatic"). The resolver is never re-run
+ *  differently by a choice — [buildResolverTraceBox] always shows the same thing either way. */
+private fun buildMetadataLanguageCard(item: MediaItem, fallbackLang: String, tmdbLangs: Set<String>?): String {
+    // FR-184-6: a series has no per-file audio trace (buildResolverTraceBox is movie-only — series
+    // language lives on the separate left-rail "Series language" card) but the picker itself still
+    // applies to it as a whole, so the entry point must exist even with no trace to show — only "no
+    // TMDB match at all" (matching the backend route's own guard) hides this card entirely.
+    if (item.tmdbId == null) return ""
+    val traceBox = buildResolverTraceBox(item, fallbackLang, tmdbLangs)
+    val chosen = item.metadataLanguage
+    // FR-184-4 — empty/error coverage: the button stays inert rather than opening a picker with nothing
+    // in it. tmdbLangs is the SAME coverage fetch the trace box above already used (fed from the richer
+    // /tmdb-languages response), so this needs no extra request.
+    val noCoverage = tmdbLangs.isNullOrEmpty()
+    val openBtnHtml = if (noCoverage)
+        """<button id="mlang-open-btn" class="btn sm ghost" disabled title="TMDB has no language data for this title" style="width:100%;margin-top:10px;opacity:.5;cursor:not-allowed;">Choose another language…</button>"""
+    else
+        """<button id="mlang-open-btn" class="btn sm ghost" style="width:100%;margin-top:10px;">Choose another language…</button>"""
+    if (chosen == null) {
+        return """
+        <div class="override" id="mlang-card" style="margin-top:16px;">
           <div class="row center">
             <h4 style="margin:0;">Resolved metadata language</h4>
             <span class="spacer"></span>
@@ -114,15 +147,28 @@ private fun buildResolverTrace(item: MediaItem, fallbackLang: String, tmdbLangs:
           <div class="tiny" style="margin-top:8px;">
             The resolver walks audio tracks in physical order and fetches TMDB metadata in the first language that returns a result. Track flags are never changed automatically.
           </div>
-          <div class="box flat" style="margin-top:10px;background:var(--fill-2);">
-            <div class="mono tiny" style="line-height:2.1;">
-              $traceLines
-              $fallbackLine
-            </div>
-            <hr class="dash" style="margin:9px 0;">
-            <div class="row center"><span class="tiny">Fetching metadata in</span><span class="spacer"></span>$resolvedBadge</div>
-          </div>
+          $traceBox
+          $openBtnHtml
           <div class="tiny muted" style="margin-top:8px;">Global fallback is <span class="lang">${fallbackLang.esc()}</span> · <a href="#/settings">Language Settings →</a></div>
+        </div>""".trimIndent()
+    }
+    val setAt = item.metadataLanguageSetAt
+    val whenLine = if (setAt != null) " · set ${tsAgo(setAt)}" else ""
+    return """
+        <div class="override" id="mlang-card" style="margin-top:16px;border:1px solid var(--accent);border-radius:10px;">
+          <div class="row center">
+            <h4 style="margin:0;">Metadata language</h4>
+            <span class="spacer"></span>
+            <span class="badge ok lang">${chosen.esc()}</span>
+            <span class="badge" style="margin-left:6px;">chosen</span>
+          </div>
+          <div class="tiny" style="margin-top:6px;">Manually set$whenLine. Locked against pull_tmdb and re-scans — an automatic re-check will never overwrite this.</div>
+          <div class="tiny muted" style="margin-top:12px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;font-size:.68rem;">Resolver would pick</div>
+          <div style="opacity:.55;">$traceBox</div>
+          <div style="display:flex;gap:8px;margin-top:10px;">
+            <button id="mlang-open-btn" class="btn sm ghost" style="flex:1;">Change language…</button>
+            <button id="mlang-reset-btn" class="btn sm ghost" style="flex:1;">Back to automatic</button>
+          </div>
         </div>""".trimIndent()
 }
 
@@ -510,7 +556,7 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
 
     val tracksHtml = if (!isTvShow) buildUnifiedTrackEditorShell("trk", item.path) + movieSegmentsCardShellHtml(item.id) + bazarrMovieCardShellHtml() else ""
 
-    val resolverTraceHtml = buildResolverTrace(item, fallbackLang, tmdbLangs)
+    val resolverTraceHtml = buildMetadataLanguageCard(item, fallbackLang, tmdbLangs)
     val ageRatingTraceHtml = buildAgeRatingTrace(item, ageRatingCascade)
     val ageRatingBadgeHtml = buildAgeRatingBadge(item, ageRatingCascade)
     val episodesTabHtml = if (isTvShow) buildEpisodesTab(item) else ""
@@ -842,6 +888,29 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
 
     document.getElementById("find-tmdb-match-btn")?.addEventListener("click") {
         showTmdbMatchModal(item, container, scope, fallbackLang, jellyfinUrl, tmdbLangs)
+    }
+
+    // Phase 184 — the metadata-language picker card's two actions.
+    document.getElementById("mlang-open-btn")?.addEventListener("click") {
+        showMetadataLanguageModal(item, container, scope, fallbackLang, jellyfinUrl)
+    }
+    document.getElementById("mlang-reset-btn")?.addEventListener("click") {
+        scope.launch {
+            showDetailMsg("Reverting to automatic…", true)
+            val updated = MediaApi.setMetadataLanguage(item.id, null)
+            if (updated != null) {
+                val config = ConfigApi.get()
+                val fb = config?.config?.languageRules?.fallbackLanguage ?: fallbackLang
+                val jfUrl = config?.config?.apiKeys?.jellyfinUrl?.trimEnd('/') ?: jellyfinUrl
+                val ageRatingCascade5 = config?.config?.metadata?.ageRatingCascade ?: emptyList()
+                val langs = if (updated.tmdbId != null) MediaApi.getTmdbLanguages(updated.id) else null
+                val jsTags5 = dev.jellystructure.api.MetadataApi.getAllJsTags() ?: emptyList()
+                renderDetailView(container, updated, scope, fb, jfUrl, langs, jsTags = jsTags5, ageRatingCascade = ageRatingCascade5)
+                showDetailMsg("Back to automatic.", true)
+            } else {
+                showDetailMsg("Failed — try again.", false)
+            }
+        }
     }
 
     // Phase 174: undo a wrong/unwanted match — nulls every TMDB-owned field (overview, genres,
@@ -2073,6 +2142,125 @@ private fun showTmdbMatchModal(
     scope.launch {
         val results = MediaApi.tmdbSearch(item.id, item.title, item.year)
         renderResults(results)
+    }
+}
+
+/** One coverage pip: filled when TMDB actually holds it, hollow when not (FR-184-4). */
+private fun coveragePip(glyph: String, has: Boolean, title: String): String {
+    val style = if (has) "opacity:1;" else "opacity:.25;"
+    return """<span title="${title.esc()}" style="$style margin-right:4px;">$glyph</span>"""
+}
+
+/**
+ * Phase 184 (FR-184-7) — the metadata-language picker. Two groups: the language the audio-cascade
+ * resolver would pick automatically (picking it is defined as identical to "Back to automatic" — no
+ * separate action, no separate row styling beyond the label), and everything else TMDB holds for this
+ * title. A plain text filter over code/English/native name stands in for "searchable menu" — this
+ * catalog rarely has more than a dozen rows, so no fancy virtualization is needed.
+ */
+private fun showMetadataLanguageModal(
+    item: MediaItem,
+    container: Element,
+    scope: CoroutineScope,
+    fallbackLang: String,
+    jellyfinUrl: String,
+) {
+    document.getElementById("mlang-modal-overlay")?.remove()
+    val overlay = document.createElement("div") as HTMLElement
+    overlay.id = "mlang-modal-overlay"
+    overlay.setAttribute("style", "position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:8000;display:flex;align-items:center;justify-content:center;")
+    overlay.innerHTML = """
+        <div style="background:var(--fill);border:1px solid var(--line-2);border-radius:var(--radius);padding:24px;max-width:520px;width:92%;box-shadow:var(--shadow);display:flex;flex-direction:column;gap:14px;">
+          <div style="display:flex;align-items:center;gap:10px;">
+            <h4 style="margin:0;flex:1;">Choose metadata language</h4>
+            <button id="mlang-modal-close" class="btn sm ghost">✕</button>
+          </div>
+          <input id="mlang-modal-filter" class="input" placeholder="Filter languages…" autocomplete="off">
+          <div id="mlang-modal-results" style="display:flex;flex-direction:column;gap:4px;max-height:380px;overflow-y:auto;min-height:40px;">
+            <span class="muted tiny">Loading…</span>
+          </div>
+        </div>"""
+    document.body?.appendChild(overlay)
+
+    fun closeModal() { overlay.remove() }
+    overlay.addEventListener("click") { e -> if ((e.target as? HTMLElement) == overlay) closeModal() }
+    document.getElementById("mlang-modal-close")?.addEventListener("click") { closeModal() }
+
+    fun applyChoice(code: String?) {
+        val resultsEl = document.getElementById("mlang-modal-results") as? HTMLElement
+        resultsEl?.innerHTML = """<span class="muted tiny">Saving…</span>"""
+        scope.launch {
+            val updated = MediaApi.setMetadataLanguage(item.id, code)
+            if (updated != null) {
+                closeModal()
+                val config = ConfigApi.get()
+                val fb = config?.config?.languageRules?.fallbackLanguage ?: fallbackLang
+                val jfUrl = config?.config?.apiKeys?.jellyfinUrl?.trimEnd('/') ?: jellyfinUrl
+                val ageRatingCascade = config?.config?.metadata?.ageRatingCascade ?: emptyList()
+                val langs = if (updated.tmdbId != null) MediaApi.getTmdbLanguages(updated.id) else null
+                val jsTags = dev.jellystructure.api.MetadataApi.getAllJsTags() ?: emptyList()
+                renderDetailView(container, updated, scope, fb, jfUrl, langs, jsTags = jsTags, ageRatingCascade = ageRatingCascade)
+                showDetailMsg(if (code != null) "Metadata language set to $code." else "Back to automatic.", true)
+            } else {
+                resultsEl?.innerHTML = """<span style="color:var(--bad);" class="tiny">Save failed — try again.</span>"""
+            }
+        }
+    }
+
+    fun rowHtml(c: dev.jellystructure.api.TmdbLanguageCoverage, isResolved: Boolean): String {
+        val name = c.englishName?.takeIf { it.isNotBlank() } ?: c.code.uppercase()
+        val native = c.nativeName?.takeIf { it.isNotBlank() && it != c.englishName }?.let { """ <span class="muted tiny">$it</span>""" } ?: ""
+        val current = if (item.metadataLanguage == c.code) """ <span class="badge ok" style="font-size:.68rem;">current</span>""" else ""
+        val pips = coveragePip("Aa", c.hasTitle, "title") + coveragePip("¶", c.hasOverview, "overview") +
+            coveragePip("▣ ${c.posterCount}", c.posterCount > 0, "${c.posterCount} poster(s)")
+        return """<div class="mlang-row" data-code="${c.code.esc()}" style="display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--line-2);border-radius:var(--radius-s);cursor:pointer;">
+                     <span class="mono" style="width:32px;flex-shrink:0;">${c.code.esc()}</span>
+                     <div style="flex:1;min-width:0;font-size:.85rem;">${name.esc()}$native$current</div>
+                     <div class="tiny mono" style="flex-shrink:0;">$pips</div>
+                   </div>"""
+    }
+
+    var allCoverage: List<dev.jellystructure.api.TmdbLanguageCoverage> = emptyList()
+
+    fun render(filter: String) {
+        val resultsEl = document.getElementById("mlang-modal-results") as? HTMLElement ?: return
+        val q = filter.trim().lowercase()
+        val filtered = if (q.isBlank()) allCoverage else allCoverage.filter {
+            it.code.lowercase().contains(q) || (it.englishName ?: "").lowercase().contains(q) || (it.nativeName ?: "").lowercase().contains(q)
+        }
+        val resolved = filtered.filter { it.code == item.resolvedLanguage }
+        val rest = filtered.filterNot { it.code == item.resolvedLanguage }
+        val html = buildString {
+            if (resolved.isNotEmpty()) {
+                append("""<div class="tiny muted" style="margin:4px 0 2px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;font-size:.68rem;">Resolved automatically</div>""")
+                resolved.forEach { append(rowHtml(it, isResolved = true)) }
+            }
+            if (rest.isNotEmpty()) {
+                append("""<div class="tiny muted" style="margin:8px 0 2px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;font-size:.68rem;">Also available for this title</div>""")
+                rest.forEach { append(rowHtml(it, isResolved = false)) }
+            }
+        }
+        resultsEl.innerHTML = html.ifEmpty { """<span class="muted tiny">No languages match.</span>""" }
+        val rows = resultsEl.querySelectorAll(".mlang-row")
+        for (i in 0 until rows.length) {
+            val row = rows.item(i) as? HTMLElement ?: continue
+            val code = row.getAttribute("data-code") ?: continue
+            // Picking the resolved language IS "Back to automatic" (FR-184-7) — same action, no
+            // separately-stored "chose the automatic winner explicitly" state.
+            row.addEventListener("click") { applyChoice(if (code == item.resolvedLanguage) null else code) }
+        }
+    }
+
+    (document.getElementById("mlang-modal-filter") as? HTMLInputElement)?.addEventListener("input") { e ->
+        render((e.target as? HTMLInputElement)?.value ?: "")
+    }
+
+    scope.launch {
+        allCoverage = MediaApi.getTmdbLanguageCoverage(item.id)
+        if (allCoverage.isEmpty()) {
+            (document.getElementById("mlang-modal-results") as? HTMLElement)?.innerHTML =
+                """<span class="muted tiny">TMDB has no language data for this title.</span>"""
+        } else render("")
     }
 }
 

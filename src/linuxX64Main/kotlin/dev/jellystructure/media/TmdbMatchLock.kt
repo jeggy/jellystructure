@@ -35,6 +35,10 @@ internal fun clearTmdbMatch(item: MediaItem): MediaItem = item.copy(
     trailer = null,
     imdbRating = null,
     tmdbMatchLocked = true,
+    // Phase 184 (FR-184-3): a cleared match invalidates any manually-chosen fetch language too — there
+    // is no TMDB entry left for it to have been a language OF.
+    metadataLanguage = null,
+    metadataLanguageSetAt = null,
 )
 
 /**
