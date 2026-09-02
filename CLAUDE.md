@@ -36,6 +36,82 @@ GitHub is the **source of truth**; we layer designs on top of it.
 - `specs/research-reports/` — dated deep-dives (research, not spec; may go stale).
 
 ## Where the work stands (read the repo `STATUS.md` for the live table)
+- **2026-08-31 sync — both our 2026-08-28 specs shipped, and 5 new dev-authored specs landed.**
+  Next unassigned numbers: **184 / R221**.
+  - **R218 (player loading & buffering) is `Implemented`** — built the day it was spec'd, Android/Compose
+    only, **on-device verified 2026-08-29** (stue TV, Severance S2E4 resume). **Phase 180 (session
+    teardown) is `✓ Done`** — the Jellyfin stop call was confirmed against 10.11.11's OpenAPI before any
+    code was written (the open question we flagged), and verified live against a real forced 4K/DV/HDR
+    NVENC transcode.
+  - **R219 — Continue Watching, one canonical list** (`Implemented`, design-authored with the owner
+    2026-08-30, supersedes R217). One merged list per (user, visibility scope); Home rows, channel rows
+    and See-all are filtered/capped **views** over it. Every Jellyfin fetch pages to `TotalRecordCount` —
+    a `Limit` may never act as a cap (that one error caused four separate bugs); the card and the order
+    are decided by **timestamp, never by which endpoint an entry came from**; See-all mirrors its row's
+    own configured scope, not the page it was opened from. Row cap 30 → **20**. **No UI change** — nothing
+    for us to draw.
+  - **R220 — black picture, perfect audio, after Home/TV-standby** (`✓ Built 2026-08-31`, not dev-reviewed,
+    not reproduced on-device). Frame-count detector plus a 4-rung recovery ladder (re-attach surface →
+    seek flush → recreate `SurfaceView` → re-prepare item). **Touches our R218 design:** none of R218's
+    three moments fire here (the player reports playing, not buffering, first frame already rendered), and
+    FR-R220-5 says a recovery outliving the 400 ms debounce should show R218's **existing STALL**
+    presentation — no new copy, no new visual language. The build note admits that signal is **not wired**
+    (its open question 7), so a viewer can still sit on a frozen black frame for ~4.5 s with no chrome
+    change. **Drawn here 2026-08-31** as frame **E** on
+    `ravilo/Player Loading and Buffering - Directions.html` — R218's stall treatment verbatim, new trigger.
+  - **181 — converge on Jellyfin's library, don't predict it** (FR-181-2 built; the rest `Planned`).
+    Klovn S11E07 sat in Jellyfin for 15 h unnoticed: premiere-year freshness bucketing files a
+    currently-airing 2005 show as monthly archive (9 of 16 provably-airing series were starved — now fixed
+    via `sonarrNextAiringDate`), nothing ever compares our item set against Jellyfin's, and the
+    Jellyfin-based realtime ingest has delivered **nothing, ever** since phase 165 (the WS listener
+    subscribes to no message type and `LibraryChanged` is never sent — dead code reporting itself
+    healthy). Remaining: an **id set-difference** sweep as the backstop (`DateCreated` is the file's mtime
+    and 50% of files carry junk mtimes, so no timestamp watermark is sound), per-series count
+    reconciliation, and a persistent dirty-set.
+  - **182 — a scan must never stop the server** (`✓ Built 2026-08-31`, not live-verified). The whole
+    4-thread scan pool wedged uncancellably for 21 minutes while `/api/tv/**` starved behind one global
+    64-permit outbound semaphore — indistinguishable from the server being down. Shipped: locks/atomics
+    on the scan write path, per-item deadlines, a cancel that actually cancels, and
+    **INTERACTIVE/BACKGROUND partitioning** of `OutboundHttp` (16 reserved) and `ProcessGate` (4 reserved)
+    with bounded acquires → 503 + `Retry-After`. **Design item: FR-182-9's Activity-page banner is not
+    built** — `GET /api/health` now reports both gates per class, but there is no surface. Needs a
+    plain-language banner on `app/activity.html`: "Ravilo requests are queuing behind background work".
+  - **183 — pace outbound requests by rate, not concurrency** (`✓ Built 2026-08-31`, not live-measured).
+    A 300-episode series fanned out ~1 500–2 000 TMDB requests from a single worker slot, retrying on a
+    flat jitter-free 3 s that made every 429'd batch re-converge; an exhausted retry then wrote null
+    title/overview and stamped the item as freshly checked. Shipped: a TMDB token bucket with AIMD on 429,
+    `Retry-After` + jittered exponential backoff, an episode fan-out gate derived from `scan_workers`, and
+    skipping details/credits we already hold. FR-183-6's per-run aggregate is **drawn here 2026-08-31** — an **Outbound pacing** card (rate now,
+    the limiter's current ceiling, refusals in the last minute, per host) plus FR-183-5's run-summary line
+    "12 fields not fetched: TMDB rate limit", on `app/activity.html`.
+  - **This sync's design items, resolved 2026-08-31:** the **Outbound pacing** card and frame **E** are
+    drawn; the **Capacity** card stays as read-only reporting; FR-182-9's banner was **dropped** (see
+    above). Everything else is backend/platform. Nothing exported to the repo yet.
+- **2026-09-01 — two design-authored specs written, both `Planned`, neither dev-reviewed.**
+  Next unassigned numbers: **185 / R222**.
+  - **184 — choose the TMDB metadata language for a single title** (`specs/requirements/phase-184-choose-metadata-language.md`).
+    올드보이's Korean first audio track makes the resolver fetch Korean metadata — correct by the rules,
+    wrong for this house. Adds a nullable `metadataLanguage` consulted **above** the resolver (the
+    cascade is not modified and its trace stays on screen, dimmed, after a choice), a picker offering
+    only what TMDB actually holds for the title with per-language coverage (title · overview · poster
+    count), artwork following the same pick via `include_image_language=<chosen>,null`, and a lock with
+    the Phase 151/174 preserve shape so no scan can undo it. **Deliberately no new empty-field warnings
+    or states** (owner decision — a first draft flagged missing fields and it invented a state the rest
+    of the page doesn't have). Per title only: no rules, no per-library default, no global preference,
+    no Ravilo work. Design: `app/Metadata Language Override - Directions.html` (Direction A chosen; B and
+    C recorded as rejected) — **built into `app/media.html` + `app/detail.css` 2026-09-01**.
+  - **R221 — every genre on a media detail** (`specs/ravilo/requirements/phase-R221-all-genres-media-detail.md`).
+    The detail hero shows one genre; the library stores a set. Genres get their own labelled row built
+    from the AUDIO/SUBTITLES flag-strip pattern, in TMDB's order with the primary one accent-tinted,
+    capped at four visible plus a focusable `+N`, **never wrapping on TV**. Each chip opens the R187
+    browse page seeded to that genre — the same contract R190 gave cast faces — with Back restoring
+    focus to the chip. Row sits above the synopsis so Play doesn't move. Design:
+    `ravilo/Media Detail Genres - Directions.html` (Direction B chosen with C's primacy tint; A and C
+    rejected) — **built into the Ravilo mockups 2026-09-01** (`ravilo.css`, `ravilo-app.js`,
+    `ravilo-browse.js`, `ravilo-i18n.js`, `Ravilo Mobile.html`, plus a canonical per-title genre list in
+    `ravilo-data.js`). Noir's amber accent did read as a warning, so its primary chip is marked by weight
+    and ink rather than tint. **Biggest open question: whether the Ravilo payload carries the full genre list or
+    flattens it — that decides whether this is a UI phase or a backend one.**
 - **2026-08-27 sync — 15 new dev-authored specs (admin 169–176, Ravilo R208–R214), all shipped, plus three
   amended specs that change *our* mockups.** Next unassigned numbers: **177 / R215**. Counts now:
   158 admin rows + 164 Ravilo rows = **322 numbered phases**; 46 + 53 phase files + 14 research reports;
@@ -76,7 +152,7 @@ GitHub is the **source of truth**; we layer designs on top of it.
     — infra built, generation blocked). **R214** — Ravilo's image cache outliving a corrected poster.
   - **No design work is outstanding from this sync** beyond the four mockup updates above; everything else
     is backend/platform.
-- **2026-08-28 — two design-authored specs written for the player wait states (both `Planned`, not yet
+- (shipped — see the 2026-08-31 entry above) **2026-08-28 — two design-authored specs written for the player wait states (both `Planned`, not yet
   dev-reviewed).** Triggered by `specs/research-reports/ravilo-player-buffering-loading-states-2026-08-28.md`,
   which catalogued **four waiting moments** and found only one of them drawn.
   - **`phase-R218-player-loading-buffering-states.md` (client)** — moment A (session negotiation) unchanged;

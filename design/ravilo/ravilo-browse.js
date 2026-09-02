@@ -8,8 +8,14 @@
   const NF = it => it; // id helper
   function hash(s) { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return Math.abs(h); }
 
+  // R221 — genre naming is owned by ravilo-data.js so a chip and the page it opens agree
   const GMAP = { nordic: 'Crime', docs: 'Documentary', scifi: 'Sci-Fi', 'sci-fi': 'Sci-Fi' };
-  function normGenre(tok) { const k = tok.trim().toLowerCase(); return GMAP[k] || (tok.trim().charAt(0).toUpperCase() + tok.trim().slice(1)); }
+  function normGenre(tok) {
+    const R = window.RAVILO;
+    if (R && R.normGenre) return R.normGenre(tok);
+    const k = String(tok).trim().toLowerCase();
+    return GMAP[k] || (String(tok).trim().charAt(0).toUpperCase() + String(tok).trim().slice(1));
+  }
 
   function create(ctx) {
     const { R, W, el, esc, scroll, appbar, go, buildGridRows, tracksFor, rowTitle, catalog, stopHero, getView, castFor, seerrEnabled, seerrCatalog, rankTile } = ctx;
@@ -27,7 +33,7 @@
     const PEOPLE = ['Sigrun Restorff','Páll Heinason','Marin Klett','Eva Restorff','Tóki á Bø','Lena Björk','Anders Holm','Freya Dahl','Mikkel Sørensen','Ingrid Vold','Johan Máni','Sara Winther','Colin Reeves','Nadia Hassan'];
     // deterministic 2–3 cast/crew per title so a person spans several titles (demo; prod: credits index)
     function castOf(it) { const h = hash(it.title); const n = 2 + (h % 2); const out = []; for (let i = 0; i < n; i++) out.push(PEOPLE[(h + i * 5) % PEOPLE.length]); return Array.from(new Set(out)); }
-    function genres(it) { return Array.from(new Set((it.genre || '').split(/\s*·\s*/).filter(Boolean).map(normGenre))); }
+    function genres(it) { const src = R.genresFor ? R.genresFor(it) : String(it.genre || '').split(/\s*·\s*/); return Array.from(new Set(src.map(normGenre).filter(Boolean))); }
     function watchedState(it) {
       const ws = W.itemState(it.title);
       return ws.watched ? t('br_w_watched') : (ws.pct > 0 ? t('br_w_inprogress') : t('br_w_unwatched'));
@@ -74,7 +80,11 @@
     function seed() {
       if (v._seed) return v._seed;
       let s;
-      if (v.person) s = catalog().filter(it => appearsIn(it, v.person.n));
+      if (v.genres && v.genres.length) {   // R221 — seeded from a genre chip on a media detail
+        const want = new Set(v.genres.map(normGenre));
+        s = catalog().filter(it => genres(it).some(g => want.has(g)));
+      }
+      else if (v.person) s = catalog().filter(it => appearsIn(it, v.person.n));
       else if (v.row) { const seen = new Set(); s = v.row.items.filter(it => it && it.title && !seen.has(it.title) && seen.add(it.title) !== null); }
       else if (v.kind) s = catalog().filter(it => it.kind === v.kind || (v.kind === 'film' && it.kind !== 'series'));
       else s = catalog();
@@ -136,10 +146,13 @@
     function render(view) {
       v = view; v.filters = v.filters || {}; v.sort = v.sort || 'added';
       stopHero(); closePop(); scroll.innerHTML = '';
-      const title = v.person ? v.person.n : (v.row ? rowTitle(v.row) : v.title);
+      const title = v.person ? v.person.n
+        : (v.genres && v.genres.length) ? v.genres.map(normGenre).join(' · ')
+        : (v.row ? rowTitle(v.row) : v.title);
       const wrap = el('div', 'gridscreen browse');
       let crumb = '';
       if (v.person) crumb = `<div class="crumb">◂ ${esc(v.personFrom || fromLabel())} · <b>${esc(title)}</b></div>`;
+      else if (v.genres && v.genres.length) crumb = `<div class="crumb">◂ ${esc(v.genreFrom || fromLabel())} · <b>${esc(title)}</b></div>`;
       else if (v.row) crumb = `<div class="crumb">◂ ${esc(fromLabel())} · <b>${esc(title)}</b></div>`;
       const pmeta = (v.person && v.person.r) ? `<div class="pmeta">${esc(v.person.r)}</div>` : '';
       wrap.innerHTML = `<div class="gridhead browsehead"><div>${crumb}<h1>${esc(title)}</h1>${pmeta}<div class="gridsub"></div></div><span class="gridcount"></span></div>`;

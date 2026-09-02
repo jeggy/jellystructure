@@ -1,9 +1,87 @@
 repo: jeggy/jellystructure
 branch: main
 path: specs/   (plus root STATUS.md — both mirrored read-only from the repo); presentation/ (full mirror, ours to build on)
-tree: main (2026-08-28 sync, compared 4a2675f524cd...main)
+tree: main @ d8a6a6e3610a (2026-09-01 sync)
 
-## Last sync (2026-08-28, second pull — numbering collision resolved)
+## Last sync (2026-09-01)
+date: 2026-09-01T19:58:58Z
+direction: pull (repo → this project) — mirror refresh, no export
+- **Nothing new repo-side since the 2026-08-31 sync.** The full `specs/` diff against `4a2675f524cd`
+  returns the same 17 files we already pulled (R215–R220, 177–183, amended 167, two research reports).
+  Re-pulled **STATUS.md**, `specs/research-reports/README.md` and the amended `phase-167` to be certain
+  our read-only mirrors match `main` — the repo wins on any disagreement, per CLAUDE.md.
+- **No numbering collision.** A tree scan for `phase-18[4-9]` / `phase-R22[1-9]` matched **0 of 139**
+  spec files, so our two 2026-09-01 design-authored specs keep their numbers: **184**
+  (choose the TMDB metadata language) and **R221** (every genre on a media detail). Next unassigned
+  numbers stay **185 / R222**. No repeat of the R196→R208 or 179→180 collisions.
+- **Still not exported.** Both new specs, both directions files, and the 184 build in `app/media.html`
+  + `app/detail.css` remain local — see *Pending export* below.
+
+## Previous sync (2026-08-31)
+date: 2026-08-31T15:28:03Z
+direction: pull (repo → this project)
+- **Both design-authored specs from 2026-08-28 shipped.** `phase-R218` (player loading/buffering states)
+  is **Implemented** — built the same day it was spec'd, Android/Compose only, **on-device verified
+  2026-08-29** on the stue TV. `phase-180` (playback session teardown) is **✓ Done** — the Jellyfin-side
+  stop call was confirmed against 10.11.11's OpenAPI *before* any code was written (the open question we
+  flagged), and it was verified live against a real forced 4K/DV/HDR NVENC transcode. Canonical versions
+  pulled over our local drafts.
+- **5 new dev-authored specs pulled:**
+  - **R219 — Continue Watching: one canonical list** (`Implemented`, design-authored with the owner
+    2026-08-30). Supersedes R217's FR-1/2/3. jellystructure owns one merged list per (user, visibility
+    scope); every surface is a filtered/capped view. Every Jellyfin fetch is paged to `TotalRecordCount`
+    (no `Limit` may act as a cap — the same truncation error caused four bugs); conflict resolved by
+    **timestamp, never provenance**; See-all mirrors the row's own configured scope. Home/channel cap
+    drops 30 → 20. Explicitly **no UI change**.
+  - **R220 — video output lost on return from background** (`✓ Built 2026-08-31`, not dev-reviewed, not
+    reproduced on-device). Black picture with perfect audio after Home-button/TV-standby round-trip;
+    detector on rendered-frame count + a 4-rung recovery ladder. **Touches R218:** none of R218's three
+    moments fire in this failure, and FR-R220-5 says a slow recovery should show R218's existing **STALL**
+    presentation with no new copy or visual language. Build note admits that signal is **not wired**
+    (open question 7) — so a viewer can still see several seconds of frozen black frame with no chrome.
+  - **181 — converge on Jellyfin's library, don't predict it** (partially implemented; FR-181-2 built).
+    Klovn S11E07 missing for 15h: premiere-year freshness bucketing filed a currently-airing 2005 show as
+    monthly-archive (9 of 16 provably-airing series were starved), nothing ever compared our item set to
+    Jellyfin's, and the Jellyfin-based realtime ingest has delivered **nothing, ever** since phase 165
+    (the WS listener subscribes to nothing and `LibraryChanged` is never sent — dead code reporting
+    itself healthy). Fix: id **set-difference** sweep as the backstop (`DateCreated` is the file's mtime —
+    50% of files are junk-dated, so no timestamp watermark is sound), activity-based freshness, per-series
+    count reconciliation, a persistent dirty-set.
+  - **182 — a scan must never stop the server** (`✓ Built 2026-08-31`, not live-verified). Whole 4-thread
+    scan pool wedged uncancellably for 21 min while `/api/tv/**` starved behind one global 64-permit
+    outbound semaphore. Shipped: `SpinLock`/atomics on the scan write path, per-item deadlines, real
+    cancel with a grace period, and **INTERACTIVE/BACKGROUND partitioning** of `OutboundHttp` (16 reserved)
+    and `ProcessGate` (4 reserved) with bounded acquires → 503 + `Retry-After`.
+  - **183 — pace outbound requests by rate, not concurrency** (`✓ Built 2026-08-31`, not live-measured).
+    A 300-episode series fanned out ~1 500–2 000 unbounded TMDB requests from one worker slot, retried on a
+    flat jitter-free 3 s; a rate-limited fetch then silently wrote null titles and stamped the item as
+    checked. Shipped: `TmdbRateLimiter` token bucket + AIMD on 429, `Retry-After` + jittered backoff, an
+    episode fan-out gate sized from `scan_workers`, and skipping already-held episode details/credits.
+- **Also pulled:** amended `phase-167` (already-known publish-on-main change), `specs/research-reports/README.md`,
+  and the **STATUS.md** mirror. No `design/**` changes to pull — the diff's `design/` entries are our own
+  2026-08-27/28 export echoing back (segments/library/media/builders, the presentation deck + screenshots,
+  and `Player Loading and Buffering - Directions.html`).
+- **Next unassigned numbers: 184 / R221.**
+
+### Design work from this sync — all three drawn 2026-08-31 (pending export)
+- **FR-182-9 — banner DROPPED (owner decision, 2026-08-31).** The "Ravilo requests are queuing behind
+  background work" banner was drawn and then removed: telling the admin about the queuing accepts it as a
+  normal state. Ravilo clients get priority unconditionally, and if interactive work does slow down the
+  right response is to **stop the running background activity**, not to display a warning. Only the
+  read-only **Capacity** card remains (one bar per gate, background vs Ravilo/admin against the reserved
+  share, from the `/api/health` gate blocks). The stop-background-work behaviour is **not spec'd** — it is
+  a backend change for the dev team, and FR-182-9 as written no longer matches what we want.
+- **FR-183-6 — rate limiting visible while it happens. Drawn.** An **Outbound pacing** card on
+  `app/activity.html`: per host, the current rate, the limiter's ceiling (with when it last backed off)
+  and refusals in the last minute; plus FR-183-5's plain run-summary line "12 fields not fetched: TMDB
+  rate limit" and a matching chip in the Overall strip. Copy deliberately avoids promising a re-check —
+  FR-183-5's DB half is not built.
+- **R220 open question 7 — the recovery ladder shows nothing. Drawn.** New frame **E · video output
+  recovery** on `ravilo/Player Loading and Buffering - Directions.html` (black frame, chrome up, spinner
+  in the play button's place) plus a panel section recording the decision: reuse R218's stall treatment
+  verbatim under a new trigger — no new copy, no new visual language, nothing to translate.
+
+## Previous sync (2026-08-28, second pull — numbering collision resolved)
 date: 2026-08-28T21:20:19Z
 direction: pull (repo → this project)
 - **New repo-side spec: `phase-179-subtitle-sideload-transcode-stall.md` (✓ Implemented, same evening).**
@@ -16,7 +94,7 @@ direction: pull (repo → this project)
 - **R218 is uncontested** — no repo-side R218 exists. Next unassigned: **181 / R219**.
 - STATUS.md mirror refreshed.
 
-## Previous sync
+## Previous sync (2026-08-28, first pull)
 date: 2026-08-28T16:08:36Z
 direction: pull (repo → this project), no design work required
 - **10 commits / 51 files since last sync, all backend/platform + CI + specs — nothing under `design/`.**
@@ -206,14 +284,29 @@ direction: pull (repo → this project)
 | ravilo/ravilo-player.js, ravilo-player.css, ravilo-app.js, ravilo/Audio & Subtitles Picker - Same-Language Directions.html | R195 (same-language subtitle picker — shipped) |
 | app/towo*.html, app/towo.css, app/settings.html (Towo tab), app/app-shell.js (Towo nav group), claude-console/Dashboard - Direction B.html | **phase-162** (Towo agent control plane — design-authored, shipped 2026-08-11; mockups predate the build's extra settings fields) |
 | (none — backend/platform only) | R192/R193/R194 (MediaSession lifecycle, metadata, season artwork — shipped, no design change), phase-160 (scanner numbering fallback) |
+| ravilo/Player Loading and Buffering - Directions.html, ravilo/ravilo-player.js/.css | **R218** (player loading/buffering states — shipped 2026-08-28, on-device verified 08-29), **phase-180** (session teardown — ✓ Done), R220 (video-output recovery — reuses R218's STALL; presentation not yet wired) |
+| app/activity.html | phase-182 (Capacity card only — FR-182-9's banner dropped by owner decision), phase-183 FR-183-6/FR-183-5 (Outbound pacing card + run summary) — drawn 2026-08-31, backend built, UI not yet in code |
+| (none — backend only) | R219 (Continue Watching canonical list — explicitly no UI change), 181 (library sync convergence) |
 | presentation/presentation-context.md, presentation/observed-issues-2026-08-18.md, presentation/screenshots/ | (not a spec — talk source material; documents R202 as its centerpiece and the R203–R207 triage) |
 
 ## Pending export (design-authored since the last sync)
+- **2026-09-01 specs, not pushed:** `specs/requirements/phase-184-choose-metadata-language.md` and
+  `specs/ravilo/requirements/phase-R221-all-genres-media-detail.md`, plus their design files
+  (`app/Metadata Language Override - Directions.html`, `ravilo/Media Detail Genres - Directions.html`)
+  and the 184 build in `app/media.html` + `app/detail.css`. Next unassigned numbers become **185 / R222**.
+- **2026-08-31 mockups, not pushed:** `app/activity.html` (Capacity card, FR-183-6 Outbound
+  pacing + FR-183-5 run summary; no FR-182-9 banner) and `ravilo/Player Loading and Buffering - Directions.html` (frame E,
+  R220's recovery state). No spec files were authored — all three are surfaces for specs the dev team
+  already wrote.
 - **phase-163 — intro & credits editor** (`Planned`, 2026-08-13): `specs/requirements/phase-163-segment-editor.md`
   + `design/app/segments.html`/`segments.js`/`segments.css`, the `Segment Editor - Directions.html`
   exploration, and the series-page entry points in `series-simpsons.js`. Not pushed yet.
 
 ## Sync history
+- 2026-09-01: mirror refresh; no repo changes since 08-31. Confirmed 184 / R221 uncontested.
+- 2026-08-31: R218 + 180 shipped (both design-authored, on-device verified); pulled 5 new dev specs (R219, R220, 181, 182, 183) + amended 167 + STATUS.md. Three design items outstanding — see above.
+- 2026-08-28 (#2): pulled phase-179; renumbered our teardown spec 179 → 180.
+- 2026-08-28: pulled 177/178/R215–R217 + two research reports; design-authored R218 + 180.
 - 2026-08-27: pulled admin 169–176 + Ravilo R208–R214 + 3 amended specs + STATUS.md; deleted the stale R196 episode-rail file; updated segments/library/media/builders mockups and the deck.
 - 2026-08-21: read-only — `initial-idea.md` + repo tree stats for the deck; nothing new mirrored.
 - 2026-08-20: pulled 26 new spec files (admin 164–168, Ravilo R196–R207) + STATUS.md + new `presentation/` directory (59 files, taking over).

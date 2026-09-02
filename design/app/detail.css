@@ -383,29 +383,32 @@
 .badge.seg-stinger { color: #0a0c13; background: var(--warn); border-color: transparent; }
 .seg-lock.on { color: var(--ok); border-color: rgba(45,212,154,.4); background: var(--ok-soft); }
 
-/* NFO raw viewer (Phase 44) — never had a design pass at all (no mockup, no shipped CSS,
-   no runtime injection like the artwork/diff tabs get) until now. Sidebar tree (seasons
-   collapse like the sidebar nav-groups) + a content pane; .log (the raw-text <pre>) is
-   already styled. RESTORED 2026-07-31, again 2026-08-11, after a design-tool sync silently reverted this. */
-.nfo-layout { display: flex; gap: 16px; align-items: flex-start; }
-.nfo-tree {
-  flex: none; width: 240px; max-height: 520px; overflow: auto;
-  border: 1px solid var(--line); border-radius: var(--radius-s); background: var(--fill-2);
-  padding: 6px;
-}
-.nfo-viewer { flex: 1; min-width: 0; }
-.nfo-node {
-  padding: 7px 10px; border-radius: 7px; font-size: .84rem; cursor: pointer;
-  color: var(--ink-soft); transition: background .15s ease, color .15s ease;
-}
-.nfo-node:hover { background: var(--fill-3); color: var(--ink); }
-.nfo-node.sel { background: var(--hi-soft); color: var(--acc-ink); font-weight: 600; }
-.nfo-node.missing { opacity: .55; }
-.nfo-season-hd {
-  display: flex; align-items: center; gap: 6px; padding: 7px 10px; margin-top: 4px;
-  border-radius: 7px; font-size: .84rem; font-weight: 600; cursor: pointer; color: var(--ink);
-  transition: background .15s ease;
-}
-.nfo-season-hd:hover { background: var(--fill-3); }
-.nfo-caret { display: inline-block; width: 12px; color: var(--ink-soft); font-size: .72rem; }
-.nfo-season-body { padding-left: 14px; }
+/* ---------- metadata language: choose a winner (phase 184 design) ---------- */
+.mlang-wrap { position: relative; }
+.mlang-band { background: var(--hi-soft); border: 1px solid rgba(123,110,240,.42); border-radius: 9px; padding: 9px 11px; margin-top: 10px; }
+.mlang-band .mb-top { display: flex; align-items: center; gap: 8px; }
+.mlang-band .lang { font-size: .72rem; flex: none; }
+.mlang-band .mb-top b { font-size: .82rem; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mlang-band .mb-when { display: block; margin-top: 3px; }
+.override.chosen { border-color: rgba(123,110,240,.45); }
+.override.chosen .mlang-trace { opacity: .4; }
+.mlang-trace-hd { font-size: .66rem; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-dim); font-family: 'JetBrains Mono', monospace; margin-bottom: 7px; }
+.lmenu { position: absolute; z-index: 40; left: 0; width: 306px; top: calc(100% + 6px); background: var(--fill); border: 1px solid var(--line-2); border-radius: 13px; box-shadow: 0 26px 60px rgba(0,0,0,.55); overflow: hidden; display: none; }
+.lmenu.open { display: block; }
+.lm-s { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--line); }
+.lm-s input { flex: 1; background: transparent; border: none; outline: none; color: var(--ink); font-family: inherit; font-size: .82rem; }
+.lm-hd { padding: 9px 12px 5px; font-size: .64rem; letter-spacing: .09em; text-transform: uppercase; color: var(--ink-dim); font-family: 'JetBrains Mono', monospace; }
+.lm-list { max-height: 268px; overflow: auto; }
+.lm-r { display: grid; grid-template-columns: 28px 1fr auto; align-items: center; gap: 9px; padding: 8px 12px; cursor: pointer; }
+.lm-r:hover, .lm-r.hot { background: var(--hi-soft); }
+.lm-r[hidden] { display: none; }
+.lm-nm { font-size: .82rem; font-weight: 600; line-height: 1.3; min-width: 0; }
+.lm-nm i { display: block; font-style: normal; font-size: .68rem; color: var(--ink-soft); font-weight: 400; }
+.lm-r .lang { font-size: .7rem; }
+.pips { display: flex; gap: 4px; align-items: center; }
+.pip { width: 19px; height: 19px; border-radius: 5px; display: inline-flex; align-items: center; justify-content: center; font-size: .58rem; font-family: 'JetBrains Mono', monospace; font-weight: 600; background: var(--ok-soft); color: var(--ok); border: 1px solid rgba(45,212,154,.35); }
+.pip.no { background: transparent; color: var(--ink-dim); border: 1px dashed var(--line-2); }
+.pip.n { background: var(--fill-3); color: var(--ink-soft); border-color: var(--line-2); width: auto; padding: 0 6px; }
+.lm-ft { padding: 9px 12px; border-top: 1px solid var(--line); font-size: .68rem; color: var(--ink-soft); line-height: 1.55; }
+.lm-ft b { color: var(--ink); }
+.lm-empty { padding: 16px 12px; text-align: center; font-size: .78rem; color: var(--ink-dim); }

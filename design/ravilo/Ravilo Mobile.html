@@ -100,6 +100,13 @@
   .st.fetch{ color:var(--accent-2); } .st.fetch .dot{ background:var(--accent-2); }
   .st.none{ color:var(--ink-dim); } .st.none .dot{ background:var(--ink-dim); }
 
+  /* R221 — genre chips on the phone detail. No D-pad here, so the row wraps freely and
+     there is no cap; the chips are already a comfortable tap target. */
+  .dgenres{ display:flex; gap:7px; flex-wrap:wrap; margin:12px 0 0; }
+  .dgen{ height:34px; padding:0 15px; border-radius:17px; display:inline-flex; align-items:center; font-size:13px; font-weight:500;
+    color:var(--ink); background:rgba(255,255,255,.09); border:1px solid rgba(255,255,255,.09); }
+  .dgen.lead{ background:color-mix(in oklch, var(--accent) 22%, transparent); border-color:color-mix(in oklch, var(--accent) 45%, transparent); font-weight:600; }
+
   /* detail screen */
   .detail{ position:absolute; inset:0; background:var(--bg); z-index:70; display:flex; flex-direction:column; transform:translateX(100%); transition:transform .3s var(--ease); }
   .detail.on{ transform:translateX(0); }
@@ -322,6 +329,12 @@
     const all = [].concat(R.hero, ...R.rows.map(r=>r.items), ...R.discover.lists.map(l=>l.items));
     return all.find(x=>x.title===title) || {title, year:'', genre:'', rating:'12', grad:R.grad(title), initials:R.initials(title)};
   }
+  /* R221 — every genre, first one primary. TMDB's order; no cap on the phone. */
+  function genresHTML(it){
+    const gs = R.genresFor ? R.genresFor(it) : String(it.genre||'').split(' · ').filter(Boolean);
+    if(!gs.length) return '';
+    return '<div class="dgenres">'+gs.map((g,i)=>'<span class="dgen'+(i===0?' lead':'')+'">'+esc(g)+'</span>').join('')+'</div>';
+  }
   function openDetail(title){
     const it = findItem(title);
     const bg = it.backdrop ? 'url('+it.backdrop+') center/cover' : it.grad;
@@ -330,7 +343,8 @@
     dscroll.innerHTML = '<div class="dhero" style="background:'+bg+';"><button class="dback" id="dback">‹</button><div class="scrim"></div></div>'
       + '<div class="dbody">'
       + '<div class="dtitle">'+esc(it.title)+'</div>'
-      + '<div class="dmeta"><span>'+esc(String(it.year))+'</span><span>·</span><span>'+esc(it.genre||'')+'</span><span class="pg">'+esc(it.rating)+'</span>'+(it.kind?'<span>·</span><span>'+(it.kind==='series'?'Series':'Film')+'</span>':'')+'</div>'
+      + '<div class="dmeta"><span>'+esc(String(it.year))+'</span><span class="pg">'+esc(it.rating)+'</span>'+(it.kind?'<span>·</span><span>'+(it.kind==='series'?'Series':'Film')+'</span>':'')+'</div>'
+      + genresHTML(it)
       + '<div class="dbtns"><button class="btn play">▶ Play</button><button class="btn ghost">＋ My List</button></div>'
       + '<div class="dsyn">'+esc(syn)+'</div>'
       + (it.kind==='series' ? episodesHTML(it) : '')
