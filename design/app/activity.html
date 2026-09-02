@@ -56,6 +56,25 @@
   .runpick-opt .rp-st.done { color:var(--ok); background:var(--ok-soft); }
   .runpick-opt .rp-st.failed { color:var(--bad); background:var(--bad-soft); }
   .runpick-empty { padding:18px; text-align:center; color:var(--ink-dim); font-size:.8rem; }
+  /* phase 182 — capacity */
+  .gate { padding:11px 4px; border-top:1px dashed var(--line); }
+  .gate:first-of-type { border-top:none; }
+  .gate-head { display:flex; align-items:center; gap:9px; flex-wrap:wrap; }
+  .gate-name { font-size:.86rem; font-weight:600; }
+  .gate-bar { position:relative; height:11px; border-radius:20px; background:var(--fill-3); border:1px solid var(--line); overflow:hidden; margin-top:9px; display:flex; }
+  .gate-bar i { display:block; height:100%; }
+  .gate-bar i.bg { background:var(--ink-dim); }
+  .gate-bar i.int { background:var(--hi); }
+  .gate-res { position:absolute; top:-3px; bottom:-3px; width:0; border-left:2px dotted var(--warn); }
+  .gate-legend { display:flex; gap:14px; flex-wrap:wrap; margin-top:8px; font-size:.72rem; color:var(--ink-dim); }
+  .gate-legend span { display:inline-flex; align-items:center; gap:6px; }
+  .gate-legend i { width:9px; height:9px; border-radius:3px; flex:none; }
+  /* phase 183 FR-183-6 — outbound pacing */
+  .paced { display:grid; grid-template-columns:130px 1fr auto; align-items:center; gap:12px; padding:11px 4px; border-top:1px dashed var(--line); }
+  .paced:first-of-type { border-top:none; }
+  .paced-host { font-size:.86rem; font-weight:600; }
+  .paced-nums { display:flex; gap:16px; flex-wrap:wrap; font-size:.74rem; color:var(--ink-soft); }
+  .paced-nums b { font-family:'JetBrains Mono',monospace; font-weight:600; color:var(--ink); }
 </style>
 </head>
 <body class="wf-body app-body">
@@ -109,7 +128,58 @@
       <span class="chip">12 NFO written</span>
       <span class="chip">9 artwork fetched</span>
       <span class="chip bad" style="background:var(--bad-soft);">3 → attention</span>
+      <span class="chip warn" style="background:var(--warn-soft);">12 fields not fetched · TMDB rate limit</span>
     </div>
+  </div>
+
+  <div class="card" style="margin-bottom:14px;" id="capacity">
+    <div class="row center"><h4 style="margin:0;">Capacity</h4><span class="badge warn" style="margin-left:8px;">reserve exhausted</span><span class="spacer"></span><span class="muted tiny">Ravilo and admin requests keep a reserved share that background work can never take</span></div>
+    <hr class="dash" style="margin:10px 0 2px;">
+    <div class="gate">
+      <div class="gate-head"><span class="gate-name">Outbound requests</span><span class="badge warn">full</span><span class="spacer"></span><span class="mono tiny">61 / 64 in flight</span></div>
+      <div class="gate-bar"><i class="bg" style="width:75%"></i><i class="int" style="width:20.3%"></i><span class="gate-res" style="left:75%"></span></div>
+      <div class="gate-legend">
+        <span><i style="background:var(--ink-dim)"></i>background 48</span>
+        <span><i style="background:var(--hi)"></i>Ravilo &amp; admin 13</span>
+        <span>reserved 16 · <b style="color:var(--warn)">none free</b></span>
+        <span>waiting: <span class="mono">214</span> background · <span class="mono">3</span> interactive</span>
+      </div>
+    </div>
+    <div class="gate">
+      <div class="gate-head"><span class="gate-name">Process slots</span><span class="badge ok">healthy</span><span class="spacer"></span><span class="mono tiny">9 / 16 in use</span></div>
+      <div class="gate-bar"><i class="bg" style="width:50%"></i><i class="int" style="width:6.25%"></i><span class="gate-res" style="left:75%"></span></div>
+      <div class="gate-legend">
+        <span><i style="background:var(--ink-dim)"></i>ffprobe / scan 8</span>
+        <span><i style="background:var(--hi)"></i>artwork for a TV 1</span>
+        <span>reserved 4 · 3 free</span>
+        <span>waiting: <span class="mono">0</span></span>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-bottom:14px;">
+    <div class="row center"><h4 style="margin:0;">Outbound pacing</h4><span class="spacer"></span><span class="muted tiny">this run · metadata providers are paced by rate, not just by how many run at once</span></div>
+    <hr class="dash" style="margin:10px 0 2px;">
+    <div class="paced">
+      <span class="paced-host">TMDB</span>
+      <div class="paced-nums">
+        <span>now <b>3.4/s</b></span>
+        <span>ceiling <b>4.0/s</b> <span class="muted">· halved at 14:02:41 after a refusal</span></span>
+        <span>refused <b>18</b> in the last minute</span>
+      </div>
+      <span class="badge warn">pacing back</span>
+    </div>
+    <div class="paced">
+      <span class="paced-host">Jellyfin</span>
+      <div class="paced-nums">
+        <span>now <b>1.1/s</b></span>
+        <span>ceiling <span class="muted">not paced</span></span>
+        <span>refused <b>0</b></span>
+      </div>
+      <span class="badge ok">healthy</span>
+    </div>
+    <hr class="dash" style="margin:2px 0 10px;">
+    <div class="tiny" style="line-height:1.6;color:var(--ink-soft);"><b style="color:var(--warn)">12 fields not fetched: TMDB rate limit</b> — across 5 episodes of <b>Fjollerne</b>, TMDB stopped answering before the title, overview or cast came back. Those episodes were written with what we already had, not with blanks.</div>
   </div>
 
   <div class="row" style="align-items:stretch;">

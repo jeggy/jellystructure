@@ -116,6 +116,11 @@
   STR.fo.play = 'Sp\u00e6l';
   STR.fo.row_continue = 'Hald fram';
 
+  // ---- R221: genre row on the media detail ----
+  Object.assign(STR.en, { genre_one: 'Genre', genre_many: 'Genres' });
+  Object.assign(STR.da, { genre_one: 'Genre', genre_many: 'Genrer' });
+  Object.assign(STR.fo, { genre_one: 'Sjangur', genre_many: 'Sjangrar' });
+
   // ---- watched-state (R07) ----
   Object.assign(STR.en, {
     mark_watched: 'Mark Watched', watched: 'Watched', play_again: 'Play Again',

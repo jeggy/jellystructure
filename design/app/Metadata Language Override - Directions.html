@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="design_doc_mode" content="canvas">
+<title>Choosing the metadata language — Directions</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Sora:wght@400;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="wf.css">
+<style>
+body{background:transparent;font-family:'Sora',sans-serif}
+.lbl{position:absolute;width:400px;font-family:'Space Grotesk',sans-serif;color:#e8eaf2}
+.lbl h3{margin:0;font-size:1.15rem;letter-spacing:-.01em}
+.lbl small{display:block;margin-top:8px;font-family:'Sora',sans-serif;font-size:.78rem;line-height:1.65;color:#a9afc4;font-weight:400}
+.lbl small b{color:#d7dbe8;font-weight:600}
+.lbl .tag{display:inline-block;font-family:'JetBrains Mono',monospace;font-size:.66rem;letter-spacing:.09em;text-transform:uppercase;color:#7b6ef0;margin-bottom:7px}
+.fr{position:absolute;background:var(--bg);border:1px solid rgba(255,255,255,.1);border-radius:16px;padding:18px;box-shadow:0 24px 60px rgba(0,0,0,.45)}
+.fr.pale{background:var(--bg-2)}
+.cap{position:absolute;width:400px;font-size:.72rem;color:#8f95aa;font-family:'JetBrains Mono',monospace;letter-spacing:.05em;text-transform:uppercase}
+.panel{position:absolute;background:#fff;color:#171923;border-radius:18px;padding:34px 38px;box-shadow:0 24px 60px rgba(0,0,0,.4)}
+.panel h2{font-family:'Space Grotesk',sans-serif;font-size:1.5rem;margin:0 0 4px;letter-spacing:-.02em}
+.panel h4{font-family:'Space Grotesk',sans-serif;font-size:.95rem;margin:26px 0 8px;letter-spacing:-.01em}
+.panel p{font-size:.86rem;line-height:1.7;color:#3c4256;margin:0 0 10px}
+.panel .lead{font-size:.95rem;color:#232838}
+.panel b{color:#171923}
+.panel ul{margin:0;padding-left:18px}.panel li{font-size:.86rem;line-height:1.75;color:#3c4256;margin-bottom:5px}
+.panel .mono{font-family:'JetBrains Mono',monospace;font-size:.82em;background:#f0f1f6;padding:1px 5px;border-radius:4px}
+.panel hr{border:none;border-top:1px solid #e6e8ef;margin:22px 0}
+.warn{background:#fff8e8;border:1px solid #f2d79a;border-radius:10px;padding:13px 15px;font-size:.84rem;line-height:1.65;color:#4a3c1c;margin:12px 0}
+.warn b{color:#3a2e10}
+.good{background:#eef7f2;border:1px solid #b9dfcc;border-radius:10px;padding:13px 15px;font-size:.84rem;line-height:1.65;color:#1f4634;margin:12px 0}
+.good b{color:#123326}
+.three{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin:14px 0 4px}
+.three div{background:#f6f7fb;border:1px solid #e6e8ef;border-radius:11px;padding:13px 15px}
+.three h5{margin:0 0 5px;font-family:'Space Grotesk',sans-serif;font-size:.82rem}
+.three p{font-size:.78rem;line-height:1.6;margin:0;color:#4b5165}
+
+/* --- admin surfaces --- */
+.override{background:var(--card-bg);border:1px solid var(--line);border-radius:var(--radius-s,12px);padding:15px;-webkit-backdrop-filter:var(--blur);backdrop-filter:var(--blur)}
+.override h4{font-family:'Space Grotesk',sans-serif;font-size:.9rem}
+.tiny{font-size:.75rem;line-height:1.55}
+.muted{color:var(--ink-soft)}
+.mono{font-family:'JetBrains Mono',monospace}
+.okc{color:var(--ok)}
+.row{display:flex;gap:10px}.row.center{align-items:center}.col{display:flex;flex-direction:column;gap:14px}
+.spacer{flex:1}
+.dash{border:none;border-top:1px dashed var(--line-2)}
+.pill-row{display:flex;gap:7px;flex-wrap:wrap}
+
+/* resolution trace */
+.trace{line-height:2.05}
+.trace .t-sup{opacity:.42}
+.ovr .trace{opacity:.4}
+.strikebar{position:relative}
+.ovr-band{display:flex;align-items:center;gap:9px;background:var(--hi-soft);border:1px solid rgba(123,110,240,.42);border-radius:9px;padding:9px 11px}
+.ovr-band .lang{font-size:.9rem;color:var(--acc-ink)}
+
+/* language menu (direction A) */
+.lmenu{position:absolute;z-index:20;width:328px;background:var(--fill);border:1px solid var(--line-2);border-radius:13px;box-shadow:0 26px 60px rgba(0,0,0,.6);overflow:hidden}
+.lm-s{display:flex;align-items:center;gap:8px;padding:11px 13px;border-bottom:1px solid var(--line)}
+.lm-s input{flex:1;background:transparent;border:none;outline:none;color:var(--ink);font-family:'Sora',sans-serif;font-size:.84rem}
+.lm-hd{padding:9px 13px 5px;font-size:.66rem;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-dim);font-family:'JetBrains Mono',monospace}
+.lm-r{display:grid;grid-template-columns:30px 1fr auto;align-items:center;gap:10px;padding:8px 13px;cursor:pointer}
+.lm-r:hover,.lm-r.hot{background:var(--hi-soft)}
+.lm-r .lang{font-size:.72rem;color:var(--acc-ink)}
+.lm-nm{font-size:.84rem;font-weight:600;line-height:1.3}
+.lm-nm i{display:block;font-style:normal;font-size:.7rem;color:var(--ink-soft);font-weight:400}
+.pips{display:flex;gap:4px;align-items:center}
+.pip{width:19px;height:19px;border-radius:5px;display:inline-flex;align-items:center;justify-content:center;font-size:.6rem;font-family:'JetBrains Mono',monospace;font-weight:600;background:var(--ok-soft);color:var(--ok);border:1px solid rgba(45,212,154,.35)}
+.pip.no{background:transparent;color:var(--ink-dim);border:1px dashed var(--line-2)}
+.pip.n{background:var(--fill-3);color:var(--ink-soft);border-color:var(--line-2);width:auto;padding:0 6px}
+.lm-ft{padding:9px 13px;border-top:1px solid var(--line);font-size:.7rem;color:var(--ink-soft);line-height:1.55}
+
+/* direction B table */
+.tl{width:100%;border-collapse:collapse}
+.tl th{font-size:.66rem;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-dim);font-family:'JetBrains Mono',monospace;font-weight:600;text-align:left;padding:0 10px 9px;border-bottom:1px solid var(--line)}
+.tl td{padding:10px;border-bottom:1px solid var(--line);font-size:.82rem;vertical-align:middle}
+.tl tr.sel td{background:var(--hi-soft)}
+.tl tr.cur td{background:rgba(255,255,255,.03)}
+.tl .lang{font-size:.72rem;color:var(--acc-ink)}
+.prev{background:var(--bg-2);border:1px solid var(--line);border-radius:12px;padding:15px}
+.prev .pt{font-family:'Space Grotesk',sans-serif;font-size:1.15rem;font-weight:700;letter-spacing:-.01em}
+.prev .po{font-size:.78rem;line-height:1.65;color:var(--ink-soft);margin-top:8px}
+.posterbox{width:88px;height:132px;border-radius:8px;background:linear-gradient(150deg,#2b3040,#191c25);border:1px solid var(--line-2);display:flex;align-items:center;justify-content:center;text-align:center;font-size:.6rem;color:var(--ink-dim);font-family:'JetBrains Mono',monospace;flex:none;padding:6px;line-height:1.4}
+.empt{border:1px dashed rgba(245,181,66,.5);background:var(--warn-soft);border-radius:8px;padding:9px 11px;font-size:.75rem;color:var(--warn);line-height:1.5}
+
+/* direction C */
+.pagebar{display:flex;align-items:center;gap:12px;background:var(--card-bg);border:1px solid var(--line);border-radius:12px;padding:11px 14px}
+.readin{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--line-2);background:var(--fill-2);border-radius:9px;padding:5px 10px;font-size:.78rem;cursor:pointer}
+.readin.live{border-color:var(--hi);background:var(--hi-soft);box-shadow:0 0 0 3px var(--hi-soft)}
+.pv{outline:2px solid var(--hi);outline-offset:3px;border-radius:7px}
+.pvtag{position:absolute;transform:translateY(-50%);font-size:.6rem;font-family:'JetBrains Mono',monospace;background:var(--hi);color:#fff;padding:2px 6px;border-radius:5px;letter-spacing:.05em}
+.acceptbar{display:flex;align-items:center;gap:12px;background:linear-gradient(122deg,rgba(177,92,208,.18),rgba(0,164,220,.14));border:1px solid rgba(123,110,240,.5);border-radius:12px;padding:12px 15px}
+
+/* consequences */
+.field label{display:block;font-size:.68rem;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-dim);font-family:'JetBrains Mono',monospace;margin-bottom:6px}
+.inp{background:var(--fill-2);border:1px solid var(--line-2);border-radius:9px;padding:9px 11px;font-size:.84rem}
+.inp.ta{min-height:60px;line-height:1.6}
+.hist{display:grid;grid-template-columns:52px 78px 1fr;gap:11px;align-items:center;padding:9px 0;border-bottom:1px solid var(--line);font-size:.78rem}
+.libcard{display:flex;gap:12px;align-items:center;background:var(--card-bg);border:1px solid var(--line);border-radius:11px;padding:11px}
+</style>
+</head>
+<body>
+
+<!-- ============ CONTEXT PANEL ============ -->
+<div class="panel" style="left:0;top:0;width:1010px">
+  <h2>Choosing the metadata language, per title</h2>
+  <p class="lead">The resolver walks a file's audio tracks in physical order and fetches TMDB in the first language that answers. For <b>열배</b> that lands on <span class="mono">kor</span> — correct about the film, wrong about what you want to read. This adds one manual escape hatch: <b>choose a different winner for this one item</b>. Automatic resolution stays the default and stays untouched, and English is only the example — any language TMDB holds is selectable, in either direction.</p>
+
+  <h4>The page currently conflates three different languages</h4>
+  <div class="three">
+    <div><h5>Original language</h5><p>TMDB's own <span class="mono">original_language</span> — <b>ko</b>. A fact about the film. Never editable.</p></div>
+    <div><h5>Resolved language</h5><p>The winner of the audio cascade — <b>kor</b>, from <span class="mono">0:a:0</span>. Describes the <i>file</i>.</p></div>
+    <div><h5>Metadata language</h5><p>What we fetch title, overview and artwork in. Today it silently equals the resolved language. <b>This is the one you get to choose.</b></p></div>
+  </div>
+  <p>Every direction below keeps the trace visible after a choice. You should always be able to see what the resolver <i>would</i> have done — a choice that hides its own cause becomes a mystery six months later.</p>
+
+  <h4>Held constant from your answers</h4>
+  <ul>
+    <li><b>Per title only.</b> No rules, no per-library default, no global preference. One item at a time, for the rare edge case.</li>
+    <li><b>One language for text and artwork together.</b> Poster/backdrop candidates follow the same pick.</li>
+    <li><b>Gaps behave exactly as they do today.</b> Choosing a language is choosing a different winner — the existing fetch logic and its existing fallback handle the rest. Nothing new is flagged.</li>
+    <li><b>The list shows only what TMDB actually holds for this title</b>, each row carrying how complete it is.</li>
+    <li><b>열배 lives in the admin only.</b> Ravilo shows exactly the language you chose.</li>
+    <li><b>A series is chosen as a whole.</b> Per-episode resolution keeps running underneath; the choice sits above it.</li>
+    <li>English is <b>an example, not a destination</b> — any language TMDB has is selectable, including going the other way.</li>
+  </ul>
+
+  <div class="warn"><b>Chosen: Direction A</b> (31 Aug). The picker lists only the languages TMDB currently holds for the title, and picking one simply makes it the winner — everything downstream behaves exactly as it does today for an automatically-resolved language, including whatever the existing logic already does about a field TMDB doesn't have. <b>No new empty-field warnings, no new flags, no new states.</b> The one thing that genuinely can't be a language row is textless artwork — see the consequences row. B and C are kept below as rejected.</div>
+</div>
+
+<!-- ============ DIRECTION A ============ -->
+<div class="lbl" style="left:0;top:1180px">
+  <span class="tag">Direction A · chosen</span>
+  <h3>In place, on the trace card</h3>
+  <small>The right-rail card you already read to answer "why is this Korean?" grows the control that changes it. The trace never disappears — once a language is chosen it dims to grey and keeps sitting underneath as the record of what the resolver would have done. The picker lists only what TMDB currently holds for this title, each row showing how much it has, so the choice is informed without the page inventing new warning states.</small>
+</div>
+
+<div class="cap" style="left:440px;top:1180px">A1 · automatic (today + the new button)</div>
+<div class="fr" style="left:440px;top:1210px;width:330px">
+  <div class="override">
+    <div class="row center"><h4 style="margin:0">Metadata language</h4><span class="spacer"></span><span class="badge info">automatic</span></div>
+    <div class="tiny muted" style="margin-top:8px">Resolved from this title's audio tracks, in physical order. Track flags are never touched by this.</div>
+    <div class="box flat" style="margin-top:11px;background:var(--bg-2);padding:12px">
+      <div class="mono tiny trace">
+        <div>0:a:0 <span class="lang">kor</span> <span class="okc">✓ TMDB → winner</span></div>
+        <div class="muted">0:a:1 <span class="lang">??</span> untagged → skipped</div>
+        <div class="muted t-sup">0:a:2–4 <span class="lang">kor</span> → already resolved</div>
+        <div class="muted">0:a:5 <span class="lang">eng</span> → not reached</div>
+        <div class="muted t-sup">0:a:6–7 <span class="lang">kor</span> → already resolved</div>
+        <div class="muted">0:a:8 <span class="lang">eng</span> → not reached</div>
+      </div>
+      <hr class="dash" style="margin:10px 0">
+      <div class="row center"><span class="tiny">Fetching in</span><span class="spacer"></span><span class="badge ok lang">ko</span></div>
+    </div>
+    <div class="pill-row" style="margin-top:11px"><span class="btn sm fill" style="justify-content:center;width:100%">Choose another language…</span></div>
+    <div class="tiny muted" style="margin-top:8px">Global fallback <span class="lang">en</span> · <a href="settings.html">Settings → Metadata →</a></div>
+  </div>
+</div>
+
+<div class="cap" style="left:830px;top:1180px">A2 · picker open — only what TMDB holds</div>
+<div class="fr" style="left:830px;top:1210px;width:330px;height:210px">
+  <div class="override" style="opacity:.45">
+    <div class="row center"><h4 style="margin:0">Metadata language</h4><span class="spacer"></span><span class="badge info">automatic</span></div>
+    <div class="tiny muted" style="margin-top:8px">Resolved from this title's audio tracks, in physical order.</div>
+    <div class="box flat" style="margin-top:11px;background:var(--bg-2);padding:12px"><div class="mono tiny">0:a:0 <span class="lang">kor</span> <span class="okc">✓ winner</span></div></div>
+  </div>
+</div>
+<div class="lmenu" style="left:844px;top:1330px">
+  <div class="lm-s"><span class="muted">⌕</span><input value="" placeholder="Search the 14 languages TMDB has…"></div>
+  <div class="lm-hd">Resolved automatically</div>
+  <div class="lm-r"><span class="lang">ko</span><span class="lm-nm">Korean<i>한국어 · current winner, from 0:a:0</i></span><span class="pips"><span class="pip">Aa</span><span class="pip">¶</span><span class="pip n">12</span></span></div>
+  <div class="lm-hd">Also available for this title</div>
+  <div class="lm-r hot"><span class="lang">en</span><span class="lm-nm">English<i>English</i></span><span class="pips"><span class="pip">Aa</span><span class="pip">¶</span><span class="pip n">34</span></span></div>
+  <div class="lm-r"><span class="lang">ja</span><span class="lm-nm">Japanese<i>日本語</i></span><span class="pips"><span class="pip">Aa</span><span class="pip">¶</span><span class="pip n">3</span></span></div>
+  <div class="lm-r"><span class="lang">fr</span><span class="lm-nm">French<i>Français</i></span><span class="pips"><span class="pip">Aa</span><span class="pip">¶</span><span class="pip n">5</span></span></div>
+  <div class="lm-r"><span class="lang">de</span><span class="lm-nm">German<i>Deutsch</i></span><span class="pips"><span class="pip">Aa</span><span class="pip">¶</span><span class="pip n">4</span></span></div>
+  <div class="lm-r"><span class="lang">da</span><span class="lm-nm">Danish<i>Dansk</i></span><span class="pips"><span class="pip">Aa</span><span class="pip no">¶</span><span class="pip no">▣</span></span></div>
+  <div class="lm-ft"><b style="color:var(--ink)">Aa</b> title · <b style="color:var(--ink)">¶</b> overview · <b style="color:var(--ink)">▣</b> posters. Hollow means TMDB doesn't hold it — the usual fallback applies, same as any other title.</div>
+</div>
+
+<div class="cap" style="left:1220px;top:1180px">A3 · chosen — the trace survives, greyed</div>
+<div class="fr" style="left:1220px;top:1210px;width:330px">
+  <div class="override ovr" style="border-color:rgba(123,110,240,.45)">
+    <div class="row center"><h4 style="margin:0">Metadata language</h4><span class="spacer"></span><span class="badge" style="background:var(--hi-soft);border-color:rgba(123,110,240,.45);color:var(--acc-ink)">chosen</span></div>
+    <div class="ovr-band" style="margin-top:11px">
+      <span class="lang">en</span>
+      <div style="flex:1;min-width:0"><div style="font-size:.82rem;font-weight:600">English</div><div class="tiny muted">chosen by you · 31 Aug</div></div>
+      <span class="btn sm ghost">Change</span>
+    </div>
+    <div class="box flat" style="margin-top:11px;background:var(--bg-2);padding:12px">
+      <div class="tiny muted" style="margin-bottom:7px;font-size:.68rem;letter-spacing:.08em;text-transform:uppercase;font-family:'JetBrains Mono',monospace">What the resolver would do</div>
+      <div class="mono tiny trace">
+        <div>0:a:0 <span class="lang">kor</span> ✓ TMDB → winner</div>
+        <div>0:a:5 <span class="lang">eng</span> → not reached</div>
+      </div>
+    </div>
+    <div class="pill-row" style="margin-top:11px"><span class="btn sm ghost fill" style="justify-content:center;width:100%">Back to automatic (<span class="lang">ko</span>)</span></div>
+    <div class="tiny muted" style="margin-top:8px">Locked — <span class="mono">pull_tmdb</span> and re-scans can't move it.</div>
+  </div>
+</div>
+
+<!-- ============ DIRECTION B ============ -->
+<div class="lbl" style="left:0;top:1900px">
+  <span class="tag" style="color:#8f95aa">Direction B · rejected</span>
+  <h3 style="color:#9aa0b4">A chooser that shows consequences</h3>
+  <small>Built to answer your doubt about the dropdown: not a dropdown at all, but a sheet whose right pane renders the item as it would actually read. <b>Rejected — it earns its keep only if empty fields need warning about, and they don't.</b> The per-language coverage read-out was the good part and moved into A's picker.</small>
+</div>
+
+<div class="cap" style="left:440px;top:1900px">B · rejected — chooser sheet with live preview</div>
+<div class="fr" style="left:440px;top:1930px;width:830px;opacity:.5">
+  <div class="row center" style="margin-bottom:4px"><h3 style="margin:0;font-family:'Space Grotesk',sans-serif;font-size:1.1rem">Choose a language…</h3><span class="spacer"></span><span class="badge info">TMDB 670 · 열배</span></div>
+  <div class="tiny muted" style="margin-bottom:14px;max-width:64ch">Only languages TMDB currently holds a translation for. Everything else about this title is unaffected — audio tracks, defaults and the file itself are never touched.</div>
+  <div class="row" style="gap:18px;align-items:flex-start">
+    <div style="flex:1;min-width:0">
+      <table class="tl">
+        <tr><th style="width:46px"></th><th>Language</th><th style="width:52px">Title</th><th style="width:70px">Overview</th><th style="width:64px">Artwork</th></tr>
+        <tr class="cur"><td><span class="lang">ko</span></td><td><b>Korean</b> <span class="muted">한국어</span><div class="tiny muted">resolved from 0:a:0 · current</div></td><td><span class="pip">Aa</span></td><td><span class="pip">¶</span></td><td><span class="pip n">12</span></td></tr>
+        <tr class="sel"><td><span class="lang">en</span></td><td><b>English</b><div class="tiny" style="color:var(--acc-ink)">selected</div></td><td><span class="pip">Aa</span></td><td><span class="pip">¶</span></td><td><span class="pip n">34</span></td></tr>
+        <tr><td><span class="lang">ja</span></td><td><b>Japanese</b> <span class="muted">日本語</span></td><td><span class="pip">Aa</span></td><td><span class="pip">¶</span></td><td><span class="pip n">3</span></td></tr>
+        <tr><td><span class="lang">fr</span></td><td><b>French</b> <span class="muted">Français</span></td><td><span class="pip">Aa</span></td><td><span class="pip">¶</span></td><td><span class="pip n">5</span></td></tr>
+        <tr><td><span class="lang">da</span></td><td><b>Danish</b> <span class="muted">Dansk</span><div class="tiny" style="color:var(--warn)">title only</div></td><td><span class="pip">Aa</span></td><td><span class="pip no">¶</span></td><td><span class="pip no">▣</span></td></tr>
+      </table>
+      <div class="tiny muted" style="margin-top:11px;line-height:1.6">9 more · <a href="#">show all 14</a>. A language TMDB doesn't have for this title can't be picked — the resolver's global fallback still applies if the pick later disappears.</div>
+    </div>
+    <div style="width:310px;flex:none">
+      <div class="tiny muted" style="margin-bottom:8px;font-size:.68rem;letter-spacing:.08em;text-transform:uppercase;font-family:'JetBrains Mono',monospace">How it will read</div>
+      <div class="prev">
+        <div class="row" style="gap:13px">
+          <div class="posterbox">poster<br>en · 1 of 34</div>
+          <div style="min-width:0">
+            <div class="pt">Tenfold</div>
+            <div class="tiny muted" style="margin-top:3px">2003 · Park Chan-wook</div>
+            <div class="tiny" style="margin-top:9px;color:var(--ink-dim)">열배 <span style="opacity:.7">· kept in the admin only</span></div>
+          </div>
+        </div>
+        <div class="po">With no clue how he came to be imprisoned, drugged and tortured for fifteen years, a desperate man seeks revenge on his captors.</div>
+        <hr class="dash" style="margin:13px 0">
+        <div class="empt">Tagline — English has none on TMDB. This field will be <b>empty</b>, not filled from Korean.</div>
+      </div>
+      <div class="row" style="gap:8px;margin-top:14px;justify-content:flex-end"><span class="btn ghost">Cancel</span><span class="btn primary">Choose English</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ DIRECTION C ============ -->
+<div class="lbl" style="left:0;top:2700px">
+  <span class="tag" style="color:#8f95aa">Direction C · rejected</span>
+  <h3 style="color:#9aa0b4">Change the page, then keep it</h3>
+  <small>The control moves into the pagebar as a standing statement and picking a language turns the detail page itself into a preview with a keep/cancel bar. <b>Rejected — the preview state fights the write-through model the rest of the page follows</b>, and it is by far the most to build for a control used a handful of times a year.</small>
+</div>
+
+<div class="cap" style="left:440px;top:2700px">C · rejected — pagebar control, resting</div>
+<div class="fr" style="left:440px;top:2730px;width:740px;opacity:.5">
+  <div class="pagebar">
+    <div class="posterbox" style="width:34px;height:50px;font-size:.5rem">poster</div>
+    <div style="min-width:0"><div style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:1rem">열배</div><div class="tiny muted">2003 · <span class="mono">c045ed9c</span> · TMDB 670</div></div>
+    <span class="spacer"></span>
+    <span class="lang badge ok">kor</span><span class="lang badge" style="background:var(--fill-2);border-color:var(--line-2);color:var(--ink-soft)">eng</span>
+    <span class="readin">Chosen <b class="lang" style="color:var(--acc-ink)">ko</b> <span class="muted">▾</span></span>
+    <span class="btn sm primary">Save ▾</span>
+  </div>
+</div>
+
+<div class="cap" style="left:440px;top:2870px">C · rejected — preview live, the page becomes the preview</div>
+<div class="fr" style="left:440px;top:2900px;width:740px;opacity:.5">
+  <div class="pagebar" style="margin-bottom:16px">
+    <div class="posterbox" style="width:34px;height:50px;font-size:.5rem">poster<br>en</div>
+    <div style="min-width:0"><div style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:1rem">Tenfold</div><div class="tiny muted">2003 · <span class="mono">c045ed9c</span> · TMDB 670</div></div>
+    <span class="spacer"></span>
+    <span class="readin live">Chosen <b class="lang" style="color:var(--acc-ink)">en</b> <span class="muted">▾</span></span>
+  </div>
+  <div class="row" style="gap:16px;align-items:flex-start">
+    <div style="flex:1;min-width:0;position:relative">
+      <div class="field" style="margin-bottom:14px"><label>Title</label><div class="inp pv">Tenfold</div><span class="pvtag" style="right:6px;top:32px">was 열배</span></div>
+      <div class="field" style="margin-bottom:14px"><label>Overview</label><div class="inp ta pv" style="font-size:.78rem;color:var(--ink-soft)">With no clue how he came to be imprisoned, drugged and tortured for fifteen years, a desperate man seeks revenge on his captors.</div></div>
+      <div class="field"><label>Tagline</label><div class="empt">Empty — English has no tagline on TMDB. Left blank on purpose.</div></div>
+    </div>
+    <div style="width:200px;flex:none">
+      <div class="field"><label>Poster</label><div class="posterbox pv" style="width:100%;height:200px">poster · en<br>34 candidates</div></div>
+      <div class="tiny muted" style="margin-top:9px;line-height:1.6">Artwork follows the same pick. <a href="#">8 textless</a> candidates also available.</div>
+    </div>
+  </div>
+  <div class="acceptbar" style="margin-top:18px">
+    <span class="badge" style="background:var(--hi);color:#fff;border-color:transparent">preview</span>
+    <div class="tiny" style="flex:1;line-height:1.55"><b>English chosen for this title.</b> 3 fields change and artwork re-picks from 34 English candidates. Nothing is written until you keep it.</div>
+    <span class="btn sm ghost">Cancel</span><span class="btn sm primary">Keep English</span>
+  </div>
+</div>
+
+<!-- ============ CONSEQUENCES ============ -->
+<div class="lbl" style="left:0;top:3480px">
+  <span class="tag">Shared · whichever direction wins</span>
+  <h3>What choosing a language changes elsewhere</h3>
+  <small>Same in every direction and the parts most likely to be missed in the build: artwork, how the item is spotted in a list, and how it is undone.</small>
+</div>
+
+<div class="cap" style="left:440px;top:3480px">Metadata tab · the chosen language, and the original kept</div>
+<div class="fr" style="left:440px;top:3510px;width:400px">
+  <div class="field" style="margin-bottom:13px"><label>Title</label><div class="inp">Tenfold</div></div>
+  <div class="field" style="margin-bottom:13px"><label>Original title <span style="text-transform:none;letter-spacing:0;color:var(--ink-soft)">· admin only, never sent to Ravilo</span></label><div class="inp muted">열배</div></div>
+  <div class="field" style="margin-bottom:13px"><label>Overview</label><div class="inp ta" style="font-size:.78rem;color:var(--ink-soft)">With no clue how he came to be imprisoned, drugged and tortured for fifteen years, a desperate man seeks revenge on his captors.</div></div>
+  <div class="field"><label>Original language</label><div class="inp muted"><span class="lang">ko</span> · from TMDB, not editable</div></div>
+  <div class="tiny muted" style="margin-top:11px;line-height:1.6">Fields fill exactly as they would for any title whose winner is <span class="lang">en</span>. Nothing here knows the language was chosen by hand rather than resolved.</div>
+</div>
+
+<div class="cap" style="left:880px;top:3480px">Artwork tab · candidates follow the pick</div>
+<div class="fr" style="left:880px;top:3510px;width:400px">
+  <div class="row center" style="margin-bottom:11px"><h4 style="margin:0;font-family:'Space Grotesk',sans-serif;font-size:.9rem">Posters</h4><span class="spacer"></span><span class="badge" style="background:var(--hi-soft);border-color:rgba(123,110,240,.45);color:var(--acc-ink)"><span class="lang">en</span> chosen</span></div>
+  <div class="row" style="gap:9px"><div class="posterbox" style="width:78px;height:117px;border-color:var(--hi);box-shadow:0 0 0 2px var(--hi-soft)">in use<br>en</div><div class="posterbox" style="width:78px;height:117px">en</div><div class="posterbox" style="width:78px;height:117px">en</div><div class="posterbox" style="width:78px;height:117px">textless</div></div>
+  <hr class="dash" style="margin:13px 0">
+  <div class="row center" style="gap:9px;flex-wrap:wrap"><span class="chip" style="background:var(--hi-soft);border-color:rgba(123,110,240,.45)">English · 34</span><span class="chip">Textless · 8</span><span class="chip ghost">Korean · 12</span></div>
+  <div class="tiny muted" style="margin-top:11px;line-height:1.6"><b style="color:var(--ink)">Textless is not a language</b>, so it can't live in the language picker — but for a foreign-language film it is often the best poster. It stays reachable here as its own group.</div>
+</div>
+
+<div class="cap" style="left:440px;top:3950px">Library list · spot a hand-chosen title without opening it</div>
+<div class="fr" style="left:440px;top:3980px;width:400px">
+  <div class="libcard" style="margin-bottom:9px"><div class="posterbox" style="width:36px;height:54px;font-size:.5rem">en</div><div style="flex:1;min-width:0"><div style="font-weight:600;font-size:.88rem">Tenfold</div><div class="tiny muted">2003 · <span class="lang">kor</span> audio</div></div><span class="badge" style="background:var(--hi-soft);border-color:rgba(123,110,240,.45);color:var(--acc-ink)"><span class="lang">en</span></span></div>
+  <div class="libcard"><div class="posterbox" style="width:36px;height:54px;font-size:.5rem">ja</div><div style="flex:1;min-width:0"><div style="font-weight:600;font-size:.88rem">千と千尋の神隠し</div><div class="tiny muted">2001 · <span class="lang">jpn</span> audio</div></div></div>
+  <div class="tiny muted" style="margin-top:11px;line-height:1.6">A chip only where a language was chosen by hand — the automatic majority stays unmarked. Filterable in the workbench as <b>Metadata language · chosen</b>, which is how you find the handful you've touched.</div>
+</div>
+
+<div class="cap" style="left:880px;top:3950px">History · reversible like every other write</div>
+<div class="fr" style="left:880px;top:3980px;width:400px">
+  <div class="hist"><span class="muted tiny mono">14:22</span><span class="badge" style="background:var(--hi-soft);border-color:rgba(123,110,240,.45);color:var(--acc-ink)">language</span><span class="tiny">Metadata language → <span class="lang">en</span> (was <span class="lang">ko</span>, automatic) · locked</span></div>
+  <div class="hist"><span class="muted tiny mono">14:22</span><span class="badge ok">nfo</span><span class="tiny">Re-wrote movie.nfo in <span class="lang">en</span></span></div>
+  <div class="hist" style="border:none"><span class="muted tiny mono">14:22</span><span class="badge info">artwork</span><span class="tiny">Poster re-picked from 34 <span class="lang">en</span> candidates</span></div>
+  <div class="tiny muted" style="margin-top:12px;line-height:1.6">One user action, three recorded writes — going back to automatic restores all three, the same contract as the Phase 174 clear.</div>
+</div>
+
+<!-- ============ DECISIONS ============ -->
+<div class="panel" style="left:0;top:4370px;width:1010px">
+  <h2>Direction A, and what still needs deciding</h2>
+  <p class="lead"><b>A, with the per-language coverage read-out from B folded into its picker.</b> The control sits where the question gets asked, the trace stays visible underneath, and choosing a language does one thing: it names a different winner. Everything after that — fetching, filling fields, picking artwork, writing the NFO — runs the code that already exists, with no new warning states, no new flags, and no new empty-field handling. If TMDB lacks a field in the chosen language, whatever happens today for an automatically-resolved language happens here too.</p>
+
+  <div class="good"><b>The invariant I'd write into the spec:</b> choosing a language changes <i>which language we ask TMDB for</i>, and nothing else. It never edits a track, never changes a default flag, never touches the file, and never alters the resolver — the cascade keeps running underneath and stays visible. The constitution's "language resolution is per-file, first TMDB hit wins" stays true; the choice is a layer above it, not an edit to it.</div>
+
+  <h4>Behaviour worth pinning before anyone builds</h4>
+  <ul>
+    <li><b>The choice is a lock.</b> Same shape as Phase 151/174: <span class="mono">pull_tmdb</span>, a re-scan and a Jellyfin re-pull all keep it. Otherwise the next scan silently undoes your work.</li>
+    <li><b>Downstream is unchanged.</b> No field gains a warning, nothing new enters Triage, and the Metadata tab can't tell a chosen winner from a resolved one.</li>
+    <li><b>TMDB gains translations over time.</b> A later pull picks them up on its own — the choice re-fetches like any other item rather than freezing a payload.</li>
+    <li><b>Series:</b> one choice for the whole show. Per-episode resolution still runs (episodes have their own tracks), but every episode fetches in the chosen language. An episode whose own audio differs does <i>not</i> escape it.</li>
+    <li><b>Ravilo is unaffected as a system</b> — it receives whatever the admin stored. No client work, no new strings.</li>
+  </ul>
+
+  <h4>Open questions for the dev review</h4>
+  <ul>
+    <li>Is <span class="mono">GET /movie/{id}/translations</span> cheap enough to call when the picker opens, or does the coverage read-out need caching on the item? A series needs the same call per season for episode coverage.</li>
+    <li>Does the artwork side use <span class="mono">include_image_language=&lt;chosen&gt;,null</span>, or does the choice steer text only? Your answer said text and artwork together — this is where "together" gets specific.</li>
+    <li>What does the NFO carry — a field recording the chosen language so Jellyfin and a future re-import agree, or is it invisible outside our DB?</li>
+    <li>Does the Library workbench need a <b>Metadata language</b> facet, or is the chip enough to find these again?</li>
+  </ul>
+
+  <hr>
+  <p class="tiny" style="color:#6b7286;font-size:.78rem">Next unassigned phase number is <b>184</b>. Say the word and I'll write this up as a spec and apply it to <span class="mono">app/media.html</span>.</p>
+</div>
+
+</body>
+</html>

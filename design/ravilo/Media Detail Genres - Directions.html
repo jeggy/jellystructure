@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="design_doc_mode" content="canvas">
+<title>Ravilo · all genres on the media detail — Directions</title>
+<link rel="stylesheet" href="ravilo.css">
+<link rel="stylesheet" href="../flags.css">
+<style>
+body{background:transparent;font-family:'Sora',sans-serif}
+.lbl{position:absolute;width:400px;color:#e8eaf2}
+.lbl h3{margin:0;font-family:'Space Grotesk',sans-serif;font-size:1.15rem;letter-spacing:-.01em}
+.lbl small{display:block;margin-top:8px;font-size:.78rem;line-height:1.65;color:#a9afc4}
+.lbl small b{color:#d7dbe8;font-weight:600}
+.lbl small + small{margin-top:10px}
+.lbl .tag{display:inline-block;font-family:'JetBrains Mono','SFMono-Regular',monospace;font-size:.66rem;letter-spacing:.09em;text-transform:uppercase;color:#7b6ef0;margin-bottom:7px}
+.lbl .tag.no{color:#8f95aa}
+.cap{position:absolute;width:460px;font-size:.72rem;color:#8f95aa;font-family:'JetBrains Mono','SFMono-Regular',monospace;letter-spacing:.05em;text-transform:uppercase}
+.shot{position:absolute;width:960px;height:310px;overflow:hidden;border-radius:14px;border:1px solid rgba(255,255,255,.12);box-shadow:0 24px 60px rgba(0,0,0,.5)}
+.shot.tall{height:340px}
+.shot > .inner{width:1920px;transform:scale(.5);transform-origin:top left}
+.stagebg{position:relative;height:620px;background:#0a0c13;color:#f3f4fb;overflow:hidden}
+.stagebg.tall{height:680px}
+.bg1{position:absolute;inset:0;background:linear-gradient(118deg,#2a1d4d,#122238 58%,#0a0c13)}
+.bg2{position:absolute;inset:0;background:linear-gradient(118deg,#123a3c,#10202f 58%,#0a0c13)}
+.scrimx{position:absolute;inset:0;background:linear-gradient(90deg,rgba(10,12,19,.94) 0%,rgba(10,12,19,.72) 42%,rgba(10,12,19,.15) 100%),linear-gradient(0deg,rgba(10,12,19,.96),transparent 62%)}
+.phone{position:absolute;width:390px;height:600px;border-radius:34px;border:1px solid rgba(255,255,255,.14);background:#0a0c13;overflow:hidden;box-shadow:0 24px 60px rgba(0,0,0,.5)}
+.ph-bg{position:absolute;left:0;right:0;top:0;height:300px;background:linear-gradient(118deg,#2a1d4d,#122238 70%,#0a0c13)}
+.ph-scrim{position:absolute;left:0;right:0;top:0;height:300px;background:linear-gradient(0deg,#0a0c13,rgba(10,12,19,.1))}
+.ph-body{position:absolute;left:22px;right:22px;top:196px;color:#f3f4fb}
+.ph-title{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:31px;letter-spacing:-1px;line-height:1}
+.ph-meta{display:flex;align-items:center;gap:9px;font-size:13px;color:#aeb4cb;margin-top:11px}
+.ph-syn{font-size:13px;line-height:1.6;color:#aeb4cb;margin-top:14px}
+.ph-acts{display:flex;gap:9px;margin-top:16px}
+.ph-btn{flex:1;height:44px;border-radius:11px;display:flex;align-items:center;justify-content:center;gap:7px;font-size:14px;font-weight:600;background:#fff;color:#0a0c13}
+.ph-btn.g{background:rgba(255,255,255,.1);color:#f3f4fb;flex:none;width:52px}
+.panel{position:absolute;background:#fff;color:#171923;border-radius:18px;padding:34px 38px;box-shadow:0 24px 60px rgba(0,0,0,.4)}
+.panel h2{font-family:'Space Grotesk',sans-serif;font-size:1.5rem;margin:0 0 4px;letter-spacing:-.02em}
+.panel h4{font-family:'Space Grotesk',sans-serif;font-size:.95rem;margin:26px 0 8px;letter-spacing:-.01em}
+.panel p{font-size:.86rem;line-height:1.7;color:#3c4256;margin:0 0 10px}
+.panel .lead{font-size:.95rem;color:#232838}
+.panel b{color:#171923}
+.panel ul{margin:0;padding-left:18px}.panel li{font-size:.86rem;line-height:1.75;color:#3c4256;margin-bottom:5px}
+.panel .mono{font-family:'JetBrains Mono','SFMono-Regular',monospace;font-size:.82em;background:#f0f1f6;padding:1px 5px;border-radius:4px}
+.panel hr{border:none;border-top:1px solid #e6e8ef;margin:22px 0}
+.three{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin:14px 0 4px}
+.three div{background:#f6f7fb;border:1px solid #e6e8ef;border-radius:11px;padding:13px 15px}
+.three h5{margin:0 0 5px;font-family:'Space Grotesk',sans-serif;font-size:.82rem}
+.three p{font-size:.78rem;line-height:1.6;margin:0;color:#4b5165}
+.good{background:#eef7f2;border:1px solid #b9dfcc;border-radius:10px;padding:13px 15px;font-size:.84rem;line-height:1.65;color:#1f4634;margin:12px 0}
+.good b{color:#123326}
+.warn{background:#fff8e8;border:1px solid #f2d79a;border-radius:10px;padding:13px 15px;font-size:.84rem;line-height:1.65;color:#4a3c1c;margin:12px 0}
+.warn b{color:#3a2e10}
+
+/* ============ THE NEW GENRE TREATMENTS ============ */
+/* A — inline chips inside the existing meta line */
+.gm{display:inline-flex;align-items:center;gap:10px}
+.gm .g{font-size:19px;color:#aeb4cb}
+.gm .sep{width:3px;height:3px;border-radius:50%;background:#6b7290}
+.gm .more{font-size:16px;font-weight:600;color:#f3f4fb;background:rgba(255,255,255,.1);padding:2px 10px;border-radius:30px}
+
+/* B — its own labelled row, mirroring the audio/subtitle flag strip */
+.dhero-genres{display:flex;align-items:center;gap:14px;margin-bottom:20px;flex-wrap:wrap}
+.dhero-genres .g-label{font-size:13px;font-weight:600;letter-spacing:2px;text-transform:uppercase;color:#6b7290}
+.dhero-genres .g-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.gchip2{display:inline-flex;align-items:center;height:42px;padding:0 20px;border-radius:21px;font-size:19px;font-weight:500;color:#f3f4fb;background:rgba(255,255,255,.09);border:1px solid rgba(255,255,255,.09);white-space:nowrap;transition:all .15s}
+.gchip2.lead{background:rgba(123,110,240,.2);border-color:rgba(123,110,240,.55);font-weight:600}
+.gchip2.focused{background:#f3f4fb;color:#0a0c13;border-color:transparent;box-shadow:0 0 0 4px #8e82ff,0 14px 34px rgba(0,0,0,.5);transform:translateY(-2px)}
+.gchip2 .arrow{margin-left:9px;font-size:15px;opacity:.55}
+.gchip2.focused .arrow{opacity:.8}
+
+/* C — primary genre promoted into the kicker, rest as a quiet trail */
+.kick-genre{color:#3fb6f5}
+.gtrail{font-size:18px;color:#6b7290;margin-bottom:18px;letter-spacing:.2px}
+.gtrail b{color:#aeb4cb;font-weight:500}
+
+/* phone */
+.ph-gwrap{display:flex;gap:7px;flex-wrap:wrap;margin-top:13px}
+.ph-g{height:32px;padding:0 14px;border-radius:16px;display:inline-flex;align-items:center;font-size:13px;font-weight:500;background:rgba(255,255,255,.09);border:1px solid rgba(255,255,255,.09);color:#f3f4fb}
+.ph-g.lead{background:rgba(123,110,240,.2);border-color:rgba(123,110,240,.5);font-weight:600}
+</style>
+</head>
+<body>
+
+<!-- ================= CONTEXT ================= -->
+<div class="panel" style="left:0;top:0;width:1010px">
+  <h2>Showing every genre on a Ravilo detail page</h2>
+  <p class="lead">Today the hero meta line renders <span class="mono">item.genre</span> — one string, one genre, dropped in between the year and the age rating. Most titles have three or four. The question isn't only <i>where the other genres go</i>; it's <b>what genres are for on this screen</b>.</p>
+
+  <h4>Two honest answers, and they pull in different directions</h4>
+  <div class="three">
+    <div><h5>Genres are description</h5><p>Part of the same glance as year, HD and the age badge. Quiet, unclickable, there to answer "what kind of film is this?" Cheapest, no D-pad cost.</p></div>
+    <div><h5>Genres are navigation</h5><p>The way you leave this title for a shelf of others like it. Ravilo already has the destination — the browse page with its Genre facet — and R190 set the precedent by making a cast face a link into it.</p></div>
+    <div><h5>Genres are identity</h5><p>One genre is what a film <i>is</i>; the rest are footnotes. TMDB returns them in a meaningful order, so the first can carry real weight and the tail can stay small.</p></div>
+  </div>
+  <p>Direction <b>A</b> takes the first answer, <b>B</b> the second, <b>C</b> the third. All three are drawn on the real detail hero at half scale, using Ravilo's own stylesheet.</p>
+
+  <div class="warn"><b>The constraint that shapes all of this:</b> this is a 10-foot D-pad screen. The hero already holds four focus rows — synopsis, actions, and on a series the season pills and episode rail. Every genre chip that becomes focusable is another stop on the way down the page, and Down from the title should still land on <b>Play</b>. Only B pays that cost, and it pays it deliberately.</div>
+</div>
+
+<!-- ================= BASELINE ================= -->
+<div class="lbl" style="left:0;top:820px">
+  <span class="tag no">Today</span>
+  <h3>One genre, in the meta line</h3>
+  <small>Offboarding has four genres in the library — Drama, Mystery, Sci-Fi, Thriller. The detail page shows <b>Drama</b>, and nothing indicates the others exist.</small>
+</div>
+<div class="cap" style="left:440px;top:820px">Baseline · ravilo-app.js line 595</div>
+<div class="shot" style="left:440px;top:850px">
+  <div class="inner"><div class="stagebg">
+    <div class="bg1"></div><div class="scrimx"></div>
+    <div class="dhero-body">
+      <div class="hero-kicker"><span>Innie. Outie. One life.</span><span class="n">2 Seasons</span></div>
+      <div class="dhero-title">Offboarding</div>
+      <div class="hero-meta"><span class="tag">4K DV</span><span>2022</span><span>Drama</span><span class="cert lvl-3"><span class="cert-rg">DK</span><span class="cert-code">15</span></span><span class="imdb"><span class="imdb-wm"><span class="imdb-star">★</span>IMDb</span><span>8.7</span></span></div>
+      <div class="dhero-flags"><div class="aflag-group"><span class="aflag-label">Audio</span><div class="aflag-row"><span class="aflag flag-us"></span><span class="aflag flag-dk"></span></div></div><span class="aflag-div"></span><div class="aflag-group"><span class="aflag-label">Subtitles</span><div class="aflag-row"><span class="aflag flag-dk"></span><span class="aflag flag-fo"></span><span class="aflag-more">+3</span></div></div></div>
+      <div class="dsyn-block"><div class="hero-syn dsyn">Mark leads a team of office workers whose memories have been surgically divided between their work and personal lives.</div><span class="syn-toggle">▾ more</span></div>
+      <div class="dactions"><div class="btn primary"><span class="ic">▶</span> Resume S2:E4</div><div class="btn ghost"><span class="ic">＋</span> My List</div></div>
+    </div>
+  </div></div>
+</div>
+
+<!-- ================= DIRECTION A ================= -->
+<div class="lbl" style="left:0;top:1250px">
+  <span class="tag">Direction A</span>
+  <h3>All of them, in the line they already live in</h3>
+  <small>The genre slot simply stops being one string. Genres render as text separated by hairline dots, in the same weight and colour as the year — no chips, no new row, nothing focusable. Past three, the tail collapses into a <b>+2</b> pill in the same style the subtitle flag strip already uses.</small>
+  <small><b>Cheapest by far and impossible to get wrong.</b> The cost is that the meta line is already the busiest thing in the hero: format, year, four genres, an age badge and an IMDb score in one 19px row. It reads as a spec sheet rather than as anything you'd want to look at.</small>
+</div>
+<div class="cap" style="left:440px;top:1250px">A · meta line carries all four</div>
+<div class="shot" style="left:440px;top:1280px">
+  <div class="inner"><div class="stagebg">
+    <div class="bg1"></div><div class="scrimx"></div>
+    <div class="dhero-body">
+      <div class="hero-kicker"><span>Innie. Outie. One life.</span><span class="n">2 Seasons</span></div>
+      <div class="dhero-title">Offboarding</div>
+      <div class="hero-meta"><span class="tag">4K DV</span><span>2022</span><span class="gm"><span class="g">Drama</span><span class="sep"></span><span class="g">Mystery</span><span class="sep"></span><span class="g">Sci-Fi</span><span class="more">+1</span></span><span class="cert lvl-3"><span class="cert-rg">DK</span><span class="cert-code">15</span></span><span class="imdb"><span class="imdb-wm"><span class="imdb-star">★</span>IMDb</span><span>8.7</span></span></div>
+      <div class="dhero-flags"><div class="aflag-group"><span class="aflag-label">Audio</span><div class="aflag-row"><span class="aflag flag-us"></span><span class="aflag flag-dk"></span></div></div><span class="aflag-div"></span><div class="aflag-group"><span class="aflag-label">Subtitles</span><div class="aflag-row"><span class="aflag flag-dk"></span><span class="aflag flag-fo"></span><span class="aflag-more">+3</span></div></div></div>
+      <div class="dsyn-block"><div class="hero-syn dsyn">Mark leads a team of office workers whose memories have been surgically divided between their work and personal lives.</div><span class="syn-toggle">▾ more</span></div>
+      <div class="dactions"><div class="btn primary"><span class="ic">▶</span> Resume S2:E4</div><div class="btn ghost"><span class="ic">＋</span> My List</div></div>
+    </div>
+  </div></div>
+</div>
+
+<!-- ================= DIRECTION B ================= -->
+<div class="lbl" style="left:0;top:1680px">
+  <span class="tag">Direction B</span>
+  <h3>Their own row — and a way out of the page</h3>
+  <small>Genres leave the meta line and become a labelled row of their own, built exactly like the <b>AUDIO / SUBTITLES</b> flag strip directly below it: a dim 13px caps label, then the values. The pattern is already in the design language, so this reads as native rather than added.</small>
+  <small>Each chip is <b>focusable and opens the browse page seeded to that genre</b> — the same contract R190 gave a cast face. The first chip is tinted with the accent because TMDB's order is meaningful: this is a Drama that is also three other things. One extra focus row on the way down, placed above the synopsis so <b>Down from the title still reaches Play</b> in the same number of presses as today.</small>
+</div>
+<div class="cap" style="left:440px;top:1680px">B · resting</div>
+<div class="shot tall" style="left:440px;top:1710px">
+  <div class="inner"><div class="stagebg tall">
+    <div class="bg1"></div><div class="scrimx"></div>
+    <div class="dhero-body">
+      <div class="hero-kicker"><span>Innie. Outie. One life.</span><span class="n">2 Seasons</span></div>
+      <div class="dhero-title">Offboarding</div>
+      <div class="hero-meta"><span class="tag">4K DV</span><span>2022</span><span class="cert lvl-3"><span class="cert-rg">DK</span><span class="cert-code">15</span></span><span class="imdb"><span class="imdb-wm"><span class="imdb-star">★</span>IMDb</span><span>8.7</span></span><span class="dmeta-watched">✓ Watched</span></div>
+      <div class="dhero-genres"><span class="g-label">Genres</span><div class="g-row"><span class="gchip2 lead">Drama</span><span class="gchip2">Mystery</span><span class="gchip2">Sci-Fi</span><span class="gchip2">Thriller</span></div></div>
+      <div class="dhero-flags"><div class="aflag-group"><span class="aflag-label">Audio</span><div class="aflag-row"><span class="aflag flag-us"></span><span class="aflag flag-dk"></span></div></div><span class="aflag-div"></span><div class="aflag-group"><span class="aflag-label">Subtitles</span><div class="aflag-row"><span class="aflag flag-dk"></span><span class="aflag flag-fo"></span><span class="aflag-more">+3</span></div></div></div>
+      <div class="dsyn-block"><div class="hero-syn dsyn">Mark leads a team of office workers whose memories have been surgically divided between their work and personal lives.</div><span class="syn-toggle">▾ more</span></div>
+      <div class="dactions"><div class="btn primary"><span class="ic">▶</span> Resume S2:E4</div><div class="btn ghost"><span class="ic">＋</span> My List</div></div>
+    </div>
+  </div></div>
+</div>
+
+<div class="cap" style="left:440px;top:2090px">B · focused — OK opens browse, seeded to Sci-Fi</div>
+<div class="shot tall" style="left:440px;top:2120px">
+  <div class="inner"><div class="stagebg tall">
+    <div class="bg1"></div><div class="scrimx"></div>
+    <div class="dhero-body">
+      <div class="hero-kicker"><span>Innie. Outie. One life.</span><span class="n">2 Seasons</span></div>
+      <div class="dhero-title">Offboarding</div>
+      <div class="hero-meta"><span class="tag">4K DV</span><span>2022</span><span class="cert lvl-3"><span class="cert-rg">DK</span><span class="cert-code">15</span></span><span class="imdb"><span class="imdb-wm"><span class="imdb-star">★</span>IMDb</span><span>8.7</span></span><span class="dmeta-watched">✓ Watched</span></div>
+      <div class="dhero-genres"><span class="g-label">Genres</span><div class="g-row"><span class="gchip2 lead">Drama</span><span class="gchip2">Mystery</span><span class="gchip2 focused">Sci-Fi <span class="arrow">›</span></span><span class="gchip2">Thriller</span></div></div>
+      <div class="dhero-flags"><div class="aflag-group"><span class="aflag-label">Audio</span><div class="aflag-row"><span class="aflag flag-us"></span><span class="aflag flag-dk"></span></div></div><span class="aflag-div"></span><div class="aflag-group"><span class="aflag-label">Subtitles</span><div class="aflag-row"><span class="aflag flag-dk"></span><span class="aflag flag-fo"></span><span class="aflag-more">+3</span></div></div></div>
+      <div class="dsyn-block"><div class="hero-syn dsyn">Mark leads a team of office workers whose memories have been surgically divided between their work and personal lives.</div><span class="syn-toggle">▾ more</span></div>
+      <div class="dactions"><div class="btn primary"><span class="ic">▶</span> Resume S2:E4</div><div class="btn ghost"><span class="ic">＋</span> My List</div></div>
+    </div>
+  </div></div>
+</div>
+
+<!-- ================= DIRECTION C ================= -->
+<div class="lbl" style="left:0;top:2530px">
+  <span class="tag">Direction C</span>
+  <h3>One genre is the identity, the rest are detail</h3>
+  <small>The kicker line above the title already exists and currently repeats the tagline. Here the <b>primary genre takes it</b>, in the accent blue small-caps the kicker is already styled in — <span style="color:#3fb6f5;font-weight:600">DRAMA · 2 SEASONS</span> — so the first thing read after the title is what kind of thing this is. The remaining genres sit under the meta line as one quiet, unemphasised line.</small>
+  <small><b>The most editorial and the least chrome:</b> nothing gains a border, nothing gains focus, and the hero gets calmer rather than busier. It's also the most opinionated — it asserts that genre one matters and genres two-to-four are footnotes, which is true of <i>Offboarding</i> and arguable for a Comedy/Horror.</small>
+</div>
+<div class="cap" style="left:440px;top:2530px">C · primary in the kicker, trail below</div>
+<div class="shot" style="left:440px;top:2560px">
+  <div class="inner"><div class="stagebg">
+    <div class="bg1"></div><div class="scrimx"></div>
+    <div class="dhero-body">
+      <div class="hero-kicker"><span class="kick-genre">Drama</span><span class="n">2 Seasons · 2022</span></div>
+      <div class="dhero-title">Offboarding</div>
+      <div class="hero-meta"><span class="tag">4K DV</span><span class="cert lvl-3"><span class="cert-rg">DK</span><span class="cert-code">15</span></span><span class="imdb"><span class="imdb-wm"><span class="imdb-star">★</span>IMDb</span><span>8.7</span></span><span class="dmeta-watched">✓ Watched</span></div>
+      <div class="gtrail">also <b>Mystery</b>, <b>Sci-Fi</b> and <b>Thriller</b></div>
+      <div class="dhero-flags"><div class="aflag-group"><span class="aflag-label">Audio</span><div class="aflag-row"><span class="aflag flag-us"></span><span class="aflag flag-dk"></span></div></div><span class="aflag-div"></span><div class="aflag-group"><span class="aflag-label">Subtitles</span><div class="aflag-row"><span class="aflag flag-dk"></span><span class="aflag flag-fo"></span><span class="aflag-more">+3</span></div></div></div>
+      <div class="dsyn-block"><div class="hero-syn dsyn">Mark leads a team of office workers whose memories have been surgically divided between their work and personal lives.</div><span class="syn-toggle">▾ more</span></div>
+      <div class="dactions"><div class="btn primary"><span class="ic">▶</span> Resume S2:E4</div><div class="btn ghost"><span class="ic">＋</span> My List</div></div>
+    </div>
+  </div></div>
+</div>
+
+<!-- ================= EDGE CASES ================= -->
+<div class="lbl" style="left:0;top:2960px">
+  <span class="tag">Direction B · the cases that break layouts</span>
+  <h3>One genre, and seven</h3>
+  <small>A documentary with a single genre must not look like a row with something missing, and TMDB will happily return seven for an animated family adventure. The row caps at <b>four visible</b> and rolls the rest into a focusable <b>+3</b> that opens browse pre-filtered to the title's full genre set.</small>
+</div>
+<div class="cap" style="left:440px;top:2960px">B · a single genre — the label carries it</div>
+<div class="shot" style="left:440px;top:2990px;height:250px">
+  <div class="inner"><div class="stagebg" style="height:500px">
+    <div class="bg2"></div><div class="scrimx"></div>
+    <div class="dhero-body">
+      <div class="hero-kicker"><span>A year on the ice</span><span class="n">2023</span></div>
+      <div class="dhero-title">Kalaallit Nunaat</div>
+      <div class="hero-meta"><span class="tag">4K</span><span>2023</span><span class="cert lvl-1"><span class="cert-rg">DK</span><span class="cert-code">7</span></span></div>
+      <div class="dhero-genres"><span class="g-label">Genre</span><div class="g-row"><span class="gchip2 lead">Documentary</span></div></div>
+      <div class="dsyn-block"><div class="hero-syn dsyn">Twelve months with the last dog-sled hunters of north-west Greenland.</div></div>
+      <div class="dactions"><div class="btn primary"><span class="ic">▶</span> Play</div></div>
+    </div>
+  </div></div>
+</div>
+
+<div class="cap" style="left:440px;top:3280px">B · seven genres — capped at four, tail is focusable</div>
+<div class="shot" style="left:440px;top:3310px;height:250px">
+  <div class="inner"><div class="stagebg" style="height:500px">
+    <div class="bg2"></div><div class="scrimx"></div>
+    <div class="dhero-body">
+      <div class="hero-kicker"><span>Dreams have a price</span><span class="n">2010</span></div>
+      <div class="dhero-title">Sintel</div>
+      <div class="hero-meta"><span class="tag">HD</span><span>2010</span><span class="cert lvl-2"><span class="cert-rg">US</span><span class="cert-code">PG</span></span></div>
+      <div class="dhero-genres"><span class="g-label">Genres</span><div class="g-row"><span class="gchip2 lead">Animation</span><span class="gchip2">Fantasy</span><span class="gchip2">Adventure</span><span class="gchip2">Short</span><span class="gchip2" style="background:rgba(255,255,255,.05);color:#aeb4cb">+3</span></div></div>
+      <div class="dsyn-block"><div class="hero-syn dsyn">A lone girl crosses a hostile world to find the dragon she once raised.</div></div>
+      <div class="dactions"><div class="btn primary"><span class="ic">▶</span> Play</div></div>
+    </div>
+  </div></div>
+</div>
+
+<!-- ================= PHONE ================= -->
+<div class="lbl" style="left:0;top:3620px">
+  <span class="tag">Phone · R60 target</span>
+  <h3>The same three, thumb-sized</h3>
+  <small>On the phone there is no D-pad cost and no 10-foot legibility floor, so the calculus changes: <b>B is straightforwardly the best of the three here</b> — the chips are already the right size for a tap target and wrapping is free. A's dot-separated run competes with the meta line for a much narrower measure, and C's kicker is too small to carry the accent treatment.</small>
+</div>
+
+<div class="cap" style="left:440px;top:3620px">A on phone</div>
+<div class="phone" style="left:440px;top:3650px">
+  <div class="ph-bg"></div><div class="ph-scrim"></div>
+  <div class="ph-body">
+    <div class="ph-title">Offboarding</div>
+    <div class="ph-meta"><span>2022</span><span>·</span><span>Drama · Mystery · Sci-Fi</span><span style="background:rgba(255,255,255,.1);padding:2px 8px;border-radius:20px;font-size:11px">+1</span></div>
+    <div class="ph-meta" style="margin-top:8px"><span class="cert lvl-3" style="transform:scale(.8);transform-origin:left"><span class="cert-rg">DK</span><span class="cert-code">15</span></span></div>
+    <div class="ph-syn">Mark leads a team of office workers whose memories have been surgically divided between their work and personal lives.</div>
+    <div class="ph-acts"><div class="ph-btn">▶ Resume S2:E4</div><div class="ph-btn g">＋</div></div>
+  </div>
+</div>
+
+<div class="cap" style="left:880px;top:3620px">B on phone — tappable, wraps for free</div>
+<div class="phone" style="left:880px;top:3650px">
+  <div class="ph-bg"></div><div class="ph-scrim"></div>
+  <div class="ph-body">
+    <div class="ph-title">Offboarding</div>
+    <div class="ph-meta"><span>2022</span><span>·</span><span>2 Seasons</span><span class="cert lvl-3" style="transform:scale(.8);transform-origin:left"><span class="cert-rg">DK</span><span class="cert-code">15</span></span></div>
+    <div class="ph-gwrap"><span class="ph-g lead">Drama</span><span class="ph-g">Mystery</span><span class="ph-g">Sci-Fi</span><span class="ph-g">Thriller</span></div>
+    <div class="ph-syn">Mark leads a team of office workers whose memories have been surgically divided between their work and personal lives.</div>
+    <div class="ph-acts"><div class="ph-btn">▶ Resume S2:E4</div><div class="ph-btn g">＋</div></div>
+  </div>
+</div>
+
+<div class="cap" style="left:1320px;top:3620px">C on phone</div>
+<div class="phone" style="left:1320px;top:3650px">
+  <div class="ph-bg"></div><div class="ph-scrim"></div>
+  <div class="ph-body">
+    <div style="font-size:12px;font-weight:600;letter-spacing:2px;text-transform:uppercase;color:#3fb6f5;margin-bottom:7px">Drama <span style="color:#aeb4cb">· 2 Seasons</span></div>
+    <div class="ph-title">Offboarding</div>
+    <div class="ph-meta"><span>2022</span><span class="cert lvl-3" style="transform:scale(.8);transform-origin:left"><span class="cert-rg">DK</span><span class="cert-code">15</span></span></div>
+    <div style="font-size:12px;color:#6b7290;margin-top:10px">also <span style="color:#aeb4cb">Mystery</span>, <span style="color:#aeb4cb">Sci-Fi</span> and <span style="color:#aeb4cb">Thriller</span></div>
+    <div class="ph-syn">Mark leads a team of office workers whose memories have been surgically divided between their work and personal lives.</div>
+    <div class="ph-acts"><div class="ph-btn">▶ Resume S2:E4</div><div class="ph-btn g">＋</div></div>
+  </div>
+</div>
+
+<!-- ================= DECISIONS ================= -->
+<div class="panel" style="left:0;top:4340px;width:1010px">
+  <h2>What I'd ship</h2>
+  <p class="lead"><b>Direction B</b>, with one borrowing from C: keep the accent tint on the first chip, so the row still says which genre is the primary one. B is the only direction that turns genres into something you can <i>act</i> on, and Ravilo already owns the destination — the browse page's Genre facet, reachable today only from a row's See-all. A genre chip is the natural front door to it, and it costs no new screen.</p>
+
+  <div class="good"><b>Why it looks native rather than bolted on:</b> the labelled-row pattern is lifted wholesale from the audio/subtitle flag strip immediately below it — same 13px dim caps label, same gap, same row rhythm. Nothing new is invented; an existing pattern gets a second use.</div>
+
+  <h4>Behaviour to pin down</h4>
+  <ul>
+    <li><b>Cap at four visible chips</b>, remainder in a focusable <span class="mono">+N</span>. Never wrap the row to a second line on TV — the hero has no vertical room and a wrapped row pushes Play below the fold on a 720p panel.</li>
+    <li><b>Order is TMDB's order</b>, never alphabetical. The first genre is the primary one and gets the accent tint; re-sorting would destroy the only signal we have.</li>
+    <li><b>The label is singular when there is one genre</b> ("Genre"), plural otherwise — and the whole row is omitted, not left empty, when a title has none.</li>
+    <li><b>OK on a chip opens browse seeded to that genre</b>, scoped exactly as the person filter is in R190: Back returns to the detail page with focus restored to the same chip. <span class="mono">+N</span> opens browse with the title's full genre set applied.</li>
+    <li><b>Focus order:</b> genres sit between the meta line and the synopsis. Down from the genre row reaches the synopsis, then the actions — one extra press to Play than today, which is why the row goes <i>above</i> the synopsis rather than below the buttons.</li>
+    <li><b>Rows and tiles are out of scope.</b> A poster tile's subtitle keeps showing one genre — four would not fit and the tile is not where this question gets asked.</li>
+  </ul>
+
+  <h4>Open questions</h4>
+  <ul>
+    <li>Does jellystructure already store the full genre list per item, or does <span class="mono">item.genre</span> flatten it at scan time? The admin's Metadata page manages genres as a set, so the data is likely there — but the Ravilo payload needs checking before anyone builds.</li>
+    <li>Genres are TMDB's English names. Ravilo is translated (en/da/fo) — do the chips need localised genre names, or is this the one place English leaks through? TMDB returns localised genre lists per language, so this may fall out of the metadata-language work for free.</li>
+    <li>Should the accent tint on the primary chip appear at all in <b>Noir</b>, where the accent is amber and the tint reads as a warning colour?</li>
+  </ul>
+
+  <hr>
+  <p style="color:#6b7286;font-size:.78rem;margin:0">Next unassigned Ravilo phase number is <b>R221</b>. Say which direction and I'll build it into <span class="mono">Ravilo TV.html</span> and the phone target, and write the spec.</p>
+</div>
+
+</body>
+</html>

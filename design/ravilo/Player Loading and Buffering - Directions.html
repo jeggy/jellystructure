@@ -144,6 +144,19 @@ a{color:var(--accent-2)}a:hover{color:var(--ink)}
   </div>
 </div>
 
+<div class="lbl" style="left:4040px;top:1400px">E (moment) · video output recovery — <b style="color:#7b6ef0">R220</b><small>New trigger, <b>no new presentation</b>. The picture is gone but audio is perfect and the position keeps advancing, so nothing R218 already watches for fires. While the recovery ladder runs (up to ~4.5 s), the player takes the <b>same treatment as C</b>: chrome up over the frame we have — black, in this case — spinner in the play button's place, the existing “Loading…” string, no new copy and no new visual language. Rungs that finish inside the 400 ms debounce show nothing at all; a ladder that runs out hands off to the ordinary player error.</small></div>
+<div class="tv" style="left:4040px;top:1520px">
+  <div class="scrim" style="background:#000"></div>
+  <div class="scrim scrim-bot"></div>
+  <div class="chrome-bot">
+    <div class="pl-title">Threshold Night</div>
+    <div class="pl-sub2">Offboarding · <b>S2 E7</b></div>
+    <div class="bar"><div class="done"></div><div class="buffd"></div><div class="knob"></div></div>
+    <div class="times"><span>00:42:18</span><span>−00:31:04</span></div>
+    <div class="transport"><div class="tbtn">↺</div><div class="spin sm" style="border-top-color:#fff"></div><div class="tbtn">↻</div></div>
+  </div>
+</div>
+
 <div class="lbl narrow" style="left:0;top:2700px">Phone · cold start (B)<small>Same three parts at arm's length: 40 px spinner, 17 px label, title context kept. Web build inherits this scale.</small></div>
 <div class="ph" style="left:0;top:2880px">
   <div class="buf" style="gap:22px">
@@ -195,6 +208,9 @@ a{color:var(--accent-2)}a:hover{color:var(--ink)}
     <div><b>6 · Copy</b>Reuse the existing <b>“Loading…”</b> / “Indlæder…” / “Ledur inn…” string everywhere. No new locale work, no drift risk, and it is the only wording already cleared against R180.</div>
     <div><b>7 · Phone / web</b>Same three parts, scaled: 40 px spinner, 26 px title, 15 px label. Leaving is the platform back gesture or button, which ends the session exactly as on TV.</div>
   </div>
+
+  <h4>Added 2026-08-31 — R220's recovery state</h4>
+  <p class="lead">R220 (black picture, perfect audio, after Home or TV standby) is a <b>fifth waiting moment</b> that none of R218's three signals detect: the player reports playing, not buffering, not seeking, and the first frame rendered long ago. Its recovery ladder can run for ~4.5 s, and today it changes nothing on screen — a viewer sits on a frozen black frame with no chrome. Frame <b>E</b> above is the reference: reuse <b>C's</b> presentation verbatim, triggered by the recovery instead of by <span class="mono">isBuffering</span>. Nothing new to translate, nothing new to draw — the ladder just needs to flip R218's existing stall moment on for its own duration (R220 open question 7).</p>
 
   <div class="warn"><b>Binding constraint (R180 FR-RV-ASP1-2):</b> nothing here may vary by delivery method. The same overlay, the same string and the same timings cover an instant direct play, an audio-only transcode and a 20-second 4K transcode. The title context in B is catalog data the viewer already saw — it is not a cue about how the stream is being delivered.</div>
 </div>

@@ -288,7 +288,7 @@
           <div class="hero-body">
             <div class="hero-kicker"><span>${it.tagline}</span><span class="n">${it.kind === 'series' ? 'Series' : 'Film'}</span></div>
             ${it.logo ? `<img class="hero-logo" src="${it.logo}" alt="${esc(it.title)}" onerror="this.style.display='none';this.nextElementSibling.style.display='block';"><div class="hero-title" style="display:none;">${esc(it.title)}</div>` : `<div class="hero-title">${esc(it.title)}</div>`}
-            <div class="hero-meta"><span class="tag">${it.badge}</span><span>${it.year}</span><span>${it.genre}</span><span class="rt">${it.rating}+</span></div>
+            <div class="hero-meta"><span class="tag">${it.badge}</span><span>${it.year}</span><span>${genresOf(it).slice(0, 2).join(' · ')}</span><span class="rt">${it.rating}+</span></div>
             <div class="hero-syn">${it.syn}</div>
           </div>`;
         hero.appendChild(s);
@@ -325,7 +325,7 @@
           <div class="meta-ep">${item.ep || ''}</div>
           <div class="play"><span>▶</span></div>
           <div class="pbar"><i style="width:${item.pct || 0}%"></i></div></div>
-          <div class="label">${item.title}</div><div class="sub">${item.next ? 'Next up' : (item.genre || '')}</div>`;
+          <div class="label">${item.title}</div><div class="sub">${item.next ? 'Next up' : (genresOf(item)[0] || '')}</div>`;
       } else if (kind === 'continue') {
         // poster shape, but keep the resume progress + time-left from Continue Watching
         t.innerHTML = `<div class="art">${artFill(item)}
@@ -339,7 +339,7 @@
         const air = item.kind === 'series' ? R.nextAiringFor(item) : null;
         const wmark = ws.watched ? `<div class="tile-check">✓</div>` : (ws.pct > 0 ? `<div class="tile-prog"><i style="width:${ws.pct}%"></i></div>` : '');
         t.innerHTML = `<div class="art">${artFill(item)}${item.badge ? `<div class="badge">${item.badge}</div>` : ''}${air ? `<div class="tile-air"><span class="tile-air-dot"></span>${upcomingLabel()}</div>` : ''}${wmark}</div>
-          <div class="label">${item.title}</div><div class="sub">${item.year} · ${item.genre}</div>`;
+          <div class="label">${item.title}</div><div class="sub">${[item.year, genresOf(item)[0]].filter(Boolean).join(' · ')}</div>`;
       }
       return t;
     }
@@ -544,6 +544,23 @@
       if (sub.length) groups.push(`<span class="aflag-group"><span class="aflag-label">Subtitles</span><span class="aflag-row">${flagRow(sub)}</span></span>`);
       return `<div class="dhero-flags">${groups.join('<span class="aflag-div"></span>')}</div>`;
     }
+    // ---- R221: every genre, not just the first ----
+    // The library stores genres as a ' · '-separated list in TMDB's own order; the first is the
+    // primary one. Cap at 4 visible on TV — the row must never wrap, or Play falls below the fold.
+    const GENRE_CAP = 4;
+    function genresOf(item) {
+      if (R.genresFor) return R.genresFor(item);
+      return String((item && item.genre) || '').split(/\s*·\s*/).map(s => s.trim()).filter(Boolean);
+    }
+    function genreRowHTML(item) {
+      const gs = genresOf(item);
+      if (!gs.length) return '';   // no genres ⇒ no row at all, never an empty label
+      const shown = gs.slice(0, GENRE_CAP), rest = gs.slice(GENRE_CAP);
+      const chips = shown.map((g, i) =>
+        `<span class="gchip2 foc${i === 0 ? ' lead' : ''}" data-genre="${esc(g)}">${esc(g)}<span class="g-arrow">›</span></span>`);
+      if (rest.length) chips.push(`<span class="gchip2 rest foc" data-genre-all="1">+${rest.length}<span class="g-arrow">›</span></span>`);
+      return `<div class="dhero-genres focus-row"><span class="g-label">${t(gs.length === 1 ? 'genre_one' : 'genre_many')}</span><span class="g-row">${chips.join('')}</span></div>`;
+    }
     // ---- IMDb rating chip (detail hero) — data from imdbapi.dev, stored + synced (R164) ----
     function fmtVotes(n) { return n >= 1e6 ? (n / 1e6).toFixed(1).replace(/\.0$/, '') + 'M' : n >= 1e3 ? (n / 1e3).toFixed(1).replace(/\.0$/, '') + 'K' : String(n); }
     function imdbHTML(item) {
@@ -592,7 +609,8 @@
         <div class="dhero-body">
           <div class="hero-kicker"><span>${item.tagline || (isSeries ? 'Series' : 'Film')}</span><span class="n">${isSeries ? seasons + ' Season' + (seasons > 1 ? 's' : '') : (item.year || '')}</span></div>
           ${detailTitle(item)}
-          <div class="hero-meta"><span class="tag">${item.badge || 'HD'}</span><span>${item.year}</span><span>${item.genre}</span>${certHTML}${imdbHTML(item)}${wItem.watched ? `<span class="dmeta-watched">✓ ${t('watched')}</span>` : ''}</div>
+          <div class="hero-meta"><span class="tag">${item.badge || 'HD'}</span><span>${item.year}</span>${certHTML}${imdbHTML(item)}${wItem.watched ? `<span class="dmeta-watched">✓ ${t('watched')}</span>` : ''}</div>
+          ${genreRowHTML(item)}
           ${audioFlagsHTML(item)}
           <div class="dsyn-block focus-row"><div class="hero-syn dsyn foc" data-syn="1">${item.syn || 'A standout from your Ravilo library — streamed from Jellyfin, organised by Jellystructure.'}</div><span class="syn-toggle">▾ more</span></div>
           ${(upNote || nextAirHTML) ? `<div class="dnext-row">${upNote ? `<div class="dnext"><span class="dnext-dot"></span>${upNote}</div>` : ''}${nextAirHTML}</div>` : ''}
@@ -697,7 +715,7 @@
     }
     function rankTile(it, list) {
       const tl = el('div', 'rtile foc'); tl._ditem = it; tl._dlist = list;
-      const meta = [it.year, it.genre].filter(Boolean).join(' · ');
+      const meta = [it.year, genresOf(it)[0]].filter(Boolean).join(' · ');
       tl.innerHTML = `
         <div class="rposter"><div class="art">${artGrad(it)}${statusMark(it)}</div></div>
         <div class="label">${it.title}</div>
@@ -850,7 +868,7 @@
           <div class="ddt-body">
             <div class="ddt-kicker"><span class="ddt-srcwm" style="background:${src.accent}">${src.wm}</span>${src.name} ${t('via_source', { src: src.via })}<span class="ddt-rank">${t('rank_in', { n: it.rank, region })}</span></div>
             <div class="ddt-title">${it.title}</div>
-            <div class="hero-meta"><span class="tag">${it.rating}+</span><span>${it.year}</span><span>${it.genre}</span><span>${it.kind === 'series' ? 'Series' : 'Film'}</span>${statusLine}</div>
+            <div class="hero-meta"><span class="tag">${it.rating}+</span><span>${it.year}</span><span>${genresOf(it).slice(0, 2).join(' · ')}</span><span>${it.kind === 'series' ? 'Series' : 'Film'}</span>${statusLine}</div>
             <div class="hero-syn">${it.syn || 'Trending on ' + src.name + ' right now. Not yet in your library — request it and it will be added and organised automatically.'}</div>
             ${discoverActions(it)}
           </div>
@@ -1005,7 +1023,7 @@
           <div class="ddt-body">
             <div class="ddt-kicker up-kicker"><span class="up-kdot ${kindDot}"></span>${kindLabel}<span class="ddt-rank up-airchip${isMissing ? ' missing' : ''}"><span class="up-airdot"></span>${rel}</span></div>
             <div class="ddt-title">${esc(it.title)}</div>
-            <div class="hero-meta">${certHTML}<span>${it.year}</span><span>${it.genre}</span><span>${isSeries ? 'Series' : 'Film'}</span>${isSeries && it.ep ? `<span class="up-epchip">${it.ep}${it.epTitle ? ' · ' + esc(it.epTitle) : ''}</span>` : `<span class="up-epchip">${esc(it.release || '')}</span>`}</div>
+            <div class="hero-meta">${certHTML}<span>${it.year}</span><span>${genresOf(it).slice(0, 2).join(' · ')}</span><span>${isSeries ? 'Series' : 'Film'}</span>${isSeries && it.ep ? `<span class="up-epchip">${it.ep}${it.epTitle ? ' · ' + esc(it.epTitle) : ''}</span>` : `<span class="up-epchip">${esc(it.release || '')}</span>`}</div>
             <div class="hero-syn">${esc(it.syn || ('Coming soon to your library — ' + (isSeries ? 'the new episode is added automatically when it airs' : 'added automatically when it releases') + '.'))}</div>
           </div>
         </div>
@@ -1180,7 +1198,18 @@
         if (v.type === 'home') focusRowByIndex(0);
         else if (v.type === 'category' || v.type === 'discover') focusRowByIndex(firstContentRowIndex());
         else if (v.type === 'upcoming') focusRC(firstContentRowIndex(), 0);
-        else if (v.type === 'movie' || v.type === 'series') { const ai = rows().findIndex(r => r.classList.contains('dactions')); focusRC(ai > 0 ? ai : 1, 0); } // entry focus stays on Play (R135)
+        else if (v.type === 'movie' || v.type === 'series') {
+          // R221: returning from a genre browse restores focus to the chip it was opened from
+          const gsel = v._genreFocus === '__all' ? '.gchip2[data-genre-all]'
+            : v._genreFocus ? '.gchip2[data-genre="' + String(v._genreFocus).replace(/"/g, '\\"') + '"]' : null;
+          const chip = gsel && scroll.querySelector(gsel);
+          v._genreFocus = null;
+          if (chip) {
+            const all = rows();
+            for (let r = 0; r < all.length; r++) { const c = items(all[r]).indexOf(chip); if (c >= 0) { cur = { r, c }; focusEl(chip); return; } }
+          }
+          const ai = rows().findIndex(r => r.classList.contains('dactions')); focusRC(ai > 0 ? ai : 1, 0); // entry focus stays on Play (R135)
+        }
         else if (v.type === 'upcomingDetail') { const ni = items(appbar).findIndex(n => n.dataset && n.dataset.nav === 'upcoming'); focusRC(0, ni > 0 ? ni : 0); } // info-only page → rest focus on the nav
         else if (v.type === 'liveGuide') liveTV.focusGuide(); // the Live TV module owns guide focus
         else focusRC(1, 0); // discoverDetail / grid / search → first focusable row
@@ -1315,6 +1344,13 @@
       }
       if (f._ep) { const eps = R.episodesFor(view.item, view.season || 0); const idx = eps.findIndex(x => x.n === f._ep.n); openPlayer(episodeCtx(view.item, view.season || 0, eps, Math.max(0, idx))); return; }
       if (f._cast) { go({ type: 'browse', person: f._cast, personFrom: view.item ? view.item.title : null, from: view }); return; }
+      if (f.dataset.genre || f.dataset.genreAll) {   // R221 — genre chip → browse, seeded
+        const all = genresOf(view.item);
+        view._genreFocus = f.dataset.genreAll ? '__all' : f.dataset.genre;   // Back restores focus to this chip
+        go({ type: 'browse', genres: f.dataset.genreAll ? all : [f.dataset.genre],
+             genreFrom: view.item ? view.item.title : null, from: view });
+        return;
+      }
       if (f._src) { if (f._src.enabled) { renderDiscover(); setTimeout(() => focusRowByIndex(firstContentRowIndex()), 20); } else flash(f._src.name + ' · coming soon'); return; }
       if (f._ditem) { go({ type: 'discoverDetail', item: f._ditem, list: f._dlist, from: view }); return; }
       if (f._upsrc) { view.upSource = f._upsrc; renderUpcoming(); setTimeout(() => focusRC(1, ['all', 'series', 'movies'].indexOf(f._upsrc)), 20); return; }
