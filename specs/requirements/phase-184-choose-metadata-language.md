@@ -109,11 +109,25 @@ sparse language is allowed and produces no special state.
 Empty/error response ⇒ the picker says so and the button stays inert; it must not fall back to a list of
 all ISO languages, which would offer choices that cannot work.
 
-### FR-184-5 — Artwork follows the same choice
+### FR-184-5 — Artwork follows the same choice — but only the automatic pick, never the gallery
 
-Poster and backdrop candidate fetching uses the chosen language
-(`include_image_language=<chosen>,null`), so the item's artwork matches its text. The `null` half is
-deliberate and is the reason artwork can't simply be a language row in the picker: **textless artwork
+Two different fetches are involved, and only one of them may narrow. **Amended 2026-09-02 after reading
+the code; the original wording narrowed both and would have regressed the Artwork tab.**
+
+- **The automatic poster/backdrop already follows the fetch language, for free.** `rescanMetadata`
+  writes `posterPath = details.posterPath` from `getMovieDetailsLocalized(tmdbId, langPriority)`
+  (`Scanner.kt`, `TmdbClient.kt:530`) — a single localized details call whose `posterPath` is TMDB's own
+  best image *for that language*. Once FR-184-1 puts the chosen language at the head of `langPriority`,
+  the artwork moves with the text and **no new TMDB parameter is required**. This requirement is
+  therefore a consequence of FR-184-2, not extra work.
+- **The candidate gallery must keep returning everything.** `getImages()` (`TmdbClient.kt:905`) passes
+  **no** `language` parameter, and the comment above it says why: Phase 47 wants every image in every
+  language plus the textless ones. Adding `include_image_language=<chosen>,null` there would empty the
+  Artwork tab of every other language's candidates — the exact browsing surface Phases 47/173 exist to
+  provide, and a strictly worse outcome for the foreign-language titles this phase is for. **Do not
+  touch `getImages()`.**
+
+The reason artwork still can't simply be a language row in the picker is unchanged: **textless artwork
 has no language**, and for a foreign-language film it is frequently the best available poster. It stays
 reachable as its own group on the Artwork tab, exactly as it is today.
 
@@ -175,5 +189,13 @@ Nothing else on the page changes. The Metadata tab cannot tell a chosen winner f
    `metadata_edit` titles (see Phase 174's note on why it is left alone). Does choosing a language change
    which entry is *primary*, or does it only change what gets fetched? The former is probably what an
    operator expects and the latter is what falls out of the code — worth deciding deliberately.
-4. **Music videos** never touch TMDB (Phase 168), so the card should presumably not render for
-   `MediaKind.MUSIC_VIDEO` at all. Confirm.
+4. ~~**Music videos** never touch TMDB (Phase 168)~~ — **stale premise, corrected 2026-09-02.** Phase 171
+   reversed 168's "no TMDB ever", and Phase 175 then merged the two code paths: `rescanMetadata`'s
+   `MediaKind.MUSIC_VIDEO` branch calls the same `fetchTmdbMovieMetadata(..., langPriority)` as MOVIE
+   (`Scanner.kt:1245`), writing localized title/overview/artwork exactly like a film. A music video has
+   this phase's problem too, so the card **should** render for it. The real question is narrower: a
+   MUSIC_VIDEO TMDB miss is the *expected, common* case (that branch deliberately leaves the item
+   unchanged on a miss rather than failing), so the picker will frequently have no languages to offer —
+   decide whether that renders as the ordinary empty state or the card hides itself when `tmdbId` is
+   null, which is a rule worth applying to unmatched movies and series too rather than to music videos
+   specially.
