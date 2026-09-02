@@ -195,6 +195,12 @@ fun MultiEpisodeCard(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
+            // R222 (Phase 185, FR-R222-5/FR-185-9) — one file, one line: every episode in this group
+            // resolves the identical note (same file), so render it once for the group, not per row.
+            first.playbackNote?.let {
+                Spacer(Modifier.height(6.dp))
+                PlaybackNoteLine(note = it, compact = true)
+            }
         }
     }
     }
