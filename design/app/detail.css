@@ -383,6 +383,34 @@
 .badge.seg-stinger { color: #0a0c13; background: var(--warn); border-color: transparent; }
 .seg-lock.on { color: var(--ok); border-color: rgba(45,212,154,.4); background: var(--ok-soft); }
 
+/* NFO raw viewer (Phase 44) — never had a design pass at all (no mockup, no shipped CSS,
+   no runtime injection like the artwork/diff tabs get) until now. Sidebar tree (seasons
+   collapse like the sidebar nav-groups) + a content pane; .log (the raw-text <pre>) is
+   already styled. RESTORED 2026-07-31, again 2026-08-11, again 2026-09-02, after a
+   design-tool sync silently reverted this. */
+.nfo-layout { display: flex; gap: 16px; align-items: flex-start; }
+.nfo-tree {
+  flex: none; width: 240px; max-height: 520px; overflow: auto;
+  border: 1px solid var(--line); border-radius: var(--radius-s); background: var(--fill-2);
+  padding: 6px;
+}
+.nfo-viewer { flex: 1; min-width: 0; }
+.nfo-node {
+  padding: 7px 10px; border-radius: 7px; font-size: .84rem; cursor: pointer;
+  color: var(--ink-soft); transition: background .15s ease, color .15s ease;
+}
+.nfo-node:hover { background: var(--fill-3); color: var(--ink); }
+.nfo-node.sel { background: var(--hi-soft); color: var(--acc-ink); font-weight: 600; }
+.nfo-node.missing { opacity: .55; }
+.nfo-season-hd {
+  display: flex; align-items: center; gap: 6px; padding: 7px 10px; margin-top: 4px;
+  border-radius: 7px; font-size: .84rem; font-weight: 600; cursor: pointer; color: var(--ink);
+  transition: background .15s ease;
+}
+.nfo-season-hd:hover { background: var(--fill-3); }
+.nfo-caret { display: inline-block; width: 12px; color: var(--ink-soft); font-size: .72rem; }
+.nfo-season-body { padding-left: 14px; }
+
 /* ---------- metadata language: choose a winner (phase 184 design) ---------- */
 .mlang-wrap { position: relative; }
 .mlang-band { background: var(--hi-soft); border: 1px solid rgba(123,110,240,.42); border-radius: 9px; padding: 9px 11px; margin-top: 10px; }
