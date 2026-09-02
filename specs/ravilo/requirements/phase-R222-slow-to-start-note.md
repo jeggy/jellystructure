@@ -1,0 +1,106 @@
+# Phase R222 — One plain line: "slow to start on this TV"
+
+> The viewer half of **Phase 185**. The server has decided whether tonight's film will be slow to start
+> on the device asking, and how sure it is. Ravilo's whole job is to render one sentence, or nothing.
+> No thresholds, no numbers of its own, no decision logic — and, per **R180 FR-RV-ASP1-2**, not one word
+> about bitrates, codecs, decoders, transcoding or delivery methods.
+
+**Status:** Planned (design-authored 2026-09-02, not yet dev-reviewed)
+
+Research: `specs/research-reports/ravilo-per-device-decode-ceiling-warning-2026-09-02.md`
+Design: `design/ravilo/Decode Ceiling Warning - Directions.html` (Direction B′ chosen; B, C and D
+recorded as rejected). Built in the mockups at `design/ravilo/Ravilo TV.html` and
+`design/ravilo/Ravilo Mobile.html`.
+
+## Current state
+
+The detail hero shows what the *file* is — format badge, year, runtime, age rating, IMDb, and after R221
+its genre chips. All of it is true of the film everywhere, on every device, forever. Nothing on the page
+is true of *tonight*: the same page renders identically on a TV that will start this file in two seconds
+and one that will take twenty.
+
+R216 deliberately closed the door on exposing capability to viewers — *"the viewer's experience is that
+playback simply works"*. That line is still right about picture quality: with 177/R216 live the file does
+not stutter, it re-encodes. But "simply works" is wrong about one thing, and it is the thing the viewer
+actually experiences: a black screen for ~20 seconds with no explanation, which reads as broken and gets
+abandoned.
+
+## Goal
+
+Set the expectation before Play, in the viewer's own language, using the one fact that helps: how long
+this will take here. Nothing to configure, nothing to dismiss, nothing to understand.
+
+## Functional requirements
+
+**FR-R222-1 — Render, never compute.** The client reads `playbackNote { device, basis, seconds }` off the
+detail payload (Phase 185 FR-185-5) and renders the corresponding sentence. It never derives, caches past
+the payload, re-checks or second-guesses the field. **Absent ⇒ nothing renders** — not an empty slot, not
+a placeholder, no reserved space and no layout shift.
+
+**FR-R222-2 — Two sentences, three strings.** Split so the lead can be emphasised structurally rather
+than with markup inside a translatable string:
+
+| key | en |
+| --- | --- |
+| `slow_lead` | `Slow to start on {device}.` |
+| `slow_tail_measured` | `The last few times it took about {n} seconds.` |
+| `slow_tail_expected` | `Give it a moment after you press play.` |
+
+`basis: "measured"` uses the lead + `slow_tail_measured`; `basis: "expected"` uses the lead +
+`slow_tail_expected`. Full en/da/fo at ship, like every string since R180. Deliberately rejected copy,
+recorded so it is not re-proposed: *"may not play smoothly"* (predicts a stutter we now prevent),
+*"can't handle this file at full quality"* (implies a quality control exists), *"better on the Living
+room TV"* (household logistics — see 185's non-goals).
+
+**FR-R222-3 — Name the device.** `device` arrives resolved from the server (185 FR-185-5) and is shown
+verbatim, because a three-TV household needs to know which one is being talked about. When the server
+sends no name, fall back to the localised `this_tv` / `this_phone`. A model string
+(`BRAVIA VH21`, `Chromecast HD`) is **never** shown to a viewer — that lives in the admin.
+
+**FR-R222-4 — Placement: directly above the actions.** On a movie detail the line sits between the
+synopsis block and `.dactions`, so it is read at the moment the decision is made. It is deliberately
+**not** in the meta row: after R221 that row already carries format, year, age, IMDb and genre chips,
+and this is not a fact about the film — it is a fact about tonight. Play must not move: the line takes
+its own vertical slot above the button row and never reflows it.
+
+**FR-R222-5 — Series carry it on episodes.** A ceiling is per device and a bitrate is per file, so the
+series hero never shows the line (its episodes may come from different sources). The line belongs to the
+episode row in the rail. A Phase 149 combined `S01E01–E03` row is one file and shows **one** line;
+expanding it does not repeat it per episode.
+
+**FR-R222-6 — Not an interaction.** Not focusable, not in the D-pad order, no action, no target, no
+"don't show this again", nothing revealed on focus or hover. It is a label, like the age badge. Back
+behaves exactly as it does today.
+
+**FR-R222-7 — Noir drops the tint.** Aurora and Midnight mark the line with the `--warn` amber (a 3px
+rule plus amber ink on the lead). Noir's own accent *is* amber, so a tinted rule there reads as
+decoration — the same collision R221's primary-genre chip hit, solved the same way: **keep the ink and
+the weight, drop the colour**.
+
+**FR-R222-8 — Phone parity.** The phone detail shows the same sentence above its action row, wrapping
+freely (no D-pad, no cap). The phone resolves its **own** verdict from the server, so a title that
+carries the line on a TV may carry nothing on the phone — that is correct, not a bug.
+
+## Non-goals
+
+- **No numbers except the seconds.** No bitrate, no ceiling, no resolution maths, no percentage, no
+  "82 of 60 Mbps". Direction D was drawn and rejected for exactly this.
+- **No gate.** Direction C (confirm-before-play) was drawn and rejected: Ravilo has no quality picker, no
+  alternate version and no device switcher, so the dialog's only possible content is *press OK again*,
+  and it would fire on every play of every heavy file forever.
+- **No setting, no dismissal, no preference.** R216's invariant.
+- **No player-side change.** R218 owns every waiting moment once Play is pressed; this phase says nothing
+  after the press and adds no new player state.
+- **No note for non-Ravilo playback**, and no sentence explaining that gap (185's non-goals).
+
+## Open questions
+
+1. **Copy hangs on 185's open question #1.** If the R216 build is not live on the living-room TV, the
+   file still stutters there and "slow to start" is a false statement — the sentence would have to be
+   about picture instead, i.e. the copy this phase explicitly rejects. Confirm before translation.
+2. **At launch nothing is measured**, so every note starts as `expected` and the `measured` sentence
+   appears only once a device has actually started that file three times (185 FR-185-7). Worth stating in
+   release notes so the softer sentence isn't read as the feature being broken.
+3. **Does a 60 s-plus start deserve different words?** R218 deepens its loading state at 60 s without
+   changing a word; the equivalent question here is whether "about 90 seconds" should read differently
+   from "about 20 seconds". Current answer: no — same sentence, bigger number.

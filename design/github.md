@@ -3,7 +3,49 @@ branch: main
 path: specs/   (plus root STATUS.md — both mirrored read-only from the repo); presentation/ (full mirror, ours to build on)
 tree: main @ d8a6a6e3610a (2026-09-01 sync)
 
-## Last sync (2026-09-01)
+## Last sync (2026-09-02)
+date: 2026-09-02T07:25:03Z
+direction: pull (repo → this project) — one research report, then a design pass
+- **Pulled `specs/research-reports/ravilo-per-device-decode-ceiling-warning-2026-09-02.md`** (new repo-side,
+  19 KB). Triggered by *Until Dawn (2025)* — a 82 Mbps 4K DV/HDR10+ REMUX — stuttering on stue TV and
+  being abandoned mid-watch, the third stutter on that TV in three weeks. Owner's proposal: record what
+  bitrate each device can take and warn on the Ravilo detail page before Play.
+- **What the report establishes:** the *measuring* half already exists (Phase 177 + R216, 2026-08-28 —
+  `detectDecoderLimits()` reads the decoder's own declared ceiling, stue TV = exactly 60 Mbps, and the
+  server turns it into a `VideoBitrate` condition at 0.9 margin so Jellyfin transcodes instead of
+  breaking). Three blockers: (1) last night's session was **Wholphin**, a third-party client that
+  negotiates straight against Jellyfin — architecturally unreachable by anything we design; (2) nothing
+  persists the ceiling anywhere queryable at rest (`ravilo_device` has no column; `playback_qoe` is
+  session-scoped and pruned); (3) the proposal reverses R216's stated invariant *"no user-visible
+  setting, ever"* and R180 FR-RV-ASP1-2's no-delivery-cues rule.
+- **Design pass done same day** — `ravilo/Decode Ceiling Warning - Directions.html` (canvas): baseline,
+  four directions (A admin-only persistence · B meta-row chip · B′ line above Play · C confirm gate ·
+  D full numbers), Noir + phone frames, a copy-candidates panel and panels answering all eight of the
+  report's open questions. **Recommendation: A + B′.** Key reframe: if 177/R216 are working the file
+  does *not* stutter — it re-encodes and takes ~20 s to start, so the honest signal is an expectation
+  (**"Slow to start on Stue TV. Give it a moment after you press play."**), not a capability warning.
+  The badge is a function of two static numbers only (recorded ceiling × file bitrate, same 0.9
+  predicate as 177) — QoE and link state never feed it, so it can't flicker. C rejected (nothing to
+  offer but dismissal), D rejected (undoes R180/R218 deliberately).
+- **Owner steer, same day:** the note must be **backend-computed per device from the recorded limit plus
+  that device's history**, not derived client-side. Design updated and **B′ built into the Ravilo mockups**
+  — one server-pushed `playbackNote { device, basis, seconds }` per file per device; ceiling decides
+  *whether*, history decides *how sure* (`measured` adds "about 20 seconds", `expected` says "give it a
+  moment"), history can never toggle the note. Touched `ravilo-data.js`, `ravilo-app.js`, `ravilo.css`,
+  `ravilo-i18n.js`, `Ravilo Mobile.html`. Admin half (A) **drawn 2026-09-02** in `app/ravilo-users.html` — persisted ceiling as a second line in
+  each device row ("picture it can take"), two unknown states, no new column. Owner also confirmed the
+  start-timing history and the file-bitrate field don't exist yet and will be built backend-side, so both
+  fold into 185 instead of blocking it.
+- **Both specs written 2026-09-02** (`Planned`, not dev-reviewed): `specs/requirements/phase-185-device-decode-ceiling-and-start-history.md`
+  (persist the ceiling, add `Track.video_bitrate`, record start samples, resolve `playbackNote` server-side,
+  admin device row) and `specs/ravilo/requirements/phase-R222-slow-to-start-note.md` (render the sentence,
+  three strings × en/da/fo, placement + rejected directions). Next unassigned numbers now **186 / R223**.
+- **Previously noted as blocking** — three answers needed first: where the file's bitrate comes from (`Track` has
+  no bitrate field today), whether other OEM decoders report honest ceilings, and whether the R216 build
+  is actually installed on the stue TV Ravilo. Prospective numbers **185** (admin persistence + device
+  row) and **R222** (the Ravilo line).
+
+## Previous sync (2026-09-01)
 date: 2026-09-01T19:58:58Z
 direction: pull (repo → this project) — mirror refresh, no export
 - **Nothing new repo-side since the 2026-08-31 sync.** The full `specs/` diff against `4a2675f524cd`
@@ -287,9 +329,14 @@ direction: pull (repo → this project)
 | ravilo/Player Loading and Buffering - Directions.html, ravilo/ravilo-player.js/.css | **R218** (player loading/buffering states — shipped 2026-08-28, on-device verified 08-29), **phase-180** (session teardown — ✓ Done), R220 (video-output recovery — reuses R218's STALL; presentation not yet wired) |
 | app/activity.html | phase-182 (Capacity card only — FR-182-9's banner dropped by owner decision), phase-183 FR-183-6/FR-183-5 (Outbound pacing card + run summary) — drawn 2026-08-31, backend built, UI not yet in code |
 | (none — backend only) | R219 (Continue Watching canonical list — explicitly no UI change), 181 (library sync convergence) |
+| ravilo/Decode Ceiling Warning - Directions.html | (no spec yet) research report `ravilo-per-device-decode-ceiling-warning-2026-09-02.md`; builds on phase-177 + R216, constrained by R180 FR-RV-ASP1-2. Admin half would land on app/ravilo-users.html |
 | presentation/presentation-context.md, presentation/observed-issues-2026-08-18.md, presentation/screenshots/ | (not a spec — talk source material; documents R202 as its centerpiece and the R203–R207 triage) |
 
 ## Pending export (design-authored since the last sync)
+- **2026-09-02, not pushed:** `ravilo/Decode Ceiling Warning - Directions.html` plus the B′ build in
+  `ravilo-data.js` · `ravilo-app.js` · `ravilo.css` · `ravilo-i18n.js` · `Ravilo Mobile.html` · `app/ravilo-users.html`
+  (per-device slow-start note, backend-computed; no spec authored yet — see *Last sync* for the three
+  open answers).
 - **2026-09-01 specs, not pushed:** `specs/requirements/phase-184-choose-metadata-language.md` and
   `specs/ravilo/requirements/phase-R221-all-genres-media-detail.md`, plus their design files
   (`app/Metadata Language Override - Directions.html`, `ravilo/Media Detail Genres - Directions.html`)
@@ -303,6 +350,7 @@ direction: pull (repo → this project)
   exploration, and the series-page entry points in `series-simpsons.js`. Not pushed yet.
 
 ## Sync history
+- 2026-09-02: pulled the per-device decode-ceiling-warning research report; design pass (A+B′ recommended), no spec yet.
 - 2026-09-01: mirror refresh; no repo changes since 08-31. Confirmed 184 / R221 uncontested.
 - 2026-08-31: R218 + 180 shipped (both design-authored, on-device verified); pulled 5 new dev specs (R219, R220, 181, 182, 183) + amended 167 + STATUS.md. Three design items outstanding — see above.
 - 2026-08-28 (#2): pulled phase-179; renumbered our teardown spec 179 → 180.

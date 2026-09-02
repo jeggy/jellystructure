@@ -561,6 +561,17 @@
       if (rest.length) chips.push(`<span class="gchip2 rest foc" data-genre-all="1">+${rest.length}<span class="g-arrow">›</span></span>`);
       return `<div class="dhero-genres focus-row"><span class="g-label">${t(gs.length === 1 ? 'genre_one' : 'genre_many')}</span><span class="g-row">${chips.join('')}</span></div>`;
     }
+    // ---- R222: per-device "slow to start" note. Server-pushed verdict, rendered as-is:
+    // no thresholds, no numbers and no decision logic live on the client. ----
+    function playNoteHTML(item) {
+      const n = R.playbackNoteFor ? R.playbackNoteFor(item) : null;
+      if (!n) return '';
+      const lead = t('slow_lead', { device: esc(n.device || t('this_tv')) });
+      const tail = (n.basis === 'measured' && n.seconds)
+        ? t('slow_tail_measured', { n: n.seconds })
+        : t('slow_tail_expected');
+      return `<div class="dplaynote"><span class="pn-bar"></span><span class="pn-txt"><b>${lead}</b> ${tail}</span></div>`;
+    }
     // ---- IMDb rating chip (detail hero) — data from imdbapi.dev, stored + synced (R164) ----
     function fmtVotes(n) { return n >= 1e6 ? (n / 1e6).toFixed(1).replace(/\.0$/, '') + 'M' : n >= 1e3 ? (n / 1e3).toFixed(1).replace(/\.0$/, '') + 'K' : String(n); }
     function imdbHTML(item) {
@@ -614,6 +625,7 @@
           ${audioFlagsHTML(item)}
           <div class="dsyn-block focus-row"><div class="hero-syn dsyn foc" data-syn="1">${item.syn || 'A standout from your Ravilo library — streamed from Jellyfin, organised by Jellystructure.'}</div><span class="syn-toggle">▾ more</span></div>
           ${(upNote || nextAirHTML) ? `<div class="dnext-row">${upNote ? `<div class="dnext"><span class="dnext-dot"></span>${upNote}</div>` : ''}${nextAirHTML}</div>` : ''}
+          ${playNoteHTML(item)}
           <div class="dactions focus-row">
             <div class="btn primary foc" data-play="1"><span class="ic">▶</span> ${playLabel}</div>
             ${!isSeries ? `<div class="btn ghost foc${wItem.watched ? ' watched-on' : ''}" data-mark="1"><span class="ic">${wItem.watched ? '✓' : '○'}</span> ${wItem.watched ? t('watched') : t('mark_watched')}</div>` : ''}

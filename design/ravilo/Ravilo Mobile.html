@@ -107,6 +107,13 @@
     color:var(--ink); background:rgba(255,255,255,.09); border:1px solid rgba(255,255,255,.09); }
   .dgen.lead{ background:color-mix(in oklch, var(--accent) 22%, transparent); border-color:color-mix(in oklch, var(--accent) 45%, transparent); font-weight:600; }
 
+  /* R222 — the per-device slow-start line, above the buttons. Same sentence as TV, wrapping freely. */
+  .dslow{ display:flex; gap:9px; align-items:flex-start; margin:15px 0 0; font-size:12.5px; line-height:1.55; color:var(--ink-soft); }
+  .dslow i{ flex:none; width:3px; align-self:stretch; border-radius:2px; background:#f5b542; }
+  .dslow b{ font-weight:600; color:#f0c07a; }
+  [data-skin="noir"] .dslow i{ background:var(--ink); }
+  [data-skin="noir"] .dslow b{ color:var(--ink); font-weight:700; }
+
   /* detail screen */
   .detail{ position:absolute; inset:0; background:var(--bg); z-index:70; display:flex; flex-direction:column; transform:translateX(100%); transition:transform .3s var(--ease); }
   .detail.on{ transform:translateX(0); }
@@ -335,6 +342,17 @@
     if(!gs.length) return '';
     return '<div class="dgenres">'+gs.map((g,i)=>'<span class="dgen'+(i===0?' lead':'')+'">'+esc(g)+'</span>').join('')+'</div>';
   }
+  // R222 — the phone renders the same server-pushed field. In production the backend answers it
+  // for THIS phone (its own decoder, its own history), so a title that carries the note on the TV
+  // may carry nothing here; the mock substitutes the phone's name to show that it is per-device.
+  // i18n keys: slow_lead · slow_tail_expected · slow_tail_measured · this_phone.
+  function slowHTML(it){
+    const n = R.playbackNoteFor ? R.playbackNoteFor(it) : null;
+    if(!n) return '';
+    const tail = (n.basis==='measured' && n.seconds) ? 'The last few times it took about '+n.seconds+' seconds.'
+      : 'Give it a moment after you press play.';
+    return '<div class="dslow"><i></i><span><b>Slow to start on Pixel 8.</b> '+tail+'</span></div>';
+  }
   function openDetail(title){
     const it = findItem(title);
     const bg = it.backdrop ? 'url('+it.backdrop+') center/cover' : it.grad;
@@ -345,6 +363,7 @@
       + '<div class="dtitle">'+esc(it.title)+'</div>'
       + '<div class="dmeta"><span>'+esc(String(it.year))+'</span><span class="pg">'+esc(it.rating)+'</span>'+(it.kind?'<span>·</span><span>'+(it.kind==='series'?'Series':'Film')+'</span>':'')+'</div>'
       + genresHTML(it)
+      + slowHTML(it)
       + '<div class="dbtns"><button class="btn play">▶ Play</button><button class="btn ghost">＋ My List</button></div>'
       + '<div class="dsyn">'+esc(syn)+'</div>'
       + (it.kind==='series' ? episodesHTML(it) : '')
