@@ -8,8 +8,12 @@
 > 30 came from the resume list and zero came from next-up** — every slot was full before next-up ever got
 > a turn.
 
-**Status:** Planned — design-authored 2026-08-28. **Implementation deliberately deferred** (user asked to
-write the spec and wait) — no code changes in this phase.
+**Status:** Superseded by [R219](phase-R219-continue-watching-model.md) — closed without implementation
+2026-09-02. R219 (2026-08-30, ✓ Done) rebuilt Continue Watching as one canonical merged list instead of
+patching the concatenate-then-cap model this spec's FR-R217-1 targeted; there is no longer a separate
+"resume list" and "next-up list" to interleave, so the starvation failure mode this phase describes is
+structurally impossible under R219. Root-cause diagnosis below is still accurate history — just aimed at
+code that no longer exists in that shape.
 
 ## Root cause
 
