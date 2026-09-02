@@ -10,6 +10,17 @@ import androidx.compose.ui.Modifier
  * no-op so every other platform (and any existing call site) is unaffected; the Android actual is the
  * only one that ever invokes it. The caller (PlayerScreen) re-arms the current item's session exactly as
  * its existing background/foreground return path already does — see that call site's own comment.
+ *
+ * Phase R220 (FR-R220-5) — [onVideoOutputRecovering] reports true for the whole time the Android actual's
+ * ladder is running (rungs 1-3; false again once a rung restores frames, or right before the rung-4
+ * hand-off), so the caller can force R218's existing STALL presentation on for that stretch instead of
+ * a viewer sitting on a frozen frame with no chrome change (phase-R220 §5 open question 7). Default no-op;
+ * only the Android actual ever calls it with anything but false.
  */
 @Composable
-expect fun PlayerVideoSurface(player: RaviloPlayer, modifier: Modifier = Modifier, onVideoOutputStuck: () -> Unit = {})
+expect fun PlayerVideoSurface(
+    player: RaviloPlayer,
+    modifier: Modifier = Modifier,
+    onVideoOutputStuck: () -> Unit = {},
+    onVideoOutputRecovering: (Boolean) -> Unit = {},
+)

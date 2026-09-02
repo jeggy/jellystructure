@@ -278,6 +278,11 @@ fun PlayerScreen(
     var hasRenderedFirstFrame by remember { mutableStateOf(false) }
     var isBuffering    by remember { mutableStateOf(false) }
     var isSeeking      by remember { mutableStateOf(false) }
+    // Phase R220 (FR-R220-5) — true for the whole time the Android actual's video-output recovery ladder
+    // is running; folded into rawBufferMoment below so a rung past R218's own debounce shows the existing
+    // STALL presentation instead of a silent frozen frame (isPlaying/isBuffering/isSeeking all read
+    // healthy throughout a video-output stall — see PlayerVideoSurface's own doc for why).
+    var videoOutputRecovering by remember { mutableStateOf(false) }
 
     // Chrome visibility — bumping chromeRevision restarts the auto-hide timer
     var chromeVisible  by remember { mutableStateOf(true) }
@@ -879,6 +884,9 @@ fun PlayerScreen(
     val rawBufferMoment = when {
         sessionState !is PlayerSessionState.Ready -> PlBufferMoment.NONE  // moment A owns this wait
         !hasRenderedFirstFrame -> PlBufferMoment.COLD
+        // R220 (FR-R220-5) — ahead of SEEK/isBuffering: a video-output recovery in progress must always
+        // read as STALL, even if rung 2's own no-op seek happens to flip isSeeking true mid-ladder.
+        videoOutputRecovering -> PlBufferMoment.STALL
         isSeeking -> PlBufferMoment.SEEK
         isBuffering -> PlBufferMoment.STALL
         else -> PlBufferMoment.NONE
@@ -1262,7 +1270,13 @@ fun PlayerScreen(
         // re-attach/seek-flush/surface-recreate have all failed while the player is genuinely still
         // playing. Re-arming mirrors PlayerLifecycleEffect's own onForeground path exactly (same
         // re-negotiate-without-a-full-player-rebuild shape) rather than inventing a second one.
-        PlayerVideoSurface(player, Modifier.fillMaxSize(), onVideoOutputStuck = { armSession(currentItemId) })
+        // FR-R220-5 — feeds rawBufferMoment above so a rung running past R218's debounce shows STALL.
+        PlayerVideoSurface(
+            player,
+            Modifier.fillMaxSize(),
+            onVideoOutputStuck = { armSession(currentItemId) },
+            onVideoOutputRecovering = { videoOutputRecovering = it },
+        )
 
         // ── Dim scrim (deepens when chrome is up, paused, or R218's moment C stalls) ──
         val dimAlpha = when {
