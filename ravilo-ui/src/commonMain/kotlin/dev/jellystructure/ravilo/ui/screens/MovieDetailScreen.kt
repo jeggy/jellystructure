@@ -58,6 +58,7 @@ import dev.jellystructure.ravilo.ui.components.CertBadge
 import dev.jellystructure.ravilo.ui.components.DetailErrorState
 import dev.jellystructure.ravilo.ui.components.DetailLoadingShell
 import dev.jellystructure.ravilo.ui.components.DetailSynopsis
+import dev.jellystructure.ravilo.ui.components.GenreChipRow
 import dev.jellystructure.ravilo.ui.components.ImdbChip
 import dev.jellystructure.ravilo.ui.components.RaviloButton
 import dev.jellystructure.ravilo.ui.components.Tile
@@ -87,6 +88,9 @@ fun MovieDetailScreen(
     // R190 §A — OK on a cast/crew face; sourceTitle is this detail's own title (for the person
     // browse page's breadcrumb, FR-RV-PPL1-3). null = face stays inert (no call site opts in yet).
     onCastSelect: ((dev.jellystructure.shared.tv.Person, sourceTitle: String) -> Unit)? = null,
+    // R221 §B — OK on a genre chip; sourceTitle is this detail's own title (matches onCastSelect's
+    // shape). null = the chip stays inert (no call site opts in yet).
+    onGenreSelect: ((genres: List<String>, sourceTitle: String) -> Unit)? = null,
     displayName: String = "",
     onNavSelect: (Int) -> Unit = {},
     onProfile: (() -> Unit)? = null,
@@ -112,6 +116,7 @@ fun MovieDetailScreen(
                 onMarkFavorite = { favorite -> store.setFavorite(favorite) },
                 onRelatedSelect = onRelatedSelect,
                 onCastSelect = onCastSelect,
+                onGenreSelect = onGenreSelect,
                 displayName = displayName,
                 onNavSelect = onNavSelect,
                 onProfile = onProfile,
@@ -132,6 +137,7 @@ private fun MovieDetailLoaded(
     onMarkFavorite: (Boolean) -> Unit,
     onRelatedSelect: (MediaCard) -> Unit,
     onCastSelect: ((dev.jellystructure.shared.tv.Person, sourceTitle: String) -> Unit)?,
+    onGenreSelect: ((genres: List<String>, sourceTitle: String) -> Unit)?,
     displayName: String,
     onNavSelect: (Int) -> Unit,
     onProfile: (() -> Unit)?,
@@ -157,6 +163,7 @@ private fun MovieDetailLoaded(
     val heroHeight = if (containerH > 0) with(density) { containerH.toDp() } else 540.dp
 
     val playFR = remember { FocusRequester() }
+    val genreFR = remember { FocusRequester() }   // R221 — first (lead) genre chip
     val synopsisFR = remember { FocusRequester() }   // R135
     val navBarFR = remember { FocusRequester() }
     val trailerFR = remember { FocusRequester() }   // R163
@@ -239,6 +246,16 @@ private fun MovieDetailLoaded(
                             }
                         }
                     }
+                    if (detail.genres.isNotEmpty()) {
+                        Spacer(Modifier.height(10.dp))
+                        GenreChipRow(
+                            genres = detail.genres,
+                            onGenreSelect = onGenreSelect?.let { cb -> { values: List<String> -> cb(values, detail.card.title) } },
+                            entryFocusRequester = genreFR,
+                            onUp = { navBarFR.requestFocus() },
+                            onDown = { if (detail.synopsis != null) runCatching { synopsisFR.requestFocus() } else runCatching { playFR.requestFocus() } },
+                        )
+                    }
                     if (detail.audioLanguages.isNotEmpty() || detail.subtitleLanguages.isNotEmpty()) {
                         Spacer(Modifier.height(8.dp))
                         AudioSubtitleFlagLine(detail.audioLanguages, detail.subtitleLanguages)  // R134: one line
@@ -249,7 +266,9 @@ private fun MovieDetailLoaded(
                             text = it,
                             collapsedMaxLines = 3,
                             focusRequester = synopsisFR,
-                            onUp = { navBarFR.requestFocus() },
+                            // R221: Up from synopsis reaches the genre row (its lead chip) when present,
+                            // preserving the existing title → genres → synopsis → actions order.
+                            onUp = { if (detail.genres.isNotEmpty()) runCatching { genreFR.requestFocus() } else navBarFR.requestFocus() },
                             onDown = { runCatching { playFR.requestFocus() } },
                         )
                     }
@@ -280,8 +299,11 @@ private fun MovieDetailLoaded(
                             // R79/R135: UP from actions → the focusable synopsis if present, else the AppBar.
                             .onKeyEvent { ev ->
                                 if (ev.type == KeyEventType.KeyDown && ev.key == Key.DirectionUp) {
-                                    if (detail.synopsis != null) runCatching { synopsisFR.requestFocus() }
-                                    else navBarFR.requestFocus()
+                                    when {
+                                        detail.synopsis != null -> runCatching { synopsisFR.requestFocus() }
+                                        detail.genres.isNotEmpty() -> runCatching { genreFR.requestFocus() }
+                                        else -> navBarFR.requestFocus()
+                                    }
                                     true
                                 } else false
                             },

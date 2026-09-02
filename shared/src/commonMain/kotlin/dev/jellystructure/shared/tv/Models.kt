@@ -471,6 +471,11 @@ data class MovieDetail(
     @SerialName("original_language") val originalLanguage: String? = null,
     /** Phase 150: this movie's own intro/credits segments (R182 Skip Intro / Skip Credits). */
     val segments: TvSegmentMarkers = TvSegmentMarkers(),
+    /** R221 — every genre, in TMDB's own order (the first is "primary" — [MediaCard.genre] is already
+     *  `genres.firstOrNull()`, this is the rest). Deliberately on the detail DTO, not [MediaCard] itself —
+     *  same reasoning as [BrowseCard.genres]/R164's IMDb-rating precedent: every other card-consuming
+     *  surface (Home rows, search, Continue Watching) would pay for a field only the detail page renders. */
+    val genres: List<String> = emptyList(),
 )
 
 @Serializable
@@ -497,6 +502,9 @@ data class SeriesDetail(
     /** R181 — the series' own original-audio language (ISO code), for the player's "Dubbed" badge on
      *  audio tracks in a different language. Null when unknown. */
     @SerialName("original_language") val originalLanguage: String? = null,
+    /** R221 — every genre, in TMDB's own order. See [MovieDetail.genres]'s doc for why this lives here
+     *  and not on [MediaCard]. */
+    val genres: List<String> = emptyList(),
 )
 
 // ─── Search ───────────────────────────────────────────────────────────────────
