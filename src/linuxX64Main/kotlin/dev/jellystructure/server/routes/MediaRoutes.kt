@@ -195,6 +195,8 @@ fun Route.mediaRoutes(
     imdbClient: dev.jellystructure.imdb.ImdbClient,
     fingerprintService: dev.jellystructure.media.FingerprintService,
     mediaSegmentStore: dev.jellystructure.media.MediaSegmentStore,
+    realtimeIngest: dev.jellystructure.media.RealtimeIngestService,
+    dirtyItemStore: dev.jellystructure.media.DirtyItemStore,
 ) {
     // Phase 175 — shared collaborator bundle for every runPipeline() call these routes make.
     val pipelineDeps = PipelineDeps(
@@ -202,6 +204,7 @@ fun Route.mediaRoutes(
         jellyfinClient = jellyfinClient, scanDispatcher = scanDispatcher, artworkDownloader = artwork,
         arrRescan = arrRescan, sonarrEnrich = sonarrEnrich, imdbClient = imdbClient,
         mediaSegmentStore = mediaSegmentStore, mediaJobQueue = mediaJobQueue,
+        realtimeIngest = realtimeIngest, mediaHistory = mediaHistory, dirtyItemStore = dirtyItemStore,
     )
     route("/media") {
         get {

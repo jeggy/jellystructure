@@ -263,6 +263,37 @@ class JellyfinClient {
         result.getOrDefault(emptyList())
     }
 
+    /**
+     * Phase 181 (FR-181-1) — every Movie/Series/Episode id Jellyfin holds, for the set-difference sweep
+     * that converges jellystructure's catalog onto Jellyfin's actual state instead of predicting what
+     * needs attention. Deliberately **not** filtered by `MinDateCreated`/`MinDateLastSaved` — both were
+     * verified live to be silently ignored (return the full unfiltered library, no error) — and
+     * deliberately not sorted or windowed by `DateCreated`, which is the file's on-disk mtime, not
+     * Jellyfin's ingest time, and unusable as a watermark on this library (spec §2.4: 50% of files carry
+     * an mtime unrelated to when they were actually added). A full, unfiltered id enumeration is the only
+     * sound basis here. Paged to `TotalRecordCount` per this codebase's own rule (see
+     * `getResumeItemsAll`/`getRecentlyPlayedAll` — a bare `Limit` is never trusted as a cap), even though
+     * this server returns the whole 8k-item library in one unpaged response today.
+     */
+    suspend fun getAllLibraryItemIds(baseUrl: String, token: String): List<JellyfinItem> = runCatching {
+        val acc = mutableListOf<JellyfinItem>()
+        var startIndex = 0
+        while (true) {
+            val url = baseUrl.trimEnd('/') +
+                "/Items?Recursive=true&IncludeItemTypes=Movie,Series,Episode&EnableImages=false&EnableUserData=false" +
+                "&Fields=Path,SeriesId&Limit=$JF_PAGE_SIZE&StartIndex=$startIndex"
+            val resp = httpGet(url) { jellyfinAuth(token) }.bodyOrNull<JellyfinItemsResponse>("getAllLibraryItemIds") ?: break
+            if (resp.items.isEmpty()) break
+            acc += resp.items
+            startIndex += resp.items.size
+            if (startIndex >= resp.totalRecordCount) break
+        }
+        acc
+    }.let { result ->
+        if (result.isFailure) Logger.warn("Jellyfin getAllLibraryItemIds failed: ${result.exceptionOrNull()?.message}")
+        result.getOrDefault(emptyList())
+    }
+
     suspend fun getItem(baseUrl: String, token: String, jellyfinId: String): JellyfinItem? = runCatching {
         // Fetch via the same list-endpoint shape getItems uses, filtered to one id. The
         // non-user-scoped single-item route `/Items/{id}` 400s with a server token across Jellyfin

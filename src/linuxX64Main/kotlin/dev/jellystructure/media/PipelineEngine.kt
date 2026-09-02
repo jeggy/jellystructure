@@ -52,6 +52,13 @@ class PipelineDeps(
     val imdbClient: ImdbClient? = null,
     val mediaSegmentStore: MediaSegmentStore,
     val mediaJobQueue: MediaJobQueue,
+    // Phase 181 — every RunTarget.Library run converges on Jellyfin's actual catalog (the set-difference
+    // sweep, FR-181-1) before the (predictive) freshness filter runs, and retries anything a prior
+    // ingest attempt gave up on (the persistent dirty-set, FR-181-5). Required, not defaulted, so a new
+    // PipelineDeps construction site can't silently opt out of the backstop this phase exists to add.
+    val realtimeIngest: RealtimeIngestService,
+    val mediaHistory: MediaHistory,
+    val dirtyItemStore: DirtyItemStore,
 )
 
 /**
@@ -157,6 +164,9 @@ suspend fun runPipeline(
     val imdbClient = deps.imdbClient
     val mediaSegmentStore = deps.mediaSegmentStore
     val mediaJobQueue = deps.mediaJobQueue
+    val realtimeIngest = deps.realtimeIngest
+    val mediaHistory = deps.mediaHistory
+    val dirtyItemStore = deps.dirtyItemStore
 
     val scanStep = pipeline.firstOrNull { it.step == "scan_files" } ?: PipelineStep(step = "scan_files")
 
@@ -200,6 +210,42 @@ suspend fun runPipeline(
 
     val workingSet: List<MediaItem> = when (target) {
         is RunTarget.Library -> {
+            // Phase 181 (FR-181-1/FR-181-1a/FR-181-5) — converge on Jellyfin's actual catalog before the
+            // (predictive) freshness filter runs, so a title stuck in a slow recheck tier can never fully
+            // hide a file Jellyfin already has (the Fjollerne incident this phase exists for). Cheap enough
+            // (~0.5s / ~7MB for this library's ~8k items) to run on every Library trigger uniformly,
+            // rather than trying to give it its own, separately-reasoned-about cadence.
+            runCatching {
+                val sweep = sweepJellyfinLibrary(configStore, jellyfinClient, store)
+                if (sweep != null) {
+                    if (sweep.missingIds.isNotEmpty() || sweep.staleTopLevelIds.isNotEmpty()) {
+                        Logger.info(
+                            "Library sweep: ${sweep.scannedCount} Jellyfin items scanned, " +
+                                "${sweep.missingIds.size} missing, ${sweep.staleTopLevelIds.size} stale",
+                            "ingest",
+                        )
+                    }
+                    sweep.missingIds.forEach { realtimeIngest.enqueue(it) }
+                    // FR-181-1a — surfaced for review on the item's own History tab, never auto-removed
+                    // (Phase 95's non-destructive invariant).
+                    for (staleId in sweep.staleTopLevelIds) {
+                        store.resolveByJellyfinId(staleId)?.let { item ->
+                            mediaHistory.record(
+                                item.id, "jellyfin_missing",
+                                "Jellyfin no longer reports this item (jellyfinId=$staleId) — check for a removal or re-import",
+                            )
+                        }
+                    }
+                }
+                // FR-181-5 — anything a prior ingest attempt exhausted its retries on gets one more try
+                // every Library cycle, instead of being forgotten the moment the in-memory retry gave up.
+                val outstanding = dirtyItemStore.all()
+                if (outstanding.isNotEmpty()) {
+                    Logger.info("Retrying ${outstanding.size} previously-failed ingest(s)", "ingest")
+                    outstanding.forEach { realtimeIngest.enqueue(it) }
+                }
+            }.onFailure { Logger.warn("Library sweep failed: ${it.message}", "ingest") }
+
             val freshnessFilter = computeFreshnessFilter(scanStep, store, fullRun, target)
             val result = withContext(RunContext(jobId, "scan_files")) {
                 runScan(

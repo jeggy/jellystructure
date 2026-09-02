@@ -155,7 +155,7 @@ fun startServer(
     sessionBridge: dev.jellystructure.tv.JellyfinSessionBridge,
     apiKeyStore: dev.jellystructure.auth.ApiKeyStore,
     realtimeIngest: dev.jellystructure.media.RealtimeIngestService,
-    libraryListener: dev.jellystructure.tv.JellyfinLibraryListener,
+    dirtyItemStore: dev.jellystructure.media.DirtyItemStore,
     fdWatchdog: dev.jellystructure.ops.FdWatchdog,
     imdbClient: dev.jellystructure.imdb.ImdbClient,
     upcomingService: dev.jellystructure.tv.UpcomingService? = null,
@@ -458,11 +458,23 @@ fun startServer(
                         val p = if (bazarrClient != null && b.url.isNotBlank()) bazarrClient.ping(b.url, b.apiKey) else ArrPing(false, "URL not configured")
                         checks.add(HealthCheck("Bazarr", p.ok, if (p.ok) "Connected" + (p.version?.let { " · v$it" } ?: "") else p.detail))
                     }
-                    // Phase 114 (FR B.3) — the Jellyfin LibraryChanged listener's own connection state.
+                    // Phase 181 (FR-181-4.2) — replaces the deleted JellyfinLibraryListener's connection
+                    // check (that socket never delivered a usable event on this Jellyfin version — a
+                    // false "connected" concealed a 23-day silence). The real signal is whether ANY
+                    // realtime-ingest path has actually completed successfully recently, and whether the
+                    // persistent dirty-set is backing up.
                     if (cfg.ingest.realtime) {
-                        val connected = libraryListener.connected
-                        val lastEvent = libraryListener.lastEventAt?.let { " · last event ${dev.jellystructure.nowEpochSec() - it}s ago" } ?: ""
-                        checks.add(HealthCheck("Realtime ingest listener", connected, (if (connected) "Connected" else "Disconnected — reconnecting") + lastEvent))
+                        val last = realtimeIngest.lastSuccessfulIngestAt
+                        val ageSec = last?.let { dev.jellystructure.nowEpochSec() - it }
+                        val outstanding = dirtyItemStore.count()
+                        // 6h — generous enough to never false-alarm a quiet household, tight enough to
+                        // catch a silence like the 23-day one this phase was written to surface.
+                        val healthy = last != null && (ageSec ?: Long.MAX_VALUE) < 6 * 3600
+                        val detail = buildString {
+                            append(if (last != null) "Last successful ingest ${ageSec}s ago" else "No successful ingest yet")
+                            if (outstanding > 0) append(" · $outstanding item(s) awaiting retry")
+                        }
+                        checks.add(HealthCheck("Realtime ingest", healthy, detail))
                     }
                     call.respond(mapOf("checks" to checks))
                 }
@@ -471,7 +483,7 @@ fun startServer(
                 configureConfigRoutes(configStore, effectiveScanThreads, qbClient, arrClient, seerrClient, bazarrClient, tmdbClient, requestLanguageService)
                 setupRoutes(configStore, jellyfinClient)
                 jellyfinRoutes(configStore, jellyfinClient)
-                mediaRoutes(mediaStore, scanner, artworkDownloader, tmdbClient, appScope, scanTracker, broadcaster, jellyfinClient, configStore, mediaHistory, scanDispatcher, seedingGuard, seedingSnapshot, raviloConfigService, logoDownloader, arrRescan, sonarrEnrich, mediaJobQueue, imdbClient, fingerprintService, mediaSegmentStore)
+                mediaRoutes(mediaStore, scanner, artworkDownloader, tmdbClient, appScope, scanTracker, broadcaster, jellyfinClient, configStore, mediaHistory, scanDispatcher, seedingGuard, seedingSnapshot, raviloConfigService, logoDownloader, arrRescan, sonarrEnrich, mediaJobQueue, imdbClient, fingerprintService, mediaSegmentStore, realtimeIngest, dirtyItemStore)
                 activityRoutes(activityLog)
                 triageRoutes(mediaStore, jellyfinClient, configStore, mediaHistory, seedingGuard, mediaSegmentStore)
                 segmentRoutes(mediaStore, mediaSegmentStore, configStore, fingerprintService, appScope, jellyfinClient, mediaJobQueue)
@@ -480,7 +492,7 @@ fun startServer(
                 jobsRoutes(mediaJobQueue)
                 remoteRoutes(deviceService, tvEventBus, mediaStore)
                 apiKeyManagementRoutes(apiKeyStore)
-                webhookRoutes(configStore, jellyfinClient, realtimeIngest, appScope, libraryListener)
+                webhookRoutes(configStore, jellyfinClient, realtimeIngest, appScope, dirtyItemStore)
                 acquisitionService?.let { acquisitionRoutes(it) }
                 bazarrClient?.let { bc ->
                     val bazarrService = dev.jellystructure.bazarr.BazarrService(configStore, bc)

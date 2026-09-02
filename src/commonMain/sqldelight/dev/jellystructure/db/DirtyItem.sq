@@ -1,0 +1,24 @@
+-- Phase 181 (FR-181-5) — persistent "needs work" set. Written whenever an ingest attempt exhausts its
+-- retries (RealtimeIngestService), cleared only on success, so a failure is remembered across restarts
+-- instead of being silently forgotten the way the old stateless-heuristic worklist would forget it.
+CREATE TABLE dirty_item (
+    id INTEGER NOT NULL PRIMARY KEY,
+    jellyfin_id TEXT NOT NULL UNIQUE,
+    reason TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+);
+
+CREATE INDEX dirty_item_created ON dirty_item(created_at);
+
+insert:
+INSERT OR IGNORE INTO dirty_item(jellyfin_id, reason, created_at)
+VALUES (:jellyfin_id, :reason, :created_at);
+
+all:
+SELECT * FROM dirty_item ORDER BY created_at ASC;
+
+clear:
+DELETE FROM dirty_item WHERE jellyfin_id = :jellyfin_id;
+
+count:
+SELECT COUNT(*) FROM dirty_item;
