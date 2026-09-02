@@ -33,6 +33,13 @@
   .usr-now-bar { width: 130px; flex: none; }
   .usr-now-bar .bar { height: 5px; }
   .usr-now-pct { font-size: .7rem; color: var(--ink-soft); font-variant-numeric: tabular-nums; flex: none; }
+  /* Phase 185 — the persisted decode ceiling, in plain words. A second line in the device's own
+     cell rather than a sixth column: this table is shared with the Admin web sessions and
+     Recently watched sections, which have nothing to put in such a column. Numbers are fine
+     here — this is the admin, not Ravilo. */
+  .usr-cap { display: block; font-size: .68rem; color: var(--ink-soft); margin-top: 3px; }
+  .usr-cap b { color: var(--ink-soft); font-weight: 600; }
+  .usr-cap.unknown b { font-weight: 500; font-style: italic; }
 </style>
 </head>
 <body class="wf-body app-body">
@@ -46,7 +53,7 @@
     <span class="chip ok" style="font-size:.72rem;background:var(--ok-soft);"><span class="dot ok"></span> 3 connected now</span>
     <span class="btn sm ghost" id="users-refresh">↻ Refresh</span>
   </div>
-  <p class="page-sub">Every Jellyfin user with their <b>Ravilo devices</b> and <b>admin web sessions</b> — created, last used, and whether it's connected now. <b>Revoke</b> signs one device/browser out; <b>Sign out everywhere</b> clears all of a user's devices <i>and</i> web sessions. The <b>access</b> line mirrors each user's Jellyfin policy — Ravilo serves only what it permits. <b>Now watching</b> / <b>recently watched</b> come from Jellyfin. Read-only against Jellyfin — edit accounts &amp; policies there.</p>
+  <p class="page-sub">Every Jellyfin user with their <b>Ravilo devices</b> and <b>admin web sessions</b> — created, last used, and whether it's connected now. <b>Revoke</b> signs one device/browser out; <b>Sign out everywhere</b> clears all of a user's devices <i>and</i> web sessions. The <b>access</b> line mirrors each user's Jellyfin policy — Ravilo serves only what it permits. <b>Now watching</b> / <b>recently watched</b> come from Jellyfin. <b>What this device can take</b> is the bitrate each device's own decoder reports it can handle — recorded the last time that device started something in Ravilo, and the reason a heavy file re-encodes for one TV and plays untouched on another. Read-only against Jellyfin — edit accounts &amp; policies there.</p>
 
   <div class="col fill">
     <!-- Jógvan (admin) -->
@@ -60,8 +67,8 @@
           <div class="usr-now"><span class="usr-now-ic">▶</span><div class="usr-now-main"><div class="usr-now-t">Hraðar Ljós (2024)</div><div class="usr-now-sub">now watching · Living room TV · 1080p direct play</div></div><div class="usr-now-bar"><div class="bar"><i style="width:61%"></i></div></div><span class="usr-now-pct">1:12:08 / 1:58:24</span></div>
           <table class="wf-table usr-table" style="margin-top:11px;">
             <tr class="usr-hd"><td>Ravilo devices</td><td>created</td><td>last seen</td><td></td><td></td></tr>
-            <tr><td><b>Living room TV</b> <span class="tiny muted">· Shield TV</span></td><td class="tiny muted">2 May 2026</td><td class="tiny muted">2 min ago</td><td><span class="badge ok"><span class="dot ok"></span> connected</span></td><td class="num"><span class="btn sm ghost usr-revoke">Revoke</span></td></tr>
-            <tr><td><b>Pixel 8</b> <span class="tiny muted">· phone</span></td><td class="tiny muted">11 Jun 2026</td><td class="tiny muted">yesterday 21:40</td><td></td><td class="num"><span class="btn sm ghost usr-revoke">Revoke</span></td></tr>
+            <tr><td><b>Living room TV</b> <span class="tiny muted">· Shield TV</span><div class="usr-cap">what this device can take <b>up to 120 Mbps</b> <span class="muted">· measured 31 Aug</span></div></td><td class="tiny muted">2 May 2026</td><td class="tiny muted">2 min ago</td><td><span class="badge ok"><span class="dot ok"></span> connected</span></td><td class="num"><span class="btn sm ghost usr-revoke">Revoke</span></td></tr>
+            <tr><td><b>Pixel 8</b> <span class="tiny muted">· phone</span><div class="usr-cap">what this device can take <b>up to 40 Mbps</b> <span class="muted">· measured 29 Aug</span></div></td><td class="tiny muted">11 Jun 2026</td><td class="tiny muted">yesterday 21:40</td><td></td><td class="num"><span class="btn sm ghost usr-revoke">Revoke</span></td></tr>
             <tr class="usr-hd"><td>Admin web sessions</td><td>created</td><td>last used</td><td></td><td></td></tr>
             <tr><td><b>Chrome · macOS</b> <span class="badge" style="margin-left:5px;font-size:.62rem;">this session</span></td><td class="tiny muted">today 09:12</td><td class="tiny muted">just now</td><td><span class="tiny muted">expires in 13 days</span></td><td class="num"><span class="btn sm ghost usr-revoke" data-self="1">Revoke</span></td></tr>
             <tr><td><b>Firefox · Windows</b></td><td class="tiny muted">1 Jul 2026</td><td class="tiny muted">3 days ago</td><td><span class="tiny muted">expires in 6 days</span></td><td class="num"><span class="btn sm ghost usr-revoke">Revoke</span></td></tr>
@@ -88,8 +95,8 @@
           </div>
           <table class="wf-table usr-table" style="margin-top:11px;">
             <tr class="usr-hd"><td>Ravilo devices</td><td>created</td><td>last seen</td><td></td><td></td></tr>
-            <tr><td><b>Bedroom TV</b> <span class="tiny muted">· Chromecast HD</span></td><td class="tiny muted">18 Mar 2026</td><td class="tiny muted">41 min ago</td><td><span class="badge ok"><span class="dot ok"></span> connected</span></td><td class="num"><span class="btn sm ghost usr-revoke">Revoke</span></td></tr>
-            <tr><td><b>Ravilo Web</b> <span class="tiny muted">· browser</span></td><td class="tiny muted">29 Jun 2026</td><td class="tiny muted">6 days ago</td><td></td><td class="num"><span class="btn sm ghost usr-revoke">Revoke</span></td></tr>
+            <tr><td><b>Bedroom TV</b> <span class="tiny muted">· Chromecast HD</span><div class="usr-cap">what this device can take <b>up to 60 Mbps</b> <span class="muted">· measured yesterday</span></div></td><td class="tiny muted">18 Mar 2026</td><td class="tiny muted">41 min ago</td><td><span class="badge ok"><span class="dot ok"></span> connected</span></td><td class="num"><span class="btn sm ghost usr-revoke">Revoke</span></td></tr>
+            <tr><td><b>Ravilo Web</b> <span class="tiny muted">· browser</span><div class="usr-cap unknown">what this device can take <b>not measured</b> <span class="muted">· the browser never tells us</span></div></td><td class="tiny muted">29 Jun 2026</td><td class="tiny muted">6 days ago</td><td></td><td class="num"><span class="btn sm ghost usr-revoke">Revoke</span></td></tr>
             <tr class="usr-hd"><td>Recently watched</td><td>when</td><td>device</td><td></td><td></td></tr>
             <tr><td><b>Havets Hjarta</b> <span class="tiny muted">· S02E01</span></td><td class="tiny muted">today 21:12</td><td class="tiny muted">Bedroom TV</td><td><span class="badge">stopped at 64%</span></td><td></td></tr>
             <tr><td><b>Havets Hjarta</b> <span class="tiny muted">· S01 · E01–E08</span></td><td class="tiny muted">29 Jun – 6 Jul</td><td class="tiny muted">Bedroom TV</td><td><span class="badge ok">✓ 8 episodes</span></td><td></td></tr>
@@ -112,7 +119,7 @@
           <div class="usr-access tiny"><span class="muted">access</span><span class="chip">3 of 5 libraries <span class="muted">· Movies · Series · Dansk TV</span></span><span class="chip"><span class="usr-tagdot bad"></span>blocked tags <b>horror</b> · <b>true-crime</b></span></div>
           <table class="wf-table usr-table" style="margin-top:11px;">
             <tr class="usr-hd"><td>Ravilo devices</td><td>created</td><td>last seen</td><td></td><td></td></tr>
-            <tr><td><b>Kitchen TV</b> <span class="tiny muted">· Fire TV Stick</span></td><td class="tiny muted">7 Apr 2026</td><td class="tiny muted">2 weeks ago</td><td></td><td class="num"><span class="btn sm ghost usr-revoke">Revoke</span></td></tr>
+            <tr><td><b>Kitchen TV</b> <span class="tiny muted">· Fire TV Stick</span><div class="usr-cap unknown">what this device can take <b>not measured yet</b> <span class="muted">· no Ravilo session since the update</span></div></td><td class="tiny muted">7 Apr 2026</td><td class="tiny muted">2 weeks ago</td><td></td><td class="num"><span class="btn sm ghost usr-revoke">Revoke</span></td></tr>
             <tr class="usr-hd"><td>Recently watched</td><td>when</td><td>device</td><td></td><td></td></tr>
             <tr><td><b>Sommeren ’92</b> <span class="tiny muted">· 2019</span></td><td class="tiny muted">24 Jun 20:12</td><td class="tiny muted">Kitchen TV</td><td><span class="badge ok">✓ finished</span></td><td></td></tr>
           </table>
@@ -130,7 +137,7 @@
           <div class="usr-now"><span class="usr-now-ic">▶</span><div class="usr-now-main"><div class="usr-now-t">Caminandes 3: Llamigos</div><div class="usr-now-sub">now watching · Playroom TV</div></div><div class="usr-now-bar"><div class="bar"><i style="width:68%"></i></div></div><span class="usr-now-pct">08:12 / 12:00</span></div>
           <table class="wf-table usr-table" style="margin-top:11px;">
             <tr class="usr-hd"><td>Ravilo devices</td><td>created</td><td>last seen</td><td></td><td></td></tr>
-            <tr><td><b>Playroom TV</b> <span class="tiny muted">· Android TV</span></td><td class="tiny muted">2 Jun 2026</td><td class="tiny muted">12 min ago</td><td><span class="badge ok"><span class="dot ok"></span> connected</span></td><td class="num"><span class="btn sm ghost usr-revoke">Revoke</span></td></tr>
+            <tr><td><b>Playroom TV</b> <span class="tiny muted">· Android TV</span><div class="usr-cap">what this device can take <b>up to 100 Mbps</b> <span class="muted">· measured 30 Aug</span></div></td><td class="tiny muted">2 Jun 2026</td><td class="tiny muted">12 min ago</td><td><span class="badge ok"><span class="dot ok"></span> connected</span></td><td class="num"><span class="btn sm ghost usr-revoke">Revoke</span></td></tr>
             <tr class="usr-hd"><td>Recently watched</td><td>when</td><td>device</td><td></td><td></td></tr>
             <tr><td><b>Big Buck Bunny</b> <span class="tiny muted">· 2008</span></td><td class="tiny muted">today 08:44</td><td class="tiny muted">Playroom TV</td><td><span class="badge ok">✓ finished</span></td><td></td></tr>
             <tr><td><b>Wing It!</b> <span class="tiny muted">· 2023</span></td><td class="tiny muted">yesterday 17:20</td><td class="tiny muted">Playroom TV</td><td><span class="badge ok">✓ finished</span></td><td></td></tr>
