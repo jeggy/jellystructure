@@ -64,6 +64,12 @@ private data class OverviewDevice(
     // device has never posted one (an un-updated client, or simply no playback yet) — never badged in
     // that case, same as a clean (no-issue) report; see QoeSummary.hasIssue.
     @SerialName("recent_quality") val recentQuality: dev.jellystructure.tv.QoeSummary? = null,
+    // Phase 185 (FR-185-8) — this device's persisted decode ceiling, for the "what this device can
+    // take" second line. Both null ⇒ FR-185-2's "not measured yet" (no Ravilo session since the R216
+    // build) — the admin card spells this out in plain words rather than a raw null.
+    @SerialName("decode_max_bitrate_hevc") val decodeMaxBitrateHevc: Long? = null,
+    @SerialName("decode_max_bitrate_h264") val decodeMaxBitrateH264: Long? = null,
+    @SerialName("decode_measured_at") val decodeMeasuredAt: Long? = null,
 )
 
 @Serializable
@@ -455,7 +461,7 @@ fun Route.tvRoutes(
     post("/tv/playback/stop") {
         val device = call.attributes[DeviceKey]
         val req = call.receive<PlaybackStopRequest>()
-        playbackService.stopPlayback(device, req.itemId, req.positionMs)
+        playbackService.stopPlayback(device, req.itemId, req.positionMs, req.startupMs)
         call.respond(mapOf("status" to "ok"))
         // Bug fix: the stop used to be forwarded to Jellyfin and nothing else — the cached home feed
         // (5 min) kept serving the pre-stop Continue row, so a correct stop could stay invisible on
@@ -684,6 +690,7 @@ fun Route.tvRoutes(
                     maxRating = policy?.maxParentalRating,
                 ),
                 devices = userDevices.map { d ->
+                    val decode = deviceService.decodeCapabilities(d.deviceId, d.jellyfinUserId)
                     OverviewDevice(
                         deviceId = d.deviceId,
                         name = d.displayName,
@@ -695,6 +702,9 @@ fun Route.tvRoutes(
                         // Bug fix: this used to be the raw Jellyfin item id (a hex UUID) — resolve to a title.
                         nowPlaying = dev.jellystructure.tv.nowPlayingItem(d.deviceId)?.let { id -> mediaStore?.titleForJellyfinId(id) ?: id },
                         recentQuality = playbackQoeStore.recentForDevice(d.deviceId, limit = 1).firstOrNull(),
+                        decodeMaxBitrateHevc = decode?.hevcMaxBitrate,
+                        decodeMaxBitrateH264 = decode?.h264MaxBitrate,
+                        decodeMeasuredAt = decode?.measuredAt,
                     )
                 },
                 sessions = userSessions.map { s ->

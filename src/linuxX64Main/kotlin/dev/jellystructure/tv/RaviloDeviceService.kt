@@ -31,6 +31,14 @@ private fun encodeTags(tags: Set<String>): String? = tags.takeIf { it.isNotEmpty
 private fun decodeTags(raw: String?): Set<String> =
     raw?.split(",")?.filter { it.isNotBlank() }?.toSet() ?: emptySet()
 
+/** Phase 185 — a device's persisted decode ceiling (bps), per codec, plus when it was last measured
+ *  (epoch millis). Every field null means "not measured yet" (FR-185-2). */
+data class DeviceDecodeCapabilities(
+    val hevcMaxBitrate: Long?,
+    val h264MaxBitrate: Long?,
+    val measuredAt: Long?,
+)
+
 class RaviloDeviceService(private val db: JellystructureDb) {
 
     // token → (DeviceData, cachedAtMs, lastSeenWrittenMs)
@@ -214,6 +222,38 @@ class RaviloDeviceService(private val db: JellystructureDb) {
             .forEach { tokenCache.remove(it.device_token) }
         db.raviloDeviceQueries.deleteByUser(jellyfin_user_id = jellyfinUserId)
     }
+
+    /**
+     * Phase 185 (FR-185-1) — persists the R216 decode ceiling this device just reported, keyed per
+     * codec (not one shared value — see the migration's own doc for why a single slot is wrong on a TV
+     * that always transcodes to AVC). Called on every playback negotiation; a no-op when the client
+     * reported neither ceiling (an unmeasured client, or one that hasn't started a session on this
+     * build yet — FR-185-2's two permanent unknown states, left untouched rather than zeroed).
+     */
+    fun recordDecodeCapabilities(deviceId: String, jellyfinUserId: String, hevcMaxBitrate: Long?, h264MaxBitrate: Long?) {
+        if (hevcMaxBitrate == null && h264MaxBitrate == null) return
+        db.raviloDeviceQueries.updateDecodeCapabilities(
+            decode_max_bitrate_hevc = hevcMaxBitrate,
+            decode_max_bitrate_h264 = h264MaxBitrate,
+            decode_measured_at = nowMs(),
+            device_id = deviceId,
+            jellyfin_user_id = jellyfinUserId,
+        )
+    }
+
+    /** Phase 185 (FR-185-5/FR-185-8) — this device's persisted decode ceiling. Both fields null means
+     *  FR-185-2's "not measured yet" (or "not measured", for a client that structurally never can) —
+     *  the two are indistinguishable from stored state alone; callers needing to tell them apart use
+     *  [DeviceData] context (e.g. a known-web session) the way the admin row already does. */
+    fun decodeCapabilities(deviceId: String, jellyfinUserId: String): DeviceDecodeCapabilities? =
+        db.raviloDeviceQueries.getDecodeCapabilities(device_id = deviceId, jellyfin_user_id = jellyfinUserId)
+            .executeAsOneOrNull()?.let {
+                DeviceDecodeCapabilities(
+                    hevcMaxBitrate = it.decode_max_bitrate_hevc,
+                    h264MaxBitrate = it.decode_max_bitrate_h264,
+                    measuredAt = it.decode_measured_at,
+                )
+            }
 
     /** Phase 111 — every device paired to [jellyfinUserId] (remote-control device list / D.1's admin
      *  Ravilo config editor device list). */

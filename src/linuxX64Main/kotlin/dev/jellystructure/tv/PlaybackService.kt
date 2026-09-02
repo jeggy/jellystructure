@@ -296,6 +296,10 @@ class PlaybackService(
     private val jellyfinClient: JellyfinClient,
     private val configStore: ConfigStore,
     private val playbackQoeStore: PlaybackQoeStore,
+    // Phase 185 (FR-185-4) — written from stopPlayback only, on a real client-reported startupMs.
+    private val playbackStartSampleStore: PlaybackStartSampleStore,
+    // Phase 185 (FR-185-1) — persists the decode ceiling reported on every negotiation.
+    private val raviloDeviceService: RaviloDeviceService,
 ) {
     /**
      * Security fix (2026-08-02 review, finding M4) — Detail/Browse/Home all gate on
@@ -331,6 +335,14 @@ class PlaybackService(
         capabilities: ClientCapabilities,
     ): StreamTicket {
         requireVisible(device, jellyfinId)
+        // Phase 185 (FR-185-1) — every negotiation that reports at least one decode ceiling persists it,
+        // regardless of what this particular file needs (ClientCapabilities always reports both
+        // hevc/h264 ceilings together, not just the one this session happens to select).
+        raviloDeviceService.recordDecodeCapabilities(
+            device.deviceId, device.jellyfinUserId,
+            capabilities.maxHevcBitrate.takeIf { it > 0 }?.toLong(),
+            capabilities.maxH264Bitrate.takeIf { it > 0 }?.toLong(),
+        )
         val jellyfinBase = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
         val token = jellyfinClient.tvTokenForClient(jellyfinBase, device)
             ?: throw JellyfinReauthRequiredException("This device's Jellyfin sign-in has expired — re-pair it to continue watching.")
@@ -450,7 +462,7 @@ class PlaybackService(
         )
     }
 
-    suspend fun stopPlayback(device: DeviceData, jellyfinId: String, positionMs: Long) {
+    suspend fun stopPlayback(device: DeviceData, jellyfinId: String, positionMs: Long, startupMs: Long? = null) {
         // No requireVisible() here deliberately — same reasoning as reportProgress above: this is
         // cleanup for a session startPlayback already gated, and it's also called from the stop
         // watchdog for stale/disconnected devices. Blocking it would risk leaving a phantom "Now
@@ -458,6 +470,24 @@ class PlaybackService(
         // of letting an in-flight stop go through.
         val jellyfinPlaySessionId = playbackTracker.stopped(device, jellyfinId)
         releaseSession(device, jellyfinId, positionMs, jellyfinPlaySessionId)
+        // Phase 185 (FR-185-4) — session genuinely completed (this IS the stop path, not a mid-session
+        // heartbeat) and the client reported a real startup duration: record one sample. The watchdog's
+        // own forced stop (stopWatchdogTick) never supplies startupMs, so a device that vanished
+        // mid-session correctly contributes nothing here.
+        if (startupMs != null) recordStartSample(device, jellyfinId, startupMs)
+    }
+
+    private suspend fun recordStartSample(device: DeviceData, jellyfinId: String, startupMs: Long) {
+        // Same top-level-or-episode lookup requireVisible() already does — a jellyfinId is either a
+        // movie/series' own id or one of a series' episode ids; FR-185-9 keys by the FILE (Phase 149's
+        // own multi-episode grouping key, R179), never the item id, so a combined S01E01-E03 file's
+        // three episodes share one history.
+        val fileId = mediaStore.resolveByJellyfinId(jellyfinId)?.path
+            ?: mediaStore.allItems().firstOrNull { series -> series.episodes.any { it.jellyfinId == jellyfinId } }
+                ?.episodes?.firstOrNull { it.jellyfinId == jellyfinId }?.path
+            ?: return
+        val seconds = ((startupMs + 500) / 1000L).toInt().coerceAtLeast(0)
+        playbackStartSampleStore.record(device.deviceId, jellyfinId, fileId, seconds, mediaStore.nowMs())
     }
 
     /**

@@ -1,0 +1,8 @@
+-- Phase 185 (FR-185-1) — persist the R216 decode ceiling instead of throwing it away after each
+-- PlaybackInfo negotiation. See RaviloDevice.sq for the full column docs; kept per codec (not one
+-- shared value) — live playback_qoe evidence showed this same TV always reports its AVC decoder (R183/
+-- R216 force an AVC transcode target) even for 4K sessions, so a single column would silently record the
+-- AVC ceiling while the FR-185-6 predicate needs the HEVC direct-play one for an HEVC file.
+ALTER TABLE ravilo_device ADD COLUMN decode_max_bitrate_hevc INTEGER;
+ALTER TABLE ravilo_device ADD COLUMN decode_max_bitrate_h264 INTEGER;
+ALTER TABLE ravilo_device ADD COLUMN decode_measured_at INTEGER;

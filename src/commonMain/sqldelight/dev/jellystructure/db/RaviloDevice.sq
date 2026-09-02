@@ -17,6 +17,22 @@ CREATE TABLE ravilo_device (
     -- on every login, same as allowed_libraries.
     allowed_tags TEXT,
     blocked_tags TEXT,
+    -- Phase 185 (FR-185-1) — this device's own real hardware decode ceiling (bps), read straight off
+    -- R216's ClientCapabilities on every playback negotiation (PlaybackService.startPlayback), never
+    -- inferred or invented. Kept per codec, not one shared value — live playback_qoe evidence showed a
+    -- single-slot design would be wrong: this same TV always reports its AVC decoder (R183/R216 force an
+    -- AVC transcode target) even for 4K sessions, so a single column would silently record the AVC
+    -- ceiling while FR-185-6's predicate needs the HEVC direct-play one for an HEVC file. NULL = "not
+    -- measured yet" (FR-185-2) — no Ravilo session since this device's build started reporting it, or a
+    -- client (Ravilo Web) that can't report a ceiling at all. A NULL ceiling means no slow-start note,
+    -- ever, for that codec — never treated as unlimited or as constrained.
+    decode_max_bitrate_hevc INTEGER,
+    decode_max_bitrate_h264 INTEGER,
+    -- Epoch MILLISECONDS (matches last_seen/created_at above — NOT playback_qoe.updated_at, which is
+    -- seconds; verified against the live DB 2026-09-02, see the phase spec's own note). One shared
+    -- timestamp for both columns above: ClientCapabilities reports both ceilings together on every
+    -- negotiation, so they're always written in the same statement.
+    decode_measured_at INTEGER,
     PRIMARY KEY (device_id, jellyfin_user_id)
 );
 
@@ -53,3 +69,21 @@ DELETE FROM ravilo_device WHERE device_id = :device_id AND jellyfin_user_id = :j
 -- Phase 143 — "sign out everywhere": every device row this Jellyfin user has ever signed into.
 deleteByUser:
 DELETE FROM ravilo_device WHERE jellyfin_user_id = :jellyfin_user_id;
+
+-- Phase 185 (FR-185-1) — the newest measurement is always the truth (a firmware update can change it),
+-- so a reported value always overwrites. COALESCE on each column independently: a negotiation that
+-- reports only one codec's ceiling (the other came back 0/unknown that round) must not null out a
+-- previously-known-good value for the OTHER codec — only a genuinely reported number ever changes a
+-- column. PlaybackService only calls this at all when at least one of the two is non-null.
+updateDecodeCapabilities:
+UPDATE ravilo_device
+SET decode_max_bitrate_hevc = COALESCE(:decode_max_bitrate_hevc, decode_max_bitrate_hevc),
+    decode_max_bitrate_h264 = COALESCE(:decode_max_bitrate_h264, decode_max_bitrate_h264),
+    decode_measured_at = :decode_measured_at
+WHERE device_id = :device_id AND jellyfin_user_id = :jellyfin_user_id;
+
+-- Phase 185 (FR-185-5/FR-185-8) — this device's persisted decode ceiling, read by both the detail
+-- payload's playbackNote resolution and the admin Users & devices row.
+getDecodeCapabilities:
+SELECT decode_max_bitrate_hevc, decode_max_bitrate_h264, decode_measured_at
+FROM ravilo_device WHERE device_id = :device_id AND jellyfin_user_id = :jellyfin_user_id;

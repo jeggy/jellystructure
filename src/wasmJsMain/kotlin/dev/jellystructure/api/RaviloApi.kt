@@ -50,6 +50,11 @@ data class OverviewDevice(
     @SerialName("now_playing") val nowPlaying: String? = null,
     // Phase 177 §FR-177-5 — this device's most recent playback-quality report, if any.
     @SerialName("recent_quality") val recentQuality: QoeSummary? = null,
+    // Phase 185 (FR-185-8) — this device's persisted decode ceiling (bps). Both null ⇒ "not measured
+    // yet" (no Ravilo session since the R216 build).
+    @SerialName("decode_max_bitrate_hevc") val decodeMaxBitrateHevc: Long? = null,
+    @SerialName("decode_max_bitrate_h264") val decodeMaxBitrateH264: Long? = null,
+    @SerialName("decode_measured_at") val decodeMeasuredAt: Long? = null,
 )
 
 /** Phase 177 §FR-177-5 — mirrors the backend's `dev.jellystructure.tv.QoeSummary`. [hasIssue] matches
