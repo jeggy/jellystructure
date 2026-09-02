@@ -7,7 +7,37 @@
 > to say so. This phase adds one manual escape hatch — **choose a different winner for this one item** —
 > and changes nothing else.
 
-**Status:** Planned (design-authored 2026-09-01, not yet dev-reviewed)
+**Status:** Mostly built 2026-09-02 (not yet dev-reviewed, not yet live-tested against real TMDB traffic
+— compiles clean backend + wasmJs, `linuxX64Test` green incl. new `MetadataLanguageLockTest`). FR-184-1
+through FR-184-5 and FR-184-7 are built; FR-184-6 is built as a consequence of FR-184-2 (no extra code
+needed — see its note below); **FR-184-8's library chip and workbench facet are NOT built** — time-boxed
+out of this pass, see that section for what remains.
+
+**Build summary:** `MediaItem` gains `metadataLanguage: String?` + `metadataLanguageSetAt: Long?`
+(`model/Media.kt`), consulted in `Scanner.rescanMetadata` ABOVE the existing series-only
+`resolvedLanguage` override — a real pre-existing mechanism this phase had to compose with, not replace
+(see FR-184-1's note). `fetchTmdbMovieMetadata` gained `acceptTitleOnly`, threaded from `rescanMetadata`
+exactly like the TV branch already did, extending that existing leniency to MOVIE and MUSIC_VIDEO so a
+manually-chosen sparse-coverage language (FR-184-4's whole reason for showing coverage pips) actually
+works rather than silently falling through. New `preserveMetadataLanguage` guard
+(`MetadataLanguageLock.kt`) at both `MediaStore` write choke points, mirroring
+`preserveLockedArtwork`/`preserveTmdbMatchLock`; `clearTmdbMatch` now also clears it (FR-184-3).
+`TmdbClient.getTranslationCoverage()` (new) extends the existing `getTranslationLanguages()` machinery
+with per-language title/overview/poster-count coverage, reusing the images call the Artwork tab already
+makes — no third TMDB endpoint. `GET /api/media/{id}/tmdb-languages` now returns this richer shape (the
+existing resolver-trace caller was updated to read just the codes off it, unchanged behavior). New
+`PATCH /api/media/{id}/metadata-language` (`language: null` ⇒ back to automatic) sets the field, runs the
+ordinary `rescanMetadata`, writes NFO, fetches artwork, and records three History entries
+(`metadata_language_set`, `nfo_write`, `artwork_fetch`) — its revert restores the **full pre-change item
+snapshot** (episodes included), not a named field list, because a language change can touch every
+TMDB-derived field plus, for a series, every episode's own title/overview/still (FR-184-6). Admin UI: the
+existing movie-only resolver-trace card is now `buildMetadataLanguageCard` — automatic state unchanged
+plus a "Choose another language…" button; chosen state gets the accent border/badge/band the design
+calls for, with the same trace dimmed underneath headed "Resolver would pick". New
+`showMetadataLanguageModal` (filterable, two groups — resolved automatically / also available, 3 coverage
+pips per row) mirrors the existing `showTmdbMatchModal` pattern. The card's guard is "has a TMDB match"
+(not "is a movie"), so a series shows the entry point too even though it has no per-file audio trace to
+render — FR-184-6 applies to it as a whole, per the spec.
 
 Design: `design/app/Metadata Language Override - Directions.html` (Direction A chosen; B and C recorded
 as rejected). Implemented in the mockup at `design/app/media.html` + `design/app/detail.css`.
@@ -60,7 +90,15 @@ default to the second.
 
 ## Requirements
 
-### FR-184-1 — `metadataLanguage` on the item, defaulting to null
+### FR-184-1 — `metadataLanguage` on the item, defaulting to null — ✅ Built 2026-09-02
+
+One correction found while implementing: "the resolver is not modified" needed to compose with a
+pre-existing mechanism this section didn't mention. Series already had a narrower, real override —
+the language-mix control writes a manual choice into `resolvedLanguage`, and `rescanMetadata` already
+honoured it as `overrideLang` for TV_SHOW before this phase existed. `metadataLanguage` now wins over
+that when both are set (checked first in the `overrideLang` computation), so a series with both an old
+language-mix pin and a new Phase 184 choice does the sane thing — the newer, more explicit choice wins —
+rather than the two silently fighting.
 
 A nullable `metadataLanguage: String?` (ISO-639-1) on `MediaItem`. Null means *"resolve automatically"*
 and is the default for every existing and future item — this phase adds no behaviour to the 99% of the
@@ -95,7 +133,7 @@ Only two things clear it: the operator choosing **Back to automatic**, or a Phas
 (which by its own definition removes every TMDB-derived decision about the item — `metadataLanguage`
 joins the FR-174-1 field set).
 
-### FR-184-4 — The picker offers only what TMDB holds, with coverage
+### FR-184-4 — The picker offers only what TMDB holds, with coverage — ✅ Built 2026-09-02
 
 `GET /api/media/{id}/tmdb-languages` returns the languages TMDB currently has for the item, each with
 enough to judge it: whether a **title** and an **overview** exist, and how many **posters** are
@@ -131,13 +169,13 @@ The reason artwork still can't simply be a language row in the picker is unchang
 has no language**, and for a foreign-language film it is frequently the best available poster. It stays
 reachable as its own group on the Artwork tab, exactly as it is today.
 
-### FR-184-6 — A series is chosen as a whole
+### FR-184-6 — A series is chosen as a whole — ✅ Built (as a consequence of FR-184-2, no new code)
 
 `metadataLanguage` on a series applies to the series and **every episode under it**. Per-episode
 resolution keeps running (episodes have their own audio tracks and their own traces), but an episode
 whose own audio resolves elsewhere does not escape the series' choice. There is no per-episode override.
 
-### FR-184-7 — Admin UI
+### FR-184-7 — Admin UI — ✅ Built 2026-09-02
 
 The existing right-rail **Metadata language** card on `media.html` / `series.html` grows the control
 (design: Direction A):
@@ -159,12 +197,21 @@ Nothing else on the page changes. The Metadata tab cannot tell a chosen winner f
 ### FR-184-8 — Visible in the library, and in History
 
 - **Library list:** a small language chip on rows where `metadataLanguage != null`. The automatic
-  majority stays unmarked.
+  majority stays unmarked. **Not built** — time-boxed out of this pass. `MediaItem.metadataLanguage` is
+  already on every item the library list fetches, so this is purely a rendering addition to the existing
+  row template whenever it's picked up.
 - **Workbench:** a **Metadata language** facet (Metadata group) with `is any of` / `is none of` plus a
-  `chosen` / `automatic` distinction, so the handful of hand-set titles can be found again.
-- **History:** one operator action, three recorded writes — the language change (with the previous
-  value), the NFO re-write, and the artwork re-pick. Reverting the language row restores all three, the
-  same contract as Phase 174's revert.
+  `chosen` / `automatic` distinction, so the handful of hand-set titles can be found again. **Not built**
+  — same reason. Needs a new `Condition.facet` value plus a matcher in the workbench's evaluator; no
+  blocker found, just not reached.
+- **History: ✅ Built.** One operator action, three recorded writes — `metadata_language_set` (with the
+  previous value in its detail string), `nfo_write`, `artwork_fetch`. Reverting the language row restores
+  **the full pre-change item** (episodes included) from the History snapshot, not a named field list —
+  see the phase's build summary for why a `tmdb_match_clear`-shaped named restore isn't enough here (a
+  language change can touch every TMDB-derived field, and for a series every episode's own text/still
+  too). This is also what "restores all three" means in practice: the snapshot already reflects the
+  pre-change NFO/artwork state, so restoring it undoes their effects without needing to separately track
+  or re-run anything.
 
 ## Explicitly out of scope
 

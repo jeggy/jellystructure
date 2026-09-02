@@ -235,6 +235,11 @@ data class Localized<T>(val details: T, val language: String?)
 data class TmdbTranslation(
     @SerialName("iso_639_1") val languageCode: String = "",
     @SerialName("iso_3166_1") val region: String = "",
+    // Phase 184 — the language's own display names, straight from TMDB (not the title/overview content
+    // in `data`): `name` is the language's name IN that language (e.g. "Français" for fr), `englishName`
+    // is its English name (e.g. "French"). Used by the metadata-language picker's coverage list.
+    @SerialName("english_name") val englishName: String = "",
+    val name: String = "",
     val data: TmdbTranslationData = TmdbTranslationData(),
 )
 
@@ -243,6 +248,19 @@ data class TmdbTranslationData(
     val overview: String = "",
     val title: String = "",
     val name: String = "",
+)
+
+/** Phase 184 (FR-184-4) — one row of the metadata-language picker's coverage list. [code] is ISO-639-1;
+ *  [englishName]/[nativeName] are null only when TMDB's translations response happened to omit them
+ *  (rare — the picker falls back to the bare code). */
+@Serializable
+data class TmdbLanguageCoverage(
+    val code: String,
+    val englishName: String? = null,
+    val nativeName: String? = null,
+    val hasTitle: Boolean = false,
+    val hasOverview: Boolean = false,
+    val posterCount: Int = 0,
 )
 
 @Serializable
@@ -742,6 +760,55 @@ class TmdbClient(
         // original_language is always fetchable (TMDB returns it natively) — prepend it so the
         // resolver prefers the original over contributed translations when both are available.
         return (listOfNotNull(originalLang) + fromTranslations).distinct()
+    }
+
+    /**
+     * Phase 184 (FR-184-4) — the picker's coverage list: every language TMDB actually holds something
+     * for, each with enough to judge it (title? overview? how many posters?) rather than just the bare
+     * code [getTranslationLanguages] returns. Two calls, same shape [getTranslationLanguages] already
+     * makes (`/translations` + the original-language backfill) plus the images call the Artwork tab
+     * already fetches for per-language poster counts — no third TMDB endpoint invented for this.
+     */
+    suspend fun getTranslationCoverage(tmdbId: Int, isMovie: Boolean): List<TmdbLanguageCoverage> {
+        val key = apiKey()
+        if (key.isBlank()) return emptyList()
+        val originalLang: String? = runCatching {
+            if (isMovie) getMovieDetails(tmdbId)?.originalLanguage else getTvDetails(tmdbId)?.originalLanguage
+        }.getOrNull()?.takeIf { it.isNotBlank() }
+
+        val path = if (isMovie) "movie/$tmdbId/translations" else "tv/$tmdbId/translations"
+        val translations = runCatching {
+            httpGet("$baseUrl/$path") { parameter("api_key", key) }
+                .body<TmdbTranslationsResponse>().translations.filter { it.languageCode.isNotBlank() }
+        }.getOrElse { emptyList() }
+
+        val images = if (isMovie) getMovieImages(tmdbId) else getTvImages(tmdbId)
+        val posterCounts = images?.posters.orEmpty()
+            .mapNotNull { it.languageCode }
+            .groupingBy { it }.eachCount()
+
+        val byCode = LinkedHashMap<String, TmdbLanguageCoverage>()
+        // Original language first (may have no `translations` entry of its own — TMDB doesn't list it
+        // as a translation of itself — but it's always a real, selectable language for the title).
+        originalLang?.let { code ->
+            byCode[code] = TmdbLanguageCoverage(code = code, posterCount = posterCounts[code] ?: 0)
+        }
+        for (t in translations) {
+            val code = t.languageCode
+            val hasTitle = t.data.title.isNotBlank() || t.data.name.isNotBlank()
+            val hasOverview = t.data.overview.isNotBlank()
+            if (!hasTitle && !hasOverview && code != originalLang) continue  // matches getTranslationLanguages' own filter
+            val existing = byCode[code]
+            byCode[code] = TmdbLanguageCoverage(
+                code = code,
+                englishName = t.englishName.takeIf { it.isNotBlank() } ?: existing?.englishName,
+                nativeName = t.name.takeIf { it.isNotBlank() } ?: existing?.nativeName,
+                hasTitle = hasTitle || existing?.hasTitle == true,
+                hasOverview = hasOverview || existing?.hasOverview == true,
+                posterCount = posterCounts[code] ?: existing?.posterCount ?: 0,
+            )
+        }
+        return byCode.values.toList()
     }
 
     /** Returns a map of language code → localized title for all available languages. */

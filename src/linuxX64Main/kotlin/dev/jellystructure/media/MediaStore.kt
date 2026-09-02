@@ -604,6 +604,9 @@ class MediaStore(
         // has already re-run the search the operator rejected, so the flag AND the match it suppresses
         // both have to come from `old`.
         merged = preserveTmdbMatchLock(merged, old)
+        // Phase 184: same idea again — an operator's chosen fetch language must survive a fresh scan
+        // exactly like the artwork lock and the TMDB match lock do.
+        merged = preserveMetadataLanguage(merged, old)
         if (existing != null && existing.titlesByLang.isNotEmpty()) {
             merged = merged.copy(titlesByLang = existing.titlesByLang + item.titlesByLang)
         }
@@ -631,13 +634,21 @@ class MediaStore(
      * restored. Every other caller leaves it true, including the clear route itself (whose stored
      * predecessor isn't locked yet, so the guard no-ops there).
      */
-    suspend fun updateOne(item: MediaItem, respectArtworkLock: Boolean = true, respectTmdbMatchLock: Boolean = true) {
+    suspend fun updateOne(
+        item: MediaItem,
+        respectArtworkLock: Boolean = true,
+        respectTmdbMatchLock: Boolean = true,
+        // Phase 184: false on exactly the routes that deliberately CHANGE metadataLanguage (the set/
+        // reset route, and its history revert) — same contract as [respectTmdbMatchLock].
+        respectMetadataLanguageLock: Boolean = true,
+    ) {
         val existing = get(item.id)
         var merged = if (existing != null && existing.titlesByLang.isNotEmpty()) {
             item.copy(titlesByLang = existing.titlesByLang + item.titlesByLang)
         } else item
         if (respectArtworkLock) merged = preserveLockedArtwork(merged, existing)
         if (respectTmdbMatchLock) merged = preserveTmdbMatchLock(merged, existing)
+        if (respectMetadataLanguageLock) merged = preserveMetadataLanguage(merged, existing)
         merged = merged.copy(episodes = stampEpisodeCreatedAt(merged.episodes, existing?.episodes))
         merged = stampTimestamps(merged, existing)
         upsertItem(merged)

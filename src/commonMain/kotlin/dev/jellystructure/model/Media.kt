@@ -272,6 +272,19 @@ data class MediaItem(
      *  (Find/fix match…, or manually setting a tmdbId again) — same "operator decision beats
      *  automation" precedent as [lockedArtwork]/segment locks. */
     val tmdbMatchLocked: Boolean = false,
+    /** Phase 184: an operator's manual choice of which language to fetch TMDB metadata in — ISO-639-1,
+     *  e.g. "en". Null (the default, and the only state 99% of the library will ever be in) means
+     *  "resolve automatically" from the audio-track cascade, exactly as before this phase. Consulted
+     *  ABOVE the resolver, at the point [dev.jellystructure.media.Scanner.rescanMetadata] decides its
+     *  `langPriority` — the resolver itself is not modified, and its trace keeps rendering exactly as it
+     *  does today (see [resolvedLanguage], still auto-derived, never touched by this field). Preserved
+     *  across every automatic scan/sync/re-pull the same way [lockedArtwork]/[tmdbMatchLocked] are (see
+     *  `preserveMetadataLanguage` at the MediaStore write choke points); cleared only by the operator
+     *  choosing "Back to automatic" or by a Phase 174 `Clear TMDB match`. */
+    val metadataLanguage: String? = null,
+    /** Phase 184: epoch seconds [metadataLanguage] was last set — null whenever the field itself is
+     *  null. Powers the admin card's "chosen 3 days ago" band; carried forward by the same guard. */
+    val metadataLanguageSetAt: Long? = null,
 )
 
 /** Phase 108: the sort key every "recently added" surface uses (Ravilo's Newly Added, Browse default,
