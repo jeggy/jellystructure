@@ -73,6 +73,7 @@ class DetailService(
             imdbRating         = item.tvImdbRating(),  // Phase 131
             originalLanguage   = item.originalLanguage,  // R181 — player's "Dubbed" audio badge
             segments           = toTv(item.id, "", 0, item.segments.stinger),  // Phase 150/163
+            genres             = item.genres,  // R221 — TMDB's own order preserved (see Models.kt doc)
         )
     }
 
@@ -169,6 +170,7 @@ class DetailService(
             trailer           = item.tvTrailer(),  // Phase 130
             imdbRating        = item.tvImdbRating(),  // Phase 131
             originalLanguage  = item.originalLanguage,  // R181 — player's "Dubbed" audio badge
+            genres            = item.genres,  // R221 — TMDB's own order preserved (see Models.kt doc)
         )
     }
 
