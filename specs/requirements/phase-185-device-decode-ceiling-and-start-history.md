@@ -44,6 +44,12 @@ or delivery methods leaves the server.
 session negotiation that reports limits, overwriting the previous value — the newest measurement from a
 device is always the truth, because a firmware update can change it.
 
+> **Timestamp units — check the neighbour you copy.** These two tables disagree today:
+> `ravilo_device.last_seen` is **epoch milliseconds**, while `playback_qoe.updated_at` is **epoch
+> seconds** (verified against the live DB 2026-09-02). `decode_measured_at` sits on `ravilo_device`, so
+> it is **milliseconds**; `playback_start_sample.recorded_at` (FR-185-4) is a new table and should also
+> be milliseconds. Do not infer the unit from `playback_qoe`.
+
 **FR-185-2 — Never infer a ceiling.** Two distinct unknown states, both permanent-until-measured and
 both honest:
 - **not measured yet** — the device has run no Ravilo session since the R216 build. `NULL`.
@@ -160,14 +166,31 @@ read the same column. They cannot drift.
 
 ## Open questions
 
-1. **Is the R216 build actually installed on the living-room TV?** If it is not, the transcode fallback
-   is not live there either, the file genuinely stutters, and the copy R222 ships is the wrong copy — it
-   would have to be about picture quality instead of start time. Confirm on-device before building.
+1. ~~**Is the R216 build actually installed on the living-room TV?**~~ **Answered on-device 2026-09-02:
+   yes, and it has been since 2026-08-30.** The stue TV (`BRAVIA_4K_VH21`, 192.0.2.11) was running a
+   build installed 2026-08-30 20:37, from `e684a516` — two days *after* R216 landed in `87235de8`
+   (2026-08-28). Confirmed independently by the data rather than by timestamps alone: `playback_qoe`
+   holds **105 rows** for that device (`84a57080…`), populated with exactly the fields R216 added
+   (`video_decoder`, `link_kind`, `link_mbps`, `bandwidth_estimate_bps`). R216's transcode fallback is
+   demonstrably firing too — the heavy 2026-09-01 sessions record `direct_play = 0`, and
+   `dropped_frames` is **0 on every row**.
+
+   **So the copy R222 ships is the right copy.** Through Ravilo the file re-encodes and starts slowly;
+   it does not stutter. The *Until Dawn* stutter that triggered this work was a **Wholphin** session,
+   which negotiates straight against Jellyfin and never reaches any of this — exactly as the research
+   report concluded, and now positively confirmed rather than assumed. Translation is unblocked.
+
+   (All three devices were brought to `HEAD` on 2026-09-02 anyway, so R220 is live for the first time.)
 2. **Do other OEM decoders report honest ceilings?** R216's own open question #1. A decoder that
    over-reports means a note that never fires (harmless); one that under-reports means a note on
    everything (the feature dies of distrust). Only testable as more devices join.
-3. **Key the ceiling per codec, or one value per device?** FR-185-1 stores the codec alongside the value;
-   whether a device needs several rows (HEVC vs AV1) depends on how far apart real decoders are.
+3. **Key the ceiling per codec, or one value per device?** FR-185-1 stores the codec alongside the value.
+   **Live data now argues for per-codec.** Every `playback_qoe` row from the stue TV — 4K sessions
+   included — reports `video_decoder = OMX.MTK.VIDEO.DECODER.AVC`, i.e. the **AVC** decoder, because
+   R183/R216 force an AVC transcode target. A single per-device column would therefore record the
+   *AVC* ceiling, while the number the FR-185-6 predicate actually needs is the **HEVC direct-play**
+   ceiling of the file being considered. Storing one value per device risks comparing a HEVC REMUX's
+   bitrate against an AVC decoder's limit. Resolve before building.
 4. **Retention N for start samples** — bounded below at 3 by FR-185-4, but the actual value is open.
    And whether a firmware change (detectable via a changed ceiling) should discard the history for that
    device: the samples were measured against a decoder that no longer exists, which argues yes.
