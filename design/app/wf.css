@@ -484,6 +484,9 @@ hr.dash { border: none; border-top: 1px solid var(--line); margin: 18px 0; }
 }
 .note.blue { background: var(--info-soft); border-color: rgba(63,182,245,.35); }
 .note.red  { background: var(--bad-soft); border-color: rgba(255,111,97,.35); }
+/* Phase 182 (FR-182-9) — the Activity page's gate-saturation banner: a queuing condition is a
+   warning, not an error (.red) and not merely informational (.blue). */
+.note.warn { background: var(--warn-soft, rgba(240,180,60,.15)); border-color: rgba(240,180,60,.35); }
 .note-row { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; margin: 10px 0; }
 /* RaviloConfig's upload-failure notice — same red-alert treatment as .note.red, no
    reference anywhere (not in the mockup either); this is new, not a port.

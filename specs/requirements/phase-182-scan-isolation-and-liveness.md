@@ -323,7 +323,8 @@ The interactive acquire timeout must be **shorter than** the read paths' existin
 (`HomeFeedService.CONTINUE_TIMEOUT_MS`, `DetailService`'s 2 500 ms, `BrowseService.HYDRATE_TIMEOUT_MS`),
 or those timeouts keep firing first and the improvement is invisible.
 
-**FR-182-9 — Gate saturation is observable.** `/api/health` reports, for each gate: permits total,
+**FR-182-9 — Gate saturation is observable.** ✅ Built — see the build note below for the one deliberate
+simplification (instantaneous sampling, not a true rolling window). `/api/health` reports, for each gate: permits total,
 permits in use, the background/interactive split, and the current and peak queue depth per class. The
 Activity page surfaces a plain-language banner when the interactive reserve has been exhausted at all in
 the last minute — "Ravilo requests are queuing behind background work". Today there is **no signal
@@ -385,11 +386,16 @@ deploying. What shipped:
   per the spec's own requirement), 30s for BACKGROUND. Expiry throws `GateTimeoutException`; a new
   `StatusPages` handler turns that into 503 + `Retry-After: 2` for any request-path caller that didn't
   already have its own degrade path.
-- **FR-182-9**: `GET /api/health` now includes `outbound_http_gate`/`process_gate` blocks (permits,
-  in-flight, waiting, timeout counts for both classes). **Not done**: the Activity-page UI banner
-  ("Ravilo requests are queuing behind background work") — the backend data exists, the frontend
-  surface doesn't yet. Left as a follow-up rather than rushed without the ability to visually verify a
-  WASM UI change against a live backend this session.
+- **FR-182-9 — ✅ Built 2026-09-02.** `GET /api/health` already included `outbound_http_gate`/
+  `process_gate` blocks (permits, in-flight, waiting, timeout counts for both classes); the Activity page
+  now polls that same endpoint every 5s and shows a `.note.warn` banner ("Ravilo requests are queuing
+  behind background work") whenever either gate's `interactive_waiting > 0`. **Deliberate simplification
+  from the literal wording**: this is instantaneous sampling at poll time, not a true rolling "exhausted
+  at all in the last minute" window — building the latter would need the same kind of prune-on-read
+  timestamp tracker Phase 183's 429-count got (see below), which felt like overbuilding for a banner that
+  a 5s-sampled `interactive_waiting > 0` already catches for any saturation period lasting more than a
+  poll or two. Revisit if a real incident shows a saturation spike briefer than 5s that this misses.
+  Still not run against a live backend this session (no restart/deploy authorized) — compiles clean only.
 - **FR-182-1/FR-182-10**: not run — both require a live process (a hung one to attach to; a running one
   to curl against). See their own sections above.
 

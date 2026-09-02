@@ -12,6 +12,7 @@ import kotlinx.browser.window
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import org.w3c.dom.Element
 import org.w3c.dom.HTMLElement
@@ -36,6 +37,10 @@ private var activeLogCategory: String = ""
 private var errorsOnlyFilter: Boolean = false
 private var activeRunFilter: String? = null   // 93g: scope the log to one scan/pipeline run
 private var jobsPollActive = false   // Phase 109: true while the "Jobs & workers" segment is showing
+private var healthPollActive = false // Phase 182/183: true while the Activity page is open at all — the
+                                      // saturation banner is view-independent; the pacing card lives in
+                                      // Jobs & workers but stays in the DOM (just display:none) when that
+                                      // view isn't active, so updating it while hidden is harmless
 
 // Phase 135 — the whole ordered step plan for the active/last run, which step is active, and a
 // one-line result summary per finished step (all reset per renderActivity()/on "started").
@@ -62,6 +67,37 @@ private data class ActivityEntryDto(
 @Serializable
 private data class ActivityLogPageDto(val entries: List<ActivityEntryDto>, val total: Int)
 
+// Phase 182 (FR-182-9) / Phase 183 (FR-183-6) — mirrors dev.jellystructure.ops.GateStats /
+// dev.jellystructure.tmdb.TmdbPacingStats, read off the existing lightweight GET /api/health probe (not
+// a new endpoint — that route already computes these on every hit, plain atomic/spin-locked reads).
+@Serializable
+private data class GateStatsDto(
+    @SerialName("total_permits") val totalPermits: Int = 0,
+    @SerialName("interactive_reserved") val interactiveReserved: Int = 0,
+    @SerialName("shared_capacity") val sharedCapacity: Int = 0,
+    @SerialName("reserved_in_flight") val reservedInFlight: Int = 0,
+    @SerialName("shared_in_flight") val sharedInFlight: Int = 0,
+    @SerialName("interactive_waiting") val interactiveWaiting: Int = 0,
+    @SerialName("background_waiting") val backgroundWaiting: Int = 0,
+    @SerialName("interactive_timeouts") val interactiveTimeouts: Int = 0,
+    @SerialName("background_timeouts") val backgroundTimeouts: Int = 0,
+)
+
+@Serializable
+private data class TmdbPacingDto(
+    @SerialName("rate_per_sec") val ratePerSec: Double = 0.0,
+    @SerialName("ceiling_per_sec") val ceilingPerSec: Double = 0.0,
+    @SerialName("floor_per_sec") val floorPerSec: Double = 0.0,
+    @SerialName("rate_limited_last_minute") val rateLimitedLastMinute: Int = 0,
+)
+
+@Serializable
+private data class HealthProbeDto(
+    @SerialName("outbound_http_gate") val outboundHttpGate: GateStatsDto = GateStatsDto(),
+    @SerialName("process_gate") val processGate: GateStatsDto = GateStatsDto(),
+    @SerialName("tmdb_pacing") val tmdbPacing: TmdbPacingDto = TmdbPacingDto(),
+)
+
 @Serializable
 private data class RunSummaryDto(
     val runId: String, val trigger: String, val startedAt: Long, val finishedAt: Long? = null,
@@ -84,6 +120,7 @@ fun renderActivity(container: Element, scope: CoroutineScope, query: Map<String,
     stepSummaries.clear()
     runTrigger = null; runScope = null; runType = null
     activeStepFilter = null
+    healthPollActive = true
 
     container.innerHTML = """
         <div class="pagebar">
@@ -95,6 +132,11 @@ fun renderActivity(container: Element, scope: CoroutineScope, query: Map<String,
           <button id="act-cancel-btn" class="btn sm ghost" style="display:none">Pause</button>
         </div>
         <p class="page-sub">Full activity log: scan events, NFO writes, artwork downloads, and track operations. Streams live over WebSocket; history is loaded from disk on page open.</p>
+
+        <div id="gate-saturation-banner" class="note warn" style="display:none;margin-bottom:14px;align-items:flex-start;gap:11px;">
+          <span style="flex:none;">⚠</span>
+          <div class="tiny" style="line-height:1.6;">Ravilo requests are queuing behind background work.</div>
+        </div>
 
         <div class="row center" style="margin-bottom:14px;"><span class="seg viewseg" id="viewseg"><span class="on" data-view="console">Scan console</span><span data-view="jobs">Jobs &amp; workers <span class="jobs-count" id="jobs-count-badge" style="display:none;">0</span></span></span></div>
 
@@ -124,6 +166,12 @@ fun renderActivity(container: Element, scope: CoroutineScope, query: Map<String,
             <div class="row center"><h4 style="margin:0;">Recent</h4></div>
             <hr class="dash" style="margin:10px 0 4px;">
             <div id="jobrecent"><span class="muted tiny">Nothing yet.</span></div>
+          </div>
+          <div class="card" style="margin-bottom:14px;">
+            <div class="row center"><h4 style="margin:0;">Outbound pacing</h4><span class="badge info" style="margin-left:8px;font-size:.68rem;">Phase 183</span></div>
+            <div class="tiny muted" style="margin-top:4px">TMDB is the only host paced today — its own token bucket, adjusted down on every 429 and back up on sustained success.</div>
+            <hr class="dash" style="margin:10px 0 4px;">
+            <div id="pacing-card-body"><span class="muted tiny">Loading…</span></div>
           </div>
           <div class="card">
             <div class="row center"><h4 style="margin:0;">Playback quality</h4><span class="badge info" style="margin-left:8px;font-size:.68rem;">Phase 177</span></div>
@@ -267,6 +315,7 @@ fun renderActivity(container: Element, scope: CoroutineScope, query: Map<String,
     connectWebSocket(container)
     scope.launch { loadRuns(container) }
     scope.launch { loadLogHistory(container) }
+    scope.launch { pollHealthCard(container) }  // Phase 182/183: saturation banner + pacing card
     // If a scan is already running when this page opens, show the running-job UI immediately — otherwise
     // we miss the WS "started" event and wrongly show "No job is currently running" for the whole run.
     scope.launch {
@@ -469,6 +518,45 @@ private suspend fun pollJobsPanel(container: Element) {
         refreshJobsPanel(container)
         delay(2000)
     }
+}
+
+/** Phase 182 (FR-182-9) / Phase 183 (FR-183-6) — polls the existing GET /api/health probe (no new
+ *  endpoint) for the gate-saturation banner and the Outbound pacing card. 5s cadence: this is ambient
+ *  health, not a running job's own progress, so it doesn't need pollJobsPanel's tighter 2s. */
+private suspend fun pollHealthCard(container: Element) {
+    while (healthPollActive) {
+        refreshHealthCard(container)
+        delay(5000)
+    }
+}
+
+private suspend fun refreshHealthCard(container: Element) {
+    val health = runCatching { httpClient.get("/api/health").body<HealthProbeDto>() }.getOrNull() ?: return
+
+    // FR-182-9 — "queuing" means an INTERACTIVE request (a live Ravilo/admin request, not a background
+    // scan step) is waiting on the gate right now: that's the concrete, observable fact this banner
+    // exists to surface, not a saturation percentage that needs interpreting.
+    val queuing = health.outboundHttpGate.interactiveWaiting > 0 || health.processGate.interactiveWaiting > 0
+    (container.querySelector("#gate-saturation-banner") as? HTMLElement)?.style?.display = if (queuing) "flex" else "none"
+
+    val pacing = health.tmdbPacing
+    val pacingHtml = buildString {
+        append("""<div class="row center" style="gap:14px;flex-wrap:wrap;">""")
+        append("""<span class="tiny"><b>${pacing.ratePerSec.formatRate()}</b>/s now</span>""")
+        append("""<span class="tiny muted">ceiling ${pacing.ceilingPerSec.formatRate()}/s · floor ${pacing.floorPerSec.formatRate()}/s</span>""")
+        if (pacing.rateLimitedLastMinute > 0) {
+            append("""<span class="badge warn" style="font-size:.7rem;">${pacing.rateLimitedLastMinute} rate-limited in the last minute</span>""")
+        } else {
+            append("""<span class="tiny muted">no rate limiting in the last minute</span>""")
+        }
+        append("</div>")
+    }
+    (container.querySelector("#pacing-card-body") as? HTMLElement)?.innerHTML = pacingHtml
+}
+
+private fun Double.formatRate(): String {
+    val rounded = (this * 10).let { kotlin.math.round(it) } / 10
+    return if (rounded == rounded.toInt().toDouble()) rounded.toInt().toString() else rounded.toString()
 }
 
 private suspend fun refreshJobsPanel(container: Element) {
