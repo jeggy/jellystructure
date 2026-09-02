@@ -112,6 +112,10 @@ data class JellyfinItem(
 @Serializable
 data class JellyfinItemsResponse(
     @SerialName("Items") val items: List<JellyfinItem> = emptyList(),
+    // Phase 181 (FR-181-1) — needed to page the full-catalog sweep to completion rather than trusting
+    // Jellyfin to return everything unpaged (it does today at this library's size, but relying on that
+    // forever is exactly the "Limit is never a cap" mistake R219 already paid for once).
+    @SerialName("TotalRecordCount") val totalRecordCount: Int = 0,
 )
 
 /** Phase 163 (step 6) — Jellyfin's own `GetItemSegments` shape. Ticks are 100ns units (Jellyfin's usual

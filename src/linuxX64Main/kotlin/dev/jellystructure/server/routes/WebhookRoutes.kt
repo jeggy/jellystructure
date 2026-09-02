@@ -6,8 +6,8 @@ import dev.jellystructure.config.AppConfig
 import dev.jellystructure.config.ConfigStore
 import dev.jellystructure.config.LibraryMapping
 import dev.jellystructure.log.Logger
+import dev.jellystructure.media.DirtyItemStore
 import dev.jellystructure.media.RealtimeIngestService
-import dev.jellystructure.tv.JellyfinLibraryListener
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.request.receive
 import io.ktor.server.request.receiveText
@@ -73,17 +73,21 @@ data class TestLiveResult(val delivered: Boolean, val message: String)
 data class IngestStatus(
     @SerialName("webhook_secret") val webhookSecret: String,
     val realtime: Boolean,
-    @SerialName("listener_connected") val listenerConnected: Boolean,
-    // Fallback change-feed listener's own last event — NOT the primary Jellyfin-plugin webhook (see
-    // last_webhook_received_at below). Kept separate per the 2026-08-14 amendment: conflating the two
-    // let a dead primary path hide behind the fallback's own traffic.
-    @SerialName("last_event_at") val lastEventAt: Long?,
     // Phase 165
     @SerialName("jellyfin_reach_url") val jellyfinReachUrl: String = "",
     val jellyfin: JellyfinWebhookStatus? = null,
     // FR-165-7 (2026-08-14 amendment) — the primary /api/webhooks/jellyfin route's own last-received
-    // timestamp, set the instant a request passes the secret check, independent of the fallback above.
+    // timestamp, set the instant a request passes the secret check, independent of whether ingest itself
+    // succeeded (see last_successful_ingest_at below).
     @SerialName("last_webhook_received_at") val lastWebhookReceivedAt: Long? = null,
+    // Phase 181 (FR-181-4.2) — replaces the deleted JellyfinLibraryListener's `listener_connected`/
+    // `last_event_at` (that change-feed socket never delivered a single usable event on this Jellyfin
+    // version — see the phase-181 spec §2.3 — and a false "connected" concealed the gap for 23 days).
+    // This is the real health signal: the last time ANY realtime-ingest path (webhook, library sweep, or
+    // dirty-set retry) actually completed successfully, plus how many items the persistent dirty-set is
+    // currently holding for retry.
+    @SerialName("last_successful_ingest_at") val lastSuccessfulIngestAt: Long? = null,
+    @SerialName("outstanding_retry_count") val outstandingRetryCount: Long = 0,
 )
 
 /**
@@ -94,18 +98,23 @@ data class IngestStatus(
  * settle-time poll — the id it hands over is already resolvable. `/webhooks/{sonarr,radarr}` (Phase 114
  * FR A) are DEPRECATED as of Phase 165 (FR-165-6) but stay routed — existing installs already have
  * these URLs pasted into their *arr instances, and 404ing them would turn a working-ish path into a
- * broken one at upgrade time; they now only nudge Jellyfin's own monitor and let the Jellyfin webhook
- * (or, failing that, [JellyfinLibraryListener]'s change-feed) deliver the actual ingest, rather than
+ * broken one at upgrade time; they now only nudge Jellyfin's own monitor and let the Jellyfin webhook (or,
+ * failing that, Phase 181's library sweep on the next scan cycle) deliver the actual ingest, rather than
  * running their own 5-minute path-polling loop. Open routes, authenticated by a per-install secret
  * query param rather than AuthPlugin's cookie/token/API-key model, since none of these senders can
  * present any of those.
+ *
+ * Phase 181 replaced the old `JellyfinLibraryListener` WS fallback (deleted — proven live, three separate
+ * ways, to never deliver a single usable event on this Jellyfin version) with a set-difference sweep run
+ * from inside every [dev.jellystructure.media.RunTarget.Library] pipeline run
+ * ([dev.jellystructure.media.sweepJellyfinLibrary]), so this file no longer holds a listener reference.
  */
 fun Route.webhookRoutes(
     configStore: ConfigStore,
     jellyfinClient: JellyfinClient,
     realtimeIngest: RealtimeIngestService,
     appScope: CoroutineScope,
-    libraryListener: JellyfinLibraryListener? = null,
+    dirtyItemStore: DirtyItemStore,
 ) {
     post("/webhooks/jellyfin") { handleJellyfinWebhook(call, configStore, realtimeIngest) }
     post("/webhooks/sonarr") { handleArrWebhook(call, configStore, jellyfinClient, appScope, isSonarr = true) }
@@ -117,8 +126,9 @@ fun Route.webhookRoutes(
         val cfg = configStore.current
         val jellyfinStatus = computeJellyfinWebhookStatus(cfg, jellyfinClient)
         call.respond(IngestStatus(
-            cfg.ingest.webhookSecret, cfg.ingest.realtime, libraryListener?.connected ?: false, libraryListener?.lastEventAt,
+            cfg.ingest.webhookSecret, cfg.ingest.realtime,
             cfg.ingest.jellyfinReachUrl, jellyfinStatus, realtimeIngest.lastWebhookReceivedAt,
+            realtimeIngest.lastSuccessfulIngestAt, dirtyItemStore.count(),
         ))
     }
 
@@ -354,6 +364,11 @@ private suspend fun handleJellyfinWebhook(
         return
     }
     if (itemType != null && itemType !in setOf("Movie", "Series", "Episode")) return
+    // Phase 181 — RealtimeIngestService.enqueue() is no longer gated on this setting itself (the library
+    // sweep and dirty-set retry must keep working as a correctness backstop even when an admin has
+    // turned "instant" reactive ingest off); the webhook path is the genuinely optional "react within
+    // seconds" one, so it checks here instead.
+    if (!configStore.current.ingest.realtime) return
     realtimeIngest.enqueue(itemId)
 }
 

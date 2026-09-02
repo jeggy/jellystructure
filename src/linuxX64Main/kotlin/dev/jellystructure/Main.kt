@@ -221,9 +221,13 @@ fun main() = runBlocking {
     if (configStore.current.ingest.webhookSecret.isBlank()) {
         rootScope.launch { configStore.update(configStore.current.copy(ingest = configStore.current.ingest.copy(webhookSecret = dev.jellystructure.auth.generateSecureToken()))) }
     }
-    val realtimeIngest = dev.jellystructure.media.RealtimeIngestService(scanner, mediaStore, jellyfinClient, configStore, artworkDownloader, rootScope, broadcaster, mediaHistory, arrRescan, sonarrEnrich, imdbClient, mediaJobQueue, db, mediaSegmentStore)
-    val libraryListener = dev.jellystructure.tv.JellyfinLibraryListener(configStore, jellyfinClient, mediaStore, realtimeIngest, rootScope)
-    libraryListener.start()
+    // Phase 181 (FR-181-5) — persistent "needs work" set; must exist before RealtimeIngestService, which
+    // writes to it.
+    val dirtyItemStore = dev.jellystructure.media.DirtyItemStore(db)
+    val realtimeIngest = dev.jellystructure.media.RealtimeIngestService(scanner, mediaStore, jellyfinClient, configStore, artworkDownloader, rootScope, broadcaster, mediaHistory, arrRescan, sonarrEnrich, imdbClient, mediaJobQueue, db, mediaSegmentStore, dirtyItemStore)
+    // Phase 181 — the old JellyfinLibraryListener WS fallback is gone (proven live, three separate ways,
+    // to never deliver a usable event on this Jellyfin version — spec §2.3); PipelineEngine's
+    // sweepJellyfinLibrary() now runs from inside every RunTarget.Library pipeline run instead.
     // Phase 118 (FR C.4) — FD telemetry: the durable defense against the unfixable Ktor Native
     // FD_SETSIZE selector crash is keeping total FDs under the 1024 ceiling; this makes pressure
     // observable (warn/alert thresholds) before the process dies.
@@ -257,7 +261,7 @@ fun main() = runBlocking {
     val shutdown = startServer(
         configStore, sessionService, raviloDeviceService, raviloConfigService, channelLogoStore, homeFeedService, browseService, detailService, playbackService, jellyfinClient, mediaStore, scanner,
         artworkDownloader, tmdbClient, scanTracker, mediaHistory, activityLog, broadcaster,
-        frontendDir, raviloWebDir = raviloWebDir, port = port, scanDispatcher = scanDispatcher, effectiveScanThreads = effectiveScanThreads, jsTagStore = jsTagStore, seedingGuard = seedingGuard, seedingSnapshot = seedingSnapshot, logoDownloader = logoDownloader, qbClient = qbClient, arrClient = arrClient, arrRescan = arrRescan, sonarrEnrich = sonarrEnrich, acquisitionService = acquisitionService, seerrClient = seerrClient, bazarrClient = bazarrClient, tvEventBus = tvEventBus, imageProxyService = imageProxyService, mediaJobQueue = mediaJobQueue, sessionBridge = sessionBridge, apiKeyStore = apiKeyStore, realtimeIngest = realtimeIngest, libraryListener = libraryListener, fdWatchdog = fdWatchdog, imdbClient = imdbClient, upcomingService = upcomingService, requestLanguageService = requestLanguageService, requestIntentStore = requestIntentStore, liveTvService = liveTvService, fingerprintService = fingerprintService, mediaSegmentStore = mediaSegmentStore,
+        frontendDir, raviloWebDir = raviloWebDir, port = port, scanDispatcher = scanDispatcher, effectiveScanThreads = effectiveScanThreads, jsTagStore = jsTagStore, seedingGuard = seedingGuard, seedingSnapshot = seedingSnapshot, logoDownloader = logoDownloader, qbClient = qbClient, arrClient = arrClient, arrRescan = arrRescan, sonarrEnrich = sonarrEnrich, acquisitionService = acquisitionService, seerrClient = seerrClient, bazarrClient = bazarrClient, tvEventBus = tvEventBus, imageProxyService = imageProxyService, mediaJobQueue = mediaJobQueue, sessionBridge = sessionBridge, apiKeyStore = apiKeyStore, realtimeIngest = realtimeIngest, dirtyItemStore = dirtyItemStore, fdWatchdog = fdWatchdog, imdbClient = imdbClient, upcomingService = upcomingService, requestLanguageService = requestLanguageService, requestIntentStore = requestIntentStore, liveTvService = liveTvService, fingerprintService = fingerprintService, mediaSegmentStore = mediaSegmentStore,
         towoStore = towoStore, towoRunnerRegistry = towoRunnerRegistry, towoEventBus = towoEventBus, towoService = towoService,
         playbackQoeStore = playbackQoeStore,
     )
@@ -273,6 +277,7 @@ fun main() = runBlocking {
         jellyfinClient = jellyfinClient, scanDispatcher = scanDispatcher, artworkDownloader = artworkDownloader,
         arrRescan = arrRescan, sonarrEnrich = sonarrEnrich, imdbClient = imdbClient,
         mediaSegmentStore = mediaSegmentStore, mediaJobQueue = mediaJobQueue,
+        realtimeIngest = realtimeIngest, mediaHistory = mediaHistory, dirtyItemStore = dirtyItemStore,
     )
 
     // Scheduled scan / pipeline (Phase 91 / 93b). Fires at the LOCAL WALL-CLOCK time the admin set
