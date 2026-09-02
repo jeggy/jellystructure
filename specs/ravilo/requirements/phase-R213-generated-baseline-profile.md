@@ -15,8 +15,9 @@
 > fulfilling the constitution's own "if ever distributed" clause — it is not fixing an active,
 > currently-felt problem the way R210 is.
 
-**Status:** Planned (infrastructure built and wired 2026-08-27; generation itself blocked this
-session — see dev-review addendum).
+**Status:** ✓ Built 2026-09-02 (infrastructure built and wired 2026-08-27; generation completed
+2026-09-02 — see the second dev-review addendum below). Not yet dev-reviewed, not yet on-device
+jank-remeasured (per this phase's own Acceptance section, that's a separate, later step).
 
 ## Problem
 `ravilo-android/src/main/baseline-prof.txt` is hand-authored with two blanket wildcards:
@@ -158,6 +159,45 @@ Verified via `:ravilo-android-benchmark:compileNonMinifiedReleaseKotlin`,
 `:ravilo-android:tasks --all` (confirms `generateBaselineProfile`/`generateReleaseBaselineProfile`
 are real, correctly-wired tasks). The hand-authored `baseline-prof.txt` is untouched — this phase
 has not yet replaced it with anything.
+
+## Dev-review addendum #2 (2026-09-02 — generation completed, root cause found and fixed)
+
+**Root cause of the `amStartAndWait` failure, confirmed rather than guessed**: a stale
+`androidx.benchmark` dependency, not a device or app defect. The Pixel 9 Pro is running **Android 17
+(API 37)** — reproduced the identical failure first (`IllegalStateException: Unable to confirm
+activity launch completion`, same stack, `MacrobenchmarkScope.amStartAndWait`), then checked Google's
+Maven index directly (`dl.google.com/android/maven2/androidx/benchmark/benchmark-macro/maven-
+metadata.xml`): `androidx.benchmark` had moved from the pinned **1.3.4** through two full stable
+releases to **1.4.1** (1.5.0 was still RC as of the metadata's own last-updated timestamp), and a web
+search of the library's own changelog between those versions surfaced exactly the relevant work —
+launch-completion detection was reworked around `dumpsys gfxinfo` framestats, plus a fix for
+`am start -W` not always waiting for the process to be up. Bumped `gradle/libs.versions.toml`'s
+`androidx-benchmark` (shared by `androidx-benchmark-macro-junit4` and the `androidx.baselineprofile`
+plugin — both track the same version family) from 1.3.4 to 1.4.1. **This alone fixed it** —
+`:ravilo-android-benchmark:compileNonMinifiedReleaseKotlin` stayed clean, and
+`:ravilo-android:generateBaselineProfile` completed successfully on the very next run against the
+same Pixel 9 Pro, no other code change needed.
+
+**Generated and committed**: a real 14,675-line profile (`Landroidx/activity/ComponentActivity;`
+through the Compose-resources provider glue) from the cold-start → Home-scroll → detail-open-and-back
+journey `BaselineProfileGenerator.kt` already implemented, replacing R103's 20-line hand-authored
+`HSPLdev/jellystructure/**;`/`HSPLcoil3/**;` wildcards at `ravilo-android/src/main/baseline-prof.txt`
+verbatim — confirmed to actually cover both target namespaces (138 `dev/jellystructure/**` lines, 7
+`coil3`-prefixed lines) rather than just being large. `:ravilo-android:assembleRelease` (the full
+minified release build, not just a compile check) succeeds with the new file in place, including
+`compileReleaseArtProfile` consuming it through the R8 mapping exactly as FR-RV-R213-2 specified. The
+old file's rationale is preserved verbatim in `ravilo-android-benchmark/README.md` (already written
+2026-08-27, unchanged). AGP's own generation scratch output (`ravilo-android/src/release/generated/`)
+is now `.gitignore`d — it's reproduced by rerunning the same command, not a second copy to maintain.
+
+**Not done, deliberately, per this phase's own Acceptance section**: no on-device jank re-measurement.
+This phase's acceptance is "the profile is real, generated, and wired" — confirmed — not "jank
+measurably improved," which is its own separate, later, user-initiated verification pass. The
+household's stue TV was not touched at any point in this work (the whole `androidx.benchmark`
+requirement — API 33+ or root — already ruled it out permanently; R213 was TV-scoped only in the
+sense that its *output* targets `:ravilo-android`, never in *where generation runs*). All device
+interaction was against the Pixel 9 Pro, with the owner's explicit go-ahead for this specific attempt;
+the phone returned to its home launcher in a normal, clean state after the final successful run.
 
 ## Source references
 - `specs/ravilo/constitution.md`, "Technology Mandates" — the existing mandate this phase fulfills.

@@ -15,7 +15,11 @@ android-gradle-plugin = "9.0.1"
 coil = "3.2.0"
 # R213 — Baseline Profile generation (Macrobenchmark). Kept separate from the app's own AndroidX
 # versions since this only ever runs in :ravilo-android-benchmark, never shipped in the app itself.
-androidx-benchmark = "1.3.4"
+# Bumped 1.3.4 -> 1.4.1 (2026-09-02): 1.3.4's amStartAndWait failed with "Unable to confirm activity
+# launch completion" against a real API 37 (Android 17) device — androidx.benchmark's own changelog
+# between these versions touches exactly this path (dumpsys gfxinfo framestats detection, an
+# `am start -W` process-up-wait fix).
+androidx-benchmark = "1.4.1"
 androidx-test = "1.6.2"
 androidx-test-ext-junit = "1.2.1"
 androidx-test-uiautomator = "2.3.0"

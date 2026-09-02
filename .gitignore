@@ -2,6 +2,10 @@
 .gradle/
 build/
 
+# R213 — AGP's own baseline-profile-generation scratch output (androidx.baselineprofile plugin
+# writes here before generateBaselineProfile copies the reviewed result into src/main/baseline-prof.txt)
+ravilo-android/src/release/generated/
+
 # IntelliJ IDEA
 .idea/
 *.iml
