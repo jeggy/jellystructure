@@ -702,6 +702,11 @@ private fun posterCardHtml(item: MediaItem): String {
         item.issueCount > 0 -> """<span class="badge bad" style="font-size:.62rem;">${item.issueCount} issue${if (item.issueCount != 1) "s" else ""}</span>"""
         else              -> """<span class="badge ok" style="font-size:.62rem;">ok</span>"""
     }
+    // Phase 184 (FR-184-8) — a small chip on the handful of hand-set titles; the automatic majority
+    // stays unmarked (no chip at all when metadataLanguage is null).
+    val langChip = item.metadataLanguage?.let {
+        """ <span class="badge info lang" style="font-size:.62rem;" title="Metadata language manually set to ${it.esc()}">${it.esc()}</span>"""
+    } ?: ""
     val imgContent = if (item.posterPath != null) {
         """<img src="${posterSrc(item.posterPath, TMDB_IMG)}" alt="${item.title.esc()}" loading="lazy"
              style="width:100%;height:100%;object-fit:cover;border-radius:4px 4px 0 0;">"""
@@ -720,7 +725,7 @@ private fun posterCardHtml(item: MediaItem): String {
         <div class="poster" data-id="${item.jellyfinId ?: item.id}" style="cursor:pointer;">
           <div class="imgslot">$imgContent</div>
           <div class="ttl">${item.title.esc()}</div>
-          <div class="yr">${item.year ?: "—"} · $badge</div>
+          <div class="yr">${item.year ?: "—"} · $badge$langChip</div>
         </div>"""
 }
 

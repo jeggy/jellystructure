@@ -7,11 +7,11 @@
 > to say so. This phase adds one manual escape hatch — **choose a different winner for this one item** —
 > and changes nothing else.
 
-**Status:** Mostly built 2026-09-02 (not yet dev-reviewed, not yet live-tested against real TMDB traffic
-— compiles clean backend + wasmJs, `linuxX64Test` green incl. new `MetadataLanguageLockTest`). FR-184-1
-through FR-184-5 and FR-184-7 are built; FR-184-6 is built as a consequence of FR-184-2 (no extra code
-needed — see its note below); **FR-184-8's library chip and workbench facet are NOT built** — time-boxed
-out of this pass, see that section for what remains.
+**Status:** ✓ Built 2026-09-02, all FRs (not yet dev-reviewed, not yet live-tested against real TMDB
+traffic — compiles clean backend + wasmJs, `linuxX64Test` green incl. new `MetadataLanguageLockTest`).
+FR-184-1 through FR-184-5 and FR-184-7 built same day; FR-184-6 built as a consequence of FR-184-2 (no
+extra code needed — see its note below); **FR-184-8's library chip and workbench facet also built**, same
+day, closing out the phase.
 
 **Build summary:** `MediaItem` gains `metadataLanguage: String?` + `metadataLanguageSetAt: Long?`
 (`model/Media.kt`), consulted in `Scanner.rescanMetadata` ABOVE the existing series-only
@@ -194,16 +194,24 @@ The existing right-rail **Metadata language** card on `media.html` / `series.htm
 
 Nothing else on the page changes. The Metadata tab cannot tell a chosen winner from a resolved one.
 
-### FR-184-8 — Visible in the library, and in History
+### FR-184-8 — Visible in the library, and in History — ✅ Built (all three parts, 2026-09-02)
 
-- **Library list:** a small language chip on rows where `metadataLanguage != null`. The automatic
-  majority stays unmarked. **Not built** — time-boxed out of this pass. `MediaItem.metadataLanguage` is
-  already on every item the library list fetches, so this is purely a rendering addition to the existing
-  row template whenever it's picked up.
-- **Workbench:** a **Metadata language** facet (Metadata group) with `is any of` / `is none of` plus a
-  `chosen` / `automatic` distinction, so the handful of hand-set titles can be found again. **Not built**
-  — same reason. Needs a new `Condition.facet` value plus a matcher in the workbench's evaluator; no
-  blocker found, just not reached.
+- **Library list: ✅ Built 2026-09-02.** A small `badge info lang` chip on the poster card's meta line
+  (`Library.kt`'s `posterCardHtml`) wherever `item.metadataLanguage != null`; the automatic majority stays
+  unmarked, matching the spec's own framing.
+- **Workbench: ✅ Built 2026-09-02.** New `"metadata_language"` facet (Metadata group), `is any of` /
+  `is none of` via the workbench's existing generic checklist path (no special-cased UI needed). The
+  `chosen`/`automatic` distinction is folded into the SAME facet rather than a second control: a
+  synthetic `"automatic"` value (documented on `ConditionEvaluator.ItemFacets`, never a real ISO-639-1
+  code) stands in for `metadataLanguage == null`, so `is any of [en]` finds chosen-English titles and
+  `is any of [automatic]` finds every title left alone — one facet, one picker, covers both halves of the
+  requirement. `MediaStore.buildMetaFacetsFrom` only populates `"automatic"` when at least one title in
+  the library is actually hand-set (otherwise the facet would show a permanent, useless "100% of the
+  library" entry). Wired through both `GET /media/meta-facets` and `POST /media/facets` (global +
+  channel-narrowed counts) and the shared `ConditionEvaluator` (admin-only surface: added to
+  `Workbench.kt`'s own facet-group list, NOT to `ravilo-builders.js`'s — the evaluator supporting the
+  facet doesn't put it in Ravilo's own picker, keeping Phase 184's "no Ravilo work" non-goal intact even
+  though the matching logic lives in code Ravilo's row filters also use).
 - **History: ✅ Built.** One operator action, three recorded writes — `metadata_language_set` (with the
   previous value in its detail string), `nfo_write`, `artwork_fetch`. Reverting the language row restores
   **the full pre-change item** (episodes included) from the History snapshot, not a named field list —
