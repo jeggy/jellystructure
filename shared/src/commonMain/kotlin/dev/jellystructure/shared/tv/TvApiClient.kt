@@ -189,10 +189,13 @@ class TvApiClient(
         }.assertSuccess()
     }
 
-    suspend fun stopPlayback(itemId: String, positionMs: Long) {
+    /** startupMs — Phase 185 (FR-185-4) client-measured negotiation-to-first-frame for this session,
+     *  null when the client never rendered a first frame or never measured (see PlaybackStopRequest's
+     *  own doc). */
+    suspend fun stopPlayback(itemId: String, positionMs: Long, startupMs: Long? = null) {
         client.post("$baseUrl/api/tv/playback/stop") {
             auth()
-            jsonBody(json.encodeToString(PlaybackStopRequest(itemId, positionMs)))
+            jsonBody(json.encodeToString(PlaybackStopRequest(itemId, positionMs, startupMs)))
         }.assertSuccess()
     }
 

@@ -284,6 +284,15 @@ fun PlayerScreen(
     // healthy throughout a video-output stall — see PlayerVideoSurface's own doc for why).
     var videoOutputRecovering by remember { mutableStateOf(false) }
 
+    // Phase 185/R222 (FR-185-4 client half) — negotiation-to-first-frame timing. negotiationStartMs is
+    // stamped in armSession() itself (the single chokepoint for both the initial start and the
+    // background/foreground re-arm — see that function's own doc), consumed by the poll loop below the
+    // instant hasRenderedFirstFrame's false→true transition is observed. measuredStartupMs is what
+    // armSession hands PlayerStore as this session's startupMsProvider, read once at stop time; null is
+    // an honest "never measured" (still buffering, or the session ended some other way), not an error.
+    var negotiationStartMs by remember { mutableStateOf<Long?>(null) }
+    var measuredStartupMs  by remember { mutableStateOf<Long?>(null) }
+
     // Chrome visibility — bumping chromeRevision restarts the auto-hide timer
     var chromeVisible  by remember { mutableStateOf(true) }
     var chromeRevision by remember { mutableLongStateOf(0L) }
@@ -663,12 +672,18 @@ fun PlayerScreen(
     // durationProvider lets the store take the ≥90% mark-played decision itself if it is closed without
     // an explicit stopSession — see PlayerStore.close().
     fun armSession(id: String) {
+        // Phase 185/R222 (FR-185-4 client half) — a real StreamTicket negotiation starts the instant
+        // startSession below is called, whether this is the episode's initial start or a background/
+        // foreground re-arm (both reload the player — see RaviloPlayerAndroid.load()'s own
+        // _hasRenderedFirstFrame reset), so both get timed the same way from this one chokepoint.
+        negotiationStartMs = kotlin.time.Clock.System.now().toEpochMilliseconds()
         store.startSession(
             id,
             positionProvider = { positionMs },
             isPausedProvider = { !isPlaying },
             durationProvider = { durationMs },
             qoeSnapshotProvider = { player.qoeSnapshot() },  // R216 (FR-R216-4)
+            startupMsProvider = { measuredStartupMs },
         )
     }
 
@@ -714,6 +729,7 @@ fun PlayerScreen(
         hasRenderedFirstFrame = false  // R218 — the new episode's own cold start, not the outgoing one's
         isBuffering = false
         isSeeking = false
+        measuredStartupMs = null  // R185/R222 — a stale prior episode's number must never carry over
         armSession(itemId)
     }
 
@@ -776,7 +792,17 @@ fun PlayerScreen(
                     // R218 — same staleness guard as positionMs/durationMs above: only read the live
                     // player's signal once it is actually loaded for THIS item, or a stale
                     // hasRenderedFirstFrame=true from the outgoing episode could suppress moment B here.
-                    hasRenderedFirstFrame = player.hasRenderedFirstFrame
+                    val renderedNow = player.hasRenderedFirstFrame
+                    // Phase 185/R222 (FR-185-4 client half) — the false→true transition this negotiation
+                    // was timing. Consumed (negotiationStartMs cleared) so a later re-arm's own transition
+                    // is never mistaken for this one, and a session that never renders never reports.
+                    if (renderedNow && !hasRenderedFirstFrame) {
+                        negotiationStartMs?.let { start ->
+                            measuredStartupMs = kotlin.time.Clock.System.now().toEpochMilliseconds() - start
+                        }
+                        negotiationStartMs = null
+                    }
+                    hasRenderedFirstFrame = renderedNow
                     isBuffering = player.isBuffering
                     isSeeking = player.isSeeking
                 }

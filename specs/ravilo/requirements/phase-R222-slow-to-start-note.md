@@ -13,10 +13,12 @@ per file group, not per contained episode). Five i18n strings shipped × en/da/f
 `slow_tail_measured`, `slow_tail_expected`, `this_tv`, `this_phone`), da/fo translated to match the
 mockup's own already-translated copy verbatim. Noir's tint-drop (FR-R222-7) reads `LocalRaviloSkin.current`
 directly, the same pattern R221's genre chip already established. **Depends on Phase 185's backend**,
-which resolves the `playbackNote` field this phase only renders — see that spec for what's built there
-(notably: no client yet actually measures/sends `startupMs`, so every note that fires will read
-`basis: "expected"` — "Give it a moment after you press play." — until that lands; `basis: "measured"`
-is fully implemented and tested but has no live data to reach it yet).
+which resolves the `playbackNote` field this phase only renders — see that spec for what's built there.
+**2026-09-02: Phase 185's client-side timer is now built too** (`PlayerScreen`/`PlayerStore`, commonMain —
+covers `ravilo-android` and `ravilo-phone`), so `basis: "measured"` is reachable in practice, not just in
+theory — it still needs 3 real completed starts of the same file on the same device (FR-185-7) before the
+first `slow_tail_measured` sentence can appear anywhere, none of which have happened yet (no device
+access this session, and live TVs are now off-limits entirely).
 
 Research: `specs/research-reports/ravilo-per-device-decode-ceiling-warning-2026-09-02.md`
 Design: `design/ravilo/Decode Ceiling Warning - Directions.html` (Direction B′ chosen; B, C and D
@@ -118,12 +120,12 @@ carries the line on a TV may carry nothing on the phone — that is correct, not
    question 1 for the full evidence.
 2. **At launch nothing is measured**, so every note starts as `expected` and the `measured` sentence
    appears only once a device has actually started that file three times (185 FR-185-7). Worth stating in
-   release notes so the softer sentence isn't read as the feature being broken. **Sharper as of
-   2026-09-02: this isn't just a launch-day state, it's the current permanent state.** Phase 185's server
-   side is fully built and tested, but the client-side timer that measures negotiation-to-first-frame and
-   sends it (`startup_ms` on the stop call) was time-boxed out of that pass — so today `basis: "measured"`
-   is unreachable in practice, not just unreached-yet. Every note that fires reads `slow_tail_expected`
-   until that client work lands; not a regression in what R222 built, but worth knowing before demoing it.
+   release notes so the softer sentence isn't read as the feature being broken. **Resolved 2026-09-02: the
+   client-side timer landed** (Phase 185's build note) — `basis: "measured"` is reachable in practice now,
+   not just implemented-but-dead-code as it was for most of 2026-09-02. It is still unreached on every
+   real device today, because reaching it needs 3 completed starts of the same file on the same device
+   and there has been no device access or live-TV testing since the timer shipped — a genuinely fresh
+   launch-day-shaped state again, just for a different reason than before.
 3. **Does a 60 s-plus start deserve different words?** R218 deepens its loading state at 60 s without
    changing a word; the equivalent question here is whether "about 90 seconds" should read differently
    from "about 20 seconds". Current answer: no — same sentence, bigger number.
