@@ -451,6 +451,24 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
             ))
         }
 
+        // R221 §B — OK on a genre chip opens the browse page seeded to that genre, the same contract
+        // as openPersonBrowse above. A single chip seeds [genreNames] with one value; the `+N` chip
+        // seeds the title's full genre set ("everything like this one" — FR-RV-GEN1-4).
+        // Open question (spec §"Open questions" #3): whether this should inherit the detail page's own
+        // channel scope rather than the whole library is left undecided — always global for now.
+        fun openGenreBrowse(genreNames: List<String>, sourceTitle: String, displayName: String) {
+            push(Dest.SeededBrowse(
+                seedQuery = dev.jellystructure.shared.tv.ConditionGroup(children = listOf(
+                    dev.jellystructure.shared.tv.Condition(facet = "genre", op = "is_any_of", values = genreNames),
+                )),
+                seedMediaKind = null,
+                title = genreNames.joinToString(", "),
+                breadcrumb = sourceTitle,
+                continueWatching = false,
+                displayName = displayName,
+            ))
+        }
+
         // Shared by the remote-play collector and the R170 ProfileMenu (both need "whatever name the
         // currently visible screen is carrying," without an exhaustive `when` at every call site).
         fun destDisplayName(d: Dest?): String = when (d) {
@@ -955,6 +973,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                     },
                     onRelatedSelect = { openDetail(it, dest.displayName) },
                     onCastSelect = { person, sourceTitle -> openPersonBrowse(person, sourceTitle, dest.displayName) },
+                    onGenreSelect = { genres, sourceTitle -> openGenreBrowse(genres, sourceTitle, dest.displayName) },
                     displayName = dest.displayName,
                     discoverAvailable = upcomingAvailable || discoverAvailable,
                     onNavSelect = { idx ->
@@ -995,6 +1014,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                     },
                     onRelatedSelect = { openDetail(it, dest.displayName) },
                     onCastSelect = { person, sourceTitle -> openPersonBrowse(person, sourceTitle, dest.displayName) },
+                    onGenreSelect = { genres, sourceTitle -> openGenreBrowse(genres, sourceTitle, dest.displayName) },
                     displayName = dest.displayName,
                     discoverAvailable = upcomingAvailable || discoverAvailable,
                     onNavSelect = { idx ->

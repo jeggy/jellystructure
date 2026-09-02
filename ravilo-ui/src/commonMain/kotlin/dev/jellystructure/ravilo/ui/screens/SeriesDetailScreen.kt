@@ -63,6 +63,7 @@ import dev.jellystructure.ravilo.ui.components.DetailErrorState
 import dev.jellystructure.ravilo.ui.components.DetailLoadingShell
 import dev.jellystructure.ravilo.ui.components.EpisodeCard
 import dev.jellystructure.ravilo.ui.components.DetailSynopsis
+import dev.jellystructure.ravilo.ui.components.GenreChipRow
 import dev.jellystructure.ravilo.ui.components.ImdbChip
 import dev.jellystructure.ravilo.ui.components.MultiEpisodeCard
 import dev.jellystructure.ravilo.ui.components.RaviloButton
@@ -99,6 +100,8 @@ fun SeriesDetailScreen(
     onRelatedSelect: (MediaCard) -> Unit,
     // R190 §A — see MovieDetailScreen's identical parameter doc.
     onCastSelect: ((dev.jellystructure.shared.tv.Person, sourceTitle: String) -> Unit)? = null,
+    // R221 §B — see MovieDetailScreen's identical parameter doc.
+    onGenreSelect: ((genres: List<String>, sourceTitle: String) -> Unit)? = null,
     displayName: String = "",
     onNavSelect: (Int) -> Unit = {},
     onProfile: (() -> Unit)? = null,
@@ -124,6 +127,7 @@ fun SeriesDetailScreen(
                 onMarkFavorite = { favorite -> store.setFavorite(favorite) },
                 onRelatedSelect = onRelatedSelect,
                 onCastSelect = onCastSelect,
+                onGenreSelect = onGenreSelect,
                 displayName = displayName,
                 onNavSelect = onNavSelect,
                 onProfile = onProfile,
@@ -246,6 +250,7 @@ private fun SeriesDetailLoaded(
     onMarkFavorite: (Boolean) -> Unit,
     onRelatedSelect: (MediaCard) -> Unit,
     onCastSelect: ((dev.jellystructure.shared.tv.Person, sourceTitle: String) -> Unit)?,
+    onGenreSelect: ((genres: List<String>, sourceTitle: String) -> Unit)?,
     displayName: String,
     onNavSelect: (Int) -> Unit,
     onProfile: (() -> Unit)?,
@@ -314,6 +319,7 @@ private fun SeriesDetailLoaded(
     }
 
     val playFR = remember { FocusRequester() }
+    val genreFR = remember { FocusRequester() }   // R221 — first (lead) genre chip
     val synopsisFR = remember { FocusRequester() }   // R135
     val seasonFirstFR = remember { FocusRequester() }   // R138
     val navBarFR = remember { FocusRequester() }
@@ -398,6 +404,16 @@ private fun SeriesDetailLoaded(
                             }
                         }
                     }
+                    if (detail.genres.isNotEmpty()) {
+                        Spacer(Modifier.height(10.dp))
+                        GenreChipRow(
+                            genres = detail.genres,
+                            onGenreSelect = onGenreSelect?.let { cb -> { values: List<String> -> cb(values, detail.card.title) } },
+                            entryFocusRequester = genreFR,
+                            onUp = { navBarFR.requestFocus() },
+                            onDown = { if (detail.synopsis != null) runCatching { synopsisFR.requestFocus() } else runCatching { playFR.requestFocus() } },
+                        )
+                    }
                     if (detail.audioLanguages.isNotEmpty() || detail.subtitleLanguages.isNotEmpty()) {
                         Spacer(Modifier.height(8.dp))
                         AudioSubtitleFlagLine(detail.audioLanguages, detail.subtitleLanguages)  // R134: one line
@@ -421,7 +437,8 @@ private fun SeriesDetailLoaded(
                             text = it,
                             collapsedMaxLines = 2,
                             focusRequester = synopsisFR,
-                            onUp = { navBarFR.requestFocus() },
+                            // R221: Up from synopsis reaches the genre row (its lead chip) when present.
+                            onUp = { if (detail.genres.isNotEmpty()) runCatching { genreFR.requestFocus() } else navBarFR.requestFocus() },
                             onDown = { runCatching { playFR.requestFocus() } },
                         )
                     }
@@ -499,8 +516,11 @@ private fun SeriesDetailLoaded(
                                 if (ev.type != KeyEventType.KeyDown) return@onKeyEvent false
                                 when (ev.key) {
                                     Key.DirectionUp -> {
-                                        if (detail.synopsis != null) runCatching { synopsisFR.requestFocus() }
-                                        else navBarFR.requestFocus()
+                                        when {
+                                            detail.synopsis != null -> runCatching { synopsisFR.requestFocus() }
+                                            detail.genres.isNotEmpty() -> runCatching { genreFR.requestFocus() }
+                                            else -> navBarFR.requestFocus()
+                                        }
                                         true
                                     }
                                     Key.DirectionDown -> if (detail.seasons.size > 1) {
