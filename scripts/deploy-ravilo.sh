@@ -45,15 +45,11 @@ case "$choice" in
     *) echo "Invalid choice: $choice"; exit 1 ;;
 esac
 
-if [ "$KIND" = "tv" ]; then
-    GRADLE_TASK=":ravilo-android:assembleRelease"
-    APK_DIR="$REPO_ROOT/ravilo-android/build/outputs/apk/release"
-    PACKAGE_ID="dev.jellystructure.ravilo"
-else
-    GRADLE_TASK=":ravilo-phone:assembleRelease"
-    APK_DIR="$REPO_ROOT/ravilo-phone/build/outputs/apk/release"
-    PACKAGE_ID="dev.jellystructure.ravilo.phone"
-fi
+# R224 — TV and phone merged into one universal app/listing: same gradle task, same APK,
+# same application id for every device kind now (was split ravilo-android/ravilo-phone before).
+GRADLE_TASK=":ravilo-android:assembleRelease"
+APK_DIR="$REPO_ROOT/ravilo-android/build/outputs/apk/release"
+PACKAGE_ID="dev.jellystructure.ravilo"
 DEBUG_PACKAGE_ID="${PACKAGE_ID}.debug"
 
 echo
