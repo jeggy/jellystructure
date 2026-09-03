@@ -6,7 +6,35 @@
 > have content for.
 
 ## Status
-Planned.
+Implemented (2026-09-03). Compile-clean (`compileKotlinLinuxX64`); not yet live-verified against a
+restricted profile's real session (per [[feedback-no-more-stue-tv-testing]] / no backend
+restart — verify next time a backend restart is granted).
+
+### Implementation notes (2026-09-03)
+- **FR-R228-1:** factored `buildChannelContent(device, config, channelCfg, allItems, jellyfinBase,
+  token, heroIds): Pair<List<Hero>, List<Row>>` out of `getChannelFeed` — the exact same
+  `filtered = allItems.filter { matchesChannel }` → pageHero-or-empty heroes → `buildRows(...,
+  channelFilter = channelCfg)` sequence it always ran, just callable independently. `buildChannels`
+  became `suspend` and now calls this per enabled channel, keeping the channel only when
+  `heroes.isNotEmpty() || rows.any { it.items.isNotEmpty() }`. `getChannelFeed` itself now calls
+  `buildChannelContent` too (for its own `heroes`/`rows`), so the two paths are structurally
+  incapable of disagreeing — same function, not parallel logic.
+- **FR-R228-2:** `buildChannels`'s new signature (`config, device, allItems, jellyfinBase, token,
+  heroIds`) is threaded through all three call sites — `buildHomeFeed` (which now also computes
+  `heroIds` locally, previously only needed inside `buildRows`/`getChannelFeed`), `getChannelFeed`,
+  and `getChannels(device)` (the standalone R187-facet route), which now runs the same
+  `mediaStore.liveItems(device)` + `jellyfinClient.tvToken(...)` pair `getHomeFeed` does instead of
+  being config-only.
+- **FR-R228-3:** untouched — `getChannelFeed`'s existing `?: return HomeFeed(empty...)` for an
+  unknown channel id already covers "reachable a moment ago, empty now" gracefully; no code needed.
+- **Perf, per the spec's Open questions:** left sequential (one channel's content built after the
+  previous, not `async` fan-out) — `canonicalContinueList` is cached per-userId within
+  `FEED_TTL_MS` (`HomeFeedService.kt:539-545`), so an inherit-mode channel's Continue Watching build
+  costs a real Jellyfin round trip only once per request regardless of channel count; every other
+  row kind is in-memory list filtering over the already-fetched `allItems`. Not parallelized to
+  avoid concurrent access to the plain (non-locked) `continueListCache`/`feedCache` HashMaps that
+  the rest of this class already assumes single-threaded-per-request access to. Revisit only if a
+  library with many configured channels measures as slow.
 
 ## Problem — verified against live code
 Channel visibility and channel content are computed by two completely disconnected code paths in
