@@ -54,7 +54,7 @@
             }
             fsBtn.onclick = toggleFs;
             document.addEventListener('keydown', function(e) {
-                if (e.key === 'f' || e.key === 'F') toggleFs();
+                if ((e.key === 'f' || e.key === 'F') && !window.raviloTextFieldFocused) toggleFs();
             });
         }
 
