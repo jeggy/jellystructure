@@ -5,7 +5,6 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -38,16 +37,14 @@ import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 @Composable
 fun ServerSetupScreen(onUrlSaved: (String) -> Unit) {
     val colors = RaviloTheme.colors
-    var useHttps by remember { mutableStateOf(false) }
     var host by remember { mutableStateOf("") }
 
-    val scheme = if (useHttps) "https://" else "http://"
-    val hasScheme = host.startsWith("http://") || host.startsWith("https://")
-    val fullUrl = if (hasScheme) host else "$scheme$host"
-    val canConnect = fullUrl.startsWith("http://") || fullUrl.startsWith("https://")
+    // R226 — a typed scheme always wins outright (the one escape hatch for a plain-HTTP LAN box);
+    // otherwise https:// is inferred, since virtually every real deployment sits behind TLS.
+    val hasScheme = host.startsWith("http://", ignoreCase = true) || host.startsWith("https://", ignoreCase = true)
+    val fullUrl = if (hasScheme) host else "https://$host"
+    val canConnect = host.isNotBlank()
 
-    val httpFR = remember { FocusRequester() }
-    val httpsFR = remember { FocusRequester() }
     val connectFR = remember { FocusRequester() }
     val keyboardController = LocalSoftwareKeyboardController.current
 
@@ -68,24 +65,6 @@ fun ServerSetupScreen(onUrlSaved: (String) -> Unit) {
                 color = colors.textSecondary,
                 fontSize = 15.sp,
             )
-
-            // Scheme selector
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                SchemeButton(
-                    label = "http://",
-                    isActive = !useHttps,
-                    focusRequester = httpFR,
-                    onRight = { httpsFR.requestFocus() },
-                    onSelect = { useHttps = false },
-                )
-                SchemeButton(
-                    label = "https://",
-                    isActive = useHttps,
-                    focusRequester = httpsFR,
-                    onLeft = { httpFR.requestFocus() },
-                    onSelect = { useHttps = true },
-                )
-            }
 
             // URL input — focuses native Android TV keyboard on select
             TextField(
@@ -154,42 +133,5 @@ fun ServerSetupScreen(onUrlSaved: (String) -> Unit) {
                 )
             }
         }
-    }
-}
-
-@Composable
-private fun SchemeButton(
-    label: String,
-    isActive: Boolean,
-    focusRequester: FocusRequester,
-    onLeft: (() -> Unit)? = null,
-    onRight: (() -> Unit)? = null,
-    onSelect: () -> Unit,
-) {
-    val colors = RaviloTheme.colors
-    var focused by remember { mutableStateOf(false) }
-    Box(
-        modifier = Modifier
-            .background(if (isActive) colors.accent else colors.surfaceVariant, RoundedCornerShape(8.dp))
-            .then(
-                if (focused && !isActive) Modifier.border(2.dp, colors.focusRing, RoundedCornerShape(8.dp))
-                else Modifier
-            )
-            .dpadFocusable(
-                focusRequester = focusRequester,
-                onFocused = { focused = true },
-                onLeft = onLeft,
-                onRight = onRight,
-                onSelect = onSelect,
-            )
-            .padding(horizontal = 20.dp, vertical = 10.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            label,
-            color = if (isActive) colors.onAccent else if (focused) colors.text else colors.textSecondary,
-            fontSize = 14.sp,
-            fontWeight = if (isActive || focused) FontWeight.SemiBold else FontWeight.Normal,
-        )
     }
 }
