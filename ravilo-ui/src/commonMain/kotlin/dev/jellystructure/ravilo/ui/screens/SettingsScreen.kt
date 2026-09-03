@@ -30,6 +30,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.jellystructure.ravilo.ui.focus.dpadFocusable
 import dev.jellystructure.ravilo.ui.i18n.str
+import dev.jellystructure.ravilo.ui.theme.LocalCompact
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import dev.jellystructure.shared.tv.RaviloConfig
 import dev.jellystructure.shared.tv.Skin
@@ -179,8 +180,13 @@ fun SettingsScreen(
     var backFocused by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { runCatching { backFR.requestFocus() } }
 
+    // R229 bug fix: 80dp/side was sized for a TV's 10-foot canvas and never adapted for a phone
+    // window — on a ~360-400dp-wide handset it left ~200dp for content, which is what pushed the
+    // Appearance/Language pill rows and the toggle pills into the squeezed/character-wrapped state
+    // reported live. LocalCompact (< 600dp width, R145) already exists for exactly this.
+    val compact = LocalCompact.current
     Box(modifier = Modifier.fillMaxSize().background(colors.background)) {
-        Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 80.dp, vertical = 40.dp)) {
+        Column(modifier = Modifier.fillMaxWidth().padding(horizontal = if (compact) 20.dp else 80.dp, vertical = 40.dp)) {
             Text(
                 "‹ ${str("action.back")}",
                 color = if (backFocused) colors.text else colors.textSecondary,
@@ -520,7 +526,17 @@ private fun ToggleRow(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(label, color = if (focused) colors.text else colors.textSecondary, fontSize = 15.sp)
+        // R229 bug fix: an unweighted label next to a fixed-size On/Off pill let a long label (e.g.
+        // "Show progress on Continue Watching") claim the row's full width before the pill was ever
+        // measured, squeezing the pill to near-zero width and wrapping its text one letter per line.
+        // weight(1f) reserves the pill's own natural size first and lets the label wrap into the
+        // remainder instead, on any screen width.
+        Text(
+            label,
+            color = if (focused) colors.text else colors.textSecondary,
+            fontSize = 15.sp,
+            modifier = Modifier.weight(1f).padding(end = 12.dp),
+        )
         Box(
             modifier = Modifier
                 .background(if (checked) colors.accent else colors.surfaceVariant.copy(alpha = 0.5f), RoundedCornerShape(50))
