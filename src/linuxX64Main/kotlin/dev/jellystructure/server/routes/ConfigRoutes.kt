@@ -158,6 +158,14 @@ fun Route.configureConfigRoutes(
         // config-file-only — the Settings form (readForm) sends neither, so without this a Settings save
         // would wipe the operator's tracker registry and reset the ingest webhook secret/realtime flag.
         config = config.copy(trackers = stored.trackers, ingest = stored.ingest)
+        // Bug fix (live report, 2026-09-04) — same class of bug: age_rating_map is managed on Metadata ▸
+        // Age ratings via its own write-through POST /api/metadata/age-ratings, not on this form.
+        // readForm() sends MetadataConfig(ageRatingCascade = ...) with ageRatingMap defaulting to empty,
+        // so every plain Settings save (e.g. just reordering the cascade on this same page) was silently
+        // wiping every mapped certification back to Unmapped — the map's contents never actually appeared
+        // deleted from the library (item counts stayed put), just reset, which read as "the page doesn't
+        // work" rather than an obvious data loss.
+        config = config.copy(metadata = config.metadata.copy(ageRatingMap = stored.metadata.ageRatingMap))
 
         // Phase 166 (FR-166-4) — the save-path backstop: a blank schedule means "scheduling off" and is
         // always valid; anything else must parse, actually fire within the search horizon, and not fire
