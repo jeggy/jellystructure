@@ -54,6 +54,11 @@ actual fun createTvApiClient(baseUrl: String, deviceTokenProvider: () -> String?
 }
 
 private fun jsOrigin(): String = js("window.location.origin")
+
+// R225 — set by web-static-server (via injectDefaultServer) only when DEFAULT_SERVER_URL is configured;
+// `undefined` (not present) when unset, which is indistinguishable from "not on web" and falls straight
+// through to the origin fallback below, unchanged from before this phase.
+private fun jsDefaultServer(): String? = js("window.__RAVILO_DEFAULT_SERVER__")
 private fun jsGetToken(): String? = js("localStorage.getItem('ravilo_token')")
 private fun jsSetToken(token: String): Unit = js("localStorage.setItem('ravilo_token', token)")
 private fun jsClearToken(): Unit = js("localStorage.removeItem('ravilo_token')")
@@ -61,11 +66,17 @@ private fun jsGetBaseUrl(): String? = js("localStorage.getItem('ravilo_base_url'
 private fun jsSetBaseUrl(url: String): Unit = js("localStorage.setItem('ravilo_base_url', url)")
 private fun jsClearBaseUrl(): Unit = js("localStorage.removeItem('ravilo_base_url')")
 
-// A persisted server override (set via "Change server") wins over the page origin. When the app is
-// served by the backend itself, no override is stored and we fall back to the origin. Persisting is
-// required because the session token is also persisted — without it a reload would point a cached
-// session at the page origin (e.g. a dev server) instead of the paired backend.
-actual fun raviloBaseUrl(): String = jsGetBaseUrl()?.takeIf { it.isNotBlank() } ?: jsOrigin()
+// A persisted server override (set via "Change server") wins over everything — a person's explicit
+// choice must keep winning over an operator-configured default. Next, an operator-configured default
+// (R225's DEFAULT_SERVER_URL, injected by web-static-server) — needed when ravilo-web and its backend
+// aren't on the same origin (e.g. the demo stack). Last, the page origin — the household deploy's
+// implicit "I'm served by my own backend" assumption. Persisting the override is required because the
+// session token is also persisted — without it a reload would point a cached session at whichever of
+// tiers 2/3 resolved instead of the server it actually signed in against.
+actual fun raviloBaseUrl(): String =
+    jsGetBaseUrl()?.takeIf { it.isNotBlank() }
+        ?: jsDefaultServer()?.takeIf { it.isNotBlank() }
+        ?: jsOrigin()
 
 actual fun saveBaseUrl(url: String) {
     val trimmed = url.trim().trimEnd('/')
