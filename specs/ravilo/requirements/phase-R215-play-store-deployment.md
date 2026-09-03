@@ -7,6 +7,25 @@
 **Status:** Planned — CI/build-side pieces implemented this session; Play Console setup is manual and
 outside this repo, not yet done.
 
+**2026-09-03 addendum — manual first upload done, one blocking error found and fixed.** The user completed
+§3 steps 1–4 (app listing, service account, upload keystore, five repo secrets — the keystore was
+generated locally via `keytool`, a signed AAB built with it via the same `-Pravilo.keystore.*`/
+`-Pravilo.versionCode`/`-Pravilo.versionName` properties CI uses, and delivered for the required manual
+first upload). That upload surfaced a **blocking Play Console error**: `compileSdk`/`targetSdk` were still
+35, and Play now requires **36** minimum. Bumped to 36 across every Android module
+(`ravilo-android`, `ravilo-android-benchmark`, `ravilo-ui`, `ravilo-player`, `shared`) — `minSdk` stays 21,
+unaffected; `targetSdk` doesn't gate installability or force new runtime behavior on an older OS, a device
+is only ever held to its own OS's own API level regardless of what an app declares. Verified live against
+**stue TV (BRAVIA 4K VH21, Android 12 / API 31)** — well below 36, confirming zero compatibility risk before
+touching this. Also added `ndk { debugSymbolLevel = "FULL" }` on the release build type in response to a
+non-blocking "no debug symbols" warning — confirmed it has **no actual effect** here, since the only native
+libraries in the bundle (`libffmpegJNI.so` from Media3's FFmpeg extension, `libandroidx.graphics.path.so`)
+are prebuilt third-party `.so` files with no unstripped originals in this repo to extract from; kept anyway
+since it's harmless and would help if first-party native code is ever added. The other warning Play Console
+showed ("release not available — no testers configured") is a Play Console configuration step, not a build
+issue — add testers to the internal testing track there. `:ravilo-android:assembleRelease` and
+`:ravilo-android:bundleRelease` both verified clean with the real upload keystore after the bump.
+
 ## 1. Scope
 
 Ship `ravilo-android` (`dev.jellystructure.ravilo`, the TV/leanback app) to the Google Play **internal

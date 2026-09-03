@@ -11,7 +11,7 @@ plugins {
 
 android {
     namespace = "dev.jellystructure.ravilo.player"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         minSdk = 21
