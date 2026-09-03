@@ -40,6 +40,12 @@ private fun env(name: String, default: String): String = getenv(name)?.toKString
 fun main() {
     val dir = env("STATIC_DIR", "/srv")
     val port = env("SERVER_PORT", "8080").toIntOrNull() ?: 8080
+    // R225 — ravilo-web has no env access of its own (compiled wasmJs); this is the only runtime
+    // process in front of it, and the natural place to hand it an operator-configured default server
+    // (e.g. the demo stack, where ravilo-web and its backend are on different origins so the wasmJs
+    // actual's same-origin fallback is wrong). Unset ⇒ index.html is byte-identical to before this
+    // phase, no behavior change.
+    val defaultServerUrl = env("DEFAULT_SERVER_URL", "").ifBlank { null }
 
     embeddedServer(
         CIO,
@@ -50,13 +56,13 @@ fun main() {
     ) {
         routing {
             get("{...}") {
-                call.serveStaticFile(dir, call.request.path())
+                call.serveStaticFile(dir, call.request.path(), defaultServerUrl)
             }
         }
     }.start(wait = true)
 }
 
-private suspend fun ApplicationCall.serveStaticFile(dir: String, requestPath: String) {
+private suspend fun ApplicationCall.serveStaticFile(dir: String, requestPath: String, defaultServerUrl: String?) {
     val rel = requestPath.trimStart('/').ifEmpty { "index.html" }
 
     if (".." in rel) {
@@ -66,7 +72,11 @@ private suspend fun ApplicationCall.serveStaticFile(dir: String, requestPath: St
 
     val target = Path("$dir/$rel")
     if (SystemFileSystem.exists(target)) {
-        serveBytes(readFile(target), rel)
+        if (rel == "index.html") {
+            serveBytes(injectDefaultServer(readFile(target), defaultServerUrl), rel)
+        } else {
+            serveBytes(readFile(target), rel)
+        }
         return
     }
 
@@ -76,10 +86,20 @@ private suspend fun ApplicationCall.serveStaticFile(dir: String, requestPath: St
     val index = Path("$dir/index.html")
     if (SystemFileSystem.exists(index)) {
         response.cacheControl(CacheControl.NoCache(null))
-        respondBytes(readFile(index), ContentType.Text.Html)
+        respondBytes(injectDefaultServer(readFile(index), defaultServerUrl), ContentType.Text.Html)
     } else {
         respond(HttpStatusCode.NotFound)
     }
+}
+
+// R225 FR-R225-2 — one inline script ahead of the app bundle's own <script> tag; every other asset
+// (ravilo.js, the .wasm files, composeResources/**) is untouched and stays content-addressed/cacheable.
+private fun injectDefaultServer(indexBytes: ByteArray, defaultServerUrl: String?): ByteArray {
+    if (defaultServerUrl == null) return indexBytes
+    val html = indexBytes.decodeToString()
+    val escaped = defaultServerUrl.replace("\\", "\\\\").replace("\"", "\\\"")
+    val script = "<script>window.__RAVILO_DEFAULT_SERVER__=\"$escaped\";</script>\n    "
+    return html.replace("<script src=\"ravilo.js\">", script + "<script src=\"ravilo.js\">").encodeToByteArray()
 }
 
 // kotlinx-io's SystemFileSystem.source() has no finalizer — an unclosed source leaks one FD per call.
