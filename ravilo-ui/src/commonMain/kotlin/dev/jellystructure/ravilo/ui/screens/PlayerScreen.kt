@@ -836,8 +836,13 @@ fun PlayerScreen(
                 val creditsReached = if (creditsStart != null) positionMs >= creditsStart
                     else durationMs > 0 && (durationMs - positionMs) in 1..NEXTUP_AT_MS
                 val advanceAlreadyRequested = advanceRequestedForItemId == currentItemId
+                // R230 (FR-R230-1) — Skip Credits: Off means no mid-playback interruption at all, so this
+                // early trigger (segment creditsStartMs, or the NEXTUP_AT_MS heuristic for an unscanned
+                // title) is suppressed entirely while Off. The real end of file (below) becomes the only
+                // trigger point in that mode.
                 if (playerLoadedForCurrentItem && creditsReached && !advanceAlreadyRequested &&
-                    !nextUpVisible && !nextUpDismissed && !player.isEnded) {
+                    !nextUpVisible && !nextUpDismissed && !player.isEnded &&
+                    currentSkipCreditsMode != dev.jellystructure.shared.tv.SkipMode.OFF) {
                     nextUpVisible = true
                     nuFocus = NuFocus.PLAY
                 }
@@ -849,9 +854,23 @@ fun PlayerScreen(
                 // which calls the same stayThrough()) hid it, but the instant playback reached its real
                 // end a moment later, this check fired again (it only looked at nextUpVisible, not
                 // whether the viewer had already dismissed it) and popped it right back up, forever.
+                // R230 (FR-R230-2) — while Off, this is the ONLY trigger left, and it no longer just shows
+                // the card: a next episode with Autoplay next episode on still gets the ordinary
+                // Next-Episode countdown here (re-anchored to the real end instead of the early one, per
+                // the owner's decision that Off must not disable Autoplay); anything else — no next
+                // episode, or Autoplay off — exits silently via the same fallback skipCredits() already
+                // uses, with no card ever shown.
                 if (playerLoadedForCurrentItem && player.isEnded && !advanceAlreadyRequested &&
                     !nextUpVisible && !nextUpDismissed) {
-                    nextUpVisible = true; nuFocus = NuFocus.PLAY
+                    if (currentSkipCreditsMode == dev.jellystructure.shared.tv.SkipMode.OFF) {
+                        if (resolvedNextEpisodeId != null && currentAutoplayNext) {
+                            nextUpVisible = true; nuFocus = NuFocus.PLAY
+                        } else {
+                            skipCredits()
+                        }
+                    } else {
+                        nextUpVisible = true; nuFocus = NuFocus.PLAY
+                    }
                 }
 
                 // R182 (FR-RV-SKIP1-1) — Skip Intro pill. Entering [introStartMs, introEndMs) for the
@@ -963,7 +982,12 @@ fun PlayerScreen(
     // R182 (FR-RV-SKIP1-2) — priority: a stinger always wins (never auto-skip past it), else a real
     // next episode, else plain skip-credits/exit. Derived every recomposition — segments/nextEpisodeId
     // only ever change across an episode transition, when nextUpVisible/nextUpDismissed also reset.
+    // R230 (FR-R230-3) — Skip Credits: Off only ever reaches this card via the isEnded-trigger's
+    // Autoplay branch above, which guarantees resolvedNextEpisodeId != null — Stinger's "skip to scene"
+    // and the plain Skip-Credits exit are both meaningless once already at the real end of the file, so
+    // neither variant is reachable while Off regardless of what segments/next-episode data says.
     val creditsCardMode = when {
+        currentSkipCreditsMode == dev.jellystructure.shared.tv.SkipMode.OFF -> CreditsCardMode.NEXT_EPISODE
         segments.stinger != null -> CreditsCardMode.STINGER
         resolvedNextEpisodeId != null -> CreditsCardMode.NEXT_EPISODE
         else -> CreditsCardMode.SKIP_CREDITS
