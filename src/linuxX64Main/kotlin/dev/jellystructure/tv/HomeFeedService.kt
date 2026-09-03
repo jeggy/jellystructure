@@ -583,10 +583,18 @@ class HomeFeedService(
         val libVer = mediaStore.libraryVersion
         val allowedHash = (device.allowedLibraries.hashCode() * 31 + device.allowedTags.hashCode()) * 31 + device.blockedTags.hashCode()
         val now = nowMs()
-        continueListCache[userId]?.takeIf {
+        val cached = continueListCache[userId]
+        cached?.takeIf {
             it.libVer == libVer && it.allowedHash == allowedHash && (now - it.builtAt) < FEED_TTL_MS
         }?.let { return it.list }
-        val built = buildCanonicalContinueList(device, libraryAll, jellyfinBase, token)
+        // R231 — a failed build (Jellyfin timeout, or the blank-URL config gap) is `null`, distinct from
+        // a successful build that's genuinely empty. A failed build must never overwrite the cache — it's
+        // transient by nature, so the very next request retries live rather than inheriting a poisoned
+        // empty result for the rest of FEED_TTL_MS. Per R219's own invariant ("the SWR cache serves the
+        // previous good value" on timeout), fall back to whatever is cached for this user even if it's
+        // past its own TTL/libVer/allowedHash — stale-but-real beats wrongly-empty. Only a genuinely cold
+        // cache (no prior entry at all) ships empty here, self-healing on the next request.
+        val built = buildCanonicalContinueList(device, libraryAll, jellyfinBase, token) ?: return cached?.list ?: emptyList()
         continueListCache[userId] = ContinueListEntry(built, now, libVer, allowedHash)
         return built
     }
@@ -612,20 +620,24 @@ class HomeFeedService(
      *
      * THE RULE (top of phase-R219's spec): every Jellyfin input below is fetched to completion before
      * anything is filtered, ranked or capped. No candidate is ever excluded by a bounded `Limit`.
+     *
+     * R231 — returns `null` (not an empty list) when the build could not be trusted (blank-URL config
+     * gap, or the timeout below) — see [canonicalContinueList], which must never cache a `null` build
+     * or treat it as "genuinely nothing to show."
      */
     private suspend fun buildCanonicalContinueList(
         device: DeviceData,
         libraryAll: List<MediaItem>,
         jellyfinBase: String,
         token: String,
-    ): List<ContinueEntry> = coroutineScope {
-        val jellyfinUrl = configStore.current.apiKeys.jellyfinUrl.takeIf { it.isNotBlank() } ?: return@coroutineScope emptyList()
+    ): List<ContinueEntry>? = coroutineScope {
+        val jellyfinUrl = configStore.current.apiKeys.jellyfinUrl.takeIf { it.isNotBlank() } ?: return@coroutineScope null
         val sinceTouched = nowMs() / 1000L - CONTINUE_TOUCHED_WINDOW_DAYS * 86_400L
 
         // R102: bound the wait so a cold/slow Jellyfin can't hang the whole home response on the 30s
-        // HttpTimeout. On timeout the asyncs are cancelled and Continue Watching ships EMPTY for this
-        // build — an empty row is atomic-safe (no reflow), and the cache above refreshes it next load.
-        // All four fetches are independent — run them in parallel.
+        // HttpTimeout. On timeout the asyncs are cancelled and this build is untrustworthy (R231: `null`,
+        // never cached) — the SWR cache in [canonicalContinueList] falls back to the previous good value
+        // instead. All four fetches are independent — run them in parallel.
         val fetched = withTimeoutOrNull(CONTINUE_TIMEOUT_MS) {
             coroutineScope {
                 val resumeDeferred   = async { jellyfinClient.getResumeItemsAll(jellyfinUrl, token, device.jellyfinUserId) }
@@ -634,7 +646,7 @@ class HomeFeedService(
                 val touchedDeferred  = async { jellyfinClient.getRecentlyTouched(jellyfinUrl, token, device.jellyfinUserId, sinceTouched) }
                 listOf(resumeDeferred.await(), nextUpDeferred.await(), finishedDeferred.await(), touchedDeferred.await())
             }
-        } ?: return@coroutineScope emptyList()
+        } ?: return@coroutineScope null
         val (resumeItems, nextUpItems, finishedItems, touchedItems) = fetched
 
         val byJellyfinId = libraryAll.asSequence().mapNotNull { mi -> mi.jellyfinId?.let { it to mi } }.toMap()
