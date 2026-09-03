@@ -9,12 +9,12 @@ plugins {
 
 android {
     namespace = "dev.jellystructure.ravilo"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "dev.jellystructure.ravilo"
         minSdk = 21
-        targetSdk = 35
+        targetSdk = 36
         // R215: deploy-play-store.yml overrides both via -Pravilo.versionCode/-Pravilo.versionName,
         // derived from the release tag. Unset for local/sideload builds, which keep 1 / "1.0".
         versionCode = (project.findProperty("ravilo.versionCode") as String?)?.toInt() ?: 1
@@ -67,6 +67,12 @@ android {
                 "proguard-rules.pro"
             )
             signingConfig = signingConfigs.getByName("release")
+            ndk {
+                // Play Console warns on native code (Media3/ExoPlayer's .so libs) shipped with no
+                // debug symbols — FULL embeds them in the AAB so Play can auto-extract for crash/ANR
+                // symbolication, no separate upload step needed.
+                debugSymbolLevel = "FULL"
+            }
         }
     }
 

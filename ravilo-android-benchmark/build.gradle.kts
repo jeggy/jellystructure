@@ -22,11 +22,11 @@ plugins {
 
 android {
     namespace = "dev.jellystructure.ravilo.benchmark"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         minSdk = 28 // androidx.benchmark's own floor for reliable Baseline Profile collection
-        targetSdk = 35
+        targetSdk = 36
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
