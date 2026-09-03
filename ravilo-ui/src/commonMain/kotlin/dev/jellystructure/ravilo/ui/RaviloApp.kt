@@ -569,8 +569,18 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
         // Excluding Player/LiveTv here lets their own dpadFocusable onBack be the single source of truth
         // for what Back does while one of them is on screen.
         val ownsItsOwnBack = dest is Dest.Player || dest is Dest.LiveTv
-        PlatformBackHandler(enabled = !ownsItsOwnBack && (stack.size > 1 || atHomeRoot)) {
-            if (stack.size > 1) pop() else exitApp()
+        // Bug fix: profileMenuOpen is local overlay state, not part of `stack`, so it was invisible to
+        // both this handler and the raw KeyEvent block below. On TV the physical remote's Back key
+        // reaches ProfileMenu's own dpadFocusable onKeyEvent first (topmost focusable wins) and closes
+        // it — but Android's system back gesture/button never surfaces as a Compose KeyEvent (same gap
+        // documented above for screens without their own back affordance) and instead skips straight to
+        // this dispatcher-level handler, which had no idea the menu was open and either popped the
+        // screen underneath it or exited the app while the menu stayed on screen. Reported live on
+        // mobile as "can't be closed." Checking profileMenuOpen first here — and consuming it — fixes
+        // both the gesture-back and physical-back-with-a-non-KeyEvent-dispatch cases in one place.
+        PlatformBackHandler(enabled = !ownsItsOwnBack && (profileMenuOpen || stack.size > 1 || atHomeRoot)) {
+            if (profileMenuOpen) profileMenuOpen = false
+            else if (stack.size > 1) pop() else exitApp()
         }
         Box(
             modifier = Modifier
