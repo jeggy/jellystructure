@@ -13,6 +13,12 @@
          Was leanback required="true" (TV-only distribution) until the TV and phone apps merged. -->
     <uses-feature android:name="android.software.leanback" android:required="false" />
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
+    <!-- Bug fix (found live 2026-09-03, Play Console filtered out every TV as "not compatible"):
+         `.phone.MainActivity`'s android:screenOrientation="portrait" makes the manifest merger imply
+         android.hardware.screen.portrait as REQUIRED — Android TV has no portrait mode at all, so Play's
+         device filter excludes every TV from this one listing on that basis alone. Explicit override
+         wins over the implied one. -->
+    <uses-feature android:name="android.hardware.screen.portrait" android:required="false" />
 
     <application
         android:icon="@mipmap/ic_launcher"
