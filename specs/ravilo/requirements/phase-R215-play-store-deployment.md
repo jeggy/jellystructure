@@ -26,6 +26,19 @@ showed ("release not available — no testers configured") is a Play Console con
 issue — add testers to the internal testing track there. `:ravilo-android:assembleRelease` and
 `:ravilo-android:bundleRelease` both verified clean with the real upload keystore after the bump.
 
+**Second addendum, same day — every TV showed "not compatible" when installing from the tester link.**
+Google Pixel 9 Pro installed fine; Google TV Streamer and both Sony BRAVIA TVs were greyed out. Root
+cause: `.phone.MainActivity`'s `android:screenOrientation="portrait"` (R224) makes the Android manifest
+merger **imply** `android.hardware.screen.portrait` as a *required* feature — Android TV has no portrait
+mode at all, so Play's device compatibility filter excluded every TV on that basis alone, independently
+of the already-correct `leanback`/`touchscreen` `required="false"` declarations. Confirmed via
+`aapt2 dump badging` on the built APK before and after: the feature was listed as `uses-feature` (required)
+before, `uses-feature-not-required` after adding an explicit
+`<uses-feature android:name="android.hardware.screen.portrait" android:required="false" />` to
+`AndroidManifest.xml` — an explicit declaration wins over the merger's implied one. This is a known trap
+for any manifest combining an orientation-locked activity with TV distribution in the same app; worth
+remembering if another orientation-locked entry point is ever added.
+
 ## 1. Scope
 
 Ship `ravilo-android` (`dev.jellystructure.ravilo`, the TV/leanback app) to the Google Play **internal
