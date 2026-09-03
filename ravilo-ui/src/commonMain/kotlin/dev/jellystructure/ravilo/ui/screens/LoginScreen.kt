@@ -67,6 +67,9 @@ sealed class LoginState {
 }
 
 class LoginStore(private val apiClient: TvApiClient) {
+    // R225 — read by LoginScreen's server indicator, so it reflects exactly what this store's client
+    // is actually using rather than being threaded a second value that could drift from it.
+    val baseUrl: String get() = apiClient.baseUrl
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val _state = MutableStateFlow<LoginState>(LoginState.Idle)
     val state: StateFlow<LoginState> = _state.asStateFlow()
@@ -216,6 +219,8 @@ fun LoginScreen(
 
                     Spacer(Modifier.height(18.dp))
                     ChangeServerLink(focusRequester = changeServerFR, onSelect = onChangeServer)
+                    Spacer(Modifier.height(4.dp))
+                    ServerIndicator(store.baseUrl)
                 }
             }
         }
@@ -284,6 +289,17 @@ private fun LoginField(
             )
         }
     }
+}
+
+// R225 — read-only reflection of what LoginStore's TvApiClient is actually pointed at (host only, no
+// scheme — matches ServerSetupScreen's separate host/useHttps fields). Never focusable/actionable;
+// ChangeServerLink above it is the only way to act on this.
+@Composable
+private fun ServerIndicator(baseUrl: String) {
+    val colors = RaviloTheme.colors
+    val host = baseUrl.substringAfter("://").trimEnd('/')
+    if (host.isBlank()) return
+    Text(host, color = colors.textSecondary, fontSize = 11.sp)
 }
 
 @Composable
