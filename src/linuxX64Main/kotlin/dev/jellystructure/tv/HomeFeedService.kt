@@ -91,10 +91,21 @@ class HomeFeedService(
     /**
      * R187 fix — just the channel id→name list, for callers that need Ravilo channel display names
      * (e.g. the seeded-browse page's Channel facet) without a top-level Home/Channel screen having
-     * already loaded a full [HomeFeed] first. Cheap: config-only, no Jellyfin/MediaStore calls.
+     * already loaded a full [HomeFeed] first.
+     * R228: no longer config-only — [buildChannels] now needs this device's own accessible library
+     * to decide which channels are non-empty for it, so this makes the same MediaStore/Jellyfin calls
+     * [getHomeFeed] does.
      */
-    suspend fun getChannels(device: DeviceData): List<Channel> =
-        buildChannels(configService.getConfig(device.jellyfinUserId))
+    suspend fun getChannels(device: DeviceData): List<Channel> = coroutineScope {
+        val config = configService.getConfig(device.jellyfinUserId)
+        val jellyfinBase = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
+        val allDeferred = async { mediaStore.liveItems(device) }
+        val tokenDeferred = async { jellyfinClient.tvToken(jellyfinBase, device, configStore.current.apiKeys.jellyfinToken) }
+        val allItems = allDeferred.await()
+        val token = tokenDeferred.await()
+        val heroIds = config.heroes.map { it.itemId }.toSet()
+        buildChannels(config, device, allItems, jellyfinBase, token, heroIds)
+    }
 
     suspend fun getHomeFeed(device: DeviceData): HomeFeed = coroutineScope {
         val userId = device.jellyfinUserId
@@ -190,9 +201,10 @@ class HomeFeedService(
         val tokenDeferred = async { jellyfinClient.tvToken(jellyfinBase, device, configStore.current.apiKeys.jellyfinToken) }
         val all   = allDeferred.await()
         val token = tokenDeferred.await()
+        val heroIds = config.heroes.map { it.itemId }.toSet()
         HomeFeed(
             heroes = buildHeroes(config, all),
-            channels = buildChannels(config),
+            channels = buildChannels(config, device, all, jellyfinBase, token, heroIds),
             rows = buildRows(config, device, all, all, jellyfinBase, token, channelFilter = null),
             heroHeightPct = config.heroHeightPct,
             autoAdvanceSeconds = config.autoAdvanceSeconds,
@@ -214,16 +226,11 @@ class HomeFeedService(
         val allItems = allDeferred.await()
         val token    = tokenDeferred.await()
         val heroIds  = config.heroes.map { it.itemId }.toSet()
-        val filtered = allItems.filter { it.matchesChannel(channelCfg, heroIds) }
-        val pageHero = channelCfg.pageHero
-        val heroes   = if (pageHero?.enabled == true && pageHero.items.isNotEmpty())
-            buildHeroesFromList(pageHero.items, allItems)
-        else
-            emptyList()
+        val (heroes, rows) = buildChannelContent(device, config, channelCfg, allItems, jellyfinBase, token, heroIds)
         applyPlaystate(HomeFeed(
             heroes = heroes,
-            channels = buildChannels(config),
-            rows = buildRows(config, device, filtered, allItems, jellyfinBase, token, channelFilter = channelCfg),
+            channels = buildChannels(config, device, allItems, jellyfinBase, token, heroIds),
+            rows = rows,
             heroHeightPct = config.heroHeightPct,
             autoAdvanceSeconds = config.autoAdvanceSeconds,
             tileShape = config.tileShape,
@@ -287,21 +294,61 @@ class HomeFeedService(
 
     // ─── Channels ─────────────────────────────────────────────────────────────
 
-    private fun buildChannels(config: RaviloConfig): List<Channel> =
-        config.channels
-            .filter { it.enabled }
-            .sortedBy { it.order }
-            .map { ch ->
-                Channel(
-                    id = ch.id,
-                    name = ch.name,
-                    logoUrl = ch.logoUrl,
-                    style = ch.style,
-                    brandColor = ch.brandColor,
-                    paddingLogo = ch.paddingLogo,
-                    paddingText = ch.paddingText,
-                )
-            }
+    /**
+     * R228 — a channel that resolves to nothing for THIS device (e.g. a restricted profile whose
+     * library access excludes everything the channel's own filter would ever match) is left out
+     * entirely, rather than rendering a tile that opens onto a blank page. "Empty" has to mean the
+     * channel's actual built content is empty, not just [MediaItem.matchesChannel] returning no
+     * matches — an inherit-mode channel's Continue Watching row is always Home's own row (R202),
+     * independent of the channel's own filter, so it can be genuinely non-empty even when nothing
+     * in the library matches that filter. [buildChannelContent] is the same heroes+rows build
+     * [getChannelFeed] uses, so this can never disagree with what opening the channel actually shows.
+     */
+    private suspend fun buildChannels(
+        config: RaviloConfig,
+        device: DeviceData,
+        allItems: List<MediaItem>,
+        jellyfinBase: String,
+        token: String,
+        heroIds: Set<String>,
+    ): List<Channel> {
+        val result = mutableListOf<Channel>()
+        for (ch in config.channels.filter { it.enabled }.sortedBy { it.order }) {
+            val (heroes, rows) = buildChannelContent(device, config, ch, allItems, jellyfinBase, token, heroIds)
+            if (heroes.isEmpty() && rows.all { it.items.isEmpty() }) continue
+            result.add(Channel(
+                id = ch.id,
+                name = ch.name,
+                logoUrl = ch.logoUrl,
+                style = ch.style,
+                brandColor = ch.brandColor,
+                paddingLogo = ch.paddingLogo,
+                paddingText = ch.paddingText,
+            ))
+        }
+        return result
+    }
+
+    /** R228: the heroes+rows build shared by [getChannelFeed] and [buildChannels]'s own emptiness
+     *  check — factored out so the two can never compute different content for the same channel. */
+    private suspend fun buildChannelContent(
+        device: DeviceData,
+        config: RaviloConfig,
+        channelCfg: ChannelConfig,
+        allItems: List<MediaItem>,
+        jellyfinBase: String,
+        token: String,
+        heroIds: Set<String>,
+    ): Pair<List<Hero>, List<Row>> {
+        val filtered = allItems.filter { it.matchesChannel(channelCfg, heroIds) }
+        val pageHero = channelCfg.pageHero
+        val heroes   = if (pageHero?.enabled == true && pageHero.items.isNotEmpty())
+            buildHeroesFromList(pageHero.items, allItems)
+        else
+            emptyList()
+        val rows = buildRows(config, device, filtered, allItems, jellyfinBase, token, channelFilter = channelCfg)
+        return heroes to rows
+    }
 
     // ─── Rows ─────────────────────────────────────────────────────────────────
 
