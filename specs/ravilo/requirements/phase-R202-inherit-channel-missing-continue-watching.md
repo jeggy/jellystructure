@@ -11,6 +11,9 @@
 > was; it's an R05 leftover that R59 should have retired for the inherit case and didn't.
 
 **Status:** Implemented. Verified via `compileKotlinLinuxX64`.
+**Partially reversed by [R233](phase-R233-system-rows-always-scoped.md) (2026-09-04)** — see the
+addendum at the foot of this file. R202's core finding stands; only its `libraryAll` choice and its
+invariant were overturned.
 
 ## Bug report
 "why is there no continue watching on the Apple tv channel?" — followed by a correction once first
@@ -80,3 +83,40 @@ approximation of it.
 - Original skip: commit `c6233e93` (Phase R05, 2026-06-19).
 - Preserved-not-fixed: commit `a2de8eb8` (Phase R143, 2026-06-29).
 - R59's actual scope: `STATUS.md`'s R59 row (no dated spec file exists for R59; described only there).
+
+---
+
+## Addendum 2026-09-04 — R233 partially reverses this phase
+
+**What stands.** R202's central finding is unchanged and still correct: an inherit-mode channel **does**
+show Continue Watching. The R05-era `if (channelFilter != null) continue` skip was a leftover, R143
+preserved it while mislabelling it "R59 behaviour", and removing it was right. The provenance chain
+this file recovered — **R05 → carried by R143 → fixed by R202 → scoped by R233** — is the reason the
+file is kept rather than superseded.
+
+**What is reversed.** Two things:
+
+1. **FR-RV-R2-1's `libraryAll` choice.** The row is still *built* from `libraryAll` (the canonical list
+   is library-wide and cached per user — R219 FR-R219-1, guarded by R233 FR-R233-5), but it is now
+   **filtered by `matchesChannel` before capping** whenever it renders on a channel page. It is no
+   longer "byte-for-byte the same content Home shows."
+2. **The invariant.** *"An inherit-mode channel's system rows are Home's own rows, not a
+   channel-filtered variant of them"* is now false, and deliberately so. The replacement (R233) is:
+   a system row shows what is available in the place it is shown, in either row-list mode.
+
+**Why, given this phase argued the opposite.** R202 reasoned from the *config model* — "inherit" means
+no override exists, so the row should be Home's row. That is a correct reading of the setting and a
+wrong reading of the page. Reported live 2026-09-04: inside **Thriller / Gyser**, Continue Watching
+led with *Two and a Half Men*, *Klovn* and *Ali G*, while *Newly Added — Movies* directly beneath it
+was correctly filtered. A collection page is a claim about its contents; a row on it that ignores the
+claim is worse than the missing row R202 fixed. The owner's framing: scoping should not have been a
+setting at all.
+
+**The out-of-scope note is resolved.** This file deferred `RowKind.NEWLY_ADDED` in the inherit path
+with *"Left unchanged; revisit only if reported."* It was reported — as the row that was **right**
+while Continue was wrong. R233 FR-R233-2 resolves it by making both rows behave the same way, which
+means the inherit path's Newly Added needs no change at all; it was already correct.
+
+**Also note:** R202's reading of R59 ("System rows still appear unless removed") remains the correct
+one and is untouched by R233. R233 changes how those system rows are *scoped*, never whether they
+appear, and leaves the Same as Home / Custom switch itself exactly as it is.
