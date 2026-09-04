@@ -170,13 +170,19 @@ private enum class CreditsCardMode { STINGER, NEXT_EPISODE, SKIP_CREDITS }
 
 // R182 — SKIP_INTRO only enters the order while the pill is actually visible (mirrors NEXT_EP's own
 // hasNextEp gating), first in the order per the design prototype's own focus-order function.
+//
+// Bug fix: BACK used to be appended last here, but BackButton lives in the top bar, spatially
+// unrelated to this bottom transport row (SeekRow/SkipButton/PlayPauseButton/TrackButton) — pressing
+// Right past the last real control (NEXT_EP, or TRACKS with no next episode) teleported focus up to
+// the top-left Back button, which read as "Right does Up" instead of a no-op at the row's end. BACK
+// stays reachable via mouse/touch hover (onControlHover sets `focus` directly, independent of this
+// list) and via the hardware Back key (root onBack), which is the primary D-pad way to leave anyway.
 private fun transportOrder(hasNextEp: Boolean, hasSkipIntro: Boolean): List<PlFocus> =
     buildList {
         if (hasSkipIntro) add(PlFocus.SKIP_INTRO)
         add(PlFocus.SEEK_BAR); add(PlFocus.SKIP_BACK); add(PlFocus.PLAY)
         add(PlFocus.SKIP_FWD); add(PlFocus.TRACKS)
         if (hasNextEp) add(PlFocus.NEXT_EP)
-        add(PlFocus.BACK)
     }
 
 // R157 (FR-R157-2.2) — hoverable()/HoverInteraction is cross-platform commonMain, unlike the

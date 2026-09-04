@@ -25,6 +25,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.focusRestorer
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
@@ -64,6 +65,17 @@ fun SeasonPicker(
     val listState = rememberLazyListState()
     LaunchedEffect(selectedIndex) { runCatching { listState.scrollToItem(selectedIndex) } }
 
+    // Bug fix (live-tested on stue TV, Klovn's 11-season row): interior pills used to leave
+    // onLeft/onRight null so Compose's native spatial focus search would move between them (the
+    // documented dpadFocusable pattern for lazy-list items). That search composes the next off-screen
+    // item and scrolls it into view, which takes a frame or two — under a fast D-pad burst (real remote
+    // repeat-rate, not a single deliberate press) the next pill wasn't composed/on-screen yet when the
+    // key landed, and native search picked the nearest ALREADY-composed focusable candidate instead:
+    // the AppBar's profile avatar in the top-right corner, several rows above. Focus silently jumped
+    // there mid-burst with no visual cue at the season row itself. Explicit per-pill FocusRequesters
+    // sidestep the timing dependency entirely — Left/Right always targets a specific known pill.
+    val pillFocusRequesters = remember(seasons) { List(seasons.size) { FocusRequester() } }
+
     LazyRow(
         state = listState,
         modifier = modifier.focusRestorer(),
@@ -86,18 +98,23 @@ fun SeasonPicker(
             // Focusable outer keeps a constant layout size; the scale + glow run draw-only on the inner
             // layer so the season picker never chases the focus animation → no viewport jump (R42/R43).
             Box(
-                modifier = Modifier.dpadFocusable(
-                    focusRequester = if (i == selectedIndex) firstFocusRequester else null,
-                    onFocused = { focused = true },
-                    onBlurred = { focused = false },
-                    onSelect = { onSelect(i) },
-                    // Bug fix (live-tested on stue TV): this row sits directly under the AppBar, same as
-                    // SeededBrowseScreen's facet bar -- Right past the LAST season pill fell through to
-                    // native focus search and could land on the profile avatar instead of doing nothing.
-                    // Left on the FIRST pill has the same risk. No-op both ends explicitly.
-                    onLeft = { }.takeIf { i == 0 },
-                    onRight = { }.takeIf { i == seasons.lastIndex },
-                ),
+                modifier = Modifier
+                    .then(
+                        if (i == selectedIndex && firstFocusRequester != null)
+                            Modifier.focusRequester(firstFocusRequester)
+                        else Modifier
+                    )
+                    .dpadFocusable(
+                        focusRequester = pillFocusRequesters[i],
+                        onFocused = { focused = true },
+                        onBlurred = { focused = false },
+                        onSelect = { onSelect(i) },
+                        // Bug fix — see pillFocusRequesters' doc above: explicit targets for every pill,
+                        // not just the two edges, so a fast D-pad burst can never outrun native search
+                        // and escape to the AppBar avatar. No-op at both true ends of the row.
+                        onLeft = if (i == 0) {{ }} else {{ runCatching { pillFocusRequesters[i - 1].requestFocus() } }},
+                        onRight = if (i == seasons.lastIndex) {{ }} else {{ runCatching { pillFocusRequesters[i + 1].requestFocus() } }},
+                    ),
                 contentAlignment = Alignment.Center,
             ) {
             Column(
