@@ -176,6 +176,11 @@ private fun h264TargetConditions(capabilities: ClientCapabilities): String {
     return """[{"Condition":"EqualsAny","Property":"VideoProfile","Value":"high|main|baseline|constrained baseline","IsRequired":false},{"Condition":"LessThanEqual","Property":"VideoLevel","Value":"$maxLevel","IsRequired":false},{"Condition":"LessThanEqual","Property":"Width","Value":"$maxWidth","IsRequired":false},{"Condition":"LessThanEqual","Property":"Height","Value":"$maxHeight","IsRequired":false}]"""
 }
 
+/** Phase 187 (FR-187-3) — the three outcomes `POST /Users/Password` can produce, as distinguished by
+ *  the caller: [OK], [WRONG_CURRENT] (403, verified live 2026-09-05 — not the 401 the spec first
+ *  guessed), and [FAILED] (network/other — never guessed to be a wrong password). */
+enum class PasswordChangeOutcome { OK, WRONG_CURRENT, FAILED }
+
 class JellyfinClient {
     private suspend fun httpGet(url: String, block: HttpRequestBuilder.() -> Unit = {}): HttpResponse =
         OutboundHttp.withPermit { http.get(url, block) }
@@ -212,6 +217,62 @@ class JellyfinClient {
         }
         return response.body()
     }
+
+    /**
+     * Phase 187 (FR-187-6/7) — set the caller's own Jellyfin user image. [imageBytes] must already be
+     * server-side validated + centre-cropped + bounded ([FfmpegRunner.centerCropSquareJpeg]) before this
+     * is called; this method only speaks the wire format. [contentType] should be `image/jpeg`.
+     *
+     * FR-187-1's probe found the documented request shape (a raw `image` MIME binary body) is **wrong** — it
+     * 500s. Jellyfin actually wants **base64 text of the image bytes**, with the real MIME type still in
+     * `Content-Type` (verified live 2026-09-05: a raw-binary POST 500'd, the identical bytes base64-
+     * encoded returned 204 and moved `PrimaryImageTag`). Returns the new `PrimaryImageTag`
+     * (`GET /Users/{userId}` re-fetched after a successful write) so the caller can build a change-keyed
+     * avatar URL (FR-187-7) without a second round trip elsewhere in the call chain.
+     */
+    suspend fun setUserImage(baseUrl: String, token: String, userId: String, imageBytes: ByteArray, contentType: String = "image/jpeg"): String? = runCatching {
+        @OptIn(kotlin.io.encoding.ExperimentalEncodingApi::class)
+        val b64 = kotlin.io.encoding.Base64.Default.encode(imageBytes)
+        val url = baseUrl.trimEnd('/') + "/UserImage?userId=${userId.encodeURLParameter()}"
+        val resp = httpPost(url) { jellyfinAuth(token); header("Content-Type", contentType); setBody(b64) }
+        if (!resp.status.isSuccess()) { Logger.warn("Jellyfin setUserImage failed: ${resp.status.value}", "auth"); return@runCatching null }
+        getUserImageTag(baseUrl, token, userId)
+    }.getOrNull()
+
+    /** Phase 187 (FR-187-3) — remove the caller's own Jellyfin user image, back to initials. */
+    suspend fun deleteUserImage(baseUrl: String, token: String, userId: String): Boolean = runCatching {
+        val url = baseUrl.trimEnd('/') + "/UserImage?userId=${userId.encodeURLParameter()}"
+        httpDelete(url) { jellyfinAuth(token) }.status.isSuccess()
+    }.getOrDefault(false)
+
+    private suspend fun getUserImageTag(baseUrl: String, token: String, userId: String): String? = runCatching {
+        httpGet(baseUrl.trimEnd('/') + "/Users/$userId") { jellyfinAuth(token) }
+            .bodyOrNull<JellyfinUser>("getUserImageTag")?.primaryImageTag
+    }.getOrNull()
+
+    /**
+     * Phase 187 (FR-187-3/8) — change the caller's own Jellyfin password. Jellyfin validates
+     * [currentPw]; jellystructure never does (never compares/hashes/stores it). [tokenSurvives] is
+     * measured, not assumed: probed live 2026-09-05 that on this house's Jellyfin (10.11.11) a token
+     * minted before the change still authorises afterwards — only `AuthenticateByName` is affected —
+     * but that isn't a documented guarantee, so the caller re-validates with [JellyfinClient.isTokenValid]
+     * using the very token this call was made with, rather than the route hard-coding "always survives".
+     */
+    suspend fun updateUserPassword(baseUrl: String, token: String, userId: String, currentPw: String, newPw: String): PasswordChangeOutcome = runCatching {
+        val url = baseUrl.trimEnd('/') + "/Users/Password?userId=${userId.encodeURLParameter()}"
+        val resp = httpPost(url) {
+            jellyfinAuth(token)
+            contentType(ContentType.Application.Json)
+            setBody("""{"CurrentPw":${currentPw.jsonEscape()},"NewPw":${newPw.jsonEscape()}}""")
+        }
+        when {
+            resp.status.isSuccess() -> PasswordChangeOutcome.OK
+            // FR-187-1's probe: a wrong CurrentPw is 403 on this Jellyfin version, not the 401 an
+            // earlier pass at the spec guessed from the declared response list.
+            resp.status == HttpStatusCode.Forbidden -> PasswordChangeOutcome.WRONG_CURRENT
+            else -> { Logger.warn("Jellyfin updateUserPassword failed: ${resp.status.value}", "auth"); PasswordChangeOutcome.FAILED }
+        }
+    }.getOrElse { PasswordChangeOutcome.FAILED }
 
     suspend fun testConnection(baseUrl: String, token: String): Boolean = runCatching {
         val url = baseUrl.trimEnd('/') + "/System/Info/Public"

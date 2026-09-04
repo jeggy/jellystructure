@@ -120,6 +120,8 @@ data class OverviewUser(
     val policy: OverviewPolicy,
     val devices: List<OverviewDevice>,
     val sessions: List<OverviewSession>,
+    // Phase 187 (FR-187-9) — read-only; the admin gets no ability to set/clear another user's photo.
+    @SerialName("avatar_url") val avatarUrl: String? = null,
 )
 
 // Phase 143 (design addendum) — "Recently watched" lazy history. Timestamps are epoch **seconds**
