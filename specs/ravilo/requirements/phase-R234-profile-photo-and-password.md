@@ -13,18 +13,20 @@
 **Depends on Phase 187** for both routes; FR-R234-7 in particular cannot be finished until 187's open
 question 2 is answered.
 
-> **2026-09-05 — 187's endpoint probe ran; two of this phase's blocks moved, one did not.**
-> **FR-R234-8 is now fully specified:** Jellyfin exposes `UserDto.PrimaryImageTag`, so 187 FR-187-7's
-> change-keyed URL is real (`…/avatar?v=<tag>`) and "let `RemoteImage` miss its cache" has a concrete
-> mechanism — a new tag is a new URL and therefore a cache miss, not something needing active eviction.
-> Worth knowing while building it: jellystructure's avatar cache turned out to have **no TTL whatever**,
-> so before 187 lands there is no version of this that self-heals.
-> **Open question 5 (kids profiles) is settled** — no Jellyfin policy flag gates it; see below.
-> **FR-R234-7 is still blocked.** 187's open question 2 could not be answered read-only: the password
-> endpoint returns a bare `204` whether or not it invalidated tokens. Build the success path first, as
-> this requirement already says, and keep the branch explicit.
-> Unchanged for this phase: preset colours (FR-R234-3) remain blocked on 187 open question 3, which is an
-> owner decision and not something a probe can resolve.
+> **2026-09-05 — 187's endpoint probe ran in full, and every block on this phase is now cleared.**
+> **FR-R234-8 is fully specified:** Jellyfin exposes `UserDto.PrimaryImageTag` and it demonstrably moves
+> on each upload (three uploads, three different tags), so 187 FR-187-7's change-keyed URL is real
+> (`…/avatar?v=<tag>`) and "let `RemoteImage` miss its cache" has a concrete mechanism — a new tag is a
+> new URL and therefore a cache miss, not something needing active eviction. Worth knowing while building
+> it: jellystructure's avatar cache turned out to have **no TTL whatever**, so before 187 lands there is
+> no version of this that self-heals.
+> **FR-R234-7 is unblocked** — tokens survive a password change, so only the success path ships.
+> **FR-R234-3 loses the preset colours** — owner decision on 187 open question 3.
+> **Open question 5 (kids profiles) is settled** — no Jellyfin policy flag gates it.
+>
+> **The mockups now lead this spec in one place:** they still draw the preset-colour row (`AV_PRESETS`,
+> `colorFor`, `setColor` in `ravilo-data.js`, and the Your profile sheet in `Ravilo Mobile.html`). That
+> needs removing before this ships — see FR-R234-3.
 
 Design: built into the mockups at `design/ravilo/Ravilo Mobile.html` (profile sheet · Your profile ·
 Settings → Account → change password) and `design/ravilo/Ravilo TV.html` (Settings → Account, password
@@ -77,10 +79,18 @@ file; the mockup gates that on `pointer:fine`, and the shipped client should gat
 than on an input-capability query. Every control is ≥48 dp; the phone form's own type floor is 13 sp
 (R229's `LocalCompact` padding conventions apply throughout).
 
-> **Preset colours are blocked on 187's open question 3.** They are new stored state with no home in
-> Jellyfin's user record. If that question resolves against storing them, this control comes out and the
-> existing deterministic initials gradient stands — build the rest of the screen so its removal leaves no
-> hole.
+> ~~**Preset colours are blocked on 187's open question 3.**~~ **Resolved 2026-09-05 — the owner chose to
+> drop them, so this control comes out.** They were new stored state with no home in Jellyfin's user
+> record, and the alternatives (a jellystructure-side column, or storing a generated solid-colour image
+> *as* the photo) both cost more than the control was worth. The existing deterministic initials gradient
+> stands, exactly as this requirement anticipated.
+>
+> **Three ways in, then, not four:** Choose a photo · Take a photo · Remove photo, plus the web-only drop
+> target. The `photo_presets` string ("Or use a colour") comes out of FR-R234-10's table. **The mockups
+> still draw the preset row** — `design/ravilo/Ravilo Mobile.html`'s Your profile sheet and
+> `ravilo-data.js`'s `AV_PRESETS` / `colorFor` / `setColor` — so they now lead the spec and must be
+> updated before this ships. Note `avatarFace()` still needs its colour input for the *initials*
+> fallback; what goes is the viewer-facing **choice**, not the gradient itself.
 
 **FR-R234-4 — Settings gains an Account section, on every platform.** Above the existing sections: the
 viewer's own name and photo as a non-interactive identity block, then **Change password**. Present on TV,
@@ -111,7 +121,21 @@ survived, show *"Password changed."* and return to Settings. If it reports the t
 pretend: sign out and route to login with a plain line saying the new password is now the one to use.
 Phase 141's per-`(device, user)` identity means other devices may be affected too — if 187's probe shows
 that, say so once, in words, rather than letting three TVs discover it separately at their next request.
-**Blocked on 187 open question 2**; build the success path first and keep the branch explicit.
+~~**Blocked on 187 open question 2**~~; build the success path first and keep the branch explicit.
+
+> **✅ Unblocked 2026-09-05 — the probe says tokens survive, so only the success path ships.** On Jellyfin
+> 10.11.11 a token minted before a password change still authorises afterwards; only future
+> `AuthenticateByName` calls are affected. So: *"Password changed."* (`pw_ok`), return to Settings, no
+> sign-out, and **nothing said about other devices** — none of them is affected either, and a line
+> reassuring the viewer about TVs that were never at risk only invents a worry.
+>
+> **Still render from what 187's response says, not from a constant.** This requirement's rule — say the
+> truth the server reports — is what keeps the sign-out branch cheap if a future Jellyfin starts revoking.
+> Keep reading the field; just do not build a screen for a branch that cannot currently occur.
+>
+> One thing this does *not* license: telling a viewer that changing a password protects their other
+> devices. It does not sign them out. That behaviour would be its own phase, and a sign-out-everywhere
+> control is already an explicit non-goal below.
 
 **FR-R234-8 — A new photo appears everywhere, immediately.** On a successful upload or removal, the
 avatar updates on the Your profile screen, the profile menu header, the appbar and the profile picker
@@ -146,7 +170,7 @@ English one because it reads as broken rather than untranslated.
 | `photo_title` / `photo_sub` | `Your photo` / `Shows on every device you watch on — including the TV.` |
 | `photo_choose` / `photo_camera` / `photo_remove` | `Choose a photo` / `Take a photo` / `Remove photo` |
 | `photo_drop` | `or drop an image here` |
-| `photo_presets` | `Or use a colour` |
+| ~~`photo_presets`~~ | ~~`Or use a colour`~~ — **cut 2026-09-05**, presets dropped (187 OQ3) |
 | `photo_saved` / `photo_removed` | `Photo updated.` / `Photo removed — back to your initials.` |
 
 Deliberately rejected copy, recorded so it is not re-proposed: *"Your Jellyfin password"* (the viewer
@@ -176,8 +200,13 @@ picture in the Ravilo app on your phone"* as a TV line (FR-R234-2 forbids it ent
    devices and essential on others depending on the installed gallery app. Two explicit buttons are drawn
    (deliberately — a viewer who wants the camera should not have to know their gallery app offers it);
    confirm they map to two real intents rather than one dialog shown twice.
-2. **Preset colours** — blocked on 187 open question 3, and the whole control may come out.
-3. **Session consequence** — blocked on 187 open question 2 (FR-R234-7).
+2. ~~**Preset colours** — blocked on 187 open question 3, and the whole control may come out.~~
+   **Closed 2026-09-05: the control comes out.** Owner decision on 187 OQ3 — presets are dropped and the
+   deterministic initials gradient stands. See FR-R234-3; the mockups still draw the row and need
+   updating.
+3. ~~**Session consequence** — blocked on 187 open question 2 (FR-R234-7).~~
+   **Closed 2026-09-05: tokens survive a password change**, so FR-R234-7 ships its success path only —
+   *"Password changed."*, back to Settings, no sign-out and no line about other devices.
 4. **Does `ravilo-web` get the camera?** `capture` on a file input is a phone-browser affordance; a
    desktop browser will show a webcam or nothing depending on the browser. Current answer: offer
    **Choose a photo** and drag-and-drop on web, and show **Take a photo** only where a camera input is
