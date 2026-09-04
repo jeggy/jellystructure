@@ -759,6 +759,42 @@ data class ChannelLogoUpload(
     @SerialName("data_base64") val dataBase64: String,
 )
 
+// ─── Phase 187 — a viewer's own photo + password ──────────────────────────────
+
+/** Upload payload for a viewer's own account photo: base64 image bytes (data-URL prefix tolerated) +
+ *  the browser/client-reported content type. The server validates/re-encodes before it ever reaches
+ *  Jellyfin (FR-187-6) — this is what the client actually captured, not what gets forwarded. */
+@Serializable
+data class AccountPhotoUpload(
+    @SerialName("data_base64") val dataBase64: String,
+    @SerialName("content_type") val contentType: String,
+)
+
+/** Response to a photo set/remove: the new avatar URL to repaint everywhere immediately (FR-R234-8) —
+ *  already carries Jellyfin's fresh PrimaryImageTag as its cache-busting `?v=`, or is null after a
+ *  remove (client falls back to initials, same as any other viewer with no photo). */
+@Serializable
+data class AccountPhotoResult(
+    @SerialName("avatar_url") val avatarUrl: String?,
+)
+
+@Serializable
+data class AccountPasswordChangeRequest(
+    @SerialName("current_password") val currentPassword: String,
+    @SerialName("new_password") val newPassword: String,
+)
+
+/** FR-187-8 — the route states what actually happened to the caller's own session rather than the
+ *  client guessing; [tokenSurvived] is measured per-call (see [dev.jellystructure.auth.JellyfinClient]'s
+ *  own doc), never hard-coded to a fixed answer. [wrongCurrentPassword] is the one error the client
+ *  renders as its own sentence (FR-187-3/R234 FR-R234-5) rather than a generic failure. */
+@Serializable
+data class AccountPasswordResult(
+    val ok: Boolean,
+    @SerialName("wrong_current_password") val wrongCurrentPassword: Boolean = false,
+    @SerialName("token_survived") val tokenSurvived: Boolean = true,
+)
+
 @Serializable
 data class RowConfig(
     val id: String,

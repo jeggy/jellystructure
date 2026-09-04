@@ -11,11 +11,44 @@
 > Jellyfin, and puts the photo in the admin's user list. **R234** builds the screens; this phase owns the
 > routes, the storage answer and the cache.
 
-**Status:** Planned (design-authored 2026-09-03, not yet dev-reviewed) — **but FR-187-1 is now fully
-discharged.** The endpoint probe ran 2026-09-05 against this house's live Jellyfin 10.11.11, read-only
-first and then with writes against a test account and a throwaway account, and is recorded below.
-**All four open questions are closed** (1 and 4 by probe, 2 by probe, 3 by owner decision), so nothing
-blocks a dev review or a build.
+**Status:** ✓ Built 2026-09-05, same session as the probe below — design-authored 2026-09-03, all four
+open questions closed by probe/owner-decision the same day, backend built immediately after. Compiles
+clean (`compileKotlinLinuxX64` + `compileKotlinWasmJs`), full suite green (185/185), no schema migration
+needed (FR-187-5 — nothing new is stored). Not dev-reviewed, not live-tested through a running server
+(every write above was verified via direct `curl` against Jellyfin, matching the Kotlin code's exact
+request shape, rather than by starting jellystructure itself). **R234 (the client half) is not built —
+separate session**, per its own dependency on this phase.
+
+### What's built
+
+- `JellyfinClient.kt` — `setUserImage`/`deleteUserImage`/`updateUserPassword`, each mirroring the exact
+  wire shape the probe verified (base64 body + `Content-Type` header for the image; `PasswordChangeOutcome`
+  distinguishing `WRONG_CURRENT` (`403`) from a real failure). `JellyfinUser` gains `primaryImageTag`
+  (free on every existing `getUsers`/login call — no new Jellyfin round-trip).
+- `FfmpegRunner.centerCropSquareJpeg` — FR-187-6's server-side centre-crop-to-320px-square. **A real bug
+  caught before it ever ran:** the first draft's `crop=min(iw,ih):min(iw,ih)` left the comma inside
+  `min(iw,ih)` unescaped, which ffmpeg's own filtergraph parser reads as a filter separator — it would
+  have silently mangled the whole `-vf` value into three broken fragments. Caught by testing the exact
+  command against a real 1200×800 image before wiring it up (`crop='min(iw\,ih)':'min(iw\,ih)'` — output
+  verified 320×320).
+- `RaviloArtworkService.kt` — moved off the undocumented `/Users/{userId}/Images/Primary` legacy alias
+  onto `/UserImage?userId=` (FR-187-7); the avatar cache's `.ct` sidecar now stores `"$tag|$contentType"`
+  and a tag mismatch is a cache miss, not something needing an explicit eviction call — closes the "no
+  TTL at all" gap the probe found. New `setAvatar`/`deleteAvatar` write methods, both invalidating/
+  priming the cache themselves.
+- `TvRoutes.kt` — `POST`/`DELETE /api/tv/account/photo`, `POST /api/tv/account/password`, all scoped to
+  `device.jellyfinUserId`/`device.jellyfinUserToken` from the session (FR-187-2) — no route parameter
+  can name another viewer's account. Password route reuses `LoginRateLimiter`, keyed on
+  `deviceId:clientIp` (FR-187-4). `RaviloImageUrl.avatar()` now takes the tag; both existing call sites
+  (login, `/tv/sessions`) updated — login gets it free from `AuthenticateByName`'s own response,
+  `/tv/sessions` needed one `getUsers` call shared across the whole picker rather than per profile.
+- FR-187-9 (admin, read-only) — `/tv/admin/overview`'s `OverviewUser` gains `avatarUrl`; **the CSS this
+  needed had never shipped at all** — `.usr-av`/`.has-photo`/`.av-img` existed only in the standalone
+  design mockup's own `<style>` block, never in `wf.css`. Found and fixed alongside a matching pre-
+  existing gap from Phase 185 (`.usr-cap`, the decode-ceiling line) on the same page, neither of which
+  had ever reached a served stylesheet. Both added to `wf.css` and to `check-mobile-css.sh`'s fence.
+- Shared `AccountPhotoUpload`/`AccountPhotoResult`/`AccountPasswordChangeRequest`/`AccountPasswordResult`
+  DTOs, matching the existing `ChannelLogoUpload` base64-JSON convention rather than multipart.
 
 Headline: **all three operations exist, none at the path this spec assumed, and the OpenAPI document is
 actively wrong about the image upload's body shape** — it describes a raw binary body that returns `500`,

@@ -118,6 +118,8 @@ private data class OverviewUser(
     val policy: OverviewPolicy,
     val devices: List<OverviewDevice>,
     val sessions: List<OverviewSession>,
+    // Phase 187 (FR-187-9) — read-only; the admin gets no ability to set/clear another user's photo.
+    @SerialName("avatar_url") val avatarUrl: String? = null,
 )
 
 // Phase 143 (design addendum) — "Recently watched" lazy history DTOs. Timestamps are epoch **seconds**
@@ -299,7 +301,8 @@ fun Route.tvRoutes(
                 displayName = device.jellyfinUsername,
                 isAdmin = device.isAdmin,
                 isKids = device.isKids,
-                avatarUrl = RaviloImageUrl.avatar(device.jellyfinUserId),
+                // Phase 187 (FR-187-7) — free: AuthenticateByName's own User already carries PrimaryImageTag.
+                avatarUrl = RaviloImageUrl.avatar(device.jellyfinUserId, authResult.user.primaryImageTag),
             ),
             deviceToken = deviceToken,
         ))
@@ -318,6 +321,12 @@ fun Route.tvRoutes(
     // ── Multi-user sessions ──────────────────────────────────────────────────
     get("/tv/sessions") {
         val device = call.attributes[DeviceKey]
+        // Phase 187 (FR-187-7) — one Jellyfin call for the whole picker, not one per profile; the
+        // stored device rows have no live PrimaryImageTag of their own (unlike the login response).
+        val jf = configStore.current.apiKeys
+        val tagByUser = if (jf.jellyfinUrl.isNotBlank() && jf.jellyfinToken.isNotBlank())
+            jellyfinClient.getUsers(jf.jellyfinUrl, jf.jellyfinToken).associate { it.id to it.primaryImageTag }
+        else emptyMap()
         val sessions = deviceService.listSessions(device.deviceId).map { d ->
             TvSession(
                 deviceId = d.deviceId,
@@ -325,7 +334,7 @@ fun Route.tvRoutes(
                 displayName = d.jellyfinUsername,
                 isAdmin = d.isAdmin,
                 isKids = d.isKids,
-                avatarUrl = RaviloImageUrl.avatar(d.jellyfinUserId),
+                avatarUrl = RaviloImageUrl.avatar(d.jellyfinUserId, tagByUser[d.jellyfinUserId]),
             )
         }
         call.respond(sessions)
@@ -338,6 +347,87 @@ fun Route.tvRoutes(
         }
         deviceService.removeSession(device.deviceId, userId)
         call.respond(mapOf("status" to "removed"))
+    }
+
+    // ── Phase 187 — a viewer's own photo + password ──────────────────────────
+    // FR-187-2: the Jellyfin user id is taken from the session (device.jellyfinUserId) — never from the
+    // request body or a query parameter. There is no route shape here in which one viewer can name
+    // another viewer's account, not "and check they match": no such parameter exists at all.
+    post("/tv/account/photo") {
+        val device = call.attributes[DeviceKey]
+        val svc = imageProxyService ?: return@post call.respond(HttpStatusCode.ServiceUnavailable)
+        // FR-187-6 — reject an oversized body before decoding it. Base64 inflates ~4/3; 16MB of source
+        // bytes (already generous for a phone photo the server is about to shrink to 320px) is ~21.5MB
+        // of base64 text, comfortably under the global 64MB ceiling but a tighter, purpose-fit cap.
+        val declared = call.request.headers[io.ktor.http.HttpHeaders.ContentLength]?.toLongOrNull()
+        if (declared != null && declared > 22 * 1024 * 1024L) {
+            call.respond(HttpStatusCode.PayloadTooLarge, mapOf("error" to "photo too large")); return@post
+        }
+        val req = runCatching { call.receive<dev.jellystructure.shared.tv.AccountPhotoUpload>() }.getOrElse {
+            call.respond(HttpStatusCode.BadRequest, mapOf("error" to "invalid upload")); return@post
+        }
+        // FR-187-6 — content-type allowlist; the server decides what Jellyfin receives, not the client.
+        val ct = req.contentType.substringBefore(';').trim().lowercase()
+        if (ct !in setOf("image/jpeg", "image/png", "image/webp")) {
+            call.respond(HttpStatusCode.BadRequest, mapOf("error" to "unsupported image type")); return@post
+        }
+        val bytes = runCatching {
+            @OptIn(ExperimentalEncodingApi::class)
+            Base64.decode(req.dataBase64.substringAfterLast(","))
+        }.getOrNull()
+        if (bytes == null || bytes.isEmpty()) {
+            call.respond(HttpStatusCode.BadRequest, mapOf("error" to "invalid base64 data")); return@post
+        }
+        val tag = svc.setAvatar(device.jellyfinUserId, jellyfinClient, bytes)
+            ?: return@post call.respond(HttpStatusCode.BadGateway, mapOf("error" to "Jellyfin rejected the photo"))
+        call.respond(dev.jellystructure.shared.tv.AccountPhotoResult(RaviloImageUrl.avatar(device.jellyfinUserId, tag)))
+    }
+
+    delete("/tv/account/photo") {
+        val device = call.attributes[DeviceKey]
+        val svc = imageProxyService ?: return@delete call.respond(HttpStatusCode.ServiceUnavailable)
+        val ok = svc.deleteAvatar(device.jellyfinUserId, jellyfinClient)
+        if (!ok) return@delete call.respond(HttpStatusCode.BadGateway, mapOf("error" to "Jellyfin rejected the removal"))
+        call.respond(dev.jellystructure.shared.tv.AccountPhotoResult(avatarUrl = null))
+    }
+
+    // FR-187-4 — the same brute-force exposure as /tv/login (a synchronous credential proxy on an
+    // internet-exposable instance, Phase 167), keyed per session AND per source so one compromised
+    // device can't exhaust the limit for every other device in the household.
+    post("/tv/account/password") {
+        val device = call.attributes[DeviceKey]
+        val clientKey = dev.jellystructure.auth.LoginRateLimiter.clientKey(
+            call.request.origin.remoteHost, call.request.headers["X-Forwarded-For"],
+        )
+        if (!loginRateLimiter.tryAcquire("${device.deviceId}:$clientKey")) {
+            call.respond(HttpStatusCode.TooManyRequests, mapOf("error" to "Too many attempts — try again in a moment"))
+            return@post
+        }
+        val req = runCatching { call.receive<dev.jellystructure.shared.tv.AccountPasswordChangeRequest>() }.getOrElse {
+            call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Invalid request")); return@post
+        }
+        val config = configStore.current
+        if (config.apiKeys.jellyfinUrl.isBlank() || config.apiKeys.jellyfinToken.isBlank()) {
+            call.respond(HttpStatusCode.ServiceUnavailable, mapOf("error" to "Jellyfin not configured")); return@post
+        }
+        // FR-187-3 — Jellyfin validates the current password; jellystructure never does. The caller's
+        // own device token IS a Jellyfin access token (Phase 141 login mints one per device/user), so it
+        // is what's sent — never the shared admin token, and never re-authenticated as a side effect.
+        val outcome = jellyfinClient.updateUserPassword(
+            config.apiKeys.jellyfinUrl, device.jellyfinUserToken, device.jellyfinUserId,
+            req.currentPassword, req.newPassword,
+        )
+        when (outcome) {
+            dev.jellystructure.auth.PasswordChangeOutcome.WRONG_CURRENT ->
+                call.respond(HttpStatusCode.OK, dev.jellystructure.shared.tv.AccountPasswordResult(ok = false, wrongCurrentPassword = true))
+            dev.jellystructure.auth.PasswordChangeOutcome.FAILED ->
+                call.respond(HttpStatusCode.BadGateway, mapOf("error" to "Jellyfin rejected the change"))
+            dev.jellystructure.auth.PasswordChangeOutcome.OK -> {
+                // FR-187-8 — measured, not assumed: re-validate the very token this call used.
+                val survived = jellyfinClient.isTokenValid(config.apiKeys.jellyfinUrl, device.jellyfinUserToken, device.jellyfinUserId)
+                call.respond(dev.jellystructure.shared.tv.AccountPasswordResult(ok = true, tokenSurvived = survived))
+            }
+        }
     }
 
     // ── Home feed ────────────────────────────────────────────────────────────
@@ -663,10 +753,13 @@ fun Route.tvRoutes(
         val allSessions = sessionService.list()
         // Every admin's full Policy, in one call — already fetched for admin login elsewhere; reused
         // here rather than a per-user round-trip. Skipped gracefully if Jellyfin isn't configured yet.
-        val jfPolicies = if (config.apiKeys.jellyfinUrl.isNotBlank() && config.apiKeys.jellyfinToken.isNotBlank()) {
+        val jfUsers = if (config.apiKeys.jellyfinUrl.isNotBlank() && config.apiKeys.jellyfinToken.isNotBlank()) {
             jellyfinClient.getUsers(config.apiKeys.jellyfinUrl, config.apiKeys.jellyfinToken)
-                .associate { it.id to it.policy }
-        } else emptyMap()
+        } else emptyList()
+        val jfPolicies = jfUsers.associate { it.id to it.policy }
+        // Phase 187 (FR-187-9) — read-only photo per user row, same PrimaryImageTag cache-busting
+        // shape as the client-facing routes above; one call, reused, not a per-row round trip.
+        val jfAvatarTags = jfUsers.associate { it.id to it.primaryImageTag }
         val totalLibraries = config.libraries.size
 
         val userIds = (allDevices.map { it.jellyfinUserId } + allSessions.map { it.jellyfinUserId }).distinct()
@@ -689,6 +782,7 @@ fun Route.tvRoutes(
                     blockedTags = policy?.blockedTags ?: emptyList(),
                     maxRating = policy?.maxParentalRating,
                 ),
+                avatarUrl = RaviloImageUrl.avatar(uid, jfAvatarTags[uid]),
                 devices = userDevices.map { d ->
                     val decode = deviceService.decodeCapabilities(d.deviceId, d.jellyfinUserId)
                     OverviewDevice(
@@ -926,7 +1020,9 @@ fun Route.tvRoutes(
     get("/tv/image/user/{userId}/avatar") {
         val userId = call.parameters["userId"] ?: return@get call.respond(HttpStatusCode.BadRequest)
         val svc = imageProxyService ?: return@get call.respond(HttpStatusCode.ServiceUnavailable)
-        val result = svc.serveAvatar(userId) ?: return@get call.respond(HttpStatusCode.NotFound)
+        // Phase 187 (FR-187-7) — the cache-busting tag, when the caller has one (RaviloImageUrl.avatar).
+        val tag = call.request.queryParameters["v"]
+        val result = svc.serveAvatar(userId, tag) ?: return@get call.respond(HttpStatusCode.NotFound)
         call.respondCachedBytes(result.first, ContentType.parse(result.second))
     }
 

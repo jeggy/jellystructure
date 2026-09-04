@@ -61,6 +61,8 @@ data class JellyfinUser(
     @SerialName("Id") val id: String,
     @SerialName("Name") val name: String,
     @SerialName("Policy") val policy: JellyfinPolicy,
+    // Phase 187 (FR-187-7) — the change-keyed avatar cache-busting id; null when the user has no photo.
+    @SerialName("PrimaryImageTag") val primaryImageTag: String? = null,
 )
 
 @Serializable
