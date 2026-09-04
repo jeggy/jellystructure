@@ -540,13 +540,42 @@ private fun SeriesDetailLoaded(
                                         true
                                     }
                                     Key.DirectionDown -> if (detail.seasons.size > 1) {
+                                        // Bug fix (live-tested on stue TV, Fjollerne's 11-season case):
+                                        // animateScrollToItem(1) alone lands the season row flush at
+                                        // scroll offset 0 — exactly where the overlay AppBar (drawn last,
+                                        // outside this LazyColumn, see the R79 comment below) sits on top
+                                        // of it, clipping the pills' top half under the bar. The comment
+                                        // that used to be here ("BIV reveals it below the AppBar") assumed
+                                        // focusing seasonFirstFR would trigger a compensating bring-into-
+                                        // view scroll through detailBivSpec's topInsetDp, but that request
+                                        // has to bubble out of the season row's own nested LazyRow into
+                                        // this outer LazyColumn, and doesn't reliably fire that way — the
+                                        // row was still visibly cut off after the focus request settled.
+                                        // Passing the same inset directly as a negative pixel offset here
+                                        // is the same pattern LiveTvGuideScreen already uses to land
+                                        // content below a fixed header, and doesn't depend on that chain.
+                                        // Bug fix (live-tested on stue TV, Fjollerne): this used to launch the
+                                        // scroll and call requestFocusRetrying independently/concurrently.
+                                        // requestFocusRetrying's first attempt runs synchronously, before
+                                        // the scroll coroutine below has even started — on a series whose
+                                        // season row had never been scrolled to before, item 1 genuinely
+                                        // isn't composed yet, so that attempt always failed as expected.
+                                        // The retry loop was supposed to catch it a few frames later, but
+                                        // this page also has an async playstate overlay landing around the
+                                        // same time (R84), and the resulting recomposition churn could eat
+                                        // the whole 30-frame retry budget without the target ever settling
+                                        // — reproduced live as: first Down press scrolls the row into view
+                                        // but leaves real focus behind on the hero's button row (silently,
+                                        // no visual cue), and only a SECOND Down press actually focuses the
+                                        // season pill. Sequencing this — await the scroll finishing, THEN
+                                        // request focus — means the season row is always composed and
+                                        // settled before the first attempt, so retries are a pure safety
+                                        // net rather than the only path to success.
+                                        val insetPx = with(density) { (RaviloDimens.appBarHeight + 24.dp).toPx() }.toInt()
                                         scope.launch {
-                                            runCatching { listState.animateScrollToItem(1) }   // hero=0, seasons=1
+                                            runCatching { listState.animateScrollToItem(1, -insetPx) }   // hero=0, seasons=1
+                                            requestFocusRetrying(scope, seasonFirstFR)
                                         }
-                                        // R201: requestFocusRetrying (not a single runCatching) — the
-                                        // picker's own self-scroll-to-selected (SeasonPicker.kt) may still
-                                        // take a frame to attach the pill's FocusRequester.
-                                        requestFocusRetrying(scope, seasonFirstFR)          // BIV reveals it below the AppBar
                                         true
                                     } else false
                                     else -> false
