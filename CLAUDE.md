@@ -36,6 +36,183 @@ GitHub is the **source of truth**; we layer designs on top of it.
 - `specs/research-reports/` — dated deep-dives (research, not spec; may go stale).
 
 ## Where the work stands (read the repo `STATUS.md` for the live table)
+- **2026-09-04 sync — 5 specs pulled, and our two unpushed drafts renumbered: they are now 187 / R234.**
+  Next unassigned numbers: **188 / R235.**
+  - **Two collisions, both resolved by renumbering ours** (the dev team pushed first): repo **186** is
+    `phase-186-request-intent-lifecycle-cleanup.md` (a request must be able to end — the Discover
+    "In progress" rail can never drop a row; two titles had to be removed by hand across Radarr, Seerr
+    and the live SQLite DB; Planned), and repo **R230** is
+    `phase-R230-fully-disable-skip-intro-credits.md` (Skip Credits' **Off** has been inert since R182 —
+    the resolved setting was read into client state and never consulted, so the credits card interrupted
+    every title regardless; Implemented 2026-09-03, `PlayerScreen.kt` only). Our profile-photo pair
+    became **187** and **R234**; FR ids inside both specs and the R230 comments in
+    `app/ravilo-users.html`, `ravilo/ravilo-app.js` and `ravilo/Ravilo Mobile.html` were renumbered with
+    them, and each spec carries a renumbering note. Same shape as R196 → R208 and 179 → 180.
+  - **R231 is now mirrored** under `specs/` — the item flagged as unmirrored yesterday. Its spec adds one
+    line worth keeping for the talk: this is the same failure shape as R202 — *shipped code not matching
+    its own documented invariant* — caught by re-reading the owning phase's spec against the code.
+  - **R232 — series detail & player D-pad polish** (✓ Built 2026-09-04, live-tested on stue TV against
+    Klovn, not dev-reviewed). Player Right past the last transport control teleported focus to the
+    top-bar Back button; Down from the hero landed the season row clipped under the overlay AppBar; and
+    the first Down press only *looked* like it focused a season pill — the scroll and the focus request
+    ran as concurrent coroutines and R84's async playstate overlay ate the 30-frame retry budget, so real
+    focus stayed on the hero with no visual cue. Now sequenced (await the scroll, then request focus).
+    **No mockup change** — focus behaviour, not layout.
+  - **R233 — a system row shows what is available where it is shown** (Planned, design-authored
+    2026-09-04 with the owner). Standing inside Thriller / Gyser, Continue Watching led with *Two and a
+    Half Men*, *Klovn* and *Sjit Happens* while Newly Added directly below it was correctly filtered —
+    two system rows on one page disagreeing about what page they were on. Partially reverses R202 and
+    R219 §5: both system rows are always scoped to the surface they render on, in **both** row-list
+    modes, and the per-channel `scope` field is retired (no live channel sets it). Guard requirement
+    **FR-R233-5** keeps the canonical list library-wide and cached per `(user, visibility scope)` —
+    filtering is a view, never a re-derivation, and `channelId` must never enter the cache key.
+    **⚠ Our one outstanding design item:** FR-R233-7 asks for the `scope` segmented controls to come out
+    of `app/ravilo-builders.js` (`:364` new-channel template, `:534`, `:540`, `:736`) with the two row
+    descriptions made unconditional ("In-progress titles from this collection" / "Newest titles in this
+    collection"). **Not applied** — R233 is Planned and not dev-reviewed; apply on acceptance, then run
+    `scripts/check-mobile-css.sh` and `scripts/check-css-scoping.sh`.
+  - **Presentation counters re-derived from the fresh mirror:** 359 phases unchanged (STATUS.md now has
+    exactly 359 rows — 174 admin + 185 Ravilo), documents 154 → **158**, highest numbers 187 / R234,
+    next free 188 / R235.
+  - **Repo-side STATUS gap widened (code-owned, not ours):** no rows for R227–R232 or admin 186 though
+    their spec files read Implemented / ✓ Built; R233 does have one. `scripts/check-phases.sh` will flag
+    it — mention it to the dev team rather than editing the mirror.
+- **2026-09-03 (latest) — R231 (Continue Watching cache poisoning) fixed dev-side and folded into the
+  presentation. Next unassigned numbers: 187 / R232.**
+  - **R231 — `specs/ravilo/requirements/phase-R231-continue-watching-timeout-cache-poisoning.md`**, spec
+    written first per convention, committed `e8a11120`. DanskTV showed no Continue Watching row; config,
+    server response (15 items on re-check, every device) and `ChannelScreen.kt` rendering were all fine —
+    which is what pointed at the cache. **R219's spec already stated the invariant** ("on a Jellyfin
+    timeout the row is omitted entirely rather than shipped half-built, and the SWR cache serves the
+    previous good value"); the shipped code did only the first half. `buildCanonicalContinueList` returned
+    `emptyList()` when its 6 s `CONTINUE_TIMEOUT_MS` was hit and that empty list went unconditionally into
+    the 5-minute SWR cache shared by Home, every channel's Continue row and See-all — one slow round trip
+    blanked Continue Watching everywhere for up to 5 minutes. Fix: return type is now
+    `List<ContinueEntry>?` — `null` = build failed (timeout, or the pre-existing blank-Jellyfin-URL config
+    gap) and is **never** written to the cache; the caller falls back to the prior cached value even past
+    its TTL, since stale-but-real beats wrongly-empty. Empty still means "genuinely nothing to show" and
+    caches normally. Only a cold cache shows empty, and it self-heals on the next request.
+    **Verification is partial and flagged as such:** `compileKotlinLinuxX64` clean; `linuxX64Test`
+    inconclusive from scratch (sandbox killed `--rerun-tasks` twice, unrelated Android reconfiguration),
+    UP-TO-DATE on a non-forced run; **not device-tested**, no deploy granted.
+  - **No mockup change** — backend-only, and the client already renders any non-empty row it receives.
+  - **Presentation updated:** new slide **15a** "The spec said it. The code did half of it." sits right
+    after the R202→R219 chain, making the case study a two-parter — part one is a comment that lied, part
+    two is a spec that was right and a shipped implementation that did half of it, found by re-reading the
+    spec rather than the code. Counters bumped: 358 → **359** phases, 153 → **154** documents (cover,
+    household and spec-before-code slides).
+  - **The R231 spec file is now mirrored** (pulled in the 2026-09-04 sync).
+- **2026-09-03 (later) — profile photo + password change designed and built into the mockups; no spec
+  yet.** Owner picks: photo lives on a **"Your profile" screen** off the avatar menu (phone/web only),
+  password lives in **Settings → Account** (every platform, own password only, current + new + repeat).
+  Photo sources: gallery, camera, preset colours, remove; drag-and-drop on web only (`pointer:fine`).
+  **TV renders a photo but offers nothing about changing one** — no copy, no entry point, per R216's
+  no-settings invariant. Avatars stay circles; the profile-grid *picker card* keeps its rounded square
+  and just fills with the photo. Admin gets the photo read-only in each user row.
+  - **One stored fact, one representation** (the 185/R222 discipline): the photo is written only by
+    phone/web and read by every surface — `ravilo-data.js`'s new `avatars` helper (`photoFor`/`setPhoto`/
+    `clearPhoto`/`colorFor`/`avatarFace`) is the single painter, so the TV appbar, profile menu, profile
+    grid, Settings row and `app/ravilo-users.html` can't crop or fall back differently. Rendered as an
+    `<img class="av-img">` filling its circle rather than a `background-image`, so one `object-fit` rule
+    governs every size.
+  - **Built in:** `ravilo/ravilo-data.js`, `ravilo/ravilo.css`, `ravilo/ravilo-app.js` (Account section +
+    a password panel reusing R175's on-screen keyboard, with Tab/Backspace/printable-key support for a
+    real keyboard), `ravilo/ravilo-i18n.js` (18 strings × en/da/fo), `ravilo/Ravilo Mobile.html` (the
+    phone **mockup** had no profile menu or Settings screen at all — both built: bottom sheet, Your
+    profile, Settings → Account → change password, 46px+ targets, 13px type floor; note the shipped app
+    *does* have both, per R227/R229 — the gap was in our design files, not the product),
+    `app/ravilo-users.html`.
+  - **Both specs written 2026-09-03, `Planned`, neither dev-reviewed — renumbered 2026-09-04 to **187 +
+    R234** (were 186 + R230, both taken by the dev team first). Next unassigned numbers: 188 / R235.**
+    - **187 — let a viewer change their own photo and their own password**
+      (`specs/requirements/phase-187-account-photo-and-password.md`). **The research finding that reshaped
+      both specs: the photo's READ path already ships in full and nobody had noticed.** R65 wired it —
+      `TvRoutes.kt:302` sets `avatarUrl = RaviloImageUrl.avatar(jellyfinUserId)` on login, `:328` per
+      profile in the picker; `RaviloArtworkService.kt:126` proxies
+      `GET /Users/{id}/Images/Primary?fillHeight=160`; `AppBar.kt:299` renders it via `RemoteImage`,
+      initials as fallback. **A photo set in Jellyfin's own web UI already appears on the TV and phone
+      today.** So the storage question is already answered by R65's own choice — Jellyfin's user Primary
+      image, no new jellystructure store (FR-187-5) — and this phase is only the two write paths
+      (`POST`/`DELETE /api/tv/account/photo`, `POST /api/tv/account/password`), both session-scoped so no
+      route shape can name another user's account. Two teeth: **FR-187-1** probes all three Jellyfin
+      endpoints against 10.11.11 *before* any code, per phase 163's 405 lesson (the image body shape is
+      the real risk — base64-with-header vs multipart changes R234's contract too); **FR-187-7** is
+      R214's exact bug pre-empted — `RaviloImageUrl.avatar()` has no version component and the proxy
+      caches to disk, so a replaced photo would serve stale bytes. Also: rate-limit via the existing
+      `LoginRateLimiter` (FR-187-4 — same credential-proxy exposure Phase 167 made internet-facing),
+      server-side re-encode + centre-crop to square (FR-187-6, which is *why* there's no crop UI), and
+      admin photo strictly read-only (FR-187-9 — an operator clearing someone's photo is moderation, which
+      needs its own thinking about notice and recourse).
+    - **R234 — your photo, and your password, without leaving Ravilo**
+      (`specs/ravilo/requirements/phase-R234-profile-photo-and-password.md`). Your profile is
+      **phone/web only, gated on platform not screen size** (a phone in landscape is still a phone; a
+      10-foot UI is still a TV) — FR-R234-2 keeps the TV silent, no row and no "change this on your
+      phone" hint, since a TV screen explaining where a setting lives is still a TV screen talking about
+      settings. Settings → **Account** is every platform, because a password isn't a preference — which is
+      exactly why the photo and the password ended up on different screens. TV reuses R175's keyboard
+      verbatim incl. its physical-keyboard courtesy; phone/web use native inputs so password managers
+      work. A wrong current password clears only that field and keeps the two new ones. Rejected copy
+      recorded: **"Your Jellyfin password"** (live-corrected mid-pass — the viewer doesn't need to know
+      what the server is called), "Upload avatar", and the TV hint line.
+  - **Blocked / open, and honestly flagged rather than guessed:** (1) do all three Jellyfin endpoints
+    exist and behave on **10.11.11** — unprobed; (2) **does changing a password invalidate existing
+    tokens** — the single answer that most changes R234's flow, and with Phase 141's per-`(device, user)`
+    identity one household change may sign out three TVs; (3) **where would a preset colour live** — the
+    mockup's colour row is new stored state with no home in Jellyfin's user record, so it's either
+    dropped, given a jellystructure column, or stored as a generated image (probably wrong); (4) whether
+    `JellyfinPolicy` carries a "may not change own password" flag worth honouring. Name editing stays out
+    of scope — the row is labelled "Photo and name" but only the photo is wired, so relabel or wire both
+    before shipping.
+- **2026-09-03 sync — both decode-ceiling specs shipped, on-device confirmation resolved the copy
+  question, 181/182/183 all built with real measurements, 7 new Ravilo bug/deploy specs landed.**
+  Next unassigned numbers: **186 / R230** *(true at the time; both were taken by the dev team — as of
+  2026-09-04 the next free numbers are 188 / R235)*.
+  - **185 + R222 are ✓ Built (2026-09-02).** One real deviation: the decoder ceiling persists as **two**
+    columns (`decode_max_bitrate_hevc`/`_h264`, one shared timestamp) rather than one — found
+    live-necessary the same session, since R183/R216 force an AVC transcode target, so a single column
+    would silently record the AVC ceiling while an HEVC file's note needs the HEVC one. The client-side
+    start timer (`PlayerScreen`/`PlayerStore`, commonMain) also landed 2026-09-02, so `basis: "measured"`
+    is reachable in practice, not just implemented-but-dead. **Open question 1 is answered, on-device,
+    for good:** R216 has been live on the stue TV since **2026-08-30** — 105 `playback_qoe` rows carry its
+    fields, heavy 2026-09-01 sessions show `direct_play=0` (transcode fallback firing) and
+    `dropped_frames=0` throughout. The *Until Dawn* stutter that started this whole thread was a
+    **Wholphin** session, architecturally unreachable by any of this. Through Ravilo the file re-encodes
+    and starts slowly — it does not stutter — so `slow_lead`/`slow_tail_measured`/`slow_tail_expected` are
+    the right copy, translation unblocked. `basis: "measured"` is still unreached on any real device
+    today: it needs 3 completed starts of the same file on the same device, and there's been no device
+    access since the timer shipped.
+  - **181 (library convergence) — ✓ Built 2026-09-02.** FR-181-1/1a/2/4/5 all shipped (id set-difference
+    sweep against Jellyfin's full item list, a reverse-diff writing to History instead of auto-deleting,
+    activity-based freshness overriding premiere-year bucketing, the dead `JellyfinLibraryListener`
+    deleted outright, a narrow persistent dirty-set). FR-181-3 (per-series count reconciliation)
+    deliberately **not built** — FR-181-1's sweep already runs at the fastest cadence a count check would,
+    making a second mechanism catch a strict subset for no benefit.
+  - **182 (scan isolation) — ✓ Built, §A+§B, live-measured 2026-09-02** (dev-restart authorized).
+    `/api/tv/series/{id}` held steady under a concurrent scan; **`/api/tv/home` degraded ~120× at p50**
+    — root cause is `HomeFeedService`'s own cache invalidating on almost every request because
+    `libraryVersion` (correctly, per 182's own fix) bumps on every single item write during a scan. **New
+    candidate follow-up, not fixed here:** a home-feed cache keyed on a coarser signal than per-item
+    `libraryVersion`.
+  - **183 (outbound pacing) — ✓ Built, all FRs, incl. the DB-level rate-limit marking and the Outbound
+    pacing card, built 2026-09-02.** Live test against the exact reported series (2777, 505 episodes)
+    never hit a single 429. **New candidate follow-up, not fixed here:** `POST /api/media/{id}/sync` on
+    that same series reliably self-saturates the 4-permit **interactive** `ProcessGate` reserve (not the
+    background one) via a completely unbounded ffprobe fan-out in `syncSeriesEpisodes` — 183 bounded the
+    TMDB fetch in that same loop but never the ffprobe call beside it. Household playback was unaffected
+    throughout both attempts.
+  - **7 new Ravilo specs, none touching a design mockup** (all Compose-only or CI/deploy): **R223**
+    (season-picker focus + rapid-Up scroll-stranding, ✓ Built, deployed to both TVs, not re-verified
+    on-device), **R224** (merges Ravilo TV + phone into one universal Play Store listing/APK, ✓ Built),
+    **R225** (login-screen server indicator + `DEFAULT_SERVER_URL` env var for `ravilo-web` only,
+    Planned), **R226** (drops the http/https toggle on server setup, infers `https://` unless typed
+    otherwise, Planned), **R227** (system Back now closes the profile menu on mobile — it wasn't reachable
+    at all before, ✓ Built), **R228** (a channel that resolves to zero heroes/rows for this specific
+    viewer no longer renders as a tile anywhere, ✓ Built), **R229** (Settings screen adopts `LocalCompact`
+    padding + a weighted toggle-row pill, fixing single-character-per-line wrapping on phone, ✓ Built).
+    Also: **R213**'s Baseline Profile generation completed 2026-09-02 (root cause of the earlier blocker
+    was a stale `androidx.benchmark` pin, fixed by a version bump); **R217** stays superseded/closed by
+    **R219**; R216's last open question (on-device verification) is answered by 185's finding above.
+  - **No design/mockup work is outstanding from this sync** — every new spec is backend/Compose-only.
 - **2026-08-31 sync — both our 2026-08-28 specs shipped, and 5 new dev-authored specs landed.**
   Next unassigned numbers: **184 / R221**.
   - **R218 (player loading & buffering) is `Implemented`** — built the day it was spec'd, Android/Compose

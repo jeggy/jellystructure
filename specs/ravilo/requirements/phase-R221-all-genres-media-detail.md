@@ -6,10 +6,7 @@
 > this screen. This phase makes them the front door to the browse page, the same way R190 made a cast
 > face one.
 
-**Status:** ✓ Built 2026-09-02 (not yet dev-reviewed, not yet on-device tested — compiles clean across
-every Ravilo target: `:ravilo-ui:compileKotlinWasmJs`, `:ravilo-android:compileDebugKotlin`,
-`:ravilo-phone:compileDebugKotlin`, `:ravilo-web:compileKotlinWasmJs`, `:ravilo-tizen:compileKotlinJs`;
-`linuxX64Test` and `:ravilo-ui:testDebugUnitTest` green)
+**Status:** Planned (design-authored 2026-09-01, not yet dev-reviewed)
 
 Design: `design/ravilo/Media Detail Genres - Directions.html` (Direction B chosen, with C's primacy
 tint; A and C recorded as rejected). **Built into the mockups 2026-09-01:** `design/ravilo/ravilo.css`
@@ -109,12 +106,9 @@ question gets asked. The Home hero carousel likewise keeps its single-genre line
 
 ## i18n
 
-#### FR-RV-GEN1-7 — en/da/fo — ✅ Built 2026-09-02
+#### FR-RV-GEN1-7 — en/da/fo
 One new string: the row label, in singular and plural (`Genre` / `Genres`, `Genre` / `Genrer`,
 `Sjangur` / `Sjangrar`). The genre **values** themselves are a separate question — see open question 2.
-
-Shipped as `detail.genre`/`detail.genres` in `ravilo-ui/.../i18n/Strings.kt`, matching the values already
-translated into the mockups.
 
 ## Skins
 
@@ -124,52 +118,10 @@ a heavier weight or a brighter ink rather than a tint.
 
 ## Open questions for dev review
 
-1. ~~**Does the Ravilo payload carry the full genre list?**~~ **Answered against the code 2026-09-02: it
-   does not — this is a backend phase, not a UI phase.** `MovieDetail` and `SeriesDetail`
-   (`shared/.../tv/Models.kt:450,477`) carry no genre field of their own; they carry `card: MediaCard`,
-   and `MediaCard.genre` is a single `String?`. It is flattened at the card boundary, not at scan or
-   serialization time: `DetailService.kt:236` writes `genre = genres.firstOrNull()` from an item that
-   already holds the full ordered list. Every other card-building site does the same
-   (`BrowseService.kt:253`, `HomeFeedService.kt:715`, `UpcomingService.kt:189,228`).
-
-   The fix is small and local — add `genres: List<String>` to `MovieDetail` and `SeriesDetail` and pass
-   the item's own list through. **Do not widen `MediaCard`**: R187 already faced this exact choice and
-   put its genre list on `BrowseCard` (a wrapper around `MediaCard`) rather than on the card itself, so
-   Home rows / search / Continue Watching don't pay for a field they never render — the reasoning is
-   written out at `Models.kt:219` and cites R164's identical decision for IMDb ratings. Follow that
-   precedent; `BrowseCard.genres: List<String>` is also the field shape to copy.
-
-   ~~Still to confirm: that the item's stored `genres` preserves TMDB's own order~~ **Confirmed 2026-09-02
-   against `Scanner.kt`.** A fresh scan writes `genres = details.genres.map { it.name }` verbatim —
-   TMDB's own order, untouched. A re-scan/sync routes through `mergeUserGenres()` (`Scanner.kt:190-195`),
-   which is `(newTmdb.filterNot { it in userRemoved } + userAdded).distinct()`: `filterNot` preserves the
-   source list's relative order, so the TMDB-sourced portion keeps TMDB's order on every path; any
-   user-added genres are appended after it (never inserted ahead), and `.distinct()` keeps first-occurrence
-   order. `firstOrNull()` — what `MediaCard.genre` already uses today — was never marking an arbitrary
-   chip, and neither does this row's primacy tint.
-
-   **Built:** `MovieDetail`/`SeriesDetail` (`shared/.../tv/Models.kt`) gained `genres: List<String>`,
-   populated at `DetailService.kt` from `item.genres` on both `getMovieDetail`/`getSeriesDetail`. Ravilo:
-   new `GenreChipRow` (`ravilo-ui/.../components/GenreChipRow.kt`) — TV caps at 4 + focusable `+N` inside
-   a `horizontalScroll` Row (the same overflow guard the hero's actions row already needed for long
-   labels in a 60%-width column); phone renders every genre via `FlowRow`, wrapping freely, no cap. Wired
-   into both `MovieDetailScreen`/`SeriesDetailScreen` between the meta line and the audio/subtitle flag
-   line, exactly the mockup's order. `onGenreSelect: ((List<String>, sourceTitle: String) -> Unit)?`
-   mirrors `onCastSelect`'s existing shape; `RaviloApp.kt`'s new `openGenreBrowse()` mirrors
-   `openPersonBrowse()` verbatim, pushing `Dest.SeededBrowse` with `Condition(facet = "genre",
-   op = "is_any_of", values = ...)` — `"genre"` is an already-established facet name (the admin workbench
-   and R187's own browse facet bar both use it). Focus chain: title → genre row (lead chip) → synopsis →
-   actions, matching FR-RV-GEN1-5; `Up` from synopsis/actions reaches the genre row's lead chip when
-   genres exist, falling back to today's targets when they don't.
-
-   **One deliberate scope reduction, not a bug:** FR-RV-GEN1-4's "Back returns to the detail page with
-   focus restored to the same chip" restores focus to the **lead chip**, not necessarily the exact chip
-   that was pressed. Per-exact-chip restore would need a `FocusRequester` per genre (up to 5) remembered
-   across a push/pop navigation cycle, and this codebase's existing back-navigation does not preserve a
-   screen's composition across a stack pop (the R200/R201 focus-bridge bugs this project already fixed
-   were instances of exactly that gap) — building a reliable N-way version of that restore was out of
-   scope for this pass. Landing on the lead chip on return is the same simplification the hero already
-   makes for Play ("entry focus stays on Play (R135)"), not a new pattern.
+1. **Does the Ravilo payload carry the full genre list?** The admin manages genres as a set and the
+   browse facet filters on them, so the data almost certainly exists — but `item.genre` is singular in
+   the client model and may be flattened at scan or serialization time. This is the one thing that could
+   turn a UI phase into a backend phase; confirm before scheduling.
 2. **Localised genre names.** Ravilo is translated (en/da/fo) but genre values come from TMDB in
    English. TMDB returns localised genre lists per language, so this may fall out of Phase 184's
    metadata-language work for free — or it may need its own fetch and a genre-name map. Until then the
