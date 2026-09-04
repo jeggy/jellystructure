@@ -4,6 +4,7 @@ import dev.jellystructure.OutboundHttp
 import dev.jellystructure.arr.ArrPing
 import dev.jellystructure.shared.tv.SeerrDiscoverEndpoint
 import io.ktor.client.call.body
+import io.ktor.client.request.delete
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.parameter
@@ -44,19 +45,38 @@ data class SeerrCatalogResult(
 )
 
 /**
- * `status`: 1=UNKNOWN 2=PENDING 3=PROCESSING 4=PARTIALLY_AVAILABLE 5=AVAILABLE 6=DELETED.
+ * `status`: 1=UNKNOWN 2=PENDING 3=PROCESSING 4=PARTIALLY_AVAILABLE 5=AVAILABLE **7**=DELETED.
+ *
+ * Corrected 2026-09-05 (Phase 186): this used to say `6=DELETED` — wrong. Probed live against
+ * `GET /request?filter=deleted`: every row it returned had `media.status == 7`, not 6. No live example
+ * of status 6 has been seen; nothing in this codebase branches on the literal value anyway (the
+ * `else` arm of `statusFromMediaInfo` already covers it), but Phase 186's dead-request sweep does need
+ * the correct number.
  *
  * [downloadStatus] — verified live (2026-07-05) against a real in-progress movie: Seerr's `Media`
  * entity proxies real byte-level progress straight from Radarr/Sonarr's own download-client queue
  * (`server/lib/downloadtracker.ts` `DownloadingItem`), even though it isn't in the public OpenAPI
  * docs. Empty while status=3/PROCESSING but nothing has actually been grabbed yet (still "in queue");
  * populated once a download is under way — this is what R171 called out as unavailable, but it exists.
+ *
+ * [id] — Seerr's own internal media row id (distinct from [tmdbId] and from a request's own `id`),
+ * needed for `DELETE /media/{id}` (Phase 186 FR-186-6). [requests] — every request Seerr has ever
+ * recorded against this title, verified live (2026-09-05) to be embedded on `GET /movie|tv/{tmdbId}`'s
+ * own `mediaInfo` — no separate `GET /request?filter=...` page-through is needed to find "does a
+ * declined/dead request exist for this specific tmdbId", which is exactly Phase 186's FR-186-2 rule 1.
  */
 @Serializable
 data class SeerrMediaInfo(
+    val id: Int = 0,
     val status: Int = 0,
     val downloadStatus: List<SeerrDownloadItem> = emptyList(),
+    val requests: List<SeerrRequestRef> = emptyList(),
 )
+
+/** Phase 186 — the bare shape of one request as embedded on `SeerrMediaInfo.requests`; see
+ *  [SeerrRequestResult] for the full request-status docs (same `status` enum). */
+@Serializable
+data class SeerrRequestRef(val id: Int = 0, val status: Int = 0)
 
 /** One item (a movie, or one episode of a series) actively tracked by the download client, as Seerr
  *  relays it. [size]/[sizeLeft] are bytes; `size - sizeLeft` over `size` is the real progress fraction. */
@@ -76,11 +96,20 @@ data class SeerrCatalogPage(
     val results: List<SeerrCatalogResult> = emptyList(),
 )
 
-/** `status`: 1=PENDING APPROVAL 2=APPROVED 3=DECLINED. */
+/**
+ * `status`: 1=PENDING APPROVAL 2=APPROVED 3=DECLINED **5=COMPLETED**.
+ *
+ * Corrected 2026-09-05 (Phase 186): the doc only ever listed 1–3. Live data (`GET /request?filter=all`,
+ * 219 real requests) showed status=5 on 140 of them — every one already `media.status == AVAILABLE`,
+ * i.e. Seerr's own "this got fulfilled" terminal state. No live example of 4 (presumably FAILED) was
+ * seen. This is a distinct enum from [SeerrMediaInfo.status] despite sharing some numbers — a request
+ * being DECLINED (3) is not the same fact as a media row being PROCESSING (also 3).
+ */
 @Serializable
 data class SeerrRequestResult(
     val id: Int = 0,
     val status: Int = 0,
+    val type: String = "",
     val media: SeerrMediaInfo = SeerrMediaInfo(),
 )
 
@@ -287,4 +316,27 @@ class SeerrClient {
         }
         if (imported.status == HttpStatusCode.Created) imported.body<List<SeerrUser>>().firstOrNull()?.id else null
     }.getOrNull()
+
+    /**
+     * Phase 186 (FR-186-6) — the three writes the manual cleanup this phase replaces needed by hand.
+     * All three verified live (2026-09-05) against nonexistent ids, since exercising them for real
+     * would touch this house's actual requests: each returns Seerr's own `{"message":"Request not
+     * found."}` shape (distinct from a route-not-found 404) rather than a routing miss, confirming the
+     * method + path are real. `DELETE /media/{id}` is idempotent-ish — even a nonexistent id answered
+     * `204` — so its success here means "the call went through", not "a row was necessarily removed".
+     */
+    suspend fun declineRequest(url: String, apiKey: String, requestId: Int): Boolean = runCatching {
+        val resp = httpPost(base(url) + "/request/$requestId/decline", apiKey)
+        resp.status == HttpStatusCode.OK || resp.status == HttpStatusCode.NoContent
+    }.getOrElse { false }
+
+    suspend fun deleteRequest(url: String, apiKey: String, requestId: Int): Boolean = runCatching {
+        val resp = OutboundHttp.withPermit { http.delete(base(url) + "/request/$requestId") { header("X-Api-Key", apiKey) } }
+        resp.status == HttpStatusCode.OK || resp.status == HttpStatusCode.NoContent
+    }.getOrElse { false }
+
+    suspend fun deleteMedia(url: String, apiKey: String, mediaId: Int): Boolean = runCatching {
+        val resp = OutboundHttp.withPermit { http.delete(base(url) + "/media/$mediaId") { header("X-Api-Key", apiKey) } }
+        resp.status == HttpStatusCode.OK || resp.status == HttpStatusCode.NoContent
+    }.getOrElse { false }
 }

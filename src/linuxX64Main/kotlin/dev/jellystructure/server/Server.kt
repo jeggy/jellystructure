@@ -162,6 +162,7 @@ fun startServer(
     upcomingService: dev.jellystructure.tv.UpcomingService? = null,
     requestLanguageService: dev.jellystructure.arr.RequestLanguageService? = null,
     requestIntentStore: dev.jellystructure.seerr.RequestIntentStore? = null,
+    requestLifecycleService: dev.jellystructure.seerr.RequestLifecycleService? = null,
     liveTvService: LiveTvService,
     fingerprintService: dev.jellystructure.media.FingerprintService,
     mediaSegmentStore: dev.jellystructure.media.MediaSegmentStore,
@@ -498,7 +499,7 @@ fun startServer(
                 remoteRoutes(deviceService, tvEventBus, mediaStore)
                 apiKeyManagementRoutes(apiKeyStore)
                 webhookRoutes(configStore, jellyfinClient, realtimeIngest, appScope, dirtyItemStore)
-                acquisitionService?.let { acquisitionRoutes(it) }
+                acquisitionService?.let { acquisitionRoutes(it, requestLifecycleService) }
                 bazarrClient?.let { bc ->
                     val bazarrService = dev.jellystructure.bazarr.BazarrService(configStore, bc)
                     bazarrRoutes(mediaStore, bazarrService, bc)

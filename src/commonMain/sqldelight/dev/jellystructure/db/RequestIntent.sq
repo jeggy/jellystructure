@@ -1,6 +1,14 @@
 -- Phase 139 — records which request-language intent a viewer chose for a title, independent of Seerr's
 -- own live status (which carries no language). One row per requested title (media_kind + tmdb_id);
 -- re-requesting or changing language overwrites the row rather than accumulating history.
+--
+-- Phase 186 — a request must be able to end. `retired_at`/`retired_reason` are a soft delete (FR-186-8:
+-- the row is cheap and "why did my request vanish?" is answerable from History/Activity instead of the
+-- row just disappearing) — `forUser`/`all` both filter `retired_at IS NULL`; `upsert` always clears both
+-- on a (re-)request, since a fresh request is definitionally live again (open question 5). `dead_streak`
+-- is the "N consecutive sweeps" counter FR-186-2 requires before a row is ever retired — never on a
+-- single observation, so one Seerr/TMDB hiccup can't retire a real request; `upsert` resets it to 0
+-- alongside the retirement fields for the same reason.
 CREATE TABLE request_intent (
     media_kind TEXT NOT NULL,       -- 'MOVIE' | 'SERIES'
     tmdb_id INTEGER NOT NULL,
@@ -9,17 +17,43 @@ CREATE TABLE request_intent (
     strict INTEGER NOT NULL DEFAULT 0,
     requested_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL,
+    dead_streak INTEGER NOT NULL DEFAULT 0,
+    retired_at INTEGER,
+    retired_reason TEXT,
     PRIMARY KEY (media_kind, tmdb_id)
 );
 
 CREATE INDEX request_intent_user ON request_intent(requested_by);
 
 upsert:
-INSERT OR REPLACE INTO request_intent(media_kind, tmdb_id, requested_by, language_id, strict, requested_at, updated_at)
-VALUES (:media_kind, :tmdb_id, :requested_by, :language_id, :strict, :requested_at, :updated_at);
+INSERT OR REPLACE INTO request_intent(media_kind, tmdb_id, requested_by, language_id, strict, requested_at, updated_at, dead_streak, retired_at, retired_reason)
+VALUES (:media_kind, :tmdb_id, :requested_by, :language_id, :strict, :requested_at, :updated_at, 0, NULL, NULL);
 
 getOne:
 SELECT * FROM request_intent WHERE media_kind = :media_kind AND tmdb_id = :tmdb_id;
 
 forUser:
-SELECT * FROM request_intent WHERE requested_by = :requested_by ORDER BY requested_at DESC;
+SELECT * FROM request_intent WHERE requested_by = :requested_by AND retired_at IS NULL ORDER BY requested_at DESC;
+
+-- Phase 186 (FR-186-1) — every live row, for the reconciliation sweep. Unfiltered by user; the sweep
+-- classifies against ground truth, not per-viewer.
+all:
+SELECT * FROM request_intent WHERE retired_at IS NULL;
+
+-- Phase 186 (FR-186-2) — bump this row's consecutive-dead-observation counter.
+bumpDeadStreak:
+UPDATE request_intent SET dead_streak = dead_streak + 1, updated_at = :updated_at WHERE media_kind = :media_kind AND tmdb_id = :tmdb_id;
+
+-- Phase 186 — a live/indeterminate observation resets the streak; a single good sweep un-does any
+-- run of bad ones (FR-186-2's "never on a single observation" applies symmetrically).
+resetDeadStreak:
+UPDATE request_intent SET dead_streak = 0, updated_at = :updated_at WHERE media_kind = :media_kind AND tmdb_id = :tmdb_id AND dead_streak != 0;
+
+-- Phase 186 (FR-186-4) — soft-retire a dead row; audited by the caller (History/Activity), not here.
+retire:
+UPDATE request_intent SET retired_at = :retired_at, retired_reason = :retired_reason WHERE media_kind = :media_kind AND tmdb_id = :tmdb_id;
+
+-- Phase 186 (FR-186-6) — the explicit "remove this request" action hard-deletes; there is nothing to
+-- explain later once the whole cascade (Seerr + *arr + this row) has already run and been logged.
+deleteOne:
+DELETE FROM request_intent WHERE media_kind = :media_kind AND tmdb_id = :tmdb_id;

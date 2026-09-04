@@ -238,6 +238,12 @@ fun main() = runBlocking {
     val acquisitionStore = AcquisitionStore(db)
     val acquisitionService = AcquisitionService(configStore, arrClient, tmdbClient, acquisitionStore, mediaStore, tvEventBus, rootScope)
     acquisitionService.startReconciler()
+    // Phase 186 — a request must be able to end: the reconciliation sweep that retires a request once
+    // Seerr/*arr ground truth says it's dead (declined, media deleted, *arr entity gone by hand, or a
+    // stale FAILED past the retention window), plus the `POST /acquisition/request/remove` route's
+    // admin-triggerable full cascade — the 2026-09-04 manual three-system cleanup, now one call.
+    val requestLifecycleService = dev.jellystructure.seerr.RequestLifecycleService(configStore, requestIntentStore, acquisitionStore, acquisitionService, seerrClient, arrClient, mediaStore, rootScope)
+    requestLifecycleService.startSweeper()
     // Phase 147 — Live TV surfaced from Jellyfin; jsTagStore-style JSON store (no SQLDelight migration)
     // for the per-channel lineup overrides + guide-cadence settings.
     val liveTvStore = dev.jellystructure.tv.LiveTvStore("$dataDir/livetv.json")
@@ -263,7 +269,7 @@ fun main() = runBlocking {
     val shutdown = startServer(
         configStore, sessionService, raviloDeviceService, raviloConfigService, channelLogoStore, homeFeedService, browseService, detailService, playbackService, jellyfinClient, mediaStore, scanner,
         artworkDownloader, tmdbClient, scanTracker, mediaHistory, activityLog, broadcaster,
-        frontendDir, raviloWebDir = raviloWebDir, port = port, scanDispatcher = scanDispatcher, effectiveScanThreads = effectiveScanThreads, jsTagStore = jsTagStore, seedingGuard = seedingGuard, seedingSnapshot = seedingSnapshot, logoDownloader = logoDownloader, qbClient = qbClient, arrClient = arrClient, arrRescan = arrRescan, sonarrEnrich = sonarrEnrich, acquisitionService = acquisitionService, seerrClient = seerrClient, bazarrClient = bazarrClient, tvEventBus = tvEventBus, imageProxyService = imageProxyService, mediaJobQueue = mediaJobQueue, sessionBridge = sessionBridge, apiKeyStore = apiKeyStore, realtimeIngest = realtimeIngest, dirtyItemStore = dirtyItemStore, fdWatchdog = fdWatchdog, imdbClient = imdbClient, upcomingService = upcomingService, requestLanguageService = requestLanguageService, requestIntentStore = requestIntentStore, liveTvService = liveTvService, fingerprintService = fingerprintService, mediaSegmentStore = mediaSegmentStore,
+        frontendDir, raviloWebDir = raviloWebDir, port = port, scanDispatcher = scanDispatcher, effectiveScanThreads = effectiveScanThreads, jsTagStore = jsTagStore, seedingGuard = seedingGuard, seedingSnapshot = seedingSnapshot, logoDownloader = logoDownloader, qbClient = qbClient, arrClient = arrClient, arrRescan = arrRescan, sonarrEnrich = sonarrEnrich, acquisitionService = acquisitionService, seerrClient = seerrClient, bazarrClient = bazarrClient, tvEventBus = tvEventBus, imageProxyService = imageProxyService, mediaJobQueue = mediaJobQueue, sessionBridge = sessionBridge, apiKeyStore = apiKeyStore, realtimeIngest = realtimeIngest, dirtyItemStore = dirtyItemStore, fdWatchdog = fdWatchdog, imdbClient = imdbClient, upcomingService = upcomingService, requestLanguageService = requestLanguageService, requestIntentStore = requestIntentStore, requestLifecycleService = requestLifecycleService, liveTvService = liveTvService, fingerprintService = fingerprintService, mediaSegmentStore = mediaSegmentStore,
         towoStore = towoStore, towoRunnerRegistry = towoRunnerRegistry, towoEventBus = towoEventBus, towoService = towoService,
         playbackQoeStore = playbackQoeStore,
     )

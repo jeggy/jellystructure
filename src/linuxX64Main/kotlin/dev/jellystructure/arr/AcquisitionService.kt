@@ -162,25 +162,36 @@ class AcquisitionService(
      *  items, and drop the record. Never deletes library files — already-imported episodes stay. */
     suspend fun cancel(itemKey: String): Boolean = mutex.withLock {
         val h = store.handle(itemKey) ?: return false
-        val cfg = configStore.current
-        when (h.arrKind) {
-            "radarr" -> cfg.radarr?.let { r ->
-                if (h.arrId != null) {
-                    client.getQueue(r.url, r.apiKey).filter { it.refId == h.arrId }.forEach { client.deleteQueueItem(r.url, r.apiKey, it.id) }
-                    client.deleteMovie(r.url, r.apiKey, h.arrId)
-                }
-            }
-            "sonarr" -> cfg.sonarr?.let { s ->
-                if (h.arrId != null) {
-                    client.getQueue(s.url, s.apiKey).filter { it.refId == h.arrId }.forEach { client.deleteQueueItem(s.url, s.apiKey, it.id) }
-                    client.deleteSeries(s.url, s.apiKey, h.arrId)
-                }
-            }
-        }
+        teardownArr(h.mediaKind, h.arrId)
         store.delete(itemKey)
         emit(AcquisitionRecord(itemKey, h.mediaKind, AcquisitionStatus.NOT_REQUESTED, h.tmdbId))
         Logger.info("acquisition: cancelled $itemKey")
         true
+    }
+
+    /**
+     * Phase 186 (FR-186-6) — the *arr half of the full request-removal cascade, extracted out of
+     * [cancel] so [dev.jellystructure.seerr.RequestLifecycleService] can run the identical teardown for
+     * a title that may have no `acquisition` row at all (the Lokkeduerne shape — Seerr and *arr both gone,
+     * only jellystructure's own `request_intent` row remains, so there is nothing for [cancel]'s
+     * `store.handle` lookup to find). `deleteFiles`/`addExclusion` default to `false` — this is "stop
+     * wanting it", never "delete my library" (FR-186-6's own words) — matching [cancel]'s prior
+     * hardcoded behaviour exactly when left at the defaults.
+     */
+    suspend fun teardownArr(mediaKind: MediaKind, arrId: Int?, deleteFiles: Boolean = false, addExclusion: Boolean = false) {
+        if (arrId == null) return
+        val cfg = configStore.current
+        when (mediaKind) {
+            MediaKind.MOVIE -> cfg.radarr?.let { r ->
+                client.getQueue(r.url, r.apiKey).filter { it.refId == arrId }.forEach { client.deleteQueueItem(r.url, r.apiKey, it.id) }
+                client.deleteMovie(r.url, r.apiKey, arrId, deleteFiles, addExclusion)
+            }
+            MediaKind.SERIES -> cfg.sonarr?.let { s ->
+                client.getQueue(s.url, s.apiKey).filter { it.refId == arrId }.forEach { client.deleteQueueItem(s.url, s.apiKey, it.id) }
+                client.deleteSeries(s.url, s.apiKey, arrId, deleteFiles, addExclusion)
+            }
+            MediaKind.MUSIC_VIDEO -> {}
+        }
     }
 
     // ---- reconciler ----

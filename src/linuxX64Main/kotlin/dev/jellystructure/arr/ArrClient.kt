@@ -424,11 +424,22 @@ class ArrClient {
         }.body<List<ArrCalendarMovie>>()
     }.getOrElse { emptyList() }
 
-    suspend fun deleteMovie(url: String, apiKey: String, movieId: Int): Boolean =
-        del(url, apiKey, "/movie/$movieId?deleteFiles=false&addImportExclusion=false")
+    suspend fun deleteMovie(url: String, apiKey: String, movieId: Int, deleteFiles: Boolean = false, addImportExclusion: Boolean = false): Boolean =
+        del(url, apiKey, "/movie/$movieId?deleteFiles=$deleteFiles&addImportExclusion=$addImportExclusion")
 
-    suspend fun deleteSeries(url: String, apiKey: String, seriesId: Int): Boolean =
-        del(url, apiKey, "/series/$seriesId?deleteFiles=false&addImportExclusion=false")
+    suspend fun deleteSeries(url: String, apiKey: String, seriesId: Int, deleteFiles: Boolean = false, addImportExclusion: Boolean = false): Boolean =
+        del(url, apiKey, "/series/$seriesId?deleteFiles=$deleteFiles&addImportExclusion=$addImportExclusion")
+
+    /** Phase 186 (FR-186-2 rule 3) — does this *arr entity still exist? A dead `request_intent` row can
+     *  point at an id an admin removed by hand outside jellystructure entirely; `GET /movie|series/{id}`
+     *  404ing is the ground-truth signal, distinct from "not in the queue" (which just means idle). */
+    suspend fun movieExists(url: String, apiKey: String, movieId: Int): Boolean = runCatching {
+        httpGet(base(url) + "/movie/$movieId") { header("X-Api-Key", apiKey) }.status == HttpStatusCode.OK
+    }.getOrElse { true } // network failure ≠ "gone" — never treat an unreachable *arr as evidence of deletion
+
+    suspend fun seriesExists(url: String, apiKey: String, seriesId: Int): Boolean = runCatching {
+        httpGet(base(url) + "/series/$seriesId") { header("X-Api-Key", apiKey) }.status == HttpStatusCode.OK
+    }.getOrElse { true }
 
     suspend fun deleteQueueItem(url: String, apiKey: String, queueId: Long): Boolean =
         del(url, apiKey, "/queue/$queueId?removeFromClient=true&blocklist=false")

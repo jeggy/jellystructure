@@ -5,9 +5,79 @@
 > write a spec for this, so it won't happen again. We will need some type of cleanup job within
 > jellystructure that checks for stale stuff in this area."*
 
-**Status:** Planned — design-authored 2026-09-04, not dev-reviewed, not built. The reported instance was
-cleaned up by hand the same day (see §1); this phase is the systemic fix so it never has to be done by
-hand again.
+**Status:** ✓ Built 2026-09-05, same session as this status update — spec'd 2026-09-04, built the next
+day after probing Seerr's live API to answer open question 2 first (same discipline this file's own
+FR-186-1 asks of it). Compiles clean (`compileKotlinLinuxX64`); full suite green (185/185,
+`linuxX64Test`); `verifyCommonMainJellystructureDbMigration` passes. Not dev-reviewed, not live-verified
+against a real dead/declined request (every Seerr probe below was run against nonexistent ids or an
+already-cleaned-up title specifically to avoid touching this house's real requests). The reported
+instance was cleaned up by hand the same day it was reported (see §1); this phase is the systemic fix so
+it never has to be done by hand again.
+
+### Open questions, resolved 2026-09-05
+
+Probed live against `stream.example.net` (Seerr 3.4.1) before writing any sweep code, same as Phase
+163's/187's standing discipline:
+
+1. **Cadence** — its own independent hourly timer (`AcquisitionConfig.lifecycleSweepHours`, default 1,
+   coerced 1–24), not folded into `poll()` (which runs every 3–300s watching the *arr download queue —
+   a different timescale and a different question) or a pipeline run (this reconciles against Seerr/*arr
+   ground truth and has no reason to entangle with Phase 182's scan Gate classes at all).
+2. **Seerr "declined" detection — the API not only exposes it, it's better than assumed.**
+   `GET /movie|tv/{tmdbId}}`'s own embedded `mediaInfo` carries a **`requests[]`** array (each with its
+   own `id`/`status`) — verified live against a real title with an active request. So classifying a
+   single `request_intent` row never needs a separate paginated `GET /request?filter=...` call; the same
+   per-tmdbId lookup this codebase already had (`SeerrClient.movieDetails`/`tvDetails`) answers rules 1
+   and 2 in one round trip. Two corrections the probe also turned up, both fixed in `SeerrClient.kt`:
+   Seerr's media `status` **7** = DELETED, not the previously-documented 6 (no live example of 6 was
+   ever seen); and request `status` has a **5** = COMPLETED value the old docstring didn't list (140 of
+   219 real requests carried it).
+3. **"Viewer hasn't looked at it since"** — dropped, as this file's own fallback suggested: no per-viewer
+   last-seen signal exists for the Request tab. A stale FAILED row retires on age alone (rule 4).
+   Separately, the literal "non-retryable" half of rule 4 turned out to be unreachable: every FAILED
+   `AcquisitionRecord` in this codebase is created with `retryable = true` (`AcquisitionService.fail()`
+   and `reconcileMovie`'s FAILED branch both hardcode it; nothing ever sets it false) — so rule 4 is
+   implemented as "FAILED past the retention window", full stop, and this deviation from the literal
+   wording is called out in `RequestLifecycleService.classify()`'s own comment rather than left silent.
+4. **Retention window** — kept the proposed defaults: 14 days (`AcquisitionConfig.requestRetentionDays`),
+   3 consecutive sweeps (`AcquisitionConfig.deadSweepThreshold`). No real-world data yet to sanity-check
+   against; both are config, adjustable without a redeploy.
+5. **Soft-delete vs hard-delete** — soft (`retired_at`/`retired_reason`, migration `39.sqm`) for the
+   sweep's own dead-row retirement (FR-186-4's audit trail), matching the file's stated preference.
+   `save()` (a fresh request) always clears both, plus `dead_streak` — answers this question's second
+   half: yes, a retired row is un-retired the moment it's requested again. **FR-186-6's explicit remove
+   action hard-deletes** — by the time that cascade has run and been logged, there's nothing left to
+   explain.
+6. **Multi-user rows** — accepted as-is, no change: `request_intent`'s `(media_kind, tmdb_id)` PK means
+   FR-186-6's remove is global for that title, matching how the table already behaves everywhere else.
+7. **The `acquisition` ↔ `request_intent` link** — confirmed: every write site in both
+   `AcquisitionService.request()`/`trackSeerrRequest()` uses `itemKey = "tmdb:$tmdbId"` unconditionally,
+   never a library `item_key`, before a match exists. No exception found.
+
+### What's built
+
+- `RequestIntent.sq` / migration `39.sqm` — `dead_streak`/`retired_at`/`retired_reason` columns;
+  `forUser`/`all` filter `retired_at IS NULL`; new `bumpDeadStreak`/`resetDeadStreak`/`retire`/`deleteOne`.
+- `SeerrClient.kt` — `SeerrMediaInfo` gains `id`/`requests[]` (see OQ2); `SeerrRequestResult` gains
+  `type`; new `declineRequest`/`deleteRequest`/`deleteMedia`, each verified live against a nonexistent id
+  (Seerr's own `{"message":"Request not found."}` shape, distinct from a route-miss 404 — confirms the
+  method+path are real without touching a real request).
+- `ArrClient.kt` — `movieExists`/`seriesExists` (rule 3's ground truth); `deleteMovie`/`deleteSeries`
+  gain `deleteFiles`/`addImportExclusion` params (default `false`, matching prior hardcoded behaviour).
+- `AcquisitionService.kt` — `cancel()`'s *arr teardown extracted into public `teardownArr()`, reused by
+  the new cascade so a title with no `acquisition` row (Lokkeduerne's shape) still gets the *arr half
+  attempted.
+- `RequestLifecycleService.kt` (new) — `classify()` (FR-186-2), `sweep()` (FR-186-1 + FR-186-4),
+  `sweepOrphanAcquisitions()` (FR-186-5), `removeRequest()` (FR-186-6). Wired + started in `Main.kt`.
+- `SeerrDiscoverService.getMyRequests` — FR-186-7's defensive filter: drops a row immediately on
+  `NOT_REQUESTED` (Seerr-derived **or** the real linked `acquisition` record), never on `FAILED`.
+- `AcquisitionRoutes.kt` / `Server.kt` — `POST /acquisition/request/remove` (FR-186-6), `503` until the
+  service is wired, same nullable-optional pattern as every other feature route in this file.
+
+A genuine logic bug was caught by the compiler's own dead-code warning while building this, not by
+review: an early draft of `classify()` conflated "the Seerr call itself failed" with "the call succeeded
+and Seerr says no record exists" into one `?:` chain, which would have made every network hiccup read as
+a dead request. Fixed before this was ever run.
 
 **Prospective number:** admin **186** (next unassigned admin number as of 2026-09-04, verified against
 `ls specs/requirements/` + `STATUS.md`; highest existing is 185). No Ravilo (R) number — the missing

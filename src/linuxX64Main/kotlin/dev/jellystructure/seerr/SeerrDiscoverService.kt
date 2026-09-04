@@ -96,7 +96,19 @@ class SeerrDiscoverService(
 
     /** Phase 139 §D.2 — the viewer's own not-yet-available requests, for the Request tab's "In progress"
      *  rail. Re-derives each entry's live status exactly like [getEntry] (no separate poller); a request
-     *  that has since become AVAILABLE simply drops off this list on the next fetch. */
+     *  that has since become AVAILABLE simply drops off this list on the next fetch.
+     *
+     *  Phase 186 (FR-186-7) — belt-and-suspenders: also drops a row the moment THIS fetch already
+     *  proves it dead, rather than waiting for the next reconciliation sweep (FR-186-1). Two distinct
+     *  "dead" signals, both already computable from data this function fetches anyway:
+     *  - [acq] itself lands on NOT_REQUESTED when Seerr's media is absent/deleted (see
+     *    [statusFromMediaInfo]'s `else` arm) AND the title isn't in the library — i.e. Seerr has no
+     *    record of this request at all, the Lokkeduerne shape.
+     *  - the REAL jellystructure `acquisition` row for this title (tracked separately by
+     *    [AcquisitionService], with its own genuine FAILED/QUEUED/DOWNLOADING states derived from the
+     *    actual Radarr/Sonarr queue — [acq] above never produces FAILED) has gone NOT_REQUESTED, which
+     *    only happens after an explicit cancel/removal.
+     *  Never drops on FAILED — that's a real problem the viewer needs to see and Retry, not a dead row. */
     suspend fun getMyRequests(userId: String): List<DiscoverEntry> {
         val store = requestIntentStore ?: return emptyList()
         val seerr = seerr() ?: return emptyList()
@@ -105,17 +117,24 @@ class SeerrDiscoverService(
             if (row.mediaKind == MediaKind.SERIES) {
                 val d = seerrClient.tvDetails(seerr.url, seerr.apiKey, row.tmdbId) ?: return@mapNotNull null
                 val acq = acquisitionFor(row.tmdbId, MediaKind.SERIES, d.title(), d.mediaInfo, libByTmdb)
-                if (acq.status == AcquisitionStatus.AVAILABLE) return@mapNotNull null
+                if (isDeadThisFetch(row.tmdbId, acq)) return@mapNotNull null
                 val entry = RequestEntry(row.tmdbId, MediaKind.SERIES, d.title(), d.firstAirDate?.take(4)?.toIntOrNull(), d.genres.firstOrNull()?.name, formatRating(d.voteAverage), d.posterPath, d.backdropPath, d.overview)
                 DiscoverEntry(entry, acq)
             } else {
                 val d = seerrClient.movieDetails(seerr.url, seerr.apiKey, row.tmdbId) ?: return@mapNotNull null
                 val acq = acquisitionFor(row.tmdbId, MediaKind.MOVIE, d.title, d.mediaInfo, libByTmdb)
-                if (acq.status == AcquisitionStatus.AVAILABLE) return@mapNotNull null
+                if (isDeadThisFetch(row.tmdbId, acq)) return@mapNotNull null
                 val entry = RequestEntry(row.tmdbId, MediaKind.MOVIE, d.title, d.releaseDate?.take(4)?.toIntOrNull(), d.genres.firstOrNull()?.name, formatRating(d.voteAverage), d.posterPath, d.backdropPath, d.overview)
                 DiscoverEntry(entry, acq)
             }
         }
+    }
+
+    private fun isDeadThisFetch(tmdbId: Int, acq: AcquisitionRecord): Boolean {
+        if (acq.status == AcquisitionStatus.AVAILABLE) return true
+        if (acq.status == AcquisitionStatus.NOT_REQUESTED) return true
+        val real = acquisitionService?.get("tmdb:$tmdbId")?.status
+        return real == AcquisitionStatus.NOT_REQUESTED
     }
 
     /**
@@ -313,8 +332,9 @@ class SeerrDiscoverService(
 
     /**
      * Seerr `MediaInfo.status`: 1=UNKNOWN 2=PENDING 3=PROCESSING 4=PARTIALLY_AVAILABLE 5=AVAILABLE
-     * 6=DELETED. A declined request simply reads back as NOT_REQUESTED (re-requestable) rather than a
-     * flagged FAILED, since this field carries no distinct "declined" signal — see the R171 note.
+     * **7**=DELETED (corrected 2026-09-05, Phase 186 — see [SeerrMediaInfo]'s own doc). A declined
+     * request simply reads back as NOT_REQUESTED (re-requestable) rather than a flagged FAILED, since
+     * this field carries no distinct "declined" signal — see the R171 note.
      *
      * Bug fix (2026-07-05): status=3/PROCESSING used to collapse queued/downloading/importing into one
      * bare "in queue" — the R171-era assumption was that Seerr's public API exposes no per-item
