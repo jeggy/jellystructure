@@ -618,27 +618,53 @@
   //   'measured' — this device has started this file before and the backend timed it.
   //   'expected' — the ceiling predicate says it will re-encode, but nobody has played it here.
   //   absent     — under the threshold, ceiling not measured yet, or bitrate unknown. Say nothing.
-  // Keys mirror what the note is a property OF: a film is one file, so its key is the title;
-  // a series episode is its own file, so its key is title|S{n}E{n}. In production neither key
-  // exists — the backend resolves the note per file id and hangs it on that file's payload
-  // (185 FR-185-9). A Phase 149 combined multi-episode file is ONE file, so the mock keys it on
-  // the unit's first episode and the combined card renders exactly one line (R222 FR-R222-5).
   const PLAY_NOTES = {
-    'Cosmos Laundromat':  { device: 'Bedroom TV', basis: 'measured', seconds: 20 },
-    'Iron Veil':          { device: 'Bedroom TV', basis: 'expected' },
-    'Nordvest|S1E8':      { device: 'Bedroom TV', basis: 'measured', seconds: 25 },
-    'Nordvest|S2E1':      { device: 'Bedroom TV', basis: 'measured', seconds: 15 },
-    'Nordvest|S2E6':      { device: 'Bedroom TV', basis: 'expected' },
+    'Cosmos Laundromat': { device: 'Bedroom TV', basis: 'measured', seconds: 20 },
+    'Iron Veil':         { device: 'Bedroom TV', basis: 'expected' },
   };
-  // `season` is 0-based (as the UI carries it); `ep` is the episode object, or omitted for a film.
-  function playbackNoteFor(item, season, ep) {
+  function playbackNoteFor(item) {
     if (!item || !item.title) return null;
-    const key = ep ? item.title + '|S' + ((season || 0) + 1) + 'E' + ep.n : item.title;
-    const n = PLAY_NOTES[key];
+    const n = PLAY_NOTES[item.title];
     return n ? Object.assign({}, n) : null;
   }
 
   const watched = { itemState, setItem, setItemWatched, epState, setEpWatched, setEpPct };
 
-  window.RAVILO = { studios, hero, rows, mergedNew, profiles, discover, upcoming, upcomingByDay, overdue, grad, initials, genresFor, normGenre, playbackNoteFor, episodesFor, seasonsFor, castFor, relatedFor, nextAiringFor, trailerFor, imdbFor, ratingFor, itemCerts, CERT_SYS, config, watched };
+  /* ---- profile photo + avatar colour ----
+     A photo is uploaded on phone/web only, but it is a property of the USER, so every
+     surface renders it: the TV appbar and profile grid, and the admin's user row. The
+     mock keeps it where all three mockups can read it (same origin), so dropping a photo
+     on the phone really does show up on the TV — one stored fact, one representation.
+     Real product: Jellyfin's own user image, resolved server-side onto the profile. */
+  const PHOTO_KEY = 'js-ravilo-photo:';   // dataURL, written by phone/web only
+  const AVCOL_KEY = 'js-ravilo-avcolor:'; // preset gradient, the no-photo choice
+  const AV_PRESETS = [
+    'linear-gradient(145deg,#7b6ef0,#3fb6f5)', 'linear-gradient(145deg,#19d6c6,#2a8cf0)',
+    'linear-gradient(145deg,#f5b542,#e0792f)', 'linear-gradient(145deg,#e0567a,#7b6ef0)',
+    'linear-gradient(145deg,#e0639a,#b15cd0)', 'linear-gradient(145deg,#2dd49a,#12a3a0)',
+  ];
+  function photoFor(id) { try { return localStorage.getItem(PHOTO_KEY + id) || null; } catch (e) { return null; } }
+  function setPhoto(id, dataUrl) { try { localStorage.setItem(PHOTO_KEY + id, dataUrl); } catch (e) {} }
+  function clearPhoto(id) { try { localStorage.removeItem(PHOTO_KEY + id); } catch (e) {} }
+  function colorFor(p) {
+    const id = typeof p === 'string' ? p : (p && p.id);
+    let saved = null; try { saved = localStorage.getItem(AVCOL_KEY + id); } catch (e) {}
+    return saved || (p && p.color) || AV_PRESETS[0];
+  }
+  function setColor(id, css) { try { localStorage.setItem(AVCOL_KEY + id, css); } catch (e) {} }
+  /* One helper every surface paints from: a photo wins, otherwise colour + initials.
+     The photo is returned as a URL for an <img> child rather than a background-image, so
+     the circle keeps one sizing rule (object-fit) and the markup stays capturable. */
+  function avatarFace(p) {
+    const ph = photoFor(typeof p === 'string' ? p : (p && p.id));
+    if (ph) return { photo: ph, style: 'background:' + colorFor(p), label: '' };
+    return { photo: null, style: 'background:' + colorFor(p), label: (p && p.initials) || '' };
+  }
+  function avatarImg(p, cls) {
+    const f = avatarFace(p);
+    return f.photo ? '<img class="' + (cls || 'av-img') + '" src="' + f.photo + '" alt="">' : '';
+  }
+  const avatars = { photoFor, setPhoto, clearPhoto, colorFor, setColor, avatarFace, avatarImg, presets: AV_PRESETS };
+
+  window.RAVILO = { studios, hero, rows, mergedNew, profiles, discover, upcoming, upcomingByDay, overdue, grad, initials, genresFor, normGenre, playbackNoteFor, episodesFor, seasonsFor, castFor, relatedFor, nextAiringFor, trailerFor, imdbFor, ratingFor, itemCerts, CERT_SYS, config, watched, avatars };
 })();

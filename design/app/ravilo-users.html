@@ -40,6 +40,11 @@
   .usr-cap { display: block; font-size: .68rem; color: var(--ink-soft); margin-top: 3px; }
   .usr-cap b { color: var(--ink-soft); font-weight: 600; }
   .usr-cap.unknown b { font-weight: 500; font-style: italic; }
+  /* Read-only user photos (R234). The photo is set in Ravilo on a phone or in the browser;
+     the admin only ever renders it, and falls back to initials when there is none — same
+     stored fact the Ravilo mockups read, so the two can't disagree. */
+  .usr-av.has-photo { color: transparent; overflow: hidden; }
+  .usr-av .av-img { width: 100%; height: 100%; border-radius: inherit; object-fit: cover; display: block; }
 </style>
 </head>
 <body class="wf-body app-body">
@@ -59,7 +64,7 @@
     <!-- Jógvan (admin) -->
         <div class="box flat usr-group" style="padding:14px 15px;margin-top:14px;">
           <div class="row center" style="gap:11px;">
-            <span class="usr-av" style="background:linear-gradient(120deg,#7b6ef0,#3fb6f5);">JJ</span>
+            <span class="usr-av" data-uid="jogvan" style="background:linear-gradient(120deg,#7b6ef0,#3fb6f5);">JJ</span>
             <div><b>Jógvan</b> <span class="badge info" style="margin-left:5px;">admin</span><div class="tiny muted mono" style="margin-top:1px;">jellyfin · 8c41…e2</div></div>
             <span class="spacer"></span>
             <span class="btn sm ghost usr-signout-all">⏻ Sign out everywhere</span>
@@ -88,7 +93,7 @@
         <!-- Eyð -->
         <div class="box flat usr-group" style="padding:14px 15px;margin-top:12px;">
           <div class="row center" style="gap:11px;">
-            <span class="usr-av" style="background:linear-gradient(120deg,#e0792f,#f5b542);">ER</span>
+            <span class="usr-av" data-uid="eyd" style="background:linear-gradient(120deg,#e0792f,#f5b542);">ER</span>
             <div><b>Eyð Restorff</b><div class="tiny muted mono" style="margin-top:1px;">jellyfin · 4fa7…91</div></div>
             <span class="spacer"></span>
             <span class="btn sm ghost usr-signout-all">⏻ Sign out everywhere</span>
@@ -111,7 +116,7 @@
         <!-- Charlotte (restricted) -->
         <div class="box flat usr-group" style="padding:14px 15px;margin-top:12px;">
           <div class="row center" style="gap:11px;">
-            <span class="usr-av" style="background:linear-gradient(120deg,#19d6c6,#2a8cf0);">CH</span>
+            <span class="usr-av" data-uid="charlotte" style="background:linear-gradient(120deg,#19d6c6,#2a8cf0);">CH</span>
             <div><b>Charlotte</b> <span class="badge warn" style="margin-left:5px;" title="Jellyfin user policy — Ravilo serves only what it permits (Phase 142)">restricted</span><div class="tiny muted mono" style="margin-top:1px;">jellyfin · b2c9…0d</div></div>
             <span class="spacer"></span>
             <span class="btn sm ghost usr-signout-all">⏻ Sign out everywhere</span>
@@ -183,6 +188,14 @@
       b.classList.remove('confirm'); b.textContent = '⏻ Sign out everywhere';
     });
   }));
+
+  // R234: paint whatever photo the user set in Ravilo (phone/web); initials otherwise.
+  document.querySelectorAll('.usr-av[data-uid]').forEach(av => {
+    let ph = null; try { ph = localStorage.getItem('js-ravilo-photo:' + av.dataset.uid); } catch (e) {}
+    if (!ph) return;
+    av.classList.add('has-photo');
+    av.innerHTML = '<img class="av-img" src="' + ph + '" alt="">';
+  });
 })();
 </script>
 </body>

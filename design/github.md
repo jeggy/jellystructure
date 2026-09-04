@@ -1,9 +1,119 @@
 repo: jeggy/jellystructure
 branch: main
 path: specs/   (plus root STATUS.md — both mirrored read-only from the repo); presentation/ (full mirror, ours to build on)
-tree: main @ d8a6a6e3610a (2026-09-01 sync)
+tree: main @ d67afe6a3e63 (2026-09-04 sync)
 
-## Last sync (2026-09-02)
+## Last sync (2026-09-04 — pull; two numbering collisions resolved)
+date: 2026-09-04T18:08:00Z
+direction: pull (repo → this project). 5 new spec files mirrored, STATUS.md refreshed, our two unpushed
+drafts renumbered out of the way of numbers the dev team had already taken.
+- **Collision 1 — admin 186.** The repo's `phase-186-request-intent-lifecycle-cleanup.md` (Planned,
+  design-authored 2026-09-04) took the number our profile-photo draft was holding. **Ours is now 187**
+  (`specs/requirements/phase-187-account-photo-and-password.md`); all `FR-186-*` ids inside renumbered.
+- **Collision 2 — R230.** The repo's `phase-R230-fully-disable-skip-intro-credits.md` (Implemented
+  2026-09-03) took R230. **Ours is now R234** (`specs/ravilo/requirements/phase-R234-profile-photo-and-password.md`);
+  `FR-R230-*` → `FR-R234-*`, and the mockup comments that cited R230 (`app/ravilo-users.html`,
+  `ravilo/ravilo-app.js`, `ravilo/Ravilo Mobile.html`) now cite R234. Both spec files carry a
+  renumbering note at the top. Same shape as R196 → R208 and 179 → 180.
+- **New specs pulled:** **R231** (Continue Watching timeout cache poisoning — Implemented; the report we
+  folded into the deck yesterday, now mirrored), **R232** (series-detail & player D-pad polish — ✓ Built
+  2026-09-04, live-tested on stue TV: season-row focus/clipping, player Right no longer teleports to
+  Back), **R233** (system rows always scoped to the page they are on — Planned), repo **R230** (Skip
+  Credits Off was inert since R182 — Implemented), repo **186** (request-intent lifecycle cleanup — Planned).
+- **One outstanding design item, deliberately not built yet: R233 FR-R233-7** asks for the per-channel
+  `scope` segmented controls to be removed from `app/ravilo-builders.js` (`:364` new-channel template,
+  `:534`, `:540`, `:736`) and the two row descriptions made unconditional. R233 is Planned and not
+  dev-reviewed, so the mockup still shows the control. Apply when R233 is accepted.
+- **Counts re-derived:** STATUS.md now has **359** rows (174 admin + 185 Ravilo); **158** documents under
+  `specs/`. Deck counters updated (359 unchanged, 154 → 158, highest 187 / R234, next free 188 / R235).
+- **STATUS.md gap widened (repo-side, not ours):** no rows for R227–R232 or admin 186, though their spec
+  files read Implemented / ✓ Built. R233 does have a row. `scripts/check-phases.sh` will flag it.
+
+## Previous sync (2026-09-03, latest — R231 report folded into the deck)
+date: 2026-09-03T21:04:12Z
+direction: no repo I/O — a dev-authored bug report (R231) was handed over in chat and built into the deck
+- **R231 — Continue Watching timeout cache poisoning** (`specs/ravilo/requirements/phase-R231-continue-watching-timeout-cache-poisoning.md`,
+  committed `e8a11120`). R219's spec said a failed Jellyfin build must serve the previous good cache value;
+  the shipped `buildCanonicalContinueList` returned `emptyList()` on its 6 s timeout and wrote that empty
+  list into the shared 5-minute SWR cache, blanking Continue Watching on Home, every channel row and
+  See-all at once. Return type is now `List<ContinueEntry>?` — `null` = failed (never cached, falls back to
+  the prior value even past TTL), empty = genuinely nothing. Compile clean; `linuxX64Test` inconclusive on
+  a from-scratch rerun; not device-verified.
+- **Deck updated:** new slide **15a** "The spec said it. The code did half of it." after the R202→R219
+  chain, and the phase/document counters moved 358→**359** and 153→**154** on the cover, household and
+  spec-before-code slides (next free numbers now 187 / R232).
+- **Not yet mirrored:** the R231 spec file itself is not in this project's `specs/` copy — pull it on the
+  next sync.
+
+## Previous sync (2026-09-03, later — read-only counting pass)
+date: 2026-09-03T18:13:38Z
+direction: read-only (no copy, no export) — counted the repo to refresh the presentation's stats
+- **No files pulled or written to the project.** Every figure in
+  `presentation/Jellystructure & Ravilo - Spec-Driven Development.html` was re-counted against `main`
+  rather than carried over: **342** Kotlin source files, **9** Gradle modules (8 subprojects + root, from
+  `settings.gradle.kts`), **18** route files under `server/routes/`, **27** Kotlin unit-test files (25
+  backend + 2 `ravilo-ui` commonTest), **5** Playwright `.spec.ts` files under `tests/e2e/`. Largest
+  files by bytes: `ui/MediaDetail.kt` 262 KB · `screens/PlayerScreen.kt` 186 KB · `ui/Settings.kt` 185 KB ·
+  `ui/RaviloConfig.kt` 173 KB · `routes/MediaRoutes.kt` 158 KB.
+- Counted from this project's own mirror: **153** documents under `specs/` (56 admin phase files, 69
+  Ravilo phase files, 18 research reports), **358** STATUS.md phase rows (174 admin + 184 Ravilo), **305**
+  design mockup files.
+- **Lines of Kotlin (~84k) is an estimate**, not a count — derived from summed file bytes at ~56
+  bytes/line, calibrated against three real files. Replace with real `wc -l` output when convenient; it is
+  the one figure on that slide nobody has actually measured.
+- **Commits shown as "1,300+"** for the same reason: the previous 1,130 could not be re-verified with the
+  tools available, and the floor is safe. Worth replacing with a real `git rev-list --count` before the talk.
+- Also on that deck: rewrote the Kotlin/Native constraint callout in plain language (was `select()` /
+  `fd 1024`), and rebuilt the R202 case-study pair to end on **R219** — deleting R202's line exposed that
+  there was no single Continue Watching list at all, which is the better story and the current truth.
+
+## Previous sync (2026-09-03, earlier)
+date: 2026-09-03T12:10:31Z
+direction: pull (repo → this project) — 31 commits since the 2026-09-02 sync, no new export needed
+- **Both our specs shipped as designed. Open question resolved on-device — the copy is confirmed correct.**
+  **Phase 185** (✓ Built 2026-09-02, incl. the client-side start timer) and **R222** (✓ Built 2026-09-02)
+  are both in `main` now, canonical versions pulled over our drafts. The one deviation: the ceiling is
+  **two columns** (`decode_max_bitrate_hevc`/`_h264`, one shared timestamp), not one — found live-necessary
+  because R216/R183 force an AVC transcode target, so a single column would silently record the wrong
+  codec's ceiling for an HEVC file. **Open question 1 answered on-device 2026-09-02**: R216 has been live on
+  the stue TV since 2026-08-30 (105 `playback_qoe` rows carrying its fields, `direct_play=0` on heavy
+  sessions, `dropped_frames=0` throughout) — the *Till Daybreak* stutter was a Wholphin session, architecturally
+  unreachable by any of this. Through Ravilo the file re-encodes and starts slowly; it does not stutter.
+  `slow_lead`/`slow_tail_measured`/`slow_tail_expected` are the right copy, unblocked for translation.
+  `basis: "measured"` is reachable in practice now (timer built) but unreached on any real device yet —
+  needs 3 completed starts of the same file on the same device, and there's been no device access since.
+- **181/182/183 all moved from Planned/partial to ✓ Built, with real measurements**, and both surfaced a
+  genuine new follow-up bug each — logged for the next unassigned number, not fixed inline:
+  - **181**: FR-181-1/1a/2/4/5 built (id set-difference sweep, reverse-diff-to-History, activity-based
+    freshness, dead WS listener deleted, narrow dirty-set). FR-181-3 (count reconciliation) deliberately
+    **not built** — FR-181-1's full sweep already runs at the fastest cadence a separate count check would,
+    making it strictly redundant.
+  - **182**: all of §A/§B built. **Live-measured 2026-09-02** (dev-restart authorized): `/api/tv/series/{id}`
+    unaffected by a concurrent scan; `/api/tv/home` degrades **~120× at p50** during a scan — root cause is
+    `HomeFeedService`'s cache invalidating almost every request because `libraryVersion` (correctly, per
+    182's own fix) bumps on every item write. **New candidate follow-up, unfixed**: a home-feed cache keyed
+    on a coarser signal than per-item `libraryVersion`.
+  - **183**: all FRs built (TMDB token bucket + AIMD, jittered backoff, bounded per-episode fan-out, skip
+    already-held metadata, DB-level rate-limit marking via 181's dirty-set, Outbound pacing card). **New
+    candidate follow-up, unfixed**: `POST /api/media/{id}/sync` on a 505-episode series reliably
+    self-saturates the 4-permit **interactive** `ProcessGate` reserve (not the background one) via a
+    completely unbounded ffprobe fan-out in `syncSeriesEpisodes` that 183 never bounded (183 only bounded
+    the TMDB fetch in the same loop) — confirmed live, household playback unaffected throughout.
+- **7 new dev-authored Ravilo specs pulled**, none requiring a design/mockup change (all Compose-only or
+  deploy/CI): **R223** (season-picker focus + rapid-Up scroll-stranding fixes, ✓ Built, deployed to both
+  TVs), **R224** (merge Ravilo TV + phone into one universal Play listing, ✓ Built), **R225** (login-screen
+  server indicator + `DEFAULT_SERVER_URL` for `ravilo-web`, Planned), **R226** (drop the http/https toggle
+  on server setup, infer scheme, Planned), **R227** (profile menu now closable via system Back on mobile,
+  ✓ Built), **R228** (a channel empty for this viewer no longer shows as a tile, ✓ Built), **R229**
+  (Settings screen phone-width padding + toggle-row squeeze fix, ✓ Built). Also: **R213** (generated
+  Baseline Profile) completed generation 2026-09-02 (root cause was a stale `androidx.benchmark` pin);
+  **R217** superseded/closed by **R219** (re-pulled canonical, unchanged status); **R216**'s open question 4
+  (on-device verification) is now answered by 185's finding above.
+- **STATUS.md mirror refreshed.** No `design/**` changes needed this sync — every new spec is
+  backend/Compose-only.
+- **Next unassigned numbers: 186 / R230.**
+
+## Previous sync (2026-09-02)
 date: 2026-09-02T07:25:03Z
 direction: pull (repo → this project) — one research report, then a design pass
 - **Pulled `specs/research-reports/ravilo-per-device-decode-ceiling-warning-2026-09-02.md`** (new repo-side,
@@ -330,26 +440,33 @@ direction: pull (repo → this project)
 | app/activity.html | phase-182 (Capacity card only — FR-182-9's banner dropped by owner decision), phase-183 FR-183-6/FR-183-5 (Outbound pacing card + run summary) — drawn 2026-08-31, backend built, UI not yet in code |
 | (none — backend only) | R219 (Continue Watching canonical list — explicitly no UI change), 181 (library sync convergence) |
 | ravilo/Decode Ceiling Warning - Directions.html | (no spec yet) research report `ravilo-per-device-decode-ceiling-warning-2026-09-02.md`; builds on phase-177 + R216, constrained by R180 FR-RV-ASP1-2. Admin half would land on app/ravilo-users.html |
+| ravilo/Ravilo Mobile.html, ravilo/ravilo-app.js, ravilo/ravilo-data.js, ravilo/ravilo.css, ravilo/ravilo-i18n.js, app/ravilo-users.html | **187** (`phase-187-account-photo-and-password.md`) + **R234** (`phase-R234-profile-photo-and-password.md`) — profile photo (phone/web upload; read path already shipped in R65) + change password (Settings → Account, all platforms). Both `Planned`, design-authored 2026-09-03, **renumbered from 186 / R230 on 2026-09-04** |
+| app/ravilo-builders.js (per-channel system rows), app/ravilo-config.html | **R233** (system rows always scoped — Planned; FR-R233-7 removes the `scope` segmented controls, **not yet applied to the mockup**), R143 (introduced `scope`, retired by R233) |
+| (none — backend/client-only) | **R231** (Continue Watching timeout cache poisoning), **R232** (series-detail & player D-pad polish), repo **R230** (Skip Credits Off), repo **186** (request-intent lifecycle cleanup — explicitly no new Ravilo UI) |
 | presentation/presentation-context.md, presentation/observed-issues-2026-08-18.md, presentation/screenshots/ | (not a spec — talk source material; documents R202 as its centerpiece and the R203–R207 triage) |
 
-## Pending export (design-authored since the last sync)
-- **2026-09-02, not pushed:** `ravilo/Decode Ceiling Warning - Directions.html` plus the B′ build in
-  `ravilo-data.js` · `ravilo-app.js` · `ravilo.css` · `ravilo-i18n.js` · `Ravilo Mobile.html` · `app/ravilo-users.html`
-  (per-device slow-start note, backend-computed; no spec authored yet — see *Last sync* for the three
-  open answers).
-- **2026-09-01 specs, not pushed:** `specs/requirements/phase-184-choose-metadata-language.md` and
-  `specs/ravilo/requirements/phase-R221-all-genres-media-detail.md`, plus their design files
-  (`app/Metadata Language Override - Directions.html`, `ravilo/Media Detail Genres - Directions.html`)
-  and the 184 build in `app/media.html` + `app/detail.css`. Next unassigned numbers become **185 / R222**.
-- **2026-08-31 mockups, not pushed:** `app/activity.html` (Capacity card, FR-183-6 Outbound
-  pacing + FR-183-5 run summary; no FR-182-9 banner) and `ravilo/Player Loading and Buffering - Directions.html` (frame E,
-  R220's recovery state). No spec files were authored — all three are surfaces for specs the dev team
-  already wrote.
+## Pending export
+- **2026-09-03, design-authored — profile photo + password change, specs now written** (**187** /
+  **R234** after the 2026-09-04 renumber; both `Planned`, neither dev-reviewed):
+  `specs/requirements/phase-187-account-photo-and-password.md`,
+  `specs/ravilo/requirements/phase-R234-profile-photo-and-password.md`, plus the mockup build in
+  `ravilo/ravilo-data.js` (new `avatars` helper), `ravilo/ravilo.css`, `ravilo/ravilo-app.js`,
+  `ravilo/ravilo-i18n.js` (18 strings × en/da/fo), `ravilo/Ravilo Mobile.html` (profile sheet + Your
+  profile + Settings, all new in the *mockup*), `app/ravilo-users.html` (read-only photo per user row).
+  **Key finding:** the photo's read path already ships (R65 — `RaviloImageUrl.avatar()` →
+  `RaviloArtworkService` proxy → `AppBar.ProfileAvatar`), so 186 is only the write paths and keeps
+  Jellyfin's user Primary image as the single store. Blocked on probing three Jellyfin endpoints against
+  10.11.11, on whether a password change invalidates tokens, and on where a preset colour would live.
+- **All earlier design/spec work is already on `main`** — the 2026-09-02 decode-ceiling
+  mockups + specs (185/R222) and the 2026-09-01 metadata-language/genre work (184/R221) were exported and
+  are confirmed present in the repo diff this sync pulled.
 - **phase-163 — intro & credits editor** (`Planned`, 2026-08-13): `specs/requirements/phase-163-segment-editor.md`
   + `design/app/segments.html`/`segments.js`/`segments.css`, the `Segment Editor - Directions.html`
-  exploration, and the series-page entry points in `series-simpsons.js`. Not pushed yet.
+  exploration, and the series-page entry points in `series-simpsons.js`. Still not confirmed pushed —
+  check on next export pass.
 
 ## Sync history
+- 2026-09-03: 31 commits pulled — 185/R222 shipped incl. on-device confirmation (R216 live on stue TV since 08-30, copy correct); 181/182/183 all built with real measurements, two new candidate follow-up bugs logged (home-feed cache thrashing, unbounded ffprobe fan-out); 7 new Ravilo specs (R223-R229), all backend/Compose-only.
 - 2026-09-02: pulled the per-device decode-ceiling-warning research report; design pass (A+B′ recommended), no spec yet.
 - 2026-09-01: mirror refresh; no repo changes since 08-31. Confirmed 184 / R221 uncontested.
 - 2026-08-31: R218 + 180 shipped (both design-authored, on-device verified); pulled 5 new dev specs (R219, R220, 181, 182, 183) + amended 167 + STATUS.md. Three design items outstanding — see above.

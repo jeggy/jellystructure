@@ -68,7 +68,7 @@
     function pmItems() { return [...profmenu.querySelectorAll('.foc')]; }
     function openProfMenu() {
       const u = currentUser() || {};
-      const av = profmenu.querySelector('#pm-av'); if (av) { av.textContent = u.initials || 'ER'; if (u.color) av.style.background = u.color; }
+      const av = profmenu.querySelector('#pm-av'); if (av) paintAv(av, u);
       const nm = profmenu.querySelector('#pm-name'); if (nm) nm.textContent = u.name || 'Profile';
       const sb = profmenu.querySelector('#pm-sub'); if (sb) sb.textContent = (u.kid ? 'Kids · ' : '') + String(u.lang || 'en').toUpperCase();
       profmenu.classList.add('on'); stopHero();
@@ -441,7 +441,7 @@
       if (isNaN(d)) return iso;
       return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' });
     }
-    function episodeCard(e, st, idx, item, season) {
+    function episodeCard(e, st, idx) {
       st = st || {};
       const cls = 'ep-card' + (st.watched ? ' watched' : '') + (st.inprogress ? ' inprogress' : '') + (st.upnext ? ' upnext' : '');
       const card = el('div', cls);
@@ -453,7 +453,7 @@
         ${st.watched ? '<span class="ep-check">✓</span>' : ''}
         <div class="play"><span>▶</span></div>
         ${(st.inprogress || st.watched) ? `<div class="ep-prog"><i style="width:${pct}%"></i></div>` : ''}</div>
-        <div class="ep-info"><div class="ep-t">${e.n}. ${e.title}${st.watched ? ` <span class="ep-tag">${t('watched')}</span>` : ''}</div>${e.air ? `<div class="ep-date">${epAirLabel(e.air)}</div>` : ''}<div class="ep-d">${e.desc}</div>${epNoteHTML(item, season, e)}</div>`;
+        <div class="ep-info"><div class="ep-t">${e.n}. ${e.title}${st.watched ? ` <span class="ep-tag">${t('watched')}</span>` : ''}</div>${e.air ? `<div class="ep-date">${epAirLabel(e.air)}</div>` : ''}<div class="ep-d">${e.desc}</div></div>`;
       const done = el('div', 'ep-done foc' + (st.watched ? ' on' : '')); done._epdone = true; done._epn = e.n; done._epidx = idx; done.setAttribute('data-epidx', idx);
       done.innerHTML = `<span class="ep-done-ic">${st.watched ? '✓' : ''}</span><span class="ep-done-tx">${st.watched ? t('watched') : t('mark_watched')}</span>`;
       card.appendChild(play); card.appendChild(done);
@@ -492,8 +492,7 @@
         <span class="ep-rng">Episodes ${first}–${last}</span></div>
         <div class="ep-info"><div class="ep-t">Episodes ${first}–${last}${allW ? ` <span class="ep-tag">${t('watched')}</span>` : ''}</div>
           <div class="combo-list">${eps.map(e => `<div class="combo-row"><span class="cn">${padN(e.n)}</span><span class="ct">${e.title}</span><span class="cd">${e.dur}</span></div>`).join('')}</div>
-          <div class="combo-file">▤ 1 file · ${eps.length} episodes · ${durSum}m</div>
-          ${epNoteHTML(item, season, eps[0])}</div>`;
+          <div class="combo-file">▤ 1 file · ${eps.length} episodes · ${durSum}m</div></div>`;
       const done = el('div', 'ep-done foc' + (allW ? ' on' : '')); done._epfile = u; done._epidx = idxs[0]; done.setAttribute('data-epidx', idxs[0]);
       done.innerHTML = `<span class="ep-done-ic">${allW ? '✓' : ''}</span><span class="ep-done-tx">${allW ? t('watched') : t('mark_watched')}</span>`;
       card.appendChild(play); card.appendChild(done);
@@ -563,30 +562,15 @@
       return `<div class="dhero-genres focus-row"><span class="g-label">${t(gs.length === 1 ? 'genre_one' : 'genre_many')}</span><span class="g-row">${chips.join('')}</span></div>`;
     }
     // ---- R222: per-device "slow to start" note. Server-pushed verdict, rendered as-is:
-    // no thresholds, no numbers and no decision logic live on the client. Absent ⇒ nothing
-    // renders — no empty slot, no reserved space, no layout shift (FR-R222-1). ----
-    function slowSentence(n) {
+    // no thresholds, no numbers and no decision logic live on the client. ----
+    function playNoteHTML(item) {
+      const n = R.playbackNoteFor ? R.playbackNoteFor(item) : null;
+      if (!n) return '';
       const lead = t('slow_lead', { device: esc(n.device || t('this_tv')) });
       const tail = (n.basis === 'measured' && n.seconds)
         ? t('slow_tail_measured', { n: n.seconds })
         : t('slow_tail_expected');
-      return `<b>${lead}</b> ${tail}`;
-    }
-    // FR-R222-4 — movie detail only. A ceiling is per device and a bitrate is per file, so a
-    // SERIES hero never carries the line (its episodes are different files); it rides the
-    // episode row instead — see epNoteHTML below (FR-R222-5).
-    function playNoteHTML(item) {
-      if (item.kind === 'series') return '';
-      const n = R.playbackNoteFor ? R.playbackNoteFor(item) : null;
-      if (!n) return '';
-      return `<div class="dplaynote"><span class="pn-bar"></span><span class="pn-txt">${slowSentence(n)}</span></div>`;
-    }
-    // FR-R222-5 — the episode row's own line. One file ⇒ one line, so a Phase 149 combined
-    // S01E01–E03 card renders this once, not once per episode.
-    function epNoteHTML(item, season, ep) {
-      const n = (R.playbackNoteFor && item && ep) ? R.playbackNoteFor(item, season, ep) : null;
-      if (!n) return '';
-      return `<div class="ep-playnote">${slowSentence(n)}</div>`;
+      return `<div class="dplaynote"><span class="pn-bar"></span><span class="pn-txt"><b>${lead}</b> ${tail}</span></div>`;
     }
     // ---- IMDb rating chip (detail hero) — data from imdbapi.dev, stored + synced (R164) ----
     function fmtVotes(n) { return n >= 1e6 ? (n / 1e6).toFixed(1).replace(/\.0$/, '') + 'M' : n >= 1e3 ? (n / 1e3).toFixed(1).replace(/\.0$/, '') + 'K' : String(n); }
@@ -683,7 +667,7 @@
         track.dataset.def = def;
         units.forEach(u => {
           if (u.type === 'file') { track.appendChild(comboCard(item, season, u, states)); }
-          else { const i = u.idx; track.appendChild(episodeCard(eps[i], { watched: states[i].watched, inprogress: states[i].pct > 0 && !states[i].watched, upnext: i === prog.idx, pct: states[i].pct }, i, item, season)); }
+          else { const i = u.idx; track.appendChild(episodeCard(eps[i], { watched: states[i].watched, inprogress: states[i].pct > 0 && !states[i].watched, upnext: i === prog.idx, pct: states[i].pct }, i)); }
         });
         epRow.appendChild(track);
         d.appendChild(epRow);
@@ -1657,7 +1641,7 @@
       updateDiscoverNav();
       updateUpcomingNav();
       const av = document.getElementById('rv-avatar');
-      if (av) { av.textContent = p.initials; av.style.background = p.color; }
+      if (av) paintAv(av, p);
     }
     // In-app interface-language override — one of the few prefs controllable on the TV itself.
     // Defaults to the user's Jellystructure-set language; an in-app choice is stored per user id.
@@ -1698,7 +1682,7 @@
       prof.innerHTML =
         '<h2>' + (pMode === 'switch' ? t('switch_profile') : t('whos_watching')) + '</h2>' +
         '<div class="grid">' +
-          signed.map(p => '<div class="prof foc" data-pid="' + p.id + '"><div class="pic" style="background:' + p.color + '"><div class="sheen"></div>' + p.initials + (p.kid ? '<span class="badge-k">' + t('kids') + '</span>' : '') + '</div><div class="nm">' + p.name + '</div>' + (p.isAdmin ? '<div class="tag">' + t('admin') + '</div>' : '') + '</div>').join('') +
+          signed.map(p => { const a = avAttrs(p, 'pic'); return '<div class="prof foc" data-pid="' + p.id + '"><div class="' + a.cls + '" style="' + a.style + '"><div class="sheen"></div>' + a.label + (p.kid ? '<span class="badge-k">' + t('kids') + '</span>' : '') + '</div><div class="nm">' + p.name + '</div>' + (p.isAdmin ? '<div class="tag">' + t('admin') + '</div>' : '') + '</div>'; }).join('') +
           '<div class="prof foc" data-pid="__add"><div class="pic add">＋</div><div class="nm">' + t('add_user') + '</div></div>' +
           (pMode === 'switch' ? '<div class="prof foc" data-pid="__settings"><div class="pic settings">⚙</div><div class="nm">' + t('settings') + '</div></div>' : '') +
         '</div>' +
@@ -1736,6 +1720,23 @@
     }
     function closeProfiles() { prof.style.display = 'none'; }
     // ---- Settings page (opened from the profile grid, right of “Add user”) ----
+    // ---- avatars: one painter for every surface (appbar, menu head, profile tiles).
+    //      A photo is only ever SET on phone/web (R234); the TV renders it and offers
+    //      nothing about changing it, so there is no photo copy anywhere on this screen.
+    const AV = (R.avatars || {});
+    function avFace(p) { return AV.avatarFace ? AV.avatarFace(p) : { photo: null, style: 'background:' + (p && p.color), label: (p && p.initials) || '' }; }
+    function paintAv(node, p) {
+      const f = avFace(p || {});
+      node.classList.toggle('has-photo', !!f.photo);
+      node.style.cssText = f.style;
+      node.innerHTML = f.photo ? '<img class="av-img" src="' + f.photo + '" alt="">' : esc(f.label);
+    }
+    function avAttrs(p, extra) {
+      const f = avFace(p);
+      return { cls: (extra || '') + (f.photo ? ' has-photo' : ''), style: f.style,
+        label: f.photo ? '<img class="av-img" src="' + f.photo + '" alt="">' : esc(f.label) };
+    }
+
     function openSettings() { pMode = 'settings'; pIdx = 0; renderSettings(); prof.style.display = 'flex'; }
     function renderSettings() {
       prof.className = 'profiles switch settings-panel';
@@ -1745,10 +1746,16 @@
         return '<div class="lang-chip theme-chip foc' + (tm[0] === curSkin ? ' cur' : '') + '" data-pid="__theme:' + tm[0] + '">' +
           '<span class="theme-dot ' + tm[0] + '"></span><span class="lang-endo">' + tm[1] + '</span></div>';
       }).join('');
+      const u = currentUser() || {};
+      const ua = avAttrs(u, 'who-av');
       prof.innerHTML =
         '<h2>' + t('settings') + '</h2>' +
         '<div class="set-sec"><div class="prof-langs-h">' + t('theme') + '</div><div class="lang-row">' + themeChips + '</div></div>' +
         langSectionHTML() +
+        '<div class="set-sec set-acct"><div class="prof-langs-h">' + t('account') + '</div>' +
+          '<div class="set-who"><span class="' + ua.cls + '" style="' + ua.style + '">' + ua.label + '</span>' +
+            '<div><div class="who-name">' + esc(u.name || '') + '</div><div class="who-sub">' + (u.isAdmin ? t('admin') + ' · ' : '') + 'jellyfin</div></div></div>' +
+          '<div class="btn foc" data-pid="__pw"><span class="ic">🔑</span> ' + t('pw_change') + '</div></div>' +
         '<div class="set-sec set-danger"><div class="prof-langs-h">' + t('unpair') + '</div>' +
           '<div class="set-danger-desc">' + t('unpair_desc') + '</div>' +
           '<div class="btn danger foc" data-pid="__logout"><span class="ic">⏻</span> ' + t('unpair') + '</div></div>' +
@@ -1782,14 +1789,108 @@
         '</div></div>';
       pTiles = [...prof.querySelectorAll('.foc')]; pIdx = 0; paintP();
     }
+    /* ---- change your own password (every platform; TV reuses R175's on-screen keyboard) ----
+       Three fields, per the owner's pick: current + new + repeat. Own password only — there is
+       no way to reach another profile's from here. The real thing proxies to Jellyfin the same
+       way Phase 141's login does; the mock validates locally and treats "wrong" as a bad
+       current password so the error state is reachable. */
+    let pwCur = '', pwNew = '', pwRep = '', pwField = 'cur', pwErr = null, pwOk = false, pwBusy = false;
+    function openPassword() {
+      pMode = 'pw'; pwCur = ''; pwNew = ''; pwRep = ''; pwField = 'cur'; pwErr = null; pwOk = false; pwBusy = false;
+      sgShift = false; pIdx = 0;
+      prof.className = 'profiles switch';
+      renderPassword();
+    }
+    function pwVal(id) { return id === 'cur' ? pwCur : id === 'new' ? pwNew : pwRep; }
+    function pwFieldHTML(id, label) {
+      const live = pwField === id, val = pwVal(id);
+      const body = val.length
+        ? '<span class="mask">' + '\u2022'.repeat(val.length) + '</span>' + (live ? '<span class="cursor"></span>' : '')
+        : (live ? '<span class="cursor"></span>' : '<span class="ph">\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022</span>');
+      return '<div class="signin-field"><label>' + label + '</label><div class="inp foc' + (live ? ' live' : '') + '" data-pid="__pwf:' + id + '" data-pwf="' + id + '">' + body + '</div></div>';
+    }
+    function renderPassword() {
+      prof.innerHTML =
+        '<div class="login-wrap">' +
+          '<div class="signin-panel pw-panel">' +
+            '<h3>' + t('pw_title') + '</h3>' +
+            '<div class="sub">' + t('pw_sub') + '</div>' +
+            (pwOk ? '<div class="set-ok">✓ ' + t('pw_ok') + '</div>' : '') +
+            pwFieldHTML('cur', t('pw_cur')) +
+            pwFieldHTML('new', t('pw_new')) +
+            pwFieldHTML('rep', t('pw_rep')) +
+            (pwErr ? '<div class="signin-err">⚠ ' + pwErr + '</div>' : '') +
+            '<div class="actions">' +
+              '<span class="btn ghost foc" data-pid="__close">' + t('back') + '</span>' +
+              '<span class="btn primary foc" data-pid="__pwsave">' + (pwBusy ? '<span class="spin"></span> ' + t('pw_busy') : t('pw_save')) + '</span>' +
+            '</div>' +
+          '</div>' +
+          '<div class="login-kbd">' +
+            sgKeyRow('1234567890') +
+            sgKeyRow('qwertyuiop') +
+            sgKeyRow('asdfghjkl-') +
+            sgKeyRow('zxcvbnm._@') +
+            '<div class="kbd-row">' +
+              '<div class="key wide foc" data-pid="__kb:shift">' + t('key_shift') + '</div>' +
+              '<div class="key wide foc" data-pid="__kb:space">' + t('key_space') + '</div>' +
+              '<div class="key wide foc" data-pid="__kb:del">' + t('key_del') + '</div>' +
+            '</div>' +
+          '</div>' +
+        '</div>';
+      pTiles = [...prof.querySelectorAll('.foc')];
+      if (pIdx >= pTiles.length) pIdx = 0;
+      paintP();
+    }
+    function pwPaintFields() {
+      prof.querySelectorAll('[data-pwf]').forEach(f => {
+        const id = f.dataset.pwf, val = pwVal(id), live = pwField === id;
+        f.classList.toggle('live', live);
+        f.innerHTML = val.length
+          ? '<span class="mask">' + '\u2022'.repeat(val.length) + '</span>' + (live ? '<span class="cursor"></span>' : '')
+          : (live ? '<span class="cursor"></span>' : '<span class="ph">\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022</span>');
+      });
+    }
+    function pwType(ch) {
+      if (pwBusy) return;
+      const back = ch === '\b';
+      if (pwField === 'cur') pwCur = back ? pwCur.slice(0, -1) : pwCur + ch;
+      else if (pwField === 'new') pwNew = back ? pwNew.slice(0, -1) : pwNew + ch;
+      else pwRep = back ? pwRep.slice(0, -1) : pwRep + ch;
+      pwPaintFields();
+    }
+    function pwKey(code) {
+      if (code === 'shift') { sgShift = !sgShift; renderPassword(); return; }
+      if (code === 'space') { pwType(' '); return; }
+      if (code === 'del') { pwType('\b'); return; }
+      if (code.indexOf('ch:') === 0) { const c = code.slice(3); pwType(sgShift ? c.toUpperCase() : c); }
+    }
+    function pwSubmit() {
+      if (pwBusy) return;
+      pwOk = false;
+      if (!pwCur) { pwErr = t('pw_err_cur'); pwField = 'cur'; renderPassword(); return; }
+      if (pwNew.length < 6) { pwErr = t('pw_err_new'); pwField = 'new'; renderPassword(); return; }
+      if (pwNew !== pwRep) { pwErr = t('pw_err_rep'); pwField = 'rep'; renderPassword(); return; }
+      pwErr = null; pwBusy = true; renderPassword();
+      setTimeout(() => {
+        pwBusy = false;
+        if (pwCur === 'wrong') { pwCur = ''; pwErr = t('pw_err_wrong'); pwField = 'cur'; renderPassword(); return; }
+        pwCur = ''; pwNew = ''; pwRep = ''; pwField = 'cur';
+        flash(t('pw_ok'));
+        openSettings();
+      }, 900);
+    }
+
     function pickProfile(pid) {
       if (pid === '__settings') { openSettings(); return; }
       if (pid && pid.indexOf('__theme:') === 0) { setSkin(pid.slice(8)); return; }
       if (pid && pid.indexOf('__lang:') === 0) { setUserLang(pid.slice(7)); return; }
       if (pid === '__logout') { renderUnpairConfirm(); return; }
       if (pid === '__logout-confirm') { doLogout(); return; }
-      if (pid === '__close') { if (pMode === 'unpair') { openSettings(); return; } if (pMode === 'settings') { openProfiles('switch'); return; } if (pMode === 'signin') { openProfiles(sgBack); return; } closeProfiles(); return; }
-      if (pid && pid.indexOf('__kb:') === 0) { sgKey(pid.slice(5)); return; }
+      if (pid === '__close') { if (pMode === 'unpair') { openSettings(); return; } if (pMode === 'pw') { openSettings(); return; } if (pMode === 'settings') { openProfiles('switch'); return; } if (pMode === 'signin') { openProfiles(sgBack); return; } closeProfiles(); return; }
+      if (pid === '__pw') { openPassword(); return; }
+      if (pid === '__pwsave') { pwSubmit(); return; }
+      if (pid && pid.indexOf('__pwf:') === 0) { pwField = pid.slice(6); pwPaintFields(); return; }
+      if (pid && pid.indexOf('__kb:') === 0) { if (pMode === 'pw') pwKey(pid.slice(5)); else sgKey(pid.slice(5)); return; }
       if (pid && pid.indexOf('__field:') === 0) { sgField = pid.slice(8); sgPaintFields(); return; }
       if (pid === '__login') { sgSubmit(); return; }
       if (pid === '__add') { openSignin(); return; }
@@ -1902,9 +2003,15 @@
         if (k.length === 1 && k !== ' ' && !e.metaKey && !e.ctrlKey && !e.altKey) { e.preventDefault(); e.stopImmediatePropagation(); sgType(k); return; }
         if (k === 'Backspace') { e.preventDefault(); e.stopImmediatePropagation(); sgType('\b'); return; }
       }
+      // same courtesy on the change-password panel (a keyboard beats the D-pad grid when there is one)
+      if (pMode === 'pw' && !pwBusy) {
+        if (k.length === 1 && k !== ' ' && !e.metaKey && !e.ctrlKey && !e.altKey) { e.preventDefault(); e.stopImmediatePropagation(); pwType(k); return; }
+        if (k === 'Backspace') { e.preventDefault(); e.stopImmediatePropagation(); pwType('\b'); return; }
+        if (k === 'Tab') { e.preventDefault(); e.stopImmediatePropagation(); pwField = pwField === 'cur' ? 'new' : pwField === 'new' ? 'rep' : 'cur'; pwPaintFields(); return; }
+      }
       if (!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Enter',' ','Backspace','Escape'].includes(k)) return;
       e.preventDefault(); e.stopImmediatePropagation();
-      if (k === 'Backspace' || k === 'Escape') { if (pMode === 'unpair') { openSettings(); return; } if (pMode === 'settings') { openProfiles('switch'); return; } if (pMode === 'signin') { openProfiles(sgBack); return; } if (pMode === 'switch') closeProfiles(); return; }
+      if (k === 'Backspace' || k === 'Escape') { if (pMode === 'unpair') { openSettings(); return; } if (pMode === 'pw') { openSettings(); return; } if (pMode === 'settings') { openProfiles('switch'); return; } if (pMode === 'signin') { openProfiles(sgBack); return; } if (pMode === 'switch') closeProfiles(); return; }
       if (k === 'Enter' || k === ' ') { const t = pTiles[pIdx]; if (t) pickProfile(t.dataset.pid); return; }
       if (k === 'ArrowRight') movePidx('right');
       else if (k === 'ArrowLeft') movePidx('left');
