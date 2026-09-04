@@ -11,13 +11,18 @@
 > Jellyfin, and puts the photo in the admin's user list. **R234** builds the screens; this phase owns the
 > routes, the storage answer and the cache.
 
-**Status:** Planned (design-authored 2026-09-03, not yet dev-reviewed). **FR-187-1's endpoint probe was
-run 2026-09-05 against this house's live Jellyfin 10.11.11** and is recorded below: all three operations
-exist, none at the path this spec assumed, and the probe turned up three things the design did not
-anticipate (an undocumented legacy alias on the read path, `fillHeight`/`quality` being silently ignored,
-and an avatar cache with no TTL at all). Open questions 1 and 4 are answered; **open question 2 remains
-open and still blocks R234 FR-R234-7** — it needs a write against a throwaway account, which has not been
-done.
+**Status:** Planned (design-authored 2026-09-03, not yet dev-reviewed) — **but FR-187-1 is now fully
+discharged.** The endpoint probe ran 2026-09-05 against this house's live Jellyfin 10.11.11, read-only
+first and then with writes against a test account and a throwaway account, and is recorded below.
+**All four open questions are closed** (1 and 4 by probe, 2 by probe, 3 by owner decision), so nothing
+blocks a dev review or a build.
+
+Headline: **all three operations exist, none at the path this spec assumed, and the OpenAPI document is
+actively wrong about the image upload's body shape** — it describes a raw binary body that returns `500`,
+while the base64 form this spec's own note warned about returns `204`. The probe also turned up three
+things the design did not anticipate: an undocumented legacy alias on the read path,
+`fillHeight`/`quality` being silently ignored end to end, and an avatar cache with no TTL at all. One
+correction to an earlier pass at this file: the wrong-password signal is **`403`**, not `401`.
 
 Design: built into the mockups at `design/ravilo/Ravilo Mobile.html` (profile sheet · Your profile ·
 Settings → Account), `design/ravilo/Ravilo TV.html` (photo rendering + Settings → Account → change
@@ -97,19 +102,37 @@ not exist, and the real operations live elsewhere:
 "the caller". That does not change FR-187-2: jellystructure calls Jellyfin with the admin token, so it
 must always send the id explicitly, taken from the session.
 
-**Image upload body shape — answers open question 1.** `POST /UserImage` declares content type `image/*`
-with schema `{"type": "string", "format": "binary"}`: a **raw image byte body with the real MIME type in
-the `Content-Type` header**. Not multipart, and not the historical base64 text this phase's own note
-warned about. Responses: `204, 400, 401, 403, 404, 503`. `DELETE /UserImage` takes the same `userId`
-query parameter and answers `204, 401, 403, 503`.
+**Image upload body shape — the OpenAPI document is *wrong*, and only a write proved it.**
+`POST /UserImage` declares content type `image/*` with schema `{"type": "string", "format": "binary"}`,
+which reads as a raw image byte body. **It is not.** Probed live against a photo-less test account:
 
-**Password body — field names confirmed.** `POST /Users/Password` takes JSON (`application/json`) of
-schema `UpdateUserPassword`, whose properties are exactly `CurrentPassword` (the *sha1-hashed* legacy
-field), **`CurrentPw`** (plain text), **`NewPw`** (plain text) and `ResetPassword` (bool). So FR-187-3
-sends `{"CurrentPw": …, "NewPw": …}` and nothing else — never `ResetPassword`, which is the
-admin/forgot-password path, not a viewer changing a password they know. Responses:
-`204, 401, 403, 404, 503`, so **a wrong current password is a `401`** and that is the signal FR-187-3
-relays for R234's *"That current password isn't right."*
+| body sent as | `Content-Type` | result |
+| --- | --- | --- |
+| raw JPEG bytes (what the schema describes) | `image/jpeg` | **`500` — `Error processing request.`** |
+| **base64 text of the same bytes** | `image/jpeg` | **`204`, and `PrimaryImageTag` is set** |
+
+So the shape is the **historical base64-with-the-content-type-in-the-header** that this phase's own
+FR-187-1 note warned about — *"verify, do not assume"* was the right instinct, and the OpenAPI document
+would have sent us the wrong way. **This is a stronger version of Phase 163's lesson: reading the schema
+is not probing.** 163 at least got an honest `405`; here the document describes a body shape that returns
+a `500`. `DELETE /UserImage` takes the same `userId` query parameter and answers `204`.
+
+The `Content-Type` header also **decides the stored format** — the same probe uploaded a PNG as
+`image/png` and `GET /UserImage` then served `image/png` back. FR-187-6's re-encode should therefore
+declare `image/jpeg` and mean it.
+
+**Password body — field names confirmed, and the failure code is `403`, not `401`.**
+`POST /Users/Password` takes JSON (`application/json`) of schema `UpdateUserPassword`, whose properties
+are exactly `CurrentPassword` (the *sha1-hashed* legacy field), **`CurrentPw`** (plain text), **`NewPw`**
+(plain text) and `ResetPassword` (bool). So FR-187-3 sends `{"CurrentPw": …, "NewPw": …}` and nothing
+else — never `ResetPassword`, which is the admin/forgot-password path, not a viewer changing a password
+they know.
+
+The declared responses are `204, 401, 403, 404, 503`, and a first pass at this spec guessed from that
+list that a wrong current password would be `401`. **The live probe says `403`** — a wrong `CurrentPw`
+returns `403`, a correct one returns `204`. FR-187-3 must key R234's *"That current password isn't
+right."* on **`403`**; treating `401` as the wrong-password signal would misreport an expired session as
+a bad password.
 
 ### ⚠ Three findings the design did not anticipate
 
@@ -148,19 +171,39 @@ threaded through *jellystructure's own* URL and cache key (`avatarDir/$userId@$t
 upstream. A user with no photo returns `404` with a JSON body, which `RaviloArtworkService`'s existing R132
 "never cache a non-image" guard already handles correctly.
 
-### Still unprobed — both need a write, see open questions 1 and 2
+### ✅ Write probes, also 2026-09-05 — both remaining unknowns answered
 
-The read-only probe cannot settle these, and neither may be assumed:
+**Photo lifecycle, end to end** (on `Test Stream`, which had no photo, and which was restored to exactly
+that state afterwards). Beyond the base64 finding above:
 
-- **That `POST /UserImage` accepts what its schema says**, and that a `204` really replaces the image and
-  moves `PrimaryImageTag`. Safe to probe on a photo-less test account (`Test Stream` /
-  `Test Føroyskt`) and reversible with the `DELETE`.
-- **Whether changing a password invalidates existing access tokens** (open question 2, FR-187-8, and
-  R234 FR-R234-7's blocked branch). This cannot be answered from the OpenAPI document — the response is a
-  bare `204` either way. It needs a real change on a throwaway account: `POST /Users/New`, set a password,
-  `AuthenticateByName` for a token, change the password, then re-issue a request with the **old** token and
-  see whether it still authorises — then delete the user. Nothing about a real household account should be
-  touched to answer this.
+- **A replace moves the tag.** Three successive uploads produced three different `PrimaryImageTag`
+  values (`70f38cb0…` → `6ede2eaf…` → `4ca76aeb…`). FR-187-7's cache key is therefore sound: a new photo
+  is a new tag is a new URL is a cache miss.
+- **`DELETE` fully reverts.** `204`, `PrimaryImageTag` back to `null`, `GET /UserImage` back to `404`
+  with a JSON body — the case R132's "never cache a non-image" guard already covers.
+- **Jellyfin stores the original verbatim and never resizes it.** A 300×300 / 2 074-byte upload came back
+  as exactly 300×300 / 2 074 bytes. With `fillHeight` ignored on the read side too, there is **no
+  resizing anywhere in the chain** — see the amendment on FR-187-6.
+
+**Password change and token survival** (on a throwaway `zz-probe-187` account created with
+`POST /Users/New` and removed with `DELETE /Users/{userId}` at the end — no household account touched,
+and the user list was re-checked clear of probe accounts afterwards):
+
+| step | result |
+| --- | --- |
+| `AuthenticateByName` with the original password | `200`, token A |
+| `GET /Users/Me` with token A | `200` |
+| `POST /Users/Password` with a **wrong** `CurrentPw` | **`403`** |
+| `POST /Users/Password` with the correct `CurrentPw` | `204` |
+| **`GET /Users/Me` with the OLD token A, after the change** | **`200` — still valid** |
+| `GET /Users/{id}/Items` with the OLD token A | **`200` — still valid** |
+| `AuthenticateByName` with the **new** password | `200` |
+| `AuthenticateByName` with the **old** password | `401` |
+
+**This answers open question 2: a password change does *not* invalidate existing access tokens** on
+10.11.11. The caller's own session survives, and so does every other device's; only future
+*authentications* are affected. FR-187-8 collapses to its simple branch, and R234 FR-R234-7 is unblocked
+and needs only its success path.
 
 **FR-187-2 — One route per write, both scoped to the caller's own account.**
 `POST /api/tv/account/photo`, `DELETE /api/tv/account/photo`, `POST /api/tv/account/password`. The
@@ -175,6 +218,13 @@ locally by calling `authenticateByName` first (that mints a second token as a si
 authority for "is this the right password" into the wrong process), and never compare, hash or store it.
 A rejection comes back as a distinct, translatable outcome so R234 can say *"That current password isn't
 right"* rather than a generic failure.
+
+> **Probed 2026-09-05: the wrong-password signal is `403`, not `401`.** Jellyfin's declared response set
+> for `POST /Users/Password` is `204, 401, 403, 404, 503`, which invites the guess that a bad password is
+> a `401`; the live probe returns **`403`** for a wrong `CurrentPw` and `204` for a correct one. Key the
+> distinct outcome on **`403`**. Mapping `401` to "wrong password" would report an expired or revoked
+> admin token as the viewer having mistyped, which is the one failure this requirement exists to avoid
+> confusing.
 
 **FR-187-4 — Rate-limit the password route like the login route.** `LoginRateLimiter` exists precisely
 because `POST /api/tv/login` is a synchronous credential proxy on an instance that Phase 167 made
@@ -252,6 +302,22 @@ survived, so the client renders the truth instead of guessing. If tokens do die,
 **re-authenticate**, not a silent failure: nothing may leave a device in a state where it appears signed
 in and every subsequent request 401s.
 
+> **✅ Answered 2026-09-05 — tokens survive, so this requirement collapses to one branch.** Probed on a
+> throwaway account: after a successful `POST /Users/Password`, the token minted *before* the change
+> still returned `200` on both `GET /Users/Me` and an items query. Only `AuthenticateByName` is affected
+> — the new password works, the old one `401`s. So on 10.11.11 a password change signs **nobody** out:
+> not the caller, and not the household's other TVs.
+>
+> **Build it as the success path only.** R234 shows *"Password changed."* and returns to Settings
+> (FR-R234-7's unblocked branch). Two things this does not license, though:
+> - **Keep the response field.** This requirement's real content — that the route *states* what happened
+>   to the session rather than leaving the client to guess — still holds, and is what makes the answer
+>   cheap to revise if a future Jellyfin starts revoking. Report the observed truth; do not hard-code the
+>   client to assume survival.
+> - **Do not present it as a security property.** "Changing your password signs out your other devices"
+>   is a thing people reasonably expect, and it is **not** what happens here. If that behaviour is ever
+>   wanted it needs its own phase — and note R234 explicitly non-goals a sign-out-everywhere control.
+
 **FR-187-9 — Show the photo in the admin, read-only.** Each user row on **Ravilo → Users & devices**
 renders that user's photo in place of its initials chip, from the same `RaviloImageUrl.avatar()` the
 clients use (`getUsers` is already called there — `server/routes/TvRoutes.kt:667`, and its `UserDto`
@@ -284,26 +350,30 @@ TV-specific behaviour and no capability flag — the same route simply never get
 
 ## Open questions
 
-1. ~~**Do all three endpoints exist and behave on 10.11.11?**~~ **Mostly answered 2026-09-05** — see
-   FR-187-1. All three exist; none is at the believed path (`POST`/`DELETE /UserImage?userId=…` and
-   `POST /Users/Password?userId=…`). The body-shape risk this question flagged is **resolved**: the image
-   upload is a **raw binary body with the real MIME type in `Content-Type`** — neither multipart nor
-   base64 — and the password body is `{"CurrentPw", "NewPw"}`. *Still open:* the read-only probe cannot
-   confirm that a `POST` actually replaces the image and moves `PrimaryImageTag`. Probe on a photo-less
-   test account (`Test Stream` / `Test Føroyskt`); the `DELETE` makes it reversible.
-2. **Does changing a password invalidate existing tokens?** FR-187-8. **Still open, and not answerable
-   from the OpenAPI document** — the response is a bare `204` either way. It needs a real password change
-   on a **throwaway** account: `POST /Users/New`, set a password, `AuthenticateByName` for a token, change
-   the password, re-issue a request with the *old* token, then `DELETE /Users/{userId}`. No real household
-   account should be touched to answer it. This is the single answer that most changes R234's flow — one
-   household change may sign out three TVs.
-3. **Where would a preset colour live?** The mockup lets a viewer pick a colour instead of a photo, but
-   Jellyfin's user record has no field for it and this phase deliberately adds no jellystructure-side
-   store. Three honest options: drop the presets (initials keep their existing deterministic gradient),
-   accept a jellystructure-side column and accept that it is one fact Jellyfin does not own, or store a
-   generated solid-colour image *as* the user's photo (which makes "has a photo" and "chose a colour"
-   indistinguishable — probably wrong). Owner decision needed; the mockup currently keeps the choice
-   client-side, which is not shippable as-is.
+1. ~~**Do all three endpoints exist and behave on 10.11.11?**~~ **✅ Answered 2026-09-05** — see FR-187-1.
+   All three exist; none is at the believed path (`POST`/`DELETE /UserImage?userId=…` and
+   `POST /Users/Password?userId=…`). The body-shape risk this question flagged is resolved, and **the
+   answer is the opposite of what the OpenAPI document says**: a raw binary body returns `500`, and the
+   **base64 text body with the MIME type in `Content-Type`** — the historical shape — returns `204`. The
+   write probe also confirmed a `POST` replaces the image and moves `PrimaryImageTag`, that `DELETE`
+   fully reverts, and that the password body is `{"CurrentPw", "NewPw"}` with **`403`** (not `401`) as
+   the wrong-password answer.
+2. ~~**Does changing a password invalidate existing tokens?**~~ **✅ Answered 2026-09-05: no, it does
+   not.** Probed on a throwaway account — a token minted before the change still returned `200`
+   afterwards, on `/Users/Me` and on an items query alike; only `AuthenticateByName` is affected. So
+   nobody is signed out: not the caller, not the household's other TVs. FR-187-8 collapses to its success
+   branch and R234 FR-R234-7 is unblocked. Two cautions recorded on FR-187-8: keep the response field
+   anyway so the client renders observed truth rather than a hard-coded assumption, and never present
+   this to a viewer as "changing your password signs out your other devices", because it does not.
+3. ~~**Where would a preset colour live?**~~ **✅ Decided 2026-09-05 by the owner: drop the presets.**
+   Initials keep their existing deterministic gradient. The two alternatives were a jellystructure-side
+   column (which would have made this the one fact Jellyfin does not own, against FR-187-5's "no new
+   table, no new column") and storing a generated solid-colour image *as* the photo (which would make
+   "has a photo" and "chose a colour" indistinguishable). Neither is built. **This removes the control
+   from R234 FR-R234-3**, which was already written to survive its removal — *"build the rest of the
+   screen so its removal leaves no hole"* — so the Your profile screen keeps Choose a photo, Take a
+   photo and Remove photo, and the `photo_presets` string comes out. The mockups still draw the preset
+   row and now lead the spec; they need updating before this ships.
 4. ~~**Is there a Jellyfin policy flag that forbids a user changing their own password?**~~
    **Answered 2026-09-05: no such flag exists.** `UserPolicy` on 10.11.11 carries 45 properties and not
    one of them gates self-service password change. The only password-adjacent field is
