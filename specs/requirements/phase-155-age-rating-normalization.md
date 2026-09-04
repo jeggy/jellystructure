@@ -232,3 +232,34 @@ the body above; summary of what changed:
 8. Confirmed accurate and left as-is: the write-through convention (Phase 71/74, real and correctly
    cited), the Phase 98 unmapped-triage pattern as a structural reference, and the numbering (155/156
    don't collide with anything on the admin track or this session's 151–154 work).
+
+## Bug fix (live report, 2026-09-04) — Settings save silently wiped every mapped certification
+
+**Bug confirmed.** `age_rating_map` is edited exclusively on the Metadata ▸ Age ratings tab via its own
+write-through `POST /api/metadata/age-ratings` — by design, `MetadataConfig` has no editable field for
+it on the Settings page (only `age_rating_cascade`, the region-cascade card, lives there). But
+`Settings.kt`'s `readForm()`, which builds the full `AppConfig` sent by the Settings page's **Save**
+button (`PUT /api/config`), constructs `metadata = MetadataConfig(ageRatingCascade = ageRatingCascade.toList())`
+— `ageRatingMap` isn't in scope for that function at all, so it silently took the data class default
+(`emptyMap()`). `PUT /api/config`'s handler already has the identical failure mode fixed for two other
+fields the Settings form doesn't send — `trackers` (own CRUD endpoints, Metadata ▸ Trackers) and
+`ingest` (config-file-only) — both explicitly restored from the stored config with a comment explaining
+why. `age_rating_map` was never added to that list, so it was the one field with this exact shape that
+was *not* protected.
+
+Net effect: clicking **Save** on the Settings page for *any* reason — including just reordering the
+age-rating region cascade on that same page — reset every mapped certification back to Unmapped.
+Nothing was actually deleted from the library (item counts on each cert are recomputed live from
+`store.allItems()`, independent of the map), so the Age ratings tab still rendered normally and the
+certifications themselves didn't disappear — only their assigned ages did, which read as "the page
+doesn't really work" rather than an obvious data-loss event.
+
+**Fix:** `ConfigRoutes.kt`'s `PUT /config` handler now restores `metadata.ageRatingMap` from the stored
+config, mirroring the existing `trackers`/`ingest` preserve pattern exactly:
+```kotlin
+config = config.copy(metadata = config.metadata.copy(ageRatingMap = stored.metadata.ageRatingMap))
+```
+`ageRatingCascade` is unaffected — it's a real Settings-page field and continues to come from the
+received config as before. Compiles; not yet live-verified (needs a backend restart, operator-run) —
+the fastest confirmation once running is: map a certification on Metadata ▸ Age ratings, save any
+unrelated Settings field, then reload Age ratings and confirm the mapping survived.

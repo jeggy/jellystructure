@@ -12,6 +12,12 @@
 Supersedes **FR-R217-1**, **FR-R217-2** and **FR-R217-3**; R217's root-cause analysis and its live
 findings remain the historical record of why this phase exists.
 
+**Amended by [R233](phase-R233-system-rows-always-scoped.md) (2026-09-04)** — §5's per-channel scope
+decision and FR-R219-6's branch ladder are replaced by one rule: a system row is always scoped to the
+surface it renders on. The list model itself (§1–§4: membership, conflict resolution, ordering, the
+canonical cache) is **untouched** by R233, and FR-R233-5 exists specifically to protect it. Amended
+passages below are marked and struck through rather than deleted.
+
 **Build notes (2026-08-30):**
 - Backend + client compile clean; all 161 existing backend unit tests pass unchanged (no test yet
   exercises the new merge logic directly — `HomeFeedService` needs substantial DI mocking this session
@@ -176,31 +182,37 @@ Ties keep a stable order. An unparseable/missing date sorts last, never first (R
 
 ### 5. The views
 
+> **Amended by [R233](phase-R233-system-rows-always-scoped.md) (2026-09-04).** The three-way scope
+> decision described below was removed: a system row is now always scoped to the surface it renders
+> on, with no configuration. The original text is struck through rather than deleted, because the
+> reasoning it records — and the failure mode it was guarding against — is still the reason the
+> replacement is one rule instead of a ladder.
+
 | Surface | Filter | Cap |
 |---|---|---|
 | Home row | device visibility only | **20** |
-| Channel row (`scope = channel`) | visibility **+ channel membership** | **20**, applied *after* the filter |
-| Channel row (`scope = library` / inherit) | visibility only — identical to Home | 20 |
+| **Any channel row** (either row-list mode) | visibility **+ channel membership** | **20**, applied *after* the filter |
 | "See all" page | same as its originating row | **uncapped** |
 
 Filtering always precedes capping, so a channel row shows the 20 most recent titles *of that channel*,
 not "whatever survived a library-wide cut and happens to be in this channel."
 
-**"Same as its originating row" means mirroring that row's configured scope, not the page it happens to
-be reached from.** Concretely, a channel's Continue row is library-wide (identical to Home's row) in two
-distinct configurations, and channel-scoped in one:
+~~**"Same as its originating row" means mirroring that row's configured scope, not the page it happens
+to be reached from.** Concretely, a channel's Continue row is library-wide (identical to Home's row) in
+two distinct configurations, and channel-scoped in one:~~
 
-- **inherit-mode channel** (`ChannelConfig.rows == null`, or `rows.mode != "custom"`) — always
-  library-wide. This mode has no `cont.scope` at all; the channel simply reuses Home's row (R59/R202).
-- **custom-mode channel, `rows.system.cont.scope == "all"`** — the explicit opt-out (§F of the Ravilo
-  config editor: **"All titles"** vs **"This collection"**); library-wide by choice.
-- **custom-mode channel, `rows.system.cont.scope == "channel"`** (the default) — filtered to that
-  channel's own titles via `matchesChannel`.
+- ~~**inherit-mode channel** (`ChannelConfig.rows == null`, or `rows.mode != "custom"`) — always
+  library-wide. This mode has no `cont.scope` at all; the channel simply reuses Home's row (R59/R202).~~
+- ~~**custom-mode channel, `rows.system.cont.scope == "all"`** — the explicit opt-out (§F of the Ravilo
+  config editor: **"All titles"** vs **"This collection"**); library-wide by choice.~~
+- ~~**custom-mode channel, `rows.system.cont.scope == "channel"`** (the default) — filtered to that
+  channel's own titles via `matchesChannel`.~~
 
-Only the third case scopes See-all to the channel. The first two must produce Home's exact See-all list,
-even though the user opened it while standing inside a channel — filtering by "whatever channel I'm
-currently looking at" would silently disagree with what the row itself just showed. See FR-R219-6 for the
-concrete mechanism.
+**Post-R233:** "same as its originating row" is trivially satisfied, because there is only one
+behaviour to mirror — a channel page's Continue row and its See-all are both filtered to that channel,
+always. The hazard this paragraph was written to guard against (the row and its See-all silently
+disagreeing about membership) is now structurally impossible rather than kept in sync by hand across
+two branch ladders in two files. R233 FR-R233-1/FR-R233-3.
 
 ---
 
@@ -270,6 +282,13 @@ shorter row costs nothing and scans faster on a remote), and See-all stays uncap
 
 ### FR-R219-6 — Continue Watching's "See all" mirrors the row's own scope
 
+> **Amended by [R233](phase-R233-system-rows-always-scoped.md) (2026-09-04)** — the branch ladder below
+> collapses to "channel present ⇒ filter". The requirement's *purpose* (row and See-all can never
+> disagree about membership) is unchanged and now met by construction; only the decision it delegated
+> to config is gone. The plumbing this requirement introduced — the `channelId` parameter, the
+> `?channel=` query param, the client passing `dest.channel.id` — is all still required and still
+> correct as written below.
+
 Today `continueWatchingAll()` / `GET /tv/continue/all` takes no channel context at all — it is always
 the full, unfiltered canonical list, even when opened from a channel whose Continue row is
 `cont.scope = "channel"`. That's a real gap (confirmed by code reading 2026-08-30, not yet fixed): the
@@ -277,13 +296,16 @@ row shows a channel-filtered set, See-all shows everything. This requirement clo
 
 **Server** (`HomeFeedService`):
 - `continueWatchingAll(device: DeviceData, channelId: String?)` gains the parameter. When `channelId` is
-  non-null: resolve that channel's config the same way `getChannelFeed()` already does, then apply the
-  exact three-way decision `buildRows()` already makes for the row itself (see the model note above) —
-  - `rows == null` or `rows.mode != "custom"` (inherit) → unfiltered;
-  - `rows.mode == "custom"` and `rows.system.cont.scope == "all"` → unfiltered;
-  - `rows.mode == "custom"` and `rows.system.cont.scope == "channel"` (default) → filter the canonical
+  non-null: resolve that channel's config the same way `getChannelFeed()` already does, then ~~apply the
+  exact three-way decision `buildRows()` already makes for the row itself (see the model note above)~~
+  **(post-R233)** filter the canonical list with the existing `matchesChannel(channelCfg, heroIds)`
+  predicate — the same one `getChannelFeed()` uses for every other row — with no reference to
+  `rows.mode` or `cont.scope`:
+  - ~~`rows == null` or `rows.mode != "custom"` (inherit) → unfiltered;~~
+  - ~~`rows.mode == "custom"` and `rows.system.cont.scope == "all"` → unfiltered;~~
+  - ~~`rows.mode == "custom"` and `rows.system.cont.scope == "channel"` (default) → filter the canonical
     list with the existing `matchesChannel(channelCfg, heroIds)` predicate (the same one
-    `getChannelFeed()` uses for every other row);
+    `getChannelFeed()` uses for every other row);~~
   - channel not found → unfiltered (defensive; same as `channelId == null`).
   Result is always returned uncapped, whichever branch applies.
 - No new fetch, no new merge logic — this is a filter stage over the one canonical list from FR-R219-1,
@@ -301,6 +323,8 @@ row shows a channel-filtered set, See-all shows everything. This requirement clo
 - The client never inspects or forwards `cont.scope` itself — it always sends the channel id it's
   standing in, and the server alone decides (via config it already owns) whether that translates into an
   actual filter. This keeps scope logic server-side, per the frontend/backend split in the constitution.
+  *(Post-R233 the server's answer is always "yes, filter" — but the split is unchanged, and this is why
+  R233 needs no client change at all: the client was already sending everything the new rule needs.)*
 
 ---
 
@@ -343,9 +367,10 @@ row shows a channel-filtered set, See-all shows everything. This requirement clo
 | Jellyfin slow/unreachable | Row omitted (R102); previous cached value continues to serve. |
 | Rewatching a completed series | Re-enters naturally: starting S1E1 creates a resume position. |
 | `LastPlayedDate` missing/unparseable | Sorts last, never first (R198). |
-| See-all opened from a custom-mode channel, `cont.scope = "channel"` (default) | Filtered to that channel (`matchesChannel`), uncapped — matches the row it came from. |
-| See-all opened from a custom-mode channel, `cont.scope = "all"` (opt-out) | Unfiltered — identical to Home's See-all, even though reached from inside a channel page. |
-| See-all opened from an inherit-mode channel | Unfiltered — this mode has no `cont.scope`; the row was already Home's row (R59/R202), so See-all is too. |
+| See-all opened from **any** channel (post-R233) | Filtered to that channel (`matchesChannel`), uncapped — matches the row it came from, in either row-list mode. |
+| ~~See-all opened from a custom-mode channel, `cont.scope = "channel"` (default)~~ | ~~Filtered to that channel (`matchesChannel`), uncapped — matches the row it came from.~~ |
+| ~~See-all opened from a custom-mode channel, `cont.scope = "all"` (opt-out)~~ | ~~Unfiltered — identical to Home's See-all, even though reached from inside a channel page.~~ R233 retired `cont.scope`. |
+| ~~See-all opened from an inherit-mode channel~~ | ~~Unfiltered — this mode has no `cont.scope`; the row was already Home's row (R59/R202), so See-all is too.~~ R233 reversed this; it was the live bug report of 2026-09-04. |
 
 ---
 
