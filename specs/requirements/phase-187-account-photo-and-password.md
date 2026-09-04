@@ -11,7 +11,13 @@
 > Jellyfin, and puts the photo in the admin's user list. **R234** builds the screens; this phase owns the
 > routes, the storage answer and the cache.
 
-**Status:** Planned (design-authored 2026-09-03, not yet dev-reviewed).
+**Status:** Planned (design-authored 2026-09-03, not yet dev-reviewed). **FR-187-1's endpoint probe was
+run 2026-09-05 against this house's live Jellyfin 10.11.11** and is recorded below: all three operations
+exist, none at the path this spec assumed, and the probe turned up three things the design did not
+anticipate (an undocumented legacy alias on the read path, `fillHeight`/`quality` being silently ignored,
+and an avatar cache with no TTL at all). Open questions 1 and 4 are answered; **open question 2 remains
+open and still blocks R234 FR-R234-7** — it needs a write against a throwaway account, which has not been
+done.
 
 Design: built into the mockups at `design/ravilo/Ravilo Mobile.html` (profile sheet · Your profile ·
 Settings → Account), `design/ravilo/Ravilo TV.html` (photo rendering + Settings → Account → change
@@ -22,10 +28,13 @@ owner picked the shape up front from a written set of options rather than from d
 
 **The photo is already a solved problem in one direction.** R65 wired the whole read path and it is live:
 
-- `TvRoutes.kt:302` sets `avatarUrl = RaviloImageUrl.avatar(device.jellyfinUserId)` on the login
-  response, and `:328` does the same for every profile in the picker list.
+- `server/routes/TvRoutes.kt:302` sets `avatarUrl = RaviloImageUrl.avatar(device.jellyfinUserId)` on the
+  login response, and `:328` does the same for every profile in the picker list. (Path corrected
+  2026-09-05 — the file is under `server/routes/`, not `tv/`; the line numbers are right.)
 - `RaviloArtworkService.kt:126` proxies it from Jellyfin —
   `GET /Users/{userId}/Images/Primary?api_key={token}&fillHeight=160&quality=90` — and caches to disk.
+  Both halves of that URL turned out to be wrong in ways the probe below details: the path is an
+  undocumented legacy alias, and `fillHeight`/`quality` are silently ignored.
 - `AppBar.kt:299` renders it through `RemoteImage` when non-null, initials otherwise; `LocalUserAvatarUrl`
   (`RaviloApp.kt:152`) carries it, and `StoredSession.avatarUrl` persists it per local session on
   Android and Tizen alike.
@@ -68,6 +77,91 @@ Probe the live OpenAPI document first, including the **request body shape** for 
 and the exact field names on the password body (`CurrentPw`/`NewPw`). If any is absent or refuses, stop
 and re-scope rather than building around it — and record what the server actually said, the way 163 does.
 
+### ✅ Probed 2026-09-05 against `https://jellyfin.example.net` (10.11.11) — all three exist, none at the believed path
+
+Read-only probe: the live `/api/docs/openapi.json` (2.3 MB) plus `GET` requests against real users.
+**Every believed path in the table above is wrong.** None returns 405 the way 163's did — they simply do
+not exist, and the real operations live elsewhere:
+
+| operation | believed | **actual on 10.11.11** |
+| --- | --- | --- |
+| set photo | `POST /Users/{userId}/Images/Primary` | **`POST /UserImage?userId=<uuid>`** |
+| remove photo | `DELETE /Users/{userId}/Images/Primary` | **`DELETE /UserImage?userId=<uuid>`** |
+| change password | `POST /Users/{userId}/Password` | **`POST /Users/Password?userId=<uuid>`** |
+
+`/Users/**` in this server's whole OpenAPI document is only: `/Users`, `/Users/AuthenticateByName`,
+`/Users/AuthenticateWithQuickConnect`, `/Users/Configuration`, `/Users/ForgotPassword`,
+`/Users/ForgotPassword/Pin`, `/Users/Me`, `/Users/New`, `/Users/Password`, `/Users/Public`,
+`/Users/{userId}` and `/Users/{userId}/Policy`. There is no `/Users/{userId}/Images/*` operation at all.
+**On both real endpoints the user id is a *query* parameter and is `required: false`** — omitted, it means
+"the caller". That does not change FR-187-2: jellystructure calls Jellyfin with the admin token, so it
+must always send the id explicitly, taken from the session.
+
+**Image upload body shape — answers open question 1.** `POST /UserImage` declares content type `image/*`
+with schema `{"type": "string", "format": "binary"}`: a **raw image byte body with the real MIME type in
+the `Content-Type` header**. Not multipart, and not the historical base64 text this phase's own note
+warned about. Responses: `204, 400, 401, 403, 404, 503`. `DELETE /UserImage` takes the same `userId`
+query parameter and answers `204, 401, 403, 503`.
+
+**Password body — field names confirmed.** `POST /Users/Password` takes JSON (`application/json`) of
+schema `UpdateUserPassword`, whose properties are exactly `CurrentPassword` (the *sha1-hashed* legacy
+field), **`CurrentPw`** (plain text), **`NewPw`** (plain text) and `ResetPassword` (bool). So FR-187-3
+sends `{"CurrentPw": …, "NewPw": …}` and nothing else — never `ResetPassword`, which is the
+admin/forgot-password path, not a viewer changing a password they know. Responses:
+`204, 401, 403, 404, 503`, so **a wrong current password is a `401`** and that is the signal FR-187-3
+relays for R234's *"That current password isn't right."*
+
+### ⚠ Three findings the design did not anticipate
+
+**1. R65's read path works, but only via an undocumented legacy alias.** The premise of this phase — that
+the read path already ships — **holds**: `GET /Users/{userId}/Images/Primary?api_key=…` returns `200
+image/jpeg` today (verified against the two users who actually have photos). But that path is *absent
+from the OpenAPI document*, so it is an undocumented compatibility alias, not a contract. The documented
+route `GET /UserImage?userId=…` returns byte-identical output. **`RaviloArtworkService.kt:126` should move
+to `/UserImage` as part of this phase** — not because it is broken, but because it is currently relying on
+something the server no longer advertises, and a future Jellyfin is free to drop it.
+
+**2. `fillHeight` and `quality` are silently ignored on the user image endpoint.** `RaviloArtworkService`
+asks for `fillHeight=160&quality=90` and believes it receives a thumbnail. It does not: `fillHeight=160`,
+`fillHeight=48&quality=50` and no parameters at all every return the **identical 568×568, 22 544-byte
+original**. Jellyfin accepts the parameters and disregards them. This inverts FR-187-6's rationale — that
+requirement argued a server-side re-encode is cheap because "the read path already asks Jellyfin for
+`fillHeight=160`". It does not, and never has. **The re-encode this phase adds is therefore the only thing
+bounding avatar bytes anywhere in the system**, which makes FR-187-6 load-bearing rather than tidy: without
+it a 12 MP phone upload is served at full resolution to every TV, forever, through a cache that never
+expires (see 3).
+
+**3. The avatar cache has no TTL — it is permanent.** FR-187-7 says invalidation must happen "rather than
+waiting for a TTL". There is no TTL to wait for: `RaviloArtworkService.readSimple()` returns the cached
+file whenever it exists, with no age check, and the cache path is `"$avatarDir/$userId"` — keyed on the
+user id alone. `RaviloImageUrl.avatar()` (`RaviloImageUrl.kt:31`) returns
+`/api/tv/image/user/$userId/avatar`, likewise with no version component. So today a replaced photo would
+be served stale **forever**, on every device, with no self-healing path at all. This is R214 with the
+expiry removed.
+
+**The fix FR-187-7 asked for is available.** `UserDto.PrimaryImageTag` is exposed and populated (`GET
+/Users` returns e.g. `3b7110fc4514c914bc2591bde89a6879` for the users who have photos, `null` for those
+who do not), and `GET /UserImage` accepts a `tag` query parameter. Two caveats found by probing:
+Jellyfin **does not validate `tag`** — a deliberately wrong tag still returns `200` and the current image —
+so it is usable as a cache-busting key but never as a staleness check; and the tag must therefore be
+threaded through *jellystructure's own* URL and cache key (`avatarDir/$userId@$tag`), not merely forwarded
+upstream. A user with no photo returns `404` with a JSON body, which `RaviloArtworkService`'s existing R132
+"never cache a non-image" guard already handles correctly.
+
+### Still unprobed — both need a write, see open questions 1 and 2
+
+The read-only probe cannot settle these, and neither may be assumed:
+
+- **That `POST /UserImage` accepts what its schema says**, and that a `204` really replaces the image and
+  moves `PrimaryImageTag`. Safe to probe on a photo-less test account (`Test Stream` /
+  `Test Føroyskt`) and reversible with the `DELETE`.
+- **Whether changing a password invalidates existing access tokens** (open question 2, FR-187-8, and
+  R234 FR-R234-7's blocked branch). This cannot be answered from the OpenAPI document — the response is a
+  bare `204` either way. It needs a real change on a throwaway account: `POST /Users/New`, set a password,
+  `AuthenticateByName` for a token, change the password, then re-issue a request with the **old** token and
+  see whether it still authorises — then delete the user. Nothing about a real household account should be
+  touched to answer this.
+
 **FR-187-2 — One route per write, both scoped to the caller's own account.**
 `POST /api/tv/account/photo`, `DELETE /api/tv/account/photo`, `POST /api/tv/account/password`. The
 Jellyfin user id is taken **from the session** (`ravilo_device` → `jellyfinUserId`), never from the
@@ -99,18 +193,55 @@ existing proxy cache. A photo set in Jellyfin's own web UI and a photo set in Ra
 **FR-187-6 — Validate and normalise the upload server-side.** The client may send anything; the server
 decides what Jellyfin receives. Enforce a content-type allowlist (JPEG/PNG/WebP), a maximum request size
 (reject early, before reading the whole body into memory), and re-encode to a bounded square JPEG before
-forwarding — the read path already asks Jellyfin for `fillHeight=160`, so nothing downstream benefits
-from storing a 12 MP phone photo. Centre-crop to square: there is no crop UI in R234 (the owner did not
-ask for one) and every surface renders the photo in a circle, so a non-square original must be cropped
-somewhere and the server is the one place that does it once for everybody.
+forwarding. Centre-crop to square: there is no crop UI in R234 (the owner did not ask for one) and every
+surface renders the photo in a circle, so a non-square original must be cropped somewhere and the server
+is the one place that does it once for everybody. Forward to Jellyfin as a **raw body with the real MIME
+type in `Content-Type`** — `POST /UserImage?userId=…`, per FR-187-1's probe — not multipart, not base64.
+
+> **Amended 2026-09-05 after the FR-187-1 probe: this requirement is load-bearing, not tidiness.** Its
+> original rationale — "the read path already asks Jellyfin for `fillHeight=160`, so nothing downstream
+> benefits from storing a 12 MP phone photo" — is false. Jellyfin 10.11.11 **silently ignores `fillHeight`
+> and `quality`** on the user image endpoint and returns the stored original at full size every time
+> (measured: `fillHeight=160`, `fillHeight=48&quality=50` and no parameters all return the identical
+> 568×568 / 22 544-byte image). Combined with an avatar cache that has no TTL at all, the re-encode here
+> is the **only** thing that ever bounds what a TV downloads. Pick the bound deliberately — the read path's
+> intent was 160 px, so a 320 px square JPEG covers every surface at 2× — and treat a missing re-encode as
+> a shipping blocker rather than an optimisation.
 
 **FR-187-7 — A changed photo must not be served stale.** `RaviloImageUrl.avatar(userId)` builds a URL
 with no version component, and `RaviloArtworkService` caches the proxied bytes on disk. That is
 **R214's exact bug** — Ravilo showed a corrected poster's old bytes because the URL never changed — and
 it will reproduce here the first time somebody replaces their photo. The avatar URL therefore needs a
-change-keyed component (Jellyfin's own `PrimaryImageTag` for the user if the probe in FR-187-1 confirms
-one is exposed; otherwise a server-held "photo last changed" timestamp), the proxy cache must be keyed
-on it, and a successful upload or delete must invalidate the entry rather than waiting for a TTL.
+change-keyed component, the proxy cache must be keyed on it, and a successful upload or delete must
+invalidate the entry.
+
+> **Confirmed and sharpened 2026-09-05 by the FR-187-1 probe.**
+>
+> **The problem is worse than written: there is no TTL.** This requirement said invalidate "rather than
+> waiting for a TTL", implying a slow self-heal exists. It does not.
+> `RaviloArtworkService.readSimple()` returns the cached file whenever it exists with no age check, and
+> the cache path is `"$avatarDir/$userId"` — the user id alone. A replaced photo would be served stale
+> **permanently**, on every device, with no recovery short of deleting the file by hand. R214 without the
+> expiry.
+>
+> **The mechanism this requirement hoped for exists.** `UserDto.PrimaryImageTag` is exposed and populated
+> (`GET /Users` returns a real tag for users with a photo, `null` for those without), so no server-held
+> "photo last changed" timestamp is needed. Concretely:
+> - thread the tag into jellystructure's own URL — `RaviloImageUrl.avatar(userId, tag)` →
+>   `/api/tv/image/user/$userId/avatar?v=$tag` — since that is the URL Compose's `RemoteImage` and
+>   `StoredSession.avatarUrl` actually key on;
+> - key the disk cache on `"$avatarDir/$userId@$tag"` so a new tag is a cache *miss* rather than
+>   something needing active eviction, and old entries become garbage rather than wrong answers;
+> - **do not** rely on forwarding `tag` upstream as a correctness check: Jellyfin **does not validate it**
+>   — a deliberately wrong tag still returns `200` and the current image. It is a cache-busting key only.
+> - a user with no photo yields `404` + a JSON body, which the existing R132 "never cache a non-image"
+>   guard already handles.
+>
+> **Move the proxy to the documented route while here.** `RaviloArtworkService.kt:126` fetches
+> `GET /Users/{userId}/Images/Primary`, which still works but is **absent from 10.11.11's OpenAPI
+> document** — an undocumented legacy alias. `GET /UserImage?userId=…` is the documented route and returns
+> byte-identical output. Switching is a two-line change and removes a dependency on something the server
+> no longer advertises.
 
 **FR-187-8 — Tell the client what happened to its own session.** Jellyfin may or may not invalidate
 existing access tokens when a password changes. This decides whether R234 can show *"Password changed"*
@@ -123,7 +254,9 @@ in and every subsequent request 401s.
 
 **FR-187-9 — Show the photo in the admin, read-only.** Each user row on **Ravilo → Users & devices**
 renders that user's photo in place of its initials chip, from the same `RaviloImageUrl.avatar()` the
-clients use (`getUsers` is already called there — `TvRoutes.kt:667`). Initials remain the fallback. The
+clients use (`getUsers` is already called there — `server/routes/TvRoutes.kt:667`, and its `UserDto`
+response already carries the `PrimaryImageTag` FR-187-7 needs, so no extra Jellyfin call is required).
+Initials remain the fallback. The
 admin gets **no** ability to set, replace or clear another user's photo in this phase: a photo is
 something a person chooses about themselves, an operator clearing one is a moderation feature, and
 moderation needs its own thinking about notification and recourse rather than a quiet button.
@@ -151,11 +284,19 @@ TV-specific behaviour and no capability flag — the same route simply never get
 
 ## Open questions
 
-1. **Do all three endpoints exist and behave on 10.11.11?** FR-187-1. The image upload's body shape is
-   the specific risk: if it is base64-with-header rather than multipart, the client contract in R234
-   changes shape too, so probe before either spec is built.
-2. **Does changing a password invalidate existing tokens?** FR-187-8. This is the single answer that most
-   changes R234's flow, and it cannot be guessed — one household change may sign out three TVs.
+1. ~~**Do all three endpoints exist and behave on 10.11.11?**~~ **Mostly answered 2026-09-05** — see
+   FR-187-1. All three exist; none is at the believed path (`POST`/`DELETE /UserImage?userId=…` and
+   `POST /Users/Password?userId=…`). The body-shape risk this question flagged is **resolved**: the image
+   upload is a **raw binary body with the real MIME type in `Content-Type`** — neither multipart nor
+   base64 — and the password body is `{"CurrentPw", "NewPw"}`. *Still open:* the read-only probe cannot
+   confirm that a `POST` actually replaces the image and moves `PrimaryImageTag`. Probe on a photo-less
+   test account (`Test Stream` / `Test Føroyskt`); the `DELETE` makes it reversible.
+2. **Does changing a password invalidate existing tokens?** FR-187-8. **Still open, and not answerable
+   from the OpenAPI document** — the response is a bare `204` either way. It needs a real password change
+   on a **throwaway** account: `POST /Users/New`, set a password, `AuthenticateByName` for a token, change
+   the password, re-issue a request with the *old* token, then `DELETE /Users/{userId}`. No real household
+   account should be touched to answer it. This is the single answer that most changes R234's flow — one
+   household change may sign out three TVs.
 3. **Where would a preset colour live?** The mockup lets a viewer pick a colour instead of a photo, but
    Jellyfin's user record has no field for it and this phase deliberately adds no jellystructure-side
    store. Three honest options: drop the presets (initials keep their existing deterministic gradient),
@@ -163,7 +304,14 @@ TV-specific behaviour and no capability flag — the same route simply never get
    generated solid-colour image *as* the user's photo (which makes "has a photo" and "chose a colour"
    indistinguishable — probably wrong). Owner decision needed; the mockup currently keeps the choice
    client-side, which is not shippable as-is.
-4. **Is there a Jellyfin policy flag that forbids a user changing their own password?**
-   `JellyfinPolicy` is already parsed from the `AuthenticateByName` response for Phase 142's library
-   filtering. If it carries such a flag, FR-187-2's "every signed-in profile" should honour it and R234
-   should hide the row rather than let the attempt fail at the server.
+4. ~~**Is there a Jellyfin policy flag that forbids a user changing their own password?**~~
+   **Answered 2026-09-05: no such flag exists.** `UserPolicy` on 10.11.11 carries 45 properties and not
+   one of them gates self-service password change. The only password-adjacent field is
+   `PasswordResetProviderId` (which provider handles a *forgotten* password — not a permission), and the
+   only account-scope flags are `IsAdministrator`, `IsDisabled` and `IsHidden`.
+   `EnableUserPreferenceAccess` governs display preferences, not credentials. So FR-187-2's "a kids
+   profile is a signed-in profile and gets the same rights over its own account" stands with nothing to
+   honour, R234 hides no row, and open question 5 in R234 (kids profiles) is settled the same way — the
+   server will not stop them, so the decision is purely the owner's, and the owner already made it.
+   The one flag worth respecting for a different reason is **`IsDisabled`**: a disabled user cannot
+   authenticate at all, so it never reaches these routes.
