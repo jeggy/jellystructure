@@ -120,6 +120,15 @@ data class AcquisitionConfig(
     @SerialName("sonarr_quality_profile") val sonarrQualityProfile: String = "",
     @SerialName("sonarr_monitor") val sonarrMonitor: String = "all", // all|future|firstSeason|latestSeason|pilot
     @SerialName("sonarr_season_folder") val sonarrSeasonFolder: Boolean = true,
+    // Phase 186 — the request-lifecycle reconciliation sweep's own tunables. Own independent timer
+    // (FR-186-1 open question 1's resolution) rather than folded into poll() or a pipeline run: it
+    // reconciles against Seerr/*arr ground truth, not the *arr queue poll() already watches, and
+    // doesn't need to entangle with scan/pipeline concurrency (Phase 182's Gate classes) at all.
+    @SerialName("lifecycle_sweep_hours") val lifecycleSweepHours: Int = 1,
+    // FR-186-2's "N consecutive sweeps" before a row is ever retired — never on a single observation.
+    @SerialName("dead_sweep_threshold") val deadSweepThreshold: Int = 3,
+    // FR-186-2 rule 4 / FR-186-5's retention window for a FAILED/dead row, in days.
+    @SerialName("request_retention_days") val requestRetentionDays: Int = 14,
 )
 
 // Phase 54 — Radarr/Sonarr connection (movies / series). Opt-in, read + rescan only.

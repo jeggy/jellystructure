@@ -31,6 +31,10 @@ class AcquisitionStore(private val db: JellystructureDb) {
         RawActive(r.item_key, r.arr_kind, r.arr_id?.toInt(), r.tmdb_id?.toInt(), MediaKind.valueOf(r.media_kind))
     }
 
+    /** Phase 186 (FR-186-2 rule 4) — `updated_at` (epoch ms) isn't on the public [AcquisitionRecord]
+     *  DTO; the reconciliation sweep needs it to age out a stale FAILED row. */
+    fun updatedAtMs(itemKey: String): Long? = q.getByKey(itemKey).executeAsOneOrNull()?.updated_at
+
     /** Insert or update, preserving the original `requested_at` across reconciler updates. */
     fun save(rec: AcquisitionRecord, arrKind: String, arrId: Int?, now: Long) {
         val requestedAt = q.getByKey(rec.itemKey).executeAsOneOrNull()?.requested_at ?: now
