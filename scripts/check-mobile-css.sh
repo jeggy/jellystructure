@@ -96,6 +96,23 @@ check "$SEGCSS" "trim-view viewport-bounded flex column (.sx height:100dvh)" \
 # R208 (ex-R196) — episode rail auto-closes after 30s of inactivity.
 check "$PLAYER" "episode-rail 30s auto-hide (EPRAIL_HIDE_MS)" "EPRAIL_HIDE_MS = 30000"
 
+# 2026-09-05 (11th incident) — R222 FR-R222-5: the "slow to start" note rides EPISODE rows, since a
+# decode ceiling is per device and a bitrate is per file, so a series hero cannot speak for episodes
+# that are different files. The sync kept only the movie-detail half (FR-R222-4) and dropped the
+# episode half wholesale on TV and phone. FR-R222-5 is ✅ Built in the Compose app, so the mockups
+# silently disagreeing with shipped code is the regression.
+RAVCSS="design/ravilo/ravilo.css"
+RAVAPP="design/ravilo/ravilo-app.js"
+RAVDATA="design/ravilo/ravilo-data.js"
+RAVMOB="design/ravilo/Ravilo Mobile.html"
+check "$RAVCSS"  "R222 episode-row note, TV (.ep-playnote)"        ".ep-playnote {"
+check "$RAVAPP"  "R222 episode-row note render, TV (epNoteHTML)"   "function epNoteHTML(item, season, ep)"
+check "$RAVAPP"  "R222 series hero never carries the note"         "if (item.kind === 'series') return '';"
+check "$RAVDATA" "R222 per-episode note keys (title|SxEy)"         "'Nordvest|S1E8'"
+check "$RAVDATA" "R222 note lookup takes season+episode"           "function playbackNoteFor(item, season, ep)"
+check "$RAVMOB"  "R222 episode-row note, phone (.meslow)"          ".meslow{"
+check "$RAVMOB"  "R222 episode-row note render, phone"             "function epSlowHTML(it, ep)"
+
 if [ "$fail" -eq 0 ]; then
   echo "OK — every design-sync-fragile CSS rule tracked here is present."
 else
