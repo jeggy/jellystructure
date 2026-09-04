@@ -142,8 +142,6 @@ body.cf-screen-on .app-main2 > :not(#cf-screen-root) { display: none; }
 .cf-sysrow-main { flex: 1; min-width: 0; }
 .cf-sysrow-main .nm { font-weight: 600; font-size: .86rem; }
 .cf-sysrow-main .src { font-size: .72rem; color: var(--ink-soft); margin-top: 1px; }
-.cf-sysscope { flex: none; }
-.cf-sysscope span { padding: 5px 10px; font-size: .74rem; }
 .cf-sysmerge { display: flex; align-items: center; gap: 10px; padding: 9px 10px 2px; }
 .cf-sysmerge.off { opacity: .45; }
 .cf-sysmerge .tiny { color: var(--ink-soft); }

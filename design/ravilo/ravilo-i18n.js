@@ -213,6 +213,50 @@
   Object.assign(STR.da, { language: 'Sprog', settings: 'Indstillinger', theme: 'Tema', unpair: 'Fjern parring', unpair_desc: 'Logger alle brugere ud og fjerner dette tv\u2019s parring.', toast_unpaired: '\u2713 Dette tv er blevet fjernet', unpair_confirm: 'Fjern parring?', unpair_yes: 'Ja, fjern parring' });
   Object.assign(STR.fo, { language: 'M\u00e1l', settings: 'Stillingar', theme: 'Tema', unpair: 'Avpara sj\u00f3nvarp', unpair_desc: 'Ritar allar br\u00fakarar \u00fat og strikar parringina \u00e1 hesum sj\u00f3nvarpi.', toast_unpaired: '\u2713 Hetta sj\u00f3nvarpi\u00f0 er avpara\u00f0', unpair_confirm: 'Avpara sj\u00f3nvarp?', unpair_yes: 'Ja, avpara' });
 
+  // ---- Account: change your own password (all platforms) + profile photo (phone/web only).
+  //      The TV renders a photo but never offers to change one, so it needs no photo copy
+  //      beyond what the phone screens use — those strings live here so all three
+  //      languages stay in one place, per R180's ship-fully-translated rule. ----
+  Object.assign(STR.en, {
+    account: 'Account', pm_profile: 'Your profile', profile_title: 'Your profile',
+    pw_change: 'Change password', pw_title: 'Change your password',
+    pw_sub: 'You\u2019ll need the new one the next time you sign in on any device.',
+    pw_cur: 'Current password', pw_new: 'New password', pw_rep: 'Repeat new password',
+    pw_save: 'Save password', pw_busy: 'Saving\u2026', pw_ok: 'Password changed.',
+    pw_err_cur: 'Enter your current password.', pw_err_new: 'Use at least 6 characters.',
+    pw_err_rep: 'The two new passwords don\u2019t match.', pw_err_wrong: 'That current password isn\u2019t right.',
+    photo_title: 'Your photo', photo_sub: 'Shows on every device you watch on \u2014 including the TV.',
+    photo_choose: 'Choose a photo', photo_camera: 'Take a photo', photo_drop: 'or drop an image here',
+    photo_presets: 'Or use a colour', photo_remove: 'Remove photo',
+    photo_saved: 'Photo updated.', photo_removed: 'Photo removed \u2014 back to your initials.',
+  });
+  Object.assign(STR.da, {
+    account: 'Konto', pm_profile: 'Din profil', profile_title: 'Din profil',
+    pw_change: 'Skift adgangskode', pw_title: 'Skift din adgangskode',
+    pw_sub: 'Du skal bruge den nye, n\u00e6ste gang du logger ind p\u00e5 en enhed.',
+    pw_cur: 'Nuv\u00e6rende adgangskode', pw_new: 'Ny adgangskode', pw_rep: 'Gentag ny adgangskode',
+    pw_save: 'Gem adgangskode', pw_busy: 'Gemmer\u2026', pw_ok: 'Adgangskoden er skiftet.',
+    pw_err_cur: 'Indtast din nuv\u00e6rende adgangskode.', pw_err_new: 'Brug mindst 6 tegn.',
+    pw_err_rep: 'De to nye adgangskoder er ikke ens.', pw_err_wrong: 'Den nuv\u00e6rende adgangskode er ikke rigtig.',
+    photo_title: 'Dit billede', photo_sub: 'Vises p\u00e5 alle de enheder, du ser p\u00e5 \u2014 ogs\u00e5 tv\u2019et.',
+    photo_choose: 'V\u00e6lg et billede', photo_camera: 'Tag et billede', photo_drop: 'eller tr\u00e6k et billede herind',
+    photo_presets: 'Eller brug en farve', photo_remove: 'Fjern billede',
+    photo_saved: 'Billedet er opdateret.', photo_removed: 'Billedet er fjernet \u2014 tilbage til dine initialer.',
+  });
+  Object.assign(STR.fo, {
+    account: 'Kontu', pm_profile: 'T\u00edn vangamynd', profile_title: 'T\u00edn vangamynd',
+    pw_change: 'Skift loyniord', pw_title: 'Skift t\u00edtt loyniord',
+    pw_sub: 'T\u00fa skalt br\u00faka ta\u00f0 n\u00fdggja n\u00e6stu fer\u00f0, t\u00fa ritar inn \u00e1 einum t\u00f3li.',
+    pw_cur: 'Verandi loyniord', pw_new: 'N\u00fdtt loyniord', pw_rep: 'Endurtak n\u00fdtt loyniord',
+    pw_save: 'Var\u00f0geym loyniord', pw_busy: 'Var\u00f0geymir\u2026', pw_ok: 'Loyniordi\u00f0 er skift.',
+    pw_err_cur: 'Skriva t\u00edtt verandi loyniord.', pw_err_new: 'Br\u00faka minst 6 t\u00f8kn.',
+    pw_err_rep: 'Tey tvey n\u00fdggju loyniord\u00f0 eru ikki eins.', pw_err_wrong: 'Ta\u00f0 verandi loyniordi\u00f0 er skeivt.',
+    photo_title: 'T\u00edn mynd', photo_sub: 'S\u00fdnist \u00e1 \u00f8llum teimum t\u00f3lum, t\u00fa hyggur \u00e1 \u2014 eisini sj\u00f3nvarpinum.',
+    photo_choose: 'Vel eina mynd', photo_camera: 'Tak eina mynd', photo_drop: 'ella drag eina mynd higar',
+    photo_presets: 'Ella br\u00fak ein lit', photo_remove: 'Tak myndina av',
+    photo_saved: 'Myndin er dagf\u00f8rd.', photo_removed: 'Myndin er tikin av \u2014 aftur til initialarnar.',
+  });
+
   // ---- R175: username/password login (replaces the pairing code) ----
   Object.assign(STR.en, {
     login_title: 'Sign in to Jellyfin', login_sub: 'Use your Jellyfin username and password. Each person signs in once \u2014 their profile stays on this TV.',
