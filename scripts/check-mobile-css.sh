@@ -113,6 +113,11 @@ check "$RAVDATA" "R222 note lookup takes season+episode"           "function pla
 check "$RAVMOB"  "R222 episode-row note, phone (.meslow)"          ".meslow{"
 check "$RAVMOB"  "R222 episode-row note render, phone"             "function epSlowHTML(it, ep)"
 
+# 2026-09-05 — Users & devices (Phase 143/185/187): .usr-cap/.usr-av never made it into a served
+# stylesheet at all until now (found while building 187's admin photo chip, on the same page).
+check "$WF" "Users & devices: decode-ceiling line (.usr-cap)" ".usr-cap {"
+check "$WF" "Users & devices: read-only photo chip (.usr-av)" ".usr-av {"
+
 if [ "$fail" -eq 0 ]; then
   echo "OK — every design-sync-fragile CSS rule tracked here is present."
 else

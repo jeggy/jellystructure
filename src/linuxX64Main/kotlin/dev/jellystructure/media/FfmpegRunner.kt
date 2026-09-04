@@ -288,6 +288,25 @@ object FfmpegRunner {
         return runCommand("ffmpeg -y -i '$inEsc' -vf scale=$w:$h -frames:v 1 $q'$outEsc' 2>&1")
     }
 
+    /**
+     * Phase 187 (FR-187-6) — server-side centre-crop-to-square + bound, for an uploaded account photo.
+     * There is no crop UI (R234 FR-R234-9: the owner didn't ask for one, every surface renders a
+     * circle), so a non-square original is cropped exactly once, here, for every viewer of it —
+     * `crop=min(iw\,ih):min(iw\,ih)` takes the largest centred square Ffmpeg's own filter graph can
+     * express, then `scale` bounds it to [size]px. Always JPEG: Jellyfin's `/UserImage` re-serves
+     * whatever bytes it was given verbatim (FR-187-1's probe found it never resizes), so this is the
+     * only place in the whole chain that ever bounds what a TV eventually downloads.
+     */
+    suspend fun centerCropSquareJpeg(input: String, output: String, size: Int): Boolean {
+        val inEsc = input.replace("'", "'\\''")
+        val outEsc = output.replace("'", "'\\''")
+        // The comma inside min(iw,ih) MUST be escaped (\,) — ffmpeg's own filtergraph parser splits
+        // filters on an unescaped comma, so an un-escaped one here silently mangles the whole -vf value
+        // into three broken fragments (crop='min(iw / ih)':'min(iw / ih)':scale=...) rather than erroring
+        // loudly. Caught by testing this against a real non-square image before it was ever wired up.
+        return runCommand("ffmpeg -y -i '$inEsc' -vf \"crop='min(iw\\,ih)':'min(iw\\,ih)',scale=$size:$size\" -frames:v 1 -q:v 3 '$outEsc' 2>&1")
+    }
+
     // Phase 150 (FR-SEG1-3) — below this runtime, treat the file as TV-episode-length (a short window
     // is enough); at/above it, movie-length (credits can run much longer, so scan further back).
     private const val CREDITS_WINDOW_THRESHOLD_SEC = 3000.0  // 50min

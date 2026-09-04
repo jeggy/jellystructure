@@ -47,6 +47,14 @@ class RaviloArtworkService(
     private val cacheDir = "$dataDir/artwork/tv"
     private val avatarDir = "$dataDir/artwork/avatars"
 
+    companion object {
+        // Phase 187 (FR-187-6) — the read path's own intent was 160px (RaviloArtworkService's prior
+        // fillHeight=160 request, before FR-187-1's probe found Jellyfin ignores it); 320 covers every
+        // surface at 2x. This is the only bound anywhere in the chain (Jellyfin stores + re-serves the
+        // upload verbatim, per that same probe), so it is a real ceiling, not a suggestion.
+        private const val AVATAR_SIZE_PX = 320
+    }
+
     // R129/R130: bound the on-disk media cache (configurable; 0 = unlimited), read live so a config edit
     // applies without a restart. Eviction runs only on a cache miss (already behind the gate).
     private fun maxCacheBytes(): Long {
@@ -105,8 +113,26 @@ class RaviloArtworkService(
         return resizeServe("$itemId-season$season-poster$wSuffix", source, "poster", width)
     }
 
-    /** Avatar — the one remaining (cached) Jellyfin fetch. Durable cache; 404 when Jellyfin has no image. */
-    suspend fun serveAvatar(userId: String): Pair<ByteArray, String>? {
+    /**
+     * Avatar — the one remaining (cached) Jellyfin fetch. Durable cache; 404 when Jellyfin has no image.
+     *
+     * Phase 187 (FR-187-7): [requestedTag] is Jellyfin's own `PrimaryImageTag`, carried on the URL as
+     * `?v=` ([RaviloImageUrl.avatar]) exactly like [dev.jellystructure.media.ArtworkDownloader]'s size-
+     * keyed versioning does for library art (R214's fix for the *other* half of this bug class). The
+     * sidecar `.ct` file now stores `"$tag|$contentType"`; a cached entry only counts as fresh when its
+     * stored tag matches what was requested — a mismatch (new photo, new tag) is a cache MISS, not
+     * something needing an explicit eviction call from the write path. `requestedTag == null` (an old
+     * cached client, or a caller with no tag to hand) always accepts whatever is cached, unchanged from
+     * before this phase.
+     *
+     * Also moved off the undocumented `/Users/{userId}/Images/Primary` legacy alias onto the documented
+     * `/UserImage?userId=` route — verified live 2026-09-05 (FR-187-1's probe) to return byte-identical
+     * output; the alias simply isn't in Jellyfin's own OpenAPI document, so relying on it was one
+     * upgrade away from silently breaking. `fillHeight`/`quality` are dropped from the request for the
+     * same probe's other finding: Jellyfin ignores both and always returns the full original — they were
+     * never doing anything.
+     */
+    suspend fun serveAvatar(userId: String, requestedTag: String? = null): Pair<ByteArray, String>? {
         // Security fix (2026-08-02 review, finding C2) — this route is intentionally auth-exempt
         // (AuthPlugin's OPEN_API_PATHS: an <img>/Coil request can't attach a device token) and the
         // cache read below happens BEFORE any Jellyfin round-trip. Without this guard, a userId of
@@ -117,22 +143,64 @@ class RaviloArtworkService(
         if (".." in userId || "/" in userId || "\\" in userId) return null
         val cachePath = "$avatarDir/$userId"
         val ctPath = "$cachePath.ct"
-        readSimple(cachePath, ctPath)?.let { return it }
+        readTagged(cachePath, ctPath, requestedTag)?.let { return it }
         return OutboundHttp.withPermit {
-            readSimple(cachePath, ctPath)?.let { return@withPermit it }
+            readTagged(cachePath, ctPath, requestedTag)?.let { return@withPermit it }
             val base = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
             val token = configStore.current.apiKeys.jellyfinToken
             if (base.isBlank() || token.isBlank()) return@withPermit null
-            val resp = runCatching { http.get("$base/Users/$userId/Images/Primary?api_key=$token&fillHeight=160&quality=90") }
+            val resp = runCatching { http.get("$base/UserImage?userId=$userId&api_key=$token") }
                 .getOrElse { Logger.warn("RaviloArtwork: avatar fetch failed $userId — ${it.message}", "tv-image"); return@withPermit null }
             val bytes = runCatching { resp.readRawBytes() }.getOrNull() ?: return@withPermit null
             val ct = resp.contentType()?.toString() ?: "image/jpeg"
             // R132: never cache a non-image (Jellyfin returns a JSON body when a user has no avatar).
             if (resp.status.value !in 200..299 || bytes.isEmpty() || !ct.startsWith("image/")) return@withPermit null
             atomicWrite(cachePath, bytes)
-            atomicWrite(ctPath, ct.encodeToByteArray())
+            atomicWrite(ctPath, "${requestedTag.orEmpty()}|$ct".encodeToByteArray())
             Pair(bytes, ct)
         }
+    }
+
+    /**
+     * Phase 187 (FR-187-6/7) — the write half: centre-crops+bounds server-side, forwards to Jellyfin,
+     * and returns the new tag so the caller can hand back a change-keyed URL immediately (no waiting on
+     * the next cache read to pick up the new photo — FR-R234-8). [rawBytes] must already be validated
+     * (allowed content type, size cap) by the route.
+     */
+    suspend fun setAvatar(userId: String, jellyfinClient: dev.jellystructure.auth.JellyfinClient, rawBytes: ByteArray): String? {
+        val base = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
+        val token = configStore.current.apiKeys.jellyfinToken
+        if (base.isBlank() || token.isBlank()) return null
+        val tmpIn = "$avatarDir/.upload_$userId.src"
+        val tmpOut = "$avatarDir/.upload_$userId.jpg"
+        return OutboundHttp.withPermit {
+            runCatching { FileIo.writeBytes(Path(tmpIn), rawBytes) }.onFailure { return@withPermit null }
+            val cropped = FfmpegRunner.centerCropSquareJpeg(tmpIn, tmpOut, AVATAR_SIZE_PX)
+            val bytes = if (cropped) runCatching { FileIo.readBytes(Path(tmpOut)) }.getOrNull() else null
+            runCatching { SystemFileSystem.delete(Path(tmpIn), false) }
+            runCatching { SystemFileSystem.delete(Path(tmpOut), false) }
+            if (bytes == null || bytes.isEmpty()) { Logger.warn("RaviloArtwork: avatar crop failed for $userId", "tv-image"); return@withPermit null }
+            val tag = jellyfinClient.setUserImage(base, token, userId, bytes, "image/jpeg") ?: return@withPermit null
+            // Prime the cache with exactly what we just uploaded (already the right size/format) so the
+            // very next read is a hit at the new tag, rather than an avoidable round-trip back to Jellyfin.
+            atomicWrite("$avatarDir/$userId", bytes)
+            atomicWrite("$avatarDir/$userId.ct", "$tag|image/jpeg".encodeToByteArray())
+            tag
+        }
+    }
+
+    /** Phase 187 (FR-187-3) — remove the caller's own avatar; clears the local cache too so a stale
+     *  file can't outlive the Jellyfin-side delete (same discipline as [setAvatar]). */
+    suspend fun deleteAvatar(userId: String, jellyfinClient: dev.jellystructure.auth.JellyfinClient): Boolean {
+        val base = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
+        val token = configStore.current.apiKeys.jellyfinToken
+        if (base.isBlank() || token.isBlank()) return false
+        val ok = jellyfinClient.deleteUserImage(base, token, userId)
+        if (ok) {
+            runCatching { SystemFileSystem.delete(Path("$avatarDir/$userId"), false) }
+            runCatching { SystemFileSystem.delete(Path("$avatarDir/$userId.ct"), false) }
+        }
+        return ok
     }
 
     // ─── core: resolve source → size-keyed cache → ffmpeg resize ──────────────────
@@ -230,11 +298,18 @@ class RaviloArtworkService(
     }
 
     /** Avatar cache read — durable, no staleness check. */
-    private fun readSimple(cachePath: String, ctPath: String): Pair<ByteArray, String>? {
+    /** Phase 187 (FR-187-7) — [requestedTag] absent means "accept whatever's cached" (pre-Phase-187
+     *  callers, or Jellyfin genuinely has no tag for this user); present means the cached tag must
+     *  match or this is treated as a miss. Sidecar format: `"$tag|$contentType"`. */
+    private fun readTagged(cachePath: String, ctPath: String, requestedTag: String?): Pair<ByteArray, String>? {
         if (!SystemFileSystem.exists(Path(cachePath))) return null
         val bytes = runCatching { FileIo.readBytes(Path(cachePath)) }.getOrNull() ?: return null
         if (bytes.isEmpty()) return null
-        val ct = runCatching { FileIo.readBytes(Path(ctPath)).decodeToString() }.getOrDefault("image/jpeg")
+        val meta = runCatching { FileIo.readBytes(Path(ctPath)).decodeToString() }.getOrDefault("|image/jpeg")
+        val parts = meta.split('|', limit = 2)
+        val cachedTag = parts.getOrNull(0).orEmpty()
+        val ct = parts.getOrNull(1)?.takeIf { it.isNotBlank() } ?: "image/jpeg"
+        if (requestedTag != null && cachedTag != requestedTag) return null
         return Pair(bytes, ct)
     }
 

@@ -28,7 +28,11 @@ object RaviloImageUrl {
         val base = "/api/tv/image/$seriesId/still/${epFilename.encodeURLPathPart()}"
         return if (epNum != null) "$base?ep=$epNum" else base
     }
-    fun avatar(userId: String)   = "/api/tv/image/user/$userId/avatar"
+    // Phase 187 (FR-187-7) — [tag] is Jellyfin's own PrimaryImageTag; same R214 cache-busting shape as
+    // [v] above, keyed on Jellyfin's own change signal instead of an on-disk file size since the
+    // avatar's source of truth is Jellyfin's user record, not a jellystructure-managed asset.
+    fun avatar(userId: String, tag: String? = null) =
+        if (tag != null) "/api/tv/image/user/$userId/avatar?v=$tag" else "/api/tv/image/user/$userId/avatar"
     /** R194 — a season's own poster; 404s when the season has no poster on disk (client falls back to
      *  [poster], the series' own). */
     fun seasonPoster(seriesId: String, season: Int, v: Long? = null) =

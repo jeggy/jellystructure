@@ -7,6 +7,32 @@ import kotlinx.coroutines.launch
 import org.w3c.dom.Element
 import org.w3c.dom.HTMLElement
 
+// Phase 187 (FR-187-9) — read-only photo per user row, in place of the initials chip when Jellyfin
+// has one. Same `.usr-av`/`.av-img` markup as `design/app/ravilo-users.html`'s mockup, and the same
+// gradient presets, so a viewer's photo appears identically whether it was set on the TV/phone (via
+// Ravilo) or is missing and falling back to initials here — one stored fact (Jellyfin's own user
+// Primary image), never two representations that can disagree.
+private val USR_GRADIENTS = listOf(
+    "linear-gradient(120deg,#7b6ef0,#3fb6f5)", "linear-gradient(120deg,#e0792f,#f5b542)",
+    "linear-gradient(120deg,#19d6c6,#2a8cf0)", "linear-gradient(120deg,#2dd49a,#3fb6f5)",
+    "linear-gradient(120deg,#e0567a,#7b6ef0)", "linear-gradient(120deg,#e0639a,#b15cd0)",
+)
+private fun usrInitials(name: String): String {
+    val parts = name.trim().split(Regex("\\s+")).filter { it.isNotBlank() }
+    return when {
+        parts.size >= 2 -> "${parts.first().first()}${parts.last().first()}".uppercase()
+        parts.size == 1 -> parts.first().take(2).uppercase()
+        else -> "?"
+    }
+}
+private fun usrAvatarChip(userId: String, username: String, avatarUrl: String?): String {
+    if (avatarUrl != null) {
+        return """<span class="usr-av has-photo"><img class="av-img" src="${avatarUrl.esc()}" alt=""></span>"""
+    }
+    val gradient = USR_GRADIENTS[(userId.hashCode().let { if (it < 0) -it else it }) % USR_GRADIENTS.size]
+    return """<span class="usr-av" style="background:$gradient;">${usrInitials(username).esc()}</span>"""
+}
+
 // Phase 148 — "Users & devices" extracted out of the Settings tab rail into its own standalone
 // page/route (design/app/ravilo-users.html), living under the sidebar's Ravilo section. Everything
 // here (markup + the loadUsersCard/refreshUsersList/loadUserHistory trio) was moved verbatim from
@@ -166,6 +192,7 @@ private suspend fun refreshUsersList(scope: CoroutineScope) {
 
         """<div class="card" style="margin-bottom:12px;padding:14px 16px">
              <div class="row center" style="margin-bottom:4px">
+               ${usrAvatarChip(u.userId, u.username, u.avatarUrl)}
                <b>${u.username.esc()}</b>$badges
                <span class="spacer"></span>
                <button class="btn sm ghost users-signout-all" data-user="${u.userId}" style="color:var(--bad)">Sign out everywhere</button>
