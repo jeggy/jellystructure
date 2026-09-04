@@ -14,6 +14,7 @@
   const NEXTUP_AT = 34;     // seconds remaining → next-up card appears
   const COUNTDOWN = 8;      // next-up auto-advance countdown
   const HIDE_MS = 3600;     // auto-hide chrome after inactivity while playing
+  const EPRAIL_HIDE_MS = 30000;   // R208: auto-close the episode rail after inactivity
   const SKIP_BACK = 10, SKIP_FWD = 30;   // -10s / +30s
 
   // simple inline icons
@@ -189,7 +190,7 @@
     let focus = 'play';           // current focusable id in transport
     let epIdx = 0;                // focused episode in the rail
     let countdown = COUNTDOWN;
-    let tickTimer = null, hideTimer = null, bufferTimer = null, cdTimer = null;
+    let tickTimer = null, hideTimer = null, bufferTimer = null, cdTimer = null, epRailTimer = null;
     let introEntered = false, skipPromptOn = false, skipTimer = null;
     let cardMode = 'next', cardDismissed = false;
 
@@ -481,9 +482,10 @@
       const c = els.erTrack.children[epIdx]; if (c) c.classList.add('focused');
       scrollEp();
     }
-    function openEpRail() { if (!ctx.episodes) return; root.classList.add('eprail'); showChrome(); clearTimeout(hideTimer); epIdx = ctx.epIndex; paintEpRail(); }
-    function closeEpRail() { root.classList.remove('eprail'); paintFocus(); scheduleHide(); }
-    function epNav(d) { epIdx = Math.max(0, Math.min(ctx.episodes.length - 1, epIdx + d)); paintEpRail(); }
+    function armEpRailTimer() { clearTimeout(epRailTimer); epRailTimer = setTimeout(closeEpRail, EPRAIL_HIDE_MS); }
+    function openEpRail() { if (!ctx.episodes) return; root.classList.add('eprail'); showChrome(); clearTimeout(hideTimer); epIdx = ctx.epIndex; paintEpRail(); armEpRailTimer(); }
+    function closeEpRail() { clearTimeout(epRailTimer); root.classList.remove('eprail'); paintFocus(); scheduleHide(); }
+    function epNav(d) { epIdx = Math.max(0, Math.min(ctx.episodes.length - 1, epIdx + d)); paintEpRail(); armEpRailTimer(); }
     function chooseEp() {
       if (epIdx === ctx.epIndex) { closeEpRail(); return; }
       const c = ctx.resolveEpisode ? ctx.resolveEpisode(epIdx) : null;
@@ -721,6 +723,7 @@
       sel = { audio: c.audioDefault || 0, subs: c.subsDefault || 0 };
       focus = 'play';
       introEntered = false; skipPromptOn = false; cardDismissed = false; clearTimeout(skipTimer);
+      clearTimeout(epRailTimer);
       root.classList.remove('picker', 'nextup', 'eprail', 'skipintro');
       root.classList.toggle('series', !!c.episodes);
       paintMeta(); paintTime(); paintFrame(pos); paintFocus();
@@ -738,7 +741,7 @@
       load(c, true);
     }
     function exit() {
-      stopTick(); clearTimeout(hideTimer); clearTimeout(bufferTimer); clearInterval(cdTimer);
+      stopTick(); clearTimeout(hideTimer); clearTimeout(bufferTimer); clearInterval(cdTimer); clearTimeout(epRailTimer);
       root.classList.remove('on', 'picker', 'nextup', 'buffering', 'chrome', 'paused');
       open = false; playing = false;
       const watched = ctx ? { title: ctx.title, pos, duration: ctx.duration } : null;
