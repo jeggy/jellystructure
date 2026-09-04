@@ -13,6 +13,19 @@
 **Depends on Phase 187** for both routes; FR-R234-7 in particular cannot be finished until 187's open
 question 2 is answered.
 
+> **2026-09-05 — 187's endpoint probe ran; two of this phase's blocks moved, one did not.**
+> **FR-R234-8 is now fully specified:** Jellyfin exposes `UserDto.PrimaryImageTag`, so 187 FR-187-7's
+> change-keyed URL is real (`…/avatar?v=<tag>`) and "let `RemoteImage` miss its cache" has a concrete
+> mechanism — a new tag is a new URL and therefore a cache miss, not something needing active eviction.
+> Worth knowing while building it: jellystructure's avatar cache turned out to have **no TTL whatever**,
+> so before 187 lands there is no version of this that self-heals.
+> **Open question 5 (kids profiles) is settled** — no Jellyfin policy flag gates it; see below.
+> **FR-R234-7 is still blocked.** 187's open question 2 could not be answered read-only: the password
+> endpoint returns a bare `204` whether or not it invalidated tokens. Build the success path first, as
+> this requirement already says, and keep the branch explicit.
+> Unchanged for this phase: preset colours (FR-R234-3) remain blocked on 187 open question 3, which is an
+> owner decision and not something a probe can resolve.
+
 Design: built into the mockups at `design/ravilo/Ravilo Mobile.html` (profile sheet · Your profile ·
 Settings → Account → change password) and `design/ravilo/Ravilo TV.html` (Settings → Account, password
 panel on R175's on-screen keyboard). Strings drafted × en/da/fo in `design/ravilo/ravilo-i18n.js`.
@@ -172,5 +185,8 @@ picture in the Ravilo app on your phone"* as a TV line (FR-R234-2 forbids it ent
    wasmJS target.
 5. **Kids profiles** — the owner's decision was "any signed-in profile, its own password only", which
    includes a kids profile changing its own password and photo. Worth one explicit confirmation, since a
-   kid locking themselves out of a TV is a support call to the same household member who set it up. No
-   Jellyfin policy flag is consulted today; see 187 open question 4.
+   kid locking themselves out of a TV is a support call to the same household member who set it up.
+   **Narrowed 2026-09-05 by 187's probe:** it is now purely a product question, with no technical half
+   left. Jellyfin 10.11.11's `UserPolicy` has **no flag** that gates self-service password change (see
+   187 open question 4), so there is nothing to consult and nothing that would stop a kids profile at the
+   server — the row is shown or hidden entirely by our own choice, and the owner has already made it.
