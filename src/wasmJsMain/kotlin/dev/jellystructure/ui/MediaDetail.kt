@@ -154,6 +154,18 @@ private fun buildMetadataLanguageCard(item: MediaItem, fallbackLang: String, tmd
     }
     val setAt = item.metadataLanguageSetAt
     val whenLine = if (setAt != null) " · set ${tsAgo(setAt)}" else ""
+    // Phase 191 (FR-191-5) — the cheap 90% mismatch check: titlesByLang[chosen] is already stored (built
+    // by every TMDB fetch, Phase 94), so when it exists and disagrees with the title actually on screen,
+    // the item demonstrably didn't last fetch in the language this card claims. Not a general guarantee
+    // (a title can coincide across languages, and this says nothing about overview/genres/artwork) — a
+    // safety net that catches the reported failure mode, not a replacement for FR-191-1's real fix.
+    val titledInChosen = item.titlesByLang[chosen]
+    val mismatchLine = if (titledInChosen != null && titledInChosen != item.title) {
+        """<div class="tiny" style="margin-top:10px;padding:8px 10px;border-radius:8px;background:var(--warn-soft);border:1px solid var(--warn);">
+             Showing metadata fetched in <b>${(item.resolvedLanguage ?: "another language").esc()}</b>, not <span class="lang">${chosen.esc()}</span> —
+             <button id="mlang-mismatch-repull-btn" class="btn sm ghost" style="padding:2px 8px;margin-left:4px;">re-pull to fix</button>
+           </div>"""
+    } else ""
     return """
         <div class="override" id="mlang-card" style="margin-top:16px;border:1px solid var(--accent);border-radius:10px;">
           <div class="row center">
@@ -163,6 +175,7 @@ private fun buildMetadataLanguageCard(item: MediaItem, fallbackLang: String, tmd
             <span class="badge" style="margin-left:6px;">chosen</span>
           </div>
           <div class="tiny" style="margin-top:6px;">Manually set$whenLine. Locked against pull_tmdb and re-scans — an automatic re-check will never overwrite this.</div>
+          $mismatchLine
           <div class="tiny muted" style="margin-top:12px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;font-size:.68rem;">Resolver would pick</div>
           <div style="opacity:.55;">$traceBox</div>
           <div style="display:flex;gap:8px;margin-top:10px;">
@@ -1006,6 +1019,16 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
 
     document.getElementById("repull-jellyfin-btn")?.addEventListener("click") {
         showRepullJellyfinModal(item, container, scope)
+    }
+
+    // Phase 191 (FR-191-5) — same action as the page-bar Re-pull ▾ → From TMDB button (repull-btn above);
+    // only present when buildMetadataLanguageCard detected the chosen-language mismatch.
+    document.getElementById("mlang-mismatch-repull-btn")?.addEventListener("click") {
+        if (item.tmdbMatchLocked) {
+            showDetailMsg("TMDB match is locked — use Find/fix match… to re-match first.", false)
+        } else {
+            scope.launch { handleRepull(item, container, scope, fallbackLang, jellyfinUrl, prevTmdbLangs = tmdbLangs) }
+        }
     }
 
     document.getElementById("trailer-refetch")?.addEventListener("click") {

@@ -146,6 +146,25 @@ internal fun parseMusicVideoArtistTitle(filename: String): Pair<String?, String>
     return Pair(artist.ifBlank { null }, title.ifBlank { base })
 }
 
+/**
+ * Phase 191 — an operator's explicit [dev.jellystructure.model.MediaItem.metadataLanguage] choice must
+ * win the TMDB query-language order on EVERY fetch, not only [Scanner.rescanMetadata] (the one path an
+ * operator actually triggers by hand). Before this, a routine scheduled scan or a per-item Sync rebuilt
+ * [MediaItem] from scratch via [LanguageResolver.priorityList] alone, ignoring the override entirely —
+ * [MediaStore.preserveMetadataLanguage] then restored the *field* post-hoc, but the metadata it had
+ * already fetched (title/overview/resolvedLanguage) stayed in the wrong language. Extracted from the
+ * inline logic Phase 184 wrote for rescanMetadata so every call site shares one implementation.
+ */
+internal fun normalizedMetadataLanguageOverride(raw: String?): String? =
+    raw?.ifBlank { null }?.let { LanguageResolver.normalize(it) }
+
+/** Moves [overrideLang] to the front of [basePriority] (de-duplicated), or returns [basePriority]
+ *  unchanged when there's no override or it's already first. See [normalizedMetadataLanguageOverride]. */
+internal fun overriddenLangPriority(basePriority: List<String>, overrideLang: String?): List<String> =
+    if (overrideLang != null && basePriority.firstOrNull() != overrideLang)
+        listOf(overrideLang) + basePriority.filter { it != overrideLang }
+    else basePriority
+
 class Scanner(
     private val configStore: ConfigStore,
     private val tmdb: TmdbClient,
@@ -326,9 +345,15 @@ class Scanner(
 
         val tracks = FfprobeRunner.probe(localPath)
         val audioLangs = tracks.filter { it.kind == TrackKind.AUDIO }.map { it.language }
-        val langPriority = LanguageResolver.priorityList(audioLangs, fallback)
+        val basePriority = LanguageResolver.priorityList(audioLangs, fallback)
+        // Phase 191 — a routine scan re-scans this item from scratch (no MediaItem in scope), so the
+        // only way to see an operator's earlier metadataLanguage choice is to look up the record it was
+        // set on. `store` is null only in test construction (Scanner's own doc comment), in which case
+        // there's nothing to honour and this degrades to the pre-191 behaviour.
+        val overrideLang = normalizedMetadataLanguageOverride(store?.resolveByJellyfinId(jItem.id)?.metadataLanguage)
+        val langPriority = overriddenLangPriority(basePriority, overrideLang)
 
-        val fetch = fetchTmdbMovieMetadata(jItem.providerIds?.tmdb?.toIntOrNull(), title, searchYear, langPriority)
+        val fetch = fetchTmdbMovieMetadata(jItem.providerIds?.tmdb?.toIntOrNull(), title, searchYear, langPriority, acceptTitleOnly = overrideLang != null)
         val details = fetch.localized?.details
         val resolvedLang = fetch.localized?.let { it.language ?: langPriority.lastOrNull() }
 
@@ -410,13 +435,16 @@ class Scanner(
 
         val tracks = FfprobeRunner.probe(localPath)
         val audioLangs = tracks.filter { it.kind == TrackKind.AUDIO }.map { it.language }
-        val langPriority = LanguageResolver.priorityList(audioLangs, fallback)
+        val basePriority = LanguageResolver.priorityList(audioLangs, fallback)
+        // Phase 191 — same override lookup as scanMovie.
+        val overrideLang = normalizedMetadataLanguageOverride(store?.resolveByJellyfinId(jItem.id)?.metadataLanguage)
+        val langPriority = overriddenLangPriority(basePriority, overrideLang)
 
         // Phase 171: search combines artist + title when both are known — TMDB concert-film titles
         // routinely include the artist name (e.g. "Muse: HAARP"), so the bare filename title alone
         // under-searches. Still just a best-effort search: providerIds first, like every other kind.
         val searchQuery = if (artist != null) "$artist $title" else title
-        val fetch = fetchTmdbMovieMetadata(jItem.providerIds?.tmdb?.toIntOrNull(), searchQuery, jItem.year, langPriority)
+        val fetch = fetchTmdbMovieMetadata(jItem.providerIds?.tmdb?.toIntOrNull(), searchQuery, jItem.year, langPriority, acceptTitleOnly = overrideLang != null)
         val details = fetch.localized?.details
         val resolvedLang = fetch.localized?.let { it.language ?: langPriority.lastOrNull() }
 
@@ -520,7 +548,11 @@ class Scanner(
             .mapValues { (_, eps) -> eps.firstOrNull()?.seasonName ?: "" }
             .filterValues { it.isNotBlank() }
 
-        val previousEpisodes = store?.resolveByJellyfinId(jItem.id)?.episodes ?: emptyList()
+        val existingSeriesItem = store?.resolveByJellyfinId(jItem.id)
+        val previousEpisodes = existingSeriesItem?.episodes ?: emptyList()
+        // Phase 191 — same override lookup as scanMovie/scanMusicVideo, from the record this fresh scan
+        // is about to replace; applied below to both the series-level fetch and every per-episode fetch.
+        val overrideLang = normalizedMetadataLanguageOverride(existingSeriesItem?.metadataLanguage)
 
         // Phase 183 (FR-183-4) — the previously-stored episode for each (season, episode), so the loop
         // below can skip a per-episode TMDB re-fetch when we already hold good data for it (the single
@@ -564,6 +596,10 @@ class Scanner(
                     val audioLangs = tracks.filter { it.kind == TrackKind.AUDIO }.map { it.language }
                     val epLangPriority = LanguageResolver.priorityList(audioLangs, fallback)
                     val epResolvedLang = epLangPriority.firstOrNull()
+                    // Phase 191 — only the TMDB *fetch* order honours the series-level override; the
+                    // episode's own displayed resolvedLanguage above stays audio-derived, matching the
+                    // existing per-episode "honest display language" contract (Phase 128).
+                    val epFetchPriority = overriddenLangPriority(epLangPriority, overrideLang)
                     val translatedJfPath = if (lib.jellyfinPath.isNotBlank()) file.replaceFirst(lib.localPath, lib.jellyfinPath) else file
                     val jfPathMatch = jfByPath[translatedJfPath]
                     // Phase 160: when our own filename regexes find nothing (e.g. a bare `SEE` scheme like
@@ -597,7 +633,7 @@ class Scanner(
                         val epDetails = if (!hasGoodDetails && seriesTmdbId != null && seasonNum != null && epNum != null) {
                             // Phase 183 (FR-183-3) — bounded, not one coroutine per episode unconditionally.
                             episodeFanoutGate.withPermit {
-                                tmdb.getEpisodeDetailsLocalized(seriesTmdbId, seasonNum, epNum, epLangPriority)
+                                tmdb.getEpisodeDetailsLocalized(seriesTmdbId, seasonNum, epNum, epFetchPriority)
                             }
                         } else null
 
@@ -696,10 +732,12 @@ class Scanner(
                 if (primaryLang != null) langVotes[primaryLang] = (langVotes[primaryLang] ?: 0) + 1
             }
             val majorityLang = langVotes.maxByOrNull { it.value }?.key
-            val mixPriority = LanguageResolver.priorityList(
+            val mixBasePriority = LanguageResolver.priorityList(
                 majorityLang?.let { listOf(it) } ?: emptyList(), fallback
             )
-            val mixDetails = seriesTmdbId?.let { tmdb.getTvDetailsLocalized(it, mixPriority) }?.details
+            // Phase 191 — the override still wins even when episodes disagree on audio language.
+            val mixPriority = overriddenLangPriority(mixBasePriority, overrideLang)
+            val mixDetails = seriesTmdbId?.let { tmdb.getTvDetailsLocalized(it, mixPriority, acceptTitleOnly = overrideLang != null) }?.details
             val mixNetwork = mixDetails?.networks?.firstOrNull()
             val mixTitlesByLang = buildTitlesByLang(seriesTmdbId, isMovie = false, mixDetails?.name, mixDetails?.originalLanguage, mixDetails?.originalName)
             val mixStoredYear = mixDetails?.firstAirDate?.take(4)?.toIntOrNull() ?: searchYear
@@ -751,9 +789,11 @@ class Scanner(
         }
 
         val audioLangs = firstTracks.filter { it.kind == TrackKind.AUDIO }.map { it.language }
-        val langPriority = LanguageResolver.priorityList(audioLangs, fallback)
+        val basePriority = LanguageResolver.priorityList(audioLangs, fallback)
+        // Phase 191 — see the override lookup at the top of this function.
+        val langPriority = overriddenLangPriority(basePriority, overrideLang)
 
-        val localized = seriesTmdbId?.let { tmdb.getTvDetailsLocalized(it, langPriority) }
+        val localized = seriesTmdbId?.let { tmdb.getTvDetailsLocalized(it, langPriority, acceptTitleOnly = overrideLang != null) }
         val details = localized?.details
         val resolvedLang = localized?.let { it.language ?: langPriority.lastOrNull() }
 
@@ -820,9 +860,13 @@ class Scanner(
         }
         val tracks = FfprobeRunner.probe(item.path)
         val audioLangs = tracks.filter { it.kind == TrackKind.AUDIO }.map { it.language }
-        val langPriority = LanguageResolver.priorityList(audioLangs, fallback)
+        val basePriority = LanguageResolver.priorityList(audioLangs, fallback)
+        // Phase 191 — the Sync button rebuilds this item from scratch just like a routine scan; the
+        // operator's override must survive it exactly like rescanMetadata (the Re-pull button).
+        val overrideLang = normalizedMetadataLanguageOverride(item.metadataLanguage)
+        val langPriority = overriddenLangPriority(basePriority, overrideLang)
         val tmdbId = item.tmdbId ?: tmdb.searchMovie(item.title, item.year)?.id
-        val localized = tmdbId?.let { tmdb.getMovieDetailsLocalized(it, langPriority) } ?: return null
+        val localized = tmdbId?.let { tmdb.getMovieDetailsLocalized(it, langPriority, acceptTitleOnly = overrideLang != null) } ?: return null
         val details = localized.details
         val resolvedLang = localized.language ?: langPriority.lastOrNull()
         val issueCount = tracks.count { (it.kind == TrackKind.AUDIO || it.kind == TrackKind.SUBTITLE) && it.language == null }
@@ -887,6 +931,9 @@ class Scanner(
             return null
         }
         val seriesTmdbId = item.tmdbId
+        // Phase 191 — the Sync button rebuilds every episode + the series-level fields from scratch,
+        // same as scanSeries; the override must survive it identically.
+        val overrideLang = normalizedMetadataLanguageOverride(item.metadataLanguage)
         // Backfill missing jellyfinIds: fetch Jellyfin episode meta if the series has a jellyfinId
         // and any episode is still missing one (e.g. scanned before R82 or via old sync path).
         val scanBaseUrl = config.apiKeys.jellyfinUrl
@@ -920,6 +967,9 @@ class Scanner(
                     val epIssueCount = tracks.count { (it.kind == TrackKind.AUDIO || it.kind == TrackKind.SUBTITLE) && it.language == null }
                     val audioLangs = tracks.filter { it.kind == TrackKind.AUDIO }.map { it.language }
                     val epLangPriority = LanguageResolver.priorityList(audioLangs, fallback)
+                    // Phase 191 — see scanSeries's identical epFetchPriority split: the fetch order honours
+                    // the override, the episode's own displayed resolvedLanguage below stays audio-derived.
+                    val epFetchPriority = overriddenLangPriority(epLangPriority, overrideLang)
                     val jfPathMatchSync = jfByPathSync[toJellyfinPath(file)]
                     // Phase 160: same filename-parse fallback scanSeries uses — see resolveSeasonEpisode.
                     val (seasonNum, epNums) = resolveSeasonEpisode(parseSeasonEpisodes(file), jfPathMatchSync?.parentIndexNumber, jfPathMatchSync?.indexNumber)
@@ -948,7 +998,7 @@ class Scanner(
                         val epDetails = if (!hasGoodDetails && seriesTmdbId != null && seasonNum != null && epNum != null) {
                             // Phase 183 (FR-183-3) — bounded, not one coroutine per episode unconditionally.
                             episodeFanoutGate.withPermit {
-                                tmdb.getEpisodeDetailsLocalized(seriesTmdbId, seasonNum, epNum, epLangPriority)
+                                tmdb.getEpisodeDetailsLocalized(seriesTmdbId, seasonNum, epNum, epFetchPriority)
                             }
                         } else null
                         // Phase 76: preserve existing guest stars/crew; re-fetch from TMDB if available
@@ -1008,12 +1058,16 @@ class Scanner(
             }
             val majorityLang = langVotes.maxByOrNull { it.value }?.key
             resolvedLang = majorityLang
-            val mixPriority = LanguageResolver.priorityList(majorityLang?.let { listOf(it) } ?: emptyList(), fallback)
-            seriesTmdbId?.let { tmdb.getTvDetailsLocalized(it, mixPriority) }?.details
+            val mixBasePriority = LanguageResolver.priorityList(majorityLang?.let { listOf(it) } ?: emptyList(), fallback)
+            // Phase 191 — the override still wins even when episodes disagree on audio language.
+            val mixPriority = overriddenLangPriority(mixBasePriority, overrideLang)
+            seriesTmdbId?.let { tmdb.getTvDetailsLocalized(it, mixPriority, acceptTitleOnly = overrideLang != null) }?.details
         } else {
             val audioLangs = firstTracks.filter { it.kind == TrackKind.AUDIO }.map { it.language }
-            val langPriority = LanguageResolver.priorityList(audioLangs, fallback)
-            val localized = seriesTmdbId?.let { tmdb.getTvDetailsLocalized(it, langPriority) }
+            val basePriority = LanguageResolver.priorityList(audioLangs, fallback)
+            // Phase 191 — see the override lookup above.
+            val langPriority = overriddenLangPriority(basePriority, overrideLang)
+            val localized = seriesTmdbId?.let { tmdb.getTvDetailsLocalized(it, langPriority, acceptTitleOnly = overrideLang != null) }
             resolvedLang = localized?.let { it.language ?: langPriority.lastOrNull() }
             localized?.details
         }
@@ -1064,6 +1118,8 @@ class Scanner(
         }
         val fallback = lib?.fallbackLanguage?.ifBlank { null } ?: config.languageRules.fallbackLanguage
         val seriesTmdbId = item.tmdbId
+        // Phase 191 — a single-season re-sync is the same "rebuild from scratch" shape as syncSeriesEpisodes.
+        val overrideLang = normalizedMetadataLanguageOverride(item.metadataLanguage)
         val updatedEpisodes = item.episodes.toMutableList()
         var synced = 0
         for ((idx, ep) in updatedEpisodes.withIndex()) {
@@ -1074,9 +1130,10 @@ class Scanner(
             else ep.issueCount
             val audioLangs = tracks.filter { it.kind == TrackKind.AUDIO }.map { it.language }
             val epLangPriority = LanguageResolver.priorityList(audioLangs, fallback)
+            val epFetchPriority = overriddenLangPriority(epLangPriority, overrideLang)
             val epNum = ep.episodeNumber
             val epDetails = if (seriesTmdbId != null && epNum != null) {
-                tmdb.getEpisodeDetailsLocalized(seriesTmdbId, seasonNumber, epNum, epLangPriority)
+                tmdb.getEpisodeDetailsLocalized(seriesTmdbId, seasonNumber, epNum, epFetchPriority)
             } else null
             updatedEpisodes[idx] = ep.copy(
                 tracks = tracks,
@@ -1135,13 +1192,11 @@ class Scanner(
         // override would pin the old language forever and make reordering audio (or changing the
         // fallback) unable to ever change the fetched language. For movies with no metadataLanguage,
         // follow the current audio order instead.
-        val overrideLang = item.metadataLanguage?.ifBlank { null }?.let { LanguageResolver.normalize(it) }
+        val overrideLang = normalizedMetadataLanguageOverride(item.metadataLanguage)
             ?: if (item.kind == MediaKind.TV_SHOW)
-                item.resolvedLanguage?.ifBlank { null }?.let { LanguageResolver.normalize(it) }
+                normalizedMetadataLanguageOverride(item.resolvedLanguage)
             else null
-        val langPriority = if (overrideLang != null && basePriority.firstOrNull() != overrideLang)
-            listOf(overrideLang) + basePriority.filter { it != overrideLang }
-        else basePriority
+        val langPriority = overriddenLangPriority(basePriority, overrideLang)
 
         return when (item.kind) {
             MediaKind.MOVIE -> {
