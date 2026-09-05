@@ -6,8 +6,35 @@
 > all scenarios where things are being overwritten."*
 
 ## Status
-Planned (spec'd 2026-09-06). Not dev-reviewed. **Confirmed live against the production database**, with
-timestamps — see Evidence.
+✓ Built 2026-09-06. Not dev-reviewed, not live-verified against the production database (per the
+standing "no build/restart" rule — this needs a real scan/sync run against a live item to fully close
+the loop). **Confirmed live against the production database**, with timestamps — see Evidence.
+
+**Implementation notes:**
+- FR-191-1/191-2: done. Two shared helpers (`normalizedMetadataLanguageOverride`,
+  `overriddenLangPriority`) extracted in `Scanner.kt` and now called from every TMDB-fetching path:
+  `scanMovie`, `scanMusicVideo`, `scanSeries` (series-level, the languageMix branch, and per-episode),
+  `syncMovie`, `syncSeriesEpisodes` (series-level and per-episode), `syncSeason`, and `rescanMetadata`
+  (refactored onto the shared helpers, behaviour unchanged). `rescanFromJellyfin` and realtime/webhook
+  ingest needed no separate change — both compose `scanItem` → `scanMovie`/`scanSeries`, which now
+  consult `store.resolveByJellyfinId(jItem.id)?.metadataLanguage` directly. Per-episode fetches keep a
+  separate `epFetchPriority` from the audio-derived `epLangPriority` used for the episode's own
+  `resolvedLanguage` display field — the override changes what language is *fetched*, not the per-episode
+  audio-derived display language (Phase 128's contract, left untouched).
+- FR-191-3: `MetadataLanguageOverrideTest.kt` covers the two helpers directly (5 cases incl. the exact
+  tenfold-2003 shape — Korean-first audio, "en" override). This proves the priority-list construction is
+  correct; it does **not** exercise a full mocked `scanMovie`/`Scanner` call (no fake `TmdbClient` harness
+  exists in this codebase to build one against without significant new test infrastructure) — flagged
+  honestly rather than claimed as full path coverage.
+- FR-191-4: no new code, per the spec's own "no new UI" scope — the existing Library metadata-language
+  facet + per-item Re-pull button are what an operator uses. Production currently has exactly the one
+  known-affected item (tenfold-2003); re-pulling it is an operational follow-up, not something this commit
+  does.
+- FR-191-5: done — `buildMetadataLanguageCard` (`MediaDetail.kt`) now checks `titlesByLang[chosen]`
+  against `item.title` and, on a mismatch, shows an inline warning + a "re-pull to fix" button (wired to
+  the same `handleRepull` the page-bar Re-pull ▾ button already uses).
+- `compileKotlinLinuxX64` and `compileKotlinWasmJs` both clean; `linuxX64Test` green (including the new
+  test — see Acceptance item 7's caveat above).
 
 ## Evidence
 
