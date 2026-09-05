@@ -125,6 +125,87 @@ class PlayerScreenTrackResolutionTest {
      * fine — but if it ever starts failing because the "expected" default silently changed to something
      * else, that's this exact bug walking back in.
      */
+    // R235 — the exact reported file: Kulsort S07E03's first Danish subtitle track is forced AND
+    // flagged default; the second, plain track is titled "Dansk (CC)". Both assertions fail against
+    // `main` (pre-R235, `firstOrNull { it.isDefault }` and `native.firstOrNull()` both land on index 0).
+
+    @Test
+    fun forcedDefaultTrackLosesToAPlainSiblingInTheSameLanguage_noRememberedChoice() {
+        val audioTracks = listOf(audio(0, "da", isDefault = true))
+        val subtitleTracks = listOf(
+            sub(0, "da", forced = true, isDefault = true), // "Dansk"
+            sub(1, "da"),                                  // "Dansk (CC)"
+        )
+        val result = resolveTrackChoice(
+            seriesChoice = null, globalChoice = null,
+            audioGroups = emptyList(), subGroups = emptyList(),
+            audioTracks = audioTracks, subtitleTracks = subtitleTracks,
+        )
+        assertEquals(1, result.subIndex, "a forced+default track must lose to a plain track in the same language, not win because the file also flags it default")
+    }
+
+    @Test
+    fun forcedDefaultTrackLosesToAPlainSiblingInTheSameLanguage_unmatchedRememberedVariant() {
+        val forced = version(0, forced = true, ordinal = 0).copy(kind = VariantKind.FORCED)
+        val plain = version(1, ordinal = 1).copy(kind = VariantKind.SDH) // "Dansk (CC)" now classifies as SDH (FR-R235-5)
+        val groups = listOf(group("da", forced, plain))
+        val subtitleTracks = listOf(
+            sub(0, "da", forced = true, isDefault = true),
+            sub(1, "da"),
+        )
+        val result = resolveTrackChoice(
+            // Remembered "da", but the variant signature ("plain||0") matches neither real track here.
+            seriesChoice = RememberedChoice(subtitleLanguage = "da", subtitleVariant = "plain||0"),
+            globalChoice = null,
+            audioGroups = emptyList(), subGroups = groups,
+            audioTracks = emptyList(), subtitleTracks = subtitleTracks,
+        )
+        assertEquals(1, result.subIndex, "an unmatched remembered variant must fall through to the language's first NON-FORCED version, not stream order")
+    }
+
+    @Test
+    fun explicitlyChosenForcedTrackIsStillHonoredAndRemembered() {
+        val forced = version(0, forced = true, ordinal = 0).copy(kind = VariantKind.FORCED)
+        val plain = version(1, ordinal = 1).copy(kind = VariantKind.SDH)
+        val groups = listOf(group("da", forced, plain))
+        val subtitleTracks = listOf(
+            sub(0, "da", forced = true, isDefault = true),
+            sub(1, "da"),
+        )
+        val result = resolveTrackChoice(
+            seriesChoice = RememberedChoice(subtitleLanguage = "da", subtitleVariant = forced.signature()),
+            globalChoice = null,
+            audioGroups = emptyList(), subGroups = groups,
+            audioTracks = emptyList(), subtitleTracks = subtitleTracks,
+        )
+        assertEquals(0, result.subIndex, "an EXPLICIT remembered pick of the forced track must still win — FR-R235-1 only changes the unmatched fallback")
+    }
+
+    @Test
+    fun aFileWithOnlyAForcedTrackInALanguageStillSelectsIt() {
+        val subtitleTracks = listOf(sub(0, "da", forced = true, isDefault = true))
+        val result = resolveTrackChoice(
+            seriesChoice = null, globalChoice = null,
+            audioGroups = emptyList(), subGroups = emptyList(),
+            audioTracks = emptyList(), subtitleTracks = subtitleTracks,
+        )
+        assertEquals(0, result.subIndex, "when forced is genuinely all there is, it must still be selected — nothing becomes unreachable")
+    }
+
+    @Test
+    fun commentaryAudioTrackLosesToAPlainSiblingInTheSameLanguage() {
+        val audioTracks = listOf(
+            PlayerAudioTrack(0, "Director's Commentary", "en", isDefault = true),
+            PlayerAudioTrack(1, "English", "en"),
+        )
+        val result = resolveTrackChoice(
+            seriesChoice = null, globalChoice = null,
+            audioGroups = emptyList(), subGroups = emptyList(),
+            audioTracks = audioTracks, subtitleTracks = emptyList(),
+        )
+        assertEquals(1, result.audioIndex, "FR-R235-4 — the same bug one tab over: a commentary track flagged default must lose to a plain track in the same language")
+    }
+
     @Test
     fun emptyGroupsWithNonEmptyTracksFallsThroughToSourceDefault_theR195RegressionShape() {
         val audioTracks = listOf(audio(0, "en", isDefault = true), audio(1, "da"))

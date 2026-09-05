@@ -5,8 +5,22 @@
 > danish and pick the other danish subtitles to be able to see any subtitles at all."*
 
 ## Status
-Planned (spec'd 2026-09-06). Not dev-reviewed. **Root cause confirmed against the exact reported
-episode** in the production database, and quantified library-wide.
+✓ Built 2026-09-06. Not dev-reviewed, not device-tested (per the standing no-TV-testing rule). **Root
+cause confirmed against the exact reported episode** in the production database, and quantified
+library-wide.
+
+**Implementation notes:** all six FRs landed in `PlayerScreen.kt`. `tierSub`'s exact-signature fallback
+now prefers a non-forced version (`bySignature ?: native.firstOrNull { !it.forced } ?: native.firstOrNull()`,
+FR-R235-1); the outer no-memory fallback now checks whether the source's own default track is forced
+and, if so, prefers a non-forced sibling in the same language before falling back to the existing forced
+fallback (FR-R235-2); an explicit remembered pick of a forced track still resolves via `bySignature` and
+is unaffected (FR-R235-3); `tierAudio` and its outer fallback got the identical treatment via the shared
+`variantKind` classifier, so a commentary/audio-description track flagged default no longer beats a plain
+track in the same language (FR-R235-4); `SDH_RE` now matches `\bcc\b`/`closed caption` (FR-R235-5). Six
+new cases in `PlayerScreenTrackResolutionTest` (FR-R235-6), including the exact Kulsort S07E03 shape
+with both a no-memory and an unmatched-remembered-variant path, plus explicit-forced-pick and
+only-a-forced-track-exists guards. `:ravilo-ui:compileDebugKotlinAndroid` clean,
+`:ravilo-ui:testDebugUnitTest` green (12/12 in the affected test class, full module suite green).
 
 ## Evidence
 
