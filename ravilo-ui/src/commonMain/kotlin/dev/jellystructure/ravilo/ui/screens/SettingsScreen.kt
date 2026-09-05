@@ -157,6 +157,8 @@ fun SettingsScreen(
     // R161: fires after the device's sessions are actually revoked (store.unpairDevice() has
     // completed) — the caller navigates to the pairing gate, mirroring onSignOut's role.
     onUnpair: () -> Unit = {},
+    // R234 (FR-R234-4) — every platform (TV included); opens the dedicated Change password screen.
+    onChangePassword: () -> Unit = {},
 ) {
     val colors = RaviloTheme.colors
     val state by store.state.collectAsState()
@@ -214,6 +216,7 @@ fun SettingsScreen(
                     onSignOut = { showSignOutConfirm = true },
                     onSkinChange = onSkinChange,
                     onUnpairRequest = { showUnpairConfirm = true },
+                    onChangePassword = onChangePassword,
                 )
             }
         }
@@ -348,6 +351,7 @@ private fun SettingsContent(
     onSignOut: () -> Unit,
     onSkinChange: (Skin) -> Unit,
     onUnpairRequest: () -> Unit,
+    onChangePassword: () -> Unit = {},
 ) {
     val colors = RaviloTheme.colors
 
@@ -456,6 +460,26 @@ private fun SettingsContent(
     SectionHeader(str("settings.account"))
     Spacer(Modifier.height(12.dp))
     Text(str("profile.signed_in", mapOf("name" to displayName)), color = colors.textSecondary, fontSize = 15.sp)
+    Spacer(Modifier.height(16.dp))
+    // R234 (FR-R234-4) — a password is a credential, not a preference, so it lives here on every
+    // platform (TV included) rather than gated like the phone/web-only "Your profile" photo screen.
+    val changePwFR = remember { FocusRequester() }
+    var changePwFocused by remember { mutableStateOf(false) }
+    Box(
+        modifier = Modifier
+            .background(colors.surfaceVariant, RoundedCornerShape(8.dp))
+            .then(if (changePwFocused) Modifier.border(2.dp, colors.focusRing, RoundedCornerShape(8.dp)) else Modifier)
+            .dpadFocusable(
+                focusRequester = changePwFR,
+                onFocused = { changePwFocused = true },
+                onBlurred = { changePwFocused = false },
+                onSelect = onChangePassword,
+            )
+            .padding(horizontal = 24.dp, vertical = 12.dp),
+        contentAlignment = Alignment.CenterStart,
+    ) {
+        Text(str("account.pw_change"), color = colors.text, fontSize = 14.sp)
+    }
     Spacer(Modifier.height(16.dp))
     val signOutFR = remember { FocusRequester() }
     var focused by remember { mutableStateOf(false) }

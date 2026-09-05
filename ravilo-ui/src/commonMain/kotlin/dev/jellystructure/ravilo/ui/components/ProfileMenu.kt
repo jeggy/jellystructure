@@ -30,6 +30,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.jellystructure.ravilo.ui.focus.dpadFocusable
 import dev.jellystructure.ravilo.ui.i18n.str
+import dev.jellystructure.ravilo.ui.isTvPlatform
 import dev.jellystructure.ravilo.ui.screens.MultiTokenStore
 import dev.jellystructure.ravilo.ui.screens.SignOutConfirmOverlay
 import dev.jellystructure.ravilo.ui.screens.UnpairConfirmOverlay
@@ -63,6 +64,9 @@ fun ProfileMenu(
     // ProfilePicker based on whether any session remains locally.
     onSignedOut: () -> Unit,
     onUnpaired: () -> Unit,
+    // R234 (FR-R234-1) — phone/web only (gated below on isTvPlatform, never on window size); opens the
+    // Your profile screen. Optional so a TV caller need not supply a destination that never shows.
+    onYourProfile: (() -> Unit)? = null,
 ) {
     val colors = RaviloTheme.colors
     val scope = rememberCoroutineScope()
@@ -92,13 +96,22 @@ fun ProfileMenu(
         return
     }
 
-    val switchFR = remember { FocusRequester() }
-    val myListFR = remember { FocusRequester() }
-    val settingsFR = remember { FocusRequester() }
-    val addUserFR = remember { FocusRequester() }
-    val signOutFR = remember { FocusRequester() }
-    val unpairFR = remember { FocusRequester() }
-    LaunchedEffect(Unit) { runCatching { switchFR.requestFocus() } }
+    // R234 — a list-based focus chain (rather than the previous hand-linked FocusRequesters) so an
+    // optional row (Your profile, phone/web only) can slot in without every other row's up/down needing
+    // to be re-wired by hand. Row order matches the mockup: Switch profile · Your profile · My List ·
+    // Settings · Add user · Sign out · Unpair.
+    data class MenuItem(val label: String, val onSelect: () -> Unit, val bold: Boolean = false, val danger: Boolean = false)
+    val items = buildList {
+        add(MenuItem(str("pm.switch"), onSwitchProfile, bold = true))
+        if (!isTvPlatform && onYourProfile != null) add(MenuItem(str("pm.your_profile"), onYourProfile))
+        add(MenuItem(str("pm.my_list"), onMyList))
+        add(MenuItem(str("pm.settings"), onSettings))
+        add(MenuItem(str("pm.add_user"), onAddUser))
+        add(MenuItem(str("pm.sign_out"), { showSignOutConfirm = true }))
+        add(MenuItem(str("pm.unpair"), { showUnpairConfirm = true }, danger = true))
+    }
+    val focusRequesters = remember(items.size) { items.map { FocusRequester() } }
+    LaunchedEffect(Unit) { runCatching { focusRequesters.first().requestFocus() } }
 
     // A fixed-position scrim + top-right-anchored panel — click-outside isn't modeled (no pointer
     // click-away convention elsewhere in the app); Back closes, matching every other overlay.
@@ -116,57 +129,21 @@ fun ProfileMenu(
                 .background(colors.surface, RoundedCornerShape(14.dp))
                 .padding(8.dp),
         ) {
-            ProfileMenuRow(
-                label = str("pm.switch"),
-                focusRequester = switchFR,
-                onUp = { unpairFR.requestFocus() },
-                onDown = { myListFR.requestFocus() },
-                onSelect = onSwitchProfile,
-                onBack = onClose,
-                bold = true,
-            )
-            Spacer(Modifier.height(4.dp))
-            ProfileMenuRow(
-                label = str("pm.my_list"),
-                focusRequester = myListFR,
-                onUp = { switchFR.requestFocus() },
-                onDown = { settingsFR.requestFocus() },
-                onSelect = onMyList,
-                onBack = onClose,
-            )
-            ProfileMenuRow(
-                label = str("pm.settings"),
-                focusRequester = settingsFR,
-                onUp = { myListFR.requestFocus() },
-                onDown = { addUserFR.requestFocus() },
-                onSelect = onSettings,
-                onBack = onClose,
-            )
-            ProfileMenuRow(
-                label = str("pm.add_user"),
-                focusRequester = addUserFR,
-                onUp = { settingsFR.requestFocus() },
-                onDown = { signOutFR.requestFocus() },
-                onSelect = onAddUser,
-                onBack = onClose,
-            )
-            ProfileMenuRow(
-                label = str("pm.sign_out"),
-                focusRequester = signOutFR,
-                onUp = { addUserFR.requestFocus() },
-                onDown = { unpairFR.requestFocus() },
-                onSelect = { showSignOutConfirm = true },
-                onBack = onClose,
-            )
-            ProfileMenuRow(
-                label = str("pm.unpair"),
-                focusRequester = unpairFR,
-                onUp = { signOutFR.requestFocus() },
-                onDown = { switchFR.requestFocus() },
-                onSelect = { showUnpairConfirm = true },
-                onBack = onClose,
-                danger = true,
-            )
+            items.forEachIndexed { i, item ->
+                if (i == 1) Spacer(Modifier.height(4.dp))  // same gap the original layout had after "Switch profile"
+                val upIdx = (i - 1 + items.size) % items.size
+                val downIdx = (i + 1) % items.size
+                ProfileMenuRow(
+                    label = item.label,
+                    focusRequester = focusRequesters[i],
+                    onUp = { focusRequesters[upIdx].requestFocus() },
+                    onDown = { focusRequesters[downIdx].requestFocus() },
+                    onSelect = item.onSelect,
+                    onBack = onClose,
+                    bold = item.bold,
+                    danger = item.danger,
+                )
+            }
         }
     }
 }
