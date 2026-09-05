@@ -11,7 +11,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -187,8 +189,20 @@ fun SettingsScreen(
     // Appearance/Language pill rows and the toggle pills into the squeezed/character-wrapped state
     // reported live. LocalCompact (< 600dp width, R145) already exists for exactly this.
     val compact = LocalCompact.current
+    // Bug fix (found via live TV testing) — this Column had no scroll at all: on a display short
+    // enough that Playback is the last visible section, the whole Account block (identity, Change
+    // password, Sign out) and the Unpair section below it were composed but permanently off-screen
+    // with no way to reveal them — not a D-pad dead-end alone (see the explicit onUp/onDown chain
+    // added below), but a hard requirement for it, since even correct focus navigation can't show
+    // what never scrolls into view.
+    val scrollState = rememberScrollState()
     Box(modifier = Modifier.fillMaxSize().background(colors.background)) {
-        Column(modifier = Modifier.fillMaxWidth().padding(horizontal = if (compact) 20.dp else 80.dp, vertical = 40.dp)) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(scrollState)
+                .padding(horizontal = if (compact) 20.dp else 80.dp, vertical = 40.dp),
+        ) {
             Text(
                 "‹ ${str("action.back")}",
                 color = if (backFocused) colors.text else colors.textSecondary,
@@ -355,11 +369,24 @@ private fun SettingsContent(
 ) {
     val colors = RaviloTheme.colors
 
+    // Bug fix (found via live TV testing) — none of this screen's sections wired an explicit
+    // onUp/onDown chain; default Compose focus search never reliably crossed section boundaries once
+    // the outer Column had no scroll to reveal what it jumped to (see SettingsScreen's own fix note),
+    // leaving Account (identity, Change password, Sign out) and the whole Unpair section unreachable
+    // by D-pad. Every section below now names its entry-point FocusRequester up front and links
+    // explicitly to its neighbours, the same explicit-chain idiom ProfileMenu already uses.
+    val skinFRs = if (config.allowSkinOverride) remember { Skin.entries.map { FocusRequester() } } else null
+    val langFRs = remember { UI_LANGUAGES.map { FocusRequester() } }
+    val progressFR = remember { FocusRequester() }
+    val autoplayFR = remember { FocusRequester() }
+    val changePwFR = remember { FocusRequester() }
+    val signOutFR = remember { FocusRequester() }
+    val unpairFR = remember { FocusRequester() }
+
     // Skin section
     if (config.allowSkinOverride) {
         SectionHeader(str("settings.appearance"))
         Spacer(Modifier.height(12.dp))
-        val skinFRs = remember { Skin.entries.map { FocusRequester() } }
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Skin.entries.forEachIndexed { i, skin ->
                 val isActive = config.effectiveSkin() == skin
@@ -376,10 +403,15 @@ private fun SettingsContent(
                             else Modifier
                         )
                         .dpadFocusable(
-                            focusRequester = skinFRs[i],
+                            focusRequester = skinFRs!![i],
                             onFocused = { focused = true },
+                            // Bug fix (found via live TV testing) — onBlurred was never wired here
+                            // either, so a skin/language pill's focus ring never cleared on navigating
+                            // away — the same stale-ring bug ToggleRow had.
+                            onBlurred = { focused = false },
                             onLeft  = { if (i > 0) skinFRs[i - 1].requestFocus() },
                             onRight = { if (i < Skin.entries.lastIndex) skinFRs[i + 1].requestFocus() },
+                            onDown = { langFRs[0].requestFocus() },
                             onSelect = { store.saveSkin(skin); onSkinChange(skin) },
                         )
                         .padding(horizontal = 24.dp, vertical = 12.dp),
@@ -401,7 +433,6 @@ private fun SettingsContent(
     // to the Jellystructure profile itself. Endonyms, current highlighted, left/right within the row.
     SectionHeader(str("settings.language"))
     Spacer(Modifier.height(12.dp))
-    val langFRs = remember { UI_LANGUAGES.map { FocusRequester() } }
     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         UI_LANGUAGES.forEachIndexed { i, (code, label) ->
             val isActive = config.uiLanguage == code
@@ -416,8 +447,11 @@ private fun SettingsContent(
                     .dpadFocusable(
                         focusRequester = langFRs[i],
                         onFocused = { focused = true },
+                        onBlurred = { focused = false },
                         onLeft  = { if (i > 0) langFRs[i - 1].requestFocus() },
                         onRight = { if (i < UI_LANGUAGES.lastIndex) langFRs[i + 1].requestFocus() },
+                        onUp = skinFRs?.let { frs -> { frs[0].requestFocus() } },
+                        onDown = { progressFR.requestFocus() },
                         onSelect = { store.saveUiLanguage(code) },
                     )
                     .padding(horizontal = 24.dp, vertical = 12.dp),
@@ -437,19 +471,22 @@ private fun SettingsContent(
     // Playback prefs
     SectionHeader(str("settings.playback"))
     Spacer(Modifier.height(12.dp))
-    val progressFR = remember { FocusRequester() }
     ToggleRow(
         label = str("settings.show_progress"),
         checked = config.showContinueProgress,
         focusRequester = progressFR,
         onToggle = { store.saveShowContinueProgress(!config.showContinueProgress) },
+        onUp = { langFRs[0].requestFocus() },
+        onDown = { autoplayFR.requestFocus() },
     )
     Spacer(Modifier.height(12.dp))
     ToggleRow(
         label = str("settings.autoplay_next"),
         checked = config.autoplayNext,
-        focusRequester = remember { FocusRequester() },
+        focusRequester = autoplayFR,
         onToggle = { store.saveAutoplayNext(!config.autoplayNext) },
+        onUp = { progressFR.requestFocus() },
+        onDown = { changePwFR.requestFocus() },
     )
     // Land focus on a stable control on entry; up/down reach skin and sign-out.
     LaunchedEffect(Unit) { runCatching { progressFR.requestFocus() } }
@@ -463,7 +500,6 @@ private fun SettingsContent(
     Spacer(Modifier.height(16.dp))
     // R234 (FR-R234-4) — a password is a credential, not a preference, so it lives here on every
     // platform (TV included) rather than gated like the phone/web-only "Your profile" photo screen.
-    val changePwFR = remember { FocusRequester() }
     var changePwFocused by remember { mutableStateOf(false) }
     Box(
         modifier = Modifier
@@ -473,6 +509,8 @@ private fun SettingsContent(
                 focusRequester = changePwFR,
                 onFocused = { changePwFocused = true },
                 onBlurred = { changePwFocused = false },
+                onUp = { autoplayFR.requestFocus() },
+                onDown = { signOutFR.requestFocus() },
                 onSelect = onChangePassword,
             )
             .padding(horizontal = 24.dp, vertical = 12.dp),
@@ -481,7 +519,6 @@ private fun SettingsContent(
         Text(str("account.pw_change"), color = colors.text, fontSize = 14.sp)
     }
     Spacer(Modifier.height(16.dp))
-    val signOutFR = remember { FocusRequester() }
     var focused by remember { mutableStateOf(false) }
     Box(
         modifier = Modifier
@@ -490,6 +527,11 @@ private fun SettingsContent(
             .dpadFocusable(
                 focusRequester = signOutFR,
                 onFocused = { focused = true },
+                // Bug fix (found via live TV testing) — onBlurred was never wired; Sign out's focus
+                // ring would have stuck the same way ToggleRow's did.
+                onBlurred = { focused = false },
+                onUp = { changePwFR.requestFocus() },
+                onDown = { unpairFR.requestFocus() },
                 onSelect = onSignOut,
             )
             .padding(horizontal = 24.dp, vertical = 12.dp),
@@ -510,8 +552,10 @@ private fun SettingsContent(
             .background(Color(0xFFE0393A).copy(alpha = 0.14f), RoundedCornerShape(8.dp))
             .then(if (unpairFocused) Modifier.border(2.dp, Color(0xFFE0393A), RoundedCornerShape(8.dp)) else Modifier)
             .dpadFocusable(
+                focusRequester = unpairFR,
                 onFocused = { unpairFocused = true },
                 onBlurred = { unpairFocused = false },
+                onUp = { signOutFR.requestFocus() },
                 onSelect = onUnpairRequest,
             )
             .padding(horizontal = 24.dp, vertical = 12.dp),
@@ -536,6 +580,8 @@ private fun ToggleRow(
     checked: Boolean,
     focusRequester: FocusRequester,
     onToggle: () -> Unit,
+    onUp: (() -> Unit)? = null,
+    onDown: (() -> Unit)? = null,
 ) {
     val colors = RaviloTheme.colors
     var focused by remember { mutableStateOf(false) }
@@ -545,7 +591,17 @@ private fun ToggleRow(
             .fillMaxWidth()
             .background(colors.surfaceVariant, RoundedCornerShape(10.dp))
             .then(if (focused) Modifier.border(2.dp, colors.focusRing, RoundedCornerShape(10.dp)) else Modifier)
-            .dpadFocusable(focusRequester = focusRequester, onFocused = { focused = true }, onSelect = onToggle)
+            .dpadFocusable(
+                focusRequester = focusRequester,
+                onFocused = { focused = true },
+                // Bug fix (found via live TV testing) — onBlurred was never wired, so once a row was
+                // focused its border never cleared: both Playback rows showed the focus ring
+                // simultaneously after navigating away from the first one.
+                onBlurred = { focused = false },
+                onSelect = onToggle,
+                onUp = onUp,
+                onDown = onDown,
+            )
             .padding(horizontal = 20.dp, vertical = 16.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
