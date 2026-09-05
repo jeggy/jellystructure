@@ -19,10 +19,13 @@ data class DriftResult(
     val state: String,          // DriftState.name, lowercase — see DriftState
     val message: String,
     val fields: List<DriftField> = emptyList(),
+    // Phase 193 (FR-193-4) — carried only for JELLYFIN_BEHIND, so the banner can say "written {n} ago"
+    // instead of a copy that reads the same whether it's been 4 seconds or 19 days.
+    val nfoWrittenAt: Long? = null,
 )
 
 object DriftEvaluator {
-    suspend fun evaluate(item: MediaItem, jellyfinClient: JellyfinClient, cfg: AppConfig): DriftResult {
+    suspend fun evaluate(item: MediaItem, jellyfinClient: JellyfinClient, cfg: AppConfig, scanRunning: Boolean = false): DriftResult {
         // State 1 — NFO stale: the XML we'd generate right now doesn't match what we last wrote, so
         // there's nothing to compare against Jellyfin yet — this is the write-through model working as
         // designed (an edit not yet saved to disk), not drift.
@@ -34,7 +37,15 @@ object DriftEvaluator {
         // State 2 — Jellyfin behind: the NFO is current, but no sync has happened since it was written
         // (or the write just happened and a sync hasn't caught up).
         if ((item.jfSyncedAt ?: 0L) < (item.nfoWrittenAt ?: 0L)) {
-            return DriftResult(DriftState.JELLYFIN_BEHIND.name.lowercase(), "Jellyfin hasn't re-read the NFO yet.")
+            // Phase 193 (FR-193-5) — a scan in progress will reach this item's sync_jellyfin pass before
+            // it ends (FR-193-2 widened that step to the whole library, not just this run's working set),
+            // so this genuinely is the "few seconds away" case the old copy claimed unconditionally.
+            // Report CONVERGED rather than a banner that would just be dismissed once the run finishes.
+            if (scanRunning) return DriftResult(DriftState.CONVERGED.name.lowercase(), "")
+            return DriftResult(
+                DriftState.JELLYFIN_BEHIND.name.lowercase(), "Jellyfin hasn't re-read the NFO yet.",
+                nfoWrittenAt = item.nfoWrittenAt,
+            )
         }
 
         val jid = item.jellyfinId

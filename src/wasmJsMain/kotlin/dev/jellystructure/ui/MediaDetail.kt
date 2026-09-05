@@ -2872,7 +2872,15 @@ private suspend fun loadDrift(id: String, scope: CoroutineScope) {
     val n = result.fields.size
     val detail = when (result.state) {
         "nfo_stale" -> "The stored metadata has changed since the NFO was last written — click Save → NFO (or Save & Sync) to write it out."
-        "jellyfin_behind" -> "The NFO on disk is current, but Jellyfin hasn't re-read it yet. This usually clears itself within a few seconds."
+        // Phase 193 (FR-193-4) — "clears itself within a few seconds" was true for the transient case
+        // and false for the rest; state elapsed time instead of promising a wait no mechanism performs.
+        // (A scan-in-progress transient no longer reaches this banner at all — see FR-193-5.)
+        "jellyfin_behind" -> {
+            val writtenAgo = result.nfoWrittenAt?.let { dev.jellystructure.formatRelativeAgo(it.toString()) }
+            "The NFO on disk is current; Jellyfin hasn't been asked to re-read it since." +
+                (if (writtenAgo != null) " Written $writtenAgo." else "") +
+                " The next scan will sync it, or use Sync Jellyfin below."
+        }
         else -> "Someone edited this item in Jellyfin (or another tool touched the NFO). <b>$n field${if (n != 1) "s" else ""}</b> differ from your last write — Jellystructure is the source of truth, so re-assert to restore it."
     }
     val reviewBtn = if (result.state == "external_drift") """<button id="drift-review-btn" class="btn sm ghost">Review differences</button>""" else ""

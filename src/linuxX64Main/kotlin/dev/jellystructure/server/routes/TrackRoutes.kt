@@ -477,6 +477,14 @@ fun Route.trackRoutes(
             if (item?.kind == MediaKind.TV_SHOW) {
                 jellyfinClient.triggerLibraryRefresh(config.apiKeys.jellyfinUrl, config.apiKeys.jellyfinToken)
             }
+            // Phase 193 (FR-193-1) — this is exactly the button the "Jellyfin hasn't re-read the NFO
+            // yet" banner offers; without this the fix action didn't fix the banner's own state.
+            if (ok && item != null) {
+                store.updateOne((store.get(id) ?: item).copy(jfSyncedAt = dev.jellystructure.nowEpochSec()))
+            } else if (!ok) {
+                dev.jellystructure.log.Logger.warn("jellyfin-refresh: failed for '$id'")
+                if (item != null) mediaHistory.record(id, "jellyfin_refresh_failed", "triggered by Sync Jellyfin banner action")
+            }
             if (ok) call.respond(mapOf("ok" to true))
             else call.respond(HttpStatusCode.BadGateway, mapOf("error" to "Jellyfin refresh failed"))
         }

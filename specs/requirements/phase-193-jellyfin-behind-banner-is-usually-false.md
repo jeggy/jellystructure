@@ -4,9 +4,39 @@
 > on the media details page. I'm not sure if it's true? And if it is, why am I seeing it so often?"*
 
 ## Status
-Planned (spec'd 2026-09-06). Not dev-reviewed. Root-caused by reading the write paths against the
-production database — the answer to *"is it true?"* is **usually no**, and to *"why so often?"* is
-**because the most-used button on the page causes it**.
+✓ Built 2026-09-06. Not dev-reviewed, not live-verified against production (would need a real scan/sync
+run against a live item to close the loop — per the standing "no build/restart" rule). Root-caused by
+reading the write paths against the production database — the answer to *"is it true?"* is **usually
+no**, and to *"why so often?"* is **because the most-used button on the page causes it**.
+
+**Implementation notes:**
+- FR-193-1: fixed `POST /api/media/{id}/nfo` (`MediaRoutes.kt`) to stamp `jfSyncedAt` on a successful
+  refresh and log + record a `jellyfin_refresh_failed` History entry on failure. The audit turned up a
+  **second** un-recorded refresh, not in the original site list: `PATCH /api/media/{id}/metadata-language`
+  had the identical gap and is now fixed the same way. It also turned up the site that actually mattered
+  most in practice — `POST /api/media/{id}/jellyfin-refresh` (`TrackRoutes.kt`), which is the exact action
+  the banner's own "Sync Jellyfin" button calls — was refreshing without stamping, so clicking the
+  banner's own fix button didn't clear it. Fixed the same way. `pushToJellyfin` and
+  `batch/jellyfin-push` were already correct, as expected.
+- FR-193-2: `sync_jellyfin`'s candidate set in `PipelineEngine.kt` now reads `store.allItems()` filtered
+  by `nfoWrittenAt > jfSyncedAt`, not `workingSet` intersected with that — library-wide, bounded by
+  construction (only items a previous write_nfo already touched can be in it).
+- FR-193-3: fixed as a byproduct of FR-193-1 — `POST /jellyfin-refresh`'s failure path now records
+  history and logs; `detectDrift`'s `autoReassert` failure path already did (unchanged).
+- FR-193-4: `DriftEvaluator.DriftResult` gained `nfoWrittenAt` (JELLYFIN_BEHIND only); the banner copy in
+  `MediaDetail.kt` now reads "written {n ago}" instead of the false "clears itself within a few seconds",
+  and keeps the existing Sync Jellyfin button as the inline action.
+- FR-193-5: `DriftEvaluator.evaluate` takes a `scanRunning: Boolean` param; the `/drift` route passes
+  `scanTracker.running`. While a scan is running, a JELLYFIN_BEHIND result reports CONVERGED instead —
+  FR-193-2's library-wide `sync_jellyfin` means this run genuinely will reach the item before it ends, so
+  this is no longer approximated by "is it in this run's working set" (moot once every unsynced item is
+  in scope regardless of freshness).
+- Open question 1 (the `detectDrift autoReassert` double-`updateOne` overwriting its own NFO-write stamp
+  with pre-rewrite values) — confirmed as a real bug and fixed: the second `updateOne` now chains off the
+  first's result instead of re-deriving from the stale `current`. Still unreachable in production
+  (`auto_reassert=false`), fixed regardless per the spec's own instruction not to leave it unstated.
+- New `DriftEvaluatorTest` (3 cases) covers the scanRunning suppression and the nfoWrittenAt carry;
+  `compileKotlinLinuxX64`/`compileKotlinWasmJs` clean, `linuxX64Test` green.
 
 ## The two answers
 
