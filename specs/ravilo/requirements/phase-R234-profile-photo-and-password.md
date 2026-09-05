@@ -9,14 +9,40 @@
 > changed (everywhere). Ravilo already *renders* a photo on every surface — R65 shipped that whole path
 > — so this phase is about the two things it can't do: put one there, and change a password.
 
-**Status:** ✓ Built 2026-09-05 (Phase 187's backend having landed the same session). Compiles clean
-across every target that carries this code (`:ravilo-ui:compileDebugKotlinAndroid`,
+**Status:** ✓ Built 2026-09-05 (Phase 187's backend having landed the same session), **✓ live-verified
+the same day on stue TV** (real BRAVIA hardware, release build, AOT-compiled). Compiles clean across
+every target that carries this code (`:ravilo-ui:compileDebugKotlinAndroid`,
 `:ravilo-ui:compileKotlinWasmJs`, `:ravilo-android:compileDebugKotlin`, `:ravilo-web:compileKotlinWasmJs`).
-Not dev-reviewed, **not run on a device or in a browser** — this repo's working agreements reserve TV
-deploys and `adb install` for explicit ask, and there was no way to exercise the Android photo picker or
-the web `<input type=file>` flow without one. `:ravilo-tizen` needed no change (confirmed: it doesn't
-depend on `:ravilo-ui` at all, per its own hand-written-DOM precedent).
+Not dev-reviewed. The photo picker and web `<input type=file>` flow specifically were **not** exercised
+(user instruction: don't test change-password or photo-upload live — both mutate the real household
+Jellyfin account). `:ravilo-tizen` needed no change (confirmed: it doesn't depend on `:ravilo-ui` at
+all, per its own hand-written-DOM precedent).
 **Depended on Phase 187** for both routes — no longer blocking, both routes are built.
+
+### Live-verified on stue TV, 2026-09-05
+
+- **R233's fix, confirmed against the exact live report that opened that phase**: standing inside
+  Thriller / Gyser, Continue Watching showed only thriller/horror titles (Nosferatu, Psycho, Speed
+  Demon, Monkey's Magic Merry-Go-Round…) — not the *Two and a Half Men*/*Klovn*/*Ali G* mix the original
+  bug report described.
+- **FR-R234-1/2's platform gate, confirmed on real TV hardware**: the profile menu shows exactly Switch
+  profile · My List · Settings · Add user · Sign out · Unpair — no "Your profile" row. `isTvPlatform`
+  (delegating to R192's `RaviloAppContext.isTelevision`) correctly detects this BRAVIA as a TV.
+- **A real, pre-existing bug found and fixed the same session**: Settings' whole content `Column` had
+  no `verticalScroll` at all, and none of its rows wired an explicit `onUp`/`onDown` — so on this TV's
+  1080p display, once Playback was the last visible section, the entire Account block (including the
+  new Change password row) and the Unpair section were composed but permanently unreachable by D-pad.
+  Pre-dates this phase (Sign out/Unpair had the identical gap before Change password was ever added),
+  but blocked this phase's own new row until fixed. Fixed by: adding `.verticalScroll` to the outer
+  Column, and an explicit `onUp`/`onDown` chain through every section (skin → language → Playback
+  toggles → Change password → Sign out → Unpair) — the same explicit-link idiom `ProfileMenu` already
+  used, rather than relying on ambiguous default 2D focus search.
+- **A second bug found in the same pass**: `ToggleRow` (and the skin/language pill rows) never wired
+  `onBlurred`, so a row's focus ring, once set, never cleared — both Playback toggles showed a focus
+  ring simultaneously in the first post-fix screenshot. Fixed alongside the chain fix; confirmed clean
+  (single ring, correctly following focus) in every subsequent screenshot.
+- Full chain re-verified end to end on-device: Show progress → Autoplay → Change password → Sign out →
+  Unpair, each landing with one clean border and the page scrolling to keep the focused row in view.
 
 ### What's built
 
