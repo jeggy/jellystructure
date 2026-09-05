@@ -7,8 +7,17 @@
 
 ## Status
 Implemented (2026-09-05). Compiles clean (`compileKotlinLinuxX64`). Not yet dev-reviewed. **Repair scan
-not yet run** — the code fix stops further damage and lets a future scan self-heal a series, but the
-135 already-truncated shows stay truncated in the DB until each is rescanned (see Non-goals).
+not yet run**, and **prod's `scan_episode_cap` is still `8`** — the code fix stops further damage and
+lets a future capped scan self-heal a series toward full coverage, but the 135 already-truncated shows
+stay truncated in the DB until each is rescanned with the cap raised/cleared (see Non-goals).
+
+**Config mitigation attempted and reverted:** `~/jellystructure/config/config.toml`'s
+`scan_episode_cap` was hand-edited to `0` on 2026-09-05 while the prod backend was running, but the
+live process holds config in memory and persists its own (still-`8`) value back to disk on its own
+save trigger — the file read back `8` again within about a minute, with no edit made by anyone. A raw
+file edit to a live instance's config.toml does not reliably stick; changing it for real needs the
+app's own settings-save path (Settings UI or an authenticated config API call) or a restart after the
+file edit, neither of which has been done.
 
 ### Implementation notes (2026-09-05)
 - **Root cause confirmed directly against the prod DB**, not guessed: `fjollerne-2005`'s stored `episodes`
@@ -92,10 +101,10 @@ probe every file and are untouched by this fix.
   lets a series self-heal (regain its full episode list) the next time it's scanned while the cap no
   longer excludes files it previously knew about — which, per FR-188-1, now happens automatically since
   the carry-over restores a show to its full known set the very first time a probed sample plus
-  carried-over existing episodes covers everything again. It does not force that rescan. Prod's
-  `scan_episode_cap` was set to `0` alongside this fix (see below) specifically so the next scheduled
-  scan of each affected show does a full, uncapped probe and permanently repopulates it — a deliberate
-  operator action, not something this phase's code does on its own.
+  carried-over existing episodes covers everything again. It does not force that rescan, and does not
+  by itself raise or clear prod's `scan_episode_cap` (still `8` as of this writing — see Status) —
+  that's a deliberate operator action via the app's own settings path, not something this phase's code
+  does on its own.
 - **Any UI-visible warning that a capped scan is leaving files unprobed.** Phase 49 already accepted this
   as visible-by-gap-in-the-UI; this phase only fixes the part that made the gap permanent and
   cap-invisible-of-scale. A dedicated triage/banner signal is a candidate follow-up if the operator wants
@@ -114,12 +123,14 @@ probe every file and are untouched by this fix.
   episode list even though FR-188-1's carry-over would otherwise still hold a stored record for it —
   same caveat, not test-covered.
 - `compileKotlinLinuxX64` clean (verified).
-- Not yet verified live against the 135 affected prod shows — needs prod's `scan_episode_cap = 0` (set
-  2026-09-05 alongside this fix) plus a scan of each, both pending explicit go-ahead per this project's
+- Not yet verified live against the 135 affected prod shows — needs prod's `scan_episode_cap` actually
+  raised/cleared through the app's own settings path (a raw config.toml edit did not stick — see
+  Status) plus a scan of each affected show, both pending explicit go-ahead per this project's
   no-unrequested-restart/scan convention.
 
 ## Source references
 - `src/linuxX64Main/kotlin/dev/jellystructure/media/Scanner.kt:472-660` (`scanSeries`)
 - `src/linuxX64Main/kotlin/dev/jellystructure/media/Scanner.kt:1315-1319` (`selectSamples`)
 - `STATUS.md` row 49 (original cap + FR-EP1 intent)
-- `~/jellystructure/config/config.toml` (prod `scan_episode_cap`, `0` as of 2026-09-05)
+- `~/jellystructure/config/config.toml` (prod `scan_episode_cap`, still `8` as of 2026-09-05 — a raw
+  file edit to `0` did not survive the running process)
