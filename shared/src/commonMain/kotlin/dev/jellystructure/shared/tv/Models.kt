@@ -687,16 +687,18 @@ data class PageHeroConfig(
 data class ChannelRowsConfig(
     val mode: String = "inherit",  // "inherit" | "custom"
     val items: List<RowConfig> = emptyList(),
-    // R143 — per-channel system rows (Continue Watching, Newly Added). Only consulted in custom mode;
-    // in "inherit" mode the channel keeps inheriting Home's system rows (scoped to the channel per R59).
+    // R143 — per-channel system rows (Continue Watching, Newly Added). `show`/`merge` only consulted in
+    // custom mode; in "inherit" mode the channel keeps inheriting Home's system rows, scoped to the
+    // channel per R233 (a system row always shows what is available on the page it's rendered on — not
+    // configurable, in either row-list mode; R59's own inherit/custom meaning is otherwise untouched).
     val system: ChannelSystemRows = ChannelSystemRows(),
 )
 
 /**
- * R143 — per-channel system-row settings. Both rows shown by default, **scoped to the channel** (R145):
- * a channel page is a curated subset, so its Continue Watching / Newly Added show only titles belonging to
- * the channel (`scope = "channel"` ANDs the channel's own conditions, R32). `scope = "all"` is the opt-out
- * that shows the library-wide row instead.
+ * R143 — per-channel system-row settings. Both rows shown by default. R233 retired `scope`: a system
+ * row is **always** scoped to the channel it's rendered on — there is no supported way to put a
+ * library-wide system row on a collection page (the field was a setting that should never have
+ * existed, not a currently-misused one — no live config ever set it). `show`/`merge` are unaffected.
  */
 @Serializable
 data class ChannelSystemRows(
@@ -708,13 +710,11 @@ data class ChannelSystemRows(
 @Serializable
 data class SystemContinue(
     val show: Boolean = true,
-    val scope: String = "channel",  // "channel" (this channel's in-progress titles) | "all" (library-wide)
 )
 
 @Serializable
 data class SystemNewly(
     val show: Boolean = true,
-    val scope: String = "channel",  // "channel" (newest in this channel) | "all" (library-wide)
     val merge: Boolean = false,
 )
 

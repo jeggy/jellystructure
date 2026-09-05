@@ -1072,13 +1072,9 @@ private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx
     val rowsCustom = c.rows?.mode == "custom"
     // R143: per-channel system rows (Continue Watching, Newly Added).
     val chSys = c.rows?.system ?: ChannelSystemRows()
-    val contShow = chSys.cont.show; val contScope = chSys.cont.scope
-    val newlyShow = chSys.newly.show; val newlyScope = chSys.newly.scope; val newlyMerge = chSys.newly.merge
-    fun scopeSeg(group: String, current: String): String {
-        val allOn = if (current == "all") " class=\"on\"" else ""
-        val chOn = if (current == "channel") " class=\"on\"" else ""
-        return "<span class=\"seg cf-sysscope\" data-sys=\"$group\" style=\"flex:none;font-size:.78rem\"><span data-scope=\"all\"$allOn>All titles</span><span data-scope=\"channel\"$chOn>This collection</span></span>"
-    }
+    // R233 — retired `scope`; a system row is always scoped to this channel now, in both row-list modes.
+    val contShow = chSys.cont.show
+    val newlyShow = chSys.newly.show; val newlyMerge = chSys.newly.merge
     val rowsCustomItems = c.rows?.items ?: emptyList()
     val chRowsListHtml = rowsCustomItems.mapIndexed { i, r ->
         val eq = r.effectiveQuery()
@@ -1216,14 +1212,12 @@ private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx
               <div style="font-size:.7rem;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-soft);margin-bottom:8px">System rows</div>
               <div class="cf-sysrow ${if (!contShow) "off" else ""}" style="display:flex;align-items:center;gap:10px;margin-bottom:8px;${if (!contShow) "opacity:.5" else ""}">
                 <span class="badge ok" style="flex:none;font-size:.62rem">system</span>
-                <div style="flex:1;min-width:0"><div style="font-size:.88rem;font-weight:500">Continue Watching</div><div class="tiny muted">${if (contScope == "channel") "In-progress titles from this collection" else "Your whole Continue + Next Up row"}</div></div>
-                ${scopeSeg("continue", contScope)}
+                <div style="flex:1;min-width:0"><div style="font-size:.88rem;font-weight:500">Continue Watching</div><div class="tiny muted">In-progress titles from this collection</div></div>
                 <span class="toggle${if (contShow) " on" else ""}" data-systog="continue" style="cursor:pointer;flex:none"></span>
               </div>
               <div class="cf-sysrow ${if (!newlyShow) "off" else ""}" style="display:flex;align-items:center;gap:10px;${if (!newlyShow) "opacity:.5" else ""}">
                 <span class="badge ok" style="flex:none;font-size:.62rem">system</span>
-                <div style="flex:1;min-width:0"><div style="font-size:.88rem;font-weight:500">Newly Added</div><div class="tiny muted">${if (newlyScope == "channel") "Newest titles in this collection" else "Newest titles library-wide"}${if (newlyMerge) " · combined" else " · Movies + Series"}</div></div>
-                ${scopeSeg("newly", newlyScope)}
+                <div style="flex:1;min-width:0"><div style="font-size:.88rem;font-weight:500">Newly Added</div><div class="tiny muted">Newest titles in this collection${if (newlyMerge) " · combined" else " · Movies + Series"}</div></div>
                 <span class="toggle${if (newlyShow) " on" else ""}" data-systog="newly" style="cursor:pointer;flex:none"></span>
               </div>
               <label class="cf-sysmerge ${if (!newlyShow) "off" else ""}" style="display:flex;align-items:center;gap:8px;margin-top:8px;padding-top:8px;border-top:1px solid var(--line);font-size:.82rem;cursor:pointer;${if (!newlyShow) "opacity:.45" else ""}">
@@ -1272,19 +1266,6 @@ private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx
     }
     container.querySelector("[data-sysmerge]")?.addEventListener("click") { _ ->
         mutateSystem { it.copy(newly = it.newly.copy(merge = !it.newly.merge)) }
-    }
-    container.querySelectorAll(".cf-sysscope span[data-scope]").let { sc ->
-        for (i in 0 until sc.length) {
-            val el = sc.item(i) as? HTMLElement ?: continue
-            el.addEventListener("click") { _ ->
-                val group = (el.parentElement?.getAttribute("data-sys")) ?: return@addEventListener
-                val scopeVal = el.getAttribute("data-scope") ?: return@addEventListener
-                when (group) {
-                    "continue" -> mutateSystem { it.copy(cont = it.cont.copy(scope = scopeVal)) }
-                    "newly"    -> mutateSystem { it.copy(newly = it.newly.copy(scope = scopeVal)) }
-                }
-            }
-        }
     }
     // R87/Phase 140: a catch-all row = the channel's own blocks verbatim AND a `content_row is_none_of
     // <existing rows>` block — properly scoped to the channel (was: bare conditions = emptyList(),
