@@ -369,23 +369,22 @@ class HomeFeedService(
         val heroIds = config.heroes.map { it.itemId }.toSet()  // Phase R86-C: hoist out of CUSTOM-row loop
         val result = mutableListOf<Row>()
 
-        // ── R143: custom channel — emit the configured system rows (Continue, Newly Added) ABOVE the
-        // filter rows, each honouring its show / scope ("all" library-wide vs "channel" channel-scoped) /
-        // merge setting. Continue is resolved against the chosen source so scope="channel" yields only the
-        // viewer's in-progress titles that belong to this channel.
+        // ── R143/R233: custom channel — emit the configured system rows (Continue, Newly Added) ABOVE
+        // the filter rows, each honouring its show/merge setting. R233: a system row always shows what
+        // is available on the page it's rendered on — never configurable, in either row-list mode (see
+        // the phase's "The rule"). `scope` is retired; Continue is unconditionally filtered to this
+        // channel, and Newly Added already receives the channel-filtered `all`.
         if (channelRows?.mode == "custom") {
             val sys = channelRows.system
             if (sys.cont.show) {
                 // R219 (FR-R219-6): the row and continueWatchingAll's See-all must apply this exact same
-                // branch, or the two silently disagree about membership — see the model note in the spec.
+                // filter, or the two silently disagree about membership — see the model note in the spec.
                 val canonical = canonicalContinueList(device, libraryAll, jellyfinBase, token)
-                val scoped = if (sys.cont.scope == "channel") canonical.filter { it.mediaItem.matchesChannel(channelFilter!!, heroIds) } else canonical
-                val cont = scoped.capped()
+                val cont = canonical.filter { it.mediaItem.matchesChannel(channelFilter!!, heroIds) }.capped()
                 if (cont.cards.isNotEmpty()) result.add(Row("continue", "Continue Watching", RowKind.CONTINUE, cont.cards, seedTotalCount = cont.total))
             }
             if (sys.newly.show) {
-                val src = if (sys.newly.scope == "channel") all else libraryAll
-                addNewlyAddedRows(result, src, merge = sys.newly.merge)
+                addNewlyAddedRows(result, all, merge = sys.newly.merge)
             }
             for (rowCfg in channelRows.items.filter { it.enabled }.sortedBy { it.order }) {
                 buildFilterRow(rowCfg, all, heroIds, channelFilter)?.let { result.add(it) }
@@ -399,13 +398,14 @@ class HomeFeedService(
         for (rowCfg in enabledRows) {
             when (rowCfg.kind) {
                 RowKind.CONTINUE -> {
-                    // R202: inherit mode means "Same as Home" (R59) — Continue Watching is Home's own
-                    // row, library-wide, not a channel-filtered variant of it. Built from libraryAll
-                    // (== `all` on the Home call site, so this is a no-op there) rather than `all` (which
-                    // is channel-filtered for a channel call). Previously skipped entirely for any
-                    // channel view — an R05 leftover from before inherit/custom existed, never actually
-                    // fixed by R59 despite a misleading comment claiming otherwise.
-                    val cont = canonicalContinueList(device, libraryAll, jellyfinBase, token).capped()
+                    // R233: built from libraryAll (FR-R233-5 — the canonical list itself stays
+                    // library-wide and cached per user, never per channel), then filtered to this page's
+                    // channel when there is one — Home's `channelFilter` is null, so this is a no-op
+                    // there. Previously unfiltered in every inherit-mode case (R202 FR-RV-R2-1): correct
+                    // on Home, wrong on a channel page, which is what R233's live report hit.
+                    val canonical = canonicalContinueList(device, libraryAll, jellyfinBase, token)
+                    val filtered = if (channelFilter != null) canonical.filter { it.mediaItem.matchesChannel(channelFilter, heroIds) } else canonical
+                    val cont = filtered.capped()
                     if (cont.cards.isNotEmpty()) result.add(Row(rowCfg.id, rowCfg.title ?: "Continue Watching", RowKind.CONTINUE, cont.cards, seedTotalCount = cont.total))
                 }
 
@@ -549,10 +549,11 @@ class HomeFeedService(
     /** R187 (§G-4) — Continue Watching's own "→ See all" path: Continue Watching isn't expressible as a
      *  [dev.jellystructure.shared.tv.ConditionGroup] (it's a live Jellyfin resume/next-up join, not a
      *  catalog filter), so it can't reuse [BrowseService.browseByQuery] — this is its dedicated
-     *  resolution. R219 (FR-R219-6): [channelId], when present, mirrors that channel's own configured
-     *  Continue row scope (see [buildRows]'s identical branch) — filtered only for a custom-mode channel
-     *  whose `cont.scope == "channel"`; every other case (inherit mode, `scope == "all"`, unknown
-     *  channel) returns the same list Home's See-all does. Always uncapped (FR-R219-5). */
+     *  resolution. R233 (FR-R233-3): [channelId], when it resolves to a real channel, always filters —
+     *  no reference to row-list mode, no `scope` to consult (retired). The row and this page can no
+     *  longer disagree about membership because there is only one behaviour, not two branch ladders
+     *  kept in sync by hand (R219 FR-R219-6's old shape). A channel id that doesn't resolve is
+     *  defensive-unfiltered, unchanged from R219. Always uncapped (FR-R219-5). */
     suspend fun continueWatchingAll(device: DeviceData, channelId: String?): List<MediaCard> {
         val jellyfinBase = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
         val token = jellyfinClient.tvToken(jellyfinBase, device, configStore.current.apiKeys.jellyfinToken)
@@ -560,9 +561,7 @@ class HomeFeedService(
         val canonical = canonicalContinueList(device, libraryAll, jellyfinBase, token)
         val config = configService.getConfig(device.jellyfinUserId)
         val channelCfg = channelId?.let { id -> config.channels.find { it.id == id } }
-        val channelRows = channelCfg?.rows  // local val: cross-module smart-cast on the property itself doesn't work
-        val scopedToChannel = channelRows?.mode == "custom" && channelRows.system.cont.scope == "channel"
-        val scoped = if (scopedToChannel && channelCfg != null) {
+        val scoped = if (channelCfg != null) {
             val heroIds = config.heroes.map { it.itemId }.toSet()
             canonical.filter { it.mediaItem.matchesChannel(channelCfg, heroIds) }
         } else canonical
