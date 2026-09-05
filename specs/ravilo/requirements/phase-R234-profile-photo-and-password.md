@@ -9,9 +9,59 @@
 > changed (everywhere). Ravilo already *renders* a photo on every surface — R65 shipped that whole path
 > — so this phase is about the two things it can't do: put one there, and change a password.
 
-**Status:** Planned (design-authored 2026-09-03, not yet dev-reviewed).
-**Depends on Phase 187** for both routes; FR-R234-7 in particular cannot be finished until 187's open
-question 2 is answered.
+**Status:** ✓ Built 2026-09-05 (Phase 187's backend having landed the same session). Compiles clean
+across every target that carries this code (`:ravilo-ui:compileDebugKotlinAndroid`,
+`:ravilo-ui:compileKotlinWasmJs`, `:ravilo-android:compileDebugKotlin`, `:ravilo-web:compileKotlinWasmJs`).
+Not dev-reviewed, **not run on a device or in a browser** — this repo's working agreements reserve TV
+deploys and `adb install` for explicit ask, and there was no way to exercise the Android photo picker or
+the web `<input type=file>` flow without one. `:ravilo-tizen` needed no change (confirmed: it doesn't
+depend on `:ravilo-ui` at all, per its own hand-written-DOM precedent).
+**Depended on Phase 187** for both routes — no longer blocking, both routes are built.
+
+### What's built
+
+- **Platform gate** — new `expect val isTvPlatform: Boolean` (`ravilo-ui` commonMain), `actual` on
+  Android delegating to R192's existing `RaviloAppContext.isTelevision` runtime hardware check, `actual`
+  on web as a constant `false`. Exactly what FR-R234-1 asked for — gated on platform, not
+  `LocalCompact`/`LocalHandset` — and the only two `actual`s needed, since `:ravilo-tizen` never
+  consumes this code.
+- **`ProfileMenu`** — refactored from hand-linked `FocusRequester`s to a list-built focus chain (an
+  optional row needed every neighbour re-wired by hand under the old shape); "Your profile" slots in
+  between Switch profile and My List, matching the mockup's order, present only when
+  `!isTvPlatform && onYourProfile != null`.
+- **`ChangePasswordScreen`** (new, `AccountScreens.kt`) — three fields via a shared `AccountField`
+  (masked `BasicTextField`, same native-IME idiom `LoginScreen`'s own `LoginField` already established
+  — see FR-R234-6's note below), client-side validation (blank current / <6 char new / mismatched
+  repeat), server verdict relayed verbatim including the `403`-shaped wrong-password case (current
+  field cleared, the other two kept), and the tokenSurvived branch — unreachable on this Jellyfin
+  version per 187's probe, but rendered from the server's field, not hard-coded.
+- **`YourProfileScreen`** (new, same file) — avatar preview + Choose/Take/Remove, wired to 187's routes;
+  a successful change repaints `LocalUserAvatarUrl` immediately (FR-R234-8) and persists via
+  `MultiTokenStore.add(active.copy(avatarUrl = ...))` (no new store method needed — `add()` already
+  upserts by userId). Preset colours are **not built** — dropped per 187 open question 3's owner
+  decision; the "Or use a colour" control never existed in this implementation.
+- **Settings' Account section** — a "Change password" row added directly to the existing identity/
+  sign-out block (FR-R234-4) rather than a second "Account" section; the spec's "above the existing
+  sections" is satisfied in substance (identity → password → sign out, all under one Account header)
+  without visual duplication.
+- **i18n** — all 24 `account.*`/`pm.your_profile` strings pulled verbatim from
+  `design/ravilo/ravilo-i18n.js` (en/da/fo already drafted there per this phase's own doc note) rather
+  than re-translated, so the Danish/Faroese copy is the design-authored text, not a guess.
+- **A real bug caught by the compiler, not review:** an early draft called `str()` (a `@Composable`
+  function reading the locale CompositionLocal) from inside plain callback lambdas and coroutine
+  bodies — a network response handler, a submit validator — none of which are composable contexts.
+  Fixed by making `PwState`/`PhotoState`'s error/success variants carry a string **key**, resolved via
+  `str()` only at render time inside the composable body itself.
+
+### Simplification recorded, not silently decided (open question 1)
+
+**"Choose a photo" and "Take a photo" open the identical picker today** — Android's
+`ActivityResultContracts.GetContent("image/*")`, which already surfaces the device's camera as one of
+its own chooser entries on most phones. There is no dedicated camera-capture intent (would need a
+`FileProvider` + manifest `<provider>` declaration) wired yet. This is exactly the ambiguity open
+question 1 already flagged before any code existed; `PhotoPicker.kt`'s own doc comment records the
+simplification so a future pass knows it's deliberate, not an oversight, and both buttons are real —
+they just currently launch the same picker.
 
 > **2026-09-05 — 187's endpoint probe ran in full, and every block on this phase is now cleared.**
 > **FR-R234-8 is fully specified:** Jellyfin exposes `UserDto.PrimaryImageTag` and it demonstrably moves
