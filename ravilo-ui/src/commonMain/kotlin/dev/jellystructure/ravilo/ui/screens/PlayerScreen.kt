@@ -3228,7 +3228,10 @@ private enum class TrackVariant { SDH, DESCRIBES_ACTION, COMMENTARY, NONE }
 // R195 (FR-RV §5.1) — widened to also catch a bare "HI" token and the word "hearing" alone (was only
 // "sdh" or the full phrase "hard of hearing"); still title-text only — an untitled SDH track needs the
 // Bazarr `hi` flag plumbing this phase's dev-review addendum scoped as separate backend work.
-private val SDH_RE = Regex("""\bsdh\b|\bhi\b|hard of hearing|hearing impaired|\bhearing\b""", RegexOption.IGNORE_CASE)
+// R235 (FR-R235-5) — "cc"/"closed caption" is the same descriptive-subtitle concept as SDH and was
+// unmatched (the reported file's full track is titled "Dansk (CC)"), so it grouped as PLAIN with no
+// badge and no distinct variant signature from the file's other (forced) Danish track.
+private val SDH_RE = Regex("""\bsdh\b|\bhi\b|hard of hearing|hearing impaired|\bhearing\b|\bcc\b|closed caption""", RegexOption.IGNORE_CASE)
 private val AD_RE = Regex("""synstolkning|audio description|\bad\b|\bdescribed\b""", RegexOption.IGNORE_CASE)
 private val COMMENTARY_RE = Regex("""commentary""", RegexOption.IGNORE_CASE)
 // DB-verified low-coverage "this track is the source's own original" marker (~20 tracks in the library,
@@ -3448,14 +3451,28 @@ internal fun resolveTrackChoice(
     audioTracks: List<PlayerAudioTrack>,
     subtitleTracks: List<PlayerSubtitleTrack>,
 ): TrackSelectionResult {
+    // R235 (FR-R235-1/4) — within a language group, automatic selection (no exact remembered variant
+    // match) must never land on a signs-only/commentary/audio-description version when a PLAIN one
+    // exists in the same group: those exist to supplement a soundtrack the viewer already understands,
+    // not to substitute for one they don't. An explicit remembered signature (bySignature) still wins
+    // outright — this only changes what an UNMATCHED memory or a fresh pick falls through to.
     fun tierAudio(choice: RememberedChoice?): Int? {
         val lang = choice?.audioLanguage ?: return null
         val group = audioGroups.firstOrNull { it.language.equals(lang, ignoreCase = true) } ?: return null
         val bySignature = choice.audioVariant?.let { sig -> group.versions.firstOrNull { it.signature() == sig } }
-        return (bySignature ?: group.versions.firstOrNull())?.flatIndex
+        return (bySignature ?: group.versions.firstOrNull { it.kind == VariantKind.PLAIN } ?: group.versions.firstOrNull())?.flatIndex
     }
     val audioIdx = tierAudio(seriesChoice) ?: tierAudio(globalChoice)
-        ?: audioTracks.firstOrNull { it.isDefault }?.index
+        ?: run {
+            // FR-R235-2's same fix one tab over: the source's own "default" flag is a packaging habit,
+            // not an instruction — a commentary/audio-description track marked default must still lose
+            // to a plain track in the same language when one exists.
+            val def = audioTracks.firstOrNull { it.isDefault } ?: return@run null
+            val defKind = variantKind(def.label, forced = false)
+            if (defKind == VariantKind.PLAIN) def.index
+            else audioTracks.firstOrNull { it.language.equals(def.language, ignoreCase = true) && variantKind(it.label, forced = false) == VariantKind.PLAIN }?.index
+                ?: def.index
+        }
         ?: audioTracks.firstOrNull()?.index
         ?: 0
 
@@ -3467,11 +3484,20 @@ internal fun resolveTrackChoice(
             val group = subGroups.firstOrNull { it.language.equals(lang, ignoreCase = true) } ?: return null
             val native = group.versions.filter { it.flatIndex < subtitleTracks.size }
             val bySignature = choice.subtitleVariant?.let { sig -> native.firstOrNull { it.signature() == sig } }
-            (bySignature ?: native.firstOrNull())?.flatIndex
+            (bySignature ?: native.firstOrNull { !it.forced } ?: native.firstOrNull())?.flatIndex
         }
     }
     val subIdx = tierSub(seriesChoice) ?: tierSub(globalChoice)
-        ?: subtitleTracks.firstOrNull { it.isDefault }?.index
+        ?: run {
+            // FR-R235-2 — the reported bug exactly: Helt Sort S07E03's forced Danish track is ALSO
+            // flagged the file's default, so `isDefault` alone picked signs-only over the full "Dansk
+            // (CC)" track sitting right beside it. The forced flag is checked first because "default"
+            // here is the misleading one — a non-forced track never needs this override.
+            val def = subtitleTracks.firstOrNull { it.isDefault } ?: return@run null
+            if (!def.forced) def.index
+            else subtitleTracks.firstOrNull { !it.forced && it.language.equals(def.language, ignoreCase = true) }?.index
+                ?: def.index
+        }
         ?: subtitleTracks.firstOrNull { it.forced }?.index
         ?: -1
 
