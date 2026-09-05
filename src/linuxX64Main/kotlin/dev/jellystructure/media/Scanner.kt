@@ -520,15 +520,24 @@ class Scanner(
             .mapValues { (_, eps) -> eps.firstOrNull()?.seasonName ?: "" }
             .filterValues { it.isNotBlank() }
 
+        val previousEpisodes = store?.resolveByJellyfinId(jItem.id)?.episodes ?: emptyList()
+
         // Phase 183 (FR-183-4) — the previously-stored episode for each (season, episode), so the loop
         // below can skip a per-episode TMDB re-fetch when we already hold good data for it (the single
         // largest lever against the reported rate-limit incident) instead of unconditionally re-fetching
         // every episode of every series on every scan, matched or not. Built once, not per-episode.
         val existingBySeasonEp: Map<Pair<Int, Int>, dev.jellystructure.model.Episode> =
-            store?.resolveByJellyfinId(jItem.id)?.episodes
-                ?.filter { it.seasonNumber != null && it.episodeNumber != null }
-                ?.associateBy { it.seasonNumber!! to it.episodeNumber!! }
-                ?: emptyMap()
+            previousEpisodes
+                .filter { it.seasonNumber != null && it.episodeNumber != null }
+                .associateBy { it.seasonNumber!! to it.episodeNumber!! }
+
+        // Phase 188 — a positive scan_episode_cap makes filesToProbe a strict subset of episodeFiles;
+        // without this, the episode list built below (from filesToProbe alone) silently replaced every
+        // previously-known episode for a file outside this pass's sample with nothing, permanently, on
+        // every subsequent scan (135 of 184 prod TV shows were found stuck at exactly episode_count 8 —
+        // scan_episode_cap's value). Keyed by path rather than (season, episode) so it also carries over
+        // files jellystructure never numbered.
+        val existingByPath: Map<String, dev.jellystructure.model.Episode> = previousEpisodes.associateBy { it.path }
 
         // Bug fix: this was a plain sequential `for` loop — one ffprobe + TMDB round trip per episode,
         // one after another. A big show (e.g. a 300+-episode series) monopolized its entire worker slot
@@ -646,13 +655,22 @@ class Scanner(
             }.awaitAll().flatten()
         }
 
+        // Phase 188 — carry over a previously-known episode for every file this pass's cap excluded from
+        // probing (filesToProbe is a strict subset of episodeFiles whenever scan_episode_cap is positive).
+        // Filtered against the live `episodeFiles` listing, not blindly against everything the DB held, so
+        // a file actually deleted from disk still drops out exactly as before — only files still present
+        // but unsampled this pass are restored. A file with no prior record (never yet probed) is left
+        // out, matching Phase 49's original "gap until an uncapped rescan" behaviour.
+        val carriedOverEpisodes = (episodeFiles - filesToProbe.toSet()).mapNotNull { existingByPath[it] }
+        val episodesWithCarryOver = episodes + carriedOverEpisodes
+
         // Bug fix (Ravilo auto-play-next loop): `jfBySeasonEp` above is keyed by (season, episode), so
         // every file that parses to the same code was handed the SAME Jellyfin id — two rail entries with
         // one id, and a "next episode" that was the episode already playing. The redundant copies keep
         // their row (the operator needs to see and fix them — they surface as the `duplicate_episode`
         // triage type) but lose the borrowed id, so only one entry ever owns an episode's identity.
         val sortedEpisodes = DuplicateEpisodes.withUniqueIds(
-            episodes.sortedWith(compareBy({ it.seasonNumber ?: 999 }, { it.episodeNumber ?: 999 }))
+            episodesWithCarryOver.sortedWith(compareBy({ it.seasonNumber ?: 999 }, { it.episodeNumber ?: 999 }))
         )
         DuplicateEpisodes.describe(sortedEpisodes).forEach {
             Logger.warn("Series '$title' has duplicate episode files — $it", "scan")
