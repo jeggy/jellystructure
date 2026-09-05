@@ -93,7 +93,7 @@ object PipelineDeferOverride {
  * NEXT deferral check, not by aborting one already in progress). A no-op (returns immediately) when
  * [deferEligible] is false or nothing is playing.
  */
-private suspend fun awaitPlaybackClear(deferEligible: Boolean, jobId: String, broadcaster: WsBroadcaster) {
+private suspend fun awaitPlaybackClear(deferEligible: Boolean, jobId: String, broadcaster: WsBroadcaster, scanTracker: ScanTracker) {
     if (!deferEligible) return
     if (!dev.jellystructure.tv.isPlaybackActive()) return
     var announced = false
@@ -103,11 +103,20 @@ private suspend fun awaitPlaybackClear(deferEligible: Boolean, jobId: String, br
             val devices = dev.jellystructure.tv.activePlaybackDeviceNames()
             Logger.info("Pipeline deferred — TV playing (${devices.joinToString(", ")})", "pipeline")
             broadcaster.broadcast(JobEvent.Deferred(jobId, devices))
+            // Bug fix (2026-09-05) — JobEvent.Deferred fires once, live, over the WS. A client that
+            // loads/reconnects after this moment (the common case, per phase-178's live incident: this
+            // household's kids-show marathons hold a TV "playing" for hours) polled GET /scan/status and
+            // saw only a generic RUNNING/0-items state forever, with no way to discover it was waiting on
+            // a TV or that "Run anyway" existed. Persisted here so status() can reconstruct it.
+            scanTracker.setDeferred(devices)
             announced = true
         }
         delay(2_000L)  // short enough that "Run anyway" feels immediate
     }
-    if (announced) broadcaster.broadcast(JobEvent.Resumed(jobId))
+    if (announced) {
+        scanTracker.clearDeferred()
+        broadcaster.broadcast(JobEvent.Resumed(jobId))
+    }
 }
 
 fun effectivePipeline(cfg: AppConfig): List<PipelineStep> =
@@ -206,7 +215,7 @@ suspend fun runPipeline(
     // Phase 178 §FR-178-2 — defer the whole run's start (covers scan_files' probe-heavy work, which
     // isn't itself a skippable step — see RunTarget.Library below) rather than starting it only to have
     // it compete with a TV for disk I/O the moment it begins.
-    awaitPlaybackClear(deferEligible, jobId, broadcaster)
+    awaitPlaybackClear(deferEligible, jobId, broadcaster, scanTracker)
 
     val workingSet: List<MediaItem> = when (target) {
         is RunTarget.Library -> {
@@ -294,7 +303,7 @@ suspend fun runPipeline(
             "fetch_artwork" -> {
                 // Phase 178 §FR-178-2 — re-checked here (not just at the run's start above): playback
                 // may have started after this run began but before its turn came.
-                awaitPlaybackClear(deferEligible, jobId, broadcaster)
+                awaitPlaybackClear(deferEligible, jobId, broadcaster, scanTracker)
                 val toProcess = if (step.scope == "all") workingSet
                     else workingSet.filter { artworkDownloader.isArtworkIncomplete(it) }
                 Logger.info("fetch_artwork: ${toProcess.size} items (scope=${step.scope})")
@@ -307,7 +316,7 @@ suspend fun runPipeline(
                 // Phase 178 §FR-178-2 — same re-check fetch_artwork already does: this step hits
                 // Jellyfin's own ffmpeg extraction, real disk/CPU work on the same media files a TV
                 // might now be reading.
-                awaitPlaybackClear(deferEligible, jobId, broadcaster)
+                awaitPlaybackClear(deferEligible, jobId, broadcaster, scanTracker)
                 val warmed = AtomicInt(0)
                 Logger.info("prewarm_subtitles: ${workingSet.size} items")
                 runPipelineStepPool(

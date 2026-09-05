@@ -253,6 +253,11 @@ data class ScanStatus(
     // the WS event stream: the active step + the whole ordered plan, plus the three run descriptors.
     val activeStep: String? = null,
     val stepPlan: List<String> = emptyList(),
+    // Bug fix (2026-09-05) — Phase 178's JobEvent.Deferred fires once, live; a page load/reconnect after
+    // that moment (the common case) needs this to reconstruct the "Paused — TV is watching" state instead
+    // of showing an indefinite 0-item/0-worker "running" scan with no explanation.
+    val deferred: Boolean = false,
+    val deferredDevices: List<String> = emptyList(),
     val trigger: String? = null,
     val scope: String? = null,
     val type: String? = null,

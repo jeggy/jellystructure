@@ -1975,10 +1975,20 @@ fun Route.mediaRoutes(
     }
 
     post("/scan") {
-        if (scanTracker.running) {
+        // Bug fix (2026-09-05, phase 178) — FR-178-2's own invariant is "an explicit human action always
+        // wins": a scheduled/event-driven run merely parked in awaitPlaybackClear (waiting for a TV to
+        // stop) must yield to a manual click, not 409 it away. Live incident: a kids-show marathon on
+        // stue TV held the hourly scheduled scan deferred for 3+ hours straight, during which every
+        // manual "Scan" click from the admin UI was flatly rejected — the exact opposite of what this
+        // phase promises. A genuinely RUNNING (non-deferred) scan still 409s; only the deferred-and-idle
+        // case is preempted, and safely — nothing has scanned yet, so nothing is lost (cancelRun sets
+        // CANCELLED synchronously before this returns; the old job's own wind-down never touches
+        // scan_state, so there is no race with the fresh startNew() below).
+        if (scanTracker.running && !scanTracker.deferred) {
             call.respond(HttpStatusCode.Conflict, mapOf("error" to "scan already running"))
             return@post
         }
+        if (scanTracker.running) scanTracker.cancelRun(appScope)
         val libraryId = call.request.queryParameters["library"]?.takeIf { it.isNotBlank() }
         // Phase 175 — honors the freshness/cooldown filter like every other trigger (previously it
         // always processed the whole library unconditionally). `?full=true` bypasses it.
@@ -1992,10 +2002,12 @@ fun Route.mediaRoutes(
     // (manual click on any page, scheduler, startup); the only thing specific to this route is Phase
     // 154's optional one-run step skip from the pre-run dialog.
     post("/pipeline/run") {
-        if (scanTracker.running) {
+        // See the matching comment on POST /scan above — same FR-178-2 preemption.
+        if (scanTracker.running && !scanTracker.deferred) {
             call.respond(HttpStatusCode.Conflict, mapOf("error" to "scan already running"))
             return@post
         }
+        if (scanTracker.running) scanTracker.cancelRun(appScope)
         val full = call.request.queryParameters["full"] == "true"
         // Phase 154 (FR-PIPE1-6): optional per-run step skip from the pre-run dialog. Read defensively so
         // a bodyless call (the pre-154 client, curl, the command palette) keeps working unchanged. This is

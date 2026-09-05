@@ -149,6 +149,54 @@ Invisible automation that slows things down is worse than no automation.
   precedent this extends to I/O scheduling), **Phase 110** (the stop watchdog).
 - `specs/research-reports/stue-tv-4k-playback-stutter-2026-08-28.md` §4.2 — the latency measurements.
 
+## Amendment (2026-09-05) — deferral was invisible past the moment it started, and blocked manual runs
+
+Answers Open question #5: a real scheduled run finally collided with real playback in production, and it
+exposed two bugs neither compile-time review nor the original design caught.
+
+**Live incident.** `docker logs jellystructure`, prod, 2026-09-05: the 15:30:00 hourly scheduled pipeline
+deferred at 15:30:00.454 ("Pipeline deferred — TV playing (BRAVIA 4K VH21)") and never resumed — the
+16:30:00 run logged "Scheduled run skipped — a scan is already running" against the *same* still-deferred
+job. `PlaybackInfo:` negotiation logs show a new title starting roughly every 7 minutes from 15:06 through
+at least 16:47 — consistent with a real back-to-back children's-show marathon (Bananer i pyjamas,
+Teletubbies, Bugs Bunny Builders — all short-episode content this household has in its library), not a
+stuck session; the stop watchdog never fired in the same 48h window. The deferral logic itself worked
+exactly as designed. What broke was everything downstream of it:
+
+1. **The Activity/Scan-console page had no `JobEvent.Deferred`/`Resumed` handling at all** (only
+   Dashboard.kt did — `is JobEvent.Deferred ->` at what was then `Dashboard.kt:322`). An operator on that
+   page during a defer saw the `scan_files` step chip spinning at 0 items / 0 workers, indefinitely, with
+   no explanation and no "Run anyway" button — indistinguishable from a genuine hang.
+2. **Even Dashboard.kt's handling was live-WS-only.** `JobEvent.Deferred`/`Resumed` fire once, at the
+   instant they happen (by design — see FR-178-4's doc), and are never otherwise recorded. A page
+   loaded/reloaded *after* that moment — the common case, since nobody keeps the admin UI open for a whole
+   TV session — had no way to reconstruct "deferred, waiting on X" from `GET /scan/status`
+   (`ScanStatusResponse` carried no such field), so it silently fell back to a generic "Scanning…" banner
+   with no override offered, same practical effect as bug 1.
+3. **`POST /scan` and `POST /pipeline/run` 409'd on any `scanTracker.running`, including merely
+   deferred.** This is a direct violation of FR-178-2's own stated invariant — "An operator who clicks
+   'Scan library' or 'Run pipeline now' while a TV is playing gets their run" and the Invariants section's
+   "An explicit human action always wins" — a manual click during a defer got flatly rejected instead of
+   preempting it, for as long as the TV kept playing (observed: 3+ hours straight).
+
+**Fix.** `ScanTracker` gained persistent `deferred: Boolean` / `deferredDevices: List<String>` fields
+(cleared on every terminal transition: `startNew`, `startResume`, `cancel`, `complete`, `reset`), set by
+`awaitPlaybackClear` (`PipelineEngine.kt`) at the same point it broadcasts `JobEvent.Deferred`/`Resumed`,
+and surfaced on `ScanStatusResponse`/`ScanStatus` alongside the existing Phase-135
+late-joining-client-reconstruction fields (`activeStep`, `stepPlan`, `trigger`/`scope`/`type`) — the exact
+pattern that section's own doc comment already described but never extended to cover this case. Both
+Activity.kt (new) and Dashboard.kt (extended) now render the "Paused — TV is watching {name}" banner +
+"Run anyway" from *polled* status, not only a live WS push — Activity.kt via its existing 2s `pollWorkers`
+tick, Dashboard.kt via its page-load hydration path. `POST /scan` / `POST /pipeline/run` now check
+`scanTracker.running && !scanTracker.deferred` for the 409 — a merely-deferred run is preempted via the
+existing `cancelRun` (safe: nothing has scanned yet, so nothing is lost; `cancelRun` sets `CANCELLED`
+synchronously before the route returns, and the old job's own wind-down never touches `scan_state`, so
+there's no race with the fresh `startNew()`/`launchScanRun()` that follows).
+
+Compiles clean (`compileKotlinLinuxX64`, `compileKotlinWasmJs`). **Not yet live/device-verified** — no
+backend restart or deploy has happened for this fix; the diagnosis above came from reading prod's existing
+logs, not from reproducing against the patched build.
+
 ## Open questions
 
 1. **Is 120s the right grace window?** Long enough to bridge auto-advance between episodes, short enough

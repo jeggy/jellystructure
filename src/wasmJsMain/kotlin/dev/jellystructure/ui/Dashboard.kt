@@ -155,6 +155,11 @@ fun renderDashboard(container: Element, scope: CoroutineScope) {
         when (status?.status) {
             "RUNNING" -> {
                 setDashScanRunning(status.processedCount)
+                // Bug fix (2026-09-05) — see renderDashDeferredBanner's doc: a page load after a run
+                // already deferred must show the paused-for-TV banner immediately (overwriting the
+                // generic one setDashScanRunning just wrote), not wait for a live JobEvent.Deferred that
+                // already fired before this page connected.
+                if (status.deferred) renderDashDeferredBanner(scope, status.deferredDevices, status.jobId ?: "")
                 connectDashScanSocket(scope, baseCount = status.processedCount)
             }
             "CANCELLED" -> setDashScanCancelled(status.processedCount, scope)
@@ -319,14 +324,7 @@ private fun connectDashScanSocket(scope: CoroutineScope, baseCount: Int = 0) {
                 // Phase 178 §FR-178-2/FR-178-4 — a scheduled/event-driven run is waiting for a TV to
                 // stop playing before its heavy steps proceed. "Run anyway" is a one-run override —
                 // nothing is written to config.
-                is JobEvent.Deferred -> {
-                    val who = event.devices.joinToString(", ").ifBlank { "a device" }
-                    val banner = document.getElementById("dash-scan-banner") as? HTMLElement
-                    banner?.innerHTML = """<span class="badge warn">Paused — TV is watching (${who.esc()})</span> <button id="run-anyway-btn" class="btn sm ghost" style="margin-left:8px">Run anyway</button>"""
-                    document.getElementById("run-anyway-btn")?.addEventListener("click") {
-                        scope.launch { MediaApi.runPipelineAnyway(event.jobId) }
-                    }
-                }
+                is JobEvent.Deferred -> renderDashDeferredBanner(scope, event.devices, event.jobId)
                 is JobEvent.Resumed -> {
                     val banner = document.getElementById("dash-scan-banner") as? HTMLElement
                     banner?.innerHTML = """<span class="badge">Resumed — scanning…</span>"""
@@ -382,6 +380,21 @@ private fun setDashScanRunning(processedCount: Int) {
     val banner = document.getElementById("dash-scan-banner") as? HTMLElement ?: return
     val countNote = if (processedCount > 0) "Scanning — $processedCount item${if (processedCount != 1) "s" else ""} processed so far…" else "Scanning — items appear in Library as they are processed."
     banner.innerHTML = """<span class="badge">$countNote</span> <button id="cancel-scan-btn" class="btn sm ghost" style="margin-left:8px">Cancel</button>"""
+}
+
+/** Phase 178 §FR-178-2/FR-178-4 — shared by the live WS `JobEvent.Deferred` handler and the page-load
+ *  hydration path below. Bug fix (2026-09-05): hydration used to call [setDashScanRunning] unconditionally
+ *  whenever `status == RUNNING`, so a page load/reload *after* the moment a run deferred (the common case
+ *  — nobody has the Dashboard open continuously) showed a plain "Scanning — items appear as processed…"
+ *  banner forever, with no way to discover the run was just waiting on a TV or that "Run anyway" existed.
+ *  A live incident held a scheduled scan deferred for 3+ hours straight on exactly this household. */
+private fun renderDashDeferredBanner(scope: CoroutineScope, devices: List<String>, jobId: String) {
+    val who = devices.joinToString(", ").ifBlank { "a device" }.esc()
+    val banner = document.getElementById("dash-scan-banner") as? HTMLElement ?: return
+    banner.innerHTML = """<span class="badge warn">Paused — TV is watching ($who)</span> <button id="run-anyway-btn" class="btn sm ghost" style="margin-left:8px">Run anyway</button>"""
+    document.getElementById("run-anyway-btn")?.addEventListener("click") {
+        scope.launch { MediaApi.runPipelineAnyway(jobId) }
+    }
 }
 
 private fun setDashScanCancelled(processedCount: Int, scope: CoroutineScope) {
