@@ -192,11 +192,20 @@ object PipelineStepOps {
             dev.jellystructure.nfo.DriftState.NFO_STALE.name.lowercase() -> DriftOutcome.NFO_STALE
             dev.jellystructure.nfo.DriftState.JELLYFIN_BEHIND.name.lowercase() -> {
                 if (autoReassert) {
+                    // Phase 193 (open question 1) — this used to build both updateOne calls from the same
+                    // stale `current`, so the jfSyncedAt stamp below silently reverted the nfoWrittenAt/
+                    // nfoHash the rewrite just recorded (the second copy() carried the PRE-rewrite values
+                    // forward over them). Thread the rewritten item through instead of re-deriving from
+                    // `current` twice. Never fired in production (auto_reassert=false) but latent either way.
+                    var reasserted = current
                     runCatching { NfoWriter.writeTracked(current, cfg.apiKeys.jellyfinUrl, cfg.metadata.ageRatingCascade).getOrThrow() }
-                        .onSuccess { r -> store.updateOne(current.copy(nfoWrittenAt = r.writtenAt, nfoHash = r.hash)) }
-                    current.jellyfinId?.let { jid ->
+                        .onSuccess { r ->
+                            reasserted = current.copy(nfoWrittenAt = r.writtenAt, nfoHash = r.hash)
+                            store.updateOne(reasserted)
+                        }
+                    reasserted.jellyfinId?.let { jid ->
                         val ok = runCatching { jellyfinClient.refreshItem(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken, jid, full = true) }.getOrDefault(false)
-                        if (ok) store.updateOne(current.copy(jfSyncedAt = nowEpochSec()))
+                        if (ok) store.updateOne(reasserted.copy(jfSyncedAt = nowEpochSec()))
                     }
                 }
                 DriftOutcome.JELLYFIN_BEHIND

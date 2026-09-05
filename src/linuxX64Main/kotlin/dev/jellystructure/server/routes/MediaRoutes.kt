@@ -542,9 +542,20 @@ fun Route.mediaRoutes(
                             // Phase 153 — plan.md documents this route as "Write NFO … trigger Jellyfin
                             // refresh"; the trigger was missing, so a manual write never actually got
                             // Jellyfin to re-read it until some other action (e.g. Sync) happened to.
+                            // Phase 193 (FR-193-1) — the refresh itself was already correct; only the
+                            // bookkeeping was missing. A refresh that fires and succeeds must be recorded
+                            // exactly like pushToJellyfin already does, or DriftEvaluator's
+                            // jfSyncedAt < nfoWrittenAt predicate reports "Jellyfin hasn't re-read it yet"
+                            // forever about a refresh that happened seconds earlier on this same request.
                             val cfg = configStore.current
                             if (!item.jellyfinId.isNullOrBlank() && cfg.apiKeys.jellyfinUrl.isNotBlank()) {
-                                jellyfinClient.refreshItem(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken, item.jellyfinId, full = true)
+                                val refreshOk = jellyfinClient.refreshItem(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken, item.jellyfinId, full = true)
+                                if (refreshOk) {
+                                    store.updateOne((store.get(id) ?: item).copy(jfSyncedAt = nowEpochSec()))
+                                } else {
+                                    Logger.warn("NFO write: Jellyfin refresh failed for '$id' (jellyfinId=${item.jellyfinId})")
+                                    mediaHistory.record(id, "jellyfin_refresh_failed", "triggered by NFO write")
+                                }
                             }
                             call.respond(mapOf("path" to result.path))
                         }
@@ -1637,7 +1648,14 @@ fun Route.mediaRoutes(
 
             val cfg = configStore.current
             if (!enriched.jellyfinId.isNullOrBlank() && cfg.apiKeys.jellyfinUrl.isNotBlank()) {
-                jellyfinClient.refreshItem(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken, enriched.jellyfinId, full = true)
+                // Phase 193 (FR-193-1) — same bookkeeping gap as the plain NFO-write route.
+                val refreshOk = jellyfinClient.refreshItem(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken, enriched.jellyfinId, full = true)
+                if (refreshOk) {
+                    store.updateOne((store.get(id) ?: enriched).copy(jfSyncedAt = nowEpochSec()), respectMetadataLanguageLock = false)
+                } else {
+                    Logger.warn("metadata-language: Jellyfin refresh failed for $id (jellyfinId=${enriched.jellyfinId})", "scan")
+                    mediaHistory.record(id, "jellyfin_refresh_failed", "triggered by metadata-language change")
+                }
             }
             call.respond(enriched)
         }
@@ -1663,7 +1681,7 @@ fun Route.mediaRoutes(
         get("/{id}/drift") {
             val id = call.parameters["id"] ?: return@get call.respond(HttpStatusCode.BadRequest)
             val item = store.resolve(id) ?: return@get call.respond(HttpStatusCode.NotFound)
-            val result = dev.jellystructure.nfo.DriftEvaluator.evaluate(item, jellyfinClient, configStore.current)
+            val result = dev.jellystructure.nfo.DriftEvaluator.evaluate(item, jellyfinClient, configStore.current, scanRunning = scanTracker.running)
             call.respond(result)
             if (result.state == dev.jellystructure.nfo.DriftState.EXTERNAL_DRIFT.name.lowercase()) {
                 val cfg = configStore.current
