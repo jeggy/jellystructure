@@ -184,6 +184,10 @@ fun renderActivity(container: Element, scope: CoroutineScope, query: Map<String,
         <div id="view-console">
         <div id="overall-card" class="card" style="display:none;margin-bottom:14px">
           <div id="step-chips" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px"></div>
+          <div id="defer-banner" class="row center" style="display:none;margin-bottom:12px;gap:8px">
+            <span class="badge warn" id="defer-banner-text"></span>
+            <button id="defer-run-anyway-btn" class="btn sm ghost">Run anyway</button>
+          </div>
           <div class="row center">
             <b id="ov-step-label">Overall</b>
             <span class="spacer"></span>
@@ -246,6 +250,13 @@ fun renderActivity(container: Element, scope: CoroutineScope, query: Map<String,
 
     container.querySelector("#act-cancel-btn")?.addEventListener("click") {
         scope.launch { MediaApi.cancelScan() }
+    }
+
+    // Phase 178 §FR-178-4 — "Run anyway" for a run parked in awaitPlaybackClear; see applyScanStatus's
+    // doc for why this page needs its own copy of the button Dashboard.kt already has.
+    container.querySelector("#defer-run-anyway-btn")?.addEventListener("click") { e ->
+        val jobId = (e.currentTarget as? HTMLElement)?.getAttribute("data-job-id") ?: return@addEventListener
+        scope.launch { MediaApi.runPipelineAnyway(jobId) }
     }
 
     // Phase 109 — "Jobs & workers" segmented view (design/app/activity.html #viewseg): the media-worker
@@ -391,6 +402,29 @@ private fun applyScanStatus(container: Element, st: dev.jellystructure.api.ScanS
     if (st.trigger != runTrigger || st.scope != runScope || st.type != runType) {
         runTrigger = st.trigger; runScope = st.scope; runType = st.type
         renderRunBadge(container)
+    }
+    // Bug fix (2026-09-05, phase 178) — this page never rendered JobEvent.Deferred/Resumed at all (only
+    // Dashboard.kt did, and only for a live WS listener already connected at the exact moment it fired).
+    // A scan sitting deferred for hours (a real household incident: a kids-show marathon held the hourly
+    // scheduled scan waiting on stue TV for 3+ hours straight) looked identical here to a genuinely
+    // hung 0-item/0-worker scan, with no explanation and no way to unstick it from this page. Status is
+    // now polled (see pollWorkers), so this renders on every 2s tick, not just a one-shot live event.
+    val banner = container.querySelector("#defer-banner") as? HTMLElement
+    val bannerText = container.querySelector("#defer-banner-text") as? HTMLElement
+    val runAnywayBtn = container.querySelector("#defer-run-anyway-btn") as? HTMLElement
+    if (st.deferred) {
+        val who = st.deferredDevices.joinToString(", ").ifBlank { "a device" }
+        bannerText?.textContent = "Paused — TV is watching ($who)"
+        banner?.style?.display = ""
+        val jobId = st.jobId
+        if (jobId != null) {
+            runAnywayBtn?.setAttribute("data-job-id", jobId)
+            runAnywayBtn?.style?.display = ""
+        } else {
+            runAnywayBtn?.style?.display = "none"
+        }
+    } else {
+        banner?.style?.display = "none"
     }
 }
 

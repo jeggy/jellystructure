@@ -42,6 +42,14 @@ data class ScanStatusResponse(
     // per-worker visibility — one entry per item currently in flight across scan_files/runPipelineStepPool,
     // so the Activity page can show what each concurrent worker is doing (not just an "N/M" count).
     val activeItems: List<ActiveScanItem> = emptyList(),
+    // Bug fix (2026-09-05) — Phase 178's JobEvent.Deferred/Resumed fire once, live, over the WS and are
+    // never otherwise recorded; a client that loads/reconnects after the moment a run deferred (the
+    // common case — nobody has the Activity page open continuously) polls this same RUNNING status
+    // forever with no way to learn WHY nothing is progressing. Persisted here so any late-joining poller
+    // can reconstruct the exact "Paused — TV is watching {name}" state Dashboard's WS handler already
+    // knows how to render, instead of just spinning at 0 items/0 workers indefinitely.
+    val deferred: Boolean = false,
+    val deferredDevices: List<String> = emptyList(),
 )
 
 @Serializable
@@ -85,6 +93,14 @@ class ScanTracker(private val db: JellystructureDb, private val persistToDb: Boo
     fun setDescriptors(trigger: String, runScope: String, type: String?) {
         _trigger = trigger; _runScope = runScope; _type = type
     }
+
+    // Bug fix (2026-09-05) — see ScanStatusResponse.deferred's doc. Plain vars, same read-mostly/
+    // single-writer tradeoff already made for _activeStep etc above.
+    @Volatile private var _deferred: Boolean = false
+    @Volatile private var _deferredDevices: List<String> = emptyList()
+    val deferred get() = _deferred
+    fun setDeferred(devices: List<String>) { _deferred = true; _deferredDevices = devices }
+    fun clearDeferred() { _deferred = false; _deferredDevices = emptyList() }
 
     // Per-worker visibility — every concurrent worker (scan_files' pool in MediaRoutes.kt, and every
     // runPipelineStepPool step) reports the item it's working on here, keyed by an opaque token (not the
@@ -163,6 +179,7 @@ class ScanTracker(private val db: JellystructureDb, private val persistToDb: Boo
         _status = "RUNNING"
         _jobId = jobId
         _startedAt = epochSeconds()
+        clearDeferred()
         if (persistToDb) db.scanStateQueries.upsertState(
             status = "RUNNING",
             job_id = jobId,
@@ -179,6 +196,7 @@ class ScanTracker(private val db: JellystructureDb, private val persistToDb: Boo
         _stepPlan = emptyList()
         activeItemsMap.clear()
         _status = "RUNNING"
+        clearDeferred()
         if (persistToDb) db.scanStateQueries.upsertState(
             status = "RUNNING",
             job_id = _jobId,
@@ -204,6 +222,7 @@ class ScanTracker(private val db: JellystructureDb, private val persistToDb: Boo
         if (_status == "RUNNING") {
             cancelRequested = true
             _status = "CANCELLED"
+            clearDeferred()
             if (persistToDb) db.scanStateQueries.upsertState(
                 status = "CANCELLED",
                 job_id = _jobId,
@@ -252,6 +271,7 @@ class ScanTracker(private val db: JellystructureDb, private val persistToDb: Boo
         _status = "COMPLETE"
         activeWorkers.value = 0
         runJob = null
+        clearDeferred()
         if (persistToDb) {
             db.scanStateQueries.clearProcessed(_jobId)
             db.scanStateQueries.upsertState(
@@ -269,6 +289,7 @@ class ScanTracker(private val db: JellystructureDb, private val persistToDb: Boo
         _startedAt = 0L
         activeWorkers.value = 0
         runJob = null
+        clearDeferred()
         if (persistToDb) db.scanStateQueries.clearOldProcessed("")
     }
 
@@ -283,6 +304,8 @@ class ScanTracker(private val db: JellystructureDb, private val persistToDb: Boo
         nextScheduledRun = nextScheduledRunSec.value.takeIf { it > 0L },
         activeStep = _activeStep,
         stepPlan = _stepPlan,
+        deferred = _deferred,
+        deferredDevices = _deferredDevices,
         trigger = _trigger,
         scope = _runScope,
         type = _type,
