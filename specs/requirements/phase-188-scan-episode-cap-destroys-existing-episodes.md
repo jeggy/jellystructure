@@ -6,10 +6,10 @@
 > prod's `scan_episode_cap`.
 
 ## Status
-Implemented (2026-09-05). Compiles clean (`compileKotlinLinuxX64`). Not yet dev-reviewed. **Repair scan
-not yet run**, and **prod's `scan_episode_cap` is still `8`** — the code fix stops further damage and
-lets a future capped scan self-heal a series toward full coverage, but the 135 already-truncated shows
-stay truncated in the DB until each is rescanned with the cap raised/cleared (see Non-goals).
+Implemented (2026-09-05). Compiles clean (`compileKotlinLinuxX64`). Not yet dev-reviewed. **Repair
+rescan has now been run by the operator with the cap cleared**, restoring the full episode lists — and
+that rescan surfaced a second-order consequence which was separately repaired; see
+"Newly Added fallout and recovery" below.
 
 **Config mitigation attempted and reverted:** `~/jellystructure/config/config.toml`'s
 `scan_episode_cap` was hand-edited to `0` on 2026-09-05 while the prod backend was running, but the
@@ -17,7 +17,51 @@ live process holds config in memory and persists its own (still-`8`) value back 
 save trigger — the file read back `8` again within about a minute, with no edit made by anyone. A raw
 file edit to a live instance's config.toml does not reliably stick; changing it for real needs the
 app's own settings-save path (Settings UI or an authenticated config API call) or a restart after the
-file edit, neither of which has been done.
+file edit. The operator subsequently cleared the cap through the app itself and ran the rescan.
+
+### Newly Added fallout and recovery (2026-09-05)
+The repair rescan re-added the ~5 000 previously-dropped episodes, and because episode `createdAt` is a
+"first-seen, stamped once" field (`MediaStore.kt:171-175`), every re-added episode was genuinely new to
+the store and got stamped with the rescan time. Since a series' Newly Added position is
+`max(episode.createdAt)`, **112 of 184 series floated to the top of Newly Added at once** — the row
+became a flat block of ~112 titles all dated within the same 36 minutes.
+
+Worth stating plainly for the record: **the rescan did not destroy this data — the cap did.** Those
+episodes' original `createdAt` values ceased to exist the moment the cap first dropped them from the
+stored list; the rescan only made the loss visible by re-materialising the rows with a current date.
+
+**Recovered by backfill, not by restore.** No usable backup existed (`jellystructure.db.bak-pre-sync-
+20260903` holds zero media rows; `media_history` is a 2 000-row ring buffer ~3 days deep with only 84
+partial snapshots). Recovery instead used `episode.jellyfinCreatedAt` — Jellyfin's own `DateCreated`,
+which is the file's mtime, is external to jellystructure, and was therefore untouched by our rescan
+(90.1 % of damaged rows still matched their on-disk mtime within an hour, spread properly across real
+history). Validated before applying, against the 1 272 surviving episodes and 72 fully-intact series
+where the true value was still known: **median per-episode error 2.4 h** (68 % within a day, 81 %
+within a week), and at the level that actually matters — per-series row ordering — **median rank
+displacement 2 places, 81 % within 3**.
+
+Selection was exact rather than a recency heuristic: the re-stamps form a single isolated cluster,
+`2026-09-05 20:11:16`–`20:46:54`, separated by a **53-minute gap** from the nearest genuine timestamp,
+with nothing above it. A naive "createdAt newer than 24 h" filter would have swept up 63 genuinely-new
+episodes and corrupted correct data — the narrow window avoided that.
+
+Applied with the backend **stopped** (`MediaStore` keeps a warm decoded-library cache patched in place,
+so a live direct DB write would have been both invisible to the running app and liable to be clobbered
+— the same failure mode that ate the config.toml edit above), after a full `db`+`wal`+`shm` snapshot at
+`config/jellystructure.db.bak-pre-createdat-backfill-20260905` and a WAL checkpoint. **108 series /
+5 054 episodes** restored — 5 000 from `jellyfinCreatedAt`, 54 from file mtime, 0 left unrecoverable.
+Verified: `integrity_check ok`, 516/516 items with identical ids, **0 episode-count changes, 0
+non-episode fields modified** (the rewrite round-trips byte-identically via
+`separators=(',',':'), ensure_ascii=False`, so the only diff is the intended field). The 49 episodes
+still carrying in-window timestamps are all Cooking Trouble, and every one matches its real file mtime or
+`jellyfinCreatedAt` — that series was genuinely importing during the rescan, so those dates are correct.
+Resulting distribution is a natural long tail (15 today / 15 this week / 23 this month / 90 in 30-90 d /
+41 older) in place of the 112-title flat block.
+
+Residual, deliberately not chased: roughly 12 % of episodes carry junk scene-release mtimes and land
+>30 days off. They skew *old*, so they push a series down rather than up, and `max()` means a single
+good episode rescues the series. The original values are gone for good — this restores a plausible,
+approximately-correct order, not the original one.
 
 ### Implementation notes (2026-09-05)
 - **Root cause confirmed directly against the prod DB**, not guessed: `fjollerne-2005`'s stored `episodes`
