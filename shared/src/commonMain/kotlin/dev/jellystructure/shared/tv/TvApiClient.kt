@@ -310,6 +310,40 @@ class TvApiClient(
         client.delete("$baseUrl/api/tv/sessions/$userId") { auth() }.assertSuccess()
     }
 
+    // ─── Phase 187/R234 — a viewer's own photo + password ────────────────────────
+
+    /** R234 (FR-R234-3) — [dataBase64] is the raw image bytes, base64-encoded (data: URL prefix
+     *  tolerated server-side); the server validates/re-encodes before anything reaches Jellyfin
+     *  (187 FR-187-6) — this is what the client actually captured, not what gets forwarded. */
+    suspend fun setAccountPhoto(dataBase64: String, contentType: String): AccountPhotoResult {
+        val r = client.post("$baseUrl/api/tv/account/photo") {
+            auth(); jsonBody("""{"data_base64":${dataBase64.jsonStr()},"content_type":${contentType.jsonStr()}}""")
+        }
+        r.assertSuccess()
+        return json.decodeFromString(r.bodyAsText())
+    }
+
+    suspend fun deleteAccountPhoto(): AccountPhotoResult {
+        val r = client.delete("$baseUrl/api/tv/account/photo") { auth() }
+        r.assertSuccess()
+        return json.decodeFromString(r.bodyAsText())
+    }
+
+    /**
+     * R234 (FR-R234-5/7) — the server relays Jellyfin's own verdict rather than the client guessing;
+     * a wrong current password comes back as `200 OK` with [AccountPasswordResult.wrongCurrentPassword]
+     * true, not an HTTP error, so it's decoded here rather than thrown. A `429` (187 FR-187-4's rate
+     * limit) or any other non-2xx is a real failure and throws, same as everywhere else in this client
+     * — the caller's generic "couldn't reach the server" path already exists for that shape of error.
+     */
+    suspend fun changeAccountPassword(currentPassword: String, newPassword: String): AccountPasswordResult {
+        val r = client.post("$baseUrl/api/tv/account/password") {
+            auth(); jsonBody("""{"current_password":${currentPassword.jsonStr()},"new_password":${newPassword.jsonStr()}}""")
+        }
+        r.assertSuccess()
+        return json.decodeFromString(r.bodyAsText())
+    }
+
     // ─── Request / Seerr discover (R171, replaces the retired R48 chart Top 10) ──────────────
 
     suspend fun getDiscover(): DiscoverResponse {

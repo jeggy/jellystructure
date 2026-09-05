@@ -73,6 +73,7 @@ import dev.jellystructure.ravilo.ui.screens.SeriesDetailScreen
 import dev.jellystructure.ravilo.ui.screens.SeriesDetailStore
 import dev.jellystructure.ravilo.ui.screens.SettingsScreen
 import dev.jellystructure.ravilo.ui.screens.SettingsStore
+import dev.jellystructure.ravilo.ui.screens.signOutActiveSession
 import dev.jellystructure.ravilo.ui.screens.UpcomingDetailScreen
 import dev.jellystructure.ravilo.ui.screens.UpcomingDetailStore
 import dev.jellystructure.ravilo.ui.screens.UpcomingScreen
@@ -222,6 +223,11 @@ private sealed class Dest {
         val segments: dev.jellystructure.shared.tv.TvSegmentMarkers = dev.jellystructure.shared.tv.TvSegmentMarkers(),
     ) : Dest()
     data class Settings(val displayName: String) : Dest()
+    // R234 (FR-R234-1) — phone/web only; the caller gates the ProfileMenu row that reaches this on
+    // !isTvPlatform, but the destination itself is reachable by any platform that pushes it.
+    data class YourProfile(val displayName: String) : Dest()
+    // R234 (FR-R234-4) — every platform, reached from Settings' Account section.
+    data class ChangePassword(val displayName: String) : Dest()
     // Phase R177 — a deliberate sibling to Player (see LiveTvPlayerStore's doc comment): live channels
     // have no resume position and need Jellyfin's explicit open/close handshake, so this is its own
     // destination rather than a branch of Dest.Player. Never reached from raviloNavItems (no top-nav
@@ -246,6 +252,8 @@ private sealed class Dest {
         is SeriesDetail   -> "/series/$itemId"
         is Player         -> "/player/$itemId"
         is Settings       -> "/settings"
+        is YourProfile    -> "/account/profile"
+        is ChangePassword -> "/account/password"
         is LiveTv         -> "/livetv/$channelId"
         is LiveTvGuide    -> "/livetv-guide"
     }
@@ -479,6 +487,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
             is Dest.UpcomingDetail -> d.displayName
             is Dest.MovieDetail -> d.displayName; is Dest.SeriesDetail -> d.displayName
             is Dest.Player -> d.displayName; is Dest.Settings -> d.displayName
+            is Dest.YourProfile -> d.displayName; is Dest.ChangePassword -> d.displayName
             else -> null
         } ?: MultiTokenStore.getActive()?.displayName.orEmpty()
 
@@ -1156,8 +1165,31 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                     // already cleared MultiTokenStore by the time this fires) — always lands on the
                     // login gate, matching the "no sessions" boot state.
                     onUnpair = { resetTo(Dest.Login) },
+                    onChangePassword = { push(Dest.ChangePassword(dest.displayName)) },
                 )
             }
+
+            is Dest.YourProfile -> dev.jellystructure.ravilo.ui.screens.YourProfileScreen(
+                apiClient = apiClient,
+                displayName = dest.displayName,
+                initialAvatarUrl = activeAvatarUrl,
+                onBack = { pop() },
+                onAvatarChanged = { activeAvatarUrl = it },
+            )
+
+            is Dest.ChangePassword -> dev.jellystructure.ravilo.ui.screens.ChangePasswordScreen(
+                apiClient = apiClient,
+                onBack = { pop() },
+                // FR-R234-7 — this Jellyfin version never actually takes this branch (probed: tokens
+                // survive a password change), but the client must still render the truth it's told,
+                // not a hard-coded assumption — see ChangePasswordScreen's own doc.
+                onForceSignOut = {
+                    configScope.launch {
+                        signOutActiveSession(apiClient)
+                        resetTo(if (MultiTokenStore.getAll().isEmpty()) Dest.Login else Dest.ProfilePicker)
+                    }
+                },
+            )
         } } // when / AnimatedContent
         // R170 — the avatar's dropdown: My List/Settings/Switch profile/Unpair, replacing the old
         // straight-to-picker click. Rendered over whatever screen is current, same tier as the
@@ -1170,6 +1202,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                 onMyList = { profileMenuOpen = false; push(Dest.Browse(BrowseKind.MY_LIST, currentDisplayName)) },
                 onSettings = { profileMenuOpen = false; push(Dest.Settings(currentDisplayName)) },
                 onSwitchProfile = { profileMenuOpen = false; push(Dest.ProfilePicker) },
+                onYourProfile = { profileMenuOpen = false; push(Dest.YourProfile(currentDisplayName)) },
                 // R175 — "Add user" opens the same LoginScreen; a successful sign-in resets the stack
                 // to the new profile's Home (see the Dest.Login branch above).
                 onAddUser = { profileMenuOpen = false; push(Dest.Login) },
