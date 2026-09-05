@@ -353,10 +353,16 @@ suspend fun runPipeline(
                     if (foreignSkipped.value > 0) ", ${foreignSkipped.value} foreign NFO(s) skipped (set overwrite to replace)" else "")
             }
             "sync_jellyfin" -> {
-                val fresh = workingSet.mapNotNull { store.get(it.id) }
-                val toSync = fresh.filter { (it.nfoWrittenAt ?: 0L) > (it.jfSyncedAt ?: 0L) && !it.jellyfinId.isNullOrBlank() }
+                // Phase 193 (FR-193-2) — was scoped to workingSet ∩ unsynced, but workingSet is the
+                // freshness-filtered scan_files output (bounding the EXPENSIVE work: probing files,
+                // calling TMDB). An item this pipeline already wrote an NFO for and never synced isn't
+                // speculative extra work — it's the completion of work already begun, and shouldn't wait
+                // up to 6 months for a freshness window that has nothing to do with it. Bounded by
+                // construction: this set can only contain items a previous run's write_nfo already
+                // touched, and each item leaves it the moment its refresh succeeds.
+                val toSync = store.allItems().filter { (it.nfoWrittenAt ?: 0L) > (it.jfSyncedAt ?: 0L) && !it.jellyfinId.isNullOrBlank() }
                 val jellyfinReady = cfg.apiKeys.jellyfinUrl.isNotBlank() && cfg.apiKeys.jellyfinToken.isNotBlank()
-                Logger.info("sync_jellyfin: ${toSync.size} of ${workingSet.size} items have unsynced NFO changes")
+                Logger.info("sync_jellyfin: ${toSync.size} item(s) have unsynced NFO changes (library-wide, not just this run's working set)")
                 runPipelineStepPool(
                     jobId, step.step, if (jellyfinReady) toSync else emptyList(),
                     { pipelineStepConcurrency(step.step, configStore.current.behavior.scanWorkers) }, scanTracker, broadcaster, labelOf = { it.title },

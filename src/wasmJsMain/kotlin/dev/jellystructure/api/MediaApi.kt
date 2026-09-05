@@ -1072,8 +1072,9 @@ data class DetectedTrackerGroup(val hosts: List<String>, val torrentCount: Int)
 data class DriftField(val field: String, val inJellyfin: String, val inDb: String)
 
 // Phase 115 — three-state sync evaluation: "nfo_stale" | "jellyfin_behind" | "external_drift" | "converged".
+// Phase 193 (FR-193-4): nfoWrittenAt is set only for "jellyfin_behind", so the banner can show elapsed time.
 @Serializable
-data class DriftResult(val state: String, val message: String, val fields: List<DriftField> = emptyList())
+data class DriftResult(val state: String, val message: String, val fields: List<DriftField> = emptyList(), val nfoWrittenAt: Long? = null)
 
 @Serializable
 data class TmdbMatchResult(
