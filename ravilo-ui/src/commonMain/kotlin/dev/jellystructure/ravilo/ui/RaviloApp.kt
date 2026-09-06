@@ -1074,6 +1074,16 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                     posterUrl        = dest.posterUrl,  // R192
                     store            = store,
                     onBack           = { pop() },
+                    // R237 (FR-R237-3) — the player told the viewer this TV needs to be signed in
+                    // again; this is the only control that can act on that. Same shape as R234's
+                    // onForceSignOut: revoke and forget just this profile, then land on the picker if
+                    // another cached profile remains, else the login gate.
+                    onReauthRequired = {
+                        configScope.launch {
+                            signOutActiveSession(apiClient)
+                            resetTo(if (MultiTokenStore.getAll().isEmpty()) Dest.Login else Dest.ProfilePicker)
+                        }
+                    },
                     onNavigateToEpisode = { nextId ->
                         // Bug fix: this used to bail out silently whenever `dest.episodes` was absent or
                         // `nextId` wasn't in it — the player had no way to know the navigation never

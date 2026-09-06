@@ -4,9 +4,44 @@
 > start fast enough, so I stopped."*
 
 ## Status
-`Planned` — design-authored 2026-09-06, not dev-reviewed. Client half of the 2026-09-06 playback
-incident; the server-side cause is **Phase 194**. This phase is worth building even after 194 lands:
-194 removes *this* cause, R237 removes the class of symptom.
+`✓ Built` 2026-09-06 — all six FRs. Design-authored the same day, not dev-reviewed, not device-tested.
+Client half of the 2026-09-06 playback incident; the server-side cause is **Phase 194**, built
+alongside it.
+
+### What was built
+- `classifyStartFailure` (FR-R237-1) — 409/403/404 and any other 4xx terminal; transport failures,
+  408/429 and 5xx retryable, honouring `Retry-After` in place of the computed backoff. `TvApiError.Http`
+  gained `retryAfterSeconds`, read from the response header in `assertSuccess`; a value outside 0–60 s
+  falls back to our own backoff rather than parking the viewer indefinitely.
+- `PlayerSessionState.Error` carries a `PlayerErrorKind` and the status; `PlayerScreen` renders a
+  per-cause heading and body (FR-R237-2) instead of `error.generic` over `"HTTP 409: {json body}"`.
+  Nine new strings × en/da/fo. No product name, protocol name or status code appears in any of them.
+- Retry is shown only where retrying can change the answer (FR-R237-3). `REAUTH` gets a **Sign in**
+  action wired to the same exit R234's forced sign-out already uses — revoke this profile, land on the
+  picker or the login gate. This answers **open question 2**: rather than a login takeover layered over
+  a dead player, the player is left entirely, which is a flow that already exists and is already
+  tested. `403`/`404` get Back alone.
+- FR-R237-5 — `PlayerSessionState.Loading(retrying)` adds one *"Still trying…"* line to R218's existing
+  cold-start treatment once a first attempt has failed. Nothing else about R218's states changed.
+- FR-R237-6 — `PlaybackQoeReport.startFailureStatus` + `playback_qoe.start_failure_status` (migration
+  `42.sqm`), posted on any start that never reached `Ready`. `0` means "failed with no HTTP response at
+  all". `QoeSummary.hasIssue` now includes it, so a failed start is badged in the admin surfaces.
+
+### Answered while building
+- **FR-R237-4 needed no code.** Auto-advance is `advanceRequestedForItemId`-latched to one attempt per
+  episode and navigates to a fresh `PlayerScreen`; a screen whose session errored never reaches
+  `player.isEnded`, so it cannot advance again. The season cannot be walked one 409 at a time.
+- **Open question 1 — `ravilo-tizen` does not share this loop.** Its `PlayerScreen.advanceTo` /
+  `DetailScreen.startPlayback` make a single attempt and `finish()` on failure: no retry, so no 15 s
+  spinner, but also no message at all. A separate, smaller gap; left alone per R190's per-target
+  precedent.
+- One incidental layout correction: the loading overlay's spinner, spacer and text were direct children
+  of a centre-aligned `Box`, so the 48 dp spacer did nothing and *"Loading…"* drew on top of the
+  spinner. They are a `Column` now — which FR-R237-5's second line needs to be legible at all.
+
+Six new `PlayerStartFailureClassificationTest` cases; `:ravilo-ui:compileDebugKotlinAndroid`,
+`:ravilo-ui:testDebugUnitTest`, `:ravilo-web:compileKotlinWasmJs`, `:ravilo-tizen:compileKotlinJs`,
+`compileKotlinLinuxX64` and `compileKotlinWasmJs` all clean.
 
 ## What the viewer saw
 
