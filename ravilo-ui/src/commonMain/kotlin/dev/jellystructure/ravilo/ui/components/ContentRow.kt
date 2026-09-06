@@ -29,6 +29,7 @@ import androidx.compose.ui.focus.FocusRequester
 import dev.jellystructure.ravilo.ui.seams.PrefetchLazyRowEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalDensity
@@ -95,6 +96,18 @@ fun <T> StaticContentRow(
      *  aren't (they're mutually exclusive with this: a row has an action link OR an info caption,
      *  never a visual double-up). e.g. Home On Now's "5 channels". */
     trailingInfo: String? = null,
+    /**
+     * R236 — an optional cross-screen bridge target (e.g. Home's hero-down / app-bar-down jump into
+     * "whichever row is first"), attached to the LazyRow ITSELF via [focusRequester] + [focusRestorer],
+     * never to a specific item inside it. The previous shape — a plain [FocusRequester] attached to
+     * item index 0 — died the moment that item scrolled out of the LazyRow's composed window (R139's
+     * own Back-return restore does exactly this by scrolling to whichever tile the viewer opened), so
+     * Down from the hero went permanently dead as soon as a viewer had gone right into any row and
+     * come back. A row-level requester's target is the row container, which stays composed for as
+     * long as the row itself is on screen — [focusRestorer] then lands on whichever child was last
+     * focused (or the first, on a fresh entry with no history), including a currently-disposed one.
+     */
+    rowFocusRequester: FocusRequester? = null,
     itemContent: @Composable (index: Int, item: T, focusRequester: FocusRequester?) -> Unit,
 ) {
     val colors = RaviloTheme.colors
@@ -217,7 +230,9 @@ fun <T> StaticContentRow(
         CompositionLocalProvider(LocalBringIntoViewSpec provides bringIntoViewSpec) {
             LazyRow(
                 state = listState,
-                modifier = Modifier.focusRestorer(),
+                modifier = Modifier
+                    .then(if (rowFocusRequester != null) Modifier.focusRequester(rowFocusRequester) else Modifier)
+                    .focusRestorer(),
                 horizontalArrangement = Arrangement.spacedBy(RaviloDimens.itemSpacing),
                 contentPadding = PaddingValues(
                     horizontal = raviloHPad,
