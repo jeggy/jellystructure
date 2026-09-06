@@ -43,6 +43,38 @@ Six new `PlayerStartFailureClassificationTest` cases; `:ravilo-ui:compileDebugKo
 `:ravilo-ui:testDebugUnitTest`, `:ravilo-web:compileKotlinWasmJs`, `:ravilo-tizen:compileKotlinJs`,
 `compileKotlinLinuxX64` and `compileKotlinWasmJs` all clean.
 
+### ⚠ The first build of this phase crashed the player outright — read before touching `PlayerScreen`
+
+Verified on the stue TV the same day and **it failed**: opening any title killed the app instantly,
+before a single playback request reached the server.
+
+```
+java.lang.VerifyError: Verifier rejected class …PlayerScreen…
+  register v2 has type Precise Reference: java.lang.String but expected Integer
+```
+
+ART refused to load the class at all. Three things make this worth writing down:
+
+1. **It reproduces only in the R8-minified release build.** `compileDebugKotlinAndroid`,
+   `testDebugUnitTest` and all four other compile targets passed. Nothing short of installing the
+   release APK on a device would have found it.
+2. **The first diagnosis was wrong.** The obvious suspect was FR-R237-3's new `onReauthRequired`
+   parameter, which made `PlayerScreen` a 16-argument composable. Moving it to a
+   `LocalReauthRequired` CompositionLocal did **not** fix it — the verifier simply failed on a
+   different register (`v3 … java.util.List but expected Integer`). Parameter count was a symptom.
+3. **The actual cause is `PlayerScreen`'s size.** It is a ~3,500-line composable, and inlining the
+   new error card into its body pushed the Compose-generated method past what the verifier accepts.
+   Reverting only this phase's client files to the previous commit restored playback, which is what
+   proved it.
+
+Fix: the error card is now `PlayerSessionErrorOverlay`, its own private composable, and the re-auth
+callback stays on the CompositionLocal (a good idea independently — it keeps the argument list from
+growing again). Re-verified on the stue TV: player opens, picture renders, crash buffer empty.
+
+**Standing constraint for future work:** new player chrome goes in its own `@Composable`, never
+inlined into `PlayerScreen`. The next thing added to that function body may well fail the same way,
+and it will pass every check you can run without a TV.
+
 ## What the viewer saw
 
 Nothing. That is the entire problem.

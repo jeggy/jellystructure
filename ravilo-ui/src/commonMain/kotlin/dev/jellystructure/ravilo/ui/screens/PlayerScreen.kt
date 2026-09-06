@@ -1,6 +1,7 @@
 package dev.jellystructure.ravilo.ui.screens
 
 import dev.jellystructure.ravilo.ui.LocalPlaystateCommands
+import dev.jellystructure.ravilo.ui.LocalReauthRequired
 import dev.jellystructure.ravilo.ui.LocalServerBaseUrl
 import dev.jellystructure.ravilo.ui.components.EpisodeTriptych
 import dev.jellystructure.ravilo.ui.components.LANG_CC
@@ -222,12 +223,16 @@ fun PlayerScreen(
     store: PlayerStore,
     onBack: () -> Unit,
     onNavigateToEpisode: ((String) -> Unit)? = null,
-    // R237 (FR-R237-3) — the action that can actually resolve a re-auth failure, in place of a Retry
-    // that is guaranteed to fail again. Deliberately the same exit R234's forced sign-out already uses
-    // (sign the session out, land on the profile picker or the login gate) rather than a login takeover
-    // layered over a dead player — see phase-R237's open question 2. Null ⇒ Back alone.
-    onReauthRequired: (() -> Unit)? = null,
 ) {
+    // R237 (FR-R237-3) — the action that can actually resolve a re-auth failure, in place of a Retry
+    // that is guaranteed to fail again: the same exit R234's forced sign-out already uses (sign the
+    // session out, land on the profile picker or the login gate) rather than a login takeover layered
+    // over a dead player — see phase-R237's open question 2. Null ⇒ Back alone.
+    //
+    // Read from a CompositionLocal, NOT taken as a parameter. As a 16th parameter it produced a
+    // release-build-only `VerifyError` that killed the player on open — see [LocalReauthRequired]'s
+    // doc for the full account. Do not turn this back into a parameter.
+    val onReauthRequired = LocalReauthRequired.current
     val colors = RaviloTheme.colors
     val sessionState by store.state.collectAsState()
     // R194 — resolves a relative /api/tv/image/... path (season/series poster) against the server base
@@ -1448,85 +1453,21 @@ fun PlayerScreen(
         // "auto play next doesn't work".
         val sessionError = sessionState as? PlayerSessionState.Error
         if (sessionError != null) {
-            // R237 (FR-R237-2) — say what is wrong, not "Something went wrong". This used to render
-            // error.generic over `sessionError.message`, which is the raw exception text ("HTTP 409:
-            // {json body}"): the first line said nothing and the second was a status code and a JSON
-            // blob. Neither was usable, and on 2026-09-06 the precise diagnosis the server had already
-            // computed was rendered to nobody.
-            val errTitle = when (sessionError.kind) {
-                PlayerErrorKind.REAUTH -> "error.play.reauth.title"
-                PlayerErrorKind.FORBIDDEN -> "error.play.forbidden.title"
-                PlayerErrorKind.GONE -> "error.play.gone.title"
-                PlayerErrorKind.UNREACHABLE -> "error.play.unreachable.title"
-                PlayerErrorKind.GENERIC -> "error.generic"
-            }
-            val errBody = when (sessionError.kind) {
-                PlayerErrorKind.REAUTH -> "error.play.reauth.body"
-                PlayerErrorKind.FORBIDDEN -> "error.play.forbidden.body"
-                PlayerErrorKind.UNREACHABLE -> "error.play.unreachable.body"
-                // GONE has no next step, and GENERIC has no honest sentence to offer beyond its heading.
-                PlayerErrorKind.GONE, PlayerErrorKind.GENERIC -> null
-            }
-            // FR-R237-3 — the Retry control stays only where trying again can plausibly change the
-            // answer. Offering it for a verdict that is deterministic for ten minutes is the same
-            // mistake as the retry loop, moved into the viewer's hands. REAUTH gets the action that
-            // actually resolves it; 403/404 get Back alone.
-            val showRetry = sessionError.kind == PlayerErrorKind.UNREACHABLE || sessionError.kind == PlayerErrorKind.GENERIC
-            val showSignIn = sessionError.kind == PlayerErrorKind.REAUTH && onReauthRequired != null
-            val retryFR = remember { FocusRequester() }
-            val backFR = remember { FocusRequester() }
-            LaunchedEffect(sessionState) {
-                runCatching { if (showRetry || showSignIn) retryFR.requestFocus() else backFR.requestFocus() }
-            }
-            var retryFocused by remember { mutableStateOf(false) }
-            var backFocused by remember { mutableStateOf(false) }
-            Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.82f)), contentAlignment = Alignment.Center) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(str(errTitle), color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
-                    if (errBody != null) {
-                        Spacer(Modifier.height(10.dp))
-                        Text(str(errBody), color = Color.White.copy(alpha = 0.65f), fontSize = 13.sp)
-                    }
-                    Spacer(Modifier.height(24.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        if (showRetry || showSignIn) Box(
-                            modifier = Modifier
-                                .background(if (retryFocused) Color.White else Color.White.copy(alpha = 0.15f), RoundedCornerShape(8.dp))
-                                .border(2.dp, if (retryFocused) colors.focusRing else Color.Transparent, RoundedCornerShape(8.dp))
-                                .dpadFocusable(
-                                    focusRequester = retryFR,
-                                    onFocused = { retryFocused = true },
-                                    onBlurred = { retryFocused = false },
-                                    onSelect = {
-                                        if (showSignIn) onReauthRequired?.invoke()
-                                        else store.startSession(itemId, positionProvider = { positionMs }, isPausedProvider = { !isPlaying })
-                                    },
-                                )
-                                .padding(horizontal = 22.dp, vertical = 12.dp),
-                        ) {
-                            Text(
-                                str(if (showSignIn) "action.sign_in" else "action.retry"),
-                                color = if (retryFocused) Color.Black else Color.White,
-                                fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
-                            )
-                        }
-                        Box(
-                            modifier = Modifier
-                                .background(if (backFocused) Color.White.copy(alpha = 0.18f) else Color.White.copy(alpha = 0.08f), RoundedCornerShape(8.dp))
-                                .border(2.dp, if (backFocused) colors.focusRing else Color.Transparent, RoundedCornerShape(8.dp))
-                                .dpadFocusable(
-                                    focusRequester = backFR,
-                                    onFocused = { backFocused = true },
-                                    onBlurred = { backFocused = false },
-                                    onSelect = onBack,
-                                )
-                                .padding(horizontal = 22.dp, vertical = 12.dp),
-                        ) {
-                            Text(str("action.back"), color = Color.White.copy(alpha = 0.85f), fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-                        }
-                    }
-                }
-            }
+            // R237 — extracted into its own composable rather than inlined here. PlayerScreen's body is
+            // already ~3.5k lines, and inlining this overlay pushed the Compose-generated method for it
+            // past what ART's verifier accepts in the R8-minified release build:
+            //   java.lang.VerifyError: Verifier rejected class …PlayerScreen…
+            //   register vN has type Precise Reference: java.lang.String but expected Integer
+            // The player then died the instant it was opened — release build only, so every compile
+            // check and unit test passed. Caught by opening an episode on the stue TV, 2026-09-06.
+            // Keep new player chrome in its own composable; do not inline it back into this function.
+            PlayerSessionErrorOverlay(
+                error = sessionError,
+                colors = colors,
+                onReauthRequired = onReauthRequired,
+                onRetry = { store.startSession(itemId, positionProvider = { positionMs }, isPausedProvider = { !isPlaying }) },
+                onBack = onBack,
+            )
         }
 
         // ── Buffering spinner (while playing but stalled) ────────────────────
@@ -3618,4 +3559,92 @@ private fun versionSentence(v: PickerVersion, isUnnamedGroup: Boolean, lang: Str
     v.kind == VariantKind.COMMENTARY -> t("player.variant_commentary", lang)
     v.region != null -> t("player.variant_region", lang, mapOf("region" to v.region.name))
     else -> t("player.variant_plain", lang)
+}
+
+/**
+ * R237 (FR-R237-2/3) — the player's failed-start card. Split out of [PlayerScreen] deliberately; see
+ * the call site's comment for the release-build `VerifyError` that inlining it caused.
+ *
+ * Replaces the old `error.generic` heading over `sessionError.message` (the raw exception text,
+ * `"HTTP 409: {json body}"`) — the first line said nothing and the second was a status code and a JSON
+ * blob, so on 2026-09-06 a precise server-side diagnosis was rendered to nobody.
+ */
+@Composable
+private fun PlayerSessionErrorOverlay(
+    error: PlayerSessionState.Error,
+    colors: RaviloColors,
+    onReauthRequired: (() -> Unit)?,
+    onRetry: () -> Unit,
+    onBack: () -> Unit,
+) {
+    val errTitle = when (error.kind) {
+        PlayerErrorKind.REAUTH -> "error.play.reauth.title"
+        PlayerErrorKind.FORBIDDEN -> "error.play.forbidden.title"
+        PlayerErrorKind.GONE -> "error.play.gone.title"
+        PlayerErrorKind.UNREACHABLE -> "error.play.unreachable.title"
+        PlayerErrorKind.GENERIC -> "error.generic"
+    }
+    val errBody = when (error.kind) {
+        PlayerErrorKind.REAUTH -> "error.play.reauth.body"
+        PlayerErrorKind.FORBIDDEN -> "error.play.forbidden.body"
+        PlayerErrorKind.UNREACHABLE -> "error.play.unreachable.body"
+        // GONE has no next step, and GENERIC has no honest sentence to offer beyond its heading.
+        PlayerErrorKind.GONE, PlayerErrorKind.GENERIC -> null
+    }
+    // FR-R237-3 — Retry stays only where trying again can plausibly change the answer. Offering it for
+    // a verdict that is deterministic for ten minutes is the same mistake as the retry loop, moved into
+    // the viewer's hands. REAUTH gets the action that actually resolves it; 403/404 get Back alone.
+    val showRetry = error.kind == PlayerErrorKind.UNREACHABLE || error.kind == PlayerErrorKind.GENERIC
+    val showSignIn = error.kind == PlayerErrorKind.REAUTH && onReauthRequired != null
+    val retryFR = remember { FocusRequester() }
+    val backFR = remember { FocusRequester() }
+    LaunchedEffect(error) {
+        runCatching { if (showRetry || showSignIn) retryFR.requestFocus() else backFR.requestFocus() }
+    }
+    var retryFocused by remember { mutableStateOf(false) }
+    var backFocused by remember { mutableStateOf(false) }
+    Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.82f)), contentAlignment = Alignment.Center) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(str(errTitle), color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+            if (errBody != null) {
+                Spacer(Modifier.height(10.dp))
+                Text(str(errBody), color = Color.White.copy(alpha = 0.65f), fontSize = 13.sp)
+            }
+            Spacer(Modifier.height(24.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                if (showRetry || showSignIn) Box(
+                    modifier = Modifier
+                        .background(if (retryFocused) Color.White else Color.White.copy(alpha = 0.15f), RoundedCornerShape(8.dp))
+                        .border(2.dp, if (retryFocused) colors.focusRing else Color.Transparent, RoundedCornerShape(8.dp))
+                        .dpadFocusable(
+                            focusRequester = retryFR,
+                            onFocused = { retryFocused = true },
+                            onBlurred = { retryFocused = false },
+                            onSelect = { if (showSignIn) onReauthRequired?.invoke() else onRetry() },
+                        )
+                        .padding(horizontal = 22.dp, vertical = 12.dp),
+                ) {
+                    Text(
+                        str(if (showSignIn) "action.sign_in" else "action.retry"),
+                        color = if (retryFocused) Color.Black else Color.White,
+                        fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
+                    )
+                }
+                Box(
+                    modifier = Modifier
+                        .background(if (backFocused) Color.White.copy(alpha = 0.18f) else Color.White.copy(alpha = 0.08f), RoundedCornerShape(8.dp))
+                        .border(2.dp, if (backFocused) colors.focusRing else Color.Transparent, RoundedCornerShape(8.dp))
+                        .dpadFocusable(
+                            focusRequester = backFR,
+                            onFocused = { backFocused = true },
+                            onBlurred = { backFocused = false },
+                            onSelect = onBack,
+                        )
+                        .padding(horizontal = 22.dp, vertical = 12.dp),
+                ) {
+                    Text(str("action.back"), color = Color.White.copy(alpha = 0.85f), fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                }
+            }
+        }
+    }
 }
