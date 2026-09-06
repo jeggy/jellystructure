@@ -15,6 +15,8 @@ import dev.jellystructure.media.SegmentSource
 import dev.jellystructure.model.Episode
 import dev.jellystructure.model.MediaItem
 import dev.jellystructure.model.MediaKind
+import dev.jellystructure.model.Track
+import dev.jellystructure.model.TrackKind
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.request.receive
 import io.ktor.server.response.respond
@@ -37,6 +39,39 @@ import kotlin.math.abs
 private const val OUTLIER_THRESHOLD_MS = 45_000L
 private const val LOW_CONFIDENCE_THRESHOLD = 0.60
 private const val SEGMENTS_STREAM_DEVICE_ID = "jellystructure-segments-editor"
+
+// Phase 190 (FR-190-2) — the browser-safe set a Chromium-class desktop browser decodes natively.
+// Confirmed against the 2026-09-06 codec census: 46.4% of library files lead with a codec NOT in this
+// set (eac3/ac3/dts/truehd), and 90% of those are MKV (also not in the safe-container set below) — the
+// video decodes, the audio never does, and nothing on the client can tell the difference (no `error`
+// event fires; see Segments.kt's wireVideo). The decision must be made here, from stored Track data,
+// before the browser ever sees a URL.
+private val BROWSER_SAFE_AUDIO_CODECS = setOf("aac", "mp3", "opus", "flac", "vorbis")
+private val BROWSER_SAFE_CONTAINERS = setOf("mp4", "m4v", "webm")
+
+/** Phase 190 (FR-190-2) — the container is never stored on [Track]; the file extension of the unit's
+ *  own path (movie file, or the specific episode file) is the container and is already on hand here. */
+internal fun containerOf(path: String): String = path.substringAfterLast('.', "").lowercase()
+
+/** Phase 190 — true when every audio track the file carries is one the browser decodes natively AND
+ *  the container itself is one a bare `<video>` element opens without a remux. Both must hold —
+ *  an AAC track inside an MKV still needs remuxing to a container Chromium's `<video>` will open,
+ *  and TS_190's audio census was measured per FIRST track, but this checks every track: a second,
+ *  commentary-style AC-3 track the picker's audio tab could switch to later is out of scope for THIS
+ *  editor (it never picks a non-default audio track — see the phase's own non-goals), so only the
+ *  file's default/first track actually matters, but checking all of them costs nothing and is honest
+ *  about multi-track files whose non-default track is what a future feature might one day play. */
+internal fun isBrowserSafeDirectPlay(tracks: List<Track>, path: String): Boolean {
+    val audio = tracks.filter { it.kind == TrackKind.AUDIO }
+    if (audio.isEmpty()) return true  // nothing to fail on — the video-only `error` fallback still applies
+    return audio.all { it.codec.lowercase() in BROWSER_SAFE_AUDIO_CODECS } && containerOf(path) in BROWSER_SAFE_CONTAINERS
+}
+
+/** Phase 190 — deterministic, not random: stable across repeated requests for the same unit (a page
+ *  reload/reopen reuses the same id, which is harmless — Jellyfin's `StopEncodingProcess` is a no-op
+ *  when nothing matches) and needs no UUID source on Kotlin/Native. */
+internal fun segmentsPlaySessionId(jellyfinId: String, episodeKey: String?): String =
+    "segeditor-$jellyfinId" + (episodeKey?.let { "-${it.hashCode()}" } ?: "")
 
 @kotlinx.serialization.Serializable
 data class SegmentDto(
@@ -288,23 +323,88 @@ fun Route.segmentRoutes(store: MediaStore, segmentStore: MediaSegmentStore, conf
             call.respond(episodeTrim(item, ep, segmentStore))
         }
 
-        // Step 5 — a direct-play stream URL for the trim view's <video>, exactly the shape
-        // PlaybackService.kt already mints for Ravilo, but using the admin's OWN Jellyfin session
+        // Step 5 — a stream URL for the trim view's <video>, using the admin's OWN Jellyfin session
         // (jellystructure Auth *is* Jellyfin Auth — every cookie session already carries a real
-        // jellyfinUserToken) rather than a device token. Never transcodes: this is a scrub/preview tool,
-        // not a client that needs HDR tone-mapping or codec negotiation — if the browser can't decode
-        // the file directly, the trim view falls back to timecode-only editing (no video).
+        // jellyfinUserToken) rather than a device token.
+        //
+        // Phase 190 — Phase 163's "never transcodes" was right about VIDEO and wrong about AUDIO: a
+        // browser that can't decode the video fires `error` (caught, honest fallback); one that decodes
+        // the video but not the audio fires NOTHING — it plays picture with no sound, and the old code
+        // here always minted the same Static=true URL regardless. `isBrowserSafeDirectPlay` decides,
+        // server-side, from the unit's own stored Track codecs + its container — never a client
+        // capability guess — whether that file needs the video-copy/audio-remux shape instead. Probed
+        // live against this house's Jellyfin 10.11.11 before writing this (2026-09-06, against
+        // 40 Weeks Gone, a real DTS/MKV title, jellyfinId 22a1aa25e38aac188da9d3f25e043d3d):
+        //   - `/Videos/{id}/stream.mp4?Static=false&VideoCodec=copy&AudioCodec=aac&AudioChannels=2&...`
+        //     works with NO PlaybackInfo negotiation needed (a bare GET, same shape as Static=true) —
+        //     but responds `Accept-Ranges: none`. A live progressive transcode has no known total size
+        //     and is NOT byte-range seekable — `video.currentTime = x` cannot work against it as a single
+        //     persistent resource. This is standard Jellyfin/Emby behaviour, not specific to this file.
+        //   - `/Videos/{id}/master.m3u8?VideoCodec=copy&AudioCodec=aac&...` returns a proper
+        //     `#EXT-X-PLAYLIST-TYPE:VOD` playlist (confirmed: 1001 segments, ~6s each) — genuinely
+        //     seekable by design, but native `<video src>` HLS playback only works in Safari; Chromium
+        //     (the browser this bug was reported against) has no built-in HLS support, and this admin
+        //     frontend has no HLS.js (or similar) dependency today. Adopting HLS would need that new
+        //     client-side dependency — out of scope for this phase's fix; see the open questions.
+        //   - `StartTimeTicks` IS honoured on the progressive endpoint (confirmed: a request 20 minutes
+        //     in returned 200 in ~2s, vs ~6.5s from the start — ffmpeg seeking with `-ss`, not decoding
+        //     from zero). This is exactly how Jellyfin's own web client seeks a live transcode: reload
+        //     `<video src>` with a new `StartTimeTicks`, rather than an in-place `currentTime` set.
+        // FR-190-5's guidance ("say so and re-scope rather than shipping a player that plays sound but
+        // cannot jump to the credits") therefore led to the progressive+StartTimeTicks-reload shape
+        // (implemented client-side in Segments.kt's seekToAbsoluteMs), not the HLS one.
         get("/{itemId}/stream") {
             val session = runCatching { call.attributes[SessionKey] }.getOrNull() ?: return@get call.respond(HttpStatusCode.Unauthorized)
             val itemId = call.parameters["itemId"] ?: return@get call.respond(HttpStatusCode.BadRequest)
             val item = store.get(itemId) ?: return@get call.respond(HttpStatusCode.NotFound)
             val episodeKey = call.request.queryParameters["episode"]
             val episodeNumber = call.request.queryParameters["n"]?.toIntOrNull() ?: 0
+            // Phase 190 (FR-190-5) — a reload-to-seek request from the client, only meaningful in remux
+            // mode; ignored (not merely harmless — actively wrong) for a direct-play URL, since Static=true
+            // already serves the whole file and StartTimeTicks has no effect there.
+            val startMs = call.request.queryParameters["startMs"]?.toLongOrNull()?.coerceAtLeast(0L)
             val jellyfinId = resolveJellyfinId(item, episodeKey, episodeNumber)
                 ?: return@get call.respond(HttpStatusCode.NotFound, mapOf("error" to "not matched in Jellyfin yet"))
+            val (tracks, path) = if (episodeKey != null) {
+                val ep = item.episodes.firstOrNull { it.filename == episodeKey && (it.episodeNumber ?: 0) == episodeNumber }
+                    ?: return@get call.respond(HttpStatusCode.NotFound)
+                ep.tracks to ep.path
+            } else item.tracks to item.path
             val base = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
-            val url = "$base/Videos/$jellyfinId/stream?Static=true&MediaSourceId=$jellyfinId&DeviceId=$SEGMENTS_STREAM_DEVICE_ID&api_key=${session.jellyfinUserToken}"
-            call.respond(mapOf("url" to url))
+            val directPlay = isBrowserSafeDirectPlay(tracks, path)
+            val url: String
+            val mode: String
+            var playSessionId: String? = null
+            if (directPlay) {
+                url = "$base/Videos/$jellyfinId/stream?Static=true&MediaSourceId=$jellyfinId&DeviceId=$SEGMENTS_STREAM_DEVICE_ID&api_key=${session.jellyfinUserToken}"
+                mode = "direct"
+            } else {
+                val psid = segmentsPlaySessionId(jellyfinId, episodeKey)
+                val startParam = startMs?.let { "&StartTimeTicks=${it * 10_000}" } ?: ""
+                url = "$base/Videos/$jellyfinId/stream.mp4?Static=false&VideoCodec=copy&AudioCodec=aac&AudioChannels=2" +
+                    "&MediaSourceId=$jellyfinId&DeviceId=$SEGMENTS_STREAM_DEVICE_ID&PlaySessionId=$psid$startParam&api_key=${session.jellyfinUserToken}"
+                mode = "remux"
+                playSessionId = psid
+            }
+            call.respond(mapOf("url" to url, "mode" to mode, "playSessionId" to (playSessionId ?: "")))
+        }
+
+        // Phase 190 (FR-190-6) — releases an in-flight audio-remux transcode when the trim view closes
+        // (navigate away, or open a different title). Safe to call even for a direct-play session or one
+        // already torn down — StopEncodingProcess no-ops when nothing matches (see stopActiveEncoding's
+        // own doc). Phase 180 exists because an abandoned transcode kept NVENC busy for nobody; this tool
+        // is a smaller version of the exact same risk.
+        post("/stream/stop") {
+            val playSessionId = call.request.queryParameters["playSessionId"]?.takeIf { it.isNotBlank() }
+                ?: return@post call.respond(HttpStatusCode.NoContent)
+            val session = runCatching { call.attributes[SessionKey] }.getOrNull() ?: return@post call.respond(HttpStatusCode.Unauthorized)
+            val base = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
+            jellyfinClient.stopActiveEncoding(
+                base, session.jellyfinUserToken,
+                dev.jellystructure.auth.JellyfinDeviceIdentity(SEGMENTS_STREAM_DEVICE_ID, "Jellystructure Segment Editor"),
+                playSessionId,
+            )
+            call.respond(HttpStatusCode.NoContent)
         }
 
         // Step 6 — [buckets] peak amplitudes for the trim view's waveform, decoded on demand (never

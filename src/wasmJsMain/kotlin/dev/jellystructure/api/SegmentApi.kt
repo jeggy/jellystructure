@@ -267,15 +267,32 @@ object SegmentApi {
         }.body<List<SegmentJellyfinCandidate>>()
     }.getOrDefault(emptyList())
 
+    /** Phase 190 — `mode` is `"direct"` (Static=true, unchanged) or `"remux"` (server decided the file's
+     *  audio needs re-encoding to something the browser can decode; video is never touched). `playSessionId`
+     *  is non-blank only for `"remux"` — pass it to [stopStream] when the trim view closes. */
     @Serializable
-    private data class StreamUrlResponse(val url: String)
+    data class StreamInfo(val url: String, val mode: String, val playSessionId: String = "")
 
-    /** Direct-play only — never transcodes (see SegmentRoutes.kt's doc). Null when the title/episode
-     *  isn't matched in Jellyfin yet, or on any other failure; the trim view falls back to timecode-only
-     *  editing rather than showing a broken video element. */
-    suspend fun streamUrl(mediaId: String, episodeKey: String?, episodeNumber: Int?): String? = runCatching {
+    /** Null when the title/episode isn't matched in Jellyfin yet, or on any other failure; the trim view
+     *  falls back to timecode-only editing rather than showing a broken video element. [startMs], when
+     *  given, only affects a `"remux"` response — a live transcode isn't range-seekable, so seeking means
+     *  reloading the stream from this offset (`SegmentRoutes.kt`'s doc has the live probe that found this). */
+    suspend fun streamInfo(mediaId: String, episodeKey: String?, episodeNumber: Int?, startMs: Long? = null): StreamInfo? = runCatching {
         httpClient.get("/api/segments/$mediaId/stream") {
-            url { episodeKey?.let { parameters.append("episode", it) }; episodeNumber?.let { parameters.append("n", it.toString()) } }
-        }.body<StreamUrlResponse>().url
+            url {
+                episodeKey?.let { parameters.append("episode", it) }
+                episodeNumber?.let { parameters.append("n", it.toString()) }
+                startMs?.let { parameters.append("startMs", it.toString()) }
+            }
+        }.body<StreamInfo>()
     }.getOrNull()
+
+    /** Phase 190 (FR-190-6) — releases an in-flight audio-remux transcode; a no-op (and safe to call
+     *  unconditionally) for a direct-play session or one already torn down. */
+    suspend fun stopStream(playSessionId: String) {
+        if (playSessionId.isBlank()) return
+        runCatching {
+            httpClient.post("/api/segments/stream/stop") { url { parameters.append("playSessionId", playSessionId) } }
+        }
+    }
 }
