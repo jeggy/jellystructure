@@ -97,6 +97,27 @@ Stated as a requirement because it is the obvious wrong move and it would look l
 state the current baseline disagrees with is a scan in flight; a new baseline would encode one
 moment of it and rot on the next timing change.
 
+### FR-197-5 — One flaky test must not fail a different spec at its login step
+
+The screenshot fix above landed and CI went red again — differently. `shell-layout`'s assertions now
+never ran at all (0 ms): `beforeAll`'s `login()` timed out waiting for the dashboard.
+
+The whole suite shares one backend and one `LoginRateLimiter` (5 attempts / 60 s, the 2026-08-02 H4
+fix). The specs already work around this by logging in **once per file** — `shell-layout.spec.ts`'s
+own header documents the 2026-08-17 incident where they didn't. **Playwright's `retries: 1` defeats
+that**: a retried test re-runs its `beforeAll`, spending another login. In the failing run,
+`bazarr-dashboard.spec.ts:68` failed once and passed on retry — and that one extra login pushed the
+run over the cap, so `shell-layout`, several specs later, could not log in.
+
+The symptom points at the wrong file every time. Nothing is wrong with `shell-layout`; it is simply
+downstream of whatever flaked first.
+
+`LoginRateLimiter`'s cap becomes overridable via `LOGIN_RATE_LIMIT_MAX`, **defaulting to the
+existing 5** and set only in `docker-compose.test.yml`. No deployment sets it, so the
+internet-facing behaviour Phase 167 shipped is unchanged. Raising it in the test stack is correct
+rather than a workaround: the limiter defends against credential stuffing from the internet, and the
+e2e stack is a closed network with one known account — the cap is measuring the wrong thing there.
+
 ### FR-197-4 — A release must not be publishable on a red pipeline
 
 Out of scope to implement here, and deliberately left as a decision rather than a silent omission:
@@ -116,6 +137,7 @@ worth an explicit answer either way, because right now the answer is "no gate, b
 
 1. `shell-layout.spec.ts` passes with a scan running, with a populated library, and against an empty
    database.
+1a. A full suite run in which one test flakes and retries still passes every later spec's login.
 2. Blanking the sidebar (e.g. re-introducing the 2026-08-13 absolutely-positioned `.seg` overlay)
    still fails the test.
 3. A full CI run is green on `main`.
