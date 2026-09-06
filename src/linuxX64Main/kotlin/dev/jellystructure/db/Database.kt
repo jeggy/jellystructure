@@ -9,6 +9,18 @@ import co.touchlab.sqliter.SynchronousFlag
 import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
 
+/**
+ * Phase 198 (FR-198-1) — a no-op [co.touchlab.sqliter.interop.Logger]. sqliter's own `NoneLogger` is
+ * `internal`, so this reimplements it: both flags off, every write dropped.
+ */
+private object SilentSqliteLogger : co.touchlab.sqliter.interop.Logger {
+    override val vActive: Boolean = false
+    override val eActive: Boolean = false
+    override fun trace(message: String) = Unit
+    override fun vWrite(message: String) = Unit
+    override fun eWrite(message: String, exception: Throwable?) = Unit
+}
+
 // Set once by createDatabase() (called exactly once at startup) — see walCheckpoint()'s doc comment for
 // why this is needed instead of going through the generated MediaQueries.walCheckpoint().
 private lateinit var rawDriver: SqlDriver
@@ -52,6 +64,24 @@ fun createDatabase(dbFile: String): JellystructureDb {
             basePath = parentDir.ifEmpty { null },
             synchronousFlag = SynchronousFlag.NORMAL,
         ),
+        // Phase 198 (FR-198-1) — silence sqliter's own logger. Its default (WarningLogger) `println`s
+        // the message and then `printStackTrace()`s the exception straight to stdout on every SQLite
+        // error, including ones we deliberately provoke and catch. Two reasons that is wrong here:
+        //
+        //  1. It is redundant. Every call site that can hit a SQLite error already catches it and
+        //     reports it through jellystructure's own Logger, with context the raw dump lacks (which
+        //     item, which job, which route). The driver's copy is ~40 unattributed frames in the
+        //     container log.
+        //  2. In the test binary it breaks the build. Kotlin/Native reports test results over the
+        //     TeamCity service-message protocol on that same stdout, and `|` is that protocol's escape
+        //     character — the driver's first line is literally
+        //     "executeNonQuery error | error code SQLITE_CONSTRAINT". It corrupts the stream, Gradle
+        //     attributes output to no test case and dies with a NullPointerException in
+        //     TestOutputStore$Writer.mark, and the half-written store then yields "Multiple entries
+        //     with same key" / "Buffer underflow" on the next run. No test is failing when this
+        //     happens: MediaJobDedupeTest is *supposed* to trip a UNIQUE constraint (Phase 164's
+        //     FR-164-1 proof that the index, not Kotlin, enforces dedupe).
+        loggingConfig = DatabaseConfiguration.Logging(logger = SilentSqliteLogger),
     )
     val driver = NativeSqliteDriver(config, maxReaderConnections = 4)
     rawDriver = driver
