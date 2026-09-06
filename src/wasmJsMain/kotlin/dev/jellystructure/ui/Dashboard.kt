@@ -77,6 +77,7 @@ fun renderDashboard(container: Element, scope: CoroutineScope) {
                 <button id="qa-triage" class="chip">View items needing attention</button>
                 <button id="qa-track-order" class="chip">Manage tracks</button>
                 <button id="qa-artwork" class="chip">Re-pull artwork</button>
+                <button id="qa-artwork-repair" class="chip" title="One-time sweep: removes any on-disk artwork file that isn't actually a valid image (e.g. a CDN error page saved before download validation existed), so the next artwork fetch can replace it">Repair corrupt artwork</button>
                 <button id="qa-jf-push" class="chip">Sync NFOs to Jellyfin</button>
                 <button id="qa-jf-refresh" class="chip" title="Tell Jellyfin to rescan its own library (does not change Jellystructure data)">Jellyfin: rescan its library</button>
                 <button id="qa-activity" class="chip">View activity</button>
@@ -119,6 +120,17 @@ fun renderDashboard(container: Element, scope: CoroutineScope) {
             val ok = MediaApi.batchFetchArtwork()
             setQaFeedback(
                 if (ok) "Artwork fetch started in background ✓" else "Failed to start artwork fetch",
+                if (ok) "badge ok" else "badge bad"
+            )
+        }
+    }
+
+    document.getElementById("qa-artwork-repair")?.addEventListener("click") {
+        scope.launch {
+            setQaFeedback("Checking on-disk artwork for corrupt files…", "badge")
+            val ok = MediaApi.batchArtworkRepair()
+            setQaFeedback(
+                if (ok) "Artwork repair sweep started — check Activity for a per-item History entry on anything removed ✓" else "Failed to start the artwork repair sweep",
                 if (ok) "badge ok" else "badge bad"
             )
         }
