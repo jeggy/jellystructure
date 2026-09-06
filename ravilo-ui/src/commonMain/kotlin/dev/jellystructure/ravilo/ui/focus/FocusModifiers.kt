@@ -10,6 +10,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
+import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.focus.FocusManager
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
@@ -50,6 +52,32 @@ fun requestFocusRetrying(scope: CoroutineScope, focusRequester: FocusRequester, 
             withFrameNanos {}
             if (runCatching { focusRequester.requestFocus() }.isSuccess) return@launch
         }
+    }
+}
+
+/**
+ * R236 (FR-R236-2) — the same retry loop as [requestFocusRetrying], but a cross-screen bridge press
+ * (Down from the hero/app-bar) must never end as a completely dead key: when every retry still fails
+ * (the bridge target genuinely isn't reachable, not just slow to attach), fall through to Compose's own
+ * native focus search in [direction] instead of giving up silently. `dpadFocusable`'s `onDown`/`onUp`
+ * callbacks always consume the key once supplied (see its own doc), so "let native search happen"
+ * has to be done explicitly from inside the callback, as this function does, rather than by declining
+ * to handle the key.
+ */
+fun requestFocusRetryingOrMoveNative(
+    scope: CoroutineScope,
+    focusRequester: FocusRequester,
+    focusManager: FocusManager,
+    direction: FocusDirection,
+    maxFrames: Int = 30,
+) {
+    if (runCatching { focusRequester.requestFocus() }.isSuccess) return
+    scope.launch {
+        repeat(maxFrames) {
+            withFrameNanos {}
+            if (runCatching { focusRequester.requestFocus() }.isSuccess) return@launch
+        }
+        focusManager.moveFocus(direction)
     }
 }
 

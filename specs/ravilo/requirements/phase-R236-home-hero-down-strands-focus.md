@@ -7,10 +7,45 @@
 > get below the carousel, even though I can see everything below it."*
 
 ## Status
-Planned (spec'd 2026-09-06). Not dev-reviewed. Root-caused by reading `HomeScreen.kt` against
-`ContentRow.kt` and `FocusModifiers.kt`; **not reproduced on-device** — see Open questions. The
-reporter's own hedge ("only when doing something else first, like opening a movie and going back") is
-the decisive clue and it points straight at the mechanism.
+✓ Built 2026-09-06. Not dev-reviewed, not device-tested (per the standing no-TV-testing rule) — see
+Open questions, now also true of the fix itself. Root-caused by reading `HomeScreen.kt` against
+`ContentRow.kt` and `FocusModifiers.kt`. The reporter's own hedge ("only when doing something else
+first, like opening a movie and going back") was the decisive clue and it pointed straight at the
+mechanism.
+
+**Implementation notes:**
+- FR-R236-1: `StaticContentRow` (`ContentRow.kt`) gained a `rowFocusRequester: FocusRequester?` param,
+  attached directly to the `LazyRow` via `Modifier.focusRequester(rowFocusRequester).focusRestorer()` —
+  no separate `focusGroup()` call needed (checked against the actual Compose UI 1.9.4 sources in this
+  project's dependency cache: `focusRestorer()` is self-sufficient, it sets `FocusProperties.onEnter`/
+  `onExit` on the node it decorates directly). `HomeScreen.kt`'s `firstRowFR` now flows into whichever
+  row is currently first as this row-level param — channels, the first content row, or `OnNowRow` — and
+  every per-item `fr ?: if (i == 0) firstRowFR/firstItemFR` conditional is gone; `ContentRowItem` and
+  `OnNowRow`'s own `firstItemFR` params were renamed/re-plumbed to `rowFocusRequester` accordingly, and
+  `OnNowRow`'s leading guide tile no longer takes an explicit `focusRequester` at all (it's simply the
+  first focusable child in composition order, which `focusRestorer()` lands on by default with no prior
+  history).
+- FR-R236-2/3: new `requestFocusRetryingOrMoveNative` (`FocusModifiers.kt`) — the same per-frame retry
+  loop as `requestFocusRetrying`, but falls through to `FocusManager.moveFocus(FocusDirection.Down)`
+  when every retry still fails, so a genuinely unreachable bridge is never a fully dead key. Since
+  `dpadFocusable`'s `onDown` always consumes the key once supplied (its own doc: `onDown?.invoke()
+  ?.let { true } ?: false` can't return `false` for a non-null callback), the fallback happens
+  *inside* the callback rather than by declining to handle the key — changing `dpadFocusable`'s public
+  signature to support declining would touch every call site in the module, which this phase doesn't
+  need given the fallback works exactly as well from inside. Both the hero's and the app-bar's
+  hero-less Down handlers now use it.
+- FR-R236-4: stated as a comment on `rowFocusRequester`'s own doc (`ContentRow.kt`) rather than a
+  runtime guard — the parameter shape itself (one row-level requester, never threaded per-item) is
+  what prevents the regression; there's no remaining `fr ?: rowFR` call site left to reintroduce.
+- FR-R236-5: the exact same per-item `FocusRequester` shape was found, not fixed, in three more
+  screens while sweeping — `ChannelScreen.kt:264` (`fr ?: if (ri == 0 && idx == 0) firstTileFR else
+  null`), `SeededBrowseScreen.kt` (multiple sites: 672, 751, 788), and `BrowseScreen.kt` (356, 439).
+  Left as identified-but-not-fixed: none of these were the reported bug, and rewiring four more
+  screens' focus plumbing was judged out of scope for this phase — worth its own follow-up phase
+  rather than folding in here as a drive-by.
+- `:ravilo-ui:compileDebugKotlinAndroid` clean, `:ravilo-ui:testDebugUnitTest` green (no regressions;
+  there is still no Compose-composition test harness in this module to write a real reproduction
+  against, same limitation the spec's own Open question 1 already named).
 
 ## Problem
 
