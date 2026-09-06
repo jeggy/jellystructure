@@ -846,6 +846,12 @@ object MediaApi {
         response.status.value in 200..299
     }.getOrDefault(false)
 
+    /** Phase 192 (FR-192-2) — the one-time corrupt-artwork sweep. */
+    suspend fun batchArtworkRepair(): Boolean = runCatching {
+        val response = httpClient.post("/api/media/batch/artwork-repair")
+        response.status.value in 200..299
+    }.getOrDefault(false)
+
     suspend fun batchJellyfinPush(): Boolean = runCatching {
         val response = httpClient.post("/api/media/batch/jellyfin-push")
         response.status.value in 200..299

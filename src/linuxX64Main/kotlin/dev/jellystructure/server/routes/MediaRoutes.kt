@@ -2137,6 +2137,26 @@ fun Route.mediaRoutes(
         call.respond(HttpStatusCode.Accepted, BatchStartedResponse("artwork fetch started", items.size))
     }
 
+    // POST /api/media/batch/artwork-repair — Phase 192 (FR-192-2): a one-time maintenance sweep that
+    // removes any on-disk artwork file that isn't actually a recognized image (a CDN error page or
+    // similar saved before download validation existed). Not part of the regular scan pipeline — an
+    // explicit operator-triggered action, since it only ever needs to run once per library.
+    post("/media/batch/artwork-repair") {
+        val items = store.allItems()
+        appScope.launch {
+            var removedTotal = 0
+            for (item in items) {
+                val removed = artwork.repairCorruptArtwork(item)
+                if (removed.isNotEmpty()) {
+                    removedTotal += removed.size
+                    mediaHistory.record(item.id, "artwork_corrupt_removed", removed.joinToString(", ") { it.substringAfterLast('/') })
+                }
+            }
+            Logger.info("artwork-repair sweep complete: $removedTotal corrupt file(s) removed across ${items.size} items", "artwork")
+        }
+        call.respond(HttpStatusCode.Accepted, BatchStartedResponse("artwork repair sweep started", items.size))
+    }
+
     // POST /api/media/batch/jellyfin-push — write NFOs for all items and refresh each in Jellyfin
     post("/media/batch/jellyfin-push") {
         val cfg = configStore.current
