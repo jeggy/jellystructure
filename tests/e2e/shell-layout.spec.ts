@@ -80,7 +80,23 @@ test.describe.serial("App shell layout", () => {
       }, { x: navBox!.x + navBox!.width / 2, y: navBox!.y + navBox!.height / 2 });
       expect(topmostAtNav).toBe("#/dashboard");
 
-      await expect(page).toHaveScreenshot(`shell-${theme}.png`, { maxDiffPixelRatio: 0.02 });
+      // Phase 197 (FR-197-1/2) — screenshot the SHELL, not the page. This used to be
+      // `expect(page).toHaveScreenshot(...)`, which compared the whole dashboard and therefore
+      // compared live server state: `scan-fixture.spec.ts` runs immediately before this file
+      // (workers: 1, filename order) and leaves a scan in flight, so the counts, the "Scanning —
+      // N items processed" banner, the Recently-processed list and the attention dock all differ
+      // from a baseline recorded against an empty database. That turned every dashboard data
+      // change into a "sidebar regression" and kept CI red for four days and 18 commits, while the
+      // shell pixels were identical the whole time. `.app-side` is what this spec exists to
+      // protect (see the 2026-08-13 report in the file header).
+      //
+      // FR-197-2: `.app-side .status` still carries live counts ("0 to triage" / "19 to triage")
+      // inside the sidebar, so it is masked. Its visibility is already asserted structurally above;
+      // only its digits are hidden from the pixel comparison.
+      await expect(page.locator(".app-side")).toHaveScreenshot(`shell-${theme}.png`, {
+        maxDiffPixelRatio: 0.02,
+        mask: [page.locator(".app-side .status")],
+      });
     });
   }
 
