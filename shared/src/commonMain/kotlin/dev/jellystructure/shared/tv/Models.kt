@@ -133,6 +133,10 @@ data class PlaybackQoeReport(
      *  `.../Subtitles/{index}/...` sideload racing Jellyfin's own concurrent extraction — see
      *  phase-179's Root cause). Diagnostic only, so a repeat doesn't need another live logcat pull. */
     @SerialName("subtitle_load_errors") val subtitleLoadErrors: Int = 0,
+    /** R237 (FR-R237-6) — the HTTP status that ended a start attempt, set ONLY when the session never
+     *  reached Ready. Null on every ordinary report. Makes a failed start readable from `playback_qoe`
+     *  alone instead of by hand-correlating log lines against row timestamps. */
+    @SerialName("start_failure_status") val startFailureStatus: Int? = null,
 )
 
 @Serializable
@@ -1058,5 +1062,16 @@ data class BrowseFacets(
 // ─── Errors ───────────────────────────────────────────────────────────────────
 
 sealed class TvApiError(message: String, cause: Throwable? = null) : Exception(message, cause) {
-    class Http(val status: Int, override val message: String) : TvApiError("HTTP $status: $message")
+    /**
+     * R237 — [status] was always here and never consulted: the player retried a deterministic 409 on
+     * the same 1/2/4/8 s schedule as a dropped packet, so a precise server-side diagnosis spent ~15 s
+     * behind a spinner and was never rendered. [retryAfterSeconds] carries the server's own
+     * `Retry-After` (Phase 182 FR-182-8 sends it with every 503) so a busy server is waited on for as
+     * long as it asked for, rather than a guess.
+     */
+    class Http(
+        val status: Int,
+        override val message: String,
+        val retryAfterSeconds: Int? = null,
+    ) : TvApiError("HTTP $status: $message")
 }

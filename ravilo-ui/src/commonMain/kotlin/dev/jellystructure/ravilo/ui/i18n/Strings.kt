@@ -276,6 +276,20 @@ private val EN = mapOf(
     "player.end_of_movie" to "End of film",
     "loading"             to "Loading...",
     "error.generic"       to "Something went wrong",
+    // R237 (FR-R237-2) — a start that failed for a reason we know, said in words the viewer can act on.
+    // Per the constitution's copy rule (and R234's rejected "Your Jellyfin password"), these name what
+    // the viewer must do, never the component that failed: no product name, no protocol, no status code.
+    "error.play.reauth.title"      to "This TV needs to be signed in again",
+    "error.play.reauth.body"       to "Sign in again on this TV to keep watching.",
+    "error.play.forbidden.title"   to "Not available on this profile",
+    "error.play.forbidden.body"    to "This title isn't part of what this profile can watch.",
+    "error.play.gone.title"        to "This title isn't available any more",
+    "error.play.unreachable.title" to "Couldn't reach the server",
+    "error.play.unreachable.body"  to "Check the connection and try again.",
+    "action.sign_in"      to "Sign in",
+    // R237 (FR-R237-5) — one line added to R218's existing cold-start treatment once a first attempt has
+    // already failed. No progress count, no attempt number, no new visual language.
+    "loading.still_trying" to "Still trying...",
     "action.retry"        to "Retry",
     // R212 — shown on Home when a cached snapshot is displayed and the background refresh keeps failing.
     "home.showing_saved"  to "Showing saved content — trying to reconnect",
@@ -552,6 +566,17 @@ private val DA = mapOf(
     "player.end_of_movie" to "Slut på filmen",
     "loading"             to "Indlaeder...",
     "error.generic"       to "Noget gik galt",
+    // R237 (FR-R237-2)
+    "error.play.reauth.title"      to "Dette TV skal logge ind igen",
+    "error.play.reauth.body"       to "Log ind igen på dette TV for at se videre.",
+    "error.play.forbidden.title"   to "Ikke tilgængelig på denne profil",
+    "error.play.forbidden.body"    to "Denne titel er ikke en del af, hvad denne profil kan se.",
+    "error.play.gone.title"        to "Denne titel findes ikke længere",
+    "error.play.unreachable.title" to "Kunne ikke få forbindelse",
+    "error.play.unreachable.body"  to "Tjek forbindelsen, og prøv igen.",
+    "action.sign_in"      to "Log ind",
+    // R237 (FR-R237-5)
+    "loading.still_trying" to "Prøver stadig...",
     "action.retry"        to "Prøv igen",
     // R212 — shown on Home when a cached snapshot is displayed and the background refresh keeps failing.
     "home.showing_saved"  to "Viser gemt indhold — prøver at genoprette forbindelse",
@@ -828,6 +853,17 @@ private val FO = mapOf(
     "player.end_of_movie" to "Endi á filminum",
     "loading"             to "Ledur inn...",
     "error.generic"       to "Nakad gjekk skeivt",
+    // R237 (FR-R237-2)
+    "error.play.reauth.title"      to "Hetta sjónvarpid má rita inn av nýggjum",
+    "error.play.reauth.body"       to "Rita inn av nýggjum á hesum sjónvarpinum fyri at hyggja víðari.",
+    "error.play.forbidden.title"   to "Ikki tøkt á hesi vangamyndini",
+    "error.play.forbidden.body"    to "Hesin titulin er ikki partur av tí, sum henda vangamyndin kann hyggja at.",
+    "error.play.gone.title"        to "Hesin titulin er ikki tøkur longur",
+    "error.play.unreachable.title" to "Fekk ikki samband",
+    "error.play.unreachable.body"  to "Kanna sambandid og royn aftur.",
+    "action.sign_in"      to "Rita inn",
+    // R237 (FR-R237-5)
+    "loading.still_trying" to "Royni framvegis...",
     "action.retry"        to "Royn aftur",
     // R212 — shown on Home when a cached snapshot is displayed and the background refresh keeps failing.
     "home.showing_saved"  to "Vísir goymt innihald — royna aftur at knýta samband",

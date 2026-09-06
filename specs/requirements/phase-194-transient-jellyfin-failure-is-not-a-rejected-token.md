@@ -4,9 +4,36 @@
 > start fast enough, so I stopped."*
 
 ## Status
-`Planned` — design-authored 2026-09-06, not dev-reviewed. Root-caused from production logs, the
-production database, and a live token probe against Jellyfin. Companion client-side phase: **R237**
-(the ~15 s spinner that hid this from the viewer).
+`✓ Built` 2026-09-06 — all six FRs. Design-authored the same day, not dev-reviewed, not live-verified.
+Root-caused from production logs, the production database, and a live token probe against Jellyfin.
+Companion client-side phase: **R237** (the ~15 s spinner that hid this from the viewer).
+
+**The same failure recurred on stue TV at 07:38:58Z the morning this was built**, which is what
+triggered the implementation: `TV: paired user token rejected by Jellyfin (401) for user 7450a8c6…
+— negative-cached 10min`, 14 minutes after that device had played normally, against a token that
+probed `200` in ~30 ms five times in a row. Two devices in two days; not a rare race.
+
+### What was built
+- `JellyfinClient.isTokenValid` → **`checkToken`**, returning `TokenCheckResult(outcome, httpStatus,
+  error)` over the three-state `TokenCheck` (FR-194-1). The caught exception is carried out instead of
+  being swallowed by `getOrDefault(false)`.
+- `isPairedTokenValid` → **`pairedTokenCheck`**, returning `TokenCheck`. `UNKNOWN` writes neither cache
+  and — the part that mattered most — no longer clears an established positive entry (FR-194-2).
+- `tvTokenForClient` returns the device's own token on `UNKNOWN`, `null` only on `REJECTED`
+  (FR-194-3). `tvToken`'s 19 call sites are untouched in behaviour.
+- The fabricated `"(401)"` is gone; three log lines that each name their real cause, with the `UNKNOWN`
+  ones deliberately *not* suppressed by `tokenRejectionLogged` (FR-194-4).
+- One ~500 ms re-probe before a `REJECTED` is believed and cached (FR-194-5).
+- FR-194-6: the shared `OutboundHttp` Curl client had **no** retry of any kind (confirmed — no
+  `HttpRequestRetry` was installed). Added one, scoped hard: `maxRetries = 1`, idempotent methods only
+  (GET/HEAD/OPTIONS), and only when the call *threw* a connection-layer failure — never when a request
+  reached the server and got an answer, so Phase 183's 429/AIMD pacing and the 503 + `Retry-After`
+  contract are untouched. An unrecognised exception is simply not retried, i.e. today's behaviour.
+- `TvRoutes`' FR-187-8 password-change probe now treats only `REJECTED` as "the token died"; a
+  transient failure there would otherwise tell the viewer to sign in again on every device for nothing.
+
+`compileKotlinLinuxX64` clean; 221 `linuxX64Test` tests pass (run from the linked test binary — the
+Gradle test task itself fails in its own report writer, unrelated to this change).
 
 ## What actually happened
 

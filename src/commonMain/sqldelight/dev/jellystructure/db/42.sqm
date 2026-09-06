@@ -1,0 +1,13 @@
+-- R237 (FR-R237-6) — a start that never reached the player is diagnosable from this table alone.
+--
+-- The 2026-09-06 outage wrote three playback_qoe rows with every field null or zero, which proved only
+-- THAT the starts failed, never WHY; the reason had to be reconstructed by hand-correlating three log
+-- lines against row timestamps. The client already holds the HTTP status that ended the attempt (it is
+-- what R237 classifies on), so it posts it.
+--
+-- NULL means "this session reached the player", which is every existing row and the overwhelming
+-- majority of new ones — the column is only ever set on a start that never became Ready.
+--
+-- This migration must stay byte-for-byte in sync with PlaybackQoe.sq's CREATE TABLE statement, per the
+-- SQLDelight-migration rule.
+ALTER TABLE playback_qoe ADD COLUMN start_failure_status INTEGER;

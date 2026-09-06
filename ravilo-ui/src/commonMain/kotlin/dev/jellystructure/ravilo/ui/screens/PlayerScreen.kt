@@ -222,6 +222,11 @@ fun PlayerScreen(
     store: PlayerStore,
     onBack: () -> Unit,
     onNavigateToEpisode: ((String) -> Unit)? = null,
+    // R237 (FR-R237-3) — the action that can actually resolve a re-auth failure, in place of a Retry
+    // that is guaranteed to fail again. Deliberately the same exit R234's forced sign-out already uses
+    // (sign the session out, land on the profile picker or the login gate) rather than a login takeover
+    // layered over a dead player — see phase-R237's open question 2. Null ⇒ Back alone.
+    onReauthRequired: (() -> Unit)? = null,
 ) {
     val colors = RaviloTheme.colors
     val sessionState by store.state.collectAsState()
@@ -1407,16 +1412,31 @@ fun PlayerScreen(
         }
 
         // ── Loading overlay ───────────────────────────────────────────────────
-        if (sessionState is PlayerSessionState.Loading) {
+        val sessionLoading = sessionState as? PlayerSessionState.Loading
+        if (sessionLoading != null) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                BufferingSpinner(colors)
-                Spacer(Modifier.height(48.dp))
-                // R180 (FR-RV-ASP1-2) — a neutral loading string regardless of cause; naming the PGS
-                // burn-in restream here would leak the delivery method, which the picker keeps invisible.
-                Text(
-                    str("loading"),
-                    color = Color.White.copy(0.7f), fontSize = 18.sp,
-                )
+                // Incidental layout correction: these were direct children of the Box above, which
+                // centre-stacks its children — so the 48.dp Spacer did nothing and "Loading..." was
+                // drawn ON TOP of the spinner. A Column is what the spacing was always written for,
+                // and R237's second line below needs it to be legible rather than a third overlap.
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    BufferingSpinner(colors)
+                    Spacer(Modifier.height(48.dp))
+                    // R180 (FR-RV-ASP1-2) — a neutral loading string regardless of cause; naming the PGS
+                    // burn-in restream here would leak the delivery method, which the picker keeps invisible.
+                    Text(
+                        str("loading"),
+                        color = Color.White.copy(0.7f), fontSize = 18.sp,
+                    )
+                    // R237 (FR-R237-5) — additive, and the ONLY change to R218's states: once a first
+                    // attempt has already failed this is provably not a normal cold start, and R218's own
+                    // deepen-at-60s is far past the point a viewer gives up (measured: ~4s). No new visual
+                    // language, no progress count, no attempt number.
+                    if (sessionLoading.retrying) {
+                        Spacer(Modifier.height(10.dp))
+                        Text(str("loading.still_trying"), color = Color.White.copy(0.45f), fontSize = 14.sp)
+                    }
+                }
             }
         }
 
@@ -1428,19 +1448,48 @@ fun PlayerScreen(
         // "auto play next doesn't work".
         val sessionError = sessionState as? PlayerSessionState.Error
         if (sessionError != null) {
+            // R237 (FR-R237-2) — say what is wrong, not "Something went wrong". This used to render
+            // error.generic over `sessionError.message`, which is the raw exception text ("HTTP 409:
+            // {json body}"): the first line said nothing and the second was a status code and a JSON
+            // blob. Neither was usable, and on 2026-09-06 the precise diagnosis the server had already
+            // computed was rendered to nobody.
+            val errTitle = when (sessionError.kind) {
+                PlayerErrorKind.REAUTH -> "error.play.reauth.title"
+                PlayerErrorKind.FORBIDDEN -> "error.play.forbidden.title"
+                PlayerErrorKind.GONE -> "error.play.gone.title"
+                PlayerErrorKind.UNREACHABLE -> "error.play.unreachable.title"
+                PlayerErrorKind.GENERIC -> "error.generic"
+            }
+            val errBody = when (sessionError.kind) {
+                PlayerErrorKind.REAUTH -> "error.play.reauth.body"
+                PlayerErrorKind.FORBIDDEN -> "error.play.forbidden.body"
+                PlayerErrorKind.UNREACHABLE -> "error.play.unreachable.body"
+                // GONE has no next step, and GENERIC has no honest sentence to offer beyond its heading.
+                PlayerErrorKind.GONE, PlayerErrorKind.GENERIC -> null
+            }
+            // FR-R237-3 — the Retry control stays only where trying again can plausibly change the
+            // answer. Offering it for a verdict that is deterministic for ten minutes is the same
+            // mistake as the retry loop, moved into the viewer's hands. REAUTH gets the action that
+            // actually resolves it; 403/404 get Back alone.
+            val showRetry = sessionError.kind == PlayerErrorKind.UNREACHABLE || sessionError.kind == PlayerErrorKind.GENERIC
+            val showSignIn = sessionError.kind == PlayerErrorKind.REAUTH && onReauthRequired != null
             val retryFR = remember { FocusRequester() }
             val backFR = remember { FocusRequester() }
-            LaunchedEffect(sessionState) { runCatching { retryFR.requestFocus() } }
+            LaunchedEffect(sessionState) {
+                runCatching { if (showRetry || showSignIn) retryFR.requestFocus() else backFR.requestFocus() }
+            }
             var retryFocused by remember { mutableStateOf(false) }
             var backFocused by remember { mutableStateOf(false) }
             Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.82f)), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(str("error.generic"), color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
-                    Spacer(Modifier.height(10.dp))
-                    Text(sessionError.message, color = Color.White.copy(alpha = 0.65f), fontSize = 13.sp)
+                    Text(str(errTitle), color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+                    if (errBody != null) {
+                        Spacer(Modifier.height(10.dp))
+                        Text(str(errBody), color = Color.White.copy(alpha = 0.65f), fontSize = 13.sp)
+                    }
                     Spacer(Modifier.height(24.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Box(
+                        if (showRetry || showSignIn) Box(
                             modifier = Modifier
                                 .background(if (retryFocused) Color.White else Color.White.copy(alpha = 0.15f), RoundedCornerShape(8.dp))
                                 .border(2.dp, if (retryFocused) colors.focusRing else Color.Transparent, RoundedCornerShape(8.dp))
@@ -1448,11 +1497,18 @@ fun PlayerScreen(
                                     focusRequester = retryFR,
                                     onFocused = { retryFocused = true },
                                     onBlurred = { retryFocused = false },
-                                    onSelect = { store.startSession(itemId, positionProvider = { positionMs }, isPausedProvider = { !isPlaying }) },
+                                    onSelect = {
+                                        if (showSignIn) onReauthRequired?.invoke()
+                                        else store.startSession(itemId, positionProvider = { positionMs }, isPausedProvider = { !isPlaying })
+                                    },
                                 )
                                 .padding(horizontal = 22.dp, vertical = 12.dp),
                         ) {
-                            Text(str("action.retry"), color = if (retryFocused) Color.Black else Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                            Text(
+                                str(if (showSignIn) "action.sign_in" else "action.retry"),
+                                color = if (retryFocused) Color.Black else Color.White,
+                                fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
+                            )
                         }
                         Box(
                             modifier = Modifier

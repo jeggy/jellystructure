@@ -5,8 +5,11 @@ import dev.jellystructure.ops.GateStats
 import dev.jellystructure.ops.currentGateClass
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.curl.Curl
+import io.ktor.client.plugins.HttpRequestRetry
+import io.ktor.client.plugins.HttpRequestTimeoutException
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.http.HttpMethod
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Semaphore
@@ -181,6 +184,48 @@ object OutboundHttp {
                 socketTimeoutMillis = 120_000
                 requestTimeoutMillis = 120_000
             }
+            // Phase 194 (FR-194-6) — this pool keeps keep-alive sockets resting between callers, so the
+            // first request after a long quiet period can be handed a connection the far end already
+            // closed. That failure is about the socket, not about the request, and retrying it once is
+            // free; it was the most likely proximate trigger of the 2026-09-06 playback outage (20
+            // minutes idle, then one "rejected token" against a token that probed 200 five times).
+            //
+            // Deliberately narrow: idempotent methods only, and only when the call *threw* — a request
+            // that reached the server and got an answer is never retried, so Phase 183's 429/AIMD
+            // pacing and the 503 + Retry-After contract are untouched. One retry, no backoff stacking.
+            install(HttpRequestRetry) {
+                maxRetries = 1
+                retryOnExceptionIf { request, cause ->
+                    request.method in IDEMPOTENT_METHODS && cause.isConnectionLayerFailure()
+                }
+                delayMillis { 200 }
+            }
         }
     }
+
+    private val IDEMPOTENT_METHODS = setOf(HttpMethod.Get, HttpMethod.Head, HttpMethod.Options)
+
+    /**
+     * Is [this] a failure to *establish or keep* the connection, as opposed to anything the server
+     * said? Curl surfaces these as engine-level exceptions whose type isn't part of ktor's common API,
+     * so this matches on the causal chain's messages — deliberately conservative: an unmatched
+     * exception is simply not retried, which is today's behaviour.
+     */
+    private fun Throwable.isConnectionLayerFailure(): Boolean {
+        if (this is HttpRequestTimeoutException) return false // the request was sent; don't double the wait
+        var e: Throwable? = this
+        repeat(5) {
+            if (e == null) return false
+            val m = e.message?.lowercase()
+            if (m != null && CONNECTION_LAYER_HINTS.any { it in m }) return true
+            e = e.cause
+        }
+        return false
+    }
+
+    private val CONNECTION_LAYER_HINTS = listOf(
+        "connection reset", "connection refused", "connection closed", "broken pipe",
+        "recv failure", "send failure", "empty reply from server", "could not connect",
+        "failed to connect", "ssl connect error", "eof", "connect timeout",
+    )
 }

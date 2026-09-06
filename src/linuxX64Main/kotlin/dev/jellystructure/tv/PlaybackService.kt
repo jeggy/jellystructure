@@ -5,6 +5,7 @@ import dev.jellystructure.auth.JellyfinClient
 import dev.jellystructure.auth.JellyfinDeviceIdentity
 import dev.jellystructure.config.ConfigStore
 import dev.jellystructure.auth.JellyfinItemDetail
+import dev.jellystructure.auth.TokenCheck
 import dev.jellystructure.log.Logger
 import dev.jellystructure.media.MediaStore
 import dev.jellystructure.media.visibleTo
@@ -22,6 +23,7 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
@@ -885,41 +887,71 @@ internal fun isTextSubCodec(c: String?): Boolean =
  * so per-user data (resume/watched/next-up) is still correct under the server token.
  *
  * Validity is cached for [TOKEN_VALID_TTL_MS] so we don't pay a round-trip to Jellyfin on every
- * route handler. On a cache hit this returns instantly; on a miss we fall through to isTokenValid().
+ * route handler. On a cache hit this returns instantly; on a miss we fall through to checkToken().
+ *
+ * Phase 194 — this returns the three-state [TokenCheck], not a `Boolean`. An unreachable Jellyfin and
+ * a rejected credential are different facts, and only one of them is a reason to stop trusting the
+ * credential. See FR-194-2 for what may be cached, and FR-194-3 for why the two callers below
+ * diverge on [TokenCheck.UNKNOWN].
  */
-private suspend fun JellyfinClient.isPairedTokenValid(baseUrl: String, device: DeviceData): Boolean {
+private suspend fun JellyfinClient.pairedTokenCheck(baseUrl: String, device: DeviceData): TokenCheck {
     val userToken = device.jellyfinUserToken
     val now = nowMs()
     tokenCacheMutex.withLock {
         // Fast path: token was recently validated — skip the Jellyfin round-trip.
-        tokenValidUntil[userToken]?.let { if (it > now) return true }
+        tokenValidUntil[userToken]?.let { if (it > now) return TokenCheck.VALID }
         // Phase 110: negative-cached — known-dead as of a recent check, skip the round-trip too.
-        tokenInvalidUntil[userToken]?.let { if (it > now) return false }
+        tokenInvalidUntil[userToken]?.let { if (it > now) return TokenCheck.REJECTED }
     }
     // Slow path: check with Jellyfin.
-    val valid = isTokenValid(baseUrl, userToken, device.jellyfinUserId)
-    tokenCacheMutex.withLock {
-        if (valid) {
+    var result = checkToken(baseUrl, userToken, device.jellyfinUserId)
+    // FR-194-5 — believing a rejection costs the whole household ten minutes of playback, so it does
+    // not get to rest on a single round trip. Re-probe once; only a second consecutive REJECTED is
+    // believed. This runs only on the already-rare rejection path, never on the cache-served hot one.
+    if (result.outcome == TokenCheck.REJECTED && userToken.isNotBlank()) {
+        delay(500)
+        result = checkToken(baseUrl, userToken, device.jellyfinUserId)
+    }
+    when (result.outcome) {
+        TokenCheck.VALID -> tokenCacheMutex.withLock {
             tokenValidUntil[userToken] = nowMs() + TOKEN_VALID_TTL_MS
             tokenInvalidUntil.remove(userToken)
             tokenRejectionLogged.remove(userToken)
-        } else {
+        }
+        TokenCheck.REJECTED -> tokenCacheMutex.withLock {
             tokenValidUntil.remove(userToken)
             tokenInvalidUntil[userToken] = nowMs() + TOKEN_NEGATIVE_TTL_MS
         }
+        // FR-194-2 — cache nothing, clear nothing. The next call re-probes. Crucially this must not
+        // drop an existing positive entry either: the old `else` branch did, so one blip also threw
+        // away a validity we had already established and paid a round trip for.
+        TokenCheck.UNKNOWN -> Unit
     }
-    if (!valid && tokenRejectionLogged.add(userToken)) {
-        Logger.warn(
-            "TV: paired user token rejected by Jellyfin (401) for user ${device.jellyfinUserId} " +
-                "— negative-cached ${TOKEN_NEGATIVE_TTL_MS / 60_000}min",
+    // FR-194-4 — say what actually happened. The rejection line is still logged once per transition
+    // (Phase 110 FR E), but the UNKNOWN lines are deliberately NOT suppressed by tokenRejectionLogged:
+    // a repeat means Jellyfin is flapping, which is exactly what an operator needs to see.
+    when (result.outcome) {
+        TokenCheck.REJECTED -> if (tokenRejectionLogged.add(userToken)) {
+            Logger.warn(
+                "TV: Jellyfin rejected this device's paired token " +
+                    "(${result.httpStatus?.let { "HTTP $it" } ?: result.error}) for user ${device.jellyfinUserId} " +
+                    "— negative-cached ${TOKEN_NEGATIVE_TTL_MS / 60_000}min; re-pair the device",
+                "tv",
+            )
+        }
+        TokenCheck.UNKNOWN -> Logger.warn(
+            "TV: could not verify paired token for user ${device.jellyfinUserId} — " +
+                (result.error?.let { "$it" } ?: "Jellyfin returned HTTP ${result.httpStatus}") +
+                "; not cached, will retry",
             "tv",
         )
+        TokenCheck.VALID -> Unit
     }
-    return valid
+    return result.outcome
 }
 
 internal suspend fun JellyfinClient.tvToken(baseUrl: String, device: DeviceData, serverToken: String): String =
-    if (isPairedTokenValid(baseUrl, device)) device.jellyfinUserToken else serverToken
+    if (pairedTokenCheck(baseUrl, device) == TokenCheck.VALID) device.jellyfinUserToken else serverToken
 
 /**
  * Security fix (2026-08-02 review, finding H2) — [tvToken] falls back to the long-lived **server**
@@ -931,9 +963,16 @@ internal suspend fun JellyfinClient.tvToken(baseUrl: String, device: DeviceData,
  * surrounding negative-cache logic treats as routine. This variant never falls back — it returns
  * null so the caller can surface a clear "re-pair this device" error instead of silently handing out
  * server-admin access.
+ *
+ * Phase 194 (FR-194-3) — that fix is about never *escalating* a stale device token to server-admin
+ * credentials, and it is untouched here: [TokenCheck.REJECTED] still returns null. But on
+ * [TokenCheck.UNKNOWN] we hand the device back *its own* token, the one it already holds. No
+ * privilege is escalated and no token crosses a boundary it had not already crossed. If the token
+ * really is dead the downstream Jellyfin call fails on its own and the client sees a real error —
+ * one request later, instead of a ten-minute deterministic outage for every device of that user.
  */
 internal suspend fun JellyfinClient.tvTokenForClient(baseUrl: String, device: DeviceData): String? =
-    if (isPairedTokenValid(baseUrl, device)) device.jellyfinUserToken else null
+    if (pairedTokenCheck(baseUrl, device) != TokenCheck.REJECTED) device.jellyfinUserToken else null
 
 /** Phase 110 (FR E.2) — is this device's paired token currently known-dead? Surfaced by the device
  *  list / health panel so "re-pair this user" is visible instead of a silent server-token fallback. */

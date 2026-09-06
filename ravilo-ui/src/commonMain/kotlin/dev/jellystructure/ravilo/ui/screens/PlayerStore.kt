@@ -11,6 +11,7 @@ import dev.jellystructure.shared.tv.PlaybackQoeReport
 import dev.jellystructure.shared.tv.RaviloConfig
 import dev.jellystructure.shared.tv.StreamTicket
 import dev.jellystructure.shared.tv.TvApiClient
+import dev.jellystructure.shared.tv.TvApiError
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -23,11 +24,59 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
+/**
+ * R237 (FR-R237-2) — why a start failed, in the only terms that change what the viewer is told or can
+ * do. [GENERIC] is the honest fallback for a failure we could not classify; [UNREACHABLE] means we
+ * exhausted a retryable failure's budget.
+ */
+enum class PlayerErrorKind { REAUTH, FORBIDDEN, GONE, UNREACHABLE, GENERIC }
+
 sealed class PlayerSessionState {
     data object Idle : PlayerSessionState()
-    data object Loading : PlayerSessionState()
+
+    /** [retrying] — R237 (FR-R237-5): the first attempt has already failed, so this is no longer an
+     *  ordinary cold start. Drives one extra line in R218's existing presentation, nothing more. */
+    data class Loading(val retrying: Boolean = false) : PlayerSessionState()
     data class Ready(val ticket: StreamTicket) : PlayerSessionState()
-    data class Error(val message: String) : PlayerSessionState()
+    data class Error(
+        val message: String,
+        val kind: PlayerErrorKind = PlayerErrorKind.GENERIC,
+        val httpStatus: Int? = null,
+    ) : PlayerSessionState()
+}
+
+/** R237 (FR-R237-1) — the verdict on a single failed attempt: can trying again plausibly change it? */
+internal data class FailureClass(
+    val retryable: Boolean,
+    val kind: PlayerErrorKind,
+    val status: Int?,
+    val retryAfterMs: Long?,
+)
+
+/**
+ * R237 (FR-R237-1) — classify before deciding to retry. The old loop never asked what the failure was,
+ * so a `409` that the server knew would not change for the next ten minutes got the same five attempts
+ * and ~15 s of spinner as a dropped packet. All five were guaranteed to fail identically before the
+ * first was sent, and the viewer — given nothing but elapsed time to read — backed out after 4 s
+ * without the re-pair message ever being rendered.
+ */
+internal fun classifyStartFailure(t: Throwable?): FailureClass {
+    // No HTTP response at all: the transport blip this retry loop was originally written for
+    // (an auto-advance across a momentary network drop). Still retryable, exactly as before.
+    val http = t as? TvApiError.Http
+        ?: return FailureClass(retryable = true, PlayerErrorKind.UNREACHABLE, status = null, retryAfterMs = null)
+    val retryAfterMs = http.retryAfterSeconds?.takeIf { it in 0..60 }?.let { it * 1_000L }
+    return when {
+        http.status == 409 -> FailureClass(false, PlayerErrorKind.REAUTH, http.status, null)
+        http.status == 403 -> FailureClass(false, PlayerErrorKind.FORBIDDEN, http.status, null)
+        http.status == 404 -> FailureClass(false, PlayerErrorKind.GONE, http.status, null)
+        // "Busy, try again shortly" — including Phase 182's 503 + Retry-After on gate saturation.
+        http.status == 408 || http.status == 429 -> FailureClass(true, PlayerErrorKind.UNREACHABLE, http.status, retryAfterMs)
+        http.status in 500..599 -> FailureClass(true, PlayerErrorKind.UNREACHABLE, http.status, retryAfterMs)
+        // Any other 4xx is an answer, not a fault. Retrying it is a delay with a spinner in front of it.
+        http.status in 400..499 -> FailureClass(false, PlayerErrorKind.GENERIC, http.status, null)
+        else -> FailureClass(true, PlayerErrorKind.UNREACHABLE, http.status, retryAfterMs)
+    }
 }
 
 private const val PROGRESS_INTERVAL_MS = 10_000L
@@ -83,7 +132,7 @@ class PlayerStore(private val apiClient: TvApiClient) {
         this.qoeSnapshotProvider = qoeSnapshotProvider
         this.startupMsProvider = startupMsProvider
         qoeTicksSinceReport = 0
-        _state.value = PlayerSessionState.Loading
+        _state.value = PlayerSessionState.Loading()
         scope.launch {
             // Bug fix: a failed startPlayback (e.g. a transient network blip during an auto-advance to
             // the next episode) used to surface as PlayerSessionState.Error with no code anywhere
@@ -94,6 +143,8 @@ class PlayerStore(private val apiClient: TvApiClient) {
             // quiet retry survives a blip without leaving a spinner up for minutes. PlayerScreen now
             // also renders PlayerSessionState.Error with a manual Retry as the final fallback.
             var lastErr = "Failed to start playback"
+            var lastKind = PlayerErrorKind.UNREACHABLE
+            var lastStatus: Int? = null
             var delayMs = 1_000L
             repeat(5) { attempt ->
                 val result = runCatching {
@@ -148,20 +199,36 @@ class PlayerStore(private val apiClient: TvApiClient) {
                     _state.value = PlayerSessionState.Ready(ticket)
                     return@launch
                 }
-                lastErr = result.exceptionOrNull()?.message ?: lastErr
+                val cause = result.exceptionOrNull()
+                lastErr = cause?.message ?: lastErr
+                // R237 (FR-R237-1) — the status code was always right here, one `as?` away, and never
+                // consulted. A failure that cannot succeed on retry is surfaced immediately.
+                val failure = classifyStartFailure(cause)
+                lastKind = failure.kind
+                lastStatus = failure.status
+                if (!failure.retryable) {
+                    _state.value = PlayerSessionState.Error(lastErr, failure.kind, failure.status)
+                    reportStartFailure(itemId, failure.status)
+                    return@launch
+                }
                 if (attempt < 4) {
-                    delay(delayMs)
-                    delayMs *= 2
+                    // FR-R237-5 — one failed attempt is already proof this is not a normal start. Say so
+                    // in R218's existing presentation rather than leaving the viewer to infer it from how
+                    // long a spinner has been up (measured behaviour: they give up at ~4 s).
+                    _state.value = PlayerSessionState.Loading(retrying = true)
+                    delay(failure.retryAfterMs ?: delayMs)
+                    if (failure.retryAfterMs == null) delayMs *= 2
                 }
             }
-            _state.value = PlayerSessionState.Error(lastErr)
+            _state.value = PlayerSessionState.Error(lastErr, lastKind, lastStatus)
+            reportStartFailure(itemId, lastStatus)
         }
     }
 
     /** R56 — Re-stream with a PGS subtitle burned in; keeps the heartbeat running (same item). */
     fun restreamWithSub(itemId: String, subtitleStreamIndex: Int, positionMs: Long) {
         scope.launch {
-            _state.value = PlayerSessionState.Loading
+            _state.value = PlayerSessionState.Loading()
             _state.value = runCatching {
                 PlayerSessionState.Ready(apiClient.restream(itemId, subtitleStreamIndex, positionMs))
             }.getOrElse { PlayerSessionState.Error(it.message ?: "Failed to restream") }
@@ -214,6 +281,32 @@ class PlayerStore(private val apiClient: TvApiClient) {
     /** R216 (FR-R216-4) — fire-and-forget; a failed/slow report must never affect playback, so this runs
      *  on [exitScope] (survives the caller's own scope being torn down, same reasoning as stopSession's
      *  terminal writes) and is never awaited by the caller. */
+    /**
+     * R237 (FR-R237-6) — a start that never reached the player still leaves a readable row. The
+     * 2026-09-06 incident's three attempts wrote `playback_qoe` rows of nulls and zeroes, which proved
+     * only *that* they failed; the reason had to be reconstructed by correlating log lines against row
+     * timestamps by hand. We already know the status by the time we get here, so post it.
+     *
+     * Deliberately does not go through [postQoeNow]: there is no player snapshot to take (that is the
+     * whole point), and requiring one would drop exactly the reports that matter most. Fire-and-forget
+     * on [exitScope], same as every other QoE write — a failed report must never affect playback.
+     */
+    private fun reportStartFailure(itemId: String, status: Int?) {
+        exitScope.launch {
+            runCatching {
+                apiClient.postPlaybackQoe(
+                    PlaybackQoeReport(
+                        itemId = itemId,
+                        directPlay = false,
+                        linkKind = qoeLinkKind,
+                        linkMbps = qoeLinkMbps,
+                        startFailureStatus = status ?: 0, // 0 = failed with no HTTP response at all
+                    ),
+                )
+            }
+        }
+    }
+
     private fun postQoeNow(itemId: String) {
         val snapshot = qoeSnapshotProvider?.invoke() ?: return
         exitScope.launch {

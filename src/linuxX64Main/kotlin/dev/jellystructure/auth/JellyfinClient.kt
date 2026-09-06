@@ -181,6 +181,30 @@ private fun h264TargetConditions(capabilities: ClientCapabilities): String {
  *  guessed), and [FAILED] (network/other — never guessed to be a wrong password). */
 enum class PasswordChangeOutcome { OK, WRONG_CURRENT, FAILED }
 
+/**
+ * Phase 194 (FR-194-1) — the three outcomes a token check can have, which the old `Boolean` fused
+ * into one. [REJECTED] is the *only* one that means the credential is bad; [UNKNOWN] means the
+ * question was never answered — the call threw, or Jellyfin replied with something that is a
+ * statement about the server's health, not about the token.
+ *
+ * The fusion was not academic: on 2026-09-06 a single connect-layer blip after a 20-minute idle
+ * window was recorded as a rejected token, negative-cached for ten minutes, and took out playback on
+ * every device belonging to that user while browsing carried on looking perfectly healthy. The
+ * exception was swallowed by `getOrDefault(false)`, so the incident left no evidence behind at all.
+ */
+enum class TokenCheck { VALID, REJECTED, UNKNOWN }
+
+/**
+ * A [TokenCheck] plus the evidence for it, so the caller can log what actually happened instead of
+ * asserting a status code nobody read (Phase 194, FR-194-4 — the old log line claimed "(401)" on a
+ * code path that only ever saw a `Boolean`).
+ */
+data class TokenCheckResult(
+    val outcome: TokenCheck,
+    val httpStatus: Int? = null,
+    val error: String? = null,
+)
+
 class JellyfinClient {
     private suspend fun httpGet(url: String, block: HttpRequestBuilder.() -> Unit = {}): HttpResponse =
         OutboundHttp.withPermit { http.get(url, block) }
@@ -281,15 +305,30 @@ class JellyfinClient {
     }.getOrDefault(false)
 
     /**
-     * True if [token] is a Jellyfin access token that can still act as [userId]. Used to detect a
-     * stale **paired** TV user token (Jellyfin 401s it) so the TV can fall back to the long-lived
-     * server token. `/Users/{userId}` is an authenticated endpoint — public `/System/Info/Public`
-     * would 200 even for an invalid token, so it can't be used here.
+     * Can [token] still act as [userId]? Used to detect a stale **paired** TV user token so the TV
+     * can fall back to the long-lived server token. `/Users/{userId}` is an authenticated endpoint —
+     * public `/System/Info/Public` would 200 even for an invalid token, so it can't be used here.
+     *
+     * Phase 194 (FR-194-1): this used to be `runCatching { … }.getOrDefault(false)`, which reported
+     * "the token is bad" for a 5xx, a connect timeout, a TLS failure and a stale pooled connection
+     * alike — and threw the exception away unlogged. Only 401/403 is a rejection now; everything
+     * else is [TokenCheck.UNKNOWN] and carries its own evidence, which the caller must log.
      */
-    suspend fun isTokenValid(baseUrl: String, token: String, userId: String): Boolean = runCatching {
-        if (token.isBlank()) return false
-        httpGet(baseUrl.trimEnd('/') + "/Users/$userId") { jellyfinAuth(token) }.status.isSuccess()
-    }.getOrDefault(false)
+    suspend fun checkToken(baseUrl: String, token: String, userId: String): TokenCheckResult {
+        if (token.isBlank()) return TokenCheckResult(TokenCheck.REJECTED, error = "no token stored for this device")
+        return try {
+            val status = httpGet(baseUrl.trimEnd('/') + "/Users/$userId") { jellyfinAuth(token) }.status.value
+            when {
+                status in 200..299 -> TokenCheckResult(TokenCheck.VALID, httpStatus = status)
+                // The only answer that is about the credential rather than the server.
+                status == 401 || status == 403 -> TokenCheckResult(TokenCheck.REJECTED, httpStatus = status)
+                // 5xx, 429, an unexpected 4xx — Jellyfin declined to answer the question we asked.
+                else -> TokenCheckResult(TokenCheck.UNKNOWN, httpStatus = status)
+            }
+        } catch (e: Throwable) {
+            TokenCheckResult(TokenCheck.UNKNOWN, error = e.message ?: e::class.simpleName ?: "unknown error")
+        }
+    }
 
     suspend fun getUsers(baseUrl: String, token: String): List<JellyfinUser> = runCatching {
         httpGet(baseUrl.trimEnd('/') + "/Users") { jellyfinAuth(token) }
