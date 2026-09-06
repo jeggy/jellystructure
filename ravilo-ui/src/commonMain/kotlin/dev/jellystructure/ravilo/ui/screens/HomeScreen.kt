@@ -32,6 +32,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
@@ -40,6 +41,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -56,7 +58,7 @@ import dev.jellystructure.ravilo.ui.components.Tile
 import dev.jellystructure.ravilo.ui.focus.dpadFocusable
 import dev.jellystructure.ravilo.ui.focus.rememberEdgeBringIntoViewSpec
 import dev.jellystructure.ravilo.ui.focus.backToTopOnBack
-import dev.jellystructure.ravilo.ui.focus.requestFocusRetrying
+import dev.jellystructure.ravilo.ui.focus.requestFocusRetryingOrMoveNative
 import dev.jellystructure.ravilo.ui.components.TileVariant
 import dev.jellystructure.ravilo.ui.components.tileRequestedWidth
 import dev.jellystructure.ravilo.ui.components.toTileVariant
@@ -156,6 +158,9 @@ private fun HomeLoaded(
     val showingStale by store.showingStaleContent.collectAsState()
     val onNowRowIndex = feed.liveTvHome?.onNowRowPosition?.coerceAtLeast(0) ?: 0
     val scope = rememberCoroutineScope()
+    // R236 (FR-R236-2) — the hero/app-bar Down bridges fall back to this when firstRowFR genuinely
+    // can't be reached, so the key press is never a dead end.
+    val focusManager = LocalFocusManager.current
 
     // Hero height as a % of the screen, per the user's config (R27); auto-advance interval too.
     // R159 — portrait override, when set, replaces the landscape value; both are already on the feed
@@ -183,10 +188,12 @@ private fun HomeLoaded(
     // Native focus traversal handles movement between rows and within a row. Only the app-bar
     // overlay and the hero→first-row jump need explicit bridges (neither is a reliable spatial
     // neighbour of what's below/above it): heroFR receives down-from-app-bar, navBarFR receives
-    // up-from-hero, firstRowFR receives down-from-hero AND down-from-app-bar-when-hero-less (it is
-    // always attached to whichever composable is currently the first focusable row/tile — see the
-    // firstItemFR wiring below). All are single, always-composed requesters — never one-per-item
-    // across a lazy list (that was the source of the stuck/lag behaviour).
+    // up-from-hero, firstRowFR receives down-from-hero AND down-from-app-bar-when-hero-less — it is
+    // passed as the `rowFocusRequester` of whichever row is currently first (channels / a content row
+    // / On Now), attached to that ROW, never to one of its items (see StaticContentRow's own doc for
+    // why: R236 found firstRowFR wired to lazy item index 0 here, which died the instant that item
+    // scrolled out of its LazyRow's composed window — R139's own Back-return restore does exactly
+    // that — permanently breaking Down from the hero after visiting any tile and returning).
     //
     // Bug fix: down-from-app-bar used to request focus on a `columnFR` attached to the LazyColumn
     // container itself — per Compose docs, requesting focus on a container with no focusable of its
@@ -270,7 +277,7 @@ private fun HomeLoaded(
                         // R101: freeze the Ken Burns drift while the list is actively scrolling so the
                         // full-width hero stops its per-frame scaled redraw during the gesture.
                         driftEnabled = { !listState.isScrollInProgress },
-                        onDown = { requestFocusRetrying(scope, firstRowFR) },
+                        onDown = { requestFocusRetryingOrMoveNative(scope, firstRowFR, focusManager, FocusDirection.Down) },
                     )
                 }
             }
@@ -290,13 +297,16 @@ private fun HomeLoaded(
                     // Bug fix: consume the restore once it fires — else scrolling this row out of the
                     // LazyColumn's composed window and back in re-triggers it and yanks focus back here.
                     onRestored = { store.focusRowKey = null; store.focusItemKey = null },
-                ) { i, ch, fr ->
+                    // R236 — channels is always the first row whenever it exists; the bridge targets the
+                    // row itself now, never a specific tile (see StaticContentRow's rowFocusRequester doc).
+                    rowFocusRequester = firstRowFR,
+                ) { _, ch, fr ->
                     ChannelCard(
                         name = ch.name,
                         logoUrl = ch.logoUrl,
                         brandColor = ch.brandColor,
                         logoPadding = if (ch.style == dev.jellystructure.shared.tv.ChannelStyle.LOGO) ch.paddingLogo else ch.paddingText,
-                        focusRequester = fr ?: if (i == 0) firstRowFR else null,  // R139 / hero-down bridge
+                        focusRequester = fr,  // R139 restore target only
                         onSelect = { store.focusRowKey = "channels"; store.focusItemKey = ch.id; onChannelSelect(ch) },  // R139
                     )
                 }
@@ -307,17 +317,17 @@ private fun HomeLoaded(
         // position (never a top-nav tab — it only ever lives among the Home rows).
         val clampedOnNowIndex = onNowRowIndex.coerceIn(0, feed.rows.size)
         items(clampedOnNowIndex, key = { ri -> feed.rows[ri].id }) { ri ->
-            ContentRowItem(feed.rows[ri], feed, store, onItemSelect, onSeeAll, firstItemFR = if (!hasChannels && ri == 0) firstRowFR else null)
+            ContentRowItem(feed.rows[ri], feed, store, onItemSelect, onSeeAll, rowFocusRequester = if (!hasChannels && ri == 0) firstRowFR else null)
         }
         if (liveTvChannels.isNotEmpty()) {
             item(key = "on_now") {
                 Spacer(Modifier.height(RaviloDimens.rowGap))
-                OnNowRow(liveTvChannels, store, onLiveTvChannelSelect, onOpenLiveTvGuide, firstItemFR = if (onNowIsFirstRow) firstRowFR else null)
+                OnNowRow(liveTvChannels, store, onLiveTvChannelSelect, onOpenLiveTvGuide, rowFocusRequester = if (onNowIsFirstRow) firstRowFR else null)
             }
         }
         items(feed.rows.size - clampedOnNowIndex, key = { i -> feed.rows[clampedOnNowIndex + i].id }) { i ->
             val isVeryFirstRow = !hasChannels && clampedOnNowIndex == 0 && liveTvChannels.isEmpty() && i == 0
-            ContentRowItem(feed.rows[clampedOnNowIndex + i], feed, store, onItemSelect, onSeeAll, firstItemFR = if (isVeryFirstRow) firstRowFR else null)
+            ContentRowItem(feed.rows[clampedOnNowIndex + i], feed, store, onItemSelect, onSeeAll, rowFocusRequester = if (isVeryFirstRow) firstRowFR else null)
         }
     }
     }
@@ -347,7 +357,8 @@ private fun HomeLoaded(
                     runCatching { heroFR.requestFocus() }
                 }
             } else {
-                requestFocusRetrying(scope, firstRowFR)
+                // R236 (FR-R236-3) — same guarantee as the hero's own Down bridge above.
+                requestFocusRetryingOrMoveNative(scope, firstRowFR, focusManager, FocusDirection.Down)
             }
         },
         userInitials = initials,
@@ -386,7 +397,7 @@ private fun ContentRowItem(
     store: HomeStore,
     onItemSelect: (MediaCard) -> Unit,
     onSeeAll: (Row) -> Unit = {},
-    firstItemFR: FocusRequester? = null,
+    rowFocusRequester: FocusRequester? = null,
 ) {
     // Compute variant here so urlResolver and Tile use the same value.
     val rowVariant = if (row.kind == RowKind.CONTINUE) TileVariant.LANDSCAPE else feed.tileShape.toTileVariant()
@@ -414,7 +425,8 @@ private fun ContentRowItem(
         // Bug fix: consume the restore once it fires — else scrolling this row out of the LazyColumn's
         // composed window and back in re-triggers it and yanks focus back here.
         onRestored = { store.focusRowKey = null; store.focusItemKey = null },
-    ) { i, card, fr ->
+        rowFocusRequester = rowFocusRequester,  // R236
+    ) { _, card, fr ->
         // R113: in Continue Watching, show the season/episode as a small on-image badge for TV
         // shows and leave just the series title below (was "S1E3 · Episode" as the subtitle).
         val isContinue = row.kind == RowKind.CONTINUE
@@ -429,7 +441,7 @@ private fun ContentRowItem(
             progressPct = card.progressPct ?: 0f,
             watched = card.watched,
             upcomingLabel = card.upcomingEpisode,
-            focusRequester = fr ?: if (i == 0) firstItemFR else null,  // R139 / hero-down bridge
+            focusRequester = fr,  // R139 restore target only — the hero-down bridge is row-level now (R236)
             onSelect = { store.focusRowKey = row.id; store.focusItemKey = card.id; onItemSelect(card) },  // R139
         )
     }
@@ -449,7 +461,7 @@ private fun OnNowRow(
     store: HomeStore,
     onLiveTvChannelSelect: (LiveTvChannel) -> Unit,
     onOpenLiveTvGuide: () -> Unit,
-    firstItemFR: FocusRequester? = null,
+    rowFocusRequester: FocusRequester? = null,
 ) {
     StaticContentRow(
         title = str("livetv.on_now"),
@@ -461,9 +473,9 @@ private fun OnNowRow(
         // Bug fix: consume the restore once it fires — else scrolling this row out of the LazyColumn's
         // composed window and back in re-triggers it and yanks focus back here.
         onRestored = { store.focusRowKey = null; store.focusItemKey = null },
-        // The guide tile is now the row's first item, so the hero-down focus bridge lands there
-        // instead of on the first channel tile.
-        leadingItem = { LiveTvGuideTile(onClick = onOpenLiveTvGuide, focusRequester = firstItemFR) },
+        rowFocusRequester = rowFocusRequester,  // R236 — lands on the leading guide tile by default (first in composition order) via focusRestorer
+        // The guide tile is the row's first item, reached via the row-level bridge above.
+        leadingItem = { LiveTvGuideTile(onClick = onOpenLiveTvGuide) },
         // Design inspiration (design/ravilo/ravilo-livetv.js onNowRow()'s lt-onnow-head): a live-dot
         // beside the title and a "N channels" info line where the old "TV Guide" link used to sit —
         // now that the guide has its own tile, that slot is free for this instead. User request:
