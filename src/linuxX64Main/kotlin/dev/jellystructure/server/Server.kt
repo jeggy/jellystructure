@@ -270,7 +270,18 @@ fun startServer(
 
         // Security fix (2026-08-02 review, finding H4) — shared between /api/auth/login and
         // /api/tv/login; see LoginRateLimiter's doc comment.
-        val loginRateLimiter = dev.jellystructure.auth.LoginRateLimiter()
+        //
+        // Phase 197 (FR-197-5) — the cap is overridable ONLY so the e2e stack can raise it; the
+        // default is unchanged at LoginRateLimiter's own 5-per-60s and no deployment sets this. The
+        // whole Playwright suite shares one backend, so its ~5 logins per run already sit on the
+        // limit; a single flaky test retrying re-runs a `beforeAll` and pushes it over, which then
+        // fails an unrelated later spec at its login step and reads as that spec being broken. That
+        // is exactly how it presented: shell-layout's screenshot assertions never ran (0 ms) because
+        // `login()` timed out waiting for the dashboard. The specs already log in once per file to
+        // stay under the cap (see shell-layout.spec.ts's header); retries defeat that by design.
+        val loginRateLimiter = dev.jellystructure.auth.LoginRateLimiter(
+            maxAttempts = dev.jellystructure.env("LOGIN_RATE_LIMIT_MAX", "5").toIntOrNull() ?: 5,
+        )
 
         // Security fix (2026-08-02 review, finding M8) — no security response headers were sent at
         // all. HSTS is safe to send unconditionally: browsers only ever act on it when it arrives over

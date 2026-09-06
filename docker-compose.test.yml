@@ -90,6 +90,11 @@ services:
       FRONTEND_DIR: /app/frontend
       SERVER_PORT: 9505
       TMDB_BASE_URL: http://tmdb-mock:3001
+      # Phase 197 (FR-197-5) — the whole Playwright suite shares one backend, so its ~5 logins per
+      # run sit right on the production 5-per-60s cap; one flaky test retrying re-runs a beforeAll,
+      # pushes it over, and fails an unrelated later spec at its login step. Test stack only; no
+      # deployment sets this and the code default is unchanged.
+      LOGIN_RATE_LIMIT_MAX: "1000"
     depends_on:
       jellyfin-mock:
         condition: service_healthy
