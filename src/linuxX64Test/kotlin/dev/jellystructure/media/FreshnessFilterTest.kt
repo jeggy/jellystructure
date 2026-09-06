@@ -80,4 +80,45 @@ class FreshnessFilterTest {
         assertEquals(true, isDueForRecheck(now, now - 30 * DAY, 2005, 2026, s))
         assertEquals(false, isDueForRecheck(now, now - (30 * DAY - 1), 2005, 2026, s, isActivelyAiring = false))
     }
+
+    // ─── Phase 196 (FR-196-6) — an airing show can never be starved ──────────────────────────────
+
+    @Test
+    fun `an airing show is due after a day even when its tier is much slower`() {
+        // The live case: Klovn premiered in 2005, so without Phase 181's isActivelyAiring it lands in
+        // the `older` tier. With it, the this-year tier applies — but an operator who sets that tier to
+        // something slow would silently re-create the starvation 181 set out to remove.
+        val s = step(thisYear = "monthly", older = "monthly")
+        val now = 1_000_000L * DAY
+        assertEquals(false, isDueForRecheck(now, now - 25 * DAY, 2005, 2026, s, isActivelyAiring = false))
+        assertEquals(true, isDueForRecheck(now, now - 25 * DAY, 2005, 2026, s, isActivelyAiring = true))
+    }
+
+    @Test
+    fun `the airing floor does not make a non-airing title due sooner`() {
+        val s = step(older = "monthly")
+        val now = 1_000_000L * DAY
+        assertEquals(false, isDueForRecheck(now, now - 2 * DAY, 2005, 2026, s, isActivelyAiring = false))
+    }
+
+    @Test
+    fun `never still means never for a non-airing title but not for an airing one`() {
+        val s = step(thisYear = "never", older = "never")
+        val now = 1_000_000L * DAY
+        // A title nobody is waiting on stays excluded forever, exactly as before.
+        assertEquals(false, isDueForRecheck(now, now - 400 * DAY, 2005, 2026, s, isActivelyAiring = false))
+        // One with an episode landing this week is not something "never" should be able to hide.
+        assertEquals(true, isDueForRecheck(now, now - 400 * DAY, 2005, 2026, s, isActivelyAiring = true))
+        assertEquals(false, isDueForRecheck(now, now - (DAY - 1), 2005, 2026, s, isActivelyAiring = true))
+    }
+
+    @Test
+    fun `a faster configured cadence still wins over the airing floor`() {
+        // The floor is a ceiling on staleness, not an override — `daily` config plus an airing show
+        // must not become "once a day at best" if someone configures something faster later.
+        val s = step(thisYear = "daily")
+        val now = 1_000_000L * DAY
+        assertEquals(true, isDueForRecheck(now, now - DAY, 2026, 2026, s, isActivelyAiring = true))
+        assertEquals(false, isDueForRecheck(now, now - (DAY - 1), 2026, 2026, s, isActivelyAiring = true))
+    }
 }

@@ -88,6 +88,12 @@ data class IngestStatus(
     // currently holding for retry.
     @SerialName("last_successful_ingest_at") val lastSuccessfulIngestAt: Long? = null,
     @SerialName("outstanding_retry_count") val outstandingRetryCount: Long = 0,
+    // Phase 195 (FR-195-6) — a count alone can't distinguish "a few items are being retried normally"
+    // from "this set has been stuck for half a day". Production carried 117 entries for 12+ hours with
+    // no surface but a WARN line repeated 1 994 times, and the only symptom anyone saw was a missing
+    // episode. The age of the longest-outstanding entry is the signal; the individual warnings are not.
+    @SerialName("oldest_retry_at") val oldestRetryAt: Long? = null,
+    @SerialName("due_retry_count") val dueRetryCount: Long = 0,
 )
 
 /**
@@ -129,6 +135,7 @@ fun Route.webhookRoutes(
             cfg.ingest.webhookSecret, cfg.ingest.realtime,
             cfg.ingest.jellyfinReachUrl, jellyfinStatus, realtimeIngest.lastWebhookReceivedAt,
             realtimeIngest.lastSuccessfulIngestAt, dirtyItemStore.count(),
+            dirtyItemStore.oldestCreatedAt(), dirtyItemStore.countDue(dev.jellystructure.nowEpochSec() * 1000),
         ))
     }
 

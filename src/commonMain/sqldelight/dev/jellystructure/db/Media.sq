@@ -13,7 +13,11 @@ CREATE TABLE media (
     poster_path TEXT,
     episode_count INTEGER NOT NULL DEFAULT 0,
     search_text TEXT NOT NULL DEFAULT '',
-    last_checked INTEGER,
+    -- Phase 196 — epoch ms of the last COMPLETED examination of this title's files on disk (a scan /
+    -- targeted sync that actually probed them). Set ONLY by those paths; never by a metadata write.
+    -- It is the freshness filter's threshold, so anything else touching it defers a real scan — which
+    -- is exactly the bug this rename closes (it was `last_checked`, stamped on every row write).
+    last_examined_at INTEGER,
     has_segments INTEGER NOT NULL DEFAULT 0
 );
 
@@ -23,8 +27,8 @@ CREATE INDEX media_search_text ON media(search_text);
 CREATE INDEX media_has_segments ON media(has_segments);
 
 upsert:
-INSERT OR REPLACE INTO media(id, json, kind, title, year, studio, network, issue_count, language_mix, scanned_at, tmdb_id, poster_path, episode_count, search_text, last_checked, has_segments)
-VALUES (:id, :json, :kind, :title, :year, :studio, :network, :issue_count, :language_mix, :scanned_at, :tmdb_id, :poster_path, :episode_count, :search_text, :last_checked, :has_segments);
+INSERT OR REPLACE INTO media(id, json, kind, title, year, studio, network, issue_count, language_mix, scanned_at, tmdb_id, poster_path, episode_count, search_text, last_examined_at, has_segments)
+VALUES (:id, :json, :kind, :title, :year, :studio, :network, :issue_count, :language_mix, :scanned_at, :tmdb_id, :poster_path, :episode_count, :search_text, :last_examined_at, :has_segments);
 
 getById:
 SELECT json FROM media WHERE id = :id;
@@ -63,11 +67,17 @@ SELECT id FROM media WHERE search_text LIKE ('%' || :search || '%');
 countEmptySearchText:
 SELECT COUNT(*) FROM media WHERE search_text = '';
 
-allLastChecked:
-SELECT id, last_checked FROM media WHERE last_checked IS NOT NULL;
+allLastExamined:
+SELECT id, last_examined_at FROM media WHERE last_examined_at IS NOT NULL;
 
-touchLastChecked:
-UPDATE media SET last_checked = :last_checked WHERE id = :id;
+touchLastExamined:
+UPDATE media SET last_examined_at = :last_examined_at WHERE id = :id;
+
+-- Phase 196 (FR-196-1) — `upsert` is INSERT OR REPLACE, so it rewrites every column on every write.
+-- A caller that did not examine this title's files reads the stored value with this and hands it
+-- straight back, exactly as Phase 163 already does for has_segments in the same function.
+getLastExamined:
+SELECT last_examined_at FROM media WHERE id = :id;
 
 updateSearchText:
 UPDATE media SET search_text = :search_text WHERE id = :id;

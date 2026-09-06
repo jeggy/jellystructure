@@ -191,6 +191,31 @@ class Scanner(
     )
 
     /**
+     * Phase 195 (FR-195-2) — bounds concurrent **ffprobe dispatch** the same way [episodeFanoutGate]
+     * bounds TMDB. Phase 183 gated the TMDB call inside the per-episode block and left the `ffprobe`
+     * beside it ungoverned, so a series still dispatched one waiter per episode file (Klovn: 102) into
+     * [dev.jellystructure.ops.ProcessGate]. That gate grants background work 12 permits with a **30 s
+     * acquire deadline**, so queue depth alone — not slow work — made every waiter time out. With 117
+     * ids replayed at once by the dirty-set retry, essentially nothing completed, everything was
+     * re-marked dirty, and the next cycle reproduced it: the retry set never drained in 12 hours and
+     * a new Klovn episode sat unscanned for four hours.
+     *
+     * Deliberately **smaller** than ProcessGate's background allowance rather than equal to it: what
+     * matters is that the number of scan-originated waiters inside ProcessGate stays under its permit
+     * count, so the 30 s deadline is only ever reached by genuinely slow work. Waiting here is
+     * unbounded and free; waiting in ProcessGate costs a timeout, a failed ingest, and a dirty-set
+     * entry. Leaves headroom for the other background users (artwork, other series) sharing that gate.
+     *
+     * Separate from [episodeFanoutGate] rather than widening it to cover the whole per-episode block:
+     * that block already acquires [episodeFanoutGate] internally for its TMDB calls, and a coroutine
+     * holding one permit of a non-reentrant semaphore while waiting for a second is a deadlock under
+     * contention, not a bound.
+     */
+    private val fileProbeGate = Semaphore(
+        (configStore.current.behavior.scanWorkers.coerceIn(1, 100) * 2).coerceIn(2, 8)
+    )
+
+    /**
      * TMDB re-pull tag rule (Phase 19 §15): TMDB keywords become the non-JS tags, and any
      * Jellystructure-defined tags on the item always survive. Jellyfin-sourced tags that are
      * neither are dropped — TMDB is authoritative for non-JS tags on a TMDB re-pull.
@@ -582,13 +607,18 @@ class Scanner(
         val episodes = coroutineScope {
             filesToProbe.map { file ->
                 async {
-                    val tracks = FfprobeRunner.probe(file)
-                    // Phase 128: diagnose() re-probes with stderr kept, so the scan log says WHY (corrupt,
-                    // unreadable, etc.) instead of just that the track list came back empty. Rare path — only
-                    // runs for a file that already produced zero tracks — so the extra ffprobe call is fine.
-                    if (tracks.isEmpty()) {
-                        val reason = FfprobeRunner.diagnose(file)
-                        Logger.warn("ffprobe returned no tracks for episode: $file (${reason.status}: ${reason.detail})", "scan")
+                    // Phase 195 (FR-195-2): bound how many of these reach ProcessGate at once — see
+                    // [fileProbeGate]. Held across diagnose() too, which is a second ffprobe.
+                    val tracks = fileProbeGate.withPermit {
+                        val probed = FfprobeRunner.probe(file)
+                        // Phase 128: diagnose() re-probes with stderr kept, so the scan log says WHY (corrupt,
+                        // unreadable, etc.) instead of just that the track list came back empty. Rare path — only
+                        // runs for a file that already produced zero tracks — so the extra ffprobe call is fine.
+                        if (probed.isEmpty()) {
+                            val reason = FfprobeRunner.diagnose(file)
+                            Logger.warn("ffprobe returned no tracks for episode: $file (${reason.status}: ${reason.detail})", "scan")
+                        }
+                        probed
                     }
                     val epIssueCount = tracks.count {
                         (it.kind == TrackKind.AUDIO || it.kind == TrackKind.SUBTITLE) && it.language == null
@@ -613,7 +643,7 @@ class Scanner(
                     val partEpisodeNums: List<Int?> = if (epNums.isEmpty()) listOf(null) else epNums
                     // Chapters are only worth reading for the (rare) multi-episode case — skip the extra
                     // ffprobe invocation entirely for the overwhelmingly common single-episode file.
-                    val chapterMarkers = if (partCount > 1) FfprobeRunner.chapters(file) else emptyList()
+                    val chapterMarkers = if (partCount > 1) fileProbeGate.withPermit { FfprobeRunner.chapters(file) } else emptyList()
                     val hasMatchingChapters = chapterMarkers.size == partCount
 
                     partEpisodeNums.mapIndexed { partIdx, epNum ->
@@ -963,7 +993,9 @@ class Scanner(
         val episodes = coroutineScope {
             episodeFiles.map { file ->
                 async {
-                    val tracks = FfprobeRunner.probe(file)
+                    // Phase 195 (FR-195-2): the `POST /api/media/{id}/sync` path had the identical
+                    // ungoverned dispatch — one bug in two places. See [fileProbeGate].
+                    val tracks = fileProbeGate.withPermit { FfprobeRunner.probe(file) }
                     val epIssueCount = tracks.count { (it.kind == TrackKind.AUDIO || it.kind == TrackKind.SUBTITLE) && it.language == null }
                     val audioLangs = tracks.filter { it.kind == TrackKind.AUDIO }.map { it.language }
                     val epLangPriority = LanguageResolver.priorityList(audioLangs, fallback)
@@ -975,7 +1007,7 @@ class Scanner(
                     val (seasonNum, epNums) = resolveSeasonEpisode(parseSeasonEpisodes(file), jfPathMatchSync?.parentIndexNumber, jfPathMatchSync?.indexNumber)
                     val partCount = epNums.size.coerceAtLeast(1)
                     val partEpisodeNums: List<Int?> = if (epNums.isEmpty()) listOf(null) else epNums
-                    val chapterMarkers = if (partCount > 1) FfprobeRunner.chapters(file) else emptyList()
+                    val chapterMarkers = if (partCount > 1) fileProbeGate.withPermit { FfprobeRunner.chapters(file) } else emptyList()
                     val hasMatchingChapters = chapterMarkers.size == partCount
 
                     partEpisodeNums.mapIndexed { partIdx, epNum ->
