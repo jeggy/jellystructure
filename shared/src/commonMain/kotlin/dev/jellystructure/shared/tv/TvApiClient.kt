@@ -548,7 +548,15 @@ class TvApiClient(
     }
 
     private suspend fun HttpResponse.assertSuccess() {
-        if (!status.isSuccess()) throw TvApiError.Http(status.value, bodyAsText())
+        if (!status.isSuccess()) {
+            throw TvApiError.Http(
+                status.value,
+                bodyAsText(),
+                // R237 — only the delta-seconds form; the HTTP-date form is legal but nothing in this
+                // server emits it, and a misparse would be worse than falling back to our own backoff.
+                retryAfterSeconds = headers[HttpHeaders.RetryAfter]?.toIntOrNull(),
+            )
+        }
     }
 
     // Returns the JSON-quoted form of this string (surrounds with `"`, escapes `\` and `"`).

@@ -424,7 +424,12 @@ fun Route.tvRoutes(
                 call.respond(HttpStatusCode.BadGateway, mapOf("error" to "Jellyfin rejected the change"))
             dev.jellystructure.auth.PasswordChangeOutcome.OK -> {
                 // FR-187-8 — measured, not assumed: re-validate the very token this call used.
-                val survived = jellyfinClient.isTokenValid(config.apiKeys.jellyfinUrl, device.jellyfinUserToken, device.jellyfinUserId)
+                // Phase 194 — only an actual rejection means the password change killed the token. A
+                // transient failure here is not evidence it died, and reporting it as death would tell
+                // the viewer to sign in again on every device for no reason.
+                val survived = jellyfinClient.checkToken(
+                    config.apiKeys.jellyfinUrl, device.jellyfinUserToken, device.jellyfinUserId,
+                ).outcome != dev.jellystructure.auth.TokenCheck.REJECTED
                 call.respond(dev.jellystructure.shared.tv.AccountPasswordResult(ok = true, tokenSurvived = survived))
             }
         }
