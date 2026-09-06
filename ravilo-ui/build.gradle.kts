@@ -25,7 +25,15 @@ kotlin {
     }
 
     wasmJs {
-        browser()
+        browser {
+            // Phase 198 — `browser()` creates a wasmJsBrowserTest task that `check`/`allTests` both
+            // depend on, and it FAILS ("test sources present … did not discover any tests") because
+            // commonTest compiles for wasmJs while no headless browser is configured here — see the
+            // commonTest comment below for why that is deliberate (R196). Disabling the task says the
+            // same thing honestly: it is skipped, not failed. A `check` that is red for a non-problem
+            // is exactly the signal-destroying pattern phase 197 was written about.
+            testTask { enabled = false }
+        }
         compilations.configureEach {
             compileTaskProvider.configure {
                 compilerOptions {
