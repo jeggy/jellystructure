@@ -2339,6 +2339,8 @@ private fun TrackPicker(
                             focused = i == pickerIdx,
                             colors = colors,
                             lang = lang,
+                            // R238 — so the row can caption itself with the version actually playing.
+                            selectedFlat = selectedFlat,
                             onTap = { onTapLanguage(i) },
                         )
                     }
@@ -2484,6 +2486,28 @@ private fun groupDisplayName(group: PickerLanguage, lang: String): String {
     }
 }
 
+/**
+ * R195 §A / R238 (FR-R238-1) — the badges a collapsed language row should caption itself with: those of
+ * the version that is actually playing, or those of the only version there is, or none.
+ *
+ * Extracted as a pure function so it is testable (and so [PickerLanguageRow] does not grow — see
+ * `PlayerSessionErrorOverlay`'s note on what inlining into big composables cost us).
+ *
+ * The bug this replaces: `firstOrNull { it.flatIndex >= 0 && (single || selected) }`, whose predicate
+ * is loop-invariant in `single`/`selected` and so always yielded the FIRST version in stream order.
+ * On Helt Sort S07E03 that captioned a correctly-selected `Dansk (CC)` track with the forced track's
+ * `Default` / `Signs only` badges — describing the exact track R235 exists to avoid, on the one
+ * surface a viewer checks to confirm their subtitles are right. FR-R238-2: where the playing version
+ * can't be identified we show nothing, because a missing badge costs nothing and a wrong one
+ * misinforms.
+ */
+internal fun languageRowBadges(group: PickerLanguage, selectedFlat: Int): List<String> {
+    group.versions.firstOrNull { it.flatIndex >= 0 && it.flatIndex == selectedFlat }
+        ?.let { return it.badges }
+    val only = group.versions.filter { it.flatIndex >= 0 }
+    return if (only.size == 1) only[0].badges else emptyList()
+}
+
 /** R195 §A — one row per language. No arrow + no count when there's exactly one version (OK selects
  *  it outright, matching R180's original one-press behaviour); a count + arrow otherwise. Badges
  *  belong to the single version, or — with several — to whichever one is currently playing. */
@@ -2494,14 +2518,11 @@ private fun PickerLanguageRow(
     focused: Boolean,
     colors: RaviloColors,
     lang: String,
+    selectedFlat: Int,
     onTap: () -> Unit,
 ) {
     val single = group.versions.size <= 1
-    // §A — badges belong to the single version, or (with several) to whichever one is CURRENTLY
-    // playing; a language with several versions that ISN'T the active one shows no badges at all
-    // (there's no single version to attribute them to until the viewer descends into level 2).
-    val activeVersion = group.versions.firstOrNull { it.flatIndex >= 0 && (single || selected) }
-    val badges = if (group.isOff) emptyList() else activeVersion?.badges ?: emptyList()
+    val badges = if (group.isOff) emptyList() else languageRowBadges(group, selectedFlat)
     Row(
         modifier = Modifier
             .fillMaxWidth()
