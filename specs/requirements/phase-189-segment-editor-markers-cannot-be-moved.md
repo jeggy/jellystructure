@@ -5,11 +5,54 @@
 > nor can I manually click the plus or minus buttons to change the start or end time of the segment."*
 
 ## Status
-Planned (spec'd 2026-09-06). Not dev-reviewed. Root-caused by reading
+✓ Built 2026-09-06. Not dev-reviewed. **Still not reproduced in a browser** — no headless browser is
+available on this host (see the round's memory note) — so this was built and reasoned through against
+the source, not watched live. Root-caused by reading
 `src/wasmJsMain/kotlin/dev/jellystructure/ui/Segments.kt` against
 `src/linuxX64Main/kotlin/dev/jellystructure/server/routes/SegmentRoutes.kt` and
-`src/commonMain/sqldelight/dev/jellystructure/db/MediaSegment.sq`; **not reproduced in a browser** —
-see Open questions.
+`src/commonMain/sqldelight/dev/jellystructure/db/MediaSegment.sq`.
+
+**Implementation notes:**
+- FR-189-1: `correctDuration()` no longer replaces `#seg-track`'s innerHTML. The segment SET doesn't
+  change when the video's real duration corrects the estimate — only the scale each bar is positioned
+  against — so a new `repositionSegmentBar()` patches each existing `.seg` bar's `left`/`width` style in
+  place (the ruler and evidence lane still get a full `outerHTML` swap since they carry no listeners).
+  `wireDragHandles` is now wired exactly once per navigation and reads `currentTrimData` fresh on every
+  `mousedown` instead of closing over the initial render's `data`, so it keeps working after any number
+  of duration corrections or edits — the same "read live state" rule the keydown listener already used.
+- FR-189-2: the mouse ± steppers now move by 1000ms (was 40ms — the keyboard `,`/`.` frame-nudge is
+  unchanged). Marker-row timecodes gained a tenths-precision formatter (`fmtlt`, `MM:SS.d`) so a 1s click
+  is visible without waiting 25 clicks. The rail's keyboard-help block gained a line for the ± buttons
+  (it previously only documented the keyboard shortcuts).
+- FR-189-3: introduced two new update paths so nothing inside an open trim view calls the old
+  video-recreating `renderTrim`/`refreshTrim` again (that function is deleted — it had no remaining
+  callers once every site below moved off it):
+  - `applyEditInPlace()` — same-marker start/end changes (± steppers, drag-handle release, `I`/`O`).
+    Optimistic: patches the bar position and the row's timecodes/length/source badge immediately via a
+    new `patchSegmentDom()`, writes in the background, and reverts both the in-memory state and the DOM
+    on failure (FR-189-6).
+  - `refreshTrimBody()` — structural changes (lock toggle, remove, add, apply-Jellyfin-candidate) that
+    change which markers exist or their locked state. Re-fetches, then rebuilds only `.tl`'s and `.mks`'s
+    inner content plus the rail (series only) and the confirm chip/duration label — `wireTrim` was split
+    into "chrome wired once" (back link, redetect/next, transport buttons, `wireVideo`) and the new
+    `wireEditableRegion()`, which both the initial render and every `refreshTrimBody()` call re-wire
+    identically. `.vid`/`<video>` is never touched by either path.
+  - Marker **selection** (clicking a row or a bar) no longer re-renders at all — a new `selectMarker()`
+    just toggles the `sel`/`on` classes and updates the play-pill, in place.
+- FR-189-4: `PUT /api/segments/{itemId}/{kind}` now passes `checkedAt = existing?.checkedAt` to
+  `upsertSegment`, mirroring the existing `locked = existing?.locked ?: false` — an edit no longer drops
+  a row's confirmation. A brand-new marker (`existing == null`) still starts unconfirmed, unchanged.
+- FR-189-5: a locked marker now toasts *"{Kind} is locked — unlock it to change the time"* from every
+  entry point (mouse ± steppers, drag `mousedown`, and the `I`/`O` keyboard shortcuts, which previously
+  silently no-op'ed on a locked segment instead of reaching the toast the lock already had words for).
+- FR-189-6: every `SegmentApi` write in this file now checks its boolean result and toasts on failure —
+  not just the new `applyEditInPlace` path, but also lock/unlock, remove, add and apply-Jellyfin, which
+  previously assumed success unconditionally.
+- `compileKotlinWasmJs`/`compileKotlinLinuxX64` clean, `linuxX64Test` green. **No test added for the
+  `checkedAt` preservation itself** — there is no in-memory-DB test harness for `MediaSegmentStore` in
+  this codebase to build one against cheaply, and none exists for wasmJs UI code at all (no
+  `wasmJsTest` source set in the repo) — flagged honestly rather than claimed as covered. The fix is a
+  one-line mirror of the already-proven `locked` preservation on the same line.
 
 ## Problem
 

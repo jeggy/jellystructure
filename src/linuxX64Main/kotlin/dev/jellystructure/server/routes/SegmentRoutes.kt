@@ -209,7 +209,12 @@ fun Route.segmentRoutes(store: MediaStore, segmentStore: MediaSegmentStore, conf
             val episodeNumber = call.request.queryParameters["n"]?.toIntOrNull() ?: 0
             val body = runCatching { call.receive<SegmentEditRequest>() }.getOrNull() ?: return@put call.respond(HttpStatusCode.BadRequest)
             val existing = segmentStore.getSegment(itemId, episodeKey, episodeNumber, kind)
-            segmentStore.upsertSegment(itemId, episodeKey, episodeNumber, kind, body.startMs, body.endMs, SegmentSource.MANUAL, null, locked = existing?.locked ?: false)
+            // Phase 189 (FR-189-4) — upsertSegment is INSERT OR REPLACE, and `checked` is derived from
+            // whether ANY row has a non-null checked_at (see this file's `checked` computation below):
+            // preserving only `locked` and leaving `checkedAt` at its null default silently un-confirmed
+            // the whole episode on the very next refinement, which is exactly the thing an operator does
+            // right after confirming one. Preserve it exactly like `locked` already is.
+            segmentStore.upsertSegment(itemId, episodeKey, episodeNumber, kind, body.startMs, body.endMs, SegmentSource.MANUAL, null, locked = existing?.locked ?: false, checkedAt = existing?.checkedAt)
             call.respond(HttpStatusCode.NoContent)
         }
 
