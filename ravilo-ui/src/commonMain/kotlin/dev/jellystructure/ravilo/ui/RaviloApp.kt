@@ -125,6 +125,22 @@ val LocalLiveAcquisition = staticCompositionLocalOf<SharedFlow<AcquisitionRecord
  *  bridge; collected by [dev.jellystructure.ravilo.ui.components.ServerMessageHost] at the app root. */
 val LocalServerMessages = staticCompositionLocalOf<SharedFlow<ServerMessageEnvelope>?> { null }
 
+/**
+ * R237 (FR-R237-3) — what to do when the player reports that this TV must sign in again: revoke and
+ * forget just this profile, then land on the picker or the login gate (the same exit R234's forced
+ * sign-out uses). Null ⇒ the player offers Back alone.
+ *
+ * Deliberately a CompositionLocal rather than a `PlayerScreen` parameter. It was a parameter first,
+ * and that shipped a release-build crash: `PlayerScreen` already took 15 arguments, and the 16th
+ * pushed the Compose compiler's generated `$changed`/`$default` mask arrangement into a shape ART's
+ * verifier rejects outright — `java.lang.VerifyError: Verifier rejected class …PlayerScreen…
+ * register v2 has type Precise Reference: java.lang.String but expected Integer`. The player died
+ * the instant it was opened. It reproduces ONLY in the R8-minified release build, so every compile
+ * check and unit test passed; it was caught by opening an episode on the stue TV. Adding another
+ * parameter to `PlayerScreen` will bring it back — route new inputs through here or a holder object.
+ */
+val LocalReauthRequired = staticCompositionLocalOf<(() -> Unit)?> { null }
+
 /** R159 — is the app's viewport currently taller than it is wide? Recomputed live on resize/rotation
  *  (TVs/desktop web: always false; a phone held upright: true; a resized browser window follows too).
  *  Drives portrait-only presentation overrides (starting with hero height) — the client only *selects*
@@ -555,7 +571,13 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
             windowInfo.containerSize.height > windowInfo.containerSize.width
         }
 
-        CompositionLocalProvider(LocalLiveConfig provides liveConfig, LocalLiveAcquisition provides liveAcquisition, LocalServerMessages provides liveServerMessages, LocalPlaystateCommands provides livePlaystateCommands, LocalTileScale provides tileScale, LocalGridColumns provides gridColumns, LocalPortraitGridColumns provides portraitGridColumns, LocalCompact provides compact, LocalHandset provides handset, LocalPortrait provides portrait, LocalServerBaseUrl provides apiClient.baseUrl, LocalUserAvatarUrl provides activeAvatarUrl) {
+        CompositionLocalProvider(LocalLiveConfig provides liveConfig, LocalLiveAcquisition provides liveAcquisition, LocalServerMessages provides liveServerMessages, LocalPlaystateCommands provides livePlaystateCommands, LocalTileScale provides tileScale, LocalGridColumns provides gridColumns, LocalPortraitGridColumns provides portraitGridColumns, LocalCompact provides compact, LocalHandset provides handset, LocalPortrait provides portrait, LocalServerBaseUrl provides apiClient.baseUrl, LocalUserAvatarUrl provides activeAvatarUrl,
+            LocalReauthRequired provides {
+                configScope.launch {
+                    signOutActiveSession(apiClient)
+                    resetTo(if (MultiTokenStore.getAll().isEmpty()) Dest.Login else Dest.ProfilePicker)
+                }
+            }) {
         // Bug fix: the block below only catches Key.Back as a Compose KeyEvent, which a TV remote's
         // physical back key genuinely sends but Android's system back gesture/button does NOT under
         // gesture navigation — it's intercepted by OnBackPressedDispatcher before Compose ever sees a
@@ -1074,16 +1096,6 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                     posterUrl        = dest.posterUrl,  // R192
                     store            = store,
                     onBack           = { pop() },
-                    // R237 (FR-R237-3) — the player told the viewer this TV needs to be signed in
-                    // again; this is the only control that can act on that. Same shape as R234's
-                    // onForceSignOut: revoke and forget just this profile, then land on the picker if
-                    // another cached profile remains, else the login gate.
-                    onReauthRequired = {
-                        configScope.launch {
-                            signOutActiveSession(apiClient)
-                            resetTo(if (MultiTokenStore.getAll().isEmpty()) Dest.Login else Dest.ProfilePicker)
-                        }
-                    },
                     onNavigateToEpisode = { nextId ->
                         // Bug fix: this used to bail out silently whenever `dest.episodes` was absent or
                         // `nextId` wasn't in it — the player had no way to know the navigation never
