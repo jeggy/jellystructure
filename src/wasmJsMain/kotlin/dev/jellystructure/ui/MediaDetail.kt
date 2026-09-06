@@ -3061,7 +3061,10 @@ private suspend fun buildArtTargets(item: MediaItem): List<ArtTarget> {
     val targets = mutableListOf(
         ArtTarget("poster", "Poster", "2 / 3"),
         ArtTarget("backdrop", "Backdrop", "16 / 9"),
-        ArtTarget("clearlogo", "Clearlogo", "16 / 9"),
+        // Phase 192 (FR-192-5) — a logo is a wordmark, not a photograph: measured TMDB logos cluster
+        // around 4:1 with a long tail to 10:1. A 16:9 card with object-fit:cover cropped one to its
+        // middle third; a wider card + object-fit:contain (below, `.art-card.logo`) shows the whole thing.
+        ArtTarget("clearlogo", "Clearlogo", "4 / 1"),
     )
     val status = MediaApi.getArtworkStatus(item.id)
     if (status != null) for (t in targets) t.onDisk = when (t.asset) {
@@ -3242,6 +3245,11 @@ private fun renderArtGallery() {
     val fellBack = resolved != null && artLang != resolved && all.none { it.lang == resolved } && all.isNotEmpty()
     val explainer = when {
         all.isEmpty() -> "TMDB has no ${t.label.lowercase()} candidates for this title."
+        // Phase 192 (FR-192-6) — a clearlogo has no stored field on the item (unlike poster/backdrop),
+        // so "no candidates picked yet" is the default state of five titles in six, not an error. Said
+        // plainly instead of leaving the operator to read the empty local tile as something broken.
+        t.asset == "clearlogo" && !t.onDisk ->
+            """No logo saved yet — pick one below, or let the next artwork run fetch it. Showing ${artFilterLabel(artLang)} (${shown.size}).${if (hidden > 0) " <a class=\"art-showall\">$hidden hidden — show all →</a>" else ""}"""
         fellBack -> """No ${if (resolved != null) resolved.uppercase() + " " else ""}${t.label.lowercase()} on TMDB. Falling back to ${artFilterLabel(artLang)} (${shown.size}).${if (hidden > 0) " <a class=\"art-showall\">$hidden other candidate(s) hidden — show all →</a>" else ""}"""
         else -> """Showing ${artFilterLabel(artLang)} (${shown.size}).${if (hidden > 0) " <a class=\"art-showall\">$hidden hidden — show all →</a>" else ""}"""
     }
@@ -3256,9 +3264,13 @@ private fun renderArtGallery() {
     // itself as a real tile, badged distinctly, so it reads as part of "the list" rather than a bolted-on
     // extra: reuses Ravilo's own public `/api/tv/image/{id}/{type}` (RaviloArtworkService — already
     // resolves the same fixed per-kind path the rail's "on disk" status itself comes from).
+    // Phase 192 (FR-192-5) — the clearlogo target gets object-fit:contain + a transparency-safe backing
+    // instead of the photographic cover crop every other asset uses (see .art-card.logo in the injected
+    // CSS below); applied via one extra class rather than a second card template.
+    val logoCls = if (t.asset == "clearlogo") " logo" else ""
     val localTile = if (t.kind == "asset" && t.onDisk) {
         val routeType = if (t.asset == "clearlogo") "logo" else t.asset
-        """<div class="art-card local" style="aspect-ratio:${t.aspect};">
+        """<div class="art-card local$logoCls" style="aspect-ratio:${t.aspect};">
               <img src="/api/tv/image/$artId/$routeType?w=200&b=$artStillBust" loading="lazy" alt="current ${t.asset}">
               <span class="art-ribbon local">Local</span>
            </div>"""
@@ -3270,7 +3282,7 @@ private fun renderArtGallery() {
         lbCandidates = shown
         localTile + shown.mapIndexed { idx, c ->
             val onDisk = c.onDisk
-            val cls = "art-card" + (if (onDisk) " ondisk" else "")
+            val cls = "art-card$logoCls" + (if (onDisk) " ondisk" else "")
             """<div class="$cls" data-path="${c.filePath.esc()}" data-lbidx="$idx" style="aspect-ratio:${t.aspect};">
                   <img src="$TMDB_IMG_THUMB${c.filePath}" loading="lazy" alt="">
                   ${if (onDisk) """<span class="art-ribbon">ON DISK</span>""" else ""}
@@ -3544,6 +3556,10 @@ private fun openArtLightbox(startIdx: Int, t: ArtTarget, scope: CoroutineScope, 
     }
 }
 
+// Phase 192 (FR-192-5) — the lightbox's #lb-img already used object-fit:contain (no crop), but a
+// dark-ink logo zoomed against the panel's own dark background is still close to invisible with
+// nothing behind it — the same transparency problem the grid cards have, just without the crop. Only
+// the logo target gets the backing panel; poster/backdrop zoom is unaffected.
 private fun buildLightboxHtml(t: ArtTarget): String = """
     <div id="lb-panel">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
@@ -3553,7 +3569,9 @@ private fun buildLightboxHtml(t: ArtTarget): String = """
       </div>
       <div style="position:relative;display:flex;align-items:center;justify-content:center;gap:12px;">
         <button id="lb-prev" class="btn sm ghost" style="flex:none;">‹</button>
-        <img id="lb-img" src="" alt="" style="max-width:70vw;max-height:72vh;border-radius:10px;object-fit:contain;display:block;">
+        <div class="${if (t.asset == "clearlogo") "lb-imgwrap logo" else "lb-imgwrap"}">
+          <img id="lb-img" src="" alt="" style="max-width:70vw;max-height:72vh;object-fit:contain;display:block;">
+        </div>
         <button id="lb-next" class="btn sm ghost" style="flex:none;">›</button>
       </div>
       <div id="lb-info" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:12px;"></div>
@@ -3596,6 +3614,17 @@ private fun injectArtworkStyles() {
         .art-card img { width:100%; height:100%; object-fit:cover; display:block; }
         .art-card.ondisk { border-color:var(--ok,#22c55e); }
         .art-card.local { border-color:var(--line,#2a2a3d); cursor:default; }
+        /* Phase 192 (FR-192-5) — a logo is a wordmark: contain (never crop) on a neutral mid-tone
+           checkerboard so a black logo and a white logo are both visible, in either admin theme. */
+        .art-card.logo img { object-fit:contain; }
+        .art-card.logo {
+            background-color:#a3a3a3;
+            background-image:
+                linear-gradient(45deg, #8a8a8a 25%, transparent 25%), linear-gradient(-45deg, #8a8a8a 25%, transparent 25%),
+                linear-gradient(45deg, transparent 75%, #8a8a8a 75%), linear-gradient(-45deg, transparent 75%, #8a8a8a 75%);
+            background-size:16px 16px;
+            background-position:0 0, 0 8px, 8px -8px, -8px 0;
+        }
         .art-card:hover .art-zoom { opacity:1; }
         .art-zoom { position:absolute; top:5px; right:5px; background:#000b; color:#fff; border:none; border-radius:5px; padding:2px 5px; font-size:.72rem; cursor:pointer; opacity:0; transition:opacity .15s; line-height:1.3; }
         .art-ribbon { position:absolute; top:6px; left:6px; background:var(--ok,#22c55e); color:#04210f; font-size:.62rem; font-weight:700; padding:1px 6px; border-radius:5px; }
@@ -3604,6 +3633,16 @@ private fun injectArtworkStyles() {
         .art-pill { font-size:.6rem; background:#000a; padding:1px 5px; border-radius:5px; }
         #art-lightbox { position:fixed; inset:0; background:#000c; display:flex; align-items:center; justify-content:center; z-index:9999; outline:none; }
         #lb-panel { background:var(--fill,#1a1a2e); border-radius:14px; padding:24px; max-width:90vw; max-height:92vh; overflow:auto; }
+        .lb-imgwrap { border-radius:10px; overflow:hidden; line-height:0; }
+        /* Phase 192 (FR-192-5) — same transparency backing as .art-card.logo, for the zoomed view. */
+        .lb-imgwrap.logo {
+            background-color:#a3a3a3;
+            background-image:
+                linear-gradient(45deg, #8a8a8a 25%, transparent 25%), linear-gradient(-45deg, #8a8a8a 25%, transparent 25%),
+                linear-gradient(45deg, transparent 75%, #8a8a8a 75%), linear-gradient(-45deg, transparent 75%, #8a8a8a 75%);
+            background-size:16px 16px;
+            background-position:0 0, 0 8px, 8px -8px, -8px 0;
+        }
     """.trimIndent()
     document.head?.appendChild(style)
 }

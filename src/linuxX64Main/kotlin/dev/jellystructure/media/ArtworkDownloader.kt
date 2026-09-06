@@ -9,6 +9,8 @@ import dev.jellystructure.model.MediaKind
 import dev.jellystructure.tmdb.TmdbClient
 import io.ktor.client.request.get
 import io.ktor.client.statement.readRawBytes
+import io.ktor.http.contentType
+import io.ktor.http.isSuccess
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
@@ -17,6 +19,39 @@ import kotlinx.io.files.SystemFileSystem
 import kotlinx.serialization.Serializable
 
 private const val TMDB_ORIGINAL = "https://image.tmdb.org/t/p/original"
+
+/** Phase 192 (FR-192-1) — the image formats [sniffImageSignature] recognizes. SVG is a legitimate TMDB
+ *  logo format (FR-192-3 handles rasterising it before it reaches a `.png`-named file); every other
+ *  unrecognized signature is rejected outright — a status-2xx response with an image content type can
+ *  still be an HTML error page some CDNs mislabel, and the magic bytes are the only check that catches it. */
+internal enum class SniffedImage { PNG, JPEG, WEBP, GIF, SVG }
+
+/** Reads only the magic bytes — never trusts the HTTP status or Content-Type alone (both can lie; see
+ *  the 504-page-saved-as-clearlogo.png incident this phase fixes). Returns null for anything else. */
+internal fun sniffImageSignature(bytes: ByteArray): SniffedImage? {
+    fun matches(offset: Int, sig: ByteArray): Boolean {
+        if (bytes.size < offset + sig.size) return false
+        for (i in sig.indices) if (bytes[offset + i] != sig[i]) return false
+        return true
+    }
+    fun ascii(s: String) = s.map { it.code.toByte() }.toByteArray()
+    if (matches(0, byteArrayOf(0x89.toByte(), 'P'.code.toByte(), 'N'.code.toByte(), 'G'.code.toByte()))) return SniffedImage.PNG
+    if (matches(0, byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 0xFF.toByte()))) return SniffedImage.JPEG
+    if (matches(0, ascii("RIFF")) && matches(8, ascii("WEBP"))) return SniffedImage.WEBP
+    if (matches(0, ascii("GIF8"))) return SniffedImage.GIF
+    // SVG is textual and may be preceded by a BOM/whitespace/XML prolog before the root element — scan
+    // the first 1KB for the literal root tag rather than requiring it at offset 0.
+    val needle = ascii("<svg")
+    val limit = minOf(bytes.size, 1024) - needle.size
+    if (limit >= 0) {
+        for (i in 0..limit) {
+            var hit = true
+            for (j in needle.indices) if (bytes[i + j] != needle[j]) { hit = false; break }
+            if (hit) return SniffedImage.SVG
+        }
+    }
+    return null
+}
 
 @Serializable
 data class ArtworkStatus(
@@ -159,6 +194,33 @@ class ArtworkDownloader(private val tmdbClient: TmdbClient, private val screengr
             fanartOk = fanartJob?.await() ?: fanartExists
         }
 
+        // Phase 192 (FR-192-4) — the logo joins poster/backdrop as an automatically-fetched asset. Like
+        // a season poster (R126) it has no stored path on the item to key off, so pull the TMDB images
+        // gallery and pick one: the resolved-language tier first, then textless, then anything at all —
+        // and within whichever tier wins, skip any SVG candidate when a raster one of the same tier
+        // exists (FR-192-3's rasterise path is the exception, not the norm). Never runs when a logo is
+        // already on disk, manual or not — a `.manual` logo is protected by that alone, identically to
+        // poster/backdrop above.
+        var logoOk = logoExists
+        if (!logoExists) {
+            val tid = item.tmdbId
+            if (tid != null) {
+                val images = runCatching {
+                    if (item.kind == MediaKind.TV_SHOW) tmdbClient.getTvImages(tid) else tmdbClient.getMovieImages(tid)
+                }.getOrNull()
+                val candidates = images?.logos.orEmpty()
+                val tier = candidates.filter { it.languageCode == item.resolvedLanguage }
+                    .ifEmpty { candidates.filter { it.languageCode == null } }
+                    .ifEmpty { candidates }
+                val (raster, svg) = tier.partition { !it.filePath.endsWith(".svg", ignoreCase = true) }
+                val pick = raster.ifEmpty { svg }.maxByOrNull { it.voteAverage }
+                if (pick != null) {
+                    logoOk = download("$TMDB_ORIGINAL${pick.filePath}", logo)
+                    if (logoOk) writeAssetSrc(item, "clearlogo", pick.filePath)
+                }
+            }
+        }
+
         // For TV shows: clean up any artwork that was previously written to the wrong
         // location (parent of the series directory) due to the substringBeforeLast('/') bug.
         // Only delete the old file once the correct-path file is confirmed present.
@@ -170,7 +232,7 @@ class ArtworkDownloader(private val tmdbClient: TmdbClient, private val screengr
             if (oldDir != item.path) {
                 if (posterOk && !isManual("$oldDir/poster.jpg")) deleteIfExists("$oldDir/poster.jpg")
                 if (fanartOk && !isManual("$oldDir/fanart.jpg")) deleteIfExists("$oldDir/fanart.jpg")
-                if (logoExists && !isManual("$oldDir/clearlogo.png")) deleteIfExists("$oldDir/clearlogo.png")
+                if (logoOk && !isManual("$oldDir/clearlogo.png")) deleteIfExists("$oldDir/clearlogo.png")
             }
             // R125: episode stills are part of fetch() now — download any missing (each from the
             // episode's stored stillPath), bounded by the shared download gate. So every fetch()
@@ -195,7 +257,7 @@ class ArtworkDownloader(private val tmdbClient: TmdbClient, private val screengr
         return ArtworkStatus(
             posterExists = posterOk,
             fanartExists = fanartOk,
-            logoExists = logoExists,
+            logoExists = logoOk,
             posterManual = isManual(poster),
             fanartManual = isManual(fanart),
             logoManual = isManual(logo),
@@ -213,6 +275,10 @@ class ArtworkDownloader(private val tmdbClient: TmdbClient, private val screengr
         // fetch()'s own stale check (above) exists for.
         if (isStaleAutoAsset(item, "poster", item.posterPath)) return true
         if (isStaleAutoAsset(item, "backdrop", item.backdropPath)) return true
+        // Phase 192 (FR-192-4) — the logo joins this check exactly like poster/fanart; gated on tmdbId
+        // since there's nothing to fetch without a match, matching fetch()'s own guard. Applies to
+        // movies too, so this sits above the TV-only early return below.
+        if (!st.logoExists && item.tmdbId != null) return true
         if (item.kind != MediaKind.TV_SHOW) return false
         // R131: a still is "incomplete" when missing OR a screen-grab that TMDB can now upgrade — so the
         // next scheduled "Download artwork (missing)" run re-processes the series and swaps in the real still.
@@ -246,10 +312,51 @@ class ArtworkDownloader(private val tmdbClient: TmdbClient, private val screengr
         return downloadUnchecked(url, destPath)
     }
 
+    // Phase 192 (FR-192-1) — a status-2xx, content-type-image/* response can still be a CDN error page
+    // (the live incident this fixes: a 504 Gateway Timeout HTML page, served with neither of those two
+    // things wrong, was written to disk as clearlogo.png and stayed there for weeks — nothing after this
+    // point ever re-checked it). All three checks must pass before a single byte reaches disk; a reject
+    // writes nothing at all, not even a `.tmp`.
     private suspend fun downloadUnchecked(url: String, destPath: String): Boolean = OutboundHttp.withPermit {
         val result = runCatching {
-            val bytes = http.get(url).readRawBytes()
+            val response = http.get(url)
+            if (!response.status.isSuccess()) {
+                Logger.warn("Rejected artwork download (HTTP ${response.status.value}): $url", "artwork")
+                return@withPermit false
+            }
+            val contentType = response.contentType()
+            if (contentType?.contentType != "image") {
+                Logger.warn("Rejected artwork download (Content-Type ${contentType ?: "<none>"}): $url", "artwork")
+                return@withPermit false
+            }
+            val bytes = response.readRawBytes()
             if (bytes.isEmpty()) return@withPermit false
+            val sniffed = sniffImageSignature(bytes)
+            if (sniffed == null) {
+                Logger.warn("Rejected artwork download (unrecognized image signature, ${bytes.size} bytes): $url", "artwork")
+                return@withPermit false
+            }
+
+            if (sniffed == SniffedImage.SVG && destPath.endsWith(".png")) {
+                // FR-192-3 — a saved logo must be a real PNG matching its filename. resizeImage operates
+                // on files, so the SVG bytes need a throwaway path to rasterise FROM; the throwaway is
+                // always removed below, success or failure, so nothing but the final PNG (or nothing at
+                // all) survives this branch.
+                val tmpSvg = "$destPath.svg.tmp"
+                val rasterTmp = "$destPath.tmp"
+                FileIo.writeBytes(Path(tmpSvg), bytes)
+                val rasterOk = runCatching { FfmpegRunner.resizeImage(tmpSvg, rasterTmp, height = 300) }.getOrDefault(false)
+                deleteIfExists(tmpSvg)
+                if (!rasterOk) {
+                    deleteIfExists(rasterTmp)
+                    Logger.warn("Rejected artwork download (SVG rasterise failed): $url", "artwork")
+                    return@withPermit false
+                }
+                platform.posix.rename(rasterTmp, destPath)
+                Logger.info("Downloaded + rasterised SVG artwork: $destPath", "artwork")
+                return@withPermit true
+            }
+
             val tmp = "$destPath.tmp"
             FileIo.writeBytes(Path(tmp), bytes)   // Phase 134: use{}-scoped — no FD leak on a mid-write throw
             platform.posix.rename(tmp, destPath)
@@ -425,6 +532,40 @@ class ArtworkDownloader(private val tmdbClient: TmdbClient, private val screengr
         deleteIfExists(manualMarkerPath(dest))
         deleteIfExists("$dest.src")
         return existed
+    }
+
+    /**
+     * Phase 192 (FR-192-2) — a one-time maintenance sweep for artwork saved before [downloadUnchecked]'s
+     * validation existed: check every known artwork path for [item] against its magic bytes (not its
+     * status/content-type at download time, both long gone) and remove — image, `.manual` lock, `.src`
+     * sidecar — any file that isn't a real image. The `.manual` marker must go too, or the repair is
+     * undone by the very lock that was protecting the corrupt file. Read-only when everything checks
+     * out (the overwhelming common case); a fresh `fetch_artwork` run repopulates whatever was removed.
+     * Returns the removed paths so the caller can log/record History per item.
+     */
+    suspend fun repairCorruptArtwork(item: MediaItem): List<String> {
+        val candidates = buildList {
+            add(assetFilePath(item, "poster.jpg"))
+            add(assetFilePath(item, "fanart.jpg"))
+            add(assetFilePath(item, "clearlogo.png"))
+            if (item.kind == MediaKind.TV_SHOW) {
+                addAll(item.episodes.mapNotNull { it.seasonNumber }.distinct().map { seasonPosterPath(item, it) })
+                addAll(item.episodes.map { episodeStillPath(it) })
+            }
+        }
+        val removed = mutableListOf<String>()
+        for (path in candidates) {
+            val p = Path(path)
+            if (!SystemFileSystem.exists(p)) continue
+            val bytes = runCatching { FileIo.readBytes(p) }.getOrNull() ?: continue
+            if (sniffImageSignature(bytes) != null) continue
+            Logger.warn("Removing corrupt artwork (not a recognized image): $path", "artwork")
+            deleteIfExists(path)
+            deleteIfExists(manualMarkerPath(path))
+            deleteIfExists("$path.src")
+            removed += path
+        }
+        return removed
     }
 
     /** Jellyfin local naming for a season poster at the series root. R194: `internal`, not `private` —
