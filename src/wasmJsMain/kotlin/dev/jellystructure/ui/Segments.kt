@@ -126,9 +126,21 @@ private fun redetectToast(subject: String, result: dev.jellystructure.api.Segmen
 private var currentTrimData: SegmentTrimResponse? = null
 private var currentTrimScope: CoroutineScope? = null
 private var keydownWired = false
+private var teardownWired = false
 private var trimSelectedKind: String? = null
 private var trimLastEdge = "b"   // "a" | "b" — which edge , / . nudges next
 private var trimPlayheadMs = 0L
+// Phase 190 — set once the server's stream-mode decision comes back (wireVideo); null until then.
+// "direct" = Static=true, unchanged behaviour. "remux" = a live video-copy/audio-transcode session:
+// not byte-range seekable (confirmed live against Jellyfin 10.11.11 — see SegmentRoutes.kt's doc), so
+// every seek reloads the stream from a new offset instead of setting video.currentTime in place.
+private var trimStreamMode: String? = null
+private var trimPlaySessionId: String = ""
+// The absolute ms offset the CURRENT video.src was loaded from, when trimStreamMode == "remux" (always
+// 0 for "direct", where a single persistent resource covers the whole file). A remux reload's own
+// loadedmetadata reports only the duration REMAINING from this offset, not the file's real length —
+// correctDuration() only trusts a load where this is 0 (the initial open, always at the real start).
+private var trimRemuxBaseMs = 0L
 
 fun renderSegments(scope: CoroutineScope, query: Map<String, String>) {
     val body = document.body ?: return
@@ -140,6 +152,7 @@ fun renderSegments(scope: CoroutineScope, query: Map<String, String>) {
     picked.clear()
     currentTrimData = null
     wireKeydownOnce()
+    wireStreamTeardownOnce()
 
     val series = query["series"]
     val season = query["season"]?.toIntOrNull()
@@ -326,9 +339,17 @@ private fun renderTrim(data: SegmentTrimResponse, scope: CoroutineScope) {
     val root = document.getElementById("seg-root") ?: return
     val isNewTitle = currentTrimData?.mediaId != data.mediaId || currentTrimData?.episodeKey != data.episodeKey || currentTrimData?.episodeNumber != data.episodeNumber
     if (isNewTitle) {
+        // Phase 190 (FR-190-6) — leaving this title behind means whatever remux session it opened is
+        // about to be abandoned; release it before moving on (same reasoning as Phase 180's teardown —
+        // an abandoned transcode keeps running for nobody). Safe to call even when the previous title
+        // was direct-play (blank playSessionId, stopStream no-ops).
+        if (trimPlaySessionId.isNotBlank()) { val psid = trimPlaySessionId; scope.launch { SegmentApi.stopStream(psid) } }
         trimSelectedKind = data.segments.firstOrNull()?.kind
         trimLastEdge = "b"
         trimPlayheadMs = 0L
+        trimStreamMode = null
+        trimPlaySessionId = ""
+        trimRemuxBaseMs = 0L
     } else if (trimSelectedKind != null && data.segments.none { it.kind == trimSelectedKind }) {
         trimSelectedKind = data.segments.firstOrNull()?.kind
     }
@@ -452,8 +473,8 @@ private fun wireTrim(root: Element, data: SegmentTrimResponse, scope: CoroutineS
         }
     }
     root.querySelector("[data-a='next']")?.addEventListener("click") { goNext(currentTrimData ?: data, scope) }
-    root.querySelector("[data-a='fb']")?.addEventListener("click") { seekRelative(currentTrimData ?: data, -10_000) }
-    root.querySelector("[data-a='ff']")?.addEventListener("click") { seekRelative(currentTrimData ?: data, 10_000) }
+    root.querySelector("[data-a='fb']")?.addEventListener("click") { seekRelative(currentTrimData ?: data, -10_000, scope) }
+    root.querySelector("[data-a='ff']")?.addEventListener("click") { seekRelative(currentTrimData ?: data, 10_000, scope) }
     root.querySelector("#seg-play-btn")?.addEventListener("click") {
         val video = document.getElementById("seg-video") as? HTMLVideoElement ?: return@addEventListener
         if (video.paused) video.play() else video.pause()
@@ -516,9 +537,7 @@ private fun wireEditableRegion(root: Element, data: SegmentTrimResponse, scope: 
         val box = (ev.target as HTMLElement).getBoundingClientRect()
         val me = ev as org.w3c.dom.events.MouseEvent
         val frac = ((me.clientX - box.left) / box.width).coerceIn(0.0, 1.0)
-        trimPlayheadMs = (frac * live.durationSec * 1000).toLong()
-        seekVideoTo(trimPlayheadMs)
-        updatePlayheadDom(trimPlayheadMs, live.durationSec, currentTrimSelectedLabel())
+        seekToAbsoluteMs(live, (frac * live.durationSec * 1000).toLong(), scope)
     }
 
     root.querySelectorAll("[data-l]").let { nodes ->
@@ -600,7 +619,7 @@ private fun wireEditableRegion(root: Element, data: SegmentTrimResponse, scope: 
                 val live = currentTrimData ?: data
                 val kind = el.getAttribute("data-p") ?: return@addEventListener
                 val seg = live.segments.firstOrNull { it.kind == kind } ?: return@addEventListener
-                playCut(seg)
+                playCut(seg, live, scope)
             }
         }
     }
@@ -698,27 +717,60 @@ private fun seekVideoTo(ms: Long) {
     (document.getElementById("seg-video") as? HTMLVideoElement)?.currentTime = ms / 1000.0
 }
 
-private fun seekRelative(data: SegmentTrimResponse, deltaMs: Long) {
-    trimPlayheadMs = (trimPlayheadMs + deltaMs).coerceIn(0L, (data.durationSec * 1000).toLong())
-    seekVideoTo(trimPlayheadMs)
+/** Phase 190 — the absolute playhead position implied by the `<video>`'s own `currentTime`. Trivial for
+ *  direct play (one persistent resource covers the whole file); a remux session's `currentTime` is
+ *  relative to whatever offset it was last reloaded FROM ([trimRemuxBaseMs]). */
+private fun currentVideoAbsoluteMs(video: HTMLVideoElement): Long =
+    if (trimStreamMode == "remux") trimRemuxBaseMs + (video.currentTime * 1000).toLong()
+    else (video.currentTime * 1000).toLong()
+
+/**
+ * Phase 190 (FR-190-5) — the one seek entry point every interaction (track click, ±10s, "play the cut")
+ * goes through. Direct play seeks in place — `video.currentTime`, works natively. A remux session is a
+ * live transcode with no known total size — confirmed live against Jellyfin 10.11.11 that it responds
+ * `Accept-Ranges: none` — so it is NOT byte-range seekable as a single persistent resource. Seeking
+ * therefore means reloading the stream from the new offset (`StartTimeTicks`), the same pattern
+ * Jellyfin's own web client uses for exactly this situation (also confirmed live: `StartTimeTicks` is
+ * honoured and seeks efficiently via ffmpeg's own `-ss`, not by decoding from zero).
+ */
+private fun seekToAbsoluteMs(data: SegmentTrimResponse, ms: Long, scope: CoroutineScope, resumePlaying: Boolean? = null) {
+    val clamped = ms.coerceIn(0L, (data.durationSec * 1000).toLong())
+    trimPlayheadMs = clamped
     updatePlayheadDom(trimPlayheadMs, data.durationSec, currentTrimSelectedLabel())
+    if (trimStreamMode != "remux") {
+        seekVideoTo(clamped)
+        if (resumePlaying == true) (document.getElementById("seg-video") as? HTMLVideoElement)?.play()
+        return
+    }
+    val video = document.getElementById("seg-video") as? HTMLVideoElement ?: return
+    val wasPlaying = resumePlaying ?: !video.paused
+    trimRemuxBaseMs = clamped
+    scope.launch {
+        val info = SegmentApi.streamInfo(data.mediaId, data.episodeKey.ifEmpty { null }, data.episodeNumber, startMs = clamped)
+        if (info == null) { toast("Couldn't seek — try again"); return@launch }
+        video.src = info.url
+        if (wasPlaying) video.play()
+    }
+}
+
+private fun seekRelative(data: SegmentTrimResponse, deltaMs: Long, scope: CoroutineScope) {
+    seekToAbsoluteMs(data, trimPlayheadMs + deltaMs, scope)
 }
 
 /** "▶ play the cut" — seeks 3s before the marker's start, plays, and auto-pauses 3s after its end via
  *  a one-shot timeupdate listener (removed the moment it fires, so repeated plays don't stack listeners). */
-private fun playCut(seg: SegmentDto) {
+private fun playCut(seg: SegmentDto, data: SegmentTrimResponse, scope: CoroutineScope) {
     val video = document.getElementById("seg-video") as? HTMLVideoElement
     if (video == null || video.style.display == "none") {
-        toast("Playback isn't available for this title yet — it may not be matched in Jellyfin, or this browser can't direct-play it")
+        toast("Playback isn't available for this title yet — it may not be matched in Jellyfin, or this browser can't play it here")
         return
     }
-    val startSec = (seg.startMs / 1000.0 - 3.0).coerceAtLeast(0.0)
-    val endSec = (seg.endMs ?: seg.startMs) / 1000.0 + 3.0
-    video.currentTime = startSec
-    video.play()
+    val startMs = (seg.startMs - 3000).coerceAtLeast(0L)
+    val endMs = (seg.endMs ?: seg.startMs) + 3000
+    seekToAbsoluteMs(data, startMs, scope, resumePlaying = true)
     lateinit var stopHandler: (org.w3c.dom.events.Event) -> Unit
     stopHandler = {
-        if (video.currentTime >= endSec) {
+        if (currentVideoAbsoluteMs(video) >= endMs) {
             video.pause()
             video.removeEventListener("timeupdate", stopHandler)
         }
@@ -735,28 +787,44 @@ private fun wireVideo(data: SegmentTrimResponse, scope: CoroutineScope) {
     video.addEventListener("loadedmetadata") {
         video.style.display = "block"
         ph?.style?.display = "none"
-        tag2?.innerHTML = """<span class="vpill ok">direct play · no transcode</span>"""
-        video.currentTime = trimPlayheadMs / 1000.0
-        correctDuration(video.duration)
+        // Phase 190 (FR-190-3) — the badge must never claim "direct play" for a file whose audio was
+        // actually re-encoded; the reported bug is exactly a file that LOOKS like it's playing fine.
+        tag2?.innerHTML = if (trimStreamMode == "remux")
+            """<span class="vpill ok">audio re-encoded so your browser can play it · video untouched</span>"""
+        else """<span class="vpill ok">direct play · no transcode</span>"""
+        // A remux RELOAD (seeking mid-session) starts its own ffmpeg process at the requested offset
+        // and reports only the duration REMAINING from there, not the file's real length — only the
+        // very first load (trimRemuxBaseMs == 0: true for direct play always, and for a fresh remux
+        // open at position 0) is trusted to correct the timeline.
+        if (trimRemuxBaseMs == 0L) {
+            if (trimStreamMode != "remux") video.currentTime = trimPlayheadMs / 1000.0
+            correctDuration(video.duration)
+        }
     }
     video.addEventListener("error") {
         video.style.display = "none"
-        tag2?.innerHTML = """<span class="vpill warn">can't direct play here — use the timecodes below</span>"""
+        tag2?.innerHTML = """<span class="vpill warn">can't play this file here — use the timecodes below</span>"""
     }
     video.addEventListener("timeupdate") {
-        trimPlayheadMs = (video.currentTime * 1000).toLong()
+        trimPlayheadMs = currentVideoAbsoluteMs(video)
         updatePlayheadDom(trimPlayheadMs, data.durationSec, currentTrimSelectedLabel())
     }
     video.addEventListener("play") { playBtn?.textContent = "❚❚" }
     video.addEventListener("pause") { playBtn?.textContent = "▶" }
 
     scope.launch {
-        val url = SegmentApi.streamUrl(data.mediaId, data.episodeKey.ifEmpty { null }, data.episodeNumber)
-        if (url == null) {
+        // Phase 190 — request from wherever the playhead already is (0 on a fresh open; a resumed
+        // position on the same title). Harmless for a "direct" response — the server only honours
+        // startMs in remux mode (SegmentRoutes.kt) — but saves a mode-aware branch here.
+        val info = SegmentApi.streamInfo(data.mediaId, data.episodeKey.ifEmpty { null }, data.episodeNumber, startMs = trimPlayheadMs)
+        if (info == null) {
             tag2?.innerHTML = """<span class="vpill warn">not matched in Jellyfin yet</span>"""
             return@launch
         }
-        video.src = url
+        trimStreamMode = info.mode
+        trimPlaySessionId = info.playSessionId
+        trimRemuxBaseMs = if (info.mode == "remux") trimPlayheadMs else 0L
+        video.src = info.url
     }
 }
 
@@ -928,6 +996,23 @@ private fun wireDragHandles(root: Element, data: SegmentTrimResponse, scope: Cor
                 document.addEventListener("mouseup", upHandler)
             }
         }
+    }
+}
+
+/** Phase 190 (FR-190-6) — releases an in-flight remux transcode when the viewer leaves /segments
+ *  entirely (back to a media page, the dashboard, anywhere). Wired once, page-lifetime, same idiom as
+ *  [wireKeydownOnce]: `hashchange` fires on ANY hash change, so this only acts when the PATH itself
+ *  stopped being /segments — a same-page navigation to a different title is handled separately, in
+ *  [renderTrim]'s own `isNewTitle` branch, since that case never changes the path. */
+private fun wireStreamTeardownOnce() {
+    if (teardownWired) return
+    teardownWired = true
+    window.addEventListener("hashchange") {
+        if (Router.currentPath() == "/segments") return@addEventListener
+        val psid = trimPlaySessionId
+        if (psid.isBlank()) return@addEventListener
+        trimPlaySessionId = ""
+        (currentTrimScope ?: return@addEventListener).launch { SegmentApi.stopStream(psid) }
     }
 }
 

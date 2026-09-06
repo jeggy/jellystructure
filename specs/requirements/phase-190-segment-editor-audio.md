@@ -3,9 +3,60 @@
 > Live report: *"There's no audio, when playing the media file within my browser."*
 
 ## Status
-Planned (spec'd 2026-09-06). Not dev-reviewed. Diagnosed from the stream URL the editor mints plus a
-codec census of the live production library; the browser side was not instrumented — see Open
-questions.
+✓ Built 2026-09-06. Not dev-reviewed. Diagnosed from the stream URL the editor mints plus a codec
+census of the live production library; the browser side was still not instrumented — see Open
+questions. FR-190-4's probe was run live against this house's Jellyfin 10.11.11 before any code was
+written, per its own requirement — see the route's doc comment in Source references for the full
+findings, summarized here:
+
+- `VideoCodec=copy&AudioCodec=aac` on the plain progressive `/Videos/{id}/stream.mp4` endpoint needs no
+  `PlaybackInfo` negotiation — a bare GET, same shape as the existing `Static=true` URL — but responds
+  `Accept-Ranges: none`. A live transcode has no known total size and is not byte-range seekable; this
+  is standard Jellyfin/Emby behaviour, confirmed against a real title (28 Weeks Later, DTS/MKV).
+- The same request against `/Videos/{id}/master.m3u8` returns a genuine `#EXT-X-PLAYLIST-TYPE:VOD`
+  playlist (1001 segments, ~6s each) — seekable by design. But native `<video src>` HLS playback only
+  works in Safari; Chromium (the browser this bug was reported against) has no built-in HLS support,
+  and this admin frontend has no HLS.js dependency. Adopting HLS was ruled out for this phase — it would
+  add a new client-side JS dependency for a single admin tool, disproportionate to the fix.
+- `StartTimeTicks` IS honoured on the progressive endpoint (a request 20 minutes in returned in ~2s vs
+  ~6.5s from zero — ffmpeg seeking with `-ss`, not decoding from the start). This is exactly how
+  Jellyfin's own web client seeks a live transcode: reload `<video src>` with a new `StartTimeTicks`
+  rather than setting `currentTime` in place on a persistent resource.
+
+This reshaped FR-190-5 from "does seeking still work" (yes, but not via HTTP range) into "seeking means
+a reload, not an in-place `currentTime` set" — implemented client-side as `seekToAbsoluteMs`.
+
+**Implementation notes:**
+- FR-190-1/190-2: `SegmentRoutes.kt` gained `isBrowserSafeDirectPlay` (every audio track in
+  `{aac, mp3, opus, flac, vorbis}` AND the container in `{mp4, m4v, webm}`) and `containerOf` (the file
+  extension — `Track` has no container field). `GET /{itemId}/stream` now decides `direct` vs `remux`
+  from the unit's own stored `Track` list before minting a URL; the remux branch requests
+  `VideoCodec=copy&AudioCodec=aac&AudioChannels=2` plus a deterministic `PlaySessionId`
+  (`segmentsPlaySessionId` — stable per item/episode, not random, so a page reload harmlessly reuses it).
+  The response gained `mode` and `playSessionId` fields.
+- FR-190-3: `Segments.kt`'s `wireVideo` sets the badge from `trimStreamMode` (server-supplied), not a
+  hard-coded string — *"audio re-encoded so your browser can play it · video untouched"* for remux,
+  unchanged text for direct play and the two existing fallback cases.
+- FR-190-4: see above.
+- FR-190-5: new `seekToAbsoluteMs` is the one seek entry point (track-click, ±10s, "play the cut" all
+  route through it now). Direct play seeks in place, unchanged. Remux mode reloads `video.src` with
+  `startMs`, tracking `trimRemuxBaseMs` (the offset the current load started from) so `timeupdate` and
+  `playCut`'s auto-pause can report the TRUE absolute position (`currentVideoAbsoluteMs`) rather than
+  the reload-relative one `video.currentTime` alone would give. `correctDuration` is guarded to only
+  trust a load where `trimRemuxBaseMs == 0` — a reload seeked mid-file reports only its own remaining
+  duration, not the file's real length, and would otherwise corrupt the timeline on every seek.
+- FR-190-6: the remux URL carries the existing `SEGMENTS_STREAM_DEVICE_ID`. New
+  `POST /{itemId}/stream/stop` calls `JellyfinClient.stopActiveEncoding` (the exact mechanism Phase 180
+  already built and proved safe to call unconditionally). Teardown fires from two places: `renderTrim`'s
+  `isNewTitle` branch (opening a different title/episode within `/segments`) and a new
+  `wireStreamTeardownOnce` `hashchange` listener (leaving `/segments` entirely) — the two cases a single
+  hook can't both cover, since a same-path query-only navigation doesn't change `Router.currentPath()`.
+- New `SegmentStreamModeTest` (9 cases) covers `isBrowserSafeDirectPlay`/`containerOf`/
+  `segmentsPlaySessionId` directly, including the exact reported shape (DTS in MKV) and the exact
+  probed title. `compileKotlinLinuxX64`/`compileKotlinWasmJs` clean, `linuxX64Test` green. **Not
+  verified in a live browser** — no headless browser on this host, same limitation the investigation
+  itself hit; the live Jellyfin probe is real, the client-side reload-seek behaviour is reasoned through
+  but unwatched.
 
 ## Problem
 
@@ -186,13 +237,22 @@ should carry FR-189-3 itself.
 
 ## Open questions
 
-1. **The browser side was not instrumented.** The codec census makes the diagnosis near-certain for
-   46 % of the library, but which specific title the operator hit, and whether that file's audio is one
-   of the four unsupported codecs, was not checked. One line in the console
-   (`document.getElementById('seg-video').webkitAudioDecodedByteCount`) on the failing title would
-   settle it, and is worth capturing before the fix.
-2. Does Jellyfin 10.11.11 accept `VideoCodec=copy` with an audio-only transcode on
-   `/Videos/{id}/stream.{container}`, or does it require the full `PlaybackInfo` negotiation? FR-190-4.
-3. Is a stereo AAC downmix acceptable for judging a boundary, or should the original channel layout be
-   preserved where the browser could take it? Recommendation: downmix — this is a monitoring feed, not
-   a listening experience, and it removes a whole class of channel-layout failure.
+1. **Still open — the browser side was never instrumented**, before or after the fix. The codec census
+   makes the diagnosis near-certain for 46% of the library, but which specific title the operator hit
+   was never confirmed, and the fix itself has not been watched in a real browser (no headless browser
+   on this host — the same limitation the investigation hit). One line in the console
+   (`document.getElementById('seg-video').webkitAudioDecodedByteCount`) on a real remux-mode file would
+   settle whether sound is actually reaching the speaker, and is worth doing before this ships.
+2. **Answered (FR-190-4).** Jellyfin 10.11.11 accepts `VideoCodec=copy&AudioCodec=aac` as a bare GET on
+   the plain progressive stream endpoint — no `PlaybackInfo` negotiation needed, same shape as the
+   existing `Static=true` URL. It responds `Accept-Ranges: none` (not byte-range seekable, as a live
+   transcode with unknown total size), which is why seeking is implemented as a `StartTimeTicks` reload
+   rather than an in-place `currentTime` set — see the Status section and `SegmentRoutes.kt`'s own doc
+   comment for the full probe.
+3. **Decided: downmix.** Implemented as `AudioChannels=2` unconditionally — this is a monitoring feed
+   for judging a boundary, not a listening experience, and downmixing removes a whole class of
+   channel-layout failure the editor has no reason to expose an operator to.
+4. **New, from the live probe.** Whether to adopt HLS.js (or similar) for this admin frontend in a
+   future phase, which would make the genuinely-seekable HLS-VOD shape usable in Chromium and avoid the
+   reload-per-seek pattern entirely. Deliberately out of scope here — a new client-side dependency is a
+   bigger decision than this bug fix warrants — but worth stating rather than silently foreclosing.
