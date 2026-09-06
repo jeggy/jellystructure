@@ -97,30 +97,68 @@ class RealtimeIngestService(
     fun enqueue(jellyfinId: String) {
         queueScope.launch {
             runTagged("realtime-ingest-$jellyfinId", "ingest", "library", null, "Realtime ingest: $jellyfinId") {
-                if (ingestOnce(jellyfinId)) {
-                    dirtyItemStore.clear(jellyfinId)
-                    lastSuccessfulIngestAt = dev.jellystructure.nowEpochSec()
-                } else {
-                    delay(60_000L) // FR C.4 — one retry after 60s for TMDB hiccups etc.
-                    if (ingestOnce(jellyfinId)) {
+                when (ingestOnce(jellyfinId)) {
+                    IngestOutcome.OK -> {
                         dirtyItemStore.clear(jellyfinId)
                         lastSuccessfulIngestAt = dev.jellystructure.nowEpochSec()
-                    } else {
-                        // FR-181-5 — remembered instead of forgotten: the next Library-scoped pipeline run
-                        // (scheduled scan, manual click, or SCAN_ON_START) retries this id automatically.
-                        dirtyItemStore.markDirty(jellyfinId, "ingest failed twice", store.nowMs())
-                        Logger.warn("Realtime ingest failed twice for jellyfinId=$jellyfinId — recorded for retry on the next scan cycle", "ingest")
+                    }
+                    // Phase 195 (FR-195-3) — the server was busy; nothing about this id is wrong. Burning
+                    // an attempt on it, and then recording it as a failure, is what made the dirty set
+                    // self-sustaining: a saturated gate marked ~117 healthy items dirty, the next cycle
+                    // replayed all 117 at once, saturated the gate again, and re-marked them. Defer
+                    // instead — the item keeps its attempts and is retried on the normal cadence.
+                    IngestOutcome.BUSY -> Logger.info(
+                        "Realtime ingest deferred for jellyfinId=$jellyfinId — server busy, not counted as a failure",
+                        "ingest",
+                    )
+                    IngestOutcome.FAILED -> {
+                        delay(60_000L) // FR C.4 — one retry after 60s for TMDB hiccups etc.
+                        when (ingestOnce(jellyfinId)) {
+                            IngestOutcome.OK -> {
+                                dirtyItemStore.clear(jellyfinId)
+                                lastSuccessfulIngestAt = dev.jellystructure.nowEpochSec()
+                            }
+                            IngestOutcome.BUSY -> Logger.info(
+                                "Realtime ingest deferred for jellyfinId=$jellyfinId — server busy, not counted as a failure",
+                                "ingest",
+                            )
+                            IngestOutcome.FAILED -> {
+                                // FR-181-5 — remembered instead of forgotten: the next Library-scoped pipeline run
+                                // (scheduled scan, manual click, or SCAN_ON_START) retries this id automatically.
+                                dirtyItemStore.markDirty(jellyfinId, "ingest failed twice", store.nowMs())
+                                Logger.warn("Realtime ingest failed twice for jellyfinId=$jellyfinId — recorded for retry on the next scan cycle", "ingest")
+                            }
+                        }
                     }
                 }
             }
         }
     }
 
-    private suspend fun ingestOnce(jellyfinId: String): Boolean =
-        runCatching { ingestByJellyfinId(jellyfinId) }.getOrElse {
-            Logger.warn("Realtime ingest error for jellyfinId=$jellyfinId: ${it.message}", "ingest")
-            false
-        }
+    /**
+     * Phase 195 (FR-195-3) — three outcomes, not two. [BUSY] means a gate refused us within its
+     * deadline: an availability fact about the server, saying nothing about whether this id can be
+     * ingested. Collapsing it into [FAILED] (which is what `Boolean` forced) is the same mistake
+     * Phase 194 fixes in `isTokenValid` — an unavailable dependency and a bad input are not the same
+     * fact, and a retry policy that cannot tell them apart cannot converge.
+     */
+    private enum class IngestOutcome { OK, BUSY, FAILED }
+
+    private suspend fun ingestOnce(jellyfinId: String): IngestOutcome =
+        runCatching { ingestByJellyfinId(jellyfinId) }
+            .fold(
+                onSuccess = { if (it) IngestOutcome.OK else IngestOutcome.FAILED },
+                onFailure = { e ->
+                    val busy = e is dev.jellystructure.ops.ProcessGate.GateTimeoutException ||
+                        e is dev.jellystructure.OutboundHttp.GateTimeoutException
+                    if (busy) {
+                        IngestOutcome.BUSY
+                    } else {
+                        Logger.warn("Realtime ingest error for jellyfinId=$jellyfinId: ${e.message}", "ingest")
+                        IngestOutcome.FAILED
+                    }
+                },
+            )
 
     private suspend fun ingestByJellyfinId(jellyfinId: String): Boolean {
         val cfg = configStore.current

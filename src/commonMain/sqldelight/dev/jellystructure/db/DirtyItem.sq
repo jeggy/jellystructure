@@ -5,17 +5,58 @@ CREATE TABLE dirty_item (
     id INTEGER NOT NULL PRIMARY KEY,
     jellyfin_id TEXT NOT NULL UNIQUE,
     reason TEXT NOT NULL,
-    created_at INTEGER NOT NULL
+    created_at INTEGER NOT NULL,
+    -- Phase 195 (FR-195-4) — consecutive GENUINE failures for this id. A "server busy" gate timeout is
+    -- a deferral and must never increment it (RealtimeIngestService.IngestOutcome.BUSY), or a saturated
+    -- gate would back off the very items it just failed to look at.
+    attempt_count INTEGER NOT NULL DEFAULT 1,
+    -- Epoch ms before which this id is not retried. Widens with attempt_count so one permanently
+    -- un-ingestable item stops costing a share of every cycle's burst.
+    next_attempt_at INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE INDEX dirty_item_created ON dirty_item(created_at);
+CREATE INDEX dirty_item_next_attempt ON dirty_item(next_attempt_at);
+
+-- Phase 195 (FR-195-4) — was INSERT OR IGNORE, which made a repeat failure a no-op: attempt_count could
+-- never grow and next_attempt_at could never widen. The conflict branch bumps the attempt counter and
+-- pushes the next attempt out, while leaving created_at alone so `all`'s oldest-first order still means
+-- "longest outstanding" (the fairness property FR-195-1's bounded drain depends on).
+-- Phase 195 (FR-195-4) — `markDirty` is UPDATE-then-INSERT-OR-IGNORE inside one transaction rather
+-- than an UPSERT: this project's SQLDelight dialect is sqlite_3_18, which predates `ON CONFLICT DO
+-- UPDATE`. The update no-ops when the id is new, the insert no-ops when it already existed, so exactly
+-- one of the two takes effect and neither needs a prior read.
+--
+-- The backoff is computed in SQL from the row's own attempt_count rather than read into Kotlin and
+-- written back — a read-then-write would race two concurrent failures for the same id and could hand
+-- the second one the first's (shorter) interval. Doubling, clamped at :cap_ms. created_at is left
+-- alone so `all`/`due`'s oldest-first order still means "longest outstanding" (the fairness property
+-- FR-195-1's bounded drain depends on).
+bumpAttempt:
+UPDATE dirty_item
+SET reason = :reason,
+    attempt_count = attempt_count + 1,
+    next_attempt_at = :now + MIN(:base_ms << MIN(attempt_count, 10), :cap_ms)
+WHERE jellyfin_id = :jellyfin_id;
 
 insert:
-INSERT OR IGNORE INTO dirty_item(jellyfin_id, reason, created_at)
-VALUES (:jellyfin_id, :reason, :created_at);
+INSERT OR IGNORE INTO dirty_item(jellyfin_id, reason, created_at, attempt_count, next_attempt_at)
+VALUES (:jellyfin_id, :reason, :created_at, 1, :created_at + :base_ms);
 
 all:
 SELECT * FROM dirty_item ORDER BY created_at ASC;
+
+-- Phase 195 (FR-195-1/FR-195-4) — the bounded drain's worklist: only ids whose backoff has elapsed,
+-- oldest-outstanding first so nothing is starved by newer arrivals, capped so one cycle can never
+-- reproduce the unbounded burst this phase exists to remove.
+due:
+SELECT * FROM dirty_item WHERE next_attempt_at <= :now ORDER BY created_at ASC LIMIT :limit;
+
+countDue:
+SELECT COUNT(*) FROM dirty_item WHERE next_attempt_at <= :now;
+
+oldestCreatedAt:
+SELECT MIN(created_at) FROM dirty_item;
 
 clear:
 DELETE FROM dirty_item WHERE jellyfin_id = :jellyfin_id;

@@ -4,9 +4,37 @@
 > new episode of Klovn."*
 
 ## Status
-`Planned` — design-authored 2026-09-06, not dev-reviewed. Root-caused against the production database.
-Companion phase: **195** (the ingest retry set that cannot drain). Neither alone is sufficient — see
-*Why both phases are needed*.
+✓ Built 2026-09-06. Not dev-reviewed, not live-verified (no deploy — the running backend still has the
+old behaviour). Root-caused against the production database. Companion phase: **195** (the ingest retry
+set that cannot drain). Neither alone is sufficient — see *Why both phases are needed*.
+
+**Implementation notes:**
+- FR-196-1/2: `upsertItemDbOnly` takes an explicit `examined: Boolean`. When false it reads the stored
+  value back via a new `getLastExamined` query and hands it to `upsert` — `INSERT OR REPLACE` rewrites
+  every column, so carrying it forward is the only way to leave it alone (the shape Phase 163 already
+  uses for `has_segments` in the same function). `updateOne` gained `examined: Boolean = false`, so all
+  68 existing call sites are correct by omission; the failure mode of a wrong `false` is one redundant
+  scan, of a wrong `true` a title that silently stops being scanned. Only two paths pass `true`:
+  `addOrUpdate` (the scan write path) and `POST /api/media/{id}/sync` — and the latter only on the
+  branches that actually re-probe files (`syncMovie`/`syncSeriesEpisodes`), not `rescanMetadata`, which
+  re-fetches TMDB without reading a single file.
+- FR-196-3: renamed to `last_examined_at` in the column, `lastExaminedMap`, `lastExaminedAt()` and
+  `isDueForRecheck`'s parameter. **Deviation:** done as a table rebuild in `40.sqm`, not
+  `ALTER TABLE … RENAME COLUMN` — this project's SQLDelight dialect is `sqlite_3_18`, which predates
+  both `RENAME COLUMN` (3.25) and `UPSERT`.
+- FR-196-4: folded into `40.sqm`'s `INSERT…SELECT` as `MIN(last_checked, scanned_at * 1000)`.
+  **Dry-run against a copy of the production database:** 516 rows in, 516 out, `SUM(length(json))`
+  byte-identical at 31 461 342, all four `media_*` indexes recreated, 0 rows left ahead of their own
+  `scannedAt`, and Klovn's value lands on 2026-09-05 01:49 → immediately due. No forced repair rescan.
+- FR-196-5: **deviation** — this `Logger` has no DEBUG level, so rather than adding one, the freshness
+  filter emits a single compact INFO line naming the five longest-unexamined skips and their age
+  (`klovn-2005 31h (airing)`). Same diagnostic value; no new log level. The item-detail surface is
+  **not built** — the API change is there but the wasmJs detail page was left alone.
+- FR-196-6: an `AIRING_FLOOR_MS` of 24 h in `isDueForRecheck`, applied as `minOf(configuredTier, floor)`
+  so a *faster* configured cadence still wins, and as the whole predicate when the tier is `never`.
+- 4 new `FreshnessFilterTest` cases (7 → 11) covering the floor, its non-application to non-airing
+  titles, `never`, and the faster-cadence-still-wins property. `compileKotlinLinuxX64` clean,
+  `verifyCommonMainJellystructureDbMigration` green, `linuxX64Test` 221/221.
 
 ## The finding
 
@@ -164,8 +192,12 @@ elsewhere — but the two must stop disagreeing silently.
 A one-time backfill sets `last_checked = min(last_checked, scanned_at * 1000)` for every row, so items
 currently hidden behind a falsely-fresh clock become due immediately.
 
-Bounded and safe: it can only move the value backwards, i.e. only ever cause *more* scanning. Log the
-count affected — production would move 89 rows today.
+Bounded and safe: it can only move the value backwards, i.e. only ever cause *more* scanning.
+
+*Measured on a copy of the production database:* **all 516 rows** move, not the 89 quoted above — 89 is
+how many were over an hour ahead of their own `scannedAt`, but essentially every row is ahead by *some*
+amount, because the clock is reset by writes that happen after every scan. Klovn's lands exactly on its
+`scannedAt` (2026-09-05 01:49) and is immediately due.
 
 Do **not** trigger a repair rescan as part of this: the Phase 188 recovery is the standing reminder
 that a broad forced rescan has its own blast radius. Let the normal cadence pick them up.
