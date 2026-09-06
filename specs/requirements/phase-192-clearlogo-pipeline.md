@@ -5,9 +5,45 @@
 > here."*
 
 ## Status
-Planned (spec'd 2026-09-06). Not dev-reviewed. `cf9ca84ee58176b63c69b834e56f349f` is Cooking Trouble's
+✓ Built 2026-09-06. Not dev-reviewed. `cf9ca84ee58176b63c69b834e56f349f` is Cooking Trouble's
 Jellyfin id (`breaking-bad`, TMDB 1396). Three defects confirmed against the live library and the
-TMDB API; the "empty tiles" symptom itself was **not reproduced in a browser** — see Open questions.
+TMDB API; the "empty tiles" symptom itself was **not reproduced in a browser** — see Open questions,
+now also true of the fix (no headless browser on this host).
+
+**Implementation notes:**
+- FR-192-1: `downloadUnchecked` (`ArtworkDownloader.kt`) now requires all three — HTTP 2xx, an
+  `image/*` Content-Type, and a recognized magic-byte signature (new `sniffImageSignature`/
+  `SniffedImage`, covering PNG/JPEG/WEBP/GIF/SVG) — before a single byte reaches disk. A rejection
+  writes nothing and logs the URL + status/content-type/signature. Covers every caller uniformly
+  (poster/backdrop/stills/season-posters/logo all go through this one function).
+- FR-192-2: new `ArtworkDownloader.repairCorruptArtwork(item)` sweeps every known artwork path for an
+  item, removes (image + `.manual` + `.src`) anything that fails the magic-byte check, and a new
+  `POST /api/media/batch/artwork-repair` route runs it across the library, recording an
+  `artwork_corrupt_removed` History entry per affected item. Wired to a new **Repair corrupt artwork**
+  Dashboard quick-action button (`MediaApi.batchArtworkRepair`).
+- FR-192-3: when `downloadUnchecked` sniffs SVG bytes destined for a `.png` path, it rasterises via the
+  existing `FfmpegRunner.resizeImage` (300px height, alpha preserved) before the file ever lands under
+  that name — writes nothing if rasterisation fails. This is the same code path `saveAsset` (the
+  operator picker) and the automatic fetch both go through, so both get it for free.
+- FR-192-4: `fetch()` gained a logo branch mirroring R126's season-poster shape — `getMovieImages`/
+  `getTvImages`, filtered to `resolvedLanguage` → textless → any, and within whichever tier wins, a
+  raster candidate is preferred over an SVG one when both exist. `isArtworkIncomplete()` now returns
+  true when the logo is missing and the item has a `tmdbId` (movies included, not just series).
+  `.manual` is respected identically to poster/backdrop (the branch never runs when a logo already
+  exists on disk).
+- FR-192-5: the `clearlogo` `ArtTarget`'s aspect is now `4 / 1` (was `16 / 9`); its grid cards and the
+  local on-disk tile get a new `.art-card.logo` class (`object-fit: contain` + a neutral mid-tone
+  checkerboard background, visible against both light and dark ink in both admin themes); the lightbox
+  gained the same checkerboard backing behind `#lb-img` (which already used `contain`, so only the
+  transparency problem needed fixing there).
+- FR-192-6: the artwork-tab explainer gained the `clearlogo`-and-not-on-disk case — *"No logo saved yet
+  — pick one below, or let the next artwork run fetch it."* — before falling through to the generic
+  fallback/showing-N copy.
+- New `ArtworkSignatureTest` (8 cases) covers the magic-byte sniff directly, including the exact 504
+  HTML page shape from the live incident. `compileKotlinLinuxX64`/`compileKotlinWasmJs` clean,
+  `linuxX64Test` green. **Not live-verified**: the repair sweep hasn't been run against the two known
+  corrupt files in production, and the CSS fix hasn't been seen in a browser (no headless browser on
+  this host, same limitation the investigation itself hit).
 
 ## What was found
 
