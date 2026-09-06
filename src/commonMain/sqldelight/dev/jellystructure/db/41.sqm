@@ -1,0 +1,16 @@
+-- Phase 195 (FR-195-4) — per-item backoff for the failed-ingest retry set. Every outstanding id used to
+-- be replayed on every Library cycle forever, so a permanently un-ingestable item kept paying for a full
+-- share of the retry burst indefinitely, and the burst itself is what saturated the gate that created
+-- the failures. Production carried 117 such rows for 12+ hours without draining.
+--
+-- attempt_count: consecutive genuine failures (a "server busy" deferral must NOT increment it — see
+-- RealtimeIngestService.IngestOutcome). next_attempt_at: epoch ms before which this id is not retried.
+-- Existing rows default to 1 attempt and 0 (= due immediately), so the first cycle after this migration
+-- behaves exactly as before and the backoff only starts widening on the next real failure.
+--
+-- This migration must stay byte-for-byte in sync with DirtyItem.sq's CREATE TABLE statement, per the
+-- SQLDelight-migration rule.
+ALTER TABLE dirty_item ADD COLUMN attempt_count INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE dirty_item ADD COLUMN next_attempt_at INTEGER NOT NULL DEFAULT 0;
+
+CREATE INDEX dirty_item_next_attempt ON dirty_item(next_attempt_at);

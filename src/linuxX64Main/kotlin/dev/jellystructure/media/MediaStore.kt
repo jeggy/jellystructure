@@ -120,18 +120,29 @@ class MediaStore(
     private val metaFacetsCache  = AtomicReference<Pair<Long, MetaFacets>?>(null)
     private val nfoCoveredCache  = AtomicReference<Pair<Long, Int>?>(null)
 
-    // Phase 91: per-item last_checked timestamps (item.id → epoch ms). Loaded from DB on startup,
-    // updated on upsertItem. Used by the pipeline freshness policy to skip recently-checked items.
+    // Phase 91: per-item last-examined timestamps (item.id → epoch ms). Loaded from DB on startup.
+    // Used by the pipeline freshness policy to skip recently-examined items.
+    //
+    // Phase 196 — **set only by a completed examination of the title's files on disk**, never by a
+    // metadata write. It was `last_checked` and was stamped unconditionally inside upsertItemDbOnly,
+    // so every unrelated writer (write_nfo, sync_jellyfin, artwork fetch, segment writes, Sonarr
+    // enrichment, a manual edit) silently deferred the next real scan of a title nobody had looked at.
+    // Measured on production 2026-09-06: one write_nfo pass reset 310 rows within two seconds, 89 of
+    // 516 rows sat over an hour ahead of their own scannedAt, and Fjollerne went 31 hours unexamined while
+    // reporting a freshness clock minutes old — with a new episode on disk the whole time. Worse, the
+    // Sonarr enrichment that writes `sonarrNextAiringDate` — the field that makes Phase 181's
+    // isActivelyAiring true — was itself resetting the clock that the resulting `daily` tier is
+    // compared against, so the fix aimed at airing shows could never fire for them.
     // Phase 182 (FR-182-2): this is the one cache here that is genuinely MUTATED in place (not
     // replaced wholesale like the Map caches above), from every scan thread via the non-suspend
     // upsertItemDbOnly (called synchronously inside SQLDelight's db.transaction{} — a kotlinx.coroutines
     // Mutex cannot guard it, its withLock is suspend-only). Concurrent unsynchronized `put`s into a plain
     // MutableMap is a real data race that can corrupt the map's internal structure; this was the leading
     // hypothesis for the reported "4 items stuck on 4 scan threads, forever, uncancellably" incident —
-    // see phase-182's §2.4. Guarded by [lastCheckedLock], a SpinLock so it works from upsertItemDbOnly's
+    // see phase-182's §2.4. Guarded by [lastExaminedLock], a SpinLock so it works from upsertItemDbOnly's
     // non-suspend context too.
-    private val lastCheckedMap: MutableMap<String, Long> = mutableMapOf()
-    private val lastCheckedLock = SpinLock()
+    private val lastExaminedMap: MutableMap<String, Long> = mutableMapOf()
+    private val lastExaminedLock = SpinLock()
 
     // Jellystructure-defined tags (those in the JS-tag store) always survive a re-scan, which
     // otherwise replaces an item's tags with the fresh Jellyfin set (constitution invariant #6).
@@ -177,8 +188,8 @@ class MediaStore(
     suspend fun load() {
         val count = db.mediaQueries.count().executeAsOne()
         Logger.info("MediaStore: DB has $count media items")
-        db.mediaQueries.allLastChecked().executeAsList().forEach { row ->
-            lastCheckedLock.withLock { lastCheckedMap[row.id] = row.last_checked }
+        db.mediaQueries.allLastExamined().executeAsList().forEach { row ->
+            lastExaminedLock.withLock { lastExaminedMap[row.id] = row.last_examined_at }
         }
         backfillSearchText()
         backfillTimestamps()
@@ -202,7 +213,7 @@ class MediaStore(
                     prefix.isNotBlank() && item.path.startsWith(prefix)
                 } ?: continue
                 val libId = lib.jellyfinId.ifBlank { null } ?: continue
-                upsertItemDbOnly(item.copy(libraryId = libId))
+                upsertItemDbOnly(item.copy(libraryId = libId), examined = false)  // Phase 196: a backfill reads no files
                 backfilled++
             }
         }
@@ -229,14 +240,15 @@ class MediaStore(
                     updatedAt = item.updatedAt ?: item.scannedAt,
                     episodes = item.episodes.map { ep -> if (ep.createdAt == null) ep.copy(createdAt = fallback) else ep },
                 )
-                upsertItemDbOnly(backfilled)
+                upsertItemDbOnly(backfilled, examined = false)  // Phase 196: a backfill reads no files
             }
         }
         allItemsMutex.withLock { allItemsCache = null }
         Logger.info("MediaStore: backfilled createdAt/updatedAt for ${toBackfill.size} rows")
     }
 
-    fun lastChecked(id: String): Long? = lastCheckedLock.withLock { lastCheckedMap[id] }
+    /** Phase 196 — epoch ms of the last completed examination of this item's files; see [lastExaminedMap]. */
+    fun lastExaminedAt(id: String): Long? = lastExaminedLock.withLock { lastExaminedMap[id] }
 
     @OptIn(ExperimentalForeignApi::class)
     fun nowMs(): Long = memScoped {
@@ -324,7 +336,9 @@ class MediaStore(
                 // arrives. (epoch seconds; nowMs() is ms.)
                 val freshAdded = if (gainedEpisodes) nowMs() / 1000 else (item.addedAt ?: old?.addedAt)
                 merged = merged.copy(addedAt = listOfNotNull(freshAdded, old?.addedAt).maxOrNull())
-                upsertItemDbOnly(merged)
+                // Phase 196: scan output, and deleteAll above means there is no stored value to carry
+                // forward anyway — this is a genuine examination.
+                upsertItemDbOnly(merged, examined = true)
             }
         }
     }
@@ -617,7 +631,10 @@ class MediaStore(
         // staleness gate (nfoWrittenAt > jfSyncedAt, comparing against a just-reset baseline). Carry
         // them forward from `old` exactly like the other drift/lock state above.
         merged = merged.copy(nfoWrittenAt = old?.nfoWrittenAt, nfoHash = old?.nfoHash, jfSyncedAt = old?.jfSyncedAt)
-        upsertItem(merged)
+        // Phase 196 (FR-196-2) — this is THE scan write path (runScan's per-item store, and the targeted
+        // per-item sync): the Scanner has just probed this title's files on disk. One of only two places
+        // allowed to advance the freshness clock.
+        upsertItem(merged, examined = true)
     }
 
     /**
@@ -641,6 +658,14 @@ class MediaStore(
         // Phase 184: false on exactly the routes that deliberately CHANGE metadataLanguage (the set/
         // reset route, and its history revert) — same contract as [respectTmdbMatchLock].
         respectMetadataLanguageLock: Boolean = true,
+        // Phase 196 (FR-196-2) — true ONLY when the caller has just re-read this title's files from disk
+        // (today: Scanner.syncSeriesEpisodes and the season re-sync). Every other caller here is a
+        // metadata write — an NFO stamp, a Jellyfin sync stamp, an artwork fetch, a Sonarr enrichment, a
+        // manual edit — and must leave the freshness clock alone, or it defers a scan of files nobody
+        // looked at. Defaults to false so a new call site is safe by omission: the failure mode of a
+        // wrong `false` is one redundant scan, of a wrong `true` a title that silently stops being
+        // scanned at all.
+        examined: Boolean = false,
     ) {
         val existing = get(item.id)
         var merged = if (existing != null && existing.titlesByLang.isNotEmpty()) {
@@ -651,7 +676,7 @@ class MediaStore(
         if (respectMetadataLanguageLock) merged = preserveMetadataLanguage(merged, existing)
         merged = merged.copy(episodes = stampEpisodeCreatedAt(merged.episodes, existing?.episodes))
         merged = stampTimestamps(merged, existing)
-        upsertItem(merged)
+        upsertItem(merged, examined)
     }
 
     /**
@@ -671,7 +696,7 @@ class MediaStore(
         jellyfinIdIndex.value  = null
         genreIndexCache.value  = null
         libraryVersionAtomic.incrementAndGet()
-        lastCheckedLock.withLock { lastCheckedMap.remove(item.id) }
+        lastExaminedLock.withLock { lastExaminedMap.remove(item.id) }
         db.mediaQueries.deleteById(item.id)
         return true
     }
@@ -827,10 +852,26 @@ class MediaStore(
     // (non-suspend) db.transaction {} block. Those three callers invalidate allItemsCache themselves,
     // once for the whole batch, rather than patching per item — they're either one-time startup work or
     // an already-wholesale replace, not the hot per-item path upsertItem's cache patch exists for.
-    private fun upsertItemDbOnly(item: MediaItem) {
+    /**
+     * Phase 196 (FR-196-1/FR-196-2) — [examined] is true **only** when the caller has just completed a
+     * real examination of this title's files on disk (a scan or a targeted per-item sync that actually
+     * probed them). It used to be unconditional (`last_checked = now()` on every single write), which
+     * meant an NFO write, a Jellyfin sync stamp, an artwork fetch or a Sonarr enrichment all deferred
+     * the next real scan of a title nobody had read — see [lastExaminedMap]'s doc for the measured
+     * production damage and the circular case that made it worst for exactly the airing shows Phase 181
+     * set out to protect.
+     *
+     * When false the stored value is read back and handed straight to `upsert` — `INSERT OR REPLACE`
+     * rewrites every column on every write, so carrying it forward is the only way to leave it alone.
+     * Exactly the shape Phase 163 already uses for `has_segments` two lines down.
+     */
+    private fun upsertItemDbOnly(item: MediaItem, examined: Boolean) {
         libraryVersionAtomic.incrementAndGet()
-        val now = nowMs()
-        lastCheckedLock.withLock { lastCheckedMap[item.id] = now }
+        val lastExamined = if (examined) {
+            nowMs().also { now -> lastExaminedLock.withLock { lastExaminedMap[item.id] = now } }
+        } else {
+            db.mediaQueries.getLastExamined(item.id).executeAsOneOrNull()?.last_examined_at
+        }
         // Phase 163: has_segments' source of truth is now MediaSegmentStore's own point-update, not this
         // item's (now-stale) SegmentMarkers blob — INSERT OR REPLACE still touches every column on every
         // write, so this carries the currently-stored value forward instead of recomputing it wrong.
@@ -851,11 +892,11 @@ class MediaStore(
             poster_path = item.posterPath,
             episode_count = item.episodes.size.toLong(),
             search_text = buildSearchText(item),
-            last_checked = now,
+            last_examined_at = lastExamined,
         )
     }
 
-    private suspend fun upsertItem(item: MediaItem) {
+    private suspend fun upsertItem(item: MediaItem, examined: Boolean) {
         // Bug fix: this used to null the whole cache on every single write. During an active scan,
         // addOrUpdate fires once per scanned item from potentially dozens of concurrent workers — the
         // cache was being invalidated multiple times a second for the run's entire duration, so any
@@ -874,7 +915,7 @@ class MediaStore(
         peopleIndexCache.value = null
         jellyfinIdIndex.value  = null
         genreIndexCache.value  = null
-        upsertItemDbOnly(item)
+        upsertItemDbOnly(item, examined)
     }
 
     private fun buildSearchText(item: MediaItem): String = buildString {

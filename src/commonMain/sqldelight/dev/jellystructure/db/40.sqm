@@ -1,0 +1,60 @@
+-- Phase 196 (FR-196-3 / FR-196-4) — `last_checked` never meant "we examined this title's files"; it
+-- meant "some code wrote this row", because upsertItemDbOnly stamped it unconditionally on every write
+-- (write_nfo, sync_jellyfin, artwork, Sonarr enrichment, a manual edit…). The freshness filter reads it
+-- as the former, so any metadata write deferred a real file scan — 310 production rows were reset within
+-- two seconds by one write_nfo pass, and an actively-airing series went 31 hours without being examined
+-- while carrying a freshness clock that was minutes old.
+--
+-- Done as a table rebuild rather than `ALTER TABLE … RENAME COLUMN`: this project's SQLDelight dialect
+-- is sqlite_3_18, which predates both RENAME COLUMN (3.25) and UPSERT. `ALTER TABLE … RENAME TO` and
+-- INSERT…SELECT are all available in 3.18, so the standard rebuild is the portable form.
+--
+-- The CREATE TABLE below must stay byte-for-byte in sync with Media.sq's, per the SQLDelight-migration
+-- rule — including column order, since the INSERT…SELECT below is positional.
+DROP INDEX media_kind;
+DROP INDEX media_scanned_at;
+DROP INDEX media_search_text;
+DROP INDEX media_has_segments;
+
+ALTER TABLE media RENAME TO media_pre196;
+
+CREATE TABLE media (
+    id TEXT NOT NULL PRIMARY KEY,
+    json TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    title TEXT NOT NULL,
+    year INTEGER,
+    studio TEXT,
+    network TEXT,
+    issue_count INTEGER NOT NULL DEFAULT 0,
+    language_mix INTEGER NOT NULL DEFAULT 0,
+    scanned_at INTEGER NOT NULL,
+    tmdb_id INTEGER,
+    poster_path TEXT,
+    episode_count INTEGER NOT NULL DEFAULT 0,
+    search_text TEXT NOT NULL DEFAULT '',
+    last_examined_at INTEGER,
+    has_segments INTEGER NOT NULL DEFAULT 0
+);
+
+-- FR-196-4: the copy also repairs the values. `MIN(last_checked, scanned_at * 1000)` moves the clock
+-- **backwards only**, to the last time this title's files were genuinely read, so every row currently
+-- hiding behind a falsely-fresh clock becomes due immediately. Backwards-only means the worst this can
+-- do is cause more scanning; a row already at or behind its scan time is unchanged. Deliberately no
+-- forced repair rescan — Phase 188's recovery is the standing reminder of that blast radius.
+INSERT INTO media(
+    id, json, kind, title, year, studio, network, issue_count, language_mix, scanned_at,
+    tmdb_id, poster_path, episode_count, search_text, last_examined_at, has_segments
+)
+SELECT
+    id, json, kind, title, year, studio, network, issue_count, language_mix, scanned_at,
+    tmdb_id, poster_path, episode_count, search_text,
+    MIN(last_checked, scanned_at * 1000), has_segments
+FROM media_pre196;
+
+DROP TABLE media_pre196;
+
+CREATE INDEX media_kind ON media(kind);
+CREATE INDEX media_scanned_at ON media(scanned_at);
+CREATE INDEX media_search_text ON media(search_text);
+CREATE INDEX media_has_segments ON media(has_segments);

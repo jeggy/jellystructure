@@ -36,7 +36,7 @@ class WalCheckpointTest {
             id = "test-item", json = "{}", kind = "MOVIE", title = "Test", year = null,
             studio = null, network = null, issue_count = 0L, language_mix = 0L, scanned_at = 0L,
             tmdb_id = null, poster_path = null, episode_count = 0L, search_text = "test",
-            last_checked = 0L, has_segments = 0L,
+            last_examined_at = 0L, has_segments = 0L,
         )
         db.walCheckpoint()   // must not throw
     }

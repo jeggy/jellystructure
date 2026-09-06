@@ -248,10 +248,26 @@ suspend fun runPipeline(
                 }
                 // FR-181-5 — anything a prior ingest attempt exhausted its retries on gets one more try
                 // every Library cycle, instead of being forgotten the moment the in-memory retry gave up.
-                val outstanding = dirtyItemStore.all()
-                if (outstanding.isNotEmpty()) {
-                    Logger.info("Retrying ${outstanding.size} previously-failed ingest(s)", "ingest")
-                    outstanding.forEach { realtimeIngest.enqueue(it) }
+                //
+                // Phase 195 (FR-195-1/FR-195-5) — bounded, and deliberately AFTER the sweep's own
+                // enqueues above so a genuinely new episode never queues behind the backlog. This used
+                // to be `dirtyItemStore.all().forEach { enqueue(it) }`: 117 ids dispatched at once, each
+                // fanning out one ffprobe waiter per episode file, into a gate with 12 background
+                // permits and a 30 s deadline. Nothing completed, everything was re-marked dirty, and
+                // the next cycle did it again — the set had not drained in 12 hours.
+                val drainLimit = configStore.current.behavior.scanWorkers.coerceIn(1, 100) * 2
+                val now = store.nowMs()
+                val dueCount = dirtyItemStore.countDue(now)
+                val batch = dirtyItemStore.due(now, drainLimit)
+                if (batch.isNotEmpty()) {
+                    // No silent caps (Phase 183's own rule): say what was attempted AND what was left,
+                    // or a capped pass reads as "we tried everything" when it did not.
+                    Logger.info(
+                        "Retrying ${batch.size} of $dueCount due previously-failed ingest(s) " +
+                            "(${dirtyItemStore.count()} outstanding in total)",
+                        "ingest",
+                    )
+                    batch.forEach { realtimeIngest.enqueue(it) }
                 }
             }.onFailure { Logger.warn("Library sweep failed: ${it.message}", "ingest") }
 

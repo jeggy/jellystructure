@@ -2,6 +2,7 @@ package dev.jellystructure.media
 
 import dev.jellystructure.auth.JellyfinItem
 import dev.jellystructure.config.PipelineStep
+import dev.jellystructure.log.Logger
 
 /** ms duration for a freshness cadence string: "daily", "weekly", "monthly", "6months", "yearly", "never" */
 fun cadenceMs(cadence: String): Long? = when (cadence.trim().lowercase()) {
@@ -42,7 +43,7 @@ private fun dateStringFromEpochMs(epochMs: Long): String {
 
 /**
  * Pure age-tiered due/not-due decision (Phase 91/113, extended Phase 181/FR-181-2): picks the cadence
- * tier for [releaseYear] against [currentYear], then compares [lastCheckedMs] against `now - cadence`.
+ * tier for [releaseYear] against [currentYear], then compares [lastExaminedMs] against `now - cadence`.
  * Separated from [computeFreshnessFilter]'s [MediaStore] I/O so the tier/threshold logic itself is
  * unit-testable without a live store.
  *
@@ -53,7 +54,7 @@ private fun dateStringFromEpochMs(epochMs: Long): String {
  * checking often" — activity is the actual signal.
  */
 fun isDueForRecheck(
-    nowMs: Long, lastCheckedMs: Long, releaseYear: Int, currentYear: Int, scanStep: PipelineStep,
+    nowMs: Long, lastExaminedMs: Long, releaseYear: Int, currentYear: Int, scanStep: PipelineStep,
     isActivelyAiring: Boolean = false,
 ): Boolean {
     val cadenceStr = when {
@@ -61,9 +62,17 @@ fun isDueForRecheck(
         (currentYear - releaseYear) <= 5                -> scanStep.refresh1To5y
         else                                              -> scanStep.refreshOlder
     }
-    val thresh = cadenceMs(cadenceStr) ?: return false  // "never" → never due
-    return (nowMs - lastCheckedMs) >= thresh
+    // Phase 196 (FR-196-6) — an airing show can never be starved, whatever the configured cadence says.
+    // `never` on the this-year tier used to mean a series with an episode landing tomorrow was silently
+    // excluded forever; a floor here costs one examination per `refreshThisYear` period at worst, and is
+    // cheap insurance against a future variant of the bug this phase fixes.
+    val thresh = cadenceMs(cadenceStr)
+        ?: return isActivelyAiring && (nowMs - lastExaminedMs) >= AIRING_FLOOR_MS
+    return (nowMs - lastExaminedMs) >= if (isActivelyAiring) minOf(thresh, AIRING_FLOOR_MS) else thresh
 }
+
+/** Phase 196 (FR-196-6) — the longest an actively-airing title may go unexamined, regardless of config. */
+private const val AIRING_FLOOR_MS = 24 * 3_600_000L
 
 /**
  * Phase 175 — the age-tiered freshness/cooldown filter (Phase 91/113), extracted out of
@@ -90,14 +99,36 @@ suspend fun computeFreshnessFilter(
     val now = store.nowMs()
     val currentYear = yearFromEpochMs(now)
     val today = dateStringFromEpochMs(now)
+    val skipped = mutableListOf<Triple<String, Long, Boolean>>()  // Phase 196 FR-196-5: id, examinedAt, airing
     val skipJellyfinIds = store.allItems().mapNotNull { item ->
         val jid = item.jellyfinId ?: return@mapNotNull null
-        val lc = store.lastChecked(item.id) ?: return@mapNotNull null
+        // Phase 196 — "when were this title's files last examined", not "when was its row last written".
+        // A null here (never examined, or reset by FR-196-4's backfill) always keeps the item.
+        val lc = store.lastExaminedAt(item.id) ?: return@mapNotNull null
         val ry = item.year ?: return@mapNotNull null
         // FR-181-2: a title Sonarr says is airing again soon is "hot" regardless of premiere year —
         // ISO date strings compare correctly lexicographically, so no parsing needed.
         val isActivelyAiring = item.sonarrNextAiringDate?.let { it >= today } == true
-        if (isDueForRecheck(now, lc, ry, currentYear, scanStep, isActivelyAiring)) null else jid  // due → keep; not due → skip
+        if (isDueForRecheck(now, lc, ry, currentYear, scanStep, isActivelyAiring)) {
+            null  // due → keep
+        } else {
+            skipped += Triple(item.id, lc, isActivelyAiring)
+            jid  // not due → skip
+        }
     }.toSet()
+    // Phase 196 (FR-196-5) — "504 items not due for a recheck yet" is true and useless: it cannot
+    // distinguish correctly-fresh from hidden-by-a-bookkeeping-bug, which is exactly what made the
+    // Fjollerne incident invisible from the outside. Name the items and the age of the value we skipped on.
+    // (No DEBUG level exists in this Logger, so this is a single compact INFO line naming the five
+    // longest-unexamined skips rather than one line per item — same diagnostic value, no new log level.)
+    if (skipped.isNotEmpty()) {
+        Logger.info(
+            "Freshness: skipped ${skipped.size}; longest unexamined — " +
+                skipped.sortedBy { it.second }.take(5).joinToString(", ") { (id, examinedAt, airing) ->
+                    "$id ${(now - examinedAt) / 3_600_000}h${if (airing) " (airing)" else ""}"
+                },
+            "scan",
+        )
+    }
     return { jItem -> jItem.id !in skipJellyfinIds }
 }

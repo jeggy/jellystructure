@@ -5,9 +5,42 @@
 > available in jellystructure as soon as possible as well."*
 
 ## Status
-`Planned` — design-authored 2026-09-06, not dev-reviewed. Root-caused against production logs and the
-production database. Companion phase: **196** (the freshness clock that keeps the periodic scan away
-from the same items). Neither alone is sufficient — see *Why both phases are needed*.
+✓ Built 2026-09-06 (FR-195-1 … FR-195-6). Not dev-reviewed, not live-verified — the running backend
+still has the old behaviour, so the 117-entry production backlog is untouched and Fjollerne S11E08 is still
+missing until this is deployed. Root-caused against production logs and the production database.
+Companion phase: **196** (the freshness clock that keeps the periodic scan away from the same items).
+Neither alone is sufficient — see *Why both phases are needed*.
+
+**Implementation notes:**
+- FR-195-2 landed first because it is the actual cause: a new `fileProbeGate` semaphore
+  (`scan_workers × 2`, clamped 2–8) wraps every `FfprobeRunner.probe`/`diagnose`/`chapters` call in
+  both `scanSeries` and `syncSeriesEpisodes`. Deliberately **smaller** than ProcessGate's 12 background
+  permits rather than equal: what matters is that scan-originated waiters inside ProcessGate stay under
+  its permit count, so its 30 s deadline is only ever reached by genuinely slow work. Waiting on our own
+  gate is unbounded and free; waiting in ProcessGate costs a timeout, a failed ingest and a dirty-set
+  entry. Kept separate from Phase 183's `episodeFanoutGate` rather than widening that one — the block it
+  guards already acquires `episodeFanoutGate` internally for TMDB, and a coroutine holding one permit of
+  a non-reentrant semaphore while waiting for a second is a deadlock under contention, not a bound.
+- FR-195-3: `ingestOnce` returns a three-state `IngestOutcome` (OK / BUSY / FAILED) instead of a
+  `Boolean`. `BUSY` — a `ProcessGate`/`OutboundHttp` `GateTimeoutException` — neither consumes one of the
+  two attempts nor marks the item dirty. This is the same distinction Phase 194 draws in `isTokenValid`,
+  in a different file: an unavailable dependency and a bad input are not the same fact.
+- FR-195-4: `dirty_item` gained `attempt_count` + `next_attempt_at` (`41.sqm`). `markDirty` was a bare
+  `INSERT OR IGNORE`, which made a repeat failure a **silent no-op** — the counter could never grow and
+  no backoff could ever exist. It is now UPDATE-then-INSERT-OR-IGNORE in one transaction (the dialect is
+  `sqlite_3_18`, which has no UPSERT), with the doubling computed in SQL from the row's own
+  `attempt_count` so two concurrent failures for one id can't race a read-then-write. 30 min base,
+  clamped at 24 h; `created_at` never moves, so oldest-first still means longest-outstanding.
+- FR-195-1/5: the drain now calls `dirtyItemStore.due(now, scan_workers × 2)` and runs *after* the
+  sweep's own enqueues, so a genuinely new episode never queues behind the backlog. The log line reports
+  attempted / due / total (`Retrying 8 of 117 due previously-failed ingest(s) (117 outstanding in
+  total)`) per Phase 183's no-silent-caps rule.
+- FR-195-6: `IngestStatus` gained `oldest_retry_at` and `due_retry_count` alongside the existing count.
+  **Not built:** the `app/activity.html` surface — the API carries the data, the page was left alone.
+- New `DirtyItemBackoffTest` (7 cases against a real database, since both properties live in SQL):
+  the increment, the doubling, the clamp, the `created_at` stability, the bounded oldest-first `due`,
+  backoff exclusion, and clear-resets-the-backoff. `compileKotlinLinuxX64` clean,
+  `verifyCommonMainJellystructureDbMigration` green, `linuxX64Test` 221/221.
 
 ## What happened
 

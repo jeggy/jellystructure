@@ -1725,6 +1725,14 @@ fun Route.mediaRoutes(
             }
             @Serializable data class SyncReq(val scope: String = "episodes")
             val req = runCatching { call.receive<SyncReq>() }.getOrDefault(SyncReq())
+            // Phase 196 (FR-196-2) — only the branches that actually re-probe the files on disk may
+            // advance the freshness clock. `rescanMetadata` (the "series" scope, and every music video)
+            // re-fetches TMDB without reading a single file, so it must not.
+            val reExaminesFiles = when (item.kind) {
+                MediaKind.MOVIE -> true
+                MediaKind.TV_SHOW -> req.scope != "series"
+                MediaKind.MUSIC_VIDEO -> false
+            }
             val updated = when (item.kind) {
                 MediaKind.MOVIE -> scanner.syncMovie(item)
                 MediaKind.TV_SHOW -> when (req.scope) {
@@ -1743,7 +1751,7 @@ fun Route.mediaRoutes(
                 return@post
             }
             val enriched = sonarrEnrich?.enrichOne(updated) ?: updated
-            store.updateOne(enriched)
+            store.updateOne(enriched, examined = reExaminesFiles)
             broadcaster.broadcast(JobEvent.ItemScanned("sync-$id", enriched))
             mediaHistory.record(id, "sync", "kind=${item.kind.name.lowercase()} scope=${req.scope}")
             pushToJellyfin(enriched, artwork, configStore, jellyfinClient, appScope, store, arrRescan)
