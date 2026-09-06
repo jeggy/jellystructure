@@ -52,6 +52,15 @@ private fun fmtl(sec: Double): String {
     return "${(s / 60).toString().padStart(2, '0')}:${(s % 60).toString().padStart(2, '0')}"
 }
 
+/** Phase 189 (FR-189-2) — marker-row timecodes, with tenths: the ± steppers move by a whole second
+ *  (below), and `fmtl`'s whole-second rounding made every click look like nothing happened. */
+private fun fmtlt(sec: Double): String {
+    val totalTenths = (sec * 10).roundToInt().coerceAtLeast(0)
+    val s = totalTenths / 10
+    val tenths = totalTenths % 10
+    return "${(s / 60).toString().padStart(2, '0')}:${(s % 60).toString().padStart(2, '0')}.$tenths"
+}
+
 private fun legendHtml(kinds: List<String> = SegKind.ORDER): String =
     "<div class=\"legend\">" + kinds.joinToString("") { k ->
         val m = kindOf(k)
@@ -274,9 +283,9 @@ private fun buildMarkRow(s: SegmentDto, selected: Boolean): String {
     val endSec = (s.endMs ?: s.startMs) / 1000.0
     return """<div class="mk${if (selected) " sel" else ""}${if (s.locked) " lkd" else ""}" data-m="${s.kind}">
         <span class="sw" style="background:${m.color}"></span><span class="nm">${m.label}</span>
-        <span class="tc"><span class="stp"><button data-d="-1" data-e="a" data-k="${s.kind}">−</button><button data-d="1" data-e="a" data-k="${s.kind}">+</button></span>${fmtl(startSec)}
-          <s>→</s>${fmtl(endSec)}<span class="stp"><button data-d="-1" data-e="b" data-k="${s.kind}">−</button><button data-d="1" data-e="b" data-k="${s.kind}">+</button></span>
-          <s class="len">${fmt(endSec - startSec)} long</s>${srcChipHtml(s)}</span>
+        <span class="tc"><span class="stp"><button data-d="-1" data-e="a" data-k="${s.kind}">−</button><button data-d="1" data-e="a" data-k="${s.kind}">+</button></span><span class="ts-a">${fmtlt(startSec)}</span>
+          <s>→</s><span class="ts-b">${fmtlt(endSec)}</span><span class="stp"><button data-d="-1" data-e="b" data-k="${s.kind}">−</button><button data-d="1" data-e="b" data-k="${s.kind}">+</button></span>
+          <s class="len">${fmt(endSec - startSec)} long</s><span class="src-slot">${srcChipHtml(s)}</span></span>
         <span class="acts"><button class="btn sm ghost" data-p="${s.kind}">▶ play the cut</button>
           <button class="lockb${if (s.locked) " on" else ""}" data-l="${s.kind}">${if (s.locked) "🔒 locked" else "🔓 lock"}</button>
           <button class="btn sm ghost" data-remove="${s.kind}" title="Remove this marker">✕ Remove</button></span>
@@ -306,6 +315,7 @@ private fun buildRail(data: SegmentTrimResponse): String {
         <div class="qfoot"><div class="keys">
           <div><span class="kbd">I</span><span class="kbd">O</span>set in / out at the playhead</div>
           <div><span class="kbd">,</span><span class="kbd">.</span>nudge a frame · <span class="kbd">⇧</span> for a second</div>
+          <div><b>−</b><b>+</b> on a row nudges by a second</div>
           <div><span class="kbd">L</span>lock the selected marker</div>
           <div><span class="kbd">↵</span>save and open the next episode</div></div>
           <div class="sxhint">A locked marker survives every future <b>detect_segments</b> run — that is the whole point of the lock.</div>
@@ -326,7 +336,6 @@ private fun renderTrim(data: SegmentTrimResponse, scope: CoroutineScope) {
     currentTrimScope = scope
 
     val selected = data.segments.firstOrNull { it.kind == trimSelectedKind }
-    val missing = SegKind.ORDER.filterNot { k -> data.segments.any { it.kind == k } }
 
     val backHtml = if (data.kind == "movie") """<a class="sxback" href="#/media/${data.mediaId}">‹ ${data.itemTitle}</a>"""
         else """<a class="sxback" href="#" data-a="back">‹ Season ${data.seasonNumber}</a>"""
@@ -356,59 +365,134 @@ private fun renderTrim(data: SegmentTrimResponse, scope: CoroutineScope) {
               <span class="vpill mono" id="seg-timecode">${fmtl(playheadSec)} / ${fmtl(data.durationSec)}</span>
             </div>
           </div>
-          <div class="tl"><div class="tlh"><span class="lbl">Timeline</span>${legendHtml()}</div>
-            ${buildRuler(data.durationSec)}
-            <div class="track" id="seg-track">
-              <div class="grid"></div>${buildTrack(data.segments, data.durationSec, trimSelectedKind)}
-              <div class="play" id="seg-playhead" style="left:${if (data.durationSec > 0) playheadSec / data.durationSec * 100 else 0}%"></div>
-            </div>
-            <div class="wave" id="seg-wave"></div>
-            ${buildEvidenceLane(data.evidence, data.durationSec)}
-          </div>
-          <div class="mks">${data.segments.joinToString("") { buildMarkRow(it, it.kind == trimSelectedKind) }}${buildAddRow(missing, data.kind)}</div>
+          <div class="tl" id="seg-tl">${buildTimelineInnerHtml(data, trimSelectedKind, playheadSec)}</div>
+          <div class="mks" id="seg-mks">${buildMarksInnerHtml(data, trimSelectedKind)}</div>
           <div id="seg-jf-candidates"></div>
         </div>
-        ${if (data.kind == "tv") """<div class="sxrail">${buildRail(data)}</div>""" else ""}
+        ${if (data.kind == "tv") """<div class="sxrail" id="seg-rail">${buildRail(data)}</div>""" else ""}
         </div>
     """.trimIndent()
 
     wireTrim(root, data, scope)
 }
 
-private fun refreshTrim(scope: CoroutineScope) {
+/** The `.tl` block's inner content — extracted so [refreshTrimBody] can rebuild it in place (a
+ *  structural change: lock icon, handle presence, marker set) without touching `.vid`/`<video>`. */
+private fun buildTimelineInnerHtml(data: SegmentTrimResponse, selectedKind: String?, playheadSec: Double): String = """
+    <div class="tlh"><span class="lbl">Timeline</span>${legendHtml()}</div>
+    ${buildRuler(data.durationSec)}
+    <div class="track" id="seg-track">
+      <div class="grid"></div>${buildTrack(data.segments, data.durationSec, selectedKind)}
+      <div class="play" id="seg-playhead" style="left:${if (data.durationSec > 0) playheadSec / data.durationSec * 100 else 0}%"></div>
+    </div>
+    <div class="wave" id="seg-wave"></div>
+    ${buildEvidenceLane(data.evidence, data.durationSec)}
+""".trimIndent()
+
+/** The `.mks` block's inner content — see [buildTimelineInnerHtml]. */
+private fun buildMarksInnerHtml(data: SegmentTrimResponse, selectedKind: String?): String {
+    val missing = SegKind.ORDER.filterNot { k -> data.segments.any { it.kind == k } }
+    return data.segments.joinToString("") { buildMarkRow(it, it.kind == selectedKind) } + buildAddRow(missing, data.kind)
+}
+
+/**
+ * Phase 189 (FR-189-3) — re-fetches and rebuilds the timeline, marker rows and (on a series) the rail,
+ * but never touches `.vid`/`<video>` — so locking,
+ * removing, adding a marker or applying one of Jellyfin's own candidates never restarts playback. Used
+ * by every action that changes WHICH markers exist or their locked state (structural changes a per-field
+ * DOM patch like [patchSegmentDom] can't express); [applyEditInPlace] handles the narrower "same markers,
+ * new times" case without even a refetch.
+ */
+private fun refreshTrimBody(scope: CoroutineScope) {
     val data = currentTrimData ?: return
     scope.launch {
         val fresh = if (data.kind == "movie") SegmentApi.movieTrim(data.mediaId) else SegmentApi.episodeTrim(data.mediaId, data.episodeKey, data.episodeNumber)
-        if (fresh != null) renderTrim(fresh, scope)
+        if (fresh == null) {
+            toast("Couldn't refresh this title — try reloading the page")
+            return@launch
+        }
+        if (trimSelectedKind != null && fresh.segments.none { it.kind == trimSelectedKind }) {
+            trimSelectedKind = fresh.segments.firstOrNull()?.kind
+        }
+        currentTrimData = fresh
+        val root = document.getElementById("seg-root") ?: return@launch
+
+        document.getElementById("seg-duration-label")?.textContent = fmtl(fresh.durationSec)
+        (document.querySelector(".sxbar .src") as? HTMLElement)?.let { chip ->
+            chip.className = if (fresh.checked) "src me" else "src he"
+            chip.textContent = if (fresh.checked) "confirmed" else "not confirmed — Jellyfin will not get it yet"
+        }
+        document.getElementById("seg-tl")?.innerHTML = buildTimelineInnerHtml(fresh, trimSelectedKind, trimPlayheadMs / 1000.0)
+        document.getElementById("seg-mks")?.innerHTML = buildMarksInnerHtml(fresh, trimSelectedKind)
+        if (fresh.kind == "tv") document.getElementById("seg-rail")?.innerHTML = buildRail(fresh)
+        updatePlayheadDom(trimPlayheadMs, fresh.durationSec, currentTrimSelectedLabel())
+
+        wireEditableRegion(root, fresh, scope)
+        wireWaveform(fresh, scope)
+        wireJellyfinCandidates(fresh, scope)
     }
 }
 
+// Phase 189 — split from one wireTrim into "chrome wired once" (this function; back link, redetect/next,
+// transport buttons, the <video> element itself) and wireEditableRegion (everything refreshTrimBody
+// replaces and must therefore re-wire on every structural change: locking, adding, removing a marker).
 private fun wireTrim(root: Element, data: SegmentTrimResponse, scope: CoroutineScope) {
     if (data.kind == "tv") {
         root.querySelector("[data-a='back']")?.addEventListener("click") { ev ->
             ev.preventDefault()
             Router.navigate("/segments", mapOf("series" to data.mediaId, "season" to data.seasonNumber.toString()))
         }
+    }
+    root.querySelector("[data-a='redetect-one']")?.addEventListener("click") {
+        val live = currentTrimData ?: data
+        scope.launch {
+            val result = if (live.kind == "movie") SegmentApi.redetect(movie = live.mediaId)
+            else SegmentApi.redetect(items = listOf(SegmentEpisodeRef(live.mediaId, live.episodeKey, live.episodeNumber)))
+            toast(redetectToast(live.code, result) + " — locked markers are skipped")
+        }
+    }
+    root.querySelector("[data-a='next']")?.addEventListener("click") { goNext(currentTrimData ?: data, scope) }
+    root.querySelector("[data-a='fb']")?.addEventListener("click") { seekRelative(currentTrimData ?: data, -10_000) }
+    root.querySelector("[data-a='ff']")?.addEventListener("click") { seekRelative(currentTrimData ?: data, 10_000) }
+    root.querySelector("#seg-play-btn")?.addEventListener("click") {
+        val video = document.getElementById("seg-video") as? HTMLVideoElement ?: return@addEventListener
+        if (video.paused) video.play() else video.pause()
+    }
+
+    wireEditableRegion(root, data, scope)
+    wireVideo(data, scope)
+    wireWaveform(data, scope)
+    wireJellyfinCandidates(data, scope)
+}
+
+// Phase 189 (FR-189-3) — everything refreshTrimBody() replaces (the rail, marker rows, the track's
+// select/seek listeners) lives here so both the initial render and every later structural refresh
+// (lock/remove/add/apply-Jellyfin) wire the SAME set, freshly, without touching `.vid`/`<video>`.
+// Reads currentTrimData rather than closing over the `data` this was called with, so it never goes
+// stale across a later edit — the keydown listener already follows this rule; this makes the mouse
+// paths match it.
+private fun wireEditableRegion(root: Element, data: SegmentTrimResponse, scope: CoroutineScope) {
+    if (data.kind == "tv") {
         root.querySelectorAll("[data-q]").let { nodes ->
             for (i in 0 until nodes.length) {
                 val el = nodes.item(i) as? HTMLElement ?: continue
                 el.addEventListener("click") {
+                    val live = currentTrimData ?: data
                     val parts = (el.getAttribute("data-q") ?: return@addEventListener).split("␟")
-                    Router.navigate("/segments", mapOf("series" to data.mediaId, "episode" to parts[0], "episodeNumber" to parts.getOrElse(1) { "0" }))
+                    Router.navigate("/segments", mapOf("series" to live.mediaId, "episode" to parts[0], "episodeNumber" to parts.getOrElse(1) { "0" }))
                 }
             }
         }
     }
-
-    // Select a marker (click the row, not one of its buttons).
+    // Select a marker (click the row, not one of its buttons). Marker SELECTION only changes which bar
+    // is highlighted — a lightweight in-place restyle, never renderTrim (which would restart the video).
     root.querySelectorAll("[data-m]").let { nodes ->
         for (i in 0 until nodes.length) {
             val el = nodes.item(i) as? HTMLElement ?: continue
             el.addEventListener("click") { ev ->
                 val target = ev.target as? Element
                 if (target?.closest("button") != null) return@addEventListener
-                trimSelectedKind = el.getAttribute("data-m")
-                renderTrim(data, scope)
+                selectMarker(el.getAttribute("data-m"))
             }
         }
     }
@@ -419,34 +503,41 @@ private fun wireTrim(root: Element, data: SegmentTrimResponse, scope: CoroutineS
             el.addEventListener("mousedown") { ev ->
                 val target = ev.target as? Element
                 if (target?.classList?.contains("h") == true) return@addEventListener
-                trimSelectedKind = el.getAttribute("data-s")
-                renderTrim(data, scope)
+                selectMarker(el.getAttribute("data-s"))
             }
         }
     }
     // Click empty track space (ruler included) to move the playhead — a lightweight DOM update, not a
     // full re-render: re-rendering would tear down and recreate <video>, restarting the stream.
     (root.querySelector("#seg-track") as? HTMLElement)?.addEventListener("click") { ev ->
+        val live = currentTrimData ?: data
         val target = ev.target as? Element
         if (target?.classList?.contains("grid") != true) return@addEventListener
         val box = (ev.target as HTMLElement).getBoundingClientRect()
         val me = ev as org.w3c.dom.events.MouseEvent
         val frac = ((me.clientX - box.left) / box.width).coerceIn(0.0, 1.0)
-        trimPlayheadMs = (frac * data.durationSec * 1000).toLong()
+        trimPlayheadMs = (frac * live.durationSec * 1000).toLong()
         seekVideoTo(trimPlayheadMs)
-        updatePlayheadDom(trimPlayheadMs, data.durationSec, currentTrimSelectedLabel())
+        updatePlayheadDom(trimPlayheadMs, live.durationSec, currentTrimSelectedLabel())
     }
 
     root.querySelectorAll("[data-l]").let { nodes ->
         for (i in 0 until nodes.length) {
             val el = nodes.item(i) as? HTMLElement ?: continue
             el.addEventListener("click") {
+                val live = currentTrimData ?: data
                 val kind = el.getAttribute("data-l") ?: return@addEventListener
-                val seg = data.segments.firstOrNull { it.kind == kind } ?: return@addEventListener
+                val seg = live.segments.firstOrNull { it.kind == kind } ?: return@addEventListener
                 scope.launch {
-                    SegmentApi.setLock(data.mediaId, kind, data.episodeKey, data.episodeNumber, !seg.locked)
-                    toast(if (!seg.locked) "${kindOf(kind).label} locked — detection will not touch it" else "${kindOf(kind).label} unlocked")
-                    refreshTrim(scope)
+                    // FR-189-6 — every write's result is checked; a failed one is reported instead of
+                    // silently claiming success (refreshTrimBody would then just show the old state,
+                    // indistinguishable from the click having done nothing).
+                    if (SegmentApi.setLock(live.mediaId, kind, live.episodeKey, live.episodeNumber, !seg.locked)) {
+                        toast(if (!seg.locked) "${kindOf(kind).label} locked — detection will not touch it" else "${kindOf(kind).label} unlocked")
+                    } else {
+                        toast("Couldn't ${if (!seg.locked) "lock" else "unlock"} ${kindOf(kind).label} — try again")
+                    }
+                    refreshTrimBody(scope)
                 }
             }
         }
@@ -455,11 +546,15 @@ private fun wireTrim(root: Element, data: SegmentTrimResponse, scope: CoroutineS
         for (i in 0 until nodes.length) {
             val el = nodes.item(i) as? HTMLElement ?: continue
             el.addEventListener("click") {
+                val live = currentTrimData ?: data
                 val kind = el.getAttribute("data-remove") ?: return@addEventListener
                 scope.launch {
-                    SegmentApi.deleteSegment(data.mediaId, kind, data.episodeKey, data.episodeNumber)
-                    toast("${kindOf(kind).label} removed")
-                    refreshTrim(scope)
+                    if (SegmentApi.deleteSegment(live.mediaId, kind, live.episodeKey, live.episodeNumber)) {
+                        toast("${kindOf(kind).label} removed")
+                    } else {
+                        toast("Couldn't remove ${kindOf(kind).label} — try again")
+                    }
+                    refreshTrimBody(scope)
                 }
             }
         }
@@ -471,7 +566,8 @@ private fun wireTrim(root: Element, data: SegmentTrimResponse, scope: CoroutineS
                 val kind = el.getAttribute("data-k") ?: return@addEventListener
                 val edge = el.getAttribute("data-e") ?: return@addEventListener
                 val delta = el.getAttribute("data-d")?.toIntOrNull() ?: return@addEventListener
-                nudgeSegment(data, scope, kind, edge, delta * 40L)
+                // FR-189-2 — a coarse 1s step per click, not the 40ms frame-nudge (that stays on `,`/`.`).
+                nudgeSegment(currentTrimData ?: data, scope, kind, edge, delta * 1000L)
             }
         }
     }
@@ -479,49 +575,63 @@ private fun wireTrim(root: Element, data: SegmentTrimResponse, scope: CoroutineS
         for (i in 0 until nodes.length) {
             val el = nodes.item(i) as? HTMLElement ?: continue
             el.addEventListener("click") {
+                val live = currentTrimData ?: data
                 val kind = el.getAttribute("data-add") ?: return@addEventListener
                 val endAnchored = kind == SegKind.CREDITS || kind == SegKind.STINGER || kind == SegKind.PREVIEW
-                val durMs = (data.durationSec * 1000).toLong()
+                val durMs = (live.durationSec * 1000).toLong()
                 val start = if (endAnchored) (durMs - 60_000).coerceAtLeast(0) else 30_000L
                 val end = (start + 40_000).coerceAtMost(durMs)
                 scope.launch {
-                    SegmentApi.editSegment(data.mediaId, kind, data.episodeKey, data.episodeNumber, start, end)
-                    trimSelectedKind = kind
-                    toast("${kindOf(kind).label} added — drag the handles or nudge the timecodes")
-                    refreshTrim(scope)
+                    if (SegmentApi.editSegment(live.mediaId, kind, live.episodeKey, live.episodeNumber, start, end)) {
+                        trimSelectedKind = kind
+                        toast("${kindOf(kind).label} added — drag the handles or nudge the timecodes")
+                    } else {
+                        toast("Couldn't add ${kindOf(kind).label} — try again")
+                    }
+                    refreshTrimBody(scope)
                 }
             }
         }
     }
-    root.querySelector("[data-a='redetect-one']")?.addEventListener("click") {
-        scope.launch {
-            val result = if (data.kind == "movie") SegmentApi.redetect(movie = data.mediaId)
-            else SegmentApi.redetect(items = listOf(SegmentEpisodeRef(data.mediaId, data.episodeKey, data.episodeNumber)))
-            toast(redetectToast(data.code, result) + " — locked markers are skipped")
-        }
-    }
-    root.querySelector("[data-a='next']")?.addEventListener("click") { goNext(data, scope) }
     root.querySelectorAll("[data-p]").let { nodes ->
         for (i in 0 until nodes.length) {
             val el = nodes.item(i) as? HTMLElement ?: continue
             el.addEventListener("click") {
+                val live = currentTrimData ?: data
                 val kind = el.getAttribute("data-p") ?: return@addEventListener
-                val seg = data.segments.firstOrNull { it.kind == kind } ?: return@addEventListener
+                val seg = live.segments.firstOrNull { it.kind == kind } ?: return@addEventListener
                 playCut(seg)
             }
         }
     }
-    root.querySelector("[data-a='fb']")?.addEventListener("click") { seekRelative(data, -10_000) }
-    root.querySelector("[data-a='ff']")?.addEventListener("click") { seekRelative(data, 10_000) }
-    root.querySelector("#seg-play-btn")?.addEventListener("click") {
-        val video = document.getElementById("seg-video") as? HTMLVideoElement ?: return@addEventListener
-        if (video.paused) video.play() else video.pause()
-    }
 
     wireDragHandles(root, data, scope)
-    wireVideo(data, scope)
-    wireWaveform(data, scope)
-    wireJellyfinCandidates(data, scope)
+}
+
+/** Highlights a different marker WITHOUT a full renderTrim() — restyles the `.mk`/`.seg` `sel`/`on`
+ *  classes in place (video, track positions and every listener untouched). */
+private fun selectMarker(kind: String?) {
+    trimSelectedKind = kind
+    document.querySelectorAll(".mk[data-m]").let { nodes ->
+        for (i in 0 until nodes.length) {
+            val el = nodes.item(i) as? Element ?: continue
+            el.classList.toggle("sel", el.getAttribute("data-m") == kind)
+        }
+    }
+    document.querySelectorAll(".seg[data-s]").let { nodes ->
+        for (i in 0 until nodes.length) {
+            val el = nodes.item(i) as? Element ?: continue
+            el.classList.toggle("on", el.getAttribute("data-s") == kind)
+        }
+    }
+    val data = currentTrimData
+    val selected = data?.segments?.firstOrNull { it.kind == kind }
+    if (data != null) {
+        (document.querySelector(".tag") as? HTMLElement)?.innerHTML = selected?.let { s ->
+            val m = kindOf(s.kind); """<span class="vpill" style="color:${m.color};border-color:${m.color}44">▍${m.label}</span>"""
+        } ?: ""
+    }
+    updatePlayheadDom(trimPlayheadMs, data?.durationSec ?: 0.0, currentTrimSelectedLabel())
 }
 
 /** Step 6 — fetched once per render (not per timeupdate tick — the peaks don't change during playback),
@@ -556,9 +666,12 @@ private fun wireJellyfinCandidates(data: SegmentTrimResponse, scope: CoroutineSc
                     val start = el.getAttribute("data-jf-start")?.toLongOrNull() ?: return@addEventListener
                     val end = el.getAttribute("data-jf-end")?.toLongOrNull()
                     scope.launch {
-                        SegmentApi.editSegment(data.mediaId, kind, data.episodeKey, data.episodeNumber, start, end)
-                        toast("${kindOf(kind).label} set from Jellyfin")
-                        refreshTrim(scope)
+                        if (SegmentApi.editSegment(data.mediaId, kind, data.episodeKey, data.episodeNumber, start, end)) {
+                            toast("${kindOf(kind).label} set from Jellyfin")
+                        } else {
+                            toast("Couldn't apply Jellyfin's ${kindOf(kind).label} — try again")
+                        }
+                        refreshTrimBody(scope)
                     }
                 }
             }
@@ -652,6 +765,12 @@ private fun wireVideo(data: SegmentTrimResponse, scope: CoroutineScope) {
 // before playback exists. Once the real <video> loads, its duration is the frame-accurate truth — patch
 // the duration-dependent pieces of the DOM in place rather than a full renderTrim (which would recreate
 // the <video> element and restart the stream).
+// Phase 189 (FR-189-1) — this used to replace #seg-track's innerHTML wholesale, which destroys every
+// .h drag-handle and .seg bar-select listener wireDragHandles/wireTrim attached — the handles die a few
+// hundred milliseconds after the view appears (a whole-minute TMDB estimate vs. a real file's duration
+// essentially never agree within 1s), before an operator can reach them. The segment SET doesn't change
+// here, only the scale each bar is positioned against, so there is nothing to rebuild — patch each
+// existing bar's left/width in place, the same way updatePlayheadDom already patches the playhead.
 private fun correctDuration(newDurationSec: Double) {
     val data = currentTrimData ?: return
     if (newDurationSec.isNaN() || !newDurationSec.isFinite() || newDurationSec <= 0) return
@@ -661,24 +780,79 @@ private fun correctDuration(newDurationSec: Double) {
 
     document.getElementById("seg-duration-label")?.textContent = fmtl(newDurationSec)
     document.getElementById("seg-ruler")?.outerHTML = buildRuler(newDurationSec)
-    document.getElementById("seg-track")?.innerHTML =
-        """<div class="grid"></div>${buildTrack(corrected.segments, newDurationSec, trimSelectedKind)}<div class="play" id="seg-playhead"></div>"""
     document.getElementById("seg-evidence")?.outerHTML = buildEvidenceLane(corrected.evidence, newDurationSec)
+    for (seg in corrected.segments) repositionSegmentBar(seg, newDurationSec)
     updatePlayheadDom(trimPlayheadMs, newDurationSec, currentTrimSelectedLabel())
 }
 
+/** Phase 189 — the shared bar-positioning math `buildTrack` uses for a fresh render, applied to an
+ *  EXISTING `.seg` element's style instead of rebuilding it, so its drag-handle/select listeners survive.
+ *  No-op if the bar isn't in the DOM (e.g. a kind just removed). */
+private fun repositionSegmentBar(seg: SegmentDto, durationSec: Double) {
+    if (durationSec <= 0) return
+    val bar = document.querySelector(".seg[data-s='${seg.kind}']") as? HTMLElement ?: return
+    val startSec = seg.startMs / 1000.0
+    val endSec = (seg.endMs ?: seg.startMs) / 1000.0
+    bar.style.left = "${startSec / durationSec * 100}%"
+    bar.style.width = "${((endSec - startSec) / durationSec * 100).coerceAtLeast(0.5)}%"
+}
+
 private fun nudgeSegment(data: SegmentTrimResponse, scope: CoroutineScope, kind: String, edge: String, deltaMs: Long) {
-    val seg = data.segments.firstOrNull { it.kind == kind } ?: return
-    if (seg.locked) return
+    val seg = data.segments.firstOrNull { it.kind == kind }
+    if (seg == null) return
+    if (seg.locked) {
+        // FR-189-5 — "nothing happens" is the exact symptom this phase exists to eliminate; a locked
+        // marker must say so rather than silently ignoring the click, indistinguishable from broken.
+        toast("${kindOf(kind).label} is locked — unlock it to change the time")
+        return
+    }
     trimLastEdge = edge
     val start = seg.startMs
     val end = seg.endMs ?: seg.startMs
     val newStart = if (edge == "a") (start + deltaMs).coerceIn(0, end - 100) else start
     val newEnd = if (edge == "b") (end + deltaMs).coerceAtLeast(newStart + 100) else end
+    applyEditInPlace(data, seg, newStart, newEnd, scope)
+}
+
+/**
+ * Phase 189 (FR-189-1/3/6) — writes an edit and patches the changed marker's bar + row DIRECTLY, never a
+ * full renderTrim() (which tears down and recreates `<video>`, restarting the stream — the exact thing
+ * this file's own "patch the DOM you own" idiom forbids elsewhere; see updatePlayheadDom's doc comment).
+ * Used by the ± steppers, drag handles and the I/O keyboard shortcuts — every path that
+ * changes an existing marker's start/end without changing which markers exist.
+ *
+ * Optimistic: the DOM is patched immediately (a click must always visibly change something), then
+ * reverted if the write turns out to have failed, so a rejected/failed write can never again look
+ * identical to nothing having happened.
+ */
+private fun applyEditInPlace(data: SegmentTrimResponse, seg: SegmentDto, newStart: Long, newEnd: Long, scope: CoroutineScope) {
+    val kind = seg.kind
+    val patched = seg.copy(startMs = newStart, endMs = newEnd, source = SegSource.MANUAL, confidence = null)
+    currentTrimData = data.copy(segments = data.segments.map { if (it.kind == kind) patched else it })
+    patchSegmentDom(patched, data.durationSec)
     scope.launch {
-        SegmentApi.editSegment(data.mediaId, kind, data.episodeKey, data.episodeNumber, newStart, newEnd)
-        refreshTrim(scope)
+        val ok = SegmentApi.editSegment(data.mediaId, kind, data.episodeKey, data.episodeNumber, newStart, newEnd)
+        if (ok) {
+            toast("${kindOf(kind).label} now ${fmtl(newStart / 1000.0)} → ${fmtl(newEnd / 1000.0)} · saved")
+        } else {
+            toast("Couldn't save the ${kindOf(kind).label} change — reverted")
+            currentTrimData = currentTrimData?.copy(segments = currentTrimData!!.segments.map { if (it.kind == kind) seg else it }) ?: data
+            patchSegmentDom(seg, data.durationSec)
+        }
     }
+}
+
+/** Patches one marker's timeline bar position + its row's timecodes/length/source badge in place —
+ *  never rebuilds either element, so their button/drag-handle listeners survive. */
+private fun patchSegmentDom(seg: SegmentDto, durationSec: Double) {
+    repositionSegmentBar(seg, durationSec)
+    val startSec = seg.startMs / 1000.0
+    val endSec = (seg.endMs ?: seg.startMs) / 1000.0
+    val row = document.querySelector(".mk[data-m='${seg.kind}']") as? Element
+    row?.querySelector(".ts-a")?.textContent = fmtlt(startSec)
+    row?.querySelector(".ts-b")?.textContent = fmtlt(endSec)
+    row?.querySelector(".len")?.textContent = "${fmt(endSec - startSec)} long"
+    row?.querySelector(".src-slot")?.innerHTML = srcChipHtml(seg)
 }
 
 private fun goNext(data: SegmentTrimResponse, scope: CoroutineScope) {
@@ -700,6 +874,12 @@ private fun goNext(data: SegmentTrimResponse, scope: CoroutineScope) {
     }
 }
 
+// Phase 189 (FR-189-1) — wired ONCE per navigation (called from wireTrim only); it must go on working
+// for as long as the view is open, including after correctDuration() and any number of edits, since none
+// of those replace #seg-track's DOM anymore. Reads currentTrimData fresh on every mousedown instead of
+// closing over the initial render's `data`, so a duration correction (or any prior edit) is never stale
+// by the time the next drag starts — the same "read live state, don't close over a stale render" rule
+// wireKeydownOnce already follows.
 private fun wireDragHandles(root: Element, data: SegmentTrimResponse, scope: CoroutineScope) {
     val track = document.getElementById("seg-track") as? HTMLElement ?: return
     track.querySelectorAll(".h").let { nodes ->
@@ -707,13 +887,18 @@ private fun wireDragHandles(root: Element, data: SegmentTrimResponse, scope: Cor
             val handle = nodes.item(i) as? HTMLElement ?: continue
             handle.addEventListener("mousedown") { downEv ->
                 downEv.preventDefault()
+                val live = currentTrimData ?: data
                 val segEl = handle.closest(".seg") as? HTMLElement ?: return@addEventListener
                 val kind = segEl.getAttribute("data-s") ?: return@addEventListener
                 val edge = handle.getAttribute("data-e") ?: return@addEventListener
-                val seg = data.segments.firstOrNull { it.kind == kind } ?: return@addEventListener
-                if (seg.locked) return@addEventListener
+                val seg = live.segments.firstOrNull { it.kind == kind } ?: return@addEventListener
+                if (seg.locked) {
+                    toast("${kindOf(kind).label} is locked — unlock it to change the time")
+                    return@addEventListener
+                }
                 trimSelectedKind = kind
                 val box = track.getBoundingClientRect()
+                val durationSec = live.durationSec
                 var liveStartMs = seg.startMs
                 var liveEndMs = seg.endMs ?: seg.startMs
 
@@ -722,24 +907,22 @@ private fun wireDragHandles(root: Element, data: SegmentTrimResponse, scope: Cor
                 moveHandler = handler@{ mv ->
                     val me = mv as org.w3c.dom.events.MouseEvent
                     val frac = ((me.clientX - box.left) / box.width).coerceIn(0.0, 1.0)
-                    val tMs = (frac * data.durationSec * 1000).toLong()
+                    val tMs = (frac * durationSec * 1000).toLong()
                     if (edge == "a") liveStartMs = tMs.coerceAtMost(liveEndMs - 100) else liveEndMs = tMs.coerceAtLeast(liveStartMs + 100)
-                    val left = liveStartMs / 1000.0 / data.durationSec * 100
-                    val width = (liveEndMs - liveStartMs) / 1000.0 / data.durationSec * 100
+                    val left = liveStartMs / 1000.0 / durationSec * 100
+                    val width = (liveEndMs - liveStartMs) / 1000.0 / durationSec * 100
                     segEl.style.left = "$left%"
                     segEl.style.width = "$width%"
-                    (document.getElementById("seg-playhead") as? HTMLElement)?.style?.left = "${(if (edge == "a") liveStartMs else liveEndMs) / 1000.0 / data.durationSec * 100}%"
+                    (document.getElementById("seg-playhead") as? HTMLElement)?.style?.left = "${(if (edge == "a") liveStartMs else liveEndMs) / 1000.0 / durationSec * 100}%"
                 }
                 upHandler = handler@{
                     document.removeEventListener("mousemove", moveHandler)
                     document.removeEventListener("mouseup", upHandler)
                     trimLastEdge = edge
                     trimPlayheadMs = if (edge == "a") liveStartMs else liveEndMs
-                    scope.launch {
-                        SegmentApi.editSegment(data.mediaId, kind, data.episodeKey, data.episodeNumber, liveStartMs, liveEndMs)
-                        toast("${kindOf(kind).label} now ${fmtl(liveStartMs / 1000.0)} → ${fmtl(liveEndMs / 1000.0)} · saved")
-                        refreshTrim(scope)
-                    }
+                    // FR-189-1/3/6 — same write-and-patch path the ± steppers use: no full re-render (the
+                    // <video> element is untouched), and a failed write snaps the bar back to where it was.
+                    applyEditInPlace(currentTrimData ?: live, seg, liveStartMs, liveEndMs, scope)
                 }
                 document.addEventListener("mousemove", moveHandler)
                 document.addEventListener("mouseup", upHandler)
@@ -761,11 +944,31 @@ private fun wireKeydownOnce() {
         val kind = trimSelectedKind ?: return@addEventListener
         val seg = data.segments.firstOrNull { it.kind == kind }
         when (kev.key.lowercase()) {
-            "," -> if (seg != null && !seg.locked) { kev.preventDefault(); nudgeSegment(data, scope, kind, trimLastEdge, if (kev.shiftKey) -1000L else -40L) }
-            "." -> if (seg != null && !seg.locked) { kev.preventDefault(); nudgeSegment(data, scope, kind, trimLastEdge, if (kev.shiftKey) 1000L else 40L) }
-            "i" -> if (seg != null && !seg.locked) { kev.preventDefault(); trimLastEdge = "a"; scope.launch { SegmentApi.editSegment(data.mediaId, kind, data.episodeKey, data.episodeNumber, trimPlayheadMs, seg.endMs ?: seg.startMs); refreshTrim(scope) } }
-            "o" -> if (seg != null && !seg.locked) { kev.preventDefault(); trimLastEdge = "b"; scope.launch { SegmentApi.editSegment(data.mediaId, kind, data.episodeKey, data.episodeNumber, seg.startMs, trimPlayheadMs); refreshTrim(scope) } }
-            "l" -> if (seg != null) { kev.preventDefault(); scope.launch { SegmentApi.setLock(data.mediaId, kind, data.episodeKey, data.episodeNumber, !seg.locked); refreshTrim(scope) } }
+            // FR-189-5 — the locked check moved INSIDE nudgeSegment/applyEditInPlace so every path (mouse
+            // and keyboard alike) reports the same toast instead of the keyboard path silently no-op'ing.
+            "," -> if (seg != null) { kev.preventDefault(); nudgeSegment(data, scope, kind, trimLastEdge, if (kev.shiftKey) -1000L else -40L) }
+            "." -> if (seg != null) { kev.preventDefault(); nudgeSegment(data, scope, kind, trimLastEdge, if (kev.shiftKey) 1000L else 40L) }
+            "i" -> if (seg != null) {
+                kev.preventDefault()
+                if (seg.locked) toast("${kindOf(kind).label} is locked — unlock it to change the time")
+                else { trimLastEdge = "a"; applyEditInPlace(data, seg, trimPlayheadMs, seg.endMs ?: seg.startMs, scope) }
+            }
+            "o" -> if (seg != null) {
+                kev.preventDefault()
+                if (seg.locked) toast("${kindOf(kind).label} is locked — unlock it to change the time")
+                else { trimLastEdge = "b"; applyEditInPlace(data, seg, seg.startMs, trimPlayheadMs, scope) }
+            }
+            "l" -> if (seg != null) {
+                kev.preventDefault()
+                scope.launch {
+                    if (SegmentApi.setLock(data.mediaId, kind, data.episodeKey, data.episodeNumber, !seg.locked)) {
+                        toast(if (!seg.locked) "${kindOf(kind).label} locked — detection will not touch it" else "${kindOf(kind).label} unlocked")
+                    } else {
+                        toast("Couldn't ${if (!seg.locked) "lock" else "unlock"} ${kindOf(kind).label} — try again")
+                    }
+                    refreshTrimBody(scope)
+                }
+            }
             "enter" -> { kev.preventDefault(); goNext(data, scope) }
             "escape" -> {
                 kev.preventDefault()
