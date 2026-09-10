@@ -38,6 +38,23 @@ private const val PLAYSTATE_CHUNK = 100   // max ids per Jellyfin bulk UserData 
 // R83: gate concurrent outbound Jellyfin UserData calls to avoid FD ceiling (Phase 78).
 private val playstateGate = Semaphore(4)
 
+/**
+ * Phase 200 (FR-200-4) — the series-level flag strip's language set: every language any episode
+ * carries, ordered by the first episode (in [episodes]' own order) that carries it. Pulled out as a
+ * standalone function so the union-not-episode-1 behavior is unit-testable without a `DetailService`.
+ */
+internal fun unionLanguagesInFirstSeenOrder(episodes: List<Episode>, kind: dev.jellystructure.model.TrackKind): List<String> {
+    val seen = LinkedHashSet<String>()
+    for (ep in episodes) {
+        for (track in ep.tracks) {
+            if (track.kind != kind) continue
+            val lang = track.language?.lowercase()?.takeIf { it.isNotBlank() } ?: continue
+            seen.add(lang)
+        }
+    }
+    return seen.toList()
+}
+
 class DetailService(
     private val mediaStore: MediaStore,
     private val jellyfinClient: JellyfinClient,
@@ -165,16 +182,13 @@ class DetailService(
             )
         }
 
-        // Use the first episode's scanned tracks for flag strips (no extra Jellyfin round-trip).
-        val firstEpTracks = uniqueEpisodes.firstOrNull()?.tracks
-        val seriesAudioLangs = firstEpTracks
-            ?.filter { it.kind == dev.jellystructure.model.TrackKind.AUDIO }
-            ?.mapNotNull { it.language?.lowercase()?.takeIf { l -> l.isNotBlank() } }
-            ?: emptyList()
-        val seriesSubLangs = firstEpTracks
-            ?.filter { it.kind == dev.jellystructure.model.TrackKind.SUBTITLE }
-            ?.mapNotNull { it.language?.lowercase()?.takeIf { l -> l.isNotBlank() } }
-            ?: emptyList()
+        // Phase 200 (FR-200-4): union across every episode, not just the first one — episodes routinely
+        // disagree about which languages they carry (64 of 182 multi-episode series, measured). Order
+        // stays physical-track order of the first episode (season/episode order) that has each
+        // language, so the strip doesn't reshuffle between visits.
+        val episodesInOrder = uniqueEpisodes.sortedWith(compareBy({ it.seasonNumber ?: 0 }, { it.episodeNumber ?: 0 }))
+        val seriesAudioLangs = unionLanguagesInFirstSeenOrder(episodesInOrder, dev.jellystructure.model.TrackKind.AUDIO)
+        val seriesSubLangs = unionLanguagesInFirstSeenOrder(episodesInOrder, dev.jellystructure.model.TrackKind.SUBTITLE)
         val sonarrEnabled = configStore.current.sonarr?.enabled == true
         val nextAiring = if (sonarrEnabled && item.sonarrStatus != "ended") {
             val date = item.sonarrNextAiringDate

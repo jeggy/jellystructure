@@ -7,9 +7,10 @@
 > Embedded: yes. Sidecar: never. Both: only the embedded half.
 
 ## Status
-`Planned`, 2026-09-06. Design/audit-authored, not dev-reviewed. Nothing built. Ravilo counterpart:
-**R239** (the render half). This phase owns *what languages exist in the payload*; R239 owns *how the
-strip draws them*.
+✓ Built 2026-09-10. Design/audit-authored, not dev-reviewed, not deployed — sidecars will appear on
+each title's next scan (FR-200-8), no forced repair rescan run. Ravilo counterpart: **R239** (the
+render half, ⚠ Partial — new flag assets not sourced). This phase owns *what languages exist in the
+payload*; R239 owns *how the strip draws them*. See STATUS.md for the build summary.
 
 ## The finding
 

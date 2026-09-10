@@ -173,7 +173,15 @@ object FfprobeRunner {
             }
         }
         if (result.isFailure) Logger.warn("Failed to parse ffprobe output for $filePath: ${result.exceptionOrNull()?.message}")
-        return result.getOrElse { emptyList() }
+        val embeddedTracks = result.getOrElse { emptyList() }
+        // Phase 200 (FR-200-1) — ffprobe only ever sees the container; a subtitle file sitting beside
+        // the video is invisible to it. Merged here (the one place every caller — scan, re-probe,
+        // per-track edit refresh — already gets its track list from) so the catalog and the player
+        // picker (which reads Jellyfin's MediaStreams, external tracks included) stop disagreeing.
+        val sidecars = runCatching {
+            SidecarSubtitleScanner.discover(filePath, startStreamIndex = (embeddedTracks.maxOfOrNull { it.streamIndex } ?: -1) + 1)
+        }.getOrDefault(emptyList())
+        return embeddedTracks + sidecars
     }
 
     /**

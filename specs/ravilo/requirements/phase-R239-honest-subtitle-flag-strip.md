@@ -4,9 +4,12 @@
 > *what languages reach the payload*; this fixes *what the strip does with them once they arrive*.
 
 ## Status
-`Planned`, 2026-09-06. Design/audit-authored, not dev-reviewed. Nothing built. Depends on nothing —
-both findings below are live today and worth fixing whether or not 200 ships — but 200 makes the first
-one considerably more visible.
+⚠ Partial, built 2026-09-10. Design/audit-authored, not dev-reviewed, not deployed. FR-R239-1/2/4/5/6
+built and unit-tested; **FR-R239-3 (new flag assets) NOT built — no source for the required flag
+images was available this session**, so Serbian/Bulgarian/Indonesian/Malay/Slovenian/Estonian/
+Latvian/Lithuanian/Tamil/Telugu/Filipino/Catalan still render as an honest `+N` with no flag, which is
+strictly better than before (they used to be invisible) but not the full fix. FR-R239-7's mockup sync
+not done. See STATUS.md for the build summary.
 
 ## The finding
 

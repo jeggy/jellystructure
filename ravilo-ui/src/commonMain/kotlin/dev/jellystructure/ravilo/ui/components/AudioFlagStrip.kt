@@ -66,21 +66,48 @@ internal val LANG_CC: Map<String, DrawableResource> = mapOf(
 
 private const val FLAG_MAX = 5
 
+/** Pure result of counting [AudioFlagStrip]'s inputs — extracted so FR-R239-1/2's counting rules are
+ *  unit-testable without a Composable. */
+internal data class FlagStripCounts(
+    val shownFlags: List<DrawableResource>,
+    val extra: Int,
+) {
+    /** True whenever the group has ANY language at all, mapped or not — the signal
+     *  [AudioSubtitleFlagLine] uses to decide whether a group renders (FR-R239-2). */
+    val hasAnyLanguage: Boolean get() = shownFlags.isNotEmpty() || extra > 0
+}
+
+/** Phase R239 (FR-R239-1) — counts every language the group has, not every flag it can draw. */
+internal fun countFlagStrip(languages: List<String>): FlagStripCounts {
+    val lowerLangs = languages.map { it.lowercase() }
+    // Deduplicate mapped languages by FLAG (same language, different 3-letter alias, e.g.
+    // nor/nob/nno → flag_no, should show once) — but an unmapped language has no such alias table, so
+    // it's deduplicated by its own raw code instead. Undercounting true duplicates there is the safe
+    // failure mode; over-counting (claiming fewer languages than exist) is the one FR-R239-1 forbids.
+    val mappedFlags = lowerLangs.mapNotNull { LANG_CC[it] }.distinct()
+    val unmappedCount = lowerLangs.filterNot { it in LANG_CC }.distinct().size
+    val totalDistinct = mappedFlags.size + unmappedCount
+    val shown = mappedFlags.take(FLAG_MAX)
+    return FlagStripCounts(shown, totalDistinct - shown.size)
+}
+
 /**
  * R75/R78 — language flag strip for the detail hero.
  * One flag per track that has a language, in physical track order.
- * Skips untagged/unmapped tracks; hidden entirely when none map to a flag; max 5 + "+N" pill.
+ * Hidden entirely only when the group has no languages at all; max 5 flags + an honest "+N" pill.
  * [label] is the category label shown before the flags ("AUDIO" or "SUBTITLES").
+ *
+ * Phase R239 (FR-R239-1/2) — a language with no flag asset used to be dropped before anything was
+ * counted, so a title with 6 mapped and 15 unmapped subtitle languages rendered five flags and "+1"
+ * (there are twenty-one), and a title whose only subtitles were entirely unmapped languages rendered
+ * identically to a title with none at all. `+N` now counts every language the group actually has —
+ * mapped or not — and the label renders as a bare count when nothing maps, never nothing.
  */
 @Composable
 fun AudioFlagStrip(audioLanguages: List<String>, label: String = "AUDIO", modifier: Modifier = Modifier) {
-    // Deduplicate: same language code from multiple tracks, or different 3-letter codes
-    // resolving to the same flag (nor/nob/nno → flag_no), should each show only once.
-    val mapped = audioLanguages.mapNotNull { lang -> LANG_CC[lang.lowercase()] }.distinct()
-    if (mapped.isEmpty()) return
-
-    val shown = mapped.take(FLAG_MAX)
-    val extra = mapped.size - shown.size
+    val counts = countFlagStrip(audioLanguages)
+    if (!counts.hasAnyLanguage) return
+    val (shown, extra) = counts
     val sora = Sora
 
     Row(
@@ -126,17 +153,16 @@ fun AudioFlagStrip(audioLanguages: List<String>, label: String = "AUDIO", modifi
     }
 }
 
-private fun hasMappedFlag(languages: List<String>): Boolean =
-    languages.any { LANG_CC.containsKey(it.lowercase()) }
-
 /**
- * R134 — audio + subtitle flags on a single line: `AUDIO 🅐🅑 · SUBTITLES 🅒🅓`. Renders only the groups
- * that actually map to a flag, with a subtle divider between them; nothing when neither maps.
+ * R134 — audio + subtitle flags on a single line: `AUDIO 🅐🅑 · SUBTITLES 🅒🅓`. Renders a group whenever
+ * it has ANY language at all, mapped or not (Phase R239, FR-R239-2) — a group whose languages happen
+ * to be entirely unmapped must never render identically to a group with no languages; nothing when
+ * neither group has any language.
  */
 @Composable
 fun AudioSubtitleFlagLine(audioLanguages: List<String>, subtitleLanguages: List<String>, modifier: Modifier = Modifier) {
-    val hasAudio = hasMappedFlag(audioLanguages)
-    val hasSub = hasMappedFlag(subtitleLanguages)
+    val hasAudio = audioLanguages.isNotEmpty()
+    val hasSub = subtitleLanguages.isNotEmpty()
     if (!hasAudio && !hasSub) return
     Row(
         modifier = modifier,
