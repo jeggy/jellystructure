@@ -5,8 +5,9 @@
 > The answer is *almost*: every scan-shaped path is safe, one is not, and the guard has no test.
 
 ## Status
-`Planned`, 2026-09-06. Design/audit-authored, not dev-reviewed. Nothing built. Backend-only — no
-mockup change, no Ravilo counterpart.
+✓ Built 2026-09-10. Design/audit-authored, not dev-reviewed, not deployed (no rename observed live —
+the fix is proven by test, per FR-199-4's own argument). Backend-only — no mockup change, no Ravilo
+counterpart. See STATUS.md for the build summary.
 
 ## The invariant under audit
 

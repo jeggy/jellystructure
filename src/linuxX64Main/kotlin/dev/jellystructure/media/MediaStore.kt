@@ -145,18 +145,31 @@ class MediaStore(
     private val lastExaminedLock = SpinLock()
 
     // Jellystructure-defined tags (those in the JS-tag store) always survive a re-scan, which
-    // otherwise replaces an item's tags with the fresh Jellyfin set (constitution invariant #6).
-    private fun preserveJsTags(fresh: MediaItem, existing: MediaItem?): MediaItem {
-        val keptJs = existing?.tags?.filter { it in jsTagStore.nameSet() } ?: return fresh
-        if (keptJs.isEmpty()) return fresh
-        return fresh.copy(tags = (fresh.tags + keptJs).distinct())
-    }
+    // otherwise replaces an item's tags with the fresh Jellyfin set (constitution invariant #6). The
+    // guard itself is [preserveJsTags] in JsTagLock.kt (Phase 199 — extracted so it can be unit-tested,
+    // same reason as the artwork/TMDB-match/metadata-language guards below).
 
     // Phase 133: a manually-picked/uploaded poster or backdrop must survive every automatic metadata
     // pull (scan/sync/re-pull), which otherwise unconditionally resets posterPath/backdropPath to TMDB's
-    // current default. The guard itself lives in ArtworkLock.kt (Phase 151) and is applied at BOTH write
-    // choke points below, mirroring preserveJsTags/mergeUserGenres — the Scanner never needs to know
-    // about the lock itself.
+    // current default. The guard itself lives in ArtworkLock.kt (Phase 151).
+    //
+    // Phase 199 — the real per-choke-point coverage (corrected; the previous version of this comment
+    // claimed the artwork/JS-tag guards mirrored each other's coverage and they never did):
+    //
+    //             | update() | addOrUpdate() | updateOne() |
+    //   ----------|----------|---------------|-------------|
+    //   jsTags     |    ✓    |       ✓       |   ✓ (opt)   |
+    //   artwork    |    —    |       ✓       |   ✓ (opt)   |
+    //   tmdbMatch  |    —    |       ✓       |   ✓ (opt)   |
+    //   metaLang   |    —    |       ✓       |   ✓ (opt)   |
+    //
+    // `update()` keeps jsTags (it has a real per-id predecessor: `existing[item.id]`, since it's a
+    // wholesale replace-by-id, not the twin/slug-matching `addOrUpdate` does) but has no locked-artwork/
+    // TMDB-match/metadata-language guard — its only caller is a full library wipe
+    // (`MediaRoutes.kt`, `store.update(emptyList())`). Every guard below is keyed off the item's
+    // **predecessor**, not the row under its own id: across a slug rename (id change) the predecessor is
+    // `old` (the stale duplicate under the previous id when one exists), not `existing` — `existing` is
+    // `null` on exactly that rename, and a guard keyed on it preserves nothing (Phase 199 / FR-199-1).
 
     // Phase 108: JS-owned created/updated timestamps. createdAt is stamped once (first insert) and
     // never moves; updatedAt only bumps when the item's actual content changed — a scan that re-finds
@@ -318,7 +331,7 @@ class MediaStore(
             db.mediaQueries.deleteAll()
             newItems.forEach { item ->
                 val old = existing[item.id]
-                var merged = preserveJsTags(item, old)
+                var merged = preserveJsTags(item, old, jsTagStore.nameSet())
                 val oldTitles = old?.titlesByLang
                 if (!oldTitles.isNullOrEmpty()) merged = merged.copy(titlesByLang = oldTitles + item.titlesByLang)
                 // Keep the original first-seen timestamp so a re-scan doesn't make every existing item
@@ -610,7 +623,9 @@ class MediaStore(
         // that case, keyed under the old id), otherwise `existing` — so createdAt/episode createdAt
         // survive a slug change instead of resetting.
         val old = stale ?: existing
-        var merged = preserveJsTags(item, existing)
+        // Phase 199 (FR-199-1): keyed off `old`, not `existing`, matching the three guards beside it —
+        // a slug rename now keeps the operator's JS tags instead of silently losing them.
+        var merged = preserveJsTags(item, old, jsTagStore.nameSet())
         // Phase 151: key the artwork lock off `old`, not `existing`, so a slug rename (id change) keeps
         // the operator's locked poster instead of silently falling back to the fresh TMDB default.
         merged = preserveLockedArtwork(merged, old)
@@ -650,6 +665,13 @@ class MediaStore(
      * a real id, and a `tmdb_match_clear` revert), or the guard would strip the very match they just
      * restored. Every other caller leaves it true, including the clear route itself (whose stored
      * predecessor isn't locked yet, so the guard no-ops there).
+     *
+     * Phase 199 (FR-199-3): [respectJsTags] is the same contract for JS tags. Every path that reaches
+     * `updateOne` today happens to be safe without it — the point of adding it isn't extra protection,
+     * it's that "a manual tag removal through `PATCH /{id}/metadata` sticks" stops being a property of
+     * the guard's *absence* and becomes a property somebody wrote down, defended by a test. `false` on
+     * exactly that route and its History revert (when reverting a `metadata_edit`, which is the one
+     * action that can change tags) — same wording and same default as the two guards above it.
      */
     suspend fun updateOne(
         item: MediaItem,
@@ -658,6 +680,7 @@ class MediaStore(
         // Phase 184: false on exactly the routes that deliberately CHANGE metadataLanguage (the set/
         // reset route, and its history revert) — same contract as [respectTmdbMatchLock].
         respectMetadataLanguageLock: Boolean = true,
+        respectJsTags: Boolean = true,
         // Phase 196 (FR-196-2) — true ONLY when the caller has just re-read this title's files from disk
         // (today: Scanner.syncSeriesEpisodes and the season re-sync). Every other caller here is a
         // metadata write — an NFO stamp, a Jellyfin sync stamp, an artwork fetch, a Sonarr enrichment, a
@@ -674,6 +697,7 @@ class MediaStore(
         if (respectArtworkLock) merged = preserveLockedArtwork(merged, existing)
         if (respectTmdbMatchLock) merged = preserveTmdbMatchLock(merged, existing)
         if (respectMetadataLanguageLock) merged = preserveMetadataLanguage(merged, existing)
+        if (respectJsTags) merged = preserveJsTags(merged, existing, jsTagStore.nameSet())
         merged = merged.copy(episodes = stampEpisodeCreatedAt(merged.episodes, existing?.episodes))
         merged = stampTimestamps(merged, existing)
         upsertItem(merged, examined)

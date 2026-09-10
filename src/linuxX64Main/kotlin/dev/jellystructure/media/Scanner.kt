@@ -215,15 +215,10 @@ class Scanner(
         (configStore.current.behavior.scanWorkers.coerceIn(1, 100) * 2).coerceIn(2, 8)
     )
 
-    /**
-     * TMDB re-pull tag rule (Phase 19 §15): TMDB keywords become the non-JS tags, and any
-     * Jellystructure-defined tags on the item always survive. Jellyfin-sourced tags that are
-     * neither are dropped — TMDB is authoritative for non-JS tags on a TMDB re-pull.
-     */
-    private fun mergeRepullTags(tmdbTags: List<String>, existing: MediaItem): List<String> {
-        val jsNames = jsTagStore.nameSet()
-        return (tmdbTags + existing.tags.filter { it in jsNames }).distinct()
-    }
+    // Phase 199 (FR-199-2): `mergeRepullTags` moved to JsTagLock.kt as a pure function, same reason as
+    // preserveJsTags — extracted so it can be unit-tested directly.
+    private fun mergeRepullTags(tmdbTags: List<String>, existing: MediaItem): List<String> =
+        mergeRepullTags(tmdbTags, existing.tags, jsTagStore.nameSet())
 
     /**
      * Phase 94: genre provenance. TMDB owns genres it sets, but the user's edits are sticky across a

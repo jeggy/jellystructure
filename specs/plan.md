@@ -298,7 +298,7 @@ data class Episode(
 | GET | `/tags` | All JS-tag definitions |
 | POST | `/tags` | Create a JS tag (`{name,color,description}`); 409 if it exists |
 | PATCH | `/tags/{name}` | Update color / description |
-| DELETE | `/tags/{name}` | Delete the tag definition (does not strip it from items) |
+| DELETE | `/tags/{name}` | Delete the tag definition and strip it from every item that carries it (Phase 199 — immediate, not left for the next scan to drop silently) |
 
 > The global **fallback language** is edited via `PUT /config` (Settings → Metadata). The standalone
 > `/api/language/settings` routes and the Language page were removed in Phase 23.
