@@ -233,3 +233,7 @@ A setup script (`scripts/build-fixtures.sh`) downloads and prepares test media b
    Jellyfin `Tags` + existing JS tags (Jellyfin authoritative for non-JS). **Re-pull from TMDB**: TMDB
    **keywords** + existing JS tags (drops stale Jellyfin-only tags). **Re-pull from Jellyfin**: Jellyfin
    `Tags` ∪ everything existing (additive). See Phase 19 §15 + Phase 51.
+   **Predecessor rule (Phase 199):** "preserved" means preserved from the item's predecessor row, and
+   across a slug/id rename the predecessor is **not** the row under the fresh item's own id — it is the
+   stale row the rename replaces. A guard that reads the fresh item's own id back out of the store sees
+   `null` on exactly that rename and preserves nothing.

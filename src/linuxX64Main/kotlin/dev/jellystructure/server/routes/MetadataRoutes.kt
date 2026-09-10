@@ -360,6 +360,16 @@ fun Route.metadataRoutes(store: MediaStore, tagStore: JsTagStore, logoDownloader
                 val name = call.parameters["name"] ?: return@delete call.respond(HttpStatusCode.BadRequest)
                 val ok = tagStore.delete(name)
                 if (!ok) return@delete call.respond(HttpStatusCode.NotFound)
+                // Phase 199 (FR-199-7): strip immediately rather than leave it — once a name is gone
+                // from `js_tags`, `preserveJsTags` no longer recognizes it as JS-owned, so the *next*
+                // scan/re-pull to touch each item would silently drop it anyway, at a time depending on
+                // that item's freshness tier. Stripping here now instead makes the deletion's effect on
+                // items honest and immediate rather than a ticking, tier-dependent side effect.
+                for (item in store.allItems()) {
+                    if (name in item.tags) {
+                        store.updateOne(item.copy(tags = item.tags - name), respectJsTags = false)
+                    }
+                }
                 call.respond(HttpStatusCode.NoContent)
             }
         }

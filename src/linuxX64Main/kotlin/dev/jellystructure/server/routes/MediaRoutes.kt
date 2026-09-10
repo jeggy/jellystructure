@@ -476,7 +476,15 @@ fun Route.mediaRoutes(
                 // respectMetadataLanguageLock = false: same reasoning for a `metadata_language_set`
                 // revert — the guard would otherwise re-force the currently-stored (about-to-be-undone)
                 // language straight back over whatever the snapshot restored.
-                store.updateOne(reverted, respectTmdbMatchLock = false, respectMetadataLanguageLock = false)
+                // respectJsTags = false only for a `metadata_edit` revert (Phase 199, FR-199-3) — that's
+                // the one action whose snapshot can restore a tag set with a JS tag removed; every other
+                // revert action never touches tags, so the guard staying on there is a no-op, not a risk.
+                store.updateOne(
+                    reverted,
+                    respectTmdbMatchLock = false,
+                    respectMetadataLanguageLock = false,
+                    respectJsTags = entry.action != "metadata_edit",
+                )
                 mediaHistory.record(id, "revert", "reverted entry $entryId (${entry.action})")
                 call.respond(reverted)
             }
@@ -1465,7 +1473,9 @@ fun Route.mediaRoutes(
             )
             @Serializable data class MetaSnap(val title: String, val overview: String?, val year: Int?, val originalTitle: String?, val director: String?, val studio: String?, val network: String?, val tags: List<String>, val genres: List<String> = emptyList())
             val snap = MetaSnap(item.title, item.overview, item.year, item.originalTitle, item.director, item.studio, item.network, item.tags, item.genres)
-            store.updateOne(updated)
+            // Phase 199 (FR-199-3): this is the one route that can deliberately REMOVE a JS tag — the
+            // guard would otherwise re-add it right back on the same write.
+            store.updateOne(updated, respectJsTags = false)
             mediaHistory.record(id, "metadata_edit", "title=${updated.title}", revertable = true, beforeSnapshot = Json.encodeToString(snap))
             // Phase 74: write-through persists to the DB ONLY. The NFO write + Jellyfin refresh happen
             // on the explicit "Save → NFO" / "Save & sync to Jellyfin" action, not on every field edit.
