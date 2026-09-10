@@ -8,10 +8,12 @@
 > second, and the coincidence named the wrong axis.
 
 ## Status
-`Planned`, 2026-09-08. Root cause corrected 2026-09-10 after a byte-exact reproduction — see
-*Correction* below. Audit-authored, not dev-reviewed. Nothing built. Backend/media-file only — **no
-Ravilo counterpart and no client change**: the client is behaving correctly given a file whose track
-list it cannot reach.
+✓ Built 2026-09-10 (FR-201-1/2/3/4/6/8). Root cause corrected 2026-09-10 after a byte-exact
+reproduction — see *Correction* below. Audit-authored, not dev-reviewed, not deployed. **FR-201-5 (repair
+the 164 known-broken files) is NOT run** — the repair route exists and is tested, but was deliberately
+not invoked against production media this session. Backend/media-file only — **no Ravilo counterpart
+and no client change**: the client is behaving correctly given a file whose track list it cannot reach.
+See STATUS.md for the build summary.
 
 ### Correction (2026-09-10)
 The first draft of this spec blamed `-cues_to_front 1` in `TrackCommandBuilder.ffmpegReorder:102`.

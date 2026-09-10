@@ -89,6 +89,20 @@ data class Track(
      *  (exact, container-tagged) / `"format"` (a floor that includes audio/subtitle overhead) — so the
      *  admin can tell a measured bitrate from a container-level estimate. Null iff [videoBitrate] is. */
     val videoBitrateSource: String? = null,
+    /** Phase 200 (FR-200-2): true for a subtitle track discovered as a sidecar file beside the video
+     *  rather than probed out of the container itself. Additive/defaulted — no migration. A surface
+     *  that wants to distinguish "in the file" from "beside the file" can; one that doesn't, doesn't
+     *  have to. Never crosses into Ravilo (R239 FR-R239-5) — the viewer asks "is there Danish", not
+     *  "is it muxed in". [streamIndex]/[specifier] for an external track are synthetic (continuing past
+     *  the container's real stream indices, `specifier` prefixed `ext:`) and must never be sent to
+     *  mkvpropedit/ffmpeg — there is no container stream to edit. */
+    val external: Boolean = false,
+    /** Phase 200 (FR-200-2): the sidecar file's own path, only set when [external] is true. */
+    val externalPath: String? = null,
+    /** Phase 200 (FR-200-3): parsed from the sidecar filename's `.hi`/`.cc`/`sdh` marker (R195's
+     *  deferred SDH-detection prerequisite, supplied here for free). Always false for an embedded
+     *  track — ffprobe has no SDH signal of its own. */
+    val sdh: Boolean = false,
 )
 
 @Serializable

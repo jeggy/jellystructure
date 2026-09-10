@@ -783,6 +783,7 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
           <h2>${item.title.esc()} <span class="muted">${if (item.year != null) "(${item.year})" else ""}</span></h2>
           ${if (item.tmdbId != null) """<span class="badge ok" id="match-badge">TMDB matched</span>""" else """<span class="badge warn" id="match-badge">No TMDB match</span>"""}
           <span class="audio-flags" id="audio-flags">${audioFlagsHtml(item.tracks)}</span>
+          <span class="audio-flags" id="subtitle-flags">${subtitleFlagsHtml(item.tracks)}</span>
           $ageRatingBadgeHtml
           ${buildImdbPillHtml(item)}
           <span id="seeding-pill" style="display:none;cursor:pointer;" title="Click to open Seeding tab"></span>
@@ -3800,6 +3801,28 @@ private fun audioFlagsHtml(tracks: List<Track>): String {
     }
     val more = if (extra > 0) """<span class="af-more" title="$extra more">+$extra</span>""" else ""
     return """<span class="af-label">Audio</span><span class="af-row">$flags$more</span>"""
+}
+
+/**
+ * Phase 200 (FR-200-5) — the SUBTITLES equivalent of [audioFlagsHtml], so an operator can see from the
+ * pagebar alone whether a title has subtitles at all, same as audio. Unlike audio, an empty subtitle
+ * track list is normal (plenty of titles genuinely have none) — no "?" fallback, it just renders
+ * nothing, same as [audioFlagsHtml] does for an unmapped-only language set.
+ */
+private fun subtitleFlagsHtml(tracks: List<Track>): String {
+    val subTracks = tracks.filter { it.kind == TrackKind.SUBTITLE }
+    if (subTracks.isEmpty()) return ""
+    val langs = subTracks
+        .mapNotNull { t -> t.language?.lowercase()?.let { l -> LANG_CC[l]?.let { cc -> l to cc } } }
+        .distinctBy { (_, cc) -> cc }
+    if (langs.isEmpty()) return ""
+    val shown = langs.take(AUDIO_FLAG_MAX)
+    val extra = langs.size - shown.size
+    val flags = shown.joinToString("") { (l, cc) ->
+        """<span class="fi fi-$cc" title="${langName(l)}" aria-label="${langName(l)}"></span>"""
+    }
+    val more = if (extra > 0) """<span class="af-more" title="$extra more">+$extra</span>""" else ""
+    return """<span class="af-label">Subtitles</span><span class="af-row">$flags$more</span>"""
 }
 
 /** Human-readable name for an ISO-639-1 or ISO-639-2 code used in the audio-flag tooltips. */

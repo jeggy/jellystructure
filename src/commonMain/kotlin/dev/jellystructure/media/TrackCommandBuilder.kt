@@ -105,4 +105,19 @@ object TrackCommandBuilder {
             "  -c copy$cuesFix \\\n" +
             "  '$escapedTmp' && mv '$escapedTmp' '$escaped'"
     }
+
+    /**
+     * Phase 201 (FR-201-3) — restores `Tracks` to the front of the file after an in-place mkvpropedit
+     * edit grew it past its slot and evicted it to EOF. Lossless: no re-encode, every stream/language
+     * tag/disposition byte-identical. `-cues_to_front 1` is kept (FR-201-4) — it is what already puts
+     * `Tracks` in the right place for a fresh remux (measured 0.59s for a 92MB file); this is simply
+     * that same fix, applied as a repair instead of a preventive default.
+     */
+    fun ffmpegRepairTracksLayout(filePath: String): String {
+        val escaped = esc(filePath)
+        val escapedTmp = esc(tmpPath(filePath))
+        return "ffmpeg -y -i '$escaped' \\\n" +
+            "  -map 0 -c copy -cues_to_front 1 \\\n" +
+            "  '$escapedTmp' && mv '$escapedTmp' '$escaped'"
+    }
 }

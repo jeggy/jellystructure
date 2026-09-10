@@ -220,7 +220,11 @@ fun wireUnifiedTrackEditor(
     postApply: (() -> Unit)? = null,
 ) {
     val audioModel = tracks.filter { it.kind == TrackKind.AUDIO }.map { it.toModel() }.toMutableList()
-    val subsModel = tracks.filter { it.kind == TrackKind.SUBTITLE }.map { it.toModel() }.toMutableList()
+    // Phase 200 — sidecar subtitles are never part of this editable model: there is no container flag
+    // to set/reorder on a file that isn't muxed in, and the backend now rejects any edit attempt on
+    // one (FR-200-2's doc). Listed separately, read-only, below the editable rows (FR-200-5).
+    val subsModel = tracks.filter { it.kind == TrackKind.SUBTITLE && !it.external }.map { it.toModel() }.toMutableList()
+    val externalSubs = tracks.filter { it.kind == TrackKind.SUBTITLE && it.external }
     // Snapshots of the on-disk state — diff against these to compute pending changes.
     val audioOriginal = audioModel.map { it.copy() }.toMutableList()
     val subsOriginal = subsModel.map { it.copy() }.toMutableList()
@@ -324,6 +328,36 @@ fun wireUnifiedTrackEditor(
             </div>"""
     }
 
+    // Phase 200 (FR-200-5) — sidecar subtitles, read-only: no drag handle, no order/default/forced
+    // controls (there is no container flag on a file that isn't muxed in), visually distinguished with
+    // a "sidecar" pill so an operator never mistakes one for an embedded track that just isn't wired up.
+    fun externalSubsHtml(): String {
+        if (currentKind != "subs" || externalSubs.isEmpty()) return ""
+        val rows = externalSubs.joinToString("") { t ->
+            val lang = if (t.language.isNullOrBlank()) {
+                """<span class="badge bad">no language</span>"""
+            } else {
+                """<span class="lang">${t.language!!.esc()}</span> <span class="muted tiny">${langShortName(t.language).esc()}</span>"""
+            }
+            val flags = buildList {
+                if (t.sdh) add("SDH")
+                if (t.forced) add("forced")
+            }.joinToString(" · ")
+            """<div class="trk" style="opacity:.85;">
+              <div class="trk-main">
+                <span class="grip" style="visibility:hidden;">⠿</span>
+                <span class="pos" style="visibility:hidden;">·</span>
+                <span class="trk-mid">
+                  <span class="badge" style="font-size:.68rem;" title="Sidecar file: ${t.externalPath?.esc() ?: ""}">sidecar</span>
+                  $lang
+                  <span class="muted tiny mono">${t.codec.esc()}${if (flags.isNotEmpty()) " · $flags" else ""}</span>
+                </span>
+              </div>
+            </div>"""
+        }
+        return """<div class="muted tiny" style="margin:10px 0 4px;">Sidecar subtitles (read-only — files beside the video, not part of the container)</div>$rows"""
+    }
+
     fun renderList() {
         val arr = model()
         colMidEl?.textContent = if (currentKind == "audio") "language & codec" else "language, codec & forced"
@@ -385,7 +419,7 @@ fun wireUnifiedTrackEditor(
                 <span class="trk-right">$forcedCell $starBtn</span>
               </div>
             </div>"""
-        }.joinToString("")
+        }.joinToString("") + externalSubsHtml()
 
         cascade()
         // Keep the pagebar audio-flag strip in sync with language/order changes (Phase 87).

@@ -136,7 +136,7 @@ fun Route.trackRoutes(
                 ?: return@get call.respond(HttpStatusCode.NotFound, mapOf("error" to "track not found"))
 
             val ext = item.path.substringAfterLast('.').lowercase()
-            val sameType = item.tracks.filter { it.kind == targetTrack.kind }
+            val sameType = item.tracks.filter { it.kind == targetTrack.kind && !it.external }
 
             val kindStr = targetTrack.kind.name.lowercase()
             val beforeSnaps = sameType.map { t ->
@@ -234,9 +234,11 @@ fun Route.trackRoutes(
             val req = call.receive<SetDefaultRequest>()
             val targetTrack = item.tracks.firstOrNull { it.specifier == req.specifier }
                 ?: return@post call.respond(HttpStatusCode.NotFound, mapOf("error" to "track not found"))
+            // Phase 200 — a sidecar subtitle isn't part of the container; there is no flag to set.
+            if (targetTrack.external) return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "cannot edit an external subtitle track"))
 
             val ext = item.path.substringAfterLast('.').lowercase()
-            val sameType = item.tracks.filter { it.kind == targetTrack.kind }
+            val sameType = item.tracks.filter { it.kind == targetTrack.kind && !it.external }
 
             when (val guard = seedingGuard.check(item.path, configStore.current)) {
                 is SeedingCheckResult.Blocked -> { call.respond(HttpStatusCode.Conflict, mapOf("error" to "File is seeded by '${guard.torrentName}'")); return@post }
@@ -288,6 +290,7 @@ fun Route.trackRoutes(
             val req = call.receive<SetForcedRequest>()
             val targetTrack = item.tracks.firstOrNull { it.specifier == req.specifier }
                 ?: return@post call.respond(HttpStatusCode.NotFound, mapOf("error" to "track not found"))
+            if (targetTrack.external) return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "cannot edit an external subtitle track"))
             if (targetTrack.kind != TrackKind.SUBTITLE) {
                 call.respond(HttpStatusCode.BadRequest, mapOf("error" to "forced flag only applies to subtitle tracks"))
                 return@post
@@ -345,6 +348,7 @@ fun Route.trackRoutes(
 
             val targetTrack = item.tracks.firstOrNull { it.specifier == req.specifier }
                 ?: return@post call.respond(HttpStatusCode.NotFound, mapOf("error" to "track not found"))
+            if (targetTrack.external) return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "cannot edit an external subtitle track"))
 
             val ext = item.path.substringAfterLast('.').lowercase()
 
@@ -407,8 +411,9 @@ fun Route.trackRoutes(
                 ?: return@delete call.respond(HttpStatusCode.BadRequest)
             val item = store.resolve(id)
                 ?: return@delete call.respond(HttpStatusCode.NotFound)
-            item.tracks.firstOrNull { it.specifier == specifier }
+            val deleteTarget = item.tracks.firstOrNull { it.specifier == specifier }
                 ?: return@delete call.respond(HttpStatusCode.NotFound, mapOf("error" to "track not found"))
+            if (deleteTarget.external) return@delete call.respond(HttpStatusCode.BadRequest, mapOf("error" to "cannot edit an external subtitle track"))
 
             when (val guard = seedingGuard.check(item.path, configStore.current)) {
                 is SeedingCheckResult.Blocked -> { call.respond(HttpStatusCode.Conflict, mapOf("error" to "File is seeded by '${guard.torrentName}'")); return@delete }
@@ -438,6 +443,10 @@ fun Route.trackRoutes(
             val orderedTracks = req.order.mapNotNull { spec -> item.tracks.firstOrNull { it.specifier == spec } }
             if (orderedTracks.size != req.order.size) {
                 call.respond(HttpStatusCode.BadRequest, mapOf("error" to "one or more specifiers not found"))
+                return@post
+            }
+            if (orderedTracks.any { it.external }) {
+                call.respond(HttpStatusCode.BadRequest, mapOf("error" to "cannot reorder an external subtitle track"))
                 return@post
             }
 
@@ -554,7 +563,7 @@ fun Route.trackRoutes(
                 for (epPlan in toReorder) {
                     val ep = store.resolve(id)?.episodes?.firstOrNull { it.filename == epPlan.filename } ?: continue
                     val targetLangs = req.order.map { it.lowercase() }
-                    val tracksOfKind = ep.tracks.filter { it.kind == kind }
+                    val tracksOfKind = ep.tracks.filter { it.kind == kind && !it.external }
                     val ordered = computeProposedTracks(tracksOfKind, targetLangs, partial = epPlan.status == "partial")
                     val orderedIndices = ordered.map { it.streamIndex }
 
@@ -570,22 +579,31 @@ fun Route.trackRoutes(
                         else -> Unit
                     }
 
+                    // Phase 201 (FR-201-8): run setDefault BEFORE the reorder remux, not after — an MKV
+                    // mkvpropedit edit can grow the Tracks element past its slot and evict it to EOF,
+                    // reachable only via SeekHead; ExoPlayer reads the HTTP body linearly and never
+                    // builds a renderer. Putting the ffmpeg remux (which already carries -cues_to_front
+                    // and therefore lays Tracks out correctly) LAST means the common path never reaches
+                    // FR-201-3's repair at all. The track that will become first-of-kind after the
+                    // reorder is known up front — it's simply `orderedIndices.first()` — so the default
+                    // flag can be set on the pre-reorder file by its current (pre-reorder) stream index,
+                    // and ffmpeg's `-c copy` remux carries dispositions forward per-stream regardless of
+                    // where the track ends up in the new order.
+                    if (req.setDefault) {
+                        val desiredDefaultIndex = orderedIndices.firstOrNull()
+                        val currentlyDefault = tracksOfKind.firstOrNull { it.streamIndex == desiredDefaultIndex }?.default == true
+                        if (desiredDefaultIndex != null && !currentlyDefault) {
+                            val sameKindIndices = tracksOfKind.map { it.streamIndex }
+                            val ext = ep.path.substringAfterLast('.').lowercase()
+                            if (ext == "mkv") MkvpropeditRunner.setDefault(ep.path, desiredDefaultIndex, sameKindIndices)
+                            else FfmpegRunner.setDefault(ep.path, desiredDefaultIndex, sameKindIndices, kind)
+                        }
+                    }
+
                     val ok = FfmpegRunner.reorderTracks(ep.path, kind, orderedIndices)
                     if (!ok) {
                         broadcaster.broadcast(JobEvent.FileDone(jobId, epPlan.code, false, "ffmpeg remux failed"))
                         failed++; continue
-                    }
-
-                    // Run setDefault before the final probe so the DB gets the post-setDefault state.
-                    if (req.setDefault) {
-                        val midTracks = FfprobeRunner.probe(ep.path)
-                        val firstOfKind = midTracks.filter { it.kind == kind }.minByOrNull { it.streamIndex }
-                        val sameKind = midTracks.filter { it.kind == kind }
-                        if (firstOfKind != null && !firstOfKind.default) {
-                            val ext = ep.path.substringAfterLast('.').lowercase()
-                            if (ext == "mkv") MkvpropeditRunner.setDefault(ep.path, firstOfKind.streamIndex, sameKind.map { it.streamIndex })
-                            else FfmpegRunner.setDefault(ep.path, firstOfKind.streamIndex, sameKind.map { it.streamIndex }, kind)
-                        }
                     }
 
                     val newTracks = FfprobeRunner.probe(ep.path)
@@ -611,7 +629,7 @@ fun Route.trackRoutes(
 
                 for (epPlan in toFlagFix) {
                     val ep = store.resolve(id)?.episodes?.firstOrNull { it.filename == epPlan.filename } ?: continue
-                    val tracksOfKind = ep.tracks.filter { it.kind == kind }
+                    val tracksOfKind = ep.tracks.filter { it.kind == kind && !it.external }
                     val firstOfKind = tracksOfKind.minByOrNull { it.streamIndex } ?: continue
                     val sameKind = tracksOfKind.map { it.streamIndex }
 
@@ -662,6 +680,49 @@ fun Route.trackRoutes(
             }
         }
     }
+
+    // Phase 200 (FR-200-6) — the guard on the sidecar-discovery decision: sweep the library comparing
+    // our own per-title subtitle language set against Jellyfin's own MediaStreams (one Jellyfin round
+    // trip per item with a jellyfinId — operator-triggered, not part of the automatic /health/full
+    // poll, the same reasoning as the MKV layout sweep below). Report only; a divergence is a parser
+    // bug to fix, never a value to silently correct.
+    get("/media/health/subtitle-reconciliation") {
+        val cfg = configStore.current
+        if (cfg.apiKeys.jellyfinUrl.isBlank() || cfg.apiKeys.jellyfinToken.isBlank()) {
+            return@get call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Jellyfin not configured"))
+        }
+        // Movies and music videos only — item.tracks IS the file's own track list for those kinds. A
+        // series' tracks live per-episode; extending this to every episode would multiply the Jellyfin
+        // round trips by episode count for comparatively little of the 260-movie finding this exists to
+        // guard. Scoped deliberately, not an oversight.
+        val items = store.allItems().filter { !it.jellyfinId.isNullOrBlank() && it.kind != MediaKind.TV_SHOW }
+        val divergences = items.mapNotNull { item ->
+            val jfId = item.jellyfinId ?: return@mapNotNull null
+            val streams = jellyfinClient.getItemMediaStreams(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken, jfId)?.mediaStreams
+                ?: return@mapNotNull null
+            val ourSubLangs = item.tracks.filter { it.kind == TrackKind.SUBTITLE }.mapNotNull { it.language }
+            dev.jellystructure.media.SubtitleReconciliation.compare(jfId, ourSubLangs, streams).takeUnless { it.agrees }
+        }
+        call.respond(mapOf("scanned" to items.size, "diverged" to divergences.size, "divergences" to divergences))
+    }
+
+    // Phase 201 (FR-201-6) — a read-only Tracks/Cluster layout sweep the operator can run and read,
+    // surfaced on the Activity page's health reporting. Never auto-repairs: a repair is a write to a
+    // media file, and this route is a report. Cheap — it stops at the first Cluster of each file and
+    // never reads a payload; the full production library swept well under a minute.
+    get("/media/health/mkv-layout") {
+        call.respond(dev.jellystructure.media.MkvLayoutAudit.sweep(store.allItems()))
+    }
+
+    // Phase 201 (FR-201-5) — repair a specific, operator-chosen set of files: normally exactly the
+    // `tracksAfterClusters` list a prior sweep reported. An explicit action on the media library, not
+    // something a scan may trigger on its own initiative (Phase 188 is the standing reminder why).
+    post("/media/health/mkv-layout/repair") {
+        @Serializable data class MkvRepairReq(val paths: List<String>)
+        val req = call.receive<MkvRepairReq>()
+        if (req.paths.isEmpty()) return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "paths required"))
+        call.respond(dev.jellystructure.media.MkvLayoutAudit.repair(req.paths))
+    }
 }
 
 // ── Phase 96 helpers ─────────────────────────────────────────────────────────
@@ -700,7 +761,7 @@ private fun classifyEpisodes(episodes: List<Episode>, kind: TrackKind, order: Li
 
 private fun classifyEpisode(ep: Episode, kind: TrackKind, targetLangs: List<String>, targetSet: Set<String>, setDefault: Boolean): BulkPlanEpisode {
     val code = buildBulkEpCode(ep)
-    val tracks = ep.tracks.filter { it.kind == kind }
+    val tracks = ep.tracks.filter { it.kind == kind && !it.external }
 
     if (tracks.size <= 1) {
         val summary = tracks.toSummary(targetSet)

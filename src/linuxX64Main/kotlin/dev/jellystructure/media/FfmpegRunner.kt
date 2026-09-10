@@ -42,6 +42,14 @@ object FfmpegRunner {
     fun planSetDefault(filePath: String, defaultStreamIndex: Int, sameTypeIndices: List<Int>, kind: TrackKind): String =
         TrackCommandBuilder.ffmpegDefault(filePath, defaultStreamIndex, sameTypeIndices, typeChar(kind))
 
+    /** Phase 201 (FR-201-3/5) — repair a file whose `Tracks` element has been evicted past the first
+     *  `Cluster` (see [MkvLayout]). Same remux plumbing as every other write here. */
+    suspend fun repairTracksLayout(filePath: String): Boolean {
+        val core = TrackCommandBuilder.ffmpegRepairTracksLayout(filePath)
+        val escaped = filePath.replace("'", "'\\''")
+        return runRemux(filePath, withOwnershipPreservation(escaped, core))
+    }
+
     private suspend fun runRemux(filePath: String, cmd: String): Boolean {
         val ok = runCommand(cmd)
         if (!ok) {
