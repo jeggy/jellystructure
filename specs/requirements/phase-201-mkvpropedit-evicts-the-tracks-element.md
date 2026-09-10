@@ -31,7 +31,7 @@ slot and there is no adjacent `Void` to absorb it, mkvpropedit overwrites the ol
 of the identical size and **appends `Tracks` to the very end of the file**, reachable only through
 `SeekHead`.
 
-`mkvpropedit` is called from three places, all of which can do this:
+`mkvpropedit` is called from four places, all of which can do this:
 
 | site | call |
 |---|---|
@@ -110,7 +110,7 @@ This is the invariant. Everything below is a means to it.
 
 **FR-201-2 — check the layout after every mkvpropedit edit.** A top-level EBML walk of the edited
 file, confirming `Tracks` precedes the first `Cluster`. It reads a few hundred bytes and needs no
-subprocess. It belongs in `MkvpropeditRunner`, once — not at each of the three call sites. **It must
+subprocess. It belongs in `MkvpropeditRunner`, once — not at each of the four call sites. **It must
 not use ffprobe**, which seeks and therefore always passes.
 
 **FR-201-3 — a file that fails the check is repaired in place, immediately, before the operation
@@ -140,6 +140,12 @@ copy, no new error state, no "this file can't be played" screen — R237's class
 start failures and this is not one (the start *succeeds*). A client-side guard, if ever wanted,
 belongs in its own phase with its own thinking about what the viewer is meant to do about it.
 
+**FR-201-8 — in the bulk-reorder path, make the ffmpeg remux the last writer.** `TrackRoutes.kt:587`
+runs `setDefault` *after* `FfmpegRunner.reorderTracks`; swapping them lets the remux lay `Tracks` out
+correctly for free, so the common path never reaches FR-201-3's repair at all. This is a complement to
+FR-201-2/3 and **never a replacement** — it does nothing for the `toFlagFix` loop at `:626` or the
+single-title edits at `:254`/`:364`, which have no remux to be last.
+
 ## Out of scope
 
 - Re-encoding anything.
@@ -152,15 +158,10 @@ belongs in its own phase with its own thinking about what the viewer is meant to
 
 ## Open questions
 
-1. **Ordering as a cheaper partial fix.** In the bulk-reorder path the mkvpropedit call at
-   `TrackRoutes.kt:587` runs *after* the ffmpeg remux; swapping them would make the remux the last
-   writer and lay `Tracks` out correctly for free. It does **not** cover `:626` or the single-title
-   edits at `:254`/`:364`, so it is a complement to FR-201-2/3, never a replacement. Worth doing
-   anyway?
-2. **Bob the Builder (52), The Cleaner (6), Secrets We Keep (6), Taskmaster (5)** have no
+1. **Bob the Builder (52), The Cleaner (6), Secrets We Keep (6), Taskmaster (5)** have no
    `reorder_tracks` / `bulk_reorder_tracks` row in `media_history` — but they may well have gone
    through the single-title set-language/set-default paths, which record different actions. Confirm
    before FR-201-2 is called complete; if some other writer can do this, the check is in the wrong
    place.
-3. **Repair ordering.** Nothing stops the next flag edit from re-breaking a repaired file until
+2. **Repair ordering.** Nothing stops the next flag edit from re-breaking a repaired file until
    FR-201-2/3 ship, so the repair should follow the code fix rather than precede it.
