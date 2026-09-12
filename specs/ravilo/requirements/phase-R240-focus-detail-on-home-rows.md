@@ -183,6 +183,43 @@ Run with `focusDetail: "line"` first, then `"rowOpen"`, on the stue TV.
    J's reveal runs on the flip.
 10. Danish and Faroese: every label is translated; nothing clips at 88px.
 
+## 2026-09-12 addendum — device-verified on the stue TV (BRAVIA 4K VH21)
+
+Live-tested against the real household config (`focusDetailRowOpen` flipped on by the app owner via
+the admin panel for this pass, reverted after), release build, AOT-compiled (`compile -m speed -f`).
+
+- **Test 3 (J settling) — confirmed.** Focusing Taskmaster then Mayday in Continue Watching both
+  opened a clean widened panel beside the tile (title, badges, genre chips, synopsis, AUDIO/SUBTITLES
+  flags, Resume link) with no overlap into the row below.
+- **Test 4 (J sweeping, no repeated opens) — confirmed, and measured.** 5 rapid Right presses (~80ms
+  apart) produced only 53 total frames rendered with 1 janky frame (1.89%) and 1 frame-deadline miss
+  over the whole sweep+settle window — the dwell suppressed every intermediate open exactly as
+  designed; the row opened once, on the tile the sweep actually stopped on (Bluey).
+- **Test 6 (first content row, foot fully on screen, no scroll-back) — confirmed.** Continue
+  Watching is the first content row under the hero/channel rail in this household's layout; its
+  opened panel never clipped under anything and the page never scrolled back up afterward.
+- **FR-R240-10 (two-slot lateral-hop crossfade) — confirmed live**, not just in the mockup/unit
+  tests: hopping Right from an open Taskmaster straight to Mayday produced a single clean crossfade,
+  no stray leftover panel, no double-open.
+- **Open question 3 (reduced motion) — confirmed live.** With `animator_duration_scale` set to 0
+  (Android's system-wide "remove animations"), a fresh launch rendered **L** instead of **J** for the
+  exact same config (`focusDetailRowOpen: true`) — the downgrade in
+  `effectiveFocusDetailMode()`/`systemPrefersReducedMotion()` fires correctly end-to-end on real
+  hardware. Restoring the setting to 1.0 required a fresh launch to take effect, confirming the
+  documented "read once per composition" tradeoff is what actually happens, not a bug.
+- **Open question 1 (reflow cost) — one real data point, not fully closed.** A single settled
+  row-open (one lateral hop, Taskmaster→Mayday) cost 19 total frames / 1 janky (5.26%) / 1 deadline
+  miss, GPU flat at 4ms. This is a single sample on one device under light concurrent load (no active
+  scan, no transcode), not the systematic sweep-and-trace invariant 11 asks for — the open question
+  stays open, but the data collected here is encouraging rather than alarming, and doesn't argue for
+  keeping J off any harder than the existing "unmeasured" default already does.
+- Channel rail / "Collections" row correctly stayed inert (no L, no J) when focused, confirming
+  FR-R240-1's reverse still holds on real hardware, not just in the mockup.
+- Not tested this pass: acceptance tests 5, 7, 9, 10 (Faroese/Danish locale, live config-flip-while-
+  focused, multi-row Down navigation clearing the panel). Acceptance test 2's exact "never shows a
+  title that is not focused" claim during a fast sweep was implied by the frame data above but not
+  independently eyeballed frame-by-frame.
+
 ## Open questions
 
 1. **The reflow cost on the living-room BRAVIA is unmeasured — this is why J ships off.** J changes a
