@@ -13,6 +13,8 @@ import dev.jellystructure.shared.tv.Channel
 import dev.jellystructure.shared.tv.ChannelConfig
 import dev.jellystructure.shared.tv.Condition
 import dev.jellystructure.shared.tv.ConditionGroup
+import dev.jellystructure.shared.tv.FocusDetailFacts
+import dev.jellystructure.shared.tv.RatingBadge
 import dev.jellystructure.shared.tv.Hero
 import dev.jellystructure.shared.tv.HeroConfig
 import dev.jellystructure.shared.tv.HomeFeed
@@ -202,15 +204,69 @@ class HomeFeedService(
         val all   = allDeferred.await()
         val token = tokenDeferred.await()
         val heroIds = config.heroes.map { it.itemId }.toSet()
+        val rows = buildRows(config, device, all, all, jellyfinBase, token, channelFilter = null)
+        // Phase 202/R240 — Home content rows only (not heroes, not the channel rail, not channel
+        // pages): see FocusDetailFacts' doc and the R240 spec's non-goals.
         HomeFeed(
             heroes = buildHeroes(config, all),
             channels = buildChannels(config, device, all, jellyfinBase, token, heroIds),
-            rows = buildRows(config, device, all, all, jellyfinBase, token, channelFilter = null),
+            rows = if (config.focusDetail == "none") rows else attachFocusDetail(rows, all),
             heroHeightPct = config.heroHeightPct,
             autoAdvanceSeconds = config.autoAdvanceSeconds,
             tileShape = config.tileShape,
             portraitHeroHeightPct = config.portrait?.heroHeightPct,
             liveTvHome = config.liveTvHome,
+            focusDetail = config.focusDetail,
+            focusDetailDelayMs = config.focusDetailDelayMs,
+        )
+    }
+
+    /** Phase 202 (FR-202-5) — attach the per-title fact set to every Home content-row item, resolved
+     *  from the same [MediaItem] list the rows were built from (no extra fetch). A card whose id can't
+     *  be matched back to a MediaItem (shouldn't happen — rows are built from this exact list) is left
+     *  as-is rather than failing the whole feed. */
+    private fun attachFocusDetail(rows: List<Row>, all: List<MediaItem>): List<Row> {
+        val byId = all.associateBy { it.jellyfinId ?: it.id }
+        return rows.map { row ->
+            row.copy(items = row.items.map { card ->
+                byId[card.id]?.let { card.copy(focusDetail = it.toFocusDetailFacts()) } ?: card
+            })
+        }
+    }
+
+    /** Phase 202 (FR-202-5) — the fact set itself. Mirrors the same resolution DetailService/BrowseService
+     *  already use for the equivalent detail-page fields (ratingBadge/imdbRating/qualityLabel), duplicated
+     *  here rather than shared — same precedent as `toMediaCard()` being its own copy per service. */
+    private fun MediaItem.toFocusDetailFacts(): FocusDetailFacts {
+        val isSeries = kind == MediaKind.TV_SHOW
+        val allTracks = if (isSeries) episodes.flatMap { it.tracks } else tracks
+        val bestVideo = allTracks.filter { it.kind == dev.jellystructure.model.TrackKind.VIDEO }
+            .maxByOrNull { (it.width ?: 0) * (it.height ?: 0) }
+        val badge = bestVideo?.let { v ->
+            val tier = when {
+                (v.width ?: 0) >= 3840 || (v.height ?: 0) >= 2160 -> "4K"
+                (v.width ?: 0) >= 1920 || (v.height ?: 0) >= 1080 -> "1080p"
+                (v.width ?: 0) >= 1280 || (v.height ?: 0) >= 720  -> "720p"
+                v.width != null || v.height != null -> "SD"
+                else -> null
+            } ?: return@let null
+            if (v.videoRange == "HDR") "$tier HDR" else tier
+        }
+        val cert = CertificationResolver.resolve(configStore.current.metadata.ageRatingCascade, certifications)
+        return FocusDetailFacts(
+            year = year,
+            badge = badge,
+            seasons = if (isSeries) episodes.mapNotNull { it.seasonNumber }.distinct().size.takeIf { it > 0 } else null,
+            episodes = if (isSeries) episodes.distinctBy { (it.seasonNumber ?: 0) to (it.episodeNumber ?: 0) }.size.takeIf { it > 0 } else null,
+            runtimeMinutes = if (!isSeries) runtime else null,
+            ratingBadge = cert?.let { RatingBadge(region = it.region, code = it.code, tier = it.tier, fallback = it.fallback) },
+            imdbRating = imdbRating?.let { dev.jellystructure.shared.tv.TvImdbRating(aggregateRating = it.aggregateRating, voteCount = it.voteCount) },
+            genres = genres,
+            audioLanguages = allTracks.filter { it.kind == dev.jellystructure.model.TrackKind.AUDIO }
+                .mapNotNull { it.language?.lowercase()?.takeIf { l -> l.isNotBlank() } }.distinct(),
+            subtitleLanguages = allTracks.filter { it.kind == dev.jellystructure.model.TrackKind.SUBTITLE }
+                .mapNotNull { it.language?.lowercase()?.takeIf { l -> l.isNotBlank() } }.distinct(),
+            overview = overview,
         )
     }
 

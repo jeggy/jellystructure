@@ -5,10 +5,11 @@
 > said. Ravilo renders that decision and never makes it: **the server resolves which of the two
 > directions applies**, so no client anywhere re-implements the supersession rule.
 
-**Status:** `Planned` — written 2026-09-12, not dev-reviewed. Built in the **mockups only**
-(`design/app/ravilo-config.html` — Preferences → Focus detail, three controls; the Ravilo half is built
-in `design/ravilo/*`). No backend code exists yet: `RaviloConfig` has none of these fields, the home
-feed carries none of this text, and the estimate below is arithmetic, not a measurement.
+**Status:** see `STATUS.md` (the sole source of truth — this file's body no longer encodes status).
+Written 2026-09-12, not dev-reviewed. Backend built same-session: `RaviloConfig` carries the three
+fields, `GET /api/tv/config`/`GET /api/tv/home` both carry the resolved mode + delay, and Home
+content-row `MediaCard`s carry `FocusDetailFacts`. **The Ravilo client half (R240) is not built** — L/J
+still exist only in the mockups (`design/app/ravilo-config.html`, `design/ravilo/*`).
 
 **Numbering:** verified against `main` on 2026-09-12 — admin phases are taken through **201** and Ravilo
 through **R239**, so this pair is **202 / R240**. Next free: 203 / R241.
