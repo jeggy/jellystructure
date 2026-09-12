@@ -88,6 +88,7 @@
           <a class="chip" href="library.html?filter=attention">View attention</a>
           <a class="chip" href="media.html#tab=tracks">Manage tracks</a>
           <span class="chip" id="qa-artwork">Re-pull artwork</span>
+          <span class="chip" id="qa-artrepair" title="Phase 192: sweeps every artwork path for files that are not actually images (a saved error page, a truncated download) and removes them so the next fetch can replace them.">Repair corrupt artwork</span>
           <span class="chip" id="qa-nfo">Sync NFOs to Jellyfin</span>
           <span class="chip" id="qa-rescan">Jellyfin rescan</span>
           <a class="chip" href="activity.html">View activity</a>
@@ -111,6 +112,7 @@
     if (el) el.addEventListener('click', function () { if (qaFeedback) qaFeedback.innerHTML = msg + ' — watch it in the dock, bottom-right, or on <a href="activity.html">Activity</a>.'; });
   }
   qa('qa-artwork', 'Re-pull artwork queued for all items');
+  qa('qa-artrepair', 'Artwork repair sweep started \u2014 files that are not real images are removed, then re-fetched');
   qa('qa-nfo', 'Writing NFOs and asking Jellyfin to re-read them');
   qa('qa-rescan', 'Jellyfin library rescan requested');
 </script>

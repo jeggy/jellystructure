@@ -131,6 +131,7 @@
       <div class="navitem" data-goto="sect-livetv">Live TV</div>
       <div class="navitem" data-goto="sect-top10">Request</div>
       <div class="navitem" data-goto="sect-behaviour">Behaviour</div>
+      <div class="navitem" data-goto="sect-focus">Focus detail</div>
     </div>    <div class="col fill" id="config-col">
       <!-- lock prompt: shown when a user without a custom layout is selected -->
       <div class="card" id="scope-lock" style="display:none;margin-bottom:14px;border-color:var(--hi);background:var(--hi-soft);">
@@ -278,6 +279,80 @@
         <div id="beh-list" style="margin-top:8px;"></div>
         <div class="note blue" id="beh-foot" style="margin-top:14px;"></div>
       </div>
+
+      <!-- FOCUS DETAIL — round 2 outcome, drawn in ravilo/Focus Detail - Round 2 Directions.html.
+           The floating plate was rejected. Two switches, both real product config:
+           L (the status line) ships on; J (the row opens) ships off pending a
+           focus-sweep measurement on the living-room BRAVIA. -->
+      <div class="card set-section" id="sect-focus">
+        <div class="row center"><h3 style="font-size:1.05rem;margin:0;">Focus detail</h3><span class="badge info" style="margin-left:8px;">design exploration</span><span class="spacer"></span><span class="tiny muted">Home rows</span></div>
+        <p class="tiny muted" style="margin:6px 0 14px;">What a highlighted title says <b>before you open it</b>. Nothing here floats over a tile, and nothing adds a stop to the D-pad — Down from a tile goes where it goes today. <b>Ravilo itself shows no setting for either</b>, and with both off the feed carries nothing extra.</p>
+        <div class="beh-row" style="border-top:1px solid var(--line);align-items:center;">
+          <div class="beh-main">
+            <div class="beh-name">A detail line at the foot of the screen</div>
+            <div class="beh-desc">A permanent 88px strip describing the focused title: year, seasons, runtime, age rating, IMDb score, audio &amp; subtitle flags, and where you left off. Facts only — <b>no description</b>; there is no room for one. Applies to the content rows on <b>Home</b>.</div>
+          </div>
+          <div class="beh-right"><span class="toggle on" id="fd-line"></span><span class="beh-state follow" id="fd-line-state">On</span></div>
+        </div>
+        <div class="beh-row" style="border-top:1px solid var(--line);border-bottom:1px solid var(--line);align-items:center;">
+          <div class="beh-main">
+            <div class="beh-name">Open the focused row <span class="badge" style="margin-left:6px;">next gen</span></div>
+            <div class="beh-desc">The focused poster grows in place and the full description sits beside it, inside the row's own band, with the rest of the row continuing past it. <b>Supersedes the line</b> — it already states every fact the line does. <b>Off by default:</b> it changes the row's height and its tiles' positions on every focus move, which is the reflow <b>invariant 11</b> exists to protect, and that has not been measured on the stue TV yet.</div>
+          </div>
+          <div class="beh-right"><span class="toggle" id="fd-rowopen"></span><span class="beh-state follow" id="fd-rowopen-state">Off</span></div>
+        </div>
+        <div class="beh-row" style="border-bottom:1px solid var(--line);align-items:center;">
+          <div class="beh-main">
+            <div class="beh-name">Wait before it appears</div>
+            <div class="beh-desc">How still the D-pad has to be before the detail is shown. Sweeping along a row stays a plain row — nothing grows, nothing is stated — until the viewer settles for this long. <b>0 ms shows it immediately</b>, which is the right setting for a household that never holds a direction down; the higher the number, the calmer a fast browse is and the longer a deliberate stop waits. A few seconds is a legitimate setting: it makes the detail something you get only by stopping on purpose. Applies to whichever of the two is on.</div>
+          </div>
+          <div class="beh-right" style="align-items:stretch;min-width:230px;">
+            <label class="tiny" for="fd-delay" style="display:flex;justify-content:space-between;gap:12px;">Delay <span class="muted" id="fd-delay-val">0.17 s</span></label>
+            <span class="input" style="padding:0 12px;gap:8px;"><input type="number" id="fd-delay" value="170" min="0" step="10" inputmode="numeric" style="flex:1;min-width:0;background:none;border:0;outline:none;color:var(--ink);font-family:'JetBrains Mono',monospace;font-size:.9rem;font-weight:600;padding:9px 0;"><span class="tiny muted" style="flex:none;">ms</span></span>
+            <span class="beh-state follow" style="align-self:flex-end;" id="fd-delay-state">Both directions</span>
+          </div>
+        </div>
+        <div class="note blue" style="margin-top:14px;"><span class="tiny">A title's text ships with the row it belongs to — about <b>0.9 KB per title</b>, roughly 38 KB for a 42-title home. No artwork and no image fetch: dropping round 1's hero mirror and colour wash took the backdrop URL back out of the payload. <b>Whether that text rides the home feed or a separate per-title fetch on focus is the dev team's call</b>, and is flagged as open rather than decided here.</span></div>
+      </div>
+      <script>
+      /* Mocks the server-owned switch: the TV reads this on load, exactly as it would read
+         its per-user config from /api/tv/**. Key is shared with ravilo/ravilo-focus.js.
+         Two booleans, nothing else — round 1's variant/mirror/tint keys are retired. */
+      (function () {
+        const KEY = 'js-ravilo-focusdetail';
+        let raw = {}; try { raw = JSON.parse(localStorage.getItem(KEY) || '{}') || {}; } catch (e) {}
+        const DEF_DELAY = 170;
+        // Any non-negative whole number of milliseconds is valid — 10 and 10000 both are, and so is
+        // anything between. Only junk falls back to the default; nothing is snapped to a step or a ceiling.
+        const clampDelay = v => { const n = Math.round(+v); return Number.isFinite(n) && n >= 0 ? n : DEF_DELAY; };
+        const cfg = { line: raw.line !== false, rowOpen: raw.rowOpen === true, delay: clampDelay(raw.delay == null ? DEF_DELAY : raw.delay) };
+        const line = document.getElementById('fd-line'), lineState = document.getElementById('fd-line-state');
+        const rowOpen = document.getElementById('fd-rowopen'), rowState = document.getElementById('fd-rowopen-state');
+        const delay = document.getElementById('fd-delay'), delayVal = document.getElementById('fd-delay-val'), delayState = document.getElementById('fd-delay-state');
+        function paint() {
+          line.classList.toggle('on', cfg.line);
+          rowOpen.classList.toggle('on', cfg.rowOpen);
+          // the line is still configured when the row is open, it is just not what renders
+          lineState.textContent = cfg.line ? (cfg.rowOpen ? 'On · superseded' : 'On') : 'Off';
+          rowState.textContent = cfg.rowOpen ? 'On' : 'Off';
+          if (+delay.value !== cfg.delay) delay.value = cfg.delay;
+          delayVal.textContent = cfg.delay === 0 ? 'immediately' : cfg.delay < 1000 ? cfg.delay + ' ms' : (cfg.delay / 1000) + ' s';
+          // the delay governs whichever direction renders, so say which one that is
+          delayState.textContent = cfg.rowOpen ? 'Before the row opens' : (cfg.line ? 'Before the line appears' : 'Nothing to delay');
+        }
+        /* No preview reload: ravilo-focus.js applies this config live (storage event), and
+           reloading would throw away the focused tile the change is meant to be judged on. */
+        function save() {
+          try { localStorage.setItem(KEY, JSON.stringify(cfg)); } catch (e) {}
+          paint();
+        }
+        line.addEventListener('click', () => { cfg.line = !cfg.line; save(); });
+        rowOpen.addEventListener('click', () => { cfg.rowOpen = !cfg.rowOpen; save(); });
+        delay.addEventListener('input', () => { const n = Math.round(+delay.value); if (Number.isFinite(n) && n >= 0) { cfg.delay = n; save(); } });
+        delay.addEventListener('blur', () => { cfg.delay = clampDelay(delay.value); delay.value = cfg.delay; save(); });
+        paint();
+      })();
+      </script>
     </div>
 
     <!-- live preview -->
@@ -306,7 +381,7 @@
     var main = document.querySelector('.app-main2');
     main.dataset.page = 'ravilo-' + tab;
     main.dataset.rtab = tab;
-    var GROUPS = { layout: ['sect-hero', 'sect-studios', 'sect-rows', 'sect-livetv'], requests: ['sect-top10'], preferences: ['sect-behaviour'] };
+    var GROUPS = { layout: ['sect-hero', 'sect-studios', 'sect-rows', 'sect-livetv'], requests: ['sect-top10'], preferences: ['sect-behaviour', 'sect-focus'] };
     var show = GROUPS[tab];
     document.querySelectorAll('#config-col .set-section').forEach(function (s) { s.style.display = show.indexOf(s.id) >= 0 ? '' : 'none'; });
     var nav = document.getElementById('set-nav');

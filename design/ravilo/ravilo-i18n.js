@@ -130,6 +130,35 @@
   Object.assign(STR.fo, { slow_lead: 'Seint at byrja \u00e1 {device}.', slow_tail_expected: 'Gev t\u00ed eitt eygnabrag\u00f0, t\u00e1 t\u00fa tr\u00fdstir sp\u00e6l.',
     slow_tail_measured: 'Seinastu fer\u00f0irnar t\u00f3k ta\u00f0 uml\u00ed\u00f0 {n} sekund.', this_tv: 'hesum sj\u00f3nvarpinum', this_phone: 'hesi telefonini' });
 
+  // ---- Focus detail (the plate) + the detail page's About section. ----
+  Object.assign(STR.en, {
+    fd_audio: 'Audio', fd_subs: 'Subs', fd_nodesc: 'No description yet', fd_min_left: '{n} min left',
+    about: 'About', about_sub: 'From your library \u00b7 scanned by Jellystructure',
+    fact_runtime: 'Runtime', fact_per_ep: '{n} min per episode', fact_min: '{n} min',
+    fact_first_aired: 'First aired', fact_released: 'Released', fact_director: 'Director',
+    fact_network: 'Network', fact_studio: 'Studio', fact_country: 'Country',
+    fact_language: 'Original language', fact_seasons: 'Seasons', fact_seasons_v: '{s} \u00b7 {n} episodes',
+    fact_added: 'In your library since',
+  });
+  Object.assign(STR.da, {
+    fd_audio: 'Lyd', fd_subs: 'Undertekst', fd_nodesc: 'Ingen beskrivelse endnu', fd_min_left: '{n} min tilbage',
+    about: 'Om', about_sub: 'Fra dit bibliotek \u00b7 skannet af Jellystructure',
+    fact_runtime: 'L\u00e6ngde', fact_per_ep: '{n} min pr. afsnit', fact_min: '{n} min',
+    fact_first_aired: 'F\u00f8rst vist', fact_released: 'Udgivet', fact_director: 'Instrukt\u00f8r',
+    fact_network: 'Kanal', fact_studio: 'Studie', fact_country: 'Land',
+    fact_language: 'Originalsprog', fact_seasons: 'S\u00e6soner', fact_seasons_v: '{s} \u00b7 {n} afsnit',
+    fact_added: 'I dit bibliotek siden',
+  });
+  Object.assign(STR.fo, {
+    fd_audio: 'Lj\u00f3\u00f0', fd_subs: 'Undirtekst', fd_nodesc: 'Onki umr\u00f8\u00f0ur enn', fd_min_left: '{n} min eftir',
+    about: 'Um', about_sub: '\u00dar t\u00ednum savni \u00b7 skanna\u00f0 av Jellystructure',
+    fact_runtime: 'Longd', fact_per_ep: '{n} min hv\u00f8rt part', fact_min: '{n} min',
+    fact_first_aired: 'Fyrst v\u00edst', fact_released: '\u00datgivi\u00f0', fact_director: 'Leikstj\u00f3ri',
+    fact_network: 'R\u00e1s', fact_studio: 'Studio', fact_country: 'Land',
+    fact_language: 'Upprunam\u00e1l', fact_seasons: 'Seasonir', fact_seasons_v: '{s} \u00b7 {n} pettir',
+    fact_added: '\u00cd t\u00ednum savni s\u00ed\u00f0an',
+  });
+
   // ---- watched-state (R07) ----
   Object.assign(STR.en, {
     mark_watched: 'Mark Watched', watched: 'Watched', play_again: 'Play Again',
@@ -227,7 +256,7 @@
     pw_err_rep: 'The two new passwords don\u2019t match.', pw_err_wrong: 'That current password isn\u2019t right.',
     photo_title: 'Your photo', photo_sub: 'Shows on every device you watch on \u2014 including the TV.',
     photo_choose: 'Choose a photo', photo_camera: 'Take a photo', photo_drop: 'or drop an image here',
-    photo_presets: 'Or use a colour', photo_remove: 'Remove photo',
+    photo_remove: 'Remove photo',
     photo_saved: 'Photo updated.', photo_removed: 'Photo removed \u2014 back to your initials.',
   });
   Object.assign(STR.da, {
@@ -240,7 +269,7 @@
     pw_err_rep: 'De to nye adgangskoder er ikke ens.', pw_err_wrong: 'Den nuv\u00e6rende adgangskode er ikke rigtig.',
     photo_title: 'Dit billede', photo_sub: 'Vises p\u00e5 alle de enheder, du ser p\u00e5 \u2014 ogs\u00e5 tv\u2019et.',
     photo_choose: 'V\u00e6lg et billede', photo_camera: 'Tag et billede', photo_drop: 'eller tr\u00e6k et billede herind',
-    photo_presets: 'Eller brug en farve', photo_remove: 'Fjern billede',
+    photo_remove: 'Fjern billede',
     photo_saved: 'Billedet er opdateret.', photo_removed: 'Billedet er fjernet \u2014 tilbage til dine initialer.',
   });
   Object.assign(STR.fo, {
@@ -253,8 +282,47 @@
     pw_err_rep: 'Tey tvey n\u00fdggju loyniord\u00f0 eru ikki eins.', pw_err_wrong: 'Ta\u00f0 verandi loyniordi\u00f0 er skeivt.',
     photo_title: 'T\u00edn mynd', photo_sub: 'S\u00fdnist \u00e1 \u00f8llum teimum t\u00f3lum, t\u00fa hyggur \u00e1 \u2014 eisini sj\u00f3nvarpinum.',
     photo_choose: 'Vel eina mynd', photo_camera: 'Tak eina mynd', photo_drop: 'ella drag eina mynd higar',
-    photo_presets: 'Ella br\u00fak ein lit', photo_remove: 'Tak myndina av',
+    photo_remove: 'Tak myndina av',
     photo_saved: 'Myndin er dagf\u00f8rd.', photo_removed: 'Myndin er tikin av \u2014 aftur til initialarnar.',
+  });
+
+  /* ---- R237: a start that failed for a reason we know, said in words the viewer can act on ----
+     Copy rule (Ravilo constitution, and R234's rejected "Your Jellyfin password"): name the thing the
+     viewer must do, never the component that failed. No product name, no protocol, no status code.
+     `pl_still` is ONE line added to R218's existing cold-start treatment once a first attempt has
+     failed (FR-R237-5) \u2014 not a new state, not a progress count, not an attempt number. */
+  Object.assign(STR.en, {
+    pl_loading: 'Loading\u2026', pl_seeking: 'Seeking\u2026', pl_still: 'Still trying\u2026',
+    pl_err_reauth_h: 'This TV needs to be signed in again',
+    pl_err_reauth_b: 'Sign in again on this TV to keep watching.',
+    pl_err_forbidden_h: 'Not available on this profile',
+    pl_err_forbidden_b: 'This title isn\u2019t part of what this profile can watch.',
+    pl_err_gone_h: 'This title isn\u2019t available any more', pl_err_gone_b: '',
+    pl_err_unreachable_h: 'Couldn\u2019t reach the server',
+    pl_err_unreachable_b: 'Check the connection and try again.',
+    pl_sign_in: 'Sign in', pl_retry: 'Try again', pl_back: 'Back',
+  });
+  Object.assign(STR.da, {
+    pl_loading: 'Indl\u00e6der\u2026', pl_seeking: 'S\u00f8ger\u2026', pl_still: 'Pr\u00f8ver stadig\u2026',
+    pl_err_reauth_h: 'Dette tv skal logge ind igen',
+    pl_err_reauth_b: 'Log ind igen p\u00e5 dette tv for at se videre.',
+    pl_err_forbidden_h: 'Ikke tilg\u00e6ngelig p\u00e5 denne profil',
+    pl_err_forbidden_b: 'Denne titel er ikke en del af det, denne profil kan se.',
+    pl_err_gone_h: 'Denne titel er ikke tilg\u00e6ngelig l\u00e6ngere', pl_err_gone_b: '',
+    pl_err_unreachable_h: 'Kunne ikke f\u00e5 forbindelse',
+    pl_err_unreachable_b: 'Tjek forbindelsen og pr\u00f8v igen.',
+    pl_sign_in: 'Log ind', pl_retry: 'Pr\u00f8v igen', pl_back: 'Tilbage',
+  });
+  Object.assign(STR.fo, {
+    pl_loading: 'Ledur inn\u2026', pl_seeking: 'Leitar\u2026', pl_still: 'Royni framvegis\u2026',
+    pl_err_reauth_h: 'Hetta sj\u00f3nvarpi\u00f0 m\u00e1 rita inn aftur',
+    pl_err_reauth_b: 'Rita inn aftur \u00e1 hesum sj\u00f3nvarpinum fyri at hyggja v\u00ed\u00f0ari.',
+    pl_err_forbidden_h: 'Ikki t\u00f8kt \u00e1 hesi vangamynd',
+    pl_err_forbidden_b: 'Hesin t\u00edtil er ikki partur av t\u00ed, hendan vangamyndin kann hyggja \u00e1.',
+    pl_err_gone_h: 'Hesin t\u00edtil er ikki t\u00f8kur longur', pl_err_gone_b: '',
+    pl_err_unreachable_h: 'Fekk ikki samband',
+    pl_err_unreachable_b: 'Kanna sambandi\u00f0 og royn aftur.',
+    pl_sign_in: 'Rita inn', pl_retry: 'Royn aftur', pl_back: 'Aftur',
   });
 
   // ---- R175: username/password login (replaces the pairing code) ----

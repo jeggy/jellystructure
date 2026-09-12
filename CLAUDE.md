@@ -36,6 +36,284 @@ GitHub is the **source of truth**; we layer designs on top of it.
 - `specs/research-reports/` — dated deep-dives (research, not spec; may go stale).
 
 ## Where the work stands (read the repo `STATUS.md` for the live table)
+- **2026-09-12 (later) — full sync: 19 new dev specs mirrored, our 202 / R240 keep their numbers, and
+  187 / R234 came back BUILT.** Next unassigned numbers: **203 / R241**.
+  - **Nothing to renumber, for once.** `main` tops out at **201** and **R239** — no `phase-202-*`, no
+    `phase-R240-*`, and no `STATUS.md` row for either — so the focus-detail pair stands as written.
+    (Contrast R196→R208, 179→180, and the 2026-09-04 pair 186→187 / R230→R234.)
+  - **Our profile-photo pair shipped.** **187** (backend, built 2026-09-05: both write routes, the
+    change-keyed avatar URL, admin read-only photo) and **R234** (built 2026-09-05, **live-verified on
+    stue TV** — and a real pre-existing Settings D-pad focus-chain bug found and fixed in the same pass)
+    are both `✓ Built`. The canonical specs (32 KB / 23 KB against our 12 KB drafts) replaced our local
+    copies. **FR-187-1's live probe closed every open question:** all three Jellyfin operations exist,
+    **none at the assumed path**, and Jellyfin's own OpenAPI is **wrong about the image body** (raw binary
+    → 500; base64-with-MIME → 204). Wrong password answers **403**, not 401.
+  - **⚠ Two places where our mockups now LEAD the spec and must change before either ships:**
+    (1) **preset colours are dropped** (owner decision on 187 OQ3, 2026-09-05 — the deterministic initials
+    gradient stands), so `ravilo/ravilo-data.js`'s `AV_PRESETS`/`colorFor`/`setColor` and the Your profile
+    sheet in `ravilo/Ravilo Mobile.html` still draw a control the spec has deleted (R234 FR-R234-3: three
+    ways in — Choose · Take · Remove — plus the web-only drop target, and `photo_presets` comes out of the
+    string table); (2) the Settings row labelled **"Photo and name"** promises renaming, which 187 puts out
+    of scope — relabel it or wire the name. Also recorded dev-side: `.usr-av`/`.has-photo`/`.av-img` (187)
+    and `.usr-cap` (185) only ever existed in our mockup's inline `<style>` and had never reached a served
+    stylesheet; both are now in `wf.css` and fenced by `check-mobile-css.sh`.
+  - **19 new dev-authored specs pulled** — admin **188–201**, Ravilo **R235–R239** — every one `✓ Built`
+    except **R239** (`⚠ Partial`). Highlights: **188** a capped scan overwrote each series' episode list
+    with its sample (135 of 184 shows stuck at 8 episodes); **194** one stale pooled connection marked a
+    good Jellyfin token dead for 10 minutes and blocked playback household-wide (`runCatching{…}` +
+    `getOrDefault(false)` collapsing a 401, a 5xx and a thrown connect error into one verdict); **195** the
+    failed-ingest retry set re-fired itself into saturation — 1 994 background gate saturations in a day
+    moved the backlog by three items; **196** `last_checked` was stamped by *every* write, so Sonarr's own
+    "this show is airing" enrichment reset the clock that would have made it be examined; **197** CI was
+    red for four days across 18 commits and two published releases over a screenshot racing a scan;
+    **199** the JS-tag preserve guard read the wrong predecessor, so a slug rename silently dropped every
+    operator tag (355 of 516 items carry one, two of which gate kids visibility); **200** 83 % of movies
+    had a subtitle file on disk that the catalog could not see while the player picker showed it — the
+    product contradicting itself; **201** `mkvpropedit` moves `Tracks` past the first `Cluster` and
+    ExoPlayer then buffers forever — **164 production files unplayable in Ravilo, playable in Jellyfin**
+    (and *not* repaired yet: FR-201-5's route exists, deliberately un-run against production data).
+    Ravilo: **R235** never auto-select a signs-only subtitle (7.1 % of subtitled units affected), **R236**
+    Down from the Home hero could stop working entirely (the bridge now targets the row, not lazy item 0 —
+    the code R240 is written against), **R237** 15 s of spinner retrying a deterministic 409, **R238** the
+    collapsed language row captioned the viewer's selection with the badges of the exact track R235 exists
+    to avoid, **R239** the flag strip said "no subtitles" when it meant "no flag for those subtitles".
+  - **Our design backlog out of this sync — nine items, ALL DRAWN 2026-09-12** (200, 201, 192, 193, 196,
+    189/190, 191 admin-side; R237, R239 Ravilo-side. The one thing still open is checking EN *"Couldn't
+    reach the server"* and DA *"Indlæser…"* against the shipped string tables):
+    - **201 FR-201-10/11/12** — an **MKV track layout** health card on `app/activity.html` (broken count +
+      affected titles, absent entirely at zero) and a **Fix now** banner on `app/media.html` /
+      `app/series.html`, both reading the same sweep, the banner scoped to that title's own paths.
+    - **200 FR-200-5** — a **SUBTITLES** flag strip beside Audio in the `media.html`/`series.html` pagebar
+      and a read-only **Sidecar subtitles** group in Tracks & subtitles (no drag, order or default — a
+      sidecar has no container flag to set). Already shipped dev-side; our mockups don't have it.
+    - **192 FR-192-5/6** — the artwork picker must show a logo **as a logo**: `16/9` + `object-fit:cover`
+      crops a 5:1 wordmark to its middle third (simulated: `"DF TH"`, `"RA DOS T"`), so it needs the real
+      aspect, a transparency backing for dark ink, and the new nothing-to-show copy. Plus a Dashboard
+      **artwork repair** button for FR-192-2's corrupt-file sweep.
+    - **193 FR-193-4** — the Jellyfin-behind banner's copy: elapsed time instead of *"usually clears
+      itself within a few seconds"* (a claim no mechanism supported), **Sync Jellyfin** offered inline,
+      and no banner at all while a scan is running.
+    - **196 FR-196-3/5** — `last_checked` is now **`last_examined_at`**; admin labels reading "last
+      checked" should follow, and a skipped item needs to be explicable rather than `504 item(s) not due`.
+    - **189 FR-189-2/5 + 190 FR-190-3** — segment editor: the ± stepper becomes a **1 s** coarse step with
+      tenths in the readout (40 ms against whole-second timecodes meant 25 clicks before anything moved), a
+      locked marker **toasts** instead of doing nothing, and `#seg-vid-tag2` can no longer hard-code
+      *"direct play · no transcode"* — audio may now be transcoded to AAC while video stays copy (46.4 % of
+      first audio tracks are eac3/ac3/dts/truehd, which no mainstream browser decodes: the editor had a
+      picture of the sound and not the sound).
+    - **191 FR-191-5** — the metadata-language mismatch card + inline re-pull button on the media detail.
+    - **R239 FR-R239-7** — the honest counting rules (`+N` counts every language, mapped or not; a wholly
+      unmapped group still renders its label) are explicitly asked of our mockups too. Note FR-R239-3's
+      12 missing flag assets are **not** built on either side.
+    - **R237 FR-R237-2/5** — per-cause failed-start copy (nine strings × en/da/fo, naming no product,
+      protocol or status code) and **one** *"Still trying…"* line added to R218's cold-start treatment at
+      ~5 s. Our player mockup and `ravilo/Player Loading and Buffering - Directions.html` still show only
+      R218's three moments plus R220's frame E.
+    Everything else (188, 194, 195, 197, 198, 199, R235, R236, R238) is backend- or Compose-only.
+  - **Counters re-derived from the fresh mirror:** `STATUS.md` is **387** rows (**190** admin + **197**
+    Ravilo), up from 359 — and **every** number 130–201 and R180–R239 now has exactly one row, no gaps and
+    no duplicates, so the repo-side STATUS gap flagged on 2026-09-04 (R227–R232, 186) is **closed**.
+    **179** documents under `specs/` (177 on `main` + our two unpushed drafts). Highest **202 / R240**,
+    next free **203 / R241**. The presentation deck's counters were updated to match.
+- **2026-09-12 — the reveal delay is now household config, and both halves are finally spec'd:
+  admin **202** + Ravilo **R240**.** Next unassigned numbers: **203 / R241**.
+  - **The 170 ms dwell became a setting.** Jellystructure → Preferences → **Focus detail** has a third
+    control, *Wait before it appears* (0–600 ms, step 10, default 170), and it governs **whichever
+    direction is on** — J's row does not open and L's line does not appear until the D-pad has been still
+    that long. Two rules the build has to keep: at **0** the reveal is not deferred by a zero-length timer
+    at all, and **while the delay runs, nothing is stated** — L hides rather than leaving the previous
+    title's facts up, since the one thing this surface must never do is describe a title that is no longer
+    focused (the 88px band stays reserved, so the page doesn't move while the text clears).
+  - Also: the admin card **no longer reloads the live preview** on a change (`ravilo-focus.js` applies
+    config live, and reloading threw away the focused tile the change is meant to be judged on), and the
+    TV mockup's FOCUS picker gained a small `ms` field plus `?dwell=`.
+  - **Specs written 2026-09-12, both `Planned`, neither dev-reviewed.** Numbers verified against `main`
+    the same day: the dev team has taken admin **188–201** and Ravilo **R235–R239** since our last sync,
+    so the pair is **202 / R240** — no collision. (The mirror was ~14 specs behind at that moment; it was
+    re-pulled in full later the same day — see the sync entry above.)
+    - **202 — one resolved mode, one delay, one payload**
+      (`specs/requirements/phase-202-focus-detail-config-and-payload.md`). Three `RaviloConfig` fields
+      (`focusDetailLine` / `focusDetailRowOpen` / `focusDetailDelayMs`), per Jellyfin user per
+      constitution §3. **The one place the spec deliberately overrules the mockup: the server resolves
+      the mode** — the payload carries `focusDetail: "none"|"line"|"rowOpen"`, not the two booleans, so no
+      client re-implements supersession; the booleans stay admin-side only so the card can say *"On ·
+      superseded"*. Delay clamped 0–600 server-side, junk reads back as 170. Payload carries **facts, not
+      sentences** (the client formats against its own en/da/fo table — render-never-compute governs
+      decisions, not translation), ~0.9 KB/title, no image URL.
+    - **R240 — what a highlighted title says before you open it**
+      (`specs/ravilo/requirements/phase-R240-focus-detail-on-home-rows.md`). L + J, the inertness rules,
+      and **J's four motion requirements written as requirements rather than notes** (animate from an
+      explicit width, reserve the opened band and never lower it, one vertical target computed after the
+      growth, collapse-and-catch-up cancel) — because a build that implements the layout without them
+      reproduces exactly the "too jumpy" / "jumping in" versions the owner rejected. Cites **R236**
+      FR-R236-5 explicitly: J inserts and removes a `LazyRow` child on every settled focus move, which is
+      the lazy-item-`FocusRequester` topology five phases have now been spent on, so nothing J draws may
+      carry a requester or be reachable by `focusRestorer()`.
+  - **Open questions carried into the specs rather than guessed:** the reflow measurement on the stue
+    BRAVIA (still why J ships off — the delay and the held band remove the *repeated* cost, so what is
+    left to measure is a single open); whether `focusRestorer()` survives a row whose children change
+    size (R236's own open question 2, now with a sibling appearing in the row); whether reduced motion
+    should fall back to L rather than to an instant open; the feed-vs-per-title payload path (J's dwell
+    makes the per-focus fetch less bad than it was); and whether `rowOpen` should key on device rather
+    than user, since J's cost is a property of the BRAVIA, not of the viewer.
+- **2026-09-11 — focus detail is now switchable and correct inside `ravilo/Ravilo TV.html`.**
+  L and J were already wired into the main TV mockup on 2026-09-06; what was missing was being able
+  to *see* them there. Three changes, no new design decisions:
+  - **The setting is live, not read-once.** `ravilo-focus.js` returns an `apply(cfg)` and listens for
+    both the cross-tab `storage` event on `js-ravilo-focusdetail` and a same-page `ravilo:focuscfg`
+    event, so flipping **Jellystructure → Preferences → Focus detail** in `app/ravilo-config.html`
+    updates an open TV immediately and re-renders the focused tile through the normal focus path.
+    Turning L off now also removes the reserved 88px and the `fd-line` hooks (the padding is what
+    makes L not an overlay, so it stays while L is *configured*, not merely while something is focused).
+  - **A FOCUS picker in the TV preview chrome** (Off / Line · L / Row · J, plus an `ms` field for the
+    delay), plus `?focus=` and `?dwell=`.
+    It does not shadow the admin switch — it writes the same key, so flipping either is the same act.
+    Mockup affordance, same class of thing as the SKIN picker; the admin card stays product-only.
+  - **J's reveal is fixed, in the app's focus code where it belongs.** `focusEl()` now renders the
+    focus detail *first*, then computes **one** vertical target: `max(rowTop − 150, row foot + 40 −
+    screen)`. So the grown row is measured before the page is parked, there is no second scroll racing
+    the first (R232's hazard), and the page never scrolls back up. `onFocus()` reports which direction
+    rendered (`'row'`/`'line'`/`null`) — that is the only reason the rendering module returns anything.
+  - **Same day, J's motion calmed (owner: "too jumpy when navigating").** Three rules, no change to
+    what J looks like once it is open: (1) **a 170 ms dwell** before the row opens — holding Right now
+    sweeps a plain row instead of opening and collapsing one per keypress (round 1's direction E as a
+    rule rather than a look); (2) **the row band holds its opened height** for as long as focus stays
+    in that row (`min-height` on the `.track`, released on leaving), so lateral moves move nothing
+    below them, and the row grows exactly once; (3) **a collapse is now animated and followed on the
+    same clock** — the earlier fix suppressed the tile's width tween and snapped the track instantly,
+    which removed the lurch but was itself the "jumping in" the owner then reported; the panel now
+    narrows out while the scroll tween subtracts the width it gives back. The reveal
+    now runs from `openRow()` via an `o.reveal(node)` callback, i.e. after the dwell and after the
+    growth; `focusEl()` still folds the same target in for a row that is already holding its height.
+  - **Same day, the opening was made to animate rather than appear — and then actually animate.**
+    The panel opens by widening (`jp-open` 0→820 on `.jpanel`, `overflow:hidden`, text in a fixed-width
+    `.jp-body` so nothing reflows mid-tween) and **closes by narrowing** (`jp-close`, the node leaving
+    the DOM only once it has closed), so the posters to its right slide aside and slide home instead of
+    teleporting either way. Four things had to be true before any of that read as motion:
+    (1) **the tile needed an explicit `flex-basis` to interpolate from** — the base rule was `flex:none`
+    (basis `auto`), and `auto`→`300px` is a *discrete* jump no duration can smooth, which is why the
+    poster kept snapping into its big card however long the tween was; the base is now `flex:0 0 210px`
+    and both `width` and `flex-basis` are transitioned.
+    (2) **the row band reserves the OPENED height up front and is never lowered** — `holdOpened()`
+    measures the row with the tile forced to its final width (transition suppressed, restored in the
+    same tick), then a monotonic `max` ramp over ~300 ms picks up any later growth, backstopped by a
+    timer for throttled tabs. Sampling alone was either too early (mid-tween, so the band pumps later)
+    or too late (so it drops back first); the earlier sync-then-settle pair did both.
+    (3) **the track's horizontal catch-up runs on the same clock as the CSS** — native smooth scrolling
+    has its own duration and finished at a different moment than the width tween, which is what made
+    growth and slide read as two movements; it is now a rAF tween on the same cubic easing, and
+    `.track`'s own `scroll-behavior:smooth` is suspended for its duration or it fights it.
+    (4) **the collapse's reclaimed width is subtracted from that scroll target** (`FD.hShift`) when the
+    closing panel is left of the newly focused tile — the collapse and the catch-up then cancel, which
+    is what removes the ~900px lurch, without freezing either animation as the previous attempt did.
+    Both open animations carry **no fill mode**, which is a style choice, not a safety net: a paused
+    animation clock parks an element on its *first* keyframe regardless of fill, so a frozen timeline
+    shows the panel at width 0. **This preview iframe does pause the animation clock and throttle
+    timers** (`document.visibilityState: "hidden"`, `document.timeline.currentTime: 0`), so J's motion
+    cannot be judged or timed here at all — call `getAnimations().forEach(a => a.finish())` before
+    measuring anything about the open. Probed after this pass: the row band traces a flat 546px across
+    a lateral move, and no stray panel survives a collapse.
+  - **Still unmeasured, still why J ships off:** the reflow cost of growing a row on every focus move
+    on the stue BRAVIA (invariant 11). Nothing here changes that, and the switch default is unchanged.
+    Preview caveat unchanged: `.screen-scroll` scrolls smoothly and smooth scrolling is inert in the
+    preview iframe, so vertical reveal cannot be judged by eye here — probe the computed target instead.
+- **2026-09-06 — focus detail resolved: L ships on, J ships off behind a switch. Both built.
+  No spec yet (owner: mockups first). Next unassigned numbers still 188 / R235.**
+  - **Round 2 rejected the popover.** `ravilo/Focus Detail - Round 2 Directions.html` (canvas) drew six
+    non-overlay directions on the axis *where the information lives*: **G** a permanent info band
+    replacing the hero carousel, **K** the tile's own caption expands, **H** full-bleed cinema takeover,
+    **I** a fixed detail pane beside a narrower row list, **J** the row opens, **L** an 88px status line at
+    the foot. A comparison table scored all six on overlay / synopsis / rows-stay-put / needs-artwork.
+    An 8-page landscape print copy exists at `ravilo/Focus Detail - Round 2 Directions-print.html`
+    (doc-page, stamped with its source version — regenerate it from a fresh read if the canvas changes).
+  - **Owner picked L as the default and J as the next-gen option**, J disabled by default behind a
+    Jellystructure switch. My recommendation had been G; recorded here because the owner's reasoning is
+    better on one axis — L is the only direction that cannot regress anything, and J is the only one that
+    feels good under the thumb, so shipping the floor and gating the ceiling avoids betting on the band.
+  - **Round 1's A/B/C/D are retired**, not just switched off: the plate, the hero mirror, the tile-unfold
+    and the ambience wash are gone from `ravilo-focus.js` and `ravilo.css`, and `fd_mirror_tag` is out of
+    `ravilo-i18n.js`. **That also took artwork back out of the payload** — B and D needed a backdrop per
+    focused title, so `fieldsFor()` no longer carries `backdrop`/`logo`/`grad`/`tagline` and the admin
+    estimate drops from ~1.1 KB to **~0.9 KB per title, no image fetch**. `synFor`/`artFor` in
+    `ravilo-data.js` stay — the detail hero and the phone still use them.
+  - **Built:** `ravilo/ravilo-focus.js` (rewritten — two booleans, `{line, rowOpen}`, round-1 keys ignored
+    on read), `ravilo.css` (`.fdline` + `.jopen`/`.jpanel`, shared `.fd-*` primitives, Noir override for
+    the line and the primary genre chip), `ravilo-app.js` (`fieldsFor` trimmed, hero-mirror code deleted),
+    `ravilo-i18n.js`, and `app/ravilo-config.html` — **Preferences → Focus detail** now has two real
+    product switches and *no* mockup-only switches; when the row-opens switch is on, the line's state
+    reads “On · superseded” rather than silently disagreeing with the screen.
+  - **J supersedes L when both are on** — the open row already states every fact the line does.
+  - **Three things a spec must say, and one preview caveat:**
+    (1) whether the text rides a fattened `/api/tv/home` or a per-title fetch on focus — still the dev
+    team's call, flagged in the admin card rather than decided;
+    (2) **J changes the row's height and its tiles' positions on every focus move** — the reflow
+    invariant 11 exists to protect, unmeasured on the stue BRAVIA, which is exactly why it ships off;
+    (3) **J needs the reveal rule re-run after the row grows** — the open tile is ~160px taller than what
+    `focusEl()` measured, so on the first content row (the one deliberately parked under the hero) it runs
+    past the bottom of the screen. Deliberately *not* patched inside the rendering module: that is
+    navigation behaviour, it belongs in the app's focus code, and it has to be sequenced after the growth
+    rather than raced against it (R232's hazard).
+    Preview caveat: `.screen-scroll` uses `scroll-behavior: smooth`, and smooth scrolling is inert in this
+    preview iframe — so vertical row reveal looks broken here for *every* row, feature or not. Set
+    `scrollBehavior='auto'` before asserting on scroll position when probing.
+  - **The mockup's own preview chrome had to yield.** `#chrome` (D-pad legend + skin picker) is
+    `position:fixed; bottom:22px`, outside `#stage`, and it covered the line's right half — hiding
+    where-you-left-off and the whole genre list. `ravilo-focus.js` now also puts `.fd-line` on `<body>`
+    so `body.fd-line #chrome { bottom: 122px }` can lift it; mockup affordance yields to product surface.
+    Worth remembering for any future bottom-anchored treatment: a DOM probe of the line's own rect says
+    nothing about what is painted on top of it.
+- **2026-09-05 (later) — round 2: five NON-overlay directions drawn. Owner rejected the popover.**
+  Design doc: `ravilo/Focus Detail - Round 2 Directions.html` (canvas). Same fields, no floating panel —
+  the axis is *where the information lives*: **G** a permanent 380px info band replacing the hero carousel
+  (recommended), **K** the focused tile's own caption expands in place (quietest, but clamps the synopsis
+  to 3 short lines at 340px), **H** full-bleed cinema takeover with the row dimmed to a foot strip (best
+  looking, hard dependency on artwork, slowest browse), **I** a fixed 772px detail pane beside a narrower
+  row list (most information, but a redesign of Home — touches rail, browse, search), **L** an 88px status
+  line at the foot (facts only, no synopsis; the honest floor). A comparison table scores all six
+  (incl. J, the row-opens variant) on overlay / synopsis / rows-stay-put / needs-artwork.
+  - **The plate (A) is now OFF by default** in `ravilo-focus.js` and `app/ravilo-config.html` — still
+    switchable under Preferences → Focus detail so the built version can be compared. All directions read
+    the same `fieldsFor()` output, so choosing one is a rendering change, not a data one.
+  - **Awaiting the owner's pick before building.** My recommendation on the file: **G**, with **K** as the
+    fallback if the band reads too heavy; **H** only if real artwork is coming; **I** only as a deliberate
+    browse redesign.
+- **2026-09-05 — Ravilo focus detail: 6 directions drawn, owner picked 5, all built into the mockups.
+  No spec yet (owner: mockups first). Next unassigned numbers still 188 / R235.**
+  - Design doc: `ravilo/Focus Detail - Directions.html` (canvas) — **A** info plate, **B** hero mirrors the
+    focused tile, **C** the tile unfolds, **D** ambience wash, **E** the dwell ladder (a rule, not a look),
+    **F** an About section on the detail page. Recorded as rejected: **trailer autoplay on focus** (a
+    transcode session per focus move — straight into 183's and R231's territory) and putting R222's
+    slow-to-start note at row level. Drawing the plate at true scale is what surfaced its placement rule:
+    below the tile, else beside it — on the 6-up browse grid a 380px plate fits neither above nor below.
+  - **Owner answers:** build A+B+C+D+F; **Home rows only**; **one on/off switch**; reveal **immediately**;
+    artwork strip **held** (a focusable image that does nothing on Select is a dead end); payload question
+    **left open as the dev team's call**; plate fields left to us — shipped with description, all genres,
+    runtime, age rating, IMDb, audio/subtitle flags and where-you-left-off; no studio/director/cast (those
+    belong in About).
+  - **Built:** new `ravilo/ravilo-focus.js` (the whole treatment; `fieldsFor()` in `ravilo-app.js` resolves
+    one object per item so the module only renders — render-never-compute, the 185/R222 discipline),
+    `ravilo.css` (plate/unfold/ambience/About + Noir overrides: half art, no wash, no chip tint per R221),
+    `ravilo-app.js` (`heroMirror`/`heroRestore`, About section, hooks in `focusEl`/`go`),
+    `ravilo-data.js` (`aboutFor`, plus **`synFor`/`artFor`** — row items are built by `T()` and carried no
+    description or artwork at all, so A/B/D initially rendered their fallback on every title; the two
+    resolvers follow the `genresFor`/`imdbFor` pattern, answering first from the copy the file already
+    states for hero and Discover entries, then from a per-title table. 96 of 100 row items now carry a
+    synopsis; **Glasberget, Kaffepause and Tang & Tang are deliberately left without one** so the plate's
+    "no description yet" state is the rare honest case it was drawn as. Only Big Buck Bunny has real
+    artwork in this project, so `artFor` resolves its backdrop/logo and every fictional title falls back
+    to its gradient — the same stand-in the tiles already use),
+    `ravilo-i18n.js` (16 strings × en/da/fo), `Ravilo TV.html`,
+    `Ravilo Mobile.html` (About on the phone detail), and `app/ravilo-config.html` — the single product
+    switch under **Preferences → Focus detail**, plus a clearly-fenced set of *mockup-only* switches
+    (A-vs-C, hero mirror, ambience) so the directions stay comparable in the live preview.
+  - **Two answers we can't give ourselves, and the spec must say so:** whether the plate's text rides a
+    fattened `/api/tv/home` or a per-title fetch on focus (R210–R213 spent four phases on cold start), and
+    whether **C** survives a focus sweep on the stue BRAVIA — a width animation on the focused child of a
+    lazy row is exactly the workload invariant 11 exists for. **C is built but not recommended**; it also
+    overruns the next row's heading, being taller than the row.
+  - **R233's FR-R233-7 was applied earlier the same day** (scope segmented controls out of
+    `app/ravilo-builders.js`, both row descriptions unconditional) — the mockup is now *ahead* of the code
+    on a Planned, un-dev-reviewed phase. Worth saying out loud when R233 goes to review.
 - **2026-09-04 sync — 5 specs pulled, and our two unpushed drafts renumbered: they are now 187 / R234.**
   Next unassigned numbers: **188 / R235.**
   - **Two collisions, both resolved by renumbering ours** (the dev team pushed first): repo **186** is

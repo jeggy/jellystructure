@@ -618,23 +618,13 @@
   //   'measured' — this device has started this file before and the backend timed it.
   //   'expected' — the ceiling predicate says it will re-encode, but nobody has played it here.
   //   absent     — under the threshold, ceiling not measured yet, or bitrate unknown. Say nothing.
-  // Keys mirror what the note is a property OF: a film is one file, so its key is the title;
-  // a series episode is its own file, so its key is title|S{n}E{n}. In production neither key
-  // exists — the backend resolves the note per file id and hangs it on that file's payload
-  // (185 FR-185-9). A Phase 149 combined multi-episode file is ONE file, so the mock keys it on
-  // the unit's first episode and the combined card renders exactly one line (R222 FR-R222-5).
   const PLAY_NOTES = {
-    'Cosmos Laundromat':  { device: 'Bedroom TV', basis: 'measured', seconds: 20 },
-    'Iron Veil':          { device: 'Bedroom TV', basis: 'expected' },
-    'Nordvest|S1E8':      { device: 'Bedroom TV', basis: 'measured', seconds: 25 },
-    'Nordvest|S2E1':      { device: 'Bedroom TV', basis: 'measured', seconds: 15 },
-    'Nordvest|S2E6':      { device: 'Bedroom TV', basis: 'expected' },
+    'Cosmos Laundromat': { device: 'Bedroom TV', basis: 'measured', seconds: 20 },
+    'Iron Veil':         { device: 'Bedroom TV', basis: 'expected' },
   };
-  // `season` is 0-based (as the UI carries it); `ep` is the episode object, or omitted for a film.
-  function playbackNoteFor(item, season, ep) {
+  function playbackNoteFor(item) {
     if (!item || !item.title) return null;
-    const key = ep ? item.title + '|S' + ((season || 0) + 1) + 'E' + ep.n : item.title;
-    const n = PLAY_NOTES[key];
+    const n = PLAY_NOTES[item.title];
     return n ? Object.assign({}, n) : null;
   }
 
@@ -647,34 +637,184 @@
      on the phone really does show up on the TV — one stored fact, one representation.
      Real product: Jellyfin's own user image, resolved server-side onto the profile. */
   const PHOTO_KEY = 'js-ravilo-photo:';   // dataURL, written by phone/web only
-  const AVCOL_KEY = 'js-ravilo-avcolor:'; // preset gradient, the no-photo choice
-  const AV_PRESETS = [
-    'linear-gradient(145deg,#7b6ef0,#3fb6f5)', 'linear-gradient(145deg,#19d6c6,#2a8cf0)',
-    'linear-gradient(145deg,#f5b542,#e0792f)', 'linear-gradient(145deg,#e0567a,#7b6ef0)',
-    'linear-gradient(145deg,#e0639a,#b15cd0)', 'linear-gradient(145deg,#2dd49a,#12a3a0)',
+  /* No stored avatar colour and no colour picker: 187's open question 3 was answered by dropping
+     preset colours outright (owner, 2026-09-05) — a chosen colour is new stored state with no home
+     in Jellyfin's user record, and R234 FR-R234-3 is three ways in, not four. The no-photo face is
+     a gradient DERIVED from the profile, so it is stable on every surface without being stored on
+     any of them. */
+  const AV_RAMP = [
+    '#7b6ef0,#3fb6f5', '#19d6c6,#2a8cf0', '#f5b542,#e0792f',
+    '#e0567a,#7b6ef0', '#e0639a,#b15cd0', '#2dd49a,#12a3a0',
   ];
   function photoFor(id) { try { return localStorage.getItem(PHOTO_KEY + id) || null; } catch (e) { return null; } }
   function setPhoto(id, dataUrl) { try { localStorage.setItem(PHOTO_KEY + id, dataUrl); } catch (e) {} }
   function clearPhoto(id) { try { localStorage.removeItem(PHOTO_KEY + id); } catch (e) {} }
-  function colorFor(p) {
-    const id = typeof p === 'string' ? p : (p && p.id);
-    let saved = null; try { saved = localStorage.getItem(AVCOL_KEY + id); } catch (e) {}
-    return saved || (p && p.color) || AV_PRESETS[0];
+  function gradientFor(p) {
+    if (p && p.color) return p.color;
+    const id = String((typeof p === 'string' ? p : (p && p.id)) || '');
+    let h = 0; for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
+    return 'linear-gradient(145deg,' + AV_RAMP[h % AV_RAMP.length] + ')';
   }
-  function setColor(id, css) { try { localStorage.setItem(AVCOL_KEY + id, css); } catch (e) {} }
   /* One helper every surface paints from: a photo wins, otherwise colour + initials.
      The photo is returned as a URL for an <img> child rather than a background-image, so
      the circle keeps one sizing rule (object-fit) and the markup stays capturable. */
   function avatarFace(p) {
     const ph = photoFor(typeof p === 'string' ? p : (p && p.id));
-    if (ph) return { photo: ph, style: 'background:' + colorFor(p), label: '' };
-    return { photo: null, style: 'background:' + colorFor(p), label: (p && p.initials) || '' };
+    if (ph) return { photo: ph, style: 'background:' + gradientFor(p), label: '' };
+    return { photo: null, style: 'background:' + gradientFor(p), label: (p && p.initials) || '' };
   }
   function avatarImg(p, cls) {
     const f = avatarFace(p);
     return f.photo ? '<img class="' + (cls || 'av-img') + '" src="' + f.photo + '" alt="">' : '';
   }
-  const avatars = { photoFor, setPhoto, clearPhoto, colorFor, setColor, avatarFace, avatarImg, presets: AV_PRESETS };
+  const avatars = { photoFor, setPhoto, clearPhoto, gradientFor, avatarFace, avatarImg };
 
-  window.RAVILO = { studios, hero, rows, mergedNew, profiles, discover, upcoming, upcomingByDay, overdue, grad, initials, genresFor, normGenre, playbackNoteFor, episodesFor, seasonsFor, castFor, relatedFor, nextAiringFor, trailerFor, imdbFor, ratingFor, itemCerts, CERT_SYS, config, watched, avatars };
+  /* ---------- Synopsis + artwork, resolved per title ----------
+     Row items are built by T() and carry no description or artwork — in production every
+     one of these is a field on the item the server composes. The demo needs a single
+     resolver per fact for the same reason genresFor() exists: the same title is built in
+     several rows, and a title must never present differently by entry path.
+     synFor() answers first from what the file already states (hero + Discover entries are
+     the canonical copy), then from the table below. A handful of titles are deliberately
+     absent so the plate's "no description yet" state is the rare honest case it was drawn
+     as, rather than either a lie or the default. */
+  const SYN = {
+    'Mýrin': 'A murder in a basement flat reopens a case the town agreed to forget — and quietly indicts the detective who closed it.',
+    'Frostbarn': 'A girl walks out of the ice road alive, eleven years after she was buried, and nobody in the village will say whose child she is.',
+    'Tórshavn 1918': 'As the influenza reaches the islands, a young doctor must choose between the harbour that feeds the town and the quarantine that might save it.',
+    'Den Sidste Vinter': 'The last family on a depopulated fjord farm decides to winter there once more, against every warning they are given.',
+    'Kalkverket': 'A closed limeworks reopens under new owners, and the men who worked it start remembering the accident differently.',
+    'Brúgvin': 'A bridge inspector finds a fault nobody wants recorded, on the only road connecting two islands that have never agreed on anything.',
+    'Nátt yvir Fjørðin': 'One night, three boats, and a radio call that four villages heard and none of them reported.',
+    'Stilla Vatn': 'A retired teacher returns to the lake where her sister drowned and starts, politely, asking everyone the same question.',
+    'Det Tavse Hus': 'A family moves into a house whose previous owners left everything behind — including a room the deed does not mention.',
+    'Mod Strømmen': 'A champion rower loses her legs and her funding in the same season, and refuses to accept that either is the end of it.',
+    'Fars Hænder': 'A cabinetmaker’s son inherits the workshop, the debts, and a commission his father never intended to finish.',
+    'Vesterhavet': 'Two brothers who have not spoken in twenty years are named joint keepers of the same stretch of coast.',
+    'Lyset i Nord': 'A lighthouse automation engineer spends her last winter with the keeper she is there to replace.',
+    'Hjemkomst': 'A soldier comes home to a town that held a funeral for him, and finds it easier to let them keep the story.',
+    'Bølgebryder': 'The harbour wall is failing, the money is gone, and the council has one summer to decide which half of the town to save.',
+    'Jarnvegur': 'A rail engineer discovers the line she is certifying was built over ground her own family was moved off.',
+    'Siste Utvei': 'A hostage negotiator with nothing left to lose takes the one call she was told to hand to somebody else.',
+    'Kaperen': 'A privateer’s descendant finds the ship, the charter, and a claim that four governments would rather stayed sunk.',
+    'Nordlys Protocol': 'When the northern grid goes dark, the only people who know why are the ones who built the failsafe.',
+    'Brennur': 'A wildfire crew works a burn that keeps starting again behind them, always in the same direction.',
+    'Fald': 'A climber survives the fall that killed her partner, and the inquest turns on ninety seconds she cannot account for.',
+    'Stormkast': 'A rescue pilot flies into the storm she was ordered to sit out, for a boat that is not on any register.',
+    'Isbjørn': 'A wildlife officer tracking a bear across the pack ice realises something else is following them both.',
+    'Granat': 'A bomb-disposal veteran is called back for one device — the same make she disarmed thirty years ago.',
+    'Tears of Steel': 'In a ruined Amsterdam, a team of scientists tries to undo the future by rewriting one afternoon of the past.',
+    'Sintel': 'A lone warrior crosses a hostile world to find the dragon she once nursed back to life.',
+    'Banens Ende': 'The last train on a decommissioned line carries passengers who cannot agree on where it is going.',
+    'Drift 7': 'A salvage crew wakes their seventh drift with one fewer person aboard than the manifest allows.',
+    'Polstjernen': 'An ice-station navigator loses the star she steers by and keeps the crew moving anyway.',
+    'Aurora Station': 'The northern relay has run itself for nine years. Its first human visit does not go as briefed.',
+    'Det Niende Lag': 'A network archaeologist digs through nine layers of a dead protocol and finds something still answering.',
+    'Ekko': 'A sound engineer hears her own voice in a recording made two years before she was born.',
+    'Johnny Bravo': 'A muscle-bound, hair-obsessed dimwit strikes out with every woman in town, at full volume.',
+    'Fjollerne i Nord': 'Two friends take a fishing holiday in the far north and manage to insult an entire village before the boat leaves the pier.',
+    'Fjollerne í Nord': 'Two friends take a fishing holiday in the far north and manage to insult an entire village before the boat leaves the pier.',
+    'Sommerhus & Sild': 'Four couples, one summer house, and a herring festival that nobody survives with their dignity.',
+    'Naboer': 'A shared hedge becomes a border dispute, then a legal case, then a wedding.',
+    'Fars Ferie': 'A father plans the perfect family holiday down to the minute. The family has other plans.',
+    'Den Gode Nabo': 'A man determined to be voted the street’s best neighbour ruins the street.',
+    'Tøris': 'A failing ice-cream van becomes the unlikely centre of a small town’s summer.',
+    'Bryllupsballaden': 'The band booked for the wedding is not the band that arrives, and the bride is the only one who notices.',
+    'Hytteliv': 'A city couple buys a cabin with no water, no road, and a neighbour who has opinions about both.',
+    'Strandvask': 'A beach kiosk, a heatwave, and two brothers who should never have gone into business together.',
+    'Havets Folk': 'A year with the last crews who still fish the old grounds by hand, in the weather that decides everything.',
+    'Havets Fólk': 'A year with the last crews who still fish the old grounds by hand, in the weather that decides everything.',
+    'Ísland frá Lofti': 'Iceland from above, across four seasons — glaciers, lava fields and the farms that hold on between them.',
+    'Vulkanens Børn': 'The families who live in the shadow of an active volcano, and why they never left.',
+    'Stillehavets Dyb': 'Six kilometres down, a research team films creatures that have never encountered light.',
+    'Gletsjeren': 'One glacier, measured every summer for forty years, and the people who keep the record.',
+    'Fugleøen': 'A single island, a million birds, and the four wardens who count them.',
+    'Det Vilde Norden': 'The Nordic wilderness through a year of light and dark, from the tundra to the fjord floor.',
+    'Nordens Ulve': 'The return of the wolf to Scandinavia, told from both sides of the fence.',
+    'Lyset Vender': 'The long polar night ends. A community that has waited three months for the sun explains what it means.',
+    'Caminandes': 'A determined llama tries to cross a road, a fence, and a Patagonian winter.',
+    'Agent 327': 'A Dutch secret agent walks into a barbershop ambush and out with the haircut of his career.',
+    'Glas Halvt': 'Two friends argue about optimism for eleven minutes without either winning.',
+    'Bukken & Bjørnen': 'A goat and a bear share a mountain, a berry patch, and an uneasy truce.',
+    'Vintereventyr': 'A brother and sister follow a reindeer track into a forest that has its own ideas about winter.',
+    'Den Lille Havfrue': 'A mermaid trades her voice for a summer ashore, in the telling closest to the original.',
+    'Skovens Konge': 'An old elk leads his herd through their last migration along a route the roads have almost closed.',
+    'Trolde': 'Two trolls, turned to stone by the sun for a thousand years, wake up on a building site.',
+    'Snemand': 'A snowman with one night to live decides how to spend it.',
+  };
+  let _synIndex = null;
+  function synIndex() {
+    if (_synIndex) return _synIndex;
+    const ix = {};
+    const take = list => (list || []).forEach(it => { if (it && it.title && it.syn && !(it.title in ix)) ix[it.title] = it.syn; });
+    take(hero);
+    studios.forEach(s => take(s.hero));
+    (discover.lists || []).forEach(r => take(r.items));
+    Object.keys(SYN).forEach(k => { if (!(k in ix)) ix[k] = SYN[k]; });
+    _synIndex = ix;
+    return ix;
+  }
+  function synFor(item) {
+    if (!item || !item.title) return '';
+    if (item.syn) return item.syn;
+    return synIndex()[item.title] || '';
+  }
+
+  /* Artwork. Only Big Buck Bunny has real assets in this project — everything else is a
+     fictional title with no licensed art, so it resolves to the item's own gradient, the
+     same stand-in the tiles already use. Returns the shape the server would send. */
+  const ART = {
+    'Big Buck Bunny': { backdrop: 'assets/bbb-backdrop-landscape.png', logo: 'assets/bbb-logo.png', poster: BBB_IMG },
+  };
+  function artFor(item) {
+    if (!item || !item.title) return { backdrop: '', logo: '', poster: '', grad: '' };
+    const a = ART[item.title] || {};
+    return {
+      backdrop: item.backdrop || a.backdrop || '',
+      logo: item.logo || a.logo || '',
+      poster: item.image || a.poster || '',
+      grad: item.grad || grad(item.title),
+    };
+  }
+
+  /* ---------- About: the facts the scanner already holds (Direction F) ----------
+     In production every one of these is a field on the detail payload — runtime and
+     premiere date from Jellyfin, director/network/country/language from TMDB, and
+     date-added from jellystructure's own row. Hand-written for the titles the demo
+     leans on, deterministic per title for the rest so no two renders disagree. */
+  const ABOUT = {
+    'Mýrin':          { director: 'Baltasar Kormákur', network: 'RÚV · Dansk TV', country: 'Iceland · Denmark', lang: 'Icelandic', runtime: 52 },
+    'Nordvest':        { director: 'Michael Noer', network: 'Dansk TV', country: 'Denmark', lang: 'Danish', runtime: 48 },
+    'Havets Fólk':     { director: 'Katrin Ottarsdóttir', network: 'Kringvarp Føroya', country: 'Faroe Islands', lang: 'Faroese', runtime: 44 },
+    'Tórshavn 1918':   { director: 'Katrin Ottarsdóttir', network: 'Kringvarp Føroya', country: 'Faroe Islands', lang: 'Faroese', runtime: 96 },
+    'Big Buck Bunny':  { director: 'Sacha Goedegebure', network: 'Blender Foundation', country: 'Netherlands', lang: 'No dialogue', runtime: 10 },
+    'Sintel':          { director: 'Colin Levy', network: 'Blender Foundation', country: 'Netherlands', lang: 'English', runtime: 15 },
+    'Cosmos Laundromat': { director: 'Mathieu Auvray', network: 'Blender Foundation', country: 'Netherlands', lang: 'English', runtime: 12 },
+    'Fjollerne í Nord':    { director: 'Mikkel Nørgaard', network: 'Dansk TV', country: 'Denmark', lang: 'Danish', runtime: 28 },
+  };
+  const A_DIRS = ['Baltasar Kormákur', 'Susanne Bier', 'Katrin Ottarsdóttir', 'Hans Petter Moland', 'Tinna Hrafnsdóttir', 'Ole Bornedal'];
+  const A_NETS = ['RÚV', 'Dansk TV', 'Kringvarp Føroya', 'NRK', 'SVT', 'HBO Nordic'];
+  const A_CTRY = ['Iceland', 'Denmark', 'Faroe Islands', 'Norway', 'Sweden', 'Denmark · Sweden'];
+  const A_LANG = ['Icelandic', 'Danish', 'Faroese', 'Norwegian', 'Swedish', 'English'];
+  function aboutFor(item) {
+    if (!item || !item.title) return null;
+    const h = hash(item.title), a = ABOUT[item.title] || {};
+    const isSeries = item.kind === 'series';
+    const year = item.year || 2018 + (h % 8);
+    const aired = new Date(Date.UTC(year, h % 12, 1 + (h >> 4) % 27));
+    const added = new Date(Date.now() - ((h >> 2) % 420) * 864e5);
+    return {
+      runtime: a.runtime || (isSeries ? 38 + (h % 22) : 84 + (h % 46)),
+      perEpisode: isSeries,
+      aired: aired.toISOString().slice(0, 10),
+      added: added.toISOString().slice(0, 10),
+      director: a.director || A_DIRS[h % A_DIRS.length],
+      network: a.network || A_NETS[(h >> 3) % A_NETS.length],
+      isNetwork: isSeries,
+      country: a.country || A_CTRY[(h >> 5) % A_CTRY.length],
+      lang: a.lang || A_LANG[(h >> 7) % A_LANG.length],
+    };
+  }
+
+  window.RAVILO = { studios, hero, rows, mergedNew, profiles, discover, upcoming, upcomingByDay, overdue, grad, initials, genresFor, normGenre, synFor, artFor, playbackNoteFor, episodesFor, seasonsFor, castFor, relatedFor, nextAiringFor, trailerFor, imdbFor, ratingFor, aboutFor, itemCerts, CERT_SYS, config, watched, avatars };
 })();

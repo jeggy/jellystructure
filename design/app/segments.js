@@ -30,6 +30,20 @@
   function pad(n) { return String(n).padStart(2, '0'); }
   function fmt(s) { return Math.floor(s / 60) + ':' + pad(Math.floor(s % 60)); }
   function fmtl(s) { return pad(Math.floor(s / 60)) + ':' + pad(Math.floor(s % 60)); }
+  /* Phase 189 FR-189-2: the stepper moves in whole seconds, so the readout has to show tenths —
+     against a whole-second timecode a sub-second move looked like nothing happening at all. */
+  function fmtt(s) { return fmtl(s) + '<s class="tenths">.' + Math.floor((s - Math.floor(s)) * 10) + '</s>'; }
+  /* Phase 190 FR-190-3: what the preview actually does, not a hard-coded claim. 46.4% of first audio
+     tracks are eac3/ac3/dts/truehd, which no mainstream browser decodes — video stays copy, audio is
+     re-encoded to AAC, and the editor must not show a picture of the sound it is not playing. */
+  var BROWSER_OK = { aac: 1, vorbis: 1, opus: 1, mp3: 1, flac: 1 };
+  function acodecOf(e) { return e.acodec || (e.acodec = ['eac3', 'aac', 'ac3', 'dts', 'aac', 'truehd'][(e.i || 0) % 6]); }
+  function playTag(e) {
+    var a = acodecOf(e);
+    return BROWSER_OK[a]
+      ? '<span class="vpill ok" title="' + a + ' plays in the browser — nothing is re-encoded">direct play · no transcode</span>'
+      : '<span class="vpill warn" title="' + a + ' has no mainstream browser decoder, so only the audio is re-encoded — the video is still a copy">video copy · audio ' + a + ' → AAC</span>';
+  }
   function fmtf(s) { return fmtl(s) + '<s>.' + pad(Math.round((s - Math.floor(s)) * 25)) + '</s>'; }
   function rnd(seed) { var x = Math.sin(seed * 12.9898) * 43758.5453; return x - Math.floor(x); }
 
@@ -257,8 +271,8 @@ if (s.src === 'fp') h += '<span class="b fp" style="left:' + (s.a / e.dur * 100)
     var rows = e.segs.map(function (g, n) {
       return '<div class="mk' + (n === S.sel ? ' sel' : '') + (g.lock ? ' lkd' : '') + '" data-m="' + n + '">' +
         '<span class="sw" style="background:' + K[g.k].c + '"></span><span class="nm">' + K[g.k].n + '</span>' +
-        '<span class="tc"><span class="stp"><button data-d="-1" data-e="a">−</button><button data-d="1" data-e="a">+</button></span>' + fmtl(g.a) +
-          '<s>→</s>' + fmtl(g.b) + '<span class="stp"><button data-d="-1" data-e="b">−</button><button data-d="1" data-e="b">+</button></span>' +
+        '<span class="tc"><span class="stp"><button data-d="-1" data-e="a">−</button><button data-d="1" data-e="a">+</button></span>' + fmtt(g.a) +
+          '<s>→</s>' + fmtt(g.b) + '<span class="stp"><button data-d="-1" data-e="b">−</button><button data-d="1" data-e="b">+</button></span>' +
           '<s class="len">' + fmt(g.b - g.a) + ' long</s>' + srcChip(g) + '</span>' +
         '<span class="acts"><button class="btn sm ghost" data-p="' + n + '">▶ play the cut</button>' +
           '<button class="lockb' + (g.lock ? ' on' : '') + '" data-l="' + n + '">' + (g.lock ? '🔒 locked' : '🔓 lock') + '</button></span></div>';
@@ -274,7 +288,7 @@ if (s.src === 'fp') h += '<span class="b fp" style="left:' + (s.a / e.dur * 100)
       '<div class="sxmain" style="grid-template-columns:1fr 322px"><div class="sxstage">' +
         '<div class="vid"><div class="ph"><em>' + fmtl(head) + '</em>' + (s ? K[s.k].n.toLowerCase() + ' ends here' : 'drag on the bar to mark a segment') + '</div>' +
           '<div class="tag">' + (s ? '<span class="vpill" style="color:' + K[s.k].c + ';border-color:' + K[s.k].c + '44">▍' + K[s.k].n + '</span>' : '') + '</div>' +
-          '<div class="tag2"><span class="vpill ok">direct play · no transcode</span></div>' +
+          '<div class="tag2">' + playTag(e) + '</div>' +
           '<div class="foot"><span class="vbtn pri">▶</span><span class="vbtn" data-a="fb">◂◂</span><span class="vbtn" data-a="ff">▸▸</span>' +
             '<span class="vpill">↺ loop this cut · 3 s either side</span><span class="sxsp"></span>' +
             '<span class="vpill mono">' + fmtl(head) + ' / ' + fmtl(e.dur) + '</span></div></div>' +
@@ -373,9 +387,12 @@ if (s.src === 'fp') h += '<span class="b fp" style="left:' + (s.a / e.dur * 100)
     });
     root.querySelectorAll('.stp button').forEach(function (b) {
       b.addEventListener('click', function () {
-        var s = e.segs[+b.closest('[data-m]').dataset.m], f = b.dataset.e;
+        var mi = +b.closest('[data-m]').dataset.m, s = e.segs[mi], f = b.dataset.e;
+        S.sel = mi;
+        // FR-189-5: a locked marker says so. Silently doing nothing reads as a broken button.
+        if (s.lock) { render(); toast(K[s.k].n + ' is locked — unlock it to move this marker'); return; }
         s[f] = Math.max(0, Math.min(e.dur, s[f] + +b.dataset.d)); s.src = 'me'; delete s.conf; dirty();
-        S.sel = +b.closest('[data-m]').dataset.m; render();
+        render();
       });
     });
     root.querySelectorAll('[data-p]').forEach(function (b) {
@@ -436,7 +453,10 @@ if (s.src === 'fp') h += '<span class="b fp" style="left:' + (s.a / e.dur * 100)
     if (S.view !== 'trim' || ev.target.matches('input,textarea')) return;
     var e = EPS[S.cur], s = e.segs[S.sel]; if (!s) return;
     var step = ev.shiftKey ? 1 : 0.04, k = ev.key.toLowerCase();
-    if (k === ',' || k === '.') { s.b = Math.max(s.a + 1, s.b + (k === ',' ? -step : step)); s.src = 'me'; delete s.conf; dirty(); render(); }
+    if (k === ',' || k === '.') {
+      if (s.lock) { toast(K[s.k].n + ' is locked — unlock it to move this marker'); return; }
+      s.b = Math.max(s.a + 1, s.b + (k === ',' ? -step : step)); s.src = 'me'; delete s.conf; dirty(); render();
+    }
     else if (k === 'l') { s.lock = !s.lock; dirty(); render(); }
     else if (k === 'enter') root.querySelector('[data-a="next"]').click();
     else if (k === 'escape') { S.view = 'sheet'; S.open = S.cur; render(); }

@@ -113,11 +113,6 @@
   .dslow b{ font-weight:600; color:#f0c07a; }
   [data-skin="noir"] .dslow i{ background:var(--ink); }
   [data-skin="noir"] .dslow b{ color:var(--ink); font-weight:700; }
-  /* FR-R222-5 — the same line on an episode row (one file, one line), scaled to the row's type. */
-  .meslow{ margin-top:6px; padding-left:8px; border-left:3px solid #f5b542; font-size:11.5px; line-height:1.45; color:var(--ink-soft); }
-  .meslow b{ font-weight:600; color:#f0c07a; }
-  [data-skin="noir"] .meslow{ border-left-color:var(--ink); }
-  [data-skin="noir"] .meslow b{ color:var(--ink); font-weight:700; }
 
   /* detail screen */
   .detail{ position:absolute; inset:0; background:var(--bg); z-index:70; display:flex; flex-direction:column; transform:translateX(100%); transition:transform .3s var(--ease); }
@@ -133,6 +128,12 @@
   .dmeta .pg{ border:1px solid var(--line); border-radius:5px; padding:0 5px; font-size:11px; }
   .dbtns{ display:flex; gap:10px; margin-top:16px; }
   .dsyn{ margin-top:16px; font-size:14px; line-height:1.6; color:var(--ink-soft); }
+  /* Direction F — the same facts as the TV's About section, stacked two-up. Reading
+     surface only; the phone's tap targets are unaffected. */
+  .aboutp{ margin-top:22px; }
+  .aboutp .g{ display:grid; grid-template-columns:1fr 1fr; gap:14px 16px; margin-top:12px; }
+  .aboutp .k{ font-size:10px; font-weight:600; letter-spacing:1.6px; text-transform:uppercase; color:var(--ink-dim); }
+  .aboutp .v{ font-size:14px; color:var(--ink); margin-top:3px; font-weight:500; }
   .seclbl{ font-family:'Space Grotesk',sans-serif; font-size:15px; font-weight:600; margin:22px 0 11px; }
 
   /* Multi-episode files — combined triptych card (Option B) */
@@ -212,9 +213,6 @@
   .pf-btn.danger{ color:#f5667a; border-color:rgba(245,102,122,.4); background:rgba(245,102,122,.08); }
   .pf-btn:active{ transform:scale(.985); }
   .pf-drop{ font-size:12px; color:var(--ink-dim); text-align:center; }
-  .pf-presets{ display:grid; grid-template-columns:repeat(6,1fr); gap:10px; }
-  .pf-preset{ aspect-ratio:1; border-radius:50%; border:2px solid transparent; cursor:pointer; padding:0; min-height:44px; }
-  .pf-preset.cur{ border-color:var(--ink); }
   .pf-note{ display:flex; align-items:center; gap:8px; border-radius:12px; padding:11px 13px; font-size:13.5px; line-height:1.45; margin-top:14px; }
   .pf-note.ok{ background:rgba(45,212,154,.12); border:1px solid rgba(45,212,154,.4); color:#2dd49a; }
   .pf-note.bad{ background:rgba(245,102,122,.12); border:1px solid rgba(245,102,122,.4); color:#f5667a; }
@@ -398,7 +396,7 @@
     const cards = units.map(u=>{
       if(u.single){ const e=u.single; return '<div class="merow-single">'
         + '<div class="methumb" style="background:'+e.grad+'"><span class="mn">'+mPad(e.n)+'</span></div>'
-        + '<div class="memeta2"><div class="mt2">'+esc(e.title)+'</div><div class="md2">'+esc(e.dur)+'</div>'+epSlowHTML(it, e)+'</div></div>'; }
+        + '<div class="memeta2"><div class="mt2">'+esc(e.title)+'</div><div class="md2">'+esc(e.dur)+'</div></div></div>'; }
       const eps3=u.eps.slice(0,3);
       const tiles=eps3.map((e,i)=>'<div class="tp tp'+(i+1)+'" style="background:'+e.grad+'"></div>').join('');
       const nums=eps3.map((e,i)=>'<span class="tnum tnum'+(i+1)+'">'+mPad(e.n)+'</span>').join('');
@@ -410,8 +408,7 @@
         + '<span class="merng">Episodes '+first+'\u2013'+last+'</span></div>'
         + '<div class="mebody"><div class="met">Episodes '+first+'\u2013'+last+'</div>'
         + '<div class="merows">'+rows+'</div>'
-        + '<div class="mefile">\u25a4 1 file \u00b7 '+u.eps.length+' episodes \u00b7 '+durSum+'m</div>'
-        + epSlowHTML(it, u.eps[0])+'</div></div>';
+        + '<div class="mefile">\u25a4 1 file \u00b7 '+u.eps.length+' episodes \u00b7 '+durSum+'m</div></div></div>';
     }).join('');
     return '<div class="seclbl">Episodes <span style="font-weight:400;color:var(--ink-dim);font-family:Sora,sans-serif;font-size:12px;">Season 1 \u00b7 '+units.length+' files</span></div>'
       + '<div class="melist">'+cards+'</div>';
@@ -430,28 +427,37 @@
   // for THIS phone (its own decoder, its own history), so a title that carries the note on the TV
   // may carry nothing here; the mock substitutes the phone's name to show that it is per-device.
   // i18n keys: slow_lead · slow_tail_expected · slow_tail_measured · this_phone.
-  function slowBody(n){
-    const tail = (n.basis==='measured' && n.seconds) ? 'The last few times it took about '+n.seconds+' seconds.'
-      : 'Give it a moment after you press play.';
-    return '<b>Slow to start on Pixel 8.</b> '+tail;
-  }
-  // FR-R222-4/5 — films carry the line above the action row; a SERIES never does, because its
-  // episodes are different files. The episode rows below carry their own (one file, one line).
   function slowHTML(it){
-    if(it.kind==='series') return '';
     const n = R.playbackNoteFor ? R.playbackNoteFor(it) : null;
     if(!n) return '';
-    return '<div class="dslow"><i></i><span>'+slowBody(n)+'</span></div>';
+    const tail = (n.basis==='measured' && n.seconds) ? 'The last few times it took about '+n.seconds+' seconds.'
+      : 'Give it a moment after you press play.';
+    return '<div class="dslow"><i></i><span><b>Slow to start on Pixel 8.</b> '+tail+'</span></div>';
   }
-  function epSlowHTML(it, ep){
-    const n = (R.playbackNoteFor && ep) ? R.playbackNoteFor(it, 0, ep) : null;
-    if(!n) return '';
-    return '<div class="meslow">'+slowBody(n)+'</div>';
+  function aboutHTML(it){
+    const ab = R.aboutFor ? R.aboutFor(it) : null;
+    if(!ab) return '';
+    const isS = it.kind==='series';
+    const seasons = isS && R.seasonsFor ? R.seasonsFor(it) : 0;
+    const epTotal = isS && R.episodesFor ? R.episodesFor(it,0).length*seasons : 0;
+    const d = iso => { const x=new Date(iso+'T00:00:00Z'); return isNaN(x)?iso:x.toLocaleDateString(undefined,{day:'numeric',month:'long',year:'numeric',timeZone:'UTC'}); };
+    const f = (k,v) => v ? '<div><div class="k">'+k+'</div><div class="v">'+esc(String(v))+'</div></div>' : '';
+    return '<div class="aboutp"><div class="seclbl" style="margin:0;">About</div><div class="g">'
+      + f('Runtime', isS ? ab.runtime+' min per episode' : ab.runtime+' min')
+      + f(isS?'First aired':'Released', d(ab.aired))
+      + f('Director', ab.director)
+      + f(isS?'Network':'Studio', ab.network)
+      + f('Country', ab.country)
+      + f('Original language', ab.lang)
+      + (isS ? f('Seasons', seasons+' · '+epTotal+' episodes') : '')
+      + f('In your library since', d(ab.added))
+      + '</div></div>';
   }
   function openDetail(title){
     const it = findItem(title);
-    const bg = it.backdrop ? 'url('+it.backdrop+') center/cover' : it.grad;
-    const syn = it.syn || 'A standout title from your Jellyfin library, organised and ready to play through Ravilo.';
+    const art = R.artFor ? R.artFor(it) : { backdrop: it.backdrop, grad: it.grad };
+    const bg = art.backdrop ? 'url('+art.backdrop+') center/cover' : art.grad;
+    const syn = (R.synFor ? R.synFor(it) : it.syn) || 'A standout title from your Jellyfin library, organised and ready to play through Ravilo.';
     const more = (R.relatedFor ? R.relatedFor(it) : R.rows[0].items).slice(0,10);
     dscroll.innerHTML = '<div class="dhero" style="background:'+bg+';"><button class="dback" id="dback">‹</button><div class="scrim"></div></div>'
       + '<div class="dbody">'
@@ -462,6 +468,7 @@
       + '<div class="dbtns"><button class="btn play">▶ Play</button><button class="btn ghost">＋ My List</button></div>'
       + '<div class="dsyn">'+esc(syn)+'</div>'
       + (it.kind==='series' ? episodesHTML(it) : '')
+      + aboutHTML(it)
       + '<div class="seclbl">More like this</div>'
       + '<div class="track" style="padding-left:0;padding-right:0;">'+more.map(tile).join('')+'</div>'
       + '<div style="height:24px;"></div></div>';
@@ -514,8 +521,6 @@
   function profileHTML(){
     const f = faceOf();
     const fine = window.matchMedia('(pointer:fine)').matches;   // web gets drag-and-drop, touch doesn't
-    const cur = AV.colorFor ? AV.colorFor(ME) : ME.color;
-    const presets = (AV.presets||[]).map(c=>'<button class="pf-preset'+(!f.photo && c===cur?' cur':'')+'" style="background:'+c+'" data-preset="'+esc(c)+'" aria-label="Use this colour"></button>').join('');
     return '<div class="acct-bar"><button data-acct="back">‹</button><h2>Your profile</h2></div>'
       + '<div class="acct-body">'
       + '<div class="pf-photo">'
@@ -530,8 +535,6 @@
       +   (fine ? '<div class="pf-drop">or drop an image on the circle above</div>' : '')
       + '</div>'
       + noteHTML()
-      + '<div class="acct-sec">Or use a colour</div>'
-      + '<div class="pf-presets">'+presets+'</div>'
       + '<input type="file" accept="image/*" id="pfFile" hidden>'
       + '<input type="file" accept="image/*" capture="user" id="pfCam" hidden>'
       + '</div>';
@@ -541,7 +544,7 @@
     return '<div class="acct-bar"><button data-acct="back">‹</button><h2>Settings</h2></div>'
       + '<div class="acct-body">'
       + '<div class="acct-sec">Account</div>'
-      + '<button class="acct-row" data-acct="profile"><span class="ph-av'+(f.photo?' has-photo':'')+'" style="'+f.style+';width:34px;height:34px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-family:\'Space Grotesk\',sans-serif;font-weight:700;font-size:13px;color:'+(f.photo?'transparent':'#fff')+';flex:none;overflow:hidden;">'+(f.photo?'<img class="av-img" src="'+f.photo+'" alt="">':esc(f.label))+'</span><span><b>'+esc(ME.name)+'</b><div class="rsub">Photo and name</div></span><span class="chev">›</span></button>'
+      + '<button class="acct-row" data-acct="profile"><span class="ph-av'+(f.photo?' has-photo':'')+'" style="'+f.style+';width:34px;height:34px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-family:\'Space Grotesk\',sans-serif;font-weight:700;font-size:13px;color:'+(f.photo?'transparent':'#fff')+';flex:none;overflow:hidden;">'+(f.photo?'<img class="av-img" src="'+f.photo+'" alt="">':esc(f.label))+'</span><span><b>'+esc(ME.name)+'</b><div class="rsub">Your photo</div></span><span class="chev">›</span></button>'
       + '<div style="height:10px"></div>'
       + '<button class="acct-row" data-acct="password"><span style="width:22px;text-align:center">🔑</span><span>Change password<div class="rsub">Used when you sign in</div></span><span class="chev">›</span></button>'
       + noteHTML()
@@ -575,8 +578,6 @@
     else if(a==='mylist'){ tab='top10'; render(); }
   });
   acct.addEventListener('click', e=>{
-    const preset = e.target.closest('[data-preset]');
-    if(preset){ if(AV.clearPhoto) AV.clearPhoto(ME.id); if(AV.setColor) AV.setColor(ME.id, preset.dataset.preset); acctNote=null; acctInner.innerHTML = profileHTML(); paintAvatars(); return; }
     const b = e.target.closest('[data-acct]'); if(!b) return;
     const a = b.dataset.acct;
     if(a==='back') closeAcct();

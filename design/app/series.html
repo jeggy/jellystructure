@@ -7,6 +7,7 @@
 <link rel="stylesheet" href="wf.css">
 <link rel="stylesheet" href="app.css">
 <link rel="stylesheet" href="seeding.css">
+<link rel="stylesheet" href="../flags.css">
 <link rel="stylesheet" href="detail.css">
 <style>
   #sbz-card .sbz-cols{display:grid;grid-template-columns:120px 1fr 1fr auto;gap:12px;font-size:.68rem;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-soft);font-weight:600;padding:0 2px 8px;}
@@ -30,6 +31,10 @@
   <div class="pagebar">
     <h1>Nordvest <span class="muted">(2023)</span></h1>
     <span class="badge bad">4 episodes need attention</span>
+    <!-- Phase 200 FR-200-4/5: the union across every episode, not episode 1. Order is the physical
+         track order of the first episode carrying each language, so the strip doesn't reshuffle. -->
+    <span class="audio-flags"><span class="af-label">Audio</span><span class="af-row"><span class="fi fi-fo" title="Faroese"></span><span class="fi fi-dk" title="Danish"></span></span></span>
+    <span class="audio-flags"><span class="af-label">Subtitles</span><span class="af-row"><span class="fi fi-dk" title="Danish"></span><span class="fi fi-fo" title="Faroese"></span><span class="fi fi-gb" title="English"></span><span class="af-more" title="1 more language">+1</span></span></span>
     <a class="imdb-pill" href="https://www.imdb.com/title/tt6910212/" target="_blank" rel="noopener" title="IMDb 7.9/10 · 5,412 votes · synced 2d ago"><span class="imdb-wm"><span class="imdb-star">★</span>IMDb</span><b>7.9</b><span class="imdb-votes">5.4K</span></a>
     <a id="seed-pill-link" href="#tab=seeding" style="text-decoration:none;"></a>
     <span class="spacer"></span>
@@ -40,6 +45,39 @@
     <span class="btn primary">Save → NFO</span>
     <span class="btn">Sync Jellyfin ↻</span>
   </div>
+
+  <!-- MKV track layout (Phase 201 FR-201-11/12) — a view over the last sweep result, never persisted
+       state. Scoped to this series' own affected paths; a partial repair keeps the banner and says so. -->
+  <div class="note red" id="mkv-banner" style="margin-bottom:14px;display:flex;gap:11px;align-items:flex-start;">
+    <span class="badge bad" style="flex:none;">Can't play in Ravilo</span>
+    <div class="tiny" style="line-height:1.6;flex:1;"><b id="mkv-msg">3 episodes in this series can't play in Ravilo (track list unreachable).</b><br>A flag edit moved each file's <span class="mono">Tracks</span> element behind the first <span class="mono">Cluster</span>, so Ravilo buffers forever — Jellyfin plays them fine, which is why nothing else here looks wrong. Repair rewrites the header in place: no re-encode, ~0.6s per file.</div>
+    <span class="btn sm primary" id="mkv-fix" style="flex:none;">Fix now</span>
+  </div>
+  <script>
+  (function () {
+    // FR-201-12: repairs only this title's paths. A file that still reports false keeps the banner,
+    // states how many of N remain, and Fix now retries just those.
+    let paths = ['S01E02.mkv', 'S01E05.mkv', 'S01E07.mkv'], total = paths.length, pass = 0;
+    const bar = document.getElementById('mkv-banner'), btn = document.getElementById('mkv-fix'), msg = document.getElementById('mkv-msg');
+    if (!paths.length) { bar.remove(); return; }
+    btn.addEventListener('click', () => {
+      if (btn.dataset.busy) return;
+      btn.dataset.busy = '1'; btn.textContent = 'Repairing…'; btn.style.opacity = '.6';
+      setTimeout(() => {
+        pass++;
+        paths = pass === 1 ? paths.slice(0, 1) : [];   // first pass fixes 2 of 3
+        delete btn.dataset.busy; btn.style.opacity = '';
+        if (!paths.length) {
+          bar.remove();
+          if (typeof toast === 'function') toast('Track layout repaired · ' + total + ' episodes · Ravilo can play them now');
+          return;
+        }
+        btn.textContent = 'Retry ' + paths.length;
+        msg.textContent = paths.length + ' of ' + total + ' episodes still can\'t play in Ravilo (repair reported failure).';
+      }, 1800);
+    });
+  })();
+  </script>
 
   <div class="tabs2" id="tabbar">
     <span data-tab="overview">Overview</span>

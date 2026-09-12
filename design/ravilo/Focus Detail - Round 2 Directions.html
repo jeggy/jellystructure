@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="design_doc_mode" content="canvas">
+<title>Ravilo · focus detail without a popover — Round 2</title>
+<link rel="stylesheet" href="ravilo.css">
+<link rel="stylesheet" href="../flags.css">
+<style>
+body{background:transparent;font-family:'Sora',sans-serif}
+.lbl{position:absolute;width:420px;color:#e8eaf2}
+.lbl h3{margin:0;font-family:'Space Grotesk',sans-serif;font-size:1.2rem;letter-spacing:-.01em}
+.lbl small{display:block;margin-top:9px;font-size:.79rem;line-height:1.68;color:#a9afc4}
+.lbl small b{color:#d7dbe8;font-weight:600}
+.lbl .tag{display:inline-block;font-family:'JetBrains Mono','SFMono-Regular',monospace;font-size:.66rem;letter-spacing:.09em;text-transform:uppercase;color:#7b6ef0;margin-bottom:7px}
+.lbl .tag.pick{color:#2dd49a}
+.lbl .tag.no{color:#8f95aa}
+.lbl .cost{display:block;margin-top:12px;padding:10px 12px;border-radius:9px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.09);font-size:.74rem;line-height:1.6;color:#9aa0b4}
+.lbl .cost b{color:#e8eaf2}
+.cap{position:absolute;width:600px;font-size:.7rem;color:#8f95aa;font-family:'JetBrains Mono','SFMono-Regular',monospace;letter-spacing:.05em;text-transform:uppercase}
+.shot{position:absolute;width:960px;height:540px;overflow:hidden;border-radius:14px;border:1px solid rgba(255,255,255,.12);box-shadow:0 24px 60px rgba(0,0,0,.5)}
+.shot>.inner{width:1920px;height:1080px;transform:scale(.5);transform-origin:top left}
+.stagebg{position:relative;width:1920px;height:1080px;background:var(--bg);color:var(--ink);overflow:hidden;font-family:'Sora',sans-serif}
+.panel{position:absolute;background:#fff;color:#171923;border-radius:18px;padding:34px 38px;box-shadow:0 24px 60px rgba(0,0,0,.4)}
+.panel h2{font-family:'Space Grotesk',sans-serif;font-size:1.5rem;margin:0 0 6px;letter-spacing:-.02em}
+.panel h4{font-family:'Space Grotesk',sans-serif;font-size:.95rem;margin:24px 0 8px;letter-spacing:-.01em}
+.panel p{font-size:.86rem;line-height:1.72;color:#3c4256;margin:0 0 10px}
+.panel .lead{font-size:.95rem;color:#232838}
+.panel b{color:#171923}
+.panel ul{margin:0;padding-left:18px}.panel li{font-size:.85rem;line-height:1.75;color:#3c4256;margin-bottom:7px}
+.panel .mono{font-family:'JetBrains Mono','SFMono-Regular',monospace;font-size:.82em;background:#f0f1f6;padding:1px 5px;border-radius:4px}
+.axis{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:14px;margin:16px 0 4px}
+.axis>div{background:#f6f7fb;border:1px solid #e6e8ef;border-radius:11px;padding:14px 15px}
+.axis h5{margin:0 0 5px;font-family:'Space Grotesk',sans-serif;font-size:.82rem}
+.axis p{font-size:.77rem;line-height:1.6;margin:0;color:#4b5165}
+.good{background:#eef7f2;border:1px solid #b9dfcc;border-radius:10px;padding:13px 15px;font-size:.84rem;line-height:1.65;color:#1f4634;margin:12px 0}
+.warn{background:#fff8e8;border:1px solid #f2d79a;border-radius:10px;padding:13px 15px;font-size:.84rem;line-height:1.65;color:#4a3c1c;margin:12px 0}
+.tbl{width:100%;border-collapse:collapse;margin-top:12px}
+.tbl th{text-align:left;font-family:'JetBrains Mono',monospace;font-size:.66rem;letter-spacing:.08em;text-transform:uppercase;color:#6b7183;padding:0 10px 7px 0;font-weight:600}
+.tbl td{font-size:.8rem;line-height:1.55;color:#3c4256;padding:9px 10px 9px 0;border-top:1px solid #e6e8ef;vertical-align:top}
+.tbl td b{color:#171923}
+
+/* ---------- G · the band ---------- */
+.r2band{position:relative;display:grid;grid-template-columns:minmax(0,1fr) 600px;gap:56px;align-items:center;padding:26px 64px 30px;
+  border-bottom:1px solid var(--line);background:linear-gradient(180deg,rgba(255,255,255,.035),transparent)}
+.r2band .bt{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:64px;line-height:1;letter-spacing:-2px}
+.r2band .bm{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-top:14px;font-size:20px;color:var(--ink-soft)}
+.r2band .bm .fp-tag{padding:2px 10px;border-radius:6px;background:var(--chip);color:var(--ink);font-size:17px;font-weight:500}
+.r2band .bs{font-size:23px;line-height:1.48;color:var(--ink-soft);margin-top:14px;max-width:1000px;text-wrap:pretty}
+.r2band .bart{width:600px;height:338px;border-radius:12px;overflow:hidden;position:relative;box-shadow:0 18px 44px rgba(0,0,0,.5)}
+.r2band .bart img{width:100%;height:100%;object-fit:cover}
+.r2band .bart .g{position:absolute;inset:0}
+
+/* ---------- H · cinema ---------- */
+.r2cin{position:absolute;inset:0}
+.r2cin .art{position:absolute;inset:0;background-size:cover;background-position:center}
+.r2cin .sc1{position:absolute;inset:0;background:linear-gradient(90deg,rgba(6,8,14,.96) 0%,rgba(6,8,14,.8) 42%,rgba(6,8,14,.25) 72%,transparent)}
+.r2cin .sc2{position:absolute;inset:0;background:linear-gradient(0deg,rgba(6,8,14,.97) 6%,rgba(6,8,14,.55) 30%,transparent 58%)}
+.r2cin .body{position:absolute;left:64px;top:268px;width:820px}
+.r2cin .ct{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:84px;line-height:.98;letter-spacing:-2.6px}
+.r2cin .cs{font-size:25px;line-height:1.46;color:var(--ink-soft);margin-top:18px;text-wrap:pretty}
+.r2strip{position:absolute;left:0;right:0;bottom:0;padding:0 64px 34px}
+.r2strip .hd{font-family:'Space Grotesk',sans-serif;font-size:21px;font-weight:600;color:var(--ink-soft);letter-spacing:.4px;margin-bottom:14px}
+.r2strip .tk{display:flex;gap:16px}
+.r2strip .mini{width:154px;flex:none;opacity:.5}
+.r2strip .mini .a{width:154px;height:231px;border-radius:9px;overflow:hidden;position:relative}
+.r2strip .mini.on{opacity:1}
+.r2strip .mini.on .a{outline:3px solid var(--ring);outline-offset:3px}
+.r2strip .mini .tt{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;padding:8px;font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:18px;color:#fff}
+
+/* ---------- I · split ---------- */
+.r2split{display:grid;grid-template-columns:772px minmax(0,1fr);height:988px}
+.r2split .pane{padding:34px 40px 0 64px;border-right:1px solid var(--line);background:linear-gradient(180deg,rgba(255,255,255,.03),transparent 60%)}
+.r2split .part{width:668px;height:376px;border-radius:12px;overflow:hidden;position:relative;box-shadow:0 18px 44px rgba(0,0,0,.5)}
+.r2split .part img{width:100%;height:100%;object-fit:cover}
+.r2split .pt{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:52px;line-height:1.02;letter-spacing:-1.6px;margin-top:26px}
+.r2split .ps{font-size:21px;line-height:1.5;color:var(--ink-soft);margin-top:14px;text-wrap:pretty}
+.r2split .pfacts{display:grid;grid-template-columns:1fr 1fr;gap:16px 30px;margin-top:24px;padding-top:22px;border-top:1px solid var(--line)}
+.r2split .k{font-size:12px;font-weight:600;letter-spacing:1.6px;text-transform:uppercase;color:var(--ink-dim)}
+.r2split .v{font-size:19px;color:var(--ink);margin-top:4px;font-weight:500}
+.r2split .list{padding:34px 64px 0 40px;overflow:hidden}
+
+/* ---------- J · the row opens ---------- */
+.r2open{display:flex;gap:34px;align-items:flex-start;padding:0 0 0 64px}
+.r2open .big{width:300px;flex:none}
+.r2open .big .a{width:300px;height:450px;border-radius:12px;overflow:hidden;position:relative;outline:3px solid var(--ring);outline-offset:4px}
+.r2open .big .tt{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;padding:14px;font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:30px;color:#fff}
+.r2open .txt{flex:1;min-width:0;padding-top:6px}
+.r2open .ot{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:46px;line-height:1.04;letter-spacing:-1.3px}
+.r2open .os{font-size:21px;line-height:1.5;color:var(--ink-soft);margin-top:12px;max-width:900px;text-wrap:pretty}
+.r2open .rest{display:flex;gap:20px;overflow:hidden;padding-right:64px}
+.r2open .rest .m{width:180px;flex:none}
+.r2open .rest .m .a{width:180px;height:270px;border-radius:9px;overflow:hidden;position:relative}
+.r2open .rest .m .tt{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;padding:8px;font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:19px;color:#fff}
+.r2open .rest .l{font-size:16px;color:var(--ink-soft);margin-top:9px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* ---------- K · the caption grows ---------- */
+.r2cap{margin-top:14px;width:340px}
+.r2cap .t{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:26px;letter-spacing:-.6px;line-height:1.1}
+.r2cap .m{font-size:16px;color:var(--ink-soft);margin-top:8px}
+.r2cap .s{font-size:16px;line-height:1.45;color:var(--ink-dim);margin-top:9px;
+  display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.r2cap .f{display:flex;align-items:center;gap:7px;margin-top:11px}
+.r2cap .f .pflag{width:24px;height:18px;border-radius:3px;box-shadow:0 0 0 1px rgba(255,255,255,.2);background-size:cover;flex:none}
+.r2cap .f .lb{font-size:11px;font-weight:600;letter-spacing:1.5px;text-transform:uppercase;color:var(--ink-dim)}
+
+/* ---------- L · the line ---------- */
+.r2line{position:absolute;left:0;right:0;bottom:0;height:88px;display:flex;align-items:center;gap:20px;padding:0 64px;
+  background:linear-gradient(0deg,rgba(6,8,14,.96),rgba(6,8,14,.72));border-top:1px solid var(--line);font-size:21px;color:var(--ink-soft)}
+.r2line .t{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:28px;letter-spacing:-.7px;color:var(--ink)}
+.r2line .sep{width:1px;height:26px;background:var(--line)}
+.r2line .res{color:var(--accent-2);font-weight:500}
+.r2line .fl{display:flex;gap:6px}
+.r2line .fl .pflag{width:26px;height:19px;border-radius:3px;box-shadow:0 0 0 1px rgba(255,255,255,.2);background-size:cover;flex:none}
+
+.pchip{display:inline-flex;align-items:center;height:32px;padding:0 14px;border-radius:16px;font-size:16px;font-weight:500;color:var(--ink);background:var(--chip);border:1px solid rgba(255,255,255,.08);white-space:nowrap}
+.pchip.lead{background:rgba(123,110,240,.2);border-color:rgba(123,110,240,.5);font-weight:600}
+.fp-tag{padding:2px 9px;border-radius:6px;background:var(--chip);color:var(--ink);font-size:15px;font-weight:500}
+.pflag{width:27px;height:20px;border-radius:4px;box-shadow:0 0 0 1px rgba(255,255,255,.2);background-size:cover;background-position:center;flex:none}
+</style>
+</head>
+<body>
+
+<div class="panel" style="left:0;top:0;width:1120px">
+  <h2>Same information. No popover.</h2>
+  <p class="lead">Fair — the plate solves the problem by putting a panel on top of the page, and a floating panel is the one thing a 10-foot UI has no good precedent for. So here are <b>six</b> directions that carry <b>the same fields</b> and never overlay anything.</p>
+  <p>What separates them is not styling, it's <b>where the information lives</b>. Once you name that, the choice mostly makes itself:</p>
+  <div class="axis">
+    <div><h5>In a fixed region</h5><p>A zone of the page that always describes the focused title. Rows never move. → <b>G</b>, <b>L</b></p></div>
+    <div><h5>In the page itself</h5><p>The whole screen becomes the title; rows retreat to a strip. → <b>H</b></p></div>
+    <div><h5>In a second column</h5><p>Detail and list side by side, permanently. → <b>I</b></p></div>
+    <div><h5>In the row</h5><p>The shelf you're standing in grows to hold the text. → <b>J</b>, <b>K</b></p></div>
+  </div>
+  <div class="warn"><b>The plate is now off by default</b> in the mockups — the switch in <span class="mono">Preferences → Focus detail</span> turns it back on if you want to compare against it. Nothing else about the built work changed, and all five directions below reuse the exact same resolved fields (<span class="mono">fieldsFor()</span>), so switching direction is a rendering change, not a data one.</div>
+  <p style="margin:12px 0 0"><b>Read them in this order:</b> <b>G</b> is the safe one and my recommendation. <b>K</b> is the quietest thing that could work. <b>H</b> is the one with real presence. <b>I</b> changes what Home <i>is</i>. <b>J</b> feels best under the thumb and carries the one hardware risk. <b>L</b> is the minimum viable answer, drawn so you can see how little is enough.</p>
+</div>
+
+<!-- G -->
+<div class="lbl" style="left:0;top:1060px">
+  <span class="tag pick">Direction G · recommended</span>
+  <h3>The band — a fixed region that always describes the focused title</h3>
+  <small>The hero stops being a carousel and becomes a <b>permanent 380px information band</b>. Whatever has focus, the band describes it: title at 64px, meta, synopsis, genres, flags, artwork on the right. Rows sit below and scroll <b>under nothing</b>.</small>
+  <small>This is the one that fixes the actual complaint. Nothing floats, nothing covers a tile, nothing appears or disappears — the text simply <b>changes in place</b> as you move, the way a station's now-playing panel does. The page has exactly one place where information lives, and you learn it in two seconds.</small>
+  <small>It also retires an oddity you already have: a hero advertising a title you didn't ask about on a 6.5s timer. Before you enter a row, the band shows the household's pick — after that, it's yours.</small>
+  <span class="cost"><b>Cost:</b> a layout change, not a new surface. Rows start ~140px lower, so Home shows 2 full rows instead of 2½. <b>Zero</b> risk to focus traversal.</span>
+</div>
+<div class="cap" style="left:480px;top:1060px">G · band above, rows below · Mýrin focused in row 1</div>
+<div class="shot" style="left:480px;top:1090px"><div class="inner"><div class="stagebg" id="s-g"></div></div></div>
+<div class="cap" style="left:1500px;top:1060px">G · the band before you enter a row — the household's pick</div>
+<div class="shot" style="left:1500px;top:1090px"><div class="inner"><div class="stagebg" id="s-g2"></div></div></div>
+
+<!-- K -->
+<div class="lbl" style="left:0;top:1760px">
+  <span class="tag">Direction K · the quiet one</span>
+  <h3>The caption grows</h3>
+  <small>No new region at all. The tile's own caption — today one line of <span class="mono">year · genre</span> — <b>expands for the focused tile only</b>: title, meta, three lines of synopsis, the flag strip. The row band grows ~150px; the tiles themselves never move.</small>
+  <small>Cheapest possible answer, and the most native: the information is attached to the thing, in the place captions already live, so there's nothing new to learn and nothing to dismiss. On a phone or the web it needs no separate treatment.</small>
+  <small><b>The limit is honest:</b> a caption is 340px wide, so the synopsis clamps to three short lines and the genres have to sit on one row. If the answer to "what is this?" needs more words than that, K can't give them and G can.</small>
+  <span class="cost"><b>Watch:</b> the row's height changes as focus enters and leaves it, which nudges the rows below. Pinning the row height to the tallest caption avoids that at the cost of permanent empty space.</span>
+</div>
+<div class="cap" style="left:480px;top:1760px">K · only the focused tile's caption expands</div>
+<div class="shot" style="left:480px;top:1790px"><div class="inner"><div class="stagebg" id="s-k"></div></div></div>
+
+<!-- H -->
+<div class="lbl" style="left:0;top:2460px">
+  <span class="tag">Direction H · presence</span>
+  <h3>Cinema — the page becomes the title</h3>
+  <small>The focused title's artwork goes <b>full-bleed</b>. Its name is set at 84px where a poster would be, the synopsis under it, and the row you're browsing retreats to a <b>single dimmed strip at the bottom</b> — neighbours at 50% opacity, only the focused tile at full.</small>
+  <small>This is the most confident of the five and by far the best-looking on a big screen in a dark room. It also makes browsing feel like <i>choosing</i> rather than scrolling a catalogue, because you see one title at a time at full size.</small>
+  <small><b>Two real costs.</b> You lose sight of the rest of the library — only one row is visible, so the "what else is there" browse loop gets slower. And it depends entirely on artwork: with only a gradient behind it, this direction is much weaker than G, and most of this project's fictional titles have no art.</small>
+  <span class="cost"><b>Needs:</b> a backdrop per focused title, which is the one direction that can't degrade gracefully without one.</span>
+</div>
+<div class="cap" style="left:480px;top:2460px">H · Big Buck Bunny focused · one row, dimmed, at the foot</div>
+<div class="shot" style="left:480px;top:2490px"><div class="inner"><div class="stagebg" id="s-h"></div></div></div>
+
+<!-- I -->
+<div class="lbl" style="left:0;top:3160px">
+  <span class="tag">Direction I · a different Home</span>
+  <h3>Split — detail column beside the list</h3>
+  <small>The page divides permanently: a <b>fixed 772px detail pane</b> on the left, rows on the right in a narrower track. Left never scrolls, right never covers. The most information of any direction — art, synopsis, and a facts grid all visible at once, without a single overlay.</small>
+  <small>It's the classic 10-foot inspector pattern and it's genuinely good for a household that browses deliberately. It also gives the detail page's own content a permanent home, which makes <b>Select</b> feel like less of a leap.</small>
+  <small><b>But it changes what Home is.</b> Only ~3 tiles per row are visible, poster art gets small, and every existing row layout, the channel rail and the 6-up browse grid would need re-thinking. This is a redesign of the browse experience, not an addition to it — worth doing only if that's what you want.</small>
+  <span class="cost"><b>Cost:</b> the largest by far. Touches every row surface, the rail, browse, search. Not a phase — a project.</span>
+</div>
+<div class="cap" style="left:480px;top:3160px">I · fixed detail pane left, rows right</div>
+<div class="shot" style="left:480px;top:3190px"><div class="inner"><div class="stagebg" id="s-i"></div></div></div>
+
+<!-- J -->
+<div class="lbl" style="left:0;top:3860px">
+  <span class="tag">Direction J</span>
+  <h3>The row opens</h3>
+  <small>The row you're standing in becomes the detail surface. The focused poster grows to 300×450 <b>in place</b>, the text sits beside it <b>inside the row's own band</b>, and the rest of the row continues past it at normal size. Other rows are untouched.</small>
+  <small>The appeal: information appears exactly where you're looking, with no new region and no overlay, and the row still reads as a shelf — you can see what's to the right of the thing you're considering, which H and I both lose.</small>
+  <small><b>The catch is the one C had.</b> The row's height and the tiles' positions change on every focus move, which is the reflow that invariant 11 exists to protect — and unlike C, this one moves the row's <i>height</i> too, so the rows below shift. It needs a measurement on the stue BRAVIA before it's promised.</small>
+  <span class="cost"><b>Mitigation if you like it:</b> pin the open row's band height permanently so only widths animate, never the page's vertical rhythm.</span>
+</div>
+<div class="cap" style="left:480px;top:3860px">J · the active row grows; the rows around it don't</div>
+<div class="shot" style="left:480px;top:3890px"><div class="inner"><div class="stagebg" id="s-j"></div></div></div>
+
+<!-- L -->
+<div class="lbl" style="left:0;top:4560px">
+  <span class="tag no">Direction L · the minimum</span>
+  <h3>One line at the foot of the screen</h3>
+  <small>A permanent 88px strip at the bottom: title, year, seasons, runtime, rating, IMDb, flags, and where you left off. It never moves, never covers a tile, and is readable at a glance without pulling your eye off the row.</small>
+  <small>Drawn because it's the honest floor of this whole exercise. If the household's real question is "how long is it and is there Danish audio", this answers it completely, costs almost nothing, and can't regress anything.</small>
+  <small>What it can't do is <b>describe</b> a title — there's no room for a synopsis, which is the field that actually decides "what is this?". Good as a companion to K; not a substitute for G.</small>
+  <span class="cost"><b>Cheapest to ship, cheapest to reverse.</b> One row of text, no layout change beyond 88px of bottom padding.</span>
+</div>
+<div class="cap" style="left:480px;top:4560px">L · status line, rows otherwise untouched</div>
+<div class="shot" style="left:480px;top:4590px"><div class="inner"><div class="stagebg" id="s-l"></div></div></div>
+
+<div class="panel" style="left:0;top:5300px;width:1500px">
+  <h2>How they compare</h2>
+  <table class="tbl">
+    <tr><th style="width:112px">Direction</th><th style="width:96px">Overlay?</th><th style="width:150px">Carries a synopsis</th><th style="width:150px">Rows stay put</th><th style="width:130px">Needs artwork</th><th>The trade you're making</th></tr>
+    <tr><td><b>G · band</b></td><td>No</td><td>Yes, in full</td><td>Yes</td><td>Helps, degrades fine</td><td>Home shows ~half a row less. The hero carousel goes away.</td></tr>
+    <tr><td><b>K · caption</b></td><td>No</td><td>Three short lines</td><td>Row height changes</td><td>No</td><td>Not enough room for real copy. Quietest to build and to live with.</td></tr>
+    <tr><td><b>H · cinema</b></td><td>No</td><td>Yes, in full</td><td>One row visible</td><td><b>Yes, hard</b></td><td>Best-looking; slowest browse. Weak without backdrops.</td></tr>
+    <tr><td><b>I · split</b></td><td>No</td><td>Yes, plus facts</td><td>Yes, but narrower</td><td>Helps</td><td>Most information, biggest rebuild. A redesign of Home.</td></tr>
+    <tr><td><b>J · row opens</b></td><td>No</td><td>Yes</td><td><b>No — reflow</b></td><td>Helps</td><td>Feels best under the thumb; the one with a hardware risk.</td></tr>
+    <tr><td><b>L · line</b></td><td>No</td><td><b>No</b></td><td>Yes</td><td>No</td><td>Facts only, no description. Nearly free.</td></tr>
+  </table>
+  <h4>What I'd pick, and why</h4>
+  <div class="good"><b>G, with K's caption as a later refinement.</b> G is the only direction that gives the synopsis room, keeps every row where it is, needs no artwork to work, and carries no hardware risk — and it removes the hero carousel, which is currently the least useful 550px on the screen. If G's band feels too heavy once it's live, K is the fallback that needs no new region at all. <b>H</b> is the one I'd build if you told me artwork was coming; <b>I</b> only if you want to redesign browsing outright.</div>
+  <p style="margin-top:14px">Say which one and I'll build it into the TV and phone mockups the same way — the resolved fields are already there, so it's a rendering change. Or if none of these is it either, tell me what's wrong with the closest one and I'll take another pass.</p>
+</div>
+
+<script>
+function hash(s){let h=2166136261;for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619);}return Math.abs(h);}
+function grad(s){const h=hash(s);const a=h%360;const b=(a+36+(h>>3)%50)%360;const l1=30+(h>>5)%12,l2=12+(h>>7)%8;
+  return `linear-gradient(145deg, hsl(${a} 48% ${l1}%), hsl(${b} 52% ${l2}%))`;}
+const BD='assets/bbb-backdrop-landscape.png', PO='assets/big-buck-bunny-poster.jpg';
+
+const APPBAR=`<div class="appbar">
+  <div class="brand"><img class="mark" src="assets/brand/ravilo-mark.svg" alt=""><span class="wm">Ravilo</span></div>
+  <div class="topnav"><span class="navitem cur">Home</span><span class="navitem">Series</span><span class="navitem">Films</span><span class="navitem">Discover</span><span class="navitem">My List</span></div>
+  <div class="right"><span class="clock">21:14</span>
+    <div class="search-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg></div>
+    <div class="avatar">JE</div></div></div>`;
+
+const MY={title:'Mýrin',year:'2019',badge:'4K',count:'Season 2 · 8 episodes',rt:'52 min',imdb:'7.9',
+  genres:['Crime','Drama','Mystery'],
+  syn:'A murder in a basement flat reopens a case the town agreed to forget — and quietly indicts the detective who closed it.',
+  resume:'Resume S2 · E4 “Vetrarnótt” · 18 min left'};
+const BB={title:'Big Buck Bunny',year:'2008',badge:'HD',count:'Film',rt:'10 min',imdb:'6.4',
+  genres:['Animation','Comedy','Family'],
+  syn:'A big, good-natured rabbit takes elaborate revenge on three rodents who have been tormenting the forest.'};
+
+const CERT=`<span class="cert lvl-3" style="transform:scale(.9);transform-origin:left center"><span class="cert-rg">DK</span><span class="cert-code">15</span></span>`;
+const FLAGS=`<span class="lb" style="font-size:12px;font-weight:600;letter-spacing:1.8px;text-transform:uppercase;color:var(--ink-dim)">Audio</span>
+  <span class="fi fi-dk pflag"></span><span class="fi fi-us pflag"></span>
+  <span style="width:1px;height:20px;background:var(--line);margin:0 6px"></span>
+  <span class="lb" style="font-size:12px;font-weight:600;letter-spacing:1.8px;text-transform:uppercase;color:var(--ink-dim)">Subs</span>
+  <span class="fi fi-dk pflag"></span><span class="fi fi-fo pflag"></span>`;
+
+function poster(t,sub,o){o=o||{};
+  const art=o.img?`<img class="tile-img" src="${o.img}" alt="">`:`<div class="grad" style="background:${grad(t)}"></div><div class="tt">${t}</div>`;
+  return `<div class="tile poster${o.focused?' focused':''}"><div class="art">${art}${o.pct?`<div class="tile-prog"><i style="width:${o.pct}%"></i></div>`:''}</div>
+    ${o.cap||`<div class="label">${t}</div><div class="sub">${sub}</div>`}</div>`;}
+function row(title,items,o){o=o||{};
+  return `<div class="crow${o.active?' active':''}"><div class="crow-head"><h2>${title}</h2><span class="more">See all ›</span></div>
+    <div class="track">${items}</div></div>`;}
+
+const NORDIC=[['Nordvest','2018 · Crime'],['Mýrin','2019 · Crime'],['Arvur','2021 · Drama'],['Jarnvegur','2020 · Thriller'],['Frostbarn','2017 · Crime'],['Glasberget','2016 · Drama'],['Tórshavn 1918','2022 · Drama'],['Havets Fólk','2019 · Documentary']];
+const NEWLY=[['Big Buck Bunny','2008 · Animation'],['Sintel','2010 · Animation'],['Cosmos Laundromat','2015 · Sci-Fi'],['Havets Hjarta','2023 · Drama'],['Fjollerne í Nord','2021 · Comedy'],['Phantom Circuit','2023 · Thriller'],['Midnight Sun Patrol','2022 · Action'],['Iron Veil','2021 · Action']];
+const CONT=[['Fjollerne í Nord','S3 · E2'],['Nordvest','S1 · E6'],['Arvur','S2 · E1'],['Sintel','42 min left'],['Glasberget','S1 · E3'],['Jarnvegur','S2 · E8']];
+function tiles(list,fi,opts){return list.map((x,i)=>poster(x[0],x[1],Object.assign({focused:i===fi},(opts&&opts[i])||{}))).join('')}
+
+/* ---- G ---- */
+function band(d,art){
+  return `<div class="r2band">
+    <div>
+      <div class="bt">${d.title}</div>
+      <div class="bm"><span class="fp-tag">${d.badge||'HD'}</span><span>${d.year}</span><span>${d.count}</span><span>${d.rt}</span>${CERT}<span style="color:var(--ink);font-weight:600">★ ${d.imdb}</span></div>
+      <div class="bs">${d.syn}</div>
+      <div style="display:flex;gap:8px;margin-top:16px">${d.genres.map((g,i)=>`<span class="pchip${i===0?' lead':''}">${g}</span>`).join('')}</div>
+      <div style="display:flex;align-items:center;gap:9px;margin-top:16px">${FLAGS}
+        ${d.resume?`<span style="width:1px;height:20px;background:var(--line);margin:0 6px"></span><span style="display:flex;align-items:center;gap:9px;font-size:18px;color:var(--accent-2);font-weight:500"><span style="width:8px;height:8px;border-radius:50%;background:var(--accent-2);box-shadow:0 0 12px var(--accent-2)"></span>${d.resume}</span>`:''}</div>
+    </div>
+    <div class="bart">${art?`<img src="${art}" alt="">`:`<div class="g" style="background:${grad(d.title)}"></div>`}</div>
+  </div>`;}
+document.getElementById('s-g').innerHTML=APPBAR+band(MY,null)+
+  `<div style="margin-top:14px">`+row('Nordic Crime',tiles(NORDIC,1,{1:{pct:22}}),{active:1})+row('Newly Added',tiles(NEWLY,-1,{0:{img:PO}}))+`</div>`;
+document.getElementById('s-g2').innerHTML=APPBAR+
+  band({title:'Big Buck Bunny',year:'2008',badge:'HD',count:'Film',rt:'10 min',imdb:'6.4',genres:BB.genres,syn:BB.syn},BD)+
+  `<div style="margin-top:14px">`+row('Continue Watching',tiles(CONT,-1,{0:{pct:64},1:{pct:22},2:{pct:81},3:{pct:38},4:{pct:12},5:{pct:70}}))+row('Nordic Crime',tiles(NORDIC,-1,{}))+`</div>`;
+
+/* ---- K ---- */
+const KCAP=`<div class="r2cap">
+  <div class="t">Mýrin</div>
+  <div class="m">2019 · S2 · 8 episodes · 52 min · ★ 7.9</div>
+  <div class="s">${MY.syn}</div>
+  <div class="f"><span class="lb">Audio</span><span class="fi fi-dk pflag"></span><span class="fi fi-us pflag"></span>
+    <span style="width:1px;height:16px;background:var(--line);margin:0 4px"></span>
+    <span class="lb">Subs</span><span class="fi fi-dk pflag"></span><span class="fi fi-fo pflag"></span></div>
+</div>`;
+document.getElementById('s-k').innerHTML=APPBAR+
+  `<div style="margin-top:-92px;padding-top:112px">`+
+  row('Nordic Crime',tiles(NORDIC,1,{1:{pct:22,cap:KCAP}}),{active:1})+
+  row('Newly Added',tiles(NEWLY,-1,{0:{img:PO}}))+`</div>`;
+
+/* ---- H ---- */
+document.getElementById('s-h').innerHTML=
+  `<div class="r2cin"><div class="art" style="background-image:url('${BD}')"></div><div class="sc1"></div><div class="sc2"></div></div>`+
+  `<div style="position:relative;z-index:4">`+APPBAR+`</div>`+
+  `<div class="r2cin" style="z-index:3">
+     <div class="body">
+       <div style="display:flex;align-items:center;gap:12px;font-size:16px;letter-spacing:2.4px;text-transform:uppercase;font-weight:600;color:var(--accent-2);margin-bottom:16px"><span>In your library</span></div>
+       <div class="ct">Big Buck Bunny</div>
+       <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-top:18px;font-size:21px;color:var(--ink-soft)"><span class="fp-tag" style="font-size:18px">HD</span><span>2008</span><span>10 min</span><span style="color:var(--ink);font-weight:600">★ 6.4</span>${CERT}</div>
+       <div class="cs">${BB.syn}</div>
+       <div style="display:flex;gap:8px;margin-top:20px">${BB.genres.map((g,i)=>`<span class="pchip${i===0?' lead':''}">${g}</span>`).join('')}</div>
+       <div style="display:flex;align-items:center;gap:9px;margin-top:20px">${FLAGS}</div>
+     </div>
+   </div>
+   <div class="r2strip">
+     <div class="hd">Newly Added</div>
+     <div class="tk">${NEWLY.map((x,i)=>`<div class="mini${i===0?' on':''}"><div class="a">${i===0?`<img src="${PO}" style="width:100%;height:100%;object-fit:cover" alt="">`:`<div style="position:absolute;inset:0;background:${grad(x[0])}"></div><div class="tt">${x[0]}</div>`}</div></div>`).join('')}</div>
+   </div></div>`;
+
+/* ---- I ---- */
+document.getElementById('s-i').innerHTML=APPBAR+
+  `<div class="r2split">
+     <div class="pane">
+       <div class="part"><div class="g" style="position:absolute;inset:0;background:${grad('Mýrin')}"></div></div>
+       <div class="pt">Mýrin</div>
+       <div style="display:flex;align-items:center;gap:13px;flex-wrap:wrap;margin-top:14px;font-size:19px;color:var(--ink-soft)"><span class="fp-tag">4K</span><span>2019</span><span>S2 · 8 episodes</span>${CERT}<span style="color:var(--ink);font-weight:600">★ 7.9</span></div>
+       <div class="ps">${MY.syn}</div>
+       <div style="display:flex;gap:8px;margin-top:16px">${MY.genres.map((g,i)=>`<span class="pchip${i===0?' lead':''}">${g}</span>`).join('')}</div>
+       <div class="pfacts">
+         <div><div class="k">Runtime</div><div class="v">52 min per episode</div></div>
+         <div><div class="k">Director</div><div class="v">Baltasar Kormákur</div></div>
+         <div><div class="k">Network</div><div class="v">RÚV · Dansk TV</div></div>
+         <div><div class="k">Audio · Subs</div><div class="v" style="display:flex;gap:7px;align-items:center;margin-top:8px"><span class="fi fi-dk pflag"></span><span class="fi fi-us pflag"></span><span style="width:1px;height:18px;background:var(--line);margin:0 3px"></span><span class="fi fi-dk pflag"></span><span class="fi fi-fo pflag"></span></div></div>
+       </div>
+     </div>
+     <div class="list">
+       <div class="crow active"><div class="crow-head"><h2>Nordic Crime</h2></div>
+         <div class="track">${NORDIC.slice(0,5).map((x,i)=>poster(x[0],x[1],{focused:i===1,pct:i===1?22:0})).join('')}</div></div>
+       <div class="crow"><div class="crow-head"><h2>Newly Added</h2></div>
+         <div class="track">${NEWLY.slice(0,5).map((x,i)=>poster(x[0],x[1],i===0?{img:PO}:{})).join('')}</div></div>
+     </div>
+   </div>`;
+
+/* ---- J ---- */
+document.getElementById('s-j').innerHTML=APPBAR+
+  `<div style="margin-top:-92px;padding-top:104px">`+
+  `<div class="crow active"><div class="crow-head"><h2>Nordic Crime</h2><span class="more">See all ›</span></div>
+     <div class="r2open">
+       <div class="big"><div class="a"><div style="position:absolute;inset:0;background:${grad('Mýrin')}"></div><div class="tt">Mýrin</div>
+         <div class="tile-prog" style="position:absolute;left:0;right:0;bottom:0"><i style="width:22%"></i></div></div></div>
+       <div class="txt">
+         <div class="ot">Mýrin</div>
+         <div style="display:flex;align-items:center;gap:13px;flex-wrap:wrap;margin-top:12px;font-size:19px;color:var(--ink-soft)"><span class="fp-tag">4K</span><span>2019</span><span>S2 · 8 episodes</span><span>52 min</span>${CERT}<span style="color:var(--ink);font-weight:600">★ 7.9</span></div>
+         <div class="os">${MY.syn}</div>
+         <div style="display:flex;gap:8px;margin-top:14px">${MY.genres.map((g,i)=>`<span class="pchip${i===0?' lead':''}">${g}</span>`).join('')}</div>
+         <div style="display:flex;align-items:center;gap:9px;margin-top:14px">${FLAGS}</div>
+         <div style="display:flex;align-items:center;gap:9px;margin-top:16px;font-size:18px;color:var(--accent-2);font-weight:500"><span style="width:8px;height:8px;border-radius:50%;background:var(--accent-2);box-shadow:0 0 12px var(--accent-2)"></span>${MY.resume}</div>
+         <div class="rest" style="margin-top:22px">${NORDIC.slice(2,7).map(x=>`<div class="m"><div class="a"><div style="position:absolute;inset:0;background:${grad(x[0])}"></div><div class="tt">${x[0]}</div></div><div class="l">${x[0]}</div></div>`).join('')}</div>
+       </div>
+     </div></div>`+
+  row('Newly Added',tiles(NEWLY,-1,{0:{img:PO}}))+`</div>`;
+
+/* ---- L ---- */
+document.getElementById('s-l').innerHTML=APPBAR+
+  `<div style="margin-top:-92px;padding-top:112px;height:992px;overflow:hidden">`+
+  row('Nordic Crime',tiles(NORDIC,1,{1:{pct:22}}),{active:1})+
+  row('Newly Added',tiles(NEWLY,-1,{0:{img:PO}}))+
+  row('Continue Watching',tiles(CONT,-1,{0:{pct:64},1:{pct:22},2:{pct:81},3:{pct:38},4:{pct:12},5:{pct:70}}))+`</div>`+
+  `<div class="r2line">
+     <span class="t">Mýrin</span><span class="sep"></span>
+     <span>2019</span><span>Season 2 · 8 episodes</span><span>52 min</span>${CERT}<span style="color:var(--ink);font-weight:600">★ 7.9</span>
+     <span class="sep"></span><span class="fl"><span class="fi fi-dk pflag"></span><span class="fi fi-us pflag"></span></span>
+     <span class="fl" style="margin-left:4px"><span class="fi fi-dk pflag"></span><span class="fi fi-fo pflag"></span></span>
+     <span class="sep"></span><span class="res">S2 · E4 · 18 min left</span>
+     <span style="flex:1"></span><span style="font-size:17px;color:var(--ink-dim)">Crime · Drama · Mystery</span>
+   </div>`;
+</script>
+</body>
+</html>
