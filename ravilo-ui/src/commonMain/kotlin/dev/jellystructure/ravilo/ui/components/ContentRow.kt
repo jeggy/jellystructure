@@ -39,6 +39,7 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.jellystructure.ravilo.ui.focus.dpadFocusable
@@ -119,6 +120,13 @@ fun <T> StaticContentRow(
      *  household direction isn't "rowOpen", or nothing here is focused/settled yet). */
     openAfterKey: Any? = null,
     openPanel: (@Composable () -> Unit)? = null,
+    /** The width [openPanel] will lay out at. Supplied rather than measured: the panel is spliced in
+     *  to the RIGHT of a tile that is often already at the viewport's edge, so its slot lands
+     *  off-screen — and a `LazyRow` never *places* an off-screen item, so `onGloballyPositioned` never
+     *  fires for it. Measuring it in order to know how far to scroll it into view is therefore
+     *  circular. The caller derives this from the row's own tile variant (`focusDetailPanelWidthFor`),
+     *  so this row and the panel it scrolls always agree on one number. */
+    openPanelWidth: Dp = 0.dp,
     /** FR-R240-10 — a SECOND, independent panel slot for the tile that just stopped being open, so a
      *  lateral hop from one open tile straight to another in the same row gets a real two-panel
      *  crossfade (the old one shrinking out on its own exit tween, the new one expanding in) instead of
@@ -278,7 +286,7 @@ fun <T> StaticContentRow(
         // ([FOCUS_DETAIL_PANEL_WIDTH]) — and scroll on the SAME tween the tile and panel animate on, so
         // all three read as one motion. Nothing here depends on the panel having been laid out first.
         val density = LocalDensity.current
-        val panelWidthPx = with(density) { FOCUS_DETAIL_PANEL_WIDTH.toPx() }
+        val panelWidthPx = with(density) { openPanelWidth.toPx() }
         val itemSpacingPx = with(density) { RaviloDimens.itemSpacing.toPx() }
         LaunchedEffect(openAfterKey) {
             val key = openAfterKey ?: return@LaunchedEffect

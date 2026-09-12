@@ -71,6 +71,15 @@ private const val LANDSCAPE_IMAGE_W = 640
 fun tileRequestedWidth(variant: TileVariant): Int? =
     if (variant == TileVariant.LANDSCAPE) LANDSCAPE_IMAGE_W else null
 
+/** A tile's own resting width, before [dev.jellystructure.ravilo.ui.LocalTileScale] and before
+ *  R240's open-growth. Exposed so J can size its panel to the space a grown tile of this variant
+ *  actually leaves — see [focusDetailPanelWidthFor]. */
+fun tileBaseWidth(variant: TileVariant): Dp = when (variant) {
+    TileVariant.POSTER -> POSTER_W
+    TileVariant.LANDSCAPE -> LANDSCAPE_W
+    TileVariant.SQUARE -> SQUARE_W
+}
+
 @Composable
 fun Tile(
     title: String,
