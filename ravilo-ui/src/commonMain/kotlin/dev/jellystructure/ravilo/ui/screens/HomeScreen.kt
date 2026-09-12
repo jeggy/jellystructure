@@ -451,26 +451,54 @@ private fun ContentRowItem(
     val rowHasOpen = fd?.rowId == row.id && fd?.mode == "rowOpen"
     // FR-R240-7 — the panel item stays anchored at [panelKey] through its whole exit tween (not
     // immediately reassigned to wherever focus lands next), so leaving the row entirely gets a real
-    // narrow-out instead of the node just vanishing. Known simplification vs the full spec: hopping
-    // laterally from one already-open tile straight to another within the SAME row re-anchors
-    // immediately with no exit tween for the old panel — see FR-R240-10's doc comment on
-    // FocusDetailPanel.kt for why a true two-slot crossfade wasn't built out here.
+    // narrow-out instead of the node just vanishing.
     var panelKey by remember(row.id) { mutableStateOf<String?>(null) }
     var panelVisible by remember(row.id) { mutableStateOf(false) }
     // Kept alive through the exit tween below — [fd] itself may already be null (or about a
     // different row) by the time the panel is merely narrowing out, and the panel must keep showing
     // the title it was open on, not vanish, until FR-R240-7's close animation actually finishes.
-    var lastUi by remember(row.id) { mutableStateOf<dev.jellystructure.ravilo.ui.focus.FocusDetailUi?>(null) }
-    if (rowHasOpen) lastUi = fd
+    // Updated ONLY inside the effect below (never unconditionally from [fd]) so a lateral hop can
+    // still read the PREVIOUS tile's snapshot after [fd] has already moved on to the new one.
+    var panelUi by remember(row.id) { mutableStateOf<dev.jellystructure.ravilo.ui.focus.FocusDetailUi?>(null) }
+
+    // FR-R240-10 — a second, independent slot for the panel that's on its way OUT when a lateral hop
+    // within the SAME row swaps which tile is open before the previous panel finished closing: the old
+    // tile's panel moves here and shrinks out on its own clock while the new one expands in [panelKey]
+    // above, instead of one shared node being re-anchored mid-tween with no exit animation for the one
+    // that just lost focus.
+    var closingKey by remember(row.id) { mutableStateOf<String?>(null) }
+    var closingUi by remember(row.id) { mutableStateOf<dev.jellystructure.ravilo.ui.focus.FocusDetailUi?>(null) }
+
     LaunchedEffect(rowHasOpen, fd?.itemKey) {
-        if (rowHasOpen) {
-            panelKey = fd?.itemKey
+        val targetKey = if (rowHasOpen) fd?.itemKey else null
+        if (targetKey == panelKey) return@LaunchedEffect
+        if (targetKey != null && panelKey != null) {
+            // Lateral hop: the tile that WAS open moves to the closing slot (its own exit tween, handled
+            // by the LaunchedEffect(closingKey) below) while the new tile opens immediately.
+            closingKey = panelKey
+            closingUi = panelUi
+            panelKey = targetKey
+            panelUi = fd
             panelVisible = true
-        } else if (panelKey != null) {
+        } else if (targetKey != null) {
+            // Nothing was open in this row — first open, no closing slot involved.
+            panelKey = targetKey
+            panelUi = fd
+            panelVisible = true
+        } else {
+            // Leaving the row entirely — the open slot itself narrows out and self-clears (FR-R240-7).
             panelVisible = false
             kotlinx.coroutines.delay(RaviloMotion.ROW_OPEN_TWEEN_MS.toLong() + 60L)
             if (!rowHasOpen) panelKey = null
         }
+    }
+    // Scoped to [closingKey] itself (not the outer effect above) so a later hop overwriting
+    // [closingKey] cleanly cancels and restarts this delay rather than leaving the earlier one's
+    // cleanup orphaned by the outer effect's own restart.
+    LaunchedEffect(closingKey) {
+        val key = closingKey ?: return@LaunchedEffect
+        kotlinx.coroutines.delay(RaviloMotion.ROW_OPEN_TWEEN_MS.toLong() + 60L)
+        if (closingKey == key) { closingKey = null; closingUi = null }
     }
 
     // FR-R240-9 — the row's own top/foot in window space, refreshed on every layout pass (incl. every
@@ -524,7 +552,13 @@ private fun ContentRowItem(
         // NOT given a FocusRequester anywhere inside it (FR-R240-5) — see FocusDetailPanel's own doc.
         openAfterKey = panelKey,
         openPanel = if (panelKey != null) ({
-            lastUi?.let { FocusDetailPanel(ui = it, visible = panelVisible) }
+            panelUi?.let { FocusDetailPanel(ui = it, visible = panelVisible) }
+        }) else null,
+        // FR-R240-10 — always exiting (visible = false): this slot only ever holds the tile that just
+        // stopped being open, mid-shrink, independent of whatever is opening in [panelKey] above.
+        closingAfterKey = closingKey,
+        closingPanel = if (closingKey != null) ({
+            closingUi?.let { FocusDetailPanel(ui = it, visible = false) }
         }) else null,
     ) { _, card, fr ->
         // R113: in Continue Watching, show the season/episode as a small on-image badge for TV

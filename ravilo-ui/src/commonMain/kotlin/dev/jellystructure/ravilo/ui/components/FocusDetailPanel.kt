@@ -39,14 +39,17 @@ private val PANEL_CONTENT_WIDTH = 620.dp
 private const val PANEL_GENRE_CAP = 4
 
 /**
- * FR-R240-10 (open gap, not built) — a lateral hop from one already-open tile straight to another IN
- * THE SAME ROW re-anchors this composable at the new key immediately (see `ContentRowItem`'s
- * `LaunchedEffect(rowHasOpen, fd?.itemKey)` in HomeScreen.kt), with no exit tween for the tile that
- * was open a moment ago — the spec's `FD.hShift` collapse/catch-up cancellation assumes two panels
- * can be mid-tween at once (one closing, one opening) so their width deltas net out; this component
- * only ever holds one. A true fix needs `StaticContentRow` to accept two simultaneous
- * `openAfterKey`s. FR-R240-9 (the row's one-shot vertical scroll target) is built, in
- * `FocusDetailScroll.kt`/`ContentRowItem` — a separate concern from this horizontal gap.
+ * FR-R240-10 (built 2026-09-12) — a lateral hop from one already-open tile straight to another IN THE
+ * SAME ROW now gets a real two-panel crossfade: `ContentRowItem` (HomeScreen.kt) moves the tile that
+ * WAS open into a second, independent `closingAfterKey`/`closingPanel` slot on `StaticContentRow`
+ * (always rendered with `visible = false`, so its own exit tween plays out undisturbed) while the new
+ * tile opens in the original `openAfterKey` slot — two `FocusDetailPanel` instances genuinely mid-tween
+ * at once, one shrinking, one expanding, rather than one shared node being re-anchored with no exit
+ * animation for the tile that just lost focus. (Compose's `LazyRow` reflows both width changes on its
+ * own via its per-item-key anchor tracking, so there is no separate manual `FD.hShift`-style scroll
+ * subtraction to build here the way the original HTML mockup needed — that concern was specific to the
+ * mockup's own scroll-offset bookkeeping.) FR-R240-9 (the row's one-shot vertical scroll target) is
+ * built too, in `FocusDetailScroll.kt`/`ContentRowItem` — a separate concern from this horizontal one.
  *
  * Phase R240 (FR-R240-3/7) — J's inert panel, inserted into the row right after the tile that opened
  * it (see `StaticContentRow`'s `openAfterKey`/`openPanel`). [visible] drives Compose's own
