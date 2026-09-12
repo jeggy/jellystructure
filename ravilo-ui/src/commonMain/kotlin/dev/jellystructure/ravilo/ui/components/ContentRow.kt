@@ -115,6 +115,13 @@ fun <T> StaticContentRow(
      *  household direction isn't "rowOpen", or nothing here is focused/settled yet). */
     openAfterKey: Any? = null,
     openPanel: (@Composable () -> Unit)? = null,
+    /** FR-R240-10 — a SECOND, independent panel slot for the tile that just stopped being open, so a
+     *  lateral hop from one open tile straight to another in the same row gets a real two-panel
+     *  crossfade (the old one shrinking out on its own exit tween, the new one expanding in) instead of
+     *  the old panel node just being reassigned mid-tween with no exit animation. Null ⇒ nothing is
+     *  currently closing. Ignored if it equals [openAfterKey] (never render the same tile's panel twice). */
+    closingAfterKey: Any? = null,
+    closingPanel: (@Composable () -> Unit)? = null,
     itemContent: @Composable (index: Int, item: T, focusRequester: FocusRequester?) -> Unit,
 ) {
     val colors = RaviloTheme.colors
@@ -271,6 +278,13 @@ fun <T> StaticContentRow(
                     }
                     if (openPanel != null && key != null && key == openAfterKey) {
                         item(key = "__openpanel__$key") { openPanel() }
+                    }
+                    // FR-R240-10: the closing slot renders at its own tile's position, distinct from
+                    // the open slot above — the guard against `closingAfterKey == openAfterKey` stops a
+                    // tile from ever getting two panel items on itself (e.g. the instant a hop lands on
+                    // what was already the closing key from an even earlier hop).
+                    if (closingPanel != null && key != null && key == closingAfterKey && closingAfterKey != openAfterKey) {
+                        item(key = "__closingpanel__$key") { closingPanel() }
                     }
                 }
                 if (trailingItem != null) {
