@@ -47,8 +47,12 @@
     subsoff:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="M7 14h4M15 14h2"/><path d="M4 4l16 16"/></svg>',
   };
 
-  // ISO-639-1 -> flag-icons country code (from ravilo-app.js LANG_CC)
-  const PL_CC = { en:'gb', fr:'fr', de:'de', es:'es', da:'dk', fo:'fo', is:'is', no:'no', sv:'se', fi:'fi', nl:'nl', it:'it', pt:'pt', pl:'pl', ru:'ru', ja:'jp', ko:'kr', zh:'cn' };
+  // ISO-639-1/2 -> flag-icons country code (from ravilo-app.js LANG_CC)
+  // R239 FR-R239-3 (2026-09-12) parity — same 9 codes added to ravilo-app.js's LANG_CC.
+  const PL_CC = {
+    en:'gb', fr:'fr', de:'de', es:'es', da:'dk', fo:'fo', is:'is', no:'no', sv:'se', fi:'fi', nl:'nl', it:'it', pt:'pt', pl:'pl', ru:'ru', ja:'jp', ko:'kr', zh:'cn',
+    sr:'rs', srp:'rs', bg:'bg', bul:'bg', id:'id', ind:'id', ms:'my', msa:'my', may:'my', sl:'si', slv:'si', et:'ee', est:'ee', lv:'lv', lav:'lv', lt:'lt', lit:'lt', tl:'ph', fil:'ph',
+  };
   // jargon-free variant labels (no codec names, no delivery-method talk)
   const PL_KIND = { forced:'Signs only', sdh:'Sound described', describe:'Describes action', commentary:'Commentary' };
   function plFlag(o) {

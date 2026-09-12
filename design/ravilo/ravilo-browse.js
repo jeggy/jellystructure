@@ -27,8 +27,12 @@
     // normalized age (0–18) — in production this is the jellystructure Metadata → Age ratings
     // mapping (raw certification → number); the viewer never sees “G” / “TV-PG” / “Btl”
     function normAge(it) { if (!it.rating) return 18; return it.rating === 'G' ? 0 : (parseInt(it.rating, 10) || 18); }   // no rating ⇒ 18 (155 FR-AGE1-2)
-    // audio-facet flags: ISO-639-1 → flag-icons country code; label→cc captured as tracks are read
-    const LANG_CC = { en: 'gb', fr: 'fr', de: 'de', es: 'es', da: 'dk', fo: 'fo', is: 'is', no: 'no', sv: 'se', fi: 'fi', nl: 'nl', it: 'it', pt: 'pt', pl: 'pl', ru: 'ru', ja: 'jp', ko: 'kr', zh: 'cn', ar: 'sa', hi: 'in' };
+    // audio-facet flags: ISO-639-1/2 → flag-icons country code; label→cc captured as tracks are read
+    // R239 FR-R239-3 (2026-09-12) parity — same 9 codes added to ravilo-app.js's LANG_CC.
+    const LANG_CC = {
+      en: 'gb', fr: 'fr', de: 'de', es: 'es', da: 'dk', fo: 'fo', is: 'is', no: 'no', sv: 'se', fi: 'fi', nl: 'nl', it: 'it', pt: 'pt', pl: 'pl', ru: 'ru', ja: 'jp', ko: 'kr', zh: 'cn', ar: 'sa', hi: 'in',
+      sr: 'rs', srp: 'rs', bg: 'bg', bul: 'bg', id: 'id', ind: 'id', ms: 'my', msa: 'my', may: 'my', sl: 'si', slv: 'si', et: 'ee', est: 'ee', lv: 'lv', lav: 'lv', lt: 'lt', lit: 'lt', tl: 'ph', fil: 'ph',
+    };
     const audCc = {};
     const PEOPLE = ['Sigrun Restorff','Páll Heinason','Marin Klett','Eva Restorff','Tóki á Bø','Lena Björk','Anders Holm','Freya Dahl','Mikkel Sørensen','Ingrid Vold','Johan Máni','Sara Winther','Colin Reeves','Nadia Hassan'];
     // deterministic 2–3 cast/crew per title so a person spans several titles (demo; prod: credits index)

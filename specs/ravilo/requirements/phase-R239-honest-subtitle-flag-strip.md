@@ -4,12 +4,16 @@
 > *what languages reach the payload*; this fixes *what the strip does with them once they arrive*.
 
 ## Status
-⚠ Partial, built 2026-09-10. Design/audit-authored, not dev-reviewed, not deployed. FR-R239-1/2/4/5/6
-built and unit-tested; **FR-R239-3 (new flag assets) NOT built — no source for the required flag
-images was available this session**, so Serbian/Bulgarian/Indonesian/Malay/Slovenian/Estonian/
-Latvian/Lithuanian/Tamil/Telugu/Filipino/Catalan still render as an honest `+N` with no flag, which is
-strictly better than before (they used to be invisible) but not the full fix. FR-R239-7's mockup sync
-not done. See STATUS.md for the build summary.
+⚠ Partial. FR-R239-1/2/4/5/6 built and unit-tested 2026-09-10. FR-R239-3 (new flag assets) built
+2026-09-12 for 9 of 12 codes (Serbian/Bulgarian/Indonesian/Malay/Slovenian/Estonian/Latvian/
+Lithuanian/Filipino) — Tamil/Telugu/Catalan are permanently unmapped, no ISO-3166 flag exists for any
+of them. **FR-R239-7's mockup sync partially done 2026-09-12**: `design/ravilo/ravilo-app.js`,
+`ravilo-browse.js` and `ravilo-player.js`'s three independently hand-written `LANG_CC` tables now
+carry the same 9 codes (`ravilo-app.js` already had the honest-count logic from the earlier pass).
+**`Ravilo Mobile.html` still has no audio/subtitle flag strip of any kind** — not a regression of this
+phase, a pre-existing gap: the phone mockup is a self-contained file with no `flags.css` and no shared
+`tracksFor()`, so building real parity there is a phone-side feature addition, out of this phase's
+scope as a "fix". See STATUS.md for the full build summary.
 
 ## The finding
 

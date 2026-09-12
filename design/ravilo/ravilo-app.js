@@ -582,9 +582,17 @@
       return t;
     }
     // ---- audio-language flag strip (detail hero) ----
-    // ISO-639-1 → ISO-3166-1-alpha-2 (flag-icons country code) + English display name.
-    const LANG_CC = { en: 'gb', fr: 'fr', de: 'de', es: 'es', da: 'dk', fo: 'fo', is: 'is', no: 'no', sv: 'se', fi: 'fi', nl: 'nl', it: 'it', pt: 'pt', pl: 'pl', ru: 'ru', ja: 'jp', ko: 'kr', zh: 'cn', ar: 'sa', hi: 'in' };
-    const LANG_NAME = { en: 'English', fr: 'French', de: 'German', es: 'Spanish', da: 'Danish', fo: 'Faroese', is: 'Icelandic', no: 'Norwegian', sv: 'Swedish', fi: 'Finnish', nl: 'Dutch', it: 'Italian', pt: 'Portuguese', pl: 'Polish', ru: 'Russian', ja: 'Japanese', ko: 'Korean', zh: 'Chinese', ar: 'Arabic', hi: 'Hindi' };
+    // ISO-639-1/2 → ISO-3166-1-alpha-2 (flag-icons country code) + English display name.
+    // R239 FR-R239-3 (2026-09-12) added the 9 codes below, matching the Compose LANG_CC in
+    // AudioFlagStrip.kt/MediaDetail.kt/TrackEditor.kt — same flags.css assets, no new mockup art.
+    const LANG_CC = {
+      en: 'gb', fr: 'fr', de: 'de', es: 'es', da: 'dk', fo: 'fo', is: 'is', no: 'no', sv: 'se', fi: 'fi', nl: 'nl', it: 'it', pt: 'pt', pl: 'pl', ru: 'ru', ja: 'jp', ko: 'kr', zh: 'cn', ar: 'sa', hi: 'in',
+      sr: 'rs', srp: 'rs', bg: 'bg', bul: 'bg', id: 'id', ind: 'id', ms: 'my', msa: 'my', may: 'my', sl: 'si', slv: 'si', et: 'ee', est: 'ee', lv: 'lv', lav: 'lv', lt: 'lt', lit: 'lt', tl: 'ph', fil: 'ph',
+    };
+    const LANG_NAME = {
+      en: 'English', fr: 'French', de: 'German', es: 'Spanish', da: 'Danish', fo: 'Faroese', is: 'Icelandic', no: 'Norwegian', sv: 'Swedish', fi: 'Finnish', nl: 'Dutch', it: 'Italian', pt: 'Portuguese', pl: 'Polish', ru: 'Russian', ja: 'Japanese', ko: 'Korean', zh: 'Chinese', ar: 'Arabic', hi: 'Hindi',
+      sr: 'Serbian', srp: 'Serbian', bg: 'Bulgarian', bul: 'Bulgarian', id: 'Indonesian', ind: 'Indonesian', ms: 'Malay', msa: 'Malay', may: 'Malay', sl: 'Slovenian', slv: 'Slovenian', et: 'Estonian', est: 'Estonian', lv: 'Latvian', lav: 'Latvian', lt: 'Lithuanian', lit: 'Lithuanian', tl: 'Filipino', fil: 'Filipino',
+    };
     const FLAG_MAX = 5;
     /* R239 (FR-R239-1/2) — count every language the group HAS, not every flag we can draw.
        Mapped languages dedupe by flag (two codes sharing one flag count once); unmapped ones
