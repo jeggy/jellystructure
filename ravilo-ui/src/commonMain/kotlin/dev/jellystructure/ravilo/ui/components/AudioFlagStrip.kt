@@ -62,6 +62,18 @@ internal val LANG_CC: Map<String, DrawableResource> = mapOf(
     "he" to Res.drawable.flag_il, "heb" to Res.drawable.flag_il,
     "th" to Res.drawable.flag_th, "tha" to Res.drawable.flag_th,
     "vi" to Res.drawable.flag_vn, "vie" to Res.drawable.flag_vn,
+    // Phase R239 (FR-R239-3) — added 2026-09-12: flags now exist for these; Tamil/Telugu/Catalan are
+    // deliberately still absent — no ISO-3166 country flag fits them (India already maps to Hindi's
+    // flag_in, and Catalonia isn't a country), so they stay in the honest "+N" unmapped count instead.
+    "sr" to Res.drawable.flag_rs, "srp" to Res.drawable.flag_rs,
+    "bg" to Res.drawable.flag_bg, "bul" to Res.drawable.flag_bg,
+    "id" to Res.drawable.flag_id, "ind" to Res.drawable.flag_id,
+    "ms" to Res.drawable.flag_my, "msa" to Res.drawable.flag_my, "may" to Res.drawable.flag_my,
+    "sl" to Res.drawable.flag_si, "slv" to Res.drawable.flag_si,
+    "et" to Res.drawable.flag_ee, "est" to Res.drawable.flag_ee,
+    "lv" to Res.drawable.flag_lv, "lav" to Res.drawable.flag_lv,
+    "lt" to Res.drawable.flag_lt, "lit" to Res.drawable.flag_lt,
+    "tl" to Res.drawable.flag_ph, "fil" to Res.drawable.flag_ph,
 )
 
 private const val FLAG_MAX = 5
