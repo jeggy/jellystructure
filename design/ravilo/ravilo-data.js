@@ -618,13 +618,23 @@
   //   'measured' — this device has started this file before and the backend timed it.
   //   'expected' — the ceiling predicate says it will re-encode, but nobody has played it here.
   //   absent     — under the threshold, ceiling not measured yet, or bitrate unknown. Say nothing.
+  // Keys mirror what the note is a property OF: a film is one file, so its key is the title;
+  // a series episode is its own file, so its key is title|S{n}E{n}. In production neither key
+  // exists — the backend resolves the note per file id and hangs it on that file's payload
+  // (185 FR-185-9). A Phase 149 combined multi-episode file is ONE file, so the mock keys it on
+  // the unit's first episode and the combined card renders exactly one line (R222 FR-R222-5).
   const PLAY_NOTES = {
-    'Cosmos Laundromat': { device: 'Bedroom TV', basis: 'measured', seconds: 20 },
-    'Iron Veil':         { device: 'Bedroom TV', basis: 'expected' },
+    'Cosmos Laundromat':  { device: 'Bedroom TV', basis: 'measured', seconds: 20 },
+    'Iron Veil':          { device: 'Bedroom TV', basis: 'expected' },
+    'Nordvest|S1E8':      { device: 'Bedroom TV', basis: 'measured', seconds: 25 },
+    'Nordvest|S2E1':      { device: 'Bedroom TV', basis: 'measured', seconds: 15 },
+    'Nordvest|S2E6':      { device: 'Bedroom TV', basis: 'expected' },
   };
-  function playbackNoteFor(item) {
+  // `season` is 0-based (as the UI carries it); `ep` is the episode object, or omitted for a film.
+  function playbackNoteFor(item, season, ep) {
     if (!item || !item.title) return null;
-    const n = PLAY_NOTES[item.title];
+    const key = ep ? item.title + '|S' + ((season || 0) + 1) + 'E' + ep.n : item.title;
+    const n = PLAY_NOTES[key];
     return n ? Object.assign({}, n) : null;
   }
 
