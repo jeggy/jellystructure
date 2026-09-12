@@ -83,17 +83,21 @@ class RaviloConfigService(
             skipIntro = resolved.skipIntro.value,
             skipCredits = resolved.skipCredits.value,
             skipSecs = resolved.skipSecs.value,
-        )
+        ).withResolvedFocusDetail()
     }
 
     fun getGlobalConfig(): RaviloConfig {
         val stored = db.raviloConfigQueries.getByUser(GLOBAL_USER_ID).executeAsOneOrNull()
         if (stored != null) {
-            return runCatching { json.decodeFromString<RaviloConfig>(stored) }.getOrDefault(DEFAULT_CONFIG)
+            return runCatching { json.decodeFromString<RaviloConfig>(stored) }.getOrDefault(DEFAULT_CONFIG).withResolvedFocusDetail()
         }
         save(GLOBAL_USER_ID, DEFAULT_CONFIG)
-        return DEFAULT_CONFIG
+        return DEFAULT_CONFIG.withResolvedFocusDetail()
     }
+
+    /** FR-202-2 — never trust a stored/round-tripped `focus_detail` value; always recompute it from the
+     *  two admin-side booleans before a config leaves the server, on every read path. */
+    private fun RaviloConfig.withResolvedFocusDetail(): RaviloConfig = copy(focusDetail = resolvedFocusDetail())
 
     fun hasCustomConfig(userId: String): Boolean =
         userId != GLOBAL_USER_ID && db.raviloConfigQueries.getByUser(userId).executeAsOneOrNull() != null
@@ -156,6 +160,7 @@ class RaviloConfigService(
         // R182 — the countdown is one of exactly three lengths; snap a stray value (hand-edited config,
         // or a future UI slider) to the nearest of them rather than silently accepting an odd number.
         skipSecs = snapSkipSecs(config.skipSecs),
+        focusDetailDelayMs = clampFocusDetailDelayMs(config.focusDetailDelayMs),
     )
 
     private fun snapSkipSecs(v: Int): Int = SKIP_SECS_OPTIONS.minByOrNull { kotlin.math.abs(it - v) } ?: 6
@@ -401,6 +406,11 @@ private fun isColorToken(t: String): Boolean {
     }
     return s.startsWith("rgb(") || s.startsWith("rgba(") // lenient; the editor emits hex
 }
+
+/** FR-202-3 — any non-negative ms value is valid and untouched (no step, no ceiling); only a value
+ *  that is NOT a non-negative number (a hand-edited row, an older client) resolves to the 170 default —
+ *  never an error. */
+fun clampFocusDetailDelayMs(v: Int): Int = if (v >= 0) v else 170
 
 @OptIn(ExperimentalForeignApi::class)
 private fun nowMs(): Long = memScoped {

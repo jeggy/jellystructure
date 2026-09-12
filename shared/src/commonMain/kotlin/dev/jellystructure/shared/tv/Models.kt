@@ -216,6 +216,39 @@ data class MediaCard(
      *  18 for an unmapped or uncertified title. A gate value for filtering/kids-gating, not a label —
      *  never render this as "18+" on its own; [rating] is still what R153's regional chip displays. */
     @SerialName("age_rating") val ageRating: Int = 18,
+    /** Phase 202 (FR-202-5) — R240's L/J facts, populated only on Home content-row items and only when
+     *  the household's resolved [RaviloConfig.focusDetail] isn't "none". Null everywhere else (hero,
+     *  channel rail, browse, search, related) — the same additive-field discipline [BrowseCard.genres]/
+     *  R164's IMDb-rating precedent already set for this card. */
+    @SerialName("focus_detail") val focusDetail: FocusDetailFacts? = null,
+)
+
+/**
+ * Phase 202 (FR-202-5) — the per-title fact set R240's L (foot status line) and J (row-opens) directions
+ * render, carried on a Home content-row [MediaCard]. Facts only, no presentation: the client formats
+ * these against its own en/da/fo string table (R240 FR-R240-11) rather than being shipped prose.
+ * "Where you left off" rides [MediaCard]'s own [MediaCard.progressPct]/[MediaCard.nextUpLabel] — not
+ * duplicated here. Deliberately **no artwork of any kind** — dropping round 1's overlay directions took
+ * the backdrop/logo fetch back out of this payload (see the phase 202 spec's Current-state note).
+ */
+@Serializable
+data class FocusDetailFacts(
+    val year: Int? = null,
+    /** Format/quality label, e.g. "4K HDR" / "1080p" (same resolution as [BrowseCard.quality]). */
+    val badge: String? = null,
+    /** Series only — distinct season count. */
+    val seasons: Int? = null,
+    /** Series only — total episode count across all seasons. */
+    val episodes: Int? = null,
+    /** Movie only — null for a series (seasons/episodes stand in for it on the strip). */
+    @SerialName("runtime_minutes") val runtimeMinutes: Int? = null,
+    @SerialName("rating_badge") val ratingBadge: RatingBadge? = null,
+    @SerialName("imdb_rating") val imdbRating: TvImdbRating? = null,
+    /** R221 — every genre, in TMDB's own order (the first is primary). */
+    val genres: List<String> = emptyList(),
+    @SerialName("audio_languages") val audioLanguages: List<String> = emptyList(),
+    @SerialName("subtitle_languages") val subtitleLanguages: List<String> = emptyList(),
+    val overview: String? = null,
 )
 
 /**
@@ -326,6 +359,12 @@ data class HomeFeed(
     // Phase 147/R177 — placement for the Home "On now" row / Live TV collection; null = not configured
     // (Live TV disabled or never placed) — the client renders no Live TV surface at all in that case.
     @SerialName("live_tv_home") val liveTvHome: LiveTvHomePlacement? = null,
+    // Phase 202 (FR-202-1/2) — the household's resolved focus-detail mode + delay, mirrored from
+    // [RaviloConfig] onto this feed so a client never needs a second round trip to `/api/tv/config`
+    // before it can render the first focused tile (FR-202-7). "none"/170 default matches
+    // [RaviloConfig]'s own defaults for every pre-202 test/mock HomeFeed construction.
+    @SerialName("focus_detail") val focusDetail: String = "none",
+    @SerialName("focus_detail_delay_ms") val focusDetailDelayMs: Int = 170,
 )
 
 // ─── Detail ───────────────────────────────────────────────────────────────────
@@ -849,9 +888,34 @@ data class RaviloConfig(
     // Live TV page's job). Null = not configured — the Layout tab's "Live TV on Home" section only
     // renders once Live TV is enabled there, and defaults apply from that point on.
     @SerialName("live_tv_home") val liveTvHome: LiveTvHomePlacement? = null,
+    // Phase 202 — R240's L (foot line, ships on) / J (row opens in place, ships off pending the
+    // reflow measurement invariant 11 exists to protect). Both booleans stay admin-side state so the
+    // config screen can say "On · superseded" (FR-202-6) rather than silently disagreeing with the
+    // screen; a client never reads these two directly — see [focusDetail] below.
+    @SerialName("focus_detail_line") val focusDetailLine: Boolean = true,
+    @SerialName("focus_detail_row_open") val focusDetailRowOpen: Boolean = false,
+    // FR-202-3 — any non-negative ms value is valid (0 = immediate, no upper bound); RaviloConfigService
+    // .normalize() is what resolves a negative/hand-edited value back to the 170 default on save.
+    @SerialName("focus_detail_delay_ms") val focusDetailDelayMs: Int = 170,
+    // FR-202-2 — the server resolves the mode; no client anywhere re-implements this precedence rule.
+    // Deliberately a real (settable) field rather than a getter-only computed property — kotlinx.
+    // serialization only serializes properties with a backing field — but callers never set it
+    // directly: [resolvedFocusDetail] is the single source of truth and every read path
+    // (RaviloConfigService.getConfig/getGlobalConfig, HomeFeedService) overwrites this field with it
+    // before the config leaves the server, the same way [viewerSkinOverride] gets overwritten with the
+    // resolved behaviour overlay in RaviloConfigService.getConfig.
+    @SerialName("focus_detail") val focusDetail: String = "line",
 ) {
     /** The skin actually rendered: the viewer's override when allowed, else the operator default. */
     fun effectiveSkin(): Skin = if (allowSkinOverride) (viewerSkinOverride ?: defaultSkin) else defaultSkin
+
+    /** FR-202-2 — `rowOpen` wins whenever it's on, regardless of [focusDetailLine]. Recompute this
+     *  (never trust a stored/round-tripped [focusDetail] value) before a config leaves the server. */
+    fun resolvedFocusDetail(): String = when {
+        focusDetailRowOpen -> "rowOpen"
+        focusDetailLine -> "line"
+        else -> "none"
+    }
 }
 
 /**

@@ -568,6 +568,24 @@ private fun wireShell(container: Element, scope: CoroutineScope) {
             container.querySelector("#beh-grid-cols-val")?.textContent = t.value
             collectConfig(container)
         }
+        // FR-202-3/6 — live ms readout as the field is typed; no clamping in the UI itself (the server
+        // resolves a negative/junk value to the 170 default on save — the client doesn't re-clamp).
+        if (t is HTMLInputElement && t.id == "beh-fd-delay") {
+            container.querySelector("#beh-fd-delay-val")?.textContent = "${t.value}ms"
+            collectConfig(container)
+        }
+    }
+    // FR-202-6 — the line's row states "On · superseded" live the moment the row-opens switch flips,
+    // without waiting for a full section re-render.
+    sections?.addEventListener("change") { ev ->
+        val t = ev.target
+        if (t is HTMLInputElement && t.id == "beh-fd-rowopen") {
+            val badge = container.querySelector("#beh-fd-line-superseded") as? HTMLElement
+            if (badge != null) {
+                badge.style.display = if (t.checked) "" else "none"
+                if (t.checked) { badge.className = "tiny"; badge.setAttribute("style", "color:var(--acc-ink);font-weight:600") }
+            }
+        }
     }
     // R159 — the toggle enables/disables the slider and flips the live-preview thumbnail.
     sections?.addEventListener("change") { ev ->
@@ -2381,6 +2399,13 @@ private fun renderBehaviourGlobal(sect: Element) {
         val sel = if (s == currentConfig.skipSecs) " selected" else ""
         """<option value="$s"$sel>${s}s</option>"""
     }
+    val focusLineChecked = if (currentConfig.focusDetailLine) " checked" else ""
+    val focusRowOpenChecked = if (currentConfig.focusDetailRowOpen) " checked" else ""
+    // FR-202-6 — states the whole rule, including the part that's off: J supersedes L whenever both
+    // are on, so the line's own row must say so rather than silently disagreeing with the screen.
+    val focusLineSuperseded = if (currentConfig.focusDetailRowOpen)
+        """<span class="tiny" id="beh-fd-line-superseded" style="color:var(--acc-ink);font-weight:600">On · superseded</span>"""
+        else """<span class="tiny muted" id="beh-fd-line-superseded" style="display:none">On · superseded</span>"""
     sect.innerHTML = """
         <div class="card" style="padding:18px 20px;margin-bottom:18px">
           <div style="font-weight:600;margin-bottom:2px">Behaviour &amp; preferences</div>
@@ -2431,6 +2456,29 @@ private fun renderBehaviourGlobal(sect: Element) {
             <label style="display:flex;align-items:center;justify-content:space-between;gap:12px">
               <span style="font-size:.9rem">Skip button countdown</span>
               <select id="beh-skip-secs" class="input" style="width:160px;font-size:.85rem">$skipSecsOptions</select>
+            </label>
+          </div>
+        </div>
+        <div class="card" style="padding:18px 20px;margin-bottom:18px" id="sect-focus">
+          <div style="font-weight:600;margin-bottom:2px">Focus detail <span class="tiny muted">· Phase 202/R240</span></div>
+          <div class="tiny muted" style="margin-bottom:14px">What a highlighted Home-row title says before you open it. Scoped to <b>Home rows</b> only —
+            not the channel rail, hero, browse, search, Discover or Live TV. No viewer-facing setting anywhere in Ravilo.</div>
+          <div style="display:grid;gap:14px">
+            <label style="display:flex;align-items:center;gap:10px;font-size:.9rem">
+              <input type="checkbox" id="beh-fd-line"$focusLineChecked>
+              Status line — an 88px strip at the foot of the screen states the focused title's facts
+              $focusLineSuperseded
+            </label>
+            <label style="display:flex;align-items:center;gap:10px;font-size:.9rem">
+              <input type="checkbox" id="beh-fd-rowopen"$focusRowOpenChecked>
+              Row opens in place — the focused row grows to show a panel beside the tile
+              <span class="tiny muted">· ships off — moves the row's height and its tiles' positions on every
+              focus move (invariant 11, unmeasured on the living-room BRAVIA)</span>
+            </label>
+            <label style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+              <span style="font-size:.9rem">Wait before it appears <span class="mono" id="beh-fd-delay-val">${currentConfig.focusDetailDelayMs}ms</span>
+                <span class="tiny muted">· how still the D-pad must be first</span></span>
+              <input type="number" id="beh-fd-delay" min="0" step="10" value="${currentConfig.focusDetailDelayMs}" class="input" style="width:100px;font-size:.85rem">
             </label>
           </div>
         </div>
@@ -2740,6 +2788,11 @@ private fun collectConfig(container: Element) {
     val skipCredits = runCatching { SkipMode.valueOf((container.querySelector("#beh-skip-credits") as? HTMLSelectElement)?.value ?: "") }
         .getOrDefault(currentConfig.skipCredits)
     val skipSecs = (container.querySelector("#beh-skip-secs") as? HTMLSelectElement)?.value?.toIntOrNull() ?: currentConfig.skipSecs
+    // Phase 202 — global scope only (renderBehaviourGlobal is where these controls render); per-user
+    // scope preserves whatever the layout record already stored, same fallback as gridColumns above.
+    val focusDetailLine = (container.querySelector("#beh-fd-line") as? HTMLInputElement)?.checked ?: currentConfig.focusDetailLine
+    val focusDetailRowOpen = (container.querySelector("#beh-fd-rowopen") as? HTMLInputElement)?.checked ?: currentConfig.focusDetailRowOpen
+    val focusDetailDelayMs = (container.querySelector("#beh-fd-delay") as? HTMLInputElement)?.value?.toIntOrNull() ?: currentConfig.focusDetailDelayMs
     // R159 — toggled off saves null (no override; portrait behaves exactly like landscape).
     val portraitEnabled = (container.querySelector("#portrait-enable") as? HTMLInputElement)?.checked ?: (currentConfig.portrait?.heroHeightPct != null)
     val portraitHeroHeight = (container.querySelector("#portrait-hero-height") as? HTMLInputElement)?.value?.toIntOrNull()
@@ -2792,6 +2845,9 @@ private fun collectConfig(container: Element) {
         discover = discover,
         portrait = portrait,
         liveTvHome = liveTvHome,
+        focusDetailLine = focusDetailLine,
+        focusDetailRowOpen = focusDetailRowOpen,
+        focusDetailDelayMs = focusDetailDelayMs,
     )
 }
 
