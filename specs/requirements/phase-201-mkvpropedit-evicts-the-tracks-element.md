@@ -15,6 +15,17 @@ not invoked against production media this session. Backend/media-file only — *
 and no client change**: the client is behaving correctly given a file whose track list it cannot reach.
 See STATUS.md for the build summary.
 
+**Amended 2026-09-12 — FR-201-6 shipped half of itself.** The sweep and repair *routes*
+(`GET /media/health/mkv-layout`, `POST /media/health/mkv-layout/repair`) exist and work — confirmed
+live by re-running the sweep by hand, which found **165** files (the original 164 plus one new
+`Ashworth` episode broken by a track edit made after the 2026-09-08 count, before FR-201-2/3 shipped
+their guard). But FR-201-6's own text promised the sweep would be "surfaced on the Activity page's
+existing health reporting," and it never was — there is no reference to `mkv-layout` anywhere in the
+frontend. An operator has no way to discover a single one of these 165 files is broken except calling
+the route by hand. FR-201-9 through FR-201-13 below close that gap: a real triage surface grouped by
+title, plus a fix action on the title's own detail page, so this doesn't stay a curl-only feature.
+Not yet built.
+
 ### Correction (2026-09-10)
 The first draft of this spec blamed `-cues_to_front 1` in `TrackCommandBuilder.ffmpegReorder:102`.
 **That was wrong and `-cues_to_front` must stay.** Running the exact production remux under the
@@ -148,6 +159,54 @@ correctly for free, so the common path never reaches FR-201-3's repair at all. T
 FR-201-2/3 and **never a replacement** — it does nothing for the `toFlagFix` loop at `:626` or the
 single-title edits at `:254`/`:364`, which have no remux to be last.
 
+### Triage surface (added 2026-09-12 — closes the gap in FR-201-6)
+
+`MkvLayoutAudit.sweep` reports a flat list of broken file paths. That is enough for a curl call and
+nothing else: no screen in the admin turns a path back into "which movie or which series and episode is
+this." The following make the existing sweep/repair routes into an actual triage feature, the same way
+Phase 95's `missingFromSource` makes an item surface in Triage rather than just sit in a log.
+
+**FR-201-9 — the sweep groups by title, not by raw path.** `MkvLayoutAudit.SweepResult` gains a
+per-item breakdown: for each `MediaItem` that has at least one `TRACKS_AFTER_CLUSTER` file, its `id`,
+`title`, `kind` (movie/series), and the affected path(s) — for a series, keyed further by which
+episode(s) (season/episode number, falling back to filename if either is null, same as the Seasons &
+episodes tab already does for an unparsed file). The flat `tracksAfterClusters: List<String>` stays for
+`FR-201-5`'s existing repair contract; the grouping is additive, not a breaking change to the response
+shape.
+
+**FR-201-10 — a health card on `app/activity.html`.** "MKV track layout" (or folded into an existing
+health section if one is added around the same time — this is not precious about its own card), showing
+a total broken count and a scrollable list of affected titles, each row: poster thumb, title, kind, and
+a count ("14 episodes" / "1 file"). Clicking a row navigates to that title's `media.html` or
+`series.html`. Sourced from `GET /media/health/mkv-layout`; the sweep is cheap (full library under a
+minute per the FR-201-6 measurement) but is **not** run on every Activity page load — run it on demand
+(a "Check now" affordance, or once per admin session, mirroring how the Phase 93 divergence check
+already behaves on this page) rather than a page-load side effect no one asked for. Empty list ⇒ the
+card doesn't render at all — this is a defect surface, not a permanent fixture.
+
+**FR-201-11 — a fix banner on the title's own detail page.** `media.html` (movie) and `series.html`
+(series) each check, on load, whether the open title appears in the last sweep's broken-title list (via
+the item id from FR-201-9 — no separate per-title endpoint needed, the admin frontend already holds the
+sweep result from FR-201-10, or refetches it if the operator navigated here directly). If it does: a
+banner in the same family as the existing drift/Jellyfin-lock banners (Phase 71/74 pattern), reading
+something like *"3 episodes in this series can't play in Ravilo (track list unreachable)"* / *"This
+file can't play in Ravilo (track list unreachable)"* for a movie, with a **Fix now** button.
+
+**FR-201-12 — Fix now calls `POST /media/health/mkv-layout/repair` scoped to this title only** — the
+paths belonging to this item from FR-201-9's grouping, never the full library list. Write-through
+(Phase 71 convention): on success the banner clears immediately without a page reload; the button shows
+a busy state while the repair runs (FR-201-3 measured ~0.6 s per file, so a multi-episode series could
+take a few seconds — the button must not look inert during that window). A partial failure (one file's
+repair reports `false`) keeps the banner, states how many of N still fail, and Fix now retries only the
+still-broken ones.
+
+**FR-201-13 — no new state is invented for this.** The banner and the card both read directly off a
+sweep result — nothing about "broken" is written to `media_history`, the item's `issueCount`, or any
+other persisted field. Re-running the sweep is the only source of truth, matching FR-201-6's original
+"never auto-repairs, this is a report" posture: a title that gets fixed by FR-201-12 simply stops
+appearing the next time the sweep runs, the same way FR-201-3's own automatic repair leaves no residue
+once a file is fixed.
+
 ## Out of scope
 
 - Re-encoding anything.
@@ -157,6 +216,13 @@ single-title edits at `:254`/`:364`, which have no remux to be last.
 - Changing ExoPlayer/`MatroskaExtractor` behaviour or making a player seek to a trailing `Tracks`
   element. Reading the tail of an HTTP stream before the head is not something to build into a player.
 - The Jellyfin side. Jellyfin is correct throughout.
+- A dedicated Triage-dock entry (FR-201-9/10 use the Activity page, per FR-201-6's original placement;
+  promoting it into the floating Triage dock is a separate call the operator hasn't asked for here).
+- A per-episode fix button inside the Seasons & episodes tab. FR-201-11/12 fix a whole title in one
+  action; a row-level "just this episode" button is easy to add later on top of the same repair route
+  if the all-at-once button ever proves too coarse, but nothing today calls for it.
+- Persisting any "was broken" history once a file is fixed. FR-201-13 is explicit that the sweep is the
+  only source of truth.
 
 ## Open questions
 
@@ -167,3 +233,14 @@ single-title edits at `:254`/`:364`, which have no remux to be last.
    place.
 2. **Repair ordering.** Nothing stops the next flag edit from re-breaking a repaired file until
    FR-201-2/3 ship, so the repair should follow the code fix rather than precede it.
+3. **(added 2026-09-12) How often does the Activity page's sweep refresh?** FR-201-10 deliberately
+   doesn't run it on every page load; whether "once per admin session" is the right cadence, or whether
+   it should also re-run automatically right after any bulk track-edit operation (reorder, bulk
+   set-default/set-language), is unresolved. Leaning toward the latter since that's exactly the
+   operation that causes the breakage — but it means threading a "sweep just this title" call into
+   `TrackRoutes.kt`'s existing bulk-edit handlers, which FR-201-9's per-item grouping makes cheap enough
+   to consider but doesn't itself decide.
+4. **(added 2026-09-12) Does FR-201-9's per-episode keying need a stable episode id, or is
+   season/episode-number-with-filename-fallback good enough?** The Seasons & episodes tab already lives
+   with the fallback for display; whether Fix now's retry-only-the-failed-ones behavior (FR-201-12)
+   needs something sturdier is worth a second look once this is actually being built, not guessed here.
