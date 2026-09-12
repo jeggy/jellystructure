@@ -195,9 +195,18 @@ Run with `focusDetail: "line"` first, then `"rowOpen"`, on the stue TV.
    flags that restoring focus to a *disposed* child is an unverified assumption; J adds and removes a
    sibling in the same row. Verify in isolation before building — if the two interact badly, the panel
    should be a sibling of the row's item rather than a child of the list.
-3. **Reduced motion.** If the platform reports it, is J's open instant (and therefore the jump the owner
-   rejected), or does J fall back to L? Current instinct: fall back to L, because an instant open is the
-   rejected behaviour, not a lesser version of the accepted one.
+3. **Reduced motion — resolved 2026-09-12, built the same day.** Falls back to L, per the instinct
+   recorded above: `effectiveFocusDetailMode()` (`ravilo-ui/.../focus/FocusDetailReducedMotion.kt`)
+   downgrades a resolved `"rowOpen"` to `"line"` whenever the platform reports reduced motion, and
+   leaves `"line"`/`"none"` untouched. Platform seam: `systemPrefersReducedMotion()`
+   (`seams/ReducedMotion.kt`) — Android reads `ValueAnimator.areAnimatorsEnabled()` (API 26+, the same
+   signal the "Remove animations" accessibility toggle and Developer options' animator duration scale
+   both drive), falling back to reading `Settings.Global.ANIMATOR_DURATION_SCALE` directly below API
+   26; wasmJs reads the standard `(prefers-reduced-motion: reduce)` media query. Read once per Home
+   composition (not live-observed — matches R216's own link-state sampling tradeoff: a mid-session
+   toggle is rare enough that a `ContentObserver` isn't worth the seam). 4 new
+   `FocusDetailReducedMotionTest` cases on the pure downgrade rule; `:ravilo-ui:compileDebugKotlinAndroid`/
+   `compileKotlinWasmJs`/`testDebugUnitTest`/`allTests` all green. Not device-tested.
 4. **Where the text comes from** — 202 open question 1, unresolved: the home feed or a per-title fetch on
    focus. J's dwell makes the second option *less* bad than it was (no request until the viewer settles),
    which is worth saying out loud when the dev team decides.

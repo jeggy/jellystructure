@@ -63,11 +63,13 @@ import dev.jellystructure.ravilo.ui.components.SeeAllTile
 import dev.jellystructure.ravilo.ui.components.StaticContentRow
 import dev.jellystructure.ravilo.ui.components.Tile
 import dev.jellystructure.ravilo.ui.focus.dpadFocusable
+import dev.jellystructure.ravilo.ui.focus.effectiveFocusDetailMode
 import dev.jellystructure.ravilo.ui.focus.focusDetailRowOpenScrollDelta
 import dev.jellystructure.ravilo.ui.focus.rememberEdgeBringIntoViewSpec
 import dev.jellystructure.ravilo.ui.focus.backToTopOnBack
 import dev.jellystructure.ravilo.ui.focus.requestFocusRetryingOrMoveNative
 import dev.jellystructure.ravilo.ui.components.TileVariant
+import dev.jellystructure.ravilo.ui.seams.systemPrefersReducedMotion
 import dev.jellystructure.ravilo.ui.components.tileRequestedWidth
 import dev.jellystructure.ravilo.ui.components.toTileVariant
 import dev.jellystructure.ravilo.ui.seams.sizedProxyUrl
@@ -216,11 +218,17 @@ private fun HomeLoaded(
     // OTHER focusable Home surface (hero, channel rail, nav bar) must say so by clearing it the moment
     // IT takes focus, or L/J would keep stating a title that's no longer focused (FR-R240-1's reverse).
     val fdUi by store.focusDetail.current.collectAsState()
-    val lineActive = feed.focusDetail == "line"
+    // Open question 3 — a system "reduce motion" preference falls back to L: J's whole mechanism IS
+    // the motion (see seams/ReducedMotion.kt's doc), so there is no reduced version of it to offer.
+    // Read once per composition, not live-observed — the same tradeoff R216's link-state sampling
+    // makes (a mid-session toggle is vanishingly rare; a ContentObserver for it isn't worth the seam).
+    val reduceMotion = remember { systemPrefersReducedMotion() }
+    val effectiveFocusDetail = effectiveFocusDetailMode(feed.focusDetail, reduceMotion)
+    val lineActive = effectiveFocusDetail == "line"
     // FR-R240-13 — a config change re-runs the reveal rule for whichever tile is focused right now,
     // through the same path a real focus move takes (not merely "the next natural refetch").
-    LaunchedEffect(feed.focusDetail, feed.focusDetailDelayMs) {
-        store.focusDetail.reapply(feed.focusDetail, feed.focusDetailDelayMs)
+    LaunchedEffect(effectiveFocusDetail, feed.focusDetailDelayMs) {
+        store.focusDetail.reapply(effectiveFocusDetail, feed.focusDetailDelayMs)
     }
 
     // Land focus somewhere sensible on entry. With a hero, focus it; otherwise focus the app bar
@@ -345,7 +353,7 @@ private fun HomeLoaded(
         // position (never a top-nav tab — it only ever lives among the Home rows).
         val clampedOnNowIndex = onNowRowIndex.coerceIn(0, feed.rows.size)
         items(clampedOnNowIndex, key = { ri -> feed.rows[ri].id }) { ri ->
-            ContentRowItem(feed.rows[ri], feed, store, listState, onItemSelect, onSeeAll, rowFocusRequester = if (!hasChannels && ri == 0) firstRowFR else null)
+            ContentRowItem(feed.rows[ri], feed, store, listState, onItemSelect, onSeeAll, reduceMotion, rowFocusRequester = if (!hasChannels && ri == 0) firstRowFR else null)
         }
         if (liveTvChannels.isNotEmpty()) {
             item(key = "on_now") {
@@ -358,7 +366,7 @@ private fun HomeLoaded(
         }
         items(feed.rows.size - clampedOnNowIndex, key = { i -> feed.rows[clampedOnNowIndex + i].id }) { i ->
             val isVeryFirstRow = !hasChannels && clampedOnNowIndex == 0 && liveTvChannels.isEmpty() && i == 0
-            ContentRowItem(feed.rows[clampedOnNowIndex + i], feed, store, listState, onItemSelect, onSeeAll, rowFocusRequester = if (isVeryFirstRow) firstRowFR else null)
+            ContentRowItem(feed.rows[clampedOnNowIndex + i], feed, store, listState, onItemSelect, onSeeAll, reduceMotion, rowFocusRequester = if (isVeryFirstRow) firstRowFR else null)
         }
     }
     }
@@ -435,10 +443,12 @@ private fun ContentRowItem(
     listState: LazyListState,
     onItemSelect: (MediaCard) -> Unit,
     onSeeAll: (Row) -> Unit = {},
+    reduceMotion: Boolean = false,
     rowFocusRequester: FocusRequester? = null,
 ) {
     // Compute variant here so urlResolver and Tile use the same value.
     val rowVariant = if (row.kind == RowKind.CONTINUE) TileVariant.LANDSCAPE else feed.tileShape.toTileVariant()
+    val effectiveFocusDetail = effectiveFocusDetailMode(feed.focusDetail, reduceMotion)
     Spacer(Modifier.height(RaviloDimens.rowGap))
     // R187 (FR-RV-BROWSE1-1) — a "→ See all" TILE (not a header link — see SeeAllTile's doc comment)
     // only when there's more than a screen's worth AND the row has something to resolve into: CONTINUE
@@ -579,7 +589,7 @@ private fun ContentRowItem(
             // Phase R240 — the tile that's actually open right now grows in place (FR-R240-7); every
             // other tile in every other row is untouched.
             open = rowHasOpen && fd?.itemKey == card.id,
-            onFocused = { store.focusDetail.onFocus(row.id, card.id, card, feed.focusDetail, feed.focusDetailDelayMs) },
+            onFocused = { store.focusDetail.onFocus(row.id, card.id, card, effectiveFocusDetail, feed.focusDetailDelayMs) },
             onSelect = { store.focusRowKey = row.id; store.focusItemKey = card.id; onItemSelect(card) },  // R139
         )
     }
