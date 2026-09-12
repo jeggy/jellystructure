@@ -220,6 +220,41 @@ the admin panel for this pass, reverted after), release build, AOT-compiled (`co
   title that is not focused" claim during a fast sweep was implied by the frame data above but not
   independently eyeballed frame-by-frame.
 
+## 2026-09-12 (later) — bug fix: a panel opened near the right edge of the screen was invisible
+
+**The bug, reported live:** focus a tile near the right edge of a row and wait out the dwell — the
+poster grows and the row's height increases (both correct), but the panel itself — every fact J
+exists to show — rendered off the right edge of the viewport, completely invisible. Root cause: the
+native per-tile "bring into view" (`bringIntoViewSpec` in `StaticContentRow`) only ever knows about
+the FOCUSED TILE's own bounds; the panel is a separate `LazyRow` item spliced in right after it
+(FR-R240-3), so bringing the tile into view says nothing about whether the panel — everything to its
+right — fits on screen at all.
+
+**Fix:** `focusDetailRowOpenHorizontalScrollDelta()` (new, pure, `FocusDetailScroll.kt`, mirrors
+FR-R240-9's vertical formula: `panelRight + margin − screenWidth`) plus a `LaunchedEffect(openAfterKey)`
+inside `StaticContentRow` itself (not `HomeScreen.kt` — the row's own `LazyListState` lives there,
+inaccessible to the caller) that measures the panel's own right edge via `onGloballyPositioned` on a
+wrapping `Box`, waits out the same `ROW_OPEN_TWEEN_MS` settle window FR-R240-9 does (same R232-hazard
+discipline — never read a mid-tween measurement), then `listState.animateScrollBy(delta)` when
+`delta > 0`. This scrolls the row itself further right so the opened tile lands nearer the left of
+the screen with the whole panel visible — visually confirmed on the stue TV: a tile at the row's
+literal last position scrolled fully into view with room to spare, panel completely legible. 4 new
+`FocusDetailHorizontalScrollTest` cases on the pure formula;
+`:ravilo-ui:compileDebugKotlinAndroid`/`compileKotlinWasmJs`/`testDebugUnitTest`/`allTests` all green.
+Device-verified with a deliberate single-tile focus (twice, two different rows/tiles) — a full row
+sweep only ever needs to reveal one settled tile's panel at a time, same as the vertical mechanism.
+
+**A separate, pre-existing bug found while re-testing, NOT fixed here:** landing on a tile via a fast
+repeated-press sweep (5 presses at both 200ms and 500ms intervals, reproduced twice each) sometimes
+opens **no panel at all**, even 3+ seconds after input stops — well past the household's 1000ms dwell.
+A single deliberate press to the exact same tile (not part of a sweep) opens it correctly every time,
+which rules out anything data- or scroll-related. This points at `FocusDetailController`'s dwell
+scheduling itself (`onFocus()`'s `dwellJob?.cancel()`/reschedule race) rather than anything this fix
+touched — plausibly a spurious extra `onFocused` callback firing during the row's own scroll-driven
+recomposition and re-cancelling the dwell timer before it ever completes. Not investigated further
+this pass — flagged for a separate look, since root-causing it means instrumenting
+`FocusDetailController`, not `ContentRow.kt`.
+
 ## Open questions
 
 1. **The reflow cost on the living-room BRAVIA is unmeasured — this is why J ships off.** J changes a
