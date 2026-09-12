@@ -804,7 +804,7 @@
     });
     box.appendChild(tbl);
     const note = document.createElement('div'); note.className = 'sc-state';
-    note.innerHTML = '<b>How it works:</b> Jellystructure stores each title\u2019s last-checked date and, on every run, re-processes only the titles whose interval is due \u2014 they then flow through the steps below. New &amp; changed files are always processed immediately, no matter this schedule.';
+    note.innerHTML = '<b>How it works:</b> Jellystructure stores the date each title\u2019s files were <b>last examined</b> and, on every run, re-processes only the titles whose interval is due \u2014 they then flow through the steps below. New &amp; changed files are always processed immediately, no matter this schedule. <span class="muted">(Phase 196: this is stamped when the files are actually read, not when the row was last written \u2014 an unrelated write no longer resets the clock.)</span>';
     box.appendChild(note);
     return box;
   }

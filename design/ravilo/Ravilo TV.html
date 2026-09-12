@@ -20,6 +20,13 @@
     <kbd>↑</kbd><kbd>↓</kbd><kbd>←</kbd><kbd>→</kbd> move
     <span class="sep">·</span> <kbd>↵</kbd> select <span class="sep">·</span> <kbd>esc</kbd> back
   </div>
+  <div class="skinpick" id="focuspick" title="Jellystructure &rarr; Preferences &rarr; Focus detail">
+    <b>FOCUS</b>
+    <button data-fd="off">Off</button>
+    <button data-fd="line">Line &middot; L</button>
+    <button data-fd="row">Row &middot; J</button>
+    <label class="msfield" title="Jellystructure &rarr; Focus detail &rarr; Wait before it appears"><input id="fddelay" type="number" min="0" step="10">ms</label>
+  </div>
   <div class="skinpick" id="skinpick">
     <b>SKIN</b>
     <button data-skin="aurora" class="on">Aurora</button>
@@ -34,6 +41,7 @@
 <script src="ravilo-player.js"></script>
 <script src="ravilo-livetv.js"></script>
 <script src="ravilo-browse.js"></script>
+<script src="ravilo-focus.js"></script>
 <script src="ravilo-app.js"></script>
 <script>
   const params = new URLSearchParams(location.search);
@@ -41,6 +49,18 @@
   const interactive = params.get('static') !== '1';
   document.documentElement.setAttribute('data-skin', skin);
   if (params.get('chrome') === '0') document.getElementById('chrome').remove();
+
+  /* Focus detail is real product config, owned by Jellystructure per Jellyfin user and
+     mocked through the same localStorage key app/ravilo-config.html writes. ?focus= has
+     to land before mount, since the TV reads its config once on start like the app does. */
+  const FDKEY = 'js-ravilo-focusdetail';
+  const fdq = params.get('focus'), dwq = params.get('dwell');
+  if (fdq === 'off' || fdq === 'line' || fdq === 'row' || dwq != null) {
+    let cur = {}; try { cur = JSON.parse(localStorage.getItem(FDKEY) || '{}') || {}; } catch (e) {}
+    if (fdq) { cur.line = fdq !== 'off'; cur.rowOpen = fdq === 'row'; }
+    if (dwq != null && Number.isFinite(+dwq)) cur.delay = Math.max(0, Math.round(+dwq));
+    localStorage.setItem(FDKEY, JSON.stringify(cur));
+  }
 
   const stage = document.getElementById('stage');
   window.fitStage(stage);
@@ -55,6 +75,32 @@
       document.documentElement.setAttribute('data-skin', b.dataset.skin);
       pick.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
     });
+  }
+
+  /* focus-detail picker (preview control) — it does not shadow the admin switch, it
+     writes the very same setting, so flipping it here and flipping it in Jellystructure
+     are the same act. Either one takes effect on the focused tile immediately. */
+  const fdpick = document.getElementById('focuspick');
+  if (fdpick) {
+    const readFD = () => { let r = {}; try { r = JSON.parse(localStorage.getItem(FDKEY) || '{}') || {}; } catch (e) {} const d = Math.round(Number(r.delay)); return { line: r.line !== false, rowOpen: r.rowOpen === true, delay: Number.isFinite(d) ? Math.max(0, Math.min(600, d)) : 170 }; };
+    const msIn = document.getElementById('fddelay');
+    const paintFD = () => {
+      const c = readFD(), v = c.rowOpen ? 'row' : (c.line ? 'line' : 'off');
+      fdpick.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.fd === v));
+      if (document.activeElement !== msIn) msIn.value = c.delay;
+    };
+    const writeFD = next => {
+      localStorage.setItem(FDKEY, JSON.stringify(Object.assign(readFD(), next)));
+      window.dispatchEvent(new Event('ravilo:focuscfg'));
+      paintFD();
+    };
+    fdpick.addEventListener('click', e => {
+      const b = e.target.closest('button'); if (!b) return;
+      writeFD({ line: b.dataset.fd !== 'off', rowOpen: b.dataset.fd === 'row' });
+    });
+    msIn.addEventListener('change', () => writeFD({ delay: Math.max(0, Math.min(600, Math.round(+msIn.value || 0))) }));
+    window.addEventListener('storage', e => { if (e.key === FDKEY) paintFD(); });
+    paintFD();
   }
 </script>
 </body>

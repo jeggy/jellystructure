@@ -1,9 +1,79 @@
 repo: jeggy/jellystructure
 branch: main
 path: specs/   (plus root STATUS.md — both mirrored read-only from the repo); presentation/ (full mirror, ours to build on)
-tree: main @ d67afe6a3e63 (2026-09-04 sync)
+tree: main @ 42885163eeee (2026-09-12 pull)
 
-## Last sync (2026-09-04 — pull; two numbering collisions resolved)
+## Last sync (2026-09-12, later — pull; 19 new dev specs, no renumbering needed)
+date: 2026-09-12T07:25:00Z
+direction: pull (repo → this project). 29 files mirrored (STATUS.md, both plans/constitution, 19 new
+specs, 8 amended), nothing exported. **Repo wins on every disagreement, per CLAUDE.md — our local 187 and
+R234 drafts were overwritten by the canonical, dev-reviewed, now-built versions.**
+- **No numbering collision, so nothing was renamed.** `main` tops out at **201** / **R239**: no
+  `phase-202-*` or `phase-R240-*` file, and `STATUS.md` has no row for either number. Our 2026-09-12
+  focus-detail pair keeps **202 / R240**. **Next free: 203 / R241.**
+- **187 + R234 are `✓ Built` (2026-09-05)** — the profile-photo/password pair we design-authored on
+  2026-09-03 and renumbered on 2026-09-04. 187's backend landed with both write routes, the change-keyed
+  avatar URL (R214 pre-empted) and the admin read-only photo; R234 was **live-verified on stue TV**, and a
+  pre-existing Settings D-pad focus-chain bug (Change password / Sign out / Unpair unreachable) was found
+  and fixed in the same pass. Canonical specs are 32 KB / 23 KB against our 12 KB drafts — pulled over.
+  **FR-187-1's live Jellyfin probe closed every open question:** all three operations exist, none at the
+  assumed path, the OpenAPI document is wrong about the image body (raw binary → 500, base64-with-MIME →
+  204), and a wrong password answers **403**.
+- **⚠ Our mockups now lead both specs in two places** (they must change before either ships, and they are
+  the only design work this sync inherits from our own earlier passes): **preset colours are dropped**
+  (owner decision on 187 OQ3 — `AV_PRESETS`/`colorFor`/`setColor` in `ravilo/ravilo-data.js` and the Your
+  profile sheet in `ravilo/Ravilo Mobile.html`), and the **"Photo and name"** row promises a rename that is
+  out of scope. 187 also records that `.usr-av`/`.has-photo`/`.av-img` and 185's `.usr-cap` existed only in
+  our mockup's inline `<style>` and had never reached `wf.css` — fixed dev-side, now fenced by
+  `check-mobile-css.sh`.
+- **19 new specs mirrored:** admin **188–201** (capped-scan episode destruction, segment-editor markers +
+  audio, metadata-language override on every write, clearlogo pipeline, Jellyfin-behind banner, transient
+  failure vs rejected token, retry-set drain, `last_checked` semantics, four days of red CI, a constraint
+  violation breaking the build, JS tags surviving a slug rename, invisible sidecar subtitles,
+  `mkvpropedit` evicting `Tracks`) and Ravilo **R235–R239** (signs-only subtitle auto-select, Home-hero
+  Down stranding focus, don't retry an unretryable failure, wrong version badges on the language row,
+  honest subtitle flag strip). All `✓ Built` except **R239** `⚠ Partial`. Also re-pulled as amended:
+  `specs/constitution.md` (invariant #6's predecessor rule, per 199), `specs/plan.md`, `phase-155`,
+  `phase-178`, `phase-186`, `R202`, `R219`.
+- **Nine design items land on us** — see `CLAUDE.md` for the detail: 201's MKV-layout health card +
+  per-title Fix now banner, 200's SUBTITLES strip + Sidecar subtitles group, 192's logo-as-logo picker fix
+  + artwork-repair button, 193's honest banner copy, 196's `last_examined_at` labels, 189/190's stepper +
+  lock toast + audio-transcode badge, 191's mismatch card, R239's honest flag counting, and R237's
+  per-cause failed-start copy + the *"Still trying…"* line on R218's cold start. **None drawn yet.**
+- **Counters re-derived:** `STATUS.md` = **387** rows (190 admin + 197 Ravilo, no gaps, no duplicates —
+  the 2026-09-04 repo-side STATUS gap for R227–R232/186 is **closed**); **179** documents under `specs/`
+  (177 on `main` + our two unpushed drafts); highest **202 / R240**; next free **203 / R241**. Deck
+  counters updated in `presentation/Jellystructure & Ravilo - Spec-Driven Development.html`.
+- `presentation/` is unchanged upstream (compare against `e8a11120` returns nothing) — the mirror is
+  still current and ours to build on.
+
+## Previous sync (2026-09-12 — read-only: numbering check before writing two specs)
+date: 2026-09-12T06:43:33Z
+direction: read-only (repo → this project). Nothing copied, nothing exported — the repo tree was queried
+to pick collision-free numbers, and one adjacent spec was read in full because it touches the same code.
+- **The dev team has moved a long way since 2026-09-04.** A tree scan at `main` shows admin phases taken
+  through **201** and Ravilo through **R239**: admin `188` (scan episode cap destroys existing episodes),
+  `189`/`190` (segment-editor markers + audio), `191` (metadata-language override survives every write —
+  our 184's follow-up), `192` (clearlogo pipeline), `193`–`196` (Jellyfin-behind banner, transient failure
+  vs rejected token, ingest retry set, last-checked semantics), `197`/`198` (CI red four days; a constraint
+  violation breaks the build), `199` (js tags survive a slug rename), `200`/`201` (sidecar subtitles
+  invisible; `mkvpropedit` evicts the Tracks element); Ravilo `R235` (never auto-select a signs-only
+  subtitle), **`R236`** (Down from the Home hero can stop working entirely), `R237` (don't retry a failure
+  that cannot succeed), `R238` (picker language row shows the wrong version badges), `R239` (honest
+  subtitle flag strip).
+- **Our two new specs are therefore 202 / R240**, written the same day, both `Planned`, neither
+  dev-reviewed — the focus-detail pair (config + payload, and the viewer half incl. J's motion rules).
+  **Next free: 203 / R241.** No renumbering needed this time.
+- **R236 read in full, because it owns code R240 touches.** It rewired Home's Down bridge from a
+  per-item `FocusRequester` to a row-level one decorated with `focusRestorer()` (✓ Built 2026-09-06, not
+  device-tested). R240 cites it: J inserts and removes a `LazyRow` child on every settled focus move, so
+  nothing J draws may carry a requester or be reachable by the restorer — and R236's own open question 2
+  (does the restorer compose a *disposed* remembered child?) now has a sibling-resizing case layered on it.
+- **⚠ This project's `STATUS.md` mirror and spec mirror are ~14 documents stale.** Neither was refreshed
+  this turn (the task was two specs, not a sync). Re-pull both — and re-derive every presentation counter —
+  before quoting status, phase counts or document counts anywhere.
+
+## Previous sync (2026-09-04 — pull; two numbering collisions resolved)
 date: 2026-09-04T18:08:00Z
 direction: pull (repo → this project). 5 new spec files mirrored, STATUS.md refreshed, our two unpushed
 drafts renumbered out of the way of numbers the dev team had already taken.
@@ -427,7 +497,7 @@ direction: pull (repo → this project)
 | app/subtitles.html, app/app-shell.js (Subtitles nav) | phase-157 (Bazarr subtitle overview — shipped) |
 | app/media.html, app/series.html | phase-157 (Tracks & subtitles / season Bazarr cards — shipped), phase-158 (IMDb re-sync label fix — shipped) |
 | app/livetv.html | phase-147 (Live TV admin config) |
-| app/segments.html, app/segments.js, app/segments.css, app/series-simpsons.js (entry points), app/Segment Editor - Directions.html | **phase-163** (intro & credits editor — shipped 2026-08-13/14; publishing to Jellyfin dropped in dev review, mockups updated 2026-08-27) |
+| app/segments.html, app/segments.js, app/segments.css, app/series-simpsons.js (entry points), app/Segment Editor - Directions.html | **phase-163** (intro & credits editor — shipped 2026-08-13/14; publishing to Jellyfin dropped in dev review, mockups updated 2026-08-27), **189** (markers cannot be moved — ✓ Built; FR-189-2's 1 s stepper + tenths readout and FR-189-5's locked-marker toast **not drawn**), **190** (editor audio — ✓ Built; FR-190-3's honest badge replaces the hard-coded "direct play · no transcode", **not drawn**) |
 | app/library.html, app/ravilo-builders.js (Include segment) | phase-172 (music-video filter support — shipped, drawn 2026-08-27) |
 | app/media.html (Artwork tab, pagebar Identity card) | phase-173 (current on-disk asset), phase-174 (clear a wrong TMDB match) — both shipped, drawn 2026-08-27 |
 | (none — backend/platform only) | 169, 170, 171, 175, 176, R209–R214 (parallel probes, segment process pool, music-video artwork/TMDB, unified scan engine, stale-artwork guards, subtitle delivery, startup performance, image cache busting) |
@@ -436,27 +506,38 @@ direction: pull (repo → this project)
 | ravilo/ravilo-player.js, ravilo-player.css, ravilo-app.js, ravilo/Audio & Subtitles Picker - Same-Language Directions.html | R195 (same-language subtitle picker — shipped) |
 | app/towo*.html, app/towo.css, app/settings.html (Towo tab), app/app-shell.js (Towo nav group), claude-console/Dashboard - Direction B.html | **phase-162** (Towo agent control plane — design-authored, shipped 2026-08-11; mockups predate the build's extra settings fields) |
 | (none — backend/platform only) | R192/R193/R194 (MediaSession lifecycle, metadata, season artwork — shipped, no design change), phase-160 (scanner numbering fallback) |
-| ravilo/Player Loading and Buffering - Directions.html, ravilo/ravilo-player.js/.css | **R218** (player loading/buffering states — shipped 2026-08-28, on-device verified 08-29), **phase-180** (session teardown — ✓ Done), R220 (video-output recovery — reuses R218's STALL; presentation not yet wired) |
-| app/activity.html | phase-182 (Capacity card only — FR-182-9's banner dropped by owner decision), phase-183 FR-183-6/FR-183-5 (Outbound pacing card + run summary) — drawn 2026-08-31, backend built, UI not yet in code |
+| ravilo/Player Loading and Buffering - Directions.html, ravilo/ravilo-player.js/.css | **R218** (player loading/buffering states — shipped 2026-08-28, on-device verified 08-29), **phase-180** (session teardown — ✓ Done), R220 (video-output recovery — reuses R218's STALL; presentation not yet wired), **R237** (per-cause failed-start copy + one *"Still trying…"* line on the cold-start treatment — ✓ Built dev-side, **not drawn here**) |
+| ravilo/Ravilo Mobile.html, ravilo/ravilo.css (flag strips) | **R239** FR-R239-7 (`+N` counts every language, mapped or not; a wholly unmapped group still renders its label) — ⚠ Partial dev-side, **mockup sync not done**; FR-R239-3's 12 missing flag assets unbuilt on both sides |
+| app/activity.html | phase-182 (Capacity card only — FR-182-9's banner dropped by owner decision), phase-183 FR-183-6/FR-183-5 (Outbound pacing card + run summary) — drawn 2026-08-31, backend built, UI not yet in code; **201** FR-201-10 (MKV track layout health card — **not drawn**) |
+| app/media.html, app/series.html (pagebar + Tracks & subtitles + Artwork tab) | **200** FR-200-5 (SUBTITLES flag strip + read-only Sidecar subtitles group), **201** FR-201-11/12 (Fix now banner per title), **192** FR-192-5/6 (logo shown as a logo, not a cropped 16/9 backdrop; nothing-to-show copy), **191** FR-191-5 (metadata-language mismatch card + inline re-pull), **193** FR-193-4 (honest Jellyfin-behind banner copy, inline Sync Jellyfin, suppressed during a scan), **196** FR-196-3/5 (`last_examined_at` labels, explicable skips) — all ✓ Built dev-side, **none drawn here yet** |
+| app/index.html (Dashboard) | **192** FR-192-2 (artwork-repair sweep button — **not drawn**) |
 | (none — backend only) | R219 (Continue Watching canonical list — explicitly no UI change), 181 (library sync convergence) |
 | ravilo/Decode Ceiling Warning - Directions.html | (no spec yet) research report `ravilo-per-device-decode-ceiling-warning-2026-09-02.md`; builds on phase-177 + R216, constrained by R180 FR-RV-ASP1-2. Admin half would land on app/ravilo-users.html |
-| ravilo/Ravilo Mobile.html, ravilo/ravilo-app.js, ravilo/ravilo-data.js, ravilo/ravilo.css, ravilo/ravilo-i18n.js, app/ravilo-users.html | **187** (`phase-187-account-photo-and-password.md`) + **R234** (`phase-R234-profile-photo-and-password.md`) — profile photo (phone/web upload; read path already shipped in R65) + change password (Settings → Account, all platforms). Both `Planned`, design-authored 2026-09-03, **renumbered from 186 / R230 on 2026-09-04** |
+| ravilo/Ravilo Mobile.html, ravilo/ravilo-app.js, ravilo/ravilo-data.js, ravilo/ravilo.css, ravilo/ravilo-i18n.js, app/ravilo-users.html | **187** (`phase-187-account-photo-and-password.md`) + **R234** (`phase-R234-profile-photo-and-password.md`) — profile photo + change password. Design-authored 2026-09-03, renumbered from 186 / R230 on 2026-09-04, **both `✓ Built` 2026-09-05** (R234 live-verified on stue TV) and canonical specs pulled 2026-09-12. **⚠ The mockups now lead the specs:** the preset-colour row (`AV_PRESETS`/`colorFor`/`setColor` + the Your profile sheet) is dropped per R234 FR-R234-3, and the "Photo and name" row must be relabelled or wired |
 | app/ravilo-builders.js (per-channel system rows), app/ravilo-config.html | **R233** (system rows always scoped — Planned; FR-R233-7 removes the `scope` segmented controls, **not yet applied to the mockup**), R143 (introduced `scope`, retired by R233) |
 | (none — backend/client-only) | **R231** (Continue Watching timeout cache poisoning), **R232** (series-detail & player D-pad polish), repo **R230** (Skip Credits Off), repo **186** (request-intent lifecycle cleanup — explicitly no new Ravilo UI) |
+| ravilo/Focus Detail - Directions.html, ravilo/Focus Detail - Round 2 Directions.html (+ -print copy), ravilo/ravilo-focus.js, ravilo/ravilo.css, ravilo/ravilo-app.js, ravilo/ravilo-i18n.js, ravilo/Ravilo TV.html, app/ravilo-config.html | **202** (`phase-202-focus-detail-config-and-payload.md`) + **R240** (`phase-R240-focus-detail-on-home-rows.md`) — focus detail on Home rows: L ships on, J off behind the switch, delay configurable 0–600 ms. Both `Planned`, design-authored 2026-09-12. Constrained by invariant 11, R216 (no viewer setting), R221 (genres), R236 (focus bridge topology) |
 | presentation/presentation-context.md, presentation/observed-issues-2026-08-18.md, presentation/screenshots/ | (not a spec — talk source material; documents R202 as its centerpiece and the R203–R207 triage) |
 
 ## Pending export
-- **2026-09-03, design-authored — profile photo + password change, specs now written** (**187** /
-  **R234** after the 2026-09-04 renumber; both `Planned`, neither dev-reviewed):
-  `specs/requirements/phase-187-account-photo-and-password.md`,
-  `specs/ravilo/requirements/phase-R234-profile-photo-and-password.md`, plus the mockup build in
-  `ravilo/ravilo-data.js` (new `avatars` helper), `ravilo/ravilo.css`, `ravilo/ravilo-app.js`,
-  `ravilo/ravilo-i18n.js` (18 strings × en/da/fo), `ravilo/Ravilo Mobile.html` (profile sheet + Your
-  profile + Settings, all new in the *mockup*), `app/ravilo-users.html` (read-only photo per user row).
-  **Key finding:** the photo's read path already ships (R65 — `RaviloImageUrl.avatar()` →
-  `RaviloArtworkService` proxy → `AppBar.ProfileAvatar`), so 186 is only the write paths and keeps
-  Jellyfin's user Primary image as the single store. Blocked on probing three Jellyfin endpoints against
-  10.11.11, on whether a password change invalidates tokens, and on where a preset colour would live.
+- **2026-09-06 → 2026-09-12, design-authored — Ravilo focus detail (L + J), its motion, and the
+  Jellystructure switch.** Specs: `specs/requirements/phase-202-focus-detail-config-and-payload.md` and
+  `specs/ravilo/requirements/phase-R240-focus-detail-on-home-rows.md` (both `Planned`, neither
+  dev-reviewed, written 2026-09-12). Mockup build: `ravilo/ravilo-focus.js` (the whole treatment,
+  incl. the dwell, the held row band, the animated open/close and live config apply), `ravilo/ravilo.css`
+  (`.fdline`, `.jopen`/`.jpanel` + the `jp-open`/`jp-close` animations, Noir overrides, the preview
+  chrome's `ms` field), `ravilo/ravilo-app.js` (`fieldsFor()`, the one-target reveal in `focusEl`, the
+  same-clock horizontal tween), `ravilo/ravilo-i18n.js`, `ravilo/Ravilo TV.html` (FOCUS picker,
+  `?focus=`/`?dwell=`), `app/ravilo-config.html` (Preferences → Focus detail: two switches + the delay
+  slider; no longer reloads the live preview), plus the two directions files and the 8-page print copy.
+  **One deliberate spec-over-mockup deviation to carry into the build:** 202 FR-202-2 has the *server*
+  resolve `focusDetail: "none"|"line"|"rowOpen"`; the mockup still reads both booleans client-side.
+- **2026-09-03 — profile photo + password change: the specs are now on `main` and BUILT** (187 / R234,
+  both `✓ Built` 2026-09-05), so nothing spec-side is pending. What is still local is the **mockup build**
+  in `ravilo/ravilo-data.js`, `ravilo/ravilo.css`, `ravilo/ravilo-app.js`, `ravilo/ravilo-i18n.js`,
+  `ravilo/Ravilo Mobile.html` and `app/ravilo-users.html` — and it needs the two corrections above (drop
+  the preset-colour row; relabel or wire "Photo and name") **before** it is exported, or the export ships
+  a control the shipped spec has deleted.
 - **All earlier design/spec work is already on `main`** — the 2026-09-02 decode-ceiling
   mockups + specs (185/R222) and the 2026-09-01 metadata-language/genre work (184/R221) were exported and
   are confirmed present in the repo diff this sync pulled.
@@ -466,6 +547,7 @@ direction: pull (repo → this project)
   check on next export pass.
 
 ## Sync history
+- 2026-09-12: 19 new dev specs pulled (admin 188–201, Ravilo R235–R239) + 8 amended + STATUS.md; **no numbering collision — our 202 / R240 kept their numbers**; 187 + R234 came back `✓ Built` and their canonical specs replaced our drafts; nine design items logged; counters 359 → 387 phases, 158 → 179 documents.
 - 2026-09-03: 31 commits pulled — 185/R222 shipped incl. on-device confirmation (R216 live on stue TV since 08-30, copy correct); 181/182/183 all built with real measurements, two new candidate follow-up bugs logged (home-feed cache thrashing, unbounded ffprobe fan-out); 7 new Ravilo specs (R223-R229), all backend/Compose-only.
 - 2026-09-02: pulled the per-device decode-ceiling-warning research report; design pass (A+B′ recommended), no spec yet.
 - 2026-09-01: mirror refresh; no repo changes since 08-31. Confirmed 184 / R221 uncontested.

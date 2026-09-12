@@ -311,6 +311,65 @@
     function startHero() { stopHero(); if (interactive) heroTimer = setInterval(() => setHero(heroIdx + 1), 6500); }
     function stopHero() { if (heroTimer) clearInterval(heroTimer); heroTimer = null; }
 
+    /* ---------------- FOCUS DETAIL (L / J) ----------------
+       fieldsFor() is the seam that matters: it resolves ONE object per item here,
+       the way /api/tv/** would deliver it, and ravilo-focus.js only renders it.
+       Nothing shown on a focused tile is derived at paint time.
+
+       It carries exactly what the two surviving directions draw — no artwork and no
+       tagline: round 1's hero mirror and ambience wash needed a backdrop per focused
+       title, and dropping them takes the image URL, and the fetch behind it, back out
+       of the payload. */
+    function fieldsFor(item) {
+      if (!item) return null;
+      const isS = item.kind === 'series';
+      const ab = R.aboutFor && R.aboutFor(item), im = R.imdbFor(item), rt = R.ratingFor(item);
+      const ws = W.itemState(item.title);
+      const seasons = isS ? R.seasonsFor(item) : 0;
+      const epCount = isS ? R.episodesFor(item, 0).length : 0;
+      const mp = ws.pct || item.pct || 0;
+      let resume = '';
+      if (item.next) resume = t('next_episode') + (item.ep ? ' · ' + item.ep : '');
+      else if (mp > 0 && mp < 100) {
+        resume = isS ? t('resume') + (item.ep ? ' · ' + item.ep : '')
+          : t('resume') + ' · ' + t('fd_min_left', { n: Math.max(1, Math.round(durFor(item) * (1 - mp / 100) / 60)) });
+      }
+      const ts = tracksFor(item) || {};
+      const syn = R.synFor ? R.synFor(item) : (item.syn || '');
+      /* R239 (FR-R239-1/2) — the counts are of LANGUAGES, not of flags we happen to hold an asset
+         for. An unmapped language is still a language the title carries, so it is counted into the
+         `+N` even though nothing can be drawn for it. */
+      const langs = list => {
+        const ccs = [], seenCC = new Set(), seenRaw = new Set();
+        (list || []).forEach(x => {
+          const l = x && x.lang; if (!l) return;
+          const cc = LANG_CC[l];
+          if (cc) { if (!seenCC.has(cc)) { seenCC.add(cc); ccs.push(cc); } }
+          else { seenRaw.add(l); }
+        });
+        return { ccs, total: seenCC.size + seenRaw.size };
+      };
+      const au = langs(ts.audio), su = langs(ts.subs);
+      return {
+        title: esc(item.title), year: item.year || '', badge: item.badge || 'HD',
+        count: isS ? seasons + ' Season' + (seasons > 1 ? 's' : '') + (epCount ? ' · ' + epCount + ' episodes' : '') : '',
+        runtime: ab ? (isS ? t('fact_per_ep', { n: ab.runtime }) : t('fact_min', { n: ab.runtime })) : '',
+        certHTML: rt ? `<span class="cert lvl-${rt.tier}"><span class="cert-rg">${rt.region}</span><span class="cert-code">${esc(rt.code)}</span></span>` : '',
+        imdb: im ? im.rating.toFixed(1) : '', genres: genresOf(item), syn: syn ? esc(syn) : '',
+        audio: au.ccs.slice(0, 3), audioMore: Math.max(0, au.total - Math.min(3, au.ccs.length)),
+        subs: su.ccs.slice(0, 3), subsMore: Math.max(0, su.total - Math.min(3, su.ccs.length)),
+        resume: resume,
+      };
+    }
+    const FD = window.initRaviloFocus ? window.initRaviloFocus(stage, {
+      t: window.t, getView: () => view, fieldsFor: fieldsFor,
+      // a live config change re-renders the focused tile through the same path a focus
+      // move takes, so J's reveal rule runs on a switch flip too
+      refocus: node => focusEl(node),
+      // J's growth is deferred by a dwell, so the reveal runs when the row actually opens
+      reveal: node => revealRowFoot(node),
+    }) : null;
+
     function upcomingLabel() { return t('upcoming'); }
     function airBadge(iso) {
       const d = new Date(iso + 'T00:00:00Z');
@@ -441,7 +500,7 @@
       if (isNaN(d)) return iso;
       return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' });
     }
-    function episodeCard(e, st, idx, item, season) {
+    function episodeCard(e, st, idx) {
       st = st || {};
       const cls = 'ep-card' + (st.watched ? ' watched' : '') + (st.inprogress ? ' inprogress' : '') + (st.upnext ? ' upnext' : '');
       const card = el('div', cls);
@@ -453,7 +512,7 @@
         ${st.watched ? '<span class="ep-check">✓</span>' : ''}
         <div class="play"><span>▶</span></div>
         ${(st.inprogress || st.watched) ? `<div class="ep-prog"><i style="width:${pct}%"></i></div>` : ''}</div>
-        <div class="ep-info"><div class="ep-t">${e.n}. ${e.title}${st.watched ? ` <span class="ep-tag">${t('watched')}</span>` : ''}</div>${e.air ? `<div class="ep-date">${epAirLabel(e.air)}</div>` : ''}<div class="ep-d">${e.desc}</div>${epNoteHTML(item, season, e)}</div>`;
+        <div class="ep-info"><div class="ep-t">${e.n}. ${e.title}${st.watched ? ` <span class="ep-tag">${t('watched')}</span>` : ''}</div>${e.air ? `<div class="ep-date">${epAirLabel(e.air)}</div>` : ''}<div class="ep-d">${e.desc}</div></div>`;
       const done = el('div', 'ep-done foc' + (st.watched ? ' on' : '')); done._epdone = true; done._epn = e.n; done._epidx = idx; done.setAttribute('data-epidx', idx);
       done.innerHTML = `<span class="ep-done-ic">${st.watched ? '✓' : ''}</span><span class="ep-done-tx">${st.watched ? t('watched') : t('mark_watched')}</span>`;
       card.appendChild(play); card.appendChild(done);
@@ -492,8 +551,7 @@
         <span class="ep-rng">Episodes ${first}–${last}</span></div>
         <div class="ep-info"><div class="ep-t">Episodes ${first}–${last}${allW ? ` <span class="ep-tag">${t('watched')}</span>` : ''}</div>
           <div class="combo-list">${eps.map(e => `<div class="combo-row"><span class="cn">${padN(e.n)}</span><span class="ct">${e.title}</span><span class="cd">${e.dur}</span></div>`).join('')}</div>
-          <div class="combo-file">▤ 1 file · ${eps.length} episodes · ${durSum}m</div>
-          ${epNoteHTML(item, season, eps[0])}</div>`;
+          <div class="combo-file">▤ 1 file · ${eps.length} episodes · ${durSum}m</div></div>`;
       const done = el('div', 'ep-done foc' + (allW ? ' on' : '')); done._epfile = u; done._epidx = idxs[0]; done.setAttribute('data-epidx', idxs[0]);
       done.innerHTML = `<span class="ep-done-ic">${allW ? '✓' : ''}</span><span class="ep-done-tx">${allW ? t('watched') : t('mark_watched')}</span>`;
       card.appendChild(play); card.appendChild(done);
@@ -527,22 +585,37 @@
     const LANG_CC = { en: 'gb', fr: 'fr', de: 'de', es: 'es', da: 'dk', fo: 'fo', is: 'is', no: 'no', sv: 'se', fi: 'fi', nl: 'nl', it: 'it', pt: 'pt', pl: 'pl', ru: 'ru', ja: 'jp', ko: 'kr', zh: 'cn', ar: 'sa', hi: 'in' };
     const LANG_NAME = { en: 'English', fr: 'French', de: 'German', es: 'Spanish', da: 'Danish', fo: 'Faroese', is: 'Icelandic', no: 'Norwegian', sv: 'Swedish', fi: 'Finnish', nl: 'Dutch', it: 'Italian', pt: 'Portuguese', pl: 'Polish', ru: 'Russian', ja: 'Japanese', ko: 'Korean', zh: 'Chinese', ar: 'Arabic', hi: 'Hindi' };
     const FLAG_MAX = 5;
+    /* R239 (FR-R239-1/2) — count every language the group HAS, not every flag we can draw.
+       Mapped languages dedupe by flag (two codes sharing one flag count once); unmapped ones
+       dedupe by their raw code and are still counted, because dropping them before counting is
+       what made a title with fifteen unmapped subtitle languages read as five flags and "+1".
+       A group renders whenever it has ANY language — a wholly unmapped one shows its label and a
+       bare count rather than looking identical to a title with no subtitles at all. */
+    function countStrip(langs) {
+      const flags = [], seenCC = new Set(), seenRaw = new Set();
+      (langs || []).forEach(l => {
+        if (!l) return;
+        const cc = LANG_CC[l];
+        if (cc) { if (!seenCC.has(cc)) { seenCC.add(cc); flags.push(l); } }
+        else { seenRaw.add(l); }
+      });
+      return { flags, total: seenCC.size + seenRaw.size };
+    }
     function audioFlagsHTML(item) {
       // R134 — one merged line: Audio 🅐🅑 · Subtitles 🅒🅓, rendering only the groups that exist.
       const ts = tracksFor(item);
-      const uniq = arr => { const seen = new Set(), out = []; arr.filter(l => l && LANG_CC[l]).forEach(l => { if (!seen.has(l)) { seen.add(l); out.push(l); } }); return out; };
-      const flagRow = langs => {
-        const shown = langs.slice(0, FLAG_MAX), extra = langs.length - shown.length;
+      const flagRow = c => {
+        const shown = c.flags.slice(0, FLAG_MAX), extra = c.total - shown.length;   // FLAG_MAX stays 5 (FR-R239-6)
         const flags = shown.map(l => `<span class="fi fi-${LANG_CC[l]} aflag" title="${LANG_NAME[l] || l}"></span>`).join('');
         const more = extra > 0 ? `<span class="aflag-more" title="${extra} more language${extra > 1 ? 's' : ''}">+${extra}</span>` : '';
         return flags + more;
       };
-      const aud = uniq((ts.audio || []).map(a => a.lang));                  // physical track order
-      const sub = uniq((ts.subs || []).filter(s => !s.off).map(s => s.lang)); // one flag per language
-      if (!aud.length && !sub.length) return '';
+      const aud = countStrip((ts.audio || []).map(a => a.lang));                     // physical track order
+      const sub = countStrip((ts.subs || []).filter(s => !s.off).map(s => s.lang));  // one flag per language
+      if (!aud.total && !sub.total) return '';
       const groups = [];
-      if (aud.length) groups.push(`<span class="aflag-group"><span class="aflag-label">Audio</span><span class="aflag-row">${flagRow(aud)}</span></span>`);
-      if (sub.length) groups.push(`<span class="aflag-group"><span class="aflag-label">Subtitles</span><span class="aflag-row">${flagRow(sub)}</span></span>`);
+      if (aud.total) groups.push(`<span class="aflag-group"><span class="aflag-label">Audio</span><span class="aflag-row">${flagRow(aud)}</span></span>`);
+      if (sub.total) groups.push(`<span class="aflag-group"><span class="aflag-label">Subtitles</span><span class="aflag-row">${flagRow(sub)}</span></span>`);
       return `<div class="dhero-flags">${groups.join('<span class="aflag-div"></span>')}</div>`;
     }
     // ---- R221: every genre, not just the first ----
@@ -563,36 +636,52 @@
       return `<div class="dhero-genres focus-row"><span class="g-label">${t(gs.length === 1 ? 'genre_one' : 'genre_many')}</span><span class="g-row">${chips.join('')}</span></div>`;
     }
     // ---- R222: per-device "slow to start" note. Server-pushed verdict, rendered as-is:
-    // no thresholds, no numbers and no decision logic live on the client. Absent ⇒ nothing
-    // renders — no empty slot, no reserved space, no layout shift (FR-R222-1). ----
-    function slowSentence(n) {
+    // no thresholds, no numbers and no decision logic live on the client. ----
+    function playNoteHTML(item) {
+      const n = R.playbackNoteFor ? R.playbackNoteFor(item) : null;
+      if (!n) return '';
       const lead = t('slow_lead', { device: esc(n.device || t('this_tv')) });
       const tail = (n.basis === 'measured' && n.seconds)
         ? t('slow_tail_measured', { n: n.seconds })
         : t('slow_tail_expected');
-      return `<b>${lead}</b> ${tail}`;
-    }
-    // FR-R222-4 — movie detail only. A ceiling is per device and a bitrate is per file, so a
-    // SERIES hero never carries the line (its episodes are different files); it rides the
-    // episode row instead — see epNoteHTML below (FR-R222-5).
-    function playNoteHTML(item) {
-      if (item.kind === 'series') return '';
-      const n = R.playbackNoteFor ? R.playbackNoteFor(item) : null;
-      if (!n) return '';
-      return `<div class="dplaynote"><span class="pn-bar"></span><span class="pn-txt">${slowSentence(n)}</span></div>`;
-    }
-    // FR-R222-5 — the episode row's own line. One file ⇒ one line, so a Phase 149 combined
-    // S01E01–E03 card renders this once, not once per episode.
-    function epNoteHTML(item, season, ep) {
-      const n = (R.playbackNoteFor && item && ep) ? R.playbackNoteFor(item, season, ep) : null;
-      if (!n) return '';
-      return `<div class="ep-playnote">${slowSentence(n)}</div>`;
+      return `<div class="dplaynote"><span class="pn-bar"></span><span class="pn-txt"><b>${lead}</b> ${tail}</span></div>`;
     }
     // ---- IMDb rating chip (detail hero) — data from imdbapi.dev, stored + synced (R164) ----
     function fmtVotes(n) { return n >= 1e6 ? (n / 1e6).toFixed(1).replace(/\.0$/, '') + 'M' : n >= 1e3 ? (n / 1e3).toFixed(1).replace(/\.0$/, '') + 'K' : String(n); }
     function imdbHTML(item) {
       const im = R.imdbFor(item); if (!im) return '';
       return `<span class="imdb" title="IMDb ${im.rating.toFixed(1)}/10 · ${im.votes.toLocaleString()} votes"><span class="imdb-wm"><span class="imdb-star">★</span>IMDb</span><span class="imdb-val">${im.rating.toFixed(1)}</span><span class="imdb-votes">${fmtVotes(im.votes)}</span></span>`;
+    }
+    /* Direction F — the facts the scanner already holds. A reading surface: it has
+       no .foc children, so Down from Cast & Crew still walks to More like this. */
+    function dateLabel(iso) {
+      const d = new Date(iso + 'T00:00:00Z');
+      return isNaN(d) ? iso : d.toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' });
+    }
+    function aboutSection(item) {
+      const ab = R.aboutFor && R.aboutFor(item); if (!ab) return null;
+      const isS = item.kind === 'series';
+      const seasons = isS ? R.seasonsFor(item) : 0;
+      const epTotal = isS ? R.episodesFor(item, 0).length * seasons : 0;
+      const fact = (k, v) => v ? `<div class="fact"><div class="k">${k}</div><div class="v">${v}</div></div>` : '';
+      const s = el('div', 'about');
+      const aSyn = R.synFor ? R.synFor(item) : item.syn;
+      const hasSyn = !!aSyn;
+      s.innerHTML = `<div class="about-head"><h2>${t('about')}</h2><span class="sub">${t('about_sub')}</span></div>
+        <div class="about-grid${hasSyn ? '' : ' nosyn'}">
+          ${hasSyn ? `<div class="about-syn">${esc(aSyn)}</div>` : ''}
+          <div class="facts">
+            ${fact(t('fact_runtime'), isS ? t('fact_per_ep', { n: ab.runtime }) : t('fact_min', { n: ab.runtime }))}
+            ${fact(isS ? t('fact_first_aired') : t('fact_released'), dateLabel(ab.aired))}
+            ${fact(t('fact_director'), esc(ab.director))}
+            ${fact(isS ? t('fact_network') : t('fact_studio'), esc(ab.network))}
+            ${fact(t('fact_country'), esc(ab.country))}
+            ${fact(t('fact_language'), esc(ab.lang))}
+            ${isS ? fact(t('fact_seasons'), t('fact_seasons_v', { s: seasons, n: epTotal })) : ''}
+            ${fact(t('fact_added'), dateLabel(ab.added))}
+          </div>
+        </div>`;
+      return s;
     }
     function renderDetail(item) {
       stopHero();
@@ -639,7 +728,7 @@
           <div class="hero-meta"><span class="tag">${item.badge || 'HD'}</span><span>${item.year}</span>${certHTML}${imdbHTML(item)}${wItem.watched ? `<span class="dmeta-watched">✓ ${t('watched')}</span>` : ''}</div>
           ${genreRowHTML(item)}
           ${audioFlagsHTML(item)}
-          <div class="dsyn-block focus-row"><div class="hero-syn dsyn foc" data-syn="1">${item.syn || 'A standout from your Ravilo library — streamed from Jellyfin, organised by Jellystructure.'}</div><span class="syn-toggle">▾ more</span></div>
+          <div class="dsyn-block focus-row"><div class="hero-syn dsyn foc" data-syn="1">${(R.synFor && R.synFor(item)) || item.syn || 'A standout from your Ravilo library — streamed from Jellyfin, organised by Jellystructure.'}</div><span class="syn-toggle">▾ more</span></div>
           ${(upNote || nextAirHTML) ? `<div class="dnext-row">${upNote ? `<div class="dnext"><span class="dnext-dot"></span>${upNote}</div>` : ''}${nextAirHTML}</div>` : ''}
           ${playNoteHTML(item)}
           <div class="dactions focus-row">
@@ -683,7 +772,7 @@
         track.dataset.def = def;
         units.forEach(u => {
           if (u.type === 'file') { track.appendChild(comboCard(item, season, u, states)); }
-          else { const i = u.idx; track.appendChild(episodeCard(eps[i], { watched: states[i].watched, inprogress: states[i].pct > 0 && !states[i].watched, upnext: i === prog.idx, pct: states[i].pct }, i, item, season)); }
+          else { const i = u.idx; track.appendChild(episodeCard(eps[i], { watched: states[i].watched, inprogress: states[i].pct > 0 && !states[i].watched, upnext: i === prog.idx, pct: states[i].pct }, i)); }
         });
         epRow.appendChild(track);
         d.appendChild(epRow);
@@ -695,6 +784,9 @@
       R.castFor(item).forEach(c => ctrack.appendChild(castCircle(c)));
       castRow.appendChild(ctrack);
       d.appendChild(castRow);
+
+      const about = aboutSection(item);
+      if (about) d.appendChild(about);
 
       const rel = el('div', 'crow');
       rel.innerHTML = `<div class="crow-head"><h2>${t('more_like_this')}</h2></div>`;
@@ -1208,6 +1300,7 @@
     }
 
     function go(v) {
+      if (FD) FD.clear();
       view = v;
       if (_browse) _browse.closePop();   // never carry a browse popover across views
       if (v.type === 'home') renderHome();
@@ -1255,18 +1348,70 @@
       clearFocus(); if (!node) return;
       node.classList.add('focused');
       const cr = node.closest('.crow') || node.closest('.rail'); if (cr) cr.classList.add('active');
-      // horizontal: keep tile in view
+      /* The focus detail renders BEFORE either reveal below, because J (the row opens)
+         grows the row ~160px and moves its tiles: the reveal has to measure the row it
+         will actually park, sequenced after the growth rather than racing a second
+         scroll against the first (R232's hazard). L changes no geometry. */
+      const dir = FD ? FD.onFocus(node) : null;
+      // horizontal: keep tile in view. A collapsing J row moves the tiles right of the
+      // focus by ~900px in one frame; following that instantly is what keeps the tile
+      // under your thumb still, where an animated catch-up reads as a lurch.
       const track = node.closest('.track');
-      if (track) { const target = node.offsetLeft - 64; track.scrollTo({ left: Math.max(0, target), behavior: 'smooth' }); }
+      if (track) {
+        // J: the tween chases the tile's live position, so the collapse, the dwell-
+        // delayed open and the catch-up all resolve against the same moving layout
+        if (dir === 'row') tweenScrollLeft(track, node, 620);
+        else track.scrollTo({ left: Math.max(0, node.offsetLeft - 64), behavior: 'smooth' });
+      }
       // vertical: keep row comfortably in view
       const rowWrap = node.closest('.crow') || node.closest('.rail') || node.closest('.hero') || node.closest('.dhero') || node.closest('.dsec') || node.closest('.cathead') || node.closest('.grid-row') || node.closest('.gridfilter') || node.closest('.kbd-row') || node.closest('.sresults');
       const inAppbar = !!node.closest('.appbar');
       if (inAppbar) scroll.scrollTo({ top: 0, behavior: 'smooth' });
       else if (rowWrap && (rowWrap.classList.contains('hero') || rowWrap.classList.contains('dhero'))) scroll.scrollTo({ top: 0, behavior: 'smooth' });
       else if (rowWrap) {
-        const top = rowWrap.offsetTop - 150;
-        scroll.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
+        let top = Math.max(0, rowWrap.offsetTop - 150);
+        /* One scroll, one target. An open row is taller than the row the hero-peek was
+           sized for, so on the first content row the tile's foot lands past the bottom
+           of the screen: take whichever target is lower, never scroll back up. */
+        if (dir === 'row') top = Math.max(top, contentBottom(track || node) + 40 - scroll.clientHeight);
+        scroll.scrollTo({ top, behavior: 'smooth' });
       }
+    }
+    /* Called by the focus module once an open row has actually grown: bring its foot
+       into view, and only ever downwards — pulling back up would undo the hero-peek. */
+    function revealRowFoot(node) {
+      if (!node || !node.isConnected) return;
+      const rowWrap = node.closest('.crow'); if (!rowWrap) return;
+      const top = Math.max(Math.max(0, rowWrap.offsetTop - 150), contentBottom(node.closest('.track') || node) + 40 - scroll.clientHeight);
+      if (top > scroll.scrollTop + 1) scroll.scrollTo({ top, behavior: 'smooth' });
+    }
+    /* Native smooth scrolling runs on its own clock and duration, so the track's
+       catch-up finished at a different moment than the panel's .22s width tween and the
+       two read as separate movements. This drives the track on the same clock and the
+       same easing as the CSS, so the poster growing, the tiles sliding right and the
+       row scrolling are one motion.
+       The target is re-read EVERY FRAME from the node's live position, because the
+       layout it is chasing is itself moving: a panel closing to the left and another
+       opening after the dwell each shift the focused tile by ~820px mid-tween. A target
+       computed once is already wrong by the time the tween lands, and the next keypress
+       corrects it the other way — which is the fling-and-snap this replaces. */
+    function tweenScrollLeft(el, node, ms) {
+      if (el._jtwStop) el._jtwStop();
+      const from = el.scrollLeft, t0 = performance.now();
+      const ease = p => (p < .5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2);  // matches --ease
+      const aim = () => Math.max(0, Math.min(node.offsetLeft - 64, el.scrollWidth - el.clientWidth));
+      el.style.scrollBehavior = 'auto';   // .track is smooth by default; that would fight the tween
+      let raf = requestAnimationFrame(function step(now) {
+        const p = Math.min(1, (now - t0) / ms);
+        el.scrollLeft = from + (aim() - from) * ease(p);
+        if (p < 1) raf = requestAnimationFrame(step); else el._jtwStop();
+      });
+      el._jtwStop = () => { cancelAnimationFrame(raf); el.style.scrollBehavior = ''; el._jtwStop = null; };
+    }
+    // y of an element's foot in the scroll surface's own content coordinates
+    function contentBottom(node) {      let y = 0, el = node;
+      while (el && el !== scroll) { y += el.offsetTop; el = el.offsetParent; }
+      return y + node.offsetHeight;
     }
     function focusRowByIndex(ri) {
       const all = rows(); ri = Math.max(0, Math.min(all.length - 1, ri));
@@ -1440,7 +1585,7 @@
       overlay.querySelector('.art .grad').style.background = item.grad;
       overlay.querySelector('h2').textContent = item.title;
       overlay.querySelector('.m').innerHTML = `<span class="rt" style="border:1px solid var(--line);padding:2px 8px;border-radius:6px">${item.rating}+</span><span>${item.year}</span><span>${item.genre}</span><span>${item.kind === 'series' ? 'Series' : 'Film'}</span>`;
-      overlay.querySelector('p').textContent = item.syn || 'A standout from your Ravilo library — pulled live from Jellyfin, organised by Jellystructure.';
+      overlay.querySelector('p').textContent = (R.synFor && R.synFor(item)) || item.syn || 'A standout from your Ravilo library — pulled live from Jellyfin, organised by Jellystructure.';
       overlay.querySelectorAll('.foc').forEach(e => e.classList.remove('focused'));
       overlay.querySelector('[data-ov="play"]').classList.add('focused');
       overlay.classList.add('on'); stopHero();

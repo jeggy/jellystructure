@@ -1,0 +1,555 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="design_doc_mode" content="canvas">
+<title>Ravilo · what a highlighted title tells you — Directions</title>
+<link rel="stylesheet" href="ravilo.css">
+<link rel="stylesheet" href="../flags.css">
+<style>
+body{background:transparent;font-family:'Sora',sans-serif}
+.lbl{position:absolute;width:420px;color:#e8eaf2}
+.lbl h3{margin:0;font-family:'Space Grotesk',sans-serif;font-size:1.2rem;letter-spacing:-.01em}
+.lbl small{display:block;margin-top:9px;font-size:.79rem;line-height:1.68;color:#a9afc4}
+.lbl small b{color:#d7dbe8;font-weight:600}
+.lbl small+small{margin-top:11px}
+.lbl .tag{display:inline-block;font-family:'JetBrains Mono','SFMono-Regular',monospace;font-size:.66rem;letter-spacing:.09em;text-transform:uppercase;color:#7b6ef0;margin-bottom:7px}
+.lbl .tag.no{color:#8f95aa}
+.lbl .tag.pick{color:#2dd49a}
+.lbl .cost{display:block;margin-top:12px;padding:10px 12px;border-radius:9px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.09);font-size:.74rem;line-height:1.6;color:#9aa0b4}
+.lbl .cost b{color:#e8eaf2}
+.cap{position:absolute;width:520px;font-size:.7rem;color:#8f95aa;font-family:'JetBrains Mono','SFMono-Regular',monospace;letter-spacing:.05em;text-transform:uppercase}
+.shot{position:absolute;width:960px;height:540px;overflow:hidden;border-radius:14px;border:1px solid rgba(255,255,255,.12);box-shadow:0 24px 60px rgba(0,0,0,.5)}
+.shot>.inner{width:1920px;height:1080px;transform:scale(.5);transform-origin:top left}
+.stagebg{position:relative;width:1920px;height:1080px;background:var(--bg);color:var(--ink);overflow:hidden;font-family:'Sora',sans-serif}
+.scrolled{margin-top:-186px}
+.topmask{position:absolute;left:0;right:0;top:0;height:132px;z-index:35;background:linear-gradient(180deg,var(--bg) 52%,rgba(10,12,19,.7) 78%,transparent)}
+.scrolled.deep{margin-top:-450px}
+
+/* white reasoning panels */
+.panel{position:absolute;background:#fff;color:#171923;border-radius:18px;padding:34px 38px;box-shadow:0 24px 60px rgba(0,0,0,.4)}
+.panel h2{font-family:'Space Grotesk',sans-serif;font-size:1.5rem;margin:0 0 6px;letter-spacing:-.02em}
+.panel h4{font-family:'Space Grotesk',sans-serif;font-size:.95rem;margin:26px 0 8px;letter-spacing:-.01em}
+.panel p{font-size:.86rem;line-height:1.72;color:#3c4256;margin:0 0 10px}
+.panel .lead{font-size:.95rem;color:#232838}
+.panel b{color:#171923}
+.panel ul{margin:0;padding-left:18px}.panel li{font-size:.85rem;line-height:1.75;color:#3c4256;margin-bottom:6px}
+.panel ol{margin:0;padding-left:20px}.panel ol li{font-size:.85rem;line-height:1.75;color:#3c4256;margin-bottom:9px}
+.panel .mono{font-family:'JetBrains Mono','SFMono-Regular',monospace;font-size:.82em;background:#f0f1f6;padding:1px 5px;border-radius:4px}
+.panel hr{border:none;border-top:1px solid #e6e8ef;margin:22px 0}
+.three{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin:14px 0 4px}
+.three>div{background:#f6f7fb;border:1px solid #e6e8ef;border-radius:11px;padding:14px 16px}
+.three h5{margin:0 0 5px;font-family:'Space Grotesk',sans-serif;font-size:.83rem}
+.three p{font-size:.78rem;line-height:1.62;margin:0;color:#4b5165}
+.good{background:#eef7f2;border:1px solid #b9dfcc;border-radius:10px;padding:13px 15px;font-size:.84rem;line-height:1.65;color:#1f4634;margin:12px 0}
+.good b{color:#123326}
+.warn{background:#fff8e8;border:1px solid #f2d79a;border-radius:10px;padding:13px 15px;font-size:.84rem;line-height:1.65;color:#4a3c1c;margin:12px 0}
+.warn b{color:#3a2e10}
+.no{background:#fdf1f1;border:1px solid #f0c9c9;border-radius:10px;padding:13px 15px;font-size:.84rem;line-height:1.65;color:#5a2b2b;margin:12px 0}
+.no b{color:#3f1b1b}
+
+/* dwell timeline graphic */
+.tl{position:relative;height:150px;margin:22px 0 6px}
+.tl .rail{position:absolute;left:0;right:0;top:30px;height:3px;background:#e6e8ef;border-radius:2px}
+.tl .fill{position:absolute;left:0;top:30px;height:3px;width:62%;background:linear-gradient(90deg,#7b6ef0,#3fb6f5);border-radius:2px}
+.tl .stop{position:absolute;top:22px;width:19px;height:19px;border-radius:50%;background:#fff;border:3px solid #7b6ef0}
+.tl .stop.a{left:0}.tl .stop.b{left:31%}.tl .stop.c{left:62%}.tl .stop.d{left:100%;margin-left:-19px;border-color:#c9cddb}
+.tl .txt{position:absolute;top:58px;width:230px;font-size:.78rem;line-height:1.55;color:#4b5165}
+.tl .txt b{display:block;font-family:'JetBrains Mono',monospace;font-size:.72rem;letter-spacing:.06em;color:#171923;margin-bottom:3px}
+.tl .txt.a{left:0}.tl .txt.b{left:31%;margin-left:-14px}.tl .txt.c{left:62%;margin-left:-14px}.tl .txt.d{right:0;text-align:right}
+
+/* ===== A · the focus plate ===== */
+.fplate{position:absolute;z-index:30;width:452px;padding:20px 22px 18px;border-radius:20px;
+  background:rgba(16,19,31,.97);border:1px solid rgba(255,255,255,.12);
+  box-shadow:0 40px 80px -24px rgba(0,0,0,.85);-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px)}
+.fplate:before{content:"";position:absolute;top:-9px;left:50%;margin-left:-9px;width:18px;height:18px;transform:rotate(45deg);
+  background:rgba(16,19,31,.97);border-left:1px solid rgba(255,255,255,.12);border-top:1px solid rgba(255,255,255,.12);border-radius:3px}
+.fplate.side:before{top:50%;left:-9px;margin:-9px 0 0 0;border-top:none;border-left:1px solid rgba(255,255,255,.12);border-bottom:1px solid rgba(255,255,255,.12)}
+.fplate.up:before{top:auto;bottom:-9px;border-left:none;border-top:none;border-right:1px solid rgba(255,255,255,.12);border-bottom:1px solid rgba(255,255,255,.12)}
+.fp-title{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:34px;line-height:1.04;letter-spacing:-.9px;color:var(--ink)}
+.fp-meta{display:flex;align-items:center;gap:11px;flex-wrap:wrap;margin-top:11px;font-size:17px;color:var(--ink-soft)}
+.fp-meta .fp-tag{padding:2px 9px;border-radius:6px;background:var(--chip);color:var(--ink);font-size:15px;font-weight:500}
+.fp-meta .fp-imdb{font-size:16px;color:var(--ink);font-weight:600}
+.fp-meta .cert{transform:scale(.86);transform-origin:left center}
+.fp-chips{display:flex;gap:8px;margin-top:13px}
+.pchip{display:inline-flex;align-items:center;height:32px;padding:0 14px;border-radius:16px;font-size:16px;font-weight:500;color:var(--ink);background:var(--chip);border:1px solid rgba(255,255,255,.08)}
+.pchip.lead{background:rgba(123,110,240,.2);border-color:rgba(123,110,240,.5);font-weight:600}
+.fp-syn{font-size:18px;line-height:1.5;color:var(--ink-soft);margin-top:14px;text-wrap:pretty;
+  display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.fp-flags{display:flex;align-items:center;gap:9px;margin-top:15px}
+.fp-lbl{font-size:12px;font-weight:600;letter-spacing:1.8px;text-transform:uppercase;color:var(--ink-dim)}
+.pflag{width:27px;height:20px;border-radius:4px;box-shadow:0 0 0 1px rgba(255,255,255,.2);background-size:cover;background-position:center;flex:none}
+.fp-div{width:1px;height:20px;background:var(--line);margin:0 4px}
+.fp-more{font-size:14px;font-weight:600;color:var(--ink);padding:2px 8px;border-radius:20px;background:var(--chip);line-height:1.3}
+.fp-resume{display:flex;align-items:center;gap:9px;margin-top:16px;padding-top:14px;border-top:1px solid var(--line);font-size:17px;font-weight:500;color:var(--accent-2)}
+.fp-dot{width:8px;height:8px;border-radius:50%;background:var(--accent-2);box-shadow:0 0 12px var(--accent-2);flex:none}
+.fp-empty{font-size:17px;color:var(--ink-dim);margin-top:12px;font-style:italic}
+
+/* ===== C · the unfolding card ===== */
+.ucard{position:absolute;z-index:30;width:496px;border-radius:16px;overflow:hidden;background:var(--card);
+  border:2px solid var(--ring);box-shadow:0 0 0 4px var(--ring-glow),0 30px 70px rgba(0,0,0,.7)}
+.uc-art{position:relative;height:279px;overflow:hidden}
+.uc-art .g{position:absolute;inset:0}
+.uc-art .fade{position:absolute;inset:0;background:linear-gradient(0deg,var(--card),rgba(22,26,40,.1) 62%)}
+.uc-art .tt{position:absolute;left:22px;bottom:16px;font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:40px;letter-spacing:-1.2px;text-shadow:0 2px 16px rgba(0,0,0,.6)}
+.uc-art .play{position:absolute;right:20px;bottom:18px;width:56px;height:56px;border-radius:50%;background:rgba(255,255,255,.94);color:#0a0c13;display:flex;align-items:center;justify-content:center;font-size:22px}
+.uc-body{padding:4px 22px 20px}
+
+/* ===== D · ambience ===== */
+.amb{position:absolute;inset:0;z-index:0;overflow:hidden}
+.amb .art{position:absolute;right:-160px;top:-40px;width:1500px;height:1000px;opacity:.22;filter:blur(46px) saturate(140%);
+  background-size:cover;background-position:center}
+.amb .wash{position:absolute;inset:0;background:radial-gradient(120% 90% at 78% 18%,rgba(123,110,240,.26),transparent 60%)}
+.stagebg.amb-on{background:#0b0d15}
+
+/* ===== F · detail "About" ===== */
+.about{padding:0 64px;margin-top:52px}
+.about-head{display:flex;align-items:baseline;gap:16px;padding-bottom:4px}
+.about-head h2{font-family:'Space Grotesk',sans-serif;font-size:29px;font-weight:600;letter-spacing:-.5px}
+.about-head .sub{font-size:16px;color:var(--ink-dim)}
+.about-grid{display:grid;grid-template-columns:1fr 620px;gap:56px;margin-top:22px}
+.about-syn{font-size:22px;line-height:1.55;color:var(--ink-soft);text-wrap:pretty}
+.about-syn+.about-syn{margin-top:16px}
+.facts{display:grid;grid-template-columns:1fr 1fr;gap:20px 38px}
+.fact .k{font-size:13px;font-weight:600;letter-spacing:1.8px;text-transform:uppercase;color:var(--ink-dim)}
+.fact .v{font-size:20px;color:var(--ink);margin-top:5px;font-weight:500}
+.artstrip{display:flex;gap:18px;padding:22px 64px 0}
+.astill{position:relative;width:340px;height:191px;border-radius:10px;overflow:hidden;border:2px solid transparent;box-shadow:0 10px 26px rgba(0,0,0,.4)}
+.astill.focused{border-color:var(--ring);box-shadow:0 0 0 4px var(--ring),0 22px 50px rgba(0,0,0,.6);transform:scale(1.05)}
+.astill img{width:100%;height:100%;object-fit:cover}
+.astill .cnt{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:22px;color:rgba(255,255,255,.5)}
+
+/* ===== phone peek ===== */
+.phone{position:absolute;width:390px;height:720px;border-radius:34px;border:1px solid rgba(255,255,255,.14);background:#0a0c13;overflow:hidden;box-shadow:0 24px 60px rgba(0,0,0,.5)}
+.ph-rows{padding:14px 0 0}
+.ph-h{font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:17px;color:#f3f4fb;padding:0 18px 10px}
+.ph-track{display:flex;gap:10px;padding:0 18px 20px}
+.ph-p{flex:none;width:104px}
+.ph-p .a{position:relative;width:104px;height:156px;border-radius:9px;overflow:hidden}
+.ph-p .a .tt{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;padding:6px;font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:14px;color:#fff}
+.ph-p .l{font-size:12px;color:#aeb4cb;margin-top:7px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ph-p.sel .a{outline:2px solid #8e82ff;outline-offset:2px}
+.ph-scrim2{position:absolute;inset:0;background:rgba(6,7,12,.6);-webkit-backdrop-filter:blur(2px);backdrop-filter:blur(2px)}
+.ph-sheet{position:absolute;left:0;right:0;bottom:0;background:#12151f;border-top:1px solid rgba(255,255,255,.12);border-radius:22px 22px 0 0;padding:18px 20px 26px}
+.ph-grip{width:44px;height:4px;border-radius:2px;background:rgba(255,255,255,.22);margin:0 auto 16px}
+.ph-t{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:24px;color:#f3f4fb;letter-spacing:-.5px}
+.ph-m{display:flex;align-items:center;gap:9px;font-size:12px;color:#aeb4cb;margin-top:8px;flex-wrap:wrap}
+.ph-c{display:flex;gap:6px;margin-top:11px}
+.ph-c span{font-size:12px;padding:5px 11px;border-radius:14px;background:rgba(255,255,255,.1);color:#f3f4fb}
+.ph-s{font-size:13px;line-height:1.6;color:#aeb4cb;margin-top:12px}
+.ph-b{display:flex;gap:9px;margin-top:16px}
+.ph-b .b{flex:1;height:46px;border-radius:11px;display:flex;align-items:center;justify-content:center;gap:7px;font-size:14px;font-weight:600;background:#fff;color:#0a0c13}
+.ph-b .b.g{background:rgba(255,255,255,.1);color:#f3f4fb;flex:none;width:54px}
+
+/* ===== admin frame (jellystructure console — wf.css "Soft Charcoal" values) ===== */
+.adm{position:absolute;width:980px;padding:26px 28px;border-radius:16px;background:rgba(46,51,66,.74);border:1px solid rgba(255,255,255,.08);
+  box-shadow:0 10px 34px rgba(0,0,0,.42);color:#dde1ec;font-family:'Sora',sans-serif;
+  /* real tokens from app/wf.css — dark “Soft Charcoal” theme */
+  --fill-2:#20242f;--fill-3:#2f3441;--line:rgba(255,255,255,.08);--line-2:rgba(255,255,255,.14);
+  --hi:#7b6ef0;--hi-soft:rgba(123,110,240,.16);--acc-ink:#c6bcfb;--ink:#dde1ec;--ink-soft:#9aa0b4;
+  --grad:linear-gradient(122deg,#b15cd0 0%,#7b6ef0 48%,#00a4dc 100%)}
+.adm-wrap{position:absolute;padding:34px;border-radius:22px;background:#16181f;border:1px solid rgba(255,255,255,.06)}
+.adm h3{font-family:'Space Grotesk',sans-serif;font-size:1.05rem;margin:0;letter-spacing:-.01em;color:#dde1ec}
+.adm .hint{font-size:.78rem;color:#9aa0b4;margin-top:6px;line-height:1.6}
+.adm .grp{margin-top:22px}
+.adm .glbl{font-size:.7rem;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:rgba(221,225,236,.42);margin-bottom:9px}
+/* .seg-pill + .toggle + .seg span.on reproduced verbatim from app/wf.css:190-203,363-365 */
+.segp{display:inline-flex;gap:3px;padding:3px;border-radius:9px;background:var(--fill-3);border:1px solid var(--line)}
+.segp b{font-family:'Sora',sans-serif;font-size:.82rem;font-weight:600;padding:6px 12px;border-radius:7px;color:var(--ink-soft)}
+.segp b.on{background:var(--hi-soft);color:var(--acc-ink);box-shadow:inset 0 0 0 1px rgba(123,110,240,.3)}
+.achips{display:flex;flex-wrap:wrap;gap:8px}
+.achip{display:inline-flex;align-items:center;gap:7px;padding:7px 12px;border-radius:8px;font-size:.8rem;font-weight:500;background:var(--fill-2);border:1px solid var(--line);color:var(--ink-soft)}
+.achip.on{background:var(--hi-soft);color:var(--acc-ink);border-color:rgba(123,110,240,.3)}
+.achip .bx{width:15px;height:15px;border-radius:4px;border:1.5px solid var(--line-2);display:flex;align-items:center;justify-content:center;font-size:10px}
+.achip.on .bx{background:var(--hi);border-color:transparent;color:#fff}
+.adm .note{margin-top:20px;padding:13px 15px;border-radius:10px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);font-size:.78rem;line-height:1.65;color:#9aa0b4}
+.adm .note b{color:#dde1ec}
+.adm .rowline{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:14px 0;border-top:1px solid rgba(255,255,255,.08)}
+.adm .rowline .t{font-size:.86rem;color:#dde1ec}
+.adm .rowline .d{font-size:.75rem;color:#9aa0b4;margin-top:3px}
+.tog{width:44px;height:25px;border:1px solid var(--line-2);border-radius:20px;background:var(--fill-3);position:relative;flex:none}
+.tog i{position:absolute;top:2px;left:3px;width:17px;height:17px;border-radius:50%;background:var(--ink-soft)}
+.tog.on{background:var(--grad);border-color:transparent}.tog.on i{left:auto;right:3px;background:#fff}
+</style>
+</head>
+<body>
+
+<!-- ============================ CONTEXT ============================ -->
+<div class="panel" style="left:0;top:0;width:1060px">
+  <h2>What a highlighted title tells you</h2>
+  <p class="lead">Right now, moving the D-pad across a Ravilo row tells you almost nothing new. A focused tile is a 210×315 poster, a title, and one line: <span class="mono">year · first genre</span>. Everything else the library holds — the synopsis, the other three genres, the runtime, whether there's Danish audio, how far into season 2 you are — costs a <b>Select</b> press and a full page load.</p>
+  <p>On a 10-foot screen the main activity isn't watching, it's <b>deciding</b>. So the question this document answers is: <i>how much can a title say while you are merely looking at it,</i> and what does that cost in bytes, in frames, and in D-pad presses.</p>
+
+  <h4>Three framings, and they pull apart</h4>
+  <div class="three">
+    <div><h5>Browsing is deciding</h5><p>The row should answer "what is this?" on its own. Information near the tile, no navigation, no commitment. → <b>A</b></p></div>
+    <div><h5>The page is a stage</h5><p>One title at a time deserves the whole screen — the hero you already built is sitting there showing something you didn't ask about. → <b>B</b>, <b>D</b></p></div>
+    <div><h5>The tile is the object</h5><p>Don't put information beside the thing; make the thing itself open up. Most tactile, most expensive. → <b>C</b></p></div>
+  </div>
+  <p style="margin-top:14px">Five directions below. <b>A</b> is the by-the-book one and the only one that works identically on every surface. <b>B</b> is the cinematic one. <b>C</b> is the show-off. <b>D</b> is atmosphere, not information, and composes with any of the others. <b>E</b> isn't a look at all — it's the timing rule that decides whether B and C feel alive or exhausting. <b>F</b> is the separate, easy win on the detail page itself.</p>
+
+  <div class="warn"><b>The constraint that shapes all of it:</b> Invariant 4 — the TV renders server-composed state and holds no derived catalog state. So none of this is a client feature. Every word in every plate has to arrive from <span class="mono">/api/tv/**</span>, which means the real decision isn't visual, it's <b>where the extra bytes come from</b> (see the costs panel, far right). That is also exactly why your instinct about a jellystructure switch is right: the flag doesn't just hide a panel, it stops the backend composing and shipping the data at all.</p></div>
+  <div class="good"><b>Recommendation:</b> <b>A + E</b> as one phase (plate, dwell-gated, off by default), <b>F</b> as a separate small phase that needs no new plumbing beyond two fields. <b>B</b> as a follow-up once A's payload question is settled — it reuses A's data exactly and adds only artwork. <b>C</b> drawn but not recommended: it reflows a lazy row on every focus move, which is the one thing invariant 11 tells us to measure before promising.</div>
+</div>
+
+<!-- ============================ BASELINE ============================ -->
+<div class="lbl" style="left:0;top:1020px">
+  <span class="tag no">Today</span>
+  <h3>A poster and five words</h3>
+  <small>Mýrin is focused. The library knows it has three genres, three seasons, Danish and English audio, Faroese subtitles, an IMDb score, a 52-minute runtime and that you're 18 minutes from the end of S2·E4.</small>
+  <small>The screen shows <b>“Mýrin”</b> and <b>“2019 · Crime”</b>. The hero above is advertising a different title entirely, on a 6.5-second timer, whether or not you're looking at it.</small>
+</div>
+<div class="cap" style="left:480px;top:1020px">Baseline · ravilo-app.js:341 · tile sub = year · genres[0]</div>
+<div class="shot" style="left:480px;top:1050px"><div class="inner"><div class="stagebg" id="s-base"></div></div></div>
+
+<!-- ============================ A ============================ -->
+<div class="lbl" style="left:0;top:1720px">
+  <span class="tag pick">Direction A · recommended</span>
+  <h3>The focus plate</h3>
+  <small>A plate opens beneath the focused tile after a short dwell: title at reading size, the full meta line, <b>every</b> genre, three lines of synopsis, the audio/subtitle flag strip you already designed for the detail hero, and — if you've started it — where you left off.</small>
+  <small>It is an <b>overlay</b>. Nothing reflows, no row moves, no tile resizes, and it adds <b>zero focus stops</b> — Down from the tile still goes to the next row, Select still opens the detail page.</small>
+  <small><b>Placement is a rule, not a position:</b> below the tile when there's room, <b>beside</b> it when there isn't. Drawing it at true scale is what surfaced this — the plate is ~380px tall, so on the 6-up browse grid (450px posters) nothing fits above or below and it has to take the nearest free side, flipping to the left edge for the last two columns. In rows, the focused row simply has to sit high enough, which it already does once you've navigated into it.</small>
+  <small><b>Third frame — the state that matters most:</b> a title the scanner found nothing for. The plate <b>shrinks to what exists</b> — no synopsis line, no flag strip, no resume row, no reserved gap — which is the same discipline R222 fixed in place for the slow-to-start note.</small>
+  <small>Because it's anchored to a tile and not to a page, it behaves identically on <b>Home, a channel page, browse, search, My List, More like this</b> — which is the whole reason to prefer it. The second shot is the browse grid, unchanged apart from the plate.</small>
+  <span class="cost"><b>Cost:</b> one new component, no layout risk, no new focus model. <b>Needs:</b> synopsis + genres + runtime + rating + resume for every item in every row.</span>
+</div>
+<div class="cap" style="left:480px;top:1720px">A · Home, second row focused · plate anchored to the tile</div>
+<div class="shot" style="left:480px;top:1750px"><div class="inner"><div class="stagebg" id="s-a1"></div></div></div>
+<div class="cap" style="left:1500px;top:1720px">A · browse grid · plate takes the free side, not the bottom</div>
+<div class="shot" style="left:1500px;top:1750px"><div class="inner"><div class="stagebg" id="s-a2"></div></div></div>
+<div class="cap" style="left:2520px;top:1720px">A · a title the scanner found nothing for</div>
+<div class="shot" style="left:2520px;top:1750px;width:500px;height:300px"><div class="inner" style="width:1000px;height:600px"><div class="stagebg" id="s-a3" style="width:1000px;height:600px"></div></div></div>
+<div class="lbl" style="left:2520px;top:2080px;width:500px">
+  <small>Same component, same anchor rule. <b>Glasberget</b> has a year, a season count, an age rating and one genre in the library — and no description, no second audio track, no resume position. Six fields collapse to three lines and the plate is 180px shorter. Nothing is greyed out, nothing says “unknown”, and the space isn't held open.</small>
+</div>
+
+<!-- ============================ B ============================ -->
+<div class="lbl" style="left:0;top:2420px">
+  <span class="tag">Direction B</span>
+  <h3>The hero mirrors what you're on</h3>
+  <small>Stop treating the hero as an advert. When focus enters a row, the hero cross-fades — after a longer dwell than A's — into <b>the title you are actually looking at</b>: its backdrop, its title logo, its full synopsis. The carousel parks itself and resumes only when focus returns to the top.</small>
+  <small>The pleasure of this one is that it's nearly free in UI terms: <b>.hero-slide already renders exactly these fields</b>. It's a data swap and a 500 ms fade, not a new component. The screen suddenly feels like it's paying attention to you.</small>
+  <small><b>But</b> it only exists where a hero exists — Home and channels with a configured hero. Browse, search and My List get nothing, so B is not a replacement for A, it's a layer on top of it. And a big backdrop per focus move is real image traffic, pulled from Jellyfin on the data plane.</small>
+  <span class="cost"><b>Open:</b> does Select on a mirrored hero play <i>that</i> title? (It must — otherwise the hero lies.) Does the carousel ever resume while you sit in a row?</span>
+</div>
+<div class="cap" style="left:480px;top:2420px">B · before — hero on its own carousel, focus in row 1</div>
+<div class="shot" style="left:480px;top:2450px"><div class="inner"><div class="stagebg" id="s-b1"></div></div></div>
+<div class="cap" style="left:1500px;top:2420px">B · after 900 ms on the same tile — hero has become that title</div>
+<div class="shot" style="left:1500px;top:2450px"><div class="inner"><div class="stagebg" id="s-b2"></div></div></div>
+
+<!-- ============================ C ============================ -->
+<div class="lbl" style="left:0;top:3120px">
+  <span class="tag">Direction C · drawn, not recommended</span>
+  <h3>The tile unfolds</h3>
+  <small>The focused poster becomes a landscape card in place: backdrop on top, facts beneath, a play affordance in the corner. Its neighbours slide right to make room. This is the most physical, most "designed" option and the one people notice.</small>
+  <small>It is also the one that <b>reflows a lazy row on every single focus move</b>. Constitution invariant 11 exists because D-pad traversal on this hardware already had to be rescued once with full AOT compilation — 7–9 missed frame deadlines per pass before, 0–1 after. A width animation on the focused child, with siblings translating, is precisely the workload that regressed. It can't be specced on a drawing; it needs a measurement on the BRAVIA first.</small>
+  <small>Second problem, quieter: the poster you were looking at <b>disappears</b> when it becomes a backdrop, so the row's shape changes under your thumb and left/right stops feeling like a shelf.</small>
+  <small>Third, visible in the drawing: the card is <b>taller than the row</b> — 541px against the poster's 396 — so it overruns the next row's heading. Either that stays (it reads as a bug) or the page reflows vertically as well as horizontally, which doubles the cost of the thing we already can't promise.</small>
+  <span class="cost"><b>If we ever build it:</b> only in fixed-width rows (never the 6-up grid), and the card must occupy the poster's slot exactly so nothing after it moves.</span>
+</div>
+<div class="cap" style="left:480px;top:3120px">C · focused tile expanded, row pushed right</div>
+<div class="shot" style="left:480px;top:3150px"><div class="inner"><div class="stagebg" id="s-c"></div></div></div>
+
+<!-- ============================ D ============================ -->
+<div class="lbl" style="left:0;top:3820px">
+  <span class="tag">Direction D · composes with A or B</span>
+  <h3>Ambience — the page takes on the title's colour</h3>
+  <small>Not information: mood. The focused title's backdrop bleeds into the page background at ~16% behind a heavy blur, with a soft accent wash following it. Nothing to read, nothing to focus, no layout at all — the room just changes temperature as you move.</small>
+  <small>Drawn here <b>without</b> a plate so you can judge it on its own. In practice it would sit under A. It's the cheapest "feels expensive" move available, and it reuses the backdrop B already needs.</small>
+  <small><b>Skin caution:</b> Noir is near-black with gold accents; a colour wash there reads as a stain rather than atmosphere, and R221 already found amber tints reading as warnings. Noir would take the art bleed at half strength and drop the accent wash entirely.</small>
+  <span class="cost"><b>Watch:</b> contrast. Every tile label and row heading must still clear 4.5:1 over the brightest part of the wash — cap opacity, don't tune it per title.</span>
+</div>
+<div class="cap" style="left:480px;top:3820px">D · ambience only, no plate — Big Buck Bunny focused</div>
+<div class="shot" style="left:480px;top:3850px"><div class="inner"><div class="stagebg amb-on" id="s-d"></div></div></div>
+
+<!-- ============================ E ============================ -->
+<div class="panel" style="left:0;top:4520px;width:1440px">
+  <span style="font-family:'JetBrains Mono',monospace;font-size:.66rem;letter-spacing:.09em;text-transform:uppercase;color:#7b6ef0">Direction E · the rule, not a look</span>
+  <h2 style="margin-top:8px">Effort earns detail: the dwell ladder</h2>
+  <p class="lead">A viewer holding Right for two seconds crosses fourteen tiles. If each one fires a plate, a backdrop swap and a colour change, the screen is a strobe and the network is on fire. Every direction above lives or dies on one number, so make it three numbers instead.</p>
+  <div class="tl">
+    <div class="rail"></div><div class="fill"></div>
+    <div class="stop a"></div><div class="stop b"></div><div class="stop c"></div><div class="stop d"></div>
+    <div class="txt a"><b>0 ms</b>Tile scales and rings, exactly as today. Fast traversal shows nothing else — no request, no fade.</div>
+    <div class="txt b"><b>~260 ms</b>You stopped. The plate fades up (A). Cheap: text already in the feed, no image fetch.</div>
+    <div class="txt c"><b>~900 ms</b>You're considering it. Backdrop arrives — hero mirror (B) and/or the ambience wash (D).</div>
+    <div class="txt d"><b>Leaving</b>Plate dismisses in 120 ms; the hero holds the last title rather than snapping back mid-glance.</div>
+  </div>
+  <p style="margin-top:16px">Two rules make it robust: the 900 ms tier <b>never blocks</b> on an image (if the backdrop isn't in cache it simply arrives late or not at all), and the neighbouring two tiles' art is <b>prefetched at small size</b> so the common case — one step left or right — is instant.</p>
+  <div class="no"><b>Rejected outright: trailer autoplay on focus.</b> It's the obvious next step and it's wrong here. Every focus-triggered preview is a Jellyfin playback session and, at this house's bitrates, very likely a transcode — the exact outbound behaviour 183 spent a phase pacing and R231 spent a phase repairing. A viewer sweeping a row would open a dozen encode sessions nobody watches. If motion is ever wanted, it should be a pre-rendered short loop the backend produces once, not a live stream.</div>
+  <div class="warn"><b>Also rejected:</b> putting R222's "slow to start on this TV" note in the plate. R222 deliberately scopes that sentence to the detail page and to episode rows; at row level it would appear and vanish as you sweep, which is exactly the flicker that phase's split-responsibility design was built to avoid.</div>
+</div>
+
+<!-- ============================ F ============================ -->
+<div class="lbl" style="left:0;top:5480px">
+  <span class="tag pick">Direction F · recommended, independent</span>
+  <h3>“About this title” — the detail page finally holds everything</h3>
+  <small>Separate from the focus question, and cheap. The detail page today clamps the synopsis behind <b>▾ more</b> and shows no runtime, no director, no studio, no first-air date, nothing about when it entered your library. All of it is already scanned and sitting in jellystructure.</small>
+  <small>A quiet <b>About</b> section under Cast &amp; Crew: the synopsis in full at 22px, and a two-column facts grid beside it. No focus stops — it's a reading surface, and Down still walks to <b>More like this</b>.</small>
+  <small>Under it, the <b>additional artwork</b> you asked about — the backdrops and episode stills the library already holds. This is the weakest idea in the document and I'd like to argue it down: on a TV a focusable image that does nothing on Select is a dead end. It earns its place only if Select opens a full-screen viewer, which is a real feature, not a strip. Recommend shipping About now and holding the strip.</small>
+  <span class="cost"><b>Needs:</b> runtime, director, studio/network, premiere date, date-added on the detail payload. All present in the scanner today.</span>
+</div>
+<div class="cap" style="left:480px;top:5480px">F · detail page, scrolled to About · artwork strip shown for discussion</div>
+<div class="shot" style="left:480px;top:5510px"><div class="inner"><div class="stagebg" id="s-f"></div></div></div>
+
+<!-- ============================ PHONE ============================ -->
+<div class="cap" style="left:1500px;top:5480px">Phone / web · there is no “focus”, so it's a peek</div>
+<div class="phone" style="left:1500px;top:5510px" id="ph"></div>
+<div class="lbl" style="left:1920px;top:5510px;width:340px">
+  <span class="tag">Pointer &amp; touch</span>
+  <h3>Same data, three input models</h3>
+  <small><b>TV:</b> dwell on focus, as drawn.</small>
+  <small><b>Web (pointer):</b> hover is focus. 260 ms is right for a mouse too, but the plate must follow the cursor's tile without the D-pad's prefetch assumptions.</small>
+  <small><b>Phone:</b> nothing hovers. The same fields become a <b>long-press peek sheet</b> with the two actions attached — which turns the plate from information into a shortcut. Tap still opens the detail page as it does now.</small>
+</div>
+
+<!-- ============================ ADMIN ============================ -->
+<div class="adm-wrap" style="left:0;top:6280px;width:1048px;height:716px"></div>
+<div class="cap" style="left:34px;top:6240px">The switch · jellystructure → Ravilo → per Jellyfin user</div>
+<div class="adm" style="left:34px;top:6314px" id="adm"></div>
+
+<!-- ============================ COSTS / OPEN ============================ -->
+<div class="panel" style="left:1140px;top:6280px;width:1060px">
+  <h2>What has to be true before any of this is a spec</h2>
+  <p class="lead">The visual choice is the easy half. These are the answers that decide whether this is one phase or three — and two of them can only be settled by the dev side.</p>
+  <ol>
+    <li><b>Where do the extra bytes come from?</b> The fork in the road. Either <span class="mono">/api/tv/home</span> fattens — synopsis, genres, runtime, rating, backdrop URL for every item in every row, call it ~1 KB × 40+ titles — or a per-item <span class="mono">GET /api/tv/item/{id}/peek</span> is fetched on dwell and cached. The first slows the cold start that R210–R213 spent four phases fixing; the second puts a request on a D-pad move. My instinct: fatten the feed but only when the flag is on, and ship the plate's text with the row it belongs to.</li>
+    <li><b>Backdrop traffic.</b> B and D need artwork per focused title, direct from Jellyfin. Full-size backdrops are out of the question at browse speed — this wants a small fixed width (~640) through the existing artwork proxy, a two-tile prefetch window, and no request at all below the 900 ms tier.</li>
+    <li><b>Does C survive the hardware?</b> Unanswerable from a drawing. Needs a real focus-sweep measurement on the stue BRAVIA before it's promised to anyone (invariant 11).</li>
+    <li><b>Items with nothing to say.</b> Plenty of library titles have no synopsis and no backdrop. The plate must <b>shrink to what exists</b> and never reserve empty space — R222's rule, and the reason the drawn plate has an "no description yet" state rather than a gap.</li>
+    <li><b>Which surfaces are in scope?</b> Discover/Seerr rows are TMDB-shaped, not library items; Live TV's "On now" row holds programmes, not titles. Both would need their own field mapping — I'd exclude both in phase one and say so.</li>
+    <li><b>Where the flag lives.</b> Per Jellyfin user in the Ravilo config (config is server-owned and synced, so it follows the viewer to every TV) — and <b>no setting on the TV itself</b>, per R216's standing rule. The admin card at left is drawn to that shape.</li>
+  </ol>
+  <hr>
+  <h4>What I'd write into the spec as invariants</h4>
+  <ul>
+    <li>The plate <b>renders, never computes</b> — no client-side derivation of runtime, "18 min left", or genre order.</li>
+    <li>The plate adds <b>no focus stops</b> and cannot move <b>Play</b>. Down from a tile goes where it goes today.</li>
+    <li>Flag off ⇒ the backend composes none of it and the payload is byte-identical to today's.</li>
+    <li>No focus-triggered playback of any kind, ever.</li>
+  </ul>
+</div>
+
+<script>
+/* ---- demo art: same hash→gradient the app uses, so tiles match ravilo-data.js ---- */
+function hash(s){let h=2166136261;for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619);}return Math.abs(h);}
+function grad(s){const h=hash(s);const a=h%360;const b=(a+36+(h>>3)%50)%360;const l1=30+(h>>5)%12,l2=12+(h>>7)%8;
+  return `linear-gradient(145deg, hsl(${a} 48% ${l1}%), hsl(${b} 52% ${l2}%))`;}
+
+const BBB_BD='assets/bbb-backdrop-landscape.png', BBB_P='assets/big-buck-bunny-poster.jpg', BBB_L='assets/bbb-logo.png';
+
+/* ---- chrome ---- */
+const APPBAR=`<div class="appbar">
+  <div class="brand"><img class="mark" src="assets/brand/ravilo-mark.svg" alt=""><span class="wm">Ravilo</span></div>
+  <div class="topnav"><span class="navitem cur">Home</span><span class="navitem">Series</span><span class="navitem">Films</span><span class="navitem">Discover</span><span class="navitem">My List</span></div>
+  <div class="right"><span class="clock">21:14</span>
+    <div class="search-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg></div>
+    <div class="avatar">JE</div></div></div>`;
+
+function poster(t,sub,o){o=o||{};
+  const art=o.img?`<img class="tile-img" src="${o.img}" alt="">`:`<div class="grad" style="background:${grad(t)}"></div><div class="tt">${t}</div>`;
+  return `<div class="tile poster${o.focused?' focused':''}"><div class="art">${art}${o.badge?`<div class="badge">${o.badge}</div>`:''}${o.pct?`<div class="tile-prog"><i style="width:${o.pct}%"></i></div>`:''}</div>
+    <div class="label">${t}</div><div class="sub">${sub}</div></div>`;}
+
+function row(title,items,o){o=o||{};
+  return `<div class="crow${o.active?' active':''}"><div class="crow-head"><h2>${title}</h2><span class="more">See all ›</span></div>
+    <div class="track" style="${o.pad?`padding-left:${o.pad}px`:''}">${items}</div></div>`;}
+
+const RAIL=`<div class="rail"><div class="rail-head"><h2>Channels</h2><span class="more">Collections your household has set up</span></div>
+  <div class="track">
+    <div class="studio" style="background:linear-gradient(135deg,#1648d0,#091646)"><div class="sheen"></div><div class="wm">Disney+</div></div>
+    <div class="studio" style="background:linear-gradient(135deg,#c8102e,#1a1a1a)"><div class="sheen"></div><div class="wm">Dansk<small>TV</small></div></div>
+    <div class="studio" style="background:linear-gradient(135deg,#5b2db8,#1a0f3d)"><div class="sheen"></div><div class="wm">HBO</div></div>
+    <div class="studio" style="background:linear-gradient(135deg,#0e4f99,#06203f)"><div class="sheen"></div><div class="wm">Varpið</div></div>
+    <div class="studio" style="background:linear-gradient(135deg,#0b3d91,#06203f)"><div class="sheen"></div><div class="wm">Universal</div></div>
+  </div></div>`;
+
+/* ---- heroes ---- */
+function hero(o){
+  const bg=o.img?`<img class="hero-backdrop" src="${o.img}" alt="">`
+    :`<div class="grad" style="position:absolute;inset:0;background:${o.bg||grad(o.title)}"></div><div class="hero-noise"></div>`;
+  const ttl=o.logo?`<img class="hero-logo" src="${o.logo}" alt="${o.title}">`:`<div class="hero-title">${o.title}</div>`;
+  return `<div class="hero" style="height:${o.h||556}px"><div class="hero-slide on">
+    <div class="hero-bg">${bg}<div class="hero-scrim"></div></div>
+    <div class="hero-body">
+      <div class="hero-kicker"><span>${o.kicker}</span><span class="n">${o.n}</span></div>
+      ${ttl}
+      <div class="hero-meta"><span class="tag">${o.badge}</span><span>${o.year}</span><span>${o.genres}</span><span class="rt">${o.rt}+</span></div>
+      <div class="hero-syn">${o.syn}</div>
+    </div></div>
+    <div class="hero-dots"><div class="d${o.mirror?'':' on'}"></div><div class="d"></div><div class="d"></div>${o.mirror?'<div class="d on"></div>':''}</div>
+    ${o.mirror?`<div style="position:absolute;right:64px;top:34px;z-index:6;display:flex;align-items:center;gap:10px;font-size:15px;letter-spacing:2px;text-transform:uppercase;font-weight:600;color:var(--accent-2);background:rgba(10,12,19,.55);padding:8px 16px;border-radius:20px"><span style="width:7px;height:7px;border-radius:50%;background:var(--accent-2);box-shadow:0 0 10px var(--accent-2)"></span>Showing what you're on</div>`:''}
+  </div>`;}
+
+const HERO_IRON=hero({h:470,title:'Iron Veil',kicker:'HBO Feature',n:'Film',badge:'4K',year:'2021',genres:'Action · Sci-Fi',rt:'16',
+  syn:'A decommissioned war machine hides in a border town, until the soldiers who built it come looking.'});
+const HERO_BBB=hero({h:470,title:'Big Buck Bunny',kicker:'In your library',n:'Film',badge:'HD',year:'2008',genres:'Animation · Comedy · Family',rt:'7',
+  img:BBB_BD,logo:BBB_L,mirror:1,syn:'A big, good-natured rabbit takes elaborate revenge on three rodents who have been tormenting the forest.'});
+
+/* ---- the plate ---- */
+function plate(o){o=o||{};
+  return `<div class="fplate${o.up?' up':''}${o.side?' side':''}" style="left:${o.left}px;top:${o.top}px">
+    <div class="fp-title">Mýrin</div>
+    <div class="fp-meta"><span class="fp-tag">4K</span><span>2019</span><span>Season 2 · 8 episodes</span><span>52 min</span>
+      <span class="cert lvl-3"><span class="cert-rg">DK</span><span class="cert-code">15</span></span>
+      <span class="fp-imdb">★ 7.9</span></div>
+    <div class="fp-chips"><span class="pchip lead">Crime</span><span class="pchip">Drama</span><span class="pchip">Mystery</span></div>
+    <div class="fp-syn">A murder in a basement flat reopens a case the town agreed to forget — and quietly indicts the detective who closed it.</div>
+    <div class="fp-flags"><span class="fp-lbl">Audio</span><span class="fi fi-dk pflag"></span><span class="fi fi-us pflag"></span>
+      <span class="fp-div"></span><span class="fp-lbl">Subs</span><span class="fi fi-dk pflag"></span><span class="fi fi-fo pflag"></span><span class="fp-more">+2</span></div>
+    <div class="fp-resume"><span class="fp-dot"></span>Resume S2 · E4 “Vetrarnótt” · 18 min left</div>
+  </div>`;}
+
+/* ---- shots ---- */
+const NORDIC=[['Nordvest','2018 · Crime'],['Mýrin','2019 · Crime'],['Arvur','2021 · Drama'],['Jarnvegur','2020 · Thriller'],['Frostbarn','2017 · Crime'],['Glasberget','2016 · Drama'],['Tórshavn 1918','2022 · Drama'],['Havets Fólk','2019 · Documentary']];
+const NEWLY=[['Big Buck Bunny','2008 · Animation'],['Sintel','2010 · Animation'],['Cosmos Laundromat','2015 · Sci-Fi'],['Havets Hjarta','2023 · Drama'],['Klovn í Nord','2021 · Comedy'],['Phantom Circuit','2023 · Thriller'],['Midnight Sun Patrol','2022 · Action'],['Iron Veil','2021 · Action']];
+
+function tiles(list,focusIdx,opts){return list.map((x,i)=>{
+  const o=Object.assign({focused:i===focusIdx},(opts&&opts[i])||{});
+  return poster(x[0],x[1],o);}).join('');}
+
+function contShelf(){
+  return row('Continue Watching',tiles([['Klovn í Nord','S3 · E2'],['Nordvest','S1 · E6'],['Arvur','S2 · E1'],['Sintel','42 min left'],['Glasberget','S1 · E3'],['Jarnvegur','S2 · E8']],-1,
+    {0:{pct:64},1:{pct:22},2:{pct:81},3:{pct:38},4:{pct:12},5:{pct:70}}));}
+
+/* baseline */
+document.getElementById('s-base').innerHTML=APPBAR+HERO_IRON+
+  `<div style="margin-top:6px">`+row('Continue Watching',tiles(NORDIC.slice(0,6),1,{1:{pct:22}}),{active:1})+`</div>`;
+
+/* A1 — home, scrolled one row down, plate under tile index 1 */
+document.getElementById('s-a1').innerHTML=APPBAR+`<div class="topmask"></div>`+
+  `<div class="scrolled deep">`+contShelf()+row('Nordic Crime',tiles(NORDIC,1,{1:{pct:22}}),{active:1})+row('Newly Added',tiles(NEWLY,-1,{0:{img:BBB_P}}))+`</div>`+
+  plate({left:171,top:658});
+
+const GRID=NORDIC.concat(NEWLY);
+/* A2 — browse grid */
+document.getElementById('s-a2').innerHTML=APPBAR+
+  `<div class="browse" style="padding:26px 64px 0">
+     <div class="pttl" style="font-family:'Space Grotesk',sans-serif;font-size:52px;font-weight:700;letter-spacing:-1.5px">Series</div>
+     <div class="pmeta" style="font-size:20px;color:var(--ink-soft);margin-top:6px;font-weight:500">148 titles · Genre: Crime · Sort: Recently added</div>
+   </div>
+   <div style="display:flex;gap:12px;padding:24px 64px 0">
+     ${['All','Crime','Drama','Comedy','Documentary','Danish','Faroese'].map((f,i)=>`<span class="pchip${i===1?' lead':''}" style="height:44px;padding:0 22px;font-size:19px">${f}</span>`).join('')}
+   </div>
+   <div class="pgrid" style="margin-top:30px">
+     <div class="grid-row">${GRID.slice(0,6).map((x,i)=>poster(x[0],x[1],{focused:i===2,pct:i===2?22:0})).join('')}</div>
+     <div class="grid-row">${GRID.slice(6,12).map(x=>poster(x[0],x[1],{})).join('')}</div>
+   </div>`+
+  plate({left:972,top:360,side:1});
+
+/* A3 — the empty state: the plate shrinks to what the library actually holds */
+document.getElementById('s-a3').innerHTML=
+  `<div style="position:absolute;left:60px;top:150px;width:210px">${poster('Glasberget','2016 · Drama',{focused:1})}</div>
+   <div class="fplate" style="left:340px;top:180px">
+     <div class="fp-title">Glasberget</div>
+     <div class="fp-meta"><span class="fp-tag">HD</span><span>2016</span><span>Season 1 · 6 episodes</span>
+       <span class="cert lvl-2"><span class="cert-rg">DK</span><span class="cert-code">12</span></span></div>
+     <div class="fp-chips"><span class="pchip lead">Drama</span></div>
+     <div class="fp-empty">No description yet</div>
+   </div>`;
+
+/* B before / after */
+document.getElementById('s-b1').innerHTML=APPBAR+HERO_IRON+`<div style="margin-top:6px">`+row('Newly Added',tiles(NEWLY,0,{0:{img:BBB_P}}),{active:1})+`</div>`;
+document.getElementById('s-b2').innerHTML=APPBAR+HERO_BBB+`<div style="margin-top:6px">`+row('Newly Added',tiles(NEWLY,0,{0:{img:BBB_P}}),{active:1})+`</div>`;
+
+/* C — unfolding card */
+document.getElementById('s-c').innerHTML=APPBAR+`<div class="topmask"></div>`+
+  `<div class="scrolled">`+contShelf()+
+  row('Nordic Crime',tiles(NORDIC.slice(1),-1,{}),{active:1,pad:590})+
+  row('Newly Added',tiles(NEWLY,-1,{0:{img:BBB_P}}))+`</div>`+
+  `<div class="ucard" style="left:64px;top:438px">
+     <div class="uc-art"><div class="g" style="background:${grad('Mýrin')}"></div><div class="fade"></div>
+       <div class="tt">Mýrin</div><div class="play">▶</div></div>
+     <div class="uc-body">
+       <div class="fp-meta"><span class="fp-tag">4K</span><span>2019</span><span>S2 · 8 episodes</span><span>52 min</span>
+         <span class="cert lvl-3"><span class="cert-rg">DK</span><span class="cert-code">15</span></span><span class="fp-imdb">★ 7.9</span></div>
+       <div class="fp-chips"><span class="pchip lead">Crime</span><span class="pchip">Drama</span><span class="pchip">Mystery</span></div>
+       <div class="fp-syn">A murder in a basement flat reopens a case the town agreed to forget — and quietly indicts the detective who closed it.</div>
+       <div class="fp-resume"><span class="fp-dot"></span>Resume S2 · E4 · 18 min left</div>
+     </div></div>`;
+
+/* D — ambience */
+document.getElementById('s-d').innerHTML=
+  `<div class="amb"><div class="art" style="background-image:url('${BBB_BD}')"></div><div class="wash"></div></div>`+
+  `<div style="position:relative;z-index:2">`+APPBAR+`<div class="topmask" style="background:linear-gradient(180deg,rgba(11,13,21,.96) 52%,rgba(11,13,21,.6) 78%,transparent)"></div>`+
+  `<div class="scrolled">`+contShelf()+row('Newly Added',tiles(NEWLY,0,{0:{img:BBB_P}}),{active:1})+row('Nordic Crime',tiles(NORDIC,-1,{}))+`</div></div>`;
+
+/* F — detail page About */
+document.getElementById('s-f').innerHTML=APPBAR+
+  `<div style="margin-top:-40px">
+    <div class="crow"><div class="crow-head"><h2>Cast &amp; Crew</h2></div>
+      <div class="track">${['Ingvar E. Sigurðsson','Ágústa Eva','Björn Hlynur','Sara Dögg','Ólafur Darri','Nína Dögg'].map(n=>
+        `<div style="width:190px;flex:none;text-align:center">
+          <div style="width:150px;height:150px;border-radius:50%;margin:0 auto;background:${grad(n)}"></div>
+          <div style="font-size:18px;color:var(--ink);margin-top:14px;font-weight:500">${n}</div>
+          <div style="font-size:15px;color:var(--ink-dim);margin-top:3px">Cast</div></div>`).join('')}
+      </div></div>
+    <div class="about">
+      <div class="about-head"><h2>About</h2><span class="sub">From your library · scanned by jellystructure</span></div>
+      <div class="about-grid">
+        <div>
+          <div class="about-syn">A murder in a basement flat reopens a case the town agreed to forget — and quietly indicts the detective who closed it.</div>
+          <div class="about-syn">Detective Erlendur works a killing that everyone else would rather file. The evidence is thin, the witnesses are related to each other, and the only person telling the truth has the least reason to.</div>
+        </div>
+        <div class="facts">
+          <div class="fact"><div class="k">Runtime</div><div class="v">52 min per episode</div></div>
+          <div class="fact"><div class="k">First aired</div><div class="v">14 March 2019</div></div>
+          <div class="fact"><div class="k">Director</div><div class="v">Baltasar Kormákur</div></div>
+          <div class="fact"><div class="k">Network</div><div class="v">RÚV · Dansk TV</div></div>
+          <div class="fact"><div class="k">Country</div><div class="v">Iceland · Denmark</div></div>
+          <div class="fact"><div class="k">Original language</div><div class="v">Icelandic</div></div>
+          <div class="fact"><div class="k">Seasons</div><div class="v">3 · 24 episodes</div></div>
+          <div class="fact"><div class="k">In your library since</div><div class="v">11 January 2026</div></div>
+        </div>
+      </div>
+    </div>
+    <div class="about" style="margin-top:44px"><div class="about-head"><h2>Images</h2><span class="sub">Backdrops and stills already on disk · holding this one</span></div></div>
+    <div class="artstrip">
+      <div class="astill focused"><img src="${BBB_BD}" alt=""></div>
+      <div class="astill"><div class="cnt" style="background:${grad('still two')}">Backdrop 2</div></div>
+      <div class="astill"><div class="cnt" style="background:${grad('still three')}">S2·E4 still</div></div>
+      <div class="astill"><div class="cnt" style="background:${grad('still four')}">S1·E1 still</div></div>
+      <div class="astill"><div class="cnt" style="background:${grad('still five')}">Logo</div></div>
+    </div>
+  </div>`;
+
+/* phone peek */
+document.getElementById('ph').innerHTML=
+  `<div class="ph-rows">
+    <div class="ph-h">Nordic Crime</div>
+    <div class="ph-track">${NORDIC.slice(0,4).map((x,i)=>
+      `<div class="ph-p${i===1?' sel':''}"><div class="a" style="background:${grad(x[0])}"><div class="tt">${x[0]}</div></div><div class="l">${x[0]}</div></div>`).join('')}</div>
+    <div class="ph-h">Newly Added</div>
+    <div class="ph-track">${NEWLY.slice(0,4).map(x=>
+      `<div class="ph-p"><div class="a" style="background:${grad(x[0])}"><div class="tt">${x[0]}</div></div><div class="l">${x[0]}</div></div>`).join('')}</div>
+  </div>
+  <div class="ph-scrim2"></div>
+  <div class="ph-sheet">
+    <div class="ph-grip"></div>
+    <div class="ph-t">Mýrin</div>
+    <div class="ph-m"><span>2019</span><span>·</span><span>Season 2 · 8 episodes</span><span>·</span><span>52 min</span><span class="cert lvl-3" style="transform:scale(.7);transform-origin:left center"><span class="cert-rg">DK</span><span class="cert-code">15</span></span></div>
+    <div class="ph-c"><span>Crime</span><span>Drama</span><span>Mystery</span></div>
+    <div class="ph-s">A murder in a basement flat reopens a case the town agreed to forget — and quietly indicts the detective who closed it.</div>
+    <div class="ph-b"><div class="b">▶ Resume · 18 min left</div><div class="b g">＋</div><div class="b g">›</div></div>
+  </div>`;
+
+/* admin card */
+document.getElementById('adm').innerHTML=
+  `<h3>Focus detail</h3>
+   <div class="hint">What a highlighted title shows before you open it. Applies to Home, channels, browse, search and My List for <b style="color:#dde1ec">Jógvan</b> on every device he signs into.</div>
+   <div class="grp"><div class="glbl">Level</div>
+     <div class="segp"><b>Off</b><b class="on">Info plate</b><b>Plate + hero mirror</b></div></div>
+   <div class="grp"><div class="glbl">Show in the plate</div>
+     <div class="achips">
+       ${[['Description',1],['All genres',1],['Runtime',1],['Age rating',1],['IMDb score',1],['Audio &amp; subtitle flags',1],['Where you left off',1],['Studio / network',0]].map(([t,on])=>
+         `<span class="achip${on?' on':''}"><span class="bx">${on?'✓':''}</span>${t}</span>`).join('')}
+     </div></div>
+   <div class="grp"><div class="glbl">Reveal after</div>
+     <div class="segp"><b>Immediately</b><b class="on">260 ms</b><b>500 ms</b></div></div>
+   <div class="rowline" style="margin-top:22px"><div><div class="t">Tint the page with the title's artwork</div><div class="d">Direction D. Ignored on the Noir skin.</div></div><div class="tog on"><i></i></div></div>
+   <div class="rowline"><div><div class="t">Include Discover and Live TV rows</div><div class="d">Those rows aren't library items — fields come from TMDB/Seerr and the EPG.</div></div><div class="tog"><i></i></div></div>
+   <div class="note"><b>Off ships nothing.</b> With the plate on, this user's home feed carries about <b>1.1 KB extra per title</b> — roughly 46 KB for a 42-title home — and the hero mirror adds one small backdrop fetch per considered title, direct from Jellyfin. <b>Ravilo itself shows no setting for this</b>; it lives here, per user, and follows them to every TV.</div>`;
+</script>
+</body>
+</html>

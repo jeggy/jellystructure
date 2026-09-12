@@ -152,6 +152,21 @@
 @keyframes plspin { to { transform: rotate(360deg); } }
 .pl-buffer .blab { font-size: 21px; font-weight: 600; color: var(--ink-soft); letter-spacing: .3px; }
 .pl-buffer .blab b { color: #fff; font-weight: 600; }
+/* R237 (FR-R237-5) — ONE line, added to the treatment above once a first attempt has failed.
+   Quieter than the label it sits under: it is reassurance, not a new state. */
+.pl-buffer .bstill { margin-top: -14px; font-size: 18px; color: var(--ink-dim); letter-spacing: .2px; min-height: 22px; }
+
+/* R237 — a start that cannot succeed. Per-cause words, and only the action that can resolve it. */
+.pl-fail { position: absolute; inset: 0; z-index: 10; display: none; flex-direction: column;
+  align-items: center; justify-content: center; gap: 20px; text-align: center; padding: 0 200px; background: rgba(4,5,9,.86); }
+.player.failed .pl-fail { display: flex; }
+.player.failed .pl-buffer { display: none; }
+.pl-fail .pf-h { font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 46px; letter-spacing: -1px; color: #fff; max-width: 1200px; }
+.pl-fail .pf-b { font-size: 24px; line-height: 1.45; color: var(--ink-soft); max-width: 1000px; }
+.pl-fail .pf-acts { display: flex; gap: 18px; margin-top: 16px; }
+.pl-fail .pf-btn { padding: 17px 34px; border-radius: 14px; font-size: 22px; font-weight: 600; color: var(--ink);
+  background: rgba(255,255,255,.10); border: 1px solid var(--line); }
+.pl-fail .pf-btn.foc { background: #fff; color: #0a0c13; border-color: transparent; box-shadow: 0 0 0 4px rgba(142,130,255,.4); }
 
 /* ============================================================
    TRACK PICKER (audio / subtitles popup)

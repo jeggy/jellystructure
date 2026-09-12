@@ -182,6 +182,55 @@
     <div class="tiny" style="line-height:1.6;color:var(--ink-soft);"><b style="color:var(--warn)">12 fields not fetched: TMDB rate limit</b> — across 5 episodes of <b>Klovn</b>, TMDB stopped answering before the title, overview or cast came back. Those episodes were written with what we already had, not with blanks.</div>
   </div>
 
+  <!-- MKV TRACK LAYOUT HEALTH (Phase 201 FR-201-10) — a defect surface, not a fixture: an empty sweep
+       removes the card entirely. Not run as a page-load side effect; swept on demand / once per session. -->
+  <div class="card" style="margin-bottom:14px;" id="mkvhealth">
+    <div class="row center" style="flex-wrap:wrap;gap:8px;">
+      <h4 style="margin:0;">MKV track layout</h4>
+      <span class="badge bad" id="mkvh-count">—</span>
+      <span class="spacer"></span>
+      <span class="muted tiny" id="mkvh-when">swept 14:02 · this session</span>
+      <span class="btn sm ghost" id="mkvh-check">Check now</span>
+    </div>
+    <div class="tiny muted" style="margin-top:7px;line-height:1.6;">Files whose <span class="mono">Tracks</span> element sits after the first <span class="mono">Cluster</span>. <b>Ravilo buffers forever on these; Jellyfin plays them fine</b> — which is why they never showed up as an error anywhere. Sweeping the full library takes under a minute.</div>
+    <hr class="dash" style="margin:11px 0 2px;">
+    <div class="mkvh-list" id="mkvh-list"></div>
+    <div class="tiny muted" style="margin-top:10px;">Nothing is recorded against these titles — a repaired one simply stops appearing on the next sweep. Repair from the title's own page.</div>
+  </div>
+  <script>
+  (function () {
+    // FR-201-9: the sweep groups by title, not by raw path — a path alone can't be navigated to.
+    const BROKEN = [
+      { title:'Klovn',            kind:'series', n:22, path:'/media/tv/Klovn',                       href:'series.html' },
+      { title:'The Simpsons',     kind:'series', n:14, path:'/media/tv/The Simpsons',                href:'series-simpsons.html' },
+      { title:'Johnny Bravo',     kind:'series', n:9,  path:'/media/tv/Johnny Bravo',                href:'series-johnnybravo.html' },
+      { title:'Nordvest',         kind:'series', n:3,  path:'/media/tv/Nordvest/Season 01',          href:'series.html' },
+      { title:'Sintel',           kind:'movie',  n:1,  path:'/media/movies/Sintel (2010)',           href:'media.html' },
+      { title:'Big Buck Bunny',   kind:'movie',  n:1,  path:'/media/movies/Big Buck Bunny (2008)',   href:'media.html' },
+      { title:'Agent 327',        kind:'movie',  n:1,  path:'/media/movies/Agent 327 (2017)',        href:'media.html' },
+    ];
+    const card = document.getElementById('mkvhealth');
+    if (!BROKEN.length) { card.remove(); return; }   // empty sweep ⇒ no card at all
+    const files = BROKEN.reduce((s, b) => s + b.n, 0);
+    document.getElementById('mkvh-count').textContent = files + ' files · ' + BROKEN.length + ' titles';
+    document.getElementById('mkvh-list').innerHTML = BROKEN.map(b =>
+      '<a class="mkvh-row" href="' + b.href + '"><span class="mkvh-th">' + (b.kind === 'series' ? 'TV' : 'film') + '</span>' +
+      '<span class="mkvh-main"><b>' + b.title + '</b><span class="mkvh-p">' + b.path + '</span></span>' +
+      '<span class="chip" style="font-size:.7rem;padding:2px 9px;">' + b.n + (b.kind === 'series' ? (b.n === 1 ? ' episode' : ' episodes') : (b.n === 1 ? ' file' : ' files')) + '</span>' +
+      '<span class="mkvh-go">›</span></a>').join('');
+    const btn = document.getElementById('mkvh-check'), when = document.getElementById('mkvh-when');
+    btn.addEventListener('click', () => {
+      if (btn.dataset.busy) return;
+      btn.dataset.busy = '1'; btn.textContent = 'Sweeping…'; btn.style.opacity = '.6';
+      setTimeout(() => {
+        delete btn.dataset.busy; btn.textContent = 'Check now'; btn.style.opacity = '';
+        const t = new Date();
+        when.textContent = 'swept ' + String(t.getHours()).padStart(2, '0') + ':' + String(t.getMinutes()).padStart(2, '0') + ' · 184 files read';
+      }, 2200);
+    });
+  })();
+  </script>
+
   <div class="row" style="align-items:stretch;">
     <div class="card fill">
       <div class="row center"><h4 style="margin:0;">Now processing</h4><span class="spacer"></span><span class="mono tiny">Glass Half (2015).mp4</span></div>

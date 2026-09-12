@@ -14,8 +14,20 @@
   const NEXTUP_AT = 34;     // seconds remaining → next-up card appears
   const COUNTDOWN = 8;      // next-up auto-advance countdown
   const HIDE_MS = 3600;     // auto-hide chrome after inactivity while playing
-  const EPRAIL_HIDE_MS = 30000;   // R208: auto-close the episode rail after inactivity
   const SKIP_BACK = 10, SKIP_FWD = 30;   // -10s / +30s
+  const STILL_AT = 5000;    // R237 FR-R237-5 — one extra line once a first attempt has failed
+
+  /* Strings live in ravilo-i18n.js; the fallbacks keep the chrome legible if it is loaded alone. */
+  function PT(k, f) { try { const s = window.t && window.t(k); return (s && s !== k) ? s : f; } catch (e) { return f; } }
+  /* R237 — a terminal start failure says what is wrong and offers only what can resolve it.
+     Retry survives ONLY where trying again can change the answer (FR-R237-3). */
+  const PL_FAIL = {
+    reauth:      { h: ['pl_err_reauth_h', 'This TV needs to be signed in again'], b: ['pl_err_reauth_b', 'Sign in again on this TV to keep watching.'], acts: ['signin', 'back'] },
+    forbidden:   { h: ['pl_err_forbidden_h', 'Not available on this profile'], b: ['pl_err_forbidden_b', 'This title isn’t part of what this profile can watch.'], acts: ['back'] },
+    gone:        { h: ['pl_err_gone_h', 'This title isn’t available any more'], b: ['pl_err_gone_b', ''], acts: ['back'] },
+    unreachable: { h: ['pl_err_unreachable_h', 'Couldn’t reach the server'], b: ['pl_err_unreachable_b', 'Check the connection and try again.'], acts: ['retry', 'back'] },
+  };
+  const PL_ACT = { signin: ['pl_sign_in', 'Sign in'], retry: ['pl_retry', 'Try again'], back: ['pl_back', 'Back'] };
 
   // simple inline icons
   const I = {
@@ -81,7 +93,8 @@
       <div class="pl-center">
         <div class="pl-pausemark">${I.play}</div>
       </div>
-      <div class="pl-buffer"><div class="pl-spin"></div><div class="blab"></div></div>
+      <div class="pl-buffer"><div class="pl-spin"></div><div class="blab"></div><div class="bstill"></div></div>
+      <div class="pl-fail"><div class="pf-h"></div><div class="pf-b"></div><div class="pf-acts"></div></div>
 
       <div class="pl-chrome">
         <div class="pl-scrim-top"></div>
@@ -172,7 +185,8 @@
       trick: q('.pl-trick'), trickImg: q('.pl-trick img'), trickG: q('.pl-trick .g'),
       trickTc: q('.pl-trick .tc'), trickLbl: q('.pl-trick .lbl'),
       playBtn: q('[data-pf="play"]'), pausemark: q('.pl-pausemark'),
-      nextBtn: q('.nextbtn'), buffer: q('.pl-buffer'), blab: q('.pl-buffer .blab'),
+      nextBtn: q('.nextbtn'), buffer: q('.pl-buffer'), blab: q('.pl-buffer .blab'), bstill: q('.pl-buffer .bstill'),
+      fail: q('.pl-fail'), failH: q('.pl-fail .pf-h'), failB: q('.pl-fail .pf-b'), failActs: q('.pl-fail .pf-acts'),
       pickCols: q('.pl-cols'),
       nu: { ep: q('.pl-nu-ep'), title: q('.pl-nu-title'), desc: q('.pl-nu-desc'),
             img: q('.pl-nu-shot img'), g: q('.pl-nu-shot .g'), kick: q('.nu-kicktext'),
@@ -190,7 +204,8 @@
     let focus = 'play';           // current focusable id in transport
     let epIdx = 0;                // focused episode in the rail
     let countdown = COUNTDOWN;
-    let tickTimer = null, hideTimer = null, bufferTimer = null, cdTimer = null, epRailTimer = null;
+    let tickTimer = null, hideTimer = null, bufferTimer = null, cdTimer = null, stillTimer = null;
+    let failActs = [], failIdx = 0;   // R237's failed-start card
     let introEntered = false, skipPromptOn = false, skipTimer = null;
     let cardMode = 'next', cardDismissed = false;
 
@@ -322,11 +337,44 @@
     }
 
     /* ---------- buffering ---------- */
-    function buffer(ms, label, then) {
+    /* R218 — one treatment, one string, whatever the cause: no delivery method, no timing hint
+       (R180 FR-RV-ASP1-2). R237 FR-R237-5 adds exactly ONE line, at ~5 s, and only where a first
+       attempt can have failed — a session start, never a seek. Nothing else about R218 changes. */
+    function buffer(ms, label, then, opts) {
       root.classList.add('buffering');
-      els.blab.innerHTML = label || `Loading from <b>Jellyfin</b>…`;
+      els.blab.innerHTML = label || PT('pl_loading', 'Loading…');
+      els.bstill.textContent = '';
+      clearTimeout(stillTimer);
+      if (opts && opts.still) stillTimer = setTimeout(() => { els.bstill.textContent = PT('pl_still', 'Still trying…'); }, STILL_AT);
       clearTimeout(bufferTimer);
-      bufferTimer = setTimeout(() => { root.classList.remove('buffering'); if (then) then(); }, ms);
+      bufferTimer = setTimeout(() => {
+        root.classList.remove('buffering'); clearTimeout(stillTimer); els.bstill.textContent = '';
+        if (then) then();
+      }, ms);
+    }
+    /* A start that cannot succeed stops pretending to load. Mockup-only trigger: ?playfail=
+       (reauth | forbidden | gone | unreachable | slow) — a mock has no real 409 to classify. */
+    function failStart(kind) {
+      const f = PL_FAIL[kind]; if (!f) return;
+      stopTick(); clearTimeout(bufferTimer); clearTimeout(stillTimer);
+      root.classList.remove('buffering', 'chrome', 'picker', 'nextup', 'eprail');
+      els.bstill.textContent = '';
+      els.failH.textContent = PT(f.h[0], f.h[1]);
+      els.failB.textContent = PT(f.b[0], f.b[1]);
+      els.failB.style.display = els.failB.textContent ? '' : 'none';
+      failActs = f.acts; failIdx = 0;
+      els.failActs.innerHTML = f.acts.map((a, i) =>
+        `<div class="pf-btn${i === 0 ? ' foc' : ''}${a !== 'back' ? ' pri' : ''}" data-pfa="${a}">${PT(PL_ACT[a][0], PL_ACT[a][1])}</div>`).join('');
+      root.classList.add('failed');
+    }
+    function paintFailFocus() {
+      [...els.failActs.children].forEach((el, i) => el.classList.toggle('foc', i === failIdx));
+    }
+    function failAct() {
+      const a = failActs[failIdx];
+      if (a === 'retry') { root.classList.remove('failed'); showChrome(); buffer(1400, null, () => setPlaying(true), { still: true }); return; }
+      if (a === 'signin') flash('Sign in — this profile signs in again');   // R234's existing forced sign-out exit
+      root.classList.remove('failed'); exit();
     }
 
     /* ---------- scrubbing ---------- */
@@ -335,7 +383,7 @@
     function commitScrub() {
       if (!scrubbing) return;
       const to = scrubPos; scrubbing = false; els.barWrap.classList.remove('scrubbing');
-      buffer(550, `Seeking…`, () => { pos = to; ended = false; paintTime(); paintFrame(pos); if (playing) startTick(); });
+      buffer(550, PT('pl_seeking', 'Seeking…'), () => { pos = to; ended = false; paintTime(); paintFrame(pos); if (playing) startTick(); });
       paintTime();
     }
     function skip(sec) {
@@ -482,10 +530,9 @@
       const c = els.erTrack.children[epIdx]; if (c) c.classList.add('focused');
       scrollEp();
     }
-    function armEpRailTimer() { clearTimeout(epRailTimer); epRailTimer = setTimeout(closeEpRail, EPRAIL_HIDE_MS); }
-    function openEpRail() { if (!ctx.episodes) return; root.classList.add('eprail'); showChrome(); clearTimeout(hideTimer); epIdx = ctx.epIndex; paintEpRail(); armEpRailTimer(); }
-    function closeEpRail() { clearTimeout(epRailTimer); root.classList.remove('eprail'); paintFocus(); scheduleHide(); }
-    function epNav(d) { epIdx = Math.max(0, Math.min(ctx.episodes.length - 1, epIdx + d)); paintEpRail(); armEpRailTimer(); }
+    function openEpRail() { if (!ctx.episodes) return; root.classList.add('eprail'); showChrome(); clearTimeout(hideTimer); epIdx = ctx.epIndex; paintEpRail(); }
+    function closeEpRail() { root.classList.remove('eprail'); paintFocus(); scheduleHide(); }
+    function epNav(d) { epIdx = Math.max(0, Math.min(ctx.episodes.length - 1, epIdx + d)); paintEpRail(); }
     function chooseEp() {
       if (epIdx === ctx.epIndex) { closeEpRail(); return; }
       const c = ctx.resolveEpisode ? ctx.resolveEpisode(epIdx) : null;
@@ -633,6 +680,15 @@
       e.preventDefault(); e.stopImmediatePropagation();
       wake();
 
+      // FAILED START owns input (R237) — Back always leaves, as it does in every other state
+      if (root.classList.contains('failed')) {
+        if (k === 'ArrowLeft') { failIdx = Math.max(0, failIdx - 1); paintFailFocus(); }
+        else if (k === 'ArrowRight') { failIdx = Math.min(failActs.length - 1, failIdx + 1); paintFailFocus(); }
+        else if (k === 'Enter' || k === ' ') failAct();
+        else if (k === 'Backspace' || k === 'Escape') { root.classList.remove('failed'); exit(); }
+        return;
+      }
+
       // NEXT-UP card owns input
       if (root.classList.contains('nextup')) {
         if (k === 'ArrowLeft') { focus = 'nu-play'; paintFocus(); }
@@ -723,17 +779,20 @@
       sel = { audio: c.audioDefault || 0, subs: c.subsDefault || 0 };
       focus = 'play';
       introEntered = false; skipPromptOn = false; cardDismissed = false; clearTimeout(skipTimer);
-      clearTimeout(epRailTimer);
       root.classList.remove('picker', 'nextup', 'eprail', 'skipintro');
       root.classList.toggle('series', !!c.episodes);
       paintMeta(); paintTime(); paintFrame(pos); paintFocus();
       if (c.episodes) buildEpRail();
       setPlaying(false);
       showChrome();
-      buffer(900, c.resumeNote ? `Resuming from <b>Jellyfin</b> · ${c.resumeNote}` : `Starting stream from <b>Jellyfin</b>…`, () => {
+      /* One string for every cause (R218). The ?playfail= knob is a mockup affordance: `slow` runs the
+         cold start long enough to show R237's extra line, the four causes render its failure card. */
+      const forced = (new URLSearchParams(location.search).get('playfail') || '').toLowerCase();
+      if (PL_FAIL[forced]) { buffer(1200, null, () => failStart(forced), { still: false }); return; }
+      buffer(forced === 'slow' ? 14000 : 900, null, () => {
         setPlaying(true);
         flashCenter();
-      });
+      }, { still: true });
     }
     function start(c) {
       open = true; ended = false;
@@ -741,8 +800,8 @@
       load(c, true);
     }
     function exit() {
-      stopTick(); clearTimeout(hideTimer); clearTimeout(bufferTimer); clearInterval(cdTimer); clearTimeout(epRailTimer);
-      root.classList.remove('on', 'picker', 'nextup', 'buffering', 'chrome', 'paused');
+      stopTick(); clearTimeout(hideTimer); clearTimeout(bufferTimer); clearTimeout(stillTimer); clearInterval(cdTimer);
+      root.classList.remove('on', 'picker', 'nextup', 'buffering', 'chrome', 'paused', 'failed');
       open = false; playing = false;
       const watched = ctx ? { title: ctx.title, pos, duration: ctx.duration } : null;
       restoreFocus(watched);

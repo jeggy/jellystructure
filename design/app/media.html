@@ -33,6 +33,7 @@
     <h1>Sintel <span class="muted">(2010)</span></h1>
     <span class="badge ok" id="match-badge">TMDB matched</span>
     <span class="audio-flags" id="audio-flags"></span>
+    <span class="audio-flags" id="sub-flags"></span>
     <span class="cert lvl-2" title="United States · MPA — via region cascade (Denmark had no rating)"><span class="cert-rg">US</span><span class="cert-code">PG</span></span>
     <a class="imdb-pill" href="https://www.imdb.com/title/tt1727587/" target="_blank" rel="noopener" title="IMDb 7.6/10 · 28,431 votes · synced 2d ago"><span class="imdb-wm"><span class="imdb-star">★</span>IMDb</span><b>7.6</b><span class="imdb-votes">28K</span></a>
     <a id="seed-pill-link" href="#tab=seeding" style="text-decoration:none;"></a>
@@ -96,6 +97,58 @@
     <span class="x" id="dismiss-drift" style="cursor:pointer;color:var(--ink-soft);">✕</span>
   </div>
 
+  <!-- Jellyfin-behind banner (Phase 193 FR-193-4). Distinct from drift: the NFO is current, Jellyfin
+       just hasn't re-read it. It does NOT clear itself, so the copy states elapsed time and offers the
+       sync inline; FR-193-5 suppresses it entirely while a scan is running. -->
+  <div class="note" id="behind-banner" style="margin-bottom:16px;background:var(--info-soft);border-color:rgba(63,182,245,.35);display:flex;gap:13px;align-items:flex-start;">
+    <span class="badge info" style="flex:none;margin-top:1px;">Jellyfin behind</span>
+    <div style="flex:1;min-width:0;">
+      <b>The NFO on disk is current — Jellyfin hasn't re-read it yet.</b>
+      <div class="tiny" style="margin-top:5px;line-height:1.6;">Written <b id="behind-ago">6 days ago</b>. Nothing re-reads it on a timer: Jellyfin will pick it up on its own next scan, or on the next freshness recheck of this title — <b id="behind-due">not due for 22 days</b>. Sync now if you need it sooner.</div>
+      <div class="pill-row" style="margin-top:10px;">
+        <span class="btn sm" id="behind-sync">Sync Jellyfin ↻</span>
+      </div>
+    </div>
+    <span class="x" id="dismiss-behind" style="cursor:pointer;color:var(--ink-soft);">✕</span>
+  </div>
+  <script>
+  (function () {
+    const bar = document.getElementById('behind-banner');
+    // FR-193-5: no banner at all while a scan is running — during a scan it is neither true nor useful.
+    const SCAN_RUNNING = false;
+    if (SCAN_RUNNING) { bar.remove(); return; }
+    document.getElementById('dismiss-behind').addEventListener('click', () => bar.remove());
+    document.getElementById('behind-sync').addEventListener('click', () => {
+      bar.remove();
+      if (typeof toast === 'function') toast('Sync requested — Jellyfin re-reading the .nfo files ↻');
+    });
+  })();
+  </script>
+
+  <!-- MKV track layout (Phase 201 FR-201-11/12) — a view over the last sweep result, never persisted state.
+       Rendered only while this title appears in it; it removes itself on repair and on an empty sweep. -->
+  <div class="note red" id="mkv-banner" style="margin-bottom:14px;display:flex;gap:11px;align-items:flex-start;">
+    <span class="badge bad" style="flex:none;">Can't play in Ravilo</span>
+    <div class="tiny" style="line-height:1.6;flex:1;"><b id="mkv-msg">This file can't play in Ravilo (track list unreachable).</b><br>A flag edit moved the file's <span class="mono">Tracks</span> element behind the first <span class="mono">Cluster</span>, so Ravilo buffers forever — Jellyfin plays it fine, which is why nothing else here looks wrong. Repair rewrites the header in place: no re-encode, ~0.6s per file.</div>
+    <span class="btn sm primary" id="mkv-fix" style="flex:none;">Fix now</span>
+  </div>
+  <script>
+  (function () {
+    // FR-201-12: the repair is scoped to this title's own paths, never the full library list.
+    let paths = ['/media/movies/Sintel (2010)/Sintel (2010).mkv'];
+    const bar = document.getElementById('mkv-banner'), btn = document.getElementById('mkv-fix'), msg = document.getElementById('mkv-msg');
+    if (!paths.length) { bar.remove(); return; }
+    btn.addEventListener('click', () => {
+      if (btn.dataset.busy) return;
+      btn.dataset.busy = '1'; btn.textContent = 'Repairing…'; btn.style.opacity = '.6';
+      setTimeout(() => {
+        bar.remove();
+        if (typeof toast === 'function') toast('Track layout repaired · 1 file · Ravilo can play it now');
+      }, 1400);
+    });
+  })();
+  </script>
+
   <div class="tabs2" id="tabbar">
     <span class="on" data-tab="overview">Overview</span>
     <span data-tab="tracks">Tracks &amp; subtitles</span>
@@ -112,6 +165,13 @@
   <div class="row" style="align-items:flex-start;">
     <!-- LEFT RAIL -->
     <div class="col" style="width:240px;flex:none;">
+      <!-- Freshness (Phase 196 FR-196-5): a skipped item must be explicable, not just "not due". -->
+      <div class="card">
+        <div class="row center"><h4 style="margin:0;">Freshness</h4><span class="badge info" style="margin-left:8px;">monthly</span></div>
+        <div class="tiny muted" style="margin-top:8px;line-height:1.7;">Files last examined<br><b style="color:var(--ink);">2026-09-05 01:49</b><br>Tier <b style="color:var(--ink);">monthly</b> — premiered 2010, not actively airing.<br>Next due <b style="color:var(--ink);">2026-10-05</b> (in 23 days).</div>
+        <div class="tiny muted" style="margin-top:8px;line-height:1.6;">A scan that skips this title is skipping it for this reason. <b>Re-pull from Jellyfin</b> examines it now regardless of the tier.</div>
+      </div>
+
       <div class="card">
         <h4 style="margin:0 0 8px;">Artwork</h4>
         <div class="imgslot" style="height:240px;margin-bottom:8px;"><span>poster.jpg<br>(drop / fetch)</span></div>
@@ -154,6 +214,28 @@
         <div class="tiny" style="margin-top:8px;" id="mlang-blurb">
           The resolver walks this title's audio tracks in physical order and fetches TMDB metadata in the first language that returns a result. Track flags are never touched by this.
         </div>
+        <!-- Metadata-language mismatch (Phase 191 FR-191-5): what is stored no longer matches what this
+             title resolves to, so the fields on screen were fetched in a language we would not pick today. -->
+        <div class="note" id="mlang-mismatch" style="margin-top:12px;background:var(--warn-soft);border-color:rgba(245,181,66,.4);display:flex;gap:11px;align-items:flex-start;">
+          <span class="badge warn" style="flex:none;">Language mismatch</span>
+          <div style="flex:1;min-width:0;">
+            <div class="tiny" style="line-height:1.6;">Stored metadata is in <b><span class="lang">da</span> Danish</b>, but this title now resolves to <b><span class="lang">en</span> English</b> — the tracks were re-ordered after the last fetch, so the title and overview on this page came from a language the resolver would no longer choose. Nothing is wrong on disk; it is just stale in the wrong language.</div>
+            <div class="pill-row" style="margin-top:9px;"><span class="btn sm" id="mlang-repull">Re-pull in <span class="lang" style="margin-left:2px;">en</span></span><span class="btn sm ghost" id="mlang-keep">Keep Danish</span></div>
+          </div>
+        </div>
+        <script>
+        (function () {
+          const bar = document.getElementById('mlang-mismatch');
+          document.getElementById('mlang-repull').addEventListener('click', () => {
+            bar.remove();
+            if (typeof toast === 'function') toast('Re-pulling title, overview & artwork from TMDB in en…');
+          });
+          document.getElementById('mlang-keep').addEventListener('click', () => {
+            bar.remove();
+            if (typeof toast === 'function') toast('Danish kept · metadata language pinned for this title');
+          });
+        })();
+        </script>
         <div class="mlang-band" id="mlang-band" style="display:none;">
           <div class="mb-top"><span class="lang" id="mlang-band-code">en</span><b id="mlang-band-name">English</b></div>
           <span class="tiny muted mb-when" id="mlang-band-when">chosen by you</span>
@@ -356,6 +438,17 @@
           <div class="row center" style="gap:10px;"><span class="op-ic" style="width:22px;height:22px;flex:none;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;font-size:.7rem;background:var(--ok-soft);color:var(--ok);">✓</span><span class="tiny">Track edits are <b>written to disk immediately</b>.</span></div>
           <hr class="dash" style="margin:10px 0;">
           <div class="tiny muted" style="line-height:1.6;">Flag &amp; language changes use <b>mkvpropedit</b> in place (~40ms, no re-encode). Re-ordering streams needs an <b>ffmpeg -c copy</b> remux (no re-encode, but rewrites the file) — so <b>Apply</b> <b>queues a background job</b> on the single media worker (one at a time; watch it in <a href="activity.html">Activity ▸ Jobs</a>) instead of blocking. Jellyfin picks the change up on its next scan, or when the job finishes if you chose <b>Save &amp; sync</b>.</div>
+        </div>
+
+        <!-- SIDECAR SUBTITLES ON DISK (Phase 200 FR-200-5) — read-only: a sidecar has no container flag,
+             so there is no order, no default and nothing to drag. -->
+        <div class="card" id="sidecar-card">
+          <div class="row center"><h4 style="margin:0;white-space:nowrap;">Sidecar subtitles</h4><span class="badge info" style="margin-left:9px;">read-only</span><span class="spacer"></span><span class="mono tiny muted" id="sc-count"></span></div>
+          <div class="tiny muted" style="margin:7px 0 0;line-height:1.6;">Subtitle files found on disk beside <span class="mono">Sintel (2010).mkv</span>. Language, <b>forced</b> and <b>SDH</b> are read from the filename — there is no container flag to set, so these have <b>no order and no default</b>. A filename with no recognisable language stays <b>untagged</b> and routes to Triage rather than being guessed at.</div>
+          <hr class="dash" style="margin:12px 0;">
+          <div class="sc-cols"><span>lang</span><span>file</span><span style="text-align:right;">flags</span></div>
+          <div id="sc-list"></div>
+          <div class="tiny muted" style="margin-top:10px;">Sidecars are picked up by the next scan of this title, so the list fills in over the freshness cadence rather than all at once.</div>
         </div>
 
         <!-- BAZARR SIDECAR SUBTITLES (Phase 157) -->
@@ -786,18 +879,44 @@
     const kindName = () => kind === 'audio' ? 'Audio' : 'Subtitle';
     const ordMsg = () => kindName() + ' order queued · ffmpeg remux job (Activity ▸ Jobs)';
 
-    // pagebar audio-language flags — driven by the same model.audio (physical track order).
-    // Untagged tracks (no language) are skipped; if none are tagged the strip is hidden entirely.
+    // Sidecar subtitle files on disk (Phase 200). One list, read by both the pagebar strip and the card.
+    const SIDECARS = [
+      { lang:'en', file:'Sintel (2010).en.srt',     src:'Bazarr · Addic7ed',                      forced:false, sdh:false },
+      { lang:'en', file:'Sintel (2010).en.hi.srt',  src:'on disk · not managed by Bazarr',        forced:false, sdh:true  },
+      { lang:'nl', file:'Sintel (2010).nl.srt',     src:'on disk · not managed by Bazarr',        forced:false, sdh:false },
+      { lang:'',   file:'Sintel (2010).forced.srt', src:'on disk · no language in the filename',  forced:true,  sdh:false },
+    ];
+    (function renderSidecars() {
+      const el = document.getElementById('sc-list'); if (!el) return;
+      const tag = (t, c) => '<span class="chip" style="background:var(--' + c + '-soft);border-color:transparent;color:var(--' + c + ');font-size:.7rem;padding:2px 9px;">' + t + '</span>';
+      el.innerHTML = SIDECARS.map(s => {
+        const lang = s.lang ? '<span class="lang">' + s.lang + '</span>' : '<span class="lang" style="opacity:.45;">—</span>';
+        const tags = [s.sdh ? tag('SDH', 'info') : '', s.forced ? tag('forced', 'warn') : '', s.lang ? '' : tag('untagged', 'bad')].filter(Boolean).join('');
+        return '<div class="sc-row">' + lang + '<div class="sc-main"><span class="sc-name">' + s.file + '</span><span class="sc-sub">' + s.src + '</span></div>' +
+          '<div class="sc-tags">' + (tags || '<span class="tiny muted">—</span>') + '</div></div>';
+      }).join('');
+      document.getElementById('sc-count').textContent = SIDECARS.length + ' files on disk';
+    })();
+
+    // pagebar language strips — AUDIO from model.audio, SUBTITLES from embedded subs + sidecars
+    // (Phase 200 FR-200-5). Physical track order, first occurrence of each language wins; untagged
+    // tracks are skipped, and a strip with nothing tagged is hidden entirely. Deduped by LANGUAGE,
+    // never by track, so +N counts languages — R239's counting rule.
     const flagStrip = document.getElementById('audio-flags');
-    function updateHeaderFlags() {
-      if (!flagStrip) return;
-      const langs = model.audio.map(t => t.lang).filter(l => l && LANG_CC[l]);
-      if (!langs.length) { flagStrip.innerHTML = ''; return; }
-      const shown = langs.slice(0, FLAG_MAX);
-      const extra = langs.length - shown.length;
+    const subStrip = document.getElementById('sub-flags');
+    function strip(el, label, langs) {
+      if (!el) return;
+      const uniq = [...new Set(langs.filter(l => l && LANG_CC[l]))];
+      if (!uniq.length) { el.innerHTML = ''; return; }
+      const shown = uniq.slice(0, FLAG_MAX);
+      const extra = uniq.length - shown.length;
       const flags = shown.map(l => '<span class="fi fi-' + LANG_CC[l] + '" title="' + (LANGNAME[l] || l) + '"></span>').join('');
       const more = extra > 0 ? '<span class="af-more" title="' + extra + ' more">+' + extra + '</span>' : '';
-      flagStrip.innerHTML = '<span class="af-label">Audio</span><span class="af-row">' + flags + more + '</span>';
+      el.innerHTML = '<span class="af-label">' + label + '</span><span class="af-row">' + flags + more + '</span>';
+    }
+    function updateHeaderFlags() {
+      strip(flagStrip, 'Audio', model.audio.map(t => t.lang));
+      strip(subStrip, 'Subtitles', model.subs.map(t => t.lang).concat(SIDECARS.map(s => s.lang)));
     }
 
     function render() {
@@ -1054,10 +1173,10 @@
         sub:'16:9 · textless · 3840×2160', disk:{ lang:'xx', res:'3840×2160' },
         cands:[ C('xx',8.6,3840,2160,200,true), C('xx',8.2,1920,1080,230), C('xx',7.5,1920,1080,160), C('xx',6.7,1920,1080,60),
           C('en',7.9,3840,2160,280), C('en',7.1,1280,720,320), C('de',6.9,1920,1080,20) ] },
-      clearlogo:{ key:'clearlogo', label:'Clearlogo', ratio:'transparent', file:'clearlogo.png', kind:'logo', status:'bad', railHue:0,
-        sub:'transparent · missing', disk:null,
-        cands:[ C('xx',8.3,800,310,0), C('xx',7.8,500,200,0), C('xx',7.1,400,155,0),
-          C('de',8.0,800,310,0), C('de',7.4,600,240,0), C('fr',6.9,500,200,0), C('ja',6.5,500,200,0) ] },   // note: no 'en'
+      clearlogo:{ key:'clearlogo', label:'Clearlogo', ratio:'4:1', file:'clearlogo.png', kind:'logo', status:'bad', railHue:0,
+        sub:'4:1 transparent · missing', disk:null,
+        cands:[ C('xx',8.3,800,200,0), C('xx',7.8,500,125,0), C('xx',7.1,400,100,0),
+          C('de',8.0,800,200,0), C('de',7.4,600,150,0), C('fr',6.9,500,125,0), C('ja',6.5,500,125,0) ] },   // note: no 'en' · real logos run ~5:1
       banner:{ key:'banner', label:'Banner', ratio:'5.4:1', file:'banner.jpg', kind:'banner', status:'warn', railHue:300,
         sub:'5.4:1 · low-res 1000×185', disk:{ lang:'en', res:'1000×185', lowres:true },
         cands:[ C('en',7.4,1000,185,300,true), C('en',7.0,1500,278,330), C('xx',6.8,1500,278,210), C('xx',6.2,1000,185,180) ] },
@@ -1080,11 +1199,13 @@
     function st(a){ return state[a.key] || (state[a.key] = initState(a)); }
 
     // ---- rail ----
-    const RDIM = { poster:[30,45], fanart:[48,27], clearlogo:[48,27], banner:[48,18] };
+    // clearlogo is 4:1 (Phase 192 FR-192-5) — 16/9 cropped a wordmark to its middle third.
+    const RDIM = { poster:[30,45], fanart:[48,27], clearlogo:[48,12], banner:[48,18] };
     function railThumb(a){
       const d = RDIM[a.key]; let inner;
-      if (a.localUrl) inner = '<img src="'+a.localUrl+'" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;">';
-      else if (a.kind==='logo' && a.status==='bad') inner = '<div class="aw-checker" style="position:absolute;inset:0;"></div>';
+      if (a.localUrl && a.kind==='logo') inner = '<div class="aw-checker" style="position:absolute;inset:0;"><img src="'+a.localUrl+'" style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain;"></div>';
+      else if (a.localUrl) inner = '<img src="'+a.localUrl+'" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;">';
+      else if (a.kind==='logo') inner = '<div class="aw-checker" style="position:absolute;inset:0;"></div>';
       else inner = '<div class="aw-fill" style="filter:hue-rotate('+a.railHue+'deg);"></div>';
       return '<div class="th" style="width:'+d[0]+'px;height:'+d[1]+'px;">'+inner+'</div>';
     }
@@ -1108,7 +1229,7 @@
     const grid = document.getElementById('aw-grid');
     const foot = document.getElementById('aw-foot');
     const dzName = document.getElementById('aw-dz-name');
-    const GDIM = { portrait:[124,186], land:[220,124], logo:[196,92], banner:[300,56] };
+    const GDIM = { portrait:[124,186], land:[220,124], logo:[220,55], banner:[300,56] };
 
     function filtered(a){
       const s = st(a); let list = a.cands.filter(c => s.active.has(c.lang));
@@ -1150,8 +1271,10 @@
       const names = [...s.active].map(l => l==='xx' ? 'No-language' : (LN[l]||l));
       const hidden = a.cands.filter(c => !s.active.has(c.lang)).length;
       let warn = false, lead = '';
-      if (s.mode==='fallback-xx') { warn = true; lead = '<b>No '+LN[RES]+' '+a.label.toLowerCase()+' on TMDB.</b> Falling back to <b>No-language</b> art'+(a.kind==='logo'?' — the best choice for logos':'')+'. '; }
-      else if (s.mode==='fallback-any') { warn = true; lead = '<b>No '+LN[RES]+' or no-language '+a.label.toLowerCase()+'.</b> Showing every language. '; }
+      // FR-192-6: say when there is nothing saved yet, before the fallback copy.
+      if (a.kind==='logo' && a.status==='bad') lead = '<b>No logo saved yet</b> — pick one below, or let the next artwork run fetch it. ';
+      if (s.mode==='fallback-xx') { warn = true; lead += '<b>No '+LN[RES]+' '+a.label.toLowerCase()+' on TMDB.</b> Falling back to <b>No-language</b> art'+(a.kind==='logo'?' — the best choice for logos':'')+'. '; }
+      else if (s.mode==='fallback-any') { warn = true; lead += '<b>No '+LN[RES]+' or no-language '+a.label.toLowerCase()+'.</b> Showing every language. '; }
       const body = lead
         + 'Showing <b>'+names.join('</b> + <b>')+'</b>'
         + (s.mode==='resolved' ? ' — matched to this title’s resolved language <span class="lang">en</span>'+(s.prefer==='textless'?', textless preferred':s.prefer==='text'?', with-text preferred':'') : '')
@@ -1163,7 +1286,7 @@
     function cardHTML(c, a){
       const tl = c.lang==='xx', d = GDIM[a.kind];
       let bg;
-      if (a.kind==='logo') bg = '<div class="aw-checker" style="position:absolute;inset:0;"><div class="aw-logomark" style="font-size:'+(d[0]/9)+'px;">Sintel</div></div>';
+      if (a.kind==='logo') bg = '<div class="aw-checker" style="position:absolute;inset:0;"><div class="aw-logomark" style="font-size:'+(d[0]/9)+'px;"><span class="wm">Sintel</span></div></div>';
       else bg = '<div class="aw-fill" style="filter:hue-rotate('+c.hue+'deg);"></div>';
       return '<div class="aw-cand'+(c.current?' current':'')+'" data-pick="'+c._i+'" style="width:'+d[0]+'px;height:'+d[1]+'px;">'
         + bg + (c.current?'<div class="aw-ribbon">ON DISK</div>':'')
@@ -1196,9 +1319,9 @@
       lbPanel = document.getElementById('aw-lb-panel'), lbPrev = document.getElementById('aw-lb-prev'),
       lbNext = document.getElementById('aw-lb-next'), lbCounter = document.getElementById('aw-lb-counter');
     let lbList = [], lbIdx = 0;
-    const LBDIM = { portrait:[348,522], land:[660,372], logo:[560,263], banner:[792,148] };
+    const LBDIM = { portrait:[348,522], land:[660,372], logo:[660,165], banner:[792,148] };
     function lbArtHTML(c, a){ const d = LBDIM[a.kind]; let bg;
-      if (a.kind==='logo') bg = '<div class="aw-checker" style="position:absolute;inset:0;"><div class="aw-logomark" style="font-size:'+(d[0]/9)+'px;">Sintel</div></div>';
+      if (a.kind==='logo') bg = '<div class="aw-checker" style="position:absolute;inset:0;"><div class="aw-logomark" style="font-size:'+(d[0]/9)+'px;"><span class="wm">Sintel</span></div></div>';
       else bg = '<div class="aw-fill" style="filter:hue-rotate('+c.hue+'deg);"></div>';
       lbArt.style.width = d[0]+'px'; lbArt.style.height = d[1]+'px';
       return bg + (c.current?'<div class="aw-ribbon">ON DISK</div>':''); }

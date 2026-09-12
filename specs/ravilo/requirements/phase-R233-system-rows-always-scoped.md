@@ -6,34 +6,7 @@
 > was correctly filtered to the collection (*Primate*, *Until Dawn*, *Oldboy*, *Mutiny*). The two
 > system rows on one page disagreed about what page they were on.
 
-**Status:** ✓ Built 2026-09-05 — design-authored 2026-09-04 with the owner, built the next day. Compiles
-clean (`compileKotlinLinuxX64` + `compileKotlinWasmJs`), full suite green (185/185), no schema
-migration (FR-R233-4 — `ignoreUnknownKeys` already handles the field's removal on read). Not
-dev-reviewed. **Not live-verified against the running dev backend** — this repo's own working
-agreement is never to restart the live backend without asking, and the "Verification" table below
-needs the new code actually loaded (a curl against the currently-running process would only prove the
-*old*, pre-fix behaviour). Ask the user before restarting to run those checks.
-
-### What's built
-
-- `HomeFeedService.kt` — FR-R233-1/2 (custom-mode branch always filters Continue via `matchesChannel`,
-  `scope` conditionals deleted; inherit-mode `RowKind.CONTINUE` gains the same filter, applied only
-  when `channelFilter != null` so Home is an unconditional no-op) and FR-R233-3
-  (`continueWatchingAll`'s `scopedToChannel`/mode check collapsed to "filters whenever the channel
-  resolves"). FR-R233-5 untouched by construction — every change is a `.filter{}` layered on top of
-  `canonicalContinueList()`'s existing return value; nothing built the canonical list from a
-  channel-filtered source or touched `continueListCache`'s key.
-- `shared/.../Models.kt` — FR-R233-4: `SystemContinue.scope`/`SystemNewly.scope` deleted; the
-  `ChannelRowsConfig`/`ChannelSystemRows` KDoc corrected to describe scope-always-on and the R145
-  mis-citation removed.
-- `RaviloConfig.kt` (admin editor) — FR-R233-7: `scopeSeg()`, the `contScope`/`newlyScope` locals, the
-  `.cf-sysscope` click handler, and both segmented controls deleted; the two row descriptions are now
-  unconditional ("In-progress titles from this collection" / "Newest titles in this collection").
-  **`design/app/ravilo-builders.js`/`.css` needed no change** — the 2026-09-05 design sync had already
-  removed the same segmented control and its 2-line CSS rule before this phase was built (confirmed:
-  no `scope:'all'`/`scope:'channel'` literal remains in the new-channel template either); see the
-  design-sync restore commit from the same session, which explicitly left this removal alone as
-  legitimate rather than reverting it.
+**Status:** Planned — design-authored 2026-09-04 with the owner. Not dev-reviewed, not built.
 
 ## Problem
 

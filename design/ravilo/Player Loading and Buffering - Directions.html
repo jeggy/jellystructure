@@ -66,6 +66,19 @@ a{color:var(--accent-2)}a:hover{color:var(--ink)}
 .scrub .tile{width:300px;height:169px;border-radius:12px;border:2px solid rgba(255,255,255,.5);background:#05070d;overflow:hidden;display:flex;align-items:center;justify-content:center}
 .scrub .tv2{font-family:'JetBrains Mono',monospace;font-size:22px;font-weight:600}
 
+.err{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;text-align:center;padding:0 200px;background:rgba(4,5,9,.86)}
+.err .eh{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:46px;letter-spacing:-1px;color:#fff;max-width:1200px}
+.err .eb{font-size:24px;line-height:1.45;color:var(--ink-soft);max-width:1000px}
+.err .acts{display:flex;gap:18px;margin-top:16px}
+.err .btn{padding:17px 34px;border-radius:14px;font-size:22px;font-weight:600;color:var(--ink);background:rgba(255,255,255,.10);border:1px solid var(--line)}
+.err .btn.pri{background:#fff;color:#0a0c13;border-color:transparent;box-shadow:0 0 0 4px rgba(142,130,255,.4)}
+.bstill{font-size:18px;color:var(--ink-dim);letter-spacing:.2px}
+.causes{display:grid;gap:10px}
+.cause{padding:14px 16px;border-radius:12px;background:rgba(255,255,255,.04);border:1px solid var(--line)}
+.cause b{display:block;font-size:19px;margin-bottom:4px}
+.cause span{font-size:16px;color:var(--ink-soft)}
+.cause em{display:block;margin-top:7px;font-size:14px;color:var(--ink-dim);font-style:normal;letter-spacing:.4px;text-transform:uppercase}
+
 /* spec / decision panel */
 .panel{position:absolute;width:1280px;background:var(--card);border:1px solid var(--line);border-radius:20px;padding:44px 48px;color:var(--ink);box-shadow:0 30px 90px rgba(0,0,0,.5)}
 .panel h3{font-family:'Space Grotesk',sans-serif;font-size:30px;margin:0 0 6px;letter-spacing:-.5px}
@@ -82,7 +95,7 @@ a{color:var(--accent-2)}a:hover{color:var(--ink)}
 .warn{margin-top:28px;padding:16px 20px;border-radius:12px;background:rgba(245,181,66,.10);border:1px solid rgba(245,181,66,.35);font-size:17px;line-height:1.5;color:#f0d9a8}
 </style>
 </head>
-<body style="width:6100px;height:4100px;position:relative">
+<body style="width:6100px;height:5620px;position:relative">
 
 <div class="lbl" style="left:0;top:40px">A · Quiet<small>Today's drawn treatment (`.pl-buffer`), reused verbatim for the cold start. Nothing but a spinner and the one already-translated string. Safest, and the least reassuring after 20 seconds.</small></div>
 <div class="tv" style="left:0;top:160px">
@@ -213,6 +226,50 @@ a{color:var(--accent-2)}a:hover{color:var(--ink)}
   <p class="lead">R220 (black picture, perfect audio, after Home or TV standby) is a <b>fifth waiting moment</b> that none of R218's three signals detect: the player reports playing, not buffering, not seeking, and the first frame rendered long ago. Its recovery ladder can run for ~4.5 s, and today it changes nothing on screen — a viewer sits on a frozen black frame with no chrome. Frame <b>E</b> above is the reference: reuse <b>C's</b> presentation verbatim, triggered by the recovery instead of by <span class="mono">isBuffering</span>. Nothing new to translate, nothing new to draw — the ladder just needs to flip R218's existing stall moment on for its own duration (R220 open question 7).</p>
 
   <div class="warn"><b>Binding constraint (R180 FR-RV-ASP1-2):</b> nothing here may vary by delivery method. The same overlay, the same string and the same timings cover an instant direct play, an audio-only transcode and a 20-second 4K transcode. The title context in B is catalog data the viewer already saw — it is not a cue about how the stream is being delivered.</div>
+</div>
+<div class="lbl" style="left:0;top:4140px">F (moment) · the start failed — <b style="color:#7b6ef0">R237</b><small>Not a waiting state at all, which is the point: three Play presses each got an immediate, deterministic answer, and the viewer was shown fifteen seconds of spinner instead. A terminal failure now says what is wrong in words that name no product, no protocol and no status code — and offers only the action that can resolve it. Drawn here as the re-auth case, the one cause with a real next step.</small></div>
+<div class="tv" style="left:0;top:4260px">
+  <div class="scrim" style="background:#000"></div>
+  <div class="err">
+    <div class="eh">This TV needs to be signed in again</div>
+    <div class="eb">Sign in again on this TV to keep watching.</div>
+    <div class="acts"><div class="btn pri">Sign in</div><div class="btn">Back</div></div>
+  </div>
+</div>
+
+<div class="lbl" style="left:2020px;top:4140px">B + <i>Still trying…</i> — <b style="color:#7b6ef0">R237</b><small>The whole of FR-R237-5: R218's cold start, unchanged, plus <b>one</b> line once a first attempt has failed (~5 s — R218's own 60 s deepen is far past the measured 4 s give-up point). No attempt number, no progress count, no cause, no new component. It turns a wait the viewer cannot interpret into one they can.</small></div>
+<div class="tv" style="left:2020px;top:4260px">
+  <div class="buf" style="gap:34px">
+    <div class="pulse"><i></i><i></i><i></i></div>
+    <div class="ctx">
+      <div class="kick">Severance</div>
+      <div class="tt">Chikhai Bardo</div>
+      <div class="sub">Season 2 · Episode 7</div>
+    </div>
+    <div class="sweep"><span></span></div>
+    <div class="blab" style="margin-top:-6px">Loading…</div>
+    <div class="bstill" style="margin-top:-24px">Still trying…</div>
+  </div>
+</div>
+
+<div class="panel" style="left:4040px;top:4260px">
+  <h3>Added 2026-09-12 — R237</h3>
+  <p class="lead">Two additions, both built into the mockups: a failed-start card with per-cause copy, and one line on the cold start. Everything else about R218 is untouched — same overlay, same debounce, same single <b>“Loading…”</b> string, same rule that nothing varies by delivery method.</p>
+
+  <h4>What each cause says, and what it offers</h4>
+  <div class="causes">
+    <div class="cause"><b>This TV needs to be signed in again</b><span>Sign in again on this TV to keep watching.</span><em>Sign in · Back</em></div>
+    <div class="cause"><b>Not available on this profile</b><span>This title isn’t part of what this profile can watch.</span><em>Back only</em></div>
+    <div class="cause"><b>This title isn’t available any more</b><span>No body line — there is nothing to add.</span><em>Back only</em></div>
+    <div class="cause"><b>Couldn’t reach the server</b><span>Check the connection and try again.</span><em>Try again · Back</em></div>
+  </div>
+  <p class="lead" style="margin:18px 0 0"><b>Retry appears only where retrying can change the answer.</b> A deterministic refusal is not a thing to try five times; a transport error, 408, 429 or 5xx still is. Back leaves from every state, as it always has, and still ends the session.</p>
+
+  <h4>Two things this drawing cannot settle</h4>
+  <div class="qa">
+    <div><b>“Couldn’t reach the server”</b>The one string that names a component, kept because it is the only message whose action genuinely concerns the network — the spec itself flags it for review. The Danish and Faroese lines here deliberately avoid the word (<i>Kunne ikke få forbindelse</i> · <i>Fekk ikki samband</i>), so if EN follows them the whole set is clean.</div>
+    <div><b>“Indlæder…”</b>This file has recorded the Danish loading string as <i>Indlæder…</i> since R218; the ordinary Danish is <i>Indlæser…</i>. Check it against the shipped table before adding strings beside it — R203 was exactly this, one character, live for months.</div>
+  </div>
 </div>
 
 </body>
