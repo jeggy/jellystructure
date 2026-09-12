@@ -220,7 +220,12 @@ the admin panel for this pass, reverted after), release build, AOT-compiled (`co
   title that is not focused" claim during a fast sweep was implied by the frame data above but not
   independently eyeballed frame-by-frame.
 
-## 2026-09-12 (later) — bug fix: a panel opened near the right edge of the screen was invisible
+## 2026-09-12 (later) — bug: a panel opened near the right edge of the screen was invisible
+
+> **Superseded by the 2026-09-13 entry below.** The problem statement here is correct and still worth
+> reading; the fix described is not what ships — it was measurement-based, which turned out to be the
+> root cause of two follow-up bugs. `focusDetailRowOpenHorizontalScrollDelta()` survives only as the
+> unused sibling of the formula that replaced it, kept for its documentation value.
 
 **The bug, reported live:** focus a tile near the right edge of a row and wait out the dwell — the
 poster grows and the row's height increases (both correct), but the panel itself — every fact J
@@ -230,30 +235,69 @@ the FOCUSED TILE's own bounds; the panel is a separate `LazyRow` item spliced in
 (FR-R240-3), so bringing the tile into view says nothing about whether the panel — everything to its
 right — fits on screen at all.
 
-**Fix:** `focusDetailRowOpenHorizontalScrollDelta()` (new, pure, `FocusDetailScroll.kt`, mirrors
-FR-R240-9's vertical formula: `panelRight + margin − screenWidth`) plus a `LaunchedEffect(openAfterKey)`
-inside `StaticContentRow` itself (not `HomeScreen.kt` — the row's own `LazyListState` lives there,
-inaccessible to the caller) that measures the panel's own right edge via `onGloballyPositioned` on a
-wrapping `Box`, waits out the same `ROW_OPEN_TWEEN_MS` settle window FR-R240-9 does (same R232-hazard
-discipline — never read a mid-tween measurement), then `listState.animateScrollBy(delta)` when
-`delta > 0`. This scrolls the row itself further right so the opened tile lands nearer the left of
-the screen with the whole panel visible — visually confirmed on the stue TV: a tile at the row's
-literal last position scrolled fully into view with room to spare, panel completely legible. 4 new
-`FocusDetailHorizontalScrollTest` cases on the pure formula;
-`:ravilo-ui:compileDebugKotlinAndroid`/`compileKotlinWasmJs`/`testDebugUnitTest`/`allTests` all green.
-Device-verified with a deliberate single-tile focus (twice, two different rows/tiles) — a full row
-sweep only ever needs to reveal one settled tile's panel at a time, same as the vertical mechanism.
+**The fix attempted here** measured the panel's own right edge via `onGloballyPositioned` on a
+wrapping `Box`, waited out `ROW_OPEN_TWEEN_MS`, then animated one corrective scroll. It demonstrably
+worked for a deliberate single-tile focus (verified twice on the stue TV), which is why it was
+believed complete — but it both read as two separate motions and, more seriously, depended on a
+measurement that a `LazyRow` frequently never produces. See below.
 
-**A separate, pre-existing bug found while re-testing, NOT fixed here:** landing on a tile via a fast
-repeated-press sweep (5 presses at both 200ms and 500ms intervals, reproduced twice each) sometimes
-opens **no panel at all**, even 3+ seconds after input stops — well past the household's 1000ms dwell.
-A single deliberate press to the exact same tile (not part of a sweep) opens it correctly every time,
-which rules out anything data- or scroll-related. This points at `FocusDetailController`'s dwell
-scheduling itself (`onFocus()`'s `dwellJob?.cancel()`/reschedule race) rather than anything this fix
-touched — plausibly a spurious extra `onFocused` callback firing during the row's own scroll-driven
-recomposition and re-cancelling the dwell timer before it ever completes. Not investigated further
-this pass — flagged for a separate look, since root-causing it means instrumenting
-`FocusDetailController`, not `ContentRow.kt`.
+## 2026-09-13 — both remaining bugs root-caused and fixed: measure-then-scroll was circular
+
+Two live reports drove this pass, and they turned out to be **the same underlying mistake**: the
+horizontal scroll was derived from a *measurement of the panel*, which is not something that can be
+relied on to exist.
+
+**Report 1 — "the poster gets cut off on the left, and it depends whether it's a Continue Watching
+item or a standard poster row."** The scroll had no upper bound, so a row whose panel needed more room
+than existed to the tile's right scrolled far enough to drag the *tile itself* off the left edge. The
+per-row difference is the tell: Continue Watching uses `TileVariant.LANDSCAPE` (much wider) against a
+standard row's `POSTER`, so the same panel overflows at different points — different tile widths,
+different overscroll, clipping on some rows and not others.
+
+**Report 2 — "after a fast sweep, no panel appears at all."** Device logging proved every piece of
+state was correct: the dwell fired, `HomeScreen.kt`'s machine transitioned
+`panelKey`/`panelUi`/`panelVisible`, and `ContentRow.kt` genuinely composed the `FocusDetailPanel`
+node — yet nothing was ever presented, while the app's own on-screen clock kept ticking (so: not a
+freeze). The signature was `onGloballyPositioned` firing **exactly once with a pre-layout `0f` and
+never again**. Three separate theories were tested on-device and disproven: a dwell-cancellation race
+in `FocusDetailController` (logs show the dwell is fine), a recomposition storm starving
+`AnimatedVisibility` (rewritten to `snapshotFlow`; bug reproduced identically), and a swallowed
+`CancellationException` from a `runCatching` around `scrollBy` (removed; bug reproduced identically).
+
+**The actual root cause, common to both:** a `LazyRow` never *places* an item that falls outside its
+viewport, and `onGloballyPositioned` only fires for placed nodes. J's panel is spliced in to the RIGHT
+of a tile that is frequently already at the right edge — so at exactly the moment the panel most needs
+scrolling into view, it is unplaced and unmeasurable. **Measure-the-panel-then-scroll-it-in is
+circular**: it can't be measured until it's scrolled in, and the old code wouldn't scroll until it had
+measured. When the row's own preceding native focus-scroll happened to settle first (which a
+mechanically even ~200ms sweep reliably produces), nothing ever re-triggered layout and the panel sat
+composed-but-unplaced indefinitely — until any later keypress caused an unrelated layout pass and
+"discovered" it, which is exactly the self-healing behaviour observed.
+
+**Fix — compute the target from known geometry, never from the panel's own measurement.**
+`focusDetailRowOpenTargetScrollDelta()` (new, pure, `FocusDetailScroll.kt`) takes the opening tile's
+current offset/width from `listState.layoutInfo` (the tile *is* placed — it's focused), derives its
+grown width from FR-R240-7's own `ROW_OPEN_WIDTH_SCALE` rather than measuring mid-animation, and adds
+`FOCUS_DETAIL_PANEL_WIDTH` (newly exported from `FocusDetailPanel.kt` — the panel's width is a
+declared constant, so nothing needs to be laid out first). The scroll runs on the **same
+`tween(ROW_OPEN_TWEEN_MS)`** the tile's growth and the panel's expand already use, so all three read
+as one motion instead of the earlier grow-pause-slide. `onGloballyPositioned`, the measuring `Box`
+wrapper, and the whole `snapshotFlow` correction loop are gone — the circular dependency is removed
+rather than worked around.
+
+**And the clamp that fixes report 1:** the result is capped at the tile's own offset, so the opening
+tile can never be scrolled past the row's content start. On a viewport too narrow to fit tile + panel
+together this deliberately leaves the panel's tail off-screen rather than clipping the tile — the tile
+is what the viewer is pointing at. 6 new `FocusDetailRowOpenTargetScrollTest` cases, including one
+asserting the raw (unclamped) arithmetic *would* have clipped, so the clamp can't be silently
+regressed away.
+
+**Device-verified on the stue TV**, release build, AOT-compiled, across all the shapes that
+previously failed: the fast sweep that produced no panel now opens correctly every time; LANDSCAPE
+(Continue Watching) and POSTER (Newly Added — Movies) rows both open with the full poster visible and
+nothing clipped; and a same-row lateral hop still crossfades correctly (FR-R240-10 intact).
+27 focus-detail unit tests green; `:ravilo-ui:compileDebugKotlinAndroid`/`compileKotlinWasmJs`/
+`testDebugUnitTest`/`allTests` all clean.
 
 ## Open questions
 

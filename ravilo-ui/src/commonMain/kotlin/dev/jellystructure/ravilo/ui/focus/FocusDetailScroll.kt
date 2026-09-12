@@ -39,3 +39,40 @@ fun focusDetailRowOpenHorizontalScrollDelta(
     screenWidthPx: Float,
     marginPx: Float,
 ): Float = panelRightPx + marginPx - screenWidthPx
+
+/**
+ * The same horizontal target, computed from KNOWN geometry instead of a measurement — the only form
+ * that works before the panel has ever been placed (see [dev.jellystructure.ravilo.ui.components.FOCUS_DETAIL_PANEL_WIDTH]'s
+ * doc for why measuring it first is circular).
+ *
+ * [openTileOffsetPx] is the opening tile's current left edge in the row's own scroll space and
+ * [openTileWidthPx] its width *before* it grows — the grown width is derived here via
+ * [widthScale] (FR-R240-7's `ROW_OPEN_WIDTH_SCALE`) rather than measured, since at the moment this
+ * runs the growth animation has only just started. [viewportEndPx] is the row's own viewport end
+ * (already net of the row's end content-padding, so that inset comes for free).
+ *
+ * **The result is clamped so the opening tile can never be scrolled past the row's own content start.**
+ * That clamp is not a detail — it is the fix for a real reported bug: without it, a row whose panel
+ * needs more room than exists to the tile's right scrolls far enough to push the tile itself off the
+ * left edge, visibly clipping the poster. The amount of room needed depends on the tile's own width,
+ * which differs per [dev.jellystructure.ravilo.ui.components.TileVariant] (Continue Watching's
+ * LANDSCAPE tiles vs. a standard POSTER row), which is exactly why the clipping was reported as
+ * happening on some rows and not others. Clamping here means the panel may stay partly off-screen on
+ * a very narrow viewport — deliberately preferred over clipping the focused tile, since the tile is
+ * the thing the viewer is actually pointing at.
+ */
+fun focusDetailRowOpenTargetScrollDelta(
+    openTileOffsetPx: Float,
+    openTileWidthPx: Float,
+    widthScale: Float,
+    itemSpacingPx: Float,
+    panelWidthPx: Float,
+    viewportEndPx: Float,
+): Float {
+    val grownTileEnd = openTileOffsetPx + openTileWidthPx * widthScale
+    val panelEnd = grownTileEnd + itemSpacingPx + panelWidthPx
+    val needed = panelEnd - viewportEndPx
+    // Never scroll the opening tile past the row's own content start (offset 0 in this space).
+    val maxWithoutClipping = openTileOffsetPx.coerceAtLeast(0f)
+    return needed.coerceIn(0f, maxWithoutClipping)
+}
