@@ -5,6 +5,7 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
+import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,6 +18,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.derivedStateOf
@@ -40,6 +42,8 @@ import kotlinx.coroutines.launch
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalWindowInfo
@@ -59,6 +63,7 @@ import dev.jellystructure.ravilo.ui.components.SeeAllTile
 import dev.jellystructure.ravilo.ui.components.StaticContentRow
 import dev.jellystructure.ravilo.ui.components.Tile
 import dev.jellystructure.ravilo.ui.focus.dpadFocusable
+import dev.jellystructure.ravilo.ui.focus.focusDetailRowOpenScrollDelta
 import dev.jellystructure.ravilo.ui.focus.rememberEdgeBringIntoViewSpec
 import dev.jellystructure.ravilo.ui.focus.backToTopOnBack
 import dev.jellystructure.ravilo.ui.focus.requestFocusRetryingOrMoveNative
@@ -340,7 +345,7 @@ private fun HomeLoaded(
         // position (never a top-nav tab — it only ever lives among the Home rows).
         val clampedOnNowIndex = onNowRowIndex.coerceIn(0, feed.rows.size)
         items(clampedOnNowIndex, key = { ri -> feed.rows[ri].id }) { ri ->
-            ContentRowItem(feed.rows[ri], feed, store, onItemSelect, onSeeAll, rowFocusRequester = if (!hasChannels && ri == 0) firstRowFR else null)
+            ContentRowItem(feed.rows[ri], feed, store, listState, onItemSelect, onSeeAll, rowFocusRequester = if (!hasChannels && ri == 0) firstRowFR else null)
         }
         if (liveTvChannels.isNotEmpty()) {
             item(key = "on_now") {
@@ -353,7 +358,7 @@ private fun HomeLoaded(
         }
         items(feed.rows.size - clampedOnNowIndex, key = { i -> feed.rows[clampedOnNowIndex + i].id }) { i ->
             val isVeryFirstRow = !hasChannels && clampedOnNowIndex == 0 && liveTvChannels.isEmpty() && i == 0
-            ContentRowItem(feed.rows[clampedOnNowIndex + i], feed, store, onItemSelect, onSeeAll, rowFocusRequester = if (isVeryFirstRow) firstRowFR else null)
+            ContentRowItem(feed.rows[clampedOnNowIndex + i], feed, store, listState, onItemSelect, onSeeAll, rowFocusRequester = if (isVeryFirstRow) firstRowFR else null)
         }
     }
     }
@@ -427,6 +432,7 @@ private fun ContentRowItem(
     row: Row,
     feed: dev.jellystructure.shared.tv.HomeFeed,
     store: HomeStore,
+    listState: LazyListState,
     onItemSelect: (MediaCard) -> Unit,
     onSeeAll: (Row) -> Unit = {},
     rowFocusRequester: FocusRequester? = null,
@@ -467,9 +473,34 @@ private fun ContentRowItem(
         }
     }
 
+    // FR-R240-9 — the row's own top/foot in window space, refreshed on every layout pass (incl. every
+    // frame of the open/collapse width-and-height tween). The effect below only ever READS these once
+    // the tween has settled, so a mid-animation value never leaks into the scroll target.
+    var rowTopPx by remember(row.id) { mutableStateOf(0f) }
+    var rowFootPx by remember(row.id) { mutableStateOf(0f) }
+    val density = LocalDensity.current
+    val screenHeightPx = LocalWindowInfo.current.containerSize.height.toFloat()
+    val scope = rememberCoroutineScope()
+    LaunchedEffect(rowHasOpen) {
+        if (rowHasOpen) {
+            // Sequenced after the growth (R232's hazard): wait out the same tween Tile/FocusDetailPanel
+            // animate on, so rowFootPx reflects the GROWN row, not the row mid-tween.
+            kotlinx.coroutines.delay(RaviloMotion.ROW_OPEN_TWEEN_MS.toLong())
+            val peekPx = with(density) { 150.dp.toPx() }
+            val footMarginPx = with(density) { 40.dp.toPx() }
+            val delta = focusDetailRowOpenScrollDelta(rowTopPx, rowFootPx, screenHeightPx, peekPx, footMarginPx)
+            // FR-R240-9's own "never scrolls back up": a row that already fits (delta <= 0) is left alone.
+            if (delta > 0f) scope.launch { runCatching { listState.animateScrollBy(delta) } }
+        }
+    }
+
     StaticContentRow(
         title = row.title,
         items = row.items,
+        modifier = Modifier.onGloballyPositioned { coords ->
+            rowTopPx = coords.positionInWindow().y
+            rowFootPx = rowTopPx + coords.size.height
+        },
         trailingItem = if (canSeeAll) ({
             // Phase R240 — a "→ See all" tile carries no MediaCard/facts; focusing it must say nothing.
             Box(modifier = Modifier.onFocusChanged { if (it.hasFocus) store.focusDetail.clear() }) {
