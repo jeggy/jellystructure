@@ -299,6 +299,33 @@ nothing clipped; and a same-row lateral hop still crossfades correctly (FR-R240-
 27 focus-detail unit tests green; `:ravilo-ui:compileDebugKotlinAndroid`/`compileKotlinWasmJs`/
 `testDebugUnitTest`/`allTests` all clean.
 
+### Same pass — the panel's own width was a fixed number, and it didn't fit
+
+Reported immediately after the above: Taskmaster's synopsis was **cut off mid-word on the right**
+("…his ever-loyal assista", "…skills of fi"). This is the same family of bug seen from the other
+side. The scroll now positions the panel correctly, but the panel itself was a hardcoded
+`620.dp` — and on this house's 960dp-wide TV that simply doesn't fit next to a grown tile:
+
+| row | grown tile | needs | vs 960dp screen |
+|---|---|---|---|
+| LANDSCAPE (Continue Watching) | 256 → 366dp | 1098dp | **overflows by 138dp** |
+| POSTER (standard rows) | 155 → 221dp | 953dp | fits, by 7dp |
+
+Which is exactly why it looked intermittent: it clipped in Continue Watching and nowhere else, and
+the 7dp of headroom on poster rows was pure luck. **Fix:** `focusDetailPanelWidthFor(variant)`
+derives the width as `screen − gutters − grownTile − spacing`, so the panel always ends exactly at
+the row's own end gutter — 482dp on LANDSCAPE, 627dp on POSTER, 591dp on SQUARE, each summing to
+precisely 960dp. Nothing can overflow by construction, at any tile shape or screen size, and the
+row's scroll target reduces to "bring the opening tile to the row's content start". `StaticContentRow`
+takes the same value as `openPanelWidth` so the scroll maths and the thing being scrolled can never
+disagree.
+
+The two horizontal lines inside the panel (the badge/meta line and the audio/subtitle-flags + resume
+line) became `FlowRow`s in the same change: they were laid out against 620dp and would otherwise run
+their last items off the edge of a 482dp panel — re-introducing the same clipping one level down.
+Device-verified: Taskmaster's synopsis now reads to "…crowned the Taskmaster champion?" in full, and
+a POSTER row with four genre chips and ten language flags fits without wrapping at all.
+
 ## Open questions
 
 1. **The reflow cost on the living-room BRAVIA is unmeasured — this is why J ships off.** J changes a

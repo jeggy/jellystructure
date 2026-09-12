@@ -57,6 +57,7 @@ import dev.jellystructure.ravilo.ui.components.ChannelCard
 import dev.jellystructure.ravilo.ui.components.FOCUS_DETAIL_LINE_HEIGHT
 import dev.jellystructure.ravilo.ui.components.FocusDetailLine
 import dev.jellystructure.ravilo.ui.components.FocusDetailPanel
+import dev.jellystructure.ravilo.ui.components.focusDetailPanelWidthFor
 import dev.jellystructure.ravilo.ui.components.HeroCarousel
 import dev.jellystructure.ravilo.ui.components.HomeLoadingShell
 import dev.jellystructure.ravilo.ui.components.SeeAllTile
@@ -449,6 +450,9 @@ private fun ContentRowItem(
     // Compute variant here so urlResolver and Tile use the same value.
     val rowVariant = if (row.kind == RowKind.CONTINUE) TileVariant.LANDSCAPE else feed.tileShape.toTileVariant()
     val effectiveFocusDetail = effectiveFocusDetailMode(feed.focusDetail, reduceMotion)
+    // J's panel takes whatever a grown tile of THIS row's variant leaves — see focusDetailPanelWidthFor.
+    // Passed to StaticContentRow too so its scroll target and the panel it scrolls agree on one number.
+    val panelWidth = focusDetailPanelWidthFor(rowVariant)
     Spacer(Modifier.height(RaviloDimens.rowGap))
     // R187 (FR-RV-BROWSE1-1) — a "→ See all" TILE (not a header link — see SeeAllTile's doc comment)
     // only when there's more than a screen's worth AND the row has something to resolve into: CONTINUE
@@ -560,15 +564,16 @@ private fun ContentRowItem(
         rowFocusRequester = rowFocusRequester,  // R236
         // Phase R240 (FR-R240-3) — J's panel, spliced in right after [panelKey]'s tile. Deliberately
         // NOT given a FocusRequester anywhere inside it (FR-R240-5) — see FocusDetailPanel's own doc.
+        openPanelWidth = panelWidth,
         openAfterKey = panelKey,
         openPanel = if (panelKey != null) ({
-            panelUi?.let { FocusDetailPanel(ui = it, visible = panelVisible) }
+            panelUi?.let { FocusDetailPanel(ui = it, visible = panelVisible, width = panelWidth) }
         }) else null,
         // FR-R240-10 — always exiting (visible = false): this slot only ever holds the tile that just
         // stopped being open, mid-shrink, independent of whatever is opening in [panelKey] above.
         closingAfterKey = closingKey,
         closingPanel = if (closingKey != null) ({
-            closingUi?.let { FocusDetailPanel(ui = it, visible = false) }
+            closingUi?.let { FocusDetailPanel(ui = it, visible = false, width = panelWidth) }
         }) else null,
     ) { _, card, fr ->
         // R113: in Continue Watching, show the season/episode as a small on-image badge for TV
