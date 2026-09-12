@@ -3774,6 +3774,17 @@ private val LANG_CC = mapOf(
     "he" to "il", "heb" to "il",
     "th" to "th", "tha" to "th",
     "vi" to "vn", "vie" to "vn",
+    // Phase R239 (FR-R239-3) — added 2026-09-12; Tamil/Telugu/Catalan deliberately still absent, see
+    // Ravilo's AudioFlagStrip.kt for why.
+    "sr" to "rs", "srp" to "rs",
+    "bg" to "bg", "bul" to "bg",
+    "id" to "id", "ind" to "id",
+    "ms" to "my", "msa" to "my", "may" to "my",
+    "sl" to "si", "slv" to "si",
+    "et" to "ee", "est" to "ee",
+    "lv" to "lv", "lav" to "lv",
+    "lt" to "lt", "lit" to "lt",
+    "tl" to "ph", "fil" to "ph",
 )
 private const val AUDIO_FLAG_MAX = 5
 

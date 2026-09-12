@@ -44,7 +44,9 @@ class AudioFlagStripTest {
     @Test
     fun `a wholly unmapped language list still reports languages present`() {
         // The other lie the old code told: this used to be indistinguishable from "no subtitles at all".
-        val counts = countFlagStrip(listOf("ind", "srp"))
+        // "tam"/"tel" (Tamil/Telugu) are FR-R239-3's deliberately-still-unmapped codes — no ISO country
+        // flag fits them — so they stay valid stand-ins for "unmapped" as the table grows.
+        val counts = countFlagStrip(listOf("tam", "tel"))
 
         assertTrue(counts.hasAnyLanguage)
         assertTrue(counts.shownFlags.isEmpty())
@@ -61,16 +63,34 @@ class AudioFlagStripTest {
 
     @Test
     fun `a duplicate unmapped code is not double-counted`() {
-        val counts = countFlagStrip(listOf("ind", "ind", "ind"))
+        val counts = countFlagStrip(listOf("tam", "tam", "tam"))
 
         assertEquals(1, counts.extra)
     }
 
     @Test
     fun `mixed mapped and unmapped under five total shows all flags with no overflow`() {
-        val counts = countFlagStrip(listOf("en", "ind"))
+        val counts = countFlagStrip(listOf("en", "tam"))
 
         assertEquals(1, counts.shownFlags.size) // only "en" maps
-        assertEquals(1, counts.extra) // "ind" counted, just not shown as a flag
+        assertEquals(1, counts.extra) // "tam" counted, just not shown as a flag
+    }
+
+    @Test
+    fun `FR-R239-3 new codes each map to a flag, aliases included`() {
+        val counts = countFlagStrip(listOf("sr", "srp", "bg", "bul", "id", "ind", "ms", "msa", "may", "sl", "slv", "et", "est", "lv", "lav", "lt", "lit", "tl", "fil"))
+
+        assertEquals(4, counts.extra) // 9 distinct flags, 5 shown, 4 over FLAG_MAX — still all mapped, none unmapped
+        assertEquals(5, counts.shownFlags.size) // capped at FLAG_MAX
+    }
+
+    @Test
+    fun `Tamil, Telugu and Catalan are deliberately still unmapped`() {
+        // No ISO-3166 country flag fits them (India already maps to Hindi's flag; Catalonia isn't a
+        // country) — FR-R239-3's honest remaining gap, not an oversight.
+        val counts = countFlagStrip(listOf("tam", "tel", "cat"))
+
+        assertTrue(counts.shownFlags.isEmpty())
+        assertEquals(3, counts.extra)
     }
 }
