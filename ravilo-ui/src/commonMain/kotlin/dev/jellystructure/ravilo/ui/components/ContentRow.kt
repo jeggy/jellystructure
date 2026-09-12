@@ -1,7 +1,7 @@
 package dev.jellystructure.ravilo.ui.components
 
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -19,15 +19,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -40,19 +37,17 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.jellystructure.ravilo.ui.focus.dpadFocusable
-import dev.jellystructure.ravilo.ui.focus.focusDetailRowOpenHorizontalScrollDelta
+import dev.jellystructure.ravilo.ui.focus.focusDetailRowOpenTargetScrollDelta
 import dev.jellystructure.ravilo.ui.theme.RaviloDimens
 import dev.jellystructure.ravilo.ui.theme.RaviloMotion
 import dev.jellystructure.ravilo.ui.theme.raviloHPad
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import dev.jellystructure.ravilo.ui.theme.SpaceGrotesk
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
@@ -258,22 +253,48 @@ fun <T> StaticContentRow(
         if (openAfterKey == null && heldHeightPx != 0) heldHeightPx = 0
         val heldHeightDp = with(LocalDensity.current) { heldHeightPx.toDp() }
 
-        // Bug fix — a tile focused near the right edge of the screen brought ITSELF into view (the
-        // native per-tile bring-into-view above only ever knows about the tile's own bounds), but its
-        // panel — a separate LazyRow item spliced in right after it — rendered off the right edge of
-        // the viewport, invisible. Tracked per [openAfterKey] so a lateral hop to a new tile always
-        // re-measures its own panel rather than trusting the previous tile's edge.
-        var panelRightPx by remember(openAfterKey) { mutableFloatStateOf(0f) }
-        val screenWidthPx = LocalWindowInfo.current.containerSize.width.toFloat()
-        val hScope = rememberCoroutineScope()
+        // J's panel needs room to its right, and the native per-tile bring-into-view above can't
+        // provide it: that spec only ever knows about the FOCUSED TILE's own bounds, while the panel
+        // is a separate `LazyRow` item spliced in after it (FR-R240-3). Without this, a tile focused
+        // near the right edge opened a panel that rendered past the viewport entirely — invisible.
+        //
+        // Two earlier attempts, both wrong, both kept here because the reasons matter:
+        //   1. Wait out the panel's own tween, THEN jump the scroll in one animated correction. Reads
+        //      as two separate motions (grow, pause, slide) and, running on a clock independent of the
+        //      tile's width tween, could momentarily clip the tile's poster while the two raced.
+        //   2. Track the panel's measured right edge every frame and scroll incrementally. Smooth in
+        //      principle, but it can only react to a panel that has actually been laid out — and the
+        //      panel very often isn't. Device logging proved the real failure: after a fast sweep the
+        //      dwell fires, `HomeScreen.kt`'s state machine transitions, and this composable genuinely
+        //      composes the `FocusDetailPanel` node (all confirmed in logcat) — yet
+        //      `onGloballyPositioned` fires exactly once with a pre-layout `0f` and never again, and
+        //      the panel is never presented, while the app's own clock keeps ticking (so: not a freeze,
+        //      not a data bug, not a dwell race — every one of those was tested and ruled out). A
+        //      `LazyRow` never PLACES an item that falls outside its viewport, and this panel lands
+        //      outside precisely when it most needs scrolling in. Measure-then-scroll is circular.
+        //
+        // So: compute the target from KNOWN geometry instead — the tile's current offset/width from
+        // `layoutInfo`, its growth factor (FR-R240-7's own constant), and the panel's declared width
+        // ([FOCUS_DETAIL_PANEL_WIDTH]) — and scroll on the SAME tween the tile and panel animate on, so
+        // all three read as one motion. Nothing here depends on the panel having been laid out first.
+        val density = LocalDensity.current
+        val panelWidthPx = with(density) { FOCUS_DETAIL_PANEL_WIDTH.toPx() }
+        val itemSpacingPx = with(density) { RaviloDimens.itemSpacing.toPx() }
         LaunchedEffect(openAfterKey) {
-            if (openAfterKey == null) return@LaunchedEffect
-            // Sequenced after the panel's own open tween (same R232-hazard discipline FR-R240-9 uses
-            // vertically) so panelRightPx reflects the settled, fully-open panel, not one mid-tween.
-            delay(RaviloMotion.ROW_OPEN_TWEEN_MS.toLong())
-            val marginPx = insetPx
-            val delta = focusDetailRowOpenHorizontalScrollDelta(panelRightPx, screenWidthPx, marginPx)
-            if (delta > 0f) hScope.launch { runCatching { listState.animateScrollBy(delta) } }
+            val key = openAfterKey ?: return@LaunchedEffect
+            val info = listState.layoutInfo
+            val tile = info.visibleItemsInfo.firstOrNull { it.key == key } ?: return@LaunchedEffect
+            val delta = focusDetailRowOpenTargetScrollDelta(
+                openTileOffsetPx = tile.offset.toFloat(),
+                openTileWidthPx = tile.size.toFloat(),
+                widthScale = RaviloMotion.ROW_OPEN_WIDTH_SCALE,
+                itemSpacingPx = itemSpacingPx,
+                panelWidthPx = panelWidthPx,
+                viewportEndPx = info.viewportEndOffset.toFloat(),
+            )
+            if (delta > 0f) {
+                listState.animateScrollBy(delta, tween(RaviloMotion.ROW_OPEN_TWEEN_MS))
+            }
         }
 
         @OptIn(ExperimentalFoundationApi::class)
@@ -304,11 +325,7 @@ fun <T> StaticContentRow(
                         itemContent(i, items[i], fr)
                     }
                     if (openPanel != null && key != null && key == openAfterKey) {
-                        item(key = "__openpanel__$key") {
-                            Box(modifier = Modifier.onGloballyPositioned { coords ->
-                                panelRightPx = coords.positionInWindow().x + coords.size.width
-                            }) { openPanel() }
-                        }
+                        item(key = "__openpanel__$key") { openPanel() }
                     }
                     // FR-R240-10: the closing slot renders at its own tile's position, distinct from
                     // the open slot above — the guard against `closingAfterKey == openAfterKey` stops a

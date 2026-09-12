@@ -25,6 +25,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.jellystructure.ravilo.ui.focus.FocusDetailUi
@@ -37,6 +38,21 @@ import dev.jellystructure.shared.tv.Skin
 
 private val PANEL_CONTENT_WIDTH = 620.dp
 private const val PANEL_GENRE_CAP = 4
+
+/**
+ * The panel's own total laid-out width — `Modifier.width(PANEL_CONTENT_WIDTH)` fixes the node's
+ * measured width, and the `padding` after it insets the content *within* that, so the node is exactly
+ * [PANEL_CONTENT_WIDTH] wide.
+ *
+ * Exported because `StaticContentRow` must know how much room the panel needs **before it has ever
+ * been laid out**. That isn't an optimisation — it's the only way the calculation can work at all: the
+ * panel is inserted to the RIGHT of a tile that is frequently already at the right edge of the
+ * viewport, so the panel's own slot lands off-screen, and a `LazyRow` never *places* an off-screen
+ * item. `onGloballyPositioned` therefore never fires for it, so "measure the panel, then scroll it
+ * into view" is circular — it can't be measured until it's scrolled in, and it can't be scrolled in
+ * until it's measured. Knowing the width up front breaks that loop.
+ */
+val FOCUS_DETAIL_PANEL_WIDTH: Dp = PANEL_CONTENT_WIDTH
 
 /**
  * FR-R240-10 (built 2026-09-12) — a lateral hop from one already-open tile straight to another IN THE
