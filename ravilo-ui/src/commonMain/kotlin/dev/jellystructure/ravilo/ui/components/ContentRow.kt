@@ -12,10 +12,12 @@ import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -108,6 +110,11 @@ fun <T> StaticContentRow(
      * focused (or the first, on a fresh entry with no history), including a currently-disposed one.
      */
     rowFocusRequester: FocusRequester? = null,
+    /** Phase R240 (FR-R240-3) — J's inert panel is inserted as one more row item, immediately after
+     *  the tile whose [itemKey] equals [openAfterKey]. Null ⇒ no panel anywhere in this row (the
+     *  household direction isn't "rowOpen", or nothing here is focused/settled yet). */
+    openAfterKey: Any? = null,
+    openPanel: (@Composable () -> Unit)? = null,
     itemContent: @Composable (index: Int, item: T, focusRequester: FocusRequester?) -> Unit,
 ) {
     val colors = RaviloTheme.colors
@@ -226,13 +233,24 @@ fun <T> StaticContentRow(
             }
             Spacer(Modifier.height(RaviloDimens.rowHeadPadB))
         }
+        // Phase R240 (FR-R240-8) — while J holds an open panel in this row, the row's measured height
+        // may only ever grow, never shrink back, until focus leaves the row entirely (openAfterKey
+        // returns to null clears it below). Without this, closing the old tile's panel a frame before
+        // the newly-focused tile's panel opens would let the row's natural (intrinsic) height sag back
+        // to its resting size and immediately grow again — exactly the "pump" the spec calls out.
+        var heldHeightPx by remember { mutableStateOf(0) }
+        if (openAfterKey == null && heldHeightPx != 0) heldHeightPx = 0
+        val heldHeightDp = with(LocalDensity.current) { heldHeightPx.toDp() }
+
         @OptIn(ExperimentalFoundationApi::class)
         CompositionLocalProvider(LocalBringIntoViewSpec provides bringIntoViewSpec) {
             LazyRow(
                 state = listState,
                 modifier = Modifier
                     .then(if (rowFocusRequester != null) Modifier.focusRequester(rowFocusRequester) else Modifier)
-                    .focusRestorer(),
+                    .focusRestorer()
+                    .heightIn(min = heldHeightDp)
+                    .then(if (openAfterKey != null) Modifier.onSizeChanged { if (it.height > heldHeightPx) heldHeightPx = it.height } else Modifier),
                 horizontalArrangement = Arrangement.spacedBy(RaviloDimens.itemSpacing),
                 contentPadding = PaddingValues(
                     horizontal = raviloHPad,
@@ -242,9 +260,18 @@ fun <T> StaticContentRow(
                 if (leadingItem != null) {
                     item(key = "__leading") { leadingItem() }
                 }
-                items(items.size, key = if (itemKey != null) { i -> itemKey(items[i]) } else null) { i ->
-                    val fr = if (restoreItemKey != null && itemKey != null && itemKey(items[i]) == restoreItemKey) restoreFR else null
-                    itemContent(i, items[i], fr)
+                // Manual per-index items (rather than the items() builder) so the panel can be spliced
+                // in right after whichever item's key matches openAfterKey — items() has no hook for
+                // "one more item conditionally after index i" without this same unrolling underneath.
+                for (i in items.indices) {
+                    val key = itemKey?.invoke(items[i])
+                    item(key = key) {
+                        val fr = if (restoreItemKey != null && itemKey != null && key == restoreItemKey) restoreFR else null
+                        itemContent(i, items[i], fr)
+                    }
+                    if (openPanel != null && key != null && key == openAfterKey) {
+                        item(key = "__openpanel__$key") { openPanel() }
+                    }
                 }
                 if (trailingItem != null) {
                     item(key = "__trailing") { trailingItem() }

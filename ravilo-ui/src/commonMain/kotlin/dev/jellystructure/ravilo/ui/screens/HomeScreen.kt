@@ -50,6 +50,9 @@ import androidx.compose.ui.unit.sp
 import dev.jellystructure.ravilo.ui.LocalPortrait
 import dev.jellystructure.ravilo.ui.components.AppBar
 import dev.jellystructure.ravilo.ui.components.ChannelCard
+import dev.jellystructure.ravilo.ui.components.FOCUS_DETAIL_LINE_HEIGHT
+import dev.jellystructure.ravilo.ui.components.FocusDetailLine
+import dev.jellystructure.ravilo.ui.components.FocusDetailPanel
 import dev.jellystructure.ravilo.ui.components.HeroCarousel
 import dev.jellystructure.ravilo.ui.components.HomeLoadingShell
 import dev.jellystructure.ravilo.ui.components.SeeAllTile
@@ -204,6 +207,17 @@ private fun HomeLoaded(
     val navBarFR = remember { FocusRequester() }
     val heroFR   = remember { FocusRequester() }
 
+    // Phase R240 — this Home content-row phase is the only thing FocusDetailController tracks; every
+    // OTHER focusable Home surface (hero, channel rail, nav bar) must say so by clearing it the moment
+    // IT takes focus, or L/J would keep stating a title that's no longer focused (FR-R240-1's reverse).
+    val fdUi by store.focusDetail.current.collectAsState()
+    val lineActive = feed.focusDetail == "line"
+    // FR-R240-13 — a config change re-runs the reveal rule for whichever tile is focused right now,
+    // through the same path a real focus move takes (not merely "the next natural refetch").
+    LaunchedEffect(feed.focusDetail, feed.focusDetailDelayMs) {
+        store.focusDetail.reapply(feed.focusDetail, feed.focusDetailDelayMs)
+    }
+
     // Land focus somewhere sensible on entry. With a hero, focus it; otherwise focus the app bar
     // (always composed + focusable) so a hero-less feed never opens with nothing focused — Down
     // then enters the content. Requesting focus on the LazyColumn container itself is unreliable.
@@ -250,7 +264,11 @@ private fun HomeLoaded(
         state = listState,
         // R140: generous bottom padding so the LAST row can still scroll up to the same comfortable height
         // as the others (never stranded at the very bottom of the screen).
-        contentPadding = PaddingValues(bottom = 240.dp),
+        // Phase R240 (FR-R240-2) — L is not an overlay: this padding grows by the strip's own height
+        // for as long as the household's resolved direction is "line", so the last row can always
+        // clear it. Kept for as long as L is CONFIGURED, not merely while something is focused, or the
+        // page would shift the moment the very first tile ever takes focus.
+        contentPadding = PaddingValues(bottom = 240.dp + (if (lineActive) FOCUS_DETAIL_LINE_HEIGHT else 0.dp)),
         modifier = Modifier.fillMaxSize(),
     ) {
         // Hero carousel
@@ -261,7 +279,9 @@ private fun HomeLoaded(
                 // low in the hero, so a bare bring-into-view would otherwise strand it mid-scroll).
                 Box(
                     modifier = Modifier.onFocusChanged {
-                        if (it.hasFocus) scope.launch { listState.scrollToItem(0) }
+                        // Phase R240 — the hero is outside Home content rows (spec non-goal list); it
+                        // must say nothing on the status line/row-open panel.
+                        if (it.hasFocus) { scope.launch { listState.scrollToItem(0) }; store.focusDetail.clear() }
                     }
                 ) {
                     HeroCarousel(
@@ -287,6 +307,8 @@ private fun HomeLoaded(
         if (hasChannels) {
             item(key = "channels") {
                 Spacer(Modifier.height(24.dp))
+                // Phase R240 — the channel rail is outside Home content rows (spec non-goal list).
+                Box(modifier = Modifier.onFocusChanged { if (it.hasFocus) store.focusDetail.clear() }) {
                 StaticContentRow(
                     title = str("section.channels"),
                     items = feed.channels,
@@ -310,6 +332,7 @@ private fun HomeLoaded(
                         onSelect = { store.focusRowKey = "channels"; store.focusItemKey = ch.id; onChannelSelect(ch) },  // R139
                     )
                 }
+                }
             }
         }
 
@@ -322,7 +345,10 @@ private fun HomeLoaded(
         if (liveTvChannels.isNotEmpty()) {
             item(key = "on_now") {
                 Spacer(Modifier.height(RaviloDimens.rowGap))
-                OnNowRow(liveTvChannels, store, onLiveTvChannelSelect, onOpenLiveTvGuide, rowFocusRequester = if (onNowIsFirstRow) firstRowFR else null)
+                // Phase R240 — On Now isn't a Home content row either (spec non-goal list).
+                Box(modifier = Modifier.onFocusChanged { if (it.hasFocus) store.focusDetail.clear() }) {
+                    OnNowRow(liveTvChannels, store, onLiveTvChannelSelect, onOpenLiveTvGuide, rowFocusRequester = if (onNowIsFirstRow) firstRowFR else null)
+                }
             }
         }
         items(feed.rows.size - clampedOnNowIndex, key = { i -> feed.rows[clampedOnNowIndex + i].id }) { i ->
@@ -365,6 +391,8 @@ private fun HomeLoaded(
         onProfile = onProfile,
         onSearch = onSearch,
         scrolled = appBarScrolled,
+        // Phase R240 — the nav bar is outside Home content rows too.
+        modifier = Modifier.onFocusChanged { if (it.hasFocus) store.focusDetail.clear() },
     )
     // R212 — small, non-blocking: a cached snapshot is on screen and the background refresh keeps
     // failing. Never takes over the screen (no Loading/Error state change) and disappears the
@@ -372,6 +400,10 @@ private fun HomeLoaded(
     if (showingStale) {
         StaleContentBanner(modifier = Modifier.align(Alignment.TopCenter).padding(top = RaviloDimens.appBarHeight + 12.dp))
     }
+    // Phase R240 (FR-R240-2) — L's foot strip. Reserved space comes from the LazyColumn's own bottom
+    // padding above; this is an overlay ONLY in the sense that it paints on top of that reserved,
+    // never-scrolled-under band — it never covers a tile.
+    FocusDetailLine(ui = fdUi, active = lineActive, modifier = Modifier.align(Alignment.BottomCenter))
     }
 }
 
@@ -407,11 +439,42 @@ private fun ContentRowItem(
     // has its own dedicated seed-less path (still navigable, HomeFeedService.continueWatchingAll),
     // everything else needs Row.seedQuery.
     val canSeeAll = row.items.size > 8 && (row.kind == RowKind.CONTINUE || row.seedQuery != null || row.seedMediaKind != null)
+
+    // Phase R240 — this row's own slice of the shared FocusDetailController state.
+    val fd by store.focusDetail.current.collectAsState()
+    val rowHasOpen = fd?.rowId == row.id && fd?.mode == "rowOpen"
+    // FR-R240-7 — the panel item stays anchored at [panelKey] through its whole exit tween (not
+    // immediately reassigned to wherever focus lands next), so leaving the row entirely gets a real
+    // narrow-out instead of the node just vanishing. Known simplification vs the full spec: hopping
+    // laterally from one already-open tile straight to another within the SAME row re-anchors
+    // immediately with no exit tween for the old panel — see FR-R240-10's doc comment on
+    // FocusDetailPanel.kt for why a true two-slot crossfade wasn't built out here.
+    var panelKey by remember(row.id) { mutableStateOf<String?>(null) }
+    var panelVisible by remember(row.id) { mutableStateOf(false) }
+    // Kept alive through the exit tween below — [fd] itself may already be null (or about a
+    // different row) by the time the panel is merely narrowing out, and the panel must keep showing
+    // the title it was open on, not vanish, until FR-R240-7's close animation actually finishes.
+    var lastUi by remember(row.id) { mutableStateOf<dev.jellystructure.ravilo.ui.focus.FocusDetailUi?>(null) }
+    if (rowHasOpen) lastUi = fd
+    LaunchedEffect(rowHasOpen, fd?.itemKey) {
+        if (rowHasOpen) {
+            panelKey = fd?.itemKey
+            panelVisible = true
+        } else if (panelKey != null) {
+            panelVisible = false
+            kotlinx.coroutines.delay(RaviloMotion.ROW_OPEN_TWEEN_MS.toLong() + 60L)
+            if (!rowHasOpen) panelKey = null
+        }
+    }
+
     StaticContentRow(
         title = row.title,
         items = row.items,
         trailingItem = if (canSeeAll) ({
-            SeeAllTile(count = row.seedTotalCount ?: row.items.size, variant = rowVariant, onSelect = { onSeeAll(row) })
+            // Phase R240 — a "→ See all" tile carries no MediaCard/facts; focusing it must say nothing.
+            Box(modifier = Modifier.onFocusChanged { if (it.hasFocus) store.focusDetail.clear() }) {
+                SeeAllTile(count = row.seedTotalCount ?: row.items.size, variant = rowVariant, onSelect = { onSeeAll(row) })
+            }
         }) else null,
         itemKey = { card -> card.id },
         urlResolver = { card ->
@@ -426,6 +489,12 @@ private fun ContentRowItem(
         // composed window and back in re-triggers it and yanks focus back here.
         onRestored = { store.focusRowKey = null; store.focusItemKey = null },
         rowFocusRequester = rowFocusRequester,  // R236
+        // Phase R240 (FR-R240-3) — J's panel, spliced in right after [panelKey]'s tile. Deliberately
+        // NOT given a FocusRequester anywhere inside it (FR-R240-5) — see FocusDetailPanel's own doc.
+        openAfterKey = panelKey,
+        openPanel = if (panelKey != null) ({
+            lastUi?.let { FocusDetailPanel(ui = it, visible = panelVisible) }
+        }) else null,
     ) { _, card, fr ->
         // R113: in Continue Watching, show the season/episode as a small on-image badge for TV
         // shows and leave just the series title below (was "S1E3 · Episode" as the subtitle).
@@ -442,6 +511,10 @@ private fun ContentRowItem(
             watched = card.watched,
             upcomingLabel = card.upcomingEpisode,
             focusRequester = fr,  // R139 restore target only — the hero-down bridge is row-level now (R236)
+            // Phase R240 — the tile that's actually open right now grows in place (FR-R240-7); every
+            // other tile in every other row is untouched.
+            open = rowHasOpen && fd?.itemKey == card.id,
+            onFocused = { store.focusDetail.onFocus(row.id, card.id, card, feed.focusDetail, feed.focusDetailDelayMs) },
             onSelect = { store.focusRowKey = row.id; store.focusItemKey = card.id; onItemSelect(card) },  // R139
         )
     }

@@ -68,4 +68,11 @@ object RaviloMotion {
 
     // ── Server-message toast (R152) ─────────────────────────────────────────────
     const val TOAST_TRANSITION_MS = 340
+
+    // ── Focus detail J — the row opens (R240) ───────────────────────────────────
+    // FR-R240-7: the mockup's tile grows 210dp→300dp; Compose's own POSTER_W (155dp, Tile.kt) is a
+    // different base scale, so the RATIO is what's reused, applied to whatever width the tile is
+    // actually laid out at (post tileScale) rather than the mockup's literal dp numbers.
+    const val ROW_OPEN_WIDTH_SCALE = 300f / 210f
+    const val ROW_OPEN_TWEEN_MS = 220   // mirrors ravilo.css .jopen / jp-open .22s
 }
