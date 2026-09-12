@@ -1,6 +1,7 @@
 package dev.jellystructure.ravilo.ui.components
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -8,6 +9,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.gestures.BringIntoViewSpec
 import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
+import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -17,12 +19,15 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -35,15 +40,19 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.jellystructure.ravilo.ui.focus.dpadFocusable
+import dev.jellystructure.ravilo.ui.focus.focusDetailRowOpenHorizontalScrollDelta
 import dev.jellystructure.ravilo.ui.theme.RaviloDimens
+import dev.jellystructure.ravilo.ui.theme.RaviloMotion
 import dev.jellystructure.ravilo.ui.theme.raviloHPad
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import dev.jellystructure.ravilo.ui.theme.SpaceGrotesk
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
@@ -249,6 +258,24 @@ fun <T> StaticContentRow(
         if (openAfterKey == null && heldHeightPx != 0) heldHeightPx = 0
         val heldHeightDp = with(LocalDensity.current) { heldHeightPx.toDp() }
 
+        // Bug fix — a tile focused near the right edge of the screen brought ITSELF into view (the
+        // native per-tile bring-into-view above only ever knows about the tile's own bounds), but its
+        // panel — a separate LazyRow item spliced in right after it — rendered off the right edge of
+        // the viewport, invisible. Tracked per [openAfterKey] so a lateral hop to a new tile always
+        // re-measures its own panel rather than trusting the previous tile's edge.
+        var panelRightPx by remember(openAfterKey) { mutableFloatStateOf(0f) }
+        val screenWidthPx = LocalWindowInfo.current.containerSize.width.toFloat()
+        val hScope = rememberCoroutineScope()
+        LaunchedEffect(openAfterKey) {
+            if (openAfterKey == null) return@LaunchedEffect
+            // Sequenced after the panel's own open tween (same R232-hazard discipline FR-R240-9 uses
+            // vertically) so panelRightPx reflects the settled, fully-open panel, not one mid-tween.
+            delay(RaviloMotion.ROW_OPEN_TWEEN_MS.toLong())
+            val marginPx = insetPx
+            val delta = focusDetailRowOpenHorizontalScrollDelta(panelRightPx, screenWidthPx, marginPx)
+            if (delta > 0f) hScope.launch { runCatching { listState.animateScrollBy(delta) } }
+        }
+
         @OptIn(ExperimentalFoundationApi::class)
         CompositionLocalProvider(LocalBringIntoViewSpec provides bringIntoViewSpec) {
             LazyRow(
@@ -277,7 +304,11 @@ fun <T> StaticContentRow(
                         itemContent(i, items[i], fr)
                     }
                     if (openPanel != null && key != null && key == openAfterKey) {
-                        item(key = "__openpanel__$key") { openPanel() }
+                        item(key = "__openpanel__$key") {
+                            Box(modifier = Modifier.onGloballyPositioned { coords ->
+                                panelRightPx = coords.positionInWindow().x + coords.size.width
+                            }) { openPanel() }
+                        }
                     }
                     // FR-R240-10: the closing slot renders at its own tile's position, distinct from
                     // the open slot above — the guard against `closingAfterKey == openAfterKey` stops a
