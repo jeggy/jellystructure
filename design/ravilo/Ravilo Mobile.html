@@ -113,6 +113,10 @@
   .dslow b{ font-weight:600; color:#f0c07a; }
   [data-skin="noir"] .dslow i{ background:var(--ink); }
   [data-skin="noir"] .dslow b{ color:var(--ink); font-weight:700; }
+  .meslow{ margin-top:6px; padding-left:8px; border-left:3px solid #f5b542; font-size:11.5px; line-height:1.45; color:var(--ink-soft); }
+  .meslow b{ font-weight:600; color:#f0c07a; }
+  [data-skin="noir"] .meslow{ border-left-color:var(--ink); }
+  [data-skin="noir"] .meslow b{ color:var(--ink); font-weight:700; }
 
   /* detail screen */
   .detail{ position:absolute; inset:0; background:var(--bg); z-index:70; display:flex; flex-direction:column; transform:translateX(100%); transition:transform .3s var(--ease); }
@@ -396,7 +400,7 @@
     const cards = units.map(u=>{
       if(u.single){ const e=u.single; return '<div class="merow-single">'
         + '<div class="methumb" style="background:'+e.grad+'"><span class="mn">'+mPad(e.n)+'</span></div>'
-        + '<div class="memeta2"><div class="mt2">'+esc(e.title)+'</div><div class="md2">'+esc(e.dur)+'</div></div></div>'; }
+        + '<div class="memeta2"><div class="mt2">'+esc(e.title)+'</div><div class="md2">'+esc(e.dur)+'</div>'+epSlowHTML(it, e)+'</div></div>'; }
       const eps3=u.eps.slice(0,3);
       const tiles=eps3.map((e,i)=>'<div class="tp tp'+(i+1)+'" style="background:'+e.grad+'"></div>').join('');
       const nums=eps3.map((e,i)=>'<span class="tnum tnum'+(i+1)+'">'+mPad(e.n)+'</span>').join('');
@@ -408,7 +412,8 @@
         + '<span class="merng">Episodes '+first+'\u2013'+last+'</span></div>'
         + '<div class="mebody"><div class="met">Episodes '+first+'\u2013'+last+'</div>'
         + '<div class="merows">'+rows+'</div>'
-        + '<div class="mefile">\u25a4 1 file \u00b7 '+u.eps.length+' episodes \u00b7 '+durSum+'m</div></div></div>';
+        + '<div class="mefile">\u25a4 1 file \u00b7 '+u.eps.length+' episodes \u00b7 '+durSum+'m</div>'
+        + epSlowHTML(it, u.eps[0])+'</div></div>';
     }).join('');
     return '<div class="seclbl">Episodes <span style="font-weight:400;color:var(--ink-dim);font-family:Sora,sans-serif;font-size:12px;">Season 1 \u00b7 '+units.length+' files</span></div>'
       + '<div class="melist">'+cards+'</div>';
@@ -427,12 +432,23 @@
   // for THIS phone (its own decoder, its own history), so a title that carries the note on the TV
   // may carry nothing here; the mock substitutes the phone's name to show that it is per-device.
   // i18n keys: slow_lead · slow_tail_expected · slow_tail_measured · this_phone.
-  function slowHTML(it){
-    const n = R.playbackNoteFor ? R.playbackNoteFor(it) : null;
-    if(!n) return '';
+  function slowBody(n){
     const tail = (n.basis==='measured' && n.seconds) ? 'The last few times it took about '+n.seconds+' seconds.'
       : 'Give it a moment after you press play.';
-    return '<div class="dslow"><i></i><span><b>Slow to start on Pixel 8.</b> '+tail+'</span></div>';
+    return '<b>Slow to start on Pixel 8.</b> '+tail;
+  }
+  // FR-R222-4/5 — films carry the line above the action row; a SERIES never does, because its
+  // episodes are different files. The episode rows below carry their own (one file, one line).
+  function slowHTML(it){
+    if(it.kind==='series') return '';
+    const n = R.playbackNoteFor ? R.playbackNoteFor(it) : null;
+    if(!n) return '';
+    return '<div class="dslow"><i></i><span>'+slowBody(n)+'</span></div>';
+  }
+  function epSlowHTML(it, ep){
+    const n = (R.playbackNoteFor && ep) ? R.playbackNoteFor(it, 0, ep) : null;
+    if(!n) return '';
+    return '<div class="meslow">'+slowBody(n)+'</div>';
   }
   function aboutHTML(it){
     const ab = R.aboutFor ? R.aboutFor(it) : null;
