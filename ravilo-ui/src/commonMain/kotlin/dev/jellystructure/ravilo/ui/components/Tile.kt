@@ -2,6 +2,7 @@ package dev.jellystructure.ravilo.ui.components
 
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -98,7 +99,15 @@ fun Tile(
     episodeBadgeColor: Color = Color.Black.copy(alpha = 0.6f),
     /** R149: "Soon • SxxExx" badge for continuing series with a scheduled episode. Null = no badge. */
     upcomingLabel: String? = null,
+    /** Phase R240 (FR-R240-3/7) — true for the one tile J has opened. Grows the tile's actual layout
+     *  width (not a draw-only scale — the row band's reflow IS the point here, unlike the focus-scale
+     *  effect below) by [dev.jellystructure.ravilo.ui.theme.RaviloMotion.ROW_OPEN_WIDTH_SCALE], and
+     *  hides the label/subtitle the way the mockup's `.jopen` rule does (the panel beside it already
+     *  states the title). Never true together with a [FocusRequester] on this tile or any ancestor
+     *  reaching into it via `focusRestorer()` — FR-R240-5 forbids both. */
+    open: Boolean = false,
     onFocused: () -> Unit = {},
+    onBlurred: () -> Unit = {},
     onSelect: (() -> Unit)? = null,
 ) {
     val colors = RaviloTheme.colors
@@ -117,23 +126,30 @@ fun Tile(
 
     // Operator-configured content size (R: ui_density) scales every grid/row tile uniformly.
     val tileScale = dev.jellystructure.ravilo.ui.LocalTileScale.current
-    val (w, h) = when (variant) {
+    val (baseW, baseH) = when (variant) {
         TileVariant.POSTER -> POSTER_W to POSTER_H
         TileVariant.LANDSCAPE -> LANDSCAPE_W to LANDSCAPE_H
         TileVariant.SQUARE -> SQUARE_W to SQUARE_H
     }.let { (bw, bh) -> bw * tileScale to bh * tileScale }
 
+    // R240 (FR-R240-7) — unlike the focus scale below, this DOES change real layout width: J's whole
+    // point is the row band growing, so the lazy row's measured bounds must actually move. Only ever
+    // non-1x for the one tile J has opened.
+    val openSpec = remember { tween<Dp>(RaviloMotion.ROW_OPEN_TWEEN_MS) }
+    val w by animateDpAsState(if (open) baseW * RaviloMotion.ROW_OPEN_WIDTH_SCALE else baseW, openSpec, label = "tileOpenWidth")
+    val h by animateDpAsState(if (open) baseH * RaviloMotion.ROW_OPEN_WIDTH_SCALE else baseH, openSpec, label = "tileOpenHeight")
+
     // R54: the focusable wraps the WHOLE tile (poster + label) so the vertical bring-into-view reveals
-    // the title/subtitle below the poster instead of clipping it. R42 still holds — the Column's layout
-    // size is fixed (the focus scale is a draw-only graphicsLayer on the inner poster box, so the lazy
-    // list's focused-bounds tracking never chases the scale animation → no viewport jump while focusing).
+    // the title/subtitle below the poster instead of clipping it. R42 still holds for the FOCUS-SCALE
+    // effect specifically — it's a draw-only graphicsLayer on the inner poster box below, so the lazy
+    // list's focused-bounds tracking never chases IT (no viewport jump while merely focusing).
     Column(
         modifier = Modifier
             .width(w)
             .dpadFocusable(
                 focusRequester = focusRequester,
                 onFocused = { focused = true; onFocused() },
-                onBlurred = { focused = false },
+                onBlurred = { focused = false; onBlurred() },
                 onSelect = onSelect,
             ),
     ) {
@@ -320,38 +336,42 @@ fun Tile(
             }
         }
 
-        Spacer(Modifier.height(8.dp))
-        Text(
-            text = title,
-            color = if (focused) colors.text else colors.textSecondary,
-            fontSize = 18.sp,
-            fontWeight = if (focused) FontWeight.SemiBold else FontWeight.Medium,
-            fontFamily = sora,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.width(w),
-        )
-        if (!subtitle.isNullOrEmpty()) {
+        // R240 (FR-R240-3) — the mockup's `.jopen .label,.sub{display:none}`: the panel beside this
+        // tile already states the title, so the caption underneath it would just repeat it.
+        if (!open) {
+            Spacer(Modifier.height(8.dp))
             Text(
-                text = subtitle,
-                color = colors.textDim,
-                fontSize = 14.sp,
+                text = title,
+                color = if (focused) colors.text else colors.textSecondary,
+                fontSize = 18.sp,
+                fontWeight = if (focused) FontWeight.SemiBold else FontWeight.Medium,
                 fontFamily = sora,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.width(w),
             )
-        }
-        if (!caption.isNullOrEmpty()) {
-            Text(
-                text = caption,
-                color = colors.textDim,
-                fontSize = 12.sp,
-                fontFamily = sora,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.width(w),
-            )
+            if (!subtitle.isNullOrEmpty()) {
+                Text(
+                    text = subtitle,
+                    color = colors.textDim,
+                    fontSize = 14.sp,
+                    fontFamily = sora,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.width(w),
+                )
+            }
+            if (!caption.isNullOrEmpty()) {
+                Text(
+                    text = caption,
+                    color = colors.textDim,
+                    fontSize = 12.sp,
+                    fontFamily = sora,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.width(w),
+                )
+            }
         }
     }
 }

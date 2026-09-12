@@ -1,6 +1,7 @@
 package dev.jellystructure.ravilo.ui.screens
 
 import androidx.compose.foundation.lazy.LazyListState
+import dev.jellystructure.ravilo.ui.focus.FocusDetailController
 import dev.jellystructure.shared.tv.HomeFeed
 import dev.jellystructure.shared.tv.LiveTvChannel
 import dev.jellystructure.shared.tv.TvApiClient
@@ -57,6 +58,9 @@ class HomeStore(
     val liveTvChannels: StateFlow<List<LiveTvChannel>> = _liveTvChannels.asStateFlow()
     private var loadJob: Job? = null
     private var liveTvPollJob: Job? = null
+    // Phase R240 — outlives per-composition recomposition the same way [listState]/[focusRowKey] do,
+    // so the dwell timer survives a Back-return or a config-triggered silent refresh mid-flight.
+    val focusDetail = FocusDetailController(scope)
 
     init {
         // R212 — a seeded feed already has something reasonable on screen; run the first load quietly

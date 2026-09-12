@@ -138,6 +138,12 @@ private val EN = mapOf(
     "detail.director"     to "Director",
     "detail.genre"        to "Genre",
     "detail.genres"       to "Genres",
+    // R240 (Phase 202) — the focus-detail status line (L) / row-open panel (J). Facts only; every
+    // number is server-resolved (FocusDetailFacts), these four strings are the only presentation.
+    "fd.audio"            to "AUDIO",
+    "fd.subs"             to "SUBTITLES",
+    "fd.nodesc"           to "No description yet",
+    "fd.min_left"         to "{n} min left",
     // R222 (Phase 185) — the "slow to start" note. Three rejected candidates recorded in the spec so
     // they aren't re-proposed: "may not play smoothly" (predicts a stutter R216/177 already prevent),
     // "can't handle this file at full quality" (implies a quality control exists), "better on the
@@ -436,6 +442,10 @@ private val DA = mapOf(
     "detail.director"     to "Instruktor",
     "detail.genre"        to "Genre",
     "detail.genres"       to "Genrer",
+    "fd.audio"            to "LYD",
+    "fd.subs"             to "UNDERTEKSTER",
+    "fd.nodesc"           to "Ingen beskrivelse endnu",
+    "fd.min_left"         to "{n} min tilbage",
     "slow_lead"           to "Langsom at starte på {device}.",
     "slow_tail_measured"  to "De sidste par gange tog det omkring {n} sekunder.",
     "slow_tail_expected"  to "Giv den et øjeblik, når du trykker afspil.",
@@ -723,6 +733,10 @@ private val FO = mapOf(
     "detail.director"     to "Leikstjori",
     "detail.genre"        to "Sjangur",
     "detail.genres"       to "Sjangrar",
+    "fd.audio"            to "LJÓÐ",
+    "fd.subs"             to "UNDERTEKSTIR",
+    "fd.nodesc"           to "Onga lýsing enn",
+    "fd.min_left"         to "{n} min eftir",
     "slow_lead"           to "Seint at byrja á {device}.",
     "slow_tail_measured"  to "Seinastu ferðirnar tók tað umleið {n} sekund.",
     "slow_tail_expected"  to "Gev tí eitt eygnabragð, tá tú trýstir spæl.",
