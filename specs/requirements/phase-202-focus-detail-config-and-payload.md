@@ -45,7 +45,7 @@ synced across that user's devices like every other layout field (constitution §
 | field | type | default | meaning |
 | --- | --- | --- | --- |
 | `focusDetailLine` | `Boolean` | `true` | L — the foot status line is configured |
-| `focusDetailRowOpen` | `Boolean` | `false` | J — the focused row opens in place |
+| `focusDetailRowOpen` | `Boolean` | `true` (was `false` until 2026-09-13) | J — the focused row opens in place |
 | `focusDetailDelayMs` | `Int` | `170` | how still the D-pad must be before either appears |
 
 Read by `GET /api/tv/config` and `GET /api/tv/home`, written by the jellystructure Ravilo config screen
@@ -98,14 +98,17 @@ table, not shipped as English. **No artwork, no backdrop, no logo, no tagline, n
 kind.** Render-never-compute governs *decisions*, not translation: the client may format, but it may
 never decide what is true.
 
-**FR-202-6 — The admin card states the whole rule, including the part that is off.** Preferences →
-**Focus detail** carries the three controls, scoped `Home rows`, plus: each switch's own state; **`On ·
-superseded`** for the line while the row-opens switch is on; the delay's readout in ms and which
-direction it currently governs; and, on the row-opens switch, the reason it ships off — it moves the
-row's height and its tiles' positions on every focus move, which is the reflow **invariant 11** exists
-to protect, unmeasured on the living-room BRAVIA. The card is **product-only**: the mockup's own
-preview-chrome FOCUS picker and `?focus=`/`?dwell=` parameters (`design/ravilo/Ravilo TV.html`) write
-the same key so the two never disagree, but they are scaffolding and ship nowhere.
+**FR-202-6 — The admin card states the whole rule.** Preferences → **Focus detail** carries the three
+controls, scoped `Home rows`, plus: each switch's own state; **`On · superseded`** for the line while the
+row-opens switch is on; and the delay's readout in ms and which direction it currently governs. The
+row-opens switch defaulted off pending a reflow-cost measurement — J moves the row's height and its
+tiles' positions on every settled focus move, exactly the workload **invariant 11** exists to protect —
+until a 2026-09-13 sweep-and-trace pass on the living-room BRAVIA (R240 spec, 46 real settled opens,
+2.8–3.2% janky frames, 0 missed vsync) closed that question and the default flipped to on; the card no
+longer needs to explain an unmeasured cost, since there isn't one anymore. The card is **product-only**:
+the mockup's own preview-chrome FOCUS picker and `?focus=`/`?dwell=` parameters
+(`design/ravilo/Ravilo TV.html`) write the same key so the two never disagree, but they are scaffolding
+and ship nowhere.
 
 **FR-202-7 — Cost is stated before it is spent.** ~**0.9 KB per title** of additional text, ~38 KB for a
 42-title home, **no image fetch**. Whichever delivery path open question 1 settles on, the resolved
@@ -125,10 +128,12 @@ sees the first focus of a session behave differently from the second.
 
 ## Acceptance
 
-1. A user with defaults (`line: true`, `rowOpen: false`, `delay: 170`) gets `focusDetail: "line"` and
-   `focusDetailDelayMs: 170` from both `/api/tv/config` and `/api/tv/home`.
-2. Turning the row-opens switch on yields `focusDetail: "rowOpen"` **without** the line switch changing
-   value in the admin — and the admin shows the line as `On · superseded`.
+1. A user with defaults (`line: true`, `rowOpen: true`, `delay: 170`) gets `focusDetail: "rowOpen"` and
+   `focusDetailDelayMs: 170` from both `/api/tv/config` and `/api/tv/home` — and the admin shows the line
+   as `On · superseded`. (Before 2026-09-13, `rowOpen` defaulted `false` and this resolved to `"line"`;
+   see the field table's own note.)
+2. Turning the row-opens switch off yields `focusDetail: "line"` **without** the line switch changing
+   value in the admin.
 3. Turning both off yields `focusDetail: "none"` and the per-title fact set is **omitted**, not sent and
    ignored.
 4. `focusDetailDelayMs` is accepted at 0, at 137, at 600 and at 10000 — none of them snapped to a step;

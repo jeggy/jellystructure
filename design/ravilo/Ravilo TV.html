@@ -82,7 +82,7 @@
      are the same act. Either one takes effect on the focused tile immediately. */
   const fdpick = document.getElementById('focuspick');
   if (fdpick) {
-    const readFD = () => { let r = {}; try { r = JSON.parse(localStorage.getItem(FDKEY) || '{}') || {}; } catch (e) {} const d = Math.round(Number(r.delay)); return { line: r.line !== false, rowOpen: r.rowOpen === true, delay: Number.isFinite(d) ? Math.max(0, Math.min(600, d)) : 170 }; };
+    const readFD = () => { let r = {}; try { r = JSON.parse(localStorage.getItem(FDKEY) || '{}') || {}; } catch (e) {} const d = Math.round(Number(r.delay)); return { line: r.line !== false, rowOpen: r.rowOpen !== false, delay: Number.isFinite(d) && d >= 0 ? d : 170 }; };
     const msIn = document.getElementById('fddelay');
     const paintFD = () => {
       const c = readFD(), v = c.rowOpen ? 'row' : (c.line ? 'line' : 'off');
@@ -98,7 +98,7 @@
       const b = e.target.closest('button'); if (!b) return;
       writeFD({ line: b.dataset.fd !== 'off', rowOpen: b.dataset.fd === 'row' });
     });
-    msIn.addEventListener('change', () => writeFD({ delay: Math.max(0, Math.min(600, Math.round(+msIn.value || 0))) }));
+    msIn.addEventListener('change', () => writeFD({ delay: Math.max(0, Math.round(+msIn.value || 0)) }));
     window.addEventListener('storage', e => { if (e.key === FDKEY) paintFD(); });
     paintFD();
   }

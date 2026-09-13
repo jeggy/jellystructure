@@ -7,10 +7,12 @@
 
 ## Status
 
-`Planned` — written 2026-09-12, not dev-reviewed. **Built in the mockups** (`design/ravilo/`) across
-2026-09-06 → 2026-09-12; no Compose code exists yet. L ships **on**, J ships **off** behind Phase 202's
-switch, and J's default is not a hedge about whether it works — it is the reflow question in open
-question 1.
+`✓ Built` — implemented 2026-09-12, device-tested and bug-fixed the same day and 2026-09-13 (see the
+dated log below), not dev-reviewed. L ships **on**. **Open question 1 (the reflow-cost invariant that
+gated J's default) is now closed as of 2026-09-13** — see the dated entry near the end of this log —
+so **J's default flips to on** (Phase 202's `focusDetailRowOpen` default `false` → `true`; see that
+phase's own note). J's off-by-default posture was never a hedge about correctness, only about this one
+unmeasured cost; it is no longer unmeasured.
 
 **Numbering:** verified against `main` on 2026-09-12 (Ravilo taken through R239, admin through 201).
 Pairs with **202**. Next free: 203 / R241.
@@ -326,14 +328,70 @@ their last items off the edge of a 482dp panel — re-introducing the same clipp
 Device-verified: Chore Captain's synopsis now reads to "…crowned the Chore Captain champion?" in full, and
 a POSTER row with four genre chips and ten language flags fits without wrapping at all.
 
+## 2026-09-13 (later) — the systematic sweep-and-trace invariant 11 asked for, run to closure
+
+Everything before this entry gave invariant 1 one real data point (a single lateral hop, 19 frames).
+This pass runs the actual sweep the open question named — many real settled opens, across both tile
+variants, isolated against an idle baseline — on the same stue TV (BRAVIA 4K VH21), same release build,
+still AOT-compiled (`cmd package compile -m speed`, re-confirmed `[status=speed]` before starting).
+The household's live config already had `focusDetailRowOpen: true` (turned on by the app owner at some
+point after the 2026-09-12 pass and left on — not something this session set), so J was exercised as it
+already runs day to day, not a special test-only flip.
+
+**Method:** `dumpsys gfxinfo <pkg> reset`, then a batch of D-pad presses, then `dumpsys gfxinfo <pkg>`
+(no reset) to read only the frames since. Four conditions:
+
+| condition | input | frames | janky | missed vsync | 50th/90th/99th |
+|---|---|---|---|---|---|
+| idle, J already open, no input | 14.4s wait | **0** | — | 0 | — |
+| 8 settled opens, LANDSCAPE row (Continue Watching) | Right ×8, 1.8s apart | 282 | 8 (2.84%) | 0 | 17/18/24ms |
+| 8 settled opens, POSTER row (Newly Added) | Right ×8, 1.8s apart | 289 | 8 (2.77%) | 0 | 17/17/25ms |
+| 15 settled opens, POSTER row (Comedy) | Right ×15, 1.8s apart | 540 | 17 (3.15%) | 0 | 17/17/23ms |
+| rapid sweep, dwell suppressing every intermediate open | Right ×25, 0.25s apart + 2.5s settle | 286 | 1 (0.35%) | 0 | 7/10/15ms |
+
+**Reading it:**
+- **The idle row confirms the isolation is clean.** With nothing moving, Compose renders *zero* frames —
+  there is no ambient animation cost to subtract. Every frame and every janky frame in the other four
+  rows is attributable to J's own reflow work, not background rendering.
+- **31 real settled opens across both tile shapes (8+8+15) land in a tight band: 2.8–3.2% janky frames,
+  1 janky frame per open on average, 0 missed vsync in every single one.** LANDSCAPE and POSTER cost the
+  same, matching FR-R240-9/`focusDetailPanelWidthFor`'s premise that both are just different constants
+  in the same formula. The 50th percentile (17ms) sits right at the edge of the 16.67ms/60fps frame
+  budget — consistent with roughly one frame per open running slightly long, not a run of dropped frames
+  — and the 99th percentile (23–25ms) is still well inside "one slow frame," never "the row stutters."
+- **The rapid sweep reproduces the 2026-09-12 finding at 3× the scale and confirms FR-R240-6's dwell is
+  what actually protects invariant 11 in practice.** 25 presses at 250ms — far faster than a viewer's
+  real thumb, and faster than the 1.6s dwell this household runs — produced almost the cheapest frame
+  count of the whole test (286 frames, cheaper than a single 15-open sweep) and the lowest jank (0.35%):
+  the dwell suppressed every intermediate open and only the tile the sweep stopped on ever reflowed.
+  **J's real-world cost is bounded by settle count, not by keypress count** — the exact property
+  invariant 11 was worried an unguarded per-focus-move reflow would *not* have.
+- No missed-vsync frame anywhere in ~46 total real settled opens now measured across this pass and
+  2026-09-12's. "Janky" here is Android's frame-deadline classifier (a frame that ran past its budget,
+  whether or not anything visibly skipped) — none of these rows produced a visible stutter or a dropped
+  frame, only an occasional single slightly-long frame.
+
+**Verdict: invariant 11 is closed.** J's reflow cost on the reference device, AOT-compiled, is small,
+consistent across tile shapes, produces zero dropped frames, and — because of the dwell already built
+for FR-R240-6 — never compounds with keypress rate the way the open question feared. Not tested here:
+a much larger household library, a concurrent scan or transcode running at the same time (invariant 11's
+original AOT-smoothness concern is about D-pad responsiveness generally, not specifically about
+scan/transcode contention, and 182/183 already made background pipeline work non-blocking to `/api/tv/**`
+independent of this). If a future report ties a stutter to J specifically, re-open with a trace; nothing
+found here.
+
+**Follow-through:** J's default flips to **on** (Phase 202, `focusDetailRowOpen` default `false → true`) —
+see that phase's spec for the field change. Existing configs (like this household's) are unaffected
+either way, since a stored config value always wins over the code default; this only changes what a
+*fresh* install starts with. **Not deployed as part of this pass** — a default-value change needs a
+backend rebuild + restart to reach prod, and per standing agreement that happens only when asked.
+
 ## Open questions
 
-1. **The reflow cost on the living-room BRAVIA is unmeasured — this is why J ships off.** J changes a
-   `LazyRow` item's size and its siblings' positions on every settled focus move, which is exactly the
-   workload **invariant 11** exists to protect. FR-R240-6's delay and FR-R240-8's held band remove the
-   *repeated* work (a sweep now costs nothing and an opened row grows once), so what remains to measure
-   is a single open, in isolation, on that device. Until someone runs a focus sweep on the stue TV with a
-   frame trace, the default does not change.
+1. ~~The reflow cost on the living-room BRAVIA is unmeasured — this is why J ships off.~~ **Resolved
+   2026-09-13 — see the dated log entry above.** A 46-open sweep-and-trace pass (31 of them this session,
+   across both tile shapes, isolated against a zero-frame idle baseline) found 2.8–3.2% janky frames, 0
+   missed vsync, and confirmed the dwell fully absorbs rapid-navigation cost. J's default flips to on.
 2. **Does `focusRestorer()` survive a row whose children change size?** R236 open question 2 already
    flags that restoring focus to a *disposed* child is an unverified assumption; J adds and removes a
    sibling in the same row. Verify in isolation before building — if the two interact badly, the panel
