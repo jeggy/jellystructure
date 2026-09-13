@@ -121,13 +121,44 @@ at. Which leads to a concrete, separately-verified finding:
 schedulers are `[none] mq-deadline` (nvme0n1) and `none [mq-deadline]` (sda–sdd). The I/O politeness
 that command line claims has never been in effect.
 
-### Two more unbounded waits on the same path
+### Home is not the only read path that waits on Jellyfin
 
-- **`tvToken` is awaited with no timeout** in `getHomeFeed` (`:203`) and `getChannelFeed` (`:280`). On a
-  cache miss — every 5 minutes per token, `TOKEN_VALID_TTL_MS` — it makes a live `isTokenValid` round
-  trip. `OutboundHttp`'s client is configured `socketTimeoutMillis = 120_000`,
-  `requestTimeoutMillis = 120_000` (`OutboundHttp.kt:183-185`), so a wedged Jellyfin can hold a TV
-  request for **two minutes** with nothing in between to stop it.
+This is the full inventory, because an earlier draft of this phase enumerated only `HomeFeedService` and
+FR-205-1's invariant covers every viewer read. **Every surface the owner named — collections, media
+items — is on this list:**
+
+| read path | Jellyfin call | bound |
+|---|---|---|
+| `GET /api/tv/playstate` → `DetailService.getPlaystate` (`:225`) | `tvToken` + `getUserDataBulk` × ⌈ids/100⌉ chunks, sequential | **none at all** |
+| `GET /api/tv/movie/{id}` · `/series/{id}` → `hydrateRelated` (`:96`, `:206`) | `tvToken` + `fetchPlaystate` over 12 related cards | 2 500 ms |
+| `GET /api/tv/browse` → `BrowseService.browseFiltered` (`:78`) | `fetchPlaystate` over **every matched item**, not a page | 2 500 ms |
+| `GET /api/tv/search` (both forms, `:172` / `:205`) | `fetchPlaystate` over the result cards | 2 500 ms |
+| `GET /api/tv/channels` → `getChannels` (`:104`) | `tvToken` | **none** |
+| `getHomeFeed`/`buildHomeFeed` (`:203`) · `getChannelFeed` (`:280`) | `tvToken` | **none** |
+| `fetchAllPlaystate` (`:183`) | `fetchPlaystate` over the feed's ids | 2 500 ms |
+| `canonicalContinueList` (`:696`) | the four calls above | 6 000 ms shared |
+
+Three things follow that the Home-only framing hid:
+
+- **`/api/tv/playstate` is the one read route with no timeout anywhere on it**, and it is the route the
+  detail screen exists on: `MovieDetailScreen`, `SeriesDetailScreen`, `EpisodeCard` and `DetailStore`
+  all call it, and `DetailService` has **no cache of any kind**. Every episode row on every season open
+  is a live Jellyfin fan-out. R83 designed it that way deliberately — `playback`/`progress` are
+  explicitly `null` in the detail payload and hydrated by this route — so the fix is FR-205-2's
+  refresher serving it, not a timeout bolted on.
+- **`browseFiltered` hydrates the whole match set, not the page it returns.** A "→ See all" over 400
+  titles is four chunked round trips before anything renders, and it is the surface R187 added for
+  exactly the navigation the owner asked about.
+- **`tvToken` is awaited with no timeout** at three sites (`getChannels`, `buildHomeFeed`,
+  `getChannelFeed`). On a cache miss — every 5 minutes per token, `TOKEN_VALID_TTL_MS`
+  (`PlaybackService.kt:43`) — it makes a live `isTokenValid` round trip. `OutboundHttp`'s client is
+  configured `socketTimeoutMillis = 120_000`, `requestTimeoutMillis = 120_000`
+  (`OutboundHttp.kt:183-185`), so a wedged Jellyfin can hold a TV request for **two minutes** with
+  nothing in between to stop it.
+
+The 2 500 ms bounds are not a defence, only a ceiling: at the measured 84 ms per 100-id lookup they are
+never hit in the healthy case, and when they *are* hit the surface silently ships with no watched state —
+the same confident-wrong-answer shape as the missing Continue row, one screen over.
 - **`fetchAllPlaystate`** is bounded at `WATCHED_TIMEOUT_MS = 2_500`, and its `PLAYSTATE_TTL_MS` is 20 s
   against the feed's 5 min. That is the measured steady-state floor: over four quiet minutes with no
   scan, `/api/tv/home` was 28/40 hits at 13 ms and **12/40 misses at 494 ms median** — the misses being
@@ -136,15 +167,28 @@ that command line claims has never been in effect.
 
 ## Requirements
 
-**FR-205-1 — no `/api/tv/**` read initiates a Jellyfin request.** The invariant. A read path serves what
-is already known and never makes a viewer wait on a dependency whose median for the shape we need is
-1.4 seconds. Everything below serves this.
+**FR-205-1 — no viewer read under `/api/tv/**` initiates a Jellyfin request.** The invariant. A read path
+serves what is already known and never makes a viewer wait on a dependency whose median for the shape we
+need is 1.4 seconds. Everything below serves this. Two deliberate exclusions: the **playback** path
+(negotiation, progress, stop — Jellyfin *is* the streaming server, and `PlaybackService` is not in
+question), and **`/api/tv/admin/**`**, where `GET /tv/admin/users/{userId}/history`
+(`TvRoutes.kt:873`) is documented as "the one section of the overview that must read Jellyfin live" —
+an operator-initiated, lazy, one-user-at-a-time read behind a *Show more* expander, which is a different
+contract from a viewer's Home screen.
 
 **FR-205-2 — Continue Watching and playstate are maintained off the request path.** Both become
 background-refreshed per user on their own cadence, writing into the caches the read path already
 consults. Scope the refresh to users with a recently-seen device (`ravilo_device.last_seen`) so a
 household of ten historical pairings does not generate ten users' worth of Jellyfin traffic forever.
 The refresher, not the reader, owns every Jellyfin call.
+
+**Playstate here means all seven read sites in the table above, not just the feed's.** One refreshed
+per-user playstate map, consulted by Home, channel feeds, browse, search, related and — the one with no
+cache today — `GET /api/tv/playstate`. That route is the detail screen's only source of resume position
+and ✓ (R83 leaves `playback`/`progress` null in the detail payload on purpose), so it must keep
+answering the same shape; what changes is where the answer comes from. A single shared map is also the
+only way the same title cannot show a ✓ on Home and no ✓ on the detail page, which is reachable today
+whenever one of the 2 500 ms bounds fires and the other does not.
 
 **FR-205-3 — an unbuildable row is omitted, never shipped empty.** A Continue Watching list that has
 never been successfully built for this user is *unknown*, and an unknown row is absent — which is what
@@ -154,9 +198,12 @@ R231's rule stands: a failed build never overwrites a good cached value. FR-203-
 same confident-false-negative that cost the v1.12 release.
 
 **FR-205-4 — bound every remaining Jellyfin call on an interactive path.** Any call that survives
-FR-205-1 — `tvToken` revalidation is the known one — gets an explicit local timeout well under the
-120 s client default, and a documented behaviour on expiry. A 120-second ceiling is not a timeout; it is
-the absence of one.
+FR-205-1 gets an explicit local timeout well under the 120 s client default, and a documented behaviour
+on expiry. A 120-second ceiling is not a timeout; it is the absence of one. The known unbounded ones are
+in the table above: `tvToken` revalidation at **three** sites (`getChannels`, `buildHomeFeed`,
+`getChannelFeed`) and `DetailService.getPlaystate`, which has no bound at all and is reached on every
+detail open. If FR-205-2 removes the latter entirely, say so rather than bounding a call that no longer
+happens.
 
 **FR-205-5 — a cancelled sibling must not be logged as a failed call.** When one of a concurrent group
 times out, the others' cancellations are reported as their own failures (39 `getNextUp` "failures" for a
@@ -230,6 +277,12 @@ minutes). Under FR-205-2 that becomes *trigger a refresh*, not *make the next re
 4. **Should the refresher back off when Jellyfin is degraded?** If Jellyfin is answering in 8 s, polling
    it harder is the wrong response — but stopping means every viewer's row goes stale with no signal.
    FR-205-8's pacing work may answer this; if it does, say so there rather than twice.
-5. **Is `getRecentlyPlayedAll`'s sequential paging worth parallelizing?** 7 pages × ~0.25 s warm. Off the
+5. **Should `browseFiltered` hydrate the page or the match set?** It currently hydrates every matched
+   item (`BrowseService.kt:78`) though it returns a page, which on a 400-title "→ See all" is four
+   chunked round trips for tiles nobody scrolled to. Under FR-205-2 the cost moves off the request path
+   and the question becomes moot — unless the refresher's map is itself scoped, in which case a browse
+   over rarely-touched titles finds nothing cached and the page-vs-match-set choice returns. Worth
+   deciding once, where the refresher's scope is decided.
+6. **Is `getRecentlyPlayedAll`'s sequential paging worth parallelizing?** 7 pages × ~0.25 s warm. Off the
    request path it hardly matters, which may be the answer — but it is 1.8 s of one user's refresh and
    the page count grows with watch history, unbounded.
