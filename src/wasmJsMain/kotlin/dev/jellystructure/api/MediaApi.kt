@@ -824,17 +824,20 @@ object MediaApi {
     }.getOrNull()
 
     @Serializable
-    private data class MkvRepairReq(val paths: List<String>)
+    private data class MkvRepairReq(val mediaId: String, val paths: List<String>)
 
-    /** Phase 201 amendment (2026-09-13, FR-201-12) — repair exactly the paths passed in (this title's
-     *  own broken files, never the whole library). Returns the per-path success map, or null on failure. */
-    suspend fun repairMkvLayout(paths: List<String>): Map<String, Boolean>? = runCatching {
+    /** Phase 201 amendment (2026-09-13, FR-201-12) — queue a repair of exactly the paths passed in (this
+     *  title's own broken files, never the whole library). Returns the media-job id (progress/outcome
+     *  show on Activity ▸ Jobs, per the same 2026-09-13 amendment that moved this off the request
+     *  thread — see MkvLayoutAudit.repair's doc), or null if it couldn't even be queued. */
+    suspend fun repairMkvLayout(mediaId: String, paths: List<String>): String? = runCatching {
         val response = httpClient.post("/api/media/health/mkv-layout/repair") {
             contentType(ContentType.Application.Json)
-            setBody(MkvRepairReq(paths))
+            setBody(MkvRepairReq(mediaId, paths))
         }
         if (response.status.value !in 200..299) return@runCatching null
-        response.body<Map<String, Boolean>>()
+        @Serializable data class JobIdResp(val jobId: String)
+        response.body<JobIdResp>().jobId
     }.getOrNull()
 
     suspend fun getRecentActivity(): List<HistoryEntry> = runCatching {

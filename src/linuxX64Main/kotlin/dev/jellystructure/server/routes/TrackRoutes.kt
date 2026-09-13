@@ -728,15 +728,24 @@ fun Route.trackRoutes(
     // Phase 201 (FR-201-5) — repair a specific, operator-chosen set of files: normally exactly the
     // `tracksAfterClusters` list a prior sweep reported. An explicit action on the media library, not
     // something a scan may trigger on its own initiative (Phase 188 is the standing reminder why).
+    //
+    // Phase 201 amendment (2026-09-13) — this used to run every file inline on the request thread and
+    // block until all were done. The first real production click (85 episodes) took minutes with no
+    // feedback, read as broken, and got re-clicked/reloaded — each attempt ran a fresh, fully-overlapping
+    // repair of the same files (see MkvLayoutAudit.repair's doc for the race that caused). It now enqueues
+    // through the existing Phase 109 media job queue instead: 202 + jobId, visible with real progress on
+    // Activity ▸ Jobs, and the queue's single-worker FIFO is what actually rules out the concurrent-remux
+    // race (a second "Fix now" click just enqueues a second job behind the first, never runs alongside it).
     post("/media/health/mkv-layout/repair") {
-        @Serializable data class MkvRepairReq(val paths: List<String>)
+        @Serializable data class MkvRepairReq(val mediaId: String, val paths: List<String>)
         val req = call.receive<MkvRepairReq>()
         if (req.paths.isEmpty()) return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "paths required"))
-        val result = dev.jellystructure.media.MkvLayoutAudit.repair(req.paths)
-        // Phase 201 amendment (2026-09-13, FR-201-13): a fixed file stops appearing immediately rather
-        // than waiting out MkvHealthCache's refresh interval.
-        dev.jellystructure.media.MkvHealthCache.markRepaired(result.filterValues { it }.keys)
-        call.respond(result)
+        val item = store.resolve(req.mediaId) ?: return@post call.respond(HttpStatusCode.NotFound)
+        val job = mediaJobQueue.enqueue(
+            "mkv_layout_repair", item.id, "Fix now: ${req.paths.size} file${if (req.paths.size != 1) "s" else ""}",
+            dev.jellystructure.jobs.MediaJobParams(repairPaths = req.paths), fileCount = req.paths.size,
+        )
+        call.respond(HttpStatusCode.Accepted, mapOf("jobId" to job.id))
     }
 }
 

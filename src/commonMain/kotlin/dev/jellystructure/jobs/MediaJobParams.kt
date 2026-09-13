@@ -36,4 +36,10 @@ data class MediaJobParams(
     // explicit "detect again" in the segment editor — which per the phase's invariant must never be
     // silently deferred.
     val deferWhilePlaying: Boolean = false,
+
+    // Phase 201 amendment (2026-09-13) — mkv_layout_repair (the media lane): every broken file's path,
+    // repaired one at a time in this order so progress (filesDone/fileCount) means something. Unlike
+    // reorder/remove this job type has no single [episodeFilename] target — it can span every episode of
+    // a series in one enqueue.
+    val repairPaths: List<String>? = null,
 )
