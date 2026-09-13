@@ -61,4 +61,29 @@ class TriageDetectionTest {
         ))
         assertEquals(2, TriageDetection.coverAsVideoCount(s))
     }
+
+    // Phase 201 amendment (2026-09-13) — mkv_track_layout folded into the triage framework.
+    @Test
+    fun `movie whose own path is in the broken set counts as one`() {
+        val m = movie(emptyList()).copy(path = "/mnt/movies/Sintel/Sintel.mkv")
+        assertEquals(1, TriageDetection.mkvLayoutBrokenCount(m, setOf("/mnt/movies/Sintel/Sintel.mkv")))
+        assertEquals(0, TriageDetection.mkvLayoutBrokenCount(m, emptySet()))
+    }
+
+    @Test
+    fun `series counts only its own broken episode paths`() {
+        val s = series(listOf(
+            episode("S01E01.mkv", emptyList()),
+            episode("S01E02.mkv", emptyList()),
+            episode("S01E03.mkv", emptyList()),
+        ))
+        val broken = setOf("/x/S01E01.mkv", "/x/S01E03.mkv", "/some/other/show/S02E04.mkv")
+        assertEquals(2, TriageDetection.mkvLayoutBrokenCount(s, broken))
+    }
+
+    @Test
+    fun `no overlap with the broken set counts as zero`() {
+        val s = series(listOf(episode("S01E01.mkv", emptyList())))
+        assertEquals(0, TriageDetection.mkvLayoutBrokenCount(s, setOf("/unrelated/path.mkv")))
+    }
 }

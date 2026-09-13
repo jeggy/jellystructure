@@ -413,6 +413,10 @@ class MediaStore(
                 "segments_lowconf" -> items = items.filter { TriageDetection.lowConfidenceSegmentsCount(it, segmentStore) > 0 }  // Phase 150/163
                 "no_segments" -> items = items.filter { TriageDetection.hasNoSegments(it, segmentStore) }  // Phase 150/163
                 "unresolved_jellyfin_id" -> items = items.filter { TriageDetection.unresolvedJellyfinIdCount(it) > 0 }  // Phase 152/153
+                "mkv_track_layout" -> {  // Phase 201 amendment (2026-09-13)
+                    val broken = MkvHealthCache.brokenPaths(items)
+                    items = items.filter { TriageDetection.mkvLayoutBrokenCount(it, broken) > 0 }
+                }
             }
             items
         }.let { items ->

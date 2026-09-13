@@ -814,6 +814,29 @@ object MediaApi {
         response.body<JobIdResp>().jobId
     }.getOrNull()
 
+    @Serializable
+    data class MkvLayoutStatus(val brokenPaths: List<String> = emptyList())
+
+    /** Phase 201 amendment (2026-09-13, FR-201-11) — a live, uncached check of just this title's own
+     *  MKV file(s) for the Tracks-after-Cluster defect (see MkvLayout.kt). */
+    suspend fun mkvLayoutStatus(id: String): MkvLayoutStatus? = runCatching {
+        httpClient.get("/api/media/$id/health/mkv-layout").body<MkvLayoutStatus>()
+    }.getOrNull()
+
+    @Serializable
+    private data class MkvRepairReq(val paths: List<String>)
+
+    /** Phase 201 amendment (2026-09-13, FR-201-12) — repair exactly the paths passed in (this title's
+     *  own broken files, never the whole library). Returns the per-path success map, or null on failure. */
+    suspend fun repairMkvLayout(paths: List<String>): Map<String, Boolean>? = runCatching {
+        val response = httpClient.post("/api/media/health/mkv-layout/repair") {
+            contentType(ContentType.Application.Json)
+            setBody(MkvRepairReq(paths))
+        }
+        if (response.status.value !in 200..299) return@runCatching null
+        response.body<Map<String, Boolean>>()
+    }.getOrNull()
+
     suspend fun getRecentActivity(): List<HistoryEntry> = runCatching {
         httpClient.get("/api/activity/recent").body<List<HistoryEntry>>()
     }.getOrDefault(emptyList())

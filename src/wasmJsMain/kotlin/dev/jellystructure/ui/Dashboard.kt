@@ -267,6 +267,7 @@ private val ATTENTION_ROW_ORDER = listOf(
     // library entry, and kept next to it: both are "one thing exists twice" problems.
     "duplicate_episode" to "bad",
     "missing_from_source" to "bad",
+    "mkv_track_layout" to "bad",  // Phase 201 amendment (2026-09-13) — unplayable in Ravilo
 )
 
 private suspend fun loadRecentActivity() {
