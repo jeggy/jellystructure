@@ -32,6 +32,7 @@
     const LANG_CC = {
       en: 'gb', fr: 'fr', de: 'de', es: 'es', da: 'dk', fo: 'fo', is: 'is', no: 'no', sv: 'se', fi: 'fi', nl: 'nl', it: 'it', pt: 'pt', pl: 'pl', ru: 'ru', ja: 'jp', ko: 'kr', zh: 'cn', ar: 'sa', hi: 'in',
       sr: 'rs', srp: 'rs', bg: 'bg', bul: 'bg', id: 'id', ind: 'id', ms: 'my', msa: 'my', may: 'my', sl: 'si', slv: 'si', et: 'ee', est: 'ee', lv: 'lv', lav: 'lv', lt: 'lt', lit: 'lt', tl: 'ph', fil: 'ph',
+      ca: 'ct', cat: 'ct',  // R239 amendment (2026-09-13) parity
     };
     const audCc = {};
     const PEOPLE = ['Sigrun Restorff','Páll Heinason','Marin Klett','Eva Restorff','Tóki á Bø','Lena Björk','Anders Holm','Freya Dahl','Mikkel Sørensen','Ingrid Vold','Johan Máni','Sara Winther','Colin Reeves','Nadia Hassan'];

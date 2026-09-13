@@ -85,12 +85,31 @@ class AudioFlagStripTest {
     }
 
     @Test
-    fun `Tamil, Telugu and Catalan are deliberately still unmapped`() {
-        // No ISO-3166 country flag fits them (India already maps to Hindi's flag; Catalonia isn't a
-        // country) — FR-R239-3's honest remaining gap, not an oversight.
-        val counts = countFlagStrip(listOf("tam", "tel", "cat"))
+    fun `Tamil and Telugu are deliberately still unmapped`() {
+        // No ISO-3166 country flag fits them, and reusing India's (already Hindi's) would collapse
+        // three distinct languages onto one shown flag via this file's own dedup — the exact
+        // undercount FR-R239-1 exists to prevent. Honest remaining gap, not an oversight.
+        val counts = countFlagStrip(listOf("tam", "tel"))
 
         assertTrue(counts.shownFlags.isEmpty())
-        assertEquals(3, counts.extra)
+        assertEquals(2, counts.extra)
+    }
+
+    @Test
+    fun `Catalan maps to its own flag, both language-code forms`() {
+        // R239 amendment (2026-09-13) — Catalonia's flag (Senyera) is a single, uncontested regional
+        // flag, unlike Tamil/Telugu's situation above.
+        val counts = countFlagStrip(listOf("ca", "cat"))
+
+        assertEquals(1, counts.shownFlags.size)
+        assertEquals(0, counts.extra)
+    }
+
+    @Test
+    fun `Catalan mapped, Tamil and Telugu still not, all three counted`() {
+        val counts = countFlagStrip(listOf("cat", "tam", "tel"))
+
+        assertEquals(1, counts.shownFlags.size) // "cat" maps
+        assertEquals(2, counts.extra) // "tam"/"tel" counted, just not shown as flags
     }
 }

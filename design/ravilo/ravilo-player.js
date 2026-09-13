@@ -52,6 +52,7 @@
   const PL_CC = {
     en:'gb', fr:'fr', de:'de', es:'es', da:'dk', fo:'fo', is:'is', no:'no', sv:'se', fi:'fi', nl:'nl', it:'it', pt:'pt', pl:'pl', ru:'ru', ja:'jp', ko:'kr', zh:'cn',
     sr:'rs', srp:'rs', bg:'bg', bul:'bg', id:'id', ind:'id', ms:'my', msa:'my', may:'my', sl:'si', slv:'si', et:'ee', est:'ee', lv:'lv', lav:'lv', lt:'lt', lit:'lt', tl:'ph', fil:'ph',
+    ca:'ct', cat:'ct',  // R239 amendment (2026-09-13) parity
   };
   // jargon-free variant labels (no codec names, no delivery-method talk)
   const PL_KIND = { forced:'Signs only', sdh:'Sound described', describe:'Describes action', commentary:'Commentary' };
