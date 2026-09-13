@@ -139,6 +139,42 @@ class MkvLayoutTest {
         assertEquals(MkvLayout.ELEMENT_SIZE_OVERFLOW, scanMkvLayout(buf))
     }
 
+    /** Phase 201, 2026-09-13 amendment — the corruption that actually shipped on production files:
+     *  a child *inside* the first Cluster declaring a size far larger than the Cluster (one real file
+     *  declared 22 GB inside a 395 KB Cluster). The top-level walk treats a Cluster as one opaque
+     *  element, so before this the file was reported OK while being exactly as unplayable as a
+     *  TRACKS_AFTER_CLUSTER one. */
+    @Test
+    fun `a Cluster child whose size overruns the Cluster is ELEMENT_SIZE_OVERFLOW`() {
+        val buf = Buffer().apply {
+            writeEbmlHeaderAndSegment()
+            writeElement(id = 0x1654AE6BL, idLen = 4, contentSize = 6) // Tracks
+            writeIdBytes(0x1F43B675L, 4)  // Cluster
+            writeSizeBytes(40L, 1)        // ...claiming 40 bytes of children
+            writeIdBytes(0xA3L, 1)        // SimpleBlock
+            writeSizeBytes(9_999_999L, 4) // ...declaring far more than the Cluster's 40
+            repeat(30) { writeByte(0) }
+        }
+
+        assertEquals(MkvLayout.ELEMENT_SIZE_OVERFLOW, scanMkvLayout(buf))
+    }
+
+    /** The same descent must not cry wolf on a normal Cluster whose children tile it exactly. */
+    @Test
+    fun `a Cluster whose children fit exactly is OK`() {
+        val buf = Buffer().apply {
+            writeEbmlHeaderAndSegment()
+            writeElement(id = 0x1654AE6BL, idLen = 4, contentSize = 6) // Tracks
+            writeIdBytes(0x1F43B675L, 4)
+            // Timestamp(0xE7): 1 id + 1 size + 1 body = 3; SimpleBlock(0xA3): 1 + 1 + 10 = 12 → 15
+            writeSizeBytes(15L, 1)
+            writeElement(id = 0xE7L, idLen = 1, contentSize = 1)
+            writeElement(id = 0xA3L, idLen = 1, contentSize = 10)
+        }
+
+        assertEquals(MkvLayout.OK, scanMkvLayout(buf))
+    }
+
     /** A multi-byte VINT size (2-byte length descriptor) — real files routinely need more than one
      *  size byte for a several-KB `Tracks` element; this pins that the length encoding is decoded
      *  correctly, not just the common 1-byte case. */

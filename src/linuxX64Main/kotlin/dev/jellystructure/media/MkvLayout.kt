@@ -81,7 +81,13 @@ internal fun scanMkvLayout(source: Source): MkvLayout {
                 // declared size overruns the actual file, not "unparseable."
                 if (!safeSkip(source, size)) return MkvLayout.ELEMENT_SIZE_OVERFLOW
             }
-            CLUSTER_ID -> return if (sawTracks) MkvLayout.OK else MkvLayout.TRACKS_AFTER_CLUSTER
+            CLUSTER_ID -> {
+                if (!sawTracks) return MkvLayout.TRACKS_AFTER_CLUSTER
+                // A Cluster with an unknown size is legal for a still-being-written/streamed file —
+                // there is no declared bound to validate against, so don't guess.
+                if (size == UNKNOWN_SIZE) return MkvLayout.OK
+                return scanClusterChildren(source, size)
+            }
             else -> {
                 // An unknown-size element here (only legal for a still-being-written Cluster in
                 // practice) can't be skipped — bail out honestly rather than guess.
@@ -93,6 +99,66 @@ internal fun scanMkvLayout(source: Source): MkvLayout {
     // Reached EOF with no Cluster at all (e.g. a truncated or non-video MKV) — nothing to strand a
     // player on, so it's not the failure mode this check exists to catch.
     return MkvLayout.OK
+}
+
+/**
+ * Phase 201, 2026-09-13 amendment — walks the children of the first `Cluster`, checking each declared
+ * size against the bytes the `Cluster` itself said it had left.
+ *
+ * This is where the real-world corruption actually lives: the 2026-09-13 concurrent-repair race left
+ * files whose *first Cluster body* contains a child element declaring a preposterous size (one
+ * production file: 22 GB inside a 395 KB Cluster). The top-level walk above never saw it, because it
+ * treats the whole `Cluster` as one opaque element to stop at — so a file could be reported `OK` while
+ * being exactly as unplayable as a `TRACKS_AFTER_CLUSTER` one, and with the same symptom (ffprobe and
+ * Jellyfin resync past the bad element and report it fine; ExoPlayer's linear reader cannot).
+ *
+ * Bounded on purpose: only the *first* Cluster is descended into, so this reads one Cluster's worth of
+ * bytes (a few hundred KB) rather than the whole file — the full 8 015-file production sweep ran in
+ * ~88 s with this check in place. It needs no file length and no seeking: every bound is the `Cluster`'s
+ * own declared size, decremented as children are consumed, which is exactly the arithmetic a linear
+ * reader does and therefore exactly the arithmetic that fails on these files.
+ */
+private fun scanClusterChildren(source: Source, clusterSize: Long): MkvLayout {
+    var remaining = clusterSize
+    // A Cluster holds blocks, not thousands of tiny elements; this only exists so a pathological
+    // (already-corrupt) file can't spin here. Hitting it means "couldn't tell", not "fine".
+    var guard = 0
+    while (remaining > 0 && guard < 100_000) {
+        guard++
+        // The Cluster said it had more bytes than the file actually contains.
+        if (source.exhausted()) return MkvLayout.ELEMENT_SIZE_OVERFLOW
+        val id = readVintSized(source, stripMarker = false) ?: return MkvLayout.ELEMENT_SIZE_OVERFLOW
+        remaining -= id.bytesRead
+        if (remaining <= 0) return MkvLayout.ELEMENT_SIZE_OVERFLOW
+        val size = readVintSized(source, stripMarker = true) ?: return MkvLayout.ELEMENT_SIZE_OVERFLOW
+        remaining -= size.bytesRead
+        // An unknown-size child can't be measured against the remaining budget — stop rather than guess.
+        if (size.value == UNKNOWN_SIZE) return MkvLayout.OK
+        if (size.value > remaining) return MkvLayout.ELEMENT_SIZE_OVERFLOW
+        if (!safeSkip(source, size.value)) return MkvLayout.ELEMENT_SIZE_OVERFLOW
+        remaining -= size.value
+    }
+    return MkvLayout.OK
+}
+
+private class Vint(val value: Long, val bytesRead: Int)
+
+/** [readVintId]/[readVintSize] with the consumed byte count, which [scanClusterChildren] needs to
+ *  decrement its budget by. `stripMarker` picks between the two: an ID keeps its length-descriptor
+ *  bits (per spec, and matching the ID constants above), a size has them stripped. */
+private fun readVintSized(source: Source, stripMarker: Boolean): Vint? {
+    if (source.exhausted()) return null
+    val b0 = source.readByte().toInt() and 0xFF
+    val len = vintLength(b0)
+    if (len <= 0) return null
+    val marker = 0x80 shr (len - 1)
+    var value = if (stripMarker) (b0 and marker.inv() and 0xFF).toLong() else b0.toLong()
+    repeat(len - 1) {
+        if (source.exhausted()) return null
+        value = (value shl 8) or (source.readByte().toLong() and 0xFF)
+    }
+    if (stripMarker && value == (1L shl (7 * len)) - 1) return Vint(UNKNOWN_SIZE, len)
+    return Vint(value, len)
 }
 
 private fun safeSkip(source: Source, byteCount: Long): Boolean {
