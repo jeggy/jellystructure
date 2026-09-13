@@ -9,8 +9,23 @@
 > second** Home screen.
 
 ## Status
-Planned, written 2026-09-13. Audit-authored, not dev-reviewed, not built. Backend-only — no Ravilo
-counterpart, no client change, no new UI.
+✓ Built 2026-09-13. Audit-authored, not dev-reviewed, not deployed. Backend-only — no Ravilo
+counterpart, no client change, no new UI. `compileKotlinLinuxX64`/`compileTestKotlinLinuxX64` clean;
+`MediaStoreFeedVersionTest` (3 tests) green. Not live-verified — the running backend still keys on
+`libraryVersion` until redeployed.
+
+**FR-204-2 decided: the free option.** `stampTimestamps` already computed
+`contentSignature(old) != contentSignature(fresh)` to decide `updatedAt` and discarded the result
+otherwise; it now also returns that `changed` boolean, and a new `MediaStore.feedVersion` (separate
+`AtomicLong`, alongside `libraryVersion`) advances only when it's true. `HomeFeedService`'s `feedCache`/
+`continueListCache` key on `feedVersion`; `nfoCoveredCache`/`trackFacetsCache`/`metaFacetsCache`/Triage's
+count cache are untouched, still on `libraryVersion` (FR-204-3). `backfillLibraryIds`/
+`backfillTimestamps` deliberately never bump `feedVersion` (neither field is card-visible);
+`update()`'s wholesale replace and `deleteItem` both bump it unconditionally, the former because it's a
+rare bulk path not worth the per-item signature dance, the latter because a title disappearing is
+unambiguously card-relevant. This settles open question 1 differently than measuring first would have:
+the free option needed no measurement to justify, since its cost is zero by construction — worth doing
+regardless of what the `changed==false` fraction turns out to be.
 
 **This phase was filed by Phase 182, in Phase 182's own words**, and has sat unclaimed since
 2026-08-31. From that spec's FR-182-9 measurement notes:

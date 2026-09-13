@@ -69,9 +69,11 @@ class HomeFeedService(
     private val json = Json { encodeDefaults = true }
 
     // Phase R86-A: stale-while-revalidate home feed cache per Jellyfin user.
-    // Key = jellyfinUserId; invalidated on library write (libraryVersion), config change (cfgHash),
-    // a Phase 142 (+ tag follow-up) policy change (allowedHash), or TTL (Continue stays fresh within FEED_TTL_MS).
-    private data class FeedEntry(val feed: HomeFeed, val builtAt: Long, val libVer: Long, val cfgHash: Int, val allowedHash: Int)
+    // Key = jellyfinUserId; invalidated on a card-relevant library write (feedVersion — Phase 204;
+    // was libraryVersion, which bumps on every write regardless of relevance and thrashed this cache on
+    // background scan noise), config change (cfgHash), a Phase 142 (+ tag follow-up) policy change
+    // (allowedHash), or TTL (Continue stays fresh within FEED_TTL_MS).
+    private data class FeedEntry(val feed: HomeFeed, val builtAt: Long, val feedVer: Long, val cfgHash: Int, val allowedHash: Int)
     private val feedCache = HashMap<String, FeedEntry>()
 
     // Bug fix: per-user cache for the WHOLE catalog's playstate (not just one feed's rows) — a cache hit
@@ -87,7 +89,7 @@ class HomeFeedService(
     // staleness/invalidation shape as [feedCache]: TTL = FEED_TTL_MS, dropped immediately on a reported
     // playback stop (see [invalidatePlaystate]). Never keyed by channel — channel membership is a filter
     // *over* this list (FR-R219-6), not a reason to rebuild it.
-    private data class ContinueListEntry(val list: List<ContinueEntry>, val builtAt: Long, val libVer: Long, val allowedHash: Int)
+    private data class ContinueListEntry(val list: List<ContinueEntry>, val builtAt: Long, val feedVer: Long, val allowedHash: Int)
     private val continueListCache = HashMap<String, ContinueListEntry>()
 
     /**
@@ -111,14 +113,14 @@ class HomeFeedService(
 
     suspend fun getHomeFeed(device: DeviceData): HomeFeed = coroutineScope {
         val userId = device.jellyfinUserId
-        val libVer = mediaStore.libraryVersion
+        val feedVer = mediaStore.feedVersion
         val config = configService.getConfig(userId)
         val cfgHash = config.hashCode()
         val allowedHash = (device.allowedLibraries.hashCode() * 31 + device.allowedTags.hashCode()) * 31 + device.blockedTags.hashCode()
         val now = nowMs()
 
         val cachedStructural = feedCache[userId]?.takeIf {
-            it.libVer == libVer && it.cfgHash == cfgHash && it.allowedHash == allowedHash && (now - it.builtAt) < FEED_TTL_MS
+            it.feedVer == feedVer && it.cfgHash == cfgHash && it.allowedHash == allowedHash && (now - it.builtAt) < FEED_TTL_MS
         }
 
         // Bug fix: these two used to run sequentially (build the whole feed — including its own live
@@ -127,7 +129,7 @@ class HomeFeedService(
         // concurrently; a cache hit on either side just returns immediately without touching Jellyfin.
         val feedDeferred = async {
             cachedStructural?.feed ?: buildHomeFeed(device, config).also {
-                feedCache[userId] = FeedEntry(it, now, libVer, cfgHash, allowedHash)
+                feedCache[userId] = FeedEntry(it, now, feedVer, cfgHash, allowedHash)
             }
         }
         val playstateDeferred = async { playstateFor(device, now) }
@@ -635,22 +637,22 @@ class HomeFeedService(
         token: String,
     ): List<ContinueEntry> {
         val userId = device.jellyfinUserId
-        val libVer = mediaStore.libraryVersion
+        val feedVer = mediaStore.feedVersion
         val allowedHash = (device.allowedLibraries.hashCode() * 31 + device.allowedTags.hashCode()) * 31 + device.blockedTags.hashCode()
         val now = nowMs()
         val cached = continueListCache[userId]
         cached?.takeIf {
-            it.libVer == libVer && it.allowedHash == allowedHash && (now - it.builtAt) < FEED_TTL_MS
+            it.feedVer == feedVer && it.allowedHash == allowedHash && (now - it.builtAt) < FEED_TTL_MS
         }?.let { return it.list }
         // R231 — a failed build (Jellyfin timeout, or the blank-URL config gap) is `null`, distinct from
         // a successful build that's genuinely empty. A failed build must never overwrite the cache — it's
         // transient by nature, so the very next request retries live rather than inheriting a poisoned
         // empty result for the rest of FEED_TTL_MS. Per R219's own invariant ("the SWR cache serves the
         // previous good value" on timeout), fall back to whatever is cached for this user even if it's
-        // past its own TTL/libVer/allowedHash — stale-but-real beats wrongly-empty. Only a genuinely cold
+        // past its own TTL/feedVer/allowedHash — stale-but-real beats wrongly-empty. Only a genuinely cold
         // cache (no prior entry at all) ships empty here, self-healing on the next request.
         val built = buildCanonicalContinueList(device, libraryAll, jellyfinBase, token) ?: return cached?.list ?: emptyList()
-        continueListCache[userId] = ContinueListEntry(built, now, libVer, allowedHash)
+        continueListCache[userId] = ContinueListEntry(built, now, feedVer, allowedHash)
         return built
     }
 

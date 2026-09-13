@@ -113,6 +113,21 @@ class MediaStore(
     private val libraryVersionAtomic = AtomicLong(0L)
     val libraryVersion: Long get() = libraryVersionAtomic.value
 
+    // Phase 204 (FR-204-2) — a coarser sibling of [libraryVersion] for HomeFeedService's feed/Continue
+    // caches specifically. [libraryVersion] bumps on every write regardless of content (correctly, for
+    // the facet/Triage consumers below that key on it); those caches were keying on it too, so a poster
+    // path written for one title discarded the assembled Home feed for every user. This bumps only when
+    // [stampTimestamps]' own already-computed `changed` (content-signature) comparison says a write
+    // actually changed something — the "free" option from that phase's three: the comparison already
+    // runs on every write to decide `updatedAt`, so gating this on its result costs nothing new. It is
+    // coarser than a MediaCard/FocusDetailFacts field list (an IMDb-rating-only write still bumps it,
+    // same as libraryVersion would), which is deliberate: a field-list signature drifts out of sync with
+    // whatever Phase 202 (or the next phase) adds to the payload, silently, with no test to catch it —
+    // this can't, because it reuses the one piece of "did the content change at all" logic MediaStore
+    // already maintains for its own reasons.
+    private val feedVersionAtomic = AtomicLong(0L)
+    val feedVersion: Long get() = feedVersionAtomic.value
+
     // Phase 89: memoize computed results keyed on libraryVersion so repeated reads between writes are O(1).
     // The Pair<Long, T> carries the version the result was built against; a version change auto-invalidates.
     // Phase 182 (FR-182-2): AtomicReference — same cross-thread-visibility reasoning as the index caches above.
@@ -178,12 +193,15 @@ class MediaStore(
     private fun contentSignature(item: MediaItem): MediaItem =
         item.copy(scannedAt = 0, createdAt = null, updatedAt = null, jellyfinUpdatedAt = null)
 
-    private fun stampTimestamps(fresh: MediaItem, old: MediaItem?): MediaItem {
+    // Phase 204 — returns the already-computed `changed` alongside the stamped item, instead of
+    // discarding it once `updatedAt` is decided, so callers can bump [feedVersionAtomic] on the exact
+    // same signal rather than recomputing (or skipping) their own notion of "did this write matter".
+    private fun stampTimestamps(fresh: MediaItem, old: MediaItem?): Pair<MediaItem, Boolean> {
         val now = nowMs() / 1000
         val createdAt = old?.createdAt ?: now
         val changed = old == null || contentSignature(old) != contentSignature(fresh)
         val updatedAt = if (changed) now else (old.updatedAt ?: now)
-        return fresh.copy(createdAt = createdAt, updatedAt = updatedAt)
+        return fresh.copy(createdAt = createdAt, updatedAt = updatedAt) to changed
     }
 
     // Phase 108: an episode's createdAt is the JS "first-seen" timestamp — stamped once when it's not
@@ -233,6 +251,10 @@ class MediaStore(
         // One-time startup batch (not the live-scan hot path) — a single invalidate for the whole
         // batch is simpler than patching per row, and just as correct since nothing else can be
         // running concurrently against a fresh cache this early.
+        // Phase 204 — deliberately does NOT bump feedVersionAtomic: libraryId isn't a field any
+        // MediaCard/FocusDetailFacts carries, so a feed rebuild here would cost every reader for a
+        // write that provably cannot change what they see. Same reasoning covers backfillTimestamps
+        // below (createdAt/updatedAt aren't card-visible either).
         if (backfilled > 0) {
             allItemsMutex.withLock { allItemsCache = null }
             Logger.info("MediaStore: backfilled libraryId for $backfilled rows", "media")
@@ -354,6 +376,12 @@ class MediaStore(
                 upsertItemDbOnly(merged, examined = true)
             }
         }
+        // Phase 204 — this is a wholesale delete-all + reinsert (see the comment above), not the
+        // incremental per-item hot path stampTimestamps' `changed` signal exists for. One conservative
+        // bump per call is correct and cheap: this path already forces a full allItemsCache invalidate
+        // for the same reason, and it isn't the "scan re-finds 500 unchanged titles" case this phase
+        // targets — it's a rarer bulk-import/full-rescan path.
+        feedVersionAtomic.incrementAndGet()
     }
 
     suspend fun list(
@@ -649,7 +677,8 @@ class MediaStore(
             merged = merged.copy(titlesByLang = existing.titlesByLang + item.titlesByLang)
         }
         merged = merged.copy(episodes = stampEpisodeCreatedAt(merged.episodes, old?.episodes))
-        merged = stampTimestamps(merged, old)
+        val (stamped, changed) = stampTimestamps(merged, old)
+        merged = stamped
         // Phase 153: Scanner never sets these — a fresh scan left them null every cycle, which broke
         // write_nfo's content-hash compare (a real hash can never equal null) and sync_jellyfin's
         // staleness gate (nfoWrittenAt > jfSyncedAt, comparing against a just-reset baseline). Carry
@@ -659,6 +688,10 @@ class MediaStore(
         // per-item sync): the Scanner has just probed this title's files on disk. One of only two places
         // allowed to advance the freshness clock.
         upsertItem(merged, examined = true)
+        // Phase 204 (FR-204-1) — a scan re-finding a title with no real content change must not discard
+        // every user's Home feed; `changed` is the same content-signature comparison stampTimestamps
+        // already made above.
+        if (changed) feedVersionAtomic.incrementAndGet()
     }
 
     /**
@@ -708,8 +741,13 @@ class MediaStore(
         if (respectMetadataLanguageLock) merged = preserveMetadataLanguage(merged, existing)
         if (respectJsTags) merged = preserveJsTags(merged, existing, jsTagStore.nameSet())
         merged = merged.copy(episodes = stampEpisodeCreatedAt(merged.episodes, existing?.episodes))
-        merged = stampTimestamps(merged, existing)
+        val (stamped, changed) = stampTimestamps(merged, existing)
+        merged = stamped
         upsertItem(merged, examined)
+        // Phase 204 (FR-204-1) — same reasoning as addOrUpdate: an NFO stamp, a Jellyfin sync stamp, or
+        // an artwork fetch that ends up writing back identical content must not cost every reader a
+        // rebuilt Home feed.
+        if (changed) feedVersionAtomic.incrementAndGet()
     }
 
     /**
@@ -729,6 +767,10 @@ class MediaStore(
         jellyfinIdIndex.value  = null
         genreIndexCache.value  = null
         libraryVersionAtomic.incrementAndGet()
+        // Phase 204 — a title disappearing is a real content change for anyone's Home/Continue feed
+        // (the card it backed can no longer be shown), unlike the metadata-only writes stampTimestamps
+        // filters out elsewhere.
+        feedVersionAtomic.incrementAndGet()
         lastExaminedLock.withLock { lastExaminedMap.remove(item.id) }
         db.mediaQueries.deleteById(item.id)
         return true
