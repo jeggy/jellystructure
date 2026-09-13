@@ -11,8 +11,38 @@
 > collections you didn't open** — to decide whether to draw their tiles.
 
 ## Status
-Planned, written 2026-09-13. Audit-authored, not dev-reviewed, not built. Backend-only — no client
-change, no contract change, no new UI.
+✓ Built 2026-09-13. Audit-authored, not dev-reviewed, not deployed. Backend-only — no client change, no
+contract change, no new UI. `compileKotlinLinuxX64`/`compileTestKotlinLinuxX64` clean; full `linuxX64Test`
+suite green (`HomeFeedServiceChannelRailTest`, 2 tests). Not live-verified — the running backend still
+builds every channel's full content to decide the rail until redeployed.
+
+**Build notes:** `matchesConfiguredRow` is the one predicate `buildFilterRow` (real content) and the new
+`channelHasAnyMatch` (the rail's verdict) both call — extracted once so they cannot drift, per FR-206-1's
+own wording. `buildChannels`'s loop now computes `filtered` once and asks `channelHasAnyMatch` a boolean
+instead of building full heroes+rows per channel; that function short-circuits on heroes (cheap already
+— `buildHeroesFromList` resolves a handful of configured ids), on an empty channel-scoped list (open
+question 1's "cheap outer test", which does settle the common case), and per-row via `any{}` — CONTINUE
+via the existing `canonicalContinueList` SWR cache, NEWLY_ADDED via a `kind`-only check, GENRE/CUSTOM via
+`matchesConfiguredRow`. `getChannelFeed` no longer builds the requested channel twice: `channelRail`
+(FR-206-3) is now the single cached rail lookup shared by `buildHomeFeed`, `getChannels`, and
+`getChannelFeed` — open question 2 answered "yes, one lookup" — and `channelContent` (FR-206-4) caches
+each channel's own heroes/rows per `(user, channelId)`. Both new caches key on Phase 204's `feedVersion`
++ `cfgHash` + `allowedHash`, exactly like `feedCache`, and both are cleared in `invalidatePlaystate` next
+to the existing three. `seedTotalCount` (FR-206-5) is untouched — the short-circuit only ever replaces
+the discarded emptiness check, never a returned row's own build.
+
+**Open question 4 answered:** the rail's key cannot drop the user id — `RaviloConfig` is per-user
+(constitution §3), so two viewers can have different channel lists entirely; `(cfgHash, allowedHash)`
+alone would leak one viewer's channels to another. Kept per-user, `cfgHash` still collapses a household
+sharing one config.
+
+**FR-206-6 partially automated, said so rather than overclaimed:** `HomeFeedServiceChannelRailTest`
+proves the verdict agrees with real membership in both the trivial (channel-scoped list empty) and
+non-trivial (scoped list non-empty, every row's predicate still excludes it) cases — the second case
+specifically exercises `matchesConfiguredRow`, not just the cheap outer test. It does **not** instrument
+or bound actual `MediaCard`-construction counts, which is what the FR literally asks for; a future
+regression that reintroduces a second, drifted copy of the predicate would very likely also fail this
+test's correctness assertion, but that is a side effect, not a direct measurement.
 
 **This phase is not about background work.** Unlike Phases 204 and 205 it does not close a
 background-to-interactive coupling: this cost is paid identically whether a scan is running or the box
