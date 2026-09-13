@@ -283,8 +283,9 @@ fun <T> StaticContentRow(
         //
         // So: compute the target from KNOWN geometry instead — the tile's current offset/width from
         // `layoutInfo`, its growth factor (FR-R240-7's own constant), and the panel's declared width
-        // ([FOCUS_DETAIL_PANEL_WIDTH]) — and scroll on the SAME tween the tile and panel animate on, so
-        // all three read as one motion. Nothing here depends on the panel having been laid out first.
+        // (the caller-supplied [openPanelWidth], from `focusDetailPanelWidthFor`) — and scroll on the
+        // SAME tween the tile and panel animate on, so all three read as one motion. Nothing here
+        // depends on the panel having been laid out first.
         val density = LocalDensity.current
         val panelWidthPx = with(density) { openPanelWidth.toPx() }
         val itemSpacingPx = with(density) { RaviloDimens.itemSpacing.toPx() }
