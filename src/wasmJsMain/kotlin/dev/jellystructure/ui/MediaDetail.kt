@@ -3835,7 +3835,9 @@ private val LANG_CC = mapOf(
     "th" to "th", "tha" to "th",
     "vi" to "vn", "vie" to "vn",
     // Phase R239 (FR-R239-3) — added 2026-09-12; Tamil/Telugu deliberately still absent, see Ravilo's
-    // AudioFlagStrip.kt for why.
+    // AudioFlagStrip.kt for why. CLOSED 2026-09-13, permanently — no legitimate flag exists for either
+    // (candidates reviewed and rejected, one being a proscribed militant organization's emblem); "no
+    // flag" is the intended final rendering, not an open TODO.
     "sr" to "rs", "srp" to "rs",
     "bg" to "bg", "bul" to "bg",
     "id" to "id", "ind" to "id",
