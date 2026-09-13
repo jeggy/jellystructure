@@ -395,10 +395,14 @@ class JellyfinClient {
     }
 
     suspend fun getItem(baseUrl: String, token: String, jellyfinId: String): JellyfinItem? = runCatching {
-        // Fetch via the same list-endpoint shape getItems uses, filtered to one id. The
-        // non-user-scoped single-item route `/Items/{id}` 400s with a server token across Jellyfin
-        // versions (it expects `/Users/{userId}/Items/{id}`); the `Ids=` filter on the list endpoint
-        // is accepted with the same token + Fields (incl. LockData/LockedFields for Phase 22).
+        // Fetch via the same list-endpoint shape getItems uses, filtered to one id.
+        // Phase 207/208 correction (2026-09-13, verified live against this server's Jellyfin): the
+        // non-user-scoped single-item route `/Items/{id}` 400s not because of the server token but
+        // because it has no user context — `GET /Items/{id}?userId={uid}` returns 200 with this exact
+        // admin token. `/Users/{userId}/Items/{id}` is NOT what it "expects" either: it isn't declared
+        // in this server's own OpenAPI document (Phase 208's undocumented-routes finding) — it merely
+        // also happens to work. The `Ids=` filter used here needs no user context at all and is the
+        // pattern this file now also uses in getItemMediaStreams for the same reason.
         val url = baseUrl.trimEnd('/') +
             "/Items?Ids=$jellyfinId&Recursive=true&Fields=Path,ProviderIds,ProductionYear,LockData,LockedFields,Tags,DateCreated,DateLastSaved,SeriesId"
         httpGet(url) { jellyfinAuth(token) }
@@ -866,20 +870,48 @@ class JellyfinClient {
     /**
      * Phase 179 (FR-179-1) — like [getItemDetail], but no `/Users/{userId}` context: only `MediaStreams`
      * is needed to find text-subtitle streams to pre-warm, and the pipeline has no per-device user to
-     * scope the call to (it runs once for the library, not once per viewer). Uses the admin token, same
-     * pattern as [getSeriesEpisodesMeta].
+     * scope the call to (it runs once for the library, not once per viewer).
+     *
+     * Phase 207 correction: this used to call `/Items/{id}?Fields=MediaStreams` with the admin token,
+     * which 400s — a route needing a user context answers 400, not 401/403, when none is named (see
+     * [getItem]'s comment). It ran unnoticed since Phase 179 shipped: 285 failing calls/run, all logged,
+     * none read as a bug because "0 subtitle stream(s) warmed" looks identical to "nothing needed
+     * warming." Now uses the same `Ids=` list-endpoint shape [getItem] uses, which needs no user
+     * context at all — verified live, 2026-09-13.
      */
     suspend fun getItemMediaStreams(
         baseUrl: String,
         token: String,
         jellyfinId: String,
     ): JellyfinItemDetail? = runCatching {
-        val url = baseUrl.trimEnd('/') + "/Items/$jellyfinId?Fields=MediaStreams"
+        val url = baseUrl.trimEnd('/') + "/Items?Ids=$jellyfinId&Fields=MediaStreams"
         httpGet(url) { jellyfinAuth(token) }
-            .bodyOrNull<JellyfinItemDetail>("getItemMediaStreams")
+            .bodyOrNull<JellyfinItemDetailsResponse>("getItemMediaStreams")?.items?.firstOrNull()
     }.let { result ->
         if (result.isFailure) Logger.warn("Jellyfin getItemMediaStreams failed: ${result.exceptionOrNull()?.message}")
         result.getOrNull()
+    }
+
+    /**
+     * Phase 207 (FR-207-2) — the per-series sibling of [getItemMediaStreams]: one request returns
+     * `MediaStreams` for every episode Jellyfin knows about, rather than one sequential call per episode
+     * (285 calls / 14s for one series, observed in production before this phase). No user context
+     * needed, same reasoning as [getSeriesEpisodesMeta]'s `/Shows/{seriesId}/Episodes` shape. Returns
+     * `null` only when the Jellyfin call itself failed — distinct from a successful call whose series
+     * genuinely has zero episodes — so the caller can tell "nothing to warm" from "could not tell"
+     * (FR-207-3), which is the exact distinction this phase exists to draw.
+     */
+    suspend fun getSeriesEpisodesMediaStreams(
+        baseUrl: String,
+        token: String,
+        seriesId: String,
+    ): List<JellyfinEpisodeItem>? {
+        val url = baseUrl.trimEnd('/') + "/Shows/$seriesId/Episodes?Fields=MediaStreams"
+        val response = runCatching { httpGet(url) { jellyfinAuth(token) } }.getOrElse {
+            Logger.warn("Jellyfin getSeriesEpisodesMediaStreams failed: ${it.message}")
+            return null
+        }
+        return response.bodyOrNull<JellyfinEpisodesResponse>("getSeriesEpisodesMediaStreams")?.items
     }
 
     /**

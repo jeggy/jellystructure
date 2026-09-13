@@ -345,12 +345,36 @@ suspend fun runPipeline(
                 // might now be reading.
                 awaitPlaybackClear(deferEligible, jobId, broadcaster, scanTracker)
                 val warmed = AtomicInt(0)
+                val attempted = AtomicInt(0)
+                val failed = AtomicInt(0)
                 Logger.info("prewarm_subtitles: ${workingSet.size} items")
                 runPipelineStepPool(
                     jobId, step.step, workingSet, { pipelineStepConcurrency(step.step, configStore.current.behavior.scanWorkers) },
                     scanTracker, broadcaster, labelOf = { it.title },
-                ) { item, _ -> repeat(PipelineStepOps.prewarmSubtitles(item, jellyfinClient, cfg)) { warmed.incrementAndGet() } }
-                Logger.info("prewarm_subtitles: ${warmed.value} subtitle stream(s) warmed")
+                ) { item, _ ->
+                    when (val outcome = PipelineStepOps.prewarmSubtitles(item, jellyfinClient, cfg)) {
+                        is PipelineStepOps.PrewarmOutcome.Warmed -> {
+                            attempted.incrementAndGet()
+                            repeat(outcome.count) { warmed.incrementAndGet() }
+                        }
+                        PipelineStepOps.PrewarmOutcome.LookupFailed -> {
+                            attempted.incrementAndGet()
+                            failed.incrementAndGet()
+                        }
+                        PipelineStepOps.PrewarmOutcome.Skipped -> {}
+                    }
+                }
+                // Phase 207 (FR-207-3) — "0 subtitle stream(s) warmed" is indistinguishable from "nothing
+                // needed warming" (a perfectly normal outcome) unless a run where every lookup failed
+                // says so separately, at WARN, once — not once per item, which is how the original
+                // 285-failures-per-run bug went unnoticed for a whole phase's lifetime.
+                if (attempted.value > 0 && failed.value == attempted.value) {
+                    Logger.warn("prewarm_subtitles: every lookup failed (${failed.value}/${attempted.value}) — 0 subtitle stream(s) warmed, not because none needed it")
+                } else if (failed.value > 0) {
+                    Logger.warn("prewarm_subtitles: ${warmed.value} subtitle stream(s) warmed (${failed.value}/${attempted.value} lookups failed)")
+                } else {
+                    Logger.info("prewarm_subtitles: ${warmed.value} subtitle stream(s) warmed")
+                }
             }
             "write_nfo" -> {
                 val serverUrl = cfg.apiKeys.jellyfinUrl
