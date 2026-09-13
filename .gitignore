@@ -36,7 +36,8 @@ data
 
 # Config
 config/*
-!config/config.example.toml.claude/
+!config/config.example.toml
+
 .claude/
 backend.log
 
