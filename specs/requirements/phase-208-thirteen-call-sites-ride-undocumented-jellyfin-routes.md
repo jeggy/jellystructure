@@ -10,13 +10,71 @@
 > playback at the same time.
 
 ## Status
-Planned, written 2026-09-13. Audit-authored, not dev-reviewed, not built. Backend-only, mechanical,
-no behaviour change intended — every route below has a documented equivalent with the same semantics.
+✓ Built 2026-09-13 (FR-208-1/2/3/5/6; FR-208-4 corrected, not applicable — see below). Audit-authored,
+not dev-reviewed, not deployed. Backend-only, mechanical, no behaviour change intended — every route
+migrated has a documented equivalent with the same semantics, verified live where that was safe to do.
+`compileKotlinLinuxX64`/`compileTestKotlinLinuxX64` clean; full `linuxX64Test` suite green.
 
-Sibling of Phase 207 by discovery, not by cause: 207 is a call that has never worked, this is thirteen
+**Correction found while building this phase: the count is twelve, not thirteen, and FR-208-4 describes
+a bug that no longer exists.** `openLiveStream` was already fixed to call the documented
+`/LiveStreams/Open` — not `/LiveTv/LiveStreams/Open` — in commit `dcc2de32`
+(`fix(livetv): correct LiveStreams Open/Close URL path (was 404ing)`), **2026-07-10, more than two
+months before this phase's audit.** The audit that produced this spec misread the code (or was
+comparing against a since-fixed memory of it) and reported a live bug that had been dead for ten weeks.
+Verified directly against the current source: `openLiveStream` already builds
+`/LiveStreams/Open`, matching `closeLiveStream`'s `/LiveStreams/Close` exactly — there never was an
+inconsistency to fix, once the file is actually read rather than recalled. The real count is the seven
+`/Users/{userId}/Items` callers + `getItemDetail` + the four write methods = **12**, not 13. Kept as a
+visible correction here rather than silently editing the title/count away, since "an audit's own finding
+turned out to be wrong on inspection" is exactly the kind of thing this phase's methodology section is
+about.
+
+**FR-208-1 resolved, with primary-source evidence — not just an absent OpenAPI entry.** Jellyfin's own
+current source (`jellyfin/jellyfin` on GitHub, `Jellyfin.Api/Controllers/*.cs`) marks every one of the
+twelve legacy routes `[Obsolete("Kept for backwards compatibility")]` plus `[ApiExplorerSettings(IgnoreApi
+= true)]` — which is *why* they're absent from the OpenAPI document: deliberately hidden, not merely
+undocumented by omission. Each legacy handler is a one-line delegate to the modern one
+(`MarkPlayedItemLegacy(userId, itemId, datePlayed) => MarkPlayedItem(userId, itemId, datePlayed)`, and
+the same pattern for `MarkUnplayedItemLegacy`/`MarkFavoriteItemLegacy`/`UnmarkFavoriteItemLegacy`/
+`GetItemsByUserIdLegacy`) — same internal code path, not merely "similar." A community thread
+(community.firecore.com) independently confirms the same migration and the "deprecations are normally
+marked for an entire major release cycle before removal" convention. **This phase's migration is
+therefore justified, not just its FR-208-5 guard** — the gate does not downgrade.
+
+Sibling of Phase 207 by discovery, not by cause: 207 is a call that has never worked, this is twelve
 that work but are undated cheques. **Deliberately separate phases** — 207 is a one-parameter bug fix
 with a measured 21 s payoff, this is a mechanical sweep across the hottest paths in the product and
 wants its own verification pass.
+
+**Build notes:**
+
+- **FR-208-2 (read routes) — migrated and live-verified byte-for-byte identical**, not just "returns
+  200": `getResumeItems`/`getResumeItemsAll` (`Filters=IsResumable`), `getRecentlyPlayed`/
+  `getRecentlyPlayedAll` (`Filters=IsPlayed`), `getRecentlyTouched` (no filter, `SortBy=DatePlayed`),
+  `getFavoriteItemIds` (`Filters=IsFavorite`), `getUserDataBulk` (`Ids=` bulk), and `getItemDetail`
+  (single-item) — all six distinct query shapes were run against the live household Jellyfin, old path
+  vs new path, same token, same moment: **identical JSON, item-for-item, in order, `TotalRecordCount`
+  included.** This resolves open question 1 outright — `GET /Items?userId=` does not just work, it
+  returns the *exact same* membership and ordering as `GET /Users/{userId}/Items` for every filter
+  combination this codebase uses. `getNextUp`'s `/Shows/NextUp` route was never in the `/Users/{userId}/`
+  family and is unaffected.
+- **FR-208-3 (write routes) — migrated, deliberately NOT live-tested.** `markPlayed`/`markUnplayed`/
+  `markFavorite`/`unmarkFavorite` now call `/UserPlayedItems/{itemId}?userId=`/
+  `/UserFavoriteItems/{itemId}?userId=`. Firing a live write against the household to "verify" a route
+  the source already proves is the same code path would mutate real watch-history/favourites data for
+  no additional confidence — the risk this phase's own FR-208-3 text warns against. The `jellyfin-demo`
+  container this phase names as the right target **is running on this host** (`172.28.0.43:8096`,
+  reachable), but no credentials for it were available this session — its admin account exists and is
+  password-protected, and guessing at a password was not attempted. Whoever has those credentials should
+  run the four write calls there before this phase is considered dev-reviewed.
+- **FR-208-5 — built as `JellyfinLiveRouteGuardTest`.** Bypasses `JellyfinClient`'s own methods
+  deliberately (they swallow a non-2xx into an empty default, the exact ambiguity this guard exists to
+  catch) and asserts on raw HTTP status for every migrated shape plus the exact URL Phase 207 fixed.
+  Opt-in via three env vars (`JELLYFIN_LIVE_TEST_URL`/`_TOKEN`/`_USER_ID`) — passes as a no-op with none
+  set (verified: 0 assertions run, build stays green), and was run for real against the live household
+  Jellyfin during this build (read-only shapes only, same reasoning as FR-208-3) — **all shapes 2xx.**
+- **FR-208-6 — already done.** Phase 207's commit corrected `getItem`'s comment; this phase adds nothing
+  further to it.
 
 ## The finding
 
@@ -32,25 +90,30 @@ Every HTTP-calling method in `JellyfinClient.kt` (55 of them) was enumerated, th
   would change real state. Those were cross-referenced against Jellyfin's own OpenAPI document
   (`/api-docs/openapi.json` — 392 paths, 463 operations) and nothing more.
 
-### The thirteen
+### The twelve
+
+**Corrected during the build pass** (see Status): the seventh row below (`openLiveStream`) does not
+exist — the code already calls the documented `/LiveStreams/Open`, fixed in commit `dcc2de32` on
+2026-07-10. Struck through rather than deleted, so this table still shows what the original audit
+claimed and where it was wrong.
 
 | our route | callers | live | documented in 10.11.11 |
 |---|---|---|---|
-| `GET /Users/{userId}/Items` | `getResumeItems`, `getRecentlyPlayed`, `getResumeItemsAll`, `getRecentlyPlayedAll`, `getRecentlyTouched`, `getUserDataBulk`, `getFavoriteItemIds` — **7** | **200** | `GET /Items` (+`userId`), `GET /UserItems/Resume` |
-| `GET /Users/{userId}/Items/{itemId}` | `getItemDetail` | **200** | `GET /Items/{itemId}` (+`userId`) |
-| `POST /Users/{userId}/PlayedItems/{itemId}` | `markPlayed` | not probed | `POST /UserPlayedItems/{itemId}` |
-| `DELETE /Users/{userId}/PlayedItems/{itemId}` | `markUnplayed` | not probed | `DELETE /UserPlayedItems/{itemId}` |
-| `POST /Users/{userId}/FavoriteItems/{itemId}` | `markFavorite` | not probed | `POST /UserFavoriteItems/{itemId}` |
-| `DELETE /Users/{userId}/FavoriteItems/{itemId}` | `unmarkFavorite` | not probed | `DELETE /UserFavoriteItems/{itemId}` |
-| `POST /LiveTv/LiveStreams/Open` | `openLiveStream` | not probed | `POST /LiveStreams/Open` |
+| `GET /Users/{userId}/Items` | `getResumeItems`, `getRecentlyPlayed`, `getResumeItemsAll`, `getRecentlyPlayedAll`, `getRecentlyTouched`, `getUserDataBulk`, `getFavoriteItemIds` — **7** | **200**, verified byte-identical to the replacement | `GET /Items` (+`userId`), `GET /UserItems/Resume` |
+| `GET /Users/{userId}/Items/{itemId}` | `getItemDetail` | **200**, verified byte-identical | `GET /Items/{itemId}` (+`userId`) |
+| `POST /Users/{userId}/PlayedItems/{itemId}` | `markPlayed` | not probed (see FR-208-3) | `POST /UserPlayedItems/{itemId}` |
+| `DELETE /Users/{userId}/PlayedItems/{itemId}` | `markUnplayed` | not probed (see FR-208-3) | `DELETE /UserPlayedItems/{itemId}` |
+| `POST /Users/{userId}/FavoriteItems/{itemId}` | `markFavorite` | not probed (see FR-208-3) | `POST /UserFavoriteItems/{itemId}` |
+| `DELETE /Users/{userId}/FavoriteItems/{itemId}` | `unmarkFavorite` | not probed (see FR-208-3) | `DELETE /UserFavoriteItems/{itemId}` |
+| ~~`POST /LiveTv/LiveStreams/Open`~~ | ~~`openLiveStream`~~ | **already fixed 2026-07-10** — not part of this phase | `POST /LiveStreams/Open` |
 
-Seven of the thirteen are the `/Users/{userId}/Items` list route — which is **every Jellyfin fetch
+Seven of the twelve are the `/Users/{userId}/Items` list route — which is **every Jellyfin fetch
 Continue Watching is built from** (R219's four sources), plus the playstate hydration every tile's ✓
 depends on, plus favourites.
 
-The last row is the one that shows this is drift rather than a considered choice: **`closeLiveStream`
-already uses the documented `POST /LiveStreams/Close`**, while its own partner `openLiveStream` uses the
-undocumented `/LiveTv/LiveStreams/Open`. One pair, two conventions, written at the same time.
+The struck-through row was originally read as the one that showed this was drift rather than a
+considered choice (`closeLiveStream` already documented, `openLiveStream` supposedly not) — it turned
+out to be an error in the audit instead: both have used the documented form since July.
 
 ### Why "undocumented but working" is a real risk and not pedantry
 
@@ -122,9 +185,11 @@ users. The `jellyfin-demo` container already running on this host is the right t
 write-through and R185's played/position desync history both depend on these, so a silent no-op here
 would show up as Continue Watching resurrecting finished titles — the exact bug R185 fixed.
 
-**FR-208-4 — fix the `openLiveStream`/`closeLiveStream` inconsistency.** Close already uses the
+**FR-208-4 — fix the `openLiveStream`/`closeLiveStream` inconsistency.** ~~Close already uses the
 documented form; Open should match it. Smallest item here and the only one that is unambiguously just
-tidying.
+tidying.~~ **Withdrawn — the inconsistency does not exist.** `openLiveStream` already calls the
+documented `/LiveStreams/Open`, fixed in commit `dcc2de32` on 2026-07-10, ten weeks before this phase's
+audit claimed otherwise. Verified directly against the current source during this build. Nothing to fix.
 
 **FR-208-5 — a guard so the next one of these is found by CI, not by an outage.** A single test or
 script that exercises each `JellyfinClient` route shape against a reachable Jellyfin and fails on a
@@ -155,19 +220,29 @@ requires this; whichever lands first does it.
 
 ## Open questions
 
-1. **Does `GET /Items` with a `userId` parameter return identical membership to
-   `GET /Users/{userId}/Items` for every filter combination we use?** `Filters=IsResumable`,
-   `Filters=IsPlayed`, `Filters=IsFavorite`, `SortBy=DatePlayed` and the bare `Ids=` lookup are five
-   distinct shapes and the audit only confirmed the legacy form answers 200 — not that the replacement
-   answers *the same thing*. This is the real work of FR-208-2.
-2. **Is `GET /UserItems/Resume` a better fit for `getResumeItemsAll` than `GET /Items`?** It is
-   purpose-built and may page differently. Note R219's standing rule that **a `Limit` is never a cap** —
-   whatever replaces these must still page to `TotalRecordCount`, which is the constraint that caused
-   four separate bugs before it was written down.
-3. **Should Phase 205 absorb the seven Continue-Watching callers?** 205 already restructures where those
-   calls are made from, so migrating the same seven twice is wasted motion — but bundling a route
-   migration into a restructuring makes a regression in either impossible to attribute, which is the
-   reason 204/205/206 were kept apart in the first place. Leaning: keep separate, land this first since
-   it is mechanical and verifiable.
-4. **Does the demo container's Jellyfin match production's version?** FR-208-3 and FR-208-5 both depend
-   on it being a faithful target. If it drifts, the guard tests a server nobody runs.
+1. ~~**Does `GET /Items` with a `userId` parameter return identical membership to
+   `GET /Users/{userId}/Items` for every filter combination we use?**~~ **Answered, live, during this
+   build: yes, byte-for-byte.** All six distinct query shapes this codebase uses (`Filters=IsResumable`,
+   `Filters=IsPlayed`, the no-filter `SortBy=DatePlayed` sort, `Filters=IsFavorite`, the bare `Ids=`
+   lookup, and the single-item detail form) were run old-path-vs-new-path against the live household
+   Jellyfin and returned **identical JSON**, not just matching status codes.
+2. **Is `GET /UserItems/Resume` a better fit for `getResumeItemsAll` than `GET /Items`?** Still open —
+   not tested this pass, since the `Filters=IsResumable` form on `GET /Items` was already confirmed
+   correct and sufficient. Worth a separate look if `getResumeItemsAll`'s paging ever becomes a concern
+   in its own right, but not blocking this migration. R219's standing rule stands unchanged: **a `Limit`
+   is never a cap** — whatever is used must still page to `TotalRecordCount`.
+3. **Should Phase 205 absorb the seven Continue-Watching callers?** Resolved by construction, not by
+   decision: Phase 205 restructured *when* these calls happen (background-refreshed, never on the
+   interactive path) without touching *which URL* they call, and this phase changed the URL without
+   touching the calling convention. Landing 205 first, then 208 against the resulting code, meant neither
+   pass needed to know about the other's edits — confirms the "keep separate" leaning was right, and
+   shows why: a regression introduced by either phase stayed attributable to it alone.
+4. **Does the demo container's Jellyfin match production's version?** **Checked — no, and this matters.**
+   `jellyfin-demo` (`172.28.0.43:8096`) reports **12.0.0**; the household runs **10.11.11**. That's not a
+   patch gap, it's the major-version jump the `[Obsolete]` source evidence above was read from (GitHub
+   `master`, i.e. 12.0-era code) — the demo container is at least a plausible proxy for *that* evidence,
+   but FR-208-3's write-route testing, if run there, would be validating against a server two major
+   versions ahead of the one this fix actually ships to. Not disqualifying (the legacy-route shapes are
+   old and stable enough that a 10.11→12.0 gap is unlikely to have changed their behavior), but the next
+   person to test the write migration should know they are not testing production's actual version, and
+   should treat a pass there as "plausible," not "proven."
