@@ -42,8 +42,9 @@ fun focusDetailRowOpenHorizontalScrollDelta(
 
 /**
  * The same horizontal target, computed from KNOWN geometry instead of a measurement — the only form
- * that works before the panel has ever been placed (see [dev.jellystructure.ravilo.ui.components.FOCUS_DETAIL_PANEL_WIDTH]'s
- * doc for why measuring it first is circular).
+ * that works before the panel has ever been placed (see
+ * [dev.jellystructure.ravilo.ui.components.focusDetailPanelWidthFor]'s doc for why measuring it
+ * first is circular).
  *
  * [openTileOffsetPx] is the opening tile's current left edge in the row's own scroll space and
  * [openTileWidthPx] its width *before* it grows — the grown width is derived here via
