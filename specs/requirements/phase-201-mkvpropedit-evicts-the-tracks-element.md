@@ -9,11 +9,15 @@
 
 ## Status
 ✓ Built 2026-09-10 (FR-201-1/2/3/4/6/8). Root cause corrected 2026-09-10 after a byte-exact
-reproduction — see *Correction* below. Audit-authored, not dev-reviewed, not deployed. **FR-201-5 (repair
-the 164 known-broken files) is NOT run** — the repair route exists and is tested, but was deliberately
-not invoked against production media this session. Backend/media-file only — **no Ravilo counterpart
-and no client change**: the client is behaving correctly given a file whose track list it cannot reach.
-See STATUS.md for the build summary.
+reproduction — see *Correction* below. Audit-authored, not dev-reviewed, not deployed. Backend/media-file
+only — **no Ravilo counterpart and no client change**: the client is behaving correctly given a file whose
+track list it cannot reach. See STATUS.md for the build summary.
+
+**FR-201-5's repair route ran for real for the first time 2026-09-13**, on a different series
+(Hoppy Hare Builders, not the Hoppe Hares Byggebande example above) — see the 2026-09-13 "later"
+amendment at the bottom for what that click found and fixed (a real concurrency bug, no data lost) and
+FR-201-12's amended, job-queue-backed behavior. The original 164-file count from this spec's opening
+example is still not run against production as of writing.
 
 **Amended 2026-09-12 — FR-201-6 shipped half of itself.** The sweep and repair *routes*
 (`GET /media/health/mkv-layout`, `POST /media/health/mkv-layout/repair`) exist and work — confirmed
@@ -281,3 +285,49 @@ Answers open questions 3 and 4 as built:
   style every other issue type uses), and the detail page computes its own per-title grouping from a
   live per-item check. Simpler than FR-201-9 as originally scoped, and sidesteps the stable-episode-id
   question entirely since nothing persists a grouping keyed by episode.
+
+### Amendment (2026-09-13, later) — Fix now's first real click found a concurrency bug; repair moved onto the media job queue
+
+The Triage surface's first genuine production use: an operator clicked **Fix now** on a series with 85
+broken episodes (Hoppy Hare Builders S2, not this spec's own Hoppe Hares Byggebande example). FR-201-12
+as built ran every file's repair inline on the request thread with no progress feedback — for 85 files
+that is minutes of a button that just looks disabled. Reading that as stuck, the operator reloaded and/or
+re-clicked several times; each attempt was a fresh HTTP request that repaired the *same* files again, and
+`docker logs` showed the identical episode paths being remuxed **16–26 times each, concurrently**, over a
+~5 minute window. `FfmpegRunner`'s remux helper uses a fixed, non-unique temp filename
+(`.jstmp_<basename>`) per path — shared by every track-edit function, not just this repair — so two
+overlapping repairs of the *same* path race on that name. This time every losing attempt's `mv` failed
+harmlessly onto a temp file the winner had already renamed away (confirmed on disk: no corruption, no
+leftover temp files, and the MKV header layout is now correctly repaired on the sampled episodes), but
+that was luck, not a guarantee — a truly simultaneous double-write to the same open temp path could have
+corrupted whichever `mv` ran last.
+
+**FR-201-12 is amended: the repair route no longer runs inline.** `POST /media/health/mkv-layout/repair`
+now takes `{mediaId, paths}` and enqueues one `mkv_layout_repair` job on the existing Phase 109
+`MediaJobQueue` (the media lane — the same single-worker FIFO that already serializes every
+reorder/remove ffmpeg remux), returning `202 {jobId}` immediately instead of blocking for the whole
+series. The job repairs its paths one at a time, reporting `filesDone`/`pct` after each so a long repair
+shows real, visible progress on **Activity ▸ Jobs** — which is also the answer to "if it takes a while, can
+we see the queue": yes, the same page every other bulk ffmpeg operation already uses. Critically, the
+job queue's single-worker guarantee is what actually rules out the concurrency bug: a second "Fix now"
+click (or a third, or a page reload) now just enqueues a second job behind the first — it can never run
+alongside it, on this file or any other the media lane is touching. `MkvLayoutAudit.repair` itself keeps
+no lock of its own; the queue is the only mutual-exclusion mechanism, matching how reorder/remove already
+work. The detail-page banner (FR-201-11) no longer live-updates on completion or retries failed paths
+itself — it shows "Repairing N files — queued. Progress in Activity ▸ Jobs." and leaves the button
+disabled, the same convention `media.html`'s existing "Fix cover track" (Phase 144) action already uses
+for its own queued remuxes; the banner clears on the next sweep/page load once the files are actually
+fixed.
+
+**FR-201-13's "no new state is invented" still holds, with one clarification.** That requirement is about
+not persisting *"is this file broken"* anywhere but the live sweep — still true. What's new here is a
+`media_history` row per repair job (`mkv_layout_repair`, `"fixed=N failed=M of T"`), the same *action log*
+every other track-edit route already writes (`reorder_tracks`, `remove_track`, `bulk_reorder_tracks`,
+`set_default`, …). This repair route was the one write path in the whole track editor that recorded
+nothing at all about what it had just done — an operator had no way to see, on a title's own History tab,
+that a repair had ever run. Logging the action taken is not the same thing as persisting broken-state,
+and every sibling route already does it.
+
+Fixed same day: `c10716ef` (an ad hoc in-flight-path guard, immediate stopgap) then `51b82387`
+(supersedes it — the real fix, moving the repair onto `MediaJobQueue` as described above). Not
+deployed as of writing.
