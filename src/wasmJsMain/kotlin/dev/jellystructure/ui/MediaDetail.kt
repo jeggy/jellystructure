@@ -850,6 +850,7 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
           </div>
         </div>""" else ""}
         $coverBannerHtml
+        <div id="mkv-banner" style="display:none;margin-bottom:14px"></div>
         <div id="drift-banner" style="display:none;margin-bottom:14px"></div>
         <div id="jf-lock-banner" style="display:${if (item.jellyfinLockData || item.jellyfinLockedFields.isNotEmpty()) "block" else "none"};margin-bottom:14px">
           <div style="background:var(--bad-soft);border:1px solid var(--bad);border-radius:6px;padding:10px 14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
@@ -1154,6 +1155,7 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
 
     if (activeTab == "artwork") scope.launch { loadArtworkTab(item, scope) }
     scope.launch { loadDrift(item.id, scope) }
+    scope.launch { loadMkvHealth(item, scope) }
     scope.launch { loadSeedingReport(item.id, item.kind == MediaKind.TV_SHOW) }
     if (activeTab == "tracks" && !isTvShow) {
         wireUnifiedTrackEditor("trk", item.tracks, item.id, null, scope, item.resolvedLanguage, item.path)
@@ -2909,6 +2911,64 @@ private suspend fun loadDrift(id: String, scope: CoroutineScope) {
             }
         }
     }
+}
+
+// Phase 201 amendment (2026-09-13, FR-201-11/12) — the media detail page's Tracks-after-Cluster Fix
+// banner. Async because a live per-item file-header check (MediaApi.mkvLayoutStatus) is the only way to
+// know — nothing about this defect lives in the MediaItem the page already loaded (FR-201-13: no new
+// persisted state, the sweep/live-check is the only source of truth).
+private suspend fun loadMkvHealth(item: MediaItem, scope: CoroutineScope) {
+    val status = MediaApi.mkvLayoutStatus(item.id)
+    val banner = document.getElementById("mkv-banner") as? HTMLElement ?: return
+    val broken = status?.brokenPaths.orEmpty().toSet()
+    if (broken.isEmpty()) { banner.style.display = "none"; return }
+    val isTvShow = item.kind == MediaKind.TV_SHOW
+
+    fun render(pathsLeft: Set<String>) {
+        if (pathsLeft.isEmpty()) { banner.style.display = "none"; return }
+        val detail = if (isTvShow)
+            "${pathsLeft.size} episode${if (pathsLeft.size != 1) "s" else ""} in this series can't play in Ravilo (track list unreachable)."
+        else "This file can't play in Ravilo (track list unreachable)."
+        banner.innerHTML = """
+        <div style="background:var(--bad-soft);border:1px solid var(--bad);border-radius:6px;padding:10px 14px;display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap;">
+          <span class="badge bad" style="flex:none;margin-top:1px;">⚠ Unplayable in Ravilo</span>
+          <div style="flex:1;min-width:200px;">
+            <b style="font-size:.9rem;">${detail.esc()}</b>
+            <div class="tiny muted" style="margin-top:5px;line-height:1.6;">
+              A flag edit moved this file's <code>Tracks</code> element behind its first <code>Cluster</code> —
+              Jellyfin seeks and plays it fine, which is why nothing else on this page looks wrong; Ravilo reads
+              linearly and buffers forever. Repair rewrites the header in place: no re-encode, ~0.6s per file.
+            </div>
+            <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">
+              <button id="mkv-fix-btn" class="btn sm bad">Fix now</button>
+            </div>
+          </div>
+        </div>"""
+        banner.style.display = "block"
+
+        document.getElementById("mkv-fix-btn")?.addEventListener("click") {
+            val btn = document.getElementById("mkv-fix-btn")
+            btn?.setAttribute("disabled", "true")
+            scope.launch {
+                val result = MediaApi.repairMkvLayout(pathsLeft.toList())
+                if (result == null) {
+                    showDetailMsg("Couldn't run the repair — check the server connection.", false)
+                    btn?.removeAttribute("disabled")
+                    return@launch
+                }
+                val stillBroken = pathsLeft.filter { result[it] != true }.toSet()
+                if (stillBroken.isEmpty()) {
+                    showDetailMsg("Fixed — Ravilo can now play ${if (isTvShow) "these episodes" else "this file"}.", true)
+                    banner.style.display = "none"
+                } else {
+                    showDetailMsg("${pathsLeft.size - stillBroken.size} of ${pathsLeft.size} fixed — ${stillBroken.size} still failing.", false)
+                    render(stillBroken)
+                }
+            }
+        }
+    }
+
+    render(broken)
 }
 
 /** Phase 115 (FR E) — after a sync-triggering action, Jellyfin's refresh is async: poll the drift state

@@ -139,4 +139,12 @@ object TriageDetection {
     } else hasSegmentData(segmentStore.segmentsForItem(item.id))
 
     fun hasNoSegments(item: MediaItem, segmentStore: MediaSegmentStore): Boolean = !hasAnySegments(item, segmentStore)
+
+    /** Phase 201 amendment (2026-09-13): the Tracks-after-Cluster defect (see [MkvLayout]), folded into
+     *  the standard triage framework. [broken] is a [MkvHealthCache] snapshot — unlike every other
+     *  predicate here this can't be computed from the item's own already-known fields, it needs a file
+     *  header read, hence the externally-supplied set rather than an in-place check. */
+    fun mkvLayoutBrokenCount(item: MediaItem, broken: Set<String>): Int = if (item.kind == MediaKind.TV_SHOW) {
+        item.episodes.count { it.path in broken }
+    } else if (item.path in broken) 1 else 0
 }

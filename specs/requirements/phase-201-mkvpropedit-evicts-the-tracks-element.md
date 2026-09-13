@@ -244,3 +244,40 @@ once a file is fixed.
    season/episode-number-with-filename-fallback good enough?** The Seasons & episodes tab already lives
    with the fallback for display; whether Fix now's retry-only-the-failed-ones behavior (FR-201-12)
    needs something sturdier is worth a second look once this is actually being built, not guessed here.
+
+### Amendment (2026-09-13) — the operator asked for this directly, and asked for the Dashboard, not Activity
+
+Live report: *"Snurre Snups Byggevenner"* (this spec's own opening example) has no issue anywhere in
+jellystructure and no category on the Dashboard — confirming the 2026-09-12 finding above: FR-201-9
+through FR-201-13 were speced but never built. Verified again live-inspecting
+`Bugs.Bunny.Builders.S01E14...mkv` with `mkvinfo`: no top-level `Tracks` element appears before the
+file's single reported `Cluster` — the exact defect, still present, still unrepaired.
+
+**Building FR-201-9/11/12/13 now, FR-201-10 superseded rather than built as originally written.** The
+operator's own words: *"it a[s] an issue in jellystructure and then as a category on the dashboard, and
+when opening an item with this type of issue, we should be prompted on the media details page... and an
+explanation about what's wrong and what will fix it."* That is the **Triage framework** (Phase 117/146)
+verbatim — every other issue type already gets exactly this shape (a `TriageTypeCount` row rendered as a
+Dashboard "attention breakdown" cell, a `Library ?filter=` value, a click-through). Building a *second*,
+parallel health card on `activity.html` for one issue type when the standing mechanism for "issue type
+with a count and a fix" already exists on the Dashboard would be the inconsistency, not the fix. This
+spec now treats **FR-201-10 as superseded**: `mkv_track_layout` becomes a normal `TriageTypeCount` /
+`?filter=mkv_track_layout` entry instead of a bespoke Activity card. No Activity page change.
+
+Answers open questions 3 and 4 as built:
+- **Refresh cadence (Q3):** a process-lifetime cache (`MkvHealthCache`), lazily refreshed at most every
+  15 minutes on `/triage/count`/`/triage` access — cheap enough per FR-201-6's own measurement not to
+  need a dedicated trigger, and avoids a full-library file-header sweep on every Dashboard load. A
+  successful repair (FR-201-12) removes just that path from the cache immediately rather than waiting
+  out the interval — the same "no stale false-positive after a fix" property FR-201-13 asks for, without
+  needing a full re-sweep. Hooking a sweep into bulk track-edit ops (the rest of Q3) stays unresolved —
+  not built.
+- **Per-episode keying (Q4):** the detail-page Fix banner (FR-201-11) doesn't reuse FR-201-9's
+  library-wide grouping at all — it calls a new, cheap **per-item** endpoint
+  (`GET /media/{id}/health/mkv-layout`, this item's own file(s) only, live, no cache) and matches the
+  returned broken paths against the episodes/path the page already has loaded. FR-201-9's dedicated
+  "SweepResult groups by title" data structure is therefore **not built** — the Dashboard/Library side
+  only ever needs a flat broken-paths set (matched per item via the same `TriageDetection` predicate
+  style every other issue type uses), and the detail page computes its own per-title grouping from a
+  live per-item check. Simpler than FR-201-9 as originally scoped, and sidesteps the stable-episode-id
+  question entirely since nothing persists a grouping keyed by episode.

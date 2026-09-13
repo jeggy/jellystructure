@@ -714,6 +714,17 @@ fun Route.trackRoutes(
         call.respond(dev.jellystructure.media.MkvLayoutAudit.sweep(store.allItems()))
     }
 
+    // Phase 201 amendment (2026-09-13, FR-201-11) — the media detail page's own Fix banner: a live
+    // check of just THIS item's file(s), never the whole-library sweep above. Cheap (1 file for a
+    // movie, N for a series) and always fresh — no cache, unlike the Dashboard/Library integration's
+    // MkvHealthCache, which exists specifically to avoid this cost at library scale.
+    get("/media/{mediaId}/health/mkv-layout") {
+        val mediaId = call.parameters["mediaId"] ?: return@get call.respond(HttpStatusCode.BadRequest)
+        val item = store.resolve(mediaId) ?: return@get call.respond(HttpStatusCode.NotFound)
+        val broken = dev.jellystructure.media.MkvLayoutAudit.sweep(listOf(item)).tracksAfterClusters
+        call.respond(mapOf("brokenPaths" to broken))
+    }
+
     // Phase 201 (FR-201-5) — repair a specific, operator-chosen set of files: normally exactly the
     // `tracksAfterClusters` list a prior sweep reported. An explicit action on the media library, not
     // something a scan may trigger on its own initiative (Phase 188 is the standing reminder why).
@@ -721,7 +732,11 @@ fun Route.trackRoutes(
         @Serializable data class MkvRepairReq(val paths: List<String>)
         val req = call.receive<MkvRepairReq>()
         if (req.paths.isEmpty()) return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "paths required"))
-        call.respond(dev.jellystructure.media.MkvLayoutAudit.repair(req.paths))
+        val result = dev.jellystructure.media.MkvLayoutAudit.repair(req.paths)
+        // Phase 201 amendment (2026-09-13, FR-201-13): a fixed file stops appearing immediately rather
+        // than waiting out MkvHealthCache's refresh interval.
+        dev.jellystructure.media.MkvHealthCache.markRepaired(result.filterValues { it }.keys)
+        call.respond(result)
     }
 }
 

@@ -8,6 +8,7 @@ import dev.jellystructure.media.DuplicateEpisodes
 import dev.jellystructure.media.FfmpegRunner
 import dev.jellystructure.media.FfprobeRunner
 import dev.jellystructure.media.MediaHistory
+import dev.jellystructure.media.MkvHealthCache
 import dev.jellystructure.media.MediaSegmentStore
 import dev.jellystructure.media.MediaStore
 import dev.jellystructure.media.MkvpropeditRunner
@@ -142,6 +143,10 @@ fun Route.triageRoutes(store: MediaStore, jellyfinClient: JellyfinClient, config
             val segmentsLowConfInstances = if (segmentsEnabled) all.sumOf { TriageDetection.lowConfidenceSegmentsCount(it, segmentStore) } else 0
             val segmentsLowConfTitles = if (segmentsEnabled) all.count { TriageDetection.lowConfidenceSegmentsCount(it, segmentStore) > 0 } else 0
             val noSegmentsTitles = if (segmentsEnabled) all.count { TriageDetection.hasNoSegments(it, segmentStore) } else 0
+            // Phase 201 amendment (2026-09-13): Tracks-after-Cluster — unplayable in Ravilo, fine in Jellyfin.
+            val mkvBroken = MkvHealthCache.brokenPaths(all)
+            val mkvLayoutInstances = all.sumOf { TriageDetection.mkvLayoutBrokenCount(it, mkvBroken) }
+            val mkvLayoutTitles = all.count { TriageDetection.mkvLayoutBrokenCount(it, mkvBroken) > 0 }
 
             val types = listOf(
                 TriageTypeCount("untagged", "Untagged audio/subtitle tracks",
@@ -186,6 +191,9 @@ fun Route.triageRoutes(store: MediaStore, jellyfinClient: JellyfinClient, config
                 TriageTypeCount("no_segments", "No intro/credits detected",
                     "Skip Intro/Credits falls back to the fixed end-of-file heuristic — no chapter, heuristic, or manual marker exists yet.",
                     noSegmentsTitles, noSegmentsTitles),
+                TriageTypeCount("mkv_track_layout", "Unplayable in Ravilo (MKV track layout)",
+                    "A flag edit moved the file's Tracks element after its first Cluster. Jellyfin seeks and plays it fine, which is why nothing else here looks wrong — Ravilo reads linearly and buffers forever. Repair rewrites the header in place, no re-encode.",
+                    mkvLayoutInstances, mkvLayoutTitles),
             )
             val result = TriageCount(types = types, total = types.sumOf { it.instances })
             triageCountCache = Pair(ver, result)
