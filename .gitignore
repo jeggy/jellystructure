@@ -44,3 +44,4 @@ backend.log
 # Qodana local analysis (never committed)
 .qodana/
 qodana.sarif.json
+qodana-baseline.sarif.json
