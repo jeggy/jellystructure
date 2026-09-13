@@ -798,14 +798,26 @@ private fun classifyEpisode(ep: Episode, kind: TrackKind, targetLangs: List<Stri
         // Phase 209: a sidecar subtitle has no container stream to reorder (Phase 200), so it's
         // correctly excluded above — but the old "≤1 track of this kind" reason counted only the
         // embedded remainder and read as "nothing here" even when several sidecar files exist.
-        val reason = if (externalCount > 0) {
+        val sidecarNote = if (externalCount > 0) {
             val noun = if (kind == TrackKind.SUBTITLE) "sidecar subtitle" else "external track"
             val plural = if (externalCount != 1) "s" else ""
             "$externalCount $noun$plural present — sidecars have no container order to change"
+        } else null
+
+        // Phase 209 (part 2): a single embedded track has a trivially well-defined "#1" — itself —
+        // so "set the default track to #1" must still be able to flip its disposition flag even
+        // though there's nothing to reorder. Previously this branch returned before ever consulting
+        // `setDefault`, so a lone embedded track left non-default (common: one embedded language
+        // alongside several sidecar ones) could never be fixed by the bulk tool.
+        val onlyTrack = tracks.firstOrNull()
+        val needsDefaultFix = setDefault && onlyTrack != null && !onlyTrack.default
+        return if (needsDefaultFix) {
+            val reason = "single embedded track of this kind — already in target order" +
+                (sidecarNote?.let { "; $it" } ?: "")
+            BulkPlanEpisode(ep.filename, code, ep.title, "already_correct", summary, summary, reason, 0.05, false)
         } else {
-            "≤1 track of this kind"
+            BulkPlanEpisode(ep.filename, code, ep.title, "nothing_to_do", summary, summary, sidecarNote ?: "≤1 track of this kind", 0.0, false)
         }
-        return BulkPlanEpisode(ep.filename, code, ep.title, "nothing_to_do", summary, summary, reason, 0.0, false)
     }
 
     val hasUntagged = tracks.any { it.language == null }

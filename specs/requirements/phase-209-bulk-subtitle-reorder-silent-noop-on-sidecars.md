@@ -5,10 +5,13 @@
 > subtitles.
 
 ## Status
-✓ Built 2026-09-14 — spec'd and fixed same day. Backend + frontend (admin WASM), no Ravilo
-counterpart — the bulk track-reorder wizard (Phase 96) is admin-only. `compileKotlinLinuxX64` and
-`compileKotlinWasmJs` both clean; not dev-reviewed, not deployed, not live-tested against a real
-sidecar-only series.
+✓ Built 2026-09-14 — spec'd and fixed same day, in two passes (FR-209-1..4 from the original report,
+FR-209-5 from a direct follow-up question about whether "set default" works). Backend + frontend
+(admin WASM), no Ravilo counterpart — the bulk track-reorder wizard (Phase 96) is admin-only.
+`compileKotlinLinuxX64` and `compileKotlinWasmJs` both clean; **zero pre-existing test coverage for
+this route file** (no `TrackRoutesTest.kt`, checked before shipping) — verified by tracing the apply
+path by hand, not by a new test, which is a real gap worth closing in a follow-up rather than this
+pass. Not dev-reviewed, not deployed, not live-tested against a real sidecar-only series.
 
 ## The finding
 
@@ -63,6 +66,37 @@ for (ep in eps) for (t in ep.tracks) {
 So Step 1 happily offers "English, Danish" as detected subtitle languages when those languages exist
 *only* as sidecar files — languages `classifyEpisode` can never actually act on. The wizard invites
 the user to build a plan around tracks it already knows it will reject, then fails to say so.
+
+### A second, distinct gap in the same feature: "set default" skips single-track episodes entirely
+
+Prompted by a direct follow-up question ("I also want to set default language, will that work?").
+`classifyEpisode`'s `tracks.size <= 1` branch returned before ever consulting the `setDefault`
+parameter, for both sub-cases it covers:
+
+- **Zero embedded tracks (sidecar-only):** correctly a no-op — a sidecar file has no disposition flag
+  in any container to set, same constraint as reordering.
+- **Exactly one embedded track:** incorrectly a no-op. "Set the default track to #1" has a
+  well-defined meaning even with a single track — #1 *is* that track — but the early return skipped
+  the check entirely, so a lone embedded track left non-default (a common shape: one embedded
+  language alongside several sidecar ones) could never be fixed by the bulk tool even with "Also set
+  the default track to #1" checked.
+
+Checked for a matching bug on the apply side before fixing: `toFlagFix`'s eligibility filter
+(`TrackRoutes.kt:536-541`) reads `ts.minByOrNull { it.streamIndex }?.default` over **all** tracks of
+the kind, not `!it.external`-filtered like its sibling loops — a latent inconsistency, but not
+reachable today. `SidecarSubtitleScanner` seeds every external track's `streamIndex` at
+`(embeddedTracks.maxOfOrNull { it.streamIndex } ?: -1) + 1` plus its own index
+(`SidecarSubtitleScanner.kt:108-110`, `FfprobeRunner.kt:182`) — strictly above every embedded index on
+that episode, always — so `minByOrNull` can never resolve to an external track while any embedded
+track exists. Left as-is (still relies on an invariant enforced elsewhere rather than being
+self-evidently correct on its own, but changing it is not required to fix the reported behavior).
+
+**FR-209-5 — a single embedded track's default flag is still fixable.** When `classifyEpisode` finds
+exactly one embedded track of the requested kind, it must still check `setDefault` and, if that track
+isn't currently default, report `already_correct` with a flag-only fix (reusing the existing
+`already_correct` + `toFlagFix` apply path — no new status, no new apply-side branch) rather than
+`nothing_to_do`. Zero embedded tracks remains `nothing_to_do` unconditionally, since there is nothing
+to flag either way.
 
 ## Requirements
 
