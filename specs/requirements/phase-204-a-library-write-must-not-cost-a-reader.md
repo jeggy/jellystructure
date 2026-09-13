@@ -112,15 +112,28 @@ title, then load `/api/tv/home` and observe a cache hit.
 record why**, not ship both:
 
 - *Content signature.* A version that advances only when a field a `MediaCard` or `FocusDetailFacts`
-  actually carries has changed. Precise, and `MediaStore.contentSignature` (`:178`) already exists for
-  a related purpose. Costs a comparison per write and a decision about which fields are card-visible —
-  a list that Phase 202 just grew and will grow again.
+  actually carries has changed. Precise. Costs a decision about which fields are card-visible — a list
+  that Phase 202 just grew and will grow again.
 - *Debounce.* Invalidate at most once per N seconds. Trivial, mechanism-independent, immune to a future
   field being forgotten. Costs a bounded staleness window, and a write that *does* matter is delayed.
 
-The trade is precision against maintainability, and the second failure mode is worse: a card-visible
-field added later and not registered means a stale feed, silently, with no test that would catch it.
-**Leaning debounce** — but the phase decides, and says so in the spec rather than in a commit message.
+**There is a third option, and it is nearly free: a signal for "this write changed nothing at all"
+already exists at the write site.** `stampTimestamps` (`MediaStore.kt:181`) computes
+`contentSignature(old) != contentSignature(fresh)` on **every** upsert, and `contentSignature` (`:178`)
+is not a version — it is `item.copy(scannedAt = 0, createdAt = null, updatedAt = null,
+jellyfinUpdatedAt = null)`, i.e. the item with the fields that differ on every write regardless of real
+change zeroed out. That comparison's `changed` boolean is already paid for on the same code path that
+then unconditionally increments `libraryVersion`, and it is currently used for nothing but stamping
+`updatedAt`. A feed version gated on `changed` is a coarser filter than a card-field signature — an
+IMDb-rating or `hasStill` write is a real content change and would still invalidate — but it is
+**strictly better than today at zero added cost**, and it removes the "a scan re-found 500 unchanged
+titles" case entirely.
+
+So the trade is not precision against maintainability with a comparison cost on one side: the
+comparison is already happening. The phase must evaluate all three, and note that the field-list
+failure mode is the worst of them — a card-visible field added later and not registered means a stale
+feed, silently, with no test that would catch it. **No longer leaning debounce by default**; measure
+what fraction of writes are `changed == false` first (open question 1).
 
 **FR-204-3 — invalidation stays per-consumer.** `nfoCoveredCache`, `trackFacetsCache`,
 `metaFacetsCache` and the Triage summary keep invalidating on `libraryVersion` exactly as they do
@@ -128,13 +141,20 @@ today. This phase must not "improve" their keys as a side effect; they have diff
 and none of them is on a Ravilo read path. `libraryVersion` itself, and FR-182-2's atomicity guarantee
 for it, are unchanged.
 
+One caveat on the Triage consumer, which is `triageCountCache` (`TriageRoutes.kt:112`, keyed at `:117`):
+since Phase 201's 2026-09-13 amendment, an invalidation there can trigger `MkvHealthCache.brokenPaths`'
+~88-second library walk (`:147`). Leaving its key alone is still correct, but it is only *safe* once
+**Phase 203**'s FR-203-1 has landed. If 204 ships first, nothing gets worse than it is today; if 203 is
+ever reverted or deferred, this bullet is the reason the Dashboard re-enters that walk on every write.
+
 **FR-204-4 — a write that genuinely changes a card must still be visible promptly.** Whatever FR-204-2
 chooses, a newly-added title appearing in Newly Added, a corrected poster, or a retitled item must
 reach Home within a bounded, stated window — not "eventually". The existing `FEED_TTL_MS` (5 min) is
 already the outer bound today; this phase must not make it worse, and must state the new worst case
 explicitly so R33's push path and this TTL can be reasoned about together.
 
-**FR-204-5 — a playback stop still corrects the row immediately.** `invalidatePlaystate` (`:147`) drops
+**FR-204-5 — a playback stop still corrects the row immediately.** `invalidatePlaystate`
+(`HomeFeedService.kt:147`) drops
 `feedCache`, `playstateCache` and `continueListCache` for one user on a reported stop, and the bug it
 fixed (a finished episode still showing in Continue for up to five minutes) must not come back. An
 explicit, targeted invalidation is a different thing from incidental invalidation by an unrelated
@@ -166,12 +186,15 @@ test going red.
 
 ## Open questions
 
-1. **If FR-204-2 picks the content signature, what is the authoritative list of card-visible fields?**
-   `MediaCard` plus `FocusDetailFacts` (Phase 202) is the obvious answer, but `FocusDetailFacts` alone
-   carries eleven fields including `overview` and `imdbRating`, and an IMDb rating sync writes those on
-   a schedule. That may mean the signature invalidates nearly as often as `libraryVersion` does for
-   exactly the writes that are most frequent — which would settle FR-204-2 in favour of the debounce on
-   evidence rather than on taste. **Worth measuring before choosing.**
+1. **What fraction of writes change nothing, and what fraction change only fields no card carries?**
+   This is the measurement that settles FR-204-2, and both numbers come from the same instrumentation:
+   count writes where `stampTimestamps`' `changed` is false (the free option's yield), and among the
+   rest, how many touch a `MediaCard`/`FocusDetailFacts` field (the signature's yield over it). The
+   142-series `hasStill` correction is a real content change, so the free option does not catch it; a
+   scan re-finding unchanged titles is caught entirely. If the answer is that most writes are `changed
+   == true` **and** most of those touch a card field, all three options converge and the debounce wins
+   on simplicity. **Measure before choosing.** Note `FocusDetailFacts` alone carries eleven fields
+   including `overview` and `imdbRating`, and an IMDb sync writes those on a schedule.
 2. **Should the debounce window be per-user or global?** Global is simpler and the invalidation cause is
    global. Per-user would let a user who just stopped playback skip the wait, but FR-204-5 already
    handles that case explicitly.

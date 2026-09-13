@@ -105,7 +105,8 @@ establishes**, not `libraryVersion` directly — otherwise this cache inherits e
 exists to remove. If 204 has not landed, this phase states the dependency rather than duplicating the
 fix.
 
-**FR-206-4 — channel feeds are cached like Home is.** Same shape as `feedCache`: per user, same TTL, same
+**FR-206-4 — channel feeds are cached like Home is.** Same shape as `feedCache`: per user, same TTL, the
+**same library-write invalidation signal FR-206-3 uses** (Phase 204's, not `libraryVersion`), and the same
 targeted invalidation on a reported playback stop (FR-204-5 / FR-205-9). Keyed by `(user, channelId)`.
 A viewer moving between four collections and back should pay for four builds, not eight.
 
@@ -149,7 +150,11 @@ a future change that reintroduces the full build.
 3. **What TTL for a channel feed?** Home uses `FEED_TTL_MS = 5 min`. A channel page is arguably staler-
    tolerant than Home, but two surfaces disagreeing about how fresh "Newly Added" is would be its own
    confusion. Leaning: same TTL, same invalidation, no new constant.
-4. **Does the rail need to be per-user at all?** It depends on visibility scope, not identity — two
-   viewers with the same `allowedLibraries`/tags get the same rail. Keying on the scope hash rather than
-   the user id would collapse a household of five to one or two entries. Minor, but the hash is already
-   computed (`allowedHash`).
+4. **Can the rail's cache key drop the user id?** Only if it keeps `cfgHash` — and that is the whole
+   answer, so this is nearly closed. The rail is built from `configService.getConfig(device.jellyfinUserId)`
+   (`:102`), and `RaviloConfig` is **per Jellyfin user** per constitution §3: the channel list itself, not
+   just what the viewer may see, differs between users. Keying on `allowedHash` alone would serve one
+   viewer's collections to another — a visibility bug, not an optimization. A `(cfgHash, allowedHash)` key
+   is sound and still collapses a household whose members share a config, which on this household is most
+   of them. FR-206-3 already states the dependency correctly; this question only exists to record why the
+   cheaper key is wrong.
