@@ -108,6 +108,37 @@ class MkvLayoutTest {
         assertEquals(MkvLayout.OK, scanMkvLayout(buf))
     }
 
+    /** Phase 201, 2026-09-13 amendment — the concurrent-repair race corrupted a `Tags` element's
+     *  declared size into a value far larger than the file, which `ffmpeg -xerror` reports as
+     *  "exceeds containing master element" but which `ffprobe`/Jellyfin silently resync past. Before
+     *  this case existed, `safeSkip`'s caught `EOFException` fell into the generic [MkvLayout.UNKNOWN]
+     *  bucket — indistinguishable from "not EBML at all" and invisible to every consumer that only
+     *  looks at [MkvLayout.TRACKS_AFTER_CLUSTER]. */
+    @Test
+    fun `a top-level element whose declared size overruns the file is ELEMENT_SIZE_OVERFLOW`() {
+        val buf = Buffer().apply {
+            writeEbmlHeaderAndSegment()
+            writeElement(id = 0x114D9B74L, idLen = 4, contentSize = 3) // SeekHead
+            writeIdBytes(0x1254C367L, 4) // Tags
+            writeSizeBytes(50_000L, 4)   // declared size, but no body follows to satisfy it
+        }
+
+        assertEquals(MkvLayout.ELEMENT_SIZE_OVERFLOW, scanMkvLayout(buf))
+    }
+
+    /** Same corruption, but landing on `Tracks` itself rather than a later sibling — must not be
+     *  misread as [MkvLayout.TRACKS_AFTER_CLUSTER] (which requires actually reaching a `Cluster`). */
+    @Test
+    fun `a Tracks element whose declared size overruns the file is ELEMENT_SIZE_OVERFLOW`() {
+        val buf = Buffer().apply {
+            writeEbmlHeaderAndSegment()
+            writeIdBytes(0x1654AE6BL, 4) // Tracks
+            writeSizeBytes(50_000L, 4)   // declared size, but no body follows to satisfy it
+        }
+
+        assertEquals(MkvLayout.ELEMENT_SIZE_OVERFLOW, scanMkvLayout(buf))
+    }
+
     /** A multi-byte VINT size (2-byte length descriptor) — real files routinely need more than one
      *  size byte for a several-KB `Tracks` element; this pins that the length encoding is decoded
      *  correctly, not just the common 1-byte case. */

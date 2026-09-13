@@ -191,8 +191,8 @@ fun Route.triageRoutes(store: MediaStore, jellyfinClient: JellyfinClient, config
                 TriageTypeCount("no_segments", "No intro/credits detected",
                     "Skip Intro/Credits falls back to the fixed end-of-file heuristic — no chapter, heuristic, or manual marker exists yet.",
                     noSegmentsTitles, noSegmentsTitles),
-                TriageTypeCount("mkv_track_layout", "Unplayable in Ravilo (MKV track layout)",
-                    "A flag edit moved the file's Tracks element after its first Cluster. Jellyfin seeks and plays it fine, which is why nothing else here looks wrong — Ravilo reads linearly and buffers forever. Repair rewrites the header in place, no re-encode.",
+                TriageTypeCount("mkv_track_layout", "Unplayable in Ravilo (MKV structure)",
+                    "Either a flag edit moved the file's Tracks element after its first Cluster, or a prior repair left an element with a corrupted declared size. Jellyfin seeks/resyncs past both and plays the file fine, which is why nothing else here looks wrong — Ravilo reads linearly and buffers forever. Repair rewrites the header in place, no re-encode.",
                     mkvLayoutInstances, mkvLayoutTitles),
             )
             val result = TriageCount(types = types, total = types.sumOf { it.instances })

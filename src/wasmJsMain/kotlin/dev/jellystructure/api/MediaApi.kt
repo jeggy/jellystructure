@@ -815,10 +815,16 @@ object MediaApi {
     }.getOrNull()
 
     @Serializable
-    data class MkvLayoutStatus(val brokenPaths: List<String> = emptyList())
+    data class MkvLayoutStatus(
+        val brokenPaths: List<String> = emptyList(),
+        /** Phase 201, 2026-09-13 amendment — the same "unplayable in Ravilo" symptom via a corrupted
+         *  element size rather than an evicted Tracks element (see MkvLayout.ELEMENT_SIZE_OVERFLOW).
+         *  Kept separate from [brokenPaths] so the banner's copy stays honest about which is true. */
+        val corruptSizePaths: List<String> = emptyList(),
+    )
 
     /** Phase 201 amendment (2026-09-13, FR-201-11) — a live, uncached check of just this title's own
-     *  MKV file(s) for the Tracks-after-Cluster defect (see MkvLayout.kt). */
+     *  MKV file(s) for either repairable defect (see MkvLayout.kt). */
     suspend fun mkvLayoutStatus(id: String): MkvLayoutStatus? = runCatching {
         httpClient.get("/api/media/$id/health/mkv-layout").body<MkvLayoutStatus>()
     }.getOrNull()
