@@ -67,6 +67,12 @@ internal val LANG_CC: Map<String, DrawableResource> = mapOf(
     // Hindi's flag_in, so reusing it for Tamil/Telugu would collapse three DISTINCT languages onto one
     // flag_in drawable, undercounting them via this file's own `.distinct()` dedup — exactly the
     // FR-R239-1 miscount this phase exists to prevent. They stay in the honest "+N" unmapped count.
+    //
+    // CLOSED 2026-09-13, permanently — do not revisit without a product decision overriding this.
+    // Candidate images were reviewed and rejected: no legitimate single flag exists (Tamil
+    // Nadu/Andhra Pradesh/Telangana have no official state flags), and one submitted candidate for
+    // Tamil was the flag of a proscribed militant organization — entirely unsuitable regardless of the
+    // undercount problem above. "No flag" is the final, intended rendering for these two languages.
     "sr" to Res.drawable.flag_rs, "srp" to Res.drawable.flag_rs,
     "bg" to Res.drawable.flag_bg, "bul" to Res.drawable.flag_bg,
     "id" to Res.drawable.flag_id, "ind" to Res.drawable.flag_id,

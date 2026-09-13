@@ -23,6 +23,16 @@ gap: the phone mockup is a self-contained file with no `flags.css` and no shared
 building real parity there is a phone-side feature addition, out of this phase's
 scope as a "fix". See STATUS.md for the full build summary.
 
+**Tamil/Telugu CLOSED 2026-09-13, permanently — this is a decision, not a pending TODO.** The owner
+was asked to source flag candidates directly. Two were submitted and reviewed: one was an
+unidentifiable wavy-stripe design with no confirmable provenance, and the other — offered for Tamil —
+was the flag of the Liberation Tigers of Tamil Eelam (LTTE), a proscribed militant organization
+responsible for a decades-long civil war and terrorism; unusable regardless of the FR-R239-1 undercount
+argument already made against reusing India's flag. The owner's explicit call: **ship "no flag" as the
+final, intended rendering for Tamil and Telugu — do not reopen this by looking for better source images
+later.** If the product ever wants something in that slot, the next design task is a non-flag treatment
+(e.g. a text-code badge), not another round of flag sourcing.
+
 ## The finding
 
 `AudioFlagStrip.kt:76-83`:
