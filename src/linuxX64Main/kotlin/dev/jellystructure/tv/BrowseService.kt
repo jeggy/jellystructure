@@ -21,12 +21,8 @@ import dev.jellystructure.shared.tv.TvImdbRating
 import dev.jellystructure.shared.tv.effectiveQuery
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.withTimeoutOrNull
-
 
 private const val SEARCH_SUGGESTION_LIMIT = 20
-// R142: cap the played-state overlay fetch so a slow Jellyfin never hangs a browse/search response.
-private const val HYDRATE_TIMEOUT_MS = 2_500L
 // Bug fix: shorter queries fall back to the suggestions path instead of a full-library contains-scan.
 private const val MIN_SEARCH_LEN = 2
 
@@ -47,15 +43,15 @@ class BrowseService(
      * reactively from this one response with no further round trips as the viewer toggles facets.
      */
     suspend fun browseByQuery(device: DeviceData, query: ConditionGroup?, mediaKind: String?): SeededBrowseResponse = coroutineScope {
-        val jellyfinBase = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
-        val tokenDeferred = async { jellyfinClient.tvToken(jellyfinBase, device, configStore.current.apiKeys.jellyfinToken) }
+        // Phase 205 (FR-205-1) — this used to fetch a tvToken it needed only for the fetchPlaystate call
+        // below; now that playstate is a PlaystateCache read (no Jellyfin call, no timeout), this
+        // function makes no Jellyfin call of its own at all.
         val allDeferred = async { mediaStore.liveItems(device) }
         val cfg = raviloConfigService.getConfig(device.jellyfinUserId)
         val heroIds = cfg.heroes.map { it.itemId }.toSet()
         val cascade = configStore.current.metadata.ageRatingCascade
         val channels = cfg.channels.filter { it.enabled }
 
-        val token = tokenDeferred.await()
         val all = allDeferred.await()
         val kindFiltered = when (mediaKind) {
             "MOVIE"  -> all.filter { it.kind == MediaKind.MOVIE }
@@ -74,9 +70,7 @@ class BrowseService(
             else kindFiltered.filter { ConditionEvaluator.matches(it, query, heroIds, cascade) })
             .sortedByDescending { it.recencyKey() }
 
-        val ps = withTimeoutOrNull(HYDRATE_TIMEOUT_MS) {
-            fetchPlaystate(jellyfinClient, jellyfinBase, token, device.jellyfinUserId, matched.map { it.jellyfinId ?: it.id })
-        } ?: emptyMap()
+        val ps = PlaystateCache.get(device.jellyfinUserId)
 
         val items = matched.map { item ->
             BrowseCard(
@@ -167,17 +161,14 @@ class BrowseService(
             .map { it.toMediaCard() }
             .distinctBy { it.id }
 
-        // R142: overlay Jellyfin played / in-progress state so grid tiles show ✓ / progress sliver.
-        val ps = withTimeoutOrNull(HYDRATE_TIMEOUT_MS) {
-            fetchPlaystate(jellyfinClient, jellyfinBase, token, device.jellyfinUserId, cards.map { it.id })
-        } ?: emptyMap()
+        // Phase 205 (FR-205-1) — PlaystateCache read, no Jellyfin call (see browseByQuery's doc above).
+        val ps = PlaystateCache.get(device.jellyfinUserId)
         SearchResults(query = kind ?: "all", items = cards.map { it.withPlaystate(ps) }, total = sorted.size)
     }
 
     /** Multi-language search: matches title, originalTitle, and every titlesByLang value. */
     suspend fun search(device: DeviceData, query: String): SearchResults {
         val all = mediaStore.liveItems(device)
-        val jellyfinBase = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
 
         // Bug fix: a 1-char query used to trigger the same full-library contains-scan as any other
         // query, with no min-length guard — fall back to the same suggestions path as a blank query.
@@ -199,11 +190,8 @@ class BrowseService(
                 .toList()
         }
 
-        // R142: overlay Jellyfin played / in-progress state so search-result tiles show ✓ / progress sliver.
-        val ps = withTimeoutOrNull(HYDRATE_TIMEOUT_MS) {
-            val token = jellyfinClient.tvToken(jellyfinBase, device, configStore.current.apiKeys.jellyfinToken)
-            fetchPlaystate(jellyfinClient, jellyfinBase, token, device.jellyfinUserId, cards.map { it.id })
-        } ?: emptyMap()
+        // Phase 205 (FR-205-1) — PlaystateCache read, no Jellyfin call (see browseByQuery's doc above).
+        val ps = PlaystateCache.get(device.jellyfinUserId)
         return SearchResults(query = query, items = cards.map { it.withPlaystate(ps) })
     }
 

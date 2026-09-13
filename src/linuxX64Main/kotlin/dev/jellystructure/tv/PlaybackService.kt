@@ -6,6 +6,7 @@ import dev.jellystructure.auth.JellyfinDeviceIdentity
 import dev.jellystructure.config.ConfigStore
 import dev.jellystructure.auth.JellyfinItemDetail
 import dev.jellystructure.auth.TokenCheck
+import dev.jellystructure.auth.TokenCheckResult
 import dev.jellystructure.log.Logger
 import dev.jellystructure.media.MediaStore
 import dev.jellystructure.media.visibleTo
@@ -29,6 +30,7 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.concurrent.Volatile
 import platform.posix.CLOCK_REALTIME
 import platform.posix.clock_gettime
@@ -49,6 +51,10 @@ private const val TOKEN_VALID_TTL_MS = 5 * 60_000L // 5 minutes
 private val tokenInvalidUntil = HashMap<String, Long>()
 private val tokenRejectionLogged = HashSet<String>()
 private const val TOKEN_NEGATIVE_TTL_MS = 10 * 60_000L // ~10 minutes, per spec FR E.1
+// Phase 205 (FR-205-4) — checkToken's own client is configured requestTimeoutMillis = 120_000; on a
+// cache miss (every 5 min per token) that is not a timeout, it is the absence of one. A wedged Jellyfin
+// could otherwise hold a TV request for two minutes with nothing in between to stop it.
+private const val TOKEN_CHECK_TIMEOUT_MS = 5_000L
 private const val TICKS_PER_MS = 10_000L
 
 // R142: bound the played write-through fan-out (a series mark-all can be dozens of episode calls).
@@ -903,14 +909,18 @@ private suspend fun JellyfinClient.pairedTokenCheck(baseUrl: String, device: Dev
         // Phase 110: negative-cached — known-dead as of a recent check, skip the round-trip too.
         tokenInvalidUntil[userToken]?.let { if (it > now) return TokenCheck.REJECTED }
     }
-    // Slow path: check with Jellyfin.
-    var result = checkToken(baseUrl, userToken, device.jellyfinUserId)
+    // Slow path: check with Jellyfin. Phase 205 (FR-205-4) — bounded well under the client's own 120s
+    // default; a timeout here is UNKNOWN (Jellyfin didn't answer), never REJECTED (that would escalate
+    // "could not tell" into a ten-minute household-wide credential rejection).
+    var result = withTimeoutOrNull(TOKEN_CHECK_TIMEOUT_MS) { checkToken(baseUrl, userToken, device.jellyfinUserId) }
+        ?: TokenCheckResult(TokenCheck.UNKNOWN, error = "timed out after ${TOKEN_CHECK_TIMEOUT_MS}ms")
     // FR-194-5 — believing a rejection costs the whole household ten minutes of playback, so it does
     // not get to rest on a single round trip. Re-probe once; only a second consecutive REJECTED is
     // believed. This runs only on the already-rare rejection path, never on the cache-served hot one.
     if (result.outcome == TokenCheck.REJECTED && userToken.isNotBlank()) {
         delay(500)
-        result = checkToken(baseUrl, userToken, device.jellyfinUserId)
+        result = withTimeoutOrNull(TOKEN_CHECK_TIMEOUT_MS) { checkToken(baseUrl, userToken, device.jellyfinUserId) }
+            ?: TokenCheckResult(TokenCheck.UNKNOWN, error = "timed out after ${TOKEN_CHECK_TIMEOUT_MS}ms")
     }
     when (result.outcome) {
         TokenCheck.VALID -> tokenCacheMutex.withLock {

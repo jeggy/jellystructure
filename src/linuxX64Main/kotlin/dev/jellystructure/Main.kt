@@ -199,6 +199,12 @@ fun main() = runBlocking {
     val raviloConfigService = RaviloConfigService(db, tvEventBus, requestLanguageService)
     raviloConfigService.migrateAllLegacyBehaviourFields()  // R162: one-time, idempotent
     val homeFeedService = HomeFeedService(mediaStore, raviloConfigService, jellyfinClient, configStore, tvEventBus, artworkDownloader)
+    // Phase 205 (FR-205-2) — background-refresh Continue Watching and the whole-catalog playstate map
+    // for recently-seen devices, instead of building either on a viewer's own request. Both used to
+    // fetch live on a cache miss on the interactive path; PlaystateCache also replaces DetailService's
+    // and BrowseService's own live, uncached/unbounded fetches (see those files' Phase 205 notes).
+    homeFeedService.start(rootScope, raviloDeviceService)
+    dev.jellystructure.tv.PlaystateCache.start(rootScope, raviloDeviceService, mediaStore, jellyfinClient, configStore, tvEventBus)
     val browseService = BrowseService(mediaStore, jellyfinClient, configStore, raviloConfigService, artworkDownloader)
     // Phase 185 (FR-185-4) — needed by DetailService below, for playbackNote resolution.
     val playbackStartSampleStore = dev.jellystructure.tv.PlaybackStartSampleStore(db)

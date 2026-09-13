@@ -26,17 +26,9 @@ import dev.jellystructure.shared.tv.TvSegmentMarkers
 import dev.jellystructure.shared.tv.TvStinger
 import dev.jellystructure.shared.tv.TvTrailer
 import dev.jellystructure.resolver.CertificationResolver
-import kotlinx.coroutines.sync.Semaphore
-import kotlinx.coroutines.sync.withPermit
-import kotlinx.coroutines.withTimeoutOrNull
 import dev.jellystructure.shared.tv.Episode as TvEpisode
 
 private const val RELATED_LIMIT = 12
-private const val TICKS_PER_MS = 10_000L
-private const val PLAYSTATE_CHUNK = 100   // max ids per Jellyfin bulk UserData call
-
-// R83: gate concurrent outbound Jellyfin UserData calls to avoid FD ceiling (Phase 78).
-private val playstateGate = Semaphore(4)
 
 /**
  * Phase 200 (FR-200-4) — the series-level flag strip's language set: every language any episode
@@ -218,51 +210,37 @@ class DetailService(
     }
 
     /**
-     * R83: Fetch per-user play-state for the given Jellyfin ids from Jellyfin UserData.
-     * Chunks the request into batches of [PLAYSTATE_CHUNK] and fans out with [playstateGate].
-     * Returns an empty map on auth/connectivity failures (callers treat absent entries as "not played").
+     * R83: per-user play-state for the given Jellyfin ids.
+     *
+     * Phase 205 (FR-205-1/FR-205-2) — this used to fan out its own chunked `getUserDataBulk` calls with
+     * no timeout anywhere on them, on every single detail/episode-row open (every season open was a
+     * live, unbounded Jellyfin fan-out). It now reads [PlaystateCache], the same background-refreshed
+     * whole-catalog map Home/Browse/Search read — no Jellyfin call, no timeout needed, and this can no
+     * longer disagree with what a tile shows on Home for the same title (reachable before, whenever one
+     * surface's own bound fired and another's didn't). An absent entry (this user has never been
+     * refreshed yet) degrades to "not played" — the same harmless fallback `withPlaystate` already
+     * applies everywhere else; unlike Continue Watching's row there is no confident-wrong-answer risk
+     * here worth a FR-203-2-style omission marker.
      */
-    suspend fun getPlaystate(device: DeviceData, jellyfinIds: List<String>): Map<String, CardPlayState> {
+    fun getPlaystate(device: DeviceData, jellyfinIds: List<String>): Map<String, CardPlayState> {
         if (jellyfinIds.isEmpty()) return emptyMap()
-        val jellyfinBase = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
-        val token = jellyfinClient.tvToken(jellyfinBase, device, configStore.current.apiKeys.jellyfinToken)
+        val all = PlaystateCache.get(device.jellyfinUserId)
+        if (all.isEmpty()) return emptyMap()
         // Filter out path-based IDs (ep.jellyfinId was null at scan time → ep.id = ep.path)
-        val realIds = jellyfinIds.filterNot { it.startsWith('/') }
-        if (realIds.isEmpty()) return emptyMap()
-        val chunks = realIds.chunked(PLAYSTATE_CHUNK)
-        val results = mutableMapOf<String, CardPlayState>()
-        for (chunk in chunks) {
-            playstateGate.withPermit {
-                val items = jellyfinClient.getUserDataBulk(jellyfinBase, token, device.jellyfinUserId, chunk)
-                for (jfItem in items) {
-                    val ud = jfItem.userData ?: continue
-                    val posMs = ud.playbackPositionTicks / TICKS_PER_MS
-                    val pct = (ud.playedPercentage?.toFloat() ?: 0f) / 100f
-                    results[jfItem.id] = CardPlayState(
-                        resumeMs  = posMs,
-                        // Skip a vacuous series ✓ (empty Jellyfin child rollup → Played=true of 0). See PlaystateHydrator.
-                        played    = ud.played && !(jfItem.type == "Series" && jfItem.recursiveItemCount == 0),
-                        playedPct = pct,
-                        favorite  = ud.isFavorite,
-                    )
-                }
-            }
-        }
-        return results
+        return jellyfinIds.asSequence().filterNot { it.startsWith('/') }.mapNotNull { id -> all[id]?.let { id to it } }.toMap()
     }
 
     // ─── Helpers ──────────────────────────────────────────────────────────────
     // R100: related items now come from MediaStore.relatedByGenre (genre-bucket index) instead of a
     // full-library scan per detail open; the old in-place relatedItems()/allItems() pair is gone.
 
-    /** R142: overlay played / in-progress state onto More-Like-This tiles (bounded so it never hangs detail). */
-    private suspend fun hydrateRelated(device: DeviceData, cards: List<MediaCard>): List<MediaCard> {
+    /** R142: overlay played / in-progress state onto More-Like-This tiles. Phase 205 — reads
+     *  [PlaystateCache] directly (see [getPlaystate]'s doc); no longer a live Jellyfin call, so no
+     *  timeout is needed here either. */
+    private fun hydrateRelated(device: DeviceData, cards: List<MediaCard>): List<MediaCard> {
         if (cards.isEmpty()) return cards
-        val base = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
-        val ps = withTimeoutOrNull(2_500L) {
-            val token = jellyfinClient.tvToken(base, device, configStore.current.apiKeys.jellyfinToken)
-            fetchPlaystate(jellyfinClient, base, token, device.jellyfinUserId, cards.map { it.id })
-        } ?: return cards
+        val ps = PlaystateCache.get(device.jellyfinUserId)
+        if (ps.isEmpty()) return cards
         return cards.map { it.withPlaystate(ps) }
     }
 
