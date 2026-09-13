@@ -163,6 +163,18 @@ fun main() = runBlocking {
     val scanDispatcher = newFixedThreadPoolContext(effectiveScanThreads, "scan-pool")
     scanTracker.targetWorkers.value = configStore.current.behavior.scanWorkers.coerceIn(1, 100)
 
+    // Phase 203 (FR-203-3) — background-warm the MKV structure health cache so it's normally already
+    // answered by the time anyone opens the Dashboard, instead of the old lazy on-access refresh that
+    // could block /triage/count for ~88s on a cold cache (Phase 201's first-Cluster descent made the
+    // sweep ~10x more expensive than when that lazy refresh was written). Reuses scanDispatcher/
+    // scanWorkers — this is I/O-bound file-header reading, the same class of background work the scan
+    // pool already isolates from request-serving capacity.
+    dev.jellystructure.media.MkvHealthCache.start(
+        scope = rootScope,
+        dispatcher = scanDispatcher,
+        concurrency = configStore.current.behavior.scanWorkers.coerceIn(1, 100),
+    ) { mediaStore.allItems() }
+
     signal(SIGTERM, staticCFunction(::onSignal))
     signal(SIGINT, staticCFunction(::onSignal))
     // Bug fix: writing to a socket whose peer already disconnected raises SIGPIPE, whose default

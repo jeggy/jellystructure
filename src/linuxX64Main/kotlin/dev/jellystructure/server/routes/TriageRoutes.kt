@@ -144,11 +144,15 @@ fun Route.triageRoutes(store: MediaStore, jellyfinClient: JellyfinClient, config
             val segmentsLowConfTitles = if (segmentsEnabled) all.count { TriageDetection.lowConfidenceSegmentsCount(it, segmentStore) > 0 } else 0
             val noSegmentsTitles = if (segmentsEnabled) all.count { TriageDetection.hasNoSegments(it, segmentStore) } else 0
             // Phase 201 amendment (2026-09-13): Tracks-after-Cluster — unplayable in Ravilo, fine in Jellyfin.
-            val mkvBroken = MkvHealthCache.brokenPaths(all)
-            val mkvLayoutInstances = all.sumOf { TriageDetection.mkvLayoutBrokenCount(it, mkvBroken) }
-            val mkvLayoutTitles = all.count { TriageDetection.mkvLayoutBrokenCount(it, mkvBroken) > 0 }
+            // Phase 203 — brokenPathsOrNull() never triggers a sweep and never blocks; `null` (cold
+            // cache) means the count below is omitted from `types` entirely rather than reported as 0
+            // (FR-203-1/FR-203-2). See MkvHealthCache's own doc for why this used to hold up the whole
+            // response.
+            val mkvBroken = MkvHealthCache.brokenPathsOrNull()?.keys
+            val mkvLayoutInstances = mkvBroken?.let { b -> all.sumOf { TriageDetection.mkvLayoutBrokenCount(it, b) } }
+            val mkvLayoutTitles = mkvBroken?.let { b -> all.count { TriageDetection.mkvLayoutBrokenCount(it, b) > 0 } }
 
-            val types = listOf(
+            val types = listOfNotNull(
                 TriageTypeCount("untagged", "Untagged audio/subtitle tracks",
                     "Tracks with no language tag — Ravilo and the workbench can't filter by language until these are assigned.",
                     untaggedInstances, untaggedTitles),
@@ -191,9 +195,13 @@ fun Route.triageRoutes(store: MediaStore, jellyfinClient: JellyfinClient, config
                 TriageTypeCount("no_segments", "No intro/credits detected",
                     "Skip Intro/Credits falls back to the fixed end-of-file heuristic — no chapter, heuristic, or manual marker exists yet.",
                     noSegmentsTitles, noSegmentsTitles),
-                TriageTypeCount("mkv_track_layout", "Unplayable in Ravilo (MKV structure)",
+                // Phase 203 — omitted entirely (not sent as a 0) while mkvLayoutInstances/Titles are
+                // null, i.e. no sweep has completed yet for this process.
+                if (mkvLayoutInstances != null && mkvLayoutTitles != null) TriageTypeCount(
+                    "mkv_track_layout", "Unplayable in Ravilo (MKV structure)",
                     "Either a flag edit moved the file's Tracks element after its first Cluster, or a prior repair left an element with a corrupted declared size. Jellyfin seeks/resyncs past both and plays the file fine, which is why nothing else here looks wrong — Ravilo reads linearly and buffers forever. Repair rewrites the header in place, no re-encode.",
-                    mkvLayoutInstances, mkvLayoutTitles),
+                    mkvLayoutInstances, mkvLayoutTitles,
+                ) else null,
             )
             val result = TriageCount(types = types, total = types.sumOf { it.instances })
             triageCountCache = Pair(ver, result)
