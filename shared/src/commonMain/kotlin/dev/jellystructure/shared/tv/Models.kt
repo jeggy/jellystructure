@@ -888,12 +888,14 @@ data class RaviloConfig(
     // Live TV page's job). Null = not configured — the Layout tab's "Live TV on Home" section only
     // renders once Live TV is enabled there, and defaults apply from that point on.
     @SerialName("live_tv_home") val liveTvHome: LiveTvHomePlacement? = null,
-    // Phase 202 — R240's L (foot line, ships on) / J (row opens in place, ships off pending the
-    // reflow measurement invariant 11 exists to protect). Both booleans stay admin-side state so the
-    // config screen can say "On · superseded" (FR-202-6) rather than silently disagreeing with the
-    // screen; a client never reads these two directly — see [focusDetail] below.
+    // Phase 202 — R240's L (foot line) / J (row opens in place). Both booleans stay admin-side state so
+    // the config screen can say "On · superseded" (FR-202-6) rather than silently disagreeing with the
+    // screen; a client never reads these two directly — see [focusDetail] below. J defaulted to off
+    // pending the reflow-cost measurement invariant 11 asked for; that measurement closed 2026-09-13
+    // (R240 spec, "the systematic sweep-and-trace invariant 11 asked for, run to closure" — 46 real
+    // settled opens on the stue TV, 2.8-3.2% janky frames, 0 missed vsync), so J now defaults on too.
     @SerialName("focus_detail_line") val focusDetailLine: Boolean = true,
-    @SerialName("focus_detail_row_open") val focusDetailRowOpen: Boolean = false,
+    @SerialName("focus_detail_row_open") val focusDetailRowOpen: Boolean = true,
     // FR-202-3 — any non-negative ms value is valid (0 = immediate, no upper bound); RaviloConfigService
     // .normalize() is what resolves a negative/hand-edited value back to the 170 default on save.
     @SerialName("focus_detail_delay_ms") val focusDetailDelayMs: Int = 170,

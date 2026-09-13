@@ -21,10 +21,11 @@
    2. NO FOCUS STOPS. Everything drawn is inert. Down from a tile goes where it went
       before, Play never moves, and nothing new is reachable with the D-pad.
 
-   ⚠ J's known cost, unresolved by any drawing: the row's height and its tiles'
-   positions change on every focus move. That is the reflow constitution invariant 11
-   exists to protect, and it needs a focus-sweep measurement on the stue BRAVIA before
-   it is promised to anyone. It ships off by default for exactly that reason.
+   J's known cost, not resolved by any drawing but by device measurement: the row's
+   height and its tiles' positions change on every focus move, which is the reflow
+   constitution invariant 11 exists to protect. A 2026-09-13 sweep-and-trace pass on
+   the stue BRAVIA (46 real settled opens, 2.8-3.2% janky frames, 0 missed vsync;
+   see the R240 spec) closed that question, so J now defaults on.
 
    Scope: Home content rows only (not the channel rail, not the hero, not browse,
    search, Discover or Live TV — those rows aren't library items in the same shape).
@@ -38,7 +39,7 @@
      round 1's direction E (the dwell ladder) as a rule rather than a look. It is a
      household setting rather than a constant because how long "settled" feels depends
      on who is holding the remote; 0 means show it immediately. */
-  const DEF = { line: true, rowOpen: false, delay: 170 };
+  const DEF = { line: true, rowOpen: true, delay: 170 };
 
   function readCfg() {
     let raw = {};
@@ -47,7 +48,7 @@
     const d = Math.round(Number(raw.delay));
     return {
       line: raw.line !== false,
-      rowOpen: raw.rowOpen === true,
+      rowOpen: raw.rowOpen !== false,
       // any non-negative whole number of ms is a valid setting — 10 and 10000 both are, and so is
       // anything between; only junk falls back to the default. No ceiling.
       delay: Number.isFinite(d) && d >= 0 ? d : DEF.delay,

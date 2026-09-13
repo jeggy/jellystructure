@@ -11,8 +11,8 @@ import kotlin.test.assertEquals
 class FocusDetailConfigTest {
 
     @Test
-    fun `defaults resolve to line`() {
-        assertEquals("line", RaviloConfig().resolvedFocusDetail())
+    fun `defaults resolve to rowOpen since the 2026-09-13 reflow measurement closed invariant 11`() {
+        assertEquals("rowOpen", RaviloConfig().resolvedFocusDetail())
     }
 
     @Test
