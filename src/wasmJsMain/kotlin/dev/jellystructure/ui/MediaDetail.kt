@@ -2939,8 +2939,9 @@ private suspend fun loadMkvHealth(item: MediaItem, scope: CoroutineScope) {
               Jellyfin seeks and plays it fine, which is why nothing else on this page looks wrong; Ravilo reads
               linearly and buffers forever. Repair rewrites the header in place: no re-encode, ~0.6s per file.
             </div>
-            <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">
+            <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;align-items:center;">
               <button id="mkv-fix-btn" class="btn sm bad">Fix now</button>
+              <span id="mkv-fix-status" class="tiny muted"></span>
             </div>
           </div>
         </div>"""
@@ -2948,12 +2949,22 @@ private suspend fun loadMkvHealth(item: MediaItem, scope: CoroutineScope) {
 
         document.getElementById("mkv-fix-btn")?.addEventListener("click") {
             val btn = document.getElementById("mkv-fix-btn")
+            val status = document.getElementById("mkv-fix-status")
             btn?.setAttribute("disabled", "true")
+            btn?.textContent = "Repairing…"
+            // 2026-09-13 fix — a many-episode repair takes minutes with no other feedback, which read as
+            // "nothing happened" and led to repeated clicks/reloads racing the same files server-side
+            // (see MkvLayoutAudit.inFlightPaths). This line is the fix: say plainly that it's working.
+            status?.textContent = if (pathsLeft.size > 1)
+                "Repairing ${pathsLeft.size} files — this can take a few minutes. Don't reload." else
+                "Repairing — a few seconds."
             scope.launch {
                 val result = MediaApi.repairMkvLayout(pathsLeft.toList())
+                status?.textContent = ""
                 if (result == null) {
                     showDetailMsg("Couldn't run the repair — check the server connection.", false)
                     btn?.removeAttribute("disabled")
+                    btn?.textContent = "Fix now"
                     return@launch
                 }
                 val stillBroken = pathsLeft.filter { result[it] != true }.toSet()
