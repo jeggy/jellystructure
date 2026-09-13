@@ -789,11 +789,23 @@ private fun classifyEpisodes(episodes: List<Episode>, kind: TrackKind, order: Li
 
 private fun classifyEpisode(ep: Episode, kind: TrackKind, targetLangs: List<String>, targetSet: Set<String>, setDefault: Boolean): BulkPlanEpisode {
     val code = buildBulkEpCode(ep)
-    val tracks = ep.tracks.filter { it.kind == kind && !it.external }
+    val allOfKind = ep.tracks.filter { it.kind == kind }
+    val tracks = allOfKind.filterNot { it.external }
+    val externalCount = allOfKind.size - tracks.size
 
     if (tracks.size <= 1) {
         val summary = tracks.toSummary(targetSet)
-        return BulkPlanEpisode(ep.filename, code, ep.title, "nothing_to_do", summary, summary, "≤1 track of this kind", 0.0, false)
+        // Phase 209: a sidecar subtitle has no container stream to reorder (Phase 200), so it's
+        // correctly excluded above — but the old "≤1 track of this kind" reason counted only the
+        // embedded remainder and read as "nothing here" even when several sidecar files exist.
+        val reason = if (externalCount > 0) {
+            val noun = if (kind == TrackKind.SUBTITLE) "sidecar subtitle" else "external track"
+            val plural = if (externalCount != 1) "s" else ""
+            "$externalCount $noun$plural present — sidecars have no container order to change"
+        } else {
+            "≤1 track of this kind"
+        }
+        return BulkPlanEpisode(ep.filename, code, ep.title, "nothing_to_do", summary, summary, reason, 0.0, false)
     }
 
     val hasUntagged = tracks.any { it.language == null }
