@@ -55,6 +55,17 @@ object PipelineStepOps {
         store.updateOne(artwork.stampHasStill(current))
     }
 
+    /** Phase 207 (FR-207-3) — three outcomes where the old code only ever reported a count, which is
+     *  exactly how a 400-on-every-call bug read as "nothing needed warming" for the step's entire
+     *  lifetime. [Warmed] with `count == 0` still means the lookup succeeded and genuinely found no text
+     *  subtitle streams — the case that must stay silent. [LookupFailed] means Jellyfin could not answer
+     *  at all, which must not collapse into the same "0 warmed" summary line. */
+    sealed interface PrewarmOutcome {
+        data class Warmed(val count: Int) : PrewarmOutcome
+        data object Skipped : PrewarmOutcome
+        data object LookupFailed : PrewarmOutcome
+    }
+
     /**
      * `prewarm_subtitles` (Phase 179, FR-179-1) — hit Jellyfin's `.../Subtitles/{index}/0/Stream.vtt`
      * extraction endpoint for every embedded text-subtitle stream ahead of any real playback, so its own
@@ -65,32 +76,44 @@ object PipelineStepOps {
      * device's* decode ceiling (Phase 177), not just the file, so there's no reliable narrower filter —
      * matches `detect_segments`/`fetch_artwork`'s existing "touch everything in the working set" pattern.
      * `isExternal` streams are skipped: a sidecar `.srt` is served as-is, never ffmpeg-extracted, so
-     * there is nothing to warm. Returns the count of subtitle streams actually warmed, for the step's
-     * summary log line. Movies pre-warm their own playable id; a TV_SHOW pre-warms every episode that has
-     * one (episodes scanned before R82 have `jellyfinId = null` and are skipped — the next scan fills it
-     * in). Silently a no-op with no Jellyfin connection configured (mirrors `sync_jellyfin`'s own guard).
+     * there is nothing to warm. Silently a no-op with no Jellyfin connection configured (mirrors
+     * `sync_jellyfin`'s own guard).
+     *
+     * Phase 207 (FR-207-1/2) — movies use [JellyfinClient.getItemMediaStreams]'s now-corrected `Ids=`
+     * shape (one call). A TV_SHOW uses [JellyfinClient.getSeriesEpisodesMediaStreams] — **one call for
+     * the whole series**, not one per episode (285 calls/14s for a single series, observed before this
+     * fix) — and reads Jellyfin's own episode list directly rather than joining against
+     * `item.episodes`, so an episode this scan hasn't backfilled a `jellyfinId` for is still warmed.
      */
-    suspend fun prewarmSubtitles(item: MediaItem, jellyfinClient: JellyfinClient, cfg: AppConfig): Int {
+    suspend fun prewarmSubtitles(item: MediaItem, jellyfinClient: JellyfinClient, cfg: AppConfig): PrewarmOutcome {
         val base = cfg.apiKeys.jellyfinUrl
         val token = cfg.apiKeys.jellyfinToken
-        if (base.isBlank() || token.isBlank()) return 0
+        if (base.isBlank() || token.isBlank()) return PrewarmOutcome.Skipped
 
-        suspend fun warmPlayable(jellyfinId: String?): Int {
-            val id = jellyfinId?.takeIf { it.isNotBlank() } ?: return 0
-            val detail = jellyfinClient.getItemMediaStreams(base, token, id) ?: return 0
-            val textSubs = detail.mediaStreams.filter {
+        suspend fun warmedCountOf(streams: List<dev.jellystructure.auth.JellyfinMediaStream>, jellyfinId: String): Int {
+            val textSubs = streams.filter {
                 it.type.equals("Subtitle", ignoreCase = true) &&
                     !it.isExternal &&
                     (it.isTextSubtitleStream || dev.jellystructure.tv.isTextSubCodec(it.codec))
             }
-            for (s in textSubs) jellyfinClient.warmSubtitleExtraction(base, token, id, s.index)
+            for (s in textSubs) jellyfinClient.warmSubtitleExtraction(base, token, jellyfinId, s.index)
             return textSubs.size
         }
 
         return when (item.kind) {
-            MediaKind.MOVIE -> warmPlayable(item.jellyfinId)
-            MediaKind.TV_SHOW -> item.episodes.sumOf { warmPlayable(it.jellyfinId) }
-            MediaKind.MUSIC_VIDEO -> 0
+            MediaKind.MOVIE -> {
+                val id = item.jellyfinId?.takeIf { it.isNotBlank() } ?: return PrewarmOutcome.Skipped
+                val detail = jellyfinClient.getItemMediaStreams(base, token, id)
+                    ?: return PrewarmOutcome.LookupFailed
+                PrewarmOutcome.Warmed(warmedCountOf(detail.mediaStreams, id))
+            }
+            MediaKind.TV_SHOW -> {
+                val seriesId = item.jellyfinId?.takeIf { it.isNotBlank() } ?: return PrewarmOutcome.Skipped
+                val episodes = jellyfinClient.getSeriesEpisodesMediaStreams(base, token, seriesId)
+                    ?: return PrewarmOutcome.LookupFailed
+                PrewarmOutcome.Warmed(episodes.sumOf { ep -> warmedCountOf(ep.mediaStreams, ep.id) })
+            }
+            MediaKind.MUSIC_VIDEO -> PrewarmOutcome.Skipped
         }
     }
 

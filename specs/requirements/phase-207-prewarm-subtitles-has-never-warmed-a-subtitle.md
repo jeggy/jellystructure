@@ -13,8 +13,21 @@
 > shipped. `0 subtitle stream(s) warmed` was read as "nothing needed warming."
 
 ## Status
-Planned, written 2026-09-13. Audit-authored, not dev-reviewed, not built. Backend-only, no UI, no
-client change. Small and self-contained — a wrong URL and an avoidable fan-out.
+✓ Built 2026-09-13. Audit-authored, not dev-reviewed, not deployed. Backend-only, no UI, no client
+change. `compileKotlinLinuxX64` clean; not live-verified against production (the running backend still
+has the old 400-on-every-call behaviour until redeployed).
+
+**Build notes:** `getItemMediaStreams` now uses `/Items?Ids={id}&Fields=MediaStreams` (FR-207-1) — the
+`Ids=` shape rather than `?userId=`, since this is a scan-time pipeline step with no per-device viewer
+to scope a `userId` to; it needs none, unlike the `?userId=` option this spec originally favoured. This
+also fixes `TrackRoutes.kt:701`'s `/media/health/subtitle-reconciliation` route for free — a second
+caller of the same broken function this spec's "Out of scope" section undercounted as having "a single
+caller." New `JellyfinClient.getSeriesEpisodesMediaStreams` gives FR-207-2 its one-call-per-series
+shape and reads Jellyfin's own episode list directly (no join against `item.episodes`, so an
+un-backfilled `jellyfinId` no longer skips an episode). FR-207-3 is `PipelineStepOps.PrewarmOutcome`
+(`Warmed`/`Skipped`/`LookupFailed`) plus `PipelineEngine`'s run-summary WARN when every attempted lookup
+failed. FR-207-6 needed no change — the step already runs inside the existing scan-pool/`ProcessGate`
+partitioning.
 
 Fixes a shipped phase: **179** (`✓ Implemented`). Its functional goal has never once been achieved in
 production, so R183's cold-extraction problem is entirely unmitigated today.

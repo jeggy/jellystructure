@@ -120,6 +120,13 @@ data class JellyfinItemsResponse(
     @SerialName("TotalRecordCount") val totalRecordCount: Int = 0,
 )
 
+/** Phase 207 — the `Fields=MediaStreams` sibling of [JellyfinItemsResponse], for `/Items?Ids=…` reads
+ *  that want [JellyfinItemDetail] (UserData + MediaStreams) rather than the plain [JellyfinItem]. */
+@Serializable
+data class JellyfinItemDetailsResponse(
+    @SerialName("Items") val items: List<JellyfinItemDetail> = emptyList(),
+)
+
 /** Phase 163 (step 6) — Jellyfin's own `GetItemSegments` shape. Ticks are 100ns units (Jellyfin's usual
  *  convention, matching this codebase's own TICKS_PER_MS constant elsewhere). */
 @Serializable
@@ -286,6 +293,10 @@ data class JellyfinEpisodeItem(
     @SerialName("DateCreated") val dateCreated: String? = null,
     // Phase 152 — fallback join key when Jellyfin never numbered this episode (no IndexNumber).
     @SerialName("Path") val path: String? = null,
+    // Phase 207 — populated only when the caller asks with `Fields=MediaStreams`
+    // (getSeriesEpisodesMediaStreams); getSeriesEpisodesMeta's own Fields list doesn't request it,
+    // so this is an empty list there, same as any field Jellyfin simply wasn't asked for.
+    @SerialName("MediaStreams") val mediaStreams: List<JellyfinMediaStream> = emptyList(),
 )
 
 @Serializable
