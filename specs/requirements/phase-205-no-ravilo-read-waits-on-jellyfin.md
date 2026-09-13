@@ -12,8 +12,55 @@
 > Jellyfin happened to answer four questions inside six seconds.
 
 ## Status
-Planned, written 2026-09-13. Audit-authored, not dev-reviewed, not built. Backend-only — the client
-already renders whatever row it receives, so there is no Ravilo counterpart and no contract change.
+✓ Built 2026-09-13 (FR-205-1/2/3/4/5/6/9). Audit-authored, not dev-reviewed, not deployed. Backend-only —
+the client already renders whatever row it receives, so there is no Ravilo counterpart and no contract
+change. `compileKotlinLinuxX64`/`compileTestKotlinLinuxX64` clean; full `linuxX64Test` suite green
+(`HomeFeedServiceReadPathTest`, 2 new tests). Not live-verified — the running backend still fetches
+Continue Watching and playstate live until redeployed. **FR-205-7 and FR-205-8 deliberately NOT
+built** — see their own section below; this phase does not guess at what those require.
+
+**Build notes:**
+
+- **New `PlaystateCache`** (`tv/PlaystateCache.kt`) — the one per-user whole-catalog playstate map,
+  background-refreshed every 20s for devices seen in the last 30 days, staggered 500ms apart so a
+  household isn't fired at Jellyfin in one instant. `get(userId)` never calls Jellyfin and never blocks.
+  Wired into **all seven read sites** named in the review pass: `HomeFeedService`'s `getHomeFeed`/
+  `getChannelFeed` (replacing the deleted `playstateFor`/`fetchAllPlaystate`/`playstateCache`),
+  `BrowseService`'s `browseByQuery`/`browse`/`search` (replacing three live, uncached `fetchPlaystate`
+  calls), and `DetailService.getPlaystate`/`hydrateRelated` — the worst of the seven, with **no cache
+  and no timeout at all** before this phase, hit on every single detail/episode-row open. Both
+  `DetailService` functions are no longer `suspend` — they're pure map reads now. Preserves the R176
+  `playstate_changed` push on a real refresh.
+- **Continue Watching's reader** (`HomeFeedService.canonicalContinueList`) is now a pure, non-suspend
+  cache read — it never calls `buildCanonicalContinueList` itself. That function is now called
+  exclusively by `HomeFeedService.start()`'s background loop (`refreshContinueListFor`/
+  `refreshAllContinueLists`), same recently-seen/staggered shape as `PlaystateCache`, on its own
+  `CONTINUE_REFRESH_INTERVAL_MS = 60_000` cadence (FR-205-6 — chosen for `getRecentlyTouched`'s cost,
+  the most expensive of the four fetches the build runs, not inherited from a per-request TTL).
+  `allowedHash` is kept as a **safety** check on read (a policy change makes a stale-scope cache miss
+  read as unknown rather than risk leaking a title outside the current policy), not a staleness one.
+- **A structural side effect worth naming**: once Continue Watching stopped needing a live token on the
+  read path, `jellyfinBase`/`token` turned out to be threaded through `buildRows`, `buildChannelContent`,
+  `channelHasAnyMatch`, `buildChannels`, `channelRail` and `channelContent` for **no other reason** — so
+  `getChannels`, `buildHomeFeed` and `getChannelFeed` no longer fetch a `tvToken` at all. `getChannels` in
+  particular used to make a live-cache-checked Jellyfin call for a token nothing inside it ever used for
+  anything besides Continue Watching.
+- **FR-205-5**: `JellyfinClient.warnOnFailureOrDefault` replaces the repeated
+  `runCatching{}.let{ if (isFailure) warn(...); getOrDefault(...) }` idiom on the four methods
+  `buildCanonicalContinueList` runs concurrently (`getResumeItemsAll`, `getNextUp`,
+  `getRecentlyPlayedAll`, `getRecentlyTouched`) — the old idiom caught `CancellationException` the same
+  as any real failure and defaulted instead of rethrowing it, which is why 39 `getNextUp` "failures" (a
+  call measuring 1.0s standalone) showed up in 25 minutes of log: the other three fetches were slow, the
+  6s group deadline fired, and every sibling's own cancellation logged itself as a plain error. Scoped to
+  these four methods, not applied file-wide — see the helper's own doc for why. `checkToken` (a related
+  but separate call site, found while fixing this) had the identical `catch (e: Throwable)` swallow and
+  is fixed the same way.
+- **FR-205-4**: `pairedTokenCheck`'s `checkToken` call is now wrapped in `withTimeoutOrNull(5_000L)` (a
+  timeout resolves to `TokenCheck.UNKNOWN`, never `REJECTED` — a non-answer must not escalate into a
+  ten-minute household-wide credential rejection, per FR-194-3's own reasoning).
+- **FR-205-9**: `invalidatePlaystate` no longer has a per-request playstate cache to drop; instead it
+  calls `PlaystateCache.refreshOne` and `refreshContinueListFor` directly, best-effort, for an immediate
+  correction after a reported stop rather than waiting out either background loop's next cycle.
 
 Sibling of Phase 204: that phase reduces how *often* a feed is rebuilt, this one reduces what a rebuild
 *costs* and removes the failure mode where the rebuild silently produces less than the truth. Either is
@@ -225,12 +272,25 @@ conclusive. Required before any scheduler, `ionice`, `nice`, or read-throttling 
 with `iostat` per-device figures alongside. The A/B this phase's investigation attempted produced 39
 busy samples and **1** idle sample, which is why this is a requirement and not a conclusion. Same
 posture as FR-187-1's live endpoint probe and R240's invariant-11 measurement: probe, then build.
+**NOT done as part of this build pass** — it needs a live production A/B with `detect_segments` runs
+deliberately timed around the measurement, which this pass had no standing access to arrange. FR-205-1
+through FR-205-6/FR-205-9 do not depend on it: none of them change scheduler/`ionice`/`nice` behaviour,
+they change *whether a request waits on Jellyfin at all*, which is sound regardless of what causes the
+`+0.53` correlation.
 
 **FR-205-8 — Jellyfin gets the Phase 183 treatment, or a stated reason it does not.** Phase 183 gave
 TMDB a token bucket with AIMD on 429, `Retry-After` handling, and jittered backoff, because an unpaced
 background fan-out against a shared dependency was starving the thing viewers use. Jellyfin is the same
 shape with higher stakes — it is also the playback path. Either pace and prioritize it the same way, or
 record why Jellyfin is different. Not left implicit.
+**NOT built, and deliberately gated on FR-205-7**: pacing/prioritizing Jellyfin traffic is exactly the
+kind of I/O behaviour change FR-205-7 says must not ship without the A/B first — building it now would
+mean guessing at the shape of a problem that measurement might show doesn't exist in the form assumed.
+What *is* true after this build: the background refreshers this phase adds (`PlaystateCache`,
+`HomeFeedService`'s Continue Watching loop) are already staggered (500ms between users) rather than
+firing a household at Jellyfin simultaneously, and both run under `GateClass.BACKGROUND` so Phase 182's
+existing `OutboundHttp`/`ProcessGate` partitioning applies to them like any other background work — that
+is baseline hygiene this phase's own new code owes, not FR-205-8's pacing/prioritization treatment.
 
 **FR-205-9 — a playback stop still corrects the row at once.** `invalidatePlaystate` must keep
 correcting Continue immediately (the bug it fixed: a just-finished episode still in the row for five

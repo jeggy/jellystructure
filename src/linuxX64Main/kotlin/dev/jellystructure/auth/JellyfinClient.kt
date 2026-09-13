@@ -17,6 +17,7 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
 import io.ktor.http.encodeURLParameter
 import io.ktor.http.isSuccess
+import kotlinx.coroutines.CancellationException
 
 // R219 (FR-R219-2) — page size for the "page to completion" fetches Continue Watching's canonical list
 // needs. Not a cap: every paged fetch below loops until TotalRecordCount is reached.
@@ -325,6 +326,12 @@ class JellyfinClient {
                 // 5xx, 429, an unexpected 4xx — Jellyfin declined to answer the question we asked.
                 else -> TokenCheckResult(TokenCheck.UNKNOWN, httpStatus = status)
             }
+        } catch (e: CancellationException) {
+            // Phase 205 (FR-205-5) — a bare `catch (e: Throwable)` here swallowed cancellation the same
+            // way runCatching does elsewhere in this file: the caller's own withTimeoutOrNull cancels
+            // this call, and catching+returning UNKNOWN instead of rethrowing means the coroutine keeps
+            // running past its deadline rather than actually stopping.
+            throw e
         } catch (e: Throwable) {
             TokenCheckResult(TokenCheck.UNKNOWN, error = e.message ?: e::class.simpleName ?: "unknown error")
         }
@@ -631,10 +638,7 @@ class JellyfinClient {
             if (startIndex >= resp.totalRecordCount) break
         }
         acc
-    }.let { result ->
-        if (result.isFailure) Logger.warn("Jellyfin getResumeItemsAll failed: ${result.exceptionOrNull()?.message}")
-        result.getOrDefault(emptyList())
-    }
+    }.warnOnFailureOrDefault("getResumeItemsAll", emptyList())
 
     /**
      * R219 (FR-R219-2) — [getRecentlyPlayed] in FULL, not one bounded history page. Continue Watching's
@@ -659,10 +663,7 @@ class JellyfinClient {
             if (startIndex >= resp.totalRecordCount) break
         }
         acc
-    }.let { result ->
-        if (result.isFailure) Logger.warn("Jellyfin getRecentlyPlayedAll failed: ${result.exceptionOrNull()?.message}")
-        result.getOrDefault(emptyList())
-    }
+    }.warnOnFailureOrDefault("getRecentlyPlayedAll", emptyList())
 
     /**
      * R219 (FR-R219-3) — membership rule §2(c): an item touched (played at least once) within
@@ -692,10 +693,7 @@ class JellyfinClient {
             if (startIndex >= resp.totalRecordCount) break
         }
         acc
-    }.let { result ->
-        if (result.isFailure) Logger.warn("Jellyfin getRecentlyTouched failed: ${result.exceptionOrNull()?.message}")
-        result.getOrDefault(emptyList())
-    }
+    }.warnOnFailureOrDefault("getRecentlyTouched", emptyList())
 
     suspend fun startPlaybackSession(
         baseUrl: String,
@@ -1086,10 +1084,7 @@ class JellyfinClient {
             if (startIndex >= resp.totalRecordCount) break
         }
         acc
-    }.let { result ->
-        if (result.isFailure) Logger.warn("Jellyfin getNextUp failed: ${result.exceptionOrNull()?.message}")
-        result.getOrDefault(emptyList())
-    }
+    }.warnOnFailureOrDefault("getNextUp", emptyList())
 }
 
 /**
@@ -1137,6 +1132,28 @@ private suspend inline fun <reified T> HttpResponse.bodyOrNull(context: String):
         return null
     }
     return body()
+}
+
+/**
+ * Phase 205 (FR-205-5) — the `runCatching { … }.let { if (isFailure) Logger.warn(…); getOrDefault(…) }`
+ * idiom used across this file catches `CancellationException` the same as any other `Throwable` and
+ * defaults instead of rethrowing it. That is not just a misleading log line: when an enclosing
+ * `withTimeoutOrNull` cancels the caller (e.g. `buildCanonicalContinueList`'s shared 6s budget across
+ * four concurrent fetches), a call using this idiom logged itself as a plain failure — "39 getNextUp
+ * failures" in production for a call that measures 1.0s standalone — because the *other* three fetches
+ * were slow and the group deadline fired. Swallowing cancellation also means this coroutine keeps
+ * running to completion instead of actually stopping, which is what let a "6s budget" cost more than 6s
+ * in practice whenever a sibling ignored its own cancellation this way.
+ *
+ * Scoped here to the four methods [buildCanonicalContinueList] uses concurrently — the ones the
+ * investigation actually named — not applied file-wide; the other ~20 methods sharing this same idiom
+ * have the identical latent issue and are a generalization candidate for whichever phase next touches
+ * this file's error handling (Phase 208's route migration is the nearest candidate).
+ */
+private suspend fun <T> Result<T>.warnOnFailureOrDefault(context: String, default: T): T {
+    exceptionOrNull()?.let { if (it is CancellationException) throw it }
+    if (isFailure) Logger.warn("Jellyfin $context failed: ${exceptionOrNull()?.message}")
+    return getOrDefault(default)
 }
 
 private fun String.jsonEscape(): String =

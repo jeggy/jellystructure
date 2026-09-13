@@ -3,8 +3,10 @@ package dev.jellystructure.tv
 import dev.jellystructure.auth.DeviceData
 import dev.jellystructure.auth.JellyfinClient
 import dev.jellystructure.config.ConfigStore
+import dev.jellystructure.log.Logger
 import dev.jellystructure.media.ArtworkDownloader
 import dev.jellystructure.media.MediaStore
+import dev.jellystructure.ops.GateClass
 import dev.jellystructure.model.MediaItem
 import dev.jellystructure.model.MediaKind
 import dev.jellystructure.model.recencyKey
@@ -31,8 +33,11 @@ import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.alloc
 import kotlinx.cinterop.memScoped
 import kotlinx.cinterop.ptr
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -53,10 +58,16 @@ private const val CONTINUE_ROW_LIMIT = 20
 // (2026-08-30): the household's newest such item was 3 days old, so a shorter window still keeps it
 // while shedding the stale tail (6 weeks–6 months for the rest).
 private const val CONTINUE_TOUCHED_WINDOW_DAYS = 7L
-private const val WATCHED_TIMEOUT_MS = 2_500L  // R142: cap the played-state overlay so it never hangs the feed
-// Bug fix: shorter than FEED_TTL_MS on purpose — watched/in-progress state changes far more often than
-// the structural feed (rows/heroes/channels), so it needs its own, tighter freshness window.
-private const val PLAYSTATE_TTL_MS = 20_000L
+// Phase 205 (FR-205-2/FR-205-6) — the background loop's own refresh cadence, now that the reader never
+// triggers a build. Coarser than PlaystateCache's 20s: getRecentlyTouched (one of the four fetches
+// buildCanonicalContinueList runs) is a whole-library DatePlayed sort (measured: 1.26-2.01s, up to
+// 8.56s during a pipeline run) — the single most expensive of the four, so this cadence is chosen for
+// that fetch's cost, not the cheaper three it happens to run alongside.
+private const val CONTINUE_REFRESH_INTERVAL_MS = 60_000L
+// Same reasoning as PlaystateCache's own window — a household's historical pairings shouldn't grow
+// background Jellyfin traffic forever.
+private const val RECENTLY_SEEN_WINDOW_MS = 30L * 24 * 3_600_000L
+private const val REFRESH_STAGGER_MS = 500L
 
 class HomeFeedService(
     private val mediaStore: MediaStore,
@@ -76,13 +87,10 @@ class HomeFeedService(
     private data class FeedEntry(val feed: HomeFeed, val builtAt: Long, val feedVer: Long, val cfgHash: Int, val allowedHash: Int)
     private val feedCache = HashMap<String, FeedEntry>()
 
-    // Bug fix: per-user cache for the WHOLE catalog's playstate (not just one feed's rows) — a cache hit
-    // costs zero Jellyfin calls regardless of which rows end up in the feed, and it's what lets the
-    // structural-feed build and the playstate fetch run concurrently below (neither needs the other's
-    // output — the old code fetched playstate AFTER building the feed, purely because it read the
-    // feed's own row ids as its candidate list; fetching for the whole catalog removes that dependency).
-    private data class PlaystateEntry(val data: Map<String, CardPlayState>, val builtAt: Long)
-    private val playstateCache = HashMap<String, PlaystateEntry>()
+    // Phase 205 (FR-205-2) — playstate moved to PlaystateCache, a background-refreshed, cross-service
+    // cache (also read by BrowseService and DetailService, neither of which had ANY cache before this
+    // phase). The per-user whole-catalog fetch this comment used to describe now happens off the
+    // request path entirely; see that object's own doc.
 
     // R219 (FR-R219-1) — the ONE canonical Continue Watching list, keyed by (user, visibility scope),
     // reused by every view (Home row, every channel row, See-all) instead of each re-deriving it. Same
@@ -113,24 +121,21 @@ class HomeFeedService(
      * to decide which channels are non-empty for it, so this makes the same MediaStore/Jellyfin calls
      * [getHomeFeed] does.
      */
-    suspend fun getChannels(device: DeviceData): List<Channel> = coroutineScope {
+    // Phase 205 (FR-205-1) — no longer fetches a tvToken: the channel rail's only Jellyfin-touching
+    // dependency was Continue Watching, which channelHasAnyMatch now reads from continueListCache
+    // (background-refreshed) instead of building live. Listing channels makes no Jellyfin call at all.
+    suspend fun getChannels(device: DeviceData): List<Channel> {
         val config = configService.getConfig(device.jellyfinUserId)
-        val jellyfinBase = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
-        val allDeferred = async { mediaStore.liveItems(device) }
-        val tokenDeferred = async { jellyfinClient.tvToken(jellyfinBase, device, configStore.current.apiKeys.jellyfinToken) }
-        val allItems = allDeferred.await()
-        val token = tokenDeferred.await()
+        val allItems = mediaStore.liveItems(device)
         val heroIds = config.heroes.map { it.itemId }.toSet()
-        channelRail(device, config, allItems, jellyfinBase, token, heroIds)
+        return channelRail(device, config, allItems, heroIds)
     }
 
     /** Phase 206 (FR-206-3) — see the cache field's own doc. Same shape as [feedCache]'s own gate. */
-    private suspend fun channelRail(
+    private fun channelRail(
         device: DeviceData,
         config: RaviloConfig,
         allItems: List<MediaItem>,
-        jellyfinBase: String,
-        token: String,
         heroIds: Set<String>,
     ): List<Channel> {
         val userId = device.jellyfinUserId
@@ -141,7 +146,7 @@ class HomeFeedService(
         channelRailCache[userId]?.takeIf {
             it.feedVer == feedVer && it.cfgHash == cfgHash && it.allowedHash == allowedHash && (now - it.builtAt) < FEED_TTL_MS
         }?.let { return it.channels }
-        val built = buildChannels(config, device, allItems, jellyfinBase, token, heroIds)
+        val built = buildChannels(config, device, allItems, heroIds)
         channelRailCache[userId] = RailEntry(built, now, feedVer, cfgHash, allowedHash)
         return built
     }
@@ -160,69 +165,43 @@ class HomeFeedService(
 
         // Bug fix: these two used to run sequentially (build the whole feed — including its own live
         // Continue-row Jellyfin calls — THEN fetch playstate afterward), stacking their worst-case
-        // latencies. Neither depends on the other's result (see PlaystateEntry doc above), so run them
-        // concurrently; a cache hit on either side just returns immediately without touching Jellyfin.
+        // latencies. Neither depends on the other's result, so run them concurrently; a cache hit on
+        // either side just returns immediately without touching Jellyfin. Phase 205 — playstate is now
+        // a PlaystateCache map read (no Jellyfin call at all), but kept as its own async so a future
+        // change to it can't accidentally re-serialize onto feedDeferred's path.
         val feedDeferred = async {
             cachedStructural?.feed ?: buildHomeFeed(device, config).also {
                 feedCache[userId] = FeedEntry(it, now, feedVer, cfgHash, allowedHash)
             }
         }
-        val playstateDeferred = async { playstateFor(device, now) }
+        val playstateDeferred = async { PlaystateCache.get(userId) }
         applyPlaystate(feedDeferred.await(), playstateDeferred.await())
     }
 
     /**
      * Bug fix: a playback stop (and the played write-through) used to only forward to Jellyfin — nothing
-     * touched [feedCache] (FEED_TTL_MS = 5 min) or [playstateCache] (PLAYSTATE_TTL_MS = 20s). The Continue
-     * row is built INSIDE the cached feed from Jellyfin's Resume + NextUp, so even a perfectly correct
-     * stop stayed invisible on Home for up to five minutes: the row still showed the episode at its old
-     * position, or still showed one the viewer had just finished. Drop both caches for this user so the
-     * next load rebuilds the row, and re-read the playstate right away so the R176 `playstate_changed`
-     * push patches any Home/Browse screen that is already open (on this device or another of the
-     * viewer's). Best-effort: a failure here must never turn a successful stop into an error response.
+     * touched [feedCache] or [continueListCache]. The Continue row is built INSIDE the cached feed from
+     * Jellyfin's Resume + NextUp, so even a perfectly correct stop stayed invisible on Home for up to
+     * five minutes: the row still showed the episode at its old position, or still showed one the viewer
+     * had just finished. Drop the structural caches for this user so the next load rebuilds the row.
+     *
+     * Phase 205 (FR-205-9) — playstate itself no longer has a per-request cache to drop: under FR-205-2
+     * it's [PlaystateCache], background-refreshed. "Correct it at once" now means triggering an
+     * immediate, best-effort refresh for this one user rather than waiting out that cache's next cycle —
+     * still fire-and-forget (a failure here must never turn a successful stop into an error response),
+     * and it still fires the same R176 `playstate_changed` push on success so an already-open Home/
+     * Browse screen elsewhere patches instantly.
      */
     suspend fun invalidatePlaystate(device: DeviceData) {
         val userId = device.jellyfinUserId
         feedCache.remove(userId)
-        playstateCache.remove(userId)
         continueListCache.remove(userId)  // R219 (FR-R219-1) — a stop must correct the row at once
         channelRailCache.remove(userId)
         // Phase 206 (FR-206-4) — same reasoning as the caches above: a channel whose Continue row just
         // changed must not keep serving a pre-stop build for the rest of FEED_TTL_MS.
         channelContentCache.keys.filter { it.first == userId }.forEach { channelContentCache.remove(it) }
-        runCatching { playstateFor(device, nowMs()) }
-    }
-
-    /**
-     * Returns this user's cached whole-catalog playstate if still fresh; otherwise fetches it live,
-     * caches it, and — since a fresh fetch is the whole point of the exercise — broadcasts it to every
-     * OTHER device signed in as this user (see [TvEventBus.notifyPlaystateChanged]) so an already-open
-     * Home/Browse/Search screen elsewhere patches its tiles instantly instead of waiting for its own
-     * next load to independently pay the same live round trip.
-     */
-    private suspend fun playstateFor(device: DeviceData, now: Long): Map<String, CardPlayState> {
-        val userId = device.jellyfinUserId
-        playstateCache[userId]?.takeIf { (now - it.builtAt) < PLAYSTATE_TTL_MS }?.let { return it.data }
-        val ps = fetchAllPlaystate(device)
-        playstateCache[userId] = PlaystateEntry(ps, now)
-        if (ps.isNotEmpty()) tvEventBus.notifyPlaystateChanged(userId, json.encodeToString(ps))
-        return ps
-    }
-
-    /**
-     * Fetch played/in-progress state for this user's ENTIRE visible catalog, not just whatever ends up
-     * in one particular feed's rows — the ids come straight from [MediaStore]'s own cache, so this has
-     * no data dependency on [buildHomeFeed] and can run concurrently with it. Bounded by
-     * [WATCHED_TIMEOUT_MS] — on a slow Jellyfin the feed ships without fresh watched-state, same as before.
-     */
-    private suspend fun fetchAllPlaystate(device: DeviceData): Map<String, CardPlayState> {
-        val ids = mediaStore.liveItems(device).mapNotNull { it.jellyfinId }
-        if (ids.isEmpty()) return emptyMap()
-        val base = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
-        return withTimeoutOrNull(WATCHED_TIMEOUT_MS) {
-            val token = jellyfinClient.tvToken(base, device, configStore.current.apiKeys.jellyfinToken)
-            fetchPlaystate(jellyfinClient, base, token, device.jellyfinUserId, ids)
-        } ?: emptyMap()
+        runCatching { PlaystateCache.refreshOne(device, mediaStore, jellyfinClient, configStore, tvEventBus) }
+        runCatching { refreshContinueListFor(device) }
     }
 
     /**
@@ -237,20 +216,19 @@ class HomeFeedService(
         })
     }
 
-    private suspend fun buildHomeFeed(device: DeviceData, config: RaviloConfig): HomeFeed = coroutineScope {
-        val jellyfinBase = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
-        val allDeferred   = async { mediaStore.liveItems(device) }
-        // R85: token no longer needed for image URLs; still needed for buildContinueRow.
-        val tokenDeferred = async { jellyfinClient.tvToken(jellyfinBase, device, configStore.current.apiKeys.jellyfinToken) }
-        val all   = allDeferred.await()
-        val token = tokenDeferred.await()
+    // Phase 205 (FR-205-1) — no longer fetches a tvToken. R85 already removed the image-URL need for
+    // it; Continue Watching (the "still needed for buildContinueRow" reason this comment gave) is now a
+    // background-refreshed cache read (see canonicalContinueList's doc), so buildHomeFeed makes no
+    // Jellyfin call of its own at all.
+    private suspend fun buildHomeFeed(device: DeviceData, config: RaviloConfig): HomeFeed {
+        val all = mediaStore.liveItems(device)
         val heroIds = config.heroes.map { it.itemId }.toSet()
-        val rows = buildRows(config, device, all, all, jellyfinBase, token, channelFilter = null)
+        val rows = buildRows(config, device, all, channelFilter = null)
         // Phase 202/R240 — Home content rows only (not heroes, not the channel rail, not channel
         // pages): see FocusDetailFacts' doc and the R240 spec's non-goals.
-        HomeFeed(
+        return HomeFeed(
             heroes = buildHeroes(config, all),
-            channels = channelRail(device, config, all, jellyfinBase, token, heroIds),
+            channels = channelRail(device, config, all, heroIds),
             rows = if (config.focusDetail == "none") rows else attachFocusDetail(rows, all),
             heroHeightPct = config.heroHeightPct,
             autoAdvanceSeconds = config.autoAdvanceSeconds,
@@ -311,41 +289,35 @@ class HomeFeedService(
         )
     }
 
-    suspend fun getChannelFeed(device: DeviceData, channelId: String): HomeFeed = coroutineScope {
+    // Phase 205 (FR-205-1) — no longer fetches a tvToken (same reasoning as buildHomeFeed above); reads
+    // PlaystateCache instead of the deleted playstateFor.
+    suspend fun getChannelFeed(device: DeviceData, channelId: String): HomeFeed {
         val config     = configService.getConfig(device.jellyfinUserId)
         val channelCfg = config.channels.find { it.id == channelId }
-            ?: return@coroutineScope HomeFeed(emptyList(), emptyList(), emptyList())
-        val jellyfinBase  = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
-        val allDeferred   = async { mediaStore.liveItems(device) }
-        // R85: token no longer needed for image URLs; still needed for buildContinueRow.
-        val tokenDeferred = async { jellyfinClient.tvToken(jellyfinBase, device, configStore.current.apiKeys.jellyfinToken) }
-        val playstateDeferred = async { playstateFor(device, nowMs()) }
-        val allItems = allDeferred.await()
-        val token    = tokenDeferred.await()
+            ?: return HomeFeed(emptyList(), emptyList(), emptyList())
+        val allItems = mediaStore.liveItems(device)
         val heroIds  = config.heroes.map { it.itemId }.toSet()
         // Phase 206 (FR-206-2/FR-206-4) — both cached; channelContent builds this channel's heroes/rows
         // at most once per (user, channel, feedVersion, config, scope) instead of buildChannels (below,
         // via channelRail) building it again as a side effect of assembling the rail.
-        val (heroes, rows) = channelContent(device, config, channelCfg, allItems, jellyfinBase, token, heroIds)
-        applyPlaystate(HomeFeed(
+        val (heroes, rows) = channelContent(device, config, channelCfg, allItems, heroIds)
+        return applyPlaystate(HomeFeed(
             heroes = heroes,
-            channels = channelRail(device, config, allItems, jellyfinBase, token, heroIds),
+            channels = channelRail(device, config, allItems, heroIds),
             rows = rows,
             heroHeightPct = config.heroHeightPct,
             autoAdvanceSeconds = config.autoAdvanceSeconds,
             tileShape = config.tileShape,
             portraitHeroHeightPct = config.portrait?.heroHeightPct,
-        ), playstateDeferred.await())
+        ), PlaystateCache.get(device.jellyfinUserId))
     }
 
     /** Phase 206 (FR-206-4) — see [channelContentCache]'s own doc. Same shape as [channelRail]. */
-    private suspend fun channelContent(
+    private fun channelContent(
         device: DeviceData,
         config: RaviloConfig,
         channelCfg: ChannelConfig,
         allItems: List<MediaItem>,
-        jellyfinBase: String,
-        token: String,
         heroIds: Set<String>,
     ): Pair<List<Hero>, List<Row>> {
         val userId = device.jellyfinUserId
@@ -357,7 +329,7 @@ class HomeFeedService(
         channelContentCache[cacheKey]?.takeIf {
             it.feedVer == feedVer && it.cfgHash == cfgHash && it.allowedHash == allowedHash && (now - it.builtAt) < FEED_TTL_MS
         }?.let { return it.heroes to it.rows }
-        val (heroes, rows) = buildChannelContent(device, config, channelCfg, allItems, jellyfinBase, token, heroIds)
+        val (heroes, rows) = buildChannelContent(device, config, channelCfg, allItems, heroIds)
         channelContentCache[cacheKey] = ChannelContentEntry(heroes, rows, now, feedVer, cfgHash, allowedHash)
         return heroes to rows
     }
@@ -428,12 +400,10 @@ class HomeFeedService(
      * in the library matches that filter. [buildChannelContent] is the same heroes+rows build
      * [getChannelFeed] uses, so this can never disagree with what opening the channel actually shows.
      */
-    private suspend fun buildChannels(
+    private fun buildChannels(
         config: RaviloConfig,
         device: DeviceData,
         allItems: List<MediaItem>,
-        jellyfinBase: String,
-        token: String,
         heroIds: Set<String>,
     ): List<Channel> {
         val result = mutableListOf<Channel>()
@@ -443,7 +413,7 @@ class HomeFeedService(
             // of a channel nobody may ever open). filtered is computed once here and reused by
             // channelHasAnyMatch, matching buildChannelContent's own first line exactly.
             val filtered = allItems.filter { it.matchesChannel(ch, heroIds) }
-            if (!channelHasAnyMatch(config, device, ch, filtered, allItems, jellyfinBase, token, heroIds)) continue
+            if (!channelHasAnyMatch(config, device, ch, filtered, allItems, heroIds)) continue
             result.add(Channel(
                 id = ch.id,
                 name = ch.name,
@@ -459,13 +429,11 @@ class HomeFeedService(
 
     /** R228: the heroes+rows build shared by [getChannelFeed] and [buildChannels]'s own emptiness
      *  check — factored out so the two can never compute different content for the same channel. */
-    private suspend fun buildChannelContent(
+    private fun buildChannelContent(
         device: DeviceData,
         config: RaviloConfig,
         channelCfg: ChannelConfig,
         allItems: List<MediaItem>,
-        jellyfinBase: String,
-        token: String,
         heroIds: Set<String>,
     ): Pair<List<Hero>, List<Row>> {
         val filtered = allItems.filter { it.matchesChannel(channelCfg, heroIds) }
@@ -474,7 +442,7 @@ class HomeFeedService(
             buildHeroesFromList(pageHero.items, allItems)
         else
             emptyList()
-        val rows = buildRows(config, device, filtered, allItems, jellyfinBase, token, channelFilter = channelCfg)
+        val rows = buildRows(config, device, filtered, channelFilter = channelCfg)
         return heroes to rows
     }
 
@@ -489,14 +457,12 @@ class HomeFeedService(
      * [buildChannelContent] computes it — passed in so the caller (looping over every channel) computes
      * it once, not twice.
      */
-    private suspend fun channelHasAnyMatch(
+    private fun channelHasAnyMatch(
         config: RaviloConfig,
         device: DeviceData,
         channelCfg: ChannelConfig,
         filtered: List<MediaItem>,
         libraryAll: List<MediaItem>,
-        jellyfinBase: String,
-        token: String,
         heroIds: Set<String>,
     ): Boolean {
         val pageHero = channelCfg.pageHero
@@ -504,8 +470,8 @@ class HomeFeedService(
         if (filtered.isEmpty()) return false  // open question 1's "cheap outer test" — settles the common case with no row work at all
 
         val cascade = configStore.current.metadata.ageRatingCascade
-        suspend fun continueRowNonEmpty(): Boolean {
-            val canonical = canonicalContinueList(device, libraryAll, jellyfinBase, token)
+        fun continueRowNonEmpty(): Boolean {
+            val canonical = canonicalContinueList(device)
             return canonical.any { it.mediaItem.matchesChannel(channelCfg, heroIds) }
         }
 
@@ -541,13 +507,10 @@ class HomeFeedService(
      * R143: [all] is the context list (the channel-scoped list inside a channel, the full library on Home);
      * [libraryAll] is always the full unscoped library — used for system rows whose scope is "all".
      */
-    private suspend fun buildRows(
+    private fun buildRows(
         config: RaviloConfig,
         device: DeviceData,
         all: List<MediaItem>,
-        libraryAll: List<MediaItem>,
-        jellyfinBase: String,
-        token: String,
         channelFilter: ChannelConfig?,
     ): List<Row> {
         val channelRows = channelFilter?.rows
@@ -564,7 +527,7 @@ class HomeFeedService(
             if (sys.cont.show) {
                 // R219 (FR-R219-6): the row and continueWatchingAll's See-all must apply this exact same
                 // filter, or the two silently disagree about membership — see the model note in the spec.
-                val canonical = canonicalContinueList(device, libraryAll, jellyfinBase, token)
+                val canonical = canonicalContinueList(device)
                 val cont = canonical.filter { it.mediaItem.matchesChannel(channelFilter!!, heroIds) }.capped()
                 if (cont.cards.isNotEmpty()) result.add(Row("continue", "Continue Watching", RowKind.CONTINUE, cont.cards, seedTotalCount = cont.total))
             }
@@ -588,7 +551,7 @@ class HomeFeedService(
                     // channel when there is one — Home's `channelFilter` is null, so this is a no-op
                     // there. Previously unfiltered in every inherit-mode case (R202 FR-RV-R2-1): correct
                     // on Home, wrong on a channel page, which is what R233's live report hit.
-                    val canonical = canonicalContinueList(device, libraryAll, jellyfinBase, token)
+                    val canonical = canonicalContinueList(device)
                     val filtered = if (channelFilter != null) canonical.filter { it.mediaItem.matchesChannel(channelFilter, heroIds) } else canonical
                     val cont = filtered.capped()
                     if (cont.cards.isNotEmpty()) result.add(Row(rowCfg.id, rowCfg.title ?: "Continue Watching", RowKind.CONTINUE, cont.cards, seedTotalCount = cont.total))
@@ -755,11 +718,10 @@ class HomeFeedService(
      *  longer disagree about membership because there is only one behaviour, not two branch ladders
      *  kept in sync by hand (R219 FR-R219-6's old shape). A channel id that doesn't resolve is
      *  defensive-unfiltered, unchanged from R219. Always uncapped (FR-R219-5). */
+    // Phase 205 (FR-205-1) — no longer fetches a tvToken or the whole library; canonicalContinueList is
+    // a pure cache read now.
     suspend fun continueWatchingAll(device: DeviceData, channelId: String?): List<MediaCard> {
-        val jellyfinBase = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
-        val token = jellyfinClient.tvToken(jellyfinBase, device, configStore.current.apiKeys.jellyfinToken)
-        val libraryAll = mediaStore.liveItems(device)
-        val canonical = canonicalContinueList(device, libraryAll, jellyfinBase, token)
+        val canonical = canonicalContinueList(device)
         val config = configService.getConfig(device.jellyfinUserId)
         val channelCfg = channelId?.let { id -> config.channels.find { it.id == id } }
         val scoped = if (channelCfg != null) {
@@ -769,34 +731,76 @@ class HomeFeedService(
         return scoped.map { it.card }
     }
 
-    /** R219 (FR-R219-1) — get-or-build wrapper around [buildCanonicalContinueList]: SWR-cached per user
-     *  (see [continueListCache]'s doc comment) so a Home row, every channel row and the See-all page —
-     *  in one feed build, or across builds within [FEED_TTL_MS] — share one set of Jellyfin round trips
-     *  instead of each re-deriving the list. */
-    private suspend fun canonicalContinueList(
-        device: DeviceData,
-        libraryAll: List<MediaItem>,
-        jellyfinBase: String,
-        token: String,
-    ): List<ContinueEntry> {
-        val userId = device.jellyfinUserId
-        val feedVer = mediaStore.feedVersion
+    /**
+     * Phase 205 (FR-205-1/FR-205-2) — read-only. This used to build on a cache miss, which is exactly
+     * the live Jellyfin wait FR-205-1 forbids (measured: a whole-library `DatePlayed` sort inside this
+     * build costs 1.26-8.56s, and a cold-cache window was common precisely because Phase 204's fix
+     * hadn't landed yet — a background write invalidated this cache too). [buildCanonicalContinueList]
+     * is now called exclusively by the background loop ([start]/[refreshContinueListFor]); this just
+     * returns whatever it last wrote for this user, or an empty list if never refreshed — R231's own
+     * posture ("a failed build is never worse than an empty row") one layer further out.
+     *
+     * [allowedHash] is checked as a SAFETY property, not a staleness one: if this device's visibility
+     * scope has changed since the cache was last written (a Jellyfin policy edit), the cached list may
+     * belong to a broader scope than the viewer currently has — treated as unknown (empty) rather than
+     * risked, self-healing on the next background cycle rather than retried live.
+     */
+    private fun canonicalContinueList(device: DeviceData): List<ContinueEntry> {
+        val cached = continueListCache[device.jellyfinUserId] ?: return emptyList()
         val allowedHash = (device.allowedLibraries.hashCode() * 31 + device.allowedTags.hashCode()) * 31 + device.blockedTags.hashCode()
+        return if (cached.allowedHash == allowedHash) cached.list else emptyList()
+    }
+
+    /** Phase 205 (FR-205-2) — the ONLY caller of [buildCanonicalContinueList] left after this phase.
+     *  Also called directly by [invalidatePlaystate] (FR-205-9) for an immediate, best-effort correction
+     *  right after a reported playback stop, rather than leaving it to wait out [CONTINUE_REFRESH_INTERVAL_MS]. */
+    private suspend fun refreshContinueListFor(device: DeviceData) {
+        val jellyfinBase = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
+        if (jellyfinBase.isBlank()) return
+        val libraryAll = mediaStore.liveItems(device)
+        val token = jellyfinClient.tvToken(jellyfinBase, device, configStore.current.apiKeys.jellyfinToken)
+        val userId = device.jellyfinUserId
+        val allowedHash = (device.allowedLibraries.hashCode() * 31 + device.allowedTags.hashCode()) * 31 + device.blockedTags.hashCode()
+        // R231 — a failed build must never overwrite a good cached value; the previous entry (if any)
+        // is simply left in place for the next cycle to retry.
+        val built = buildCanonicalContinueList(device, libraryAll, jellyfinBase, token) ?: return
+        continueListCache[userId] = ContinueListEntry(built, nowMs(), mediaStore.feedVersion, allowedHash)
+    }
+
+    /** Phase 205 (FR-205-2/FR-205-6) — called once from `Main.kt` at boot. [CONTINUE_REFRESH_INTERVAL_MS]
+     *  is this loop's own cadence, chosen for `getRecentlyTouched`'s cost (the most expensive of the
+     *  four fetches [buildCanonicalContinueList] runs) rather than inherited from a per-request TTL. */
+    fun start(scope: CoroutineScope, deviceService: RaviloDeviceService) {
+        scope.launch(GateClass.BACKGROUND) {
+            while (true) {
+                runCatching { refreshAllContinueLists(deviceService) }
+                    .onFailure { Logger.warn("Continue Watching refresh failed: ${it.message}", "tv") }
+                delay(CONTINUE_REFRESH_INTERVAL_MS)
+            }
+        }
+    }
+
+    private suspend fun refreshAllContinueLists(deviceService: RaviloDeviceService) {
+        if (configStore.current.apiKeys.jellyfinUrl.isBlank()) return
         val now = nowMs()
-        val cached = continueListCache[userId]
-        cached?.takeIf {
-            it.feedVer == feedVer && it.allowedHash == allowedHash && (now - it.builtAt) < FEED_TTL_MS
-        }?.let { return it.list }
-        // R231 — a failed build (Jellyfin timeout, or the blank-URL config gap) is `null`, distinct from
-        // a successful build that's genuinely empty. A failed build must never overwrite the cache — it's
-        // transient by nature, so the very next request retries live rather than inheriting a poisoned
-        // empty result for the rest of FEED_TTL_MS. Per R219's own invariant ("the SWR cache serves the
-        // previous good value" on timeout), fall back to whatever is cached for this user even if it's
-        // past its own TTL/feedVer/allowedHash — stale-but-real beats wrongly-empty. Only a genuinely cold
-        // cache (no prior entry at all) ships empty here, self-healing on the next request.
-        val built = buildCanonicalContinueList(device, libraryAll, jellyfinBase, token) ?: return cached?.list ?: emptyList()
-        continueListCache[userId] = ContinueListEntry(built, now, feedVer, allowedHash)
-        return built
+        val users = deviceService.allDevices()
+            .filter { now - it.lastSeen < RECENTLY_SEEN_WINDOW_MS }
+            .distinctBy { it.jellyfinUserId }
+        var refreshed = 0
+        var failed = 0
+        for (device in users) {
+            val before = continueListCache[device.jellyfinUserId]
+            refreshContinueListFor(device)
+            if (continueListCache[device.jellyfinUserId] !== before) refreshed++ else failed++
+            delay(REFRESH_STAGGER_MS)
+        }
+        // Phase 205 (FR-205-3) — an aggregate, once per cycle: how many recently-seen users have no
+        // Continue list at all yet ("unknown") vs how many just got a fresh one vs how many failed.
+        // Distinguishing "unknown" from "confirmed empty" in the wire response was already true before
+        // this phase (an empty list omits the row either way); this is the log-side half FR-205-3 also
+        // asks for, since the wire response alone can't carry the distinction beyond "row present/absent."
+        val cold = users.count { continueListCache[it.jellyfinUserId] == null }
+        if (users.isNotEmpty()) Logger.info("Continue Watching refresh: $refreshed refreshed, $failed failed, $cold never built", "tv")
     }
 
     /** R219 — one canonical, uncapped, unfiltered-by-channel Continue Watching entry: [mediaItem] (so a
