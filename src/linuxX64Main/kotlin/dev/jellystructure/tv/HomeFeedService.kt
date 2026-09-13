@@ -92,6 +92,19 @@ class HomeFeedService(
     private data class ContinueListEntry(val list: List<ContinueEntry>, val builtAt: Long, val feedVer: Long, val allowedHash: Int)
     private val continueListCache = HashMap<String, ContinueListEntry>()
 
+    // Phase 206 (FR-206-3) — the channel rail cached once per user, same shape/signal as [feedCache],
+    // shared by every entry point that needs it ([buildHomeFeed], [getChannels], [getChannelFeed]) so
+    // it is computed once per (user, feedVersion, config, scope) rather than once per caller — resolves
+    // the phase's own open question 2 in favour of "yes, one lookup."
+    private data class RailEntry(val channels: List<Channel>, val builtAt: Long, val feedVer: Long, val cfgHash: Int, val allowedHash: Int)
+    private val channelRailCache = HashMap<String, RailEntry>()
+
+    // Phase 206 (FR-206-4) — [buildChannelContent]'s own cache, per (user, channelId), same TTL and
+    // invalidation signal as [feedCache]. A viewer moving between channels pays for one build per
+    // channel, not one per navigation.
+    private data class ChannelContentEntry(val heroes: List<Hero>, val rows: List<Row>, val builtAt: Long, val feedVer: Long, val cfgHash: Int, val allowedHash: Int)
+    private val channelContentCache = HashMap<Pair<String, String>, ChannelContentEntry>()
+
     /**
      * R187 fix — just the channel id→name list, for callers that need Ravilo channel display names
      * (e.g. the seeded-browse page's Channel facet) without a top-level Home/Channel screen having
@@ -108,7 +121,29 @@ class HomeFeedService(
         val allItems = allDeferred.await()
         val token = tokenDeferred.await()
         val heroIds = config.heroes.map { it.itemId }.toSet()
-        buildChannels(config, device, allItems, jellyfinBase, token, heroIds)
+        channelRail(device, config, allItems, jellyfinBase, token, heroIds)
+    }
+
+    /** Phase 206 (FR-206-3) — see the cache field's own doc. Same shape as [feedCache]'s own gate. */
+    private suspend fun channelRail(
+        device: DeviceData,
+        config: RaviloConfig,
+        allItems: List<MediaItem>,
+        jellyfinBase: String,
+        token: String,
+        heroIds: Set<String>,
+    ): List<Channel> {
+        val userId = device.jellyfinUserId
+        val feedVer = mediaStore.feedVersion
+        val cfgHash = config.hashCode()
+        val allowedHash = (device.allowedLibraries.hashCode() * 31 + device.allowedTags.hashCode()) * 31 + device.blockedTags.hashCode()
+        val now = nowMs()
+        channelRailCache[userId]?.takeIf {
+            it.feedVer == feedVer && it.cfgHash == cfgHash && it.allowedHash == allowedHash && (now - it.builtAt) < FEED_TTL_MS
+        }?.let { return it.channels }
+        val built = buildChannels(config, device, allItems, jellyfinBase, token, heroIds)
+        channelRailCache[userId] = RailEntry(built, now, feedVer, cfgHash, allowedHash)
+        return built
     }
 
     suspend fun getHomeFeed(device: DeviceData): HomeFeed = coroutineScope {
@@ -151,6 +186,10 @@ class HomeFeedService(
         feedCache.remove(userId)
         playstateCache.remove(userId)
         continueListCache.remove(userId)  // R219 (FR-R219-1) — a stop must correct the row at once
+        channelRailCache.remove(userId)
+        // Phase 206 (FR-206-4) — same reasoning as the caches above: a channel whose Continue row just
+        // changed must not keep serving a pre-stop build for the rest of FEED_TTL_MS.
+        channelContentCache.keys.filter { it.first == userId }.forEach { channelContentCache.remove(it) }
         runCatching { playstateFor(device, nowMs()) }
     }
 
@@ -211,7 +250,7 @@ class HomeFeedService(
         // pages): see FocusDetailFacts' doc and the R240 spec's non-goals.
         HomeFeed(
             heroes = buildHeroes(config, all),
-            channels = buildChannels(config, device, all, jellyfinBase, token, heroIds),
+            channels = channelRail(device, config, all, jellyfinBase, token, heroIds),
             rows = if (config.focusDetail == "none") rows else attachFocusDetail(rows, all),
             heroHeightPct = config.heroHeightPct,
             autoAdvanceSeconds = config.autoAdvanceSeconds,
@@ -284,16 +323,43 @@ class HomeFeedService(
         val allItems = allDeferred.await()
         val token    = tokenDeferred.await()
         val heroIds  = config.heroes.map { it.itemId }.toSet()
-        val (heroes, rows) = buildChannelContent(device, config, channelCfg, allItems, jellyfinBase, token, heroIds)
+        // Phase 206 (FR-206-2/FR-206-4) — both cached; channelContent builds this channel's heroes/rows
+        // at most once per (user, channel, feedVersion, config, scope) instead of buildChannels (below,
+        // via channelRail) building it again as a side effect of assembling the rail.
+        val (heroes, rows) = channelContent(device, config, channelCfg, allItems, jellyfinBase, token, heroIds)
         applyPlaystate(HomeFeed(
             heroes = heroes,
-            channels = buildChannels(config, device, allItems, jellyfinBase, token, heroIds),
+            channels = channelRail(device, config, allItems, jellyfinBase, token, heroIds),
             rows = rows,
             heroHeightPct = config.heroHeightPct,
             autoAdvanceSeconds = config.autoAdvanceSeconds,
             tileShape = config.tileShape,
             portraitHeroHeightPct = config.portrait?.heroHeightPct,
         ), playstateDeferred.await())
+    }
+
+    /** Phase 206 (FR-206-4) — see [channelContentCache]'s own doc. Same shape as [channelRail]. */
+    private suspend fun channelContent(
+        device: DeviceData,
+        config: RaviloConfig,
+        channelCfg: ChannelConfig,
+        allItems: List<MediaItem>,
+        jellyfinBase: String,
+        token: String,
+        heroIds: Set<String>,
+    ): Pair<List<Hero>, List<Row>> {
+        val userId = device.jellyfinUserId
+        val feedVer = mediaStore.feedVersion
+        val cfgHash = config.hashCode()
+        val allowedHash = (device.allowedLibraries.hashCode() * 31 + device.allowedTags.hashCode()) * 31 + device.blockedTags.hashCode()
+        val now = nowMs()
+        val cacheKey = userId to channelCfg.id
+        channelContentCache[cacheKey]?.takeIf {
+            it.feedVer == feedVer && it.cfgHash == cfgHash && it.allowedHash == allowedHash && (now - it.builtAt) < FEED_TTL_MS
+        }?.let { return it.heroes to it.rows }
+        val (heroes, rows) = buildChannelContent(device, config, channelCfg, allItems, jellyfinBase, token, heroIds)
+        channelContentCache[cacheKey] = ChannelContentEntry(heroes, rows, now, feedVer, cfgHash, allowedHash)
+        return heroes to rows
     }
 
     // ─── Heroes ───────────────────────────────────────────────────────────────
@@ -372,8 +438,12 @@ class HomeFeedService(
     ): List<Channel> {
         val result = mutableListOf<Channel>()
         for (ch in config.channels.filter { it.enabled }.sortedBy { it.order }) {
-            val (heroes, rows) = buildChannelContent(device, config, ch, allItems, jellyfinBase, token, heroIds)
-            if (heroes.isEmpty() && rows.all { it.items.isEmpty() }) continue
+            // Phase 206 (FR-206-1) — the rail only needs a boolean per channel; deciding it no longer
+            // costs a full buildChannelContent (sort + take(30) + MediaCard construction for every row
+            // of a channel nobody may ever open). filtered is computed once here and reused by
+            // channelHasAnyMatch, matching buildChannelContent's own first line exactly.
+            val filtered = allItems.filter { it.matchesChannel(ch, heroIds) }
+            if (!channelHasAnyMatch(config, device, ch, filtered, allItems, jellyfinBase, token, heroIds)) continue
             result.add(Channel(
                 id = ch.id,
                 name = ch.name,
@@ -406,6 +476,63 @@ class HomeFeedService(
             emptyList()
         val rows = buildRows(config, device, filtered, allItems, jellyfinBase, token, channelFilter = channelCfg)
         return heroes to rows
+    }
+
+    /**
+     * Phase 206 (FR-206-1) — [buildChannels]'s non-empty verdict for one channel, answering exactly what
+     * `heroes.isEmpty() && rows.all { it.items.isEmpty() }` would answer against [buildChannelContent]'s
+     * real output, without a sort, a `take(30)`, or a single [MediaCard] construction: heroes are already
+     * cheap ([buildHeroesFromList] resolves a handful of configured ids, not the library), and every row
+     * kind gets a short-circuiting `any{}` over the *same* predicate [buildFilterRow] uses
+     * ([matchesConfiguredRow]) rather than a second, hand-kept-in-sync copy of it — the drift R228 exists
+     * to prevent. [filtered] is [allItems] already scoped by [MediaItem.matchesChannel], exactly as
+     * [buildChannelContent] computes it — passed in so the caller (looping over every channel) computes
+     * it once, not twice.
+     */
+    private suspend fun channelHasAnyMatch(
+        config: RaviloConfig,
+        device: DeviceData,
+        channelCfg: ChannelConfig,
+        filtered: List<MediaItem>,
+        libraryAll: List<MediaItem>,
+        jellyfinBase: String,
+        token: String,
+        heroIds: Set<String>,
+    ): Boolean {
+        val pageHero = channelCfg.pageHero
+        if (pageHero?.enabled == true && pageHero.items.isNotEmpty() && buildHeroesFromList(pageHero.items, libraryAll).isNotEmpty()) return true
+        if (filtered.isEmpty()) return false  // open question 1's "cheap outer test" — settles the common case with no row work at all
+
+        val cascade = configStore.current.metadata.ageRatingCascade
+        suspend fun continueRowNonEmpty(): Boolean {
+            val canonical = canonicalContinueList(device, libraryAll, jellyfinBase, token)
+            return canonical.any { it.mediaItem.matchesChannel(channelCfg, heroIds) }
+        }
+
+        val channelRows = channelCfg.rows
+        if (channelRows?.mode == "custom") {
+            val sys = channelRows.system
+            if (sys.cont.show && continueRowNonEmpty()) return true
+            if (sys.newly.show) return true  // filtered already known non-empty above; addNewlyAddedRows applies no further per-item filter
+            return channelRows.items.filter { it.enabled }.any { rowCfg -> filtered.any { matchesConfiguredRow(it, rowCfg, heroIds, cascade) } }
+        }
+
+        // merge-mode injects a merged Newly Added row purely off the config.mergeNewlyAdded flag,
+        // independent of whether any RowConfig of kind NEWLY_ADDED is even enabled — see the merge
+        // block at the end of buildRows.
+        if (config.mergeNewlyAdded) return true
+        return config.rows.filter { it.enabled }.any { rowCfg ->
+            when (rowCfg.kind) {
+                RowKind.CONTINUE -> continueRowNonEmpty()
+                RowKind.NEWLY_ADDED -> when (rowCfg.mediaKind) {
+                    "MOVIE" -> filtered.any { it.kind == MediaKind.MOVIE }
+                    "SERIES" -> filtered.any { it.kind == MediaKind.TV_SHOW }
+                    "MUSIC_VIDEO" -> filtered.any { it.kind == MediaKind.MUSIC_VIDEO }
+                    else -> true  // null mediaKind splits into Movies/Series; filtered non-empty ⇒ at least one exists
+                }
+                RowKind.GENRE, RowKind.CUSTOM -> filtered.any { matchesConfiguredRow(it, rowCfg, heroIds, cascade) }
+            }
+        }
     }
 
     // ─── Rows ─────────────────────────────────────────────────────────────────
@@ -549,13 +676,34 @@ class HomeFeedService(
     private fun genreTermsOf(rowCfg: RowConfig): List<String> =
         (rowCfg.title ?: "").split("&", ",").map { it.trim().lowercase() }.filter { it.isNotBlank() }
 
+    /** Phase 206 (FR-206-1) — the per-item predicate a GENRE or CUSTOM row's membership actually turns
+     *  on, factored out of [buildFilterRow] so the rail's cheap non-empty verdict ([channelHasAnyMatch])
+     *  consults the *same* logic rather than a hand-kept-in-sync copy of it — the exact trap R228 was
+     *  created to close for [buildChannelContent], now closed here too. Does not itself filter a list;
+     *  [buildFilterRow] still does that (and still needs `matched`/`genreTerms` again afterward for the
+     *  See-all seed), and the verdict path below calls this once per candidate inside an `any{}`. */
+    // [resolvedQuery] lets a caller filtering many items hoist rowCfg.effectiveQuery()'s (cheap but
+    // non-trivial — it runs migrateFlatQuery for a legacy row) resolution out of the per-item loop,
+    // exactly like the pre-Phase-206 code already did; defaults to resolving it here for a one-off caller.
+    private fun matchesConfiguredRow(item: MediaItem, rowCfg: RowConfig, heroIds: Set<String>, ageRatingCascade: List<String>, resolvedQuery: ConditionGroup? = null): Boolean =
+        when (rowCfg.kind) {
+            RowKind.GENRE -> genreTermsOf(rowCfg).let { terms -> terms.isEmpty() || item.genres.any { g -> terms.any { t -> g.lowercase().contains(t) } } }
+            RowKind.CUSTOM -> ConditionEvaluator.matches(item, resolvedQuery ?: rowCfg.effectiveQuery(), heroIds, ageRatingCascade) && when (rowCfg.mediaKind) {
+                "MOVIE" -> item.kind == MediaKind.MOVIE
+                "SERIES" -> item.kind == MediaKind.TV_SHOW
+                "MUSIC_VIDEO" -> item.kind == MediaKind.MUSIC_VIDEO
+                else -> true
+            }
+            else -> false  // CONTINUE/NEWLY_ADDED: different data source / no per-item query, handled by their own callers
+        }
+
     /** R143: build one GENRE or CUSTOM filter row from [all] (already channel-scoped in channel context).
      *  R187: also populates [Row.seedQuery]/[Row.seedMediaKind]/[Row.seedTotalCount] for the "→ See all"
      *  browse page — the total is the pre-[ROW_ITEM_LIMIT] match count, not `cards.size`, so a genuinely
      *  truncated row's tile shows the real number, not the 30-item cap. */
     private fun buildFilterRow(rowCfg: RowConfig, all: List<MediaItem>, heroIds: Set<String>, channelFilter: ChannelConfig? = null): Row? = when (rowCfg.kind) {
         RowKind.GENRE -> {
-            val matched = all.filter { item -> genreTermsOf(rowCfg).let { it.isEmpty() || item.genres.any { g -> it.any { t -> g.lowercase().contains(t) } } } }
+            val matched = all.filter { matchesConfiguredRow(it, rowCfg, heroIds, configStore.current.metadata.ageRatingCascade) }
             val cards = matched
                 .sortedWith(compareByDescending<MediaItem> { it.recencyKey() }.thenBy { it.title })
                 .take(ROW_ITEM_LIMIT)
@@ -582,15 +730,10 @@ class HomeFeedService(
             // Phase 140 — effectiveQuery() reads rowCfg.query when the editor has migrated this row to
             // the blocks tree (and cleared match/conditions on save); falls back to migrating the
             // legacy flat shape on the fly otherwise. Reading match/conditions directly here would
-            // silently stop filtering the moment a row is saved as a tree.
+            // silently stop filtering the moment a row is saved as a tree. Resolved once, outside the
+            // per-item filter below (matchesConfiguredRow's resolvedQuery param), same as before Phase 206.
             val query = rowCfg.effectiveQuery()
-            val matched = all.filter { ConditionEvaluator.matches(it, query, heroIds, configStore.current.metadata.ageRatingCascade) }
-            val filtered = when (rowCfg.mediaKind) {
-                "MOVIE"  -> matched.filter { it.kind == MediaKind.MOVIE }
-                "SERIES" -> matched.filter { it.kind == MediaKind.TV_SHOW }
-                "MUSIC_VIDEO" -> matched.filter { it.kind == MediaKind.MUSIC_VIDEO }
-                else     -> matched
-            }
+            val filtered = all.filter { matchesConfiguredRow(it, rowCfg, heroIds, configStore.current.metadata.ageRatingCascade, resolvedQuery = query) }
             val cards = filtered
                 .sortedWith(compareByDescending<MediaItem> { it.recencyKey() }.thenBy { it.title })
                 .take(ROW_ITEM_LIMIT)
