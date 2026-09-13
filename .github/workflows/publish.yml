@@ -1,11 +1,13 @@
 name: Publish Docker images
 
-# FR-167-6/7, extended 2026-08-27 — pushes to GHCR on two occasions:
-#  - every push to main: unversioned continuous build, tagged `latest` + the commit SHA. This is what
-#    keeps `latest` following main day to day.
-#  - a GitHub Release being published (Releases -> Draft a new release -> Publish release): versioned
-#    build, additionally tagged with the release's own MAJOR.MINOR version.
-# workflow_dispatch re-publishes an existing released version on demand.
+# FR-167-6/7, extended 2026-08-27, retagged 2026-09-13 — pushes to GHCR on two occasions:
+#  - every push to main: unversioned continuous build, tagged with the commit SHA only. `latest` no
+#    longer follows main day to day — it only moves on a deliberate release, so a plain `docker compose
+#    pull` against `:latest` can't pick up an unreviewed main commit.
+#  - a GitHub Release being published (Releases -> Draft a new release -> Publish release): tagged
+#    `latest` + the release's own MAJOR.MINOR version.
+# workflow_dispatch re-publishes an existing released version on demand (latest + version, same as a
+# real release).
 #
 # Versioning is a plain two-part number (MAJOR.MINOR), NOT SemVer — no patch segment, no pre-release/
 # build metadata. Starts at 1.0. The release's tag is the single source of truth (no VERSION file to keep
@@ -38,7 +40,7 @@ jobs:
         id: resolve
         run: |
           if [ "${{ github.event_name }}" = "push" ]; then
-            # Continuous main-push build: no release version, tags are latest + commit SHA only.
+            # Continuous main-push build: no release version, tagged with the commit SHA only.
             echo "version=" >> "$GITHUB_OUTPUT"
             echo "tag=" >> "$GITHUB_OUTPUT"
             exit 0
@@ -86,9 +88,12 @@ jobs:
         run: |
           IMAGE="ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}"
           VERSION="${{ needs.version.outputs.version }}"
-          TAGS="$IMAGE:latest"$'\n'"$IMAGE:${{ github.sha }}"
           if [ -n "$VERSION" ]; then
-            TAGS="$IMAGE:$VERSION"$'\n'"$TAGS"
+            # Release (or workflow_dispatch re-publish) — latest + the version, no bare-SHA tag.
+            TAGS="$IMAGE:latest"$'\n'"$IMAGE:$VERSION"
+          else
+            # Plain push to main — SHA only, so `latest` never moves on an unreviewed commit.
+            TAGS="$IMAGE:${{ github.sha }}"
           fi
           {
             echo "tags<<TAGEOF"
