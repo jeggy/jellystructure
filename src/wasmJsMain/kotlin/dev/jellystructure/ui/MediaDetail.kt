@@ -3834,8 +3834,8 @@ private val LANG_CC = mapOf(
     "he" to "il", "heb" to "il",
     "th" to "th", "tha" to "th",
     "vi" to "vn", "vie" to "vn",
-    // Phase R239 (FR-R239-3) — added 2026-09-12; Tamil/Telugu/Catalan deliberately still absent, see
-    // Ravilo's AudioFlagStrip.kt for why.
+    // Phase R239 (FR-R239-3) — added 2026-09-12; Tamil/Telugu deliberately still absent, see Ravilo's
+    // AudioFlagStrip.kt for why.
     "sr" to "rs", "srp" to "rs",
     "bg" to "bg", "bul" to "bg",
     "id" to "id", "ind" to "id",
@@ -3845,6 +3845,10 @@ private val LANG_CC = mapOf(
     "lv" to "lv", "lav" to "lv",
     "lt" to "lt", "lit" to "lt",
     "tl" to "ph", "fil" to "ph",
+    // R239 amendment (2026-09-13) — Catalan gets its own flag (Senyera, non-ISO code "ct"), unlike
+    // Tamil/Telugu: Catalonia's flag is a single, uncontested regional flag, not one of several
+    // plausible-but-wrong choices across multiple countries/states with no dedicated flag of their own.
+    "ca" to "ct", "cat" to "ct",
 )
 private const val AUDIO_FLAG_MAX = 5
 

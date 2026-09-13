@@ -588,10 +588,14 @@
     const LANG_CC = {
       en: 'gb', fr: 'fr', de: 'de', es: 'es', da: 'dk', fo: 'fo', is: 'is', no: 'no', sv: 'se', fi: 'fi', nl: 'nl', it: 'it', pt: 'pt', pl: 'pl', ru: 'ru', ja: 'jp', ko: 'kr', zh: 'cn', ar: 'sa', hi: 'in',
       sr: 'rs', srp: 'rs', bg: 'bg', bul: 'bg', id: 'id', ind: 'id', ms: 'my', msa: 'my', may: 'my', sl: 'si', slv: 'si', et: 'ee', est: 'ee', lv: 'lv', lav: 'lv', lt: 'lt', lit: 'lt', tl: 'ph', fil: 'ph',
+      // R239 amendment (2026-09-13): Catalonia's flag (Senyera, "ct" — not ISO-3166) is a single
+      // uncontested regional flag, unlike Tamil/Telugu which stay unmapped — see AudioFlagStrip.kt.
+      ca: 'ct', cat: 'ct',
     };
     const LANG_NAME = {
       en: 'English', fr: 'French', de: 'German', es: 'Spanish', da: 'Danish', fo: 'Faroese', is: 'Icelandic', no: 'Norwegian', sv: 'Swedish', fi: 'Finnish', nl: 'Dutch', it: 'Italian', pt: 'Portuguese', pl: 'Polish', ru: 'Russian', ja: 'Japanese', ko: 'Korean', zh: 'Chinese', ar: 'Arabic', hi: 'Hindi',
       sr: 'Serbian', srp: 'Serbian', bg: 'Bulgarian', bul: 'Bulgarian', id: 'Indonesian', ind: 'Indonesian', ms: 'Malay', msa: 'Malay', may: 'Malay', sl: 'Slovenian', slv: 'Slovenian', et: 'Estonian', est: 'Estonian', lv: 'Latvian', lav: 'Latvian', lt: 'Lithuanian', lit: 'Lithuanian', tl: 'Filipino', fil: 'Filipino',
+      ca: 'Catalan', cat: 'Catalan',
     };
     const FLAG_MAX = 5;
     /* R239 (FR-R239-1/2) — count every language the group HAS, not every flag we can draw.

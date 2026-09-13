@@ -62,9 +62,11 @@ internal val LANG_CC: Map<String, DrawableResource> = mapOf(
     "he" to Res.drawable.flag_il, "heb" to Res.drawable.flag_il,
     "th" to Res.drawable.flag_th, "tha" to Res.drawable.flag_th,
     "vi" to Res.drawable.flag_vn, "vie" to Res.drawable.flag_vn,
-    // Phase R239 (FR-R239-3) — added 2026-09-12: flags now exist for these; Tamil/Telugu/Catalan are
-    // deliberately still absent — no ISO-3166 country flag fits them (India already maps to Hindi's
-    // flag_in, and Catalonia isn't a country), so they stay in the honest "+N" unmapped count instead.
+    // Phase R239 (FR-R239-3) — added 2026-09-12: flags now exist for these; Tamil/Telugu are
+    // deliberately still absent — no ISO-3166 country flag fits them, and India already maps to
+    // Hindi's flag_in, so reusing it for Tamil/Telugu would collapse three DISTINCT languages onto one
+    // flag_in drawable, undercounting them via this file's own `.distinct()` dedup — exactly the
+    // FR-R239-1 miscount this phase exists to prevent. They stay in the honest "+N" unmapped count.
     "sr" to Res.drawable.flag_rs, "srp" to Res.drawable.flag_rs,
     "bg" to Res.drawable.flag_bg, "bul" to Res.drawable.flag_bg,
     "id" to Res.drawable.flag_id, "ind" to Res.drawable.flag_id,
@@ -74,6 +76,10 @@ internal val LANG_CC: Map<String, DrawableResource> = mapOf(
     "lv" to Res.drawable.flag_lv, "lav" to Res.drawable.flag_lv,
     "lt" to Res.drawable.flag_lt, "lit" to Res.drawable.flag_lt,
     "tl" to Res.drawable.flag_ph, "fil" to Res.drawable.flag_ph,
+    // R239 amendment (2026-09-13) — Catalonia's flag (Senyera) is a single, uncontested regional flag
+    // unlike Tamil/Telugu's situation above, so Catalan gets its own dedicated drawable (flag_ct), not
+    // a borrowed one.
+    "ca" to Res.drawable.flag_ct, "cat" to Res.drawable.flag_ct,
 )
 
 private const val FLAG_MAX = 5
