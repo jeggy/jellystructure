@@ -16,25 +16,34 @@ import dev.jellystructure.nowEpochSec
 object MkvHealthCache {
     private const val REFRESH_INTERVAL_SEC = 15 * 60L
 
-    private var brokenPaths: Set<String> = emptySet()
+    // Phase 201, 2026-09-13 amendment — keyed by [MkvLayout] rather than a plain Set so a caller that
+    // cares *which* of the two repairable defects a path has (the media-detail Fix banner's copy) can
+    // ask, without every existing Set<String>-shaped consumer (Triage count, Library filter) needing to
+    // change at all — they just read `.keys`.
+    private var broken: Map<String, MkvLayout> = emptyMap()
     private var sweptAtSec: Long? = null
 
     fun sweptAt(): Long? = sweptAtSec
 
-    /** The current broken-path set, refreshing first if the cache is empty or stale. */
+    /** The current broken-path set (either repairable defect), refreshing first if the cache is empty
+     *  or stale. */
     suspend fun brokenPaths(items: List<MediaItem>): Set<String> {
         val now = nowEpochSec()
         val last = sweptAtSec
         if (last == null || now - last > REFRESH_INTERVAL_SEC) refresh(items)
-        return brokenPaths
+        return broken.keys
     }
 
+    /** Forces a fresh sweep regardless of [REFRESH_INTERVAL_SEC] — called both by the throttled
+     *  [brokenPaths] above and, since the 2026-09-13 amendment, once by the scan pipeline right after
+     *  `scan_files` completes, so a file broken (or fixed) during that scan is known immediately rather
+     *  than waiting out the interval or an admin's next Dashboard load. */
     suspend fun refresh(items: List<MediaItem>) {
-        brokenPaths = MkvLayoutAudit.sweep(items).tracksAfterClusters.toSet()
+        broken = MkvLayoutAudit.broken(items)
         sweptAtSec = nowEpochSec()
     }
 
     fun markRepaired(paths: Collection<String>) {
-        brokenPaths = brokenPaths - paths.toSet()
+        broken = broken - paths.toSet()
     }
 }

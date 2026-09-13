@@ -721,8 +721,12 @@ fun Route.trackRoutes(
     get("/media/{mediaId}/health/mkv-layout") {
         val mediaId = call.parameters["mediaId"] ?: return@get call.respond(HttpStatusCode.BadRequest)
         val item = store.resolve(mediaId) ?: return@get call.respond(HttpStatusCode.NotFound)
-        val broken = dev.jellystructure.media.MkvLayoutAudit.sweep(listOf(item)).tracksAfterClusters
-        call.respond(mapOf("brokenPaths" to broken))
+        val sweep = dev.jellystructure.media.MkvLayoutAudit.sweep(listOf(item))
+        // Two fields, not one merged list — the 2026-09-13 amendment's ELEMENT_SIZE_OVERFLOW case is
+        // the same "unplayable in Ravilo, fine everywhere else" symptom and the same repair, but a
+        // different confirmed defect; the detail page's banner copy shouldn't claim "track list
+        // unreachable" for a file where that specific claim isn't true.
+        call.respond(mapOf("brokenPaths" to sweep.tracksAfterClusters, "corruptSizePaths" to sweep.elementSizeOverflow))
     }
 
     // Phase 201 (FR-201-5) — repair a specific, operator-chosen set of files: normally exactly the

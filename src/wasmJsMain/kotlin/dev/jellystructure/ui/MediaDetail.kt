@@ -2920,22 +2920,38 @@ private suspend fun loadDrift(id: String, scope: CoroutineScope) {
 private suspend fun loadMkvHealth(item: MediaItem, scope: CoroutineScope) {
     val status = MediaApi.mkvLayoutStatus(item.id)
     val banner = document.getElementById("mkv-banner") as? HTMLElement ?: return
-    val broken = status?.brokenPaths.orEmpty().toSet()
+    val trackPaths = status?.brokenPaths.orEmpty().toSet()
+    val corruptPaths = status?.corruptSizePaths.orEmpty().toSet()
+    val broken = trackPaths + corruptPaths
     if (broken.isEmpty()) { banner.style.display = "none"; return }
     val isTvShow = item.kind == MediaKind.TV_SHOW
 
     fun render(pathsLeft: Set<String>) {
         if (pathsLeft.isEmpty()) { banner.style.display = "none"; return }
-        val detail = if (isTvShow)
-            "${pathsLeft.size} episode${if (pathsLeft.size != 1) "s" else ""} in this series can't play in Ravilo (track list unreachable)."
-        else "This file can't play in Ravilo (track list unreachable)."
+        val leftTrack = pathsLeft.intersect(trackPaths)
+        val leftCorrupt = pathsLeft.intersect(corruptPaths)
+        val what = if (isTvShow)
+            "${pathsLeft.size} episode${if (pathsLeft.size != 1) "s" else ""} in this series can't play in Ravilo"
+        else "This file can't play in Ravilo"
+        // Two confirmed defects share this banner (same symptom, same repair) but not the same
+        // explanation — say the one(s) that are actually true of the paths still open, per FR-201-15.
+        val why = when {
+            leftCorrupt.isEmpty() -> "track list unreachable"
+            leftTrack.isEmpty() -> "a file section has a corrupted size marker"
+            else -> "track list unreachable on some, a corrupted size marker on others"
+        }
+        val explain = when {
+            leftCorrupt.isEmpty() -> "A flag edit moved this file's <code>Tracks</code> element behind its first <code>Cluster</code>"
+            leftTrack.isEmpty() -> "A prior repair pass left one of this file's elements with a corrupted declared size"
+            else -> "A flag edit or a prior repair pass left this file's structure damaged"
+        }
         banner.innerHTML = """
         <div style="background:var(--bad-soft);border:1px solid var(--bad);border-radius:6px;padding:10px 14px;display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap;">
           <span class="badge bad" style="flex:none;margin-top:1px;">⚠ Unplayable in Ravilo</span>
           <div style="flex:1;min-width:200px;">
-            <b style="font-size:.9rem;">${detail.esc()}</b>
+            <b style="font-size:.9rem;">${"$what ($why).".esc()}</b>
             <div class="tiny muted" style="margin-top:5px;line-height:1.6;">
-              A flag edit moved this file's <code>Tracks</code> element behind its first <code>Cluster</code> —
+              $explain —
               Jellyfin seeks and plays it fine, which is why nothing else on this page looks wrong; Ravilo reads
               linearly and buffers forever. Repair rewrites the header in place: no re-encode, ~0.6s per file.
             </div>

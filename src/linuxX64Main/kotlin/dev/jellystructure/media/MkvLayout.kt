@@ -18,6 +18,22 @@ enum class MkvLayout {
     /** A `Cluster` was reached before `Tracks` was ever seen — unplayable by a linear reader. */
     TRACKS_AFTER_CLUSTER,
 
+    /** Phase 201, 2026-09-13 amendment — a top-level element's declared size runs past the actual end
+     *  of the file (e.g. `ffmpeg -xerror` reporting "Element at 0x... exceeds containing master
+     *  element ending at 0x..."). Found on a file the day after the 85-episode concurrent-repair race
+     *  documented in this phase's spec — almost certainly that race's `mv` landing badly on one
+     *  element while a losing concurrent attempt wrote over the same fixed temp filename. Same
+     *  failure mode as [TRACKS_AFTER_CLUSTER] (ffprobe/Jellyfin resync past it and report the file
+     *  fine; a linear reader like ExoPlayer's `MatroskaExtractor` cannot) and the same fix (a
+     *  `-cues_to_front` remux rewrites every element with a correct size), but a different write-time
+     *  defect — kept as its own case so user-facing copy doesn't claim "track list unreachable" for a
+     *  file where that specific claim isn't true. Detected the same way [TRACKS_AFTER_CLUSTER] already
+     *  was found before this case existed: by the time the per-child loop below is skipping a top-level
+     *  Segment child, the EBML header and Segment header already parsed correctly, so a [safeSkip]
+     *  failure there is specifically "this element's declared size overruns the file," never "not
+     *  Matroska at all." */
+    ELEMENT_SIZE_OVERFLOW,
+
     /** Not a parseable EBML/Matroska file, or an element used an unknown ("all ones") size in a
      *  position this walker can't safely skip over. Distinct from [OK] so a caller doesn't mistake
      *  "couldn't tell" for "confirmed fine" — [MkvLayoutAudit] counts it separately. */
@@ -60,14 +76,17 @@ internal fun scanMkvLayout(source: Source): MkvLayout {
         when (id) {
             TRACKS_ID -> {
                 sawTracks = true
-                if (!safeSkip(source, size)) return MkvLayout.UNKNOWN
+                // Past this point we're skipping a top-level Segment child of a file that already
+                // parsed a valid EBML header and Segment header — a skip failure here means the
+                // declared size overruns the actual file, not "unparseable."
+                if (!safeSkip(source, size)) return MkvLayout.ELEMENT_SIZE_OVERFLOW
             }
             CLUSTER_ID -> return if (sawTracks) MkvLayout.OK else MkvLayout.TRACKS_AFTER_CLUSTER
             else -> {
                 // An unknown-size element here (only legal for a still-being-written Cluster in
                 // practice) can't be skipped — bail out honestly rather than guess.
                 if (size == UNKNOWN_SIZE) return MkvLayout.UNKNOWN
-                if (!safeSkip(source, size)) return MkvLayout.UNKNOWN
+                if (!safeSkip(source, size)) return MkvLayout.ELEMENT_SIZE_OVERFLOW
             }
         }
     }

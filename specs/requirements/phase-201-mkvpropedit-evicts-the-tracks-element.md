@@ -331,3 +331,76 @@ and every sibling route already does it.
 Fixed same day: `c10716ef` (an ad hoc in-flight-path guard, immediate stopgap) then `51b82387`
 (supersedes it — the real fix, moving the repair onto `MediaJobQueue` as described above). Not
 deployed as of writing.
+
+### Amendment (2026-09-13, later still) — the race *did* corrupt a file; the "no corruption" finding
+above was a shallow check that missed it, and the walker already half-catches this class of defect
+
+A household report the next day — *"S00E11 just loads forever"* — landed on exactly the episode this
+spec's own concurrency amendment used as its example (Hoppy Hare Builders, the series whose 85-episode
+repair raced 16–26× per file). `PlaybackInfo` for this item is clean (`directPlay=true`, one call, no
+retries, at `14:07:52` — *before* that day's repair ran at `14:55`), the repaired file's `mkvinfo`
+top-level layout is correct (`Tracks` before `Cluster`, matching the prior amendment's claim), and
+Jellyfin serves every byte range of it in <50 ms. None of that is wrong. But `ffmpeg -xerror -i <file>
+-map 0 -f null -` on the same file reports:
+
+```
+Element at 0x17be6 ending at 0x527911825 exceeds containing master element ending at 0x61c77
+```
+
+A `Tags` element's declared size was corrupted into a ~22 GB value against a 66 MB file — not the
+`Tracks`-after-`Cluster` defect this spec exists for, but the **same failure mode**: `ffprobe`/Jellyfin
+tolerate it (they resync past the bad element and report the file as playable, which is exactly why
+every server-side check above passed), and a linear reader that can't resync does not. This is almost
+certainly the fixed-temp-filename race from the previous amendment actually landing badly on this file's
+`Tags` element while a losing concurrent `mv` overwrote bytes the winning one had already started
+writing — "no corruption, no leftover temp files" was true of every file that amendment's author
+*sampled*, not a claim about all 85.
+
+**The walker in `MkvLayout.kt` already partially catches this, by accident, and then the pipeline throws
+the result away.** `scanMkvLayout`'s top-level loop calls `Source.skip(size)` to step over each
+element it isn't interested in; `kotlinx.io`'s `skip` throws `EOFException` when asked to skip past the
+actual end of the stream — which is exactly what happens when `size` is a corrupted ~22 GB value read
+against a 66 MB file. `safeSkip` catches that exception and returns `MkvLayout.UNKNOWN` — the *same*
+enum value returned for "this isn't EBML at all" and every other can't-parse case. `MkvLayoutAudit.sweep`
+counts `unknown` but never lists its paths, and `MkvHealthCache`/Triage/the repair route only ever look
+at `tracksAfterClusters`. So this file has been silently invisible to Fix Now, the Dashboard, and the
+per-item detail-page banner since the moment it broke — not because nothing detected it, but because the
+one signal that *did* fire (`UNKNOWN`) has no consumer.
+
+**FR-201-14 — split "declared element size runs past the end of the file" out of `UNKNOWN` into its own
+[`MkvLayout`] case**, distinct from both `TRACKS_AFTER_CLUSTER` and the genuine can't-parse-at-all
+`UNKNOWN` (not EBML, truncated header, an `UNKNOWN_SIZE` marker in an illegal position). Every
+`safeSkip`-triggered failure inside the per-child loop qualifies — by the time that loop is running, the
+file has already passed EBML-header and `Segment`-header validation, so a skip failure there is
+specifically "a top-level child's declared size overruns the file," never "not Matroska." Do not attempt
+to classify *which* element or *why* the size is wrong (Tags here; could as easily be any other
+top-level child) — the fingerprint and the fix are identical regardless.
+
+**FR-201-15 — the same repair fixes it; wire it into the same surfaces.** Verified by hand
+(2026-09-13): remuxing the corrupted file with the unmodified FR-201-3 command
+(`ffmpeg -i f -map 0 -c copy -cues_to_front 1 tmp && mv`) produces a file with no EBML errors under
+`ffmpeg -xerror` and a correct `Tracks`/`Tags`/`Cues`-before-`Cluster` layout — the demuxer resyncs past
+the bad size on read and writes fresh, correctly-sized elements on the way out. `MkvLayoutAudit.sweep`,
+`.repair`, `MkvHealthCache`, the Triage `mkv_track_layout` type, both `/media/health/mkv-layout*`
+routes, and the Dashboard/Library/detail-page surfaces all treat this new case as another flavor of the
+same defect — one Triage type, one Fix now action, one job type (`mkv_layout_repair`) — rather than a
+parallel feature. The only place it must **not** be silently merged is user-facing copy: "track list
+unreachable" is a specific, confirmed claim about this file that doesn't hold for an element-size
+overrun, so the banner/card text distinguishes the two ("track list unreachable" vs. "a file section has
+a corrupted size marker," or similar — exact wording is an implementation call, not a spec requirement).
+
+**FR-201-16 — detection runs as part of the regular scan, not only on an admin page load.** The operator
+asked for this directly: a corruption like this should be found by the library scan that already walks
+every file, not discovered by a viewer hitting play. `MkvHealthCache`'s 15-minute lazy-refresh-on-access
+pattern (the 2026-09-13 "Refresh cadence" answer above) stays as the read path for Dashboard/Triage, but
+the pipeline's `scan_files` step forces a fresh (non-throttled) `MkvHealthCache` refresh once it
+completes, so a file broken by that day's scan or by a track edit made during it is known immediately
+rather than whenever the cache next happens to go stale. This does not persist anything new
+(FR-201-13 still holds — the cache is a process-lifetime read-through, not a stored fact), it just moves
+*when* the first read-through of a scan's worth of files happens from "whenever an admin next opens
+Dashboard" to "right after the scan that touched them."
+
+**Not done here:** a full-library sweep to find how many *other* files this specific race corrupted
+beyond the one reported. FR-201-14's widened detector, once live, finds them itself on the next Triage
+access or scan — no separate one-off script, per the operator's explicit preference for this living in
+the normal scan/Triage machinery rather than a manual investigation each time.

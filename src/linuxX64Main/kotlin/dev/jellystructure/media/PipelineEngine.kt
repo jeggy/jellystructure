@@ -294,6 +294,17 @@ suspend fun runPipeline(
 
     Logger.info("Pipeline scan_files complete: ${workingSet.size} items in working set")
 
+    // Phase 201, 2026-09-13 amendment — the operator asked for MKV structure corruption to be found by
+    // the scan that already walks every file, not discovered by a viewer hitting play. Deliberately
+    // `store.allItems()`, not `workingSet` — an incremental/freshness-filtered run's working set can be
+    // a small subset of the library, and MkvHealthCache.refresh *replaces* its cached map wholesale, so
+    // refreshing against only the items just scanned would wipe cache entries for every broken file this
+    // run didn't touch. The full-library sweep is the same one the on-demand routes already run and is
+    // cheap (FR-201-6: well under a minute for the whole production library). Same
+    // runCatching-swallow-and-log posture as sonarrEnrich above it — this must never fail the scan.
+    runCatching { MkvHealthCache.refresh(store.allItems()) }
+        .onFailure { Logger.warn("MKV structure sweep failed: ${it.message}", "scan") }
+
     val cfg = configStore.current
     try {
     for (step in pipeline) {

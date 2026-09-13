@@ -20,6 +20,10 @@ object MkvLayoutAudit {
         val scanned: Int,
         val ok: Int,
         val tracksAfterClusters: List<String>,
+        /** Phase 201, 2026-09-13 amendment — the second defect [MkvLayout.ELEMENT_SIZE_OVERFLOW]
+         *  covers: same "plays in Jellyfin, buffers forever in Ravilo" symptom, different write-time
+         *  cause (a corrupted element size, not an evicted `Tracks`). Repaired by the same remux. */
+        val elementSizeOverflow: List<String>,
         val unknown: Int,
     )
 
@@ -35,15 +39,26 @@ object MkvLayoutAudit {
         SystemFileSystem.source(Path(path)).buffered().use { scanMkvLayout(it) }
     }.getOrDefault(MkvLayout.UNKNOWN)
 
+    /** The set of "confirmed broken, confirmed repairable by the same remux" classifications — the
+     *  only two [MkvLayout] values [repair] will act on. Kept as one place so the two call sites below
+     *  (and any future one) can't drift apart on what counts as "broken." */
+    private val REPAIRABLE = setOf(MkvLayout.TRACKS_AFTER_CLUSTER, MkvLayout.ELEMENT_SIZE_OVERFLOW)
+
     fun sweep(items: List<MediaItem>): SweepResult {
         val results = mkvPaths(items).map { FileResult(it, classify(it)) }
         return SweepResult(
             scanned = results.size,
             ok = results.count { it.layout == MkvLayout.OK },
             tracksAfterClusters = results.filter { it.layout == MkvLayout.TRACKS_AFTER_CLUSTER }.map { it.path },
+            elementSizeOverflow = results.filter { it.layout == MkvLayout.ELEMENT_SIZE_OVERFLOW }.map { it.path },
             unknown = results.count { it.layout == MkvLayout.UNKNOWN },
         )
     }
+
+    /** Every broken path across both repairable [MkvLayout] classifications, keyed to which one — the
+     *  shape [MkvHealthCache] caches and every Dashboard/Triage/Library consumer reads through. */
+    fun broken(items: List<MediaItem>): Map<String, MkvLayout> =
+        mkvPaths(items).associateWith(::classify).filterValues { it in REPAIRABLE }
 
     /**
      * Phase 201 (FR-201-5) — repair a specific, operator-chosen set of files (normally the
@@ -63,6 +78,6 @@ object MkvLayoutAudit {
      * kind, ever run at once, which removes the race without this object needing its own lock.
      */
     suspend fun repair(paths: List<String>): Map<String, Boolean> =
-        paths.filter { classify(it) == MkvLayout.TRACKS_AFTER_CLUSTER }
+        paths.filter { classify(it) in REPAIRABLE }
             .associateWith { FfmpegRunner.repairTracksLayout(it) }
 }
