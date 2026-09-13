@@ -1,6 +1,12 @@
 package dev.jellystructure.media
 
 import dev.jellystructure.model.MediaItem
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.withContext
 import kotlinx.io.buffered
 import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
@@ -55,10 +61,28 @@ object MkvLayoutAudit {
         )
     }
 
-    /** Every broken path across both repairable [MkvLayout] classifications, keyed to which one — the
-     *  shape [MkvHealthCache] caches and every Dashboard/Triage/Library consumer reads through. */
+    /** Every broken path across both repairable [MkvLayout] classifications, keyed to which one.
+     *  Synchronous, one file at a time on the calling thread — fine for [sweep]'s own existing
+     *  operator-triggered, request-thread callers (the standalone `/media/health/mkv-layout` report
+     *  route), which is a deliberate choice already documented on that route from Phase 201, not
+     *  revisited here. [MkvHealthCache] does **not** call this — see [brokenParallel]. */
     fun broken(items: List<MediaItem>): Map<String, MkvLayout> =
         mkvPaths(items).associateWith(::classify).filterValues { it in REPAIRABLE }
+
+    /** Phase 203 (FR-203-5) — [MkvHealthCache]'s own sweep: the same classification as [broken], fanned
+     *  out across [concurrency] concurrent file opens on [dispatcher] instead of one item at a time on
+     *  the calling thread. A first-`Cluster` descent costs ~400 KB of reads per file (Phase 201's
+     *  2026-09-13 amendment) — ~3 GB and ~88s serially across a production library — so this is what
+     *  keeps the sweep off the critical path without needing the walk itself to get cheaper. */
+    suspend fun brokenParallel(items: List<MediaItem>, dispatcher: CoroutineDispatcher, concurrency: Int): Map<String, MkvLayout> =
+        withContext(dispatcher) {
+            val gate = Semaphore(concurrency.coerceAtLeast(1))
+            mkvPaths(items)
+                .map { path -> async { gate.withPermit { path to classify(path) } } }
+                .awaitAll()
+                .toMap()
+                .filterValues { it in REPAIRABLE }
+        }
 
     /**
      * Phase 201 (FR-201-5) — repair a specific, operator-chosen set of files (normally the

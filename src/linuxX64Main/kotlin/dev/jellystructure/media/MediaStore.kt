@@ -414,7 +414,12 @@ class MediaStore(
                 "no_segments" -> items = items.filter { TriageDetection.hasNoSegments(it, segmentStore) }  // Phase 150/163
                 "unresolved_jellyfin_id" -> items = items.filter { TriageDetection.unresolvedJellyfinIdCount(it) > 0 }  // Phase 152/153
                 "mkv_track_layout" -> {  // Phase 201 amendment (2026-09-13)
-                    val broken = MkvHealthCache.brokenPaths(items)
+                    // Phase 203 — resolved open question 2 in favour of consistency with FR-203-4,
+                    // which already named this call site as one that "must not start its own sweep" and
+                    // must "take the current value and move on": a cold cache filters to no matches
+                    // rather than blocking ~88s on the operator's own filter click. The background warm
+                    // (FR-203-3) plus the post-scan hook keep this cold window rare in practice.
+                    val broken = MkvHealthCache.brokenPathsOrNull()?.keys.orEmpty()
                     items = items.filter { TriageDetection.mkvLayoutBrokenCount(it, broken) > 0 }
                 }
             }

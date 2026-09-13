@@ -8,8 +8,26 @@
 > every other issue type on the page.
 
 ## Status
-Planned, written 2026-09-13. Audit-authored, not dev-reviewed, not built. Backend-only — no Ravilo
-counterpart, no client change, and (FR-203-2 aside) no new admin UI.
+✓ Built 2026-09-13. Audit-authored, not dev-reviewed, not deployed. Backend-only — no Ravilo
+counterpart, no client change, and (FR-203-2 aside) no new admin UI. `compileKotlinLinuxX64` and
+`compileTestKotlinLinuxX64` clean; not live-verified (the running backend still has the old
+lazy-refresh-on-access behaviour until redeployed).
+
+**Build notes:** `MkvHealthCache.brokenPathsOrNull()` replaces the old auto-refreshing `brokenPaths()` —
+returns `null` on a cold cache, never triggers a sweep, never blocks (FR-203-1/2). `start()` (called once
+from `Main.kt`, reusing `scanDispatcher`/`scanWorkers`) warms at boot and re-warms every 15 minutes for
+the process's life (FR-203-3); `refresh()` gets a `Mutex.tryLock()` so a concurrent trigger — the boot
+loop, the post-`scan_files` hook, or both landing together — skips rather than queues or overlaps
+(FR-203-4). The sweep itself moved into `MkvLayoutAudit.brokenParallel`, fanning file opens across a
+`Semaphore`-bounded set of coroutines on the scan dispatcher instead of one path at a time on the
+calling thread (FR-203-5). `sweptAt()` is now surfaced on `/api/health` as `mkv_health_swept_at`, the
+same place Phase 182's gate stats and Phase 183's TMDB pacing already report (FR-203-6).
+
+**Open question 2 resolved during build, not left open:** `MediaStore.kt:417`'s Library `?filter=`
+path was already named in FR-203-4's own text as a site that "must not start its own sweep" and must
+"take the current value and move on" — which already answered the question against the "leaning:
+Library waits" text above it. Kept consistent with FR-203-4 rather than the older leaning: a cold
+filter now returns no matches instead of blocking ~88s on an operator's own click.
 
 Direct consequence of Phase 201's 2026-09-13 amendment: this phase exists because widening that
 phase's detector silently invalidated an assumption its *caller* was built on, and nobody re-examined

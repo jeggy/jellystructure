@@ -379,10 +379,16 @@ fun startServer(
                     // Phase 183 (FR-183-6) — the Activity page's "Outbound pacing" card; same cheap-probe
                     // reasoning as the gate stats above (plain spin-locked reads, safe on every hit).
                     val tmdbPacing = tmdbClient.pacingStats()
+                    // Phase 203 (FR-203-6) — sweptAt() was computed since Phase 201 and surfaced
+                    // nowhere; a slow or failing sweep was only diagnosable by reading container logs,
+                    // which is how the 88s block was found in the first place. `null` means no sweep has
+                    // completed yet for this process (cold cache) — distinct from a real past timestamp.
+                    val mkvHealthSweptAt = dev.jellystructure.media.MkvHealthCache.sweptAt()
                     call.respondText(
                         """{"status":"ok","fd_count":${fdWatchdog.currentCount},"fd_high_water_mark":${fdWatchdog.highWaterMark},"fd_census":${census?.toJson() ?: "null"},""" +
                             """"outbound_http_gate":${outboundHttp.toJson()},"process_gate":${processGate.toJson()},""" +
-                            """"tmdb_pacing":${Json.encodeToString(TmdbPacingStats.serializer(), tmdbPacing)}}""",
+                            """"tmdb_pacing":${Json.encodeToString(TmdbPacingStats.serializer(), tmdbPacing)},""" +
+                            """"mkv_health_swept_at":${mkvHealthSweptAt ?: "null"}}""",
                         ContentType.Application.Json,
                     )
                 }
