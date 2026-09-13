@@ -578,17 +578,17 @@ class JellyfinClient {
         userId: String,
         limit: Int = 200,
     ): List<JellyfinPlayItem> = runCatching {
+        // Phase 208 — migrated off /Users/{userId}/Items (undocumented in 10.11.11, [Obsolete("Kept for
+        // backwards compatibility")] in Jellyfin's own source) to the documented /Items?userId= form.
+        // Verified live 2026-09-13: byte-identical response, same filter, on this exact query shape.
         val url = baseUrl.trimEnd('/') +
-            "/Users/$userId/Items?Filters=IsResumable&Recursive=true&IsPlayed=false" +
+            "/Items?userId=$userId&Filters=IsResumable&Recursive=true&IsPlayed=false" +
             "&IncludeItemTypes=Movie,Episode&Limit=$limit" +
             "&SortBy=DatePlayed&SortOrder=Descending" +
             "&Fields=UserData,SeriesId,SeriesName,SeasonId,IndexNumber,ParentIndexNumber"
         httpGet(url) { jellyfinAuth(userToken) }
             .bodyOrNull<JellyfinPlayItemsResponse>("getResumeItems")?.items.orEmpty()
-    }.let { result ->
-        if (result.isFailure) Logger.warn("Jellyfin getResumeItems failed: ${result.exceptionOrNull()?.message}")
-        result.getOrDefault(emptyList())
-    }
+    }.warnOnFailureOrDefault("getResumeItems", emptyList())
 
     /**
      * Phase 143 — the target user's fully-watched items, newest-played first, for the Users & Devices
@@ -603,17 +603,15 @@ class JellyfinClient {
         limit: Int = 20,
         startIndex: Int = 0,
     ): List<JellyfinPlayItem> = runCatching {
+        // Phase 208 — see getResumeItems' comment; same migration, verified the same way.
         val url = baseUrl.trimEnd('/') +
-            "/Users/$userId/Items?Filters=IsPlayed&Recursive=true" +
+            "/Items?userId=$userId&Filters=IsPlayed&Recursive=true" +
             "&IncludeItemTypes=Movie,Episode&Limit=$limit&StartIndex=$startIndex" +
             "&SortBy=DatePlayed&SortOrder=Descending" +
             "&Fields=UserData,SeriesId,SeriesName,SeasonId,IndexNumber,ParentIndexNumber"
         httpGet(url) { jellyfinAuth(adminToken) }
             .bodyOrNull<JellyfinPlayItemsResponse>("getRecentlyPlayed")?.items.orEmpty()
-    }.let { result ->
-        if (result.isFailure) Logger.warn("Jellyfin getRecentlyPlayed failed: ${result.exceptionOrNull()?.message}")
-        result.getOrDefault(emptyList())
-    }
+    }.warnOnFailureOrDefault("getRecentlyPlayed", emptyList())
 
     /**
      * R219 (FR-R219-2) — [getResumeItems] in FULL, not the bounded preview Phase 143's device-history
@@ -626,8 +624,9 @@ class JellyfinClient {
         val acc = mutableListOf<JellyfinPlayItem>()
         var startIndex = 0
         while (true) {
+            // Phase 208 — migrated off /Users/{userId}/Items; see getResumeItems' comment.
             val url = baseUrl.trimEnd('/') +
-                "/Users/$userId/Items?Filters=IsResumable&Recursive=true&IsPlayed=false" +
+                "/Items?userId=$userId&Filters=IsResumable&Recursive=true&IsPlayed=false" +
                 "&IncludeItemTypes=Movie,Episode&Limit=$JF_PAGE_SIZE&StartIndex=$startIndex" +
                 "&SortBy=DatePlayed&SortOrder=Descending&EnableImages=false" +
                 "&Fields=UserData,SeriesId,SeriesName,SeasonId,IndexNumber,ParentIndexNumber"
@@ -651,8 +650,9 @@ class JellyfinClient {
         val acc = mutableListOf<JellyfinPlayItem>()
         var startIndex = 0
         while (true) {
+            // Phase 208 — migrated off /Users/{userId}/Items; see getResumeItems' comment.
             val url = baseUrl.trimEnd('/') +
-                "/Users/$userId/Items?Filters=IsPlayed&Recursive=true" +
+                "/Items?userId=$userId&Filters=IsPlayed&Recursive=true" +
                 "&IncludeItemTypes=Movie,Episode&Limit=$JF_PAGE_SIZE&StartIndex=$startIndex" +
                 "&SortBy=DatePlayed&SortOrder=Descending&EnableImages=false" +
                 "&Fields=UserData,SeriesId,SeriesName,SeasonId,IndexNumber,ParentIndexNumber"
@@ -678,8 +678,9 @@ class JellyfinClient {
         val acc = mutableListOf<JellyfinPlayItem>()
         var startIndex = 0
         outer@ while (true) {
+            // Phase 208 — migrated off /Users/{userId}/Items; see getResumeItems' comment.
             val url = baseUrl.trimEnd('/') +
-                "/Users/$userId/Items?Recursive=true&IncludeItemTypes=Movie,Episode" +
+                "/Items?userId=$userId&Recursive=true&IncludeItemTypes=Movie,Episode" +
                 "&Limit=$JF_PAGE_SIZE&StartIndex=$startIndex&SortBy=DatePlayed&SortOrder=Descending" +
                 "&EnableImages=false&Fields=UserData,SeriesId,SeriesName,SeasonId,IndexNumber,ParentIndexNumber"
             val resp = httpGet(url) { jellyfinAuth(userToken) }.bodyOrNull<JellyfinPlayItemsResponse>("getRecentlyTouched") ?: break
@@ -824,28 +825,39 @@ class JellyfinClient {
         }
     }.let { if (it.isFailure) Logger.warn("Jellyfin postCapabilities failed: ${it.exceptionOrNull()?.message}") }
 
+    // Phase 208 (FR-208-3) — migrated off /Users/{userId}/PlayedItems/{itemId}. Jellyfin's own source
+    // (Jellyfin.Api/Controllers/PlaystateController.cs) shows the legacy route's handler
+    // (`MarkPlayedItemLegacy`) does nothing but call this exact modern handler with the same
+    // parameters — same internal code path, not just a similar one — which is why this is trusted
+    // without a live write test: firing a live write against the household to "verify" it would mutate
+    // real watch-history data for a route this source reading already proves is identical, and no
+    // jellyfin-demo credentials were available this session to test it there instead (FR-208-3's own
+    // preferred target). Whoever verifies this live should use jellyfin-demo, never the household.
     suspend fun markPlayed(baseUrl: String, userToken: String, userId: String, jellyfinId: String) = runCatching {
-        httpPost(baseUrl.trimEnd('/') + "/Users/$userId/PlayedItems/$jellyfinId") {
+        httpPost(baseUrl.trimEnd('/') + "/UserPlayedItems/$jellyfinId?userId=$userId") {
             jellyfinAuth(userToken)
         }
     }.let { if (it.isFailure) Logger.warn("Jellyfin markPlayed failed: ${it.exceptionOrNull()?.message}") }
 
     suspend fun markUnplayed(baseUrl: String, userToken: String, userId: String, jellyfinId: String) = runCatching {
-        httpDelete(baseUrl.trimEnd('/') + "/Users/$userId/PlayedItems/$jellyfinId") {
+        httpDelete(baseUrl.trimEnd('/') + "/UserPlayedItems/$jellyfinId?userId=$userId") {
             jellyfinAuth(userToken)
         }
     }.let { if (it.isFailure) Logger.warn("Jellyfin markUnplayed failed: ${it.exceptionOrNull()?.message}") }
 
     // Bug fix — Ravilo's "My List": mirrors markPlayed/markUnplayed exactly, same REST shape
     // (`/Users/{id}/FavoriteItems/{itemId}`), for a feature whose write-through call never existed.
+    // Phase 208 (FR-208-3) — migrated off /Users/{userId}/FavoriteItems/{itemId}; same reasoning and same
+    // same-handler proof as markPlayed/markUnplayed above (UserLibraryController.cs's
+    // `MarkFavoriteItemLegacy`/`UnmarkFavoriteItemLegacy` call the modern handlers directly).
     suspend fun markFavorite(baseUrl: String, userToken: String, userId: String, jellyfinId: String) = runCatching {
-        httpPost(baseUrl.trimEnd('/') + "/Users/$userId/FavoriteItems/$jellyfinId") {
+        httpPost(baseUrl.trimEnd('/') + "/UserFavoriteItems/$jellyfinId?userId=$userId") {
             jellyfinAuth(userToken)
         }
     }.let { if (it.isFailure) Logger.warn("Jellyfin markFavorite failed: ${it.exceptionOrNull()?.message}") }
 
     suspend fun unmarkFavorite(baseUrl: String, userToken: String, userId: String, jellyfinId: String) = runCatching {
-        httpDelete(baseUrl.trimEnd('/') + "/Users/$userId/FavoriteItems/$jellyfinId") {
+        httpDelete(baseUrl.trimEnd('/') + "/UserFavoriteItems/$jellyfinId?userId=$userId") {
             jellyfinAuth(userToken)
         }
     }.let { if (it.isFailure) Logger.warn("Jellyfin unmarkFavorite failed: ${it.exceptionOrNull()?.message}") }
@@ -856,8 +868,10 @@ class JellyfinClient {
         userId: String,
         jellyfinId: String,
     ): JellyfinItemDetail? = runCatching {
+        // Phase 208 — migrated off /Users/{userId}/Items/{itemId}; verified live 2026-09-13,
+        // byte-identical response on this exact query shape.
         val url = baseUrl.trimEnd('/') +
-            "/Users/$userId/Items/$jellyfinId?Fields=UserData,RunTimeTicks,MediaStreams"
+            "/Items/$jellyfinId?userId=$userId&Fields=UserData,RunTimeTicks,MediaStreams"
         httpGet(url) { jellyfinAuth(userToken) }
             .bodyOrNull<JellyfinItemDetail>("getItemDetail")
     }.let { result ->
@@ -958,22 +972,21 @@ class JellyfinClient {
     ): List<JellyfinUserDataItem> = runCatching {
         if (jellyfinIds.isEmpty()) return@runCatching emptyList()
         val ids = jellyfinIds.joinToString(",")
+        // Phase 208 — migrated off /Users/{userId}/Items; see getResumeItems' comment.
         val url = baseUrl.trimEnd('/') +
-            "/Users/$userId/Items?Ids=$ids&Fields=UserData,RecursiveItemCount&Limit=${jellyfinIds.size}"
+            "/Items?userId=$userId&Ids=$ids&Fields=UserData,RecursiveItemCount&Limit=${jellyfinIds.size}"
         httpGet(url) { jellyfinAuth(userToken) }
             .bodyOrNull<JellyfinUserDataItemsResponse>("getUserDataBulk")?.items.orEmpty()
-    }.let { result ->
-        if (result.isFailure) Logger.warn("Jellyfin getUserDataBulk failed: ${result.exceptionOrNull()?.message}")
-        result.getOrDefault(emptyList())
-    }
+    }.warnOnFailureOrDefault("getUserDataBulk", emptyList())
 
     suspend fun getFavoriteItemIds(
         baseUrl: String,
         userToken: String,
         userId: String,
     ): Set<String> = runCatching {
+        // Phase 208 — migrated off /Users/{userId}/Items; see getResumeItems' comment.
         val url = baseUrl.trimEnd('/') +
-            "/Users/$userId/Items?Filters=IsFavorite&Recursive=true" +
+            "/Items?userId=$userId&Filters=IsFavorite&Recursive=true" +
             "&IncludeItemTypes=Movie,Series&Fields=Id&Limit=500"
         httpGet(url) { jellyfinAuth(userToken) }
             .bodyOrNull<JellyfinItemsResponse>("getFavoriteItemIds")?.items?.map { it.id }?.toSet().orEmpty()
