@@ -4,7 +4,7 @@
 > *what languages reach the payload*; this fixes *what the strip does with them once they arrive*.
 
 ## Status
-⚠ Partial. FR-R239-1/2/4/5/6 built and unit-tested 2026-09-10. FR-R239-3 (new flag assets) built
+✓ Done 2026-09-13. FR-R239-1/2/4/5/6 built and unit-tested 2026-09-10. FR-R239-3 (new flag assets) built
 2026-09-12 for 9 of 12 codes (Serbian/Bulgarian/Indonesian/Malay/Slovenian/Estonian/Latvian/
 Lithuanian/Filipino). **2026-09-13: Catalan added as a 10th** — Catalonia's flag (the Senyera) is a
 single, uncontested regional flag, unlike Tamil/Telugu, which stay genuinely unmappable: reusing
@@ -18,10 +18,16 @@ all three production `LANG_CC` tables (`AudioFlagStrip.kt`, admin `MediaDetail.k
 extended 2026-09-13 for Catalan**: `design/ravilo/ravilo-app.js`, `ravilo-browse.js` and
 `ravilo-player.js`'s three independently hand-written `LANG_CC` tables now carry the same 10 codes
 (`ravilo-app.js` already had the honest-count logic from the earlier pass). **`Ravilo Mobile.html`
-still has no audio/subtitle flag strip of any kind** — not a regression of this phase, a pre-existing
-gap: the phone mockup is a self-contained file with no `flags.css` and no shared `tracksFor()`, so
-building real parity there is a phone-side feature addition, out of this phase's
-scope as a "fix". See STATUS.md for the full build summary.
+had no audio/subtitle flag strip of any kind** — not a regression of this phase, a pre-existing gap.
+**Built 2026-09-13:** a phone-scaled `.dflags` block (AUDIO/SUBTITLES groups, same R134 merged-line
+shape, capped at 5 + honest `+N`) with its own `LANG_CC`/`LANG_NAME`/`countStrip`/`tracksFor`/
+`flagsHTML` ported into `Ravilo Mobile.html`'s self-contained script (the file has no `flags.css` link
+and no shared `tracksFor()` to import from — `../flags.css` was linked for the `.fi`/`.fi-xx` assets,
+matching how `Ravilo TV.html` already links it), placed directly after the genre row and before the
+action buttons so Play never moves. Verified by rendering the mockup headlessly (Chromium via
+Playwright) on both Big Buck Bunny (matches TV's flags exactly, same demo track data) and a generic
+title (Nordvest) — no console errors, no layout shift. `check-lang-cc-sync.sh`/`check-mobile-css.sh`
+both still green. See STATUS.md for the full build summary.
 
 **Tamil/Telugu CLOSED 2026-09-13, permanently — this is a decision, not a pending TODO.** The owner
 was asked to source flag candidates directly. Two were submitted and reviewed: one was an
@@ -121,6 +127,8 @@ language added to one must be added to the other, and nothing enforces it.
 
 - **FR-R239-7 — phone and TV alike, and the mockups too.** The strip is shared; `Ravilo Mobile.html`
   and the design mockups get the same treatment, so the design files don't drift back on the next sync.
+  **Built 2026-09-13** — `Ravilo Mobile.html` had never had this strip at all (a pre-existing gap, not
+  a drift); see the Status section for what landed.
 
 ## Non-goals
 

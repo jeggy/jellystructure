@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Ravilo — Mobile (Pixel 9)</title>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Sora:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<!-- R239 amendment (2026-09-13, FR-R239-7) — the audio/subtitle flag strip's .fi/.fi-xx assets, same
+     source as the TV mockup (Ravilo TV.html links this identically). -->
+<link rel="stylesheet" href="../flags.css">
 <style>
   :root{
     --bg:#0a0c13; --bg-2:#0e111b; --ink:#f3f4fb; --ink-soft:#aeb4cb; --ink-dim:#6b7290;
@@ -106,6 +109,17 @@
   .dgen{ height:34px; padding:0 15px; border-radius:17px; display:inline-flex; align-items:center; font-size:13px; font-weight:500;
     color:var(--ink); background:rgba(255,255,255,.09); border:1px solid rgba(255,255,255,.09); }
   .dgen.lead{ background:color-mix(in oklch, var(--accent) 22%, transparent); border-color:color-mix(in oklch, var(--accent) 45%, transparent); font-weight:600; }
+
+  /* R239 amendment (2026-09-13, FR-R239-7) — audio/subtitle flag strip, phone scale. Mirrors the TV's
+     merged R134 line (Audio flags · Subtitles flags), placed the same way relative to Play: above the
+     synopsis and above the action row, so neither moves depending on whether a title has flags. */
+  .dflags{ display:flex; align-items:center; gap:14px; flex-wrap:wrap; margin:14px 0 0; }
+  .dflags .fgroup{ display:flex; align-items:center; gap:8px; }
+  .dflags .flabel{ font-size:10px; font-weight:600; letter-spacing:1.6px; text-transform:uppercase; color:var(--ink-dim); }
+  .dflags .frow{ display:flex; align-items:center; gap:6px; }
+  .dflags .fi{ width:22px; height:16px; border-radius:3px; box-shadow:0 0 0 1px rgba(255,255,255,.18); flex:none; }
+  .dflags .fmore{ font-size:12px; font-weight:600; color:var(--ink); padding:2px 8px; border-radius:20px; background:rgba(255,255,255,.09); line-height:1.4; }
+  .dflags .fdiv{ width:1px; align-self:stretch; min-height:16px; background:var(--line); }
 
   /* R222 — the per-device slow-start line, above the buttons. Same sentence as TV, wrapping freely. */
   .dslow{ display:flex; gap:9px; align-items:flex-start; margin:15px 0 0; font-size:12.5px; line-height:1.55; color:var(--ink-soft); }
@@ -428,6 +442,66 @@
     if(!gs.length) return '';
     return '<div class="dgenres">'+gs.map((g,i)=>'<span class="dgen'+(i===0?' lead':'')+'">'+esc(g)+'</span>').join('')+'</div>';
   }
+  // R239 amendment (2026-09-13, FR-R239-7) — the phone had NO audio/subtitle flag strip at all (this
+  // was the one real remaining gap the R239 spec called out — not a regression, never built). Ported
+  // from ravilo-app.js's LANG_CC/LANG_NAME/countStrip/tracksFor/audioFlagsHTML (TV-only file, not
+  // shared with this self-contained mockup) rather than pulling in the whole TV script. Kept the exact
+  // same demo track data so Big Buck Bunny renders identical flags on phone and TV for comparison.
+  const LANG_CC = {
+    en:'gb', fr:'fr', de:'de', es:'es', da:'dk', fo:'fo', is:'is', no:'no', sv:'se', fi:'fi', nl:'nl', it:'it', pt:'pt', pl:'pl', ru:'ru', ja:'jp', ko:'kr', zh:'cn', ar:'sa', hi:'in',
+    sr:'rs', srp:'rs', bg:'bg', bul:'bg', id:'id', ind:'id', ms:'my', msa:'my', may:'my', sl:'si', slv:'si', et:'ee', est:'ee', lv:'lv', lav:'lv', lt:'lt', lit:'lt', tl:'ph', fil:'ph',
+    ca:'ct', cat:'ct',
+    // Tamil/Telugu (tam/tel) CLOSED 2026-09-13, permanently — no legitimate flag exists for either
+    // (India's is already Hindi's, and reusing it would collapse three distinct languages onto one
+    // shown flag); "no flag" is the intended final rendering, not an open TODO. See AudioFlagStrip.kt.
+  };
+  const LANG_NAME = {
+    en:'English', fr:'French', de:'German', es:'Spanish', da:'Danish', fo:'Faroese', is:'Icelandic', no:'Norwegian', sv:'Swedish', fi:'Finnish', nl:'Dutch', it:'Italian', pt:'Portuguese', pl:'Polish', ru:'Russian', ja:'Japanese', ko:'Korean', zh:'Chinese', ar:'Arabic', hi:'Hindi',
+    sr:'Serbian', srp:'Serbian', bg:'Bulgarian', bul:'Bulgarian', id:'Indonesian', ind:'Indonesian', ms:'Malay', msa:'Malay', may:'Malay', sl:'Slovenian', slv:'Slovenian', et:'Estonian', est:'Estonian', lv:'Latvian', lav:'Latvian', lt:'Lithuanian', lit:'Lithuanian', tl:'Filipino', fil:'Filipino',
+    ca:'Catalan', cat:'Catalan',
+  };
+  const FLAG_MAX = 5;
+  function countStrip(langs){
+    const flags = [], seenCC = new Set(), seenRaw = new Set();
+    (langs||[]).forEach(l => {
+      if(!l) return;
+      const cc = LANG_CC[l];
+      if(cc){ if(!seenCC.has(cc)){ seenCC.add(cc); flags.push(l); } }
+      else seenRaw.add(l);
+    });
+    return { flags, total: seenCC.size + seenRaw.size };
+  }
+  function tracksFor(item){
+    if(item && item.title === 'Big Buck Bunny') return {
+      audio: [
+        { lang:'en' }, {}, { lang:'fo' }, { lang:'da' }, { lang:'de' }, { lang:'es' }, { lang:'fr' }, { lang:'it' }, { lang:'nl' }, { lang:'pt' },
+      ],
+      subs: [ { off:true }, { lang:'en' }, { lang:'en' }, { lang:'fo' }, { lang:'da' } ],
+    };
+    return {
+      audio: [ { lang:'fo' }, { lang:'da' }, { lang:'da' }, { lang:'en' }, {} ],
+      subs: [
+        { off:true }, { lang:'fo' }, { lang:'da' }, { lang:'da' }, { lang:'en' }, { lang:'en' }, { lang:'en' },
+        { lang:'pt' }, { lang:'pt' }, { lang:'pt' }, { lang:'zh' }, { lang:'zh' }, { lang:'fr' }, { lang:'fr' }, { lang:'fr' }, { lang:'fi' },
+      ],
+    };
+  }
+  function flagsHTML(it){
+    const ts = tracksFor(it);
+    const flagRow = c => {
+      const shown = c.flags.slice(0, FLAG_MAX), extra = c.total - shown.length;
+      const flags = shown.map(l => '<span class="fi fi-'+LANG_CC[l]+'" title="'+esc(LANG_NAME[l]||l)+'"></span>').join('');
+      const more = extra > 0 ? '<span class="fmore" title="'+extra+' more language'+(extra>1?'s':'')+'">+'+extra+'</span>' : '';
+      return flags + more;
+    };
+    const aud = countStrip((ts.audio||[]).map(a => a.lang));
+    const sub = countStrip((ts.subs||[]).filter(s => !s.off).map(s => s.lang));
+    if(!aud.total && !sub.total) return '';
+    const groups = [];
+    if(aud.total) groups.push('<span class="fgroup"><span class="flabel">Audio</span><span class="frow">'+flagRow(aud)+'</span></span>');
+    if(sub.total) groups.push('<span class="fgroup"><span class="flabel">Subtitles</span><span class="frow">'+flagRow(sub)+'</span></span>');
+    return '<div class="dflags">'+groups.join('<span class="fdiv"></span>')+'</div>';
+  }
   // R222 — the phone renders the same server-pushed field. In production the backend answers it
   // for THIS phone (its own decoder, its own history), so a title that carries the note on the TV
   // may carry nothing here; the mock substitutes the phone's name to show that it is per-device.
@@ -480,6 +554,7 @@
       + '<div class="dtitle">'+esc(it.title)+'</div>'
       + '<div class="dmeta"><span>'+esc(String(it.year))+'</span><span class="pg">'+esc(it.rating)+'</span>'+(it.kind?'<span>·</span><span>'+(it.kind==='series'?'Series':'Film')+'</span>':'')+'</div>'
       + genresHTML(it)
+      + flagsHTML(it)
       + slowHTML(it)
       + '<div class="dbtns"><button class="btn play">▶ Play</button><button class="btn ghost">＋ My List</button></div>'
       + '<div class="dsyn">'+esc(syn)+'</div>'
