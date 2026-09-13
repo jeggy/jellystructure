@@ -367,14 +367,46 @@ at `tracksAfterClusters`. So this file has been silently invisible to Fix Now, t
 per-item detail-page banner since the moment it broke — not because nothing detected it, but because the
 one signal that *did* fire (`UNKNOWN`) has no consumer.
 
-**FR-201-14 — split "declared element size runs past the end of the file" out of `UNKNOWN` into its own
+**FR-201-14 — split "declared element size runs past its container" out of `UNKNOWN` into its own
 [`MkvLayout`] case**, distinct from both `TRACKS_AFTER_CLUSTER` and the genuine can't-parse-at-all
 `UNKNOWN` (not EBML, truncated header, an `UNKNOWN_SIZE` marker in an illegal position). Every
 `safeSkip`-triggered failure inside the per-child loop qualifies — by the time that loop is running, the
 file has already passed EBML-header and `Segment`-header validation, so a skip failure there is
-specifically "a top-level child's declared size overruns the file," never "not Matroska." Do not attempt
-to classify *which* element or *why* the size is wrong (Tags here; could as easily be any other
-top-level child) — the fingerprint and the fix are identical regardless.
+specifically "a child's declared size overruns its container," never "not Matroska." Do not attempt to
+classify *which* element or *why* the size is wrong — the fingerprint and the fix are identical
+regardless.
+
+> **Correction (same day, after v1.12 shipped and found nothing).** The paragraph above was first
+> written as *top-level* validation only, on the assumption — from reading `ffmpeg`'s
+> `Element at 0x17be6 ... exceeds containing master element ending at 0x61c77` without resolving the
+> offsets — that the corrupt element was a top-level `Tags`. **It is not.** Walking the real file by
+> hand: `0x17be6` is the 5th child *inside the first `Cluster`* (whose body runs `0x1454`–`0x61c77`,
+> the exact "containing master element" ffmpeg named), declaring a size of 22 138 559 545 bytes
+> against a 395 KB Cluster in a 66 MB file. v1.12's top-level-only check therefore classified the
+> reporting file as `OK` and the Triage card stayed empty — the operator's report ("I did a full scan
+> on 1.12, still empty") is what forced the offsets to actually be resolved. **The check must descend
+> into the first `Cluster`'s children**, validating each declared size against the `Cluster`'s own
+> remaining byte budget. Bounded to the *first* Cluster: no seeking, no file length, a few hundred KB
+> read per file. Shipped in v1.13.
+>
+> Two lessons worth keeping, both about the same failure: an error message's offsets are evidence and
+> must be resolved against the actual file before they become a diagnosis, and "the detector found
+> nothing" is not the same as "nothing is wrong" — v1.12 was a correct implementation of a wrong
+> requirement, and its passing tests proved only internal consistency.
+
+**FR-201-14a — validate the widened detector against the real library before trusting it.** Measured
+2026-09-13 on the production library, 8 015 `.mkv` files, ~88 s total:
+**68 flagged**, distributed as Bugs Bunny Builders 46 · Bob the Builder 16 · Taskmaster 3 ·
+The Cleaner (2021) 2 · Bridgerton 1 — i.e. **entirely within this phase's own known blast radius**,
+which is the corroboration that matters most (a heuristic that fired on unrelated titles would be
+suspect regardless of its ffmpeg agreement rate). A 14-file control group drawn from the unflagged
+majority produced **zero** `exceeds containing master element` errors under a full demux-only ffmpeg
+read; flagged files reproduce the error on the same check. Two of the flagged files are tolerated
+silently by ffmpeg and could not be independently confirmed — they are treated as broken anyway, since
+they sit in the same damaged set and FR-201-3's repair is a lossless `-c copy` remux, so the cost of a
+false positive is one unnecessary remux rather than any data loss. **Any future widening of this
+detector repeats this exercise** — full-library sweep, blast-radius check, and an unflagged control
+group — before it is allowed to drive a user-facing "unplayable" banner.
 
 **FR-201-15 — the same repair fixes it; wire it into the same surfaces.** Verified by hand
 (2026-09-13): remuxing the corrupted file with the unmodified FR-201-3 command
