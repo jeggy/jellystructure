@@ -288,6 +288,7 @@ class MediaJobQueue(
                 params == null -> Failure("Corrupt job parameters")
                 row.type == "reorder" -> runReorder(row, params)
                 row.type == "remove" -> runRemove(row, params)
+                row.type == "mkv_layout_repair" -> runMkvLayoutRepair(row, params)
                 else -> Failure("Unknown job type '${row.type}'")
             }
         } catch (e: Exception) {
@@ -583,6 +584,28 @@ class MediaJobQueue(
         mediaHistory.record(row.media_id, "remove_track", "${params.episodeFilename?.let { "ep=$it " } ?: ""}specifier=$specifier")
         postWriteSync(fresh)
         return Success
+    }
+
+    /** Phase 201 amendment (2026-09-13) — repairs [MediaJobParams.repairPaths] one file at a time,
+     *  reporting `filesDone`/`pct` after each so a many-episode repair shows real progress on the Jobs
+     *  page instead of sitting at "running" with no feedback for minutes (the gap that led an operator
+     *  to re-click/reload and fire the same repair concurrently — see [MkvLayoutAudit.repair]'s doc).
+     *  Running through this queue's single-worker media lane is itself the fix for that race: no other
+     *  media-lane job (this type or otherwise) can be remuxing anything while this one runs. */
+    private suspend fun runMkvLayoutRepair(row: Media_job, params: MediaJobParams): Outcome {
+        val paths = params.repairPaths?.takeIf { it.isNotEmpty() } ?: return Failure("Missing paths")
+        val fixed = mutableSetOf<String>()
+        for ((index, path) in paths.withIndex()) {
+            if (cancelRunning) return Cancelled
+            if (MkvLayoutAudit.repair(listOf(path))[path] == true) fixed += path
+            val done = index + 1
+            queries.updateProgress(done.toDouble() / paths.size * 100.0, null, done.toLong(), null, row.id)
+            broadcastSnapshot(row.id)
+        }
+        MkvHealthCache.markRepaired(fixed)
+        val failed = paths.size - fixed.size
+        mediaHistory.record(row.media_id, "mkv_layout_repair", "fixed=${fixed.size} failed=$failed of ${paths.size}")
+        return if (failed == 0) Success else Failure("$failed of ${paths.size} file(s) could not be repaired")
     }
 
     private suspend fun postWriteSync(item: dev.jellystructure.model.MediaItem) {

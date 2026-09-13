@@ -1,7 +1,6 @@
 package dev.jellystructure.media
 
 import dev.jellystructure.model.MediaItem
-import dev.jellystructure.ops.SpinLock
 import kotlinx.io.buffered
 import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
@@ -46,32 +45,24 @@ object MkvLayoutAudit {
         )
     }
 
-    // 2026-09-13 fix — the first real production "Fix now" click fired the same series-wide request
-    // several times over (no progress feedback on a multi-minute, 85-episode repair reads as "nothing
-    // happened", so the operator re-clicked/reloaded), and every one of those calls ran
-    // FfmpegRunner.repairTracksLayout on the SAME files concurrently. FfmpegRunner's remux temp file is
-    // a fixed `.jstmp_<name>` per path with no run-to-run uniqueness, so overlapping repairs of one path
-    // race on that name; this time every loser's `mv` just failed harmlessly onto an already-renamed-
-    // away temp file, but it is not guaranteed to stay harmless. Track in-flight paths and skip any path
-    // a concurrent call already claimed rather than starting a second remux on it.
-    private val inFlightPaths = mutableSetOf<String>()
-    private val inFlightLock = SpinLock()
-
     /**
      * Phase 201 (FR-201-5) — repair a specific, operator-chosen set of files (normally the
      * `tracksAfterClusters` list a [sweep] just reported). An explicit action on the media library, not
      * something a scan may trigger on its own initiative — same posture Phase 188 established for any
      * bulk repair. Re-classifies each file first so a file fixed by an unrelated edit since the sweep
-     * isn't remuxed again for nothing. A path already being repaired by a still-running call is skipped
-     * (absent from the result map) rather than remuxed twice.
+     * isn't remuxed again for nothing.
+     *
+     * 2026-09-13 amendment — this used to run inline on the request thread and be called directly from
+     * the repair route. The first real production click (an 85-episode series, no progress feedback on
+     * a multi-minute run) got re-clicked/reloaded several times, firing the same request repeatedly and
+     * running this on the same files concurrently — [FfmpegRunner]'s remux temp file is a fixed
+     * `.jstmp_<name>` per path with no run-to-run uniqueness, so overlapping repairs of one path raced on
+     * that name. No data was lost that time, but the race was real. The repair route now enqueues this
+     * through [MediaJobQueue] (type `mkv_layout_repair`) instead of calling it directly — the media
+     * lane's existing single-worker FIFO (Phase 109) already guarantees no two ffmpeg remuxes, of any
+     * kind, ever run at once, which removes the race without this object needing its own lock.
      */
-    suspend fun repair(paths: List<String>): Map<String, Boolean> {
-        val claimed = inFlightLock.withLock { paths.filter { inFlightPaths.add(it) } }
-        try {
-            return claimed.filter { classify(it) == MkvLayout.TRACKS_AFTER_CLUSTER }
-                .associateWith { FfmpegRunner.repairTracksLayout(it) }
-        } finally {
-            inFlightLock.withLock { inFlightPaths.removeAll(claimed.toSet()) }
-        }
-    }
+    suspend fun repair(paths: List<String>): Map<String, Boolean> =
+        paths.filter { classify(it) == MkvLayout.TRACKS_AFTER_CLUSTER }
+            .associateWith { FfmpegRunner.repairTracksLayout(it) }
 }
