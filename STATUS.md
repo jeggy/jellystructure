@@ -433,8 +433,9 @@ diff, independent of the per-series skip) as the correct, still-unbuilt fix — 
 per-item **Re-sync** (`POST /media/{id}/sync`) bypasses the cooldown today via `RunTarget.SingleItem`; the
 **Scan library** button does not (Phase 175). No code changed for this report — spec-only per instruction.
 **✓ Built 2026-09-02** (not dev-reviewed, not yet live-verified against production traffic — compiled
-clean, unit-tested). FR-181-1/1a/4/5 all implemented; FR-181-3 deliberately **not** built as its own
-mechanism (subsumed by FR-181-1 running at the same cadence it would have — see the spec). New
+clean, unit-tested). FR-181-1/1a/4/5 all implemented; FR-181-3 was never built (subsumed by FR-181-1
+running at the same cadence it would have) and was **removed from the spec outright 2026-09-13** — the
+owner decided not to build it, so it no longer reads as a planned/deferred item. New
 `media/LibrarySweep.kt` (`sweepJellyfinLibrary`/`computeLibraryDiff`, id-level diff against Jellyfin's
 full catalog) runs inside every `RunTarget.Library` pipeline run, right where the freshness filter sits —
 answering this row's own Lanterns finding above (the skip-set gates the on-disk walk itself; the sweep is
