@@ -51,13 +51,20 @@ private class WizardState(val item: MediaItem) {
     var sortByStatus: Boolean = false
 }
 
+private fun trackKindFor(kind: String) = if (kind == "audio") TrackKind.AUDIO else TrackKind.SUBTITLE
+
+private fun scopedEpisodes(item: MediaItem, scope: String) =
+    if (scope == "series") item.episodes
+    else scope.removePrefix("season-").toIntOrNull()?.let { sn -> item.episodes.filter { it.seasonNumber == sn } } ?: item.episodes
+
 private fun detectInitialLanguages(item: MediaItem, kind: String, scope: String): List<String> {
-    val trackKind = if (kind == "audio") TrackKind.AUDIO else TrackKind.SUBTITLE
-    val eps = if (scope == "series") item.episodes
-              else scope.removePrefix("season-").toIntOrNull()?.let { sn -> item.episodes.filter { it.seasonNumber == sn } } ?: item.episodes
+    val trackKind = trackKindFor(kind)
+    val eps = scopedEpisodes(item, scope)
     val seen = linkedSetOf<String>()
+    // Phase 209: a sidecar/external track can never actually be reordered (Phase 200 — no container
+    // stream to edit), so seeding the target order from one only sets up Step 2 to reject it.
     for (ep in eps) for (t in ep.tracks) {
-        if (t.kind == trackKind && t.language != null) seen.add(t.language.lowercase())
+        if (t.kind == trackKind && !t.external && t.language != null) seen.add(t.language.lowercase())
     }
     return seen.toList()
 }
@@ -107,9 +114,28 @@ private fun renderStep1(container: Element, scope: CoroutineScope, state: Wizard
         }
     }
 
+    // Phase 209: if this scope has no embedded track of the selected kind anywhere, the wizard is
+    // about to be a no-op — say so before Step 2 rather than after, since a sidecar file has no
+    // container order to change (Phase 200) and every episode would otherwise land on an unexplained
+    // "Nothing to do".
+    val trackKind = trackKindFor(state.kind)
+    val scopedEps = scopedEpisodes(state.item, state.wizScope)
+    val hasEmbedded = scopedEps.any { ep -> ep.tracks.any { it.kind == trackKind && !it.external } }
+    val externalOnlyCount = scopedEps.count { ep -> ep.tracks.any { it.kind == trackKind && it.external } }
+    val sidecarOnlyWarning = !hasEmbedded && externalOnlyCount > 0
+    val kindLabel = if (state.kind == "audio") "audio" else "subtitle"
+
     container.innerHTML = """
         ${wizardHeader(state.item, 1)}
-        <h2 style="margin:0 0 20px;">↕ Re-order ${if (state.kind == "audio") "audio" else "subtitle"} tracks across series</h2>
+        <h2 style="margin:0 0 20px;">↕ Re-order $kindLabel tracks across series</h2>
+
+        ${if (sidecarOnlyWarning) """
+        <div class="note" style="max-width:640px;margin-bottom:20px;border-color:var(--warn);font-size:.85rem;">
+          ⚠ No embedded $kindLabel tracks in this scope — all $externalOnlyCount episode${if (externalOnlyCount != 1) "s" else ""}
+          with $kindLabel here store ${if (state.kind == "audio") "it" else "them"} as sidecar files (e.g. <code>.srt</code>),
+          which have no container stream order to change. Bulk re-order only affects tracks embedded in the
+          video file — there is nothing this tool can do for this scope.
+        </div>""" else ""}
 
         <div style="max-width:640px;display:flex;flex-direction:column;gap:20px;">
 
@@ -206,13 +232,15 @@ private fun wireStep1Events(container: Element, scope: CoroutineScope, state: Wi
         wireStep1Events(container, scope, state)
     }
 
-    // Scope selector
+    // Scope selector — full re-render, not just the order list, so the Phase 209 sidecar-only
+    // warning (computed per-scope in renderStep1) recomputes for the newly selected scope too.
     (document.getElementById("wiz-scope-sel") as? HTMLInputElement)?.addEventListener("change") { e ->
         val newScope = (e.target as? HTMLInputElement)?.value ?: return@addEventListener
         state.wizScope = newScope
         state.targetOrder.clear()
         state.targetOrder.addAll(detectInitialLanguages(state.item, state.kind, state.wizScope))
-        renderOrderList(state)
+        renderStep1(container, scope, state)
+        wireStep1Events(container, scope, state)
     }
 
     // Move up/down and remove — delegated on the list
@@ -420,14 +448,18 @@ private fun buildEpisodeRow2(ep: BulkPlanEpisode, state: WizardState): String {
     }
 
     val bodyId = "wiz-epbody-${ep.filename.replace("[^a-zA-Z0-9]".toRegex(), "_")}"
+    // Phase 209: the Reason panel used to be reachable only via the "+N" chip below, which only
+    // exists when there are >3 tracks to show — so a "nothing_to_do" row with 0-2 tracks (exactly the
+    // sidecar-only case) had no way to reveal why. The status cell itself is now always the toggle.
+    val toggleReason = "var e=document.getElementById('$bodyId'); if(e){e.style.display = e.style.display==='none' ? '' : 'none';}"
     return """
         <tr class="wiz-ep-row" data-status="${ep.status}" style="border-bottom:1px solid var(--border-soft);">
           <td style="padding:8px 12px;white-space:nowrap;font-weight:500;">${ep.code.esc()}<br><span class="tiny muted">${(ep.title ?: "").esc().take(28)}</span></td>
-          <td style="padding:8px 12px;">$statusBadge</td>
+          <td style="padding:8px 12px;cursor:pointer;" title="Show reason" onclick="$toggleReason">$statusBadge</td>
           <td style="padding:8px 6px;">${col(0)}</td>
           <td style="padding:8px 6px;">${col(1)}</td>
           <td style="padding:8px 6px;">${col(2)}</td>
-          <td style="padding:8px 6px;">${if (moreCount > 0) """<span class="chip muted" style="font-size:.72rem;cursor:pointer;" onclick="document.getElementById('$bodyId')?.style?.removeProperty('display')">+$moreCount</span>""" else ""}</td>
+          <td style="padding:8px 6px;">${if (moreCount > 0) """<span class="chip muted" style="font-size:.72rem;cursor:pointer;" onclick="$toggleReason">+$moreCount</span>""" else ""}</td>
           <td style="padding:8px 12px;text-align:right;">$actionCell</td>
         </tr>
         <tr id="$bodyId" style="display:none;background:var(--surface-alt);">
