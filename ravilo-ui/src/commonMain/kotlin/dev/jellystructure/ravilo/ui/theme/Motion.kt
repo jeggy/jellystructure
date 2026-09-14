@@ -75,4 +75,10 @@ object RaviloMotion {
     // actually laid out at (post tileScale) rather than the mockup's literal dp numbers.
     const val ROW_OPEN_WIDTH_SCALE = 300f / 210f
     const val ROW_OPEN_TWEEN_MS = 220   // mirrors ravilo.css .jopen / jp-open .22s
+
+    // ── J's own backdrop (R242) ─────────────────────────────────────────────────
+    // Deliberately slower than ROW_OPEN_TWEEN_MS (FR-R242-3) — the panel snaps into its slot, the
+    // room around it catches up a beat later. Mirrors ravilo.css .jbg's .5s/.jbg-img's .6s.
+    const val ROW_OPEN_BG_FADE_IN_MS = 550
+    const val ROW_OPEN_BG_FADE_OUT_MS = 500
 }

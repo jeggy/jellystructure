@@ -55,6 +55,7 @@ import dev.jellystructure.ravilo.ui.LocalPortrait
 import dev.jellystructure.ravilo.ui.components.AppBar
 import dev.jellystructure.ravilo.ui.components.ChannelCard
 import dev.jellystructure.ravilo.ui.components.FOCUS_DETAIL_LINE_HEIGHT
+import dev.jellystructure.ravilo.ui.components.FocusDetailBackdrop
 import dev.jellystructure.ravilo.ui.components.FocusDetailLine
 import dev.jellystructure.ravilo.ui.components.FocusDetailPanel
 import dev.jellystructure.ravilo.ui.components.focusDetailPanelWidthFor
@@ -263,6 +264,11 @@ private fun HomeLoaded(
             },
         ),
     ) {
+    // Phase R242 — the focused title's own backdrop, painted as the FIRST child of this Box so it
+    // sits behind the LazyColumn, the AppBar overlay and L's foot strip alike (FR-R242-4). Reacts to
+    // the same shared [fdUi] every row's own panel already reads — no new state at the feed/store
+    // level, no new payload (FR-R242-2).
+    FocusDetailBackdrop(fd = fdUi)
     @Suppress("OPT_IN_USAGE")
     // R140: comfortable vertical framing for content rows.
     //  - topInsetDp clears the 60dp AppBar + the full ~64dp row-title band (was 34, too small → the title

@@ -8,8 +8,11 @@
 
 ## Status
 
-`Planned` — written 2026-09-14, not dev-reviewed. Built into the design mockup the same day
-(`design/ravilo/ravilo-focus.js`, `ravilo.css`, `ravilo-app.js`).
+`✓ Built` — written 2026-09-14, not dev-reviewed, not device-tested. Built into the design mockup the
+same day (`design/ravilo/ravilo-focus.js`, `ravilo.css`, `ravilo-app.js`), and into the real Compose
+app the same day (`ravilo-ui/.../components/FocusDetailBackdrop.kt`, wired into `HomeScreen.kt`,
+motion constants in `theme/Motion.kt`) — `:ravilo-ui:compileCommonMainKotlinMetadata` and
+`:ravilo-ui:compileDebugKotlinAndroid` both clean.
 
 **Numbering:** verified against `STATUS.md` on 2026-09-14 — Ravilo is taken through **R241**, admin
 through **209**. This is Ravilo-only (no backend/DTO change — see FR-R242-2), so it takes the next
@@ -153,10 +156,22 @@ stops" rule R240 already holds itself to for the row's own opening.
   (FR-R240-10), reduced-motion downgrade.
 - `specs/requirements/phase-202-focus-detail-config-and-payload.md` — FR-202-5 / non-goals, and the
   `FocusDetailFacts`-vs-`MediaCard` distinction this phase's whole premise rests on.
-- Real build reference (not yet touched by this phase, cited for the client-side implementer):
-  `shared/.../tv/Models.kt` (`MediaCard.backdropUrl`), `HomeFeedService.kt` (`toMediaCard`,
-  `RaviloImageUrl.backdrop`), `ravilo-ui/.../components/HeroCarousel.kt` (the
-  `AnimatedContent`/`fadeIn`/`fadeOut` crossfade idiom this phase's Compose build should mirror),
+- `ravilo-ui/.../components/FocusDetailBackdrop.kt` (new, this phase) — the actual Compose build.
+  `AnimatedVisibility(visible = bgActive)` wraps an `AnimatedContent` keyed on `backdropUrl`, mirroring
+  `HeroCarousel.kt`'s own `AnimatedContent`/`fadeIn`/`fadeOut` idiom; a held `bgUi` snapshot (not the
+  live `fd` directly) reproduces `ContentRowItem`'s own `panelKey`/`panelUi` "survive the dwell's null
+  gap" pattern so FR-R242-5's hop crossfade doesn't blank. Reads `FocusDetailUi.card.backdropUrl`
+  directly, never `facts` — keeps FR-202-5's fact/artwork split visible in code. Null `backdropUrl`
+  falls back to a plain `colors.surface` fill (Compose has no per-title CSS gradient equivalent to the
+  mockup's `artFor().grad` — see open question 5).
+- `ravilo-ui/.../screens/HomeScreen.kt` — `FocusDetailBackdrop(fd = fdUi)` inserted as the first child
+  of `HomeLoaded`'s own `Box` (before the `LazyColumn`), so it paints behind the AppBar overlay and
+  every row, reusing the same `store.focusDetail.current` the row-open panel already collects — no new
+  state at the feed/store level.
+- `ravilo-ui/.../theme/Motion.kt` — `ROW_OPEN_BG_FADE_IN_MS` (550) / `ROW_OPEN_BG_FADE_OUT_MS` (500),
+  deliberately slower than `ROW_OPEN_TWEEN_MS` (220) per FR-R242-3.
+- `shared/.../tv/Models.kt` (`MediaCard.backdropUrl`, nullable — unlike `Hero.backdropUrl`, which the
+  server always populates), `HomeFeedService.kt` (`toMediaCard`, `RaviloImageUrl.backdrop`),
   `ravilo-ui/.../seams/ImageLoader.kt` (`RemoteImage`, existing Coil3 crossfade + cache).
 
 ## Open questions
@@ -175,3 +190,9 @@ stops" rule R240 already holds itself to for the row's own opening.
 4. **Should the backdrop be a switch of its own, independent of J?** A household might want the facts
    panel without the immersive background (slower device, or simply taste). This phase deliberately
    ships with no separate control (see Non-goals) — an owner call for a follow-up, not assumed here.
+5. **The mockup's per-title placeholder gradient has no Compose equivalent.** `design/ravilo/
+   ravilo-data.js`'s `artFor()` fabricates a CSS gradient for titles with no real backdrop (the design
+   data set); the real backend has no such field — a null `MediaCard.backdropUrl` gets a flat
+   `colors.surface` fill in the shipped build instead (`FocusDetailBackdrop.kt`). Worth deciding
+   whether that's the permanent answer or whether a generated-tint fallback (à la the profile-avatar
+   initials gradient, 187/R234) is worth adding here too.
