@@ -351,11 +351,20 @@ suspend fun runPipeline(
                 runPipelineStepPool(
                     jobId, step.step, workingSet, { pipelineStepConcurrency(step.step, configStore.current.behavior.scanWorkers) },
                     scanTracker, broadcaster, labelOf = { it.title },
+                    // Phase 210 (FR-210-3) — an item genuinely abandoned by PipelineStepPool's own
+                    // per-item deadline used to default to this no-op and vanish from every counter
+                    // below, which made the "every lookup failed" summary WARN under-report exactly the
+                    // runs where the deadline was biting. Streams that warmed before the abandonment are
+                    // still credited via onStreamWarmed below — only the item-level attempt is marked
+                    // failed here.
+                    onItemFailure = { _, _ -> attempted.incrementAndGet(); failed.incrementAndGet() },
                 ) { item, _ ->
-                    when (val outcome = PipelineStepOps.prewarmSubtitles(item, jellyfinClient, cfg)) {
+                    // FR-210-4 — credit each stream the instant it's confirmed warmed, not only from a
+                    // normally-returning Warmed(count): a mid-item cancellation must not lose progress
+                    // that already happened.
+                    when (val outcome = PipelineStepOps.prewarmSubtitles(item, jellyfinClient, cfg, onStreamWarmed = { warmed.incrementAndGet() })) {
                         is PipelineStepOps.PrewarmOutcome.Warmed -> {
                             attempted.incrementAndGet()
-                            repeat(outcome.count) { warmed.incrementAndGet() }
                         }
                         PipelineStepOps.PrewarmOutcome.LookupFailed -> {
                             attempted.incrementAndGet()

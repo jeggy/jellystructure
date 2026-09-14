@@ -84,8 +84,21 @@ object PipelineStepOps {
      * the whole series**, not one per episode (285 calls/14s for a single series, observed before this
      * fix) — and reads Jellyfin's own episode list directly rather than joining against
      * `item.episodes`, so an episode this scan hasn't backfilled a `jellyfinId` for is still warmed.
+     *
+     * Phase 210 (FR-210-2/FR-210-4) — [onStreamWarmed] fires the instant an individual stream is
+     * *confirmed* warmed (a true return from [JellyfinClient.warmSubtitleExtraction]), not once at the
+     * end of a normally-returning loop over an attempted count. Two reasons: an ordinary per-stream HTTP
+     * failure must not be counted as a success (FR-210-2), and if the caller's own per-item deadline
+     * cancels this call partway through a `TV_SHOW`'s episode list, whatever streams already succeeded
+     * before that point must still be credited — the Jellyfin-side cache write already happened, and
+     * losing that count to "0 warmed" would misreport real progress as none (FR-210-4).
      */
-    suspend fun prewarmSubtitles(item: MediaItem, jellyfinClient: JellyfinClient, cfg: AppConfig): PrewarmOutcome {
+    suspend fun prewarmSubtitles(
+        item: MediaItem,
+        jellyfinClient: JellyfinClient,
+        cfg: AppConfig,
+        onStreamWarmed: () -> Unit = {},
+    ): PrewarmOutcome {
         val base = cfg.apiKeys.jellyfinUrl
         val token = cfg.apiKeys.jellyfinToken
         if (base.isBlank() || token.isBlank()) return PrewarmOutcome.Skipped
@@ -96,8 +109,14 @@ object PipelineStepOps {
                     !it.isExternal &&
                     (it.isTextSubtitleStream || dev.jellystructure.tv.isTextSubCodec(it.codec))
             }
-            for (s in textSubs) jellyfinClient.warmSubtitleExtraction(base, token, jellyfinId, s.index)
-            return textSubs.size
+            var confirmed = 0
+            for (s in textSubs) {
+                if (jellyfinClient.warmSubtitleExtraction(base, token, jellyfinId, s.index)) {
+                    confirmed++
+                    onStreamWarmed()
+                }
+            }
+            return confirmed
         }
 
         return when (item.kind) {
