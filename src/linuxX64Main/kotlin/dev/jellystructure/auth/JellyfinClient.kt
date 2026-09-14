@@ -934,11 +934,26 @@ class JellyfinClient {
      * why a live client request can lose the race against Jellyfin extracting the same file a real
      * transcode is concurrently reading. The response body is discarded; only the side effect (Jellyfin's
      * own cache getting warmed) matters here.
+     *
+     * Phase 210 (FR-210-1) — returns whether the request actually succeeded, and does not catch
+     * [CancellationException]: this call runs inside [PipelineStepPool]'s per-item [kotlinx.coroutines.withTimeout],
+     * and a plain `runCatching` here used to swallow that timeout's cancellation exactly like the bug
+     * [PipelineStepPool] itself already documents fixing at its own layer (Phase 182, FR-182-5) — silently
+     * absorbing the cancellation instead of letting the deadline actually abandon the item, while every
+     * remaining loop iteration in [PipelineStepOps.warmedCountOf] threw and was logged as an independent
+     * "timeout" the instant it was reached.
      */
-    suspend fun warmSubtitleExtraction(baseUrl: String, token: String, jellyfinId: String, streamIndex: Int) {
+    suspend fun warmSubtitleExtraction(baseUrl: String, token: String, jellyfinId: String, streamIndex: Int): Boolean {
         val url = baseUrl.trimEnd('/') + "/Videos/$jellyfinId/$jellyfinId/Subtitles/$streamIndex/0/Stream.vtt?api_key=$token"
-        runCatching { httpGet(url) }
-            .onFailure { Logger.warn("Jellyfin subtitle pre-warm failed (item=$jellyfinId index=$streamIndex): ${it.message}") }
+        return try {
+            httpGet(url)
+            true
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            Logger.warn("Jellyfin subtitle pre-warm failed (item=$jellyfinId index=$streamIndex): ${e.message}")
+            false
+        }
     }
 
     /**
