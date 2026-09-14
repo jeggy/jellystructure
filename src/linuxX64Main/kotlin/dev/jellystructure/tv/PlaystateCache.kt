@@ -100,7 +100,7 @@ object PlaystateCache {
     ): Boolean {
         val base = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
         if (base.isBlank()) return false
-        val ids = mediaStore.liveItems(device).mapNotNull { it.jellyfinId }
+        val ids = idsToRefresh(mediaStore.liveItems(device))
         if (ids.isEmpty()) return true  // nothing to fetch is not a failure
         val ps = withTimeoutOrNull(FETCH_TIMEOUT_MS) {
             val token = jellyfinClient.tvToken(base, device, configStore.current.apiKeys.jellyfinToken)
@@ -112,6 +112,13 @@ object PlaystateCache {
         if (ps.isNotEmpty()) tvEventBus?.notifyPlaystateChanged(device.jellyfinUserId, json.encodeToString(ps))
         return true
     }
+
+    /** Phase 211 — a series' own top-level id carries no per-episode state; `DetailService.getPlaystate`
+     *  is called with episode ids (season open), so this map must hold episode-keyed entries too, or
+     *  every one of those lookups misses unconditionally, not just intermittently. Pulled out of
+     *  [refreshOne] so the id set is unit-testable without a live/faked Jellyfin call. */
+    internal fun idsToRefresh(items: List<dev.jellystructure.model.MediaItem>): List<String> =
+        items.flatMap { item -> listOfNotNull(item.jellyfinId) + item.episodes.mapNotNull { it.jellyfinId } }
 }
 
 @OptIn(ExperimentalForeignApi::class)
