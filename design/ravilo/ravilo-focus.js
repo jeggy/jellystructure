@@ -27,6 +27,14 @@
    the stue BRAVIA (46 real settled opens, 2.8-3.2% janky frames, 0 missed vsync;
    see the R240 spec) closed that question, so J now defaults on.
 
+   R242 (2026-09-14) gives J its own backdrop: while a row is open, the title's
+   backdrop fills the whole screen behind everything, fading in on open and back to
+   plain --bg on close. L stays exactly as above — facts only, no artwork. This is
+   NOT round 1's hero mirror or ambience wash come back: those needed a backdrop
+   fetch that didn't exist for a row item at all; today every MediaCard (hero or
+   row alike) already carries backdropUrl, so this renders a field that's already
+   shipping rather than adding one. Nothing rides the wire that wasn't there before.
+
    Scope: Home content rows only (not the channel rail, not the hero, not browse,
    search, Discover or Live TV — those rows aren't library items in the same shape).
 
@@ -59,6 +67,7 @@
   window.initRaviloFocus = function (stage, o) {
     const cfg = readCfg();
     let line = null, openTile = null, panel = null, lastNode = null, dwellT = null, heldTrack = null, settleT = null, rampT = 0, closing = null, closingTile = null, closeT = null;
+    let bg = null, bgImgs = null, bgCur = 0, bgKey = null;
 
     /* ---------- shared field rendering ---------- */
     function metaBits(f) {
@@ -123,11 +132,46 @@
       stage.classList.remove('fd-line'); document.body.classList.remove('fd-line');
     }
 
+    /* ---------- R242 · J's own backdrop ----------
+       While a row is open, the focused title's own backdrop fills the whole screen
+       behind everything else — inserted as #stage's very first child so it paints
+       behind the app bar, every row, and the open panel itself, and never scrolls
+       with .screen-scroll. It renders ONLY the item that has actually committed to
+       opening (never ambiently, never on a still-dwelling focus move — see openRow's
+       own call site), and it fades on its own, slower clock than the .22s panel/tile
+       tween: the panel snaps into place, the room catches up a beat later.
+       No new fetch, no new field: R.artFor(item).backdrop is the exact URL the hero
+       already renders — round 1's B/D needed a backdrop that didn't exist for a row
+       item at all; this one already ships on every card. */
+    function bgLayer() {
+      if (!bg) {
+        bg = document.createElement('div'); bg.className = 'jbg';
+        bg.innerHTML = '<div class="jbg-img"></div><div class="jbg-img"></div><div class="jbg-scrim"></div>';
+        bgImgs = bg.querySelectorAll('.jbg-img');
+        stage.insertBefore(bg, stage.firstChild);
+      }
+      return bg;
+    }
+    function showBg(item) {
+      const layer = bgLayer();
+      const key = item && (item.title || item.id);
+      if (key && key === bgKey) { layer.classList.add('on'); return; }
+      bgKey = key;
+      const art = (o.backdropFor && item) ? o.backdropFor(item) : null;
+      const next = bgImgs[1 - bgCur], cur = bgImgs[bgCur];
+      next.style.background = (art && art.backdrop) ? `center 30%/cover no-repeat url("${art.backdrop}")` : ((art && art.grad) || '');
+      next.classList.add('on'); cur.classList.remove('on');
+      bgCur = 1 - bgCur;
+      layer.classList.add('on');
+    }
+    function hideBg() { bgKey = null; if (bg) bg.classList.remove('on'); }
+
     /* ---------- J · the row opens ----------
        The tile grows in its own slot and one inert panel is inserted after it, inside
        the same .track, so the remainder of the row simply continues past it. Nothing is
        positioned absolutely and nothing overlays: the row band itself gets taller. */
     function openRow(node, f) {
+      showBg(node._item);
       panel = document.createElement('div');
       panel.className = 'jpanel';
       panel.innerHTML = `<div class="jp-body"><div class="jp-title">${f.title}</div>
@@ -223,7 +267,7 @@
       heldTrack = track || null;
     }
 
-    function clear() { clearTimeout(dwellT); hideLine(); closeRow(); dropClosing(); holdRow(null); sweepPanels(); }
+    function clear() { clearTimeout(dwellT); hideLine(); hideBg(); closeRow(); dropClosing(); holdRow(null); sweepPanels(); }
 
     function eligible(node) {
       if (!node || !node._item) return false;
@@ -274,7 +318,7 @@
       apply(next) {
         if (cfg.line === next.line && cfg.rowOpen === next.rowOpen && cfg.delay === next.delay) return;
         cfg.line = next.line; cfg.rowOpen = next.rowOpen; cfg.delay = next.delay;
-        clearTimeout(dwellT); closeRow(); dropClosing(); holdRow(null);
+        clearTimeout(dwellT); closeRow(); dropClosing(); holdRow(null); hideBg();
         if (!cfg.line || cfg.rowOpen) lineOff(); else hideLine();
         const n = lastNode && lastNode.isConnected ? lastNode : null;
         if (n && o.refocus) o.refocus(n); else if (n) api.onFocus(n);

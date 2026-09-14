@@ -363,6 +363,10 @@
     }
     const FD = window.initRaviloFocus ? window.initRaviloFocus(stage, {
       t: window.t, getView: () => view, fieldsFor: fieldsFor,
+      // R242 — kept deliberately separate from fieldsFor(): the fact/artwork split
+      // FR-202-5 draws stays visible in the code, not just in prose. Same R.artFor()
+      // the hero and detail page already call; no new field, no new fetch shape.
+      backdropFor: item => R.artFor && R.artFor(item),
       // a live config change re-renders the focused tile through the same path a focus
       // move takes, so J's reveal rule runs on a switch flip too
       refocus: node => focusEl(node),
