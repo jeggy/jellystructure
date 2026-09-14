@@ -206,6 +206,56 @@ class PlayerScreenTrackResolutionTest {
         assertEquals(1, result.audioIndex, "FR-R235-4 — the same bug one tab over: a commentary track flagged default must lose to a plain track in the same language")
     }
 
+    // Phase R241 — real production data (It's Always Rainy in Pittsburgh, 182 episodes/16 seasons)
+    // showed the same language tagged "dan" in some seasons and "da" in others. A remembered "dan"
+    // must still match a file that only offers "da", or every cross-season episode silently loses the
+    // remembered choice and falls back to the source default.
+
+    @Test
+    fun rememberedSubtitleLanguageMatchesADifferentIsoGranularity() {
+        val plain = version(0)
+        val groups = listOf(group("da", plain)) // this file tags Danish as 2-letter
+        val subtitleTracks = listOf(sub(0, "da"))
+        val result = resolveTrackChoice(
+            seriesChoice = RememberedChoice(subtitleLanguage = "dan"), // remembered from a 3-letter-tagged file
+            globalChoice = null,
+            audioGroups = emptyList(), subGroups = groups,
+            audioTracks = emptyList(), subtitleTracks = subtitleTracks,
+        )
+        assertEquals(0, result.subIndex, "\"dan\" and \"da\" are the same language and must match across episodes")
+    }
+
+    @Test
+    fun rememberedAudioLanguageMatchesADifferentIsoGranularity() {
+        val audioTracks = listOf(audio(0, "fr"), audio(1, "en", isDefault = true))
+        val groups = listOf(group("fr", version(0)), group("en", version(1, isDefault = true)))
+        val result = resolveTrackChoice(
+            seriesChoice = RememberedChoice(audioLanguage = "eng"), // remembered from a 3-letter-tagged file
+            globalChoice = null,
+            audioGroups = groups, subGroups = emptyList(),
+            audioTracks = audioTracks, subtitleTracks = emptyList(),
+        )
+        assertEquals(1, result.audioIndex, "\"eng\" and \"en\" are the same language and must match across episodes")
+    }
+
+    @Test
+    fun unmatchedRememberedSubtitleVariantPrefersPlainOverSdh_regardlessOfStreamOrder() {
+        // Real shape found in Always Sunny season 14+: SDH sorts BEFORE the plain track in this file,
+        // unlike the season the choice was learned from.
+        val sdh = version(0, ordinal = 0).copy(kind = VariantKind.SDH)
+        val plain = version(1, ordinal = 0)
+        val groups = listOf(group("eng", sdh, plain))
+        val subtitleTracks = listOf(sub(0, "eng"), sub(1, "eng"))
+        val result = resolveTrackChoice(
+            // Remembered "eng" from a season with only ONE English track (signature never matches here).
+            seriesChoice = RememberedChoice(subtitleLanguage = "eng", subtitleVariant = "plain||5"),
+            globalChoice = null,
+            audioGroups = emptyList(), subGroups = groups,
+            audioTracks = emptyList(), subtitleTracks = subtitleTracks,
+        )
+        assertEquals(1, result.subIndex, "an unmatched remembered subtitle variant must prefer PLAIN over SDH, matching tierAudio's own rule")
+    }
+
     @Test
     fun emptyGroupsWithNonEmptyTracksFallsThroughToSourceDefault_theR195RegressionShape() {
         val audioTracks = listOf(audio(0, "en", isDefault = true), audio(1, "da"))

@@ -3469,6 +3469,21 @@ internal fun resolveTrackChoice(
     audioTracks: List<PlayerAudioTrack>,
     subtitleTracks: List<PlayerSubtitleTrack>,
 ): TrackSelectionResult {
+    // Phase 210/R241 — a remembered language must match even when this file tags it at a different
+    // ISO-639 granularity than the file the choice was learned from. Confirmed against real production
+    // data ("It's Always Rainy in Pittsburgh", 182 episodes/16 seasons of mixed release sources):
+    // some seasons tag subtitle languages as 3-letter ("dan", "eng"), others as 2-letter ("da", "en") —
+    // a plain `.equals(lang, ignoreCase = true)` never matches "da" against a remembered "dan", so the
+    // remembered tier silently misses on the very next episode and falls through to the source's own
+    // (often unrelated) default track — reported live as "it remembers on this episode, not the next."
+    // languageName() (already used for display) doubles as the canonicalizer for free.
+    fun sameLanguage(a: String?, b: String?): Boolean {
+        if (a == null || b == null) return a == b
+        val na = languageName(a)
+        val nb = languageName(b)
+        return if (na != null && nb != null) na == nb else a.equals(b, ignoreCase = true)
+    }
+
     // R235 (FR-R235-1/4) — within a language group, automatic selection (no exact remembered variant
     // match) must never land on a signs-only/commentary/audio-description version when a PLAIN one
     // exists in the same group: those exist to supplement a soundtrack the viewer already understands,
@@ -3476,7 +3491,7 @@ internal fun resolveTrackChoice(
     // outright — this only changes what an UNMATCHED memory or a fresh pick falls through to.
     fun tierAudio(choice: RememberedChoice?): Int? {
         val lang = choice?.audioLanguage ?: return null
-        val group = audioGroups.firstOrNull { it.language.equals(lang, ignoreCase = true) } ?: return null
+        val group = audioGroups.firstOrNull { sameLanguage(it.language, lang) } ?: return null
         val bySignature = choice.audioVariant?.let { sig -> group.versions.firstOrNull { it.signature() == sig } }
         return (bySignature ?: group.versions.firstOrNull { it.kind == VariantKind.PLAIN } ?: group.versions.firstOrNull())?.flatIndex
     }
@@ -3499,10 +3514,15 @@ internal fun resolveTrackChoice(
         choice.subtitlesOff -> -1
         else -> {
             val lang = choice.subtitleLanguage ?: return null
-            val group = subGroups.firstOrNull { it.language.equals(lang, ignoreCase = true) } ?: return null
+            val group = subGroups.firstOrNull { sameLanguage(it.language, lang) } ?: return null
             val native = group.versions.filter { it.flatIndex < subtitleTracks.size }
             val bySignature = choice.subtitleVariant?.let { sig -> native.firstOrNull { it.signature() == sig } }
-            (bySignature ?: native.firstOrNull { !it.forced } ?: native.firstOrNull())?.flatIndex
+            // Phase 210/R241 — same R235 invariant as tierAudio above, missing here until now: an
+            // unmatched remembered variant must prefer a PLAIN version over SDH/forced in the same
+            // language, not whichever sorts first in stream order (real library data shows some
+            // seasons carry a duplicate plain+SDH English pair the other seasons don't).
+            val nonForced = native.filter { !it.forced }
+            (bySignature ?: nonForced.firstOrNull { it.kind == VariantKind.PLAIN } ?: nonForced.firstOrNull() ?: native.firstOrNull())?.flatIndex
         }
     }
     val subIdx = tierSub(seriesChoice) ?: tierSub(globalChoice)
