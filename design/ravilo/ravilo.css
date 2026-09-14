@@ -1038,6 +1038,34 @@ body.fd-line #chrome { bottom: 122px; }
 .pchip.lead { background: rgba(123,110,240,.2); border-color: rgba(123,110,240,.5); font-weight: 600; }
 .pflag { width: 27px; height: 20px; border-radius: 4px; box-shadow: 0 0 0 1px rgba(255,255,255,.2); background-size: cover; background-position: center; flex: none; }
 
+/* ---- R242: J's own backdrop. Inserted as #stage's FIRST child (see ravilo-focus.js
+   bgLayer()) so it paints behind the app bar, every row and the open panel itself —
+   nothing else needs a background of its own, they were always relying on #stage's
+   flat --bg showing through. Fixed to the viewport, not the scroll position: .jbg sits
+   outside .screen-scroll entirely. Two speeds by design: the panel/tile use J's own
+   .22s tween above; this fades on its own slower clock so the room reads as catching
+   up to the panel, not moving with it. L never triggers this — facts only, no artwork,
+   unchanged from R240. ---- */
+.jbg { position: absolute; inset: 0; z-index: 0; overflow: hidden; pointer-events: none;
+  opacity: 0; transition: opacity .5s var(--ease); }
+.jbg.on { opacity: 1; }
+/* two stacked layers so a lateral hop (R240 FR-R240-10) crossfades directly between two
+   open titles' backdrops rather than dropping to --bg in between — same idiom as
+   .hero-slide's own crossfade. */
+.jbg-img { position: absolute; inset: 0; opacity: 0; transition: opacity .6s var(--ease); }
+.jbg-img.on { opacity: 1; }
+/* legibility, not a colour statement. hero-scrim/ddt-scrim fade left-to-right because
+   the hero's own text sits fixed at the left edge; this backdrop sits behind content
+   spanning the whole width (row titles, badges, the panel itself wherever it opens),
+   so the shape here is a plain top/bottom darkening instead — same idiom (a dark
+   gradient over the image, tuned for whatever sits on top of it), different geometry.
+   Placeholder contrast only — see the spec's open question on device verification.
+   Noir goes darker still (less colour, not less picture: this is the title's own
+   backdrop, not an accent tint, so the image itself is unchanged). */
+.jbg-scrim { position: absolute; inset: 0;
+  background: linear-gradient(180deg, rgba(0,0,0,.62) 0%, rgba(0,0,0,.36) 20%, rgba(0,0,0,.46) 62%, rgba(0,0,0,.6) 100%); }
+[data-skin="noir"] .jbg-scrim { background: linear-gradient(180deg, rgba(0,0,0,.74) 0%, rgba(0,0,0,.48) 20%, rgba(0,0,0,.56) 62%, rgba(0,0,0,.72) 100%); }
+
 
 
 /* Noir: R221 found amber tints reading as warnings, so the primary genre chip is
