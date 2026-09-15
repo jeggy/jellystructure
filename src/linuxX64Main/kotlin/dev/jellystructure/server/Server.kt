@@ -511,7 +511,7 @@ fun startServer(
                 authRoutes(sessionService, jellyfinClient, configStore, loginRateLimiter)
                 configureConfigRoutes(configStore, effectiveScanThreads, qbClient, arrClient, seerrClient, bazarrClient, tmdbClient, requestLanguageService)
                 setupRoutes(configStore, jellyfinClient)
-                jellyfinRoutes(configStore, jellyfinClient)
+                jellyfinRoutes(configStore, jellyfinClient, deviceService)
                 mediaRoutes(mediaStore, scanner, artworkDownloader, tmdbClient, appScope, scanTracker, broadcaster, jellyfinClient, configStore, mediaHistory, scanDispatcher, seedingGuard, seedingSnapshot, raviloConfigService, logoDownloader, arrRescan, sonarrEnrich, mediaJobQueue, imdbClient, fingerprintService, mediaSegmentStore, realtimeIngest, dirtyItemStore)
                 activityRoutes(activityLog)
                 triageRoutes(mediaStore, jellyfinClient, configStore, mediaHistory, seedingGuard, mediaSegmentStore)

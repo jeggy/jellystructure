@@ -74,6 +74,13 @@ data class JellyfinAuthResponse(
 @Serializable
 data class JellyfinLibraryOptions(
     @SerialName("MetadataSavers") val metadataSavers: List<String> = emptyList(),
+    // Phase 212 — the flags FR-212-4's findings read. Confirmed live against 10.11.11
+    // (GET /Library/VirtualFolders, 2026-09-15) — every key here is the real JSON field name.
+    @SerialName("EnableChapterImageExtraction") val enableChapterImageExtraction: Boolean = false,
+    @SerialName("ExtractChapterImagesDuringLibraryScan") val extractChapterImagesDuringLibraryScan: Boolean = false,
+    @SerialName("EnableTrickplayImageExtraction") val enableTrickplayImageExtraction: Boolean = false,
+    @SerialName("ExtractTrickplayImagesDuringLibraryScan") val extractTrickplayImagesDuringLibraryScan: Boolean = false,
+    @SerialName("EnableLUFSScan") val enableLufsScan: Boolean = false,
 )
 
 @Serializable
@@ -342,6 +349,29 @@ data class JellyfinPackageInfo(
     @SerialName("name") val name: String,
     @SerialName("guid") val guid: String? = null,
     @SerialName("versions") val versions: List<JellyfinPackageVersion> = emptyList(),
+)
+
+// Phase 212 — GET /System/Configuration/encoding, the source for FR-212-5's server-wide findings.
+// Field names confirmed live against 10.11.11, 2026-09-15. Deliberately narrow (not the full
+// EncodingOptions document) — only what the advisor's predicates actually read.
+@Serializable
+data class JellyfinEncodingConfig(
+    @SerialName("TranscodingTempPath") val transcodingTempPath: String? = null,
+    @SerialName("EnableThrottling") val enableThrottling: Boolean = false,
+    @SerialName("ThrottleDelaySeconds") val throttleDelaySeconds: Int = 0,
+    @SerialName("EnableSegmentDeletion") val enableSegmentDeletion: Boolean = false,
+    @SerialName("SegmentKeepSeconds") val segmentKeepSeconds: Int = 0,
+    @SerialName("EnableHardwareEncoding") val enableHardwareEncoding: Boolean = false,
+    @SerialName("AllowHevcEncoding") val allowHevcEncoding: Boolean = false,
+    @SerialName("AllowOnDemandMetadataBasedKeyframeExtractionForExtensions")
+    val allowOnDemandMetadataBasedKeyframeExtractionForExtensions: List<String> = emptyList(),
+)
+
+// Phase 212 — GET /System/Info (authenticated; distinct from the public /System/Info/Public
+// [testConnection] already uses, which does not carry HasPendingRestart).
+@Serializable
+data class JellyfinSystemInfoAuth(
+    @SerialName("HasPendingRestart") val hasPendingRestart: Boolean = false,
 )
 
 // Phase 165 amendment (2026-08-14, FR-165-8) — GET /ScheduledTasks, used to find the Webhook plugin's

@@ -162,6 +162,8 @@ X-JS-Api-Key: jsk_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx</pre>
               <div id="apikey-list"><span class="muted tiny">Loading…</span></div>
             </div>
 
+            <div id="advisor-server-wide" data-tab="libraries" style="display:none"></div>
+
             <div class="card set-section" id="sect-libraries" data-tab="libraries">
               <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
                 <h3 style="font-size:1rem;margin:0">Library mapping</h3>
@@ -871,7 +873,7 @@ private fun populateForm(response: ConfigResponse) {
     updateToggle("defer-while-playing-toggle", deferWhilePlaying)
 
     libraryMappings = config.libraries.toMutableList()
-    if (libraryMappings.isNotEmpty()) renderLibraryList()
+    if (libraryMappings.isNotEmpty()) { renderLibraryList(); settingsScope?.launch { renderJellyfinAdvisor() } }
 
     val qb = config.qbittorrent
     qbEnabled = qb?.enabled ?: false
@@ -1260,8 +1262,60 @@ private suspend fun fetchAndRenderLibraries() {
     }.toMutableList()
 
     renderLibraryList()
+    renderJellyfinAdvisor()
     refreshTomlPreview(readForm())
 }
+
+/** Phase 212 — fetches the Jellyfin settings advisor and renders its findings: a "Server-wide" card
+ *  pinned above the library list (§3 of the spec), plus each library's own findings inside its existing
+ *  card (`#lib-advisor-$i`, added by [buildLibraryCardHtml]). Must run AFTER [renderLibraryList] so
+ *  those per-library placeholder divs already exist. Silent by design (FR-212-2): a library/section
+ *  with no findings gets no card, no "all clear" message — nothing at all. */
+private suspend fun renderJellyfinAdvisor() {
+    val serverWideEl = document.getElementById("advisor-server-wide") as? HTMLElement ?: return
+    val result = ConfigApi.getJellyfinAdvisor()
+    if (result == null || !result.reachable) {
+        serverWideEl.style.display = "none"
+        return
+    }
+
+    if (result.serverWide.isEmpty()) {
+        serverWideEl.style.display = "none"
+    } else {
+        serverWideEl.style.display = "block"
+        serverWideEl.innerHTML = """
+        <div class="card set-section" style="margin-bottom:14px">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+            <h3 style="font-size:1rem;margin:0">Jellyfin settings advisor — server-wide</h3>
+            <span class="badge warn" style="font-size:.72rem">${result.serverWide.size} finding${if (result.serverWide.size == 1) "" else "s"}</span>
+          </div>
+          <p class="hint" style="margin:0 0 8px">Read-only. jellystructure never writes to Jellyfin — every row below is something to change yourself, with exact steps.</p>
+          ${result.serverWide.joinToString("") { advisorFindingHtml(it) }}
+        </div>"""
+    }
+
+    for (section in result.perLibrary) {
+        val idx = libraryMappings.indexOfFirst { it.name == section.libraryName }
+        if (idx < 0) continue
+        val el = document.getElementById("lib-advisor-$idx") as? HTMLElement ?: continue
+        el.innerHTML = """<div style="margin-top:8px;padding-top:8px;border-top:1px dashed var(--border)">""" +
+            section.findings.joinToString("") { advisorFindingHtml(it) } + "</div>"
+    }
+}
+
+private fun advisorFindingHtml(f: dev.jellystructure.api.AdvisorFinding): String = """
+    <div class="note warn" style="margin-top:8px;display:flex;gap:9px;align-items:flex-start;">
+      <span style="flex:none;">⚠</span>
+      <div class="tiny" style="line-height:1.65">
+        <b>${f.summary.esc()}</b><br>
+        <b>Now:</b> ${f.currentValue.esc()}<br>
+        <b>Costs here:</b> ${f.costHere.esc()}<br>
+        <b>Where:</b> ${f.navigationPath.esc()} → ${f.fieldLabel.esc()}<br>
+        <b>Set to:</b> ${f.recommendation.esc()}<br>
+        <b>You lose:</b> ${f.tradeoff.esc()}
+      </div>
+    </div>
+""".trimIndent()
 
 private fun buildLibraryCardHtml(i: Int, lib: LibraryMapping): String {
     val skipped = lib.skip
@@ -1304,6 +1358,7 @@ private fun buildLibraryCardHtml(i: Int, lib: LibraryMapping): String {
         <button class="btn sm ghost lib-push-btn" data-lib-idx="$i">Push all to Jellyfin</button>
         <span id="lib-action-result-$i" class="tiny muted"></span>
       </div>""" else ""}
+      <div id="lib-advisor-$i"></div>
     </div>
     """.trimIndent()
 }
@@ -1950,7 +2005,7 @@ private suspend fun importArrRoots(kind: String) {
             lib.copy(localPath = best)
         } else lib
     }.toMutableList()
-    if (libraryMappings.isNotEmpty()) renderLibraryList()
+    if (libraryMappings.isNotEmpty()) { renderLibraryList(); renderJellyfinAdvisor() }
     refreshTomlPreview(readForm())
     if (filled > 0) rootsEl.innerHTML += """ <span class="badge ok">Pre-filled $filled librar${if (filled == 1) "y" else "ies"}</span>"""
 }

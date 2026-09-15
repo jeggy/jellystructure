@@ -294,3 +294,59 @@ the trade visible on *this* hardware, not to push the operator toward one answer
 - It must render **nothing** for the transcode path and nothing for config/cache isolation.
 - **Recordings** and **Samlinger** have every per-library flag off and must produce no per-library
   findings at all — the cleanest proof that silence works.
+
+## 8. Implementation notes (2026-09-15, same day, second pass)
+
+Built as `JellyfinAdvisorService` (a Kotlin `object`, like `MkvHealthCache`) plus two new
+`JellyfinClient` calls (`getEncodingConfiguration`, `getSystemInfoAuth`) and two new `JellyfinLibrary`/
+`JellyfinLibraryOptions` fields, all re-verified live against the production server before writing any
+code (`curl` against `/System/Configuration/encoding`, `/Library/VirtualFolders`, `/System/Info`,
+`/Plugins` with the real admin token) — every field name in FR-212-3/4/5 checked out exactly as stated.
+New endpoint: `GET /api/jellyfin/advisor`. Rendered on Settings → Libraries: a "Server-wide" card pinned
+above the library list, and each library's own findings inside its existing mapping card.
+
+Four deviations from the letter of the spec, found while implementing, each a deliberate, evidence-first
+call rather than a bug:
+
+1. **FR-212-6's storage resolution reads jellystructure's OWN `[[libraries]] local_path`, not Jellyfin's
+   `jellyfin_path`.** Confirmed live: the two containers mount the same host directories at *different*
+   internal paths (Jellyfin sees `/media/movies`; jellystructure sees `/mnt/media/jellyfin/movies`).
+   `/proc/self/mountinfo` inside jellystructure's own container only ever contains jellystructure's own
+   paths, so `local_path` is the only usable input — matches the spec's own cited example paths
+   (`/mnt/media`, `/mnt/series`) exactly, but the spec's prose didn't say *which* path to start from.
+2. **FR-212-5(b)'s tmpfs precondition is dropped.** The spec's predicate is `EnableSegmentDeletion:
+   false AND TranscodingTempPath is on a tmpfs`. jellystructure cannot verify the second half from
+   inside its own container — Jellyfin's mount namespace is invisible to it, and no docker-socket or
+   shared-PID access exists to check another way. The finding now fires on `EnableSegmentDeletion ==
+   false` alone (itself fully evidence-backed — Jellyfin really does report it), with the RAM-severity
+   framing kept as unverified colour in the cost line rather than a proven fact. FR-212-8's "no finding
+   without evidence" is the reason for the drop, not a reason to skip the finding entirely: unbounded
+   segment accumulation is a real cost regardless of what backs the temp path.
+3. **FR-212-5(c) is simplified.** Fires on "≥1 device has a recorded HEVC decode ceiling"
+   (`ravilo_device.decode_max_bitrate_hevc IS NOT NULL`, via the existing `RaviloDeviceService`) rather
+   than "≥1 device transcodes a 4K HDR title *today*", which would need live correlation against
+   `playback_qoe`/177's 0.9× predicate per session — a second phase's worth of work on its own. Still
+   never fires without a real device row, so FR-212-8 holds.
+4. **A live correction to §7's own verification list, found by checking the current config, not by
+   guessing:** `Blandet` is `skip = true` with an empty `local_path` in the live `config.toml` (it is
+   NOT a jellystructure-managed library, despite having every FR-212-4(c)(d)-triggering flag on in
+   Jellyfin's own `LibraryOptions`). Storage resolution for it is therefore `unknown`, and per FR-212-6's
+   own suppression rule it must render **no** per-library findings — not the (c)(d) findings §7 said to
+   expect. This is the verification list being wrong, not the implementation: a library jellystructure
+   doesn't manage well enough to know its own local path shouldn't get a storage-conditional finding.
+5. **FR-212-3's exact label re-verification could not be completed.** The production server's bundled
+   web client changed between this spec's authoring and this implementation pass (same day) — a
+   Moonbase-plugin-supplied "Moonfin" build replaced the chunk-per-locale `en-us-json.*.chunk.js`
+   structure the original labels were extracted from, and the admin-settings strings could not be
+   located in the new bundle's main/vendor chunks within reasonable effort (likely lazy-loaded per admin
+   route). The labels already cited in FR-212-3/4/5 are used as-is, unverified against the current
+   bundle. This is exactly open question 5's scenario, arriving before the phase even shipped — a real
+   argument for treating these labels as needing a screenshot check before this goes live, not just on
+   "a Jellyfin major upgrade."
+
+Not done: open questions 1 ("re-check now" control), 2 (showing "unknown" explicitly), 3
+(`EnableRealtimeMonitor`), 4 (dashboard placement), 6 (prefetch feature) all remain open, unchanged.
+
+`compileKotlinLinuxX64` / `compileKotlinWasmJs` / `linuxX64Test` all clean. Not dev-reviewed, not
+deployed (the running jellystructure container was not restarted to pick this up), not live-verified
+end-to-end against the rendered Settings page.
