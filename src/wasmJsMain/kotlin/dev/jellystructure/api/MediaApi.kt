@@ -430,10 +430,25 @@ object MediaApi {
         response.status.value in 200..299
     }.getOrDefault(false)
 
-    suspend fun cancelScan(): Boolean = runCatching {
+    // Phase 214 (FR-214-3) — "Stopped. jellystructure won't start any more subtitle extractions.
+    // Jellyfin is still finishing N it already started" — subtitlesStillRunning is that N (0 = the
+    // caller shows nothing). Structurally at most 1 since Phase 213's per-queue occupancy rule.
+    data class StopResult(val ok: Boolean, val subtitlesStillRunning: Int = 0)
+
+    @Serializable
+    private data class StopApiBody(val subtitlesStillRunning: Int = 0)
+
+    suspend fun cancelScan(): StopResult = runCatching {
         val response = httpClient.post("/api/scan/cancel")
-        response.status.value in 200..299
-    }.getOrDefault(false)
+        if (response.status.value in 200..299) StopResult(true, response.body<StopApiBody>().subtitlesStillRunning) else StopResult(false)
+    }.getOrDefault(StopResult(false))
+
+    /** Phase 214 (FR-214-2) — stop only the currently executing pipeline step; the run continues to the
+     *  next one. */
+    suspend fun stopStep(): StopResult = runCatching {
+        val response = httpClient.post("/api/scan/stop-step")
+        if (response.status.value in 200..299) StopResult(true, response.body<StopApiBody>().subtitlesStillRunning) else StopResult(false)
+    }.getOrDefault(StopResult(false))
 
     /** Phase 178 §FR-178-4 — "Run anyway" override for a run currently deferred (waiting for a TV to
      *  stop playing before its heavy steps proceed). One-run only; nothing is written to config. */

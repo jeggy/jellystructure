@@ -116,7 +116,10 @@ suspend fun <T> runPipelineStepPool(
         val channel = Channel<T>(Channel.UNLIMITED)
         launch {
             for (item in items) {
-                if (scanTracker.cancelRequested) break
+                // Phase 214 (FR-214-2) — stepStopRequested is the per-step sibling of cancelRequested
+                // (the whole-run one): same cooperative check, narrower scope. Both stop dispatch of
+                // further items; only cancelRequested also propagates a real CancellationException below.
+                if (scanTracker.cancelRequested || scanTracker.stepStopRequested) break
                 channel.send(item)
             }
             channel.close()
@@ -159,7 +162,7 @@ suspend fun <T> runPipelineStepPool(
             launch {
                 try {
                     for (item in channel) {
-                        if (scanTracker.cancelRequested) break
+                        if (scanTracker.cancelRequested || scanTracker.stepStopRequested) break
                         val label = labelOf(item)
                         val token = scanTracker.beginItem(label)
                         try {
@@ -216,7 +219,14 @@ suspend fun <T> runPipelineStepPool(
         supervisor.join()
         watchdog.cancel()
     }
-    broadcaster.broadcast(JobEvent.StepFinished(jobId, step, "$total item${if (total != 1) "s" else ""} processed"))
+    // Phase 214 (FR-214-2) — an operator-requested per-step stop ends the step honestly ("stopped early
+    // at N of M") rather than claiming every item was processed; the pipeline's own for-loop still moves
+    // on to the NEXT step afterward (open question 3 in the phase-214 spec: continuing is more useful
+    // than ending the whole run over one slow/unwanted step).
+    val summary = if (scanTracker.stepStopRequested && processed.value < total)
+        "stopped early at ${processed.value} of $total item${if (total != 1) "s" else ""}"
+    else "$total item${if (total != 1) "s" else ""} processed"
+    broadcaster.broadcast(JobEvent.StepFinished(jobId, step, summary))
 }
 
 /** Phase 135 (FR-135-1 item 2) — the concurrency ceiling per step. Most steps are safe at the

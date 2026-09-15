@@ -130,15 +130,30 @@ that was still true.
 
 ## 4. Open questions
 
-1. **Should "Stop scan" ask for confirmation?** It is terminal and may discard a long run's remaining
-   steps. But a confirmation dialog on the button an operator reaches for during a live incident is its
-   own cost. Leaning no; not decided.
-2. **Is a real pause worth building?** `POST /scan/resume` exists and `startResume` takes `skipIds`, so
-   the machinery is most of the way there. It would make FR-214-1's rename less of a consolation.
-3. **Per-step stop and resumability.** FR-214-2 stops the executing step — does the run then continue
-   to the next step, or end? Continuing is more useful and more surprising. Undecided.
-4. **Should the in-flight count in FR-214-3 be live?** A static number at press time goes stale within
-   seconds. A live countdown is more honest and more code.
+1. ~~**Should "Stop scan" ask for confirmation?**~~ **Resolved during implementation: no.** Matches the
+   spec's own lean — a confirmation dialog on the button an operator reaches for during a live incident
+   is its own cost, and Phase 213 already shrank the blast radius of a wrong click (the subtitles queue
+   caps at one in-flight extraction, not ten).
+2. **Is a real pause worth building?** Still open — not built. `POST /scan/resume` exists and
+   `startResume` takes `skipIds`, so the machinery is most of the way there. It would make FR-214-1's
+   rename less of a consolation.
+3. ~~**Per-step stop and resumability.**~~ **Resolved during implementation: continues.** Stopping the
+   executing step lets the run proceed to the next one — implemented via `ScanTracker.stepStopRequested`,
+   a per-step sibling of the existing whole-run `cancelRequested` flag, reset at the top of every step so
+   a stop requested for a previous step can never leak into the next. `runPipelineStepPool` checks both
+   flags at its two existing break points; the two enqueue-only steps (`detect_segments`,
+   `prewarm_subtitles`) got their own identical check since they have no worker pool for that function to
+   guard.
+4. **Should the in-flight count in FR-214-3 be live?** **Resolved during implementation: static.** A
+   number computed once at the moment the stop request is handled (`mediaJobQueue.running().count { it.lane
+   == "subtitles" }`), not a live countdown. Simpler, and Phase 213 already bounds it to 0 or 1 — a live
+   countdown would be tracking a value that can only ever step from 1 to 0 once.
+
+**One correction found while implementing FR-214-1:** the spec's "Same for the Dashboard control" assumed
+`Dashboard.kt`'s button was also labelled "Pause". It wasn't — `Dashboard.kt:325`/`:395` already said
+"Cancel" (only `Activity.kt:132`'s `#act-cancel-btn` said "Pause"). Both are now renamed to "Stop scan"
+and un-ghosted regardless, for consistency between the two entry points to the same action — but the
+Dashboard button was never the mislabelled one the incident report was about.
 
 ## 5. Verification
 

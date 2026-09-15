@@ -315,6 +315,9 @@ suspend fun runPipeline(
         // A per-webhook 5-minute wait, or a notify firing on every single realtime ingest, would be
         // actively wrong — not just unimplemented — so these are explicitly excluded for SingleItem.
         if (target is RunTarget.SingleItem && (step.step == "wait" || step.step == "notify")) continue
+        // Phase 214 (FR-214-2) — a per-step stop requested for a PREVIOUS step must never leak into this
+        // one: reset right before each step starts, not once at the run's own start.
+        scanTracker.resetStepStop()
         withContext(RunContext(jobId, step.step)) {
         Logger.info("Pipeline step: ${step.step}")
         when (step.step) {
@@ -351,6 +354,8 @@ suspend fun runPipeline(
                 var enqueued = 0
                 var deduped = 0
                 for (item in workingSet) {
+                    // Phase 214 (FR-214-2) — see the identical check in detect_segments above.
+                    if (scanTracker.stepStopRequested) break
                     if (item.kind == dev.jellystructure.model.MediaKind.MUSIC_VIDEO) continue
                     val jellyfinReady = cfg.apiKeys.jellyfinUrl.isNotBlank() && cfg.apiKeys.jellyfinToken.isNotBlank()
                     if (!jellyfinReady) continue
@@ -361,7 +366,8 @@ suspend fun runPipeline(
                     if (result.deduped) deduped++ else enqueued++
                 }
                 val summary = "enqueued $enqueued subtitle pre-warm job${if (enqueued == 1) "" else "s"}" +
-                    if (deduped > 0) " ($deduped already queued)" else ""
+                    (if (deduped > 0) " ($deduped already queued)" else "") +
+                    (if (scanTracker.stepStopRequested) " — stopped early" else "")
                 Logger.info("prewarm_subtitles: $summary", "pipeline")
                 broadcaster.broadcast(JobEvent.StepFinished(jobId, step.step, summary))
             }
@@ -460,6 +466,11 @@ suspend fun runPipeline(
                 var enqueued = 0
                 var deduped = 0
                 for (item in toProcess) {
+                    // Phase 214 (FR-214-2) — an enqueue-only step has no worker pool for
+                    // runPipelineStepPool's own check to guard, so it needs its own: stop ADDING more
+                    // enqueue work once a per-step stop is requested. Rows already enqueued stand — the
+                    // subtitles/segments queue's own per-job cancel (Jobs & workers) is how those stop.
+                    if (scanTracker.stepStopRequested) break
                     when (item.kind) {
                         dev.jellystructure.model.MediaKind.MOVIE -> {
                             // Phase 178 §FR-178-2 — deferWhilePlaying mirrors this run's own deferEligible:
@@ -488,7 +499,8 @@ suspend fun runPipeline(
                     }
                 }
                 val summary = "enqueued $enqueued detection job${if (enqueued == 1) "" else "s"}" +
-                    if (deduped > 0) " ($deduped already queued)" else ""
+                    (if (deduped > 0) " ($deduped already queued)" else "") +
+                    (if (scanTracker.stepStopRequested) " — stopped early" else "")
                 Logger.info("detect_segments: $summary", "pipeline")
                 broadcaster.broadcast(JobEvent.StepFinished(jobId, step.step, summary))
             }

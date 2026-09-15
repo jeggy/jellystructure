@@ -129,9 +129,14 @@ fun renderActivity(container: Element, scope: CoroutineScope, query: Map<String,
           <span id="run-badge" style="display:none" class="badge"></span>
           <span class="spacer"></span>
           <span id="ws-status" class="badge">Connecting…</span>
-          <button id="act-cancel-btn" class="btn sm ghost" style="display:none">Pause</button>
+          <button id="act-cancel-btn" class="btn sm bad" style="display:none">Stop scan</button>
         </div>
         <p class="page-sub">Full activity log: scan events, NFO writes, artwork downloads, and track operations. Streams live over WebSocket; history is loaded from disk on page open.</p>
+
+        <div id="stop-confirm-note" class="note warn" style="display:none;margin-bottom:14px;align-items:flex-start;gap:11px;">
+          <span style="flex:none;">⚠</span>
+          <div class="tiny" style="line-height:1.6;" id="stop-confirm-text"></div>
+        </div>
 
         <div id="gate-saturation-banner" class="note warn" style="display:none;margin-bottom:14px;align-items:flex-start;gap:11px;">
           <span style="flex:none;">⚠</span>
@@ -185,7 +190,11 @@ fun renderActivity(container: Element, scope: CoroutineScope, query: Map<String,
 
         <div id="view-console">
         <div id="overall-card" class="card" style="display:none;margin-bottom:14px">
-          <div id="step-chips" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px"></div>
+          <div class="row center" style="gap:8px;flex-wrap:wrap;margin-bottom:12px">
+            <div id="step-chips" style="display:flex;gap:8px;flex-wrap:wrap;"></div>
+            <span class="spacer"></span>
+            <button id="step-stop-btn" class="btn sm ghost" style="display:none">Stop this step</button>
+          </div>
           <div id="defer-banner" class="row center" style="display:none;margin-bottom:12px;gap:8px">
             <span class="badge warn" id="defer-banner-text"></span>
             <button id="defer-run-anyway-btn" class="btn sm ghost">Run anyway</button>
@@ -251,7 +260,12 @@ fun renderActivity(container: Element, scope: CoroutineScope, query: Map<String,
     """.trimIndent()
 
     container.querySelector("#act-cancel-btn")?.addEventListener("click") {
-        scope.launch { MediaApi.cancelScan() }
+        scope.launch { showStopConfirmation(container, MediaApi.cancelScan()) }
+    }
+
+    // Phase 214 (FR-214-2) — stop only the currently executing step; the run continues to the next one.
+    container.querySelector("#step-stop-btn")?.addEventListener("click") {
+        scope.launch { showStopConfirmation(container, MediaApi.stopStep()) }
     }
 
     // Phase 178 §FR-178-4 — "Run anyway" for a run parked in awaitPlaybackClear; see applyScanStatus's
@@ -331,29 +345,37 @@ fun renderActivity(container: Element, scope: CoroutineScope, query: Map<String,
     scope.launch { pollHealthCard(container) }  // Phase 182/183: saturation banner + pacing card
     // If a scan is already running when this page opens, show the running-job UI immediately — otherwise
     // we miss the WS "started" event and wrongly show "No job is currently running" for the whole run.
-    scope.launch {
-        val st = MediaApi.scanStatus()
-        if (st?.running == true) {
-            scanRunning = true
-            jobItemCount = st.processedCount
-            jobDoneCount = st.processedCount
-            // Without this, jobStartMs stays at its 0.0 default on a page (re)load mid-scan, so the
-            // "~T remaining" estimate's elapsed-time math computes nowMs() - 0 -- decades, not minutes.
-            // startedAt is the real job start (epoch seconds); nowMs() is only a fallback for an old
-            // backend/response shape that never sent it.
-            jobStartMs = st.startedAt?.let { it.toDouble() * 1000 } ?: nowMs()
-            showJobUI(container)
-            (container.querySelector("#act-cancel-btn") as? HTMLElement)?.style?.display = ""
-            (container.querySelector("#act-crumb") as? HTMLElement)?.let { it.textContent = "Scanning"; it.style.display = "" }
-            applyScanStatus(container, st)   // Phase 135: seed step chips + trigger/scope/type badge
-            updateActivityChips(container)
-            updateOvLabel(container)
-            pollWorkers(container)
-        } else {
-            hideJobUI(container)
-        }
-    }
+    scope.launch { reconcileRunningState(container) }
     wireLogResize(container)
+}
+
+/** Phase 135's original doc, widened by Phase 214 (FR-214-5): the stop control's visibility must be
+ *  derivable from a fresh poll, not only from a live WS event — a client that (re)connects after a
+ *  `started`/`cancelled` event already fired has no other way to discover state that's still true. Was
+ *  only called once, on initial page load; now also called from [connectWebSocket]'s `onopen`, so a
+ *  reconnect after a network blip re-derives the same state instead of trusting whatever was on screen
+ *  before the drop (the same class of bug as the 2026-09-05 `awaitPlaybackClear` fix). */
+private suspend fun reconcileRunningState(container: Element) {
+    val st = MediaApi.scanStatus()
+    if (st?.running == true) {
+        scanRunning = true
+        jobItemCount = st.processedCount
+        jobDoneCount = st.processedCount
+        // Without this, jobStartMs stays at its 0.0 default on a page (re)load mid-scan, so the
+        // "~T remaining" estimate's elapsed-time math computes nowMs() - 0 -- decades, not minutes.
+        // startedAt is the real job start (epoch seconds); nowMs() is only a fallback for an old
+        // backend/response shape that never sent it.
+        jobStartMs = st.startedAt?.let { it.toDouble() * 1000 } ?: nowMs()
+        showJobUI(container)
+        (container.querySelector("#act-cancel-btn") as? HTMLElement)?.style?.display = ""
+        (container.querySelector("#act-crumb") as? HTMLElement)?.let { it.textContent = "Scanning"; it.style.display = "" }
+        applyScanStatus(container, st)   // Phase 135: seed step chips + trigger/scope/type badge
+        updateActivityChips(container)
+        updateOvLabel(container)
+        pollWorkers(container)
+    } else {
+        hideJobUI(container)
+    }
 }
 
 /** Phase 135 — apply the step plan/active step/run descriptors from a [MediaApi.ScanStatus] poll. Used
@@ -754,6 +776,11 @@ private fun connectWebSocket(container: Element) {
             it.textContent = "● live"
             it.className = "badge ok"
         }
+        // Phase 214 (FR-214-5) — re-derive running/stop-control state on every (re)connect, not just the
+        // page's initial load. Harmlessly redundant on the very first connect (reconcileRunningState was
+        // already called once from renderActivity); the case this actually fixes is a reconnect after a
+        // network blip, which previously trusted whatever was on screen before the drop.
+        activityScope?.launch { reconcileRunningState(container) }
     }
 
     ws.onclose = { _: Event ->
@@ -1009,9 +1036,13 @@ private fun stepLabel(step: String): String = when (step) {
 }
 
 /** Phase 135 (FR-135-3 item 6) — one chip per step in [stepPlan]: highlights the active phase,
- *  checks off finished ones with their result summary as a tooltip, per FR-135-3 item 6. */
+ *  checks off finished ones with their result summary as a tooltip, per FR-135-3 item 6.
+ *  Phase 214 (FR-214-2) — also shows/hides "Stop this step" alongside the chips: visible exactly when
+ *  a step is active and hasn't already finished. */
 private fun renderStepChips(container: Element) {
     val el = container.querySelector("#step-chips") as? HTMLElement ?: return
+    val hasActiveStep = activeStepName != null && stepSummaries[activeStepName] == null
+    (container.querySelector("#step-stop-btn") as? HTMLElement)?.style?.display = if (hasActiveStep) "" else "none"
     if (stepPlan.isEmpty()) { el.innerHTML = ""; return }
     el.innerHTML = stepPlan.joinToString("") { step ->
         val summary = stepSummaries[step]
@@ -1023,6 +1054,23 @@ private fun renderStepChips(container: Element) {
         val titleAttr = summary?.let { """ title="${it.escapeHtml()}"""" } ?: ""
         """<span class="$cls"$styleAttr$titleAttr>$icon${stepLabel(step).escapeHtml()}</span>"""
     }
+}
+
+/** Phase 214 (FR-214-3) — "say what stopping cannot reach": shown at the moment Stop scan / Stop this
+ *  step is pressed, in the operator's own terms, not a tooltip or doc note. Absent entirely when
+ *  [MediaApi.StopResult.subtitlesStillRunning] is zero — most stops touch nothing Jellyfin is still
+ *  doing, and this must not become a permanent fixture on every stop. */
+private fun showStopConfirmation(container: Element, result: dev.jellystructure.api.MediaApi.StopResult) {
+    val note = container.querySelector("#stop-confirm-note") as? HTMLElement ?: return
+    val text = container.querySelector("#stop-confirm-text") as? HTMLElement
+    if (!result.ok || result.subtitlesStillRunning <= 0) {
+        note.style.display = "none"
+        return
+    }
+    val n = result.subtitlesStillRunning
+    text?.innerHTML = "Stopped. jellystructure won't start any more subtitle extractions. " +
+        "Jellyfin is still finishing <b>$n</b> it already started — ${if (n == 1) "it" else "those"} can take a few minutes and there's no way to stop ${if (n == 1) "it" else "them"}."
+    note.style.display = "flex"
 }
 
 /** Phase 135 (FR-135-3 item 7) — lazily add a step to the `#step-filter` dropdown the first time a log
