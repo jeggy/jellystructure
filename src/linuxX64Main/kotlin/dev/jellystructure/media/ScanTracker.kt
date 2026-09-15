@@ -136,6 +136,17 @@ class ScanTracker(private val db: JellystructureDb, private val persistToDb: Boo
     var cancelRequested: Boolean = false
         private set
 
+    // Phase 214 (FR-214-2) — a cooperative, PER-STEP stop: sits beside [cancelRequested] (the whole-run
+    // one) rather than replacing it. [runPipelineStepPool] checks both at the same two points, so the
+    // mechanics are identical to the whole-run cancel; the only difference is scope. [resetStepStop] is
+    // called once per step, right before it starts, so a stop requested for a PREVIOUS step can never
+    // leak into the next one — an operator who stops fetch_artwork must still see write_nfo run normally.
+    var stepStopRequested: Boolean = false
+        private set
+
+    fun stopCurrentStep() { stepStopRequested = true }
+    fun resetStepStop() { stepStopRequested = false }
+
     // Phase 182 (FR-182-5) — the Job backing the currently running scan/pipeline coroutine tree, set by
     // whoever launches it (launchScanRun). Lets cancelRun() actually cancel instead of only flipping the
     // cooperative [cancelRequested] boolean, which runPipelineStepPool's worker loop only ever checked
@@ -172,6 +183,7 @@ class ScanTracker(private val db: JellystructureDb, private val persistToDb: Boo
         val jobId = "scan-${epochSeconds()}"
         if (persistToDb) db.scanStateQueries.clearOldProcessed(jobId)
         cancelRequested = false
+        stepStopRequested = false
         activeWorkers.value = 0
         _activeStep = null
         _stepPlan = emptyList()
@@ -191,6 +203,7 @@ class ScanTracker(private val db: JellystructureDb, private val persistToDb: Boo
 
     fun startResume(): String {
         cancelRequested = false
+        stepStopRequested = false
         activeWorkers.value = 0
         _activeStep = null
         _stepPlan = emptyList()

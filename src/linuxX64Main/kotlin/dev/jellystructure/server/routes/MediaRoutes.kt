@@ -2098,7 +2098,21 @@ fun Route.mediaRoutes(
         // Phase 182 (FR-182-5) — cancelRun actually cancels the run's Job (not just the cooperative
         // flag) and force-frees its slots if it doesn't wind down within a bounded grace period.
         scanTracker.cancelRun(appScope)
-        call.respond(mapOf("status" to "cancel requested"))
+        // Phase 214 (FR-214-3) — say what stopping cannot reach: how many subtitle extractions Jellyfin
+        // is still finishing at the moment this was pressed (structurally at most 1 since Phase 213's
+        // per-queue occupancy rule, but computed rather than assumed). 0 means the frontend shows nothing.
+        call.respond(mapOf("status" to "cancel requested", "subtitlesStillRunning" to mediaJobQueue.running().count { it.lane == "subtitles" }))
+    }
+
+    // Phase 214 (FR-214-2) — stop only the CURRENTLY EXECUTING step; the run continues to the next one
+    // afterward. See ScanTracker.stopCurrentStep's doc and PipelineStepPool's two check sites.
+    post("/scan/stop-step") {
+        if (!scanTracker.running) {
+            call.respond(HttpStatusCode.Conflict, mapOf("error" to "no scan running"))
+            return@post
+        }
+        scanTracker.stopCurrentStep()
+        call.respond(mapOf("status" to "step stop requested", "subtitlesStillRunning" to mediaJobQueue.running().count { it.lane == "subtitles" }))
     }
 
     get("/scan/status") {

@@ -322,7 +322,7 @@ private fun connectDashScanSocket(scope: CoroutineScope, baseCount: Int = 0) {
                     val banner = document.getElementById("dash-scan-banner") as? HTMLElement
                     val countNote = if (dashScanTotal > 0) "Scanning — $scannedCount of $dashScanTotal items…"
                         else "Scanning — $scannedCount item${if (scannedCount != 1) "s" else ""} found so far…"
-                    banner?.innerHTML = """<span class="badge">$countNote</span> <button id="cancel-scan-btn" class="btn sm ghost" style="margin-left:8px">Cancel</button>"""
+                    banner?.innerHTML = """<span class="badge">$countNote</span> <button id="cancel-scan-btn" class="btn sm bad" style="margin-left:8px">Stop scan</button>"""
                     wireCancelBtn(scope)
                 }
                 is JobEvent.Finished -> {
@@ -356,7 +356,16 @@ private fun connectDashScanSocket(scope: CoroutineScope, baseCount: Int = 0) {
 
 private fun wireCancelBtn(scope: CoroutineScope) {
     document.getElementById("cancel-scan-btn")?.addEventListener("click") {
-        scope.launch { MediaApi.cancelScan() }
+        scope.launch {
+            val result = MediaApi.cancelScan()
+            // Phase 214 (FR-214-3) — say what stopping cannot reach, in the same short form the
+            // dashboard's other scan-status badges already use; the full sentence lives on Activity.
+            if (result.ok && result.subtitlesStillRunning > 0) {
+                val banner = document.getElementById("dash-scan-banner") as? HTMLElement
+                val n = result.subtitlesStillRunning
+                banner?.innerHTML = """<span class="badge warn">Stopped — Jellyfin still finishing $n subtitle extraction${if (n == 1) "" else "s"} it already started</span>"""
+            }
+        }
     }
 }
 
@@ -392,7 +401,7 @@ private fun setDashScanRunning(processedCount: Int) {
     setDashScanSplitDisabled(true)
     val banner = document.getElementById("dash-scan-banner") as? HTMLElement ?: return
     val countNote = if (processedCount > 0) "Scanning — $processedCount item${if (processedCount != 1) "s" else ""} processed so far…" else "Scanning — items appear in Library as they are processed."
-    banner.innerHTML = """<span class="badge">$countNote</span> <button id="cancel-scan-btn" class="btn sm ghost" style="margin-left:8px">Cancel</button>"""
+    banner.innerHTML = """<span class="badge">$countNote</span> <button id="cancel-scan-btn" class="btn sm bad" style="margin-left:8px">Stop scan</button>"""
 }
 
 /** Phase 178 §FR-178-2/FR-178-4 — shared by the live WS `JobEvent.Deferred` handler and the page-load
