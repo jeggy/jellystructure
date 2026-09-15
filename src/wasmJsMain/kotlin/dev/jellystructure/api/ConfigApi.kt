@@ -191,6 +191,33 @@ data class JellyfinLibrary(
     @SerialName("Locations") val locations: List<String> = emptyList(),
 )
 
+// Phase 212 — mirrors dev.jellystructure.advisor.{AdvisorFinding,LibraryAdvisorSection,AdvisorResponse}.
+@Serializable
+data class AdvisorFinding(
+    val id: String,
+    val summary: String,
+    @SerialName("current_value") val currentValue: String,
+    @SerialName("cost_here") val costHere: String,
+    @SerialName("navigation_path") val navigationPath: String,
+    @SerialName("field_label") val fieldLabel: String,
+    val recommendation: String,
+    val tradeoff: String,
+)
+
+@Serializable
+data class LibraryAdvisorSection(
+    @SerialName("library_name") val libraryName: String,
+    val findings: List<AdvisorFinding> = emptyList(),
+)
+
+@Serializable
+data class AdvisorResponse(
+    val reachable: Boolean,
+    @SerialName("computed_at") val computedAt: Long = 0,
+    @SerialName("server_wide") val serverWide: List<AdvisorFinding> = emptyList(),
+    @SerialName("per_library") val perLibrary: List<LibraryAdvisorSection> = emptyList(),
+)
+
 @Serializable
 data class ConnectionTestResult(val jellyfin: Boolean, val tmdb: Boolean)
 
@@ -262,6 +289,11 @@ object ConfigApi {
 
     suspend fun getJellyfinLibraries(): List<JellyfinLibrary>? = runCatching {
         httpClient.get("/api/jellyfin/libraries").body<List<JellyfinLibrary>>()
+    }.getOrNull()
+
+    // Phase 212 — Settings → Libraries' Jellyfin settings advisor.
+    suspend fun getJellyfinAdvisor(): AdvisorResponse? = runCatching {
+        httpClient.get("/api/jellyfin/advisor").body<AdvisorResponse>()
     }.getOrNull()
 
     suspend fun pathCheck(): List<LibraryPathDiag>? = runCatching {

@@ -1,7 +1,9 @@
 package dev.jellystructure.server.routes
 
+import dev.jellystructure.advisor.JellyfinAdvisorService
 import dev.jellystructure.auth.JellyfinClient
 import dev.jellystructure.config.ConfigStore
+import dev.jellystructure.tv.RaviloDeviceService
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
@@ -16,7 +18,7 @@ data class JellyfinUserDto(
     @SerialName("display_name") val displayName: String,
 )
 
-fun Route.jellyfinRoutes(configStore: ConfigStore, jellyfinClient: JellyfinClient) {
+fun Route.jellyfinRoutes(configStore: ConfigStore, jellyfinClient: JellyfinClient, raviloDeviceService: RaviloDeviceService) {
     route("/jellyfin") {
         get("/libraries") {
             val config = configStore.current
@@ -37,6 +39,11 @@ fun Route.jellyfinRoutes(configStore: ConfigStore, jellyfinClient: JellyfinClien
             val users = jellyfinClient.getUsers(config.apiKeys.jellyfinUrl, config.apiKeys.jellyfinToken)
                 .map { JellyfinUserDto(id = it.id, displayName = it.name) }
             call.respond(users)
+        }
+
+        // Phase 212 — Settings → Libraries' Jellyfin settings advisor.
+        get("/advisor") {
+            call.respond(JellyfinAdvisorService.findings(jellyfinClient, configStore.current, raviloDeviceService))
         }
     }
 }

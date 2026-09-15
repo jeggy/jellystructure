@@ -442,10 +442,26 @@ class JellyfinClient {
 
     /** Every INSTALLED plugin (`GET /Plugins`), used to check whether the Webhook plugin is present and
      *  which version, and to find its live `Id` (needed for the Configuration calls below — never
-     *  assume it equals the catalog GUID; Jellyfin mints its own plugin instance id). */
+     *  assume it equals the catalog GUID; Jellyfin mints its own plugin instance id). Phase 212
+     *  (FR-212-7) also reads each entry's `status` for a pending-restart finding. */
     suspend fun getPlugins(baseUrl: String, token: String): List<JellyfinPluginInfo>? = runCatching {
         httpGet(baseUrl.trimEnd('/') + "/Plugins") { jellyfinAuth(token) }.bodyOrNull<List<JellyfinPluginInfo>>("getPlugins")
     }.getOrElse { Logger.warn("Jellyfin getPlugins failed: ${it.message}"); null }
+
+    // ── Phase 212 — Jellyfin settings advisor ───────────────────────────────────
+
+    /** `GET /System/Configuration/encoding` — the source for FR-212-5's server-wide findings. */
+    suspend fun getEncodingConfiguration(baseUrl: String, token: String): JellyfinEncodingConfig? = runCatching {
+        httpGet(baseUrl.trimEnd('/') + "/System/Configuration/encoding") { jellyfinAuth(token) }
+            .bodyOrNull<JellyfinEncodingConfig>("getEncodingConfiguration")
+    }.getOrElse { Logger.warn("Jellyfin getEncodingConfiguration failed: ${it.message}"); null }
+
+    /** `GET /System/Info` (authenticated — distinct from [testConnection]'s public probe, which doesn't
+     *  carry `HasPendingRestart`). Source for FR-212-7. */
+    suspend fun getSystemInfoAuth(baseUrl: String, token: String): JellyfinSystemInfoAuth? = runCatching {
+        httpGet(baseUrl.trimEnd('/') + "/System/Info") { jellyfinAuth(token) }
+            .bodyOrNull<JellyfinSystemInfoAuth>("getSystemInfoAuth")
+    }.getOrElse { Logger.warn("Jellyfin getSystemInfoAuth failed: ${it.message}"); null }
 
     /** The default repository's plugin catalog (`GET /Packages`) — used to find the Webhook plugin's
      *  latest installable version when it isn't installed yet. */
