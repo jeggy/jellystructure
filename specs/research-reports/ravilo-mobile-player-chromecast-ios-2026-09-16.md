@@ -170,20 +170,50 @@ capabilities (CAF's `canDisplayType` answers HEVC / VP9 / HDR per device generat
 receives a `StreamTicket`, and plays `hlsUrl` through CAF's built-in player with the ticket's VTT
 sideloads as text tracks. Progress, stop, QoE and restream-for-burn-in are the same routes the TV uses.
 
-**Hosting, corrected for an open-source project (owner answer 1, 2026-09-16):** a Cast app ID is bound
-to **one receiver URL at registration time**, so the receiver page cannot live on each self-hoster's
-jellystructure. It is served from one project-owned public HTTPS URL (GitHub Pages or a small static
-host — the same shape as Jellyfin, whose stable/unstable IDs point at Jellyfin-hosted builds), and the
-viewer's **server URL, hand-off code and item id travel in the LOAD `customData`**.
+**Hosting — decided (owner, 2026-09-16, second and third follow-ups): two receivers, same code, the
+shared one is the default.** The owner first asked for jellystructure to host everything and no GitHub
+Pages, then allowed GitHub Pages *"if it's too hard to host it on the jellystructure end"*. Hosting on
+jellystructure is **not hard**: the backend already serves the admin frontend's static files
+(`Server.kt` `serveFrontendFile`), and the receiver is one more static bundle at
+`https://<jellystructure>/cast/` (CAF's framework script comes from Google's CDN as the SDK requires;
+the Ravilo receiver code is `shared` compiled to JS plus thin CAF glue). What *is* hard is what
+per-installation hosting forces on **every admin**: a Cast app ID is bound to **one receiver URL at
+registration**, so a self-hosted receiver means every installation registers its own Cast application
+with Google (US$5 once, a console visit, publish or test-device steps) before the first cast works.
+A project-hosted receiver lets the project register **one published app ID that works on every
+Chromecast with zero setup**, because the page is static and takes the viewer's server URL at LOAD.
 
-**Requirement (owner, 2026-09-16 follow-up): Chromecast is set up optionally inside jellystructure
-Settings.** A *Chromecast* card: an enable switch (off by default; off means the server tells the phone
-there is nothing to cast to and no Cast button is shown — server-pushed state, never a client guess),
-the project's default receiver app ID pre-filled, an *own app ID* field for a self-hoster who registers
-and hosts their own receiver (the escape hatch Jellyfin offers via `system.xml`), and the concurrent
-cast-session ceiling from answer 3. Because the owner's Jellyfin is always public `https://` (answer 2),
-reachability from the dongle is settled for this house; for other households the receiver must show a
-plain "can't reach your server" state rather than spin.
+So: the project publishes the receiver bundle to **GitHub Pages from CI** and registers **one Ravilo
+app ID** against it — that is the default, and for most households the only step is the enable switch.
+The **same bundle is also served by every jellystructure at `/cast/`**, and the Settings card offers
+*"host the receiver on this server"* for admins who want no project dependency; choosing it requires
+their own Google registration, which the card walks through. The owner's own household can run either.
+Either way the only paid or external step is Google's **one-time US$5 developer registration** (nothing
+recurring, nothing Apple — AirPlay is dropped), and it is configurable inside jellystructure, never in
+code or on a dongle.
+
+**Requirement: Settings → Chromecast card.** Off by default (off means the server tells the phone there
+is nothing to cast to and no Cast button is shown — server-pushed state, never a client guess).
+Receiver choice: *Ravilo's shared receiver* (recommended, pre-filled app ID, nothing to do) or *Hosted
+by this server*, which reveals: (1) this server's receiver URL, read-only and copyable, with a
+self-check that it is reachable over public `https://` (the backend fetches its own `/cast/` through
+the configured public URL); (2) "Register an application at the Google Cast Developer Console (US$5
+once), choose *Custom Receiver*, paste that URL"; (3) "Add your Chromecast as a test device, or publish
+the application so every Chromecast can use it"; (4) paste the **Application ID** here. Plus the
+concurrent cast-session ceiling from answer 3 and a status line (receiver reachable · app ID in use ·
+last cast · devices that have cast, linking to Users & devices). jellystructure cannot verify an app
+ID with Google (there is no API for it); the honest check is a first cast from the admin's own phone,
+which the card should say.
+
+**Sender consequence:** the receiver app ID is per installation, so the phone learns it from the server
+config, not from a manifest constant. On Android `CastContext.setReceiverApplicationId(String)` changes
+it at runtime ([CastContext reference](https://developers.google.com/android/reference/com/google/android/gms/cast/framework/CastContext)),
+so the sender initialises Cast with a placeholder and applies the real ID once the config snapshot
+loads; on iOS `GCKCastContext` options are set once per launch, so the ID is read before Cast is
+initialised and a changed ID takes effect on the next app start (*verify on the iOS SDK when that phase
+comes*). Because the owner's Jellyfin is always public `https://` (answer 2), media reachability from the
+dongle is settled for this house; for other households the receiver must show a plain "can't reach your
+server" state rather than spin.
 
 - Every jellystructure invariant keeps working; the Chromecast shows up in **Users & devices** like any
   other device; R222's slow-to-start note, R237's failure copy, R182's 503 + `Retry-After` all apply.
@@ -340,7 +370,7 @@ Ordered so that each phase is independently shippable and the earliest ones are 
 | **R244** | **Phone player chrome.** Handset layout via `LocalHandset`, safe-area insets, double-tap seek, rotate button + portrait player, lock, playback speed (new seam member, Wasm actual too), subtitle size, phone-scale next-up / skip-intro / picker sheet. TV chrome untouched. | **yes** (§5.1) | — |
 | **R245** | **Phone playback lifecycle — narrowed by owner answer 5.** Local playback keeps today's contract (pause on background, session ends on `ON_STOP`, no background audio). What remains: a *local-only* `MediaSession` for headset/Bluetooth keys and, while **casting**, the Cast SDK's own notification + lock-screen controls (`CastOptions.NotificationOptions`, no `MediaSessionService` needed). PiP deferred. | no | R244 |
 | **R246** | **Play on a Ravilo TV.** Phase 111 routes under device-token auth, "Play on …" on the detail screen, remote transport while it plays. | light | — |
-| **217 + R247** | **Chromecast.** Admin half (217): **Settings → Chromecast card** (enable, default/own app ID, session ceiling), receiver enrolment via hand-off code, Jellyfin session named *"Chromecast via Ravilo"*, dashboard control via Phase 110. Ravilo half (R247): web receiver (architecture B, `shared` as JS, CAF player, one project-hosted HTTPS URL, Cast app registration + publish) that keeps playing with the phone dead, Android sender (`media3-cast`, `MediaRouteButton` on every app bar, Output Switcher, connecting state, **re-connect on app start**, mini bar, full-screen remote — see the design brief). Acceptance device: the parents' old stick. | **yes** (design brief §B/§C/§F) | R245 for the notification path |
+| **217 + R247** | **Chromecast.** Admin half (217): the receiver bundle is **published to GitHub Pages from CI under the project's app ID (default) and also served by the backend at `/cast/`**, **Settings → Chromecast card** (enable, shared vs self-hosted receiver, guided Google registration for the latter, public-https self-check, session ceiling, status), receiver enrolment via hand-off code, Jellyfin session named *"Chromecast via Ravilo"*, dashboard control via Phase 110, app ID pushed to clients in the config snapshot. Ravilo half (R247): web receiver (architecture B, `shared` as JS, CAF player) that keeps playing with the phone dead, Android sender (`media3-cast`, runtime app ID, `MediaRouteButton` on every app bar, Output Switcher, connecting state, **re-connect on app start**, mini bar, full-screen remote — see the design brief). Acceptance device: the parents' old stick. | **yes** (design brief §B/§C/§F) | R245 for the notification path |
 | **R248** | **Cast Connect** on the Android TV activity. | no | R247 |
 | **R249** | **Phone-wide mobile pass** — Home, Browse, Detail, Live TV guide + player, Discover on a handset. | **yes** (§5.2) | — |
 | **R250** | **iOS bring-up** (targets, 21 non-player actuals, Xcode app, MacBook as build host per the companion guide, TestFlight). | no | — |
@@ -366,10 +396,12 @@ R250–R252 are the iOS ask and are gated on a Mac, an Apple account, and the AV
 | 7 | Mac + Apple account? | Yes; development stays on Debian with the MacBook reached over SSH; guidelines wanted. | Companion guide: `ios-build-host-macbook-setup-2026-09-16.md`. |
 | 8 | Apple TV / AirPlay? | The Sony stue TV has AirPlay (testing only). Chromecast must work, specifically **parents' iPhones → an old Chromecast stick on an LG TV**. **Follow-up:** *"if AirPlay is not free, then let's just fully stop it here and not consider implementing it at all."* | AirPlay dropped outright (§4.2/§4.3). That stick + iPhone pair is the acceptance test for R247 + R252. |
 | — | Follow-up (same day) | *"I'm fine with making it a requirement that we can optionally set up Chromecast within the jellystructure settings."* | Settings → Chromecast card is a requirement of phase 217 (§3-B, design brief §F). |
+| — | Second follow-up (same day) | *"No GitHub Pages. I want our jellystructure backend to host anything needed. And if we need to pay (Google only — I don't want to pay for AirPlay) or configure anything to get proper cast support, then this should be configurable within jellystructure (API keys and whatnot)."* | First recorded as "backend hosts the receiver, every installation registers its own app"; superseded by the next row. |
+| — | Third follow-up (same day) | *"If it's too hard to host it on the jellystructure end, then GitHub Pages is fine."* | Hosting on the backend is easy; the per-admin Google registration it forces is the hard part. Decided: **both** — the project publishes the receiver to GitHub Pages under one shared app ID (default, zero setup) and every backend also serves it at `/cast/` with a guided own-registration path in Settings. Sender takes whichever app ID the server config carries (§3-B). |
 
 **Still open after the answers:** the generation of the parents' stick (decides whether 1st-gen CAF
-support has to be proven), the concurrent-encode number to pre-fill in the Settings card, and whether
-the project-hosted default receiver lives on GitHub Pages or a domain the project owns.
+support has to be proven) and the concurrent-encode number to pre-fill in the Settings card. Nothing
+else blocks the design round.
 
 **Design hand-over:** the screens this report says do not exist are specified for the design tool in
 `specs/ravilo/design-brief-mobile-player-and-cast-2026-09-16.md`.

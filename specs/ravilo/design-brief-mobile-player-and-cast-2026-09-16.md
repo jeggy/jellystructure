@@ -157,17 +157,30 @@ skeleton shimmer as on TV, all three skins, all three languages.
 
 ## F. Admin: Settings → Chromecast card (jellystructure, `app/settings.html`)
 
-Chromecast is **optional and set up by the admin** (owner requirement). One card in the existing
+Chromecast is **optional and set up by the admin** (owner requirement). The project publishes a shared
+receiver that works with no setup; an admin may instead host the receiver on their own jellystructure,
+which requires registering their own Cast application with Google — the card's job is to make that
+choice obvious and the self-hosted path feel like part of the product. One card in the existing
 Settings tab structure (likely under *Ravilo*, next to Live TV's placement, or *Connections*):
 1. **Enable Chromecast** switch, off by default. Off ⇒ no Cast button anywhere in Ravilo.
-2. **Receiver** — *Ravilo's default receiver* (pre-filled app ID, read-only, with the hosted URL shown
-   as a hint) vs *Your own receiver* (an app ID field + a short "how to register" link line).
-3. **Concurrent cast sessions** stepper (the transcoding ceiling), with a one-line explanation in plain
+2. **Receiver** — a two-option choice: *Ravilo's shared receiver* (recommended; "nothing to set up")
+   vs *Hosted by this server* ("no dependency on the Ravilo project; needs a one-time Google
+   registration"). The second option reveals 3–4 below.
+3. **Your receiver address** — read-only, copyable: `https://<this server>/cast/`, with a live check
+   chip: *reachable over the internet* / *not reachable — Chromecast needs a public https address*.
+4. **Register with Google** — three numbered plain-language steps inline, not a help link: *Register an
+   application at the Google Cast Developer Console (a one-time US$5 fee)* · *Choose "Custom Receiver"
+   and paste the address above* · *Add your Chromecast as a test device, or publish the application so
+   any Chromecast can use it* — then the **Application ID** field (8 hex characters). Copy rule: Google
+   is named because the admin pays Google; nothing else is named.
+5. **Concurrent cast sessions** stepper (the transcoding ceiling), with a one-line explanation in plain
    words: "Each cast is a transcode on your Jellyfin server."
-4. **Status** line: receiver reachable / last cast session / devices that have cast (linking to Users &
+6. **Status** line: receiver in use (shared / this server) · reachable · *"Cast from your phone once to
+   confirm it works"* until the first session · last cast · devices that have cast (linking to Users &
    devices, where a Chromecast appears as its own device row).
-Follow the wf.css tokens and the write-through editing shape (Phases 71/74); draw the off and on
-states and the own-receiver state.
+Follow the wf.css tokens and the write-through editing shape (Phases 71/74); draw the off state, the
+shared-receiver state (one switch, done), the self-hosted-but-unregistered state (steps visible, ID
+empty), and the self-hosted registered-and-verified state.
 
 ## E. Deliverables and order
 
