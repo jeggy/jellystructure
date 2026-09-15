@@ -126,6 +126,58 @@ ever built, its RAM allowance becomes another line in this calculator's output.
 This phase must be useful **without** it — every output in §2 is worth having on a host where the
 prefetch idea is never built. Stated so the calculator is not quietly blocked on a much larger feature.
 
+### FR-215-8 — the budget must survive a neighbour that arrives later
+
+(Raised by the owner, 2026-09-15: *"if at some point I'd have some other random service taking up
+60 GB, would that break our setup, or only make the prefetch idea not fully available and then skip
+it?"*)
+
+The calculator must not model allocation only at time zero. This host runs ~30 containers; a new one
+taking 60 GB is a realistic future, and the budget's job is to make that a slowdown rather than an
+outage. **The answer differs by memory kind, and the design depends on the distinction:**
+
+| Kind | Reclaimable? | Behaviour when a neighbour takes 60 GB |
+|---|---|---|
+| Page cache (incl. any prefetch) | **Yes**, by the kernel, automatically | Evicted. Prefetch silently stops helping; playback falls back to disk. **Degrades correctly with no work from us.** |
+| **tmpfs** (`/dev/shm` → `/transcode`, `/tmp`) | **No** — pages can only go to swap | Cannot be dropped. Kernel swaps, then OOM-kills. **This is the break path.** |
+| Container RSS | No | Bounded only where a `mem_limit` exists |
+
+So the owner's hoped-for behaviour — *"skip it and my clients still work"* — is **already true for the
+prefetch idea** and is **not** true for tmpfs. Two requirements follow.
+
+**(a) Anything cache-shaped must be best-effort, and must back off.** A prefetch that re-reads files
+the kernel is actively evicting turns graceful degradation into thrashing — prefetch 20 GB, get
+evicted, prefetch again — which is worse than never prefetching. Gracefulness here is a property of
+page cache, but *non-thrashing* is not: it has to be built. Any future prefetch reads memory pressure
+and stops, and the calculator's prefetch allowance is a ceiling, never a reservation.
+
+**(b) tmpfs must be capped, because nothing else will cap it.** Measured on this host today:
+
+```
+/dev/shm   63 GB cap, 0 GB used      -> Jellyfin's /transcode bind mount
+/tmp       63 GB cap, 6.2 GB used    -> a second unbounded RAM disk, already holding 6.2 GB
+```
+
+Both default to half of RAM. With `EnableSegmentDeletion: false` and a 720 s keep, a long 4K transcode
+writes into `/dev/shm` and nothing removes it for the session's duration. A 60 GB neighbour *alone* is
+survivable; a 60 GB neighbour **plus** a transcode filling tmpfs is not, and the kernel's only options
+are swap and the OOM killer. `/tmp` is called out because it is the same hazard from a source this
+project does not own, and a budget that caps `/dev/shm` while ignoring a 63 GB `/tmp` has bounded half
+the problem.
+
+**(c) Say who should die.** All of `jellyfin`, `immich_server`, `immich_postgres` and `umami-db` run
+with **no memory limit**, and measured OOM scores are effectively tied — `jellyfin` 671 versus
+`jellystructure` 678, both at `oom_score_adj = 0`. Under host pressure the kernel picks by RSS
+heuristic, so the process serving someone's film is as likely a victim as a batch job. The calculator's
+`mem_limit` output is what converts an arbitrary host-wide OOM into a bounded, predictable failure of
+one named service, and it should say that is what the operator is buying.
+
+**Reassurance the output should carry, because it is true and it is not obvious:** real usage today is
+small — Jellyfin 3.5 GB, jellystructure 3.0 GB, nothing else above 1.3 GB, against 125 GB total and
+34 GB of free swap. A 60 GB neighbour would fit today without touching anything. The risk being
+designed against is not the neighbour; it is the neighbour arriving while tmpfs holds an unbounded
+transcode.
+
 ### FR-215-7 — refuse to over-commit
 
 If the entered budget exceeds what the host can honour once existing non-media usage and a safety
