@@ -20,7 +20,6 @@ cd "$(dirname "$0")/.."
 # file -> its own declared scope-wrapper class (from that file's own header/established convention).
 declare -A SCOPED_FILES=(
   ["design/app/segments.css"]=".sx"
-  ["design/app/towo.css"]=".towo"
 )
 
 # Selectors allowed to stay outside the scope for this file, with the reason inline in the file
