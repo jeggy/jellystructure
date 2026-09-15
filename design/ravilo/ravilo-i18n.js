@@ -348,6 +348,38 @@
     key_shift: '\u21e7 Skift', key_space: 'Millumr\u00fam', key_del: '\u232b Strika',
   });
 
+  // ---- Discover → library taxonomies (Studios / Networks / Genres) ----
+  Object.assign(STR.en, {
+    seg_studios: 'Studios', seg_networks: 'Networks', seg_genres: 'Genres',
+    tx_sub_studios: 'Films in your library, by studio',
+    tx_sub_networks: 'Series in your library, by network',
+    tx_sub_genres: 'Everything in your library, by genre',
+    tx_n_studios: '{n} studios', tx_n_networks: '{n} networks', tx_n_genres: '{n} genres',
+    tx_titles: '{n} titles', tx_title_one: '1 title',
+    tx_kid_note: 'counting only what this profile can watch',
+    tx_empty: 'Nothing here for this profile yet',
+  });
+  Object.assign(STR.da, {
+    seg_studios: 'Studier', seg_networks: 'Stationer', seg_genres: 'Genrer',
+    tx_sub_studios: 'Film i dit bibliotek, efter studie',
+    tx_sub_networks: 'Serier i dit bibliotek, efter station',
+    tx_sub_genres: 'Alt i dit bibliotek, efter genre',
+    tx_n_studios: '{n} studier', tx_n_networks: '{n} stationer', tx_n_genres: '{n} genrer',
+    tx_titles: '{n} titler', tx_title_one: '1 titel',
+    tx_kid_note: 'tæller kun det, denne profil må se',
+    tx_empty: 'Ingenting til denne profil endnu',
+  });
+  Object.assign(STR.fo, {
+    seg_studios: 'Studio', seg_networks: 'St\u00f8\u00f0ir', seg_genres: 'Sjanrur',
+    tx_sub_studios: 'Filmar \u00ed t\u00ednum savni, eftir studio',
+    tx_sub_networks: 'S\u00f8gur \u00ed t\u00ednum savni, eftir st\u00f8\u00f0',
+    tx_sub_genres: 'Alt \u00ed t\u00ednum savni, eftir sjanru',
+    tx_n_studios: '{n} studio', tx_n_networks: '{n} st\u00f8\u00f0ir', tx_n_genres: '{n} sjanrur',
+    tx_titles: '{n} heiti', tx_title_one: '1 heiti',
+    tx_kid_note: 'teljir bert ta\u00f0, hendan vangamyndin kann s\u00edggja',
+    tx_empty: 'Einki til hesa vangamynd enn',
+  });
+
   let lang = 'en';
   window.RAVILO_I18N = STR;
   window.RAVILO_LANGS_UI = [

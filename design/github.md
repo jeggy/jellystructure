@@ -1,9 +1,72 @@
 repo: jeggy/jellystructure
 branch: main
-path: specs/   (plus root STATUS.md — both mirrored read-only from the repo); presentation/ (full mirror, ours to build on)
-tree: main @ 42885163eeee (2026-09-12 pull)
+path: specs/   (plus root STATUS.md — both mirrored read-only from the repo); presentation/ (full mirror, ours to build on); design/ (our export — now confirmed to flow BOTH ways, see 2026-09-15)
+tree: main @ fbee64fe7e4a (2026-09-15 pull)
 
-## Last sync (2026-09-12, later — pull; 19 new dev specs, no renumbering needed)
+## Last sync (2026-09-16 — read-only: numbering check before writing two specs)
+date: 2026-09-15T22:11:06Z   (repo query; the specs themselves are dated 2026-09-16 local)
+direction: read-only (repo → this project). Nothing copied, nothing exported — the tree was queried only
+to pick collision-free numbers for the Discover taxonomy pair.
+- **No collision.** A filtered tree scan at `main` for `phase-(215-219|22x|R242-R259)` matched exactly
+  **two** files, both already mirrored here: `phase-215-memory-budget-calculator.md` and
+  `phase-R242-focus-detail-backdrop-background.md`. So `main` still tops out at **215 / R242** and our new
+  pair keeps **216 / R243**. **Next free: 217 / R244.**
+- **Written this turn, both `Planned`, neither dev-reviewed:**
+  `specs/requirements/phase-216-library-taxonomy-index.md` (the served per-viewer index: one endpoint,
+  profile-scoped counts, one seed shared with the grid, artwork only where it exists) and
+  `specs/ravilo/requirements/phase-R243-browse-by-studio-network-genre.md` (the three Discover tabs, the
+  wall, the two tile variants, Select → browse grid, the phone half).
+- **⚠ The mirror was NOT refreshed this turn** — the task was two specs, not a sync. `STATUS.md` and
+  `specs/` are as of the 2026-09-15 pull; re-pull before quoting status or counts anywhere.
+
+## Previous sync (2026-09-15 — pull; our whole last pass landed upstream, and the repo edited our mockups back)
+date: 2026-09-15T20:32:00Z
+direction: pull (repo → this project). 25 spec/STATUS files mirrored + **12 design files pulled BACK over
+our own local copies**, nothing exported. Repo wins on every disagreement, per CLAUDE.md.
+- **Base commit unknown — `github_compare` failed** (`42885163eeee` from the last sync is a tree hash,
+  not a commit, and is unreachable). Fell back to tree + blob-size diffing against every local file.
+- **Everything we authored last session is now canonical on `main`.** 202 and R240 both have `STATUS.md`
+  rows and shipped code; `design/app/media.html`, `series.html`, `activity.html`, `settings.html`,
+  `segments.js`, `index.html` are **byte-identical** to our local copies. The 187/R234 corrections
+  (preset colours dropped, "Your photo") **survived upstream** — verified by grep before overwriting.
+  **Nothing is pending export any more.**
+- **⚠ The design mirror is two-way now.** The dev team edited our mockups repo-side (R242 was built into
+  them the same day it was spec'd). Local was BEHIND on all of: `ravilo/ravilo-focus.js` (15.4→18.0 KB),
+  `ravilo.css` (89.3→92.2), `ravilo-app.js` (136.9→139.1), `ravilo-data.js` (66.0→66.9),
+  `Ravilo Mobile.html` (43.8→49.9), `ravilo-player.js`, `ravilo-browse.js`, `app/wf.css` (**38.0→50.3**
+  — mockup-only classes finally moved into the served stylesheet), `app/detail.css` (37.7→39.2),
+  `app/ravilo-config.html`. All pulled over. `ravilo-i18n.js` was already identical.
+  **Only local-ahead file was `Ravilo TV.html`** — and only because it still clamped the focus delay to
+  600 ms, a ceiling 202 FR-202-3 deleted. Pulled over too.
+- **J (the row opens) now ships ON.** R240's open question 1 — invariant 11's reflow cost — **closed
+  2026-09-13**: 46 real settled row-opens on the stue BRAVIA, **2.8–3.2 % janky frames, 0 missed vsync**,
+  dwell absorbing rapid navigation at 0.35 %. `focusDetailRowOpen` default `false → true`. Four live J
+  bugs fixed on the way, all one root cause (**measuring the panel to decide where to scroll is
+  circular** — a `LazyRow` never places an off-viewport item); panel width now derived per tile variant
+  (482/627/591 dp), not a hardcoded 620.
+- **R242 — J's own backdrop (`✓ Built` 2026-09-14), already built into our mockups dev-side.** The open
+  row's title backdrop fills the whole screen, scrimmed, slower clock than the .22s panel tween; a
+  lateral hop crossfades and never blanks. No new payload — `MediaCard.backdropUrl` already ships; the
+  spec argues 202's "no artwork" non-goal was scoped to `FocusDetailFacts`, not `MediaCard`. L untouched.
+- **15 new specs pulled:** admin **203–215**, Ravilo **R241**, **R242** — all `✓ Built`. 203–211 and R241
+  need no design work (backend or Compose-only).
+- **⚠ Four shipped admin surfaces are NOT in our mockups — this sync's entire design backlog: 212, 213,
+  214, 215.** All design-authored with the owner repo-side on 2026-09-15, built the same day, from one
+  playback incident (*The Godfather* stalling every ~10 s — 10 concurrent Jellyfin ffmpeg subtitle
+  extractions starving the disk at 80.8 % utilisation; the owner found **no UI to cancel it**, restarted
+  the whole backend, and playback was still broken). **Their spec files still read `Status: Planned` —
+  that header is stale; `STATUS.md` says `✓ Built` and STATUS.md is the declared source of truth.**
+  See `CLAUDE.md` for the per-surface detail.
+- **\u26a0 Owed back on export, beyond the mockups themselves: `adv-*` class names are ad-blocker bait.**\n  212's findings were first drawn with `.adv-label`, which renders **invisible** \u2014 a cosmetic filter\n  list hides that class with a user-origin `!important` that beats even an inline style, while every\n  sibling class renders normally, so it looks like one blank element rather than a broken page. Ours are\n  `jfa-*` now. The shipped `advisorFindingHtml` (212 \u00a78, reused by 215) should be checked for the same\n  thing before an operator running uBlock hits it.\n- **\u26a0 One repo-side defect found in the pulled CSS, and one deliberate local divergence.**  `design/ravilo/ravilo.css` uses `var(--line-2)` with **no fallback** in `.prof .pic.add`, and
+  `--line-2` **is never declared** anywhere in the token set (29 properties: `--line`, `--bg-2`,
+  `--card-2`, `--accent-2`, `--lt-live-2` \u2014 no `--line-2`). The shorthand is therefore invalid at
+  computed-value time and the border is dropped outright, so the \"Add user\" profile tile renders with
+  no border at all (probed: `border-top: 0px none`). The only other use, `.fpop .opt .box`, carries a
+  `rgba(255,255,255,.22)` fallback and renders fine \u2014 which is why it shows up in exactly one place.\n  Given the `-2` suffix convention this reads as an intended sibling of `--line` that was never declared.\n  **Local divergence (deliberate, one character-level change):** we added the same fallback the sibling\n  rule already uses \u2014 `var(--line-2, rgba(255,255,255,.22))`. Same class of finding as 187's\n  `.usr-av`/`.usr-cap` (mockup-only classes that never reached a served stylesheet): **send it back with\n  the next export**, and either declare `--line-2` upstream or keep the fallback.\n- **Counters re-derived:** `STATUS.md` = **404** rows (**204** admin + **200** Ravilo), no duplicates;\n  **194** documents under `specs/`; highest **215 / R242**; next free **216 / R243**. Unused numbers
+  (admin 59–69, 77; Ravilo R88–R132) are historical, below where our mirror starts. Deck counters
+  updated in `presentation/Jellystructure & Ravilo - Spec-Driven Development.html` (387→404, 179→194).
+
+## Previous sync (2026-09-12, later — pull; 19 new dev specs, no renumbering needed)
 date: 2026-09-12T07:25:00Z
 direction: pull (repo → this project). 29 files mirrored (STATUS.md, both plans/constitution, 19 new
 specs, 8 amended), nothing exported. **Repo wins on every disagreement, per CLAUDE.md — our local 187 and
@@ -504,40 +567,56 @@ direction: pull (repo → this project)
 | ravilo/Ravilo Mobile.html, ravilo-player.js/.css | R177, R179, R180, R181, R182, R184 (autoplay stale position fix — shipped), R188 (Upcoming visibility — shipped, no design change), R191 (single-user sign-out — shipped, no design change) |
 | ravilo/ assets/brand, Barna TV Channel Logo.html | R62 brand (no spec yet) |
 | ravilo/ravilo-player.js, ravilo-player.css, ravilo-app.js, ravilo/Audio & Subtitles Picker - Same-Language Directions.html | R195 (same-language subtitle picker — shipped) |
-| app/towo*.html, app/towo.css, app/settings.html (Towo tab), app/app-shell.js (Towo nav group), claude-console/Dashboard - Direction B.html | **phase-162** (Towo agent control plane — design-authored, shipped 2026-08-11; mockups predate the build's extra settings fields) |
+| (removed from this project 2026-09-16 — every Towo mockup, `app/towo.css`, the Settings tab, the sidebar group and `claude-console/` are deleted) | **phase-162** (Towo agent control plane) → **retired by 217** (`specs/requirements/phase-217-remove-towo.md`, written 2026-09-16, `Planned`). 162's spec + `STATUS.md` row are deliberately **kept** (to be marked `Removed`); the next export **deletes** the design files repo-side and must not be read as a stale mirror |
 | (none — backend/platform only) | R192/R193/R194 (MediaSession lifecycle, metadata, season artwork — shipped, no design change), phase-160 (scanner numbering fallback) |
-| ravilo/Player Loading and Buffering - Directions.html, ravilo/ravilo-player.js/.css | **R218** (player loading/buffering states — shipped 2026-08-28, on-device verified 08-29), **phase-180** (session teardown — ✓ Done), R220 (video-output recovery — reuses R218's STALL; presentation not yet wired), **R237** (per-cause failed-start copy + one *"Still trying…"* line on the cold-start treatment — ✓ Built dev-side, **not drawn here**) |
-| ravilo/Ravilo Mobile.html, ravilo/ravilo.css (flag strips) | **R239** FR-R239-7 (`+N` counts every language, mapped or not; a wholly unmapped group still renders its label) — ⚠ Partial dev-side, **mockup sync not done**; FR-R239-3's 12 missing flag assets unbuilt on both sides |
+| ravilo/Player Loading and Buffering - Directions.html, ravilo/ravilo-player.js/.css | **R218** (player loading/buffering states — shipped 2026-08-28, on-device verified 08-29), **phase-180** (session teardown — ✓ Done), R220 (video-output recovery — reuses R218's STALL; presentation not yet wired), **R237** (per-cause failed-start copy + one *"Still trying…"* line on the cold-start treatment — ✓ Built; drawn 2026-09-15, canonical upstream) |
+| ravilo/Ravilo Mobile.html, ravilo/ravilo.css (flag strips) | **R239** — now `✓ Done`; the honest `+N` counting is drawn and canonical upstream |
 | app/activity.html | phase-182 (Capacity card only — FR-182-9's banner dropped by owner decision), phase-183 FR-183-6/FR-183-5 (Outbound pacing card + run summary) — drawn 2026-08-31, backend built, UI not yet in code; **201** FR-201-10 (MKV track layout health card — **not drawn**) |
-| app/media.html, app/series.html (pagebar + Tracks & subtitles + Artwork tab) | **200** FR-200-5 (SUBTITLES flag strip + read-only Sidecar subtitles group), **201** FR-201-11/12 (Fix now banner per title), **192** FR-192-5/6 (logo shown as a logo, not a cropped 16/9 backdrop; nothing-to-show copy), **191** FR-191-5 (metadata-language mismatch card + inline re-pull), **193** FR-193-4 (honest Jellyfin-behind banner copy, inline Sync Jellyfin, suppressed during a scan), **196** FR-196-3/5 (`last_examined_at` labels, explicable skips) — all ✓ Built dev-side, **none drawn here yet** |
-| app/index.html (Dashboard) | **192** FR-192-2 (artwork-repair sweep button — **not drawn**) |
+| app/media.html, app/series.html (pagebar + Tracks & subtitles + Artwork tab) | **200** FR-200-5, **201** FR-201-11/12, **192** FR-192-5/6, **191** FR-191-5, **193** FR-193-4, **196** FR-196-3/5 — all `✓ Built` dev-side and **drawn here 2026-09-12→15, now confirmed canonical upstream** |
+| app/index.html (Dashboard) | **192** FR-192-2 (artwork-repair sweep button — drawn 2026-09-12, canonical upstream); **214** ("Stop scan" rename + un-ghost — **not drawn**) |
 | (none — backend only) | R219 (Continue Watching canonical list — explicitly no UI change), 181 (library sync convergence) |
 | ravilo/Decode Ceiling Warning - Directions.html | (no spec yet) research report `ravilo-per-device-decode-ceiling-warning-2026-09-02.md`; builds on phase-177 + R216, constrained by R180 FR-RV-ASP1-2. Admin half would land on app/ravilo-users.html |
 | ravilo/Ravilo Mobile.html, ravilo/ravilo-app.js, ravilo/ravilo-data.js, ravilo/ravilo.css, ravilo/ravilo-i18n.js, app/ravilo-users.html | **187** (`phase-187-account-photo-and-password.md`) + **R234** (`phase-R234-profile-photo-and-password.md`) — profile photo + change password. Design-authored 2026-09-03, renumbered from 186 / R230 on 2026-09-04, **both `✓ Built` 2026-09-05** (R234 live-verified on stue TV) and canonical specs pulled 2026-09-12. **⚠ The mockups now lead the specs:** the preset-colour row (`AV_PRESETS`/`colorFor`/`setColor` + the Your profile sheet) is dropped per R234 FR-R234-3, and the "Photo and name" row must be relabelled or wired |
 | app/ravilo-builders.js (per-channel system rows), app/ravilo-config.html | **R233** (system rows always scoped — Planned; FR-R233-7 removes the `scope` segmented controls, **not yet applied to the mockup**), R143 (introduced `scope`, retired by R233) |
 | (none — backend/client-only) | **R231** (Continue Watching timeout cache poisoning), **R232** (series-detail & player D-pad polish), repo **R230** (Skip Credits Off), repo **186** (request-intent lifecycle cleanup — explicitly no new Ravilo UI) |
-| ravilo/Focus Detail - Directions.html, ravilo/Focus Detail - Round 2 Directions.html (+ -print copy), ravilo/ravilo-focus.js, ravilo/ravilo.css, ravilo/ravilo-app.js, ravilo/ravilo-i18n.js, ravilo/Ravilo TV.html, app/ravilo-config.html | **202** (`phase-202-focus-detail-config-and-payload.md`) + **R240** (`phase-R240-focus-detail-on-home-rows.md`) — focus detail on Home rows: L ships on, J off behind the switch, delay configurable 0–600 ms. Both `Planned`, design-authored 2026-09-12. Constrained by invariant 11, R216 (no viewer setting), R221 (genres), R236 (focus bridge topology) |
+| ravilo/Focus Detail - Directions.html, ravilo/Focus Detail - Round 2 Directions.html (+ -print copy), ravilo/ravilo-focus.js, ravilo/ravilo.css, ravilo/ravilo-app.js, ravilo/ravilo-i18n.js, ravilo/Ravilo TV.html, app/ravilo-config.html | **202** + **R240** — focus detail on Home rows. Both `✓ Built`; **J now defaults ON** (invariant-11 reflow cost measured and closed 2026-09-13). Plus **R242** (J's own full-screen backdrop — `.jbg`/`.jbg-img`/`.jbg-scrim`, `showBg`/`hideBg`/`bgLayer`, the `backdropFor` seam), **built into these mockups dev-side and pulled back 2026-09-15** |
+| app/settings.html (Libraries tab) | **212** — Jellyfin settings advisor: read-only, suggest-only, per library, silent where the live value already matches; findings carry Jellyfin's exact on-screen label. `✓ Built` dev-side, **drawn 2026-09-15** (server-wide card + per-library findings + the unknown-storage silence case on 4K Movies) |
+| app/settings.html (Advanced tab) | **215** — memory budget calculator: one RAM number in, copy-pasteable Jellyfin/compose/sysctl changes out; show the arithmetic, never offer page cache as capacity, refuse rather than over-commit. `✓ Built` dev-side, **drawn 2026-09-15** |
+| app/activity.html, app/index.html (Dashboard) | **214** — "Stop scan" (renamed from Pause, un-ghosted, both surfaces), "Stop this step" beside Activity's new step strip, and the `subtitlesStillRunning` sentence (absent at zero). `✓ Built` dev-side, **drawn 2026-09-15** |
+| app/settings.html (Scanning), app/activity.html (Jobs & workers) | **213** — `behavior.segment_workers` replaced by `behavior.job_workers` (1–3, default 2) over three named FIFO queues; `/api/health` `job_queues` block. `✓ Built` dev-side, **drawn 2026-09-15** (shared-pool card + three-lane Queues card + the Settings control) |
+| (none — backend/client-only) | **203–211** (cold health cache, reader-blocking writes, Ravilo reads waiting on Jellyfin, collection fan-out, three `prewarm_subtitles` defects, undocumented Jellyfin routes, sidecar bulk-reorder no-op, `PlaystateCache` episode ids), **R241** (remembered track vs ISO-639 granularity) |
+| ravilo/Ravilo TV.html, ravilo/ravilo-app.js, ravilo/ravilo-browse.js, ravilo/ravilo-data.js, ravilo/ravilo.css, ravilo/ravilo-i18n.js, ravilo/Ravilo Mobile.html | **216** + **R243** — Discover's Studios / Networks / Genres tabs (the viewer-side of `app/metadata.html`). Design-authored: mockups 2026-09-15, both specs 2026-09-16, both `Planned`, neither dev-reviewed. **Pending export** |
 | presentation/presentation-context.md, presentation/observed-issues-2026-08-18.md, presentation/screenshots/ | (not a spec — talk source material; documents R202 as its centerpiece and the R203–R207 triage) |
 
 ## Pending export
-- **2026-09-06 → 2026-09-12, design-authored — Ravilo focus detail (L + J), its motion, and the
-  Jellystructure switch.** Specs: `specs/requirements/phase-202-focus-detail-config-and-payload.md` and
-  `specs/ravilo/requirements/phase-R240-focus-detail-on-home-rows.md` (both `Planned`, neither
-  dev-reviewed, written 2026-09-12). Mockup build: `ravilo/ravilo-focus.js` (the whole treatment,
-  incl. the dwell, the held row band, the animated open/close and live config apply), `ravilo/ravilo.css`
-  (`.fdline`, `.jopen`/`.jpanel` + the `jp-open`/`jp-close` animations, Noir overrides, the preview
-  chrome's `ms` field), `ravilo/ravilo-app.js` (`fieldsFor()`, the one-target reveal in `focusEl`, the
-  same-clock horizontal tween), `ravilo/ravilo-i18n.js`, `ravilo/Ravilo TV.html` (FOCUS picker,
-  `?focus=`/`?dwell=`), `app/ravilo-config.html` (Preferences → Focus detail: two switches + the delay
-  slider; no longer reloads the live preview), plus the two directions files and the 8-page print copy.
-  **One deliberate spec-over-mockup deviation to carry into the build:** 202 FR-202-2 has the *server*
-  resolve `focusDetail: "none"|"line"|"rowOpen"`; the mockup still reads both booleans client-side.
-- **2026-09-03 — profile photo + password change: the specs are now on `main` and BUILT** (187 / R234,
-  both `✓ Built` 2026-09-05), so nothing spec-side is pending. What is still local is the **mockup build**
-  in `ravilo/ravilo-data.js`, `ravilo/ravilo.css`, `ravilo/ravilo-app.js`, `ravilo/ravilo-i18n.js`,
-  `ravilo/Ravilo Mobile.html` and `app/ravilo-users.html` — and it needs the two corrections above (drop
-  the preset-colour row; relabel or wire "Photo and name") **before** it is exported, or the export ships
-  a control the shipped spec has deleted.
+- **2026-09-16 — Towo removed, and `phase-217-remove-towo.md` written** (`Planned`, not dev-reviewed).
+  The export **deletes** `design/app/towo*.html` (8 files), `design/app/towo.css` and all of
+  `design/claude-console/`, and carries the Towo tab out of `design/app/settings.html` and the nav group +
+  icons out of `design/app/app-shell.js`. 162's spec and its `STATUS.md` row are **not** to be touched by
+  us — 217 FR-217-8 asks the dev team to mark the row `Removed`.
+- **2026-09-15/16 — the Discover taxonomy pair: specs 216 + R243 and the mockup build.**
+  `specs/requirements/phase-216-library-taxonomy-index.md`,
+  `specs/ravilo/requirements/phase-R243-browse-by-studio-network-genre.md`, plus
+  `ravilo/ravilo-data.js` (new `taxonomy`/`taxonomySummary`/`taxoValues`/`libraryFor`/`normAge`; films now
+  resolve from `A_STUDIOS`, series from `A_NETS` — **this changes the *Studio* fact on some film detail
+  pages**), `ravilo-app.js`, `ravilo-browse.js`, `ravilo.css`, `ravilo-i18n.js`, `Ravilo TV.html` and
+  `Ravilo Mobile.html`. Two pre-existing CSS defects fixed on the way and owed back with it: the browse
+  crumb wrapping against the `h1`'s width, and a short browse result stretching its posters to fill six
+  columns.
+- **The 2026-09-15 design pass: 212, 213, 214 and 215 drawn** into `app/settings.html`,
+  `app/activity.html` and `app/index.html`, plus the `--line-2` fallback in `ravilo/ravilo.css`. All
+  four specs are already on `main` and `✓ Built` in Kotlin — what is pending is only the mockups.
+  New page-local classes (`.adv*`, `.mb-*`, `.steps`/`.stepchip`, `.stopnote`, `.lane`/`.occ`) live in
+  each page's own `<style>`, following `.paced`/`.mkvh-*` precedent; the 187 lesson says they will want
+  moving into `wf.css` dev-side, so expect `check-mobile-css.sh` to have an opinion.
+- Everything before this pass is canonical upstream — see the note below.
+- ~~2026-09-06 → 2026-09-12, Ravilo focus detail (202 / R240, the mockup build, both directions files
+  and the print copy)~~ — **exported and canonical as of 2026-09-15.** The one deviation noted here
+  (202 FR-202-2 resolving the mode server-side while the mockup read both booleans) is resolved
+  upstream: the server resolves it, and our pulled `ravilo-focus.js` is the repo's own copy.
+- ~~2026-09-03 — profile photo + password mockup build (187 / R234)~~ — **exported and canonical as of
+  2026-09-15**, including both corrections (preset colours dropped, "Your photo"), verified by grep
+  against the repo copies before they were pulled over.
 - **All earlier design/spec work is already on `main`** — the 2026-09-02 decode-ceiling
   mockups + specs (185/R222) and the 2026-09-01 metadata-language/genre work (184/R221) were exported and
   are confirmed present in the repo diff this sync pulled.
@@ -547,6 +626,9 @@ direction: pull (repo → this project)
   check on next export pass.
 
 ## Sync history
+- 2026-09-16 (later): no repo I/O — Towo deleted from the design set and `phase-217-remove-towo.md` written against the 2026-09-16 numbering scan (217 confirmed free).
+- 2026-09-16: read-only numbering check — `main` still tops out at 215 / R242, so the Discover taxonomy pair was written as **216 / R243** (both `Planned`); mirror deliberately not refreshed.
+- 2026-09-15: base commit unreachable, fell back to blob-size diffing; 15 new specs (admin 203–215, Ravilo R241/R242) + STATUS.md pulled; **12 design files pulled BACK over ours** (the mirror is two-way now — R242 was built into our mockups dev-side); our 202/R240 + the nine admin draws + the 187/R234 corrections all confirmed canonical upstream, so **nothing is pending export**; J flipped to default-on after invariant 11 was measured; new design backlog = 212/213/214/215; counters 387 → 404 phases, 179 → 194 documents.
 - 2026-09-12: 19 new dev specs pulled (admin 188–201, Ravilo R235–R239) + 8 amended + STATUS.md; **no numbering collision — our 202 / R240 kept their numbers**; 187 + R234 came back `✓ Built` and their canonical specs replaced our drafts; nine design items logged; counters 359 → 387 phases, 158 → 179 documents.
 - 2026-09-03: 31 commits pulled — 185/R222 shipped incl. on-device confirmation (R216 live on stue TV since 08-30, copy correct); 181/182/183 all built with real measurements, two new candidate follow-up bugs logged (home-feed cache thrashing, unbounded ffprobe fan-out); 7 new Ravilo specs (R223-R229), all backend/Compose-only.
 - 2026-09-02: pulled the per-device decode-ceiling-warning research report; design pass (A+B′ recommended), no spec yet.

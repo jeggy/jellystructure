@@ -882,13 +882,21 @@
       return r;
     }
     function seerrEnabled() { return !!(R.config && R.config.seerr); }
+    // The Discover tabs, in order. Coming Soon and Request are config-gated (Sonarr/Radarr,
+     // Seerr); the three taxonomy tabs index what is already on the shelf, so they need no
+    // integration and are always present.
+    const TAXO_TABS = ['studios', 'networks', 'genres'];
+    const SEG_LABEL = { coming: 'seg_coming', request: 'seg_request', studios: 'seg_studios', networks: 'seg_networks', genres: 'seg_genres' };
+    function discTabs() {
+      const tabs = [];
+      if (upcomingEnabled()) tabs.push('coming');
+      if (seerrEnabled()) tabs.push('request');
+      return tabs.concat(TAXO_TABS);
+    }
     function discSegment(active) {
       const seg = el('div', 'discseg');
-      const mk = (tab, label) => '<div class="dseg foc' + (tab === active ? ' cur' : '') + '" data-disctab="' + tab + '">' + label + '</div>';
-      let html = '';
-      if (upcomingEnabled()) html += mk('coming', t('seg_coming'));
-      if (seerrEnabled()) html += mk('request', t('seg_request'));
-      seg.innerHTML = html;
+      seg.innerHTML = discTabs().map(tab =>
+        '<div class="dseg foc' + (tab === active ? ' cur' : '') + '" data-disctab="' + tab + '">' + t(SEG_LABEL[tab]) + '</div>').join('');
       return seg;
     }
     function renderDiscover() {
@@ -909,6 +917,55 @@
       const rail = inProgressRail();
       if (rail) wrap.appendChild(rail);
       lists.forEach(l => wrap.appendChild(discoverRow(l)));
+      wrap.appendChild(el('div', 'screen-end'));
+      scroll.appendChild(wrap);
+      appbar.querySelectorAll('.navitem').forEach(n => n.classList.toggle('cur', n.dataset.nav === 'discover'));
+    }
+
+    /* ---------------- DISCOVER → library taxonomies (Studios / Networks / Genres) ----
+       The viewer-side of jellystructure's Metadata page. Counts are resolved once in
+       ravilo-data (R.taxonomy) and scoped to the profile, so this renders and never
+       computes — the TV wall, the phone wall and the filtered grid cannot disagree.
+       Studio vs network is aboutFor()'s own isNetwork flag, the same one the media detail
+       labels its fact from, not a new field. */
+    function countLabel(n) { return n === 1 ? t('tx_title_one') : t('tx_titles', { n: n }); }
+    function taxoTile(e) {
+      const tl = el('div', 'taxo foc' + (e.kind === 'genres' ? ' genre' : ''));
+      tl._taxo = e;
+      // Only a handful of brands ship a logo file, so the name set as a wordmark is the
+      // designed state — and then the caption does not repeat it: a logo tile needs the
+      // name beneath, a wordmark tile already is the name.
+      const mark = e.logo ? `<img class="taxo-logo" src="${e.logo}" alt="${esc(e.name)}">` : `<span class="taxo-wm">${esc(e.name)}</span>`;
+      const nm = e.logo ? `<span class="taxo-nm">${esc(e.name)}</span>` : '';
+      tl.innerHTML = `<div class="taxo-card">${mark}</div><div class="taxo-cap">${nm}<span class="taxo-ct">${countLabel(e.count)}</span></div>`;
+      return tl;
+    }
+    function renderTaxonomy(v) {
+      stopHero(); scroll.innerHTML = '';
+      const kind = TAXO_TABS.indexOf(v.taxo) >= 0 ? v.taxo : 'studios';
+      const u = currentUser();
+      const list = R.taxonomy ? R.taxonomy(kind, u) : [];
+      const sum = R.taxonomySummary ? R.taxonomySummary(kind, u) : { groups: list.length, titles: 0 };
+      const wrap = el('div', 'discoverscreen taxoscreen');
+      const head = el('div', 'dischead');
+      head.innerHTML = `<div class="dischead-row"><h1>${t('nav_discover')}</h1><span class="disc-sub">${t('tx_sub_' + kind)}</span></div>`;
+      const dctrl = el('div', 'dischead-controls focus-row');
+      dctrl.appendChild(discSegment(kind));
+      head.appendChild(dctrl);
+      wrap.appendChild(head);
+      const meta = el('div', 'taxometa');
+      meta.innerHTML = `<b>${t('tx_n_' + kind, { n: sum.groups })}</b><span>·</span><span>${countLabel(sum.titles)}</span>`
+        + (u && u.kid ? `<span class="tm-note">· ${t('tx_kid_note')}</span>` : '');
+      wrap.appendChild(meta);
+      const grid = el('div', 'taxogrid' + (kind === 'genres' ? ' genres' : ''));
+      if (!list.length) grid.innerHTML = `<div class="taxo-empty">${t('tx_empty')}</div>`;
+      const per = kind === 'genres' ? 5 : 4;
+      for (let i = 0; i < list.length; i += per) {
+        const row = el('div', 'taxo-row focus-row');
+        list.slice(i, i + per).forEach(e => row.appendChild(taxoTile(e)));
+        grid.appendChild(row);
+      }
+      wrap.appendChild(grid);
       wrap.appendChild(el('div', 'screen-end'));
       scroll.appendChild(wrap);
       appbar.querySelectorAll('.navitem').forEach(n => n.classList.toggle('cur', n.dataset.nav === 'discover'));
@@ -1338,6 +1395,7 @@
       else if (v.type === 'category') renderCategory(v.studio);
       else if (v.type === 'movie' || v.type === 'series') renderDetail(v.item);
       else if (v.type === 'discover') renderDiscover();
+      else if (v.type === 'taxonomy') renderTaxonomy(v);
       else if (v.type === 'upcoming') renderUpcoming();
       else if (v.type === 'upcomingDetail') renderUpcomingDetail(v.item);
       else if (v.type === 'discoverDetail') renderDiscoverDetail(v.item, v.list);
@@ -1349,6 +1407,9 @@
       setTimeout(() => {
         if (v.type === 'home') focusRowByIndex(0);
         else if (v.type === 'category' || v.type === 'discover') focusRowByIndex(firstContentRowIndex());
+        // a taxonomy tab keeps focus on the tab you just pressed, so the segment stays
+        // steerable left/right and Down drops into the wall
+        else if (v.type === 'taxonomy') focusRC(1, Math.max(0, discTabs().indexOf(v.taxo)));
         else if (v.type === 'upcoming') focusRC(firstContentRowIndex(), 0);
         else if (v.type === 'movie' || v.type === 'series') {
           // R221: returning from a genre browse restores focus to the chip it was opened from
@@ -1395,7 +1456,7 @@
         else track.scrollTo({ left: Math.max(0, node.offsetLeft - 64), behavior: 'smooth' });
       }
       // vertical: keep row comfortably in view
-      const rowWrap = node.closest('.crow') || node.closest('.rail') || node.closest('.hero') || node.closest('.dhero') || node.closest('.dsec') || node.closest('.cathead') || node.closest('.grid-row') || node.closest('.gridfilter') || node.closest('.kbd-row') || node.closest('.sresults');
+      const rowWrap = node.closest('.crow') || node.closest('.rail') || node.closest('.hero') || node.closest('.dhero') || node.closest('.dsec') || node.closest('.cathead') || node.closest('.taxo-row') || node.closest('.grid-row') || node.closest('.gridfilter') || node.closest('.kbd-row') || node.closest('.sresults');
       const inAppbar = !!node.closest('.appbar');
       if (inAppbar) scroll.scrollTo({ top: 0, behavior: 'smooth' });
       else if (rowWrap && (rowWrap.classList.contains('hero') || rowWrap.classList.contains('dhero'))) scroll.scrollTo({ top: 0, behavior: 'smooth' });
@@ -1502,7 +1563,7 @@
         else if (f.dataset.nav === 'movies') go({ type: 'browse', kind: 'film', title: t('nav_movies'), nav: 'movies' });
         else if (f.dataset.nav === 'series') go({ type: 'browse', kind: 'series', title: t('nav_series'), nav: 'series' });
         else if (f.dataset.nav === 'top10') go({ type: 'discover' });
-        else if (f.dataset.nav === 'discover') go({ type: upcomingEnabled() ? 'upcoming' : 'discover' });
+        else if (f.dataset.nav === 'discover') go(upcomingEnabled() ? { type: 'upcoming' } : seerrEnabled() ? { type: 'discover' } : { type: 'taxonomy', taxo: 'studios' });
         else if (f.dataset.nav === 'upcoming') go({ type: 'upcoming' });
         else if (f.dataset.nav === 'mylist') go({ type: 'grid', kind: 'mylist', title: 'My List', nav: 'mylist' });
         else if (f.dataset.nav === 'profile') openProfMenu();
@@ -1510,7 +1571,19 @@
       }
       if (f.dataset.liveguide) { go({ type: 'liveGuide' }); return; }
       if (f._livech) { liveTV.tune(f._livech.id, { type: 'home' }); return; }
-      if (f.dataset.disctab) { go({ type: f.dataset.disctab === 'coming' ? 'upcoming' : 'discover' }); return; }
+      if (f.dataset.disctab) {
+        const d = f.dataset.disctab;
+        go(d === 'coming' ? { type: 'upcoming' } : d === 'request' ? { type: 'discover' } : { type: 'taxonomy', taxo: d });
+        return;
+      }
+      // a taxonomy tile opens the browse grid seeded to that studio / network / genre —
+      // one catalog page, not a third kind of list. Genres already have a browse seed.
+      if (f._taxo) {
+        const e = f._taxo;
+        if (e.kind === 'genres') go({ type: 'browse', genres: [e.name], genreFrom: t('nav_discover'), from: view, nav: 'discover' });
+        else go({ type: 'browse', taxo: { name: e.name, kind: e.kind }, title: e.name, from: view, nav: 'discover' });
+        return;
+      }
       if (f.dataset.seerrsearch) { go({ type: 'search', query: '', seerr: true }); return; }
       if (f._seeall) { go({ type: 'browse', row: f._seeall, from: view }); return; }
       if (f._facet || f._sortbtn || f._facetreset) { browse().onChip(f); return; }
@@ -1864,9 +1937,11 @@
       const u = currentUser();
       return !!(R.discover && R.discover.config && R.discover.config.radarr && u && u.discover && u.discover.enabled && (u.discover.lists || []).length);
     }
+    // Discover is no longer only the Seerr/Sonarr surface: the taxonomy tabs browse the
+    // library itself, so the nav item stands whatever is configured.
     function updateDiscoverNav() {
       const el = document.getElementById('rv-nav-discover');
-      if (el) el.style.display = (upcomingEnabled() || seerrEnabled()) ? '' : 'none';
+      if (el) el.style.display = '';
     }
     function renderProfiles() {
       const signed = profiles.filter(p => p.signedIn);

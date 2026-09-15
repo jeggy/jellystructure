@@ -36,8 +36,161 @@ GitHub is the **source of truth**; we layer designs on top of it.
 - `specs/research-reports/` — dated deep-dives (research, not spec; may go stale).
 
 ## Where the work stands (read the repo `STATUS.md` for the live table)
+- **2026-09-15 (later) — Ravilo's Discover page gained three library-taxonomy tabs; both specs written
+  2026-09-16 as 216 / R243. Next unassigned numbers: 217 / R244.**
+  - **Discover is no longer only the request/calendar surface.** Its segment bar now reads
+    `Coming Soon · Request · Studios · Networks · Genres`; the three new tabs index the library the
+    viewer already has, so they are ungated (Coming Soon and Request stay config-gated) and the
+    Discover nav item no longer hides when neither Seerr nor Sonarr is configured.
+  - **The viewer-side of jellystructure's Metadata page**, same idea as `app/metadata.html`: a wall of
+    logo tiles, each with its item count. 4-up for studios/networks, 5-up for genres; Select opens the
+    **existing browse grid** seeded to that value (genres reuse R221's genre seed), so there is no third
+    kind of list. Counts are **scoped to the profile** — a kids profile counts a smaller library (no
+    rating ⇒ 18, so unrated titles are never counted for it) and says so under the header.
+  - **Studio vs network is not a new field:** `aboutFor()` already answers `network` + `isNetwork`
+    (series → broadcaster, film → studio), the same flag the media detail labels its fact from. A value
+    naming two (`RÚV · Dansk TV`) is counted under each, as the admin page counts them. New resolvers
+    `R.taxonomy` / `R.taxonomySummary` / `R.taxoValues` / `R.normAge` / `R.libraryFor` live in
+    `ravilo-data.js` so the TV wall, the phone wall and the filtered grid cannot state different numbers;
+    `ravilo-browse.js`'s local `normAge` now delegates to `R.normAge`.
+  - **Only a few brands ship a logo file** (TMDB has no network search — the admin page's own note), so a
+    tile without artwork sets the **name as a wordmark** and its caption carries only the count; a logo
+    tile carries the name beneath. There is deliberately **no "no logo" badge** on the viewer side.
+  - **A film's company was drawn from the broadcaster pool**, so the Studios wall would have been all
+    broadcasters: `aboutFor()` now resolves films from `A_STUDIOS` and series from `A_NETS` (both pools
+    widened). This changes the *Studio* fact on some film detail pages — one resolver, so it changes
+    everywhere at once.
+  - **Built:** `ravilo/ravilo-data.js`, `ravilo-app.js` (`discTabs`/`renderTaxonomy`/`taxoTile`),
+    `ravilo.css`, `ravilo-browse.js`, `ravilo-i18n.js` (10 strings × en/da/fo), `Ravilo Mobile.html`
+    (three phone tabs, 2-up wall, filtered grid). Two pre-existing defects fixed on the way: a long
+    browse crumb wrapped against the `h1`'s width, and a short browse result stretched its posters to
+    fill six columns (now capped at the 6-up column width).
+  - **Specs written 2026-09-16, both `Planned`, neither dev-reviewed.** Numbers verified against `main`
+    the same day (admin through 215, Ravilo through R242 — no collision, unlike 186→187 / R230→R234).
+    - **216 — the library indexed by studio, network and genre**
+      (`specs/requirements/phase-216-library-taxonomy-index.md`). One endpoint
+      `GET /api/tv/taxonomy?kind=…`, counted **server-side per (user, visibility scope)** because the
+      client holds one page of one feed and any count it derived would be a count of what it happens to
+      have loaded. The grid and the tile run **one seed**, so the acceptance test is arithmetic: every
+      tile's count equals its grid's result count. Zero-count values never ship; `logoUrl` is present only
+      where a logo was really captured (no placeholder, no sentinel, no on-demand fetch); values are
+      normalised before grouping so `HBO Nordic` and `HBO  nordic` can't both be counted. Cache keyed on
+      `(user, visibility scope)` and never narrower — R233 FR-R233-5's rule restated, same trap.
+    - **R243 — browse the library by studio, network and genre**
+      (`specs/ravilo/requirements/phase-R243-browse-by-studio-network-genre.md`). The three tabs, the
+      two tile variants and the caption rule (a wordmark tile does not repeat its name; **no "no logo"
+      badge, ever** — on the admin page a missing logo is a work item, on the viewer's TV it is not),
+      the scoped-profile header line, Select → the existing browse grid, tab-keeps-focus, ten strings ×
+      en/da/fo, and the phone half. Explicitly **no focus-detail behaviour here** (202/R240 is Home rows).
+  - **Open questions carried into the specs rather than guessed:** whether a household should be able to
+    switch the tabs off (they ship ungated); precomputed-at-scan vs per-request counts; whether the real
+    library has enough mis-filed film companies to need a repair sweep; count-descending vs A–Z; and the
+    phone's now seven-chip tab strip.
+- **2026-09-15 — full sync: our whole 2026-09-12→15 pass is now ON `main` (specs + mockups), and the
+  repo came back AHEAD of us on the design files.** Next unassigned numbers: **216 / R243**.
+  - **Everything we drew last session was exported and is now canonical.** 202 and R240 both have
+    `STATUS.md` rows and `✓ Built` code; `design/app/media.html`, `series.html`, `activity.html`,
+    `settings.html`, `segments.js` and `index.html` are byte-identical to our local copies, and the
+    187/R234 corrections (preset colours dropped, "Your photo") survived upstream intact.
+  - **Repo-side edits to OUR mockups pulled back in (the design mirror now flows both ways).**
+    `ravilo-focus.js`, `ravilo.css`, `ravilo-app.js`, `ravilo-data.js`, `Ravilo Mobile.html`,
+    `Ravilo TV.html`, `ravilo-player.js`, `ravilo-browse.js`, plus `app/wf.css` (+12 KB — the
+    mockup-only classes finally moved into the served stylesheet), `app/detail.css` and
+    `app/ravilo-config.html`. Local copies were behind on every one and have been overwritten.
+  - **J now ships ON.** R240's open question 1 — invariant 11's reflow cost — **closed 2026-09-13** by a
+    sweep-and-trace pass on the stue BRAVIA: 46 real settled row-opens, **2.8–3.2 % janky frames, 0
+    missed vsync**, the dwell absorbing rapid navigation at 0.35 % jank. `focusDetailRowOpen` default
+    flipped `false → true` (202 / R240 / `ravilo-focus.js` / `ravilo-config.html` all updated). Four J
+    bugs were found and fixed live on the way there, all one root cause: **measuring the panel to decide
+    where to scroll is circular** — a `LazyRow` never places an off-viewport item, so the panel was
+    unmeasurable exactly when it most needed scrolling in. The panel's width is now derived per tile
+    variant (482/627/591 dp), not a hardcoded 620.
+  - **The 600 ms ceiling we put on the focus delay is gone repo-side** — any non-negative int is valid
+    (0 and 10000 both), only junk falls back to 170. Our local `Ravilo TV.html` still clamped; pulled over.
+  - **R242 — J's own backdrop (new, `✓ Built` 2026-09-14, built into our mockups dev-side).** While a row
+    is open the focused title's backdrop fills the whole screen, scrimmed, fading in on open and out on
+    close; a lateral hop crossfades and never blanks. **No new payload** — `MediaCard.backdropUrl` already
+    rides every Home card, and the spec argues explicitly that 202's "no artwork" non-goal was about
+    `FocusDetailFacts`, not `MediaCard`. L is untouched, facts-only. `.jbg`/`.jbg-img`/`.jbg-scrim` +
+    `showBg`/`hideBg`/`bgLayer` + a `backdropFor` seam are in our files now.
+  - **13 new admin specs (203–215) and two Ravilo (R241, R242), all `✓ Built`.** 203–211 are backend-only
+    (cold health cache, reader-blocking library writes, Ravilo reads waiting on Jellyfin, collection
+    fan-out, three separate `prewarm_subtitles` defects, thirteen undocumented Jellyfin routes, sidecar
+    bulk-reorder no-op, `PlaystateCache` never fetching an episode id). **R241**: a remembered subtitle
+    didn't survive to the next episode when the language was tagged at a different ISO-639 granularity —
+    client-only.
+  - **⚠ FOUR SHIPPED ADMIN SURFACES WERE NOT IN OUR MOCKUPS — all four DRAWN 2026-09-15.** All were
+    design-authored with the owner repo-side on **2026-09-15**, built the same day, and their spec files
+    still carry a stale `Status: Planned` header — **`STATUS.md` says `✓ Built` and it wins**:
+    - **212 — Jellyfin settings advisor** (Settings → Libraries). Read-only, suggest-only, per library,
+      and **silent where the live value already matches** — two of the owner's own three optimisations
+      were already correct, so a surface reciting best practice would have been 2/3 noise on day one.
+      Every finding carries Jellyfin's **exact on-screen label** pulled from that server's own string
+      table, not the API property name. Headline finding is the **I/O scheduler**: background ffmpeg has
+      run under `ionice -c3` since Phase 109 to "protect API/playback", but both media devices run
+      `mq-deadline`, **which ignores ionice entirely** — the mitigation has never once taken effect.
+    - **215 — memory budget calculator** (Settings → Advanced). One number in (RAM you'll allow),
+      copy-pasteable changes out across Jellyfin settings, both `docker-compose.yml` files and host
+      sysctls. Rules worth drawing to: **show the arithmetic**; **page cache is neither free nor spare
+      memory** and must never be offered as capacity; a tmpfs cap is always paired with "Delete segments";
+      and it **refuses to emit anything** rather than emit an over-commit with a warning above it.
+    - **214 — stopping background work.** "Pause" → **"Stop scan"**, un-ghosted, on Activity *and*
+      Dashboard; a new **"Stop this step"** beside Activity's step chips; and when a cancel returns
+      `subtitlesStillRunning`, one exact sentence saying what could not be stopped (shown nowhere when
+      zero). No confirmation dialog, no in-app restart button — both deliberate.
+    - **213 — one shared job-queue pool.** `behavior.segment_workers` is **replaced** by
+      `behavior.job_workers` (1–3, default 2) driving three named FIFO queues; `/api/health` gained a
+      `job_queues` block. The Settings control and any Activity surfacing of the lanes need redrawing.
+  - **All four drawn, 2026-09-15 (pending export):**
+    - **214** — `app/activity.html`: the pagebar's `Pause`+`Stop` pair became one un-ghosted **Stop
+      scan**; a new **Steps** card shows the run's nine steps with the executing one marked and a
+      **Stop this step** beside them (the two `enqueues` steps are annotated as such, since 213 turned
+      them into lanes); FR-214-3's exact sentence renders on either stop and **not at all at zero** — a
+      fenced preview control switches the count so the zero case stays visible in the design.
+      `app/index.html` gained the Dashboard's matching **Stop scan**.
+    - **213** — `app/activity.html`'s Jobs & workers view: the old "Media worker · concurrency 1" card
+      is now a **Job workers** card (shared pool, `job_workers = 2`, capped at 3) over a **Queues** card
+      with all three lanes, their occupancy dots and queued counts — the `subtitles` lane showing its
+      playback deferral and last failure reason, and a line saying why its cost is invisible to the
+      Capacity gates. `app/settings.html` gained the **Job workers** control beside Scan workers (with
+      the "not the same thing as scan workers" hint) and `job_workers = 2` in the live TOML.
+    - **212** — `app/settings.html`: a **Jellyfin settings advisor** card pinned above Library mapping
+      carrying the server-wide findings, plus per-library findings inside each library's own mapping
+      card. The silence rule is drawn as much as the findings: nothing renders for the transcode path or
+      config/cache isolation, and **4K Movies renders an explicit "no findings"** because a skipped
+      library has no `local_path`, so storage is unknown and unknown suppresses rather than guesses.
+      Findings carry Jellyfin's exact on-screen labels, the nav path, the command, the trade-off, and
+      the "does not survive a reboot" warning; the I/O-scheduler finding leads. A fenced preview toggle
+      shows the **Couldn't reach Jellyfin** state, which replaces the list rather than emptying it.
+    - **215** — `app/settings.html` → Advanced: a **Memory budget** card. One number in (presets
+      16/32/64/96 plus a field), the arithmetic shown line by line — with the safety reserve naming
+      itself an assumption — and copy-pasteable output for both compose files, the tmpfs cap paired
+      inseparably with "Delete segments", and the sysctl. Over-budget produces **the refusal and nothing
+      else**. Page cache is never offered as capacity, and the neighbour case is answered by memory kind.
+  - **The incident behind 212/213/214/215, worth keeping in one place:** a viewer 30 minutes into *The
+    Godfather* (19.3 Mbps HEVC DV, inside every ceiling) stalled every ~10 s — **10 concurrent Jellyfin
+    ffmpeg subtitle extractions**, each linearly reading a 20–80 GB remux, pushed the disk to 80.8 %
+    utilisation. The owner then found **there was no UI to cancel it**, restarted the entire backend, and
+    playback was *still* broken. 213 bounds the work, 214 is how you stop it, 212/215 are the standing
+    advisory surfaces — and 212 is explicitly **not** a fix for the incident.
+  - **\u26a0 One repo-side CSS defect came in with the pull, fixed locally with a fallback and owed back on
+    export.** `ravilo.css`'s `.prof .pic.add` uses `var(--line-2)` with no fallback and **`--line-2` is
+    never declared**, so the shorthand is invalid and the \"Add user\" profile tile loses its border
+    entirely. The sibling rule `.fpop .opt .box` already carries a `rgba(255,255,255,.22)` fallback \u2014 we
+    matched it. Same class of thing as 187's `.usr-av`/`.usr-cap`: **declare the token upstream or keep
+    the fallback**, but don't lose it on the next export.
+  - **⚠ A finding worth sending back to the dev team: `adv-*` CSS class names get eaten by ad
+    blockers.** Our first draft of 212 used `.adv-label`, and it rendered **invisible** — a cosmetic
+    filter list matches that class name and hides it with a user-origin `!important`, which beats even
+    an inline `style="display:inline"`. Every sibling (`.adv-kind`, `.adv-now`, `.adv-body`) rendered
+    fine, so it presents as one mysteriously blank element rather than an obviously broken page. Ours
+    are now `jfa-*`. **The shipped Kotlin frontend's `advisorFindingHtml` (212 §8, reused by 215) needs
+    the same check** — any operator running uBlock/AdGuard would silently lose those labels.
+  - **Counters re-derived:** `STATUS.md` = **404** rows (**204** admin + **200** Ravilo), no duplicates;
+    **194** documents under `specs/`; highest **215 / R242**. (The unused numbers — admin 59–69, 77 and
+    Ravilo R88–R132 — are all historical, below where our mirror begins.) Deck counters updated.
 - **2026-09-12 (later) — full sync: 19 new dev specs mirrored, our 202 / R240 keep their numbers, and
-  187 / R234 came back BUILT.** Next unassigned numbers: **203 / R241**.
+  187 / R234 came back BUILT.** Superseded above — next unassigned numbers were **203 / R241**.
   - **Nothing to renumber, for once.** `main` tops out at **201** and **R239** — no `phase-202-*`, no
     `phase-R240-*`, and no `STATUS.md` row for either — so the focus-detail pair stands as written.
     (Contrast R196→R208, 179→180, and the 2026-09-04 pair 186→187 / R230→R234.)
@@ -843,34 +996,20 @@ GitHub is the **source of truth**; we layer designs on top of it.
   and ⌘K command palette.
 
 ## Admin screen set (current)
-- **Towo** (`towo*.html`, Phase 162 — **✓ Done / shipped 2026-08-11**; our mockups are the visual target
-  but now lag the build, see the delta note at the end of this entry) — a control plane for
-  **Claude Code** sessions running on machines we own; unrelated to media. Feature-flagged **off by
-  default** in Settings → **Towo** (`js-towo` in localStorage, read by `app-shell.js`, which shows/hides
-  the sidebar **Towo** group: Overview · Approvals · Runners). Screens: `towo.html` (overview — runner
-  shelf + quota + sessions grouped by folder), `towo-sessions.html`, `towo-session.html` (live
-  transcript: one-line tool cards, streaming turn, composer, editable turn cap, and idle / awaiting-
-  approval / paused-on-quota / picked-back-up states), `towo-session-new.html`, `towo-approvals.html`
-  (desktop queue + phone notification and sheet), `towo-runners.html`, `towo-runner-new.html`
-  (enrollment: one pasted `npx` command), `towo-limits.html`. Styles in `app/towo.css`, scoped under
-  `.towo` over `wf.css` tokens. **Principles:** usage is Claude's own two refilling allowances (100% per
-  5 hours, 100% weekly) — **no money, budgets or cost anywhere**; the runner's `--root` *is* the
-  configuration, so folders are **discovered, never declared**; Claude's sign-in stays on the host;
-  **idle is a normal resting state** you continue by typing; only quota pauses ever auto-resume, and
-  only when armed per session (default off, 6-hour sweep). Turn caps are two-level: a global default in
-  Settings, overridable per session at start and mid-run. Spec:
-  `specs/requirements/phase-162-towo-agent-control-plane.md`; research report
-  `specs/research-reports/claude-code-remote-agent-management-2026-08-10.md`; rejected overview
-  direction kept at `claude-console/Dashboard - Direction B.html`.
-  **Design caught up to the shipped build 2026-08-13** (settings fields, `mirror_error` chip, offline banner — all drawn). **Deltas the build introduced:** Towo settings are
-  **backend-owned** (`towo_settings`), not localStorage — only `js-towo` stays client-side; Settings gained a
-  **low-quota threshold %**, a **permission-request timeout + reason** (default 30 min) and a **"where runners
-  connect" URL** override, and the five notification toggles now genuinely fire. Auto-continue is
-  control-plane-owned. **No runner-detail screen was built**, so the new `mirror_error` (transcript-mirror
-  failure) warning chip rides the **runners list row**, not §B's detail page (drawn there too). The session
-  view gained a live **"runner offline" banner** (drawn, with its own preview state); a decision made while the runner is down is **queued and redelivered** rather
-  than failing; a timed-out request records `decision = "timeout"`. Remaining code polish: a resumed session
-  loses its permission profile (falls back to Normal).
+- **Towo — removed from this project 2026-09-16, and spec'd for removal from the product as 217.**
+  Every `towo*.html` mockup, `app/towo.css`, the
+  Settings → Towo tab, the `js-towo` feature flag, the sidebar Towo group and its nav icons, and the
+  `claude-console/` directions are **deleted**. The Claude Code control plane is out of the design set;
+  nothing in `app/` references it. `specs/requirements/phase-162-towo-agent-control-plane.md` and the
+  `STATUS.md` row for 162 are **repo-owned read-only mirrors and were deliberately left alone** — retiring
+  the phase itself is the dev team’s call, and our export must never re-add the deleted mockups.
+  **`specs/requirements/phase-217-remove-towo.md` (written 2026-09-16, `Planned`, not dev-reviewed)** is
+  the product-side removal: UI deleted rather than gated (and a stale `js-towo` key cannot resurrect it),
+  routes deleted rather than stubbed, the auto-continue scheduler unregistered **first**, transcripts
+  exported once then the tables dropped in one forward migration, and every runner **uninstalled rather
+  than orphaned** in a reconnect loop. 162's spec and `STATUS.md` row are deliberately **kept** — marked
+  `Removed`, pointing at 217 — because the record of a shipped phase is worth more than a tidy directory.
+  Next unassigned numbers: **218 / R244**.
 - **Intro & credits editor** (`segments.html` + `segments.js` + `segments.css`, Phase 163 design) — one
   fullscreen tool, no sidebar, opened from a season / episode row / **movie detail** and returning there.
   Reached via a dedicated **Intro & credits** tab — its own tab, not a card in Overview or a link in a

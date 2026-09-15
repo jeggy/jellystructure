@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Jellystructure &amp; Ravilo — spec-driven development</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Sora:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+--bg:#16181f;--bg-2:#1a1d25;--fill:#1c2029;--fill-2:#20242f;--fill-3:#2f3441;
+--ink:#dde1ec;--ink-soft:#9aa0b4;--ink-dim:rgba(221,225,236,.34);
+--line:rgba(255,255,255,.08);--line-2:rgba(255,255,255,.14);
+--hi:#7b6ef0;--acc-a:#b15cd0;--acc-b:#00a4dc;--grad:linear-gradient(122deg,#b15cd0 0%,#7b6ef0 48%,#00a4dc 100%);
+--ok:#2dd49a;--warn:#f5b542;--bad:#ff6f61;
+--type-hero:96px;--type-title:64px;--type-subtitle:44px;--type-body:34px;--type-small:28px;--type-mono:24px;
+--pad-top:100px;--pad-bottom:80px;--pad-x:100px;--gap-title:52px;--gap-item:28px;
+--display:'Space Grotesk',system-ui,sans-serif;--ui:'Sora',system-ui,sans-serif;--mono:'JetBrains Mono',ui-monospace,monospace;
+}
+deck-stage:not(:defined){visibility:hidden}
+*{box-sizing:border-box}
+body{margin:0;background:#0d0f14;font-family:var(--ui);color:var(--ink)}
+a{color:var(--acc-b);text-decoration:none}a:hover{color:var(--hi)}
+section{background:var(--bg);display:flex;flex-direction:column;padding:var(--pad-top) var(--pad-x) var(--pad-bottom);overflow:hidden}
+h1,h2,h3{margin:0;font-family:var(--display);font-weight:600;letter-spacing:-.02em;line-height:1.04}
+p{margin:0;text-wrap:pretty}
+.kicker{font-family:var(--mono);font-size:var(--type-mono);letter-spacing:.18em;text-transform:uppercase;color:var(--hi)}
+.title{font-size:var(--type-title)}
+.lede{font-size:var(--type-subtitle);color:var(--ink-soft);font-weight:300;line-height:1.28;max-width:1400px}
+.body{font-size:var(--type-body);line-height:1.42;color:var(--ink)}
+.small{font-size:var(--type-small);line-height:1.4;color:var(--ink-soft)}
+.mono{font-family:var(--mono);font-size:var(--type-mono);color:var(--ink-soft);line-height:1.6}
+.rule{height:6px;width:200px;border-radius:6px;background:var(--grad)}
+.card{background:var(--fill);border:1px solid var(--line);border-radius:20px;padding:44px;display:flex;flex-direction:column}
+.head{display:flex;flex-direction:column;gap:20px;margin-bottom:var(--gap-title)}
+.grow{flex:1;min-height:0}
+ul{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:var(--gap-item)}
+li{font-size:var(--type-body);line-height:1.34;display:flex;gap:20px;align-items:baseline}
+li .dot{width:12px;height:12px;border-radius:50%;background:var(--hi);flex:none;transform:translateY(-4px)}
+/* cover */
+.cover{background:radial-gradient(1100px 700px at 12% 8%,rgba(123,110,240,.26),transparent 60%),radial-gradient(900px 600px at 88% 92%,rgba(0,164,220,.20),transparent 62%),var(--bg);justify-content:center;gap:40px}
+.cover h1{font-size:var(--type-hero);letter-spacing:-.03em}
+.cover .lede{max-width:1240px}
+.metarow{display:flex;gap:40px;font-family:var(--mono);font-size:var(--type-mono);color:var(--ink-dim);margin-top:24px}
+/* section header */
+.section-slide{background:linear-gradient(180deg,#1c2029 0%,#16181f 100%);justify-content:center;gap:36px}
+.section-slide h1{font-size:84px}
+/* two-up */
+.two{display:grid;grid-template-columns:1fr 1fr;gap:40px}
+.two .card{display:flex;flex-direction:column;gap:32px}
+.two.center .card{justify-content:center;gap:20px}
+.stack-list{justify-content:flex-start;margin-top:24px}
+.tag{font-family:var(--mono);font-size:24px;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-dim)}
+.card h2{font-size:48px}
+.card li{font-size:var(--type-small);color:var(--ink)}
+.card li .dot{width:9px;height:9px;background:var(--acc-b)}
+.foot{margin-top:auto;padding-top:36px;font-size:var(--type-small);color:var(--ink-soft);max-width:1620px}
+/* origin slide */
+.origin{display:grid;grid-template-columns:1.02fr .98fr;gap:56px;align-items:start}
+.doc{background:#11131a;border:1px solid var(--line);border-radius:18px;overflow:hidden;display:flex;flex-direction:column}
+.doc .bar{display:flex;gap:14px;align-items:center;padding:20px 28px;border-bottom:1px solid var(--line);font-family:var(--mono);font-size:24px;color:var(--ink-dim)}
+.doc .bar b{color:var(--ink);font-weight:400}
+.doc .txt{padding:30px 32px;display:flex;flex-direction:column;gap:22px;font-size:26px;line-height:1.5;color:var(--ink-soft)}
+.doc .txt em{color:var(--ink);font-style:normal}
+.doc .txt .cite{font-family:var(--mono);font-size:24px;color:var(--acc-b);line-height:1.55}
+.arc{display:flex;flex-direction:column;gap:10px}
+.arc .step{display:grid;grid-template-columns:132px 1fr;gap:24px;align-items:baseline;padding:16px 0;border-top:1px solid var(--line)}
+.arc .step:first-of-type{border-top:0;padding-top:0}
+.arc .when{font-family:var(--mono);font-size:24px;color:var(--hi)}
+.arc .what{font-size:29px;line-height:1.36}
+.arc .what span{color:var(--ink-soft);font-size:26px}
+/* numbers */
+.statgrid{display:grid;grid-template-columns:1.35fr 1fr;gap:40px}
+.numbers{display:grid;grid-template-columns:repeat(3,1fr);gap:26px}
+.num.sm{min-height:0;padding:30px;justify-content:center;gap:12px}
+.num.sm b{font-size:68px}
+.num.sm span{font-size:25px}
+.nums{display:grid;grid-template-columns:repeat(5,1fr);gap:28px}
+.num{background:var(--fill);border:1px solid var(--line);border-radius:20px;padding:40px 32px;min-height:340px;display:flex;flex-direction:column;justify-content:flex-end;gap:18px}
+.num b{font-family:var(--display);font-size:92px;font-weight:600;letter-spacing:-.03em;line-height:1;background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
+.num span{font-size:26px;color:var(--ink-soft);line-height:1.3}
+/* table */
+table{border-collapse:collapse;width:100%}
+th{font-family:var(--mono);font-size:24px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-dim);text-align:left;padding:0 0 20px;font-weight:400}
+td{font-size:30px;padding:26px 0;border-top:1px solid var(--line);vertical-align:top}
+td.k{font-weight:500;width:26%}
+td.t{font-family:var(--mono);font-size:26px;color:var(--acc-b);width:34%}
+td.n{color:var(--ink-soft);font-size:27px}
+.callout{margin-top:44px;border-left:4px solid var(--hi);padding:8px 0 8px 32px;display:flex;flex-direction:column;gap:16px}
+.callout code{font-family:var(--mono);font-size:26px;color:var(--ink);line-height:1.55}
+/* screenshot slides */
+.shot{display:grid;grid-template-columns:520px 1fr;gap:56px;align-items:start}
+.shot .caps{display:flex;flex-direction:column;gap:28px}
+.shot .caps h1{font-size:56px;margin-bottom:8px}
+.frame{border:1px solid var(--line-2);border-radius:16px;overflow:hidden;background:var(--bg-2);box-shadow:0 30px 80px rgba(0,0,0,.45)}
+.frame img{display:block;width:100%}
+.frame.tall img{height:auto;width:100%}
+/* A crop frame yields height instead of pushing the foot out of the slide: the image is
+   object-fit:cover, so a shorter frame just crops a little more. 640px is the ceiling, not a fixed size. */
+.frame.crop{position:relative;flex:1 1 auto;min-height:0;max-height:640px}
+.frame.crop img{height:100%;object-fit:cover;object-position:top left}
+.frame.crop::after{content:"";position:absolute;left:0;right:0;bottom:0;height:110px;background:linear-gradient(180deg,transparent,#1a1d25 84%);pointer-events:none}
+.frame.wide img{height:auto}
+.frame.hero{width:1560px;margin:0 auto;flex:none}
+.frame.hero.w2{width:1680px;position:relative}
+.frame.hero.w2::after{content:"";position:absolute;left:0;right:0;bottom:0;height:96px;background:linear-gradient(180deg,transparent,#1a1d25 82%);pointer-events:none}
+.bleed{position:relative;flex:1;display:flex}
+.bleed img{width:100%;height:100%;object-fit:cover;object-position:22% 62%}
+.bleed::after{content:"";position:absolute;inset:0;background:linear-gradient(100deg,rgba(13,15,20,.82) 0%,rgba(13,15,20,.35) 46%,transparent 72%)}
+.overlay{z-index:2}
+.overlay{position:absolute;left:100px;bottom:96px;background:rgba(16,18,25,.9);border:1px solid var(--line-2);border-radius:20px;padding:40px 44px;display:flex;flex-direction:column;gap:18px;max-width:900px;backdrop-filter:blur(14px)}
+.overlay h1{font-size:52px}
+/* picker slide */
+.pair{display:grid;grid-template-columns:1fr 1fr;gap:44px}
+.pair figure{margin:0;display:flex;flex-direction:column;gap:18px}
+.pair figcaption{font-family:var(--mono);font-size:24px;color:var(--ink-soft)}
+.statline{display:flex;gap:72px;margin-top:52px}
+.statline div{display:flex;flex-direction:column;gap:8px}
+.statline b{font-family:var(--display);font-size:56px;font-weight:600;color:var(--ink)}
+.statline span{font-size:24px;color:var(--ink-soft)}
+/* tree */
+.treegrid{display:grid;grid-template-columns:1.05fr .95fr;gap:64px;align-items:start}
+pre{margin:0;font-family:var(--mono);font-size:25px;line-height:1.72;color:var(--ink-soft);background:var(--fill);border:1px solid var(--line);border-radius:18px;padding:36px 40px;white-space:pre}
+pre b{color:var(--ink);font-weight:500}
+pre i{color:var(--ink-dim);font-style:normal}
+/* rules grid */
+.quad{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:32px}
+.quad .card{padding:38px 40px;gap:16px;justify-content:center}
+.quad .n{font-family:var(--mono);font-size:24px;color:var(--hi)}
+.quad h2{font-size:38px}
+.quad p{font-size:26px;color:var(--ink-soft);line-height:1.42}
+/* quotes + code */
+blockquote{margin:0;font-family:var(--display);font-size:52px;font-weight:500;line-height:1.24;letter-spacing:-.015em}
+blockquote.small-q{font-size:40px}
+.attrib{font-family:var(--mono);font-size:24px;color:var(--ink-dim);margin-top:22px}
+.code{font-family:var(--mono);font-size:26px;line-height:1.7;background:#11131a;border:1px solid var(--line);border-radius:16px;padding:34px 38px;color:var(--ink-soft);white-space:pre;overflow:hidden}
+.code em{color:var(--warn);font-style:normal}
+.code s{color:var(--bad);text-decoration:none}
+/* chain */
+/* process steps */
+.steps{display:flex;flex-direction:column;gap:16px;margin:0;padding:0;list-style:none}
+.steps li{display:grid;grid-template-columns:56px 1fr auto;align-items:center;gap:26px;padding:20px 30px;border:1px solid var(--line);border-radius:16px;background:var(--bg-2)}
+.steps .sn{font-family:var(--mono);font-size:28px;color:var(--acc-b)}
+.steps h3{font-size:33px;font-weight:600;letter-spacing:-.01em}
+.steps .model{font-family:var(--mono);font-size:25px;color:var(--ink-dim);text-align:right;white-space:nowrap}
+.steps li.plain{background:none}
+.steps li.plain h3{color:var(--ink-soft);font-weight:500}
+.chain{display:grid;grid-template-columns:repeat(3,1fr);gap:32px;margin-top:8px}
+.chain .card{padding:36px 38px;gap:14px}
+.chain .when{font-family:var(--mono);font-size:24px;color:var(--ink-dim)}
+.chain h2{font-size:34px}
+.chain p{font-size:25px;color:var(--ink-soft);line-height:1.42}
+.chain .card:nth-child(1) h2{color:var(--warn)}.chain .card:nth-child(2) h2{color:var(--bad)}.chain .card:nth-child(3) h2{color:var(--ok)}
+.chain.four{grid-template-columns:repeat(4,1fr);gap:22px}.chain.four .card{padding:30px 26px}.chain.four h2{font-size:30px}.chain.four p{font-size:24px;line-height:1.38}.chain.four .when{font-size:24px}
+.chain.four .card:nth-child(3) h2{color:var(--acc-b)}.chain.four .card:nth-child(4) h2{color:var(--ok)}
+/* close */
+.close{background:radial-gradient(900px 620px at 80% 20%,rgba(177,92,208,.22),transparent 62%),var(--bg);justify-content:center;gap:44px}
+.close blockquote{font-size:76px;max-width:1500px}
+@media (prefers-reduced-motion:no-preference){
+[data-deck-active] .head,[data-deck-active] .grow,[data-deck-active] .nums,[data-deck-active] .two,[data-deck-active] blockquote{animation:rise .46s cubic-bezier(.2,.7,.3,1) both}
+@keyframes rise{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}
+}
+</style>
+</head>
+<body>
+<deck-stage width="1920" height="1080">
+
+<section data-label="Cover" class="cover" data-screen-label="01">
+<div class="rule"></div>
+<p class="kicker">Internal engineering talk</p>
+<h1>Jellystructure &amp; Ravilo</h1>
+<p class="lede">One backend, four clients, 404 numbered phases — every one of them specified in writing before it was built.</p>
+<div class="metarow"><span>Kotlin/Native · Ktor</span><span>Compose Multiplatform</span><span>~84k LOC</span><span>1,300+ commits</span></div>
+</section>
+
+<section data-label="Where it started" data-screen-label="02">
+<div class="head" style="gap:16px"><p class="kicker">initial-idea.md · 1,865 bytes · committed first</p><h1 class="title">Where it started</h1></div>
+<div class="origin grow">
+<div class="doc">
+<div class="bar"><span style="color:var(--acc-a)">●</span><b>initial-idea.md</b><span>· 2026-06-11</span></div>
+<div class="txt">
+<p>“A nice web system that can be hosted via docker compose, built with <em>Kotlin native on backend and Kotlin wasm on frontend</em> — proper DOM things instead of some canvas.”</p>
+<p>“This system should be a <em>replacement for the existing metadata that Jellyfin provides</em>, so you shouldn't need to use refresh metadata ever.”</p>
+<p class="cite">“if a file has the languages 0 → Faroese, 1 → Danish … first check Faroese, if it's not there check Danish, then the global fallback”</p>
+<p>“We want to build this project in multiple steps, so let's <em>write the requirements and all the different phases</em>.”</p>
+</div>
+</div>
+<div class="arc">
+<div class="step"><span class="when">Phase 0–30</span><span class="what">Scanner, NFO writer, config editor<br><span>The whole of the original document, shipped.</span></span></div>
+<div class="step"><span class="when">R01</span><span class="what">Ravilo, an Android TV client<br><span>Not in the idea at all — the clean data made it worth building.</span></span></div>
+<div class="step"><span class="when">R60 · R189</span><span class="what">Phone, web and Samsung Tizen<br><span>Three more clients off one shared Compose module.</span></span></div>
+<div class="step"><span class="when">176 · R214</span><span class="what">Live TV, Seerr requests, segments, Docker/GHCR<br><span>Two products, four clients, one repository.</span></span></div>
+</div>
+</div>
+<p class="foot">That last sentence is the origin of everything in Part 2. The method was in the brief before the first line of Kotlin.</p>
+</section>
+
+<section data-label="Two halves" data-screen-label="03">
+<div class="head"><h1 class="title">Two halves, one repository</h1><p class="lede">Jellyfin streams files well and understands them poorly. That split defines both halves.</p></div>
+<div class="two grow">
+<div class="card">
+<p class="tag">Backend + admin</p>
+<h2>Jellystructure</h2>
+<ul>
+<li><span class="dot"></span><span>Scans the library, resolves metadata against TMDB</span></li>
+<li><span class="dot"></span><span>Writes NFO files and owns artwork</span></li>
+<li><span class="dot"></span><span>Normalises age ratings across national systems</span></li>
+<li><span class="dot"></span><span>Detects intro and credits by audio fingerprint</span></li>
+<li><span class="dot"></span><span>Reconciles all of it back into Jellyfin</span></li>
+</ul>
+</div>
+<div class="card">
+<p class="tag">Client</p>
+<h2>Ravilo</h2>
+<ul>
+<li><span class="dot"></span><span>Reads the cleaned data, not Jellyfin's raw view</span></li>
+<li><span class="dot"></span><span>Android TV, phone, web, Samsung Tizen</span></li>
+<li><span class="dot"></span><span>Flags and native language names, not codec strings</span></li>
+<li><span class="dot"></span><span>Skips intros because it knows where they are</span></li>
+<li><span class="dot"></span><span>Channels, profiles, maturity limits, Live TV</span></li>
+</ul>
+</div>
+</div>
+<p class="foot">Neither half replaces Jellyfin — it still does the streaming.</p>
+</section>
+
+<section data-label="Stack" data-screen-label="04">
+<div class="head"><h1 class="title">The stack</h1></div>
+<table>
+<tr><th>Layer</th><th>Technology</th><th>Note</th></tr>
+<tr><td class="k">Backend</td><td class="t">Kotlin/Native · linuxX64 · Ktor</td><td class="n">One native binary, no JVM on the host</td></tr>
+<tr><td class="k">Admin frontend</td><td class="t">Kotlin/WASM</td><td class="n">DOM-based — no Canvas, no Compose for Web</td></tr>
+<tr><td class="k">TV · phone · web</td><td class="t">Compose Multiplatform</td><td class="n">One UI codebase across three form factors</td></tr>
+<tr><td class="k">Extra target</td><td class="t">ravilo-tizen</td><td class="n">Samsung TVs, built from the same shared module</td></tr>
+</table>
+<div class="callout">
+<code>no response compression at all · past ~1,000 open connections the whole server dies</code>
+<p class="small">Kotlin/Native is a thin ecosystem. Ktor's native networking can only watch a fixed number of connections at once, and going one over doesn't refuse a request — it takes the process down. Constraints you rediscover by crashing are constraints you should have written down.</p>
+</div>
+</section>
+
+<section data-label="By the numbers">
+<div class="head"><h1 class="title">The codebase, in numbers</h1><p class="lede">Counted from the repository at this week's <span class="mono" style="font-size:34px;color:var(--acc-b)">main</span>, not estimated.</p></div>
+<div class="statgrid grow">
+<div class="numbers">
+<div class="num sm"><b>342</b><span>Kotlin source files</span></div>
+<div class="num sm"><b>9</b><span>Gradle modules</span></div>
+<div class="num sm"><b>84k</b><span>lines of Kotlin</span></div>
+<div class="num sm"><b>1,300+</b><span>commits since 2026-06-11</span></div>
+<div class="num sm"><b>404</b><span>numbered phases — 204 admin, 200 Ravilo</span></div>
+<div class="num sm"><b>194</b><span>spec and research documents live in <span class="mono" style="font-size:24px">specs/</span></span></div>
+</div>
+<div class="card" style="gap:26px;justify-content:center">
+<p class="tag">Where the weight sits</p>
+<pre style="background:none;border:0;padding:0;font-size:25px">ui/MediaDetail.kt        262 KB
+screens/PlayerScreen.kt  186 KB
+ui/Settings.kt           185 KB
+ui/RaviloConfig.kt       173 KB
+routes/MediaRoutes.kt    158 KB</pre>
+<p class="small" style="font-size:26px">18 route files behind one Ktor server · 27 Kotlin unit-test files · 5 Playwright end-to-end specs · 305 files of design mockups.</p>
+</div>
+</div>
+</section>
+
+<section data-label="Part 1" class="section-slide" data-screen-label="05">
+<div class="rule"></div>
+<p class="kicker">Part 1</p>
+<h1>The product</h1>
+<p class="lede">What correct data buys you at the UI layer.</p>
+</section>
+
+<section data-label="Admin surface" data-screen-label="06">
+<div class="head" style="margin-bottom:40px;gap:16px"><h1 class="title">The admin surface</h1><p class="lede">Write-through editing: every change commits to disk immediately, then syncs to Jellyfin on demand.</p></div>
+<div class="frame crop"><img src="admin/01-dashboard.png" alt="Jellystructure dashboard"></div>
+<p class="foot">214 flagged items grouped by issue type — untagged audio, default ≠ resolved language, cover art muxed as a selectable video track — instead of one flat error list.</p>
+</section>
+
+<section data-label="Language resolution" data-screen-label="09">
+<div class="head" style="margin-bottom:34px;gap:16px"><h1 class="title">Language resolution</h1></div>
+<div class="frame hero"><img src="admin/05-language-tracks.png" alt="Audio track language and order table"></div>
+<p class="foot" style="max-width:1560px;margin-left:auto;margin-right:auto">The founding rule: read the audio tracks in physical order and fetch metadata in the first language that returns a TMDB result. <b>Order</b> decides the metadata language; <b>default</b> decides what the player auto-selects — two different things that every other tool conflates. Untagged tracks are surfaced for manual fixing. Writes go through <span class="mono" style="font-size:26px">mkvpropedit</span>, guarded against active seeding.</p>
+</section>
+
+<section data-label="Config as a file" data-screen-label="10">
+<div class="head" style="margin-bottom:34px;gap:16px"><h1 class="title">Config is a file</h1><p class="lede">One <span class="mono" style="font-size:40px;color:var(--acc-b)">config.toml</span> on a mounted volume — editable from the web UI, surviving container restarts.</p></div>
+<div class="frame hero w2"><img src="admin/06-settings-language.png" alt="Settings metadata tab with live config.toml"></div>
+<p class="foot" style="max-width:1680px;margin-left:auto;margin-right:auto">Per-library fallbacks override the global one. Libraries themselves are never declared — they come from <span class="mono" style="font-size:26px">GET /Library/VirtualFolders</span>, never a filesystem walk.</p>
+</section>
+
+<section data-label="Observability" data-screen-label="11">
+<div class="head" style="margin-bottom:40px;gap:16px"><h1 class="title">Pipeline observability</h1><p class="lede">Per-step progress, real worker counts and run descriptors — over one WebSocket.</p></div>
+<div class="frame crop"><img src="admin/04-activity.png" alt="Activity page with live scan console"></div>
+<p class="foot">The frontend renders server-pushed state only. No polling, no page reloads, no derived or optimistic client state — a constitution rule, not a preference.</p>
+</section>
+
+<section data-label="Channels" style="padding:0" data-screen-label="08">
+<div class="bleed">
+<img src="screenshots/38-home-channel-rail-dansktv-focused.png" alt="Ravilo home with channel rail and Continue Watching">
+<div class="overlay">
+<h1>Curated channels</h1>
+<p class="small">A channel is a saved filter over the library — Olivar, DanskTV, Barna Sjónvarp, Varpið — not a separate service or a second library. The episode badges fall back to our own scanned numbering whenever Jellyfin's filename parse comes back empty.</p>
+</div>
+</div>
+</section>
+
+<section data-label="Picker" data-screen-label="09">
+<div class="head"><h1 class="title">The audio &amp; subtitle picker</h1><p class="lede">Two levels: languages first, versions inside — because a flat list stopped scaling.</p></div>
+<div class="pair grow">
+<figure><div class="frame"><img src="screenshots/26-audio-subtitles-picker-level1-languages.png" alt="Picker level 1, one row per language"></div><figcaption>Level 1 · one row per language</figcaption></figure>
+<figure><div class="frame"><img src="screenshots/29-subtitles-picker-level2-versions.png" alt="Picker level 2, versions within a language"></div><figcaption>Level 2 · versions inside one language</figcaption></figure>
+</div>
+<div class="statline">
+<div><b>46.5%</b><span>of movies have a same-language collision</span></div>
+<div><b>47.5%</b><span>of series do</span></div>
+<div><b>32</b><span>unnamed tracks in the worst single file</span></div>
+</div>
+</section>
+
+<section data-label="Segments" data-screen-label="10">
+<div class="head" style="margin-bottom:40px;gap:16px"><h1 class="title">Intro &amp; credits editing</h1><p class="lede">Every episode of the season on one timeline, so the odd one out sticks out.</p></div>
+<div class="frame crop"><img src="admin/03-segments.png" alt="Intro and credits season sheet"></div>
+<p class="foot">Chapter match → ffmpeg heuristic → cross-episode Chromaprint fingerprinting. Markers lock per marker, and only what a human confirms counts as a decision. Publishing back to Jellyfin was specified, then dropped — the review probed the live server and found <span class="mono" style="font-size:24px">POST /MediaSegments</span> returns 405.</p>
+</section>
+
+<section data-label="Part 2" class="section-slide" data-screen-label="11">
+<div class="rule"></div>
+<p class="kicker">Part 2</p>
+<h1>The method</h1>
+<p class="lede">Spec-driven development, as actually practised here.</p>
+</section>
+
+<section data-label="Spec before code" data-screen-label="12">
+<div class="head"><h1 class="title">Spec before code</h1></div>
+<div class="treegrid grow">
+<pre><b>specs/</b>
+  <b>constitution.md</b>          <i>wins on conflict</i>
+  <b>plan.md</b>                  <i>layout · models · routes · WS</i>
+  <b>requirements/</b>            <i>phase-NN-*.md   · 57 files</i>
+  <b>ravilo/requirements/</b>     <i>phase-R*.md     · 73 files</i>
+  <b>research-reports/</b>        <i>dated deep-dives · 18 files</i>
+<b>STATUS.md</b>                   <i>the one status table</i></pre>
+<div style="display:flex;flex-direction:column;gap:32px">
+<p class="body">Every change gets a numbered phase and a markdown spec in the repository <em>before</em> any code is written — not a ticket, not a comment on a PR.</p>
+<p class="body">Numbers are monotonic and never reused: admin phases are numeric, Ravilo phases are prefixed <span class="mono" style="color:var(--acc-b)">R</span>. <b>404 phases</b> so far — the two counters run independently, so the highest are <span class="mono" style="font-size:30px">215</span> and <span class="mono" style="font-size:30px">R242</span>.</p>
+<p class="small">Only recent phases keep a flat spec file; older ones were folded into <span class="mono" style="font-size:25px">STATUS.md</span> and git history once shipped. Next free numbers today: 216 and R243.</p>
+</div>
+</div>
+</section>
+
+<section data-label="The loop" data-screen-label="12a">
+<div class="head"><h1 class="title">The loop, step by step</h1><p class="lede">Same five steps every time. Only the subject changes.</p></div>
+<ol class="steps grow" style="justify-content:center">
+<li><span class="sn">01</span><h3>Design it — and keep playing with it until it looks right</h3><span class="model">Claude Design · Opus 5, high</span></li>
+<li><span class="sn">02</span><h3>Write the specs for what we just designed together</h3><span class="model">Claude Design · Opus 5, high</span></li>
+<li class="plain"><span class="sn">03</span><h3>Commit, push — then pull on the Debian server</h3><span class="model">git</span></li>
+<li><span class="sn">04</span><h3>Review the specs against what the backend actually knows — add, update, correct</h3><span class="model">Claude Code · Opus 5, extra/max</span></li>
+<li><span class="sn">05</span><h3>Implement the specs</h3><span class="model">Claude Code · Sonnet 5, medium</span></li>
+</ol>
+<p class="foot">Step 4 is the one that earns its keep: the design side proposes, the side that can read the real backend gets to object before a line is written.</p>
+</section>
+
+<section data-label="Two projects" data-screen-label="12b">
+<div class="head"><h1 class="title">Two projects, and how a bug gets into the loop</h1></div>
+<div class="two center grow" style="gap:40px">
+<div class="card"><p class="tag">where steps 1–2 happen</p><h2>The design project</h2><p class="small" style="font-size:29px">HTML, CSS, JavaScript and SVG for the whole admin site and the TV app — buttons work, screens navigate, states are real. It is mockup and wireframe, and it never ships.</p></div>
+<div class="card"><p class="tag">where steps 4–5 happen</p><h2>The actual code</h2><p class="small" style="font-size:29px">Kotlin — 342 files, one native binary, Compose clients. The mockups are its visual specification, not a preview of it.</p></div>
+</div>
+<div class="callout" style="margin-top:44px">
+<code>an 82 Mbps 4K remux against a 60 Mbps decoder — not the server, not the wifi, the TV itself</code>
+<p class="small">So: a debug session to find the real ceiling, ending in a written report. The report goes to the design side, which turns it into something a viewer would actually want to see — and then it runs the same five steps as everything else. A bug does not get a shortcut.</p>
+</div>
+</section>
+
+<section data-label="Four rules" data-screen-label="13">
+<div class="head"><h1 class="title">Four rules that make it hold</h1></div>
+<div class="quad grow">
+<div class="card"><p class="n">01</p><h2>The constitution wins on conflict</h2><p>Auth model, language resolution, NFO and artwork conventions, subprocess hierarchy. When a phase spec disagrees, the phase spec is wrong.</p></div>
+<div class="card"><p class="n">02</p><h2>Bug fixes get specs too</h2><p>A bug means the original spec was wrong or silent. Fixing only the code leaves the spec wrong — and the next person reads the spec.</p></div>
+<div class="card"><p class="n">03</p><h2>Status lives in exactly one place</h2><p>Spec files describe what a phase <em>is</em>; they never claim it is done. <span class="mono" style="font-size:24px">STATUS.md</span> is the only source of truth.</p></div>
+<div class="card"><p class="n">04</p><h2>Design is half the spec</h2><p>The HTML/CSS mockups under <span class="mono" style="font-size:24px">design/</span> are the visual specification for the Compose and WASM implementations, not throwaway comps.</p></div>
+</div>
+</section>
+
+<section data-label="Case study report" data-screen-label="14">
+<div class="head"><p class="kicker">Case study · R202</p><h1 class="title">The report, and the wrong answer</h1></div>
+<div class="grow" style="display:flex;flex-direction:column;gap:44px">
+<blockquote>“Why is there no Continue Watching on the Apple&nbsp;TV channel?”<p class="attrib">Live report · 2026-08-18</p></blockquote>
+<div class="code">RowKind.CONTINUE -&gt; {
+    if (channelFilter != null) continue  <em>// inherit-mode channels keep R59 behaviour (no Continue)</em></div>
+<p class="body">A code comment, citing a specific phase number, explaining exactly why the row is absent. Reported back as intended behaviour. Case closed — twice over, because the comment was wrong <em style="font-style:normal;color:var(--warn)">and</em> the thing it described was about to be replaced wholesale.</p>
+</div>
+</section>
+
+<section data-label="Case study history" data-screen-label="15">
+<div class="head"><p class="kicker">Case study · R202 → R219</p><h1 class="title">One line, four phases, and a model that was wrong</h1></div>
+<blockquote class="small-q">“It's in ‘inherit’ layout mode, which means it should get the same settings as the home screen has — and this page does have Continue Watching.”<p class="attrib">The user, overruling the comment · R59's own text agreed with them</p></blockquote>
+<div class="chain four">
+<div class="card"><p class="when">c6233e93 · 2026-06-19</p><h2>R05 wrote it</h2><p>The first channel implementation, before inherit and custom modes existed. Every channel skipped Continue — correctly, then.</p></div>
+<div class="card"><p class="when">a2de8eb8 · 2026-06-29</p><h2>R143 mislabelled it</h2><p>Built custom-mode row config, left the R05 line alone, and credited it to “R59 behaviour” in a comment. It never was.</p></div>
+<div class="card"><p class="when">2026-08-18</p><h2>R202 retired it</h2><p>Inherit means Home's own rows over the unfiltered library. The spec records the wrong answer too.</p></div>
+<div class="card"><p class="when">2026-08-30</p><h2>R219 replaced it</h2><p>Deleting the line exposed the real fault: there was never one Continue Watching list. Now there is, and every row is a view over it.</p></div>
+</div>
+<p class="foot"><span class="mono" style="font-size:26px;color:var(--ink)">git log -S"RowKind.CONTINUE"</span> settled a 200-phase-old provenance question in one command — and the fix it unblocked turned out to be four bugs (R185, R186, R198, R202) sharing one wrong assumption.</p>
+</section>
+
+<section data-label="Case study, part two" data-screen-label="15a">
+<div class="head"><p class="kicker">Case study · R219 → R231</p><h1 class="title">The spec said it. The code did half of it.</h1></div>
+<div class="grow" style="display:flex;flex-direction:column;gap:40px">
+<blockquote class="small-q">“On a Jellyfin timeout the row is omitted entirely rather than shipped half-built, and the SWR cache serves the previous good value.”<p class="attrib">R219's own invariant · written before the code</p></blockquote>
+<div class="code"><s>fun buildCanonicalContinueList(): List&lt;ContinueEntry&gt;   // timeout → empty list → cached</s>
+fun buildCanonicalContinueList(): List&lt;ContinueEntry&gt;<em>?</em>  <em>// null = failed, never cached</em></div>
+<p class="body">One slow Jellyfin round trip past the six-second timeout returned an empty list — and empty was written into the five-minute cache that Home, every channel's row and See-all all share. Continue Watching went blank everywhere until it expired. The fix is one question mark: a failed build can no longer look like an empty one, and never overwrites a good value. Stale but real beats wrongly empty.</p>
+</div>
+<p class="foot">The channel config was fine, the server returned 15 items when I re-checked, the client render was correct. What found it was re-reading R219's text and noticing the shipped code did the first half of that sentence and not the second — the spec was the diagnostic instrument, months after it was written.</p>
+</section>
+
+<section data-label="Cost" data-screen-label="16">
+<div class="head"><h1 class="title">What the method costs</h1><p class="lede">Worth saying out loud — it makes the rest credible.</p></div>
+<ul class="grow stack-list" style="gap:44px;max-width:1560px">
+<li><span class="dot"></span><span>Writing a spec for a two-line fix feels absurd in the moment. It stops feeling absurd the third time a spec catches a wrong assumption before it becomes code.</span></li>
+<li><span class="dot"></span><span>Specs go stale. That is why <span class="mono" style="font-size:28px">research-reports/</span> is labelled “research, not spec, may go stale” — an honest label beats a doomed promise to maintain everything.</span></li>
+<li><span class="dot"></span><span>Comments lie, as R202 proved. Specs lie less, because they are reviewed as documents rather than skimmed as decoration — but they are not immune, which is why status is separate and script-checked.</span></li>
+</ul>
+</section>
+
+<section data-label="The agent" data-screen-label="17">
+<div class="head"><h1 class="title">Where the agent fits</h1><p class="lede">Claude Code writes most of the implementation. The specs are what make that reviewable.</p></div>
+<div class="two center grow">
+<div class="card"><p class="tag">Before code exists</p><h2>A spec is vetoable</h2><p class="small" style="font-size:30px">Reviewing a one-page document beats reviewing a 400-line diff — and it happens before the diff exists.</p></div>
+<div class="card"><p class="tag">Across sessions</p><h2>Phase numbers are addresses</h2><p class="small" style="font-size:30px">“Implement R202” is unambiguous in a way “fix the channel bug” is not, in a new session with no memory of the last one.</p></div>
+</div>
+<p class="foot">And when the agent is confidently wrong, the spec is what the human uses to win the argument. Same rules for the human and the machine.</p>
+</section>
+
+<section data-label="Guard rails" data-screen-label="18">
+<div class="head"><h1 class="title">Guard rails that don't rely on memory</h1></div>
+<div class="two center grow">
+<div class="card">
+<p class="tag">post-push gate</p><h2 class="mono" style="font-family:var(--mono);font-size:34px;color:var(--ink)">scripts/check-phases.sh</h2>
+<p class="small" style="font-size:29px">Flags any spec file with no row in <span class="mono" style="font-size:26px">STATUS.md</span>, and any row whose spec file has vanished. That is the “never forget a phase” guarantee.</p>
+</div>
+<div class="card">
+<p class="tag">post-push gate</p><h2 class="mono" style="font-family:var(--mono);font-size:34px;color:var(--ink)">scripts/check-mobile-css.sh</h2>
+<p class="small" style="font-size:29px">Fences 18 specific CSS rules that a careless design re-sync silently reverted <b style="color:var(--warn)">eight separate times</b> before the check existed.</p>
+</div>
+</div>
+<p class="foot">The fix was never “be more careful.” It was making the mistake impossible.</p>
+</section>
+
+<section data-label="Close" class="close" data-screen-label="19">
+<div class="rule"></div>
+<blockquote>The specs didn't prevent the bug. They made it arguable.</blockquote>
+<p class="lede" style="max-width:1300px">A non-programmer overruled the code by quoting the specification. That is the whole value proposition.</p>
+<div class="metarow"><span>404 phases</span><span>194 documents</span><span>1 status table</span><span>2 gate scripts</span></div>
+</section>
+
+</deck-stage>
+<script src="deck-stage.js"></script>
+</body>
+</html>

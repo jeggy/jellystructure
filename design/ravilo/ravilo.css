@@ -158,7 +158,7 @@ body { font-family: 'Sora', sans-serif; }
 .prof .tag { font-size: 14px; color: var(--ink-dim); margin-top: -10px; }
 .prof.focused .pic { transform: scale(1.07); border-color: var(--ring); box-shadow: 0 0 0 4px var(--ring), 0 22px 50px rgba(0,0,0,.55); }
 .prof.focused .nm { color: var(--ink); }
-.prof .pic.add { background: rgba(255,255,255,.06); border: 2px dashed var(--line-2); color: var(--ink-soft); font-size: 64px; font-weight: 300; }
+.prof .pic.add { background: rgba(255,255,255,.06); border: 2px dashed var(--line-2, rgba(255,255,255,.22)); color: var(--ink-soft); font-size: 64px; font-weight: 300; }
 .prof .pic.signin { background: rgba(255,255,255,.06); border: 2px solid var(--line); }
 .prof .badge-k { position: absolute; top: 8px; right: 8px; background: rgba(0,0,0,.45); border-radius: 8px; font-size: 13px; padding: 2px 8px; font-weight: 600; }
 .profiles .ft { display: flex; gap: 16px; align-items: center; }
@@ -604,11 +604,16 @@ body { font-family: 'Sora', sans-serif; }
 .gchip.focused { background: var(--ink); color: #0a0c13; transform: scale(1.05); box-shadow: 0 0 0 4px var(--ring); }
 .pgrid { padding: 0 64px; }
 .grid-row { display: flex; gap: 24px; margin-bottom: 30px; }
-.grid-row .tile.poster { flex: 1 1 0; width: auto; min-width: 0; }       /* 6 equal columns via flex */
+/* 6 equal columns via flex — capped at the 6-up column width so a short row (a studio with
+   three titles, a person with two) keeps poster proportions instead of stretching to fill */
+.grid-row .tile.poster { flex: 1 1 0; width: auto; min-width: 0; max-width: calc((100% - 120px) / 6); }
 .pgrid .empty { color: var(--ink-dim); font-size: 20px; padding: 30px 0; }
 
 /* ---------- browse page (Direction A: facet bar + popover) ---------- */
 .browsehead { align-items: flex-start; }
+/* the head's text column takes the free width, or a long crumb wraps against the h1's
+   own width ("Dansk / TV") while the row still has room to spare */
+.browsehead > div:first-child { flex: 1 1 auto; min-width: 0; }
 .browsehead .gridcount { margin-left: auto; align-self: baseline; }
 .crumb { font-size: 19px; color: var(--ink-dim); margin-bottom: 8px; font-weight: 500; }
 .crumb b { color: var(--ink-soft); font-weight: 600; }
@@ -696,6 +701,36 @@ body { font-family: 'Sora', sans-serif; }
 .dischead-row { display: flex; align-items: baseline; gap: 18px; }
 .dischead-row h1 { font-family: 'Space Grotesk', sans-serif; font-size: 52px; letter-spacing: -1.5px; }
 .disc-sub { color: var(--ink-soft); font-size: 20px; }
+/* ---- Discover → library taxonomies (Studios / Networks / Genres) ----
+   The viewer-side of jellystructure's Metadata page: a logo wall with counts. Only a few
+   brands ship a logo file (TMDB has no network search), so the name set as a wordmark is
+   the designed state of a tile, not an error state — there is no "no logo" badge here. */
+.taxometa { display: flex; align-items: baseline; gap: 11px; padding: 0 64px; margin: 26px 0 22px; color: var(--ink-dim); font-size: 19px; }
+.taxometa b { color: var(--ink-soft); font-weight: 600; }
+.taxometa .tm-note { margin-left: 5px; }
+.taxogrid { padding: 0 64px; }
+.taxo-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 24px; margin-bottom: 34px; }
+.taxogrid.genres .taxo-row { grid-template-columns: repeat(5, 1fr); }
+.taxo { cursor: pointer; min-width: 0; }
+.taxo-card { height: 158px; border-radius: 16px; padding: 0 26px; overflow: hidden;
+  background: linear-gradient(180deg, rgba(255,255,255,.085), rgba(255,255,255,.035));
+  border: 2px solid var(--line); display: flex; align-items: center; justify-content: center;
+  transition: transform .18s var(--ease), box-shadow .2s, border-color .2s, background .2s; }
+.taxo.genre .taxo-card { height: 104px; }
+.taxo-wm { font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 34px; letter-spacing: -1px;
+  line-height: 1.04; color: var(--ink); text-align: center; text-wrap: balance; }
+.taxo.genre .taxo-wm { font-size: 27px; letter-spacing: -.5px; }
+.taxo-logo { max-width: 74%; max-height: 56%; object-fit: contain; }
+.taxo-cap { display: flex; align-items: baseline; gap: 10px; margin-top: 12px; padding: 0 4px; min-width: 0; }
+.taxo-nm { font-size: 20px; font-weight: 600; color: var(--ink-soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.taxo-ct { font-size: 18px; color: var(--ink-dim); white-space: nowrap; }
+.taxo.focused .taxo-card { transform: scale(1.045); border-color: rgba(255,255,255,.3);
+  background: linear-gradient(180deg, rgba(255,255,255,.15), rgba(255,255,255,.07));
+  box-shadow: 0 0 0 4px var(--ring), 0 22px 50px rgba(0,0,0,.55); }
+.taxo.focused .taxo-nm { color: var(--ink); }
+.taxo.focused .taxo-ct { color: var(--ink-soft); }
+.taxo-empty { color: var(--ink-dim); font-size: 22px; padding: 26px 0; }
+
 .srcpick { display: flex; gap: 14px; margin-top: 22px; }
 .srcchip { display: flex; align-items: center; gap: 12px; padding: 11px 20px 11px 12px; border-radius: 16px; background: var(--card); border: 2px solid transparent; cursor: pointer; transition: transform .15s var(--ease), box-shadow .2s, background .2s; }
 .srcchip .srcwm { width: 42px; height: 42px; border-radius: 10px; display: flex; align-items: center; justify-content: center; color: #fff; font-family: 'Space Grotesk',sans-serif; font-weight: 800; font-size: 18px; }

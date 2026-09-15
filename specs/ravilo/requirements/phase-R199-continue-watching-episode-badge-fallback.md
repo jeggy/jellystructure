@@ -2,7 +2,7 @@
 
 > Found live on stue TV immediately after deploying R198: every other in-progress series in Continue
 > Watching shows its "S1 · E3"-style badge except *Severance*, whose S02E03 card has no episode number
-> at all. Root-caused live against Jellyfin (jellyfin.example.net) and jellystructure's own DB — this is
+> at all. Root-caused live against Jellyfin (jellyfin.jebster.net) and jellystructure's own DB — this is
 > the Continue Watching badge's own gap, not a repeat of Phase 152 (which already fixed the *scanner's*
 > side of exactly this problem).
 
@@ -13,7 +13,7 @@
 (2026-08-18, immediately following the R198 restart.)
 
 ## Investigation
-Live query (`GET /Users/{id}/Items/Resume?...&Fields=UserData`, jellyfin.example.net, user `jogvan`):
+Live query (`GET /Users/{id}/Items/Resume?...&Fields=UserData`, jellyfin.jebster.net, user `jogvan`):
 Severance's current resume entry ("Severance.S02E03.Who.Is.Alive") comes back with
 `ParentIndexNumber: 2` (season, present) but **`IndexNumber: null`** (episode, missing) — Jellyfin's own
 metadata parser failed to extract an episode number from this file's scene-release-style name. Two other
