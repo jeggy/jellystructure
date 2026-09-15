@@ -5,11 +5,18 @@
 # designs" sync (see CLAUDE.md "Watch the loop") — a rule added here, in the repo, with no matching
 # source in that project gets clobbered on the next export with no warning.
 #
-# This has now happened NINE times (2026-07-13, 07-31, 08-02, 08-07, 08-10 ×2, 08-11, 08-13, 08-28),
-# wiping the same blocks over and over. Prose warnings did not stop it: the CLAUDE.md warning added
-# after the 3rd incident was followed by five more. This script is the technical fence instead — it
-# was created after the 2nd incident (Phase 138) but only ever tracked ONE rule, so it kept passing
-# while everything else was being wiped. It now covers every block a sync has actually destroyed.
+# This has now happened THIRTEEN times (2026-07-13, 07-31, 08-02, 08-07, 08-10 ×2, 08-11, 08-13,
+# 08-28, 09-02, 09-05, 09-12, 09-16), wiping the same blocks over and over. Prose warnings did not
+# stop it: the CLAUDE.md warning added after the 3rd incident was followed by five more. This script
+# is the technical fence instead — it was created after the 2nd incident (Phase 138) but only ever
+# tracked ONE rule, so it kept passing while everything else was being wiped. It now covers every
+# block a sync has actually destroyed.
+#
+# 13th incident (2026-09-16) also deleted the 3 font .woff2 binaries AGAIN (see the font-existence
+# check below — wf.css referencing the right URL isn't enough if the file itself is gone) and, for
+# the first time, reintroduced REAL de-anonymized infrastructure values (real IPs, a real domain, a
+# real private-tracker name + its announce passkey) across ~20 spec files and design/app/{metadata,
+# library,seeding}.js — see scripts/check-deanonymization.sh, a separate fence for that class.
 #
 # The 9th incident (08-28) also hit two files this script didn't cover at all: it reverted the
 # 2026-08-13 .sx-scoping fix in segments.css wholesale (caught by check-css-scoping.sh, run alongside
@@ -82,6 +89,15 @@ check "$WF" "alert banner (.alert-bad)" ".alert-bad {"
 # was silently blocking. A design sync reverting this to the @import breaks admin typography again with
 # no visible error, so it's fenced the same as everything else here.
 check "$WF" "self-hosted fonts, not the Google Fonts @import" "url('fonts/jetbrains-mono.woff2')"
+# wf.css referencing the right URL doesn't help if the binary itself is gone — a sync has deleted
+# these three outright (not just the CSS rule) at least twice (9th, 10th, 12th, 13th incidents).
+for font in jetbrains-mono sora space-grotesk; do
+  f="design/app/fonts/$font.woff2"
+  if [ ! -s "$f" ]; then
+    echo "MISSING      self-hosted font file ($f)"
+    fail=1
+  fi
+done
 
 # ---- segments.css / ravilo-player.js --------------------------------------------------------------
 SEGCSS="design/app/segments.css"

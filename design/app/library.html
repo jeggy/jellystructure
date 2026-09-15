@@ -103,7 +103,7 @@
       <select class="seedsel" id="seed-tracker">
         <option value="">any tracker (off)</option>
         <option value="*">— any tracker —</option>
-        <option value="NordicHD">NordicHD</option>
+        <option value="FrostSeed">FrostSeed</option>
         <option value="FilmBytes">FilmBytes</option>
         <option value="OpenTrackers">OpenTrackers</option>
       </select>
@@ -172,8 +172,8 @@
   /* tracker seeding filter (Phase 98) — which tracker (if any) a title is seeded on.
      Live data comes from qBittorrent resolved via the Phase-98 tracker registry; here it's a
      deterministic stand-in so the filter produces a believable subset. */
-  const SEED_TRACKERS = ['NordicHD', 'FilmBytes', 'OpenTrackers'];
-  const SEED_OVERRIDE = { 'Nordvest': 'NordicHD', 'Sintel': 'NordicHD' };
+  const SEED_TRACKERS = ['FrostSeed', 'FilmBytes', 'OpenTrackers'];
+  const SEED_OVERRIDE = { 'Nordvest': 'FrostSeed', 'Sintel': 'FrostSeed' };
   function hashStr(s) { let h = 0; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0; return h; }
   function seededOn(title) {
     if (title in SEED_OVERRIDE) return SEED_OVERRIDE[title];

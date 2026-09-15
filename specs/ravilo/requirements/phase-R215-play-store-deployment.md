@@ -4,8 +4,8 @@
 > a github release. Let's prepare all of this."* Follows the same-day Play Store submission-checklist
 > conversation (package names, store assets, signing, privacy policy, closed-testing gate).
 
-**Status:** Planned — CI/build-side pieces implemented this session; Play Console setup is manual and
-outside this repo, not yet done.
+**Status:** ✓ Done (2026-09-12) — CI/build-side pieces and all manual Play Console setup complete;
+see §7.
 
 **2026-09-03 addendum — manual first upload done, one blocking error found and fixed.** The user completed
 §3 steps 1–4 (app listing, service account, upload keystore, five repo secrets — the keystore was
@@ -126,3 +126,11 @@ not a silent no-op), matching `publish.yml`'s existing validation behavior.
 - Automatic promotion internal → production, or any staged rollout percentage — always manual in Play
   Console.
 - Creating the Play Console app listing, service account, or upload keystore — human-only steps, §3.
+
+## 7. 2026-09-12 addendum — manual step complete, phase closed
+
+The one remaining manual action from §3 (upload the first build to the internal track, add testers) is
+done — confirmed by the app owner. `deploy-play-store.yml` has since shipped at least one real release
+through the automated path on top of that first upload (the TV-exclusion fix in `0ba8ae5c` and the
+targetSdk-36 fix in `8350ea18` were both driven by real Play Console submission feedback, which only
+happens against a live listing). No further action outstanding; phase is complete.

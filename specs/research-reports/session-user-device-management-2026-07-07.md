@@ -10,7 +10,7 @@ pairing should be replaced by (or extended with) Jellyfin QuickConnect; and (e) 
 flood of ugly session logs (`Jellyfin session bridge dropped … 403`, `paired user token rejected (401)`).
 
 **Status: investigation only — nothing implemented here.** Everything below was verified against the live
-stack (Jellyfin @ jellyfin.jebster.net, read-only with the admin token; the live `config/jellystructure.db`)
+stack (Jellyfin @ jellyfin.example.net, read-only with the admin token; the live `config/jellystructure.db`)
 and the working tree on 2026-07-07. The durable recommendation has graduated into four `Planned` phase
 specs — **141 / 142 / 143** (`specs/requirements/`) and **R175** (`specs/ravilo/requirements/`) — this
 report is the record of the analysis behind them.

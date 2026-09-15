@@ -1,7 +1,7 @@
 # Phase 186 — a request must be able to end: lifecycle reconciliation for Discover requests
 
 > Requested 2026-09-04: *"Please remove Lokkeduerne and Digger from this list"* (the Ravilo Discover ▸
-> Request ▸ **"In progress"** rail on ravilo.jebster.net) → after a manual three-system removal → *"Let's
+> Request ▸ **"In progress"** rail on ravilo.example.net) → after a manual three-system removal → *"Let's
 > write a spec for this, so it won't happen again. We will need some type of cleanup job within
 > jellystructure that checks for stale stuff in this area."*
 
@@ -16,7 +16,7 @@ it never has to be done by hand again.
 
 ### Open questions, resolved 2026-09-05
 
-Probed live against `stream.jebster.net` (Seerr 3.4.1) before writing any sweep code, same as Phase
+Probed live against `stream.example.net` (Seerr 3.4.1) before writing any sweep code, same as Phase
 163's/187's standing discipline:
 
 1. **Cadence** — its own independent hourly timer (`AcquisitionConfig.lifecycleSweepHours`, default 1,

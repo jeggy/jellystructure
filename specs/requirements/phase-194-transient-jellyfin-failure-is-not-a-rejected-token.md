@@ -55,7 +55,7 @@ has ever written carries a real decoder and `direct_play = 1`. These three never
 
 The 10-minute negative cache opened at 07:51:55 and ran to 08:01:55. All three attempts fall inside it.
 
-**The token was never invalid.** Probed live against `https://jellyfin.jebster.net` on 2026-09-06,
+**The token was never invalid.** Probed live against `https://jellyfin.example.net` on 2026-09-06,
 using the exact `jellyfin_user_token` still stored for that device, against the exact endpoint
 `isTokenValid` uses:
 
@@ -90,7 +90,7 @@ Three distinct outcomes collapse into the single value `false`:
    `getOrDefault(false)` without ever being logged, so there is no evidence left behind.
 
 Case 3 is overwhelmingly the likely one here: the server had been idle for 20 minutes, Jellyfin is
-reached over external HTTPS (`jellyfin_url = "https://jellyfin.jebster.net"`), and the shared
+reached over external HTTPS (`jellyfin_url = "https://jellyfin.example.net"`), and the shared
 `OutboundHttp` Curl client (`OutboundHttp.kt:177-183`, `connectTimeoutMillis = 10_000`) pools
 connections across that idle window. The first outbound call after a long quiet period is precisely
 where a stale pooled connection surfaces — and it surfaced 5 seconds before the TV finished connecting.
