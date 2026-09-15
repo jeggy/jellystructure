@@ -83,6 +83,28 @@
   .tlabel{ font-size:12.5px; font-weight:500; margin-top:7px; line-height:1.25; }
   .tsub{ font-size:11px; color:var(--ink-dim); margin-top:1px; }
 
+  /* Discover → library taxonomies (Studios / Networks / Genres). Phone half of the TV
+     wall: same counts, same resolver (R.taxonomy), two-up because the tiles are taps. */
+  .txmeta{ padding:6px 18px 12px; font-size:12px; color:var(--ink-dim); }
+  .txmeta b{ color:var(--ink-soft); font-weight:600; }
+  .txwall{ display:grid; grid-template-columns:1fr 1fr; gap:11px; padding:0 18px; }
+  .txwall.gen{ grid-template-columns:1fr 1fr 1fr; }
+  .txc{ cursor:pointer; }
+  .txcard{ height:78px; border-radius:13px; border:1px solid var(--line); background:rgba(255,255,255,.055);
+    display:flex; align-items:center; justify-content:center; padding:0 12px; overflow:hidden; }
+  .txwall.gen .txcard{ height:58px; }
+  .txc:active .txcard{ border-color:var(--accent); background:rgba(255,255,255,.1); }
+  .txwm{ font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:16px; line-height:1.08; text-align:center; letter-spacing:-.3px; text-wrap:balance; }
+  .txwall.gen .txwm{ font-size:13.5px; }
+  .txlogo{ max-width:78%; max-height:56%; object-fit:contain; }
+  .txcap{ display:flex; align-items:baseline; gap:6px; margin-top:6px; }
+  .txnm{ flex:1 1 auto; min-width:0; font-size:12.5px; font-weight:600; color:var(--ink-soft); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .txct{ flex:none; font-size:11px; color:var(--ink-dim); white-space:nowrap; }
+  .txback{ display:inline-flex; align-items:center; min-height:44px; padding:0 4px; margin:0 18px; white-space:nowrap; font-size:13.5px; font-weight:600; color:var(--ink-soft); cursor:pointer; }
+  .txgrid{ display:grid; grid-template-columns:repeat(3,1fr); gap:13px 11px; padding:0 18px; }
+  .txgrid .tile{ width:auto; }
+  .txgrid .poster{ width:100%; height:auto; aspect-ratio:2/3; }
+
   /* studios rail */
   .studios{ display:flex; gap:10px; overflow-x:auto; padding:0 18px; scrollbar-width:none; }
   .studios::-webkit-scrollbar{ display:none; }
@@ -275,6 +297,9 @@
           <div class="tab" data-tab="movies">Movies</div>
           <div class="tab" data-tab="series">Series</div>
           <div class="tab" data-tab="top10">Top 10</div>
+          <div class="tab" data-tab="studios">Studios</div>
+          <div class="tab" data-tab="networks">Networks</div>
+          <div class="tab" data-tab="genres">Genres</div>
         </div>
         <div id="app"></div>
       </div>
@@ -312,6 +337,11 @@
   const dscroll = document.getElementById('dscroll');
   const esc = s => (s==null?'':String(s)).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
   let tab = 'home';
+  const TAXO_TABS = ['studios', 'networks', 'genres'];
+  const TAXO_LABEL = { studios: 'Studios', networks: 'Networks', genres: 'Genres' };
+  const TAXO_SUB = { studios: 'Films by studio', networks: 'Series by network', genres: 'Everything by genre' };
+  let txsel = null;   // a picked studio / network / genre, i.e. the filtered grid
+  const me = (R.profiles || []).find(p => p.signedIn) || null;
 
   /* ---- fit phone to viewport ---- */
   function fit(){
@@ -326,7 +356,7 @@
     const badge = it.badge ? '<span class="pb">'+esc(it.badge)+'</span>' : '';
     return '<div class="tile" data-title="'+esc(it.title)+'">'
       + '<div class="poster" style="background:'+it.grad+';">'+badge+'<span class="ini">'+esc(it.initials)+'</span></div>'
-      + '<div class="tlabel">'+esc(it.title)+'</div><div class="tsub">'+esc(String(it.year))+' · '+esc(it.genre.split(' · ')[0])+'</div></div>';
+      + '<div class="tlabel">'+esc(it.title)+'</div><div class="tsub">'+esc(String(it.year))+' · '+esc(R.normGenre ? R.normGenre(it.genre.split(' · ')[0]) : it.genre.split(' · ')[0])+'</div></div>';
   }
   function rowHTML(r){
     return '<div class="row"><h3>'+esc(r.title)+'<span class="more">See all ›</span></h3>'
@@ -386,10 +416,40 @@
       + '</div><div style="height:30px;"></div>';
   }
 
+  /* ---- Discover → library taxonomies ----
+     Counts and grouping come from R.taxonomy / R.taxoValues, the same resolver the TV wall
+     uses and scoped to this profile, so the two surfaces can never state different numbers. */
+  function countLabel(n){ return n===1 ? '1 title' : n+' titles'; }
+  function renderTaxo(kind){
+    const list = R.taxonomy ? R.taxonomy(kind, me) : [];
+    const sum = R.taxonomySummary ? R.taxonomySummary(kind, me) : {groups:list.length, titles:0};
+    let html = '<div class="row" style="margin-top:8px;"><h3>'+TAXO_LABEL[kind]+'</h3></div>'
+      + '<div class="txmeta"><b>'+sum.groups+' '+kind+'</b> · '+countLabel(sum.titles)+' · '+TAXO_SUB[kind].toLowerCase()
+      + (me && me.kid ? ' · counting only what this profile can watch' : '') + '</div>';
+    html += '<div class="txwall'+(kind==='genres'?' gen':'')+'">'
+      + list.map(e=>'<div class="txc" data-tx="'+esc(e.name)+'">'
+          + '<div class="txcard">'+(e.logo
+              ? '<img class="txlogo" src="'+esc(e.logo)+'" alt="'+esc(e.name)+'">'
+              : '<span class="txwm">'+esc(e.name)+'</span>')+'</div>'
+          + '<div class="txcap">'+(e.logo?'<span class="txnm">'+esc(e.name)+'</span>':'')
+          + '<span class="txct">'+countLabel(e.count)+'</span></div></div>').join('')
+      + '</div>';
+    if(!list.length) html = '<div class="txmeta" style="padding-top:20px;">Nothing here for this profile yet</div>';
+    app.innerHTML = html + '<div style="height:30px;"></div>';
+  }
+  function renderTaxoList(kind, name){
+    const items = (R.libraryFor ? R.libraryFor(me) : []).filter(it => (R.taxoValues ? R.taxoValues(it, kind) : []).indexOf(name) >= 0);
+    app.innerHTML = '<div class="txback" data-txback="1">‹ '+TAXO_LABEL[kind]+'</div>'
+      + '<div class="row" style="margin-top:0;"><h3>'+esc(name)+'<span class="more">'+countLabel(items.length)+'</span></h3></div>'
+      + '<div class="txgrid">'+items.map(tile).join('')+'</div>'
+      + '<div style="height:30px;"></div>';
+  }
+
   function render(){
     document.querySelectorAll('#tabs .tab').forEach(t=>t.classList.toggle('on', t.dataset.tab===tab));
     scroll.scrollTop = 0;
-    if(tab==='top10') renderTop10(); else renderHome();
+    if(TAXO_TABS.indexOf(tab)>=0){ if(txsel) renderTaxoList(tab, txsel); else renderTaxo(tab); }
+    else if(tab==='top10') renderTop10(); else renderHome();
   }
 
   /* ---- hero dots on scroll ---- */
@@ -569,8 +629,10 @@
   function closeDetail(){ detail.classList.remove('on'); }
 
   /* ---- events ---- */
-  document.getElementById('tabs').addEventListener('click', e=>{ const t=e.target.closest('[data-tab]'); if(t){ tab=t.dataset.tab; render(); } });
+  document.getElementById('tabs').addEventListener('click', e=>{ const t=e.target.closest('[data-tab]'); if(t){ tab=t.dataset.tab; txsel=null; render(); } });
   app.addEventListener('click', e=>{
+    const tb = e.target.closest('[data-txback]'); if(tb){ txsel=null; render(); return; }
+    const tx = e.target.closest('[data-tx]'); if(tx){ txsel=tx.dataset.tx; render(); return; }
     const play = e.target.closest('[data-play]'); if(play){ openDetail(play.dataset.play); return; }
     const el = e.target.closest('[data-title]'); if(el){ openDetail(el.dataset.title); }
   });

@@ -211,6 +211,37 @@
   .blk-item .pipe-ic { width: 30px; height: 30px; }
   .blk-item .nm { font-weight: 600; font-size: .85rem; }
   .blk-item .ds { font-size: .72rem; color: var(--ink-soft); line-height: 1.3; }
+  /* phase 212 — Jellyfin settings advisor. Read-only, suggest-only, and SILENT wherever the live
+     value already matches the recommendation: two of the owner's own three optimisations were
+     already correct, so a surface reciting best practice would have been 2/3 noise on day one. */
+  .jfa { border-top: 1px dashed var(--line); padding: 13px 2px; }
+  .jfa:first-child { border-top: none; }
+  .jfa-h { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
+  .jfa-kind { font-size: .6rem; text-transform: uppercase; letter-spacing: .05em; font-weight: 700; padding: 2px 7px; border-radius: 4px; background: var(--fill-3); color: var(--ink-dim); flex: none; }
+  .jfa-kind.jf { background: rgba(0,164,220,.15); color: #52b9e0; }
+  .jfa-kind.host { background: rgba(177,92,208,.15); color: #c08ad8; }
+  .jfa-label { font-weight: 600; font-size: .86rem; flex: 1 1 auto; min-width: 120px; }
+  .jfa-now { flex: none; }
+  .jfa-now { font-family: 'JetBrains Mono', monospace; font-size: .7rem; padding: 2px 8px; border-radius: 4px; background: var(--warn-soft); color: var(--ink); border: 1px solid rgba(185,145,42,.35); }
+  .jfa-body { margin-top: 7px; font-size: .78rem; line-height: 1.6; color: var(--ink-soft); }
+  .jfa-do { margin-top: 8px; font-size: .77rem; line-height: 1.65; }
+  .jfa-path { font-size: .72rem; color: var(--ink-dim); }
+  .jfa-cmd { font-family: 'JetBrains Mono', monospace; font-size: .7rem; background: var(--fill-3); border: 1px solid var(--line); border-radius: 5px; padding: 7px 9px; margin-top: 7px; overflow-x: auto; white-space: pre; line-height: 1.55; }
+  .jfa-lose { margin-top: 7px; font-size: .74rem; color: var(--ink-dim); line-height: 1.55; }
+  .jfa-lose b { color: var(--ink-soft); font-weight: 600; }
+  .jfa-none { font-size: .76rem; color: var(--ink-dim); line-height: 1.6; padding: 4px 2px; }
+  /* phase 215 — memory budget calculator. One number in, copy-pasteable changes out. */
+  .mb-in { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .mb-num { width: 96px; font-family: 'JetBrains Mono', monospace; font-size: 1rem; font-weight: 600; text-align: right; }
+  .mb-math { margin-top: 12px; border: 1px solid var(--line); border-radius: 9px; overflow: hidden; }
+  .mb-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; padding: 8px 12px; font-size: .78rem; border-top: 1px dashed var(--line); }
+  .mb-row:first-child { border-top: none; }
+  .mb-row .mb-k { flex: 1; color: var(--ink-soft); }
+  .mb-row .mb-v { font-family: 'JetBrains Mono', monospace; font-weight: 600; }
+  .mb-row .mb-why { flex-basis: 100%; font-size: .71rem; color: var(--ink-dim); line-height: 1.5; }
+  .mb-row.tot { background: var(--fill-2); border-top: 1px solid var(--line); }
+  .mb-row.tot .mb-k { color: var(--ink); font-weight: 600; }
+  .mb-file { font-family: 'JetBrains Mono', monospace; font-size: .7rem; color: var(--ink-dim); margin-top: 10px; }
 </style>
 </head>
 <body class="wf-body app-body">
@@ -233,7 +264,6 @@
       <div class="navitem" data-tab="metadata">Metadata<span class="nav-badge" data-badge="metadata">!</span></div>
       <div class="navitem" data-tab="downloads">Download tools<span class="nav-badge" data-badge="downloads">!</span></div>
       <div class="navitem" data-tab="notifications">Notifications</div>
-      <div class="navitem" data-tab="towo">Towo</div>
       <div class="navitem" data-tab="advanced">Advanced</div>
     </div>
 
@@ -329,7 +359,11 @@
         <div class="row" style="gap:16px;flex-wrap:wrap;">
           <div class="field" style="margin:0;width:180px;"><label>Scan workers</label><div class="input">4</div><span class="hint">Concurrent items processed. Live scale-up/down.</span></div>
           <div class="field" style="margin:0;width:200px;"><label>Scan thread pool <span class="restart-note">· restart required</span></label><div class="input">8</div><span class="hint">ffprobe/ffmpeg subprocess pool size.</span></div>
+          <!-- Phase 213 FR-213-1 — replaces behavior.segment_workers. One knob for the whole job queue;
+               scan_workers above is a different, unrelated job (pipeline step concurrency). -->
+          <div class="field" style="margin:0;width:200px;"><label>Job workers</label><span class="select" style="width:100%;"><span>2 · default</span></span><span class="hint">1–3. Shared by the <b>media</b>, <b>segments</b> and <b>subtitles</b> queues — a queue never gets more than one. Not the same thing as scan workers.</span></div>
         </div>
+        <div class="tiny muted" style="margin-top:10px;line-height:1.6;">At <b>1</b> no two background jobs ever overlap. At <b>3</b> all three queues can run at once — that was this host's ceiling on 15 Sep, when ten concurrent subtitle extractions saturated the media disk and stalled a film. <a href="activity.html">See what's queued →</a></div>
         <hr class="dash" style="margin:12px 0;">
         <div class="row center" style="padding:2px 0;"><div><b>Scheduled scan pipeline</b><div class="tiny muted">Compose what runs on each automated scan. It always starts by <b>scanning media files</b> — then chain the steps you want, in any order.</div></div><span class="spacer"></span><span class="muted tiny">enable</span><span class="toggle on" id="pipe-enable"></span></div>
 
@@ -366,6 +400,92 @@
         </div>
       </div>
 
+      <!-- JELLYFIN SETTINGS ADVISOR (Phase 212) — pinned above the library list. Server-wide findings
+           live here; per-library findings live inside each library's own mapping card below, because
+           the cost of each one is a property of that library's own storage. Read-only: jellystructure
+           never writes to Jellyfin (FR-212-2 / §2), so there is no Apply anywhere on this surface. -->
+      <div class="card set-section" id="sect-advisor" data-tab="libraries">
+        <div class="row center" style="flex-wrap:wrap;gap:8px;">
+          <h3 style="font-size:1.05rem;margin:0;">Jellyfin settings advisor</h3>
+          <span class="badge info">suggest-only</span>
+          <span class="badge warn" id="jfa-count">6 server-wide</span>
+          <span class="spacer"></span>
+          <span class="muted tiny">read 14:06 · cached 5 min</span>
+        </div>
+        <div class="tiny muted" style="margin:8px 0 0;line-height:1.6;">What Jellyfin is set to today, where that costs this hardware something, and exactly where to change it. <b>A setting that already matches the recommendation shows nothing at all</b> — no row, no green tick. On this server the transcode path is already a RAM disk and <span class="mono">/config</span>+<span class="mono">/cache</span> are already on NVMe, so neither is mentioned below. Nothing here is a defect; every one is a trade-off, and each row says what turning it off costs you.</div>
+
+        <!-- FR-212-1: a Jellyfin that cannot answer must never render as an empty finding list —
+             that reads as "everything is fine". Phase 207's lesson, one layer out. -->
+        <div class="note bad" id="jfa-down" style="display:none;margin-top:12px;">
+          <b>Couldn't reach Jellyfin.</b> None of these settings could be read, so nothing is being claimed about them — this is not "no findings".
+        </div>
+
+        <div id="jfa-list">
+          <hr class="dash" style="margin:12px 0 0;">
+          <div class="jfa">
+            <div class="jfa-h"><span class="jfa-kind jf">Jellyfin</span><span class="jfa-label">Throttle Transcodes</span><span class="jfa-now">off</span></div>
+            <div class="jfa-body">A client that pauses or seeks leaves its <span class="mono">ffmpeg</span> writing segments at full speed instead of easing off — reads this disk can't spare during playback. <b>Time to throttle after</b> is already set to 180 s and has never once applied: it is inert until throttling itself is on, which is exactly what makes this hard to notice.</div>
+            <div class="jfa-do"><span class="jfa-path">Dashboard → Playback → Transcoding</span> → turn <b>Throttle Transcodes</b> <b>on</b></div>
+            <div class="jfa-lose"><b>Trade-off:</b> a throttled transcode has less buffer built up, so a big seek can take a moment longer to recover.</div>
+          </div>
+          <div class="jfa">
+            <div class="jfa-h"><span class="jfa-kind jf">Jellyfin</span><span class="jfa-label">Delete segments</span><span class="jfa-now">off · keep 720s</span></div>
+            <div class="jfa-body">Finished segments are never removed during a session, so a long film accumulates the whole way through. This one only matters <i>because</i> the transcode path is already a RAM disk — segments pile up in memory rather than on a disk with room to spare. <span class="muted">jellystructure can't see Jellyfin's own mounts from inside its container, so the RAM part is inference; the setting itself is read straight from Jellyfin.</span></div>
+            <div class="jfa-do"><span class="jfa-path">Dashboard → Playback → Transcoding</span> → turn <b>Delete segments</b> <b>on</b>, keep <b>Time to keep segments</b> at 720 s</div>
+            <div class="jfa-lose"><b>Trade-off:</b> a viewer who rewinds past the keep window makes Jellyfin transcode that stretch again.</div>
+          </div>
+          <div class="jfa">
+            <div class="jfa-h"><span class="jfa-kind jf">Jellyfin</span><span class="jfa-label">Allow encoding in HEVC format</span><span class="jfa-now">off</span></div>
+            <div class="jfa-body">Hardware encoding is on, but HEVC output is disallowed, so every transcode lands as H.264 — more bitrate for the same picture, over the same link. <b>BRAVIA 4K GB ATV3</b> and 2 other devices have a recorded HEVC decode ceiling, which is how we know they'd take it.</div>
+            <div class="jfa-do"><span class="jfa-path">Dashboard → Playback → Transcoding</span> → consider turning <b>Allow encoding in HEVC format</b> <b>on</b></div>
+            <div class="jfa-lose"><b>Trade-off:</b> an older client that asks for a transcode may not decode HEVC at all. Worth testing per device rather than assuming.</div>
+          </div>
+          <div class="jfa">
+            <div class="jfa-h"><span class="jfa-kind jf">Jellyfin</span><span class="jfa-label">On-demand metadata-based keyframe extraction</span><span class="jfa-now">mkv, mp4</span></div>
+            <div class="jfa-body">A seek in a file without a usable index can make Jellyfin scan the whole file for keyframes — a full linear read of a remux, on a rotational library, triggered by someone dragging a scrub bar. <b>There is no switch for this in Jellyfin's UI</b>: it lives only in <span class="mono">encoding.xml</span>, as <span class="mono">AllowOnDemandMetadataBasedKeyframeExtractionForExtensions</span>.</div>
+            <div class="jfa-do">Edit <span class="mono">encoding.xml</span> and empty that list. No admin-panel equivalent exists — we're not sending you to hunt for a toggle that isn't there.</div>
+            <div class="jfa-lose"><b>Trade-off:</b> seeking in files with no index gets less accurate.</div>
+          </div>
+          <div class="jfa">
+            <div class="jfa-h"><span class="jfa-kind host">Host</span><span class="jfa-label">vm.swappiness</span><span class="jfa-now">60</span></div>
+            <div class="jfa-body"><b>12 GB is currently swapped out</b> on a machine holding 102 GB of page cache. At 60 the kernel will page out a process to keep cache it doesn't need.</div>
+            <div class="jfa-do">Lower to <b>10</b>:</div>
+            <div class="jfa-cmd">sysctl -w vm.swappiness=10</div>
+            <div class="jfa-lose"><b>This does not survive a reboot.</b> To keep it, add <span class="mono">vm.swappiness=10</span> to <span class="mono">/etc/sysctl.d/</span>.</div>
+          </div>
+          <div class="jfa">
+            <div class="jfa-h"><span class="jfa-kind jf">Jellyfin</span><span class="jfa-label">Jellyfin reports a pending restart</span></div>
+            <div class="jfa-body">One plugin is waiting on it: <b>File Transformation</b>.</div>
+            <div class="jfa-lose">Stated, not recommended — and there is deliberately no button here. Restarting the household's media server isn't an admin-panel side effect, and Ravilo sessions are live against it.</div>
+          </div>
+          <hr class="dash" style="margin:0 0 10px;">
+          <div class="tiny muted" style="line-height:1.6;">Field names above are Jellyfin's own on-screen labels, not API property names — pulled from this server's string table so you can search for them. <b>They need a screenshot check before anyone relies on them:</b> this server's web client was replaced by a Moonfin build and the admin strings couldn't be re-verified in the new bundle.</div>
+        </div>
+        <hr class="dash" style="margin:12px 0 10px;">
+        <!-- mockup-only, clearly fenced: the product has no such control. -->
+        <div class="row center" style="gap:9px;flex-wrap:wrap;">
+          <span class="muted tiny">Preview · Jellyfin reachable:</span>
+          <span class="seg" id="jfa-reach"><span class="on" data-r="1">yes</span><span data-r="0">no</span></span>
+          <span class="tiny muted">the unreachable state replaces the whole list, never empties it</span>
+        </div>
+      </div>
+      <script>
+      (function () {
+        const seg = document.getElementById('jfa-reach'), list = document.getElementById('jfa-list'),
+              down = document.getElementById('jfa-down'), count = document.getElementById('jfa-count');
+        seg.addEventListener('click', e => {
+          const s = e.target.closest('[data-r]'); if (!s) return;
+          seg.querySelectorAll('span').forEach(x => x.classList.remove('on')); s.classList.add('on');
+          const up = s.dataset.r === '1';
+          list.style.display = up ? '' : 'none';
+          down.style.display = up ? 'none' : '';
+          count.style.display = up ? '' : 'none';
+          // per-library findings read the same pass, so they go with it
+          document.querySelectorAll('.jfa-lib').forEach(b => b.style.display = up ? '' : 'none');
+        });
+      })();
+      </script>
+
       <!-- LIBRARY MAPPING -->
       <div class="card set-section" id="sect-library" data-tab="libraries">
         <div class="row center"><h3 style="font-size:1.05rem;margin:0;">Library mapping</h3><span class="badge info" style="margin-left:8px;">from Jellyfin</span><span class="spacer"></span><span class="btn sm">↻ Re-discover</span></div>
@@ -380,6 +500,45 @@
               <div class="field" style="margin:0;width:130px;"><label>fallback</label><span class="select"><span><span class="lang">en</span> English</span></span></div>
             </div>
             <div class="row center" style="margin-top:9px;gap:7px;"><span class="badge ok">match prefix ✓</span><span class="tiny muted mono">/media/movies → /mnt/media/movies · 1,842 items resolved</span><span class="spacer"></span><span class="btn sm ghost lib-scan">Scan</span><span class="btn sm ghost lib-push">Push to Jellyfin</span></div>
+            <!-- Phase 212 FR-212-4/6 — this library's own findings. Storage-conditional ones fire
+                 because /mnt/media/movies resolves to sdc, which is rotational. -->
+            <div class="jfa-lib">
+              <hr class="dash" style="margin:12px 0 2px;">
+              <div class="row center" style="gap:8px;flex-wrap:wrap;"><b class="tiny">Advisor</b><span class="badge warn">5 findings</span><span class="spacer"></span><span class="tiny muted mono">sdc · rotational · 12.7 TB</span></div>
+              <div class="jfa">
+                <div class="jfa-h"><span class="jfa-kind host">Host</span><span class="jfa-label">I/O scheduler on sdc</span><span class="jfa-now">mq-deadline</span></div>
+                <div class="jfa-body">Background <span class="mono">ffmpeg</span> here already runs under <span class="mono">nice -n 19 ionice -c3</span> — jellystructure has done that since Phase 109, to protect playback. <b>mq-deadline ignores ionice completely</b>, so that protection has never taken effect once. Switching to BFQ makes an already-written mitigation start working, and gives the film being watched latency priority over batch readers — exactly the contention that stalled <i>The Patriarch</i>.</div>
+                <div class="jfa-do">Switch to <b>BFQ</b> (the module is present on this kernel):</div>
+                <div class="jfa-cmd">echo bfq &gt; /sys/block/sdc/queue/scheduler</div>
+                <div class="jfa-lose"><b>Trade-off:</b> BFQ costs a little more CPU per request and can shave peak sequential throughput. This box sat at 0.15 % CPU pressure while the disk was saturated, so it's the right trade here — but it is a trade. <b>Does not survive a reboot</b> — needs a udev rule to persist.</div>
+              </div>
+              <div class="jfa">
+                <div class="jfa-h"><span class="jfa-kind host">Host</span><span class="jfa-label">Read-ahead on sdc</span><span class="jfa-now">128 KB</span></div>
+                <div class="jfa-body">Every read of a 4K remux is broken into small requests, each paying a seek. Raising it means fewer, larger sequential reads. <span class="muted">A minor lever, listed second on purpose: a 24.7 GB film was 0.7 % resident in a 102 GB page cache, so the big win on this host isn't read-ahead at all.</span></div>
+                <div class="jfa-do">Raise to <b>8–16 MB</b>:</div>
+                <div class="jfa-cmd">echo 16384 &gt; /sys/block/sdc/queue/read_ahead_kb</div>
+                <div class="jfa-lose"><b>Trade-off:</b> more memory held per reader, and wasted reads if access turns out random. <b>Does not survive a reboot.</b></div>
+              </div>
+              <div class="jfa">
+                <div class="jfa-h"><span class="jfa-kind host">Host</span><span class="jfa-label">Max request size on sdc</span><span class="jfa-now">1280 KB of 32767 KB</span></div>
+                <div class="jfa-body">The hardware will take requests 25× larger than the queue currently allows, so a 16 MB read-ahead gets split into ~13 requests anyway — the row above is partly wasted without this one.</div>
+                <div class="jfa-do">Raise toward the hardware ceiling:</div>
+                <div class="jfa-cmd">echo 32767 &gt; /sys/block/sdc/queue/max_sectors_kb</div>
+                <div class="jfa-lose"><b>Trade-off:</b> a single huge request can hold the queue longer, which matters more without BFQ than with it. <b>Does not survive a reboot.</b></div>
+              </div>
+              <div class="jfa">
+                <div class="jfa-h"><span class="jfa-kind jf">Jellyfin</span><span class="jfa-label">Enable chapter image extraction</span><span class="jfa-now">on</span></div>
+                <div class="jfa-body">Generates a still per chapter for every title in this library — each one a full linear read of a remux off a rotational disk. <b>Extract chapter images during the library scan</b> is on too, which moves that work into every scan instead of leaving it to the nightly task. Jellyfin's own help text makes the argument: <i>“The process can be slow, resource intensive, and may require several gigabytes of space… It is not recommended to run this task during peak usage hours.”</i></div>
+                <div class="jfa-do"><span class="jfa-path">Dashboard → Libraries → Movies → Manage library</span> → turn <b>Extract chapter images during the library scan</b> <b>off</b>; turn <b>Enable chapter image extraction</b> off too, or keep it knowing the cost</div>
+                <div class="jfa-lose"><b>You lose:</b> the chapter-image menu when picking a scene. Chapter <i>markers</i> stay.</div>
+              </div>
+              <div class="jfa">
+                <div class="jfa-h"><span class="jfa-kind jf">Jellyfin</span><span class="jfa-label">Extract trickplay images during the library scan</span><span class="jfa-now">on, but inert</span></div>
+                <div class="jfa-body">A contradictory pair: <b>Enable trickplay image extraction</b> is <b>off</b> for this library, so the during-scan flag does nothing at all. Nothing is being wasted — but one of the two doesn't mean what it says, and that's a mistake at any disk speed.</div>
+                <div class="jfa-do"><span class="jfa-path">Dashboard → Libraries → Movies → Manage library</span> → pick one: turn the during-scan flag <b>off</b>, or turn the feature <b>on</b> if scrub previews were the intent</div>
+                <div class="jfa-lose">This one is a consistency finding, so it fires regardless of storage — nothing is lost by resolving it either way.</div>
+              </div>
+            </div>
           </div>
           <div class="box flat" style="padding:13px 15px;">
             <div class="row center" style="gap:9px;"><b>TV Shows</b><span class="badge info">tvshows</span><span class="spacer"></span><span class="muted tiny">skip</span><span class="toggle"></span></div>
@@ -389,9 +548,43 @@
               <div class="field" style="margin:0;width:130px;"><label>fallback</label><span class="select"><span><span class="lang">da</span> Danish</span></span></div>
             </div>
             <div class="row center" style="margin-top:9px;gap:7px;"><span class="badge ok">match prefix ✓</span><span class="tiny muted mono">/media/tv → /mnt/media/tv · 312 items resolved</span><span class="spacer"></span><span class="btn sm ghost lib-scan">Scan</span><span class="btn sm ghost lib-push">Push to Jellyfin</span></div>
+            <div class="jfa-lib">
+              <hr class="dash" style="margin:12px 0 2px;">
+              <div class="row center" style="gap:8px;flex-wrap:wrap;"><b class="tiny">Advisor</b><span class="badge warn">4 findings</span><span class="spacer"></span><span class="tiny muted mono">sda · rotational · 9.1 TB</span></div>
+              <div class="jfa">
+                <div class="jfa-h"><span class="jfa-kind host">Host</span><span class="jfa-label">I/O scheduler on sda</span><span class="jfa-now">mq-deadline</span></div>
+                <div class="jfa-body">Same as the Movies library, on the other spindle: the <span class="mono">ionice -c3</span> that background work already runs under is silently ignored by this scheduler.</div>
+                <div class="jfa-do">Switch to <b>BFQ</b>:</div>
+                <div class="jfa-cmd">echo bfq &gt; /sys/block/sda/queue/scheduler</div>
+                <div class="jfa-lose"><b>Trade-off:</b> slightly more CPU per request, marginally lower peak throughput. <b>Does not survive a reboot.</b></div>
+              </div>
+              <div class="jfa">
+                <div class="jfa-h"><span class="jfa-kind host">Host</span><span class="jfa-label">Read-ahead + max request size on sda</span><span class="jfa-now">128 KB · 1280 KB of 32767 KB</span></div>
+                <div class="jfa-do">Raise both, in that order — the first is throttled by the second:</div>
+                <div class="jfa-cmd">echo 16384 &gt; /sys/block/sda/queue/read_ahead_kb ; echo 32767 &gt; /sys/block/sda/queue/max_sectors_kb</div>
+                <div class="jfa-lose"><b>Trade-off:</b> more memory per reader; wasted reads if access is random. <b>Does not survive a reboot.</b></div>
+              </div>
+              <div class="jfa">
+                <div class="jfa-h"><span class="jfa-kind jf">Jellyfin</span><span class="jfa-label">Enable trickplay image extraction</span><span class="jfa-now">on</span></div>
+                <div class="jfa-body">Builds a filmstrip for the scrub bar by reading each episode end to end. 312 series' worth of episodes, on a rotational disk, as background work.</div>
+                <div class="jfa-do"><span class="jfa-path">Dashboard → Libraries → TV Shows → Manage library</span> → consider turning <b>Enable trickplay image extraction</b> <b>off</b></div>
+                <div class="jfa-lose"><b>You lose:</b> thumbnail previews while dragging the scrub bar. Seeking itself is unaffected.</div>
+              </div>
+              <div class="jfa">
+                <div class="jfa-h"><span class="jfa-kind jf">Jellyfin</span><span class="jfa-label">Enable LUFS scan</span><span class="jfa-now">on</span></div>
+                <div class="jfa-body">Measures loudness by decoding each episode's audio in full — another complete pass over every file in this library.</div>
+                <div class="jfa-do"><span class="jfa-path">Dashboard → Libraries → TV Shows → Manage library</span> → consider turning <b>Enable LUFS scan</b> <b>off</b></div>
+                <div class="jfa-lose"><b>You lose:</b> loudness normalisation, so volume can jump between episodes from different sources.</div>
+              </div>
+            </div>
           </div>
           <div class="box flat" style="padding:13px 15px;opacity:.6;">
             <div class="row center" style="gap:9px;"><b>4K Movies</b><span class="badge info">movies</span><span class="chip" style="font-size:.64rem;">skipped</span><span class="spacer"></span><span class="muted tiny">skip</span><span class="toggle on"></span></div>
+            <!-- Phase 212 FR-212-6 / FR-212-8 — a skipped library has no local_path, so its storage
+                 can't be resolved, so no storage-conditional finding may fire. Unknown suppresses;
+                 it never assumes rotational. This library has chapter images and LUFS on in Jellyfin
+                 and still correctly produces nothing. -->
+            <div class="jfa-lib"><div class="jfa-none" style="margin-top:9px;">No findings — this library is skipped and has no <span class="mono">local_path</span>, so we can't tell what disk it sits on. Findings that depend on storage stay silent rather than guess, even though Jellyfin has chapter-image extraction and the LUFS scan switched on here.</div></div>
           </div>
         </div>
       </div>
@@ -490,43 +683,112 @@
         <span class="btn sm" id="test-webhook">Send test notification</span>
       </div>
 
-      <!-- TOWO — agent control plane (feature flag drives the sidebar group) -->
-      <div class="card set-section" id="sect-towo" data-tab="towo">
-        <div class="row center"><h3 style="font-size:1.05rem;margin:0;">Towo</h3><span class="badge info" style="margin-left:8px;">Claude Code runners</span><span class="spacer"></span><span class="muted tiny">enable</span><span class="toggle on" id="towo-enable"></span></div>
-        <div class="tiny muted" style="margin:8px 0 0;line-height:1.6;">Off by default. Towo runs Claude Code sessions on machines you own — a small <b>runner</b> dials out from each host, so nothing opens on your firewall. Enabling this adds the <b>Towo</b> group to the sidebar. Claude's own sign-in always stays on the host: Towo never holds your Claude credentials.</div>
-        <div id="towo-on" class="box flat" style="padding:14px 15px;margin-top:14px;">
-          <div class="tiny muted" style="margin:0 0 12px;">Everything below is saved on the server, so the quota watcher still applies it when no browser is open. Only the <b>enable</b> switch above is per-browser.</div>
-          <div class="row center" style="gap:9px;flex-wrap:wrap;"><span class="badge ok">2 runners online</span><span class="tiny muted">dev box · home server · <span style="color:var(--ink-dim)">macbook offline</span></span><span class="spacer"></span><a class="btn sm ghost" href="towo.html">Open Towo →</a><a class="btn sm" href="towo-runner-new.html">＋ Add a runner</a></div>
-          <hr class="dash" style="margin:12px 0;">
-          <div class="row" style="gap:12px;flex-wrap:wrap;">
-            <div class="field fill" style="margin:0;min-width:220px;"><label>Where runners connect <span class="muted" style="font-weight:400;">— optional</span></label><div class="input mono">wss://towo.jeggy.dev/api/stream</div><span class="hint">Baked into the enrollment command. Leave it empty and Towo uses the address you are reading this on — set it when that address is wrong for the runners (behind a reverse proxy, or a WireGuard address only they can reach).</span></div>
-            <div class="field fill" style="margin:0;min-width:200px;"><label>How the hosts sign in to Claude</label><span class="select"><span>Subscription — <span class="mono">claude /login</span></span></span><span class="hint">Usage is two allowances that refill on their own: <b>100% every 5 hours</b> and <b>100% each week</b>. Towo shows how much is left and when it resets — there is nothing to buy, budget or top up here.</span></div>
-          </div>
-          <hr class="dash" style="margin:12px 0;">
-          <div class="row center" style="padding:2px 0;"><div><b>Watch for quota pauses</b><div class="tiny muted">Every <b>6 hours</b> Towo looks for sessions paused on a quota window and continues the ones you armed — using the reset time Claude reported. Never touches a session that stopped for any other reason.</div></div><span class="spacer"></span><span class="select" style="width:104px;flex:none;"><span>6 hours</span></span><span class="toggle on"></span></div>
-          <hr class="dash" style="margin:6px 0;">
-          <div class="row center" style="padding:2px 0;"><div><b>Arm new sessions automatically</b><div class="tiny muted">Off — the <b>Continue after reset</b> switch starts off on every new session, so a session only ever resumes itself because you said so.</div></div><span class="spacer"></span><span class="toggle"></span></div>
-          <hr class="dash" style="margin:6px 0;">
-          <div class="row" style="gap:12px;flex-wrap:wrap;">
-            <div class="field fill" style="margin:0;min-width:200px;"><label>Default permission profile</label><span class="select"><span>Normal — writes and pushes ask</span></span><span class="hint">Pre-selected in the composer; per session you can still change it.</span></div>
-            <div class="field" style="margin:0;width:210px;flex:none;"><label>Default turn cap</label><div class="input mono">40</div><span class="hint">A <b>turn</b> is one round-trip — Claude thinks, uses tools, answers. Claude’s own unit, not ours. The cap just stops a stuck session running all night. <b>This is only the starting value</b>: every session can override it when you start it, or while it runs.</span></div>
-          </div>
-          <hr class="dash" style="margin:12px 0;">
-          <div class="row" style="gap:12px;flex-wrap:wrap;">
-            <div class="field fill" style="margin:0;min-width:200px;"><label>If nobody answers an approval</label><span class="select" style="width:150px;"><span>after 30 minutes</span></span><span class="hint">The host itself declines the tool call once this runs out — it is the only thing that can, since the session is suspended inside Claude. Towo records it as <b>timed out</b>, not as a decision you made.</span></div>
-            <div class="field fill" style="margin:0;min-width:220px;"><label>What Claude is told</label><div class="input">Nobody was around to approve this — carry on without it.</div><span class="hint">Sent as the reason, so the session keeps working instead of reading a bare refusal.</span></div>
-          </div>
-          <hr class="dash" style="margin:12px 0;">
-          <div class="row center" style="padding:2px 0;"><div><b>Ping me when</b><div class="tiny muted">Uses the same webhook as the <a href="settings.html?tab=notifications">Notifications</a> tab.</div></div><span class="spacer"></span><span class="row" style="gap:6px;flex-wrap:wrap;justify-content:flex-end;"><span class="chip">a tool needs approval</span><span class="chip">a session pauses on quota</span><span class="chip">it picks back up</span><span class="chip ghost">a session errors</span><span class="chip ghost">a window runs low</span></span></div>
-          <hr class="dash" style="margin:6px 0;">
-          <div class="row center" style="padding:2px 0;gap:12px;flex-wrap:wrap;"><div style="min-width:240px;flex:1;"><b>“Runs low” means below</b><div class="tiny muted">Pinged once per window, when Claude first reports it under this much left — not again while it stays there.</div></div><span class="spacer"></span><span class="row center" style="gap:7px;"><div class="input mono" style="width:74px;text-align:center;">20</div><span class="muted tiny">% left</span></span></div>
-          <div class="tiny muted" style="margin-top:10px;">A transcript that fails to save is <b>always</b> reported — that is data loss, not a preference, so it has no switch here. It shows as a warning on the <a href="towo-runners.html">runner</a> it happened on.</div>
-        </div>
-      </div>
-
       <!-- ADVANCED -->
       <div class="card set-section" id="sect-advanced" data-tab="advanced">
         <h3 style="font-size:1.05rem;margin:0 0 10px;">Advanced</h3>
+
+        <!-- MEMORY BUDGET CALCULATOR (Phase 215) — Phase 212 is a differ (live value vs recommendation);
+             this is a calculator: one number in, concrete changes out across three places that have to
+             agree. Same posture as 212: suggest-only, never writes a compose file or runs a sysctl. -->
+        <div class="box flat" style="padding:15px 17px;margin-bottom:14px;" id="membudget">
+          <div class="row center" style="flex-wrap:wrap;gap:8px;">
+            <b style="font-size:.95rem;">Memory budget</b>
+            <span class="badge info">suggest-only</span>
+            <span class="spacer"></span>
+            <span class="tiny muted mono">host 125 GB · 23 GB used · 102 GB page cache · swap 47 GB (12 GB in use)</span>
+          </div>
+          <div class="tiny muted" style="margin:8px 0 12px;line-height:1.6;">This host's memory is enormous and <b>entirely ungoverned</b> — Jellyfin runs with no memory limit at all, and its <span class="mono">/transcode</span> is a 63 GB RAM disk that nothing bounds. Nothing has fallen over; nothing has been decided either. Say how much of the machine the media stack may use and this works out what to change.</div>
+          <hr class="dash" style="margin:0 0 12px;">
+          <div class="mb-in">
+            <label class="tiny" for="mb-budget" style="font-weight:600;">The media stack may use</label>
+            <input class="input mb-num" id="mb-budget" type="number" min="4" max="125" step="1" value="32">
+            <span class="tiny muted">GB of 125</span>
+            <span class="seg" id="mb-presets"><span data-g="16">16</span><span class="on" data-g="32">32</span><span data-g="64">64</span><span data-g="96">96</span></span>
+          </div>
+
+          <!-- FR-215-1: the arithmetic is shown, not just the answer. The operator is being asked to
+               cap their media server's memory; a result they can't check is one they shouldn't apply. -->
+          <div class="mb-math" id="mb-math"></div>
+
+          <!-- FR-215-7: an over-large budget produces the refusal and NOTHING else — never a
+               best-effort block with a warning above it, because the block wins every time. -->
+          <div class="note bad" id="mb-refuse" style="display:none;margin-top:12px;"></div>
+
+          <div id="mb-out">
+            <div class="mb-file">~/jellyfin/docker-compose.yml</div>
+            <div class="jfa-cmd" id="mb-c1"></div>
+            <div class="jfa-lose" style="margin-top:6px;">Jellyfin has <b>no limit today</b>. Adding one trades “the host OOMs unpredictably” for “Jellyfin gets OOM-killed predictably” — mid-film that is better, but it isn't good. It's also the only thing that makes every other number here real: <span class="mono">jellyfin</span>, <span class="mono">immich_server</span>, <span class="mono">immich_postgres</span> and <span class="mono">umami-db</span> all run unbounded, and OOM scores are effectively tied (671 vs 678), so today the kernel picks its victim by size — the process serving a film is as likely as a batch job.</div>
+            <div class="mb-file">~/jellystructure/docker-compose.yml</div>
+            <div class="jfa-cmd" id="mb-c2"></div>
+            <div class="jfa-lose" style="margin-top:6px;">Already bounded at <span class="mono">16g</span>, and it measures ~3.0 GB in practice — it was never the unbounded one. Left as is.</div>
+            <hr class="dash" style="margin:13px 0;">
+            <!-- FR-215-3: a size cap and "Delete segments" are ONE recommendation. A cap alone just
+                 converts an OOM into a failed transcode. -->
+            <div class="jfa" style="border-top:none;padding-top:0;">
+              <div class="jfa-h"><span class="jfa-kind host">Host</span><span class="jfa-label">Cap the transcode RAM disk</span><span class="jfa-now" id="mb-shm-now">63 GB, uncapped</span></div>
+              <div class="jfa-body"><span class="mono">/transcode</span> is a <i>bind mount</i> of the host's <span class="mono">/dev/shm</span>, so the container's own <span class="mono">shm_size: 64 MB</span> does not bound it — it defaults to half of RAM. tmpfs pages are <b>not reclaimable</b>: the kernel can't drop them under pressure, only swap them and then start killing. That makes this the one real break path in the whole budget.</div>
+              <div class="jfa-do">Give the mount an explicit size, <b>and</b> turn segment deletion on — these are one change, not two:</div>
+              <div class="jfa-cmd" id="mb-c3"></div>
+              <div class="jfa-do" style="margin-top:8px;"><span class="jfa-path">Dashboard → Playback → Transcoding</span> → turn <b>Delete segments</b> <b>on</b>, leave <b>Time to keep segments</b> at 720 s. <span class="muted">Jellyfin currently reports it off, so a long 4K transcode accumulates segments in RAM for the whole session.</span></div>
+              <div class="jfa-lose"><b>Also worth capping:</b> <span class="mono">/tmp</span> is a second 63 GB RAM disk already holding 6.2 GB. Not ours, same hazard — a budget that caps one and ignores the other has bounded half the problem.</div>
+            </div>
+            <div class="jfa" id="mb-swap">
+              <div class="jfa-h"><span class="jfa-kind host">Host</span><span class="jfa-label">vm.swappiness</span><span class="jfa-now">60</span></div>
+              <div class="jfa-body">The kernel is paging out live processes to grow a cache it doesn't need — 12 GB swapped out against 102 GB cached. Wrong trade when one of those processes is serving video.</div>
+              <div class="jfa-cmd">sysctl -w vm.swappiness=10   #  persist: echo 'vm.swappiness=10' &gt; /etc/sysctl.d/99-swappiness.conf</div>
+              <div class="jfa-lose">This is the one line here that disappears on its own once it's right — swappiness is host-wide and genuinely readable, unlike Jellyfin's compose file or the host's tmpfs size, which this container simply cannot see.</div>
+            </div>
+            <hr class="dash" style="margin:13px 0;">
+            <div class="tiny muted" style="line-height:1.65;">
+              <b>If another service later takes 60 GB:</b> page cache is reclaimable, so anything cache-shaped just gets evicted and playback falls back to disk — it degrades on its own, correctly. tmpfs can't be dropped at all, which is why the cap above matters more than any other line. Today's real usage is small — Jellyfin 3.5 GB, jellystructure 3.0 GB, nothing else above 1.3 GB — so a 60 GB neighbour would fit right now without touching a thing. The risk isn't the neighbour; it's the neighbour arriving while an uncapped transcode is filling RAM.
+            </div>
+          </div>
+        </div>
+        <script>
+        (function () {
+          const HOST = 125, RESERVE = Math.max(8, Math.round(HOST * 0.1 * 10) / 10), JS_SLICE = 4, TMPFS_FRACTION = 0.25;
+          const el = id => document.getElementById(id);
+          const inp = el('mb-budget'), presets = el('mb-presets');
+          function paint() {
+            const b = Math.max(0, Math.round(+inp.value || 0));
+            const ceiling = Math.round((HOST - RESERVE) * 10) / 10;
+            const jf = b - JS_SLICE, tmpfs = Math.max(1, Math.round(jf * TMPFS_FRACTION));
+            // FR-215-1 — show the working, including that the reserve is an assumption, not a measurement
+            el('mb-math').innerHTML =
+              row('Host memory', HOST + ' GB') +
+              row('Safety reserve for the OS and every other container', '− ' + RESERVE + ' GB',
+                  'max(8 GB, 10% of host). <b>An assumption, not a measurement</b> — this runs inside jellystructure\'s own container with no docker access, so it structurally cannot add up what the other ~15 containers actually use.') +
+              row('Available to the media stack', ceiling + ' GB') +
+              row('Your budget', b + ' GB') +
+              (b > ceiling ? '' :
+                row('jellystructure', '− ' + JS_SLICE + ' GB', 'Fixed slice, a little above its measured ~3.0 GB. It already has its own <span class="mono">mem_limit: 16g</span> regardless of this.') +
+                row('Jellyfin gets', jf + ' GB', null, true) +
+                row('…of which the transcode RAM disk', tmpfs + ' GB', 'A stated guess at 25% of Jellyfin\'s share — not derived from a measured per-transcode footprint.'));
+            const over = b > ceiling;
+            el('mb-refuse').style.display = over ? '' : 'none';
+            el('mb-out').style.display = over ? 'none' : '';
+            if (over) {
+              el('mb-refuse').innerHTML = '<b>That\'s more than this host can honour.</b> ' + b + ' GB leaves nothing for the OS and the other containers once the ' + RESERVE + ' GB reserve is counted. No changes are suggested — deliberately not a best-effort set of numbers with a warning on top. Try <b>' + ceiling + ' GB</b> or less.';
+              return;
+            }
+            el('mb-c1').textContent = 'services:\n  jellyfin:\n    mem_limit: ' + jf + 'g          # currently: no limit at all';
+            el('mb-c2').textContent = 'services:\n  jellystructure:\n    mem_limit: 16g        # unchanged';
+            el('mb-c3').textContent = 'services:\n  jellyfin:\n    tmpfs:\n      - /transcode:size=' + tmpfs + 'g,mode=1777   # replaces the /dev/shm bind mount';
+            el('mb-shm-now').textContent = '63 GB, uncapped';
+          }
+          function row(k, v, why, tot) {
+            return '<div class="mb-row' + (tot ? ' tot' : '') + '"><span class="mb-k">' + k + '</span><span class="mb-v">' + v + '</span>' +
+              (why ? '<span class="mb-why">' + why + '</span>' : '') + '</div>';
+          }
+          inp.addEventListener('input', () => { presets.querySelectorAll('span').forEach(s => s.classList.toggle('on', +s.dataset.g === +inp.value)); paint(); });
+          presets.addEventListener('click', e => {
+            const s = e.target.closest('[data-g]'); if (!s) return;
+            presets.querySelectorAll('span').forEach(x => x.classList.remove('on')); s.classList.add('on');
+            inp.value = s.dataset.g; paint();
+          });
+          paint();
+        })();
+        </script>
         <div class="danger">
           <div class="row center"><b style="color:var(--bad);">Danger zone</b></div>
           <div class="row center" style="margin-top:10px;gap:12px;"><div><b>Clear all scanned data</b><div class="tiny muted">Wipes the media store and scan state. Does not touch your files or NFOs on disk.</div></div><span class="spacer"></span><span class="btn sm bad" id="clear-data">Clear all scanned data</span></div>
@@ -575,6 +837,7 @@
         <div>tell_jellyfin = <span class="okc">true</span></div>
         <div>scan_workers = 4</div>
         <div>scan_threads = 8</div>
+        <div>job_workers = 2</div>
         <div>scan_schedule = <span id="toml-cron">"0 3 * * *"</span></div>
         <div>&nbsp;</div>
         <div class="muted"># scan.pipeline — built above</div>
@@ -615,7 +878,7 @@
     'sect-connections': 'connections', 'sect-arr': 'downloads',
     'sect-library': 'libraries', 'sect-scanning': 'libraries',
     'sect-metadata': 'metadata', 'sect-ageratings': 'metadata', 'sect-seeding': 'downloads',
-    'sect-notifications': 'notifications', 'sect-towo': 'towo', 'sect-advanced': 'advanced'
+    'sect-notifications': 'notifications', 'sect-advanced': 'advanced'
   };
   const names = [...tabs].map(t => t.dataset.tab);
   // URL-addressable tabs via ?tab= + replaceState (Phase 28 Router contract — no hashchange,
@@ -707,23 +970,11 @@
     });
   })();
   // radarr / sonarr enable toggles reveal their config
-  [['radarr-enable','radarr-on'],['sonarr-enable','sonarr-on'],['bazarr-enable','bazarr-on'],['towo-enable','towo-on']].forEach(([t,c]) => {
+  [['radarr-enable','radarr-on'],['sonarr-enable','sonarr-on'],['bazarr-enable','bazarr-on']].forEach(([t,c]) => {
     const tog = document.getElementById(t);
     tog.addEventListener('click', () => { document.getElementById(c).style.display = tog.classList.contains('on') ? '' : 'none'; });
   });
   document.querySelectorAll('.arr-import').forEach(b => b.addEventListener('click', () => toast('Imported root folders as library mappings')));
-  // Towo feature flag — drives the sidebar group, live (app-shell.js reads js-towo)
-  (function () {
-    const tog = document.getElementById('towo-enable');
-    const grp = document.querySelector('.nav-group[data-group="Towo"]');
-    try { if (localStorage.getItem('js-towo') === '0') { tog.classList.remove('on'); document.getElementById('towo-on').style.display = 'none'; } } catch (e) {}
-    tog.addEventListener('click', () => {
-      const on = tog.classList.contains('on');
-      try { localStorage.setItem('js-towo', on ? '1' : '0'); } catch (e) {}
-      if (grp) grp.style.display = on ? '' : 'none';
-      toast(on ? 'Towo enabled — added to the sidebar' : 'Towo disabled — runners keep running, the UI is hidden');
-    });
-  })();
   document.getElementById('clear-data').addEventListener('click', () => {
     if (confirm('Clear all scanned data? This wipes the media store and scan state. Your files and NFOs on disk are not touched.')) {
       const t = document.createElement('div'); t.className = 'toast'; t.textContent = 'Scanned data cleared'; document.body.appendChild(t); setTimeout(() => t.remove(), 1800);

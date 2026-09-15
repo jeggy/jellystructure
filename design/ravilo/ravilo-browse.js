@@ -26,7 +26,7 @@
     /* ---- facet value extraction ---- */
     // normalized age (0–18) — in production this is the jellystructure Metadata → Age ratings
     // mapping (raw certification → number); the viewer never sees “G” / “TV-PG” / “Btl”
-    function normAge(it) { if (!it.rating) return 18; return it.rating === 'G' ? 0 : (parseInt(it.rating, 10) || 18); }   // no rating ⇒ 18 (155 FR-AGE1-2)
+    function normAge(it) { return R.normAge ? R.normAge(it) : (!it.rating ? 18 : (it.rating === 'G' ? 0 : (parseInt(it.rating, 10) || 18))); }   // no rating ⇒ 18 (155 FR-AGE1-2)
     // audio-facet flags: ISO-639-1/2 → flag-icons country code; label→cc captured as tracks are read
     // R239 FR-R239-3 (2026-09-12) parity — same 9 codes added to ravilo-app.js's LANG_CC.
     const LANG_CC = {
@@ -85,7 +85,10 @@
     function seed() {
       if (v._seed) return v._seed;
       let s;
-      if (v.genres && v.genres.length) {   // R221 — seeded from a genre chip on a media detail
+      // seeded from a Discover taxonomy tile (studio / network) — R.taxoValues is the same
+      // resolver that counted the wall, so the grid can never contradict the count
+      if (v.taxo) s = catalog().filter(it => (R.taxoValues ? R.taxoValues(it, v.taxo.kind) : []).indexOf(v.taxo.name) >= 0);
+      else if (v.genres && v.genres.length) {   // R221 — seeded from a genre chip on a media detail
         const want = new Set(v.genres.map(normGenre));
         s = catalog().filter(it => genres(it).some(g => want.has(g)));
       }
@@ -152,11 +155,13 @@
       v = view; v.filters = v.filters || {}; v.sort = v.sort || 'added';
       stopHero(); closePop(); scroll.innerHTML = '';
       const title = v.person ? v.person.n
+        : v.taxo ? v.taxo.name
         : (v.genres && v.genres.length) ? v.genres.map(normGenre).join(' · ')
         : (v.row ? rowTitle(v.row) : v.title);
       const wrap = el('div', 'gridscreen browse');
       let crumb = '';
       if (v.person) crumb = `<div class="crumb">◂ ${esc(v.personFrom || fromLabel())} · <b>${esc(title)}</b></div>`;
+      else if (v.taxo) crumb = `<div class="crumb">◂ ${esc(fromLabel())} · ${esc(t('seg_' + v.taxo.kind))} · <b>${esc(title)}</b></div>`;
       else if (v.genres && v.genres.length) crumb = `<div class="crumb">◂ ${esc(v.genreFrom || fromLabel())} · <b>${esc(title)}</b></div>`;
       else if (v.row) crumb = `<div class="crumb">◂ ${esc(fromLabel())} · <b>${esc(title)}</b></div>`;
       const pmeta = (v.person && v.person.r) ? `<div class="pmeta">${esc(v.person.r)}</div>` : '';
@@ -191,6 +196,7 @@
     function fromLabel() {
       const f = v.from || {};
       if (f.type === 'category') { const s = R.studios.find(x => x.id === f.studio); return s ? s.name : t('back_home'); }
+      if (f.type === 'taxonomy' || f.type === 'discover' || f.type === 'upcoming') return t('nav_discover');
       return t('back_home');
     }
     function refreshBar() {

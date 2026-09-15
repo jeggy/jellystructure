@@ -75,6 +75,28 @@
   .paced-host { font-size:.86rem; font-weight:600; }
   .paced-nums { display:flex; gap:16px; flex-wrap:wrap; font-size:.74rem; color:var(--ink-soft); }
   .paced-nums b { font-family:'JetBrains Mono',monospace; font-weight:600; color:var(--ink); }
+  /* phase 214 — stopping background work. FR-214-1: one control, called what it does.
+     FR-214-2: a per-step stop on the CURRENTLY EXECUTING step only. */
+  .steps { display:flex; gap:7px; flex-wrap:wrap; align-items:center; }
+  .stepchip { display:inline-flex; align-items:center; gap:7px; padding:5px 11px; border-radius:20px; border:1px solid var(--line); background:var(--fill-2); font-size:.74rem; font-family:'JetBrains Mono',monospace; color:var(--ink-dim); }
+  .stepchip .si { font-family:system-ui,sans-serif; font-size:.8rem; line-height:1; }
+  .stepchip.done { color:var(--ink-soft); } .stepchip.done .si { color:var(--ok); }
+  .stepchip.run { border-color:rgba(185,145,42,.55); background:var(--warn-soft); color:var(--ink); font-weight:600; }
+  .stepchip.run .si { color:var(--warn); }
+  .stepchip .enq { font-family:system-ui,sans-serif; font-size:.64rem; text-transform:uppercase; letter-spacing:.04em; color:var(--ink-dim); border-left:1px solid var(--line); padding-left:7px; }
+  /* FR-214-3: what a stop cannot reach. Never rendered at a count of zero. */
+  .stopnote { display:flex; gap:11px; align-items:flex-start; margin-top:12px; padding:11px 13px; border-radius:9px; border:1px solid rgba(185,145,42,.4); background:var(--warn-soft); }
+  .stopnote .si { flex:none; color:var(--warn); }
+  .stopnote .tx { font-size:.8rem; line-height:1.65; }
+  /* phase 213 — one shared worker pool across three named FIFO queues. */
+  .lane { display:grid; grid-template-columns:150px 1fr auto; align-items:center; gap:12px; padding:12px 4px; border-top:1px dashed var(--line); }
+  .lane:first-of-type { border-top:none; }
+  .lane-name { font-family:'JetBrains Mono',monospace; font-size:.82rem; font-weight:600; display:flex; align-items:center; gap:8px; }
+  .lane-body { min-width:0; }
+  .lane-kinds { font-size:.72rem; color:var(--ink-dim); font-family:'JetBrains Mono',monospace; margin-top:4px; }
+  .lane-note { font-size:.74rem; color:var(--ink-soft); margin-top:5px; line-height:1.55; }
+  .occ { width:9px; height:9px; border-radius:50%; flex:none; background:var(--ink-dim); }
+  .occ.on { background:var(--warn); box-shadow:0 0 0 3px var(--warn-soft); }
 </style>
 </head>
 <body class="wf-body app-body">
@@ -85,8 +107,10 @@
     <span class="badge warn">running</span>
     <span class="crumb">Run #2847 · scheduled · Scanning Movies</span>
     <span class="spacer"></span>
-    <span class="btn sm">Pause</span>
-    <span class="btn sm bad">Stop</span>
+    <!-- FR-214-1: was "Pause" (ghost) beside a second "Stop". One terminal action, named for what it
+         does, un-ghosted. FR-214-5: shown whenever any run OR lane has work in flight — not keyed on
+         the scan-status string, so a page loaded mid-run can still stop it. -->
+    <span class="btn sm bad" id="act-cancel-btn">Stop scan</span>
   </div>
   <p class="page-sub">The full console for the job that's also shown in the ambient dock. Everything streams over WebSocket — no polling, no page reloads. Items with problems are flagged for attention and the run keeps going.</p>
 
@@ -118,6 +142,69 @@
       <span class="btn sm ghost">Clear log</span>
     </div>
   </div>
+
+  <!-- PIPELINE STEPS + PER-STEP STOP (Phase 214 FR-214-2) — the incident's shape: eight of nine steps
+       were fine and one was saturating a disk, and the only remedy offered was killing the whole run.
+       Stopping the executing step lets the run carry on to the next one. -->
+  <div class="card" style="margin-bottom:14px;" id="stepstrip">
+    <div class="row center" style="flex-wrap:wrap;gap:8px;">
+      <h4 style="margin:0;">Steps</h4>
+      <span class="muted tiny">run #2847 · step 2 of 9</span>
+      <span class="spacer"></span>
+      <span class="btn sm bad" id="stop-step-btn">Stop this step</span>
+    </div>
+    <hr class="dash" style="margin:10px 0;">
+    <div class="steps">
+      <span class="stepchip done"><span class="si">✓</span>scan_files</span>
+      <span class="stepchip run"><span class="si">▸</span>pull_tmdb</span>
+      <span class="stepchip">fetch_artwork</span>
+      <span class="stepchip">write_nfo</span>
+      <span class="stepchip">sync_jellyfin</span>
+      <span class="stepchip">detect_segments<span class="enq">enqueues</span></span>
+      <span class="stepchip">prewarm_subtitles<span class="enq">enqueues</span></span>
+      <span class="stepchip">detect_drift</span>
+      <span class="stepchip">notify</span>
+    </div>
+    <div class="tiny muted" style="margin-top:10px;line-height:1.6;">Stopping <b class="mono">pull_tmdb</b> ends that step only — the run moves on to <b class="mono">fetch_artwork</b>. Whole-run <b>Stop scan</b> is in the pagebar. The two <span class="mono">enqueues</span> steps hand their work to a queue and return, so they finish instantly and are stopped from <b>Jobs &amp; workers</b> instead.</div>
+    <!-- FR-214-3 — a stop that touches work already delegated to Jellyfin must say so, at the moment it
+         is pressed, in the confirmation itself. The count is the in-flight subtitle extractions at that
+         instant (static, not a countdown — Phase 213 bounds it to 0 or 1). At zero this does not render
+         at all: use the Preview control to see that state. -->
+    <div class="stopnote" id="stopnote" style="display:none;">
+      <span class="si">⚠</span>
+      <div class="tx" id="stopnote-tx"></div>
+    </div>
+    <hr class="dash" style="margin:12px 0 10px;">
+    <!-- mockup-only, clearly fenced: the product has no such control. It exists so the zero case
+         (no sentence at all) stays visible in the design alongside the non-zero one. -->
+    <div class="row center" style="gap:9px;flex-wrap:wrap;">
+      <span class="muted tiny">Preview · subtitle extractions Jellyfin already started:</span>
+      <span class="seg" id="subsflight"><span class="on" data-n="1">1</span><span data-n="0">0</span></span>
+      <span class="tiny muted">at 0 the sentence is absent entirely</span>
+    </div>
+  </div>
+  <script>
+  (function () {
+    // FR-214-3's exact sentence. Written once here so both stop paths say the same thing.
+    const seg = document.getElementById('subsflight'), note = document.getElementById('stopnote'), tx = document.getElementById('stopnote-tx');
+    const n = () => +seg.querySelector('.on').dataset.n;
+    function stopped(what) {
+      const c = n();
+      if (!c) { note.style.display = 'none'; return; }   // zero ⇒ no sentence, not an empty one
+      tx.innerHTML = '<b>Stopped.</b> jellystructure won\'t start any more subtitle extractions. Jellyfin is still finishing <b>' + c + '</b> it already started; those can take a few minutes and there\'s no way to stop them.';
+      note.style.display = '';
+    }
+    seg.addEventListener('click', e => {
+      const s = e.target.closest('[data-n]'); if (!s) return;
+      seg.querySelectorAll('span').forEach(x => x.classList.remove('on')); s.classList.add('on');
+      if (note.style.display !== 'none') stopped();
+    });
+    // FR-214-1 open question 1, resolved: no confirmation dialog. The button acts, and the sentence
+    // reports what the action could not reach.
+    document.getElementById('stop-step-btn').addEventListener('click', () => stopped('step'));
+    document.getElementById('act-cancel-btn').addEventListener('click', () => stopped('run'));
+  })();
+  </script>
 
   <div class="card" style="margin-bottom:14px;">
     <div class="row center"><b>Overall</b><span class="spacer"></span><span class="mono tiny" id="ov">88 / 142 files · ~2m left</span></div>
@@ -271,16 +358,55 @@
   <div id="view-jobs" style="display:none;">
     <div class="note blue" style="margin-bottom:14px;display:flex;gap:11px;align-items:flex-start;">
       <span style="flex:none;">ℹ</span>
-      <div class="tiny" style="line-height:1.6;">Heavy media edits — an audio <b>re-order</b> is an <span class="mono">ffmpeg</span> remux (a full stream copy, 4K included) — are queued through a <b>single media worker</b> and run <b>one at a time</b>. So clicking <b>Apply</b> on several titles, or two admins re-ordering at once, can't saturate CPU/disk or stall the API (no more 504s). Scanning keeps its own parallel workers.</div>
+      <div class="tiny" style="line-height:1.6;">Background jobs run on <b>one shared pool of workers</b> across three named queues. A queue never has <b>more than one worker drawing from it at a time</b> — that single rule is what keeps two heavy media edits (an audio <b>re-order</b> is an <span class="mono">ffmpeg</span> remux sharing one temp path) off the same file, while still letting a remux and a background detection overlap. Scanning keeps its own separate workers.</div>
     </div>
 
+    <!-- SHARED JOB POOL (Phase 213 FR-213-1) — replaces the old per-lane "Media worker · concurrency 1"
+         card and the segments lane's own independent worker count. One knob: behavior.job_workers. -->
     <div class="card" style="margin-bottom:14px;">
       <div class="row center" style="gap:10px;flex-wrap:wrap;">
-        <span class="wk-dot busy"></span><b>Media worker</b><span class="badge warn">busy</span>
-        <span class="muted tiny">concurrency 1 · FIFO queue · remux runs at low I/O priority</span>
+        <span class="wk-dot busy"></span><b>Job workers</b><span class="badge warn">2 of 2 busy</span>
+        <span class="muted tiny"><span class="mono">behavior.job_workers = 2</span> · shared by every queue below · capped at 3</span>
         <span class="spacer"></span>
-        <span class="chip"><b>1</b> running</span><span class="chip"><b id="q-count">3</b> queued</span><span class="chip ok" style="background:var(--ok-soft);">12 done today</span>
+        <span class="chip"><b>2</b> running</span><span class="chip"><b id="q-count">3</b> queued</span><span class="chip ok" style="background:var(--ok-soft);">12 done today</span>
+        <a class="btn sm ghost" href="settings.html?tab=libraries">Change →</a>
       </div>
+      <div class="tiny muted" style="margin-top:9px;line-height:1.6;">A free worker takes the oldest eligible job from any queue that isn't already occupied. At <b>1</b> nothing overlaps at all; at <b>3</b> all three queues can run at once — the ceiling this host was at on 15 Sep, when ten subtitle extractions saturated the disk. Default is <b>2</b>.</div>
+    </div>
+
+    <!-- THE THREE QUEUES (FR-213-1 / FR-213-7) — the subtitles queue is new: prewarm_subtitles stopped
+         being a step that fans out and became a lane that does one item at a time. FR-213-7 exists
+         because every gate jellystructure owns reported idle while Jellyfin's disk sat at 81%. -->
+    <div class="card" style="margin-bottom:14px;">
+      <div class="row center"><h4 style="margin:0;">Queues</h4><span class="spacer"></span><span class="muted tiny">occupancy · one worker per queue, maximum</span></div>
+      <hr class="dash" style="margin:10px 0 2px;">
+      <div class="lane">
+        <span class="lane-name"><span class="occ on"></span>media</span>
+        <div class="lane-body">
+          <b class="tiny">Re-ordering audio · Sintel (2010)</b>
+          <div class="lane-kinds">reorder · remove · bulk_reorder · mkv_layout_repair</div>
+        </div>
+        <span class="chip"><b>3</b> queued</span>
+      </div>
+      <div class="lane">
+        <span class="lane-name"><span class="occ on"></span>segments</span>
+        <div class="lane-body">
+          <b class="tiny">Detecting intro &amp; credits · Fjollerne S11E04</b>
+          <div class="lane-kinds">segments_movie · segments_season · segments_episodes</div>
+        </div>
+        <span class="chip"><b>6</b> queued</span>
+      </div>
+      <div class="lane">
+        <span class="lane-name"><span class="occ"></span>subtitles</span>
+        <div class="lane-body">
+          <b class="tiny" style="color:var(--ink-soft);">Waiting — a TV is playing</b>
+          <div class="lane-kinds">prewarm_subtitles</div>
+          <div class="lane-note">Re-checked before every item <i>and</i> between every subtitle stream, so a film that starts mid-job stops it rather than riding it out. Last failure: <b>Dreadful Me 4</b> — Jellyfin didn't answer within 120s, 3rd attempt, given up.</div>
+        </div>
+        <span class="chip"><b>41</b> queued</span>
+      </div>
+      <hr class="dash" style="margin:2px 0 10px;">
+      <div class="tiny" style="line-height:1.6;color:var(--ink-soft);">A subtitle pre-warm asks <b>Jellyfin</b> to extract a track, and that ffmpeg reads the whole file — inside Jellyfin's own container, where none of the gates on the <b>Capacity</b> card can see it. That is why this queue exists and why it runs one at a time: the count of outstanding requests is the only number jellystructure can honestly report about it.</div>
     </div>
 
     <div class="card" style="margin-bottom:14px;">
@@ -296,7 +422,7 @@
     </div>
 
     <div class="card" style="margin-bottom:14px;">
-      <div class="row center"><h4 style="margin:0;">Queue</h4><span class="chip" style="margin-left:8px;"><b>3</b> waiting</span><span class="spacer"></span><span class="tiny muted">processed in order (FIFO)</span></div>
+      <div class="row center"><h4 style="margin:0;">Media queue</h4><span class="chip" style="margin-left:8px;"><b>3</b> waiting</span><span class="spacer"></span><span class="tiny muted">processed in order (FIFO)</span></div>
       <hr class="dash" style="margin:10px 0 4px;">
       <div id="jobqueue">
         <div class="jobrow" data-job="q1"><span class="jq-pos">1</span><div class="jq-main"><div class="jq-title">Re-order audio · <b>Big Buck Bunny (2008)</b></div><div class="jq-sub">4K remux · 12.1 GB · queued by Eyð · 14:03</div></div><span class="badge">queued</span><span class="btn sm ghost jq-cancel">Cancel</span></div>

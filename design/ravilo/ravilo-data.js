@@ -803,7 +803,12 @@
     'Fjollerne í Nord':    { director: 'Mikkel Nørgaard', network: 'Dansk TV', country: 'Denmark', lang: 'Danish', runtime: 28 },
   };
   const A_DIRS = ['Baltasar Kormákur', 'Susanne Bier', 'Katrin Ottarsdóttir', 'Hans Petter Moland', 'Tinna Hrafnsdóttir', 'Ole Bornedal'];
-  const A_NETS = ['RÚV', 'Dansk TV', 'Kringvarp Føroya', 'NRK', 'SVT', 'HBO Nordic'];
+  const A_NETS = ['RÚV', 'Dansk TV', 'Kringvarp Føroya', 'NRK', 'SVT', 'HBO Nordic', 'DR', 'TV 2', 'Viaplay', 'Yle', 'Netflix'];
+  // A film's company is a production studio, not a broadcaster. The detail page already
+  // labels this same fact "Studio" for films and "Network" for series (isNetwork below),
+  // so the pool has to split too — otherwise the Studios wall fills up with broadcasters.
+  const A_STUDIOS = ['Nordisk Film', 'Zentropa', 'SF Studios', 'Blender Foundation', 'Film i Vest', 'Maipo Film',
+    'Miso Film', 'Nimbus Film', 'Motlys', 'Sunset Cinema', 'Snowfall Pictures'];
   const A_CTRY = ['Iceland', 'Denmark', 'Faroe Islands', 'Norway', 'Sweden', 'Denmark · Sweden'];
   const A_LANG = ['Icelandic', 'Danish', 'Faroese', 'Norwegian', 'Swedish', 'English'];
   function aboutFor(item) {
@@ -819,12 +824,63 @@
       aired: aired.toISOString().slice(0, 10),
       added: added.toISOString().slice(0, 10),
       director: a.director || A_DIRS[h % A_DIRS.length],
-      network: a.network || A_NETS[(h >> 3) % A_NETS.length],
+      network: a.network || (isSeries ? A_NETS[(h >> 3) % A_NETS.length] : A_STUDIOS[(h >> 3) % A_STUDIOS.length]),
       isNetwork: isSeries,
       country: a.country || A_CTRY[(h >> 5) % A_CTRY.length],
       lang: a.lang || A_LANG[(h >> 7) % A_LANG.length],
     };
   }
 
-  window.RAVILO = { studios, hero, rows, mergedNew, profiles, discover, upcoming, upcomingByDay, overdue, grad, initials, genresFor, normGenre, synFor, artFor, playbackNoteFor, episodesFor, seasonsFor, castFor, relatedFor, nextAiringFor, trailerFor, imdbFor, ratingFor, aboutFor, itemCerts, CERT_SYS, config, watched, avatars };
+  /* ---------- Taxonomies: the library indexed by studio / network / genre ----------
+     The viewer-side half of jellystructure's Metadata page (Studios · Networks · Genres,
+     each with its item count). Counted here, once, so the TV wall, the phone wall and any
+     filtered grid can never disagree — the same reason genresFor()/synFor() exist.
+     Production reads jellystructure's own index; the demo derives it from the catalog.
+     Studio vs network is NOT a second field: aboutFor() already answers `network` plus
+     `isNetwork` (series → a broadcaster, film → a studio), and the media detail labels its
+     fact from that same flag. A value may name two ('RÚV · Dansk TV'); each is counted
+     separately, exactly as the admin page counts them. */
+  const TAXO_LOGOS = {          // only brands with a real logo file; see taxoTile()
+    'Dansk TV': 'assets/brand/dansk-tv-logo.svg',
+  };
+  // normalized age (0–18) — jellystructure's Metadata → Age ratings mapping. No rating ⇒ 18
+  // (155 FR-AGE1-2), which is why an unrated title is never counted for a kids profile.
+  function normAge(item) { if (!item || !item.rating) return 18; return item.rating === 'G' ? 0 : (parseInt(item.rating, 10) || 18); }
+  const KID_MAX_AGE = 7;        // demo stand-in for the profile's own maturity ceiling
+  let _libIx = null;
+  function libraryTitles() {
+    if (_libIx) return _libIx;
+    const seen = {}, out = [];
+    const push = it => { if (it && it.title && !seen[it.title]) { seen[it.title] = 1; out.push(it); } };
+    hero.forEach(push); rows.forEach(r => (r.items || []).forEach(push));
+    return _libIx = out;
+  }
+  // what this profile is allowed to see — the count must never promise titles the viewer
+  // cannot open, so a kids profile counts a smaller library, not a filtered-later one.
+  function libraryFor(user) {
+    const all = libraryTitles();
+    return (user && user.kid) ? all.filter(it => normAge(it) <= KID_MAX_AGE) : all;
+  }
+  function taxoValues(item, kind) {
+    if (kind === 'genres') return genresFor(item);
+    const ab = aboutFor(item);
+    if (!ab || !ab.network) return [];
+    if (kind === 'networks' ? !ab.isNetwork : ab.isNetwork) return [];
+    return String(ab.network).split(/\s*·\s*/).map(s => s.trim()).filter(Boolean);
+  }
+  function taxonomy(kind, user) {
+    const counts = new Map();
+    libraryFor(user).forEach(it => taxoValues(it, kind).forEach(nm => counts.set(nm, (counts.get(nm) || 0) + 1)));
+    return Array.from(counts.keys()).map(name => ({ name: name, count: counts.get(name), kind: kind, logo: TAXO_LOGOS[name] || '' }))
+      .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+  }
+  // titles counted once, not the sum of the groups: a title on two networks is still one title.
+  function taxonomySummary(kind, user) {
+    const lib = libraryFor(user);
+    let titles = 0;
+    lib.forEach(it => { if (taxoValues(it, kind).length) titles++; });
+    return { groups: taxonomy(kind, user).length, titles: titles, library: lib.length };
+  }
+
+  window.RAVILO = { normAge, libraryFor, taxonomy, taxonomySummary, taxoValues, studios, hero, rows, mergedNew, profiles, discover, upcoming, upcomingByDay, overdue, grad, initials, genresFor, normGenre, synFor, artFor, playbackNoteFor, episodesFor, seasonsFor, castFor, relatedFor, nextAiringFor, trailerFor, imdbFor, ratingFor, aboutFor, itemCerts, CERT_SYS, config, watched, avatars };
 })();

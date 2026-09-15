@@ -229,7 +229,7 @@
           '<div class="q">' + queue(cur) + '</div>' +
           '<div class="qfoot"><div class="keys"><div><span class="kbd">↵</span>looks right, next boundary</div>' +
           '<div><span class="kbd">J</span><span class="kbd">K</span>nudge the cut</div><div><span class="kbd">N</span>next episode</div></div>' +
-          '<div class="sxhint">You never scrub here. Towo-style: the tool asks a yes/no question and you answer it.</div></div></div>' +
+          '<div class="sxhint">You never scrub here: the tool asks a yes/no question and you answer it.</div></div></div>' +
       '</div>';
     root.querySelectorAll('[data-q]').forEach(function (r) { r.addEventListener('click', function () { cur = +r.dataset.q; renderB(); }); });
     root.querySelectorAll('[data-ok]').forEach(function (b) {
