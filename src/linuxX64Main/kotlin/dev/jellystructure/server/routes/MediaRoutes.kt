@@ -2320,9 +2320,14 @@ internal fun launchScanRun(
         if (skipSteps.isNotEmpty()) append(" · skipped: ${skipSteps.sorted().joinToString(", ")}")
     }
     val startMsg = "▶ ${triggerKind.replaceFirstChar { it.uppercase() }} $kindWord started$suffix"
-    // Phase 178 §FR-178-2 — only a "scheduled" trigger defers; "manual" (any admin-page button) and
-    // "startup" (SCAN_ON_START, itself an explicit operator action) always proceed immediately.
-    val deferEligible = triggerKind == "scheduled" && configStore.current.scan.deferWhilePlaying
+    // Phase 178 §FR-178-2 originally restricted deferral to a "scheduled" trigger only; Phase 213
+    // (FR-213-6) removed that restriction after the 2026-09-15 incident, where a manual full run at
+    // 17:08:50 was never eligible to defer and ran prewarm_subtitles straight through 29 minutes of live
+    // playback. "Defer while playing" is an operator preference about the household, not about which
+    // button started the run — FR-178-4's "Run anyway" already exists as the explicit override, and is
+    // the correct place for that intent since it's a decision made WHILE the TV is playing, not one
+    // inferred from a button pressed minutes earlier.
+    val deferEligible = configStore.current.scan.deferWhilePlaying
     // Phase 182 (FR-182-6/FR-182-5) — GateClass.BACKGROUND tags this coroutine and everything launched
     // under it (every runPipelineStepPool worker, every per-episode async{} inside Scanner) so
     // OutboundHttp/ProcessGate never let this run starve an interactive request; attachJob lets

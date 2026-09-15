@@ -9,9 +9,10 @@ import io.ktor.server.routing.post
 import io.ktor.server.routing.route
 import kotlinx.serialization.Serializable
 
-// Phase 164 — widened for the two-lane queue: `running` is now every currently-running job across BOTH
-// lanes (the media lane has at most one; the segments lane can have up to behavior.segment_workers), and
-// `lanes` carries each lane's own busy/queued/done-today counts for the Jobs page's two worker lines.
+// Phase 164 widened this for the two-lane queue; Phase 213 widened it again to three, sharing one
+// worker pool (behavior.job_workers): `running` is every currently-running job across all THREE queues
+// (each has at most one, per FR-213-1's occupancy rule), and `lanes` carries each queue's own
+// busy/queued/done-today counts for the Jobs page's three worker lines.
 // `busy`/`doneToday` are KEPT (not removed) for one release so an old cached frontend build doesn't
 // crash on a missing field; the new UI reads `lanes` instead.
 @Serializable

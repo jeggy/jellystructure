@@ -17,12 +17,12 @@ import kotlinx.coroutines.withContext
  * (Phase 150/159), which stops a segments run from starving *CPU*. It does nothing about *slot*
  * contention: every other `popen` call site in the backend — regular scan-time ffprobe, artwork resize,
  * screengrab, track-editing remux — shares the exact same [ProcessGate] semaphore, so a big show's
- * detect_segments run (Phase 164's segments job lane, `behavior.segment_workers` concurrent jobs, each
- * running several of these calls per episode) can still occupy enough of [ProcessGate]'s 16 permits to
- * make an unrelated scan or artwork request wait behind it.
+ * detect_segments run (Phase 164's segments queue, one of `behavior.job_workers`' shared slots — Phase
+ * 213 — running several of these calls per episode) can still occupy enough of [ProcessGate]'s 16
+ * permits to make an unrelated scan or artwork request wait behind it.
  *
- * 4 slots — a small multiple of `behavior.segment_workers`' default of 2, deliberately far below
- * [ProcessGate]'s 16 so the segments lane can never crowd out request-serving process work, matching
+ * 4 slots — a small multiple of `behavior.job_workers`' default of 2, deliberately far below
+ * [ProcessGate]'s 16 so the segments queue can never crowd out request-serving process work, matching
  * the same "own dedicated pool, not a bigger shared one" shape [ProcessGate] itself already uses to
  * isolate `popen` from `Dispatchers.Default`.
  */

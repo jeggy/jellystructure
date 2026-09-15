@@ -143,13 +143,15 @@ fun renderActivity(container: Element, scope: CoroutineScope, query: Map<String,
         <div id="view-jobs" style="display:none;">
           <div class="note blue" style="margin-bottom:14px;display:flex;gap:11px;align-items:flex-start;">
             <span style="flex:none;">ℹ</span>
-            <div class="tiny" style="line-height:1.6;">Two independent worker lanes. Heavy media edits — an audio <b>re-order</b> is an <span class="mono">ffmpeg</span> remux (a full stream copy, 4K included) — are queued through a <b>single media worker</b> and run <b>one at a time</b>, so several <b>Apply</b> clicks (or two admins at once) can't saturate CPU/disk or stall the API. <b>Intro &amp; credits detection</b> runs on its own concurrent lane instead — off the pipeline's critical path, so a slow library no longer holds up scans, TMDB, artwork or anything else.</div>
+            <div class="tiny" style="line-height:1.6;">Three queues share one worker pool (Settings ▸ Job workers). Heavy media edits — an audio <b>re-order</b> is an <span class="mono">ffmpeg</span> remux (a full stream copy, 4K included) — go through the <b>media</b> queue; <b>intro &amp; credits detection</b> through <b>segments</b>; <b>subtitle pre-warming</b> (a full read of the source file, in Jellyfin's own process) through <b>subtitles</b>. Each queue only ever runs one job at a time no matter how many workers are configured — that's what keeps a re-order safe from racing another edit on the same file — so the pool size really just decides how many of the three queues can be busy at once.</div>
           </div>
           <div class="card" style="margin-bottom:14px;">
             <div id="jobs-worker-lines">
               <div class="row center" style="gap:10px;flex-wrap:wrap;" id="jobs-worker-line-media"><span class="muted tiny">Loading…</span></div>
               <hr class="dash" style="margin:10px 0;">
               <div class="row center" style="gap:10px;flex-wrap:wrap;" id="jobs-worker-line-segments"><span class="muted tiny">Loading…</span></div>
+              <hr class="dash" style="margin:10px 0;">
+              <div class="row center" style="gap:10px;flex-wrap:wrap;" id="jobs-worker-line-subtitles"><span class="muted tiny">Loading…</span></div>
             </div>
           </div>
           <div class="card" id="jobs-running-card" style="margin-bottom:14px;display:none;">
@@ -606,12 +608,12 @@ private fun jobTypeLabel(type: String): String = when (type) {
     "segments_movie" -> "intro & credits detection"
     "segments_season" -> "intro & credits detection (season)"
     "segments_episodes" -> "intro & credits detection (episodes)"
+    // Phase 213
+    "prewarm_subtitles" -> "subtitle pre-warm"
     else -> type
 }
 
-private fun laneBadge(lane: String): String =
-    if (lane == "segments") """<span class="badge" style="background:var(--fill-2);font-size:.68rem;">segments</span>"""
-    else """<span class="badge" style="background:var(--fill-2);font-size:.68rem;">media</span>"""
+private fun laneBadge(lane: String): String = """<span class="badge" style="background:var(--fill-2);font-size:.68rem;">${lane.esc()}</span>"""
 
 private fun renderJobsPanel(container: Element, s: dev.jellystructure.api.JobsSummary) {
     (container.querySelector("#jobs-count-badge") as? HTMLElement)?.let {
@@ -620,38 +622,57 @@ private fun renderJobsPanel(container: Element, s: dev.jellystructure.api.JobsSu
         it.style.display = if (n > 0) "" else "none"
     }
 
+    // Phase 213 — the three queues now share ONE configured worker count (Settings ▸ Job workers);
+    // each line shows its own running/queued/done-today but the same pool size, since it's one number.
     val media = s.lanes.firstOrNull { it.lane == "media" }
     val segments = s.lanes.firstOrNull { it.lane == "segments" }
+    val subtitles = s.lanes.firstOrNull { it.lane == "subtitles" }
+    val poolSize = media?.configuredWorkers ?: segments?.configuredWorkers ?: subtitles?.configuredWorkers ?: 1
     (container.querySelector("#jobs-worker-line-media") as? HTMLElement)?.innerHTML = """
-        <span class="wk-dot ${if ((media?.runningCount ?: 0) > 0) "busy" else "idle"}"></span><b>Media worker</b>
+        <span class="wk-dot ${if ((media?.runningCount ?: 0) > 0) "busy" else "idle"}"></span><b>Media edits</b>
         <span class="badge ${if ((media?.runningCount ?: 0) > 0) "warn" else ""}">${if ((media?.runningCount ?: 0) > 0) "busy" else "idle"}</span>
-        <span class="muted tiny">concurrency 1 · FIFO queue · remux runs at low I/O priority</span>
+        <span class="muted tiny">shares $poolSize job worker${if (poolSize == 1) "" else "s"} with the other queues · never more than 1 remux at once · low I/O priority</span>
         <span class="spacer"></span>
         <span class="chip"><b>${media?.runningCount ?: 0}</b> running</span>
         <span class="chip"><b>${media?.queuedCount ?: 0}</b> queued</span>
         <span class="chip ok" style="background:var(--ok-soft);">${media?.doneToday ?: 0} done today</span>"""
     (container.querySelector("#jobs-worker-line-segments") as? HTMLElement)?.innerHTML = """
-        <span class="wk-dot ${if ((segments?.runningCount ?: 0) > 0) "busy" else "idle"}"></span><b>Segment detection</b>
+        <span class="wk-dot ${if ((segments?.runningCount ?: 0) > 0) "busy" else "idle"}"></span><b>Intro &amp; credits detection</b>
         <span class="badge ${if ((segments?.runningCount ?: 0) > 0) "warn" else ""}">${if ((segments?.runningCount ?: 0) > 0) "busy" else "idle"}</span>
-        <span class="muted tiny">concurrency ${segments?.configuredWorkers ?: 1} · runs alongside the pipeline · low CPU/IO priority</span>
+        <span class="muted tiny">shares $poolSize job worker${if (poolSize == 1) "" else "s"} with the other queues · pauses while a TV is playing · low CPU/IO priority</span>
         <span class="spacer"></span>
         <span class="chip"><b>${segments?.runningCount ?: 0}</b> running</span>
         <span class="chip"><b>${segments?.queuedCount ?: 0}</b> queued</span>
         <span class="chip ok" style="background:var(--ok-soft);">${segments?.doneToday ?: 0} done today</span>"""
+    (container.querySelector("#jobs-worker-line-subtitles") as? HTMLElement)?.innerHTML = """
+        <span class="wk-dot ${if ((subtitles?.runningCount ?: 0) > 0) "busy" else "idle"}"></span><b>Subtitle pre-warm</b>
+        <span class="badge ${if ((subtitles?.runningCount ?: 0) > 0) "warn" else ""}">${if ((subtitles?.runningCount ?: 0) > 0) "busy" else "idle"}</span>
+        <span class="muted tiny">shares $poolSize job worker${if (poolSize == 1) "" else "s"} with the other queues · pauses while a TV is playing, and between every stream</span>
+        <span class="spacer"></span>
+        <span class="chip"><b>${subtitles?.runningCount ?: 0}</b> running</span>
+        <span class="chip"><b>${subtitles?.queuedCount ?: 0}</b> queued</span>
+        <span class="chip ok" style="background:var(--ok-soft);">${subtitles?.doneToday ?: 0} done today</span>"""
 
     val runningCard = container.querySelector("#jobs-running-card") as? HTMLElement
     if (s.running.isNotEmpty()) {
         runningCard?.style?.display = ""
         (container.querySelector("#jobs-running-body") as? HTMLElement)?.innerHTML = s.running.joinToString("""<hr class="dash" style="margin:10px 0;">""") { r ->
             val startedStr = r.startedAt?.let { dev.jellystructure.formatStoredTs(it.toString()) } ?: "?"
-            // Phase 164 (FR-164-5) — segments-lane cancel is cooperative (no temp file to kill); say so
-            // rather than implying an instant stop the media lane's own Cancel genuinely provides.
-            val cancelLabel = if (r.lane == "segments") "Stop after this episode" else "Cancel"
-            val detailLine = if (r.lane == "segments") {
-                val progress = if (r.fileCount > 1) "episode ${r.filesDone.coerceAtMost(r.fileCount)} of ${r.fileCount}" else "${r.pct.toInt()}%"
-                (r.speed?.let { "${it.esc()} · " } ?: "") + progress
-            } else {
-                "${if (r.speed != null) "speed=${r.speed.esc()} · " else ""}${r.pct.toInt()}%${if (r.fileCount > 1) " · file ${r.filesDone + 1} of ${r.fileCount}" else ""}${r.etaSeconds?.let { " · ~${formatRemaining(it * 1000.0)} left" } ?: ""}"
+            // Phase 164 (FR-164-5), extended by Phase 213 to subtitles — neither queue has a temp file
+            // to kill (their calls only ever READ the source), so cancel is cooperative; say so rather
+            // than implying an instant stop the media queue's own Cancel genuinely provides.
+            val cancelLabel = when (r.lane) {
+                "segments" -> "Stop after this episode"
+                "subtitles" -> "Stop after this stream"
+                else -> "Cancel"
+            }
+            val detailLine = when (r.lane) {
+                "segments" -> {
+                    val progress = if (r.fileCount > 1) "episode ${r.filesDone.coerceAtMost(r.fileCount)} of ${r.fileCount}" else "${r.pct.toInt()}%"
+                    (r.speed?.let { "${it.esc()} · " } ?: "") + progress
+                }
+                "subtitles" -> "warming subtitle streams — stops on its own if a TV starts playing"
+                else -> "${if (r.speed != null) "speed=${r.speed.esc()} · " else ""}${r.pct.toInt()}%${if (r.fileCount > 1) " · file ${r.filesDone + 1} of ${r.fileCount}" else ""}${r.etaSeconds?.let { " · ~${formatRemaining(it * 1000.0)} left" } ?: ""}"
             }
             """<div class="row center" style="gap:8px;flex-wrap:wrap;">
                  ${laneBadge(r.lane)}

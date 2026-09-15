@@ -210,10 +210,14 @@ data class Behavior(
     @SerialName("fetch_images") val fetchImages: Boolean = true,
     @SerialName("tell_jellyfin") val tellJellyfin: Boolean = true,
     @SerialName("scan_workers") val scanWorkers: Int = 1,
-    // Phase 164 — the detect_segments job queue's own worker lane, deliberately a separate (smaller)
-    // knob from scan_workers: this lane runs CONCURRENTLY with normal request serving and every other
-    // pipeline step now, not sequentially inside a scan/pipeline run — see MediaJobQueue.kt.
-    @SerialName("segment_workers") val segmentWorkers: Int = 2,
+    // Phase 164 introduced this as `segment_workers`, sizing the detect_segments job queue's own worker
+    // lane independently of scan_workers. Phase 213 retired that field and replaced it with this one:
+    // MediaJobQueue now runs three FIFO queues (media/segments/subtitles) off ONE shared pool, with the
+    // rule that a queue may never have more than one worker drawing from it at once (see MediaJobQueue.kt
+    // and the phase-213 spec's FR-213-1) — so one number governs how much background job-queue work may
+    // run at a time, same as before, just no longer split into per-lane knobs that duplicated each other.
+    // Coerced 1..3 wherever read: a 4th worker could never find a 4th queue to occupy.
+    @SerialName("job_workers") val jobWorkers: Int = 2,
     @SerialName("scan_threads") val scanThreads: Int = 4,
     @SerialName("scan_interval_hours") val scanIntervalHours: Int = 0,
     @SerialName("scan_episode_cap") val scanEpisodeCap: Int = 0, // 0 = unlimited (probe every episode); Phase 49

@@ -59,25 +59,34 @@ object PipelineStepOps {
      *  exactly how a 400-on-every-call bug read as "nothing needed warming" for the step's entire
      *  lifetime. [Warmed] with `count == 0` still means the lookup succeeded and genuinely found no text
      *  subtitle streams — the case that must stay silent. [LookupFailed] means Jellyfin could not answer
-     *  at all, which must not collapse into the same "0 warmed" summary line. */
+     *  at all, which must not collapse into the same "0 warmed" summary line.
+     *
+     *  Phase 213 (FR-213-3/FR-213-4) — two more outcomes, both mid-item stops rather than failures.
+     *  [Deferred] means a TV started playing between streams and the walk stopped cleanly, carrying
+     *  whatever it already confirmed; the caller re-queues the item. [TimedOut] means Jellyfin was still
+     *  busy on this exact file (a 120 s [JellyfinClient.WarmResult.TimedOut]) and the walk abandoned the
+     *  rest of that item's stream list rather than starting another request against the same busy file —
+     *  the caller retries with backoff, bounded. */
     sealed interface PrewarmOutcome {
         data class Warmed(val count: Int) : PrewarmOutcome
         data object Skipped : PrewarmOutcome
         data object LookupFailed : PrewarmOutcome
+        data class Deferred(val warmedSoFar: Int) : PrewarmOutcome
+        data class TimedOut(val warmedSoFar: Int) : PrewarmOutcome
+        data object Cancelled : PrewarmOutcome
     }
 
     /**
-     * `prewarm_subtitles` (Phase 179, FR-179-1) — hit Jellyfin's `.../Subtitles/{index}/0/Stream.vtt`
-     * extraction endpoint for every embedded text-subtitle stream ahead of any real playback, so its own
-     * ffmpeg extraction cache is warm by the time a client asks (R183 measured a 4m37s cold extraction on
-     * a 26 GB file; today it can additionally lose the race against a concurrent transcode reading the
-     * same source file and hit a client-side HTTP timeout — see the phase's Root cause §4). Every text
-     * stream, not just ones likely to transcode: which files transcode now depends on the *playing
-     * device's* decode ceiling (Phase 177), not just the file, so there's no reliable narrower filter —
-     * matches `detect_segments`/`fetch_artwork`'s existing "touch everything in the working set" pattern.
-     * `isExternal` streams are skipped: a sidecar `.srt` is served as-is, never ffmpeg-extracted, so
-     * there is nothing to warm. Silently a no-op with no Jellyfin connection configured (mirrors
-     * `sync_jellyfin`'s own guard).
+     * `prewarm_subtitles` (Phase 179, FR-179-1; moved to its own job lane by Phase 213) — hit Jellyfin's
+     * `.../Subtitles/{index}/0/Stream.vtt` extraction endpoint for every embedded text-subtitle stream
+     * ahead of any real playback, so its own ffmpeg extraction cache is warm by the time a client asks
+     * (R183 measured a 4m37s cold extraction on a 26 GB file; today it can additionally lose the race
+     * against a concurrent transcode reading the same source file and hit a client-side HTTP timeout —
+     * see the phase's Root cause §4). Every text stream, not just ones likely to transcode: which files
+     * transcode now depends on the *playing device's* decode ceiling (Phase 177), not just the file, so
+     * there's no reliable narrower filter. `isExternal` streams are skipped: a sidecar `.srt` is served
+     * as-is, never ffmpeg-extracted, so there is nothing to warm. Silently a no-op with no Jellyfin
+     * connection configured (mirrors `sync_jellyfin`'s own guard).
      *
      * Phase 207 (FR-207-1/2) — movies use [JellyfinClient.getItemMediaStreams]'s now-corrected `Ids=`
      * shape (one call). A TV_SHOW uses [JellyfinClient.getSeriesEpisodesMediaStreams] — **one call for
@@ -86,24 +95,41 @@ object PipelineStepOps {
      * `item.episodes`, so an episode this scan hasn't backfilled a `jellyfinId` for is still warmed.
      *
      * Phase 210 (FR-210-2/FR-210-4) — [onStreamWarmed] fires the instant an individual stream is
-     * *confirmed* warmed (a true return from [JellyfinClient.warmSubtitleExtraction]), not once at the
-     * end of a normally-returning loop over an attempted count. Two reasons: an ordinary per-stream HTTP
-     * failure must not be counted as a success (FR-210-2), and if the caller's own per-item deadline
-     * cancels this call partway through a `TV_SHOW`'s episode list, whatever streams already succeeded
-     * before that point must still be credited — the Jellyfin-side cache write already happened, and
-     * losing that count to "0 warmed" would misreport real progress as none (FR-210-4).
+     * *confirmed* warmed ([JellyfinClient.WarmResult.Success]), not once at the end of a normally-
+     * returning loop over an attempted count. Two reasons: an ordinary per-stream HTTP failure must not
+     * be counted as a success (FR-210-2), and a mid-walk stop must still credit whatever already
+     * succeeded — the Jellyfin-side cache write already happened, and losing that count would misreport
+     * real progress as none (FR-210-4).
+     *
+     * Phase 213 (FR-213-3/FR-213-4) — [isCancelled] and Jellyfin's own [dev.jellystructure.tv.isPlaybackActive]
+     * are both re-checked **between every stream**, not only once per item: one item can hold dozens of
+     * streams (32 on a single film observed in the incident), each a full-file read, and a job that
+     * started legitimately must not keep extracting through a title a TV began playing after it was
+     * claimed. A [JellyfinClient.WarmResult.TimedOut] abandons the rest of that call's stream list
+     * outright — retrying immediately just queues another request behind the one Jellyfin is already
+     * running against the same file, which is precisely how the incident's backlog built.
      */
+    /** Phase 213 — per-stream walk result, internal to [prewarmSubtitles] (Kotlin doesn't allow a local
+     *  sealed hierarchy inside a function body, so this lives at object scope instead). */
+    private sealed interface StreamWalkResult {
+        data class Completed(val confirmed: Int) : StreamWalkResult
+        data class Deferred(val confirmed: Int) : StreamWalkResult
+        data class TimedOut(val confirmed: Int) : StreamWalkResult
+        data object Cancelled : StreamWalkResult
+    }
+
     suspend fun prewarmSubtitles(
         item: MediaItem,
         jellyfinClient: JellyfinClient,
         cfg: AppConfig,
         onStreamWarmed: () -> Unit = {},
+        isCancelled: () -> Boolean = { false },
     ): PrewarmOutcome {
         val base = cfg.apiKeys.jellyfinUrl
         val token = cfg.apiKeys.jellyfinToken
         if (base.isBlank() || token.isBlank()) return PrewarmOutcome.Skipped
 
-        suspend fun warmedCountOf(streams: List<dev.jellystructure.auth.JellyfinMediaStream>, jellyfinId: String): Int {
+        suspend fun warmedCountOf(streams: List<dev.jellystructure.auth.JellyfinMediaStream>, jellyfinId: String): StreamWalkResult {
             val textSubs = streams.filter {
                 it.type.equals("Subtitle", ignoreCase = true) &&
                     !it.isExternal &&
@@ -111,12 +137,15 @@ object PipelineStepOps {
             }
             var confirmed = 0
             for (s in textSubs) {
-                if (jellyfinClient.warmSubtitleExtraction(base, token, jellyfinId, s.index)) {
-                    confirmed++
-                    onStreamWarmed()
+                if (isCancelled()) return StreamWalkResult.Cancelled
+                if (dev.jellystructure.tv.isPlaybackActive()) return StreamWalkResult.Deferred(confirmed)
+                when (jellyfinClient.warmSubtitleExtraction(base, token, jellyfinId, s.index)) {
+                    JellyfinClient.WarmResult.Success -> { confirmed++; onStreamWarmed() }
+                    JellyfinClient.WarmResult.TimedOut -> return StreamWalkResult.TimedOut(confirmed)
+                    is JellyfinClient.WarmResult.Failed -> {} // this one stream's own problem — move on
                 }
             }
-            return confirmed
+            return StreamWalkResult.Completed(confirmed)
         }
 
         return when (item.kind) {
@@ -124,13 +153,27 @@ object PipelineStepOps {
                 val id = item.jellyfinId?.takeIf { it.isNotBlank() } ?: return PrewarmOutcome.Skipped
                 val detail = jellyfinClient.getItemMediaStreams(base, token, id)
                     ?: return PrewarmOutcome.LookupFailed
-                PrewarmOutcome.Warmed(warmedCountOf(detail.mediaStreams, id))
+                when (val r = warmedCountOf(detail.mediaStreams, id)) {
+                    is StreamWalkResult.Completed -> PrewarmOutcome.Warmed(r.confirmed)
+                    is StreamWalkResult.Deferred -> PrewarmOutcome.Deferred(r.confirmed)
+                    is StreamWalkResult.TimedOut -> PrewarmOutcome.TimedOut(r.confirmed)
+                    StreamWalkResult.Cancelled -> PrewarmOutcome.Cancelled
+                }
             }
             MediaKind.TV_SHOW -> {
                 val seriesId = item.jellyfinId?.takeIf { it.isNotBlank() } ?: return PrewarmOutcome.Skipped
                 val episodes = jellyfinClient.getSeriesEpisodesMediaStreams(base, token, seriesId)
                     ?: return PrewarmOutcome.LookupFailed
-                PrewarmOutcome.Warmed(episodes.sumOf { ep -> warmedCountOf(ep.mediaStreams, ep.id) })
+                var total = 0
+                for (ep in episodes) {
+                    when (val r = warmedCountOf(ep.mediaStreams, ep.id)) {
+                        is StreamWalkResult.Completed -> total += r.confirmed
+                        is StreamWalkResult.Deferred -> return PrewarmOutcome.Deferred(total + r.confirmed)
+                        is StreamWalkResult.TimedOut -> return PrewarmOutcome.TimedOut(total + r.confirmed)
+                        StreamWalkResult.Cancelled -> return PrewarmOutcome.Cancelled
+                    }
+                }
+                PrewarmOutcome.Warmed(total)
             }
             MediaKind.MUSIC_VIDEO -> PrewarmOutcome.Skipped
         }

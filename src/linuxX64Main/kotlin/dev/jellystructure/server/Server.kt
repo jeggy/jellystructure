@@ -384,11 +384,17 @@ fun startServer(
                     // which is how the 88s block was found in the first place. `null` means no sweep has
                     // completed yet for this process (cold cache) — distinct from a real past timestamp.
                     val mkvHealthSweptAt = dev.jellystructure.media.MkvHealthCache.sweptAt()
+                    // Phase 213 (FR-213-7) — the state that mattered during the 2026-09-15 incident:
+                    // jellystructure's own gates (outboundHttp/processGate above) all read idle while ten
+                    // Jellyfin-side subtitle extractions saturated the disk, because that cost lands in
+                    // Jellyfin's process where no gate here can see it. This can't measure that cost either
+                    // — it only makes the count of outstanding requests jellystructure itself issued legible.
+                    val jobQueues = mediaJobQueue.healthSnapshot()
                     call.respondText(
                         """{"status":"ok","fd_count":${fdWatchdog.currentCount},"fd_high_water_mark":${fdWatchdog.highWaterMark},"fd_census":${census?.toJson() ?: "null"},""" +
                             """"outbound_http_gate":${outboundHttp.toJson()},"process_gate":${processGate.toJson()},""" +
                             """"tmdb_pacing":${Json.encodeToString(TmdbPacingStats.serializer(), tmdbPacing)},""" +
-                            """"mkv_health_swept_at":${mkvHealthSweptAt ?: "null"}}""",
+                            """"mkv_health_swept_at":${mkvHealthSweptAt ?: "null"},"job_queues":${jobQueues.toJson()}}""",
                         ContentType.Application.Json,
                     )
                 }
