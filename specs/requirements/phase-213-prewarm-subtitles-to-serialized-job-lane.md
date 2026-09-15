@@ -1,9 +1,11 @@
 # Phase 213 — `prewarm_subtitles` becomes a serialized job lane, and stops out-running playback
 
 **Status:** Planned
-**Authored:** 2026-09-15 (design-authored with the owner, not dev-reviewed)
-**Depends on:** Phase 109 (media job queue), Phase 164 (the segments lane — the pattern this copies),
-Phase 178 (defer while playing), Phase 182 (gate partitioning)
+**Authored:** 2026-09-15 (design-authored with the owner, not dev-reviewed; revised same day, second
+design pass, to merge all three job-queue lanes onto one shared configurable worker pool — see FR-213-1)
+**Depends on:** Phase 109 (media job queue), Phase 164 (the segments lane — **amended** by this phase,
+see FR-213-1: its independent worker-count supervisor is replaced by the shared pool), Phase 178 (defer
+while playing), Phase 182 (gate partitioning)
 **Related:** Phase 179 (introduced `prewarm_subtitles`), Phase 207, Phase 210 (its two prior bug fixes)
 **Sibling:** Phase 212 (Jellyfin settings advisor) — 212 is advisory and is explicitly *not* a fix for
 this incident.
@@ -142,22 +144,69 @@ val next = queued.firstOrNull { !playing || !it.deferWhilePlaying() } ?: return@
 Playback is re-evaluated **at every dispatch**. A queue that checks before each unit of work degrades
 gracefully when a TV starts mid-run; a step that checks once at entry cannot.
 
-### FR-213-1 — a `subtitles` lane on `MediaJobQueue`
+### FR-213-1 — one shared worker pool across three FIFO queues, not three independently-sized lanes
 
-A third lane beside `media` (FIFO-1) and `segments` (`behavior.segment_workers`), following the Phase
-164 pattern: persistent `media_job` rows, a claim mutex, WS snapshots, cancel support, and live
-worker-count re-polling.
+**Revised 2026-09-15 (second design pass with the owner)**, after a first draft of this spec proposed a
+third lane sized by its own `behavior.subtitle_workers` knob, independent of the segments lane's
+`behavior.segment_workers`. The owner's correction: that is two configuration knobs doing the same
+conceptual job (how much background job-queue work may run at once) plus `scan_workers` doing a third,
+unrelated one (pipeline step concurrency, untouched by this phase). The right shape is **one** knob for
+the job queue, shared.
 
-**Default concurrency 1** (owner decision). Unlike segments, whose work is CPU-bound and locally gated
-by `SegmentProcessGate`, this lane's cost is remote disk I/O that jellystructure cannot meter (§2.1).
-When the only lever is how many you start, the safe default is one. Configurable as
-`behavior.subtitle_workers`, default `1`.
+`MediaJobQueue` keeps three named queues — `media` (`reorder`/`remove`/`bulk_reorder`/
+`mkv_layout_repair`), `segments` (`segments_movie`/`segments_season`/`segments_episodes`, Phase 164), and
+the new `subtitles` (`prewarm_subtitles`) — but they no longer size their concurrency independently. One
+configurable pool, **`behavior.job_workers`** (1–3, default **2**), supplies every worker across all
+three. The rule that keeps the merge safe: **a queue may never have more than one worker actively
+drawing from it at a time.** That single rule is what preserves both correctness guarantees the old,
+independently-sized lanes each depended on without saying so — the media lane's FIFO-1 dispatcher exists
+because two `reorder`/`remove` jobs racing the same file's shared temp path
+(`FfmpegRunner.tmpPath`) would corrupt it, and nothing else in the codebase guards against that; the
+merge must not silently drop that guarantee just because the pool now has more than one worker in it.
+
+A free worker looks across the queues that are **not currently occupied**, and among their oldest
+eligible candidates (each queue's own FIFO order still applies within itself, and a deferrable job in
+`segments`/`subtitles` still yields to the next non-deferrable one in its own queue while a TV plays,
+exactly as today's segments claim loop already does) picks the globally oldest, claims it, and marks
+that queue occupied until the job finishes. Concretely:
+
+- **`job_workers = 1`** collapses to the old media lane's own behaviour, generalized across all three
+  queues: strictly one job running at a time, of any type, in queue-FIFO-then-global-age order.
+- **`job_workers = 3`** lets all three queues run at once — the ceiling this host already saw before
+  this phase (1 media + 2 segments = 3 concurrent), now shared with `subtitles` instead of adding a
+  fourth slot on top of it.
+- **`job_workers` is capped at 3** — a fourth worker can never find a fourth queue to occupy, so a
+  higher number would only ever sit idle. This also matches the owner's own framing of the setting: "1
+  up to 3 workers."
+
+**Default is 2, not 3.** The pre-phase ceiling of 3 was an accident of two independently-chosen
+defaults (media's implicit 1, segments' explicit 2), not a considered total — and this phase adds a
+third, I/O-heavy queue to the same shared budget. 2 keeps real concurrency (a remux and a background
+detection/warm can still overlap) without defaulting straight back to the exact ceiling the 2026-09-15
+incident happened under. An operator who wants that ceiling back sets it to 3 in Settings.
+
+**Bulk reorder is unchanged in effect.** `registerBulkJob`/`acquireBulkSlot` already blocks every other
+**media**-queue job while it runs and never blocked segments (today's `acquireBulkSlot` only checks the
+media lane's own `runningJobId`/`bulkRunning`) — that stays true. In the merged pool this is expressed
+the same way: bulk occupies the `media` queue and holds one of the shared `job_workers` permits for its
+duration, so it now counts against the same shared budget as everything else instead of running outside
+it entirely.
+
+**`behavior.segment_workers` is retired**, replaced by `behavior.job_workers`. Existing config files
+carrying the old key are unaffected — deserialization ignores unknown keys, the same as every prior
+`AppConfig` field addition/removal in this codebase.
+
+This phase therefore also **amends Phase 164**: the segments lane's own independent worker-count
+supervisor (`segmentsSupervisorLoop`/`segmentsTargetWorkers`) is replaced by the shared pool described
+here. Phase 164's actual per-job behaviour (dedup by `dedupe_key`, cooperative cancel, per-episode
+progress) is untouched — only how many workers it gets, and where that number comes from, changes.
 
 ### FR-213-2 — one job per item, deferrable by default
 
-The pipeline step is replaced by an enqueue pass. Each item becomes one `prewarm_subtitles` job with
-`MediaJobParams.deferWhilePlaying = true`, deduplicated on `(media_id, type)` against active rows so a
-re-run cannot stack duplicates — the `SegmentEnqueueResult.deduped` shape already exists for this.
+The pipeline step is replaced by an enqueue pass. Each item becomes one `prewarm_subtitles` job on the
+`subtitles` queue with `MediaJobParams.deferWhilePlaying = true`, deduplicated on `(media_id, type)`
+against active rows so a re-run cannot stack duplicates — the `SegmentEnqueueResult.deduped` shape
+already exists for this.
 
 `deferWhilePlaying` is `true` **regardless of trigger kind**. This deliberately diverges from
 `PipelineEngine`'s use of `deferEligible` for segment jobs (`PipelineEngine.kt:491`). Subtitle
@@ -182,8 +231,13 @@ stream list** instead of proceeding to the next index. A timeout means Jellyfin 
 extracting from this file; issuing the next request against the same file is the behaviour that built
 the backlog in §2.2.
 
-The item is re-queued with backoff. Phase 210's `CancellationException` rethrow must not regress: a
-deadline-cancelled call still propagates, and still reports honestly rather than as success.
+The item is re-queued with backoff, capped at **3 attempts total** — resolved during implementation
+(closes open question 2 below): a fixed, small ceiling rather than an unbounded nightly retry, on the
+reasoning open question 2 itself states — if a file cannot be extracted in 120 s it likely never can.
+Backoff is 5 minutes × attempt number (5/10/15 min); after the third timeout the job fails outright with
+a reason naming the file, rather than retrying forever. Phase 210's `CancellationException` rethrow must
+not regress: a deadline-cancelled call still propagates, and still reports honestly rather than as
+success.
 
 ### FR-213-5 — the pipeline step becomes an enqueue
 
@@ -210,8 +264,10 @@ button pressed 26 minutes earlier.
 ### FR-213-7 — make the invisible load visible
 
 Phase 182's health output reports gates that were all idle during a disk-saturating incident (§2.1).
-`GET /api/health` gains a `subtitle_lane` block (queued, running, deferred-by-playback, last failure)
-so the state that mattered is at least reportable.
+`GET /api/health` gains a `job_queues` block: per queue (`media`/`segments`/`subtitles`) queued count,
+whether it currently holds the shared pool's occupancy, and — for `subtitles` specifically — whether it
+is sitting idle because of playback deferral and its last failure reason, so the state that mattered is
+at least reportable. Also reports the shared pool's own `configured`/`active` worker counts (FR-213-1).
 
 This is **not** a claim to measure Jellyfin-side cost — jellystructure cannot see that process. It only
 makes the count of outstanding requests legible, which was the missing number tonight.
@@ -233,10 +289,10 @@ makes the count of outstanding requests legible, which was the missing number to
    signal than "is a TV playing" — it would have caught this even with no playback. Attractive, and
    unspecified here because a pressure threshold that is wrong in either direction is worse than the
    playback check: too low and the lane never runs on a busy server, too high and it does nothing.
-2. **Retention/backoff for a repeatedly-timing-out item.** FR-213-4 re-queues with backoff but sets no
-   ceiling. Four items (`e6639307…`, `442799400f…`, `c79198bd…`, `679cc343…`) timed out continuously
-   for the entire window. If a file cannot be extracted in 120 s it likely never can, and retrying it
-   nightly forever is its own slow leak.
+2. ~~**Retention/backoff for a repeatedly-timing-out item.**~~ **Resolved during implementation** — see
+   FR-213-4: capped at 3 attempts, 5/10/15 min backoff, then a permanent failure naming the file. Four
+   items (`e6639307…`, `442799400f…`, `c79198bd…`, `679cc343…`) timed out continuously for the entire
+   incident window; an uncapped retry would have kept them cycling nightly forever.
 3. **Is pre-warming worth it at all for large remuxes?** Phase 179 cited a 4m37s cold extraction on a
    26 GB file as the motivation. That reasoning holds for a file someone is about to watch; whether it
    holds for warming *every* stream of *every* title — 32 tracks on a film nobody has opened — is worth
@@ -244,17 +300,28 @@ makes the count of outstanding requests legible, which was the missing number to
 4. **Does FR-213-6 change behaviour operators depend on?** Someone may be relying on a manual scan
    overriding playback deferral. FR-178-4's "Run anyway" covers it, but the change is silent.
 5. **Concurrency 1 across a multi-disk library set.** `/mnt/media` and `/mnt/series` are separate
-   spindles; one global worker serialises across both. Per-device lanes would be better and are not
-   specified — FR-212-6 already resolves a path to its backing device, so the input exists.
+   spindles; with `job_workers = 1` one global worker serialises across both regardless. Per-device
+   queues would be better and are not specified — FR-212-6 already resolves a path to its backing
+   device, so the input exists.
+6. **Cross-queue scheduling fairness.** FR-213-1's "globally oldest eligible candidate among
+   non-occupied queues" rule means a queue with a steady trickle of new jobs could in principle keep
+   winning ties against a queue with one very old job, if age is compared naively. Not expected to
+   matter in practice at this job volume (single digits per queue at any time), but the implementation
+   should compare `created_at` honestly rather than iterating queues in a fixed order that could starve
+   one of them.
 
 ## 6. Verification
 
 - Reproduce §2.4: start playback, trigger a manual full run, confirm pre-warm work **does not** begin.
 - Start a job with nothing playing, then start playback mid-item; confirm it stops between streams
   (FR-213-3) and that already-warmed streams stay credited.
-- Confirm at most `behavior.subtitle_workers` extraction ffmpegs exist in the Jellyfin container at any
-  time — the direct check the old code could not satisfy.
+- Confirm at most `behavior.job_workers` extraction ffmpegs exist in the Jellyfin container at any
+  time — the direct check the old code could not satisfy — and that a `media`-queue job never runs
+  concurrently with another `media`-queue job regardless of `job_workers`' value (FR-213-1's per-queue
+  occupancy rule).
 - Confirm a 120 s timeout abandons the item rather than advancing the index (FR-213-4), by watching for
-  the absence of the climbing-index pattern in §2.2.
+  the absence of the climbing-index pattern in §2.2, and that a third consecutive timeout fails the job
+  rather than re-queuing a fourth time.
 - Regression: Phase 210's honest-reporting behaviour under cancellation, and Phase 207's
-  "every lookup failed" WARN, must both still hold.
+  "every lookup failed" WARN, must both still hold. Phase 164's segments lane behaviour (dedup, per-
+  episode progress, cooperative cancel) must be unchanged by the worker-count restructuring.
