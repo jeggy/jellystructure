@@ -1,13 +1,16 @@
 package dev.jellystructure.server.routes
 
 import dev.jellystructure.advisor.JellyfinAdvisorService
+import dev.jellystructure.advisor.MemoryBudgetService
 import dev.jellystructure.auth.JellyfinClient
 import dev.jellystructure.config.ConfigStore
 import dev.jellystructure.tv.RaviloDeviceService
 import io.ktor.http.HttpStatusCode
+import io.ktor.server.request.receive
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.get
+import io.ktor.server.routing.post
 import io.ktor.server.routing.route
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -17,6 +20,9 @@ data class JellyfinUserDto(
     val id: String,
     @SerialName("display_name") val displayName: String,
 )
+
+@Serializable
+data class MemoryBudgetRequest(@SerialName("budget_gb") val budgetGb: Double)
 
 fun Route.jellyfinRoutes(configStore: ConfigStore, jellyfinClient: JellyfinClient, raviloDeviceService: RaviloDeviceService) {
     route("/jellyfin") {
@@ -44,6 +50,16 @@ fun Route.jellyfinRoutes(configStore: ConfigStore, jellyfinClient: JellyfinClien
         // Phase 212 — Settings → Libraries' Jellyfin settings advisor.
         get("/advisor") {
             call.respond(JellyfinAdvisorService.findings(jellyfinClient, configStore.current, raviloDeviceService))
+        }
+
+        // Phase 215 — the memory budget calculator: one number in, concrete changes out.
+        post("/memory-budget") {
+            val req = runCatching { call.receive<MemoryBudgetRequest>() }.getOrNull()
+            if (req == null || req.budgetGb <= 0) {
+                call.respond(HttpStatusCode.BadRequest, mapOf("error" to "budget_gb must be a positive number"))
+                return@post
+            }
+            call.respond(MemoryBudgetService.calculate(req.budgetGb, jellyfinClient, configStore.current))
         }
     }
 }
