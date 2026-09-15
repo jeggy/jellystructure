@@ -75,8 +75,8 @@ safe areas and the absence of a system back button on iOS (edge swipe instead).
 
 ### B1. Flow (the owner's sentence, as screens)
 1. **Cast icon** on every app bar (Home, Detail, Player) — the standard Cast glyph, in its three states:
-   disconnected · connecting (animated) · connected. On iOS, an AirPlay icon may sit beside it later;
-   not this round.
+   disconnected · connecting (animated) · connected. Shown only when the server says Chromecast is set
+   up (§F); absent otherwise, not greyed. No AirPlay icon, ever (owner decision).
 2. **Device picker** — the *system* Cast dialog on both platforms (not ours). Draw the frame around it so
    the moment is understood, do not redesign the dialog.
 3. **Connecting** — a thin bar under the app bar: "Connecting to Living room TV…" → "Casting to Living
@@ -84,8 +84,12 @@ safe areas and the absence of a system back button on iOS (edge swipe instead).
 4. **Play while connected** — pressing *Play* on a detail screen casts instead of playing locally, and
    the phone opens the remote (B2). Pressing the cast icon *inside* the local player hands the current
    position to the TV and swaps to the remote.
-5. **Re-attach** — opening the app while a cast is running goes straight to the connected state with
-   the mini bar (B3); one tap opens the remote.
+5. **Re-connect (a requirement, not a nicety)** — the TV keeps playing even if the phone dies, so
+   opening the app while a cast is running must bring control back without a new session: the cast icon
+   animates and a bar reads "Reconnecting to Living room TV…", then the mini bar (B3) appears with the
+   live position; one tap opens the remote. Draw the reconnecting moment and the two outcomes: the cast
+   is still running (mini bar), or the receiver has finished or is gone (nothing shown, no error — the
+   viewer just casts again with one tap).
 6. **Stop casting** — from the remote or the cast icon; the TV returns to the receiver idle screen.
 
 ### B2. The full-screen remote (Netflix-inspired, whole app view)
@@ -151,15 +155,31 @@ skeleton shimmer as on TV, all three skins, all three languages.
 
 ---
 
+## F. Admin: Settings → Chromecast card (jellystructure, `app/settings.html`)
+
+Chromecast is **optional and set up by the admin** (owner requirement). One card in the existing
+Settings tab structure (likely under *Ravilo*, next to Live TV's placement, or *Connections*):
+1. **Enable Chromecast** switch, off by default. Off ⇒ no Cast button anywhere in Ravilo.
+2. **Receiver** — *Ravilo's default receiver* (pre-filled app ID, read-only, with the hosted URL shown
+   as a hint) vs *Your own receiver* (an app ID field + a short "how to register" link line).
+3. **Concurrent cast sessions** stepper (the transcoding ceiling), with a one-line explanation in plain
+   words: "Each cast is a transcode on your Jellyfin server."
+4. **Status** line: receiver reachable / last cast session / devices that have cast (linking to Users &
+   devices, where a Chromecast appears as its own device row).
+Follow the wf.css tokens and the write-through editing shape (Phases 71/74); draw the off and on
+states and the own-receiver state.
+
 ## E. Deliverables and order
 
 1. **Round 1 — `ravilo/Mobile Player - Directions.html`**: two or three directions for A (chrome +
    gestures), on both device frames, plus the picker sheet and next-up. Owner picks.
-2. **Round 1 — `ravilo/Casting - Directions.html`**: the B1 flow as a storyboard, two directions for the
-   remote (B2), the mini bar (B3), and the receiver screens (C).
+2. **Round 1 — `ravilo/Casting - Directions.html`**: the B1 flow as a storyboard incl. the re-connect
+   moment, two directions for the remote (B2), the mini bar (B3), the receiver screens (C), and the
+   admin card (F) drawn once in `app/settings.html`'s idiom.
 3. **After the picks:** build into `Ravilo Mobile.html` + `ravilo-mobile.css` (player, remote, mini bar)
    and a new `ravilo/Ravilo Receiver.html`; then the D screens as a second brief round.
 4. Print copies as for earlier rounds; keep `LANG_CC`/flag tables in sync with `ravilo-i18n.js`.
 
-**Not in this round:** background audio / PiP on the phone, AirPlay, offline downloads, a Ravilo TV
-app "Cast Connect" receiver (later phase), tablets.
+**Not in this round:** background audio / PiP on the phone, offline downloads, a Ravilo TV app
+"Cast Connect" receiver (later phase), tablets. **Never:** AirPlay — dropped by owner decision,
+2026-09-16; do not draw an AirPlay affordance anywhere.
