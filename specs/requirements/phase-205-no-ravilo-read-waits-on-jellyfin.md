@@ -89,7 +89,7 @@ The four run concurrently, which is correct. But the budget is shared, and `getR
 Jellyfin for the **whole library sorted by `DatePlayed` with no played filter** — 8 720 items — because
 R219 FR-R219-3 verified against the live OpenAPI that no Jellyfin filter expresses "has been played"
 (`minDateLastSaved` exists, `minDateLastPlayed` does not). Measured directly against
-`http://10.10.10.10:8096`, connect time 0.3 ms, so this is Jellyfin and not the network:
+`http://192.0.2.10:8096`, connect time 0.3 ms, so this is Jellyfin and not the network:
 
 | Jellyfin query shape | latency |
 |---|---|
@@ -308,8 +308,8 @@ minutes). Under FR-205-2 that becomes *trigger a refresh*, not *make the next re
 - **Replacing Jellyfin, or changing how playback negotiates with it.** Jellyfin is not replaceable and
   the playback path is not in question. This phase is about *reads that could have been answered without
   asking it*.
-- **The public-HTTPS hop.** `jellyfin_url` is `https://jellyfin.jebster.net`, which resolves to
-  `10.10.10.10` — the same host. Measured: connect + TLS is ~30 ms against a 1.4 s query. Switching to a
+- **The public-HTTPS hop.** `jellyfin_url` is `https://jellyfin.example.net`, which resolves to
+  `192.0.2.10` — the same host. Measured: connect + TLS is ~30 ms against a 1.4 s query. Switching to a
   local address is not worth the config churn. Recorded so it is not re-proposed.
 - **Making `getUserDataBulk` chunk larger.** `HYDRATE_CHUNK = 100` is safely under Jellyfin's URL-length
   ceiling, but only by luck: 250 ids returns an **empty body** with no error. A guard on that
