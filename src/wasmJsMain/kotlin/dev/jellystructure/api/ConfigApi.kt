@@ -218,6 +218,19 @@ data class AdvisorResponse(
     @SerialName("per_library") val perLibrary: List<LibraryAdvisorSection> = emptyList(),
 )
 
+// Phase 215 — mirrors dev.jellystructure.advisor.{MemoryBudgetLine,MemoryBudgetResult}.
+@Serializable
+data class MemoryBudgetLine(val label: String, val value: String)
+
+@Serializable
+data class MemoryBudgetResult(
+    val ok: Boolean,
+    @SerialName("refusal_reason") val refusalReason: String? = null,
+    val arithmetic: List<MemoryBudgetLine> = emptyList(),
+    val findings: List<AdvisorFinding> = emptyList(),
+    @SerialName("survival_note") val survivalNote: String = "",
+)
+
 @Serializable
 data class ConnectionTestResult(val jellyfin: Boolean, val tmdb: Boolean)
 
@@ -294,6 +307,14 @@ object ConfigApi {
     // Phase 212 — Settings → Libraries' Jellyfin settings advisor.
     suspend fun getJellyfinAdvisor(): AdvisorResponse? = runCatching {
         httpClient.get("/api/jellyfin/advisor").body<AdvisorResponse>()
+    }.getOrNull()
+
+    // Phase 215 — the memory budget calculator.
+    suspend fun calculateMemoryBudget(budgetGb: Double): MemoryBudgetResult? = runCatching {
+        httpClient.post("/api/jellyfin/memory-budget") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"budget_gb":$budgetGb}""")
+        }.body<MemoryBudgetResult>()
     }.getOrNull()
 
     suspend fun pathCheck(): List<LibraryPathDiag>? = runCatching {

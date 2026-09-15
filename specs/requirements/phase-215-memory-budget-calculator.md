@@ -189,24 +189,32 @@ will lose to the copy-pasteable block every time.
 
 ## 4. Open questions
 
-1. **What is the safety reserve?** FR-215-7 needs a floor for the OS, the other ~15 containers on this
-   host (Immich, qBittorrent, Postgres, Caddy…) and burst headroom. Measuring current non-media usage
-   is easy; deciding how much to hold back is a judgment the spec does not make.
-2. **One budget or two?** The owner's phrasing was "jellystructure/jellyfin" as a unit. They have very
-   different profiles — jellystructure is a bounded Kotlin/Native server, Jellyfin is an unbounded
-   .NET server that also spawns ffmpeg. A single figure is simpler to enter; two are more accurate.
-   Unresolved, and it changes the whole input design.
-3. **Does it re-check afterwards?** Phase 212's findings are live-diffed, so an applied change stops
-   being reported. A calculator has no such feedback unless it also diffs its own recommendations
-   against live values — at which point it is partly 212 again. Whether that overlap is duplication or
-   the right integration is undecided.
-4. **Does ffmpeg memory count against the budget?** Jellyfin's transcodes are child processes inside
-   its cgroup, so a `mem_limit` does bound them — meaning a limit tuned for the server alone will
-   kill transcodes. The calculator needs a per-concurrent-transcode allowance, and that number is not
-   yet measured here.
-5. **Where does it live?** Phase 212 chose per-library placement for findings that are per-library.
-   This is inherently host-wide and has an input, so it is probably its own page rather than a card on
-   Settings → Libraries. Not decided.
+1. ~~**What is the safety reserve?**~~ **Resolved during implementation:** `max(8 GB, 10% of host RAM)`
+   for the OS + every other container. Stated explicitly as an assumption, not a measurement — the
+   calculator runs inside jellystructure's own container with no docker-socket access, so it structurally
+   cannot sum what the other ~15 containers are actually using. FR-215-1's "show the arithmetic" rule is
+   what keeps this honest: the reserve line names itself as a proxy in its own text, not a hidden
+   constant.
+2. ~~**One budget or two?**~~ **Resolved during implementation: one**, matching the owner's own
+   phrasing. jellystructure gets a small fixed slice (4 GB — a bit above its measured ~3 GB, and it
+   already has its own independent `mem_limit: 16g` in its own compose file regardless of what this
+   calculator says) and the remainder becomes Jellyfin's `mem_limit` recommendation — which is really
+   what this phase exists to produce, since jellystructure was never the unbounded one.
+3. **Does it re-check afterwards?** Still open, and now partially answered by what got built: the
+   Jellyfin `mem_limit` and `/dev/shm` cap findings are **unconditional** (FR-215-4/FR-215-3), not
+   live-diffed — jellystructure has no way to read Jellyfin's own compose file or the host's `/dev/shm`
+   size from inside its own container (the identical limitation documented in Phase 212's §8 for
+   FR-212-5(b)'s tmpfs check). The swappiness finding IS real silence-when-correct, because
+   `/proc/sys/vm/swappiness` is host-wide and genuinely readable live. So today: two of three findings
+   can't be re-checked even in principle without new access this container doesn't have; one already is.
+4. **Does ffmpeg memory count against the budget?** Still open, not built. The 25%-of-Jellyfin's-share
+   tmpfs sizing is a stated guess (`TMPFS_FRACTION_OF_JELLYFIN`), not derived from a measured
+   per-concurrent-transcode footprint.
+5. ~~**Where does it live?**~~ **Resolved during implementation, but not as originally leaning:** a
+   card under Settings → **Advanced**, not its own routed page. A dedicated page needs sidebar nav entry
+   + router wiring beyond a single calculator's worth of scope; Advanced already hosts other host-level,
+   non-per-library settings (TV image cache, defer-while-playing, the danger zone), so it's a reasonable
+   fit. Worth revisiting if this feature earns more prominence than a card gives it.
 
 ## 5. Verification
 
@@ -217,3 +225,29 @@ will lose to the copy-pasteable block every time.
   sysctl lines must be accepted by `sysctl -p`.
 - On this host the output must include a Jellyfin `mem_limit` (FR-215-4), a bounded `/transcode` size
   paired with segment deletion (FR-215-3), and a `vm.swappiness` change (FR-215-5).
+
+## 6. Implementation notes (2026-09-15, same day)
+
+Built as `MemoryBudgetService` (a Kotlin `object`, alongside `JellyfinAdvisorService` in
+`dev.jellystructure.advisor`), a new `POST /api/jellyfin/memory-budget` endpoint (`{"budget_gb": N}`),
+and a card under Settings → Advanced. Reuses Phase 212's `AdvisorFinding` shape and its frontend renderer
+(`advisorFindingHtml`) for the findings list, so the two features read as one family rather than two —
+they are, after all, both "read something, tell the operator exactly what to change."
+
+Live facts checked before writing the arithmetic (2026-09-15, same session as Phase 212's live checks):
+`~/jellyfin/docker-compose.yml` confirmed to have no `mem_limit` and `/dev/shm:/transcode` with no size
+cap on the bind (matching the incident's original finding, re-verified rather than assumed);
+`~/jellystructure/docker-compose.yml` confirmed `mem_limit: 16g`; `df -h` confirmed `/dev/shm` at 63 GB/
+0 used and `/tmp` at 63 GB/6.2 GB used; `free -h` confirmed 125 GB total, `vm.swappiness` still 60.
+
+The swappiness finding is the one place this phase achieves genuine FR-212-2-style
+silence-when-correct (`/proc/sys/vm/swappiness` is host-wide, not container-namespaced, so it's real
+live data) — the Jellyfin `mem_limit` and `/dev/shm` cap findings are unconditional by necessity, not
+choice: jellystructure cannot read Jellyfin's compose file or the host's tmpfs size from inside its own
+container. Where Jellyfin's own API *can* answer a sub-question (whether `EnableSegmentDeletion` is
+already on), the tmpfs finding's wording is built from that live read via the same
+`JellyfinClient.getEncodingConfiguration` Phase 212 added, rather than assuming it's off.
+
+`compileKotlinLinuxX64` / `compileKotlinWasmJs` / `linuxX64Test` all clean. Not dev-reviewed, not
+deployed (the running jellystructure container was not restarted to pick this up), not live-verified
+end-to-end against the rendered Settings page.

@@ -624,7 +624,17 @@ X-JS-Api-Key: jsk_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx</pre>
                 </div>
                 <span id="defer-while-playing-toggle" class="toggle" style="cursor:pointer;flex-shrink:0;margin-left:12px"></span>
               </div>
-              <div style="border:1px solid var(--bad);border-radius:8px;padding:14px 16px">
+              <hr class="dash">
+              <div style="font-size:.83rem;font-weight:500;margin:14px 0 8px;color:var(--ink-soft)">Memory budget calculator (Phase 215)</div>
+              <p class="hint" style="margin:0 0 10px">Enter how much of this host's memory the media stack (jellystructure + Jellyfin) may use, and get back exact changes — a Jellyfin <code>mem_limit</code>, a <code>/dev/shm</code> cap, a swappiness setting. Suggest-only: nothing here writes to Jellyfin, edits a compose file, or runs a sysctl. Page cache is never counted as spare capacity.</p>
+              <div class="field">
+                <label>Budget for jellystructure + Jellyfin (GB)</label>
+                <input id="mem-budget-input" class="input" type="number" min="1" max="1000" step="0.5" style="width:110px">
+                <button id="mem-budget-calc-btn" class="btn sm ghost" style="margin-left:8px">Calculate</button>
+              </div>
+              <div id="mem-budget-output"></div>
+
+              <div style="border:1px solid var(--bad);border-radius:8px;padding:14px 16px;margin-top:14px">
                 <div style="font-size:.9rem;font-weight:600;color:var(--bad);margin-bottom:4px">Danger zone</div>
                 <p class="hint" style="margin:0 0 12px">Permanently deletes all scanned media data and resets scan state. Your media files and NFOs on disk are not touched. You will need to run a full scan afterwards.</p>
                 <button id="clear-all-data-btn" class="btn sm" style="background:var(--bad);color:#fff;border-color:var(--bad)">Clear all scanned data</button>
@@ -1171,6 +1181,10 @@ private fun attachListeners(scope: CoroutineScope) {
         scope.launch { fetchAndRenderLibraries() }
     }
 
+    document.getElementById("mem-budget-calc-btn")?.addEventListener("click") {
+        scope.launch { runMemoryBudgetCalculator() }
+    }
+
     document.getElementById("clear-all-data-btn")?.addEventListener("click") {
         if (window.confirm("This will permanently delete all scanned media data and reset scan state. Your files on disk are not touched. Continue?")) {
             scope.launch {
@@ -1301,6 +1315,49 @@ private suspend fun renderJellyfinAdvisor() {
         el.innerHTML = """<div style="margin-top:8px;padding-top:8px;border-top:1px dashed var(--border)">""" +
             section.findings.joinToString("") { advisorFindingHtml(it) } + "</div>"
     }
+}
+
+/** Phase 215 — reads the budget input, calls the calculator, and renders FR-215-1's arithmetic followed
+ *  by its findings (reusing [advisorFindingHtml] — same shape as Phase 212's, same visual language) and
+ *  FR-215-8's survival note. FR-215-7's refusal renders only the arithmetic plus why it doesn't fit —
+ *  never a best-effort set of numbers with a warning on top. */
+private suspend fun runMemoryBudgetCalculator() {
+    val outEl = document.getElementById("mem-budget-output") as? HTMLElement ?: return
+    val budget = (document.getElementById("mem-budget-input") as? HTMLInputElement)?.value?.toDoubleOrNull()
+    if (budget == null || budget <= 0) {
+        outEl.innerHTML = """<p class="hint" style="color:var(--bad);margin-top:8px">Enter a positive number of GB first.</p>"""
+        return
+    }
+    outEl.innerHTML = """<p class="hint" style="margin-top:8px">Calculating…</p>"""
+    val result = ConfigApi.calculateMemoryBudget(budget)
+    if (result == null) {
+        outEl.innerHTML = """<p class="hint" style="color:var(--bad);margin-top:8px">Couldn't reach the server.</p>"""
+        return
+    }
+
+    val arithmeticHtml = """
+        <table style="width:100%;border-collapse:collapse;margin-top:10px;font-size:.82rem">
+          ${result.arithmetic.joinToString("") { line ->
+              """<tr><td style="padding:3px 10px 3px 0;color:var(--ink-soft);white-space:nowrap;vertical-align:top">${line.label.esc()}</td><td style="padding:3px 0">${line.value.esc()}</td></tr>"""
+          }}
+        </table>"""
+
+    if (!result.ok) {
+        outEl.innerHTML = arithmeticHtml + """
+            <div class="note red" style="margin-top:10px;display:flex;gap:9px;align-items:flex-start;">
+              <span style="flex:none;">✗</span>
+              <div class="tiny" style="line-height:1.6;">${(result.refusalReason ?: "This budget doesn't fit.").esc()}</div>
+            </div>"""
+        return
+    }
+
+    outEl.innerHTML = arithmeticHtml +
+        result.findings.joinToString("") { advisorFindingHtml(it) } +
+        if (result.survivalNote.isBlank()) "" else """
+            <div class="note blue" style="margin-top:10px;display:flex;gap:9px;align-items:flex-start;">
+              <span style="flex:none;">ℹ</span>
+              <div class="tiny" style="line-height:1.6;">${result.survivalNote.esc()}</div>
+            </div>"""
 }
 
 private fun advisorFindingHtml(f: dev.jellystructure.api.AdvisorFinding): String = """
