@@ -42,4 +42,11 @@ data class MediaJobParams(
     // reorder/remove this job type has no single [episodeFilename] target — it can span every episode of
     // a series in one enqueue.
     val repairPaths: List<String>? = null,
+
+    // Phase 213 — prewarm_subtitles (the subtitles queue). How many times this item has already been
+    // re-enqueued after a Jellyfin-side timeout (never for a playback-deferral requeue, which reuses the
+    // same row in place — see MediaJobQueue.requeueOne). Capped at 3 attempts total: past that, a file
+    // that still can't be extracted in 120s likely never will be, and the job fails outright instead of
+    // retrying forever (open question 2 in the phase-213 spec).
+    val subtitleRetryCount: Int = 0,
 )

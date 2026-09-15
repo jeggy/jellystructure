@@ -76,12 +76,13 @@ data class MediaJobSnapshot(
     val pct: Double = 0.0,
     val speed: String? = null,
     val etaSeconds: Long? = null,
-    val lane: String = "media",  // Phase 164 — "media" | "segments"
+    val lane: String = "media",  // Phase 164/213 — "media" | "segments" | "subtitles"
 )
 
-/** Phase 164 (FR-164-6) — one worker-line summary chip's worth of data for the Jobs & workers page:
- *  busy/running/queued/done-today, per lane. Shared shape (not duplicated frontend/backend) like
- *  [MediaJobSnapshot] above. */
+/** Phase 164 (FR-164-6), widened by Phase 213 to three queues — one worker-line summary chip's worth of
+ *  data for the Jobs & workers page: busy/running/queued/done-today, per queue. `configuredWorkers`
+ *  reports the ONE shared pool's target on every entry since Phase 213 (queues no longer size
+ *  independently). Shared shape (not duplicated frontend/backend) like [MediaJobSnapshot] above. */
 @Serializable
 data class LaneSummary(
     val lane: String,

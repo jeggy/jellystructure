@@ -926,6 +926,17 @@ class JellyfinClient {
         return response.bodyOrNull<JellyfinEpisodesResponse>("getSeriesEpisodesMediaStreams")?.items
     }
 
+    /** Phase 213 (FR-213-4) — [warmSubtitleExtraction]'s outcome, split so a caller can tell "Jellyfin
+     *  is still busy on this file" (abandon the rest of this item's stream list — retrying immediately
+     *  just queues another request behind the one still running) from an ordinary per-stream failure
+     *  (safe to move on to the next stream). Collapsing both into one `Boolean` is the exact shape of
+     *  the 2026-09-15 incident's §2.2 defect: a timeout advanced to the next index instead of stopping. */
+    sealed interface WarmResult {
+        data object Success : WarmResult
+        data object TimedOut : WarmResult
+        data class Failed(val reason: String?) : WarmResult
+    }
+
     /**
      * Phase 179 (FR-179-1) — hits the exact URL [dev.jellystructure.tv.PlaybackService.buildSubtracks]
      * builds for a real sideloaded text-subtitle track (`.../Subtitles/{index}/0/Stream.vtt`), ahead of
@@ -942,17 +953,26 @@ class JellyfinClient {
      * absorbing the cancellation instead of letting the deadline actually abandon the item, while every
      * remaining loop iteration in [PipelineStepOps.warmedCountOf] threw and was logged as an independent
      * "timeout" the instant it was reached.
+     *
+     * Phase 213 (FR-213-4) — [WarmResult.TimedOut] is reported distinctly from an ordinary
+     * [WarmResult.Failed]: `OutboundHttp`'s shared client times out this call at 120 s
+     * ([io.ktor.client.plugins.HttpRequestTimeoutException]), and a timeout means Jellyfin's own ffmpeg
+     * is still running against this same file — the caller must stop issuing more requests against it,
+     * not move on to the next stream index (the behaviour that built the 2026-09-15 backlog).
      */
-    suspend fun warmSubtitleExtraction(baseUrl: String, token: String, jellyfinId: String, streamIndex: Int): Boolean {
+    suspend fun warmSubtitleExtraction(baseUrl: String, token: String, jellyfinId: String, streamIndex: Int): WarmResult {
         val url = baseUrl.trimEnd('/') + "/Videos/$jellyfinId/$jellyfinId/Subtitles/$streamIndex/0/Stream.vtt?api_key=$token"
         return try {
             httpGet(url)
-            true
+            WarmResult.Success
         } catch (e: CancellationException) {
             throw e
+        } catch (e: io.ktor.client.plugins.HttpRequestTimeoutException) {
+            Logger.warn("Jellyfin subtitle pre-warm timed out (item=$jellyfinId index=$streamIndex) — Jellyfin is still busy on this file")
+            WarmResult.TimedOut
         } catch (e: Throwable) {
             Logger.warn("Jellyfin subtitle pre-warm failed (item=$jellyfinId index=$streamIndex): ${e.message}")
-            false
+            WarmResult.Failed(e.message)
         }
     }
 

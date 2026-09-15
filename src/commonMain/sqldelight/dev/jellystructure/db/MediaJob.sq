@@ -16,11 +16,14 @@ CREATE TABLE media_job (
     speed TEXT,                       -- ffmpeg's own "speed=" readout, e.g. "2.3x" (Phase 164: repurposed
                                        -- by the segments lane's fingerprint tier for its own live detail text)
     eta_seconds INTEGER,              -- Phase 123: estimated seconds remaining, derived from speed + duration
-    -- Phase 164 — a second worker lane (concurrency > 1, unlike the media lane's FIFO-1) for
-    -- detect_segments work, extracted off the pipeline's critical path. See MediaJobQueue.kt.
-    lane TEXT NOT NULL DEFAULT 'media',   -- media | segments
-    dedupe_key TEXT                       -- segments lane only: enforces "never queued/running twice"
-                                           -- via the partial unique index below, not a check-then-insert
+    -- Phase 164 added 'segments' as a second queue; Phase 213 added 'subtitles' as a third and made all
+    -- three share one worker pool (behavior.job_workers) instead of sizing independently — a queue may
+    -- never have more than one worker drawing from it at once, so this column is still what enforces
+    -- "at most one active X at a time" per queue, same as it always has. See MediaJobQueue.kt.
+    lane TEXT NOT NULL DEFAULT 'media',   -- media | segments | subtitles
+    dedupe_key TEXT                       -- segments/subtitles only: enforces "never queued/running
+                                           -- twice for the same item" via the partial unique index
+                                           -- below, not a check-then-insert
 );
 
 CREATE INDEX media_job_state ON media_job(state);
@@ -69,6 +72,13 @@ UPDATE media_job SET state = :state, finished_at = :finished_at, error = :error,
 
 requeueRunning:
 UPDATE media_job SET state = 'queued', started_at = NULL, pct = 0, speed = NULL, eta_seconds = NULL WHERE state = 'running';
+
+-- Phase 213 — the subtitles queue's own mid-item stop-and-resume (playback started, or a timed-out
+-- retry still under its cap): puts ONE row back to queued rather than finishing it and inserting a new
+-- one, so its id/created_at/history stay put. `created_at` is deliberately left untouched — the row
+-- keeps its place in FIFO order rather than jumping to the back on every defer.
+requeueOne:
+UPDATE media_job SET state = 'queued', started_at = NULL, pct = 0, speed = NULL, eta_seconds = NULL WHERE id = :id;
 
 deleteOld:
 DELETE FROM media_job WHERE state IN ('done', 'failed', 'cancelled') AND COALESCE(finished_at, created_at) < :cutoff;

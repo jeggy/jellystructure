@@ -198,9 +198,9 @@ X-JS-Api-Key: jsk_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx</pre>
                 <span class="hint">Number of items processed concurrently. Changing this during a scan takes effect immediately.</span>
               </div>
               <div class="field">
-                <label>Segment detection workers</label>
-                <input id="segment-workers" class="input" type="number" min="1" max="8" style="width:90px">
-                <span class="hint">Intro/credits detection runs in its own queue (Activity ▸ Jobs &amp; workers), concurrently with everything else, so a slow scan no longer holds up the rest of the pipeline. Takes effect on the next job dispatch, no restart needed.</span>
+                <label>Job workers</label>
+                <input id="job-workers" class="input" type="number" min="1" max="3" style="width:90px">
+                <span class="hint">Track edits, intro/credits detection and subtitle pre-warming (Activity ▸ Jobs &amp; workers) share one pool of this many workers, concurrently with everything else — a slow scan no longer holds up the rest of the pipeline. Each of the three queues only ever runs one job at a time no matter this number (a track edit's own file safety depends on that), so this really just decides how many of the three can be busy at once — 1 to 3. Takes effect on the next job dispatch, no restart needed.</span>
               </div>
               <div class="field">
                 <label>Scan thread pool size</label>
@@ -765,7 +765,7 @@ private var overwriteNfo = false
 private var fetchImages = true
 private var tellJellyfin = true
 private var scanWorkers = 1
-private var segmentWorkers = 2
+private var jobWorkers = 2
 private var scanThreads = 4
 private var scanEpisodeCap = 0
 private var tvImageCacheMb = 2048
@@ -854,7 +854,7 @@ private fun populateForm(response: ConfigResponse) {
     fetchImages = config.behavior.fetchImages
     tellJellyfin = config.behavior.tellJellyfin
     scanWorkers = config.behavior.scanWorkers
-    segmentWorkers = config.behavior.segmentWorkers
+    jobWorkers = config.behavior.jobWorkers
     scanThreads = config.behavior.scanThreads
     scanEpisodeCap = config.behavior.scanEpisodeCap
     tvImageCacheMb = config.behavior.tvImageCacheMb
@@ -862,7 +862,7 @@ private fun populateForm(response: ConfigResponse) {
     updateToggle("fetch-images-toggle", fetchImages)
     updateToggle("tell-jellyfin-toggle", tellJellyfin)
     setInputValue("scan-workers", scanWorkers.toString())
-    setInputValue("segment-workers", segmentWorkers.toString())
+    setInputValue("job-workers", jobWorkers.toString())
     setInputValue("scan-threads", scanThreads.toString())
     setInputValue("scan-episode-cap", scanEpisodeCap.toString())
     setInputValue("tv-image-cache", tvImageCacheMb.toString())
@@ -1018,8 +1018,8 @@ private fun attachListeners(scope: CoroutineScope) {
         scanWorkers = (document.getElementById("scan-workers") as? HTMLInputElement)?.value?.toIntOrNull()?.coerceIn(1, 100) ?: 1
         refreshTomlPreview(readForm())
     }
-    document.getElementById("segment-workers")?.addEventListener("input") {
-        segmentWorkers = (document.getElementById("segment-workers") as? HTMLInputElement)?.value?.toIntOrNull()?.coerceIn(1, 8) ?: 2
+    document.getElementById("job-workers")?.addEventListener("input") {
+        jobWorkers = (document.getElementById("job-workers") as? HTMLInputElement)?.value?.toIntOrNull()?.coerceIn(1, 3) ?: 2
         refreshTomlPreview(readForm())
     }
     document.getElementById("scan-threads")?.addEventListener("input") {
@@ -1417,7 +1417,7 @@ private fun readForm(): AppConfig = AppConfig(
         fetchImages = fetchImages,
         tellJellyfin = tellJellyfin,
         scanWorkers = scanWorkers,
-        segmentWorkers = segmentWorkers,
+        jobWorkers = jobWorkers,
         scanThreads = scanThreads,
         scanEpisodeCap = scanEpisodeCap,
         tvImageCacheMb = tvImageCacheMb,
@@ -1491,7 +1491,7 @@ private fun buildToml(c: AppConfig): String = buildString {
     appendLine("fetch_images = ${c.behavior.fetchImages}")
     appendLine("tell_jellyfin = ${c.behavior.tellJellyfin}")
     appendLine("scan_workers = ${c.behavior.scanWorkers}")
-    appendLine("segment_workers = ${c.behavior.segmentWorkers}")
+    appendLine("job_workers = ${c.behavior.jobWorkers}")
     appendLine("scan_threads = ${c.behavior.scanThreads}")
     appendLine("tv_image_cache_mb = ${c.behavior.tvImageCacheMb}")
     if (c.scanSchedule.isNotBlank()) {

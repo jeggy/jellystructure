@@ -340,50 +340,30 @@ suspend fun runPipeline(
                 ) { item, _ -> PipelineStepOps.fetchArtwork(item, store, artworkDownloader) }
             }
             "prewarm_subtitles" -> {
-                // Phase 178 §FR-178-2 — same re-check fetch_artwork already does: this step hits
-                // Jellyfin's own ffmpeg extraction, real disk/CPU work on the same media files a TV
-                // might now be reading.
-                awaitPlaybackClear(deferEligible, jobId, broadcaster, scanTracker)
-                val warmed = AtomicInt(0)
-                val attempted = AtomicInt(0)
-                val failed = AtomicInt(0)
-                Logger.info("prewarm_subtitles: ${workingSet.size} items")
-                runPipelineStepPool(
-                    jobId, step.step, workingSet, { pipelineStepConcurrency(step.step, configStore.current.behavior.scanWorkers) },
-                    scanTracker, broadcaster, labelOf = { it.title },
-                    // Phase 210 (FR-210-3) — an item genuinely abandoned by PipelineStepPool's own
-                    // per-item deadline used to default to this no-op and vanish from every counter
-                    // below, which made the "every lookup failed" summary WARN under-report exactly the
-                    // runs where the deadline was biting. Streams that warmed before the abandonment are
-                    // still credited via onStreamWarmed below — only the item-level attempt is marked
-                    // failed here.
-                    onItemFailure = { _, _ -> attempted.incrementAndGet(); failed.incrementAndGet() },
-                ) { item, _ ->
-                    // FR-210-4 — credit each stream the instant it's confirmed warmed, not only from a
-                    // normally-returning Warmed(count): a mid-item cancellation must not lose progress
-                    // that already happened.
-                    when (val outcome = PipelineStepOps.prewarmSubtitles(item, jellyfinClient, cfg, onStreamWarmed = { warmed.incrementAndGet() })) {
-                        is PipelineStepOps.PrewarmOutcome.Warmed -> {
-                            attempted.incrementAndGet()
-                        }
-                        PipelineStepOps.PrewarmOutcome.LookupFailed -> {
-                            attempted.incrementAndGet()
-                            failed.incrementAndGet()
-                        }
-                        PipelineStepOps.PrewarmOutcome.Skipped -> {}
-                    }
+                // Phase 213 — enqueue-only, same shape as detect_segments below: the actual extraction
+                // runs on MediaJobQueue's subtitles queue, off this run's critical path. No
+                // awaitPlaybackClear here (removed, not kept) — with the queue's own per-stream playback
+                // check (PipelineStepOps.prewarmSubtitles) the deferral is continuous and per-unit, so a
+                // one-shot gate in front of the enqueue would only delay the enqueue while implying a
+                // protection the queue now provides properly.
+                scanTracker.setActiveStep(step.step)
+                broadcaster.broadcast(JobEvent.StepStarted(jobId, step.step, workingSet.size))
+                var enqueued = 0
+                var deduped = 0
+                for (item in workingSet) {
+                    if (item.kind == dev.jellystructure.model.MediaKind.MUSIC_VIDEO) continue
+                    val jellyfinReady = cfg.apiKeys.jellyfinUrl.isNotBlank() && cfg.apiKeys.jellyfinToken.isNotBlank()
+                    if (!jellyfinReady) continue
+                    // deferWhilePlaying = true regardless of trigger kind (FR-213-2) — pre-warming is
+                    // never urgent enough to be worth stalling a live film for; an operator who genuinely
+                    // wants it now still has "Run anyway" (FR-178-4).
+                    val result = mediaJobQueue.enqueueSubtitles(item.id, item.title, dev.jellystructure.jobs.MediaJobParams(deferWhilePlaying = true))
+                    if (result.deduped) deduped++ else enqueued++
                 }
-                // Phase 207 (FR-207-3) — "0 subtitle stream(s) warmed" is indistinguishable from "nothing
-                // needed warming" (a perfectly normal outcome) unless a run where every lookup failed
-                // says so separately, at WARN, once — not once per item, which is how the original
-                // 285-failures-per-run bug went unnoticed for a whole phase's lifetime.
-                if (attempted.value > 0 && failed.value == attempted.value) {
-                    Logger.warn("prewarm_subtitles: every lookup failed (${failed.value}/${attempted.value}) — 0 subtitle stream(s) warmed, not because none needed it")
-                } else if (failed.value > 0) {
-                    Logger.warn("prewarm_subtitles: ${warmed.value} subtitle stream(s) warmed (${failed.value}/${attempted.value} lookups failed)")
-                } else {
-                    Logger.info("prewarm_subtitles: ${warmed.value} subtitle stream(s) warmed")
-                }
+                val summary = "enqueued $enqueued subtitle pre-warm job${if (enqueued == 1) "" else "s"}" +
+                    if (deduped > 0) " ($deduped already queued)" else ""
+                Logger.info("prewarm_subtitles: $summary", "pipeline")
+                broadcaster.broadcast(JobEvent.StepFinished(jobId, step.step, summary))
             }
             "write_nfo" -> {
                 val serverUrl = cfg.apiKeys.jellyfinUrl
