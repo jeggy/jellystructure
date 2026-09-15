@@ -163,12 +163,22 @@ vs transcode, builds the URL, and answers `SetAudioStreamIndex` / `SetSubtitleSt
 ### B. A Ravilo web receiver (recommended)
 
 A CAF web receiver is an HTML/JS page. Register a Cast app in the Google Cast Developer Console
-(one-time fee; yields the receiver app ID), host the page over HTTPS where the Chromecast can reach it
-(the `web-static-server` image behind the existing TLS termination on `jelly.example.net` is the natural
-home), and make it a **Ravilo device**: it calls `POST /api/tv/playback/start` with the Chromecast's own
+(one-time US$5 fee; yields the receiver app ID; the app must be **published** before it works on anyone
+else's Chromecast — unpublished apps run only on devices registered to the developer account), and make
+the page a **Ravilo device**: it calls `POST /api/tv/playback/start` with the Chromecast's own
 capabilities (CAF's `canDisplayType` answers HEVC / VP9 / HDR per device generation at runtime),
 receives a `StreamTicket`, and plays `hlsUrl` through CAF's built-in player with the ticket's VTT
 sideloads as text tracks. Progress, stop, QoE and restream-for-burn-in are the same routes the TV uses.
+
+**Hosting, corrected for an open-source project (owner answer 1, 2026-09-16):** a Cast app ID is bound
+to **one receiver URL at registration time**, so the receiver page cannot live on each self-hoster's
+jellystructure. It is served from one project-owned public HTTPS URL (GitHub Pages or a small static
+host — the same shape as Jellyfin, whose stable/unstable IDs point at Jellyfin-hosted builds), and the
+viewer's **server URL, device token and item id travel in the LOAD `customData`**. A self-hoster who
+wants to run their own copy registers their own app ID and enters it in jellystructure Settings — the
+same escape hatch Jellyfin offers via `system.xml`. Because the owner's Jellyfin is always public
+`https://` (answer 2), reachability from the dongle is settled for this house; for other households the
+receiver must show a plain "can't reach your server" state rather than spin.
 
 - Every jellystructure invariant keeps working; the Chromecast shows up in **Users & devices** like any
   other device; R222's slow-to-start note, R237's failure copy, R182's 503 + `Retry-After` all apply.
@@ -177,17 +187,35 @@ sideloads as text tracks. Progress, stop, QoE and restream-for-burn-in are the s
   player, Output Switcher discovery via `MediaTransferReceiver`, a mini-controller sheet while casting.
 - The receiver can honour **next-episode auto-advance and Skip Intro** on the TV, because it reads the
   same detail payload and segment markers the TV app reads — none of that exists in architecture A.
-- **Open auth question, needs a decision before spec:** the receiver needs a Bearer device token.
-  Either (i) the phone hands its own token in `customData` on LOAD — simplest, Jellyfin then sees the
-  phone's per-(device,user) identity, "Living room Chromecast" never appears as its own device; or (ii)
-  the receiver enrols as its own `ravilo_device` via a short-lived hand-off code minted by the phone's
-  session — cleaner, more work, and it is what makes the Chromecast a first-class row in Users & devices.
-  Recommend (i) first, (ii) as a follow-up.
-- **Verify before building:** that the `jellyfin_base_url` in the ticket is reachable from a Chromecast
-  on the LAN (a CAF receiver loaded over HTTPS may fetch LAN `http://` media, but this must be tried on
-  the real dongle, not assumed), which Chromecast generations the house has (1st/2nd gen: H.264 1080p;
-  Ultra: HEVC/VP9 4K HDR; Chromecast with Google TV: HEVC, AV1, DV), and NVENC headroom for one more
-  concurrent encode per cast session.
+- **Receiver identity — decided (owner answer 4): the receiver is its own Ravilo device.** The phone's
+  LOAD carries a short-lived hand-off code minted by the phone's session; the receiver redeems it for
+  its own device token and `ravilo_device` row, so it appears in **Users & devices** as e.g. *"Living
+  room Chromecast"*. Phase 110 then gives the rest for free: a device that opens `/api/tv/events` gets
+  its own **named Jellyfin session** (`Client="Ravilo", Device="<name>"` via `JellyfinDeviceIdentity`)
+  and the **Jellyfin dashboard's pause/stop/seek already reach it** through `JellyfinSessionBridge` —
+  the owner's "control the pause from the Jellyfin dashboard" is an existing feature once the receiver is
+  a device. The `Device` string should read *"Chromecast via Ravilo · Living room"* (or the Client field
+  becomes *"Ravilo Cast"*) so the dashboard says what it is; a small identity change in `forDevice`.
+- **Which Chromecasts (owner answer 1):** open source means every generation. Facts: 1st gen (2013,
+  H.264/VP8 1080p30) had its **last firmware in November 2022 and lost support in April 2023**; 2nd/3rd
+  gen are H.264 1080p; Ultra adds HEVC/VP9 4K HDR10/DV; Chromecast with Google TV adds AV1 and HDR10+.
+  Whether a CAF v3 receiver still launches on a 1st-gen stick is **not confirmed by any page fetched**
+  and must be tested on a real one — the benchmark is Jellyfin's own receiver on the same stick: if that
+  runs, ours will. The receiver never assumes a codec; it probes `canDisplayType` and lets jellystructure
+  negotiate, so an old stick simply gets an H.264 1080p HLS encode. The parents' "old chromecast stick
+  on an LG TV" is the acceptance device for this whole phase; identify its generation first (1st gen is
+  the flat "dongle with a rounded end", 2nd/3rd gen are round discs).
+- **Transcoding capacity (owner answer 3, "what is NVENC?"):** NVENC is the video encoder built into
+  Nvidia GPUs; Jellyfin uses it (or the CPU) to transcode. Every cast session is one such encode. For
+  this house the question is how many run at once next to the TVs' own fallbacks; for open source it
+  becomes a jellystructure Settings number and an honest "your server is busy" state on the receiver,
+  fed by Phase 182's 503 + `Retry-After`.
+- **Session lifecycle (owner answer 5):** a cast plays on the receiver regardless of the phone — locking
+  or backgrounding the phone must **not** pause the TV. If the phone app is killed, the Cast SDK's
+  session resumption re-attaches to the running receiver on next launch, and if the receiver is gone
+  the viewer starts a new session with one tap. "Super simple and fast" is a sender requirement: the
+  Cast button is on every screen's app bar, one tap opens the system device picker, and pressing Play
+  while connected casts instead of playing locally, with the current position handed over.
 
 ### C. Play on a Ravilo TV (cheap, orthogonal, worth doing regardless)
 
@@ -251,15 +279,19 @@ and the engine choice decides what the library looks like from an iPhone:
 (Feature matrix per Swiftfin's own [players.md](https://github.com/jellyfin/Swiftfin/blob/main/Documentation/players.md);
 Swiftfin ships both engines for exactly this reason.)
 
-**Recommendation: AVPlayer + `hlsOnly = true`.** `ClientCapabilities.hlsOnly` already exists (Live TV
-sets it), so an iOS client that declares it gets a Jellyfin HLS/fMP4 remux or transcode for every file —
-codec-compatible files (H.264/HEVC + AAC/AC3/EAC3) remux without an encode, everything else encodes
-under the same R183 target-profile rules. The cost is one Jellyfin session per iOS play, the same cost
-as Chromecast, and the reward is that AirPlay, PiP, the lock screen and background audio are the
-platform's, not ours. VLCKit is the fallback if remux latency (Phase 179's subtitle-sideload stall
-applies here too) proves unacceptable. The seam's `load(streamUrl, …, subtitles, audio, …)` shape
-already fits AVPlayer's `AVPlayerItem` + sideloaded VTT through `AVMediaSelection`, and the R218
-moments map onto `AVPlayerItem.status` / `isPlaybackLikelyToKeepUp`.
+**Decision (owner answer 6): do what Swiftfin does, with no user option — VLCKit.** Swiftfin's default
+and recommended engine is its VLCKit-based "Swiftfin" player, and its maintainers have said the Native
+player will be removed in favour of consolidating on it. VLCKit gives the iPhone what the Android TV has:
+MKV direct play, DTS, ASS/PGS subtitles, and a decoder-capability answer that lets jellystructure
+negotiate the best quality exactly as it does for the TV today (`detectDecoderLimits` / `detectHdrSupport`
+actuals report VideoToolbox H.264/HEVC hardware limits; software fallback for the rest). What it costs
+against AVPlayer: AirPlay, PiP and the lock-screen card are not free and come later or not at all; HDR
+tone-mapping is weaker. The owner's Sony TV has AirPlay and can serve as a test target, but Chromecast is
+the requirement and AirPlay is not, so this is the right trade. AVPlayer + `hlsOnly = true` stays on file
+as the alternative (every play becomes a Jellyfin HLS remux/encode; AirPlay/PiP/lock screen free) if
+VLCKit's build or licence footprint (LGPL, same containment as R31's GPL decoders) proves a problem.
+The seam's `load(streamUrl, …, subtitles, audio, …)` shape maps onto `VLCMediaPlayer` + `VLCMedia`
+with `addPlaybackSlave` for sideloaded subtitles, and the R218 moments onto VLC's buffering events.
 
 ### 4.3 Chromecast and AirPlay on iOS
 
@@ -295,14 +327,14 @@ Ordered so that each phase is independently shippable and the earliest ones are 
 |---|---|---|---|
 | **216 + R243** | **Mobile data policy.** Viewer setting *Quality on mobile data* (Auto / Data saver / Always high) and *Wi-Fi only*; client reports `link_kind = "cellular"`; server feeds `MaxStreamingBitrate` from it (never a `VideoBitrate` condition — R183). | no | — |
 | **R244** | **Phone player chrome.** Handset layout via `LocalHandset`, safe-area insets, double-tap seek, rotate button + portrait player, lock, playback speed (new seam member, Wasm actual too), subtitle size, phone-scale next-up / skip-intro / picker sheet. TV chrome untouched. | **yes** (§5.1) | — |
-| **R245** | **Phone playback lifecycle.** `MediaSessionService` + media notification + PiP + audio-only continuation; revisits R193 with a *local-only* session on phone (R193's concern was cross-device surfacing, which `MediaSession` visibility controls; the notification is the feature on a phone). Backend half: the `ON_STOP → stopSession` contract becomes pause + heartbeat, reconciled with Phase 180 teardown and the watchdog. | no | R244 |
+| **R245** | **Phone playback lifecycle — narrowed by owner answer 5.** Local playback keeps today's contract (pause on background, session ends on `ON_STOP`, no background audio). What remains: a *local-only* `MediaSession` for headset/Bluetooth keys and, while **casting**, the Cast SDK's own notification + lock-screen controls (`CastOptions.NotificationOptions`, no `MediaSessionService` needed). PiP deferred. | no | R244 |
 | **R246** | **Play on a Ravilo TV.** Phase 111 routes under device-token auth, "Play on …" on the detail screen, remote transport while it plays. | light | — |
-| **217 + R247** | **Chromecast.** Ravilo web receiver (architecture B, `shared` as JS, CAF player, HTTPS hosting, Cast app registration), Android sender (`media3-cast`, `MediaRouteButton`, Output Switcher, mini/expanded controller), receiver auth hand-off (option i). | yes (controllers) | R245 for the notification path |
+| **217 + R247** | **Chromecast.** Ravilo web receiver (architecture B, `shared` as JS, CAF player, one project-hosted HTTPS URL, Cast app registration + publish), receiver enrols as its own Ravilo device via a hand-off code (Jellyfin session named *"Chromecast via Ravilo"*, dashboard control via Phase 110), Android sender (`media3-cast`, `MediaRouteButton` on every app bar, Output Switcher, connecting state, mini bar, full-screen remote — see the design brief). Acceptance device: the parents' old stick. | **yes** (design brief §B/§C) | R245 for the notification path |
 | **R248** | **Cast Connect** on the Android TV activity. | no | R247 |
 | **R249** | **Phone-wide mobile pass** — Home, Browse, Detail, Live TV guide + player, Discover on a handset. | **yes** (§5.2) | — |
-| **R250** | **iOS bring-up** (targets, 21 non-player actuals, Xcode app, macOS CI, TestFlight). | no | — |
-| **R251** | **iOS player**: AVPlayer + `hlsOnly`, the 9 player-seam actuals, AirPlay, PiP. | no | R250, R244 |
-| **R252** | **iOS Cast sender** (Swift actual behind `CastController`). | no | R247, R251 |
+| **R250** | **iOS bring-up** (targets, 21 non-player actuals, Xcode app, MacBook as build host per the companion guide, TestFlight). | no | — |
+| **R251** | **iOS player**: VLCKit engine, the 9 player-seam actuals, capability negotiation with jellystructure as on Android TV; no engine option for the viewer. | no | R250, R244 |
+| **R252** | **iOS Cast sender** (Swift actual behind `CastController`, Google Cast iOS SDK 4.8.x via CocoaPods); the parents' iPhones → old stick is the acceptance test. | no | R247, R251 |
 
 R243–R245 are the "perfect player" work; 216/R243 alone removes the worst mobile failure mode. R246 is
 the fastest route to "watch this on the TV from my phone". 217/R247 is the Chromecast ask proper.
@@ -310,22 +342,25 @@ R250–R252 are the iOS ask and are gated on a Mac, an Apple account, and the AV
 
 ---
 
-## 7. Open questions — for the owner, not guessed at
+## 7. Owner answers (2026-09-16) and what each changed
 
-1. **Which Cast devices are in the house?** Generation decides whether HEVC/4K ever direct-streams on
-   Cast or every 4K title is a 1080p H.264 encode.
-2. **Is Jellyfin reachable from a Chromecast at the URL the ticket carries** (LAN `http://` vs the
-   public `https://` name)? Try it on the dongle before writing the receiver.
-3. **NVENC headroom.** Every Cast and every iOS session is a Jellyfin remux/encode. What concurrency is
-   acceptable alongside the TVs' own transcode fallbacks and the Phase 182/183 gates?
-4. **Receiver identity** — the phone's token (fast) or a device of its own (clean)? See §3-B.
-5. **Should phone playback keep its session open while backgrounded** (R245), given Phase 180's
-   teardown was written to stop invisible work? The answer is "pause with heartbeat, tear down on a
-   timeout", but the timeout is a product number.
-6. **iOS engine**: AVPlayer-only (every play is HLS) or ship VLCKit alongside as Swiftfin does?
-7. **Apple side**: is there a Mac for the build, an Apple Developer account, and is TestFlight-only
-   distribution acceptable for the household?
-8. **Apple TV** in the house? If yes, AirPlay matters more than Chromecast for the iPhone owners.
+| # | Question | Answer | Effect on this report |
+|---|---|---|---|
+| 1 | Which Cast devices? | Unknown, and the project is going **open source**: modern built-in Cast TVs *and* old HDMI+USB-powered sticks must work. | Receiver probes capabilities at runtime, assumes nothing; 1st-gen stick support is a must-test, not a given (§3-B). Receiver hosting moved to one project-owned URL with a self-hoster override. |
+| 2 | Jellyfin reachable from the dongle? | Yes — Jellyfin is always public `https://`. | Reachability settled for this house; the receiver still needs an honest unreachable state for others. |
+| 3 | NVENC headroom? | "I don't know what NVENC is." | Explained in §3-B: the GPU encoder Jellyfin transcodes with. Becomes a Settings number plus a "server busy" state, not a design-time assumption. |
+| 4 | Receiver identity? | **Own device token**, and the Jellyfin dashboard should show the client as *Chromecast via Ravilo*. | Option (ii) chosen. Phase 110 gives the named Jellyfin session and dashboard control for free once the receiver is a device. |
+| 5 | Keep the session while backgrounded? | No — pause or fully stop; a new cast session is made from the phone, and starting one must be **super simple and fast**. | R245 narrowed to headset keys + Cast SDK notification; PiP deferred. Sender gets explicit speed requirements (§3-B, design brief §B). Note: a *cast* keeps playing on the TV when the phone locks — that is the Cast model, and the phone re-attaches on relaunch. |
+| 6 | iOS engine? | Whatever the existing Jellyfin iOS client does, **without options**; Ravilo and jellystructure negotiate quality like the Android TV. | **VLCKit**, Swiftfin's default and its future single engine (§4.2). |
+| 7 | Mac + Apple account? | Yes; development stays on Debian with the MacBook reached over SSH; guidelines wanted. | Companion guide: `ios-build-host-macbook-setup-2026-09-16.md`. |
+| 8 | Apple TV / AirPlay? | The Sony stue TV has AirPlay (testing only). Chromecast must work, specifically **parents' iPhones → an old Chromecast stick on an LG TV**. | AirPlay is optional; that stick + iPhone pair is the acceptance test for R247 + R252. |
+
+**Still open after the answers:** the generation of the parents' stick (decides whether 1st-gen CAF
+support has to be proven), how many concurrent encodes the owner's Jellyfin box should be allowed, and
+whether the project-hosted receiver URL lives on GitHub Pages or a domain the project owns.
+
+**Design hand-over:** the screens this report says do not exist are specified for the design tool in
+`specs/ravilo/design-brief-mobile-player-and-cast-2026-09-16.md`.
 
 ---
 
