@@ -204,6 +204,11 @@ class HomeFeedService(
         channelContentCache.keys.filter { it.first == userId }.forEach { channelContentCache.remove(it) }
         runCatching { PlaystateCache.refreshOne(device, mediaStore, jellyfinClient, configStore, tvEventBus) }
         runCatching { refreshContinueListFor(device) }
+        // R248 (FR-R248-2) — only now, with the caches dropped and the Continue list rebuilt (or its
+        // rebuild failed and the previous value standing), is a client re-pull guaranteed to see the
+        // post-stop answer. Sent whether the refreshes above succeeded or not: the client shows whatever
+        // the server honestly has (FR-R248-5).
+        tvEventBus.notifyHomeChanged(userId)
     }
 
     /**

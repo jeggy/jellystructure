@@ -221,6 +221,9 @@ fun main() = runBlocking {
     val detailService = DetailService(mediaStore, jellyfinClient, configStore, artworkDownloader, mediaSegmentStore, raviloDeviceService, playbackStartSampleStore)
     val playbackQoeStore = dev.jellystructure.tv.PlaybackQoeStore(db)
     val playbackService = PlaybackService(mediaStore, jellyfinClient, configStore, playbackQoeStore, playbackStartSampleStore, raviloDeviceService, castService, writerScope = rootScope)
+    // R248 (FR-R248-2) — once a queued stop has landed in Jellyfin, fold it into the Home feed and tell
+    // the user's devices (`home_changed`); the stop route itself no longer invalidates (see TvRoutes).
+    playbackService.onStopLanded = { device -> homeFeedService.invalidatePlaystate(device) }
     val mediaHistory = MediaHistory(db)
     val imageProxyService = dev.jellystructure.tv.RaviloArtworkService(dataDir, configStore, mediaStore, artworkDownloader)
     val channelLogoStore = dev.jellystructure.tv.ChannelLogoStore(dataDir)

@@ -83,7 +83,8 @@ class ChannelStore(private val apiClient: TvApiClient) {
 
     fun load(channelId: String) {
         // R40: re-entry with the same channel keeps the cached feed and refreshes silently (no flash).
-        if (currentId == channelId && _state.value is HomeState.Loaded) { refresh(silent = true); return }
+        // R248 (FR-R248-4) — unless the server's `home_changed` push already refreshed it while away.
+        if (currentId == channelId && _state.value is HomeState.Loaded) { if (returnGate.consumeReturn()) refresh(silent = true); return }
         currentId = channelId
         loadJob?.cancel()
         _state.value = HomeState.Loading
@@ -92,6 +93,11 @@ class ChannelStore(private val apiClient: TvApiClient) {
                 .getOrElse { HomeState.Error(it.message ?: "Unknown error") }
         }
     }
+
+    // R248 (FR-R248-4) — a channel page gets the same treatment as Home: see HomeStore.onLeave/onHomeChanged.
+    private val returnGate = ReturnRefreshGate()
+    fun onLeave() = returnGate.onLeave()
+    fun onHomeChanged() { returnGate.onEventRefresh(); refresh(silent = true) }
 
     /** R33 live refresh: re-pull the channel feed in place (no Loading flash). */
     fun refresh(silent: Boolean = false) {

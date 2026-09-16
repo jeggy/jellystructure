@@ -345,6 +345,10 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
     val livePlayItem = remember { MutableSharedFlow<PlayItemEnvelope>(replay = 0, extraBufferCapacity = 8) }
     val livePlaystateCommands = remember { MutableSharedFlow<PlaystateCommandEnvelope>(replay = 0, extraBufferCapacity = 8) }
     val liveNavigate = remember { MutableSharedFlow<NavigateEnvelope>(replay = 0, extraBufferCapacity = 8) }
+    // R248 (FR-R248-2) — the server folded a stop into this user's Home feed; collected below against
+    // the retained Home/channel stores (not the screens), so a push that lands while the player is still
+    // on top refreshes the feed the viewer is about to return to.
+    val liveHome = remember { MutableSharedFlow<Long>(replay = 0, extraBufferCapacity = 16) }
     var activeUserId by remember { mutableStateOf(MultiTokenStore.getActive()?.userId) }
     var activeAvatarUrl by remember { mutableStateOf(MultiTokenStore.getActive()?.avatarUrl) }
 
@@ -370,6 +374,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                     onPlayItem = { livePlayItem.emit(it) },
                     onPlaystateCommand = { livePlaystateCommands.emit(it) },
                     onNavigate = { liveNavigate.emit(it) },
+                    onHomeChanged = { liveHome.emit(it) },
                     // Home-feed playstate cache/concurrency fix — a live Jellyfin fetch made to satisfy
                     // this or another device's own /api/tv/home request lands here; reuse the existing
                     // R147 patch-in-place path (WatchedBus) instead of forcing a re-fetch.
@@ -432,6 +437,18 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
         @Suppress("UNCHECKED_CAST")
         fun <T : Any> keptStore(key: String, create: () -> T): T =
             storeRegistry.getOrPut(key) { create() } as T
+        // R248 (FR-R248-2/4) — a `home_changed` push refreshes every retained Home and channel store,
+        // visible or not; the screens themselves never re-derive anything (FR-R248-5).
+        LaunchedEffect(Unit) {
+            liveHome.collect {
+                storeRegistry.values.forEach { s ->
+                    when (s) {
+                        is HomeStore -> s.onHomeChanged()
+                        is ChannelStore -> s.onHomeChanged()
+                    }
+                }
+            }
+        }
 
         // Load config when already on Home (single-session fast path)
         if (initialDest is Dest.Home) {
@@ -758,10 +775,14 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                 SideEffect { discoverAvailable = da }
                 val ua by store.upcomingAvailable.collectAsState()
                 SideEffect { upcomingAvailable = ua }
-                // R141: on every Home re-entry (including Back-returns), emit on liveConfig so the store
-                // does a silent re-pull. HomeStore.refresh(silent=true) keeps the current content visible
-                // and swaps in the new feed when it arrives — no Loading flash.
-                LaunchedEffect(Unit) { liveConfig.emit(0L) }
+                // R141: on every Home re-entry (including Back-returns) the store does a silent re-pull.
+                // HomeStore.refresh(silent=true) keeps the current content visible and swaps in the new
+                // feed when it arrives — no Loading flash.
+                // R248 (FR-R248-1) — the re-pull is the store's own `onReturn()` now (skipped when the
+                // server's `home_changed` push already refreshed it while away), not a liveConfig emit —
+                // which also re-pulled skin/lang on every return, work config_changed already covers.
+                LaunchedEffect(Unit) { store.onReturn() }
+                DisposableEffect(Unit) { onDispose { store.onLeave() } }
                 // R212 — write through the combined feed + display-settings snapshot whenever Home has
                 // fresh content, so the next cold start can seed instantly instead of a bare shimmer.
                 // Always an exact copy of what's already on screen — never computed/derived.
@@ -821,6 +842,9 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
 
             is Dest.ChannelView -> {
                 val store = keptStore("channel:${dest.displayName}:${dest.channel.id}") { ChannelStore(apiClient) }
+                // R248 (FR-R248-4) — the return re-pull itself is ChannelScreen's R40 `load()`; this
+                // only tells the store when the page went away, for the one-refresh-per-return rule.
+                DisposableEffect(Unit) { onDispose { store.onLeave() } }
                 ChannelScreen(
                     channel = dest.channel,
                     store = store,
