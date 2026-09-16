@@ -99,6 +99,20 @@ for font in jetbrains-mono sora space-grotesk; do
   fi
 done
 
+# R239 — every flag rule in flags.css must have its SVG on disk. The 13th AND 14th incidents both
+# deleted design/flags/4x3/ct.svg (Catalan, hand-authored, a deliberately non-ISO code) while leaving
+# flags.css's own .fi-ct rule alone in one of them — so neither a selector check nor check-lang-cc-sync
+# (which compares LANG_CC key counts, not assets) noticed. A missing asset renders an empty box, not an
+# error. Checked generically so any future flag loss trips this too, not just Catalan.
+missing_flags=""
+while IFS= read -r code; do
+  [ -s "design/flags/4x3/$code.svg" ] || missing_flags="$missing_flags $code"
+done < <(grep -oE '^\.fi-[a-z]{2,3}' design/flags.css | sed 's/^\.fi-//' | sort -u)
+if [ -n "$missing_flags" ]; then
+  echo "MISSING      flag asset(s) for flags.css rule(s):$missing_flags  (design/flags/4x3/<code>.svg)"
+  fail=1
+fi
+
 # ---- segments.css / ravilo-player.js --------------------------------------------------------------
 SEGCSS="design/app/segments.css"
 PLAYER="design/ravilo/ravilo-player.js"
