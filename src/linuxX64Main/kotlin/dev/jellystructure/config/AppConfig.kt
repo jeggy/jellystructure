@@ -18,6 +18,9 @@ data class AppConfig(
     val seerr: SeerrConfig? = null,
     // Phase 157 — Bazarr subtitle integration
     val bazarr: BazarrConfig? = null,
+    // Phase 218 (FR-218-2) — Chromecast. Null or enabled=false is "off", and off means ABSENT on every
+    // client (FR-218-3): the config snapshot carries no cast capability and nothing draws a button.
+    val chromecast: ChromecastConfig? = null,
     // Phase 91 — scan pipeline
     @SerialName("scan_schedule") val scanSchedule: String = "",
     val scan: ScanConfig = ScanConfig(),
@@ -108,6 +111,31 @@ data class BazarrConfig(
     @SerialName("auto_search_on_add") val autoSearchOnAdd: Boolean = false,
     @SerialName("show_history_on_title") val showHistoryOnTitle: Boolean = true,
 )
+
+/**
+ * Phase 218 (FR-218-2) — the Chromecast block. Each installation registers its own Cast application
+ * with Google (the one paid, external step — US$5, once), pastes the application id here, and
+ * jellystructure serves the receiver itself at `<public_url>/cast/` (FR-218-1/5).
+ *
+ * [maxSessions] is the concurrent-cast ceiling (FR-218-8), 1–5, default 2; junk reads back as 2 via
+ * [effectiveMaxSessions] rather than failing the load. [publicUrl] is the address a Chromecast will
+ * load the receiver from — an explicit override, never derived from a request (the same shape phase
+ * 165's Jellyfin reach URL uses), because the backend performs the reachability check by fetching its
+ * own `/cast/` through it.
+ */
+@Serializable
+data class ChromecastConfig(
+    val enabled: Boolean = false,
+    @SerialName("app_id") val appId: String = "",
+    @SerialName("max_sessions") val maxSessions: Int = 2,
+    @SerialName("public_url") val publicUrl: String = "",
+) {
+    fun effectiveMaxSessions(): Int = if (maxSessions in 1..5) maxSessions else 2
+    /** A Cast application id is 8 hex characters; anything else is "not set yet". */
+    fun hasAppId(): Boolean = APP_ID.matches(appId.trim())
+    fun receiverUrl(): String? = publicUrl.trim().trimEnd('/').takeIf { it.isNotBlank() }?.let { "$it/cast/" }
+    companion object { val APP_ID = Regex("[0-9A-Fa-f]{8}") }
+}
 
 // Phase 56 — acquisition engine settings. Absent or enabled=false ⇒ no requests/polling.
 // Flat keys (not [acquisition.radarr] sub-tables) to keep ktoml serialization trivial.

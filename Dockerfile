@@ -77,11 +77,14 @@ RUN adduser --system --uid 1000 jellystructure
 # form duplicated the whole copied content (33MB) into a second layer just to flip permissions.
 COPY --from=builder --chmod=755 --chown=jellystructure /app/build/bin/linuxX64/releaseExecutable/jellystructure.kexe /app/jellystructure
 COPY --from=builder --chown=jellystructure /app/build/dist/wasmJs/productionExecutable/ /app/frontend/
+# Phase 218 (FR-218-1) — the Chromecast receiver bundle, served at /cast/ (a plain static directory).
+COPY --chown=jellystructure cast-receiver/ /app/cast/
 
 USER jellystructure
 EXPOSE 9505
 
 ENV FRONTEND_DIR=/app/frontend
+ENV CAST_DIR=/app/cast
 ENV CONFIG_FILE=/config/config.toml
 ENV SESSIONS_FILE=/config/sessions.json
 # FR-167-2 — real bug found live-testing this image as its own non-root USER (the default; also what

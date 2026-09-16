@@ -35,6 +35,7 @@ import dev.jellystructure.tv.RaviloConfigService
 import dev.jellystructure.tv.RaviloDeviceService
 import dev.jellystructure.tv.TvEventBus
 import io.ktor.http.ContentType
+import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.request.receive
 import io.ktor.server.response.respond
@@ -222,6 +223,8 @@ fun Route.tvRoutes(
     imageProxyService: RaviloArtworkService? = null,
     // Phase 216 (FR-216-5) — serves the studio/network logos `BrowseFacets.logoUrl` points at.
     logoDownloader: dev.jellystructure.media.LogoDownloader? = null,
+    // Phase 218 (FR-218-9) — hand-off mint (phone) and redeem (receiver).
+    castService: dev.jellystructure.tv.CastService? = null,
     tvEventBus: TvEventBus? = null,
     upcomingService: dev.jellystructure.tv.UpcomingService? = null,
     seerrDiscoverService: dev.jellystructure.seerr.SeerrDiscoverService? = null,
@@ -539,6 +542,44 @@ fun Route.tvRoutes(
         val device = call.attributes[DeviceKey]
         val kind = call.request.queryParameters["kind"]
         call.respond(browseService.facets(device, kind))
+    }
+
+    // ── Phase 218 (FR-218-9): Chromecast hand-off ────────────────────────────
+    // The phone mints a short-lived, single-use code under its own session and puts it in the Cast
+    // LOAD; the receiver redeems it for ITS OWN device token + ravilo_device row and is a Ravilo device
+    // from then on. Nothing about the session depends on the phone staying alive.
+    post("/tv/cast/handoff") {
+        val device = call.attributes[DeviceKey]
+        val svc = castService ?: return@post call.respond(HttpStatusCode.NotFound, mapOf("error" to "casting is not available"))
+        if (svc.capability() == null) return@post call.respond(HttpStatusCode.NotFound, mapOf("error" to "casting is not enabled"))
+        call.respond(svc.mint(device))
+    }
+    // Pre-auth (AuthPlugin OPEN_API_PATHS) — same rate limiter as /tv/login, since a code is guessable
+    // in principle and this is the only unauthenticated path that mints a device token.
+    post("/tv/cast/redeem") {
+        val svc = castService ?: return@post call.respond(HttpStatusCode.NotFound, mapOf("error" to "casting is not available"))
+        val clientKey = call.request.headers["X-Forwarded-For"]?.substringBefore(',')?.trim()?.takeIf { it.isNotBlank() }
+            ?: call.request.local.remoteHost
+        if (!loginRateLimiter.tryAcquire(clientKey)) {
+            call.response.headers.append(HttpHeaders.RetryAfter, "60")
+            return@post call.respond(HttpStatusCode.TooManyRequests, mapOf("error" to "Too many attempts — try again in a minute"))
+        }
+        val req = runCatching { call.receive<dev.jellystructure.shared.tv.CastRedeemRequest>() }.getOrElse {
+            return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Invalid request"))
+        }
+        val redeemed = svc.redeem(req.code, req.deviceName, req.receiverId)
+            ?: return@post call.respond(HttpStatusCode.Unauthorized, mapOf("error" to "That code is not valid any more — cast again from your phone"))
+        val (device, deviceToken) = redeemed
+        call.respond(PairResult(
+            session = TvSession(
+                deviceId = device.deviceId,
+                userId = device.jellyfinUserId,
+                displayName = device.displayName,
+                isAdmin = device.isAdmin,
+                isKids = device.isKids,
+            ),
+            deviceToken = deviceToken,
+        ))
     }
 
     // ── Playback ─────────────────────────────────────────────────────────────

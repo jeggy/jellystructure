@@ -75,6 +75,10 @@ fun main() = runBlocking {
     val dbFile = env("DB_FILE", "./data/jellystructure.db")
     val frontendDir = env("FRONTEND_DIR", "/app/frontend")
     val raviloWebDir = env("RAVILO_WEB_DIR", "").takeIf { it.isNotBlank() }
+    // Phase 218 (FR-218-1) — the Chromecast receiver bundle, served at /cast/ the same way ravilo-web is
+    // served at /tv/. Absent directory ⇒ the route simply does not answer (pairs with FR-218-3's "off
+    // means absent"). Docker sets CAST_DIR=/app/cast; a dev checkout serves the repo's cast-receiver/.
+    val castDir = env("CAST_DIR", "cast-receiver").takeIf { it.isNotBlank() && kotlinx.io.files.SystemFileSystem.exists(kotlinx.io.files.Path(it)) }
     val port = env("SERVER_PORT", "9505").toIntOrNull() ?: 9505
     val tmdbBaseUrl = env("TMDB_BASE_URL", "https://api.themoviedb.org/3")
 
@@ -196,7 +200,9 @@ fun main() = runBlocking {
     val arrClient = ArrClient()
     val requestLanguageService = dev.jellystructure.arr.RequestLanguageService(configStore, arrClient)
     val requestIntentStore = dev.jellystructure.seerr.RequestIntentStore(db)
-    val raviloConfigService = RaviloConfigService(db, tvEventBus, requestLanguageService)
+    // Phase 218 (FR-218-3) — cast capability rides every RaviloConfig read, resolved from config.toml.
+    val castService = dev.jellystructure.tv.CastService(db, configStore, raviloDeviceService)
+    val raviloConfigService = RaviloConfigService(db, tvEventBus, requestLanguageService, castCapability = { castService.capability() })
     raviloConfigService.migrateAllLegacyBehaviourFields()  // R162: one-time, idempotent
     val homeFeedService = HomeFeedService(mediaStore, raviloConfigService, jellyfinClient, configStore, tvEventBus, artworkDownloader)
     // Phase 205 (FR-205-2) — background-refresh Continue Watching and the whole-catalog playstate map
@@ -213,7 +219,7 @@ fun main() = runBlocking {
     val playbackStartSampleStore = dev.jellystructure.tv.PlaybackStartSampleStore(db)
     val detailService = DetailService(mediaStore, jellyfinClient, configStore, artworkDownloader, mediaSegmentStore, raviloDeviceService, playbackStartSampleStore)
     val playbackQoeStore = dev.jellystructure.tv.PlaybackQoeStore(db)
-    val playbackService = PlaybackService(mediaStore, jellyfinClient, configStore, playbackQoeStore, playbackStartSampleStore, raviloDeviceService)
+    val playbackService = PlaybackService(mediaStore, jellyfinClient, configStore, playbackQoeStore, playbackStartSampleStore, raviloDeviceService, castService)
     val mediaHistory = MediaHistory(db)
     val imageProxyService = dev.jellystructure.tv.RaviloArtworkService(dataDir, configStore, mediaStore, artworkDownloader)
     val channelLogoStore = dev.jellystructure.tv.ChannelLogoStore(dataDir)
@@ -280,6 +286,7 @@ fun main() = runBlocking {
         artworkDownloader, tmdbClient, scanTracker, mediaHistory, activityLog, broadcaster,
         frontendDir, raviloWebDir = raviloWebDir, port = port, scanDispatcher = scanDispatcher, effectiveScanThreads = effectiveScanThreads, jsTagStore = jsTagStore, seedingGuard = seedingGuard, seedingSnapshot = seedingSnapshot, logoDownloader = logoDownloader, qbClient = qbClient, arrClient = arrClient, arrRescan = arrRescan, sonarrEnrich = sonarrEnrich, acquisitionService = acquisitionService, seerrClient = seerrClient, bazarrClient = bazarrClient, tvEventBus = tvEventBus, imageProxyService = imageProxyService, mediaJobQueue = mediaJobQueue, sessionBridge = sessionBridge, apiKeyStore = apiKeyStore, realtimeIngest = realtimeIngest, dirtyItemStore = dirtyItemStore, fdWatchdog = fdWatchdog, imdbClient = imdbClient, upcomingService = upcomingService, requestLanguageService = requestLanguageService, requestIntentStore = requestIntentStore, requestLifecycleService = requestLifecycleService, liveTvService = liveTvService, fingerprintService = fingerprintService, mediaSegmentStore = mediaSegmentStore,
         playbackQoeStore = playbackQoeStore,
+        castService = castService, castDir = castDir,
     )
 
     // R149: populate Sonarr next-airing data for all TV shows on startup (background, non-blocking).

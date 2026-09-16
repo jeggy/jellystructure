@@ -907,6 +907,11 @@ data class RaviloConfig(
     // before the config leaves the server, the same way [viewerSkinOverride] gets overwritten with the
     // resolved behaviour overlay in RaviloConfigService.getConfig.
     @SerialName("focus_detail") val focusDetail: String = "line",
+    // Phase 218 (FR-218-3/11) — server-resolved, never stored: present ONLY when the admin has enabled
+    // Chromecast and set an application id. Absent means "there is nothing to cast to" and Ravilo draws
+    // NO cast button — not a greyed one (R245 FR-R245-1). Same shape as [focusDetail]: one resolved
+    // field, overwritten by RaviloConfigService on every read path before the config leaves the server.
+    val cast: CastCapability? = null,
 ) {
     /** The skin actually rendered: the viewer's override when allowed, else the operator default. */
     fun effectiveSkin(): Skin = if (allowSkinOverride) (viewerSkinOverride ?: defaultSkin) else defaultSkin
@@ -1110,6 +1115,37 @@ data class PlayedRequest(
 data class FavoriteRequest(
     @SerialName("item_id") val itemId: String,
     val favorite: Boolean,
+)
+
+// ─── Chromecast (Phase 218 / R245) ────────────────────────────────────────────
+
+/** Phase 218 (FR-218-11) — the per-installation Cast application id, delivered at runtime on the config
+ *  snapshot rather than in any manifest. [receiverUrl] is informational (the receiver is resolved by
+ *  Google from the app id); null when the admin has not set a public address. */
+@Serializable
+data class CastCapability(
+    @SerialName("app_id") val appId: String,
+    @SerialName("receiver_url") val receiverUrl: String? = null,
+)
+
+/** Phase 218 (FR-218-9) — what `POST /api/tv/cast/handoff` returns to the phone: a short-lived,
+ *  single-use code the phone puts in its LOAD so the receiver can enrol as its own Ravilo device. */
+@Serializable
+data class CastHandoffResponse(
+    val code: String,
+    @SerialName("expires_at") val expiresAt: Long,
+    /** Seconds the code stays valid, for a client that wants to show or time it. */
+    @SerialName("ttl_seconds") val ttlSeconds: Int,
+)
+
+/** Phase 218 (FR-218-9) — the receiver redeems the code for its own device token (a [PairResult], exactly
+ *  what `/tv/login` returns to a TV). [receiverId] is the receiver's persisted device id when its storage
+ *  survived since the last cast, so the same `ravilo_device` row is reused; absent ⇒ a new row. */
+@Serializable
+data class CastRedeemRequest(
+    val code: String,
+    @SerialName("device_name") val deviceName: String? = null,
+    @SerialName("receiver_id") val receiverId: String? = null,
 )
 
 // ─── Browse facets ────────────────────────────────────────────────────────────

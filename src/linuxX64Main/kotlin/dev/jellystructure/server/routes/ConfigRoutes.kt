@@ -107,7 +107,23 @@ fun Route.configureConfigRoutes(
     bazarrClient: BazarrClient? = null,
     tmdbClient: dev.jellystructure.tmdb.TmdbClient? = null,
     requestLanguageService: dev.jellystructure.arr.RequestLanguageService? = null,
+    // Phase 218 — the Chromecast card's reachability check (FR-218-5) and honest status (FR-218-7);
+    // tvEventBus so a change to the chromecast block reaches every client's config snapshot (FR-218-3).
+    castService: dev.jellystructure.tv.CastService? = null,
+    tvEventBus: dev.jellystructure.tv.TvEventBus? = null,
 ) {
+    // Phase 218 (FR-218-5) — the BACKEND fetches its own /cast/ through the public address the admin
+    // typed; never a verdict off local config or the browser's address bar. Two outcomes only.
+    post("/config/chromecast/check") {
+        val svc = castService ?: return@post call.respond(HttpStatusCode.NotFound)
+        val req = runCatching { call.receive<ChromecastCheckRequest>() }.getOrElse { ChromecastCheckRequest() }
+        call.respond(svc.checkReceiver(req.url))
+    }
+    // Phase 218 (FR-218-7) — `verified` is true only once a real cast has enrolled a receiver.
+    get("/config/chromecast/status") {
+        val svc = castService ?: return@get call.respond(HttpStatusCode.NotFound)
+        call.respond(svc.status(dev.jellystructure.tv.activePlaybackDeviceNames()))
+    }
     get("/config") {
         call.respond(ConfigResponse(maskSecrets(configStore.current), effectiveScanThreads))
     }
@@ -183,6 +199,9 @@ fun Route.configureConfigRoutes(
         // checked; a failed persist used to still respond 204, so a Settings "Saved ✓" could be a lie
         // (the ktoml age_rating_map decode bug produced exactly this — see ConfigStore.fixAgeRatingMapKeys).
         val ok = configStore.update(config)
+        // Phase 218 (FR-218-3) — a changed chromecast block changes every client's resolved `cast`
+        // capability, so push the same global-config event a layout save does; clients re-fetch /tv/config.
+        if (ok && config.chromecast != stored.chromecast) tvEventBus?.notifyGlobalConfigChanged()
         if (ok) call.respond(HttpStatusCode.NoContent)
         else call.respond(HttpStatusCode.InternalServerError, mapOf("error" to "Couldn't save — check the server log"))
     }
@@ -292,3 +311,7 @@ fun Route.configureConfigRoutes(
         call.respond(dev.jellystructure.seerr.CURATED_NETWORKS)
     }
 }
+
+/** Phase 218 (FR-218-5) — the public address the admin typed; the backend fetches `<url>/cast/` itself. */
+@Serializable
+data class ChromecastCheckRequest(val url: String = "")

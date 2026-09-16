@@ -54,6 +54,35 @@ data class SeerrConfig(
 )
 
 // Phase 157 — Bazarr subtitle connection.
+// Phase 218 (FR-218-2) — mirrors the backend's ChromecastConfig.
+@Serializable
+data class ChromecastConfig(
+    val enabled: Boolean = false,
+    @SerialName("app_id") val appId: String = "",
+    @SerialName("max_sessions") val maxSessions: Int = 2,
+    @SerialName("public_url") val publicUrl: String = "",
+)
+
+/** Phase 218 (FR-218-5) — the backend's verdict after fetching its own /cast/ through the public URL. */
+@Serializable
+data class ReceiverCheck(val reachable: Boolean, val https: Boolean, val detail: String)
+
+@Serializable
+data class CastDeviceSummary(val name: String, @SerialName("last_seen") val lastSeen: Long)
+
+/** Phase 218 (FR-218-7) — `verified` only once a real cast has enrolled a receiver. */
+@Serializable
+data class ChromecastStatus(
+    val enabled: Boolean = false,
+    @SerialName("app_id_set") val appIdSet: Boolean = false,
+    @SerialName("receiver_url") val receiverUrl: String? = null,
+    val verified: Boolean = false,
+    val devices: List<CastDeviceSummary> = emptyList(),
+    @SerialName("last_cast_at") val lastCastAt: Long? = null,
+    @SerialName("max_sessions") val maxSessions: Int = 2,
+    @SerialName("active_sessions") val activeSessions: Int = 0,
+)
+
 @Serializable
 data class BazarrConfig(
     val enabled: Boolean = false,
@@ -129,6 +158,8 @@ data class AppConfig(
     val sonarr: ArrConfig? = null,
     val seerr: SeerrConfig? = null,
     val bazarr: BazarrConfig? = null,
+    // Phase 218 (FR-218-2) — Chromecast; null = off, and off means the phone shows no cast button at all.
+    val chromecast: ChromecastConfig? = null,
     @SerialName("scan_schedule") val scanSchedule: String = "",
     val scan: ScanConfig = ScanConfig(),
     val trackers: List<TrackerConfig> = emptyList(),
@@ -336,6 +367,18 @@ object ConfigApi {
     suspend fun testSonarr(url: String, apiKey: String): ArrTestResult? = testArr("sonarr", url, apiKey)
     suspend fun testSeerr(url: String, apiKey: String): ArrTestResult? = testArr("seerr", url, apiKey)
     suspend fun testBazarr(url: String, apiKey: String): ArrTestResult? = testArr("bazarr", url, apiKey)
+
+    // Phase 218 (FR-218-5/7) — the Chromecast card's reachability check and honest status list.
+    suspend fun checkChromecast(url: String): ReceiverCheck? = runCatching {
+        httpClient.post("/api/config/chromecast/check") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"url":"${url.replace("\\", "\\\\").replace("\"", "\\\"")}"}""")
+        }.body<ReceiverCheck>()
+    }.getOrNull()
+
+    suspend fun chromecastStatus(): ChromecastStatus? = runCatching {
+        httpClient.get("/api/config/chromecast/status").body<ChromecastStatus>()
+    }.getOrNull()
 
     // Phase 139 — "Set up profiles in Radarr/Sonarr": preview shows what would be created/updated
     // (read-only), provision actually does it (idempotent — safe to re-run).

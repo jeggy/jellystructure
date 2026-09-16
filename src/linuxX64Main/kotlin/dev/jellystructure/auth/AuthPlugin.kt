@@ -19,6 +19,10 @@ private val OPEN_API_PATHS = listOf(
     // Phase 141 — no device token exists yet at sign-in; the route itself authenticates the
     // credentials against Jellyfin before minting one. Retires /api/tv/pair/{start,poll,approve}.
     "/api/tv/login",
+    // Phase 218 (FR-218-9) — a Chromecast receiver redeems its hand-off code here to GET its device token,
+    // so it cannot present one yet. The code is single-use, minutes-lived and minted by an authenticated
+    // phone session; the route is rate-limited by the same LoginRateLimiter as /api/tv/login.
+    "/api/tv/cast/redeem",
     // /api/tv/events is the live-config WebSocket (R33); browsers can't send a bearer header on the
     // handshake, so the route validates a device token from the query string itself.
     "/api/tv/events",

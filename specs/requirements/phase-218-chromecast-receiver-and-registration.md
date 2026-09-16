@@ -8,9 +8,12 @@
 
 ## Status
 
-`Planned` — written 2026-09-16, **dev-reviewed 2026-09-16 against `main`** (see §Dev review at the
-bottom). Admin card built into the mockups 2026-09-16. **One finding materially resizes the phase:**
-FR-218-9's hand-off code has no existing mechanism to build on — phase 141 retired the only one.
+`✓ Built` — written 2026-09-16, **dev-reviewed 2026-09-16 against `main`** (see §Dev review at the
+bottom), **implemented 2026-09-16** (see §Implementation notes). Admin card built into the mockups
+2026-09-16. **One finding materially resized the phase:** FR-218-9's hand-off code had no existing
+mechanism to build on — phase 141 retired the only one — so it is new machinery (`cast_handoff`,
+migration `44.sqm`, two endpoints). Compiled on linuxX64 and wasmJs, unit-tested (`CastServiceTest`);
+not deployed; the receiver page itself is R245's.
 
 **Numbering:** verified against `main` on 2026-09-16 — admin taken through **217** (Towo removal), Ravilo
 through **R243**. No `phase-218-*` file and no `STATUS.md` row for it. Pairs with **R245**. The source
@@ -272,3 +275,55 @@ FR-218-4, 6, 7, 8, 12 and 13 are unaffected. The honest-verification rule in FR-
 and has no cheaper alternative — nothing in the Cast SDK lets a server confirm an application ID without
 a real cast. Open questions 1, 2 and 3 stand as written; 4 and 5 gain the storage-durability question
 above.
+
+## Implementation notes (2026-09-16)
+
+- **FR-218-1** — `Server.kt` serves `/cast/**` from `castDir` exactly like `/tv/**` from `raviloWebDir`
+  (three lines), adding an `X-Ravilo-Cast: receiver` response header so FR-218-5's check can tell *our*
+  receiver from any other 200. `Main.kt` resolves `CAST_DIR` (Docker: `/app/cast`, `COPY cast-receiver/`
+  in the Dockerfile; dev: the repo's `cast-receiver/`) and passes null when the directory is absent, so
+  the route simply does not answer. `cast-receiver/index.html` is the mount point; **R245 owns and
+  replaces its contents.**
+- **FR-218-2** — `ChromecastConfig? = null` on `AppConfig` (`enabled`, `app_id`, `max_sessions`,
+  **plus `public_url`**, see FR-218-5 below). `effectiveMaxSessions()` returns 2 for anything outside
+  1–5; `hasAppId()` is the 8-hex rule.
+- **FR-218-3/11** — `RaviloConfig.cast: CastCapability?` (`app_id`, informational `receiver_url`),
+  resolved by `RaviloConfigService` on every read path exactly the way `focus_detail` is (202's
+  precedent), **never persisted** (`normalize()` nulls it) and null unless enabled *and* an app id is
+  set. `PUT /api/config` publishes the global-config event when the block changed, so open clients
+  re-fetch. Nothing derived from the network ever enters it.
+- **FR-218-4/6/7/13** — the card in `Settings.kt` under Connections (`sect-cast`, `cc-*` classes),
+  three states driven by the form + `GET /api/config/chromecast/status`: off (switch + paragraph),
+  on-but-unregistered (address, the three steps naming Google and the US$5 fee, empty ID, the 1–5
+  stepper, status list), and registered-and-verified (steps collapse behind *Show the three steps
+  again*, hint says confirmed by a real cast, last cast + device count + the Jellyfin name). `verified`
+  is **only** "a receiver has enrolled" — the card never claims a check it did not perform. The `cc-*`
+  rules moved from the design's inline `<style>` into the served `wf.css` and are fenced by
+  `check-mobile-css.sh`.
+- **FR-218-5** — `POST /api/config/chromecast/check {url}`: the backend fetches `<url>/cast/` itself
+  through `OutboundHttp` (8 s), requires `https://` and the `X-Ravilo-Cast` header, and answers one of
+  two outcomes. **Deviation, stated:** the spec's "configured public URL" did not exist in config, so the
+  block gained `public_url`; the card pre-fills it from the page's origin (as a default the admin
+  saves, not as evidence) and the check never trusts the browser. This is now the first shipped
+  instance of the "explicit reach address" pattern 165 will copy.
+- **FR-218-8** — `CastService.checkCeiling()` runs at the top of `PlaybackService.startPlayback` for a
+  device whose name carries the receiver prefix: `max_sessions` *other* receivers already playing ⇒
+  `CastCeilingException` ⇒ phase 182's shape, 503 + `Retry-After: 30`, via `StatusPages`. A receiver
+  starting its next episode never counts against itself; a TV or phone is never gated.
+- **FR-218-9** — new `cast_handoff` table (`CastHandoff.sq`, **`44.sqm`**): `POST /api/tv/cast/handoff`
+  (device-auth) mints a 6-character code (no 0/O/1/I) valid **5 minutes**, single-use; `POST
+  /api/tv/cast/redeem` (in `OPEN_API_PATHS`, rate-limited by the `/tv/login` limiter) exchanges it
+  for a `PairResult` — a `ravilo_device` row `cast-…` created through `loginDevice` with the **phone
+  user's** id, Jellyfin token, kids flag and library/tag policy copied server-side. The receiver holds
+  only a `device_token`, like a TV. An optional `receiver_id` reuses the row when the stick's storage
+  survived (open question on durability handled both ways: same row + same token if it did, a fresh
+  row if not). Expired and redeemed rows are swept on every mint/redeem.
+- **FR-218-10** — free, as the review said: the row's name is `Chromecast via Ravilo · <name>`.
+- **FR-218-12** — nothing new: a receiver calls `/api/tv/playback/start` as any device.
+- **Test** `CastServiceTest`: capability absent unless enabled + 8-hex; mint → redeem once (policy,
+  name, real token), second redeem and unknown code refused, `receiver_id` reuse; ceiling refuses only a
+  receiver past the limit and never a TV.
+- **Not done / open:** acceptance 3–6 need a real stick and a deploy; the stick's generation (OQ1) and
+  the concurrent-encode number (OQ2) are untouched guesses; what happens to a receiver row when the admin
+  switches Chromecast off (OQ5) is unchanged — the row stays, the button disappears, and a redeem while
+  disabled is refused because `handoff` 404s without a capability.
