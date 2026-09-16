@@ -604,7 +604,10 @@ fun Route.tvRoutes(
         // Bug fix: the stop used to be forwarded to Jellyfin and nothing else — the cached home feed
         // (5 min) kept serving the pre-stop Continue row, so a correct stop could stay invisible on
         // Home for minutes. Runs after responding so the client's stop ack isn't delayed by it.
-        homeFeedService.invalidatePlaystate(device)
+        // R248 (FR-R248-2) — with the 219 writer in place the stop has only been *queued* at this
+        // point, so invalidating here would rebuild the row from Jellyfin's pre-stop state; the writer
+        // runs the same invalidation (and the `home_changed` push) the moment the stop lands.
+        if (!playbackService.queuesStops) homeFeedService.invalidatePlaystate(device)
     }
 
     // Phase 177 §FR-177-5 / R216 §FR-R216-4 — fire-and-forget playback-quality report; see

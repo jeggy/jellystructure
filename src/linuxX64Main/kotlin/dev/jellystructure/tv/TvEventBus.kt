@@ -30,6 +30,7 @@ class TvEventBus(private val scope: CoroutineScope) {
     // userId -> (deviceId -> session). One session per device; a reconnect overwrites the old entry.
     private val sessions = mutableMapOf<String, MutableMap<String, DefaultWebSocketServerSession>>()
     private var rev = 0L
+    private var homeRev = 0L  // R248 — home_changed has its own counter (see notifyHomeChanged)
 
     /**
      * Phase 134 (FR-OPS2 §D) — returns `false` (refuse) only when [deviceId] would be a genuinely NEW
@@ -70,6 +71,23 @@ class TvEventBus(private val scope: CoroutineScope) {
             val (r, targets) = mutex.withLock { (++rev) to (sessions[userId]?.values?.toList() ?: emptyList()) }
             if (targets.isEmpty()) return@launch
             val msg = """{"type":"config_changed","rev":$r}"""
+            for (s in targets) runCatching { s.send(Frame.Text(msg)) }
+        }
+    }
+
+    /**
+     * R248 (FR-R248-2) — "your Home feed changed on the server; re-pull it": sent to all of [userId]'s
+     * devices once a stop (or a played/mark write) has been folded into the feed caches and the
+     * Continue Watching list has been rebuilt — success or failure — so the client refreshes on the
+     * server's word instead of guessing on the way back from the player (which used to race the
+     * server's own post-respond invalidation and cement the pre-stop row). Its own counter, not [rev]:
+     * the R141 config-rev poll must not mistake a stop for a layout change. Non-blocking.
+     */
+    fun notifyHomeChanged(userId: String) {
+        scope.launch {
+            val (r, targets) = mutex.withLock { (++homeRev) to (sessions[userId]?.values?.toList() ?: emptyList()) }
+            if (targets.isEmpty()) return@launch
+            val msg = """{"type":"home_changed","rev":$r}"""
             for (s in targets) runCatching { s.send(Frame.Text(msg)) }
         }
     }

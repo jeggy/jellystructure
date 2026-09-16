@@ -316,6 +316,17 @@ class PlaybackService(
 ) {
     private val writer: PlaybackWriter? = writerScope?.let { PlaybackWriter(it, JellyfinSink()) }
 
+    /** R248 — true when stops are queued on the [PlaybackWriter] (production): the Home-feed
+     *  invalidation then runs from [onStopLanded] once Jellyfin has acknowledged the stop, not from the
+     *  route right after it responds — before this the route's own invalidation raced the queued write
+     *  and could rebuild Continue Watching from Jellyfin's *pre-stop* state. */
+    val queuesStops: Boolean get() = writer != null
+
+    /** R248 (FR-R248-2) — called with the device once a queued STOP has landed in Jellyfin (Main wires
+     *  it to `HomeFeedService.invalidatePlaystate`, which ends with the `home_changed` push). Never
+     *  called for a stop that was abandoned; a throw here never turns the landed stop into a retry. */
+    var onStopLanded: (suspend (DeviceData) -> Unit)? = null
+
     /** Phase 219 — what one queued write does: the same token + identity + ids the inline path used. */
     private inner class JellyfinSink : PlaybackSink {
         override suspend fun progress(w: PlaybackWriter.PendingWrite): Boolean {
@@ -336,6 +347,8 @@ class PlaybackService(
             // Phase 180 — release the encode once the stop has landed (idempotent; a release for a
             // session that never transcoded or already ended is a success, not an error).
             if (ok && w.jellyfinPlaySessionId != null) jellyfinClient.stopActiveEncoding(jellyfinBase, token, identity, w.jellyfinPlaySessionId)
+            // R248 — Jellyfin has the stop: now (and only now) the Home feed can be rebuilt to show it.
+            if (ok) onStopLanded?.let { hook -> runCatching { hook(w.device) }.onFailure { Logger.warn("Home refresh after stop failed for ${w.jellyfinId}: ${it.message}", "tv") } }
             return ok
         }
     }

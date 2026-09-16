@@ -1,6 +1,7 @@
 package dev.jellystructure.ravilo.ui.components
 
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -29,6 +30,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.focus.FocusRequester
 import dev.jellystructure.ravilo.ui.seams.PrefetchLazyRowEffect
 import androidx.compose.ui.Alignment
@@ -158,6 +160,34 @@ fun <T> StaticContentRow(
 
     val listState = rememberLazyListState()
 
+    // R248 (FR-R248-3) — focus follows the item, not the index. A silent refresh may reorder this row
+    // (Continue Watching after a stop) or drop the focused title from it. Keyed items already keep the
+    // focused tile focused when it merely moves; this scrolls it back into view if the move took it out,
+    // and sends focus to the row's first tile when the title is gone (else the D-pad has nowhere to be).
+    // `rowFocused` is read *during* the composition that applied the new items — before the removed
+    // tile's detach clears focus — so the effect knows whether this row owned focus at the swap.
+    var rowFocused by remember { mutableStateOf(false) }
+    var focusedKey by remember { mutableStateOf<Any?>(null) }
+    val firstFR = remember { FocusRequester() }
+    val prevItems = remember { mutableStateOf(items) }
+    val hadFocusAtSwap = rowFocused
+    LaunchedEffect(items) {
+        val prev = prevItems.value
+        prevItems.value = items
+        val key = focusedKey ?: return@LaunchedEffect
+        if (itemKey == null || !hadFocusAtSwap || prev === items) return@LaunchedEffect
+        val idx = items.indexOfFirst { itemKey(it) == key }
+        if (idx < 0) {
+            focusedKey = null
+            if (items.isNotEmpty()) runCatching { firstFR.requestFocus() }
+            return@LaunchedEffect
+        }
+        withFrameNanos { }
+        if (listState.layoutInfo.visibleItemsInfo.none { it.key == key }) {
+            runCatching { listState.scrollToItem(idx + if (leadingItem != null) 1 else 0) }
+        }
+    }
+
     // R139: a Back-return into a screen that retained its scroll re-composes this row; if it's the row the
     // user navigated from, scroll it to the originating tile and request focus there (once per entry). The
     // matching item's content receives `restoreFR` below.
@@ -205,7 +235,7 @@ fun <T> StaticContentRow(
             .onFocusChanged { if (it.hasFocus) scope.launch { rowBIVR.bringIntoView() } }
     } else Modifier
 
-    Column(modifier = modifier.fillMaxWidth().then(headerInViewModifier)) {
+    Column(modifier = modifier.fillMaxWidth().onFocusChanged { rowFocused = it.hasFocus }.then(headerInViewModifier)) {
         if (title != null) {
             Row(
                 modifier = Modifier
@@ -331,7 +361,12 @@ fun <T> StaticContentRow(
                     val key = itemKey?.invoke(items[i])
                     item(key = key) {
                         val fr = if (restoreItemKey != null && itemKey != null && key == restoreItemKey) restoreFR else null
-                        itemContent(i, items[i], fr)
+                        // R248 (FR-R248-3) — see `focusedKey` above; the wrapper adds no size of its own.
+                        Box(
+                            modifier = Modifier
+                                .onFocusChanged { if (it.hasFocus) focusedKey = key }
+                                .then(if (i == 0) Modifier.focusRequester(firstFR) else Modifier),
+                        ) { itemContent(i, items[i], fr) }
                     }
                     if (openPanel != null && key != null && key == openAfterKey) {
                         item(key = "__openpanel__$key") { openPanel() }

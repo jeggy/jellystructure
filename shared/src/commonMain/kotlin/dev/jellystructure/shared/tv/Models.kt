@@ -593,9 +593,10 @@ data class SearchResults(
 // ─── Live events (R33) ──────────────────────────────────────────────────────────
 
 /**
- * Pushed over the `/api/tv/events` WebSocket to a user's connected devices. `type` is currently
- * always `config_changed`; `rev` is a monotonic counter the client uses to dedupe/skip redundant
- * refreshes. The event is a signal only — the client re-pulls the authoritative feed/config.
+ * Pushed over the `/api/tv/events` WebSocket to a user's connected devices. `type` is `config_changed`
+ * (R33) or `home_changed` (R248 — a stop or played/mark write was folded into the Home feed); `rev` is
+ * a per-type monotonic counter the client uses to dedupe/skip redundant refreshes. The event is a
+ * signal only — the client re-pulls the authoritative feed/config.
  */
 @Serializable
 data class TvEvent(val type: String, val rev: Long = 0)

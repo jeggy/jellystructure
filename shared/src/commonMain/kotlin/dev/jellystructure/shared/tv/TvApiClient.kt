@@ -516,6 +516,9 @@ class TvApiClient(
         // Pushed once a live Jellyfin playstate fetch completes for this user (see PlaystateChangedEnvelope) —
         // patch already-rendered tiles in place, the same way onAcquisition does for acquisition status.
         onPlaystateChanged: suspend (Map<String, CardPlayState>) -> Unit = {},
+        // R248 (FR-R248-2) — the server folded a stop (or a played/mark write) into this user's Home feed;
+        // re-pull Home / the open channel page. A signal only, like config_changed.
+        onHomeChanged: suspend (Long) -> Unit = {},
     ) {
         val token = deviceToken() ?: return
         val wsUrl = baseUrl.replaceFirst("http", "ws").trimEnd('/') +
@@ -560,6 +563,7 @@ class TvApiClient(
                     "playstate_changed" -> {
                         runCatching { json.decodeFromString<PlaystateChangedEnvelope>(text).patch }.getOrNull()?.let { onPlaystateChanged(it) }
                     }
+                    "home_changed" -> onHomeChanged(ev.rev)
                     else -> onEvent(ev)
                 }
             }

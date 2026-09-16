@@ -6,9 +6,12 @@
 
 ## Status
 
-`Planned` — written 2026-09-16 from the live stue-TV sweep
-(`specs/research-reports/stue-tv-test-sweep-2026-09-16.md`, finding F3). Not dev-reviewed, not built.
-Client-side with one small server-side event; no admin change.
+`✓ Built` — written 2026-09-16 from the live stue-TV sweep
+(`specs/research-reports/stue-tv-test-sweep-2026-09-16.md`, finding F3), **implemented 2026-09-16**
+(see §Implementation notes). Not dev-reviewed, not device-tested. Client-side with one small
+server-side event; no admin change. `compileKotlinLinuxX64`, `:ravilo-ui:compileDebugKotlinAndroid`,
+`:ravilo-ui:compileKotlinWasmJs` and the admin `compileKotlinWasmJs` clean; `ReturnRefreshGateTest` (4)
+green, `PlaybackWriterTest` / `PlaybackTrackerTest` still green.
 
 **Numbering:** verified against `STATUS.md` on 2026-09-16 — Ravilo taken through R245; R246/R247 by
 sibling specs the same day.
@@ -76,3 +79,35 @@ Continue Watching with the right `S:E` badge, focus unchanged, no restart, withi
 
 - Whether `notifyHomeChanged` should carry the row ids that changed so the client can skip the fetch
   when nothing visible moved. Not for this phase — one fetch per stop is cheap.
+
+## Implementation notes (2026-09-16)
+
+- **FR-R248-2 — the event, and *when* it is sent.** `TvEventBus.notifyHomeChanged(userId)` pushes
+  `{"type":"home_changed","rev":n}` (its own counter, so the R141 config-rev poll never mistakes a stop
+  for a layout change). `HomeFeedService.invalidatePlaystate` ends with it — after the cache drops, the
+  playstate refresh and the Continue rebuild, success or failure — so `/tv/mark` and `/tv/played` push it
+  too. **One deviation from the traced code, forced by phase 219:** with the `PlaybackWriter` in place the
+  stop route has only *queued* the stop when it responds, so its post-respond invalidation would rebuild
+  the row from Jellyfin's pre-stop state and push an event that says "correct" about a wrong answer. The
+  route now invalidates only when no writer is in use (tests); in production `PlaybackService.onStopLanded`
+  (wired in `Main`) runs the same invalidation — and therefore the push — the moment Jellyfin has
+  acknowledged the stop, retries included. An abandoned stop pushes nothing; the client's return re-pull
+  has already shown whatever the server had (FR-R248-5).
+- **FR-R248-1 — the return path, one refresh not two.** `ReturnRefreshGate` (pure, tested) sits in
+  `HomeStore` and `ChannelStore`: `onLeave()` when the screen leaves the composition (a `DisposableEffect`
+  in `RaviloApp`'s Home/ChannelView blocks), `onHomeChanged()` when the push arrives, and `onReturn()` /
+  R40's `load()` on re-entry re-pulls silently **unless** the push already refreshed the retained store
+  while away. The push is collected at app level against the store registry (`liveHome`), not by the
+  screens, so an event that lands while the player is still on top refreshes the feed the viewer is about
+  to return to. R141's Home re-entry emit on `liveConfig` is replaced by `store.onReturn()` — it also
+  re-pulled skin/lang on every return, which `config_changed` already covers. The feed on screen stays
+  until the new one lands (`refresh(silent = true)`, unchanged).
+- **FR-R248-3 — focus follows the item.** `StaticContentRow` records the focused tile's key and whether
+  the row owns focus (read during the composition that applies the new items, before the removed tile's
+  detach clears focus). On a swap: a surviving key stays focused (keyed items) and is scrolled back into
+  view only if the reorder took it out; a vanished key sends focus to the row's first tile. Other rows'
+  `LazyListState`s are untouched.
+- **FR-R248-4** — `ChannelStore` gets the same gate and the same app-level push handling.
+- **FR-R248-5** — nothing client-side moves a tile; every path is a re-pull of `/api/tv/home` or
+  `/api/tv/channel/{id}`.
+- **Not done:** FR-R248-6 and verification 1–3 (stue TV, logcat fetch count) — no device this session.

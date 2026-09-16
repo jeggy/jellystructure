@@ -58,6 +58,17 @@ class HomeStore(
     val liveTvChannels: StateFlow<List<LiveTvChannel>> = _liveTvChannels.asStateFlow()
     private var loadJob: Job? = null
     private var liveTvPollJob: Job? = null
+
+    // R248 (FR-R248-1/2) — the return-vs-event refresh rule; see ReturnRefreshGate.
+    private val returnGate = ReturnRefreshGate()
+    /** The Home screen left the composition (the player, a detail page… is on top). */
+    fun onLeave() = returnGate.onLeave()
+    /** Home re-entered: silent re-pull unless a `home_changed` push already refreshed this store while
+     *  it was away (one refresh per return, not two). The feed on screen stays until the new one lands. */
+    fun onReturn() { if (returnGate.consumeReturn()) refresh(silent = true) }
+    /** R248 (FR-R248-2) — the server says this user's Home feed changed (a stop landed, a title was
+     *  marked): re-pull now, visible or not, so a Back-return finds the retained feed already right. */
+    fun onHomeChanged() { returnGate.onEventRefresh(); refresh(silent = true) }
     // Phase R240 — outlives per-composition recomposition the same way [listState]/[focusRowKey] do,
     // so the dwell timer survives a Back-return or a config-triggered silent refresh mid-flight.
     val focusDetail = FocusDetailController(scope)
