@@ -22,6 +22,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.jellystructure.ravilo.ui.theme.Sora
 import jellystructure.ravilo_ui.generated.resources.Res
+import dev.jellystructure.ravilo.ui.seams.canonicalLanguage
 import jellystructure.ravilo_ui.generated.resources.*
 import org.jetbrains.compose.resources.DrawableResource
 import org.jetbrains.compose.resources.painterResource
@@ -88,6 +89,14 @@ internal val LANG_CC: Map<String, DrawableResource> = mapOf(
     "ca" to Res.drawable.flag_ct, "cat" to Res.drawable.flag_ct,
 )
 
+/** R247 (FR-R247-5) — every flag lookup goes through [canonicalLanguage] first, so `hbs-srp` finds
+ *  `flag_rs` and `gre`/`ell`/`el` all find the same drawable; the raw lower-cased key is the fallback
+ *  for a code the canonicaliser does not know but the map happens to. */
+internal fun flagFor(code: String?): DrawableResource? {
+    if (code.isNullOrBlank()) return null
+    return canonicalLanguage(code)?.let { LANG_CC[it] } ?: LANG_CC[code.trim().lowercase()]
+}
+
 private const val FLAG_MAX = 5
 
 /** Pure result of counting [AudioFlagStrip]'s inputs — extracted so FR-R239-1/2's counting rules are
@@ -103,13 +112,15 @@ internal data class FlagStripCounts(
 
 /** Phase R239 (FR-R239-1) — counts every language the group has, not every flag it can draw. */
 internal fun countFlagStrip(languages: List<String>): FlagStripCounts {
-    val lowerLangs = languages.map { it.lowercase() }
-    // Deduplicate mapped languages by FLAG (same language, different 3-letter alias, e.g.
-    // nor/nob/nno → flag_no, should show once) — but an unmapped language has no such alias table, so
-    // it's deduplicated by its own raw code instead. Undercounting true duplicates there is the safe
-    // failure mode; over-counting (claiming fewer languages than exist) is the one FR-R239-1 forbids.
-    val mappedFlags = lowerLangs.mapNotNull { LANG_CC[it] }.distinct()
-    val unmappedCount = lowerLangs.filterNot { it in LANG_CC }.distinct().size
+    // R247 (FR-R247-2) — identity is the canonical code, so `da`+`dan` or `sr`+`hbs-srp` are one
+    // language whether or not a flag exists for it.
+    val keys = languages.map { canonicalLanguage(it) ?: it.lowercase() }
+    // Deduplicate mapped languages by FLAG (same language, different alias, e.g. nor/nob/nno →
+    // flag_no, should show once); an unmapped language is deduplicated by its canonical code.
+    // Undercounting true duplicates there is the safe failure mode; over-counting (claiming fewer
+    // languages than exist) is the one FR-R239-1 forbids.
+    val mappedFlags = keys.mapNotNull { flagFor(it) }.distinct()
+    val unmappedCount = keys.filter { flagFor(it) == null }.distinct().size
     val totalDistinct = mappedFlags.size + unmappedCount
     val shown = mappedFlags.take(FLAG_MAX)
     return FlagStripCounts(shown, totalDistinct - shown.size)
