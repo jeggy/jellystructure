@@ -391,8 +391,14 @@
           <div class="label">${item.title}</div><div class="sub">${item.next ? 'Next up' : (genresOf(item)[0] || '')}</div>`;
       } else if (kind === 'continue') {
         // poster shape, but keep the resume progress + time-left from Continue Watching
+        // R249 (FR-R249-2/4) — the episode badge owns the top-start corner; a scheduled episode's
+        // `Soon` sits top-end on a Continue tile (never over the S:E pill). "Next up" stays in the
+        // caption (`cont-sub` already carries it) once an S:E pill is present.
+        const epm = /^S\d+:E\d+/.exec(item.ep || '');
+        const air = item.kind === 'series' ? R.nextAiringFor(item) : null;
         t.innerHTML = `<div class="art">${artFill(item)}
-          ${item.next ? '<div class="cont-badge">Next up</div>' : ''}
+          ${epm ? `<div class="ep-badge">${epm[0]}</div>` : (item.next ? '<div class="cont-badge">Next up</div>' : '')}
+          ${air ? `<div class="tile-air"><span class="tile-air-dot"></span>${upcomingLabel()}</div>` : ''}
           <div class="play"><span>▶</span></div>
           ${(item.pct || 0) > 0 ? `<div class="pbar"><i style="width:${item.pct}%"></i></div>` : ''}</div>
           <div class="label">${item.title}</div><div class="sub cont-sub">${item.ep || ''}</div>`;

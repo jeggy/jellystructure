@@ -13,9 +13,11 @@
 
 ## Status
 
-`Planned` — written 2026-09-16 from the live stue-TV sweep
-(`specs/research-reports/stue-tv-test-sweep-2026-09-16.md`, finding F4). Not dev-reviewed, not built.
-Client-only; a tile-rendering rule.
+`✓ Built` — written 2026-09-16 from the live stue-TV sweep
+(`specs/research-reports/stue-tv-test-sweep-2026-09-16.md`, finding F4), **implemented 2026-09-16**
+(see §Implementation notes). Not dev-reviewed, not device-tested. Client-only; a tile-rendering rule
+plus the mockup. `:ravilo-ui:compileDebugKotlinAndroid` + `:ravilo-ui:compileKotlinWasmJs` clean;
+`TileCornerBadgesTest` (6) green.
 
 **Numbering:** verified against `STATUS.md` on 2026-09-16 — Ravilo taken through R245; R246–R248 by
 sibling specs the same day.
@@ -70,3 +72,20 @@ pair in the two corners, so the next design sync cannot re-introduce the overlap
 1. Stue TV, release build, the same tile: both `S17:E8` and `Soon • S18E07` legible, one per corner.
 2. A Newly Added row tile with `Soon`: unchanged (top-start, alone).
 3. A Continue tile for a series with no scheduled episode: episode badge alone, top-start.
+
+## Implementation notes (2026-09-16)
+
+- **FR-R249-3 — the table is code.** `resolveCornerBadges(episodeBadge, upcomingLabel, isNew, watched)`
+  (`Tile.kt`, internal, tested) returns one `CornerBadge?` per top corner from exactly the table above;
+  `CornerBadgeContent` draws whichever badge a corner got, anchored by the modifier it is handed. The
+  four independent `if`s (each with its own guard) are gone, so a fifth badge cannot re-introduce an
+  overlap without touching the table.
+- **FR-R249-1/2** — on a Continue tile `S17:E8` owns top-start and `Soon • S18E07` renders top-end;
+  everywhere else `Soon` stays top-start. One behaviour change beyond the spec's four `if`s: the old code
+  hid the watched ✓ whenever a `Soon` badge was present (different corners, no reason); the table shows
+  both, as written. `NEW` keeps its pre-existing not-on-a-watched-title guard — a different axis.
+- **FR-R249-4** — `design/ravilo/ravilo-app.js`'s Continue tile now draws an `.ep-badge` (the `S:E`
+  prefix of `item.ep`) top-left and the existing `.tile-air` `Soon` pill top-right (it drew neither
+  before — the episode lived only in the caption); `.tile.cont .ep-badge` added to `ravilo.css`.
+  "Next up" stays in the caption once an S:E pill is present.
+- **Not done:** verification 1–3 on the stue TV (no device this session).

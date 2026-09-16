@@ -33,6 +33,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -41,6 +42,7 @@ import androidx.compose.ui.unit.sp
 import dev.jellystructure.ravilo.ui.focus.dpadFocusable
 import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.seams.RemoteImage
+import dev.jellystructure.ravilo.ui.theme.RaviloColors
 import dev.jellystructure.ravilo.ui.theme.RaviloMotion
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import dev.jellystructure.ravilo.ui.theme.Sora
@@ -262,86 +264,13 @@ fun Tile(
                 }
             }
 
-            // R142: watched ✓ badge (top-end). Suppressed when upcomingLabel badge occupies top-start.
-            if (watched && upcomingLabel == null) {
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(8.dp)
-                        .size(24.dp)
-                        .background(colors.badgeWatched, CircleShape),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text("✓", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                }
-            }
-
-            // "NEW" gradient badge (top-start). Suppressed when upcomingLabel badge occupies the same corner.
-            if (isNew && !watched && upcomingLabel == null) {
-                val newGradient = remember(colors.accent, colors.accentSecondary) {
-                    colors.accentGradient
-                }
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.TopStart)
-                        .padding(8.dp)
-                        .background(newGradient, RoundedCornerShape(4.dp))
-                        .padding(horizontal = 7.dp, vertical = 3.dp),
-                ) {
-                    Text(
-                        text = "NEW",
-                        color = Color.White,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold,
-                        fontFamily = sora,
-                        letterSpacing = 0.5.sp,
-                    )
-                }
-            }
-
-            // R113: season/episode badge (top-start) — small dark pill over the image for TV shows in
-            // Continue Watching. Neutral translucent black so it reads on any backdrop. (Continue rows
-            // never set isNew, so it won't collide with the NEW badge.)
-            if (episodeBadge != null) {
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.TopStart)
-                        .padding(8.dp)
-                        .background(episodeBadgeColor, RoundedCornerShape(4.dp))
-                        .padding(horizontal = 6.dp, vertical = 2.dp),
-                ) {
-                    Text(
-                        text = episodeBadge,
-                        color = Color.White,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold,
-                        fontFamily = sora,
-                        letterSpacing = 0.3.sp,
-                    )
-                }
-            }
-
-            // R149: "Soon • SxxExx" badge (top-start). Solid accent background so it reads on any poster.
-            if (upcomingLabel != null) {
-                Row(
-                    modifier = Modifier
-                        .align(Alignment.TopStart)
-                        .padding(8.dp)
-                        .background(colors.accent, RoundedCornerShape(4.dp))
-                        .padding(horizontal = 6.dp, vertical = 3.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Box(modifier = Modifier.size(5.dp).background(Color.White, CircleShape))
-                    Spacer(Modifier.width(4.dp))
-                    Text(
-                        text = "Soon • $upcomingLabel",
-                        color = Color.White,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold,
-                        fontFamily = sora,
-                    )
-                }
-            }
+            // R249 (FR-R249-3) — one precedence table for the two top corners; see [resolveCornerBadges].
+            // Two badges never share an anchor: `S17:E8` and `Soon • S18E07` used to be painted at the
+            // same TopStart, and only the second one drawn was visible — on the one row whose tiles exist
+            // to say which episode you are on.
+            val corners = resolveCornerBadges(episodeBadge = episodeBadge, upcomingLabel = upcomingLabel, isNew = isNew, watched = watched)
+            CornerBadgeContent(corners.topStart, Modifier.align(Alignment.TopStart), episodeBadge, episodeBadgeColor, upcomingLabel, colors, sora)
+            CornerBadgeContent(corners.topEnd, Modifier.align(Alignment.TopEnd), episodeBadge, episodeBadgeColor, upcomingLabel, colors, sora)
             }
         }
 
@@ -471,5 +400,82 @@ fun SeeAllTile(
         // (Tile always reserves a title line below the image) — keeps the row's baseline aligned.
         Spacer(Modifier.height(2.dp))
         Text(text = "", fontSize = 15.sp, fontFamily = sora, modifier = Modifier.width(w))
+    }
+}
+
+/** R249 (FR-R249-3) — which badge a tile's top corner shows. */
+internal enum class CornerBadge { EPISODE, UPCOMING, NEW, WATCHED }
+
+internal data class CornerBadges(val topStart: CornerBadge?, val topEnd: CornerBadge?)
+
+/**
+ * R249 (FR-R249-3) — the one precedence table for a tile's two top corners (first wins):
+ *
+ * | Corner    | Priority                                                        |
+ * |-----------|-----------------------------------------------------------------|
+ * | Top-start | `episodeBadge` → `upcomingLabel` → `NEW`                        |
+ * | Top-end   | `watched ✓` → `upcomingLabel` (only when displaced from top-start) |
+ *
+ * A badge that loses its corner moves to its fallback corner if the table gives it one (`Soon` → top-end
+ * on a Continue Watching tile, FR-R249-2) and is omitted otherwise (`NEW` has no fallback). `NEW` also
+ * keeps its pre-existing "not on a watched title" guard — that is a different axis from the corner.
+ */
+internal fun resolveCornerBadges(episodeBadge: String?, upcomingLabel: String?, isNew: Boolean, watched: Boolean): CornerBadges {
+    val topStart = when {
+        episodeBadge != null -> CornerBadge.EPISODE
+        upcomingLabel != null -> CornerBadge.UPCOMING
+        isNew && !watched -> CornerBadge.NEW
+        else -> null
+    }
+    val topEnd = when {
+        watched -> CornerBadge.WATCHED
+        upcomingLabel != null && topStart != CornerBadge.UPCOMING -> CornerBadge.UPCOMING
+        else -> null
+    }
+    return CornerBadges(topStart, topEnd)
+}
+
+/** R249 — draws whichever badge [resolveCornerBadges] assigned to one corner; [modifier] carries the anchor. */
+@Composable
+private fun CornerBadgeContent(
+    badge: CornerBadge?,
+    modifier: Modifier,
+    episodeBadge: String?,
+    episodeBadgeColor: Color,
+    upcomingLabel: String?,
+    colors: RaviloColors,
+    sora: FontFamily,
+) {
+    when (badge) {
+        null -> {}
+        // R142: watched ✓.
+        CornerBadge.WATCHED -> Box(
+            modifier = modifier.padding(8.dp).size(24.dp).background(colors.badgeWatched, CircleShape),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text("✓", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+        }
+        // "NEW" gradient badge.
+        CornerBadge.NEW -> Box(
+            modifier = modifier.padding(8.dp).background(colors.accentGradient, RoundedCornerShape(4.dp)).padding(horizontal = 7.dp, vertical = 3.dp),
+        ) {
+            Text(text = "NEW", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = sora, letterSpacing = 0.5.sp)
+        }
+        // R113: season/episode badge — small dark pill over the image for TV shows in Continue Watching.
+        // Neutral translucent black so it reads on any backdrop.
+        CornerBadge.EPISODE -> Box(
+            modifier = modifier.padding(8.dp).background(episodeBadgeColor, RoundedCornerShape(4.dp)).padding(horizontal = 6.dp, vertical = 2.dp),
+        ) {
+            Text(text = episodeBadge.orEmpty(), color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = sora, letterSpacing = 0.3.sp)
+        }
+        // R149: "Soon • SxxExx" badge. Solid accent background so it reads on any poster.
+        CornerBadge.UPCOMING -> Row(
+            modifier = modifier.padding(8.dp).background(colors.accent, RoundedCornerShape(4.dp)).padding(horizontal = 6.dp, vertical = 3.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(modifier = Modifier.size(5.dp).background(Color.White, CircleShape))
+            Spacer(Modifier.width(4.dp))
+            Text(text = "Soon • ${upcomingLabel.orEmpty()}", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = sora)
+        }
     }
 }

@@ -426,6 +426,8 @@ body { font-family: 'Sora', sans-serif; }
 .tile.cont .cont-badge { position: absolute; top: 10px; left: 10px; z-index: 3; background: rgba(8,10,16,.8); color: #fff; font-size: 12px; font-weight: 600;
   padding: 3px 9px; border-radius: 6px; -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); }
 .tile.cont .cont-sub { color: var(--ink-soft); }
+/* R249 (FR-R249-1/2) — the S:E pill owns top-start on a Continue tile; `.tile-air` (Soon) keeps top-end. */
+.tile.cont .ep-badge { position: absolute; top: 10px; left: 10px; z-index: 3; background: rgba(8,10,16,.62); color: #fff; font-size: 12px; font-weight: 700; letter-spacing: .3px; padding: 3px 7px; border-radius: 6px; }
 
 /* bottom spacer so last row can scroll up */
 .screen-end { height: 120px; }
