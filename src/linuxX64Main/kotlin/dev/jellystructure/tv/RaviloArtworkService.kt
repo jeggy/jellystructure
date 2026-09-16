@@ -35,6 +35,9 @@ import kotlinx.io.files.SystemFileSystem
  * Gate: the app-wide [OutboundHttp] permit keeps FD count well below the CIO select() ceiling
  * (avatar fetch + ffmpeg spawn both consume FDs from the same process-wide table).
  */
+/** Phase 220 (FR-220-2) — the largest original served in place of a resize under a saturated gate. */
+internal const val ORIGINAL_FALLBACK_MAX_BYTES = 2L * 1024 * 1024
+
 class RaviloArtworkService(
     dataDir: String,
     private val configStore: ConfigStore,
@@ -65,6 +68,25 @@ class RaviloArtworkService(
     private val cacheIndex = LinkedHashMap<String, Long>()   // cacheKey → bytes, oldest-write-first
     private var cacheBytes = 0L
 
+    // Phase 220 (FR-220-3/5) — one in-flight resize per cache key (two viewers scrolling the same season
+    // must not spawn the same ffmpeg twice), and a count of resizes that happened ON THE REQUEST PATH in
+    // the last hour, so a regression of FR-220-1 is visible on /api/health.
+    private val inFlightMutex = Mutex()
+    private val inFlight = HashMap<String, Mutex>()
+    private val requestResizeStamps = ArrayDeque<Long>()
+    private var presizedTotal = 0L
+    /** Test hook — makes the request path behave as if the process gate were saturated (FR-220-2). */
+    internal var forceGateTimeoutForTests = false
+
+    class ImageStats(val resizesOnRequestLastHour: Int, val presizedTotal: Long) {
+        fun toJson(): String = """{"resizes_on_request_last_hour":$resizesOnRequestLastHour,"presized_total":$presizedTotal}"""
+    }
+    suspend fun stats(): ImageStats = inFlightMutex.withLock {
+        val cutoff = nowEpochMs() - 3_600_000L
+        while (requestResizeStamps.isNotEmpty() && requestResizeStamps.first() < cutoff) requestResizeStamps.removeFirst()
+        ImageStats(requestResizeStamps.size, presizedTotal)
+    }
+
     init {
         runCatching { SystemFileSystem.createDirectories(Path(cacheDir)) }
         runCatching { SystemFileSystem.createDirectories(Path(avatarDir)) }
@@ -92,11 +114,20 @@ class RaviloArtworkService(
             else item.episodes.firstOrNull { it.filename == epFilename }
         ep ?: return null
         val source = artwork.episodeStillPath(ep)
+        return resizeServe(stillCacheKey(seriesId, ep, width), source, "still", width)
+    }
+
+    /** Phase 220 (FR-220-1) — ONE key derivation for the request path and the pre-sizer, so what the
+     *  pipeline writes is exactly what [serveStill] reads (the spec's verification 1). Bug fix kept from
+     *  Phase 149: the episode number is part of the key, so a multi-episode file's episodes never share one. */
+    internal fun stillCacheKey(seriesId: String, ep: dev.jellystructure.model.Episode, width: Int? = null): String {
         val wSuffix = width?.takeIf { it > 0 && it != 640 }?.let { "-$it" } ?: ""
-        // Bug fix: the cache key was filename-only too, so every episode in a group shared one cache
-        // entry — whichever still got resized+cached first silently served for all of them afterward.
         val epSuffix = ep.episodeNumber?.let { "-e$it" } ?: ""
-        return resizeServe("$seriesId-still-${epFilename.hashCode().toUInt()}$epSuffix$wSuffix", source, "still", width)
+        return "$seriesId-still-${ep.filename.hashCode().toUInt()}$epSuffix$wSuffix"
+    }
+    internal fun seasonPosterCacheKey(itemId: String, season: Int, width: Int? = null): String {
+        val wSuffix = width?.takeIf { it > 0 && it != 320 }?.let { "-$it" } ?: ""
+        return "$itemId-season$season-poster$wSuffix"
     }
 
     /**
@@ -109,8 +140,7 @@ class RaviloArtworkService(
     suspend fun serveSeasonPoster(itemId: String, season: Int, width: Int? = null): Pair<ByteArray, String>? {
         val item = store.resolve(itemId) ?: return null
         val source = artwork.seasonPosterPath(item, season)
-        val wSuffix = width?.takeIf { it > 0 && it != 320 }?.let { "-$it" } ?: ""
-        return resizeServe("$itemId-season$season-poster$wSuffix", source, "poster", width)
+        return resizeServe(seasonPosterCacheKey(itemId, season, width), source, "poster", width)
     }
 
     /**
@@ -209,30 +239,92 @@ class RaviloArtworkService(
         val cachePath = "$cacheDir/$cacheKey"
         val ctPath = "$cachePath.ct"
         readFresh(cachePath, ctPath, srcSize)?.let { return it }
-        return OutboundHttp.withPermit {
-            readFresh(cachePath, ctPath, srcSize)?.let { return@withPermit it }
-            val isPng = type == "logo"
-            val ct = if (isPng) "image/png" else "image/jpeg"
-            val tmpOut = "$cacheDir/.rsz_$cacheKey.${if (isPng) "png" else "jpg"}"
-            val ok = when (type) {
-                "poster"   -> FfmpegRunner.resizeImage(sourcePath, tmpOut, width = width?.takeIf { it > 0 } ?: 320)
-                "backdrop" -> FfmpegRunner.resizeImage(sourcePath, tmpOut, width = width?.takeIf { it > 0 } ?: 1920)
-                "still"    -> FfmpegRunner.resizeImage(sourcePath, tmpOut, width = width?.takeIf { it > 0 } ?: 640)
-                "logo"     -> FfmpegRunner.resizeImage(sourcePath, tmpOut, height = 300)
-                else       -> false
+        // Phase 220 (FR-220-3) — this used to hold an OutboundHttp permit around a LOCAL process, coupling
+        // two unrelated pools; ProcessGate (inside FfmpegRunner) is the only gate a local ffmpeg holds now.
+        // One in-flight resize per key coalesces a burst of identical requests.
+        val keyMutex = inFlightMutex.withLock { inFlight.getOrPut(cacheKey) { Mutex() } }
+        try {
+            return keyMutex.withLock {
+                readFresh(cachePath, ctPath, srcSize)?.let { return@withLock it }
+                val produced = try {
+                    if (forceGateTimeoutForTests) throw dev.jellystructure.ops.ProcessGate.GateTimeoutException("test: gate saturated")
+                    resizeInto(cacheKey, sourcePath, type, width, srcSize)
+                } catch (e: dev.jellystructure.ops.ProcessGate.GateTimeoutException) {
+                    // FR-220-2 — an image is never worth a 503: under a saturated gate serve the ORIGINAL
+                    // (bounded — a still or poster is small; a 4K backdrop original is not), else let the
+                    // 503 stand for the one case the cap excludes.
+                    if (srcSize <= ORIGINAL_FALLBACK_MAX_BYTES) {
+                        Logger.info("RaviloArtwork: gate busy — serving the original for $cacheKey (${srcSize / 1024} KB)", "tv-image")
+                        val bytes = runCatching { FileIo.readBytes(Path(sourcePath)) }.getOrNull() ?: return@withLock null
+                        return@withLock Pair(bytes, if (sourcePath.endsWith(".png", true)) "image/png" else "image/jpeg")
+                    }
+                    throw e
+                }
+                inFlightMutex.withLock { requestResizeStamps.addLast(nowEpochMs()) }
+                produced
             }
-            val bytes = if (ok) runCatching { FileIo.readBytes(Path(tmpOut)) }.getOrNull() else null
-            runCatching { SystemFileSystem.delete(Path(tmpOut), false) }
-            if (bytes == null || bytes.isEmpty()) {
-                Logger.warn("RaviloArtwork: resize failed $sourcePath ($type)", "tv-image")
-                return@withPermit null
-            }
-            atomicWrite(cachePath, bytes)
-            atomicWrite(ctPath, "$srcSize|$ct".encodeToByteArray())
-            recordWrite(cacheKey, bytes.size.toLong())
-            Pair(bytes, ct)
+        } finally {
+            inFlightMutex.withLock { if (!keyMutex.isLocked) inFlight.remove(cacheKey) }
         }
     }
+
+    /** The resize itself; shared by the request path and [presize]. Null when ffmpeg produced nothing. */
+    private suspend fun resizeInto(cacheKey: String, sourcePath: String, type: String, width: Int?, srcSize: Long): Pair<ByteArray, String>? {
+        val cachePath = "$cacheDir/$cacheKey"
+        val ctPath = "$cachePath.ct"
+        val isPng = type == "logo"
+        val ct = if (isPng) "image/png" else "image/jpeg"
+        val tmpOut = "$cacheDir/.rsz_$cacheKey.${if (isPng) "png" else "jpg"}"
+        val ok = when (type) {
+            "poster"   -> FfmpegRunner.resizeImage(sourcePath, tmpOut, width = width?.takeIf { it > 0 } ?: 320)
+            "backdrop" -> FfmpegRunner.resizeImage(sourcePath, tmpOut, width = width?.takeIf { it > 0 } ?: 1920)
+            "still"    -> FfmpegRunner.resizeImage(sourcePath, tmpOut, width = width?.takeIf { it > 0 } ?: 640)
+            "logo"     -> FfmpegRunner.resizeImage(sourcePath, tmpOut, height = 300)
+            else       -> false
+        }
+        val bytes = if (ok) runCatching { FileIo.readBytes(Path(tmpOut)) }.getOrNull() else null
+        runCatching { SystemFileSystem.delete(Path(tmpOut), false) }
+        if (bytes == null || bytes.isEmpty()) {
+            Logger.warn("RaviloArtwork: resize failed $sourcePath ($type)", "tv-image")
+            return null
+        }
+        atomicWrite(cachePath, bytes)
+        atomicWrite(ctPath, "$srcSize|$ct".encodeToByteArray())
+        recordWrite(cacheKey, bytes.size.toLong())
+        return Pair(bytes, ct)
+    }
+
+    /**
+     * Phase 220 (FR-220-1/4) — produce, at pipeline time, every variant the TV will ask for: poster 320,
+     * backdrop 1920, logo h300 (under BOTH ids a card can carry — the Jellyfin id the browse/home cards
+     * use and the slug the detail page uses), each season's poster, and every episode still at 640.
+     * Keys are the exact ones the request path computes. Already-fresh entries are skipped, so a
+     * re-run after a restart resumes rather than repeats. Returns how many files were produced.
+     */
+    suspend fun presize(item: MediaItem): Int {
+        var produced = 0
+        suspend fun ensure(key: String, source: String?, type: String) {
+            source ?: return
+            val srcSize = SystemFileSystem.metadataOrNull(Path(source))?.size ?: return
+            val cachePath = "$cacheDir/$key"
+            if (readFresh(cachePath, "$cachePath.ct", srcSize) != null) return
+            if (resizeInto(key, source, type, null, srcSize) != null) { produced++; inFlightMutex.withLock { presizedTotal++ } }
+        }
+        val ids = listOfNotNull(item.jellyfinId, item.id).distinct()
+        for (id in ids) {
+            ensure(cacheKey(id, "poster", null), sourceFile(item, "poster"), "poster")
+            ensure(cacheKey(id, "backdrop", null), sourceFile(item, "backdrop"), "backdrop")
+            ensure(cacheKey(id, "logo", null), sourceFile(item, "logo"), "logo")
+        }
+        val seasons = item.episodes.mapNotNull { it.seasonNumber }.distinct()
+        for (season in seasons) ensure(seasonPosterCacheKey(item.id, season), artwork.seasonPosterPath(item, season), "poster")
+        for (ep in item.episodes) ensure(stillCacheKey(item.id, ep), artwork.episodeStillPath(ep), "still")
+        return produced
+    }
+
+    /** Phase 220 (FR-220-4) — the one-time backfill's marker, next to the cache it fills. */
+    fun backfillDone(): Boolean = SystemFileSystem.exists(Path("$cacheDir/.presize-done"))
+    suspend fun markBackfillDone() = atomicWrite("$cacheDir/.presize-done", nowEpochMs().toString().encodeToByteArray())
 
     private fun sourceFile(item: MediaItem, type: String): String? = when (type) {
         "poster"   -> artwork.assetPath(item, "poster")
@@ -329,3 +421,6 @@ class RaviloArtworkService(
         return if (width != null && width > 0 && width != defaultW) "$itemId-$type-$width" else "$itemId-$type"
     }
 }
+
+@OptIn(kotlinx.cinterop.ExperimentalForeignApi::class)
+private fun nowEpochMs(): Long = platform.posix.time(null) * 1000L

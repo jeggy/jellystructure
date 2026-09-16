@@ -14,9 +14,9 @@
 
 ## Status
 
-`Planned` — written 2026-09-16 from the live stue-TV sweep
-(`specs/research-reports/stue-tv-test-sweep-2026-09-16.md`, finding F13). Not dev-reviewed, not
-built. Backend only. **Severity is low** — a still is a small JPEG, not a remux — and this phase is
+`✓ Built` — written 2026-09-16 from the live stue-TV sweep
+(`specs/research-reports/stue-tv-test-sweep-2026-09-16.md`, finding F13), **implemented 2026-09-16**
+(see §Implementation notes). Not dev-reviewed, not deployed. Backend only. **Severity is low** — a still is a small JPEG, not a remux — and this phase is
 sized accordingly: measure, pre-size, stop 503ing images.
 
 **Numbering:** verified against `STATUS.md` on 2026-09-16 — admin taken through 218; 219 by a sibling
@@ -78,3 +78,27 @@ resizes-on-request per hour so a regression is visible.
 
 - Whether the size cap in FR-220-2 should be per type (a 4K backdrop original is not "small").
   Recommendation: cap at 2 MB, above which the 503 stands.
+
+## Implementation notes (2026-09-16)
+
+- **FR-220-1** — `RaviloArtworkService.presize(item)` produces, with the exact keys the request path
+  computes (`cacheKey`, and the new shared `stillCacheKey` / `seasonPosterCacheKey`), poster 320 ·
+  backdrop 1920 · logo h300 under **both** ids a card can carry (the Jellyfin id the Home/browse cards
+  use, the slug the detail page uses), every season poster, and every episode still at 640; fresh
+  entries are skipped. `PipelineDeps` gained `artworkPresize`, called by the `fetch_artwork` step right
+  after the originals are written, on the step's own background gate; both `PipelineDeps` constructions
+  (Main and the media routes) pass the service.
+- **FR-220-2** — `resizeServe` catches `ProcessGate.GateTimeoutException` and serves the **original**
+  when it is ≤ 2 MB (`ORIGINAL_FALLBACK_MAX_BYTES`, the open question's recommendation), logging one
+  INFO line; larger originals let the 503 stand.
+- **FR-220-3** — the `OutboundHttp.withPermit` around the local ffmpeg is gone; `ProcessGate` inside
+  `FfmpegRunner` is the only gate it holds. A per-key mutex coalesces a burst of identical requests
+  (which the HTTP permit used to do incidentally).
+- **FR-220-4** — a `presize_artwork` job on the media lane (`MediaJobQueue.runPresizeArtwork`) walks
+  the whole library, updates progress per item, honours cancel, and writes `artwork/tv/.presize-done`
+  on completion; `enqueuePresizeBackfill()` is called once at boot and is deduped (`presize:library`)
+  and silent once the marker exists. Resumable by construction: a re-run skips fresh entries.
+- **FR-220-5** — `/api/health` gained `tv_image: {resizes_on_request_last_hour, presized_total}`.
+  The cold-browse spawn count and p95 measurement were **not** taken (no device this session).
+- Test `RaviloArtworkServiceTest`: the original is served under a forced gate timeout; the still and
+  season keys the pre-sizer writes are the ones the serve path computes.

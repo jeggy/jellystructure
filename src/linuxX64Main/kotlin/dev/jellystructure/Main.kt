@@ -238,8 +238,11 @@ fun main() = runBlocking {
     val upcomingService = dev.jellystructure.tv.UpcomingService(configStore, arrClient, mediaStore, tmdbClient, artworkDownloader)
     // Phase 109: single-worker persistent queue for heavy media edits (ffmpeg remuxes) — see the class
     // doc for why enqueue-then-drain replaces running ffmpeg inline on the request thread.
-    val mediaJobQueue = dev.jellystructure.media.MediaJobQueue(db, mediaStore, broadcaster, jellyfinClient, configStore, mediaHistory, seedingGuard, arrRescan, rootScope, mediaSegmentStore, fingerprintService)
+    val mediaJobQueue = dev.jellystructure.media.MediaJobQueue(db, mediaStore, broadcaster, jellyfinClient, configStore, mediaHistory, seedingGuard, arrRescan, rootScope, mediaSegmentStore, fingerprintService, artworkService = imageProxyService)
     mediaJobQueue.start()
+    // Phase 220 (FR-220-4) — once, in the background, until the marker exists: every served variant for
+    // the existing library, so the first viewer to scroll a season never pays for it on the request path.
+    rootScope.launch(dev.jellystructure.ops.GateClass.BACKGROUND) { runCatching { mediaJobQueue.enqueuePresizeBackfill() } }
     // Phase 110 — one outbound Jellyfin WS per connected Ravilo TV (dashboard messages, remote control).
     val sessionBridge = dev.jellystructure.tv.JellyfinSessionBridge(configStore, tvEventBus, rootScope, mediaStore)
     // Phase 111 — jellystructure-issued API keys for external tools (Home Assistant etc.), fenced to /api/remote/**.
@@ -301,6 +304,7 @@ fun main() = runBlocking {
         arrRescan = arrRescan, sonarrEnrich = sonarrEnrich, imdbClient = imdbClient,
         mediaSegmentStore = mediaSegmentStore, mediaJobQueue = mediaJobQueue,
         realtimeIngest = realtimeIngest, mediaHistory = mediaHistory, dirtyItemStore = dirtyItemStore,
+        artworkPresize = { imageProxyService.presize(it) },   // Phase 220 (FR-220-1)
     )
 
     // Scheduled scan / pipeline (Phase 91 / 93b). Fires at the LOCAL WALL-CLOCK time the admin set

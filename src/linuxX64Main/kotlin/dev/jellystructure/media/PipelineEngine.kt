@@ -59,6 +59,9 @@ class PipelineDeps(
     val realtimeIngest: RealtimeIngestService,
     val mediaHistory: MediaHistory,
     val dirtyItemStore: DirtyItemStore,
+    // Phase 220 (FR-220-1) — after fetch_artwork writes an item's originals, produce the served
+    // variants the TV will ask for (RaviloArtworkService.presize), so the request path is a file read.
+    val artworkPresize: (suspend (MediaItem) -> Unit)? = null,
 )
 
 /**
@@ -340,7 +343,11 @@ suspend fun runPipeline(
                 runPipelineStepPool(
                     jobId, step.step, toProcess, { pipelineStepConcurrency(step.step, configStore.current.behavior.scanWorkers) },
                     scanTracker, broadcaster, labelOf = { it.title },
-                ) { item, _ -> PipelineStepOps.fetchArtwork(item, store, artworkDownloader) }
+                ) { item, _ ->
+                    PipelineStepOps.fetchArtwork(item, store, artworkDownloader)
+                    // Phase 220 (FR-220-1) — pre-size in the same step, on the same (background) gate.
+                    deps.artworkPresize?.let { presize -> runCatching { presize(store.get(item.id) ?: item) }.onFailure { Logger.warn("fetch_artwork: presize failed for ${item.id}: ${it.message}", "tv-image") } }
+                }
             }
             "prewarm_subtitles" -> {
                 // Phase 213 — enqueue-only, same shape as detect_segments below: the actual extraction
