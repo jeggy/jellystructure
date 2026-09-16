@@ -5,14 +5,7 @@
 
 .app-body { margin: 0; min-height: 100vh; }
 
-/* minmax(0, 1fr), not bare 1fr (== minmax(auto, 1fr)): the main column is a plain block with no
-   overflow/min-width of its own, so any unwrapped long string deep inside it (a series title, a raw
-   filename) would otherwise become that column's automatic minimum size and blow the whole grid — and
-   the viewport — wider than the sidebar + content should ever be.
-   RESTORED 2026-07-31 after a design-tool sync silently reverted this a second time, AGAIN 2026-09-02,
-   AGAIN 2026-09-12 (11th sync-wipe event) — see the reference memory note on diffing design/app/*.css
-   after every sync before touching this again. */
-.shell { display: grid; grid-template-columns: 248px minmax(0, 1fr); min-height: 100vh; }
+.shell { display: grid; grid-template-columns: 248px 1fr; min-height: 100vh; }
 
 /* ---------- sidebar ---------- */
 .app-side {
@@ -54,25 +47,6 @@
 }
 
 .app-side .group-label { padding-top: 16px; }
-
-/* Phase 148 — collapsible nav groups. .group-label doubles as a <button> (group-toggle) now,
-   so it needs its browser button chrome reset on top of the plain-label typography above.
-   RE-ADDED 2026-07, RESTORED AGAIN 2026-07-31 after a second design-tool sync overwrote this
-   file and silently dropped it, AGAIN 2026-09-02, AGAIN 2026-09-12 — see the reference memory
-   note on syncing before touching this block again. */
-.app-side .nav-group { display: flex; flex-direction: column; }
-.app-side .group-label.group-toggle {
-  display: flex; align-items: center; width: 100%;
-  background: transparent; border: 0; cursor: pointer;
-  text-align: left; font-family: inherit; border-radius: var(--radius-s);
-  transition: background .15s ease, color .15s ease;
-}
-.app-side .group-label.group-toggle:hover { background: var(--fill-3); color: var(--ink); }
-.app-side .group-label .grp-chev { margin-left: auto; flex: none; opacity: .6; transition: transform .18s ease; }
-.app-side .nav-group.collapsed .grp-chev { transform: rotate(-90deg); }
-.app-side .nav-group-items { display: flex; flex-direction: column; overflow: hidden; }
-.app-side .nav-group.collapsed .nav-group-items { display: none; }
-
 .app-side .grow { flex: 1; min-height: 12px; }
 
 .app-side .status {
@@ -256,7 +230,7 @@
     -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
   }
 
-  .shell { grid-template-columns: minmax(0, 1fr); }
+  .shell { grid-template-columns: 1fr; }
 
   /* sidebar becomes an off-canvas drawer */
   .app-side {

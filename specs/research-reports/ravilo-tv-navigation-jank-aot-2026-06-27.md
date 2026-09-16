@@ -2,8 +2,8 @@
 
 **Date:** 2026-06-27 (afternoon follow-up to `ravilo-tv-jank-measurement-2026-06-27.md`)
 **Devices:**
-- **soveværelse** — Sony BRAVIA 4K VH2 (Android 12), `192.0.2.12` — *weak* panel, primary stress-test
-- **stue** — Sony BRAVIA XR-65X93K (Android TV), `192.0.2.11` — *fast* panel
+- **soveværelse** — Sony BRAVIA 4K VH2 (Android 12), `192.0.2.23` — *weak* panel, primary stress-test
+- **stue** — Sony BRAVIA XR-65X93K (Android TV), `192.0.2.22` — *fast* panel
 **Build under test:** `dev.jellystructure.ravilo` release APK at `main` (through R115)
 **Method:** `dumpsys gfxinfo` frame stats, driven by scripted `adb input` D-pad, with the
 app **AOT-compiled and warmed** before each measurement so cold-start/JIT warm-up is not a
@@ -161,11 +161,11 @@ Up/down is **essentially perfect** on both. Transitions are good on the fast pan
 
 - **Pairing the soveværelse TV:** it was a fresh install on the server-address screen; pairing
   normally needs the web "Ravilo → Pair a TV" modal, which was unreachable. The server address
-  (`192.0.2.10:9505`) was entered via `adb input`, producing pairing code `X37T5G`; the
+  (`192.0.2.20:9505`) was entered via `adb input`, producing pairing code `X37T5G`; the
   approval was then written directly to `ravilo_pairing` (`approved=1` + jogvan's user fields),
   reusing jogvan's freshest token copied DB→DB inside SQL (never materialised). The TV polled,
   minted its device token, and dropped to Home — paired as **jogvan** (admin).
-- **Backend:** bare `jellystructure.kexe` on the dev host (`192.0.2.10:9505`), not docker; see
+- **Backend:** bare `jellystructure.kexe` on the dev host (`192.0.2.20:9505`), not docker; see
   memory `reference-backend-deployment`. Running it as a session-tracked process is fragile;
   the user's own launch is the durable one.
 - **gfxinfo gotcha:** sending `KEYCODE_HOME` before a pass bounces the app to the Android

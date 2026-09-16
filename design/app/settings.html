@@ -32,6 +32,22 @@
   .set-section[data-tab] { display: none; }
   .set-section[data-tab].tab-show { display: block; }
 
+  /* Chromecast card (phase 218) — page-local, cc- prefixed. The three numbered
+     steps ARE the registration flow, so they are laid out as steps rather than
+     as a help link; the status list is the only place a state is asserted. */
+  .cc-step { display: grid; grid-template-columns: 28px 1fr; gap: 12px; align-items: start; margin-bottom: 12px; }
+  .cc-step p { margin: 0; font-size: .85rem; line-height: 1.55; color: var(--ink-soft); }
+  .cc-step p b { color: var(--ink); font-weight: 600; }
+  .cc-stat { display: grid; gap: 8px; }
+  .cc-stat > div { display: flex; align-items: center; gap: 9px; font-size: .82rem; color: var(--ink-soft); }
+  .cc-stat b { color: var(--ink); font-weight: 600; }
+  .cc-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--ok); }
+  .cc-dot.wait { background: var(--warn); }
+  .cc-dot.off { background: var(--ink-dim); }
+  .cc-num { display: flex; align-items: center; border: 1px solid var(--line-2); border-radius: var(--radius-s); overflow: hidden; width: 132px; }
+  .cc-num b { width: 40px; height: 38px; display: flex; align-items: center; justify-content: center; background: var(--fill-3); font-size: 1rem; font-weight: 600; cursor: pointer; }
+  .cc-num span { flex: 1; height: 38px; display: flex; align-items: center; justify-content: center; background: var(--fill-2); font-family: 'JetBrains Mono', monospace; font-size: .95rem; font-weight: 600; }
+
   /* age-rating region cascade (Metadata tab) */
   .rc-list { list-style: none; margin: 12px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
   .rc-item { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid var(--line-2); border-radius: 10px; background: var(--fill-2); }
@@ -278,6 +294,52 @@
         </div>
       </div>
 
+      <!-- CHROMECAST (phase 218) — the card IS the registration. jellystructure
+           serves the receiver at /cast/ and each installation registers its own
+           Cast application with Google; Google is named here, and only here,
+           because the admin pays Google. Page-local classes are prefixed cc-
+           following the .paced / .mkvh- precedent — and deliberately NOT adv-*,
+           which an ad blocker's cosmetic filter list hides outright (2026-09-15). -->
+      <div class="card set-section" id="sect-cast" data-tab="connections">
+        <div class="row center"><h3 style="font-size:1.05rem;margin:0;">Chromecast</h3><span class="badge info" style="margin-left:8px;">Ravilo</span><span class="spacer"></span><span class="badge warn" id="cc-badge" style="display:none;">not finished</span><span class="badge ok" id="cc-badge-ok" style="display:none;">working</span><span class="muted tiny">enable</span><span class="toggle" id="cc-toggle"></span></div>
+        <div class="tiny muted" id="cc-blurb" style="margin-top:10px;line-height:1.6;">Optional. Lets a phone cast to a Chromecast, with Jellystructure serving the receiver itself. While this is off, Ravilo shows <b>no cast button at all</b> — the phone is told there is nothing to cast to and never guesses.</div>
+
+        <div id="cc-on" style="display:none;">
+          <hr class="dash">
+          <div class="field"><label>Your receiver address</label>
+            <div class="input mono">https://js.heimatún.fo/cast/ <span class="spacer"></span><span class="chk"><span class="dot ok"></span><span class="badge ok">reachable over https</span></span><span class="btn sm ghost">Copy</span></div>
+            <span class="hint">A Chromecast loads this page itself, so it has to be reachable from the internet over <b>https</b>. Checked from outside, just now.</span></div>
+
+          <div class="box flat" id="cc-steps" style="padding:14px 15px;">
+            <div class="cc-step"><span class="step-n">1</span><p><b>Register an application</b> at the Google Cast Developer Console. Google charges a <b>one-time US$5</b> developer fee. Nothing else in Ravilo costs money.</p></div>
+            <div class="cc-step"><span class="step-n">2</span><p>Choose <b>Custom Receiver</b> and paste the address above.</p></div>
+            <div class="cc-step" style="margin-bottom:0;"><span class="step-n">3</span><p>Add your Chromecast as a <b>test device</b>, or <b>publish</b> the application so any Chromecast can use it.</p></div>
+          </div>
+
+          <div class="field" style="margin-top:14px;"><label>Application ID</label>
+            <div class="input mono" id="cc-appid"><span class="muted">8 hex characters, e.g. A1B2C3D4</span></div>
+            <span class="hint" id="cc-appid-hint">From the console, after step 1.</span></div>
+
+          <div class="row center" style="gap:14px;margin-bottom:14px;">
+            <div><b style="font-size:.9rem;">Concurrent cast sessions</b><div class="tiny muted" style="margin-top:3px;">Each cast is a transcode on your Jellyfin server.</div></div>
+            <span class="spacer"></span>
+            <div class="cc-num"><b>−</b><span>2</span><b>+</b></div>
+          </div>
+
+          <hr class="dash">
+          <div class="cc-stat" id="cc-stat"></div>
+        </div>
+
+        <hr class="dash" style="margin:12px 0 10px;">
+        <!-- mockup-only, clearly fenced: the product has no such control. It exists so all three
+             states of the card stay visible in the design at once. -->
+        <div class="row center" style="gap:9px;flex-wrap:wrap;">
+          <span class="muted tiny">Preview · card state:</span>
+          <span class="seg" id="cc-preview"><span class="on" data-cc="off">off</span><span data-cc="unreg">on, not registered</span><span data-cc="ok">registered &amp; verified</span></span>
+          <span class="tiny muted">off means the phone shows no cast button at all</span>
+        </div>
+      </div>
+
       <!-- RADARR / SONARR -->
       <div class="card set-section" id="sect-arr" data-tab="downloads">
         <div class="row center"><h3 style="font-size:1.05rem;margin:0;">Radarr / Sonarr</h3><span class="badge info" style="margin-left:8px;">*arr stack</span></div>
@@ -469,6 +531,50 @@
           <span class="tiny muted">the unreachable state replaces the whole list, never empties it</span>
         </div>
       </div>
+      <script>
+      /* Chromecast card (phase 218) — the preview control is mockup-only. */
+      (function () {
+        const seg = document.getElementById('cc-preview'), on = document.getElementById('cc-on'),
+              tog = document.getElementById('cc-toggle'), blurb = document.getElementById('cc-blurb'),
+              bw = document.getElementById('cc-badge'), bo = document.getElementById('cc-badge-ok'),
+              steps = document.getElementById('cc-steps'), appid = document.getElementById('cc-appid'),
+              hint = document.getElementById('cc-appid-hint'), stat = document.getElementById('cc-stat');
+        const OFF_BLURB = blurb.innerHTML;
+        const ON_BLURB = 'Ravilo shows a cast button on every screen. A Chromecast appears in <b>Users &amp; devices</b> as its own device, and the Jellyfin dashboard can pause and seek it like any other client.';
+        const STEP_BLURB = 'Three one-time steps. Nothing recurring, and nothing leaves this page except the address you paste at Google.';
+        function set(state) {
+          const isOff = state === 'off', okd = state === 'ok';
+          on.style.display = isOff ? 'none' : '';
+          tog.classList.toggle('on', !isOff);
+          bw.style.display = state === 'unreg' ? '' : 'none';
+          bo.style.display = okd ? '' : 'none';
+          blurb.innerHTML = isOff ? OFF_BLURB : (okd ? ON_BLURB : STEP_BLURB);
+          steps.style.display = okd ? 'none' : '';
+          appid.innerHTML = okd
+            ? 'A1B2C3D4 <span class="spacer"></span><span class="badge ok">used 6 times</span>'
+            : '<span class="muted">8 hex characters, e.g. A1B2C3D4</span>';
+          hint.innerHTML = okd
+            ? 'Registered with Google · published, so any Chromecast can use it. <span class="btn sm ghost" style="padding:0;">Show the three steps again</span>'
+            : 'From the console, after step 1.';
+          /* jellystructure cannot verify an application ID with Google — there is no API for
+             it — so the honest check is a first real cast, and the card says so until then. */
+          stat.innerHTML = okd
+            ? '<div><span class="cc-dot"></span> Receiver <b>reachable</b> at that address</div>'
+              + '<div><span class="cc-dot"></span> Application ID <b>set and confirmed by a real cast</b></div>'
+              + '<div><span class="cc-dot"></span> Last cast <b>yesterday 21:14</b> · Living room TV · 38 min</div>'
+              + '<div><span class="cc-dot"></span> <b>2 devices</b> have cast · <a href="ravilo-users.html">Users &amp; devices</a></div>'
+              + '<div><span class="cc-dot"></span> Jellyfin shows it as <b>Chromecast via Ravilo · Living room</b></div>'
+            : '<div><span class="cc-dot"></span> Receiver <b>reachable</b> at that address</div>'
+              + '<div><span class="cc-dot wait"></span> Application ID <b>not set yet</b></div>'
+              + '<div><span class="cc-dot off"></span> <b>Cast from your phone once to confirm it works.</b> Jellystructure can\'t check an application ID with Google — only a real cast can.</div>';
+          seg.querySelectorAll('[data-cc]').forEach(s => s.classList.toggle('on', s.dataset.cc === state));
+        }
+        seg.addEventListener('click', e => { const s = e.target.closest('[data-cc]'); if (s) set(s.dataset.cc); });
+        tog.addEventListener('click', () => set(tog.classList.contains('on') ? 'off' : 'unreg'));
+        set('off');
+      })();
+      </script>
+
       <script>
       (function () {
         const seg = document.getElementById('jfa-reach'), list = document.getElementById('jfa-list'),

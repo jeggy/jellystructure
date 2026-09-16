@@ -36,8 +36,160 @@ GitHub is the **source of truth**; we layer designs on top of it.
 - `specs/research-reports/` — dated deep-dives (research, not spec; may go stale).
 
 ## Where the work stands (read the repo `STATUS.md` for the live table)
+- **2026-09-16 (latest) — the picks are BUILT into the design files, and three specs are written:
+  R244 · 218 · R245. Next unassigned numbers: 219 / R246.**
+  - **Built into `ravilo/Ravilo Mobile.html`** (with a new served stylesheet `ravilo/mobile/ravilo-mobile-player.css`,
+    linked *before* the inline `<style>` so the file's own frame rules still win, and every class prefixed
+    `mp-` / `rc-` so nothing can collide with the TV's `ravilo-player.css` — the 187 lesson applied up front):
+    - **The phone media player**, direction 2 · Thumb rail. Working: tap-to-toggle with a **3 000 ms**
+      auto-hide (held open by a sheet or a drag, suspended while locked), centred −10 s / ▶ / +30 s,
+      drag-to-scrub with a time bubble, **double-tap to seek with accumulating repeats**, lock with the
+      hold-to-unlock note, the R218 cold start behind its 400 ms debounce, the Skip-intro pill, the
+      next-up card, the R180/R195 **two-level picker as a bottom sheet** with **Subtitle size** S/M/L
+      applied live behind it, the season sheet, and the R237 failure sheet.
+    - **Casting**: a server-pushed cast button on the app bar (absent, never greyed), the device sheet on
+      its own layer (labelled as the *platform's* dialog, which we do not redesign), the connecting bar,
+      the **mini bar** that never dismisses while a cast runs, and the **full-screen remote** — direction
+      2 · Now playing — with play/pause, −10 s / +30 s, seek, *Next episode*, *Stop casting* and
+      **Subtitles &amp; audio opening the same sheet component the local player opens**, applied on the TV.
+      Casting from inside the player hands the position over and swaps straight to the remote.
+    - **Two states a mockup cannot otherwise reach** get a clearly-fenced **PREVIEW** control beneath the
+      phone (the precedent is `app/activity.html`'s stop-note toggle): **Failed start · R237**, and
+      **System portrait lock**, which is the only condition under which FR-R244-7's rotate button appears.
+      Also fixed on the way: a window-level `pointermove` from the remote's seek bar was hijacking drags on
+      the player's bar and sending the position to the end (zero-width rect ⇒ division by zero), and the
+      double-tap window now lives on the element so repeats reliably accumulate 30 → 60 → 90.
+  - **New file `ravilo/Ravilo Receiver.html`** — the Chromecast's own screen at 1920×1080: all **tenen
+    states** behind a mockup-only STATE picker, × three skins × three languages, with a captions-size
+    picker. Idle is the lit mark and one sentence; *ended* is literally the idle view, because that is the
+    decision.
+  - **`app/settings.html` → Connections gained the Chromecast card** in all three states behind a fenced
+    preview control, in wf.css's own idiom. Classes prefixed `cc-` — deliberately **not** `adv-*`, which
+    an ad blocker's filter list hides outright. Google is named on this card and nowhere else.
+  - **`ravilo/ravilo-i18n.js`** gained the player and casting strings in **en · da · fo** (13 player + 15
+    cast keys; `cast_applies_on` was the one string the build needed that the canvas tables missed).
+    Danish and Faroese are drafts and the shipped table wins wherever a string already exists.
+  - **Three specs written 2026-09-16, all `Planned`, none dev-reviewed.** Numbers verified against `main`
+    the same day (admin through 217, Ravilo through R243), and taken **contiguously from free** rather than
+    reserving the research report's proposed gaps — reserving numbers for phases nobody has written is how
+    186→187 and R230→R234 happened:
+    - **R244 — the player on a phone** (`phase-R244-phone-player-chrome.md`). The handset chrome gated on
+      `LocalHandset`, the rail's orientation rule, auto-hide, double-tap seek, brightness/volume swipes
+      (**brightness needs a new seam — there is no brightness API in the codebase**), pinch fit/fill,
+      portrait playback and the rotate-only-when-locked rule, lock, scrubbing without thumbnails, the
+      picker as **one component with two destinations**, the season sheet, safe areas, haptics, and the
+      Live TV player — the one screen with zero phone handling today.
+    - **218 — Chromecast: serve the receiver, and make registering it part of the product**
+      (`phase-218-chromecast-receiver-and-registration.md`). `/cast/` as one more static bundle, a
+      `chromecast` config block (off by default), **off means absent not greyed**, the three-state Settings
+      card, a reachability check the backend performs **by fetching its own `/cast/` through the public
+      URL**, the guided Google registration, the honest "only a real cast can confirm this" rule, the
+      session ceiling → phase 182's 503, receiver enrolment by hand-off code, and the
+      *Chromecast via Ravilo* Jellyfin identity that makes dashboard pause/seek free via phase 110.
+    - **R245 — casting: the receiver, the sender, and the remote in your hand**
+      (`phase-R245-cast-sender-receiver-and-remote.md`). The sender, the mini bar, the remote and its seven
+      states plus the subtitles sheet, **re-connect with its two outcomes — one of which is silence**, the
+      Cast SDK notification (landscape still, not poster), and the receiver's ten non-interactive screens.
+  - **Why Jellyfin's own Cast receiver is rejected as the product** (recorded in 218): it talks to Jellyfin
+    directly, so the playback tracker, phase 180 teardown, R216 QoE, `requireVisible()`, the per-user ACL,
+    kids gating and R183 pacing all see nothing — the same architecturally-unreachable class as the
+    Wholphin finding — and it needs the phone to hold a durable Jellyfin token, which 141/175 prevent.
+  - **Still open, and named in the specs rather than guessed:** the generation of the parents' stick (if
+    1st gen, whether a CAF v3 receiver launches at all must be tested first), the concurrent-encode number,
+    the brightness seam on the Wasm build, and the Danish/Faroese drafts.
+- **2026-09-16 (later) — the round-1 picks are in, and playback Speed is removed from the design.**
+  Both canvases and both print copies now read as **decisions, not options** — the nine-row panels are
+  retitled *Decided* and carry one answer each.
+  - **Chosen for the player:** **direction 2 · Thumb rail**, auto-hide **3 000 ms** (held open while a
+    sheet or a drag is live, suspended while locked), **follow the sensor** with a rotate button only when
+    the system has portrait locked, **both** brightness and volume swipes, **Subtitle size** as a row
+    inside the picker sheet, haptics on skip/lock/seek-release, the mobile-data quality row drawn next,
+    and phase 111's *Play on Stue TV* drawn beside the cast button in round 2.
+  - **Chosen for casting:** **remote 2 · Now playing**, the card in **Settings → Connections**, session
+    ceiling pre-filled **2**, the mini bar **never dismisses while casting**, *Next episode* **skips
+    straight to it**, casting from inside the local player **swaps straight to the remote**, receiver idle
+    stays **mark + one sentence**, and *ended* offers **two actions**.
+  - **⚠ Playback speed is gone from the design entirely** (owner decision). Not a rail item, not a sheet,
+    not a *More* entry, and **no new seam member** — which also deletes a Wasm actual and a future iOS
+    actual from the work. The rail is now **three** items (Subtitles · Next · Lock), the Speed sheet frame
+    and its state label are removed, the §A1 state list has no state 7, and `pl_speed` /
+    `pl_speed_normal` come off the string list — **thirteen** new player strings, not fifteen.
+  - **New frame, because the ask was explicit:** the casting remote with **Subtitles &amp; audio open**
+    (state 8). It is the *same* R180/R195 two-level picker the local player uses — one component, two
+    destinations — with the choice applied on the TV and one line saying so, and the same S/M/L
+    **Subtitle size** row. So pause/play, −10 s / +30 s, seek and subtitles are all one tap from the
+    remote, with no trip back into the app.
+  - Both `-print.html` copies were re-stamped against their sources' new versions.
+- **2026-09-16 — ROUND 1 DIRECTIONS for the phone: the mobile media player and casting to a Chromecast.
+  Drawn only — nothing built into the main mockups, no spec written or edited. Next unassigned numbers:
+  218 / R244** (the research report's proposed 216/R243 and 217 were taken the same day by the Discover
+  taxonomy pair and the Towo removal, so its whole ladder shifts by one — recorded on both canvases).
+  - **Three new repo documents pulled and mirrored** (all dated 2026-09-16, all repo-authored):
+    `specs/ravilo/design-brief-mobile-player-and-cast-2026-09-16.md` (the brief this round answers),
+    `specs/research-reports/ravilo-mobile-player-chromecast-ios-2026-09-16.md` (the investigation) and
+    `specs/research-reports/ios-build-host-macbook-setup-2026-09-16.md` (no design work in it).
+  - **The problem, in one line:** `PlayerScreen` renders the **TV chrome verbatim on a phone** — 48 dp
+    gutters, D-pad pills with focus rings, forced sensor-landscape, no gestures, no safe-area reads — and
+    `design/ravilo/Ravilo Mobile.html` had no player screen at all. Every phone bug fixed so far (R227,
+    R229, R195's missing touch dismissal) was found by someone using the phone, never by a pass.
+  - **`ravilo/Mobile Player - Directions.html`** (canvas + 8-page landscape print copy). Three directions
+    on one axis — **where the secondary controls live**: **1 Grounded** (the TV's bottom block, made
+    touchable; cheapest, worst reach), **2 Thumb rail** (**recommended** — transport centred on the
+    picture, four secondary controls as a right-edge column that folds into a row in portrait), **3
+    Sheet-first** (least chrome, but two taps to subtitles, which is the wrong thing to deepen in a
+    trilingual house). All **twelve states of brief §A1** drawn for direction 2, plus two the brief does
+    not list: the **Live TV player** (the one screen with *zero* phone handling in the code) and an
+    **iOS safe-area** set. Skins: Midnight + Noir. Fifteen new strings × en/da/fo tabled.
+  - **`ravilo/Casting - Directions.html`** (canvas + 8-page landscape print copy). The §B1 flow as nine
+    phone frames incl. **both re-connect outcomes**; two remote directions — **1 Cinema** (full-bleed
+    backdrop) vs **2 Now playing** (**recommended**: 16:9 art card on a solid ground, device chip as the
+    header *and* the control); the mini bar (§B3); the Cast notification (§B4); the receiver's **ten TV
+    screens** (§C) at 1920×1080; and the **Settings → Chromecast card** (§F) in `app/settings.html`'s
+    idiom in all three states. Fourteen new strings × en/da/fo.
+  - **The one architectural fact that shaped nearly every casting frame:** the receiver is **its own
+    Ravilo device**, so the TV keeps playing if the phone dies, the remote **rebuilds from the receiver**
+    on app start rather than from anything the phone remembered, and **re-connect has two outcomes — one
+    of which is silence** (finished or gone ⇒ no bar, no toast, no error; the viewer casts again with one
+    tap). The cast button is **server-pushed and absent, never greyed**.
+  - **Why *Now playing* over *Cinema*:** ink on a solid surface always clears 4.5:1 and a scrimmed
+    backdrop does not — and most of this library has no backdrop, so Cinema's best case is its rarest
+    case. Same trap as Focus Detail round 2's direction H. It also degrades to a wordmark tile with no
+    redraw, the rule R243's taxonomy walls already follow.
+  - **Rules held on every frame:** 46 px targets · 13 px type floor (so the skip buttons read **10 s** /
+    **30 s** as labels under the arrow, never an 11 px numeral inside it); R180's no-delivery-cues rule;
+    R218's waiting states and R237's failure copy **reused verbatim**; R180/R195's two-level picker as a
+    bottom sheet with **Subtitle size** as its only addition; safe-area insets on both platforms;
+    **Google named only on the admin card**, because the admin pays Google.
+  - **Deliberately not drawn:** background audio, PiP, a local mini-player, offline downloads, thumbnail
+    scrub previews (`trickplayUrl` is always null), a lock-screen card for *local* playback (R193 stands),
+    our own device picker (the dialog is the platform's), an on-screen cast volume slider, Cast Connect,
+    tablets — and **AirPlay, ever** (dropped by owner decision 2026-09-16).
+  - **The only edit to a built mockup, per the brief's instruction:** `ravilo/Ravilo Mobile.html` gained
+    an **iPhone 16 frame** — a device picker beneath the phone (mockup-only chrome, same class as the TV's
+    SKIN/FOCUS pickers, `?dev=ios` also works) swaps the Pixel 9 bezel for 393×852 with a Dynamic Island,
+    a home indicator and the taller iOS status bar, so **every existing screen renders in both**. A second
+    side-by-side frame would have meant forking the whole id-bound render layer; say the word if you want
+    that instead. Nothing else in that file or `mobile/ravilo-mobile.css` was touched.
+  - **New shared file:** `ravilo/mobile-directions.css` — device frames, phone player chrome, bottom
+    sheets, the remote, the mini bar and the receiver, shared by both canvases and both print copies.
+  - **Eighteen decisions are left open on purpose, as marked options with my lean** (nine per canvas):
+    the chrome direction, auto-hide delay, portrait playback, brightness/volume swipes, subtitle-size
+    placement, speed, haptics, the mobile-data row, "Play on Stue TV"; and the remote, the card's Settings
+    home, the pre-filled session ceiling, mini-bar dismissal, what *Next episode* does, casting from
+    inside the player, the receiver idle screen, what *ended* offers, and whether §D round 2 draws phase
+    111's affordance beside the cast button.
+  - **Still open and unanswerable here:** the **generation of the parents' Chromecast stick** (if 1st gen,
+    whether a CAF v3 receiver launches on it at all must be tested before the phase is committed to), the
+    concurrent-encode number to pre-fill, and the Danish/Faroese drafts for the new strings — the shipped
+    `ravilo-i18n.js` wins wherever a string already exists.
+  - **⚠ Found while checking the sync: `design/claude-console/` is still on `main`** (3 files). The Towo
+    removal deleted it locally on 2026-09-16 but that deletion did not reach the repo, while
+    `design/app/towo*.html` and `towo.css` did. **The next export must delete it.**
+  - **Brief §D — Home, Detail, Browse, Search, Discover, Live TV guide, login/profile, Settings
+    additions — is the second round and waits on the picks from this one.** *(Picks now in — see the
+    entry above.)*
 - **2026-09-15 (later) — Ravilo's Discover page gained three library-taxonomy tabs; both specs written
-  2026-09-16 as 216 / R243. Next unassigned numbers: 217 / R244.**
+  2026-09-16 as 216 / R243. All three specs (216, 217, R243) are now confirmed ON `main`.**
   - **Discover is no longer only the request/calendar surface.** Its segment bar now reads
     `Coming Soon · Request · Studios · Networks · Genres`; the three new tabs index the library the
     viewer already has, so they are ungated (Coming Soon and Request stay config-gated) and the

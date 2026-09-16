@@ -1,9 +1,39 @@
 repo: jeggy/jellystructure
 branch: main
 path: specs/   (plus root STATUS.md — both mirrored read-only from the repo); presentation/ (full mirror, ours to build on); design/ (our export — now confirmed to flow BOTH ways, see 2026-09-15)
-tree: main @ fbee64fe7e4a (2026-09-15 pull)
+tree: main @ a5eeb8a82b50 (2026-09-16 pull)
 
-## Last sync (2026-09-16 — read-only: numbering check before writing two specs)
+## Last sync (2026-09-16, later — pull: the mobile player + casting design brief, and our specs confirmed upstream)
+date: 2026-09-16T00:10:22Z
+direction: pull (repo → this project). 4 files mirrored, nothing exported. The design round this brief
+asked for was then drawn locally — see *Pending export*.
+- **Three new repo documents pulled**, all dated 2026-09-16 and all repo-authored:
+  `specs/ravilo/design-brief-mobile-player-and-cast-2026-09-16.md` (the brief — the phone player, casting,
+  the receiver, the admin card, the missing phone screens),
+  `specs/research-reports/ravilo-mobile-player-chromecast-ios-2026-09-16.md` (the investigation: the
+  phone-player gap table, three Chromecast architectures with B recommended, the iOS cost, and §7's
+  owner decisions) and `specs/research-reports/ios-build-host-macbook-setup-2026-09-16.md`. `STATUS.md`
+  re-pulled.
+- **Our three 2026-09-16 specs are now canonical on `main`:** `phase-216-library-taxonomy-index.md`,
+  `phase-217-remove-towo.md` and `phase-R243-browse-by-studio-network-genre.md`. A filtered tree scan for
+  `phase-(215-219|22x|R242-R259)` matched exactly those three plus 215 and R242 — so **`main` tops out at
+  217 / R243 and the next free pair is 218 / R244.** The research report's proposed numbering (216/R243 for
+  mobile data policy, 217/R247 for Chromecast) **collides** and its whole ladder shifts by one; recorded on
+  both new canvases, and no spec was written or edited to claim a number.
+- **The design mirror needed nothing pulled this time.** Byte-compared every Ravilo design file the taxonomy
+  build touched — `ravilo-app.js` 143,685 · `ravilo-data.js` 70,530 · `ravilo-browse.js` 22,974 ·
+  `ravilo-i18n.js` 32,609 · `ravilo.css` 94,907 · `Ravilo TV.html` 4,955 — **all identical to `main`**. Only
+  `Ravilo Mobile.html` differs (57,568 local vs 54,645 upstream) and that is exactly this turn's
+  iPhone-frame addition. So our 2026-09-15/16 export landed in full and the repo has not edited our
+  mockups since.
+- **⚠ One piece of the Towo removal did NOT reach the repo: `design/claude-console/` is still on `main`**
+  (`Dashboard - Direction A.html`, `Dashboard - Direction B.html`, `console.css`). `design/app/towo*.html`
+  and `design/app/towo.css` are gone upstream as intended, and the directory is empty locally. **The next
+  export must delete `design/claude-console/`.**
+- **No `STATUS.md` edit, no `specs/research-reports/` edit, no `scripts/` touch** — all three remain
+  repo-owned per CLAUDE.md.
+
+## Previous sync (2026-09-16 — read-only: numbering check before writing two specs)
 date: 2026-09-15T22:11:06Z   (repo query; the specs themselves are dated 2026-09-16 local)
 direction: read-only (repo → this project). Nothing copied, nothing exported — the tree was queried only
 to pick collision-free numbers for the Discover taxonomy pair.
@@ -586,14 +616,35 @@ direction: pull (repo → this project)
 | app/settings.html (Scanning), app/activity.html (Jobs & workers) | **213** — `behavior.segment_workers` replaced by `behavior.job_workers` (1–3, default 2) over three named FIFO queues; `/api/health` `job_queues` block. `✓ Built` dev-side, **drawn 2026-09-15** (shared-pool card + three-lane Queues card + the Settings control) |
 | (none — backend/client-only) | **203–211** (cold health cache, reader-blocking writes, Ravilo reads waiting on Jellyfin, collection fan-out, three `prewarm_subtitles` defects, undocumented Jellyfin routes, sidecar bulk-reorder no-op, `PlaystateCache` episode ids), **R241** (remembered track vs ISO-639 granularity) |
 | ravilo/Ravilo TV.html, ravilo/ravilo-app.js, ravilo/ravilo-browse.js, ravilo/ravilo-data.js, ravilo/ravilo.css, ravilo/ravilo-i18n.js, ravilo/Ravilo Mobile.html | **216** + **R243** — Discover's Studios / Networks / Genres tabs (the viewer-side of `app/metadata.html`). Design-authored: mockups 2026-09-15, both specs 2026-09-16, both `Planned`, neither dev-reviewed. **Pending export** |
+| ravilo/Ravilo Mobile.html, ravilo/mobile/ravilo-mobile-player.css, ravilo/Ravilo Receiver.html, ravilo/ravilo-i18n.js, app/settings.html (Connections → Chromecast) | **R244** (`phase-R244-phone-player-chrome.md`) · **218** (`phase-218-chromecast-receiver-and-registration.md`) · **R245** (`phase-R245-cast-sender-receiver-and-remote.md`) — the phone player (direction 2 · Thumb rail, **no playback speed**), casting (remote direction 2 · Now playing, mini bar, server-pushed cast button), the receiver's ten screens, and the admin Chromecast card. Design-authored: mockups + specs 2026-09-16, all three `Planned`, none dev-reviewed. **Pending export** |
+| ravilo/Mobile Player - Directions.html (+ -print), ravilo/Casting - Directions.html (+ -print), ravilo/mobile-directions.css | **Design brief** `specs/ravilo/design-brief-mobile-player-and-cast-2026-09-16.md` §A/§B/§C/§F + research report `ravilo-mobile-player-chromecast-ios-2026-09-16.md`. **Round 1 directions only, drawn 2026-09-16 — no spec written, nothing built into the main mockups.** Constrained by R218 (waiting states, reused verbatim), R237 (failure copy), R180/R195 (the picker as a sheet), R234 (46 px / 13 px floors), R193 (no local MediaSession), R182 (the busy state), R222. Prospective phases **218 + R244** (mobile data) · **R245** (player chrome) · **219 + R248** (Chromecast). **Pending export** |
 | presentation/presentation-context.md, presentation/observed-issues-2026-08-18.md, presentation/screenshots/ | (not a spec — talk source material; documents R202 as its centerpiece and the R203–R207 triage) |
 
 ## Pending export
-- **2026-09-16 — Towo removed, and `phase-217-remove-towo.md` written** (`Planned`, not dev-reviewed).
-  The export **deletes** `design/app/towo*.html` (8 files), `design/app/towo.css` and all of
-  `design/claude-console/`, and carries the Towo tab out of `design/app/settings.html` and the nav group +
-  icons out of `design/app/app-shell.js`. 162's spec and its `STATUS.md` row are **not** to be touched by
-  us — 217 FR-217-8 asks the dev team to mark the row `Removed`.
+- **2026-09-16 (latest) — the picks BUILT, and three specs.** New: `specs/ravilo/requirements/phase-R244-phone-player-chrome.md`,
+  `specs/requirements/phase-218-chromecast-receiver-and-registration.md`,
+  `specs/ravilo/requirements/phase-R245-cast-sender-receiver-and-remote.md`,
+  `ravilo/mobile/ravilo-mobile-player.css` and `ravilo/Ravilo Receiver.html`. Modified:
+  `ravilo/Ravilo Mobile.html` (the player, the remote, the mini bar and the cast button — well beyond the
+  iPhone frame now that the picks are in), `ravilo/ravilo-i18n.js` (player + casting strings × en/da/fo)
+  and `app/settings.html` (the Chromecast card in Connections, `cc-` prefixed page-local classes).
+  **Numbers taken contiguously from free (218 / R244 / R245); next free 219 / R246.**
+- **2026-09-16 (later) — the round-1 picks applied, and playback Speed removed from the design.** Both
+  canvases and both print copies now read as decisions rather than options (nine settled rows each);
+  Speed is out of every rail, sheet, state list and string table (the rail is three items, the player
+  string list is thirteen); a new **state 8** on the casting canvas draws the remote with **Subtitles &amp;
+  audio open** — the same R180/R195 picker, applied on the TV. Both `-print.html` copies re-stamped
+  against their sources' new versions.
+- **2026-09-16 (later) — the mobile player + casting design round (round 1, directions only).**
+  New: `ravilo/Mobile Player - Directions.html`, `ravilo/Casting - Directions.html`, their two
+  `-print.html` copies (both stamped with their source version) and `ravilo/mobile-directions.css`.
+  Modified: `ravilo/Ravilo Mobile.html` — **iPhone 16 frame only** (device picker + `.phone.ios` +
+  `.island` / `.homeind` + a `?dev=ios` param, and `fit()` adjusted for two frame sizes). Per the brief,
+  nothing else in that file and nothing in `mobile/ravilo-mobile.css` was touched. **No spec files
+  written or edited by this round.**
+- **⚠ The export must also DELETE `design/claude-console/`** (3 files still on `main`) — the one part of
+  the 2026-09-16 Towo removal that never reached the repo. `design/app/towo*.html` and `towo.css` did
+  land; 162's spec and its `STATUS.md` row stay untouched by us, per 217 FR-217-8.
 - **2026-09-15/16 — the Discover taxonomy pair: specs 216 + R243 and the mockup build.**
   `specs/requirements/phase-216-library-taxonomy-index.md`,
   `specs/ravilo/requirements/phase-R243-browse-by-studio-network-genre.md`, plus
@@ -626,6 +677,9 @@ direction: pull (repo → this project)
   check on next export pass.
 
 ## Sync history
+- 2026-09-16 (latest, same turn): no repo I/O — the picks were **built** into `Ravilo Mobile.html` (+ a new served `mobile/ravilo-mobile-player.css`), a new `Ravilo Receiver.html` was drawn, the Chromecast card was added to `app/settings.html`, the player + casting strings landed in `ravilo-i18n.js`, and **three specs were written: R244 · 218 · R245** (all `Planned`, none dev-reviewed). Next free **219 / R246**.
+- 2026-09-16 (latest, same turn): no repo I/O — the round-1 picks were applied to both canvases and both print copies, playback **Speed removed from the design entirely** (owner decision), and the casting remote gained a **Subtitles &amp; audio** frame.
+- 2026-09-16 (latest): pulled the mobile-player/casting **design brief** + two research reports + STATUS.md; confirmed 216 / 217 / R243 are canonical on `main` (next free **218 / R244**, and the research report's proposed ladder shifts by one); byte-compared the whole Ravilo design mirror — **nothing to pull, the repo has not edited our mockups**; found `design/claude-console/` still upstream and owed a deletion; drew the two round-1 direction canvases + print copies and added the iPhone frame.
 - 2026-09-16 (later): no repo I/O — Towo deleted from the design set and `phase-217-remove-towo.md` written against the 2026-09-16 numbering scan (217 confirmed free).
 - 2026-09-16: read-only numbering check — `main` still tops out at 215 / R242, so the Discover taxonomy pair was written as **216 / R243** (both `Planned`); mirror deliberately not refreshed.
 - 2026-09-15: base commit unreachable, fell back to blob-size diffing; 15 new specs (admin 203–215, Ravilo R241/R242) + STATUS.md pulled; **12 design files pulled BACK over ours** (the mirror is two-way now — R242 was built into our mockups dev-side); our 202/R240 + the nine admin draws + the 187/R234 corrections all confirmed canonical upstream, so **nothing is pending export**; J flipped to default-on after invariant 11 was measured; new design backlog = 212/213/214/215; counters 387 → 404 phases, 179 → 194 documents.
