@@ -39,12 +39,17 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.jellystructure.ravilo.ui.focus.dpadFocusable
+import dev.jellystructure.ravilo.ui.focus.focusDetailPanelAvailableWidthPx
+import dev.jellystructure.ravilo.ui.focus.focusDetailPanelClampedWidthPx
 import dev.jellystructure.ravilo.ui.focus.focusDetailRowOpenTargetScrollDelta
 import dev.jellystructure.ravilo.ui.theme.RaviloDimens
 import dev.jellystructure.ravilo.ui.theme.RaviloMotion
@@ -121,7 +126,9 @@ fun <T> StaticContentRow(
      *  the tile whose [itemKey] equals [openAfterKey]. Null ⇒ no panel anywhere in this row (the
      *  household direction isn't "rowOpen", or nothing here is focused/settled yet). */
     openAfterKey: Any? = null,
-    openPanel: (@Composable () -> Unit)? = null,
+    /** R250 (FR-R250-4) — receives the widest the panel may be given where the opening tile actually
+     *  landed (≤ [openPanelWidth]); the caller clamps its panel to it. */
+    openPanel: (@Composable (maxWidth: Dp) -> Unit)? = null,
     /** The width [openPanel] will lay out at. Supplied rather than measured: the panel is spliced in
      *  to the RIGHT of a tile that is often already at the viewport's edge, so its slot lands
      *  off-screen — and a `LazyRow` never *places* an off-screen item, so `onGloballyPositioned` never
@@ -254,6 +261,10 @@ fun <T> StaticContentRow(
                         color = colors.text,
                         fontSize = 18.sp,
                         fontWeight = FontWeight.SemiBold,
+                        // R250 (FR-R250-2) — the heading's own local backing: a halo in the page's own
+                        // background colour. Invisible on plain `--bg` (same colour), a dark ground
+                        // behind the letters while J's backdrop is lit under this row.
+                        style = TextStyle(shadow = Shadow(color = colors.background.copy(alpha = 0.9f), offset = Offset.Zero, blurRadius = 12f)),
                         fontFamily = spaceGrotesk,
                         letterSpacing = (-0.3).sp,
                     )
@@ -319,21 +330,45 @@ fun <T> StaticContentRow(
         val density = LocalDensity.current
         val panelWidthPx = with(density) { openPanelWidth.toPx() }
         val itemSpacingPx = with(density) { RaviloDimens.itemSpacing.toPx() }
+        // R250 (FR-R250-4) — 0 = no clamp (the declared width stands); set from the tile's measured
+        // landing once the scroll has settled, and reset the moment another tile opens.
+        var panelMaxWidthPx by remember { mutableStateOf(0f) }
+        val panelMaxWidthDp = if (panelMaxWidthPx > 0f) with(density) { panelMaxWidthPx.toDp() } else openPanelWidth
         LaunchedEffect(openAfterKey) {
+            panelMaxWidthPx = 0f
             val key = openAfterKey ?: return@LaunchedEffect
             val info = listState.layoutInfo
             val tile = info.visibleItemsInfo.firstOrNull { it.key == key } ?: return@LaunchedEffect
+            // R250 (FR-R250-5) — `viewportEndOffset` is the row's far edge net of its START padding only,
+            // i.e. the screen edge in content space, not the end gutter. Targeting it let the panel end at
+            // x = 1920 and left the opening tile short of the content start by exactly the end gutter
+            // (the 66 px the stue TV measured, less the tile's own inset). The end gutter is the target.
+            val endGutterPx = (info.viewportEndOffset - info.afterContentPadding).toFloat()
             val delta = focusDetailRowOpenTargetScrollDelta(
                 openTileOffsetPx = tile.offset.toFloat(),
                 openTileWidthPx = tile.size.toFloat(),
                 widthScale = RaviloMotion.ROW_OPEN_WIDTH_SCALE,
                 itemSpacingPx = itemSpacingPx,
                 panelWidthPx = panelWidthPx,
-                viewportEndPx = info.viewportEndOffset.toFloat(),
+                viewportEndPx = endGutterPx,
             )
             if (delta > 0f) {
                 listState.animateScrollBy(delta, tween(RaviloMotion.ROW_OPEN_TWEEN_MS))
             }
+            // FR-R250-4 — size the panel from where the tile ACTUALLY landed. Measuring here is not the
+            // circularity R240 warns about (that was scrolling on a panel that is never placed until it
+            // is scrolled to): the tile is always placed, and a clamp only ever narrows.
+            val after = listState.layoutInfo
+            val landed = after.visibleItemsInfo.firstOrNull { it.key == key } ?: return@LaunchedEffect
+            val grownPx = maxOf(landed.size.toFloat(), tile.size * RaviloMotion.ROW_OPEN_WIDTH_SCALE)
+            val available = focusDetailPanelAvailableWidthPx(
+                landedTileOffsetPx = landed.offset.toFloat(),
+                grownTileWidthPx = grownPx,
+                itemSpacingPx = itemSpacingPx,
+                endGutterPx = (after.viewportEndOffset - after.afterContentPadding).toFloat(),
+            )
+            val clamped = focusDetailPanelClampedWidthPx(panelWidthPx, available, with(density) { 280.dp.toPx() })
+            panelMaxWidthPx = if (clamped < panelWidthPx) clamped else 0f
         }
 
         @OptIn(ExperimentalFoundationApi::class)
@@ -369,7 +404,7 @@ fun <T> StaticContentRow(
                         ) { itemContent(i, items[i], fr) }
                     }
                     if (openPanel != null && key != null && key == openAfterKey) {
-                        item(key = "__openpanel__$key") { openPanel() }
+                        item(key = "__openpanel__$key") { openPanel(panelMaxWidthDp) }
                     }
                     // FR-R240-10: the closing slot renders at its own tile's position, distinct from
                     // the open slot above — the guard against `closingAfterKey == openAfterKey` stops a

@@ -77,3 +77,28 @@ fun focusDetailRowOpenTargetScrollDelta(
     val maxWithoutClipping = openTileOffsetPx.coerceAtLeast(0f)
     return needed.coerceIn(0f, maxWithoutClipping)
 }
+
+/**
+ * R250 (FR-R250-4) — how wide the panel may actually be once the opening tile has *landed*: the room
+ * between the grown tile's right edge (plus the item gap) and the row's end gutter. Computed from the
+ * tile's measured position after the scroll settled, not from where the row intended to put it — the
+ * stue TV showed a tile landing 66 px right of the content start with the panel sized for a tile at
+ * the content start, so the synopsis ran to the screen's last pixel column. A result below the
+ * declared width narrows the panel; it is never widened past what was declared. [endGutterPx] is the
+ * row's end gutter in the same (content) space as [landedTileOffsetPx] — i.e. `viewportEndOffset −
+ * afterContentPadding`, **not** `viewportEndOffset`, which reaches the screen edge (the root cause of
+ * FR-R250-5's 66 px: the target let the panel end at the screen edge, so the tile stopped short of the
+ * content start by exactly the gutter it had been allowed to spend).
+ */
+fun focusDetailPanelAvailableWidthPx(
+    landedTileOffsetPx: Float,
+    grownTileWidthPx: Float,
+    itemSpacingPx: Float,
+    endGutterPx: Float,
+): Float = endGutterPx - (landedTileOffsetPx + grownTileWidthPx + itemSpacingPx)
+
+/** R250 (FR-R250-4) — the width the panel renders at: the declared width unless the room measured by
+ *  [focusDetailPanelAvailableWidthPx] is smaller (beyond a 2 px rounding tolerance), never below
+ *  [minPx], never above the declared width. */
+fun focusDetailPanelClampedWidthPx(declaredPx: Float, availablePx: Float, minPx: Float): Float =
+    if (availablePx < declaredPx - 2f) availablePx.coerceIn(minPx.coerceAtMost(declaredPx), declaredPx) else declaredPx

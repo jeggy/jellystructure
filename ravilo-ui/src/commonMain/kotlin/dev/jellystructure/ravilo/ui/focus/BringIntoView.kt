@@ -61,3 +61,29 @@ fun rememberEdgeBringIntoViewSpec(peekDp: Dp = 0.dp, topInsetDp: Dp = 0.dp, cent
         }
     }
 }
+
+/**
+ * R250 (FR-R250-6) — pure distance for [rememberGutterBringIntoViewSpec]: a focused item is never
+ * closer than [gutterPx] to either edge of the container. A merely *focused* season pill used to be
+ * brought to the viewport edge (the lazy row's default), inside the content padding — Season 17 sat
+ * 25 px from the screen edge on the stue TV. Selection-driven `scrollToItem` (R201) is unaffected.
+ */
+fun gutterBringIntoViewDistance(offset: Float, size: Float, containerSize: Float, gutterPx: Float): Float = when {
+    offset < gutterPx -> offset - gutterPx                                            // clipped / inside the start gutter → reveal at the gutter
+    offset + size > containerSize - gutterPx -> offset + size - (containerSize - gutterPx)  // inside the end gutter → reveal at the gutter
+    else -> 0f
+}
+
+/** R250 (FR-R250-6) — a horizontal bring-into-view spec whose margin on both sides is [gutter]. */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+fun rememberGutterBringIntoViewSpec(gutter: Dp): BringIntoViewSpec {
+    val density = LocalDensity.current
+    return remember(density, gutter) {
+        val gutterPx = with(density) { gutter.toPx() }
+        object : BringIntoViewSpec {
+            override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float): Float =
+                gutterBringIntoViewDistance(offset, size, containerSize, gutterPx)
+        }
+    }
+}
