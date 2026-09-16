@@ -4,7 +4,7 @@ import dev.jellystructure.ravilo.ui.LocalPlaystateCommands
 import dev.jellystructure.ravilo.ui.LocalReauthRequired
 import dev.jellystructure.ravilo.ui.LocalServerBaseUrl
 import dev.jellystructure.ravilo.ui.components.EpisodeTriptych
-import dev.jellystructure.ravilo.ui.components.LANG_CC
+import dev.jellystructure.ravilo.ui.components.flagFor
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
@@ -109,7 +109,11 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import dev.jellystructure.ravilo.ui.seams.PlayerLifecycleEffect
 import dev.jellystructure.ravilo.ui.seams.PlayerVideoSurface
 import dev.jellystructure.ravilo.ui.seams.RaviloPlayer
+import dev.jellystructure.ravilo.ui.seams.canonicalLanguage
+import dev.jellystructure.ravilo.ui.seams.endonymOf
+import dev.jellystructure.ravilo.ui.seams.isKnownLanguage
 import dev.jellystructure.ravilo.ui.seams.languageName
+import dev.jellystructure.ravilo.ui.seams.sameLanguage
 import dev.jellystructure.ravilo.ui.seams.playerBackdropColor
 import dev.jellystructure.ravilo.ui.seams.playerTapTogglesChrome
 import dev.jellystructure.ravilo.ui.seams.setPointerCursorHidden
@@ -2455,8 +2459,8 @@ internal fun TrackPicker(
     val lang = LocalLang.current
     val groups = if (pickerTab == 0) audioGroups else subGroups
     val selectedFlat = if (pickerTab == 0) selectedAudio else selectedSub
-    val audioFlag = audioGroups.firstOrNull { g -> g.versions.any { it.flatIndex == selectedAudio } }?.language?.lowercase()?.let { LANG_CC[it] }
-    val subFlag = subGroups.firstOrNull { g -> g.versions.any { it.flatIndex == selectedSub } }?.language?.lowercase()?.let { LANG_CC[it] }
+    val audioFlag = flagFor(audioGroups.firstOrNull { g -> g.versions.any { it.flatIndex == selectedAudio } }?.language)
+    val subFlag = flagFor(subGroups.firstOrNull { g -> g.versions.any { it.flatIndex == selectedSub } }?.language)
 
     Box(
         modifier = if (handset) Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp) else Modifier
@@ -2515,6 +2519,8 @@ internal fun TrackPicker(
                             lang = lang,
                             // R238 — so the row can caption itself with the version actually playing.
                             selectedFlat = selectedFlat,
+                            // R247 (FR-R247-5) — a subtitle row never draws the microphone.
+                            isSubtitle = pickerTab == 1,
                             onTap = { onTapLanguage(i) },
                         )
                     }
@@ -2557,7 +2563,7 @@ internal fun TrackPicker(
 @Composable
 private fun PickerCrumbHeader(group: PickerLanguage, colors: RaviloColors, onBack: () -> Unit) {
     val lang = LocalLang.current
-    val flagRes = group.language?.lowercase()?.let { LANG_CC[it] }
+    val flagRes = flagFor(group.language)
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -2637,6 +2643,25 @@ private fun pickerName(language: String?, fallbackLabel: String): String =
     endonym(language) ?: languageName(language) ?: fallbackLabel
 
 /**
+ * R247 (FR-R247-4) — what a level-1 row prints: the primary name and, only for a code nothing
+ * recognises, that code as a secondary `xx` beside it. A recognised code never reaches the screen as
+ * a code. For an unrecognised one the track's own label (the group's first non-blank title) is the
+ * primary and the code is the secondary; with no label at all the code itself is the primary (R206:
+ * a row is never rendered with no name) and nothing is repeated beside it.
+ */
+internal fun pickerRowName(group: PickerLanguage, lang: String): Pair<String, String?> {
+    val code = group.language?.trim()?.lowercase()?.takeIf { it.isNotEmpty() }
+    if (code == null || isKnownLanguage(code)) return groupDisplayName(group, lang) to null
+    val kindWord = when {
+        group.versions.all { it.kind == VariantKind.COMMENTARY } -> t("player.badge_commentary", lang)
+        group.versions.all { it.kind == VariantKind.DESCRIBE } -> t("player.badge_describes_action", lang)
+        else -> null
+    }
+    val primary = group.sampleTitle?.takeIf { it.isNotBlank() } ?: kindWord ?: return code to null
+    return primary to code
+}
+
+/**
  * R195 §A/§B — a [PickerLanguage] group's own display name (level-1 row / level-2 crumb header).
  * `group.language` covers the overwhelming majority of groups; a null-language cluster (untagged
  * tracks — real, e.g. a commentary track with no language tag, per R180's own `pickerName` doc) has
@@ -2650,13 +2675,16 @@ private fun groupDisplayName(group: PickerLanguage, lang: String): String {
     // fall through to a hardcoded "" here, rendering the row with a glyph and no text at all. Fall
     // through to the same kind-word logic used for a null-language cluster instead, and failing that,
     // show the raw code rather than nothing — a picker row is never rendered with no name.
+    // R247 (FR-R247-4) — a recognised code always has a name here (the canonicaliser and the name
+    // table are one list); the code-as-name fallback below is reached only for a code nothing knows,
+    // and then it is the track's own label first, lower-case code last (never the shouting uppercase).
     if (group.language != null) {
         pickerName(group.language, "").takeIf { it.isNotBlank() }?.let { return it }
     }
     return when {
         group.versions.all { it.kind == VariantKind.COMMENTARY } -> t("player.badge_commentary", lang)
         group.versions.all { it.kind == VariantKind.DESCRIBE } -> t("player.badge_describes_action", lang)
-        group.language != null -> group.language.uppercase()
+        group.language != null -> group.sampleTitle?.takeIf { it.isNotBlank() } ?: group.language.trim().lowercase()
         else -> t("player.unnamed", lang)
     }
 }
@@ -2694,6 +2722,7 @@ private fun PickerLanguageRow(
     colors: RaviloColors,
     lang: String,
     selectedFlat: Int,
+    isSubtitle: Boolean,
     onTap: () -> Unit,
 ) {
     val single = group.versions.size <= 1
@@ -2714,11 +2743,17 @@ private fun PickerLanguageRow(
         horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         PickerTick(selected = selected, colors = colors)
-        PickerGlyphBox(language = group.language, isOff = group.isOff, isUnnamed = group.isUnnamed)
+        PickerGlyphBox(language = group.language, isOff = group.isOff, isUnnamed = group.isUnnamed, isSubtitle = isSubtitle)
         Column(modifier = Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                val name = if (group.isOff) str("off") else if (group.isUnnamed) str("player.unnamed") else groupDisplayName(group, lang)
+                val (name, code) = when {
+                    group.isOff -> str("off") to null
+                    group.isUnnamed -> str("player.unnamed") to null
+                    else -> pickerRowName(group, lang)
+                }
                 Text(name, color = colors.text, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                // R247 (FR-R247-4) — an unrecognised code rides beside the label in the secondary style.
+                if (code != null) Text(code, color = colors.textSecondary, fontSize = 11.sp)
             }
             if (badges.isNotEmpty()) PickerBadgeRow(badges, colors)
         }
@@ -2748,7 +2783,7 @@ private fun PickerVersionRow(
     lang: String,
     onTap: () -> Unit,
 ) {
-    val headerFlag = group.language?.lowercase()?.let { LANG_CC[it] }
+    val headerFlag = flagFor(group.language)
     val regionFlag = version.region?.flag?.takeIf { it != headerFlag }
     val baseName = if (group.isUnnamed) t("player.version_n", lang, mapOf("n" to (version.ordinal + 1).toString()))
         else groupDisplayName(group, lang)
@@ -2842,8 +2877,8 @@ private fun PickerBadgeRow(badges: List<String>, colors: RaviloColors) {
 // Flag / glyph — never a codec or delivery-method cue (FR-RV-ASP1-2). §E — Unnamed gets a neutral
 // globe placeholder where the flag would be, distinct from Off's crossed-out glyph.
 @Composable
-private fun PickerGlyphBox(language: String?, isOff: Boolean, isUnnamed: Boolean) {
-    val flagRes = if (!isOff && !isUnnamed) language?.lowercase()?.let { LANG_CC[it] } else null
+private fun PickerGlyphBox(language: String?, isOff: Boolean, isUnnamed: Boolean, isSubtitle: Boolean = false) {
+    val flagRes = if (!isOff && !isUnnamed) flagFor(language) else null
     Box(modifier = Modifier.size(width = 40.dp, height = 30.dp), contentAlignment = Alignment.Center) {
         when {
             flagRes != null -> Image(
@@ -2865,6 +2900,8 @@ private fun PickerGlyphBox(language: String?, isOff: Boolean, isUnnamed: Boolean
                 when {
                     isOff -> PickerGlyphOff(Modifier.size(20.dp), tint)
                     isUnnamed -> PickerGlyphGlobe(Modifier.size(20.dp), tint)
+                    // R247 (FR-R247-5) — a subtitle row with no flag says "captions", never "audio".
+                    isSubtitle -> PickerGlyphCaptions(Modifier.size(20.dp), tint)
                     else -> PickerGlyphMic(Modifier.size(20.dp), tint)
                 }
             }
@@ -2915,6 +2952,25 @@ private fun PickerGlyphMic(modifier: Modifier, tint: Color) {
             style = Stroke(strokeW, cap = StrokeCap.Round),
         )
         drawLine(tint, Offset(w * 0.5f, h * 0.68f), Offset(w * 0.5f, h * 0.88f), strokeW, StrokeCap.Round)
+    }
+}
+
+/** R247 (FR-R247-5) — captions glyph for a subtitle row with no flag: the design's `I.cc` shape, a
+ *  rounded box with two text lines inside, drawn in code the way [PickerGlyphMic] is. */
+@Composable
+private fun PickerGlyphCaptions(modifier: Modifier, tint: Color) {
+    Canvas(modifier) {
+        val w = size.width; val h = size.height
+        val strokeW = w * 0.10f
+        drawRoundRect(
+            color = tint,
+            topLeft = Offset(w * 0.08f, h * 0.20f),
+            size = Size(w * 0.84f, h * 0.60f),
+            cornerRadius = CornerRadius(w * 0.14f),
+            style = Stroke(strokeW, cap = StrokeCap.Round),
+        )
+        drawLine(tint, Offset(w * 0.26f, h * 0.44f), Offset(w * 0.74f, h * 0.44f), strokeW, StrokeCap.Round)
+        drawLine(tint, Offset(w * 0.26f, h * 0.60f), Offset(w * 0.58f, h * 0.60f), strokeW, StrokeCap.Round)
     }
 }
 
@@ -3394,33 +3450,9 @@ private fun Int.pad2() = toString().padStart(2, '0')
  * elsewhere (e.g. [pickerName]'s fallback for a language the endonym map doesn't cover). Covers the
  * library's top languages (verified via a DB scan of the real library during the R180 dev review).
  */
-private fun endonym(code: String?): String? =
-    code?.lowercase()?.trim()?.let { RAVILO_ENDONYMS[it] }
-
-private val RAVILO_ENDONYMS: Map<String, String> = mapOf(
-    "en" to "English", "eng" to "English",
-    "da" to "Dansk", "dan" to "Dansk",
-    "fo" to "Føroyskt", "fao" to "Føroyskt",
-    "sv" to "Svenska", "swe" to "Svenska",
-    "no" to "Norsk", "nor" to "Norsk", "nb" to "Norsk", "nob" to "Norsk",
-    "de" to "Deutsch", "ger" to "Deutsch", "deu" to "Deutsch",
-    "fr" to "Français", "fre" to "Français", "fra" to "Français",
-    "es" to "Español", "spa" to "Español",
-    "fi" to "Suomi", "fin" to "Suomi",
-    "nl" to "Nederlands", "dut" to "Nederlands", "nld" to "Nederlands",
-    "zh" to "中文", "chi" to "中文", "zho" to "中文",
-    "pt" to "Português", "por" to "Português",
-    "it" to "Italiano", "ita" to "Italiano",
-    "pl" to "Polski", "pol" to "Polski",
-    "ru" to "Русский", "rus" to "Русский",
-    "ja" to "日本語", "jpn" to "日本語",
-    "ko" to "한국어", "kor" to "한국어",
-    "ar" to "العربية", "ara" to "العربية",
-    "hi" to "हिन्दी", "hin" to "हिन्दी",
-    "cs" to "Čeština", "cze" to "Čeština", "ces" to "Čeština",
-    "tr" to "Türkçe", "tur" to "Türkçe",
-    "is" to "Íslenska", "isl" to "Íslenska", "ice" to "Íslenska",
-)
+private fun endonym(code: String?): String? = endonymOf(code)
+// R247 (FR-R247-3) — the endonym column lives in seams/LanguageIdentity.kt beside the English one,
+// keyed by canonical code; `RAVILO_ENDONYMS` (24 raw-keyed entries) is gone.
 
 private enum class TrackVariant { SDH, DESCRIBES_ACTION, COMMENTARY, NONE }
 
@@ -3499,9 +3531,12 @@ internal fun audioBadges(track: PlayerAudioTrack, originalLanguage: String?, lan
         TrackVariant.DESCRIBES_ACTION -> badges += t("player.badge_describes_action", lang)
         else -> {}
     }
+    // R247 (FR-R247-6) — identity, not string equality: jellystructure's `originalLanguage` is `en`,
+    // Jellyfin's stream code is `eng`, and `equals(ignoreCase)` badged every original-language track
+    // on every 3-letter-coded title Dubbed.
     val dubbed = !isOriginalMarked(track.label) &&
         originalLanguage != null && track.language != null &&
-        !originalLanguage.equals(track.language, ignoreCase = true)
+        !sameLanguage(originalLanguage, track.language)
     if (dubbed) badges += t("player.badge_dubbed", lang)
     return badges
 }
@@ -3550,11 +3585,11 @@ private fun variantKind(title: String?, forced: Boolean): VariantKind = when {
 internal data class RegionInfo(val code: String, val name: String, val flag: DrawableResource?)
 
 private val REGION_TABLE: List<Pair<Regex, RegionInfo>> = listOf(
-    Regex("""\bcastilian\b|\bspain\b|\bes[- ]es\b""", RegexOption.IGNORE_CASE) to RegionInfo("es", "España", LANG_CC["es"]),
+    Regex("""\bcastilian\b|\bspain\b|\bes[- ]es\b""", RegexOption.IGNORE_CASE) to RegionInfo("es", "España", flagFor("es")),
     Regex("""\blatin american?\b|\bes[- ]419\b""", RegexOption.IGNORE_CASE) to RegionInfo("419", "Latinoamérica", null),
     Regex("""\bbrazil(ian)?\b|\bpt[- ]br\b""", RegexOption.IGNORE_CASE) to RegionInfo("br", "Brasil", null),
-    Regex("""\bportugal\b|\biberian\b|\bpt[- ]pt\b""", RegexOption.IGNORE_CASE) to RegionInfo("pt", "Portugal", LANG_CC["pt"]),
-    Regex("""\bsimplified\b|\bzh[- ]hans\b|\bzh[- ]cn\b""", RegexOption.IGNORE_CASE) to RegionInfo("cn", "简体", LANG_CC["zh"]),
+    Regex("""\bportugal\b|\biberian\b|\bpt[- ]pt\b""", RegexOption.IGNORE_CASE) to RegionInfo("pt", "Portugal", flagFor("pt")),
+    Regex("""\bsimplified\b|\bzh[- ]hans\b|\bzh[- ]cn\b""", RegexOption.IGNORE_CASE) to RegionInfo("cn", "简体", flagFor("zh")),
     Regex("""\btraditional\b|\bzh[- ]hant\b|\bzh[- ]tw\b""", RegexOption.IGNORE_CASE) to RegionInfo("tw", "繁體", null),
     Regex("""\bcanad(a|ian)\b""", RegexOption.IGNORE_CASE) to RegionInfo("ca", "Canada", null),
     Regex("""\beuropean\b""", RegexOption.IGNORE_CASE) to RegionInfo("eu", "European", null),
@@ -3618,6 +3653,9 @@ internal data class PickerLanguage(
      *  title text at all — the only way that can genuinely happen). Level 1 shows "Unnamed" + a neutral
      *  globe glyph instead of a flag; level 2 numbers them "Version 1"…"Version n". */
     val isUnnamed: Boolean,
+    /** R247 (FR-R247-4) — the group's first non-blank track title, the primary label for a language
+     *  code nothing recognises (the code itself then rides beside it in the secondary style). */
+    val sampleTitle: String? = null,
 )
 
 /** R246 (FR-R246-5) — one string per track set, so a set that changed after the first resolve is detectable. */
@@ -3667,13 +3705,8 @@ internal fun resolveTrackChoice(
     // a plain `.equals(lang, ignoreCase = true)` never matches "da" against a remembered "dan", so the
     // remembered tier silently misses on the very next episode and falls through to the source's own
     // (often unrelated) default track — reported live as "it remembers on this episode, not the next."
-    // languageName() (already used for display) doubles as the canonicalizer for free.
-    fun sameLanguage(a: String?, b: String?): Boolean {
-        if (a == null || b == null) return a == b
-        val na = languageName(a)
-        val nb = languageName(b)
-        return if (na != null && nb != null) na == nb else a.equals(b, ignoreCase = true)
-    }
+    // R247 (FR-R247-2) — the comparison is the seam's `sameLanguage()` (canonical identity), no
+    // longer a local `languageName(a) == languageName(b)` that missed every language the table lacked.
 
     // R235 (FR-R235-1/4) — within a language group, automatic selection (no exact remembered variant
     // match) must never land on a signs-only/commentary/audio-description version when a PLAIN one
@@ -3740,7 +3773,10 @@ internal fun resolveTrackChoice(
  * never renumbers the underlying tracks.
  */
 internal fun buildLanguageGroups(entries: List<PickerEntryInput>): List<PickerLanguage> {
-    val byLanguage = entries.withIndex().groupBy { (_, e) -> e.language?.lowercase() }
+    // R247 (FR-R247-2) — grouped by canonical identity, so a file that mixes `da` and `dan` (or `sr`
+    // and `hbs-srp`) is one language with several versions, and R195's "indistinguishable" test runs
+    // across them (open question 2: yes).
+    val byLanguage = entries.withIndex().groupBy { (_, e) -> canonicalLanguage(e.language) }
     // Group order = each language's first-occurrence position in the original track list (not
     // alphabetical) — preserves the pre-R195 flat picker's stream order, which callers/track
     // authoring already treat as meaningful (e.g. the source's own primary-language-first ordering).
@@ -3773,10 +3809,15 @@ internal fun buildLanguageGroups(entries: List<PickerEntryInput>): List<PickerLa
                 )
             }
         }.sortedBy { it.flatIndex } // preserve original stream order within the group after re-flattening clusters
+        // R247 (FR-R247-4) — a platform's last-resort label is the code itself uppercased (`QQQ`); that is
+        // not a title, so it never becomes the row's primary — the code rides in the secondary style once.
+        val sampleTitle = indexed.firstNotNullOfOrNull { (_, e) ->
+            e.title?.trim()?.takeIf { it.isNotEmpty() && !it.equals(e.language?.trim(), ignoreCase = true) }
+        }
         val isUnnamed = versions.size > 1 && versions.all {
             it.kind == VariantKind.PLAIN && it.region == null && !it.hadTitleText
         }
-        PickerLanguage(language, isOff = false, versions = versions, isUnnamed = isUnnamed)
+        PickerLanguage(language, isOff = false, versions = versions, isUnnamed = isUnnamed, sampleTitle = sampleTitle)
     }
 }
 

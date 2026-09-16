@@ -8,9 +8,12 @@
 
 ## Status
 
-`Planned` — written 2026-09-16 from the live stue-TV sweep
-(`specs/research-reports/stue-tv-test-sweep-2026-09-16.md`, findings F7 and F14). Not dev-reviewed,
-not built. Client-only (`ravilo-ui`).
+`✓ Built` — written 2026-09-16 from the live stue-TV sweep
+(`specs/research-reports/stue-tv-test-sweep-2026-09-16.md`, findings F7 and F14), **implemented
+2026-09-16** (see §Implementation notes). Not dev-reviewed, not device-tested. Client-only
+(`ravilo-ui`). `:ravilo-ui:compileDebugKotlinAndroid` + `:ravilo-ui:compileKotlinWasmJs` clean;
+`LanguageIdentityTest` (6) + `PlayerScreenLanguageIdentityTest` (6) green, and the R246
+`PlayerScreenTrackResolutionTest` (20) and R239 `AudioFlagStripTest` still pass on the new comparison.
 
 **Numbering:** verified against `STATUS.md` on 2026-09-16 — Ravilo taken through R245, R246 taken by
 the sibling spec written the same day.
@@ -114,3 +117,49 @@ entries into one group.
   script; recommendation is `Srpski` with `(ћирилица)`/`(latinica)` only if both ever appear.
 - Whether the Unnamed group (R195 §3.8) should also key on the canonical code so two untitled tracks
   in `da` and `dan` count as one cluster. Probably yes; small.
+
+## Implementation notes (2026-09-16)
+
+- **FR-R247-1 — `seams/LanguageIdentity.kt`** (new): `canonicalLanguage(code)` trims, lower-cases,
+  splits BCP-47 subtags (`-`/`_`), takes the individual language out of ExoPlayer's `hbs-*` / `sh-*`
+  macrolanguage form, drops region/script subtags (`pt-BR`, `zh-Hant-TW`, `ar-eg`, `ms-my` → base), and
+  maps every ISO-639-2/B, /T and deprecated 639-1 alias (`iw`, `in`, `ji`) to one key via
+  `ISO_ALIASES`; an unrecognised code comes back unchanged, never null for a non-blank input.
+  `resolveRegion` still reads the raw title — region was never in the language code here.
+- **FR-R247-2 — `sameLanguage(a, b)`** is `canonicalLanguage(a) == canonicalLanguage(b)` in the seam;
+  the local copy inside `resolveTrackChoice` is gone, and the resolver's tiers, `audioBadges`'
+  Dubbed rule, `buildLanguageGroups`' grouping key and `countFlagStrip` (R239) all use canonical
+  identity. Open question 2 is answered *yes* for free: grouping by canonical key means R195's
+  "indistinguishable" test already runs across a `da`+`dan` pair.
+- **FR-R247-3 — one table.** `LANGUAGE_TABLE` (canonical key → English name + endonym) replaces
+  `LANGUAGE_NAMES` (`RaviloPlayer.kt`) and `RAVILO_ENDONYMS` (`PlayerScreen.kt`); `languageName()` and
+  the new `endonymOf()` look up through `canonicalLanguage` first. A test asserts every alias target has
+  a name. **Codes added** (every distinct `language` value in the production `media.json` scan on
+  2026-09-16 that the old 24-entry tables lacked): `el` (gre/ell), `sr` (srp/scc, and `hbs-srp`), `hr`
+  (hrv/scr, `hbs-hrv`), `bs`, `cnr`, `hu`, `ro` (rum/ron), `sk` (slo/slk), `sl`, `bg`, `uk`, `he`
+  (heb/iw), `th`, `vi`, `id` (ind/in), `ms` (may/msa), `lv`, `lt`, `et`, `te`, `ta`, `mk` (mac/mkd),
+  `tl` (fil/tgl), `ca`, `gl`, `eu` (baq/eus), `ml`, `kn`, `mn`, `bn`, `ur`, `pa`, `ne`, `mr`, `gu`, `si`,
+  `sq` (alb/sqi), `ty` (tah), `fa` (per/fas), `ky`, `km`, `kk`, `ka` (geo/kat), `az`, `hy` (arm/hye),
+  `arc`, `cpe`, `zxx`; plus the spec's own B/T pairs not yet in the library (`my`, `cy`, `bo`, `mi`)
+  and `yi`, `la`, `af`, `sw`, `ga`, `lb`, `mt`, `be`. Serbian's endonym is Latin `Srpski` (open
+  question 1's recommendation). `cpe`, `zxx` and `und` carry an English name only.
+- **FR-R247-4** — `pickerRowName(group, lang)` (internal, tested): a recognised code always renders
+  its endonym; only a code nothing knows falls to the group's first real track title as the primary
+  with the lower-case code beside it in the secondary style (11 sp, `textSecondary`). A platform's
+  last-resort label — the code itself uppercased (`RaviloPlayerAndroid`/`RaviloPlayerWasm`) — is not
+  treated as a title, so such a row prints the code once, never `QQQ qqq`. `PickerLanguage` gained
+  `sampleTitle` (defaulted, so R195's constructors are untouched). The old uppercase-code primary in
+  `groupDisplayName` is gone.
+- **FR-R247-5** — `PickerGlyphBox` takes `isSubtitle`; a subtitle row with no flag draws the new
+  `PickerGlyphCaptions` (rounded box + two text lines, Canvas-drawn like `PickerGlyphMic`), the mic
+  stays for audio rows. Every flag lookup in the picker (level-1 row, crumb header, version rows, the
+  tab-header flags, the R195 region table) goes through the new `flagFor(code)` in `AudioFlagStrip.kt`
+  (`LANG_CC[canonical] ?: LANG_CC[raw]`), so `hbs-srp` finds `flag_rs`. No new flag assets.
+- **FR-R247-6** — `audioBadges` uses `sameLanguage`; the test reproduces *It's Always Sunny*
+  (`originalLanguage: en`, stream `eng`) and gets Default · Surround 5.1 only, while a `dan` dub of an
+  `en` title is still Dubbed.
+- **FR-R247-7** — `LanguageIdentityTest` (table of every on-device string and every production code)
+  and `PlayerScreenLanguageIdentityTest` (Dubbed, `da`+`dan` merge, row naming). Not touched: the
+  browse facet's `languageName(value) ?: value` (benefits from the wider table by itself) and the
+  Settings UI-language picker's own endonyms (a different, four-entry list).
+- **Verification 2/3 (stue TV)** not run — no device this session.
