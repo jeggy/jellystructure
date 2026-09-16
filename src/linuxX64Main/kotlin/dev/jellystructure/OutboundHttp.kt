@@ -97,8 +97,10 @@ object OutboundHttp {
         if (currentGateClass() == GateClassKind.BACKGROUND) withBackgroundPermit(block) else withInteractivePermit(block)
 
     private suspend fun <T> withInteractivePermit(block: suspend () -> T): T {
+        val recorder = kotlin.coroutines.coroutineContext[dev.jellystructure.ops.GateWaitRecorder]
         if (reserved.tryAcquire()) {
             reservedInFlight.incrementAndGet()
+            recorder?.acquisitions = (recorder?.acquisitions ?: 0) + 1
             try {
                 return block()
             } finally {
@@ -107,11 +109,14 @@ object OutboundHttp {
             }
         }
         interactiveWaiting.incrementAndGet()
+        val waitStart = TimeSource.Monotonic.markNow()
         try {
             if (!acquireWithTimeout(shared, INTERACTIVE_ACQUIRE_TIMEOUT_MS)) {
                 interactiveTimeouts.incrementAndGet()
+                recorder?.let { it.waitedMs += waitStart.elapsedNow().inWholeMilliseconds; it.timedOut = true }
                 throw GateTimeoutException("OutboundHttp saturated (interactive, ${INTERACTIVE_ACQUIRE_TIMEOUT_MS}ms)")
             }
+            recorder?.let { it.waitedMs += waitStart.elapsedNow().inWholeMilliseconds; it.acquisitions++ }
         } finally {
             interactiveWaiting.decrementAndGet()
         }
@@ -125,12 +130,16 @@ object OutboundHttp {
     }
 
     private suspend fun <T> withBackgroundPermit(block: suspend () -> T): T {
+        val recorder = kotlin.coroutines.coroutineContext[dev.jellystructure.ops.GateWaitRecorder]
         backgroundWaiting.incrementAndGet()
+        val waitStart = TimeSource.Monotonic.markNow()
         try {
             if (!acquireWithTimeout(shared, BACKGROUND_ACQUIRE_TIMEOUT_MS)) {
                 backgroundTimeouts.incrementAndGet()
+                recorder?.let { it.waitedMs += waitStart.elapsedNow().inWholeMilliseconds; it.timedOut = true }
                 throw GateTimeoutException("OutboundHttp saturated (background, ${BACKGROUND_ACQUIRE_TIMEOUT_MS}ms)")
             }
+            recorder?.let { it.waitedMs += waitStart.elapsedNow().inWholeMilliseconds; it.acquisitions++ }
         } finally {
             backgroundWaiting.decrementAndGet()
         }

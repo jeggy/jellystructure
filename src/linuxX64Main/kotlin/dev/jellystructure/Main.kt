@@ -219,7 +219,7 @@ fun main() = runBlocking {
     val playbackStartSampleStore = dev.jellystructure.tv.PlaybackStartSampleStore(db)
     val detailService = DetailService(mediaStore, jellyfinClient, configStore, artworkDownloader, mediaSegmentStore, raviloDeviceService, playbackStartSampleStore)
     val playbackQoeStore = dev.jellystructure.tv.PlaybackQoeStore(db)
-    val playbackService = PlaybackService(mediaStore, jellyfinClient, configStore, playbackQoeStore, playbackStartSampleStore, raviloDeviceService, castService)
+    val playbackService = PlaybackService(mediaStore, jellyfinClient, configStore, playbackQoeStore, playbackStartSampleStore, raviloDeviceService, castService, writerScope = rootScope)
     val mediaHistory = MediaHistory(db)
     val imageProxyService = dev.jellystructure.tv.RaviloArtworkService(dataDir, configStore, mediaStore, artworkDownloader)
     val channelLogoStore = dev.jellystructure.tv.ChannelLogoStore(dataDir)

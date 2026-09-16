@@ -99,6 +99,8 @@ class HomeFeedService(
     // *over* this list (FR-R219-6), not a reason to rebuild it.
     private data class ContinueListEntry(val list: List<ContinueEntry>, val builtAt: Long, val feedVer: Long, val allowedHash: Int)
     private val continueListCache = HashMap<String, ContinueListEntry>()
+    /** Phase 219 (FR-219-4) — the age of each user's last successful Continue Watching build, for /api/health. */
+    fun continueRefreshAges(): Map<String, Long> { val now = nowMs(); return continueListCache.mapValues { now - it.value.builtAt } }
 
     // Phase 206 (FR-206-3) — the channel rail cached once per user, same shape/signal as [feedCache],
     // shared by every entry point that needs it ([buildHomeFeed], [getChannels], [getChannelFeed]) so
@@ -842,15 +844,28 @@ class HomeFeedService(
         // HttpTimeout. On timeout the asyncs are cancelled and this build is untrustworthy (R231: `null`,
         // never cached) — the SWR cache in [canonicalContinueList] falls back to the previous good value
         // instead. All four fetches are independent — run them in parallel.
+        // Phase 219 (FR-219-4) — the permit wait is measured apart from the round trip, so the log can
+        // say which of the two things happened when this build times out.
+        val recorder = dev.jellystructure.ops.GateWaitRecorder()
         val fetched = withTimeoutOrNull(CONTINUE_TIMEOUT_MS) {
-            coroutineScope {
-                val resumeDeferred   = async { jellyfinClient.getResumeItemsAll(jellyfinUrl, token, device.jellyfinUserId) }
-                val nextUpDeferred   = async { jellyfinClient.getNextUp(jellyfinUrl, token, device.jellyfinUserId) }
-                val finishedDeferred = async { jellyfinClient.getRecentlyPlayedAll(jellyfinUrl, token, device.jellyfinUserId) }
-                val touchedDeferred  = async { jellyfinClient.getRecentlyTouched(jellyfinUrl, token, device.jellyfinUserId, sinceTouched) }
-                listOf(resumeDeferred.await(), nextUpDeferred.await(), finishedDeferred.await(), touchedDeferred.await())
+            kotlinx.coroutines.withContext(recorder) {
+                coroutineScope {
+                    val resumeDeferred   = async { jellyfinClient.getResumeItemsAll(jellyfinUrl, token, device.jellyfinUserId) }
+                    val nextUpDeferred   = async { jellyfinClient.getNextUp(jellyfinUrl, token, device.jellyfinUserId) }
+                    val finishedDeferred = async { jellyfinClient.getRecentlyPlayedAll(jellyfinUrl, token, device.jellyfinUserId) }
+                    val touchedDeferred  = async { jellyfinClient.getRecentlyTouched(jellyfinUrl, token, device.jellyfinUserId, sinceTouched) }
+                    listOf(resumeDeferred.await(), nextUpDeferred.await(), finishedDeferred.await(), touchedDeferred.await())
+                }
             }
-        } ?: return@coroutineScope null
+        }
+        if (fetched == null) {
+            if (recorder.acquisitions == 0 || recorder.waitedMs >= CONTINUE_TIMEOUT_MS / 2) {
+                Logger.info("Continue Watching refresh for ${device.jellyfinUsername} skipped — outbound pool busy (waited ${recorder.waitedMs} ms for a permit), will retry in ${CONTINUE_REFRESH_INTERVAL_MS / 1000} s", "tv")
+            } else {
+                Logger.warn("Continue Watching refresh for ${device.jellyfinUsername} timed out after ${CONTINUE_TIMEOUT_MS} ms at Jellyfin (permit wait ${recorder.waitedMs} ms)", "tv")
+            }
+            return@coroutineScope null
+        }
         val (resumeItems, nextUpItems, finishedItems, touchedItems) = fetched
 
         val byJellyfinId = libraryAll.asSequence().mapNotNull { mi -> mi.jellyfinId?.let { it to mi } }.toMap()

@@ -310,7 +310,39 @@ class PlaybackService(
     private val raviloDeviceService: RaviloDeviceService,
     // Phase 218 (FR-218-8) — the concurrent-cast ceiling; null in tests that never cast.
     private val castService: CastService? = null,
+    // Phase 219 (FR-219-2) — when given a scope, progress/stop writes are queued on a PlaybackWriter
+    // running there and retried until Jellyfin acks; null (tests) keeps the direct inline path.
+    writerScope: kotlinx.coroutines.CoroutineScope? = null,
 ) {
+    private val writer: PlaybackWriter? = writerScope?.let { PlaybackWriter(it, JellyfinSink()) }
+
+    /** Phase 219 — what one queued write does: the same token + identity + ids the inline path used. */
+    private inner class JellyfinSink : PlaybackSink {
+        override suspend fun progress(w: PlaybackWriter.PendingWrite): Boolean {
+            val jellyfinBase = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
+            val token = jellyfinClient.tvToken(jellyfinBase, w.device, configStore.current.apiKeys.jellyfinToken)
+            return jellyfinClient.postPlaybackProgress(
+                jellyfinBase, token, w.jellyfinId, w.positionMs * TICKS_PER_MS, w.isPaused, w.jellyfinId,
+                JellyfinDeviceIdentity.forDevice(w.device), playSessionIdFor(w.device, w.jellyfinId),
+            )
+        }
+        override suspend fun stop(w: PlaybackWriter.PendingWrite): Boolean {
+            val jellyfinBase = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
+            val token = jellyfinClient.tvToken(jellyfinBase, w.device, configStore.current.apiKeys.jellyfinToken)
+            val identity = JellyfinDeviceIdentity.forDevice(w.device)
+            val ok = jellyfinClient.postPlaybackStopped(
+                jellyfinBase, token, w.jellyfinId, w.positionMs * TICKS_PER_MS, w.jellyfinId, identity, playSessionIdFor(w.device, w.jellyfinId),
+            )
+            // Phase 180 — release the encode once the stop has landed (idempotent; a release for a
+            // session that never transcoded or already ended is a success, not an error).
+            if (ok && w.jellyfinPlaySessionId != null) jellyfinClient.stopActiveEncoding(jellyfinBase, token, identity, w.jellyfinPlaySessionId)
+            return ok
+        }
+    }
+
+    /** Phase 219 (FR-219-4) — for `/api/health`. */
+    suspend fun writerStats(): PlaybackWriter.Stats? = writer?.stats()
+
     /**
      * Security fix (2026-08-02 review, finding M4) — Detail/Browse/Home all gate on
      * `MediaItem.visibleTo(device)` (library allow-list + Jellyfin AllowedTags/BlockedTags), but
@@ -466,6 +498,9 @@ class PlaybackService(
             Logger.info("Ignoring progress for already-stopped playback item=$jellyfinId device=${device.deviceId}", "tv")
             return
         }
+        // Phase 219 (FR-219-2) — queued and retried by the writer; the route answers at once.
+        val w = writer
+        if (w != null) { w.enqueueProgress(device, jellyfinId, positionMs, isPaused); return }
         val jellyfinBase = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
         val token = jellyfinClient.tvToken(jellyfinBase, device, configStore.current.apiKeys.jellyfinToken)
         jellyfinClient.reportPlaybackProgress(
@@ -518,6 +553,10 @@ class PlaybackService(
         positionMs: Long,
         jellyfinPlaySessionId: String?,
     ) {
+        // Phase 219 (FR-219-2) — the stop is the write that must land: queued, retried past the
+        // client's disconnect, and the encode released once it has (JellyfinSink.stop).
+        val w = writer
+        if (w != null) { w.enqueueStop(device, jellyfinId, positionMs, jellyfinPlaySessionId); return }
         val jellyfinBase = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
         val token = jellyfinClient.tvToken(jellyfinBase, device, configStore.current.apiKeys.jellyfinToken)
         val identity = JellyfinDeviceIdentity.forDevice(device)
