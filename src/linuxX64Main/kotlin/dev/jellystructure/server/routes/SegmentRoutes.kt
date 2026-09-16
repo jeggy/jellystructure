@@ -21,6 +21,7 @@ import dev.jellystructure.model.MediaKind
 import dev.jellystructure.model.Track
 import dev.jellystructure.model.TrackKind
 import dev.jellystructure.model.fileDurationMs
+import dev.jellystructure.model.SegmentEditRules
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.request.receive
 import io.ktor.server.response.respond
@@ -298,6 +299,11 @@ fun Route.segmentRoutes(store: MediaStore, segmentStore: MediaSegmentStore, conf
                 return@put call.respond(HttpStatusCode.UnprocessableEntity, mapOf("error" to reason))
             }
             val existing = segmentStore.getSegment(itemId, episodeKey, episodeNumber, kind)
+            // Phase 223 (FR-223-6) — the neighbour rule, the same function the client clamps a drag with.
+            val others = segmentStore.segmentsForEpisode(itemId, episodeKey, episodeNumber).filter { it.kind != kind }
+            validateNeighbours(kind, body.startMs, body.endMs, existing, others, unitDurationMs)?.let { reason ->
+                return@put call.respond(HttpStatusCode.UnprocessableEntity, mapOf("error" to reason))
+            }
             // Phase 189 (FR-189-4) — upsertSegment is INSERT OR REPLACE, and `checked` is derived from
             // whether ANY row has a non-null checked_at (see this file's `checked` computation below):
             // preserving only `locked` and leaving `checkedAt` at its null default silently un-confirmed
@@ -650,6 +656,16 @@ internal fun validateSegmentEdit(kind: String, startMs: Long, endMs: Long?, dura
     durationMs != null && endMs != null && endMs > durationMs + EDIT_PAST_END_TOLERANCE_MS -> "end is past the end of the file (${fmtMs(durationMs)})"
     else -> null
 }
+
+/** Phase 223 (FR-223-6) — [SegmentEditRules] against the unit's stored rows. An unmeasured file leaves
+ *  open-ended credits unbounded rather than pretending they are a point. */
+internal fun validateNeighbours(kind: String, startMs: Long, endMs: Long?, existing: MediaSegmentRow?, others: List<MediaSegmentRow>, durationMs: Long?): String? =
+    SegmentEditRules.acceptEdit(
+        before = existing?.let { SegmentEditRules.Marker(it.kind, it.startMs, it.endMs) },
+        after = SegmentEditRules.Marker(kind, startMs, endMs),
+        others = others.map { SegmentEditRules.Marker(it.kind, it.startMs, it.endMs) },
+        durationMs = durationMs?.takeIf { it > 0 } ?: SegmentEditRules.UNBOUNDED_MS,
+    )
 
 private fun fmtMs(ms: Long): String {
     val s = ms / 1000

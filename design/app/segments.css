@@ -84,7 +84,10 @@
 /* .seg (timeline segment bars) is the selector that caused the live incident above — position:absolute;
    top:0;bottom:0 turned wf.css's unrelated .seg (the sidebar theme-picker's segmented-control component)
    into a full-height overlay the instant this file got wired into index.html on every page. */
-.sx .track .seg{position:absolute;top:0;bottom:0;display:flex;align-items:center;justify-content:center;font-size:10.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:#0d1017;cursor:grab;overflow:hidden;white-space:nowrap}
+/* Phase 223 — the bar no longer clips: its handles hang half outside it (left:-6px) and a marker a few
+   seconds long is a sliver, so clipping to the bar made both handles unreachable; the label clips instead. */
+.sx .track .seg{position:absolute;top:0;bottom:0;display:flex;align-items:center;justify-content:center;font-size:10.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:#0d1017;cursor:grab;overflow:visible;white-space:nowrap}
+.sx .track .seg .sl{max-width:100%;overflow:hidden;text-overflow:ellipsis;pointer-events:none}
 .sx .track .seg .h{position:absolute;top:50%;width:11px;height:28px;border-radius:4px;transform:translateY(-50%);box-shadow:0 2px 8px rgba(0,0,0,.5);cursor:ew-resize}
 .sx .track .seg .h.l{left:-6px}.sx .track .seg .h.r{right:-6px}
 .sx .track .seg.lk{cursor:default}
@@ -233,3 +236,27 @@ body.sxpage{background:var(--bg)}
 .sxtoast b{color:#fff;font-weight:600}
 .sxtoast.out{opacity:0;transform:translateY(8px)}
 #toasts{position:fixed;right:20px;bottom:20px;display:flex;flex-direction:column;gap:8px;z-index:60;pointer-events:none}
+
+/* ---------- Phase 223 — dragging: one engine for every pointer ---------- */
+/* Body slides, handles trim, empty space scrubs; the zoom strip is a second track. touch-action:none so a
+   finger drags instead of scrolling; the hit areas grow on a coarse pointer while the paint stays 11 px. */
+.sx .tl{position:relative}
+.sx .track,.sx .wave{touch-action:none}
+.sx .track .seg .h::before{content:'';position:absolute;inset:-6px -8px}
+.sx .track .seg.dragging,.sx .wave .zseg.dragging{filter:brightness(1.15)}
+.sx .dragtip{position:absolute;z-index:6;transform:translateX(-50%);padding:3px 8px;border-radius:6px;background:#0d1017;color:#e6e9f2;border:1px solid rgba(255,255,255,.18);font-family:'JetBrains Mono',monospace;font-size:11px;white-space:nowrap;pointer-events:none;box-shadow:0 4px 14px rgba(0,0,0,.5)}
+.sx .dragtip b{color:#8ee6c3;font-weight:600}
+.sx .dragtip.stop b{color:#f7ce85}
+.sx .wave.zoomable{cursor:crosshair}
+.sx .wave .zseg{position:absolute;top:0;bottom:0;border-radius:3px;cursor:grab;z-index:3}
+.sx .wave .zseg.lk{cursor:default}
+.sx .wave .zseg.on{box-shadow:inset 0 0 0 2px rgba(255,255,255,.55)}
+.sx .wave .zseg .h{position:absolute;top:50%;width:11px;height:28px;border-radius:4px;transform:translateY(-50%);box-shadow:0 2px 8px rgba(0,0,0,.5);cursor:ew-resize}
+.sx .wave .zseg .h.l{left:-6px}.sx .wave .zseg .h.r{right:-6px}
+.sx .wave .zseg .h::before{content:'';position:absolute;inset:-6px -8px}
+.sx .wave .zplay{position:absolute;top:0;bottom:0;width:2px;background:#fff;box-shadow:0 0 9px rgba(255,255,255,.7);z-index:4;pointer-events:none}
+.sx .snapchip{cursor:pointer;margin-left:10px}
+.sx.sx-drag-grab,.sx.sx-drag-grab *{cursor:grabbing!important}
+.sx.sx-drag-resize,.sx.sx-drag-resize *{cursor:ew-resize!important}
+.sx.sx-drag-grab,.sx.sx-drag-resize{user-select:none;-webkit-user-select:none}
+@media (pointer:coarse){.sx .track{height:56px}.sx .track .seg .h::before,.sx .wave .zseg .h::before{inset:-14px -17px}.sx .wave{height:48px}}

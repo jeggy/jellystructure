@@ -63,4 +63,22 @@ class SegmentEditorTest {
         assertNull(parseKeyframeLine(""))
         assertNull(parseKeyframeLine("N/A,K__"))
     }
+    // Phase 223 (FR-223-6) — the neighbour rule at the route, judged against the stored rows.
+
+    @Test
+    fun neighbourRuleRefusesANewOverlapAndLetsAnOldOneShrink() {
+        val intro = row("intro", 30_000L, 90_000L)
+        val credits = row("credits", 2_590_000L, null)
+        assertEquals("credits can't start before the intro ends (1:30)", validateNeighbours("credits", 80_000L, null, credits, listOf(intro), 2_612_480L))
+        assertNull(validateNeighbours("credits", 90_000L, null, credits, listOf(intro), 2_612_480L))
+        // Unmeasured file: the credits still run to the end, so an intro reaching past their start is refused.
+        assertEquals("intro can't end after the credits start (43:10)", validateNeighbours("intro", 30_000L, 2_600_000L, intro, listOf(credits), null))
+        // One of the 775 production rows (credits inside the intro): fixable by moving the credits later,
+        // refused when moved earlier — the overlap may shrink but never grow.
+        val bad = row("credits", 60_000L, null)
+        assertNull(validateNeighbours("credits", 80_000L, null, bad, listOf(intro), 2_612_480L))
+        assertEquals("credits can't start before the intro ends (1:30)", validateNeighbours("credits", 10_000L, null, bad, listOf(intro), 2_612_480L))
+        // A stinger inside the credits is where it belongs.
+        assertNull(validateNeighbours("stinger", 2_600_000L, null, null, listOf(intro, credits), 2_612_480L))
+    }
 }

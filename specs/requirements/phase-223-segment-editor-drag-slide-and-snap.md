@@ -14,11 +14,13 @@
 
 ## Status
 
-`Planned` — written 2026-09-16 from the question plus a read of `Segments.kt` as built by phase 222
+`✓ Built` — written 2026-09-16 from the question plus a read of `Segments.kt` as built by phase 222
 (`main` `90dbc201`), `design/app/segments.css` and `segments.js`, `SegmentRoutes.kt`, and a read-only
-copy of the production database. Not dev-reviewed, not built. Admin frontend (`/segments`), the served
-`segments.css`, the mockup, and one shared rule the backend validates too. No Ravilo half — but Ravilo
-is the consumer whose behaviour justifies FR-223-6.
+copy of the production database; **implemented 2026-09-16** (see §8). Not dev-reviewed, not deployed,
+not watched in a browser. Admin frontend (`/segments`), the served `segments.css`, the mockup, and one
+shared rule the backend validates too. `compileKotlinLinuxX64` + `compileKotlinWasmJs` clean;
+`SegmentEditRulesTest` (8) and `SegmentEditorTest` (8) green, full `linuxX64Test` 324/0. No Ravilo
+half — but Ravilo is the consumer whose behaviour justifies FR-223-6.
 
 **Numbering:** verified against `STATUS.md` on 2026-09-16 — admin taken through 222.
 
@@ -241,3 +243,46 @@ the bubble class so a design sync cannot drop them silently (the 14th-incident l
 6. **`←`/`→` when the `<video>` has focus** — the element is rendered without native controls today; if
    that changes, the arrows would seek the video and slide the marker at once. Guard by target, as the
    keydown listener already does for inputs.
+
+## 8. Implementation notes (2026-09-16)
+
+- **The rule lives once, in `commonMain`** — `model/SegmentEditRules.kt`: `interval`, `overlapMs`,
+  `refusal`/`acceptEdit`, the drag arithmetic (`slid`, `withStart`, `withEnd`), `clampMove` (a binary
+  search over the millisecond range against the same predicate, so the clamp under the pointer and the
+  server's 422 cannot disagree), `nearestSnap` and `wholeSecondSnap`. An unknown file length makes
+  open-ended credits **unbounded** rather than a point, on both sides. The route calls it through
+  `validateNeighbours` after 222's `validateSegmentEdit`; the client calls it inside `applyEditInPlace`
+  (every path: steppers, keys, drags) and inside the drag loop.
+- **FR-223-6, one nuance the spec did not state:** the measure is milliseconds of overlap, so a credits
+  marker that already starts *at* the intro's start swallows the whole intro, and moving it earlier
+  cannot make that number larger — the rule promises "no worse", not "closer to right". Moving it later
+  is the fix and is always accepted. Covered by a test, named in the code.
+- **FR-223-1/2/3/5** — `Segments.kt`: `wireDragHandles` is replaced by one engine (`beginDrag` /
+  `onDragMove` / `endDrag`) driven by Pointer Events with capture on the **surface** (track or zoom
+  strip), three grips plus a playhead scrub on empty space, a 4 px click threshold below which a press
+  is the click it always was, `touch-action:none`, the bubble (`.dragtip`, kept inside the surface's
+  bounds), live row readouts through the existing `patchSegmentDom`, one `currentTime` per animation
+  frame in direct play, one seek on release in either mode, Escape/pointercancel/lost-capture/blur
+  restore, nothing written when nothing moved. The click the browser fires after a real drag is swallowed
+  once. `timeupdate` yields to a live drag so the clock cannot fight the pointer.
+- **One CSS change the spec did not foresee:** the bar was `overflow:hidden`, which clipped its own
+  handles (they hang 6 px outside it) and made a short marker's handles unreachable; the bar now clips
+  only its label (`.sl`). On a coarse pointer the hit areas grow through a transparent `::before`
+  (44 × 40 px) while the paint stays 11 px; the track grows to 56 px. Fenced by `check-mobile-css.sh`.
+- **FR-223-4** — targets are computed at pointer-down from the evidence lane, the other markers' edges,
+  Jellyfin's candidates (now held client-side when they load) and the playhead; whole seconds only on
+  the zoom strip; radius 6 px fine / 12 px coarse; Shift frees, `S` toggles, and a chip in the timeline
+  header shows the state and toggles on click.
+- **FR-223-7** — the zoom strip is rendered as a track whether or not the envelope exists (a quiet strip
+  says "no waveform yet"), carries the selected marker's bar with the same grips, its own playhead line,
+  and is centred on the last-touched edge — re-centred only by the release path, never mid-drag.
+- **FR-223-8** — `←`/`→` slide the whole marker (1 s, ⇧ 10 s, Ctrl/⌘ 40 ms) through `slideSegment`,
+  `[`/`]` pick the edge, all on the same clamp and write path; the rail's key legend lists them. The
+  `,`/`.` nudges and the row steppers now also stop at the neighbour and say so, instead of asking the
+  server and being told.
+- **FR-223-9** — `design/app/segments.js` carries the same engine in JS (body slide, bubble, pointer
+  capture, snapping, Escape, the neighbour clamp with the same message text, arrows, `S`, `[`/`]`); the
+  cursor classes ride the `.sx` root so `check-css-scoping.sh` stays green.
+- **Not done:** verification 2 and 3 (a browser, and the Pixel 9) — no device this session; the
+  burned-in-timecode sample is still owed from 222. Verification 4 (a real one of the 775 rows) was
+  exercised only through the unit tests.
