@@ -13,9 +13,10 @@
 
 ## Status
 
-`Planned` — written 2026-09-16 from the live stue-TV sweep
-(`specs/research-reports/stue-tv-test-sweep-2026-09-16.md`, finding F12). Not dev-reviewed, not
-built. Backend + admin (Settings → Notifications, and one advisor-style finding). Small.
+`✓ Built` — written 2026-09-16 from the live stue-TV sweep
+(`specs/research-reports/stue-tv-test-sweep-2026-09-16.md`, finding F12), **implemented 2026-09-16**
+(see §Implementation notes). Not dev-reviewed, not deployed. Backend + admin (Settings → Notifications,
+Dashboard). `compileKotlinLinuxX64` + `compileKotlinWasmJs` clean; `WebhookStatusTest` (3) green.
 
 **Numbering:** verified against `STATUS.md` on 2026-09-16 — admin taken through 218; 219 and 220 by
 sibling specs the same day.
@@ -78,3 +79,27 @@ in `config.toml`.
 
 - Whether "3 consecutive failures" should instead be "any failure in the last hour" — the former can
   take days to trigger on a quiet library. Recommendation: either condition raises it.
+
+## Implementation notes (2026-09-16)
+
+- **FR-221-1** — `fireWebhook` times the POST, records the outcome per target in `WebhookStatus`
+  (`ops/WebhookStatus.kt`: consecutive failures, last failure time + reason, last success, last
+  elapsed), logs *"Webhook fired"* only on a 2xx, and on failure logs the host and the reason once —
+  never the payload again. A CancellationException is rethrown, not counted.
+- **FR-221-2** — Settings → Notifications: the old *Send test notification* posted from the **browser**;
+  **Test** now calls `POST /api/config/test-webhook`, so the server that will deliver the real ones does
+  the test and reports status code or connect error plus elapsed ms inline; the delivery is recorded,
+  and the standing line under the field (`GET /api/config/webhook-status`) reads *Last delivery 14:02 ·
+  failed · could not connect* / *… · ok · 40 ms* / *Never delivered*.
+- **FR-221-3** — `WebhookStatus.findings()` raises `webhook-failing` when the last 3 deliveries failed
+  **or** any failure happened in the last hour without a later success (the open question's
+  recommendation: either condition), in phase 212's `AdvisorFinding` shape; rendered by the same
+  `advisorFindingHtml` (now `internal`) under the field and on the Dashboard (`#dash-findings`), and
+  literally empty while deliveries succeed or the URL is blank.
+- **FR-221-4** — `handleArrWebhook` records the hit per source and writes one INFO line per source per
+  day (the per-hit WARN is gone); `arr-deprecated-<source>` is a finding for 30 days after the last hit,
+  worded with the Jellyfin webhook's own last delivery (`RealtimeIngestService.lastWebhookReceivedAt`)
+  when it has one.
+- **FR-221-5** — everything above lives in memory with one small JSON file next to the database
+  (`<dataDir>/webhook-status.json`); `config.toml` is untouched.
+- **Verification 2 (live)** was not run — no deploy this session.

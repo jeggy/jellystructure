@@ -432,7 +432,12 @@ private suspend fun handleArrWebhook(
     // (once configured, Phase 165) or, failing that, JellyfinLibraryListener's change-feed. Both already
     // exist independently of this nudge, so removing the poll loses nothing but the redundant 5-minute
     // busy-wait this route used to do on every single import.
-    Logger.warn("Webhook: ${if (isSonarr) "sonarr" else "radarr"} webhook is deprecated (Phase 165) — set up the Jellyfin webhook in Settings instead", "ingest")
+    // Phase 221 (FR-221-4) — a hit is recorded (it becomes a Settings/Dashboard finding while recent)
+    // and logged at INFO once per day per source, not WARN on every import.
+    val source = if (isSonarr) "sonarr" else "radarr"
+    if (dev.jellystructure.ops.WebhookStatus.recordArrHit(source)) {
+        Logger.info("Webhook: $source is still calling the deprecated *arr webhook (Phase 165) — remove that connection in $source; the Jellyfin webhook delivers ingest now", "ingest")
+    }
     appScope.launch { nudgeJellyfin(filePath, configStore, jellyfinClient) }
 }
 

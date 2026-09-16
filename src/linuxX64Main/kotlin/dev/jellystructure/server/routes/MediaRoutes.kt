@@ -2633,15 +2633,31 @@ internal suspend fun runScan(
 internal suspend fun fireWebhook(cfg: dev.jellystructure.config.AppConfig, payload: String) {
     val url = cfg.behavior.notificationsWebhook
     if (url.isBlank()) return
-    runCatching {
+    // Phase 221 (FR-221-1) — "fired" is logged only on success; a failure logs the target host and the
+    // reason once (never the payload again) and is remembered per target for the Settings status line
+    // and the advisor-style finding (WebhookStatus). Eight notifications a day used to be logged as
+    // fired right after their own failure line.
+    val started = kotlin.time.TimeSource.Monotonic.markNow()
+    val result = runCatching {
         dev.jellystructure.OutboundHttp.withPermit {
             dev.jellystructure.OutboundHttp.client.post(url) {
                 contentType(ContentType.Application.Json)
                 setBody(payload)
             }
         }
-    }.onFailure { Logger.warn("Webhook delivery failed: ${it.message}", "notify") }
-    Logger.info("Webhook fired: $payload", "notify")
+    }
+    val elapsed = started.elapsedNow().inWholeMilliseconds
+    result.exceptionOrNull()?.let { if (it is kotlinx.coroutines.CancellationException) throw it }
+    val response = result.getOrNull()
+    val ok = response != null && response.status.value in 200..299
+    val reason = when {
+        response == null -> result.exceptionOrNull()?.message?.substringBefore("CurlRequestData")?.trim()?.trimEnd(':', ' ') ?: "connection failed"
+        !ok -> "HTTP ${response.status.value}"
+        else -> null
+    }
+    dev.jellystructure.ops.WebhookStatus.recordDelivery(url, ok, reason, elapsed)
+    if (ok) Logger.info("Webhook fired: $payload", "notify")
+    else Logger.warn("Webhook delivery to ${url.substringAfter("://").substringBefore('/')} failed after ${elapsed} ms: $reason", "notify")
 }
 
 /** Tree label for an episode NFO node: "S01E03 — Title", falling back to the filename. */

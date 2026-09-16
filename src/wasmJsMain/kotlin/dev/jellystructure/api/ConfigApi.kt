@@ -380,6 +380,18 @@ object ConfigApi {
         httpClient.get("/api/config/chromecast/status").body<ChromecastStatus>()
     }.getOrNull()
 
+    // Phase 221 (FR-221-2/3/4) — a server-side test delivery, and the standing status + findings.
+    suspend fun testWebhook(url: String): WebhookTestResult? = runCatching {
+        httpClient.post("/api/config/test-webhook") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"url":"${url.replace("\\", "\\\\").replace("\"", "\\\"")}"}""")
+        }.body<WebhookTestResult>()
+    }.getOrNull()
+
+    suspend fun webhookStatus(): WebhookStatusResponse? = runCatching {
+        httpClient.get("/api/config/webhook-status").body<WebhookStatusResponse>()
+    }.getOrNull()
+
     // Phase 139 — "Set up profiles in Radarr/Sonarr": preview shows what would be created/updated
     // (read-only), provision actually does it (idempotent — safe to re-run).
     suspend fun previewRequestLanguage(): List<ProvisionPlanLine>? = runCatching {
@@ -417,4 +429,27 @@ data class ArrTestResult(
     val detail: String,
     val version: String? = null,
     val rootFolders: List<String>? = null,
+)
+
+// Phase 221 — mirrors the backend's WebhookTestResult / WebhookStatusResponse. `findings` reuse the
+// phase-212 AdvisorFinding shape so advisorFindingHtml renders them unchanged.
+@Serializable
+data class WebhookTestResult(val ok: Boolean, val status: Int? = null, @SerialName("elapsed_ms") val elapsedMs: Long = 0, val detail: String = "")
+
+@Serializable
+data class WebhookTargetStatus(
+    val url: String,
+    @SerialName("consecutive_failures") val consecutiveFailures: Int = 0,
+    @SerialName("last_attempt_at") val lastAttemptAt: Long? = null,
+    @SerialName("last_success_at") val lastSuccessAt: Long? = null,
+    @SerialName("last_failure_at") val lastFailureAt: Long? = null,
+    @SerialName("last_failure_reason") val lastFailureReason: String? = null,
+    @SerialName("last_elapsed_ms") val lastElapsedMs: Long? = null,
+)
+
+@Serializable
+data class WebhookStatusResponse(
+    val configured: Boolean = false,
+    val target: WebhookTargetStatus? = null,
+    val findings: List<AdvisorFinding> = emptyList(),
 )

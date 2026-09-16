@@ -38,6 +38,8 @@ fun renderDashboard(container: Element, scope: CoroutineScope) {
         </div>
         <p class="page-sub">Single source of truth for your media metadata. Jellyfin just reads what Jellystructure writes — you never touch its built-in scraper. <span id="dash-next-run" class="badge" style="margin-left:6px"></span></p>
 
+        <!-- Phase 221 (FR-221-3/4) — operator findings (webhook failing, deprecated *arr route); empty = silent. -->
+        <div id="dash-findings" style="margin-bottom:14px"></div>
         <div id="dash-scan-banner" style="margin-bottom:14px"></div>
 
         <div class="statgrid">
@@ -160,6 +162,8 @@ fun renderDashboard(container: Element, scope: CoroutineScope) {
 
     scope.launch {
         loadDashboardStats()
+
+        loadDashFindings()
         loadAttentionBreakdown()
         loadRecentActivity()
         loadDashSubtitlesCard()
@@ -184,6 +188,13 @@ fun renderDashboard(container: Element, scope: CoroutineScope) {
             else (el as? HTMLElement)?.style?.display = "none"
         }
     }
+}
+
+/** Phase 221 — the same findings Settings → Notifications shows, on the Dashboard. */
+private suspend fun loadDashFindings() {
+    val el = document.getElementById("dash-findings") as? HTMLElement ?: return
+    val st = dev.jellystructure.api.ConfigApi.webhookStatus() ?: return
+    el.innerHTML = st.findings.joinToString("") { advisorFindingHtml(it) }
 }
 
 private suspend fun loadDashboardStats() {

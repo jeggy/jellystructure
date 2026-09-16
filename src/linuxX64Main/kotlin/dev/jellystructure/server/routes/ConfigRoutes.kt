@@ -7,6 +7,10 @@ import dev.jellystructure.config.ConfigStore
 import dev.jellystructure.config.QBittorrentConfig
 import dev.jellystructure.seerr.SeerrClient
 import dev.jellystructure.torrent.QBittorrentClient
+import io.ktor.client.request.post
+import io.ktor.client.request.setBody
+import io.ktor.http.ContentType
+import io.ktor.http.contentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.request.receive
 import io.ktor.server.response.respond
@@ -111,7 +115,45 @@ fun Route.configureConfigRoutes(
     // tvEventBus so a change to the chromecast block reaches every client's config snapshot (FR-218-3).
     castService: dev.jellystructure.tv.CastService? = null,
     tvEventBus: dev.jellystructure.tv.TvEventBus? = null,
+    // Phase 221 — the Jellyfin webhook's own last delivery, for the deprecated-*arr finding's wording.
+    realtimeIngest: dev.jellystructure.media.RealtimeIngestService? = null,
 ) {
+    // Phase 221 (FR-221-2) — a server-side test delivery: status code or connect error, elapsed ms.
+    // Recorded like any delivery, so the status line under the field updates at once.
+    post("/config/test-webhook") {
+        val req = runCatching { call.receive<WebhookTestRequest>() }.getOrElse { WebhookTestRequest() }
+        val url = req.url.trim()
+        if (url.isBlank()) { call.respond(WebhookTestResult(false, null, 0, "No URL set")); return@post }
+        val started = kotlin.time.TimeSource.Monotonic.markNow()
+        val result = runCatching {
+            dev.jellystructure.OutboundHttp.withPermit {
+                dev.jellystructure.OutboundHttp.client.post(url) {
+                    contentType(ContentType.Application.Json)
+                    setBody("""{"event":"test","source":"jellystructure","note":"A test notification sent from Settings → Notifications"}""")
+                }
+            }
+        }
+        val elapsed = started.elapsedNow().inWholeMilliseconds
+        val response = result.getOrNull()
+        val ok = response != null && response.status.value in 200..299
+        val detail = when {
+            response == null -> result.exceptionOrNull()?.message?.substringBefore("CurlRequestData")?.trim()?.trimEnd(':', ' ') ?: "connection failed"
+            ok -> "HTTP ${response.status.value}"
+            else -> "HTTP ${response.status.value}"
+        }
+        dev.jellystructure.ops.WebhookStatus.recordDelivery(url, ok, if (ok) null else detail, elapsed)
+        call.respond(WebhookTestResult(ok, response?.status?.value, elapsed, detail))
+    }
+    // Phase 221 (FR-221-2/3/4) — the standing status line and the findings (empty = silent).
+    get("/config/webhook-status") {
+        val url = configStore.current.behavior.notificationsWebhook.trim()
+        val since = realtimeIngest?.lastWebhookReceivedAt
+        call.respond(WebhookStatusResponse(
+            configured = url.isNotBlank(),
+            target = if (url.isNotBlank()) dev.jellystructure.ops.WebhookStatus.target(url) else null,
+            findings = dev.jellystructure.ops.WebhookStatus.findings(url, since),
+        ))
+    }
     // Phase 218 (FR-218-5) — the BACKEND fetches its own /cast/ through the public address the admin
     // typed; never a verdict off local config or the browser's address bar. Two outcomes only.
     post("/config/chromecast/check") {
@@ -315,3 +357,17 @@ fun Route.configureConfigRoutes(
 /** Phase 218 (FR-218-5) — the public address the admin typed; the backend fetches `<url>/cast/` itself. */
 @Serializable
 data class ChromecastCheckRequest(val url: String = "")
+
+// Phase 221 — DTOs for the webhook test + status routes.
+@Serializable
+data class WebhookTestRequest(val url: String = "")
+
+@Serializable
+data class WebhookTestResult(val ok: Boolean, val status: Int?, @kotlinx.serialization.SerialName("elapsed_ms") val elapsedMs: Long, val detail: String)
+
+@Serializable
+data class WebhookStatusResponse(
+    val configured: Boolean,
+    val target: dev.jellystructure.ops.WebhookTargetStatus?,
+    val findings: List<dev.jellystructure.ops.OperatorFinding>,
+)
