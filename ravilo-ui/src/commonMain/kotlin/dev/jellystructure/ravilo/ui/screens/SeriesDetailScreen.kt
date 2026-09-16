@@ -73,6 +73,7 @@ import dev.jellystructure.ravilo.ui.components.TitleLogoOrText
 import dev.jellystructure.ravilo.ui.components.TrailerOverlay
 import dev.jellystructure.ravilo.ui.focus.rememberEdgeBringIntoViewSpec
 import dev.jellystructure.ravilo.ui.i18n.str
+import dev.jellystructure.ravilo.ui.components.castConnectedDeviceName
 import dev.jellystructure.ravilo.ui.seams.RemoteImage
 import dev.jellystructure.ravilo.ui.theme.RaviloDimens
 import dev.jellystructure.ravilo.ui.theme.raviloHPad
@@ -588,9 +589,12 @@ private fun SeriesDetailLoaded(
                             else ep?.let { "E${it.episodeNumber}" }
                         }
                         val hasResume = overlayLoaded && resumeEpId != null && watchedCount < allEps.size
-                        val playLabel = if (hasResume && resumeShort != null)
-                            "${str("action.resume")} · $resumeShort"
-                        else "${str("action.play")} · E1"
+                        val castDevice = castConnectedDeviceName()   // R245 (FR-R245-4)
+                        val playLabel = when {
+                            castDevice != null -> str("cast.play_on", mapOf("device" to castDevice))
+                            hasResume && resumeShort != null -> "${str("action.resume")} · $resumeShort"
+                            else -> "${str("action.play")} · E1"
+                        }
                         // Fixed min-width: sized for the longest "Resume · SNNEN" label so swapping
                         // Play→Resume never shifts the "My List" button (no-flicker rule).
                         RaviloButton(

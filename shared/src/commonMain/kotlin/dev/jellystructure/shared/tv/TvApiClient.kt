@@ -268,6 +268,25 @@ class TvApiClient(
 
     // ─── Config ──────────────────────────────────────────────────────────────
 
+    // ─── Phase 218 / R245 — Chromecast hand-off ─────────────────────────────
+
+    /** The phone mints a short-lived, single-use code under its own session (FR-218-9). 404 when the
+     *  server has no cast capability — the client never reaches this without one. */
+    suspend fun castHandoff(): CastHandoffResponse {
+        val r = client.post("$baseUrl/api/tv/cast/handoff") { auth() }
+        r.assertSuccess()
+        return json.decodeFromString<CastHandoffResponse>(r.bodyAsText())
+    }
+
+    /** The receiver redeems the code for its own device token — pre-auth, so no [auth] here. */
+    suspend fun castRedeem(code: String, deviceName: String?, receiverId: String?): PairResult {
+        val r = client.post("$baseUrl/api/tv/cast/redeem") {
+            jsonBody(json.encodeToString(CastRedeemRequest(code, deviceName, receiverId)))
+        }
+        r.assertSuccess()
+        return json.decodeFromString<PairResult>(r.bodyAsText())
+    }
+
     suspend fun getConfig(): RaviloConfig {
         val r = client.get("$baseUrl/api/tv/config") { auth() }
         r.assertSuccess()

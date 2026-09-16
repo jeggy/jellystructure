@@ -23,6 +23,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -49,6 +50,15 @@ import dev.jellystructure.ravilo.ui.screens.discoverSegments
 import dev.jellystructure.ravilo.ui.screens.nextDiscoverSegment
 import dev.jellystructure.ravilo.ui.screens.seedFacet
 import dev.jellystructure.ravilo.ui.screens.TaxonomyScreen
+import dev.jellystructure.ravilo.ui.screens.CastRemoteScreen
+import dev.jellystructure.ravilo.ui.components.CastController
+import dev.jellystructure.ravilo.ui.components.CastConnectingBar
+import dev.jellystructure.ravilo.ui.components.CastMiniBar
+import dev.jellystructure.ravilo.ui.components.LocalCast
+import dev.jellystructure.ravilo.ui.components.LocalCastHandoff
+import dev.jellystructure.ravilo.ui.components.castArtFor
+import dev.jellystructure.ravilo.ui.components.castEpisodes
+import dev.jellystructure.ravilo.ui.seams.rememberCastSender
 import dev.jellystructure.ravilo.ui.screens.TaxonomyStore
 import dev.jellystructure.ravilo.ui.screens.HomeScreen
 import dev.jellystructure.ravilo.ui.screens.HomeSnapshot
@@ -257,6 +267,9 @@ private sealed class Dest {
     // tab) — only from the Home "On now" row or the guide below.
     data class LiveTv(val channelId: String, val displayName: String) : Dest()
     data class LiveTvGuide(val displayName: String) : Dest()
+    // R245 (FR-R245-7) — the full-screen remote for a running cast. Reached from the mini bar, from a
+    // detail screen's "Play on {device}", or by the hand-off from inside the local player.
+    data class CastRemote(val displayName: String) : Dest()
 
     // R80: each Dest maps to a hash route (web) or is ignored (android/TV).
     fun toRoute(): String = when (this) {
@@ -279,6 +292,7 @@ private sealed class Dest {
         is ChangePassword -> "/account/password"
         is LiveTv         -> "/livetv/$channelId"
         is LiveTvGuide    -> "/livetv-guide"
+        is CastRemote     -> "/cast"
     }
 }
 
@@ -302,9 +316,12 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
     // Fetch the active user's config and apply server-owned interface prefs (language + skin)
     val configScope = remember { CoroutineScope(SupervisorJob() + Dispatchers.Default) }
 
+    // R245 / 218 (FR-218-3/11) — the cast capability rides the config snapshot: absent ⇒ no button.
+    var castAppId by remember { mutableStateOf<String?>(null) }
     fun refreshConfig() {
         configScope.launch {
             runCatching { apiClient.getConfig() }.getOrNull()?.let { cfg ->
+                castAppId = cfg.cast?.appId
                 lang = cfg.uiLanguage
                 themeState.skin = cfg.effectiveSkin()
                 tileScale = cfg.uiDensity.tileScale()
@@ -526,7 +543,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
             is Dest.SeerrSearch -> d.displayName
             is Dest.UpcomingDetail -> d.displayName
             is Dest.MovieDetail -> d.displayName; is Dest.SeriesDetail -> d.displayName
-            is Dest.Player -> d.displayName; is Dest.Settings -> d.displayName
+            is Dest.Player -> d.displayName; is Dest.Settings -> d.displayName; is Dest.CastRemote -> d.displayName
             is Dest.YourProfile -> d.displayName; is Dest.ChangePassword -> d.displayName
             else -> null
         } ?: MultiTokenStore.getActive()?.displayName.orEmpty()
@@ -595,7 +612,23 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
             windowInfo.containerSize.height > windowInfo.containerSize.width
         }
 
-        CompositionLocalProvider(LocalLiveConfig provides liveConfig, LocalLiveAcquisition provides liveAcquisition, LocalServerMessages provides liveServerMessages, LocalPlaystateCommands provides livePlaystateCommands, LocalTileScale provides tileScale, LocalGridColumns provides gridColumns, LocalPortraitGridColumns provides portraitGridColumns, LocalCompact provides compact, LocalHandset provides handset, LocalPortrait provides portrait, LocalServerBaseUrl provides apiClient.baseUrl, LocalUserAvatarUrl provides activeAvatarUrl,
+        // R245 — one sender per app (the platform SDK), one controller per server; null when this platform
+        // cannot cast or the server has no capability, in which case nothing anywhere draws a button.
+        val castSender = rememberCastSender()
+        val castController = remember(castSender, apiClient) { castSender?.let { CastController(it, apiClient, apiClient.baseUrl) } }
+        LaunchedEffect(castController, castAppId) { castController?.appId = castAppId }
+        val castActive = if (castController != null && castAppId != null) castController else null
+        val currentDisplayNameForCast = destDisplayName(dest)
+        CompositionLocalProvider(LocalCast provides castActive, LocalCastHandoff provides (if (castActive != null && dest is Dest.Player) { pos: Long ->
+            val d = dest as Dest.Player
+            castActive.cast(
+                itemId = d.itemId, title = d.title, kicker = d.kicker,
+                artUrl = resolveCastArt(apiClient.baseUrl, castArtFor(null, d.episodes?.getOrNull(d.currentEpIndex)?.stillUrls?.firstOrNull { it != null })),
+                positionMs = pos, episodes = castEpisodes(d.episodes), currentIndex = d.currentEpIndex, lang = lang,
+            )
+            replaceTop(Dest.CastRemote(d.displayName))
+        } else null),
+            LocalLiveConfig provides liveConfig, LocalLiveAcquisition provides liveAcquisition, LocalServerMessages provides liveServerMessages, LocalPlaystateCommands provides livePlaystateCommands, LocalTileScale provides tileScale, LocalGridColumns provides gridColumns, LocalPortraitGridColumns provides portraitGridColumns, LocalCompact provides compact, LocalHandset provides handset, LocalPortrait provides portrait, LocalServerBaseUrl provides apiClient.baseUrl, LocalUserAvatarUrl provides activeAvatarUrl,
             LocalReauthRequired provides {
                 configScope.launch {
                     signOutActiveSession(apiClient)
@@ -1029,7 +1062,16 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                     store = store,
                     onBack = { pop() },
                     onPlay = { detail ->
-                        push(Dest.Player(
+                        // R245 (FR-R245-4) — while a cast session is connected, Play casts; the server
+                        // resolves the resume position exactly as it does for a TV.
+                        if (castActive?.connected == true) {
+                            castActive.cast(
+                                itemId = detail.card.id, title = detail.card.title, kicker = null,
+                                artUrl = resolveCastArt(apiClient.baseUrl, detail.card.backdropUrl),
+                                positionMs = null, lang = lang,
+                            )
+                            push(Dest.CastRemote(dest.displayName))
+                        } else push(Dest.Player(
                             detail.card.id,
                             detail.card.title,
                             displayName = dest.displayName,
@@ -1063,7 +1105,15 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                     store = store,
                     onBack = { pop() },
                     onPlay = { ctx ->
-                        push(Dest.Player(
+                        if (castActive?.connected == true) {
+                            // R245 (FR-R245-4/14) — the receiver gets the whole season so it can advance by itself.
+                            castActive.cast(
+                                itemId = ctx.episodeId, title = ctx.episodeTitle, kicker = ctx.kicker,
+                                artUrl = resolveCastArt(apiClient.baseUrl, ctx.episodes.getOrNull(ctx.currentEpIndex)?.stillUrls?.firstOrNull { it != null }),
+                                positionMs = null, episodes = castEpisodes(ctx.episodes), currentIndex = ctx.currentEpIndex, lang = lang,
+                            )
+                            push(Dest.CastRemote(dest.displayName))
+                        } else push(Dest.Player(
                             itemId        = ctx.episodeId,
                             title         = ctx.episodeTitle,
                             kicker        = ctx.kicker,
@@ -1153,6 +1203,19 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                             segments         = newEp?.segments ?: dev.jellystructure.shared.tv.TvSegmentMarkers(),
                             posterUrl        = dest.posterUrl,  // R194 — same series poster fallback for the whole binge
                         ))
+                    },
+                )
+            }
+
+            is Dest.CastRemote -> {
+                val cc = castActive
+                if (cc == null) { LaunchedEffect(Unit) { pop() } }
+                else CastRemoteScreen(
+                    cast = cc,
+                    onBack = { pop() },
+                    onPlayAgain = { itemId ->
+                        val st = cc.sender.status.value
+                        cc.cast(itemId = itemId, title = st?.title ?: "", kicker = st?.kicker, artUrl = st?.artUrl, positionMs = 0L, lang = lang)
                     },
                 )
             }
@@ -1261,6 +1324,14 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                 onUnpaired = { profileMenuOpen = false; resetTo(Dest.Login) },
             )
         }
+        // R245 (FR-R245-3/6) — the connecting bar and the mini bar float over every screen except the
+        // three that own the picture or ARE the remote. The mini bar never dismisses while a cast runs.
+        if (castActive != null && dest !is Dest.Player && dest !is Dest.LiveTv && dest !is Dest.CastRemote) {
+            Box(Modifier.fillMaxSize()) {
+                Box(Modifier.align(Alignment.TopCenter)) { CastConnectingBar() }
+                Box(Modifier.align(Alignment.BottomCenter)) { CastMiniBar(onOpen = { push(Dest.CastRemote(currentDisplayNameForCast)) }) }
+            }
+        }
         FrameTrackerOverlay(fpsOverlay)  // R94: F5 toggles; no-op when false
         ServerMessageHost()  // R152: floats over every screen incl. the player (reads LocalServerMessages)
         } // Box (back-intercept)
@@ -1268,3 +1339,8 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
     } // WithLocale
     } // RaviloTheme
 }
+
+/** R245 — the Cast SDK hands art URLs straight to the receiver and the notification, so a relative
+ *  `/api/tv/image/...` path must be absolute here (RemoteImage does this itself for on-screen art). */
+private fun resolveCastArt(baseUrl: String, url: String?): String? =
+    url?.let { if (it.startsWith("/") && baseUrl.isNotBlank()) "$baseUrl$it" else it }

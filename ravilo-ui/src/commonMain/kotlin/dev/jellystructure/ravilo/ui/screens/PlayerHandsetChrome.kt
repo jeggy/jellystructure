@@ -142,6 +142,8 @@ internal fun HandsetPlayerChrome(
     onRotate: () -> Unit,
     /** Set when a season exists: tapping the kicker + title opens the season sheet (FR-R244-11). */
     onTitleTap: (() -> Unit)? = null,
+    /** R245 (FR-R245-1/4) — the cast button; casting from inside the player hands the position over. */
+    castSlot: (@Composable () -> Unit)? = null,
     onSkipBack: () -> Unit,
     onPlayPause: () -> Unit,
     onSkipFwd: () -> Unit,
@@ -184,6 +186,7 @@ internal fun HandsetPlayerChrome(
                     }
                     Text(itemTitle, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold, fontFamily = SpaceGrotesk, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
+                castSlot?.invoke()
                 if (showRotate) {
                     HandsetIconButton(size = HANDSET_TARGET, onClick = onRotate, label = str("pl.rotate"), showLabel = false) { tint ->
                         Canvas(Modifier.size(20.dp)) {

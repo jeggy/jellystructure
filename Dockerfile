@@ -31,6 +31,8 @@ COPY shared ./shared
 COPY ravilo-ui ./ravilo-ui
 COPY ravilo-web ./ravilo-web
 COPY ravilo-tizen ./ravilo-tizen
+COPY ravilo-cast ./ravilo-cast
+COPY cast-receiver ./cast-receiver
 COPY web-static-server ./web-static-server
 # wasmJsBrowserDistribution's doLast block (build.gradle.kts) copies wf.css/app.css/detail.css/
 # metadata.css/seeding.css/seeding.js + flags.css/flags/** from design/ into the production dist
@@ -53,6 +55,11 @@ RUN --mount=type=cache,id=gradle-jellystructure,target=/root/.gradle \
     --mount=type=cache,id=konan-jellystructure,target=/root/.konan \
     --mount=type=cache,id=npm-jellystructure,target=/root/.npm \
     ./gradlew linkReleaseExecutableLinuxX64 --no-daemon
+# R245 — the Chromecast receiver bundle (Kotlin/JS), dropped next to cast-receiver/index.html.
+RUN --mount=type=cache,id=gradle-jellystructure,target=/root/.gradle \
+    --mount=type=cache,id=konan-jellystructure,target=/root/.konan \
+    --mount=type=cache,id=npm-jellystructure,target=/root/.npm \
+    ./gradlew :ravilo-cast:syncCastReceiver --no-daemon
 RUN --mount=type=cache,id=gradle-jellystructure,target=/root/.gradle \
     --mount=type=cache,id=konan-jellystructure,target=/root/.konan \
     --mount=type=cache,id=npm-jellystructure,target=/root/.npm \

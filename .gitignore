@@ -21,6 +21,10 @@ local.properties
 # Node / Webpack (WASM frontend)
 node_modules/
 
+# R245 — the receiver bundle is built (`./gradlew :ravilo-cast:syncCastReceiver`), never committed
+cast-receiver/ravilo-cast.js
+cast-receiver/ravilo-cast.js.map
+
 # Tests
 tests/test-results
 tests/playwright-report

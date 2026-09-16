@@ -61,6 +61,9 @@ androidx-media3-exoplayer = { module = "androidx.media3:media3-exoplayer", versi
 androidx-media3-exoplayer-hls = { module = "androidx.media3:media3-exoplayer-hls", version = "1.8.0" }
 androidx-media3-session = { module = "androidx.media3:media3-session", version = "1.8.0" }
 androidx-media3-ui = { module = "androidx.media3:media3-ui", version = "1.8.0" }
+# R245 — the Cast SDK (sender) and the MediaRouter it rides on; the receiver is our own web page (218).
+play-services-cast-framework = { module = "com.google.android.gms:play-services-cast-framework", version = "22.1.0" }
+androidx-mediarouter = { module = "androidx.mediarouter:mediarouter", version = "1.7.0" }
 # GPL-3.0 — jellyfin's prebuilt Media3 FFmpeg audio decoder (DTS/TrueHD/AC3/E-AC3). The version base
 # must match the Media3 version above; only the :ravilo-player GPL-containment module links it (R31).
 jellyfin-media3-ffmpeg-decoder = { module = "org.jellyfin.media3:media3-ffmpeg-decoder", version = "1.8.0+1" }
