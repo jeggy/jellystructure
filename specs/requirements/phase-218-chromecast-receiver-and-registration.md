@@ -8,7 +8,9 @@
 
 ## Status
 
-`Planned` — written 2026-09-16, **not dev-reviewed**. Admin card built into the mockups 2026-09-16.
+`Planned` — written 2026-09-16, **dev-reviewed 2026-09-16 against `main`** (see §Dev review at the
+bottom). Admin card built into the mockups 2026-09-16. **One finding materially resizes the phase:**
+FR-218-9's hand-off code has no existing mechanism to build on — phase 141 retired the only one.
 
 **Numbering:** verified against `main` on 2026-09-16 — admin taken through **217** (Towo removal), Ravilo
 through **R243**. No `phase-218-*` file and no `STATUS.md` row for it. Pairs with **R245**. The source
@@ -61,14 +63,34 @@ There is **no Cast or `MediaRouter` code anywhere** in the repo. The pieces that
 from `shared` compiled to JS plus thin CAF glue (R245 owns its behaviour). It must be reachable over
 **public `https://`** for a Chromecast to load it at all.
 
+**Dev review — the pattern is already shipping twice, so copy it rather than invent it.** `Server.kt`
+already serves a second static bundle exactly this way: `raviloWebDir` is an optional directory served
+under its own path prefix via `call.serveFrontendFile(raviloWebDir, path)` (`:683-686`), falling through
+to the admin frontend otherwise (`:692`). `/cast/` is a third instance of that same three-line shape,
+with the same "absent directory ⇒ route simply does not answer" behaviour, which pairs well with
+FR-218-3. `shared` genuinely does compile to plain JS for this — `js(IR) { browser() }` has shipped since
+R189 for Tizen, alongside the `wasmJs` target.
+
 **FR-218-2 · A `chromecast` config block.** `enabled` (bool, default **false**), `app_id` (string, empty
 by default), `max_sessions` (int 1–5, default **2**). Per installation, in `config.toml` like every other
 key. Junk in `max_sessions` reads back as 2 rather than failing the load.
+
+**Dev review — `val chromecast: ChromecastConfig? = null` on `AppConfig`, matching `seerr`/`bazarr`.**
+That is the established shape for an optional integration block (`AppConfig.kt:13-20`), and a null block
+is a second, cheaper expression of "off" that FR-218-3 can read without a nested boolean.
 
 **FR-218-3 · Off means absent, not greyed.** When `enabled = false` the config snapshot pushed to clients
 says there is nothing to cast to, and **Ravilo renders no cast button anywhere**. The client never
 guesses from the presence of a Cast route, a network device or a cached value. A disabled cast button is
 a promise the server is not keeping, and is forbidden.
+
+**Dev review — the snapshot is `RaviloConfig`, and phase 202 is the precedent to follow.** `RaviloConfig`
+(shared DTO, `Models.kt`) is the per-user resolved config already pushed to every client. 202 put
+`focusDetail` on it as a **server-resolved enum** rather than the two booleans the admin card holds,
+precisely so no client re-implements a resolution rule. Cast capability takes the same shape: one
+resolved field that is either absent or carries the app id (FR-218-11), never a set of flags the client
+has to combine. Anything derived — "is there a Chromecast on the network" — stays out of it entirely;
+that is the platform's question, asked by the platform's own button.
 
 **FR-218-4 · Settings → Connections → Chromecast, in three states.** Off (the switch and one paragraph,
 nothing else rendered); on-but-unregistered (the receiver address, the three numbered steps, an empty
@@ -105,11 +127,41 @@ then behaves like any other Ravilo device: heartbeats, `/api/tv/playback/start`,
 code is single-use and expires in minutes. **Nothing about the session depends on the phone staying
 alive.**
 
+⚠ **Dev review — there is nothing to build this on. Phase 141 deleted the only code-based enrolment
+flow this project ever had.** `ravilo_pairing` — the code + poll + admin-approve challenge table — was
+**retired** when 141 replaced it with proxied username/password login; `RaviloDeviceService.kt:50` records
+that the current path "creates the `(deviceId, jellyfinUserId)` row directly, bypassing the retired
+`ravilo_pairing` challenge table entirely." So the hand-off code is **entirely new machinery**: a new
+short-lived store, a mint endpoint, a redeem endpoint and an expiry sweep. The spec reads as though it
+reuses something; it does not, and that is a real addition to this phase's size.
+
+**Two constraints the new mechanism inherits from `ravilo_device`'s schema.** A row requires a
+`jellyfin_user_token` — so redeeming the code copies the *phone user's* Jellyfin token into the
+receiver's row, server-side. This is consistent with 141/175 rather than in tension with them, and the
+spec should say so plainly: the **receiver never holds a Jellyfin token**, it holds a Ravilo
+`device_token`, exactly like a TV, and jellystructure does every Jellyfin call on its behalf. That
+distinction is the whole reason this design survives the argument §2 makes against Jellyfin's own
+receiver, so leaving it implicit invites a reviewer to think the argument is self-defeating.
+
+Second: a Chromecast receiver is a web page whose storage the platform may clear between sessions. If the
+`device_token` does not survive, the receiver re-enrols on **every** cast, and the "single-use, expires in
+minutes" code becomes a per-session round trip rather than a one-time setup step. Which of the two it is
+must be settled on the real stick before build — it changes the mint endpoint's rate profile, and it
+interacts directly with open question 5 (what happens to the row when Chromecast is switched off).
+
 **FR-218-10 · Named identity in Jellyfin.** `JellyfinDeviceIdentity.forDevice` produces
-`Device = "Chromecast via Ravilo · <name>"` (or `Client = "Ravilo Cast"`) so the Jellyfin dashboard says
-what the client is rather than "Ravilo" twice. Phase 110 then gives dashboard pause/stop/seek for free —
-the owner's *"control the pause from the Jellyfin dashboard"* is an existing feature once the receiver is
-a device, and this phase must not re-implement it.
+`Device = "Chromecast via Ravilo · <name>"` so the Jellyfin dashboard says what the client is rather than
+"Ravilo" twice. Phase 110 then gives dashboard pause/stop/seek for free — the owner's *"control the pause
+from the Jellyfin dashboard"* is an existing feature once the receiver is a device, and this phase must
+not re-implement it.
+
+**Dev review — this costs nothing, and the `Client = "Ravilo Cast"` alternative is not available.**
+`forDevice` already reads `device.displayName.ifBlank { "Ravilo TV" }` (`JellyfinClient.kt:1171-1172`),
+so naming the receiver's `ravilo_device` row is the entire implementation — no code change at all. But
+`Client` is **hardcoded** to `"Ravilo"` in `jellyfinAuth` (`:1182`), shared by every device; changing it
+per-device would mean threading a second field through that one canonical header builder, which Phase 50
+deliberately centralised. So the dashboard will read `Client = Ravilo`, `Device = Chromecast via Ravilo ·
+<name>`, and the parenthetical alternative in this requirement is withdrawn.
 
 **FR-218-11 · The app ID reaches clients at runtime, not in a manifest.** The receiver app ID is per
 installation, so it rides the config snapshot. On Android `CastContext.setReceiverApplicationId(String)`
@@ -173,3 +225,50 @@ matches — that cost a mysteriously blank element on 2026-09-15, and the shippe
 5. **What happens to the receiver's `ravilo_device` row** when the admin turns Chromecast off. Revoke the
    token, or leave the row so history survives? The Towo removal (phase 217) argues for an explicit
    answer rather than an orphan.
+
+## Dev review (2026-09-16)
+
+Reviewed against `main` at `080364b4`. **The architecture holds and the §2 argument against Jellyfin's own
+receiver survives scrutiny** — every invariant it names is real and really would be bypassed. Most
+integration points are cheaper than the spec assumes. One is considerably more expensive.
+
+### Cheaper than assumed
+
+- **FR-218-1** — a third static bundle is a three-line copy of the `raviloWebDir` shape already in
+  `Server.kt`, and `shared`'s JS target has shipped since R189.
+- **FR-218-2** — `ChromecastConfig? = null` on `AppConfig` matches four existing optional blocks.
+- **FR-218-10** — free. `forDevice` already names the device from `displayName`, so setting the
+  receiver's row name is the whole implementation. The `Client = "Ravilo Cast"` variant is withdrawn:
+  `Client` is hardcoded in the one canonical header builder Phase 50 centralised, and per-device
+  variation would undo that centralisation for a cosmetic gain.
+
+### More expensive than assumed
+
+**FR-218-9 has no foundation.** `ravilo_pairing` — code, poll, admin-approve — was retired by phase 141,
+which is recorded in `RaviloDeviceService.kt`'s own comment. The hand-off code is therefore a new store,
+two endpoints and an expiry sweep, not a reuse. Worse, whether it runs **once per receiver** or **once per
+cast** depends on whether a Chromecast preserves the receiver page's storage between sessions, which
+nobody has tested. That question sits alongside open question 1 as something to answer on the real stick
+before committing to the phase, and it bears directly on open questions 4 and 5.
+
+### One clarification that protects the spec's own argument
+
+The receiver enrolling as a Ravilo device means its `ravilo_device` row holds a `jellyfin_user_token`
+**server-side**. The receiver itself holds only a `device_token`, exactly like a TV. Stating this
+explicitly matters, because §2 rejects Jellyfin's receiver partly on the grounds that it "needs the phone
+to hold a durable Jellyfin token" — a reader who does not know the schema could reasonably think this
+design has the same problem, and it does not.
+
+### Inherited from 217
+
+165 cited Towo's "where runners connect" field as the precedent for an operator-editable "where should
+this be reached from" address. **Phase 217 deletes it.** So FR-218-5's receiver address is now the first
+shipped instance of that pattern rather than the second, and whatever shape it takes is what 165 will
+have to copy later.
+
+### Unchanged
+
+FR-218-4, 6, 7, 8, 12 and 13 are unaffected. The honest-verification rule in FR-218-7 is the right call
+and has no cheaper alternative — nothing in the Cast SDK lets a server confirm an application ID without
+a real cast. Open questions 1, 2 and 3 stand as written; 4 and 5 gain the storage-durability question
+above.
