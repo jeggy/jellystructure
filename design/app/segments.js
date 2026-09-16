@@ -139,7 +139,7 @@
     return e.segs.map(function (s, n) {
       var w = (s.b - s.a) / e.dur * 100;
       return '<div class="seg ' + K[s.k].cls + (s.lock ? ' lk' : '') + (interactive && n === S.sel ? ' on' : '') + '" data-s="' + n + '" style="left:' + (s.a / e.dur * 100) + '%;width:' + w + '%">' +
-        (w > 6 ? K[s.k].n : '') + (interactive && !s.lock ? '<i class="h l" data-e="a"></i><i class="h r" data-e="b"></i>' : '') + '</div>';
+        (w > 6 ? '<span class="sl">' + K[s.k].n + '</span>' : '') + (interactive && !s.lock ? '<i class="h l" data-e="a"></i><i class="h r" data-e="b"></i>' : '') + '</div>';
     }).join('');
   }
   function wave(e, n) {
@@ -271,8 +271,8 @@ if (s.src === 'fp') h += '<span class="b fp" style="left:' + (s.a / e.dur * 100)
     var rows = e.segs.map(function (g, n) {
       return '<div class="mk' + (n === S.sel ? ' sel' : '') + (g.lock ? ' lkd' : '') + '" data-m="' + n + '">' +
         '<span class="sw" style="background:' + K[g.k].c + '"></span><span class="nm">' + K[g.k].n + '</span>' +
-        '<span class="tc"><span class="stp"><button data-d="-1" data-e="a">−</button><button data-d="1" data-e="a">+</button></span>' + fmtt(g.a) +
-          '<s>→</s>' + fmtt(g.b) + '<span class="stp"><button data-d="-1" data-e="b">−</button><button data-d="1" data-e="b">+</button></span>' +
+        '<span class="tc"><span class="stp"><button data-d="-1" data-e="a">−</button><button data-d="1" data-e="a">+</button></span><span class="ts-a">' + fmtt(g.a) + '</span>' +
+          '<s>→</s><span class="ts-b">' + fmtt(g.b) + '</span><span class="stp"><button data-d="-1" data-e="b">−</button><button data-d="1" data-e="b">+</button></span>' +
           '<s class="len">' + fmt(g.b - g.a) + ' long</s>' + srcChip(g) + '</span>' +
         '<span class="acts"><button class="btn sm ghost" data-p="' + n + '">▶ play the cut</button>' +
           '<button class="lockb' + (g.lock ? ' on' : '') + '" data-l="' + n + '">' + (g.lock ? '🔒 locked' : '🔓 lock') + '</button></span></div>';
@@ -286,13 +286,13 @@ if (s.src === 'fp') h += '<span class="b fp" style="left:' + (s.a / e.dur * 100)
       '<button class="btn sm" data-a="redetect-one">↻ Re-detect</button>' +
       '<button class="btn sm pri" data-a="next">' + C.next + '</button></div>' +
       '<div class="sxmain" style="grid-template-columns:1fr 322px"><div class="sxstage">' +
-        '<div class="vid"><div class="ph"><em>' + fmtl(head) + '</em>' + (s ? K[s.k].n.toLowerCase() + ' ends here' : 'drag on the bar to mark a segment') + '</div>' +
+        '<div class="vid"><div class="ph"><em>' + fmtl(head) + '</em>' + (s ? K[s.k].n.toLowerCase() + ' ends here' : 'drag a bar to slide it, its ends to trim it') + '</div>' +
           '<div class="tag">' + (s ? '<span class="vpill" style="color:' + K[s.k].c + ';border-color:' + K[s.k].c + '44">▍' + K[s.k].n + '</span>' : '') + '</div>' +
           '<div class="tag2">' + playTag(e) + '</div>' +
           '<div class="foot"><span class="vbtn pri">▶</span><span class="vbtn" data-a="fb">◂◂</span><span class="vbtn" data-a="ff">▸▸</span>' +
             '<span class="vpill">↺ loop this cut · 3 s either side</span><span class="sxsp"></span>' +
             '<span class="vpill mono">' + fmtl(head) + ' / ' + fmtl(e.dur) + '</span></div></div>' +
-        '<div class="tl"><div class="tlh"><span class="lbl">Timeline</span>' + legend() + '</div>' + ruler(e.dur) +
+        '<div class="tl"><div class="tlh"><span class="lbl">Timeline</span><span class="src snapchip' + (SNAP ? ' me' : '') + '" data-a="snap" title="Edges stick to black frames, chapter marks, the neighbours and the playhead · hold ⇧ while dragging to free them · S toggles">snap ' + (SNAP ? 'on' : 'off') + ' · S</span>' + legend() + '</div>' + ruler(e.dur) +
           '<div class="track" id="track"><div class="grid"></div>' + segEls(e, true) +
             '<div class="play" style="left:' + (head / e.dur * 100) + '%"></div></div>' +
           wave(e, 150) + evidence(e) + '</div>' +
@@ -313,7 +313,11 @@ if (s.src === 'fp') h += '<span class="b fp" style="left:' + (s.a / e.dur * 100)
           '<div><span class="kbd">I</span><span class="kbd">O</span>set in / out at the playhead</div>' +
           '<div><span class="kbd">,</span><span class="kbd">.</span>nudge a frame · <span class="kbd">⇧</span> for a second</div>' +
           '<div><span class="kbd">L</span>lock the selected marker</div>' +
-          '<div><span class="kbd">↵</span>save and open the next ' + C.unit + '</div></div>' +
+          '<div><span class="kbd">↵</span>save and open the next ' + C.unit + '</div>' +
+          '<div>drag a bar to slide it · its ends to trim it</div>' +
+          '<div><span class="kbd">←</span><span class="kbd">→</span>slide the marker a second · <span class="kbd">⇧</span> ten · <span class="kbd">Ctrl</span> a frame</div>' +
+          '<div><span class="kbd">[</span><span class="kbd">]</span>pick the start / end edge for <span class="kbd">,</span><span class="kbd">.</span></div>' +
+          '<div><span class="kbd">S</span>snapping on / off · hold <span class="kbd">⇧</span> while dragging to free an edge · <span class="kbd">Esc</span> cancels a drag</div></div>' +
           '<div class="sxhint">A locked marker survives every future <b>detect_segments</b> run — that is the whole point of the lock.</div>' +
           '<a class="sxlink" href="settings.html?tab=libraries">Detection settings →</a></div></div></div>';
   }
@@ -418,34 +422,131 @@ if (s.src === 'fp') h += '<span class="b fp" style="left:' + (s.a / e.dur * 100)
         else { S.view = 'sheet'; render(); toast('Every episode in the season is checked'); }
       }
       if (a === 'redetect-one') toast('Queued <b>detect_segments</b> for ' + (MOVIE ? e.t : e.id) + ' — locked markers are skipped');
+      if (a === 'snap') { SNAP = !SNAP; render(); }
     });
     dragHandles(e);
   }
 
+  /* Phase 223 — one drag engine for every pointer. The body slides (length kept), the handles trim, empty
+     space scrubs the playhead; a bubble reads the time; edges snap to the evidence lane, the neighbours and
+     the playhead (⇧ frees, S toggles); Escape restores; and a marker never overlaps its neighbour — the same
+     "no new or worsened overlap" rule the backend's SegmentEditRules enforces on the write. */
+  var SNAP = true, DRAG = null, suppressClick = false;
+  function fmtl1(t) { return fmtl(t) + '.' + Math.floor((t - Math.floor(t)) * 10); }
+  function snapTargets(e, skip) {
+    var t = [];
+    e.segs.forEach(function (s, n) {
+      t.push({ at: s.a - 1.5, l: 'black frames' }, { at: s.a + 1.5, l: 'black frames end' }, { at: s.b - 1.5, l: 'black frames' }, { at: s.b + 1.5, l: 'black frames end' });
+      if (n !== skip) t.push({ at: s.a, l: K[s.k].n.toLowerCase() + ' start' }, { at: s.b, l: K[s.k].n.toLowerCase() + ' end' });
+    });
+    [0, .31, .58, .79].forEach(function (p) { t.push({ at: p * e.dur, l: 'chapter mark' }); });
+    if (skip >= 0) t.push({ at: S.head, l: 'playhead' });
+    return t;
+  }
+  function nearestSnap(v, targets, r) { var best = null, bd = r + 1e-9; targets.forEach(function (t) { var d = Math.abs(t.at - v); if (d <= r && d < bd) { best = t; bd = d; } }); return best; }
+  function overlap(a, b) { if (a.k === b.k) return 0; if ((a.k === 'stinger' && b.k === 'credits') || (a.k === 'credits' && b.k === 'stinger')) return 0; return Math.max(0, Math.min(a.b, b.b) - Math.max(a.a, b.a)); }
+  function refusal(before, after, others) {
+    for (var i = 0; i < others.length; i++) {
+      var o = others[i]; if (o.k === after.k) continue;
+      if (overlap(after, o) > overlap(before, o)) {
+        var ob = o.a < before.a;
+        return { msg: K[after.k].n + " can't " + (ob ? 'start before the ' + K[o.k].n.toLowerCase() + ' ends' : 'end after the ' + K[o.k].n.toLowerCase() + ' starts') + ' (' + fmt(ob ? o.b : o.a) + ')',
+                 stops: 'stops at ' + K[o.k].n.toLowerCase() + (ob ? ' end' : ' start') };
+      }
+    }
+    return null;
+  }
+  function clampMove(before, others, from, to, propose) {
+    if (from === to || !refusal(before, propose(to), others)) return { v: to, r: null };
+    var lo = from, hi = to;
+    while (Math.abs(hi - lo) > 0.001) { var mid = (lo + hi) / 2; if (refusal(before, propose(mid), others)) hi = mid; else lo = mid; }
+    return { v: lo, r: refusal(before, propose(hi), others) };
+  }
+  function selectInPlace(n) {
+    S.sel = n;
+    root.querySelectorAll('.mk[data-m]').forEach(function (r) { r.classList.toggle('sel', +r.dataset.m === n); });
+    root.querySelectorAll('.seg[data-s]').forEach(function (b) { b.classList.toggle('on', +b.dataset.s === n); });
+  }
   function dragHandles(e) {
     var track = document.getElementById('track'); if (!track) return;
-    track.querySelectorAll('.h').forEach(function (h) {
-      h.addEventListener('mousedown', function (ev) {
-        ev.preventDefault(); ev.stopPropagation();
-        var n = +h.closest('.seg').dataset.s, f = h.dataset.e, s = e.segs[n], box = track.getBoundingClientRect();
-        S.sel = n; document.body.style.cursor = 'ew-resize';
-        function move(m) {
-          var t = Math.max(0, Math.min(e.dur, (m.clientX - box.left) / box.width * e.dur));
-          if (f === 'a') s.a = Math.min(t, s.b - 1); else s.b = Math.max(t, s.a + 1);
-          var el = track.querySelector('.seg[data-s="' + n + '"]');
-          el.style.left = (s.a / e.dur * 100) + '%'; el.style.width = ((s.b - s.a) / e.dur * 100) + '%';
-          track.querySelector('.play').style.left = (s[f] / e.dur * 100) + '%';
+    var tl = track.parentNode, bubble = document.createElement('div');
+    bubble.className = 'dragtip'; bubble.style.display = 'none'; tl.appendChild(bubble);
+    function showTip(t, html, stop) {
+      var bx = track.getBoundingClientRect(), tb = tl.getBoundingClientRect();
+      bubble.innerHTML = html; bubble.classList.toggle('stop', !!stop); bubble.style.display = 'block';
+      var half = bubble.offsetWidth / 2, x = (bx.left - tb.left) + t / e.dur * bx.width;
+      bubble.style.left = Math.max(bx.left - tb.left + half, Math.min(bx.right - tb.left - half, x)) + 'px';
+      bubble.style.top = (bx.top - tb.top - 30) + 'px';
+    }
+    function begin(ev, grip, n) {
+      if (DRAG || ev.button) return;
+      ev.preventDefault();
+      var s = n >= 0 ? e.segs[n] : null, box = track.getBoundingClientRect();
+      var d = DRAG = { grip: grip, n: n, s: s, before: s ? { k: s.k, a: s.a, b: s.b } : null, ox: ev.clientX, moved: false, pid: ev.pointerId,
+        off: s ? (ev.clientX - box.left) / box.width * e.dur - s.a : 0, targets: snapTargets(e, n), a: s ? s.a : 0, b: s ? s.b : 0, ph: S.head };
+      track.setPointerCapture(ev.pointerId);
+      function move(m) {
+        if (m.pointerId !== d.pid) return;
+        if (!d.moved) {
+          if (Math.abs(m.clientX - d.ox) < 4) return;
+          if (s && s.lock) { if (!d.warned) { d.warned = true; toast(K[s.k].n + ' is locked — unlock it to move it'); } return; }
+          d.moved = true; (document.querySelector('.sx') || document.body).classList.add(grip === 'a' || grip === 'b' ? 'sx-drag-resize' : 'sx-drag-grab');
         }
-        function up() {
-          document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up);
-          document.body.style.cursor = ''; s.src = 'me'; delete s.conf; dirty(); render();
-          toast(K[s.k].n + ' now ' + fmtl(s.a) + ' → ' + fmtl(s.b) + ' · saved');
+        var bx = track.getBoundingClientRect(), raw = Math.max(0, Math.min(e.dur, (m.clientX - bx.left) / bx.width * e.dur));
+        var r = 6 / bx.width * e.dur, snapOn = SNAP && !m.shiftKey, snap = null, cm = null;
+        var others = e.segs.filter(function (x, i) { return i !== n; });
+        function sn(v) { var h = snapOn ? nearestSnap(v, d.targets, r) : null; if (h) snap = h; return h ? h.at : v; }
+        if (grip === 'ph') {
+          d.ph = sn(raw); track.querySelector('.play').style.left = (d.ph / e.dur * 100) + '%';
+          showTip(d.ph, '<b>' + fmtl1(d.ph) + '</b>' + (snap ? ' · ' + snap.l : ''), false); return;
         }
-        document.addEventListener('mousemove', move); document.addEventListener('mouseup', up);
-      });
+        var before = d.before;
+        if (grip === 'a') { cm = clampMove(before, others, before.a, Math.max(0, Math.min(sn(raw), before.b - 0.1)), function (v) { return { k: before.k, a: v, b: before.b }; }); d.a = cm.v; d.b = before.b; }
+        else if (grip === 'b') { cm = clampMove(before, others, before.b, Math.min(e.dur, Math.max(sn(raw), before.a + 0.1)), function (v) { return { k: before.k, a: before.a, b: v }; }); d.b = cm.v; d.a = before.a; }
+        else {
+          var len = before.b - before.a, ps = raw - d.off;
+          if (snapOn) {
+            var hs = nearestSnap(ps, d.targets, r), he = nearestSnap(ps + len, d.targets, r);
+            if (hs && (!he || Math.abs(hs.at - ps) <= Math.abs(he.at - ps - len))) { snap = hs; ps = hs.at; } else if (he) { snap = he; ps = he.at - len; }
+          }
+          ps = Math.max(0, Math.min(e.dur - len, ps));
+          cm = clampMove(before, others, before.a, ps, function (v) { return { k: before.k, a: v, b: v + len }; }); d.a = cm.v; d.b = cm.v + len;
+        }
+        if (cm.r) snap = null;
+        var el = track.querySelector('.seg[data-s="' + n + '"]'); el.style.left = (d.a / e.dur * 100) + '%'; el.style.width = ((d.b - d.a) / e.dur * 100) + '%';
+        var edge = grip === 'b' ? d.b : d.a; track.querySelector('.play').style.left = (edge / e.dur * 100) + '%';
+        var row = root.querySelector('.mk[data-m="' + n + '"]');
+        if (row) { row.querySelector('.ts-a').innerHTML = fmtt(d.a); row.querySelector('.ts-b').innerHTML = fmtt(d.b); row.querySelector('.len').textContent = fmt(d.b - d.a) + ' long'; }
+        showTip(edge, (grip === 'ab' ? '<b>' + fmtl1(d.a) + '</b> → <b>' + fmtl1(d.b) + '</b> · ' + (d.b - d.a).toFixed(1) + ' s' : '<b>' + fmtl1(edge) + '</b>') +
+          (cm.r ? ' · ' + cm.r.stops : snap ? ' · ' + snap.l : ''), !!cm.r);
+      }
+      function finish(cancel) {
+        if (DRAG !== d) return; DRAG = null;
+        track.removeEventListener('pointermove', move); track.removeEventListener('pointerup', up); track.removeEventListener('pointercancel', cancelH);
+        track.removeEventListener('lostpointercapture', cancelH); window.removeEventListener('blur', cancelH); document.removeEventListener('keydown', esc, true);
+        (document.querySelector('.sx') || document.body).classList.remove('sx-drag-grab', 'sx-drag-resize'); bubble.style.display = 'none';
+        if (!d.moved) return;
+        if (cancel) { toast('Drag cancelled — nothing changed'); render(); return; }
+        suppressClick = true;
+        if (grip === 'ph') { S.head = d.ph; render(); return; }
+        s.a = d.a; s.b = d.b; s.src = 'me'; delete s.conf; S.head = grip === 'b' ? d.b : d.a; S.edge = grip === 'b' ? 'b' : 'a'; dirty(); render();
+        toast(K[s.k].n + ' now ' + fmtl(s.a) + ' → ' + fmtl(s.b) + ' · saved');
+      }
+      function up(m) { if (m.pointerId === d.pid) finish(false); }
+      function cancelH() { finish(true); }
+      function esc(k) { if (k.key === 'Escape') { k.preventDefault(); k.stopPropagation(); finish(true); } }
+      track.addEventListener('pointermove', move); track.addEventListener('pointerup', up); track.addEventListener('pointercancel', cancelH);
+      track.addEventListener('lostpointercapture', cancelH); window.addEventListener('blur', cancelH); document.addEventListener('keydown', esc, true);
+    }
+    track.addEventListener('pointerdown', function (ev) {
+      var bar = ev.target.closest('.seg'), h = ev.target.closest('.h');
+      if (bar && h) begin(ev, h.dataset.e, +bar.dataset.s);
+      else if (bar) { selectInPlace(+bar.dataset.s); begin(ev, 'ab', +bar.dataset.s); }
+      else begin(ev, 'ph', -1);
     });
-    track.querySelectorAll('.seg').forEach(function (el) {
-      el.addEventListener('mousedown', function (ev) { if (!ev.target.classList.contains('h')) { S.sel = +el.dataset.s; render(); } });
+    track.addEventListener('click', function (ev) {
+      if (suppressClick) { suppressClick = false; return; }
+      var bx = track.getBoundingClientRect(); S.head = Math.max(0, Math.min(e.dur, (ev.clientX - bx.left) / bx.width * e.dur)); render();
     });
   }
 
@@ -455,8 +556,22 @@ if (s.src === 'fp') h += '<span class="b fp" style="left:' + (s.a / e.dur * 100)
     var step = ev.shiftKey ? 1 : 0.04, k = ev.key.toLowerCase();
     if (k === ',' || k === '.') {
       if (s.lock) { toast(K[s.k].n + ' is locked — unlock it to move this marker'); return; }
-      s.b = Math.max(s.a + 1, s.b + (k === ',' ? -step : step)); s.src = 'me'; delete s.conf; dirty(); render();
+      var f = S.edge || 'b', nv = s[f] + (k === ',' ? -step : step);
+      if (f === 'a') s.a = Math.max(0, Math.min(s.b - 0.1, nv)); else s.b = Math.max(s.a + 0.1, Math.min(e.dur, nv));
+      s.src = 'me'; delete s.conf; dirty(); render();
     }
+    /* Phase 223 — arrows slide the WHOLE marker (1 s, ⇧ 10 s, Ctrl a frame) through the same neighbour clamp as a drag. */
+    else if (k === 'arrowleft' || k === 'arrowright') {
+      ev.preventDefault();
+      if (s.lock) { toast(K[s.k].n + ' is locked — unlock it to move it'); return; }
+      var dd = (ev.shiftKey ? 10 : (ev.ctrlKey || ev.metaKey) ? 0.04 : 1) * (k === 'arrowleft' ? -1 : 1), len = s.b - s.a;
+      var cm = clampMove({ k: s.k, a: s.a, b: s.b }, e.segs.filter(function (x) { return x !== s; }), s.a, Math.max(0, Math.min(e.dur - len, s.a + dd)), function (v) { return { k: s.k, a: v, b: v + len }; });
+      if (cm.v === s.a) { toast(cm.r ? cm.r.msg : K[s.k].n + ' is already at the ' + (dd < 0 ? 'start' : 'end') + ' of the file'); return; }
+      if (cm.r) toast(cm.r.msg);
+      s.a = cm.v; s.b = cm.v + len; s.src = 'me'; delete s.conf; S.edge = 'a'; dirty(); render();
+    }
+    else if (k === '[' || k === ']') { S.edge = k === '[' ? 'a' : 'b'; toast((k === '[' ? 'Start' : 'End') + ' edge selected — , and . nudge it'); }
+    else if (k === 's') { SNAP = !SNAP; render(); toast(SNAP ? 'Snapping on — edges stick to the evidence and the neighbours · hold ⇧ while dragging to free them' : 'Snapping off — S turns it back on'); }
     else if (k === 'l') { s.lock = !s.lock; dirty(); render(); }
     else if (k === 'enter') root.querySelector('[data-a="next"]').click();
     else if (k === 'escape') { S.view = 'sheet'; S.open = S.cur; render(); }

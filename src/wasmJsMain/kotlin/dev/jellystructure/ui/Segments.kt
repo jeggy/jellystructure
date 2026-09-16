@@ -9,10 +9,12 @@ import dev.jellystructure.api.SegmentDto
 import dev.jellystructure.api.SegmentEpisodeRef
 import dev.jellystructure.api.SegmentEpisodeRow
 import dev.jellystructure.api.SegmentEvidenceDto
+import dev.jellystructure.api.SegmentJellyfinCandidate
 import dev.jellystructure.api.SegmentRailItem
 import dev.jellystructure.api.SegmentSheetResponse
 import dev.jellystructure.api.SegmentTrimResponse
 import dev.jellystructure.api.SegmentWaveform
+import dev.jellystructure.model.SegmentEditRules
 import kotlinx.browser.document
 import kotlinx.browser.window
 import kotlinx.coroutines.CoroutineScope
@@ -21,6 +23,7 @@ import org.w3c.dom.Element
 import org.w3c.dom.HTMLElement
 import org.w3c.dom.HTMLVideoElement
 import org.w3c.dom.events.KeyboardEvent
+import org.w3c.dom.events.MouseEvent
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
@@ -175,6 +178,14 @@ private var trimStreamSeq = 0
 // Phase 222 (FR-222-6) — the stored envelope, fetched once per title and sliced client-side for both
 // waveform lanes; never re-fetched on a structural refresh.
 private var trimEnvelope: SegmentWaveform? = null
+// Phase 223 — snapping is a view-level switch (S); Jellyfin's candidates are held so their edges can be
+// snap targets; the zoom strip's window is what its pointer mapping reads; the click the browser fires
+// after a real drag is swallowed once.
+private var trimSnapEnabled = true
+private var trimJfCandidates: List<SegmentJellyfinCandidate> = emptyList()
+private var suppressNextSurfaceClick = false
+private var zoomWindowStartMs = 0L
+private var zoomWindowMs = 0L
 
 fun renderSegments(scope: CoroutineScope, query: Map<String, String>) {
     val body = document.body ?: return
@@ -296,7 +307,7 @@ private fun buildTrack(segments: List<SegmentDto>, durationSec: Double, selected
             else -> """<i class="h l" data-e="a"></i><i class="h r" data-e="b"></i>"""
         }
         val title = if (pastEnd) """ title="starts after the end of the file — move it back"""" else ""
-        """<div class="seg ${m.cls}$lockCls$onCls" data-s="${s.kind}"$title style="left:${left}%;width:${width}%">${if (width > 6) m.label else ""}$handles</div>"""
+        """<div class="seg ${m.cls}$lockCls$onCls" data-s="${s.kind}"$title style="left:${left}%;width:${width}%">${if (width > 6) "<span class=\"sl\">${m.label}</span>" else ""}$handles</div>"""
     }
 }
 
@@ -371,7 +382,11 @@ private fun buildRail(data: SegmentTrimResponse): String {
           <div><b>−</b><b>+</b> on a row nudges by a second</div>
           <div><span class="kbd">L</span>lock the selected marker</div>
           <div><span class="kbd">↵</span>save and open the next episode</div>
-          <div><span class="kbd">Space</span>play / pause · click the timeline, a bar or the ruler to jump</div></div>
+          <div><span class="kbd">Space</span>play / pause · click the timeline, a bar or the ruler to jump</div>
+          <div>drag a bar to slide it · its ends to trim it · the strip below the waveform for fine work</div>
+          <div><span class="kbd">←</span><span class="kbd">→</span>slide the marker a second · <span class="kbd">⇧</span> ten · <span class="kbd">Ctrl</span> a frame</div>
+          <div><span class="kbd">[</span><span class="kbd">]</span>pick the start / end edge for <span class="kbd">,</span><span class="kbd">.</span></div>
+          <div><span class="kbd">S</span>snapping on / off · hold <span class="kbd">⇧</span> while dragging to free an edge · <span class="kbd">Esc</span> cancels a drag</div></div>
           <div class="sxhint">A locked marker survives every future <b>detect_segments</b> run — that is the whole point of the lock.</div>
           <a class="sxlink" href="#/settings?tab=libraries">Detection settings →</a></div>"""
 }
@@ -393,6 +408,8 @@ private fun renderTrim(data: SegmentTrimResponse, scope: CoroutineScope) {
         trimRemuxBaseMs = 0L
         trimStreamSeq++
         trimEnvelope = null
+        trimJfCandidates = emptyList()
+        abandonDrag()
     } else if (trimSelectedKind != null && data.segments.none { it.kind == trimSelectedKind }) {
         trimSelectedKind = data.segments.firstOrNull()?.kind
     }
@@ -444,7 +461,7 @@ private fun renderTrim(data: SegmentTrimResponse, scope: CoroutineScope) {
 /** The `.tl` block's inner content — extracted so [refreshTrimBody] can rebuild it in place (a
  *  structural change: lock icon, handle presence, marker set) without touching `.vid`/`<video>`. */
 private fun buildTimelineInnerHtml(data: SegmentTrimResponse, selectedKind: String?, playheadSec: Double): String = """
-    <div class="tlh"><span class="lbl">Timeline</span>${legendHtml()}</div>
+    <div class="tlh"><span class="lbl">Timeline</span>${snapChipHtml()}${legendHtml()}</div>
     ${buildRuler(data.durationSec)}
     <div class="track" id="seg-track">
       <div class="grid"></div>${buildTrack(data.segments, data.durationSec, selectedKind)}
@@ -452,7 +469,7 @@ private fun buildTimelineInnerHtml(data: SegmentTrimResponse, selectedKind: Stri
     </div>
     <div class="wave" id="seg-wave"></div>
     <div class="tlh" style="margin:6px 0 0"><span class="lbl" id="seg-wave-zoom-lbl"></span></div>
-    <div class="wave" id="seg-wave-zoom"></div>
+    <div class="wave zoomable" id="seg-wave-zoom"></div>
     ${buildEvidenceLane(data.evidence, data.durationSec)}
 """.trimIndent()
 
@@ -574,37 +591,49 @@ private fun wireEditableRegion(root: Element, data: SegmentTrimResponse, scope: 
             }
         }
     }
-    // Select a marker by clicking its bar on the track (not a resize handle).
-    root.querySelectorAll(".seg[data-s]").let { nodes ->
-        for (i in 0 until nodes.length) {
-            val el = nodes.item(i) as? HTMLElement ?: continue
-            el.addEventListener("mousedown") { ev ->
-                val target = ev.target as? Element
-                if (target?.classList?.contains("h") == true) return@addEventListener
-                selectMarker(el.getAttribute("data-s"))
-            }
+    // Phase 223 (FR-223-1/2/7) — every pointer on the track and on the zoom strip goes through ONE engine:
+    // a bar's body slides it, a handle trims one edge, empty space scrubs the playhead. Below the click
+    // threshold a press is a click and does what a click did before (select, and seek where the cursor is).
+    val track = root.querySelector("#seg-track") as? HTMLElement
+    val zoom = root.querySelector("#seg-wave-zoom") as? HTMLElement
+    track?.addEventListener("pointerdown") { ev ->
+        val me = ev as MouseEvent
+        val target = ev.target as? Element
+        val bar = target?.closest(".seg") as? HTMLElement
+        val kind = bar?.getAttribute("data-s")
+        val handle = target?.closest(".h")?.getAttribute("data-e")
+        when {
+            kind != null && handle != null -> beginDrag(me, "track", handle, kind, track, bar, scope)
+            kind != null -> { if (trimSelectedKind != kind) selectMarker(kind); beginDrag(me, "track", "ab", kind, track, bar, scope) }
+            else -> beginDrag(me, "track", "ph", null, track, null, scope)
         }
     }
-    // Click empty track space (ruler included) to move the playhead — a lightweight DOM update, not a
-    // full re-render: re-rendering would tear down and recreate <video>, restarting the stream.
-    // Phase 222 (FR-222-8) — the grid, a bar (not its handles) and the ruler all move the playhead; the
-    // position is always measured against the TRACK so a click on a bar lands where the cursor is.
-    val track = root.querySelector("#seg-track") as? HTMLElement
-    fun seekAtClientX(clientX: Double) {
+    zoom?.addEventListener("pointerdown") { ev ->
+        val me = ev as MouseEvent
+        val target = ev.target as? Element
+        val bar = target?.closest(".zseg") as? HTMLElement
+        val kind = bar?.getAttribute("data-zs")
+        val handle = target?.closest(".h")?.getAttribute("data-e")
+        when {
+            kind != null && handle != null -> beginDrag(me, "zoom", handle, kind, zoom, bar, scope)
+            kind != null -> beginDrag(me, "zoom", "ab", kind, zoom, bar, scope)
+            else -> beginDrag(me, "zoom", "ph", null, zoom, null, scope)
+        }
+    }
+    // A click (a press that never became a drag) moves the playhead — a lightweight DOM update, not a
+    // full re-render: re-rendering would tear down and recreate <video>, restarting the stream. The
+    // position is measured against the SURFACE so a click on a bar lands where the cursor is (222 FR-8);
+    // the click the browser fires after a real drag is swallowed.
+    fun seekAtSurface(surface: String, clientX: Double) {
+        if (suppressNextSurfaceClick) { suppressNextSurfaceClick = false; return }
         val live = currentTrimData ?: data
-        val box = (track ?: return).getBoundingClientRect()
-        if (box.width <= 0 || live.durationSec <= 0) return
-        val frac = ((clientX - box.left) / box.width).coerceIn(0.0, 1.0)
-        seekToAbsoluteMs(live, (frac * live.durationSec * 1000).toLong(), scope)
+        val ms = surfaceMsAt(surface, clientX, (live.durationSec * 1000).toLong()) ?: return
+        seekToAbsoluteMs(live, ms, scope)
     }
-    track?.addEventListener("click") { ev ->
-        val target = ev.target as? Element ?: return@addEventListener
-        if (target.classList.contains("h") || target.closest(".h") != null) return@addEventListener
-        seekAtClientX((ev as org.w3c.dom.events.MouseEvent).clientX.toDouble())
-    }
-    (root.querySelector("#seg-ruler") as? HTMLElement)?.addEventListener("click") { ev ->
-        seekAtClientX((ev as org.w3c.dom.events.MouseEvent).clientX.toDouble())
-    }
+    track?.addEventListener("click") { ev -> seekAtSurface("track", (ev as MouseEvent).clientX.toDouble()) }
+    zoom?.addEventListener("click") { ev -> seekAtSurface("zoom", (ev as MouseEvent).clientX.toDouble()) }
+    (root.querySelector("#seg-ruler") as? HTMLElement)?.addEventListener("click") { ev -> seekAtSurface("track", (ev as MouseEvent).clientX.toDouble()) }
+    (root.querySelector("#seg-snap-chip") as? HTMLElement)?.addEventListener("click") { toggleSnap() }
 
     root.querySelectorAll("[data-l]").let { nodes ->
         for (i in 0 until nodes.length) {
@@ -695,7 +724,6 @@ private fun wireEditableRegion(root: Element, data: SegmentTrimResponse, scope: 
         }
     }
 
-    wireDragHandles(root, data, scope)
 }
 
 /** Highlights a different marker WITHOUT a full renderTrim() — restyles the `.mk`/`.seg` `sel`/`on`
@@ -736,11 +764,9 @@ private fun wireWaveform(data: SegmentTrimResponse, scope: CoroutineScope) {
         val live = currentTrimData ?: return@launch
         if (live.mediaId != data.mediaId || live.episodeKey != data.episodeKey || live.episodeNumber != data.episodeNumber) return@launch
         trimEnvelope = env
-        if (env == null) {
-            document.getElementById("seg-wave")?.innerHTML = """<span class="sxhint" style="padding:0 6px">waveform not computed yet — queued in the background (Activity ▸ Jobs &amp; workers); reopen this title in a few minutes</span>"""
-            document.getElementById("seg-wave-zoom-lbl")?.textContent = ""
-            return@launch
-        }
+        // Phase 223 (FR-223-7) — the zoom strip is a track whether or not the envelope exists, so the lanes
+        // are always rendered; only the full lane carries the "not yet" hint.
+        if (env == null) document.getElementById("seg-wave")?.innerHTML = """<span class="sxhint" style="padding:0 6px">waveform not computed yet — queued in the background (Activity ▸ Jobs &amp; workers); reopen this title in a few minutes</span>"""
         renderWaveformLanes()
     }
 }
@@ -748,39 +774,102 @@ private fun wireWaveform(data: SegmentTrimResponse, scope: CoroutineScope) {
 private const val WAVE_FULL_BARS = 300
 private const val WAVE_ZOOM_HALF_SEC = 60
 
-/** Phase 222 (FR-222-6) — both lanes from the held envelope: the whole file downsampled to at most
- *  [WAVE_FULL_BARS] bars (max per group, so a short loud cue is not averaged away), and a ±[WAVE_ZOOM_HALF_SEC]
- *  s strip around the selected marker's start (or the playhead) at one bar per bucket — the strip the
- *  operator actually judges a boundary on. Pure DOM; nothing is fetched. */
+/** Phase 222 (FR-222-6) — the full lane from the held envelope: the whole file downsampled to at most
+ *  [WAVE_FULL_BARS] bars (max per group, so a short loud cue is not averaged away). Phase 223 (FR-223-7) —
+ *  the ±[WAVE_ZOOM_HALF_SEC] s strip is a second TRACK: centred on the selected marker's last-touched edge
+ *  (or the playhead), drawn even before the envelope exists, carrying the selected marker's bar with the
+ *  same grips as the track and its own playhead line. Never redrawn mid-drag — the ground must not move
+ *  under the pointer — so a drag re-centres it on release. Pure DOM; nothing is fetched. */
 private fun renderWaveformLanes() {
-    val env = trimEnvelope ?: return
+    if (dragLive != null) return
     val data = currentTrimData ?: return
-    val full = document.getElementById("seg-wave") ?: return
-    val zoom = document.getElementById("seg-wave-zoom")
+    val env = trimEnvelope
+    val full = document.getElementById("seg-wave")
+    if (full != null && env != null) {
+        val peaks = env.peaks
+        if (peaks.isEmpty() || env.bucketMs <= 0) full.innerHTML = "" else {
+            val group = (peaks.size + WAVE_FULL_BARS - 1) / WAVE_FULL_BARS
+            val bars = (0 until (peaks.size + group - 1) / group).map { g ->
+                var m = 0
+                for (i in g * group until ((g + 1) * group).coerceAtMost(peaks.size)) if (peaks[i] > m) m = peaks[i]
+                m
+            }
+            full.innerHTML = bars.joinToString("") { p -> """<i style="height:${p.coerceAtLeast(1)}%"></i>""" }
+        }
+    }
+    val zoom = document.getElementById("seg-wave-zoom") as? HTMLElement ?: return
     val zoomLbl = document.getElementById("seg-wave-zoom-lbl")
-    val peaks = env.peaks
-    if (peaks.isEmpty() || env.bucketMs <= 0) { full.innerHTML = ""; return }
-    val group = (peaks.size + WAVE_FULL_BARS - 1) / WAVE_FULL_BARS
-    val bars = (0 until (peaks.size + group - 1) / group).map { g ->
-        var m = 0
-        for (i in g * group until ((g + 1) * group).coerceAtMost(peaks.size)) if (peaks[i] > m) m = peaks[i]
-        m
-    }
-    full.innerHTML = bars.joinToString("") { p -> """<i style="height:${p.coerceAtLeast(1)}%"></i>""" }
-
-    if (zoom == null) return
+    val durationMs = (data.durationSec * 1000).toLong()
+    if (durationMs <= 0) { zoom.innerHTML = ""; zoomLbl?.textContent = ""; zoomWindowMs = 0L; return }
     val selected = trimSelectedKind?.let { k -> data.segments.firstOrNull { it.kind == k } }
-    val centreMs = selected?.startMs ?: trimPlayheadMs
-    val fromBucket = ((centreMs - WAVE_ZOOM_HALF_SEC * 1000L) / env.bucketMs).toInt().coerceAtLeast(0)
-    val toBucket = ((centreMs + WAVE_ZOOM_HALF_SEC * 1000L) / env.bucketMs).toInt().coerceAtMost(peaks.size - 1)
-    if (toBucket < fromBucket) { zoom.innerHTML = ""; zoomLbl?.textContent = ""; return }
-    val centreIdx = (centreMs / env.bucketMs).toInt()
-    zoom.innerHTML = (fromBucket..toBucket).joinToString("") { i ->
-        val mark = if (i == centreIdx) ";background:#fff" else ""
-        """<i style="height:${peaks[i].coerceAtLeast(1)}%$mark"></i>"""
+    val edgeIsEnd = selected != null && trimLastEdge == "b" && !isOpenEnded(selected) && selected.endMs != null
+    val centreMs = when { selected == null -> trimPlayheadMs; edgeIsEnd -> selected.endMs!!; else -> selected.startMs }
+    val bucketMs = env?.bucketMs?.takeIf { it > 0 } ?: 1_000L
+    val winStart = ((centreMs - WAVE_ZOOM_HALF_SEC * 1000L).coerceAtLeast(0L) / bucketMs) * bucketMs
+    val winEnd = (((centreMs + WAVE_ZOOM_HALF_SEC * 1000L).coerceAtMost(durationMs) + bucketMs - 1) / bucketMs * bucketMs).coerceAtLeast(winStart + bucketMs)
+    zoomWindowStartMs = winStart
+    zoomWindowMs = winEnd - winStart
+    val sb = StringBuilder()
+    if (env != null && env.peaks.isNotEmpty()) {
+        val peaks = env.peaks
+        val centreIdx = (centreMs / bucketMs).toInt()
+        var i = (winStart / bucketMs).toInt()
+        val last = ((winEnd - 1) / bucketMs).toInt()
+        while (i <= last) {
+            val p = peaks.getOrNull(i) ?: 0
+            val mark = if (i == centreIdx) ";background:#fff" else ""
+            sb.append("""<i style="height:${p.coerceAtLeast(1)}%$mark"></i>""")
+            i++
+        }
+    } else {
+        // No envelope yet (queued, or no decodable audio): the strip is still a track, just a quiet one.
+        sb.append("""<span class="sxhint" style="position:absolute;left:8px;top:4px;pointer-events:none">no waveform yet</span>""")
     }
-    zoomLbl?.textContent = if (selected != null) "±$WAVE_ZOOM_HALF_SEC s around the ${kindOf(selected.kind).label.lowercase()} start (${fmtl(selected.startMs / 1000.0)})"
-        else "±$WAVE_ZOOM_HALF_SEC s around the playhead (${fmtl(trimPlayheadMs / 1000.0)})"
+    if (selected != null) sb.append(zoomBarHtml(selected, data.durationSec))
+    sb.append("""<div class="zplay" id="seg-zplay" style="display:none"></div>""")
+    zoom.innerHTML = sb.toString()
+    positionZoomPlayhead(trimPlayheadMs)
+    zoomLbl?.textContent = when {
+        selected == null -> "±$WAVE_ZOOM_HALF_SEC s around the playhead (${fmtlt(trimPlayheadMs / 1000.0)}) · drag here for fine work"
+        else -> "±$WAVE_ZOOM_HALF_SEC s around the ${kindOf(selected.kind).label.lowercase()} ${if (edgeIsEnd) "end" else "start"} (${fmtlt(centreMs / 1000.0)}) · drag here for fine work"
+    }
+}
+
+/** The selected marker's bar on the zoom strip — the visible part of it, with a handle only for an edge
+ *  that lies inside the window. */
+private fun zoomBarHtml(s: SegmentDto, durationSec: Double): String {
+    if (zoomWindowMs <= 0) return ""
+    val m = kindOf(s.kind)
+    val startMs = s.startMs
+    val endMs = (segEndSec(s, durationSec) * 1000).toLong()
+    val winEnd = zoomWindowStartMs + zoomWindowMs
+    if (endMs < zoomWindowStartMs || startMs > winEnd) return ""
+    val left = (startMs - zoomWindowStartMs).coerceAtLeast(0L).toDouble() / zoomWindowMs * 100
+    val right = (endMs - zoomWindowStartMs).coerceAtMost(zoomWindowMs).toDouble() / zoomWindowMs * 100
+    val width = (right - left).coerceAtLeast(0.3)
+    val lockCls = if (s.locked) " lk" else ""
+    val handles = if (s.locked) "" else buildString {
+        if (startMs >= zoomWindowStartMs) append("""<i class="h l" data-e="a"></i>""")
+        if (!isOpenEnded(s) && s.endMs != null && endMs <= winEnd) append("""<i class="h r" data-e="b"></i>""")
+    }
+    return """<div class="zseg ${m.cls}$lockCls on" data-zs="${s.kind}" style="left:$left%;width:$width%">$handles</div>"""
+}
+
+private fun positionZoomBar(s: SegmentDto, durationSec: Double) {
+    val bar = document.querySelector(".zseg[data-zs='${s.kind}']") as? HTMLElement ?: return
+    if (zoomWindowMs <= 0) return
+    val endMs = (segEndSec(s, durationSec) * 1000).toLong()
+    val left = ((s.startMs - zoomWindowStartMs).coerceAtLeast(0L).toDouble() / zoomWindowMs * 100).coerceAtMost(100.0)
+    val right = (endMs - zoomWindowStartMs).coerceIn(0L, zoomWindowMs).toDouble() / zoomWindowMs * 100
+    bar.style.left = "$left%"
+    bar.style.width = "${(right - left).coerceAtLeast(0.3)}%"
+}
+
+private fun positionZoomPlayhead(ms: Long) {
+    val zp = document.getElementById("seg-zplay") as? HTMLElement ?: return
+    if (zoomWindowMs <= 0 || ms < zoomWindowStartMs || ms > zoomWindowStartMs + zoomWindowMs) { zp.style.display = "none"; return }
+    zp.style.display = "block"
+    zp.style.left = "${(ms - zoomWindowStartMs).toDouble() / zoomWindowMs * 100}%"
 }
 
 /** Step 6 — Jellyfin's own markers, offered as candidates only. Empty (no provider plugin installed) is
@@ -788,6 +877,7 @@ private fun renderWaveformLanes() {
 private fun wireJellyfinCandidates(data: SegmentTrimResponse, scope: CoroutineScope) {
     scope.launch {
         val candidates = SegmentApi.jellyfinCandidates(data.mediaId, data.episodeKey, data.episodeNumber)
+        if (currentTrimData?.mediaId == data.mediaId && currentTrimData?.episodeKey == data.episodeKey) trimJfCandidates = candidates
         val container = document.getElementById("seg-jf-candidates") ?: return@launch
         if (candidates.isEmpty()) return@launch
         container.innerHTML = """<div class="mk add"><span class="sw" style="background:var(--info)"></span>
@@ -825,6 +915,7 @@ private fun currentTrimSelectedLabel(): String? = trimSelectedKind?.let { "${kin
 private fun updatePlayheadDom(ms: Long, durationSec: Double, phLabel: String?) {
     val pct = if (durationSec > 0) (ms / 1000.0 / durationSec * 100) else 0.0
     (document.getElementById("seg-playhead") as? HTMLElement)?.style?.left = "$pct%"
+    positionZoomPlayhead(ms)
     document.getElementById("seg-timecode")?.textContent = "${fmtl(ms / 1000.0)} / ${fmtl(durationSec)}"
     val ph = document.getElementById("seg-ph") as? HTMLElement
     if (ph != null && ph.style.display != "none") {
@@ -960,6 +1051,7 @@ private fun wireVideo(data: SegmentTrimResponse, scope: CoroutineScope) {
         setStreamBadge("can't play this file here — $why · use the timecodes below", "warn")
     }
     video.addEventListener("timeupdate") {
+        if (dragLive != null) return@addEventListener   // Phase 223 — the playhead rides the dragged edge, not the clock
         trimPlayheadMs = currentVideoAbsoluteMs(video)
         updatePlayheadDom(trimPlayheadMs, data.durationSec, currentTrimSelectedLabel())
     }
@@ -1013,15 +1105,30 @@ private fun nudgeSegment(data: SegmentTrimResponse, scope: CoroutineScope, kind:
         // Phase 222 (FR-222-4) — an open-ended marker has only a start, free to move EITHER way within
         // the file. (The old clamp against `end - 100` with end == start turned +1 s into −100 ms.)
         if (edge == "b") { toast("${kindOf(kind).label} runs to the end — press O at the playhead to give it an end"); return }
-        val ceiling = if (durMs > 0) durMs else Long.MAX_VALUE
-        applyEditInPlace(data, seg, (start + deltaMs).coerceIn(0L, ceiling), null, scope)
+        val before = markerOf(seg)
+        val want = SegmentEditRules.withStart(before, start + deltaMs, durMs).startMs
+        val (v, refusal) = SegmentEditRules.clampMove(before, otherMarkers(data, kind), durMs, start, want) { before.copy(startMs = it) }
+        if (v == start) { toast(refusal?.message ?: "${kindOf(kind).label} can't move further that way"); return }
+        if (refusal != null) toast(refusal.message)
+        applyEditInPlace(data, seg, v, null, scope)
         return
     }
     val end = seg.endMs ?: seg.startMs
     // Phase 222 — clamps that can neither invert the marker nor throw (a ceiling below zero did).
-    val newStart = if (edge == "a") (start + deltaMs).coerceIn(0L, (end - 100).coerceAtLeast(0L)) else start
-    val newEnd = if (edge == "b") (end + deltaMs).coerceAtLeast(newStart + 100) else end
-    applyEditInPlace(data, seg, newStart, newEnd, scope)
+    // Phase 223 (FR-223-6) — and the neighbour rule: the edge stops where the neighbour is, and says so.
+    val before = markerOf(seg)
+    val others = otherMarkers(data, kind)
+    val (v, refusal) = if (edge == "a") {
+        val want = SegmentEditRules.withStart(before, start + deltaMs, durMs).startMs
+        SegmentEditRules.clampMove(before, others, durMs, start, want) { SegmentEditRules.withStart(before, it, durMs) }
+    } else {
+        val want = SegmentEditRules.withEnd(before, end + deltaMs, durMs).endMs ?: end
+        SegmentEditRules.clampMove(before, others, durMs, end, want) { SegmentEditRules.withEnd(before, it, durMs) }
+    }
+    val result = if (edge == "a") SegmentEditRules.withStart(before, v, durMs) else SegmentEditRules.withEnd(before, v, durMs)
+    if (result.startMs == start && (result.endMs ?: end) == end) { toast(refusal?.message ?: "${kindOf(kind).label} can't move further that way"); return }
+    if (refusal != null) toast(refusal.message)
+    applyEditInPlace(data, seg, result.startMs, result.endMs, scope)
 }
 
 /**
@@ -1037,6 +1144,11 @@ private fun nudgeSegment(data: SegmentTrimResponse, scope: CoroutineScope, kind:
  */
 private fun applyEditInPlace(data: SegmentTrimResponse, seg: SegmentDto, newStart: Long, newEnd: Long?, scope: CoroutineScope) {
     val kind = seg.kind
+    // Phase 223 (FR-223-6) — the neighbour rule, checked here so every path (steppers, keys, drags) gets the
+    // same answer before a round trip; the server checks the same function again.
+    val durMs = (data.durationSec * 1000).toLong()
+    SegmentEditRules.acceptEdit(markerOf(seg), SegmentEditRules.Marker(kind, newStart, newEnd), otherMarkers(data, kind), if (durMs > 0) durMs else SegmentEditRules.UNBOUNDED_MS)
+        ?.let { toast(it); return }
     val patched = seg.copy(startMs = newStart, endMs = newEnd, source = SegSource.MANUAL, confidence = null)
     // Phase 222 (FR-222-4) — giving an open-ended marker an end (or the reverse) changes the row's
     // controls, which a per-field patch cannot express: write, then refresh the structure.
@@ -1095,63 +1207,350 @@ private fun goNext(data: SegmentTrimResponse, scope: CoroutineScope) {
     }
 }
 
-// Phase 189 (FR-189-1) — wired ONCE per navigation (called from wireTrim only); it must go on working
-// for as long as the view is open, including after any number of edits, since none
-// of those replace #seg-track's DOM anymore. Reads currentTrimData fresh on every mousedown instead of
-// closing over the initial render's `data`, so a duration correction (or any prior edit) is never stale
-// by the time the next drag starts — the same "read live state, don't close over a stale render" rule
-// wireKeydownOnce already follows.
-private fun wireDragHandles(root: Element, data: SegmentTrimResponse, scope: CoroutineScope) {
-    val track = document.getElementById("seg-track") as? HTMLElement ?: return
-    track.querySelectorAll(".h").let { nodes ->
-        for (i in 0 until nodes.length) {
-            val handle = nodes.item(i) as? HTMLElement ?: continue
-            handle.addEventListener("mousedown") { downEv ->
-                downEv.preventDefault()
-                val live = currentTrimData ?: data
-                val segEl = handle.closest(".seg") as? HTMLElement ?: return@addEventListener
-                val kind = segEl.getAttribute("data-s") ?: return@addEventListener
-                val edge = handle.getAttribute("data-e") ?: return@addEventListener
-                val seg = live.segments.firstOrNull { it.kind == kind } ?: return@addEventListener
-                if (seg.locked) {
-                    toast("${kindOf(kind).label} is locked — unlock it to change the time")
-                    return@addEventListener
-                }
-                trimSelectedKind = kind
-                val box = track.getBoundingClientRect()
-                val durationSec = live.durationSec
-                // Phase 222 (FR-222-4) — an open-ended marker's bar reaches the end; its start may go anywhere in the file.
-                val openEnded = isOpenEnded(seg)
-                var liveStartMs = seg.startMs
-                var liveEndMs = if (openEnded) (durationSec * 1000).toLong() else seg.endMs ?: seg.startMs
+// ---- Phase 223 — one drag engine for every pointer ---------------------------------------------------
+//
+// Three grips — a bar's body ("ab": start and end together, length kept), its left handle ("a"), its
+// right handle ("b") — plus a playhead scrub on empty space ("ph"), on two surfaces: the track and the
+// zoom strip. Pointer Events with capture on the surface, so mouse, pen and touch share one path and a
+// drag survives the pointer leaving the bar or the window. Nothing is written until release; Escape,
+// pointercancel, a lost capture or a window blur restore everything. Every position goes through
+// SegmentEditRules — the same function the server answers 422 with — so the bar stops where a write
+// would be refused, and the bubble says why. Wired by wireEditableRegion, i.e. freshly after every
+// structural refresh, reading currentTrimData on every event rather than closing over a render.
 
-                lateinit var moveHandler: (org.w3c.dom.events.Event) -> Unit
-                lateinit var upHandler: (org.w3c.dom.events.Event) -> Unit
-                moveHandler = handler@{ mv ->
-                    val me = mv as org.w3c.dom.events.MouseEvent
-                    val frac = ((me.clientX - box.left) / box.width).coerceIn(0.0, 1.0)
-                    val tMs = (frac * durationSec * 1000).toLong()
-                    if (edge == "a") liveStartMs = tMs.coerceAtMost(if (openEnded) liveEndMs else liveEndMs - 100) else liveEndMs = tMs.coerceAtLeast(liveStartMs + 100)
-                    val left = liveStartMs / 1000.0 / durationSec * 100
-                    val width = (liveEndMs - liveStartMs) / 1000.0 / durationSec * 100
-                    segEl.style.left = "$left%"
-                    segEl.style.width = "$width%"
-                    (document.getElementById("seg-playhead") as? HTMLElement)?.style?.left = "${(if (edge == "a") liveStartMs else liveEndMs) / 1000.0 / durationSec * 100}%"
+private const val DRAG_THRESHOLD_PX = 4.0
+private const val SNAP_PX_FINE = 6.0
+private const val SNAP_PX_COARSE = 12.0
+
+private class DragState(
+    val surface: String,
+    val grip: String,
+    val kind: String?,
+    val before: SegmentDto?,
+    val pointerId: Int,
+    val captured: HTMLElement,
+    val visual: HTMLElement?,
+    val originX: Double,
+    val grabOffsetMs: Long,
+    val snapTargets: List<SegmentEditRules.SnapTarget>,
+    val playheadBefore: Long,
+    val locked: Boolean,
+) {
+    var moved = false
+    var lockedToastShown = false
+    var wasPlaying = false
+    var liveStart = before?.startMs ?: 0L
+    var liveEnd: Long? = before?.endMs
+    var livePlayhead = playheadBefore
+    var rafPending = false
+    var pendingScrubMs = -1L
+    lateinit var onMove: (org.w3c.dom.events.Event) -> Unit
+    lateinit var onUp: (org.w3c.dom.events.Event) -> Unit
+    lateinit var onCancel: (org.w3c.dom.events.Event) -> Unit
+    lateinit var onBlur: (org.w3c.dom.events.Event) -> Unit
+}
+
+private var dragLive: DragState? = null
+
+internal fun pointerIdOf(ev: JsAny): Int = js("(ev.pointerId === undefined ? 1 : ev.pointerId)")
+internal fun setPointerCaptureJs(el: JsAny, id: Int): Unit = js("(function(){ try { el.setPointerCapture(id) } catch (e) {} })()")
+internal fun releasePointerCaptureJs(el: JsAny, id: Int): Unit = js("(function(){ try { el.releasePointerCapture(id) } catch (e) {} })()")
+internal fun isCoarsePointer(): Boolean = js("window.matchMedia('(pointer: coarse)').matches")
+
+private fun surfaceEl(surface: String): HTMLElement? =
+    document.getElementById(if (surface == "zoom") "seg-wave-zoom" else "seg-track") as? HTMLElement
+
+/** The time under [clientX] on a surface — re-measured on every call, since the page may scroll under a
+ *  finger mid-drag. Null when the surface has no width or no window yet. */
+private fun surfaceMsAt(surface: String, clientX: Double, durationMs: Long): Long? {
+    val el = surfaceEl(surface) ?: return null
+    val box = el.getBoundingClientRect()
+    if (box.width <= 0) return null
+    val frac = ((clientX - box.left) / box.width).coerceIn(0.0, 1.0)
+    return if (surface == "zoom") { if (zoomWindowMs <= 0) null else zoomWindowStartMs + (frac * zoomWindowMs).toLong() }
+    else { if (durationMs <= 0) null else (frac * durationMs).toLong() }
+}
+
+private fun surfaceMsPerPx(surface: String, durationMs: Long): Double {
+    val box = surfaceEl(surface)?.getBoundingClientRect() ?: return 0.0
+    if (box.width <= 0) return 0.0
+    return (if (surface == "zoom") zoomWindowMs else durationMs).toDouble() / box.width
+}
+
+private fun markerOf(s: SegmentDto) = SegmentEditRules.Marker(s.kind, s.startMs, s.endMs)
+
+private fun otherMarkers(data: SegmentTrimResponse, kind: String?): List<SegmentEditRules.Marker> =
+    data.segments.filter { it.kind != kind }.map { markerOf(it) }
+
+private fun fmtSecs(ms: Long): String = "${ms / 1000}.${(ms % 1000) / 100}"
+
+/** FR-223-4 — computed once at pointer-down, never during the move. Evidence first, then the other
+ *  markers' edges, then Jellyfin's candidates, the playhead last so it loses ties. */
+private fun snapTargetsFor(data: SegmentTrimResponse, movingKind: String?): List<SegmentEditRules.SnapTarget> {
+    val t = ArrayList<SegmentEditRules.SnapTarget>()
+    fun add(ms: Long?, label: String) { if (ms != null && ms >= 0) t.add(SegmentEditRules.SnapTarget(ms, label)) }
+    for (e in data.evidence) when (e.evidenceType) {
+        EvType.BLACK_FRAME -> { add(e.startMs, "black frames"); add(e.endMs, "black frames end") }
+        EvType.SILENCE -> { add(e.startMs, "silence"); add(e.endMs, "silence end") }
+        EvType.FINGERPRINT_MATCH -> { add(e.startMs, "match start"); add(e.endMs, "match end") }
+        EvType.CHAPTER_CANDIDATE -> add(e.startMs, "chapter mark")
+    }
+    for (s in data.segments) if (s.kind != movingKind) {
+        val l = kindOf(s.kind).label.lowercase()
+        add(s.startMs, "$l start")
+        if (!isOpenEnded(s)) add(s.endMs, "$l end")
+    }
+    for (c in trimJfCandidates) {
+        val l = kindOf(c.kind).label.lowercase()
+        add(c.startMs, "Jellyfin's $l start")
+        add(c.endMs, "Jellyfin's $l end")
+    }
+    if (movingKind != null) add(trimPlayheadMs, "playhead")
+    return t
+}
+
+private fun snapChipHtml(): String =
+    """<span class="src snapchip${if (trimSnapEnabled) " me" else ""}" id="seg-snap-chip" title="Edges stick to black frames, silences, matches, chapter marks, the neighbours and the playhead · hold ⇧ while dragging to free them · S toggles">snap ${if (trimSnapEnabled) "on" else "off"} · S</span>"""
+
+private fun toggleSnap() {
+    trimSnapEnabled = !trimSnapEnabled
+    (document.getElementById("seg-snap-chip") as? HTMLElement)?.let { chip ->
+        chip.textContent = "snap ${if (trimSnapEnabled) "on" else "off"} · S"
+        chip.classList.toggle("me", trimSnapEnabled)
+    }
+    toast(if (trimSnapEnabled) "Snapping on — edges stick to the evidence and the neighbours · hold ⇧ while dragging to free them" else "Snapping off — S turns it back on")
+}
+
+/** Called when the trim view moves to another title: the surfaces are about to be replaced, so a live
+ *  drag has nothing left to restore into. */
+private fun abandonDrag() {
+    val st = dragLive ?: return
+    dragLive = null
+    window.removeEventListener("blur", st.onBlur)
+    (document.querySelector(".sx") as? HTMLElement)?.classList?.remove("sx-drag-grab", "sx-drag-resize")
+    hideDragTip()
+}
+
+private fun beginDrag(ev: MouseEvent, surface: String, grip: String, kind: String?, captured: HTMLElement, visual: HTMLElement?, scope: CoroutineScope) {
+    if (dragLive != null) return
+    if (ev.button.toInt() != 0) return
+    val data = currentTrimData ?: return
+    val durationMs = (data.durationSec * 1000).toLong()
+    if (durationMs <= 0) return
+    val seg = kind?.let { k -> data.segments.firstOrNull { it.kind == k } }
+    if (kind != null && seg == null) return
+    val downMs = surfaceMsAt(surface, ev.clientX.toDouble(), durationMs) ?: return
+    ev.preventDefault()
+    suppressNextSurfaceClick = false
+    val pid = pointerIdOf(ev)
+    setPointerCaptureJs(captured, pid)
+    val st = DragState(
+        surface, grip, kind, seg, pid, captured, visual, ev.clientX.toDouble(),
+        if (grip == "ab" && seg != null) downMs - seg.startMs else 0L,
+        snapTargetsFor(data, kind), trimPlayheadMs, seg?.locked == true,
+    )
+    st.onMove = { e -> onDragMove(st, e as MouseEvent) }
+    st.onUp = { e -> endDrag(st, e as MouseEvent, scope, cancelled = false) }
+    st.onCancel = { endDrag(st, null, scope, cancelled = true) }
+    st.onBlur = { endDrag(st, null, scope, cancelled = true) }
+    captured.addEventListener("pointermove", st.onMove)
+    captured.addEventListener("pointerup", st.onUp)
+    captured.addEventListener("pointercancel", st.onCancel)
+    captured.addEventListener("lostpointercapture", st.onCancel)
+    window.addEventListener("blur", st.onBlur)
+    dragLive = st
+}
+
+private fun onDragMove(st: DragState, e: MouseEvent) {
+    if (dragLive !== st || pointerIdOf(e) != st.pointerId) return
+    val data = currentTrimData ?: return
+    val durationMs = (data.durationSec * 1000).toLong()
+    if (!st.moved) {
+        if (abs(e.clientX.toDouble() - st.originX) < DRAG_THRESHOLD_PX) return
+        if (st.locked) {
+            // FR-189-5 — a locked marker says so; it never silently refuses to move.
+            if (!st.lockedToastShown) { st.lockedToastShown = true; toast("${kindOf(st.kind ?: "").label} is locked — unlock it to move it") }
+            return
+        }
+        st.moved = true
+        val video = document.getElementById("seg-video") as? HTMLVideoElement
+        st.wasPlaying = video != null && video.style.display != "none" && !video.paused
+        if (st.wasPlaying) video?.pause()
+        (document.querySelector(".sx") as? HTMLElement)?.classList?.add(if (st.grip == "a" || st.grip == "b") "sx-drag-resize" else "sx-drag-grab")
+        st.visual?.classList?.add("dragging")
+    }
+    val raw = surfaceMsAt(st.surface, e.clientX.toDouble(), durationMs) ?: return
+    val msPerPx = surfaceMsPerPx(st.surface, durationMs)
+    val radiusMs = ((if (isCoarsePointer()) SNAP_PX_COARSE else SNAP_PX_FINE) * msPerPx).toLong().coerceAtLeast(1L)
+    val snapOn = trimSnapEnabled && !e.shiftKey
+    var snap: SegmentEditRules.SnapTarget? = null
+    fun snapped(ms: Long): Long {
+        if (!snapOn) return ms
+        val hit = SegmentEditRules.nearestSnap(ms, st.snapTargets, radiusMs)
+            ?: (if (st.surface == "zoom") SegmentEditRules.wholeSecondSnap(ms, radiusMs) else null)
+        if (hit != null) snap = hit
+        return hit?.ms ?: ms
+    }
+    if (st.grip == "ph") {
+        st.livePlayhead = snapped(raw).coerceIn(0L, durationMs)
+        updatePlayheadDom(st.livePlayhead, data.durationSec, currentTrimSelectedLabel())
+        scheduleScrub(st, st.livePlayhead)
+        val label = snap?.label?.takeIf { it.isNotEmpty() }?.let { " · $it" } ?: ""
+        showDragTip(st.surface, st.livePlayhead, durationMs, "<b>${fmtlt(st.livePlayhead / 1000.0)}</b>$label", stop = false)
+        return
+    }
+    val seg = st.before ?: return
+    val before = markerOf(seg)
+    val others = otherMarkers(data, seg.kind)
+    var refusal: SegmentEditRules.Refusal? = null
+    when (st.grip) {
+        "a" -> {
+            val want = SegmentEditRules.withStart(before, snapped(raw), durationMs).startMs
+            val (v, r) = SegmentEditRules.clampMove(before, others, durationMs, before.startMs, want) { SegmentEditRules.withStart(before, it, durationMs) }
+            st.liveStart = SegmentEditRules.withStart(before, v, durationMs).startMs
+            st.liveEnd = before.endMs
+            refusal = r
+        }
+        "b" -> {
+            val fromEnd = before.endMs ?: before.startMs
+            val want = SegmentEditRules.withEnd(before, snapped(raw), durationMs).endMs ?: fromEnd
+            val (v, r) = SegmentEditRules.clampMove(before, others, durationMs, fromEnd, want) { SegmentEditRules.withEnd(before, it, durationMs) }
+            st.liveEnd = SegmentEditRules.withEnd(before, v, durationMs).endMs
+            st.liveStart = before.startMs
+            refusal = r
+        }
+        else -> {
+            val len = before.endMs?.let { it - before.startMs }
+            var proposed = raw - st.grabOffsetMs
+            if (snapOn) {
+                // A slide snaps whichever of its two edges is nearer to a target.
+                val hs = SegmentEditRules.nearestSnap(proposed, st.snapTargets, radiusMs)
+                val he = if (len != null) SegmentEditRules.nearestSnap(proposed + len, st.snapTargets, radiusMs) else null
+                val dS = if (hs != null) abs(hs.ms - proposed) else Long.MAX_VALUE
+                val dE = if (he != null && len != null) abs(he.ms - (proposed + len)) else Long.MAX_VALUE
+                when {
+                    hs != null && dS <= dE -> { snap = hs; proposed = hs.ms }
+                    he != null && len != null -> { snap = he; proposed = he.ms - len }
+                    st.surface == "zoom" -> SegmentEditRules.wholeSecondSnap(proposed, radiusMs)?.let { snap = it; proposed = it.ms }
                 }
-                upHandler = handler@{
-                    document.removeEventListener("mousemove", moveHandler)
-                    document.removeEventListener("mouseup", upHandler)
-                    trimLastEdge = edge
-                    trimPlayheadMs = if (edge == "a") liveStartMs else liveEndMs
-                    // FR-189-1/3/6 — same write-and-patch path the ± steppers use: no full re-render (the
-                    // <video> element is untouched), and a failed write snaps the bar back to where it was.
-                    applyEditInPlace(currentTrimData ?: live, seg, liveStartMs, if (openEnded) null else liveEndMs, scope)
-                }
-                document.addEventListener("mousemove", moveHandler)
-                document.addEventListener("mouseup", upHandler)
             }
+            val want = SegmentEditRules.slid(before, proposed, durationMs).startMs
+            val (v, r) = SegmentEditRules.clampMove(before, others, durationMs, before.startMs, want) { SegmentEditRules.slid(before, it, durationMs) }
+            val result = SegmentEditRules.slid(before, v, durationMs)
+            st.liveStart = result.startMs
+            st.liveEnd = result.endMs
+            refusal = r
         }
     }
+    if (refusal != null) snap = null
+    val live = seg.copy(startMs = st.liveStart, endMs = st.liveEnd)
+    // FR-223-3 — the bar, the row's readouts and the zoom overlay follow the pointer from the same numbers.
+    patchSegmentDom(live, data.durationSec)
+    positionZoomBar(live, data.durationSec)
+    val edgeMs = if (st.grip == "b") (st.liveEnd ?: st.liveStart) else st.liveStart
+    updatePlayheadDom(edgeMs, data.durationSec, currentTrimSelectedLabel())
+    scheduleScrub(st, edgeMs)
+    val liveEnd = st.liveEnd
+    val body = when {
+        st.grip == "ab" && liveEnd == null -> "<b>${fmtlt(st.liveStart / 1000.0)}</b> → the end"
+        st.grip == "ab" -> "<b>${fmtlt(st.liveStart / 1000.0)}</b> → <b>${fmtlt(liveEnd!! / 1000.0)}</b> · ${fmtSecs(liveEnd - st.liveStart)} s"
+        else -> "<b>${fmtlt(edgeMs / 1000.0)}</b>"
+    }
+    val suffix = refusal?.stopsAt?.let { " · $it" } ?: snap?.label?.takeIf { it.isNotEmpty() }?.let { " · $it" } ?: ""
+    showDragTip(st.surface, edgeMs, durationMs, body + suffix, stop = refusal != null)
+}
+
+/** FR-223-3 — in direct play the picture follows the edge, one `currentTime` per animation frame at most;
+ *  a remux stream is a transcode per seek, so it waits for the release. */
+private fun scheduleScrub(st: DragState, ms: Long) {
+    if (trimStreamMode == null || trimStreamMode == "remux") return
+    st.pendingScrubMs = ms
+    if (st.rafPending) return
+    st.rafPending = true
+    window.requestAnimationFrame {
+        st.rafPending = false
+        if (dragLive === st) seekVideoTo(st.pendingScrubMs)
+    }
+}
+
+private fun endDrag(st: DragState, e: MouseEvent?, scope: CoroutineScope, cancelled: Boolean) {
+    if (dragLive !== st) return
+    if (e != null && pointerIdOf(e) != st.pointerId) return
+    dragLive = null
+    st.captured.removeEventListener("pointermove", st.onMove)
+    st.captured.removeEventListener("pointerup", st.onUp)
+    st.captured.removeEventListener("pointercancel", st.onCancel)
+    st.captured.removeEventListener("lostpointercapture", st.onCancel)
+    window.removeEventListener("blur", st.onBlur)
+    releasePointerCaptureJs(st.captured, st.pointerId)
+    (document.querySelector(".sx") as? HTMLElement)?.classList?.remove("sx-drag-grab", "sx-drag-resize")
+    st.visual?.classList?.remove("dragging")
+    hideDragTip()
+    if (!st.moved) return   // a click: the click event that follows does what a click did before
+    val data = currentTrimData ?: return
+    val video = document.getElementById("seg-video") as? HTMLVideoElement
+    if (cancelled) {
+        // FR-223-5 — everything back to where it was, nothing written.
+        st.before?.let { patchSegmentDom(it, data.durationSec); positionZoomBar(it, data.durationSec) }
+        updatePlayheadDom(st.playheadBefore, data.durationSec, currentTrimSelectedLabel())
+        if (trimStreamMode != null && trimStreamMode != "remux") seekVideoTo(st.playheadBefore)
+        if (st.wasPlaying) video?.play()
+        renderWaveformLanes()
+        toast("Drag cancelled — nothing changed")
+        return
+    }
+    if (e != null) suppressNextSurfaceClick = true
+    if (st.grip == "ph") { seekToAbsoluteMs(data, st.livePlayhead, scope, resumePlaying = st.wasPlaying); return }
+    val before = st.before ?: return
+    trimLastEdge = if (st.grip == "b") "b" else "a"
+    val edgeMs = if (st.grip == "b") (st.liveEnd ?: st.liveStart) else st.liveStart
+    if (st.liveStart != before.startMs || st.liveEnd != before.endMs) applyEditInPlace(data, before, st.liveStart, st.liveEnd, scope)
+    // FR-223-3 — the playhead states where the picture is: one seek on release (in place for direct play,
+    // a new stream at the keyframe for remux), and playback resumes if it was running.
+    seekToAbsoluteMs(currentTrimData ?: data, edgeMs, scope, resumePlaying = st.wasPlaying)
+}
+
+/** FR-223-3 — the bubble above the moving edge, kept inside the surface's horizontal bounds. */
+private fun showDragTip(surface: String, ms: Long, durationMs: Long, html: String, stop: Boolean) {
+    val tl = document.getElementById("seg-tl") as? HTMLElement ?: return
+    val sEl = surfaceEl(surface) ?: return
+    val tip = (document.getElementById("seg-dragtip") as? HTMLElement) ?: (document.createElement("div") as HTMLElement).also {
+        it.id = "seg-dragtip"
+        it.className = "dragtip"
+        tl.appendChild(it)
+    }
+    tip.innerHTML = html
+    tip.classList.toggle("stop", stop)
+    tip.style.display = "block"
+    val sb = sEl.getBoundingClientRect()
+    val tb = tl.getBoundingClientRect()
+    val frac = if (surface == "zoom") { if (zoomWindowMs <= 0) 0.0 else (ms - zoomWindowStartMs).toDouble() / zoomWindowMs }
+        else { if (durationMs <= 0) 0.0 else ms.toDouble() / durationMs }
+    val half = tip.offsetWidth / 2.0
+    val lo = sb.left - tb.left + half
+    val hi = (sb.right - tb.left - half).coerceAtLeast(lo)
+    val x = (sb.left - tb.left) + frac.coerceIn(0.0, 1.0) * sb.width
+    tip.style.left = "${x.coerceIn(lo, hi)}px"
+    tip.style.top = "${sb.top - tb.top - 30}px"
+}
+
+private fun hideDragTip() {
+    (document.getElementById("seg-dragtip") as? HTMLElement)?.style?.display = "none"
+}
+
+/** Phase 223 (FR-223-8) — the keyboard's slide: same clamp, same write path, same toasts as a body drag. */
+private fun slideSegment(data: SegmentTrimResponse, scope: CoroutineScope, kind: String, deltaMs: Long) {
+    val seg = data.segments.firstOrNull { it.kind == kind } ?: return
+    if (seg.locked) { toast("${kindOf(kind).label} is locked — unlock it to move it"); return }
+    val durMs = (data.durationSec * 1000).toLong()
+    val before = markerOf(seg)
+    val want = SegmentEditRules.slid(before, seg.startMs + deltaMs, durMs).startMs
+    val (v, refusal) = SegmentEditRules.clampMove(before, otherMarkers(data, kind), durMs, seg.startMs, want) { SegmentEditRules.slid(before, it, durMs) }
+    val result = SegmentEditRules.slid(before, v, durMs)
+    if (result.startMs == seg.startMs) { toast(refusal?.message ?: "${kindOf(kind).label} is already at the ${if (deltaMs < 0) "start" else "end"} of the file"); return }
+    if (refusal != null) toast(refusal.message)
+    trimLastEdge = "a"
+    applyEditInPlace(data, seg, result.startMs, result.endMs, scope)
 }
 
 /** Phase 190 (FR-190-6) — releases an in-flight remux transcode when the viewer leaves /segments
@@ -1181,6 +1580,12 @@ private fun wireKeydownOnce() {
         val scope = currentTrimScope ?: return@addEventListener
         val target = kev.target
         if (target is HTMLElement && (target.tagName.equals("input", true) || target.tagName.equals("textarea", true))) return@addEventListener
+        // Phase 223 (FR-223-5) — while a drag is live the keyboard belongs to it: Escape cancels, nothing else acts.
+        dragLive?.let { st ->
+            if (kev.key == "Escape") { kev.preventDefault(); endDrag(st, null, scope, cancelled = true) }
+            return@addEventListener
+        }
+        if (kev.key.lowercase() == "s" && !kev.ctrlKey && !kev.metaKey && !kev.altKey) { kev.preventDefault(); toggleSnap(); return@addEventListener }
         // Phase 222 (FR-222-8) — Space plays/pauses whether or not a marker is selected.
         if (kev.key == " ") { kev.preventDefault(); togglePlayback(); return@addEventListener }
         val kind = trimSelectedKind ?: return@addEventListener
@@ -1213,6 +1618,14 @@ private fun wireKeydownOnce() {
                     applyEditInPlace(data, seg, seg.startMs, newEnd, scope)
                 }
             }
+            // Phase 223 (FR-223-8) — arrows slide the WHOLE marker: 1 s, ⇧ 10 s, Ctrl a frame (40 ms).
+            "arrowleft", "arrowright" -> if (seg != null) {
+                kev.preventDefault()
+                val step = if (kev.shiftKey) 10_000L else if (kev.ctrlKey || kev.metaKey) 40L else 1_000L
+                slideSegment(data, scope, kind, if (kev.key.lowercase() == "arrowleft") -step else step)
+            }
+            "[" -> { kev.preventDefault(); trimLastEdge = "a"; toast("Start edge selected — , and . nudge it"); renderWaveformLanes() }
+            "]" -> if (seg != null && !isOpenEnded(seg)) { kev.preventDefault(); trimLastEdge = "b"; toast("End edge selected — , and . nudge it"); renderWaveformLanes() }
             "l" -> if (seg != null) {
                 kev.preventDefault()
                 scope.launch {

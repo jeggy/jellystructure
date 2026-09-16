@@ -154,6 +154,13 @@ check "$WF" "Chromecast card steps (.cc-step)" \
 check "$WF" "Chromecast card status dots (.cc-dot)" \
   ".cc-dot { width: 8px; height: 8px; border-radius: 50%;"
 
+# Phase 223 — the segment editor's drag engine keeps its rules in the served segments.css; a sync that
+# drops them leaves touch users with 11 px handles, no bubble and an inert zoom strip.
+check "$SEGCSS" "Phase 223 coarse-pointer hit areas" "@media (pointer:coarse){.sx .track{height:56px}"
+check "$SEGCSS" "Phase 223 drag timecode bubble (.dragtip)" ".sx .dragtip{"
+check "$SEGCSS" "Phase 223 zoom-strip overlay bar (.zseg)" ".sx .wave .zseg{"
+check "$SEGCSS" "Phase 223 bars no longer clip their handles" "cursor:grab;overflow:visible;white-space:nowrap}"
+
 if [ "$fail" -eq 0 ]; then
   echo "OK — every design-sync-fragile CSS rule tracked here is present."
 else
