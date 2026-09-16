@@ -1,7 +1,7 @@
 # Phase R185 — Continue Watching shows already fully-watched titles (bug fix, FR-RV-CW1)
 
 > A viewer reported already-finished series/episodes still showing in Ravilo's Continue Watching.
-> Root-caused live against Jellyfin (jellyfin.jebster.net); this is a genuinely different bug from
+> Root-caused live against Jellyfin (jellyfin.example.net); this is a genuinely different bug from
 > R184 (which fixed a *leaked* stale position landing on the wrong episode) — this one is about
 > Jellyfin's own `Played` and `PlaybackPositionTicks` fields going out of sync on the SAME item, with
 > nothing in jellystructure ever reconciling them before Continue Watching renders.
@@ -24,7 +24,7 @@ implements as **`PlaybackPositionTicks > 0`, with no `Played` check at all**. Bo
 every per-channel row (`HomeFeedService.getChannelFeed`, `HomeFeedService.kt:174-201`) resolve to this same
 function — a channel just hands it a pre-filtered candidate list.
 
-**Live evidence** (`GET /Users/{id}/Items/Resume?Filters=IsResumable` against jellyfin.jebster.net, all 7
+**Live evidence** (`GET /Users/{id}/Items/Resume?Filters=IsResumable` against jellyfin.example.net, all 7
 users): user `jogvan`'s 115 "resumable" items include **62 (54%)** with `Played:true` **and**
 `PlaybackPositionTicks > 0` simultaneously — a state that should never coexist. Smoking-gun pattern: within
 one binge session, many *different* episodes share a byte-identical `PlaybackPositionTicks` — e.g. all 15

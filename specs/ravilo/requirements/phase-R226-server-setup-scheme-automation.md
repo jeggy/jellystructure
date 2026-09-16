@@ -69,7 +69,7 @@ Connect path, just without the scheme row above it to route around).
 
 ## 4. Verification
 
-- Typing `demo.jellystructure.jebster.net` and connecting resolves to `https://demo.jellystructure.jebster.net`.
+- Typing `demo.jellystructure.example.net` and connecting resolves to `https://demo.jellystructure.example.net`.
 - Typing `http://192.168.1.50:9505` and connecting resolves to exactly that — the explicit `http://` is
   preserved, not upgraded.
 - Typing `https://example.com` behaves identically to today (no functional change for an already-schemed

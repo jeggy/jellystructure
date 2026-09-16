@@ -264,7 +264,7 @@ Adds to the existing file, reusing the external `caddy` network. **Not applied â
       CORS_ALLOWED_ORIGINS: ""    # stays empty if Ravilo is same-origin via Caddy (F5)
     restart: unless-stopped
     labels:
-      caddy: "js.jebster.net"
+      caddy: "js.example.net"
       caddy.reverse_proxy: "{{upstreams 9505}}"
       caddy.request_body.max_size: "64MB"
 
@@ -274,7 +274,7 @@ Adds to the existing file, reusing the external `caddy` network. **Not applied â
     networks: [caddy]
     restart: unless-stopped
     labels:
-      caddy: "ravilo.jebster.net"
+      caddy: "ravilo.example.net"
       # order matters: /api and /ws to the backend, everything else static (F5)
       caddy.0_handle: "/api/*"
       caddy.0_handle.reverse_proxy: "jellystructure:9505"
@@ -284,11 +284,11 @@ Adds to the existing file, reusing the external `caddy` network. **Not applied â
       caddy.2_handle.reverse_proxy: "{{upstreams 80}}"
 ```
 
-Two things to decide before this is real: whether the admin surface (`js.jebster.net`) should be on the public
+Two things to decide before this is real: whether the admin surface (`js.example.net`) should be on the public
 internet at all â€” the security review's Â§6 suggested publishing only Ravilo's `/api/tv/**` and keeping
 `/api/config`, `/api/media/**`, `/api/settings/**` on the LAN/VPN, which removes most of the blast radius for
 free â€” and whether jellystructure should reach Jellyfin over the internal network (`http://jellyfin:8096`)
-rather than the current `https://jellyfin.jebster.net`, which currently hairpins out through Caddy and back.
+rather than the current `https://jellyfin.example.net`, which currently hairpins out through Caddy and back.
 
 ---
 
