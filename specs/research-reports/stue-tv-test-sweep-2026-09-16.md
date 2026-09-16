@@ -1,7 +1,7 @@
 # Stue-TV test sweep — the ten most recently implemented phases
 
 **Date:** 2026-09-16
-**Device:** stue TV (Sony BRAVIA, `ro.product.model` = `BRAVIA_4K_VH21`, `10.10.11.128:5555`), profile `jogvan`
+**Device:** stue TV (Sony BRAVIA, `ro.product.model` = `BRAVIA_4K_VH21`, `192.0.2.11:5555`), profile `jogvan`
 **Method:** live adb session — D-pad driving, `uiautomator dump` for the semantics tree, `screencap`
 for pixels, `dumpsys media_session` for playback state, plus prod backend logs and a read-only copy
 of the production DB (`~/jellystructure/config/jellystructure.db`).
@@ -15,7 +15,7 @@ This is the most important context for everything below, and it was not knowable
 
 | Component | What is running | Evidence |
 |---|---|---|
-| **Backend** (`jelly.jebster.net`) | `main` as of **2026-09-14 ~14:34**, i.e. **through phase 210** | `/app/jellystructure` binary mtime `2026-09-14 14:34`; image created `2026-09-14T14:41`. Phase 210 landed 11:29, phase 211 landed 16:22. |
+| **Backend** (`jelly.example.net`) | `main` as of **2026-09-14 ~14:34**, i.e. **through phase 210** | `/app/jellystructure` binary mtime `2026-09-14 14:34`; image created `2026-09-14T14:41`. Phase 210 landed 11:29, phase 211 landed 16:22. |
 | **Ravilo TV app** | **v1.17** (`4e428862`), installed `2026-09-14 16:34` | `dumpsys package … lastUpdateTime`; R242's backdrop renders on-device, and R242 (`5b38ca98`, v1.16) is a descendant of R241 (`baa57f84`, v1.15). |
 
 Independent confirmation that the backend predates 213: `GET /api/health` returns no `job_queues`
@@ -284,11 +284,11 @@ fail to persist.
 
 ```
 [WARN] Webhook: radarr webhook is deprecated (Phase 165) — set up the Jellyfin webhook in Settings instead
-[WARN] Webhook delivery failed: Could not connect to http://10.10.10.10:8585 (CURLE_COULDNT_CONNECT)  ×8
+[WARN] Webhook delivery failed: Could not connect to http://192.0.2.10:8585 (CURLE_COULDNT_CONNECT)  ×8
 ```
 
 Radarr is still pointed at the deprecated ingest path, and something is configured to POST to
-`10.10.10.10:8585`, where nothing is listening. Both are configuration debt, not code defects.
+`192.0.2.10:8585`, where nothing is listening. Both are configuration debt, not code defects.
 
 ---
 
