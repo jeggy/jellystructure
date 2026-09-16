@@ -1,7 +1,7 @@
 # Stue-TV test sweep — the ten most recently implemented phases
 
 **Date:** 2026-09-16
-**Device:** stue TV (Sony BRAVIA, `ro.product.model` = `BRAVIA_4K_VH21`, `192.0.2.22:5555`), profile `jogvan`
+**Device:** stue TV (Sony BRAVIA, `ro.product.model` = `BRAVIA_4K_VH21`, `192.0.2.11:5555`), profile `jogvan`
 **Method:** live adb session — D-pad driving, `uiautomator dump` for the semantics tree, `screencap`
 for pixels, `dumpsys media_session` for playback state, plus prod backend logs and a read-only copy
 of the production DB (`~/jellystructure/config/jellystructure.db`).
@@ -284,11 +284,11 @@ fail to persist.
 
 ```
 [WARN] Webhook: radarr webhook is deprecated (Phase 165) — set up the Jellyfin webhook in Settings instead
-[WARN] Webhook delivery failed: Could not connect to http://192.0.2.20:8585 (CURLE_COULDNT_CONNECT)  ×8
+[WARN] Webhook delivery failed: Could not connect to http://192.0.2.10:8585 (CURLE_COULDNT_CONNECT)  ×8
 ```
 
 Radarr is still pointed at the deprecated ingest path, and something is configured to POST to
-`192.0.2.20:8585`, where nothing is listening. Both are configuration debt, not code defects.
+`192.0.2.10:8585`, where nothing is listening. Both are configuration debt, not code defects.
 
 ---
 
