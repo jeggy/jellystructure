@@ -8,9 +8,12 @@
 
 ## Status
 
-`Planned` — written 2026-09-16, **dev-reviewed 2026-09-16 against `main`** (see §Dev review at the
+`✓ Built` — written 2026-09-16, **dev-reviewed 2026-09-16 against `main`** (see §Dev review at the
 bottom; six requirements were corrected against the real code and the shape of the phase changed
-substantially — most of what this phase proposed to build already ships).
+substantially — most of what this phase proposed to build already ships), **implemented 2026-09-16**
+(see §Implementation notes). Compiled (`compileKotlinLinuxX64`, `:ravilo-ui:compileKotlinWasmJs`) and
+unit-tested (`BrowseServiceTaxonomyTest`, `ConditionEvaluatorTest`); not deployed, not run against
+production data.
 
 **Numbering:** verified against `main` on 2026-09-16 — admin taken through **215**, Ravilo through
 **R242**, no `phase-216-*` file and no `STATUS.md` row for it. Pairs with **R243**. Next free: 217 / R244.
@@ -337,3 +340,43 @@ stand; **open question 3 is largely answered** — a film cannot be mis-filed in
 server-side, because films and series write different columns, so the repair-sweep risk the mockups
 found does not carry over. What remains of it is the narrower question in FR-216-4: whether real data has
 films carrying a `network` value at all.
+
+## Implementation notes (2026-09-16)
+
+Built as the dev review resized it — `BrowseService.facets()` extended, nothing added beside it.
+
+- **`TaxonomyKey`** (`tv/TaxonomyKey.kt`) is FR-216-9's one resolver: `key()` (trim, collapse
+  whitespace, lowercase) for grouping and matching, `display()` for what a viewer sees, and a
+  `Counter` that groups by key and shows the **most frequent spelling**. It is called by `facets()`,
+  by `browse()`'s four taxonomy predicates, by `ConditionEvaluator.ItemFacets` (so the seeded
+  `POST /tv/browse/seeded` path — the one R221's genre chip and R243's tiles actually use — matches
+  under the same key), and by the admin `GET /api/metadata/{studios,networks,genres}` grouping.
+  `ConditionEvaluatorTest` (14 cases) still passes; the taxonomy facets got strictly more permissive.
+- **`BrowseFacets`** gained `library`, `scoped` and `titles: Map<String, Int>` (distinct titles per list
+  name); `FacetItem` gained `logoUrl: String?` (absent from the JSON when null — the server's
+  `Json` does not encode defaults). `groups` was **not** added: it equals the list's length and the
+  client reads that directly. `titles` is a map rather than one field because the endpoint returns all
+  four lists in one response and each has its own distinct-title count.
+- **Cache** (FR-216-8/11): one `FacetsEntry` per Jellyfin user holding the *all / movie / series*
+  slices from **one pass**, validated against `feedVersion` + `allowedHash` (the exact
+  `HomeFeedService` triple) with a 5-minute TTL backstop. Never keyed on `kind` or a value.
+- **FR-216-4 settled: networks count for `TV_SHOW` only**, adopting the admin page's rule; a film
+  hand-edited to carry a broadcaster is not a wall entry. Studios stay kind-neutral like the admin page.
+  The scanner only writes `network` on the series path and `studio` on the movie/music-video paths, so
+  neither rule excludes anything scanned. **`ConditionEvaluator`'s `network` facet is deliberately left
+  kind-neutral** (its tests assert a film matching `network is HBO`); R243 therefore seeds a network
+  tile with `seedMediaKind = "SERIES"`, which is what makes the count and the grid agree.
+- **`logoUrl`** is `RaviloImageUrl.taxonomyLogo(kind, name)` = `/api/tv/image/logo/{studios|networks}/{name}`,
+  a new public route under the existing `/api/tv/image/` OPEN_API_PATHS prefix (Coil cannot attach a
+  device token, exactly like posters and channel logos). The spec's `/api/metadata/.../artwork` is
+  admin-cookie-authenticated and unreachable from a TV. Emitted only when `LogoDownloader.hasLogo` is
+  true; `BrowseService` now takes the `LogoDownloader` (nullable, so a test can run without a data dir).
+- **`TvApiClient.browse()`** gained repeated `studio`/`network` parameters (FR-216-7's client work).
+- **Test** `BrowseServiceTaxonomyTest`: spelling variants are one group with the most frequent spelling;
+  a secondary studio counts under both studios and once in `titles`; a film's broadcaster is not a
+  network; every value's count equals both grid paths' `total` (acceptance 4 and 8, two-sided); kind
+  slices; absent-never-zero; cache hit and `feedVersion` recompute.
+- **Not done, noted for a follow-up:** `MediaStore.facetsNarrowed()` (`:857`, the admin *library*
+  workbench's own counter) still groups exactly while its filter (`:478`) compares case-insensitively —
+  the same pre-existing disagreement on a surface this phase does not own. Acceptance 7's live
+  comparison and 10/11's measurements were not run (no production data in this session).

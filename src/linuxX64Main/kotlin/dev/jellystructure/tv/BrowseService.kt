@@ -4,6 +4,7 @@ import dev.jellystructure.auth.DeviceData
 import dev.jellystructure.auth.JellyfinClient
 import dev.jellystructure.config.ConfigStore
 import dev.jellystructure.media.ArtworkDownloader
+import dev.jellystructure.media.LogoDownloader
 import dev.jellystructure.media.MediaStore
 import dev.jellystructure.model.MediaItem
 import dev.jellystructure.model.MediaKind
@@ -21,8 +22,15 @@ import dev.jellystructure.shared.tv.TvImdbRating
 import dev.jellystructure.shared.tv.effectiveQuery
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import platform.posix.time
 
 private const val SEARCH_SUGGESTION_LIMIT = 20
+// Phase 216 (FR-216-8/11) — the facets cache's TTL backstop, same window as HomeFeedService's feed
+// cache. feedVersion + allowedHash are the real invalidation signals; the TTL only bounds staleness
+// for anything neither of them can see.
+private const val FACETS_TTL_MS = 5 * 60_000L
+@OptIn(kotlinx.cinterop.ExperimentalForeignApi::class)
+private fun nowMs(): Long = time(null) * 1000L
 // Bug fix: shorter queries fall back to the suggestions path instead of a full-library contains-scan.
 private const val MIN_SEARCH_LEN = 2
 
@@ -32,7 +40,19 @@ class BrowseService(
     private val configStore: ConfigStore,
     private val raviloConfigService: RaviloConfigService,
     private val artwork: ArtworkDownloader,
+    // Phase 216 (FR-216-5) — the ONLY permitted source for `logoUrl`: `hasLogo` says whether a logo
+    // file is really on disk. Nullable so a test can construct the service without a data dir.
+    private val logoDownloader: LogoDownloader? = null,
 ) {
+    // Phase 216 (FR-216-8/11) — facets() used to iterate the whole visible library on every call and
+    // cache nothing, which was fine for a rarely-opened facet bar and is not fine once R243 puts a
+    // Discover wall in front of it. One entry per Jellyfin user, validated against feedVersion (Phase
+    // 204 — NOT libraryVersion, which bumps on every write and reproduced Phase 182's measured 120×
+    // home-feed regression) and allowedHash (the Phase 142 visibility scope). Never keyed on the
+    // requested kind or a selected value: filtering is a view, never a re-derivation (R233 FR-R233-5).
+    // The entry holds all three kind slices (all / movie / series) from ONE pass over the library.
+    private class FacetsEntry(val all: BrowseFacets, val movie: BrowseFacets, val series: BrowseFacets, val builtAt: Long, val feedVer: Long, val allowedHash: Int)
+    private val facetsCache = HashMap<String, FacetsEntry>()
     /**
      * R187 — resolves a "→ See all" seed (a [Row.seedQuery] condition tree, already channel-ANDed
      * where relevant, plus [mediaKind]) to the FULL matching set as [BrowseCard]s (genres, audio
@@ -143,12 +163,14 @@ class BrowseService(
             allDeferred.await()
         }
 
+        // Phase 216 (FR-216-9) — the four taxonomy predicates compare under TaxonomyKey, the same
+        // resolver facets() counts with, so a tile's count and its grid cannot disagree over a spelling.
         val filtered = all
             .let { items -> if (mediaKind != null) items.filter { it.kind == mediaKind } else items }
-            .let { items -> if (genres.isNotEmpty())   items.filter { i -> genres.any   { g -> i.genres.any  { it.equals(g, ignoreCase = true) } } } else items }
-            .let { items -> if (studios.isNotEmpty())  items.filter { i -> studios.any  { s -> i.studio?.equals(s, ignoreCase = true) == true || i.secondaryStudios.any { it.equals(s, ignoreCase = true) } } } else items }
-            .let { items -> if (networks.isNotEmpty()) items.filter { i -> networks.any { n -> i.network?.equals(n, ignoreCase = true) == true } } else items }
-            .let { items -> if (tags.isNotEmpty())     items.filter { i -> tags.any     { t -> i.tags.any    { it.equals(t, ignoreCase = true) } } } else items }
+            .let { items -> if (genres.isNotEmpty())   items.filter { i -> genres.any   { g -> i.genres.any  { TaxonomyKey.matches(it, g) } } } else items }
+            .let { items -> if (studios.isNotEmpty())  items.filter { i -> studios.any  { s -> TaxonomyKey.matches(i.studio, s) || i.secondaryStudios.any { TaxonomyKey.matches(it, s) } } } else items }
+            .let { items -> if (networks.isNotEmpty()) items.filter { i -> networks.any { n -> TaxonomyKey.matches(i.network, n) } } else items }
+            .let { items -> if (tags.isNotEmpty())     items.filter { i -> tags.any     { t -> i.tags.any    { TaxonomyKey.matches(it, t) } } } else items }
 
         val sorted = when (sort) {
             "title" -> filtered.sortedBy { it.title.lowercase() }
@@ -195,35 +217,89 @@ class BrowseService(
         return SearchResults(query = query, items = cards.map { it.withPlaystate(ps) })
     }
 
-    /** Available filter values + counts for browse filter chips. Phase 142: scoped to [device]'s
-     *  allowed libraries — a restricted user's chips (and counts) never leak a blocked title. */
+    /**
+     * Available filter values + counts for browse filter chips — and, since Phase 216, the Discover
+     * wall's index (R243). Phase 142: scoped to [device]'s allowed libraries — a restricted user's
+     * chips (and counts) never leak a blocked title.
+     *
+     * Phase 216: cached per user (see [facetsCache]), normalised through [TaxonomyKey] (FR-216-9),
+     * `logoUrl` only where [LogoDownloader.hasLogo] is true (FR-216-5), zero-count values never ship
+     * (FR-216-6 — a value only exists here because a visible title named it), and the summary fields
+     * ([BrowseFacets.library]/[BrowseFacets.titles]/[BrowseFacets.scoped]) are accumulated in the same
+     * single pass as the four count maps, never as a second traversal (FR-216-11).
+     *
+     * FR-216-4, settled in one direction: **networks are counted for series only**, adopting the admin
+     * Metadata page's rule (`MetadataRoutes` `/metadata/networks` filters to `TV_SHOW`), so the viewer
+     * wall and the admin page state the same number for the same network. The scanner only ever writes
+     * `network` on the series path, so this excludes nothing real — it just makes a hand-edited film
+     * carrying a broadcaster the metadata problem it is rather than a wall entry. Studios stay
+     * kind-neutral, exactly as the admin page counts them.
+     */
     suspend fun facets(device: DeviceData, kind: String?): BrowseFacets {
-        val mediaKind = when (kind) {
-            "movie"  -> MediaKind.MOVIE
-            "series" -> MediaKind.TV_SHOW
-            else     -> null
+        val userId = device.jellyfinUserId
+        val feedVer = mediaStore.feedVersion
+        val allowedHash = (device.allowedLibraries.hashCode() * 31 + device.allowedTags.hashCode()) * 31 + device.blockedTags.hashCode()
+        val now = nowMs()
+        val entry = facetsCache[userId]?.takeIf {
+            it.feedVer == feedVer && it.allowedHash == allowedHash && (now - it.builtAt) < FACETS_TTL_MS
+        } ?: buildFacets(device).also { facetsCache[userId] = FacetsEntry(it.all, it.movie, it.series, now, feedVer, allowedHash) }
+        return when (kind) {
+            "movie"  -> entry.movie
+            "series" -> entry.series
+            else     -> entry.all
         }
-        val scoped = mediaStore.liveItems(device)
-        val all = if (mediaKind != null) scoped.filter { it.kind == mediaKind } else scoped
+    }
 
-        val genreCounts   = mutableMapOf<String, Int>()
-        val studioCounts  = mutableMapOf<String, Int>()
-        val networkCounts = mutableMapOf<String, Int>()
-        val tagCounts     = mutableMapOf<String, Int>()
+    /** One accumulator per kind slice; [add] is called once per item for the slice(s) it belongs to. */
+    private class FacetsAcc {
+        val genres = TaxonomyKey.Counter(); val studios = TaxonomyKey.Counter()
+        val networks = TaxonomyKey.Counter(); val tags = TaxonomyKey.Counter()
+        var library = 0
+        var genreTitles = 0; var studioTitles = 0; var networkTitles = 0; var tagTitles = 0
 
-        for (item in all) {
-            item.genres.forEach  { g -> genreCounts[g]   = (genreCounts[g]   ?: 0) + 1 }
-            (listOfNotNull(item.studio) + item.secondaryStudios).distinct().forEach { s -> studioCounts[s] = (studioCounts[s] ?: 0) + 1 }
-            item.network?.let    { n -> networkCounts[n] = (networkCounts[n] ?: 0) + 1 }
-            item.tags.forEach    { t -> tagCounts[t]     = (tagCounts[t]     ?: 0) + 1 }
+        fun add(item: MediaItem) {
+            library++
+            if (item.genres.any { it.isNotBlank() }) genreTitles++
+            item.genres.forEach { genres.add(it) }
+            val studioValues = (listOfNotNull(item.studio) + item.secondaryStudios).filter { it.isNotBlank() }
+            if (studioValues.isNotEmpty()) studioTitles++
+            // distinct under the key, so a film credited to `HBO` and `hbo` counts once for HBO
+            studioValues.distinctBy { TaxonomyKey.key(it) }.forEach { studios.add(it) }
+            if (item.kind == MediaKind.TV_SHOW && !item.network.isNullOrBlank()) { networkTitles++; networks.add(item.network) }
+            if (item.tags.any { it.isNotBlank() }) tagTitles++
+            item.tags.distinctBy { TaxonomyKey.key(it) }.forEach { tags.add(it) }
         }
 
-        return BrowseFacets(
-            genres   = genreCounts.entries.sortedByDescending { it.value }.map { FacetItem(it.key, it.value) },
-            studios  = studioCounts.entries.sortedByDescending { it.value }.map { FacetItem(it.key, it.value) },
-            networks = networkCounts.entries.sortedByDescending { it.value }.map { FacetItem(it.key, it.value) },
-            tags     = tagCounts.entries.sortedByDescending { it.value }.map { FacetItem(it.key, it.value) },
+        fun toFacets(scoped: Boolean, logoUrl: (String, String) -> String?): BrowseFacets = BrowseFacets(
+            genres   = genres.entries().map { FacetItem(it.name, it.count) },
+            studios  = studios.entries().map { FacetItem(it.name, it.count, logoUrl("studios", it.name)) },
+            networks = networks.entries().map { FacetItem(it.name, it.count, logoUrl("networks", it.name)) },
+            tags     = tags.entries().map { FacetItem(it.name, it.count) },
+            library  = library,
+            titles   = mapOf("studios" to studioTitles, "networks" to networkTitles, "genres" to genreTitles, "tags" to tagTitles),
+            scoped   = scoped,
         )
+    }
+
+    private suspend fun buildFacets(device: DeviceData): FacetsEntry {
+        val visible = mediaStore.liveItems(device)
+        val all = FacetsAcc(); val movie = FacetsAcc(); val series = FacetsAcc()
+        for (item in visible) {
+            all.add(item)
+            when (item.kind) {
+                MediaKind.MOVIE   -> movie.add(item)
+                MediaKind.TV_SHOW -> series.add(item)
+                else -> {}
+            }
+        }
+        // FR-216-2 — "scoped" is exactly what visibleTo(device) is: a library allow-list or a Jellyfin
+        // tag policy. There is no age filter in the server-side catalog and none is claimed here.
+        val scoped = device.allowedLibraries != null || device.allowedTags.isNotEmpty() || device.blockedTags.isNotEmpty()
+        // FR-216-5 — the key is ABSENT unless a logo file is really on disk; genres/tags never get one.
+        val logoUrl: (String, String) -> String? = { k, name ->
+            if (logoDownloader?.hasLogo(k, name) == true) RaviloImageUrl.taxonomyLogo(k, name) else null
+        }
+        return FacetsEntry(all.toFacets(scoped, logoUrl), movie.toFacets(scoped, logoUrl), series.toFacets(scoped, logoUrl), 0L, 0L, 0)
     }
 
     private fun MediaItem.toMediaCard(): MediaCard {

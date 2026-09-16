@@ -74,11 +74,23 @@ class TvApiClient(
     // ─── Browse + search ─────────────────────────────────────────────────────
 
     // R118: pageSize null ⇒ server returns the full filtered set (no 40-item cap).
-    suspend fun browse(kind: String? = null, genre: String? = null, page: Int = 1, pageSize: Int? = null): SearchResults {
+    // Phase 216 (FR-216-7) / R243 (FR-R243-5) — [studios] and [networks] are the two repeated query
+    // parameters the server has accepted since R187 but this client never sent, so a studio or network
+    // seed had no way through the shared client at all. Genres already passed.
+    suspend fun browse(
+        kind: String? = null,
+        genre: String? = null,
+        page: Int = 1,
+        pageSize: Int? = null,
+        studios: List<String> = emptyList(),
+        networks: List<String> = emptyList(),
+    ): SearchResults {
         val r = client.get("$baseUrl/api/tv/browse") {
             auth()
             if (kind != null) parameter("kind", kind)
             if (genre != null) parameter("genre", genre)
+            studios.forEach { parameter("studio", it) }
+            networks.forEach { parameter("network", it) }
             parameter("page", page)
             if (pageSize != null) parameter("pageSize", pageSize)
         }

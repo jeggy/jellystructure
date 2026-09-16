@@ -205,14 +205,16 @@ fun main() = runBlocking {
     // and BrowseService's own live, uncached/unbounded fetches (see those files' Phase 205 notes).
     homeFeedService.start(rootScope, raviloDeviceService)
     dev.jellystructure.tv.PlaystateCache.start(rootScope, raviloDeviceService, mediaStore, jellyfinClient, configStore, tvEventBus)
-    val browseService = BrowseService(mediaStore, jellyfinClient, configStore, raviloConfigService, artworkDownloader)
+    // Phase 216 (FR-216-5) — BrowseService answers `logoUrl` from LogoDownloader.hasLogo, the one
+    // "was a logo really captured" predicate the admin Metadata page already uses.
+    val logoDownloader = LogoDownloader(dataDir, tmdbClient)
+    val browseService = BrowseService(mediaStore, jellyfinClient, configStore, raviloConfigService, artworkDownloader, logoDownloader)
     // Phase 185 (FR-185-4) — needed by DetailService below, for playbackNote resolution.
     val playbackStartSampleStore = dev.jellystructure.tv.PlaybackStartSampleStore(db)
     val detailService = DetailService(mediaStore, jellyfinClient, configStore, artworkDownloader, mediaSegmentStore, raviloDeviceService, playbackStartSampleStore)
     val playbackQoeStore = dev.jellystructure.tv.PlaybackQoeStore(db)
     val playbackService = PlaybackService(mediaStore, jellyfinClient, configStore, playbackQoeStore, playbackStartSampleStore, raviloDeviceService)
     val mediaHistory = MediaHistory(db)
-    val logoDownloader = LogoDownloader(dataDir, tmdbClient)
     val imageProxyService = dev.jellystructure.tv.RaviloArtworkService(dataDir, configStore, mediaStore, artworkDownloader)
     val channelLogoStore = dev.jellystructure.tv.ChannelLogoStore(dataDir)
     val qbClient = QBittorrentClient()

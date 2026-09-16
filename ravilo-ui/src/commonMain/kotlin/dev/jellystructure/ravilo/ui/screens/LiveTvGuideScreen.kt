@@ -152,7 +152,6 @@ fun formatGuideTime(epochMs: Long): String {
 fun LiveTvGuideScreen(
     store: LiveTvGuideStore,
     displayName: String,
-    discoverAvailable: Boolean,
     onBack: () -> Unit,
     onTuneChannel: (LiveTvChannel) -> Unit,
     onNavSelect: (Int) -> Unit = {},
@@ -164,7 +163,7 @@ fun LiveTvGuideScreen(
     LaunchedEffect(Unit) { store.load() }
 
     var selectedCategory by remember { mutableStateOf<String?>(null) }
-    val navItems = raviloNavItems(discoverAvailable)
+    val navItems = raviloNavItems()
     val navBarFR = remember { FocusRequester() }
     // Hoisted out of the Loaded branch (unlike most of its other state) so the details overlay below
     // — which must render on top of the AppBar, i.e. as a sibling declared after it — can both set it

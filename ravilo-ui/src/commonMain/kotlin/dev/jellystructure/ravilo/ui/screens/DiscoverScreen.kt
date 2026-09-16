@@ -72,15 +72,16 @@ fun DiscoverScreen(
     onProfile: () -> Unit,
     onSearch: () -> Unit,
     onSearchSeerr: () -> Unit,
-    upcomingAvailable: Boolean = false,
-    // R170 — set when Coming Soon (Sonarr/Radarr calendar) is *also* available, so this segment needs
-    // a way back to it; null when Request is the only Discover segment (no switcher shown).
-    onSwitchToComingSoon: (() -> Unit)? = null,
+    // R243 (FR-R243-1) — the Discover segment bar replaces R170's single "↔ Coming Soon" pill; see
+    // UpcomingScreen for the same three parameters.
+    segments: List<DiscoverSegment> = listOf(DiscoverSegment.REQUEST),
+    onSegment: (DiscoverSegment) -> Unit = {},
+    focusSegmentOnEntry: Boolean = false,
 ) {
     val colors = RaviloTheme.colors
     val state by store.state.collectAsState()
     val myRequests by store.myRequests.collectAsState()
-    val navItems = raviloNavItems(discoverAvailable = true)
+    val navItems = raviloNavItems()
 
     // R33 live config refresh + payload-bearing acquisition patching (Phase 56).
     val live = LocalLiveConfig.current
@@ -95,7 +96,7 @@ fun DiscoverScreen(
                 Spacer(Modifier.height(200.dp)); Text("Request unavailable", color = colors.text, fontSize = 20.sp)
                 Spacer(Modifier.height(8.dp)); Text(s.message, color = colors.textSecondary, fontSize = 14.sp)
             }
-            is DiscoverState.Loaded -> DiscoverLoaded(store, s.data, myRequests, displayName, DISCOVER_NAV_INDEX, navItems, onNavSelect, onEntrySelect, onProfile, onSearch, onSearchSeerr, onSwitchToComingSoon)
+            is DiscoverState.Loaded -> DiscoverLoaded(store, s.data, myRequests, displayName, DISCOVER_NAV_INDEX, navItems, onNavSelect, onEntrySelect, onProfile, onSearch, onSearchSeerr, segments, onSegment, focusSegmentOnEntry)
         }
     }
 }
@@ -113,7 +114,9 @@ private fun DiscoverLoaded(
     onProfile: () -> Unit,
     onSearch: () -> Unit,
     onSearchSeerr: () -> Unit,
-    onSwitchToComingSoon: (() -> Unit)?,
+    segments: List<DiscoverSegment>,
+    onSegment: (DiscoverSegment) -> Unit,
+    focusSegmentOnEntry: Boolean,
 ) {
     val colors = RaviloTheme.colors
     val listState = rememberLazyListState()
@@ -130,7 +133,7 @@ private fun DiscoverLoaded(
         if (idx >= 0) {
             listState.scrollToItem((idx + 1).coerceAtLeast(0)) // +1 for header item
         }
-        if (store.lastSelectedItemKey == null) runCatching { navBarFR.requestFocus() }
+        if (store.lastSelectedItemKey == null && !focusSegmentOnEntry) runCatching { navBarFR.requestFocus() }
     }
 
     // Two-stage Back: first Back focuses AppBar (and scrolls to top); second Back (from AppBar) pops.
@@ -162,10 +165,8 @@ private fun DiscoverLoaded(
                         }
                         SeerrSearchPill(onSelect = onSearchSeerr)
                     }
-                    if (onSwitchToComingSoon != null) {
-                        Spacer(Modifier.height(12.dp))
-                        DiscoverSegmentPill(other = str("seg.coming"), onSelect = onSwitchToComingSoon)
-                    }
+                    Spacer(Modifier.height(12.dp))
+                    DiscoverSegmentBar(segments = segments, active = DiscoverSegment.REQUEST, onSelect = onSegment, focusActiveOnEntry = focusSegmentOnEntry)
                 }
             }
             // Phase 139 §D.2 — "In progress": the viewer's own not-yet-available requests, so a

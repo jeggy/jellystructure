@@ -106,7 +106,6 @@ fun SeriesDetailScreen(
     onNavSelect: (Int) -> Unit = {},
     onProfile: (() -> Unit)? = null,
     onSearch: (() -> Unit)? = null,
-    discoverAvailable: Boolean = false,
 ) {
     val colors = RaviloTheme.colors
     LaunchedEffect(itemId) { store.load(itemId) }
@@ -132,7 +131,6 @@ fun SeriesDetailScreen(
                 onNavSelect = onNavSelect,
                 onProfile = onProfile,
                 onSearch = onSearch,
-                discoverAvailable = discoverAvailable,
             )
         }
     }
@@ -255,7 +253,6 @@ private fun SeriesDetailLoaded(
     onNavSelect: (Int) -> Unit,
     onProfile: (() -> Unit)?,
     onSearch: (() -> Unit)?,
-    discoverAvailable: Boolean,
 ) {
     val colors = RaviloTheme.colors
     val spaceGrotesk = SpaceGrotesk
@@ -367,7 +364,7 @@ private fun SeriesDetailLoaded(
         derivedStateOf { listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 0 }
     }
 
-    val navItems = raviloNavItems(discoverAvailable)
+    val navItems = raviloNavItems()
 
     Box(Modifier.fillMaxSize()) {
         @OptIn(ExperimentalFoundationApi::class)

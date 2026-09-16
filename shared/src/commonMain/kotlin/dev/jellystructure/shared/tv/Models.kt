@@ -1114,15 +1114,35 @@ data class FavoriteRequest(
 
 // ─── Browse facets ────────────────────────────────────────────────────────────
 
+/**
+ * Phase 216 (FR-216-5) — [logoUrl] is present ONLY when a logo was really captured for this value
+ * (the server's `LogoDownloader.hasLogo` predicate); there is no placeholder, no sentinel and no
+ * on-demand fetch, so an absent key is the normal, permanent state for most networks and for every
+ * genre and tag. R243 renders the name as a wordmark in that case and never says "no logo".
+ */
 @Serializable
-data class FacetItem(val name: String, val count: Int)
+data class FacetItem(val name: String, val count: Int, val logoUrl: String? = null)
 
+/**
+ * Phase 216 (FR-216-1) — the browse facet bar's counts, now also the Discover wall's index (R243).
+ * Every list is per-viewer (counted over what this device can see), count-descending with the
+ * display name as tie-break, normalised so two spellings of one value cannot both appear.
+ *
+ * [library] = titles visible to this profile; [titles] = per list ("studios"/"networks"/"genres"/
+ * "tags"), the number of DISTINCT titles carrying at least one value of that kind — never the sum
+ * of the counts, since a film with two studios counts once here and once under each studio.
+ * [scoped] = this profile sees less than the whole library (a library allow-list or a Jellyfin tag
+ * policy narrows it), so a header can say the counts are narrowed rather than under-report silently.
+ */
 @Serializable
 data class BrowseFacets(
     val genres: List<FacetItem> = emptyList(),
     val studios: List<FacetItem> = emptyList(),
     val networks: List<FacetItem> = emptyList(),
     val tags: List<FacetItem> = emptyList(),
+    val library: Int = 0,
+    val titles: Map<String, Int> = emptyMap(),
+    val scoped: Boolean = false,
 )
 
 // ─── Errors ───────────────────────────────────────────────────────────────────
