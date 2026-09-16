@@ -34,10 +34,6 @@ private val OPEN_API_PATHS = listOf(
     // Phase 114 — *arr webhooks: authenticated by their own per-install secret query param, since *arr's
     // webhook sender can't attach a cookie/device-token/API-key like every other caller.
     "/api/webhooks/",
-    // Phase 162 (Towo) — a runner daemon dials this WS outbound from a machine with no admin browser
-    // session at all; same reasoning as /api/tv/events above. It authenticates itself from a query-
-    // param enrollment token or runner credential (TowoService.authenticateRunnerLink), never a cookie.
-    "/api/towo/runner-link",
 )
 
 /**

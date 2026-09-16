@@ -86,8 +86,8 @@ data class SegmentEvidenceRow(
 )
 
 /** Phase 163 — the per-(item, episode, kind) segment-marker store, replacing the old flat
- *  `SegmentMarkers` blob field embedded in `MediaItem`/`Episode`. Mirrors `TowoStore`'s thin-wrapper
- *  style: plain query pass-throughs plus the handful of derived operations (lock-checking, evidence
+ *  `SegmentMarkers` blob field embedded in `MediaItem`/`Episode`. Thin-wrapper style (the same shape
+ *  the retired phase-162 store used): plain query pass-throughs plus the handful of derived operations (lock-checking, evidence
  *  bookkeeping, the `media.has_segments` point-update) every caller would otherwise duplicate. */
 class MediaSegmentStore(private val db: JellystructureDb) {
 

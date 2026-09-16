@@ -20,8 +20,6 @@ import dev.jellystructure.api.SeerrConfig
 import dev.jellystructure.api.RequestLanguageConfig
 import dev.jellystructure.api.RequestLanguageIntent
 import dev.jellystructure.api.ProvisionPlanLine
-import dev.jellystructure.api.TowoApi
-import dev.jellystructure.api.TowoSettings
 import dev.jellystructure.api.MetadataConfig
 import dev.jellystructure.resolver.CertificationCatalog
 import dev.jellystructure.api.httpClient
@@ -69,7 +67,6 @@ fun renderSettings(container: Element, scope: CoroutineScope, query: Map<String,
               ${settingsNavItemHtml("metadata", "Metadata")}
               ${settingsNavItemHtml("downloads", "Download tools")}
               ${settingsNavItemHtml("notifications", "Notifications")}
-              ${settingsNavItemHtml("towo", "Towo")}
               ${settingsNavItemHtml("advanced", "Advanced")}
             </div>
           </nav>
@@ -492,122 +489,6 @@ X-JS-Api-Key: jsk_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx</pre>
               </div>
             </div>
 
-            <div class="card set-section" id="sect-towo" data-tab="towo">
-              <h3 style="font-size:1rem;margin:0 0 6px">Towo</h3>
-              <p class="hint" style="margin:0 0 14px">A control plane for <b>Claude Code</b> sessions running on machines you own — unrelated to media management. Off by default.</p>
-              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
-                <div>
-                  <span style="font-size:.9rem;font-weight:500">Enable Towo</span>
-                  <div class="hint" style="margin-top:2px">Adds a <b>Towo</b> group to the sidebar. Runners and sessions are untouched either way — this only hides/shows the UI.</div>
-                </div>
-                <span id="towo-enable-toggle" class="toggle" style="cursor:pointer;flex-shrink:0;margin-left:12px"></span>
-              </div>
-              <p class="tiny muted" style="margin:0 0 16px">Takes effect on next page load.</p>
-
-              <hr class="dash">
-
-              <div class="field" style="max-width:420px;margin-bottom:14px">
-                <label>Where runners connect</label>
-                <input id="towo-runner-connect-url" class="input" placeholder="auto-detected from this page, e.g. wss://jellystructure.example.com">
-                <span class="hint">Leave blank to derive it from how you're viewing this page. Set it if that's wrong — e.g. behind a reverse proxy, or a different external hostname than the one runners should dial. Affects new enrollment commands only.</span>
-              </div>
-
-              <div class="field" style="max-width:420px;margin-bottom:14px">
-                <label>GitHub token (for the npx enrollment command)</label>
-                <input id="towo-github-token" class="input" type="password" placeholder="github_pat_…">
-                <span class="hint">A fine-grained personal access token with <b>Contents: Read-only</b> on this repo — needed because this is a private repo and the npx command downloads towo-runner's source from it. Embedded in plain text into every new enrollment command; rotate it here if it leaks.</span>
-              </div>
-
-              <hr class="dash">
-
-              <div style="display:flex;align-items:center;justify-content:space-between;margin:14px 0 8px">
-                <div>
-                  <span style="font-size:.9rem;font-weight:500">Quota watch</span>
-                  <div class="hint" style="margin-top:2px">Continues only sessions you armed (per session — "Continue after reset"), at the reset time Claude reported.</div>
-                </div>
-                <span id="towo-quota-watch-toggle" class="toggle" style="cursor:pointer;flex-shrink:0;margin-left:12px"></span>
-              </div>
-              <div class="field" style="max-width:220px;margin-bottom:14px">
-                <label>Check interval</label>
-                <select id="towo-quota-interval" class="input">
-                  <option value="900000">15 minutes</option>
-                  <option value="3600000">1 hour</option>
-                  <option value="21600000">6 hours (default)</option>
-                  <option value="43200000">12 hours</option>
-                  <option value="86400000">24 hours</option>
-                </select>
-              </div>
-
-              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
-                <div>
-                  <span style="font-size:.9rem;font-weight:500">Arm new sessions automatically</span>
-                  <div class="hint" style="margin-top:2px">Off by default — a session only ever resumes itself because someone said so, per session.</div>
-                </div>
-                <span id="towo-arm-default-toggle" class="toggle" style="cursor:pointer;flex-shrink:0;margin-left:12px"></span>
-              </div>
-
-              <div class="row" style="gap:14px;margin-bottom:14px;flex-wrap:wrap">
-                <div class="field" style="max-width:220px;flex:1">
-                  <label>Default permission profile</label>
-                  <select id="towo-default-profile" class="input">
-                    <option value="read_only">Read-only</option>
-                    <option value="normal">Normal</option>
-                    <option value="autonomous">Autonomous</option>
-                    <option value="unrestricted">Unrestricted</option>
-                  </select>
-                  <span class="hint">A starting value — every session can override it.</span>
-                </div>
-                <div class="field" style="max-width:140px">
-                  <label>Default turn cap</label>
-                  <input id="towo-default-max-turns" class="input" type="number" min="1" step="1">
-                </div>
-              </div>
-
-              <hr class="dash">
-
-              <div style="font-size:.83rem;font-weight:500;margin:14px 0 8px;color:var(--ink-soft)">Notify me when…</div>
-              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-                <span style="font-size:.9rem">A tool needs approval</span>
-                <span id="towo-notify-permission-toggle" class="toggle" style="cursor:pointer"></span>
-              </div>
-              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-                <span style="font-size:.9rem">A session pauses on quota</span>
-                <span id="towo-notify-paused-toggle" class="toggle" style="cursor:pointer"></span>
-              </div>
-              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-                <span style="font-size:.9rem">It picks back up</span>
-                <span id="towo-notify-resumed-toggle" class="toggle" style="cursor:pointer"></span>
-              </div>
-              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-                <span style="font-size:.9rem">A session errors</span>
-                <span id="towo-notify-errored-toggle" class="toggle" style="cursor:pointer"></span>
-              </div>
-              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-                <span style="font-size:.9rem">A window drops low</span>
-                <span id="towo-notify-low-quota-toggle" class="toggle" style="cursor:pointer"></span>
-              </div>
-              <div class="field" style="max-width:160px;margin-bottom:14px">
-                <label>Low-quota threshold (% remaining)</label>
-                <input id="towo-low-quota-threshold" class="input" type="number" min="1" max="99" step="1">
-              </div>
-
-              <hr class="dash">
-
-              <div style="font-size:.83rem;font-weight:500;margin:14px 0 8px;color:var(--ink-soft)">Permission timeout</div>
-              <div class="row" style="gap:14px;margin-bottom:14px;flex-wrap:wrap">
-                <div class="field" style="max-width:160px">
-                  <label>Auto-deny after (minutes)</label>
-                  <input id="towo-permission-timeout-min" class="input" type="number" min="1" step="1">
-                  <span class="hint">An ignored approval blocks the session forever otherwise.</span>
-                </div>
-                <div class="field" style="max-width:340px;flex:1">
-                  <label>Reason shown to Claude</label>
-                  <input id="towo-permission-timeout-reason" class="input">
-                </div>
-              </div>
-              <p class="tiny muted" style="margin:0">Saved with the page's main <b>Save</b> button, above.</p>
-            </div>
-
             <div class="card set-section" id="sect-advanced" data-tab="advanced">
               <h3 style="font-size:1rem;margin:0 0 10px">Advanced</h3>
               <div class="field">
@@ -730,7 +611,8 @@ private val SECTION_TAB = mapOf(
     "sect-notifications" to "notifications",
     "sect-advanced" to "advanced",
 )
-private val SETTINGS_TABS = listOf("connections", "libraries", "metadata", "downloads", "notifications", "towo", "advanced")
+// Phase 217 — the phase-162 tab is gone; its old `?tab=` value is unknown and the Phase-55 contract sends it to the default.
+private val SETTINGS_TABS = listOf("connections", "libraries", "metadata", "downloads", "notifications", "advanced")
 
 private fun applyHealthFailures(failsBySection: Map<String, Int>) {
     // Phase 55 — bubble section failures up to their owning tab.
@@ -1093,16 +975,6 @@ private fun attachListeners(scope: CoroutineScope) {
         refreshTomlPreview(readForm())
     }
 
-    // Phase 162 (Towo) — independent of config.toml, same localStorage-only/immediate-apply pattern
-    // as js-theme; app-shell.js reads this key to decide whether to render the sidebar Towo group.
-    updateToggle("towo-enable-toggle", window.localStorage.getItem("js-towo") == "1")
-    document.getElementById("towo-enable-toggle")?.addEventListener("click") {
-        val newState = window.localStorage.getItem("js-towo") != "1"
-        window.localStorage.setItem("js-towo", if (newState) "1" else "0")
-        updateToggle("towo-enable-toggle", newState)
-    }
-    wireTowoSettings(scope)
-
     wireArr(scope, "radarr")
     wireArr(scope, "sonarr")
     wireSeerr(scope)
@@ -1158,10 +1030,7 @@ private fun attachListeners(scope: CoroutineScope) {
         scope.launch {
             val config = readForm()
             val result = ConfigApi.save(config)
-            // Towo settings live in their own backend table (not config.toml) but ride this same
-            // button rather than getting a second one — see towoSettingsFromForm's doc comment.
-            val towoOk = if (result.ok) TowoApi.updateSettings(towoSettingsFromForm()) else true
-            val ok = result.ok && towoOk
+            val ok = result.ok
             // Phase 166 (FR-166-4) — the save-path backstop: surface the backend's own rejection reason
             // rather than a bare "Save failed" if an invalid schedule somehow reached PUT /api/config
             // (the live check above should already have caught it and disabled this button, but a stale
@@ -2327,64 +2196,6 @@ private fun runIngestRestart() {
 private fun updateToggle(id: String, on: Boolean) {
     val el = document.getElementById(id) as? HTMLElement ?: return
     if (on) el.className = "toggle on" else el.className = "toggle"
-}
-
-/** Phase 162 (Towo), spec §A — backend-owned settings (towo_settings table), a separate concern
- *  from config.toml: TowoAutoContinueScheduler is a server-side loop with no browser to read
- *  localStorage from, so this section gets its own load + its own "Save Towo settings" button
- *  rather than riding the page's main config-save flow. */
-private fun towoToggleOn(id: String): Boolean = (document.getElementById(id) as? HTMLElement)?.className?.contains("on") == true
-
-/** Reads the Towo tab's fields into a [TowoSettings] — shared by [wireTowoSettings]'s toggle wiring
- *  and the page's single global "Save" button (Towo settings live in their own backend table, not
- *  `config.toml`, but ride the same one-button save UX as everything else on this page rather than
- *  getting a second save button). */
-private fun towoSettingsFromForm(): TowoSettings = TowoSettings(
-    quotaWatchEnabled = towoToggleOn("towo-quota-watch-toggle"),
-    quotaWatchIntervalMs = (document.getElementById("towo-quota-interval") as? HTMLSelectElement)?.value?.toLongOrNull() ?: (6L * 60 * 60 * 1000),
-    armNewSessionsDefault = towoToggleOn("towo-arm-default-toggle"),
-    defaultPermissionProfile = (document.getElementById("towo-default-profile") as? HTMLSelectElement)?.value ?: "normal",
-    defaultMaxTurns = (document.getElementById("towo-default-max-turns") as? HTMLInputElement)?.value?.toLongOrNull() ?: 40,
-    notifyPermissionRequested = towoToggleOn("towo-notify-permission-toggle"),
-    notifyPausedQuota = towoToggleOn("towo-notify-paused-toggle"),
-    notifyResumed = towoToggleOn("towo-notify-resumed-toggle"),
-    notifyErrored = towoToggleOn("towo-notify-errored-toggle"),
-    notifyLowQuota = towoToggleOn("towo-notify-low-quota-toggle"),
-    lowQuotaThresholdPct = (document.getElementById("towo-low-quota-threshold") as? HTMLInputElement)?.value?.toLongOrNull()?.coerceIn(1, 99) ?: 20,
-    permissionTimeoutMs = (((document.getElementById("towo-permission-timeout-min") as? HTMLInputElement)?.value?.toLongOrNull()?.coerceAtLeast(1)) ?: 30) * 60_000,
-    permissionTimeoutReason = (document.getElementById("towo-permission-timeout-reason") as? HTMLInputElement)?.value?.trim()?.takeIf { it.isNotEmpty() }
-        ?: "No response within the timeout — auto-denied by Towo.",
-    runnerConnectUrl = (document.getElementById("towo-runner-connect-url") as? HTMLInputElement)?.value?.trim().orEmpty(),
-    githubToken = (document.getElementById("towo-github-token") as? HTMLInputElement)?.value?.trim().orEmpty(),
-)
-
-private fun wireTowoSettings(scope: CoroutineScope) {
-    scope.launch {
-        val settings = TowoApi.getSettings()
-        updateToggle("towo-quota-watch-toggle", settings.quotaWatchEnabled)
-        updateToggle("towo-arm-default-toggle", settings.armNewSessionsDefault)
-        updateToggle("towo-notify-permission-toggle", settings.notifyPermissionRequested)
-        updateToggle("towo-notify-paused-toggle", settings.notifyPausedQuota)
-        updateToggle("towo-notify-resumed-toggle", settings.notifyResumed)
-        updateToggle("towo-notify-errored-toggle", settings.notifyErrored)
-        updateToggle("towo-notify-low-quota-toggle", settings.notifyLowQuota)
-        (document.getElementById("towo-quota-interval") as? HTMLSelectElement)?.value = settings.quotaWatchIntervalMs.toString()
-        (document.getElementById("towo-default-profile") as? HTMLSelectElement)?.value = settings.defaultPermissionProfile
-        setInputValue("towo-default-max-turns", settings.defaultMaxTurns.toString())
-        setInputValue("towo-low-quota-threshold", settings.lowQuotaThresholdPct.toString())
-        setInputValue("towo-permission-timeout-min", (settings.permissionTimeoutMs / 60_000).toString())
-        setInputValue("towo-permission-timeout-reason", settings.permissionTimeoutReason)
-        setInputValue("towo-runner-connect-url", settings.runnerConnectUrl)
-        setInputValue("towo-github-token", settings.githubToken)
-    }
-
-    for (id in listOf(
-        "towo-quota-watch-toggle", "towo-arm-default-toggle", "towo-notify-permission-toggle",
-        "towo-notify-paused-toggle", "towo-notify-resumed-toggle", "towo-notify-errored-toggle",
-        "towo-notify-low-quota-toggle",
-    )) {
-        document.getElementById(id)?.addEventListener("click") { updateToggle(id, !towoToggleOn(id)) }
-    }
 }
 
 // Phase 107 — country-chart multi-select for Discover/Top 10 (design/app/settings.html .reg-grid).

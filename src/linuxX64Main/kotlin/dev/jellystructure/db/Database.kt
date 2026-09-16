@@ -55,6 +55,15 @@ fun createDatabase(dbFile: String): JellystructureDb {
                 } else {
                     startVersion = old.toLong()
                 }
+                // Phase 217 (FR-217-4) — 43.sqm drops the eight phase-162 tables. Transcripts are the
+                // one thing in them that cannot be reconstructed, so they are exported to a file on the
+                // config volume BEFORE the migration runs. Deliberately not fatal: a household's media
+                // server must not refuse to start over an export nobody may ever read (217 OQ1) — but
+                // it is loud, and the path is logged so the operator knows where to look.
+                if (startVersion < 44L && new.toLong() >= 44L) {
+                    runCatching { exportRetiredTranscripts(driver, parentDir.ifEmpty { "." }) }
+                        .onFailure { println("[WARN] Phase 217: transcript export before migration 43 failed — ${it.message}") }
+                }
                 if (startVersion < new.toLong()) {
                     JellystructureDb.Schema.migrate(driver, startVersion, new.toLong())
                 }
@@ -118,4 +127,68 @@ fun JellystructureDb.walCheckpoint() {
         while (cursor.next().value) { /* one row: busy, log, checkpointed — nothing to read */ }
         QueryResult.Value(Unit)
     }, 0)
+}
+
+/**
+ * Phase 217 (FR-217-4) — dumps every phase-162 session transcript, plus the runner/session metadata
+ * needed to read it, to ONE JSON file next to the database (the config volume), and logs the path.
+ * Runs once, immediately before migration 43 drops the tables; a database that never had them (a fresh
+ * install, or one already migrated) writes nothing. Raw SQL through the driver on purpose: the
+ * generated queries for these tables no longer exist.
+ */
+@OptIn(kotlinx.cinterop.ExperimentalForeignApi::class)
+private fun exportRetiredTranscripts(driver: SqlDriver, dir: String) {
+    fun tableExists(name: String): Boolean = driver.executeQuery(null,
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='$name'",
+        { cursor -> QueryResult.Value(cursor.next().value) }, 0).value
+    if (!tableExists("towo_transcript_entry") || !tableExists("towo_session")) return
+
+    fun jsonStr(s: String?): String = if (s == null) "null" else buildString {
+        append('"')
+        for (ch in s) when (ch) {
+            '"' -> append("\\\"")
+            '\\' -> append("\\\\")
+            '\n' -> append("\\n")
+            '\r' -> append("\\r")
+            '\t' -> append("\\t")
+            else -> if (ch < ' ') append("\\u" + ch.code.toString(16).padStart(4, '0')) else append(ch)
+        }
+        append('"')
+    }
+
+    val runners = ArrayList<String>()
+    driver.executeQuery(null, "SELECT id, name, host_label, os, created_at, last_seen_at FROM towo_runner", { c ->
+        while (c.next().value) {
+            runners += "{\"id\":${jsonStr(c.getString(0))},\"name\":${jsonStr(c.getString(1))},\"hostLabel\":${jsonStr(c.getString(2))}," +
+                "\"os\":${jsonStr(c.getString(3))},\"createdAt\":${c.getLong(4)},\"lastSeenAt\":${c.getLong(5)}}"
+        }
+        QueryResult.Value(Unit)
+    }, 0)
+    val sessions = ArrayList<String>()
+    driver.executeQuery(null, "SELECT id, runner_id, folder_path, title, tag, status, created_at, last_activity_at FROM towo_session", { c ->
+        while (c.next().value) {
+            sessions += "{\"id\":${jsonStr(c.getString(0))},\"runnerId\":${jsonStr(c.getString(1))},\"folderPath\":${jsonStr(c.getString(2))}," +
+                "\"title\":${jsonStr(c.getString(3))},\"tag\":${jsonStr(c.getString(4))},\"status\":${jsonStr(c.getString(5))}," +
+                "\"createdAt\":${c.getLong(6)},\"lastActivityAt\":${c.getLong(7)}}"
+        }
+        QueryResult.Value(Unit)
+    }, 0)
+    val entries = ArrayList<String>()
+    driver.executeQuery(null, "SELECT session_id, subpath, entry_uuid, entry_json, appended_at FROM towo_transcript_entry ORDER BY session_id, id", { c ->
+        while (c.next().value) {
+            // entry_json is already JSON — embedded verbatim, never re-encoded.
+            entries += "{\"sessionId\":${jsonStr(c.getString(0))},\"subpath\":${jsonStr(c.getString(1))},\"entryUuid\":${jsonStr(c.getString(2))}," +
+                "\"appendedAt\":${c.getLong(4)},\"entry\":${c.getString(3) ?: "null"}}"
+        }
+        QueryResult.Value(Unit)
+    }, 0)
+    if (runners.isEmpty() && sessions.isEmpty() && entries.isEmpty()) {
+        println("[INFO] Phase 217: no transcripts to export before dropping the retired tables")
+        return
+    }
+    val stamp = platform.posix.time(null)
+    val path = Path("$dir/towo-transcripts-export-$stamp.json")
+    val body = "{\"exportedAt\":$stamp,\"runners\":[${runners.joinToString(",")}],\"sessions\":[${sessions.joinToString(",")}],\"transcriptEntries\":[${entries.joinToString(",")}]}\n"
+    dev.jellystructure.io.FileIo.writeText(path, body)
+    println("[INFO] Phase 217: exported ${entries.size} transcript entries from ${sessions.size} session(s) to $path before dropping the retired tables")
 }
