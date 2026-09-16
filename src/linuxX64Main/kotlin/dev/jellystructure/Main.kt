@@ -247,6 +247,14 @@ fun main() = runBlocking {
     // Phase 220 (FR-220-4) — once, in the background, until the marker exists: every served variant for
     // the existing library, so the first viewer to scroll a season never pays for it on the request path.
     rootScope.launch(dev.jellystructure.ops.GateClass.BACKGROUND) { runCatching { mediaJobQueue.enqueuePresizeBackfill() } }
+    // Phase 222 (FR-222-6/7) — once at boot, in the background: prune segment rows filed under episodes
+    // that no longer exist, then queue the stored waveform envelope for every unit that lacks one.
+    rootScope.launch(dev.jellystructure.ops.GateClass.BACKGROUND) {
+        runCatching { dev.jellystructure.media.pruneOrphanSegments(mediaStore, mediaSegmentStore, mediaHistory) }
+            .onFailure { Logger.warn("Phase 222 orphan sweep failed: ${it.message}", "media") }
+        runCatching { mediaJobQueue.enqueueWaveformBackfill() }
+            .onFailure { Logger.warn("Phase 222 waveform backfill could not be queued: ${it.message}", "media") }
+    }
     // Phase 110 — one outbound Jellyfin WS per connected Ravilo TV (dashboard messages, remote control).
     val sessionBridge = dev.jellystructure.tv.JellyfinSessionBridge(configStore, tvEventBus, rootScope, mediaStore)
     // Phase 111 — jellystructure-issued API keys for external tools (Home Assistant etc.), fenced to /api/remote/**.

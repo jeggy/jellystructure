@@ -5,10 +5,13 @@ import dev.jellystructure.auth.SessionKey
 import dev.jellystructure.config.ConfigStore
 import dev.jellystructure.jobs.MediaJobParams
 import dev.jellystructure.media.DuplicateEpisodes
-import dev.jellystructure.media.FfmpegRunner
+import dev.jellystructure.media.FfprobeRunner
 import dev.jellystructure.media.FingerprintService
+import dev.jellystructure.media.MediaHistory
+import dev.jellystructure.media.MediaSegmentRow
 import dev.jellystructure.media.MediaSegmentStore
 import dev.jellystructure.media.MediaStore
+import dev.jellystructure.media.validSegmentKeys
 import dev.jellystructure.media.PipelineStepOps
 import dev.jellystructure.media.SegmentKind
 import dev.jellystructure.media.SegmentSource
@@ -17,6 +20,7 @@ import dev.jellystructure.model.MediaItem
 import dev.jellystructure.model.MediaKind
 import dev.jellystructure.model.Track
 import dev.jellystructure.model.TrackKind
+import dev.jellystructure.model.fileDurationMs
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.request.receive
 import io.ktor.server.response.respond
@@ -39,6 +43,11 @@ import kotlin.math.abs
 private const val OUTLIER_THRESHOLD_MS = 45_000L
 private const val LOW_CONFIDENCE_THRESHOLD = 0.60
 private const val SEGMENTS_STREAM_DEVICE_ID = "jellystructure-segments-editor"
+private val SEGMENTS_IDENTITY = dev.jellystructure.auth.JellyfinDeviceIdentity(SEGMENTS_STREAM_DEVICE_ID, "Jellystructure Segment Editor")
+/** Phase 222 (FR-222-5) — how far past the measured end an edit may reach before it is refused: a
+ *  container's own duration and the last decodable frame disagree by a hair, never by seconds. */
+private const val EDIT_PAST_END_TOLERANCE_MS = 2_000L
+private val streamNonce = kotlin.concurrent.AtomicInt(0)
 
 // Phase 190 (FR-190-2) — the browser-safe set a Chromium-class desktop browser decodes natively.
 // Confirmed against the 2026-09-06 codec census: 46.4% of library files lead with a codec NOT in this
@@ -67,11 +76,36 @@ internal fun isBrowserSafeDirectPlay(tracks: List<Track>, path: String): Boolean
     return audio.all { it.codec.lowercase() in BROWSER_SAFE_AUDIO_CODECS } && containerOf(path) in BROWSER_SAFE_CONTAINERS
 }
 
-/** Phase 190 — deterministic, not random: stable across repeated requests for the same unit (a page
- *  reload/reopen reuses the same id, which is harmless — Jellyfin's `StopEncodingProcess` is a no-op
- *  when nothing matches) and needs no UUID source on Kotlin/Native. */
-internal fun segmentsPlaySessionId(jellyfinId: String, episodeKey: String?): String =
-    "segeditor-$jellyfinId" + (episodeKey?.let { "-${it.hashCode()}" } ?: "")
+/**
+ * Phase 222 (FR-222-1) — UNIQUE per stream start. Phase 190 made this deterministic ("a reopen reuses the
+ * same id, which is harmless"); it was not harmless. Jellyfin 10.11.11 hashes a progressive transcode's
+ * output path from `MediaPath-UserAgent-DeviceId-PlaySessionId` (StreamingHelpers.cs:376) — never
+ * `StartTimeTicks` — and serves an existing file from byte zero without starting ffmpeg
+ * (FileStreamResponseHelpers.cs:149-163). So every seek the editor made was handed the stream it was
+ * already playing, and two admin tabs on one title shared one transcode. The readable prefix stays (it is
+ * what Jellyfin's session list shows); [nonce] makes each start its own output path, so a seek's `-ss`
+ * really runs. The previous id is stopped by the stream route (see there). No UUID source is needed on
+ * Kotlin/Native: epoch seconds plus a process counter cannot collide within a job's 10 s lifetime.
+ */
+internal fun segmentsPlaySessionId(jellyfinId: String, episodeKey: String?, nonce: String): String =
+    "segeditor-$jellyfinId" + (episodeKey?.let { "-${it.hashCode()}" } ?: "") + "-$nonce"
+
+internal fun nextStreamNonce(): String = "${dev.jellystructure.nowEpochSec()}-${streamNonce.incrementAndGet()}"
+
+/**
+ * Phase 222 — what the trim view needs to play a unit. [startedAtMs] is the media time of the first frame
+ * the stream will contain: 0 for direct play and a fresh remux open; for a remux seek, the keyframe at or
+ * before the requested offset (FR-222-2), because `-ss` with stream copy starts there and the browser's
+ * clock starts at zero there (the fragmented MP4's edit list is ignored by ffmpeg-based demuxers —
+ * "advanced_editlist does not work with fragmented MP4"). [startedAtExact] is false when that could not
+ * be measured, so the client says so instead of pretending.
+ */
+@kotlinx.serialization.Serializable
+data class SegmentStreamInfo(val url: String, val mode: String, val playSessionId: String = "", val startedAtMs: Long = 0, val startedAtExact: Boolean = true)
+
+/** Phase 222 (FR-222-6) — the stored envelope as the client reads it: [peaks] one 0-100 value per [bucketMs]. */
+@kotlinx.serialization.Serializable
+data class SegmentWaveformDto(val bucketMs: Long, val peaks: List<Int>)
 
 @kotlinx.serialization.Serializable
 data class SegmentDto(
@@ -95,6 +129,9 @@ data class SegmentEpisodeRow(
     val code: String,
     val title: String,
     val durationSec: Double,
+    /** Phase 222 (FR-222-3) — where [durationSec] came from: `file` (measured) · `tmdb` (whole-minute
+     *  estimate, labelled as such) · `markers` (furthest marker edge) · `unknown` (0). */
+    val durationSource: String = "unknown",
     val jellyfinId: String? = null,
     val partCount: Int = 1,
     val segments: List<SegmentDto> = emptyList(),
@@ -204,6 +241,7 @@ data class SegmentTrimResponse(
     val code: String,
     val title: String,
     val durationSec: Double,
+    val durationSource: String = "unknown",
     val kind: String,   // "tv" | "movie"
     val partCount: Int = 1,
     val segments: List<SegmentDto> = emptyList(),
@@ -214,7 +252,13 @@ data class SegmentTrimResponse(
     val totalCount: Int = 0,
 )
 
-fun Route.segmentRoutes(store: MediaStore, segmentStore: MediaSegmentStore, configStore: ConfigStore, fingerprintService: FingerprintService?, appScope: CoroutineScope, jellyfinClient: JellyfinClient, mediaJobQueue: dev.jellystructure.media.MediaJobQueue) {
+fun Route.segmentRoutes(store: MediaStore, segmentStore: MediaSegmentStore, configStore: ConfigStore, fingerprintService: FingerprintService?, appScope: CoroutineScope, jellyfinClient: JellyfinClient, mediaJobQueue: dev.jellystructure.media.MediaJobQueue, mediaHistory: MediaHistory) {
+    // Phase 222 (FR-222-7) — opening a title in the editor prunes its orphaned rows first (cheap: one
+    // key listing per table), so what the sheet counts is what the episodes on disk can carry.
+    fun pruneOnOpen(item: MediaItem) {
+        val removed = segmentStore.pruneOrphans(item.id, validSegmentKeys(item))
+        if (removed > 0) mediaHistory.record(item.id, "segments_pruned", "$removed orphaned intro/credits unit(s) removed — the episode files they were filed under no longer exist")
+    }
     route("/segments") {
         get {
             val seriesId = call.request.queryParameters["series"]
@@ -225,10 +269,12 @@ fun Route.segmentRoutes(store: MediaStore, segmentStore: MediaSegmentStore, conf
                 filter != null -> call.respond(crossLibrarySheet(store, segmentStore, filter))
                 seriesId != null && season != null -> {
                     val item = store.get(seriesId) ?: return@get call.respond(HttpStatusCode.NotFound)
+                    pruneOnOpen(item)
                     call.respond(seasonSheet(item, season, segmentStore))
                 }
                 movieId != null -> {
                     val item = store.get(movieId) ?: return@get call.respond(HttpStatusCode.NotFound)
+                    pruneOnOpen(item)
                     call.respond(movieSheet(item, segmentStore))
                 }
                 else -> call.respond(HttpStatusCode.BadRequest)
@@ -243,6 +289,14 @@ fun Route.segmentRoutes(store: MediaStore, segmentStore: MediaSegmentStore, conf
             val episodeKey = call.request.queryParameters["episode"] ?: ""
             val episodeNumber = call.request.queryParameters["n"]?.toIntOrNull() ?: 0
             val body = runCatching { call.receive<SegmentEditRequest>() }.getOrNull() ?: return@put call.respond(HttpStatusCode.BadRequest)
+            // Phase 222 (FR-222-5) — validated against the unit's MEASURED length when known; an unknown
+            // length only relaxes the past-the-end rule, never the others.
+            val item = store.get(itemId)
+            val unitDurationMs = if (episodeKey.isEmpty()) item?.tracks?.fileDurationMs()
+                else item?.episodes?.firstOrNull { it.filename == episodeKey && (it.episodeNumber ?: 0) == episodeNumber }?.tracks?.fileDurationMs()
+            validateSegmentEdit(kind, body.startMs, body.endMs, unitDurationMs)?.let { reason ->
+                return@put call.respond(HttpStatusCode.UnprocessableEntity, mapOf("error" to reason))
+            }
             val existing = segmentStore.getSegment(itemId, episodeKey, episodeNumber, kind)
             // Phase 189 (FR-189-4) — upsertSegment is INSERT OR REPLACE, and `checked` is derived from
             // whether ANY row has a non-null checked_at (see this file's `checked` computation below):
@@ -309,8 +363,10 @@ fun Route.segmentRoutes(store: MediaStore, segmentStore: MediaSegmentStore, conf
         // above) since the response shape genuinely differs — a sheet row vs one title's full detail.
         get("/{itemId}") {
             val itemId = call.parameters["itemId"] ?: return@get call.respond(HttpStatusCode.BadRequest)
-            val item = store.get(itemId) ?: return@get call.respond(HttpStatusCode.NotFound)
-            if (item.kind != MediaKind.MOVIE) return@get call.respond(HttpStatusCode.BadRequest)
+            val item0 = store.get(itemId) ?: return@get call.respond(HttpStatusCode.NotFound)
+            if (item0.kind != MediaKind.MOVIE) return@get call.respond(HttpStatusCode.BadRequest)
+            pruneOnOpen(item0)
+            val item = ensureMeasured(store, item0, null)
             call.respond(movieTrim(item, segmentStore))
         }
 
@@ -318,8 +374,11 @@ fun Route.segmentRoutes(store: MediaStore, segmentStore: MediaSegmentStore, conf
             val itemId = call.parameters["itemId"] ?: return@get call.respond(HttpStatusCode.BadRequest)
             val key = call.request.queryParameters["key"] ?: return@get call.respond(HttpStatusCode.BadRequest)
             val n = call.request.queryParameters["n"]?.toIntOrNull() ?: 0
-            val item = store.get(itemId) ?: return@get call.respond(HttpStatusCode.NotFound)
-            val ep = item.episodes.firstOrNull { it.filename == key && (it.episodeNumber ?: 0) == n } ?: return@get call.respond(HttpStatusCode.NotFound)
+            val item0 = store.get(itemId) ?: return@get call.respond(HttpStatusCode.NotFound)
+            val ep0 = item0.episodes.firstOrNull { it.filename == key && (it.episodeNumber ?: 0) == n } ?: return@get call.respond(HttpStatusCode.NotFound)
+            pruneOnOpen(item0)
+            val item = ensureMeasured(store, item0, ep0)
+            val ep = item.episodes.firstOrNull { it.filename == key && (it.episodeNumber ?: 0) == n } ?: ep0
             call.respond(episodeTrim(item, ep, segmentStore))
         }
 
@@ -363,6 +422,8 @@ fun Route.segmentRoutes(store: MediaStore, segmentStore: MediaSegmentStore, conf
             // mode; ignored (not merely harmless — actively wrong) for a direct-play URL, since Static=true
             // already serves the whole file and StartTimeTicks has no effect there.
             val startMs = call.request.queryParameters["startMs"]?.toLongOrNull()?.coerceAtLeast(0L)
+            // Phase 222 (FR-222-1) — the id of the stream this tab is abandoning, if any.
+            val prev = call.request.queryParameters["prev"]?.takeIf { it.isNotBlank() }
             val jellyfinId = resolveJellyfinId(item, episodeKey, episodeNumber)
                 ?: return@get call.respond(HttpStatusCode.NotFound, mapOf("error" to "not matched in Jellyfin yet"))
             val (tracks, path) = if (episodeKey != null) {
@@ -371,22 +432,30 @@ fun Route.segmentRoutes(store: MediaStore, segmentStore: MediaSegmentStore, conf
                 ep.tracks to ep.path
             } else item.tracks to item.path
             val base = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
-            val directPlay = isBrowserSafeDirectPlay(tracks, path)
-            val url: String
-            val mode: String
-            var playSessionId: String? = null
-            if (directPlay) {
-                url = "$base/Videos/$jellyfinId/stream?Static=true&MediaSourceId=$jellyfinId&DeviceId=$SEGMENTS_STREAM_DEVICE_ID&api_key=${session.jellyfinUserToken}"
-                mode = "direct"
-            } else {
-                val psid = segmentsPlaySessionId(jellyfinId, episodeKey)
-                val startParam = startMs?.let { "&StartTimeTicks=${it * 10_000}" } ?: ""
-                url = "$base/Videos/$jellyfinId/stream.mp4?Static=false&VideoCodec=copy&AudioCodec=aac&AudioChannels=2" +
-                    "&MediaSourceId=$jellyfinId&DeviceId=$SEGMENTS_STREAM_DEVICE_ID&PlaySessionId=$psid$startParam&api_key=${session.jellyfinUserToken}"
-                mode = "remux"
-                playSessionId = psid
+            // Phase 222 (FR-222-1) — the previous stream is stopped by ITS OWN id, never by DeviceId alone
+            // (that would kill another tab's stream on the same title). Fire-and-forget: the new id hashes
+            // to a new output path on Jellyfin's side, so correctness does not depend on the old file being
+            // gone first — Jellyfin's delete retries on a 500 ms ladder and a request would win that race.
+            if (prev != null) {
+                val token = session.jellyfinUserToken
+                appScope.launch { jellyfinClient.stopActiveEncoding(base, token, SEGMENTS_IDENTITY, prev) }
             }
-            call.respond(mapOf("url" to url, "mode" to mode, "playSessionId" to (playSessionId ?: "")))
+            val directPlay = isBrowserSafeDirectPlay(tracks, path)
+            if (directPlay) {
+                val url = "$base/Videos/$jellyfinId/stream?Static=true&MediaSourceId=$jellyfinId&DeviceId=$SEGMENTS_STREAM_DEVICE_ID&api_key=${session.jellyfinUserToken}"
+                return@get call.respond(SegmentStreamInfo(url = url, mode = "direct"))
+            }
+            val psid = segmentsPlaySessionId(jellyfinId, episodeKey, nextStreamNonce())
+            val requested = startMs ?: 0L
+            // Phase 222 (FR-222-2) — where the picture will really start. `-ss` with stream copy cannot cut
+            // inside a GOP, so the stream begins at the keyframe at or before the request and the browser's
+            // clock starts at zero there; the client bases the playhead on THIS, not on what it asked for.
+            val keyframeSec = if (requested > 0) FfprobeRunner.keyframeAtOrBefore(path, requested / 1000.0) else 0.0
+            val startedAtMs = keyframeSec?.let { (it * 1000).toLong().coerceAtLeast(0L) } ?: requested
+            val startParam = if (requested > 0) "&StartTimeTicks=${requested * 10_000}" else ""
+            val url = "$base/Videos/$jellyfinId/stream.mp4?Static=false&VideoCodec=copy&AudioCodec=aac&AudioChannels=2" +
+                "&MediaSourceId=$jellyfinId&DeviceId=$SEGMENTS_STREAM_DEVICE_ID&PlaySessionId=$psid$startParam&api_key=${session.jellyfinUserToken}"
+            call.respond(SegmentStreamInfo(url = url, mode = "remux", playSessionId = psid, startedAtMs = startedAtMs, startedAtExact = keyframeSec != null))
         }
 
         // Phase 190 (FR-190-6) — releases an in-flight audio-remux transcode when the trim view closes
@@ -399,33 +468,31 @@ fun Route.segmentRoutes(store: MediaStore, segmentStore: MediaSegmentStore, conf
                 ?: return@post call.respond(HttpStatusCode.NoContent)
             val session = runCatching { call.attributes[SessionKey] }.getOrNull() ?: return@post call.respond(HttpStatusCode.Unauthorized)
             val base = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
-            jellyfinClient.stopActiveEncoding(
-                base, session.jellyfinUserToken,
-                dev.jellystructure.auth.JellyfinDeviceIdentity(SEGMENTS_STREAM_DEVICE_ID, "Jellystructure Segment Editor"),
-                playSessionId,
-            )
+            jellyfinClient.stopActiveEncoding(base, session.jellyfinUserToken, SEGMENTS_IDENTITY, playSessionId)
             call.respond(HttpStatusCode.NoContent)
         }
 
-        // Step 6 — [buckets] peak amplitudes for the trim view's waveform, decoded on demand (never
-        // cached/persisted — this is a display aid, not detection data). Bounded to a sane window so a
-        // malformed request can't ask ffmpeg to decode an unbounded amount of audio.
+        // Phase 222 (FR-222-6) — the stored envelope, and ONLY the stored envelope. Phase 163 decoded the
+        // whole file here on every open and every structural edit (a 60 GB linear read for a 4K remux —
+        // the 2026-09-15 stall's I/O class) for 150 buckets that resolved to one peak per 18 s. Now a
+        // missing envelope queues one background job for exactly this unit and answers 404; the trim view
+        // renders an empty lane and says so. This handler never spawns a process.
         get("/{itemId}/waveform") {
             val itemId = call.parameters["itemId"] ?: return@get call.respond(HttpStatusCode.BadRequest)
             val item = store.get(itemId) ?: return@get call.respond(HttpStatusCode.NotFound)
-            val episodeKey = call.request.queryParameters["episode"]
+            val episodeKey = call.request.queryParameters["episode"]?.takeIf { it.isNotEmpty() }
             val episodeNumber = call.request.queryParameters["n"]?.toIntOrNull() ?: 0
-            val startMs = call.request.queryParameters["startMs"]?.toLongOrNull() ?: 0L
-            val endMs = call.request.queryParameters["endMs"]?.toLongOrNull()
-            val buckets = call.request.queryParameters["buckets"]?.toIntOrNull()?.coerceIn(10, 600) ?: 150
-            val path = if (episodeKey != null) {
-                item.episodes.firstOrNull { it.filename == episodeKey && (it.episodeNumber ?: 0) == episodeNumber }?.path
-            } else item.path
-            if (path == null) return@get call.respond(HttpStatusCode.NotFound)
-            val startSec = (startMs / 1000.0).coerceAtLeast(0.0)
-            val windowSec = ((endMs?.let { it / 1000.0 } ?: (startSec + 1_800)) - startSec).coerceIn(0.0, 14_400.0)
-            val peaks = FfmpegRunner.computeWaveform(path, startSec, windowSec, buckets)
-            if (peaks == null) call.respond(HttpStatusCode.UnprocessableEntity, mapOf("error" to "couldn't decode audio")) else call.respond(peaks)
+            val stored = segmentStore.getWaveform(item.id, episodeKey ?: "", episodeNumber)
+            when {
+                stored != null && stored.bucketMs > 0 ->
+                    call.respond(SegmentWaveformDto(stored.bucketMs, stored.peaks.map { it.toInt() and 0xFF }))
+                stored != null -> call.respond(HttpStatusCode.UnprocessableEntity, mapOf("error" to "couldn't decode audio"))
+                else -> {
+                    val label = if (episodeKey != null) "${item.title} · $episodeKey" else item.title
+                    mediaJobQueue.enqueueWaveformUnit(item, episodeKey ?: "", episodeNumber, label)
+                    call.respond(HttpStatusCode.NotFound, mapOf("error" to "not computed yet"))
+                }
+            }
         }
 
         // Step 6 — Jellyfin's own MediaSegments, offered as read-only candidates (never auto-applied —
@@ -519,8 +586,9 @@ private fun applyConsensusToTargets(item: MediaItem, season: Int, kind: String, 
             }
             SegmentKind.CREDITS -> {
                 val lead = consensus.leadMs ?: continue
-                val durMs = (durationSecOf(ep.runtime, segmentStore.segmentsForEpisode(item.id, ep.filename, ep.episodeNumber ?: 0)) * 1000).toLong()
-                if (durMs <= 0) continue
+                // Phase 222 (FR-222-3) — end-relative placement only against a MEASURED length; an
+                // estimate here wrote credits into the last TMDB-minute, not the last file-minute.
+                val durMs = ep.tracks.fileDurationMs() ?: continue
                 val start = (durMs - lead).coerceAtLeast(0)
                 segmentStore.upsertSegment(item.id, ep.filename, ep.episodeNumber ?: 0, SegmentKind.CREDITS, start, null, SegmentSource.MANUAL, null, locked = lock)
             }
@@ -534,33 +602,84 @@ private fun applyConsensusToTargets(item: MediaItem, season: Int, kind: String, 
 
 private fun episodeRow(mediaId: String, itemTitle: String?, ep: Episode, segmentStore: MediaSegmentStore): SegmentEpisodeRow {
     val rows = segmentStore.segmentsForEpisode(mediaId, ep.filename, ep.episodeNumber ?: 0)
+    val duration = resolveDuration(ep.tracks.fileDurationMs(), ep.runtime, rows)
     val code = if (ep.seasonNumber != null && ep.episodeNumber != null) {
         "S${ep.seasonNumber.toString().padStart(2, '0')}E${ep.episodeNumber.toString().padStart(2, '0')}"
     } else ep.filename.substringBeforeLast('.')
     return SegmentEpisodeRow(
         mediaId = mediaId, itemTitle = itemTitle, episodeKey = ep.filename, episodeNumber = ep.episodeNumber ?: 0,
-        code = code, title = ep.title ?: code, durationSec = durationSecOf(ep.runtime, rows),
+        code = code, title = ep.title ?: code, durationSec = duration.first, durationSource = duration.second,
         jellyfinId = ep.jellyfinId, partCount = ep.partCount, segments = rows.toDtos(), checked = rows.any { it.checkedAt != null },
     )
 }
 
 private fun movieRow(item: MediaItem, itemTitle: String?, segmentStore: MediaSegmentStore): SegmentEpisodeRow {
     val rows = segmentStore.segmentsForItem(item.id)
+    val duration = resolveDuration(item.tracks.fileDurationMs(), item.runtime, rows)
     return SegmentEpisodeRow(
         mediaId = item.id, itemTitle = itemTitle, code = item.title, title = item.title,
-        durationSec = durationSecOf(item.runtime, rows), jellyfinId = item.jellyfinId, partCount = 1,
+        durationSec = duration.first, durationSource = duration.second, jellyfinId = item.jellyfinId, partCount = 1,
         segments = rows.toDtos(), checked = rows.any { it.checkedAt != null },
     )
 }
 
-// Real per-episode/movie duration lives nowhere in the model (only ffprobe knows it, at scan/detect
-// time) — re-invoking ffprobe for a whole season just to render a comparison timeline would repeat
-// this repo's own unthrottled-ffmpeg-call incident class. TMDB's runtime (minutes) is close enough for
-// the sheet's relative-width bar chart; the trim view (step 4/5) gets the frame-accurate figure from
-// the real <video> element once playback exists. Falls back to the furthest known segment edge so a
-// title with markers but no TMDB runtime yet still renders something.
-private fun durationSecOf(runtimeMinutes: Int?, rows: List<dev.jellystructure.media.MediaSegmentRow>): Double =
-    runtimeMinutes?.let { it * 60.0 } ?: rows.maxOfOrNull { it.endMs ?: it.startMs }?.div(1000.0) ?: 0.0
+/**
+ * Phase 222 (FR-222-3) — one duration, labelled. `file` = measured by jellystructure's own ffprobe
+ * (`Track.durationMs` on the video track, stored with the track list at every examination and by
+ * [ensureMeasured] the first time the editor opens a unit); `tmdb` = TMDB's whole-minute runtime, kept
+ * ONLY as a labelled fallback until the file is measured — it is shorter than the file for most credits
+ * (2 152 credits markers sat past it in production on 2026-09-16) and the client says so; `markers` = the
+ * furthest marker edge when nothing else is known; `unknown` = 0. The client never rescales any of these
+ * from the `<video>` element: a fragmented-MP4 remux reports one GOP as its duration.
+ */
+internal fun resolveDuration(durationMs: Long?, runtimeMinutes: Int?, rows: List<MediaSegmentRow>): Pair<Double, String> {
+    if (durationMs != null && durationMs > 0) return durationMs / 1000.0 to "file"
+    if (runtimeMinutes != null && runtimeMinutes > 0) return runtimeMinutes * 60.0 to "tmdb"
+    val edge = rows.maxOfOrNull { it.endMs ?: it.startMs }
+    if (edge != null && edge > 0) return edge / 1000.0 to "markers"
+    return 0.0 to "unknown"
+}
+
+/** Phase 222 (FR-222-5) — null = acceptable; else the reason, in the operator's words. [durationMs] null
+ *  = not measured, which only relaxes the past-the-end rule. */
+internal fun validateSegmentEdit(kind: String, startMs: Long, endMs: Long?, durationMs: Long?): String? = when {
+    kind !in SegmentKind.ALL -> "'$kind' is not a marker kind"
+    startMs < 0 -> "a marker cannot start before the file does"
+    endMs != null && endMs <= startMs -> "a marker's end must come after its start"
+    durationMs != null && startMs > durationMs + EDIT_PAST_END_TOLERANCE_MS -> "start is past the end of the file (${fmtMs(durationMs)})"
+    durationMs != null && endMs != null && endMs > durationMs + EDIT_PAST_END_TOLERANCE_MS -> "end is past the end of the file (${fmtMs(durationMs)})"
+    else -> null
+}
+
+private fun fmtMs(ms: Long): String {
+    val s = ms / 1000
+    return "${s / 60}:${(s % 60).toString().padStart(2, '0')}"
+}
+
+/**
+ * Phase 222 (FR-222-3) — the first time the editor opens a unit whose file has not been measured since
+ * `Track.durationMs` existed, measure it now (one bounded ffprobe of the container header — not a read
+ * of the file) and persist it on the video track, so the very next scan-less open is a plain read and the
+ * consensus/apply paths see the same number. Returns the item as stored afterwards. A file with no video
+ * track has nowhere to carry the figure and stays unmeasured (the resolver then labels the fallback).
+ */
+private suspend fun ensureMeasured(store: MediaStore, item: MediaItem, ep: Episode?): MediaItem {
+    val tracks = ep?.tracks ?: item.tracks
+    if (tracks.fileDurationMs() != null) return item
+    val path = ep?.path ?: item.path
+    val sec = FfprobeRunner.duration(path)?.takeIf { it > 0 } ?: return item
+    val stamped = stampDuration(tracks, (sec * 1000).toLong()) ?: return item
+    val updated = if (ep == null) item.copy(tracks = stamped)
+        else item.copy(episodes = item.episodes.map { if (it.filename == ep.filename && it.episodeNumber == ep.episodeNumber) it.copy(tracks = stamped) else it })
+    store.updateOne(updated)
+    return store.get(item.id) ?: updated
+}
+
+private fun stampDuration(tracks: List<Track>, ms: Long): List<Track>? {
+    val idx = tracks.indexOfFirst { it.kind == TrackKind.VIDEO }
+    if (idx < 0) return null
+    return tracks.mapIndexed { i, t -> if (i == idx) t.copy(durationMs = ms) else t }
+}
 
 private fun List<dev.jellystructure.media.MediaSegmentRow>.toDtos(): List<SegmentDto> =
     map { SegmentDto(kind = it.kind, startMs = it.startMs, endMs = it.endMs, source = it.source, confidence = it.confidence, locked = it.locked) }
@@ -583,7 +702,8 @@ private fun computeConsensus(rows: List<SegmentEpisodeRow>): List<SegmentConsens
         val ends = it.mapNotNull { s -> s.endMs }.sorted()
         SegmentConsensus(kind = SegmentKind.INTRO, startMs = starts[starts.size / 2], endMs = ends.getOrNull(ends.size / 2))
     }
-    val creditsLeads = nonOutliers.mapNotNull { r ->
+    // Phase 222 (FR-222-3) — an end-relative lead is only meaningful against a measured length.
+    val creditsLeads = nonOutliers.filter { it.durationSource == "file" }.mapNotNull { r ->
         r.segments.firstOrNull { it.kind == SegmentKind.CREDITS }?.let { s -> (r.durationSec * 1000).toLong() - s.startMs }
     }
     val creditsConsensus = creditsLeads.takeIf { it.isNotEmpty() }?.let {
@@ -639,9 +759,10 @@ private fun movieTrim(item: MediaItem, segmentStore: MediaSegmentStore): Segment
     val rows = segmentStore.segmentsForItem(item.id)
     val evidence = segmentStore.evidenceForEpisode(item.id, "", 0)
     val checked = rows.any { it.checkedAt != null }
+    val duration = resolveDuration(item.tracks.fileDurationMs(), item.runtime, rows)
     return SegmentTrimResponse(
         mediaId = item.id, itemTitle = item.title, code = item.title, title = item.title,
-        durationSec = durationSecOf(item.runtime, rows), kind = "movie", partCount = 1,
+        durationSec = duration.first, durationSource = duration.second, kind = "movie", partCount = 1,
         segments = rows.toDtos(), evidence = evidence.toEvidenceDtos(), checked = checked,
         checkedCount = if (checked) 1 else 0, totalCount = 1,
     )
@@ -651,11 +772,13 @@ private fun episodeTrim(item: MediaItem, ep: Episode, segmentStore: MediaSegment
     val season = ep.seasonNumber ?: 0
     val seasonEpisodes = DuplicateEpisodes.deduped(item.episodes).filter { (it.seasonNumber ?: 0) == season }.sortedBy { it.episodeNumber ?: 0 }
     val railRows = markOutliers(seasonEpisodes.map { episodeRow(item.id, null, it, segmentStore) })
-    val ownRow = railRows.first { it.episodeKey == ep.filename && it.episodeNumber == (ep.episodeNumber ?: 0) }
+    // An episode the duplicate-dedup dropped from the rail still gets its own row rather than a 500.
+    val ownRow = railRows.firstOrNull { it.episodeKey == ep.filename && it.episodeNumber == (ep.episodeNumber ?: 0) }
+        ?: episodeRow(item.id, null, ep, segmentStore)
     val evidence = segmentStore.evidenceForEpisode(item.id, ep.filename, ep.episodeNumber ?: 0)
     return SegmentTrimResponse(
         mediaId = item.id, itemTitle = item.title, seasonNumber = season, episodeKey = ep.filename, episodeNumber = ep.episodeNumber ?: 0,
-        code = ownRow.code, title = ep.title ?: ownRow.code, durationSec = ownRow.durationSec, kind = "tv", partCount = ep.partCount,
+        code = ownRow.code, title = ep.title ?: ownRow.code, durationSec = ownRow.durationSec, durationSource = ownRow.durationSource, kind = "tv", partCount = ep.partCount,
         segments = ownRow.segments, evidence = evidence.toEvidenceDtos(), checked = ownRow.checked,
         rail = railRows.map { SegmentRailItem(it.episodeKey, it.episodeNumber, it.code, it.title, it.durationSec, it.segments, it.checked, it.outlier) },
         checkedCount = railRows.count { it.checked }, totalCount = railRows.size,

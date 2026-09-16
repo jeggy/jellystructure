@@ -219,69 +219,47 @@ object FfmpegRunner {
         return runCommand("ffmpeg -y -ss $atSeconds -i '$inEsc' -frames:v 1 -q:v 3 '$outEsc' 2>&1")
     }
 
-    // Phase 163 (step 6) — binary-safe stdout capture. captureCommand/runCommand above read via
-    // fgets()+toKString(), which is text-only: fgets stops at every newline byte (common in raw PCM) and
-    // toKString() truncates at the first embedded NUL. This reads raw bytes via fread() instead, growing
-    // a chunk list rather than one big pre-sized buffer since ffmpeg's output length isn't known upfront.
-    // Phase 170 — through the segment-detection lane's dedicated SegmentProcessGate (see its doc
-    // comment): this is only ever used by [computeWaveform], the trim view's own heavy-decode call.
-    @OptIn(ExperimentalForeignApi::class)
-    private suspend fun captureBinaryCommand(cmd: String): ByteArray? = dev.jellystructure.ops.SegmentProcessGate.withPermit {
-        memScoped {
-            val pipe = popen(cmd, "r")
-            if (pipe == null) {
-                null
-            } else {
-                val chunkSize = 65536
-                val buf = allocArray<ByteVar>(chunkSize)
-                val chunks = mutableListOf<ByteArray>()
-                var total = 0
-                while (true) {
-                    val n = platform.posix.fread(buf, 1u, chunkSize.toULong(), pipe).toInt()
-                    if (n <= 0) break
-                    chunks.add(buf.readBytes(n))
-                    total += n
-                }
-                pclose(pipe)
-                val out = ByteArray(total)
-                var offset = 0
-                for (chunk in chunks) {
-                    chunk.copyInto(out, offset)
-                    offset += chunk.size
-                }
-                out
-            }
-        }
-    }
-
-    // Peak-per-bucket amplitude only needs coarse temporal resolution (a handful of buckets per minute at
-    // most) — 8kHz mono is already generous for that, keeping a full movie's raw PCM in the tens-of-MB
-    // range rather than hundreds.
+    // Phase 222 (FR-222-6) — the whole-file peak envelope, computed ONCE per file on the segments lane
+    // (MediaJobQueue.runWaveformBackfill / runWaveformUnit) and stored in segment_waveform; the trim view
+    // only ever reads it. Replaces phase 163's per-request computeWaveform, which decoded the whole file
+    // on every open and every structural edit and held the entire PCM stream in memory before bucketing
+    // (a 4 h window was 230 MB in this process). This one folds the PCM into buckets as it streams past
+    // (fread → EnvelopeAccumulator), so memory is one bucket's worth, not the file's. Through
+    // SegmentProcessGate like every heavy decode on that lane. ffmpeg still has to demux the whole
+    // interleaved file to reach its audio — that is the cost this phase moves OFF the request path, not
+    // one it removes; `ionice -c3` stays for hosts whose scheduler honours it (this one's does not — 212).
     private const val WAVEFORM_SAMPLE_RATE = 8000
 
-    /** Phase 163 (step 6) — [buckets] peak amplitudes (0-100) across [startSec]..[startSec]+[windowSec]
-     *  of [filePath]'s audio, for the trim view's waveform. Null on any ffmpeg failure (no audio track,
-     *  corrupt file, etc.) — the frontend renders no waveform rather than a fake flat one. */
-    suspend fun computeWaveform(filePath: String, startSec: Double, windowSec: Double, buckets: Int): List<Int>? {
-        if (windowSec <= 0 || buckets <= 0) return null
+    /** One byte per [bucketMs]-long bucket, 0-100 = peak amplitude in that bucket. Null on any ffmpeg
+     *  failure (no audio track, unreadable file) — the caller records "not available", never a fake flat
+     *  lane. */
+    @OptIn(ExperimentalForeignApi::class)
+    suspend fun computeEnvelope(filePath: String, bucketMs: Long = 1_000L): ByteArray? {
+        if (bucketMs <= 0) return null
         val escaped = filePath.replace("'", "'\\''")
-        val cmd = "nice -n 19 ionice -c3 ffmpeg -ss $startSec -i '$escaped' -t $windowSec -vn -ac 1 -ar $WAVEFORM_SAMPLE_RATE -f s16le - 2>/dev/null"
-        val bytes = captureBinaryCommand(cmd) ?: return null
-        val sampleCount = bytes.size / 2
-        if (sampleCount == 0) return List(buckets) { 0 }
-        val samplesPerBucket = (sampleCount / buckets).coerceAtLeast(1)
-        return IntArray(buckets) { b ->
-            val startIdx = b * samplesPerBucket
-            val endIdx = (startIdx + samplesPerBucket).coerceAtMost(sampleCount)
-            var peak = 0
-            for (i in startIdx until endIdx) {
-                val lo = bytes[i * 2].toInt() and 0xFF
-                val hi = bytes[i * 2 + 1].toInt()
-                val sample = kotlin.math.abs((hi shl 8) or lo)
-                if (sample > peak) peak = sample
+        val cmd = "nice -n 19 ionice -c3 ffmpeg -v error -i '$escaped' -vn -sn -dn -ac 1 -ar $WAVEFORM_SAMPLE_RATE -f s16le - 2>/dev/null"
+        val samplesPerBucket = (WAVEFORM_SAMPLE_RATE * bucketMs / 1000).toInt().coerceAtLeast(1)
+        Logger.info("ffmpeg (waveform envelope): $filePath", "pipeline")
+        return dev.jellystructure.ops.SegmentProcessGate.withPermit {
+            memScoped {
+                val pipe = popen(cmd, "r")
+                if (pipe == null) {
+                    null
+                } else {
+                    val chunkSize = 65536
+                    val buf = allocArray<ByteVar>(chunkSize)
+                    val acc = EnvelopeAccumulator(samplesPerBucket)
+                    while (true) {
+                        val n = platform.posix.fread(buf, 1u, chunkSize.toULong(), pipe).toInt()
+                        if (n <= 0) break
+                        acc.feed(buf.readBytes(n))
+                    }
+                    val rc = pclose(pipe)
+                    val peaks = acc.finish()
+                    if (rc != 0 || peaks.isEmpty()) null else peaks
+                }
             }
-            (peak / 32768.0 * 100).toInt().coerceIn(0, 100)
-        }.toList()
+        }
     }
 
     /** R133: resize [input] into [output] for the Ravilo artwork service. Pass [width] OR [height] (the
@@ -495,5 +473,47 @@ object FfmpegRunner {
         val output = captureCommandSegments(cmd) ?: return null
         val match = Regex("""FINGERPRINT=([\d,]+)""").find(output) ?: return null
         return match.groupValues[1].split(",").mapNotNull { it.trim().toLongOrNull()?.toInt() }.takeIf { it.isNotEmpty() }
+    }
+}
+
+/** Phase 222 (FR-222-6) — folds a stream of little-endian s16 mono PCM into per-bucket peaks (0-100), one
+ *  byte per bucket, holding nothing but the bucket in progress. A chunk boundary may split a sample in
+ *  two; the low byte is carried to the next [feed]. */
+internal class EnvelopeAccumulator(private val samplesPerBucket: Int) {
+    private val out = ArrayList<Byte>()
+    private var peak = 0
+    private var inBucket = 0
+    private var carry = -1
+
+    fun feed(bytes: ByteArray) {
+        var i = 0
+        if (carry >= 0 && bytes.isNotEmpty()) {
+            push(carry, bytes[0].toInt())
+            carry = -1
+            i = 1
+        }
+        while (i + 1 < bytes.size) {
+            push(bytes[i].toInt() and 0xFF, bytes[i + 1].toInt())
+            i += 2
+        }
+        if (i < bytes.size) carry = bytes[i].toInt() and 0xFF
+    }
+
+    private fun push(lo: Int, hi: Int) {
+        val sample = kotlin.math.abs((hi shl 8) or lo)
+        if (sample > peak) peak = sample
+        if (++inBucket >= samplesPerBucket) closeBucket()
+    }
+
+    private fun closeBucket() {
+        out.add((peak / 32768.0 * 100).toInt().coerceIn(0, 100).toByte())
+        peak = 0
+        inBucket = 0
+    }
+
+    /** Flushes a partial last bucket (the file's tail) and returns every bucket in order. */
+    fun finish(): ByteArray {
+        if (inBucket > 0) closeBucket()
+        return out.toByteArray()
     }
 }

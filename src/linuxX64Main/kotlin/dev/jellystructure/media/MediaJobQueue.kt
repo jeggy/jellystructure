@@ -80,6 +80,10 @@ data class JobQueueHealth(
             """"subtitles_last_failure":${subtitlesLastFailure?.let { "\"" + it.replace("\"", "'").replace("\n", " ") + "\"" } ?: "null"}}"""
 }
 
+/** Phase 222 (FR-222-6) — one envelope byte per second of audio: 2 700 bytes for a 45-minute episode,
+ *  fine enough for the ±60 s strip the operator judges a boundary on. */
+private const val WAVEFORM_BUCKET_MS = 1_000L
+
 class MediaJobQueue(
     private val db: JellystructureDb,
     private val store: MediaStore,
@@ -646,6 +650,8 @@ class MediaJobQueue(
     private suspend fun runSegmentsJobBody(row: Media_job): Outcome {
         fun isCancelled() = row.id in cooperativeCancelledIds
         val segStore = segmentStore ?: return Failure("Segments store not available")
+        // Phase 222 — the library-wide envelope backfill has no single item (media_id = "library").
+        if (row.type == "waveform_backfill") return runWaveformBackfill(row, segStore, isCancelled = ::isCancelled)
         val item = store.resolve(row.media_id) ?: return Failure("Media item no longer exists")
         val params = runCatching { json.decodeFromString(MediaJobParams.serializer(), row.params) }.getOrNull() ?: return Failure("Corrupt job parameters")
         if (isCancelled()) return Cancelled()
@@ -653,9 +659,72 @@ class MediaJobQueue(
             "segments_movie" -> runSegmentsMovie(row, item, params, segStore, isCancelled = ::isCancelled)
             "segments_season" -> runSegmentsSeason(row, item, params, segStore, isCancelled = ::isCancelled)
             "segments_episodes" -> runSegmentsEpisodes(row, item, params, segStore, isCancelled = ::isCancelled)
+            "waveform_unit" -> runWaveformUnit(row, item, params, segStore, isCancelled = ::isCancelled)
             else -> Failure("Unknown segments job type '${row.type}'")
         }
     }
+
+    // ── Phase 222 (FR-222-6): the stored waveform envelope, computed once per file on this lane ─────
+
+    /** Every unit of [item] the editor can open, as (path, episodeKey, episodeNumber). */
+    private fun waveformUnits(item: dev.jellystructure.model.MediaItem): List<Triple<String, String, Int>> =
+        if (item.kind == dev.jellystructure.model.MediaKind.TV_SHOW) DuplicateEpisodes.deduped(item.episodes).map { Triple(it.path, it.filename, it.episodeNumber ?: 0) }
+        else listOf(Triple(item.path, "", 0))
+
+    /** Computes and stores one unit's envelope. A decode failure is stored too (bucket_ms = 0) so the
+     *  backfill never re-reads a file it already knows it cannot decode. */
+    private suspend fun computeAndStoreEnvelope(segStore: MediaSegmentStore, itemId: String, path: String, key: String, n: Int): Boolean {
+        val peaks = FfmpegRunner.computeEnvelope(path, WAVEFORM_BUCKET_MS)
+        if (peaks == null) {
+            segStore.putWaveform(itemId, key, n, 0L, ByteArray(0))
+            return false
+        }
+        segStore.putWaveform(itemId, key, n, WAVEFORM_BUCKET_MS, peaks)
+        return true
+    }
+
+    private suspend fun runWaveformBackfill(row: Media_job, segStore: MediaSegmentStore, isCancelled: () -> Boolean): Outcome {
+        val units = store.allItems().flatMap { item -> waveformUnits(item).map { item.id to it } }
+            .filterNot { (id, u) -> segStore.hasWaveform(id, u.second, u.third) }
+        var stored = 0
+        var unavailable = 0
+        for ((i, pair) in units.withIndex()) {
+            if (isCancelled()) return Cancelled()
+            val (id, u) = pair
+            if (computeAndStoreEnvelope(segStore, id, u.first, u.second, u.third)) stored++ else unavailable++
+            if ((i + 1) % 5 == 0 || i + 1 == units.size) segmentsProgress(row.id, i + 1, units.size)
+        }
+        Logger.info("waveform_backfill: $stored envelope(s) stored, $unavailable file(s) without decodable audio, ${units.size} examined", "pipeline")
+        return Success
+    }
+
+    private suspend fun runWaveformUnit(row: Media_job, item: dev.jellystructure.model.MediaItem, params: MediaJobParams, segStore: MediaSegmentStore, isCancelled: () -> Boolean): Outcome {
+        val target = params.segmentEpisodeKeys?.firstOrNull()
+        val unit = waveformUnits(item).firstOrNull { u -> if (target == null) u.second == "" else target == "${u.second}#${u.third}" }
+            ?: return Failure("Episode not found")
+        if (isCancelled()) return Cancelled()
+        return if (computeAndStoreEnvelope(segStore, item.id, unit.first, unit.second, unit.third)) Success
+        else Failure("Couldn't decode this file's audio")
+    }
+
+    /** Phase 222 (FR-222-6) — idempotent: one active backfill at a time, none when every unit already has
+     *  an envelope (or a recorded failure). Called once at boot, in the background. */
+    suspend fun enqueueWaveformBackfill(): MediaJobSnapshot? {
+        val segStore = segmentStore ?: return null
+        val missing = store.allItems().sumOf { item -> waveformUnits(item).count { !segStore.hasWaveform(item.id, it.second, it.third) } }
+        if (missing == 0) return null
+        val r = enqueueSegments("waveform_backfill", "library", "Waveforms for the intro & credits editor ($missing file(s) to read)", MediaJobParams(), missing, "wave:library")
+        return if (r.deduped) null else r.snapshot
+    }
+
+    /** Phase 222 (FR-222-6) — the trim view opened a unit with no envelope yet: queue exactly that one,
+     *  deduped, so the operator gets it minutes later without the request path ever spawning ffmpeg. */
+    suspend fun enqueueWaveformUnit(item: dev.jellystructure.model.MediaItem, episodeKey: String, episodeNumber: Int, label: String): SegmentEnqueueResult =
+        enqueueSegments(
+            "waveform_unit", item.id, "Waveform · $label",
+            MediaJobParams(segmentEpisodeKeys = if (episodeKey.isEmpty()) null else listOf("$episodeKey#$episodeNumber")),
+            1, "wave:${item.id}:$episodeKey:$episodeNumber",
+        )
 
     private fun segmentPipelineSettings(): Pair<List<String>, Boolean> {
         val step = configStore.current.scan.pipeline.firstOrNull { it.step == "detect_segments" }

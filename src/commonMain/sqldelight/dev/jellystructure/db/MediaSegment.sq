@@ -46,6 +46,22 @@ CREATE TABLE segment_evidence (
 );
 CREATE INDEX segment_evidence_lookup ON segment_evidence(item_id, episode_key, episode_number);
 
+-- Phase 222 (FR-222-6) — one stored peak envelope per (item, episode): `peaks` is one byte per bucket
+-- (0-100 peak amplitude), `bucket_ms` the bucket length. Computed at most once per file on the segments
+-- lane and only ever READ by the trim view — phase 163's per-request whole-file decode is gone.
+-- bucket_ms = 0 with an empty blob records "could not be computed" (no audio track, unreadable file)
+-- so the boot backfill does not retry the same file forever. Same key sentinels as media_segment.
+-- 45.sqm carries this CREATE TABLE byte-for-byte (the SQLDelight-migration rule).
+CREATE TABLE segment_waveform (
+    item_id TEXT NOT NULL,
+    episode_key TEXT NOT NULL DEFAULT '',
+    episode_number INTEGER NOT NULL DEFAULT 0,
+    bucket_ms INTEGER NOT NULL,
+    peaks BLOB NOT NULL,
+    computed_at INTEGER NOT NULL,
+    PRIMARY KEY (item_id, episode_key, episode_number)
+);
+
 -- ===== media_segment =====
 
 upsertSegment:
@@ -104,3 +120,39 @@ DELETE FROM segment_evidence WHERE item_id = :item_id AND episode_key = :episode
 
 clearEvidenceForItem:
 DELETE FROM segment_evidence WHERE item_id = :item_id;
+
+-- Phase 222 (FR-222-7) — per-episode evidence clear, for the orphan sweep.
+clearEvidenceForEpisode:
+DELETE FROM segment_evidence WHERE item_id = :item_id AND episode_key = :episode_key AND episode_number = :episode_number;
+
+-- Phase 222 (FR-222-7) — every (episode_key, episode_number) an item's rows are filed under, so the
+-- orphan sweep can compare against the episodes that exist now.
+segmentKeysForItem:
+SELECT DISTINCT episode_key, episode_number FROM media_segment WHERE item_id = :item_id;
+
+evidenceKeysForItem:
+SELECT DISTINCT episode_key, episode_number FROM segment_evidence WHERE item_id = :item_id;
+
+-- ===== segment_waveform (Phase 222, FR-222-6) =====
+
+getWaveform:
+SELECT * FROM segment_waveform WHERE item_id = :item_id AND episode_key = :episode_key AND episode_number = :episode_number;
+
+putWaveform:
+INSERT OR REPLACE INTO segment_waveform(item_id, episode_key, episode_number, bucket_ms, peaks, computed_at)
+VALUES (:item_id, :episode_key, :episode_number, :bucket_ms, :peaks, :computed_at);
+
+hasWaveform:
+SELECT EXISTS(SELECT 1 FROM segment_waveform WHERE item_id = :item_id AND episode_key = :episode_key AND episode_number = :episode_number) AS present;
+
+deleteWaveformForEpisode:
+DELETE FROM segment_waveform WHERE item_id = :item_id AND episode_key = :episode_key AND episode_number = :episode_number;
+
+deleteWaveformsForItem:
+DELETE FROM segment_waveform WHERE item_id = :item_id;
+
+waveformKeysForItem:
+SELECT DISTINCT episode_key, episode_number FROM segment_waveform WHERE item_id = :item_id;
+
+countWaveforms:
+SELECT COUNT(*) FROM segment_waveform;

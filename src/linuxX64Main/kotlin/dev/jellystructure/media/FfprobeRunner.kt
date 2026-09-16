@@ -56,6 +56,9 @@ private data class FfprobeDisposition(
 @Serializable
 private data class FfprobeFormat(
     @SerialName("bit_rate") val bitRate: String? = null,
+    // Phase 222 (FR-222-3) — the file's length, a JSON string of seconds ("2612.480000"); already in
+    // every probe's output since `-show_format` landed for phase 185, just never read until now.
+    val duration: String? = null,
 )
 
 /**
@@ -169,6 +172,7 @@ object FfprobeRunner {
                     videoRange = videoRange,
                     videoBitrate = bitrateResult?.first,
                     videoBitrateSource = bitrateResult?.second,
+                    durationMs = if (kind == TrackKind.VIDEO) probe.format.duration?.toDoubleOrNull()?.takeIf { it > 0 }?.let { (it * 1000).toLong() } else null,
                 )
             }
         }
@@ -251,6 +255,24 @@ object FfprobeRunner {
         return result.getOrElse { emptyList() }
     }
 
+    /**
+     * Phase 222 (FR-222-2) — the media time of the keyframe ffmpeg will actually start from for an input
+     * seek to [atSec] with stream copy: the first video packet after seeking there, which is the keyframe
+     * at or before it (ffprobe's `-read_intervals` seek is the same demuxer seek ffmpeg's `-ss` makes).
+     * Bounded — one seek, one packet, ~90 ms on a local file. Null when ffprobe cannot say (no video
+     * stream, unreadable file); the caller must then say so rather than guess. [atSec] ≤ 0 is 0 by
+     * definition: a stream from the start starts at the start.
+     */
+    suspend fun keyframeAtOrBefore(filePath: String, atSec: Double): Double? {
+        if (atSec <= 0) return 0.0
+        val escaped = filePath.replace("'", "'\\''")
+        val ms = (atSec * 1000).toLong()
+        val at = "${ms / 1000}.${(ms % 1000).toString().padStart(3, '0')}"
+        val out = runCommand("ffprobe -v error -select_streams v:0 -show_entries packet=pts_time,flags -read_intervals '$at%+#1' -of csv=p=0 '$escaped' 2>/dev/null")
+            ?: return null
+        return parseKeyframeLine(out)
+    }
+
     /** R131: media duration in seconds, or null if unknown — used to pick a screen-grab timestamp. */
     suspend fun duration(filePath: String): Double? {
         val escaped = filePath.replace("'", "'\\''")
@@ -283,3 +305,10 @@ object FfprobeRunner {
         }
     }
 }
+
+/** Phase 222 — the first `pts_time,flags` line of a `-read_intervals` probe: `300.000000,K__`. Null for
+ *  an empty answer or an `N/A` timestamp. The flags are not required to carry `K` — after a demuxer
+ *  seek the first packet returned IS where a copy stream starts, keyframe or not. */
+internal fun parseKeyframeLine(out: String): Double? =
+    out.lineSequence().map { it.trim() }.firstOrNull { it.isNotEmpty() }
+        ?.substringBefore(',')?.toDoubleOrNull()?.takeIf { it.isFinite() && it >= 0 }
