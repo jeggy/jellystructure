@@ -328,7 +328,6 @@ fun SeededBrowseScreen(
     showTypeFacet: Boolean,
     showFacetBar: Boolean,
     displayName: String,
-    discoverAvailable: Boolean = false,
     /** Which nav tab (if any) to highlight — pass Movies/Series' own index when this IS that tab;
      *  -1 (default) for a seeded drill-in that isn't itself one of the section tabs. */
     activeNav: Int = -1,
@@ -361,7 +360,7 @@ fun SeededBrowseScreen(
     val barScrolled by remember { derivedStateOf {
         gridState.firstVisibleItemIndex > 0 || gridState.firstVisibleItemScrollOffset > 0
     } }
-    val navItems = raviloNavItems(discoverAvailable)
+    val navItems = raviloNavItems()
 
     Box(
         modifier = Modifier.fillMaxSize().background(colors.background)

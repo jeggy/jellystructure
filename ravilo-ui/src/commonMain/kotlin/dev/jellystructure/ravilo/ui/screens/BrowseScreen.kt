@@ -193,7 +193,6 @@ fun BrowseScreen(
     onItemSelect: (MediaCard) -> Unit,
     onProfile: (() -> Unit)? = null,
     onSearch: (() -> Unit)? = null,
-    discoverAvailable: Boolean = false,
 ) {
     val colors = RaviloTheme.colors
 
@@ -214,7 +213,7 @@ fun BrowseScreen(
     // R139: on a Back-return from a grid cell, the grid re-focuses that cell; skip the default nav-bar focus.
     LaunchedEffect(Unit) { if (store.focusItemKey == null) runCatching { navBarFR.requestFocus() } }
 
-    val navItems = raviloNavItems(discoverAvailable)
+    val navItems = raviloNavItems()
     // R170 — My List moved out of the section-tab row into the avatar's ProfileMenu, so it no longer
     // has a nav index to highlight; -1 never matches any tab's index, leaving all of them unselected.
     val activeNav = when (kind) {

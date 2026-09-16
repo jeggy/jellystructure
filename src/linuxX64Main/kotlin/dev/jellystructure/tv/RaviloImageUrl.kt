@@ -37,4 +37,8 @@ object RaviloImageUrl {
      *  [poster], the series' own). */
     fun seasonPoster(seriesId: String, season: Int, v: Long? = null) =
         withVersion("/api/tv/image/$seriesId/season/$season/poster", v)
+    /** Phase 216 (FR-216-5) — a studio/network logo the artwork pipeline captured, served publicly
+     *  under `/api/tv/image/` (AuthPlugin OPEN_API_PATHS) because a Coil/<img> request cannot attach a
+     *  device token. Only ever emitted when `LogoDownloader.hasLogo` is true; never a placeholder. */
+    fun taxonomyLogo(kind: String, name: String) = "/api/tv/image/logo/$kind/${name.encodeURLPathPart()}"
 }

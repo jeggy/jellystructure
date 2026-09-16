@@ -45,6 +45,11 @@ import dev.jellystructure.ravilo.ui.screens.DiscoverScreen
 import dev.jellystructure.ravilo.ui.screens.DiscoverSegment
 import dev.jellystructure.ravilo.ui.screens.DiscoverStore
 import dev.jellystructure.ravilo.ui.screens.defaultDiscoverSegment
+import dev.jellystructure.ravilo.ui.screens.discoverSegments
+import dev.jellystructure.ravilo.ui.screens.nextDiscoverSegment
+import dev.jellystructure.ravilo.ui.screens.seedFacet
+import dev.jellystructure.ravilo.ui.screens.TaxonomyScreen
+import dev.jellystructure.ravilo.ui.screens.TaxonomyStore
 import dev.jellystructure.ravilo.ui.screens.HomeScreen
 import dev.jellystructure.ravilo.ui.screens.HomeSnapshot
 import dev.jellystructure.ravilo.ui.screens.HomeSnapshotCache
@@ -208,7 +213,9 @@ private sealed class Dest {
     // R170 — Coming Soon (the old Upcoming tab) and Request (the old Top-10/Discover tab) are now the
     // two segments of one merged Discover tab; `segment` decides which of UpcomingScreen/DiscoverScreen
     // actually renders (see DiscoverSegment/defaultDiscoverSegment in NavItems.kt).
-    data class Discover(val displayName: String, val segment: DiscoverSegment) : Dest()
+    // R243 — [focusSegment] is set by a segment-bar switch (replaceTop), so the next screen keeps
+    // focus on the chip that was pressed rather than parking it on the AppBar (FR-R243-7).
+    data class Discover(val displayName: String, val segment: DiscoverSegment, val focusSegment: Boolean = false) : Dest()
     // R171 — addressed by mediaType ("movie"|"tv") + tmdbId; Request rows have no rank concept.
     data class DiscoverItem(val mediaType: String, val tmdbId: Int, val displayName: String) : Dest()
     // R171 — the Request tab's Seerr-scoped search (FR-R171-3), a separate destination from the
@@ -493,6 +500,23 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
             ))
         }
 
+        // R243 (FR-R243-5/6) — OK on a wall tile opens the browse page seeded to that value through the
+        // SAME path an R221 genre chip uses (a workbench condition on the seeded endpoint), so a genre
+        // tile opens exactly the page a genre chip opens. A network seed carries kind SERIES because
+        // Phase 216 counts networks for series only (FR-216-4); studios and genres count every kind.
+        fun openTaxonomyBrowse(segment: DiscoverSegment, item: dev.jellystructure.shared.tv.FacetItem, crumb: String, displayName: String) {
+            push(Dest.SeededBrowse(
+                seedQuery = dev.jellystructure.shared.tv.ConditionGroup(children = listOf(
+                    dev.jellystructure.shared.tv.Condition(facet = segment.seedFacet(), op = "is_any_of", values = listOf(item.name)),
+                )),
+                seedMediaKind = if (segment == DiscoverSegment.NETWORKS) "SERIES" else null,
+                title = item.name,
+                breadcrumb = crumb,
+                continueWatching = false,
+                displayName = displayName,
+            ))
+        }
+
         // Shared by the remote-play collector and the R170 ProfileMenu (both need "whatever name the
         // currently visible screen is carrying," without an exhaustive `when` at every call site).
         fun destDisplayName(d: Dest?): String = when (d) {
@@ -729,7 +753,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                     onProfile = { profileMenuOpen = true },
                     onSignOut = { resetTo(Dest.Login) },
                     onNavSelect = { idx ->
-                        when (raviloNavTarget(idx, upcomingAvailable || discoverAvailable)) {
+                        when (raviloNavTarget(idx)) {
                             RaviloNavTarget.HOME -> {} // already home
                             RaviloNavTarget.MOVIES -> push(Dest.Browse(BrowseKind.MOVIES, dest.displayName))
                             RaviloNavTarget.SERIES -> push(Dest.Browse(BrowseKind.SERIES, dest.displayName))
@@ -768,10 +792,9 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                     channel = dest.channel,
                     store = store,
                     displayName = dest.displayName,
-                    discoverAvailable = upcomingAvailable || discoverAvailable,
                     onBack = { pop() },
                     onNavSelect = { idx ->   // R136: nav tabs on the channel page
-                        when (raviloNavTarget(idx, upcomingAvailable || discoverAvailable)) {
+                        when (raviloNavTarget(idx)) {
                             RaviloNavTarget.HOME -> resetTo(Dest.Home(dest.displayName))
                             RaviloNavTarget.MOVIES -> push(Dest.Browse(BrowseKind.MOVIES, dest.displayName))
                             RaviloNavTarget.SERIES -> push(Dest.Browse(BrowseKind.SERIES, dest.displayName))
@@ -811,11 +834,10 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                     showTypeFacet = dest.seedMediaKind == null,
                     showFacetBar = !dest.continueWatching,
                     displayName = dest.displayName,
-                    discoverAvailable = upcomingAvailable || discoverAvailable,
                     activeNav = dest.activeNav,
                     onBack = { pop() },
                     onNavSelect = { idx ->
-                        when (raviloNavTarget(idx, upcomingAvailable || discoverAvailable)) {
+                        when (raviloNavTarget(idx)) {
                             RaviloNavTarget.HOME -> resetTo(Dest.Home(dest.displayName))
                             RaviloNavTarget.MOVIES -> push(Dest.Browse(BrowseKind.MOVIES, dest.displayName))
                             RaviloNavTarget.SERIES -> push(Dest.Browse(BrowseKind.SERIES, dest.displayName))
@@ -855,11 +877,10 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                     showTypeFacet = false,
                     showFacetBar = true,
                     displayName = dest.displayName,
-                    discoverAvailable = upcomingAvailable || discoverAvailable,
                     activeNav = if (dest.kind == BrowseKind.MOVIES) 1 else 2,
                     onBack = { pop() },
                     onNavSelect = { idx ->
-                        when (raviloNavTarget(idx, upcomingAvailable || discoverAvailable)) {
+                        when (raviloNavTarget(idx)) {
                             RaviloNavTarget.HOME -> resetTo(Dest.Home(dest.displayName))
                             RaviloNavTarget.MOVIES -> replaceTop(Dest.Browse(BrowseKind.MOVIES, dest.displayName))
                             RaviloNavTarget.SERIES -> replaceTop(Dest.Browse(BrowseKind.SERIES, dest.displayName))
@@ -876,10 +897,9 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                     kind = dest.kind,
                     store = store,
                     displayName = dest.displayName,
-                    discoverAvailable = upcomingAvailable || discoverAvailable,
                     onBack = { pop() },
                     onNavSelect = { idx ->
-                        when (raviloNavTarget(idx, upcomingAvailable || discoverAvailable)) {
+                        when (raviloNavTarget(idx)) {
                             RaviloNavTarget.HOME -> resetTo(Dest.Home(dest.displayName))
                             RaviloNavTarget.MOVIES -> replaceTop(Dest.Browse(BrowseKind.MOVIES, dest.displayName))
                             RaviloNavTarget.SERIES -> replaceTop(Dest.Browse(BrowseKind.SERIES, dest.displayName))
@@ -905,68 +925,75 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
             // screens renders. Each gets a switch-pill to flip to the other segment in place
             // (replaceTop, same Dest class ⇒ AnimatedContent's contentKey skips the slide transition —
             // same treatment as any other same-class tab switch, e.g. Browse→Browse).
-            is Dest.Discover -> when (dest.segment) {
-                DiscoverSegment.COMING_SOON -> {
-                    val store = keptStore("upcoming:${dest.displayName}") { UpcomingStore(apiClient) }
-                    UpcomingScreen(
-                        store = store,
-                        displayName = dest.displayName,
-                        onNavSelect = { idx ->
-                            when (raviloNavTarget(idx, upcomingAvailable || discoverAvailable)) {
-                                RaviloNavTarget.HOME -> resetTo(Dest.Home(dest.displayName))
-                                RaviloNavTarget.MOVIES -> push(Dest.Browse(BrowseKind.MOVIES, dest.displayName))
-                                RaviloNavTarget.SERIES -> push(Dest.Browse(BrowseKind.SERIES, dest.displayName))
-                                // Bug fix: this used to be a hard no-op ("already on Discover"), but since
-                                // R170 merged two separately-navigable tabs (Upcoming, Discover/Top10) into
-                                // one shared nav slot, that no-op now fires for BOTH segments — and this
-                                // screen's own two-stage-Back (`atTop = { navBarFocused }`) + entry-focus
-                                // routinely park D-pad focus directly on this now-inert button, unlike
-                                // Home/Browse/Channel which refocus real content instead. Reuse the same
-                                // switch already wired to the in-screen pill (onSwitchToRequest below) so
-                                // the nav button does the pre-R170-equivalent thing: flip segments when the
-                                // other one exists, instead of nothing.
-                                RaviloNavTarget.DISCOVER -> if (discoverAvailable) replaceTop(Dest.Discover(dest.displayName, DiscoverSegment.REQUEST)) else Unit
-                            }
-                        },
-                        onProfile = { profileMenuOpen = true },
-                        onSearch = { push(Dest.Search(dest.displayName)) },
-                        onItemSelect = { item ->
-                            val itemId = item.itemId
-                            when {
-                                itemId != null && item.kind == MediaKind.SERIES -> push(Dest.SeriesDetail(itemId, dest.displayName))
-                                itemId != null -> push(Dest.MovieDetail(itemId, dest.displayName))
-                                else -> push(Dest.UpcomingDetail(item.id, dest.displayName))
-                            }
-                        },
-                        onSwitchToRequest = if (discoverAvailable) {
-                            { replaceTop(Dest.Discover(dest.displayName, DiscoverSegment.REQUEST)) }
-                        } else null,
-                    )
+            is Dest.Discover -> {
+                // R243 (FR-R243-1) — the segment bar shows every available segment; a chip press swaps
+                // the segment in place (replaceTop, same Dest class ⇒ AnimatedContent's contentKey skips
+                // the slide transition) and keeps focus on that chip via focusSegment.
+                val segs = discoverSegments(upcomingAvailable, discoverAvailable)
+                val onSegment: (DiscoverSegment) -> Unit = { seg -> replaceTop(Dest.Discover(dest.displayName, seg, focusSegment = true)) }
+                // The Discover nav button while already on Discover: step to the next segment rather than
+                // no-op (the R170 fix, generalised — this screen's two-stage Back routinely parks focus on it).
+                val onNav: (Int) -> Unit = { idx ->
+                    when (raviloNavTarget(idx)) {
+                        RaviloNavTarget.HOME -> resetTo(Dest.Home(dest.displayName))
+                        RaviloNavTarget.MOVIES -> push(Dest.Browse(BrowseKind.MOVIES, dest.displayName))
+                        RaviloNavTarget.SERIES -> push(Dest.Browse(BrowseKind.SERIES, dest.displayName))
+                        RaviloNavTarget.DISCOVER -> nextDiscoverSegment(segs, dest.segment)?.let { replaceTop(Dest.Discover(dest.displayName, it)) } ?: Unit
+                    }
                 }
-                DiscoverSegment.REQUEST -> {
-                    val store = keptStore("discover:${dest.displayName}") { DiscoverStore(apiClient) }
-                    DiscoverScreen(
-                        store = store,
-                        displayName = dest.displayName,
-                        onNavSelect = { idx ->
-                            when (raviloNavTarget(idx, upcomingAvailable || discoverAvailable)) {
-                                RaviloNavTarget.HOME -> resetTo(Dest.Home(dest.displayName))
-                                RaviloNavTarget.MOVIES -> push(Dest.Browse(BrowseKind.MOVIES, dest.displayName))
-                                RaviloNavTarget.SERIES -> push(Dest.Browse(BrowseKind.SERIES, dest.displayName))
-                                // Same fix as the COMING_SOON branch above, mirrored: switch to the other
-                                // segment instead of no-op'ing when it exists.
-                                RaviloNavTarget.DISCOVER -> if (upcomingAvailable) replaceTop(Dest.Discover(dest.displayName, DiscoverSegment.COMING_SOON)) else Unit
-                            }
-                        },
-                        onEntrySelect = { mediaType, tmdbId -> push(Dest.DiscoverItem(mediaType, tmdbId, dest.displayName)) },
-                        onProfile = { profileMenuOpen = true },
-                        onSearch = { push(Dest.Search(dest.displayName)) },
-                        onSearchSeerr = { push(Dest.SeerrSearch(dest.displayName)) },
-                        upcomingAvailable = upcomingAvailable,
-                        onSwitchToComingSoon = if (upcomingAvailable) {
-                            { replaceTop(Dest.Discover(dest.displayName, DiscoverSegment.COMING_SOON)) }
-                        } else null,
-                    )
+                when (dest.segment) {
+                    DiscoverSegment.COMING_SOON -> {
+                        val store = keptStore("upcoming:${dest.displayName}") { UpcomingStore(apiClient) }
+                        UpcomingScreen(
+                            store = store,
+                            displayName = dest.displayName,
+                            onNavSelect = onNav,
+                            onProfile = { profileMenuOpen = true },
+                            onSearch = { push(Dest.Search(dest.displayName)) },
+                            onItemSelect = { item ->
+                                val itemId = item.itemId
+                                when {
+                                    itemId != null && item.kind == MediaKind.SERIES -> push(Dest.SeriesDetail(itemId, dest.displayName))
+                                    itemId != null -> push(Dest.MovieDetail(itemId, dest.displayName))
+                                    else -> push(Dest.UpcomingDetail(item.id, dest.displayName))
+                                }
+                            },
+                            segments = segs,
+                            onSegment = onSegment,
+                            focusSegmentOnEntry = dest.focusSegment,
+                        )
+                    }
+                    DiscoverSegment.REQUEST -> {
+                        val store = keptStore("discover:${dest.displayName}") { DiscoverStore(apiClient) }
+                        DiscoverScreen(
+                            store = store,
+                            displayName = dest.displayName,
+                            onNavSelect = onNav,
+                            onEntrySelect = { mediaType, tmdbId -> push(Dest.DiscoverItem(mediaType, tmdbId, dest.displayName)) },
+                            onProfile = { profileMenuOpen = true },
+                            onSearch = { push(Dest.Search(dest.displayName)) },
+                            onSearchSeerr = { push(Dest.SeerrSearch(dest.displayName)) },
+                            segments = segs,
+                            onSegment = onSegment,
+                            focusSegmentOnEntry = dest.focusSegment,
+                        )
+                    }
+                    // R243 — the three library walls share one store (one facets fetch feeds all three).
+                    DiscoverSegment.STUDIOS, DiscoverSegment.NETWORKS, DiscoverSegment.GENRES -> {
+                        val store = keptStore("taxonomy:${dest.displayName}") { TaxonomyStore(apiClient) }
+                        TaxonomyScreen(
+                            store = store,
+                            segment = dest.segment,
+                            displayName = dest.displayName,
+                            segments = segs,
+                            onSegment = onSegment,
+                            focusSegmentOnEntry = dest.focusSegment,
+                            onNavSelect = onNav,
+                            onProfile = { profileMenuOpen = true },
+                            onSearch = { push(Dest.Search(dest.displayName)) },
+                            onTileSelect = { seg, item, crumb -> openTaxonomyBrowse(seg, item, crumb, dest.displayName) },
+                        )
+                    }
                 }
             }
 
@@ -1016,9 +1043,8 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                     onCastSelect = { person, sourceTitle -> openPersonBrowse(person, sourceTitle, dest.displayName) },
                     onGenreSelect = { genres, sourceTitle -> openGenreBrowse(genres, sourceTitle, dest.displayName) },
                     displayName = dest.displayName,
-                    discoverAvailable = upcomingAvailable || discoverAvailable,
                     onNavSelect = { idx ->
-                        when (raviloNavTarget(idx, upcomingAvailable || discoverAvailable)) {
+                        when (raviloNavTarget(idx)) {
                             RaviloNavTarget.HOME -> resetTo(Dest.Home(dest.displayName))
                             RaviloNavTarget.MOVIES -> resetTo(Dest.Browse(BrowseKind.MOVIES, dest.displayName))
                             RaviloNavTarget.SERIES -> resetTo(Dest.Browse(BrowseKind.SERIES, dest.displayName))
@@ -1057,9 +1083,8 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                     onCastSelect = { person, sourceTitle -> openPersonBrowse(person, sourceTitle, dest.displayName) },
                     onGenreSelect = { genres, sourceTitle -> openGenreBrowse(genres, sourceTitle, dest.displayName) },
                     displayName = dest.displayName,
-                    discoverAvailable = upcomingAvailable || discoverAvailable,
                     onNavSelect = { idx ->
-                        when (raviloNavTarget(idx, upcomingAvailable || discoverAvailable)) {
+                        when (raviloNavTarget(idx)) {
                             RaviloNavTarget.HOME -> resetTo(Dest.Home(dest.displayName))
                             RaviloNavTarget.MOVIES -> resetTo(Dest.Browse(BrowseKind.MOVIES, dest.displayName))
                             RaviloNavTarget.SERIES -> resetTo(Dest.Browse(BrowseKind.SERIES, dest.displayName))
@@ -1149,7 +1174,6 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                 LiveTvGuideScreen(
                     store = store,
                     displayName = dest.displayName,
-                    discoverAvailable = upcomingAvailable || discoverAvailable,
                     onBack = { pop() },
                     // Bug fix: this used to replaceTop the guide itself with the LiveTv player, which
                     // dropped the guide from the stack — Back from the player then skipped straight to
@@ -1158,7 +1182,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                     // same as tuning from anywhere else (e.g. Home's On Now row already pushes).
                     onTuneChannel = { ch -> push(Dest.LiveTv(ch.channelId, dest.displayName)) },
                     onNavSelect = { idx ->
-                        when (raviloNavTarget(idx, upcomingAvailable || discoverAvailable)) {
+                        when (raviloNavTarget(idx)) {
                             RaviloNavTarget.HOME -> resetTo(Dest.Home(dest.displayName))
                             RaviloNavTarget.MOVIES -> push(Dest.Browse(BrowseKind.MOVIES, dest.displayName))
                             RaviloNavTarget.SERIES -> push(Dest.Browse(BrowseKind.SERIES, dest.displayName))

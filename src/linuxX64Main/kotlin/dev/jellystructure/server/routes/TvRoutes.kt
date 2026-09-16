@@ -220,6 +220,8 @@ fun Route.tvRoutes(
     configStore: ConfigStore,
     channelLogoStore: ChannelLogoStore,
     imageProxyService: RaviloArtworkService? = null,
+    // Phase 216 (FR-216-5) — serves the studio/network logos `BrowseFacets.logoUrl` points at.
+    logoDownloader: dev.jellystructure.media.LogoDownloader? = null,
     tvEventBus: TvEventBus? = null,
     upcomingService: dev.jellystructure.tv.UpcomingService? = null,
     seerrDiscoverService: dev.jellystructure.seerr.SeerrDiscoverService? = null,
@@ -999,6 +1001,15 @@ fun Route.tvRoutes(
         val width  = call.request.queryParameters["w"]?.toIntOrNull()  // R93: optional width
         val result = svc.serve(itemId, type, width) ?: return@get call.respond(HttpStatusCode.NotFound)
         call.respondCachedBytes(result.first, ContentType.parse(result.second))
+    }
+    // Phase 216 (FR-216-5) — a captured studio/network logo, addressed the way `RaviloImageUrl.taxonomyLogo`
+    // builds it. Public like every other /tv/image/ path (brand logos are not sensitive, Coil can't
+    // attach a token). 404 when nothing was captured — the client never asks unless `logoUrl` was set.
+    get("/tv/image/logo/{kind}/{name}") {
+        val kind = call.parameters["kind"]?.takeIf { it == "studios" || it == "networks" } ?: return@get call.respond(HttpStatusCode.BadRequest)
+        val name = call.parameters["name"] ?: return@get call.respond(HttpStatusCode.BadRequest)
+        val bytes = logoDownloader?.serveLogo(kind, name) ?: return@get call.respond(HttpStatusCode.NotFound)
+        call.respondCachedBytes(bytes, ContentType.Image.PNG)
     }
     // R133: episode still — addressed by series id + episode filename. Phase 149: ?ep= disambiguates
     // when several episodes share that filename (a multi-episode file).

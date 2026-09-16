@@ -9,6 +9,7 @@ import dev.jellystructure.media.JsTagStore
 import dev.jellystructure.media.LogoDownloader
 import dev.jellystructure.media.MediaStore
 import dev.jellystructure.model.MediaKind
+import dev.jellystructure.tv.TaxonomyKey
 import dev.jellystructure.resolver.CertificationCatalog
 import dev.jellystructure.resolver.CertificationResolver
 import dev.jellystructure.torrent.SeedingSnapshot
@@ -118,17 +119,26 @@ private suspend fun computeAgeRatings(store: MediaStore, cfg: AppConfig?): AgeRa
 
 fun Route.metadataRoutes(store: MediaStore, tagStore: JsTagStore, logoDownloader: LogoDownloader, seedingSnapshot: SeedingSnapshot, configStore: ConfigStore? = null) {
     route("/metadata") {
+        // Phase 216 (FR-216-9) — grouped through TaxonomyKey, the same normaliser the viewer-side
+        // BrowseService.facets() counts with, so this page and Ravilo's Discover wall state the same
+        // number for the same value (acceptance test 7). Was an exact-match groupBy, which counted
+        // `HBO Nordic` and `HBO  nordic` as two studios.
         get("/studios") {
             val sort = call.request.queryParameters["sort"] ?: "count"
             val all = store.allItems()
-            val grouped = all.mapNotNull { it.studio?.takeIf { s -> s.isNotBlank() }?.let { s ->
-                Triple(s, it.studioTmdbId, it.studioLogoPath)
-            }}.groupBy { it.first }
-            val entries = grouped.map { (name, items) ->
+            val counter = TaxonomyKey.Counter()
+            val firstByKey = HashMap<String, Pair<Int?, String?>>()
+            for (it in all) {
+                val s = it.studio?.takeIf { s -> s.isNotBlank() } ?: continue
+                counter.add(s)
+                firstByKey.getOrPut(TaxonomyKey.key(s)) { it.studioTmdbId to it.studioLogoPath }
+            }
+            val entries = counter.entries().map { e ->
+                val first = firstByKey[TaxonomyKey.key(e.name)]
                 MetadataEntry(
-                    name = name, count = items.size,
-                    tmdbId = items.firstOrNull()?.second, logoPath = items.firstOrNull()?.third,
-                    hasLogo = logoDownloader.hasLogo("studios", name),
+                    name = e.name, count = e.count,
+                    tmdbId = first?.first, logoPath = first?.second,
+                    hasLogo = logoDownloader.hasLogo("studios", e.name),
                 )
             }
             val sorted = if (sort == "name") entries.sortedBy { it.name.lowercase() } else entries.sortedByDescending { it.count }
@@ -138,14 +148,19 @@ fun Route.metadataRoutes(store: MediaStore, tagStore: JsTagStore, logoDownloader
         get("/networks") {
             val sort = call.request.queryParameters["sort"] ?: "count"
             val all = store.allItems().filter { it.kind == MediaKind.TV_SHOW }
-            val grouped = all.mapNotNull { it.network?.takeIf { n -> n.isNotBlank() }?.let { n ->
-                Triple(n, it.networkTmdbId, it.networkLogoPath)
-            }}.groupBy { it.first }
-            val entries = grouped.map { (name, items) ->
+            val counter = TaxonomyKey.Counter()
+            val firstByKey = HashMap<String, Pair<Int?, String?>>()
+            for (it in all) {
+                val n = it.network?.takeIf { n -> n.isNotBlank() } ?: continue
+                counter.add(n)
+                firstByKey.getOrPut(TaxonomyKey.key(n)) { it.networkTmdbId to it.networkLogoPath }
+            }
+            val entries = counter.entries().map { e ->
+                val first = firstByKey[TaxonomyKey.key(e.name)]
                 MetadataEntry(
-                    name = name, count = items.size,
-                    tmdbId = items.firstOrNull()?.second, logoPath = items.firstOrNull()?.third,
-                    hasLogo = logoDownloader.hasLogo("networks", name),
+                    name = e.name, count = e.count,
+                    tmdbId = first?.first, logoPath = first?.second,
+                    hasLogo = logoDownloader.hasLogo("networks", e.name),
                 )
             }
             val sorted = if (sort == "name") entries.sortedBy { it.name.lowercase() } else entries.sortedByDescending { it.count }
@@ -217,13 +232,12 @@ fun Route.metadataRoutes(store: MediaStore, tagStore: JsTagStore, logoDownloader
 
         get("/genres") {
             val sort = call.request.queryParameters["sort"] ?: "count"
-            val counts = mutableMapOf<String, Int>()
+            // Phase 216 (FR-216-9) — same TaxonomyKey grouping as studios/networks above.
+            val counter = TaxonomyKey.Counter()
             for (item in store.allItems()) {
-                for (genre in item.genres) {
-                    if (genre.isNotBlank()) counts[genre] = (counts[genre] ?: 0) + 1
-                }
+                item.genres.distinctBy { TaxonomyKey.key(it) }.forEach { counter.add(it) }
             }
-            val entries = counts.map { (name, count) -> MetadataEntry(name = name, count = count) }
+            val entries = counter.entries().map { MetadataEntry(name = it.name, count = it.count) }
             val sorted = if (sort == "name") entries.sortedBy { it.name.lowercase() } else entries.sortedByDescending { it.count }
             call.respond(sorted)
         }

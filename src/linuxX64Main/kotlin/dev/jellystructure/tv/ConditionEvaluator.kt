@@ -71,10 +71,13 @@ object ConditionEvaluator {
                 val audio = item.tracks.filter { it.kind == TrackKind.AUDIO }
                 val resolvedCode = CertificationResolver.resolve(ageRatingCascade, item.certifications)?.code
                 return ItemFacets(
-                    studio         = (listOfNotNull(item.studio) + item.secondaryStudios).mapTo(HashSet()) { it.lowercase() },
-                    network        = setOfNotNull(item.network?.lowercase()),
-                    genres         = item.genres.mapTo(HashSet()) { it.lowercase() },
-                    tags           = item.tags.mapTo(HashSet()) { it.lowercase() },
+                    // Phase 216 (FR-216-9) — the four taxonomy facets key through TaxonomyKey (trim,
+                    // collapse whitespace, lowercase), the same resolver BrowseService.facets() counts
+                    // with, so a value's count and its seeded grid cannot disagree over a spelling.
+                    studio         = (listOfNotNull(item.studio) + item.secondaryStudios).mapTo(HashSet()) { TaxonomyKey.key(it) },
+                    network        = setOfNotNull(item.network?.let { TaxonomyKey.key(it) }),
+                    genres         = item.genres.mapTo(HashSet()) { TaxonomyKey.key(it) },
+                    tags           = item.tags.mapTo(HashSet()) { TaxonomyKey.key(it) },
                     audioLanguages = audio.mapTo(HashSet()) { it.language?.lowercase() ?: "untagged" },
                     audioCodecs    = audio.mapTo(HashSet()) { it.codec.lowercase() },
                     ageRating      = setOfNotNull(resolvedCode?.lowercase()),
@@ -106,11 +109,14 @@ object ConditionEvaluator {
 
     private fun evalOne(item: MediaItem, facets: ItemFacets, c: Condition, heroIds: Set<String>): Boolean {
         val vals = c.values.map { it.lowercase() }
+        // Phase 216 (FR-216-9) — taxonomy conditions compare under the same key their facet sets were
+        // built with (see ItemFacets.of); every other facet keeps plain lowercasing.
+        val taxoVals = c.values.map { TaxonomyKey.key(it) }
         return when (c.facet) {
-            "studio"         -> setMatch(facets.studio, vals, c.op)
-            "network"        -> setMatch(facets.network, vals, c.op)
-            "genre"          -> setMatch(facets.genres, vals, c.op)
-            "tag"            -> setMatch(facets.tags, vals, c.op)
+            "studio"         -> setMatch(facets.studio, taxoVals, c.op)
+            "network"        -> setMatch(facets.network, taxoVals, c.op)
+            "genre"          -> setMatch(facets.genres, taxoVals, c.op)
+            "tag"            -> setMatch(facets.tags, taxoVals, c.op)
             "audio_language" -> setMatch(facets.audioLanguages, vals, c.op)
             "audio_codec"    -> setMatch(facets.audioCodecs, vals, c.op)
             "age_rating"     -> setMatch(facets.ageRating, vals, c.op)

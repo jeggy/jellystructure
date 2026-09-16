@@ -8,9 +8,10 @@
 
 ## Status
 
-`Planned` — written 2026-09-16, **dev-reviewed 2026-09-16 against `main`** (see §Dev review at the
-bottom). Built into the mockups 2026-09-15 (TV + phone). No viewer-facing change came out of the
-review; two requirements gained the exact call sites they have to touch.
+`✓ Built` — written 2026-09-16, **dev-reviewed 2026-09-16 against `main`** (see §Dev review at the
+bottom), **implemented 2026-09-16** in `ravilo-ui` (see §Implementation notes). Built into the mockups
+2026-09-15 (TV + phone). Compiled for wasmJs; **not device-tested** — the acceptance list below is still
+to be run on the stue TV and the phone.
 
 **Numbering:** verified against `main` on 2026-09-16 — Ravilo taken through **R242**, admin through
 **215**, no `phase-R243-*` file and no `STATUS.md` row for it. Pairs with **216**. Next free: 217 / R244.
@@ -206,3 +207,34 @@ carrying here.
 phone's now seven-chip tab strip. Add one, from 216's review: whether the wall should show `tags` too —
 the endpoint it now extends already counts them, and the answer is presumably no (operator concept, per
 the non-goals), but it is now one field away rather than a new mechanism.
+
+## Implementation notes (2026-09-16)
+
+- **FR-R243-1** — `raviloNavItems()` / `raviloNavTarget(index)` lost their `discoverAvailable`
+  parameter entirely (and every screen that only forwarded it), so the Discover tab cannot be hidden.
+  `DiscoverSegment` gained `STUDIOS · NETWORKS · GENRES`; `defaultDiscoverSegment` answers Coming Soon,
+  else Request, else **Studios**; `discoverSegments()` is the bar's contents. Both call sites the review
+  named changed together.
+- **The segment bar** (`DiscoverSegmentBar` in `NavItems.kt`) replaces R170's single "↔ Discover:
+  <other>" pill on Coming Soon and Request as well, so all three surfaces show the same five-chip bar.
+  A chip press is `replaceTop(Dest.Discover(…, focusSegment = true))`, and the next screen re-focuses
+  its current chip instead of the AppBar (FR-R243-7). The Discover nav button while already on
+  Discover steps to the next segment (the R170 no-op fix, generalised).
+- **`TaxonomyScreen` + `TaxonomyStore`** — one `GET /api/tv/facets` fetch feeds all three walls
+  (switching tabs is a re-render). Rows of 4 (5 for genres) on the TV, 2 (3) on a handset via
+  `LocalHandset` (FR-R243-10), as plain `Row`s inside the screen's `LazyColumn` so wall rows are ordinary
+  D-pad rows and Up from the first row reaches the bar. Two tile variants exactly as FR-R243-2: a logo
+  tile (`RemoteImage`, `ContentScale.Fit`, name + count beneath) or a wordmark tile (the name as the
+  card, count-only caption). Nothing renders a "no logo" state. Header: `{n} studios · {n} titles`, plus
+  `tx.scoped_note` when 216 answers `scoped: true` (FR-R243-4). Empty = one sentence (FR-R243-8).
+- **FR-R243-5/6/8 — Select seeds the *seeded* browse page**, the same `Dest.SeededBrowse` +
+  `Condition(facet = studio|network|genre)` path an R221 genre chip takes, so a genre tile opens
+  literally the page a genre chip opens. A network seed carries `seedMediaKind = "SERIES"` because
+  216 counts networks for series only. Crumb `Discover · Networks`, title the value, Back returns to
+  the tab with the tile re-focused (`TaxonomyStore.lastSelectedKey`).
+- **Strings** — 13 keys (`seg.studios/networks/genres`, `tx.sub_*`, `tx.n_*`, `tx.titles`,
+  `tx.title_one`, `tx.scoped_note`, `tx.empty`) × en/da/fo, copied from the design's tables
+  (*Stationer*, *Støðir*). The singular `1 title` is its own key in all three (FR-R243-9).
+- **Render-never-compute** held: the store does no grouping, sorting or counting; the `titles` number
+  comes from 216's map, the group count is the list's length.
+- **Tizen** (`ravilo-tizen`) has its own screens and was not touched.

@@ -130,14 +130,17 @@ fun UpcomingScreen(
     onProfile: () -> Unit,
     onSearch: () -> Unit,
     onItemSelect: (UpcomingItem) -> Unit,
-    // R170 — set when Request (Seerr feeds) is *also* available, so this segment needs a way over to
-    // it; null when Coming Soon is the only Discover segment (no switcher shown).
-    onSwitchToRequest: (() -> Unit)? = null,
+    // R243 (FR-R243-1) — the Discover segment bar replaces R170's single "↔ Request" pill: every
+    // available segment, this one marked. [focusSegmentOnEntry] keeps focus on the chip that was
+    // pressed to get here (FR-R243-7), so the bar stays steerable after a switch.
+    segments: List<DiscoverSegment> = listOf(DiscoverSegment.COMING_SOON),
+    onSegment: (DiscoverSegment) -> Unit = {},
+    focusSegmentOnEntry: Boolean = false,
 ) {
     val colors = RaviloTheme.colors
     val state by store.state.collectAsState()
     // Being on this screen implies the Discover tab itself is active, regardless of which segment.
-    val navItems = raviloNavItems(discoverAvailable = true)
+    val navItems = raviloNavItems()
 
     val live = LocalLiveConfig.current
     LaunchedEffect(live) { live?.collect { store.refresh(silent = true) } }
@@ -163,7 +166,9 @@ fun UpcomingScreen(
                 onProfile = onProfile,
                 onSearch = onSearch,
                 onItemSelect = onItemSelect,
-                onSwitchToRequest = onSwitchToRequest,
+                segments = segments,
+                onSegment = onSegment,
+                focusSegmentOnEntry = focusSegmentOnEntry,
             )
         }
     }
@@ -179,7 +184,9 @@ private fun UpcomingLoaded(
     onProfile: () -> Unit,
     onSearch: () -> Unit,
     onItemSelect: (UpcomingItem) -> Unit,
-    onSwitchToRequest: (() -> Unit)?,
+    segments: List<DiscoverSegment>,
+    onSegment: (DiscoverSegment) -> Unit,
+    focusSegmentOnEntry: Boolean,
 ) {
     val colors = RaviloTheme.colors
     var filter by remember { mutableStateOf(UpcomingFilter.ALL) }
@@ -208,7 +215,7 @@ private fun UpcomingLoaded(
     // Bug fix: only default focus to the AppBar on a genuinely fresh entry — when returning from a
     // detail screen we just opened a card from, restoreItemKey (passed to StaticContentRow below)
     // re-focuses that exact card instead, matching BrowseScreen's R139 pattern.
-    LaunchedEffect(Unit) { if (store.lastSelectedItemKey == null) runCatching { navBarFR.requestFocus() } }
+    LaunchedEffect(Unit) { if (store.lastSelectedItemKey == null && !focusSegmentOnEntry) runCatching { navBarFR.requestFocus() } }
 
     var navBarFocused by remember { mutableStateOf(false) }
     Box(
@@ -231,10 +238,8 @@ private fun UpcomingLoaded(
                 Column(Modifier.fillMaxWidth().padding(horizontal = raviloHPad, vertical = 8.dp)) {
                     Text(str("nav.upcoming"), color = colors.text, fontSize = 26.sp, fontWeight = FontWeight.Bold, fontFamily = SpaceGrotesk)
                     Text(str("up.subtitle"), color = colors.textSecondary, fontSize = 13.sp)
-                    if (onSwitchToRequest != null) {
-                        Spacer(Modifier.height(12.dp))
-                        DiscoverSegmentPill(other = str("seg.request"), onSelect = onSwitchToRequest)
-                    }
+                    Spacer(Modifier.height(12.dp))
+                    DiscoverSegmentBar(segments = segments, active = DiscoverSegment.COMING_SOON, onSelect = onSegment, focusActiveOnEntry = focusSegmentOnEntry)
                     Spacer(Modifier.height(16.dp))
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         FilterChips(filter, onFilterChange = { filter = it })
