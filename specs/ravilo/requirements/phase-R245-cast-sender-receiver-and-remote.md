@@ -320,3 +320,23 @@ pill on the remote (hardware keys work through the SDK's own routing); R222's no
 left undrawn); position reconciliation is "the next report wins" (OQ3); receiver-side audio track
 switching exposes only what the manifest carries; `PROMPT` Skip Intro is not surfaced on a receiver (nothing
 to press) — only *Auto* skips.
+
+## Packaging fix (2026-09-16, later the same day)
+
+**Bug confirmed.** Every `publish.yml` and `ci.yml` run after this phase landed (`d9ed4c8c`) was red:
+`ravilo-web/Dockerfile` builds from the same Gradle graph as the main image, and `settings.gradle.kts`
+now includes `:ravilo-cast`, but only the main Dockerfile copied `ravilo-cast/` into its context. Gradle
+configures every included module before running any task, so the ravilo-web image failed in 3 s with
+*"Configuring project ':ravilo-cast' without an existing directory is not allowed"* — and the matrix's
+fail-fast then cancelled the jellystructure image alongside it, so nothing was published for two pushes.
+Reproduced locally with a scratch context holding exactly that Dockerfile's `COPY` set (fails identically;
+passes once `ravilo-cast/` is present).
+
+**Second defect, found on the same read.** The main image's runtime stage copied `cast-receiver/` from
+the *build context*, but `cast-receiver/ravilo-cast.js` is gitignored — it is the output of
+`:ravilo-cast:syncCastReceiver`, which the builder stage runs. On a CI checkout the context holds only
+`index.html`, so the published image would have served a receiver page with no bundle behind it. The
+runtime stage now copies `/app/cast-receiver/` from the builder stage instead.
+
+**Amended:** `ravilo-web/Dockerfile` gains `COPY ravilo-cast ./ravilo-cast` (configured, never built);
+`Dockerfile`'s receiver copy is `COPY --from=builder … /app/cast-receiver/ /app/cast/`. No code change.
