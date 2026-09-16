@@ -377,6 +377,13 @@ fun PlayerScreen(
     // (rememberUpdatedState) each poll tick so it re-arms exactly once per episode, same mechanism as
     // loadedForItemId above, and never re-fires mid-playback or fights a later manual pick.
     var resolvedForItemId by remember { mutableStateOf<String?>(null) }
+    // R246 (FR-R246-5) — the track set the last resolve ran against, so a set that GROWS later (HLS
+    // renditions or a sideload arriving after prepare) is resolved once more — only to fill in an
+    // `Off` that resolved before the subtitle group existed (open question 2's recommendation), and
+    // never over a manual pick.
+    var resolvedTrackSig by remember { mutableStateOf<String?>(null) }
+    var resolvedTrackCount by remember { mutableIntStateOf(0) }
+    var manualPickSinceResolve by remember { mutableStateOf(false) }
 
     // Next-up card
     var nextUpVisible by remember { mutableStateOf(false) }
@@ -468,18 +475,11 @@ fun PlayerScreen(
     val subGroupsWithOff: List<PickerLanguage> = listOf(PickerLanguage(language = null, isOff = true, versions = listOf(offVersion), isUnnamed = false)) + subGroups
     val pickerGroups: List<PickerLanguage> = if (pickerTab == 0) audioGroups else subGroupsWithOff
 
-    // R196 (FR-RV-TRK2-1) — same staleness risk as itemId/seriesId/segments above (see that comment):
-    // resolveTrackSelection() runs from the LaunchedEffect(Unit) poll loop's closure, captured once at
-    // first composition and never restarted. audioGroups/subGroups are plain remember(...) vals, not
-    // snapshot state, so that closure permanently saw the FIRST composition's values — an empty
-    // subGroups and a single null-language placeholder audioGroups (both tracks lists start empty) —
-    // and the remembered-choice tiers always returned null and fell through to the source default,
-    // even once real tracks (and a real stored choice) existed. Bug: this made "remember my subtitle
-    // language" silently stop working entirely (not just for auto-advance) the moment R195 rerouted
-    // the tiers through these groups instead of the raw (snapshot-state) track lists. rememberUpdatedState
-    // gives the poll loop's closure a live reference, matching the established fix for itemId etc.
-    val currentAudioGroups by rememberUpdatedState(audioGroups)
-    val currentSubGroups by rememberUpdatedState(subGroups)
+    // R246 (FR-R246-2) — the poll loop resolves against the exact track lists it read in that tick;
+    // nothing derived from the lists is read from composed state. The `currentAudioGroups` /
+    // `currentSubGroups` readers R196 added were one composition behind those lists on the very tick
+    // the tracks arrive — empty, or the outgoing episode's — which is why a remembered subtitle never
+    // reached the next episode (three live repros on 2026-09-16 with R241's build installed).
 
     // ─── Helper functions ───────────────────────────────────────────────────
 
@@ -618,25 +618,28 @@ fun PlayerScreen(
     // exists only as a PGS track in this file falls through instead of silently triggering an autoplay
     // transcode; PGS stays a manual pick, same as today.
     //
-    // R196 (FR-RV-TRK2-1/2/4) — the actual tier logic now lives in the pure, unit-tested top-level
-    // resolveTrackChoice() (near buildLanguageGroups below), and reads currentAudioGroups/
-    // currentSubGroups (rememberUpdatedState) rather than the plain audioGroups/subGroups vals — this
-    // function is called from the poll loop's LaunchedEffect(Unit) closure, which is captured once and
-    // never restarted (see that comment on currentItemId etc.), and a plain remember(...) val read from
-    // inside it stays frozen at whatever it was on the FIRST composition. That silently disabled every
-    // remembered-choice tier (audio and subtitles, first episode and every later one) from the moment
-    // R195 rerouted them through audioGroups/subGroups instead of the raw (snapshot-state) track lists.
-    fun resolveTrackSelection() {
+    // R196 (FR-RV-TRK2-1/2/4) — the actual tier logic lives in the pure, unit-tested top-level
+    // resolveTrackChoice() (near buildLanguageGroups below). R246 — it is handed the TRACK LISTS the
+    // calling poll tick read and builds its own groups from them; the composed audioGroups/subGroups
+    // (and R196's rememberUpdatedState readers of them) are picker UI only. A group list composed
+    // before the tick the tracks arrive is empty or the outgoing episode's, which is why every
+    // remembered tier returned null on exactly that tick — the 2026-09-16 repros.
+    // R246 (FR-R246-1/2) — takes the lists the calling tick read; the resolver builds its own groups
+    // from them, so no caller can hand it a group list that is one composition behind.
+    fun resolveTrackSelection(tickAudio: List<PlayerAudioTrack>, tickSubs: List<PlayerSubtitleTrack>) {
         val profileId = MultiTokenStore.getActive()?.userId
         val seriesKey = currentSeriesId ?: currentItemId
         val seriesChoice = profileId?.let { PlaybackPrefsStore.getSeriesChoice(it, seriesKey) }
         val globalChoice = profileId?.let { PlaybackPrefsStore.getGlobalChoice(it) }
 
-        val result = resolveTrackChoice(seriesChoice, globalChoice, currentAudioGroups, currentSubGroups, audioTracks, subtitleTracks)
+        val result = resolveTrackChoice(seriesChoice, globalChoice, tickAudio, tickSubs)
         player.selectAudioTrack(result.audioIndex)
         selectedAudio = result.audioIndex
         player.selectSubtitleTrack(result.subIndex)
         selectedSub = result.subIndex
+        resolvedTrackSig = trackSetSignature(tickAudio, tickSubs)
+        resolvedTrackCount = tickAudio.size + tickSubs.size
+        manualPickSinceResolve = false
     }
 
     // R195 §3 — applies whichever version is currently targeted (level-1's implicit single version,
@@ -645,6 +648,7 @@ fun PlayerScreen(
     fun choosePick() {
         val group = pickerGroups.getOrNull(pickerIdx) ?: return
         val version = group.versions.getOrNull(if (pickerLevel == 1) pickerVersionIdx else 0) ?: return
+        manualPickSinceResolve = true   // R246 (FR-R246-5) — a grown track set never overrides a manual pick
         if (pickerTab == 0) {
             selectedAudio = version.flatIndex
             player.selectAudioTrack(version.flatIndex)
@@ -866,9 +870,20 @@ fun PlayerScreen(
                 // the next-up checks below: right after an advance, audioTracks/subtitleTracks can
                 // still briefly reflect the OUTGOING episode until the new load swaps in, and resolving
                 // against stale tracks could pick a bogus index for the new one.
-                if (playerLoadedForCurrentItem && resolvedForItemId != currentItemId && audioTracks.isNotEmpty()) {
-                    resolveTrackSelection()
+                // R246 (FR-R246-2) — resolved against the exact lists this tick read (tickAudio/tickSubs),
+                // never against groups composed earlier.
+                val tickAudio = audioTracks
+                val tickSubs = subtitleTracks
+                if (playerLoadedForCurrentItem && resolvedForItemId != currentItemId && tickAudio.isNotEmpty()) {
+                    resolveTrackSelection(tickAudio, tickSubs)
                     resolvedForItemId = currentItemId
+                } else if (playerLoadedForCurrentItem && resolvedForItemId == currentItemId && !manualPickSinceResolve && selectedSub == -1) {
+                    // R246 (FR-R246-5) — the set grew after the first resolve: run once more, keyed on
+                    // the set's signature, only while nothing is selected that a grown set could change.
+                    val sig = trackSetSignature(tickAudio, tickSubs)
+                    if (resolvedTrackSig != null && sig != resolvedTrackSig && tickSubs.size + tickAudio.size > resolvedTrackCount) {
+                        resolveTrackSelection(tickAudio, tickSubs)
+                    }
                 }
 
                 // Credits card trigger (R111/R182 FR-RV-SKIP1-2): the real creditsStartMs when known,
@@ -3605,6 +3620,10 @@ internal data class PickerLanguage(
     val isUnnamed: Boolean,
 )
 
+/** R246 (FR-R246-5) — one string per track set, so a set that changed after the first resolve is detectable. */
+internal fun trackSetSignature(audio: List<PlayerAudioTrack>, subs: List<PlayerSubtitleTrack>): String =
+    audio.joinToString(";") { "a:${it.index}:${it.language}:${it.label}" } + "|" + subs.joinToString(";") { "s:${it.index}:${it.language}:${it.label}:${it.forced}" }
+
 /** R196 (FR-RV-TRK2-4) — result of [resolveTrackChoice]: the flat index to hand to
  *  `RaviloPlayer.selectAudioTrack`/`selectSubtitleTrack` (subtitle `-1` = off). */
 internal data class TrackSelectionResult(val audioIndex: Int, val subIndex: Int)
@@ -3619,11 +3638,9 @@ internal data class TrackSelectionResult(val audioIndex: Int, val subIndex: Int)
  * track index (indices differ across episodes/files).
  *
  * Extracted from the composable specifically so the R196 regression — a call site inside a
- * `LaunchedEffect(Unit)` poll loop that only ever sees the FIRST composition's [audioGroups]/
- * [subGroups] (both empty/placeholder at that point) because they were plain `remember(...)` vals, not
- * snapshot state — has a test that can actually catch a recurrence. [PlayerScreen] itself is
- * responsible for supplying LIVE group data (via `rememberUpdatedState`); this function has no opinion
- * on how its inputs stay fresh, only on what to do with them.
+ * `LaunchedEffect(Unit)` poll loop that only ever sees a composition-old group list — has a test that
+ * can actually catch a recurrence. R246 closed the residue of that bug for good: this function takes
+ * the TRACK LISTS only and derives the groups itself, so there is no group parameter left to be stale.
  *
  * Scope note (unchanged since R181): only matches against native/external [subtitleTracks], never
  * PGS/encode burn-in subs — a remembered language that exists only as a PGS track in this file falls
@@ -3632,11 +3649,17 @@ internal data class TrackSelectionResult(val audioIndex: Int, val subIndex: Int)
 internal fun resolveTrackChoice(
     seriesChoice: RememberedChoice?,
     globalChoice: RememberedChoice?,
-    audioGroups: List<PickerLanguage>,
-    subGroups: List<PickerLanguage>,
     audioTracks: List<PlayerAudioTrack>,
     subtitleTracks: List<PlayerSubtitleTrack>,
 ): TrackSelectionResult {
+    // R246 (FR-R246-1) — the groups are derived HERE, from the lists this call is handed, through the
+    // same buildLanguageGroups the picker uses. R196 left the composable responsible for supplying
+    // live groups; on the tick the tracks arrive the freshest composed groups were still the previous
+    // composition's (empty, or the outgoing episode's), and every remembered tier returned null —
+    // exactly the source-default selections the 2026-09-16 sweep saw. Badges are display-only and
+    // play no part in resolution, so none are built.
+    val audioGroups = buildLanguageGroups(audioTracks.map { PickerEntryInput(it.language, it.label, forced = false, isDefault = it.isDefault, badges = emptyList()) })
+    val subGroups = buildLanguageGroups(subtitleTracks.map { PickerEntryInput(it.language, it.label, forced = it.forced, isDefault = it.isDefault, badges = emptyList()) })
     // Phase 210/R241 — a remembered language must match even when this file tags it at a different
     // ISO-639 granularity than the file the choice was learned from. Confirmed against real production
     // data ("It's Always Rainy in Pittsburgh", 182 episodes/16 seasons of mixed release sources):
