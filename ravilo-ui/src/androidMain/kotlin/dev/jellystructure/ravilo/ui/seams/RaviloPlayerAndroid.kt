@@ -191,6 +191,9 @@ actual class RaviloPlayer actual constructor() {
     // from a household member's phone; a phone's own playback must never be advertised the same way
     // to other devices, so the phone build never creates a session in the first place.
     private var mediaSessionRef: MediaSession? = null
+    // R244 (FR-R244-10) — the attached caption view and the phone's chosen size multiplier.
+    private var subtitleViewRef: SubtitleView? = null
+    private var subtitleScale: Float = 1f
     private fun ensureMediaSession(): MediaSession? {
         if (!RaviloAppContext.isTelevision) return null
         return mediaSessionRef ?: MediaSession.Builder(ctx, exo).setId("ravilo-player").build().also { mediaSessionRef = it }
@@ -296,7 +299,8 @@ actual class RaviloPlayer actual constructor() {
             Color.argb(204, 0, 0, 0), // ~80% black — gentle outline, not a hard solid border
             null,
         ))
-        view.setFractionalTextSize(SubtitleView.DEFAULT_TEXT_SIZE_FRACTION * 0.9f)
+        view.setFractionalTextSize(SubtitleView.DEFAULT_TEXT_SIZE_FRACTION * 0.9f * subtitleScale)
+        subtitleViewRef = view
         exo.addListener(object : Player.Listener {
             override fun onCues(cueGroup: CueGroup) {
                 val cleaned = cueGroup.cues.map { cue ->
@@ -378,6 +382,11 @@ actual class RaviloPlayer actual constructor() {
     // No-op — the video surface is already in-scene via a normal (non-Z-order-on-top) SurfaceView
     // inside the FrameLayout; nothing to swap z-order with.
     actual fun setChromeVisible(visible: Boolean) {}
+
+    actual fun setSubtitleScale(scale: Float) {
+        subtitleScale = scale.coerceIn(0.5f, 2f)
+        subtitleViewRef?.setFractionalTextSize(SubtitleView.DEFAULT_TEXT_SIZE_FRACTION * 0.9f * subtitleScale)
+    }
 
     actual val positionMs: Long get() = exo.currentPosition.coerceAtLeast(0)
     actual val durationMs: Long get() = exo.duration.let { if (it == C.TIME_UNSET) 0L else it.coerceAtLeast(0) }

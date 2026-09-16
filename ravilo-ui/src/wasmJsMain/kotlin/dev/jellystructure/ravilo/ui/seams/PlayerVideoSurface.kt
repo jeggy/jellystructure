@@ -10,6 +10,9 @@ actual fun PlayerVideoSurface(
     modifier: Modifier,
     onVideoOutputStuck: () -> Unit,
     onVideoOutputRecovering: (Boolean) -> Unit,
+    fill: Boolean,
 ) {
+    // R244 (FR-R244-6) — the <video> element's object-fit is the web's fit/fill.
+    player.setObjectFit(fill)
     Box(modifier) // <video> element is fixed-positioned behind the skiko canvas via CSS
 }

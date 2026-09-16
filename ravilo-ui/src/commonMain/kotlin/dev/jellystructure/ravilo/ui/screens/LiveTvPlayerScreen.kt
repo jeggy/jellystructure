@@ -23,6 +23,13 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.ui.input.pointer.pointerInput
+import dev.jellystructure.ravilo.ui.theme.LocalHandset
+import dev.jellystructure.ravilo.ui.seams.PlayerImmersiveEffect
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -53,6 +60,7 @@ import dev.jellystructure.ravilo.ui.seams.RaviloPlayer
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import dev.jellystructure.shared.tv.LiveTvChannel
 import kotlinx.coroutines.delay
+import kotlin.math.abs
 import kotlinx.coroutines.launch
 
 private val DIGIT_KEYS = mapOf(
@@ -90,6 +98,14 @@ fun LiveTvPlayerScreen(
 
     var chromeVisible by remember { mutableStateOf(true) }
     var chromeRevision by remember { mutableStateOf(0) }
+    // R244 (FR-R244-15) — the Live TV player had no phone handling of any kind; it gets the handset
+    // chrome with no seek bar, the channel name + Now/Next in place of the title, Guide and Lock on the
+    // rail, and a vertical swipe on the right EDGE to change channel (the volume swipe is not offered
+    // here — open question 4, so the edge is channel and nothing else).
+    val handset = LocalHandset.current
+    var locked by remember { mutableStateOf(false) }
+    var paused by remember { mutableStateOf(false) }
+    if (handset) PlayerImmersiveEffect(followSensor = true)
     var zapBanner by remember { mutableStateOf<LiveTvChannel?>(null) }
     var numberEntry by remember { mutableStateOf("") }
     var guideOpen by remember { mutableStateOf(false) }
@@ -115,7 +131,8 @@ fun LiveTvPlayerScreen(
     // Now/Next overlay is open.
     LaunchedEffect(chromeRevision, chromeVisible, numberEntry, guideOpen) {
         if (!chromeVisible || numberEntry.isNotEmpty() || guideOpen) return@LaunchedEffect
-        delay(CHROME_HIDE_MS)
+        delay(if (handset) HANDSET_CHROME_HIDE_MS else CHROME_HIDE_MS)
+        if (handset && (locked || paused)) return@LaunchedEffect
         chromeVisible = false
     }
     // Number-entry auto-commits a short pause after the last digit (no explicit Enter needed).
@@ -167,6 +184,8 @@ fun LiveTvPlayerScreen(
                         else -> onBack()
                     }
                 },
+                // R244 — a phone tap toggles the chrome (there is no D-pad Select to do it).
+                onTap = if (handset) ({ if (!guideOpen && !locked) { if (chromeVisible) chromeVisible = false else wake() } }) else null,
             )
             .onKeyEvent { ev ->
                 if (ev.type != KeyEventType.KeyDown || guideOpen) return@onKeyEvent false
@@ -177,6 +196,25 @@ fun LiveTvPlayerScreen(
             },
     ) {
         PlayerVideoSurface(player, Modifier.fillMaxSize())
+
+        // R244 (FR-R244-15) — the right-edge channel swipe: up = next channel, down = previous.
+        if (handset && !locked && !guideOpen) {
+            Box(
+                Modifier.align(Alignment.CenterEnd).fillMaxHeight().width(44.dp)
+                    .pointerInput(Unit) {
+                        var acc = 0f
+                        var fired = false
+                        detectDragGestures(
+                            onDragStart = { acc = 0f; fired = false },
+                            onDrag = { change, delta ->
+                                change.consume()
+                                acc += delta.y
+                                if (!fired && abs(acc) > 90f) { fired = true; zap(if (acc < 0f) 1 else -1) }
+                            },
+                        )
+                    },
+            )
+        }
 
         if (state is LiveTvPlayerState.Loading) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -194,15 +232,44 @@ fun LiveTvPlayerScreen(
         }
 
         val ready = state as? LiveTvPlayerState.Ready
+        // R244 (FR-R244-15) — the handset chrome; the TV's ChannelBar + LIVE badge below stay as they are.
+        AnimatedVisibility(visible = handset && chromeVisible && ready != null && !locked, enter = fadeIn(), exit = fadeOut()) {
+            val ch = ready?.channel
+            if (ch != null) HandsetPlayerChrome(
+                colors = colors,
+                itemTitle = ch.name,
+                itemKicker = "${str("livetv.live_badge")} · ${ch.number}",
+                positionMs = 0L, durationMs = 0L, bufferedMs = 0L, scrubbing = false, scrubPos = 0L,
+                isPlaying = !paused,
+                railItems = listOf(HandsetRailItem.GUIDE, HandsetRailItem.LOCK),
+                stallActive = false, seekMomentActive = false,
+                showRotate = false, landscapeForced = false,
+                showSeek = false, showSkips = false,
+                liveLine = listOfNotNull(ch.currentProgram?.name, ch.nextProgram?.name?.let { "${str("livetv.next")}: $it" }).joinToString("  ·  "),
+                onBack = onBack,
+                onRotate = {},
+                onSkipBack = {},
+                onPlayPause = { if (paused) player.play() else player.pause(); paused = !paused; wake() },
+                onSkipFwd = {},
+                onRail = { item ->
+                    when (item) {
+                        HandsetRailItem.GUIDE -> { guideOpen = true; chromeVisible = true }
+                        HandsetRailItem.LOCK -> { locked = true; chromeVisible = false }
+                        else -> {}
+                    }
+                },
+                onSeekStart = {}, onSeekDrag = {}, onSeekEnd = {},
+            )
+        }
         AnimatedVisibility(
-            visible = chromeVisible && ready != null,
+            visible = chromeVisible && ready != null && !handset,
             enter = fadeIn(),
             exit = fadeOut(),
             modifier = Modifier.align(Alignment.BottomCenter),
         ) {
             if (ready != null) ChannelBar(ready.channel)
         }
-        AnimatedVisibility(visible = chromeVisible, enter = fadeIn(), exit = fadeOut(), modifier = Modifier.align(Alignment.TopStart)) {
+        AnimatedVisibility(visible = chromeVisible && !handset, enter = fadeIn(), exit = fadeOut(), modifier = Modifier.align(Alignment.TopStart)) {
             Text(
                 str("livetv.live_badge"),
                 color = Color.White,
@@ -244,6 +311,8 @@ fun LiveTvPlayerScreen(
                 onDismiss = { guideOpen = false },
             )
         }
+        // R244 (FR-R244-8) — same lock treatment as the title player.
+        if (handset && locked) HandsetLockOverlay(onUnlock = { locked = false; wake() })
     }
 }
 
@@ -320,12 +389,16 @@ private fun NowNextOverlay(
     onDismiss: () -> Unit,
 ) {
     val colors = RaviloTheme.colors
+    val handset = LocalHandset.current
     Box(
         modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.72f))
+            // R244 — a phone taps away; the TV's Back path is unchanged.
+            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onDismiss)
             .dpadFocusable(onBack = onDismiss),
     ) {
         Column(
-            modifier = Modifier.align(Alignment.CenterEnd).width(420.dp).fillMaxSize()
+            modifier = Modifier.align(Alignment.CenterEnd).then(if (handset) Modifier.fillMaxWidth() else Modifier.width(420.dp)).fillMaxSize()
+                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = {})
                 .background(colors.surface).padding(20.dp),
         ) {
             Text(str("livetv.guide"), color = colors.text, fontSize = 18.sp, fontWeight = FontWeight.Bold)

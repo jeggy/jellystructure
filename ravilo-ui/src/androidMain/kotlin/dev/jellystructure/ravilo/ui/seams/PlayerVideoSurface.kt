@@ -3,8 +3,11 @@ package dev.jellystructure.ravilo.ui.seams
 import android.view.SurfaceHolder
 import android.view.SurfaceView
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.requiredSize
+import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -50,6 +53,7 @@ actual fun PlayerVideoSurface(
     modifier: Modifier,
     onVideoOutputStuck: () -> Unit,
     onVideoOutputRecovering: (Boolean) -> Unit,
+    fill: Boolean,
 ) {
     // R77: collect video geometry and compute display aspect ratio (DAR).
     // pixelWidthHeightRatio (SAR) corrects anamorphic encoding (e.g. DVD 720×480 @ SAR 32:27 → 16:9).
@@ -72,7 +76,21 @@ actual fun PlayerVideoSurface(
     val onVideoOutputStuckState = rememberUpdatedState(onVideoOutputStuck)
     val onVideoOutputRecoveringState = rememberUpdatedState(onVideoOutputRecovering)
 
-    Box(modifier = modifier, contentAlignment = Alignment.Center) {
+    BoxWithConstraints(modifier = modifier, contentAlignment = Alignment.Center) {
+        // R244 (FR-R244-6) — fill: the surface is sized to COVER the frame (one side matches, the other
+        // overflows symmetrically and is clipped by the window edges). A SurfaceView is its own
+        // compositor layer, so this is a layout choice, not a graphicsLayer scale. Fit is unchanged.
+        val surfaceModifier: Modifier = when {
+            dar <= 0f -> Modifier.fillMaxSize()
+            !fill -> Modifier.aspectRatio(dar)
+            else -> {
+                val cw = maxWidth
+                val ch = maxHeight
+                val containerAr = cw / ch
+                if (dar >= containerAr) Modifier.wrapContentSize(unbounded = true).requiredSize(ch * dar, ch)
+                else Modifier.wrapContentSize(unbounded = true).requiredSize(cw, cw / dar)
+            }
+        }
         key(surfaceGeneration) {
             AndroidView(
                 factory = { ctx ->
@@ -115,7 +133,7 @@ actual fun PlayerVideoSurface(
                 // R77: constrain to DAR when known — Compose fits the view inside the available space
                 // and the PlayerScreen's black background shows through as letterbox/pillarbox bars.
                 // Falls back to fillMaxSize() until the first frame is decoded (VideoSize.UNKNOWN).
-                modifier = if (dar > 0f) Modifier.aspectRatio(dar) else Modifier.fillMaxSize(),
+                modifier = surfaceModifier,
                 onRelease = { sv ->
                     // Phase R220 (FR-R220-4) — don't leave a stale reference behind a torn-down surface;
                     // a subsequent watchdog tick must not try to detach/reattach a view that's already gone.

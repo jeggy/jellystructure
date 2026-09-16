@@ -8,9 +8,11 @@
 
 ## Status
 
-`Planned` — written 2026-09-16, **dev-reviewed 2026-09-16 against `main`** (see §Dev review at the
-bottom). Built into the mockups 2026-09-16. Every code claim checked out; one requirement was found
-to need a seam the spec did not account for.
+`✓ Built` — written 2026-09-16, **dev-reviewed 2026-09-16 against `main`** (see §Dev review at the
+bottom), **implemented 2026-09-16** (see §Implementation notes). Built into the mockups 2026-09-16.
+Every code claim checked out; one requirement was found to need a seam the spec did not account for.
+Compiled for Android and wasmJs, `ravilo-ui` unit tests green; **not device-tested** — the acceptance
+list below is still to be run on the Pixel 9 (never blind on a live device).
 
 **Numbering:** verified against `main` on 2026-09-16 — admin taken through **217**, Ravilo through
 **R243**. No `phase-R244-*` file and no `STATUS.md` row for it. The source research report
@@ -247,3 +249,63 @@ objects.
 noted in this project's own history — a release-only `VerifyError` when player chrome grows inside one
 composable — argues for the handset chrome being **its own `@Composable`** from the first commit rather
 than a branch inside the existing one.
+
+## Implementation notes (2026-09-16)
+
+- **FR-R244-1** — `PlayerHandsetChrome.kt` is its own file and its own `@Composable`s from the first
+  commit (the release-only `VerifyError` precedent). `PlayerScreen` switches on `LocalHandset` at the
+  chrome call site and nowhere else in the layout; the TV branch is byte-for-byte the code it was.
+  Top bar (back · kicker + title · rotate-when-locked), centred −10 s / ▶ / +30 s with the amounts as
+  labels **beneath** the arrows, a 4/6 dp seek bar with times, and the rail from `handsetRailFor()`:
+  Subtitles · Next (or Episodes when there is no next but a season) · Lock. Targets ≥ 46 dp, labels ≥ 13 sp.
+  With Next on the rail, the season sheet opens from a tap on the kicker + title.
+- **FR-R244-2** — `LocalPortrait` decides column (landscape, `CenterEnd`) vs row (portrait, above the
+  seek bar). The Skip Intro pill is anchored bottom-**start** above the seek bar on a handset.
+- **FR-R244-3** — `HANDSET_CHROME_HIDE_MS = 3 000`; the one auto-hide effect holds while a sheet is
+  open, a drag is live, the player is paused, or locked. The TV's 3 600 ms rule is unchanged.
+- **FR-R244-4** — `HandsetGestureLayer`: double-tap in the outer thirds seeks ±10/30 s, repeats inside
+  the 900 ms ripple accumulate (the ripple shows the running total), the centre third does nothing, and
+  the chrome does not rise. The root's tap handler is disabled on a handset so a double-tap's first tap
+  cannot toggle the chrome.
+- **FR-R244-5** — new seam `rememberHandsetPlayerControls()` (`seams/HandsetPlayerControls.kt`):
+  brightness is the window's own `screenBrightness` attribute (never the device default), volume is
+  `STREAM_MUSIC`; the web actual answers null setters and the swipes are simply not offered there
+  (open question 1 closed the way the dev review recommended — no CSS fake).
+- **FR-R244-6** — `PlayerVideoSurface(fill = …)`: Android sizes the `SurfaceView` to cover the frame
+  (`BoxWithConstraints` + `requiredSize`, a layout choice, not a graphicsLayer scale, because a
+  SurfaceView is its own compositor layer); web sets `object-fit`. A pinch past ×1.25 / ×0.8 toggles it,
+  a one-word toast for 900 ms, and the choice never persists across titles.
+- **FR-R244-7** — `PlayerImmersiveEffect(followSensor = handset)`: the Android actual requests
+  `SCREEN_ORIENTATION_FULL_USER` on a handset (follows the sensor, honours the system lock) instead of
+  `SENSOR_LANDSCAPE`. The rotate button renders only while `Settings.System.ACCELEROMETER_ROTATION == 0`
+  and toggles `SENSOR_LANDSCAPE` ↔ `FULL_USER` for the player.
+- **FR-R244-8** — `HandsetLockOverlay`: drawn last (on top), takes every gesture; a tap shows *Locked ·
+  hold to unlock* for 1.2 s, a long-press unlocks; the root's Back still leaves because the chrome is
+  hidden while locked.
+- **FR-R244-9** — thumb 14 → 26 px while dragging, a time bubble above it, the ghost mark where the
+  drag began, no thumbnail. Haptic on release only (`commitScrub`).
+- **FR-R244-10** — the SAME `TrackPicker` gains `handset` + `extraRow` and renders inside
+  `HandsetSheet` (scrim tap-away, rounded top, safe-area inset, ≤ 72 % of the screen). The extra row is
+  `SubtitleSizeRow` (S · M · L ⇒ 0.85 / 1.0 / 1.25) applied live through a new
+  `RaviloPlayer.setSubtitleScale()` (Android: `SubtitleView.setFractionalTextSize`; web: a
+  `video::cue` font-size rule). Its note is a parameter — *"Applies on this phone only."* here, R245's
+  remote passes the device line — which is the one difference between the two destinations.
+- **FR-R244-11** — `SeasonSheet`: a vertical list of the season in the same sheet container; `EpisodeTriptych`
+  keeps R179's multi-episode treatment; current episode marked; the D-pad rail is untouched on TV.
+- **FR-R244-12** — the pill got a tap handler and a ≥ 46 dp target; `NextUpCard` gained `handsetFull`
+  (full-width strip in portrait, corner card in landscape) and tappable buttons at 46 dp;
+  `PlayerSessionErrorOverlay` gained `handset` and renders the same R237 sentence + the same two
+  actions as a bottom sheet. R218's waiting states are reused verbatim (their handset sizes already
+  shipped in R218 itself).
+- **FR-R244-13** — every handset layer is `windowInsetsPadding(WindowInsets.safeDrawing)`.
+- **FR-R244-14** — **no new seam after all:** Compose's own `LocalHapticFeedback` /
+  `HapticFeedbackType.SegmentTick` is the primitive (a no-op on web). Ticks on skip (buttons and
+  double-tap), lock/unlock and seek release; nothing on play/pause.
+- **FR-R244-15** — `LiveTvPlayerScreen`: the same `HandsetPlayerChrome` with `showSeek = false`,
+  `showSkips = false`, kicker `LIVE · <number>`, title = channel name, a Now/Next line in the seek bar's
+  place, Guide + Lock on the rail, a right-edge vertical swipe that zaps, the lock overlay, the
+  immersive effect (it had never been called there), and the Now/Next overlay full-width + tap-away on
+  a handset. The TV's ChannelBar and LIVE badge render only off-handset.
+- **FR-R244-16** — 15 keys (`pl.*`) × en/da/fo from the design table; no speed string anywhere.
+- **Not done / open:** device acceptance 1–7 (Pixel 9); haptic strength (OQ2); the Live TV edge swipe
+  vs a thumb (OQ4 — volume is deliberately not offered on that screen); foldables (OQ5).

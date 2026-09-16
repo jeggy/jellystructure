@@ -38,6 +38,16 @@ actual class RaviloPlayer actual constructor() {
         video.style.zIndex = if (visible) "0" else "2"
     }
 
+    /** R244 (FR-R244-6) — fit/fill is the <video>'s object-fit on the web. */
+    internal fun setObjectFit(fill: Boolean) {
+        video.style.setProperty("object-fit", if (fill) "cover" else "contain")
+    }
+
+    /** R244 (FR-R244-10) — the cue font size follows the phone's S/M/L pick; one style element, replaced. */
+    actual fun setSubtitleScale(scale: Float) {
+        setCueScale(scale.coerceIn(0.5f, 2f))
+    }
+
     private var loadedSubtitles: List<SubTrack> = emptyList()
     private var loadedAudio: List<AudioTrack> = emptyList()
 
@@ -286,5 +296,13 @@ private fun destroyOverlays(video: HTMLVideoElement): Unit = js(
     """{
         if (video._hls) { try { video._hls.destroy(); } catch(e){} video._hls = null; }
         if (video._jassub) { try { video._jassub.destroy(); } catch(e){} video._jassub = null; }
+    }"""
+)
+
+private fun setCueScale(scale: Float): Unit = js(
+    """{
+        var st = document.getElementById('ravilo-cue-size');
+        if (!st) { st = document.createElement('style'); st.id = 'ravilo-cue-size'; document.head.appendChild(st); }
+        st.textContent = 'video::cue{font-size:' + Math.round(scale * 100) + '%;}';
     }"""
 )
