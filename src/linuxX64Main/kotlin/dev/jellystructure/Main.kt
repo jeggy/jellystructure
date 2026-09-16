@@ -120,6 +120,7 @@ fun main() = runBlocking {
     val activityLog = ActivityLog(activityLogFile, broadcaster, rootScope)
     activityLog.load()
     Logger.activityLog = activityLog
+    dev.jellystructure.ops.WebhookStatus.init(dataDir)   // Phase 221 (FR-221-5) — small persisted record, never config.toml
     val scanner = Scanner(configStore, tmdbClient, jellyfinClient, jsTagStore, store = mediaStore)
     val artworkDownloader = ArtworkDownloader(tmdbClient, dev.jellystructure.media.Screengrabber())
     // Phase 150 (FR-SEG1-4) — on-disk Chromaprint fingerprint cache, keyed like RaviloArtworkService's

@@ -508,11 +508,15 @@ X-JS-Api-Key: jsk_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx</pre>
                 <label>Webhook URL</label>
                 <input id="notif-webhook" class="input" type="url" placeholder="https://…/webhook" style="width:100%">
                 <span class="hint">POST with JSON body; leave blank to disable webhooks</span>
+                <!-- Phase 221 (FR-221-2) — the standing delivery line: last delivery, ok/failed, reason. -->
+                <span class="hint" id="notif-webhook-status" style="display:block;margin-top:4px"></span>
               </div>
               <div style="margin-bottom:12px">
-                <button id="notif-test-btn" class="btn sm ghost">Send test notification</button>
+                <button id="notif-test-btn" class="btn sm ghost">Test</button>
                 <span id="notif-test-result" class="tiny muted" style="margin-left:8px"></span>
               </div>
+              <!-- Phase 221 (FR-221-3/4) — advisor-style findings; empty while deliveries succeed. -->
+              <div id="notif-findings"></div>
               <div style="font-size:.83rem;font-weight:500;margin-bottom:8px;color:var(--ink-soft)">Fire for…</div>
               <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
                 <span style="font-size:.9rem">Scan finished</span>
@@ -1074,21 +1078,24 @@ private fun attachListeners(scope: CoroutineScope) {
         refreshTomlPreview(readForm())
     }
     document.getElementById("notif-webhook")?.addEventListener("input") { refreshTomlPreview(readForm()) }
+    // Phase 221 (FR-221-2) — the test is delivered by the SERVER (the machine that will deliver the real
+    // ones), not by this browser: status code or connect error and elapsed ms, inline.
     document.getElementById("notif-test-btn")?.addEventListener("click") {
         scope.launch {
             val resultEl = document.getElementById("notif-test-result") as? HTMLElement ?: return@launch
             resultEl.textContent = "Sending…"
             val webhookUrl = getInputValue("notif-webhook")
             if (webhookUrl.isBlank()) { resultEl.textContent = "No URL set."; return@launch }
-            val ok = runCatching {
-                httpClient.post(webhookUrl) {
-                    contentType(ContentType.Application.Json)
-                    setBody("""{"event":"test","source":"jellystructure"}""")
-                }.status.value in 200..299
-            }.getOrDefault(false)
-            resultEl.innerHTML = if (ok) """<span class="badge ok">Delivered</span>""" else """<span class="badge bad">Failed</span>"""
+            val r = ConfigApi.testWebhook(webhookUrl)
+            resultEl.innerHTML = when {
+                r == null -> """<span class="badge bad">Request failed</span>"""
+                r.ok -> """<span class="badge ok">Delivered · ${r.detail.esc()} · ${r.elapsedMs} ms</span>"""
+                else -> """<span class="badge bad">Failed · ${r.detail.esc()} · ${r.elapsedMs} ms</span>"""
+            }
+            renderWebhookStatus()
         }
     }
+    scope.launch { renderWebhookStatus() }
 
     wirePipelineBuilder(scope)
     refreshNextRun()   // 93e: show the real next scheduled run on load
@@ -1296,7 +1303,7 @@ private suspend fun runMemoryBudgetCalculator() {
             </div>"""
 }
 
-private fun advisorFindingHtml(f: dev.jellystructure.api.AdvisorFinding): String = """
+internal fun advisorFindingHtml(f: dev.jellystructure.api.AdvisorFinding): String = """
     <div class="note warn" style="margin-top:8px;display:flex;gap:9px;align-items:flex-start;">
       <span style="flex:none;">⚠</span>
       <div class="tiny" style="line-height:1.65">
@@ -3220,3 +3227,26 @@ private fun wireChromecast(scope: CoroutineScope) {
     }
     if (ccEnabled) refreshStatus()
 }
+
+// ── Phase 221 — webhook delivery status + findings ─────────────────────────────
+
+/** FR-221-2 — "Last delivery 14:02 · failed · could not connect" / "… · ok" / "Never delivered". */
+internal suspend fun renderWebhookStatus() {
+    val line = document.getElementById("notif-webhook-status") as? HTMLElement
+    val findingsEl = document.getElementById("notif-findings") as? HTMLElement
+    val st = ConfigApi.webhookStatus()
+    if (st == null) { line?.textContent = ""; findingsEl?.innerHTML = ""; return }
+    val t = st.target
+    line?.innerHTML = when {
+        !st.configured -> ""
+        t == null || t.lastAttemptAt == null -> "Never delivered"
+        t.lastSuccessAt != null && (t.lastFailureAt == null || t.lastSuccessAt >= t.lastFailureAt) ->
+            "Last delivery ${clockOf(t.lastSuccessAt)} · <span class=\"badge ok\">ok</span>${t.lastElapsedMs?.let { " · $it ms" } ?: ""}"
+        else -> "Last delivery ${clockOf(t.lastFailureAt ?: t.lastAttemptAt)} · <span class=\"badge bad\">failed</span> · ${(t.lastFailureReason ?: "unknown").esc()}"
+    }
+    // FR-221-3/4 — silent while nothing is wrong: the container is simply empty.
+    findingsEl?.innerHTML = st.findings.joinToString("") { advisorFindingHtml(it) }
+}
+
+private fun clockOf(epochMs: Long): String = hhmmOf(epochMs.toDouble())
+private fun hhmmOf(epochMs: Double): String = js("new Date(epochMs).toTimeString().slice(0, 5)")
