@@ -34,6 +34,10 @@ COPY shared ./shared
 COPY ravilo-ui ./ravilo-ui
 COPY ravilo-web ./ravilo-web
 COPY ravilo-tizen ./ravilo-tizen
+# R245 added :ravilo-cast to settings.gradle.kts; without its directory here Gradle refuses to configure
+# the graph at all ("Configuring project ':ravilo-cast' without an existing directory is not allowed"),
+# which turned publish.yml and ci.yml red on 2026-09-16. Never built by this image, only configured.
+COPY ravilo-cast ./ravilo-cast
 COPY web-static-server ./web-static-server
 COPY design ./design
 RUN --mount=type=cache,id=gradle-ravilo-web,target=/root/.gradle \
