@@ -10,9 +10,12 @@
 
 ## Status
 
-`Planned` — written 2026-09-16 from the live stue-TV sweep
-(`specs/research-reports/stue-tv-test-sweep-2026-09-16.md`, finding F1). Not dev-reviewed, not built.
-Client-only (`ravilo-ui` commonMain); no backend, DTO or admin change.
+`✓ Built` — written 2026-09-16 from the live stue-TV sweep
+(`specs/research-reports/stue-tv-test-sweep-2026-09-16.md`, finding F1), **implemented 2026-09-16**
+(see §Implementation notes). Not dev-reviewed. Client-only (`ravilo-ui` commonMain); no backend, DTO
+or admin change. `PlayerScreenTrackResolutionTest` (20, incl. FR-R246-3's three transitions and
+FR-R246-4) green. **FR-R246-6's on-device check has NOT been run** — the phase's own rule says it does
+not get to stay open; it is the one thing left before this can honestly read `✓ Built` on the TV.
 
 **Numbering:** verified against `STATUS.md` on 2026-09-16 — admin taken through 218, Ravilo through
 R245. Ravilo-only, no admin pair.
@@ -144,3 +147,25 @@ own open question said so; this phase does not get to leave it open again.
   default track has masked it. Worth one household check on a dubbed series after the fix.
 - Whether FR-R246-5's re-resolve should be allowed to *change* an already-visible selection, or only
   fill in an `Off` that resolved before the subtitle group existed. Recommendation: only the latter.
+
+## Implementation notes (2026-09-16)
+
+- **FR-R246-1** — `resolveTrackChoice(seriesChoice, globalChoice, audioTracks, subtitleTracks)`: the
+  `audioGroups` / `subGroups` parameters are gone; both are built inside from the lists through the
+  same `buildLanguageGroups` the picker uses (badges omitted — display only). The old signature no
+  longer compiles, so no caller can hand it a stale group list.
+- **FR-R246-2** — the poll tick captures `tickAudio` / `tickSubs` from the lists it just read and passes
+  them to `resolveTrackSelection(tickAudio, tickSubs)`; `currentAudioGroups` / `currentSubGroups` are
+  deleted. The composable's `audioGroups` / `subGroups` remain for the picker UI only.
+- **FR-R246-3/4** — `PlayerScreenTrackResolutionTest` rebuilt on real track shapes with variant kinds
+  derived from labels exactly as the player does (`English (SDH)`, `Dansk (CC)`, `Director's
+  Commentary`), the remembered signature learned from `buildLanguageGroups` of the first file: (a)
+  embedded `dan` PLAIN → external `da` SDH-only + English `default: true` ⇒ Danish (pins FR-R241-2);
+  (b) embedded `dan` PLAIN → external `da` PLAIN with no default ⇒ Danish; (c) external `da` PLAIN →
+  same ⇒ Danish; and the dubbed-audio case ⇒ the remembered Danish over the English default. The
+  R195-shape test ("empty groups fall to the default") is retired — that shape is no longer expressible.
+- **FR-R246-5** — `trackSetSignature()` + `resolvedTrackCount` recorded at every resolve; a later tick
+  with a different signature AND a larger set re-resolves once, only while `selectedSub == -1` and no
+  manual pick has happened since (`manualPickSinceResolve`, set in `choosePick`). Open question 2 is
+  answered the recommended way: it fills in an `Off`, never changes a visible selection.
+- **FR-R246-6** — not run (no TV access this session).
