@@ -2,6 +2,8 @@ package dev.jellystructure.ravilo.ui.seams
 
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 
 /**
  * Phase R220 (FR-R220-3) — [onVideoOutputStuck] is rung 4 of the video-output-loss recovery ladder: the
@@ -26,4 +28,7 @@ expect fun PlayerVideoSurface(
     onVideoOutputStuck: () -> Unit = {},
     onVideoOutputRecovering: (Boolean) -> Unit = {},
     fill: Boolean = false,
+    // R251 (FR-R251-4) — bottom inset for rendered subtitle cues, screen-relative (R77): the 28 dp floor
+    // plus the transport band while the chrome is up. Platforms without their own cue renderer ignore it.
+    subtitleBottomInset: Dp = 28.dp,
 )

@@ -7,9 +7,12 @@
 
 ## Status
 
-`Planned` — written 2026-09-16 from the live stue-TV sweep
+`✓ Built` — written 2026-09-16 from the live stue-TV sweep
 (`specs/research-reports/stue-tv-test-sweep-2026-09-16.md`, finding F8 plus the rail-title item in
-F14). Not dev-reviewed, not built. Client-only, TV chrome (R244 owns the phone player).
+F14), **implemented 2026-09-16** (see §Implementation notes). Not dev-reviewed; **FR-R251-6's
+on-device re-run is not done** (no device this session). Client-only, TV chrome (R244 owns the phone
+player). `:ravilo-ui:compileDebugKotlinAndroid` + `:ravilo-ui:compileKotlinWasmJs` clean;
+`PlayerDpadRevealTest` (5) green.
 
 **Numbering:** verified against `STATUS.md` on 2026-09-16 — Ravilo taken through R245; R246–R250 by
 sibling specs the same day.
@@ -85,3 +88,31 @@ S08E04 → *Audio & Subs* after a 5 s pause; then `>> Next` reached deliberately
 
 - Whether `Up` while hidden should reveal *and* move to the seek bar (the only key whose "move" is
   arguably the intent). Recommendation: no — one rule for all five keys is the point.
+
+## Implementation notes (2026-09-16)
+
+- **FR-R251-1/2** — one pure rule, `dpadRevealsOnly(key, chromeVisible, focus, nextUpVisible,
+  epRailOpen, pickerOpen)` (`PlayerScreen.kt`, internal, tested): a key that finds the chrome hidden
+  reveals it and does nothing else. `onLeft`/`onRight`/`onUp`/`onDown` capture it **before** `wake()`
+  exactly as `onSelect` does and skip their dispatch when it is true; `onSelect` now uses the same
+  function instead of its own inline test. "Hidden" is R178's test with its live exceptions (the Skip
+  Intro pill, the next-up/credits card) plus the picker and the episode rail — those two hold the
+  auto-hide off while open, so they can never be found hidden today; listed so a future hide path
+  cannot swallow a key aimed at them. Media keys untouched (R44). The open question is answered no:
+  Up reveals only, like the other four. `PlFocus` became `internal` for the test.
+- **FR-R251-3** — every single-line title in the player carries `TextOverflow.Ellipsis`: the transport
+  title, the episode-rail card's title and sub-label, the rail's episode line, and the next-up card's
+  label. The handset chrome's own titles (R244) were not touched.
+- **FR-R251-4** — `PlayerChrome` reports its bottom transport band's measured height
+  (`onSizeChanged`); `PlayerScreen` animates `subtitleBottomInset` between R77's 28 dp floor and floor +
+  band on the chrome's own fade timings (`CHROME_FADE_IN_MS`/`CHROME_FADE_OUT_MS`), under the same
+  visibility test as the chrome's `AnimatedVisibility` (stall forces it up, cold start suppresses it),
+  and hands it to `PlayerVideoSurface` through a new defaulted `subtitleBottomInset: Dp` seam parameter.
+  The Android actual applies it in `AndroidView.update` so the live `SubtitleView` re-pads mid-fade;
+  R77's screen-relative measurement is kept (the sibling view is unchanged). The wasm actual accepts
+  and ignores it — the browser renders cues inside the `<video>` element. Not lifted on the handset
+  chrome (R244).
+- **FR-R251-5** — `CHROME_HIDE_MS` (3 600) and R112's Back semantics are untouched.
+- **Not done:** FR-R251-6 and verification 3 (device screenshots); verification 1 is built as
+  `PlayerDpadRevealTest` (five keys × hidden/visible, the pill/card/picker/rail exceptions, and the
+  **→ → OK** model).
