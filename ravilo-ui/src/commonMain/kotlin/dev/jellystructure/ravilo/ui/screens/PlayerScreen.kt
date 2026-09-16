@@ -80,6 +80,9 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -134,6 +137,8 @@ import org.jetbrains.compose.resources.painterResource
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 private const val CHROME_HIDE_MS = 3_600L
+/** R77's screen-relative subtitle floor; R251 (FR-R251-4) adds the transport band's height to it while the chrome is up. */
+private val SUBTITLE_FLOOR_INSET = 28.dp
 private const val CURSOR_HIDE_MS = 2_000L // R157 FR-R157-3.2
 private const val EPRAIL_HIDE_MS = 30_000L // R208: auto-close the episode rail after inactivity
 private const val NEXTUP_AT_MS   = 20_000L    // R111: show next-up card when this many ms remain (was 34s — too early)
@@ -167,7 +172,34 @@ private const val BUFFER_MOMENT_DEEPEN_MS = 60_000L
 
 // ─── Focus model ──────────────────────────────────────────────────────────────
 
-private enum class PlFocus { SKIP_INTRO, SEEK_BAR, SKIP_BACK, PLAY, SKIP_FWD, TRACKS, NEXT_EP, BACK }
+internal enum class PlFocus { SKIP_INTRO, SEEK_BAR, SKIP_BACK, PLAY, SKIP_FWD, TRACKS, NEXT_EP, BACK }
+
+/** R251 — the five D-pad keys the chrome-hidden rule applies to (media keys are not among them, R44). */
+internal enum class PlayerDpadKey { LEFT, RIGHT, UP, DOWN, SELECT }
+
+/**
+ * R251 (FR-R251-1/2) — a key that finds the chrome hidden reveals it and does nothing else. One rule
+ * for all five keys, so **→ → OK** means the same thing whether or not the chrome auto-hid a moment
+ * earlier: `hideChrome()` moves focus to PLAY (R178), and before this phase Left/Right acted on that
+ * moved focus immediately while Select did not — the same three keys reached *Audio & Subs* or
+ * *Next episode* depending on a timer the viewer was not watching (stue TV, 2026-09-16, twice).
+ *
+ * "Hidden" is R178's own test with its live exceptions: the Skip Intro pill and the next-up/credits
+ * card render regardless of `chromeVisible` and are genuinely focused when shown; the picker and the
+ * episode rail hold the auto-hide off while open (see `LaunchedEffect(chromeRevision)`), so they can
+ * never be found "hidden" — listed here so a future hide path cannot swallow a key aimed at them.
+ * [key] is accepted so the rule is visibly the same for every key (the open question — Up revealing
+ * *and* moving to the seek bar — is answered no: one rule for all five is the point).
+ */
+@Suppress("UNUSED_PARAMETER")
+internal fun dpadRevealsOnly(
+    key: PlayerDpadKey,
+    chromeVisible: Boolean,
+    focus: PlFocus,
+    nextUpVisible: Boolean,
+    epRailOpen: Boolean,
+    pickerOpen: Boolean,
+): Boolean = !chromeVisible && focus != PlFocus.SKIP_INTRO && !nextUpVisible && !epRailOpen && !pickerOpen
 private enum class NuFocus { PLAY, STAY }
 
 // R218 (FR-R218-1) — "PlayerStore exposes a single derived buffering state, not three booleans." This
@@ -347,6 +379,8 @@ fun PlayerScreen(
 
     // Chrome visibility — bumping chromeRevision restarts the auto-hide timer
     var chromeVisible  by remember { mutableStateOf(true) }
+    // R251 (FR-R251-4) — the bottom transport band's measured height, reported by PlayerChrome.
+    var transportBandPx by remember { mutableStateOf(0) }
     var chromeRevision by remember { mutableLongStateOf(0L) }
     // R157 (FR-R157-3.2) — bumping restarts the cursor auto-hide timer, independently of chrome.
     var pointerActivityRevision by remember { mutableLongStateOf(0L) }
@@ -1239,8 +1273,11 @@ fun PlayerScreen(
                 focusRequester = playerFR,
                 onFocused = {},
                 onLeft = {
+                    // R251 (FR-R251-1) — captured before wake(), like onSelect's: a hidden chrome is
+                    // only revealed; the NEXT press moves.
+                    val revealOnly = dpadRevealsOnly(PlayerDpadKey.LEFT, chromeVisible, focus, nextUpVisible, epRailOpen, pickerOpen)
                     wake()
-                    when {
+                    if (!revealOnly) when {
                         nextUpVisible -> nuFocus = NuFocus.PLAY
                         epRailOpen -> focusedEpIdx = (focusedEpIdx - 1).coerceAtLeast(0)
                         // R195 §D — switching tab always resets to level 1, focused on whichever
@@ -1258,8 +1295,9 @@ fun PlayerScreen(
                     }
                 },
                 onRight = {
+                    val revealOnly = dpadRevealsOnly(PlayerDpadKey.RIGHT, chromeVisible, focus, nextUpVisible, epRailOpen, pickerOpen)  // R251
                     wake()
-                    when {
+                    if (!revealOnly) when {
                         nextUpVisible -> nuFocus = NuFocus.STAY
                         epRailOpen -> episodes?.let { focusedEpIdx = (focusedEpIdx + 1).coerceAtMost(it.size - 1) }
                         pickerOpen -> pickerTapTab(1)
@@ -1275,8 +1313,9 @@ fun PlayerScreen(
                     }
                 },
                 onUp = {
+                    val revealOnly = dpadRevealsOnly(PlayerDpadKey.UP, chromeVisible, focus, nextUpVisible, epRailOpen, pickerOpen)  // R251
                     wake()
-                    when {
+                    if (!revealOnly) when {
                         epRailOpen -> { epRailOpen = false; scheduleHide() }
                         // R195 §D — Up/Down moves within whichever level is active.
                         pickerOpen -> if (pickerLevel == 1) { if (pickerVersionIdx > 0) pickerVersionIdx-- }
@@ -1287,8 +1326,9 @@ fun PlayerScreen(
                     }
                 },
                 onDown = {
+                    val revealOnly = dpadRevealsOnly(PlayerDpadKey.DOWN, chromeVisible, focus, nextUpVisible, epRailOpen, pickerOpen)  // R251
                     wake()
-                    when {
+                    if (!revealOnly) when {
                         nextUpVisible -> {}
                         epRailOpen -> {}
                         pickerOpen -> if (pickerLevel == 1) {
@@ -1321,7 +1361,8 @@ fun PlayerScreen(
                     // hidden, just wake" and swallowed the real Select into a togglePlay(), even though
                     // the pill/card was visibly focused on screen the whole time. Both are genuinely
                     // interactive whenever they're showing, regardless of chrome.
-                    val wasHidden = !chromeVisible && focus != PlFocus.SKIP_INTRO && !nextUpVisible
+                    // R251 (FR-R251-1) — the same rule the four direction keys now use.
+                    val wasHidden = dpadRevealsOnly(PlayerDpadKey.SELECT, chromeVisible, focus, nextUpVisible, epRailOpen, pickerOpen)
                     wake()
                     if (wasHidden) {
                         // FR-RV-SEL1-3: togglePlay() already calls wake(), so chrome is revealed too.
@@ -1410,12 +1451,25 @@ fun PlayerScreen(
         // playing. Re-arming mirrors PlayerLifecycleEffect's own onForeground path exactly (same
         // re-negotiate-without-a-full-player-rebuild shape) rather than inventing a second one.
         // FR-R220-5 — feeds rawBufferMoment above so a rung running past R218's debounce shows STALL.
+        // R251 (FR-R251-4) — subtitles rise above the transport band while the TV chrome is up: R77's
+        // screen-relative 28 dp floor plus the band's measured height, on the chrome's own fade timing;
+        // back to the floor when hidden. Same visibility test as the chrome's AnimatedVisibility below.
+        // The handset chrome (R244) is not lifted here — R244 owns the phone player.
+        val chromeUpForSubs = !handset && (chromeVisible || displayedBufferMoment == PlBufferMoment.STALL) &&
+            displayedBufferMoment != PlBufferMoment.COLD
+        val transportBandDp = with(LocalDensity.current) { transportBandPx.toDp() }
+        val subtitleInset by animateDpAsState(
+            targetValue = if (chromeUpForSubs) SUBTITLE_FLOOR_INSET + transportBandDp else SUBTITLE_FLOOR_INSET,
+            animationSpec = tween(if (chromeUpForSubs) RaviloMotion.CHROME_FADE_IN_MS else RaviloMotion.CHROME_FADE_OUT_MS),
+            label = "subtitleInset",
+        )
         PlayerVideoSurface(
             player,
             Modifier.fillMaxSize(),
             onVideoOutputStuck = { armSession(currentItemId) },
             onVideoOutputRecovering = { videoOutputRecovering = it },
             fill = fillMode,   // R244 (FR-R244-6)
+            subtitleBottomInset = subtitleInset,   // R251 (FR-R251-4)
         )
 
         // ── Dim scrim (deepens when chrome is up, paused, or R218's moment C stalls) ──
@@ -1682,6 +1736,7 @@ fun PlayerScreen(
                 container       = (sessionState as? PlayerSessionState.Ready)?.ticket?.container ?: "",
                 stallActive      = stallActive,
                 seekMomentActive = displayedBufferMoment == PlBufferMoment.SEEK,
+                onTransportBandHeight = { transportBandPx = it },  // R251 (FR-R251-4)
                 // R157 — PlayerChrome is a stateless presentational composable; it reports which
                 // logical control was clicked/hovered and this dispatcher (which has wake/skip/
                 // togglePlay/etc in scope) does the actual work, mirroring the root's onSelect dispatch.
@@ -1897,6 +1952,9 @@ private fun PlayerChrome(
     onSeekStart: (Long) -> Unit,
     onSeekDrag: (Long) -> Unit,
     onSeekEnd: () -> Unit,
+    // R251 (FR-R251-4) — the bottom transport band's measured height in px (it is bottom-anchored, so
+    // this is also its height above the screen edge); the caller lifts subtitles above it.
+    onTransportBandHeight: (Int) -> Unit = {},
 ) {
     val topScrim = remember {
         Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.72f), Color.Transparent))
@@ -1937,6 +1995,7 @@ private fun PlayerChrome(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
+                .onSizeChanged { onTransportBandHeight(it.height) }  // R251 (FR-R251-4)
                 .padding(horizontal = 48.dp)
                 .padding(top = 12.dp, bottom = 16.dp),
         ) {
@@ -1959,6 +2018,7 @@ private fun PlayerChrome(
                 fontFamily = SpaceGrotesk,
                 letterSpacing = (-0.5).sp,
                 maxLines = 1,
+                overflow = TextOverflow.Ellipsis,  // R251 (FR-R251-3)
             )
             Spacer(Modifier.height(8.dp))
 
@@ -3072,7 +3132,7 @@ private fun NextUpCard(
                 }
                 Spacer(Modifier.height(3.dp))
                 subLabel?.let {
-                    Text(it, color = colors.textSecondary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                    Text(it, color = colors.textSecondary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
                 Text(
                     text = titleText,
@@ -3081,6 +3141,7 @@ private fun NextUpCard(
                     fontWeight = FontWeight.Bold,
                     fontFamily = SpaceGrotesk,
                     maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,  // R251 (FR-R251-3)
                 )
                 Spacer(Modifier.height(10.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -3153,6 +3214,7 @@ private fun NuButton(label: String, focused: Boolean, isPrimary: Boolean, colors
             fontSize = 12.sp,
             fontWeight = FontWeight.SemiBold,
             maxLines = 1,
+            overflow = TextOverflow.Ellipsis,  // R251 (FR-R251-3)
         )
     }
 }
@@ -3337,6 +3399,7 @@ private fun EpisodeRailCard(
             fontSize = 14.sp,
             fontWeight = FontWeight.SemiBold,
             maxLines = 1,
+            overflow = TextOverflow.Ellipsis,  // R251 (FR-R251-3)
         )
         if (ep.durationLabel.isNotEmpty()) {
             Text(ep.durationLabel, color = Color.White.copy(0.40f), fontSize = 11.sp)

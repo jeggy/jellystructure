@@ -20,6 +20,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.ui.SubtitleView
 import android.util.Log
@@ -54,7 +56,11 @@ actual fun PlayerVideoSurface(
     onVideoOutputStuck: () -> Unit,
     onVideoOutputRecovering: (Boolean) -> Unit,
     fill: Boolean,
+    subtitleBottomInset: Dp,
 ) {
+    // R251 (FR-R251-4) — applied through AndroidView's update so a change while the chrome fades in/out
+    // re-pads the live SubtitleView; the floor (28 dp, R77) is what the caller passes when hidden.
+    val subtitleInsetPx = with(LocalDensity.current) { subtitleBottomInset.roundToPx() }
     // R77: collect video geometry and compute display aspect ratio (DAR).
     // pixelWidthHeightRatio (SAR) corrects anamorphic encoding (e.g. DVD 720×480 @ SAR 32:27 → 16:9).
     // ExoPlayer applies rotation itself, so width/height already reflect the on-screen orientation —
@@ -155,11 +161,11 @@ actual fun PlayerVideoSurface(
         AndroidView(
             factory = { ctx ->
                 val subtitles = SubtitleView(ctx)
-                val bottomPx = (28 * ctx.resources.displayMetrics.density).toInt()
-                subtitles.setPadding(0, 0, 0, bottomPx)
+                subtitles.setPadding(0, 0, 0, subtitleInsetPx)
                 player.setSubtitleView(subtitles)
                 subtitles
             },
+            update = { subtitles -> subtitles.setPadding(0, 0, 0, subtitleInsetPx) },  // R251 (FR-R251-4)
             modifier = Modifier.fillMaxSize(),
         )
     }
