@@ -16,9 +16,13 @@ android {
         minSdk = 21
         targetSdk = 36
         // R215: deploy-play-store.yml overrides both via -Pravilo.versionCode/-Pravilo.versionName,
-        // derived from the release tag. Unset for local/sideload builds, which keep 1 / "1.0".
+        // derived from the release tag. Unset for local/sideload builds, which keep versionCode 1.
+        // R252 (FR-R252-1): versionName is the root project's resolved buildVersion — which already
+        // prefers -Pravilo.versionName and otherwise falls back to `git describe` — so the installed
+        // package's versionName and :shared's BuildInfo.version agree by construction, and a sideload
+        // reads "1.18-3-g6d4499e" rather than a "1.0" that meant nothing.
         versionCode = (project.findProperty("ravilo.versionCode") as String?)?.toInt() ?: 1
-        versionName = (project.findProperty("ravilo.versionName") as String?) ?: "1.0"
+        versionName = rootProject.extra["buildVersion"] as String
     }
 
     signingConfigs {

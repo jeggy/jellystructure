@@ -24,8 +24,10 @@ import kotlinx.coroutines.CancellationException
 private const val JF_PAGE_SIZE = 200
 
 private const val DEVICE_ID = "jellystructure-server-v01"
-private const val AUTH_HEADER =
-    """MediaBrowser Client="Jellystructure", Device="Server", DeviceId="$DEVICE_ID", Version="0.1.0""""
+// Phase 224 (FR-224-1) — the server's own identity carries its real version (was a literal "0.1.0").
+private val AUTH_HEADER: String by lazy {
+    """MediaBrowser Client="Jellystructure", Device="Server", DeviceId="$DEVICE_ID", Version="${headerSafe(dev.jellystructure.ServerVersion.current)}""""
+}
 
 // R56 — DeviceProfile sent to Jellyfin PlaybackInfo. Declares broad direct-play support (so most
 // items stream the raw container) and per-format subtitle delivery: text subs External, image subs
@@ -226,9 +228,7 @@ class JellyfinClient {
         identity: JellyfinDeviceIdentity? = null,
     ): JellyfinAuthResponse {
         val url = baseUrl.trimEnd('/') + "/Users/AuthenticateByName"
-        val authHeader = if (identity != null) {
-            """MediaBrowser Client="Ravilo", Device="${headerSafe(identity.deviceName)}", DeviceId="${headerSafe(identity.deviceId)}", Version="0.1.0""""
-        } else AUTH_HEADER
+        val authHeader = jellyfinIdentityHeader(identity)
         val response = httpPost(url) {
             header("Authorization", authHeader)
             contentType(ContentType.Application.Json)
@@ -1204,22 +1204,39 @@ class JellyfinClient {
  * signs in. The initial `POST /api/tv/login` auth call (before a `DeviceData` row exists) builds an
  * equivalent identity directly from `deviceId` + `username`.
  */
-data class JellyfinDeviceIdentity(val deviceId: String, val deviceName: String) {
+data class JellyfinDeviceIdentity(
+    val deviceId: String,
+    val deviceName: String,
+    // Phase 224 (FR-224-3): the build the device last reported (R252). Null ⇒ the header carries no
+    // Version at all, and Jellyfin keeps whatever it last learned for that device.
+    val appVersion: String? = null,
+) {
     companion object {
         fun forDevice(device: DeviceData): JellyfinDeviceIdentity =
-            JellyfinDeviceIdentity("ravilo-${device.deviceId}-${device.jellyfinUserId}", device.displayName.ifBlank { "Ravilo TV" })
+            JellyfinDeviceIdentity("ravilo-${device.deviceId}-${device.jellyfinUserId}", device.displayName.ifBlank { "Ravilo TV" }, device.appVersion)
     }
 }
 
-private fun headerSafe(s: String): String = s.replace("\"", "'").replace("\n", " ").take(64)
+internal fun headerSafe(s: String): String = s.replace("\"", "'").replace("\n", " ").take(64)
+
+/**
+ * Phase 224 (FR-224-3) — the one place a Jellyfin identity becomes header text. A device identity emits
+ * `Version` only when the device has reported one (10.11.11 `AuthorizationContext.cs:167-176`: a blank
+ * Version leaves the stored value alone, a differing one updates it); no identity ⇒ the server's own.
+ */
+internal fun jellyfinIdentityHeader(identity: JellyfinDeviceIdentity?): String {
+    if (identity == null) return AUTH_HEADER
+    val version = identity.appVersion?.trim()?.ifBlank { null }?.let { """, Version="${headerSafe(it)}"""" } ?: ""
+    return """MediaBrowser Client="Ravilo", Device="${headerSafe(identity.deviceName)}", DeviceId="${headerSafe(identity.deviceId)}"$version"""
+}
 
 /** Canonical authenticated Jellyfin header — one place so no call site can drift (Phase 50). Phase 110:
- *  an [identity] swaps in a per-device Client/Device/DeviceId instead of the shared server identity. */
+ *  an [identity] swaps in a per-device Client/Device/DeviceId instead of the shared server identity.
+ *  Phase 224 (FR-224-4): a call site that passes no identity still gets the device's own when the token
+ *  is a device's — [DeviceIdentityRegistry] — so a device token never travels under `Device="Server"`. */
 private fun HttpRequestBuilder.jellyfinAuth(token: String, identity: JellyfinDeviceIdentity? = null) {
-    val header = if (identity != null) {
-        """MediaBrowser Client="Ravilo", Device="${headerSafe(identity.deviceName)}", DeviceId="${headerSafe(identity.deviceId)}", Version="0.1.0""""
-    } else AUTH_HEADER
-    header("Authorization", """$header, Token="$token"""")
+    val resolved = identity ?: DeviceIdentityRegistry.identityFor(token)
+    header("Authorization", """${jellyfinIdentityHeader(resolved)}, Token="$token"""")
 }
 
 /**

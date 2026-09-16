@@ -79,6 +79,20 @@ private fun decodeCapabilityLine(d: dev.jellystructure.api.OverviewDevice): Stri
     return "picture it can take · ${parts.joinToString(" · ")}$whenPart"
 }
 
+// Phase 224 (FR-224-5) — which build this device runs, from the headers R252 clients send on every
+// request. "not reported yet" is the honest state for a client that predates R252 — same idiom as the
+// decode line's "not measured yet" above.
+private fun appVersionLine(d: dev.jellystructure.api.OverviewDevice): String {
+    val platform = when (d.platform) {
+        null -> null
+        "tv" -> "TV"; "phone" -> "Phone"; "web" -> "Web"; "tizen" -> "Tizen"; "cast" -> "Chromecast"
+        else -> d.platform.esc()
+    }
+    val version = d.appVersion?.let { "Ravilo ${it.esc()}" }
+    if (version == null && platform == null) return "version · not reported yet"
+    return listOfNotNull(version, platform).joinToString(" · ")
+}
+
 private fun usersAgo(epochMs: Long): String = if (epochMs <= 0) "never" else dev.jellystructure.formatRelativeAgo((epochMs / 1000).toString())
 private fun usersAt(epochMs: Long): String = if (epochMs <= 0) "—" else dev.jellystructure.formatStoredTs((epochMs / 1000).toString())
 
@@ -170,6 +184,7 @@ private suspend fun refreshUsersList(scope: CoroutineScope) {
                    <b class="tiny">${d.name.esc()}</b>$connBadge
                    <div class="tiny muted">created ${usersAt(d.createdAt)} · last seen ${usersAgo(d.lastSeen)}</div>
                    <div class="tiny muted usr-cap">${decodeCapabilityLine(d)}</div>
+                   <div class="tiny muted usr-cap">${appVersionLine(d)}</div>
                    $playing
                    $quality
                  </div>

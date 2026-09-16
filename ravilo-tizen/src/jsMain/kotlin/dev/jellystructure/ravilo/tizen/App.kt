@@ -20,6 +20,7 @@ class App(val baseUrl: String) {
         client = httpClient,
         baseUrl = baseUrl,
         deviceToken = { MultiTokenStore.getActive()?.deviceToken },
+        platform = "tizen", // R252
     )
 
     private val backStack = mutableListOf<Screen>()

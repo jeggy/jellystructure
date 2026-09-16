@@ -958,6 +958,9 @@ internal fun isTextSubCodec(c: String?): Boolean =
  * diverge on [TokenCheck.UNKNOWN].
  */
 private suspend fun JellyfinClient.pairedTokenCheck(baseUrl: String, device: DeviceData): TokenCheck {
+    // Phase 224 (FR-224-4) — before this device's token goes anywhere (checkToken below, tvToken's
+    // callers after it), the registry knows whose it is, so no call can send it under Device="Server".
+    dev.jellystructure.auth.DeviceIdentityRegistry.remember(device)
     val userToken = device.jellyfinUserToken
     val now = nowMs()
     tokenCacheMutex.withLock {

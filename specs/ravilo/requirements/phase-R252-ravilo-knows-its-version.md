@@ -7,10 +7,10 @@
 
 ## Status
 
-`Planned` — written 2026-09-16 alongside 224 from a read of `shared/build.gradle.kts`,
+`✓ Built` — written 2026-09-16 alongside 224 from a read of `shared/build.gradle.kts`,
 `TvApiClient.kt`, the `createTvApiClient` actuals (Android, wasmJs), `ravilo-tizen/App.kt`,
-`ravilo-cast/Receiver.kt`, `ravilo-android/build.gradle.kts` and `deploy-play-store.yml`. Not
-dev-reviewed. `:shared`, `:ravilo-ui`, `:ravilo-android`, `:ravilo-tizen`, `:ravilo-cast`. Safe to
+`ravilo-cast/Receiver.kt`, `ravilo-android/build.gradle.kts` and `deploy-play-store.yml`; **implemented
+2026-09-17** (see §Implementation notes). Not dev-reviewed, not device-tested. `:shared`, `:ravilo-ui`, `:ravilo-android`, `:ravilo-tizen`, `:ravilo-cast`. Safe to
 ship before or after 224 (FR-R252-5).
 
 ## What the code does (traced against `main`, 2026-09-16)
@@ -91,3 +91,22 @@ to a placeholder.
    (`BuildInfo.version`); the Tizen store listing will not until someone derives it.
 3. **The wasm dev server** (`runDev`) serves `index.html` without injection, so a dev web build reports
    the compiled `git describe` — which is right, but worth knowing when reading the dashboard.
+
+## Implementation notes (2026-09-17)
+
+`shared/build.gradle.kts` generates `dev.jellystructure.shared.BuildInfo` from the root's `buildVersion`
+(same wiring as the backend's generator). `RaviloVersion.kt`: `RaviloHeaders` (the two names, shared
+with the backend), `raviloVersion()` = the platform override else `BuildInfo.version`, and an
+`internal expect fun runtimeVersionOverride()` with four actuals — wasmJs reads
+`window.__RAVILO_VERSION__`, Android / linuxX64 / JS return null. `TvApiClient` gained a `platform`
+constructor argument (default `unknown`) and a private `identify()` that `auth()`, `login()`,
+`castRedeem()`, `unpair()` and the WebSocket request block all call. Entry points: Android `tv`/`phone`
+from `RaviloAppContext.isTelevision`, wasmJs `web`, Tizen `tizen`, Cast `cast`. `:ravilo-android`'s
+`versionName` is now `rootProject.extra["buildVersion"]`.
+
+**Verified:** `:shared:compileKotlinWasmJs`, `:shared:compileKotlinJs`, `:ravilo-ui:compileKotlinWasmJs`,
+`:ravilo-ui:compileDebugKotlinAndroid`, `:ravilo-tizen:compileKotlinJs`, `:ravilo-cast:compileKotlinJs`
+clean. `BuildInfo.version` on this tree: `1.18-1-g809fc650-dirty`; with `-Pravilo.versionName=9.9` the
+constant is `9.9` and the merged release manifest carries `android:versionName="9.9"` (the `-rel`
+suffix the verification text guessed applies at APK naming, not in the manifest). **Not done:** the
+Pixel 9 run against a 224 backend (§Verification 3) — no device this session.

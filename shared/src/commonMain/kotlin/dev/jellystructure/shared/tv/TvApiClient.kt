@@ -7,6 +7,8 @@ import io.ktor.client.request.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
 import io.ktor.websocket.*
+import dev.jellystructure.shared.RaviloHeaders
+import dev.jellystructure.shared.raviloVersion
 import kotlinx.serialization.json.Json
 
 // R146: ids per /api/tv/playstate request. 100 × ~33 chars ≈ 3.3 KB — well under the Ktor CIO
@@ -34,6 +36,9 @@ class TvApiClient(
     private val deviceToken: () -> String?,
     private val wsClient: HttpClient = client,
     private val json: Json = Json { ignoreUnknownKeys = true; isLenient = true },
+    // R252 (FR-R252-2) — which kind of client this is, stated on every request: tv · phone · web ·
+    // tizen · cast. Each entry point passes its own; the version is never passed (see identify()).
+    private val platform: String = "unknown",
 ) {
 
     // ─── Login (no auth) ─────────────────────────────────────────────────────
@@ -43,6 +48,7 @@ class TvApiClient(
      *  [TvApiError.Http] on failure (401 = invalid credentials; 503 = Jellyfin not configured). */
     suspend fun login(username: String, password: String, deviceId: String, deviceName: String? = null): PairResult {
         val r = client.post("$baseUrl/api/tv/login") {
+            identify()
             jsonBody(json.encodeToString(TvLoginRequest(username, password, deviceId, deviceName)))
         }
         r.assertSuccess()
@@ -281,6 +287,7 @@ class TvApiClient(
     /** The receiver redeems the code for its own device token — pre-auth, so no [auth] here. */
     suspend fun castRedeem(code: String, deviceName: String?, receiverId: String?): PairResult {
         val r = client.post("$baseUrl/api/tv/cast/redeem") {
+            identify()
             jsonBody(json.encodeToString(CastRedeemRequest(code, deviceName, receiverId)))
         }
         r.assertSuccess()
@@ -327,6 +334,7 @@ class TvApiClient(
      */
     suspend fun unpair(tokenOverride: String) {
         client.post("$baseUrl/api/tv/pair/unpair") {
+            identify()
             headers { append(HttpHeaders.Authorization, "Bearer $tokenOverride") }
         }.assertSuccess()
     }
@@ -533,6 +541,7 @@ class TvApiClient(
         // R210 — wsClient (not client): on Android this is the CIO-backed client, kept solely for
         // this WebSocket upgrade after REST calls moved to a different engine.
         wsClient.webSocket(wsUrl, request = {
+            identify()
             timeout {
                 requestTimeoutMillis = HttpTimeoutConfig.INFINITE_TIMEOUT_MS
                 socketTimeoutMillis = HttpTimeoutConfig.INFINITE_TIMEOUT_MS
@@ -573,8 +582,20 @@ class TvApiClient(
     // ─── Helpers ─────────────────────────────────────────────────────────────
 
     private fun HttpRequestBuilder.auth() {
+        identify()
         val token = deviceToken() ?: return
         headers { append(HttpHeaders.Authorization, "Bearer $token") }
+    }
+
+    // R252 (FR-R252-2) — every request says which build and which platform it comes from, so the backend
+    // can store it and forward the truth to Jellyfin (224). Two headers, never a login-body field: a
+    // device token outlives the build that minted it, so the only truthful moment is each request. The
+    // version comes from raviloVersion() alone — no caller can pass a different one.
+    private fun HttpRequestBuilder.identify() {
+        headers {
+            append(RaviloHeaders.VERSION, raviloVersion())
+            append(RaviloHeaders.PLATFORM, platform)
+        }
     }
 
     private fun HttpRequestBuilder.jsonBody(body: String) {

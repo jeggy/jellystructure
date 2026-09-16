@@ -55,6 +55,9 @@ data class OverviewDevice(
     @SerialName("decode_max_bitrate_hevc") val decodeMaxBitrateHevc: Long? = null,
     @SerialName("decode_max_bitrate_h264") val decodeMaxBitrateH264: Long? = null,
     @SerialName("decode_measured_at") val decodeMeasuredAt: Long? = null,
+    // Phase 224 (FR-224-5) — the build and platform this device last reported; both null ⇒ never said.
+    @SerialName("app_version") val appVersion: String? = null,
+    val platform: String? = null,
 )
 
 /** Phase 177 §FR-177-5 — mirrors the backend's `dev.jellystructure.tv.QoeSummary`. [hasIssue] matches

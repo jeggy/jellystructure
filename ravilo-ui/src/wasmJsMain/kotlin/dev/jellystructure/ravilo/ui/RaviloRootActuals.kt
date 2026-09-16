@@ -50,7 +50,7 @@ actual fun createTvApiClient(baseUrl: String, deviceTokenProvider: () -> String?
             socketTimeoutMillis = 10_000L
         }
     }
-    return TvApiClient(httpClient, baseUrl, deviceTokenProvider)
+    return TvApiClient(httpClient, baseUrl, deviceTokenProvider, platform = "web") // R252
 }
 
 private fun jsOrigin(): String = js("window.location.origin")

@@ -129,7 +129,7 @@ private class Receiver {
         val a = api
         if (a != null && serverUrl == base) return a
         serverUrl = base.trimEnd('/')
-        return TvApiClient(client = HttpClient(Js), baseUrl = serverUrl, deviceToken = { token }).also { api = it }
+        return TvApiClient(client = HttpClient(Js), baseUrl = serverUrl, deviceToken = { token }, platform = "cast" /* R252 */).also { api = it }
     }
 
     private suspend fun intercept(request: dynamic): dynamic {

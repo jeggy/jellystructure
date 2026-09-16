@@ -66,6 +66,10 @@ EXPOSE 8080
 
 ENV STATIC_DIR=/srv
 ENV SERVER_PORT=8080
+# Phase 224 (FR-224-6) — same as the main image: the published version, injected into index.html by
+# web-static-server as window.__RAVILO_VERSION__ (R252 reads it). After the compile layers on purpose.
+ARG BUILD_VERSION=dev
+ENV RAVILO_VERSION=$BUILD_VERSION
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD wget -qO- http://127.0.0.1:8080/ || exit 1

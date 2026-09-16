@@ -96,7 +96,7 @@ class CastService(
      * expired, already used, or the minting phone's session is gone. [receiverId] reuses an existing
      * receiver row (storage survived between casts); absent ⇒ a fresh `cast-…` device id.
      */
-    fun redeem(code: String, deviceName: String?, receiverId: String?): Pair<DeviceData, String>? {
+    fun redeem(code: String, deviceName: String?, receiverId: String?, appVersion: String? = null, platform: String? = null): Pair<DeviceData, String>? {
         val now = nowMs()
         db.castHandoffQueries.sweep(now)
         val row = db.castHandoffQueries.getByCode(code.trim().uppercase()).executeAsOneOrNull() ?: return null
@@ -116,6 +116,8 @@ class CastService(
             isKids = phone.isKids,
             allowedLibraries = phone.allowedLibraries,
             allowedTags = phone.allowedTags,
+            appVersion = appVersion,
+            platform = platform,
             blockedTags = phone.blockedTags,
         )
     }

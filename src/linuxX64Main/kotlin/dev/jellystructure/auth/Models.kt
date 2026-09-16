@@ -38,6 +38,10 @@ data class DeviceData(
     // when Jellyfin sent none. Gates the Ravilo catalog alongside allowedLibraries.
     val allowedTags: Set<String> = emptySet(),
     val blockedTags: Set<String> = emptySet(),
+    // Phase 224 (FR-224-2): the build and platform this device last reported (R252's headers). Null =
+    // never reported; the Jellyfin header then carries no Version, and the admin row says so.
+    val appVersion: String? = null,
+    val platform: String? = null,
 )
 
 @Serializable

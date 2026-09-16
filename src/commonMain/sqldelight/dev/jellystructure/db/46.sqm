@@ -1,0 +1,5 @@
+-- Phase 224 (FR-224-2) — which build and which kind of client last spoke for a device row. See
+-- RaviloDevice.sq; this migration must stay byte-for-byte in sync with its CREATE TABLE (the
+-- SQLDelight-migration rule). NULL until the device's first R252 request; never back-filled.
+ALTER TABLE ravilo_device ADD COLUMN app_version TEXT;
+ALTER TABLE ravilo_device ADD COLUMN platform TEXT;

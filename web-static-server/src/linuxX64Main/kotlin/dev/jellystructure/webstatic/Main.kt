@@ -46,6 +46,11 @@ fun main() {
     // actual's same-origin fallback is wrong). Unset ⇒ index.html is byte-identical to before this
     // phase, no behavior change.
     val defaultServerUrl = env("DEFAULT_SERVER_URL", "").ifBlank { null }
+    // Phase 224 (FR-224-6) — the version this image was published as (BUILD_VERSION → RAVILO_VERSION),
+    // handed to the wasm app the same way: one inline assignment ahead of its bundle. R252 FR-R252-3
+    // reads it in preference to the version compiled into the bundle, which in an image is always
+    // "dev" (no .git in the build context, by design — it keeps a release build a cache hit).
+    val raviloVersion = env("RAVILO_VERSION", "").ifBlank { null }
 
     embeddedServer(
         CIO,
@@ -56,13 +61,13 @@ fun main() {
     ) {
         routing {
             get("{...}") {
-                call.serveStaticFile(dir, call.request.path(), defaultServerUrl)
+                call.serveStaticFile(dir, call.request.path(), defaultServerUrl, raviloVersion)
             }
         }
     }.start(wait = true)
 }
 
-private suspend fun ApplicationCall.serveStaticFile(dir: String, requestPath: String, defaultServerUrl: String?) {
+private suspend fun ApplicationCall.serveStaticFile(dir: String, requestPath: String, defaultServerUrl: String?, raviloVersion: String?) {
     val rel = requestPath.trimStart('/').ifEmpty { "index.html" }
 
     if (".." in rel) {
@@ -73,7 +78,7 @@ private suspend fun ApplicationCall.serveStaticFile(dir: String, requestPath: St
     val target = Path("$dir/$rel")
     if (SystemFileSystem.exists(target)) {
         if (rel == "index.html") {
-            serveBytes(injectDefaultServer(readFile(target), defaultServerUrl), rel)
+            serveBytes(injectRuntimeConfig(readFile(target), defaultServerUrl, raviloVersion), rel)
         } else {
             serveBytes(readFile(target), rel)
         }
@@ -86,7 +91,7 @@ private suspend fun ApplicationCall.serveStaticFile(dir: String, requestPath: St
     val index = Path("$dir/index.html")
     if (SystemFileSystem.exists(index)) {
         response.cacheControl(CacheControl.NoCache(null))
-        respondBytes(injectDefaultServer(readFile(index), defaultServerUrl), ContentType.Text.Html)
+        respondBytes(injectRuntimeConfig(readFile(index), defaultServerUrl, raviloVersion), ContentType.Text.Html)
     } else {
         respond(HttpStatusCode.NotFound)
     }
@@ -94,11 +99,17 @@ private suspend fun ApplicationCall.serveStaticFile(dir: String, requestPath: St
 
 // R225 FR-R225-2 — one inline script ahead of the app bundle's own <script> tag; every other asset
 // (ravilo.js, the .wasm files, composeResources/**) is untouched and stays content-addressed/cacheable.
-private fun injectDefaultServer(indexBytes: ByteArray, defaultServerUrl: String?): ByteArray {
-    if (defaultServerUrl == null) return indexBytes
+// Phase 224 (FR-224-6) extends the same script with window.__RAVILO_VERSION__ when the image carries
+// one. Neither set ⇒ index.html is byte-identical to the bundle's own.
+private fun injectRuntimeConfig(indexBytes: ByteArray, defaultServerUrl: String?, raviloVersion: String?): ByteArray {
+    if (defaultServerUrl == null && raviloVersion == null) return indexBytes
     val html = indexBytes.decodeToString()
-    val escaped = defaultServerUrl.replace("\\", "\\\\").replace("\"", "\\\"")
-    val script = "<script>window.__RAVILO_DEFAULT_SERVER__=\"$escaped\";</script>\n    "
+    fun jsString(s: String) = "\"" + s.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
+    val assignments = buildList {
+        defaultServerUrl?.let { add("window.__RAVILO_DEFAULT_SERVER__=${jsString(it)};") }
+        raviloVersion?.let { add("window.__RAVILO_VERSION__=${jsString(it)};") }
+    }.joinToString("")
+    val script = "<script>$assignments</script>\n    "
     return html.replace("<script src=\"ravilo.js\">", script + "<script src=\"ravilo.js\">").encodeToByteArray()
 }
 
