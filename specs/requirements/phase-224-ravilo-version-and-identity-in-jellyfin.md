@@ -11,11 +11,11 @@
 
 ## Status
 
-`Planned` — written 2026-09-16 from a read of `JellyfinClient.kt`, `PlaybackService.kt`,
+`✓ Built` — written 2026-09-16 from a read of `JellyfinClient.kt`, `PlaybackService.kt`,
 `RaviloDeviceService.kt`, `AuthPlugin.kt`, `TvRoutes.kt`, both Dockerfiles, `publish.yml`, Jellyfin
 10.11.11's `AuthorizationContext.cs` / `SessionManager.cs`, and a read-only `GET /Devices` +
-`GET /Sessions` against the household's Jellyfin. Not dev-reviewed. Backend, admin frontend, images and
-workflow. The client half is **R252**, which this phase needs before any number other than "unknown"
+`GET /Sessions` against the household's Jellyfin; **implemented 2026-09-17** (see §8). Not dev-reviewed, not deployed, the
+dashboard not yet observed. Backend, admin frontend, images and workflow. The client half is **R252**, which this phase needs before any number other than "unknown"
 can appear; each half is safe to ship without the other (§4, FR-224-3 and R252 FR-R252-5).
 
 **Numbering:** verified against `STATUS.md` on 2026-09-16 — admin taken through 223, Ravilo through R251.
@@ -192,3 +192,43 @@ as `dev`.
    sha rather than `1.18-1-g0ef6ff3`. A `fetch-depth: 0` (93 MB pack) would allow the richer string.
 4. **Retention.** `app_version` is one value per row, no history. If "when did this TV update" ever
    matters, that is a new table, not a column.
+
+## 8. Implementation notes (2026-09-17)
+
+**Built as specified**, one commit after the spec's. `build.gradle.kts` resolves `buildVersion` once
+(property → `ravilo.versionName` → `git describe` → `dev`) and generates `dev.jellystructure.BuildInfo`
+(plain srcDir plus an explicit dependency on every Kotlin compile task, because the SQLDelight
+`afterEvaluate` flattens srcDirs to files and would drop a `builtBy`). `ServerVersion.current` prefers
+`JELLYSTRUCTURE_VERSION`. `JellyfinDeviceIdentity.appVersion`, one `jellyfinIdentityHeader()` (emits
+`Version` only when non-blank), `jellyfinAuth()` falling back to `DeviceIdentityRegistry.identityFor(token)`,
+and the server header carrying the real version. `ravilo_device.app_version`/`platform` (migration 46),
+`RaviloDeviceService.validateDeviceToken(token, appVersion, platform)` with `recordAppInfo` as the
+change-only write, `loginDevice(appVersion, platform)`, the registry filled on every resolution and on
+`pairedTokenCheck` (which every `tvToken()` / `tvTokenForClient()` call enters first), forgotten on
+`unpair` / `removeSession` / `deleteAllForUser`. `AuthPlugin` reads both headers and hands them through;
+the login route reads them for the login identity and the row, the cast-redeem route for the receiver's
+row (`CastService.redeem` gained the two parameters). `OverviewDevice.app_version`/`platform` and the
+`RaviloUsers.kt` caption line; `design/app/ravilo-users.html` rows updated. `/api/health` carries
+`"version"`. Both Dockerfiles take `ARG BUILD_VERSION=dev` after the compile layers; `publish.yml`
+passes the release number or the short sha; `web-static-server` injects `window.__RAVILO_VERSION__`
+through one `injectRuntimeConfig()` shared with R225's default-server injection.
+
+**Two clarifications of the text above, both in the direction of "say nothing rather than something
+false":** `loginDevice` keeps the row's previous pair when the login carries none (an older client
+signing in again must not blank a newer client's report), and a blank or whitespace header is treated
+as absent — `RaviloDeviceVersionTest` pins both.
+
+**A limitation found on the way, not fixed here (OQ5).** A Chromecast receiver's row (218) holds the
+*phone's* Jellyfin user token, so two device rows share one token and the registry maps it to whichever
+of the two resolved last. Jellyfin shows that token's device under whichever name spoke last — the same
+phone/receiver flip-flop 218 already has through the explicit identities on playback calls. A receiver
+that should appear as its own device in Jellyfin needs its own Jellyfin token, which is 218's to mint.
+
+**Verified:** `compileKotlinLinuxX64` clean; `linuxX64Test` **331/0** (new: `RaviloDeviceVersionTest` ×4,
+`JellyfinIdentityHeaderTest` ×3); admin `compileKotlinWasmJs` and `:web-static-server` clean. `BuildInfo`
+on this tree reads `1.18-1-g809fc650-dirty`, and `9.9` under `-Pravilo.versionName=9.9`. The static
+server, run locally with `RAVILO_VERSION=9.9` and a default server, serves
+`<script>window.__RAVILO_DEFAULT_SERVER__="…";window.__RAVILO_VERSION__="9.9";</script>` on `/` and on a
+deep link, and a byte-identical `index.html` with neither set. **Not verified:** a Docker build with the
+arg (left to the next publish run — the ARG/ENV lines are the whole change), the live dashboard (needs
+a deploy: §6.4), and `/api/health` on a running backend.

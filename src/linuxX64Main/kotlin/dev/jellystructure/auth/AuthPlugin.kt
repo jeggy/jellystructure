@@ -63,7 +63,10 @@ private fun decodeRoutingPath(raw: String): String? {
 
 fun Application.installAuthPlugin(
     sessionService: SessionService,
-    validateDeviceToken: ((String) -> DeviceData?)? = null,
+    // Phase 224 (FR-224-2): the request's X-Ravilo-Version / X-Ravilo-Platform ride along so the device
+    // row can be updated on change — the token is durable across app updates, so this is the only
+    // moment the backend ever learns which build is speaking.
+    validateDeviceToken: ((token: String, appVersion: String?, platform: String?) -> DeviceData?)? = null,
     // Phase 111 — least-privilege by design: an API key is accepted ONLY for /api/remote/**, never for
     // the admin/media/TV surfaces. Widening that is a deliberate future decision, not a default.
     validateApiKey: ((String) -> ApiKeyData?)? = null,
@@ -127,7 +130,13 @@ fun Application.installAuthPlugin(
                 ?.removePrefix("Bearer ")
                 ?: call.request.headers["X-Ravilo-Device"]
 
-            val device = bearer?.let { validateDeviceToken(it) }
+            val device = bearer?.let {
+                validateDeviceToken(
+                    it,
+                    call.request.headers[dev.jellystructure.shared.RaviloHeaders.VERSION],
+                    call.request.headers[dev.jellystructure.shared.RaviloHeaders.PLATFORM],
+                )
+            }
             if (device != null) {
                 call.attributes.put(DeviceKey, device)
                 proceed()

@@ -71,6 +71,10 @@ private data class OverviewDevice(
     @SerialName("decode_max_bitrate_hevc") val decodeMaxBitrateHevc: Long? = null,
     @SerialName("decode_max_bitrate_h264") val decodeMaxBitrateH264: Long? = null,
     @SerialName("decode_measured_at") val decodeMeasuredAt: Long? = null,
+    // Phase 224 (FR-224-5) — the build and platform this device last reported (R252). Both null ⇒ the
+    // device has never said (an un-updated client); the row spells that out.
+    @SerialName("app_version") val appVersion: String? = null,
+    val platform: String? = null,
 )
 
 @Serializable
@@ -263,9 +267,14 @@ fun Route.tvRoutes(
         // Folding the username in here is what keeps two different profiles on one shared TV from
         // colliding on a single Jellyfin DeviceId (see JellyfinDeviceIdentity.forDevice's KDoc) —
         // post-login calls use forDevice(device), which folds in the now-known jellyfinUserId instead.
+        // Phase 224 (FR-224-2/3) — the build and platform this login comes from, R252's headers; null
+        // when an older client is signing in, and then the Jellyfin header carries no Version.
+        val appVersion = call.request.headers[dev.jellystructure.shared.RaviloHeaders.VERSION]?.trim()?.take(64)?.ifBlank { null }
+        val platform = call.request.headers[dev.jellystructure.shared.RaviloHeaders.PLATFORM]?.trim()?.take(64)?.ifBlank { null }
         val loginIdentity = dev.jellystructure.auth.JellyfinDeviceIdentity(
             "ravilo-${req.deviceId}-${req.username}",
             req.deviceName?.ifBlank { null } ?: "Ravilo TV",
+            appVersion,
         )
         val authAttempt = runCatching {
             jellyfinClient.authenticateByName(config.apiKeys.jellyfinUrl, req.username, req.password, loginIdentity)
@@ -298,6 +307,8 @@ fun Route.tvRoutes(
             // lowercases them).
             allowedTags = authResult.user.policy.allowedTags.toSet(),
             blockedTags = authResult.user.policy.blockedTags.toSet(),
+            appVersion = appVersion,
+            platform = platform,
         )
         call.respond(PairResult(
             session = TvSession(
@@ -567,7 +578,12 @@ fun Route.tvRoutes(
         val req = runCatching { call.receive<dev.jellystructure.shared.tv.CastRedeemRequest>() }.getOrElse {
             return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Invalid request"))
         }
-        val redeemed = svc.redeem(req.code, req.deviceName, req.receiverId)
+        // Phase 224 (FR-224-2) — the receiver's own build, from its headers (R252 sends them on castRedeem).
+        val redeemed = svc.redeem(
+            req.code, req.deviceName, req.receiverId,
+            appVersion = call.request.headers[dev.jellystructure.shared.RaviloHeaders.VERSION]?.trim()?.take(64)?.ifBlank { null },
+            platform = call.request.headers[dev.jellystructure.shared.RaviloHeaders.PLATFORM]?.trim()?.take(64)?.ifBlank { null },
+        )
             ?: return@post call.respond(HttpStatusCode.Unauthorized, mapOf("error" to "That code is not valid any more — cast again from your phone"))
         val (device, deviceToken) = redeemed
         call.respond(PairResult(
@@ -850,6 +866,8 @@ fun Route.tvRoutes(
                         decodeMaxBitrateHevc = decode?.hevcMaxBitrate,
                         decodeMaxBitrateH264 = decode?.h264MaxBitrate,
                         decodeMeasuredAt = decode?.measuredAt,
+                        appVersion = d.appVersion,
+                        platform = d.platform,
                     )
                 },
                 sessions = userSessions.map { s ->

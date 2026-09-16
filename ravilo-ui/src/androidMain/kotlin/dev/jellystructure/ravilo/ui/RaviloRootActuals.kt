@@ -49,7 +49,8 @@ actual fun createTvApiClient(baseUrl: String, deviceTokenProvider: () -> String?
         install(WebSockets)
         install(HttpTimeout, httpTimeoutConfig)
     }
-    return TvApiClient(restClient, baseUrl, deviceTokenProvider, wsClient = wsClient)
+    // R252 — the same runtime hardware check R234 uses: a phone in landscape is still a phone.
+    return TvApiClient(restClient, baseUrl, deviceTokenProvider, wsClient = wsClient, platform = if (RaviloAppContext.isTelevision) "tv" else "phone")
 }
 
 private fun prefs() = RaviloAppContext.get()

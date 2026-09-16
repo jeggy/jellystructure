@@ -1,6 +1,7 @@
 package dev.jellystructure.tv
 
 import dev.jellystructure.auth.DeviceData
+import dev.jellystructure.auth.DeviceIdentityRegistry
 import dev.jellystructure.auth.generateSecureToken
 import dev.jellystructure.db.JellystructureDb
 import kotlinx.cinterop.ExperimentalForeignApi
@@ -68,6 +69,10 @@ class RaviloDeviceService(private val db: JellystructureDb) {
         // lowercased once here.
         allowedTags: Set<String> = emptySet(),
         blockedTags: Set<String> = emptySet(),
+        // Phase 224 (FR-224-2) — from the login request's X-Ravilo-* headers. Null keeps what the row
+        // already knew (an older client signing in again must not blank a newer client's report).
+        appVersion: String? = null,
+        platform: String? = null,
     ): Pair<DeviceData, String> {
         val normalizedAllowed = allowedLibraries?.map { normalizeGuid(it) }?.toSet()
         val normalizedAllowedTags = allowedTags.map { it.lowercase() }.toSet()
@@ -94,6 +99,8 @@ class RaviloDeviceService(private val db: JellystructureDb) {
             allowed_libraries = encodeAllowedLibraries(normalizedAllowed),
             allowed_tags = encodeTags(normalizedAllowedTags),
             blocked_tags = encodeTags(normalizedBlockedTags),
+            app_version = appVersion ?: existing?.app_version,
+            platform = platform ?: existing?.platform,
         )
         // Force a fresh DB read on the next validateDeviceToken call — the token/policy may have
         // changed even though the device_token itself was reused (re-login as the same user).
@@ -113,12 +120,19 @@ class RaviloDeviceService(private val db: JellystructureDb) {
                 allowedLibraries = normalizedAllowed,
                 allowedTags = normalizedAllowedTags,
                 blockedTags = normalizedBlockedTags,
-            ),
+                appVersion = appVersion ?: existing?.app_version,
+                platform = platform ?: existing?.platform,
+            ).also { DeviceIdentityRegistry.remember(it) },
             deviceToken,
         )
     }
 
-    fun validateDeviceToken(token: String): DeviceData? {
+    /**
+     * Phase 224 (FR-224-2) — [appVersion]/[platform] are the request's X-Ravilo-* headers (null when the
+     * client sent none). Compared against the cached row and written only when the pair differs: one
+     * write per change, never per request, next to the once-a-minute last_seen write.
+     */
+    fun validateDeviceToken(token: String, appVersion: String? = null, platform: String? = null): DeviceData? {
         val now = nowMs()
         // Cache hit within TTL: skip the DB SELECT.
         tokenCache[token]?.let { entry ->
@@ -128,7 +142,10 @@ class RaviloDeviceService(private val db: JellystructureDb) {
                     db.raviloDeviceQueries.updateLastSeen(last_seen = now, device_token = token)
                     entry.lastSeenWritten = now
                 }
-                return entry.data
+                val data = recordAppInfo(entry.data, appVersion, platform)
+                if (data !== entry.data) tokenCache[token] = TokenEntry(data, entry.cachedAt, entry.lastSeenWritten)
+                DeviceIdentityRegistry.remember(data)
+                return data
             }
         }
         // Cache miss or expired: hit DB.
@@ -151,13 +168,26 @@ class RaviloDeviceService(private val db: JellystructureDb) {
             allowedLibraries = decodeAllowedLibraries(row.allowed_libraries),
             allowedTags = decodeTags(row.allowed_tags),
             blockedTags = decodeTags(row.blocked_tags),
-        )
+            appVersion = row.app_version,
+            platform = row.platform,
+        ).let { recordAppInfo(it, appVersion, platform) }
         tokenCache[token] = TokenEntry(data, now, now)
+        DeviceIdentityRegistry.remember(data)
         return data
     }
 
+    /** Phase 224 (FR-224-2) — the change-only write. A request that says nothing changes nothing; a
+     *  request whose pair matches the row is a no-op; only a genuinely different pair reaches the DB. */
+    private fun recordAppInfo(data: DeviceData, appVersion: String?, platform: String?): DeviceData {
+        val v = appVersion?.trim()?.take(64)?.ifBlank { null } ?: return data
+        val p = platform?.trim()?.take(64)?.ifBlank { null }
+        if (v == data.appVersion && p == data.platform) return data
+        db.raviloDeviceQueries.updateAppInfo(app_version = v, platform = p, device_token = data.deviceToken)
+        return data.copy(appVersion = v, platform = p)
+    }
+
     fun unpair(deviceToken: String) {
-        tokenCache.remove(deviceToken)
+        tokenCache.remove(deviceToken)?.let { DeviceIdentityRegistry.forget(it.data.jellyfinUserToken) }
         db.raviloDeviceQueries.deleteByToken(deviceToken)
     }
 
@@ -178,6 +208,8 @@ class RaviloDeviceService(private val db: JellystructureDb) {
                 allowedLibraries = decodeAllowedLibraries(row.allowed_libraries),
                 allowedTags = decodeTags(row.allowed_tags),
                 blockedTags = decodeTags(row.blocked_tags),
+                appVersion = row.app_version,
+                platform = row.platform,
             )
         }
 
@@ -189,11 +221,13 @@ class RaviloDeviceService(private val db: JellystructureDb) {
         // this right; this one and deleteAllForUser below didn't. Look the token up before the DB row
         // is gone so the cache entry can be dropped too.
         db.raviloDeviceQueries.getByDeviceAndUser(device_id = deviceId, jellyfin_user_id = jellyfinUserId)
-            .executeAsOneOrNull()?.let { tokenCache.remove(it.device_token) }
+            .executeAsOneOrNull()?.let { tokenCache.remove(it.device_token); DeviceIdentityRegistry.forget(it.jellyfin_user_token) }
         db.raviloDeviceQueries.deleteByDeviceAndUser(device_id = deviceId, jellyfin_user_id = jellyfinUserId)
     }
 
-    /** Phase 143 — every device row across every user, for the Users & Devices admin overview. */
+    /** Phase 143 — every device row across every user, for the Users & Devices admin overview.
+     *  Phase 224 (FR-224-4): every row resolved here is registered too, so a token a caller then hands to
+     *  Jellyfin travels under its own device's identity. */
     fun allDevices(): List<DeviceData> =
         db.raviloDeviceQueries.getAllDevices().executeAsList().map { row ->
             DeviceData(
@@ -210,7 +244,9 @@ class RaviloDeviceService(private val db: JellystructureDb) {
                 allowedLibraries = decodeAllowedLibraries(row.allowed_libraries),
                 allowedTags = decodeTags(row.allowed_tags),
                 blockedTags = decodeTags(row.blocked_tags),
-            )
+                appVersion = row.app_version,
+                platform = row.platform,
+            ).also { DeviceIdentityRegistry.remember(it) }
         }
 
     /** Phase 143 — "sign out everywhere": every device row this Jellyfin user has ever signed into. */
@@ -219,7 +255,7 @@ class RaviloDeviceService(private val db: JellystructureDb) {
         // "sign out everywhere" reported success while every signed-out device token kept working for
         // up to 5 more minutes, served straight from the cache.
         db.raviloDeviceQueries.getByUser(jellyfin_user_id = jellyfinUserId).executeAsList()
-            .forEach { tokenCache.remove(it.device_token) }
+            .forEach { tokenCache.remove(it.device_token); DeviceIdentityRegistry.forget(it.jellyfin_user_token) }
         db.raviloDeviceQueries.deleteByUser(jellyfin_user_id = jellyfinUserId)
     }
 
@@ -273,6 +309,8 @@ class RaviloDeviceService(private val db: JellystructureDb) {
                 allowedLibraries = decodeAllowedLibraries(row.allowed_libraries),
                 allowedTags = decodeTags(row.allowed_tags),
                 blockedTags = decodeTags(row.blocked_tags),
+                appVersion = row.app_version,
+                platform = row.platform,
             )
         }
 }

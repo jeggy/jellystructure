@@ -33,12 +33,23 @@ CREATE TABLE ravilo_device (
     -- timestamp for both columns above: ClientCapabilities reports both ceilings together on every
     -- negotiation, so they're always written in the same statement.
     decode_measured_at INTEGER,
+    -- Phase 224 (FR-224-2) — which build and which kind of client last spoke for this row, from the
+    -- X-Ravilo-Version / X-Ravilo-Platform headers every R252 client sends on every request. Written on
+    -- login and whenever the pair changes — never per request. NULL = the device has never said (an
+    -- un-updated client); never a placeholder, and the Jellyfin header then carries no Version at all.
+    app_version TEXT,
+    platform TEXT,
     PRIMARY KEY (device_id, jellyfin_user_id)
 );
 
 insertDevice:
-INSERT OR REPLACE INTO ravilo_device(device_id, jellyfin_user_id, jellyfin_username, jellyfin_user_token, is_admin, is_kids, device_token, display_name, created_at, last_seen, allowed_libraries, allowed_tags, blocked_tags)
-VALUES (:device_id, :jellyfin_user_id, :jellyfin_username, :jellyfin_user_token, :is_admin, :is_kids, :device_token, :display_name, :created_at, :last_seen, :allowed_libraries, :allowed_tags, :blocked_tags);
+INSERT OR REPLACE INTO ravilo_device(device_id, jellyfin_user_id, jellyfin_username, jellyfin_user_token, is_admin, is_kids, device_token, display_name, created_at, last_seen, allowed_libraries, allowed_tags, blocked_tags, app_version, platform)
+VALUES (:device_id, :jellyfin_user_id, :jellyfin_username, :jellyfin_user_token, :is_admin, :is_kids, :device_token, :display_name, :created_at, :last_seen, :allowed_libraries, :allowed_tags, :blocked_tags, :app_version, :platform);
+
+-- Phase 224 (FR-224-2) — one write per change: RaviloDeviceService compares the request's headers with
+-- the cached row and calls this only when the pair differs.
+updateAppInfo:
+UPDATE ravilo_device SET app_version = :app_version, platform = :platform WHERE device_token = :device_token;
 
 getByToken:
 SELECT * FROM ravilo_device WHERE device_token = :device_token;

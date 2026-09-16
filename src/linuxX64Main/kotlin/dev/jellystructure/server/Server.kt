@@ -270,7 +270,7 @@ fun startServer(
             allowCredentials = true
         }
 
-        installAuthPlugin(sessionService, validateDeviceToken = { deviceService.validateDeviceToken(it) }, validateApiKey = { apiKeyStore.validate(it) })
+        installAuthPlugin(sessionService, validateDeviceToken = { token, appVersion, platform -> deviceService.validateDeviceToken(token, appVersion, platform) }, validateApiKey = { apiKeyStore.validate(it) })
 
         // Security fix (2026-08-02 review, finding H4) — shared between /api/auth/login and
         // /api/tv/login; see LoginRateLimiter's doc comment.
@@ -400,7 +400,7 @@ fun startServer(
                     fun ages(m: Map<String, Long>) = m.entries.joinToString(",", "{", "}") { "\"${it.key}\":${it.value}" }
                     val refreshersJson = """{"playstate_age_ms":${ages(dev.jellystructure.tv.PlaystateCache.refresherAges())},"continue_age_ms":${ages(homeFeedService.continueRefreshAges())}}"""
                     call.respondText(
-                        """{"status":"ok","fd_count":${fdWatchdog.currentCount},"fd_high_water_mark":${fdWatchdog.highWaterMark},"fd_census":${census?.toJson() ?: "null"},""" +
+                        """{"status":"ok","version":"${dev.jellystructure.ServerVersion.current.replace("\\", "\\\\").replace("\"", "\\\"")}","fd_count":${fdWatchdog.currentCount},"fd_high_water_mark":${fdWatchdog.highWaterMark},"fd_census":${census?.toJson() ?: "null"},""" +
                             """"outbound_http_gate":${outboundHttp.toJson()},"process_gate":${processGate.toJson()},""" +
                             """"tmdb_pacing":${Json.encodeToString(TmdbPacingStats.serializer(), tmdbPacing)},""" +
                             """"mkv_health_swept_at":${mkvHealthSweptAt ?: "null"},"job_queues":${jobQueues.toJson()},""" +

@@ -106,6 +106,13 @@ ENV SESSIONS_FILE=/config/sessions.json
 # directory (Main.kt), so this one variable fixes both.
 ENV DB_FILE=/config/jellystructure.db
 ENV SERVER_PORT=9505
+# Phase 224 (FR-224-6) — the version this image was published as, from publish.yml's build-arg ("1.18"
+# on a release, the short sha on a push), read at runtime by JellyfinClient's own header and /api/health.
+# Declared HERE, after every compile layer, so a release build of an already-pushed commit stays a full
+# cache hit — a compile-time value would recompile both images for the tag alone. Absent ⇒ "dev", which
+# is also what the compiled-in BuildInfo says inside an image (no .git in the build context).
+ARG BUILD_VERSION=dev
+ENV JELLYSTRUCTURE_VERSION=$BUILD_VERSION
 
 # /api/health is deliberately unauthenticated (a liveness probe for exactly this) -- see
 # AuthPlugin.kt's exact-match carve-out.

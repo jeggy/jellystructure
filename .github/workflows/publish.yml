@@ -100,6 +100,10 @@ jobs:
             echo "$TAGS"
             echo "TAGEOF"
           } >> "$GITHUB_OUTPUT"
+          # Phase 224 (FR-224-6) — what the image reports as its version at runtime: the release's own
+          # number, or the short sha for a continuous main build. A build-arg placed after the compile
+          # layers in both Dockerfiles, so it never invalidates the cached build.
+          echo "build_version=${VERSION:-${GITHUB_SHA::8}}" >> "$GITHUB_OUTPUT"
 
       - name: Build and push
         uses: docker/build-push-action@v6
@@ -109,5 +113,7 @@ jobs:
           platforms: linux/amd64
           push: true
           tags: ${{ steps.tags.outputs.tags }}
+          build-args: |
+            BUILD_VERSION=${{ steps.tags.outputs.build_version }}
           cache-from: type=gha,scope=${{ matrix.image }}
           cache-to: type=gha,mode=max,scope=${{ matrix.image }}
