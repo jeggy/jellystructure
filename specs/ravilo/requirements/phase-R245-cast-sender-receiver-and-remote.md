@@ -8,7 +8,9 @@
 
 ## Status
 
-`Planned` — written 2026-09-16, **not dev-reviewed**. Built into the mockups 2026-09-16.
+`Planned` — written 2026-09-16, **dev-reviewed 2026-09-16 against `main`** (see §Dev review at the
+bottom). Built into the mockups 2026-09-16. No viewer-facing change; the receiver's reuse story and
+its enrolment dependency on 218 were both made explicit.
 
 **Numbering:** verified against `main` on 2026-09-16 — Ravilo taken through **R243**, admin through
 **217**. No `phase-R245-*` file and no `STATUS.md` row for it. Pairs with **218**; follows **R244**, whose
@@ -136,6 +138,21 @@ for HEVC / VP9 / HDR and sends that as its capabilities to `/api/tv/playback/sta
 `hlsUrl` with the ticket's VTT sideloads as text tracks. It assumes **no codec** — an old stick simply
 gets an H.264 1080p encode. It reports progress and QoE like any device and honours phase 180 teardown.
 
+**Dev review — the Kotlin side of this is genuinely reusable; the token story needs stating once.**
+`shared` compiles to plain JS via `js(IR) { browser() }` (shipped since R189 for Tizen), so the receiver
+uses `TvApiClient` rather than a hand-written fetch layer, and `R216`'s capability reporting and `R222`'s
+note resolution come with it. Two things to make explicit, because the receiver is the first Ravilo
+device that is a web page rather than an app:
+
+- **It authenticates with a Ravilo `device_token`, never a Jellyfin token.** Its `ravilo_device` row
+  holds `jellyfin_user_token` server-side, exactly as a TV's does, and every Jellyfin call is made by
+  jellystructure on its behalf. This is what keeps the design consistent with 141/175, and it is the same
+  point 218's review asks that phase to state.
+- **`StreamTicket.hlsUrl` already carries `api_key=` in the query**, so the receiver fetches media with
+  no headers — which is what makes a plain `<video>`/MediaPlayer receiver viable at all. That is a
+  property of the existing ticket, not something this phase adds, and it must not be "tidied up" later
+  without breaking the receiver.
+
 **FR-R245-14 · It advances and skips by itself.** Next-episode auto-advance and Skip Intro run **on the
 receiver**, because it reads the same detail payload and segment markers the TV app reads. The phone
 mirrors; it does not drive.
@@ -202,3 +219,34 @@ three the app already loads. A Chromecast idles for hours; a 1st-gen stick has v
    and neither is true mid-stall. Probably the bar stops and the button stays; not drawn.
 6. **Whether the cast glyph belongs on the Live TV player.** Casting live TV works architecturally, but the
    receiver's overlay has no seek bar to show and the design round did not cover it.
+
+## Dev review (2026-09-16)
+
+Reviewed against `main` at `080364b4`, alongside its server half **218**. **Nothing the viewer sees
+changed.** The sender flow, the mini bar, the remote's seven states, the shared picker component and the
+receiver's ten screens all survive unchanged. Three notes.
+
+**The reuse claim is real.** `shared`'s `js(IR)` target has shipped since R189, so the receiver is a
+Kotlin client rather than a JavaScript rewrite, and `StreamTicket.hlsUrl` already carries its own
+`api_key=`, so media fetches need no header plumbing on a platform that makes headers awkward.
+
+**The dependency on 218 is heavier than the cross-reference suggests.** FR-R245-13's "it is a Ravilo
+device" rests entirely on 218 FR-218-9's enrolment, and that review found FR-218-9 has **no existing
+mechanism to build on** — phase 141 retired the code-based pairing flow. Worse, if a Chromecast does not
+preserve the receiver page's storage between sessions, enrolment becomes a per-cast round trip rather
+than one-time setup. That does not change any frame drawn here, but it means **FR-R245-5's re-connect
+path may have to run an enrolment, not just a reconnect**, and the "one of the two outcomes is silence"
+rule has to hold even when the silent case is reached via a failed enrolment. Settle it on the real stick
+with 218's open question 1.
+
+**Open question 2 can be narrowed now.** Whether the remote should show R222's slow-to-start note for a
+cast is answerable in principle: `PlaybackNoteResolver` is per `(device, file)`, and the receiver is a
+device with its own row, so a note *would* resolve for it once it has history. The spec's own reason for
+not drawing it — the first cast has no history — is exactly `basis: "expected"`, which R222 already
+defines a sentence for. So the real question is narrower than written: not "can it", but whether an
+expectation about the TV's startup belongs on a phone screen the viewer is holding. Recommend leaving it
+undrawn for round 1 and revisiting once a receiver has real `playback_start_sample` rows.
+
+**Unchanged:** open questions 1, 3, 4 and 5 stand exactly as written. Question 3's position-reconciliation
+concern is the one most likely to produce a bug that reads as a bug, and it has no server-side answer —
+it is a motion decision.

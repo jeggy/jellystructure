@@ -8,7 +8,9 @@
 
 ## Status
 
-`Planned` — written 2026-09-16, **not dev-reviewed**. Built into the mockups 2026-09-15 (TV + phone).
+`Planned` — written 2026-09-16, **dev-reviewed 2026-09-16 against `main`** (see §Dev review at the
+bottom). Built into the mockups 2026-09-15 (TV + phone). No viewer-facing change came out of the
+review; two requirements gained the exact call sites they have to touch.
 
 **Numbering:** verified against `main` on 2026-09-16 — Ravilo taken through **R242**, admin through
 **215**, no `phase-R243-*` file and no `STATUS.md` row for it. Pairs with **216**. Next free: 217 / R244.
@@ -48,6 +50,13 @@ the three taxonomy tabs index the library the viewer already has, so they are al
 because they are, the Discover nav item is **no longer hidden** when neither Seerr nor Sonarr is
 configured. Pressing Discover lands on Coming Soon if it exists, else Request, else Studios.
 
+**Dev review — the two exact call sites.** The nav item's visibility is
+`raviloNavTarget(idx, upcomingAvailable || discoverAvailable)` (`RaviloApp.kt:732` and `:771`); that
+condition becomes unconditional. The landing rule above is **not** automatic — it lives in
+`defaultDiscoverSegment(upcomingAvailable, discoverAvailable)`, which today can only answer Coming Soon
+or Request. Left unchanged, a household with neither integration would reach Discover and land on a
+segment that is not there. Both must change together, and an acceptance test covers the neither-case.
+
 **FR-R243-2 — The wall.** Each tab renders one grid of tiles: **4-up** for studios and networks, **5-up**
 for genres (a genre needs no artwork, so its tile is shorter). A tile is:
 
@@ -73,6 +82,13 @@ wall reads as a broken library rather than a filtered one.
 that value — **not** a new list surface. Genres reuse R221's genre seed verbatim. The crumb names the
 path it came from (`◂ Discover · Networks · Dansk TV`), the page title is the value, and the facet bar,
 sort and Back behave exactly as they do from any other entry point. Back returns to the tab, on the tab.
+
+**Dev review — the server accepts these seeds already; the shared client cannot express two of them.**
+`GET /api/tv/browse` takes repeated `studio`, `network`, `genre` and `tag` parameters and matches them
+case-insensitively (`TvRoutes.kt:495-497`). But `TvApiClient.browse()` sends only `kind`, `genre`, `page`
+and `pageSize`, so a **studio or network seed has no way through the client today**. Adding those two
+repeated parameters to that one method is a prerequisite for this requirement, and it is the only new
+plumbing the seed needs — genres genuinely do reuse the existing path verbatim, as written.
 
 **FR-R243-6 — The count on the tile equals the number of titles on the next screen.** Restated as a
 client requirement because it is the one thing that makes this surface worth having: the tile and the
@@ -164,3 +180,29 @@ Run on the stue TV with an adult profile and the kids profile, and on the phone.
 4. **Does "Studios" read as the wrong word to a viewer** who also sees Home's Channels rail? The admin
    page calls them studios because TMDB does. If it confuses the household, the tab label — not the
    grouping — is what changes.
+
+## Dev review (2026-09-16)
+
+Reviewed against `main` at `080364b4`, alongside its server half **216**. **Nothing the viewer sees
+changed.** The wall, the two tile variants, the caption rule, the scoped header and the no-"no logo"
+decision all survive unchanged. Two requirements gained precision, and one assumption about 216 is worth
+carrying here.
+
+- **FR-R243-1** — both call sites are now named. The nav gate is a single boolean expression used twice
+  in `RaviloApp.kt`; the landing rule is a separate function that today cannot return a taxonomy segment
+  at all. Changing only the first produces a Discover screen that opens on a tab that is not rendered,
+  which is a worse failure than the one this phase fixes.
+- **FR-R243-5** — the studio and network seeds cannot currently cross the shared client. The server has
+  accepted them since R187; `TvApiClient.browse()` simply never passed them. Small, but it is real work
+  this spec did not account for, and genres hid it because genres *do* already work.
+- **FR-R243-3's "render, never compute" is now load-bearing in a way worth stating.** 216's review
+  established that the count and the grid disagree today for any value with a case variant, because
+  counting groups case-sensitively while filtering matches case-insensitively. FR-R243-6 is the
+  requirement that catches it, but the fix is entirely server-side — the client must not normalise,
+  dedupe or re-group anything it is handed, or it will paper over exactly the defect FR-R243-6 exists to
+  surface.
+
+**Unchanged and still open:** whether the tabs should be switchable off, count-descending vs A–Z, and the
+phone's now seven-chip tab strip. Add one, from 216's review: whether the wall should show `tags` too —
+the endpoint it now extends already counts them, and the answer is presumably no (operator concept, per
+the non-goals), but it is now one field away rather than a new mechanism.

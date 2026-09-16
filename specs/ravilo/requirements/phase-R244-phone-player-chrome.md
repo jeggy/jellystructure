@@ -8,7 +8,9 @@
 
 ## Status
 
-`Planned` — written 2026-09-16, **not dev-reviewed**. Built into the mockups 2026-09-16.
+`Planned` — written 2026-09-16, **dev-reviewed 2026-09-16 against `main`** (see §Dev review at the
+bottom). Built into the mockups 2026-09-16. Every code claim checked out; one requirement was found
+to need a seam the spec did not account for.
 
 **Numbering:** verified against `main` on 2026-09-16 — admin taken through **217**, Ravilo through
 **R243**. No `phase-R244-*` file and no `STATUS.md` row for it. The source research report
@@ -68,6 +70,13 @@ handset the chrome is: a top bar (back · kicker + title · cast · rotate-when-
 Next · Lock** (Episodes replaces Next on a film's chrome only where a season exists). Targets ≥ 46 px,
 every readable label ≥ 13 px. The skip amounts render as labels **beneath** the arrow (`10 s`, `30 s`),
 never as a numeral inside the glyph, because a numeral inside a 46 px circle cannot clear the floor.
+
+**Dev review — `LocalHandset` is the right gate and already exists for this exact reason.** It is a
+`staticCompositionLocalOf { false }` in `theme/Dimens.kt:22`, and its own doc comment records why it was
+introduced: `LocalCompact` is width-only, so a player behaviour gated on it "silently stopped working in
+landscape — tapping the video never brought the controls back once they auto-hid." `LocalHandset` is
+described there as "the orientation-stable form-factor signal." A phone in landscape is still a handset,
+which is precisely the property FR-R244-1 needs, so no new gate is required.
 
 **FR-R244-2 · The rail's orientation rule.** Landscape: a right-edge column, vertically centred, inset
 from the safe area. Portrait: the same items in the same order as a row above the seek bar. There is no
@@ -131,6 +140,13 @@ what Android's back does, i.e. end the session (phase 180).
 **FR-R244-14 · Haptics.** A light tick on skip (both buttons and the double-tap), on lock, and on seek
 release. Nothing on play/pause — the picture answers that.
 
+⚠ **Dev review — this needs a new seam, exactly like brightness, and the spec did not say so.** There is
+**no haptics code anywhere in `ravilo-ui`** — no `HapticFeedback`, no `performHapticFeedback`, no seam.
+So FR-R244-14 is a new `expect`/`actual` pair on the same footing as the brightness gap open question 1
+already flags: an Android actual (`LocalHapticFeedback` / `View.performHapticFeedback`) and a **wasmJs
+actual that is a no-op**, following `PlayerImmersiveEffect`'s own precedent, whose web actual is an empty
+function body. Counting it: this phase adds **two** seams, not one, and both are web-inert.
+
 **FR-R244-15 · The Live TV player.** `LiveTvPlayerScreen` gets the same chrome with **no seek bar**: the
 channel name and a Now/Next line replace the title, and a vertical swipe on the right edge changes
 channel. It has no phone handling of any kind today.
@@ -190,3 +206,44 @@ the Danish and Faroese above are drafts and must be reviewed before release.
    thumb needs a real device.
 5. Whether `LocalHandset` is the right gate for the **fold** state of a foldable, where the smallest side
    changes mid-session. Out of scope here, but the gate is the thing that would have to change.
+
+## Dev review (2026-09-16)
+
+Reviewed against `main` at `080364b4`. **This spec's factual claims about the code are accurate** — every
+one checked out, which is not the norm for a design-authored spec this size. Two additions, no
+corrections.
+
+### Verified as stated
+
+| Claim | On `main` |
+|---|---|
+| The phone renders TV chrome verbatim | `PlayerScreen.kt` is one layout; `LocalHandset` is never read in it |
+| Forced sensor-landscape | `PlayerImmersiveEffect`'s Android actual sets `SCREEN_ORIENTATION_SENSOR_LANDSCAPE` |
+| The web build has no equivalent | its wasmJs actual is `actual fun PlayerImmersiveEffect() {}` |
+| No thumbnail scrub is possible | `StreamTicket.trickplayUrl` is always null, and `PlayerScreen` already documents it |
+| `LocalHandset` is the right gate | exists, and its doc comment describes this exact failure mode |
+
+FR-R244-7's "stops forcing sensor-landscape" is therefore a change to **one line** in one Android actual,
+with the portrait-lock detection layered on top of it.
+
+### Added
+
+**FR-R244-14 needs a new seam.** No haptics primitive exists in `ravilo-ui` at all. The spec flagged
+brightness as needing a seam but treated haptics as available, and it is not. Both are new
+`expect`/`actual` pairs, and both are no-ops on web.
+
+### On open question 1 (brightness)
+
+Worth sharpening before build: the web actual for `PlayerImmersiveEffect` is already an **empty function
+body**, not a CSS approximation. That is the precedent, and it argues for the first of the two options
+the question offers — the web player simply does not offer the left-half swipe. A CSS filter on the
+surface would be the only place in this client where a seam fakes a platform capability rather than
+declining it, and it would fight HDR besides. Recommend closing the question that way unless someone
+objects.
+
+### Not in scope, but worth recording
+
+`PlayerScreen.kt` is large and this phase adds a second full chrome layout to it. The standing hazard
+noted in this project's own history — a release-only `VerifyError` when player chrome grows inside one
+composable — argues for the handset chrome being **its own `@Composable`** from the first commit rather
+than a branch inside the existing one.
