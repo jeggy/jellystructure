@@ -8,7 +8,7 @@
 When a title is requested from Ravilo, the request carries a **language intent** (e.g. `original` or
 `nordic`). jellystructure translates that intent into a Radarr/Sonarr **quality profile + tags** so the
 grab lands the right release — a Nordic/Danish release (which usually bundles English too), typically
-from the **NordicVault** tracker, versus the standard original-language release. jellystructure
+from the **NordicBytes** tracker, versus the standard original-language release. jellystructure
 **creates and maintains** the needed *arr custom formats + profiles itself (no hand-editing Radarr),
 and lets a viewer **change a still-waiting request's language later** from the app.
 
@@ -21,7 +21,7 @@ and lets a viewer **change a still-waiting request's language later** from the a
   movie is "en", so no rule expresses "the Danish dub") **and** are skipped for MANAGE_REQUESTS/admin
   callers — but Seerr `POST /request` **does** accept explicit `profileId` + `tags` (verified in
   `MediaRequest.ts:225/386/497`), which pass straight through to the *arr add.
-- The live *arr stack has NONE of the steering layer yet: NordicVault is synced+enabled (Radarr indexer
+- The live *arr stack has NONE of the steering layer yet: NordicBytes is synced+enabled (Radarr indexer
   19, Sonarr 22) but there are **zero language custom formats, no Nordic profile, no tags** — profiles are
   stock `Any/…/1080p` at `minFormatScore=0`.
 - Radarr's parser does **not** recognize `NORDiC` as a language token — so matching must be on the
@@ -68,7 +68,7 @@ and lets a viewer **change a still-waiting request's language later** from the a
    - both in **Radarr and Sonarr** (movies + series).
 2. **Preview then apply, idempotent:** a settings action returns a diff of what would be created/updated
    (never deletes), and applying is safe to re-run. Store the resulting profile ids per intent so the
-   request path can look them up. Optional (behind a toggle): tag the NordicVault indexer with the
+   request path can look them up. Optional (behind a toggle): tag the NordicBytes indexer with the
    intent's `tags` so nordic-tagged requests prefer it (documented as traffic hygiene, not required for
    correctness).
 3. Guard: if Radarr/Sonarr is disabled/unreachable, provisioning is a no-op with a clear status; the
@@ -136,7 +136,7 @@ and lets a viewer **change a still-waiting request's language later** from the a
   idempotent (re-run = no-op).
 - Requesting with `language=nordic` (strict) sends Seerr a `profileId` for the Nordic profile; Radarr
   adds the movie monitored on that profile and only grabs a NORDiC/DANiSH release (in practice from
-  NordicVault), else keeps waiting. `language=original` reproduces today's behaviour.
+  NordicBytes), else keeps waiting. `language=original` reproduces today's behaviour.
 - The `request_intent` row records the choice; a strict-unfulfilled title reports its waiting state and
   flag to the TV.
 - `POST …/language {original}` on a still-waiting Nordic request flips the *arr item to the standard

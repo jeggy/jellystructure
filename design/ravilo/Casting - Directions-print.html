@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="en" data-skin="aurora">
+<head>
+<meta charset="utf-8">
+<meta name="omelette-print-source" content="v1789544471230141 ravilo/Casting - Directions.html">
+<title>Ravilo · casting to a Chromecast — round 1 directions</title>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../flags.css">
+<link rel="stylesheet" href="mobile-directions.css">
+<style>
+*{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+*{animation-delay:-99s !important;animation-duration:.001s !important;animation-iteration-count:1 !important;animation-fill-mode:both !important;animation-play-state:running !important;transition-duration:0s !important}
+doc-page:not(:defined){visibility:hidden}
+.page{position:relative;background:#fff;color:#171923;font-family:'Sora',sans-serif;padding:38px 44px;box-sizing:border-box}
+.eyebrow{font-family:'JetBrains Mono','SFMono-Regular',monospace;font-size:8.5pt;letter-spacing:.09em;text-transform:uppercase;color:#7b6ef0}
+.eyebrow.pick{color:#1d8f66}.eyebrow.no{color:#7b8194}
+h1{font-family:'Space Grotesk',sans-serif;font-size:29pt;line-height:1.04;letter-spacing:-.02em;margin:6px 0 0;color:#171923}
+h2{font-family:'Space Grotesk',sans-serif;font-size:18pt;line-height:1.08;letter-spacing:-.02em;margin:5px 0 0;color:#171923}
+h3{font-family:'Space Grotesk',sans-serif;font-size:10.5pt;margin:0 0 5px;letter-spacing:-.01em;color:#171923}
+p{font-size:9.2pt;line-height:1.6;color:#3c4256;margin:0 0 8px;text-wrap:pretty}
+p.lead{font-size:10.6pt;line-height:1.55;color:#232838}
+b{color:#171923}
+ul{margin:0;padding-left:16px}li{font-size:8.8pt;line-height:1.58;color:#3c4256;margin-bottom:5px}
+.mono{font-family:'JetBrains Mono','SFMono-Regular',monospace;font-size:.84em;background:#f0f1f6;padding:1px 5px;border-radius:4px}
+.hr{height:1px;background:#e2e5ee;margin:14px 0}
+.good{background:#eef7f2;border:1px solid #b9dfcc;border-radius:9px;padding:11px 13px;font-size:9pt;line-height:1.58;color:#1f4634;margin:10px 0 0}
+.good b{color:#123326}
+.warn{background:#fff8e8;border:1px solid #f2d79a;border-radius:9px;padding:11px 13px;font-size:9pt;line-height:1.58;color:#4a3c1c;margin:10px 0 0}
+.warn b{color:#3a2e10}
+.cost{margin-top:9px;padding:10px 12px;border-radius:9px;background:#f6f7fb;border:1px solid #e2e5ee;font-size:8.5pt;line-height:1.55;color:#4b5165}
+.cost b{color:#171923}
+.cap{font-family:'JetBrains Mono','SFMono-Regular',monospace;font-size:7.4pt;letter-spacing:.05em;text-transform:uppercase;color:#7b8194;margin:0 0 6px}
+.tbl{width:100%;border-collapse:collapse;margin-top:10px}
+.tbl th{text-align:left;font-family:'JetBrains Mono',monospace;font-size:7.4pt;letter-spacing:.07em;text-transform:uppercase;color:#6b7183;padding:0 9px 6px 0;font-weight:600}
+.tbl td{font-size:8.4pt;line-height:1.48;color:#3c4256;padding:7px 9px 7px 0;border-top:1px solid #e2e5ee;vertical-align:top}
+.tbl.tight td{font-size:7.9pt;line-height:1.42;padding:5px 8px 5px 0}
+.tbl td b{color:#171923}
+.foot{position:absolute;left:44px;right:44px;bottom:18px;display:flex;justify-content:space-between;font-family:'JetBrains Mono',monospace;font-size:7.2pt;letter-spacing:.05em;text-transform:uppercase;color:#9aa0b4}
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:26px;margin-top:12px}
+.cols3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:18px;margin-top:12px}
+.opt>div{background:#f8f9fc;border:1px solid #e2e5ee;border-radius:10px;padding:11px 13px}
+.opt h5{margin:0 0 4px;font-family:'Space Grotesk',sans-serif;font-size:9pt;color:#171923}
+.opt p{font-size:8.2pt;line-height:1.5;margin:0 0 3px;color:#4b5165}
+.opt .ch{display:flex;gap:6px;flex-wrap:wrap;margin-top:7px}
+.opt .ch span{font-size:7.6pt;font-weight:600;padding:4px 8px;border-radius:6px;background:#fff;border:1px solid #dfe2ec;color:#3c4256}
+.opt .ch span.lean{background:#eef7f2;border-color:#b9dfcc;color:#1f4634}
+.fr{position:relative;overflow:hidden;border-radius:8px;border:1px solid #ccd1de;background:#000;flex:none}
+.fr .dv,.fr .jsa{position:absolute !important;left:0 !important;top:0 !important;transform-origin:top left;box-shadow:none !important;border-radius:0 !important}
+.fr .tvs{position:absolute;left:0;top:0;transform-origin:top left}
+.frow{display:flex;gap:18px;align-items:flex-start;margin-top:12px}
+.frw{position:relative;overflow:hidden;border-radius:8px;border:1px solid #ccd1de;background:#16181f;flex:none}
+.frw .jsa{position:absolute !important;left:0 !important;top:0 !important;transform-origin:top left;box-shadow:none !important;border-radius:0 !important}
+/* the jellystructure Settings card — wf.css values, copied not linked (same as the canvas) */
+.jsa{width:760px;--bg:#16181f;--fill-2:#20242f;--fill-3:#2f3441;--ink:#dde1ec;--ink-soft:#9aa0b4;--line:rgba(255,255,255,.08);--line-2:rgba(255,255,255,.14);--hi-soft:rgba(123,110,240,.16);--acc-ink:#c6bcfb;--grad:linear-gradient(122deg,#b15cd0 0%,#7b6ef0 48%,#00a4dc 100%);--ok:#2dd49a;--warn:#f5b542;--info:#3fb6f5;background:#16181f;padding:18px;font-family:'Sora',sans-serif;color:#dde1ec;box-sizing:border-box}
+.jsa *{box-sizing:border-box}
+.jsa .card{background:rgba(46,51,66,.74);border:1px solid var(--line);border-radius:16px;padding:16px}
+.jsa h3{font-family:'Space Grotesk',sans-serif;font-size:1.05rem;margin:0;font-weight:600;color:#dde1ec}
+.jsa .row{display:flex;gap:10px}
+.jsa .row.center{align-items:center}
+.jsa .spacer{flex:1}
+.jsa .tiny{font-size:.8rem}
+.jsa .muted{color:var(--ink-soft)}
+.jsa .mono{font-family:'JetBrains Mono',monospace;font-size:.84em;background:none;padding:0}
+.jsa .field{display:flex;flex-direction:column;gap:5px;margin-bottom:14px}
+.jsa .field label{font-size:.76rem;font-weight:600;letter-spacing:.02em;color:var(--ink-soft);text-transform:uppercase}
+.jsa .field .hint{font-size:.76rem;color:var(--ink-soft)}
+.jsa .input{background:var(--fill-2);border:1px solid var(--line-2);border-radius:10px;padding:9px 12px;font-size:.9rem;color:var(--ink);min-height:38px;display:flex;align-items:center;gap:8px}
+.jsa .input.empty{color:rgba(221,225,236,.32)}
+.jsa .box.flat{background:var(--fill-2);border:1px solid var(--line);border-radius:16px;padding:16px}
+.jsa .toggle{width:44px;height:25px;border:1px solid var(--line-2);border-radius:20px;background:var(--fill-3);position:relative;display:inline-block;flex:none}
+.jsa .toggle::after{content:'';position:absolute;top:2px;left:3px;width:17px;height:17px;border-radius:50%;background:var(--ink-soft)}
+.jsa .toggle.on{background:var(--grad);border-color:transparent}
+.jsa .toggle.on::after{left:auto;right:3px;background:#fff}
+.jsa .badge{display:inline-flex;align-items:center;gap:5px;font-size:.72rem;font-weight:600;padding:3px 9px;border-radius:7px;border:1px solid transparent;white-space:nowrap}
+.jsa .badge.ok{background:rgba(45,212,154,.14);border-color:rgba(45,212,154,.4);color:var(--ok)}
+.jsa .badge.warn{background:rgba(245,181,66,.14);border-color:rgba(245,181,66,.4);color:var(--warn)}
+.jsa .badge.info{background:rgba(63,182,245,.14);border-color:rgba(63,182,245,.4);color:var(--info)}
+.jsa .btn{font-weight:600;font-size:.9rem;display:inline-flex;align-items:center;gap:7px;padding:9px 15px;background:var(--fill-3);color:var(--ink);border:1px solid var(--line-2);border-radius:10px;white-space:nowrap}
+.jsa .btn.sm{padding:5px 11px;font-size:.8rem}
+.jsa .btn.ghost{background:transparent;border-color:transparent;color:var(--ink-soft)}
+.jsa hr.dash{border:none;border-top:1px solid var(--line);margin:14px 0}
+.jsa .step-n{width:28px;height:28px;border-radius:8px;background:var(--hi-soft);color:var(--acc-ink);font-weight:700;font-family:'Space Grotesk',sans-serif;display:inline-flex;align-items:center;justify-content:center;flex:none;font-size:.95rem}
+.jsa .note{font-size:.84rem;line-height:1.45;background:var(--hi-soft);color:var(--ink);padding:12px 14px;border-radius:10px;border:1px solid var(--line-2);margin:0}
+.jsa .stp{display:grid;grid-template-columns:28px 1fr;gap:12px;align-items:start;margin-bottom:12px}
+.jsa .stp p{margin:0;font-size:.85rem;line-height:1.55;color:var(--ink-soft)}
+.jsa .stp p b{color:var(--ink);font-weight:600}
+.jsa .stat{display:grid;gap:8px}
+.jsa .stat>div{display:flex;align-items:center;gap:9px;font-size:.82rem;color:var(--ink-soft)}
+.jsa .stat b{color:var(--ink);font-weight:600}
+.jsa .dt{width:8px;height:8px;border-radius:50%;flex:none;background:var(--ok)}
+.jsa .dt.w{background:var(--warn)}
+.jsa .dt.o{background:rgba(221,225,236,.3)}
+.jsa .num{display:flex;align-items:center;border:1px solid var(--line-2);border-radius:10px;overflow:hidden;width:132px}
+.jsa .num b{width:40px;height:38px;display:flex;align-items:center;justify-content:center;background:var(--fill-3);font-size:1rem;font-weight:600;color:#dde1ec}
+.jsa .num span{flex:1;text-align:center;font-family:'JetBrains Mono',monospace;font-size:.95rem;font-weight:600;background:var(--fill-2);height:38px;display:flex;align-items:center;justify-content:center}
+</style>
+</head>
+<body>
+<doc-page orientation="landscape">
+
+<section class="page">
+  <span class="eyebrow">Ravilo · design directions · round 1 · 16 September 2026</span>
+  <h1>Casting from the phone to a Chromecast</h1>
+  <p class="lead" style="max-width:900px;margin-top:10px">One architectural fact decides almost every frame in this document: <b>the receiver is its own Ravilo device</b>, not a screen the phone drives. It holds its own device token, runs its own heartbeats, advances to the next episode and honours Skip Intro by itself. So the phone is a remote in the literal sense — it can die, and the TV keeps playing.</p>
+  <div class="hr"></div>
+  <table class="tbl">
+    <tr><th style="width:230px">Settled before any design</th><th>Consequence for these frames</th></tr>
+    <tr><td><b>The TV keeps playing if the phone dies</b></td><td>The remote is never the source of truth. On app start it <b>rebuilds from the receiver</b> — item, position, tracks, next-up — never from anything the phone remembered. That is why re-connect is a first-class screen and not an edge case.</td></tr>
+    <tr><td><b>Re-connect has two outcomes, and one of them is silence</b></td><td>Cast still running → the mini bar appears with the live position. Receiver finished or gone → <b>nothing is shown and no error is raised</b>; the viewer casts again with one tap. An "your cast ended" toast would be noise about something they already know.</td></tr>
+    <tr><td><b>The cast button is server-pushed</b></td><td>It exists only when the server says Chromecast is set up. <b>Absent, never greyed</b> — a disabled control is a promise you are not keeping. Off in Settings ⇒ the phone is told there is nothing to cast to and never guesses.</td></tr>
+    <tr><td><b>The receiver appears in Users &amp; devices</b></td><td>It enrols with a hand-off code and gets its own row, so phase 110 gives it a named Jellyfin session — which is why <i>"control the pause from the Jellyfin dashboard"</i> already works once this exists. Nothing on the phone implements it.</td></tr>
+    <tr><td><b>Every cast is a Jellyfin encode</b></td><td>A Cast receiver never direct-plays MKV. So <b>R222's slow-to-start note, R218's waiting states and R182's busy state all apply to casting</b>, and the remote has to hold them — three of its seven states. The viewer is still never told why.</td></tr>
+  </table>
+  <div class="warn"><b>The one thing the admin pays for is named.</b> Google is the only product named anywhere in this document, and only on the admin card, because the admin registers a Cast application with Google for a one-time US$5. Nothing in the viewer's half names a product, a protocol or a status code.</div>
+  <div class="foot"><span>Jellystructure · Ravilo · casting</span><span>1 / 8</span></div>
+</section>
+
+<section class="page">
+  <span class="eyebrow">Brief §B1 · the flow</span>
+  <h2>From "I want this on the TV" to "the TV is playing it"</h2>
+  <p style="margin-top:8px;max-width:900px">Starting a cast has to be <b>super simple and fast</b>: the cast icon is on every app bar, one tap opens the system picker, and pressing Play while connected casts instead of playing locally. No interstitial, no setup step, no connecting screen that owns the view.</p>
+  <div class="cols" style="margin-top:12px">
+    <div>
+      <table class="tbl tight" style="margin-top:0">
+        <tr><th style="width:30px">#</th><th>Step</th></tr>
+        <tr><td><b>1</b></td><td><b>The cast icon, on every app bar</b> — Home, Detail, Player. Three states: idle outline · connecting (bars fill in sequence) · connected (filled, accent-tinted). Absent entirely when Chromecast is off server-side.</td></tr>
+        <tr><td><b>2</b></td><td><b>The system picker</b> — one tap. This dialog belongs to the platform on both Android and iOS; we draw the frame around it and leave it alone.</td></tr>
+        <tr><td><b>3</b></td><td><b>Connecting</b> — a thin bar under the app bar, nothing more. "Connecting to Living room TV…" becomes "Casting to Living room TV" and retires after ~2 s. The app stays usable throughout.</td></tr>
+        <tr><td><b>4</b></td><td><b>Play casts</b> — the detail screen's primary action reads <i>Play on Living room TV</i>. The position goes with it, the phone stops playing locally, and the remote opens.</td></tr>
+        <tr><td><b>5</b></td><td><b>Re-connect</b> — app opened cold with a cast running: the icon animates and one bar reads "Reconnecting to Living room TV…". A requirement, not a nicety.</td></tr>
+        <tr><td><b>6</b></td><td><b>Outcome A</b> — still playing: the mini bar appears with the live position; one tap opens the remote. This is also brief §B3, i.e. what casting looks like from every other screen.</td></tr>
+        <tr><td><b>7</b></td><td><b>Outcome B</b> — finished or gone: <b>nothing</b>. No bar, no toast, no error; the cast icon is idle again and that is the whole message.</td></tr>
+        <tr><td><b>8</b></td><td><b>Stop casting</b> — from the remote's footer or the cast icon. No confirmation dialog; it is one tap to start again. The TV returns to its idle screen.</td></tr>
+        <tr><td><b>9</b></td><td><b>Lock screen</b> (§B4) — the Cast SDK's own notification, so the layout is the platform's. Ours is the artwork crop (<b>landscape still, not poster</b> — a poster crops to nothing at 64 px) and the second line, which carries the device name.</td></tr>
+      </table>
+    </div>
+    <div>
+      <p class="cap">Outcome A · the mini bar, §B3</p>
+      <div class="frow" style="margin-top:0">
+        <div class="fr" style="width:227px;height:503px">
+          <div class="dv and" style="transform:scale(.55)">
+            <div style="position:absolute;inset:0;background:var(--bg)">
+              <div class="sbar"><span>21:03</span></div>
+              <div style="position:absolute;left:0;right:0;top:38px;display:flex;align-items:center;gap:10px;padding:0 14px;height:52px">
+                <div style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:21px;color:#9b8ff5">Ravilo</div>
+                <span style="flex:1"></span>
+                <div class="tb plain" style="color:var(--accent-2)"><span class="castic"><span class="box" style="border-color:currentColor"></span><span class="fillb" style="width:14px;height:12px"></span></span></div>
+                <div style="width:34px;height:34px;border-radius:50%;background:var(--grad)"></div>
+              </div>
+              <div style="position:absolute;left:0;right:0;top:104px;padding:0 18px">
+                <div style="display:flex;gap:11px;margin-bottom:16px">
+                  <div style="width:118px;height:178px;border-radius:14px;background:linear-gradient(140deg,#1c2338,#3a2f5e)"></div>
+                  <div style="width:118px;height:178px;border-radius:14px;background:linear-gradient(140deg,#20303a,#0f5060)"></div>
+                  <div style="width:118px;height:178px;border-radius:14px;background:linear-gradient(140deg,#2a2438,#5e2f4a)"></div>
+                </div>
+                <div style="font-family:'Space Grotesk',sans-serif;font-size:19px;font-weight:600;margin-bottom:12px;color:var(--ink)">Continue watching</div>
+                <div style="display:flex;gap:11px">
+                  <div style="width:170px;height:96px;border-radius:12px;overflow:hidden"><img src="assets/bbb-backdrop-rodents.png" alt="" style="width:100%;height:100%;object-fit:cover"></div>
+                  <div style="width:170px;height:96px;border-radius:12px;overflow:hidden"><img src="assets/bbb-backdrop-opening.png" alt="" style="width:100%;height:100%;object-fit:cover"></div>
+                </div>
+              </div>
+              <div class="mini" style="bottom:106px">
+                <div class="th"><img src="assets/bbb-backdrop-rodents.png" alt=""></div>
+                <div class="tx"><div class="n">Chikhai Bardo</div><div class="d"><span class="castic"><span class="box"></span><span class="fillb"></span></span> Living room TV</div></div>
+                <div class="pp"><svg viewBox="0 0 24 24"><rect x="7" y="5" width="3.6" height="14" rx="1.2"/><rect x="13.4" y="5" width="3.6" height="14" rx="1.2"/></svg></div>
+                <div class="bar"><i style="width:41%"></i></div>
+              </div>
+              <div style="position:absolute;left:0;right:0;bottom:0;height:92px;background:var(--bg-2);border-top:1px solid var(--line);display:flex;align-items:center;color:var(--ink)">
+                <div style="flex:1;text-align:center;font-size:13px;font-weight:600">Home</div><div style="flex:1;text-align:center;font-size:13px;color:var(--ink-dim)">Search</div><div style="flex:1;text-align:center;font-size:13px;color:var(--ink-dim)">Discover</div><div style="flex:1;text-align:center;font-size:13px;color:var(--ink-dim)">Live</div>
+              </div>
+              <div class="gpill"></div>
+            </div>
+          </div>
+        </div>
+        <div>
+          <div class="cost" style="margin-top:0"><b>64 px, above the bottom safe area, on every screen while casting.</b> Thumbnail, title, play/pause and the device name, with a hairline progress bar. Tap opens the remote. <b>Swipe down does nothing</b> — it never dismisses while a cast runs, which is deliberate and is one of the decisions on the last page.</div>
+          <div class="good"><b>Outcome B is the interesting one.</b> The temptation is to explain that the cast ended. Resist it: the viewer watched it end.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><span>§B1 · the flow</span><span>2 / 8</span></div>
+</section>
+
+<section class="page">
+  <span class="eyebrow">Brief §B2 · the remote</span>
+  <h2>Two directions, one axis: is the artwork the screen, or a card on it? <span style="font-size:10pt;color:#1d8f66">Chosen: 2</span></h2>
+  <div class="frow">
+    <div>
+      <p class="cap">1 · Cinema</p>
+      <div class="fr" style="width:227px;height:503px">
+        <div class="dv and" style="transform:scale(.55)">
+          <div class="rem bleed">
+            <div class="bg"><img src="assets/bbb-backdrop-rodents.png" alt=""><div class="sc"></div></div>
+            <div class="rtop" style="justify-content:center"><div class="devc"><span class="castic"><span class="box" style="border-color:currentColor"></span><span class="fillb" style="width:10px;height:8px"></span></span> Living room TV</div></div>
+            <div class="poster"><img src="assets/big-buck-bunny-poster.jpg" alt=""></div>
+            <div class="meta"><div class="k">Severance · S2 E7</div><h3>Chikhai Bardo</h3><div class="on">Playing on Living room TV</div></div>
+            <div class="sk"><div class="sk-bar"><div class="done" style="width:41%"></div><div class="knob" style="left:41%"></div></div><div class="sk-t"><span>00:15:41</span><span>−00:22:22</span></div></div>
+            <div class="tr"><div class="pmid" style="position:static;transform:none;gap:30px">
+              <div class="sk"><div class="tb"><svg viewBox="0 0 24 24"><path d="M11 5.2V2.4L6 6.3l5 3.9V7.4a5 5 0 1 1-5 5"/></svg></div><span>10 s</span></div>
+              <div class="tb big"><svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><rect x="7" y="5" width="3.6" height="14" rx="1.2"/><rect x="13.4" y="5" width="3.6" height="14" rx="1.2"/></svg></div>
+              <div class="sk"><div class="tb"><svg viewBox="0 0 24 24"><path d="M13 5.2V2.4L18 6.3l-5 3.9V7.4a5 5 0 1 0 5 5"/></svg></div><span>30 s</span></div>
+            </div></div>
+            <div class="foot" style="position:static;display:flex"><b>Subtitles &amp; audio</b><b>Next episode</b><b class="stop">Stop casting</b></div>
+            <div class="gpill"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div>
+      <p class="cap">2 · Now playing — CHOSEN</p>
+      <div class="fr" style="width:227px;height:503px">
+        <div class="dv and" style="transform:scale(.55)">
+          <div class="rem">
+            <div class="rtop"><div class="devc"><span class="castic"><span class="box" style="border-color:currentColor"></span><span class="fillb" style="width:10px;height:8px"></span></span> Living room TV <svg class="cv" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></div><span style="flex:1"></span><div class="tb plain"><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></div></div>
+            <div class="art"><img src="assets/bbb-backdrop-rodents.png" alt=""></div>
+            <div class="meta"><div class="k">Severance · S2 E7</div><h3>Chikhai Bardo</h3><div class="on">Playing on Living room TV</div></div>
+            <div class="sk"><div class="sk-bar"><div class="done" style="width:41%"></div><div class="knob" style="left:41%"></div></div><div class="sk-t"><span>00:15:41</span><span>−00:22:22</span></div></div>
+            <div class="tr"><div class="pmid" style="position:static;transform:none;gap:30px">
+              <div class="sk"><div class="tb"><svg viewBox="0 0 24 24"><path d="M11 5.2V2.4L6 6.3l5 3.9V7.4a5 5 0 1 1-5 5"/></svg></div><span>10 s</span></div>
+              <div class="tb big"><svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><rect x="7" y="5" width="3.6" height="14" rx="1.2"/><rect x="13.4" y="5" width="3.6" height="14" rx="1.2"/></svg></div>
+              <div class="sk"><div class="tb"><svg viewBox="0 0 24 24"><path d="M13 5.2V2.4L18 6.3l-5 3.9V7.4a5 5 0 1 0 5 5"/></svg></div><span>30 s</span></div>
+            </div></div>
+            <div class="foot" style="position:static;display:flex"><b>Subtitles &amp; audio</b><b>Next episode</b><b class="stop">Stop casting</b></div>
+            <div class="gpill"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div style="flex:1;min-width:0">
+      <table class="tbl tight" style="margin-top:0">
+        <tr><th style="width:96px">Axis</th><th style="width:150px">1 · Cinema</th><th>2 · Now playing</th></tr>
+        <tr><td><b>Needs a backdrop</b></td><td>Yes — it <i>is</i> the design. Without one: a gradient wash behind centred text.</td><td>No. A 16:9 card that falls back to a <b>wordmark tile</b>, the rule R243's taxonomy walls already use.</td></tr>
+        <tr><td><b>Text contrast</b></td><td>White on a scrimmed photo. Passes on some titles, fails on others — and you cannot know which.</td><td>Ink on a solid surface. <b>Always ≥ 4.5:1</b>, by construction.</td></tr>
+        <tr><td><b>"Which TV?"</b></td><td>A centred chip, decorative.</td><td>A chip in the header that is also the <b>control</b>: tap to switch device or stop.</td></tr>
+        <tr><td><b>Stop casting</b></td><td>Third item in the footer, same weight as <i>Next episode</i>.</td><td>Footer <b>and</b> header chip — two routes, because it is the one action people hunt for.</td></tr>
+        <tr><td><b>Feels like</b></td><td>A film, paused.</td><td>A remote control. Which is what it is.</td></tr>
+        <tr><td><b>Noir</b></td><td>Two overrides: accent wash suppressed, scrim deepened.</td><td>One: the kicker loses its accent tint (R221 precedent).</td></tr>
+      </table>
+      <div class="good"><b>Chosen: 2 · Now playing.</b> Ink never sits on a picture, so contrast is a property of the design rather than of the title; the device you are controlling belongs at the top, as a chip that is also how you switch or stop; and it degrades to a wordmark with no redraw. The cost is atmosphere — it reads like a control surface. Given that it is one, and that the ask was "enterprise-like", that is the right trade.</div>
+    </div>
+  </div>
+  <div class="cost">Both share these rules: <b>volume is the hardware keys</b> plus a transient pill (a slider would fight the TV's own remote); <b>dragging the seek bar is allowed</b> and optimistic, with disagreements resolving to the receiver's number; <b>Subtitles &amp; audio opens the same sheet as the local player</b> — one component, two destinations; and <b>back / edge swipe leaves the remote, never the cast</b>. Portrait only; landscape centres the same layout.</div>
+  <div class="foot"><span>§B2 · two remotes</span><span>3 / 8</span></div>
+</section>
+
+<section class="page">
+  <span class="eyebrow">§B2 · states</span>
+  <h2>The seven states the remote has to hold</h2>
+  <table class="tbl">
+    <tr><th style="width:150px">State</th><th style="width:300px">What changes</th><th>Why it is drawn</th></tr>
+    <tr><td><b>1 · Playing</b></td><td>The default. Position ticks from the receiver's own reports, never from a local clock.</td><td>Because the phone is not the source of truth, the position has to be visibly borrowed.</td></tr>
+    <tr><td><b>2 · Paused</b></td><td>Play glyph; the art card dims slightly.</td><td>So the state is legible without reading a button.</td></tr>
+    <tr><td><b>3 · Buffering on the TV</b></td><td><b>R218 moment C, borrowed:</b> the spinner stands in for the play button, and a small spinner sits over the art.</td><td>The phone is fine; the TV is waiting. No explanation, because the viewer cannot act on one.</td></tr>
+    <tr><td><b>4 · Next-up, mirrored</b></td><td>Countdown, <i>Play now</i>, <i>Cancel</i>, and a line saying the receiver owns the countdown.</td><td>The clearest demonstration in the whole design that the TV is not being driven by the phone — and the reason cancelling has to be <b>sent</b>, not assumed.</td></tr>
+    <tr><td><b>5 · Receiver unreachable</b></td><td>"Lost contact with Living room TV" · "It may still be playing. Ravilo cannot reach it to check." One action: <i>Try again</i>. Transport greyed.</td><td>Greying the transport is the honest move: pressing it would be a lie. And the copy claims only what is known.</td></tr>
+    <tr><td><b>6 · Server busy</b></td><td>Phase 182's 503 → "The server is busy right now. It will start as soon as it can." plus the <b>elapsed wait</b>.</td><td>The one state with a number in it. A wait whose length you can see is a different experience from one you cannot. Still no cause, still no product named.</td></tr>
+    <tr><td><b>7 · Ended</b></td><td>"You finished Season 2" · <i>Watch it again</i> / <i>Back to Ravilo</i>, and a note that the receiver has returned to idle.</td><td>Nothing auto-plays after a season's last episode, on the TV app or here. Saying so closes the loop rather than leaving a dead remote.</td></tr>
+  </table>
+  <div class="cols" style="margin-top:14px">
+    <div>
+      <h3>Changing subtitles from the remote</h3><p><b>Drawn as state 8 on the canvas.</b> <i>Subtitles &amp; audio</i> opens the <b>same sheet as the local player</b> — R180/R195's two-level flag-forward picker, one component, two destinations — except the choice is applied on the TV, and one line says so. <b>Subtitle size</b> is the same S · M · L, which is why that row lives in the picker rather than anywhere else. One tap from the remote; no trip back into the app.</p><h3 style="margin-top:12px">Skins and languages</h3>
+      <p>The recommended remote is drawn in <b>Midnight</b> and <b>Noir</b> on the canvas, and once on an <b>iPhone in Føroyskt</b>. Noir needs exactly one override — the kicker loses its accent tint, per the R221/R222 precedent. Fourteen new strings × en/da/fo are tabled on the canvas; the Danish and Faroese are drafts and the app's own strings win where one already exists.</p>
+    </div>
+    <div>
+      <h3>What is deliberately absent</h3>
+      <ul>
+        <li><b>No AirPlay affordance</b>, anywhere, ever.</li>
+        <li><b>No device picker of our own</b> — redesigning the platform dialog would be a lie about what ships.</li>
+        <li><b>No on-screen volume slider.</b></li>
+        <li><b>No Cast Connect</b> — a later phase, once the Android TV activity can be a receiver.</li>
+        <li><b>No "Play on Stue TV"</b> — phase 111's own feature, and a decision on the last page.</li>
+      </ul>
+    </div>
+  </div>
+  <div class="foot"><span>§B2 · seven states</span><span>4 / 8</span></div>
+</section>
+
+<section class="page">
+  <span class="eyebrow">Brief §C · the receiver</span>
+  <h2>What the TV shows while it is being cast to</h2>
+  <div class="frow">
+    <div>
+      <p class="cap">1 · idle</p>
+      <div class="fr" style="width:461px;height:259px">
+        <div class="tvs" style="transform:scale(.24)">
+          <div class="tvc"><img class="mark" src="assets/brand/ravilo-mark.svg" alt=""><div class="rd">Ready to play from your phone</div></div>
+        </div>
+      </div>
+      <p class="cap" style="margin-top:12px">4 · paused or seeked — overlay for ~3 s</p>
+      <div class="fr" style="width:461px;height:259px">
+        <div class="tvs" style="transform:scale(.24)">
+          <div class="vid"><img src="assets/bbb-backdrop-rodents.png" alt=""></div>
+          <div class="tvov"><div class="k">Severance · S2 E7</div><h3>Chikhai Bardo</h3>
+            <div class="bar"><div class="d"></div><div class="kn"></div></div>
+            <div class="tm"><span>00:15:41</span><span>−00:22:22</span></div>
+            <div class="pz">❚❚</div></div>
+        </div>
+      </div>
+    </div>
+    <div style="flex:1;min-width:0">
+      <p style="max-width:460px">It runs on anything from a 2013 stick to a Cast-enabled TV, so it stays light and assumes no codec — it probes what it can display and lets jellystructure negotiate. <b>Nothing here is interactive:</b> there is no remote pointed at it, so every screen is one overlay or one sentence, and every one is a state the phone has an answer for.</p>
+      <table class="tbl tight" style="margin-top:6px">
+        <tr><th style="width:150px">Screen</th><th>What is on it</th></tr>
+        <tr><td><b>1 · idle</b></td><td>Black, the lit mark, "Ready to play from your phone". Not a carousel, not a screensaver, not library artwork — a Chromecast idles for hours and a 1st-gen stick has very little memory.</td></tr>
+        <tr><td><b>2 · loading</b></td><td>R218 moment B verbatim: pulse, kicker + title, sweep, "Loading…".</td></tr>
+        <tr><td><b>3 · playing</b></td><td>Video only. There is no chrome to "show" because nothing can focus it.</td></tr>
+        <tr><td><b>4 · paused / seeked</b></td><td>A low overlay for ~3 s: kicker + title, progress, time, ❚❚ glyph. Then gone.</td></tr>
+        <tr><td><b>5 · buffering</b></td><td>R218 moment C treatment — frozen frame, overlay up, spinner in the glyph's place.</td></tr>
+        <tr><td><b>6 · subtitles</b></td><td>The TV's own caption style (R110 white, black outline). Size S/M/L comes from the phone.</td></tr>
+        <tr><td><b>7 · next-up</b></td><td>The countdown card as on the TV app. The receiver runs it; the phone mirrors it.</td></tr>
+        <tr><td><b>8 · can't reach the server</b></td><td>"Can't reach your Ravilo server" · "Check that the server is on and try again from your phone."</td></tr>
+        <tr><td><b>9 · server busy</b></td><td>"The server is busy right now" · "It will start as soon as it can." plus the elapsed wait.</td></tr>
+        <tr><td><b>10 · ended</b></td><td>Straight back to idle.</td></tr>
+      </table>
+      <div class="warn"><b>One thing the design cannot answer:</b> whether a CAF v3 receiver still launches on a 1st-generation stick (last firmware November 2022, support ended April 2023). The benchmark is Jellyfin's own receiver on the same stick — if that runs, this will. <b>Identify the generation first</b>: 1st gen is the flat dongle with a rounded end; 2nd/3rd gen are round discs.</div>
+    </div>
+  </div>
+  <div class="foot"><span>§C · the receiver</span><span>5 / 8</span></div>
+</section>
+
+<section class="page">
+  <span class="eyebrow">Brief §F · jellystructure</span>
+  <h2>Settings → Chromecast, in three states</h2>
+  <p style="margin-top:6px;max-width:900px">The card <b>is</b> the registration. jellystructure hosts the receiver at <span class="mono">/cast/</span> and each installation registers its own Cast application with Google — the owner's explicit decision, not a cost to route around.</p>
+  <div class="frow" style="gap:14px">
+    <div>
+      <p class="cap">A · off (the default)</p>
+      <div class="frw" style="width:304px;height:150px">
+        <div class="jsa" style="transform:scale(.4)">
+          <div class="card">
+            <div class="row center"><h3>Chromecast</h3><span class="badge info" style="margin-left:8px">Ravilo</span><span class="spacer"></span><span class="muted tiny">enable</span><span class="toggle"></span></div>
+            <div class="tiny muted" style="margin-top:10px;line-height:1.6">Optional. Lets a phone cast to a Chromecast, with jellystructure serving the receiver itself. While this is off, Ravilo shows <b style="color:#dde1ec">no cast button at all</b> — the phone is told there is nothing to cast to and never guesses.</div>
+          </div>
+        </div>
+      </div>
+      <div class="cost" style="width:304px"><b>Off means absent, not greyed.</b> Server-pushed state; the client never guesses.</div>
+    </div>
+    <div>
+      <p class="cap">B · on, not registered yet</p>
+      <div class="frw" style="width:304px;height:352px">
+        <div class="jsa" style="transform:scale(.4)">
+          <div class="card">
+            <div class="row center"><h3>Chromecast</h3><span class="badge info" style="margin-left:8px">Ravilo</span><span class="spacer"></span><span class="badge warn">not finished</span><span class="muted tiny">enable</span><span class="toggle on"></span></div>
+            <hr class="dash">
+            <div class="field"><label>Your receiver address</label>
+              <div class="input mono">https://js.heimatún.fo/cast/ <span class="spacer"></span><span class="badge ok">reachable over https</span><span class="btn sm ghost">Copy</span></div>
+              <span class="hint">A Chromecast loads this page itself, so it has to be reachable from the internet over <b style="color:#dde1ec">https</b>. Checked from outside, just now.</span></div>
+            <div class="box flat" style="padding:15px">
+              <div class="stp"><span class="step-n">1</span><p><b>Register an application</b> at the Google Cast Developer Console. Google charges a <b>one-time US$5</b> developer fee. Nothing else in Ravilo costs money.</p></div>
+              <div class="stp"><span class="step-n">2</span><p>Choose <b>Custom Receiver</b> and paste the address above.</p></div>
+              <div class="stp" style="margin-bottom:0"><span class="step-n">3</span><p>Add your Chromecast as a <b>test device</b>, or <b>publish</b> the application so any Chromecast can use it.</p></div>
+            </div>
+            <div class="field" style="margin-top:14px"><label>Application ID</label>
+              <div class="input mono empty">8 hex characters, e.g. A1B2C3D4</div></div>
+            <div class="row center" style="gap:14px;margin-bottom:14px">
+              <div><b style="font-size:.9rem">Concurrent cast sessions</b><div class="tiny muted" style="margin-top:3px">Each cast is a transcode on your Jellyfin server.</div></div>
+              <span class="spacer"></span><div class="num"><b>−</b><span>2</span><b>+</b></div>
+            </div>
+            <hr class="dash">
+            <div class="stat">
+              <div><span class="dt"></span> Receiver <b>reachable</b> at that address</div>
+              <div><span class="dt w"></span> Application ID <b>not set yet</b></div>
+              <div><span class="dt o"></span> <b>Cast from your phone once to confirm it works.</b> jellystructure can't check an application ID with Google — only a real cast can.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div>
+      <p class="cap">C · registered and verified</p>
+      <div class="frw" style="width:304px;height:288px">
+        <div class="jsa" style="transform:scale(.4)">
+          <div class="card">
+            <div class="row center"><h3>Chromecast</h3><span class="badge info" style="margin-left:8px">Ravilo</span><span class="spacer"></span><span class="badge ok">working</span><span class="muted tiny">enable</span><span class="toggle on"></span></div>
+            <div class="tiny muted" style="margin:10px 0 0;line-height:1.6">Ravilo shows a cast button on every screen. A Chromecast appears in <b style="color:#dde1ec">Users &amp; devices</b> as its own device, and the Jellyfin dashboard can pause and seek it like any other client.</div>
+            <hr class="dash">
+            <div class="field"><label>Your receiver address</label>
+              <div class="input mono">https://js.heimatún.fo/cast/ <span class="spacer"></span><span class="badge ok">reachable over https</span><span class="btn sm ghost">Copy</span></div></div>
+            <div class="field"><label>Application ID</label>
+              <div class="input mono">A1B2C3D4 <span class="spacer"></span><span class="badge ok">used 6 times</span></div>
+              <span class="hint">Registered with Google · published, so any Chromecast can use it.</span></div>
+            <hr class="dash">
+            <div class="stat">
+              <div><span class="dt"></span> Receiver <b>reachable</b> at that address</div>
+              <div><span class="dt"></span> Application ID <b>set and confirmed by a real cast</b></div>
+              <div><span class="dt"></span> Last cast <b>yesterday 21:14</b> · Living room TV · 38 min</div>
+              <div><span class="dt"></span> <b>2 devices</b> have cast</div>
+            </div>
+            <div class="note" style="margin-top:14px">The identity the Jellyfin dashboard shows is <b>Chromecast via Ravilo · Living room</b>, so the dashboard says what it is rather than "Ravilo" twice.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="cost">Page-local classes would be prefixed <span class="mono">cc-</span>, following the <span class="mono">.paced</span> / <span class="mono">.mkvh-</span> precedent — and explicitly <b>not</b> <span class="mono">.adv-*</span> or anything else an ad blocker's cosmetic filter list matches, which cost us a mysteriously blank element on 15 September.</div>
+  <div class="foot"><span>§F · the admin card</span><span>6 / 8</span></div>
+</section>
+
+<section class="page">
+  <span class="eyebrow pick">Decided · 16 September 2026</span>
+  <h2>Nine decisions, all settled</h2>
+  <div class="opt cols3" style="margin-top:12px">
+    <div><h5>1 · Which remote</h5><p>Ink never sits on a picture; the device chip is both "which TV" and how you stop; it degrades to a wordmark with no redraw.</p><div class="ch"><span class="lean">2 · Now playing</span></div></div>
+    <div><h5>2 · Where the card lives</h5><p>It is a connection to a thing outside jellystructure, so it sits with the others.</p><div class="ch"><span class="lean">Settings → Connections</span></div></div>
+    <div><h5>3 · Pre-filled session ceiling</h5><p>Two. One Jellyfin encode per cast, next to whatever the TVs are already doing; the admin can raise it and the receiver has an honest busy state either way.</p><div class="ch"><span class="lean">2</span></div></div>
+    <div><h5>4 · Does the mini bar ever dismiss?</h5><p>No — while a cast runs it is the only route back to the remote, so hiding it would hide the session.</p><div class="ch"><span class="lean">Never, while casting</span></div></div>
+    <div><h5>5 · What "Next episode" does</h5><p>Skips straight to it. A picker in between would be a second decision nobody asked for.</p><div class="ch"><span class="lean">Skip straight to it</span></div></div>
+    <div><h5>6 · Casting from inside the local player</h5><p>Swap straight to the remote — the viewer is already holding the thing that now controls it.</p><div class="ch"><span class="lean">Swap straight to the remote</span></div></div>
+    <div><h5>7 · "Play on Stue TV" (phase 111)</h5><p>Drawn beside the cast button in round 2, so the two affordances that compete for the same corner are decided together.</p><div class="ch"><span class="lean">Round 2, with the cast button</span></div></div>
+    <div><h5>8 · Receiver idle screen</h5><p>The lit mark and one sentence. A stick idles for hours and a 1st-gen one has very little memory — no clock, no artwork, no carousel.</p><div class="ch"><span class="lean">Mark + sentence</span></div></div>
+    <div><h5>9 · Does "ended" offer anything?</h5><p>Two actions — <i>Watch it again</i> and <i>Back to Ravilo</i>. Nothing auto-plays after a season's last episode.</p><div class="ch"><span class="lean">Two actions</span></div></div>
+  </div>
+  <div class="warn"><b>Still open, and neither the brief nor this document can close it:</b> the generation of the parents' Chromecast stick. If it is 1st gen, whether a modern receiver launches on it at all has to be tested before the phase is committed to — and a stick that cannot run it makes the acceptance test a different device, not a different design.</div>
+  <div class="foot"><span>Decided · nine decisions</span><span>7 / 8</span></div>
+</section>
+
+<section class="page">
+  <span class="eyebrow">Housekeeping</span>
+  <h2>What this round changes about the phasing</h2>
+  <p style="margin-top:6px;max-width:900px">The research report proposes phase numbers against <b>216 / R243</b>. Those were taken the same day by the Discover taxonomy pair, then <b>217</b> by the Towo removal. The report says its own numbers must be re-verified; here is the shift, for information only. <b>No spec is written or edited by this round.</b></p>
+  <div class="cols">
+    <div>
+      <table class="tbl" style="margin-top:6px">
+        <tr><th style="width:110px">Report says</th><th style="width:100px">Actually free</th><th>Scope</th></tr>
+        <tr><td>216 + R243</td><td><b>218 + R244</b></td><td>Mobile data policy — <i>Quality on mobile data</i> + <i>Wi-Fi only</i>, and a real <span class="mono">MaxStreamingBitrate</span> on cellular.</td></tr>
+        <tr><td>R244</td><td><b>R245</b></td><td>Phone player chrome — the player document.</td></tr>
+        <tr><td>R245</td><td><b>R246</b></td><td>Playback lifecycle — headset keys, Cast SDK notification.</td></tr>
+        <tr><td>R246</td><td><b>R247</b></td><td>Play on a Ravilo TV (phase 111 under device-token auth).</td></tr>
+        <tr><td>217 + R247</td><td><b>219 + R248</b></td><td>Chromecast — <b>this document</b>. Receiver bundle at <span class="mono">/cast/</span>, the Settings card, the receiver, the sender and the remote.</td></tr>
+        <tr><td>R248 → R252</td><td><b>R249 → R253</b></td><td>Cast Connect · the phone-wide pass (§D) · iOS bring-up · iOS player (VLCKit) · iOS Cast sender.</td></tr>
+      </table>
+      <div class="good"><b>Verified against <span class="mono">main</span> today:</b> admin phases run to <b>217</b>, Ravilo to <b>R243</b>, so the next free pair is <b>218 / R244</b>. Same class of collision as 186→187 / R230→R234 and 179→180 — caught before anything was written this time.</div>
+    </div>
+    <div>
+      <h3>Where the build would land, after the picks</h3>
+      <ul>
+        <li><b>Player, remote and mini bar</b> → <span class="mono">Ravilo Mobile.html</span> and <span class="mono">mobile/ravilo-mobile.css</span>, behind the same <span class="mono">LocalHandset</span>-shaped switch the code uses, so the TV mockups stay untouched.</li>
+        <li><b>The receiver</b> → a new <span class="mono">ravilo/Ravilo Receiver.html</span> at 1920 × 1080, its own file, because nothing about it is a phone.</li>
+        <li><b>The Chromecast card</b> → <span class="mono">app/settings.html</span>.</li>
+        <li><b>The iPhone frame is already in</b> <span class="mono">Ravilo Mobile.html</span> — a device picker beneath the phone swaps the Pixel 9 bezel for an iPhone 16 with a Dynamic Island and home indicator, and every existing screen renders in both (<span class="mono">?dev=ios</span> works too). Nothing else in that file was touched, per the brief.</li>
+      </ul>
+      <h3 style="margin-top:12px">Also pulled from the repo today</h3>
+      <p><span class="mono">specs/research-reports/ios-build-host-macbook-setup-2026-09-16.md</span> — the companion guide for reaching the MacBook over SSH as a build host. No design work in it; mirrored so this project's <span class="mono">specs/</span> stays an exact copy of the repo's.</p>
+    </div>
+  </div>
+  <div class="foot"><span>Housekeeping · phasing</span><span>8 / 8</span></div>
+</section>
+
+</doc-page>
+<script src="doc-page.js"></script>
+<template id="__bundler_thumbnail">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160"><rect width="160" height="160" fill="#f6f7fb"/><rect x="34" y="42" width="92" height="58" rx="6" fill="none" stroke="#7b6ef0" stroke-width="3.5"/><path d="M44 90h22a22 22 0 0 0-22-22z" fill="#3fb6f5"/><rect x="62" y="110" width="36" height="6" rx="3" fill="#7b6ef0"/></svg>
+</template>
+</body>
+</html>

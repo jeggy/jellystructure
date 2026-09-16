@@ -25,7 +25,7 @@ Jellyfin's own client.
   `@Suppress("UNUSED_PARAMETER")` and never reached `getPlaybackInfo()`. `ClientCapabilities` itself
   (shared DTO) had no HDR/color field to carry such a signal in the first place — confirmed via a
   repo-wide grep for hdr/tonemap/colorTransfer/bitdepth (zero hits anywhere in the codebase).
-- **Verified live against the real Jellyfin server** (jellyfin.example.net), item
+- **Verified live against the real Jellyfin server** (jellyfin.jebster.net), item
   `d4896721f606d45fe493b26a22fae5a2` ("Undertone"):
   - With jellystructure's exact current `DeviceProfile` (no `CodecProfiles`): `PlaybackInfo` →
     `SupportsDirectPlay: true`, `VideoRangeType: HDR10Plus` — reproduces the bug: Jellyfin has no reason

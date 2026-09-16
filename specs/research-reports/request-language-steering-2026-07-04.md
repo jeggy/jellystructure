@@ -2,11 +2,11 @@
 
 **Question:** when a viewer requests a title from Ravilo's Request/Discover tab, how can they say
 *which language the download should be in* — e.g. "Danish (NORDiC) for Disney movies", which in
-practice means grabbing the NORDiC release that usually lives on the **NordicVault** tracker — with a
+practice means grabbing the NORDiC release that usually lives on the **NordicBytes** tracker — with a
 nice, non-technical UI on the TV?
 
 **Status: investigation only — nothing implemented.** Everything below was verified against the live
-stack (Radarr v6.2.1 @ 7003, Sonarr v4 @ 7004, Jellyseerr **v3.3.0** @ stream.example.net) and the
+stack (Radarr v6.2.1 @ 7003, Sonarr v4 @ 7004, Jellyseerr **v3.3.0** @ stream.jebster.net) and the
 current working tree on 2026-07-04.
 
 ---
@@ -24,7 +24,7 @@ profile/tags/language column. Per-user Ravilo config has `uiLanguage` (display o
 `SeerrFeed.param` (browse-feed filter by *original* language) — **no "preferred dub" field exists.**
 
 ### The live *arr stack has none of the steering layer yet
-- **NordicVault is synced and enabled in both** Radarr (indexer id 19) and Sonarr (id 22), untagged.
+- **NordicBytes is synced and enabled in both** Radarr (indexer id 19) and Sonarr (id 22), untagged.
 - **Zero language custom formats** (Radarr has only "Block ISO"; Sonarr has none), no Nordic quality
   profile (stock Any/SD/720p/1080p/UHD…, all `minFormatScore=0`), no language tags (only `1-jogvan`,
   `seedbox`).
@@ -45,7 +45,7 @@ profile/tags/language column. Per-user Ravilo config has `uiLanguage` (display o
   release parses as English-by-default. ⇒ any Nordic custom format must match the **release title**
   (regex on `\bNORDiC\b` etc.), not rely on the Language condition alone.
 - *arr **indexer-tag semantics**: an indexer carrying tags is used *only* for items sharing a tag;
-  untagged indexers serve everything. So tagging NordicVault `nordic` would *remove* it from normal
+  untagged indexers serve everything. So tagging NordicBytes `nordic` would *remove* it from normal
   grabs and reserve it for nordic-tagged items — optional traffic hygiene, not the correctness
   mechanism.
 
@@ -67,8 +67,8 @@ jellystructure maps intent → { radarr profileId, sonarr profileId, tags[] }   
 Radarr/Sonarr profile "HD-1080p · Nordic" — custom format `\b(NORDiC|DANiSH|DKSUBS)\b`
 scored +10000, profile minFormatScore=10000 (strict) or 0 (prefer)
         ▼
-Only (or preferably) Nordic releases qualify → in practice the grab lands on NordicVault,
-because that's where NORDiC releases live. Optional: tag NordicVault ↔ `nordic` to pin it.
+Only (or preferably) Nordic releases qualify → in practice the grab lands on NordicBytes,
+because that's where NORDiC releases live. Optional: tag NordicBytes ↔ `nordic` to pin it.
 ```
 
 Three layers:

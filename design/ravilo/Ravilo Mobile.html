@@ -8,6 +8,12 @@
 <!-- R239 amendment (2026-09-13, FR-R239-7) — the audio/subtitle flag strip's .fi/.fi-xx assets, same
      source as the TV mockup (Ravilo TV.html links this identically). -->
 <link rel="stylesheet" href="../flags.css">
+<!-- R244 + R245 (built 2026-09-16 from the round-1 picks) — the phone media player,
+     the casting remote and the mini bar. Linked BEFORE the inline <style> so this
+     file's own frame rules still win on any shared selector; every class in it is
+     new and prefixed mp- / rc-, following the 187 lesson that mockup-only classes
+     belong in a served stylesheet rather than an inline block. -->
+<link rel="stylesheet" href="mobile/ravilo-mobile-player.css">
 <style>
   :root{
     --bg:#0a0c13; --bg-2:#0e111b; --ink:#f3f4fb; --ink-soft:#aeb4cb; --ink-dim:#6b7290;
@@ -17,7 +23,7 @@
   }
   *{box-sizing:border-box; margin:0; padding:0;}
   html,body{height:100%; background:#05060a; font-family:'Sora',sans-serif; overflow:hidden;}
-  #fit{position:fixed; inset:0; display:flex; align-items:center; justify-content:center;}
+  #fit{position:fixed; inset:0; display:flex; align-items:center; justify-content:center; padding-bottom:152px;}
 
   /* Pixel 9 — 412×915 portrait */
   .phone{ width:412px; height:915px; border-radius:46px; background:#05060a;
@@ -25,16 +31,54 @@
   .screen{ position:absolute; inset:0; border-radius:46px; overflow:hidden; background:var(--bg); color:var(--ink); display:flex; flex-direction:column; }
   .punch{ position:absolute; top:13px; left:50%; transform:translateX(-50%); width:11px; height:11px; border-radius:50%; background:#000; z-index:60; }
 
-  .statusbar{ height:34px; flex:none; display:flex; align-items:center; justify-content:space-between; padding:0 24px 0 26px; font-size:13px; font-weight:600; color:var(--ink); z-index:50; }
+  /* ---- iPhone 16 frame (added 2026-09-16 for the mobile player + casting round; the brief asks
+     for an iPhone frame beside the Pixel. Rather than fork the whole id-bound render layer for a
+     second frame, the same screens render in either bezel — Dynamic Island and home indicator
+     instead of the punch-hole, 393×852, and the taller iOS status bar. The picker is mockup-only
+     preview chrome, same class of thing as the TV mockup's SKIN and FOCUS pickers. ---- */
+  .phone.ios{ width:393px; height:852px; border-radius:52px;
+    box-shadow:0 0 0 11px #0d0e12, 0 0 0 13px #35383f, 0 40px 110px rgba(0,0,0,.7); }
+  .phone.ios .screen{ border-radius:52px; }
+  .phone.ios .punch{ display:none; }
+  .island{ display:none; position:absolute; top:11px; left:50%; transform:translateX(-50%); width:118px; height:35px; border-radius:20px; background:#000; z-index:60; }
+  .phone.ios .island{ display:block; }
+  .homeind{ display:none; position:absolute; bottom:8px; left:50%; transform:translateX(-50%); width:140px; height:5px; border-radius:3px; background:var(--ink); opacity:.9; z-index:62; }
+  .phone.ios .homeind{ display:block; }
+  .phone.ios .statusbar{ height:54px; align-items:flex-end; padding:0 30px 6px 34px; }
+  .phone.ios .scroll{ padding-bottom:22px; }
+  .devpick{ position:absolute; bottom:-72px; left:0; right:0; display:flex; justify-content:center; gap:6px; }
+  .devpick b{ align-self:center; font-size:10px; letter-spacing:1.4px; color:#54596b; font-family:'Space Grotesk',sans-serif; margin-right:4px; }
+  .devpick button{ border:1px solid rgba(255,255,255,.12); background:rgba(255,255,255,.05); color:#8b91a8;
+    font-family:'Sora',sans-serif; font-size:12px; font-weight:600; padding:6px 14px; border-radius:9px; cursor:pointer; }
+  .devpick button.on{ background:#f3f4fb; color:#0a0c13; border-color:transparent; }
+  /* mockup-only, clearly fenced: the product has no such control. It exists so two
+     states that are otherwise unreachable in a mockup — R237's failed start, and the
+     rotate button that only appears when the SYSTEM has portrait locked — stay
+     visible in the design. Same class of thing as app/activity.html's stop-note toggle. */
+  .devpick.prev{ bottom:-112px; }
+  .devpick.prev b{ color:#4a4f60; }
+
+  /* The status bar is positioned and opaque, and paints a 1px outset below itself: at the
+     mockup's fractional scale the boundary with the sticky app bar lands on a half pixel, and a
+     hairline of scrolling content showed through it. z-index sits above the app bar (41) and
+     below the player overlay (80), which still covers it for immersive playback. */
+  .statusbar{ position:relative; z-index:60; background:var(--bg); box-shadow:0 1px 0 0 var(--bg);
+    height:34px; flex:none; display:flex; align-items:center; justify-content:space-between;
+    padding:0 24px 0 26px; font-size:13px; font-weight:600; color:var(--ink); }
   .statusbar .ic{ display:flex; gap:5px; align-items:center; opacity:.95; }
   .statusbar svg{ display:block; }
 
   .scroll{ flex:1; overflow-y:auto; overflow-x:hidden; -webkit-overflow-scrolling:touch; scrollbar-width:none; }
   .scroll::-webkit-scrollbar{ display:none; }
 
-  /* app bar */
-  .appbar{ position:sticky; top:0; z-index:40; display:flex; align-items:center; gap:12px; padding:8px 18px 10px;
-    background:linear-gradient(180deg, var(--bg) 60%, rgba(10,12,19,0)); }
+  /* app bar. The background is SOLID, not a fade: with a gradient that reached
+     transparent, poster art scrolled up behind the wordmark and the icon row, and
+     a sliver of the hero showed between the app bar and the tab strip. Both
+     sticky bars are opaque and stack flush — 56px + 48px — so nothing passes
+     between them. */
+  .appbar{ position:sticky; top:0; z-index:41; display:flex; align-items:center; gap:14px; padding:8px 18px 10px;
+    background:var(--bg); }
+    background:var(--bg); }
   .wm{ font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:21px; letter-spacing:-.02em; }
   .wm .g{ background:var(--grad); -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent; }
   .appbar .sp{ flex:1; }
@@ -43,7 +87,14 @@
   .avatar{ width:34px; height:34px; border-radius:50%; background:var(--grad); display:flex; align-items:center; justify-content:center; font-weight:700; font-size:13px; color:#fff; font-family:'Space Grotesk',sans-serif; }
 
   /* tab chips */
-  .tabs{ position:sticky; top:56px; z-index:39; display:flex; gap:8px; padding:4px 18px 12px; overflow-x:auto; background:var(--bg); scrollbar-width:none; }
+  .tabs{ position:sticky; top:56px; z-index:40; display:flex; gap:8px; padding:6px 18px 12px; overflow-x:auto; background:var(--bg); scrollbar-width:none; }
+  /* A short fade pinned directly under the tab strip. Without it a row of
+     posters is guillotined mid-tile by the opaque bar — art stops dead and only
+     the titles remain, which reads as a layout fault. The strip takes no layout
+     space (negative margin), so nothing below it moves. `.tabs` cannot carry it
+     as a pseudo-element because `overflow-x:auto` clips in both axes. */
+  .stickfade{ position:sticky; top:105px; z-index:38; height:26px; margin-bottom:-26px; flex:none; pointer-events:none;
+    background:linear-gradient(180deg, var(--bg) 18%, rgba(10,12,19,0)); }
   .tabs::-webkit-scrollbar{ display:none; }
   .tab{ flex:none; padding:7px 15px; border-radius:999px; font-size:14px; font-weight:600; color:var(--ink-soft); background:rgba(255,255,255,.06); cursor:pointer; white-space:nowrap; transition:.18s var(--ease); }
   .tab.on{ background:var(--ink); color:#0a0c13; }
@@ -274,6 +325,8 @@
 <div id="fit">
   <div class="phone">
     <div class="punch"></div>
+    <div class="island"></div>
+    <div class="homeind"></div>
     <div class="screen">
       <div class="statusbar">
         <span>9:41</span>
@@ -290,6 +343,10 @@
           <button class="iconbtn" id="searchBtn" aria-label="Search">
             <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
           </button>
+          <!-- R245 FR: the cast button is server-pushed. It is present here because the
+               mockup's Chromecast switch is on; when the server says Chromecast is off it
+               is ABSENT, never greyed. -->
+          <button class="iconbtn" id="castBtn" aria-label="Cast"><span class="rc-ic" id="castGlyph"><span class="bx"></span><span class="fl"></span></span></button>
           <div class="avatar" id="avatarBtn">ER</div>
         </div>
         <div class="tabs" id="tabs">
@@ -301,11 +358,104 @@
           <div class="tab" data-tab="networks">Networks</div>
           <div class="tab" data-tab="genres">Genres</div>
         </div>
+        <div class="stickfade"></div>
         <div id="app"></div>
       </div>
 
       <div class="detail" id="detail">
         <div class="dscroll" id="dscroll"></div>
+      </div>
+
+      <!-- ===== R245 · casting chrome: connecting bar + mini bar ===== -->
+      <div class="rc-bar" id="rcBar"></div>
+      <!-- the device sheet, on its own layer so casting from an app bar never
+           has to open the player behind it -->
+      <div class="mp-scrim" id="csScrim" style="z-index:86"></div>
+      <div class="mp-sheet" id="csSheet" style="z-index:88"></div>
+      <div class="rc-mini" id="rcMini">
+        <div class="th"><img id="rcMiniArt" src="assets/bbb-backdrop-rodents.png" alt=""></div>
+        <div class="tx"><div class="n" id="rcMiniTitle">—</div><div class="d"><span class="rc-ic"><span class="bx"></span><span class="fl"></span></span> <span id="rcMiniDev">—</span></div></div>
+        <button class="pp" id="rcMiniPP" aria-label="Pause"><svg viewBox="0 0 24 24"><rect x="7" y="5" width="3.6" height="14" rx="1.2"/><rect x="13.4" y="5" width="3.6" height="14" rx="1.2"/></svg></button>
+        <div class="pb"><i id="rcMiniBar" style="width:0"></i></div>
+      </div>
+
+      <!-- ===== R244 · the phone media player — direction 2 "Thumb rail" =====
+           Portrait here because this frame is portrait; the landscape layout, the
+           gesture overlays at full size and the iOS safe-area set are drawn in
+           "Mobile Player - Directions.html". No speed control anywhere: removed by
+           owner decision 2026-09-16. -->
+      <div class="mp" id="mp">
+        <div class="mp-vid"><img id="mpArt" src="assets/bbb-backdrop-landscape.png" alt=""></div>
+        <div class="mp-sub m" id="mpSub" style="display:none"></div>
+        <div class="mp-sct"></div><div class="mp-scb"></div>
+        <div class="mp-rip l" id="mpRipL"><b>−10 s</b></div>
+        <div class="mp-rip r" id="mpRipR"><b>+30 s</b></div>
+        <div class="mp-toast" id="mpToast">Fit</div>
+        <div class="mp-top">
+          <button class="mp-b flat" id="mpBack" aria-label="Back"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
+          <div class="mp-ttl"><div class="mp-kick" id="mpKick">—</div><div class="mp-nm" id="mpTitle">—</div></div>
+          <button class="mp-b flat" id="mpRotate" aria-label="Rotate" style="display:none"><svg viewBox="0 0 24 24"><path d="M4 8a8 8 0 0 1 13-2M20 6v5h-5"/><path d="M20 16a8 8 0 0 1-13 2M4 18v-5h5"/></svg></button>
+          <button class="mp-b flat" id="mpCast" aria-label="Cast"><span class="rc-ic"><span class="bx"></span><span class="fl"></span></span></button>
+        </div>
+        <div class="mp-mid">
+          <div class="mp-sk"><button class="mp-b" id="mpBack10" aria-label="Back 10 seconds"><svg viewBox="0 0 24 24"><path d="M11 5.2V2.4L6 6.3l5 3.9V7.4a5 5 0 1 1-5 5"/></svg></button><span>10 s</span></div>
+          <button class="mp-b big" id="mpPP" aria-label="Pause"><svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><rect x="7" y="5" width="3.6" height="14" rx="1.2"/><rect x="13.4" y="5" width="3.6" height="14" rx="1.2"/></svg></button>
+          <div class="mp-sk"><button class="mp-b" id="mpFwd30" aria-label="Forward 30 seconds"><svg viewBox="0 0 24 24"><path d="M13 5.2V2.4L18 6.3l-5 3.9V7.4a5 5 0 1 0 5 5"/></svg></button><span>30 s</span></div>
+        </div>
+        <button class="mp-skip" id="mpSkip">Skip intro <i id="mpSkipCd">12 s</i></button>
+        <div class="mp-nup" id="mpNup">
+          <div class="k">Next episode</div><div class="n" id="mpNupTitle">—</div><div class="cd" id="mpNupCd">—</div>
+          <div class="acts"><button class="pri" id="mpNupGo">Play now</button><button id="mpNupNo">Cancel</button></div>
+        </div>
+        <div class="mp-bot">
+          <div class="mp-rail">
+            <button class="it" id="mpSubsBtn"><span class="c"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M7 14h4M14 14h3"/></svg></span><span class="l">Subtitles</span></button>
+            <button class="it" id="mpEpsBtn"><span class="c"><svg viewBox="0 0 24 24"><path d="M4 6h10M4 12h10M4 18h7"/><path d="M17 9l4 3-4 3z"/></svg></span><span class="l">Episodes</span></button>
+            <button class="it" id="mpNextBtn"><span class="c"><svg viewBox="0 0 24 24"><path d="M5 6l9 6-9 6z"/><path d="M19 6v12"/></svg></span><span class="l">Next</span></button>
+            <button class="it" id="mpLockBtn"><span class="c"><svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2.2"/><path d="M8.5 11V8.5a3.5 3.5 0 0 1 7 0V11"/></svg></span><span class="l">Lock</span></button>
+          </div>
+          <div class="mp-bub" id="mpBub">00:00:00</div>
+          <div class="mp-bar" id="mpBar"><i id="mpDone" style="width:0"></i><u id="mpKnob" style="left:0"></u></div>
+          <div class="mp-t"><span id="mpPos">00:00:00</span><span id="mpLeft">−</span></div>
+        </div>
+        <div class="mp-locknote" id="mpLockNote">Locked · hold to unlock</div>
+        <button class="mp-lockg" id="mpUnlock" aria-label="Unlock"><svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2.2"/><path d="M8.5 11V8.5a3.5 3.5 0 0 1 7 0V11"/></svg></button>
+        <div class="mp-buf" id="mpBuf">
+          <div class="mp-pulse"><i></i><i></i><i></i></div>
+          <div class="mp-ctx"><div class="k" id="mpBufKick">—</div><div class="t" id="mpBufTitle">—</div><div class="s" id="mpBufSub">—</div></div>
+          <div class="mp-sweep"><span></span></div>
+          <div class="mp-blab">Loading…</div>
+        </div>
+        <div class="mp-scrim" id="mpScrim"></div>
+        <div class="mp-sheet" id="mpSheet"></div>
+      </div>
+
+      <!-- ===== R245 · the full-screen remote — direction 2 "Now playing" ===== -->
+      <div class="rc-rem" id="rcRem">
+        <div class="rc-top">
+          <button class="rc-dev" id="rcDev"><span class="rc-ic"><span class="bx"></span><span class="fl"></span></span> <span id="rcDevName">—</span> <svg class="cv" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>
+          <span style="flex:1"></span>
+          <button class="mp-b flat" id="rcClose" aria-label="Back to Ravilo"><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>
+        </div>
+        <div class="rc-art" id="rcArt"><img id="rcArtImg" src="assets/bbb-backdrop-rodents.png" alt=""><div class="ov" id="rcArtOv"><div class="mp-spin"></div></div></div>
+        <div class="rc-meta"><div class="k" id="rcKick">—</div><h3 id="rcTitle">—</h3><div class="on-tv" id="rcOn">—</div></div>
+        <div class="rc-sk">
+          <div class="mp-bar" id="rcBarSeek"><i id="rcDone" style="width:0"></i><u id="rcKnob" style="left:0"></u></div>
+          <div class="mp-t"><span id="rcPos">00:00:00</span><span id="rcLeft">−</span></div>
+        </div>
+        <div class="rc-tr">
+          <div class="mp-sk"><button class="mp-b" id="rcBack10" aria-label="Back 10 seconds"><svg viewBox="0 0 24 24"><path d="M11 5.2V2.4L6 6.3l5 3.9V7.4a5 5 0 1 1-5 5"/></svg></button><span>10 s</span></div>
+          <button class="mp-b big" id="rcPP" aria-label="Pause"><svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><rect x="7" y="5" width="3.6" height="14" rx="1.2"/><rect x="13.4" y="5" width="3.6" height="14" rx="1.2"/></svg></button>
+          <div class="mp-sk"><button class="mp-b" id="rcFwd30" aria-label="Forward 30 seconds"><svg viewBox="0 0 24 24"><path d="M13 5.2V2.4L18 6.3l-5 3.9V7.4a5 5 0 1 0 5 5"/></svg></button><span>30 s</span></div>
+        </div>
+        <div class="rc-note" id="rcNote"></div>
+        <div class="rc-foot" id="rcFoot">
+          <button id="rcSubs"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M7 14h4M14 14h3"/></svg> Subtitles &amp; audio</button>
+          <button id="rcNext"><svg viewBox="0 0 24 24"><path d="M5 6l9 6-9 6z"/><path d="M19 6v12"/></svg> Next episode</button>
+          <button class="stop" id="rcStop"><svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/></svg> Stop casting</button>
+        </div>
+        <div class="mp-scrim" id="rcScrim"></div>
+        <div class="mp-sheet" id="rcSheet"></div>
       </div>
 
       <div class="acct" id="acct"><div id="acctInner"></div></div>
@@ -322,7 +472,17 @@
         <button class="prow danger" data-pm="signout"><span class="pic">⏏</span> Sign out</button>
       </div>
     </div>
-    <div class="label">Ravilo · Pixel 9 · portrait</div>
+    <div class="label" id="devLabel">Ravilo · Pixel 9 · portrait</div>
+    <div class="devpick" id="devPick">
+      <b>DEVICE</b>
+      <button class="on" data-dev="and">Pixel 9</button>
+      <button data-dev="ios">iPhone 16</button>
+    </div>
+    <div class="devpick prev" id="prevPick">
+      <b>PREVIEW</b>
+      <button data-pv="fail">Failed start · R237</button>
+      <button data-pv="portraitlock">System portrait lock</button>
+    </div>
   </div>
 </div>
 
@@ -346,10 +506,26 @@
   /* ---- fit phone to viewport ---- */
   function fit(){
     const ph = document.querySelector('.phone');
-    const s = Math.min(window.innerWidth/452, window.innerHeight/975, 1);
+    const ios = ph.classList.contains('ios');
+    const s = Math.min(window.innerWidth/(ios?433:452), (window.innerHeight-152)/(ios?918:981), 1);
     ph.style.transform = 'scale('+s+')';
   }
   window.addEventListener('resize', fit); fit();
+
+  /* ---- device picker (mockup-only preview chrome; ?dev=ios also works) ---- */
+  function setDev(kind){
+    const ph = document.querySelector('.phone');
+    ph.classList.toggle('ios', kind === 'ios');
+    document.getElementById('devLabel').textContent =
+      kind === 'ios' ? 'Ravilo · iPhone 16 · portrait' : 'Ravilo · Pixel 9 · portrait';
+    document.querySelectorAll('#devPick button').forEach(b => b.classList.toggle('on', b.dataset.dev === kind));
+    fit();
+  }
+  document.getElementById('devPick').addEventListener('click', e => {
+    const b = e.target.closest('button[data-dev]');
+    if (b) setDev(b.dataset.dev);
+  });
+  if ((new URLSearchParams(location.search)).get('dev') === 'ios') setDev('ios');
 
   /* ---- tiles & rows ---- */
   function tile(it){
@@ -616,7 +792,7 @@
       + genresHTML(it)
       + flagsHTML(it)
       + slowHTML(it)
-      + '<div class="dbtns"><button class="btn play">▶ Play</button><button class="btn ghost">＋ My List</button></div>'
+      + '<div class="dbtns"><button class="btn play" data-mplay="'+esc(it.title)+'">'+(CAST ? '<span class="rc-ic" style="width:18px;height:15px"><span class="bx"></span><span class="fl"></span></span> Play on '+esc(CAST.device) : '▶ Play')+'</button><button class="btn ghost">＋ My List</button></div>'
       + '<div class="dsyn">'+esc(syn)+'</div>'
       + (it.kind==='series' ? episodesHTML(it) : '')
       + aboutHTML(it)
@@ -762,6 +938,432 @@
     fr.readAsDataURL(file);
   });
   paintAvatars();
+
+  /* ============================================================
+     R244 — the phone media player (direction 2 · "Thumb rail")
+     R245 — casting: the remote ("Now playing"), the mini bar, the cast button
+     Both built 2026-09-16 from the round-1 picks. Design reference:
+     "Mobile Player - Directions.html" and "Casting - Directions.html".
+     Rules held here, not just drawn: 46px targets · 13px type floor ·
+     auto-hide 3000ms held open by a sheet or a drag and suspended while
+     locked · no delivery method named anywhere (R180) · R218's cold start
+     and R237's failure copy reused verbatim · ONE picker component with two
+     destinations, local and cast · no playback speed, at all (owner
+     decision 2026-09-16 — no control, no sheet, no seam, no string).
+     ============================================================ */
+  let CAST = null;                 // null | {device}
+  const DEVICES = ['Stovan', 'Køkið', 'Barnarúmið'];
+  const HIDE_MS = 3000;            // picked over the TV's 3600 — see the directions canvas
+
+  const SUBS = [
+    { off:true, nm:'Off' },
+    { nm:'Føroyskt', cc:'fo', vers:[{nm:'Føroyskt', sub:'Full dialogue · sidecar'},{nm:'Føroyskt', bdg:'signs', sub:'Signs and on-screen text only'}] },
+    { nm:'Dansk', cc:'dk', vers:[{nm:'Dansk', sub:'Full dialogue · embedded'},{nm:'Dansk', bdg:'SDH', sub:'Includes sound descriptions'},{nm:'Dansk', bdg:'forced', sub:'Only for other languages spoken'}] },
+    { nm:'English', cc:'gb', vers:[{nm:'English', sub:'Full dialogue · embedded'},{nm:'English', bdg:'SDH', sub:'Includes sound descriptions'},{nm:'English', bdg:'forced', sub:'Only for other languages spoken'},{nm:'English', bdg:'signs', sub:'Signs and on-screen text only'}] },
+    { nm:'Íslenska', cc:'is', vers:[{nm:'Íslenska', sub:'Full dialogue · sidecar'}] }
+  ];
+  const AUDIO = [
+    { nm:'Dansk', cc:'dk', vers:[{nm:'Dansk', sub:'Surround'},{nm:'Dansk', sub:'Stereo'}] },
+    { nm:'English', cc:'gb', vers:[{nm:'English', sub:'Surround'}] },
+    { nm:'Føroyskt', cc:'fo', vers:[{nm:'Føroyskt', sub:'Stereo'}] }
+  ];
+  const SIZE_LABEL = { s:'Small', m:'Medium', l:'Large' };
+  const STILLS = ['assets/bbb-backdrop-landscape.png','assets/bbb-backdrop-rodents.png','assets/bbb-backdrop-opening.png','assets/bbb-backdrop-bunny.png'];
+
+  /* one state object, shared by the local player and the remote — the remote is a
+     view of a session, never its own truth. On a real cast it is rebuilt from the
+     receiver on app start; here the mockup keeps the same shape so the handover
+     between local and cast is the same act in both directions. */
+  const S = { title:'', kind:'movie', ep:null, art:STILLS[0], pos:862, dur:2280, playing:true,
+              sub:1, ver:0, aud:0, audVer:0, size:'m', locked:false, hidden:false, buffering:false, tab:'subs' };
+  let hideTimer = null, tickTimer = null, sheetOpen = null, dragging = false;
+
+  const $ = id => document.getElementById(id);
+  const mp = $('mp'), rcRem = $('rcRem'), rcMini = $('rcMini'), rcBar = $('rcBar');
+  const fmt = s => { s = Math.max(0, Math.round(s));
+    const h = Math.floor(s/3600), m = Math.floor(s%3600/60), x = s%60;
+    return (h?String(h).padStart(2,'0')+':':'00:') + String(m).padStart(2,'0') + ':' + String(x).padStart(2,'0'); };
+  const ppIcon = on => on
+    ? '<svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><rect x="7" y="5" width="3.6" height="14" rx="1.2"/><rect x="13.4" y="5" width="3.6" height="14" rx="1.2"/></svg>'
+    : '<svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M8 5l11 7-11 7z"/></svg>';
+  const chev = '<svg viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg>';
+  const tick = '<svg viewBox="0 0 24 24"><path d="M4 12.5l5 5L20 6.5"/></svg>';
+  const subLabel = () => { const g = SUBS[S.sub]; if(!g || g.off) return 'Off';
+    const v = g.vers[S.ver] || g.vers[0]; return v.nm + (v.bdg ? ' · ' + v.bdg : ''); };
+
+  /* ---- shared render ---- */
+  function paint(){
+    const pct = Math.min(100, S.pos / S.dur * 100);
+    $('mpDone').style.width = pct + '%'; $('mpKnob').style.left = pct + '%';
+    $('mpPos').textContent = fmt(S.pos); $('mpLeft').textContent = '−' + fmt(S.dur - S.pos);
+    $('mpPP').innerHTML = ppIcon(S.playing); $('mpPP').setAttribute('aria-label', S.playing ? 'Pause' : 'Play');
+    $('rcDone').style.width = pct + '%'; $('rcKnob').style.left = pct + '%';
+    $('rcPos').textContent = fmt(S.pos); $('rcLeft').textContent = '−' + fmt(S.dur - S.pos);
+    $('rcPP').innerHTML = ppIcon(S.playing); $('rcPP').setAttribute('aria-label', S.playing ? 'Pause' : 'Play');
+    $('rcMiniPP').innerHTML = ppIcon(S.playing);
+    $('rcMiniBar').style.width = pct + '%';
+    rcRem.classList.toggle('paused', !S.playing);
+    $('rcOn').textContent = (S.playing ? 'Playing on ' : 'Paused on ') + (CAST ? CAST.device : '—');
+    // Skip intro lives in the first 30s; next-up in the last 60. Neither may overlap the rail.
+    $('mpSkip').classList.toggle('on', !S.locked && S.pos < 30 && !sheetOpen);
+    $('mpSkipCd').textContent = Math.max(0, Math.ceil(30 - S.pos)) + ' s';
+    const nup = S.kind === 'series' && S.dur - S.pos <= 60;
+    $('mpNup').classList.toggle('on', nup && !S.locked && !sheetOpen);
+    if(nup){ $('mpNupCd').textContent = 'Starts in ' + Math.max(0, Math.ceil(S.dur - S.pos)) + ' s · ' + (S.ep ? 'S2 E' + (S.ep + 1) : ''); }
+    // the subtitle line only renders when a track is actually chosen (R239 honesty)
+    const sb = $('mpSub'), on = S.sub > 0;
+    sb.style.display = on ? 'block' : 'none';
+    sb.className = 'mp-sub ' + S.size;
+    sb.style.top = 'calc(50% + 78px)';
+    sb.textContent = on ? 'Eg veit ikki hvat tú meinar.' : '';
+  }
+  function armHide(){
+    clearTimeout(hideTimer);
+    if(S.locked || sheetOpen || dragging || !S.playing) return;   // a paused player keeps its chrome
+    hideTimer = setTimeout(()=>{ mp.classList.add('hid'); }, HIDE_MS);
+  }
+  function showChrome(){ mp.classList.remove('hid'); armHide(); }
+  function startTick(){
+    clearInterval(tickTimer);
+    tickTimer = setInterval(()=>{
+      if(!S.playing || S.buffering) return;
+      if(!mp.classList.contains('on') && !rcRem.classList.contains('on') && !CAST) return;
+      S.pos = Math.min(S.dur, S.pos + 1); paint();
+    }, 1000);
+  }
+
+  /* ---- open / close ---- */
+  function openPlayer(title){
+    const it = findItem(title) || {};
+    S.title = it.title || title; S.kind = it.kind || 'movie';
+    S.ep = S.kind === 'series' ? 7 : null;
+    S.art = STILLS[(S.title.length) % STILLS.length];
+    S.pos = 862; S.dur = 2280; S.playing = true; S.locked = false; S.buffering = true;
+    $('mpArt').src = S.art;
+    $('mpKick').textContent = S.kind === 'series' ? S.title + ' · S2 E' + S.ep : (it.year ? String(it.year) : 'Film');
+    $('mpTitle').textContent = S.kind === 'series' ? 'Chikhai Bardo' : S.title;
+    $('mpBufKick').textContent = S.title;
+    $('mpBufTitle').textContent = S.kind === 'series' ? 'Chikhai Bardo' : S.title;
+    $('mpBufSub').textContent = S.kind === 'series' ? 'Season 2 · Episode ' + S.ep : (it.year ? String(it.year) : '');
+    $('mpNupTitle').textContent = 'Sweet Vitriol';
+    mp.classList.add('on'); mp.classList.remove('hid', 'lock');
+    closeSheet();
+    // R218: 400ms debounce, then direction B's cold start. An instant start shows nothing.
+    $('mpBuf').classList.remove('on');
+    const t = setTimeout(()=>{ if(S.buffering) $('mpBuf').classList.add('on'); }, 400);
+    setTimeout(()=>{ clearTimeout(t); S.buffering = false; $('mpBuf').classList.remove('on'); paint(); armHide(); }, 1900);
+    paint(); startTick();
+  }
+  function closePlayer(){ mp.classList.remove('on'); closeSheet(); clearTimeout(hideTimer); }
+
+  /* ---- sheets ---- */
+  function openSheetHTML(kind, html){
+    sheetOpen = kind; $('mpSheet').innerHTML = html;
+    $('mpSheet').classList.add('on'); $('mpScrim').classList.add('on');
+    showChrome(); clearTimeout(hideTimer); paint();
+  }
+  function closeSheet(){ sheetOpen = null; $('mpSheet').classList.remove('on'); $('mpScrim').classList.remove('on'); armHide(); paint(); }
+  function langRows(list, sel, kindAttr){
+    return list.map((g, i) => {
+      if(g.off) return '<button class="mp-row' + (sel === i ? ' on' : '') + '" data-' + kindAttr + '="' + i + '"><span class="nm">Off</span>'
+        + (sel === i ? '<span class="rt">' + tick + '</span>' : '') + '</button>';
+      return '<button class="mp-row' + (sel === i ? ' on' : '') + '" data-' + kindAttr + '="' + i + '">'
+        + '<span class="fi fi-' + g.cc + '"></span><span><span class="nm">' + esc(g.nm) + '</span>'
+        + (g.vers.length > 1 ? '<span class="sub">' + g.vers.length + ' versions</span>' : '') + '</span>'
+        + '<span class="rt">' + (sel === i ? tick : '') + chev + '</span></button>';
+    }).join('');
+  }
+  function pickerHTML(where){
+    const isSubs = S.tab === 'subs';
+    return '<div class="mp-grab"></div>'
+      + '<div class="mp-sh"><h4>Audio &amp; subtitles</h4><span class="sp"></span><button class="mp-b flat" data-mp="closesheet" aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>'
+      + (where === 'cast' ? '<div class="mp-note" style="padding-top:0;padding-bottom:12px">Applies on <b style="color:var(--ink-soft);font-weight:600">' + esc(CAST ? CAST.device : '—') + '</b></div>' : '')
+      + '<div class="mp-seg"><button data-mp="tab-aud"' + (isSubs ? '' : ' class="on"') + '>Audio</button><button data-mp="tab-subs"' + (isSubs ? ' class="on"' : '') + '>Subtitles</button></div>'
+      + (isSubs ? langRows(SUBS, S.sub, 'sublang') : langRows(AUDIO, S.aud, 'audlang'))
+      + (isSubs ? '<button class="mp-row" data-mp="size"><span><span class="nm">Subtitle size</span></span><span class="rt">' + SIZE_LABEL[S.size] + chev + '</span></button>' : '');
+  }
+  function versionsHTML(gi){
+    const g = SUBS[gi];
+    return '<div class="mp-grab"></div>'
+      + '<button class="mp-back" data-mp="backpicker">' + '<svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg> Subtitles</button>'
+      + '<div class="mp-sh" style="padding-top:4px"><span class="fi fi-' + g.cc + '" style="width:26px;height:19.5px;border-radius:3px"></span><h4>' + esc(g.nm) + '</h4></div>'
+      + g.vers.map((v, i) => '<button class="mp-row' + (S.sub === gi && S.ver === i ? ' on' : '') + '" data-subver="' + gi + ':' + i + '">'
+          + '<span><span class="nm">' + esc(v.nm) + (v.bdg ? ' <span class="mp-bdg">' + v.bdg + '</span>' : '') + '</span><span class="sub">' + esc(v.sub) + '</span></span>'
+          + (S.sub === gi && S.ver === i ? '<span class="rt">' + tick + '</span>' : '') + '</button>').join('')
+      + '<div class="mp-note">' + g.vers.length + ' tracks are tagged ' + esc(g.nm) + ' on this file. Ravilo never picks the signs-only one for you.</div>';
+  }
+  function sizeHTML(){
+    return '<div class="mp-grab"></div>'
+      + '<button class="mp-back" data-mp="backpicker"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg> Subtitles</button>'
+      + '<div class="mp-sh" style="padding-top:4px"><h4>Subtitle size</h4></div>'
+      + '<div class="mp-sizes">' + ['s','m','l'].map(k => '<button data-subsize="' + k + '"' + (S.size === k ? ' class="on"' : '') + '>' + k.toUpperCase() + '</button>').join('') + '</div>'
+      + '<div class="mp-note">Applies on this phone only. The size you set here is also what a cast uses on the TV.</div>';
+  }
+  function episodesHTMLSheet(){
+    const eps = [[6,'Attila','38 min · watched',100],[7,'Chikhai Bardo','38 min · playing now',38],[8,'Sweet Vitriol','35 min',0],[9,'Cold Harbor','41 min',0]];
+    return '<div class="mp-grab"></div>'
+      + '<div class="mp-sh"><h4>Season 2</h4><span class="sp"></span><span style="font-size:13px;color:var(--ink-dim)">10 episodes</span><button class="mp-b flat" data-mp="closesheet" aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>'
+      + eps.map((e, i) => '<button class="mp-ep' + (e[0] === S.ep ? ' on' : '') + '" data-ep="' + e[0] + '">'
+          + '<span class="th"><img src="' + STILLS[i % STILLS.length] + '" alt="">' + (e[3] ? '<span class="pb"><i style="width:' + e[3] + '%"></i></span>' : '') + '</span>'
+          + '<span><span class="n">' + e[0] + ' · ' + esc(e[1]) + '</span><span class="m">' + esc(e[2]) + '</span></span></button>').join('');
+  }
+  /* R237 — per-cause copy, reused verbatim. Named no product, protocol or status code. */
+  function failHTML(){
+    return '<div class="mp-fail"><h4>This phone needs to be signed in again</h4>'
+      + '<p>Sign in again to keep watching.</p>'
+      + '<div class="acts"><button class="pri" data-mp="closesheet">Sign in</button><button data-mp="leave">Back</button></div></div>';
+  }
+
+  /* ---- player events ---- */
+  mp.addEventListener('click', e => {
+    const b = e.target.closest('button'); const inSheet = e.target.closest('#mpSheet');
+    if(b){
+      const id = b.id, act = b.dataset.mp;
+      if(id === 'mpBack'){ closePlayer(); return; }
+      if(id === 'mpPP'){ S.playing = !S.playing; paint(); armHide(); return; }
+      if(id === 'mpBack10'){ S.pos = Math.max(0, S.pos - 10); paint(); showChrome(); return; }
+      if(id === 'mpFwd30'){ S.pos = Math.min(S.dur, S.pos + 30); paint(); showChrome(); return; }
+      if(id === 'mpSubsBtn'){ S.tab = 'subs'; openSheetHTML('picker', pickerHTML('local')); return; }
+      if(id === 'mpEpsBtn'){ openSheetHTML('eps', episodesHTMLSheet()); return; }
+      if(id === 'mpNextBtn'){ S.ep = (S.ep || 7) + 1; S.pos = 0; $('mpKick').textContent = S.title + ' · S2 E' + S.ep; $('mpTitle').textContent = 'Sweet Vitriol'; paint(); showChrome(); return; }
+      if(id === 'mpLockBtn'){ S.locked = true; mp.classList.add('lock'); clearTimeout(hideTimer); paint(); return; }
+      if(id === 'mpUnlock'){ $('mpLockNote').classList.add('on'); setTimeout(()=>$('mpLockNote').classList.remove('on'), 1200); return; }
+      if(id === 'mpSkip'){ S.pos = 92; paint(); showChrome(); return; }
+      if(id === 'mpNupGo'){ S.ep = (S.ep || 7) + 1; S.pos = 0; $('mpTitle').textContent = 'Sweet Vitriol'; $('mpKick').textContent = S.title + ' · S2 E' + S.ep; paint(); return; }
+      if(id === 'mpNupNo'){ S.dur = S.pos + 600; paint(); return; }
+      if(id === 'mpCast'){ openDeviceSheet(); return; }
+      if(id === 'mpRotate'){ $('mpToast').textContent = 'Rotate to full screen'; $('mpToast').classList.add('on'); setTimeout(()=>$('mpToast').classList.remove('on'), 900); return; }
+      if(act === 'closesheet'){ closeSheet(); return; }
+      if(act === 'leave'){ closeSheet(); closePlayer(); return; }
+      if(act === 'tab-aud'){ S.tab = 'aud'; openSheetHTML('picker', pickerHTML(sheetOpen === 'picker-cast' ? 'cast' : 'local')); return; }
+      if(act === 'tab-subs'){ S.tab = 'subs'; openSheetHTML('picker', pickerHTML(sheetOpen === 'picker-cast' ? 'cast' : 'local')); return; }
+      if(act === 'size'){ openSheetHTML('size', sizeHTML()); return; }
+      if(act === 'backpicker'){ S.tab = 'subs'; openSheetHTML('picker', pickerHTML('local')); return; }
+      if(b.dataset.sublang !== undefined){
+        const i = +b.dataset.sublang;
+        if(SUBS[i].off){ S.sub = 0; S.ver = 0; closeSheet(); }
+        else if(SUBS[i].vers.length === 1){ S.sub = i; S.ver = 0; closeSheet(); }
+        else openSheetHTML('vers', versionsHTML(i));
+        return;
+      }
+      if(b.dataset.subver !== undefined){ const p = b.dataset.subver.split(':'); S.sub = +p[0]; S.ver = +p[1]; closeSheet(); return; }
+      if(b.dataset.audlang !== undefined){ S.aud = +b.dataset.audlang; closeSheet(); return; }
+      if(b.dataset.subsize !== undefined){ S.size = b.dataset.subsize; openSheetHTML('size', sizeHTML()); paint(); return; }
+      if(b.dataset.ep !== undefined){ S.ep = +b.dataset.ep; S.pos = 0; $('mpKick').textContent = S.title + ' · S2 E' + S.ep; closeSheet(); return; }
+      return;
+    }
+    if(inSheet) return;
+    if(e.target.closest('#mpScrim')){ closeSheet(); return; }
+  });
+
+  /* Tap and double-tap live on pointerdown, where coordinates are reliable and
+     there is one code path for both. FR-R244-4: repeats accumulate (10 → 20 → 30)
+     while the ripple is up, and the chrome does not rise on a seek tap.
+     The tap window is kept on the element rather than in a closure so it is
+     observable when this is debugged on a real device. */
+  let ripTimer = null;
+  mp.addEventListener('pointerdown', e => {
+    if(e.target.closest('button, #mpBar, #mpSheet, #mpScrim, #mpBuf')) return;
+    if(S.locked){ $('mpLockNote').classList.add('on'); setTimeout(()=>$('mpLockNote').classList.remove('on'), 1200); return; }
+    const r = mp.getBoundingClientRect();
+    const cx = e.clientX;
+    let x = (r.width && typeof cx === 'number' && isFinite(cx)) ? (cx - r.left) / r.width : .5;
+    if(!isFinite(x)) x = .5;
+    const side = x < .38 ? 'l' : (x > .62 ? 'r' : null);
+    const now = Date.now();
+    const prevSide = mp.dataset.tapSide || '';
+    const prevAt = +(mp.dataset.tapAt || 0);
+    const rip = side === 'l' ? $('mpRipL') : (side === 'r' ? $('mpRipR') : null);
+    // in-window if the ripple is still up on this side, or the last tap was
+    // recent and on the same side — the ripple test is what makes a third and
+    // fourth tap accumulate rather than re-toggle the chrome.
+    if(side && rip && (rip.classList.contains('on') || (prevSide === side && now - prevAt < 600))){
+      const step = side === 'l' ? -10 : 30;
+      const accum = (+(mp.dataset.tapAccum || 0)) + step;
+      S.pos = Math.max(0, Math.min(S.dur, S.pos + step));
+      mp.dataset.tapSide = side; mp.dataset.tapAt = String(now); mp.dataset.tapAccum = String(accum);
+      rip.querySelector('b').textContent = (accum < 0 ? '−' : '+') + Math.abs(accum) + ' s';
+      rip.classList.remove('on'); void rip.offsetWidth; rip.classList.add('on');
+      clearTimeout(ripTimer);
+      ripTimer = setTimeout(()=>{ rip.classList.remove('on'); mp.dataset.tapAccum = '0'; mp.dataset.tapSide = ''; }, 760);
+      paint(); return;
+    }
+    mp.dataset.tapSide = side || ''; mp.dataset.tapAt = String(now); mp.dataset.tapAccum = '0';
+    if(mp.classList.contains('hid')) showChrome(); else { clearTimeout(hideTimer); mp.classList.add('hid'); }
+  });
+
+  /* drag-to-scrub, on both bars. The bubble rides the thumb; auto-hide is
+     suspended for the duration of the drag. */
+  /* drag-to-scrub, on both bars. pointermove/pointerup are window-level, so each
+     handler must bail unless it owns the live drag — otherwise a drag on the local
+     player's bar also runs the remote's handler, whose bar is display:none and
+     therefore zero-width, and (clientX-0)/0 sends the position to the end. */
+  let dragBar = null;
+  function wireBar(bar, onSet){
+    const set = e => {
+      const r = bar.getBoundingClientRect();
+      if(!r.width) return;
+      const cx = e.touches ? e.touches[0].clientX : e.clientX;
+      if(typeof cx !== 'number' || !isFinite(cx)) return;
+      const x = Math.min(1, Math.max(0, (cx - r.left) / r.width));
+      S.pos = Math.round(x * S.dur); onSet(x); paint();
+    };
+    bar.addEventListener('pointerdown', e => {
+      dragBar = bar; dragging = true; bar.classList.add('drag'); clearTimeout(hideTimer); set(e); e.preventDefault();
+    });
+    window.addEventListener('pointermove', e => { if(dragBar === bar) set(e); });
+    window.addEventListener('pointerup', () => {
+      if(dragBar !== bar) return;
+      dragBar = null; dragging = false; bar.classList.remove('drag');
+      $('mpBub').classList.remove('on'); armHide();
+    });
+  }
+  wireBar($('mpBar'), x => { const b = $('mpBub'); b.classList.add('on'); b.style.left = (x * 100) + '%'; b.textContent = fmt(S.pos); });
+  wireBar($('rcBarSeek'), () => {});
+
+  /* ---- casting ---- */
+  function deviceSheetHTML(){
+    return '<div class="mp-grab"></div>'
+      + '<div class="mp-sh"><h4>' + (CAST ? 'Casting to ' + esc(CAST.device) : 'Cast to') + '</h4><span class="sp"></span><button class="mp-b flat" data-mp="closesheet" aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>'
+      + '<div class="mp-note" style="padding-top:0;padding-bottom:10px">On a real phone this is the <b style="color:var(--ink-soft);font-weight:600">platform\'s own</b> Cast dialog. Drawn here so the moment works in the mockup.</div>'
+      + DEVICES.map(d => '<button class="mp-row' + (CAST && CAST.device === d ? ' on' : '') + '" data-dev="' + esc(d) + '">'
+          + '<span class="rc-ic' + (CAST && CAST.device === d ? ' rc-on' : '') + '" style="width:20px;height:16px"><span class="bx"></span><span class="fl"></span></span>'
+          + '<span class="nm">' + esc(d) + '</span>' + (CAST && CAST.device === d ? '<span class="rt">' + tick + '</span>' : '') + '</button>').join('')
+      + (CAST ? '<button class="mp-row" data-mp="stopcast"><span class="nm" style="color:#ff9b8a">Stop casting</span></button>' : '');
+  }
+  function openDeviceSheet(){ csSheetOpen(deviceSheetHTML()); }
+  function csSheetOpen(html){ $('csSheet').innerHTML = html; $('csSheet').classList.add('on'); $('csScrim').classList.add('on'); }
+  function csSheetClose(){ $('csSheet').classList.remove('on'); $('csScrim').classList.remove('on'); }
+  $('csScrim').addEventListener('click', csSheetClose);
+  $('csSheet').addEventListener('click', e => {
+    const b = e.target.closest('button'); if(!b) return;
+    if(b.dataset.mp === 'closesheet'){ csSheetClose(); return; }
+    if(b.dataset.mp === 'stopcast'){ csSheetClose(); stopCast(); return; }
+    if(b.dataset.dev !== undefined){
+      csSheetClose();
+      // pressing cast inside the player hands the current position over and swaps
+      // straight to the remote (decision 6, 2026-09-16)
+      const at = mp.classList.contains('on') ? S.pos : null;
+      if(mp.classList.contains('on')) closePlayer();
+      connect(b.dataset.dev, at); return;
+    }
+  });
+  function bar(html, cls){ rcBar.className = 'rc-bar on'; rcBar.innerHTML = html; if(cls) rcBar.classList.add(cls); }
+  function connect(device, handoffPos){
+    CAST = { device: device };
+    bar('<span class="sp"></span> Connecting to ' + esc(device) + '…');
+    paintCast();
+    setTimeout(()=>{
+      bar('<span class="dot"></span> Casting to ' + esc(device));
+      setTimeout(()=>{ rcBar.classList.remove('on'); }, 1800);
+      if(handoffPos != null) S.pos = handoffPos;
+      openRemote();
+    }, 1400);
+  }
+  function stopCast(){
+    CAST = null; rcBar.classList.remove('on'); rcRem.classList.remove('on');
+    rcMini.classList.remove('on'); paintCast();
+  }
+  function paintCast(){
+    $('castGlyph').className = 'rc-ic' + (CAST ? ' rc-on' : '');
+    $('rcDevName').textContent = CAST ? CAST.device : '—';
+    $('rcMiniDev').textContent = CAST ? CAST.device : '—';
+    $('rcMiniTitle').textContent = S.kind === 'series' ? 'Chikhai Bardo' : (S.title || '—');
+    $('rcMiniArt').src = S.art; $('rcArtImg').src = S.art;
+    $('rcKick').textContent = S.kind === 'series' ? S.title + ' · S2 E' + S.ep : (S.kind === 'movie' && S.title ? 'Film' : (S.title || '—'));
+    $('rcTitle').textContent = S.kind === 'series' ? 'Chikhai Bardo' : (S.title || '—');
+    // mini bar shows only while casting, and never dismisses while it runs
+    rcMini.classList.toggle('on', !!CAST && !rcRem.classList.contains('on'));
+    paint();
+  }
+  function openRemote(){
+    if(!CAST) return;
+    closePlayer();
+    rcRem.classList.add('on'); rcMini.classList.remove('on');
+    $('rcNext').style.display = S.kind === 'series' ? '' : 'none';
+    paintCast();
+  }
+  function closeRemote(){ rcRem.classList.remove('on'); paintCast(); }
+
+  $('castBtn').addEventListener('click', ()=>{
+    if(CAST){ openRemote(); return; }
+    if(!S.title){
+      const lib = R.libraryFor ? R.libraryFor(me) : (R.library || []);
+      const first = (lib || []).find(i => i && i.title);
+      if(first){ S.title = first.title; S.kind = first.kind || 'movie'; S.ep = 7; S.art = STILLS[(first.title.length) % STILLS.length]; }
+    }
+    openDeviceSheet();
+  });
+  mp.addEventListener('click', e => {
+    if(e.target.closest('[data-mp="stopcast"]')){ closeSheet(); stopCast(); return; }
+  });
+  rcMini.addEventListener('click', e => {
+    if(e.target.closest('#rcMiniPP')){ S.playing = !S.playing; paint(); return; }
+    openRemote();
+  });
+  rcRem.addEventListener('click', e => {
+    const b = e.target.closest('button'); if(!b) return;
+    const id = b.id, act = b.dataset.mp;
+    if(id === 'rcClose'){ closeRemote(); return; }
+    if(id === 'rcPP'){ S.playing = !S.playing; paint(); return; }
+    if(id === 'rcBack10'){ S.pos = Math.max(0, S.pos - 10); paint(); return; }
+    if(id === 'rcFwd30'){ S.pos = Math.min(S.dur, S.pos + 30); paint(); return; }
+    if(id === 'rcStop'){ stopCast(); return; }
+    if(id === 'rcDev'){ rcSheetOpen(deviceSheetHTML()); return; }
+    if(id === 'rcNext'){ S.ep = (S.ep || 7) + 1; S.pos = 0; paintCast(); return; }
+    if(id === 'rcSubs'){ S.tab = 'subs'; rcSheetOpen(pickerHTML('cast')); return; }
+    if(act === 'closesheet'){ rcSheetClose(); return; }
+    if(act === 'tab-aud'){ S.tab = 'aud'; rcSheetOpen(pickerHTML('cast')); return; }
+    if(act === 'tab-subs'){ S.tab = 'subs'; rcSheetOpen(pickerHTML('cast')); return; }
+    if(act === 'size'){ rcSheetOpen(sizeHTML()); return; }
+    if(act === 'backpicker'){ S.tab = 'subs'; rcSheetOpen(pickerHTML('cast')); return; }
+    if(act === 'stopcast'){ rcSheetClose(); stopCast(); return; }
+    if(b.dataset.sublang !== undefined){
+      const i = +b.dataset.sublang;
+      if(SUBS[i].off){ S.sub = 0; S.ver = 0; rcSheetClose(); }
+      else if(SUBS[i].vers.length === 1){ S.sub = i; S.ver = 0; rcSheetClose(); }
+      else rcSheetOpen(versionsHTML(i));
+      return;
+    }
+    if(b.dataset.subver !== undefined){ const p = b.dataset.subver.split(':'); S.sub = +p[0]; S.ver = +p[1]; rcSheetClose(); return; }
+    if(b.dataset.audlang !== undefined){ S.aud = +b.dataset.audlang; rcSheetClose(); return; }
+    if(b.dataset.subsize !== undefined){ S.size = b.dataset.subsize; rcSheetOpen(sizeHTML()); return; }
+    if(b.dataset.dev !== undefined){ CAST = { device: b.dataset.dev }; rcSheetClose(); paintCast(); return; }
+  });
+  function rcSheetOpen(html){ $('rcSheet').innerHTML = html; $('rcSheet').classList.add('on'); $('rcScrim').classList.add('on'); }
+  function rcSheetClose(){ $('rcSheet').classList.remove('on'); $('rcScrim').classList.remove('on'); }
+  $('rcScrim').addEventListener('click', rcSheetClose);
+
+  /* Play on a detail screen: casts if connected, plays locally if not. Either
+     way the position goes with it — the handover is one act, not two. */
+  dscroll.addEventListener('click', e => {
+    const p = e.target.closest('[data-mplay]'); if(!p) return;
+    e.stopPropagation();
+    const title = p.dataset.mplay;
+    if(CAST){ const it = findItem(title) || {}; S.title = it.title || title; S.kind = it.kind || 'movie'; S.ep = 7;
+      S.art = STILLS[(S.title.length) % STILLS.length]; S.pos = 862; S.playing = true; closeDetail(); openRemote(); return; }
+    closeDetail(); openPlayer(title);
+  });
+  /* mockup-only preview control (fenced in the markup): drives the two states a
+     mockup cannot otherwise reach — R237's failed start, and FR-R244-7's rotate
+     button, which the product shows ONLY when the system has portrait locked. */
+  let portraitLocked = false;
+  document.getElementById('prevPick').addEventListener('click', e => {
+    const b = e.target.closest('button[data-pv]'); if(!b) return;
+    if(b.dataset.pv === 'fail'){
+      if(!mp.classList.contains('on')) openPlayer(S.title || 'Big Buck Bunny');
+      S.buffering = false; $('mpBuf').classList.remove('on');
+      openSheetHTML('fail', failHTML());
+      return;
+    }
+    if(b.dataset.pv === 'portraitlock'){
+      portraitLocked = !portraitLocked;
+      b.classList.toggle('on', portraitLocked);
+      $('mpRotate').style.display = portraitLocked ? '' : 'none';
+    }
+  });
+
+  paintCast(); startTick();
 
   render();
 })();

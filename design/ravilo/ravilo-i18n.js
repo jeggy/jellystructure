@@ -4,6 +4,21 @@
 (function () {
   const STR = {
     en: {
+      /* R244 — phone player chrome (2026-09-16). No speed strings: playback speed
+         was removed from the design entirely by owner decision the same day. */
+      pl_subtitles: 'Subtitles', pl_episodes: 'Episodes', pl_next: 'Next', pl_lock: 'Lock', pl_guide: 'Guide',
+      pl_locked_hint: 'Locked · hold to unlock', pl_rotate: 'Rotate to full screen',
+      pl_fit: 'Fit', pl_fill: 'Fill', pl_play_now: 'Play now',
+      pl_sub_size: 'Subtitle size', pl_size_s: 'Small', pl_size_m: 'Medium', pl_size_l: 'Large',
+      pl_sub_size_note: 'Applies on this phone only.',
+      /* R245 — casting. {device} is the Chromecast's own name, as the viewer named it. */
+      cast_ready: 'Ready to play from your phone', cast_connecting: 'Connecting to {device}…',
+      cast_connected: 'Casting to {device}', cast_reconnecting: 'Reconnecting to {device}…',
+      cast_playing_on: 'Playing on {device}', cast_paused_on: 'Paused on {device}', cast_play_on: 'Play on {device}',
+      cast_stop: 'Stop casting', cast_applies_on: 'Applies on {device}',
+      cast_lost: 'Lost contact with {device}', cast_lost_sub: 'It may still be playing. Ravilo cannot reach it to check.',
+      cast_no_server: 'Can\u2019t reach your Ravilo server', cast_no_server_sub: 'Check that the server is on and try again from your phone.',
+      srv_busy: 'The server is busy right now', srv_busy_sub: 'It will start as soon as it can.', cast_waiting: 'waiting {n} s',
       nav_top10: 'Top 10', request_fetch: 'Request', requesting: 'Requesting…', fetching: 'Fetching', in_library: 'In Library',
       watch_now: 'Watch Now', not_in_library: 'Not in your library yet', requested_via: 'Requested · fetching it now',
       in_queue: 'In queue', importing: 'Importing…', requested: 'Requested', failed: 'Failed', stalled: 'stalled', starting: 'starting', retry_fetch: 'Retry', watch_e1: 'Watch Now · E1',
@@ -40,6 +55,20 @@
       br_from: 'From', br_to: 'Up to', br_any: 'Any', br_range_hint: '◂ ▸ adjust · OK done',
     },
     da: {
+      /* R244 / R245 — drafts. Where a string already exists above, the existing
+         wording wins; these were not reviewed by a Danish speaker. */
+      pl_subtitles: 'Undertekster', pl_episodes: 'Afsnit', pl_next: 'Næste', pl_lock: 'Lås', pl_guide: 'Guide',
+      pl_locked_hint: 'Låst · hold for at låse op', pl_rotate: 'Drej for fuld skærm',
+      pl_fit: 'Tilpas', pl_fill: 'Udfyld', pl_play_now: 'Spil nu',
+      pl_sub_size: 'Størrelse på undertekster', pl_size_s: 'Lille', pl_size_m: 'Mellem', pl_size_l: 'Stor',
+      pl_sub_size_note: 'Gælder kun på denne telefon.',
+      cast_ready: 'Klar til at spille fra din telefon', cast_connecting: 'Forbinder til {device}…',
+      cast_connected: 'Caster til {device}', cast_reconnecting: 'Forbinder igen til {device}…',
+      cast_playing_on: 'Spiller på {device}', cast_paused_on: 'Pauset på {device}', cast_play_on: 'Spil på {device}',
+      cast_stop: 'Stop casting', cast_applies_on: 'Gælder på {device}',
+      cast_lost: 'Mistede forbindelsen til {device}', cast_lost_sub: 'Den spiller måske stadig. Ravilo kan ikke nå den.',
+      cast_no_server: 'Kan ikke nå din Ravilo-server', cast_no_server_sub: 'Tjek at serveren er tændt, og prøv igen fra din telefon.',
+      srv_busy: 'Serveren er travl lige nu', srv_busy_sub: 'Den starter, så snart den kan.', cast_waiting: 'venter {n} s',
       br_genre: 'Genre', br_type: 'Type', br_maturity: 'Aldersgrænse', br_year: 'Årti', br_watched: 'Set',
       br_audio: 'Lyd', br_channel: 'Kanal', br_quality: 'Kvalitet', br_sort: 'Sortér', br_titles: 'titler', br_person: 'Medvirkende',
       br_s_added: 'Senest tilføjet', br_s_year: 'Udgivelsesår', br_s_maturity: 'Aldersgrænse', br_s_imdb: 'IMDb-bedømmelse',
@@ -76,6 +105,19 @@
       lt_browse: 'gennemse', lt_tune: 'stil ind', lt_change_channel: 'skift kanal', lt_no_channel: 'Ingen kanal',
     },
     fo: {
+      /* R244 / R245 — drafts, not reviewed by a Faroese speaker. */
+      pl_subtitles: 'Undirtekstir', pl_episodes: 'Rað', pl_next: 'Næsta', pl_lock: 'Lás', pl_guide: 'Skrá',
+      pl_locked_hint: 'Lást · trýst og hald til at lata upp', pl_rotate: 'Vend fyri fulla skerm',
+      pl_fit: 'Tilpassa', pl_fill: 'Fyll', pl_play_now: 'Spæl nú',
+      pl_sub_size: 'Stødd á undirtekstum', pl_size_s: 'Lítil', pl_size_m: 'Miðal', pl_size_l: 'Stór',
+      pl_sub_size_note: 'Virkar bert á hesi telefon.',
+      cast_ready: 'Klár at spæla frá telefonini', cast_connecting: 'Sambindur við {device}…',
+      cast_connected: 'Sendir til {device}', cast_reconnecting: 'Sambindur aftur við {device}…',
+      cast_playing_on: 'Spælir á {device}', cast_paused_on: 'Steðgað á {device}', cast_play_on: 'Spæl á {device}',
+      cast_stop: 'Stovna casting', cast_applies_on: 'Virkar á {device}',
+      cast_lost: 'Missti sambandið við {device}', cast_lost_sub: 'Hon spælir kanska enn. Ravilo kann ikki ná henni.',
+      cast_no_server: 'Kann ikki ná Ravilo-servaranum', cast_no_server_sub: 'Kanna um servarin er á, og royn aftur frá telefonini.',
+      srv_busy: 'Servarin hevur mikið at gera nú', srv_busy_sub: 'Hon byrjar, so skjótt sum gjørligt.', cast_waiting: 'bíðar {n} s',
       br_genre: 'Sjanra', br_type: 'Slag', br_maturity: 'Aldursmark', br_year: 'Áratíggju', br_watched: 'Sætt',
       br_audio: 'Ljóð', br_channel: 'Rás', br_quality: 'Góðska', br_sort: 'Raða', br_titles: 'heiti', br_person: 'Leikarar',
       br_s_added: 'Nýliga lagt afturat', br_s_year: 'Útgávuár', br_s_maturity: 'Aldursmark', br_s_imdb: 'IMDb-meting',

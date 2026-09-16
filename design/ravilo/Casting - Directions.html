@@ -1,0 +1,846 @@
+<!doctype html>
+<html lang="en" data-skin="aurora">
+<head>
+<meta charset="utf-8">
+<title>Ravilo — Casting directions (round 1)</title>
+<meta name="design_doc_mode" content="canvas">
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../flags.css">
+<link rel="stylesheet" href="mobile-directions.css">
+<style>
+/* ---- the platform's own Cast dialog: drawn so the moment reads, never redesigned ---- */
+.sysdlg{position:absolute;left:14px;right:14px;bottom:14px;border-radius:16px;background:#2b2c31;color:#e6e7ea;padding:18px 20px 14px;z-index:70;box-shadow:0 -10px 40px rgba(0,0,0,.6);font-family:'Sora',sans-serif}
+.sysdlg h5{margin:0 0 4px;font-size:16px;font-weight:600}
+.sysdlg .sd{font-size:13px;color:#a8aab2;margin-bottom:14px}
+.sysdlg .dev{display:flex;align-items:center;gap:13px;min-height:52px;font-size:15px}
+.sysdlg .dev .ic{width:28px;height:28px;flex:none;color:#8ab4f8}
+.sysdlg .dev .ic svg{width:28px;height:28px;fill:none;stroke:currentColor;stroke-width:1.8}
+.sysdlg .dev.on{color:#8ab4f8}
+.sysdlg .ft{margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,.12);font-size:13px;color:#a8aab2}
+.platnote{position:absolute;left:0;right:0;bottom:-30px;font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:#6b7183;text-align:center}
+/* ---- android cast notification (B4): the platform owns the layout ---- */
+.notif{position:absolute;left:12px;right:12px;top:110px;border-radius:22px;background:#1f2024;padding:14px;z-index:70;color:#e6e7ea}
+.notif .hd{display:flex;align-items:center;gap:8px;font-size:13px;color:#a8aab2;margin-bottom:11px}
+.notif .bd{display:flex;gap:12px}
+.notif .th{width:64px;height:64px;border-radius:10px;overflow:hidden;flex:none}
+.notif .th img{width:100%;height:100%;object-fit:cover}
+.notif .n{font-size:15px;font-weight:600}
+.notif .s{font-size:13px;color:#a8aab2;margin-top:3px}
+.notif .tr{display:flex;gap:6px;margin-top:11px;justify-content:flex-end}
+.notif .tr b{width:46px;height:46px;border-radius:50%;background:rgba(255,255,255,.09);display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700}
+.lockclock{position:absolute;left:0;right:0;top:34px;text-align:center;font-family:'Space Grotesk',sans-serif}
+.lockclock .h{font-size:62px;font-weight:600;letter-spacing:-.02em;line-height:1}
+.lockclock .d{font-size:14px;color:#a8aab2;margin-top:6px}
+
+/* ---- jellystructure Settings card · wf.css values, copied not linked ---- */
+.jsa{position:absolute;width:760px;--bg:#16181f;--bg-2:#1a1d25;--fill:#262a37;--fill-2:#20242f;--fill-3:#2f3441;--ink:#dde1ec;--ink-soft:#9aa0b4;--line:rgba(255,255,255,.08);--line-2:rgba(255,255,255,.14);--hi:#7b6ef0;--hi-soft:rgba(123,110,240,.16);--acc-ink:#c6bcfb;--grad:linear-gradient(122deg,#b15cd0 0%,#7b6ef0 48%,#00a4dc 100%);--ok:#2dd49a;--warn:#f5b542;--bad:#ff6f61;--info:#3fb6f5;background:#16181f;border-radius:18px;padding:18px;box-shadow:0 24px 60px rgba(0,0,0,.5);font-family:'Sora',sans-serif;color:#dde1ec}
+.jsa *{box-sizing:border-box}
+.jsa .card{background:rgba(46,51,66,.74);border:1px solid var(--line);border-radius:16px;box-shadow:0 4px 16px rgba(0,0,0,.32);padding:16px}
+.jsa h3{font-family:'Space Grotesk',sans-serif;font-size:1.05rem;margin:0;font-weight:600}
+.jsa .row{display:flex;gap:10px}
+.jsa .row.center{align-items:center}
+.jsa .spacer{flex:1}
+.jsa .fill{flex:1}
+.jsa .tiny{font-size:.8rem}
+.jsa .muted{color:var(--ink-soft)}
+.jsa .mono{font-family:'JetBrains Mono',monospace;font-size:.84em}
+.jsa .field{display:flex;flex-direction:column;gap:5px;margin-bottom:14px}
+.jsa .field label{font-size:.76rem;font-weight:600;letter-spacing:.02em;color:var(--ink-soft);text-transform:uppercase}
+.jsa .field .hint{font-size:.76rem;color:var(--ink-soft)}
+.jsa .input{background:var(--fill-2);border:1px solid var(--line-2);border-radius:10px;padding:9px 12px;font-size:.9rem;color:var(--ink);min-height:38px;display:flex;align-items:center;gap:8px}
+.jsa .input.empty{color:rgba(221,225,236,.32)}
+.jsa .box{background:rgba(46,51,66,.74);border:1px solid var(--line);border-radius:16px;padding:16px}
+.jsa .box.flat{background:var(--fill-2);box-shadow:none}
+.jsa .toggle{width:44px;height:25px;border:1px solid var(--line-2);border-radius:20px;background:var(--fill-3);position:relative;display:inline-block;flex:none}
+.jsa .toggle::after{content:'';position:absolute;top:2px;left:3px;width:17px;height:17px;border-radius:50%;background:var(--ink-soft)}
+.jsa .toggle.on{background:var(--grad);border-color:transparent}
+.jsa .toggle.on::after{left:auto;right:3px;background:#fff}
+.jsa .badge{display:inline-flex;align-items:center;gap:5px;font-size:.72rem;font-weight:600;padding:3px 9px;border-radius:7px;border:1px solid transparent;white-space:nowrap}
+.jsa .badge.ok{background:rgba(45,212,154,.14);border-color:rgba(45,212,154,.4);color:var(--ok)}
+.jsa .badge.warn{background:rgba(245,181,66,.14);border-color:rgba(245,181,66,.4);color:var(--warn)}
+.jsa .badge.info{background:rgba(63,182,245,.14);border-color:rgba(63,182,245,.4);color:var(--info)}
+.jsa .btn{font-weight:600;font-size:.9rem;display:inline-flex;align-items:center;gap:7px;padding:9px 15px;background:var(--fill-3);color:var(--ink);border:1px solid var(--line-2);border-radius:10px;white-space:nowrap}
+.jsa .btn.sm{padding:5px 11px;font-size:.8rem}
+.jsa .btn.ghost{background:transparent;border-color:transparent;color:var(--ink-soft)}
+.jsa hr.dash{border:none;border-top:1px solid var(--line);margin:14px 0}
+.jsa .step-n{width:28px;height:28px;border-radius:8px;background:var(--hi-soft);color:var(--acc-ink);font-weight:700;font-family:'Space Grotesk',sans-serif;display:inline-flex;align-items:center;justify-content:center;flex:none;font-size:.95rem}
+.jsa .note{font-size:.9rem;line-height:1.45;background:var(--hi-soft);color:var(--ink);padding:12px 14px;border-radius:10px;border:1px solid var(--line-2)}
+.jsa .stp{display:grid;grid-template-columns:28px 1fr;gap:12px;align-items:start;margin-bottom:12px}
+.jsa .stp p{margin:0;font-size:.85rem;line-height:1.55;color:var(--ink-soft)}
+.jsa .stp p b{color:var(--ink);font-weight:600}
+.jsa .stat{display:grid;gap:8px}
+.jsa .stat>div{display:flex;align-items:center;gap:9px;font-size:.82rem;color:var(--ink-soft)}
+.jsa .stat b{color:var(--ink);font-weight:600}
+.jsa .dt{width:8px;height:8px;border-radius:50%;flex:none;background:var(--ok)}
+.jsa .dt.w{background:var(--warn)}
+.jsa .dt.o{background:rgba(221,225,236,.3)}
+.jsa .num{display:flex;align-items:center;gap:0;border:1px solid var(--line-2);border-radius:10px;overflow:hidden;width:132px}
+.jsa .num b{width:40px;height:38px;display:flex;align-items:center;justify-content:center;background:var(--fill-3);font-size:1rem;font-weight:600}
+.jsa .num span{flex:1;text-align:center;font-family:'JetBrains Mono',monospace;font-size:.95rem;font-weight:600;background:var(--fill-2);height:38px;display:flex;align-items:center;justify-content:center}
+</style>
+</head>
+<body style="width:5700px;height:8120px;position:relative">
+
+<!-- ============ 0 · INTRO ============ -->
+<div class="lbl w3" style="left:0;top:0">
+  <span class="tag new">Round 1 · directions only · 2026-09-16</span>
+  <h2>Casting from the phone to a Chromecast</h2>
+  <small>Against <b>design brief §B / §C / §F</b>. The whole flow as a storyboard, two directions for the full-screen remote, the mini bar, the ten screens the <b>TV</b> shows while it is being cast to, and the admin card that turns the feature on.<br><br>One architectural fact decides almost every frame here: <b>the receiver is its own Ravilo device</b>, not a screen the phone drives. It holds its own device token, runs its own heartbeats, advances to the next episode and honours Skip Intro by itself. So the phone is a remote in the literal sense — it can die, and the TV keeps playing.</small>
+</div>
+
+<div class="panel" style="left:1500px;top:0;width:1360px">
+  <h2>What the architecture already decided</h2>
+  <p class="lead">Five things are settled by the investigation and the owner's answers. They are not design choices, and three of them are the reason this is not just "a remote screen".</p>
+  <table class="tbl">
+    <tr><th style="width:190px">Settled</th><th>Consequence for these frames</th></tr>
+    <tr><td><b>The TV keeps playing if the phone dies</b></td><td>The remote is never the source of truth. On app start it <b>rebuilds from the receiver</b> — item, position, tracks, next-up — never from anything the phone remembered. That is why the re-connect moment is drawn as a first-class screen and not an edge case.</td></tr>
+    <tr><td><b>Re-connect has two outcomes, and one of them is silence</b></td><td>Cast still running → the mini bar appears with the live position. Receiver finished or gone → <b>nothing is shown and no error is raised</b>; the viewer just casts again with one tap. An "your cast ended" toast would be noise about something they already know.</td></tr>
+    <tr><td><b>The cast button is server-pushed</b></td><td>It exists only when the server says Chromecast is set up. <b>Absent, never greyed</b> — a disabled control is a promise you are not keeping. Off in Settings ⇒ the phone is told there is nothing to cast to and never guesses.</td></tr>
+    <tr><td><b>The receiver appears in Users &amp; devices</b></td><td>It enrols with a hand-off code and gets its own row, so phase 110 gives it a named Jellyfin session — which is why the owner's <i>"control the pause from the Jellyfin dashboard"</i> already works once this exists. Nothing on the phone has to implement it.</td></tr>
+    <tr><td><b>Every cast is a Jellyfin encode</b></td><td>A Cast receiver never direct-plays MKV. So <b>R222's slow-to-start note, R218's waiting states and R182's busy state all apply to casting</b>, and the remote has to hold them — drawn as three of its seven states. The viewer is still never told why.</td></tr>
+  </table>
+  <div class="warn"><b>The one thing the admin pays for is named.</b> Google is the only product named anywhere in this canvas, and only on the admin card, because the admin registers a Cast application with Google for US$5. Nothing in the viewer's half names a product, a protocol or a status code.</div>
+</div>
+
+<div class="panel" style="left:3000px;top:0;width:1340px">
+  <h2>Read it in this order</h2>
+  <p class="lead">§B1 is the flow, drawn as nine phone frames left to right — there is only one design, so there is nothing to choose there; it either reads or it does not. <b>The choice in this canvas is the remote (§B2)</b>: two directions, on the axis of <b>whether the artwork is the screen or a card on it</b>.</p>
+  <div class="good"><b>Recommendation: Remote 2 · Now playing.</b> The art is a 16:9 card on a solid ground instead of a dimmed full-bleed backdrop. Three reasons, in order of weight: (1) <b>ink on a solid surface always clears 4.5:1</b> — a scrimmed backdrop does not, and the household's library mostly has no backdrop at all, so direction 1's best case is its rarest case; (2) the device you are controlling belongs at the <b>top</b>, as a chip that is also how you switch or stop — direction 1 buries <i>Stop casting</i> in the bottom row with everything else; (3) it degrades to a wordmark tile with no redraw, the same rule R243's taxonomy walls already follow.</p>
+  <p>Then §C — the receiver's ten screens, at 1920 × 1080 scaled to a third. They are deliberately the dullest thing in this document: <b>nothing on them is interactive</b>, so every one is a single sentence or a single overlay.</p>
+  <p>Then §F — the admin card in three states, in <span class="mono">app/settings.html</span>'s own idiom.</p>
+  <h4>Not drawn, on purpose</h4>
+  <p>No AirPlay affordance (dropped, 2026-09-16). No device picker of our own — that dialog is the platform's on both phones and redesigning it would be a lie about what ships. No volume slider on the remote (hardware keys plus a transient pill). No Cast Connect (later phase). No "Play on Stue TV" — it is phase 111's own thing and belongs with §D.</p>
+</div>
+
+<!-- ============ 1 · §B1 THE FLOW ============ -->
+<div class="rule" style="left:0;top:1000px;width:5600px"></div>
+<div class="lbl w3" style="left:0;top:1060px">
+  <span class="tag">Brief §B1 · storyboard</span>
+  <h2>From "I want this on the TV" to "the TV is playing it"</h2>
+  <small>Nine frames, Android portrait. The owner's requirement is that starting a cast be <b>super simple and fast</b>: the cast icon is on every app bar, one tap opens the system picker, and pressing Play while connected casts instead of playing locally. No interstitial, no setup step, no "connecting…" screen that owns the whole view.</small>
+</div>
+
+<div class="lbl" style="left:0;top:1280px"><span class="tag">1</span><h3>The cast icon, on every app bar</h3><small>Detail screen, not casting yet. The icon sits between Search and the avatar. <b>Three states:</b> idle outline · connecting (the bars fill in sequence) · connected (filled, accent-tinted). It is absent entirely when Chromecast is off server-side.</small></div>
+<div class="lbl" style="left:470px;top:1280px"><span class="tag">2</span><h3>The system picker — not ours</h3><small>One tap. This dialog belongs to the platform on both Android and iOS; we draw the frame around it so the moment is understood and then leave it alone. Drawn as Android's; iOS's is a sheet with the same content.</small></div>
+<div class="lbl" style="left:940px;top:1280px"><span class="tag">3</span><h3>Connecting</h3><small>A thin bar under the app bar, nothing more — the app stays usable while it connects. <b>"Connecting to Living room TV…"</b> becomes <b>"Casting to Living room TV"</b> and the bar retires itself after ~2 s.</small></div>
+<div class="lbl" style="left:1410px;top:1280px"><span class="tag">4</span><h3>Play casts, and opens the remote</h3><small>While connected, the detail screen's primary action says <b>Play on Living room TV</b>. Pressing it hands the item and the resume position over and pushes the remote. Pressing the cast icon <i>inside</i> a local player hands the current position over instead.</small></div>
+<div class="lbl" style="left:1880px;top:1280px"><span class="tag">5</span><h3>Re-connect · the moment</h3><small>App opened cold, a cast already running. The icon animates and one bar reads <b>"Reconnecting to Living room TV…"</b>. This is the <b>requirement</b> of §B1.5, not a nicety: the phone may have been dead, and the TV never stopped.</small></div>
+<div class="lbl" style="left:2350px;top:1280px"><span class="tag pick">6</span><h3>…outcome A: it is still playing</h3><small>The mini bar appears with the <b>live</b> position read from the receiver, and one tap opens the remote. This frame is also <b>§B3</b>: the mini bar is what casting looks like from every other screen in the app.</small></div>
+<div class="lbl" style="left:2820px;top:1280px"><span class="tag pick">7</span><h3>…outcome B: it has finished or gone</h3><small><b>Nothing.</b> No bar, no toast, no error — just the app, with the cast icon back to idle. The viewer already knows the film ended; telling them is a notification about the past.</small></div>
+<div class="lbl" style="left:3290px;top:1280px"><span class="tag">8</span><h3>Stop casting</h3><small>From the remote's footer or from the cast icon. The mini bar goes, the icon returns to idle, and the TV returns to the receiver's idle screen. No confirmation dialog — it is one tap to start again.</small></div>
+<div class="lbl" style="left:3760px;top:1280px"><span class="tag">9</span><h3>Lock screen · §B4</h3><small>The Cast SDK's own notification, so the layout is the platform's. Ours to decide: the artwork crop and the copy. <b>Landscape still, not poster</b> — a poster crops to nothing at 64 px — and the device name on the second line where the artist would be.</small></div>
+
+<!-- 1 · cast icon idle on a detail screen -->
+<div class="dv and" style="left:0;top:1560px"><div class="pnch"></div>
+  <div style="position:absolute;inset:0;background:var(--bg);display:flex;flex-direction:column">
+    <div class="sbar"><span>9:41</span><span class="ic"><svg width="16" height="11" viewBox="0 0 17 12" fill="currentColor"><rect x="0" y="7" width="3" height="5" rx="1"/><rect x="4.5" y="4.5" width="3" height="7.5" rx="1"/><rect x="9" y="2" width="3" height="10" rx="1"/><rect x="13.5" y="0" width="3" height="12" rx="1"/></svg><svg width="23" height="11" viewBox="0 0 25 12" fill="none"><rect x="1" y="1" width="20" height="10" rx="3" stroke="currentColor" stroke-opacity=".5"/><rect x="2.5" y="2.5" width="14" height="7" rx="1.5" fill="currentColor"/></svg></span></div>
+    <div style="position:relative;height:392px"><img src="assets/bbb-backdrop-landscape.png" alt="" style="width:100%;height:100%;object-fit:cover">
+      <div style="position:absolute;inset:0;background:linear-gradient(0deg,var(--bg) 4%,rgba(10,12,19,.55) 42%,rgba(10,12,19,.2))"></div>
+      <div style="position:absolute;left:0;right:0;top:38px;display:flex;align-items:center;gap:10px;padding:0 14px">
+        <div class="tb plain"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></div>
+        <span style="flex:1"></span>
+        <div class="tb plain"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg></div>
+        <div class="tb plain"><span class="castic"><span class="box"></span><span class="fillb"></span></span></div>
+        <div style="width:34px;height:34px;border-radius:50%;background:var(--grad);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;color:#fff">ER</div>
+      </div>
+      <div style="position:absolute;left:20px;right:20px;bottom:16px">
+        <div class="ctx" style="align-items:flex-start;text-align:left"><div class="k">Severance</div><div class="t" style="font-size:30px">Chikhai Bardo</div><div class="s">S2 E7 · 38 min · 2025</div></div>
+      </div>
+    </div>
+    <div style="padding:16px 20px 0;display:flex;gap:10px">
+      <div style="flex:1;height:50px;border-radius:13px;background:#fff;color:#0a0c13;display:flex;align-items:center;justify-content:center;gap:9px;font-size:16px;font-weight:600"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5l11 7-11 7z"/></svg> Resume 14:22</div>
+      <div style="width:50px;height:50px;border-radius:13px;background:var(--chip);border:1px solid var(--line);display:flex;align-items:center;justify-content:center">＋</div>
+    </div>
+    <div style="padding:18px 20px 0;font-size:14px;line-height:1.55;color:var(--ink-soft)">Mark's team is broken up and scattered across the severed floor as Cobel races to contain what she started.</div>
+    <div style="display:flex;gap:8px;padding:16px 20px 0;flex-wrap:wrap">
+      <span style="font-size:13px;padding:6px 12px;border-radius:20px;background:var(--chip)">Thriller</span>
+      <span style="font-size:13px;padding:6px 12px;border-radius:20px;background:var(--chip)">Sci-fi</span>
+      <span style="font-size:13px;padding:6px 12px;border-radius:20px;background:var(--chip)">Drama</span>
+    </div>
+    <div class="gpill"></div>
+  </div></div>
+<div class="cap" style="left:0;top:2500px;width:420px">Cast icon states · idle · connecting · connected</div>
+<div style="position:absolute;left:0;top:2540px;display:flex;gap:22px;align-items:center;padding:16px 20px;border-radius:14px;background:#14161d;border:1px solid rgba(255,255,255,.09);color:#f3f4fb">
+  <div style="display:flex;flex-direction:column;align-items:center;gap:8px"><span class="castic"><span class="box"></span><span class="fillb"></span></span><span style="font-size:11px;font-family:'JetBrains Mono',monospace;color:#6b7290">IDLE</span></div>
+  <div style="display:flex;flex-direction:column;align-items:center;gap:8px;color:#3fb6f5"><span class="castic wvon"><span class="box"></span><span class="wv"></span></span><span style="font-size:11px;font-family:'JetBrains Mono',monospace;color:#6b7290">CONNECTING</span></div>
+  <div style="display:flex;flex-direction:column;align-items:center;gap:8px;color:#3fb6f5"><span class="castic conn"><span class="box"></span><span class="fillb"></span></span><span style="font-size:11px;font-family:'JetBrains Mono',monospace;color:#6b7290">CONNECTED</span></div>
+  <div style="max-width:150px;font-size:12px;line-height:1.5;color:#9aa0b4">Absent — not greyed — whenever the server says Chromecast is off.</div>
+</div>
+
+<!-- 2 · system dialog -->
+<div class="dv and" style="left:470px;top:1560px"><div class="pnch"></div>
+  <div style="position:absolute;inset:0;background:var(--bg)">
+    <div style="position:absolute;inset:0;filter:blur(1px);opacity:.5"><img src="assets/bbb-backdrop-landscape.png" alt="" style="width:100%;height:392px;object-fit:cover"></div>
+    <div style="position:absolute;inset:0;background:rgba(4,5,9,.66)"></div>
+    <div class="sysdlg">
+      <h5>Cast to</h5>
+      <div class="sd">Ravilo</div>
+      <div class="dev on"><span class="ic"><svg viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="14" rx="2"/><path d="M8 21h8"/></svg></span> Living room TV</div>
+      <div class="dev"><span class="ic"><svg viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="14" rx="2"/><path d="M8 21h8"/></svg></span> Kitchen display</div>
+      <div class="dev"><span class="ic"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 8v8M8 12h8"/></svg></span> Chromecast (bedroom)</div>
+      <div class="ft">Looking for devices…</div>
+    </div>
+    <div class="gpill"></div>
+  </div>
+  <div class="platnote">Platform dialog — not ours to design</div></div>
+
+<!-- 3 · connecting bar -->
+<div class="dv and" style="left:940px;top:1560px"><div class="pnch"></div>
+  <div style="position:absolute;inset:0;background:var(--bg)">
+    <div class="sbar"><span>9:41</span></div>
+    <div style="position:absolute;left:0;right:0;top:38px;display:flex;align-items:center;gap:10px;padding:0 14px;height:52px">
+      <div class="tb plain"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></div><span style="flex:1"></span>
+      <div class="tb plain" style="color:var(--accent-2)"><span class="castic"><span class="box"></span><span class="wv"></span></span></div>
+      <div style="width:34px;height:34px;border-radius:50%;background:var(--grad)"></div>
+    </div>
+    <div class="cbar" style="top:90px"><span class="sp"></span> Connecting to Living room TV…</div>
+    <div style="position:absolute;left:0;right:0;top:135px;height:360px"><img src="assets/bbb-backdrop-landscape.png" alt="" style="width:100%;height:100%;object-fit:cover;opacity:.9">
+      <div style="position:absolute;inset:0;background:linear-gradient(0deg,var(--bg) 6%,transparent 60%)"></div></div>
+    <div style="position:absolute;left:20px;right:20px;top:420px">
+      <div class="ctx" style="align-items:flex-start;text-align:left"><div class="k">Severance</div><div class="t" style="font-size:30px">Chikhai Bardo</div></div>
+    </div>
+    <div class="cbar" style="position:absolute;top:620px;left:20px;right:20px;border-radius:12px;border:1px solid var(--line);border-bottom:1px solid var(--line)"><span style="color:var(--good)">●</span> Casting to Living room TV <span style="margin-left:auto;font-size:13px;color:var(--ink-dim)">then this retires</span></div>
+    <div class="gpill"></div>
+  </div></div>
+
+<!-- 4 · play casts -->
+<div class="dv and" style="left:1410px;top:1560px"><div class="pnch"></div>
+  <div style="position:absolute;inset:0;background:var(--bg)">
+    <div class="sbar"><span>9:41</span></div>
+    <div style="position:absolute;left:0;right:0;top:38px;height:392px"><img src="assets/bbb-backdrop-landscape.png" alt="" style="width:100%;height:100%;object-fit:cover">
+      <div style="position:absolute;inset:0;background:linear-gradient(0deg,var(--bg) 4%,rgba(10,12,19,.5) 44%,rgba(10,12,19,.2))"></div>
+      <div style="position:absolute;left:0;right:0;top:0;display:flex;align-items:center;gap:10px;padding:8px 14px 0">
+        <div class="tb plain"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></div><span style="flex:1"></span>
+        <div class="tb plain" style="color:var(--accent-2)"><span class="castic conn"><span class="box"></span><span class="fillb"></span></span></div>
+        <div style="width:34px;height:34px;border-radius:50%;background:var(--grad)"></div>
+      </div>
+      <div style="position:absolute;left:20px;right:20px;bottom:14px"><div class="ctx" style="align-items:flex-start;text-align:left"><div class="k">Severance</div><div class="t" style="font-size:30px">Chikhai Bardo</div><div class="s">S2 E7 · 38 min</div></div></div>
+    </div>
+    <div style="padding:448px 20px 0;display:flex;gap:10px">
+      <div style="flex:1;height:50px;border-radius:13px;background:#fff;color:#0a0c13;display:flex;align-items:center;justify-content:center;gap:9px;font-size:15px;font-weight:600"><span class="castic" style="width:19px;height:16px"><span class="box"></span><span class="fillb" style="width:9px;height:7px"></span></span> Play on Living room TV</div>
+    </div>
+    <div style="padding:12px 20px 0;font-size:13px;color:var(--ink-dim);text-align:center">Resumes at 14:22</div>
+    <div style="margin:22px 20px 0;padding:14px 16px;border-radius:12px;background:rgba(123,110,240,.12);border:1px solid rgba(123,110,240,.3);font-size:13px;line-height:1.55;color:var(--ink-soft)">Pressing it opens the remote. The <b style="color:var(--ink)">position goes with it</b> — the TV starts where the phone left off, and the phone stops playing locally.</div>
+    <div class="gpill"></div>
+  </div></div>
+
+<!-- 5 · reconnecting -->
+<div class="dv and" style="left:1880px;top:1560px"><div class="pnch"></div>
+  <div style="position:absolute;inset:0;background:var(--bg)">
+    <div class="sbar"><span>21:03</span></div>
+    <div style="position:absolute;left:0;right:0;top:38px;display:flex;align-items:center;gap:10px;padding:0 14px;height:52px">
+      <div style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:21px"><span style="background:var(--grad);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent">Ravilo</span></div>
+      <span style="flex:1"></span>
+      <div class="tb plain" style="color:var(--accent-2)"><span class="castic"><span class="box"></span><span class="wv"></span></span></div>
+      <div style="width:34px;height:34px;border-radius:50%;background:var(--grad)"></div>
+    </div>
+    <div class="cbar" style="top:90px"><span class="sp"></span> Reconnecting to Living room TV…</div>
+    <div style="position:absolute;left:0;right:0;top:150px;padding:0 18px">
+      <div style="display:flex;gap:11px;margin-bottom:16px">
+        <div style="width:118px;height:178px;border-radius:14px;background:linear-gradient(140deg,#1c2338,#3a2f5e)"></div>
+        <div style="width:118px;height:178px;border-radius:14px;background:linear-gradient(140deg,#20303a,#0f5060)"></div>
+        <div style="width:118px;height:178px;border-radius:14px;background:linear-gradient(140deg,#2a2438,#5e2f4a)"></div>
+      </div>
+      <div style="font-family:'Space Grotesk',sans-serif;font-size:19px;font-weight:600;margin-bottom:12px">Continue watching</div>
+      <div style="display:flex;gap:11px">
+        <div style="width:170px;height:96px;border-radius:12px;overflow:hidden"><img src="assets/bbb-backdrop-rodents.png" alt="" style="width:100%;height:100%;object-fit:cover"></div>
+        <div style="width:170px;height:96px;border-radius:12px;overflow:hidden"><img src="assets/bbb-backdrop-opening.png" alt="" style="width:100%;height:100%;object-fit:cover"></div>
+      </div>
+    </div>
+    <div style="position:absolute;left:18px;right:18px;bottom:110px;padding:14px 16px;border-radius:12px;background:rgba(255,255,255,.05);border:1px solid var(--line);font-size:13px;line-height:1.55;color:var(--ink-soft)">The app is <b style="color:var(--ink)">usable while this happens</b>. Nothing is blocked, nothing is modal — the bar is the only thing that knows.</div>
+    <div class="gpill"></div>
+  </div></div>
+
+<!-- 6 · mini bar (outcome A + §B3) -->
+<div class="dv and" style="left:2350px;top:1560px"><div class="pnch"></div>
+  <div style="position:absolute;inset:0;background:var(--bg)">
+    <div class="sbar"><span>21:03</span></div>
+    <div style="position:absolute;left:0;right:0;top:38px;display:flex;align-items:center;gap:10px;padding:0 14px;height:52px">
+      <div style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:21px"><span style="background:var(--grad);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent">Ravilo</span></div>
+      <span style="flex:1"></span>
+      <div class="tb plain" style="color:var(--accent-2)"><span class="castic conn"><span class="box"></span><span class="fillb"></span></span></div>
+      <div style="width:34px;height:34px;border-radius:50%;background:var(--grad)"></div>
+    </div>
+    <div style="position:absolute;left:0;right:0;top:104px;padding:0 18px">
+      <div style="display:flex;gap:11px;margin-bottom:16px">
+        <div style="width:118px;height:178px;border-radius:14px;background:linear-gradient(140deg,#1c2338,#3a2f5e)"></div>
+        <div style="width:118px;height:178px;border-radius:14px;background:linear-gradient(140deg,#20303a,#0f5060)"></div>
+        <div style="width:118px;height:178px;border-radius:14px;background:linear-gradient(140deg,#2a2438,#5e2f4a)"></div>
+      </div>
+      <div style="font-family:'Space Grotesk',sans-serif;font-size:19px;font-weight:600;margin-bottom:12px">Continue watching</div>
+      <div style="display:flex;gap:11px;margin-bottom:18px">
+        <div style="width:170px;height:96px;border-radius:12px;overflow:hidden"><img src="assets/bbb-backdrop-rodents.png" alt="" style="width:100%;height:100%;object-fit:cover"></div>
+        <div style="width:170px;height:96px;border-radius:12px;overflow:hidden"><img src="assets/bbb-backdrop-opening.png" alt="" style="width:100%;height:100%;object-fit:cover"></div>
+      </div>
+      <div style="font-family:'Space Grotesk',sans-serif;font-size:19px;font-weight:600;margin-bottom:12px">Newly added</div>
+      <div style="display:flex;gap:11px">
+        <div style="width:118px;height:178px;border-radius:14px;background:linear-gradient(140deg,#382a1c,#5e4a2f)"></div>
+        <div style="width:118px;height:178px;border-radius:14px;background:linear-gradient(140deg,#1c3830,#2f5e4a)"></div>
+      </div>
+    </div>
+    <div class="mini" style="bottom:106px">
+      <div class="th"><img src="assets/bbb-backdrop-rodents.png" alt=""></div>
+      <div class="tx"><div class="n">Chikhai Bardo</div><div class="d"><span class="castic"><span class="box"></span><span class="fillb"></span></span> Living room TV</div></div>
+      <div class="pp"><svg viewBox="0 0 24 24"><rect x="7" y="5" width="3.6" height="14" rx="1.2"/><rect x="13.4" y="5" width="3.6" height="14" rx="1.2"/></svg></div>
+      <div class="bar"><i style="width:41%"></i></div>
+    </div>
+    <div style="position:absolute;left:0;right:0;bottom:0;height:92px;background:var(--bg-2);border-top:1px solid var(--line);display:flex;align-items:center">
+      <div style="flex:1;text-align:center;font-size:13px;font-weight:600;color:var(--ink)">Home</div>
+      <div style="flex:1;text-align:center;font-size:13px;font-weight:600;color:var(--ink-dim)">Search</div>
+      <div style="flex:1;text-align:center;font-size:13px;font-weight:600;color:var(--ink-dim)">Discover</div>
+      <div style="flex:1;text-align:center;font-size:13px;font-weight:600;color:var(--ink-dim)">Live</div>
+    </div>
+    <div class="gpill"></div>
+  </div></div>
+
+<!-- 7 · nothing -->
+<div class="dv and" style="left:2820px;top:1560px"><div class="pnch"></div>
+  <div style="position:absolute;inset:0;background:var(--bg)">
+    <div class="sbar"><span>21:41</span></div>
+    <div style="position:absolute;left:0;right:0;top:38px;display:flex;align-items:center;gap:10px;padding:0 14px;height:52px">
+      <div style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:21px"><span style="background:var(--grad);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent">Ravilo</span></div>
+      <span style="flex:1"></span>
+      <div class="tb plain"><span class="castic"><span class="box"></span><span class="fillb"></span></span></div>
+      <div style="width:34px;height:34px;border-radius:50%;background:var(--grad)"></div>
+    </div>
+    <div style="position:absolute;left:0;right:0;top:104px;padding:0 18px">
+      <div style="display:flex;gap:11px;margin-bottom:16px">
+        <div style="width:118px;height:178px;border-radius:14px;background:linear-gradient(140deg,#1c2338,#3a2f5e)"></div>
+        <div style="width:118px;height:178px;border-radius:14px;background:linear-gradient(140deg,#20303a,#0f5060)"></div>
+        <div style="width:118px;height:178px;border-radius:14px;background:linear-gradient(140deg,#2a2438,#5e2f4a)"></div>
+      </div>
+      <div style="font-family:'Space Grotesk',sans-serif;font-size:19px;font-weight:600;margin-bottom:12px">Continue watching</div>
+      <div style="display:flex;gap:11px">
+        <div style="width:170px;height:96px;border-radius:12px;overflow:hidden"><img src="assets/bbb-backdrop-rodents.png" alt="" style="width:100%;height:100%;object-fit:cover"></div>
+        <div style="width:170px;height:96px;border-radius:12px;overflow:hidden"><img src="assets/bbb-backdrop-opening.png" alt="" style="width:100%;height:100%;object-fit:cover"></div>
+      </div>
+    </div>
+    <div style="position:absolute;left:18px;right:18px;bottom:130px;padding:14px 16px;border-radius:12px;background:rgba(45,212,154,.10);border:1px solid rgba(45,212,154,.3);font-size:13px;line-height:1.55;color:#a9e6cd">No mini bar. No toast. No error. The <b style="color:#dff6ec">cast icon is idle again</b> and that is the whole message.</div>
+    <div style="position:absolute;left:0;right:0;bottom:0;height:92px;background:var(--bg-2);border-top:1px solid var(--line);display:flex;align-items:center">
+      <div style="flex:1;text-align:center;font-size:13px;font-weight:600">Home</div><div style="flex:1;text-align:center;font-size:13px;color:var(--ink-dim)">Search</div><div style="flex:1;text-align:center;font-size:13px;color:var(--ink-dim)">Discover</div><div style="flex:1;text-align:center;font-size:13px;color:var(--ink-dim)">Live</div>
+    </div>
+    <div class="gpill"></div>
+  </div></div>
+
+<!-- 8 · stop casting -->
+<div class="dv and" style="left:3290px;top:1560px"><div class="pnch"></div>
+  <div class="rem">
+    <div class="rtop"><div class="devc"><span class="castic"><span class="box" style="border-color:currentColor"></span><span class="fillb" style="width:10px;height:8px"></span></span> Living room TV <svg class="cv" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></div></div>
+    <div class="art"><img src="assets/bbb-backdrop-rodents.png" alt=""></div>
+    <div class="meta"><div class="k">Severance · S2 E7</div><h3>Chikhai Bardo</h3><div class="on">Playing on Living room TV</div></div>
+    <div class="sk"><div class="sk-bar"><div class="done" style="width:41%"></div><div class="knob" style="left:41%"></div></div><div class="sk-t"><span>00:15:41</span><span>−00:22:22</span></div></div>
+    <div class="tr">
+      <div class="pmid" style="position:static;transform:none;gap:30px">
+        <div class="sk"><div class="tb"><svg viewBox="0 0 24 24"><path d="M11 5.2V2.4L6 6.3l5 3.9V7.4a5 5 0 1 1-5 5"/></svg></div><span>10 s</span></div>
+        <div class="tb big"><svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><rect x="7" y="5" width="3.6" height="14" rx="1.2"/><rect x="13.4" y="5" width="3.6" height="14" rx="1.2"/></svg></div>
+        <div class="sk"><div class="tb"><svg viewBox="0 0 24 24"><path d="M13 5.2V2.4L18 6.3l-5 3.9V7.4a5 5 0 1 0 5 5"/></svg></div><span>30 s</span></div>
+      </div>
+    </div>
+    <div class="foot">
+      <b><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M7 14h4M14 14h3"/></svg> Subtitles &amp; audio</b>
+      <b><svg viewBox="0 0 24 24"><path d="M5 6l9 6-9 6z"/><path d="M19 6v12"/></svg> Next episode</b>
+      <b class="stop" style="box-shadow:0 0 0 2px rgba(255,155,138,.5)"><svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/></svg> Stop casting</b>
+    </div>
+    <div class="gpill"></div>
+  </div></div>
+
+<!-- 9 · lock screen notification -->
+<div class="dv and" style="left:3760px;top:1560px"><div class="pnch"></div>
+  <div style="position:absolute;inset:0;background:linear-gradient(160deg,#101018,#1a1526 60%,#0c1018);color:#e6e7ea">
+    <div class="sbar"><span>21:18</span></div>
+    <div class="lockclock"><div class="h">21:18</div><div class="d">Tuesday 16 September</div></div>
+    <div class="notif" style="top:190px">
+      <div class="hd"><span class="castic" style="width:14px;height:12px;color:#8ab4f8"><span class="box"></span><span class="fillb"></span></span> Ravilo · casting to Living room TV</div>
+      <div class="bd">
+        <div class="th"><img src="assets/bbb-backdrop-rodents.png" alt=""></div>
+        <div><div class="n">Chikhai Bardo</div><div class="s">Severance · S2 E7</div></div>
+      </div>
+      <div class="tr"><b>10</b><b><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="7" y="5" width="3.6" height="14" rx="1.2"/><rect x="13.4" y="5" width="3.6" height="14" rx="1.2"/></svg></b><b>30</b><b><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg></b></div>
+    </div>
+    <div style="position:absolute;left:12px;right:12px;top:400px;padding:14px 16px;border-radius:12px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);font-size:13px;line-height:1.55;color:#a8aab2">The <b style="color:#e6e7ea">Cast SDK owns this layout</b>. Ours is the artwork crop (landscape still, not poster) and the second line. <b style="color:#e6e7ea">Local</b> playback still has no notification at all — R193 stands.</div>
+    <div class="gpill" style="background:#e6e7ea"></div>
+  </div></div>
+
+<!-- ============ 2 · §B2 THE REMOTE ============ -->
+<div class="rule" style="left:0;top:2760px;width:5600px"></div>
+<div class="lbl w3" style="left:0;top:2820px">
+  <span class="tag pick">Brief §B2 · the full-screen remote · Remote 2 CHOSEN</span>
+  <h2>The remote: pause/play, −10 s / +30 s, subtitles — without leaving the remote</h2>
+  <small>Same content in both — device, art, kicker + title, <i>Playing on Living room TV</i>, seek bar, −10 s · ▶ · +30 s, and three secondary actions. Portrait only; in landscape the layout simply centres. The system back / edge swipe returns to the app with the mini bar up, and <b>casting continues</b>.</small>
+</div>
+
+<div class="lbl" style="left:0;top:3040px"><span class="tag no">Remote 1 · not chosen</span><h3>Cinema — the backdrop is the screen</h3><small>Full-bleed backdrop, dimmed hard, poster floating on it, everything centred. The best-looking frame in this document <b>when a backdrop exists</b>. Two problems: most of this library has no backdrop, so the fallback is a flat gradient behind centred white text; and <i>Stop casting</i> ends up in the bottom row with the other two, so the most consequential action looks like the least.<span class="cost"><b>Contrast risk.</b> White text over a scrimmed still is the one place this project has repeatedly failed 4.5:1. Same trap as Focus Detail round 2's direction H.</span></small></div>
+<div class="lbl" style="left:470px;top:3040px"><span class="tag pick">Remote 2 · CHOSEN</span><h3>Now playing — the device is the header</h3><small>Solid ground, a 16:9 art card with a real aspect, and the <b>device chip at the very top</b> — which is both the answer to "what am I controlling" and the way to switch or stop. Ink never sits on a picture, so contrast is a property of the design rather than of the title. Degrades to a wordmark tile with no redraw.<span class="cost"><b>Less atmosphere.</b> It reads like a control surface, not like a film. Given that it <i>is</i> a control surface — and that the owner asked for "enterprise-like" — I think that is the right trade.</span></small></div>
+
+<div class="dv and" style="left:0;top:3300px"><div class="pnch"></div>
+  <div class="rem bleed">
+    <div class="bg"><img src="assets/bbb-backdrop-rodents.png" alt=""><div class="sc"></div></div>
+    <div class="rtop" style="justify-content:center"><div class="devc"><span class="castic"><span class="box" style="border-color:currentColor"></span><span class="fillb" style="width:10px;height:8px"></span></span> Living room TV</div></div>
+    <div class="poster"><img src="assets/big-buck-bunny-poster.jpg" alt=""></div>
+    <div class="meta"><div class="k">Severance · S2 E7</div><h3>Chikhai Bardo</h3><div class="on">Playing on Living room TV</div></div>
+    <div class="sk"><div class="sk-bar"><div class="done" style="width:41%"></div><div class="knob" style="left:41%"></div></div><div class="sk-t"><span>00:15:41</span><span>−00:22:22</span></div></div>
+    <div class="tr">
+      <div class="pmid" style="position:static;transform:none;gap:30px">
+        <div class="sk"><div class="tb"><svg viewBox="0 0 24 24"><path d="M11 5.2V2.4L6 6.3l5 3.9V7.4a5 5 0 1 1-5 5"/></svg></div><span>10 s</span></div>
+        <div class="tb big"><svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><rect x="7" y="5" width="3.6" height="14" rx="1.2"/><rect x="13.4" y="5" width="3.6" height="14" rx="1.2"/></svg></div>
+        <div class="sk"><div class="tb"><svg viewBox="0 0 24 24"><path d="M13 5.2V2.4L18 6.3l-5 3.9V7.4a5 5 0 1 0 5 5"/></svg></div><span>30 s</span></div>
+      </div>
+    </div>
+    <div class="foot">
+      <b><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M7 14h4M14 14h3"/></svg> Subtitles &amp; audio</b>
+      <b><svg viewBox="0 0 24 24"><path d="M5 6l9 6-9 6z"/><path d="M19 6v12"/></svg> Next episode</b>
+      <b class="stop"><svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/></svg> Stop casting</b>
+    </div>
+    <div class="gpill"></div>
+  </div></div>
+
+<div class="dv and" style="left:470px;top:3300px"><div class="pnch"></div>
+  <div class="rem">
+    <div class="rtop"><div class="devc"><span class="castic"><span class="box" style="border-color:currentColor"></span><span class="fillb" style="width:10px;height:8px"></span></span> Living room TV <svg class="cv" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></div><span style="flex:1"></span><div class="tb plain"><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></div></div>
+    <div class="art"><img src="assets/bbb-backdrop-rodents.png" alt=""></div>
+    <div class="meta"><div class="k">Severance · S2 E7</div><h3>Chikhai Bardo</h3><div class="on">Playing on Living room TV</div></div>
+    <div class="sk"><div class="sk-bar"><div class="done" style="width:41%"></div><div class="knob" style="left:41%"></div></div><div class="sk-t"><span>00:15:41</span><span>−00:22:22</span></div></div>
+    <div class="tr">
+      <div class="pmid" style="position:static;transform:none;gap:30px">
+        <div class="sk"><div class="tb"><svg viewBox="0 0 24 24"><path d="M11 5.2V2.4L6 6.3l5 3.9V7.4a5 5 0 1 1-5 5"/></svg></div><span>10 s</span></div>
+        <div class="tb big"><svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><rect x="7" y="5" width="3.6" height="14" rx="1.2"/><rect x="13.4" y="5" width="3.6" height="14" rx="1.2"/></svg></div>
+        <div class="sk"><div class="tb"><svg viewBox="0 0 24 24"><path d="M13 5.2V2.4L18 6.3l-5 3.9V7.4a5 5 0 1 0 5 5"/></svg></div><span>30 s</span></div>
+      </div>
+    </div>
+    <div class="foot">
+      <b><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M7 14h4M14 14h3"/></svg> Subtitles &amp; audio</b>
+      <b><svg viewBox="0 0 24 24"><path d="M5 6l9 6-9 6z"/><path d="M19 6v12"/></svg> Next episode</b>
+      <b class="stop"><svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/></svg> Stop casting</b>
+    </div>
+    <div class="gpill"></div>
+  </div></div>
+
+<div class="panel" style="left:1000px;top:3040px;width:1360px">
+  <h2>The two remotes, compared</h2>
+  <table class="tbl">
+    <tr><th style="width:150px">Axis</th><th style="width:230px">1 · Cinema</th><th>2 · Now playing <b>(recommended)</b></th></tr>
+    <tr><td><b>Needs a backdrop</b></td><td>Yes — it <i>is</i> the design. Without one: a gradient wash behind centred text.</td><td>No. A 16:9 card that falls back to a <b>wordmark tile</b>, the same rule R243's taxonomy walls use.</td></tr>
+    <tr><td><b>Text contrast</b></td><td>White on a scrimmed photo. Passes on some titles, fails on others — and you cannot know which.</td><td>Ink on a solid surface. <b>Always ≥ 4.5:1</b>, by construction.</td></tr>
+    <tr><td><b>"Which TV?"</b></td><td>A centred chip under the top edge, decorative.</td><td>A chip in the header that is also the <b>control</b>: tap to switch device or stop.</td></tr>
+    <tr><td><b>Stop casting</b></td><td>Third item in the bottom row, same weight as <i>Next episode</i>.</td><td>Also in the footer, <b>and</b> reachable from the header chip — two routes, because it is the one action people hunt for.</td></tr>
+    <tr><td><b>Feels like</b></td><td>A film, paused.</td><td>A remote control. Which is what it is.</td></tr>
+    <tr><td><b>Noir</b></td><td>Needs the accent wash suppressed and the scrim deepened — two overrides.</td><td>One override: the kicker loses its accent tint (R221 precedent).</td></tr>
+  </table>
+  <h4>Both share these rules</h4>
+  <ul>
+    <li><b>Volume is the hardware keys</b> plus a transient pill. No on-screen slider — on a cast, volume belongs to the TV and its own remote, and a slider invites a fight between them.</li>
+    <li><b>Dragging the seek bar is allowed</b>, and the position is optimistic: the thumb moves at once, the receiver confirms, and a disagreement resolves to the receiver's number.</li>
+    <li><b>Subtitles &amp; audio opens the same sheet as the local player</b> — the picker from R180/R195, applied on the TV. One component, two destinations.</li>
+    <li><b>Back / edge swipe leaves the remote, never the cast.</b> Stopping is only ever explicit.</li>
+  </ul>
+</div>
+
+<!-- Remote 2 · seven states -->
+<div class="lbl" style="left:0;top:4260px"><span class="tag">State 2</span><h3>Paused</h3><small>Play glyph, and the art card dims slightly so the state is legible without reading a button. Nothing else moves.</small></div>
+<div class="lbl" style="left:470px;top:4260px"><span class="tag">State 3</span><h3>Buffering on the TV</h3><small><b>R218 moment C, borrowed:</b> the spinner stands in for the play button. The phone is fine; the TV is waiting. No explanation, because the viewer cannot act on one.</small></div>
+<div class="lbl" style="left:940px;top:4260px"><span class="tag">State 4</span><h3>Next-up, mirrored</h3><small>The receiver owns the countdown — it advances by itself. The remote <b>mirrors</b> it and can cancel or skip ahead. This is the clearest demonstration that the TV is not being driven by the phone.</small></div>
+<div class="lbl" style="left:1410px;top:4260px"><span class="tag">State 5</span><h3>Receiver unreachable</h3><small>Lost contact with the TV. One sentence, one action. The transport greys because pressing it would be a lie. The cast may well still be playing — we simply cannot see it, and the copy says exactly that much and no more.</small></div>
+<div class="lbl" style="left:2820px;top:4260px"><span class="tag pick">State 8 · the one you asked for</span><h3>Subtitles &amp; audio, from the remote</h3><small>The <b>same sheet as the local player</b> — R180/R195's two-level flag-forward picker, one component, two destinations — except the choice is applied <b>on the TV</b>. One line says so, and <b>Subtitle size</b> is the same S · M · L, which is why that row lives in the picker rather than on the rail. This is the whole answer to "change subtitles while casting": one tap from the remote, no trip back into the app.</small></div>
+<div class="lbl" style="left:1880px;top:4260px"><span class="tag">State 6</span><h3>Server busy · phase 182's 503</h3><small>The one state that has a number in it: the <b>elapsed wait</b>, because a wait you can see the length of is a different experience from one you cannot. Still no cause, still no product named.</small></div>
+<div class="lbl" style="left:2350px;top:4260px"><span class="tag">State 7</span><h3>Ended</h3><small>The title finished and there is nothing next. The remote says so and offers the two things that are actually available. The TV, meanwhile, has gone back to its idle screen.</small></div>
+
+<div class="dv and" style="left:0;top:4520px"><div class="pnch"></div>
+  <div class="rem">
+    <div class="rtop"><div class="devc"><span class="castic"><span class="box" style="border-color:currentColor"></span><span class="fillb" style="width:10px;height:8px"></span></span> Living room TV <svg class="cv" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></div></div>
+    <div class="art" style="opacity:.62"><img src="assets/bbb-backdrop-rodents.png" alt=""></div>
+    <div class="meta"><div class="k">Severance · S2 E7</div><h3>Chikhai Bardo</h3><div class="on">Paused on Living room TV</div></div>
+    <div class="sk"><div class="sk-bar"><div class="done" style="width:41%"></div><div class="knob" style="left:41%"></div></div><div class="sk-t"><span>00:15:41</span><span>−00:22:22</span></div></div>
+    <div class="tr"><div class="pmid" style="position:static;transform:none;gap:30px">
+      <div class="sk"><div class="tb"><svg viewBox="0 0 24 24"><path d="M11 5.2V2.4L6 6.3l5 3.9V7.4a5 5 0 1 1-5 5"/></svg></div><span>10 s</span></div>
+      <div class="tb big"><svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M8 5l11 7-11 7z"/></svg></div>
+      <div class="sk"><div class="tb"><svg viewBox="0 0 24 24"><path d="M13 5.2V2.4L18 6.3l-5 3.9V7.4a5 5 0 1 0 5 5"/></svg></div><span>30 s</span></div>
+    </div></div>
+    <div class="foot"><b>Subtitles &amp; audio</b><b>Next episode</b><b class="stop">Stop casting</b></div>
+    <div class="gpill"></div>
+  </div></div>
+
+<div class="dv and" style="left:470px;top:4520px"><div class="pnch"></div>
+  <div class="rem">
+    <div class="rtop"><div class="devc"><span class="castic"><span class="box" style="border-color:currentColor"></span><span class="fillb" style="width:10px;height:8px"></span></span> Living room TV <svg class="cv" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></div></div>
+    <div class="art"><img src="assets/bbb-backdrop-rodents.png" alt=""><div class="ov"><div class="spin"></div></div></div>
+    <div class="meta"><div class="k">Severance · S2 E7</div><h3>Chikhai Bardo</h3><div class="on">Playing on Living room TV</div></div>
+    <div class="sk"><div class="sk-bar"><div class="done" style="width:41%"></div><div class="buf" style="left:41%;width:3%"></div><div class="knob" style="left:41%"></div></div><div class="sk-t"><span>00:15:41</span><span>−00:22:22</span></div></div>
+    <div class="tr"><div class="pmid" style="position:static;transform:none;gap:30px">
+      <div class="sk"><div class="tb"><svg viewBox="0 0 24 24"><path d="M11 5.2V2.4L6 6.3l5 3.9V7.4a5 5 0 1 1-5 5"/></svg></div><span>10 s</span></div>
+      <div class="spin" style="width:74px;height:74px;border-width:4px"></div>
+      <div class="sk"><div class="tb"><svg viewBox="0 0 24 24"><path d="M13 5.2V2.4L18 6.3l-5 3.9V7.4a5 5 0 1 0 5 5"/></svg></div><span>30 s</span></div>
+    </div></div>
+    <div class="foot"><b>Subtitles &amp; audio</b><b>Next episode</b><b class="stop">Stop casting</b></div>
+    <div class="gpill"></div>
+  </div></div>
+
+<div class="dv and" style="left:940px;top:4520px"><div class="pnch"></div>
+  <div class="rem">
+    <div class="rtop"><div class="devc"><span class="castic"><span class="box" style="border-color:currentColor"></span><span class="fillb" style="width:10px;height:8px"></span></span> Living room TV <svg class="cv" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></div></div>
+    <div class="art"><img src="assets/bbb-backdrop-bunny.png" alt=""></div>
+    <div class="meta"><div class="k">Next episode</div><h3>Sweet Vitriol</h3><div class="on">Starts on Living room TV in 8 s</div></div>
+    <div class="sk"><div class="sk-bar"><div class="done" style="width:8%;background:var(--ink)"></div></div><div class="sk-t"><span>S2 E8 · 35 min</span><span>8 s</span></div></div>
+    <div class="tr" style="gap:12px;padding:22px 18px 0">
+      <div style="flex:1;height:56px;border-radius:14px;background:#fff;color:#0a0c13;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:600">Play now</div>
+      <div style="flex:1;height:56px;border-radius:14px;background:var(--chip);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:600">Cancel</div>
+    </div>
+    <div class="note" style="margin-top:22px">The <b>receiver</b> runs this countdown and will advance on its own. The remote only mirrors it — which is why cancelling here has to be sent, not assumed.</div>
+    <div class="foot"><b>Subtitles &amp; audio</b><b class="stop">Stop casting</b></div>
+    <div class="gpill"></div>
+  </div></div>
+
+<div class="dv and" style="left:1410px;top:4520px"><div class="pnch"></div>
+  <div class="rem">
+    <div class="rtop"><div class="devc" style="color:var(--ink-soft)"><span class="castic" style="color:var(--ink-dim)"><span class="box"></span><span class="fillb"></span></span> Living room TV</div></div>
+    <div class="art" style="opacity:.4"><img src="assets/bbb-backdrop-rodents.png" alt=""></div>
+    <div class="meta"><h3>Lost contact with Living room TV</h3><div class="on" style="margin-top:12px">It may still be playing. Ravilo cannot reach it to check.</div></div>
+    <div class="tr" style="gap:12px;padding:26px 18px 0">
+      <div style="flex:1;height:56px;border-radius:14px;background:#fff;color:#0a0c13;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:600">Try again</div>
+    </div>
+    <div class="sk" style="opacity:.3;pointer-events:none"><div class="sk-bar"><div class="done" style="width:41%"></div></div><div class="sk-t"><span>00:15:41</span><span>−00:22:22</span></div></div>
+    <div class="tr" style="opacity:.3"><div class="pmid" style="position:static;transform:none;gap:30px">
+      <div class="sk"><div class="tb"><svg viewBox="0 0 24 24"><path d="M11 5.2V2.4L6 6.3l5 3.9V7.4a5 5 0 1 1-5 5"/></svg></div><span>10 s</span></div>
+      <div class="tb big"><svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><rect x="7" y="5" width="3.6" height="14" rx="1.2"/><rect x="13.4" y="5" width="3.6" height="14" rx="1.2"/></svg></div>
+      <div class="sk"><div class="tb"><svg viewBox="0 0 24 24"><path d="M13 5.2V2.4L18 6.3l-5 3.9V7.4a5 5 0 1 0 5 5"/></svg></div><span>30 s</span></div>
+    </div></div>
+    <div class="foot"><b class="stop">Stop casting</b></div>
+    <div class="gpill"></div>
+  </div></div>
+
+<div class="dv and" style="left:1880px;top:4520px"><div class="pnch"></div>
+  <div class="rem">
+    <div class="rtop"><div class="devc"><span class="castic"><span class="box" style="border-color:currentColor"></span><span class="fillb" style="width:10px;height:8px"></span></span> Living room TV <svg class="cv" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></div></div>
+    <div class="art"><img src="assets/bbb-backdrop-rodents.png" alt=""><div class="ov"><div class="pulse"><i></i><i></i><i></i></div></div></div>
+    <div class="meta"><div class="k">Severance · S2 E7</div><h3>Chikhai Bardo</h3><div class="on">Waiting for Living room TV</div></div>
+    <div class="note" style="margin-top:24px">The server is busy right now. It will start as soon as it can.<br><span style="font-family:'JetBrains Mono',monospace;font-size:13px;color:var(--ink-dim)">waiting 24 s</span></div>
+    <div class="sk" style="opacity:.35"><div class="sk-bar"><div class="done" style="width:0"></div></div><div class="sk-t"><span>00:00:00</span><span>38 min</span></div></div>
+    <div class="tr" style="opacity:.35"><div class="pmid" style="position:static;transform:none;gap:30px">
+      <div class="sk"><div class="tb"><svg viewBox="0 0 24 24"><path d="M11 5.2V2.4L6 6.3l5 3.9V7.4a5 5 0 1 1-5 5"/></svg></div><span>10 s</span></div>
+      <div class="tb big"><svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M8 5l11 7-11 7z"/></svg></div>
+      <div class="sk"><div class="tb"><svg viewBox="0 0 24 24"><path d="M13 5.2V2.4L18 6.3l-5 3.9V7.4a5 5 0 1 0 5 5"/></svg></div><span>30 s</span></div>
+    </div></div>
+    <div class="foot"><b class="stop">Stop casting</b></div>
+    <div class="gpill"></div>
+  </div></div>
+
+<div class="dv and" style="left:2350px;top:4520px"><div class="pnch"></div>
+  <div class="rem">
+    <div class="rtop"><div class="devc"><span class="castic"><span class="box" style="border-color:currentColor"></span><span class="fillb" style="width:10px;height:8px"></span></span> Living room TV <svg class="cv" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></div></div>
+    <div class="art"><img src="assets/bbb-backdrop-landscape.png" alt=""></div>
+    <div class="meta"><div class="k">Severance</div><h3>You finished Season 2</h3><div class="on">Living room TV is ready for the next thing</div></div>
+    <div class="tr" style="gap:12px;padding:26px 18px 0;flex-direction:column">
+      <div style="width:100%;height:56px;border-radius:14px;background:#fff;color:#0a0c13;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:600">Watch it again</div>
+      <div style="width:100%;height:56px;border-radius:14px;background:var(--chip);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:600">Back to Ravilo</div>
+    </div>
+    <div class="note" style="margin-top:24px">Nothing auto-plays after the last episode of a season, on the TV app or here. The receiver has already returned to its idle screen.</div>
+    <div class="foot"><b class="stop">Stop casting</b></div>
+    <div class="gpill"></div>
+  </div></div>
+
+<div class="dv and" style="left:2820px;top:4520px"><div class="pnch"></div>
+  <div class="rem">
+    <div class="rtop"><div class="devc"><span class="castic"><span class="box" style="border-color:currentColor"></span><span class="fillb" style="width:10px;height:8px"></span></span> Living room TV <svg class="cv" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></div></div>
+    <div class="art"><img src="assets/bbb-backdrop-rodents.png" alt=""></div>
+    <div class="meta"><div class="k">Severance · S2 E7</div><h3>Chikhai Bardo</h3><div class="on">Playing on Living room TV</div></div>
+    <div class="sk"><div class="sk-bar"><div class="done" style="width:41%"></div><div class="knob" style="left:41%"></div></div><div class="sk-t"><span>00:15:41</span><span>−00:22:22</span></div></div>
+    <div class="scrim"></div>
+    <div class="sheet">
+      <div class="grab"></div>
+      <div class="sh"><h4>Subtitles &amp; audio</h4><div class="tb plain x"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></div></div>
+      <div style="padding:0 20px 12px;font-size:13px;color:var(--ink-dim)">Applies on <b style="color:var(--ink-soft);font-weight:600">Living room TV</b></div>
+      <div class="seg"><b>Audio</b><b class="on">Subtitles</b></div>
+      <div class="srow"><div class="nm">Off</div></div>
+      <div class="srow on"><span class="fi fi-fo"></span><div><div class="nm">Føroyskt</div><div class="sub">2 versions</div></div><div class="rt"><svg viewBox="0 0 24 24"><path d="M4 12.5l5 5L20 6.5"/></svg><svg viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg></div></div>
+      <div class="srow"><span class="fi fi-dk"></span><div><div class="nm">Dansk</div><div class="sub">3 versions</div></div><div class="rt"><svg viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg></div></div>
+      <div class="srow"><span class="fi fi-gb"></span><div><div class="nm">English</div><div class="sub">4 versions</div></div><div class="rt"><svg viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg></div></div>
+      <div class="srow"><div><div class="nm">Subtitle size</div></div><div class="rt">Medium <svg viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg></div></div>
+    </div>
+    <div class="gpill"></div>
+  </div></div>
+
+<!-- skins + iOS -->
+<div class="cap" style="left:3290px;top:4480px">Midnight</div>
+<div class="dv and" data-skin="midnight" style="left:3290px;top:4520px"><div class="pnch"></div>
+  <div class="rem">
+    <div class="rtop"><div class="devc"><span class="castic"><span class="box" style="border-color:currentColor"></span><span class="fillb" style="width:10px;height:8px"></span></span> Living room TV <svg class="cv" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></div></div>
+    <div class="art"><img src="assets/bbb-backdrop-opening.png" alt=""></div>
+    <div class="meta"><div class="k">Severance · S2 E7</div><h3>Chikhai Bardo</h3><div class="on">Playing on Living room TV</div></div>
+    <div class="sk"><div class="sk-bar"><div class="done" style="width:41%"></div><div class="knob" style="left:41%"></div></div><div class="sk-t"><span>00:15:41</span><span>−00:22:22</span></div></div>
+    <div class="tr"><div class="pmid" style="position:static;transform:none;gap:30px">
+      <div class="sk"><div class="tb"><svg viewBox="0 0 24 24"><path d="M11 5.2V2.4L6 6.3l5 3.9V7.4a5 5 0 1 1-5 5"/></svg></div><span>10 s</span></div>
+      <div class="tb big"><svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><rect x="7" y="5" width="3.6" height="14" rx="1.2"/><rect x="13.4" y="5" width="3.6" height="14" rx="1.2"/></svg></div>
+      <div class="sk"><div class="tb"><svg viewBox="0 0 24 24"><path d="M13 5.2V2.4L18 6.3l-5 3.9V7.4a5 5 0 1 0 5 5"/></svg></div><span>30 s</span></div>
+    </div></div>
+    <div class="foot"><b>Subtitles &amp; audio</b><b>Next episode</b><b class="stop">Stop casting</b></div>
+    <div class="gpill"></div>
+  </div></div>
+
+<div class="cap" style="left:3760px;top:4480px">Noir · no accent tint, no coloured cast glyph</div>
+<div class="dv and noir" data-skin="noir" style="left:3760px;top:4520px"><div class="pnch"></div>
+  <div class="rem">
+    <div class="rtop"><div class="devc"><span class="castic"><span class="box" style="border-color:currentColor"></span><span class="fillb" style="width:10px;height:8px"></span></span> Living room TV <svg class="cv" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></div></div>
+    <div class="art"><img src="assets/bbb-backdrop-bunny.png" alt=""></div>
+    <div class="meta"><div class="k">Severance · S2 E7</div><h3>Chikhai Bardo</h3><div class="on">Playing on Living room TV</div></div>
+    <div class="sk"><div class="sk-bar"><div class="done" style="width:41%"></div><div class="knob" style="left:41%"></div></div><div class="sk-t"><span>00:15:41</span><span>−00:22:22</span></div></div>
+    <div class="tr"><div class="pmid" style="position:static;transform:none;gap:30px">
+      <div class="sk"><div class="tb"><svg viewBox="0 0 24 24"><path d="M11 5.2V2.4L6 6.3l5 3.9V7.4a5 5 0 1 1-5 5"/></svg></div><span>10 s</span></div>
+      <div class="tb big"><svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><rect x="7" y="5" width="3.6" height="14" rx="1.2"/><rect x="13.4" y="5" width="3.6" height="14" rx="1.2"/></svg></div>
+      <div class="sk"><div class="tb"><svg viewBox="0 0 24 24"><path d="M13 5.2V2.4L18 6.3l-5 3.9V7.4a5 5 0 1 0 5 5"/></svg></div><span>30 s</span></div>
+    </div></div>
+    <div class="foot"><b>Subtitles &amp; audio</b><b>Next episode</b><b class="stop">Stop casting</b></div>
+    <div class="gpill"></div>
+  </div></div>
+
+<div class="cap" style="left:4230px;top:4480px">iPhone 16 · same remote, Føroyskt</div>
+<div class="dv ios" style="left:4230px;top:4520px"><div class="isl"></div><div class="hind"></div>
+  <div class="rem">
+    <div class="rtop"><div class="devc"><span class="castic"><span class="box" style="border-color:currentColor"></span><span class="fillb" style="width:10px;height:8px"></span></span> Stovan <svg class="cv" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></div></div>
+    <div class="art"><img src="assets/bbb-backdrop-rodents.png" alt=""></div>
+    <div class="meta"><div class="k">Severance · S2 E7</div><h3>Chikhai Bardo</h3><div class="on">Spælir á Stovan</div></div>
+    <div class="sk"><div class="sk-bar"><div class="done" style="width:41%"></div><div class="knob" style="left:41%"></div></div><div class="sk-t"><span>00:15:41</span><span>−00:22:22</span></div></div>
+    <div class="tr"><div class="pmid" style="position:static;transform:none;gap:30px">
+      <div class="sk"><div class="tb"><svg viewBox="0 0 24 24"><path d="M11 5.2V2.4L6 6.3l5 3.9V7.4a5 5 0 1 1-5 5"/></svg></div><span>10 s</span></div>
+      <div class="tb big"><svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><rect x="7" y="5" width="3.6" height="14" rx="1.2"/><rect x="13.4" y="5" width="3.6" height="14" rx="1.2"/></svg></div>
+      <div class="sk"><div class="tb"><svg viewBox="0 0 24 24"><path d="M13 5.2V2.4L18 6.3l-5 3.9V7.4a5 5 0 1 0 5 5"/></svg></div><span>30 s</span></div>
+    </div></div>
+    <div class="foot"><b>Undirtekstir &amp; ljóð</b><b>Næsta rað</b><b class="stop">Stovna casting</b></div>
+  </div></div>
+
+<!-- ============ 3 · §C RECEIVER ============ -->
+<div class="rule" style="left:0;top:5500px;width:5600px"></div>
+<div class="lbl w3" style="left:0;top:5560px">
+  <span class="tag">Brief §C · the receiver</span>
+  <h2>What the TV shows while it is being cast to</h2>
+  <small>Drawn at 1920 × 1080, shown at a third. It runs on anything from a 2013 stick to a Cast-enabled TV, so it stays light and assumes no codec — it probes what it can display and lets jellystructure negotiate. <b>Nothing here is interactive:</b> there is no remote pointed at it, so every screen is one overlay or one sentence, and every one of them is a state the phone has an answer for. The acceptance device is the parents' old stick on an LG TV.</small>
+</div>
+
+<div class="cap" style="left:0;top:5800px">1 · idle / just launched</div>
+<div class="shot" style="left:0;top:5840px"><div class="inner"><div class="tvs">
+  <div class="tvc"><img class="mark" src="assets/brand/ravilo-mark.svg" alt=""><div class="rd">Ready to play from your phone</div></div>
+</div></div></div>
+
+<div class="cap" style="left:700px;top:5800px">2 · loading — R218 moment B, verbatim</div>
+<div class="shot" style="left:700px;top:5840px"><div class="inner"><div class="tvs">
+  <div class="tvc" style="gap:44px">
+    <div class="pulse" style="gap:20px"><i style="width:22px;height:22px"></i><i style="width:22px;height:22px"></i><i style="width:22px;height:22px"></i></div>
+    <div class="ctx" style="gap:16px"><div class="k" style="font-size:26px">Severance</div><div class="t" style="font-size:66px">Chikhai Bardo</div><div class="s" style="font-size:30px">Season 2 · Episode 7</div></div>
+    <div class="sweep" style="width:560px;height:5px"><span></span></div>
+    <div class="blab" style="font-size:30px">Loading…</div>
+  </div>
+</div></div></div>
+
+<div class="cap" style="left:1400px;top:5800px">3 · playing — video only</div>
+<div class="shot" style="left:1400px;top:5840px"><div class="inner"><div class="tvs">
+  <div class="vid"><img src="assets/bbb-backdrop-rodents.png" alt=""></div>
+</div></div></div>
+
+<div class="cap" style="left:2100px;top:5800px">4 · paused or seeked — overlay for ~3 s</div>
+<div class="shot" style="left:2100px;top:5840px"><div class="inner"><div class="tvs">
+  <div class="vid"><img src="assets/bbb-backdrop-rodents.png" alt=""></div>
+  <div class="tvov"><div class="k">Severance · S2 E7</div><h3>Chikhai Bardo</h3>
+    <div class="bar"><div class="d"></div><div class="kn"></div></div>
+    <div class="tm"><span>00:15:41</span><span>−00:22:22</span></div>
+    <div class="pz">❚❚</div></div>
+</div></div></div>
+
+<div class="cap" style="left:2800px;top:5800px">5 · buffering — R218 moment C treatment</div>
+<div class="shot" style="left:2800px;top:5840px"><div class="inner"><div class="tvs">
+  <div class="vid"><img src="assets/bbb-backdrop-rodents.png" alt=""></div>
+  <div class="dim"></div>
+  <div class="tvov"><div class="k">Severance · S2 E7</div><h3>Chikhai Bardo</h3>
+    <div class="bar"><div class="d"></div><div class="kn"></div></div>
+    <div class="tm"><span>00:15:41</span><span>−00:22:22</span></div>
+    <div class="pz" style="background:none;border:0"><div class="spin" style="width:80px;height:80px;border-width:6px"></div></div></div>
+</div></div></div>
+
+<div class="cap" style="left:0;top:6300px">6 · subtitles — the TV's own caption style (R110), size from the phone</div>
+<div class="shot" style="left:0;top:6340px"><div class="inner"><div class="tvs">
+  <div class="vid"><img src="assets/bbb-backdrop-opening.png" alt=""></div>
+  <div class="tvsub">Eg veit ikki hvat tú meinar.</div>
+</div></div></div>
+
+<div class="cap" style="left:700px;top:6300px">7 · next-up — the receiver's own countdown</div>
+<div class="shot" style="left:700px;top:6340px"><div class="inner"><div class="tvs">
+  <div class="vid"><img src="assets/bbb-backdrop-rodents.png" alt=""></div>
+  <div class="dim"></div>
+  <div class="tvnup"><div class="th"><img src="assets/bbb-backdrop-bunny.png" alt=""></div>
+    <div class="bd"><div class="k">Next episode</div><h4>Sweet Vitriol</h4><div class="cd">Starts in 8 s · S2 E8</div></div></div>
+</div></div></div>
+
+<div class="cap" style="left:1400px;top:6300px">8 · can't reach the server</div>
+<div class="shot" style="left:1400px;top:6340px"><div class="inner"><div class="tvs">
+  <div class="tvmsg"><h3>Can't reach your Ravilo server</h3><p>Check that the server is on and try again from your phone.</p></div>
+</div></div></div>
+
+<div class="cap" style="left:2100px;top:6300px">9 · server busy — phase 182's 503, with the wait</div>
+<div class="shot" style="left:2100px;top:6340px"><div class="inner"><div class="tvs">
+  <div class="tvmsg"><div class="pulse" style="gap:20px"><i style="width:22px;height:22px"></i><i style="width:22px;height:22px"></i><i style="width:22px;height:22px"></i></div>
+    <h3>The server is busy right now</h3><p>It will start as soon as it can.</p><div class="el">waiting 24 s</div></div>
+</div></div></div>
+
+<div class="cap" style="left:2800px;top:6300px">10 · ended — straight back to idle</div>
+<div class="shot" style="left:2800px;top:6340px"><div class="inner"><div class="tvs">
+  <div class="tvc"><img class="mark" src="assets/brand/ravilo-mark.svg" alt="" style="opacity:.8"><div class="rd">Ready to play from your phone</div></div>
+</div></div></div>
+
+<div class="panel" style="left:3540px;top:5560px;width:1360px">
+  <h2>Receiver rules worth writing down</h2>
+  <ul>
+    <li><b>It never talks about settings.</b> Same rule the TV app follows (R216/R234). Nothing on this screen can be changed from this screen, so nothing on it should describe a control.</li>
+    <li><b>Idle is the lit mark and one sentence.</b> Not a carousel, not a screensaver, not artwork from the library — a Chromecast idles for hours and a 1st-gen stick has very little memory.</li>
+    <li><b>The overlay is ~3 s and only on pause or seek.</b> There is no chrome to "show", because nothing can focus it. Everything else is video.</li>
+    <li><b>Every failure is one sentence, no code, no product.</b> R237's rules apply to a screen with no buttons — which makes them easier: there is exactly one thing to say and nothing to offer.</li>
+    <li><b>Subtitle size comes from the phone</b> and uses the TV's caption style (white, black outline, R110). Same S/M/L the player sheet sets.</li>
+    <li><b>It honours Skip Intro and next-episode itself</b>, because it reads the same detail payload and segment markers the TV app does. None of that is possible if the receiver is a dumb screen.</li>
+  </ul>
+  <div class="warn"><b>One thing the design cannot answer:</b> whether a CAF v3 receiver still launches on a 1st-generation stick (last firmware November 2022, support ended April 2023). The benchmark is Jellyfin's own receiver on the same stick — if that runs, this will. <b>Identify the generation first</b>: 1st gen is the flat dongle with a rounded end; 2nd/3rd gen are round discs.</div>
+  <h4>New strings · en · da · fo</h4>
+  <table class="tbl">
+    <tr><th style="width:150px">Key</th><th style="width:200px">English</th><th style="width:190px">Dansk</th><th>Føroyskt</th></tr>
+    <tr><td class="mono">cast_ready</td><td>Ready to play from your phone</td><td>Klar til at spille fra din telefon</td><td>Klár at spæla frá telefonini</td></tr>
+    <tr><td class="mono">cast_connecting</td><td>Connecting to {device}…</td><td>Forbinder til {device}…</td><td>Sambindur við {device}…</td></tr>
+    <tr><td class="mono">cast_connected</td><td>Casting to {device}</td><td>Caster til {device}</td><td>Sendir til {device}</td></tr>
+    <tr><td class="mono">cast_reconnecting</td><td>Reconnecting to {device}…</td><td>Forbinder igen til {device}…</td><td>Sambindur aftur við {device}…</td></tr>
+    <tr><td class="mono">cast_playing_on</td><td>Playing on {device}</td><td>Spiller på {device}</td><td>Spælir á {device}</td></tr>
+    <tr><td class="mono">cast_paused_on</td><td>Paused on {device}</td><td>Pauset på {device}</td><td>Steðgað á {device}</td></tr>
+    <tr><td class="mono">cast_play_on</td><td>Play on {device}</td><td>Spil på {device}</td><td>Spæl á {device}</td></tr>
+    <tr><td class="mono">cast_stop</td><td>Stop casting</td><td>Stop casting</td><td>Stovna casting</td></tr>
+    <tr><td class="mono">cast_lost</td><td>Lost contact with {device}</td><td>Mistede forbindelsen til {device}</td><td>Missti sambandið við {device}</td></tr>
+    <tr><td class="mono">cast_lost_sub</td><td>It may still be playing. Ravilo cannot reach it to check.</td><td>Den spiller måske stadig. Ravilo kan ikke nå den.</td><td>Hon spælir kanska enn. Ravilo kann ikki ná henni.</td></tr>
+    <tr><td class="mono">cast_no_server</td><td>Can't reach your Ravilo server</td><td>Kan ikke nå din Ravilo-server</td><td>Kann ikki ná Ravilo-servaranum</td></tr>
+    <tr><td class="mono">srv_busy</td><td>The server is busy right now</td><td>Serveren er travl lige nu</td><td>Servarin hevur mikið at gera nú</td></tr>
+    <tr><td class="mono">srv_busy_sub</td><td>It will start as soon as it can.</td><td>Den starter, så snart den kan.</td><td>Hon byrjar, so skjótt sum gjørligt.</td></tr>
+    <tr><td class="mono">cast_waiting</td><td>waiting {n} s</td><td>venter {n} s</td><td>bíðar {n} s</td></tr>
+  </table>
+  <p class="tiny" style="margin-top:10px"><b>Same caveat as the player canvas:</b> the Danish and Faroese are my drafts. Where a string already exists in <span class="mono">ravilo-i18n.js</span> (<i>Loading…</i>, R237's nine sentences, phase 182's busy line) the app's own wording wins.</p>
+</div>
+
+<!-- ============ 4 · §F ADMIN CARD ============ -->
+<div class="rule" style="left:0;top:6860px;width:5600px"></div>
+<div class="lbl w3" style="left:0;top:6920px">
+  <span class="tag">Brief §F · jellystructure</span>
+  <h2>Settings → Connections → Chromecast, in three states</h2>
+  <small>In <span style="font-family:'JetBrains Mono',monospace;font-size:.92em">app/settings.html</span>'s own idiom: wf.css tokens, the existing card shape, write-through editing. The card <b>is</b> the registration — jellystructure hosts the receiver at <span style="font-family:'JetBrains Mono',monospace;font-size:.92em">/cast/</span> and each installation registers its own Cast application with Google, which is the owner's explicit decision, not a cost to route around. Google is named here because the admin pays Google; that is the only place any product is named in this whole round.</small>
+</div>
+
+<div class="cap" style="left:0;top:7180px">A · off (the default) — nothing else renders</div>
+<div class="jsa" style="left:0;top:7220px">
+  <div class="card">
+    <div class="row center"><h3>Chromecast</h3><span class="badge info" style="margin-left:8px">Ravilo</span><span class="spacer"></span><span class="muted tiny">enable</span><span class="toggle"></span></div>
+    <div class="tiny muted" style="margin-top:10px;line-height:1.6">Optional. Lets a phone cast to a Chromecast, with jellystructure serving the receiver itself. While this is off, Ravilo shows <b style="color:#dde1ec">no cast button at all</b> — the phone is told there is nothing to cast to and never guesses.</div>
+  </div>
+</div>
+
+<div class="cap" style="left:820px;top:7180px">B · on, not registered yet — the steps are the card</div>
+<div class="jsa" style="left:820px;top:7220px">
+  <div class="card">
+    <div class="row center"><h3>Chromecast</h3><span class="badge info" style="margin-left:8px">Ravilo</span><span class="spacer"></span><span class="badge warn">not finished</span><span class="muted tiny">enable</span><span class="toggle on"></span></div>
+    <div class="tiny muted" style="margin:10px 0 0;line-height:1.6">Three one-time steps. Nothing recurring, and nothing leaves this page except the address you paste at Google.</div>
+    <hr class="dash">
+    <div class="field"><label>Your receiver address</label>
+      <div class="input mono">https://js.heimatún.fo/cast/ <span class="spacer"></span><span class="badge ok">reachable over https</span><span class="btn sm ghost">Copy</span></div>
+      <span class="hint">A Chromecast loads this page itself, so it has to be reachable from the internet over <b style="color:#dde1ec">https</b>. Checked from outside, just now.</span></div>
+    <div class="box flat" style="padding:15px">
+      <div class="stp"><span class="step-n">1</span><p><b>Register an application</b> at the Google Cast Developer Console. Google charges a <b>one-time US$5</b> developer fee. Nothing else in Ravilo costs money.</p></div>
+      <div class="stp"><span class="step-n">2</span><p>Choose <b>Custom Receiver</b> and paste the address above.</p></div>
+      <div class="stp" style="margin-bottom:0"><span class="step-n">3</span><p>Add your Chromecast as a <b>test device</b>, or <b>publish</b> the application so any Chromecast can use it.</p></div>
+    </div>
+    <div class="field" style="margin-top:14px"><label>Application ID</label>
+      <div class="input mono empty">8 hex characters, e.g. A1B2C3D4</div>
+      <span class="hint">From the console, after step 1.</span></div>
+    <div class="row center" style="gap:14px;margin-bottom:14px">
+      <div><b style="font-size:.9rem">Concurrent cast sessions</b><div class="tiny muted" style="margin-top:3px">Each cast is a transcode on your Jellyfin server.</div></div>
+      <span class="spacer"></span>
+      <div class="num"><b>−</b><span>2</span><b>+</b></div>
+    </div>
+    <hr class="dash">
+    <div class="stat">
+      <div><span class="dt"></span> Receiver <b>reachable</b> at that address</div>
+      <div><span class="dt w"></span> Application ID <b>not set yet</b></div>
+      <div><span class="dt o"></span> <b>Cast from your phone once to confirm it works.</b> jellystructure can't check an application ID with Google — only a real cast can.</div>
+    </div>
+  </div>
+</div>
+
+<div class="cap" style="left:1640px;top:7180px">C · registered and verified</div>
+<div class="jsa" style="left:1640px;top:7220px">
+  <div class="card">
+    <div class="row center"><h3>Chromecast</h3><span class="badge info" style="margin-left:8px">Ravilo</span><span class="spacer"></span><span class="badge ok">working</span><span class="muted tiny">enable</span><span class="toggle on"></span></div>
+    <div class="tiny muted" style="margin:10px 0 0;line-height:1.6">Ravilo shows a cast button on every screen. A Chromecast appears in <b style="color:#dde1ec">Users &amp; devices</b> as its own device, and the Jellyfin dashboard can pause and seek it like any other client.</div>
+    <hr class="dash">
+    <div class="field"><label>Your receiver address</label>
+      <div class="input mono">https://js.heimatún.fo/cast/ <span class="spacer"></span><span class="badge ok">reachable over https</span><span class="btn sm ghost">Copy</span></div></div>
+    <div class="field"><label>Application ID</label>
+      <div class="input mono">A1B2C3D4 <span class="spacer"></span><span class="badge ok">used 6 times</span></div>
+      <span class="hint">Registered with Google · published, so any Chromecast can use it. <span class="btn sm ghost" style="padding:0">Show the three steps again</span></span></div>
+    <div class="row center" style="gap:14px;margin-bottom:14px">
+      <div><b style="font-size:.9rem">Concurrent cast sessions</b><div class="tiny muted" style="margin-top:3px">Each cast is a transcode on your Jellyfin server.</div></div>
+      <span class="spacer"></span>
+      <div class="num"><b>−</b><span>2</span><b>+</b></div>
+    </div>
+    <hr class="dash">
+    <div class="stat">
+      <div><span class="dt"></span> Receiver <b>reachable</b> at that address</div>
+      <div><span class="dt"></span> Application ID <b>set and confirmed by a real cast</b></div>
+      <div><span class="dt"></span> Last cast <b>yesterday 21:14</b> · Living room TV · 38 min</div>
+      <div><span class="dt"></span> <b>2 devices</b> have cast · <span class="btn sm ghost" style="padding:0">Users &amp; devices</span></div>
+    </div>
+    <div class="note" style="margin-top:14px;font-size:.84rem">The identity the Jellyfin dashboard shows is <b>Chromecast via Ravilo · Living room</b>, so the dashboard says what it is rather than "Ravilo" twice.</div>
+  </div>
+</div>
+
+<div class="panel" style="left:2600px;top:6920px;width:1420px">
+  <h2>Decided — every row settled</h2>
+  <p class="lead">All nine went to my lean on 16 September 2026. Recorded here as the build's instructions rather than as questions.</p>
+  <div class="opt">
+    <div><h5>1 · Which remote</h5><p>Ink never sits on a picture, the device chip is both the answer to "which TV" and the way to stop, and it degrades to a wordmark with no redraw.</p>
+      <div class="ch"><span class="lean">2 · Now playing</span></div></div>
+    <div><h5>2 · Where the Chromecast card lives</h5><p>It is a connection to a thing outside jellystructure, so it sits with the others.</p>
+      <div class="ch"><span class="lean">Settings → Connections</span></div></div>
+    <div><h5>3 · Pre-filled session ceiling</h5><p>Two. A Jellyfin encode per cast, next to whatever the TVs are already doing — the admin can raise it, and the receiver has an honest busy state either way.</p>
+      <div class="ch"><span class="lean">2</span></div></div>
+    <div><h5>4 · Does the mini bar ever dismiss?</h5><p>No. While a cast is running it is the only route back to the remote, so hiding it would hide the session.</p>
+      <div class="ch"><span class="lean">Never, while casting</span></div></div>
+    <div><h5>5 · What "Next episode" does</h5><p>Skips straight to it. The receiver auto-advances anyway; this button is only about doing it early, so a picker in between would be a second decision nobody asked for.</p>
+      <div class="ch"><span class="lean">Skip straight to the next episode</span></div></div>
+    <div><h5>6 · Casting from inside the local player</h5><p>Swap straight to the remote. The position hands over, the phone stops playing locally, and the viewer is already holding the thing that now controls it.</p>
+      <div class="ch"><span class="lean">Swap straight to the remote</span></div></div>
+    <div><h5>7 · "Play on Stue TV" (phase 111)</h5><p>Drawn beside the cast button in round 2, so the two affordances that compete for the same corner are decided together.</p>
+      <div class="ch"><span class="lean">Round 2, with the cast button</span></div></div>
+    <div><h5>8 · Receiver idle screen</h5><p>The lit mark and one sentence. A Chromecast idles for hours and a 1st-gen stick has very little memory, so no clock, no artwork, no carousel.</p>
+      <div class="ch"><span class="lean">Mark + sentence</span></div></div>
+    <div><h5>9 · Does "ended" offer anything?</h5><p>Two actions — <i>Watch it again</i> and <i>Back to Ravilo</i>. Nothing auto-plays after a season's last episode, on the TV app or here.</p>
+      <div class="ch"><span class="lean">Two actions</span></div></div>
+  </div>
+  <div class="warn"><b>Open, and neither the brief nor this canvas can close it:</b> the generation of the parents' Chromecast stick. If it is 1st gen, whether a modern receiver launches on it at all has to be tested before R247 is committed to — and a stick that cannot run it makes the acceptance test a different device, not a different design.</div>
+</div>
+
+<div class="panel" style="left:4100px;top:6920px;width:1420px">
+  <h2>What this round changes about the phasing</h2>
+  <p class="lead">The research report proposes phase numbers against <b>216 / R243</b> — and those were taken the same day by the Discover taxonomy pair, then <b>217</b> by the Towo removal. The report says its own numbers must be re-verified, so here is the shift, for information only. <b>No spec is written or edited by this round.</b></p>
+  <table class="tbl">
+    <tr><th style="width:120px">Report says</th><th style="width:110px">Actually free</th><th>Scope</th></tr>
+    <tr><td>216 + R243</td><td><b>218 + R244</b></td><td>Mobile data policy — <i>Quality on mobile data</i> + <i>Wi-Fi only</i>, and a real <span class="mono">MaxStreamingBitrate</span> on cellular. The cheapest real win on the list.</td></tr>
+    <tr><td>R244</td><td><b>R245</b></td><td>Phone player chrome — <b>this canvas, part 1</b>.</td></tr>
+    <tr><td>R245</td><td><b>R246</b></td><td>Playback lifecycle — headset keys, and the Cast SDK notification while casting.</td></tr>
+    <tr><td>R246</td><td><b>R247</b></td><td>Play on a Ravilo TV (phase 111 under device-token auth).</td></tr>
+    <tr><td>217 + R247</td><td><b>219 + R248</b></td><td>Chromecast — <b>this canvas, parts 2–4</b>. Admin half is the receiver bundle at <span class="mono">/cast/</span> plus the Settings card; Ravilo half is the receiver, the sender and the remote.</td></tr>
+    <tr><td>R248 → R252</td><td><b>R249 → R253</b></td><td>Cast Connect · the phone-wide pass (brief §D) · iOS bring-up · iOS player (VLCKit) · iOS Cast sender.</td></tr>
+  </table>
+  <div class="good"><b>Verified against <span class="mono">main</span> today:</b> admin phases run to <b>217</b>, Ravilo to <b>R243</b>, so the next free pair is <b>218 / R244</b>. Same class of collision as 186→187 / R230→R234 and 179→180 — caught before anything was written this time.</div>
+  <h4>Third new document pulled today, for the record</h4>
+  <p><span class="mono">specs/research-reports/ios-build-host-macbook-setup-2026-09-16.md</span> — the companion guide for reaching the MacBook over SSH as a build host. Nothing in it is design work; it is mirrored so this project's <span class="mono">specs/</span> stays an exact copy of the repo's.</p>
+  <h4>Where the build would land, after the picks</h4>
+  <ul>
+    <li><b>Player + remote + mini bar</b> → <span class="mono">Ravilo Mobile.html</span> and <span class="mono">mobile/ravilo-mobile.css</span>, behind the same <span class="mono">LocalHandset</span>-shaped switch the code uses, so the TV mockups stay untouched.</li>
+    <li><b>The receiver</b> → a new <span class="mono">ravilo/Ravilo Receiver.html</span> (1920 × 1080, its own file, because nothing about it is a phone).</li>
+    <li><b>The Chromecast card</b> → <span class="mono">app/settings.html</span>, with its page-local classes prefixed <span class="mono">cc-</span> following the <span class="mono">.paced</span> / <span class="mono">.mkvh-</span> precedent — and <b>not</b> named <span class="mono">.adv-*</span> or anything else an ad blocker's cosmetic filter list matches, which cost us a mysteriously blank element on 2026-09-15.</li>
+    <li><b>Brief §D</b> — Home, Detail, Browse, Search, Discover, Live TV guide, login, Settings additions — is the <b>second round</b> and waits on the picks from this one.</li>
+  </ul>
+</div>
+
+<template id="__bundler_thumbnail">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160"><rect width="160" height="160" fill="#0a0c13"/><rect x="34" y="42" width="92" height="58" rx="6" fill="none" stroke="#7b6ef0" stroke-width="3.5"/><path d="M44 90h22a22 22 0 0 0-22-22z" fill="#3fb6f5"/><rect x="62" y="110" width="36" height="6" rx="3" fill="#7b6ef0"/></svg>
+</template>
+</body>
+</html>
