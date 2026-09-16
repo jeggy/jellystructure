@@ -52,3 +52,31 @@ private fun backfillOne(segmentStore: MediaSegmentStore, itemId: String, episode
     }
     return count
 }
+
+/**
+ * Phase 222 (FR-222-7) — one boot-time sweep: every media_segment / segment_evidence / segment_waveform
+ * row filed under an (episode_key, episode_number) that no episode of its title carries any more (a
+ * rename, a removal, a renumbering since it was written) is deleted — one History line per title, one
+ * log line with the total. The same prune runs per title whenever the editor opens it (SegmentRoutes),
+ * so this is only the catch-up for titles nobody opens. 392 such units existed on 2026-09-16.
+ */
+suspend fun pruneOrphanSegments(mediaStore: MediaStore, segmentStore: MediaSegmentStore, mediaHistory: MediaHistory): Int {
+    var units = 0
+    var titles = 0
+    for (item in mediaStore.allItems()) {
+        val removed = segmentStore.pruneOrphans(item.id, validSegmentKeys(item))
+        if (removed > 0) {
+            units += removed
+            titles++
+            mediaHistory.record(item.id, "segments_pruned", "$removed orphaned intro/credits unit(s) removed — the episode files they were filed under no longer exist")
+        }
+    }
+    if (units > 0) Logger.info("Phase 222: pruned $units orphaned segment unit(s) across $titles title(s)", "media")
+    return units
+}
+
+/** Phase 222 (FR-222-7) — the (episode_key, episode_number) keys a title's segment rows may legitimately
+ *  be filed under today: its episodes for a series, the `""`/`0` sentinel for everything else. */
+fun validSegmentKeys(item: dev.jellystructure.model.MediaItem): Set<Pair<String, Int>> =
+    if (item.kind == dev.jellystructure.model.MediaKind.TV_SHOW) item.episodes.map { it.filename to (it.episodeNumber ?: 0) }.toSet()
+    else setOf("" to 0)

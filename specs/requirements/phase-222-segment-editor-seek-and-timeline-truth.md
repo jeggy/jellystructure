@@ -14,11 +14,14 @@
 
 ## Status
 
-`Planned` — written 2026-09-16 from a live report plus a full read of `Segments.kt`, `SegmentApi.kt`,
+`✓ Built` — written 2026-09-16 from a live report plus a full read of `Segments.kt`, `SegmentApi.kt`,
 `SegmentRoutes.kt`, `MediaSegmentStore.kt`, `FfmpegRunner.computeWaveform` and Jellyfin's own source
-at tag **v10.11.11** (this house's server). Not dev-reviewed, not built. Backend + admin frontend
-(`/segments`). No Ravilo half — Ravilo reads `media_segment` through `DetailService.toTv` and is
-unaffected by every finding here except FR-222-5's validation, which only ever makes its input saner.
+at tag **v10.11.11** (this house's server); **implemented 2026-09-16** (see §8). Not dev-reviewed, not
+deployed, not watched in a browser. Backend + admin frontend (`/segments`). `compileKotlinLinuxX64` +
+`compileKotlinWasmJs` clean; `SegmentStreamModeTest` (10), `SegmentEditorTest` (7),
+`SegmentWaveformAndPruneTest` (3) green. No Ravilo half — Ravilo reads `media_segment` through
+`DetailService.toTv` and is unaffected by every finding here except FR-222-5's validation, which only
+ever makes its input saner.
 
 **Numbering:** verified against `STATUS.md` on 2026-09-16 — admin taken through 221.
 
@@ -150,6 +153,11 @@ $ ffmpeg -ss 303 -i sample.mp4 -c copy -copyts -movflags frag_keyframe+empty_moo
 $ ffprobe -select_streams v -show_entries packet=pts_time,flags s.mp4 | head -1
 300.000000,K__   ← requested 303, stream starts at 300; without -copyts the first pts is -3.0
 ```
+
+The muxer does write an edit list that would trim those three seconds, but ffmpeg's demuxer — which is
+Chromium's — switches it off for exactly this container (`advanced_editlist does not work with
+fragmented MP4. disabling.`, verified with `ffprobe -v trace`), so the first frame shown is the keyframe
+and the pre-roll is presented, not skipped.
 
 So once FR-222-1 makes seeks real, `trimRemuxBaseMs + currentTime` overstates the picture's position
 by up to one GOP (1–10 s on typical x264/x265 rips) after every seek — a frame the operator marks with
@@ -343,3 +351,64 @@ with `Space` bound to play/pause (closes F10, F11).
    Ravilo sync.
 4. **`UserAgent` in Jellyfin's hash** means the same operator in two browsers already gets two
    transcodes; nothing to do, noted so the per-tab argument in FR-222-1 is not over-built.
+
+## 8. Implementation notes (2026-09-16)
+
+- **FR-222-1** — `segmentsPlaySessionId(jellyfinId, episodeKey, nonce)` takes a per-start nonce
+  (`nextStreamNonce()`: epoch seconds + a process counter); the stream route accepts `prev` and stops
+  that id on `appScope` (fire-and-forget, by `PlaySessionId` only — never `DeviceId`). The client's
+  `startRemuxStream` passes the id it is abandoning on every seek; teardown on leave and on title
+  switch stops the current one as before. The response is now a typed `SegmentStreamInfo`.
+- **FR-222-2** — `FfprobeRunner.keyframeAtOrBefore` (`-read_intervals "T%+#1"`, one packet) fills
+  `startedAtMs`; `startedAtExact = false` when ffprobe could not answer. The client sets
+  `trimRemuxBaseMs` **and the playhead** from the response, drops a response overtaken by a newer
+  request (`trimStreamSeq`), and toasts "stream starts at 19:57 — the nearest keyframe before 20:00"
+  when the snap is a second or more (closes F7 as well).
+- **FR-222-3** — the measured length lives on the **video `Track`** (`Track.durationMs`, from
+  `format.duration` in the probe that has carried `-show_format` since 185) rather than as a new field
+  on `Episode`/`MediaItem`: every path that stores probed tracks — the scanner, the sync routes, the
+  track routes — stores it with zero call-site changes, and `List<Track>.fileDurationMs()` reads it. Two
+  deliberate deviations from the FR as written: (1) TMDB's runtime is **kept as a labelled fallback**
+  (`durationSource = "tmdb"`, header chip *length estimated · re-scan to measure*) rather than dropped,
+  because until a file is next examined the alternative was a timeline that ended at the last marker;
+  (2) the trim route **measures on first open** (`ensureMeasured`: one bounded ffprobe of the container
+  header — not a read of the file — persisted on the track), so the editor is right the first time a
+  unit is opened and the consensus/apply paths see the same number. `correctDuration()` is gone; the
+  client never reads `video.duration`; `refreshTrimBody` keeps the server's scale; a marker past the
+  measured end is clamped at the end with a *past the end* chip and a bar title (closes F4, F8, and the
+  `durationSec = 0` add case); `computeConsensus` takes credits leads only from `"file"` rows and
+  `applyConsensusToTargets` places credits only against a measured length (F5).
+- **FR-222-4** — `isOpenEnded` / `segEndSec` / `barGeometry` in `Segments.kt`: a credits marker with
+  no end is drawn to the end, its row reads *to the end* with no end steppers and no right handle, its
+  start moves both ways (steppers, drag, `,`/`.`), `O` at the playhead gives it an explicit end and the
+  row refreshes to show the end controls. The ± clamp can no longer produce a negative ceiling (F2).
+- **FR-222-5** — `validateSegmentEdit` (kind ∈ `SegmentKind.ALL`, start ≥ 0, end > start, both ≤
+  measured length + 2 s) answers **422** `{"error": …}`; `SegmentApi.editSegment` returns
+  `SegmentWriteResult` and every toast carries the reason. `I`/`O` clamp and say so; `goNext`,
+  `bulkLock`, the drawer's lock and *Fine as it is* report a failed write instead of a success (F3, F9).
+- **FR-222-6** — new `segment_waveform` table (`45.sqm`), one byte per second (`WAVEFORM_BUCKET_MS`
+  = 1 000), written by `FfmpegRunner.computeEnvelope` (streams the PCM through `EnvelopeAccumulator`,
+  one bucket in memory, `SegmentProcessGate`) from two segments-lane jobs: `waveform_backfill` (one
+  library job, queued at boot until every unit has an envelope or a recorded failure — `bucket_ms = 0`)
+  and `waveform_unit` (queued, deduped, by the waveform route when a unit has none). The route only
+  reads: 200 with the envelope, 404 *not computed yet* after queueing, 422 when the audio could not be
+  decoded. `computeWaveform` and `captureBinaryCommand` are deleted. The client fetches once per title,
+  renders the whole file at ≤ 300 bars (max per group) and a ±60 s strip around the selected marker's
+  start (or the playhead) at one bar per second, and redraws both from the held envelope on every
+  selection change and structural refresh without a request (F1). Open question 2 answered: a table
+  keyed like `media_segment`, one byte per bucket.
+- **FR-222-7** — `MediaSegmentStore.pruneOrphans` (markers + evidence + envelope in one transaction,
+  `has_segments` recomputed); `pruneOrphanSegments` runs once at boot on `rootScope` with one History
+  line per title and one log line; the sheet and trim routes prune the opened title first. An episode
+  the duplicate-dedup drops from the rail no longer 500s the trim view (F6 and a bonus).
+- **FR-222-8** — badges *checking playback…* → *starting the stream…* / *loading…* → the 190 pills;
+  the `error` handler names the `MediaError` code's meaning; `▶` (and `Space`, now bound) before the
+  stream exists toasts the badge instead of calling `play()` on nothing; the ruler and a bar (not its
+  handles) move the playhead, measured against the track; the transport is `<button>`s (F10, F11).
+- **Not done:** §6's live verification (3) — no test library, no browser, no deploy this session; the
+  keyframe report is verified by container semantics and ffprobe, not by watching Chromium. Section 6's
+  data check (4) needs one examination pass on production.
+- **Data on production the day this ships:** `user_version` is 43 (44 = 218's `cast_handoff`, also
+  undeployed); 45 creates `segment_waveform`. The boot backfill will read every one of the ~8 850 files
+  once — on the segments lane, cancellable from Activity, and the same cost the old editor paid *per
+  open*.

@@ -12,6 +12,7 @@ import dev.jellystructure.api.SegmentEvidenceDto
 import dev.jellystructure.api.SegmentRailItem
 import dev.jellystructure.api.SegmentSheetResponse
 import dev.jellystructure.api.SegmentTrimResponse
+import dev.jellystructure.api.SegmentWaveform
 import kotlinx.browser.document
 import kotlinx.browser.window
 import kotlinx.coroutines.CoroutineScope
@@ -61,6 +62,36 @@ private fun fmtlt(sec: Double): String {
     return "${(s / 60).toString().padStart(2, '0')}:${(s % 60).toString().padStart(2, '0')}.$tenths"
 }
 
+/** Phase 222 (FR-222-4) — a credits marker with no end runs to the end of the file: that is how detection
+ *  stores it (7 627 of 7 628 credits rows), and drawing it as a zero-length sliver was what made the
+ *  marker look absent and its start impossible to move later. */
+private fun isOpenEnded(s: SegmentDto): Boolean = s.endMs == null && s.kind == SegKind.CREDITS
+
+/** Where a marker's bar ends on a timeline of [durationSec]: its own end, the file's end for an
+ *  open-ended marker, or its start (a point) for a kind that has no end and does not run to the end. */
+private fun segEndSec(s: SegmentDto, durationSec: Double): Double = when {
+    s.endMs != null -> s.endMs / 1000.0
+    isOpenEnded(s) && durationSec > 0 -> durationSec
+    else -> s.startMs / 1000.0
+}
+
+/** Phase 222 (FR-222-3) — a marker past the measured end is drawn clamped at the end and flagged, never
+ *  clipped out of existence by the track's overflow. Returns (left %, width %, pastEnd). */
+private fun barGeometry(s: SegmentDto, durationSec: Double, minWidthPct: Double): Triple<Double, Double, Boolean> {
+    val startSec = s.startMs / 1000.0
+    val endSec = segEndSec(s, durationSec)
+    val pastEnd = startSec > durationSec
+    val left = (startSec / durationSec * 100).coerceIn(0.0, 100.0 - minWidthPct)
+    val width = ((endSec - startSec) / durationSec * 100).coerceAtLeast(minWidthPct).coerceAtMost(100.0 - left)
+    return Triple(left, width, pastEnd)
+}
+
+private fun durationSourceChip(source: String): String = when (source) {
+    "file" -> ""
+    "tmdb" -> """<span class="src he" title="TMDB's whole-minute runtime, which is shorter than the file for most credits — the length is measured the first time the file is examined">length estimated · re-scan to measure</span>"""
+    else -> """<span class="src he" title="No measured length yet — the timeline ends at the last marker until the file is examined">length unknown · re-scan to measure</span>"""
+}
+
 private fun legendHtml(kinds: List<String> = SegKind.ORDER): String =
     "<div class=\"legend\">" + kinds.joinToString("") { k ->
         val m = kindOf(k)
@@ -71,10 +102,7 @@ private fun legendHtml(kinds: List<String> = SegKind.ORDER): String =
 private fun segBarsHtml(row: SegmentEpisodeRow): String {
     if (row.durationSec <= 0) return ""
     return row.segments.joinToString("") { s ->
-        val startSec = s.startMs / 1000.0
-        val endSec = (s.endMs ?: s.startMs) / 1000.0
-        val left = startSec / row.durationSec * 100
-        val width = ((endSec - startSec) / row.durationSec * 100).coerceAtLeast(0.6)
+        val (left, width, _) = barGeometry(s, row.durationSec, 0.6)
         val m = kindOf(s.kind)
         val lockCls = if (s.locked) " lk" else ""
         "<div class=\"seg ${m.cls}$lockCls\" style=\"left:${left}%;width:${width}%\">" +
@@ -136,11 +164,17 @@ private var trimPlayheadMs = 0L
 // every seek reloads the stream from a new offset instead of setting video.currentTime in place.
 private var trimStreamMode: String? = null
 private var trimPlaySessionId: String = ""
-// The absolute ms offset the CURRENT video.src was loaded from, when trimStreamMode == "remux" (always
-// 0 for "direct", where a single persistent resource covers the whole file). A remux reload's own
-// loadedmetadata reports only the duration REMAINING from this offset, not the file's real length —
-// correctDuration() only trusts a load where this is 0 (the initial open, always at the real start).
+// The absolute ms offset the CURRENT video.src really starts at, when trimStreamMode == "remux" (always
+// 0 for "direct", where a single persistent resource covers the whole file). Phase 222 (FR-222-2): set
+// from the server's `startedAtMs` — the keyframe the stream begins at — never from the offset requested.
 private var trimRemuxBaseMs = 0L
+// Phase 222 (FR-222-1/2) — every stream request carries a sequence number; a response that arrives after a
+// newer request was made is dropped, so the base and the picture can never come from different streams
+// (the open-then-click race, and a slow seek overtaken by a faster one).
+private var trimStreamSeq = 0
+// Phase 222 (FR-222-6) — the stored envelope, fetched once per title and sliced client-side for both
+// waveform lanes; never re-fetched on a structural refresh.
+private var trimEnvelope: SegmentWaveform? = null
 
 fun renderSegments(scope: CoroutineScope, query: Map<String, String>) {
     val body = document.body ?: return
@@ -230,10 +264,7 @@ private fun extractJsonField(json: String?, field: String): String? {
 private fun miniHtml(durationSec: Double, segments: List<SegmentDto>): String {
     if (durationSec <= 0 || segments.isEmpty()) return """<div class="mini"></div>"""
     val bars = segments.joinToString("") { s ->
-        val startSec = s.startMs / 1000.0
-        val endSec = (s.endMs ?: s.startMs) / 1000.0
-        val left = startSec / durationSec * 100
-        val width = ((endSec - startSec) / durationSec * 100).coerceAtLeast(1.2)
+        val (left, width, _) = barGeometry(s, durationSec, 1.2)
         """<i style="left:${left}%;width:${width}%;background:${kindOf(s.kind).color}"></i>"""
     }
     return """<div class="mini">$bars</div>"""
@@ -254,15 +285,18 @@ private fun buildRuler(durationSec: Double): String {
 private fun buildTrack(segments: List<SegmentDto>, durationSec: Double, selectedKind: String?): String {
     if (durationSec <= 0) return ""
     return segments.joinToString("") { s ->
-        val startSec = s.startMs / 1000.0
-        val endSec = (s.endMs ?: s.startMs) / 1000.0
-        val left = startSec / durationSec * 100
-        val width = ((endSec - startSec) / durationSec * 100).coerceAtLeast(0.5)
+        val (left, width, pastEnd) = barGeometry(s, durationSec, 0.5)
         val m = kindOf(s.kind)
         val lockCls = if (s.locked) " lk" else ""
         val onCls = if (s.kind == selectedKind) " on" else ""
-        val handles = if (!s.locked) """<i class="h l" data-e="a"></i><i class="h r" data-e="b"></i>""" else ""
-        """<div class="seg ${m.cls}$lockCls$onCls" data-s="${s.kind}" style="left:${left}%;width:${width}%">${if (width > 6) m.label else ""}$handles</div>"""
+        // FR-222-4 — an open-ended marker has no end edge to drag.
+        val handles = when {
+            s.locked -> ""
+            isOpenEnded(s) -> """<i class="h l" data-e="a"></i>"""
+            else -> """<i class="h l" data-e="a"></i><i class="h r" data-e="b"></i>"""
+        }
+        val title = if (pastEnd) """ title="starts after the end of the file — move it back"""" else ""
+        """<div class="seg ${m.cls}$lockCls$onCls" data-s="${s.kind}"$title style="left:${left}%;width:${width}%">${if (width > 6) m.label else ""}$handles</div>"""
     }
 }
 
@@ -290,15 +324,21 @@ private fun buildEvidenceLane(evidence: List<SegmentEvidenceDto>, durationSec: D
     return """<div class="ev" id="seg-evidence"><span class="evlbl">why</span>$bars</div>"""
 }
 
-private fun buildMarkRow(s: SegmentDto, selected: Boolean): String {
+private fun buildMarkRow(s: SegmentDto, selected: Boolean, durationSec: Double): String {
     val m = kindOf(s.kind)
     val startSec = s.startMs / 1000.0
-    val endSec = (s.endMs ?: s.startMs) / 1000.0
+    val endSec = segEndSec(s, durationSec)
+    val open = isOpenEnded(s)
+    // FR-222-4 — an open-ended marker offers no end steppers; `O` at the playhead gives it one explicitly.
+    val endCell = if (open) """<span class="ts-b" title="runs to the end of the file — press O at the playhead to give it an end">to the end</span>"""
+        else """<span class="ts-b">${fmtlt(endSec)}</span><span class="stp"><button data-d="-1" data-e="b" data-k="${s.kind}">−</button><button data-d="1" data-e="b" data-k="${s.kind}">+</button></span>"""
+    val lenCell = if (open) "" else """<s class="len">${fmt(endSec - startSec)} long</s>"""
+    val pastEnd = if (durationSec > 0 && startSec > durationSec) """<span class="src he" title="the file is ${fmtl(durationSec)} long">past the end</span>""" else ""
     return """<div class="mk${if (selected) " sel" else ""}${if (s.locked) " lkd" else ""}" data-m="${s.kind}">
         <span class="sw" style="background:${m.color}"></span><span class="nm">${m.label}</span>
         <span class="tc"><span class="stp"><button data-d="-1" data-e="a" data-k="${s.kind}">−</button><button data-d="1" data-e="a" data-k="${s.kind}">+</button></span><span class="ts-a">${fmtlt(startSec)}</span>
-          <s>→</s><span class="ts-b">${fmtlt(endSec)}</span><span class="stp"><button data-d="-1" data-e="b" data-k="${s.kind}">−</button><button data-d="1" data-e="b" data-k="${s.kind}">+</button></span>
-          <s class="len">${fmt(endSec - startSec)} long</s><span class="src-slot">${srcChipHtml(s)}</span></span>
+          <s>→</s>$endCell
+          $lenCell<span class="src-slot">${srcChipHtml(s)}$pastEnd</span></span>
         <span class="acts"><button class="btn sm ghost" data-p="${s.kind}">▶ play the cut</button>
           <button class="lockb${if (s.locked) " on" else ""}" data-l="${s.kind}">${if (s.locked) "🔒 locked" else "🔓 lock"}</button>
           <button class="btn sm ghost" data-remove="${s.kind}" title="Remove this marker">✕ Remove</button></span>
@@ -330,7 +370,8 @@ private fun buildRail(data: SegmentTrimResponse): String {
           <div><span class="kbd">,</span><span class="kbd">.</span>nudge a frame · <span class="kbd">⇧</span> for a second</div>
           <div><b>−</b><b>+</b> on a row nudges by a second</div>
           <div><span class="kbd">L</span>lock the selected marker</div>
-          <div><span class="kbd">↵</span>save and open the next episode</div></div>
+          <div><span class="kbd">↵</span>save and open the next episode</div>
+          <div><span class="kbd">Space</span>play / pause · click the timeline, a bar or the ruler to jump</div></div>
           <div class="sxhint">A locked marker survives every future <b>detect_segments</b> run — that is the whole point of the lock.</div>
           <a class="sxlink" href="#/settings?tab=libraries">Detection settings →</a></div>"""
 }
@@ -350,6 +391,8 @@ private fun renderTrim(data: SegmentTrimResponse, scope: CoroutineScope) {
         trimStreamMode = null
         trimPlaySessionId = ""
         trimRemuxBaseMs = 0L
+        trimStreamSeq++
+        trimEnvelope = null
     } else if (trimSelectedKind != null && data.segments.none { it.kind == trimSelectedKind }) {
         trimSelectedKind = data.segments.firstOrNull()?.kind
     }
@@ -361,6 +404,7 @@ private fun renderTrim(data: SegmentTrimResponse, scope: CoroutineScope) {
     val backHtml = if (data.kind == "movie") """<a class="sxback" href="#/media/${data.mediaId}">‹ ${data.itemTitle}</a>"""
         else """<a class="sxback" href="#" data-a="back">‹ Season ${data.seasonNumber}</a>"""
     val confirmChip = if (data.checked) """<span class="src me">confirmed</span>""" else """<span class="src he">not confirmed — Jellyfin will not get it yet</span>"""
+    val lengthChip = durationSourceChip(data.durationSource)
     val nextLabel = if (data.kind == "movie") "Save &amp; next film →" else "Save &amp; next episode →"
     val playPill = selected?.let { s -> val m = kindOf(s.kind); """<span class="vpill" style="color:${m.color};border-color:${m.color}44">▍${m.label}</span>""" } ?: ""
     val playheadSec = trimPlayheadMs / 1000.0
@@ -369,7 +413,7 @@ private fun renderTrim(data: SegmentTrimResponse, scope: CoroutineScope) {
     root.innerHTML = """
         <div class="sxbar">$backHtml
           <span class="num">${data.code}</span><h1>${data.title}</h1><span class="sxsub" id="seg-duration-label">${fmtl(data.durationSec)}</span>
-          <span class="sxsp"></span>$confirmChip
+          <span class="sxsp"></span>$lengthChip$confirmChip
           <button class="btn sm" data-a="redetect-one">↻ Re-detect</button>
           <button class="btn sm pri" data-a="next">$nextLabel</button></div>
         <div class="sxmain" style="grid-template-columns:1fr${if (data.kind == "tv") " 322px" else ""}"><div class="sxstage">
@@ -379,9 +423,9 @@ private fun renderTrim(data: SegmentTrimResponse, scope: CoroutineScope) {
             <div class="tag">$playPill</div>
             <div class="tag2" id="seg-vid-tag2"><span class="vpill">checking playback…</span></div>
             <div class="foot">
-              <span class="vbtn pri" id="seg-play-btn">▶</span>
-              <span class="vbtn" data-a="fb">◂◂</span>
-              <span class="vbtn" data-a="ff">▸▸</span>
+              <button type="button" class="vbtn pri" id="seg-play-btn" title="play / pause (Space)">▶</button>
+              <button type="button" class="vbtn" data-a="fb" title="back 10 s">◂◂</button>
+              <button type="button" class="vbtn" data-a="ff" title="forward 10 s">▸▸</button>
               <span class="sxsp"></span>
               <span class="vpill mono" id="seg-timecode">${fmtl(playheadSec)} / ${fmtl(data.durationSec)}</span>
             </div>
@@ -407,13 +451,15 @@ private fun buildTimelineInnerHtml(data: SegmentTrimResponse, selectedKind: Stri
       <div class="play" id="seg-playhead" style="left:${if (data.durationSec > 0) playheadSec / data.durationSec * 100 else 0}%"></div>
     </div>
     <div class="wave" id="seg-wave"></div>
+    <div class="tlh" style="margin:6px 0 0"><span class="lbl" id="seg-wave-zoom-lbl"></span></div>
+    <div class="wave" id="seg-wave-zoom"></div>
     ${buildEvidenceLane(data.evidence, data.durationSec)}
 """.trimIndent()
 
 /** The `.mks` block's inner content — see [buildTimelineInnerHtml]. */
 private fun buildMarksInnerHtml(data: SegmentTrimResponse, selectedKind: String?): String {
     val missing = SegKind.ORDER.filterNot { k -> data.segments.any { it.kind == k } }
-    return data.segments.joinToString("") { buildMarkRow(it, it.kind == selectedKind) } + buildAddRow(missing, data.kind)
+    return data.segments.joinToString("") { buildMarkRow(it, it.kind == selectedKind, data.durationSec) } + buildAddRow(missing, data.kind)
 }
 
 /**
@@ -449,9 +495,23 @@ private fun refreshTrimBody(scope: CoroutineScope) {
         updatePlayheadDom(trimPlayheadMs, fresh.durationSec, currentTrimSelectedLabel())
 
         wireEditableRegion(root, fresh, scope)
-        wireWaveform(fresh, scope)
+        // Phase 222 (FR-222-6) — the envelope is held client-side; a structural refresh redraws the lanes
+        // from it and never asks the server (which would never decode anyway) again.
+        renderWaveformLanes()
         wireJellyfinCandidates(fresh, scope)
     }
+}
+
+/** Phase 222 (FR-222-8) — play/pause that is honest while the stream is still starting: no `play()` on an
+ *  element with no source (a rejected promise and nothing else), just the badge that already says so. */
+private fun togglePlayback() {
+    val video = document.getElementById("seg-video") as? HTMLVideoElement ?: return
+    if (video.style.display == "none") {
+        val badge = document.getElementById("seg-vid-tag2")?.textContent?.trim().orEmpty()
+        toast(if (badge.isNotEmpty()) "Not yet — $badge" else "Playback isn't available for this title")
+        return
+    }
+    if (video.paused) video.play() else video.pause()
 }
 
 // Phase 189 — split from one wireTrim into "chrome wired once" (this function; back link, redetect/next,
@@ -475,10 +535,7 @@ private fun wireTrim(root: Element, data: SegmentTrimResponse, scope: CoroutineS
     root.querySelector("[data-a='next']")?.addEventListener("click") { goNext(currentTrimData ?: data, scope) }
     root.querySelector("[data-a='fb']")?.addEventListener("click") { seekRelative(currentTrimData ?: data, -10_000, scope) }
     root.querySelector("[data-a='ff']")?.addEventListener("click") { seekRelative(currentTrimData ?: data, 10_000, scope) }
-    root.querySelector("#seg-play-btn")?.addEventListener("click") {
-        val video = document.getElementById("seg-video") as? HTMLVideoElement ?: return@addEventListener
-        if (video.paused) video.play() else video.pause()
-    }
+    root.querySelector("#seg-play-btn")?.addEventListener("click") { togglePlayback() }
 
     wireEditableRegion(root, data, scope)
     wireVideo(data, scope)
@@ -530,14 +587,23 @@ private fun wireEditableRegion(root: Element, data: SegmentTrimResponse, scope: 
     }
     // Click empty track space (ruler included) to move the playhead — a lightweight DOM update, not a
     // full re-render: re-rendering would tear down and recreate <video>, restarting the stream.
-    (root.querySelector("#seg-track") as? HTMLElement)?.addEventListener("click") { ev ->
+    // Phase 222 (FR-222-8) — the grid, a bar (not its handles) and the ruler all move the playhead; the
+    // position is always measured against the TRACK so a click on a bar lands where the cursor is.
+    val track = root.querySelector("#seg-track") as? HTMLElement
+    fun seekAtClientX(clientX: Double) {
         val live = currentTrimData ?: data
-        val target = ev.target as? Element
-        if (target?.classList?.contains("grid") != true) return@addEventListener
-        val box = (ev.target as HTMLElement).getBoundingClientRect()
-        val me = ev as org.w3c.dom.events.MouseEvent
-        val frac = ((me.clientX - box.left) / box.width).coerceIn(0.0, 1.0)
+        val box = (track ?: return).getBoundingClientRect()
+        if (box.width <= 0 || live.durationSec <= 0) return
+        val frac = ((clientX - box.left) / box.width).coerceIn(0.0, 1.0)
         seekToAbsoluteMs(live, (frac * live.durationSec * 1000).toLong(), scope)
+    }
+    track?.addEventListener("click") { ev ->
+        val target = ev.target as? Element ?: return@addEventListener
+        if (target.classList.contains("h") || target.closest(".h") != null) return@addEventListener
+        seekAtClientX((ev as org.w3c.dom.events.MouseEvent).clientX.toDouble())
+    }
+    (root.querySelector("#seg-ruler") as? HTMLElement)?.addEventListener("click") { ev ->
+        seekAtClientX((ev as org.w3c.dom.events.MouseEvent).clientX.toDouble())
     }
 
     root.querySelectorAll("[data-l]").let { nodes ->
@@ -598,14 +664,19 @@ private fun wireEditableRegion(root: Element, data: SegmentTrimResponse, scope: 
                 val kind = el.getAttribute("data-add") ?: return@addEventListener
                 val endAnchored = kind == SegKind.CREDITS || kind == SegKind.STINGER || kind == SegKind.PREVIEW
                 val durMs = (live.durationSec * 1000).toLong()
-                val start = if (endAnchored) (durMs - 60_000).coerceAtLeast(0) else 30_000L
-                val end = (start + 40_000).coerceAtMost(durMs)
+                // Phase 222 (FR-222-3) — defaults are placed against the real length; with no length at
+                // all an end-anchored marker has nowhere honest to go.
+                if (durMs <= 0) { toast("This title's length isn't known yet — re-scan it, then add the marker"); return@addEventListener }
+                val start = if (endAnchored) (durMs - 60_000).coerceAtLeast(0) else 30_000L.coerceAtMost((durMs - 1_000).coerceAtLeast(0))
+                // FR-222-4 — credits are stored open-ended ("to the end"), like detection stores them.
+                val end: Long? = if (kind == SegKind.CREDITS) null else (start + 40_000).coerceAtMost(durMs)
                 scope.launch {
-                    if (SegmentApi.editSegment(live.mediaId, kind, live.episodeKey, live.episodeNumber, start, end)) {
+                    val r = SegmentApi.editSegment(live.mediaId, kind, live.episodeKey, live.episodeNumber, start, end)
+                    if (r.ok) {
                         trimSelectedKind = kind
                         toast("${kindOf(kind).label} added — drag the handles or nudge the timecodes")
                     } else {
-                        toast("Couldn't add ${kindOf(kind).label} — try again")
+                        toast("Couldn't add ${kindOf(kind).label} — ${r.error ?: "try again"}")
                     }
                     refreshTrimBody(scope)
                 }
@@ -651,18 +722,65 @@ private fun selectMarker(kind: String?) {
         } ?: ""
     }
     updatePlayheadDom(trimPlayheadMs, data?.durationSec ?: 0.0, currentTrimSelectedLabel())
+    renderWaveformLanes()
 }
 
-/** Step 6 — fetched once per render (not per timeupdate tick — the peaks don't change during playback),
- *  so a plain targeted innerHTML update is fine here, unlike the playhead. */
+/** Phase 222 (FR-222-6) — the STORED envelope, fetched once per title. Null means the server has just
+ *  queued the computation (or the file has no decodable audio): the lanes say so and stay empty — the
+ *  request path never decodes, so there is nothing to wait for here. */
 private fun wireWaveform(data: SegmentTrimResponse, scope: CoroutineScope) {
-    if (data.durationSec <= 0) return
+    trimEnvelope = null
+    document.getElementById("seg-wave")?.innerHTML = """<span class="sxhint" style="padding:0 6px">loading the waveform…</span>"""
     scope.launch {
-        val peaks = SegmentApi.waveform(data.mediaId, data.episodeKey, data.episodeNumber, 0, (data.durationSec * 1000).toLong())
-        if (peaks != null) {
-            document.getElementById("seg-wave")?.innerHTML = peaks.joinToString("") { p -> """<i style="height:${p.coerceAtLeast(1)}%"></i>""" }
+        val env = SegmentApi.waveform(data.mediaId, data.episodeKey, data.episodeNumber)
+        val live = currentTrimData ?: return@launch
+        if (live.mediaId != data.mediaId || live.episodeKey != data.episodeKey || live.episodeNumber != data.episodeNumber) return@launch
+        trimEnvelope = env
+        if (env == null) {
+            document.getElementById("seg-wave")?.innerHTML = """<span class="sxhint" style="padding:0 6px">waveform not computed yet — queued in the background (Activity ▸ Jobs &amp; workers); reopen this title in a few minutes</span>"""
+            document.getElementById("seg-wave-zoom-lbl")?.textContent = ""
+            return@launch
         }
+        renderWaveformLanes()
     }
+}
+
+private const val WAVE_FULL_BARS = 300
+private const val WAVE_ZOOM_HALF_SEC = 60
+
+/** Phase 222 (FR-222-6) — both lanes from the held envelope: the whole file downsampled to at most
+ *  [WAVE_FULL_BARS] bars (max per group, so a short loud cue is not averaged away), and a ±[WAVE_ZOOM_HALF_SEC]
+ *  s strip around the selected marker's start (or the playhead) at one bar per bucket — the strip the
+ *  operator actually judges a boundary on. Pure DOM; nothing is fetched. */
+private fun renderWaveformLanes() {
+    val env = trimEnvelope ?: return
+    val data = currentTrimData ?: return
+    val full = document.getElementById("seg-wave") ?: return
+    val zoom = document.getElementById("seg-wave-zoom")
+    val zoomLbl = document.getElementById("seg-wave-zoom-lbl")
+    val peaks = env.peaks
+    if (peaks.isEmpty() || env.bucketMs <= 0) { full.innerHTML = ""; return }
+    val group = (peaks.size + WAVE_FULL_BARS - 1) / WAVE_FULL_BARS
+    val bars = (0 until (peaks.size + group - 1) / group).map { g ->
+        var m = 0
+        for (i in g * group until ((g + 1) * group).coerceAtMost(peaks.size)) if (peaks[i] > m) m = peaks[i]
+        m
+    }
+    full.innerHTML = bars.joinToString("") { p -> """<i style="height:${p.coerceAtLeast(1)}%"></i>""" }
+
+    if (zoom == null) return
+    val selected = trimSelectedKind?.let { k -> data.segments.firstOrNull { it.kind == k } }
+    val centreMs = selected?.startMs ?: trimPlayheadMs
+    val fromBucket = ((centreMs - WAVE_ZOOM_HALF_SEC * 1000L) / env.bucketMs).toInt().coerceAtLeast(0)
+    val toBucket = ((centreMs + WAVE_ZOOM_HALF_SEC * 1000L) / env.bucketMs).toInt().coerceAtMost(peaks.size - 1)
+    if (toBucket < fromBucket) { zoom.innerHTML = ""; zoomLbl?.textContent = ""; return }
+    val centreIdx = (centreMs / env.bucketMs).toInt()
+    zoom.innerHTML = (fromBucket..toBucket).joinToString("") { i ->
+        val mark = if (i == centreIdx) ";background:#fff" else ""
+        """<i style="height:${peaks[i].coerceAtLeast(1)}%$mark"></i>"""
+    }
+    zoomLbl?.textContent = if (selected != null) "±$WAVE_ZOOM_HALF_SEC s around the ${kindOf(selected.kind).label.lowercase()} start (${fmtl(selected.startMs / 1000.0)})"
+        else "±$WAVE_ZOOM_HALF_SEC s around the playhead (${fmtl(trimPlayheadMs / 1000.0)})"
 }
 
 /** Step 6 — Jellyfin's own markers, offered as candidates only. Empty (no provider plugin installed) is
@@ -685,10 +803,11 @@ private fun wireJellyfinCandidates(data: SegmentTrimResponse, scope: CoroutineSc
                     val start = el.getAttribute("data-jf-start")?.toLongOrNull() ?: return@addEventListener
                     val end = el.getAttribute("data-jf-end")?.toLongOrNull()
                     scope.launch {
-                        if (SegmentApi.editSegment(data.mediaId, kind, data.episodeKey, data.episodeNumber, start, end)) {
+                        val r = SegmentApi.editSegment(data.mediaId, kind, data.episodeKey, data.episodeNumber, start, end)
+                        if (r.ok) {
                             toast("${kindOf(kind).label} set from Jellyfin")
                         } else {
-                            toast("Couldn't apply Jellyfin's ${kindOf(kind).label} — try again")
+                            toast("Couldn't apply Jellyfin's ${kindOf(kind).label} — ${r.error ?: "try again"}")
                         }
                         refreshTrimBody(scope)
                     }
@@ -734,23 +853,57 @@ private fun currentVideoAbsoluteMs(video: HTMLVideoElement): Long =
  * honoured and seeks efficiently via ffmpeg's own `-ss`, not by decoding from zero).
  */
 private fun seekToAbsoluteMs(data: SegmentTrimResponse, ms: Long, scope: CoroutineScope, resumePlaying: Boolean? = null) {
-    val clamped = ms.coerceIn(0L, (data.durationSec * 1000).toLong())
+    val clamped = ms.coerceIn(0L, (data.durationSec * 1000).toLong().coerceAtLeast(0L))
     trimPlayheadMs = clamped
     updatePlayheadDom(trimPlayheadMs, data.durationSec, currentTrimSelectedLabel())
-    if (trimStreamMode != "remux") {
-        seekVideoTo(clamped)
-        if (resumePlaying == true) (document.getElementById("seg-video") as? HTMLVideoElement)?.play()
-        return
+    renderWaveformLanes()
+    when (trimStreamMode) {
+        // The stream-shape answer hasn't arrived yet: remember where the operator wants to be; wireVideo's
+        // response handler goes there (remux) or loadedmetadata restores it (direct).
+        null -> return
+        "remux" -> Unit
+        else -> {
+            seekVideoTo(clamped)
+            if (resumePlaying == true) (document.getElementById("seg-video") as? HTMLVideoElement)?.play()
+            return
+        }
     }
     val video = document.getElementById("seg-video") as? HTMLVideoElement ?: return
     val wasPlaying = resumePlaying ?: !video.paused
-    trimRemuxBaseMs = clamped
+    startRemuxStream(data, clamped, scope, playAfter = wasPlaying)
+}
+
+/**
+ * Phase 222 (FR-222-1/2) — one remux stream start, shared by the first open and every seek. The server
+ * mints a UNIQUE PlaySessionId (a reused one made Jellyfin serve the old transcode from byte zero — the
+ * whole of the "always starts from the beginning" report), stops the previous one by id, and reports
+ * where the picture will really start (the keyframe at or before the request, since `-ss` with stream
+ * copy cannot cut inside a GOP). The base is taken from that RESPONSE, never from what was asked for,
+ * and a response overtaken by a newer request is dropped on the floor.
+ */
+private fun startRemuxStream(data: SegmentTrimResponse, requestedMs: Long, scope: CoroutineScope, playAfter: Boolean) {
+    val video = document.getElementById("seg-video") as? HTMLVideoElement ?: return
+    val seq = ++trimStreamSeq
+    val prev = trimPlaySessionId
+    setStreamBadge("starting the stream…")
     scope.launch {
-        val info = SegmentApi.streamInfo(data.mediaId, data.episodeKey.ifEmpty { null }, data.episodeNumber, startMs = clamped)
+        val info = SegmentApi.streamInfo(data.mediaId, data.episodeKey.ifEmpty { null }, data.episodeNumber, startMs = requestedMs, prev = prev)
+        if (seq != trimStreamSeq) return@launch   // overtaken by a newer request, or the title changed
         if (info == null) { toast("Couldn't seek — try again"); return@launch }
+        trimStreamMode = info.mode
+        trimPlaySessionId = info.playSessionId
+        trimRemuxBaseMs = info.startedAtMs
+        trimPlayheadMs = info.startedAtMs
+        updatePlayheadDom(trimPlayheadMs, data.durationSec, currentTrimSelectedLabel())
+        if (!info.startedAtExact) toast("Couldn't measure where the stream starts — the playhead may sit a few seconds off the picture")
+        else if (requestedMs - info.startedAtMs >= 1_000) toast("Stream starts at ${fmtl(info.startedAtMs / 1000.0)} — the nearest keyframe before ${fmtl(requestedMs / 1000.0)}")
         video.src = info.url
-        if (wasPlaying) video.play()
+        if (playAfter) video.play()
     }
+}
+
+private fun setStreamBadge(text: String, cls: String = "") {
+    document.getElementById("seg-vid-tag2")?.innerHTML = """<span class="vpill${if (cls.isEmpty()) "" else " $cls"}">$text</span>"""
 }
 
 private fun seekRelative(data: SegmentTrimResponse, deltaMs: Long, scope: CoroutineScope) {
@@ -780,7 +933,6 @@ private fun playCut(seg: SegmentDto, data: SegmentTrimResponse, scope: Coroutine
 
 private fun wireVideo(data: SegmentTrimResponse, scope: CoroutineScope) {
     val video = document.getElementById("seg-video") as? HTMLVideoElement ?: return
-    val tag2 = document.getElementById("seg-vid-tag2")
     val ph = document.getElementById("seg-ph") as? HTMLElement
     val playBtn = document.getElementById("seg-play-btn") as? HTMLElement
 
@@ -789,21 +941,23 @@ private fun wireVideo(data: SegmentTrimResponse, scope: CoroutineScope) {
         ph?.style?.display = "none"
         // Phase 190 (FR-190-3) — the badge must never claim "direct play" for a file whose audio was
         // actually re-encoded; the reported bug is exactly a file that LOOKS like it's playing fine.
-        tag2?.innerHTML = if (trimStreamMode == "remux")
-            """<span class="vpill ok">audio re-encoded so your browser can play it · video untouched</span>"""
-        else """<span class="vpill ok">direct play · no transcode</span>"""
-        // A remux RELOAD (seeking mid-session) starts its own ffmpeg process at the requested offset
-        // and reports only the duration REMAINING from there, not the file's real length — only the
-        // very first load (trimRemuxBaseMs == 0: true for direct play always, and for a fresh remux
-        // open at position 0) is trusted to correct the timeline.
-        if (trimRemuxBaseMs == 0L) {
-            if (trimStreamMode != "remux") video.currentTime = trimPlayheadMs / 1000.0
-            correctDuration(video.duration)
-        }
+        setStreamBadge(if (trimStreamMode == "remux") "audio re-encoded so your browser can play it · video untouched" else "direct play · no transcode", "ok")
+        // Phase 222 (FR-222-3) — the timeline's scale is the server's measured length and is NEVER taken
+        // from `video.duration`: a fragmented-MP4 remux reports one GOP (≈10 s) as its duration, and
+        // phase 163's correctDuration() rescaled every marker off the track with it, seconds after open.
+        // A direct-play open only restores the position the operator chose before the stream existed.
+        if (trimStreamMode != "remux" && trimRemuxBaseMs == 0L) video.currentTime = trimPlayheadMs / 1000.0
     }
     video.addEventListener("error") {
         video.style.display = "none"
-        tag2?.innerHTML = """<span class="vpill warn">can't play this file here — use the timecodes below</span>"""
+        // Phase 222 (FR-222-8) — the browser only hands over a MediaError code; say which one it was.
+        val why = when (video.error?.code?.toInt()) {
+            2 -> "the stream broke off"
+            3 -> "your browser couldn't decode it"
+            4 -> "your browser can't open this stream, or Jellyfin refused it"
+            else -> "playback failed"
+        }
+        setStreamBadge("can't play this file here — $why · use the timecodes below", "warn")
     }
     video.addEventListener("timeupdate") {
         trimPlayheadMs = currentVideoAbsoluteMs(video)
@@ -812,45 +966,25 @@ private fun wireVideo(data: SegmentTrimResponse, scope: CoroutineScope) {
     video.addEventListener("play") { playBtn?.textContent = "❚❚" }
     video.addEventListener("pause") { playBtn?.textContent = "▶" }
 
+    val seq = ++trimStreamSeq
     scope.launch {
-        // Phase 190 — request from wherever the playhead already is (0 on a fresh open; a resumed
-        // position on the same title). Harmless for a "direct" response — the server only honours
-        // startMs in remux mode (SegmentRoutes.kt) — but saves a mode-aware branch here.
-        val info = SegmentApi.streamInfo(data.mediaId, data.episodeKey.ifEmpty { null }, data.episodeNumber, startMs = trimPlayheadMs)
-        if (info == null) {
-            tag2?.innerHTML = """<span class="vpill warn">not matched in Jellyfin yet</span>"""
-            return@launch
-        }
+        // Phase 222 — a fresh open asks for the start; the answer decides the shape, and only THEN is a
+        // seek the operator may already have made carried out (remux) or restored (direct, above).
+        val info = SegmentApi.streamInfo(data.mediaId, data.episodeKey.ifEmpty { null }, data.episodeNumber, startMs = 0L)
+        if (seq != trimStreamSeq) return@launch
+        if (info == null) { setStreamBadge("not matched in Jellyfin yet", "warn"); return@launch }
         trimStreamMode = info.mode
         trimPlaySessionId = info.playSessionId
-        trimRemuxBaseMs = if (info.mode == "remux") trimPlayheadMs else 0L
+        trimRemuxBaseMs = 0L
+        if (info.mode == "remux" && trimPlayheadMs > 0) {
+            // The operator clicked before the shape was known: don't load the start only to reload — go
+            // straight there (the unused first id is stopped by the seek's `prev`, a harmless no-op).
+            startRemuxStream(data, trimPlayheadMs, scope, playAfter = false)
+            return@launch
+        }
+        setStreamBadge(if (info.mode == "remux") "starting the stream…" else "loading…")
         video.src = info.url
     }
-}
-
-// The backend's durationSec is only a rough estimate (TMDB's whole-minute runtime, or the furthest
-// known segment edge — see SegmentRoutes.kt's durationSecOf) used so the timeline has something to draw
-// before playback exists. Once the real <video> loads, its duration is the frame-accurate truth — patch
-// the duration-dependent pieces of the DOM in place rather than a full renderTrim (which would recreate
-// the <video> element and restart the stream).
-// Phase 189 (FR-189-1) — this used to replace #seg-track's innerHTML wholesale, which destroys every
-// .h drag-handle and .seg bar-select listener wireDragHandles/wireTrim attached — the handles die a few
-// hundred milliseconds after the view appears (a whole-minute TMDB estimate vs. a real file's duration
-// essentially never agree within 1s), before an operator can reach them. The segment SET doesn't change
-// here, only the scale each bar is positioned against, so there is nothing to rebuild — patch each
-// existing bar's left/width in place, the same way updatePlayheadDom already patches the playhead.
-private fun correctDuration(newDurationSec: Double) {
-    val data = currentTrimData ?: return
-    if (newDurationSec.isNaN() || !newDurationSec.isFinite() || newDurationSec <= 0) return
-    if (abs(newDurationSec - data.durationSec) < 1.0) return
-    val corrected = data.copy(durationSec = newDurationSec)
-    currentTrimData = corrected
-
-    document.getElementById("seg-duration-label")?.textContent = fmtl(newDurationSec)
-    document.getElementById("seg-ruler")?.outerHTML = buildRuler(newDurationSec)
-    document.getElementById("seg-evidence")?.outerHTML = buildEvidenceLane(corrected.evidence, newDurationSec)
-    for (seg in corrected.segments) repositionSegmentBar(seg, newDurationSec)
-    updatePlayheadDom(trimPlayheadMs, newDurationSec, currentTrimSelectedLabel())
 }
 
 /** Phase 189 — the shared bar-positioning math `buildTrack` uses for a fresh render, applied to an
@@ -859,15 +993,13 @@ private fun correctDuration(newDurationSec: Double) {
 private fun repositionSegmentBar(seg: SegmentDto, durationSec: Double) {
     if (durationSec <= 0) return
     val bar = document.querySelector(".seg[data-s='${seg.kind}']") as? HTMLElement ?: return
-    val startSec = seg.startMs / 1000.0
-    val endSec = (seg.endMs ?: seg.startMs) / 1000.0
-    bar.style.left = "${startSec / durationSec * 100}%"
-    bar.style.width = "${((endSec - startSec) / durationSec * 100).coerceAtLeast(0.5)}%"
+    val (left, width, _) = barGeometry(seg, durationSec, 0.5)
+    bar.style.left = "$left%"
+    bar.style.width = "$width%"
 }
 
 private fun nudgeSegment(data: SegmentTrimResponse, scope: CoroutineScope, kind: String, edge: String, deltaMs: Long) {
-    val seg = data.segments.firstOrNull { it.kind == kind }
-    if (seg == null) return
+    val seg = data.segments.firstOrNull { it.kind == kind } ?: return
     if (seg.locked) {
         // FR-189-5 — "nothing happens" is the exact symptom this phase exists to eliminate; a locked
         // marker must say so rather than silently ignoring the click, indistinguishable from broken.
@@ -875,9 +1007,19 @@ private fun nudgeSegment(data: SegmentTrimResponse, scope: CoroutineScope, kind:
         return
     }
     trimLastEdge = edge
+    val durMs = (data.durationSec * 1000).toLong()
     val start = seg.startMs
+    if (isOpenEnded(seg)) {
+        // Phase 222 (FR-222-4) — an open-ended marker has only a start, free to move EITHER way within
+        // the file. (The old clamp against `end - 100` with end == start turned +1 s into −100 ms.)
+        if (edge == "b") { toast("${kindOf(kind).label} runs to the end — press O at the playhead to give it an end"); return }
+        val ceiling = if (durMs > 0) durMs else Long.MAX_VALUE
+        applyEditInPlace(data, seg, (start + deltaMs).coerceIn(0L, ceiling), null, scope)
+        return
+    }
     val end = seg.endMs ?: seg.startMs
-    val newStart = if (edge == "a") (start + deltaMs).coerceIn(0, end - 100) else start
+    // Phase 222 — clamps that can neither invert the marker nor throw (a ceiling below zero did).
+    val newStart = if (edge == "a") (start + deltaMs).coerceIn(0L, (end - 100).coerceAtLeast(0L)) else start
     val newEnd = if (edge == "b") (end + deltaMs).coerceAtLeast(newStart + 100) else end
     applyEditInPlace(data, seg, newStart, newEnd, scope)
 }
@@ -893,19 +1035,26 @@ private fun nudgeSegment(data: SegmentTrimResponse, scope: CoroutineScope, kind:
  * reverted if the write turns out to have failed, so a rejected/failed write can never again look
  * identical to nothing having happened.
  */
-private fun applyEditInPlace(data: SegmentTrimResponse, seg: SegmentDto, newStart: Long, newEnd: Long, scope: CoroutineScope) {
+private fun applyEditInPlace(data: SegmentTrimResponse, seg: SegmentDto, newStart: Long, newEnd: Long?, scope: CoroutineScope) {
     val kind = seg.kind
     val patched = seg.copy(startMs = newStart, endMs = newEnd, source = SegSource.MANUAL, confidence = null)
+    // Phase 222 (FR-222-4) — giving an open-ended marker an end (or the reverse) changes the row's
+    // controls, which a per-field patch cannot express: write, then refresh the structure.
+    val structural = isOpenEnded(seg) != isOpenEnded(patched)
     currentTrimData = data.copy(segments = data.segments.map { if (it.kind == kind) patched else it })
     patchSegmentDom(patched, data.durationSec)
+    renderWaveformLanes()
     scope.launch {
-        val ok = SegmentApi.editSegment(data.mediaId, kind, data.episodeKey, data.episodeNumber, newStart, newEnd)
-        if (ok) {
-            toast("${kindOf(kind).label} now ${fmtl(newStart / 1000.0)} → ${fmtl(newEnd / 1000.0)} · saved")
+        val r = SegmentApi.editSegment(data.mediaId, kind, data.episodeKey, data.episodeNumber, newStart, newEnd)
+        if (r.ok) {
+            toast("${kindOf(kind).label} now ${fmtl(newStart / 1000.0)} → ${newEnd?.let { fmtl(it / 1000.0) } ?: "the end"} · saved")
+            if (structural) refreshTrimBody(scope)
         } else {
-            toast("Couldn't save the ${kindOf(kind).label} change — reverted")
+            // FR-222-5 — the server's reason, when it gave one, instead of a generic "reverted".
+            toast("Couldn't save the ${kindOf(kind).label} change — ${r.error ?: "reverted"}")
             currentTrimData = currentTrimData?.copy(segments = currentTrimData!!.segments.map { if (it.kind == kind) seg else it }) ?: data
             patchSegmentDom(seg, data.durationSec)
+            renderWaveformLanes()
         }
     }
 }
@@ -915,17 +1064,21 @@ private fun applyEditInPlace(data: SegmentTrimResponse, seg: SegmentDto, newStar
 private fun patchSegmentDom(seg: SegmentDto, durationSec: Double) {
     repositionSegmentBar(seg, durationSec)
     val startSec = seg.startMs / 1000.0
-    val endSec = (seg.endMs ?: seg.startMs) / 1000.0
+    val endSec = segEndSec(seg, durationSec)
     val row = document.querySelector(".mk[data-m='${seg.kind}']") as? Element
     row?.querySelector(".ts-a")?.textContent = fmtlt(startSec)
-    row?.querySelector(".ts-b")?.textContent = fmtlt(endSec)
-    row?.querySelector(".len")?.textContent = "${fmt(endSec - startSec)} long"
+    row?.querySelector(".ts-b")?.textContent = if (isOpenEnded(seg)) "to the end" else fmtlt(endSec)
+    row?.querySelector(".len")?.textContent = if (isOpenEnded(seg)) "" else "${fmt(endSec - startSec)} long"
     row?.querySelector(".src-slot")?.innerHTML = srcChipHtml(seg)
 }
 
 private fun goNext(data: SegmentTrimResponse, scope: CoroutineScope) {
     scope.launch {
-        SegmentApi.setChecked(listOf(SegmentEpisodeRef(data.mediaId, data.episodeKey, data.episodeNumber)))
+        // Phase 222 (FR-222-5) — 189's rule for every write: a failed confirm is reported, not navigated past.
+        if (!SegmentApi.setChecked(listOf(SegmentEpisodeRef(data.mediaId, data.episodeKey, data.episodeNumber)))) {
+            toast("Couldn't confirm ${data.code} — try again")
+            return@launch
+        }
         if (data.kind == "movie") {
             toast("${data.title} confirmed")
             Router.navigate("/media/${data.mediaId}")
@@ -943,7 +1096,7 @@ private fun goNext(data: SegmentTrimResponse, scope: CoroutineScope) {
 }
 
 // Phase 189 (FR-189-1) — wired ONCE per navigation (called from wireTrim only); it must go on working
-// for as long as the view is open, including after correctDuration() and any number of edits, since none
+// for as long as the view is open, including after any number of edits, since none
 // of those replace #seg-track's DOM anymore. Reads currentTrimData fresh on every mousedown instead of
 // closing over the initial render's `data`, so a duration correction (or any prior edit) is never stale
 // by the time the next drag starts — the same "read live state, don't close over a stale render" rule
@@ -967,8 +1120,10 @@ private fun wireDragHandles(root: Element, data: SegmentTrimResponse, scope: Cor
                 trimSelectedKind = kind
                 val box = track.getBoundingClientRect()
                 val durationSec = live.durationSec
+                // Phase 222 (FR-222-4) — an open-ended marker's bar reaches the end; its start may go anywhere in the file.
+                val openEnded = isOpenEnded(seg)
                 var liveStartMs = seg.startMs
-                var liveEndMs = seg.endMs ?: seg.startMs
+                var liveEndMs = if (openEnded) (durationSec * 1000).toLong() else seg.endMs ?: seg.startMs
 
                 lateinit var moveHandler: (org.w3c.dom.events.Event) -> Unit
                 lateinit var upHandler: (org.w3c.dom.events.Event) -> Unit
@@ -976,7 +1131,7 @@ private fun wireDragHandles(root: Element, data: SegmentTrimResponse, scope: Cor
                     val me = mv as org.w3c.dom.events.MouseEvent
                     val frac = ((me.clientX - box.left) / box.width).coerceIn(0.0, 1.0)
                     val tMs = (frac * durationSec * 1000).toLong()
-                    if (edge == "a") liveStartMs = tMs.coerceAtMost(liveEndMs - 100) else liveEndMs = tMs.coerceAtLeast(liveStartMs + 100)
+                    if (edge == "a") liveStartMs = tMs.coerceAtMost(if (openEnded) liveEndMs else liveEndMs - 100) else liveEndMs = tMs.coerceAtLeast(liveStartMs + 100)
                     val left = liveStartMs / 1000.0 / durationSec * 100
                     val width = (liveEndMs - liveStartMs) / 1000.0 / durationSec * 100
                     segEl.style.left = "$left%"
@@ -990,7 +1145,7 @@ private fun wireDragHandles(root: Element, data: SegmentTrimResponse, scope: Cor
                     trimPlayheadMs = if (edge == "a") liveStartMs else liveEndMs
                     // FR-189-1/3/6 — same write-and-patch path the ± steppers use: no full re-render (the
                     // <video> element is untouched), and a failed write snaps the bar back to where it was.
-                    applyEditInPlace(currentTrimData ?: live, seg, liveStartMs, liveEndMs, scope)
+                    applyEditInPlace(currentTrimData ?: live, seg, liveStartMs, if (openEnded) null else liveEndMs, scope)
                 }
                 document.addEventListener("mousemove", moveHandler)
                 document.addEventListener("mouseup", upHandler)
@@ -1026,6 +1181,8 @@ private fun wireKeydownOnce() {
         val scope = currentTrimScope ?: return@addEventListener
         val target = kev.target
         if (target is HTMLElement && (target.tagName.equals("input", true) || target.tagName.equals("textarea", true))) return@addEventListener
+        // Phase 222 (FR-222-8) — Space plays/pauses whether or not a marker is selected.
+        if (kev.key == " ") { kev.preventDefault(); togglePlayback(); return@addEventListener }
         val kind = trimSelectedKind ?: return@addEventListener
         val seg = data.segments.firstOrNull { it.kind == kind }
         when (kev.key.lowercase()) {
@@ -1033,15 +1190,28 @@ private fun wireKeydownOnce() {
             // and keyboard alike) reports the same toast instead of the keyboard path silently no-op'ing.
             "," -> if (seg != null) { kev.preventDefault(); nudgeSegment(data, scope, kind, trimLastEdge, if (kev.shiftKey) -1000L else -40L) }
             "." -> if (seg != null) { kev.preventDefault(); nudgeSegment(data, scope, kind, trimLastEdge, if (kev.shiftKey) 1000L else 40L) }
+            // Phase 222 (FR-222-5) — an in/out point never inverts the marker: it is clamped, and the toast says so.
             "i" -> if (seg != null) {
                 kev.preventDefault()
                 if (seg.locked) toast("${kindOf(kind).label} is locked — unlock it to change the time")
-                else { trimLastEdge = "a"; applyEditInPlace(data, seg, trimPlayheadMs, seg.endMs ?: seg.startMs, scope) }
+                else {
+                    trimLastEdge = "a"
+                    val endMs = if (isOpenEnded(seg)) null else (seg.endMs ?: seg.startMs)
+                    val ceiling = (endMs?.let { it - 100 } ?: (data.durationSec * 1000).toLong()).coerceAtLeast(0L)
+                    val newStart = trimPlayheadMs.coerceIn(0L, ceiling)
+                    if (newStart != trimPlayheadMs) toast("In point clamped to ${fmtl(newStart / 1000.0)} — it can't pass the out point")
+                    applyEditInPlace(data, seg, newStart, endMs, scope)
+                }
             }
             "o" -> if (seg != null) {
                 kev.preventDefault()
                 if (seg.locked) toast("${kindOf(kind).label} is locked — unlock it to change the time")
-                else { trimLastEdge = "b"; applyEditInPlace(data, seg, seg.startMs, trimPlayheadMs, scope) }
+                else {
+                    trimLastEdge = "b"
+                    val newEnd = trimPlayheadMs.coerceAtLeast(seg.startMs + 100)
+                    if (newEnd != trimPlayheadMs) toast("Out point clamped to ${fmtl(newEnd / 1000.0)} — it can't precede the in point")
+                    applyEditInPlace(data, seg, seg.startMs, newEnd, scope)
+                }
             }
             "l" -> if (seg != null) {
                 kev.preventDefault()
@@ -1081,9 +1251,10 @@ private fun renderSheet(sheet: SegmentSheetResponse, scope: CoroutineScope) {
         val laneInner = if (row.segments.isEmpty()) """<span class="lane-empty">nothing marked</span>"""
             else row.segments.joinToString("") { s ->
                 val startSec = s.startMs / 1000.0
-                val endSec = (s.endMs ?: s.startMs) / 1000.0
-                val left = startSec / maxDur * 100
-                val width = ((endSec - startSec) / maxDur * 100).coerceAtLeast(0.9)
+                // Phase 222 (FR-222-4) — an open-ended credits marker runs to its own row's end.
+                val endSec = segEndSec(s, row.durationSec)
+                val left = (startSec / maxDur * 100).coerceIn(0.0, 99.0)
+                val width = ((endSec - startSec) / maxDur * 100).coerceAtLeast(0.9).coerceAtMost(100.0 - left)
                 val m = kindOf(s.kind)
                 val oddm = if (row.outlier && s.kind == SegKind.INTRO) " oddm" else ""
                 """<i class="$oddm" style="left:${left}%;width:${width}%;background:${m.color}"></i>"""
@@ -1200,9 +1371,9 @@ private fun wireBulkActions(root: org.w3c.dom.Element, sheet: SegmentSheetRespon
         if (picked.isEmpty()) return@addEventListener
         val targets = picked.map { ref(sheet.episodes[it]) }
         scope.launch {
-            SegmentApi.bulkLock(targets, true)
+            val ok = SegmentApi.bulkLock(targets, true)
             picked.clear()
-            reloadAndToast(sheet, scope, "Locked — detection will leave these alone")
+            reloadAndToast(sheet, scope, if (ok) "Locked — detection will leave these alone" else "Couldn't lock — try again")
         }
     }
     root.querySelector("[data-a='redetect']")?.addEventListener("click") {
@@ -1231,14 +1402,18 @@ private fun wireDrawerActions(root: org.w3c.dom.Element, sheet: SegmentSheetResp
     root.querySelector("[data-a='lock-one']")?.addEventListener("click") {
         val nowLocked = open.segments.none { it.locked }
         scope.launch {
-            SegmentApi.bulkLock(listOf(ref(open)), nowLocked)
-            reloadAndToast(sheet, scope, if (nowLocked) "Locked — detection will not touch it" else "Unlocked — the next scan may change this")
+            val ok = SegmentApi.bulkLock(listOf(ref(open)), nowLocked)
+            reloadAndToast(sheet, scope, when {
+                !ok -> "Couldn't ${if (nowLocked) "lock" else "unlock"} ${open.code} — try again"
+                nowLocked -> "Locked — detection will not touch it"
+                else -> "Unlocked — the next scan may change this"
+            })
         }
     }
     root.querySelector("[data-a='ok-one']")?.addEventListener("click") {
         scope.launch {
-            SegmentApi.setChecked(listOf(ref(open)))
-            reloadAndToast(sheet, scope, "${open.code} marked as checked")
+            val ok = SegmentApi.setChecked(listOf(ref(open)))
+            reloadAndToast(sheet, scope, if (ok) "${open.code} marked as checked" else "Couldn't mark ${open.code} — try again")
         }
     }
     root.querySelector("[data-a='redetect-one']")?.addEventListener("click") {

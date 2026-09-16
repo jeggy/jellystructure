@@ -62,18 +62,21 @@ class SegmentStreamModeTest {
     }
 
     @Test
-    fun playSessionIdIsStableAcrossRepeatedCalls() {
-        // Deterministic, not random: a page reload/reopen must reuse the same id (see the function's
-        // own doc — Jellyfin's StopEncodingProcess no-ops harmlessly when it doesn't match anything).
-        val a = segmentsPlaySessionId("jf-123", "S01E01.mkv")
-        val b = segmentsPlaySessionId("jf-123", "S01E01.mkv")
-        assertEquals(a, b)
+    fun playSessionIdIsUniquePerStreamStart() {
+        // Phase 222 (FR-222-1) — the OPPOSITE of phase 190's contract, on purpose: Jellyfin hashes the
+        // transcode output path from the PlaySessionId (never StartTimeTicks) and serves an existing file
+        // from byte zero, so a reused id made every seek replay the stream already playing.
+        val a = segmentsPlaySessionId("jf-123", "S01E01.mkv", nextStreamNonce())
+        val b = segmentsPlaySessionId("jf-123", "S01E01.mkv", nextStreamNonce())
+        assertTrue(a != b)
+        assertTrue(a.startsWith("segeditor-jf-123-"))
+        assertTrue(b.startsWith("segeditor-jf-123-"))
     }
 
     @Test
     fun playSessionIdDiffersByEpisode() {
-        val ep1 = segmentsPlaySessionId("jf-123", "S01E01.mkv")
-        val ep2 = segmentsPlaySessionId("jf-123", "S01E02.mkv")
+        val ep1 = segmentsPlaySessionId("jf-123", "S01E01.mkv", "n1")
+        val ep2 = segmentsPlaySessionId("jf-123", "S01E02.mkv", "n1")
         assertTrue(ep1 != ep2)
     }
 }

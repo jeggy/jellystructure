@@ -139,6 +139,7 @@ class MediaSegmentStore(private val db: JellystructureDb) {
     fun deleteSegmentsForItem(itemId: String) {
         db.mediaSegmentQueries.deleteSegmentsForItem(itemId)
         db.mediaSegmentQueries.clearEvidenceForItem(itemId)
+        db.mediaSegmentQueries.deleteWaveformsForItem(itemId)
         recomputeHasSegments(itemId)
     }
 
@@ -179,7 +180,51 @@ class MediaSegmentStore(private val db: JellystructureDb) {
     fun clearEvidenceForKind(itemId: String, episodeKey: String, episodeNumber: Int, kind: String) {
         db.mediaSegmentQueries.clearEvidenceForKind(itemId, episodeKey, episodeNumber.toLong(), kind)
     }
+
+    // ===== Waveform envelope (Phase 222, FR-222-6) =====
+
+    /** The stored envelope, or null when nothing has been computed yet. A row with `bucketMs == 0`
+     *  means the file's audio could not be decoded — recorded so the backfill never retries it. */
+    fun getWaveform(itemId: String, episodeKey: String, episodeNumber: Int): WaveformEnvelope? =
+        db.mediaSegmentQueries.getWaveform(itemId, episodeKey, episodeNumber.toLong()).executeAsOneOrNull()
+            ?.let { WaveformEnvelope(bucketMs = it.bucket_ms, peaks = it.peaks, computedAt = it.computed_at) }
+
+    fun hasWaveform(itemId: String, episodeKey: String, episodeNumber: Int): Boolean =
+        db.mediaSegmentQueries.hasWaveform(itemId, episodeKey, episodeNumber.toLong()).executeAsOne()
+
+    fun putWaveform(itemId: String, episodeKey: String, episodeNumber: Int, bucketMs: Long, peaks: ByteArray) {
+        db.mediaSegmentQueries.putWaveform(itemId, episodeKey, episodeNumber.toLong(), bucketMs, peaks, nowEpochSec())
+    }
+
+    fun waveformCount(): Long = db.mediaSegmentQueries.countWaveforms().executeAsOne()
+
+    // ===== Orphans (Phase 222, FR-222-7) =====
+
+    /** Deletes every marker, evidence and waveform row of [itemId] filed under an (episode_key,
+     *  episode_number) that is not in [validKeys] — the keys of the episodes that exist NOW (a movie's
+     *  set is `{"" to 0}`). 392 such units had accumulated in production by 2026-09-16 from renames and
+     *  re-scans; nothing below item level ever pruned them. Returns the number of units removed. */
+    fun pruneOrphans(itemId: String, validKeys: Set<Pair<String, Int>>): Int {
+        val q = db.mediaSegmentQueries
+        val filed = q.segmentKeysForItem(itemId).executeAsList().map { it.episode_key to it.episode_number.toInt() } +
+            q.evidenceKeysForItem(itemId).executeAsList().map { it.episode_key to it.episode_number.toInt() } +
+            q.waveformKeysForItem(itemId).executeAsList().map { it.episode_key to it.episode_number.toInt() }
+        val stale = filed.toSet().filterNot { it in validKeys }
+        if (stale.isEmpty()) return 0
+        q.transaction {
+            for ((key, n) in stale) {
+                q.deleteSegmentsForEpisode(itemId, key, n.toLong())
+                q.clearEvidenceForEpisode(itemId, key, n.toLong())
+                q.deleteWaveformForEpisode(itemId, key, n.toLong())
+            }
+        }
+        recomputeHasSegments(itemId)
+        return stale.size
+    }
 }
+
+/** Phase 222 (FR-222-6) — a stored envelope: [peaks] is one byte per [bucketMs]-long bucket, 0-100. */
+data class WaveformEnvelope(val bucketMs: Long, val peaks: ByteArray, val computedAt: Long)
 
 private fun dev.jellystructure.db.Media_segment.toModel() = MediaSegmentRow(
     itemId = item_id, episodeKey = episode_key, episodeNumber = episode_number.toInt(), kind = kind,

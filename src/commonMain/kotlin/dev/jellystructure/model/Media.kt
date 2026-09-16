@@ -89,6 +89,13 @@ data class Track(
      *  (exact, container-tagged) / `"format"` (a floor that includes audio/subtitle overhead) — so the
      *  admin can tell a measured bitrate from a container-level estimate. Null iff [videoBitrate] is. */
     val videoBitrateSource: String? = null,
+    /** Phase 222 (FR-222-3): the file's own length in milliseconds, from ffprobe's `format.duration` in
+     *  the same probe that fills the track list (`-show_format` has been on since phase 185). Set on the
+     *  VIDEO track only, so every path that stores probed tracks stores the duration with them and no
+     *  call site had to change; read through [fileDurationMs]. Null until the file is next examined.
+     *  Never TMDB's runtime — that is a whole-minute broadcast figure, shorter than the file for most
+     *  credits, and the segment editor's timeline was wrong for exactly as long as it used it. */
+    val durationMs: Long? = null,
     /** Phase 200 (FR-200-2): true for a subtitle track discovered as a sidecar file beside the video
      *  rather than probed out of the container itself. Additive/defaulted — no migration. A surface
      *  that wants to distinguish "in the file" from "beside the file" can; one that doesn't, doesn't
@@ -104,6 +111,10 @@ data class Track(
      *  track — ffprobe has no SDH signal of its own. */
     val sdh: Boolean = false,
 )
+
+/** Phase 222 (FR-222-3) — the one place a unit's measured length is read from: the video track's
+ *  [Track.durationMs]. Null when the file has not been examined since the field existed. */
+fun List<Track>.fileDurationMs(): Long? = firstOrNull { it.kind == TrackKind.VIDEO && (it.durationMs ?: 0L) > 0L }?.durationMs
 
 @Serializable
 data class Person(

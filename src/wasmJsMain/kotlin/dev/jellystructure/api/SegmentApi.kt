@@ -59,6 +59,8 @@ data class SegmentEpisodeRow(
     val code: String,
     val title: String,
     val durationSec: Double,
+    /** Phase 222 (FR-222-3) — `file` (measured) · `tmdb` (whole-minute estimate) · `markers` · `unknown`. */
+    val durationSource: String = "unknown",
     val jellyfinId: String? = null,
     val partCount: Int = 1,
     val segments: List<SegmentDto> = emptyList(),
@@ -122,6 +124,16 @@ private data class SegmentRedetectResponseDto(val jobIds: List<String> = emptyLi
 
 data class SegmentRedetectResult(val ok: Boolean, val enqueued: Int = 0, val deduped: Int = 0)
 
+/** Phase 222 (FR-222-5) — the outcome of a marker write; [error] is the server's reason on a 422. */
+data class SegmentWriteResult(val ok: Boolean, val error: String? = null)
+
+@Serializable
+private data class SegmentErrorDto(val error: String? = null)
+
+/** Phase 222 (FR-222-6) — the stored waveform envelope: one 0-100 peak per [bucketMs]. */
+@Serializable
+data class SegmentWaveform(val bucketMs: Long, val peaks: List<Int>)
+
 @Serializable
 data class SegmentEvidenceDto(
     val evidenceType: String,
@@ -156,6 +168,7 @@ data class SegmentTrimResponse(
     val code: String,
     val title: String,
     val durationSec: Double,
+    val durationSource: String = "unknown",
     val kind: String,
     val partCount: Int = 1,
     val segments: List<SegmentDto> = emptyList(),
@@ -183,13 +196,20 @@ object SegmentApi {
         httpClient.get("/api/segments") { url { parameters.append("filter", filter) } }.body<SegmentSheetResponse>()
     }.getOrNull()
 
-    suspend fun editSegment(itemId: String, kind: String, episodeKey: String, episodeNumber: Int, startMs: Long, endMs: Long?): Boolean = runCatching {
-        httpClient.put("/api/segments/$itemId/$kind") {
+    /** Phase 222 (FR-222-5) — a refused write carries the server's reason (a 422 with `{"error": …}`);
+     *  the trim view shows it instead of a generic "try again". */
+    suspend fun editSegment(itemId: String, kind: String, episodeKey: String, episodeNumber: Int, startMs: Long, endMs: Long?): SegmentWriteResult = runCatching {
+        val response = httpClient.put("/api/segments/$itemId/$kind") {
             url { parameters.append("episode", episodeKey); parameters.append("n", episodeNumber.toString()) }
             contentType(ContentType.Application.Json)
             setBody(SegmentEditRequest(startMs, endMs))
-        }.status == HttpStatusCode.NoContent
-    }.getOrDefault(false)
+        }
+        when (response.status) {
+            HttpStatusCode.NoContent -> SegmentWriteResult(ok = true)
+            HttpStatusCode.UnprocessableEntity -> SegmentWriteResult(ok = false, error = runCatching { response.body<SegmentErrorDto>().error }.getOrNull())
+            else -> SegmentWriteResult(ok = false)
+        }
+    }.getOrDefault(SegmentWriteResult(ok = false))
 
     suspend fun deleteSegment(itemId: String, kind: String, episodeKey: String, episodeNumber: Int): Boolean = runCatching {
         httpClient.delete("/api/segments/$itemId/$kind") {
@@ -250,15 +270,17 @@ object SegmentApi {
         }.body<SegmentTrimResponse>()
     }.getOrNull()
 
-    suspend fun waveform(mediaId: String, episodeKey: String, episodeNumber: Int, startMs: Long, endMs: Long, buckets: Int = 150): List<Int>? = runCatching {
-        httpClient.get("/api/segments/$mediaId/waveform") {
+    /** Phase 222 (FR-222-6) — the STORED envelope (one 0-100 peak per `bucketMs`), or null when it has
+     *  not been computed yet (the server has just queued it) or the file has no decodable audio. Never
+     *  causes a decode on the request path. */
+    suspend fun waveform(mediaId: String, episodeKey: String, episodeNumber: Int): SegmentWaveform? = runCatching {
+        val response = httpClient.get("/api/segments/$mediaId/waveform") {
             url {
-                if (episodeKey.isNotEmpty()) { parameters.append("episode", episodeKey); parameters.append("n", episodeNumber.toString()) }
-                parameters.append("startMs", startMs.toString())
-                parameters.append("endMs", endMs.toString())
-                parameters.append("buckets", buckets.toString())
+                if (episodeKey.isNotEmpty()) parameters.append("episode", episodeKey)
+                parameters.append("n", episodeNumber.toString())
             }
-        }.body<List<Int>>()
+        }
+        if (response.status == HttpStatusCode.OK) response.body<SegmentWaveform>() else null
     }.getOrNull()
 
     suspend fun jellyfinCandidates(mediaId: String, episodeKey: String, episodeNumber: Int): List<SegmentJellyfinCandidate> = runCatching {
@@ -271,18 +293,23 @@ object SegmentApi {
      *  audio needs re-encoding to something the browser can decode; video is never touched). `playSessionId`
      *  is non-blank only for `"remux"` — pass it to [stopStream] when the trim view closes. */
     @Serializable
-    data class StreamInfo(val url: String, val mode: String, val playSessionId: String = "")
+    /** Phase 222 — [startedAtMs] is the media time of the stream's first frame (the keyframe at or before
+     *  a remux seek's request; 0 for direct play and a fresh open); [startedAtExact] false means the
+     *  server could not measure it and the playhead may sit a few seconds off the picture. */
+    data class StreamInfo(val url: String, val mode: String, val playSessionId: String = "", val startedAtMs: Long = 0, val startedAtExact: Boolean = true)
 
     /** Null when the title/episode isn't matched in Jellyfin yet, or on any other failure; the trim view
      *  falls back to timecode-only editing rather than showing a broken video element. [startMs], when
      *  given, only affects a `"remux"` response — a live transcode isn't range-seekable, so seeking means
      *  reloading the stream from this offset (`SegmentRoutes.kt`'s doc has the live probe that found this). */
-    suspend fun streamInfo(mediaId: String, episodeKey: String?, episodeNumber: Int?, startMs: Long? = null): StreamInfo? = runCatching {
+    suspend fun streamInfo(mediaId: String, episodeKey: String?, episodeNumber: Int?, startMs: Long? = null, prev: String? = null): StreamInfo? = runCatching {
         httpClient.get("/api/segments/$mediaId/stream") {
             url {
                 episodeKey?.let { parameters.append("episode", it) }
                 episodeNumber?.let { parameters.append("n", it.toString()) }
                 startMs?.let { parameters.append("startMs", it.toString()) }
+                // Phase 222 (FR-222-1) — the stream this tab is abandoning; the server stops it by id.
+                prev?.takeIf { it.isNotBlank() }?.let { parameters.append("prev", it) }
             }
         }.body<StreamInfo>()
     }.getOrNull()

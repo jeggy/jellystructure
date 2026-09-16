@@ -1,0 +1,12 @@
+-- Phase 222 (FR-222-6) — the intro & credits editor's stored waveform envelope, one row per (item,
+-- episode). See MediaSegment.sq; this migration must stay byte-for-byte in sync with its CREATE TABLE
+-- (the SQLDelight-migration rule).
+CREATE TABLE segment_waveform (
+    item_id TEXT NOT NULL,
+    episode_key TEXT NOT NULL DEFAULT '',
+    episode_number INTEGER NOT NULL DEFAULT 0,
+    bucket_ms INTEGER NOT NULL,
+    peaks BLOB NOT NULL,
+    computed_at INTEGER NOT NULL,
+    PRIMARY KEY (item_id, episode_key, episode_number)
+);

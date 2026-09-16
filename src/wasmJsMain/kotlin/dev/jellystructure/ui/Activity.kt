@@ -630,6 +630,9 @@ private fun jobTypeLabel(type: String): String = when (type) {
     "segments_movie" -> "intro & credits detection"
     "segments_season" -> "intro & credits detection (season)"
     "segments_episodes" -> "intro & credits detection (episodes)"
+    // Phase 222
+    "waveform_backfill" -> "waveforms for the intro & credits editor"
+    "waveform_unit" -> "waveform for the intro & credits editor"
     // Phase 213
     "prewarm_subtitles" -> "subtitle pre-warm"
     else -> type
