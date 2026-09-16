@@ -94,6 +94,8 @@ class MediaJobQueue(
     // (and the media queue fully functional) in any test/bootstrap context that doesn't wire segments.
     private val segmentStore: MediaSegmentStore? = null,
     private val fingerprintService: FingerprintService? = null,
+    // Phase 220 (FR-220-4) — the TV image cache the one-time backfill fills.
+    private val artworkService: dev.jellystructure.tv.RaviloArtworkService? = null,
 ) {
     private val json = Json { ignoreUnknownKeys = true }
     private val queries get() = db.mediaJobQueries
@@ -481,6 +483,7 @@ class MediaJobQueue(
             "reorder" -> runReorder(row, params)
             "remove" -> runRemove(row, params)
             "mkv_layout_repair" -> runMkvLayoutRepair(row, params)
+            "presize_artwork" -> runPresizeArtwork(row)
             else -> Failure("Unknown job type '${row.type}'")
         }
     }
@@ -602,6 +605,40 @@ class MediaJobQueue(
         val failed = paths.size - fixed.size
         mediaHistory.record(row.media_id, "mkv_layout_repair", "fixed=${fixed.size} failed=$failed of ${paths.size}")
         return if (failed == 0) Success else Failure("$failed of ${paths.size} file(s) could not be repaired")
+    }
+
+    /**
+     * Phase 220 (FR-220-4) — the one-time backfill: every served variant for every item in the library,
+     * on the media lane (BACKGROUND gate, like every job here), resumable because [RaviloArtworkService.presize]
+     * skips entries that are already fresh, reported on Activity like any other job. Enqueued by
+     * [enqueuePresizeBackfill] at boot until its marker exists.
+     */
+    private suspend fun runPresizeArtwork(row: Media_job): Outcome {
+        val svc = artworkService ?: return Failure("Image cache not available")
+        val items = store.allItems()
+        var produced = 0
+        for ((index, item) in items.withIndex()) {
+            if (cancelRunning) return Cancelled()
+            produced += runCatching { svc.presize(item) }.getOrElse { e ->
+                Logger.warn("presize_artwork: ${item.id} failed — ${e.message}", "tv-image"); 0
+            }
+            val done = index + 1
+            queries.updateProgress(done.toDouble() / items.size.coerceAtLeast(1) * 100.0, null, done.toLong(), null, row.id)
+            if (done % 25 == 0) broadcastSnapshot(row.id)
+        }
+        svc.markBackfillDone()
+        Logger.info("presize_artwork: $produced image variant(s) produced for ${items.size} item(s)", "tv-image")
+        return Success
+    }
+
+    /** Phase 220 (FR-220-4) — idempotent: one active backfill at a time, none once the marker exists. */
+    suspend fun enqueuePresizeBackfill(): MediaJobSnapshot? {
+        val svc = artworkService ?: return null
+        if (svc.backfillDone()) return null
+        val count = store.allItems().size
+        if (count == 0) return null
+        val r = enqueueDeduped("presize_artwork", "library", "Pre-size TV artwork for the whole library", MediaJobParams(), count, "presize:library", "media")
+        return if (r.deduped) null else r.snapshot
     }
 
     // ── segments queue: N-concurrent-by-config work, Phase 164, worker count now shared (Phase 213) ────

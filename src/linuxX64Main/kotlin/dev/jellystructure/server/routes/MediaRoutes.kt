@@ -197,6 +197,8 @@ fun Route.mediaRoutes(
     mediaSegmentStore: dev.jellystructure.media.MediaSegmentStore,
     realtimeIngest: dev.jellystructure.media.RealtimeIngestService,
     dirtyItemStore: dev.jellystructure.media.DirtyItemStore,
+    // Phase 220 (FR-220-1) — the TV image cache, so a route-triggered pipeline pre-sizes too.
+    imageProxyService: dev.jellystructure.tv.RaviloArtworkService? = null,
 ) {
     // Phase 175 — shared collaborator bundle for every runPipeline() call these routes make.
     val pipelineDeps = PipelineDeps(
@@ -205,6 +207,7 @@ fun Route.mediaRoutes(
         arrRescan = arrRescan, sonarrEnrich = sonarrEnrich, imdbClient = imdbClient,
         mediaSegmentStore = mediaSegmentStore, mediaJobQueue = mediaJobQueue,
         realtimeIngest = realtimeIngest, mediaHistory = mediaHistory, dirtyItemStore = dirtyItemStore,
+        artworkPresize = imageProxyService?.let { svc -> { item -> svc.presize(item); Unit } },
     )
     route("/media") {
         get {

@@ -404,7 +404,8 @@ fun startServer(
                             """"outbound_http_gate":${outboundHttp.toJson()},"process_gate":${processGate.toJson()},""" +
                             """"tmdb_pacing":${Json.encodeToString(TmdbPacingStats.serializer(), tmdbPacing)},""" +
                             """"mkv_health_swept_at":${mkvHealthSweptAt ?: "null"},"job_queues":${jobQueues.toJson()},""" +
-                            """"playback_writer":$writerJson,"refreshers":$refreshersJson}""",
+                            """"playback_writer":$writerJson,"refreshers":$refreshersJson,""" +
+                            """"tv_image":${imageProxyService?.stats()?.toJson() ?: "null"}}""",
                         ContentType.Application.Json,
                     )
                 }
@@ -522,7 +523,7 @@ fun startServer(
                 configureConfigRoutes(configStore, effectiveScanThreads, qbClient, arrClient, seerrClient, bazarrClient, tmdbClient, requestLanguageService, castService = castService, tvEventBus = tvEventBus)
                 setupRoutes(configStore, jellyfinClient)
                 jellyfinRoutes(configStore, jellyfinClient, deviceService)
-                mediaRoutes(mediaStore, scanner, artworkDownloader, tmdbClient, appScope, scanTracker, broadcaster, jellyfinClient, configStore, mediaHistory, scanDispatcher, seedingGuard, seedingSnapshot, raviloConfigService, logoDownloader, arrRescan, sonarrEnrich, mediaJobQueue, imdbClient, fingerprintService, mediaSegmentStore, realtimeIngest, dirtyItemStore)
+                mediaRoutes(mediaStore, scanner, artworkDownloader, tmdbClient, appScope, scanTracker, broadcaster, jellyfinClient, configStore, mediaHistory, scanDispatcher, seedingGuard, seedingSnapshot, raviloConfigService, logoDownloader, arrRescan, sonarrEnrich, mediaJobQueue, imdbClient, fingerprintService, mediaSegmentStore, realtimeIngest, dirtyItemStore, imageProxyService = imageProxyService)
                 activityRoutes(activityLog)
                 triageRoutes(mediaStore, jellyfinClient, configStore, mediaHistory, seedingGuard, mediaSegmentStore)
                 segmentRoutes(mediaStore, mediaSegmentStore, configStore, fingerprintService, appScope, jellyfinClient, mediaJobQueue)
