@@ -4,12 +4,40 @@
 > *what languages reach the payload*; this fixes *what the strip does with them once they arrive*.
 
 ## Status
-⚠ Partial, built 2026-09-10. Design/audit-authored, not dev-reviewed, not deployed. FR-R239-1/2/4/5/6
-built and unit-tested; **FR-R239-3 (new flag assets) NOT built — no source for the required flag
-images was available this session**, so Serbian/Bulgarian/Indonesian/Malay/Slovenian/Estonian/
-Latvian/Lithuanian/Tamil/Telugu/Filipino/Catalan still render as an honest `+N` with no flag, which is
-strictly better than before (they used to be invisible) but not the full fix. FR-R239-7's mockup sync
-not done. See STATUS.md for the build summary.
+✓ Done 2026-09-13. FR-R239-1/2/4/5/6 built and unit-tested 2026-09-10. FR-R239-3 (new flag assets) built
+2026-09-12 for 9 of 12 codes (Serbian/Bulgarian/Indonesian/Malay/Slovenian/Estonian/Latvian/
+Lithuanian/Filipino). **2026-09-13: Catalan added as a 10th** — Catalonia's flag (the Senyera) is a
+single, uncontested regional flag, unlike Tamil/Telugu, which stay genuinely unmappable: reusing
+India's flag (already Hindi's) for either would collapse three distinct languages onto one shown
+flag via `AudioFlagStrip.kt`'s own by-flag dedup, reintroducing the exact undercount FR-R239-1 exists
+to prevent, so they remain in the honest `+N`. New non-ISO code `ct` (`design/flags/4x3/ct.svg`, hand-
+authored — flat two-color striped flags have no gradient-rendering risk, so ImageMagick rasterized it
+directly to `flag_ct.png` without the Chromium detour brand-asset SVGs need) added to `flags.css` and
+all three production `LANG_CC` tables (`AudioFlagStrip.kt`, admin `MediaDetail.kt`/`TrackEditor.kt`);
+`check-lang-cc-sync.sh` still agrees (94 keys). **FR-R239-7's mockup sync partially done 2026-09-12,
+extended 2026-09-13 for Catalan**: `design/ravilo/ravilo-app.js`, `ravilo-browse.js` and
+`ravilo-player.js`'s three independently hand-written `LANG_CC` tables now carry the same 10 codes
+(`ravilo-app.js` already had the honest-count logic from the earlier pass). **`Ravilo Mobile.html`
+had no audio/subtitle flag strip of any kind** — not a regression of this phase, a pre-existing gap.
+**Built 2026-09-13:** a phone-scaled `.dflags` block (AUDIO/SUBTITLES groups, same R134 merged-line
+shape, capped at 5 + honest `+N`) with its own `LANG_CC`/`LANG_NAME`/`countStrip`/`tracksFor`/
+`flagsHTML` ported into `Ravilo Mobile.html`'s self-contained script (the file has no `flags.css` link
+and no shared `tracksFor()` to import from — `../flags.css` was linked for the `.fi`/`.fi-xx` assets,
+matching how `Ravilo TV.html` already links it), placed directly after the genre row and before the
+action buttons so Play never moves. Verified by rendering the mockup headlessly (Chromium via
+Playwright) on both Big Buck Bunny (matches TV's flags exactly, same demo track data) and a generic
+title (Nordvest) — no console errors, no layout shift. `check-lang-cc-sync.sh`/`check-mobile-css.sh`
+both still green. See STATUS.md for the full build summary.
+
+**Tamil/Telugu CLOSED 2026-09-13, permanently — this is a decision, not a pending TODO.** The owner
+was asked to source flag candidates directly. Two were submitted and reviewed: one was an
+unidentifiable wavy-stripe design with no confirmable provenance, and the other — offered for Tamil —
+was the flag of the Liberation Tigers of Tamil Eelam (LTTE), a proscribed militant organization
+responsible for a decades-long civil war and terrorism; unusable regardless of the FR-R239-1 undercount
+argument already made against reusing India's flag. The owner's explicit call: **ship "no flag" as the
+final, intended rendering for Tamil and Telugu — do not reopen this by looking for better source images
+later.** If the product ever wants something in that slot, the next design task is a non-flag treatment
+(e.g. a text-code badge), not another round of flag sourcing.
 
 ## The finding
 
@@ -78,10 +106,11 @@ language added to one must be added to the other, and nothing enforces it.
   rule for AUDIO.
 
 - **FR-R239-3 — add the missing flags for what the library actually holds.** At minimum Serbian
-  (`sr`/`srp`), Bulgarian, Indonesian, Malay, Slovenian, Estonian, Latvian, Lithuanian, Tamil, Telugu,
-  Filipino and Catalan — the measured list above. Aliases in pairs (`sr` **and** `srp`): `srp` being
-  absent while `sr` is present is exactly the kind of half-mapping that makes a language vanish for
-  one title and appear for the next.
+  (`sr`/`srp`), Bulgarian, Indonesian, Malay, Slovenian, Estonian, Latvian, Lithuanian, Filipino and
+  Catalan — the measured list above. Aliases in pairs (`sr` **and** `srp`): `srp` being absent while
+  `sr` is present is exactly the kind of half-mapping that makes a language vanish for one title and
+  appear for the next. **Tamil and Telugu built 2026-09-13, per this bullet's own instruction: no flag
+  is missing for them, none exists that wouldn't be wrong** — see the Status section above.
 
 - **FR-R239-4 — one table, or a test that the two agree.** Either share `LANG_CC` between the admin
   and Ravilo, or add a check that fails when they diverge. They agree today by luck; FR-R239-3 doubles
@@ -98,6 +127,8 @@ language added to one must be added to the other, and nothing enforces it.
 
 - **FR-R239-7 — phone and TV alike, and the mockups too.** The strip is shared; `Ravilo Mobile.html`
   and the design mockups get the same treatment, so the design files don't drift back on the next sync.
+  **Built 2026-09-13** — `Ravilo Mobile.html` had never had this strip at all (a pre-existing gap, not
+  a drift); see the Status section for what landed.
 
 ## Non-goals
 
