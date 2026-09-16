@@ -772,7 +772,42 @@ class JellyfinClient {
             val psid = playSessionId?.let { ""","PlaySessionId":"$it"""" } ?: ""
             setBody("""{"ItemId":"$jellyfinId","PositionTicks":$positionTicks,"IsPaused":$isPaused,"MediaSourceId":"$mediaSourceId","EventName":"timeupdate"$psid}""")
         }
-    }.let { if (it.isFailure) Logger.warn("Jellyfin reportPlaybackProgress failed: ${it.exceptionOrNull()?.message}") }
+    }.let {
+        // Phase 219 (FR-219-1) — 210's rule: never swallow the caller's own cancellation as a "failure".
+        it.exceptionOrNull()?.let { e -> if (e is kotlinx.coroutines.CancellationException) throw e }
+        if (it.isFailure) Logger.warn("Jellyfin reportPlaybackProgress failed: ${it.exceptionOrNull()?.message}")
+    }
+
+    /** Phase 219 (FR-219-2) — the acknowledging form the PlaybackWriter retries on: true on a 2xx, false
+     *  on any other answer, and every exception (including cancellation) propagates to the writer. */
+    suspend fun postPlaybackProgress(
+        baseUrl: String, userToken: String, jellyfinId: String, positionTicks: Long, isPaused: Boolean,
+        mediaSourceId: String, identity: JellyfinDeviceIdentity? = null, playSessionId: String? = null,
+    ): Boolean {
+        val r = httpPost(baseUrl.trimEnd('/') + "/Sessions/Playing/Progress") {
+            jellyfinAuth(userToken, identity)
+            contentType(ContentType.Application.Json)
+            val psid = playSessionId?.let { ""","PlaySessionId":"$it"""" } ?: ""
+            setBody("""{"ItemId":"$jellyfinId","PositionTicks":$positionTicks,"IsPaused":$isPaused,"MediaSourceId":"$mediaSourceId","EventName":"timeupdate"$psid}""")
+        }
+        if (r.status.value !in 200..299) throw IllegalStateException("Jellyfin answered ${r.status.value} to a progress report")
+        return true
+    }
+
+    /** Phase 219 (FR-219-2) — see [postPlaybackProgress]; the stop is the write that must land. */
+    suspend fun postPlaybackStopped(
+        baseUrl: String, userToken: String, jellyfinId: String, positionTicks: Long,
+        mediaSourceId: String, identity: JellyfinDeviceIdentity? = null, playSessionId: String? = null,
+    ): Boolean {
+        val r = httpPost(baseUrl.trimEnd('/') + "/Sessions/Playing/Stopped") {
+            jellyfinAuth(userToken, identity)
+            contentType(ContentType.Application.Json)
+            val psid = playSessionId?.let { ""","PlaySessionId":"$it"""" } ?: ""
+            setBody("""{"ItemId":"$jellyfinId","PositionTicks":$positionTicks,"MediaSourceId":"$mediaSourceId"$psid}""")
+        }
+        if (r.status.value !in 200..299) throw IllegalStateException("Jellyfin answered ${r.status.value} to a stop report")
+        return true
+    }
 
     suspend fun stopPlaybackSession(
         baseUrl: String,
@@ -789,7 +824,10 @@ class JellyfinClient {
             val psid = playSessionId?.let { ""","PlaySessionId":"$it"""" } ?: ""
             setBody("""{"ItemId":"$jellyfinId","PositionTicks":$positionTicks,"MediaSourceId":"$mediaSourceId"$psid}""")
         }
-    }.let { if (it.isFailure) Logger.warn("Jellyfin stopPlaybackSession failed: ${it.exceptionOrNull()?.message}") }
+    }.let {
+        it.exceptionOrNull()?.let { e -> if (e is kotlinx.coroutines.CancellationException) throw e }   // Phase 219 (FR-219-1)
+        if (it.isFailure) Logger.warn("Jellyfin stopPlaybackSession failed: ${it.exceptionOrNull()?.message}")
+    }
 
     /**
      * Phase 180 (FR-180-2) — releases an in-flight transcode for [playSessionId], which must be

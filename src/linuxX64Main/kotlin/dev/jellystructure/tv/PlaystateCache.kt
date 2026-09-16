@@ -11,6 +11,7 @@ import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -41,6 +42,9 @@ private const val STAGGER_MS = 500L
  */
 object PlaystateCache {
     private var data: Map<String, Map<String, CardPlayState>> = emptyMap()
+    // Phase 219 (FR-219-4) — the age of the last successful cycle per user, for /api/health.
+    private var lastSuccessAt: Map<String, Long> = emptyMap()
+    fun refresherAges(): Map<String, Long> { val now = nowMs(); return lastSuccessAt.mapValues { now - it.value } }
     private val json = Json { encodeDefaults = true }
 
     fun get(userId: String): Map<String, CardPlayState> = data[userId].orEmpty()
@@ -102,10 +106,24 @@ object PlaystateCache {
         if (base.isBlank()) return false
         val ids = idsToRefresh(mediaStore.liveItems(device))
         if (ids.isEmpty()) return true  // nothing to fetch is not a failure
+        // Phase 219 (FR-219-4) — time the permit wait and the Jellyfin round trip separately, so a cycle
+        // skipped for want of a permit is INFO ("pool busy") and only a real Jellyfin timeout stays WARN.
+        val recorder = dev.jellystructure.ops.GateWaitRecorder()
         val ps = withTimeoutOrNull(FETCH_TIMEOUT_MS) {
-            val token = jellyfinClient.tvToken(base, device, configStore.current.apiKeys.jellyfinToken)
-            fetchPlaystate(jellyfinClient, base, token, device.jellyfinUserId, ids)
-        } ?: return false
+            withContext(recorder) {
+                val token = jellyfinClient.tvToken(base, device, configStore.current.apiKeys.jellyfinToken)
+                fetchPlaystate(jellyfinClient, base, token, device.jellyfinUserId, ids)
+            }
+        }
+        if (ps == null) {
+            if (recorder.acquisitions == 0 || recorder.waitedMs >= FETCH_TIMEOUT_MS / 2) {
+                Logger.info("Playstate refresh for ${device.jellyfinUsername} skipped — outbound pool busy (waited ${recorder.waitedMs} ms for a permit), will retry in ${REFRESH_INTERVAL_MS / 1000} s", "tv")
+            } else {
+                Logger.warn("Playstate refresh for ${device.jellyfinUsername} timed out after ${FETCH_TIMEOUT_MS} ms at Jellyfin (permit wait ${recorder.waitedMs} ms)", "tv")
+            }
+            return false
+        }
+        lastSuccessAt = lastSuccessAt + (device.jellyfinUserId to nowMs())
         data = data + (device.jellyfinUserId to ps)
         // R176 — patch any already-open Home/Browse/Search screen on another of this user's devices,
         // same push HomeFeedService's own playstateFor used to fire on a fresh live fetch.

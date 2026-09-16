@@ -219,6 +219,16 @@ fun startServer(
                 call.respond(HttpStatusCode.ServiceUnavailable, mapOf("error" to (cause.message ?: "server busy")))
             }
             exception<Throwable> { call, cause ->
+                // Phase 219 (FR-219-5) — a TV hanging up its event socket (ECONNRESET during the upgrade
+                // or close handshake, thrown OUTSIDE the handler's own frame loop) is lifecycle, not a
+                // server error: one INFO line with the device, no Activity entry, no 500. 43 a day
+                // were landing in the Activity log as errors before this.
+                if (call.request.path().startsWith("/api/tv/events")) {
+                    val device = call.request.queryParameters["token"]?.takeIf { it.isNotBlank() }?.let { deviceService.validateDeviceToken(it) }
+                    Logger.info("TV event socket closed by peer device=${device?.deviceId ?: "unknown"}: ${cause.message}", "tv")
+                    runCatching { call.respond(HttpStatusCode.OK) }
+                    return@exception
+                }
                 // Logger.error writes both the log line and the Activity entry in one call.
                 Logger.error("Unhandled route exception on ${call.request.path()}: ${cause.message}", "http")
                 call.respond(HttpStatusCode.InternalServerError, mapOf("error" to "internal server error"))
@@ -384,11 +394,17 @@ fun startServer(
                     // Jellyfin's process where no gate here can see it. This can't measure that cost either
                     // — it only makes the count of outstanding requests jellystructure itself issued legible.
                     val jobQueues = mediaJobQueue.healthSnapshot()
+                    // Phase 219 (FR-219-4) — the playback writer's queue and each refresher's last
+                    // successful cycle per user, so a stale household is visible without reading logs.
+                    val writerJson = playbackService.writerStats()?.toJson() ?: "null"
+                    fun ages(m: Map<String, Long>) = m.entries.joinToString(",", "{", "}") { "\"${it.key}\":${it.value}" }
+                    val refreshersJson = """{"playstate_age_ms":${ages(dev.jellystructure.tv.PlaystateCache.refresherAges())},"continue_age_ms":${ages(homeFeedService.continueRefreshAges())}}"""
                     call.respondText(
                         """{"status":"ok","fd_count":${fdWatchdog.currentCount},"fd_high_water_mark":${fdWatchdog.highWaterMark},"fd_census":${census?.toJson() ?: "null"},""" +
                             """"outbound_http_gate":${outboundHttp.toJson()},"process_gate":${processGate.toJson()},""" +
                             """"tmdb_pacing":${Json.encodeToString(TmdbPacingStats.serializer(), tmdbPacing)},""" +
-                            """"mkv_health_swept_at":${mkvHealthSweptAt ?: "null"},"job_queues":${jobQueues.toJson()}}""",
+                            """"mkv_health_swept_at":${mkvHealthSweptAt ?: "null"},"job_queues":${jobQueues.toJson()},""" +
+                            """"playback_writer":$writerJson,"refreshers":$refreshersJson}""",
                         ContentType.Application.Json,
                     )
                 }

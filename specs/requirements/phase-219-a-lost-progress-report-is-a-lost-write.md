@@ -16,9 +16,11 @@
 
 ## Status
 
-`Planned` — written 2026-09-16 from the live stue-TV sweep
-(`specs/research-reports/stue-tv-test-sweep-2026-09-16.md`, findings F10 and F11). Not dev-reviewed,
-not built. Backend only; touches the playback write path, the 205 refreshers and the events socket.
+`✓ Built` — written 2026-09-16 from the live stue-TV sweep
+(`specs/research-reports/stue-tv-test-sweep-2026-09-16.md`, findings F10 and F11), **implemented
+2026-09-16** (see §Implementation notes). Not dev-reviewed, not deployed. Backend only; touches the
+playback write path, the 205 refreshers and the events socket. `compileKotlinLinuxX64` clean;
+`PlaybackWriterTest` (4), `PlaybackTrackerTest` and `PlaystateCacheTest` green.
 
 **Numbering:** verified against `STATUS.md` on 2026-09-16 — admin taken through 218.
 
@@ -109,3 +111,38 @@ request scope mid-write and asserts the write still lands in Jellyfin.
   regardless of client tick rate — probably yes, and R216's QoE sampling already implies a cadence.
 - Correlate the refresher timeouts with `job_queues` occupancy once 213 is live: if they line up with
   `prewarm_subtitles` runs, FR-219-4's "pool busy" line will say so on its own.
+
+## Implementation notes (2026-09-16)
+
+- **FR-219-1 — the deadline is named.** The two `runCatching` blocks in `JellyfinClient.reportPlaybackProgress`
+  / `stopPlaybackSession` now rethrow `CancellationException` (210's rule). The writer's failure line
+  reads *"progress write for `<item>` device=`<id>` failed on attempt N: `<reason>` (wait W ms, request R
+  ms); retrying in B ms"*, or *"…: outbound pool busy — no permit after W ms"* when the gate, not
+  Jellyfin, was the cause. The 6 s scope named in the incident was the request handler's own; by moving
+  the write off that scope (below) the question of which deadline cancels a write no longer arises —
+  none can.
+- **FR-219-2/3 — `PlaybackWriter`** (`tv/PlaybackWriter.kt`): `PlaybackService.reportProgress` and
+  `releaseSession` enqueue (`LinkedHashMap<PlaybackKey, PendingWrite>`, last-position-wins; a waiting
+  STOP is never overwritten by a straggling PROGRESS) and the route answers at once. A single drain
+  coroutine on `rootScope` under `GateClass.INTERACTIVE` posts through the new acknowledging
+  `postPlaybackProgress` / `postPlaybackStopped` (2xx ⇒ landed; anything else throws), retries with
+  jittered exponential backoff (1 s … 30 s), drops a write that a newer one replaced while in flight,
+  and abandons a STOP only past `STOP_MAX_AGE_MS` (10 min, the watchdog's horizon) with an ERROR.
+  Phase 180's encode release runs inside the sink once the stop has landed. A `GateWaitRecorder`
+  context element (new, `ops/GateClass.kt`) is filled in by `OutboundHttp.withPermit` with the permit
+  wait, so wait and request are measured separately. Tests construct the service without a scope and
+  keep the old inline path.
+- **FR-219-4 — refreshers say which of two things happened.** `PlaystateCache.refreshOne` and
+  `HomeFeedService.buildCanonicalContinueList` run their timed fetch under a `GateWaitRecorder`: a
+  timeout with no permit acquired (or half the budget spent waiting) logs INFO *"skipped — outbound
+  pool busy (waited W ms for a permit), will retry in N s"*; a real Jellyfin timeout stays WARN and
+  names the permit wait. `/api/health` gained `playback_writer` (queued · retrying · landed ·
+  superseded · abandoned · last failure) and `refreshers.playstate_age_ms` / `continue_age_ms` per user.
+- **FR-219-5 — a TV hanging up is lifecycle.** The `StatusPages` catch-all special-cases
+  `/api/tv/events`: one INFO line naming the device (resolved from the socket's own token), no Activity
+  entry, no 500. Handled there rather than in the route because the reset is thrown by the upgrade /
+  close handshake before or after the handler's frame loop, which is why the route's own catch never
+  saw it.
+- **Open question 1 (coalescing)** — not done; the per-key last-wins queue already collapses ticks
+  that arrive faster than the writer drains, which is the practical form of it.
+- **Not done:** FR-219-6's 24-hour production comparison (needs a deploy).

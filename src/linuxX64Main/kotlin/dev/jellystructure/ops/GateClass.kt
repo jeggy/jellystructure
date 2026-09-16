@@ -55,3 +55,16 @@ data class GateStats(
             """"interactive_waiting":$interactiveWaiting,"background_waiting":$backgroundWaiting,""" +
             """"interactive_timeouts":$interactiveTimeouts,"background_timeouts":$backgroundTimeouts}"""
 }
+
+/**
+ * Phase 219 (FR-219-3/4) — an optional context element that [dev.jellystructure.OutboundHttp.withPermit]
+ * fills in with how long the caller waited for a permit (and whether it gave up). Lets a caller tell
+ * "Jellyfin was slow" from "we never got a permit" — the two things a bare "Timed out waiting for"
+ * could never distinguish. Install with `withContext(GateWaitRecorder()) { … }` and read afterwards.
+ */
+class GateWaitRecorder : AbstractCoroutineContextElement(GateWaitRecorder) {
+    companion object Key : CoroutineContext.Key<GateWaitRecorder>
+    var waitedMs: Long = 0L
+    var acquisitions: Int = 0
+    var timedOut: Boolean = false
+}
