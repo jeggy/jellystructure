@@ -23,6 +23,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.runtime.remember
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
@@ -110,7 +112,22 @@ fun FocusDetailPanel(ui: FocusDetailUi, visible: Boolean, width: Dp, modifier: M
     ) {
         val facts = ui.facts
         val colors = RaviloTheme.colors
-        Row(modifier = Modifier.width(width).fillMaxHeight().padding(start = 20.dp, top = 4.dp)) {
+        // R250 (FR-R250-1) — a panel-local scrim under the text column, layered over R242's full-screen
+        // wash: transparent at the tile-facing edge, near-opaque behind the text. The number is not
+        // taste: `textSecondary` (Aurora #AEB4CB, L≈0.46) needs the blended ground at L≤0.06 to clear
+        // 4.5:1 against a pure-white worst-case region, i.e. ≥0.94 of `background` (L≈0.003); the title
+        // clears 3:1 from ~0.73. Noir goes deeper still (R242 FR-R242-7's precedent). The picture stays
+        // untouched outside the panel — R242's point.
+        val noir = LocalRaviloSkin.current == Skin.NOIR
+        val panelScrim = remember(colors.background, noir) {
+            val a = if (noir) 0.96f else 0.94f
+            Brush.horizontalGradient(
+                0.0f to colors.background.copy(alpha = 0f),
+                0.10f to colors.background.copy(alpha = a),
+                1.0f to colors.background.copy(alpha = a),
+            )
+        }
+        Row(modifier = Modifier.width(width).fillMaxHeight().background(panelScrim).padding(start = 20.dp, top = 4.dp, end = 12.dp)) {
             Column {
                 Text(
                     text = ui.card.title,

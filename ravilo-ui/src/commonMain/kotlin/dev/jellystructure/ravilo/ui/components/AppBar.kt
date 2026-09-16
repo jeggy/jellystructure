@@ -76,6 +76,9 @@ fun AppBar(
     onProfile: (() -> Unit)? = null,
     onSearch: (() -> Unit)? = null,
     scrolled: Boolean = false,
+    // R250 (FR-R250-3) — fully opaque to whatever scrolls under it while J's backdrop is showing: a
+    // rail lit by the backdrop used to show through the 0.95 surface as clutter behind the nav.
+    opaque: Boolean = false,
     title: String? = null,   // R136: page context (e.g. channel name) shown after the brand lockup
     modifier: Modifier = Modifier,
 ) {
@@ -96,7 +99,11 @@ fun AppBar(
     }
     // R62: animate from transparent (hero mode) to solid surface (scrolled mode)
     val solidBg by animateColorAsState(
-        targetValue = if (scrolled) colors.surface.copy(alpha = 0.95f) else Color.Transparent,
+        targetValue = when {
+            opaque -> colors.surface
+            scrolled -> colors.surface.copy(alpha = 0.95f)
+            else -> Color.Transparent
+        },
         animationSpec = tween(180),
         label = "appBarBg",
     )

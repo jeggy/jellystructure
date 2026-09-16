@@ -71,20 +71,26 @@ fun FocusDetailBackdrop(fd: FocusDetailUi?, modifier: Modifier = Modifier) {
     // hero's own fixed-left text block; this sits behind full-width row content on every edge alike.
     // Noir goes darker still (less colour, not less picture — the skin's existing precedent), never
     // drops the image itself.
+    // R250 (FR-R250-2) — the band stops (20 % / 62 %) were 0.36 / 0.46 (Noir 0.48 / 0.56): thinnest
+    // exactly where the row headings above and below the open row sit, which is where the stue TV
+    // showed them washed out over a bright frame. Raised to 0.50 / 0.54 (Noir 0.62 / 0.66); the
+    // headings also carry their own local backing (a background-coloured halo, ContentRow) and the
+    // panel's text has its own scrim (FocusDetailPanel, FR-R250-1) — this wash is for the picture and
+    // the headings, never the panel text.
     val scrim = remember(colors.background, noir) {
         if (noir) {
             Brush.verticalGradient(
-                0.0f to colors.background.copy(alpha = 0.74f),
-                0.2f to colors.background.copy(alpha = 0.48f),
-                0.62f to colors.background.copy(alpha = 0.56f),
-                1.0f to colors.background.copy(alpha = 0.72f),
+                0.0f to colors.background.copy(alpha = 0.76f),
+                0.2f to colors.background.copy(alpha = 0.62f),
+                0.62f to colors.background.copy(alpha = 0.66f),
+                1.0f to colors.background.copy(alpha = 0.74f),
             )
         } else {
             Brush.verticalGradient(
-                0.0f to colors.background.copy(alpha = 0.62f),
-                0.2f to colors.background.copy(alpha = 0.36f),
-                0.62f to colors.background.copy(alpha = 0.46f),
-                1.0f to colors.background.copy(alpha = 0.6f),
+                0.0f to colors.background.copy(alpha = 0.66f),
+                0.2f to colors.background.copy(alpha = 0.50f),
+                0.62f to colors.background.copy(alpha = 0.54f),
+                1.0f to colors.background.copy(alpha = 0.64f),
             )
         }
     }

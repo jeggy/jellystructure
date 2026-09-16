@@ -9,10 +9,13 @@
 
 ## Status
 
-`Planned` — written 2026-09-16 from the live stue-TV sweep
+`✓ Built` — written 2026-09-16 from the live stue-TV sweep
 (`specs/research-reports/stue-tv-test-sweep-2026-09-16.md`, findings F5, F6 and the season-pill note
-in F14). Not dev-reviewed, not built. Client-only; closes R242's open question and one R240 layout
-assumption.
+in F14), **implemented 2026-09-16** (see §Implementation notes). Not dev-reviewed; **FR-R250-7's
+on-device verification is not done** (no device this session), so the contrast numbers below are
+computed, not measured. Client-only; closes R242's open question and one R240 layout assumption.
+`:ravilo-ui:compileDebugKotlinAndroid` + `:ravilo-ui:compileKotlinWasmJs` clean; `FocusDetailPanelClampTest`
+(5) + `GutterBringIntoViewTest` (3) green, R240's scroll tests untouched and green.
 
 **Numbering:** verified against `STATUS.md` on 2026-09-16 — Ravilo taken through R245; R246–R249 by
 sibling specs the same day.
@@ -114,3 +117,38 @@ contrast from the screenshots, not by eye.
 
 - Whether FR-R250-1's local scrim should also sit under L's line (it does not today; L reads fine on
   `--bg` because there is no backdrop under L — R242 FR-R242-1). Probably no.
+
+## Implementation notes (2026-09-16)
+
+- **FR-R250-1 — panel-local scrim.** `FocusDetailPanel` draws a horizontal gradient of
+  `colors.background` under its own column: alpha 0 at the tile-facing edge, **0.94** from 10 % of the
+  width onward (Noir **0.96**), over R242's full-screen wash, which is otherwise untouched outside the
+  panel. The number is arithmetic, not taste: Aurora's `textSecondary` (#AEB4CB, L≈0.46) clears 4.5:1
+  against a pure-white worst-case region only when the blended ground is at L≤0.06, i.e. ≥0.94 of
+  `background` (L≈0.003); the title clears 3:1 from ~0.73. The panel gained a 12 dp end padding so text
+  never touches the gutter line. The open question (a scrim under L) — no; L has no backdrop under it.
+- **FR-R250-2 — headings.** Two mechanisms, as the spec allows: the vertical wash's band stops rise
+  0.36/0.46 → **0.50/0.54** (Noir 0.48/0.56 → **0.62/0.66**; the edge stops nudged 0.62/0.60 →
+  0.66/0.64, Noir 0.74/0.72 → 0.76/0.74), and every row heading in `StaticContentRow` carries a
+  12 px halo in the page's own background colour (`TextStyle(shadow)`) — invisible on plain `--bg`, a
+  dark ground behind the letters while the backdrop is lit under the row. No new state or locals.
+- **FR-R250-3** — `AppBar(opaque = …)`: Home passes `fdUi?.mode == "rowOpen"`, and the bar's solid
+  layer goes to a fully opaque `surface` (from 0.95) for as long as the backdrop is up.
+- **FR-R250-5 — the 66 px, found.** `LazyListLayoutInfo.viewportEndOffset` is the row's far edge net
+  of its *start* padding only — the screen edge in content space, not the end gutter. `StaticContentRow`
+  targeted it, so the panel was allowed to end at x = 1920 and the tile stopped short of the content
+  start by the end gutter it had been allowed to spend (96 px, less the tile's own inset ≈ the measured
+  66). The target is now `viewportEndOffset − afterContentPadding`; with it the tile lands at the content
+  start and the declared width ends at the gutter. Tested with the TV's own numbers.
+- **FR-R250-4 — clamp from the measured landing.** After the row-open scroll settles the row reads the
+  opening tile's actual offset and computes `focusDetailPanelAvailableWidthPx` (end gutter − grown
+  tile − gap); `focusDetailPanelClampedWidthPx` narrows the panel to it when it is smaller than the
+  declared width by more than 2 px, never widens it, never below the 280 dp floor. `openPanel` now
+  receives that maximum and `HomeScreen` renders `minOf(panelWidth, maxWidth)`. Measuring here is not
+  R240's circularity — the tile is always placed; only the panel was not.
+- **FR-R250-6** — `rememberGutterBringIntoViewSpec(raviloHPad)` (new, `focus/BringIntoView.kt`, pure
+  `gutterBringIntoViewDistance` tested) provided as `LocalBringIntoViewSpec` around the season row: a
+  focused pill is never closer than the gutter to either edge; R201's selection `scrollToItem` untouched.
+- **Not done:** FR-R250-7 (screenshots + measured contrast on the stue TV) and verification 1's Compose
+  UI test — `ravilo-ui` has no UI-test source set; the arithmetic is unit-tested instead. The mockup's
+  `.jpanel` arithmetic was not touched (verification 3 does not apply).

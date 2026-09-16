@@ -404,6 +404,8 @@ private fun HomeLoaded(
         onProfile = onProfile,
         onSearch = onSearch,
         scrolled = appBarScrolled,
+        // R250 (FR-R250-3) — opaque to anything scrolled under it for as long as J's backdrop is up.
+        opaque = fdUi?.mode == "rowOpen",
         // Phase R240 — the nav bar is outside Home content rows too.
         modifier = Modifier.onFocusChanged { if (it.hasFocus) store.focusDetail.clear() },
     )
@@ -565,8 +567,9 @@ private fun ContentRowItem(
         // NOT given a FocusRequester anywhere inside it (FR-R240-5) — see FocusDetailPanel's own doc.
         openPanelWidth = panelWidth,
         openAfterKey = panelKey,
-        openPanel = if (panelKey != null) ({
-            panelUi?.let { FocusDetailPanel(ui = it, visible = panelVisible, width = panelWidth) }
+        openPanel = if (panelKey != null) ({ maxWidth ->
+            // R250 (FR-R250-4) — never wider than the room the landed tile actually left.
+            panelUi?.let { FocusDetailPanel(ui = it, visible = panelVisible, width = minOf(panelWidth, maxWidth)) }
         }) else null,
         // FR-R240-10 — always exiting (visible = false): this slot only ever holds the tile that just
         // stopped being open, mid-shrink, independent of whatever is opening in [panelKey] above.
