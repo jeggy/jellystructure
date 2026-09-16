@@ -17,10 +17,13 @@ import androidx.compose.ui.Modifier
  * a viewer sitting on a frozen frame with no chrome change (phase-R220 §5 open question 7). Default no-op;
  * only the Android actual ever calls it with anything but false.
  */
+// R244 (FR-R244-6) — [fill] crops the picture to the frame (a pinch on a handset toggles it); false is
+// the letterboxed fit every platform has always drawn. Never an arbitrary zoom.
 @Composable
 expect fun PlayerVideoSurface(
     player: RaviloPlayer,
     modifier: Modifier = Modifier,
     onVideoOutputStuck: () -> Unit = {},
     onVideoOutputRecovering: (Boolean) -> Unit = {},
+    fill: Boolean = false,
 )

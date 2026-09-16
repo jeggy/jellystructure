@@ -11,7 +11,7 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 
 @Composable
-actual fun PlayerImmersiveEffect() {
+actual fun PlayerImmersiveEffect(followSensor: Boolean) {
     val activity = LocalContext.current as? Activity ?: return
     DisposableEffect(Unit) {
         val window = activity.window
@@ -23,7 +23,9 @@ actual fun PlayerImmersiveEffect() {
         val barsWereVisible = ViewCompat.getRootWindowInsets(decorView)
             ?.isVisible(WindowInsetsCompat.Type.systemBars()) ?: true
 
-        activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        // R244 (FR-R244-7) — a phone plays upright too: FULL_USER follows the sensor and respects the
+        // system rotation lock (the one line the dev review said this requirement is).
+        activity.requestedOrientation = if (followSensor) ActivityInfo.SCREEN_ORIENTATION_FULL_USER else ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
         WindowCompat.setDecorFitsSystemWindows(window, false)
         controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         controller.hide(WindowInsetsCompat.Type.systemBars())

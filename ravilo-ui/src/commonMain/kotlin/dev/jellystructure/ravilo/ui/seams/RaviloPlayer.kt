@@ -79,6 +79,11 @@ expect class RaviloPlayer() {
      */
     fun setChromeVisible(visible: Boolean)
 
+    /** R244 (FR-R244-10) — the handset picker sheet's Subtitle size row (S · M · L ⇒ 0.85 / 1.0 / 1.25),
+     *  applied live to the caption renderer. Phone-local: nothing is sent to the server, nothing is
+     *  remembered across titles. The TV never calls this. */
+    fun setSubtitleScale(scale: Float)
+
     val positionMs: Long
     val durationMs: Long
     val bufferedMs: Long

@@ -13,5 +13,8 @@ import androidx.compose.runtime.Composable
  * (`ravilo-phone`'s manifest) with system bars visible — this is what actually lets its player go
  * landscape and edge-to-edge.
  */
+// R244 (FR-R244-7) — [followSensor] (a handset) stops forcing sensor-landscape: the player follows the
+// sensor and honours the system's own rotation lock (portrait when locked — which is exactly when the
+// rotate button appears, see HandsetPlayerControls). The TV keeps the forced-landscape behaviour.
 @Composable
-expect fun PlayerImmersiveEffect()
+expect fun PlayerImmersiveEffect(followSensor: Boolean = false)

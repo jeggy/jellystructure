@@ -95,6 +95,13 @@ import dev.jellystructure.ravilo.ui.seams.PlayerChromeActions
 import dev.jellystructure.ravilo.ui.seams.PlayerChromeBridge
 import dev.jellystructure.ravilo.ui.seams.PlayerChromeState
 import dev.jellystructure.ravilo.ui.seams.PlayerImmersiveEffect
+import dev.jellystructure.ravilo.ui.seams.rememberHandsetPlayerControls
+import dev.jellystructure.ravilo.ui.LocalPortrait
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
 import dev.jellystructure.ravilo.ui.seams.PlayerLifecycleEffect
 import dev.jellystructure.ravilo.ui.seams.PlayerVideoSurface
 import dev.jellystructure.ravilo.ui.seams.RaviloPlayer
@@ -282,6 +289,20 @@ fun PlayerScreen(
 
     val player = remember { RaviloPlayer() }
 
+    // R244 — the handset chrome's own state; none of it exists on a TV. `handset` is LocalHandset
+    // (smallest side < 600 dp, orientation-stable) — the gate the spec's dev review confirmed.
+    val handset = LocalHandset.current
+    val portrait = LocalPortrait.current
+    val handsetControls = if (handset) rememberHandsetPlayerControls() else null
+    val haptics = LocalHapticFeedback.current
+    var locked by remember { mutableStateOf(false) }          // FR-R244-8
+    var fillMode by remember { mutableStateOf(false) }        // FR-R244-6 — never persists across titles
+    var subtitleSize by remember { mutableStateOf('M') }      // FR-R244-10 — phone-local
+    var landscapeForced by remember { mutableStateOf(false) } // FR-R244-7 — only while the system is locked
+    // FR-R244-14 — a light tick on skip, lock and seek release; nothing on play/pause. Compose's own
+    // haptic primitive: a no-op on web, so no seam was needed (the dev review expected one).
+    fun tick() { if (handset) runCatching { haptics.performHapticFeedback(HapticFeedbackType.SegmentTick) } }
+
     // Playback state — polled every 500 ms from the player
     var positionMs   by remember { mutableLongStateOf(0L) }
     var durationMs   by remember { mutableLongStateOf(0L) }
@@ -463,6 +484,7 @@ fun PlayerScreen(
         val newPos = (positionMs + ms).coerceIn(0L, durationMs.coerceAtLeast(0L))
         player.seekTo(newPos)
         positionMs = newPos
+        tick()
         wake()
     }
 
@@ -470,6 +492,7 @@ fun PlayerScreen(
         player.seekTo(scrubPos)
         positionMs = scrubPos
         scrubbing = false
+        tick()   // FR-R244-9 — on release, never during the drag
         wake()
     }
 
@@ -919,10 +942,14 @@ fun PlayerScreen(
     }
 
     // Auto-hide chrome timer (restarted every time chromeRevision bumps)
+    // R244 (FR-R244-3) — a handset hides after 3 000 ms, holds open while a sheet is up or a seek drag
+    // is in progress, keeps its chrome while paused, and never runs while locked (the lock overlay is
+    // what shows then). The TV's 3 600 ms rule is unchanged.
     LaunchedEffect(chromeRevision) {
         if (chromeRevision == 0L) return@LaunchedEffect
-        delay(CHROME_HIDE_MS)
-        if (!pickerOpen && !nextUpVisible && !epRailOpen) hideChrome()
+        delay(if (handset) HANDSET_CHROME_HIDE_MS else CHROME_HIDE_MS)
+        val handsetHold = handset && (scrubbing || locked || !isPlaying)
+        if (!pickerOpen && !nextUpVisible && !epRailOpen && !handsetHold) hideChrome()
     }
 
     // R208 — auto-close the episode rail after inactivity. chromeRevision bumps on every D-pad input
@@ -1119,7 +1146,11 @@ fun PlayerScreen(
     // phone app is portrait-locked with visible system bars everywhere else, which left the player
     // stuck in portrait (heavy top/bottom letterboxing on any normal landscape video) plus a status/
     // nav-bar-shaped margin baked in on top of that.
-    PlayerImmersiveEffect()
+    PlayerImmersiveEffect(followSensor = handset)   // R244 (FR-R244-7) — a phone follows the sensor
+    // R244 (FR-R244-10) — S · M · L applied live to the caption renderer; phone-local.
+    LaunchedEffect(subtitleSize) {
+        if (handset) player.setSubtitleScale(when (subtitleSize) { 'S' -> 0.85f; 'L' -> 1.25f; else -> 1f })
+    }
 
     // Stop the playback session for the item we are leaving. Bug fix: this used to be keyed on Unit
     // together with the player teardown below, so the effect block ran exactly once and its onDispose
@@ -1326,7 +1357,9 @@ fun PlayerScreen(
                 // on a phone (confirmed live: pause worked once from the initially-visible chrome, but
                 // there was no way to reveal it again after it hid). LocalHandset uses the SMALLEST side
                 // (Android's own "smallest width" convention), so it stays true across rotation.
-                onTap = if (playerTapTogglesChrome || LocalHandset.current) {
+                // R244 — on a handset the gesture layer (HandsetGestureLayer, below) owns single AND
+                // double taps, so the root must not also toggle chrome on the first tap of a double-tap.
+                onTap = if (playerTapTogglesChrome && !handset) {
                     { if (chromeVisible) hideChrome() else wake() }
                 } else null,
             )
@@ -1342,6 +1375,7 @@ fun PlayerScreen(
             Modifier.fillMaxSize(),
             onVideoOutputStuck = { armSession(currentItemId) },
             onVideoOutputRecovering = { videoOutputRecovering = it },
+            fill = fillMode,   // R244 (FR-R244-6)
         )
 
         // ── Dim scrim (deepens when chrome is up, paused, or R218's moment C stalls) ──
@@ -1356,6 +1390,26 @@ fun PlayerScreen(
         }
         if (dimAlpha > 0f) {
             Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = dimAlpha)))
+        }
+
+        // R244 (FR-R244-4/5/6) — the handset gesture surface, under the chrome so controls take their
+        // own taps first. A double-tap seeks WITHOUT raising the chrome (it is not a request to see
+        // the controls); inert while locked, while a sheet is up, or before a session is ready.
+        if (handset) {
+            HandsetGestureLayer(
+                enabled = !locked && !pickerOpen && !epRailOpen && !nextUpVisible && sessionState is PlayerSessionState.Ready,
+                brightness = handsetControls?.brightness, setBrightness = handsetControls?.setBrightness,
+                volume = handsetControls?.volume, setVolume = handsetControls?.setVolume,
+                fill = fillMode,
+                onSingleTap = { if (chromeVisible) hideChrome() else wake() },
+                onDoubleTapSeek = { inc ->
+                    val newPos = (positionMs + inc).coerceIn(0L, durationMs.coerceAtLeast(0L))
+                    player.seekTo(newPos)
+                    positionMs = newPos
+                    tick()
+                },
+                onFillChange = { fillMode = it },
+            )
         }
 
         // ── R218 moment B: cold start (ticket in hand, no first frame yet) ────
@@ -1464,6 +1518,7 @@ fun PlayerScreen(
             PlayerSessionErrorOverlay(
                 error = sessionError,
                 colors = colors,
+                handset = handset,
                 onReauthRequired = onReauthRequired,
                 onRetry = { store.startSession(itemId, positionProvider = { positionMs }, isPausedProvider = { !isPlaying }) },
                 onBack = onBack,
@@ -1534,11 +1589,39 @@ fun PlayerScreen(
         val stallActive = displayedBufferMoment == PlBufferMoment.STALL
         val coldActive = displayedBufferMoment == PlBufferMoment.COLD
         AnimatedVisibility(
-            visible = (chromeVisible || stallActive) && !coldActive,
+            visible = (chromeVisible || stallActive) && !coldActive && !(handset && locked),
             enter = fadeIn(tween(RaviloMotion.CHROME_FADE_IN_MS)),
             exit = fadeOut(tween(RaviloMotion.CHROME_FADE_OUT_MS)),
         ) {
-            PlayerChrome(
+            // R244 (FR-R244-1) — the handset gets its own chrome (its own composable, its own file);
+            // the TV layout below is untouched.
+            if (handset) HandsetPlayerChrome(
+                colors = colors, itemTitle = itemTitle, itemKicker = itemKicker,
+                positionMs = positionMs, durationMs = durationMs, bufferedMs = bufferedMs,
+                scrubbing = scrubbing, scrubPos = scrubPos, isPlaying = isPlaying,
+                railItems = handsetRailFor(hasNextEp = resolvedNextEpisodeId != null, hasSeason = episodes != null),
+                stallActive = stallActive, seekMomentActive = displayedBufferMoment == PlBufferMoment.SEEK,
+                showRotate = handsetControls?.systemRotationLocked == true, landscapeForced = landscapeForced,
+                onBack = onBack,
+                onRotate = { landscapeForced = !landscapeForced; handsetControls?.setLandscape(landscapeForced); wake() },
+                onTitleTap = if (episodes != null) ({ epRailOpen = true; chromeVisible = true }) else null,
+                onSkipBack = { skip(-SKIP_BACK_MS) },
+                onPlayPause = { togglePlay() },
+                onSkipFwd = { skip(SKIP_FWD_MS) },
+                onRail = { item ->
+                    wake()
+                    when (item) {
+                        HandsetRailItem.SUBTITLES -> { pickerOpen = true; pickerTapTab(1) }
+                        HandsetRailItem.NEXT -> advanceNext()
+                        HandsetRailItem.EPISODES -> { epRailOpen = true; chromeVisible = true }
+                        HandsetRailItem.LOCK -> { locked = true; tick(); hideChrome() }
+                        HandsetRailItem.GUIDE -> {}
+                    }
+                },
+                onSeekStart = { ms -> wake(); focus = PlFocus.SEEK_BAR; scrubbing = true; scrubPos = ms },
+                onSeekDrag = { ms -> scrubPos = ms },
+                onSeekEnd = { commitScrub() },
+            ) else PlayerChrome(
                 colors          = colors,
                 itemTitle       = itemTitle,
                 itemKicker      = itemKicker,
@@ -1593,13 +1676,17 @@ fun PlayerScreen(
             visible = skipIntroPillVisible,
             enter = fadeIn(tween(200)),
             exit = fadeOut(tween(200)),
-            modifier = Modifier.align(Alignment.BottomEnd).padding(end = 28.dp, bottom = 160.dp),
+            // R244 (FR-R244-2/12) — on a handset the pill sits bottom-START, above the seek bar and
+            // left of the rail, so the two can never overlap at any frame size; ≥ 46 dp tall.
+            modifier = if (handset) Modifier.align(Alignment.BottomStart).windowInsetsPadding(WindowInsets.safeDrawing).padding(start = 16.dp, bottom = if (portrait) 150.dp else 96.dp)
+                       else Modifier.align(Alignment.BottomEnd).padding(end = 28.dp, bottom = 160.dp),
         ) {
             SkipIntroPill(
                 colors = colors,
                 countdown = skipIntroCountdownSecs,
                 totalSecs = skipSecs,
                 focused = focus == PlFocus.SKIP_INTRO,
+                onTap = if (handset) ({ skipIntro() }) else null,
             )
         }
 
@@ -1610,7 +1697,30 @@ fun PlayerScreen(
         // the same "tap away to back out" a modal is expected to have; tapping it runs the exact same
         // pickerBack() Back already uses (steps out of level 2 first, closes from level 1), so touch and
         // D-pad still can't diverge in behaviour. No ripple — a screen-spanning tap target shouldn't show one.
-        AnimatedVisibility(visible = pickerOpen, enter = fadeIn(tween(200)), exit = fadeOut(tween(200))) {
+        // R244 (FR-R244-10) — on a handset the SAME picker renders inside a bottom sheet, gaining only
+        // the Subtitle size row (one component, two destinations — R245's remote opens this too).
+        if (handset) HandsetSheet(visible = pickerOpen, onDismiss = { pickerBack() }) {
+            TrackPicker(
+                colors           = colors,
+                pickerTab        = pickerTab,
+                pickerLevel      = pickerLevel,
+                audioGroups      = audioGroups,
+                subGroups        = subGroupsWithOff,
+                pickerIdx        = pickerIdx,
+                pickerVersionIdx = pickerVersionIdx,
+                selectedAudio    = selectedAudio,
+                selectedSub      = selectedSub,
+                onTapLanguage = { idx -> pickerIdx = idx; pickerSelect() },
+                onTapVersion  = { idx -> pickerVersionIdx = idx; pickerSelect() },
+                onTapBack     = { pickerBack() },
+                onTapTab      = { tab -> pickerTapTab(tab) },
+                handset = true,
+                extraRow = if (pickerTab == 1 && pickerLevel == 0) ({
+                    SubtitleSizeRow(colors, subtitleSize, str("pl.sub_size_note")) { subtitleSize = it; wake() }
+                }) else null,
+            )
+        }
+        if (!handset) AnimatedVisibility(visible = pickerOpen, enter = fadeIn(tween(200)), exit = fadeOut(tween(200))) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -1621,7 +1731,7 @@ fun PlayerScreen(
                     ),
             )
         }
-        AnimatedVisibility(
+        if (!handset) AnimatedVisibility(
             visible = pickerOpen,
             enter = fadeIn(tween(200)),
             exit = fadeOut(tween(200)),
@@ -1653,7 +1763,9 @@ fun PlayerScreen(
             visible = nextUpVisible,
             enter = slideInVertically { it } + fadeIn(tween(RaviloMotion.NEXT_UP_SLIDE_MS)),
             exit  = slideOutVertically { it } + fadeOut(tween(RaviloMotion.NEXT_UP_SLIDE_MS)),
-            modifier = Modifier.align(Alignment.BottomEnd),
+            // R244 (FR-R244-12) — a corner card in landscape, a full-width strip in portrait.
+            modifier = if (handset) Modifier.align(if (portrait) Alignment.BottomCenter else Alignment.BottomEnd).windowInsetsPadding(WindowInsets.safeDrawing)
+                       else Modifier.align(Alignment.BottomEnd),
         ) {
             NextUpCard(
                 colors         = colors,
@@ -1669,12 +1781,27 @@ fun PlayerScreen(
                 countdown      = countdown,
                 totalSecs      = skipSecs,
                 nuFocus        = nuFocus,
+                handsetFull    = handset && portrait,
+                onPrimaryTap   = if (handset) ({
+                    when (creditsCardMode) {
+                        CreditsCardMode.STINGER -> skipToScene()
+                        CreditsCardMode.NEXT_EPISODE -> advanceNext()
+                        CreditsCardMode.SKIP_CREDITS -> skipCredits()
+                    }
+                }) else null,
+                onStayTap      = if (handset) ({ stayThrough() }) else null,
             )
         }
 
         // ── Episode rail (series only) ────────────────────────────────────────
         val epList = episodes
-        if (epList != null) {
+        // R244 (FR-R244-11) — the TV's horizontal rail is a vertical season sheet on a handset.
+        if (epList != null && handset) {
+            HandsetSheet(visible = epRailOpen, onDismiss = { epRailOpen = false; wake() }) {
+                SeasonSheet(colors, epList, currentEpIndex, onPick = { idx -> focusedEpIdx = idx; chooseEpisode() })
+            }
+        }
+        if (epList != null && !handset) {
             AnimatedVisibility(
                 visible = epRailOpen,
                 enter = slideInVertically { it } + fadeIn(tween(300)),
@@ -1688,6 +1815,12 @@ fun PlayerScreen(
                     focusedEpIdx    = focusedEpIdx,
                 )
             }
+        }
+
+        // R244 (FR-R244-8) — locked: everything but a lock glyph; tap hints, long-press unlocks; the
+        // system back still leaves (the root's onBack sees no chrome and exits). Drawn last, on top.
+        if (handset && locked) {
+            HandsetLockOverlay(onUnlock = { locked = false; tick(); wake() })
         }
     }
 }
@@ -2277,6 +2410,10 @@ private fun TrackPicker(
     // same tab-switch logic Left/Right already use (reset to level 1, re-target the new tab's group
     // containing the live selection).
     onTapTab: (Int) -> Unit,
+    // R244 (FR-R244-10) — inside a HandsetSheet: full width, no popup chrome of its own; [extraRow]
+    // is the sheet's one addition (the Subtitle size row), rendered after the list.
+    handset: Boolean = false,
+    extraRow: (@Composable () -> Unit)? = null,
 ) {
     val lang = LocalLang.current
     val groups = if (pickerTab == 0) audioGroups else subGroups
@@ -2285,7 +2422,7 @@ private fun TrackPicker(
     val subFlag = subGroups.firstOrNull { g -> g.versions.any { it.flatIndex == selectedSub } }?.language?.lowercase()?.let { LANG_CC[it] }
 
     Box(
-        modifier = Modifier
+        modifier = if (handset) Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp) else Modifier
             .padding(end = 48.dp, bottom = 36.dp)
             .width(520.dp)
             .clip(RoundedCornerShape(18.dp))
@@ -2371,6 +2508,7 @@ private fun TrackPicker(
                     }
                 }
             }
+            extraRow?.invoke()
         }
     }
 }
@@ -2776,6 +2914,10 @@ private fun NextUpCard(
     countdown: Int,
     totalSecs: Int,
     nuFocus: NuFocus,
+    // R244 (FR-R244-12) — a full-width strip in portrait on a handset, and tappable buttons.
+    handsetFull: Boolean = false,
+    onPrimaryTap: (() -> Unit)? = null,
+    onStayTap: (() -> Unit)? = null,
 ) {
     // R182 (FR-RV-SKIP1-2) — everything below the thumbnail/ring differs by mode; the NEXT_EPISODE case
     // is exactly the pre-R182 card, unchanged. Never more than two buttons in any mode.
@@ -2793,9 +2935,8 @@ private fun NextUpCard(
     }
     // R111: compact card tucked into the bottom-right corner (was a 560dp full-width banner).
     Box(
-        modifier = Modifier
-            .padding(end = 28.dp, bottom = 24.dp)
-            .width(360.dp)
+        modifier = (if (handsetFull) Modifier.padding(horizontal = 16.dp, vertical = 12.dp).fillMaxWidth()
+                    else Modifier.padding(end = 28.dp, bottom = 24.dp).width(360.dp))
             .clip(RoundedCornerShape(14.dp))
             .background(Color(0xFF0E1119).copy(alpha = 0.95f))
             .border(1.dp, Color.White.copy(alpha = 0.10f), RoundedCornerShape(14.dp))
@@ -2855,12 +2996,14 @@ private fun NextUpCard(
                         focused = nuFocus == NuFocus.PLAY,
                         isPrimary = true,
                         colors = colors,
+                        onTap = onPrimaryTap,
                     )
                     NuButton(
                         label = str("player.watch_credits"),
                         focused = nuFocus == NuFocus.STAY,
                         isPrimary = false,
                         colors = colors,
+                        onTap = onStayTap,
                     )
                 }
             }
@@ -2887,11 +3030,12 @@ private fun CountdownRing(colors: RaviloColors, countdown: Int, totalSecs: Int) 
 }
 
 @Composable
-private fun NuButton(label: String, focused: Boolean, isPrimary: Boolean, colors: RaviloColors) {
+private fun NuButton(label: String, focused: Boolean, isPrimary: Boolean, colors: RaviloColors, onTap: (() -> Unit)? = null) {
     Box(
         modifier = Modifier
             .scale(if (focused) 1.04f else 1f)
-            .height(34.dp)
+            .height(if (onTap != null) 46.dp else 34.dp)   // R244 — a phone target is ≥ 46 dp
+            .then(if (onTap != null) Modifier.clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onTap) else Modifier)
             .clip(RoundedCornerShape(8.dp))
             .background(
                 when {
@@ -2923,12 +3067,14 @@ private fun NuButton(label: String, focused: Boolean, isPrimary: Boolean, colors
 // ─── Skip Intro pill (R182) ───────────────────────────────────────────────────
 
 @Composable
-private fun SkipIntroPill(colors: RaviloColors, countdown: Int, totalSecs: Int, focused: Boolean) {
+private fun SkipIntroPill(colors: RaviloColors, countdown: Int, totalSecs: Int, focused: Boolean, onTap: (() -> Unit)? = null) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
         modifier = Modifier
             .scale(if (focused) 1.04f else 1f)
+            // R244 — a phone taps the pill; the TV's D-pad path is unchanged.
+            .then(if (onTap != null) Modifier.heightIn(min = 46.dp).clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onTap) else Modifier)
             .clip(RoundedCornerShape(10.dp))
             .background(if (focused) Color.White else Color(0xFF0E1119).copy(alpha = 0.92f))
             .border(
@@ -3614,6 +3760,8 @@ private fun versionSentence(v: PickerVersion, isUnnamedGroup: Boolean, lang: Str
 private fun PlayerSessionErrorOverlay(
     error: PlayerSessionState.Error,
     colors: RaviloColors,
+    // R244 (FR-R244-12) — on a handset the same sentence and the same two actions sit in a bottom sheet.
+    handset: Boolean = false,
     onReauthRequired: (() -> Unit)?,
     onRetry: () -> Unit,
     onBack: () -> Unit,
@@ -3645,7 +3793,13 @@ private fun PlayerSessionErrorOverlay(
     var retryFocused by remember { mutableStateOf(false) }
     var backFocused by remember { mutableStateOf(false) }
     Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.82f)), contentAlignment = Alignment.Center) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = if (handset) Modifier.align(Alignment.BottomCenter).fillMaxWidth()
+                .background(Color(0xFF0E1119), RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp))
+                .windowInsetsPadding(WindowInsets.safeDrawing).padding(horizontal = 20.dp, vertical = 22.dp)
+                else Modifier,
+        ) {
             Text(str(errTitle), color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
             if (errBody != null) {
                 Spacer(Modifier.height(10.dp))
