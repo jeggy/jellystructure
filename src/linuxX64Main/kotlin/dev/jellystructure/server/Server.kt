@@ -32,14 +32,6 @@ import dev.jellystructure.server.routes.metadataRoutes
 import dev.jellystructure.server.routes.segmentRoutes
 import dev.jellystructure.server.routes.triageRoutes
 import dev.jellystructure.server.routes.tvRoutes
-import dev.jellystructure.server.routes.towoRoutes
-import dev.jellystructure.towo.ControlToRunner
-import dev.jellystructure.towo.RunnerLinkAuth
-import dev.jellystructure.towo.RunnerToControl
-import dev.jellystructure.towo.TowoEventBus
-import dev.jellystructure.towo.TowoRunnerRegistry
-import dev.jellystructure.towo.TowoService
-import dev.jellystructure.towo.TowoStore
 import dev.jellystructure.arr.AcquisitionService
 import dev.jellystructure.arr.ArrClient
 import dev.jellystructure.arr.ArrPing
@@ -111,9 +103,6 @@ import platform.posix.fgets
 import platform.posix.pclose
 import platform.posix.popen
 
-// Phase 162 (Towo) — the runner-link wire protocol's JSON (distinct classDiscriminator from the
-// module-scoped ContentNegotiation Json above; shared here rather than re-created per connection).
-private val towoProtocolJson = Json { classDiscriminator = "type"; ignoreUnknownKeys = true }
 
 fun startServer(
     configStore: ConfigStore,
@@ -166,10 +155,6 @@ fun startServer(
     liveTvService: LiveTvService,
     fingerprintService: dev.jellystructure.media.FingerprintService,
     mediaSegmentStore: dev.jellystructure.media.MediaSegmentStore,
-    towoStore: TowoStore,
-    towoRunnerRegistry: TowoRunnerRegistry,
-    towoEventBus: TowoEventBus,
-    towoService: TowoService,
     playbackQoeStore: dev.jellystructure.tv.PlaybackQoeStore,
 ): suspend () -> Unit {
     // Fire-and-forget work (scans, NFO/artwork pushes, image fetches) runs as appScope.launch{}.
@@ -532,7 +517,6 @@ fun startServer(
                 val seerrDiscoverService = seerrClient?.let { dev.jellystructure.seerr.SeerrDiscoverService(configStore, it, raviloConfigService, mediaStore, requestLanguageService, requestIntentStore, acquisitionService) }
                 tvRoutes(deviceService, raviloConfigService, homeFeedService, browseService, detailService, playbackService, sessionService, jellyfinClient, configStore, channelLogoStore, imageProxyService, logoDownloader, tvEventBus, upcomingService, seerrDiscoverService, mediaStore, loginRateLimiter, playbackQoeStore)
                 liveTvRoutes(liveTvService)
-                towoRoutes(towoService, towoStore)
             }
 
             webSocket("/ws") {
@@ -610,72 +594,6 @@ fun startServer(
                     runCatching { playbackService.stopWatchdogTick { deviceId -> tvEventBus.isConnected(deviceId) } }
                     // Phase 147 — same immediate-close behavior for an open live-TV stream.
                     runCatching { liveTvService.stopWatchdogTick { deviceId -> tvEventBus.isConnected(deviceId) } }
-                }
-            }
-
-            // Phase 162 (Towo) — a runner daemon's outbound connection. Authenticates itself from a
-            // query-param enrollment token (single-use, exchanged here) or an already-known runner's
-            // long-lived credential (dev-review addendum item 2) — never the admin cookie session,
-            // which a headless host has no way to hold. Exempted from AuthPlugin's default cookie
-            // check in OPEN_API_PATHS, same justification as /api/tv/events above.
-            webSocket("/api/towo/runner-link") {
-                val presented = call.request.queryParameters["token"]?.takeIf { it.isNotBlank() }
-                if (presented == null) {
-                    close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, "Missing token"))
-                    return@webSocket
-                }
-                val auth = towoService.authenticateRunnerLink(presented)
-                val runnerId = when (auth) {
-                    is RunnerLinkAuth.Enrolled -> auth.runnerId
-                    is RunnerLinkAuth.Existing -> auth.runnerId
-                    RunnerLinkAuth.Rejected -> {
-                        close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, "Invalid or expired token"))
-                        return@webSocket
-                    }
-                }
-                towoRunnerRegistry.register(runnerId, this)
-                if (auth is RunnerLinkAuth.Enrolled) {
-                    // Sent exactly once — the runner persists this and never sees it again (spec §B).
-                    runCatching { send(Frame.Text(towoProtocolJson.encodeToString(ControlToRunner.serializer(), ControlToRunner.Enrolled(auth.runnerId, auth.credential)))) }
-                }
-                try {
-                    for (frame in incoming) {
-                        if (frame is Frame.Close) break
-                        if (frame !is Frame.Text) continue
-                        val msg = runCatching { towoProtocolJson.decodeFromString(RunnerToControl.serializer(), frame.readText()) }
-                            .getOrElse {
-                                Logger.warn("Towo: malformed message from runner $runnerId: ${it.message}", "towo")
-                                continue
-                            }
-                        towoService.onRunnerMessage(runnerId, msg)
-                    }
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Throwable) {
-                    // See the note on /ws above — must not escape the handler or it crashes the whole
-                    // Kotlin/Native process, taking every other user's session down with it.
-                    Logger.warn("WS /api/towo/runner-link runner $runnerId connection dropped: ${e.message}", "towo")
-                } finally {
-                    towoRunnerRegistry.unregister(runnerId, this)
-                    runCatching { towoService.onRunnerDisconnected(runnerId) }
-                }
-            }
-
-            // Phase 162 (Towo) — the admin browser's live event stream. Under /api/, NOT in
-            // OPEN_API_PATHS, so AuthPlugin has already validated the js_session cookie before this
-            // handler even runs (unlike /ws, which sits outside /api/ entirely and must check itself).
-            webSocket("/api/towo/stream") {
-                towoEventBus.register(this)
-                try {
-                    for (frame in incoming) {
-                        if (frame is Frame.Close) break
-                    }
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Throwable) {
-                    Logger.warn("WS /api/towo/stream client connection dropped: ${e.message}", "towo")
-                } finally {
-                    towoEventBus.unregister(this)
                 }
             }
 

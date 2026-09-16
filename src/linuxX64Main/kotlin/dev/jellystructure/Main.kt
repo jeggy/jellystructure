@@ -275,22 +275,10 @@ fun main() = runBlocking {
     // Cheap (one Jellyfin GET, see sync()'s own doc comment) and safe to call unconditionally — it no-ops
     // if Jellyfin isn't configured/reachable yet.
     rootScope.launch { runCatching { liveTvService.sync() } }
-    // Phase 162 — Towo's control-plane state. Off by default (Settings' js-towo flag gates the UI
-    // only; the routes/tables exist unconditionally, same as every other optional-tool surface here).
-    val towoStore = dev.jellystructure.towo.TowoStore(db)
-    val towoRunnerRegistry = dev.jellystructure.towo.TowoRunnerRegistry()
-    val towoEventBus = dev.jellystructure.towo.TowoEventBus()
-    val towoService = dev.jellystructure.towo.TowoService(towoStore, towoRunnerRegistry, towoEventBus, configStore)
-    // Build-order step 6 — armed sessions past their quota reset are resumed automatically. Interval
-    // and on/off live in towo_settings (spec §A), re-read every tick -- runs unconditionally like the
-    // rest of Towo's backend; the Settings sidebar flag only gates the UI, never whether armed
-    // sessions actually get resumed.
-    dev.jellystructure.towo.TowoAutoContinueScheduler(towoStore, towoService, rootScope).start()
     val shutdown = startServer(
         configStore, sessionService, raviloDeviceService, raviloConfigService, channelLogoStore, homeFeedService, browseService, detailService, playbackService, jellyfinClient, mediaStore, scanner,
         artworkDownloader, tmdbClient, scanTracker, mediaHistory, activityLog, broadcaster,
         frontendDir, raviloWebDir = raviloWebDir, port = port, scanDispatcher = scanDispatcher, effectiveScanThreads = effectiveScanThreads, jsTagStore = jsTagStore, seedingGuard = seedingGuard, seedingSnapshot = seedingSnapshot, logoDownloader = logoDownloader, qbClient = qbClient, arrClient = arrClient, arrRescan = arrRescan, sonarrEnrich = sonarrEnrich, acquisitionService = acquisitionService, seerrClient = seerrClient, bazarrClient = bazarrClient, tvEventBus = tvEventBus, imageProxyService = imageProxyService, mediaJobQueue = mediaJobQueue, sessionBridge = sessionBridge, apiKeyStore = apiKeyStore, realtimeIngest = realtimeIngest, dirtyItemStore = dirtyItemStore, fdWatchdog = fdWatchdog, imdbClient = imdbClient, upcomingService = upcomingService, requestLanguageService = requestLanguageService, requestIntentStore = requestIntentStore, requestLifecycleService = requestLifecycleService, liveTvService = liveTvService, fingerprintService = fingerprintService, mediaSegmentStore = mediaSegmentStore,
-        towoStore = towoStore, towoRunnerRegistry = towoRunnerRegistry, towoEventBus = towoEventBus, towoService = towoService,
         playbackQoeStore = playbackQoeStore,
     )
 

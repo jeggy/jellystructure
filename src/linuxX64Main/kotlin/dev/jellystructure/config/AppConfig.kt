@@ -42,7 +42,8 @@ data class IngestConfig(
     // sees as this page's own address is not necessarily reachable from Jellyfin's own network
     // position). Blank until the admin sets it; the one-click setup refuses to proceed without it
     // rather than guessing wrong and silently never delivering. Same "explicit override, not derived"
-    // shape as Towo's own "where runners connect" URL (Phase 162).
+    // shape as the retired phase 162's "where runners connect" URL had (removed by 217); 218's
+    // receiver address is the pattern's next home.
     @SerialName("jellyfin_reach_url") val jellyfinReachUrl: String = "",
 )
 

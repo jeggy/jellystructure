@@ -100,9 +100,11 @@ test.describe.serial("App shell layout", () => {
     });
   }
 
-  test("sidebar nav stays visible on a short viewport (Towo nav enabled)", async () => {
+  // Phase 217 — this used to enable the (since removed) extra sidebar group to make the nav as tall
+  // as it could get; the remaining groups are the tallest case now.
+  test("sidebar nav stays visible on a short viewport", async () => {
     await page.setViewportSize({ width: 1400, height: 640 });
-    await setLocalStorageAndReload(page, { "js-towo": "1" });
+    await setLocalStorageAndReload(page, {});
 
     await expect(page.locator('.app-side a.nav[href="#/dashboard"]')).toBeVisible();
     const navBox = await page.locator('.app-side a.nav[href="#/dashboard"]').boundingBox();

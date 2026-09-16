@@ -8,8 +8,9 @@
 
 ## Status
 
-`Planned` — written 2026-09-16, **dev-reviewed 2026-09-16 against `main`** (see §Dev review at the bottom; the inventory was verified file by file, open question 2 is closed, and three requirements gained the exact symbols they have to remove). The **design side is already done**: every Towo
-mockup was deleted from this project on 2026-09-16 (FR-217-7).
+`✓ Built` — written 2026-09-16, **dev-reviewed 2026-09-16 against `main`** (see §Dev review at the bottom; the inventory was verified file by file, open question 2 is closed, and three requirements gained the exact symbols they have to remove), **implemented 2026-09-16** (see §Implementation notes). The **design side is already done**: every Towo
+mockup was deleted from this project on 2026-09-16 (FR-217-7), and `design/claude-console/` — the one
+piece that deletion had not reached repo-side — went with this phase.
 
 **Numbering:** verified against `main` on 2026-09-16 — admin taken through **215**, and the same tree
 scan that cleared 216 also cleared 217. Next free after this: 218 / R244.
@@ -213,3 +214,49 @@ argument for answering that question before build rather than during.
 for its own Jellyfin reachability field, and **218 FR-218-5 now needs the same shape** for the receiver
 address. Removing Towo removes the only shipped implementation of that pattern, so 218 inherits the job
 of establishing it rather than copying it.
+
+## Implementation notes (2026-09-16)
+
+Removed in one commit, in the review's order: the scheduler's `.start()` and every construction in
+`Main.kt` first, then the `towo/` package, `TowoRoutes.kt`, both WebSocket handlers and the four
+`startServer(...)` parameters, then the schema.
+
+- **FR-217-1** — `ui/Towo.kt`, `api/TowoApi.kt`, the eight routes in the wasm `Main.kt`, the sidebar
+  icon + `TOWO_NAV` + the flag read in `Shell.kt` (`navEntries()` is now just `BASE_NAV`), the Settings
+  nav item, section, tab-list entry, toggle wiring, the save-button's second call and both helper
+  functions in `Settings.kt`, and the `towo.css` link in `index.html` plus its two entries in
+  `build.gradle.kts`'s design-asset copy. No code reads `js-towo` any more; `?tab=towo` falls to the
+  default tab under the existing Phase-55 contract.
+- **FR-217-2/3** — `Main.kt`, `Server.kt` (imports, the protocol `Json`, params, `towoRoutes(...)`,
+  `/api/towo/runner-link` and `/api/towo/stream`), `AuthPlugin`'s open-path entry. No stubs.
+- **FR-217-4** — `Towo.sq` deleted; **`43.sqm`** drops all eight tables (schema version 43 → 44).
+  `Database.kt` gained `exportRetiredTranscripts()`, which runs in the upgrade hook **before**
+  `Schema.migrate` whenever a database below version 44 is opened: raw-SQL reads of `towo_runner`,
+  `towo_session` and `towo_transcript_entry`, written as one JSON file
+  `towo-transcripts-export-<epoch>.json` **next to the database** (the config volume), path logged at
+  INFO; nothing written when the tables are absent or empty. **Deliberately non-fatal**: a failure logs
+  a WARN and the migration proceeds, because a household's media server must not refuse to start over
+  an export nobody may read (open question 1 still stands — if the answer is "not wanted", delete the
+  helper and the hook, the migration is unchanged).
+- **FR-217-5** — `towo-runner/` (an npm module, not a Gradle subproject as the spec assumed —
+  `settings.gradle.kts` never listed it), `.github/workflows/towo-runner-ci.yml` and the
+  `.dockerignore` line are gone. **Host-side uninstall not done here:** this dev box has no
+  `towo-runner` systemd unit or process (checked `systemctl --user`, `systemctl`, `pgrep`); the home
+  server and the offline laptop were not reachable from this session and still need their units
+  stopped and removed by hand. Credentials are dead regardless — the route and the table no longer
+  exist, so a replayed credential gets the app's normal 404.
+- **FR-217-6** — nav-group machinery, notification toggles, `wf.css`/`app.css`, the Settings tab
+  contract: untouched. `updateToggle` stays (the notification toggles use it).
+- **FR-217-7** — `design/claude-console/` deleted repo-side (three files).
+- **FR-217-8** — 162's spec opens with the *Removed by 217* note; its `STATUS.md` row reads
+  **Removed**. `scripts/check-phases.sh` only checks links, so it needed no change.
+- Also: `webpack.config.d/dev-proxy.js`, `AppConfig.kt` and `MediaSegmentStore.kt` had comments citing
+  Towo as a precedent — reworded to cite the retired phase without the name. The e2e test that enabled
+  the flag to make the sidebar tall now runs without it.
+- **Acceptance 3's grep still hits three places by design:** migrations `22`–`31.sqm` (schema history
+  — the tables they create are what `43.sqm` drops), `Database.kt` (the export names the tables it
+  reads), and this project's `CLAUDE.md`. Everything else in `src/`, `tests/`, the workflows and the
+  build files is clean.
+- Verified: `compileKotlinLinuxX64` and `compileKotlinWasmJs` clean. Not deployed; acceptance 5–7
+  (a restart with no scheduler in the logs, the export file appearing, the host units) are for the
+  next deploy.

@@ -1,0 +1,16 @@
+-- Phase 217 (FR-217-4) — Towo is removed from the product; its eight tables go in ONE forward-only
+-- migration. No `_deprecated_` renames, no rows left behind. The four indexes go with their tables.
+--
+-- Ordering (FR-217-3/4): the auto-continue scheduler was deleted from Main.kt in the same change, so
+-- nothing reads towo_settings any more; and Database.kt exports every session transcript to a file on
+-- the config volume BEFORE this migration runs (a migration cannot write a file, and a failed export
+-- after a successful drop is unrecoverable). Towo.sq is deleted alongside this file, so the generated
+-- schema and the shipped schema agree at version 44.
+DROP TABLE IF EXISTS towo_transcript_entry;
+DROP TABLE IF EXISTS towo_permission_request;
+DROP TABLE IF EXISTS towo_quota_status;
+DROP TABLE IF EXISTS towo_session;
+DROP TABLE IF EXISTS towo_folder;
+DROP TABLE IF EXISTS towo_enrollment;
+DROP TABLE IF EXISTS towo_runner;
+DROP TABLE IF EXISTS towo_settings;

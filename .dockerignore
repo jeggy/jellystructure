@@ -17,7 +17,6 @@ ravilo-android/
 ravilo-phone/
 
 # Unrelated to the backend/frontend images.
-towo-runner/
 tests/
 
 *.log

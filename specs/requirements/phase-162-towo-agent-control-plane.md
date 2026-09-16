@@ -1,6 +1,10 @@
 # Phase 162 — Towo: a self-hosted control plane for Claude Code sessions (FR-TOWO1)
 
-**Status:** Planned → **all 8 build-order steps implemented, 2026-08-11, plus a completeness pass the
+> **Removed by [Phase 217](phase-217-remove-towo.md) on 2026-09-16.** Nothing below ships any more: the
+> UI, routes, tables (dropped in migration `43.sqm`, transcripts exported first), runner module and CI
+> workflow are all gone. This file stays as the record of a shipped phase (217 FR-217-8).
+
+**Status:** ✓ Done 2026-08-11 → **Removed 2026-09-16 by 217.** Originally: Planned → **all 8 build-order steps implemented, 2026-08-11, plus a completeness pass the
 same day** — settings §A's remaining fields, permission profiles actually enforced, a real composer,
 and true multi-turn (`send_message`) all now real, not simplified-away (see the second addendum).
 Dev-reviewed 2026-08-11 (see the first addendum: three real build-config/incident-precedent gaps found
