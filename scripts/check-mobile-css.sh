@@ -147,6 +147,12 @@ check "$RAVMOB"  "R222 episode-row note render, phone"             "function epS
 # stylesheet at all until now (found while building 187's admin photo chip, on the same page).
 check "$WF" "Users & devices: decode-ceiling line (.usr-cap)" ".usr-cap {"
 check "$WF" "Users & devices: read-only photo chip (.usr-av)" ".usr-av {"
+# Phase 218 — the Chromecast card's page-local rules live in the served wf.css, not only in the
+# design's inline <style>; a sync that strips them leaves the Settings card unstyled.
+check "$WF" "Chromecast card steps (.cc-step)" \
+  ".cc-step { display: grid; grid-template-columns: 28px 1fr;"
+check "$WF" "Chromecast card status dots (.cc-dot)" \
+  ".cc-dot { width: 8px; height: 8px; border-radius: 50%;"
 
 if [ "$fail" -eq 0 ]; then
   echo "OK — every design-sync-fragile CSS rule tracked here is present."

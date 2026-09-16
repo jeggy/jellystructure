@@ -308,6 +308,8 @@ class PlaybackService(
     private val playbackStartSampleStore: PlaybackStartSampleStore,
     // Phase 185 (FR-185-1) — persists the decode ceiling reported on every negotiation.
     private val raviloDeviceService: RaviloDeviceService,
+    // Phase 218 (FR-218-8) — the concurrent-cast ceiling; null in tests that never cast.
+    private val castService: CastService? = null,
 ) {
     /**
      * Security fix (2026-08-02 review, finding M4) — Detail/Browse/Home all gate on
@@ -343,6 +345,9 @@ class PlaybackService(
         capabilities: ClientCapabilities,
     ): StreamTicket {
         requireVisible(device, jellyfinId)
+        // Phase 218 (FR-218-8) — a receiver past `max_sessions` gets phase 182's 503 + Retry-After
+        // (CastCeilingException → Server.kt StatusPages), never a spinner forever. A TV is never gated.
+        castService?.checkCeiling(device, playbackTracker.activeDevices())
         // Phase 185 (FR-185-1) — every negotiation that reports at least one decode ceiling persists it,
         // regardless of what this particular file needs (ClientCapabilities always reports both
         // hevc/h264 ceilings together, not just the one this session happens to select).

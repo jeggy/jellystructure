@@ -53,6 +53,9 @@ class RaviloConfigService(
     // fallback isn't a RaviloConfig field — it lives in AppConfig's admin-managed catalog). Null (not
     // wired) ⇒ the field always reads as "global" with an empty-string default, same as an empty catalog.
     private val requestLanguageService: dev.jellystructure.arr.RequestLanguageService? = null,
+    // Phase 218 (FR-218-3) — resolves the installation's cast capability (from config.toml, never from
+    // stored per-user JSON) on every read path, the way focusDetail is resolved. Null = never a button.
+    private val castCapability: (() -> dev.jellystructure.shared.tv.CastCapability?)? = null,
 ) {
 
     /**
@@ -97,7 +100,7 @@ class RaviloConfigService(
 
     /** FR-202-2 — never trust a stored/round-tripped `focus_detail` value; always recompute it from the
      *  two admin-side booleans before a config leaves the server, on every read path. */
-    private fun RaviloConfig.withResolvedFocusDetail(): RaviloConfig = copy(focusDetail = resolvedFocusDetail())
+    private fun RaviloConfig.withResolvedFocusDetail(): RaviloConfig = copy(focusDetail = resolvedFocusDetail(), cast = castCapability?.invoke())
 
     fun hasCustomConfig(userId: String): Boolean =
         userId != GLOBAL_USER_ID && db.raviloConfigQueries.getByUser(userId).executeAsOneOrNull() != null
@@ -127,6 +130,9 @@ class RaviloConfigService(
      * well-formed regardless of which surface wrote it. Idempotent. Drops heroes with a blank itemId.
      */
     fun normalize(config: RaviloConfig): RaviloConfig = config.copy(
+        // Phase 218 — server-resolved on read, never persisted (a stale stored value could resurrect a
+        // cast button after the admin switched Chromecast off).
+        cast = null,
         heroes = config.heroes
             .filter { it.itemId.isNotBlank() }
             .mapIndexed { i, h -> h.copy(order = i) },

@@ -1,0 +1,30 @@
+-- Phase 218 (FR-218-9) — the short-lived hand-off code a phone mints and a Chromecast receiver redeems
+-- for its own device token. Phase 141 retired `ravilo_pairing`, so this is new machinery, not a reuse:
+-- single-use (redeemed_at), minutes-lived (expires_at), swept on every mint and redeem.
+-- Must stay byte-for-byte in sync with 44.sqm's CREATE TABLE.
+CREATE TABLE cast_handoff (
+    code TEXT NOT NULL PRIMARY KEY,
+    -- The minting phone's (device, user) — the receiver enrols AS this user, with this user's
+    -- library/tag policy copied onto its own row (the receiver never sees a Jellyfin token).
+    device_id TEXT NOT NULL,
+    jellyfin_user_id TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    expires_at INTEGER NOT NULL,
+    redeemed_at INTEGER
+);
+
+insert:
+INSERT INTO cast_handoff(code, device_id, jellyfin_user_id, created_at, expires_at, redeemed_at)
+VALUES (?, ?, ?, ?, ?, NULL);
+
+getByCode:
+SELECT * FROM cast_handoff WHERE code = ?;
+
+markRedeemed:
+UPDATE cast_handoff SET redeemed_at = ? WHERE code = ?;
+
+sweep:
+DELETE FROM cast_handoff WHERE expires_at < ? OR redeemed_at IS NOT NULL;
+
+countLive:
+SELECT COUNT(*) FROM cast_handoff WHERE expires_at >= ? AND redeemed_at IS NULL;

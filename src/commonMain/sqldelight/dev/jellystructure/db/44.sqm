@@ -1,0 +1,10 @@
+-- Phase 218 (FR-218-9) — the Chromecast hand-off code store. See CastHandoff.sq; this migration must
+-- stay byte-for-byte in sync with its CREATE TABLE (the SQLDelight-migration rule).
+CREATE TABLE cast_handoff (
+    code TEXT NOT NULL PRIMARY KEY,
+    device_id TEXT NOT NULL,
+    jellyfin_user_id TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    expires_at INTEGER NOT NULL,
+    redeemed_at INTEGER
+);

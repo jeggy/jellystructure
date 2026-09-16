@@ -9,7 +9,10 @@ import dev.jellystructure.api.ScanConfig
 import dev.jellystructure.api.ConfigResponse
 import dev.jellystructure.api.LibraryMapping
 import dev.jellystructure.api.LibraryPathDiag
+import dev.jellystructure.api.ChromecastConfig
+import dev.jellystructure.api.ChromecastStatus
 import dev.jellystructure.api.ConfigApi
+import dev.jellystructure.api.ReceiverCheck
 import dev.jellystructure.api.MediaApi
 import dev.jellystructure.api.PipelineRunResult
 import dev.jellystructure.api.ArrConfig
@@ -160,6 +163,53 @@ X-JS-Api-Key: jsk_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx</pre>
             </div>
 
             <div id="advisor-server-wide" data-tab="libraries" style="display:none"></div>
+
+            <!-- Phase 218 (FR-218-4/6/13) — Settings → Connections → Chromecast, three states: off (switch +
+                 one paragraph), on-but-unregistered (address, the three steps, empty ID, ceiling, status),
+                 registered-and-verified (steps collapsed, ID with its use, status incl. the last cast).
+                 Google is named here and nowhere else in the product, because the admin pays Google.
+                 Page-local classes are cc- prefixed — deliberately NOT adv-*, which an ad blocker's
+                 cosmetic filter list hides outright (2026-09-15). -->
+            <div class="card set-section" id="sect-cast" data-tab="connections">
+              <div class="row center"><h3 style="font-size:1.05rem;margin:0;">Chromecast</h3><span class="badge info" style="margin-left:8px;">Ravilo</span><span class="spacer"></span><span class="badge warn" id="cc-badge" style="display:none;">not finished</span><span class="badge ok" id="cc-badge-ok" style="display:none;">working</span><span class="muted tiny">enable</span><span class="toggle" id="cc-toggle" style="cursor:pointer"></span></div>
+              <div class="tiny muted" id="cc-blurb" style="margin-top:10px;line-height:1.6;">Optional. Lets a phone cast to a Chromecast, with Jellystructure serving the receiver itself. While this is off, Ravilo shows <b>no cast button at all</b> — the phone is told there is nothing to cast to and never guesses.</div>
+
+              <div id="cc-on" style="display:none;">
+                <hr class="dash">
+                <div class="field"><label>Your receiver address</label>
+                  <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                    <input id="cc-public-url" class="input mono" type="url" placeholder="https://your-public-address" style="flex:1;min-width:220px">
+                    <span class="mono tiny muted">/cast/</span>
+                    <span id="cc-reach" class="tiny muted"></span>
+                    <button id="cc-check-btn" type="button" class="btn sm ghost" style="flex:none">Check</button>
+                    <button id="cc-copy-btn" type="button" class="btn sm ghost" style="flex:none">Copy</button>
+                  </div>
+                  <span class="hint">A Chromecast loads this page itself, so it has to be reachable from the internet over <b>https</b>. <b>Check</b> asks the server to fetch its own receiver through this address — from outside, not from this browser.</span></div>
+
+                <div class="box flat" id="cc-steps" style="padding:14px 15px;">
+                  <div class="cc-step"><span class="step-n">1</span><p><b>Register an application</b> at the Google Cast Developer Console. Google charges a <b>one-time US$5</b> developer fee. Nothing else in Ravilo costs money.</p></div>
+                  <div class="cc-step"><span class="step-n">2</span><p>Choose <b>Custom Receiver</b> and paste the address above.</p></div>
+                  <div class="cc-step" style="margin-bottom:0;"><span class="step-n">3</span><p>Add your Chromecast as a <b>test device</b>, or <b>publish</b> the application so any Chromecast can use it.</p></div>
+                </div>
+
+                <div class="field" style="margin-top:14px;"><label>Application ID</label>
+                  <div style="display:flex;gap:8px;align-items:center">
+                    <input id="cc-appid" class="input mono" placeholder="8 hex characters, e.g. A1B2C3D4" maxlength="8" style="width:180px;text-transform:uppercase">
+                    <span id="cc-appid-badge" class="tiny muted"></span>
+                  </div>
+                  <span class="hint" id="cc-appid-hint">From the console, after step 1.</span></div>
+
+                <div class="row center" style="gap:14px;margin-bottom:14px;">
+                  <div><b style="font-size:.9rem;">Concurrent cast sessions</b><div class="tiny muted" style="margin-top:3px;">Each cast is a transcode on your Jellyfin server.</div></div>
+                  <span class="spacer"></span>
+                  <div class="cc-num"><b id="cc-max-dec">−</b><span id="cc-max">2</span><b id="cc-max-inc">+</b></div>
+                </div>
+
+                <hr class="dash">
+                <div class="cc-stat" id="cc-stat"></div>
+                <div class="tiny muted" style="margin-top:8px"><span id="cc-steps-again" class="btn sm ghost" style="display:none;padding:0;cursor:pointer">Show the three steps again</span></div>
+              </div>
+            </div>
 
             <div class="card set-section" id="sect-libraries" data-tab="libraries">
               <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
@@ -675,6 +725,10 @@ private var radarrRescan = true
 private var sonarrEnabled = false
 private var sonarrRescan = true
 private var seerrEnabled = false
+// Phase 218 — Chromecast card state (mirrors the bazarr pattern above).
+private var ccEnabled = false
+private var ccMaxSessions = 2
+private var ccShowSteps = true
 private var bazarrEnabled = false
 private var bazarrAutoSearch = false
 private var bazarrShowHistory = true
@@ -737,6 +791,18 @@ private fun populateForm(response: ConfigResponse) {
     if (bazarr != null) { setInputValue("bazarr-url", bazarr.url) }
     setArrKeyBadge("bazarr", (bazarr?.apiKey ?: "").isNotBlank())
     (document.getElementById("bazarr-on") as? HTMLElement)?.style?.display = if (bazarrEnabled) "block" else "none"
+
+    // Phase 218 — Chromecast.
+    val cc = config.chromecast
+    ccEnabled = cc?.enabled ?: false
+    ccMaxSessions = (cc?.maxSessions ?: 2).takeIf { it in 1..5 } ?: 2
+    updateToggle("cc-toggle", ccEnabled)
+    setInputValue("cc-appid", cc?.appId ?: "")
+    // The page's own origin is the natural default for the public address, but only as a pre-fill the
+    // admin saves — the reachability check never trusts it (FR-218-5).
+    setInputValue("cc-public-url", cc?.publicUrl?.takeIf { it.isNotBlank() } ?: window.location.origin)
+    (document.getElementById("cc-max") as? HTMLElement)?.textContent = ccMaxSessions.toString()
+    renderChromecastState()
 
     // Phase 139 — request-language intents (Original/Dansk-Nordic etc.)
     requestLanguageIntents.clear()
@@ -979,6 +1045,7 @@ private fun attachListeners(scope: CoroutineScope) {
     wireArr(scope, "sonarr")
     wireSeerr(scope)
     wireBazarr(scope)
+    wireChromecast(scope)
     wireRequestLanguage(scope)
 
     document.getElementById("notif-scan-done-toggle")?.addEventListener("click") {
@@ -1445,6 +1512,14 @@ private fun readForm(): AppConfig = AppConfig(
         autoSearchOnAdd = bazarrAutoSearch,
         showHistoryOnTitle = bazarrShowHistory,
     ) else null,
+    // Phase 218 (FR-218-2) — the block is written only while enabled; off is absent (null), which is
+    // what makes the phone's cast button absent rather than greyed (FR-218-3).
+    chromecast = if (ccEnabled) ChromecastConfig(
+        enabled = true,
+        appId = getInputValue("cc-appid").trim().uppercase(),
+        maxSessions = ccMaxSessions,
+        publicUrl = getInputValue("cc-public-url").trim().trimEnd('/'),
+    ) else null,
     scanSchedule = if (pipelineEnabled) computePipeCron() else "",
     scan = ScanConfig(pipeline = if (pipelineEnabled) pipelineSteps.toList() else emptyList(), deferWhilePlaying = deferWhilePlaying),
     requestLanguage = RequestLanguageConfig(intents = requestLanguageIntents.toList(), kidsDefault = requestLanguageKidsDefault?.takeIf { it.isNotBlank() }),
@@ -1568,6 +1643,14 @@ private fun buildToml(c: AppConfig): String = buildString {
         appendLine("""api_key = "***"""")
         appendLine("auto_search_on_add = ${bz.autoSearchOnAdd}")
         appendLine("show_history_on_title = ${bz.showHistoryOnTitle}")
+    }
+    c.chromecast?.let { cc ->
+        appendLine()
+        appendLine("[chromecast]")
+        appendLine("enabled = ${cc.enabled}")
+        appendLine("""app_id = "${cc.appId}"""")
+        appendLine("max_sessions = ${cc.maxSessions}")
+        appendLine("""public_url = "${cc.publicUrl}"""")
     }
 }
 
@@ -2991,4 +3074,149 @@ private fun showPipelineToast(msg: String) {
     t.style.cssText = "position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--fill-3);border:1px solid var(--line-2);border-radius:8px;padding:8px 16px;font-size:.82rem;z-index:9999;pointer-events:none"
     document.body?.appendChild(t)
     window.setTimeout({ document.body?.removeChild(t); null }, 2000)
+}
+
+// ── Phase 218 — Chromecast card ─────────────────────────────────────────────────
+
+private const val CC_APP_ID_HEX = "^[0-9A-Fa-f]{8}$"
+
+/** Renders the card's state from what the form holds + the server's honest status (FR-218-4/7). */
+private fun renderChromecastState() {
+    val on = document.getElementById("cc-on") as? HTMLElement
+    val blurb = document.getElementById("cc-blurb") as? HTMLElement
+    val badgeWarn = document.getElementById("cc-badge") as? HTMLElement
+    val badgeOk = document.getElementById("cc-badge-ok") as? HTMLElement
+    on?.style?.display = if (ccEnabled) "block" else "none"
+    if (!ccEnabled) {
+        blurb?.innerHTML = "Optional. Lets a phone cast to a Chromecast, with Jellystructure serving the receiver itself. While this is off, Ravilo shows <b>no cast button at all</b> — the phone is told there is nothing to cast to and never guesses."
+        badgeWarn?.style?.display = "none"; badgeOk?.style?.display = "none"
+        return
+    }
+    val appId = getInputValue("cc-appid").trim()
+    val idOk = Regex(CC_APP_ID_HEX).matches(appId)
+    (document.getElementById("cc-appid-badge") as? HTMLElement)?.innerHTML = when {
+        appId.isBlank() -> ""
+        idOk -> """<span class="badge ok">looks right</span>"""
+        else -> """<span class="badge warn">8 hex characters</span>"""
+    }
+    blurb?.innerHTML = "Three one-time steps. Nothing recurring, and nothing leaves this page except the address you paste at Google."
+    badgeWarn?.style?.display = if (idOk) "none" else ""
+    badgeOk?.style?.display = "none"
+    (document.getElementById("cc-steps") as? HTMLElement)?.style?.display = if (ccShowSteps) "" else "none"
+    (document.getElementById("cc-steps-again") as? HTMLElement)?.style?.display = if (ccShowSteps) "none" else ""
+}
+
+/** FR-218-7 — the status list. Jellystructure cannot verify an application ID with Google (there is
+ *  no API), so until a real cast has enrolled a receiver the list says so in words. */
+private fun renderChromecastStatus(st: ChromecastStatus?, reach: ReceiverCheck?) {
+    val stat = document.getElementById("cc-stat") as? HTMLElement ?: return
+    val appId = getInputValue("cc-appid").trim()
+    val idOk = Regex(CC_APP_ID_HEX).matches(appId)
+    val verified = st?.verified == true
+    val blurb = document.getElementById("cc-blurb") as? HTMLElement
+    val badgeOk = document.getElementById("cc-badge-ok") as? HTMLElement
+    val badgeWarn = document.getElementById("cc-badge") as? HTMLElement
+    if (verified && idOk) {
+        blurb?.innerHTML = "Ravilo shows a cast button on every screen. A Chromecast appears in <b>Users &amp; devices</b> as its own device, and the Jellyfin dashboard can pause and seek it like any other client."
+        badgeOk?.style?.display = ""; badgeWarn?.style?.display = "none"
+        if (ccShowSteps) { ccShowSteps = false; renderChromecastState() }
+        (document.getElementById("cc-appid-hint") as? HTMLElement)?.innerHTML = "Registered with Google · confirmed by a real cast."
+    } else {
+        (document.getElementById("cc-appid-hint") as? HTMLElement)?.innerHTML = "From the console, after step 1."
+    }
+    val reachLine = when {
+        reach == null -> """<div><span class="cc-dot off"></span> Receiver address <b>not checked yet</b> — press Check</div>"""
+        reach.reachable -> """<div><span class="cc-dot"></span> Receiver <b>reachable</b> at that address</div>"""
+        else -> """<div><span class="cc-dot wait"></span> Receiver <b>${reach.detail.esc()}</b></div>"""
+    }
+    val idLine = when {
+        !idOk -> """<div><span class="cc-dot wait"></span> Application ID <b>not set yet</b></div>"""
+        verified -> """<div><span class="cc-dot"></span> Application ID <b>set and confirmed by a real cast</b></div>"""
+        else -> """<div><span class="cc-dot off"></span> <b>Cast from your phone once to confirm it works.</b> Jellystructure can't check an application ID with Google — only a real cast can.</div>"""
+    }
+    val castLines = if (st != null && st.devices.isNotEmpty()) {
+        val last = st.lastCastAt?.let { formatRelativeTime(it) } ?: "—"
+        val n = st.devices.size
+        """<div><span class="cc-dot"></span> Last cast <b>$last</b> · ${st.devices.first().name.esc()}</div>""" +
+        """<div><span class="cc-dot"></span> <b>$n device${if (n == 1) "" else "s"}</b> ${if (n == 1) "has" else "have"} cast · <a href="#/ravilo-users">Users &amp; devices</a></div>""" +
+        """<div><span class="cc-dot"></span> Jellyfin shows it as <b>Chromecast via Ravilo · ${st.devices.first().name.esc()}</b></div>""" +
+        (if (st.activeSessions > 0) """<div><span class="cc-dot"></span> <b>${st.activeSessions} of ${st.maxSessions}</b> cast sessions in use right now</div>""" else "")
+    } else ""
+    stat.innerHTML = reachLine + idLine + castLines
+}
+
+private fun ccNowMs(): Double = js("Date.now()")
+
+private fun formatRelativeTime(epochMs: Long): String {
+    val diff = (ccNowMs().toLong() - epochMs).coerceAtLeast(0L)
+    val min = diff / 60_000
+    return when {
+        min < 2 -> "just now"
+        min < 60 -> "$min min ago"
+        min < 60 * 48 -> "${min / 60} h ago"
+        else -> "${min / (60 * 24)} days ago"
+    }
+}
+
+private fun wireChromecast(scope: CoroutineScope) {
+    var lastReach: ReceiverCheck? = null
+    var lastStatus: ChromecastStatus? = null
+    fun refreshStatus() {
+        scope.launch {
+            lastStatus = ConfigApi.chromecastStatus()
+            renderChromecastStatus(lastStatus, lastReach)
+        }
+    }
+    document.getElementById("cc-toggle")?.addEventListener("click") {
+        ccEnabled = !ccEnabled
+        updateToggle("cc-toggle", ccEnabled)
+        renderChromecastState()
+        if (ccEnabled) refreshStatus()
+        refreshTomlPreview(readForm())
+    }
+    document.getElementById("cc-appid")?.addEventListener("input") {
+        renderChromecastState()
+        renderChromecastStatus(lastStatus, lastReach)
+        refreshTomlPreview(readForm())
+    }
+    document.getElementById("cc-public-url")?.addEventListener("input") {
+        lastReach = null
+        (document.getElementById("cc-reach") as? HTMLElement)?.innerHTML = ""
+        renderChromecastStatus(lastStatus, lastReach)
+        refreshTomlPreview(readForm())
+    }
+    document.getElementById("cc-max-dec")?.addEventListener("click") {
+        ccMaxSessions = (ccMaxSessions - 1).coerceIn(1, 5)
+        (document.getElementById("cc-max") as? HTMLElement)?.textContent = ccMaxSessions.toString()
+        refreshTomlPreview(readForm())
+    }
+    document.getElementById("cc-max-inc")?.addEventListener("click") {
+        ccMaxSessions = (ccMaxSessions + 1).coerceIn(1, 5)
+        (document.getElementById("cc-max") as? HTMLElement)?.textContent = ccMaxSessions.toString()
+        refreshTomlPreview(readForm())
+    }
+    document.getElementById("cc-steps-again")?.addEventListener("click") {
+        ccShowSteps = true
+        renderChromecastState()
+    }
+    document.getElementById("cc-copy-btn")?.addEventListener("click") {
+        val url = getInputValue("cc-public-url").trim().trimEnd('/') + "/cast/"
+        window.navigator.clipboard.writeText(url)
+        (document.getElementById("cc-reach") as? HTMLElement)?.innerHTML = """<span class="badge">copied</span>"""
+    }
+    document.getElementById("cc-check-btn")?.addEventListener("click") {
+        scope.launch {
+            val el = document.getElementById("cc-reach") as? HTMLElement ?: return@launch
+            el.textContent = "Checking…"
+            val r = ConfigApi.checkChromecast(getInputValue("cc-public-url"))
+            lastReach = r
+            el.innerHTML = when {
+                r == null -> """<span class="badge bad">Request failed</span>"""
+                r.reachable -> """<span class="badge ok">${r.detail.esc()}</span>"""
+                else -> """<span class="badge bad">${r.detail.esc()}</span>"""
+            }
+            renderChromecastStatus(lastStatus, lastReach)
+        }
+    }
+    if (ccEnabled) refreshStatus()
 }

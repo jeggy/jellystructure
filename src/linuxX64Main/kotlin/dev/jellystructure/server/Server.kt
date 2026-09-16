@@ -156,6 +156,9 @@ fun startServer(
     fingerprintService: dev.jellystructure.media.FingerprintService,
     mediaSegmentStore: dev.jellystructure.media.MediaSegmentStore,
     playbackQoeStore: dev.jellystructure.tv.PlaybackQoeStore,
+    // Phase 218 — the cast service (hand-off, ceiling, reachability, status) and the receiver bundle dir.
+    castService: dev.jellystructure.tv.CastService? = null,
+    castDir: String? = null,
 ): suspend () -> Unit {
     // Fire-and-forget work (scans, NFO/artwork pushes, image fetches) runs as appScope.launch{}.
     // On Kotlin/Native an exception escaping a launched coroutine reaches the global handler and
@@ -195,6 +198,12 @@ fun startServer(
             }
             exception<dev.jellystructure.tv.PlaybackForbiddenException> { call, cause ->
                 call.respond(HttpStatusCode.Forbidden, mapOf("error" to (cause.message ?: "Forbidden")))
+            }
+            // Phase 218 (FR-218-8) — a cast past `max_sessions`: phase 182's own shape, 503 + Retry-After,
+            // which the receiver renders as its busy state and the phone's remote mirrors.
+            exception<dev.jellystructure.tv.CastCeilingException> { call, cause ->
+                call.response.headers.append(HttpHeaders.RetryAfter, cause.retryAfterSeconds.toString())
+                call.respond(HttpStatusCode.ServiceUnavailable, mapOf("error" to (cause.message ?: "all cast sessions in use")))
             }
             // Phase 182 (FR-182-8) — a request-path caller that hit OutboundHttp/ProcessGate's bounded
             // interactive-acquire timeout and had no withTimeoutOrNull of its own to degrade through
@@ -494,7 +503,7 @@ fun startServer(
                 }
 
                 authRoutes(sessionService, jellyfinClient, configStore, loginRateLimiter)
-                configureConfigRoutes(configStore, effectiveScanThreads, qbClient, arrClient, seerrClient, bazarrClient, tmdbClient, requestLanguageService)
+                configureConfigRoutes(configStore, effectiveScanThreads, qbClient, arrClient, seerrClient, bazarrClient, tmdbClient, requestLanguageService, castService = castService, tvEventBus = tvEventBus)
                 setupRoutes(configStore, jellyfinClient)
                 jellyfinRoutes(configStore, jellyfinClient, deviceService)
                 mediaRoutes(mediaStore, scanner, artworkDownloader, tmdbClient, appScope, scanTracker, broadcaster, jellyfinClient, configStore, mediaHistory, scanDispatcher, seedingGuard, seedingSnapshot, raviloConfigService, logoDownloader, arrRescan, sonarrEnrich, mediaJobQueue, imdbClient, fingerprintService, mediaSegmentStore, realtimeIngest, dirtyItemStore)
@@ -515,7 +524,7 @@ fun startServer(
                 // R171 — the TV Request tab's Seerr-backed discover/search/request service; null (tab
                 // reports unavailable) until a SeerrClient is wired, exactly like the other optional *arr services above.
                 val seerrDiscoverService = seerrClient?.let { dev.jellystructure.seerr.SeerrDiscoverService(configStore, it, raviloConfigService, mediaStore, requestLanguageService, requestIntentStore, acquisitionService) }
-                tvRoutes(deviceService, raviloConfigService, homeFeedService, browseService, detailService, playbackService, sessionService, jellyfinClient, configStore, channelLogoStore, imageProxyService, logoDownloader, tvEventBus, upcomingService, seerrDiscoverService, mediaStore, loginRateLimiter, playbackQoeStore)
+                tvRoutes(deviceService, raviloConfigService, homeFeedService, browseService, detailService, playbackService, sessionService, jellyfinClient, configStore, channelLogoStore, imageProxyService, logoDownloader, castService, tvEventBus, upcomingService, seerrDiscoverService, mediaStore, loginRateLimiter, playbackQoeStore)
                 liveTvRoutes(liveTvService)
             }
 
@@ -594,6 +603,17 @@ fun startServer(
                     runCatching { playbackService.stopWatchdogTick { deviceId -> tvEventBus.isConnected(deviceId) } }
                     // Phase 147 — same immediate-close behavior for an open live-TV stream.
                     runCatching { liveTvService.stopWatchdogTick { deviceId -> tvEventBus.isConnected(deviceId) } }
+                }
+            }
+
+            // Phase 218 (FR-218-1) — the Chromecast receiver, served under /cast/** exactly like the
+            // Ravilo web app below. The X-Ravilo-Cast header is what FR-218-5's reachability check looks
+            // for, so a captive portal or a stranger's 200 at the same address does not pass as ours.
+            if (castDir != null) {
+                get("/cast/{...}") {
+                    val path = call.request.path().removePrefix("/cast")
+                    call.response.headers.append("X-Ravilo-Cast", "receiver")
+                    call.serveFrontendFile(castDir, path)
                 }
             }
 
