@@ -28,6 +28,15 @@
         android:theme="@style/Theme.Ravilo.Splash"
         android:allowBackup="false"
         android:usesCleartextTraffic="true">
+        <!-- R245 — the Cast SDK's options provider (ravilo-ui androidMain). The receiver application id
+             is a placeholder here and is applied at RUNTIME from the config snapshot (218 FR-218-11). -->
+        <meta-data
+            android:name="com.google.android.gms.cast.framework.OPTIONS_PROVIDER_CLASS_NAME"
+            android:value="dev.jellystructure.ravilo.ui.seams.RaviloCastOptionsProvider" />
+        <!-- R245 (FR-R245-2) — Output Switcher discovery of Cast devices. -->
+        <receiver
+            android:name="androidx.mediarouter.media.MediaTransferReceiver"
+            android:exported="true" />
 
         <!-- TV entry point — leanback/D-pad UI, full-screen immersive. Only the TV launcher sees this
              (LEANBACK_LAUNCHER); the phone launcher uses the separate activity below instead. -->

@@ -8,9 +8,11 @@
 
 ## Status
 
-`Planned` — written 2026-09-16, **dev-reviewed 2026-09-16 against `main`** (see §Dev review at the
-bottom). Built into the mockups 2026-09-16. No viewer-facing change; the receiver's reuse story and
-its enrolment dependency on 218 were both made explicit.
+`✓ Built` — written 2026-09-16, **dev-reviewed 2026-09-16 against `main`** (see §Dev review at the
+bottom), **implemented 2026-09-16** (see §Implementation notes). Built into the mockups 2026-09-16.
+Compiled for Android (`ravilo-ui`, `ravilo-android` incl. the manifest merge), wasmJs, and the new
+Kotlin/JS receiver bundle; `ravilo-ui` unit tests green. **Not tested against a real Chromecast** —
+acceptance 1–9 need the parents' stick and an iPhone, neither of which this session had.
 
 **Numbering:** verified against `main` on 2026-09-16 — Ravilo taken through **R243**, admin through
 **217**. No `phase-R245-*` file and no `STATUS.md` row for it. Pairs with **218**; follows **R244**, whose
@@ -250,3 +252,71 @@ undrawn for round 1 and revisiting once a receiver has real `playback_start_samp
 **Unchanged:** open questions 1, 3, 4 and 5 stand exactly as written. Question 3's position-reconciliation
 concern is the one most likely to produce a bug that reads as a bug, and it has no server-side answer —
 it is a motion decision.
+
+## Implementation notes (2026-09-16)
+
+**Shared** — `CastMessages.kt`: the custom namespace `urn:x-cast:dev.jellystructure.ravilo`, the LOAD
+`customData` (`CastLoadData`: server URL, hand-off code, item, art, optional position, the phone's
+name for the Chromecast, the receiver's persisted id, the season's episodes with their markers, the
+language and subtitle size), the receiver→phone `CastReceiverMessage` (status · tracks · nextup · busy ·
+noserver · ended) and the phone→receiver `CastCommand`. `TvApiClient.castHandoff()` / `castRedeem()`.
+
+**Sender (phone)** — `seams/CastSender.kt` is the expect surface (link state · device name · a
+`CastRemoteStatus` rebuilt from the receiver's reports · load/play/pause/seek/stop · track selection ·
+custom messages · `PlatformCastButton`). The Android actual (`CastSenderAndroid.kt`) is the Cast SDK:
+`CastContext`, a `SessionManagerListener`, `RemoteMediaClient` callbacks + a 1 s progress listener,
+`setActiveMediaTracks` for subtitles/audio, `MediaRouteButton` via `CastButtonFactory` (FR-R245-1/2),
+and `RaviloCastOptionsProvider` with the SDK's own notification (toggle · −10 · +30 · stop, 30 s skip
+step; the art is whatever landscape still/backdrop the LOAD carried — FR-R245-11) registered in
+`ravilo-android`'s manifest with `MediaTransferReceiver` for Output Switcher. The receiver application
+id is a placeholder in the provider and `setReceiverApplicationId` applies the real one when the config
+snapshot loads (218 FR-218-11). The web actual returns no sender, so nothing draws a button there.
+
+- **FR-R245-3** — `CastConnectingBar`: Connecting → Casting (retires after 2 s) → Reconnecting.
+- **FR-R245-4** — both detail screens' primary action reads *Play on {device}* while connected and
+  `RaviloApp`'s `onPlay` casts instead of pushing the player (position null ⇒ the server resolves the
+  resume point exactly as for a TV; a series hands the whole season over so the receiver can advance).
+  Inside the local player the chrome carries the cast button; a NEW connection while the player is
+  up pauses local playback, hands the live position over and `replaceTop`s the remote — one act.
+  Plumbed through `LocalCastHandoff`, not a parameter (the 16th-parameter VerifyError).
+- **FR-R245-5** — `onSessionResuming/Resumed`: alive ⇒ the remote is rebuilt from the receiver (a
+  `status` command asks it to resend item + tracks); finished or gone ⇒ the sender ends its own session
+  silently, so no bar, no toast, no error, glyph back to idle.
+- **FR-R245-6** — `CastMiniBar`, 64 dp above the safe area on every screen except Player / Live TV / the
+  remote, thumbnail · title · ▶/❚❚ · *Playing on {device}* · hairline progress; tap opens the remote; no
+  swipe handler exists on it.
+- **FR-R245-7/9/10** — `CastRemoteScreen`: device chip (the platform button inside it), 16:9 art card on
+  `surfaceVariant` (wordmark fallback, never ink on a picture), kicker + title, state line, seek bar
+  (optimistic on drag, the next report wins), −10 s · ▶/❚❚ · +30 s, footer. States: playing · paused (art
+  dims) · buffering (spinner in the play button) · next-up mirrored (`nextup_play` / `nextup_cancel` are
+  SENT) · unreachable (link ≠ connected: transport greyed, *Try again* re-asks for status) · busy
+  (phase 182's 503 as the receiver saw it + the elapsed wait, the one number) · ended (*Play again* re-casts
+  from 0 · *Stop casting*). Back never stops the cast; stop is explicit and has no confirmation.
+- **FR-R245-8** — `CastTrackSheet` is the SAME `TrackPicker` + `SubtitleSizeRow` inside R244's
+  `HandsetSheet`; the receiver's track lists feed `buildLanguageGroups`, selection goes through the SDK's
+  active-track ids, size through a `subsize` command, and the only difference from the local sheet is
+  the line *Applies on {device}*.
+- **FR-R245-12** — 16 keys (`cast.*`, `srv.busy*`) × en/da/fo from the design table.
+
+**Receiver** — new Gradle module `ravilo-cast` (Kotlin/JS IR, `:shared` + ktor-js, the Tizen shape),
+bundled to `cast-receiver/ravilo-cast.js` by `:ravilo-cast:syncCastReceiver` (gitignored; the
+Dockerfile builds it and copies `cast-receiver/` to `/app/cast`). `Receiver.kt` drives CAF through
+`dynamic`: a LOAD interceptor that **enrols** (redeems the code with `castRedeem` unless a token and
+matching receiver id survived in `localStorage`), fetches the household config, probes
+`canDisplayType` for HEVC/VP9/HDR10 and asks `/api/tv/playback/start` for its own ticket with
+`hlsOnly = true` (FR-R245-13); sets the HLS URL, the VTT sideloads as text tracks and the caption style;
+reports progress every 10 s and on pause, stops on finish/shutdown; **advances by itself** with the
+household's `skipSecs` countdown mirrored to the phone, and auto-skips an intro when `skipIntro` is
+*Auto* (FR-R245-14). Screens (FR-R245-15): idle (mark + one sentence) · loading (R218 B) · buffering
+(R218 C) · paused/seeked overlay for 3 s · captions via CAF's `TextTrackStyle` (S/M/L) · next-up card ·
+can't-reach-server · busy with the elapsed wait (retries after `Retry-After`) · ended ⇒ idle. Nothing
+is pressable; no product, protocol, codec or status code appears in any string (FR-R245-16). No fonts
+are loaded and idle draws a CSS gradient mark, no artwork (FR-R245-17) — **but the bundle is ~820 KB**
+(Ktor + coroutines + serialization), which a 1st-gen stick may or may not load; that is open question
+1's territory and is untested.
+
+**Not done / open:** every acceptance step (a real stick, an iPhone); iOS entirely; a transient volume
+pill on the remote (hardware keys work through the SDK's own routing); R222's note on the remote (OQ2,
+left undrawn); position reconciliation is "the next report wins" (OQ3); receiver-side audio track
+switching exposes only what the manifest carries; `PROMPT` Skip Intro is not surfaced on a receiver (nothing
+to press) — only *Auto* skips.

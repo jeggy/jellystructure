@@ -213,6 +213,9 @@ fun AppBar(
             // Wide: push the right cluster to the far edge. Compact: no bounded width to weight
             // against (see above) — the Row's own spacedBy(18.dp) gap is enough; items just scroll.
             if (!compact) Box(modifier = Modifier.weight(1f))
+            // R245 (FR-R245-1) — the cast button, present only when the server says Chromecast is set up
+            // and this platform has a sender (CastButton renders nothing otherwise — never greyed).
+            CastButton()
             // R52 right cluster: search icon · clock · avatar (gaps from the Row's spacedBy).
             if (onSearch != null) {
                 SearchIcon(

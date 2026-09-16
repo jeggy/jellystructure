@@ -81,6 +81,8 @@ kotlin {
                 implementation(libs.androidx.media3.ui)      // R55: SubtitleView cue rendering
                 implementation(libs.androidx.core)            // WindowCompat/WindowInsetsControllerCompat (PlayerImmersiveEffect)
                 implementation(libs.androidx.activity.compose) // BackHandler (PlatformBackHandler bug fix)
+                implementation(libs.play.services.cast.framework) // R245 — the Cast sender (CastContext, RemoteMediaClient, MediaRouteButton)
+                implementation(libs.androidx.mediarouter)         // R245 — MediaRouteButton / MediaTransferReceiver (Output Switcher)
             }
         }
         val wasmJsMain by getting {

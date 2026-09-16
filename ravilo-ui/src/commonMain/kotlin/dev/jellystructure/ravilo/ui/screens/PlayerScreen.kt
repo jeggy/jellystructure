@@ -96,6 +96,10 @@ import dev.jellystructure.ravilo.ui.seams.PlayerChromeBridge
 import dev.jellystructure.ravilo.ui.seams.PlayerChromeState
 import dev.jellystructure.ravilo.ui.seams.PlayerImmersiveEffect
 import dev.jellystructure.ravilo.ui.seams.rememberHandsetPlayerControls
+import dev.jellystructure.ravilo.ui.components.CastButton
+import dev.jellystructure.ravilo.ui.components.LocalCast
+import dev.jellystructure.ravilo.ui.components.LocalCastHandoff
+import dev.jellystructure.ravilo.ui.seams.CastLinkState
 import dev.jellystructure.ravilo.ui.LocalPortrait
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -302,6 +306,13 @@ fun PlayerScreen(
     // FR-R244-14 — a light tick on skip, lock and seek release; nothing on play/pause. Compose's own
     // haptic primitive: a no-op on web, so no seam was needed (the dev review expected one).
     fun tick() { if (handset) runCatching { haptics.performHapticFeedback(HapticFeedbackType.SegmentTick) } }
+    // R245 (FR-R245-4) — pressing cast INSIDE the player: the instant the session connects, the app
+    // hands the current position over, stops local playback and swaps straight to the remote. Read
+    // through CompositionLocals, not parameters (the 16th-parameter VerifyError, see onReauthRequired).
+    val castController = LocalCast.current
+    val castHandoff = LocalCastHandoff.current
+    val castLink = castController?.sender?.link?.collectAsState()?.value ?: CastLinkState.NONE
+    var castLinkSeen by remember { mutableStateOf(castLink) }
 
     // Playback state — polled every 500 ms from the player
     var positionMs   by remember { mutableLongStateOf(0L) }
@@ -1147,6 +1158,16 @@ fun PlayerScreen(
     // stuck in portrait (heavy top/bottom letterboxing on any normal landscape video) plus a status/
     // nav-bar-shaped margin baked in on top of that.
     PlayerImmersiveEffect(followSensor = handset)   // R244 (FR-R244-7) — a phone follows the sensor
+    // R245 (FR-R245-4) — a NEW connection while this player is up is the hand-off; a session that was
+    // already connected when the player opened is not (the app routes play to the remote in that case).
+    LaunchedEffect(castLink) {
+        val was = castLinkSeen
+        castLinkSeen = castLink
+        if (handset && castLink == CastLinkState.CONNECTED && was != CastLinkState.CONNECTED && castHandoff != null) {
+            player.pause(); isPlaying = false
+            castHandoff(positionMs)
+        }
+    }
     // R244 (FR-R244-10) — S · M · L applied live to the caption renderer; phone-local.
     LaunchedEffect(subtitleSize) {
         if (handset) player.setSubtitleScale(when (subtitleSize) { 'S' -> 0.85f; 'L' -> 1.25f; else -> 1f })
@@ -1605,6 +1626,7 @@ fun PlayerScreen(
                 onBack = onBack,
                 onRotate = { landscapeForced = !landscapeForced; handsetControls?.setLandscape(landscapeForced); wake() },
                 onTitleTap = if (episodes != null) ({ epRailOpen = true; chromeVisible = true }) else null,
+                castSlot = if (castController != null) ({ CastButton() }) else null,
                 onSkipBack = { skip(-SKIP_BACK_MS) },
                 onPlayPause = { togglePlay() },
                 onSkipFwd = { skip(SKIP_FWD_MS) },
@@ -2392,7 +2414,7 @@ private fun EpisodeChip(colors: RaviloColors) {
  * active tab's) because the tab bar shows both tabs' flags regardless of which is active.
  */
 @Composable
-private fun TrackPicker(
+internal fun TrackPicker(
     colors: RaviloColors,
     pickerTab: Int,
     pickerLevel: Int,
@@ -3447,7 +3469,7 @@ private fun isOriginalMarked(title: String?): Boolean =
  * addendum §4). Plain (non-`@Composable`) — takes [lang] directly so it's callable from resolver code,
  * not just rendering; pass `LocalLang.current` from a composable call site.
  */
-private fun audioBadges(track: PlayerAudioTrack, originalLanguage: String?, lang: String): List<String> {
+internal fun audioBadges(track: PlayerAudioTrack, originalLanguage: String?, lang: String): List<String> {
     val badges = mutableListOf<String>()
     if (track.isDefault) badges += t("player.badge_default", lang)
     track.channels?.let { ch ->
@@ -3471,7 +3493,7 @@ private fun audioBadges(track: PlayerAudioTrack, originalLanguage: String?, lang
 
 /** R180 (FR-RV-ASP1-3) — jargon-free badge words for a subtitle row. Default and Signs-only (forced)
  *  may co-occur, per the spec. See [audioBadges] for why [lang] is explicit. */
-private fun subtitleBadges(track: PlayerSubtitleTrack, lang: String): List<String> {
+internal fun subtitleBadges(track: PlayerSubtitleTrack, lang: String): List<String> {
     val badges = mutableListOf<String>()
     if (track.isDefault) badges += t("player.badge_default", lang)
     if (track.forced) badges += t("player.badge_signs_only", lang)
@@ -3538,7 +3560,7 @@ private fun hasProvenanceMarker(title: String?): Boolean = title != null && PROV
 
 /** Per-row input to [buildLanguageGroups] — the shape both audio and subtitle tracks flatten to, so
  *  the grouping logic stays generic over R195's "audio gets the identical treatment for free" non-goal. */
-private data class PickerEntryInput(
+internal data class PickerEntryInput(
     val language: String?,
     val title: String?,
     val forced: Boolean,
@@ -3694,7 +3716,7 @@ internal fun resolveTrackChoice(
  * exactly the indices [choosePick] already knows how to select with — this function only regroups,
  * never renumbers the underlying tracks.
  */
-private fun buildLanguageGroups(entries: List<PickerEntryInput>): List<PickerLanguage> {
+internal fun buildLanguageGroups(entries: List<PickerEntryInput>): List<PickerLanguage> {
     val byLanguage = entries.withIndex().groupBy { (_, e) -> e.language?.lowercase() }
     // Group order = each language's first-occurrence position in the original track list (not
     // alphabetical) — preserves the pre-R195 flat picker's stream order, which callers/track

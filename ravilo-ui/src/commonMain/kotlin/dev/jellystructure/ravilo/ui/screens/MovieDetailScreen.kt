@@ -67,6 +67,7 @@ import dev.jellystructure.ravilo.ui.components.TitleLogoOrText
 import dev.jellystructure.ravilo.ui.components.TrailerOverlay
 import dev.jellystructure.ravilo.ui.focus.rememberEdgeBringIntoViewSpec
 import dev.jellystructure.ravilo.ui.i18n.str
+import dev.jellystructure.ravilo.ui.components.castConnectedDeviceName
 import dev.jellystructure.ravilo.ui.seams.RemoteImage
 import dev.jellystructure.ravilo.ui.theme.RaviloDimens
 import dev.jellystructure.ravilo.ui.theme.raviloHPad
@@ -333,7 +334,10 @@ private fun MovieDetailLoaded(
                         val runtimeMs = detail.runtime.toLong() * 60_000L
                         val minsLeft = if (isResume && ps != null && runtimeMs > 0)
                             ((runtimeMs - ps.resumeMs) / 60_000L).toInt() else 0
+                        // R245 (FR-R245-4) — while connected, the primary action casts and says so.
+                        val castDevice = castConnectedDeviceName()
                         val playLabel = when {
+                            castDevice != null -> str("cast.play_on", mapOf("device" to castDevice))
                             played -> str("action.play_again")          // R142
                             // Bug fix: detail.runtime is the item's metadata runtime (whole minutes,
                             // e.g. from TMDB/NFO) which can understate the actual media file's duration
