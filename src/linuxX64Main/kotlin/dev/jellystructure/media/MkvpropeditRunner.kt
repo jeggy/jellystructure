@@ -15,17 +15,22 @@ import platform.posix.popen
 
 object MkvpropeditRunner {
 
+    // Phase 234 (FR-234-2) — mkvpropedit edits in place; the per-file lock keeps it off a file a remux is
+    // replacing. The post-edit repair takes the lock on its own (FfmpegRunner), never inside this one.
     suspend fun setLanguage(filePath: String, streamIndex: Int, language: String): Boolean =
-        runCommand(TrackCommandBuilder.mkvLanguage(filePath, streamIndex, language) ?: return false) &&
+        runLocked(filePath, TrackCommandBuilder.mkvLanguage(filePath, streamIndex, language) ?: return false) &&
             verifyAndRepairLayout(filePath)
 
     suspend fun setForced(filePath: String, forcedStreamIndex: Int, sameTypeIndices: List<Int>): Boolean =
-        runCommand(TrackCommandBuilder.mkvForced(filePath, forcedStreamIndex, sameTypeIndices)) &&
+        runLocked(filePath, TrackCommandBuilder.mkvForced(filePath, forcedStreamIndex, sameTypeIndices)) &&
             verifyAndRepairLayout(filePath)
 
     suspend fun setDefault(filePath: String, defaultStreamIndex: Int, sameTypeIndices: List<Int>): Boolean =
-        runCommand(TrackCommandBuilder.mkvDefault(filePath, defaultStreamIndex, sameTypeIndices)) &&
+        runLocked(filePath, TrackCommandBuilder.mkvDefault(filePath, defaultStreamIndex, sameTypeIndices)) &&
             verifyAndRepairLayout(filePath)
+
+    private suspend fun runLocked(filePath: String, cmd: String): Boolean =
+        MediaFileLock.withLock(filePath) { runCommand(cmd) }
 
     /**
      * Phase 201 (FR-201-2/3) — the post-condition every mkvpropedit edit above must satisfy: `Tracks`
@@ -42,10 +47,12 @@ object MkvpropeditRunner {
         val layout = runCatching {
             SystemFileSystem.source(Path(filePath)).buffered().use { scanMkvLayout(it) }
         }.getOrDefault(MkvLayout.UNKNOWN)
-        if (layout != MkvLayout.TRACKS_AFTER_CLUSTER) return true
-        Logger.warn("mkvpropedit evicted Tracks past the first Cluster on $filePath — repairing via ffmpeg remux", "track")
+        // Phase 234 (FR-234-1) — the same predicate the sweep and Fix now use. Until 234 this gate repaired
+        // only TRACKS_AFTER_CLUSTER, so an edit that left an overflowing element reported success.
+        if (!layout.needsRepair) return true
+        Logger.warn(layout.repairSentence(filePath), "track")
         val repaired = FfmpegRunner.repairTracksLayout(filePath)
-        if (!repaired) Logger.warn("Tracks-layout repair failed for $filePath — file remains unplayable in Ravilo", "track")
+        if (!repaired) Logger.warn("Layout repair failed for $filePath — file remains unplayable in Ravilo", "track")
         return repaired
     }
 
@@ -53,6 +60,11 @@ object MkvpropeditRunner {
     @OptIn(ExperimentalForeignApi::class)
     private suspend fun runCommand(cmd: String): Boolean {
         Logger.info("mkvpropedit: $cmd", "track")
+        return runGated(cmd)
+    }
+
+    @OptIn(ExperimentalForeignApi::class)
+    private suspend fun runGated(cmd: String): Boolean {
         return dev.jellystructure.ops.ProcessGate.withPermit {
             memScoped {
                 val pipe = popen("$cmd 2>&1", "r")

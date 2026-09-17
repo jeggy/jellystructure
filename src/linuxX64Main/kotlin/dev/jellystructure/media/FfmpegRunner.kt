@@ -50,7 +50,12 @@ object FfmpegRunner {
         return runRemux(filePath, withOwnershipPreservation(escaped, core))
     }
 
-    private suspend fun runRemux(filePath: String, cmd: String): Boolean {
+    // Phase 234 (FR-234-2) — every remux of one file shares one temp name; [MediaFileLock] makes that safe.
+    private suspend fun runRemux(filePath: String, cmd: String): Boolean = MediaFileLock.withLock(filePath) {
+        runRemuxUnlocked(filePath, cmd)
+    }
+
+    private suspend fun runRemuxUnlocked(filePath: String, cmd: String): Boolean {
         val ok = runCommand(cmd)
         if (!ok) {
             val tmp = tmpPath(filePath)
@@ -96,6 +101,15 @@ object FfmpegRunner {
      * non-suspending; it uses `runBlocking` internally to bridge into a suspend broadcaster.
      */
     suspend fun runRemuxTracked(
+        filePath: String,
+        cmd: String,
+        durationSeconds: Double?,
+        onProgress: (pct: Double, speed: String?, etaSeconds: Long?) -> Unit,
+    ): Boolean = MediaFileLock.withLock(filePath) {
+        runRemuxTrackedUnlocked(filePath, cmd, durationSeconds, onProgress)
+    }
+
+    private suspend fun runRemuxTrackedUnlocked(
         filePath: String,
         cmd: String,
         durationSeconds: Double?,
