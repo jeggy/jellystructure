@@ -6,8 +6,7 @@
 
 ## Status
 
-`✓ Built` 2026-09-17 — spec'd and fixed the same hour; Android compiles; not dev-reviewed; the fix
-itself not yet re-checked on a device. Client-only (`PlayerScreen.kt`).
+`✓ Built` 2026-09-17 — spec'd and fixed the same hour; Android compiles; not dev-reviewed; **re-checked on the stue TV 2026-09-17** (release `1.20-20`): *Resume* on Ruffy plays (the crash is gone, crash buffer empty), and after an episode switch the elapsed label matches the thumb with no stray tick. Client-only (`PlayerScreen.kt`).
 
 **Numbering:** verified against `STATUS.md` 2026-09-17 — Ravilo taken through **R257**.
 
