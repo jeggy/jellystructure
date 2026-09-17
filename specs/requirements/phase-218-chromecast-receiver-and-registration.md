@@ -327,3 +327,21 @@ above.
   the concurrent-encode number (OQ2) are untouched guesses; what happens to a receiver row when the admin
   switches Chromecast off (OQ5) is unchanged — the row stays, the button disappears, and a redeem while
   disabled is refused because `handoff` 404s without a capability.
+
+## Amendment (2026-09-18) — the first real cast: the receiver page could not load its own framework
+
+First end-to-end attempt (Pixel 9 → Soveværelse TV, app published, the TV answering `APP_AVAILABLE`):
+the TV accepted the launch (`LAUNCH_STATUS: USER_ALLOWED`) and then ran **no application**; the phone
+sat on *Connecting…*. `/cast/` was served with the site-wide CSP — `script-src 'self'` — which blocks
+`https://www.gstatic.com/cast/sdk/libs/caf_receiver/v3/cast_receiver_framework.js`, the one script a
+receiver cannot self-host. No framework ⇒ `context.start()` never runs ⇒ the device discards the page.
+FR-218-7's "only a real cast can confirm this" was right, and this is what the first one found.
+
+- **FR-218-1a** — `/cast/**` gets its own policy (`CAST_RECEIVER_CSP`): Google's Cast origin (`www.gstatic.com`) and `ajax.googleapis.com` — CAF fetches the Shaka HLS
+  player from there at runtime, protocol-relative, so the sources carry no scheme — for script, style and font; blob workers; no `X-Frame-Options`/`frame-ancestors` (some cast shells embed
+  the page; it is non-interactive). Every other path keeps the strict policy unchanged.
+- **FR-218-4a (open)** — the reachability check should also fail when the served policy would block
+  an external script the page references; today it only proves the page is fetchable.
+- e2e: every external script origin in `/cast/` must appear in its `script-src`; the admin page still
+  carries `X-Frame-Options: DENY` and no Google origin.
+

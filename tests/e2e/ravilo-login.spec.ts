@@ -109,3 +109,23 @@ test.describe("Ravilo web reaches its backend", () => {
     expect(res.status()).toBe(401);
   });
 });
+
+// The Chromecast receiver must be allowed to load Google's Cast framework. The site-wide policy says
+// script-src 'self'; under it the receiver never started and a real TV showed nothing (2026-09-18).
+test("the cast receiver page may load the Cast framework it depends on", async ({ request }) => {
+  const res = await request.get("/cast/");
+  expect(res.status()).toBe(200);
+  const html = await res.text();
+  const external = [...html.matchAll(/<script[^>]+src="(https:\/\/[^"/]+)/g)].map((m) => m[1]);
+  expect(external.length).toBeGreaterThan(0);
+  const scriptSrc = (res.headers()["content-security-policy"] ?? "").split(";").find((d) => d.trim().startsWith("script-src")) ?? "";
+  for (const origin of external) expect(scriptSrc, `CSP blocks ${origin}`).toContain(new URL(origin).host);
+  // …and the HLS player the framework fetches by itself at runtime, which no <script> tag names.
+  expect(scriptSrc).toContain("ajax.googleapis.com");
+  expect(res.headers()["x-frame-options"]).toBeUndefined();
+
+  const admin = await request.get("/");
+  expect(admin.headers()["x-frame-options"]).toBe("DENY");
+  expect(admin.headers()["content-security-policy"]).not.toContain("gstatic");
+});
+

@@ -114,7 +114,13 @@ private class Receiver {
         }
         val et = cast.framework.events.EventType
         playerManager.addEventListener(et.TIME_UPDATE) { ev: dynamic -> onTime(((ev.currentMediaTime as Double?) ?: 0.0) * 1000) }
-        playerManager.addEventListener(et.PLAYER_STATE_CHANGED) { _: dynamic -> onPlayerState() }
+        // R245 amendment (2026-09-18) — there is no `PLAYER_STATE_CHANGED` in CAF's EventType (checked
+        // against the live framework): the constant was `undefined`, `addEventListener(undefined)`
+        // throws, and the whole receiver died in start() before `context.start()` — so a TV that had
+        // accepted the launch showed nothing. The three state events CAF does define:
+        for (type in listOf(et.PLAYING, et.PAUSE, et.BUFFERING)) {
+            playerManager.addEventListener(type) { _: dynamic -> onPlayerState() }
+        }
         playerManager.addEventListener(et.MEDIA_FINISHED) { _: dynamic -> onFinished() }
         playerManager.addEventListener(et.ERROR) { _: dynamic -> /* a media error surfaces as buffering/finished; the phone's remote shows what it can */ }
         playerManager.addEventListener(et.SEEKED) { _: dynamic -> flashOverlay() }
