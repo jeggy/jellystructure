@@ -161,6 +161,17 @@ check "$SEGCSS" "Phase 223 drag timecode bubble (.dragtip)" ".sx .dragtip{"
 check "$SEGCSS" "Phase 223 zoom-strip overlay bar (.zseg)" ".sx .wave .zseg{"
 check "$SEGCSS" "Phase 223 bars no longer clip their handles" "cursor:grab;overflow:visible;white-space:nowrap}"
 
+# 2026-09-17 — season sheet: `.stat` is ALSO app.css's dashboard stat card, whose overflow:hidden let
+# .sxstage squash the strip to a clipped sliver; and the drawer's thumbnail inherited the trim view's
+# min-height:230px, which the 16/9 aspect ratio turned into a 409px min-WIDTH spilling over the text.
+# The mockup loads no app.css and so never shows either; only the served page does.
+check "$SEGCSS" "season sheet stats strip resets app.css's .stat card" \
+  ".sx .stat{display:flex;gap:10px;flex-wrap:wrap;flex:none;padding:0;border:0;"
+check "$SEGCSS" "drawer thumbnail stays in its 250px column" \
+  ".sx .drawer .vid{flex:none;aspect-ratio:16/9;min-height:0;width:100%;align-self:start}"
+check "$SEGCSS" "season sheet State column wide enough for one line" \
+  "grid-template-columns:26px 62px 186px 1fr 196px 128px"
+
 if [ "$fail" -eq 0 ]; then
   echo "OK — every design-sync-fragile CSS rule tracked here is present."
 else
