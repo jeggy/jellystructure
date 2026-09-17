@@ -257,6 +257,52 @@
 
   /* ===================== gradient helper ===================== */
   function hashHue(s){ let h = 0; for (let i=0;i<s.length;i++) h = (h*31 + s.charCodeAt(i)) % 360; return h; }
+
+  /* ===================== row order (prospective phase 225) =====================
+     A workbench row lines up one of three automatic ways, each in either direction, optionally
+     behind an ordered hand-picked prefix. Absent `sort` = { by:'added', descending:true } — the
+     order every row has today (HomeFeedService: compareByDescending(recencyKey).thenBy(title)).
+     `pinned` is an ordered list of ids (titles in this mockup); a pin the filter no longer matches
+     is KEPT and skipped on the TV, never deleted behind the admin's back. The server sorts; the TV
+     renders — nothing here reaches Ravilo but the already-ordered items. */
+  // How many titles the TV shows of a row. Configurable per row (owner decision 2026-09-17); the
+  // default is what the viewer sees today. The number shown is also the ceiling on hand-picks.
+  const ROW_LIMIT_DEFAULT = 10, ROW_LIMIT_MIN = 3, ROW_LIMIT_MAX = 30;
+  function rowLimit(state){ const n = state && +state.limit; return n >= ROW_LIMIT_MIN && n <= ROW_LIMIT_MAX ? n : ROW_LIMIT_DEFAULT; }
+  const ORDER_KEYS = {
+    added: { label: 'Date added',   dir: ['newest first', 'oldest first'] },
+    title: { label: 'Title',        dir: ['A → Z', 'Z → A'] },
+    year:  { label: 'Release year', dir: ['newest release first', 'oldest release first'] }
+  };
+  const DEFAULT_SORT = { by: 'added', descending: true };
+  // demo "date added" — days ago, deterministic per title (the catalog's real field is Jellyfin's DateCreated)
+  function addedDays(t){ return 1 + (hashHue(t.title + '|added') * 7) % 720; }
+  // Jellyfin's own SortName drops a leading article — the same key the browse page should use
+  function sortName(t){ return t.title.replace(/^(the|a|an|de|det|en|et)\s+/i, '').toLowerCase(); }
+  const CMP = {
+    added: (x, y) => addedDays(x) - addedDays(y) || sortName(x).localeCompare(sortName(y)),        // natural = newest first
+    title: (x, y) => sortName(x).localeCompare(sortName(y)),
+    year:  (x, y) => (y.year || 0) - (x.year || 0) || sortName(x).localeCompare(sortName(y))       // natural = newest release first
+  };
+  function rowSort(state){ const s = state && state.sort; return s && ORDER_KEYS[s.by] ? { by: s.by, descending: s.descending !== false } : Object.assign({}, DEFAULT_SORT); }
+  function isDefaultSort(state){ const s = rowSort(state); return s.by === 'added' && s.descending; }
+  // 'added'/'year' comparators already run newest-first, so descending = natural; 'title' natural is A → Z (= descending:false)
+  function autoSorted(list, state){ const s = rowSort(state); const out = list.slice().sort(CMP[s.by]); const natural = s.by === 'title' ? !s.descending : s.descending; return natural ? out : out.reverse(); }
+  function pinsOf(state){ return (state && state.pinned) || []; }
+  // matched pins in pin order, then everything else under the automatic key
+  function orderTitles(matches, state){
+    const pins = pinsOf(state).map(n => matches.find(t => t.title === n)).filter(Boolean);
+    return pins.concat(autoSorted(matches.filter(t => !pins.includes(t)), state));
+  }
+  function stalePins(matches, state){ return pinsOf(state).filter(n => !matches.some(t => t.title === n)); }
+  function dirLabel(state){ const s = rowSort(state); return ORDER_KEYS[s.by].dir[s.descending ? 0 : 1]; }
+  function keyPhrase(state){ const s = rowSort(state); return s.by === 'title' ? 'title ' + dirLabel(state) : dirLabel(state); }
+  // the row-list summary, in words — never "asc/desc"; '' when the row runs today's order with no hand-picks
+  function orderSummary(state){
+    const n = pinsOf(state).length;
+    if (n) return n + ' hand-picked, then ' + keyPhrase(state);
+    return isDefaultSort(state) ? '' : keyPhrase(state);
+  }
   function grad(s){ const h = hashHue(s); return `linear-gradient(150deg, hsl(${h} 46% 36%), hsl(${(h+40)%360} 52% 14%))`; }
   // value-picker glyphs: a person avatar (initials on a stable gradient) + an audio-language flag
   function personInitials(name){ const p = String(name).trim().split(/\s+/); return (((p[0]||'')[0]||'') + ((p[1]||'')[0]||'')).toUpperCase(); }
@@ -393,6 +439,14 @@
     function render() {
       let matches = evaluate(state);
       if (opts.channelContext && opts.channelContext.state) matches = matches.filter(t => matchesState(t, opts.channelContext.state));
+      const isRow = !isChannel && !isLibrary;
+      const ordered = isRow ? orderTitles(matches, state) : matches;
+      const pins = pinsOf(state), stale = isRow ? stalePins(matches, state) : [];
+      const handpick = isRow && (state.handpick || pins.length > 0);
+      const livePinN = pins.filter(p => matches.some(t => t.title === p)).length;
+      const showRank = isRow && (handpick || !isDefaultSort(state));
+      const limit = isRow ? rowLimit(state) : Infinity;
+      const full = handpick && pins.length >= limit;
       const titleVal = state.title || autoTitle();
       const isCustom = isChannel && state.chColor && CH_COLORS.indexOf(state.chColor) === -1;
       const hero = state.hero || {};
@@ -469,6 +523,8 @@
               <div style="flex:1;min-width:160px;${isLibrary?'display:none;':''}"><span class="cf-eyebrow">${isChannel?'Channel name':'Row title'}</span>
                 <input class="input cf-title" style="margin-top:7px;" value="${titleVal.replace(/"/g,'&quot;')}" placeholder="${autoTitle()}"></div>
             </div>
+
+            ${isRow ? orderHtml() : ''}
 
             ${isChannel ? `
             <hr class="dash" style="margin:16px 0;">
@@ -560,15 +616,15 @@
           </div>
 
           <div class="cf-side">
-            <span class="cf-eyebrow">Matches now</span>
+            <span class="cf-eyebrow">Matches now${showRank ? ' · in this order' : ''}</span>
             <div class="row center" style="gap:10px;margin-top:10px;">
               <span class="cf-matchcount"><span class="n">${matches.length}</span><span class="l">titles${opts.channelContext ? ' in “' + opts.channelContext.name + '”' : ''}</span></span>
               <span class="spacer"></span><span class="badge ${matches.length?'ok':'warn'}">${matches.length?'live':'none'}</span>
             </div>
             <div class="cf-prevgrid" style="display:grid;grid-template-columns:repeat(4,1fr);gap:7px;margin-top:12px;">
-              ${matches.slice(0,12).map(m => `<div class="cf-mp" title="${m.title} · ${m.year}" style="background:${grad(m.title)};"><span class="t">${m.title}</span></div>`).join('') || '<div class="tiny muted" style="grid-column:1/-1;padding:18px 4px;">No titles match — loosen a condition.</div>'}
+              ${ordered.slice(0,12).map((m, i) => `<div class="cf-mp${handpick && i >= livePinN ? ' cf-auto' : ''}${isRow && i >= limit ? ' cf-past' : ''}" title="${m.title} · ${m.year}" style="background:${grad(m.title)};">${showRank ? `<span class="cf-rk">${i+1}</span>` : ''}<span class="t">${m.title}</span></div>`).join('') || '<div class="tiny muted" style="grid-column:1/-1;padding:18px 4px;">No titles match — loosen a condition.</div>'}
             </div>
-            ${matches.length>12 ? `<div class="tiny muted" style="margin-top:8px;">+${matches.length-12} more</div>` : ''}
+            ${matches.length>12 ? `<div class="tiny muted" style="margin-top:8px;line-height:1.5;">+${matches.length-12} more${isRow && matches.length > limit ? ` · the TV shows the <b>first ${limit}</b> in this order, See all shows every one` : ''}</div>` : ''}
             ${isChannel ? `${channelWM(state, state.title||autoTitle(), {cls:'studio-wm cf-chprev', style:'width:100%;height:46px;margin-top:14px;', font:'1.05rem'})}<div class="tiny muted center-x" style="margin-top:8px;">channel button preview</div>` : ''}
             ${isLibrary ? '' : `<a href="library.html" class="tiny" style="display:block;margin-top:14px;color:var(--acc-ink);">Open these ${matches.length} in Library ↗</a>`}
           </div>
@@ -581,6 +637,40 @@
         </div>`;
       renderBlocks();
       wire();
+
+      /* ---- Order section (rows only — system rows never open this editor; channels have no order of their own) ---- */
+      function orderHtml(){
+        const s = rowSort(state);
+        const keySeg = cls => `<div class="seg ${cls}">${Object.keys(ORDER_KEYS).map(k => `<span class="${s.by===k && (cls !== 'cf-ordkeys' || !handpick) ? 'on' : ''}" data-okey="${k}">${ORDER_KEYS[k].label}</span>`).join('')}${cls === 'cf-ordkeys' ? `<span class="${handpick?'on':''}" data-okey="pins">Hand-picked first</span>` : ''}</div>`;
+        const dirBtn = `<button type="button" class="cf-dirbtn" data-odir title="Flip the direction">${dirLabel(state)} <span class="arr">⇅</span></button>`;
+        const scopeName = opts.channelContext ? opts.channelContext.name : null;
+        let body = '';
+        if (handpick) {
+          const livePins = pins.map(n => matches.find(t => t.title === n)).filter(Boolean);
+          const autoRest = autoSorted(matches.filter(t => !livePins.includes(t)), state);
+          const SHOW = 6;
+          const pinTile = (t, i) => `<div class="cf-mp cf-pin" draggable="true" data-pin="${t.title}" title="${t.title} · ${t.year} — drag to reorder, or across the seam to release" style="background:${grad(t.title)};"><span class="cf-rk">${i+1}</span><span class="cf-unpin" data-unpin="${t.title}" title="Release">✕</span><span class="t">${t.title}</span></div>`;
+          const staleTile = (n, i) => `<div class="cf-mp cf-pin cf-stale" draggable="true" data-pin="${n}" title="${n} — hand-picked but no longer matches this row; skipped on the TV" style="background:${grad(n)};"><span class="cf-rk">${i+1}</span><span class="cf-stalemark">!</span><span class="cf-unpin" data-unpin="${n}" title="Release">✕</span><span class="t">${n}</span></div>`;
+          const pinTiles = pins.map((n, i) => { const t = matches.find(x => x.title === n); return t ? pinTile(t, i) : staleTile(n, i); }).join('');
+          const autoTile = t => `<div class="cf-mp cf-auto${full ? ' cf-nopick' : ''}" draggable="${full ? 'false' : 'true'}" data-auto="${t.title}" title="${t.title} · ${t.year}${full ? ' — all ' + limit + ' places are hand-picked' : ' — drag left of the seam (or click) to hand-pick'}" style="background:${grad(t.title)};"><span class="t">${t.title}</span></div>`;
+          body = `
+          <div class="cf-strip">
+            <div class="cf-zone cf-zone-pins" data-dropzone="pins">${pinTiles || `<div class="tiny muted cf-zone-empty">Drag a title here — or click one on the right — to hand-pick it</div>`}</div>
+            <div class="cf-seam" title="Left: your order. Right: the automatic order"><span>then ${keyPhrase(state)}</span></div>
+            <div class="cf-zone cf-zone-auto" data-dropzone="auto">${autoRest.slice(0, SHOW).map(autoTile).join('')}${autoRest.length > SHOW ? `<span class="cf-more">+${autoRest.length - SHOW}</span>` : ''}${!autoRest.length ? '<span class="tiny muted" style="padding:0 6px;">every match is hand-picked</span>' : ''}</div>
+          </div>
+          <div class="tiny muted" style="margin-top:8px;line-height:1.5;"><b>${livePins.length} hand-picked</b>, then ${autoRest.length} automatic${autoRest.length + livePins.length > limit ? ` (the TV shows the first ${limit})` : ''}. ${full ? `All <b>${limit}</b> places are hand-picked — release one, or show more titles, to pick another.` : `Drag a title <b>left of the seam</b> to hand-pick it, back across to let the sort place it; drag within the left zone to reorder. Up to <b>${limit}</b> — the number this row shows.`}</div>
+          ${stale.length ? `<div class="note warn cf-ordnote"><span class="badge warn" style="flex:none;">${stale.length} skipped</span><span class="tiny">${stale.length === 1 ? `<b>${stale[0]}</b> is hand-picked but no longer matches this row${scopeName ? ` inside “${scopeName}”` : ''}. It stays in your list and is <b>skipped on the TV</b> until it matches again, or you release it.` : `<b>${stale.length} hand-picked titles</b> (${stale.join(', ')}) no longer match this row${scopeName ? ` inside “${scopeName}”` : ''}. They stay in your list and are <b>skipped on the TV</b> until they match again, or you release them.`}</span></div>` : ''}
+          <div class="cf-thenby"><span class="tiny" style="font-weight:600;">Then the rest by</span>${keySeg('cf-ordfallback')}${dirBtn}<span class="spacer"></span>${full ? '' : `<span class="cf-pinsearch" data-pinsearch title="Find a title to hand-pick">⌕ <span class="muted">Pin a title…</span></span>`}</div>`;
+        } else {
+          body = `<div class="tiny muted" style="margin-top:8px;line-height:1.5;">The TV shows this row's <b>first ${limit}</b> titles in this order; the rest are one Select away on <b>See all</b>, which opens in the same order.${isDefaultSort(state) ? ' This is the default — what every row does today.' : ''}</div>`;
+        }
+        return `<div class="cf-order">
+          <div class="row center" style="gap:8px;"><span class="cf-eyebrow">Order</span><span class="tiny muted">how the row lines up on the TV${scopeName ? ` — inside “${scopeName}”, hand-picks outside it simply don’t appear` : ''}</span></div>
+          <div class="row center" style="gap:10px;margin-top:8px;flex-wrap:wrap;">${keySeg('cf-ordkeys')}${handpick ? '' : dirBtn}<span class="spacer"></span><span class="cf-limit" title="How many titles the TV shows of this row (${ROW_LIMIT_MIN}–${ROW_LIMIT_MAX})"><span class="tiny">Show</span><button type="button" data-olimit="-1" ${limit <= Math.max(ROW_LIMIT_MIN, pins.length) ? 'disabled' : ''}>−</button><b>${limit}</b><button type="button" data-olimit="1" ${limit >= ROW_LIMIT_MAX ? 'disabled' : ''}>+</button><span class="tiny muted">titles</span></span></div>
+          ${body}
+        </div>`;
+      }
     }
 
     /* ---------------- recursive block renderer ---------------- */
@@ -684,6 +774,55 @@
 
     function wire() {
       node.querySelectorAll('[data-x]').forEach(b => b.onclick = dismiss);
+      /* ---- Order ---- */
+      const ensureSort = () => { state.sort = rowSort(state); return state.sort; };
+      node.querySelectorAll('.cf-ordkeys [data-okey], .cf-ordfallback [data-okey]').forEach(s => s.onclick = () => {
+        const k = s.dataset.okey;
+        if (k === 'pins') { state.handpick = true; state.pinned = state.pinned || []; render(); return; }
+        ensureSort().by = k;
+        if (s.closest('.cf-ordkeys')) {   // choosing a plain key on the top row leaves hand-pick mode
+          state.handpick = false;
+          if ((state.pinned || []).length) { state.pinned = []; toast('Hand-picks released · the row now runs ' + keyPhrase(state)); }
+        }
+        render();
+      });
+      node.querySelectorAll('[data-odir]').forEach(b => b.onclick = () => { const s = ensureSort(); s.descending = !s.descending; render(); });
+      const canPin = () => { const ok = (state.pinned || []).length < rowLimit(state); if (!ok) toast('All ' + rowLimit(state) + ' places are hand-picked · release one or show more titles'); return ok; };
+      node.querySelectorAll('[data-olimit]').forEach(b => b.onclick = () => {
+        const next = rowLimit(state) + (+b.dataset.olimit);
+        const floor = Math.max(ROW_LIMIT_MIN, (state.pinned || []).length);   // never below the pins — a pin is never dropped behind the admin's back
+        if (next < floor) { toast('Release a hand-pick to show fewer than ' + floor); return; }
+        state.limit = Math.min(ROW_LIMIT_MAX, next); render();
+      });
+      node.querySelectorAll('[data-unpin]').forEach(b => b.onclick = e => { e.stopPropagation(); state.pinned = (state.pinned || []).filter(n => n !== b.dataset.unpin); render(); });
+      node.querySelectorAll('[data-auto]').forEach(t => t.onclick = () => { if (!canPin()) return; state.pinned = (state.pinned || []).concat([t.dataset.auto]); render(); });
+      // drag: a tile carries its title; dropping on a pin inserts before it, on the pins zone appends, on the auto zone releases
+      let dragName = null;
+      node.querySelectorAll('.cf-strip [draggable]').forEach(t => {
+        t.ondragstart = e => { dragName = t.dataset.pin || t.dataset.auto; t.classList.add('dragging'); try { e.dataTransfer.setData('text/plain', dragName); e.dataTransfer.effectAllowed = 'move'; } catch (err) {} };
+        t.ondragend = () => { dragName = null; t.classList.remove('dragging'); node.querySelectorAll('.cf-zone.over, .cf-pin.over').forEach(z => z.classList.remove('over')); };
+      });
+      node.querySelectorAll('.cf-strip .cf-pin').forEach(p => {
+        p.ondragover = e => { if (!dragName || dragName === p.dataset.pin) return; e.preventDefault(); e.stopPropagation(); p.classList.add('over'); };
+        p.ondragleave = () => p.classList.remove('over');
+        p.ondrop = e => { e.preventDefault(); e.stopPropagation(); if (!dragName) return; if (!(state.pinned || []).includes(dragName) && !canPin()) return; const list = (state.pinned || []).filter(n => n !== dragName); const at = list.indexOf(p.dataset.pin); list.splice(at < 0 ? list.length : at, 0, dragName); state.pinned = list; render(); };
+      });
+      node.querySelectorAll('.cf-strip [data-dropzone]').forEach(z => {
+        z.ondragover = e => { if (!dragName) return; e.preventDefault(); z.classList.add('over'); };
+        z.ondragleave = () => z.classList.remove('over');
+        z.ondrop = e => { e.preventDefault(); if (!dragName) return; if (z.dataset.dropzone === 'pins' && !(state.pinned || []).includes(dragName) && !canPin()) return; const list = (state.pinned || []).filter(n => n !== dragName); if (z.dataset.dropzone === 'pins') list.push(dragName); state.pinned = list; render(); };
+      });
+      const ps = node.querySelector('[data-pinsearch]');
+      if (ps) ps.onclick = () => {
+        let matches = evaluate(state);
+        if (opts.channelContext && opts.channelContext.state) matches = matches.filter(t => matchesState(t, opts.channelContext.state));
+        const cur = state.pinned || [];
+        const avail = autoSorted(matches.filter(t => !cur.includes(t.title)), { sort: { by: 'title', descending: false } });
+        popover(ps, `<div style="padding:6px 6px 2px;"><input class="input cf-pinq" type="text" placeholder="Type a title…" style="width:100%;box-sizing:border-box;"></div><div class="cf-pinres">${avail.map(t => `<div class="cf-popitem" data-val="${t.title}"><span class="cf-mp" style="width:20px;height:30px;background:${grad(t.title)};"></span><span class="wb-vname">${t.title}</span><span class="wb-vcount">${t.year}</span></div>`).join('') || '<div class="cf-popitem" style="opacity:.6;cursor:default;">Every match is already hand-picked</div>'}</div>`, v => { if (!canPin()) return; state.pinned = (state.pinned || []).concat([v]); render(); });
+        const pop = document.querySelector('.cf-pop'); const inp = pop && pop.querySelector('.cf-pinq'); if (!inp) return; inp.focus();
+        inp.oninput = () => { const q = inp.value.trim().toLowerCase(); pop.querySelectorAll('.cf-pinres .cf-popitem[data-val]').forEach(it => { it.style.display = !q || it.dataset.val.toLowerCase().includes(q) ? '' : 'none'; }); };
+        inp.onkeydown = e => { if (e.key === 'Enter') { const first = [...pop.querySelectorAll('.cf-pinres .cf-popitem[data-val]')].find(it => it.style.display !== 'none'); if (first) first.click(); } };
+      }
       node.querySelectorAll('.cf-include span').forEach(s => s.onclick = () => { state.include = s.dataset.inc; render(); });
       function refreshChPrev(){ const box = node.querySelector('.cf-chprev'); if (box){ const fresh = el(channelWM(state, state.title||autoTitle(), {cls:'studio-wm cf-chprev', style:'width:100%;height:46px;margin-top:14px;', font:'1.05rem'})); box.replaceWith(fresh); } }
       const ti = node.querySelector('.cf-title'); if (ti) ti.oninput = () => { state.title = ti.value; const ct0 = node.querySelector('.cf-chtext'); if (ct0) ct0.placeholder = ti.value || autoTitle(); refreshChPrev(); };
@@ -883,7 +1022,11 @@
     function commit() {
       const matches = evaluate(state);
       const title = state.title || autoTitle();
-      const summary = querySummary(state) || 'all titles';
+      const isRow = !isChannel && !isLibrary;
+      if (isRow && !(state.pinned || []).length) state.handpick = false;   // "Hand-picked first" with nothing picked saves as the plain key
+      const tail = isRow ? [orderSummary(state), rowLimit(state) !== ROW_LIMIT_DEFAULT ? 'shows ' + rowLimit(state) : ''].filter(Boolean).join(' · ') : '';
+      const ordTag = tail ? '  ·  ' + tail : '';
+      const summary = (querySummary(state) || 'all titles') + ordTag;
       const heroTag = isChannel && state.hero && state.hero.on ? '  ·  ⊳ hero' : '';
       const rowsTag = isChannel && state.rows && state.rows.mode === 'custom' ? '  ·  ▤ custom rows' : '';
 
@@ -1116,8 +1259,13 @@
       const src = r.querySelector('.src').textContent;
       const vals = (src.match(/“([^”]+)”/g) || []).map(s => s.replace(/[“”]/g,''));
       const facet = src.startsWith('tag') ? 'tag' : 'genre';
-      r._cfState = { include:'all', root: mkGroup('and', [ mkGroup('or', [ mkCond(facet, 'isAny', vals.length ? vals : ['Drama']) ]) ]), title: r.querySelector('.nm').textContent.trim() };
-      bindRow(r);
+      // prospective 225 — a seeded row may declare its order: data-sort="title:asc" · data-pinned="Title A|Title B"
+      const ds = (r.dataset.sort || '').split(':');
+      const sort = ORDER_KEYS[ds[0]] ? { by: ds[0], descending: ds[1] !== 'asc' } : Object.assign({}, DEFAULT_SORT);
+      const pinned = r.dataset.pinned ? r.dataset.pinned.split('|').map(s => s.trim()).filter(Boolean) : [];
+      const limit = rowLimit({ limit: r.dataset.limit });
+      r._cfState = { include:'all', root: mkGroup('and', [ mkGroup('or', [ mkCond(facet, 'isAny', vals.length ? vals : ['Drama']) ]) ]), title: r.querySelector('.nm').textContent.trim(), sort, pinned, limit, handpick: pinned.length > 0 };
+      bindRow(r, true);
     });
     document.querySelectorAll('#herolist .cfg-row').forEach(r => {
       r.dataset.kind = 'hero';
@@ -1142,7 +1290,8 @@
   }
 
   window.RaviloBuilders = { openFilter, openHero, evaluate, matchesState, rowCoverage, grad, TITLES, FACETS,
-    mkGroup, mkCond, migrateState, pruneState, stateHasConditions, nodeHasValues: nodeLive, groupSummary, querySummary };
+    mkGroup, mkCond, migrateState, pruneState, stateHasConditions, nodeHasValues: nodeLive, groupSummary, querySummary,
+    orderTitles, orderSummary, rowSort, rowLimit, ORDER_KEYS, ROW_LIMIT_DEFAULT };
   document.addEventListener('DOMContentLoaded', () => { seed(); wireAdds(); });
   if (document.readyState !== 'loading') { seed(); wireAdds(); }
 })();

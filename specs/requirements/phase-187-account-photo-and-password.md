@@ -115,7 +115,7 @@ Probe the live OpenAPI document first, including the **request body shape** for 
 and the exact field names on the password body (`CurrentPw`/`NewPw`). If any is absent or refuses, stop
 and re-scope rather than building around it — and record what the server actually said, the way 163 does.
 
-### ✅ Probed 2026-09-05 against `https://jellyfin.example.net` (10.11.11) — all three exist, none at the believed path
+### ✅ Probed 2026-09-05 against `https://jellyfin.jebster.net` (10.11.11) — all three exist, none at the believed path
 
 Read-only probe: the live `/api/docs/openapi.json` (2.3 MB) plus `GET` requests against real users.
 **Every believed path in the table above is wrong.** None returns 405 the way 163's did — they simply do

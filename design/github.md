@@ -1,9 +1,108 @@
 repo: jeggy/jellystructure
 branch: main
 path: specs/   (plus root STATUS.md — both mirrored read-only from the repo); presentation/ (full mirror, ours to build on); design/ (our export — now confirmed to flow BOTH ways, see 2026-09-15)
-tree: main @ a5eeb8a82b50 (2026-09-16 pull)
+tree: main @ 7f22d328d5cb (2026-09-17 pull, 07:43)
 
-## Last sync (2026-09-16, later — pull: the mobile player + casting design brief, and our specs confirmed upstream)
+## Last sync (2026-09-17, 07:43 — sync check: repo unchanged where we mirror it; three design files pulled; four specs + five design files owed OUT)
+date: 2026-09-17T07:43:14Z
+direction: pull-side verified, **export owed**. `STATUS.md` (535 338 B), both constitutions, both plans and every
+README are **byte-identical** to `main` — nothing to re-pull there. **No new phase specs upstream:** a regex sweep
+for `phase-22[5-9]` / `phase-2[3-9]x` / `phase-R25[3-9]+` over all 217 spec files matched **0**, so **225 · 226 · 227
+/ R253 are still unclaimed upstream** and our numbers hold. Counts: `specs/requirements` 97 upstream vs **100**
+local (our 225/226/227), `specs/ravilo/requirements` 92 vs **93** (our R253), research reports 21 = 21.
+- **Pulled (local was behind):** `app/segments.css` (22 974 → 24 290 B — a further 222/223 editor change dev-side
+  since this morning's pull), `app/metadata.html` (+4 B) and `app/ravilo-users.html` (+190 B), neither of which had
+  been size-checked in the 06:04 pass. Everything else in `design/` that we did not touch is byte-identical.
+- **Owed OUT (this is the whole export):** four new specs —
+  `specs/requirements/phase-225-row-order-sort-and-hand-picked-prefix.md`,
+  `phase-226-chromecast-registration-fields.md`, `phase-227-one-public-address.md`,
+  `specs/ravilo/requirements/phase-R253-see-all-opens-in-row-order.md` — plus `app/Row Sorting - Directions.html`
+  and `app/row-sorting-directions.js` (new), and the four files we edited: `app/ravilo-builders.js` (82 550 →
+  99 342 B), `app/ravilo-builders.css` (18 411 → 23 332), `app/ravilo-config.html` (75 201 → 76 662),
+  `app/settings.html` (124 753 → 130 472). `CLAUDE.md` and `github.md` go to the repo root as always.
+  **Leave alone on export:** the repo's `STATUS.md`, `specs/research-reports/` and `scripts/`.
+- The tree hash moved (`0a6b45ea77b4` → `7f22d328d5cb`) on work outside our mirror (`src/`, `ravilo-ui/`) plus the
+  three design files above.
+
+## Previous sync (2026-09-17, 06:04 — pull: everything from 2026-09-16 shipped, 13 new dev specs, repo edits to our mockups pulled back)
+date: 2026-09-17T06:04:26Z
+direction: pull (repo → this project). 26 spec/STATUS files mirrored + **10 design files pulled BACK over our own
+local copies**, nothing exported. Base commit unknown (the recorded `a5eeb8a82b50` is a tree hash), so this was a
+tree + byte-size diff of every design file against `main`, as on 2026-09-15.
+- **The whole 2026-09-16 export landed and is `✓ Built`.** `phase-218`, `phase-R244`, `phase-R245` are canonical
+  on `main` (24.5 / 22.4 / 25.6 KB — dev-review addenda on all three; pulled over our drafts), and `STATUS.md` has
+  every one of 216 · 217 · 218 · R243 · R244 · R245 as **✓ Built, implemented 2026-09-16** — the phone player, casting,
+  the receiver, the taxonomy tabs and the Towo removal all shipped within a day of being drawn. `design/ravilo/Ravilo
+  Receiver.html`, `mobile/ravilo-mobile-player.css`, the Settings Chromecast card and the i18n strings are all
+  byte-identical upstream; `design/github.md` is identical (71 717 B); **`design/claude-console/` is gone** from
+  `main` — the deletion we owed happened. **Nothing was pending export before this turn.**
+- **13 new dev-authored specs pulled, every one `✓ Built` (2026-09-16/17):** admin **219** (a lost progress report
+  is a lost write — `PlaybackWriter`), **220** (no ffmpeg per still on the interactive path), **221** (tell the
+  operator an integration points at a dead endpoint — Settings → Notifications carries per-target webhook
+  outcomes), **222** (segment editor seek + timeline truth), **223** (segment editor drag, slide and snap), **224**
+  (Ravilo's real version + name in Jellyfin's dashboard); Ravilo **R246** (remembered track reaches the next
+  episode — the F1 finding of the sweep below), **R247** (every language gets its name), **R248** (Home knows what you
+  just watched — `home_changed` push), **R249** (episode badge not covered by *Soon*), **R250** (J's backdrop
+  finished — readable scrim, panel inside the safe area), **R251** (player chrome that doesn't eat the keypress),
+  **R252** (Ravilo knows its version). Plus the research report
+  `specs/research-reports/stue-tv-test-sweep-2026-09-16.md` (an on-device sweep of the stue TV; F1 = the remembered
+  subtitle never reaching the next episode, R241's fix notwithstanding — now R246). README files, both plans, both
+  constitutions and `STATUS.md` re-pulled.
+- **⚠ Repo-side edits to OUR mockups pulled back in** (local was behind on every one, all overwritten):
+  `app/segments.js` (32.5 → 42.4 KB) + `app/segments.css` (16.6 → 23.0 KB) — 222/223's seek, drag, slide and snap
+  built into the editor mockup dev-side; `app/wf.css` (50.3 → 51.8 KB) and `app/app.css` (14.3 → 16.2 KB) plus a
+  **new `app/fonts/` directory** (`sora`, `space-grotesk`, `jetbrains-mono` .woff2 — the admin now self-hosts its
+  three faces); `app/library.html` (5 B); `ravilo/ravilo-app.js` (143.7 → 144.3 KB) and `ravilo/ravilo.css` (94.9 →
+  95.2 KB) — R249/R250's badge precedence and scrim. Every other Ravilo design file (`ravilo-data.js`, `-browse.js`,
+  `-i18n.js`, `-focus.js`, `-player.js/.css`, both HTML mockups, both mobile stylesheets, `mobile-directions.css`,
+  both direction canvases) is byte-identical to `main`.
+- **Design work this sync inherits: none from the 13 specs** — 219/220/222/223/224 and R246–R252 are backend,
+  Compose or already-drawn-dev-side; 221's Notifications outcome line is the one admin surface, and it is small
+  enough to draw when the Settings page is next open.
+- **Numbers taken this turn: 225 · 226 · 227 / R253 (all `Planned`, none dev-reviewed). Next free: 228 / R254.**
+- **227 — One public address, configured once** (`phase-227-one-public-address.md`; supersedes FR-218-5's storage
+  location and FR-218-4's *Your receiver address* field). 218's dev review had put `public_url` **inside the
+  `chromecast` block** and named it "the first shipped instance of the explicit reach address pattern" — wrong home:
+  an installation with Chromecast off has nowhere to put it. Now a single **Public address** field in Settings →
+  Connections (origin only — `https://js.heimatún.fo`, no trailing slash, no path; rejected if it isn't absolute
+  https with a host), `public_url` at the **root** of `AppConfig`, a silent migration from the nested key, and
+  every external URL derived in one place (`+ "/cast/"` for 226's row, the reachability probe, and
+  `RaviloConfig.cast.receiver_url`) — never from a request's `Host` header, which a reverse proxy makes a lie.
+  The Chromecast card's own address field is **deleted**: the string now appears exactly once, in 226's step 3.
+  Unset is a first-class state (the row says *Set your public address above first*, no Copy, switch still
+  operable). **Built into `app/settings.html`** (`#pub-field`, a second fenced preview control for the unset
+  state, and the status line now names the derivation).
+- **226 — Chromecast registration: name the fields, give the values** (`phase-226-chromecast-registration-fields.md`,
+  supersedes **FR-218-6 only**; 218 is `✓ Built` so its other FRs are untouched). The shipped card summarised the
+  Google registration in three steps; the admin is reading *Google's* form, which asks for two fields by name. Now
+  five steps: the console as a real link (`https://cast.google.com/publish/`) with the one-time US$5 fee, *Add New
+  Application → Custom Receiver*, then one block per field with the console's **exact label**, the exact value and a
+  Copy — **Receiver Application URL** = `public_url` + `/cast/` (trailing slash required, https only, same string as
+  the card's own address field so they cannot disagree) and **Package Name** = `dev.jellystructure.ravilo` (a build
+  constant from `ravilo-android/build.gradle.kts:15`, `.debug` variant noted) — plus *everything else can stay as it
+  is*, the Application ID on save (the old hint said "after step 1", which was wrong), and test-device-or-publish
+  with the serial-number hint. No config, route or behaviour change; FR-218-7's honest verification untouched.
+  **Built into `app/settings.html`** (`#cc-steps`, page-local `.cc-fv*`).
+- **Drawn, then BUILT, then spec'd this turn (pending export):** `app/Row Sorting - Directions.html` +
+  `app/row-sorting-directions.js` (round-1 canvas: three hand-pick directions, states, TV consequence, ten
+  decisions); the owner picked the recommended **direction 2 · Arrange the row**, so the **Order section is now
+  built into the row editor** — `app/ravilo-builders.js` (`ORDER_KEYS`/`rowSort`/`autoSorted`/`orderTitles`/
+  `stalePins`/`orderSummary`, the `orderHtml()` block, drag/click/search pin handlers, `seed()` reads
+  `data-sort`/`data-pinned`, the row-list summary gains the order in words), `app/ravilo-builders.css` (`.cf-order`,
+  `.cf-strip`/`.cf-seam`/`.cf-zone-*`, `.cf-pin`/`.cf-stale`, `.cf-thenby`, `.cf-rk`) and `app/ravilo-config.html`
+  (three seeded workbench rows showing the three summary shapes). Specs:
+  `specs/requirements/phase-225-row-order-sort-and-hand-picked-prefix.md` (two additive `RowConfig` fields,
+  server-side resolver replacing seven hard-coded comparators, `SortName`, stale pins kept-and-skipped, the editor)
+  and `specs/ravilo/requirements/phase-R253-see-all-opens-in-row-order.md` (See all's initial Sort = the row's key,
+  `BrowseCard.sort_name`, two new Sort options — the only new strings; pins never reach the client).
+  **Owner answered all five design questions the same day** and both specs + the editor were updated: default
+  newest first; See all never puts pins first; genre rows don't exist (every non-system row is a workbench filter);
+  pins only from matches; and **the row's shown count is now per-row config** (`RowConfig.limit`, 3–30, default
+  **10** — what the viewer sees today, not the server's 30) **and is the ceiling on hand-picks** (a *Show N
+  titles* stepper in the Order section; the − step never goes below the pin count). One new open question for the
+  dev team: where the TV's client-side trim to 10 lives, since `HomeFeedService` sends 30.
+
+## Previous sync (2026-09-16, later — pull: the mobile player + casting design brief, and our specs confirmed upstream)
 date: 2026-09-16T00:10:22Z
 direction: pull (repo → this project). 4 files mirrored, nothing exported. The design round this brief
 asked for was then drawn locally — see *Pending export*.
@@ -617,10 +716,20 @@ direction: pull (repo → this project)
 | (none — backend/client-only) | **203–211** (cold health cache, reader-blocking writes, Ravilo reads waiting on Jellyfin, collection fan-out, three `prewarm_subtitles` defects, undocumented Jellyfin routes, sidecar bulk-reorder no-op, `PlaystateCache` episode ids), **R241** (remembered track vs ISO-639 granularity) |
 | ravilo/Ravilo TV.html, ravilo/ravilo-app.js, ravilo/ravilo-browse.js, ravilo/ravilo-data.js, ravilo/ravilo.css, ravilo/ravilo-i18n.js, ravilo/Ravilo Mobile.html | **216** + **R243** — Discover's Studios / Networks / Genres tabs (the viewer-side of `app/metadata.html`). Design-authored: mockups 2026-09-15, both specs 2026-09-16, both `Planned`, neither dev-reviewed. **Pending export** |
 | ravilo/Ravilo Mobile.html, ravilo/mobile/ravilo-mobile-player.css, ravilo/Ravilo Receiver.html, ravilo/ravilo-i18n.js, app/settings.html (Connections → Chromecast) | **R244** (`phase-R244-phone-player-chrome.md`) · **218** (`phase-218-chromecast-receiver-and-registration.md`) · **R245** (`phase-R245-cast-sender-receiver-and-remote.md`) — the phone player (direction 2 · Thumb rail, **no playback speed**), casting (remote direction 2 · Now playing, mini bar, server-pushed cast button), the receiver's ten screens, and the admin Chromecast card. Design-authored: mockups + specs 2026-09-16, all three `Planned`, none dev-reviewed. **Pending export** |
+| app/settings.html (Connections) | **218** (built) + **226** (`phase-226-chromecast-registration-fields.md`, supersedes FR-218-6) — the guided Google registration: five steps, the console URL as a link, one copyable row per console field (Receiver Application URL · Package Name) — and **227** (`phase-227-one-public-address.md`, supersedes FR-218-5's storage location) — a single root-level **Public address** field every external URL derives from; the Chromecast card's own address field deleted. Written + built 2026-09-17, both `Planned`, not dev-reviewed. **Pending export** |
+| app/ravilo-config.html, app/ravilo-builders.js, app/ravilo-builders.css, app/Row Sorting - Directions.html (+ row-sorting-directions.js) | **225** (`phase-225-row-order-sort-and-hand-picked-prefix.md`) + **R253** (`phase-R253-see-all-opens-in-row-order.md`) — per-row Order for workbench rows: Date added · Title · Release year in either direction, or Hand-picked first with a fallback key; server resolves, TV renders, See all opens in the same order. Design-authored: canvas + build + both specs 2026-09-17, both `Planned`, neither dev-reviewed. Constrained by R187, R219/R233 (system rows exempt), R59/R143 (rows inside collections), 202 (mirror resolved config onto the feed). **Pending export** |
 | ravilo/Mobile Player - Directions.html (+ -print), ravilo/Casting - Directions.html (+ -print), ravilo/mobile-directions.css | **Design brief** `specs/ravilo/design-brief-mobile-player-and-cast-2026-09-16.md` §A/§B/§C/§F + research report `ravilo-mobile-player-chromecast-ios-2026-09-16.md`. **Round 1 directions only, drawn 2026-09-16 — no spec written, nothing built into the main mockups.** Constrained by R218 (waiting states, reused verbatim), R237 (failure copy), R180/R195 (the picker as a sheet), R234 (46 px / 13 px floors), R193 (no local MediaSession), R182 (the busy state), R222. Prospective phases **218 + R244** (mobile data) · **R245** (player chrome) · **219 + R248** (Chromecast). **Pending export** |
 | presentation/presentation-context.md, presentation/observed-issues-2026-08-18.md, presentation/screenshots/ | (not a spec — talk source material; documents R202 as its centerpiece and the R203–R207 triage) |
 
 ## Pending export
+- **2026-09-17 — Chromecast registration fields + one public address (226 · 227).** New:
+  `specs/requirements/phase-226-chromecast-registration-fields.md`, `specs/requirements/phase-227-one-public-address.md`.
+  Modified: `app/settings.html`.
+- **2026-09-17 — row order (225 / R253).** New: `specs/requirements/phase-225-row-order-sort-and-hand-picked-prefix.md`,
+  `specs/ravilo/requirements/phase-R253-see-all-opens-in-row-order.md`, `app/Row Sorting - Directions.html`,
+  `app/row-sorting-directions.js`. Modified: `app/ravilo-builders.js`, `app/ravilo-builders.css`, `app/ravilo-config.html`.
+  Nothing else is owed back — every repo-side edit to our mockups was pulled *in* this turn, not out.
+- ~~Everything below this line landed on `main` and is `✓ Built` as of the 2026-09-17 pull.~~
 - **2026-09-16 (latest) — the picks BUILT, and three specs.** New: `specs/ravilo/requirements/phase-R244-phone-player-chrome.md`,
   `specs/requirements/phase-218-chromecast-receiver-and-registration.md`,
   `specs/ravilo/requirements/phase-R245-cast-sender-receiver-and-remote.md`,
@@ -677,6 +786,7 @@ direction: pull (repo → this project)
   check on next export pass.
 
 ## Sync history
+- 2026-09-17: base commit unreachable, byte-size diff of every design file; **the entire 2026-09-16 export is canonical and `✓ Built`** (216 · 217 · 218 · R243 · R244 · R245, `claude-console/` deleted upstream); 13 new dev specs pulled (admin 219–224, Ravilo R246–R252, all `✓ Built`) + the stue-TV test-sweep report; **10 design files pulled BACK** (segments.js/.css for 222/223, wf.css, app.css, new `app/fonts/`, library.html, ravilo-app.js, ravilo.css); no design backlog from the specs; drew the Row Sorting directions canvas, **built direction 2 into the row editor** and wrote **225 / R253** (both `Planned`); next free **226 / R254**.
 - 2026-09-16 (latest, same turn): no repo I/O — the picks were **built** into `Ravilo Mobile.html` (+ a new served `mobile/ravilo-mobile-player.css`), a new `Ravilo Receiver.html` was drawn, the Chromecast card was added to `app/settings.html`, the player + casting strings landed in `ravilo-i18n.js`, and **three specs were written: R244 · 218 · R245** (all `Planned`, none dev-reviewed). Next free **219 / R246**.
 - 2026-09-16 (latest, same turn): no repo I/O — the round-1 picks were applied to both canvases and both print copies, playback **Speed removed from the design entirely** (owner decision), and the casting remote gained a **Subtitles &amp; audio** frame.
 - 2026-09-16 (latest): pulled the mobile-player/casting **design brief** + two research reports + STATUS.md; confirmed 216 / 217 / R243 are canonical on `main` (next free **218 / R244**, and the research report's proposed ladder shifts by one); byte-compared the whole Ravilo design mirror — **nothing to pull, the repo has not edited our mockups**; found `design/claude-console/` still upstream and owed a deletion; drew the two round-1 direction canvases + print copies and added the iPhone frame.

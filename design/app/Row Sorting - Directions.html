@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="design_doc_mode" content="canvas">
+<title>Row order — Directions</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Sora:wght@400;600;700&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="wf.css">
+<link rel="stylesheet" href="ravilo-builders.css">
+<style>
+body{background:transparent;font-family:'Sora',sans-serif}
+a{color:var(--acc-ink)}a:hover{color:var(--ink)}
+.lbl{position:absolute;width:560px;font-family:'Space Grotesk',sans-serif;color:#e8eaf2}
+.lbl h3{margin:0;font-size:1.15rem;letter-spacing:-.01em}
+.lbl small{display:block;margin-top:8px;font-family:'Sora',sans-serif;font-size:.78rem;line-height:1.65;color:#a9afc4;font-weight:400}
+.lbl small b{color:#d7dbe8;font-weight:600}
+.lbl .tag{display:inline-block;font-family:'JetBrains Mono',monospace;font-size:.66rem;letter-spacing:.09em;text-transform:uppercase;color:#7b6ef0;margin-bottom:7px}
+.lbl .tag.rec{color:#2dd49a}
+.fr{position:absolute;background:var(--bg);border:1px solid rgba(255,255,255,.1);border-radius:16px;padding:18px;box-shadow:0 24px 60px rgba(0,0,0,.45)}
+.fr.tight{padding:0;overflow:hidden}
+.panel{position:absolute;background:#fff;color:#171923;border-radius:18px;padding:34px 38px;box-shadow:0 24px 60px rgba(0,0,0,.4)}
+.panel h2{font-family:'Space Grotesk',sans-serif;font-size:1.5rem;margin:0 0 4px;letter-spacing:-.02em}
+.panel h4{font-family:'Space Grotesk',sans-serif;font-size:.95rem;margin:26px 0 8px;letter-spacing:-.01em}
+.panel p{font-size:.86rem;line-height:1.7;color:#3c4256;margin:0 0 10px}
+.panel .lead{font-size:.95rem;color:#232838}
+.panel b{color:#171923}
+.panel ul{margin:0;padding-left:18px}.panel li{font-size:.86rem;line-height:1.75;color:#3c4256;margin-bottom:5px}
+.panel .mono{font-family:'JetBrains Mono',monospace;font-size:.82em;background:#f0f1f6;padding:1px 5px;border-radius:4px}
+.panel hr{border:none;border-top:1px solid #e6e8ef;margin:22px 0}
+.panel .warn{background:#fff8e8;border:1px solid #f2d79a;border-radius:10px;padding:13px 15px;font-size:.84rem;line-height:1.65;color:#4a3c1c;margin:12px 0}
+.panel .warn b{color:#3a2e10}
+.panel .good{background:#eef7f2;border:1px solid #b9dfcc;border-radius:10px;padding:13px 15px;font-size:.84rem;line-height:1.65;color:#1f4634;margin:12px 0}
+.panel .good b{color:#123326}
+.three{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin:14px 0 4px}
+.three div{background:#f6f7fb;border:1px solid #e6e8ef;border-radius:11px;padding:13px 15px}
+.three h5{margin:0 0 5px;font-family:'Space Grotesk',sans-serif;font-size:.82rem}
+.three p{font-size:.78rem;line-height:1.6;margin:0;color:#4b5165}
+.dec{display:grid;grid-template-columns:28px 1fr;gap:12px;padding:12px 0;border-bottom:1px solid #e6e8ef}
+.dec:last-child{border-bottom:none}
+.dec .dn{font-family:'JetBrains Mono',monospace;font-size:.72rem;font-weight:700;color:#7b6ef0;padding-top:3px}
+.dec b{display:block;font-size:.88rem;margin-bottom:3px}
+.dec p{margin:0;font-size:.82rem;line-height:1.65}
+.dec .lean{display:inline-block;margin-top:5px;font-size:.78rem;background:#eef7f2;border:1px solid #b9dfcc;color:#1f4634;border-radius:6px;padding:2px 8px}
+.dec .lean b{display:inline;font-size:inherit;color:#123326}
+.tiny{font-size:.75rem;line-height:1.55}.muted{color:var(--ink-soft)}.mono{font-family:'JetBrains Mono',monospace}
+.row{display:flex;gap:10px}.row.center{align-items:center}.spacer{flex:1}
+
+/* ---- the new Order section + hand-pick UIs ---- */
+.rk{position:absolute;top:4px;left:4px;min-width:17px;height:17px;padding:0 4px;border-radius:5px;background:var(--hi);color:#fff;font:700 .58rem 'JetBrains Mono',monospace;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 6px rgba(0,0,0,.4)}
+.stale{position:absolute;top:4px;right:4px;width:17px;height:17px;border-radius:5px;background:var(--warn);color:#1a1405;font:700 .66rem 'JetBrains Mono',monospace;display:flex;align-items:center;justify-content:center}
+.cf-mp.auto{opacity:.62;filter:saturate(.6)}
+.cf-mp.dropped{opacity:.32;filter:grayscale(1)}
+.ord{margin-top:16px}
+.seg span{white-space:nowrap}.dirbtn{white-space:nowrap;display:inline-flex;align-items:center;gap:7px;padding:6px 11px;border:1px solid var(--line-2);border-radius:var(--radius-s);background:var(--fill-2);color:var(--ink);font:600 .82rem 'Sora',sans-serif;cursor:pointer}
+.dirbtn .arr{color:var(--acc-ink)}
+.thenby{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:10px;padding:10px 12px;border:1px dashed var(--line-2);border-radius:10px}
+.pickbox{margin-top:10px;padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--fill-2)}
+.strip{display:flex;align-items:stretch;gap:10px;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--fill-3);overflow:hidden}
+.zone{display:flex;gap:7px;align-items:center}
+.zone.pins{padding:6px;border-radius:8px;background:var(--hi-soft);border:1px solid rgba(123,110,240,.35)}
+.zone .cf-mp{width:52px}.zone.autoz{flex:1;min-width:0;overflow:hidden;position:relative}
+.seam{width:22px;flex:none;display:flex;align-items:center;justify-content:center;position:relative}
+.seam::before{content:'';position:absolute;top:0;bottom:0;left:50%;border-left:2px dashed var(--hi)}
+.seam span{writing-mode:vertical-rl;transform:rotate(180deg);font:600 .56rem 'JetBrains Mono',monospace;letter-spacing:.06em;text-transform:uppercase;color:var(--acc-ink);background:var(--fill-3);padding:4px 1px;position:relative;white-space:nowrap}
+.zone .more{position:absolute;right:0;top:50%;transform:translateY(-50%);font:600 .7rem 'JetBrains Mono',monospace;color:var(--ink);background:var(--fill-3);padding:6px 5px 6px 10px;box-shadow:-12px 0 12px var(--fill-3)}
+.pl-list{display:flex;flex-direction:column;gap:6px}
+.pl-item{display:flex;align-items:center;gap:9px;padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:var(--fill-3);font-size:.82rem}
+.pl-item .grab{color:var(--ink-dim);cursor:grab;letter-spacing:-2px}
+.pl-n{font:700 .66rem 'JetBrains Mono',monospace;color:var(--acc-ink);width:14px;text-align:right}
+.pl-t{flex:1;min-width:0}
+.suggbox{border:1px solid var(--line-2);border-radius:9px;background:var(--fill);overflow:hidden;box-shadow:0 14px 30px rgba(0,0,0,.35);margin-top:4px}
+.pl-sugg{display:flex;align-items:center;gap:9px;padding:6px 10px;font-size:.8rem}
+.pl-sugg:first-child{background:var(--hi-soft)}
+.grid6{display:grid;grid-template-columns:repeat(8,1fr);gap:7px}
+.searchin{white-space:nowrap;display:flex;align-items:center;gap:8px;background:var(--fill-2);border:1px solid var(--hi);box-shadow:0 0 0 3px var(--hi-soft);border-radius:var(--radius-s);padding:8px 11px;font-size:.84rem;color:var(--ink)}
+.searchin .ph{color:var(--ink-dim)}
+.tvrow{background:#0b0d14;border-radius:14px;padding:22px 26px 26px}
+.tvrow h4{font:700 1.15rem 'Space Grotesk',sans-serif;margin:0 0 14px;color:#eef0f7}
+.tvstrip{display:flex;gap:11px;align-items:center}
+.tvp{width:88px;aspect-ratio:2/3;border-radius:8px;position:relative;flex:none;box-shadow:0 8px 20px rgba(0,0,0,.5)}
+.tvp span{position:absolute;left:8px;right:8px;bottom:8px;font:700 .7rem 'Space Grotesk',sans-serif;color:#fff;text-shadow:0 1px 4px rgba(0,0,0,.7);line-height:1.1}
+.tvp.foc{outline:3px solid #fff;outline-offset:3px;transform:scale(1.06)}
+.tvp.seeall{background:#1b1f2c;border:1px dashed rgba(255,255,255,.25);display:flex;align-items:center;justify-content:center;text-align:center}
+.tvp.seeall span{position:static;color:#c9cee0;font-weight:600;text-shadow:none}
+.tvp.seeall b{font-size:1.2rem;color:#fff}
+.cf-modal{max-height:none}
+.srcline .badge{font-size:.6rem;padding:1px 6px;vertical-align:1px}
+</style>
+</head>
+<body>
+
+<!-- ============ CONTEXT PANEL ============ -->
+<div class="panel" style="left:0;top:0;width:1010px">
+  <h2>How a content row lines up</h2>
+  <p class="lead">Every workbench row on the TV is ordered the same way today, and nothing in the editor says so: <span class="mono">newest added first, then title</span>, cut at <b>30</b>. That is the right order for a row called <i>Newly Added</i> and an accidental one for a row called <i>Danish drama</i>. This round adds one section to the row editor — <b>Order</b> — with three automatic keys, a direction, and a fourth mode where you <b>hand-pick the front of the row</b> and let one of the automatic keys place everything behind it, so the row keeps working as it grows.</p>
+
+  <h4>What exists today, from the code</h4>
+  <div class="three">
+    <div><h5>One order, hard-coded</h5><p><span class="mono">HomeFeedService</span> sorts every filter row <span class="mono">compareByDescending(recencyKey).thenBy(title)</span> and takes <span class="mono">ROW_ITEM_LIMIT = 30</span>. <span class="mono">RowConfig</span> has no sort field at all.</p></div>
+    <div><h5>See all already sorts</h5><p>R187's browse page offers <span class="mono">recency · title · year</span> as a facet, client-side, over the full seed. The row and its See all page can therefore disagree about order — today they do, silently, whenever a viewer changes the facet.</p></div>
+    <div><h5>Rows live in two places</h5><p>The Home stack, and each collection's <b>Custom</b> row set (R59) — both are <span class="mono">RowConfig</span> verbatim, edited by the same modal. Whatever Order gets, both get for free; a Home row inherited into a collection is scoped, not re-sorted.</p></div>
+  </div>
+
+  <div class="warn"><b>Confirmed 2026-09-17: newest first is the intended default.</b> The brief says the default should stay <i>added date (asc)</i> “just like now”. What runs now is <b>newest first</b> (descending by added date). Every frame here keeps today's behaviour as the default and labels it <b>Date added · newest first</b>; if <i>oldest first</i> was genuinely meant, it is one flip of the direction control, not a different design.</div>
+
+  <h4>Rules held on every frame</h4>
+  <ul>
+    <li><b>The server sorts; the TV renders.</b> Order is a property of the row config, resolved in <span class="mono">HomeFeedService</span> — the constitution's render-never-compute rule. No client re-implements a comparator, and <b>no new string reaches en/da/fo</b>: the viewer sees an order, never a reason.</li>
+    <li><b>Hand-picks are a prefix, not a replacement.</b> Whatever you pin comes first, in your order; everything else the filter matches follows under the automatic key you choose. A row that gains fifty titles next month still lines up.</li>
+    <li><b>The 30 cap becomes “the first 30 in this order”.</b> Today the cap is invisible because it always cuts the oldest. Under <i>Title A → Z</i> it cuts at the letter D — the editor has to say so, and See all is where the rest lives.</li>
+    <li><b>System rows are not touched.</b> <i>Continue Watching</i> is chronological by activity (R219), <i>Newly Added</i> is by definition newest first. Neither gets an Order section.</li>
+    <li><b>Hand-picks belong to the row, not to the collection.</b> A pinned title outside the collection a row is rendered in simply doesn't appear there — nothing to configure twice.</li>
+  </ul>
+</div>
+
+<!-- ============ DECISIONS PANEL ============ -->
+<div class="panel" style="left:1060px;top:0;width:880px">
+  <h2>Decided — 2026-09-17</h2>
+  <p>The owner picked <b>direction 2 · Arrange the row</b> the same day; every lean below became the answer. <b>Built</b> into the row editor (<span class="mono">app/ravilo-config.html</span> → any workbench row → Order) and spec'd as <b>225</b> (config field, server resolver, editor) + <b>R253</b> (See all opens in the row's order). Decision 2 stays flagged for the owner in 225's open questions.</p>
+  <div class="dec"><span class="dn">01</span><div><b>Which hand-pick UI</b><p>1 · a numbered list with a search field · 2 · arrange the row itself on a strip with a visible seam · 3 · click tiles in the matches grid to number them.</p><span class="lean">Lean: <b>2 · Arrange the row</b> — the seam shows the fallback as a place, not a setting, and the strip is literally what the TV shows. Keep 1's search field inside it for finding a title among hundreds.</span></div></div>
+  <div class="dec"><span class="dn">02</span><div><b>The default</b><p>Date added · newest first (today's behaviour) vs the brief's literal “asc”.</p><span class="lean"><b>Decided: newest first.</b> The brief's "asc" was a slip.</span></div></div>
+  <div class="dec"><span class="dn">03</span><div><b>Direction as a toggle or as six options</b><p>One key picker + one direction button, or “Title A→Z / Title Z→A / …” spelled out.</p><span class="lean">Lean: <b>key + direction</b>; the summary line spells the pair out in words (“title A → Z”, “newest release first”), never “asc/desc”.</span></div></div>
+  <div class="dec"><span class="dn">04</span><div><b>Title sort ignores articles</b><p>“The Bear” under B, or under T? Jellyfin already carries <span class="mono">SortName</span>; our catalog does not store it.</p><span class="lean">Lean: <b>read Jellyfin's SortName</b> where it exists (the scanner already fetches the item), fall back to the title. Same answer as the browse page should give.</span></div></div>
+  <div class="dec"><span class="dn">05</span><div><b>Where a stale hand-pick goes</b><p>A pinned title that no longer matches the filter: drop it silently, keep it and skip it on the TV, or block Save.</p><span class="lean">Lean: <b>keep and skip</b>, marked in the editor — the filter may tighten temporarily, and a pin is deliberate work you shouldn't lose to a side effect.</span></div></div>
+  <div class="dec"><span class="dn">06</span><div><b>A ceiling on hand-picks</b><p>None, or the row cap.</p><span class="lean"><b>Decided: the row's own length is the ceiling.</b> The viewer sees 10 today, not 30; the number a row shows becomes a per-row setting (<span class="mono">Show N titles</span>, 3–30, default 10) and hand-picks can never exceed it — every pin is a tile the viewer can reach.</span></div></div>
+  <div class="dec"><span class="dn">07</span><div><b>Does See all open in the row's order?</b><p>Today R187's page opens on recency regardless. With a row sorted A → Z, See all opening on “newest” means the row and its page disagree on the first tile.</p><span class="lean"><b>Decided: yes for the automatic key, no for the pins.</b> The row's key becomes the page's initial facet value, the viewer re-sorts as today; hand-picks never reach the page (R253).</span></div></div>
+  <div class="dec"><span class="dn">08</span><div><b>Hand-picked titles and the 30 cap inside a collection</b><p>Pins are resolved against the scoped set, so a row pinned 5-deep on Home may show 3 pins in “Dansk TV”.</p><span class="lean">Lean: <b>that is correct, say it once in the editor</b> (the collection frame below) and never draw a pin's absence on the TV.</span></div></div>
+  <div class="dec"><span class="dn">09</span><div><b>Genre rows</b><p><span class="mono">RowKind.GENRE</span> is still in the enum.</p><span class="lean"><b>Decided: they don't exist any more</b> — every non-system row is a workbench filter; only CONTINUE and NEWLY_ADDED are exempt.</span></div></div>
+  <div class="dec"><span class="dn">10</span><div><b>Config shape</b><p>Additive on <span class="mono">RowConfig</span>, ignored by any installed TV (it never evaluates rows).</p><p class="mono" style="margin-top:6px;background:#f0f1f6;padding:8px 10px;border-radius:7px;font-size:.76rem;line-height:1.7">sort: { by: "added" | "title" | "year", descending: true }<br>pinned: [ "&lt;jellyfinId&gt;", … ]   // ordered; empty = no hand-picks</p><span class="lean">Decided, plus <span class="mono">limit: 3..30</span> (absent = 10). Absent <span class="mono">sort</span> reads as <span class="mono">added · descending</span>, so every existing row is byte-for-byte the same after the migration.</span></div></div>
+</div>
+
+<!-- ============ FRAME A — the Order section in the row editor ============ -->
+<div class="lbl" style="left:0;top:960px"><span class="tag">A · the editor</span><h3>One new section, between Include and the notes</h3><small>The row editor as it is today, plus <b>Order</b>. Three automatic keys and a direction. The matches panel on the right now renders in the chosen order and numbers the tiles — because from this point the order is the thing being edited, not just the membership. The count line says where the 30 cap falls.</small></div>
+
+<div class="fr tight" style="left:0;top:1090px;width:1000px">
+  <div class="cf-modal" style="max-width:none;border:none;box-shadow:none;border-radius:16px;">
+    <div class="cf-modal-head"><span class="cf-grab">⠿</span><b style="font-size:.98rem;">Edit content row</b><span class="badge">⚙ Workbench</span><span class="spacer"></span><span class="tiny muted">esc to cancel</span><span class="cf-x">✕</span></div>
+    <div class="cf-body">
+      <div class="cf-main">
+        <div class="row center" style="gap:8px;"><span class="cf-eyebrow">Query</span><span class="tiny muted">blocks combine top-to-bottom — click a connector pill to flip AND / OR</span></div>
+        <div class="cf-blocks">
+          <div class="cf-block"><div class="cf-block-head"><span class="cf-eyebrow">Block 1</span><span class="spacer"></span><span class="cf-rmblock">✕</span></div>
+            <div class="cf-cond"><span class="cf-facet">Genre</span><span class="cf-op">is any of</span><span class="vchip">Drama <span class="x">✕</span></span><span class="vchip add">＋ value</span></div>
+            <div class="cf-block-adds"><span class="vchip add">＋ condition</span></div>
+          </div>
+        </div>
+        <div class="cf-addblock-row"><span class="vchip add" style="padding:7px 12px;">＋ Add block</span></div>
+
+        <div class="row center" style="gap:14px;margin-top:16px;flex-wrap:wrap;">
+          <div><span class="cf-eyebrow">Include</span><div class="seg" style="margin-top:7px;"><span class="on">All</span><span>Movies</span><span>Series</span><span>Music videos</span></div></div>
+          <div style="flex:1;min-width:160px;"><span class="cf-eyebrow">Row title</span><div class="input" style="margin-top:7px;">Drama</div></div>
+        </div>
+
+        <div class="ord">
+          <div class="row center" style="gap:8px;"><span class="cf-eyebrow">Order</span><span class="badge info" style="font-size:.58rem;">new</span><span class="tiny muted">how the row lines up on the TV</span></div>
+          <div class="row center" style="gap:10px;margin-top:8px;flex-wrap:wrap;">
+            <div class="seg"><span>Date added</span><span class="on">Title</span><span>Release year</span><span>Hand-picked first</span></div>
+            <button type="button" class="dirbtn">A → Z <span class="arr">⇅</span></button>
+          </div>
+          <div class="tiny muted" style="margin-top:8px;line-height:1.5;">Rows show their <b>first 30</b> titles in this order; the rest are one Select away on <b>See all</b>, which opens in the same order. <span class="muted">Default is <b>Date added · newest first</b> — exactly what every row does today.</span></div>
+        </div>
+
+        <div class="note blue" style="margin-top:16px;display:flex;gap:10px;align-items:center;padding:10px 12px;"><span class="badge info" style="flex:none;">reusable</span><span class="tiny" style="flex:1;">This same filter works on the <b>Library</b> page — open it anytime from <span class="mono">Library → Filter</span>.</span></div>
+      </div>
+      <div class="cf-side">
+        <span class="cf-eyebrow">Matches now · in this order</span>
+        <div class="row center" style="gap:10px;margin-top:10px;"><span class="cf-matchcount"><span class="n" id="fa-count">0</span><span class="l">titles</span></span><span class="spacer"></span><span class="badge ok">live</span></div>
+        <div class="cf-prevgrid" id="fa-side" style="display:grid;grid-template-columns:repeat(4,1fr);gap:7px;margin-top:12px;"></div>
+        <div class="tiny muted" id="fa-more" style="margin-top:8px;line-height:1.5;"></div>
+        <a href="library.html" class="tiny" style="display:block;margin-top:14px;">Open these in Library ↗</a>
+      </div>
+    </div>
+    <div class="row center" style="padding:13px 16px;border-top:1px solid var(--line);background:var(--fill-2);"><span class="tiny muted">Added to the bottom of the stack · drag to reorder after.</span><span class="spacer"></span><span class="btn sm ghost">Cancel</span><span class="btn sm primary">Save changes</span></div>
+  </div>
+</div>
+
+<!-- ============ DIRECTIONS 1–3 — the hand-pick UI ============ -->
+<div class="lbl" style="left:0;top:1830px"><span class="tag">1 · Pinned list</span><h3>A numbered list, then the rest by…</h3><small>Choosing <b>Hand-picked first</b> opens a list. Search to add, drag to reorder, ✕ to release. Beneath it the fallback key and direction. Cheapest to build and the most familiar — but the list and the row look nothing alike, so you are imagining the TV rather than looking at it.</small></div>
+<div class="lbl" style="left:650px;top:1830px"><span class="tag rec">2 · Arrange the row · chosen · built</span><h3>The strip is the row; the seam is the rule</h3><small>The Order section shows the row as a horizontal strip. Left of the dashed <b>seam</b> are your hand-picks, numbered; right of it, dimmed, is what the automatic key puts next. Drag a tile across the seam to pin or release it; drag within the left zone to reorder. The seam's label <i>is</i> the fallback control. A search field pins a title you cannot see.</small></div>
+<div class="lbl" style="left:1300px;top:1830px"><span class="tag">3 · Number the grid</span><h3>Click a title to give it the next number</h3><small>No new surface: the matches grid on the right becomes the control. Click a tile → it takes the next number and jumps to the front; click again to release it. Fastest for “put these five first”, worst for “move #4 above #2” — you release and re-number. The unnumbered remainder is dimmed and sorted by the fallback key.</small></div>
+
+<div class="fr" style="left:0;top:1990px;width:620px">
+  <div class="ord" style="margin-top:0;">
+    <div class="row center" style="gap:8px;"><span class="cf-eyebrow">Order</span><span class="tiny muted">how the row lines up on the TV</span></div>
+    <div class="row center" style="gap:10px;margin-top:8px;flex-wrap:wrap;"><div class="seg"><span>Date added</span><span>Title</span><span>Release year</span><span class="on">Hand-picked first</span></div></div>
+    <div class="pickbox">
+      <div class="row center" style="margin-bottom:8px;"><span class="cf-eyebrow">Hand-picked · shown first</span><span class="spacer"></span><span class="tiny muted">drag to reorder</span></div>
+      <div class="pl-list" id="d1-list"></div>
+      <div class="searchin" style="margin-top:9px;">⌕ <span>Dr</span><span class="ph">|</span></div>
+      <div class="suggbox" id="d1-sugg"></div>
+    </div>
+    <div class="thenby"><span class="tiny" style="font-weight:600;">Then the rest by</span><div class="seg"><span>Date added</span><span class="on">Title</span><span>Release year</span></div><button type="button" class="dirbtn">A → Z <span class="arr">⇅</span></button></div>
+    <div class="row center" id="d1-rest" style="gap:6px;margin-top:10px;"></div>
+  </div>
+</div>
+
+<div class="fr" style="left:650px;top:1990px;width:620px">
+  <div class="ord" style="margin-top:0;">
+    <div class="row center" style="gap:8px;"><span class="cf-eyebrow">Order</span><span class="tiny muted">how the row lines up on the TV</span></div>
+    <div class="row center" style="gap:10px;margin-top:8px;flex-wrap:wrap;"><div class="seg"><span>Date added</span><span>Title</span><span>Release year</span><span class="on">Hand-picked first</span></div></div>
+    <div class="strip" id="d2-strip" style="margin-top:12px;"></div>
+    <div class="row center" style="gap:10px;margin-top:10px;flex-wrap:wrap;">
+      <span class="tiny muted" style="flex:1;line-height:1.5;">Drag a title <b>left of the seam</b> to hand-pick it, back across to let the sort place it. <b>5 hand-picked</b>, then 17 automatic.</span>
+    </div>
+    <div class="thenby"><span class="tiny" style="font-weight:600;">Then the rest by</span><div class="seg"><span>Date added</span><span class="on">Title</span><span>Release year</span></div><button type="button" class="dirbtn">A → Z <span class="arr">⇅</span></button><span class="spacer"></span><div class="searchin" style="flex:none;padding:5px 9px;font-size:.78rem;box-shadow:none;border-color:var(--line-2);">⌕ <span class="ph">Pin a title…</span></div></div>
+  </div>
+</div>
+
+<div class="fr" style="left:1300px;top:1990px;width:620px">
+  <div class="ord" style="margin-top:0;">
+    <div class="row center" style="gap:8px;"><span class="cf-eyebrow">Order</span><span class="tiny muted">how the row lines up on the TV</span></div>
+    <div class="row center" style="gap:10px;margin-top:8px;flex-wrap:wrap;"><div class="seg"><span>Date added</span><span>Title</span><span>Release year</span><span class="on">Hand-picked first</span></div></div>
+    <div class="thenby"><span class="tiny" style="font-weight:600;">Then the rest by</span><div class="seg"><span>Date added</span><span class="on">Title</span><span>Release year</span></div><button type="button" class="dirbtn">A → Z <span class="arr">⇅</span></button></div>
+    <div class="pickbox">
+      <div class="row center" style="margin-bottom:8px;"><span class="cf-eyebrow">Matches now · click to number</span><span class="spacer"></span><span class="badge info" style="font-size:.58rem;">5 hand-picked</span></div>
+      <div class="grid6" id="d3-grid"></div>
+      <div class="tiny muted" style="margin-top:9px;line-height:1.5;">Click a tile → it becomes <b>#6</b> and moves to the front. Click a numbered tile to release it; the ones after it renumber.</div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ STATES ============ -->
+<div class="lbl" style="left:0;top:2860px"><span class="tag">S1 · a hand-pick that no longer matches</span><h3>Kept in your list, skipped on the TV</h3><small>Include was switched to <b>Series</b>; <i>Druk</i> is a film. The pin stays where you put it, marked, and the strip says what the TV will do. Nothing is deleted behind your back — loosen the filter and it is back in place.</small></div>
+<div class="lbl" style="left:650px;top:2860px"><span class="tag">S2 · the same row inside a collection</span><h3>Pins outside the collection don't appear there</h3><small>The Home “Drama” row, inherited into <b>Dansk TV</b> and scoped to it. <i>Trom</i> and <i>Severance</i> are pinned on Home but aren't Danish TV, so here the row opens on <i>Klovn</i>. One sentence in the editor explains it; the TV shows nothing.</small></div>
+<div class="lbl" style="left:1300px;top:2860px"><span class="tag">S3 · the row list</span><h3>The summary line carries the order</h3><small>In <b>Layout → Content rows</b> each row's second line already says what it filters. It gains the order in words — never “asc/desc” — so you can read the whole stack without opening a row. System rows are unchanged.</small></div>
+
+<div class="fr" style="left:0;top:3000px;width:620px">
+  <div class="strip" id="s1-strip"></div>
+  <div class="note warn" style="margin-top:10px;display:flex;gap:10px;align-items:flex-start;padding:10px 12px;"><span class="badge warn" style="flex:none;">1 skipped</span><span class="tiny" style="line-height:1.5;"><b>Druk</b> is hand-picked but no longer matches this row — Include is set to Series. It stays in your list and is <b>skipped on the TV</b> until it matches again, or you release it.</span></div>
+</div>
+
+<div class="fr" style="left:650px;top:3000px;width:620px">
+  <div class="row center" style="gap:8px;margin-bottom:8px;"><span class="cf-eyebrow">On Home</span><span class="tiny muted">5 hand-picked</span></div>
+  <div class="row" id="s2-home" style="gap:6px;"></div>
+  <div class="row center" style="gap:8px;margin:14px 0 8px;"><span class="cf-eyebrow">Inside Dansk TV</span><span class="badge info" style="font-size:.58rem;">scoped</span></div>
+  <div class="strip" id="s2-strip"></div>
+  <div class="tiny muted" style="margin-top:10px;line-height:1.5;"><b>2 of 5</b> hand-picked titles aren't in Dansk TV, so they don't appear here. Hand-picks belong to the row, not the collection — there is nothing to set twice.</div>
+</div>
+
+<div class="fr" style="left:1300px;top:3000px;width:620px">
+  <div class="cfg-row"><span class="grab">⠿</span><span class="badge ok" style="flex:none;">system</span><div style="flex:1;"><div class="nm">Continue Watching</div><div class="src">Continue + Next Up, merged</div></div><span class="muted tiny">show</span><span class="toggle on"></span></div>
+  <div class="cfg-row"><span class="grab">⠿</span><span class="badge ok" style="flex:none;">system</span><div style="flex:1;"><div class="nm">Newly Added</div><div class="src">movies + series combined · newest first</div></div><span class="muted tiny">show</span><span class="toggle on"></span></div>
+  <div class="cfg-row"><span class="grab">⠿</span><span class="badge info" style="flex:none;">row</span><div style="flex:1;"><div class="nm">Drama</div><div class="src srcline">Genre is Drama · <b>title A → Z</b></div></div><span class="toggle on"></span><span class="btn sm ghost">✕</span></div>
+  <div class="cfg-row"><span class="grab">⠿</span><span class="badge info" style="flex:none;">row</span><div style="flex:1;"><div class="nm">Family favourites</div><div class="src srcline">Tag is family · <b>5 hand-picked, then newest first</b></div></div><span class="toggle on"></span><span class="btn sm ghost">✕</span></div>
+  <div class="cfg-row"><span class="grab">⠿</span><span class="badge info" style="flex:none;">row</span><div style="flex:1;"><div class="nm">Nordic noir</div><div class="src srcline">Tag is nordic-noir · <b>newest release first</b></div></div><span class="toggle on"></span><span class="btn sm ghost">✕</span></div>
+  <div class="cfg-row"><span class="grab">⠿</span><span class="badge info" style="flex:none;">row</span><div style="flex:1;"><div class="nm">Faroese</div><div class="src">Audio language is Faroese</div></div><span class="toggle on"></span><span class="btn sm ghost">✕</span></div>
+  <div class="tiny muted" style="margin-top:10px;line-height:1.5;">A row on the default order says nothing extra — <i>Faroese</i> above is newest first, like today, and the line stays as it was.</div>
+</div>
+
+<!-- ============ THE TV ============ -->
+<div class="lbl" style="left:0;top:3480px"><span class="tag">TV · the consequence</span><h3>The viewer sees an order, never a reason</h3><small>The “Drama” row on the stue TV with direction 2's five hand-picks first and A → Z behind them. No pin glyph, no “sorted by” caption, no new string in any language — the server pushes the row in this order and Ravilo draws it as it draws every row. <b>See all</b> carries every title and opens in the same order (decision 7).</small></div>
+<div class="fr tight" style="left:0;top:3650px;width:1000px">
+  <div class="tvrow"><h4>Drama</h4><div class="tvstrip" id="tv-strip"></div></div>
+</div>
+
+<script src="row-sorting-directions.js"></script>
+</body>
+</html>

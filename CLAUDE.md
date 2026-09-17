@@ -36,8 +36,87 @@ GitHub is the **source of truth**; we layer designs on top of it.
 - `specs/research-reports/` — dated deep-dives (research, not spec; may go stale).
 
 ## Where the work stands (read the repo `STATUS.md` for the live table)
-- **2026-09-16 (latest) — the picks are BUILT into the design files, and three specs are written:
-  R244 · 218 · R245. Next unassigned numbers: 219 / R246.**
+- **2026-09-17 (latest) — sync: everything from 2026-09-16 shipped in a day; per-row ORDER drawn, built into the
+  row editor, and spec'd as 225 / R253; the Chromecast registration card now names its fields (226) and the
+  public address became one field of its own (227). Next unassigned numbers: 228 / R254.**
+  - **227 — One public address, configured once** (supersedes FR-218-5's storage location + FR-218-4's *Your
+    receiver address* field). 218's dev review had put `public_url` inside the `chromecast` block; an
+    installation with Chromecast off had nowhere to put it. Now **one field in Settings → Connections**
+    (origin only, no trailing slash, no path), `public_url` at the root of `AppConfig`, a silent migration
+    from the nested key, and every external URL derived in one place — 226's *Receiver Application URL* row,
+    the reachability probe, `RaviloConfig.cast.receiver_url` — **never** from a request's `Host` header. The
+    Chromecast card's address field is deleted, so the string is rendered exactly once; unset is a
+    first-class state (*Set your public address above first*, no Copy, switch still operable). Built into
+    `app/settings.html`; 165's reach address should adopt the key when it is next opened.
+  - **226 — Chromecast registration: name the fields, give the values** (supersedes **FR-218-6 only**; 218 is
+    `✓ Built`). The card summarised the Google registration; the admin is reading *Google's* form, which asks for
+    two fields by name. Now five steps in `app/settings.html`: the console as a real link
+    (`cast.google.com/publish`) with the one-time US$5 fee, *Add New Application → Custom Receiver*, then one
+    copyable block per field carrying the console's **exact label** — **Receiver Application URL** = `public_url` +
+    `/cast/` (trailing slash, https only, the same string the card's address field shows) and **Package Name** =
+    `dev.jellystructure.ravilo` (a build constant from `ravilo-android/build.gradle.kts:15`; `.debug` noted) —
+    plus *everything else can stay as it is*, the Application ID appearing on save (the old hint said "after
+    step 1"), and test-device-or-publish with the serial-number hint. No config, route or behaviour change;
+    FR-218-7's honest verification untouched. Three questions left for dev in the spec (Google's labels may be
+    redrawn; whether Package Name is strictly required for a plain sender; what a Wasm sender with no package
+    name shows).
+  - **All six of yesterday's phases are `✓ Built`** (216 · 217 · 218 · R243 · R244 · R245 — implemented 2026-09-16;
+    canonical specs with dev-review addenda pulled over our drafts), and the dev team wrote and built **thirteen
+    more the same day**: admin 219–224, Ravilo R246–R252 (see `github.md`'s sync entry for the one-liners). Of
+    these only **221** (per-target webhook outcomes in Settings → Notifications) is an admin surface we do not
+    draw yet. `design/claude-console/` is finally gone upstream.
+  - **Repo-side edits to our mockups pulled back** (the mirror is two-way, and local was behind on all of them):
+    `app/segments.js`/`.css` (222/223's seek, drag, slide and snap built into the editor mockup dev-side),
+    `app/wf.css`, `app/app.css` + a **new `app/fonts/`** (the admin now self-hosts Sora, Space Grotesk and
+    JetBrains Mono), `app/library.html`, `ravilo/ravilo-app.js`, `ravilo/ravilo.css` (R249/R250).
+  - **New research report mirrored:** `specs/research-reports/stue-tv-test-sweep-2026-09-16.md` — an on-device
+    sweep; its F1 (a remembered subtitle never reaching the next episode, R241 notwithstanding — the `dan`
+    embedded vs `da` sidecar split is a perfect proxy for "the subtitle lives in a separate file") became R246.
+  - **Drawn: `app/Row Sorting - Directions.html`** (canvas; data + honest sorting in `row-sorting-directions.js`).
+    The brief: control how a single content row lines up — alphabetical, release year, date added, each way, or a
+    **custom order with a fallback** so the row keeps working as it grows; default stays what runs today. From the
+    code: `HomeFeedService` sorts every filter row `compareByDescending(recencyKey).thenBy(title)` and cuts at
+    `ROW_ITEM_LIMIT = 30`; `RowConfig` has no sort field; R187's See-all page has its own recency/title/year facet.
+    - **One new section in the row editor — Order:** `Date added · Title · Release year · Hand-picked first` plus a
+      direction button; the Matches panel renders in the chosen order and numbers the tiles; the count line says
+      where the 30 cap falls ("first 30 in this order, the rest on See all"). System rows get no Order section.
+    - **Three hand-pick directions** on one axis — what the control looks like: **1 Pinned list** (numbered list
+      + search, then-by row), **2 Arrange the row** (**recommended** — a horizontal strip that *is* the row; a
+      dashed **seam** separates hand-picks from the automatic remainder and its label is the fallback control;
+      drag across the seam to pin/release), **3 Number the grid** (click matches to number them; fastest, worst
+      for reordering).
+    - **States drawn:** a hand-pick that no longer matches (kept, marked, skipped on the TV — never deleted behind
+      your back); the same row inside a collection (pins outside the collection just don't appear — hand-picks
+      belong to the row, not the collection); the row-list summary line in words ("title A → Z", "5 hand-picked,
+      then newest first" — never asc/desc); and the TV row itself: **the viewer sees an order, never a reason** —
+      no pin glyph, no caption, **no new string in any language**; the server sorts, the TV renders.
+    - **⚠ Flagged for the owner:** the brief says the default is *added date (asc)* "just like now" — what runs now
+      is **newest first**. Every frame keeps today's behaviour; if oldest-first was meant it is one flip.
+    - **Ten decisions left open with a lean** (which UI → 2; default → newest first; key+direction not six options;
+      title sort via Jellyfin's `SortName`; stale pins kept-and-skipped; no pin ceiling but warn past 30; See all
+      opens in the row's order → the only client change, R253; pins resolve against the scoped set; GENRE rows get
+      Order too; config `sort {by, descending}` + ordered `pinned[]`, absent = today's order byte-for-byte).
+    - **Owner picked direction 2 the same day → BUILT into `app/ravilo-builders.js` / `.css` / `ravilo-config.html`:**
+      the Order section (four-way seg + direction button in words), the Matches panel numbered and re-ordered live,
+      the strip with the dashed seam (drag across to pin/release, drag within to reorder, click a dimmed tile to pin,
+      ✕ to release, a *Pin a title…* search), the *Then the rest by* fallback row, the stale-pin note, the past-30
+      note, the collection-scope hint, the toast on leaving hand-pick mode, and the row-list summary in words. Three
+      seeded rows in `ravilo-config.html` show the three summary shapes (`data-sort` / `data-pinned`).
+    - **Specs written 2026-09-17, both `Planned`, neither dev-reviewed:** **225**
+      (`phase-225-row-order-sort-and-hand-picked-prefix.md` — `RowSort? sort` + `List<String> pinned` on
+      `RowConfig`, absent = today's order byte-for-byte; one server resolver replacing seven hard-coded comparators;
+      title via Jellyfin's `SortName`; stale pins kept-and-skipped; pins scoped per collection; system rows exempt
+      and rejected; `Row` gains `sort_by`/`sort_descending`, never the pin list) and **R253**
+      (`phase-R253-see-all-opens-in-row-order.md` — See all's *initial* Sort = the row's key, `BrowseCard.sort_name`,
+      two new reverse Sort options as the only new strings, pins never reach the client, nothing changes on the row).
+    - **Owner answered the five open questions the same day (folded into both specs + the editor):** default is
+      **newest first**; See all never puts pins first; **genre rows don't exist** (every non-system row is a workbench
+      filter — `GENRE` is legacy); pins only from matches; **the row's shown count is per-row config**
+      (`RowConfig.limit`, 3–30, default **10** = what the viewer sees today) **and caps the hand-picks** — a *Show N
+      titles* stepper in the Order section, − disabled at the pin count, picking disabled at the ceiling. New open
+      question for dev: where the TV's trim to 10 lives, since the server sends 30.
+- **2026-09-16 — the picks are BUILT into the design files, and three specs are written:
+  R244 · 218 · R245.** *(All three `✓ Built` 2026-09-16 — see the entry above.)*
   - **Built into `ravilo/Ravilo Mobile.html`** (with a new served stylesheet `ravilo/mobile/ravilo-mobile-player.css`,
     linked *before* the inline `<style>` so the file's own frame rules still win, and every class prefixed
     `mp-` / `rc-` so nothing can collide with the TV's `ravilo-player.css` — the 187 lesson applied up front):

@@ -12,7 +12,7 @@
 2026-07-31 — "Klågere end du tror" has S01E01 watched, so S01E02 is its next episode, but the series
 appears in neither the DanskTV channel's Continue Watching nor Home's.
 
-## Investigation (live, jellyfin.example.net · user `jogvan`)
+## Investigation (live, jellyfin.jebster.net · user `jogvan`)
 - Jellyfin itself is **correct** for this series: `GET /Shows/NextUp?seriesId=…` returns S01E02, series
   `UserData` reads `PlayedPercentage: 10, UnplayedItemCount: 9`, and E01 is `Played: true`. Nothing is
   broken Jellyfin-side, and the series' network (`Viaplay`) is in the DanskTV channel's condition list —

@@ -38,6 +38,9 @@
   .cc-step { display: grid; grid-template-columns: 28px 1fr; gap: 12px; align-items: start; margin-bottom: 12px; }
   .cc-step p { margin: 0; font-size: .85rem; line-height: 1.55; color: var(--ink-soft); }
   .cc-step p b { color: var(--ink); font-weight: 600; }
+  /* everything after the step number belongs in the content column — a step may have
+     more than one child (step 3 carries the field group under its sentence). */
+  .cc-step > :not(.step-n) { grid-column: 2; }
   .cc-stat { display: grid; gap: 8px; }
   .cc-stat > div { display: flex; align-items: center; gap: 9px; font-size: .82rem; color: var(--ink-soft); }
   .cc-stat b { color: var(--ink); font-weight: 600; }
@@ -47,6 +50,17 @@
   .cc-num { display: flex; align-items: center; border: 1px solid var(--line-2); border-radius: var(--radius-s); overflow: hidden; width: 132px; }
   .cc-num b { width: 40px; height: 38px; display: flex; align-items: center; justify-content: center; background: var(--fill-3); font-size: 1rem; font-weight: 600; cursor: pointer; }
   .cc-num span { flex: 1; height: 38px; display: flex; align-items: center; justify-content: center; background: var(--fill-2); font-family: 'JetBrains Mono', monospace; font-size: .95rem; font-weight: 600; }
+  /* what to type where: one row per field the Google console asks for, its exact
+     label and the exact value. Verbatim labels matter more than brevity — the admin
+     is reading Google's form, not ours (the 212 lesson). */
+  .cc-fv { margin: 10px 0 0; border: 1px solid var(--line-2); border-radius: 10px; overflow: hidden; }
+  .cc-fv > div { padding: 10px 12px; background: var(--fill-2); }
+  .cc-fv > div + div { border-top: 1px solid var(--line); }
+  .cc-fvk { font-size: .8rem; font-weight: 600; color: var(--ink); }
+  .cc-fvk em { font-style: normal; font-weight: 400; color: var(--ink-soft); }
+  .cc-fvv { display: flex; align-items: center; gap: 10px; margin-top: 7px; padding: 7px 9px; border: 1px solid var(--line); border-radius: 8px;
+    background: var(--fill-3); font-family: 'JetBrains Mono', monospace; font-size: .82rem; color: var(--ink); word-break: break-all; }
+  .cc-fvv .btn { flex: none; }
 
   /* age-rating region cascade (Metadata tab) */
   .rc-list { list-style: none; margin: 12px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
@@ -292,6 +306,14 @@
           <div class="field fill"><label>Jellyfin URL</label><div class="input">http://jellyfin:8096</div><span class="hint">Same Docker network → no reverse proxy needed.</span></div>
           <div class="field fill"><label>Jellyfin machine token</label><div class="input">••••••••••••••a1c <span class="chk" id="chk-jellyfin" style="margin-left:auto;"><span class="dot ok"></span><span class="badge ok">204 · 38ms</span></span></div><span class="hint">Background-job token for POST /Items/{id}/Refresh.</span></div>
         </div>
+        <hr class="dash">
+        <!-- Public address (phase 227) — one field, one source of truth. Extracted from the
+             chromecast block, where 218's dev review had put it as "the first shipped instance
+             of the explicit reach address pattern". Anything that has to be reached from
+             outside derives its address from here; nothing re-derives one from the browser. -->
+        <div class="field" id="pub-field"><label>Public address</label>
+          <div class="input mono" id="pub-input">https://js.heimatún.fo <span class="spacer"></span><span class="chk" id="pub-chk"><span class="dot ok"></span><span class="badge ok">reachable over https</span></span></div>
+          <span class="hint" id="pub-hint">How Jellystructure is reached <b>from outside your network</b> — scheme and host only, no trailing slash. Checked from outside, just now. Used by the Chromecast receiver.</span></div>
       </div>
 
       <!-- CHROMECAST (phase 218) — the card IS the registration. jellystructure
@@ -306,19 +328,23 @@
 
         <div id="cc-on" style="display:none;">
           <hr class="dash">
-          <div class="field"><label>Your receiver address</label>
-            <div class="input mono">https://js.heimatún.fo/cast/ <span class="spacer"></span><span class="chk"><span class="dot ok"></span><span class="badge ok">reachable over https</span></span><span class="btn sm ghost">Copy</span></div>
-            <span class="hint">A Chromecast loads this page itself, so it has to be reachable from the internet over <b>https</b>. Checked from outside, just now.</span></div>
-
           <div class="box flat" id="cc-steps" style="padding:14px 15px;">
-            <div class="cc-step"><span class="step-n">1</span><p><b>Register an application</b> at the Google Cast Developer Console. Google charges a <b>one-time US$5</b> developer fee. Nothing else in Ravilo costs money.</p></div>
-            <div class="cc-step"><span class="step-n">2</span><p>Choose <b>Custom Receiver</b> and paste the address above.</p></div>
-            <div class="cc-step" style="margin-bottom:0;"><span class="step-n">3</span><p>Add your Chromecast as a <b>test device</b>, or <b>publish</b> the application so any Chromecast can use it.</p></div>
+            <div class="cc-step"><span class="step-n">1</span><p><b>Open the Google Cast Developer Console</b> — <a href="https://cast.google.com/publish/" target="_blank" rel="noopener">cast.google.com/publish</a> — and sign in with the Google account that should own this receiver. Google charges a <b>one-time US$5</b> developer fee the first time. Nothing else in Ravilo costs money.</p></div>
+            <div class="cc-step"><span class="step-n">2</span><p>Click <b>Add New Application</b> and choose <b>Custom Receiver</b>.</p></div>
+            <div class="cc-step"><span class="step-n">3</span><p><b>Fill in two fields.</b> Name it anything; everything else can stay as it is.</p>
+              <div class="cc-fv">
+                <div><span class="cc-fvk">Receiver Application URL <em>· your public address + /cast/</em></span>
+                  <div class="cc-fvv" id="cc-fv-url"><span>https://js.heimatún.fo/cast/</span><span class="spacer"></span><span class="btn sm ghost">Copy</span></div></div>
+                <div><span class="cc-fvk">Package Name <em>· the Ravilo app on your phone</em></span>
+                  <div class="cc-fvv"><span>dev.jellystructure.ravilo</span><span class="spacer"></span><span class="btn sm ghost">Copy</span></div></div>
+              </div></div>
+            <div class="cc-step"><span class="step-n">4</span><p><b>Save.</b> The console then shows an <b>Application ID</b> — 8 characters like <span class="mono">A1B2C3D4</span>. Copy it into the field below.</p></div>
+            <div class="cc-step" style="margin-bottom:0;"><span class="step-n">5</span><p><b>Let your Chromecast use it.</b> Either add the device as a <b>test device</b> (the console asks for its serial number, which the Google Home app shows under the device's settings), or <b>publish</b> the application so any Chromecast can use it. Publishing is not instant — if the first cast does nothing, give it a while and try again.</p></div>
           </div>
 
           <div class="field" style="margin-top:14px;"><label>Application ID</label>
             <div class="input mono" id="cc-appid"><span class="muted">8 hex characters, e.g. A1B2C3D4</span></div>
-            <span class="hint" id="cc-appid-hint">From the console, after step 1.</span></div>
+            <span class="hint" id="cc-appid-hint">From the console, after step 4.</span></div>
 
           <div class="row center" style="gap:14px;margin-bottom:14px;">
             <div><b style="font-size:.9rem;">Concurrent cast sessions</b><div class="tiny muted" style="margin-top:3px;">Each cast is a transcode on your Jellyfin server.</div></div>
@@ -337,6 +363,11 @@
           <span class="muted tiny">Preview · card state:</span>
           <span class="seg" id="cc-preview"><span class="on" data-cc="off">off</span><span data-cc="unreg">on, not registered</span><span data-cc="ok">registered &amp; verified</span></span>
           <span class="tiny muted">off means the phone shows no cast button at all</span>
+        </div>
+        <div class="row center" style="gap:9px;flex-wrap:wrap;margin-top:8px;">
+          <span class="muted tiny">Preview · public address:</span>
+          <span class="seg" id="pub-preview"><span class="on" data-pub="set">set</span><span data-pub="unset">not set yet</span></span>
+          <span class="tiny muted">with no public address there is no URL to register</span>
         </div>
       </div>
 
@@ -541,7 +572,7 @@
               hint = document.getElementById('cc-appid-hint'), stat = document.getElementById('cc-stat');
         const OFF_BLURB = blurb.innerHTML;
         const ON_BLURB = 'Ravilo shows a cast button on every screen. A Chromecast appears in <b>Users &amp; devices</b> as its own device, and the Jellyfin dashboard can pause and seek it like any other client.';
-        const STEP_BLURB = 'Three one-time steps. Nothing recurring, and nothing leaves this page except the address you paste at Google.';
+        const STEP_BLURB = 'Five one-time steps, and only two fields to type. Nothing recurring, and nothing leaves this page except the two values you paste at Google.';
         function set(state) {
           const isOff = state === 'off', okd = state === 'ok';
           on.style.display = isOff ? 'none' : '';
@@ -554,17 +585,17 @@
             ? 'A1B2C3D4 <span class="spacer"></span><span class="badge ok">used 6 times</span>'
             : '<span class="muted">8 hex characters, e.g. A1B2C3D4</span>';
           hint.innerHTML = okd
-            ? 'Registered with Google · published, so any Chromecast can use it. <span class="btn sm ghost" style="padding:0;">Show the three steps again</span>'
-            : 'From the console, after step 1.';
+            ? 'Registered with Google · published, so any Chromecast can use it. <span class="btn sm ghost" style="padding:0;">Show the registration steps again</span>'
+            : 'From the console, after step 4.';
           /* jellystructure cannot verify an application ID with Google — there is no API for
              it — so the honest check is a first real cast, and the card says so until then. */
           stat.innerHTML = okd
-            ? '<div><span class="cc-dot"></span> Receiver <b>reachable</b> at that address</div>'
+            ? '<div><span class="cc-dot"></span> Receiver <b>reachable</b> at your public address + <span class="mono">/cast/</span></div>'
               + '<div><span class="cc-dot"></span> Application ID <b>set and confirmed by a real cast</b></div>'
               + '<div><span class="cc-dot"></span> Last cast <b>yesterday 21:14</b> · Living room TV · 38 min</div>'
               + '<div><span class="cc-dot"></span> <b>2 devices</b> have cast · <a href="ravilo-users.html">Users &amp; devices</a></div>'
               + '<div><span class="cc-dot"></span> Jellyfin shows it as <b>Chromecast via Ravilo · Living room</b></div>'
-            : '<div><span class="cc-dot"></span> Receiver <b>reachable</b> at that address</div>'
+            : '<div><span class="cc-dot"></span> Receiver <b>reachable</b> at your public address + <span class="mono">/cast/</span></div>'
               + '<div><span class="cc-dot wait"></span> Application ID <b>not set yet</b></div>'
               + '<div><span class="cc-dot off"></span> <b>Cast from your phone once to confirm it works.</b> Jellystructure can\'t check an application ID with Google — only a real cast can.</div>';
           seg.querySelectorAll('[data-cc]').forEach(s => s.classList.toggle('on', s.dataset.cc === state));
@@ -572,6 +603,34 @@
         seg.addEventListener('click', e => { const s = e.target.closest('[data-cc]'); if (s) set(s.dataset.cc); });
         tog.addEventListener('click', () => set(tog.classList.contains('on') ? 'off' : 'unreg'));
         set('off');
+
+        /* Public address (phase 227). One field feeds the registration URL; with it unset there
+           is nothing to paste, so the row says where to set it instead of showing a broken URL.
+           The second preview control is mockup-only, like the first. */
+        const pseg = document.getElementById('pub-preview'), pin = document.getElementById('pub-input'),
+              phint = document.getElementById('pub-hint'), fvurl = document.getElementById('cc-fv-url');
+        const PUB = 'https://js.heimatún.fo';
+        function setPub(state) {
+          const unset = state === 'unset';
+          const toml = document.getElementById('toml-pub');
+          /* root-level key, so it must sit ABOVE the first table header — below one it would
+             parse as part of that table. Absent entirely while unset. */
+          if (toml) toml.innerHTML = unset
+            ? '<span class="muted"># public_url not set — nothing outside your network can reach this installation</span>'
+            : 'public_url = "' + PUB + '"';
+          pin.innerHTML = unset
+            ? '<span class="muted">https://media.example.com</span>'
+            : PUB + ' <span class="spacer"></span><span class="chk"><span class="dot ok"></span><span class="badge ok">reachable over https</span></span>';
+          phint.innerHTML = 'How Jellystructure is reached <b>from outside your network</b> — scheme and host only, no trailing slash. '
+            + (unset ? 'Not set yet — nothing that needs reaching from outside can work until it is.' : 'Checked from outside, just now.')
+            + ' Used by the Chromecast receiver.';
+          fvurl.innerHTML = unset
+            ? '<span class="muted" style="font-family:Sora,sans-serif;">Set your public address above first.</span>'
+            : '<span>' + PUB + '/cast/</span><span class="spacer"></span><span class="btn sm ghost">Copy</span>';
+          pseg.querySelectorAll('[data-pub]').forEach(s => s.classList.toggle('on', s.dataset.pub === state));
+        }
+        pseg.addEventListener('click', e => { const s = e.target.closest('[data-pub]'); if (s) setPub(s.dataset.pub); });
+        setPub('set');
       })();
       </script>
 
@@ -906,6 +965,7 @@
     <div class="card" style="width:280px;flex:none;position:sticky;top:88px;">
       <h4 style="margin:0 0 8px;">Live config.toml</h4>
       <div class="log" style="max-height:none;">
+        <div id="toml-pub">public_url = "https://js.heimatún.fo"</div>
         <div class="muted">[api_keys]</div>
         <div>tmdb_v3_key = "•••3f9a"</div>
         <div>jellyfin_url = "http://jellyfin:8096"</div>
