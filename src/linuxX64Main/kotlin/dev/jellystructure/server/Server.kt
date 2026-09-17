@@ -405,7 +405,8 @@ fun startServer(
                             """"tmdb_pacing":${Json.encodeToString(TmdbPacingStats.serializer(), tmdbPacing)},""" +
                             """"mkv_health_swept_at":${mkvHealthSweptAt ?: "null"},"job_queues":${jobQueues.toJson()},""" +
                             """"playback_writer":$writerJson,"refreshers":$refreshersJson,""" +
-                            """"tv_image":${imageProxyService?.stats()?.toJson() ?: "null"}}""",
+                            """"tv_image":${imageProxyService?.stats()?.toJson() ?: "null"},""" +
+                            """"memory":${dev.jellystructure.ops.MemoryStats.snapshot().toJson()}}""",
                         ContentType.Application.Json,
                     )
                 }

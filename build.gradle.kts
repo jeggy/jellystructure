@@ -31,6 +31,8 @@ kotlin {
                 // ld.lld doesn't search multiarch lib dirs; --allow-shlib-undefined lets libsqlite3.so's
                 // glibc symbol references (pow, dlclose) resolve at runtime via the system linker.
                 linkerOpts("-L/usr/lib/x86_64-linux-gnu", "--allow-shlib-undefined")
+                // Runtime allocator override for experiments: -PnativeAllocator=std|custom
+                (project.findProperty("nativeAllocator") as String?)?.let { freeCompilerArgs += listOf("-Xallocator=$it") }
             }
         }
         // Phase 140 — the repo's first native tests (linuxX64Test) link the whole of linuxX64Main
