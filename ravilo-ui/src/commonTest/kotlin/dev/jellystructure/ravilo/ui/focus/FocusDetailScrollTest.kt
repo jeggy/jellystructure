@@ -60,4 +60,12 @@ class FocusDetailScrollTest {
         assertEquals(-10f, focusDetailRowOpenHeadingDelta(rowTopPx = 100f, rowFootPx = 990f, screenHeightPx = 1080f, minTopPx = 152f, footMarginPx = 80f))
     @Test fun noRoomAtAllMovesNothing() =
         assertEquals(0f, focusDetailRowOpenHeadingDelta(rowTopPx = 100f, rowFootPx = 1040f, screenHeightPx = 1080f, minTopPx = 152f, footMarginPx = 80f))
+
+    // R259 — the collapsing row hands its released height back (stue TV: a poster row gives back ~124–200 px).
+    @Test fun movingDownOutOfAnOpenRowGivesTheReleasedHeightBack() =
+        assertEquals(-124f, focusDetailCollapseCompensation(grownHeightPx = 640f, settledHeightPx = 516f, rowTopPx = -300f, focusLinePx = 324f))
+    @Test fun movingUpOutOfAnOpenRowMovesNothing() =
+        assertEquals(0f, focusDetailCollapseCompensation(grownHeightPx = 640f, settledHeightPx = 516f, rowTopPx = 700f, focusLinePx = 324f))
+    @Test fun aRowThatReleasedNothingMovesNothing() =
+        assertEquals(0f, focusDetailCollapseCompensation(grownHeightPx = 516f, settledHeightPx = 516f, rowTopPx = -300f, focusLinePx = 324f))
 }

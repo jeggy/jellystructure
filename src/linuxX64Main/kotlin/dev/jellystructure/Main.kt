@@ -221,6 +221,8 @@ fun main() = runBlocking {
     // "was a logo really captured" predicate the admin Metadata page already uses.
     val logoDownloader = LogoDownloader(dataDir, tmdbClient)
     val browseService = BrowseService(mediaStore, jellyfinClient, configStore, raviloConfigService, artworkDownloader, logoDownloader)
+    // Phase 232 (FR-232-2) — judge any logo that has no ink sidecar yet; background class, once per logo ever.
+    rootScope.launch(dev.jellystructure.ops.GateClass.BACKGROUND) { runCatching { logoDownloader.computeMissingInk() } }
     // Phase 185 (FR-185-4) — needed by DetailService below, for playbackNote resolution.
     val playbackStartSampleStore = dev.jellystructure.tv.PlaybackStartSampleStore(db)
     val detailService = DetailService(mediaStore, jellyfinClient, configStore, artworkDownloader, mediaSegmentStore, raviloDeviceService, playbackStartSampleStore)

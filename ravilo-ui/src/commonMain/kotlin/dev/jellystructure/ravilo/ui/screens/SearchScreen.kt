@@ -129,7 +129,10 @@ fun SearchScreen(
     val spaceGrotesk = SpaceGrotesk
     val state by store.state.collectAsState()
 
-    var query by remember { mutableStateOf("") }
+    // R259 — the store outlives this composable (it survives a push to a detail page), the text field
+    // did not: Back from a result showed the previous results under an EMPTY field, relabelled
+    // "Suggestions" (stue TV, 2026-09-17). The field starts from the query the results belong to.
+    var query by remember { mutableStateOf((store.state.value as? SearchState.Loaded)?.query.orEmpty()) }
     var inGrid by remember { mutableStateOf(false) }
 
     val items = when (val s = state) {

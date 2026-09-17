@@ -42,6 +42,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.positionInParent
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
@@ -615,6 +618,7 @@ private fun GuideChannelRow(
                     // row's viewport truthful about wherever native search lands, without needing to
                     // hand-roll the cell-to-cell traversal ourselves.
                     var pFocused by remember { mutableStateOf(false) }
+                    var cellLeftPx by remember { mutableStateOf(0f) }
                     val startMinutes = remember(p.startMs, guideOriginMs) { (p.startMs - guideOriginMs) / 60_000f }
                     val endMinutes = remember(p.endMs, guideOriginMs) { (p.endMs - guideOriginMs) / 60_000f }
                     Box(
@@ -627,9 +631,22 @@ private fun GuideChannelRow(
                                 onBlurred = { pFocused = false },
                                 onSelect = { onProgramSelect(p) },
                             )
+                            // R259 — where this cell's left edge sits in the row's viewport (negative = scrolled
+                            // off to the left). Read in the layout phase only, below.
+                            .onGloballyPositioned { cellLeftPx = it.positionInParent().x }
                             .padding(horizontal = 6.dp, vertical = 8.dp),
                     ) {
-                        Column {
+                        // R259 — a programme that began before the visible window (DR2's 13:00–18:15 block at
+                        // 16:20, stue TV 2026-09-17) drew as an UNTITLED slab: its label was at the cell's own
+                        // start, hours off-screen. The label is pinned to the visible part of the cell, and
+                        // measured against the width that is left, so the ellipsis is still honest.
+                        Column(
+                            Modifier.layout { measurable, constraints ->
+                                val shift = guideLabelShiftPx(cellLeftPx, constraints.maxWidth, GUIDE_LABEL_MIN_WIDTH_DP.dp.roundToPx())
+                                val placeable = measurable.measure(constraints.copy(minWidth = 0, maxWidth = (constraints.maxWidth - shift).coerceAtLeast(0)))
+                                layout(placeable.width + shift, placeable.height) { placeable.place(shift, 0) }
+                            },
+                        ) {
                             if (showText) {
                                 if (showTimeLabel) {
                                     Text(
@@ -727,4 +744,18 @@ private fun ProgramDetailsOverlay(
             }
         }
     }
+}
+
+private const val GUIDE_LABEL_MIN_WIDTH_DP = 120
+
+/**
+ * R259 — how far (px) a guide cell's label moves right so it stays inside the visible window.
+ * [cellLeftPx] is the cell's left edge in the row viewport (negative once scrolled off-screen);
+ * [innerWidthPx] the label's available width; the label never gets less than [minLabelPx] of room,
+ * so a cell that is almost entirely gone keeps its label at its tail rather than squeezing it to nothing.
+ */
+internal fun guideLabelShiftPx(cellLeftPx: Float, innerWidthPx: Int, minLabelPx: Int): Int {
+    if (cellLeftPx >= 0f) return 0
+    val maxShift = (innerWidthPx - minLabelPx).coerceAtLeast(0)
+    return (-cellLeftPx).toInt().coerceIn(0, maxShift)
 }

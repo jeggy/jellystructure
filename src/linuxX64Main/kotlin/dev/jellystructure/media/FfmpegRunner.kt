@@ -277,6 +277,15 @@ object FfmpegRunner {
         return runCommand("ffmpeg -y -i '$inEsc' -vf scale=$w:$h -frames:v 1 $q'$outEsc' 2>&1")
     }
 
+    /** Phase 232 (FR-232-2) — [input] as one [size]×[size] raw RGBA frame ([size]² × 4 bytes) in [output].
+     *  ffmpeg does the decoding so no PNG decoder is needed (and a file that is not the format its
+     *  extension claims — 192 found some — still reads). `flags=area` averages, so thin strokes survive. */
+    suspend fun rawRgbaThumb(input: String, output: String, size: Int = 32): Boolean {
+        val inEsc = input.replace("'", "'\\''")
+        val outEsc = output.replace("'", "'\\''")
+        return runCommand("ffmpeg -y -v error -i '$inEsc' -vf scale=$size:$size:flags=area -frames:v 1 -pix_fmt rgba -f rawvideo '$outEsc' 2>&1")
+    }
+
     /**
      * Phase 187 (FR-187-6) — server-side centre-crop-to-square + bound, for an uploaded account photo.
      * There is no crop UI (R234 FR-R234-9: the owner didn't ask for one, every surface renders a

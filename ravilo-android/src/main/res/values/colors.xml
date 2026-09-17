@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Aurora's page background (Colors.kt `background`, ravilo.css page background token). -->
+    <color name="ravilo_page">#0A0C13</color>
+</resources>

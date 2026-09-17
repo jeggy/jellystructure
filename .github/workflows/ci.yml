@@ -58,6 +58,10 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends libsqlite3-dev libatomic1 ffmpeg mkvtoolnix
       - name: Backend unit tests
+        # CronTest's fixtures are local-wall-clock instants for the deployment's own zone (its header says
+        # so); GitHub runners are UTC. First 231 run: 6 CronTest failures, everything else green.
+        env:
+          TZ: Europe/Copenhagen
         run: ./gradlew linuxX64Test --no-daemon
       - name: Upload test reports
         if: failure()
@@ -83,6 +87,14 @@ jobs:
           distribution: temurin
           java-version: "21"
       - uses: gradle/actions/setup-gradle@v4
+      - name: Throwaway debug keystore
+        # The release signingConfig falls back to ~/.android/debug.keystore when no real keystore is
+        # configured (ravilo-android/build.gradle.kts) — a fresh runner has none. This APK is only ever
+        # verified and uploaded as a CI artifact; the Play build signs with the real upload key.
+        run: |
+          mkdir -p ~/.android
+          keytool -genkeypair -keystore ~/.android/debug.keystore -storepass android -keypass android \
+            -alias androiddebugkey -dname "CN=Android Debug,O=Android,C=US" -keyalg RSA -keysize 2048 -validity 10000
       - name: Client unit tests + release APK
         run: ./gradlew :ravilo-ui:testDebugUnitTest :ravilo-android:assembleRelease --no-daemon
       - name: Player dex register guard (FR-231-2)
