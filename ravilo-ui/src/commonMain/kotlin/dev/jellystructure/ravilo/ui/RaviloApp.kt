@@ -617,10 +617,9 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
         }
         // Orientation-stable counterpart to `compact` — see LocalHandset's doc comment for why
         // width-only breaks for a rotated phone (e.g. video playback, which is landscape-only).
+        // R256 — never from dp alone: a TV is 960 x 540 dp, i.e. "handset-sized". See [isHandset].
         val handset = remember(windowInfo.containerSize.width, windowInfo.containerSize.height, density) {
-            val wPx = windowInfo.containerSize.width; val hPx = windowInfo.containerSize.height
-            val shortPx = minOf(wPx, hPx)
-            shortPx > 0 && with(density) { shortPx.toDp() } < 600.dp
+            isHandset(isTvPlatform, windowInfo.containerSize.width, windowInfo.containerSize.height, density.density)
         }
         // R159 — orientation, not width: a resized browser window or a rotated phone flips this live.
         // Compact controls *sizing*; portrait controls *these overrides* — a portrait phone is usually
