@@ -95,6 +95,9 @@ services:
       # pushes it over, and fails an unrelated later spec at its login step. Test stack only; no
       # deployment sets this and the code default is unchanged.
       LOGIN_RATE_LIMIT_MAX: "1000"
+      # The Ravilo web app is served from another origin (ravilo-web) and signs in here cross-origin —
+      # the same shape as production. tests/e2e/ravilo-login.spec.ts checks the preflight.
+      CORS_ALLOWED_ORIGINS: "ravilo-web:8080"
     depends_on:
       jellyfin-mock:
         condition: service_healthy
@@ -122,6 +125,10 @@ services:
         - type=local,src=${BUILDX_CACHE_DIR:-/tmp/.buildx-cache}/ravilo-web
       cache_to:
         - type=local,dest=${BUILDX_CACHE_DIR:-/tmp/.buildx-cache}/ravilo-web-new
+    environment:
+      # R225 — without this the web app signs in against its OWN origin, a static file server with no
+      # /api at all: a 404 on /api/tv/login (seen on production 2026-09-17).
+      DEFAULT_SERVER_URL: http://app:9505
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:8080/"]
       interval: 3s

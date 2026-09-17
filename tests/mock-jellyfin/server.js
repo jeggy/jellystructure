@@ -73,6 +73,15 @@ const server = http.createServer(async (req, res) => {
   // POST /Users/AuthenticateByName
   if (method === "POST" && path === "/Users/AuthenticateByName") {
     const body = await readBody(req);
+    // Refuse what the real server refuses. Jellyfin 10.11.11 answers 400 when the MediaBrowser
+    // Authorization header of a sign-in lacks Client, Device, DeviceId or Version (probed on production
+    // 2026-09-17: a Ravilo login without a Version was a 400 that the backend reported as "Could not
+    // reach Jellyfin"). A lenient mock is how that shipped.
+    const auth = String(req.headers["authorization"] || req.headers["x-emby-authorization"] || "");
+    const missing = ["Client", "Device", "DeviceId", "Version"].filter((k) => !new RegExp(`\\b${k}="[^"]+"`).test(auth));
+    if (!auth.startsWith("MediaBrowser ") || missing.length) {
+      return send(res, 400, { message: `Authorization header incomplete: ${missing.join(", ") || "scheme"}` });
+    }
     let creds = {};
     try { creds = JSON.parse(body); } catch {}
     if (creds.Username !== ADMIN_USER || creds.Pw !== ADMIN_PASS) {
