@@ -12,7 +12,7 @@
 device to do any type of testing needed").** `compileKotlinLinuxX64` clean; `linuxX64Test` 163/163 green.
 Not yet dev-reviewed. FR-182-2/3/4/5/6/7/8/9 are implemented as designed below.
 
-**FR-182-10, measured 2026-09-02 (real deployment, `10.10.10.10:9505`, live household data — 505 media
+**FR-182-10, measured 2026-09-02 (real deployment, `192.0.2.10:9505`, live household data — 505 media
 items, Jellyfin reports 8114 items).** Baseline p50/p95 over 60s of alternating `/api/tv/home` +
 `/api/tv/series/{id}` (device-token curl, Pokémon — 1128 episodes — as the series):
 

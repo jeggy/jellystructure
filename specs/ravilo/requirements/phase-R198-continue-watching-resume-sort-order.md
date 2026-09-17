@@ -4,7 +4,7 @@
 > days earlier) in Continue Watching. First investigated as a possible repeat of R185's
 > Played/PlaybackPositionTicks desync or a resume/next-up merge-order bug — both ruled out once the
 > viewer confirmed Severance still shows a progress bar (i.e. it's genuinely in the resumable set, not
-> next-up). Root-caused live against Jellyfin (jellyfin.jebster.net): Jellyfin's own
+> next-up). Root-caused live against Jellyfin (jellyfin.example.net): Jellyfin's own
 > `/Users/{id}/Items/Resume` endpoint, called with `SortBy=DatePlayed&SortOrder=Descending`, does not
 > reliably honor that sort for every item — jellystructure has never re-sorted the response itself.
 
@@ -30,7 +30,7 @@ Two hypotheses were checked and ruled out by reading the code first:
   pattern is still real and worth fixing eventually — see **Out of scope**.)
 
 **Live evidence** (`GET /Users/{id}/Items/Resume?Recursive=true&SortBy=DatePlayed&SortOrder=Descending&Fields=UserData`
-against jellyfin.jebster.net, user `jogvan`, 2026-08-18, 94 resumable items): the list is correctly
+against jellyfin.example.net, user `jogvan`, 2026-08-18, 94 resumable items): the list is correctly
 sorted descending by `UserData.LastPlayedDate` for the surrounding ~90 entries, but two adjacent
 entries are swapped:
 
