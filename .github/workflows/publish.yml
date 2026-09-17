@@ -36,6 +36,12 @@ permissions:
   contents: read
   packages: write
 
+# Phase 231 — a newer push to main supersedes the pipeline of the one before it (each run is a full CI:
+# ~40 min of e2e). A release or a manual re-publish is NEVER cancelled: its group is its own tag.
+concurrency:
+  group: publish-${{ github.event_name }}-${{ github.event.release.tag_name || inputs.version || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'push' }}
+
 jobs:
   version:
     runs-on: ubuntu-latest
