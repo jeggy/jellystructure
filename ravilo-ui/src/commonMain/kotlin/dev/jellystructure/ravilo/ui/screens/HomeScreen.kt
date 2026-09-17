@@ -353,20 +353,26 @@ private fun HomeLoaded(
         // position (never a top-nav tab — it only ever lives among the Home rows).
         val clampedOnNowIndex = onNowRowIndex.coerceIn(0, feed.rows.size)
         items(clampedOnNowIndex, key = { ri -> feed.rows[ri].id }) { ri ->
-            ContentRowItem(feed.rows[ri], feed, store, listState, onItemSelect, onSeeAll, reduceMotion, rowFocusRequester = if (!hasChannels && ri == 0) firstRowFR else null)
+            HeadingClearOfAppBar(listState) {
+                ContentRowItem(feed.rows[ri], feed, store, listState, onItemSelect, onSeeAll, reduceMotion, rowFocusRequester = if (!hasChannels && ri == 0) firstRowFR else null)
+            }
         }
         if (liveTvChannels.isNotEmpty()) {
             item(key = "on_now") {
                 Spacer(Modifier.height(RaviloDimens.rowGap))
                 // Phase R240 — On Now isn't a Home content row either (spec non-goal list).
+                HeadingClearOfAppBar(listState) {
                 Box(modifier = Modifier.onFocusChanged { if (it.hasFocus) store.focusDetail.clear() }) {
                     OnNowRow(liveTvChannels, store, onLiveTvChannelSelect, onOpenLiveTvGuide, rowFocusRequester = if (onNowIsFirstRow) firstRowFR else null)
+                }
                 }
             }
         }
         items(feed.rows.size - clampedOnNowIndex, key = { i -> feed.rows[clampedOnNowIndex + i].id }) { i ->
             val isVeryFirstRow = !hasChannels && clampedOnNowIndex == 0 && liveTvChannels.isEmpty() && i == 0
-            ContentRowItem(feed.rows[clampedOnNowIndex + i], feed, store, listState, onItemSelect, onSeeAll, reduceMotion, rowFocusRequester = if (isVeryFirstRow) firstRowFR else null)
+            HeadingClearOfAppBar(listState) {
+                ContentRowItem(feed.rows[clampedOnNowIndex + i], feed, store, listState, onItemSelect, onSeeAll, reduceMotion, rowFocusRequester = if (isVeryFirstRow) firstRowFR else null)
+            }
         }
     }
     }
@@ -525,21 +531,6 @@ private fun ContentRowItem(
     val screenHeightPx = LocalWindowInfo.current.containerSize.height.toFloat()
     val scope = rememberCoroutineScope()
     LaunchedEffect(rowHasOpen) {
-        if (!rowHasOpen) {
-            // R259 — the general form of FR-R257-5. Focus has left this row, so it is about to give back
-            // its held (opened) height. If the viewer moved DOWN, everything below — including the row now
-            // focused, already parked by bring-into-view — is dragged up by that amount, heading under the
-            // app bar. FR-R257-5 corrects that in the DESTINATION row, but only a row J opens on runs it;
-            // On Now, a See-all tile, a system row do not (stue TV 2026-09-17: "On Now" under the bar).
-            // So the COLLAPSING row hands the released height back to the scroll: the focused row stays
-            // exactly where bring-into-view put it. Moving UP needs nothing (this row is below the focus).
-            val grown = rowFootPx - rowTopPx
-            kotlinx.coroutines.delay(RaviloMotion.ROW_OPEN_TWEEN_MS.toLong() + 90L)
-            val released = dev.jellystructure.ravilo.ui.focus.focusDetailCollapseCompensation(
-                grownHeightPx = grown, settledHeightPx = rowFootPx - rowTopPx, rowTopPx = rowTopPx, focusLinePx = screenHeightPx * 0.3f,
-            )
-            if (released < 0f) scope.launch { runCatching { listState.animateScrollBy(released) } }
-        }
         if (rowHasOpen) {
             // Sequenced after the growth (R232's hazard): wait out the same tween Tile/FocusDetailPanel
             // animate on, so rowFootPx reflects the GROWN row, not the row mid-tween.
@@ -633,6 +624,38 @@ private fun ContentRowItem(
  *  letterboxing at all. The "Open TV Guide" entry point used to be a text link in the row header
  *  (dead space-wise and easy to miss); it's now its own leading tile in the track, matching the design
  *  mockup's `lt-guidetile` treatment (`design/ravilo/ravilo-livetv.js` `onNowRow()`). */
+/**
+ * R259 (FR-R259-2) — the general form of FR-R257-5: whichever row HOLDS FOCUS makes sure its own heading
+ * is clear of the app bar once things have settled. Leaving an opened row downwards, the row above gives
+ * back its held height AFTER bring-into-view has parked the new row, dragging it under the bar (stue TV
+ * 2026-09-17: the *On Now* heading at y = 72 px, bar ends at 120). The correction cannot live in the
+ * collapsing row — it scrolls out of the lazy list and is disposed before its delayed work runs (tried,
+ * measured, removed) — but the focused row is never disposed. Wrap a row's content in this.
+ */
+@Composable
+private fun HeadingClearOfAppBar(listState: androidx.compose.foundation.lazy.LazyListState, content: @Composable () -> Unit) {
+    var hasFocus by remember { mutableStateOf(false) }
+    var topPx by remember { mutableStateOf(0f) }
+    var footPx by remember { mutableStateOf(0f) }
+    val density = LocalDensity.current
+    val screenHeightPx = LocalWindowInfo.current.containerSize.height.toFloat()
+    LaunchedEffect(hasFocus) {
+        if (!hasFocus) return@LaunchedEffect
+        // after the neighbour's collapse (ROW_OPEN_TWEEN_MS + its 60 ms cleanup) and any scroll it caused
+        kotlinx.coroutines.delay(RaviloMotion.ROW_OPEN_TWEEN_MS.toLong() + 160L)
+        val up = dev.jellystructure.ravilo.ui.focus.focusDetailRowOpenHeadingDelta(
+            topPx, footPx, screenHeightPx,
+            minTopPx = with(density) { (RaviloDimens.appBarHeight + 16.dp).toPx() }, footMarginPx = with(density) { 40.dp.toPx() },
+        )
+        if (up < 0f) runCatching { listState.animateScrollBy(up) }
+    }
+    Box(
+        Modifier
+            .onFocusChanged { hasFocus = it.hasFocus }
+            .onGloballyPositioned { c -> topPx = c.positionInWindow().y; footPx = topPx + c.size.height },
+    ) { content() }
+}
+
 @Composable
 private fun OnNowRow(
     channels: List<LiveTvChannel>,
