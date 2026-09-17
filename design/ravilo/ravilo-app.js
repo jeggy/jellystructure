@@ -965,7 +965,7 @@
       wrap.appendChild(meta);
       const grid = el('div', 'taxogrid' + (kind === 'genres' ? ' genres' : ''));
       if (!list.length) grid.innerHTML = `<div class="taxo-empty">${t('tx_empty')}</div>`;
-      const per = kind === 'genres' ? 5 : 4;
+      const per = 6;   // R259 (FR-R259-7, owner decision 2026-09-17) — 6-up on the TV for all three walls
       for (let i = 0; i < list.length; i += per) {
         const row = el('div', 'taxo-row focus-row');
         list.slice(i, i + per).forEach(e => row.appendChild(taxoTile(e)));
