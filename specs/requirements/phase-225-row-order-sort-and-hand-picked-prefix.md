@@ -11,7 +11,9 @@
 
 ## Status
 
-`Planned` — written 2026-09-17, **not dev-reviewed**. Owner answered the design's open questions the same
+`Planned` — written 2026-09-17, **dev-reviewed 2026-09-17 against `main` `8873cea7`** (see §Dev review at the
+bottom: one premise was wrong — the TV draws every item the server sends, so the row length's default is **30**,
+not 10 — and the editor has to be rebuilt in Kotlin, since the design's `ravilo-builders.js` is not shipped). Owner answered the design's open questions the same
 day (newest first is the default; pins only from matches; the row's shown count is per-row and caps the
 pins; See all does not put pins first; there are no genre rows any more) — all folded in below.
 
@@ -28,8 +30,10 @@ TV consequence, ten decisions), then built into `design/app/ravilo-config.html` 
 - `HomeFeedService` sorts **every** filter row with one hard-coded comparator —
   `compareByDescending<MediaItem> { it.recencyKey() }.thenBy { it.title }` — and takes
   `ROW_ITEM_LIMIT = 30` (`HomeFeedService.kt:48,582,596,626,631,633,679,709`). Home rows and a collection's
-  `custom` rows all go through it. **The viewer sees 10** — the TV row shows fewer than the server sends;
-  the owner confirms 10 is what runs. `RowKind.GENRE` still exists in the enum but nothing creates one —
+  `custom` rows all go through it. ~~The viewer sees 10~~ **Corrected in dev review: the TV draws all 30.**
+  `StaticContentRow` takes `items: List<T>` whole (`ContentRow.kt:74`) and is called with `row.items`
+  untouched (`HomeScreen.kt:542`, `ChannelScreen.kt:249`); no `take`, no cap, on TV or phone. The "10" was an
+  observation, not a mechanism. `RowKind.GENRE` still exists in the enum but nothing creates one —
   every non-system row is a workbench filter (`CUSTOM`).
 - `RowConfig` (`shared/.../tv/Models.kt:843`) has `id · kind · title · enabled · order · mediaKind ·
   match · conditions · query`. **No sort field, no pin list.** `order` is the row's position in the
@@ -60,7 +64,7 @@ data class RowConfig(
     …,
     val sort: RowSort? = null,                 // null = RowSort("added", descending = true) — today's order
     val pinned: List<String> = emptyList(),    // ordered Jellyfin item ids; empty = no hand-picks; size ≤ limit
-    val limit: Int? = null,                    // titles the TV shows of this row; null = 10 (today); 3..30
+    val limit: Int? = null,                    // titles the TV shows of this row; null = 30 (today's ROW_ITEM_LIMIT); 3..30
 )
 @Serializable data class RowSort(val by: String = "added", val descending: Boolean = true)   // by ∈ added · title · year
 ```
@@ -69,10 +73,13 @@ All three are ignored by any installed Ravilo build (`ignoreUnknownKeys`; the TV
 An existing config with none of them **must produce the identical row it produces today** — same order,
 same number of tiles — this is the migration, and it is the first acceptance test.
 
-**FR-225-1b — The row's length is the row's.** `HomeFeedService` takes `row.limit ?: 10` per row in place
-of the shared `ROW_ITEM_LIMIT`, and the TV row renders every item it is sent (it stops trimming to 10
-itself — that trim is what `limit` replaces; R253 FR-R253-1b). `seedTotalCount` remains the pre-limit
-match count. The editor's *Show N titles* stepper (FR-225-9) is the only place the number is set; 3–30.
+**FR-225-1b — The row's length is the row's.** `HomeFeedService` takes `row.limit ?: ROW_ITEM_LIMIT` (30) per
+row; the TV already renders every item it is sent and nothing changes there (R253 FR-R253-1b). An absent
+`limit` is therefore today's row, tile for tile — which is what makes acceptance 1 hold. `seedTotalCount`
+remains the pre-limit match count. The editor's *Show N titles* stepper (FR-225-9) is the only place the
+number is set; 3–30, **default 30**. *(Corrected in dev review: the spec's first draft assumed a client-side
+trim to 10 that does not exist. If the owner wants rows to show 10 by default, that is a product change to
+make on purpose — set `limit` on the rows, or change the default in one later phase — not a migration.)*
 
 **FR-225-2 — Three keys, each in both directions, resolved server-side.** `HomeFeedService` builds
 every workbench (`CUSTOM`) row as:
@@ -135,7 +142,7 @@ note in the row editor (`design/app/ravilo-builders.js`, the `orderHtml()` block
 - A segmented control **Date added · Title · Release year · Hand-picked first** and a **direction
   button** whose label is the pair in words for the current key (`newest first` / `oldest first`,
   `A → Z` / `Z → A`, `newest release first` / `oldest release first`). Never "asc"/"desc".
-- On the same line, right-aligned: **Show N titles**, a − / + stepper, 3–30, default 10. It cannot step
+- On the same line, right-aligned: **Show N titles**, a − / + stepper, 3–30, default 30. It cannot step
   below the number of hand-picks (the − is disabled and a toast says *Release a hand-pick to show fewer
   than N*) — a pin is never dropped behind the admin's back.
 - The **Matches** panel renders in the chosen order and **numbers the tiles** whenever the order is not
@@ -158,12 +165,12 @@ note in the row editor (`design/app/ravilo-builders.js`, the `orderHtml()` block
 
 **FR-225-10 — The row list says it in words.** In *Layout → Content rows* each workbench row's summary
 line appends the order **only when it differs from the default**: `· title A → Z`, `· newest release
-first`, `· 3 hand-picked, then newest first`, and `· shows 15` when the count is not 10. A row on the
+first`, `· 3 hand-picked, then newest first`, and `· shows 15` when the count is not 30. A row on the
 default order and count shows the line it shows today.
 System rows are unchanged.
 
 **FR-225-11 — Validation on write.** `sort.by` ∉ {added, title, year} → 400. `limit` outside 3–30 → 400.
-`pinned.size > (limit ?: 10)` → 400. `pinned` entries are
+`pinned.size > (limit ?: 30)` → 400. `pinned` entries are
 Jellyfin item ids as strings; unknown ids are **accepted** (FR-225-5 — a removed title is exactly the
 stale case) but deduplicated, first occurrence wins. `RaviloConfigService.normalize()` writes nothing
 back for an absent `sort` — absent stays absent, so a config file that never mentions order never
@@ -188,8 +195,8 @@ starts mentioning it.
 1. A config with no `sort`, `pinned` or `limit` on any row produces, for every row and every user, exactly
    the row — order and tile count — the viewer sees today (fixture diff over the demo library, all three visibility
    scopes).
-2. `sort: {by:"title"}` on a row of 40 matches serves items 1–10 A → Z by sort name and
-   `seedTotalCount = 40`; `descending: true` serves Z → A; `limit: 25` serves 1–25 and the TV draws all 25.
+2. `sort: {by:"title"}` on a row of 40 matches serves items 1–30 A → Z by sort name and
+   `seedTotalCount = 40`; `descending: true` serves Z → A; `limit: 12` serves 1–12 and the TV draws 12.
 3. `pinned: [C, A]` on a row whose matches are {A, B, C, D} with `sort: {by:"added"}` serves `C, A` then
    `B, D` newest-first. Reordering `pinned` to `[A, C]` flips the first two and nothing else.
 4. A `pinned` id that matches nothing is absent from the served row, present unchanged in the stored
@@ -206,7 +213,8 @@ starts mentioning it.
 9. Editor: choosing *Hand-picked first*, dragging two dimmed tiles across the seam, then dragging the
    second above the first, saves `pinned` in that order; switching to *Title* toasts and saves
    `pinned: []`. With 10 pins and *Show 10*, no eleventh pin can be made by click, drop or search, and
-   the − step is disabled; stepping to 11 re-enables picking.
+   the − step is disabled; stepping to 11 re-enables picking. Runs against the **Kotlin** editor
+   (`Workbench.kt`), not the mockup.
 10. Row list: a row on the default order shows no order text; the three example rows in
     `design/app/ravilo-config.html` show theirs verbatim.
 
@@ -234,11 +242,9 @@ starts mentioning it.
 Design has no further owner questions; everything below is a build-time call the dev team should make
 and record in the dev-review addendum. None blocks starting the phase.
 
-1. **Where does the TV's 10 come from?** `HomeFeedService` sends 30 per row, the viewer sees 10. Locate
-   the client-side trim (a `take(10)` in the row composable, a `LazyRow` item cap, or a layout
-   consequence) and remove it so the row draws every item served (FR-225-1b / R253 FR-R253-1b). If the
-   trim turns out to be load-bearing for performance (R240's reflow budget, R242's backdrop prefetch),
-   say so and cap `limit` accordingly rather than silently ignoring it.
+1. ~~**Where does the TV's 10 come from?**~~ **Answered in dev review 2026-09-17: nowhere — there is no
+   trim.** `ContentRow.kt:74` draws the whole list and both callers pass `row.items` as served. The server's
+   30 is what the viewer sees today; FR-225-1b's default is 30 accordingly.
 2. **`SortName` for items already scanned.** FR-225-3 adds the field to the scan fetch. Decide whether
    the existing library gets a one-off backfill (phase 181's set-difference machinery) or waits for the
    next full scan; until it lands, title sort uses `title`, which files *The Bear* under T.
@@ -263,4 +269,47 @@ and record in the dev-review addendum. None blocks starting the phase.
   with R187's control as today.
 - **No genre rows** exist any more — every non-system row is a workbench filter; `GENRE` is legacy.
 - Hand-picks come **only from the row's matches**.
-- The row's shown count is **per row** (`limit`, default 10) and **caps the hand-picks**.
+- The row's shown count is **per row** (`limit`) and **caps the hand-picks**. *(The design's "default 10"
+  became 30 in dev review — see FR-225-1b.)*
+
+## Dev review (2026-09-17)
+
+Reviewed against `main` at `8873cea7`, alongside its client half **R253**. The shape of the phase survives:
+two additive fields plus a length, one server-side resolver, one editor section, nothing new on the TV. Five
+things were checked against the code; one premise was wrong and three requirements gained the exact places
+they land.
+
+- **There is no client-side trim to 10.** The premise behind FR-225-1b and open question 1 does not hold:
+  `StaticContentRow` (`ContentRow.kt:74`) takes `items: List<T>` whole, and both call sites
+  (`HomeScreen.kt:542`, `ChannelScreen.kt:249`) hand it `row.items` untouched. The TV — and the phone, same
+  composable — draws all 30 the server sends. So `limit`'s default is **30**, the migration in acceptance 1 is
+  real, and R253 FR-R253-1b has nothing to remove. Every "10" in the first draft is corrected above.
+- **The seven sites are exactly the seven.** `HomeFeedService.kt:581, 595, 626, 631, 633, 678, 708` all run
+  `compareByDescending { recencyKey() }.thenBy { title }` then `take(ROW_ITEM_LIMIT)`. Line 349 is the
+  **hero** carousel's auto-pick (`HERO_AUTO_COUNT`) and stays as it is — heroes are out of scope. Line 678
+  sits in the `RowKind.GENRE` branch (`:675-696`), which still exists as a builder even though nothing
+  creates one (the wasm editor only badges it, `RaviloConfig.kt:1896`; the live config has none) — run the
+  resolver through both branches rather than special-casing the legacy kind.
+- **Pins key on the id the card already carries.** `MediaCard.id` is `jellyfinId ?: id`
+  (`HomeFeedService.kt:985`), and items without a Jellyfin id never reach a row (`toMediaCardOrNull`,
+  `:975`), so a `pinned` entry and a served tile compare on the same string. No new id plumbing.
+- **`SortName` costs no migration.** It is absent from every `Fields=` list the scanner sends
+  (`JellyfinClient.kt:353, 364, 414, 427, 535, 545`), so FR-225-3 adds it there; but `media` rows store the
+  item as a `json` blob (`Media.sq:3`), so a new `MediaItem.sortName` field needs **no `.sqm`** — it back-fills
+  on the next scan of each item, and reads as null (→ `title`) until then. That answers open question 2:
+  no dedicated backfill; the next scheduled scan does it.
+- **The 400s land in `RaviloConfigService.validate()`** (`RaviloConfigService.kt`, returns a message that
+  `TvRoutes.kt:990` turns into the 400) — add FR-225-11's three rules there. `normalize()` is where "absent
+  stays absent" has to be kept: it must not `copy(sort = …)` a default in. `RowConfig` is
+  `@Serializable` with unknown keys ignored client-side, as the spec assumes.
+- **The editor is Kotlin, not the mockup's JS.** `design/app/ravilo-builders.js` is *not* in the served
+  bundle (`build.gradle.kts:267,299` list the shipped CSS/JS; it is not there). The shipped workbench is
+  `src/wasmJsMain/kotlin/dev/jellystructure/ui/Workbench.kt` (`openWorkbench`, opened for rows from
+  `RaviloConfig.kt:1550` and `:1572`). FR-225-9 is a port of the mockup's `orderHtml()` into that file; the
+  `data-sort` / `data-pinned` seeds are mockup-only.
+- **Acceptance 1 has a home.** `HomeFeedServiceReadPathTest.kt` and `HomeFeedServiceChannelRailTest.kt`
+  already build feeds from fixtures; the byte-for-byte diff across the three visibility scopes extends
+  them rather than starting a new harness.
+
+Open questions 3–5 stand as build-time calls. On 3: keep `title` as the tie-break for `added` if the
+fixture diff moves anything; the sort-name tie-break matters only for `title`.

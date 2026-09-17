@@ -8,7 +8,8 @@
 
 ## Status
 
-`Planned` — written 2026-09-17, **not dev-reviewed**. Supersedes **FR-218-6** only; every other 218
+`Planned` — written 2026-09-17, **dev-reviewed 2026-09-17 against `main` `8873cea7`** (see §Dev review at
+the bottom). Supersedes **FR-218-6** only; every other 218
 requirement stands unchanged.
 
 **Numbering:** verified against `main` on 2026-09-17 — admin taken through **225** (ours, same day).
@@ -23,8 +24,9 @@ page-local `.cc-fv*` classes). **Pairs with 227**, which owns the address the UR
   Receiver and paste the address above* · *Add your Chromecast as a test device, or publish it.*
 - The console's URL is not on the card at all — the admin is told the console's name and left to find it.
 - The **Package Name** field is not mentioned anywhere in 218 or R245, and the Cast console's Custom
-  Receiver form asks for it. Without it the phone's own build is not associated with the receiver, which
-  is exactly the class of failure FR-218-7 can only surface as "cast once and see".
+  Receiver form asks for it. ~~Without it the phone's own build is not associated with the receiver~~ —
+  *softened in dev review:* it is optional sender-details metadata (see §Dev review), so a blank does not
+  break casting; the row is still worth its one block because the form asks and the admin should not guess.
 - The Application ID hint says *"after step 1"*, which was already wrong — the ID appears on save.
 - The sender's package name exists in the repo as `ravilo-android/build.gradle.kts:15`
   (`applicationId = "dev.jellystructure.ravilo"`, debug builds `+ ".debug"`), so the value is knowable
@@ -85,10 +87,11 @@ says so. Google remains the only product named on this card and nowhere else (FR
 2. Step 3 shows exactly two field rows, labelled **Receiver Application URL** and **Package Name**, each
    with a Copy that puts the value on the clipboard verbatim (no trailing whitespace, no added scheme), and
    **no more than one short qualifier each**.
-3. The URL block's value is byte-identical to the *Your receiver address* field above it in every state,
-   including when `public_url` is changed and the page re-renders.
-4. The package name block's value equals the sender build's `applicationId`; changing the sender's
-   `applicationId` changes the card without a config edit.
+3. The URL block's value is byte-identical to `public_url + "/cast/"` as 227 derives it, in every state,
+   including when the public address is changed and the page re-renders. *(The *Your receiver address*
+   field the first draft compared against is deleted by 227 FR-227-5.)*
+4. The package name block's value equals the sender build's `applicationId`; changing the one Gradle
+   value both builds read (see §Dev review) changes the card without a config edit.
 5. The Application ID hint reads *"From the console, after step 4."*; the registered state's link reads
    *"Show the registration steps again"*.
 6. In the `off` state nothing above is rendered at all (218 FR-218-4 unchanged).
@@ -118,3 +121,33 @@ says so. Google remains the only product named on this card and nowhere else (FR
 3. **Where should the package name live for the Wasm/web sender?** It has no Android package. If a web
    sender is ever registered, the block should hide rather than show an inapplicable value — flag it when
    R245's Wasm half is picked up.
+
+## Dev review (2026-09-17)
+
+Reviewed against `main` at `8873cea7`, alongside **227**. The card as built by 218 is at
+`src/wasmJsMain/kotlin/dev/jellystructure/ui/Settings.kt:170-215` (`#cc-steps`, three steps,
+`#cc-steps-again` reading *Show the three steps again*, the Application ID hint) — every string this phase
+replaces exists there once, so the change is confined to that block plus one build-time constant.
+
+- **The package name is not knowable to the admin frontend today.** `applicationId =
+  "dev.jellystructure.ravilo"` is a literal in `ravilo-android/build.gradle.kts:15` (with `.debug` appended
+  at `:54` and `:66`); nothing in `:shared` or the wasm build sees it. Acceptance 4 therefore needs one Gradle
+  value read by both: extend R252's `generateBuildInfo` task (`shared/build.gradle.kts:56-75`) to emit
+  `BuildInfo.androidApplicationId` from the same property `ravilo-android` sets its `applicationId` from.
+  The admin card reads the constant; no config key, exactly as FR-226-2 says.
+- **On open question 2 — whether Package Name is required.** To the dev team's knowledge of the Cast
+  Developer Console (verify on the live form when building), the Android package name sits under *Sender
+  details* and is **optional**: it links the receiver to a sender for Google Home's "get the app" hand-off,
+  and a receiver with no sender details still launches for any sender that calls it by Application ID.
+  So: keep the row (FR-226-2), but its qualifier stays descriptive and the step text must not say *must*.
+  Skipping it produces no failure FR-218-7 could surface, which is the opposite of the first draft's worry.
+- **On open question 1 — the labels.** *Receiver Application URL* is the console's label for the receiver
+  page; the Android field is labelled *Package Name* under *Sender details*. Both are read from the live
+  form on the day of building and corrected in the one place the card renders them; nothing else in the
+  card depends on Google's wording.
+- **On open question 3 — the web sender.** `BuildInfo` is per build target already (R252's
+  `X-Ravilo-Platform`); the admin is one wasm build, so the value is a constant of the *Android* sender
+  regardless of which client the admin uses. Hide nothing; the row describes the phone app, and says so
+  (*the Ravilo app on your phone*).
+- **`rel="noopener"`** is not a convention the shipped admin uses anywhere yet (every external link on the
+  media detail opens in the same tab); acceptance 1 stands, and it should be the first of them.

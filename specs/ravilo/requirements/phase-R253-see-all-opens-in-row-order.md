@@ -7,7 +7,9 @@
 
 ## Status
 
-`Planned` — written 2026-09-17, **not dev-reviewed**.
+`Planned` — written 2026-09-17, **dev-reviewed 2026-09-17 against `main` `8873cea7`** (see §Dev review at the
+bottom: the row already draws everything it is sent, and the browse page already has both directions of every
+key — so FR-R253-1b is a no-op and FR-R253-4 adds **no** strings).
 
 **Numbering:** verified against `main` on 2026-09-17 — Ravilo taken through **R252**. Pairs with **225**.
 Next free: R254.
@@ -39,20 +41,24 @@ en/da/fo. `Row.items` arrives in the server's order and `ContentRow` draws it as
 hand-pick the server skipped (225 FR-225-5/6) leaves no trace — the viewer cannot tell a row with pins
 from a row without.
 
-**FR-R253-1b — The row draws every item it is sent.** 225 FR-225-1b makes the row's length a per-row
-setting (`limit`, default 10 — what the viewer sees today). Wherever the TV row trims the served `items`
-to 10 today, that trim goes; the server's list is already the right length. A row served with 25 items
-shows 25 before the See-all card. Continue Watching (its own `CONTINUE_ROW_LIMIT`) is untouched.
+**FR-R253-1b — The row draws every item it is sent (already true; kept as an invariant).** `StaticContentRow`
+(`ContentRow.kt:74`) draws the whole `items` list and both callers pass `row.items` as served
+(`HomeScreen.kt:542`, `ChannelScreen.kt:249`). There is no trim to remove — 225's `limit` (default 30, the
+server's `ROW_ITEM_LIMIT`) simply arrives as a shorter list. Nothing in this phase may introduce a client-side
+cap. Continue Watching (`CONTINUE_ROW_LIMIT`) is untouched.
 
 **FR-R253-2 — The page opens in the row's order.** When `→ See all` is opened from a row whose `Row`
 carries `sort_by`, the Sort control's initial value maps from it:
 
-| `sort_by` · `sort_descending` | initial Sort |
+| `sort_by` · `sort_descending` | initial `SortField` · `SortDir` |
 |---|---|
-| `added` · true / false | Recently added / *Oldest added* (new option, see FR-R253-4) |
-| `title` · false / true | A–Z / Z–A |
-| `year` · true / false | Release year (newest first) / *Release year (oldest first)* (new option) |
-| absent (CONTINUE, NEWLY_ADDED, Movies/Series nav, taxonomy tiles) | Recently added — R187's default, unchanged |
+| `added` · true / false | `RECENT` · `DESC` / `ASC` (chip: *Recently added · Newest first* / *Oldest first*) |
+| `title` · false / true | `TITLE` · `ASC` / `DESC` (chip: *A–Z* / *Z–A*) |
+| `year` · true / false | `YEAR` · `DESC` / `ASC` (chip: *Release year · Newest first* / *Oldest first*) |
+| absent (CONTINUE, NEWLY_ADDED, Movies/Series nav, taxonomy tiles) | `RECENT` · `DESC` — R187's default, unchanged |
+
+*(Corrected in dev review: the page already models sort as a field **and** a direction — `SortField` /
+`SortDir` in `SeededBrowseScreen.kt:82-83` — so every server order maps onto an existing pair.)*
 
 The value is an *initial* value only: the viewer's Sort control works exactly as before, and a change
 survives filter changes exactly as before. Nothing is persisted.
@@ -63,11 +69,12 @@ field, null when the item has none). The A–Z / Z–A facet sorts on `sortName 
 this the row files *The Bear* under B and the page files it under T, which is the disagreement this
 phase exists to remove.
 
-**FR-R253-4 — Two reverse options on the Sort control.** R187 ships *Recently added*, *A–Z*, *Z–A*,
-*Release year*, *Maturity*, *IMDb rating*. So that every server order has a page equivalent, add
-**Oldest added** and **Release year · oldest first** — the only two new strings this pair of phases
-introduces, on the browse page's Sort popover, × en/da/fo. They are ordinary options: a viewer can pick
-them on any browse page, seeded or not.
+**FR-R253-4 — No new Sort options and no new strings.** ~~Add *Oldest added* and *Release year · oldest
+first*~~ — **corrected in dev review:** the Sort control already carries a direction per field
+(`SortDir`, flipped by re-selecting the active field, `SeededBrowseScreen.kt:794`), and the strings already
+exist in all three languages: `browse.sort.newest` / `browse.sort.oldest` (`Strings.kt:218-219`) label
+`RECENT` and `YEAR` in either direction, `browse.sort.az` / `browse.sort.za` label `TITLE`. This pair of
+phases adds **zero** keys to `Strings.kt`.
 
 **FR-R253-5 — Hand-picks do not reach the page.** The See-all page shows the *full seed set* in the
 automatic key's order — pins are a property of the 30-tile row, not of the library view behind it.
@@ -98,8 +105,8 @@ rule applies. No new phone surface.
 5. A `BrowseCard` with `sort_name:"Bear, The"` sorts under B in A–Z; one without sorts by title.
 6. From a row with pins: the page opens in the row's *automatic* key; no pin is visible or inferable on
    the page or the row.
-7. `Strings.kt` gains exactly two keys (the two new Sort options) in en, da and fo; a grep for any
-   "pinned" / "hand-picked" / "sorted by" string on the client finds nothing.
+7. `Strings.kt` gains **no** keys; a grep for any "pinned" / "hand-picked" / "sorted by" string on the
+   client finds nothing.
 
 ## Source references
 
@@ -116,14 +123,32 @@ Design has no further owner questions (the one owner question — whether a pinn
 pins first — was answered **no** on 2026-09-17; FR-R253-5 stands). Build-time calls to record in the
 dev-review addendum:
 
-1. **Where the TV's 10 comes from.** See 225 open question 1 — FR-R253-1b names the intent (the row draws
-   every item served), the dev team names the mechanism and removes it, or reports why it must stay.
-2. **The two new Sort options' Danish and Faroese.** *Oldest added* / *Release year · oldest first* need
-   da/fo strings. Design has not drafted them (the shipped `Strings.kt` table wins wherever a phrasing
-   exists — R187's *Recently added* / *Release year* should be the pattern to extend).
+1. ~~**Where the TV's 10 comes from.**~~ **Answered 2026-09-17: nowhere.** There is no trim (see FR-R253-1b).
+2. ~~**The two new Sort options' Danish and Faroese.**~~ **Answered 2026-09-17: not needed.** Both directions
+   already have da/fo strings (FR-R253-4).
 3. **The phone's narrower grid.** Same initial-sort rule as the TV; no reason to think it wants a
    different default. Noted only because R244 found every phone regression by someone using the phone —
    check it on a handset once, not by review.
 4. **Sort chip mapping when `sort_by` names an option the client doesn't know.** A newer server could
    one day send a key this build has no Sort option for. Fall back to *Recently added* silently (R187's
    default), never to an empty chip.
+
+## Dev review (2026-09-17)
+
+Reviewed against `main` at `8873cea7`, alongside its server half **225**. Nothing the viewer sees changes
+from the design's intent — the first tile of a row and of its page are the same tile, and the row shows no
+reason. Two requirements shrank to nothing, which is the good kind of review:
+
+- **FR-R253-1b is already true.** The row composable draws every served item (`ContentRow.kt:74`; callers at
+  `HomeScreen.kt:542` and `ChannelScreen.kt:249`). Kept as an invariant so no one adds a cap while touching
+  the row, but there is no code to remove.
+- **FR-R253-4 needs no strings.** `SeededBrowseScreen.kt` already has `SortField { RECENT, TITLE, YEAR,
+  MATURITY, IMDB }` × `SortDir { ASC, DESC }` with `defaultDirFor()` (`:82-93`), `sortDirLabel()` (`:606-611`)
+  and the four direction strings in `Strings.kt:218-221` in en/da/fo. The initial-value rule is one function
+  from `(sort_by, sort_descending)` to `(SortField, SortDir)`, applied where the seeded page's store is
+  created; R187's "survives filter changes" behaviour is untouched because only the *initial* value moves.
+- **FR-R253-3's `sort_name` rides `BrowseCard`, not `MediaCard`** (`Models.kt:265`), matching the
+  `imdb_rating` precedent recorded on that class: browse-only payload stays off every other card surface.
+  `sortedFiltered()`'s `SortField.TITLE` branch (`:307`) becomes `sortName ?: title`, lower-cased as today.
+- **Open question 4 (an unknown `sort_by`)** — map to `RECENT · DESC`, R187's default, and never an empty
+  chip. One `when` with an `else`.
