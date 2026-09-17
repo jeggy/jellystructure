@@ -77,6 +77,19 @@ hold:
   The duration is unchanged because the gaps are inside the file. A remux makes the container valid by
   discarding what it cannot parse. S01E05 should be replaced from its seeding copy like the rest.
 
+## Addendum 2 — sources verified, fix spec'd, replacement not yet run
+
+- **62 of the 63** damaged Ben the Bricklayer and Hoppe Hare files (the 20 + 42 above, plus the remuxed
+  S01E05) have a same-named seeding copy that demuxes with zero errors and has the same stream layout.
+  The one without is Hoppe Hare **S00E13**. *The Tidier* S03E02–E05 have **no local source** and
+  need a Sonarr re-grab.
+- The code side became **phase 234** (`✓ Built`, not deployed): the post-edit gate now repairs both
+  broken layouts, one file has one writer, and a lossy repair says so in the log.
+- **The replacement itself has not been run.** It is an operator action on production media; the
+  procedure is: stream-copy the *source* into the library folder carrying over the library copy's
+  per-track language/title/default/forced flags, verify (zero demux errors, packet counts equal to the
+  source, flags equal to the old copy), quarantine the corrupt file, rename into place.
+
 ## Still to do
 
 - Check Chore Captain and Ashworth at a quiet hour (≈170 GB of sequential reads).
