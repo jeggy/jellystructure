@@ -10,7 +10,7 @@
 
 ## Status
 
-`✓ Built` — investigated, spec'd and built 2026-09-17 (commit `8d648b7d`), not dev-reviewed; deployment pending. The measurements below were taken on
+`✓ Built` — investigated, spec'd and built 2026-09-17 (commit `8d648b7d`), not dev-reviewed; **released as v1.20 and deployed to production 2026-09-17 12:41Z** (compose on `:latest`, GC floor 512 MiB); first 30 min flat. The measurements below were taken on
 the production container (`v1.18`, up since 2026-09-17 07:06Z) and on three instrumented local instances
 run against copies of the production DB and config.
 
@@ -140,6 +140,14 @@ cycles faster than once every few seconds at a stable live heap, the one tunable
 default — and logged as the first lines of the process log either way, so the deployed choice lives in
 `docker-compose.yml` next to the measurement that justified it and is reversible without a rebuild. No
 `targetHeapUtilization`, allocator or page-size changes without their own measurement.
+
+*Measured 2026-09-17, first 30 min of v1.20 on production with `JELLYSTRUCTURE_GC_MIN_HEAP_MB=512`:*
+8.8 collections/min (was ≈90), pauses 44–118 ms (mean 79), RSS 390–786 MB with no trend,
+`gc_roots.stable` 55–105 flat, kept objects 1.52–1.57 M flat. The standalone reproducer
+(`GcSchedulerProbe`) showed the tuner itself behaves as documented (target = 2× a forced-collection live
+set) and that `memoryUsageAfter` includes objects allocated during the concurrent cycle, so the
+"target below live" reading was partly measurement; the write-up for JetBrains is
+`specs/research-reports/kotlin-native-gc-pacing-jetbrains-issue-2026-09-17.md`.
 
 **FR-228-5 — Verification that would catch a regression.** (a) `CurlLeakProbe` stays in
 `linuxX64Test` as a manual probe (`CURL_PROBE_URL`, `CURL_PROBE_N`, `CURL_PROBE_MODE=ok|fail|cancel`):
