@@ -77,6 +77,7 @@ import dev.jellystructure.ravilo.ui.components.castConnectedDeviceName
 import dev.jellystructure.ravilo.ui.seams.RemoteImage
 import dev.jellystructure.ravilo.ui.theme.RaviloDimens
 import dev.jellystructure.ravilo.ui.theme.raviloHPad
+import dev.jellystructure.ravilo.ui.components.DetailHeroScrims
 import dev.jellystructure.ravilo.ui.theme.LocalCompact
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import dev.jellystructure.ravilo.ui.theme.Sora
@@ -258,13 +259,6 @@ private fun SeriesDetailLoaded(
     val colors = RaviloTheme.colors
     val spaceGrotesk = SpaceGrotesk
     val sora = Sora
-    val backdropGradient = remember(colors.background) {
-        Brush.verticalGradient(
-            0f to Color.Transparent,
-            0.45f to colors.background.copy(alpha = 0.55f),
-            1f to colors.background,
-        )
-    }
     // R109: LazyColumn so below-hero rails (season picker, episodes, cast, related) compose only when
     // scrolled into view — first paint is hero-only (supersedes R107's timed defer).
     val listState = rememberLazyListState()
@@ -385,7 +379,7 @@ private fun SeriesDetailLoaded(
                 } else {
                     Box(modifier = Modifier.matchParentSize().background(colors.surfaceVariant))
                 }
-                Box(modifier = Modifier.matchParentSize().background(backdropGradient))
+                DetailHeroScrims()  // R257 (FR-R257-4) — tint + head band + floor, shared with Home's hero
                 Column(
                     modifier = Modifier
                         .align(Alignment.BottomStart)

@@ -8,7 +8,7 @@
 
 ## Status
 
-`Planned` — written 2026-09-17 from a live reproduction and a code trace, not dev-reviewed.
+`✓ Built` 2026-09-17 (`c940888d`) — written the same day from a live reproduction and a code trace, not dev-reviewed, **not deployed**. `HomeFeedServiceStopKeepsContinueRowTest` covers FR-229-5's four cases (the Jellyfin fetches stand behind a test-only seam, `continueSourceForTest`); the list's content stamp is its own field so `/api/health`'s `continue_age_ms` still reports every successful build. Acceptance 1–2 need the deployed backend.
 Backend-only (`HomeFeedService.kt`); no wire, config or client change. Partially corrects **R219**
 FR-R219-1's implementation, restores **R231**'s invariant on the stop path, and completes **R248**
 FR-R248-2.

@@ -719,6 +719,9 @@ body { font-family: 'Sora', sans-serif; }
   border: 2px solid var(--line); display: flex; align-items: center; justify-content: center;
   transition: transform .18s var(--ease), box-shadow .2s, border-color .2s, background .2s; }
 .taxo.genre .taxo-card { height: 104px; }
+/* R257 (FR-R257-3) — a captured logo is dark ink on transparency far more often than not (88 of 135 in
+   production), so a logo tile sits on a light plate; a wordmark tile keeps the dark card. */
+.taxo-card:has(.taxo-logo), .taxo.focused .taxo-card:has(.taxo-logo) { background: #E8EAF0; }
 .taxo-wm { font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 34px; letter-spacing: -1px;
   line-height: 1.04; color: var(--ink); text-align: center; text-wrap: balance; }
 .taxo.genre .taxo-wm { font-size: 27px; letter-spacing: -.5px; }
