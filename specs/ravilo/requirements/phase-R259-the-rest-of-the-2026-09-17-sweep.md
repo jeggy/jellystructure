@@ -51,6 +51,12 @@
   stopped the shift short. The minimum is 48 dp: the label always starts at the visible edge and
   ellipsizes in what is left.
 
+- **FR-R259-7 — the walls are 6-up on a TV (owner decision, 2026-09-17, on seeing them on the stue TV).**
+  Supersedes R243 FR-R243-2's 4-up (studios, networks) and 5-up (genres), which were the mockup's numbers
+  for a 1920-px canvas and left each tile ~200 dp wide. All three walls are 6 across on a TV; the tile is
+  ~130 × 88 dp (genres 72), the caption 15 / 13 sp stacked, a wordmark 15 sp on up to three lines. The
+  phone's 2-up / 3-up is unchanged. The mockup's `.taxo-row` follows (`repeat(6, 1fr)`).
+
 ## Still open, deliberately
 
 A *positioned* subtitle cue (a release tag pinned bottom-left) is not moved by R251's lift. It is one

@@ -147,10 +147,11 @@ private fun TaxonomyLoaded(
         else -> facets.genres
     }
     val titles = facets.titles[kind] ?: 0
-    // FR-R243-2 / FR-R243-10 — 4-up (5-up genres) on the TV, 2-up (3-up genres) on a phone.
+    // R259 (FR-R259-7, owner decision 2026-09-17 on the stue TV) — 6-up on the TV for all three walls; R243's
+    // 4-up / 5-up came from the mockup's 1920-px canvas and left tiles ~200 dp wide. Phone unchanged (2 / 3).
     val perRow = when {
         handset -> if (segment == DiscoverSegment.GENRES) 3 else 2
-        else -> if (segment == DiscoverSegment.GENRES) 5 else 4
+        else -> TAXO_TV_COLUMNS
     }
     val rows = remember(list, perRow) { list.chunked(perRow) }
     // FR-R243-5 — the crumb the seeded page shows: `Discover · Networks` (the page title is the value).
@@ -288,6 +289,7 @@ internal fun titleCountLabel(n: Int): String =
  * not repeated, and nothing ever says "no logo". Both carry exactly one caption line so the grid stays
  * regular. Not a [dev.jellystructure.ravilo.ui.components.Tile]: no poster, no progress, no badge.
  */
+private const val TAXO_TV_COLUMNS = 6
 private val TAXO_LOGO_PLATE = androidx.compose.ui.graphics.Color(0xFFE8EAF0)
 
 @Composable
@@ -302,13 +304,13 @@ private fun TaxonomyTile(
     var focused by remember { mutableStateOf(false) }
     val cardHeight = when {
         handset -> if (genre) 64.dp else 96.dp
-        else -> if (genre) 104.dp else 158.dp
+        else -> if (genre) 72.dp else 88.dp      // a ~130 dp tile: roughly 3:2, was 158 dp at 4-up
     }
     val wmSize = when {
         handset -> if (genre) 15.sp else 19.sp
         // R257 — 34 sp was the mockup's px on a 1920 canvas; a 4-up TV tile is ~200 dp wide and it had
         // never been seen there (R256: the TV drew the handset branch). "Entertainment" clips at 24 sp, fits at 20.
-        else -> 20.sp
+        else -> 15.sp   // 6-up: ~102 dp of text width; up to three lines (below)
     }
     val shape = RoundedCornerShape(16.dp)
     Column(
@@ -333,7 +335,7 @@ private fun TaxonomyTile(
                 // which keeps the dark card it was drawn for. Unknown ink = the light plate.
                 .background(if (item.logoUrl != null && item.logoInk != "light") TAXO_LOGO_PLATE else colors.surfaceVariant, shape)
                 .then(if (focused) Modifier.border(2.dp, colors.focusRing, shape) else Modifier)
-                .padding(horizontal = if (handset || item.logoUrl == null) 14.dp else 26.dp),
+                .padding(horizontal = if (handset || item.logoUrl == null) 10.dp else 16.dp),
             contentAlignment = Alignment.Center,
         ) {
             val logo = item.logoUrl
@@ -352,7 +354,7 @@ private fun TaxonomyTile(
                     fontWeight = FontWeight.Bold,
                     fontFamily = SpaceGrotesk,
                     textAlign = TextAlign.Center,
-                    maxLines = 2,
+                    maxLines = if (handset) 2 else 3,
                     overflow = TextOverflow.Ellipsis,
                     lineHeight = wmSize * 1.05f,
                 )
@@ -364,7 +366,7 @@ private fun TaxonomyTile(
             Text(
                 item.name,
                 color = if (focused) colors.text else colors.textSecondary,
-                fontSize = if (handset) 14.sp else 17.sp,
+                fontSize = 14.sp,   // 6-up TV tile (~122 dp of text): "Cartoon Network" fits at 14, clipped at 15
                 fontWeight = FontWeight.SemiBold,
                 fontFamily = Sora,
                 maxLines = 1,
@@ -373,7 +375,7 @@ private fun TaxonomyTile(
             )
         }
         val countText: @Composable () -> Unit = {
-            Text(titleCountLabel(item.count), color = colors.textSecondary, fontSize = if (handset) 13.sp else 15.sp, fontFamily = Sora, maxLines = 1)
+            Text(titleCountLabel(item.count), color = colors.textSecondary, fontSize = if (handset) 13.sp else 13.sp, fontFamily = Sora, maxLines = 1)
         }
         if (handset || genre) {
             Row(

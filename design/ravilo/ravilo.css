@@ -714,10 +714,11 @@ body { font-family: 'Sora', sans-serif; }
 .taxometa b { color: var(--ink-soft); font-weight: 600; }
 .taxometa .tm-note { margin-left: 5px; }
 .taxogrid { padding: 0 64px; }
-.taxo-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 24px; margin-bottom: 34px; }
-.taxogrid.genres .taxo-row { grid-template-columns: repeat(5, 1fr); }
+/* R259 (FR-R259-7, owner decision 2026-09-17) — 6-up on the TV for all three walls (was 4 / 5). */
+.taxo-row { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 24px; margin-bottom: 34px; }
+.taxogrid.genres .taxo-row { grid-template-columns: repeat(6, minmax(0, 1fr)); }
 .taxo { cursor: pointer; min-width: 0; }
-.taxo-card { height: 158px; border-radius: 16px; padding: 0 26px; overflow: hidden;
+.taxo-card { height: 176px; border-radius: 16px; padding: 0 26px; overflow: hidden;
   background: linear-gradient(180deg, rgba(255,255,255,.085), rgba(255,255,255,.035));
   border: 2px solid var(--line); display: flex; align-items: center; justify-content: center;
   transition: transform .18s var(--ease), box-shadow .2s, border-color .2s, background .2s; }
