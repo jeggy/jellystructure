@@ -169,6 +169,9 @@ sees the first focus of a session behave differently from the second.
    a Pixel 8 are not the same machine — but config is per user by constitution §3, so one household
    answer applies to a slow TV and a fast phone alike. Resolving this properly probably means a
    device-class capability the server consults, not a second config surface.
+   **2026-09-17 — partly answered by R254:** `rowOpen` is a TV direction; on a phone or the web app the
+   client renders it as `line` (the same client-side shape as R240's reduced-motion downgrade). The
+   per-device *capability* question above stays open; R254 is one input to it, not its answer.
 4. **Does the delay belong to focus detail, or to focus?** It currently governs only this surface. If it
    reads well, the hero's auto-advance pause and browse's focus reveals are the obvious next consumers —
    at which point it is a navigation setting with a different name and a different home.
