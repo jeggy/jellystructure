@@ -52,7 +52,8 @@ class CastServiceTest {
         assertNull(cast.capability(), "no block ⇒ no button")
         configStore.update(configStore.current.copy(chromecast = ChromecastConfig(enabled = true, appId = "")))
         assertNull(cast.capability(), "enabled but no app id ⇒ still absent, never greyed")
-        configStore.update(configStore.current.copy(chromecast = ChromecastConfig(enabled = true, appId = "a1b2c3d4", publicUrl = "https://js.example/")))
+        // Phase 227 — the address is the installation's root public_url, not a field of the chromecast block.
+        configStore.update(configStore.current.copy(publicUrl = "https://js.example/", chromecast = ChromecastConfig(enabled = true, appId = "a1b2c3d4")))
         val cap = assertNotNull(cast.capability())
         assertEquals("A1B2C3D4", cap.appId)
         assertEquals("https://js.example/cast/", cap.receiverUrl)

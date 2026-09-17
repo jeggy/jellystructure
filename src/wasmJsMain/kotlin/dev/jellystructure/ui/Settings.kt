@@ -164,6 +164,19 @@ X-JS-Api-Key: jsk_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx</pre>
 
             <div id="advisor-server-wide" data-tab="libraries" style="display:none"></div>
 
+            <!-- Phase 227 — ONE public address for the installation, configured once. An origin (https, host,
+                 no path). Not gated on Chromecast: it is a property of the installation. Everything that must
+                 be reached from outside derives from it server-side, never from a request's Host header. -->
+            <div class="card set-section" id="sect-public" data-tab="connections">
+              <div class="row center"><h3 style="font-size:1.05rem;margin:0;">Public address</h3><span class="spacer"></span><span id="pub-reach" class="tiny muted"></span></div>
+              <div class="field" style="margin-top:12px;margin-bottom:0">
+                <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                  <input id="pub-url" class="input mono" type="url" placeholder="https://your-public-address" style="flex:1;min-width:220px">
+                  <button id="pub-check-btn" type="button" class="btn sm ghost" style="flex:none">Check</button>
+                </div>
+                <span class="hint" id="pub-hint"></span></div>
+            </div>
+
             <!-- Phase 218 (FR-218-4/6/13) — Settings → Connections → Chromecast, three states: off (switch +
                  one paragraph), on-but-unregistered (address, the three steps, empty ID, ceiling, status),
                  registered-and-verified (steps collapsed, ID with its use, status incl. the last cast).
@@ -176,20 +189,26 @@ X-JS-Api-Key: jsk_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx</pre>
 
               <div id="cc-on" style="display:none;">
                 <hr class="dash">
-                <div class="field"><label>Your receiver address</label>
-                  <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-                    <input id="cc-public-url" class="input mono" type="url" placeholder="https://your-public-address" style="flex:1;min-width:220px">
-                    <span class="mono tiny muted">/cast/</span>
-                    <span id="cc-reach" class="tiny muted"></span>
-                    <button id="cc-check-btn" type="button" class="btn sm ghost" style="flex:none">Check</button>
-                    <button id="cc-copy-btn" type="button" class="btn sm ghost" style="flex:none">Copy</button>
-                  </div>
-                  <span class="hint">A Chromecast loads this page itself, so it has to be reachable from the internet over <b>https</b>. <b>Check</b> asks the server to fetch its own receiver through this address — from outside, not from this browser.</span></div>
-
+                <!-- Phase 226 — the registration, step by step, in GOOGLE's words: the admin is reading Google's
+                     form, so each field carries the console's exact on-screen label (the 212 rule) and its
+                     value, copyable. Phase 227 — the address itself lives in the Public address card above
+                     and is rendered here exactly once, derived. -->
                 <div class="box flat" id="cc-steps" style="padding:14px 15px;">
-                  <div class="cc-step"><span class="step-n">1</span><p><b>Register an application</b> at the Google Cast Developer Console. Google charges a <b>one-time US$5</b> developer fee. Nothing else in Ravilo costs money.</p></div>
-                  <div class="cc-step"><span class="step-n">2</span><p>Choose <b>Custom Receiver</b> and paste the address above.</p></div>
-                  <div class="cc-step" style="margin-bottom:0;"><span class="step-n">3</span><p>Add your Chromecast as a <b>test device</b>, or <b>publish</b> the application so any Chromecast can use it.</p></div>
+                  <div class="cc-step"><span class="step-n">1</span><p>Open the <a href="https://cast.google.com/publish" target="_blank" rel="noopener">Google Cast Developer Console</a> (cast.google.com/publish). Google charges a <b>one-time US$5</b> developer fee. Nothing else in Ravilo costs money.</p></div>
+                  <div class="cc-step"><span class="step-n">2</span><p>Choose <b>Add New Application</b>, then <b>Custom Receiver</b>.</p></div>
+                  <div class="cc-step"><span class="step-n">3</span><div style="flex:1;min-width:0"><p style="margin:0 0 8px">Fill in two fields. Name it anything; everything else can stay as it is.</p>
+                    <div class="box" style="padding:0;overflow:hidden">
+                      <div style="padding:10px 12px;border-bottom:1px solid var(--line)">
+                        <div class="tiny"><b>Receiver Application URL</b> <span class="muted">· your public address + /cast/</span></div>
+                        <div style="display:flex;gap:8px;align-items:center;margin-top:5px"><code class="mono" id="cc-field-url" style="flex:1;min-width:0;overflow-wrap:anywhere"></code><button id="cc-copy-url" type="button" class="btn sm ghost" style="flex:none">Copy</button></div>
+                      </div>
+                      <div style="padding:10px 12px">
+                        <div class="tiny"><b>Package Name</b> <span class="muted">· the Ravilo app on your phone</span></div>
+                        <div style="display:flex;gap:8px;align-items:center;margin-top:5px"><code class="mono" id="cc-field-pkg" style="flex:1;min-width:0"></code><button id="cc-copy-pkg" type="button" class="btn sm ghost" style="flex:none">Copy</button></div>
+                      </div>
+                    </div></div></div>
+                  <div class="cc-step"><span class="step-n">4</span><p><b>Save.</b> The console now shows the <b>Application ID</b> — copy it into the field below.</p></div>
+                  <div class="cc-step" style="margin-bottom:0;"><span class="step-n">5</span><p>Add your Chromecast as a <b>test device</b> (its serial number is on the device and in the Google Home app), or <b>publish</b> the application so any Chromecast can use it — publishing is not instant.</p></div>
                 </div>
 
                 <div class="field" style="margin-top:14px;"><label>Application ID</label>
@@ -197,7 +216,7 @@ X-JS-Api-Key: jsk_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx</pre>
                     <input id="cc-appid" class="input mono" placeholder="8 hex characters, e.g. A1B2C3D4" maxlength="8" style="width:180px;text-transform:uppercase">
                     <span id="cc-appid-badge" class="tiny muted"></span>
                   </div>
-                  <span class="hint" id="cc-appid-hint">From the console, after step 1.</span></div>
+                  <span class="hint" id="cc-appid-hint">From the console, after step 4.</span></div>
 
                 <div class="row center" style="gap:14px;margin-bottom:14px;">
                   <div><b style="font-size:.9rem;">Concurrent cast sessions</b><div class="tiny muted" style="margin-top:3px;">Each cast is a transcode on your Jellyfin server.</div></div>
@@ -207,7 +226,7 @@ X-JS-Api-Key: jsk_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx</pre>
 
                 <hr class="dash">
                 <div class="cc-stat" id="cc-stat"></div>
-                <div class="tiny muted" style="margin-top:8px"><span id="cc-steps-again" class="btn sm ghost" style="display:none;padding:0;cursor:pointer">Show the three steps again</span></div>
+                <div class="tiny muted" style="margin-top:8px"><span id="cc-steps-again" class="btn sm ghost" style="display:none;padding:0;cursor:pointer">Show the registration steps again</span></div>
               </div>
             </div>
 
@@ -804,7 +823,9 @@ private fun populateForm(response: ConfigResponse) {
     setInputValue("cc-appid", cc?.appId ?: "")
     // The page's own origin is the natural default for the public address, but only as a pre-fill the
     // admin saves — the reachability check never trusts it (FR-218-5).
-    setInputValue("cc-public-url", cc?.publicUrl?.takeIf { it.isNotBlank() } ?: window.location.origin)
+    // Phase 227 — the root key; an old response may still carry the nested one (pre-migration server).
+    setInputValue("pub-url", config.publicUrl.ifBlank { cc?.publicUrl.orEmpty() })
+    renderPublicAddress()
     (document.getElementById("cc-max") as? HTMLElement)?.textContent = ccMaxSessions.toString()
     renderChromecastState()
 
@@ -1525,8 +1546,8 @@ private fun readForm(): AppConfig = AppConfig(
         enabled = true,
         appId = getInputValue("cc-appid").trim().uppercase(),
         maxSessions = ccMaxSessions,
-        publicUrl = getInputValue("cc-public-url").trim().trimEnd('/'),
     ) else null,
+    publicUrl = getInputValue("pub-url").trim().trimEnd('/'),   // Phase 227 — root, not inside [chromecast]
     scanSchedule = if (pipelineEnabled) computePipeCron() else "",
     scan = ScanConfig(pipeline = if (pipelineEnabled) pipelineSteps.toList() else emptyList(), deferWhilePlaying = deferWhilePlaying),
     requestLanguage = RequestLanguageConfig(intents = requestLanguageIntents.toList(), kidsDefault = requestLanguageKidsDefault?.takeIf { it.isNotBlank() }),
@@ -1559,6 +1580,7 @@ private fun buildToml(c: AppConfig): String = buildString {
     appendLine("tv_image_cache_mb = ${c.behavior.tvImageCacheMb}")
     if (c.scanSchedule.isNotBlank()) {
         appendLine("scan_schedule = \"${c.scanSchedule}\"")
+        if (c.publicUrl.isNotBlank()) appendLine("public_url = \"${c.publicUrl}\"")   // Phase 227
     }
     appendLine("defer_while_playing = ${c.scan.deferWhilePlaying}")
     for (step in c.scan.pipeline) {
@@ -1657,7 +1679,6 @@ private fun buildToml(c: AppConfig): String = buildString {
         appendLine("enabled = ${cc.enabled}")
         appendLine("""app_id = "${cc.appId}"""")
         appendLine("max_sessions = ${cc.maxSessions}")
-        appendLine("""public_url = "${cc.publicUrl}"""")
     }
 }
 
@@ -3129,11 +3150,11 @@ private fun renderChromecastStatus(st: ChromecastStatus?, reach: ReceiverCheck?)
         if (ccShowSteps) { ccShowSteps = false; renderChromecastState() }
         (document.getElementById("cc-appid-hint") as? HTMLElement)?.innerHTML = "Registered with Google · confirmed by a real cast."
     } else {
-        (document.getElementById("cc-appid-hint") as? HTMLElement)?.innerHTML = "From the console, after step 1."
+        (document.getElementById("cc-appid-hint") as? HTMLElement)?.innerHTML = "From the console, after step 4."
     }
     val reachLine = when {
-        reach == null -> """<div><span class="cc-dot off"></span> Receiver address <b>not checked yet</b> — press Check</div>"""
-        reach.reachable -> """<div><span class="cc-dot"></span> Receiver <b>reachable</b> at that address</div>"""
+        reach == null -> """<div><span class="cc-dot off"></span> Receiver at your public address + <span class="mono">/cast/</span> — <b>not checked yet</b> (press Check above)</div>"""
+        reach.reachable -> """<div><span class="cc-dot"></span> Receiver <b>reachable</b> at your public address + <span class="mono">/cast/</span></div>"""
         else -> """<div><span class="cc-dot wait"></span> Receiver <b>${reach.detail.esc()}</b></div>"""
     }
     val idLine = when {
@@ -3186,9 +3207,10 @@ private fun wireChromecast(scope: CoroutineScope) {
         renderChromecastStatus(lastStatus, lastReach)
         refreshTomlPreview(readForm())
     }
-    document.getElementById("cc-public-url")?.addEventListener("input") {
+    document.getElementById("pub-url")?.addEventListener("input") {
         lastReach = null
-        (document.getElementById("cc-reach") as? HTMLElement)?.innerHTML = ""
+        (document.getElementById("pub-reach") as? HTMLElement)?.innerHTML = ""
+        renderPublicAddress()
         renderChromecastStatus(lastStatus, lastReach)
         refreshTomlPreview(readForm())
     }
@@ -3206,16 +3228,19 @@ private fun wireChromecast(scope: CoroutineScope) {
         ccShowSteps = true
         renderChromecastState()
     }
-    document.getElementById("cc-copy-btn")?.addEventListener("click") {
-        val url = getInputValue("cc-public-url").trim().trimEnd('/') + "/cast/"
-        window.navigator.clipboard.writeText(url)
-        (document.getElementById("cc-reach") as? HTMLElement)?.innerHTML = """<span class="badge">copied</span>"""
+    // Phase 226 (FR-226-2) — the two console fields, each with its own Copy.
+    document.getElementById("cc-copy-url")?.addEventListener("click") {
+        publicReceiverUrl()?.let { window.navigator.clipboard.writeText(it); flashCopied("cc-copy-url") }
     }
-    document.getElementById("cc-check-btn")?.addEventListener("click") {
+    document.getElementById("cc-copy-pkg")?.addEventListener("click") {
+        window.navigator.clipboard.writeText(dev.jellystructure.BuildInfo.androidApplicationId); flashCopied("cc-copy-pkg")
+    }
+    document.getElementById("pub-check-btn")?.addEventListener("click") {
         scope.launch {
-            val el = document.getElementById("cc-reach") as? HTMLElement ?: return@launch
+            val el = document.getElementById("pub-reach") as? HTMLElement ?: return@launch
             el.textContent = "Checking…"
-            val r = ConfigApi.checkChromecast(getInputValue("cc-public-url"))
+            // The SERVER fetches its own /cast/ through this address — from outside, never from this browser.
+            val r = ConfigApi.checkChromecast(getInputValue("pub-url"))
             lastReach = r
             el.innerHTML = when {
                 r == null -> """<span class="badge bad">Request failed</span>"""
@@ -3225,7 +3250,41 @@ private fun wireChromecast(scope: CoroutineScope) {
             renderChromecastStatus(lastStatus, lastReach)
         }
     }
+    renderPublicAddress()
     if (ccEnabled) refreshStatus()
+}
+
+// ── Phase 227 / 226 — the one public address, and what the Chromecast card derives from it ─────────
+
+/** `PublicUrl.problem` is commonMain, so this is literally the function the server's 400 uses; the server
+ *  stays the authority — this only lets the field say why BEFORE the save. */
+private fun publicUrlProblem(): String? = dev.jellystructure.model.PublicUrl.problem(getInputValue("pub-url"))
+
+/** FR-227-4 — the one derivation, rendered client-side: `null` when unset or invalid. */
+private fun publicReceiverUrl(): String? = dev.jellystructure.model.PublicUrl.receiverUrl(getInputValue("pub-url"))
+
+private fun flashCopied(buttonId: String) {
+    val b = document.getElementById(buttonId) as? HTMLElement ?: return
+    b.textContent = "Copied"
+    window.setTimeout({ b.textContent = "Copy"; null }, 1400)
+}
+
+/** FR-227-3/6 + FR-226-2 — the field's hint, and the card's *Receiver Application URL* row. Unset is a
+ *  first-class state: the row says where to set it and offers no Copy; the enable switch stays operable. */
+private fun renderPublicAddress() {
+    val problem = publicUrlProblem()
+    val url = publicReceiverUrl()
+    (document.getElementById("pub-hint") as? HTMLElement)?.innerHTML = when {
+        problem != null -> """<span style="color:var(--bad)">${problem.esc()}</span>"""
+        url == null -> "How Jellystructure is reached from outside your network — scheme and host only, no trailing slash. Nothing that has to be reached from outside (a Chromecast loading the receiver) can work until this is set."
+        else -> "How Jellystructure is reached from outside your network — scheme and host only, no trailing slash. <b>Check</b> asks the server to fetch its own receiver through this address, from outside. Used by: the Chromecast receiver."
+    }
+    (document.getElementById("cc-field-url") as? HTMLElement)?.let { el ->
+        if (url != null) { el.textContent = url; el.style.opacity = "1" }
+        else { el.textContent = "Set your public address above first"; el.style.opacity = ".6" }
+    }
+    (document.getElementById("cc-copy-url") as? HTMLElement)?.style?.display = if (url != null) "" else "none"
+    (document.getElementById("cc-field-pkg") as? HTMLElement)?.textContent = dev.jellystructure.BuildInfo.androidApplicationId
 }
 
 // ── Phase 221 — webhook delivery status + findings ─────────────────────────────

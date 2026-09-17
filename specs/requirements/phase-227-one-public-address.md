@@ -10,7 +10,7 @@
 
 ## Status
 
-`Planned` — written 2026-09-17, **dev-reviewed 2026-09-17 against `main` `8873cea7`** (see §Dev review at
+`✓ Built` 2026-09-17 — `PublicUrl` (commonMain: normalise / problem / effective / receiverUrl — the one derivation, shared by server and admin), root `AppConfig.publicUrl`, the nested key kept `@Deprecated` and adopted in `ConfigStore.load` (root wins, logged once), validated on the Settings write path only (400 + reason; never on load), `CastService` and the card both reading the one derivation; the *Public address* card above Chromecast, whose own address field is gone. `PublicUrlTest` (6) incl. the migration and the hand-edited-invalid case; backend 355/0; admin wasm compiles; **not seen in a browser, not deployed**. Was `Planned` — written 2026-09-17, **dev-reviewed 2026-09-17 against `main` `8873cea7`** (see §Dev review at
 the bottom: FR-227-1 no longer fails the config load; 165's reach address is a different address and stays
 separate). Supersedes **FR-218-5's storage location** and the
 *Your receiver address* field of FR-218-4; 218's reachability check, its three card states and FR-218-7's

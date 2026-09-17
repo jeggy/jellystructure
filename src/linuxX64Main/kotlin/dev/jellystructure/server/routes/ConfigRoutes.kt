@@ -225,6 +225,18 @@ fun Route.configureConfigRoutes(
         // work" rather than an obvious data loss.
         config = config.copy(metadata = config.metadata.copy(ageRatingMap = stored.metadata.ageRatingMap))
 
+        // Phase 227 (FR-227-1) — validated on WRITE only (never on load): an origin, https, no path. Stored
+        // normalised; the retired nested key is never written back (FR-227-2).
+        dev.jellystructure.model.PublicUrl.problem(config.publicUrl)?.let { reason ->
+            call.respond(HttpStatusCode.BadRequest, mapOf("field" to "public_url", "error" to reason))
+            return@put
+        }
+        @Suppress("DEPRECATION")
+        config = config.copy(
+            publicUrl = dev.jellystructure.model.PublicUrl.normalize(config.publicUrl),
+            chromecast = config.chromecast?.copy(publicUrl = ""),
+        )
+
         // Phase 166 (FR-166-4) — the save-path backstop: a blank schedule means "scheduling off" and is
         // always valid; anything else must parse, actually fire within the search horizon, and not fire
         // more often than every 15 minutes. Rejects with 422 rather than silently persisting a schedule
@@ -243,7 +255,7 @@ fun Route.configureConfigRoutes(
         val ok = configStore.update(config)
         // Phase 218 (FR-218-3) — a changed chromecast block changes every client's resolved `cast`
         // capability, so push the same global-config event a layout save does; clients re-fetch /tv/config.
-        if (ok && config.chromecast != stored.chromecast) tvEventBus?.notifyGlobalConfigChanged()
+        if (ok && (config.chromecast != stored.chromecast || config.publicUrl != stored.publicUrl)) tvEventBus?.notifyGlobalConfigChanged()
         if (ok) call.respond(HttpStatusCode.NoContent)
         else call.respond(HttpStatusCode.InternalServerError, mapOf("error" to "Couldn't save — check the server log"))
     }

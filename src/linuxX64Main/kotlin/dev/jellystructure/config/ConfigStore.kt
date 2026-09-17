@@ -32,7 +32,27 @@ class ConfigStore(private val filePath: String) {
             _config = toml.decodeFromString(AppConfig.serializer(), content)
         }
         if (result.isFailure) Logger.warn("Failed to parse config, using defaults: ${result.exceptionOrNull()?.message}")
-        else fixAgeRatingMapKeys()
+        else { fixAgeRatingMapKeys(); adoptNestedPublicUrl() }
+    }
+
+    /** Phase 227 (FR-227-2) — 218's dev review had put `public_url` inside `[chromecast]`. Carry the
+     *  admin's value to the root (it is theirs, so it is carried, not dropped like 213's retired key):
+     *  root blank → adopt the nested one; both set and different → the root wins, logged once. In memory
+     *  only — the nested key disappears from the file on the next ordinary write. Silent, no prompt. */
+    @Suppress("DEPRECATION")
+    private suspend fun adoptNestedPublicUrl() {
+        val cc = _config.chromecast ?: return
+        val nested = cc.publicUrl.trim()
+        if (nested.isEmpty()) return
+        val root = _config.publicUrl.trim()
+        if (root.isNotEmpty() && dev.jellystructure.model.PublicUrl.normalize(root) != dev.jellystructure.model.PublicUrl.normalize(nested)) {
+            Logger.warn("Config: root public_url ($root) wins over the retired chromecast.public_url ($nested)", "config")
+        }
+        _config = _config.copy(
+            publicUrl = dev.jellystructure.model.PublicUrl.normalize(root.ifEmpty { nested }),
+            chromecast = cc.copy(publicUrl = ""),
+        )
+        if (root.isEmpty()) Logger.info("Config: adopted chromecast.public_url as the root public_url", "config")
     }
 
     /** Bug fix (live report, 2026-08-14) — ktoml 0.7.1 has a genuine decode bug for a QUOTED TOML table

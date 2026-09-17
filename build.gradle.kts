@@ -433,8 +433,10 @@ extra["buildVersion"] = buildVersion
 val buildInfoDir = layout.buildDirectory.dir("generated/buildinfo/commonMain/kotlin")
 val generateBuildInfo by tasks.registering {
     val version = buildVersion
+    val androidAppId = providers.gradleProperty("ravilo.applicationId").get()   // Phase 226
     val outDir = buildInfoDir
     inputs.property("version", version)
+    inputs.property("androidAppId", androidAppId)
     outputs.dir(outDir)
     doLast {
         val file = outDir.get().file("dev/jellystructure/BuildInfo.kt").asFile
@@ -445,6 +447,8 @@ val generateBuildInfo by tasks.registering {
                 "object BuildInfo {\n" +
                 "    /** What this binary was built as: a release (\"1.18\"), a `git describe` string for a dev build, or \"dev\". */\n" +
                 "    const val version: String = \"" + version.replace("\\", "\\\\").replace("\"", "\\\"") + "\"\n" +
+                "    /** Phase 226 — the Ravilo Android sender's applicationId (gradle.properties `ravilo.applicationId`). */\n" +
+                "    const val androidApplicationId: String = \"" + androidAppId + "\"\n" +
                 "}\n",
         )
     }
