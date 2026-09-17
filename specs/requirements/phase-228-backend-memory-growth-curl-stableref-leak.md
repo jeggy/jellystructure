@@ -10,7 +10,7 @@
 
 ## Status
 
-`Planned` — investigated and spec'd 2026-09-17, not dev-reviewed. The measurements below were taken on
+`✓ Built` — investigated, spec'd and built 2026-09-17 (commit `8d648b7d`), not dev-reviewed; deployment pending. The measurements below were taken on
 the production container (`v1.18`, up since 2026-09-17 07:06Z) and on three instrumented local instances
 run against copies of the production DB and config.
 
