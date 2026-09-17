@@ -53,6 +53,30 @@ A status pass asked whether phase 201's "164 files still unrepaired on productio
    demux pass per file of one title, results into Triage. Worth building only if Chore Captain and
    Ashworth also turn out damaged, or if the "not an ongoing writer" inference is ever contradicted.
 
+## Addendum, same evening — the operator's own report on S01E05, checked
+
+The household operator filed a bug report the same day on one file from this set (*Hoppe Hares Byggebande* S01E05, `DirectPlayError` on the Jellyfin Android TV app, repaired by a stream-copy remux
+at 19:13). It is the same incident. Two of its points change this report, one of its claims does not
+hold:
+
+- **The clean originals are still on disk.** The seeding copies under
+  `/mnt/series/qbittorrent/downloads/` exist for Ben the Bricklayer S13–S16 and Hoppy Hare Builders
+  S01/S02, are separate files (link count 1) and demux with zero errors. **Option 1 needs no
+  re-download: copy the seeding file over the library file, then re-apply the track flags.**
+- **The gate gap is real.** `MkvpropeditRunner.verifyAndRepairLayout` returns success for anything but
+  `TRACKS_AFTER_CLUSTER` (`:45`), so an `ELEMENT_SIZE_OVERFLOW` right after an edit is reported as fine.
+- **"No quality loss" is not true of the remux.** Packet counts, clean source vs library copy:
+
+  | file | video | audio 0 | subtitles |
+  |---|---|---|---|
+  | S01E05 source | 16 093 | 20 954 | 119 |
+  | S01E05 after the remux | 15 847 (**−246**, ≈10 s) | 20 625 (−329) | 117 (−2) |
+  | Ben the Bricklayer S13E12 source | 15 001 | | |
+  | Ben the Bricklayer S13E12 library, still corrupt | 14 859 readable (**−142**) | | |
+
+  The duration is unchanged because the gaps are inside the file. A remux makes the container valid by
+  discarding what it cannot parse. S01E05 should be replaced from its seeding copy like the rest.
+
 ## Still to do
 
 - Check Chore Captain and Ashworth at a quiet hour (≈170 GB of sequential reads).
