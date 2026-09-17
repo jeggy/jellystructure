@@ -88,6 +88,11 @@ fun main() = runBlocking {
     // (Named crashMarkerDir, not dataDir — a `dataDir` derived from DB_FILE already exists below.)
     val crashMarkerDir = configFile.substringBeforeLast('/', missingDelimiterValue = ".")
     dev.jellystructure.ops.installCrashHook(crashMarkerDir)
+    // Phase 228 (FR-228-4) — an operator-settable floor for the collector's auto-tuned target heap.
+    // Measured on this process: the runtime's target sat at ~200 MB while the live heap was 300-600 MB,
+    // so a collection ran every ~0.7 s with 60-165 ms pauses. Unset = the runtime's own default (5 MiB
+    // floor); the deployed value, if any, lives in docker-compose.yml next to its measurement.
+    dev.jellystructure.ops.MemoryStats.applyGcFloorFromEnv(env("JELLYSTRUCTURE_GC_MIN_HEAP_MB", ""))
 
     val configStore = ConfigStore(configFile)
     configStore.load()

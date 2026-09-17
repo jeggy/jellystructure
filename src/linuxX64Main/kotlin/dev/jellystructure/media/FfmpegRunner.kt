@@ -6,7 +6,7 @@ import kotlinx.cinterop.ByteVar
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.allocArray
 import kotlinx.cinterop.memScoped
-import kotlinx.cinterop.readBytes
+import kotlinx.cinterop.get
 import kotlinx.cinterop.toKString
 import platform.posix.fgets
 import platform.posix.pclose
@@ -252,7 +252,10 @@ object FfmpegRunner {
                     while (true) {
                         val n = platform.posix.fread(buf, 1u, chunkSize.toULong(), pipe).toInt()
                         if (n <= 0) break
-                        acc.feed(buf.readBytes(n))
+                        // Phase 228 — fold straight from the native buffer: `readBytes(n)` copied every
+                        // 64 KiB chunk into a fresh Kotlin ByteArray (a single-object page each, ~300 of
+                        // them per 20-minute episode) for the accumulator to read once and drop.
+                        acc.feed(buf, n)
                     }
                     val rc = pclose(pipe)
                     val peaks = acc.finish()
@@ -497,6 +500,22 @@ internal class EnvelopeAccumulator(private val samplesPerBucket: Int) {
             i += 2
         }
         if (i < bytes.size) carry = bytes[i].toInt() and 0xFF
+    }
+
+    /** Same fold, read directly from a native buffer of [n] valid bytes — no per-chunk Kotlin copy. */
+    @OptIn(ExperimentalForeignApi::class)
+    fun feed(buf: kotlinx.cinterop.CPointer<ByteVar>, n: Int) {
+        var i = 0
+        if (carry >= 0 && n > 0) {
+            push(carry, buf[0].toInt())
+            carry = -1
+            i = 1
+        }
+        while (i + 1 < n) {
+            push(buf[i].toInt() and 0xFF, buf[i + 1].toInt())
+            i += 2
+        }
+        if (i < n) carry = buf[i].toInt() and 0xFF
     }
 
     private fun push(lo: Int, hi: Int) {
