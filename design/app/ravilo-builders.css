@@ -262,3 +262,53 @@ body.cf-screen-on .app-main2 > :not(#cf-screen-root) { display: none; }
   .cf-prevgrid { grid-template-columns: repeat(5, 1fr) !important; }
   .cf-padgrid { max-width: none; }
 }
+
+/* ============ row order (prospective phase 225) — the Order section of the row editor ============ */
+.cf-order { margin-top: 16px; }
+.cf-order .seg span { white-space: nowrap; }
+.cf-dirbtn { display: inline-flex; align-items: center; gap: 7px; padding: 6px 11px; border: 1px solid var(--line-2); border-radius: var(--radius-s);
+  background: var(--fill-2); color: var(--ink); font: 600 .82rem 'Sora', sans-serif; cursor: pointer; white-space: nowrap; }
+.cf-dirbtn:hover { border-color: var(--hi); box-shadow: 0 0 0 3px var(--hi-soft); }
+.cf-dirbtn .arr { color: var(--acc-ink); }
+.cf-rk { position: absolute; top: 4px; left: 4px; min-width: 17px; height: 17px; padding: 0 4px; border-radius: 5px; background: var(--hi); color: #fff;
+  font: 700 .58rem 'JetBrains Mono', monospace; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 6px rgba(0,0,0,.4); z-index: 1; }
+.cf-mp.cf-auto { opacity: .62; filter: saturate(.6); }
+.cf-strip { display: flex; align-items: stretch; gap: 10px; margin-top: 12px; padding: 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--fill-3); }
+.cf-zone { display: flex; gap: 7px; align-items: center; min-height: 66px; border-radius: 8px; border: 1px solid transparent; transition: background .15s ease, border-color .15s ease; }
+.cf-zone .cf-mp { width: 44px; flex: none; }
+.cf-zone-pins { padding: 6px; background: var(--hi-soft); border-color: rgba(123,110,240,.35); flex: none; max-width: 58%; overflow-x: auto; }
+.cf-zone-auto { flex: 1; min-width: 0; overflow: hidden; position: relative; }
+.cf-zone.over { border-color: var(--hi); background: var(--hi-soft); }
+.cf-zone-empty { width: 150px; padding: 6px 4px; line-height: 1.5; }
+.cf-seam { width: 22px; flex: none; display: flex; align-items: center; justify-content: center; position: relative; }
+.cf-seam::before { content: ''; position: absolute; top: 0; bottom: 0; left: 50%; border-left: 2px dashed var(--hi); }
+.cf-seam span { writing-mode: vertical-rl; transform: rotate(180deg); font: 600 .56rem 'JetBrains Mono', monospace; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--acc-ink); background: var(--fill-3); padding: 4px 1px; position: relative; white-space: nowrap; max-height: 100%; overflow: hidden; }
+.cf-more { position: absolute; right: 0; top: 50%; transform: translateY(-50%); font: 600 .7rem 'JetBrains Mono', monospace; color: var(--ink);
+  background: var(--fill-3); padding: 6px 5px 6px 10px; box-shadow: -12px 0 12px var(--fill-3); }
+.cf-pin { cursor: grab; }
+.cf-pin.over { outline: 2px solid var(--hi); outline-offset: 2px; }
+.cf-pin.dragging, .cf-auto.dragging { opacity: .35; }
+.cf-auto[draggable] { cursor: pointer; }
+.cf-unpin { position: absolute; top: 4px; right: 4px; width: 15px; height: 15px; border-radius: 4px; background: rgba(0,0,0,.55); color: #fff; font-size: .55rem;
+  display: none; align-items: center; justify-content: center; cursor: pointer; z-index: 1; }
+.cf-pin:hover .cf-unpin { display: flex; }
+.cf-pin.cf-stale { filter: grayscale(.7); opacity: .8; }
+.cf-stalemark { position: absolute; top: 4px; right: 4px; width: 17px; height: 17px; border-radius: 5px; background: var(--warn); color: #1a1405;
+  font: 700 .66rem 'JetBrains Mono', monospace; display: flex; align-items: center; justify-content: center; z-index: 1; }
+.cf-pin.cf-stale:hover .cf-stalemark { display: none; }
+.cf-thenby { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 10px; padding: 10px 12px; border: 1px dashed var(--line-2); border-radius: 10px; }
+.cf-pinsearch { display: inline-flex; align-items: center; gap: 6px; padding: 5px 9px; border: 1px solid var(--line-2); border-radius: var(--radius-s); background: var(--fill-2);
+  font-size: .78rem; cursor: pointer; white-space: nowrap; flex: none; }
+.cf-pinsearch:hover { border-color: var(--hi); }
+.cf-pinres { max-height: 240px; overflow: auto; }
+.cf-pinres .cf-popitem { display: flex; align-items: center; gap: 8px; }
+.cf-ordnote { margin-top: 10px; display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; }
+.cf-ordnote .tiny { line-height: 1.5; }
+.cf-limit { display: inline-flex; align-items: center; gap: 6px; padding: 3px 4px 3px 10px; border: 1px solid var(--line-2); border-radius: var(--radius-s); background: var(--fill-2); white-space: nowrap; }
+.cf-limit b { min-width: 22px; text-align: center; font: 700 .86rem 'JetBrains Mono', monospace; }
+.cf-limit button { width: 24px; height: 24px; border: 1px solid var(--line-2); border-radius: 6px; background: var(--fill-3); color: var(--ink); font: 700 .9rem 'Sora', sans-serif; cursor: pointer; line-height: 1; }
+.cf-limit button:hover:not(:disabled) { border-color: var(--hi); }
+.cf-limit button:disabled { opacity: .35; cursor: default; }
+.cf-mp.cf-past { outline: 1px dashed var(--line-2); outline-offset: -1px; opacity: .45; }
+.cf-auto.cf-nopick { cursor: default; opacity: .4; }

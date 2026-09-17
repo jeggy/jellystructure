@@ -180,7 +180,7 @@
       <!-- ROWS -->
       <div class="card set-section" id="sect-rows">
         <div class="row center"><h3 style="font-size:1.05rem;margin:0;">Content rows</h3><span class="badge info" style="margin-left:8px;">5–20 rows</span><span class="spacer"></span><span class="btn sm ghost">＋ Add row</span></div>
-        <p class="tiny muted" style="margin:6px 0 14px;"><b>System rows</b> (Continue, Newly Added) sit at the top — toggle or rename them, but they can’t be removed. Everything below is a <b>workbench-filter row</b> you build with conditions. This set is reused inside every channel view, scoped to that channel.</p>
+        <p class="tiny muted" style="margin:6px 0 14px;"><b>System rows</b> (Continue, Newly Added) sit at the top — toggle or rename them, but they can’t be removed. Everything below is a <b>workbench-filter row</b> you build with conditions, and each lines up the way you set in its <b>Order</b> — newest first unless you say otherwise. This set is reused inside every channel view, scoped to that channel.</p>
 
         <!-- merge toggle -->
         <div class="box flat" style="background:var(--hi-soft);border-color:rgba(123,110,240,.3);margin-bottom:14px;">
@@ -195,6 +195,10 @@
           <div class="cfg-row" data-newly="split"><span class="grab">⠿</span><span class="badge ok" style="flex:none;">system</span><div style="flex:1;"><div class="nm">Newly Added Movies</div><div class="src">kind = movie · sort newest</div></div><span class="muted tiny">show</span><span class="toggle on"></span></div>
           <div class="cfg-row" data-newly="split"><span class="grab">⠿</span><span class="badge ok" style="flex:none;">system</span><div style="flex:1;"><div class="nm">Newly Added Series</div><div class="src">kind = series · sort newest</div></div><span class="muted tiny">show</span><span class="toggle on"></span></div>
           <div class="cfg-row" data-newly="merged" style="display:none;"><span class="grab">⠿</span><span class="badge ok" style="flex:none;">system</span><div style="flex:1;"><div class="nm">Newly Added</div><div class="src">movies + series combined · sort newest</div></div><span class="muted tiny">show</span><span class="toggle on"></span></div>
+          <!-- prospective 225: workbench rows carry their order in words on the summary line; data-sort / data-pinned seed the editor (see ravilo-builders.js seed()) -->
+          <div class="cfg-row" data-sort="added:desc" data-pinned="Efterforskningen Nat|Havets Hjarta|Bron Returns" data-limit="15"><span class="grab">⠿</span><span class="badge info" style="flex:none;">filter</span><div style="flex:1;"><div class="nm">Nordic noir</div><div class="src">tag = “nordic-noir”  ·  3 hand-picked, then newest first · shows 15</div></div><span class="muted tiny">show</span><span class="toggle on"></span><span class="btn sm ghost rm">✕</span></div>
+          <div class="cfg-row" data-sort="title:asc"><span class="grab">⠿</span><span class="badge info" style="flex:none;">filter</span><div style="flex:1;"><div class="nm">Drama</div><div class="src">genre = “Drama”  ·  title A → Z</div></div><span class="muted tiny">show</span><span class="toggle on"></span><span class="btn sm ghost rm">✕</span></div>
+          <div class="cfg-row"><span class="grab">⠿</span><span class="badge info" style="flex:none;">filter</span><div style="flex:1;"><div class="nm">Documentaries</div><div class="src">genre = “Documentary”</div></div><span class="muted tiny">show</span><span class="toggle on"></span><span class="btn sm ghost rm">✕</span></div>
         </div>
       </div>
 
