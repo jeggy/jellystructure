@@ -6,7 +6,7 @@
 
 ## Status
 
-`✓ Built` 2026-09-17 — written the same day from live observation plus a code trace per item, not dev-reviewed, **not yet on a device** (every acceptance line below is still owed). 122 `ravilo-ui` unit tests green; Android + Wasm compile clean.
+`✓ Built` 2026-09-17 — written the same day from live observation plus a code trace per item, not dev-reviewed, **verified on the stue TV the same day** (release `1.19-14`, sideloaded with the owner's permission): acceptance 1–4 seen; 5 (the phone glyphs) still owed on the Pixel 9. 122 `ravilo-ui` unit tests green; Android + Wasm compile clean.
 Client-only (`ravilo-ui`). Touches R187/R243 (entry focus, tile backing), R244 (one glyph), the
 detail hero (R24-era gradient) and R240 (the reveal). No wire change.
 
@@ -109,3 +109,21 @@ only because of R256, but it is a phone defect.
    centre.
 4. J open on a poster row: heading fully visible.
 5. Pixel 9 player: the 10 s arrow turns counter-clockwise, the 30 s arrow clockwise.
+
+## Implementation notes (2026-09-17, after the on-device pass)
+
+- **FR-R257-4 needed its own tint.** Home's `tintGradient` on the detail hero was visibly too weak on
+  Tomgang — the detail column carries facts, flags and a synopsis out to ~55 % of the width. `HeroScrims`
+  gained `detailTint` (0.88 → 0.74 at 35 % → 0.30 at 62 % → 0) and the head band went 0.70 → 0.80. Home's
+  own hero is unchanged. Verified on the TV: text column legible, the right 40 % of the picture untouched.
+- **Found once R256 let the TV draw its own walls for the first time:** R243's TV sizes had never been
+  seen on a TV. At 4-up a tile is ~200 dp: *"Marvel Stu… 36 titles"* and *"Domain Enterta…"*. The caption
+  now **stacks** on a TV (name, then count; a handset's 2-up tile and the genre wall keep R243's single
+  line), and the wordmark is 20 sp with 14 dp side padding (was 34 sp / 26 dp). The stacked caption was
+  verified on the TV; the final 20 sp wordmark was compiled but **not** re-checked on the device.
+- FR-R257-1/2 verified: a studio's grid opens on its first poster; Back lands on the studio's tile.
+- FR-R257-5 verified: moving Down from an open row, the next row's heading rests at 152 px (bar 120 + 16 dp);
+  it was ~112 px.
+- Seen in passing, not changed: the player's top-right **DIRECT PLAY · MKV** chips are on the release
+  build (R180's no-delivery-cues rule says they should not be), and a paused player leaves a burned-in
+  subtitle under the raised chrome.

@@ -7,7 +7,7 @@
 
 ## Status
 
-`✓ Built` 2026-09-17 (`9e060653`) — written the same day from a live reproduction, not dev-reviewed, **not yet on a device**. `isHandset()` in `Platform.kt`, `IsHandsetTest` (7 cases); Android + Wasm compile clean. Client-only
+`✓ Built` 2026-09-17 (`9e060653`) — written the same day from a live reproduction, not dev-reviewed, **verified on the stue TV the same day** (release `1.19-13`/`-14` sideloaded): TV transport with a focus ring, Left/Right seek (0:44 → 1:15 → 1:05), 4-up walls. Live TV player and the Pixel 9 regression check still owed. `isHandset()` in `Platform.kt`, `IsHandsetTest` (7 cases); Android + Wasm compile clean. Client-only
 (`ravilo-ui`). Corrects the gate **R244** and **R243** were built on; neither spec changes.
 
 **Numbering:** verified against `STATUS.md` 2026-09-17 — Ravilo taken through **R255**. Backend
