@@ -10,7 +10,9 @@
 
 ## Status
 
-`Planned` — written 2026-09-17, **not dev-reviewed**. Supersedes **FR-218-5's storage location** and the
+`Planned` — written 2026-09-17, **dev-reviewed 2026-09-17 against `main` `8873cea7`** (see §Dev review at
+the bottom: FR-227-1 no longer fails the config load; 165's reach address is a different address and stays
+separate). Supersedes **FR-218-5's storage location** and the
 *Your receiver address* field of FR-218-4; 218's reachability check, its three card states and FR-218-7's
 honest verification are unchanged. Pairs with **226** (the registration steps that consume the value).
 
@@ -31,10 +33,13 @@ Chromecast card's address field removed, and `#cc-fv-url` derived.
 
 ## Functional requirements
 
-**FR-227-1 — One config key, at the root.** `public_url: String? = null` on `AppConfig` (not inside
-`chromecast`). Normalised on read: trimmed, trailing slashes stripped, and **rejected unless it parses as
-an absolute `https://` URL with a host and no path, query or fragment** — the field is an origin, not a
-URL. Junk is not silently corrected; the config load reports it the way every other invalid key does.
+**FR-227-1 — One config key, at the root.** `public_url: String = ""` on `AppConfig` (not inside
+`chromecast`). Normalised on read: trimmed, trailing slashes stripped. **Rejected on write** (the Settings
+save route answers 400 with the reason) unless it parses as an absolute `https://` URL with a host and no
+path, query or fragment — the field is an origin, not a URL. A stored value that fails the same rule (a
+hand-edited file) does **not** fail the load: the value is kept, the field renders it marked invalid, and
+every consumer treats it as unset. *(Corrected in dev review — a config load that refuses one string takes
+the whole backend down with it; 218's `effectiveMaxSessions()` shape is the precedent.)*
 
 **FR-227-2 — Migration from `chromecast.public_url`.** On load, a `chromecast.public_url` with no root
 `public_url` is adopted as the root value and the old key is dropped on the next write. Both present and
@@ -74,7 +79,10 @@ named only on the Chromecast card.
 - **Validating that the address belongs to this machine.** The reachability check answers the useful
   question (can something outside reach `/cast/` here) and 218 FR-218-7's honesty rule still applies.
 - **Multiple public addresses** (split-horizon DNS, a second domain). One installation, one address.
-- **Moving 165's reach address onto this key now.** It should adopt it, but that is 165's phase to do.
+- **Merging 165's reach address into this key — ever.** ~~It should adopt it~~ — *corrected in dev review:*
+  `ingest.jellyfin_reach_url` is where **Jellyfin** reaches jellystructure from *its* network position
+  (`http://<lan-ip>:9505`, `AppConfig.kt:43-50`), which is deliberately not the public https origin. Two
+  addresses, two questions; they stay separate.
 
 ## Acceptance
 
@@ -96,15 +104,45 @@ named only on the Chromecast card.
   unset state of FR-227-6 stays visible in the design, like the card-state control beside it.
 - `specs/requirements/phase-218-chromecast-receiver-and-registration.md` — FR-218-2/3/4/5/11 and the dev
   review's note naming this pattern; `phase-226-chromecast-registration-fields.md` — the consumer.
-- Phase **165** — the reach address that should adopt this key when it is next opened.
+- Phase **165** — `ingest.jellyfin_reach_url`, the sibling *explicit, never derived* address for a different
+  direction (Jellyfin → jellystructure over the LAN); it does **not** adopt this key (see non-goals).
 
 ## Open questions — for the dev team
 
-1. **Should the reachability check move to the field?** It is currently cast-specific (it fetches
-   `/cast/`). Design's lean: leave the probe where it is and let the field display its result, so no new
-   endpoint is invented; revisit when a second consumer exists.
-2. **Is a root `public_url` the right key name**, or should it sit under a `server`/`network` table with
-   the bind address and port? Design has no stake; one field in the UI either way.
-3. **What should an invalid stored value do to the card** — render empty with the error in the log, or
-   render the bad value so the admin can see what to fix? Lean: render it, marked, since the admin is the
-   only one who can correct it.
+1. ~~**Should the reachability check move to the field?**~~ **Answered 2026-09-17: no.**
+   `CastService.checkReceiver(publicUrl)` (`CastService.kt:142`) stays; it takes the root value instead of
+   the nested one, and the field displays its result. No new endpoint.
+2. ~~**Is a root `public_url` the right key name?**~~ **Answered 2026-09-17: yes, root.** `AppConfig` has no
+   `server`/`network` table today (bind address and port are process arguments, not config), so a table
+   would be invented for one key.
+3. ~~**What should an invalid stored value do?**~~ **Answered 2026-09-17: render it, marked** — folded into
+   FR-227-1.
+
+## Dev review (2026-09-17)
+
+Reviewed against `main` at `8873cea7`, alongside **226**. The move is right and small; three corrections.
+
+- **What exists.** `ChromecastConfig.publicUrl` (`AppConfig.kt:127-138`, `@SerialName("public_url")`,
+  default `""`) with `receiverUrl()` doing the `trimEnd('/') + "/cast/"` derivation;
+  `CastService.capability()` (`:70-74`) and the enrolment path (`:172`) both call it;
+  `CastService.checkReceiver(publicUrl)` (`:142`) already refuses a non-https value with a sentence rather
+  than an error. Nothing derives an external URL from a request: the only header reads in the codebase are
+  `X-Forwarded-For` for the login rate limiter (`AuthRoutes.kt:34`, `TvRoutes.kt:246,416,572`). FR-227-4's
+  "never from `Host`" is therefore a rule to keep, not a bug to fix.
+- **FR-227-1 must not fail the load.** `ConfigStore` is memory-resident and the whole backend starts from
+  it; a load that rejects one malformed string is an outage for every viewer (the same reason 218 clamps
+  `max_sessions` instead of refusing it). Validation belongs on the Settings write path, where the admin
+  is present to read the 400. Corrected above, and open question 3 is answered by the same rule.
+- **FR-227-2's migration needs the old field kept deserialisable.** Keep `ChromecastConfig.publicUrl`
+  as a `@Deprecated` field so an existing `[chromecast] public_url` still parses; adopt it into the root
+  in `ConfigStore`'s load (root blank → take nested; both set and different → root wins, log once); write
+  the root key and omit the nested one on the next save. The 213 precedent (`segment_workers` →
+  `job_workers`, `AppConfig.kt:242-250`) simply ignored the retired key because its default was fine; here
+  the value is the admin's, so it is carried, not dropped.
+- **165's reach address is not a consumer.** `ingest.jellyfin_reach_url` is the LAN address Jellyfin's
+  webhook plugin posts to, explicitly *not* the browser's or the public address (`AppConfig.kt:43-49`). The
+  first draft's "165 should adopt it" would have pointed Jellyfin at a hairpin through the reverse proxy —
+  the exact class of guess this field exists to remove. Struck from the non-goals with the reason.
+- **One rendering, one derivation.** After this phase `receiverUrl()` moves off `ChromecastConfig` to a
+  single top-level function over `AppConfig.publicUrl`; `capability()`, enrolment, `checkReceiver` and
+  226's card row all call it. `RaviloConfig.cast.receiver_url` (`Models.kt:1129`) is unchanged on the wire.
