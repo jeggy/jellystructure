@@ -195,6 +195,10 @@ fun openWorkbench(
     baseQuery: ConditionGroup? = null,
     // R87: rows the `content_row` facet may reference; when non-empty the facet is offered.
     rowsContext: List<RowConfig> = emptyList(),
+    // Phase 225 (FR-225-9) — non-null = this is a ROW editor: show the Order section, seeded from this row
+    // (a blank RowConfig for a new row). The caller reads workbenchOrderResult() inside onApply.
+    orderRow: RowConfig? = null,
+    orderCollectionName: String? = null,
 ) {
     wbScope = scope
     wbTitle = title
@@ -205,6 +209,7 @@ fun openWorkbench(
     wbBaseRoot = baseQuery?.toWbGroup()
     wbLockedCount = null
     wbRowsContext = rowsContext
+    wbOrderOpen(orderRow, orderCollectionName)
     wbApplyLabel = applyLabel
     wbOnApply = onApply
     wbChannelMode = channelMode
@@ -248,6 +253,7 @@ fun openWorkbench(
           <div class="wb-body" id="wb-body">
             <div class="wb-main">
               <div id="wb-blocks"></div>
+              <div id="wb-order"></div>
               <div id="wb-summary" class="wb-summary tiny muted"></div>
               <div id="wb-channel"></div>
             </div>
@@ -717,7 +723,9 @@ private fun wbRefreshPreview() {
         val rootTree = wbRoot.toSharedGroup()
         val baseTree = wbBaseRoot?.toSharedGroup()?.takeIf { it.isLive() }
         val fullTree = if (baseTree != null) ConditionGroup(QueryJoin.AND, children = listOf(baseTree, rootTree)) else rootTree
-        val page = countMatching(fullTree, wbInclude, viewer = wbViewer, pageSize = 18)
+        // Phase 225 — a row editor needs the WHOLE match set to line it up and to pick from.
+        val page = countMatching(fullTree, wbInclude, viewer = wbViewer, pageSize = if (wbOrderActive()) 2000 else 18)
+        if (wbOrderActive()) { wbOrderSetMatches(page?.items ?: emptyList()); return@launch }
         val total = page?.total ?: 0
         countEl?.innerHTML = if (baseTree != null) "<b>$total title(s)</b> in channel" else "<b>$total title(s) match</b>"
         val prev = document.getElementById("wb-preview") as? HTMLElement
@@ -877,6 +885,7 @@ private fun injectWorkbenchStyles() {
         .wb-preview { display:grid; grid-template-columns:repeat(auto-fill,minmax(70px,1fr)); gap:7px; max-height:420px; overflow:auto; }
         .wb-pcard { aspect-ratio:2/3; border-radius:7px; overflow:hidden; background:var(--fill-3); }
         .wb-pcard img { width:100%; height:100%; object-fit:cover; }
+$WB_ORDER_CSS
         .wb-noimg { width:100%; height:100%; display:flex; align-items:center; justify-content:center; font-weight:700; color:var(--ink-soft); }
         .wb-foot { display:flex; gap:8px; align-items:center; margin-top:14px; }
         .wbc-hr { border:none; border-top:1px dashed var(--line); margin:16px 0; }
