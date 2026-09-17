@@ -353,3 +353,13 @@ device and no handset in the loop, so the button had never been pressed.
 - **FR-R245-1a** — both `MainActivity` classes extend `FragmentActivity` (a `ComponentActivity`
   subclass; nothing else changes). `androidx.fragment` becomes an explicit dependency of `:ravilo-android`.
 
+## Amendment 2 (2026-09-18) — the receiver died in `start()` on an event type CAF does not have
+
+Behind 218's CSP fix (same day): `Receiver.start()` registered
+`cast.framework.events.EventType.PLAYER_STATE_CHANGED`. CAF defines no such constant — checked against
+the live framework — so the argument was `undefined`, `addEventListener` threw, and the receiver died
+before `context.start()`. Found by loading `/cast/` in a headless browser; on a TV it is a silent
+black screen. **FR-R245-15a** — player state is followed through the three events CAF does define
+(`PLAYING`, `PAUSE`, `BUFFERING`). The receiver was written without ever being run against the real
+framework; a headless load of `/cast/` that asserts the idle screen is up is the missing guard (open).
+

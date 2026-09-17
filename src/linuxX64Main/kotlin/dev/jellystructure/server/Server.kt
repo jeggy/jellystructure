@@ -306,9 +306,21 @@ fun startServer(
         // below, scoped to exactly the two origins trailerEmbedUrl() ever constructs.
         intercept(ApplicationCallPipeline.Plugins) {
             call.response.headers.append("X-Content-Type-Options", "nosniff")
-            call.response.headers.append("X-Frame-Options", "DENY")
             call.response.headers.append("Referrer-Policy", "strict-origin-when-cross-origin")
             call.response.headers.append("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+            // Phase 218 amendment (2026-09-18) — the Chromecast receiver is the one page here that MUST
+            // load third-party script: Google's CAF framework (and the player libraries it pulls in)
+            // comes from www.gstatic.com and cannot be self-hosted. Under the site-wide `script-src
+            // 'self'` the framework was blocked, the receiver never started, and a TV that had accepted
+            // the launch showed nothing while the phone sat on "Connecting…" — found on the first real
+            // cast. The receiver is also embedded by some cast shells, so it carries no frame ban; it is
+            // non-interactive (FR-R245-15), so there is nothing to clickjack.
+            if (call.request.path().startsWith("/cast")) {
+                call.response.headers.append("Content-Security-Policy", CAST_RECEIVER_CSP)
+                proceed()
+                return@intercept
+            }
+            call.response.headers.append("X-Frame-Options", "DENY")
             call.response.headers.append(
                 "Content-Security-Policy",
                 "default-src 'self'; " +
@@ -757,3 +769,21 @@ private fun contentTypeFor(path: String): ContentType = when (path.substringAfte
     "ico"        -> ContentType.parse("image/x-icon")
     else         -> ContentType.Application.OctetStream
 }
+
+/** Phase 218 amendment — the receiver page's own policy: everything the site-wide one allows, plus
+ *  Google's Cast origin for script/style/font, and blob workers for the player's demuxer. */
+internal const val CAST_RECEIVER_CSP: String =
+    "default-src 'self'; " +
+        // www.gstatic.com = the CAF framework; ajax.googleapis.com = the Shaka player CAF fetches for HLS
+        // (seen blocked in a headless run of the receiver page, 2026-09-18).
+        // Host-sources without a scheme: CAF requests Shaka protocol-relative ("//ajax…"), and a bare host
+        // matches the page's own scheme — https in production, http in a local run of the e2e stack.
+        "script-src 'self' 'unsafe-eval' 'wasm-unsafe-eval' www.gstatic.com ajax.googleapis.com; " +
+        "style-src 'self' 'unsafe-inline' www.gstatic.com fonts.googleapis.com; " +
+        "img-src 'self' data: blob: https:; " +
+        "font-src 'self' data: www.gstatic.com fonts.gstatic.com; " +
+        "connect-src 'self' ws: wss: https:; " +
+        "media-src 'self' blob: https:; " +
+        "worker-src 'self' blob:; " +
+        "object-src 'none'; " +
+        "base-uri 'self'"
