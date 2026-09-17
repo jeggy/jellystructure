@@ -84,7 +84,10 @@ class HomeFeedService(
     // was libraryVersion, which bumps on every write regardless of relevance and thrashed this cache on
     // background scan noise), config change (cfgHash), a Phase 142 (+ tag follow-up) policy change
     // (allowedHash), or TTL (Continue stays fresh within FEED_TTL_MS).
-    private data class FeedEntry(val feed: HomeFeed, val builtAt: Long, val feedVer: Long, val cfgHash: Int, val allowedHash: Int)
+    // Phase 229 (FR-229-3) — [continueStamp] is the [ContinueListEntry.stamp] this feed read (0 = the
+    // user had no list). A feed can never outlive the Continue list it was built from: a differing
+    // stamp is a miss, which is what makes the background loop's work visible on Home at all.
+    private data class FeedEntry(val feed: HomeFeed, val builtAt: Long, val feedVer: Long, val cfgHash: Int, val allowedHash: Int, val continueStamp: Long)
     private val feedCache = HashMap<String, FeedEntry>()
 
     // Phase 205 (FR-205-2) — playstate moved to PlaystateCache, a background-refreshed, cross-service
@@ -97,7 +100,15 @@ class HomeFeedService(
     // staleness/invalidation shape as [feedCache]: TTL = FEED_TTL_MS, dropped immediately on a reported
     // playback stop (see [invalidatePlaystate]). Never keyed by channel — channel membership is a filter
     // *over* this list (FR-R219-6), not a reason to rebuild it.
-    private data class ContinueListEntry(val list: List<ContinueEntry>, val builtAt: Long, val feedVer: Long, val allowedHash: Int)
+    // Phase 229 — NOT dropped on a stop any more (see [invalidatePlaystate]): it is rebuilt in place, and
+    // [stamp] moves only when the list's content actually changed (FR-229-4) — [builtAt] moves on every
+    // successful build and is what /api/health reports.
+    private data class ContinueListEntry(val list: List<ContinueEntry>, val builtAt: Long, val feedVer: Long, val allowedHash: Int, val stamp: Long)
+    private var continueStampSeq = 0L
+    /** Phase 229 (FR-229-5) — test seam only: stands in for [buildCanonicalContinueList]'s four Jellyfin
+     *  fetches as (item, progress %, last activity). `null` result = a failed build, exactly as R231 defines it. */
+    internal var continueSourceForTest: (suspend (DeviceData) -> List<Triple<MediaItem, Float, Long>>?)? = null
+    private fun continueStamp(userId: String): Long = continueListCache[userId]?.stamp ?: 0L
     private val continueListCache = HashMap<String, ContinueListEntry>()
     /** Phase 219 (FR-219-4) — the age of each user's last successful Continue Watching build, for /api/health. */
     fun continueRefreshAges(): Map<String, Long> { val now = nowMs(); return continueListCache.mapValues { now - it.value.builtAt } }
@@ -112,7 +123,7 @@ class HomeFeedService(
     // Phase 206 (FR-206-4) — [buildChannelContent]'s own cache, per (user, channelId), same TTL and
     // invalidation signal as [feedCache]. A viewer moving between channels pays for one build per
     // channel, not one per navigation.
-    private data class ChannelContentEntry(val heroes: List<Hero>, val rows: List<Row>, val builtAt: Long, val feedVer: Long, val cfgHash: Int, val allowedHash: Int)
+    private data class ChannelContentEntry(val heroes: List<Hero>, val rows: List<Row>, val builtAt: Long, val feedVer: Long, val cfgHash: Int, val allowedHash: Int, val continueStamp: Long)
     private val channelContentCache = HashMap<Pair<String, String>, ChannelContentEntry>()
 
     /**
@@ -161,8 +172,10 @@ class HomeFeedService(
         val allowedHash = (device.allowedLibraries.hashCode() * 31 + device.allowedTags.hashCode()) * 31 + device.blockedTags.hashCode()
         val now = nowMs()
 
+        // Phase 229 — read BEFORE the build: a list that lands mid-build leaves this entry already stale.
+        val contStamp = continueStamp(userId)
         val cachedStructural = feedCache[userId]?.takeIf {
-            it.feedVer == feedVer && it.cfgHash == cfgHash && it.allowedHash == allowedHash && (now - it.builtAt) < FEED_TTL_MS
+            it.feedVer == feedVer && it.cfgHash == cfgHash && it.allowedHash == allowedHash && it.continueStamp == contStamp && (now - it.builtAt) < FEED_TTL_MS
         }
 
         // Bug fix: these two used to run sequentially (build the whole feed — including its own live
@@ -173,7 +186,7 @@ class HomeFeedService(
         // change to it can't accidentally re-serialize onto feedDeferred's path.
         val feedDeferred = async {
             cachedStructural?.feed ?: buildHomeFeed(device, config).also {
-                feedCache[userId] = FeedEntry(it, now, feedVer, cfgHash, allowedHash)
+                feedCache[userId] = FeedEntry(it, now, feedVer, cfgHash, allowedHash, contStamp)
             }
         }
         val playstateDeferred = async { PlaystateCache.get(userId) }
@@ -196,14 +209,20 @@ class HomeFeedService(
      */
     suspend fun invalidatePlaystate(device: DeviceData) {
         val userId = device.jellyfinUserId
+        // Phase 229 (FR-229-1/2) — REBUILD FIRST, drop caches after. This used to remove
+        // continueListCache and feedCache up front and then spend seconds at Jellyfin; R248's
+        // refresh-on-return asked for Home inside that window, got a feed built from "no list" (= no
+        // Continue row), and that feed was cached for FEED_TTL_MS — the row left Home for five minutes
+        // after every stop. The list is now replaced in place (R231: a failed rebuild leaves the previous
+        // value standing, which the old order made impossible), and a request arriving mid-rebuild is
+        // served the pre-stop feed, corrected by the push below.
+        runCatching { PlaystateCache.refreshOne(device, mediaStore, jellyfinClient, configStore, tvEventBus) }
+        runCatching { refreshContinueListFor(device) }
         feedCache.remove(userId)
-        continueListCache.remove(userId)  // R219 (FR-R219-1) — a stop must correct the row at once
         channelRailCache.remove(userId)
         // Phase 206 (FR-206-4) — same reasoning as the caches above: a channel whose Continue row just
         // changed must not keep serving a pre-stop build for the rest of FEED_TTL_MS.
         channelContentCache.keys.filter { it.first == userId }.forEach { channelContentCache.remove(it) }
-        runCatching { PlaystateCache.refreshOne(device, mediaStore, jellyfinClient, configStore, tvEventBus) }
-        runCatching { refreshContinueListFor(device) }
         // R248 (FR-R248-2) — only now, with the caches dropped and the Continue list rebuilt (or its
         // rebuild failed and the previous value standing), is a client re-pull guaranteed to see the
         // post-stop answer. Sent whether the refreshes above succeeded or not: the client shows whatever
@@ -333,11 +352,12 @@ class HomeFeedService(
         val allowedHash = (device.allowedLibraries.hashCode() * 31 + device.allowedTags.hashCode()) * 31 + device.blockedTags.hashCode()
         val now = nowMs()
         val cacheKey = userId to channelCfg.id
+        val contStamp = continueStamp(userId)  // Phase 229 (FR-229-3)
         channelContentCache[cacheKey]?.takeIf {
-            it.feedVer == feedVer && it.cfgHash == cfgHash && it.allowedHash == allowedHash && (now - it.builtAt) < FEED_TTL_MS
+            it.feedVer == feedVer && it.cfgHash == cfgHash && it.allowedHash == allowedHash && it.continueStamp == contStamp && (now - it.builtAt) < FEED_TTL_MS
         }?.let { return it.heroes to it.rows }
         val (heroes, rows) = buildChannelContent(device, config, channelCfg, allItems, heroIds)
-        channelContentCache[cacheKey] = ChannelContentEntry(heroes, rows, now, feedVer, cfgHash, allowedHash)
+        channelContentCache[cacheKey] = ChannelContentEntry(heroes, rows, now, feedVer, cfgHash, allowedHash, contStamp)
         return heroes to rows
     }
 
@@ -761,7 +781,13 @@ class HomeFeedService(
     /** Phase 205 (FR-205-2) — the ONLY caller of [buildCanonicalContinueList] left after this phase.
      *  Also called directly by [invalidatePlaystate] (FR-205-9) for an immediate, best-effort correction
      *  right after a reported playback stop, rather than leaving it to wait out [CONTINUE_REFRESH_INTERVAL_MS]. */
-    private suspend fun refreshContinueListFor(device: DeviceData) {
+    internal suspend fun refreshContinueListFor(device: DeviceData) {
+        continueSourceForTest?.let { source ->
+            val allowed = (device.allowedLibraries.hashCode() * 31 + device.allowedTags.hashCode()) * 31 + device.blockedTags.hashCode()
+            val built = source(device)?.map { (mi, pct, ts) -> ContinueEntry(mi, mi.toMediaCard(progressPct = pct), ts) } ?: return
+            storeContinueList(device.jellyfinUserId, built, allowed)
+            return
+        }
         val jellyfinBase = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
         if (jellyfinBase.isBlank()) return
         val libraryAll = mediaStore.liveItems(device)
@@ -771,7 +797,18 @@ class HomeFeedService(
         // R231 — a failed build must never overwrite a good cached value; the previous entry (if any)
         // is simply left in place for the next cycle to retry.
         val built = buildCanonicalContinueList(device, libraryAll, jellyfinBase, token) ?: return
-        continueListCache[userId] = ContinueListEntry(built, nowMs(), mediaStore.feedVersion, allowedHash)
+        storeContinueList(userId, built, allowedHash)
+    }
+
+    /** Phase 229 (FR-229-4) — every successful build re-stamps [ContinueListEntry.builtAt]; only a build
+     *  whose visible content differs moves [ContinueListEntry.stamp], so the 60 s loop does not become a
+     *  60 s feed TTL (FR-229-3 keys cached feeds on the stamp). */
+    private fun storeContinueList(userId: String, built: List<ContinueEntry>, allowedHash: Int) {
+        val prev = continueListCache[userId]
+        val unchanged = prev != null && prev.allowedHash == allowedHash && prev.list.size == built.size &&
+            prev.list.indices.all { prev.list[it].card == built[it].card && prev.list[it].lastActivityAt == built[it].lastActivityAt }
+        val stamp = if (unchanged) prev.stamp else ++continueStampSeq
+        continueListCache[userId] = ContinueListEntry(built, nowMs(), mediaStore.feedVersion, allowedHash, stamp)
     }
 
     /** Phase 205 (FR-205-2/FR-205-6) — called once from `Main.kt` at boot. [CONTINUE_REFRESH_INTERVAL_MS]
