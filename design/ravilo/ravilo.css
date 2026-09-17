@@ -1049,15 +1049,6 @@ body.fd-line #chrome { bottom: 122px; }
    teleported. Its content lives in a fixed-width child: text must not reflow while the
    frame around it is still growing. The row band follows the same clock. */
 .jpanel { flex: none; width: 820px; align-self: flex-start; overflow: hidden; animation: jp-open .22s var(--ease); }
-/* R255 — the mockup's first panel scrim: the reading gradient, .94 of the page colour reached over 40 %
-   of the panel's width, feathered 16px top and bottom so no straight edge sits on the picture. The panel
-   only exists while a row is open, which is exactly when the backdrop is up (openRow → showBg). */
-.jpanel { position: relative; isolation: isolate; }
-.jpanel::before { content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none;
-  background: linear-gradient(90deg, rgba(var(--bg-rgb),0) 0%, rgba(var(--bg-rgb),.94) 40%, rgba(var(--bg-rgb),.94) 100%);
-  -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 16px, #000 calc(100% - 16px), transparent 100%);
-          mask-image: linear-gradient(180deg, transparent 0, #000 16px, #000 calc(100% - 16px), transparent 100%); }
-[data-skin="noir"] .jpanel::before { background: linear-gradient(90deg, rgba(var(--bg-rgb),0) 0%, rgba(var(--bg-rgb),.96) 40%, rgba(var(--bg-rgb),.96) 100%); }
 .jp-body { width: 814px; padding: 2px 0 0 6px; animation: jp-in .26s var(--ease); }
 @keyframes jp-open { from { width: 0; } to { width: 820px; } }
 @keyframes jp-in { from { opacity: 0; transform: translateX(-12px); } to { opacity: 1; transform: none; } }
@@ -1114,12 +1105,11 @@ body.fd-line #chrome { bottom: 122px; }
    Placeholder contrast only — see the spec's open question on device verification.
    Noir goes darker still (less colour, not less picture: this is the title's own
    backdrop, not an accent tint, so the image itself is unchanged). */
-/* R255 (FR-R255-2/-7) — ONE stop table, two renderers: these numbers are FocusDetailScrims.kt's
-   (ravilo-ui). In the PAGE's colour, never black: head .70 → mid .22 (the picture is seen) → floor
-   .55 at 75 % → the page itself at 100 %. Noir: +.10 on every stop. Change one file, change the other. */
-.jbg-scrim { position: absolute; inset: 0;
-  background: linear-gradient(180deg, rgba(var(--bg-rgb),.70) 0%, rgba(var(--bg-rgb),.22) 18%, rgba(var(--bg-rgb),.22) 45%, rgba(var(--bg-rgb),.55) 75%, rgba(var(--bg-rgb),1) 100%); }
-[data-skin="noir"] .jbg-scrim { background: linear-gradient(180deg, rgba(var(--bg-rgb),.80) 0%, rgba(var(--bg-rgb),.32) 18%, rgba(var(--bg-rgb),.32) 45%, rgba(var(--bg-rgb),.65) 75%, rgba(var(--bg-rgb),1) 100%); }
+/* R255 (owner decision 2026-09-17) — ONE flat opacity layer in the PAGE's colour over the whole picture:
+   no gradient, no darker area behind the text. The number is FocusDetailScrims.kt's (ravilo-ui): .75 keeps
+   the panel's body text at ≥ 4.5:1 even over a pure-white picture. Noir .85. Change one file, change the other. */
+.jbg-scrim { position: absolute; inset: 0; background: rgba(var(--bg-rgb), .75); }
+[data-skin="noir"] .jbg-scrim { background: rgba(var(--bg-rgb), .85); }
 
 
 

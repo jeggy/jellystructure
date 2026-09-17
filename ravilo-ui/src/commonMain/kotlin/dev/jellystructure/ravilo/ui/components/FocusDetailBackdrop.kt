@@ -77,11 +77,10 @@ fun FocusDetailBackdrop(fd: FocusDetailUi?, modifier: Modifier = Modifier) {
     // headings also carry their own local backing (a background-coloured halo, ContentRow) and the
     // panel's text has its own scrim (FocusDetailPanel, FR-R250-1) — this wash is for the picture and
     // the headings, never the panel text.
-    // R255 — replaces the flat wash above (kept in the comment for its history): ONE gradient in the
-    // page's colour, shaped for where the text is — head, a mid band thin enough that the picture is
-    // actually seen, and a floor that dissolves the picture into the page. Stops: FocusDetailScrims.
+    // R255 (owner decision 2026-09-17) — ONE flat opacity layer in the page's colour over the whole
+    // picture. No gradient, no darker area behind the text. The number and its arithmetic: FocusDetailScrims.
     val scrim = remember(colors.background, noir) {
-        Brush.verticalGradient(*FocusDetailScrims.vertical(noir).map { (at, a) -> at to colors.background.copy(alpha = a) }.toTypedArray())
+        androidx.compose.ui.graphics.SolidColor(colors.background.copy(alpha = FocusDetailScrims.washAlpha(noir)))
     }
 
     AnimatedVisibility(
