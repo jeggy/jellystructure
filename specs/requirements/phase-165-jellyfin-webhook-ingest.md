@@ -179,7 +179,7 @@ and `ArrRescanService` is outbound-only. Verified.
    one-click path can be trusted. Until then the manual-instructions fallback is the shipped path.
 2. **What base URL does jellystructure advertise?** The current *arr card derives the URL from the
    browser's own address, which is right for a human copying it but wrong for a server-to-server
-   write. Jellyfin must be able to reach jellystructure — likely `http://192.0.2.20:9505` on this
+   write. Jellyfin must be able to reach jellystructure — likely `http://192.0.2.10:9505` on this
    install, not the admin's public hostname. Needs an explicit, editable "where Jellyfin should reach
    this install" field (same shape as Towo's "where runners connect" URL override, Phase 162).
 3. Whether to also gate on the plugin's per-destination `UserFilter` — `ItemAdded` is not user-scoped,

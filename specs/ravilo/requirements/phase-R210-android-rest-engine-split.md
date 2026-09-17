@@ -89,7 +89,7 @@ them as `TvApiClient(restClient, baseUrl, deviceTokenProvider, wsClient = cioCli
   `ktor-client-android`-backed client and the `/api/tv/events` upgrade over the CIO-backed client —
   confirmed by engine-specific logging or a debugger breakpoint during implementation review.
 - The original repro conditions from [[bug-ravilo-tv-cio-connect-timeout]] (soveværelse TV,
-  `192.0.2.23:5555`) no longer show a connect-timeout error on the REST path when the same
+  `192.0.2.12:5555`) no longer show a connect-timeout error on the REST path when the same
   device's raw shell HTTP request succeeds — **on-device verification is user-initiated per standing
   instruction ([[feedback-no-tv-deploy]]/[[feedback-no-auto-deploy]]); this phase's own build/compile
   checks cannot prove the fix, only that it compiles and doesn't regress the WS path.**
@@ -114,9 +114,9 @@ them as `TvApiClient(restClient, baseUrl, deviceTokenProvider, wsClient = cioCli
    (the `shared` module's constructor change reaches every target that depends on it, including the
    backend, even though the backend never constructs a `TvApiClient` itself). All clean.
 5. **Partially on-device verified 2026-08-27** — deployed the release build + full AOT compile to
-   stue TV (`192.0.2.22`) and launched it: clean launch (`Displayed
+   stue TV (`192.0.2.11`) and launched it: clean launch (`Displayed
    dev.jellystructure.ravilo/.android.MainActivity: +491ms` in logcat, no exceptions/crashes in the
-   captured log), and entering the real backend's address (`192.0.2.20:9505`) on the
+   captured log), and entering the real backend's address (`192.0.2.10:9505`) on the
    `ServerSetupScreen` and connecting transitioned cleanly to the sign-in screen with no hang or
    delay — the `ktor-client-android` REST path genuinely reached the server. This is real evidence
    the split works, though it doesn't reproduce (or rule out) the original intermittent CIO failure
