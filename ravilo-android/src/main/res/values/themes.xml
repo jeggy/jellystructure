@@ -1,7 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Base app theme (no action bar, full-screen Compose) -->
-    <style name="Theme.Ravilo" parent="Theme.AppCompat.NoActionBar" />
+    <!-- R259 — the window itself is the page colour (Aurora page background #0A0C13). It used to inherit AppCompat's
+         default dark grey, which showed as a grey band above the app AND above the player on a phone
+         (Pixel 9, 2026-09-17) wherever the system reserves space Compose does not paint: the status-bar /
+         cutout strip. Bars follow suit on the Android versions that still honour these colours. -->
+    <style name="Theme.Ravilo" parent="Theme.AppCompat.NoActionBar">
+        <item name="android:windowBackground">@color/ravilo_page</item>
+        <item name="android:statusBarColor">@color/ravilo_page</item>
+        <item name="android:navigationBarColor">@color/ravilo_page</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
 
     <!-- Android 12+ splash screen; hands off to Theme.Ravilo on entry -->
     <style name="Theme.Ravilo.Splash" parent="Theme.SplashScreen">

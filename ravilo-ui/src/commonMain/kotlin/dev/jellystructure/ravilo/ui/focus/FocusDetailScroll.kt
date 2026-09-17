@@ -44,6 +44,19 @@ fun focusDetailRowOpenHeadingDelta(
 }
 
 /**
+ * R259 — what a COLLAPSING row owes the scroll. When focus leaves an opened row downwards, the row gives
+ * back `grown − settled` px and drags every row below it (incl. the newly focused one) up by as much.
+ * Returns that amount as a NEGATIVE scroll distance (content moves back down) — but only when this row
+ * sits above the focus line, i.e. the viewer moved down; a row below the focus line moves nothing the
+ * viewer is looking at. 0 when nothing was released.
+ */
+fun focusDetailCollapseCompensation(grownHeightPx: Float, settledHeightPx: Float, rowTopPx: Float, focusLinePx: Float): Float {
+    val released = grownHeightPx - settledHeightPx
+    if (released <= 0f || rowTopPx >= focusLinePx) return 0f
+    return -released
+}
+
+/**
  * J's row's own HORIZONTAL scroll target — the bug this fixes: native per-tile bring-into-view only
  * ever accounts for the focused TILE's own bounds, never the panel item spliced in right after it
  * (they're two separate `LazyRow` children), so a tile focused near the right edge of the screen

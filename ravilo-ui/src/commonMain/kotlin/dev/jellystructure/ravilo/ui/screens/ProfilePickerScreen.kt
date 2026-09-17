@@ -112,7 +112,16 @@ fun ProfilePickerScreen(
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(str("profile.who"), color = colors.text, fontSize = 28.sp, fontWeight = FontWeight.Bold)
                     Spacer(Modifier.height(40.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+                    // R259 — was a plain Row: four tiles are wider than a phone, so the first sat flush at x = 0
+                    // and "Settings" was cut off at the right edge (Pixel 9, 2026-09-17). Wraps, centred, inside
+                    // the page gutter; on a TV it still lays out as one line until a household has more
+                    // profiles than fit, where wrapping also beats clipping. Left/Right stay index-based.
+                    @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+                    androidx.compose.foundation.layout.FlowRow(
+                        modifier = Modifier.padding(horizontal = 24.dp),
+                        horizontalArrangement = Arrangement.spacedBy(24.dp, Alignment.CenterHorizontally),
+                        verticalArrangement = Arrangement.spacedBy(24.dp),
+                    ) {
                         val extras = if (showSettings) 2 else 1   // Add user (+ Settings)
                         val frs = remember(s.sessions.size, showSettings) {
                             List(s.sessions.size + extras) { FocusRequester() }

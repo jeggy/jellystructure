@@ -525,6 +525,21 @@ private fun ContentRowItem(
     val screenHeightPx = LocalWindowInfo.current.containerSize.height.toFloat()
     val scope = rememberCoroutineScope()
     LaunchedEffect(rowHasOpen) {
+        if (!rowHasOpen) {
+            // R259 — the general form of FR-R257-5. Focus has left this row, so it is about to give back
+            // its held (opened) height. If the viewer moved DOWN, everything below — including the row now
+            // focused, already parked by bring-into-view — is dragged up by that amount, heading under the
+            // app bar. FR-R257-5 corrects that in the DESTINATION row, but only a row J opens on runs it;
+            // On Now, a See-all tile, a system row do not (stue TV 2026-09-17: "On Now" under the bar).
+            // So the COLLAPSING row hands the released height back to the scroll: the focused row stays
+            // exactly where bring-into-view put it. Moving UP needs nothing (this row is below the focus).
+            val grown = rowFootPx - rowTopPx
+            kotlinx.coroutines.delay(RaviloMotion.ROW_OPEN_TWEEN_MS.toLong() + 90L)
+            val released = dev.jellystructure.ravilo.ui.focus.focusDetailCollapseCompensation(
+                grownHeightPx = grown, settledHeightPx = rowFootPx - rowTopPx, rowTopPx = rowTopPx, focusLinePx = screenHeightPx * 0.3f,
+            )
+            if (released < 0f) scope.launch { runCatching { listState.animateScrollBy(released) } }
+        }
         if (rowHasOpen) {
             // Sequenced after the growth (R232's hazard): wait out the same tween Tile/FocusDetailPanel
             // animate on, so rowFootPx reflects the GROWN row, not the row mid-tween.

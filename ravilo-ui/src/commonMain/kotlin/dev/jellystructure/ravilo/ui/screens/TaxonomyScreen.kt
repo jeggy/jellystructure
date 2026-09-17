@@ -329,7 +329,9 @@ private fun TaxonomyTile(
                 // R257 (FR-R257-3) — a captured logo is dark ink on transparency far more often than not (88
                 // of 135 in production; TMDB draws them for a light page), so a logo tile gets a light
                 // plate; a wordmark tile keeps the dark card and light ink.
-                .background(if (item.logoUrl != null) TAXO_LOGO_PLATE else colors.surfaceVariant, shape)
+                // R259 (FR-R259-5) — …except a logo the server has judged LIGHT ink (232: Channel 4's white mark),
+                // which keeps the dark card it was drawn for. Unknown ink = the light plate.
+                .background(if (item.logoUrl != null && item.logoInk != "light") TAXO_LOGO_PLATE else colors.surfaceVariant, shape)
                 .then(if (focused) Modifier.border(2.dp, colors.focusRing, shape) else Modifier)
                 .padding(horizontal = if (handset || item.logoUrl == null) 14.dp else 26.dp),
             contentAlignment = Alignment.Center,

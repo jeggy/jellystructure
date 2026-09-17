@@ -11,6 +11,7 @@ import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
 
 private const val TMDB_ORIGINAL = "https://image.tmdb.org/t/p/original"
+private const val INK_THUMB = 32
 
 data class LogoBatchResult(val fetched: Int, val skipped: Int, val failed: Int)
 
@@ -36,6 +37,50 @@ class LogoDownloader(
 
     fun hasLogo(kind: String, name: String): Boolean =
         SystemFileSystem.exists(Path(logoFile(kind, name)))
+
+    // ── Phase 232 — which ink a logo is drawn in ("light"/"dark"), persisted as a `<slug>.ink` sidecar ──
+    private val inkCache = HashMap<String, String>()
+
+    /** FR-232-3 — read-only and cheap: never computes (that is [computeMissingInk]'s job, off the request
+     *  path). `null` = not known yet (a re-downloaded logo drops its sidecar, FR-232-4). */
+    fun logoInk(kind: String, name: String): String? {
+        val logo = logoFile(kind, name)
+        inkCache[logo]?.let { return it }
+        val side = Path(logo.removeSuffix(".png") + ".ink")
+        if (!SystemFileSystem.exists(side)) return null
+        val ink = runCatching { FileIo.readBytes(side).decodeToString().trim() }.getOrNull()
+            ?.takeIf { it == LOGO_INK_LIGHT || it == LOGO_INK_DARK } ?: return null
+        inkCache[logo] = ink
+        return ink
+    }
+
+    /** FR-232-2 — one ffmpeg run per logo, EVER: fills in missing sidecars for every captured studio and
+     *  network logo. Called at boot and after a fetch batch, on the background gate class. */
+    suspend fun computeMissingInk(): Int {
+        var done = 0
+        for (kind in listOf("studios", "networks")) {
+            val dir = Path("$dataDir/artwork/$kind")
+            if (!SystemFileSystem.exists(dir)) continue
+            for (file in SystemFileSystem.list(dir)) {
+                val path = file.toString()
+                if (!path.endsWith(".png")) continue
+                val side = path.removeSuffix(".png") + ".ink"
+                if (SystemFileSystem.exists(Path(side))) continue
+                val raw = "$side.rgba"
+                val ink = runCatching {
+                    if (!FfmpegRunner.rawRgbaThumb(path, raw, INK_THUMB)) null
+                    else logoInkOf(FileIo.readBytes(Path(raw)), INK_THUMB, INK_THUMB)
+                }.getOrNull()
+                runCatching { SystemFileSystem.delete(Path(raw), mustExist = false) }
+                // An unreadable logo is written as "dark" (the default plate) so it is not retried on every boot.
+                runCatching { FileIo.writeBytes(Path(side), (ink ?: LOGO_INK_DARK).encodeToByteArray()) }
+                inkCache.remove(path)
+                done++
+            }
+        }
+        if (done > 0) Logger.info("Logo ink: judged $done logo(s)", "artwork")
+        return done
+    }
 
     fun serveLogo(kind: String, name: String): ByteArray? {
         val path = Path(logoFile(kind, name))
@@ -67,6 +112,7 @@ class LogoDownloader(
             val ok = runCatching { fetchStudioLogo(name, tmdbId, logoPath) }.getOrDefault(false)
             if (ok) fetched++ else failed++
         }
+        if (fetched > 0) runCatching { computeMissingInk() }  // Phase 232 (FR-232-2)
         return LogoBatchResult(fetched, skipped, failed)
     }
 
@@ -77,6 +123,7 @@ class LogoDownloader(
             val ok = runCatching { fetchNetworkLogo(name, logoPath) }.getOrDefault(false)
             if (ok) fetched++ else failed++
         }
+        if (fetched > 0) runCatching { computeMissingInk() }  // Phase 232 (FR-232-2)
         return LogoBatchResult(fetched, skipped, failed)
     }
 
@@ -103,6 +150,8 @@ class LogoDownloader(
             val tmp = "$destPath.tmp"
             FileIo.writeBytes(Path(tmp), bytes)   // Phase 134: use{}-scoped — no FD leak on a mid-write throw
             platform.posix.rename(tmp, destPath)
+            // Phase 232 (FR-232-4) — a replaced logo is re-judged: drop its ink sidecar + cache entry.
+            if (destPath.endsWith(".png")) { inkCache.remove(destPath); runCatching { SystemFileSystem.delete(Path(destPath.removeSuffix(".png") + ".ink"), mustExist = false) } }
             Logger.info("Downloaded logo: $destPath", "artwork")
             true
         }

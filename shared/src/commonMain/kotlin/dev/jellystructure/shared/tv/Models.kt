@@ -1158,7 +1158,14 @@ data class CastRedeemRequest(
  * genre and tag. R243 renders the name as a wordmark in that case and never says "no logo".
  */
 @Serializable
-data class FacetItem(val name: String, val count: Int, val logoUrl: String? = null)
+data class FacetItem(
+    val name: String,
+    val count: Int,
+    val logoUrl: String? = null,
+    /** Phase 232 — `"light"` | `"dark"`: the ink the logo is drawn in, so the client can pick a ground it
+     *  is visible on (R259). Present only with [logoUrl] and only once judged; absent = unknown. */
+    @kotlinx.serialization.SerialName("logo_ink") val logoInk: String? = null,
+)
 
 /**
  * Phase 216 (FR-216-1) — the browse facet bar's counts, now also the Discover wall's index (R243).

@@ -270,10 +270,10 @@ class BrowseService(
             item.tags.distinctBy { TaxonomyKey.key(it) }.forEach { tags.add(it) }
         }
 
-        fun toFacets(scoped: Boolean, logoUrl: (String, String) -> String?): BrowseFacets = BrowseFacets(
+        fun toFacets(scoped: Boolean, logoUrl: (String, String) -> String?, logoInk: (String, String) -> String?): BrowseFacets = BrowseFacets(
             genres   = genres.entries().map { FacetItem(it.name, it.count) },
-            studios  = studios.entries().map { FacetItem(it.name, it.count, logoUrl("studios", it.name)) },
-            networks = networks.entries().map { FacetItem(it.name, it.count, logoUrl("networks", it.name)) },
+            studios  = studios.entries().map { FacetItem(it.name, it.count, logoUrl("studios", it.name), logoInk("studios", it.name)) },
+            networks = networks.entries().map { FacetItem(it.name, it.count, logoUrl("networks", it.name), logoInk("networks", it.name)) },
             tags     = tags.entries().map { FacetItem(it.name, it.count) },
             library  = library,
             titles   = mapOf("studios" to studioTitles, "networks" to networkTitles, "genres" to genreTitles, "tags" to tagTitles),
@@ -299,7 +299,9 @@ class BrowseService(
         val logoUrl: (String, String) -> String? = { k, name ->
             if (logoDownloader?.hasLogo(k, name) == true) RaviloImageUrl.taxonomyLogo(k, name) else null
         }
-        return FacetsEntry(all.toFacets(scoped, logoUrl), movie.toFacets(scoped, logoUrl), series.toFacets(scoped, logoUrl), 0L, 0L, 0)
+        // Phase 232 (FR-232-3) — a sidecar READ only; judging happens in the background (LogoDownloader).
+        val logoInk: (String, String) -> String? = { k, name -> if (logoDownloader?.hasLogo(k, name) == true) logoDownloader.logoInk(k, name) else null }
+        return FacetsEntry(all.toFacets(scoped, logoUrl, logoInk), movie.toFacets(scoped, logoUrl, logoInk), series.toFacets(scoped, logoUrl, logoInk), 0L, 0L, 0)
     }
 
     private fun MediaItem.toMediaCard(): MediaCard {
