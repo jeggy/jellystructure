@@ -575,7 +575,7 @@ private fun wireShell(container: Element, scope: CoroutineScope) {
             collectConfig(container)
         }
     }
-    // FR-202-6 — the line's row states "On · superseded" live the moment the row-opens switch flips,
+    // FR-202-6 / R254 (FR-R254-6) — the line's row states "On · superseded on TVs" live the moment the row-opens switch flips,
     // without waiting for a full section re-render.
     sections?.addEventListener("change") { ev ->
         val t = ev.target
@@ -2404,8 +2404,8 @@ private fun renderBehaviourGlobal(sect: Element) {
     // FR-202-6 — states the whole rule, including the part that's off: J supersedes L whenever both
     // are on, so the line's own row must say so rather than silently disagreeing with the screen.
     val focusLineSuperseded = if (currentConfig.focusDetailRowOpen)
-        """<span class="tiny" id="beh-fd-line-superseded" style="color:var(--acc-ink);font-weight:600">On · superseded</span>"""
-        else """<span class="tiny muted" id="beh-fd-line-superseded" style="display:none">On · superseded</span>"""
+        """<span class="tiny" id="beh-fd-line-superseded" style="color:var(--acc-ink);font-weight:600">On · superseded on TVs</span>"""
+        else """<span class="tiny muted" id="beh-fd-line-superseded" style="display:none">On · superseded on TVs</span>"""
     sect.innerHTML = """
         <div class="card" style="padding:18px 20px;margin-bottom:18px">
           <div style="font-weight:600;margin-bottom:2px">Behaviour &amp; preferences</div>
@@ -2472,8 +2472,7 @@ private fun renderBehaviourGlobal(sect: Element) {
             <label style="display:flex;align-items:center;gap:10px;font-size:.9rem">
               <input type="checkbox" id="beh-fd-rowopen"$focusRowOpenChecked>
               Row opens in place — the focused row grows to show a panel beside the tile
-              <span class="tiny muted">· ships off — moves the row's height and its tiles' positions on every
-              focus move (invariant 11, unmeasured on the living-room BRAVIA)</span>
+              <span class="tiny muted">· TVs only — a phone or the web app shows the status line instead</span>
             </label>
             <label style="display:flex;align-items:center;justify-content:space-between;gap:12px">
               <span style="font-size:.9rem">Wait before it appears <span class="mono" id="beh-fd-delay-val">${currentConfig.focusDetailDelayMs}ms</span>
