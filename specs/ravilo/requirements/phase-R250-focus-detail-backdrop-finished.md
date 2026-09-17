@@ -17,6 +17,11 @@ computed, not measured. Client-only; closes R242's open question and one R240 la
 `:ravilo-ui:compileDebugKotlinAndroid` + `:ravilo-ui:compileKotlinWasmJs` clean; `FocusDetailPanelClampTest`
 (5) + `GutterBringIntoViewTest` (3) green, R240's scroll tests untouched and green.
 
+**2026-09-17 — scrim numbers superseded by R255** (`phase-R255-backdrop-gradient-in-the-page-colour.md`):
+the owner's reading of this build on the stue TV was *readable, not nice* — the wash dims the whole picture
+and the panel scrim is a box. R255 replaces both with one gradient in `--bg` and takes over FR-R250-7's
+undone measurement. FR-R250-3/-4/-5/-6 and the heading halo stand.
+
 **Numbering:** verified against `STATUS.md` on 2026-09-16 — Ravilo taken through R245; R246–R249 by
 sibling specs the same day.
 
