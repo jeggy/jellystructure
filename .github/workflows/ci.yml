@@ -1,12 +1,117 @@
 name: CI
 
+# Phase 231 — ONE reusable definition of "the tests pass", called by publish.yml before anything is
+# pushed to GHCR or the Play Store (FR-231-4), and run directly for pull requests.
+# Pushes to main do NOT trigger this file: publish.yml runs it for them (FR-231-5), so a push costs one
+# CI run, and that run is the gate.
 on:
-  push:
-    branches: [main]
   pull_request:
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      ref:
+        description: "Git ref to test (a release tag); defaults to the triggering commit"
+        type: string
+        required: false
+        default: ""
+
+permissions:
+  contents: read
 
 jobs:
-  test:
+  # ── Fast fences (seconds). The two design-sync fences existed only as "run by hand" until 231. ──
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+      - name: Spec/STATUS consistency
+        run: ./scripts/check-phases.sh
+      - name: CSS scoping
+        run: ./scripts/check-css-scoping.sh
+      - name: Design-sync-fragile CSS
+        run: ./scripts/check-mobile-css.sh
+
+  # ── Backend unit tests (Kotlin/Native). 342 tests that CI had never run before 231. ──
+  unit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Cache Kotlin/Native toolchain
+        uses: actions/cache@v4
+        with:
+          path: ~/.konan
+          key: ${{ runner.os }}-konan-${{ hashFiles('gradle/libs.versions.toml', 'build.gradle.kts') }}
+          restore-keys: ${{ runner.os }}-konan-
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends libsqlite3-dev libatomic1 ffmpeg mkvtoolnix
+      - name: Backend unit tests
+        run: ./gradlew linuxX64Test --no-daemon
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-test-reports
+          path: build/reports/tests/
+          retention-days: 7
+
+  # ── The Ravilo client: unit tests, the REAL R8 release APK, and ART's own verifier on it. ──
+  # The release-only player VerifyError (2026-09-06 to the Play Store, 2026-09-17 to the living-room TV)
+  # passes every compile check, every unit test and every debug build. Only these two steps see it.
+  android-release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+          fetch-depth: 0   # versionName comes from `git describe`
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Client unit tests + release APK
+        run: ./gradlew :ravilo-ui:testDebugUnitTest :ravilo-android:assembleRelease --no-daemon
+      - name: Player dex register guard (FR-231-2)
+        run: ./scripts/check-player-dex.sh
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: ART verifies every class of the release APK (FR-231-3)
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 31          # Android 12 — what the living-room BRAVIA runs
+          arch: x86_64
+          target: default
+          force-avd-creation: false
+          emulator-options: -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader_indirect
+          disable-animations: true
+          script: ./scripts/verify-release-apk-on-art.sh
+      - name: Upload the release APK
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ravilo-release-apk
+          path: ravilo-android/build/outputs/apk/release/*.apk
+          retention-days: 7
+
+  # ── The full stack against mocks + Playwright (unchanged by 231, only renamed from `test`). ──
+  e2e:
     runs-on: ubuntu-latest
     # 2026-08-18: on a cold cache, `app` alone spent ~9.5 of its ~10.4 total build minutes locally in
     # the two gradlew RUN steps (linkReleaseExecutableLinuxX64 + wasmJsBrowserDistribution) -- on a
@@ -21,6 +126,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.sha }}
 
       - name: Free disk space
         # 2026-08-18: the last two runs both died mid-"Run test stack" with conclusion=failure but no

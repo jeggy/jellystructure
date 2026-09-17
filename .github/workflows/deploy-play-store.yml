@@ -33,9 +33,24 @@ name: Deploy Ravilo to Play Store
 #   ANDROID_KEY_ALIAS
 #   ANDROID_KEY_PASSWORD
 
+# Phase 231 — no longer triggered by `release:` directly: publish.yml calls this AFTER its CI job, so a
+# Play build can never ship from a commit whose tests have not passed. A manual dispatch (re-deploy,
+# or another track) runs CI itself first.
 on:
-  release:
-    types: [published]
+  workflow_call:
+    inputs:
+      version:
+        type: string
+        required: true
+      track:
+        type: string
+        required: false
+        default: internal
+      skip_ci:
+        description: "true only when the caller has already run ci.yml for this commit"
+        type: boolean
+        required: false
+        default: false
   workflow_dispatch:
     inputs:
       version:
@@ -63,13 +78,9 @@ jobs:
       - name: Resolve and validate version
         id: resolve
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            TAG="v${{ inputs.version }}"
-            TRACK="${{ inputs.track }}"
-          else
-            TAG="${{ github.event.release.tag_name }}"
-            TRACK="internal"
-          fi
+          # Both entry points (workflow_call from publish.yml, manual dispatch) carry the same two inputs.
+          TAG="v${{ inputs.version }}"
+          TRACK="${{ inputs.track }}"
           RAW="${TAG#v}"
           if ! [[ "$RAW" =~ ^([0-9]+)\.([0-9]+)$ ]]; then
             echo "::error::Version '$RAW' (from tag '$TAG') is not a plain MAJOR.MINOR number (e.g. 1.0) — refusing to deploy."
@@ -86,8 +97,17 @@ jobs:
           echo "versionCode=$((MAJOR * 1000 + MINOR))" >> "$GITHUB_OUTPUT"
           echo "track=$TRACK" >> "$GITHUB_OUTPUT"
 
-  deploy:
+  ci:
     needs: version
+    if: ${{ !inputs.skip_ci }}
+    uses: ./.github/workflows/ci.yml
+    with:
+      ref: ${{ needs.version.outputs.tag }}
+
+  deploy:
+    needs: [version, ci]
+    # runs when CI passed, or when the caller already ran it (skipped) — never when it failed
+    if: ${{ always() && needs.version.result == 'success' && (needs.ci.result == 'success' || needs.ci.result == 'skipped') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

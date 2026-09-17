@@ -1,4 +1,4 @@
-name: Publish Docker images
+name: Publish
 
 # FR-167-6/7, extended 2026-08-27, retagged 2026-09-13 — pushes to GHCR on two occasions:
 #  - every push to main: unversioned continuous build, tagged with the commit SHA only. `latest` no
@@ -8,6 +8,13 @@ name: Publish Docker images
 #    `latest` + the release's own MAJOR.MINOR version.
 # workflow_dispatch re-publishes an existing released version on demand (latest + version, same as a
 # real release).
+#
+# Phase 231 — NOTHING below publishes before CI passes. The `ci` job runs the whole reusable CI
+# workflow (fences, 342 backend + 126 client unit tests, the R8 release APK verified by ART on an
+# emulator, the e2e stack) against the exact commit being published; the GHCR push and the Play Store
+# deploy both `needs: ci`. A release therefore publishes only if ITS OWN CI run is green — there is no
+# longer any "check the push run first" rule to remember. The Play deploy is a job of this pipeline
+# (it used to be its own `release:`-triggered workflow, racing CI and the images).
 #
 # Versioning is a plain two-part number (MAJOR.MINOR), NOT SemVer — no patch segment, no pre-release/
 # build metadata. Starts at 1.0. The release's tag is the single source of truth (no VERSION file to keep
@@ -58,8 +65,14 @@ jobs:
           echo "version=$RAW" >> "$GITHUB_OUTPUT"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
-  publish:
+  ci:
     needs: version
+    uses: ./.github/workflows/ci.yml
+    with:
+      ref: ${{ needs.version.outputs.tag }}
+
+  publish:
+    needs: [version, ci]
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -117,3 +130,14 @@ jobs:
             BUILD_VERSION=${{ steps.tags.outputs.build_version }}
           cache-from: type=gha,scope=${{ matrix.image }}
           cache-to: type=gha,mode=max,scope=${{ matrix.image }}
+
+  # R215 — the Play Store internal track, on a published release only, and only after CI (231).
+  play-store:
+    needs: [version, ci, publish]
+    if: github.event_name == 'release'
+    uses: ./.github/workflows/deploy-play-store.yml
+    with:
+      version: ${{ needs.version.outputs.version }}
+      track: internal
+      skip_ci: true   # this pipeline's own `ci` job already gated it
+    secrets: inherit
