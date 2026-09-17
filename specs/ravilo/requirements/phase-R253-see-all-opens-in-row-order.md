@@ -7,7 +7,7 @@
 
 ## Status
 
-`Planned` — written 2026-09-17, **dev-reviewed 2026-09-17 against `main` `8873cea7`** (see §Dev review at the
+`✓ Built` 2026-09-17 — `initialBrowseSort()` (4 tests) maps `Row.sort_by`/`sort_descending` onto the page's existing `(SortField, SortDir)`; both See-all push sites carry it; `BrowseCard.sort_name` (additive) and the A–Z facet sorts on it. Zero new strings, no client cap, pins never reach the client. Android + Wasm compile; not on a device. Was `Planned` — written 2026-09-17, **dev-reviewed 2026-09-17 against `main` `8873cea7`** (see §Dev review at the
 bottom: the row already draws everything it is sent, and the browse page already has both directions of every
 key — so FR-R253-1b is a no-op and FR-R253-4 adds **no** strings).
 

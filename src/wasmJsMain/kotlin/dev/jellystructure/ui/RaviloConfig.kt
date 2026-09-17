@@ -1550,10 +1550,12 @@ private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx
         openWorkbench(scope, "New row — ${c.name.ifBlank { "Collection" }}", viewer = currentUserId,
             applyLabel = "Add row",
             baseQuery = chBaseQuery(),
+            orderRow = RowConfig(id = "", kind = RowKind.CUSTOM), orderCollectionName = c.name.ifBlank { null },   // Phase 225
             onApply = { query, include ->
                 val label = query.firstValueOrNull() ?: "Custom row"
                 val mediaKind = when (include) { "movies" -> "MOVIE"; "series" -> "SERIES"; "musicvideos" -> "MUSIC_VIDEO"; else -> null }
-                val newRow = RowConfig(id = genId("row"), kind = RowKind.CUSTOM, title = label, mediaKind = mediaKind, query = query)
+                val o = workbenchOrderResult()
+                val newRow = RowConfig(id = genId("row"), kind = RowKind.CUSTOM, title = label, mediaKind = mediaKind, query = query, sort = o.sort, pinned = o.pinned, limit = o.limit)
                 val list = currentConfig.channels.toMutableList()
                 val cur = list[idx]
                 val existing = cur.rows ?: ChannelRowsConfig(mode = "custom")
@@ -1573,12 +1575,14 @@ private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx
                 initialQuery = row.effectiveQuery(), initialInclude = inc,
                 applyLabel = "Update row",
                 baseQuery = chBaseQuery(),
+                orderRow = row, orderCollectionName = c.name.ifBlank { null },   // Phase 225
                 onApply = { query, inc2 ->
                     val mediaKind = when (inc2) { "movies" -> "MOVIE"; "series" -> "SERIES"; "musicvideos" -> "MUSIC_VIDEO"; else -> null }
                     val list = currentConfig.channels.toMutableList()
                     val cur = list[idx]
                     val items = cur.rows?.items?.toMutableList() ?: return@openWorkbench
-                    items[ri] = items[ri].copy(kind = RowKind.CUSTOM, query = query, mediaKind = mediaKind)
+                    val o = workbenchOrderResult()
+                    items[ri] = items[ri].copy(kind = RowKind.CUSTOM, query = query, mediaKind = mediaKind, sort = o.sort, pinned = o.pinned, limit = o.limit)
                     list[idx] = cur.copy(rows = cur.rows!!.copy(items = items))
                     currentConfig = currentConfig.copy(channels = list)
                     reRenderChannelRows()
@@ -1895,7 +1899,9 @@ private fun renderRows(container: Element) {
         } else {
             val badgeLabel = if (r.kind == RowKind.GENRE) "genre" else "filter"
             val eq = r.effectiveQuery()
-            val condSrc = if (eq.isLive()) groupSummary(eq.toWbGroup(), top = true) else "No filter — shows all media"
+            // Phase 225 (FR-225-10) — the order in words, appended only when it differs from the default.
+            val orderWords = dev.jellystructure.shared.tv.RowOrder.summary(r).takeIf { it.isNotEmpty() }?.let { " · $it" }.orEmpty()
+            val condSrc = (if (eq.isLive()) groupSummary(eq.toWbGroup(), top = true) else "No filter — shows all media") + orderWords
             val name = r.title?.takeIf { it.isNotBlank() } ?: "Custom row"
             """<div class="cfg-row" draggable="true" data-row-i="$i" style="${rowOpacity}transition:opacity .2s"><span class="grab" style="cursor:grab;user-select:none;flex-shrink:0">&#x2807;</span><span class="badge info" style="flex:none;font-size:.65rem">$badgeLabel</span><div style="flex:1;min-width:0"><input class="input" style="width:100%;max-width:200px;font-size:.84rem;padding:3px 8px;height:auto" placeholder="Row title" value="${name.htmlEsc()}" data-row-title="$i"><div class="src" style="margin-top:3px">${condSrc.htmlEsc()}</div></div><button class="btn sm ghost" data-row-edit="$i" style="white-space:nowrap">Edit filter</button>$toggleHtml<button class="btn sm ghost" data-row-del="$i" style="color:var(--bad)">&#x2715;</button></div>"""
         }
@@ -1942,12 +1948,13 @@ private fun renderRows(container: Element) {
     sect.querySelector("#row-add")?.addEventListener("click") { _ ->
         val scope = rcScope ?: return@addEventListener
         openWorkbench(scope, "New content row", viewer = currentUserId, applyLabel = "Add row",
+            orderRow = RowConfig(id = "", kind = RowKind.CUSTOM),   // Phase 225
             onApply = { query, include ->
                 val label = query.firstValueOrNull() ?: "Custom row"
                 val mediaKind = when (include) { "movies" -> "MOVIE"; "series" -> "SERIES"; "musicvideos" -> "MUSIC_VIDEO"; else -> null }
                 structural(container, {
                     currentConfig = currentConfig.copy(rows = currentConfig.rows +
-                        RowConfig(id = genId("row"), kind = RowKind.CUSTOM, title = label, mediaKind = mediaKind, query = query))
+                        workbenchOrderResult().let { o -> RowConfig(id = genId("row"), kind = RowKind.CUSTOM, title = label, mediaKind = mediaKind, query = query, sort = o.sort, pinned = o.pinned, limit = o.limit) })
                 }, ::renderRows)
             })
     }
@@ -1983,11 +1990,12 @@ private fun renderRows(container: Element) {
             val include = when (r.mediaKind) { "MOVIE" -> "movies"; "SERIES" -> "series"; "MUSIC_VIDEO" -> "musicvideos"; else -> "all" }
             openWorkbench(scope, "Edit row — ${(r.title ?: "custom row")}", viewer = currentUserId,
                 initialQuery = r.effectiveQuery(), initialInclude = include, applyLabel = "Update row",
+                orderRow = r,   // Phase 225
                 onApply = { query, inc ->
                     val mediaKind = when (inc) { "movies" -> "MOVIE"; "series" -> "SERIES"; "musicvideos" -> "MUSIC_VIDEO"; else -> null }
                     structural(container, {
                         currentConfig = currentConfig.copy(rows = currentConfig.rows.map {
-                            if (it.id == rowId) it.copy(kind = RowKind.CUSTOM, query = query, mediaKind = mediaKind) else it
+                            if (it.id == rowId) workbenchOrderResult().let { o -> it.copy(kind = RowKind.CUSTOM, query = query, mediaKind = mediaKind, sort = o.sort, pinned = o.pinned, limit = o.limit) } else it
                         })
                     }, ::renderRows)
                 })
