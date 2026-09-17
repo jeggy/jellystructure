@@ -7,7 +7,7 @@
 > publish docker images to github as part of the CI setup."* Followed by: *"we need to start doing
 > versions… Let's not use Semver, but rather a 2 digit number. Starting with 1.0."*
 
-**Status:** Planned — dev-authored, not yet built.
+**Status:** ✓ Done — see `STATUS.md`, which is authoritative. (Header as originally written: Planned) — dev-authored, not yet built.
 
 ## 1. What's there now
 

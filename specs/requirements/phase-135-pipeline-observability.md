@@ -9,7 +9,7 @@
 > (real counts) — and label the run's **trigger** (manual vs scheduled), **scope** (library-only vs full
 > pipeline), and **type** (normal vs full/freshness-ignoring).
 
-**Status:** Planned. Admin (jellystructure) phase. Builds directly on this-cycle's pipeline work (the
+**Status:** ✓ Done — see `STATUS.md`, which is authoritative. (Header as originally written: Planned). Admin (jellystructure) phase. Builds directly on this-cycle's pipeline work (the
 scanTracker-completion fix, the `?full=true` "Run pipeline now (full)" flag). Two halves: **processing**
 (the later steps run through a bounded worker pool like `scan_files`, so they're faster *and* have real
 worker counts) and **observability** (a step-aware progress protocol + an Activity page that renders the

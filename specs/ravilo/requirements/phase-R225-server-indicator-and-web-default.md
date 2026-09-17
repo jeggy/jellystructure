@@ -13,7 +13,7 @@
 > currently used"* (so this class of mistake is visible instead of a silent wrong-origin guess), and *"a
 > default server via an environment variable... on ravilo-web, but not on tv or mobile devices"*.
 
-**Status:** Planned — spec only, not yet built.
+**Status:** ✓ Built — see `STATUS.md`, which is authoritative. (Header as originally written: Planned) — spec only, not yet built.
 
 ## 1. Server indicator (all platforms)
 

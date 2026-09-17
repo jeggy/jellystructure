@@ -6,7 +6,7 @@
 > was correctly filtered to the collection (*Great Ape*, *Till Daybreak*, *Tenfold*, *Insurrection*). The two
 > system rows on one page disagreed about what page they were on.
 
-**Status:** Planned — design-authored 2026-09-04 with the owner. Not dev-reviewed, not built.
+**Status:** ✓ Built — see `STATUS.md`, which is authoritative. (Header as originally written: Planned) — design-authored 2026-09-04 with the owner. Not dev-reviewed, not built.
 
 ## Problem
 

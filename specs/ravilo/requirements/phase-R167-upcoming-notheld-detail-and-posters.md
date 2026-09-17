@@ -5,7 +5,7 @@
 > can't see what the thing even is. Make a not-held item open a proper **metadata-only detail page with
 > real art**, exactly the way the **Top 10 / Discover** detail does today for a title we don't hold.
 
-**Status:** Planned — extends **R160** (built) and explicitly **picks up R160's deferred artwork item**
+**Status:** ✓ Done — see `STATUS.md`, which is authoritative. (Header as originally written: Planned) — extends **R160** (built) and explicitly **picks up R160's deferred artwork item**
 (R160 dev-review addendum #3 deferred not-held-item artwork "to avoid a new external-image pipeline + FD
 surface"). This phase satisfies it the **Discover way** — the TV loads the poster **directly from the
 external CDN**, with **no jellystructure image proxy**, so R160's FD-surface concern does not apply.

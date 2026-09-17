@@ -7,7 +7,7 @@
 > [Phase 137](../../requirements/phase-137-ravilo-config-request-builder.md)), a **Seerr-scoped search**, and
 > a request action that hands off to Seerr → Radarr/Sonarr. Replaces the retired Top 10 charts.
 
-**Status:** Planned — **design built**, Compose app integration unbuilt.
+**Status:** ✓ Done — see `STATUS.md`, which is authoritative. (Header as originally written: Planned) — **design built**, Compose app integration unbuilt.
 
 ## Problem
 Requesting missing titles from the sofa used to ride on third-party **Top 10 charts** (Netflix/JustWatch/etc.)

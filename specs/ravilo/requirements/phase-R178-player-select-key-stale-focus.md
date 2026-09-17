@@ -7,7 +7,7 @@
 > Audio & Subs picker**. Confusing and, per the report, "bad and annoying UX." This is general — it
 > reproduces with *any* control (skip buttons, seek bar, etc.), subtitles is just how it was found.
 
-**Status:** Planned.
+**Status:** ✓ Done — see `STATUS.md`, which is authoritative. (Header as originally written: Planned).
 
 ## Problem
 

@@ -7,7 +7,7 @@
 > when no prefix like http:// or https:// is added, then we automatically add https:// infront of it. If
 // the user manually adds http:// when we will use that one instead of https."*
 
-**Status:** Planned — spec only, not yet built.
+**Status:** ✓ Built — see `STATUS.md`, which is authoritative. (Header as originally written: Planned) — spec only, not yet built.
 
 ## 1. What's there today
 

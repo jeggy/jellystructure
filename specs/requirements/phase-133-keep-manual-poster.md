@@ -6,7 +6,7 @@
 > user-chosen. Track the manual choice and preserve it — the same way genres (`mergeUserGenres`) and JS
 > tags (`preserveJsTags`) already survive a re-pull.
 
-**Status:** Planned — root-caused (see Root cause below).
+**Status:** ✓ Done — see `STATUS.md`, which is authoritative. (Header as originally written: Planned) — root-caused (see Root cause below).
 
 ## Problem (as reported)
 "Whenever I choose another poster artwork within jellystructure it gets overwritten upon the next TMDB
