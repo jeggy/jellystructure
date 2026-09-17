@@ -177,14 +177,14 @@
 
 /* ---------- direction C: season sheet ---------- */
 .sx .sheet{border:1px solid var(--line);border-radius:12px;background:var(--fill-2);overflow:hidden;display:flex;flex-direction:column;min-height:0}
-.sx .sh{display:grid;grid-template-columns:26px 62px 186px 1fr 172px 140px;gap:11px;align-items:center;padding:9px 13px;border-bottom:1px solid var(--line);background:var(--bg-2)}
+.sx .sh{display:grid;grid-template-columns:26px 62px 186px 1fr 196px 128px;gap:11px;align-items:center;padding:9px 13px;border-bottom:1px solid var(--line);background:var(--bg-2)}
 .sx .shl{display:flex;align-items:center;gap:12px;min-width:0}
 .sx .sh .lbl{white-space:nowrap}
 .sx .srows{overflow:auto;min-height:0}
-.sx .srow{display:grid;grid-template-columns:26px 62px 186px 1fr 172px 140px;gap:11px;align-items:center;padding:4px 13px;border-bottom:1px solid var(--line);cursor:pointer}
+.sx .srow{display:grid;grid-template-columns:26px 62px 186px 1fr 196px 128px;gap:11px;align-items:center;padding:4px 13px;border-bottom:1px solid var(--line);cursor:pointer}
 .sx .srow .et{font-size:12.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.sx .srow .stt{display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--ink-soft)}
-.sx .srow .pubc{display:flex;gap:5px;align-items:center;justify-content:flex-end}
+.sx .srow .stt{display:flex;align-items:center;gap:6px;min-width:0;font-size:11.5px;line-height:1.3;color:var(--ink-soft)}
+.sx .srow .pubc{display:flex;gap:5px;align-items:center;justify-content:flex-end;min-width:0}
 .sx .srow.open{box-shadow:inset 2px 0 0 var(--hi)}
 .sx .lane-empty{position:absolute;left:8px;top:1px;font-size:10.5px;color:var(--ink-dim)}
 .sx .lane i.oddm{outline:2px solid var(--bad);outline-offset:-2px}
@@ -198,11 +198,21 @@
 .sx .cb.on{background:var(--hi);border-color:transparent}
 .sx .bulk{display:flex;align-items:center;gap:9px;padding:10px 13px;border-top:1px solid var(--line);background:var(--bg-2)}
 .sx .drawer{border:1px solid var(--hi);border-radius:12px;background:var(--fill-2);padding:11px 12px;display:grid;grid-template-columns:250px 1fr;gap:13px;flex:none}
-.sx .drawer .vid{flex:none;aspect-ratio:16/9}
+/* 2026-09-17 — the trim view's .vid carries min-height:230px. Inside the drawer's 250px column that minimum
+   transfers through the 16/9 aspect ratio into a 409px min-WIDTH (a grid item with an aspect ratio is not
+   stretched, so its width is auto and the transfer applies), and the thumbnail spilled across the text column.
+   Zero the minimum, pin the width to the column, and keep it at the top of the row. */
+.sx .drawer .vid{flex:none;aspect-ratio:16/9;min-height:0;width:100%;align-self:start}
 .sx .dcol{display:flex;flex-direction:column;gap:9px;min-width:0}
 .sx .drow{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
 .sx .drow b{font-size:14px;font-weight:600}
-.sx .stat{display:flex;gap:10px;flex-wrap:wrap}
+/* 2026-09-17 — .stat is ALSO app.css's dashboard stat card (card bg, 18px padding, overflow:hidden, a hover
+   lift). The mockup never loads app.css, so the design looked right while the served page inherited the card:
+   overflow:hidden turns the flex item's min-height:auto into 0, and .sxstage's column then squashed the whole
+   strip to a sliver with the five cards clipped inside it. flex:none plus an explicit reset of every card
+   property is what keeps the strip a strip. */
+.sx .stat{display:flex;gap:10px;flex-wrap:wrap;flex:none;padding:0;border:0;border-radius:0;background:transparent;box-shadow:none;overflow:visible;-webkit-backdrop-filter:none;backdrop-filter:none;transition:none}
+.sx .stat:hover{transform:none;box-shadow:none}
 .sx .scard{flex:1;min-width:120px;border:1px solid var(--line);border-radius:10px;background:var(--fill-2);padding:7px 11px}
 .sx .scard b{display:block;font-family:'Space Grotesk',sans-serif;font-size:18px;font-weight:600;margin-bottom:1px}
 .sx .scard span{font-size:11.5px;color:var(--ink-soft)}
@@ -223,7 +233,7 @@ body.sxpage{background:var(--bg)}
 .sx .bulk{flex:none;flex-wrap:wrap}
 .sx .shl{flex-wrap:wrap;row-gap:4px}
 .sx .shl .lbl{white-space:nowrap}
-@media (max-width:1240px){.sx .sh,.sx .srow{grid-template-columns:26px 58px 1fr 138px 100px}.sx .srow .et,.sx .sh .thead,.sx .shl>.lbl{display:none}.sx .legend{gap:9px}}
+@media (max-width:1240px){.sx .sh,.sx .srow{grid-template-columns:26px 58px 1fr 168px 96px}.sx .srow .et,.sx .sh .thead,.sx .shl>.lbl{display:none}.sx .legend{gap:9px}.sx .srow .pubc .src{display:inline-block;padding-top:3px;padding-bottom:3px}.sx .srow .pubc .src[title]{flex:none}}
 .sx .track .seg.on{box-shadow:inset 0 0 0 2px rgba(255,255,255,.55)}
 .sx .mk.add{grid-template-columns:15px 1fr auto;background:transparent;border-style:dashed}
 .sx .mk .tc .len{margin-left:6px}
