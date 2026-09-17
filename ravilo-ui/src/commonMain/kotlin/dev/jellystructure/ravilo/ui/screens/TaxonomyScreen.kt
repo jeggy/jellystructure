@@ -306,7 +306,9 @@ private fun TaxonomyTile(
     }
     val wmSize = when {
         handset -> if (genre) 15.sp else 19.sp
-        else -> if (genre) 27.sp else 34.sp
+        // R257 — 34 sp was the mockup's px on a 1920 canvas; a 4-up TV tile is ~200 dp wide and it had
+        // never been seen there (R256: the TV drew the handset branch). "Entertainment" clips at 24 sp, fits at 20.
+        else -> 20.sp
     }
     val shape = RoundedCornerShape(16.dp)
     Column(
@@ -329,7 +331,7 @@ private fun TaxonomyTile(
                 // plate; a wordmark tile keeps the dark card and light ink.
                 .background(if (item.logoUrl != null) TAXO_LOGO_PLATE else colors.surfaceVariant, shape)
                 .then(if (focused) Modifier.border(2.dp, colors.focusRing, shape) else Modifier)
-                .padding(horizontal = if (handset) 14.dp else 26.dp),
+                .padding(horizontal = if (handset || item.logoUrl == null) 14.dp else 26.dp),
             contentAlignment = Alignment.Center,
         ) {
             val logo = item.logoUrl
@@ -354,31 +356,37 @@ private fun TaxonomyTile(
                 )
             }
         }
-        Row(
-            Modifier.fillMaxWidth().padding(top = 10.dp, start = 4.dp, end = 4.dp),
-            verticalAlignment = Alignment.Bottom,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            if (item.logoUrl != null) {
-                Text(
-                    item.name,
-                    color = if (focused) colors.text else colors.textSecondary,
-                    fontSize = if (handset) 14.sp else 17.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    fontFamily = Sora,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f, fill = false),
-                )
-            }
+        // R257 — on a TV the name and the count stack: side by side they need ~215 dp and a 4-up tile has
+        // ~200 ("Marvel Stu… 36 titles"). A handset's 2-up tile keeps R243's single line.
+        val nameText: @Composable (Modifier) -> Unit = { m ->
             Text(
-                titleCountLabel(item.count),
-                color = colors.textSecondary,
-                fontSize = if (handset) 13.sp else 15.sp,
+                item.name,
+                color = if (focused) colors.text else colors.textSecondary,
+                fontSize = if (handset) 14.sp else 17.sp,
+                fontWeight = FontWeight.SemiBold,
                 fontFamily = Sora,
                 maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = m,
             )
-            Spacer(Modifier.width(0.dp))
+        }
+        val countText: @Composable () -> Unit = {
+            Text(titleCountLabel(item.count), color = colors.textSecondary, fontSize = if (handset) 13.sp else 15.sp, fontFamily = Sora, maxLines = 1)
+        }
+        if (handset || genre) {
+            Row(
+                Modifier.fillMaxWidth().padding(top = 10.dp, start = 4.dp, end = 4.dp),
+                verticalAlignment = Alignment.Bottom,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                if (item.logoUrl != null) nameText(Modifier.weight(1f, fill = false))
+                countText()
+            }
+        } else {
+            Column(Modifier.fillMaxWidth().padding(top = 10.dp, start = 4.dp, end = 4.dp)) {
+                if (item.logoUrl != null) nameText(Modifier)
+                countText()
+            }
         }
     }
 }

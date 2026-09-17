@@ -23,7 +23,7 @@ import dev.jellystructure.ravilo.ui.theme.RaviloTheme
  * the app bar, the facts and the synopsis sat on the picture. Same artwork, same text column, two
  * treatments — this file is so the three cannot drift again.
  */
-class HeroScrims(val tint: Brush, val homeFloor: Brush, val detailFloor: Brush, val head: Brush)
+class HeroScrims(val tint: Brush, val detailTint: Brush, val homeFloor: Brush, val detailFloor: Brush, val head: Brush)
 
 @Composable
 fun rememberHeroScrims(): HeroScrims {
@@ -32,10 +32,14 @@ fun rememberHeroScrims(): HeroScrims {
         HeroScrims(
             // Left-to-right: the text column is the left 60 %; the right of the picture stays clear.
             tint = Brush.horizontalGradient(0f to bg.copy(alpha = 0.82f), 0.55f to bg.copy(alpha = 0.35f), 1f to Color.Transparent),
+            // The detail hero carries far more text than Home's (facts, flags, a synopsis out to ~55 % of
+            // the width) — measured on the stue TV, Home's tint left Frigear's synopsis on a lit shop front.
+            // Holds longer before it lets go; the right 40 % of the picture is still untouched.
+            detailTint = Brush.horizontalGradient(0f to bg.copy(alpha = 0.88f), 0.35f to bg.copy(alpha = 0.74f), 0.62f to bg.copy(alpha = 0.30f), 1f to Color.Transparent),
             homeFloor = Brush.verticalGradient(0f to Color.Transparent, 0.55f to bg.copy(alpha = 0.6f), 1f to bg),
             detailFloor = Brush.verticalGradient(0f to Color.Transparent, 0.45f to bg.copy(alpha = 0.55f), 1f to bg),
             // Under the (transparent-at-rest) app bar, so the nav reads over a bright sky.
-            head = Brush.verticalGradient(0f to bg.copy(alpha = 0.70f), 1f to Color.Transparent),
+            head = Brush.verticalGradient(0f to bg.copy(alpha = 0.80f), 1f to Color.Transparent),
         )
     }
 }
@@ -46,7 +50,7 @@ fun rememberHeroScrims(): HeroScrims {
 fun BoxScope.DetailHeroScrims() {
     val s = rememberHeroScrims()
     if (!LocalCompact.current) {
-        Box(Modifier.matchParentSize().background(s.tint))
+        Box(Modifier.matchParentSize().background(s.detailTint))
         Box(Modifier.align(Alignment.TopCenter).fillMaxWidth().height(RaviloDimens.appBarHeight + 40.dp).background(s.head))
     }
     Box(Modifier.matchParentSize().background(s.detailFloor))
