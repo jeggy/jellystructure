@@ -5,7 +5,7 @@
 > but must stop **being** a pipeline step that the run has to wait for — so a pipeline run can start
 > again while detection from the previous run is still working through the library.
 
-**Status:** Planned — dev-authored, not yet built.
+**Status:** ✓ Done — see `STATUS.md`, which is authoritative. (Header as originally written: Planned) — dev-authored, not yet built.
 
 ## 1. The problem, precisely
 

@@ -6,7 +6,7 @@
 > simply don't show the chip. The value is **server-pushed** (stored + synced by Phase 131); Ravilo never
 > calls imdbapi.dev.
 
-**Status:** Planned — **design built**, app integration unbuilt.
+**Status:** ✓ Done — see `STATUS.md`, which is authoritative. (Header as originally written: Planned) — **design built**, app integration unbuilt.
 
 ## Problem
 Ravilo's detail hero shows a certification badge, year and genre, but no **quality** rating. Viewers expect

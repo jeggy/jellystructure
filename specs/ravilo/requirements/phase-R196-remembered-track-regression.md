@@ -5,7 +5,7 @@
 > started and stopped without finishing [stopped working]. Let's fix this again, so it starts
 > remembering just like before."*
 
-**Status:** Planned — dev-authored, root-caused by code reading, not yet built.
+**Status:** ✓ Done — see `STATUS.md`, which is authoritative. (Header as originally written: Planned) — dev-authored, root-caused by code reading, not yet built.
 
 ## 1. Scope of the regression
 

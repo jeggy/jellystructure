@@ -7,7 +7,7 @@
 > ([R164](../ravilo/requirements/phase-R164-imdb-rating.md)). Titles with no IMDb id (or not yet synced)
 > simply have no rating and every surface hides the affordance.
 
-**Status:** Planned — **design built** (admin `#imdb-card` + pagebar pill), backend + sync + DTO unbuilt.
+**Status:** ✓ Done — see `STATUS.md`, which is authoritative. (Header as originally written: Planned) — **design built** (admin `#imdb-card` + pagebar pill), backend + sync + DTO unbuilt.
 
 ## Problem
 Jellystructure stores no external **quality** rating. TMDB has a vote average, but the number viewers know

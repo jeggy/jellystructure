@@ -6,7 +6,7 @@
 > configurable nor mentioned anywhere, in code **or** in the design mockups. Netflix (Tudum) and
 > JustWatch (Viaplay / Paramount+ / SkyShowtime) are independent of RapidAPI and **stay**.
 
-**Status:** Planned — investigated (see reference map below).
+**Status:** ✓ Done — see `STATUS.md`, which is authoritative. (Header as originally written: Planned) — investigated (see reference map below).
 
 ## Problem
 The Discover / Top-10 feature ships a `StreamingAvailabilityProvider` (added by Phase 107) that calls

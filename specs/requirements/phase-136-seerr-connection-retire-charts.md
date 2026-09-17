@@ -8,7 +8,7 @@
 > ([R171](../ravilo/requirements/phase-R171-seerr-request-tab.md)); per-user rows are configured in
 > [Phase 137](phase-137-ravilo-config-request-builder.md).
 
-**Status:** Planned — **design built** (`design/app/settings.html`), backend/frontend integration unbuilt.
+**Status:** ✓ Done — see `STATUS.md`, which is authoritative. (Header as originally written: Planned) — **design built** (`design/app/settings.html`), backend/frontend integration unbuilt.
 
 ## Problem
 Discover/Top-10 was fed by ingesting third-party charts from several vendors — Netflix (Tudum), JustWatch, and

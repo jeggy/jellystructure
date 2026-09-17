@@ -1,6 +1,6 @@
 # Phase 213 — `prewarm_subtitles` becomes a serialized job lane, and stops out-running playback
 
-**Status:** Planned
+**Status:** ✓ Built — see `STATUS.md`, which is authoritative. (Header as originally written: Planned)
 **Authored:** 2026-09-15 (design-authored with the owner, not dev-reviewed; revised same day, second
 design pass, to merge all three job-queue lanes onto one shared configurable worker pool — see FR-213-1)
 **Depends on:** Phase 109 (media job queue), Phase 164 (the segments lane — **amended** by this phase,

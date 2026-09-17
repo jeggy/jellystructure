@@ -8,7 +8,7 @@
 > the TV **Request** tab ([R171](../ravilo/requirements/phase-R171-seerr-request-tab.md)); the Seerr
 > **connection** is [Phase 136](phase-136-seerr-connection-retire-charts.md).
 
-**Status:** Planned — **design built** (`design/app/ravilo-config.html`), integration unbuilt.
+**Status:** ✓ Done — see `STATUS.md`, which is authoritative. (Header as originally written: Planned) — **design built** (`design/app/ravilo-config.html`), integration unbuilt.
 
 ## Problem
 Top 10 was configured per user by picking third-party chart lists (source + country + which charts, in order).

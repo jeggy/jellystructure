@@ -6,7 +6,7 @@
 > have in radarr/sonarr are useless."* Proposed direction: use the **Jellyfin Webhook plugin**, verify
 > it is installed, offer to install it, and retire the Radarr/Sonarr webhook setup from jellystructure.
 
-**Status:** Planned — dev-authored, not yet built.
+**Status:** ✓ Done — see `STATUS.md`, which is authoritative. (Header as originally written: Planned) — dev-authored, not yet built.
 
 ## 1. What exists today, and why the report is right
 

@@ -6,7 +6,7 @@
 > shows up as "Missing". The section should respect Radarr's own availability judgment (typically
 > "Released"), so it only lists movies Radarr actually considers grabbable-but-not-arrived.
 
-**Status:** Planned — extends **R160** (built). Backend-only change to `UpcomingService` + one field
+**Status:** ✓ Done — see `STATUS.md`, which is authoritative. (Header as originally written: Planned) — extends **R160** (built). Backend-only change to `UpcomingService` + one field
 added to `ArrCalendarMovie`; **no app rebuild** (the feed's `missing` list simply gets shorter/correct).
 
 ## Problem
