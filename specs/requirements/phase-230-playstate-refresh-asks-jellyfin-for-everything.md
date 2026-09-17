@@ -8,7 +8,7 @@
 
 ## Status
 
-`Planned` — written 2026-09-17 from production measurements, not dev-reviewed. Backend-only
+`✓ Built` 2026-09-17 — written the same day from production measurements, not dev-reviewed, **not deployed**; `linuxX64Test` 342/0 (+4 in `PlaystateCacheTest`). Acceptance 1–3 are production observations still owed. Backend-only
 (`PlaystateCache.kt`, `HomeFeedService.kt`, `PlaybackService.kt`, `Main.kt`). No wire change.
 Amends **205** FR-205-2 (the refresh cadence) and **211** (the id set) without undoing either.
 

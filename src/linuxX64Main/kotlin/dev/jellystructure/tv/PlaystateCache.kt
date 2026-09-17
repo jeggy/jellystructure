@@ -24,6 +24,13 @@ private const val REFRESH_INTERVAL_MS = 20_000L
 // unbounded outbound Jellyfin traffic with the size of the household's *history*, not its current use.
 private const val RECENTLY_SEEN_WINDOW_MS = 30L * 24 * 3_600_000L
 private const val FETCH_TIMEOUT_MS = 5_000L
+// Phase 230 (FR-230-3) — a user with no map yet: nothing good to protect, a slow answer beats none.
+private const val COLD_FETCH_TIMEOUT_MS = 20_000L
+// Phase 230 (FR-230-1) — episodes are re-read on a rotation: one slice per cycle, every episode once per
+// EPISODE_SWEEP_CYCLES cycles (15 × 20 s = 5 min). Measured on production 2026-09-17: the whole id set
+// was 9 369 ids = 94 requests = 3.4 s of a 5 s budget, per user, every 20 s (≈ 19 req/s at Jellyfin,
+// forever) — and it timed out whenever Jellyfin had anything else to do.
+internal const val EPISODE_SWEEP_CYCLES = 15
 // Spread refreshes out rather than firing a household's users at Jellyfin in one instant.
 private const val STAGGER_MS = 500L
 
@@ -46,6 +53,9 @@ object PlaystateCache {
     private var lastSuccessAt: Map<String, Long> = emptyMap()
     fun refresherAges(): Map<String, Long> { val now = nowMs(); return lastSuccessAt.mapValues { now - it.value } }
     private val json = Json { encodeDefaults = true }
+    private var cycle = 0
+    // Phase 230 (FR-230-5) — what the cycle cost, for its log line.
+    private var cycleIds = 0
 
     fun get(userId: String): Map<String, CardPlayState> = data[userId].orEmpty()
 
@@ -84,11 +94,13 @@ object PlaystateCache {
             .distinctBy { it.jellyfinUserId }
         var refreshed = 0
         var failed = 0
+        cycleIds = 0
+        val slice = cycle++ % EPISODE_SWEEP_CYCLES
         for (device in users) {
-            if (refreshOne(device, mediaStore, jellyfinClient, configStore, tvEventBus)) refreshed++ else failed++
+            if (refreshOne(device, mediaStore, jellyfinClient, configStore, tvEventBus, scope = RefreshScope.Cycle(slice))) refreshed++ else failed++
             delay(STAGGER_MS)
         }
-        if (users.isNotEmpty()) Logger.info("Playstate refresh: $refreshed/${users.size} users refreshed, $failed timed out or failed", "tv")
+        if (users.isNotEmpty()) Logger.info("Playstate refresh: $refreshed/${users.size} users refreshed, $failed timed out or failed — $cycleIds ids in ${(cycleIds + 99) / 100} requests", "tv")
     }
 
     /** Also called directly by [HomeFeedService.invalidatePlaystate] (FR-205-9) for an immediate,
@@ -101,30 +113,41 @@ object PlaystateCache {
         jellyfinClient: JellyfinClient,
         configStore: ConfigStore,
         tvEventBus: TvEventBus? = null,
+        scope: RefreshScope = RefreshScope.Touched(null),
     ): Boolean {
         val base = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
         if (base.isBlank()) return false
-        val ids = idsToRefresh(mediaStore.liveItems(device))
+        val items = mediaStore.liveItems(device)
+        // Phase 230 (FR-230-3) — no map yet ⇒ one whole, patient sweep; otherwise only what [scope] names.
+        val cold = data[device.jellyfinUserId] == null
+        val ids = when {
+            cold -> idsToRefresh(items)
+            scope is RefreshScope.Cycle -> idsForCycle(items, scope.slice)
+            else -> idsForStop(items, (scope as RefreshScope.Touched).jellyfinId)
+        }
         if (ids.isEmpty()) return true  // nothing to fetch is not a failure
+        val timeoutMs = if (cold) COLD_FETCH_TIMEOUT_MS else FETCH_TIMEOUT_MS
+        if (scope is RefreshScope.Cycle) cycleIds += ids.size
         // Phase 219 (FR-219-4) — time the permit wait and the Jellyfin round trip separately, so a cycle
         // skipped for want of a permit is INFO ("pool busy") and only a real Jellyfin timeout stays WARN.
         val recorder = dev.jellystructure.ops.GateWaitRecorder()
-        val ps = withTimeoutOrNull(FETCH_TIMEOUT_MS) {
+        val ps = withTimeoutOrNull(timeoutMs) {
             withContext(recorder) {
                 val token = jellyfinClient.tvToken(base, device, configStore.current.apiKeys.jellyfinToken)
                 fetchPlaystate(jellyfinClient, base, token, device.jellyfinUserId, ids)
             }
         }
         if (ps == null) {
-            if (recorder.acquisitions == 0 || recorder.waitedMs >= FETCH_TIMEOUT_MS / 2) {
+            if (recorder.acquisitions == 0 || recorder.waitedMs >= timeoutMs / 2) {
                 Logger.info("Playstate refresh for ${device.jellyfinUsername} skipped — outbound pool busy (waited ${recorder.waitedMs} ms for a permit), will retry in ${REFRESH_INTERVAL_MS / 1000} s", "tv")
             } else {
-                Logger.warn("Playstate refresh for ${device.jellyfinUsername} timed out after ${FETCH_TIMEOUT_MS} ms at Jellyfin (permit wait ${recorder.waitedMs} ms)", "tv")
+                Logger.warn("Playstate refresh for ${device.jellyfinUsername} timed out after ${timeoutMs} ms at Jellyfin (${ids.size} ids) (permit wait ${recorder.waitedMs} ms)", "tv")
             }
             return false
         }
         lastSuccessAt = lastSuccessAt + (device.jellyfinUserId to nowMs())
-        data = data + (device.jellyfinUserId to ps)
+        // Phase 230 (FR-230-1) — MERGE: a cycle now carries a slice, not the whole catalog.
+        data = data + (device.jellyfinUserId to (data[device.jellyfinUserId].orEmpty() + ps))
         // R176 — patch any already-open Home/Browse/Search screen on another of this user's devices,
         // same push HomeFeedService's own playstateFor used to fire on a fresh live fetch.
         if (ps.isNotEmpty()) tvEventBus?.notifyPlaystateChanged(device.jellyfinUserId, json.encodeToString(ps))
@@ -137,6 +160,29 @@ object PlaystateCache {
      *  [refreshOne] so the id set is unit-testable without a live/faked Jellyfin call. */
     internal fun idsToRefresh(items: List<dev.jellystructure.model.MediaItem>): List<String> =
         items.flatMap { item -> listOfNotNull(item.jellyfinId) + item.episodes.mapNotNull { it.jellyfinId } }
+
+    /** Phase 230 — what one refresh is about: a background [Cycle] (titles + episode slice [Cycle.slice]),
+     *  or what a playback stop [Touched] (null id ⇒ titles only). */
+    sealed interface RefreshScope {
+        data class Cycle(val slice: Int) : RefreshScope
+        data class Touched(val jellyfinId: String?) : RefreshScope
+    }
+
+    internal fun topLevelIds(items: List<dev.jellystructure.model.MediaItem>): List<String> = items.mapNotNull { it.jellyfinId }
+
+    /** FR-230-1 — every title, plus the episodes whose position falls in [slice] of [EPISODE_SWEEP_CYCLES].
+     *  Position-based (not hash-based) so slices are even and every episode is covered exactly once per sweep. */
+    internal fun idsForCycle(items: List<dev.jellystructure.model.MediaItem>, slice: Int): List<String> {
+        val episodes = items.flatMap { item -> item.episodes.mapNotNull { it.jellyfinId } }
+        return topLevelIds(items) + episodes.filterIndexed { i, _ -> i % EPISODE_SWEEP_CYCLES == slice % EPISODE_SWEEP_CYCLES }
+    }
+
+    /** FR-230-2 — every title, plus the episodes of the title that owns [jellyfinId] (an episode's or the
+     *  series' own id). A movie, an unknown id or `null` adds nothing. */
+    internal fun idsForStop(items: List<dev.jellystructure.model.MediaItem>, jellyfinId: String?): List<String> {
+        val owner = jellyfinId?.let { id -> items.firstOrNull { it.jellyfinId == id || it.episodes.any { e -> e.jellyfinId == id } } }
+        return topLevelIds(items) + owner?.episodes.orEmpty().mapNotNull { it.jellyfinId }
+    }
 }
 
 @OptIn(ExperimentalForeignApi::class)

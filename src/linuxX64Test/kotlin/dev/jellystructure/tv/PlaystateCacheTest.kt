@@ -54,4 +54,41 @@ class PlaystateCacheTest {
 
         assertEquals(listOf("m1"), ids)
     }
+
+    // ── Phase 230 (FR-230-6) — the refresher no longer asks Jellyfin for everything every cycle ──
+
+    private val library = listOf(
+        movie("m1"),
+        series("a", (1..40).map { episode("a-e$it", 1, it) }),
+        series("b", (1..7).map { episode("b-e$it", 1, it) }),
+    )
+
+    @Test
+    fun `a sweep of cycles covers every episode exactly once and every title every cycle`() {
+        val seen = mutableListOf<String>()
+        for (slice in 0 until EPISODE_SWEEP_CYCLES) {
+            val ids = PlaystateCache.idsForCycle(library, slice)
+            assertEquals(listOf("m1", "jf-a", "jf-b"), ids.take(3), "titles ride every cycle")
+            seen += ids.drop(3)
+        }
+        assertEquals(47, seen.size)
+        assertEquals(47, seen.toSet().size, "no episode twice in one sweep")
+    }
+
+    @Test
+    fun `one cycle is a fraction of the catalog`() {
+        val ids = PlaystateCache.idsForCycle(library, 0)
+        assertEquals(3 + 4, ids.size)  // 47 episodes over 15 slices: slice 0 holds indices 0,15,30,45
+    }
+
+    @Test
+    fun `a stop on an episode refreshes its own title's episodes plus every title`() {
+        val ids = PlaystateCache.idsForStop(library, "b-e3")
+        assertEquals(setOf("m1", "jf-a", "jf-b") + (1..7).map { "b-e$it" }, ids.toSet())
+    }
+
+    @Test
+    fun `a stop on a movie or an unknown id or no id refreshes titles only`() {
+        for (id in listOf("m1", "nope", null)) assertEquals(listOf("m1", "jf-a", "jf-b"), PlaystateCache.idsForStop(library, id))
+    }
 }
