@@ -400,6 +400,11 @@ fun PlayerScreen(
     // Scrubbing
     var scrubbing by remember { mutableStateOf(false) }
     var scrubPos  by remember { mutableLongStateOf(0L) }
+    // R258 — a scrub preview belongs to the episode it was started on. Seen on the stue TV 2026-09-17:
+    // switching episodes (rail / Next / auto-advance) with a preview pending left `scrubbing` true, so the
+    // elapsed label froze at the OLD episode's target ("9:02") and its tick sat on the new episode's bar
+    // while the real thumb advanced underneath.
+    LaunchedEffect(itemId) { scrubbing = false }
 
     // Track picker
     var pickerOpen by remember { mutableStateOf(false) }
