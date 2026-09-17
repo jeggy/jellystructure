@@ -340,3 +340,16 @@ runtime stage now copies `/app/cast-receiver/` from the builder stage instead.
 
 **Amended:** `ravilo-web/Dockerfile` gains `COPY ravilo-cast ./ravilo-cast` (configured, never built);
 `Dockerfile`'s receiver copy is `COPY --from=builder … /app/cast-receiver/ /app/cast/`. No code change.
+
+## Amendment (2026-09-18) — the first real tap on the Cast button crashed the app
+
+First use on a real handset (Pixel 9, v1.23, Chromecast just registered per 226): the button appeared,
+and tapping it killed the process —
+`IllegalStateException: The activity must be a subclass of FragmentActivity`
+(`androidx.mediarouter.app.MediaRouteButton.performClick`). The platform's device chooser is a
+`DialogFragment`; both Ravilo activities were plain `ComponentActivity`. R245 was built with no cast
+device and no handset in the loop, so the button had never been pressed.
+
+- **FR-R245-1a** — both `MainActivity` classes extend `FragmentActivity` (a `ComponentActivity`
+  subclass; nothing else changes). `androidx.fragment` becomes an explicit dependency of `:ravilo-android`.
+

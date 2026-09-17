@@ -1,7 +1,7 @@
 package dev.jellystructure.ravilo.phone
 
 import android.os.Bundle
-import androidx.activity.ComponentActivity
+import androidx.fragment.app.FragmentActivity
 import androidx.activity.compose.setContent
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import dev.jellystructure.ravilo.player.RaviloRenderers
@@ -25,7 +25,11 @@ import dev.jellystructure.ravilo.ui.seams.RaviloPlayerEngine
  * everywhere else now just uses Android's own default window fitting, which reserves and pads for the
  * system bars automatically, no custom inset handling needed.
  */
-class MainActivity : ComponentActivity() {
+// R245 amendment (2026-09-18) — a FragmentActivity (itself a ComponentActivity, so setContent is
+// unchanged): androidx.mediarouter's MediaRouteButton shows its device chooser as a DialogFragment and
+// throws "The activity must be a subclass of FragmentActivity" on the first tap otherwise — the Cast
+// button crashed the app outright on a Pixel 9.
+class MainActivity : FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
         super.onCreate(savedInstanceState)
