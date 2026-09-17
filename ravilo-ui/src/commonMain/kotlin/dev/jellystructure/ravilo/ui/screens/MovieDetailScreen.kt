@@ -71,6 +71,7 @@ import dev.jellystructure.ravilo.ui.components.castConnectedDeviceName
 import dev.jellystructure.ravilo.ui.seams.RemoteImage
 import dev.jellystructure.ravilo.ui.theme.RaviloDimens
 import dev.jellystructure.ravilo.ui.theme.raviloHPad
+import dev.jellystructure.ravilo.ui.components.DetailHeroScrims
 import dev.jellystructure.ravilo.ui.theme.LocalCompact
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import dev.jellystructure.ravilo.ui.theme.SpaceGrotesk
@@ -145,13 +146,6 @@ private fun MovieDetailLoaded(
 ) {
     val colors = RaviloTheme.colors
     val spaceGrotesk = SpaceGrotesk
-    val backdropGradient = remember(colors.background) {
-        Brush.verticalGradient(
-            0f to Color.Transparent,
-            0.45f to colors.background.copy(alpha = 0.55f),
-            1f to colors.background,
-        )
-    }
     // R109: LazyColumn so the below-hero rails (cast, related) compose only when scrolled into view —
     // the full-bleed hero is item 0 and fills the viewport, so on open nothing below it composes
     // (supersedes R107's timed defer; the eager off-screen composition was the detail-open hitch).
@@ -209,7 +203,7 @@ private fun MovieDetailLoaded(
                 } else {
                     Box(modifier = Modifier.matchParentSize().background(colors.surfaceVariant))
                 }
-                Box(modifier = Modifier.matchParentSize().background(backdropGradient))
+                DetailHeroScrims()  // R257 (FR-R257-4) — tint + head band + floor, shared with Home's hero
                 Column(
                     modifier = Modifier
                         .align(Alignment.BottomStart)

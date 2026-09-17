@@ -78,20 +78,10 @@ fun HeroCarousel(
     val colors = RaviloTheme.colors
     val sora = Sora
 
-    val tintGradient = remember(colors.background) {
-        Brush.horizontalGradient(
-            0f   to colors.background.copy(alpha = 0.82f),
-            0.55f to colors.background.copy(alpha = 0.35f),
-            1f   to Color.Transparent,
-        )
-    }
-    val floorGradient = remember(colors.background) {
-        Brush.verticalGradient(
-            0f   to Color.Transparent,
-            0.55f to colors.background.copy(alpha = 0.6f),
-            1f   to colors.background,
-        )
-    }
+    // R257 (FR-R257-4) — shared with the detail heroes; see HeroScrims.
+    val heroScrims = rememberHeroScrims()
+    val tintGradient = heroScrims.tint
+    val floorGradient = heroScrims.homeFloor
     val dotInactiveColor = remember(colors.textSecondary) { colors.textSecondary.copy(alpha = 0.35f) }
 
     var activeIndex by remember { mutableIntStateOf(0) }

@@ -534,6 +534,14 @@ private fun ContentRowItem(
             val delta = focusDetailRowOpenScrollDelta(rowTopPx, rowFootPx, screenHeightPx, peekPx, footMarginPx)
             // FR-R240-9's own "never scrolls back up": a row that already fits (delta <= 0) is left alone.
             if (delta > 0f) scope.launch { runCatching { listState.animateScrollBy(delta) } }
+            else {
+                // R257 (FR-R257-5) — the row ABOVE may still be giving back its held height (its collapse
+                // cleanup runs ROW_OPEN_TWEEN_MS + 60 after focus left it); measure once that is done.
+                kotlinx.coroutines.delay(90L)
+                val minTopPx = with(density) { (RaviloDimens.appBarHeight + 16.dp).toPx() }
+                val up = dev.jellystructure.ravilo.ui.focus.focusDetailRowOpenHeadingDelta(rowTopPx, rowFootPx, screenHeightPx, minTopPx, footMarginPx)
+                if (up < 0f) scope.launch { runCatching { listState.animateScrollBy(up) } }
+            }
         }
     }
 

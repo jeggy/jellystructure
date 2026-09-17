@@ -22,6 +22,28 @@ fun focusDetailRowOpenScrollDelta(
 ): Float = max(rowTopPx - peekPx, rowFootPx + footMarginPx - screenHeightPx)
 
 /**
+ * R257 (FR-R257-5) — the one case where the page DOES move back: the opened row's heading has ended up
+ * under the app bar. Seen on the stue TV 2026-09-17 moving Down from an OPEN row into the next one:
+ * bring-into-view parks the new row first, THEN the row above collapses (giving back ~60 dp of held
+ * height) and drags the new row's heading up under the bar — and [focusDetailRowOpenScrollDelta], by
+ * design, never corrects upward. Returns a NEGATIVE distance that brings the row's top down to
+ * [minTopPx], limited so the grown row's foot (+ [footMarginPx]) is not pushed off screen — the foot wins
+ * (FR-R240-9 unchanged). 0 when the heading is already clear or there is no room to give.
+ */
+fun focusDetailRowOpenHeadingDelta(
+    rowTopPx: Float,
+    rowFootPx: Float,
+    screenHeightPx: Float,
+    minTopPx: Float,
+    footMarginPx: Float,
+): Float {
+    if (rowTopPx >= minTopPx) return 0f
+    val wanted = rowTopPx - minTopPx                                   // < 0
+    val footLimit = rowFootPx + footMarginPx - screenHeightPx          // most-negative distance the foot allows
+    return kotlin.math.min(0f, max(wanted, footLimit))
+}
+
+/**
  * J's row's own HORIZONTAL scroll target — the bug this fixes: native per-tile bring-into-view only
  * ever accounts for the focused TILE's own bounds, never the panel item spliced in right after it
  * (they're two separate `LazyRow` children), so a tile focused near the right edge of the screen

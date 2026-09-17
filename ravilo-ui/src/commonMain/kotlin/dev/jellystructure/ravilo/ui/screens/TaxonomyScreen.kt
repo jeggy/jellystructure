@@ -161,18 +161,26 @@ private fun TaxonomyLoaded(
     val navBarFR = remember { FocusRequester() }
     val columnFR = remember { FocusRequester() }
     val restoreFR = remember { FocusRequester() }
-    val restoreKey = store.lastSelectedKey
+    // remember{}: the key is consumed (cleared) by the restore below; a recomposition must not drop the
+    // tile's requester before the restore has run.
+    val restoreKey = remember { store.lastSelectedKey }
+    val willRestore = remember { restoreKey != null && list.any { "$kind:${it.name}" == restoreKey } }
 
     // Fresh entry ⇒ focus the AppBar (the same rule every tab screen follows); a segment switch keeps
     // focus on the pressed chip (the bar does that itself); a Back-return re-focuses the opened tile.
     LaunchedEffect(Unit) {
         when {
-            focusSegmentOnEntry -> Unit
-            restoreKey != null && list.any { "$kind:${it.name}" == restoreKey } -> {
+            // R257 (FR-R257-2) — a pending tile restore wins over the chip: the destination on the stack
+            // still carries focusSegment = true from the chip press that selected this tab, so checking
+            // it first meant Back from a studio's grid never reached the restore below. The key is
+            // consumed, so a later switch back to this wall focuses the chip, not an old tile.
+            willRestore -> {
+                store.lastSelectedKey = null
                 val ri = rows.indexOfFirst { row -> row.any { "$kind:${it.name}" == restoreKey } }
                 if (ri >= 0) listState.scrollToItem(ri + 2)  // +2: header + meta items
-                runCatching { restoreFR.requestFocus() }
+                repeat(10) { if (runCatching { restoreFR.requestFocus() }.isSuccess) return@LaunchedEffect; kotlinx.coroutines.delay(16) }
             }
+            focusSegmentOnEntry -> Unit
             else -> runCatching { navBarFR.requestFocus() }
         }
     }
@@ -200,7 +208,7 @@ private fun TaxonomyLoaded(
                         Text(str("nav.discover"), color = colors.text, fontSize = 22.sp, fontWeight = FontWeight.Bold, fontFamily = SpaceGrotesk)
                         Text(str("tx.sub_$kind"), color = colors.textSecondary, fontSize = 13.sp)
                         Spacer(Modifier.height(12.dp))
-                        DiscoverSegmentBar(segments = segments, active = segment, onSelect = onSegment, focusActiveOnEntry = focusSegmentOnEntry)
+                        DiscoverSegmentBar(segments = segments, active = segment, onSelect = onSegment, focusActiveOnEntry = focusSegmentOnEntry && !willRestore)
                     }
                 }
                 item(key = "taxo-meta") {
@@ -280,6 +288,8 @@ internal fun titleCountLabel(n: Int): String =
  * not repeated, and nothing ever says "no logo". Both carry exactly one caption line so the grid stays
  * regular. Not a [dev.jellystructure.ravilo.ui.components.Tile]: no poster, no progress, no badge.
  */
+private val TAXO_LOGO_PLATE = androidx.compose.ui.graphics.Color(0xFFE8EAF0)
+
 @Composable
 private fun TaxonomyTile(
     item: FacetItem,
@@ -314,7 +324,10 @@ private fun TaxonomyTile(
                 .fillMaxWidth()
                 .height(cardHeight)
                 .graphicsLayer { val s = if (focused) 1.045f else 1f; scaleX = s; scaleY = s }
-                .background(colors.surfaceVariant, shape)
+                // R257 (FR-R257-3) — a captured logo is dark ink on transparency far more often than not (88
+                // of 135 in production; TMDB draws them for a light page), so a logo tile gets a light
+                // plate; a wordmark tile keeps the dark card and light ink.
+                .background(if (item.logoUrl != null) TAXO_LOGO_PLATE else colors.surfaceVariant, shape)
                 .then(if (focused) Modifier.border(2.dp, colors.focusRing, shape) else Modifier)
                 .padding(horizontal = if (handset) 14.dp else 26.dp),
             contentAlignment = Alignment.Center,

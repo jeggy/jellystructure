@@ -50,4 +50,14 @@ class FocusDetailScrollTest {
         // top constraint: 0 - 150 = -150; foot constraint: 0 + 40 - 0 = 40 -> foot wins
         assertEquals(footMargin, delta)
     }
+
+    // R257 (FR-R257-5) — stue TV numbers: bar ends at 120 px, heading seen at ~112 px, grown poster row foot ~835 px.
+    @Test fun headingUnderTheAppBarIsBroughtDownToTheClearLine() =
+        assertEquals(-40f, focusDetailRowOpenHeadingDelta(rowTopPx = 112f, rowFootPx = 835f, screenHeightPx = 1080f, minTopPx = 152f, footMarginPx = 80f))
+    @Test fun headingAlreadyClearMovesNothing() =
+        assertEquals(0f, focusDetailRowOpenHeadingDelta(rowTopPx = 254f, rowFootPx = 900f, screenHeightPx = 1080f, minTopPx = 152f, footMarginPx = 80f))
+    @Test fun theFootWinsWhenTheGrownRowLeavesNoRoom() =
+        assertEquals(-10f, focusDetailRowOpenHeadingDelta(rowTopPx = 100f, rowFootPx = 990f, screenHeightPx = 1080f, minTopPx = 152f, footMarginPx = 80f))
+    @Test fun noRoomAtAllMovesNothing() =
+        assertEquals(0f, focusDetailRowOpenHeadingDelta(rowTopPx = 100f, rowFootPx = 1040f, screenHeightPx = 1080f, minTopPx = 152f, footMarginPx = 80f))
 }

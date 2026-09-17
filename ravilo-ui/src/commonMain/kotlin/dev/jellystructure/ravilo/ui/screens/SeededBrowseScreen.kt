@@ -357,6 +357,13 @@ fun SeededBrowseScreen(
     val sortChipFR = remember { FocusRequester() }
     val firstFacetFR = facetChipFRs.getValue(BrowseFacetKey.GENRE)
     LaunchedEffect(Unit) { if (store.focusItemKey == null) runCatching { navBarFR.requestFocus() } }
+    // R257 (FR-R257-1) — a seeded page is pushed from a tile / See all / a cast face: the viewer's
+    // attention is on the content, not the app bar (whose first item, with activeNav = -1, is *Home* —
+    // one stray OK left the page). The bar only HOLDS focus until the first results compose (R60:
+    // something must, or Back bypasses Compose); then the first cell takes it — unless the viewer has
+    // already moved off the bar themselves.
+    val freshEntry = remember { store.focusItemKey == null }
+    var movedOffBar by remember { mutableStateOf(false) }
     val barScrolled by remember { derivedStateOf {
         gridState.firstVisibleItemIndex > 0 || gridState.firstVisibleItemScrollOffset > 0
     } }
@@ -442,6 +449,7 @@ fun SeededBrowseScreen(
                         items = filtered.map { it.card },
                         gridState = gridState,
                         firstCellFR = firstCellFR,
+                        focusFirstOnLoad = freshEntry && !movedOffBar,
                         restoreItemKey = store.focusItemKey,
                         onItemSelect = { card -> store.focusItemKey = card.id; onItemSelect(card) },
                         seerrOverflow = if (onRequestSelect != null) seerrOverflow else emptyList(),
@@ -458,6 +466,7 @@ fun SeededBrowseScreen(
             onNavSelect = onNavSelect,
             navFR = navBarFR,
             onDown = {
+                movedOffBar = true
                 runCatching { (if (showFacetBar) firstFacetFR else firstCellFR).requestFocus() }
             },
             userInitials = displayName.take(2).uppercase(),
@@ -836,6 +845,8 @@ private fun BrowseCardGrid(
     firstCellFR: FocusRequester,
     restoreItemKey: String?,
     onItemSelect: (MediaCard) -> Unit,
+    // R257 (FR-R257-1) — hand focus to the first cell once, when the first non-empty result composes.
+    focusFirstOnLoad: Boolean = false,
     // R190 §C — a person-scoped Seerr row, appended after every grid item as one full-width span (not
     // a nested scrollable — TV D-pad traversal handles a second scrollable inside a grid poorly, and
     // this keeps it in the same natural Down-navigation flow as the grid itself).
@@ -851,6 +862,14 @@ private fun BrowseCardGrid(
         if (!restoredOnce && restoreItemKey != null && items.any { it.id == restoreItemKey }) {
             runCatching { restoreFR.requestFocus() }
             restoredOnce = true
+        }
+    }
+    var firstFocusDone by remember { mutableStateOf(false) }
+    LaunchedEffect(items.isNotEmpty()) {
+        if (focusFirstOnLoad && !firstFocusDone && items.isNotEmpty()) {
+            firstFocusDone = true
+            // The cell's requester attaches on the grid's first layout pass, one frame after this effect.
+            repeat(10) { if (runCatching { firstCellFR.requestFocus() }.isSuccess) return@LaunchedEffect; kotlinx.coroutines.delay(16) }
         }
     }
     val cols = if (LocalPortrait.current) LocalPortraitGridColumns.current else LocalGridColumns.current

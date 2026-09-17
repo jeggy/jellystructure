@@ -7,7 +7,7 @@
 
 ## Status
 
-`Planned` — written 2026-09-17 from a live reproduction, not dev-reviewed. Client-only
+`✓ Built` 2026-09-17 (`9e060653`) — written the same day from a live reproduction, not dev-reviewed, **not yet on a device**. `isHandset()` in `Platform.kt`, `IsHandsetTest` (7 cases); Android + Wasm compile clean. Client-only
 (`ravilo-ui`). Corrects the gate **R244** and **R243** were built on; neither spec changes.
 
 **Numbering:** verified against `STATUS.md` 2026-09-17 — Ravilo taken through **R255**. Backend

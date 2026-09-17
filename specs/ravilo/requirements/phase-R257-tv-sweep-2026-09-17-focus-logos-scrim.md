@@ -6,7 +6,7 @@
 
 ## Status
 
-`Planned` — written 2026-09-17 from live observation plus a code trace per item, not dev-reviewed.
+`✓ Built` 2026-09-17 — written the same day from live observation plus a code trace per item, not dev-reviewed, **not yet on a device** (every acceptance line below is still owed). 122 `ravilo-ui` unit tests green; Android + Wasm compile clean.
 Client-only (`ravilo-ui`). Touches R187/R243 (entry focus, tile backing), R244 (one glyph), the
 detail hero (R24-era gradient) and R240 (the reveal). No wire change.
 
@@ -75,8 +75,13 @@ reveal leaves the heading clear.
 
 - **FR-R257-5** — after J's reveal settles, the opened row's **heading** is fully below the app bar
   (≥ 16 dp clear) on every tile shape, unless the grown row is taller than the space under the bar, in
-  which case the foot wins (FR-R240-9 unchanged). Root cause to be pinned on the device with the
-  row's measured top/foot before the change is chosen; recorded in the implementation note.
+  which case the foot wins (FR-R240-9 unchanged).
+- **Root cause (from the sweep's own screenshots, not re-measured):** it only happens moving Down *out
+  of an open row*. Bring-into-view parks the new row first (heading at ~254 px); then the row above
+  collapses and gives back its held height (the landscape tile: 240 → 364 px, ≈ 124 px), dragging the
+  new row up by the same amount — heading at ~112 px, under a bar that ends at 120. R240's reveal
+  never corrects upward by design. Built as `focusDetailRowOpenHeadingDelta` (4 tests): a single
+  downward correction to app bar + 16 dp, measured after the neighbour's collapse has finished.
 
 ### 6 · The phone's skip arrows point the wrong way
 
