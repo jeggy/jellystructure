@@ -82,6 +82,14 @@ enum class BrowseFacetKey { GENRE, TYPE, MATURITY, YEAR, WATCHED, AUDIO, CHANNEL
 enum class SortField { RECENT, TITLE, YEAR, MATURITY, IMDB }
 enum class SortDir { ASC, DESC }
 
+/** R253 (FR-R253-2) — 225's served `sort_by`/`sort_descending` onto the page's existing (field, direction)
+ *  pair. Absent or unknown ⇒ R187's default (`RECENT · DESC`), never an empty chip. Zero new strings. */
+fun initialBrowseSort(sortBy: String?, descending: Boolean?): Pair<SortField, SortDir> {
+    val field = when (sortBy) { "title" -> SortField.TITLE; "year" -> SortField.YEAR; "added" -> SortField.RECENT; else -> return SortField.RECENT to SortDir.DESC }
+    val dir = when (descending) { true -> SortDir.DESC; false -> SortDir.ASC; null -> if (field == SortField.TITLE) SortDir.ASC else SortDir.DESC }
+    return field to dir
+}
+
 /** Each field's "makes sense first" direction when newly selected (FR-RV-BROWSE1-fix: bidirectional
  *  sort) — e.g. Year defaults to newest-first (DESC), Title to A-Z (ASC). Re-selecting the already-
  *  active field flips [SortDir] instead of resetting to this default. */
@@ -129,6 +137,8 @@ class SeededBrowseStore(
     // a channel's own Continue row; forwarded as-is to continueAll(), which is the sole authority on
     // whether it ends up filtering anything (see HomeFeedService.continueWatchingAll's doc comment).
     val channelId: String? = null,
+    // R253 (FR-R253-2) — the (field, direction) the page OPENS in; the viewer's Sort control is untouched.
+    initialSort: Pair<SortField, SortDir> = SortField.RECENT to defaultDirFor(SortField.RECENT),
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val _state = MutableStateFlow<SeededBrowseState>(SeededBrowseState.Loading)
@@ -155,8 +165,8 @@ class SeededBrowseStore(
     var audio by mutableStateOf(setOf<String>())
     var channel by mutableStateOf(setOf<String>())
     var quality by mutableStateOf(setOf<String>())
-    var sortField by mutableStateOf(SortField.RECENT)
-    var sortDir by mutableStateOf(defaultDirFor(SortField.RECENT))
+    var sortField by mutableStateOf(initialSort.first)
+    var sortDir by mutableStateOf(initialSort.second)
     var openFacet by mutableStateOf<BrowseFacetKey?>(null)
     var sortOpen by mutableStateOf(false)
 
@@ -304,7 +314,9 @@ private fun sortedFiltered(store: SeededBrowseStore, all: List<BrowseCard>): Lis
     // one arbitrary order plus its reverse-for-the-sake-of-it.
     val ascending = when (store.sortField) {
         SortField.RECENT -> filtered.asReversed()
-        SortField.TITLE -> filtered.sortedBy { it.card.title.lowercase() }
+        // R253 (FR-R253-3) — the SAME key the server lines the row up by (Jellyfin's SortName, else the
+        // title), so the row and its page cannot file *The Bear* in two different places.
+        SortField.TITLE -> filtered.sortedBy { (it.sortName?.takeIf { n -> n.isNotBlank() } ?: it.card.title).lowercase() }
         SortField.YEAR -> filtered.sortedBy { it.card.year ?: 0 }
         SortField.MATURITY -> filtered.sortedBy { it.card.ageRating }
         SortField.IMDB -> filtered.sortedBy { it.imdbRating?.aggregateRating ?: -1.0 }

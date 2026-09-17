@@ -274,6 +274,8 @@ data class BrowseCard(
      *  itself, per R164's existing payload-bloat decision to keep it detail-DTO-only; [BrowseCard] is
      *  its own additive wrapper, so this doesn't reopen that decision for every other card surface. */
     @SerialName("imdb_rating") val imdbRating: TvImdbRating? = null,
+    /** R253 (FR-R253-3) — Jellyfin's `SortName` (225 FR-225-3); null until the item's next scan. Browse-only, like [imdbRating]. */
+    @SerialName("sort_name") val sortName: String? = null,
 )
 
 /** Request body for the seeded-browse endpoints — the row's (channel-ANDed) [Row.seedQuery] plus the
@@ -340,6 +342,11 @@ data class Row(
      *  equivalent to "the full seed has more than 8 items" — no separate total-count field is needed. */
     val seedQuery: ConditionGroup? = null,
     val seedMediaKind: String? = null,
+    /** Phase 225 (FR-225-8) — the key [items] is ordered by, so R253's See-all page can open in the same
+     *  order with no config round trip. Set on workbench rows with an explicit order; the PIN LIST IS
+     *  NEVER SENT (the viewer sees an order, never a reason). */
+    @SerialName("sort_by") val sortBy: String? = null,
+    @SerialName("sort_descending") val sortDescending: Boolean? = null,
     /** R187 — the seed's TRUE match count, before the [items] cap. [items].size alone undercounts once
      *  a row is actually truncated (ROW_ITEM_LIMIT), which is exactly when a See-all count needs to be
      *  right. Null alongside a null [seedQuery]/[seedMediaKind] (nothing to count beyond [items]). */
@@ -851,7 +858,20 @@ data class RowConfig(
     val conditions: List<Condition> = emptyList(),
     // Phase 140 — see ChannelConfig.query above; same additive/migration story here.
     val query: ConditionGroup? = null,
+    // Phase 225 — how this row lines up. ALL THREE absent = today's row, tile for tile (newest first,
+    // 30 titles): that is the migration. Ignored by every installed client (the TV never evaluates rows).
+    /** null = `RowSort("added", descending = true)` — today's order. */
+    val sort: RowSort? = null,
+    /** Ordered Jellyfin item ids shown FIRST, in this order, when they match the row (FR-225-4). A stale
+     *  id is kept here and skipped when serving (FR-225-5) — the server never edits this list. */
+    val pinned: List<String> = emptyList(),
+    /** Titles the row shows, 3..30; null = 30 (FR-225-1b). Also the ceiling on [pinned]. */
+    val limit: Int? = null,
 )
+
+/** Phase 225 — [by] ∈ `added` · `title` · `year`. [descending] = newest first for added/year, Z → A for title. */
+@Serializable
+data class RowSort(val by: String = "added", val descending: Boolean = true)
 
 @Serializable
 data class RaviloConfig(

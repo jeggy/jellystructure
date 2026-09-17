@@ -148,10 +148,11 @@ class RaviloConfigService(
                 },
                 paddingLogo = c.paddingLogo?.let { p -> p.copy(top = p.top.coerceIn(0,40), right = p.right.coerceIn(0,40), bottom = p.bottom.coerceIn(0,40), left = p.left.coerceIn(0,40)) },
                 paddingText = c.paddingText?.let { p -> p.copy(top = p.top.coerceIn(0,40), right = p.right.coerceIn(0,40), bottom = p.bottom.coerceIn(0,40), left = p.left.coerceIn(0,40)) },
-                rows = c.rows?.let { rc -> rc.copy(items = rc.items.map { it.copy(query = it.query?.pruned()) }) },
+                // Phase 225 (FR-225-11) — pins deduplicated, first occurrence wins; an absent sort/limit STAYS absent.
+                rows = c.rows?.let { rc -> rc.copy(items = rc.items.map { it.copy(query = it.query?.pruned(), pinned = it.pinned.distinct()) }) },
             )
         },
-        rows = config.rows.mapIndexed { i, r -> r.copy(order = i, query = r.query?.pruned()) },
+        rows = config.rows.mapIndexed { i, r -> r.copy(order = i, query = r.query?.pruned(), pinned = r.pinned.distinct()) },
         heroHeightPct = config.heroHeightPct.coerceIn(40, 100),
         autoAdvanceSeconds = config.autoAdvanceSeconds.coerceIn(0, 120),
         // R174 — poster-grid items per row: landscape 2..10, portrait 1..4 (fewer, phone-sized).
@@ -195,6 +196,8 @@ class RaviloConfigService(
             config.channels.flatMap { it.rows?.items.orEmpty() }.mapNotNull { it.query } +
             config.rows.mapNotNull { it.query }
         if (allQueries.any { it.maxBlockDepth() > 3 }) return "A filter is nested too deep (max 3 levels: block, sub-block, one more)."
+        // Phase 225 (FR-225-11) — sort key, limit range, pins ≤ limit, and no order at all on a system row.
+        (config.rows + config.channels.flatMap { it.rows?.items.orEmpty() }).firstNotNullOfOrNull { dev.jellystructure.shared.tv.RowOrder.problem(it) }?.let { return it }
         return null
     }
 

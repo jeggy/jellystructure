@@ -418,6 +418,7 @@ class Scanner(
             languageMix = false,
             scannedAt = epochSeconds(),
             addedAt = jItem.dateCreated?.let { isoToEpochSeconds(it) },
+            sortName = jItem.sortName,   // Phase 225 (FR-225-3)
             jellyfinUpdatedAt = jItem.dateLastSaved?.let { isoToEpochSeconds(it) },
             jellyfinLockData = jItem.lockData,
             jellyfinLockedFields = jItem.lockedFields,
@@ -503,6 +504,7 @@ class Scanner(
             languageMix = false,
             scannedAt = epochSeconds(),
             addedAt = jItem.dateCreated?.let { isoToEpochSeconds(it) },
+            sortName = jItem.sortName,   // Phase 225 (FR-225-3)
             jellyfinUpdatedAt = jItem.dateLastSaved?.let { isoToEpochSeconds(it) },
             jellyfinLockData = jItem.lockData,
             jellyfinLockedFields = jItem.lockedFields,
@@ -797,6 +799,7 @@ class Scanner(
                 languageMix = true,
                 scannedAt = epochSeconds(),
                 addedAt = jItem.dateCreated?.let { isoToEpochSeconds(it) },
+                sortName = jItem.sortName,   // Phase 225 (FR-225-3)
                 jellyfinUpdatedAt = jItem.dateLastSaved?.let { isoToEpochSeconds(it) },
                 jellyfinLockData = jItem.lockData,
                 jellyfinLockedFields = jItem.lockedFields,
@@ -855,6 +858,7 @@ class Scanner(
             languageMix = false,
             scannedAt = epochSeconds(),
             addedAt = jItem.dateCreated?.let { isoToEpochSeconds(it) },
+            sortName = jItem.sortName,   // Phase 225 (FR-225-3)
             jellyfinUpdatedAt = jItem.dateLastSaved?.let { isoToEpochSeconds(it) },
             jellyfinLockData = jItem.lockData,
             jellyfinLockedFields = jItem.lockedFields,

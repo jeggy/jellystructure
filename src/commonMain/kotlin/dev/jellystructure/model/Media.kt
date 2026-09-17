@@ -215,6 +215,8 @@ data class MediaItem(
     val kind: MediaKind,
     val path: String,
     val jellyfinId: String? = null,
+    /** Phase 225 (FR-225-3) — Jellyfin's `SortName`; null until the item's next scan (then the title is used). */
+    val sortName: String? = null,
     val tmdbId: Int?,
     val originalLanguage: String?,
     val resolvedLanguage: String? = null,

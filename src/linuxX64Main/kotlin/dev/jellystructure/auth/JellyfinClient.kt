@@ -350,7 +350,7 @@ class JellyfinClient {
 
     suspend fun getItems(baseUrl: String, token: String): List<JellyfinItem> = runCatching {
         val url = baseUrl.trimEnd('/') +
-            "/Items?IncludeItemTypes=Movie,Series,MusicVideo&Recursive=true&Fields=Path,ProviderIds,ProductionYear,LockData,LockedFields,Tags,DateCreated,DateLastSaved"
+            "/Items?IncludeItemTypes=Movie,Series,MusicVideo&Recursive=true&Fields=Path,ProviderIds,ProductionYear,LockData,LockedFields,Tags,DateCreated,DateLastSaved,SortName"
         httpGet(url) { jellyfinAuth(token) }
             .bodyOrNull<JellyfinItemsResponse>("getItems")?.items.orEmpty()
             .filter { it.type == "Movie" || it.type == "Series" || it.type == "MusicVideo" }
@@ -361,7 +361,7 @@ class JellyfinClient {
 
     suspend fun getItemsByParent(baseUrl: String, token: String, parentId: String): List<JellyfinItem> = runCatching {
         val url = baseUrl.trimEnd('/') +
-            "/Items?ParentId=$parentId&IncludeItemTypes=Movie,Series,MusicVideo&Recursive=true&Fields=Path,ProviderIds,ProductionYear,LockData,LockedFields,Tags,DateCreated,DateLastSaved"
+            "/Items?ParentId=$parentId&IncludeItemTypes=Movie,Series,MusicVideo&Recursive=true&Fields=Path,ProviderIds,ProductionYear,LockData,LockedFields,Tags,DateCreated,DateLastSaved,SortName"
         httpGet(url) { jellyfinAuth(token) }
             .bodyOrNull<JellyfinItemsResponse>("getItemsByParent")?.items.orEmpty()
             .filter { it.type == "Movie" || it.type == "Series" || it.type == "MusicVideo" }
@@ -411,7 +411,7 @@ class JellyfinClient {
         // also happens to work. The `Ids=` filter used here needs no user context at all and is the
         // pattern this file now also uses in getItemMediaStreams for the same reason.
         val url = baseUrl.trimEnd('/') +
-            "/Items?Ids=$jellyfinId&Recursive=true&Fields=Path,ProviderIds,ProductionYear,LockData,LockedFields,Tags,DateCreated,DateLastSaved,SeriesId"
+            "/Items?Ids=$jellyfinId&Recursive=true&Fields=Path,ProviderIds,ProductionYear,LockData,LockedFields,Tags,DateCreated,DateLastSaved,SortName,SeriesId"
         httpGet(url) { jellyfinAuth(token) }
             .bodyOrNull<JellyfinItemsResponse>("getItem")?.items?.firstOrNull()
     }.let { result ->
@@ -424,7 +424,7 @@ class JellyfinClient {
      *  endpoint supports alongside `Ids=`. */
     suspend fun getItemByPath(baseUrl: String, token: String, path: String): JellyfinItem? = runCatching {
         val url = baseUrl.trimEnd('/') +
-            "/Items?Path=${path.encodeURLParameter()}&Recursive=true&Fields=Path,ProviderIds,ProductionYear,LockData,LockedFields,Tags,DateCreated,DateLastSaved,SeriesId"
+            "/Items?Path=${path.encodeURLParameter()}&Recursive=true&Fields=Path,ProviderIds,ProductionYear,LockData,LockedFields,Tags,DateCreated,DateLastSaved,SortName,SeriesId"
         httpGet(url) { jellyfinAuth(token) }.bodyOrNull<JellyfinItemsResponse>("getItemByPath")?.items?.firstOrNull()
     }.getOrElse { Logger.warn("Jellyfin getItemByPath failed: ${it.message}"); null }
 
@@ -532,7 +532,7 @@ class JellyfinClient {
     suspend fun findRecentItemByPath(baseUrl: String, token: String, path: String, limit: Int = 200): JellyfinItem? = runCatching {
         val url = baseUrl.trimEnd('/') +
             "/Items?Recursive=true&IncludeItemTypes=Movie,Episode&SortBy=DateCreated&SortOrder=Descending&Limit=$limit" +
-            "&Fields=Path,ProviderIds,ProductionYear,LockData,LockedFields,Tags,DateCreated,DateLastSaved,SeriesId"
+            "&Fields=Path,ProviderIds,ProductionYear,LockData,LockedFields,Tags,DateCreated,DateLastSaved,SortName,SeriesId"
         httpGet(url) { jellyfinAuth(token) }.bodyOrNull<JellyfinItemsResponse>("findRecentItemByPath")
             ?.items?.firstOrNull { it.path == path }
     }.getOrElse { Logger.warn("Jellyfin findRecentItemByPath failed: ${it.message}"); null }
@@ -542,7 +542,7 @@ class JellyfinClient {
     suspend fun getItemsByIds(baseUrl: String, token: String, jellyfinIds: List<String>): List<JellyfinItem> {
         if (jellyfinIds.isEmpty()) return emptyList()
         val url = baseUrl.trimEnd('/') +
-            "/Items?Ids=${jellyfinIds.joinToString(",")}&Recursive=true&Fields=Path,ProviderIds,ProductionYear,LockData,LockedFields,Tags,DateCreated,DateLastSaved,SeriesId"
+            "/Items?Ids=${jellyfinIds.joinToString(",")}&Recursive=true&Fields=Path,ProviderIds,ProductionYear,LockData,LockedFields,Tags,DateCreated,DateLastSaved,SortName,SeriesId"
         return runCatching {
             httpGet(url) { jellyfinAuth(token) }.bodyOrNull<JellyfinItemsResponse>("getItemsByIds")?.items ?: emptyList()
         }.getOrElse { Logger.warn("Jellyfin getItemsByIds failed: ${it.message}"); emptyList() }

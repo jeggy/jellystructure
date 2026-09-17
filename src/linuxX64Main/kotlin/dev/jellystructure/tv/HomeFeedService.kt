@@ -26,6 +26,7 @@ import dev.jellystructure.shared.tv.RaviloConfig
 import dev.jellystructure.shared.tv.Row
 import dev.jellystructure.shared.tv.RowConfig
 import dev.jellystructure.shared.tv.RowKind
+import dev.jellystructure.shared.tv.RowOrder
 import dev.jellystructure.shared.tv.effectiveQuery
 import dev.jellystructure.shared.tv.isLive
 import dev.jellystructure.shared.tv.CardPlayState
@@ -604,8 +605,7 @@ class HomeFeedService(
                         else     -> all
                     }
                     val cards = filtered
-                        .sortedWith(compareByDescending<MediaItem> { it.recencyKey() }.thenBy { it.title })
-                        .take(ROW_ITEM_LIMIT)
+                        .let { orderRow(it, null) }
                         .mapNotNull { it.toMediaCardOrNull() }
                         .distinctBy { it.id }
                     if (cards.isNotEmpty()) result.add(Row(rowCfg.id, rowCfg.title ?: "Newly Added", RowKind.NEWLY_ADDED, cards))
@@ -618,8 +618,7 @@ class HomeFeedService(
         // Merge on → inject one merged NEWLY_ADDED row at the first configured NEWLY_ADDED position.
         if (mergeNewly) {
             val mergedCards = all
-                .sortedWith(compareByDescending<MediaItem> { it.recencyKey() }.thenBy { it.title })
-                .take(ROW_ITEM_LIMIT)
+                .let { orderRow(it, null) }
                 .mapNotNull { it.toMediaCardOrNull() }
                 .distinctBy { it.id }
             if (mergedCards.isNotEmpty()) {
@@ -649,14 +648,12 @@ class HomeFeedService(
         titlePrefix: String? = null,
     ) {
         if (merge) {
-            val cards = src.sortedWith(compareByDescending<MediaItem> { it.recencyKey() }.thenBy { it.title }).take(ROW_ITEM_LIMIT).mapNotNull { it.toMediaCardOrNull() }.distinctBy { it.id }
+            val cards = orderRow(src, null).mapNotNull { it.toMediaCardOrNull() }.distinctBy { it.id }
             if (cards.isNotEmpty()) result.add(Row(idPrefix, titlePrefix ?: "Newly Added", RowKind.NEWLY_ADDED, cards))
             return
         }
-        val movies = src.asSequence().filter { it.kind == MediaKind.MOVIE }
-            .sortedWith(compareByDescending<MediaItem> { it.recencyKey() }.thenBy { it.title }).take(ROW_ITEM_LIMIT).mapNotNull { it.toMediaCardOrNull() }.distinctBy { it.id }.toList()
-        val series = src.asSequence().filter { it.kind == MediaKind.TV_SHOW }
-            .sortedWith(compareByDescending<MediaItem> { it.recencyKey() }.thenBy { it.title }).take(ROW_ITEM_LIMIT).mapNotNull { it.toMediaCardOrNull() }.distinctBy { it.id }.toList()
+        val movies = orderRow(src.filter { it.kind == MediaKind.MOVIE }, null).mapNotNull { it.toMediaCardOrNull() }.distinctBy { it.id }
+        val series = orderRow(src.filter { it.kind == MediaKind.TV_SHOW }, null).mapNotNull { it.toMediaCardOrNull() }.distinctBy { it.id }
         if (movies.isNotEmpty()) result.add(Row("$idPrefix-movies", titlePrefix?.let { "$it — Movies" } ?: "Movies — Newly Added", RowKind.NEWLY_ADDED, movies))
         if (series.isNotEmpty()) result.add(Row("$idPrefix-series", titlePrefix?.let { "$it — Series" } ?: "Series — Newly Added", RowKind.NEWLY_ADDED, series))
     }
@@ -693,6 +690,14 @@ class HomeFeedService(
             else -> false  // CONTINUE/NEWLY_ADDED: different data source / no per-item query, handled by their own callers
         }
 
+    /** Phase 225 (FR-225-2) — every row is lined up HERE and nowhere else, through the shared [RowOrder]
+     *  (the admin editor previews with the same function). [rowCfg] null = a system row: today's order,
+     *  30 titles (FR-225-7). Pins compare on the id the served card carries (`jellyfinId ?: id`). */
+    private fun orderRow(items: List<MediaItem>, rowCfg: RowConfig?): List<MediaItem> = RowOrder.resolve(
+        items, rowCfg?.sort, rowCfg?.pinned.orEmpty(), rowCfg?.limit,
+        id = { it.jellyfinId ?: it.id }, added = { it.recencyKey() }, year = { it.year }, title = { it.title }, sortName = { it.sortName },
+    )
+
     /** R143: build one GENRE or CUSTOM filter row from [all] (already channel-scoped in channel context).
      *  R187: also populates [Row.seedQuery]/[Row.seedMediaKind]/[Row.seedTotalCount] for the "→ See all"
      *  browse page — the total is the pre-[ROW_ITEM_LIMIT] match count, not `cards.size`, so a genuinely
@@ -701,8 +706,7 @@ class HomeFeedService(
         RowKind.GENRE -> {
             val matched = all.filter { matchesConfiguredRow(it, rowCfg, heroIds, configStore.current.metadata.ageRatingCascade) }
             val cards = matched
-                .sortedWith(compareByDescending<MediaItem> { it.recencyKey() }.thenBy { it.title })
-                .take(ROW_ITEM_LIMIT)
+                .let { orderRow(it, rowCfg) }
                 .mapNotNull { it.toMediaCardOrNull() }
                 .distinctBy { it.id }
             if (cards.isEmpty()) null else {
@@ -719,7 +723,7 @@ class HomeFeedService(
                 val seed = withChannelSeed(channelFilter, ConditionGroup(QueryJoin.AND, children = listOf(
                     Condition(facet = "genre", op = "is_any_of", values = matchedGenreValues),
                 )))
-                Row(rowCfg.id, rowCfg.title ?: "Genre", RowKind.GENRE, cards, seedQuery = seed, seedMediaKind = rowCfg.mediaKind, seedTotalCount = matched.size)
+                Row(rowCfg.id, rowCfg.title ?: "Genre", RowKind.GENRE, cards, seedQuery = seed, seedMediaKind = rowCfg.mediaKind, seedTotalCount = matched.size, sortBy = rowCfg.sort?.by, sortDescending = rowCfg.sort?.descending)
             }
         }
         RowKind.CUSTOM -> {
@@ -731,13 +735,13 @@ class HomeFeedService(
             val query = rowCfg.effectiveQuery()
             val filtered = all.filter { matchesConfiguredRow(it, rowCfg, heroIds, configStore.current.metadata.ageRatingCascade, resolvedQuery = query) }
             val cards = filtered
-                .sortedWith(compareByDescending<MediaItem> { it.recencyKey() }.thenBy { it.title })
-                .take(ROW_ITEM_LIMIT)
+                .let { orderRow(it, rowCfg) }
                 .mapNotNull { it.toMediaCardOrNull() }
                 .distinctBy { it.id }
             if (cards.isEmpty()) null else Row(
                 rowCfg.id, rowCfg.title ?: "Custom", RowKind.CUSTOM, cards,
                 seedQuery = withChannelSeed(channelFilter, query), seedMediaKind = rowCfg.mediaKind, seedTotalCount = filtered.size,
+                sortBy = rowCfg.sort?.by, sortDescending = rowCfg.sort?.descending,   // FR-225-8 — the key, never the pins
             )
         }
         else -> null
