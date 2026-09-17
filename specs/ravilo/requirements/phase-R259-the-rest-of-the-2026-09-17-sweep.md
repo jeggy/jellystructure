@@ -7,7 +7,7 @@
 
 ## Status
 
-`✓ Built` 2026-09-17 — not dev-reviewed. **On the stue TV (release `1.20-20`):** FR-R259-1 (Search kept *ruffy · 3 results* across Back) and FR-R259-2 verified; FR-R259-3/-4/-5 not yet seen on a device (the guide, the phone, and 232 not deployed). Client-only (`ravilo-ui`,
+`✓ Built` 2026-09-17 — not dev-reviewed. **On the stue TV (release `1.20-20`):** FR-R259-1 (Search kept *ruffy · 3 results* across Back) and FR-R259-2 verified; FR-R259-5 (Channel 4 / Hulu / TV3 on the dark card), FR-R259-6 (*GONE MISSING* in light ink, *North Ridge* untouched) and FR-R259-7 (6-up walls) verified there later the same evening against v1.22/v1.23. **Still not seen on a device:** FR-R259-3/-3a (the guide label pin — unit-tested only; the TV was in use) and FR-R259-4 (the phone — the Pixel runs the Play build). Client-only (`ravilo-ui`,
 `ravilo-android`); FR-R259-5 consumes phase **232**'s new field.
 
 **Numbering:** verified against `STATUS.md` 2026-09-17 — Ravilo taken through **R258**.
