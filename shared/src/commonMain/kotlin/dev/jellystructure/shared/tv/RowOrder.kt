@@ -28,6 +28,19 @@ object RowOrder {
         year: (T) -> Int?,
         title: (T) -> String,
         sortName: (T) -> String?,
+    ): List<T> = resolveAll(matches, sort, pinned, id, added, year, title, sortName).take(effectiveLimit(limit))
+
+    /** The whole match set in the row's order, UNCAPPED — what the editor previews and picks from, and what
+     *  [resolve] takes its first `limit` of. */
+    fun <T> resolveAll(
+        matches: List<T>,
+        sort: RowSort?,
+        pinned: List<String>,
+        id: (T) -> String?,
+        added: (T) -> Long,
+        year: (T) -> Int?,
+        title: (T) -> String,
+        sortName: (T) -> String?,
     ): List<T> {
         val name: (T) -> String = { (sortName(it)?.takeIf { s -> s.isNotBlank() } ?: title(it)).lowercase() }
         val comparator: Comparator<T> = when {
@@ -36,13 +49,12 @@ object RowOrder {
             sort.by == "year" -> (if (sort.descending) compareByDescending<T> { year(it) ?: 0 } else compareBy<T> { year(it) ?: 0 }).thenBy { name(it) }
             else -> (if (sort.descending) compareByDescending<T> { added(it) } else compareBy<T> { added(it) }).thenBy { name(it) }
         }
-        val cap = effectiveLimit(limit)
-        if (pinned.isEmpty()) return matches.sortedWith(comparator).take(cap)
+        if (pinned.isEmpty()) return matches.sortedWith(comparator)
         val byId = HashMap<String, T>()
         for (m in matches) id(m)?.let { if (it !in byId) byId[it] = m }
         val pins = pinned.distinct().mapNotNull { byId[it] }              // FR-225-5: a stale id is simply absent here
         val pinnedIds = pins.mapNotNull(id).toSet()
-        return (pins + matches.filter { id(it) !in pinnedIds }.sortedWith(comparator)).take(cap)
+        return pins + matches.filter { id(it) !in pinnedIds }.sortedWith(comparator)
     }
 
     /** FR-225-11 — `null` when fine, else the sentence the config route answers 400 with. */
