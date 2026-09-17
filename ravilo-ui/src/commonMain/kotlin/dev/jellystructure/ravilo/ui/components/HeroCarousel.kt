@@ -255,7 +255,7 @@ fun HeroCarousel(
             // R130: clearlogo when it loads, else the title as readable text — a missing or 404 logo
             // (the server always sends a logo proxy URL) no longer leaves a blank space.
             TitleLogoOrText(
-                logoUrl = active.logoUrl,
+                logoUrl = active.logoUrl, logoInk = active.logoInk,
                 title = active.item.title,
                 logoModifier = Modifier.height(80.dp).width(300.dp),
             )

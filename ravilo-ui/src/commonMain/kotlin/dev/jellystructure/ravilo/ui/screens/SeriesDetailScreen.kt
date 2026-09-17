@@ -389,7 +389,7 @@ private fun SeriesDetailLoaded(
                 ) {
                     // R130: clearlogo when it loads, else the title as readable text.
                     TitleLogoOrText(
-                        logoUrl = detail.logoUrl,
+                        logoUrl = detail.logoUrl, logoInk = detail.logoInk,
                         title = detail.card.title,
                         logoModifier = Modifier.height(80.dp).widthIn(max = 360.dp),
                     )

@@ -82,6 +82,8 @@ class HomeFeedService(
     private val tvEventBus: TvEventBus,
     private val artwork: ArtworkDownloader,
 ) {
+    /** Phase 232 (FR-232-5) — set by Main; null in tests (= every logo's ink unknown). */
+    var clearlogoInk: dev.jellystructure.media.ClearlogoInk? = null
     private val json = Json { encodeDefaults = true }
 
     // Phase R86-A: stale-while-revalidate home feed cache per Jellyfin user.
@@ -380,6 +382,7 @@ class HomeFeedService(
                     taglineKicker = null,
                     backdropUrl = RaviloImageUrl.heroBackdrop(item.id, artwork.assetVersion(item, "backdrop")),
                     logoUrl = RaviloImageUrl.logo(item.id, artwork.assetVersion(item, "clearlogo")),
+                    logoInk = clearlogoInk?.inkFor(item),   // Phase 232 (FR-232-5/6)
                     badge = null,
                     synopsis = item.overview,
                 )
@@ -398,6 +401,7 @@ class HomeFeedService(
                     taglineKicker = hc.tagline,
                     backdropUrl = RaviloImageUrl.heroBackdrop(item.id, artwork.assetVersion(item, "backdrop")),
                     logoUrl = if (hc.clearlogoOverlay) RaviloImageUrl.logo(item.id, artwork.assetVersion(item, "clearlogo")) else null,
+                    logoInk = if (hc.clearlogoOverlay) clearlogoInk?.inkFor(item) else null,   // Phase 232
                     badge = hc.badge,
                     synopsis = item.overview,
                 )
@@ -417,6 +421,7 @@ class HomeFeedService(
                     taglineKicker = hc.tagline,
                     backdropUrl = RaviloImageUrl.heroBackdrop(item.id, artwork.assetVersion(item, "backdrop")),
                     logoUrl = if (hc.clearlogoOverlay) RaviloImageUrl.logo(item.id, artwork.assetVersion(item, "clearlogo")) else null,
+                    logoInk = if (hc.clearlogoOverlay) clearlogoInk?.inkFor(item) else null,   // Phase 232
                     badge = hc.badge,
                     synopsis = item.overview,
                 )

@@ -226,6 +226,11 @@ fun main() = runBlocking {
     // Phase 185 (FR-185-4) — needed by DetailService below, for playbackNote resolution.
     val playbackStartSampleStore = dev.jellystructure.tv.PlaybackStartSampleStore(db)
     val detailService = DetailService(mediaStore, jellyfinClient, configStore, artworkDownloader, mediaSegmentStore, raviloDeviceService, playbackStartSampleStore)
+    // Phase 232 (FR-232-5) — title clearlogo ink: in memory, judged in the background, warmed once at boot.
+    val clearlogoInk = dev.jellystructure.media.ClearlogoInk(rootScope, dataDir)
+    detailService.clearlogoInk = clearlogoInk
+    homeFeedService.clearlogoInk = clearlogoInk
+    rootScope.launch(dev.jellystructure.ops.GateClass.BACKGROUND) { runCatching { clearlogoInk.warm(mediaStore.allItems()) } }
     val playbackQoeStore = dev.jellystructure.tv.PlaybackQoeStore(db)
     val playbackService = PlaybackService(mediaStore, jellyfinClient, configStore, playbackQoeStore, playbackStartSampleStore, raviloDeviceService, castService, writerScope = rootScope)
     // R248 (FR-R248-2) — once a queued stop has landed in Jellyfin, fold it into the Home feed and tell

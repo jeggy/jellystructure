@@ -49,6 +49,9 @@ fun TitleLogoOrText(
     lineHeight: TextUnit = 40.sp,
     maxLines: Int = 2,
     logoAlignment: Alignment = Alignment.BottomStart,
+    /** R259 (FR-R259-6) — 232's `logo_ink`. `"dark"` ⇒ the logo is drawn in the page's light ink: the
+     *  hero's text column is deliberately dark, and a black clearlogo (*Gone Missing*) all but vanished on it. */
+    logoInk: String? = null,
 ) {
     // Reset the failure flag when the logo target changes (e.g. a hero slide advance reuses this slot).
     var failed by remember(logoUrl) { mutableStateOf(false) }
@@ -81,6 +84,7 @@ fun TitleLogoOrText(
         modifier = logoModifier,
         contentScale = ContentScale.Fit,
         alignment = logoAlignment,
+        colorFilter = if (logoInk == "dark") androidx.compose.ui.graphics.ColorFilter.tint(RaviloTheme.colors.text) else null,
         onState = { st -> if (st is AsyncImagePainter.State.Error) failed = true },
     )
 }
