@@ -10,6 +10,13 @@
 
 ## Status
 
+**Standalone reproducer: `~/IdeaProjects/kotlin-native-gc-pacing`** (its README is the issue text; this file is the
+background). It measured, on 2026-09-17: defaults 2.6–2.8 collections/s with 134–140 ms pauses at a 326 MB
+resident set (37 % of wall time stopped); `MIN_HEAP_MB=512` no effect (floor below the 648 MB auto target);
+`UTILIZATION=0.25` 1.1–1.2/s (17 %); `MIN_HEAP_MB=2048` 0.6–0.7/s (9 %); the pause is the mark of 3.15 M
+objects and never moves; `memoryUsageAfter` read 593 MB after a forced collection with the same kept count
+that measured 326 MB, matching RSS. The app's "target below live" reading was that field, not the tuner.
+
 Draft. Numbers marked *(prod, v1.20)* are filled from `/api/health` samples of the deployed backend.
 Post to <https://youtrack.jetbrains.com/newIssue?project=KT> once the overnight graph confirms the 30-minute picture.
 
