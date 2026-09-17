@@ -19,6 +19,8 @@ val LocalCompact = staticCompositionLocalOf { false }
 // controls back once they auto-hid. LocalHandset is the orientation-stable form-factor signal (the
 // smaller of width/height, i.e. "smallest width" — matches Android's own sw dp qualifier), for the few
 // call sites that need "is this actually a phone" rather than "is the window narrow right now".
+// R256 — and never on a TV: a TV is 960 x 540 dp, so the size test alone calls it a phone. The provider
+// (RaviloApp → isHandset) checks isTvPlatform first.
 val LocalHandset = staticCompositionLocalOf { false }
 
 // R145: responsive horizontal content gutter — tight on phones, TV-wide otherwise. Replaces the fixed

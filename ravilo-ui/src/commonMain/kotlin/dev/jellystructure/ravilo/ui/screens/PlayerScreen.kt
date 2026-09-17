@@ -1424,8 +1424,8 @@ fun PlayerScreen(
                 },
                 // R157 (FR-R157-2.4) — on web, a click on empty space toggles chrome instead of
                 // activating the focused control (the web convention; a click has no D-pad "focus"
-                // concept to act on). TV: playerTapTogglesChrome is false and LocalHandset is always
-                // false (a TV window is never handset-sized), so this stays null there and
+                // concept to act on). TV: playerTapTogglesChrome is false and LocalHandset is false (R256:
+                // by platform — a TV window IS handset-sized, 960 x 540 dp), so this stays null there and
                 // dpadFocusable's default (onTap falls back to onSelect) preserves the D-pad behaviour.
                 // Bug fix: ravilo-ui's androidMain is shared by both the TV and phone apps, so the old
                 // `playerTapTogglesChrome` platform constant (false for "Android") couldn't distinguish

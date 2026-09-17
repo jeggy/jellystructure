@@ -12,3 +12,16 @@ package dev.jellystructure.ravilo.ui
  * implementation, per R190 §C's precedent), so it needs no `actual` here.
  */
 expect val isTvPlatform: Boolean
+
+/**
+ * R256 — "is this a phone", as a pure function. Form factor first, size second: **every Android TV
+ * is 960 x 540 dp** (1920x1080 @ density 2.0, 3840x2160 @ 4.0), so its shorter side is *under*
+ * Android's own sw600dp phone/tablet line and NO dp threshold can tell a TV from a phone. The
+ * dp-only form of this shipped R244's phone player and R243's 2-up walls onto the living-room TV
+ * (v1.18). [isTv] is [isTvPlatform]; [density] is px per dp.
+ */
+fun isHandset(isTv: Boolean, widthPx: Int, heightPx: Int, density: Float): Boolean {
+    if (isTv || density <= 0f) return false
+    val shortPx = minOf(widthPx, heightPx)
+    return shortPx > 0 && shortPx / density < 600f
+}
