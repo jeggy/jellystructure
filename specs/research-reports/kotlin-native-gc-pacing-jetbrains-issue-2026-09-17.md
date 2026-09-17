@@ -11,7 +11,7 @@
 ## Status
 
 Draft. Numbers marked *(prod, v1.20)* are filled from `/api/health` samples of the deployed backend.
-Post to <https://youtrack.jetbrains.com/newIssue?project=KT> once the overnight numbers are in.
+Post to <https://youtrack.jetbrains.com/newIssue?project=KT> once the overnight graph confirms the 30-minute picture.
 
 ---
 
@@ -49,8 +49,21 @@ So: the value the API reports as "heap after collection" sat at 1.5–2.5× the 
 whole run, and the collector ran 0.7–1.3 times per second. Pauses of 60–165 ms every ~0.7 s is 10–20 %
 of wall time stopped, on a process whose users are TV remotes waiting for a list.
 
-*(prod, v1.20, `minHeapBytes` raised to 512 MiB via the patch's env var — fill in: epochs/min, pause,
-heap-after, RSS over the first 3 h.)*
+Production, v1.20 (Ktor's leak fixed, `minHeapBytes` raised to 512 MiB through the patch's env var), first
+30 minutes after the restart, sampled every 60 s from `/api/health`:
+
+| | value |
+|---|---|
+| collections | 8.8 / min (≈ one per 6.8 s) — the same process on the default 5 MiB floor ran ≈ 90 / min |
+| pause (first + second) | 44–118 ms, mean 79 ms |
+| `memoryUsageAfter["heap"]` | 307–693 MB (oscillating with the cycle, no trend) |
+| `targetHeapBytes` | 512 MiB (the floor) |
+| RSS | 390–786 MB, no trend |
+| `rootSet.stableReferences` | 55–105, flat |
+| kept objects per sweep | 1.52–1.57 M, flat |
+
+The floor turned a ~1.5 Hz collector into a ~0.15 Hz one for about 250 MB of extra resident memory —
+the trade-off a server operator wants to make, and today can only make from source.
 
 ## What a standalone reproducer shows
 
