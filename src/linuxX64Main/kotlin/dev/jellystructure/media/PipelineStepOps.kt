@@ -9,6 +9,8 @@ import dev.jellystructure.model.Episode
 import dev.jellystructure.model.ImdbRating
 import dev.jellystructure.model.MediaItem
 import dev.jellystructure.model.MediaKind
+import dev.jellystructure.model.SegmentPositionRules
+import dev.jellystructure.model.fileDurationMs
 import dev.jellystructure.nfo.NfoWriter
 import dev.jellystructure.nowEpochSec
 
@@ -322,7 +324,23 @@ object PipelineStepOps {
     private suspend fun detectForPath(
         itemId: String, episodeKey: String, episodeNumber: Int, path: String,
         segmentStore: MediaSegmentStore, extraChapterKeywords: List<String>, force: Boolean,
+        // Phase 233 — the stored file length (Track.durationMs, phase 222) when there is one; ffprobe is
+        // asked only when a decision actually needs it and the scan never measured it.
+        storedDurationMs: Long? = null,
     ): Boolean {
+        var probedDurationMs: Long? = storedDurationMs
+        var probed = storedDurationMs != null
+        suspend fun durationMs(): Long? {
+            if (!probed) { probed = true; probedDurationMs = FfprobeRunner.duration(path)?.let { (it * 1000).toLong() } }
+            return probedDurationMs
+        }
+        // Phase 233 (FR-233-5) — self-repair: an automatic row on the wrong side of half is deleted
+        // before anything reads "what exists", so this run re-derives it like a row that never was.
+        if (segmentStore.segmentsForEpisode(itemId, episodeKey, episodeNumber).any { isAutomaticPositioned(it) }) {
+            val gone = purgeImplausible(itemId, episodeKey, episodeNumber, durationMs(), segmentStore)
+            if (gone > 0) Logger.info("detect_segments: removed $gone marker(s) on the wrong side of the file for '${episodeKey.ifEmpty { itemId }}' — re-deriving", "pipeline", itemId)
+        }
+
         val existingIntro = segmentStore.getSegment(itemId, episodeKey, episodeNumber, SegmentKind.INTRO)
         val existingCredits = segmentStore.getSegment(itemId, episodeKey, episodeNumber, SegmentKind.CREDITS)
         val introWritable = existingIntro?.locked != true && (force || existingIntro == null)
@@ -343,7 +361,8 @@ object PipelineStepOps {
         val creditsHeuristicOverwriteOk = SegmentSource.precedence(SegmentSource.HEURISTIC) >= SegmentSource.precedence(existingCredits?.source)
 
         var wrote = false
-        val chapterHit = SegmentDetection.fromChapters(FfprobeRunner.chapters(path), keywords)
+        val chapters = FfprobeRunner.chapters(path)
+        val chapterHit = SegmentDetection.fromChapters(chapters, keywords, if (chapters.isEmpty()) null else durationMs())
         if (chapterHit != null) {
             if (introWritable && introOverwriteOk && chapterHit.markers.introStartMs != null) {
                 segmentStore.clearEvidenceForKind(itemId, episodeKey, episodeNumber, SegmentKind.INTRO)
@@ -368,8 +387,10 @@ object PipelineStepOps {
         }
 
         if (!creditsWritable || !creditsHeuristicOverwriteOk) return false
-        val duration = FfprobeRunner.duration(path) ?: return false
+        val duration = durationMs()?.let { it / 1000.0 } ?: return false
         val hit = SegmentDetection.fromCreditsHeuristic(path, duration) ?: return false
+        // Phase 233 (FR-233-2) — the heuristic scans the last 180 s, which is 60 % of a 5-minute file.
+        if (!SegmentPositionRules.plausible(SegmentPositionRules.CREDITS, hit.startMs, null, durationMs())) return false
         segmentStore.clearEvidenceForKind(itemId, episodeKey, episodeNumber, SegmentKind.CREDITS)
         for (ev in hit.evidence) {
             val type = if (ev.type == "black_frame") EvidenceType.BLACK_FRAME else EvidenceType.SILENCE
@@ -377,6 +398,61 @@ object PipelineStepOps {
         }
         segmentStore.upsertSegment(itemId, episodeKey, episodeNumber, SegmentKind.CREDITS, hit.startMs, null, SegmentSource.HEURISTIC, hit.confidence)
         return true
+    }
+
+    /** Phase 233 — an intro/credits row no person has written, locked or confirmed. */
+    private fun isAutomaticPositioned(row: MediaSegmentRow): Boolean =
+        (row.kind == SegmentKind.INTRO || row.kind == SegmentKind.CREDITS) &&
+            !SegmentPositionRules.humanTouched(row.source, row.locked, row.checkedAt)
+
+    /**
+     * Phase 233 (FR-233-5) — deletes (with their evidence) the automatic intro/credits rows of one
+     * episode that sit on the wrong side of half the file. When the length is unknown the position rule
+     * cannot say WHICH of an overlapping pair is wrong, so both automatic sides go. A human-touched row
+     * is never deleted, whatever it says. Returns how many rows went.
+     */
+    internal fun purgeImplausible(itemId: String, episodeKey: String, episodeNumber: Int, durationMs: Long?, segmentStore: MediaSegmentStore): Int {
+        val rows = segmentStore.segmentsForEpisode(itemId, episodeKey, episodeNumber)
+        val intro = rows.firstOrNull { it.kind == SegmentKind.INTRO }
+        val credits = rows.firstOrNull { it.kind == SegmentKind.CREDITS }
+        val overlapUnjudgeable = (durationMs == null || durationMs <= 0L) && intro != null && credits != null &&
+            SegmentPositionRules.creditsInsideIntro(intro.startMs, intro.endMs, credits.startMs)
+        var gone = 0
+        for (row in rows) {
+            if (!isAutomaticPositioned(row)) continue
+            if (SegmentPositionRules.plausible(row.kind, row.startMs, row.endMs, durationMs) && !overlapUnjudgeable) continue
+            segmentStore.clearEvidenceForKind(itemId, episodeKey, episodeNumber, row.kind)
+            segmentStore.deleteSegment(itemId, episodeKey, episodeNumber, row.kind)
+            gone++
+        }
+        return gone
+    }
+
+    /** Phase 233 (FR-233-5) — the no-I/O form of the same judgement, for `needsDetection`: true when an
+     *  episode holds an automatic row the scheduled pass should revisit. */
+    fun holdsImplausible(
+        itemId: String, episodeKey: String, episodeNumber: Int, storedDurationMs: Long?, segmentStore: MediaSegmentStore,
+        // Most production files have no measured length yet (222 fills it in as files are re-examined).
+        // TMDB's whole-minute runtime is too rough to judge the line itself, so it only flags a marker
+        // that is wrong by a wide margin — an intro ending past 70 %, credits starting before 30 %. It
+        // only ever TRIGGERS a visit; the purge that follows measures the real file.
+        runtimeMinutes: Int? = null,
+    ): Boolean {
+        val rows = segmentStore.segmentsForEpisode(itemId, episodeKey, episodeNumber)
+        if (storedDurationMs == null && runtimeMinutes != null && runtimeMinutes > 0) {
+            val est = runtimeMinutes * 60_000L
+            if (rows.any {
+                    isAutomaticPositioned(it) && when (it.kind) {
+                        SegmentKind.INTRO -> (it.endMs ?: it.startMs) > est * 7 / 10
+                        else -> it.startMs < est * 3 / 10
+                    }
+                }) return true
+        }
+        val intro = rows.firstOrNull { it.kind == SegmentKind.INTRO }
+        val credits = rows.firstOrNull { it.kind == SegmentKind.CREDITS }
+        if (rows.any { isAutomaticPositioned(it) && !SegmentPositionRules.plausible(it.kind, it.startMs, it.endMs, storedDurationMs) }) return true
+        return intro != null && credits != null && (isAutomaticPositioned(intro) || isAutomaticPositioned(credits)) &&
+            SegmentPositionRules.creditsInsideIntro(intro.startMs, intro.endMs, credits.startMs)
     }
 
     private fun chapterEvidenceDetail(title: String?): String? =
@@ -409,7 +485,7 @@ object PipelineStepOps {
     ) {
         when (item.kind) {
             MediaKind.MOVIE -> {
-                val wrote = detectForPath(item.id, "", 0, item.path, segmentStore, extraChapterKeywords, force)
+                val wrote = detectForPath(item.id, "", 0, item.path, segmentStore, extraChapterKeywords, force, item.tracks.fileDurationMs())
                 onEpisodeDone(1, 1)
                 if (wrote) mediaHistory?.record(item.id, "detect_segments", "chapter/heuristic detection wrote a marker")
             }
@@ -419,7 +495,7 @@ object PipelineStepOps {
                 var wroteCount = 0
                 for (ep in eligible) {
                     if (isCancelled()) break
-                    if (detectForPath(item.id, ep.filename, ep.episodeNumber ?: 0, ep.path, segmentStore, extraChapterKeywords, force)) wroteCount++
+                    if (detectForPath(item.id, ep.filename, ep.episodeNumber ?: 0, ep.path, segmentStore, extraChapterKeywords, force, ep.tracks.fileDurationMs())) wroteCount++
                     done++
                     onEpisodeDone(done, eligible.size)
                 }
@@ -577,11 +653,16 @@ object PipelineStepOps {
         // total as the old single-reference design in the worst case). One warning per FAILED
         // episode, not per pair it would have participated in.
         val fpCache = mutableMapOf<String, List<Int>?>()
+        val durations = mutableMapOf<String, Long?>()
         val failedEpisodes = mutableSetOf<String>()
         for ((i, ep) in touchedEpisodes.withIndex()) {
             if (isCancelled()) return
             reportDetail("fingerprinting ${episodeLabel(ep)} (${i + 1}/${touchedEpisodes.size})")
-            val fp = fingerprintService.getOrCompute(item.id, ep)
+            // Phase 233 (FR-233-3) — cut at half the file, so this pass can never correlate the closing
+            // theme of a short episode (the outro pass owns the other half).
+            val durationMs = ep.tracks.fileDurationMs() ?: FfprobeRunner.duration(ep.path)?.let { (it * 1000).toLong() }
+            durations[key(ep)] = durationMs
+            val fp = fingerprintService.getOrCompute(item.id, ep)?.let { SegmentDetection.headFrames(it, durationMs) }
             fpCache[key(ep)] = fp
             if (fp == null) {
                 failedEpisodes += key(ep)
@@ -614,6 +695,8 @@ object PipelineStepOps {
             if (!eligible(ep)) continue
             val epCandidates = candidates[key(ep)] ?: continue
             val consensus = SegmentDetection.aggregateIntroCandidates(epCandidates.map { it.candidate }) ?: continue
+            // Phase 233 (FR-233-2) — belt and braces behind the window cut: nothing past half is an intro.
+            if (!SegmentPositionRules.plausible(SegmentPositionRules.INTRO, consensus.startMs, consensus.endMs, durations[key(ep)])) continue
             Logger.info(
                 "detect_segments: '${item.title}' ${episodeLabel(ep)} — consensus from ${epCandidates.size} pairwise " +
                     "match(es), ${(consensus.endMs - consensus.startMs) / 1000}s intro (confidence ${(consensus.confidence * 100).toInt()}%)",
@@ -693,12 +776,20 @@ object PipelineStepOps {
         // Phase A — warm the tail-fingerprint cache. Needs each episode's duration (to know the tail
         // window's absolute file offset), fetched once per episode alongside the fingerprint itself.
         val fpCache = mutableMapOf<String, FingerprintService.TailFingerprint?>()
+        val durations = mutableMapOf<String, Long?>()
         val failedEpisodes = mutableSetOf<String>()
         for ((i, ep) in touchedEpisodes.withIndex()) {
             if (isCancelled()) return
             reportDetail("outro-fingerprinting ${episodeLabel(ep)} (${i + 1}/${touchedEpisodes.size})")
             val duration = FfprobeRunner.duration(ep.path)
-            val fp = duration?.let { fingerprintService.getOrComputeOutro(item.id, ep, it) }
+            val durationMs = duration?.let { (it * 1000).toLong() }
+            durations[key(ep)] = durationMs
+            // Phase 233 (FR-233-3) — the tail window is the last 300 s; on a short file that reaches back
+            // into the opening theme. Frames before half are dropped, the window start moved with them.
+            val fp = duration?.let { fingerprintService.getOrComputeOutro(item.id, ep, it) }?.let { tail ->
+                val (frames, start) = SegmentDetection.tailFrames(tail.frames, tail.windowStartMs, durationMs)
+                FingerprintService.TailFingerprint(frames, start)
+            }
             fpCache[key(ep)] = fp
             if (fp == null) {
                 failedEpisodes += key(ep)
@@ -731,6 +822,7 @@ object PipelineStepOps {
             if (!eligible(ep)) continue
             val epCandidates = candidates[key(ep)] ?: continue
             val consensus = SegmentDetection.aggregateIntroCandidates(epCandidates.map { it.candidate }) ?: continue
+            if (!SegmentPositionRules.plausible(SegmentPositionRules.CREDITS, consensus.startMs, null, durations[key(ep)])) continue
             Logger.info(
                 "detect_segments: '${item.title}' ${episodeLabel(ep)} — outro consensus from ${epCandidates.size} pairwise " +
                     "match(es) (confidence ${(consensus.confidence * 100).toInt()}%)",

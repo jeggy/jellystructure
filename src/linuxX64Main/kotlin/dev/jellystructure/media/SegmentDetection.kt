@@ -1,5 +1,6 @@
 package dev.jellystructure.media
 
+import dev.jellystructure.model.SegmentPositionRules
 import dev.jellystructure.model.SegmentMarkers
 import dev.jellystructure.model.Stinger
 
@@ -27,6 +28,9 @@ val DEFAULT_CHAPTER_KEYWORDS: List<ChapterKeyword> = listOf(
     ChapterKeyword("endamál", ChapterSegmentKind.CREDITS),        // Faroese
     ChapterKeyword("recap", ChapterSegmentKind.INTRO),
     ChapterKeyword("previously", ChapterSegmentKind.INTRO),
+    // Phase 233 (FR-233-4) — "Opening Credits" contains the word "credits" and used to be written as
+    // the END credits (68 accepted on production, It's Always Sunny at 104 s). It is an exact intro.
+    ChapterKeyword("opening credits", ChapterSegmentKind.INTRO),
 )
 
 /** Phase 163 (dev-review addendum §2) — one chapter that matched a keyword, kept whether or not it won
@@ -49,16 +53,33 @@ object SegmentDetection {
      *
      * Returns null when nothing matched (the caller falls through to the ffmpeg heuristic).
      */
-    fun fromChapters(chapters: List<ChapterMarker>, keywords: List<ChapterKeyword> = DEFAULT_CHAPTER_KEYWORDS): ChapterDetectionResult? {
+    fun fromChapters(
+        chapters: List<ChapterMarker>,
+        keywords: List<ChapterKeyword> = DEFAULT_CHAPTER_KEYWORDS,
+        // Phase 233 (FR-233-2/4) — the file's length, when known: both winners must then sit on their own
+        // side of half ([SegmentPositionRules]). Null keeps the pre-233 behaviour (the 60 s guard only).
+        durationMs: Long? = null,
+    ): ChapterDetectionResult? {
         if (chapters.isEmpty()) return null
 
-        fun matches(title: String?, kind: ChapterSegmentKind): Boolean {
+        fun matchesKind(title: String?, kind: ChapterSegmentKind): Boolean {
             if (title.isNullOrBlank()) return false
             return keywords.any { it.kind == kind && title.contains(it.word, ignoreCase = true) }
         }
+        // Phase 233 (FR-233-4) — a title that names the opening is never the credits, whatever else it says.
+        fun matches(title: String?, kind: ChapterSegmentKind): Boolean = when (kind) {
+            ChapterSegmentKind.INTRO -> matchesKind(title, ChapterSegmentKind.INTRO)
+            ChapterSegmentKind.CREDITS -> matchesKind(title, ChapterSegmentKind.CREDITS) && !matchesKind(title, ChapterSegmentKind.INTRO)
+        }
 
-        val creditsChapter = chapters.firstOrNull { matches(it.title, ChapterSegmentKind.CREDITS) && it.startMs >= 60_000L }
-        val introChapter = chapters.firstOrNull { matches(it.title, ChapterSegmentKind.INTRO) }
+        val creditsChapter = chapters.firstOrNull {
+            matches(it.title, ChapterSegmentKind.CREDITS) && it.startMs >= 60_000L &&
+                SegmentPositionRules.plausible(SegmentPositionRules.CREDITS, it.startMs, null, durationMs)
+        }
+        val introChapter = chapters.firstOrNull {
+            matches(it.title, ChapterSegmentKind.INTRO) &&
+                SegmentPositionRules.plausible(SegmentPositionRules.INTRO, it.startMs, it.endMs, durationMs)
+        }
         if (creditsChapter == null && introChapter == null) return null
 
         // Phase 163 — every OTHER keyword-matching chapter (both kinds), tagged accepted only for the
@@ -177,6 +198,26 @@ object SegmentDetection {
      * the longest run found is shorter than [MIN_RUN_FRAMES] (or either input is empty) — the caller
      * leaves `introStartMs`/`introEndMs` unset, same graceful-fallback shape as every other tier.
      */
+    /** Phase 233 (FR-233-3) — the head fingerprint cut at half the file. The intro pass fingerprints the
+     *  first 900 s and the outro pass the last 300 s; on any file under 20 minutes they cover the same
+     *  audio, both passes find the same theme, and one of the two markers is written at the wrong end of
+     *  the file. Frames past half are dropped from the LOADED list — the on-disk cache is untouched. */
+    fun headFrames(frames: List<Int>, durationMs: Long?): List<Int> {
+        if (durationMs == null || durationMs <= 0L) return frames
+        val keep = ((durationMs / 2000.0 - FRAME_OFFSET_SEC) / FRAME_SEC).toInt().coerceAtLeast(0)
+        return if (keep >= frames.size) frames else frames.subList(0, keep)
+    }
+
+    /** The tail counterpart: frames before half are dropped and the window start advanced by exactly the
+     *  frames removed, so a match position + the returned start is still an absolute file timestamp. */
+    fun tailFrames(frames: List<Int>, windowStartMs: Long, durationMs: Long?): Pair<List<Int>, Long> {
+        if (durationMs == null || durationMs <= 0L) return frames to windowStartMs
+        val shortfallMs = durationMs / 2 - windowStartMs
+        if (shortfallMs <= 0L) return frames to windowStartMs
+        val drop = kotlin.math.ceil(shortfallMs / 1000.0 / FRAME_SEC).toInt().coerceAtMost(frames.size)
+        return frames.subList(drop, frames.size) to (windowStartMs + (drop * FRAME_SEC * 1000).toLong())
+    }
+
     fun findIntroMatch(a: List<Int>, b: List<Int>): FingerprintIntroMatch? {
         if (a.isEmpty() || b.isEmpty()) return null
         val maxOffsetFrames = (MAX_OFFSET_SEARCH_SEC / FRAME_SEC).toInt()

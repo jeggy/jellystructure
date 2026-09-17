@@ -1,5 +1,6 @@
 package dev.jellystructure.tv
 
+import dev.jellystructure.model.SegmentPositionRules
 import dev.jellystructure.auth.DeviceData
 import dev.jellystructure.auth.JellyfinClient
 import dev.jellystructure.config.ConfigStore
@@ -297,8 +298,17 @@ class DetailService(
      *  ([legacyStinger], `atMs == null`) untouched since Phase 150. */
     private fun toTv(itemId: String, episodeKey: String, episodeNumber: Int, legacyStinger: Stinger?): TvSegmentMarkers {
         val rows = segmentStore.segmentsForEpisode(itemId, episodeKey, episodeNumber)
-        val intro = rows.firstOrNull { it.kind == SegmentKind.INTRO }
-        val credits = rows.firstOrNull { it.kind == SegmentKind.CREDITS }
+        var intro = rows.firstOrNull { it.kind == SegmentKind.INTRO }
+        var credits = rows.firstOrNull { it.kind == SegmentKind.CREDITS }
+        // Phase 233 (FR-233-6) — credits that begin before the intro is over are a detection defect (775
+        // rows on production when this was written). Until the segments lane repairs the pair, each side
+        // is served only if a person wrote, locked or confirmed it: no marker is the pre-150 behaviour and
+        // is harmless; "Skip Credits" over the opening theme is not.
+        val i = intro; val c = credits
+        if (i != null && c != null && SegmentPositionRules.creditsInsideIntro(i.startMs, i.endMs, c.startMs)) {
+            if (!SegmentPositionRules.humanTouched(i.source, i.locked, i.checkedAt)) intro = null
+            if (!SegmentPositionRules.humanTouched(c.source, c.locked, c.checkedAt)) credits = null
+        }
         val stingerRow = rows.firstOrNull { it.kind == SegmentKind.STINGER }
         val stinger = when {
             stingerRow != null -> TvStinger(atMs = stingerRow.startMs, kind = legacyStinger?.kind ?: "after")
