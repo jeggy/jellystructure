@@ -12,7 +12,8 @@ android {
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "dev.jellystructure.ravilo"
+        // Phase 226 — from gradle.properties, so the admin card's "Package Name" can never drift from it.
+        applicationId = providers.gradleProperty("ravilo.applicationId").get()
         minSdk = 21
         targetSdk = 36
         // R215: deploy-play-store.yml overrides both via -Pravilo.versionCode/-Pravilo.versionName,

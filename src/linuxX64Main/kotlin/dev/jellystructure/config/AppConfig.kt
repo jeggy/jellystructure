@@ -21,6 +21,10 @@ data class AppConfig(
     // Phase 218 (FR-218-2) — Chromecast. Null or enabled=false is "off", and off means ABSENT on every
     // client (FR-218-3): the config snapshot carries no cast capability and nothing draws a button.
     val chromecast: ChromecastConfig? = null,
+    /** Phase 227 (FR-227-1) — the installation's one public address (an https origin), at the ROOT: an
+     *  installation with Chromecast off still has one. Never validated on load (a load that refuses one
+     *  string is an outage); `PublicUrl.effective` is what consumers read. */
+    @SerialName("public_url") val publicUrl: String = "",
     // Phase 91 — scan pipeline
     @SerialName("scan_schedule") val scanSchedule: String = "",
     val scan: ScanConfig = ScanConfig(),
@@ -128,14 +132,19 @@ data class ChromecastConfig(
     val enabled: Boolean = false,
     @SerialName("app_id") val appId: String = "",
     @SerialName("max_sessions") val maxSessions: Int = 2,
-    @SerialName("public_url") val publicUrl: String = "",
+    /** Phase 227 (FR-227-2) — RETIRED: kept deserialisable only so an existing `[chromecast] public_url`
+     *  still parses and can be adopted into the root `public_url` by ConfigStore.load; never read otherwise
+     *  and blanked on the next write. */
+    @Deprecated("Phase 227 — use AppConfig.publicUrl") @SerialName("public_url") val publicUrl: String = "",
 ) {
     fun effectiveMaxSessions(): Int = if (maxSessions in 1..5) maxSessions else 2
     /** A Cast application id is 8 hex characters; anything else is "not set yet". */
     fun hasAppId(): Boolean = APP_ID.matches(appId.trim())
-    fun receiverUrl(): String? = publicUrl.trim().trimEnd('/').takeIf { it.isNotBlank() }?.let { "$it/cast/" }
     companion object { val APP_ID = Regex("[0-9A-Fa-f]{8}") }
 }
+
+/** Phase 227 (FR-227-4) — the one place the receiver address is derived. */
+fun AppConfig.receiverUrl(): String? = dev.jellystructure.model.PublicUrl.receiverUrl(publicUrl)
 
 // Phase 56 — acquisition engine settings. Absent or enabled=false ⇒ no requests/polling.
 // Flat keys (not [acquisition.radarr] sub-tables) to keep ktoml serialization trivial.

@@ -4,6 +4,7 @@ import dev.jellystructure.OutboundHttp
 import dev.jellystructure.auth.DeviceData
 import dev.jellystructure.auth.generateSecureToken
 import dev.jellystructure.config.AppConfig
+import dev.jellystructure.config.receiverUrl
 import dev.jellystructure.config.ConfigStore
 import dev.jellystructure.db.JellystructureDb
 import dev.jellystructure.shared.tv.CastCapability
@@ -71,7 +72,7 @@ class CastService(
     fun capability(cfg: AppConfig = configStore.current): CastCapability? {
         val cc = cfg.chromecast ?: return null
         if (!cc.enabled || !cc.hasAppId()) return null
-        return CastCapability(appId = cc.appId.trim().uppercase(), receiverUrl = cc.receiverUrl())
+        return CastCapability(appId = cc.appId.trim().uppercase(), receiverUrl = cfg.receiverUrl())
     }
 
     fun maxSessions(): Int = configStore.current.chromecast?.effectiveMaxSessions() ?: 2
@@ -169,7 +170,7 @@ class CastService(
         return ChromecastStatus(
             enabled = cc?.enabled == true,
             appIdSet = cc?.hasAppId() == true,
-            receiverUrl = cc?.receiverUrl(),
+            receiverUrl = configStore.current.receiverUrl(),  // Phase 227 — the one derivation
             verified = receivers.isNotEmpty(),
             devices = receivers.sortedByDescending { it.lastSeen }.map { CastDeviceSummary(it.displayName.removePrefix("$DEVICE_PREFIX · "), it.lastSeen) },
             lastCastAt = receivers.maxOfOrNull { it.lastSeen },

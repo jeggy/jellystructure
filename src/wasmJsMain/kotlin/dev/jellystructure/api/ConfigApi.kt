@@ -60,6 +60,7 @@ data class ChromecastConfig(
     val enabled: Boolean = false,
     @SerialName("app_id") val appId: String = "",
     @SerialName("max_sessions") val maxSessions: Int = 2,
+    /** Phase 227 — retired (moved to AppConfig.publicUrl); kept so an old response still decodes. Never sent. */
     @SerialName("public_url") val publicUrl: String = "",
 )
 
@@ -160,6 +161,8 @@ data class AppConfig(
     val bazarr: BazarrConfig? = null,
     // Phase 218 (FR-218-2) — Chromecast; null = off, and off means the phone shows no cast button at all.
     val chromecast: ChromecastConfig? = null,
+    /** Phase 227 — the installation's one public address (an https origin), at the root. */
+    @SerialName("public_url") val publicUrl: String = "",
     @SerialName("scan_schedule") val scanSchedule: String = "",
     val scan: ScanConfig = ScanConfig(),
     val trackers: List<TrackerConfig> = emptyList(),
@@ -310,7 +313,8 @@ object ConfigApi {
         }
         when (response.status) {
             HttpStatusCode.NoContent -> SaveConfigResult(ok = true)
-            HttpStatusCode.UnprocessableEntity -> {
+            // 422 = Phase 166's schedule backstop; 400 = Phase 227's public-address rule. Same body shape.
+            HttpStatusCode.UnprocessableEntity, HttpStatusCode.BadRequest -> {
                 val body = runCatching { response.body<ConfigErrorBody>() }.getOrNull()
                 SaveConfigResult(ok = false, field = body?.field, error = body?.error ?: "Invalid configuration.")
             }

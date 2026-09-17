@@ -8,7 +8,7 @@
 
 ## Status
 
-`Planned` — written 2026-09-17, **dev-reviewed 2026-09-17 against `main` `8873cea7`** (see §Dev review at
+`✓ Built` 2026-09-17 — the five steps, the two console fields with their exact labels and a Copy each, the corrected hint and link text, in `Settings.kt`; **Package Name** comes from one Gradle value (`gradle.properties` `ravilo.applicationId` → `:ravilo-android`'s `applicationId` and the root `BuildInfo.androidApplicationId`). Admin wasm compiles; **not seen in a browser**. Google's live labels were not re-read on the day (dev review's caveat stands). Was `Planned` — written 2026-09-17, **dev-reviewed 2026-09-17 against `main` `8873cea7`** (see §Dev review at
 the bottom). Supersedes **FR-218-6** only; every other 218
 requirement stands unchanged.
 
