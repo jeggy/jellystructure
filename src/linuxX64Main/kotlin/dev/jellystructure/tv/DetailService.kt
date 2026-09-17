@@ -57,6 +57,9 @@ class DetailService(
     private val raviloDeviceService: RaviloDeviceService,
     private val playbackStartSampleStore: PlaybackStartSampleStore,
 ) {
+    /** Phase 232 (FR-232-5) — set by Main; null in tests (= every logo's ink unknown). */
+    var clearlogoInk: dev.jellystructure.media.ClearlogoInk? = null
+
     suspend fun getMovieDetail(device: DeviceData, jellyfinId: String): MovieDetail? {
         val item = mediaStore.resolveByJellyfinId(jellyfinId) ?: return null
         // Phase 142: a blocked item's detail returns 404 (as if absent) rather than leaking metadata —
@@ -90,6 +93,7 @@ class DetailService(
             audioLanguages     = movieAudioLangs,
             subtitleLanguages  = movieSubLangs,
             logoUrl            = RaviloImageUrl.logo(item.id, artwork.assetVersion(item, "clearlogo")),  // R130/R133/R214
+            logoInk = clearlogoInk?.inkFor(item),   // Phase 232 (FR-232-5/6)
             ratingBadge        = item.ratingBadge(),  // Phase 106
             trailer            = item.tvTrailer(),  // Phase 130
             imdbRating         = item.tvImdbRating(),  // Phase 131
@@ -200,6 +204,7 @@ class DetailService(
             audioLanguages    = seriesAudioLangs,
             subtitleLanguages = seriesSubLangs,
             logoUrl           = RaviloImageUrl.logo(item.id, artwork.assetVersion(item, "clearlogo")),  // R130/R133/R214
+            logoInk = clearlogoInk?.inkFor(item),   // Phase 232 (FR-232-5/6)
             nextAiring        = nextAiring,
             ratingBadge       = item.ratingBadge(),  // Phase 106
             trailer           = item.tvTrailer(),  // Phase 130

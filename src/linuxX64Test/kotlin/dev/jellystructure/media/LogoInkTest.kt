@@ -30,4 +30,18 @@ class LogoInkTest {
 
     @Test fun nothingVisibleIsUnknown() = assertNull(logoInkOf(raster(8, 8) { clear }, 8, 8))
     @Test fun aShortBufferIsUnknown() = assertNull(logoInkOf(ByteArray(10), 8, 8))
+
+    // FR-232-5 — a title clearlogo may be re-inked by the client, so an opaque image must never say "dark".
+    @Test fun anOpaqueClearlogoIsLeftAlone() = assertNull(clearlogoInkOf(raster(8, 8) { intArrayOf(20, 20, 20, 255) }, 8, 8))
+    @Test fun aBlackWordmarkClearlogoIsDark() =
+        assertEquals("dark", clearlogoInkOf(raster(8, 8) { if (it % 3 == 0) intArrayOf(8, 8, 8, 255) else clear }, 8, 8))
+    @Test fun aWhiteWordmarkClearlogoIsLight() =
+        assertEquals("light", clearlogoInkOf(raster(8, 8) { if (it % 3 == 0) intArrayOf(250, 250, 250, 255) else clear }, 8, 8))
+
+    @Test fun aColourfulMidToneClearlogoIsNeverReInked() {        // Rick and Morty / Curious George / The Simpsons
+        // bright green reads "light" — also untouched; what must never happen is "dark"
+        kotlin.test.assertNotEquals("dark", clearlogoInkOf(raster(8, 8) { if (it % 2 == 0) intArrayOf(120, 220, 60, 255) else clear }, 8, 8))
+        assertNull(clearlogoInkOf(raster(8, 8) { if (it % 2 == 0) intArrayOf(40, 110, 170, 255) else clear }, 8, 8))   // a mid-tone blue
+        assertNull(clearlogoInkOf(raster(8, 8) { if (it % 2 == 0) intArrayOf(150, 20, 20, 255) else clear }, 8, 8))   // dark RED is branding, not black ink
+    }
 }

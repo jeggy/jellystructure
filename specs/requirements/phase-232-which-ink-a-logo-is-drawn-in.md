@@ -31,5 +31,26 @@ one additive wire field; client half is R259 FR-R259-5.
 
 ## Non-goals
 
-Recolouring or inverting artwork. Title clearlogos (they sit on artwork, not on a card).
-The admin Metadata page (it has 192's checkerboard).
+The admin Metadata page (it has 192's checkerboard). ~~Title clearlogos~~ — **wrong, see the extension below.**
+
+## Extended 2026-09-17 (evening) — title clearlogos too
+
+Seen on the stue TV an hour after the first build: *Last Seen*'s clearlogo is **black ink**, and on the
+detail hero — darker on the left since R257's tint — it is close to invisible. The Home hero has the same
+tint and the same problem. "They sit on artwork, not on a card" was the wrong reason to exclude them:
+the text column's ground is *deliberately* dark, on every title.
+
+- **FR-232-5 — the same judgement for a title's clearlogo.** `ClearlogoInk` judges
+  `assetFilePath(item, "clearlogo.png")` with the same `rawRgbaThumb` + `logoInkOf`. The file lives beside
+  the media, so **no sidecar is written into the library**: results are held in memory, keyed by
+  path + size, filled by a background pass at boot and on a miss (the request returns `null` = unknown
+  and the next one has the answer). Never computed on the request path.
+- **FR-232-5a — "dark" is far stricter for a title logo, because the client RE-INKS it.** Caught before it
+  shipped by running the rule over production's 146 clearlogos: with the studio rule's 0.6 line, **53** of
+  them — *Rick and Morty*, *Curious George*, *The Simpsons* — would have been flattened to a white
+  silhouette. `clearlogoInkOf` says `dark` only for a logo that is near-black **and** unsaturated (mean
+  luminance ≤ 0.2, saturation ≤ 0.3: *Last Seen*, *$elfie*, *La Linea*, *My 600-lb Life*), never for a
+  mostly opaque image (it would become a solid box), and `null` — leave the artwork alone — for
+  everything in between. 11 tests.
+- **FR-232-6 — additive wire field** `logo_ink` on `Hero`, `MovieDetail` and `SeriesDetail`, present only
+  once known. Client half: R259 FR-R259-6.

@@ -40,6 +40,17 @@
 - **FR-R259-5 — light ink gets the dark card back.** A logo tile whose `logo_ink` is `light` (232)
   draws on the dark card; `dark` or unknown keeps R257's light plate.
 
+- **FR-R259-6 — a dark-ink title logo is drawn in the page's light ink.** *Last Seen*'s black clearlogo
+  was nearly invisible on the tinted detail hero (stue TV, 2026-09-17 evening). When `logo_ink` is `dark`
+  (232 FR-232-5/6) `TitleLogoOrText` draws the logo through a tint in `colors.text` — the shape survives,
+  the ink becomes legible; a multi-colour dark logo flattens to a silhouette, which is still its wordmark.
+  `light` or unknown draws the artwork untouched. Applies to the Home hero and both detail heroes (one
+  composable).
+- **FR-R259-3a — the guide label reaches the visible edge.** Seen on the TV: a cell mostly scrolled off
+  showed the *middle* of its title ("m den … gefamilie"), because the label's reserved minimum (120 dp)
+  stopped the shift short. The minimum is 48 dp: the label always starts at the visible edge and
+  ellipsizes in what is left.
+
 ## Still open, deliberately
 
 A *positioned* subtitle cue (a release tag pinned bottom-left) is not moved by R251's lift. It is one

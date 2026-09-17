@@ -746,7 +746,9 @@ private fun ProgramDetailsOverlay(
     }
 }
 
-private const val GUIDE_LABEL_MIN_WIDTH_DP = 120
+// 48, not 120: at 120 a cell mostly scrolled off showed the MIDDLE of its title ("m den … gefamilie",
+// stue TV 2026-09-17) because the shift stopped short of the visible edge.
+private const val GUIDE_LABEL_MIN_WIDTH_DP = 48
 
 /**
  * R259 — how far (px) a guide cell's label moves right so it stays inside the visible window.

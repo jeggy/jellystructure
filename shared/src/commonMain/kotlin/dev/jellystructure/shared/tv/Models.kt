@@ -309,6 +309,8 @@ data class Hero(
     @SerialName("tagline_kicker") val taglineKicker: String?,
     @SerialName("backdrop_url") val backdropUrl: String,
     @SerialName("logo_url") val logoUrl: String?,
+    /** Phase 232 (FR-232-6) — `"light"` | `"dark"`: the ink the clearlogo is drawn in; absent = not judged yet. */
+    @SerialName("logo_ink") val logoInk: String? = null,
     val badge: String?,
     val synopsis: String? = null,
 )
@@ -532,6 +534,8 @@ data class MovieDetail(
     /** R130: clearlogo proxy URL (always set when the item has a Jellyfin id); the app falls back to
      *  the title as text if it's null or the image 404s. */
     @SerialName("logo_url") val logoUrl: String? = null,
+    /** Phase 232 (FR-232-6) — `"light"` | `"dark"`: the ink the clearlogo is drawn in; absent = not judged yet. */
+    @SerialName("logo_ink") val logoInk: String? = null,
     /** Phase 106: server-resolved age-rating badge (R153 renders it). Null = no certification data. */
     @SerialName("rating_badge") val ratingBadge: RatingBadge? = null,
     /** Phase 130: null when TMDB has no usable trailer. R163 renders the Play-Trailer button. */
@@ -568,6 +572,8 @@ data class SeriesDetail(
     @SerialName("subtitle_languages") val subtitleLanguages: List<String> = emptyList(),
     /** R130: clearlogo proxy URL; the app falls back to the title as text if null or the image 404s. */
     @SerialName("logo_url") val logoUrl: String? = null,
+    /** Phase 232 (FR-232-6) — `"light"` | `"dark"`: the ink the clearlogo is drawn in; absent = not judged yet. */
+    @SerialName("logo_ink") val logoInk: String? = null,
     /** R149: next scheduled unaired episode from Sonarr. Null = Sonarr off / ended / no date. */
     @SerialName("next_airing") val nextAiring: NextAiring? = null,
     /** Phase 106: server-resolved age-rating badge (R153 renders it). Null = no certification data. */
