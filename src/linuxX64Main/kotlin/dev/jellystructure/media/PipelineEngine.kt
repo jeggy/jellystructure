@@ -1,5 +1,6 @@
 package dev.jellystructure.media
 
+import dev.jellystructure.model.fileDurationMs
 import dev.jellystructure.arr.ArrRescanService
 import dev.jellystructure.arr.SonarrEnrichService
 import dev.jellystructure.auth.JellyfinClient
@@ -461,9 +462,17 @@ suspend fun runPipeline(
                 fun missing(itemId: String, episodeKey: String, episodeNumber: Int) =
                     mediaSegmentStore.getSegment(itemId, episodeKey, episodeNumber, SegmentKind.INTRO) == null ||
                     mediaSegmentStore.getSegment(itemId, episodeKey, episodeNumber, SegmentKind.CREDITS) == null
+                // Phase 233 (FR-233-5) — an automatic marker on the wrong side of its file counts as
+                // work too, so the scheduled pass repairs the rows earlier detection got wrong. No I/O:
+                // stored durations plus the credits-inside-intro test.
+                fun implausible(itemId: String, episodeKey: String, episodeNumber: Int, durationMs: Long?, runtimeMinutes: Int?) =
+                    PipelineStepOps.holdsImplausible(itemId, episodeKey, episodeNumber, durationMs, mediaSegmentStore, runtimeMinutes)
                 fun needsDetection(item: MediaItem): Boolean = when (item.kind) {
-                    dev.jellystructure.model.MediaKind.MOVIE -> missing(item.id, "", 0)
-                    dev.jellystructure.model.MediaKind.TV_SHOW -> item.episodes.any { it.partCount == 1 && missing(item.id, it.filename, it.episodeNumber ?: 0) }
+                    dev.jellystructure.model.MediaKind.MOVIE -> missing(item.id, "", 0) || implausible(item.id, "", 0, item.tracks.fileDurationMs(), item.runtime)
+                    dev.jellystructure.model.MediaKind.TV_SHOW -> item.episodes.any {
+                        it.partCount == 1 && (missing(item.id, it.filename, it.episodeNumber ?: 0) ||
+                            implausible(item.id, it.filename, it.episodeNumber ?: 0, it.tracks.fileDurationMs(), it.runtime ?: item.runtime))
+                    }
                     dev.jellystructure.model.MediaKind.MUSIC_VIDEO -> false
                 }
                 val toProcess = if (step.scope == "all") workingSet else workingSet.filter(::needsDetection)
@@ -493,7 +502,10 @@ suspend fun runPipeline(
                         dev.jellystructure.model.MediaKind.TV_SHOW -> {
                             val seasons = item.episodes.filter { it.partCount == 1 }.groupBy { it.seasonNumber ?: 0 }
                             for ((season, eps) in seasons) {
-                                if (step.scope != "all" && eps.none { missing(item.id, it.filename, it.episodeNumber ?: 0) }) continue
+                                if (step.scope != "all" && eps.none {
+                                        missing(item.id, it.filename, it.episodeNumber ?: 0) ||
+                                            implausible(item.id, it.filename, it.episodeNumber ?: 0, it.tracks.fileDurationMs(), it.runtime ?: item.runtime)
+                                    }) continue
                                 val result = mediaJobQueue.enqueueSegments(
                                     "segments_season", item.id, "${item.title} S${season.toString().padStart(2, '0')}",
                                     dev.jellystructure.jobs.MediaJobParams(segmentSeason = season, deferWhilePlaying = deferEligible), eps.size,

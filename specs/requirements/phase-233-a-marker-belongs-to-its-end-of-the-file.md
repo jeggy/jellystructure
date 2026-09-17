@@ -7,8 +7,20 @@
 
 ## Status
 
-`Planned` 2026-09-17 — written from a read-only copy of the production database, not dev-reviewed.
-Backend-only. No wire change, no schema change, no new string.
+`✓ Built` 2026-09-17 — written the same day from a read-only copy of the production database, not
+dev-reviewed, **not deployed**; `linuxX64Test` 382/0 (+13: `SegmentPositionRulesTest`,
+`SegmentPositionDetectionTest`). Acceptance 2 and 3 are production observations still owed — they need
+a deploy and one scheduled `detect_segments`. Backend-only (`SegmentPositionRules.kt` in `commonMain`,
+`SegmentDetection.kt`, `PipelineStepOps.kt`, `PipelineEngine.kt`, `DetailService.kt`). No wire change,
+no schema change, no new string.
+
+**Found while building:** only **1 175 of 15 001** marker rows belong to a file whose length is
+stored (`Track.durationMs`, phase 222, fills in as files are re-examined). So the no-I/O trigger of
+FR-233-5 also takes TMDB's whole-minute runtime — as a *trigger only*, and only for a marker wrong by
+a wide margin (intro ending past 70 %, credits starting before 30 %); the purge that follows always
+measures the real file. By that estimate the defect is wider than the overlap query shows: about
+**405 "intro" rows sit in the second half** (19 titles — an outro theme with no credits row beside it
+overlaps nothing) and about **310 credits rows in the first half**.
 
 **Numbering:** verified against `STATUS.md` 2026-09-17 — admin taken through **232**.
 
