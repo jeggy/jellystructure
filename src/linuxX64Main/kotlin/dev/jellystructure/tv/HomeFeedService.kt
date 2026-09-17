@@ -64,6 +64,10 @@ private const val CONTINUE_TOUCHED_WINDOW_DAYS = 7L
 // 8.56s during a pipeline run) — the single most expensive of the four, so this cadence is chosen for
 // that fetch's cost, not the cheaper three it happens to run alongside.
 private const val CONTINUE_REFRESH_INTERVAL_MS = 60_000L
+// Phase 230 (FR-230-4) — a user with NO Continue list (boot, or every build so far failed) shows no row at
+// all: build patiently, and come back soon rather than in a minute.
+private const val CONTINUE_COLD_TIMEOUT_MS = 20_000L
+private const val CONTINUE_COLD_RETRY_MS = 5_000L
 // Same reasoning as PlaystateCache's own window — a household's historical pairings shouldn't grow
 // background Jellyfin traffic forever.
 private const val RECENTLY_SEEN_WINDOW_MS = 30L * 24 * 3_600_000L
@@ -207,7 +211,7 @@ class HomeFeedService(
      * and it still fires the same R176 `playstate_changed` push on success so an already-open Home/
      * Browse screen elsewhere patches instantly.
      */
-    suspend fun invalidatePlaystate(device: DeviceData) {
+    suspend fun invalidatePlaystate(device: DeviceData, stoppedJellyfinId: String? = null) {
         val userId = device.jellyfinUserId
         // Phase 229 (FR-229-1/2) — REBUILD FIRST, drop caches after. This used to remove
         // continueListCache and feedCache up front and then spend seconds at Jellyfin; R248's
@@ -216,7 +220,9 @@ class HomeFeedService(
         // after every stop. The list is now replaced in place (R231: a failed rebuild leaves the previous
         // value standing, which the old order made impossible), and a request arriving mid-rebuild is
         // served the pre-stop feed, corrected by the push below.
-        runCatching { PlaystateCache.refreshOne(device, mediaStore, jellyfinClient, configStore, tvEventBus) }
+        // Phase 230 (FR-230-2) — only what the stop touched (titles + that title's episodes), not the
+        // whole 9 000-id catalog: this used to put 94 Jellyfin requests (3.4 s) ahead of the rebuild below.
+        runCatching { PlaystateCache.refreshOne(device, mediaStore, jellyfinClient, configStore, tvEventBus, scope = PlaystateCache.RefreshScope.Touched(stoppedJellyfinId)) }
         runCatching { refreshContinueListFor(device) }
         feedCache.remove(userId)
         channelRailCache.remove(userId)
@@ -817,15 +823,17 @@ class HomeFeedService(
     fun start(scope: CoroutineScope, deviceService: RaviloDeviceService) {
         scope.launch(GateClass.BACKGROUND) {
             while (true) {
-                runCatching { refreshAllContinueLists(deviceService) }
+                val cold = runCatching { refreshAllContinueLists(deviceService) }
                     .onFailure { Logger.warn("Continue Watching refresh failed: ${it.message}", "tv") }
-                delay(CONTINUE_REFRESH_INTERVAL_MS)
+                    .getOrDefault(0)
+                delay(if (cold > 0) CONTINUE_COLD_RETRY_MS else CONTINUE_REFRESH_INTERVAL_MS)
             }
         }
     }
 
-    private suspend fun refreshAllContinueLists(deviceService: RaviloDeviceService) {
-        if (configStore.current.apiKeys.jellyfinUrl.isBlank()) return
+    /** Returns how many recently-seen users still have no list at all (FR-230-4's fast retry). */
+    private suspend fun refreshAllContinueLists(deviceService: RaviloDeviceService): Int {
+        if (configStore.current.apiKeys.jellyfinUrl.isBlank()) return 0
         val now = nowMs()
         val users = deviceService.allDevices()
             .filter { now - it.lastSeen < RECENTLY_SEEN_WINDOW_MS }
@@ -845,6 +853,7 @@ class HomeFeedService(
         // asks for, since the wire response alone can't carry the distinction beyond "row present/absent."
         val cold = users.count { continueListCache[it.jellyfinUserId] == null }
         if (users.isNotEmpty()) Logger.info("Continue Watching refresh: $refreshed refreshed, $failed failed, $cold never built", "tv")
+        return cold
     }
 
     /** R219 — one canonical, uncapped, unfiltered-by-channel Continue Watching entry: [mediaItem] (so a
@@ -889,7 +898,9 @@ class HomeFeedService(
         // Phase 219 (FR-219-4) — the permit wait is measured apart from the round trip, so the log can
         // say which of the two things happened when this build times out.
         val recorder = dev.jellystructure.ops.GateWaitRecorder()
-        val fetched = withTimeoutOrNull(CONTINUE_TIMEOUT_MS) {
+        // Phase 230 (FR-230-4) — no list to fall back on ⇒ be patient; R231's 6 s stands once there is one.
+        val continueTimeoutMs = if (continueListCache[device.jellyfinUserId] == null) CONTINUE_COLD_TIMEOUT_MS else CONTINUE_TIMEOUT_MS
+        val fetched = withTimeoutOrNull(continueTimeoutMs) {
             kotlinx.coroutines.withContext(recorder) {
                 coroutineScope {
                     val resumeDeferred   = async { jellyfinClient.getResumeItemsAll(jellyfinUrl, token, device.jellyfinUserId) }
@@ -901,10 +912,10 @@ class HomeFeedService(
             }
         }
         if (fetched == null) {
-            if (recorder.acquisitions == 0 || recorder.waitedMs >= CONTINUE_TIMEOUT_MS / 2) {
+            if (recorder.acquisitions == 0 || recorder.waitedMs >= continueTimeoutMs / 2) {
                 Logger.info("Continue Watching refresh for ${device.jellyfinUsername} skipped — outbound pool busy (waited ${recorder.waitedMs} ms for a permit), will retry in ${CONTINUE_REFRESH_INTERVAL_MS / 1000} s", "tv")
             } else {
-                Logger.warn("Continue Watching refresh for ${device.jellyfinUsername} timed out after ${CONTINUE_TIMEOUT_MS} ms at Jellyfin (permit wait ${recorder.waitedMs} ms)", "tv")
+                Logger.warn("Continue Watching refresh for ${device.jellyfinUsername} timed out after ${continueTimeoutMs} ms at Jellyfin (permit wait ${recorder.waitedMs} ms)", "tv")
             }
             return@coroutineScope null
         }

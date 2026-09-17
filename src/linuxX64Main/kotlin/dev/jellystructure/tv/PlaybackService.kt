@@ -325,7 +325,7 @@ class PlaybackService(
     /** R248 (FR-R248-2) — called with the device once a queued STOP has landed in Jellyfin (Main wires
      *  it to `HomeFeedService.invalidatePlaystate`, which ends with the `home_changed` push). Never
      *  called for a stop that was abandoned; a throw here never turns the landed stop into a retry. */
-    var onStopLanded: (suspend (DeviceData) -> Unit)? = null
+    var onStopLanded: (suspend (DeviceData, String) -> Unit)? = null  // Phase 230 — (device, stopped Jellyfin id)
 
     /** Phase 219 — what one queued write does: the same token + identity + ids the inline path used. */
     private inner class JellyfinSink : PlaybackSink {
@@ -348,7 +348,7 @@ class PlaybackService(
             // session that never transcoded or already ended is a success, not an error).
             if (ok && w.jellyfinPlaySessionId != null) jellyfinClient.stopActiveEncoding(jellyfinBase, token, identity, w.jellyfinPlaySessionId)
             // R248 — Jellyfin has the stop: now (and only now) the Home feed can be rebuilt to show it.
-            if (ok) onStopLanded?.let { hook -> runCatching { hook(w.device) }.onFailure { Logger.warn("Home refresh after stop failed for ${w.jellyfinId}: ${it.message}", "tv") } }
+            if (ok) onStopLanded?.let { hook -> runCatching { hook(w.device, w.jellyfinId) }.onFailure { Logger.warn("Home refresh after stop failed for ${w.jellyfinId}: ${it.message}", "tv") } }
             return ok
         }
     }
