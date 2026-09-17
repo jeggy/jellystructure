@@ -38,6 +38,21 @@ enum class MkvLayout {
      *  position this walker can't safely skip over. Distinct from [OK] so a caller doesn't mistake
      *  "couldn't tell" for "confirmed fine" — [MkvLayoutAudit] counts it separately. */
     UNKNOWN,
+    ;
+
+    /** Phase 234 (FR-234-1) — the ONE answer to "is this file broken in a way a remux fixes". The sweep,
+     *  Fix now and the post-`mkvpropedit` check all read it, so they cannot disagree again. */
+    val needsRepair: Boolean get() = this == TRACKS_AFTER_CLUSTER || this == ELEMENT_SIZE_OVERFLOW
+
+    /** Phase 234 (FR-234-1/3) — what the log says before a repair. An overflowing element is not "Tracks
+     *  evicted", and its repair is LOSSY: a stream copy discards what it cannot parse (measured: −246
+     *  video packets on one production file), so the sentence says where the real fix is. */
+    fun repairSentence(filePath: String): String = when (this) {
+        TRACKS_AFTER_CLUSTER -> "mkvpropedit evicted Tracks past the first Cluster on $filePath — repairing via ffmpeg remux"
+        ELEMENT_SIZE_OVERFLOW -> "An element in $filePath declares a size that overruns its container — repairing via ffmpeg remux. " +
+            "This repair DISCARDS the data it cannot read; replace the file from its source to get it back"
+        else -> "No repair needed for $filePath"
+    }
 }
 
 // Matroska/EBML top-level element IDs (the length-descriptor bits are part of the ID, per spec).

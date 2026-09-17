@@ -1,5 +1,6 @@
 package dev.jellystructure.media
 
+import dev.jellystructure.log.Logger
 import dev.jellystructure.model.MediaItem
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.async
@@ -48,7 +49,7 @@ object MkvLayoutAudit {
     /** The set of "confirmed broken, confirmed repairable by the same remux" classifications — the
      *  only two [MkvLayout] values [repair] will act on. Kept as one place so the two call sites below
      *  (and any future one) can't drift apart on what counts as "broken." */
-    private val REPAIRABLE = setOf(MkvLayout.TRACKS_AFTER_CLUSTER, MkvLayout.ELEMENT_SIZE_OVERFLOW)
+    private val REPAIRABLE = MkvLayout.entries.filter { it.needsRepair }.toSet()   // Phase 234: one predicate
 
     fun sweep(items: List<MediaItem>): SweepResult {
         val results = mkvPaths(items).map { FileResult(it, classify(it)) }
@@ -102,6 +103,10 @@ object MkvLayoutAudit {
      * kind, ever run at once, which removes the race without this object needing its own lock.
      */
     suspend fun repair(paths: List<String>): Map<String, Boolean> =
-        paths.filter { classify(it) in REPAIRABLE }
-            .associateWith { FfmpegRunner.repairTracksLayout(it) }
+        paths.map { it to classify(it) }.filter { it.second in REPAIRABLE }
+            .associate { (path, layout) ->
+                // Phase 234 (FR-234-3) — a lossy repair says so.
+                if (layout == MkvLayout.ELEMENT_SIZE_OVERFLOW) Logger.warn(layout.repairSentence(path), "track")
+                path to FfmpegRunner.repairTracksLayout(path)
+            }
 }

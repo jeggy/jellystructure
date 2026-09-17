@@ -7,7 +7,7 @@
 
 ## Status
 
-`Planned` 2026-09-17 — not dev-reviewed. Backend-only (`MkvpropeditRunner.kt`, `FfmpegRunner.kt`,
+`✓ Built` 2026-09-17 — not dev-reviewed, **not deployed**; `linuxX64Test` 386/0 (+4 in `MediaFileLockTest`). Acceptance 2 is a production observation still owed. Backend-only (`MkvpropeditRunner.kt`, `FfmpegRunner.kt`,
 `MkvLayoutAudit.kt`, new `MediaFileLock.kt`). No wire, schema or string change.
 
 **Numbering:** verified against `STATUS.md` 2026-09-17 — admin taken through **233**.
@@ -21,9 +21,10 @@
    already treats both alike. The edit path is the one consumer that does not.
 2. **Nothing stops two processes writing one file.** The 2026-09-13 amendment to 201 moved *Fix now*
    onto the media job queue and relied on "the media lane's single-worker FIFO guarantees no two
-   remuxes ever run at once". That stopped being a guarantee twice over: **213** put the lanes on a
-   shared pool of 1–3 workers, and the edit path's own repair (`verifyAndRepairLayout` →
-   `repairTracksLayout`) never went through the queue at all. Every remux of a file writes the same
+   remuxes ever run at once". That still holds *inside* the queue (213's shared pool keeps `media` at
+   one running job) — but the queue is not the only writer: every `mkvpropedit` edit, and the repair
+   its own post-condition starts (`verifyAndRepairLayout` → `repairTracksLayout`), runs outside it.
+   Every remux of a file writes the same
    fixed `.jstmp_<name>` (109's cancel and disk preflight depend on that name), and `mkvpropedit`
    edits in place — so a track edit during a queued repair of the same file is the 2026-09-13 race
    again, by a different door.
