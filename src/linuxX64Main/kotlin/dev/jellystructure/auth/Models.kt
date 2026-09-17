@@ -115,6 +115,8 @@ data class JellyfinItem(
     // The library "date added" (ISO-8601 UTC), e.g. "2021-06-27T18:51:37.0000000Z". Display only as of
     // Phase 108 (JS-owned createdAt/updatedAt now drive "recently added"; scannedAt is the scan timestamp).
     @SerialName("DateCreated") val dateCreated: String? = null,
+    /** Phase 225 (FR-225-3) — Jellyfin's own sort name ("Bear, The" / "bear"), so a title-sorted row files a title where Jellyfin does. */
+    @SerialName("SortName") val sortName: String? = null,
     // Phase 108: Jellyfin's own "last updated" timestamp, display only (Overview ▸ Timestamps).
     @SerialName("DateLastSaved") val dateLastSaved: String? = null,
     // Phase 114 — set on Episode-type items; used to resolve a new episode back to its parent series

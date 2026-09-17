@@ -100,6 +100,7 @@ class BrowseService(
                 quality = item.qualityLabel(),
                 channels = channels.filter { ch -> ConditionEvaluator.matches(item, ch.effectiveQuery(), heroIds, cascade) }.map { it.id },
                 imdbRating = item.imdbRating?.let { TvImdbRating(aggregateRating = it.aggregateRating, voteCount = it.voteCount) },
+                sortName = item.sortName,   // R253 (FR-R253-3)
             )
         }
         SeededBrowseResponse(items = items, total = items.size)

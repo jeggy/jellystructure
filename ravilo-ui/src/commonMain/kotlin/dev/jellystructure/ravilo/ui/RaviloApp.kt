@@ -215,6 +215,10 @@ private sealed class Dest {
          *  null for every other seed source (row/kind/channel). */
         val personRoleLine: String? = null,
         val personTmdbId: Int? = null,
+        /** R253 (FR-R253-2) — the row's own order (225's `Row.sort_by`/`sort_descending`), so the page OPENS
+         *  in it. An initial value only; null = R187's default. The pin list never reaches the client. */
+        val sortBy: String? = null,
+        val sortDescending: Boolean? = null,
         /** R219 (FR-R219-6) — set only alongside [continueWatching] == true, when reached from a
          *  channel's own Continue row; forwarded to [SeededBrowseStore] unchanged. */
         val channelId: String? = null,
@@ -832,6 +836,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                             seedQuery = row.seedQuery, seedMediaKind = row.seedMediaKind,
                             title = row.title, breadcrumb = homeLabel,
                             continueWatching = row.kind == RowKind.CONTINUE, displayName = dest.displayName,
+                            sortBy = row.sortBy, sortDescending = row.sortDescending,   // R253
                         ))
                     },
                     onLiveTvChannelSelect = { ch -> push(Dest.LiveTv(ch.channelId, dest.displayName)) },
@@ -865,6 +870,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                             seedQuery = row.seedQuery, seedMediaKind = row.seedMediaKind,
                             title = row.title, breadcrumb = dest.channel.name,
                             continueWatching = row.kind == RowKind.CONTINUE, displayName = dest.displayName,
+                            sortBy = row.sortBy, sortDescending = row.sortDescending,   // R253
                             // R219 (FR-R219-6) — dest.channel was already in scope here and simply
                             // unused for this case; only meaningful for the Continue row (a non-Continue
                             // row's seedQuery is already channel-aware via withChannelSeed server-side).
@@ -880,7 +886,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                 // each other's cached store/result.
                 val storeKey = "seededBrowse:${dest.displayName}:${dest.title}:${dest.continueWatching}:${dest.channelId}"
                 val store = keptStore(storeKey) {
-                    SeededBrowseStore(apiClient, dest.seedQuery, dest.seedMediaKind, dest.continueWatching, dest.personTmdbId, dest.channelId)
+                    SeededBrowseStore(apiClient, dest.seedQuery, dest.seedMediaKind, dest.continueWatching, dest.personTmdbId, dest.channelId, initialSort = dev.jellystructure.ravilo.ui.screens.initialBrowseSort(dest.sortBy, dest.sortDescending))
                 }
                 SeededBrowseScreen(
                     store = store,
