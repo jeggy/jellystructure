@@ -228,7 +228,7 @@ class JellyfinClient {
         identity: JellyfinDeviceIdentity? = null,
     ): JellyfinAuthResponse {
         val url = baseUrl.trimEnd('/') + "/Users/AuthenticateByName"
-        val authHeader = jellyfinIdentityHeader(identity)
+        val authHeader = jellyfinIdentityHeader(identity, versionRequired = true)
         val response = httpPost(url) {
             header("Authorization", authHeader)
             contentType(ContentType.Application.Json)
@@ -1217,6 +1217,9 @@ data class JellyfinDeviceIdentity(
     }
 }
 
+/** What Jellyfin is told when a Ravilo client signs in without saying which build it is. */
+internal const val UNKNOWN_CLIENT_VERSION = "0.0.0"
+
 internal fun headerSafe(s: String): String = s.replace("\"", "'").replace("\n", " ").take(64)
 
 /**
@@ -1224,9 +1227,15 @@ internal fun headerSafe(s: String): String = s.replace("\"", "'").replace("\n", 
  * `Version` only when the device has reported one (10.11.11 `AuthorizationContext.cs:167-176`: a blank
  * Version leaves the stored value alone, a differing one updates it); no identity ⇒ the server's own.
  */
-internal fun jellyfinIdentityHeader(identity: JellyfinDeviceIdentity?): String {
+internal fun jellyfinIdentityHeader(identity: JellyfinDeviceIdentity?, versionRequired: Boolean = false): String {
     if (identity == null) return AUTH_HEADER
-    val version = identity.appVersion?.trim()?.ifBlank { null }?.let { """, Version="${headerSafe(it)}"""" } ?: ""
+    // Phase 224 amendment (2026-09-17) — `AuthenticateByName` is the one call where Version is NOT
+    // optional: it opens a NEW session, and 10.11.11 answers **400** to a header without one. A client
+    // that sends no X-Ravilo-Version (every build before R252, any script) therefore could not sign in
+    // at all, and the route reported the 400 as "Could not reach Jellyfin" (503). Found on production by
+    // a dummy-credential probe. An authenticated call may still omit it (FR-224-3 stands).
+    val reported = identity.appVersion?.trim()?.ifBlank { null } ?: if (versionRequired) UNKNOWN_CLIENT_VERSION else null
+    val version = reported?.let { """, Version="${headerSafe(it)}"""" } ?: ""
     return """MediaBrowser Client="Ravilo", Device="${headerSafe(identity.deviceName)}", DeviceId="${headerSafe(identity.deviceId)}"$version"""
 }
 
