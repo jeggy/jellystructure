@@ -2,7 +2,7 @@ package dev.jellystructure.ravilo.android
 
 import android.os.Bundle
 import android.view.WindowManager
-import androidx.activity.ComponentActivity
+import androidx.fragment.app.FragmentActivity
 import androidx.activity.compose.setContent
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.core.view.WindowCompat
@@ -13,7 +13,11 @@ import dev.jellystructure.ravilo.ui.RaviloAppContext
 import dev.jellystructure.ravilo.ui.RaviloRoot
 import dev.jellystructure.ravilo.ui.seams.RaviloPlayerEngine
 
-class MainActivity : ComponentActivity() {
+// R245 amendment (2026-09-18) — a FragmentActivity (itself a ComponentActivity, so setContent is
+// unchanged): androidx.mediarouter's MediaRouteButton shows its device chooser as a DialogFragment and
+// throws "The activity must be a subclass of FragmentActivity" on the first tap otherwise — the Cast
+// button crashed the app outright on a Pixel 9.
+class MainActivity : FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
         super.onCreate(savedInstanceState)

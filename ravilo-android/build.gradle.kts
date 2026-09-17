@@ -120,6 +120,7 @@ dependencies {
     implementation(projects.raviloUi)
     implementation(projects.raviloPlayer)
     implementation(libs.androidx.activity.compose)
+    implementation(libs.androidx.fragment) // R245 amendment: the Cast chooser needs a FragmentActivity host
     implementation(libs.androidx.core.splashscreen)
     implementation(libs.androidx.leanback)
     // R103: applies the (library-merged + app) baseline profile on first run. Without it a sideloaded

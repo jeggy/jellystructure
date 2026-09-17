@@ -64,6 +64,8 @@ androidx-media3-ui = { module = "androidx.media3:media3-ui", version = "1.8.0" }
 # R245 — the Cast SDK (sender) and the MediaRouter it rides on; the receiver is our own web page (218).
 play-services-cast-framework = { module = "com.google.android.gms:play-services-cast-framework", version = "22.1.0" }
 androidx-mediarouter = { module = "androidx.mediarouter:mediarouter", version = "1.7.0" }
+# R245 amendment — MediaRouteButton refuses to open its chooser unless the activity is a FragmentActivity.
+androidx-fragment = { module = "androidx.fragment:fragment", version = "1.8.5" }
 # GPL-3.0 — jellyfin's prebuilt Media3 FFmpeg audio decoder (DTS/TrueHD/AC3/E-AC3). The version base
 # must match the Media3 version above; only the :ravilo-player GPL-containment module links it (R31).
 jellyfin-media3-ffmpeg-decoder = { module = "org.jellyfin.media3:media3-ffmpeg-decoder", version = "1.8.0+1" }
