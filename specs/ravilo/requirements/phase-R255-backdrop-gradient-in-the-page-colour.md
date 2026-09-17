@@ -9,10 +9,36 @@
 
 ## Status
 
-`⚠ Partial` 2026-09-17 — **coded at the starting stops, not measured.** `FocusDetailScrims.kt` is the one stop table (FR-R255-7); `FocusDetailBackdrop.kt` draws the head/mid/floor gradient, `FocusDetailPanel.kt` the reading gradient (40 % feather + a 16 dp top/bottom DstIn mask in its own offscreen layer, so the mask never touches the text); `ravilo.css` carries the same numbers via a new per-skin `--bg-rgb` and gains the mockup's first panel scrim. Android + Wasm compile, 126 unit tests green, both CSS fences green. **FR-R255-6 (the stue-TV measurement, R250-7's debt included) is NOT done** — the TV was in use; it stays `Partial` until the owner schedules that pass and the stops are corrected from pixels. Was `Planned` — written 2026-09-17, not dev-reviewed, not built. Client (`ravilo-ui`) plus the design
-mockup (`design/ravilo/ravilo.css`); no backend, payload or config change. Supersedes the scrim
-*numbers* of R242 FR-R242-7 and R250 FR-R250-1/-2 and takes over R250's still-open FR-R250-7 (the
-on-device contrast measurement was never done). Everything else in R242/R250 stands.
+`✓ Built` 2026-09-17 — **as ONE FLAT OPACITY LAYER, not the gradient this document goes on to
+describe.** Owner decision 2026-09-17, on seeing R250's box and this phase's first (gradient) build
+side by side on the stue TV: *"We do not want a gradient, we only want an opacity and we want it on the
+whole image from top to bottom and left to right. Not only for the small parts where there is text."*
+
+**What is built (supersedes FR-R255-2, -3's mid-band number, and the reading gradient entirely):**
+- The whole backdrop carries one flat layer of the page's own colour (FR-R255-1 stands: `--bg`, never
+  black) at **0.75** (Noir **0.85**, FR-R255-4's margin). No head, no floor, no mid band.
+- **The panel has no scrim of its own** — R250's opaque box and the first build's feathered gradient
+  are both deleted.
+- The number is arithmetic: body ink (`textSecondary`, L ≈ 0.46) needs a ground of L ≤ 0.063 for
+  4.5:1; 0.75 of the page colour over a *pure white* picture, blended in sRGB, leaves L ≈ 0.051 →
+  5.0:1 (0.70 would leave 4.1:1). So one flat layer clears the floor anywhere on screen.
+- One definition, two renderers (FR-R255-7 stands): `FocusDetailScrims.kt` (`WASH_ALPHA`) →
+  `FocusDetailBackdrop.kt`; `ravilo.css` `.jbg-scrim` via a new per-skin `--bg-rgb`.
+- FR-R255-5 (fades, crossfade, opaque app bar, clamp, heading halo) untouched.
+
+**Measured on the stue TV (FR-R255-6, R250-7's debt), release `1.20-12` sideloaded, Aurora:**
+
+| frame | build | ground behind the synopsis (80th-pct L) | body text |
+|---|---|---|---|
+| Frigear (LANDSCAPE, a sunlit shop front) | R250 box | 0.021 | 7.1:1 |
+| | first R255 gradient (40 % feather) | — | **2.4:1** 150 px into the text — failed |
+| | **flat 0.75** | 0.051 | **5.0:1** |
+| The End of Elm Lane (POSTER) | R250 box | 0.007 | 8.9:1 |
+| | **flat 0.75** | 0.022 | **7.1:1** |
+
+The title clears 10:1 in every frame. Not measured: a Noir pass and *The Riddle of Pine Isle*.
+Everything below this section is the phase as first written and is kept for the reasoning
+(the colour rule, the mockup drift) — its gradient shape is **not** what ships.
 
 **Numbering:** verified against `STATUS.md` on 2026-09-17 — Ravilo taken through **R253**, and
 **R254** by the sibling TV-only spec the same day. Ravilo-only, no admin pair.
