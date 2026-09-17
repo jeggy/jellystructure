@@ -247,6 +247,39 @@ private fun Modifier.hoverToCall(onHover: () -> Unit): Modifier {
 
 // ─── Top-level composable ─────────────────────────────────────────────────────
 
+/**
+ * PlayerScreen's bookkeeping state, held in ONE object instead of sixteen `var … by remember` locals.
+ * Not a refactor for taste: PlayerScreen's R8-compiled dex method needed 257–266 registers, and past
+ * ~256 ART's verifier rejects the whole class — the release app crashes the moment a title is played,
+ * while every debug build, unit test and compile check passes (2026-09-06, and again 2026-09-17 when a
+ * one-line LaunchedEffect tipped it over on the stue TV). `scripts/check-player-dex.sh` reads the
+ * register count from the release APK and runs in CI. Every property is snapshot state, exactly as the
+ * locals were, so reads in composition still recompose.
+ */
+private class PlayerBookkeeping(initialCastLink: CastLinkState) {
+    var castLinkSeen by mutableStateOf(initialCastLink)
+    var negotiationStartMs by mutableStateOf<Long?>(null)
+    var measuredStartupMs by mutableStateOf<Long?>(null)
+    var skipIntroCountingDown by mutableStateOf(false)
+    var skipIntroCountdownDone by mutableStateOf(false)
+    var skipIntroCountdownSecs by mutableIntStateOf(0)
+    var resolvedForItemId by mutableStateOf<String?>(null)
+    var resolvedTrackSig by mutableStateOf<String?>(null)
+    var resolvedTrackCount by mutableIntStateOf(0)
+    var manualPickSinceResolve by mutableStateOf(false)
+    var loadedForItemId by mutableStateOf<String?>(null)
+    var positionKnownForItemId by mutableStateOf<String?>(null)
+    var advanceRequestedForItemId by mutableStateOf<String?>(null)
+    var pauseFlash by mutableStateOf(false)
+    var pauseFlashIsPlay by mutableStateOf(true)
+    var stallDeepened by mutableStateOf(false)
+    // Per-user playback settings (were 4 locals + 4 rememberUpdatedState mirrors).
+    var skipIntroMode by mutableStateOf(dev.jellystructure.shared.tv.SkipMode.PROMPT)
+    var skipCreditsMode by mutableStateOf(dev.jellystructure.shared.tv.SkipMode.PROMPT)
+    var skipSecs by mutableIntStateOf(DEFAULT_SKIP_SECS)
+    var autoplayNextEnabled by mutableStateOf(true)
+}
+
 @Composable
 fun PlayerScreen(
     itemId: String,
@@ -318,14 +351,8 @@ fun PlayerScreen(
     // R182 — resolved per-viewer skip behaviour (jellystructure Ravilo config → Preferences; there is
     // no in-app settings screen for these — see PlayerStore.getConfig()). Re-fetched every episode (the
     // LaunchedEffect(itemId) below) so a mid-binge settings change takes effect on the next episode.
-    var skipIntroMode by remember { mutableStateOf(dev.jellystructure.shared.tv.SkipMode.PROMPT) }
-    var skipCreditsMode by remember { mutableStateOf(dev.jellystructure.shared.tv.SkipMode.PROMPT) }
-    var skipSecs by remember { mutableIntStateOf(DEFAULT_SKIP_SECS) }
-    var autoplayNextEnabled by remember { mutableStateOf(true) }
-    val currentSkipIntroMode by rememberUpdatedState(skipIntroMode)
-    val currentSkipCreditsMode by rememberUpdatedState(skipCreditsMode)
-    val currentSkipSecs by rememberUpdatedState(skipSecs)
-    val currentAutoplayNext by rememberUpdatedState(autoplayNextEnabled)
+    // The four playback settings + their rememberUpdatedState mirrors (8 locals) → PlayerBookkeeping:
+    // a holder's properties are always current inside a long-lived lambda, so the mirrors are gone.
 
     val player = remember { RaviloPlayer() }
 
@@ -348,7 +375,12 @@ fun PlayerScreen(
     val castController = LocalCast.current
     val castHandoff = LocalCastHandoff.current
     val castLink = castController?.sender?.link?.collectAsState()?.value ?: CastLinkState.NONE
-    var castLinkSeen by remember { mutableStateOf(castLink) }
+    // R258/scripts/check-player-dex.sh — this function's R8 dex method sat at 257–266 registers, on ART's
+    // 256-register cliff (VerifyError on open, release build only, 2026-09-06 and 2026-09-17). Sixteen
+    // bookkeeping states now live in ONE holder instead of sixteen locals. Add new state THERE (or in its
+    // own @Composable), never as another `var … by remember` in this body.
+    val bk = remember { PlayerBookkeeping(castLink) }
+
 
     // Playback state — polled every 500 ms from the player
     var positionMs   by remember { mutableLongStateOf(0L) }
@@ -374,8 +406,6 @@ fun PlayerScreen(
     // instant hasRenderedFirstFrame's false→true transition is observed. measuredStartupMs is what
     // armSession hands PlayerStore as this session's startupMsProvider, read once at stop time; null is
     // an honest "never measured" (still buffering, or the session ended some other way), not an error.
-    var negotiationStartMs by remember { mutableStateOf<Long?>(null) }
-    var measuredStartupMs  by remember { mutableStateOf<Long?>(null) }
 
     // Chrome visibility — bumping chromeRevision restarts the auto-hide timer
     var chromeVisible  by remember { mutableStateOf(true) }
@@ -390,21 +420,18 @@ fun PlayerScreen(
     // visibility beyond that rides the SAME chrome show/hide seam (chromeVisible) rather than a separate
     // latch, so it reappears on wake() and can hide again with chrome — see skipIntroPillVisible below.
     // skipIntroCountdownDone guards against re-arming a second countdown for the same intro window.
-    var skipIntroCountingDown by remember { mutableStateOf(false) }
-    var skipIntroCountdownDone by remember { mutableStateOf(false) }
-    var skipIntroCountdownSecs by remember { mutableIntStateOf(0) }
 
     // Focus
     var focus    by remember { mutableStateOf(PlFocus.PLAY) }
 
     // Scrubbing
-    var scrubbing by remember { mutableStateOf(false) }
+    // R258 — a scrub preview belongs to the episode it was started on: keyed on itemId, so an episode
+    // switch (rail / Next / auto-advance) drops a pending preview instead of freezing the elapsed label
+    // at the OLD episode's target and drawing its tick on the new bar (stue TV, 2026-09-17).
+    // Deliberately a remember KEY and not a LaunchedEffect: this function sits at ART's 256-register
+    // cliff in the R8 build (scripts/check-player-dex.sh) — the effect form crashed the release player.
+    var scrubbing by remember(itemId) { mutableStateOf(false) }
     var scrubPos  by remember { mutableLongStateOf(0L) }
-    // R258 — a scrub preview belongs to the episode it was started on. Seen on the stue TV 2026-09-17:
-    // switching episodes (rail / Next / auto-advance) with a preview pending left `scrubbing` true, so the
-    // elapsed label froze at the OLD episode's target ("9:02") and its tick sat on the new episode's bar
-    // while the real thumb advanced underneath.
-    LaunchedEffect(itemId) { scrubbing = false }
 
     // Track picker
     var pickerOpen by remember { mutableStateOf(false) }
@@ -419,14 +446,10 @@ fun PlayerScreen(
     // R181 — which itemId the layered resolver has already run for; compared against currentItemId
     // (rememberUpdatedState) each poll tick so it re-arms exactly once per episode, same mechanism as
     // loadedForItemId above, and never re-fires mid-playback or fights a later manual pick.
-    var resolvedForItemId by remember { mutableStateOf<String?>(null) }
     // R246 (FR-R246-5) — the track set the last resolve ran against, so a set that GROWS later (HLS
     // renditions or a sideload arriving after prepare) is resolved once more — only to fill in an
     // `Off` that resolved before the subtitle group existed (open question 2's recommendation), and
     // never over a manual pick.
-    var resolvedTrackSig by remember { mutableStateOf<String?>(null) }
-    var resolvedTrackCount by remember { mutableIntStateOf(0) }
-    var manualPickSinceResolve by remember { mutableStateOf(false) }
 
     // Next-up card
     var nextUpVisible by remember { mutableStateOf(false) }
@@ -446,7 +469,6 @@ fun PlayerScreen(
     // restarting it. Tracks which itemId the player is actually loaded for; the poll loop's near-end/
     // isEnded checks are gated on this matching the current itemId so a stale outgoing stream can never
     // trigger next-up again.
-    var loadedForItemId by remember { mutableStateOf<String?>(null) }
     // R184 (FR-RV-POS1-2) — which itemId positionMs/durationMs actually reflect right now. Bug fix: a
     // lifecycle stop (PlayerLifecycleEffect's onBackground below) landing in the gap between advanceNext()
     // swapping to the next episode's PlayerStore and that episode's stream actually loading could read
@@ -454,7 +476,6 @@ fun PlayerScreen(
     // stop position — Jellyfin then resumed the new episode minutes in on the very next play. Mirrors
     // loadedForItemId above but tracked separately since it must stay valid even when this screen never
     // reaches a poll tick before onBackground fires.
-    var positionKnownForItemId by remember { mutableStateOf<String?>(null) }
     // Bug fix (auto-advance retry loop): which itemId we have already asked the host to advance away
     // from. advanceNext() only *requests* a navigation — if the host can't act on it (no episode list,
     // an id that isn't in it, or a target equal to the current item) nothing changes, and the poll loop
@@ -462,15 +483,12 @@ fun PlayerScreen(
     // re-requesting the same advance forever ("auto play next doesn't work and ends in a forever loop").
     // One attempt per episode: the re-arm checks are gated on this, and a request that never takes
     // effect leaves the player instead (see the ADVANCE_TIMEOUT_MS effect below).
-    var advanceRequestedForItemId by remember { mutableStateOf<String?>(null) }
 
     // Episode rail
     var epRailOpen  by remember { mutableStateOf(false) }
     var focusedEpIdx by remember { mutableIntStateOf(currentEpIndex) }
 
     // Pause flash
-    var pauseFlash by remember { mutableStateOf(false) }
-    var pauseFlashIsPlay by remember { mutableStateOf(true) }
 
     // R56: encode subs (PGS) from the server-pushed ticket, appended after native tracks in the picker.
     val encodeSubTracks: List<PlayerSubtitleTrack> = remember(sessionState) {
@@ -553,12 +571,12 @@ fun PlayerScreen(
     fun togglePlay() {
         if (isPlaying) {
             player.pause(); isPlaying = false
-            pauseFlashIsPlay = false
+            bk.pauseFlashIsPlay = false
         } else {
             player.play(); isPlaying = true
-            pauseFlashIsPlay = true
+            bk.pauseFlashIsPlay = true
         }
-        pauseFlash = true
+        bk.pauseFlash = true
         wake()
     }
 
@@ -576,7 +594,7 @@ fun PlayerScreen(
         if (durationMs > 0 && positionMs >= durationMs * 90 / 100) store.markWatched(itemId)
         // Latched BEFORE the call: see advanceRequestedForItemId — exactly one advance attempt per
         // episode, never a retry loop.
-        advanceRequestedForItemId = itemId
+        bk.advanceRequestedForItemId = itemId
         onNavigateToEpisode.invoke(nextId)
     }
 
@@ -615,8 +633,8 @@ fun PlayerScreen(
         val end = currentSegments.introEndMs ?: return
         player.seekTo(end)
         positionMs = end
-        skipIntroCountingDown = false
-        skipIntroCountdownDone = true
+        bk.skipIntroCountingDown = false
+        bk.skipIntroCountdownDone = true
         if (focus == PlFocus.SKIP_INTRO) focus = PlFocus.PLAY
         wake()
     }
@@ -680,9 +698,9 @@ fun PlayerScreen(
         selectedAudio = result.audioIndex
         player.selectSubtitleTrack(result.subIndex)
         selectedSub = result.subIndex
-        resolvedTrackSig = trackSetSignature(tickAudio, tickSubs)
-        resolvedTrackCount = tickAudio.size + tickSubs.size
-        manualPickSinceResolve = false
+        bk.resolvedTrackSig = trackSetSignature(tickAudio, tickSubs)
+        bk.resolvedTrackCount = tickAudio.size + tickSubs.size
+        bk.manualPickSinceResolve = false
     }
 
     // R195 §3 — applies whichever version is currently targeted (level-1's implicit single version,
@@ -691,7 +709,7 @@ fun PlayerScreen(
     fun choosePick() {
         val group = pickerGroups.getOrNull(pickerIdx) ?: return
         val version = group.versions.getOrNull(if (pickerLevel == 1) pickerVersionIdx else 0) ?: return
-        manualPickSinceResolve = true   // R246 (FR-R246-5) — a grown track set never overrides a manual pick
+        bk.manualPickSinceResolve = true   // R246 (FR-R246-5) — a grown track set never overrides a manual pick
         if (pickerTab == 0) {
             selectedAudio = version.flatIndex
             player.selectAudioTrack(version.flatIndex)
@@ -773,14 +791,14 @@ fun PlayerScreen(
         // startSession below is called, whether this is the episode's initial start or a background/
         // foreground re-arm (both reload the player — see RaviloPlayerAndroid.load()'s own
         // _hasRenderedFirstFrame reset), so both get timed the same way from this one chokepoint.
-        negotiationStartMs = kotlin.time.Clock.System.now().toEpochMilliseconds()
+        bk.negotiationStartMs = kotlin.time.Clock.System.now().toEpochMilliseconds()
         store.startSession(
             id,
             positionProvider = { positionMs },
             isPausedProvider = { !isPlaying },
             durationProvider = { durationMs },
             qoeSnapshotProvider = { player.qoeSnapshot() },  // R216 (FR-R216-4)
-            startupMsProvider = { measuredStartupMs },
+            startupMsProvider = { bk.measuredStartupMs },
         )
     }
 
@@ -815,18 +833,18 @@ fun PlayerScreen(
         // starts loading, rather than waiting for the (already-gated) poll loop to notice.
         nextUpDismissed = false  // R111: each episode (replaceTop keeps this composable) starts fresh
         nextUpVisible = false
-        countdown = currentSkipSecs
+        countdown = bk.skipSecs
         // R184 (FR-RV-POS1-1): positionMs/durationMs are screen-scoped, not per-episode (this composable
         // is reused across the whole binge — see loadedForItemId's comment above) — reset them the instant
         // a new episode starts loading so nothing can read the outgoing episode's near-the-end values
         // during the round-trip before its own stream is loaded.
         positionMs = 0L
         durationMs = 0L
-        positionKnownForItemId = null
+        bk.positionKnownForItemId = null
         hasRenderedFirstFrame = false  // R218 — the new episode's own cold start, not the outgoing one's
         isBuffering = false
         isSeeking = false
-        measuredStartupMs = null  // R185/R222 — a stale prior episode's number must never carry over
+        bk.measuredStartupMs = null  // R185/R222 — a stale prior episode's number must never carry over
         armSession(itemId)
     }
 
@@ -835,10 +853,10 @@ fun PlayerScreen(
     // values on failure — never blocks or breaks playback.
     LaunchedEffect(itemId) {
         store.getConfig()?.let { cfg ->
-            skipIntroMode = cfg.skipIntro
-            skipCreditsMode = cfg.skipCredits
-            skipSecs = cfg.skipSecs
-            autoplayNextEnabled = cfg.autoplayNext
+            bk.skipIntroMode = cfg.skipIntro
+            bk.skipCreditsMode = cfg.skipCredits
+            bk.skipSecs = cfg.skipSecs
+            bk.autoplayNextEnabled = cfg.autoplayNext
         }
     }
 
@@ -857,7 +875,7 @@ fun PlayerScreen(
         player.load(streamUrl, s.ticket.startPositionMs, s.ticket.subtitles, s.ticket.audio, title = itemTitle, subtitle = itemKicker, artworkUrl = artworkUrl)
         player.play()
         isPlaying = true
-        loadedForItemId = itemId   // Bug fix: see loadedForItemId's declaration comment above.
+        bk.loadedForItemId = itemId   // Bug fix: see loadedForItemId's declaration comment above.
         wake()
     }
 
@@ -874,7 +892,7 @@ fun PlayerScreen(
                 // loadedForItemId's declaration comment above. Uses currentItemId (rememberUpdatedState),
                 // not the raw itemId parameter — see that declaration's comment for why this loop
                 // specifically needs the live reference.
-                val playerLoadedForCurrentItem = loadedForItemId == currentItemId
+                val playerLoadedForCurrentItem = bk.loadedForItemId == currentItemId
 
                 // R184 (FR-RV-POS1-1/2): same staleness this loop already guards next-up/end-of-stream
                 // checks against also applied to positionMs/durationMs themselves — they were assigned
@@ -885,7 +903,7 @@ fun PlayerScreen(
                 if (playerLoadedForCurrentItem) {
                     positionMs = player.positionMs
                     durationMs = player.durationMs
-                    positionKnownForItemId = currentItemId
+                    bk.positionKnownForItemId = currentItemId
                     // R218 — same staleness guard as positionMs/durationMs above: only read the live
                     // player's signal once it is actually loaded for THIS item, or a stale
                     // hasRenderedFirstFrame=true from the outgoing episode could suppress moment B here.
@@ -894,10 +912,10 @@ fun PlayerScreen(
                     // was timing. Consumed (negotiationStartMs cleared) so a later re-arm's own transition
                     // is never mistaken for this one, and a session that never renders never reports.
                     if (renderedNow && !hasRenderedFirstFrame) {
-                        negotiationStartMs?.let { start ->
-                            measuredStartupMs = kotlin.time.Clock.System.now().toEpochMilliseconds() - start
+                        bk.negotiationStartMs?.let { start ->
+                            bk.measuredStartupMs = kotlin.time.Clock.System.now().toEpochMilliseconds() - start
                         }
-                        negotiationStartMs = null
+                        bk.negotiationStartMs = null
                     }
                     hasRenderedFirstFrame = renderedNow
                     isBuffering = player.isBuffering
@@ -917,14 +935,14 @@ fun PlayerScreen(
                 // never against groups composed earlier.
                 val tickAudio = audioTracks
                 val tickSubs = subtitleTracks
-                if (playerLoadedForCurrentItem && resolvedForItemId != currentItemId && tickAudio.isNotEmpty()) {
+                if (playerLoadedForCurrentItem && bk.resolvedForItemId != currentItemId && tickAudio.isNotEmpty()) {
                     resolveTrackSelection(tickAudio, tickSubs)
-                    resolvedForItemId = currentItemId
-                } else if (playerLoadedForCurrentItem && resolvedForItemId == currentItemId && !manualPickSinceResolve && selectedSub == -1) {
+                    bk.resolvedForItemId = currentItemId
+                } else if (playerLoadedForCurrentItem && bk.resolvedForItemId == currentItemId && !bk.manualPickSinceResolve && selectedSub == -1) {
                     // R246 (FR-R246-5) — the set grew after the first resolve: run once more, keyed on
                     // the set's signature, only while nothing is selected that a grown set could change.
                     val sig = trackSetSignature(tickAudio, tickSubs)
-                    if (resolvedTrackSig != null && sig != resolvedTrackSig && tickSubs.size + tickAudio.size > resolvedTrackCount) {
+                    if (bk.resolvedTrackSig != null && sig != bk.resolvedTrackSig && tickSubs.size + tickAudio.size > bk.resolvedTrackCount) {
                         resolveTrackSelection(tickAudio, tickSubs)
                     }
                 }
@@ -943,14 +961,14 @@ fun PlayerScreen(
                 }
                 val creditsReached = if (creditsStart != null) positionMs >= creditsStart
                     else durationMs > 0 && (durationMs - positionMs) in 1..NEXTUP_AT_MS
-                val advanceAlreadyRequested = advanceRequestedForItemId == currentItemId
+                val advanceAlreadyRequested = bk.advanceRequestedForItemId == currentItemId
                 // R230 (FR-R230-1) — Skip Credits: Off means no mid-playback interruption at all, so this
                 // early trigger (segment creditsStartMs, or the NEXTUP_AT_MS heuristic for an unscanned
                 // title) is suppressed entirely while Off. The real end of file (below) becomes the only
                 // trigger point in that mode.
                 if (playerLoadedForCurrentItem && creditsReached && !advanceAlreadyRequested &&
                     !nextUpVisible && !nextUpDismissed && !player.isEnded &&
-                    currentSkipCreditsMode != dev.jellystructure.shared.tv.SkipMode.OFF) {
+                    bk.skipCreditsMode != dev.jellystructure.shared.tv.SkipMode.OFF) {
                     nextUpVisible = true
                     nuFocus = NuFocus.PLAY
                 }
@@ -970,8 +988,8 @@ fun PlayerScreen(
                 // uses, with no card ever shown.
                 if (playerLoadedForCurrentItem && player.isEnded && !advanceAlreadyRequested &&
                     !nextUpVisible && !nextUpDismissed) {
-                    if (currentSkipCreditsMode == dev.jellystructure.shared.tv.SkipMode.OFF) {
-                        if (resolvedNextEpisodeId != null && currentAutoplayNext) {
+                    if (bk.skipCreditsMode == dev.jellystructure.shared.tv.SkipMode.OFF) {
+                        if (resolvedNextEpisodeId != null && bk.autoplayNextEnabled) {
                             nextUpVisible = true; nuFocus = NuFocus.PLAY
                         } else {
                             skipCredits()
@@ -991,13 +1009,13 @@ fun PlayerScreen(
                 val iEnd = currentSegments.introEndMs
                 val insideIntro = playerLoadedForCurrentItem && iStart != null && iEnd != null && iEnd > iStart &&
                     positionMs in iStart until iEnd
-                if (insideIntro && currentSkipIntroMode != dev.jellystructure.shared.tv.SkipMode.OFF &&
-                    !skipIntroCountingDown && !skipIntroCountdownDone) {
-                    skipIntroCountingDown = true
+                if (insideIntro && bk.skipIntroMode != dev.jellystructure.shared.tv.SkipMode.OFF &&
+                    !bk.skipIntroCountingDown && !bk.skipIntroCountdownDone) {
+                    bk.skipIntroCountingDown = true
                 }
-                if (!insideIntro && (skipIntroCountingDown || skipIntroCountdownDone)) {
-                    skipIntroCountingDown = false
-                    skipIntroCountdownDone = false
+                if (!insideIntro && (bk.skipIntroCountingDown || bk.skipIntroCountdownDone)) {
+                    bk.skipIntroCountingDown = false
+                    bk.skipIntroCountdownDone = false
                     if (focus == PlFocus.SKIP_INTRO) focus = PlFocus.PLAY
                 }
             } catch (e: Throwable) {
@@ -1063,12 +1081,11 @@ fun PlayerScreen(
     }
     // R218 (FR-R218-3) — "a wait that passes 60 seconds is pathological... at that point Moment C dims
     // further and raises the centre spinner. The wording does NOT change." Stall only.
-    var stallDeepened by remember { mutableStateOf(false) }
     LaunchedEffect(displayedBufferMoment) {
-        stallDeepened = false
+        bk.stallDeepened = false
         if (displayedBufferMoment == PlBufferMoment.STALL) {
             delay(BUFFER_MOMENT_DEEPEN_MS)
-            stallDeepened = true
+            bk.stallDeepened = true
         }
     }
 
@@ -1081,8 +1098,8 @@ fun PlayerScreen(
     val skipIntroEnd = segments.introEndMs
     val insideIntroWindow = skipIntroStart != null && skipIntroEnd != null && skipIntroEnd > skipIntroStart &&
         positionMs in skipIntroStart until skipIntroEnd
-    val skipIntroPillVisible = insideIntroWindow && skipIntroMode != dev.jellystructure.shared.tv.SkipMode.OFF &&
-        (skipIntroCountingDown || chromeVisible) && !pickerOpen && !nextUpVisible && !epRailOpen
+    val skipIntroPillVisible = insideIntroWindow && bk.skipIntroMode != dev.jellystructure.shared.tv.SkipMode.OFF &&
+        (bk.skipIntroCountingDown || chromeVisible) && !pickerOpen && !nextUpVisible && !epRailOpen
 
     // Mirrors the design prototype: the pill grabs focus the instant it appears, and releases it back to
     // PLAY the instant it's gone — so a later Select never dispatches on a control that's no longer shown.
@@ -1099,7 +1116,7 @@ fun PlayerScreen(
     // and the plain Skip-Credits exit are both meaningless once already at the real end of the file, so
     // neither variant is reachable while Off regardless of what segments/next-episode data says.
     val creditsCardMode = when {
-        currentSkipCreditsMode == dev.jellystructure.shared.tv.SkipMode.OFF -> CreditsCardMode.NEXT_EPISODE
+        bk.skipCreditsMode == dev.jellystructure.shared.tv.SkipMode.OFF -> CreditsCardMode.NEXT_EPISODE
         segments.stinger != null -> CreditsCardMode.STINGER
         resolvedNextEpisodeId != null -> CreditsCardMode.NEXT_EPISODE
         else -> CreditsCardMode.SKIP_CREDITS
@@ -1145,8 +1162,8 @@ fun PlayerScreen(
     // the stinger case pauses auto-skip entirely (no countdown) and skip-credits simply waits for input.
     LaunchedEffect(nextUpVisible) {
         if (!nextUpVisible || creditsCardMode != CreditsCardMode.NEXT_EPISODE) return@LaunchedEffect
-        countdown = currentSkipSecs
-        repeat(currentSkipSecs) {
+        countdown = bk.skipSecs
+        repeat(bk.skipSecs) {
             delay(1_000)
             countdown--
         }
@@ -1154,7 +1171,7 @@ fun PlayerScreen(
         // a manual pick (Select on the PLAY button, the transport's Next Episode control, or MediaKey.NEXT)
         // still calls advanceNext() directly through their own existing call sites, untouched. With
         // autoplayNext off the card simply sits at 0 waiting for one of those instead of navigating itself.
-        if (nextUpVisible && currentAutoplayNext) advanceNext()
+        if (nextUpVisible && bk.autoplayNextEnabled) advanceNext()
     }
 
     // Bug fix (auto-advance retry loop): an advance we requested but that never took effect used to be
@@ -1162,8 +1179,8 @@ fun PlayerScreen(
     // already finished playing. A successful advance swaps itemId within a frame, so if we are still on
     // the same item after this grace period the navigation genuinely failed: leave the player (Back is
     // always meaningful — see the Ravilo constitution) instead of retrying or freezing on the last frame.
-    LaunchedEffect(advanceRequestedForItemId) {
-        val requested = advanceRequestedForItemId ?: return@LaunchedEffect
+    LaunchedEffect(bk.advanceRequestedForItemId) {
+        val requested = bk.advanceRequestedForItemId ?: return@LaunchedEffect
         delay(ADVANCE_TIMEOUT_MS)
         if (currentItemId == requested) onBack()
     }
@@ -1172,25 +1189,25 @@ fun PlayerScreen(
     // INITIAL visibility only (see skipIntroPillVisible below, which takes over via chromeVisible once
     // this elapses) — Auto mode additionally seeks past the intro once the countdown runs out, unless
     // the viewer already pressed OK sooner (skipIntro() sets skipIntroCountingDown = false itself).
-    LaunchedEffect(skipIntroCountingDown) {
-        if (!skipIntroCountingDown) return@LaunchedEffect
-        skipIntroCountdownSecs = currentSkipSecs
-        repeat(currentSkipSecs) {
+    LaunchedEffect(bk.skipIntroCountingDown) {
+        if (!bk.skipIntroCountingDown) return@LaunchedEffect
+        bk.skipIntroCountdownSecs = bk.skipSecs
+        repeat(bk.skipSecs) {
             delay(1_000)
-            skipIntroCountdownSecs--
+            bk.skipIntroCountdownSecs--
         }
         // Cancelled (not reaching here) if skipIntro() already flipped skipIntroCountingDown to false —
         // same cancel-on-key-change idiom the existing next-up countdown effect above relies on.
-        skipIntroCountingDown = false
-        skipIntroCountdownDone = true
-        if (currentSkipIntroMode == dev.jellystructure.shared.tv.SkipMode.AUTO) skipIntro()
+        bk.skipIntroCountingDown = false
+        bk.skipIntroCountdownDone = true
+        if (bk.skipIntroMode == dev.jellystructure.shared.tv.SkipMode.AUTO) skipIntro()
     }
 
     // Pause-flash auto-dismiss
-    LaunchedEffect(pauseFlash) {
-        if (!pauseFlash) return@LaunchedEffect
+    LaunchedEffect(bk.pauseFlash) {
+        if (!bk.pauseFlash) return@LaunchedEffect
         delay(550)
-        pauseFlash = false
+        bk.pauseFlash = false
     }
 
     // Pause/resume when activity goes to background (Home button) and returns. Bug fix: also END the
@@ -1206,7 +1223,7 @@ fun PlayerScreen(
         // before the poll loop's first tick for the new episode), never report a position that isn't
         // known to belong to the item store.stopSession is about to close out.
         onBackground = {
-            val positionIsFresh = positionKnownForItemId == currentItemId
+            val positionIsFresh = bk.positionKnownForItemId == currentItemId
             store.stopSession(if (positionIsFresh) positionMs else 0L, if (positionIsFresh) durationMs else 0L)
         },
         onForeground = { armSession(currentItemId) },
@@ -1219,8 +1236,8 @@ fun PlayerScreen(
     // R245 (FR-R245-4) — a NEW connection while this player is up is the hand-off; a session that was
     // already connected when the player opened is not (the app routes play to the remote in that case).
     LaunchedEffect(castLink) {
-        val was = castLinkSeen
-        castLinkSeen = castLink
+        val was = bk.castLinkSeen
+        bk.castLinkSeen = castLink
         if (handset && castLink == CastLinkState.CONNECTED && was != CastLinkState.CONNECTED && castHandoff != null) {
             player.pause(); isPlaying = false
             castHandoff(positionMs)
@@ -1481,7 +1498,7 @@ fun PlayerScreen(
         val dimAlpha = when {
             // R218 (FR-R218-3) — "Moment C dims further... because the chrome alone stops being enough
             // of a signal" past the 60s deepen threshold; ~38% before that, per the chosen direction.
-            displayedBufferMoment == PlBufferMoment.STALL && stallDeepened -> 0.55f
+            displayedBufferMoment == PlBufferMoment.STALL && bk.stallDeepened -> 0.55f
             displayedBufferMoment == PlBufferMoment.STALL                 -> 0.38f
             chromeVisible && !isPlaying -> 0.50f
             chromeVisible               -> 0.34f
@@ -1565,7 +1582,7 @@ fun PlayerScreen(
 
         // R218 moment C (deepened, 60s+): the chrome-up spinner (PlayerChrome's play button, forced
         // visible below) stops being enough of a signal on its own — raise a second, centre spinner too.
-        if (displayedBufferMoment == PlBufferMoment.STALL && stallDeepened) {
+        if (displayedBufferMoment == PlBufferMoment.STALL && bk.stallDeepened) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { BufferingSpinner(colors) }
         }
 
@@ -1630,7 +1647,7 @@ fun PlayerScreen(
         // ── Center pause flash ────────────────────────────────────────────────
         // R90: scale-bounce matches the CSS plflash spec — pop in from 0.9→1.0, expand out to 1.4.
         AnimatedVisibility(
-            pauseFlash,
+            bk.pauseFlash,
             enter = scaleIn(initialScale = RaviloMotion.PAUSE_FLASH_FROM_SCALE, animationSpec = tween(RaviloMotion.PAUSE_FLASH_IN_MS)) +
                     fadeIn(tween(RaviloMotion.PAUSE_FLASH_IN_MS)),
             exit  = scaleOut(targetScale = RaviloMotion.PAUSE_FLASH_TO_SCALE, animationSpec = tween(RaviloMotion.PAUSE_FLASH_OUT_MS)) +
@@ -1646,7 +1663,7 @@ fun PlayerScreen(
                     contentAlignment = Alignment.Center,
                 ) {
                     Canvas(modifier = Modifier.size(28.dp)) {
-                        if (pauseFlashIsPlay) {
+                        if (bk.pauseFlashIsPlay) {
                             val path = Path().apply {
                                 moveTo(size.width * 0.15f, 0f)
                                 lineTo(size.width, size.height / 2)
@@ -1784,8 +1801,8 @@ fun PlayerScreen(
         ) {
             SkipIntroPill(
                 colors = colors,
-                countdown = skipIntroCountdownSecs,
-                totalSecs = skipSecs,
+                countdown = bk.skipIntroCountdownSecs,
+                totalSecs = bk.skipSecs,
                 focused = focus == PlFocus.SKIP_INTRO,
                 onTap = if (handset) ({ skipIntro() }) else null,
             )
@@ -1880,7 +1897,7 @@ fun PlayerScreen(
                 // so the next episode's is one lookup away rather than needing new plumbing end-to-end.
                 nextEpStillUrls = episodes?.getOrNull(currentEpIndex + 1)?.stillUrls ?: emptyList(),
                 countdown      = countdown,
-                totalSecs      = skipSecs,
+                totalSecs      = bk.skipSecs,
                 nuFocus        = nuFocus,
                 handsetFull    = handset && portrait,
                 onPrimaryTap   = if (handset) ({

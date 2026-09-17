@@ -24,6 +24,13 @@ A later OK would also have *committed* it: a seek to A's position inside B.
 
 - **FR-R258-1** — a change of `itemId` cancels any pending scrub preview (`scrubbing = false`); it is
   never committed against the new item.
+- **FR-R258-1a (added after it crashed the TV, 2026-09-17)** — implemented as a `remember(itemId)` KEY on
+  `scrubbing`, **not** as an effect. The first form, `LaunchedEffect(itemId) { scrubbing = false }`, was one
+  line too many: `PlayerScreen`'s R8 dex method went from 257 to **266 registers**, ART's verifier rejected
+  the class, and the sideloaded release build crashed the living-room TV the moment *Resume* was pressed
+  (the 2026-09-06 failure again). Fixed the same evening: the keyed remember, plus twenty-four bookkeeping
+  locals moved into one `PlayerBookkeeping` holder (**236** registers), plus the two guards of phase **231**
+  that now fail CI on this — both proven against the crashing commit.
 - **FR-R258-2** — nothing else about the preview model changes (R251's reveal-only first key, the
   Down-commits rule, the handset's drag).
 
