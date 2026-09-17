@@ -13,6 +13,7 @@
 
   /* ---- default skin: AURORA (Jellystructure DNA) ---- */
   --bg: #0a0c13;
+  --bg-rgb: 10,12,19; /* R255 — the page colour as a triple, so a gradient can take an alpha of it */
   --bg-2: #0e111b;
   --ink: #f3f4fb;
   --ink-soft: #aeb4cb;
@@ -35,6 +36,7 @@
 
 [data-skin="midnight"] {
   --bg: #04101a;
+  --bg-rgb: 4,16,26; /* R255 — the page colour as a triple, so a gradient can take an alpha of it */
   --bg-2: #07151f;
   --ink: #eafcff;
   --ink-soft: #9fc2cf;
@@ -54,6 +56,7 @@
 
 [data-skin="noir"] {
   --bg: #080807;
+  --bg-rgb: 8,8,7; /* R255 — the page colour as a triple, so a gradient can take an alpha of it */
   --bg-2: #0d0c0a;
   --ink: #f7f3ea;
   --ink-soft: #c7bfae;
@@ -1046,6 +1049,15 @@ body.fd-line #chrome { bottom: 122px; }
    teleported. Its content lives in a fixed-width child: text must not reflow while the
    frame around it is still growing. The row band follows the same clock. */
 .jpanel { flex: none; width: 820px; align-self: flex-start; overflow: hidden; animation: jp-open .22s var(--ease); }
+/* R255 — the mockup's first panel scrim: the reading gradient, .94 of the page colour reached over 40 %
+   of the panel's width, feathered 16px top and bottom so no straight edge sits on the picture. The panel
+   only exists while a row is open, which is exactly when the backdrop is up (openRow → showBg). */
+.jpanel { position: relative; isolation: isolate; }
+.jpanel::before { content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none;
+  background: linear-gradient(90deg, rgba(var(--bg-rgb),0) 0%, rgba(var(--bg-rgb),.94) 40%, rgba(var(--bg-rgb),.94) 100%);
+  -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 16px, #000 calc(100% - 16px), transparent 100%);
+          mask-image: linear-gradient(180deg, transparent 0, #000 16px, #000 calc(100% - 16px), transparent 100%); }
+[data-skin="noir"] .jpanel::before { background: linear-gradient(90deg, rgba(var(--bg-rgb),0) 0%, rgba(var(--bg-rgb),.96) 40%, rgba(var(--bg-rgb),.96) 100%); }
 .jp-body { width: 814px; padding: 2px 0 0 6px; animation: jp-in .26s var(--ease); }
 @keyframes jp-open { from { width: 0; } to { width: 820px; } }
 @keyframes jp-in { from { opacity: 0; transform: translateX(-12px); } to { opacity: 1; transform: none; } }
@@ -1102,9 +1114,12 @@ body.fd-line #chrome { bottom: 122px; }
    Placeholder contrast only — see the spec's open question on device verification.
    Noir goes darker still (less colour, not less picture: this is the title's own
    backdrop, not an accent tint, so the image itself is unchanged). */
+/* R255 (FR-R255-2/-7) — ONE stop table, two renderers: these numbers are FocusDetailScrims.kt's
+   (ravilo-ui). In the PAGE's colour, never black: head .70 → mid .22 (the picture is seen) → floor
+   .55 at 75 % → the page itself at 100 %. Noir: +.10 on every stop. Change one file, change the other. */
 .jbg-scrim { position: absolute; inset: 0;
-  background: linear-gradient(180deg, rgba(0,0,0,.62) 0%, rgba(0,0,0,.36) 20%, rgba(0,0,0,.46) 62%, rgba(0,0,0,.6) 100%); }
-[data-skin="noir"] .jbg-scrim { background: linear-gradient(180deg, rgba(0,0,0,.74) 0%, rgba(0,0,0,.48) 20%, rgba(0,0,0,.56) 62%, rgba(0,0,0,.72) 100%); }
+  background: linear-gradient(180deg, rgba(var(--bg-rgb),.70) 0%, rgba(var(--bg-rgb),.22) 18%, rgba(var(--bg-rgb),.22) 45%, rgba(var(--bg-rgb),.55) 75%, rgba(var(--bg-rgb),1) 100%); }
+[data-skin="noir"] .jbg-scrim { background: linear-gradient(180deg, rgba(var(--bg-rgb),.80) 0%, rgba(var(--bg-rgb),.32) 18%, rgba(var(--bg-rgb),.32) 45%, rgba(var(--bg-rgb),.65) 75%, rgba(var(--bg-rgb),1) 100%); }
 
 
 

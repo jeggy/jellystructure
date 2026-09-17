@@ -25,7 +25,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.font.FontStyle
@@ -119,15 +121,35 @@ fun FocusDetailPanel(ui: FocusDetailUi, visible: Boolean, width: Dp, modifier: M
         // clears 3:1 from ~0.73. Noir goes deeper still (R242 FR-R242-7's precedent). The picture stays
         // untouched outside the panel — R242's point.
         val noir = LocalRaviloSkin.current == Skin.NOIR
-        val panelScrim = remember(colors.background, noir) {
-            val a = if (noir) 0.96f else 0.94f
-            Brush.horizontalGradient(
-                0.0f to colors.background.copy(alpha = 0f),
-                0.10f to colors.background.copy(alpha = a),
-                1.0f to colors.background.copy(alpha = a),
+        // R255 (FR-R255-2) — R250's arithmetic (0.94) stands; its SHAPE was a box: 10 % of feather, then an
+        // opaque rectangle with straight top and bottom edges on the picture. Now feathered over 40 % of
+        // the width and 16 dp at the top and bottom (a vertical mask, DstIn, in its own offscreen layer so
+        // the mask never touches the text). Stops: FocusDetailScrims.
+        val readingAlpha = FocusDetailScrims.readingAlpha(noir)
+        val bg = colors.background
+        val edgePx = with(androidx.compose.ui.platform.LocalDensity.current) { FocusDetailScrims.READING_EDGE_FEATHER_DP.dp.toPx() }
+        // The Box wraps the Row (which keeps R250's exact sizing); the scrim only ever matches it.
+        Box {
+            Box(
+                Modifier.matchParentSize()
+                    .graphicsLayer { compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Offscreen }
+                    .drawWithCache {
+                        val reading = Brush.horizontalGradient(
+                            0f to bg.copy(alpha = 0f),
+                            FocusDetailScrims.READING_FEATHER_FRACTION to bg.copy(alpha = readingAlpha),
+                            1f to bg.copy(alpha = readingAlpha),
+                        )
+                        val e = if (size.height > 0f) (edgePx / size.height).coerceIn(0f, 0.5f) else 0f
+                        val mask = Brush.verticalGradient(
+                            0f to Color.Transparent, e to Color.Black, 1f - e to Color.Black, 1f to Color.Transparent,
+                        )
+                        onDrawBehind {
+                            drawRect(reading)
+                            drawRect(mask, blendMode = androidx.compose.ui.graphics.BlendMode.DstIn)
+                        }
+                    },
             )
-        }
-        Row(modifier = Modifier.width(width).fillMaxHeight().background(panelScrim).padding(start = 20.dp, top = 4.dp, end = 12.dp)) {
+        Row(modifier = Modifier.width(width).fillMaxHeight().padding(start = 20.dp, top = 4.dp, end = 12.dp)) {
             Column {
                 Text(
                     text = ui.card.title,
@@ -197,6 +219,7 @@ fun FocusDetailPanel(ui: FocusDetailUi, visible: Boolean, width: Dp, modifier: M
                 }
             }
         }
+        }  // R255 — the scrim+content Box
     }
 }
 

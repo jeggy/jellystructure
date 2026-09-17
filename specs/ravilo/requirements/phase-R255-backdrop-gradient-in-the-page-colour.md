@@ -9,7 +9,7 @@
 
 ## Status
 
-`Planned` — written 2026-09-17, not dev-reviewed, not built. Client (`ravilo-ui`) plus the design
+`⚠ Partial` 2026-09-17 — **coded at the starting stops, not measured.** `FocusDetailScrims.kt` is the one stop table (FR-R255-7); `FocusDetailBackdrop.kt` draws the head/mid/floor gradient, `FocusDetailPanel.kt` the reading gradient (40 % feather + a 16 dp top/bottom DstIn mask in its own offscreen layer, so the mask never touches the text); `ravilo.css` carries the same numbers via a new per-skin `--bg-rgb` and gains the mockup's first panel scrim. Android + Wasm compile, 126 unit tests green, both CSS fences green. **FR-R255-6 (the stue-TV measurement, R250-7's debt included) is NOT done** — the TV was in use; it stays `Partial` until the owner schedules that pass and the stops are corrected from pixels. Was `Planned` — written 2026-09-17, not dev-reviewed, not built. Client (`ravilo-ui`) plus the design
 mockup (`design/ravilo/ravilo.css`); no backend, payload or config change. Supersedes the scrim
 *numbers* of R242 FR-R242-7 and R250 FR-R250-1/-2 and takes over R250's still-open FR-R250-7 (the
 on-device contrast measurement was never done). Everything else in R242/R250 stands.
