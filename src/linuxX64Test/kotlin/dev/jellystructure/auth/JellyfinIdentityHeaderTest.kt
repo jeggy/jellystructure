@@ -51,4 +51,14 @@ class JellyfinIdentityHeaderTest {
         DeviceIdentityRegistry.remember(device.copy(jellyfinUserToken = ""))
         assertNull(DeviceIdentityRegistry.identityFor(""), "a blank token is never a key")
     }
+
+    /** Phase 224 amendment — Jellyfin 10.11.11 answers 400 to AuthenticateByName without a Version, so a
+     *  client that reports no build could not sign in at all (and saw "Could not reach Jellyfin"). */
+    @Test
+    fun signingInAlwaysCarriesAVersion() {
+        val silent = jellyfinIdentityHeader(JellyfinDeviceIdentity("ravilo-old-u1", "Old TV", null), versionRequired = true)
+        assertTrue(silent.contains("Version=\"$UNKNOWN_CLIENT_VERSION\""), silent)
+        val reported = jellyfinIdentityHeader(JellyfinDeviceIdentity("ravilo-new-u1", "New TV", "1.23"), versionRequired = true)
+        assertTrue(reported.contains("Version=\"1.23\""), reported)
+    }
 }
