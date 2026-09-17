@@ -218,7 +218,7 @@ private fun HomeLoaded(
     // Read once per composition, not live-observed — the same tradeoff R216's link-state sampling
     // makes (a mid-session toggle is vanishingly rare; a ContentObserver for it isn't worth the seam).
     val reduceMotion = remember { systemPrefersReducedMotion() }
-    val effectiveFocusDetail = effectiveFocusDetailMode(feed.focusDetail, reduceMotion)
+    val effectiveFocusDetail = effectiveFocusDetailMode(feed.focusDetail, reduceMotion, dev.jellystructure.ravilo.ui.isTvPlatform)
     val lineActive = effectiveFocusDetail == "line"
     // FR-R240-13 — a config change re-runs the reveal rule for whichever tile is focused right now,
     // through the same path a real focus move takes (not merely "the next natural refetch").
@@ -450,7 +450,7 @@ private fun ContentRowItem(
 ) {
     // Compute variant here so urlResolver and Tile use the same value.
     val rowVariant = if (row.kind == RowKind.CONTINUE) TileVariant.LANDSCAPE else feed.tileShape.toTileVariant()
-    val effectiveFocusDetail = effectiveFocusDetailMode(feed.focusDetail, reduceMotion)
+    val effectiveFocusDetail = effectiveFocusDetailMode(feed.focusDetail, reduceMotion, dev.jellystructure.ravilo.ui.isTvPlatform)
     // J's panel takes whatever a grown tile of THIS row's variant leaves — see focusDetailPanelWidthFor.
     // Passed to StaticContentRow too so its scroll target and the panel it scrolls agree on one number.
     val panelWidth = focusDetailPanelWidthFor(rowVariant)

@@ -8,7 +8,7 @@
 
 ## Status
 
-`Planned` — written 2026-09-17 from the owner's direction and a trace of `main` the same day; not
+`✓ Built` 2026-09-17 (FR-R254-1/-6/-7: `effectiveFocusDetailMode(…, isTv)`, 8 tests, wasm card + mockup copy; Android + both Wasm targets compile; **not on a device** — FR-R254-4's phone acceptance is owed). Was `Planned` — written 2026-09-17 from the owner's direction and a trace of `main` the same day; not
 dev-reviewed, not built. Client-only plus one copy change in the jellystructure Ravilo config card
 (`src/wasmJsMain/.../RaviloConfig.kt`) and its design mirror (`design/app/ravilo-config.html`). No
 backend, DTO or config change — see FR-R254-2 for why the gate is deliberately *not* server-side.

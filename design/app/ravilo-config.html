@@ -303,7 +303,7 @@
         <div class="beh-row" style="border-top:1px solid var(--line);border-bottom:1px solid var(--line);align-items:center;">
           <div class="beh-main">
             <div class="beh-name">Open the focused row <span class="badge" style="margin-left:6px;">next gen</span></div>
-            <div class="beh-desc">The focused poster grows in place and the full description sits beside it, inside the row's own band, with the rest of the row continuing past it. <b>Supersedes the line</b> — it already states every fact the line does. It changes the row's height and its tiles' positions on every focus move, which is the reflow <b>invariant 11</b> exists to protect; a 2026-09-13 sweep-and-trace pass on the stue TV (46 real settled opens, 2.8-3.2% janky frames, 0 missed vsync) closed that question, so this now defaults <b>on</b>.</div>
+            <div class="beh-desc">The focused poster grows in place and the full description sits beside it, inside the row's own band, with the rest of the row continuing past it. <b>TVs only</b> — a phone or the web app shows the status line instead. <b>Supersedes the line</b> on a TV — it already states every fact the line does. It changes the row's height and its tiles' positions on every focus move, which is the reflow <b>invariant 11</b> exists to protect; a 2026-09-13 sweep-and-trace pass on the stue TV (46 real settled opens, 2.8-3.2% janky frames, 0 missed vsync) closed that question, so this now defaults <b>on</b>.</div>
           </div>
           <div class="beh-right"><span class="toggle on" id="fd-rowopen"></span><span class="beh-state follow" id="fd-rowopen-state">On</span></div>
         </div>
@@ -339,7 +339,7 @@
           line.classList.toggle('on', cfg.line);
           rowOpen.classList.toggle('on', cfg.rowOpen);
           // the line is still configured when the row is open, it is just not what renders
-          lineState.textContent = cfg.line ? (cfg.rowOpen ? 'On · superseded' : 'On') : 'Off';
+          lineState.textContent = cfg.line ? (cfg.rowOpen ? 'On · superseded on TVs' : 'On') : 'Off';
           rowState.textContent = cfg.rowOpen ? 'On' : 'Off';
           if (+delay.value !== cfg.delay) delay.value = cfg.delay;
           delayVal.textContent = cfg.delay === 0 ? 'immediately' : cfg.delay < 1000 ? cfg.delay + ' ms' : (cfg.delay / 1000) + ' s';

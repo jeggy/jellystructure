@@ -7,21 +7,30 @@ import kotlin.test.assertEquals
 class FocusDetailReducedMotionTest {
     @Test
     fun `reduce motion downgrades rowOpen to line`() {
-        assertEquals("line", effectiveFocusDetailMode("rowOpen", reduceMotion = true))
+        assertEquals("line", effectiveFocusDetailMode("rowOpen", reduceMotion = true, isTv = true))
     }
 
     @Test
     fun `without reduce motion rowOpen is untouched`() {
-        assertEquals("rowOpen", effectiveFocusDetailMode("rowOpen", reduceMotion = false))
+        assertEquals("rowOpen", effectiveFocusDetailMode("rowOpen", reduceMotion = false, isTv = true))
     }
 
     @Test
     fun `reduce motion never touches an already resolved line`() {
-        assertEquals("line", effectiveFocusDetailMode("line", reduceMotion = true))
+        assertEquals("line", effectiveFocusDetailMode("line", reduceMotion = true, isTv = true))
     }
 
     @Test
     fun `reduce motion never invents a mode out of none`() {
-        assertEquals("none", effectiveFocusDetailMode("none", reduceMotion = true))
+        assertEquals("none", effectiveFocusDetailMode("none", reduceMotion = true, isTv = true))
+    }
+
+    // R254 (FR-R254-7) — J is a TV direction.
+    @Test fun rowOpenOnAPhoneOrTheWebIsTheLine() = assertEquals("line", effectiveFocusDetailMode("rowOpen", reduceMotion = false, isTv = false))
+    @Test fun rowOpenOnATvStaysRowOpen() = assertEquals("rowOpen", effectiveFocusDetailMode("rowOpen", reduceMotion = false, isTv = true))
+    @Test fun bothFlagsSetIsTheLine() = assertEquals("line", effectiveFocusDetailMode("rowOpen", reduceMotion = true, isTv = false))
+    @Test fun lineAndNoneAreUnchangedOffTv() {
+        assertEquals("line", effectiveFocusDetailMode("line", reduceMotion = false, isTv = false))
+        assertEquals("none", effectiveFocusDetailMode("none", reduceMotion = false, isTv = false))
     }
 }
