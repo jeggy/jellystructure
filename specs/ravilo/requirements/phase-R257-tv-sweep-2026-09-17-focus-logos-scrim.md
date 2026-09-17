@@ -124,6 +124,12 @@ only because of R256, but it is a phone defect.
 - FR-R257-1/2 verified: a studio's grid opens on its first poster; Back lands on the studio's tile.
 - FR-R257-5 verified: moving Down from an open row, the next row's heading rests at 152 px (bar 120 + 16 dp);
   it was ~112 px.
-- Seen in passing, not changed: the player's top-right **DIRECT PLAY · MKV** chips are on the release
-  build (R180's no-delivery-cues rule says they should not be), and a paused player leaves a burned-in
-  subtitle under the raised chrome.
+- Seen in passing, not changed: the player's top-right **DIRECT PLAY · MKV** chips — checked afterwards
+  and **by design** (the mockup's "stream / quality badge", R08/R14; R180 FR-RV-ASP1-2 governs the
+  *picker* only). A *positioned* subtitle cue (a release tag pinned bottom-left) is not moved by R251's
+  lift and sat under the raised chrome — rare, recorded, not chased.
+- Pixel 9 (Play build 1.19), 2026-09-17: handset player healthy; the swapped glyphs **confirmed live**
+  (10 s draws a clockwise arrow). The fix can only be seen there after the next Play release — a sideload
+  is refused as a downgrade (versionCode 1 < 1019). Also seen on the phone, not fixed: the profile picker
+  row starts flush at x = 0 and clips *Settings* at the right edge, and a grey status-bar band sits above
+  the app (and above the player).
