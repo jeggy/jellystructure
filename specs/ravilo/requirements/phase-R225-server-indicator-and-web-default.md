@@ -109,3 +109,17 @@ exactly as today. `DEFAULT_SERVER_URL` only ever reaches the web build.
 - Confirm `ChangeServerLink` still overrides the default: pick "Wrong server?", enter a different host,
   confirm the indicator and subsequent sign-in both reflect the override, and confirm it survives a reload
   (localStorage tier still wins over the injected default on tier 2).
+
+## Amendment (2026-09-18) — a cross-origin web app could sign in and then load nothing
+
+The household set `DEFAULT_SERVER_URL` on production (ravilo-web on one host, the backend on
+another). Sign-in worked; every call after it failed in the browser as a *CORS error*. The backend's
+auth interceptor asked the **preflight** for a device token — a browser never sends credentials on a
+preflight — so `OPTIONS /api/tv/home` answered **401** while `OPTIONS /api/tv/login` (an open path)
+answered 200. The demo stack has the same shape and the same defect.
+
+- **FR-R225-6** — a CORS preflight (`OPTIONS` with `Origin` and `Access-Control-Request-Method`)
+  passes the auth interceptor untouched; the CORS plugin answers it, and refuses an origin that is not
+  in `CORS_ALLOWED_ORIGINS`. It runs no handler and returns no data. A bare `OPTIONS` is still 401.
+- e2e: preflights for an authenticated route, a refused origin, and a non-preflight `OPTIONS`.
+

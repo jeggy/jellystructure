@@ -1,6 +1,7 @@
 package dev.jellystructure.auth
 
 import io.ktor.http.HttpStatusCode
+import io.ktor.server.request.httpMethod
 import io.ktor.http.decodeURLPart
 import io.ktor.server.application.Application
 import io.ktor.server.application.ApplicationCallPipeline
@@ -72,6 +73,15 @@ fun Application.installAuthPlugin(
     validateApiKey: ((String) -> ApiKeyData?)? = null,
 ) {
     intercept(ApplicationCallPipeline.Plugins) {
+        // R225 amendment (2026-09-18) — a CORS preflight never carries credentials (the browser strips
+        // Authorization and cookies from it by design), so asking it for a token answers 401 to every
+        // authenticated route and the browser then blocks the real request: a cross-origin Ravilo web
+        // could sign in (an open path) and do nothing else. A preflight runs no handler and returns no
+        // data — the CORS plugin answers it, 403 for an origin that is not allowed.
+        if (call.request.httpMethod == io.ktor.http.HttpMethod.Options &&
+            call.request.headers["Origin"] != null &&
+            call.request.headers["Access-Control-Request-Method"] != null
+        ) return@intercept
         val rawPath = call.request.path()
         val path = decodeRoutingPath(rawPath)
         if (path == null) {

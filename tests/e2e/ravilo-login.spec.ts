@@ -75,18 +75,37 @@ test.describe("Ravilo web reaches its backend", () => {
     expect(login.status()).not.toBe(200);
   });
 
-  test("the backend accepts the web app's origin (CORS preflight)", async ({ request }) => {
-    const origin = new URL(WEB).origin;
-    const pre = await request.fetch("/api/tv/login", {
-      method: "OPTIONS",
-      headers: {
-        Origin: origin,
-        "Access-Control-Request-Method": "POST",
-        "Access-Control-Request-Headers": "content-type,x-ravilo-platform,x-ravilo-version",
-      },
+  // A preflight never carries the token. The first version of this test only preflighted /login — an
+  // open path — and so missed that every AUTHENTICATED route answered its preflight with 401: the web
+  // app could sign in and then load nothing (production, 2026-09-18).
+  for (const [path, method, headers] of [
+    ["/api/tv/login", "POST", "content-type,x-ravilo-platform,x-ravilo-version"],
+    ["/api/tv/home", "GET", "authorization,x-ravilo-platform,x-ravilo-version"],
+    ["/api/tv/rev", "GET", "authorization,x-ravilo-platform,x-ravilo-version"],
+  ] as const) {
+    test(`the backend answers the web app's preflight for ${method} ${path}`, async ({ request }) => {
+      const origin = new URL(WEB).origin;
+      const pre = await request.fetch(path, {
+        method: "OPTIONS",
+        headers: { Origin: origin, "Access-Control-Request-Method": method, "Access-Control-Request-Headers": headers },
+      });
+      expect(pre.status()).toBe(200);
+      expect(pre.headers()["access-control-allow-origin"]).toBe(origin);
+      expect(pre.headers()["access-control-allow-headers"]?.toLowerCase()).toContain("x-ravilo-version");
     });
-    expect(pre.status()).toBe(200);
-    expect(pre.headers()["access-control-allow-origin"]).toBe(origin);
-    expect(pre.headers()["access-control-allow-headers"]?.toLowerCase()).toContain("x-ravilo-version");
+  }
+
+  test("a preflight from an origin that is not allowed gets nothing", async ({ request }) => {
+    const pre = await request.fetch("/api/tv/home", {
+      method: "OPTIONS",
+      headers: { Origin: "https://evil.example.com", "Access-Control-Request-Method": "GET", "Access-Control-Request-Headers": "authorization" },
+    });
+    expect(pre.headers()["access-control-allow-origin"]).toBeUndefined();
+    expect(pre.status()).not.toBe(200);
+  });
+
+  test("an OPTIONS that is not a preflight is still refused without a token", async ({ request }) => {
+    const res = await request.fetch("/api/tv/home", { method: "OPTIONS" });
+    expect(res.status()).toBe(401);
   });
 });
