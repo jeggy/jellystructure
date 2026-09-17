@@ -724,8 +724,20 @@ private fun wbRefreshPreview() {
         val baseTree = wbBaseRoot?.toSharedGroup()?.takeIf { it.isLive() }
         val fullTree = if (baseTree != null) ConditionGroup(QueryJoin.AND, children = listOf(baseTree, rootTree)) else rootTree
         // Phase 225 — a row editor needs the WHOLE match set to line it up and to pick from.
-        val page = countMatching(fullTree, wbInclude, viewer = wbViewer, pageSize = if (wbOrderActive()) 2000 else 18)
-        if (wbOrderActive()) { wbOrderSetMatches(page?.items ?: emptyList()); return@launch }
+        if (wbOrderActive()) {
+            // The list endpoint serves at most 100 a page: page through the whole match set (bounded).
+            val all = mutableListOf<dev.jellystructure.model.MediaItem>()
+            var pageNo = 1
+            while (pageNo <= 40) {
+                val pg = MediaApi.list(kind = when (wbInclude) { "movies" -> MediaKind.MOVIE; "series" -> MediaKind.TV_SHOW; "musicvideos" -> MediaKind.MUSIC_VIDEO; else -> null },
+                    page = pageNo, pageSize = 100, viewer = wbViewer, query = fullTree) ?: break
+                all += pg.items
+                if (pg.items.isEmpty() || all.size >= pg.total) break
+                pageNo++
+            }
+            wbOrderSetMatches(all); return@launch
+        }
+        val page = countMatching(fullTree, wbInclude, viewer = wbViewer, pageSize = 18)
         val total = page?.total ?: 0
         countEl?.innerHTML = if (baseTree != null) "<b>$total title(s)</b> in channel" else "<b>$total title(s) match</b>"
         val prev = document.getElementById("wb-preview") as? HTMLElement

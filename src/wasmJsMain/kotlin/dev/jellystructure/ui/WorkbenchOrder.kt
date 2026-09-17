@@ -57,15 +57,22 @@ fun workbenchOrderResult(): WbOrderResult {
 
 internal fun wbOrderSetMatches(items: List<MediaItem>) { ordMatches = items; wbOrderRender() }
 
-private fun ordered(): List<MediaItem> = RowOrder.resolve(
-    ordMatches, RowSort(ordBy, ordDesc), if (ordHand) ordPins else emptyList(), RowOrder.DEFAULT_LIMIT.coerceAtLeast(ordMatches.size),
+private fun ordered(): List<MediaItem> = RowOrder.resolveAll(
+    ordMatches, RowSort(ordBy, ordDesc), if (ordHand) ordPins else emptyList(),
     id = ::idOf, added = { it.recencyKey() }, year = { it.year }, title = { it.title }, sortName = { it.sortName },
 )
 
-private fun ordToast(msg: String) {
+// A toast is usually raised right BEFORE a re-render (which replaces the toast element), so it is held
+// here and shown by the render that follows — seen in the browser 2026-09-17: the "released N hand-picks"
+// message never appeared.
+private var ordPendingToast: String? = null
+private fun ordToast(msg: String) { ordPendingToast = msg }
+private fun ordShowToast() {
+    val msg = ordPendingToast ?: return
     val host = document.getElementById("wb-order-toast") as? HTMLElement ?: return
+    ordPendingToast = null
     host.textContent = msg; host.style.opacity = "1"
-    window.setTimeout({ host.style.opacity = "0"; null }, 2600)
+    window.setTimeout({ (document.getElementById("wb-order-toast") as? HTMLElement)?.let { if (it.textContent == msg) it.style.opacity = "0" }; null }, 3200)
 }
 
 private fun thumb(m: MediaItem): String =
@@ -115,13 +122,14 @@ internal fun wbOrderRender() {
           ${seg("by", false)}
           ${if (ordHand) "" else """<button class="btn sm ghost" id="wbo-dir" type="button">${words()}</button>"""}
           <span class="spacer"></span>
-          <span class="tiny muted">Show</span><span class="wbo-step"><b id="wbo-dec" class="${if (ordLimit <= maxOf(RowOrder.MIN_LIMIT, ordPins.size)) "off" else ""}">−</b><span id="wbo-limit">$ordLimit</span><b id="wbo-inc" class="${if (ordLimit >= RowOrder.DEFAULT_LIMIT) "off" else ""}">+</b></span><span class="tiny muted">titles</span>
+          <span style="display:inline-flex;align-items:center;gap:8px;white-space:nowrap"><span class="tiny muted">Show</span><span class="wbo-step"><b id="wbo-dec" class="${if (ordLimit <= maxOf(RowOrder.MIN_LIMIT, ordPins.size)) "off" else ""}">−</b><span id="wbo-limit">$ordLimit</span><b id="wbo-inc" class="${if (ordLimit >= RowOrder.DEFAULT_LIMIT) "off" else ""}">+</b></span><span class="tiny muted">titles</span></span>
         </div>
         $strip
         <div id="wb-order-toast" class="wbo-toast"></div>
       </div>"""
     wbOrderWire()
     wbOrderRenderPreview()
+    ordShowToast()
 }
 
 /** The Matches panel: in the chosen order, numbered when that order is not the default, faded with a
@@ -147,7 +155,7 @@ private fun on(sel: String, type: String, handler: (HTMLElement, Event) -> Unit)
 
 private fun pin(id: String, at: Int? = null) {
     if (id in ordPins) { if (at != null) { ordPins.remove(id); ordPins.add(at.coerceIn(0, ordPins.size), id) }; return }
-    if (ordPins.size >= ordLimit) { ordToast("All $ordLimit places are hand-picked — release one, or show more titles, to pick another."); return }
+    if (ordPins.size >= ordLimit) { ordToast("All $ordLimit places are hand-picked — release one, or show more titles, to pick another."); return }   // shown by the render every caller does next
     if (ordMatches.none { idOf(it) == id }) return                       // pins come only from the row's matches (FR-225-4)
     if (at == null) ordPins.add(id) else ordPins.add(at.coerceIn(0, ordPins.size), id)
 }
@@ -171,7 +179,7 @@ private fun wbOrderWire() {
     on("#wbo-dec", "click") { _, _ ->
         when {
             ordLimit <= RowOrder.MIN_LIMIT -> Unit
-            ordLimit <= ordPins.size -> ordToast("Release a hand-pick to show fewer than $ordLimit.")   // a pin is never dropped behind your back
+            ordLimit <= ordPins.size -> { ordToast("Release a hand-pick to show fewer than $ordLimit."); ordShowToast() }   // a pin is never dropped behind your back
             else -> { ordLimit--; wbOrderRender() }
         }
     }

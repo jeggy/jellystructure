@@ -3127,7 +3127,7 @@ private fun renderChromecastState() {
         idOk -> """<span class="badge ok">looks right</span>"""
         else -> """<span class="badge warn">8 hex characters</span>"""
     }
-    blurb?.innerHTML = "Three one-time steps. Nothing recurring, and nothing leaves this page except the address you paste at Google."
+    blurb?.innerHTML = "Five one-time steps. Nothing recurring, and nothing leaves this page except the address you paste at Google."
     badgeWarn?.style?.display = if (idOk) "none" else ""
     badgeOk?.style?.display = "none"
     (document.getElementById("cc-steps") as? HTMLElement)?.style?.display = if (ccShowSteps) "" else "none"

@@ -7,7 +7,7 @@
 
 ## Status
 
-`✓ Built` 2026-09-17 — spec'd and built the same day, not dev-reviewed, not deployed. Backend +
+`✓ Built` 2026-09-17 — spec'd and built the same day, not dev-reviewed. **Live on production as v1.22** (`Logo ink: judged 135 logo(s)` at boot; `/api/tv/facets` carries `logo_ink`: studios 87 dark / 6 light, networks 36 / 5 — the same 11 light logos as the dry run, no temp files left behind). The title-clearlogo extension below is built but NOT in v1.22. Backend +
 one additive wire field; client half is R259 FR-R259-5.
 
 **Numbering:** verified against `STATUS.md` 2026-09-17 — admin taken through **231**.
