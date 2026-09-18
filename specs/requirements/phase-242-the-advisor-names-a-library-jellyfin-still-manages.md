@@ -94,35 +94,6 @@ Movies` as an explicit "no findings" because a skipped library's storage is unkn
 suppresses rather than guesses. The same rule applies here. Phase **240**'s model-field guard is the
 other half of this and catches it at build time.
 
-**FR-242-8 — An empty `KnownProxies` behind a reverse proxy is a server-wide finding.** Jellyfin's
-`POST /System/Restart` carries `[Authorize(Policy = Policies.LocalAccessOrRequiresElevation)]`, so a
-caller Jellyfin considers local may restart it **with no credential at all**. When Jellyfin sits
-behind a reverse proxy and `KnownProxies` is empty, it ignores `X-Forwarded-For` and classifies every
-request — including every internet request — by the proxy's own private address. Every remote caller
-therefore becomes a local one, and the restart route is open to the internet.
-
-Measured on a clean 12.1.0 instance, 2026-09-18:
-
-| `KnownProxies` | Caller presented as | `POST /System/Restart`, no credential |
-|---|---|---|
-| empty | anything via the proxy | 204, server restarts |
-| set to the proxy | `8.8.8.8` | 401, refused |
-| set to the proxy | `192.168.1.50` | 204, restarts, by design |
-
-This is the impact of **CVE-2025-32012** (CVSS 7.5, patched in 10.10.7) reached without any of the IP
-spoofing that CVE describes. On the household server `KnownProxies` is empty and Jellyfin is behind
-Caddy at a private address, so it is currently reachable.
-
-The advisor fires a server-wide finding when `GET /System/Configuration/network` reports an empty
-`KnownProxies` while `public_url` is set — the configuration that means this installation is reached
-through something. The finding names the consequence in plain language, points at Dashboard →
-Networking, and is not phrased as a performance trade, because it is not one.
-
-This belongs in the advisor rather than anywhere else for the reason phase 212 exists: it is a
-Jellyfin setting that an operator has to change in Jellyfin, which jellystructure can see and they
-cannot easily. It is also the one finding here that is a security matter rather than a correctness
-one, and should render first.
-
 ## Non-goals
 
 - Changing any Jellyfin setting from jellystructure. The advisor is read-only and suggest-only, per
@@ -131,9 +102,8 @@ one, and should render first.
   already expresses that.
 - `SimilarItemProviders`. It is new in 12.1 and defaulted to a local provider; it is recorded as an
   open question rather than guessed at.
-- Changing Jellyfin's network configuration from jellystructure. FR-242-8 reports; the operator acts.
-- Jellyfin's unauthenticated media routes. That is Jellyfin's own behaviour, long known upstream, and
-  no setting exists to change it — see `jellyfin-upstream-report-unauthenticated-media-2026-09-18.md`.
+- Jellyfin's network and exposure configuration. That is phase **244**.
+- Jellyfin's unauthenticated media routes. Phase **244**, and upstream.
 - Fixing the household's Musik library. That is a configuration action, listed in acceptance so it is
   not forgotten, not code.
 
@@ -148,9 +118,6 @@ one, and should render first.
 5. Enabling internet providers on a test library produces the FR-242-2 finding.
 6. Musik's NFO saver is actually unchecked on the household server, and the NFO files jellystructure
    wrote for that library are verified not to have been overwritten in the meantime.
-7. With `KnownProxies` empty, the FR-242-8 finding renders. With it set to Caddy's address, it
-   disappears, and `POST /System/Restart` carrying a public `X-Forwarded-For` and no credential
-   answers 401 instead of restarting the server.
 
 ## Open questions
 
