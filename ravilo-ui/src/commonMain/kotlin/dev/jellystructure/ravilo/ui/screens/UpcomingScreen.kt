@@ -26,8 +26,6 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -38,7 +36,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -52,18 +49,13 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.jellystructure.ravilo.ui.LocalLiveConfig
-import dev.jellystructure.ravilo.ui.components.AppBar
-import dev.jellystructure.ravilo.ui.components.HomeLoadingShell
 import dev.jellystructure.ravilo.ui.components.StaticContentRow
-import dev.jellystructure.ravilo.ui.focus.backToTopOnBack
 import dev.jellystructure.ravilo.ui.focus.dpadFocusable
 import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.seams.RemoteImage
-import dev.jellystructure.ravilo.ui.theme.RaviloDimens
 import dev.jellystructure.ravilo.ui.theme.RaviloMotion
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import dev.jellystructure.ravilo.ui.theme.raviloHPad
-import dev.jellystructure.ravilo.ui.theme.SpaceGrotesk
 import dev.jellystructure.shared.tv.MediaKind
 import dev.jellystructure.shared.tv.TvApiClient
 import dev.jellystructure.shared.tv.UpcomingFeed
@@ -122,73 +114,30 @@ class UpcomingStore(private val apiClient: TvApiClient) {
 
 private enum class UpcomingFilter { ALL, SERIES, MOVIES }
 
+/**
+ * R262 — content-only: the frame (`screens/DiscoverScreen.kt`) owns the app bar, the page header
+ * (title/subtitle) and the segment bar now; this renders everything below them for the Coming Soon
+ * segment, into a [LazyColumn] anchored on the frame's shared [navBarFR]/[columnFR]/[listState] so
+ * Back-to-top and "AppBar Down → content" keep working the same as before the merge.
+ */
 @Composable
-fun UpcomingScreen(
-    store: UpcomingStore,
-    displayName: String,
-    onNavSelect: (Int) -> Unit,
-    onProfile: () -> Unit,
-    onSearch: () -> Unit,
-    onItemSelect: (UpcomingItem) -> Unit,
-    // R243 (FR-R243-1) — the Discover segment bar replaces R170's single "↔ Request" pill: every
-    // available segment, this one marked. [focusSegmentOnEntry] keeps focus on the chip that was
-    // pressed to get here (FR-R243-7), so the bar stays steerable after a switch.
-    segments: List<DiscoverSegment> = listOf(DiscoverSegment.COMING_SOON),
-    onSegment: (DiscoverSegment) -> Unit = {},
-    focusSegmentOnEntry: Boolean = false,
-) {
-    val colors = RaviloTheme.colors
-    val state by store.state.collectAsState()
-    // Being on this screen implies the Discover tab itself is active, regardless of which segment.
-    val navItems = raviloNavItems()
-
-    val live = LocalLiveConfig.current
-    LaunchedEffect(live) { live?.collect { store.refresh(silent = true) } }
-
-    Box(Modifier.fillMaxSize().background(colors.background)) {
-        when (val s = state) {
-            is UpcomingState.Loading -> HomeLoadingShell()
-            is UpcomingState.Error -> Column(
-                Modifier.fillMaxSize().padding(40.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                Spacer(Modifier.height(200.dp))
-                Text(str("nav.upcoming"), color = colors.text, fontSize = 20.sp)
-                Spacer(Modifier.height(8.dp))
-                Text(s.message, color = colors.textSecondary, fontSize = 14.sp)
-            }
-            is UpcomingState.Loaded -> UpcomingLoaded(
-                store = store,
-                feed = s.feed,
-                displayName = displayName,
-                navItems = navItems,
-                onNavSelect = onNavSelect,
-                onProfile = onProfile,
-                onSearch = onSearch,
-                onItemSelect = onItemSelect,
-                segments = segments,
-                onSegment = onSegment,
-                focusSegmentOnEntry = focusSegmentOnEntry,
-            )
-        }
-    }
-}
-
-@Composable
-private fun UpcomingLoaded(
+fun UpcomingContent(
     store: UpcomingStore,
     feed: UpcomingFeed,
-    displayName: String,
-    navItems: List<String>,
-    onNavSelect: (Int) -> Unit,
-    onProfile: () -> Unit,
-    onSearch: () -> Unit,
-    onItemSelect: (UpcomingItem) -> Unit,
-    segments: List<DiscoverSegment>,
-    onSegment: (DiscoverSegment) -> Unit,
+    listState: LazyListState,
+    navBarFR: FocusRequester,
+    columnFR: FocusRequester,
+    // True only on the fresh entry a chip press caused — a genuinely fresh tab entry (no chip press,
+    // no restore target) still wants the AppBar focused, same as every other tab screen.
     focusSegmentOnEntry: Boolean,
+    onItemSelect: (UpcomingItem) -> Unit,
 ) {
     val colors = RaviloTheme.colors
+    val scope = rememberCoroutineScope()
+    // R33 — only runs while this segment is the one actually composed (FR-R262-8: unchanged from
+    // before the merge, when switching segments tore this down the same way).
+    val live = LocalLiveConfig.current
+    LaunchedEffect(live) { live?.collect { store.refresh(silent = true) } }
     var filter by remember { mutableStateOf(UpcomingFilter.ALL) }
     val filtered = remember(feed, filter) {
         when (filter) {
@@ -204,43 +153,25 @@ private fun UpcomingLoaded(
         map
     }
     val days = remember(grouped) { grouped.keys.toList() }
-    // Item 0 = header. Then either one "empty" placeholder or one item per day. Used to compute
-    // the missing-jump-pill's scroll target correctly in both cases.
+    // Item 0 = controls (filter chips/jump pill/date rail). Then either one "empty" placeholder or one
+    // item per day. Used to compute the missing-jump-pill's scroll target correctly in both cases.
     val missingHeaderIndex = 1 + (if (filtered.isEmpty()) 1 else days.size)
 
-    val listState = store.listState
-    val scope = rememberCoroutineScope()
-    val navBarFR = remember { FocusRequester() }
-    val columnFR = remember { FocusRequester() }
     // Bug fix: only default focus to the AppBar on a genuinely fresh entry — when returning from a
     // detail screen we just opened a card from, restoreItemKey (passed to StaticContentRow below)
     // re-focuses that exact card instead, matching BrowseScreen's R139 pattern.
     LaunchedEffect(Unit) { if (store.lastSelectedItemKey == null && !focusSegmentOnEntry) runCatching { navBarFR.requestFocus() } }
 
-    var navBarFocused by remember { mutableStateOf(false) }
-    Box(
-        modifier = Modifier.fillMaxSize().backToTopOnBack(
-            atTop = { navBarFocused },
-            onBackToTop = {
-                runCatching { navBarFR.requestFocus() }
-                scope.launch { listState.scrollToItem(0) }
-            },
-        ),
-    ) {
-        // Index accounting for animateScrollToItem from the date rail: item 0 = header block
-        // (title/subtitle/filter chips/jump pill/date rail), then one item per day section.
+    Box(Modifier.fillMaxSize()) {
+        // Index accounting for animateScrollToItem from the date rail: item 0 = controls block
+        // (filter chips/jump pill/date rail), then one item per day section.
         LazyColumn(
             state = listState,
             modifier = Modifier.fillMaxSize().focusRequester(columnFR),
-            contentPadding = PaddingValues(top = RaviloDimens.appBarHeight + 24.dp, bottom = 120.dp),
+            contentPadding = PaddingValues(bottom = 120.dp),
         ) {
-            item(key = "up-head") {
-                Column(Modifier.fillMaxWidth().padding(horizontal = raviloHPad, vertical = 8.dp)) {
-                    Text(str("nav.upcoming"), color = colors.text, fontSize = 26.sp, fontWeight = FontWeight.Bold, fontFamily = SpaceGrotesk)
-                    Text(str("up.subtitle"), color = colors.textSecondary, fontSize = 13.sp)
-                    Spacer(Modifier.height(12.dp))
-                    DiscoverSegmentBar(segments = segments, active = DiscoverSegment.COMING_SOON, onSelect = onSegment, focusActiveOnEntry = focusSegmentOnEntry)
-                    Spacer(Modifier.height(16.dp))
+            item(key = "up-controls") {
+                Column(Modifier.fillMaxWidth().padding(horizontal = raviloHPad)) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         FilterChips(filter, onFilterChange = { filter = it })
                         if (feed.missing.isNotEmpty()) {
@@ -298,26 +229,6 @@ private fun UpcomingLoaded(
                     }
                 }
             }
-        }
-
-        val initials = remember(displayName) {
-            displayName.split(' ').filter { it.isNotBlank() }.take(2).joinToString("") { it.first().uppercase() }
-        }
-        val appBarScrolled by remember { derivedStateOf {
-            listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 0
-        } }
-        Box(Modifier.onFocusChanged { navBarFocused = it.hasFocus }) {
-            AppBar(
-                navItems = navItems,
-                activeNav = 3,
-                onNavSelect = onNavSelect,
-                navFR = navBarFR,
-                onDown = { runCatching { columnFR.requestFocus() } },
-                userInitials = initials,
-                onProfile = onProfile,
-                onSearch = onSearch,
-                scrolled = appBarScrolled,
-            )
         }
     }
 }

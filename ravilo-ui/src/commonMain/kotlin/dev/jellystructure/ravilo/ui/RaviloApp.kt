@@ -46,7 +46,6 @@ import dev.jellystructure.ravilo.ui.screens.defaultDiscoverSegment
 import dev.jellystructure.ravilo.ui.screens.discoverSegments
 import dev.jellystructure.ravilo.ui.screens.nextDiscoverSegment
 import dev.jellystructure.ravilo.ui.screens.seedFacet
-import dev.jellystructure.ravilo.ui.screens.TaxonomyScreen
 import dev.jellystructure.ravilo.ui.screens.CastRemoteScreen
 import dev.jellystructure.ravilo.ui.components.CastController
 import dev.jellystructure.ravilo.ui.components.CastConnectingBar
@@ -88,7 +87,6 @@ import dev.jellystructure.ravilo.ui.screens.SettingsStore
 import dev.jellystructure.ravilo.ui.screens.signOutActiveSession
 import dev.jellystructure.ravilo.ui.screens.UpcomingDetailScreen
 import dev.jellystructure.ravilo.ui.screens.UpcomingDetailStore
-import dev.jellystructure.ravilo.ui.screens.UpcomingScreen
 import dev.jellystructure.ravilo.ui.screens.UpcomingStore
 import dev.jellystructure.ravilo.ui.screens.WatchedBus
 import dev.jellystructure.ravilo.ui.i18n.WithLocale
@@ -735,7 +733,13 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                             fadeOut(tween(RaviloMotion.SCREEN_EXIT_MS))
                 }
             },
-            contentKey = { it::class },
+            // R262 (FR-R262-3) — Home/Movies·Series/Discover are one section rail: switching between
+            // them recomposes in place, same as the pre-existing Movies↔Series (`Dest.Browse`, same
+            // class) treatment this generalises. Acceptance 1/5 require it — entering Discover from
+            // Home, and Discover↔Movies, must never show two app bars mid-slide. The transition stays
+            // for drilling into a detail page / the player / a seeded grid / See all, and for Back out
+            // of those (still their own distinct class each).
+            contentKey = { d -> if (d is Dest.Home || d is Dest.Browse || d is Dest.Discover) "section" else d::class },
         ) { dest ->
             // R261 (FR-R261-3/5, dev review item 4) — the two playing destinations render unpadded
             // (their picture owns the whole panel; the chrome pads itself). Dest.CastRemote is excluded
@@ -1016,60 +1020,40 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                         RaviloNavTarget.DISCOVER -> nextDiscoverSegment(segs, dest.segment)?.let { replaceTop(Dest.Discover(dest.displayName, it)) } ?: Unit
                     }
                 }
-                when (dest.segment) {
-                    DiscoverSegment.COMING_SOON -> {
-                        val store = keptStore("upcoming:${dest.displayName}") { UpcomingStore(apiClient) }
-                        UpcomingScreen(
-                            store = store,
-                            displayName = dest.displayName,
-                            onNavSelect = onNav,
-                            onProfile = { profileMenuOpen = true },
-                            onSearch = { push(Dest.Search(dest.displayName)) },
-                            onItemSelect = { item ->
-                                val itemId = item.itemId
-                                when {
-                                    itemId != null && item.kind == MediaKind.SERIES -> push(Dest.SeriesDetail(itemId, dest.displayName))
-                                    itemId != null -> push(Dest.MovieDetail(itemId, dest.displayName))
-                                    else -> push(Dest.UpcomingDetail(item.id, dest.displayName))
-                                }
-                            },
-                            segments = segs,
-                            onSegment = onSegment,
-                            focusSegmentOnEntry = dest.focusSegment,
-                        )
-                    }
-                    DiscoverSegment.REQUEST -> {
-                        val store = keptStore("discover:${dest.displayName}") { DiscoverStore(apiClient) }
-                        DiscoverScreen(
-                            store = store,
-                            displayName = dest.displayName,
-                            onNavSelect = onNav,
-                            onEntrySelect = { mediaType, tmdbId -> push(Dest.DiscoverItem(mediaType, tmdbId, dest.displayName)) },
-                            onProfile = { profileMenuOpen = true },
-                            onSearch = { push(Dest.Search(dest.displayName)) },
-                            onSearchSeerr = { push(Dest.SeerrSearch(dest.displayName)) },
-                            segments = segs,
-                            onSegment = onSegment,
-                            focusSegmentOnEntry = dest.focusSegment,
-                        )
-                    }
-                    // R243 — the three library walls share one store (one facets fetch feeds all three).
-                    DiscoverSegment.STUDIOS, DiscoverSegment.NETWORKS, DiscoverSegment.GENRES -> {
-                        val store = keptStore("taxonomy:${dest.displayName}") { TaxonomyStore(apiClient) }
-                        TaxonomyScreen(
-                            store = store,
-                            segment = dest.segment,
-                            displayName = dest.displayName,
-                            segments = segs,
-                            onSegment = onSegment,
-                            focusSegmentOnEntry = dest.focusSegment,
-                            onNavSelect = onNav,
-                            onProfile = { profileMenuOpen = true },
-                            onSearch = { push(Dest.Search(dest.displayName)) },
-                            onTileSelect = { seg, item, crumb -> openTaxonomyBrowse(seg, item, crumb, dest.displayName) },
-                        )
-                    }
-                }
+                // R262 (FR-R262-7) — one frame, warmed on entry regardless of which segment shows first:
+                // a store is constructed here (and only here) exactly when its segment is available, so
+                // an ungated household never fetches a Coming Soon/Request feed nobody can see.
+                val upcomingStore = if (DiscoverSegment.COMING_SOON in segs) keptStore("upcoming:${dest.displayName}") { UpcomingStore(apiClient) } else null
+                val requestStore = if (DiscoverSegment.REQUEST in segs) keptStore("discover:${dest.displayName}") { DiscoverStore(apiClient) } else null
+                // R243 — the three library walls share one store (one facets fetch feeds all three); never gated.
+                val taxonomyStore = keptStore("taxonomy:${dest.displayName}") { TaxonomyStore(apiClient) }
+                DiscoverScreen(
+                    segment = dest.segment,
+                    segments = segs,
+                    onSegment = onSegment,
+                    focusSegmentOnEntry = dest.focusSegment,
+                    // R262 (dev review item 2) — consumes the press token on the stack entry itself, so a
+                    // later Back-return from a seeded grid doesn't re-steal focus from a tile restore.
+                    onFocusSegmentConsumed = { replaceTop(dest.copy(focusSegment = false)) },
+                    displayName = dest.displayName,
+                    onNavSelect = onNav,
+                    onProfile = { profileMenuOpen = true },
+                    onSearch = { push(Dest.Search(dest.displayName)) },
+                    upcomingStore = upcomingStore,
+                    onUpcomingItemSelect = { item ->
+                        val itemId = item.itemId
+                        when {
+                            itemId != null && item.kind == MediaKind.SERIES -> push(Dest.SeriesDetail(itemId, dest.displayName))
+                            itemId != null -> push(Dest.MovieDetail(itemId, dest.displayName))
+                            else -> push(Dest.UpcomingDetail(item.id, dest.displayName))
+                        }
+                    },
+                    requestStore = requestStore,
+                    onEntrySelect = { mediaType, tmdbId -> push(Dest.DiscoverItem(mediaType, tmdbId, dest.displayName)) },
+                    onSearchSeerr = { push(Dest.SeerrSearch(dest.displayName)) },
+                    taxonomyStore = taxonomyStore,
+                    onTileSelect = { seg, item, crumb -> openTaxonomyBrowse(seg, item, crumb, dest.displayName) },
+                )
             }
 
             is Dest.DiscoverItem -> {
