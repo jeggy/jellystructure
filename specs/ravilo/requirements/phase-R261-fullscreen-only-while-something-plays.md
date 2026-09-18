@@ -18,9 +18,14 @@ app is actually playing some media") and a same-day trace + device measurement. 
 15+ and stay, plus a cutout mode below it; FR-R261-5 is met by visibility-independent insets, not by
 ordering; the padding moves inside `AnimatedContent`). **Built 2026-09-18** per the dev review's
 corrected FR-R261-1/3/5 (see §Dev review); compiles clean on commonMain/Android/wasmJs, including
-`ravilo-android`. **Not yet device-tested** — acceptance 1–7 need a real Pixel 9 (incl. an Android ≤14
-device/emulator for the dev review's added cutout-mode step) and the Stue TV, neither run this
-session. Client-only (`ravilo-ui` androidMain seam + one root-layout rule in commonMain). No backend,
+`ravilo-android`. **Device-tested on the Pixel 9, 2026-09-18** (acceptance 1–3): a played episode in
+portrait filled the screen edge-to-edge on pure black with the status/nav bars requested-hidden
+(`dumpsys window`), leaving restored the bars, and the detail page composed with no visible position
+shift versus its pre-playback screenshot. Also confirmed on the Stue TV (acceptance 7) — bars stayed requested-invisible exactly as before this
+phase, on Home and mid-playback alike. **Acceptance 4–6 not run** — casting and the 15 s screen-timeout
+check need more session time; no Android ≤14 device was available for the dev review's added
+cutout-mode step. Client-only (`ravilo-ui` androidMain seam
++ one root-layout rule in commonMain). No backend,
 DTO, string or design change. The TV is unaffected by design (see FR-R261-1).
 
 **Numbering:** verified against `STATUS.md` and the spec directories 2026-09-18 — Ravilo taken
