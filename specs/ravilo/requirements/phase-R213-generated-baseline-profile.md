@@ -131,7 +131,7 @@ producer variant attributed `BuildTypeAttr=release`).
 
 **Generation itself did not complete this session — blocked by real device constraints, not a code
 bug**:
-1. **Stue TV (`10.10.11.128`, Android 12 / API 31, unrooted) cannot run Baseline Profile collection
+1. **Stue TV (`192.0.2.11`, Android 12 / API 31, unrooted) cannot run Baseline Profile collection
    at all.** `androidx.benchmark.macro` requires either API 33+, or a rooted device on API 28+
    (`BaselineProfilesKt.buildMacrobenchmarkScope`'s own `IllegalArgumentException` states this
    directly). This is a hard AOSP-level requirement, not something fixable in this module — FR-RV-
