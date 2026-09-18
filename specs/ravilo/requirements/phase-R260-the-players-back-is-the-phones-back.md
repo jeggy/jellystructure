@@ -11,11 +11,14 @@
 
 ## Status
 
-`Planned` — written 2026-09-18 from an owner report ("using the native android back button it just
+`✓ Built` — written 2026-09-18 from an owner report ("using the native android back button it just
 closes the app, instead of actually going back"), traced against `main` and reproduced on the Pixel 9
 the same day. **Dev-reviewed 2026-09-18 against `main` `05195d1f`** (see §Dev review at the bottom: a
 hardware Back can reach both entrances, so the platform entrance is off on TVs and de-duplicated per
-press elsewhere — FR-R260-1 amended; acceptance 6 moves to the bedroom TV). Not built. Client-only (`ravilo-ui` commonMain + the Android actual
+press elsewhere — FR-R260-1 amended; acceptance 6 moves to the bedroom TV). **Built 2026-09-18** per
+the amended FR-R260-1 (see §Dev review); compiles clean on commonMain/Android/wasmJs. **Not yet
+device-tested** — acceptance 1–7 need a real Pixel 9 (gesture + three-button nav) and the bedroom TV,
+neither run this session. Client-only (`ravilo-ui` commonMain + the Android actual
 that already exists). No backend, DTO, string or design change.
 
 **Numbering:** verified against `STATUS.md` and the spec directories 2026-09-18 — Ravilo taken

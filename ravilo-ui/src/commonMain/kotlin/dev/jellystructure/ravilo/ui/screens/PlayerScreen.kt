@@ -89,6 +89,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.jellystructure.ravilo.ui.focus.MediaKey
 import dev.jellystructure.ravilo.ui.focus.dpadFocusable
+import dev.jellystructure.ravilo.ui.focus.playerBackGesture
 import dev.jellystructure.ravilo.ui.i18n.LocalLang
 import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.i18n.t
@@ -1286,11 +1287,28 @@ fun PlayerScreen(
     val playerFR = remember { FocusRequester() }
     LaunchedEffect(Unit) { playerFR.requestFocus() }
 
+    // R260 (FR-R260-1) — hoisted so the TV remote/keyboard entrance (dpadFocusable's onBack below) and
+    // the phone's gesture/button entrance (playerBackGesture — Android's system back never arrives as
+    // a KeyEvent) run the exact same decision.
+    val playerBack: () -> Unit = {
+        when {
+            pickerOpen    -> pickerBack()
+            epRailOpen    -> { epRailOpen = false; wake() }
+            nextUpVisible -> stayThrough()
+            scrubbing     -> { scrubbing = false; wake() }
+            // R112: if the controls are showing, Back just hides them → fullscreen video.
+            // Only Back with nothing on screen leaves the player (so it takes two presses).
+            chromeVisible -> hideChrome()
+            else          -> onBack()
+        }
+    }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(playerBackdropColor)
             .wakeOnPointerMove { wake(); pointerActivityRevision++ }
+            .playerBackGesture(onBack = playerBack)
             .dpadFocusable(
                 focusRequester = playerFR,
                 onFocused = {},
@@ -1418,18 +1436,7 @@ fun PlayerScreen(
                         else -> {}
                     }
                 },
-                onBack = {
-                    when {
-                        pickerOpen    -> pickerBack()
-                        epRailOpen    -> { epRailOpen = false; wake() }
-                        nextUpVisible -> stayThrough()
-                        scrubbing     -> { scrubbing = false; wake() }
-                        // R112: if the controls are showing, Back just hides them → fullscreen video.
-                        // Only Back with nothing on screen leaves the player (so it takes two presses).
-                        chromeVisible -> hideChrome()
-                        else          -> onBack()
-                    }
-                },
+                onBack = playerBack,
                 // R44: physical remote / keyboard transport keys → playback actions, regardless of
                 // which on-screen control is focused and even when the chrome is hidden.
                 onMediaKey = { mk ->
@@ -1936,7 +1943,8 @@ fun PlayerScreen(
         }
 
         // R244 (FR-R244-8) — locked: everything but a lock glyph; tap hints, long-press unlocks; the
-        // system back still leaves (the root's onBack sees no chrome and exits). Drawn last, on top.
+        // system back still leaves (locking already calls hideChrome(), so playerBack's chrome-visible
+        // branch is false and it falls through to onBack() — R260's dev review).
         if (handset && locked) {
             HandsetLockOverlay(onUnlock = { locked = false; tick(); wake() })
         }

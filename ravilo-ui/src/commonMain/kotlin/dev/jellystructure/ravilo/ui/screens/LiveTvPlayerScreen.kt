@@ -54,6 +54,7 @@ import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import dev.jellystructure.ravilo.ui.LocalServerBaseUrl
 import dev.jellystructure.ravilo.ui.focus.dpadFocusable
+import dev.jellystructure.ravilo.ui.focus.playerBackGesture
 import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.seams.PlayerVideoSurface
 import dev.jellystructure.ravilo.ui.seams.RaviloPlayer
@@ -169,21 +170,26 @@ fun LiveTvPlayerScreen(
         store.zap(direction)
     }
 
+    // R260 (FR-R260-1) — hoisted (see PlayerScreen.kt); Live TV's equivalent decision (guide → number
+    // entry → leave — no chrome-hide stage) needs the same two entrances.
+    val liveTvBack: () -> Unit = {
+        when {
+            guideOpen -> guideOpen = false
+            numberEntry.isNotEmpty() -> numberEntry = ""
+            else -> onBack()
+        }
+    }
+
     Box(
         modifier = Modifier.fillMaxSize().background(Color.Black)
+            .playerBackGesture(onBack = liveTvBack)
             .dpadFocusable(
                 focusRequester = rootFR,
                 onLeft = { if (!guideOpen) zap(-1) },
                 onRight = { if (!guideOpen) zap(1) },
                 onUp = { if (!guideOpen) { guideOpen = true; chromeVisible = true } },
                 onSelect = { if (!guideOpen) { if (chromeVisible) chromeVisible = false else wake() } },
-                onBack = {
-                    when {
-                        guideOpen -> guideOpen = false
-                        numberEntry.isNotEmpty() -> numberEntry = ""
-                        else -> onBack()
-                    }
-                },
+                onBack = liveTvBack,
                 // R244 — a phone tap toggles the chrome (there is no D-pad Select to do it).
                 onTap = if (handset) ({ if (!guideOpen && !locked) { if (chromeVisible) chromeVisible = false else wake() } }) else null,
             )

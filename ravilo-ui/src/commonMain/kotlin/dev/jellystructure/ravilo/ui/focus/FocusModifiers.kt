@@ -6,7 +6,10 @@ import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.HoverInteraction
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
@@ -21,6 +24,8 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
+import dev.jellystructure.ravilo.ui.PlatformBackHandler
+import dev.jellystructure.ravilo.ui.isTvPlatform
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
@@ -177,4 +182,40 @@ fun Modifier.dpadFocusable(
             }
             Modifier.hoverable(interactionSource)
         } else Modifier
+    )
+
+/**
+ * R260 (FR-R260-1) — the player's Back decision (picker → rail → next-up → scrub → chrome → leave, or
+ * Live TV's guide → number entry → leave) needs a **second** entrance: Android's system back
+ * gesture/button never arrives as a `Key.Back` [KeyEvent] under gesture navigation (it's intercepted by
+ * `OnBackPressedDispatcher` before Compose sees it), which left the phone's Back finishing the whole
+ * Activity instead of running [onBack] at all. `dpadFocusable`'s `onBack` above stays the TV
+ * remote/keyboard entrance; this is the platform-dispatcher entrance for the same decision.
+ *
+ * `isTvPlatform` keeps the TV byte-for-byte on the key-only path — the dispatcher entrance never turns
+ * on there, so the bedroom-TV race that made the root step aside for the player (see `RaviloApp.kt`'s
+ * `ownsItsOwnBack`) cannot return. Off the TV, a device where one physical Back reaches both entrances
+ * (a Bluetooth keyboard's Escape, a gamepad's B) would otherwise run [onBack] twice for one press —
+ * chrome visible → hidden, then hidden → leave, in one motion. `suppressDispatcher` is set on the key
+ * entrance's `KeyDown` and cleared on its `KeyUp`, so the dispatcher entrance is a no-op for the exact
+ * press the key entrance already handled; a gesture or nav-bar tap never sets the flag and reaches the
+ * dispatcher normally.
+ *
+ * Kept as its own modifier rather than inlined into the player screens' bodies: `PlayerScreen` has
+ * already tripped ART's release-build register-count verifier once (R258), and phase 231 gates every
+ * release APK on that verifier passing.
+ */
+fun Modifier.playerBackGesture(onBack: () -> Unit): Modifier =
+    if (isTvPlatform) this
+    else this.then(
+        Modifier.composed {
+            var suppressDispatcher by remember { mutableStateOf(false) }
+            PlatformBackHandler(enabled = true) { if (!suppressDispatcher) onBack() }
+            Modifier.onKeyEvent { ev ->
+                if (ev.key == Key.Back || ev.key == Key.Escape) {
+                    suppressDispatcher = ev.type == KeyEventType.KeyDown
+                }
+                false
+            }
+        }
     )
