@@ -1,6 +1,6 @@
 # Ravilo on the web: install it on a phone, play properly, and cast — instead of an iOS app
 
-**Date:** 2026-09-18 · **Status:** research, not spec. Companion to
+**Date:** 2026-09-18 · **Status:** research, not spec. **Owner answers folded in the same day — see §11**, which changes §3.2, §5.2, §8 and §9. Companion to
 `ravilo-mobile-player-chromecast-ios-2026-09-16.md` (§4 costed a native iOS target) and
 `ios-build-host-macbook-setup-2026-09-16.md`. This report answers the owner's follow-up: *"iOS is very
 expensive to deploy to the App Store — investigate getting the web client to work even better, support
@@ -14,7 +14,7 @@ PWA, with a proper media player, Chromecast support, and installable on iOS and 
    tags), and its static server answers `manifest.json` with `index.html`. This is one small phase.
 2. **The floor is iOS 18.2.** Compose Multiplatform for web runs on WasmGC, which Safari gained in 18.2
    (December 2024). An older iPhone gets a blank page unless the Kotlin/JS fallback bundle ships too. The
-   parents' iPhones' iOS version is the first question to answer.
+   owner's answer (§11): older iPhones are **not supported** — one notice, no fallback bundle.
 3. **The app already boots on WebKit and at phone width.** Measured here: the production bundle renders the
    sign-in screen in Playwright's WebKit (Safari 26.5-era) and in Chromium under iPhone 14 and Pixel 7
    emulation, zero page errors, ~8 s to first paint on loopback. Nothing about the Compose side blocks this.
@@ -29,7 +29,11 @@ PWA, with a proper media player, Chromecast support, and installable on iOS and 
    browser". A `CastSender` web actual for Chrome is straightforward (the seam, the mini bar and the remote
    already exist in common code). For an iPhone there are exactly two routes: *Play on a Ravilo TV* (phase
    111, nearly free) or a **backend Cast launcher** that speaks the Cast v2 protocol to the dongle itself —
-   which would make casting a server feature for every client, at a real cost (§5).
+   which would make casting a server feature for every client, at a real cost (§5). **Owner (§11): Cast
+   is one of the most important functions and must be perfect; "install Chrome, then the PWA" is an
+   acceptable ask if the app guides it.** That settles Android and desktop. It does not settle the iPhone —
+   Chrome on iOS cannot cast either — and it cannot settle *parents' iPhones → their own stick* at all
+   without something on their LAN (§5.3).
 6. **Serving needs fixing regardless.** The live site ships 15.3 MB of wasm **uncompressed** (gzip would be
    5.2 MB), with a one-hour cache and no Content-Security-Policy at all on `ravilo.jebster.net`.
 
@@ -154,10 +158,12 @@ WebAPK (an installed PWA) as it does in a tab.
 - Storage: `localStorage` holds the token and device id. Safari's seven-day script-storage cap does not
   apply to Home Screen web apps, and an installed app keeps its own storage partition — so a viewer who
   signs in inside Safari signs in again after installing. Say so on the install card.
-- Below iOS 18.2 the wasm build shows nothing. Options: ship the JS fallback (doubles the bundle, and
-  the Kotlin/JS build of Compose is the slower, larger one), or show a plain HTML *"Ravilo needs iOS 18.2
-  or later"* page from a tiny feature check before the bundle loads (recommended — it costs nothing and
-  is honest). Which one is the owner's call and depends on the parents' phones.
+- Below iOS 18.2 the wasm build shows nothing. **Owner decision (§11): not supported, full stop** — no
+  Kotlin/JS fallback bundle. A tiny inline feature check in `index.html` runs *before* the 16 MB bundle is
+  requested (`WebAssembly.validate` of a WasmGC-typed module; UA sniffing is not the test) and, on
+  failure, replaces the page with one plain notice in en/da/fo: *"Ravilo can't run on this device. It
+  needs iOS 18.2 or newer."* No button, no link, no bundle download. The same check covers old Android
+  WebViews and Firefox < 120 with the same sentence minus the iOS clause.
 
 ### 3.3 Android
 - Chrome installs it as a WebAPK once the manifest criteria hold: an app icon, a splash from
@@ -265,7 +271,7 @@ seven states and the subtitles sheet are common code and arrive for free.** The 
 ceiling, the Jellyfin identity — all 218/R245, untouched. Same LAN requirement as Android: Cast discovery is
 the *browser's*, so the phone and the dongle share a network.
 
-### 5.2 iPhone: no SDK will ever run in the page
+### 5.2 iPhone: no SDK will ever run in the page — installing Chrome does not change that
 
 Every iOS browser is WebKit and Google states Cast is not supported even in Chrome for iOS. Two honest
 routes, not mutually exclusive:
@@ -301,6 +307,37 @@ routes, not mutually exclusive:
    - **Re-connect on app start** (FR-R245-5) becomes a backend query (*is a receiver device of mine
      playing?*) instead of SDK session resumption — arguably cleaner, and it makes the two-outcome rule
      (live ⇒ mini bar; gone ⇒ silence) trivially observable.
+
+### 5.3 What "Cast must be perfect" means per device (owner decision, §11)
+
+| Viewer's device | Can it launch the Ravilo receiver? | What the app does |
+|---|---|---|
+| Android phone, Chrome tab | yes (Web Sender) | cast button works in the tab; the guide offers *Install* so it launches like an app |
+| Android phone, installed from Chrome (WebAPK) | yes — **verify** the Web Sender initialises inside a WebAPK exactly as in a tab | the target state: icon on the home screen, cast button on every app bar |
+| Android phone, Samsung Internet / Firefox / another browser | no | a **setup card**: *"Casting needs Chrome"* → one tap opens the same URL in Chrome (`intent://…#Intent;scheme=https;package=com.android.chrome;end`), then the Install step |
+| Desktop Chrome / Edge | yes | works; install optional |
+| Desktop Safari / Firefox | no | the card names Chrome; no cast glyph |
+| **iPhone, any browser** | **no — never** (WebKit; Google: "not supported on the iOS Chrome browser") | no cast glyph, never greyed; *Play on Stue TV* where a Ravilo TV exists (§5.2 route 1); the backend launcher (route 2) where the backend shares the dongle's LAN |
+| **Parents' iPhones → their own stick on the LG** | **no path exists without native code or a device on their LAN** | see below |
+
+The last row is the one to read twice. The 2026-09-16 report made *parents' iPhones → old stick* the
+acceptance test of the iOS Cast phase. Dropping the native app removes the only sender that could have run
+on those phones. The backend launcher (route 2) launches a receiver only on the LAN the backend sits on —
+this house's — and their stick is on theirs. What would cover them: an Android phone or tablet in that
+house running Chrome (one-time launch, then any device including an iPhone could drive the receiver
+through the backend once §5.2's "control after launch" exists), or a tiny always-on box on their LAN
+running the launcher, or a native iOS app after all. None of these is a web-app change. **The owner has to
+choose which of these is acceptable, or accept that the parents cast from an Android device.**
+
+The **guide** itself is one component with three destinations, decided at runtime from two facts —
+*is the Cast SDK loadable here?* (`__onGCastApiAvailable` after loading `cast_sender.js`; on WebKit it
+never fires) and *is the app installed?* (`display-mode: standalone` / `navigator.standalone`) — never
+from the UA string. States: **Ready** (nothing shown; the glyph is on the app bar), **Install** (Android
+Chrome tab: *"Add Ravilo to your home screen"* → `beforeinstallprompt`), **Open in Chrome** (other
+Android browsers), **Not from this device** (iPhone: *"Casting to a Chromecast isn't possible from an
+iPhone. You can play on {Ravilo TV}."* — or nothing at all if the household has no Ravilo TV, because a
+sentence about a missing feature with no action is noise). The card is dismissible, remembered per
+device, and re-surfaces only from Settings. It is design work (§7).
 
 **Rejected:** the Remote Playback API (`video.remote.prompt()`) on Android Chrome casts a plain URL to
 Google's *Default Media Receiver* — it bypasses the Ravilo receiver and every invariant 218 was written to
@@ -339,15 +376,20 @@ MSE-driven playback anyway.
 
 ## 8. Owner questions
 
-1. **Which iOS do the parents' iPhones run?** ≥ 18.2 ⇒ wasm only; older ⇒ the JS fallback (bigger,
-   slower) or the plain "needs iOS 18.2" page. My lean: the page.
+1. ~~Which iOS do the parents' iPhones run?~~ **Answered (§11): below 18.2 is unsupported; one notice.**
+   Their actual version still matters — if either phone is on 17 or 18.0/18.1, the notice is the first
+   thing the parents see, and the household should know that before sending them a link.
 2. **One origin (`ravilo.jebster.net`) or `/tv/` on the backend** as the canonical home of the web
    app for self-hosters? My lean: keep the origin for this house, support `/tv/` in the manifest/SW
    for single-container installs.
-3. **Is *Play on Stue TV* enough for iPhones for now**, with the backend Cast launcher as a later phase
-   gated on the TLS spike? My lean: yes — ship the Chrome sender and phase 111 first; the launcher is the
-   phase that makes cast universal and is worth its own investigation report once the TLS question is
-   answered.
+3. ~~Is *Play on Stue TV* enough for iPhones for now?~~ **Superseded by §11's "Cast must be perfect":**
+   the Chrome sender + the guide ship first (Android/desktop are then complete), the backend launcher is
+   promoted from "later" to the phase that makes an iPhone cast *in this house* — still gated on the TLS
+   spike, which should run now rather than eventually.
+3b. **The parents.** Which of §5.3's three options covers *parents' iPhones → their stick*: an Android
+   device in their house as the launcher, an always-on box on their LAN, or a native iOS app after all?
+   Or is "they cast from an Android device / they get a Ravilo TV" acceptable? There is no fourth option
+   on the web; this is the decision the whole iOS question now turns on.
 4. **Host networking for the backend container** (mDNS discovery) vs. typing the dongle's address on the
    Chromecast card? My lean: the address field, because it is explicit and works for everyone.
 5. **Does the web install replace the Android phone APK?** My lean: no — the APK stays the Android phone
@@ -361,16 +403,25 @@ MSE-driven playback anyway.
 
 | # | Phase | Depends on |
 |---|---|---|
-| **R263** | **Ravilo web installs** — manifest, icons, iOS meta, service worker with versioned update + toast, safe-area seam, the install card / Settings *Install* row, the "needs iOS 18.2" page. | 235 |
+| **R263** | **Ravilo web installs** — manifest, icons, iOS meta, service worker with versioned update + toast, safe-area seam, the install card / Settings *Install* row, the pre-bundle **"needs iOS 18.2 or newer" notice** (owner decision: no JS fallback). | 235 |
 | **235** | **Serve the web app like an app** — compression, immutable caching, asset-path 404s, `HEAD`, manifest/SW types, a CSP on the static server (+ `www.gstatic.com`), self-hosted hls.js/JASSUB in the bundle. | — |
 | **R264** | **The browser tells the truth** — capability probe → `containers`/`video_codecs`/`audio_codecs`/`hls_only`/`link_kind`; native HLS on Safari, hls.js elsewhere. Backend unchanged. | — |
 | **R265** | **The web player is the phone player** — `ComposeViewport` migration, transparent canvas over the video (spike first) or the documented fallback, R218 moments wired, track switching, fullscreen + orientation lock on Android, never native fullscreen on iPhone, `visibilitychange`. | R264, the A spike |
-| **R266** | **Cast from Chrome** — the `CastSender` web actual over the Web Sender SDK; absent everywhere else. Acceptance: Pixel 9 Chrome → stue Chromecast. | 218, R245 |
+| **R266** | **Cast from Chrome, guided** — the `CastSender` web actual over the Web Sender SDK, **plus the setup guide** (§5.3: Install / Open in Chrome / Not from this device), absent-never-greyed everywhere the SDK cannot load. Acceptance: Pixel 9 — Samsung Internet → guided into Chrome → installed → casts to the stue Chromecast; and the WebAPK-sender check. | 218, R245 |
 | **R267** | **Play on a Ravilo TV** from the phone and the web (phase 111 under device-token auth; the 2026-09-16 report's R246). | 111 |
-| **236 / R268** | **A backend Cast launcher** — gated on a TLS-from-Native spike and the LAN answer; makes casting a server feature for every client. Its own research report first. | 218, R245, R267 |
+| **236 / R268** | **A backend Cast launcher** — promoted by §11: the only way an iPhone in this house casts to the stue Chromecast. TLS-from-Native spike first, Chromecast address on the 218 card, receiver takes commands over `/api/tv/events`, re-connect as a backend query. Its own research report before the spec. Does **not** reach the parents' LAN (§5.3). | 218, R245, R267 |
 
 R263 and 235 are small and independent of the player; R264 is a day and fixes the black screen on
 iPhones by itself; R265 is the real work and hinges on one spike that should run before it is spec'd.
+**Order after §11:** 235 → R264 → R266 (Cast from Chrome + guide, the owner's priority) → R263 → R265 →
+R267 → the TLS spike → 236/R268.
+
+## 11. Owner answers (2026-09-18) and what each changed
+
+| # | Question | Answer | Effect on this report |
+|---|---|---|---|
+| 1 | iOS below 18.2? | *"We will just not support. A small notice: your device is not supported at all, you'll need 18.2 or newer."* | §3.2: no Kotlin/JS fallback bundle; a pre-bundle feature check shows one notice in en/da/fo and downloads nothing. §8 Q1 closed. R263 carries it. |
+| 2 | How important is Cast, and is "install Chrome, then the PWA" an acceptable ask? | *"Google Cast is one of the most important functionality … the experience must be perfect. If that means you have to install Chrome and install the PWA from there, that's fine. Just guide the user to set it up properly."* | §5.3 added: a per-device table and a three-state setup guide (Install / Open in Chrome / Not from this device), decided from SDK availability + standalone mode, never the UA. R266 becomes "Cast from Chrome, guided" and moves to the front of the order. The backend launcher (236/R268) is promoted from "later" to the iPhone-in-this-house route, TLS spike first. **New open question 3b:** nothing on the web reaches *parents' iPhones → their own stick*; Chrome on iOS cannot cast either. |
 
 ## 10. Sources
 
