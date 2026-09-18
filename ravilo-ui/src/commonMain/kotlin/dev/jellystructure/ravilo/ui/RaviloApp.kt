@@ -8,10 +8,7 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.safeDrawing
-import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
@@ -101,6 +98,7 @@ import dev.jellystructure.ravilo.ui.components.ProfileMenu
 import dev.jellystructure.ravilo.ui.components.ServerMessageHost
 import dev.jellystructure.ravilo.ui.perf.FrameTrackerOverlay
 import dev.jellystructure.ravilo.ui.seams.prefetchImage
+import dev.jellystructure.ravilo.ui.seams.safeAreaPadding
 import dev.jellystructure.ravilo.ui.theme.LocalCompact
 import dev.jellystructure.ravilo.ui.theme.LocalHandset
 import dev.jellystructure.ravilo.ui.theme.RaviloMotion
@@ -691,10 +689,14 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
             if (profileMenuOpen) profileMenuOpen = false
             else if (stack.size > 1) pop() else exitApp()
         }
+        // R261 (FR-R261-3/5, dev review item 4) — safe-area padding used to be applied here, wrapping
+        // every destination including the player. It now lives per-destination inside AnimatedContent's
+        // content lambda below (none for the two playing destinations; safeAreaPadding(), not plain
+        // safeDrawing, for everything else) plus explicitly on the profile menu and FPS overlays, which
+        // are this root Box's other children.
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .windowInsetsPadding(WindowInsets.safeDrawing)
                 .onKeyEvent { ev ->
                     when {
                         ev.type != KeyEventType.KeyDown -> false
@@ -734,7 +736,17 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                 }
             },
             contentKey = { it::class },
-        ) { dest -> when (dest) {
+        ) { dest ->
+            // R261 (FR-R261-3/5, dev review item 4) — the two playing destinations render unpadded
+            // (their picture owns the whole panel; the chrome pads itself). Dest.CastRemote is excluded
+            // too: CastRemoteScreen.kt already self-pads with WindowInsets.safeDrawing at its own root,
+            // predating this seam — wrapping it again here would double the inset. Everything else gets
+            // safeAreaPadding() here (not on the root Box) so it composes with its final insets from the
+            // first frame, instead of jumping once the bars finish animating back in (the measured 69 px
+            // this phase fixes).
+            val playingFullscreen = dest is Dest.Player || dest is Dest.LiveTv || dest is Dest.CastRemote
+            Box(modifier = if (playingFullscreen) Modifier.fillMaxSize() else Modifier.fillMaxSize().safeAreaPadding()) {
+            when (dest) {
             is Dest.ProfilePicker -> {
                 val store = remember { ProfilePickerStore() }
                 ProfilePickerScreen(
@@ -1329,12 +1341,15 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                     }
                 },
             )
-        } } // when / AnimatedContent
+        } } } // Box (per-dest insets, R261) / when / AnimatedContent
         // R170 — the avatar's dropdown: My List/Settings/Switch profile/Unpair, replacing the old
         // straight-to-picker click. Rendered over whatever screen is current, same tier as the
         // debug/message overlays below.
         if (profileMenuOpen) {
             val currentDisplayName = destDisplayName(dest)
+            // R261 — this root Box no longer pads itself; the menu is one of its two children (with the
+            // FPS overlay below) that need it explicitly rather than through a per-destination wrapper.
+            Box(Modifier.fillMaxSize().safeAreaPadding()) {
             ProfileMenu(
                 apiClient = apiClient,
                 onClose = { profileMenuOpen = false },
@@ -1353,6 +1368,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                 },
                 onUnpaired = { profileMenuOpen = false; resetTo(Dest.Login) },
             )
+            }
         }
         // R245 (FR-R245-3/6) — the connecting bar and the mini bar float over every screen except the
         // three that own the picture or ARE the remote. The mini bar never dismisses while a cast runs.
@@ -1362,7 +1378,9 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                 Box(Modifier.align(Alignment.BottomCenter)) { CastMiniBar(onOpen = { push(Dest.CastRemote(currentDisplayNameForCast)) }) }
             }
         }
-        FrameTrackerOverlay(fpsOverlay)  // R94: F5 toggles; no-op when false
+        // R261 — see the profile-menu comment above; the overlay itself has no inset awareness of its
+        // own (a plain 6dp corner offset), so without this it could sit under a notch/status bar.
+        Box(Modifier.fillMaxSize().safeAreaPadding()) { FrameTrackerOverlay(fpsOverlay) }  // R94: F5 toggles; no-op when false
         ServerMessageHost()  // R152: floats over every screen incl. the player (reads LocalServerMessages)
         } // Box (back-intercept)
         } // CompositionLocalProvider (live config)

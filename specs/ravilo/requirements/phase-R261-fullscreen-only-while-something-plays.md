@@ -11,12 +11,16 @@
 
 ## Status
 
-`Planned` — written 2026-09-18 from an owner report ("The top notification bar and bottom native
+`✓ Built` — written 2026-09-18 from an owner report ("The top notification bar and bottom native
 android buttons are gone (just like when in full-screen mode). I only want this fullscreen when the
 app is actually playing some media") and a same-day trace + device measurement. **Dev-reviewed 2026-09-18 against `main`
 `05195d1f`** (see §Dev review at the bottom: `minSdk 21` — the window calls are inert only on Android
 15+ and stay, plus a cutout mode below it; FR-R261-5 is met by visibility-independent insets, not by
-ordering; the padding moves inside `AnimatedContent`). Not built. Client-only (`ravilo-ui` androidMain seam + one root-layout rule in commonMain). No backend,
+ordering; the padding moves inside `AnimatedContent`). **Built 2026-09-18** per the dev review's
+corrected FR-R261-1/3/5 (see §Dev review); compiles clean on commonMain/Android/wasmJs, including
+`ravilo-android`. **Not yet device-tested** — acceptance 1–7 need a real Pixel 9 (incl. an Android ≤14
+device/emulator for the dev review's added cutout-mode step) and the Stue TV, neither run this
+session. Client-only (`ravilo-ui` androidMain seam + one root-layout rule in commonMain). No backend,
 DTO, string or design change. The TV is unaffected by design (see FR-R261-1).
 
 **Numbering:** verified against `STATUS.md` and the spec directories 2026-09-18 — Ravilo taken
