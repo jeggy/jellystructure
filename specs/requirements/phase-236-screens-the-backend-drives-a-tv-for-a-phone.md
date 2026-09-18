@@ -29,6 +29,11 @@ receiver's Cast-namespace path, or phase 111's API-key routes.
    first, then a collapsible **all your TVs**. "Same network" is *only if possible* — it is (FR-236-6).
 3. **AirPlay stays**, one tier further down, with a notice that the phone must stay on (R265).
 4. **The entry point is the Cast glyph** on the phone, even though the TV is not a Chromecast (R265).
+5. **One API for everyone (added later the same day).** jellystructure already lets API-key callers
+   control Ravilo devices (phase 111, `/api/remote/**`). That surface becomes *the* device-control API:
+   API users get in-depth management of every Ravilo device, and the Ravilo PWA and Android app use
+   **the exact same routes** with their ordinary device-token authentication instead of an API key.
+   No parallel `/api/tv/screens` API exists.
 
 ## Current state (traced against `main`, 2026-09-18)
 
@@ -68,23 +73,37 @@ the existing device** (`receiverId` reuse) instead of minting a new device — t
 and one name across users. A user un-pairs from Settings → Users & devices (existing revoke). The 6-char
 code, TTL and sweep are 218's; nothing new is invented.
 
-**FR-236-3 · Phone-facing routes under the device token.**
-- `GET /api/tv/screens` → `{ nearby: [Screen], others: [Screen] }` for the calling user (only devices
-  holding a session for that `jellyfinUserId`). `Screen = { device_id, name, platform, online, last_seen,
-  now_playing: ScreenStatus? }`. `online` = heartbeat or events socket seen within 90 s.
-- `POST /api/tv/screens/{device_id}/play { jellyfin_id, start_position_ms }` → 202, pushes `play_item`
-  (FR-236-4). 404 if the screen holds no session for the caller; 409 with the current `ScreenStatus` if
-  another user's play is running on it (the phone shows *"{name} is playing something for {user}"*, R245's
-  busy shape — never silently hijacks).
-- `POST /api/tv/screens/{device_id}/command { command, … }` with the full set R245 needs: `pause`,
-  `unpause`, `seek {position_ms}`, `skip {delta_ms}`, `next`, `stop`, `set_audio {index}`, `set_subtitle
-  {index | null}`, `set_subtitle_size {S|M|L}`, `cancel_next_up`. Pushed as `playstate_command` (existing
-  ones) or the new `player_command {command, args}` event. Only the user whose play is running may
-  command it; 409 otherwise.
-- `GET /api/tv/screens/{device_id}/status` (one snapshot) and a subscription on the phone's **own**
-  events socket: `{"type":"subscribe_screen","device_id":…}` → the backend pushes `{"type":"screen_status",
-  device_id, status}` on every change until `unsubscribe_screen` or the socket closes. Constitution:
-  server-pushed state only — the remote never advances a position by a local clock.
+**FR-236-3 · One device-control API, two credentials.** Phase 111's `/api/remote/**` is extended, not
+duplicated, and `AuthPlugin` accepts **either** an API key **or** a device token on it; both resolve to
+the same principal — a `jellyfinUserId` (an API key is bound to one user, `ApiKeyData.jellyfinUserId`;
+a device session is per `(device, user)`). Every route below scopes to that user's devices and behaves
+identically for Home Assistant and for a phone. Existing phase 111 shapes stay valid (a Home Assistant
+integration written against them keeps working); new fields and commands are additive.
+- `GET /api/remote/devices` → the existing list, each device extended with `kind` (`tv | phone | web |
+  cast | screen`), `platform`, `online`, `paired_users` (names, for screens), `now_playing: ScreenStatus?`
+  (was a title string; the string stays as `now_playing_title` for compatibility), and `nearby: Boolean` —
+  FR-236-6's judgement relative to **the caller** (an API caller from the LAN gets the same grouping a
+  phone would). The phone renders `nearby` as its first tier; it never computes it.
+- `POST /api/remote/play { device_id, jellyfin_item_id, start_position_ms }` → 202 as today; now carries
+  the caller's user into `play_item` (FR-236-4); 404 if the device holds no session for the caller; 409
+  `device_offline` as today, and **409 `busy`** with the current `ScreenStatus` when another user's play is
+  running (the phone shows *"{name} is playing something for {user}"*; never silently hijacks).
+- `POST /api/remote/command { device_id, command, … }` — the existing `stop | pause | unpause | home`
+  plus `seek {position_ms}`, `skip {delta_ms}`, `next`, `previous`, `set_audio {index}`, `set_subtitle
+  {index | null}`, `set_subtitle_size {S|M|L}`, `cancel_next_up`, `skip_segment` (the current intro/credits
+  segment), `set_volume {0–100}` / `mute` (screens and TVs that can — a phone or web device answers 409
+  `unsupported`). Pushed as the existing `playstate_command`/`navigate` where they fit, else the new
+  `player_command {command, args}` event. Only the user whose play is running may command it.
+- `GET /api/remote/devices/{device_id}` → one device with its full `ScreenStatus` snapshot.
+- **Status stream.** `GET /api/remote/events` (WebSocket, either credential) pushes
+  `{"type":"device_status", device_id, status}` on every change for **all** of the caller's devices — this
+  is what an API user subscribes to. A Ravilo client may instead send `{"type":"subscribe_device",
+  device_id}` on its **own** `/api/tv/events` socket (one authenticated, reconnecting socket per client)
+  and receives the same `device_status` messages; `unsubscribe_device` or the socket closing ends it.
+  Constitution: server-pushed state only — a remote never advances a position by a local clock.
+- `DELETE /api/remote/devices/{device_id}/sessions/me` → un-pair the caller's user from a shared screen
+  (the Settings revoke, exposed).
+- Rate limits and logging as phase 111 (`"remote"` logger names the key *or* the device).
 
 **FR-236-4 · The play carries the user; the TV never holds a credential.** `play_item` gains
 `session_user_id`. The receiver starts playback with its device token as today; the backend resolves the
@@ -104,13 +123,13 @@ display state, never written to Jellyfin.
 
 **FR-236-6 · "On this network" is decided by the server from public addresses.** Each heartbeat, status
 report and events-socket open stamps the device's `last_public_address` (first `X-Forwarded-For` hop,
-else remote host). `GET /api/tv/screens` puts a screen in `nearby` when its address matches the caller's:
+else remote host). `GET /api/remote/devices` marks a device `nearby` when its address matches the caller's:
 IPv4 exact, IPv6 by `/64`. Stated limits, in the spec and in the admin help text: carrier-grade NAT can
 group two houses (harmless — the list is already filtered to the user's own TVs), a phone on a VPN or
 mobile data groups nothing (the TV is then simply in *others*). No LAN probing from the phone (an `https`
 page cannot reach a TV's local HTTP anyway) and no location permission, ever.
 
-**FR-236-7 · Reconnect is one question.** A phone rebuilds its remote from `GET /api/tv/screens`
+**FR-236-7 · Reconnect is one question.** A phone rebuilds its remote from `GET /api/remote/devices`
 (`now_playing` present ⇒ mini bar; absent ⇒ nothing), exactly R245 FR-R245-5's two outcomes, with no
 SDK session resumption involved.
 
@@ -122,10 +141,26 @@ The events socket closing does **not** end a play (the 218 amendment's rule, ext
 **FR-236-9 · Ceilings and limits.** A screen counts under 218's `max_sessions` receiver ceiling only when
 `platform` is a cast receiver; a Tizen/webOS screen counts like a TV (one transcode per playing device).
 Phase 182's 503 + `Retry-After` reaches the phone as `busy_retry_after` in status (R245 FR-R245-9's
-*Server busy* state). Rate-limit `/screens/*` per device like the other TV routes.
+*Server busy* state). Rate-limit `/api/remote/*` per credential as phase 111 does.
 
 **FR-236-10 · Admin.** Settings → Users & devices lists screens with `kind`, platform, paired users and
 *now playing*; revoke per user. The Chromecast card (218 / 226 / 227) is untouched.
+
+**FR-236-11 · Every Ravilo device honours the whole command set and reports status.** The API's promise
+is only true if the *targets* keep it. The Android TV client, the phone app and the web build already
+act on `play_item`, `playstate_command` and `navigate` (`RaviloApp.kt`); they gain handlers for
+`player_command` (next/previous, audio and subtitle selection, subtitle size, cancel next-up, skip
+segment, volume where the platform allows) and **post `ScreenStatus`** from the player exactly as the
+receiver does (FR-236-5) — so an API user, or a phone acting as a remote, sees the same buffering / track
+list / next-up countdown for a living-room Android TV as for a Tizen screen. Client-side this lands in
+`ravilo-ui` commonMain (`PlayerStore`, one status reporter shared by every platform); it is listed here
+because it is the API's contract, and it is the last thing that makes phase 111 "in-depth" rather than
+play/pause/stop. A device that cannot honour a command answers via status, never silently.
+
+**FR-236-12 · The API is documented as a product.** `specs/plan.md`'s API routes section and the phase
+111 documentation gain the full `/api/remote/**` contract (both credentials, every command, the status
+DTO, the WebSocket), plus one worked Home Assistant example (`media_player` play / pause / seek / select
+subtitle from `device_status`). Admin → Settings → Advanced's API-key card links to it.
 
 ## Acceptance
 
@@ -133,8 +168,10 @@ Phase 182's 503 + `Retry-After` reaches the phone as `busy_retry_after` in statu
   (`play_item` from user B on a TV paired by A and B plays under B; user C gets 404), the 409 on a busy
   screen, the status fan-out to two subscribed phones, the reap clearing status.
 - e2e (mock stack): a fake screen device enrols with a code, opens the events socket, receives `play_item`
-  with `session_user_id`, posts status; a phone device lists it under `nearby` (same test-runner
-  address), commands `seek`, and its events socket receives `screen_status` with the new position.
+  with `session_user_id`, posts status; a phone device (device token) lists it with `nearby=true` (same
+  test-runner address), commands `seek`, and its events socket receives `device_status` with the new
+  position; **the same three calls with an API key** succeed with identical bodies; an API key of another
+  user gets 404; phase 111's original `command: "pause"` body still works.
 - Live (with R264/R265): Pixel 9 Chrome → Stue TV running the receiver → play, pause, seek, subtitle
   change, close the app, reopen → mini bar with the live position.
 - `scripts/check-phases.sh` green.
@@ -145,14 +182,14 @@ Phase 182's 503 + `Retry-After` reaches the phone as `busy_retry_after` in statu
   A SmartThings-cloud launch is a separate investigation.
 - No Chromecast protocol in the backend (the launcher, 237/R268 in the report) — not needed for this
   route.
-- No change to phase 111's API-key routes (Home Assistant keeps working); they may later be re-expressed
-  over these.
+- No breaking change to phase 111's shapes (Home Assistant keeps working); they are extended in place.
 - No AirPlay code (R265; it needs nothing from the backend).
 
 ## Open questions
 
-1. **Status transport for the phone:** the phone's own events socket with subscribe/unsubscribe (lean —
-   one socket, already authenticated, already reconnecting) vs a second socket per screen.
+1. **Status transport for the phone:** its own events socket with subscribe/unsubscribe (lean — one
+   socket, already authenticated, already reconnecting) vs opening `/api/remote/events` like an API
+   user. Both must exist for API users anyway; the question is only what the phone does.
 2. **Should a screen be visible to users who have never paired it** (household mode)? Owner said
    filtered by user; pairing-per-user keeps it explicit. Revisit if pairing three phones per TV proves
    tedious.
