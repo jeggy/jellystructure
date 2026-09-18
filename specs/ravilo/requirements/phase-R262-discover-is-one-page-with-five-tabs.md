@@ -18,8 +18,12 @@ Stue TV (release `1.23-dirty` sideload) and the Pixel 9 (Play 1.26). **Dev-revie
 touch the same page). **Built 2026-09-18** — compiles clean on `ravilo-ui` (commonMain/Android/wasmJs),
 `ravilo-android` and `ravilo-web`. FR-R262-3 implemented for the full nav-bar section group
 (Home/Movies/Series/Discover), not Discover's own segments alone, since acceptance 1 and 5 require it.
-**Not yet device-tested** — acceptance 1–8 need the Stue TV, the bedroom TV (dev review item 5) and a
-real Pixel 9/browser, none run this session.
+**Device-tested on both the Pixel 9 and the Stue TV, 2026-09-18** — acceptance 1–3 confirmed live on the
+Stue TV (D-pad): entering Discover and switching to Studios moved nothing but the content region, and
+Down ×4 into the Coming Soon wall then Back scrolled to the top and focused the nav bar's Discover chip
+in one press, with a second Back landing on Home — the exact three-to-two-stage fix. Acceptance 1–2 and
+6 also confirmed on the Pixel 9 (touch). **Acceptance 4–5, 7–8 and the bedroom-TV double-fire check (dev
+review item 5) not run** — the phone-scroll/browser cases and the second TV need more session time.
 Client-only (`ravilo-ui` commonMain). No backend change: the three endpoints are already server-cached
 and fast (the Coming Soon and Studios walls both had their data on screen inside the first
 screenshot, < 0.5 s after the tap, on both devices). Nothing new to draw: `design/ravilo/ravilo-app.js`

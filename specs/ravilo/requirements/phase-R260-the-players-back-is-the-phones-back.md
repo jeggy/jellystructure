@@ -16,9 +16,14 @@ closes the app, instead of actually going back"), traced against `main` and repr
 the same day. **Dev-reviewed 2026-09-18 against `main` `05195d1f`** (see §Dev review at the bottom: a
 hardware Back can reach both entrances, so the platform entrance is off on TVs and de-duplicated per
 press elsewhere — FR-R260-1 amended; acceptance 6 moves to the bedroom TV). **Built 2026-09-18** per
-the amended FR-R260-1 (see §Dev review); compiles clean on commonMain/Android/wasmJs. **Not yet
-device-tested** — acceptance 1–7 need a real Pixel 9 (gesture + three-button nav) and the bedroom TV,
-neither run this session. Client-only (`ravilo-ui` commonMain + the Android actual
+the amended FR-R260-1 (see §Dev review); compiles clean on commonMain/Android/wasmJs. **Device-tested on
+the Pixel 9, 2026-09-18** (acceptance 1–2): one gesture Back during playback returned to the series detail
+page with the same `MainActivity` `ActivityRecord` still resumed (`dumpsys activity activities`) — the exact
+finish-the-Activity regression this phase fixes — and the two-step hide-chrome-then-leave sequence confirmed
+via `dumpsys window`'s requested-hidden bars before/after each press. Also played on the Stue TV (acceptance 6) — Back behaved identically to before this phase, no
+regression. **Acceptance 3–5, 7 not run** — the picker/season-sheet/next-up/scrub cases, three-button nav,
+the 15 s lock test and Live TV need more time on-device; the bedroom-TV regression check (item 1) needs a
+device this session didn't have. Client-only (`ravilo-ui` commonMain + the Android actual
 that already exists). No backend, DTO, string or design change.
 
 **Numbering:** verified against `STATUS.md` and the spec directories 2026-09-18 — Ravilo taken
