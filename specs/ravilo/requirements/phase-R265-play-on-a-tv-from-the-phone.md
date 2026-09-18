@@ -13,7 +13,10 @@
 ## Status
 
 `Planned` — written 2026-09-18 from the owner's decisions and the research report
-`ravilo-web-pwa-player-cast-2026-09-18.md` (§5, §12). Not dev-reviewed, not built. Client
+`ravilo-web-pwa-player-cast-2026-09-18.md` (§5, §12). **Dev-reviewed 2026-09-18 against `main`
+`05195d1f`** (see §Dev review at the bottom: pairing is 236's new `remote/pair`; self-hosting the player
+libraries moved to 235; the glyph's presence is server-pushed so a first TV can be added; two senders
+need a one-linked-at-a-time rule; R270 supersedes FR-R265-4's row). Not built. Client
 (`ravilo-ui` commonMain: the sheet, the tiers, a backend-transport `CastSender`; wasmJs actuals: the
 AirPlay seam; Android: nothing new), plus **design work** for the three-tier sheet and the AirPlay
 notice. Depends on **236**; needs **R264** on a TV to be tested; **R263** for the installed-app
@@ -149,3 +152,47 @@ with its notice; the connected glyph naming a Tizen TV. The remote and mini bar 
 - Jellyfin's `SubtitleDeliveryMethod.Hls` must be confirmed on 10.11.11 (163's and 187's lesson: probe
   before building) — the `SubtitleProfiles` in `deviceProfile()` gain `{"Format":"vtt","Method":"Hls"}`
   for `hls_only` clients only if the probe says the master playlist carries the rendition.
+
+## Dev review (2026-09-18, against `main` `05195d1f`)
+
+The seam is as described: `seams/CastSender.kt` (commonMain) exposes `link`, `deviceName`,
+`status: StateFlow<CastRemoteStatus?>`, `setAppId`, `load(CastLoadData)` and the transport calls; the
+mini bar, remote, sheet and states read only `status`. A commonMain `ScreenSender` is the right shape.
+
+1. **FR-R265-5 pairs through a route that does not exist yet.** Entering the TV's code is `POST
+   /api/remote/pair {code}` from 236's dev review (item 1) — the phone *claims* a code the TV minted; it
+   is not 218's redeem, whose caller is the receiver. Device token only. One error sentence, as written.
+2. **`CastRemoteStatus` is not field-for-field `ScreenStatus` today.** It lives in `ravilo-ui`, not
+   `shared`, and has `busySinceMs`, `receiverId` and `subSize: Char`. 236's dev review (item 6) moves it
+   to `shared` and makes `CastRemoteStatus` a typealias, so FR-R265-6's "unchanged" holds for the UI —
+   but it is a rename that touches the Android sender and `ravilo-cast` in the same commit.
+3. **FR-R265-8 is split.** Self-hosting hls.js and JASSUB moved to **235 FR-235-9** (235's CSP would
+   otherwise break production web playback the day it ships, long before this phase). What stays here is
+   the capability probing (`hls_only` on Safari, `canPlayType` / `MediaCapabilities` elsewhere) and the
+   HLS subtitle delivery for AirPlay — still gated on the Jellyfin 10.11.11 probe the dev note asks for.
+   The status block's "R264's honest-capabilities work" is the research report's numbering; there is no
+   such phase, the work is this FR.
+4. **Composing two senders needs a rule, not just a function.** `rememberCastSender()` returning "both
+   senders as one status" must say which wins: at most one is *linked* at a time; starting a play on a
+   screen while a Chromecast session is live stops the Cast session first (and the reverse). The mini bar
+   reads the linked one. Without the rule, a phone that cast to the Chromecast yesterday and picks the
+   Samsung today shows two remotes' worth of state.
+5. **FR-R265-1's presence rule costs a request on every Home.** "Present when the user has at least one
+   paired screen" needs `GET /api/remote/devices` before the glyph can be drawn — and with no screens and
+   no AirPlay there is then **no entry to *Add a TV*** at all, since that row lives inside the sheet. Make
+   it server-pushed like the Chromecast capability (`RaviloConfig.cast`): a `screens: { enabled, paired }`
+   block on the config the client already holds; the glyph is present when `enabled`, so a household's
+   first TV can be added from the sheet. *(Absent-never-greyed still holds: `enabled` is the admin's
+   switch.)* This is a small addition to 236's payload.
+6. **Design is ahead of this file.** The three-tier sheet, its four row states, *Add a TV*, the
+   connecting bar and AirPlay-active are already built into `design/ravilo/Ravilo Mobile.html`
+   (`sc-*` layer) — FR-R265-10 is delivered. The design-authored **R270** supersedes **FR-R265-4's row
+   shape** (AirPlay is a footnote link, with the full sentence on the connecting bar) and confirms
+   FR-R265-2's busy/offline wording; build from R270 where they differ.
+7. **Open question 2 is real for the Play build.** Google's Cast icon guidelines tie the mark to Cast
+   functionality. On Android the sheet *does* list Chromecasts, which is a defensible reading; on the web
+   there is no reviewer. Keep the glyph; keep a neutral fallback drawable ready rather than designing for
+   a rejection that may not come. Open question 3: yes.
+
+**Build order:** last of the five — after 235 (self-hosted players), 236 (routes, pairing, status) and
+with R264 on a real TV to test against.

@@ -13,7 +13,9 @@
 ## Status
 
 `Planned` — written 2026-09-18 from the owner's direction, a trace of `main` and a same-day run on the
-Stue TV (release `1.23-dirty` sideload) and the Pixel 9 (Play 1.26). Not dev-reviewed, not built.
+Stue TV (release `1.23-dirty` sideload) and the Pixel 9 (Play 1.26). **Dev-reviewed 2026-09-18 against `main` `05195d1f`** (see
+§Dev review at the bottom: nine `backToTopOnBack` sites, the focus token must be consumed, and R267/R268
+touch the same page). Not built.
 Client-only (`ravilo-ui` commonMain). No backend change: the three endpoints are already server-cached
 and fast (the Coming Soon and Studios walls both had their data on screen inside the first
 screenshot, < 0.5 s after the tap, on both devices). Nothing new to draw: `design/ravilo/ravilo-app.js`
@@ -201,3 +203,42 @@ Web (ravilo-web):
   one key, or the `transitionSpec` returns a content fade for section→section moves; either is the
   whole of FR-R262-3.
 - FR-R262-7 is three `keptStore(...)` calls hoisted to the frame's entry rather than one per branch.
+
+## Dev review (2026-09-18, against `main` `05195d1f`)
+
+The shape is as traced: `RaviloApp.kt:990–1060` renders three screens from one `Dest.Discover`, each
+with its own `AppBar`, header and `DiscoverSegmentBar`; all three render `Loading` as
+`HomeLoadingShell()` (`UpcomingScreen.kt:150`, `DiscoverScreen.kt:94`, `TaxonomyScreen.kt:112`); a chip
+press is `replaceTop(… focusSegment = true)`. The plan stands. Five notes for the build.
+
+1. **`backToTopOnBack` has nine call sites, not six** — `HomeScreen`, `BrowseScreen`,
+   `SeededBrowseScreen`, `SearchScreen`, `SeerrSearchScreen`, `ChannelScreen`, `UpcomingScreen`,
+   `DiscoverScreen`, `TaxonomyScreen`. The gate inside the modifier (`focus/BackToTop.kt`) still covers
+   them all in one line; FR-R262-6's list of screens should be read as *every* one of the nine, channel
+   pages and seeded grids included.
+2. **`focusSegment` lives on the destination, so it outlives the press.** It stays `true` on the stack
+   entry; when the viewer returns from a seeded grid the frame recomposes and a press-token keyed on the
+   destination would fire again — against R257 FR-R257-2's tile restore. The token must be **consumed**:
+   once the chip has taken focus, `replaceTop(dest.copy(focusSegment = false))` (same class, no
+   transition), or a counter held in the frame. Add to acceptance: Studios → a tile → Back lands on the
+   tile, not on the chip.
+3. **The taxonomy store is one store for three chips** (`keptStore("taxonomy:…")`, `RaviloApp.kt:1045`),
+   so FR-R262-7's "three stores" is three `keptStore` calls covering all five segments — correct as
+   written, just not one per chip.
+4. **Two design-authored drafts landed the same day and touch this page; neither blocks it.** **R268**
+   re-orders the chips (*Networks* first) and makes the strip scroll — so acceptance 1 should say *the
+   first available segment's content*, not *Coming Soon*. **R267** moves the phone's pages to a bottom
+   bar, after which FR-R262-4's phone half and acceptance 6 (the scrolled nav strip) describe a strip that
+   no longer exists. Build R262 first; the frame it creates is what both of those want to edit.
+5. **Run acceptance 3 on the bedroom TV too.** The root's `PlatformBackHandler` is *enabled* on Discover
+   (`stack.size > 1`), and that TV is where one physical Back was seen reaching both a dispatcher handler
+   and a key handler (R260 dev review, item 1). If it does so here, stage one's consumed `KeyDown` is
+   followed by a dispatcher pop and "two stages" reads as one. The Stue TV's measured three stages show it
+   does not happen there. If it reproduces, the fix is R260's per-press flag applied at the root, not a
+   change to this phase's rules.
+6. **FR-R262-3 / open question 1 stays the owner's call.** Mechanically it is one shared `contentKey`
+   for `Home`, `Browse` and `Discover`; it also removes the slide on a *pop* between sections, which is
+   consistent with the rule. Open question 2: the nav bar. Open question 3: the one-line *Loading…*
+   first; the per-segment shimmer is polish and can follow.
+
+No backend change, no new string, no dependency on another phase.

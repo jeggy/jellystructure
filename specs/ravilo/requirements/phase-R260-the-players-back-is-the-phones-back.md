@@ -13,7 +13,9 @@
 
 `Planned` — written 2026-09-18 from an owner report ("using the native android back button it just
 closes the app, instead of actually going back"), traced against `main` and reproduced on the Pixel 9
-the same day. Not dev-reviewed, not built. Client-only (`ravilo-ui` commonMain + the Android actual
+the same day. **Dev-reviewed 2026-09-18 against `main` `05195d1f`** (see §Dev review at the bottom: a
+hardware Back can reach both entrances, so the platform entrance is off on TVs and de-duplicated per
+press elsewhere — FR-R260-1 amended; acceptance 6 moves to the bedroom TV). Not built. Client-only (`ravilo-ui` commonMain + the Android actual
 that already exists). No backend, DTO, string or design change.
 
 **Numbering:** verified against `STATUS.md` and the spec directories 2026-09-18 — Ravilo taken
@@ -130,3 +132,40 @@ Pixel 9, Play build, gesture navigation, an episode playing:
 - `HandsetLockOverlay` needs nothing: it never consumed Back, it only appeared to.
 - The comment on `rememberExitAction` about `moveTaskToBack` describes an older Android; worth a
   one-line correction while in the file (observed: finish, on API 36 with the OnBackInvoked path).
+
+## Dev review (2026-09-18, against `main` `05195d1f`)
+
+The three pieces in *Current state* are exactly as described: the decision tree at
+`PlayerScreen.kt:1421–1432` (picker → rail → next-up → scrub → chrome → leave) and
+`LiveTvPlayerScreen.kt:180–186` (guide → number entry → leave — Live TV has no chrome-hide stage, which
+"its equivalent" should be read as); `ownsItsOwnBack` at `RaviloApp.kt:679` gating
+`PlatformBackHandler` at `:689` and the root `onKeyEvent` at `:701`; the Android actual is a bare
+`BackHandler(enabled, onBack)`. No manifest sets `enableOnBackInvokedCallback`; `targetSdk = 36`.
+The fix is right. One requirement would re-create the bug it cites.
+
+1. **FR-R260-2's "exactly one handler per Back press" is asserted, not true.** The comment at
+   `RaviloApp.kt:670–678` records, from the bedroom TV, that a single physical Back reached **both** a
+   dispatcher-level `BackHandler` and a Compose key handler — that is the whole reason the root steps
+   aside. FR-R260-1 registers a dispatcher-level handler *and* keeps the key handler, both calling
+   `playerBack()`. On any device where one hardware key reaches both paths, one press runs the tree
+   twice: chrome visible → hidden, then hidden → leave. From the sofa that is the original bedroom-TV
+   defect, now inside the player. A phone with a Bluetooth keyboard or a gamepad's B button is the same
+   case. **FR-R260-1 amended:**
+   - the platform entrance is composed with `enabled = !isTvPlatform` — the TV stays byte-for-byte on
+     today's key-only path, which is what FR-R260-2 meant to promise;
+   - off the TV, the two entrances are de-duplicated per physical press: the key path sets a flag on
+     Back's `KeyDown` and clears it on `KeyUp`; the dispatcher entrance returns without acting while the
+     flag is set. A gesture or a nav-bar Back never sets it.
+   - **Acceptance 6 moves to the bedroom TV** (the device the race was found on; the Stue TV never showed
+     it) and gains: a hardware keyboard's Escape on the Pixel hides the chrome and does not also leave.
+2. **Compose this outside `PlayerScreen`'s body.** `PlayerScreen` has already hit ART's register-count
+   verifier once in a release build (R258's first fix attempt). The handler and its flag go in a small
+   private `@Composable` of their own, called from both screens; phase 231's ART verification of the
+   release APK is the gate.
+3. **Two stale comments to correct in the same commit:** `PlayerScreen.kt:1939` ("the root's onBack sees
+   no chrome and exits" — after this phase it is the player's own handler) and the `moveTaskToBack`
+   description at `RaviloApp.kt:665` / `RaviloRoot.kt:88`, which the spec's own measurement contradicts
+   (observed: the Activity is finished).
+4. **Open question 1:** keep the two-swipe model; nothing here depends on it.
+
+No other phase is needed first. R261 touches the same seam file but not the same lines.

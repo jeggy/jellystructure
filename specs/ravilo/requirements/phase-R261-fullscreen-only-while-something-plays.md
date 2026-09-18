@@ -13,8 +13,10 @@
 
 `Planned` — written 2026-09-18 from an owner report ("The top notification bar and bottom native
 android buttons are gone (just like when in full-screen mode). I only want this fullscreen when the
-app is actually playing some media") and a same-day trace + device measurement. Not dev-reviewed, not
-built. Client-only (`ravilo-ui` androidMain seam + one root-layout rule in commonMain). No backend,
+app is actually playing some media") and a same-day trace + device measurement. **Dev-reviewed 2026-09-18 against `main`
+`05195d1f`** (see §Dev review at the bottom: `minSdk 21` — the window calls are inert only on Android
+15+ and stay, plus a cutout mode below it; FR-R261-5 is met by visibility-independent insets, not by
+ordering; the padding moves inside `AnimatedContent`). Not built. Client-only (`ravilo-ui` androidMain seam + one root-layout rule in commonMain). No backend,
 DTO, string or design change. The TV is unaffected by design (see FR-R261-1).
 
 **Numbering:** verified against `STATUS.md` and the spec directories 2026-09-18 — Ravilo taken
@@ -171,3 +173,44 @@ Pixel 9 (Android 17, `targetSdk 36`, gesture navigation), Play build:
 - Test first on the Pixel with `adb shell dumpsys window windows | grep "Requested non-default"` — an
   empty result is "bars visible". The screenshot method used here (first non-page-colour column) is a
   fine acceptance probe for FR-R261-3.
+
+## Dev review (2026-09-18, against `main` `05195d1f`)
+
+`PlayerImmersiveEffect.kt` is as quoted, `RaviloApp.kt:696` pads every destination with
+`WindowInsets.safeDrawing`, `FLAG_KEEP_SCREEN_ON` exists only at `android/MainActivity.kt:29`, and the
+phone Activity deliberately uses default window fitting. Both defects are real. Three corrections.
+
+1. **"Inert" is true of the Pixel, not of the app.** `minSdk = 21`. Edge-to-edge is enforced only on a
+   device running Android 15+; on Android 14 and below `targetSdk 36` changes nothing, and there
+   `setDecorFitsSystemWindows(false)` is precisely what lets the player draw behind the hidden bars. The
+   dev note "keep these calls out" would break the player on every older phone. **Kept**, entry and
+   restore, with the restore now unconditional off-TV (FR-R261-1).
+2. **FR-R261-3 needs one more window attribute below Android 15.** Nothing in the app or its theme sets
+   a cutout mode, so on Android 9–14 the system itself letterboxes a landscape window out of the cutout —
+   black rather than page-coloured, but the picture is still off-centre. The effect sets
+   `layoutInDisplayCutoutMode = SHORT_EDGES` (API 28+) on entry and restores the previous value on
+   dispose. **Acceptance gains** an Android ≤ 14 phone or emulator for step 2.
+3. **FR-R261-5 cannot be met by ordering alone.** `controller.show()` is asynchronous: the insets arrive
+   a frame or more after the detail page has composed, so "shown before the screen is interactive" still
+   composes once with zero insets and then shifts — the measured 69 px. The robust rule: every
+   non-playing destination pads by insets that **ignore visibility**
+   (`WindowInsets.systemBarsIgnoringVisibility` ∪ `displayCutout` ∪ `ime`), so its layout does not depend
+   on whether the bars have come back yet. The jump disappears on the way in as well as on the way out.
+4. **Where the padding lives.** It cannot stay on the root `Box`: during the 220 ms slide both the
+   player and the detail page are children of the same `AnimatedContent`. The padding moves **inside the
+   `AnimatedContent` content lambda**, chosen per `dest` (none for `Dest.Player` / `Dest.LiveTv`), so the
+   outgoing screen keeps its own insets while it slides. The root's other children — the profile menu
+   overlay and the F5 FPS overlay — take the same padding explicitly.
+5. **One seam with R263.** R263 FR-R263-6 needs safe-area values on wasm, where Compose's
+   `WindowInsets.safeDrawing` has no source. Both phases want the same thing: a single
+   `rememberSafeAreaPadding()` expect/actual (Android: item 3's union; wasm: `env(safe-area-inset-*)`)
+   replacing the 12 `WindowInsets.safeDrawing` call sites in `RaviloApp.kt`, `PlayerScreen.kt`,
+   `PlayerHandsetChrome.kt`, `CastRemoteScreen.kt` and `components/Cast.kt`. Whichever phase is built
+   first introduces it.
+6. **Keep-screen-on needs no new seam:** `LocalView.current.keepScreenOn = true` in the effect's Android
+   actual, cleared on dispose. Note `LiveTvPlayerScreen.kt:108` composes the effect only when `handset`;
+   `PlayerScreen.kt:1235` always — the TV branch must therefore leave `keepScreenOn` and the bars alone
+   (`isTvPlatform`), which FR-R261-6 already requires.
+7. **Open question 1:** the panel is the canvas. **Open question 2:** no timeout.
+
+Build with or after R260; they share an acceptance session on the Pixel.
