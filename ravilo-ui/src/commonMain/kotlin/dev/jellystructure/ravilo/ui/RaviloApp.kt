@@ -662,9 +662,10 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
         // on-screen back affordance. This bridges the platform's real back action into the same pop().
         //
         // Bug fix: back at the true root (Home, nothing left to pop) used to fall through to the
-        // platform's own default — on Android that's `moveTaskToBack`, leaving the app running in the
-        // background instead of closing it. Only Home gets this treatment (not e.g. Login/ProfilePicker,
-        // which stay on the platform default) — see rememberExitAction's doc comment.
+        // platform's own default — measured (R260) to finish the Activity outright, not background it —
+        // leaving the app closed in a way that reads as a crash rather than an intentional exit. Only
+        // Home gets this treatment (not e.g. Login/ProfilePicker, which stay on the platform default) —
+        // see rememberExitAction's doc comment.
         val exitApp = rememberExitAction()
         val atHomeRoot = stack.size == 1 && stack.last() is Dest.Home
         // Bug fix (live-tested on soveværelse TV): the Player/LiveTv screens own a deliberate two-step
