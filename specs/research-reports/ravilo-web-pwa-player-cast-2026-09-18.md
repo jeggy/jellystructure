@@ -532,6 +532,45 @@ Prospective numbers: **R263** installs · **235** serving · **R264** capabiliti
 own **R269**) · **R270 + 237** the receiver-only TV app (client + the backend's launch/command channel for
 receivers, the hand-off enrolment reused) · **236/R268** the launcher.
 
+### 12.5 What a Samsung Tizen app costs, including the store (owner question, 2026-09-18)
+
+**Money: nothing.** Samsung Apps TV Seller Office membership is free, Tizen Studio and the Samsung
+certificate extension are free, there is no listing, hosting or annual fee, and a free app pays no revenue
+share. Nothing on Samsung's seller pages names a fee.
+
+**Cost 1 — geography.** A *Public Seller* "can launch TV application services only in the United States".
+Publishing anywhere else — Denmark, the Faroe Islands, the EU — needs *Partner Seller* status, which is "an
+offline contract with Samsung HQ or a local subsidiary" followed by a partnership request. That is a
+business relationship, not a form; Jellyfin's Tizen store listing took years, the maintainer "had to
+bargain with the Seller Apps Office", and it landed on **2026-02-01 for 2021+ sets (Tizen 6.0+) only**.
+
+**Cost 2 — model years.** Samsung's TV model groups page marks **2015–2018 (Tizen 2.3–4.0) as
+Discontinued** for new submissions and lists 2020+ (Tizen 5.5+) as active (2019 / Tizen 5.0 is not in the
+active list — verify). So the store cannot reach the older sets at all, whatever the seller status. Older
+Samsung TVs are **sideload only, permanently**: the TV in Developer Mode, a PC with Tizen Studio's `sdb`
+(or the Apps2Samsung one-click installer) on the same LAN. For a remote household that is a technician's
+visit, not something a viewer does from a phone.
+
+**Cost 3 — certification per version.** Every store submission runs Samsung's QA checklist (remote-control
+navigation, exit behaviour, age rating, UI description) and every update is re-certified. Time, not money;
+a receiver-only app with no navigation is the easiest possible candidate.
+
+**Engineering.** The hard part for old sets is already in the repo: `ravilo-tizen` is Kotlin/JS DOM (no
+WebAssembly on Chromium 47–56), `required_version="2.4"`, with the AVPlay adapter (42 references) the
+old sets need because their `<video>` has no HLS. A receiver-only Tizen app is that player layer plus the
+receiver's states and the backend command channel — packaging and one adapter, not a new client.
+
+| Samsung sets | Store | Sideload | Reachable by AirPlay (route A) |
+|---|---|---|---|
+| 2021+ (Tizen 6.0+) | only with a Partner contract; otherwise no | yes | yes (AirPlay 2 since 2018) |
+| 2019–2020 | 2020 is in the active list; 2019 verify | yes | yes |
+| 2015–2018 | **no, discontinued** | yes, forever the only way | 2018 yes; 2015–2017 no |
+
+**What follows for the plan:** for Samsung, treat the store as an upside that depends on a contract,
+sideload as the baseline, and note that AirPlay (route A) reaches every 2018+ Samsung with **zero
+distribution** — which makes route A more important for Samsung than for LG, whose Content Store review a
+small project has demonstrably passed.
+
 ## 10. Sources
 
 - Kotlin docs — [Supported versions and configuration (Kotlin/Wasm)](https://kotlinlang.org/docs/wasm-configuration.html)
@@ -543,6 +582,8 @@ receivers, the hand-off enrolment reused) · **236/R268** the launcher.
 - Google Cast — [Web Sender](https://developers.google.com/cast/docs/web_sender)
 - web.dev — [Install criteria](https://web.dev/articles/install-criteria)
 - caniuse — [Fullscreen API](https://caniuse.com/fullscreen)
+- Samsung — [Becoming Seller Office members (Public vs Partner)](https://developer.samsung.com/tv-seller-office/guides/membership/becoming-seller-office-member.html); [TV model groups](https://developer.samsung.com/smarttv/develop/specifications/tv-model-groups.html); [Application registration Q&A](https://developer.samsung.com/tv-seller-office/faq/application-registration.html)
+- Jellyfin on Tizen — [linuxiac, 2026-02](https://linuxiac.com/after-years-of-waiting-jellyfin-finally-lands-on-samsung-tizen-tvs/); [jellyfin-tizen #222](https://github.com/jellyfin/jellyfin-tizen/issues/222); [Apps2Samsung](https://github.com/Apps2Samsung/Apps2Samsung)
 - WebKit — [How to use Media Source Extensions with AirPlay](https://webkit.org/blog/15036/how-to-use-media-source-extensions-with-airplay/)
 - LG — [Which LG TVs support AirPlay 2](https://www.lg.com/us/support/help-library/lg-tv-which-lg-tvs-support-airplay-2--20151097893431)
 - Jellyfin — [LG webOS app approved in the Content Store](https://x.com/jellyfin/status/1770519636833956036); [jellyfin-webos](https://github.com/jellyfin/jellyfin-webos); Samsung Tizen install is sideload for older sets ([forum](https://forum.jellyfin.org/t-jellyfin-on-samsung-tv-tizen))
