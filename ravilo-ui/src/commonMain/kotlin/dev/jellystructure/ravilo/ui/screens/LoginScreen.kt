@@ -43,6 +43,7 @@ import dev.jellystructure.ravilo.ui.DeviceIdStore
 import dev.jellystructure.ravilo.ui.TokenStore
 import dev.jellystructure.ravilo.ui.deviceDisplayName
 import dev.jellystructure.ravilo.ui.focus.dpadFocusable
+import dev.jellystructure.ravilo.ui.components.InstallCardIfEligible
 import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.seams.reportTextFieldFocus
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
@@ -222,6 +223,11 @@ fun LoginScreen(
                     ChangeServerLink(focusRequester = changeServerFR, onSelect = onChangeServer)
                     Spacer(Modifier.height(4.dp))
                     ServerIndicator(store.baseUrl)
+
+                    // R263 (FR-R263-8) — auto-shown at most once per device; a no-op on every platform
+                    // but the web, and there only in a browser tab under 900 dp (never standalone).
+                    Spacer(Modifier.height(24.dp))
+                    InstallCardIfEligible()
                 }
             }
         }
