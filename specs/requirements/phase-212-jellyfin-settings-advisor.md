@@ -1,6 +1,6 @@
 # Phase 212 — tell the operator which Jellyfin settings are costing them, per library
 
-**Status:** ✓ Built — see `STATUS.md`, which is authoritative. (Header as originally written: Planned)
+**Status:** Planned
 **Authored:** 2026-09-15 (design-authored with the owner, not dev-reviewed)
 **Depends on:** Phase 185 (per-device decode ceilings), Phase 177/R216 (the 0.9 × ceiling predicate),
 Phase 201 (MKV health sweep), Phase 143 (Settings → Libraries surface)

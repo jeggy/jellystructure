@@ -6,7 +6,7 @@
 > this screen. This phase makes them the front door to the browse page, the same way R190 made a cast
 > face one.
 
-**Status:** ✓ Built — see `STATUS.md`, which is authoritative. (Header as originally written: Planned) (design-authored 2026-09-01, not yet dev-reviewed)
+**Status:** Planned (design-authored 2026-09-01, not yet dev-reviewed)
 
 Design: `design/ravilo/Media Detail Genres - Directions.html` (Direction B chosen, with C's primacy
 tint; A and C recorded as rejected). **Built into the mockups 2026-09-01:** `design/ravilo/ravilo.css`

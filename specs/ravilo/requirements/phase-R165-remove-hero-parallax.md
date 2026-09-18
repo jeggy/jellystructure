@@ -6,7 +6,7 @@
 > is *not* parallax and is **kept** (its removal is a separate decision). Removing the parallax also
 > brings the Compose app back in line with the design mockups, which never had it.
 
-**Status:** ✓ Done — see `STATUS.md`, which is authoritative. (Header as originally written: Planned).
+**Status:** Planned.
 
 ## Problem
 `HeroCarousel` translates its backdrop image up at half the list's scroll speed as the hero leaves the

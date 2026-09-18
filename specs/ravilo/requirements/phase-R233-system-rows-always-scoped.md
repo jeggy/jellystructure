@@ -6,7 +6,7 @@
 > was correctly filtered to the collection (*Primate*, *Until Dawn*, *Oldboy*, *Mutiny*). The two
 > system rows on one page disagreed about what page they were on.
 
-**Status:** ✓ Built — see `STATUS.md`, which is authoritative. (Header as originally written: Planned) — design-authored 2026-09-04 with the owner. Not dev-reviewed, not built.
+**Status:** Planned — design-authored 2026-09-04 with the owner. Not dev-reviewed, not built.
 
 ## Problem
 

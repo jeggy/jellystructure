@@ -1,6 +1,6 @@
 # Phase 215 — a memory budget calculator: "here is the RAM I'll give it, tell me what to change"
 
-**Status:** ✓ Built — see `STATUS.md`, which is authoritative. (Header as originally written: Planned)
+**Status:** Planned
 **Authored:** 2026-09-15 (design-authored with the owner, not dev-reviewed)
 **Depends on:** Phase 212 (the advisory surface this extends, and its silence-on-match rule)
 **Related:** Phase 213 §2.1 (jellystructure cannot meter work inside Jellyfin — the same blind spot

@@ -1,0 +1,410 @@
+<!doctype html>
+<html lang="en" data-skin="aurora">
+<head>
+<meta charset="utf-8">
+<title>Ravilo Receiver App — the TV's own screen (R264 · R269)</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+/* ============================================================
+   RAVILO RECEIVER APP — the maintained mockup for the receiver-only
+   TV app (R264, Tizen first; R269 adds the server it needs first).
+   Started 2026-09-18 from "Play on a TV - Directions.html" §C.
+
+   How this differs from `Ravilo Receiver.html` (the Chromecast's
+   screen), and why it is its own file:
+     · that receiver is SERVED BY the backend, so its origin IS the
+       server and it never asks for one. This one is a sideloaded
+       .wgt with no origin: it needs a server before it can pair.
+     · that receiver has no remote pointed at it, so every screen is
+       one overlay or one sentence. This one DOES: the TV remote
+       drives a whole player, so it has focus, a scrub bar, a
+       two-level audio & subtitles picker and Skip Intro.
+   Everything else is shared with it by design: the mark-only idle,
+   R218's waiting moments, R237's failure copy, the R110 caption look.
+
+   NO navigation lives here. No browse, no search, no settings, no
+   profile. If a frame needs a nav item, the frame is wrong — the one
+   exception is the server-setup screen, which exists because without
+   it the app can do nothing at all (R269 FR-R269-1).
+
+   The pickers at the foot are mockup-only preview chrome.
+   ?state=idle&skin=noir&lang=fo works too.
+   ============================================================ */
+[data-skin="aurora"]{--bg:#0a0c13;--ink:#f3f4fb;--ink-soft:#aeb4cb;--ink-dim:#6b7290;--line:rgba(255,255,255,.09);--line-2:rgba(255,255,255,.16);--card:#161a28;--accent:#7b6ef0;--accent-2:#3fb6f5;--grad:linear-gradient(120deg,#7b6ef0,#3fb6f5);--ease:cubic-bezier(.22,.61,.36,1)}
+[data-skin="midnight"]{--bg:#04101a;--ink:#eafcff;--ink-soft:#9fc2cf;--ink-dim:#5a7d8a;--line:rgba(160,230,255,.10);--line-2:rgba(160,230,255,.2);--card:#0a1c28;--accent:#19d6c6;--accent-2:#2a8cf0;--grad:linear-gradient(120deg,#19d6c6,#2a8cf0);--ease:cubic-bezier(.22,.61,.36,1)}
+[data-skin="noir"]{--bg:#080807;--ink:#f7f3ea;--ink-soft:#c7bfae;--ink-dim:#807868;--line:rgba(255,240,210,.10);--line-2:rgba(255,240,210,.2);--card:#16140f;--accent:#f5b542;--accent-2:#e0792f;--grad:linear-gradient(120deg,#f5b542,#e0792f);--ease:cubic-bezier(.22,.61,.36,1)}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;background:#05060a;font-family:'Sora',sans-serif;overflow:hidden}
+#fit{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;padding-bottom:190px}
+.tv{width:1920px;height:1080px;position:relative;background:#000;color:var(--ink);overflow:hidden;border-radius:6px;box-shadow:0 0 0 10px #15171d,0 0 0 12px #2a2d36,0 40px 120px rgba(0,0,0,.75);flex:none}
+.vid{position:absolute;inset:0}
+.vid img{width:100%;height:100%;object-fit:cover;display:block}
+.scrim{position:absolute;inset:0;background:rgba(4,5,9,.34)}
+
+/* ---- idle: the lit mark, the TV's name, its server, and the code ---- */
+.mid{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:34px}
+.mark{width:170px;height:170px;border-radius:44px;background:var(--grad);filter:drop-shadow(0 0 44px rgba(123,110,240,.5))}
+[data-skin="noir"] .mark{background:var(--ink);filter:drop-shadow(0 0 44px rgba(245,181,66,.35))}
+.lock{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:64px;letter-spacing:-1.6px}
+.rd{font-size:32px;color:var(--ink-soft)}
+/* bottom-left: which TV this is, and which server it is pointed at — the one
+   piece of state a receiver holds that nobody can otherwise see (FR-R269-6) */
+.who{position:absolute;left:96px;bottom:84px;font-size:32px;color:var(--ink-soft)}
+.who i{display:block;font-style:normal;font-family:'JetBrains Mono',monospace;font-size:26px;color:var(--ink-dim);margin-top:10px}
+/* bottom-right: the pairing code. 96px tabular glyphs — read from a sofa, not
+   from a keyboard. 218's alphabet already excludes the ambiguous characters. */
+.code{position:absolute;right:96px;bottom:84px;text-align:right}
+.code .g{font-family:'JetBrains Mono',monospace;font-size:96px;font-weight:700;letter-spacing:.1em;line-height:1;font-variant-numeric:tabular-nums}
+.code .l{font-size:30px;color:var(--ink-soft);margin-top:16px}
+.code .l.bad{color:#ffb4a2}
+.code .l.wait{color:var(--ink-dim);display:flex;align-items:center;gap:16px;justify-content:flex-end}
+.sp{width:24px;height:24px;border-radius:50%;border:3px solid rgba(255,255,255,.2);border-top-color:var(--accent-2);animation:sp .9s linear infinite;flex:none}
+@keyframes sp{to{transform:rotate(360deg)}}
+
+/* ---- R269 · the server, before anything else ---- */
+.srv{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:0 240px}
+.srv .mk{width:96px;height:96px;border-radius:26px;background:var(--grad);margin-bottom:34px}
+[data-skin="noir"] .srv .mk{background:var(--ink)}
+.srv h3{font-family:'Space Grotesk',sans-serif;font-size:60px;font-weight:700;letter-spacing:-1.4px}
+.srv .hl{margin-top:16px;font-size:30px;color:var(--ink-soft);text-align:center}
+.srv .fld{margin-top:40px;width:1100px;height:112px;border-radius:18px;background:rgba(255,255,255,.06);border:2px solid var(--line-2);display:flex;align-items:center;padding:0 30px;gap:14px}
+.srv .fld.foc{border-color:var(--ink);background:rgba(255,255,255,.1)}
+.srv .fld .v,.srv .fld .ph{font-family:'JetBrains Mono',monospace;font-size:40px}
+.srv .fld .ph{color:var(--ink-dim)}
+.srv .fld .car{width:3px;height:48px;background:var(--accent-2);animation:cr 1s steps(2) infinite}
+@keyframes cr{50%{opacity:0}}
+.srv .fld .sch{margin-left:auto;font-family:'JetBrains Mono',monospace;font-size:24px;color:var(--ink-dim)}
+.srv .msg{margin-top:26px;min-height:36px;font-size:28px;color:var(--ink-soft);display:flex;align-items:center;gap:16px}
+.srv .msg.bad{color:#ffb4a2}
+.kb{margin-top:34px;display:grid;gap:12px}
+.kb .kr{display:flex;gap:12px;justify-content:center}
+.kb .kr b{width:82px;height:82px;border-radius:14px;background:rgba(255,255,255,.07);display:flex;align-items:center;justify-content:center;font-size:32px;font-weight:600;color:var(--ink-soft)}
+.kb .kr b.w{width:210px;font-size:26px}
+.kb .kr b.foc{background:var(--ink);color:#0a0c13}
+
+/* ---- the player chrome: this receiver HAS a remote ---- */
+.ov{position:absolute;left:0;right:0;bottom:0;padding:0 96px 78px;background:linear-gradient(0deg,rgba(0,0,0,.9) 8%,rgba(0,0,0,.4) 48%,transparent)}
+.ov .k{font-size:26px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--accent-2)}
+[data-skin="noir"] .ov .k{color:var(--ink-soft)}
+.ov h3{margin:10px 0 0;font-family:'Space Grotesk',sans-serif;font-size:62px;font-weight:700;letter-spacing:-1.6px}
+.ov .bar{position:relative;height:7px;border-radius:6px;background:rgba(255,255,255,.2);margin:36px 0 16px}
+.ov .bar i{position:absolute;left:0;top:0;bottom:0;border-radius:6px;background:var(--grad);display:block}
+.ov .bar u{position:absolute;top:50%;width:22px;height:22px;margin:-11px 0 0 -11px;border-radius:50%;background:#fff}
+/* the times row clears the transport badge on the right — the badge is 96px at
+   a 96px inset, so the row stops short of it rather than running underneath */
+.ov .tm{display:flex;justify-content:space-between;font-family:'JetBrains Mono',monospace;font-size:26px;color:var(--ink-soft);padding-right:232px}
+.ov .pz{position:absolute;right:96px;bottom:78px;width:96px;height:96px;border-radius:50%;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.3);display:flex;align-items:center;justify-content:center;font-size:36px}
+.ov .pz.foc{background:var(--ink);color:#0a0c13;border-color:transparent}
+.sub{position:absolute;left:0;right:0;bottom:104px;text-align:center;font-weight:500;color:#fff;text-shadow:-2px -2px 0 #000,2px -2px 0 #000,-2px 2px 0 #000,2px 2px 0 #000,0 0 14px rgba(0,0,0,.8)}
+.sub.s{font-size:38px}.sub.m{font-size:48px}.sub.l{font-size:60px}
+.skip{position:absolute;right:96px;bottom:96px;display:flex;align-items:center;gap:18px;padding:26px 44px;border-radius:999px;background:rgba(10,12,19,.9);border:2px solid var(--ink);font-size:32px;font-weight:600}
+.skip.foc{background:var(--ink);color:#0a0c13}
+.nup{position:absolute;right:96px;bottom:96px;width:720px;border-radius:20px;overflow:hidden;background:rgba(10,12,19,.92);border:1px solid var(--line-2)}
+.nup .th{height:240px}
+.nup .th img{width:100%;height:100%;object-fit:cover;display:block}
+.nup .bd{padding:28px 32px 32px}
+.nup .k{font-size:24px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;color:var(--accent-2)}
+[data-skin="noir"] .nup .k{color:var(--ink-soft)}
+.nup h4{margin:10px 0 0;font-family:'Space Grotesk',sans-serif;font-size:38px;font-weight:700;letter-spacing:-.8px}
+.nup .cd{margin-top:14px;font-size:26px;color:var(--ink-soft)}
+
+/* ---- R180/R195's two-level audio & subtitles picker, on the TV ---- */
+.pk{position:absolute;right:96px;top:96px;bottom:96px;width:720px;border-radius:24px;background:rgba(10,12,19,.94);border:1px solid var(--line-2);padding:34px 0 0;overflow:hidden}
+.pk h4{padding:0 34px;font-family:'Space Grotesk',sans-serif;font-size:40px;font-weight:700;letter-spacing:-.8px}
+.pk .s{padding:6px 34px 0;font-size:26px;color:var(--ink-dim)}
+.pk .lv{display:flex;gap:12px;padding:24px 34px 8px}
+.pk .lv b{padding:12px 26px;border-radius:999px;font-size:26px;font-weight:600;background:rgba(255,255,255,.07);color:var(--ink-soft)}
+.pk .lv b.on{background:var(--ink);color:#0a0c13}
+.pkr{display:flex;align-items:center;gap:22px;padding:22px 34px;border-top:1px solid var(--line);font-size:30px}
+.pkr .fi{width:48px;height:36px;border-radius:5px;flex:none;box-shadow:0 0 0 1px rgba(255,255,255,.2)}
+.pkr .rt{margin-left:auto;font-size:26px;color:var(--ink-dim)}
+.pkr.foc{background:var(--ink);color:#0a0c13;border-radius:16px;border-top-color:transparent}
+.pkr.foc .rt{color:rgba(10,12,19,.6)}
+.pksz{display:flex;align-items:center;gap:18px;padding:24px 34px;border-top:1px solid var(--line);font-size:28px;color:var(--ink-soft)}
+.pksz b{width:78px;height:62px;border-radius:14px;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.07);font-size:28px;font-weight:700;color:var(--ink-soft)}
+.pksz b.on{background:var(--grad);color:#fff}
+[data-skin="noir"] .pksz b.on{color:#0a0c13}
+
+/* ---- R218's waiting moments ---- */
+.ctx{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:26px;text-align:center;padding:0 200px}
+.ctx .k{font-size:26px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--accent-2)}
+[data-skin="noir"] .ctx .k{color:var(--ink-soft)}
+.ctx .t{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:66px;letter-spacing:-1.6px;line-height:1}
+.ctx .s{font-size:30px;color:var(--ink-soft)}
+.pulse{display:flex;gap:20px;align-items:center}
+.pulse i{width:22px;height:22px;border-radius:50%;background:var(--accent);opacity:.25;animation:pl 1.4s var(--ease) infinite}
+.pulse i:nth-child(2){background:var(--accent-2);animation-delay:.18s}
+.pulse i:nth-child(3){background:var(--accent);animation-delay:.36s}
+@keyframes pl{0%,100%{opacity:.2;transform:scale(.8)}45%{opacity:1;transform:scale(1.25)}}
+.spin{width:80px;height:80px;border-radius:50%;border:6px solid rgba(255,255,255,.18);border-top-color:#fff;animation:sp .9s linear infinite}
+
+/* ---- one plain sentence per failure (R237 / phase 182) ---- */
+.fail{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:22px;text-align:center;padding:0 240px;background:rgba(4,5,9,.92)}
+.fail h3{font-family:'Space Grotesk',sans-serif;font-size:56px;font-weight:700;letter-spacing:-1.4px;line-height:1.1}
+.fail p{font-size:30px;line-height:1.45;color:var(--ink-soft);max-width:1100px;text-wrap:pretty}
+.fail .el{font-family:'JetBrains Mono',monospace;font-size:24px;color:var(--ink-dim)}
+
+/* ---- preview chrome (NOT part of the app) ---- */
+.label{position:absolute;bottom:-34px;left:0;right:0;text-align:center;color:#54596b;font-size:13px;font-family:'Space Grotesk',sans-serif;letter-spacing:.05em}
+.pick{position:fixed;left:0;right:0;bottom:18px;display:flex;justify-content:center;gap:14px;z-index:200;flex-wrap:wrap;padding:0 20px}
+.grp{display:flex;gap:5px;padding:5px;border-radius:13px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.10)}
+.grp b{align-self:center;font-size:10px;letter-spacing:1.4px;color:#6b7290;padding:0 8px;font-weight:700;font-family:'Space Grotesk',sans-serif}
+.grp button{border:0;background:transparent;color:#aeb4cb;font-family:'Sora',sans-serif;font-size:12px;font-weight:600;padding:7px 12px;border-radius:9px;cursor:pointer}
+.grp button:hover{color:#fff}
+.grp button.on{background:#f3f4fb;color:#11131c}
+</style>
+</head>
+<body>
+<div id="fit">
+  <div class="tv" id="tv"></div>
+  <div class="label" id="lab">Ravilo receiver app · 1920 × 1080 · Samsung UE55RU7440 · Tizen</div>
+</div>
+
+<div class="pick">
+  <div class="grp" id="statePick">
+    <b>SETUP</b>
+    <button data-s="setup">First boot</button>
+    <button data-s="typing">Typing</button>
+    <button data-s="checking">Trying</button>
+    <button data-s="badserver">Wrong address</button>
+    <button data-s="setupback">Hold Back</button>
+  </div>
+  <div class="grp" id="statePick2">
+    <b>IDLE</b>
+    <button class="on" data-s="idle">With code</button>
+    <button data-s="waiting">No server</button>
+  </div>
+  <div class="grp" id="statePick3">
+    <b>PLAYER</b>
+    <button data-s="loading">Loading</button>
+    <button data-s="playing">Playing</button>
+    <button data-s="chrome">Chrome</button>
+    <button data-s="paused">Paused</button>
+    <button data-s="buffering">Buffering</button>
+    <button data-s="subs1">Picker 1</button>
+    <button data-s="subs2">Picker 2</button>
+    <button data-s="skip">Skip intro</button>
+    <button data-s="nextup">Next-up</button>
+    <button data-s="busy">Server busy</button>
+    <button data-s="failed">Failed</button>
+  </div>
+  <div class="grp" id="skinPick"><b>SKIN</b><button class="on" data-k="aurora">Aurora</button><button data-k="midnight">Midnight</button><button data-k="noir">Noir</button></div>
+  <div class="grp" id="langPick"><b>LANG</b><button class="on" data-l="en">EN</button><button data-l="da">DA</button><button data-l="fo">FO</button></div>
+  <div class="grp" id="sizePick"><b>CAPTIONS</b><button data-z="s">S</button><button class="on" data-z="m">M</button><button data-z="l">L</button></div>
+</div>
+
+<script>
+(function(){
+  /* ---- strings. Danish and Faroese are drafts; the shipped ravilo-i18n.js wins
+     wherever a key already exists. No product, protocol or status code in any of
+     them (R180 / FR-R245-16). The setup screen's language cannot come from the
+     server (there is no server yet), so it follows the TV's own UI language. ---- */
+  var T = {
+    en:{ setup_title:'Where is Ravilo?', setup_hint:'Type the address of your Ravilo server',
+         connect:'Connect', delete:'Delete', more:'More…', trying:'Trying to connect…',
+         notfound:"There's no Ravilo server at that address", scheme:'https:// added',
+         idle_pick:'Choose something on your phone', code_hint:'Enter this code in Ravilo on your phone',
+         no_server:"Can't reach the server", waiting:'The code appears when the server answers',
+         loading:'Getting it ready', buffering:'Buffering', subs:'Audio & subtitles',
+         size:'Size', off:'Off', selected:'Selected', choices:'choices', tracks:'tracks', tab_subs:'Subtitles', tab_audio:'Audio',
+         hoh:'Danish · for the hard of hearing', back:'Back', skip:'Skip intro', next:'Next',
+         starts:'Starts in 8 seconds', busy_t:'Ravilo is busy', busy_p:'Another screen is being served. This will start by itself.',
+         fail_t:"That didn't start", fail_p:'Try again from your phone.', elapsed:'12 s' },
+    da:{ setup_title:'Hvor er Ravilo?', setup_hint:'Skriv adressen på jeres Ravilo-server',
+         connect:'Forbind', delete:'Slet', more:'Mere…', trying:'Prøver at få forbindelse…',
+         notfound:'Der er ingen Ravilo-server på den adresse', scheme:'https:// tilføjes',
+         idle_pick:'Vælg en titel på telefonen', code_hint:'Indtast denne kode i Ravilo på din telefon',
+         no_server:'Kan ikke få forbindelse til serveren', waiting:'Koden vises, når serveren svarer',
+         loading:'Gør klar', buffering:'Henter mere', subs:'Lyd & undertekster',
+         size:'Størrelse', off:'Fra', selected:'Valgt', choices:'valg', tracks:'spor', tab_subs:'Undertekster', tab_audio:'Lyd',
+         hoh:'Dansk · for hørehæmmede', back:'Tilbage', skip:'Spring intro over', next:'Næste',
+         starts:'Starter om 8 sekunder', busy_t:'Ravilo har travlt', busy_p:'En anden skærm bliver betjent. Det starter af sig selv.',
+         fail_t:'Det kunne ikke starte', fail_p:'Prøv igen fra telefonen.', elapsed:'12 s' },
+    fo:{ setup_title:'Hvar er Ravilo?', setup_hint:'Skriva adressuna á Ravilo-servaranum',
+         connect:'Sambind', delete:'Strika', more:'Meira…', trying:'Royvir at fáa samband…',
+         notfound:'Tað er eingin Ravilo-servari á tí adressuni', scheme:'https:// verður lagt til',
+         idle_pick:'Vel eitt á telefonini', code_hint:'Skriva hesa koduna í Ravilo á telefonini',
+         no_server:'Fær ikki samband við servaran', waiting:'Kodan kemur, tá servarin svarar',
+         loading:'Geri klárt', buffering:'Hetji meira', subs:'Ljóð & undertekstir',
+         size:'Stødd', off:'Av', selected:'Valt', choices:'val', tracks:'spor', tab_subs:'Undertekstir', tab_audio:'Ljóð',
+         hoh:'Danskt · fyri illa hørandi', back:'Aftur', skip:'Loyp innganginum', next:'Næsta',
+         starts:'Byrjar um 8 sekund', busy_t:'Ravilo hevur mikið at gera', busy_p:'Ein annar skermur verður tænaður. Tað byrjar av sær sjálvum.',
+         fail_t:'Tað byrjaði ikki', fail_p:'Royn aftur frá telefonini.', elapsed:'12 s' }
+  };
+  var ITEM = { kick:'Film · 2008', title:'Big Buck Bunny', pos:'04:31', left:'−05:19', pct:46 };
+  var TVNAME = 'Stue TV', SERVER = 'ravilo.mit-hus.dk', CODE = 'K7F3Q2';
+  var STILL = 'assets/bbb-backdrop-landscape.png', NEXT_ART = 'assets/bbb-backdrop-bunny.png';
+  var state = 'idle', lang = 'en', size = 'm';
+  var tv = document.getElementById('tv'), lab = document.getElementById('lab');
+  function t(k){ return T[lang][k]; }
+  function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]; }); }
+
+  function keyboard(focus){
+    var r1 = '1234567890.:'.split(''), r2 = 'ABCDEFGHIJKL'.split('');
+    return '<div class="kb">'
+      + '<div class="kr">' + r1.map(function(c,i){ return '<b' + (focus === 'k' && i === 0 ? ' class="foc"' : '') + '>' + c + '</b>'; }).join('') + '</div>'
+      + '<div class="kr">' + r2.map(function(c){ return '<b>' + c + '</b>'; }).join('') + '</div>'
+      + '<div class="kr"><b class="w">' + esc(t('delete')) + '</b><b class="w">' + esc(t('more')) + '</b>'
+      + '<b class="w' + (focus === 'go' ? ' foc' : '') + '">' + esc(t('connect')) + '</b></div></div>';
+  }
+  /* R269 · one screen, seen once: the address, the inferred scheme, and the probe's
+     one honest sentence. The typed text is kept on failure — a 40-character address
+     typed with a D-pad is not something to make anyone do twice. */
+  function setup(o){
+    o = o || {};
+    return '<div class="srv"><div class="mk"></div><h3>' + esc(t('setup_title')) + '</h3>'
+      + '<div class="hl">' + esc(t('setup_hint')) + '</div>'
+      + '<div class="fld' + (o.blur ? '' : ' foc') + '">'
+        + (o.value ? '<span class="v">' + esc(o.value) + '</span>' + (o.blur ? '' : '<span class="car"></span>')
+                   : '<span class="ph">192.168.1.40:8096</span>')
+        + (o.scheme ? '<span class="sch">' + esc(t('scheme')) + '</span>' : '')
+      + '</div>'
+      + '<div class="msg' + (o.bad ? ' bad' : '') + '">' + (o.busy ? '<span class="sp"></span>' : '') + esc(o.msg || '') + '</div>'
+      + (o.kb === false ? '' : keyboard(o.focus)) + '</div>';
+  }
+  /* Idle. No artwork beyond the mark (FR-R264-7), the TV's name and its server
+     bottom-left (FR-R269-6), the code bottom-right. Owner pick 2026-09-18: when the
+     server is unreachable the screen WAITS and says so — it never shows a stale code,
+     because a code that cannot be redeemed fails on the phone and points at the wrong
+     device. No dimming after ten minutes either: that idea was scratched. */
+  function idle(o){
+    o = o || {};
+    return '<div class="mid"><div class="mark"></div><div class="lock">Ravilo</div>'
+      + '<div class="rd">' + esc(o.wait ? t('no_server') : t('idle_pick')) + '</div></div>'
+      + '<div class="who">' + esc(TVNAME) + '<i>' + esc(SERVER) + '</i></div>'
+      + '<div class="code">'
+        + (o.wait ? '<div class="l wait"><span class="sp"></span>' + esc(t('waiting')) + '</div>'
+                  : '<div class="g">' + esc(CODE) + '</div><div class="l">' + esc(t('code_hint')) + '</div>')
+      + '</div>';
+  }
+  function pic(){ return '<div class="vid"><img src="' + STILL + '" alt=""></div>'; }
+  function caption(){ return '<div class="sub ' + size + '">Vi ses i morgen, lille ven.</div>'; }
+  function chrome(paused, focusPz){
+    return '<div class="ov"><div class="k">' + esc(ITEM.kick) + '</div><h3>' + esc(ITEM.title) + '</h3>'
+      + '<div class="bar"><i style="width:' + ITEM.pct + '%"></i><u style="left:' + ITEM.pct + '%"></u></div>'
+      + '<div class="tm"><span>' + ITEM.pos + '</span><span>' + ITEM.left + '</span></div>'
+      + '<div class="pz' + (focusPz ? ' foc' : '') + '">' + (paused ? '▶' : '❙❙') + '</div></div>';
+  }
+  var FLAG = { da:'linear-gradient(180deg,#c8102e 50%,#fff 50%)', fo:'linear-gradient(90deg,#0b4ea2 33%,#fff 33% 66%,#0b4ea2 66%)', en:'linear-gradient(180deg,#012169,#fff)' };
+  function sizes(){
+    return '<div class="pksz"><span>' + esc(t('size')) + '</span>'
+      + ['s','m','l'].map(function(z){ return '<b class="' + (size === z ? 'on' : '') + '">' + z.toUpperCase() + '</b>'; }).join('') + '</div>';
+  }
+  /* The picker is R180/R195's, rendered on the TV when the TV remote asks and
+     mirrored to the phone's sheet when the phone asks — one component, two
+     destinations (R264 FR-R264-3). Subtitle size is the phone's addition, now here. */
+  function picker(level){
+    if(level === 2){
+      return '<div class="pk"><h4>Dansk</h4><div class="s">' + esc(t('subs')) + ' · 2 ' + esc(t('tracks')) + '</div>'
+        + '<div class="lv"><b>◀ ' + esc(t('back')) + '</b></div>'
+        + '<div class="pkr foc"><span class="fi" style="background:' + FLAG.da + '"></span><span>Dansk</span><span class="rt">' + esc(t('selected')) + '</span></div>'
+        + '<div class="pkr"><span class="fi" style="background:' + FLAG.da + '"></span><span>' + esc(t('hoh')) + '</span></div>'
+        + sizes() + '</div>';
+    }
+    return '<div class="pk"><h4>' + esc(t('subs')) + '</h4><div class="s">' + esc(ITEM.title) + '</div>'
+      + '<div class="lv"><b class="on">' + esc(t('tab_subs')) + '</b><b>' + esc(t('tab_audio')) + '</b></div>'
+      + '<div class="pkr foc"><span class="fi" style="background:' + FLAG.da + '"></span><span>Dansk</span><span class="rt">2 ' + esc(t('choices')) + '</span></div>'
+      + '<div class="pkr"><span class="fi" style="background:' + FLAG.fo + '"></span><span>Føroyskt</span><span class="rt">1 ' + esc(t('choices')) + '</span></div>'
+      + '<div class="pkr"><span class="fi" style="background:' + FLAG.en + '"></span><span>English</span><span class="rt">3 ' + esc(t('choices')) + '</span></div>'
+      + '<div class="pkr"><span class="fi" style="background:rgba(255,255,255,.14)"></span><span>' + esc(t('off')) + '</span></div>'
+      + sizes() + '</div>';
+  }
+  function waitScreen(kind){
+    if(kind === 'loading'){
+      return pic() + '<div class="scrim"></div><div class="ctx"><div class="pulse"><i></i><i></i><i></i></div>'
+        + '<div class="k">' + esc(ITEM.kick) + '</div><div class="t">' + esc(ITEM.title) + '</div>'
+        + '<div class="s">' + esc(t('loading')) + '</div></div>';
+    }
+    return pic() + '<div class="scrim"></div><div class="ctx"><div class="spin"></div>'
+      + '<div class="s">' + esc(t('buffering')) + '</div></div>';
+  }
+
+  var SCREENS = {
+    setup:      function(){ return setup({}); },
+    typing:     function(){ return setup({ value:SERVER, scheme:true, focus:'go' }); },
+    checking:   function(){ return setup({ value:SERVER, blur:true, busy:true, msg:t('trying'), kb:false }); },
+    badserver:  function(){ return setup({ value:SERVER, bad:true, msg:t('notfound'), focus:'go' }); },
+    setupback:  function(){ return setup({ value:SERVER, scheme:true, focus:'k' }); },
+    idle:       function(){ return idle({}); },
+    waiting:    function(){ return idle({ wait:true }); },
+    loading:    function(){ return waitScreen('loading'); },
+    buffering:  function(){ return waitScreen('buffering'); },
+    playing:    function(){ return pic() + caption(); },
+    chrome:     function(){ return pic() + chrome(false, true); },
+    paused:     function(){ return pic() + '<div class="scrim"></div>' + chrome(true, true); },
+    subs1:      function(){ return pic() + '<div class="scrim"></div>' + picker(1); },
+    subs2:      function(){ return pic() + '<div class="scrim"></div>' + picker(2); },
+    skip:       function(){ return '<div class="vid"><img src="assets/bbb-backdrop-opening.png" alt=""></div><div class="skip foc">' + esc(t('skip')) + '</div>'; },
+    nextup:     function(){ return pic() + '<div class="scrim"></div><div class="nup"><div class="th"><img src="' + NEXT_ART + '" alt=""></div>'
+                    + '<div class="bd"><div class="k">' + esc(t('next')) + '</div><h4>Bluey · S3 E13 · Camping</h4>'
+                    + '<div class="cd">' + esc(t('starts')) + '</div></div></div>'; },
+    busy:       function(){ return '<div class="fail"><h3>' + esc(t('busy_t')) + '</h3><p>' + esc(t('busy_p')) + '</p><div class="el">' + esc(t('elapsed')) + '</div></div>'; },
+    failed:     function(){ return '<div class="fail"><h3>' + esc(t('fail_t')) + '</h3><p>' + esc(t('fail_p')) + '</p></div>'; }
+  };
+  var NOTE = {
+    setup:'first boot · no server stored (R269 FR-R269-1)', typing:'the scheme is inferred, never asked (R226)',
+    checking:'the probe · the only spinner before playback', badserver:'unreachable and not-Ravilo are one sentence',
+    setupback:'reached by holding Back for three seconds on idle (FR-R269-7)',
+    idle:'idle · server reachable, code minted (FR-R264-2)', waiting:'configured but unreachable — waits, never a stale code',
+    loading:'R218 direction B', buffering:'R218 · buffering mid-playback', playing:'playing · no chrome, captions at the phone\u2019s size',
+    chrome:'the TV remote was used · chrome up', paused:'paused from either remote · reported within one push',
+    subs1:'R180/R195 level 1 · one component, two destinations', subs2:'level 2 · the tracks inside one language',
+    skip:'Skip Intro · from either remote (150/R182)', nextup:'next-up · the receiver runs this countdown itself',
+    busy:'phase 182 · server busy, with elapsed time', failed:'R237 · one cause, one sentence, nothing to press'
+  };
+
+  function render(){
+    tv.innerHTML = SCREENS[state] ? SCREENS[state]() : idle({});
+    lab.textContent = 'Ravilo receiver app · 1920 × 1080 · Samsung UE55RU7440 · Tizen — ' + (NOTE[state] || state);
+  }
+  function fit(){
+    /* the picker bar wraps to two or three rows depending on width, so the space it
+       needs is measured rather than assumed (the state list here is twice the
+       Chromecast receiver's). */
+    var ph = document.querySelector('.pick').offsetHeight + 56;
+    document.getElementById('fit').style.paddingBottom = ph + 'px';
+    var s = Math.min(window.innerWidth / 1980, (window.innerHeight - ph - 90) / 1120, 1);
+    document.querySelector('.tv').style.transform = 'scale(' + s + ')';
+    lab.style.transform = 'scale(' + s + ')';
+  }
+  window.addEventListener('resize', fit);
+
+  ['statePick','statePick2','statePick3'].forEach(function(id){
+    document.getElementById(id).addEventListener('click', function(e){
+      var b = e.target.closest('button'); if(!b) return;
+      state = b.dataset.s;
+      document.querySelectorAll('.grp button[data-s]').forEach(function(x){ x.classList.toggle('on', x === b); });
+      render();
+    });
+  });
+  document.getElementById('skinPick').addEventListener('click', function(e){
+    var b = e.target.closest('button'); if(!b) return;
+    document.documentElement.dataset.skin = b.dataset.k;
+    document.querySelectorAll('#skinPick button').forEach(function(x){ x.classList.toggle('on', x === b); });
+  });
+  document.getElementById('langPick').addEventListener('click', function(e){
+    var b = e.target.closest('button'); if(!b) return;
+    lang = b.dataset.l;
+    document.querySelectorAll('#langPick button').forEach(function(x){ x.classList.toggle('on', x === b); });
+    render();
+  });
+  document.getElementById('sizePick').addEventListener('click', function(e){
+    var b = e.target.closest('button'); if(!b) return;
+    size = b.dataset.z;
+    document.querySelectorAll('#sizePick button').forEach(function(x){ x.classList.toggle('on', x === b); });
+    render();
+  });
+
+  var q = new URLSearchParams(location.search);
+  if(q.get('skin')) document.documentElement.dataset.skin = q.get('skin');
+  if(q.get('lang') && T[q.get('lang')]) lang = q.get('lang');
+  if(q.get('state') && SCREENS[q.get('state')]) state = q.get('state');
+  document.querySelectorAll('.grp button[data-s]').forEach(function(x){ x.classList.toggle('on', x.dataset.s === state); });
+  document.querySelectorAll('#langPick button').forEach(function(x){ x.classList.toggle('on', x.dataset.l === lang); });
+  document.querySelectorAll('#skinPick button').forEach(function(x){ x.classList.toggle('on', x.dataset.k === (document.documentElement.dataset.skin || 'aurora')); });
+  render(); fit();
+})();
+</script>
+</body>
+</html>

@@ -7,7 +7,7 @@
 > when no prefix like http:// or https:// is added, then we automatically add https:// infront of it. If
 // the user manually adds http:// when we will use that one instead of https."*
 
-**Status:** ✓ Built — see `STATUS.md`, which is authoritative. (Header as originally written: Planned) — spec only, not yet built.
+**Status:** Planned — spec only, not yet built.
 
 ## 1. What's there today
 
@@ -69,7 +69,7 @@ Connect path, just without the scheme row above it to route around).
 
 ## 4. Verification
 
-- Typing `demo.jellystructure.example.net` and connecting resolves to `https://demo.jellystructure.example.net`.
+- Typing `demo.jellystructure.jebster.net` and connecting resolves to `https://demo.jellystructure.jebster.net`.
 - Typing `http://192.168.1.50:9505` and connecting resolves to exactly that — the explicit `http://` is
   preserved, not upgraded.
 - Typing `https://example.com` behaves identically to today (no functional change for an already-schemed

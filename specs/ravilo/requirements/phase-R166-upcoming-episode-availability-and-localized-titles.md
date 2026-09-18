@@ -7,7 +7,7 @@
 > episode*; and **(b)** titles show the English Sonarr/Radarr string ("Taskmaster (DK)") instead of the
 > localized title our library resolved and stored ("Stormester").
 
-**Status:** ✓ Done — see `STATUS.md`, which is authoritative. (Header as originally written: Planned) — extends **R160** (built). Backend-only change to `UpcomingService`; the client
+**Status:** Planned — extends **R160** (built). Backend-only change to `UpcomingService`; the client
 renders whatever the feed says, so **no app rebuild is required** to fix either symptom.
 
 ## Problem

@@ -232,22 +232,3 @@ server, run locally with `RAVILO_VERSION=9.9` and a default server, serves
 deep link, and a byte-identical `index.html` with neither set. **Not verified:** a Docker build with the
 arg (left to the next publish run — the ARG/ENV lines are the whole change), the live dashboard (needs
 a deploy: §6.4), and `/api/health` on a running backend.
-
-## 9. Amendment (2026-09-17, later) — signing in is the one call where Version is not optional
-
-Found on production with a dummy-credential probe while answering an unrelated login question:
-`POST /api/tv/login` **without** `X-Ravilo-Version` answered **503 "Could not reach Jellyfin"**, with
-the header **401**. FR-224-3 omits `Version` when the device has reported none — correct for an
-authenticated call (§2: a blank Version leaves the stored value alone), wrong for
-`AuthenticateByName`, which opens a *new* session: 10.11.11 answers **400** to a `MediaBrowser` header
-without a Version (probed directly: with → 401, without → 400). The route maps every non-401 failure
-to "could not reach", so every pre-R252 build, and anything scripted, was locked out with a sentence
-that blamed the network.
-
-- **FR-224-3a** — `authenticateByName` always sends a Version: the reported one, else `0.0.0`
-  (`UNKNOWN_CLIENT_VERSION`). Every other call is unchanged.
-- The e2e Jellyfin mock now refuses what the real server refuses (400 without
-  Client/Device/DeviceId/Version), and `tests/e2e/ravilo-login.spec.ts` signs in both ways on every CI run.
-- Not changed: the route still says "Could not reach Jellyfin" for a non-401 Jellyfin answer. It
-  should distinguish *refused* from *unreachable* — open.
-

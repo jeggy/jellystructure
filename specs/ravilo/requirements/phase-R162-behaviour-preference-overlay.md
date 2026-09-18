@@ -7,7 +7,7 @@
 > **viewer-editable on the TV** (R161, device-local) and surfaced here read-only. Removes the trap where an
 > in-app change appeared to fork the whole config and orphan the user under "A specific user".
 
-**Status:** ✓ Done — see `STATUS.md`, which is authoritative. (Header as originally written: Planned) — **design built**, backend/app-integration unbuilt. ⚠ Dev review 2026-07-03
+**Status:** Planned — **design built**, backend/app-integration unbuilt. ⚠ Dev review 2026-07-03
 **confirmed the trap is a live, shipped bug** — see the Dev-review addenda at the bottom, which also
 correct the storage model (no device-local lane; writer-tagged server overlay instead) and widen the
 field set (+`autoplay_next`).

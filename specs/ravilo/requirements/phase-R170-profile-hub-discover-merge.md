@@ -7,7 +7,7 @@
 > screens into a single **Discover** screen with a **Coming Soon / Request** segment switch. Retires **Top 10**
 > as a standalone tab (its requestable-content role moves to **Request** — see [R171](phase-R171-seerr-request-tab.md)).
 
-**Status:** ✓ Done — see `STATUS.md`, which is authoritative. (Header as originally written: Planned) — **design built**, Compose app integration unbuilt.
+**Status:** Planned — **design built**, Compose app integration unbuilt.
 
 ## Problem
 The top nav grew to six section tabs (Home / Movies / Series / Upcoming / Top 10 / My List) plus search,

@@ -7,7 +7,7 @@
 > to say so. This phase adds one manual escape hatch — **choose a different winner for this one item** —
 > and changes nothing else.
 
-**Status:** ✓ Built — see `STATUS.md`, which is authoritative. (Header as originally written: Planned) (design-authored 2026-09-01, not yet dev-reviewed)
+**Status:** Planned (design-authored 2026-09-01, not yet dev-reviewed)
 
 Design: `design/app/Metadata Language Override - Directions.html` (Direction A chosen; B and C recorded
 as rejected). Implemented in the mockup at `design/app/media.html` + `design/app/detail.css`.

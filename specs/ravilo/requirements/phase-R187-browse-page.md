@@ -8,7 +8,7 @@
 > exploration) whose filters stack on the seed. Maturity is a D-pad range picker over the Phase 155
 > normalized ages — viewers only ever see numbers.
 
-**Status:** ✓ Done — see `STATUS.md`, which is authoritative. (Header as originally written: Planned). Backend-reviewed 2026-07-31 (see addendum) — the design tool that authored this
+**Status:** Planned. Backend-reviewed 2026-07-31 (see addendum) — the design tool that authored this
 (no code access, only JS/HTML mockups + `specs/ravilo/constitution.md`/`plan.md`) got the "Reuse"
 section's targets largely right in spirit but pointed at JS mockup files instead of the real Compose
 code, and — more importantly — never addressed how a seeded, faceted, live-counted browse set is

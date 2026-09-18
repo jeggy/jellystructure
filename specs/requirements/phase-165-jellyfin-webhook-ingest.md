@@ -6,7 +6,7 @@
 > have in radarr/sonarr are useless."* Proposed direction: use the **Jellyfin Webhook plugin**, verify
 > it is installed, offer to install it, and retire the Radarr/Sonarr webhook setup from jellystructure.
 
-**Status:** ✓ Done — see `STATUS.md`, which is authoritative. (Header as originally written: Planned) — dev-authored, not yet built.
+**Status:** Planned — dev-authored, not yet built.
 
 ## 1. What exists today, and why the report is right
 
@@ -38,7 +38,7 @@ So the report is accurate about (a), and (b) is a good foundation that has a rea
 
 ## 2. Why the Webhook plugin is the right answer (verified against the live server)
 
-Verified live, 2026-08-14, against `https://jellyfin.example.net` (Jellyfin **10.11.11**):
+Verified live, 2026-08-14, against `https://jellyfin.jebster.net` (Jellyfin **10.11.11**):
 
 - `GET /Plugins` — the Webhook plugin is **not installed**. (Installed: AudioDB, File Transformation,
   Moonfin, MusicBrainz, OMDb, Studio Images, TMDb.)
@@ -179,7 +179,7 @@ and `ArrRescanService` is outbound-only. Verified.
    one-click path can be trusted. Until then the manual-instructions fallback is the shipped path.
 2. **What base URL does jellystructure advertise?** The current *arr card derives the URL from the
    browser's own address, which is right for a human copying it but wrong for a server-to-server
-   write. Jellyfin must be able to reach jellystructure — likely `http://192.0.2.10:9505` on this
+   write. Jellyfin must be able to reach jellystructure — likely `http://10.10.10.10:9505` on this
    install, not the admin's public hostname. Needs an explicit, editable "where Jellyfin should reach
    this install" field (same shape as Towo's "where runners connect" URL override, Phase 162).
 3. Whether to also gate on the plugin's per-destination `UserFilter` — `ItemAdded` is not user-scoped,

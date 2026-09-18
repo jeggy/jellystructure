@@ -888,16 +888,17 @@
       return r;
     }
     function seerrEnabled() { return !!(R.config && R.config.seerr); }
-    // The Discover tabs, in order. Coming Soon and Request are config-gated (Sonarr/Radarr,
-     // Seerr); the three taxonomy tabs index what is already on the shelf, so they need no
-    // integration and are always present.
-    const TAXO_TABS = ['studios', 'networks', 'genres'];
+    /* R268 — ONE declared order, library first: Networks · Studios · Genres · Coming Soon · Request.
+       Left to right the strip runs from what the household owns to what it does not. Gating
+       FILTERS this list and never re-orders it (R243 FR-R243-1): Coming Soon needs Sonarr/Radarr
+       and Request needs Seerr, so either may be absent — the three taxonomy tabs index the library
+       itself and are always present, which is why the first chip is Networks on every household. */
+    const TAXO_TABS = ['networks', 'studios', 'genres'];
+    const SEG_ORDER = ['networks', 'studios', 'genres', 'coming', 'request'];
     const SEG_LABEL = { coming: 'seg_coming', request: 'seg_request', studios: 'seg_studios', networks: 'seg_networks', genres: 'seg_genres' };
     function discTabs() {
-      const tabs = [];
-      if (upcomingEnabled()) tabs.push('coming');
-      if (seerrEnabled()) tabs.push('request');
-      return tabs.concat(TAXO_TABS);
+      return SEG_ORDER.filter(s =>
+        s === 'coming' ? upcomingEnabled() : s === 'request' ? seerrEnabled() : true);
     }
     function discSegment(active) {
       const seg = el('div', 'discseg');
@@ -1454,7 +1455,9 @@
       // horizontal: keep tile in view. A collapsing J row moves the tiles right of the
       // focus by ~900px in one frame; following that instantly is what keeps the tile
       // under your thumb still, where an animated catch-up reads as a lurch.
-      const track = node.closest('.track');
+      // R268 FR-R268-6: the Discover segment strip scrolls too, so a focused chip is carried into
+      // view by the same tween the content rows use — five chips overflow the row on a TV.
+      const track = node.closest('.track') || node.closest('.discseg');
       if (track) {
         // J: the tween chases the tile's live position, so the collapse, the dwell-
         // delayed open and the catch-up all resolve against the same moving layout
@@ -1569,7 +1572,9 @@
         else if (f.dataset.nav === 'movies') go({ type: 'browse', kind: 'film', title: t('nav_movies'), nav: 'movies' });
         else if (f.dataset.nav === 'series') go({ type: 'browse', kind: 'series', title: t('nav_series'), nav: 'series' });
         else if (f.dataset.nav === 'top10') go({ type: 'discover' });
-        else if (f.dataset.nav === 'discover') go(upcomingEnabled() ? { type: 'upcoming' } : seerrEnabled() ? { type: 'discover' } : { type: 'taxonomy', taxo: 'studios' });
+        // R268 FR-R268-2: Discover opens on the FIRST AVAILABLE chip, and a taxonomy tab can never
+        // be gated off — so entry is always Networks, on every household, gated or not.
+        else if (f.dataset.nav === 'discover') go({ type: 'taxonomy', taxo: discTabs()[0] });
         else if (f.dataset.nav === 'upcoming') go({ type: 'upcoming' });
         else if (f.dataset.nav === 'mylist') go({ type: 'grid', kind: 'mylist', title: 'My List', nav: 'mylist' });
         else if (f.dataset.nav === 'profile') openProfMenu();

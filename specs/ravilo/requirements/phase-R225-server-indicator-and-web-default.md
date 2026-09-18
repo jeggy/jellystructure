@@ -6,14 +6,14 @@
 > `raviloBaseUrl()`'s web actual falls back to `window.location.origin` when no server override is saved
 > (`ravilo-ui/src/wasmJsMain/.../RaviloRootActuals.kt`) — correct for the real household deploy (backend
 > and `ravilo-web` share an origin there) but wrong for the demo stack, where `ravilo-web` is served from
-> `demo.ravilo.example.net` and the backend actually lives at `demo.jellystructure.example.net`, a
+> `demo.ravilo.jebster.net` and the backend actually lives at `demo.jellystructure.jebster.net`, a
 > different origin. The login screen rendered fine (confirmed via a real headless-Chrome load 2026-09-03)
 > but was silently pointed at itself — sign-in would have failed against a server with no `/api/tv/**`
 > routes at all. The user asked for two things in response: *"a small indicator showing what server is
 > currently used"* (so this class of mistake is visible instead of a silent wrong-origin guess), and *"a
 > default server via an environment variable... on ravilo-web, but not on tv or mobile devices"*.
 
-**Status:** ✓ Built — see `STATUS.md`, which is authoritative. (Header as originally written: Planned) — spec only, not yet built.
+**Status:** Planned — spec only, not yet built.
 
 ## 1. Server indicator (all platforms)
 
@@ -24,7 +24,7 @@ showing the current server's host on the **login screen**, near the existing `Ch
 server?") — that's the one screen every session passes through, and the one place a wrong-server mistake is
 otherwise invisible until sign-in fails.
 
-- Format: host only, no scheme (`demo.jellystructure.example.net`, not `https://demo.jellystructure.example.net`)
+- Format: host only, no scheme (`demo.jellystructure.jebster.net`, not `https://demo.jellystructure.jebster.net`)
   — matches how `ServerSetupScreen` already asks for host separately from the `useHttps` toggle.
 - Styling: `colors.textSecondary`, small (`11.sp`), sits below `ChangeServerLink` — clearly secondary to the
   actual sign-in action, never competing with it for focus (not `dpadFocusable`, not part of the D-pad
@@ -57,7 +57,7 @@ already read fresh per request — `Main.kt:76-82`) injects one inline script be
 src="ravilo.js">` tag:
 
 ```html
-<script>window.__RAVILO_DEFAULT_SERVER__="https://demo.jellystructure.example.net";</script>
+<script>window.__RAVILO_DEFAULT_SERVER__="https://demo.jellystructure.jebster.net";</script>
 ```
 
 Every other static asset (`ravilo.js`, the `.wasm` files, `composeResources/**`) is untouched — they stay
@@ -82,7 +82,7 @@ falls straight through to tier 3, unchanged from today).
 ### FR-R225-4: demo stack adopts it
 
 `~/jellystructure/demo/docker-compose.yml`'s `ravilo-web` service gets
-`environment: DEFAULT_SERVER_URL: https://demo.jellystructure.example.net` — closing the exact gap this
+`environment: DEFAULT_SERVER_URL: https://demo.jellystructure.jebster.net` — closing the exact gap this
 phase's own trigger investigation found. This is an operational change (compose file + redeploy), not a
 code change, and ships alongside this phase rather than as a separate followup.
 
@@ -104,22 +104,8 @@ exactly as today. `DEFAULT_SERVER_URL` only ever reaches the web build.
   change.
 - Set `DEFAULT_SERVER_URL` on the demo stack: confirm a fresh browser profile (no `localStorage`) lands
   directly on the login screen (not `ServerSetupScreen`) with the indicator showing
-  `demo.jellystructure.example.net`, and that a real sign-in against the `demo` viewer account succeeds —
+  `demo.jellystructure.jebster.net`, and that a real sign-in against the `demo` viewer account succeeds —
   this was the concrete failure this phase closes.
 - Confirm `ChangeServerLink` still overrides the default: pick "Wrong server?", enter a different host,
   confirm the indicator and subsequent sign-in both reflect the override, and confirm it survives a reload
   (localStorage tier still wins over the injected default on tier 2).
-
-## Amendment (2026-09-18) — a cross-origin web app could sign in and then load nothing
-
-The household set `DEFAULT_SERVER_URL` on production (ravilo-web on one host, the backend on
-another). Sign-in worked; every call after it failed in the browser as a *CORS error*. The backend's
-auth interceptor asked the **preflight** for a device token — a browser never sends credentials on a
-preflight — so `OPTIONS /api/tv/home` answered **401** while `OPTIONS /api/tv/login` (an open path)
-answered 200. The demo stack has the same shape and the same defect.
-
-- **FR-R225-6** — a CORS preflight (`OPTIONS` with `Origin` and `Access-Control-Request-Method`)
-  passes the auth interceptor untouched; the CORS plugin answers it, and refuses an origin that is not
-  in `CORS_ALLOWED_ORIGINS`. It runs no handler and returns no data. A bare `OPTIONS` is still 401.
-- e2e: preflights for an authenticated route, a refused origin, and a non-preflight `OPTIONS`.
-

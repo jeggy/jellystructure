@@ -135,16 +135,22 @@ body { font-family: 'Sora', sans-serif; }
 .profmenu .foc.focused { background: var(--ink); color: #0a0c13; }
 .profmenu .pm-switch.focused { background: var(--ink); color: #0a0c13; border-color: transparent; }
 
-/* ---- Discover segment (Coming Soon / Request) ---- */
-.discseg { display: inline-flex; align-items: center; gap: 5px; padding: 5px; border-radius: 16px; background: rgba(255,255,255,.06); border: 1px solid var(--line); margin-top: 0; }
-.discseg .dseg { font-size: 21px; font-weight: 500; color: var(--ink-soft); padding: 10px 24px; border-radius: 12px; cursor: pointer; white-space: nowrap; transition: color .18s var(--ease), background .18s var(--ease); }
+/* ---- Discover segment (R268: Networks · Studios · Genres · Coming Soon · Request) ----
+   The strip scrolls rather than clipping: at five chips it runs past the Seerr search pill that
+   shares its row. On a TV the D-pad carries the focused chip into view (scrollRowTo's idiom, the
+   same tween the nav row uses); the scrollbar itself is never drawn. */
+.discseg { display: flex; align-items: center; gap: 5px; padding: 5px; border-radius: 16px; background: rgba(255,255,255,.06); border: 1px solid var(--line); margin-top: 0; min-width: 0; overflow-x: auto; scroll-behavior: smooth; scrollbar-width: none; -ms-overflow-style: none; }
+.discseg::-webkit-scrollbar { display: none; }
+.discseg .dseg { flex: none; font-size: 21px; font-weight: 500; color: var(--ink-soft); padding: 10px 24px; border-radius: 12px; cursor: pointer; white-space: nowrap; transition: color .18s var(--ease), background .18s var(--ease); }
 .discseg .dseg.cur { color: var(--ink); font-weight: 600; }
 .discseg .dseg.focused { background: var(--ink); color: #0a0c13; }
 
 /* ---- Seerr search pill (Request page) ---- */
 .dsearch-row { margin-top: 14px; }
-.dischead-controls { display: flex; align-items: center; gap: 18px; margin-top: 16px; }
-.dischead-controls .dsearch { margin-left: auto; }
+.dischead-controls { display: flex; align-items: center; gap: 18px; margin-top: 16px; min-width: 0; }
+/* R268 open question 2 — the chips scroll, the search pill stays pinned right: R52's point is that
+   search is always reachable, so it must not be able to scroll off with the strip. */
+.dischead-controls .dsearch { margin-left: auto; flex: none; }
 .dsearch { display: inline-flex; align-items: center; gap: 12px; height: 50px; padding: 0 24px; border-radius: 26px; background: rgba(255,255,255,.07); border: 1px solid var(--line); color: var(--ink-soft); font-size: 19px; cursor: pointer; }
 .dsearch .sic { font-size: 24px; line-height: 1; }
 .dsearch.focused { background: var(--ink); color: #0a0c13; }

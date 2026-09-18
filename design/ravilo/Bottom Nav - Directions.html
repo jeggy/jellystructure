@@ -1,0 +1,567 @@
+<!doctype html>
+<html lang="en" data-skin="aurora">
+<head>
+<meta charset="utf-8">
+<title>Ravilo — Bottom navigation directions (phone)</title>
+<meta name="design_doc_mode" content="canvas">
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="mobile-directions.css">
+<style>
+/* ---------- page-local: a compact stand-in Home, so every bar is judged in context ---------- */
+.scn{position:absolute;inset:0;background:var(--bg);display:flex;flex-direction:column;overflow:hidden}
+/* position:static — mobile-directions.css positions .sbar absolutely (it owns
+   the top inset in the built frames); here it is a flow row above the app bar. */
+.sbar{position:static;height:auto;flex:none;display:flex;align-items:center;justify-content:space-between;padding:14px 18px 6px;font-size:13px;color:var(--ink-soft);font-variant-numeric:tabular-nums}
+.sbar .ic{display:flex;gap:5px;align-items:center;opacity:.8}
+.abar{display:flex;align-items:center;gap:12px;padding:6px 18px 12px}
+.abar .mk{width:22px;height:22px;flex:none}
+.abar .wm{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:21px;letter-spacing:-.02em;color:var(--ink)}
+.abar .sp{flex:1}
+.abar .ib{width:38px;height:38px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.07);color:var(--ink)}
+.abar .ib svg{width:19px;height:19px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round}
+.abar .av{width:34px;height:34px;border-radius:50%;background:var(--grad);display:flex;align-items:center;justify-content:center;font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:13px;color:#fff}
+.body{flex:1;overflow:hidden;padding-bottom:6px}
+.hero{margin:0 18px;height:196px;border-radius:16px;position:relative;overflow:hidden;background:linear-gradient(150deg,#2b3350,#161b2c 60%,#101420)}
+.hero img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:.9}
+.hero .sc{position:absolute;inset:0;background:linear-gradient(0deg,rgba(10,12,19,.95) 4%,rgba(10,12,19,.25) 52%,transparent)}
+.hero .bd{position:absolute;left:14px;right:14px;bottom:13px}
+.hero .k{font-size:11px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--accent-2)}
+.hero .t{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:24px;letter-spacing:-.5px;margin-top:4px;color:var(--ink)}
+.hero .m{font-size:12px;color:var(--ink-soft);margin-top:4px}
+.rw{margin-top:18px}
+.rw h4{margin:0 0 9px;padding:0 18px;font-family:'Space Grotesk',sans-serif;font-size:15px;font-weight:700;color:var(--ink)}
+.strip{display:flex;gap:10px;padding:0 18px}
+.pst{width:96px;flex:none}
+.pst .a{height:142px;border-radius:11px;display:flex;align-items:center;justify-content:center;font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:19px;color:#fff;letter-spacing:-.5px}
+.pst .n{font-size:11.5px;font-weight:600;margin-top:6px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pst .s{font-size:10.5px;color:var(--ink-dim);margin-top:1px}
+
+/* today's second top row, for the baseline frame only */
+.toprow{display:flex;gap:8px;padding:2px 18px 12px;overflow:hidden}
+.toprow .c{flex:none;padding:7px 15px;border-radius:999px;font-size:14px;font-weight:600;color:var(--ink-soft);background:rgba(255,255,255,.06);white-space:nowrap}
+.toprow .c.on{background:var(--ink);color:#0a0c13}
+
+/* ---------- the four bottom-bar directions ---------- */
+.nav{position:absolute;left:0;right:0;bottom:0;z-index:30}
+.nav .it{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;min-height:56px;color:var(--ink-dim)}
+.nav .it svg{width:23px;height:23px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.nav .it b{font-size:11.5px;font-weight:600;letter-spacing:.01em}
+.navsafe{height:22px}
+
+/* A · standard labelled bar */
+.nav.a{background:var(--bg);border-top:1px solid var(--line);padding-top:8px}
+.nav.a .row{display:flex;align-items:flex-end}
+.nav.a .it.on{color:var(--ink)}
+.nav.a .it.on svg{stroke-width:2.4}
+
+/* B · pill indicator (Material 3 shape, Ravilo colours) */
+.nav.b{background:var(--bg-2);border-top:1px solid var(--line);padding-top:9px}
+.nav.b .row{display:flex;align-items:flex-end}
+.nav.b .it .p{width:62px;height:32px;border-radius:17px;display:flex;align-items:center;justify-content:center}
+.nav.b .it.on{color:var(--ink)}
+.nav.b .it.on .p{background:var(--grad)}
+.nav.b .it.on .p svg{stroke:#fff}
+.nav.b .it.on b{color:var(--ink)}
+
+/* C · floating capsule, detached from the edge */
+.nav.c{left:14px;right:14px;bottom:20px;border-radius:26px;background:rgba(20,24,38,.86);-webkit-backdrop-filter:blur(16px) saturate(1.3);backdrop-filter:blur(16px) saturate(1.3);border:1px solid rgba(255,255,255,.10);box-shadow:0 14px 38px rgba(0,0,0,.55);padding:7px 6px}
+.nav.c .row{display:flex;align-items:center}
+.nav.c .it{min-height:50px;gap:3px}
+.nav.c .it b{font-size:11px}
+.nav.c .it.on{color:#0a0c13}
+.nav.c .it.on .p{background:var(--ink)}
+.nav.c .it .p{width:46px;height:30px;border-radius:15px;display:flex;align-items:center;justify-content:center}
+.nav.c .it.on .p svg{stroke:#0a0c13}
+.nav.c .it.on b{color:var(--ink)}
+
+/* D · label only on the selected item, which expands */
+.nav.d{background:var(--bg);border-top:1px solid var(--line);padding:10px 10px 0}
+.nav.d .row{display:flex;align-items:center;gap:6px}
+.nav.d .it{min-height:48px;flex-direction:row;gap:8px;border-radius:24px;padding:0 6px}
+.nav.d .it b{display:none}
+.nav.d .it.on{flex:2.1;color:#0a0c13;background:var(--ink)}
+.nav.d .it.on b{display:block;font-size:13px}
+.nav.d .it.on svg{stroke:#0a0c13}
+
+/* the cast mini bar, drawn where it lands once a bottom nav exists */
+.mini{position:absolute;left:10px;right:10px;border-radius:14px;background:var(--bg-2);border:1px solid var(--line);display:flex;align-items:center;gap:11px;padding:9px 12px;z-index:28;box-shadow:0 10px 26px rgba(0,0,0,.45)}
+.mini .th{width:44px;height:30px;border-radius:7px;overflow:hidden;flex:none;background:#222}
+.mini .th img{width:100%;height:100%;object-fit:cover}
+.mini .tx{flex:1;min-width:0}
+.mini .tx .n{font-size:12.5px;font-weight:600;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mini .tx .d{font-size:11px;color:var(--ink-soft);margin-top:2px}
+.mini .pp{width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,.1);display:flex;align-items:center;justify-content:center;color:var(--ink);flex:none}
+.mini .pp svg{width:15px;height:15px;fill:currentColor}
+.mini .pb{position:absolute;left:12px;right:12px;bottom:4px;height:2px;border-radius:2px;background:rgba(255,255,255,.18)}
+.mini .pb i{display:block;height:100%;width:38%;border-radius:2px;background:var(--accent)}
+
+/* Discover's own five-chip strip, now at the top of its own page */
+.dstrip{display:flex;gap:8px;padding:2px 18px 12px;overflow:hidden}
+.dstrip .c{flex:none;padding:7px 15px;border-radius:999px;font-size:13.5px;font-weight:600;color:var(--ink-soft);background:rgba(255,255,255,.06);white-space:nowrap}
+.dstrip .c.on{background:var(--ink);color:#0a0c13}
+.wall{display:grid;grid-template-columns:1fr 1fr;gap:11px;padding:0 18px}
+.wall .cd{height:74px;border-radius:12px;border:1px solid var(--line);background:rgba(255,255,255,.055);display:flex;align-items:center;justify-content:center;font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:15px;color:var(--ink)}
+.wall .cp{font-size:11px;color:var(--ink-dim);margin-top:5px}
+
+/* player frame: no bars at all */
+.plr{position:absolute;inset:0;background:#000;display:flex;align-items:center;justify-content:center}
+.plr img{width:100%;height:100%;object-fit:cover;opacity:.92}
+.plr .ctr{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;gap:30px}
+.plr .b{width:52px;height:52px;border-radius:50%;background:rgba(0,0,0,.4);border:1px solid rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;color:#fff}
+.plr .b.big{width:74px;height:74px;background:rgba(255,255,255,.95);color:#0a0c13}
+.plr .b svg{width:24px;height:24px;fill:currentColor}
+.plr .sk{position:absolute;left:18px;right:18px;bottom:30px}
+.plr .sk .bar{height:4px;border-radius:3px;background:rgba(255,255,255,.28)}
+.plr .sk .bar i{display:block;height:100%;width:42%;border-radius:3px;background:var(--accent)}
+.plr .sk .t{display:flex;justify-content:space-between;font-family:'JetBrains Mono',monospace;font-size:11px;color:rgba(255,255,255,.75);margin-top:8px}
+</style>
+</head>
+<body style="width:4360px;height:6100px;position:relative">
+
+<!-- ============ 0 · INTRO ============ -->
+<div class="lbl w3" style="left:0;top:0">
+  <span class="tag new">Directions · phone only · 2026-09-18</span>
+  <h2>Ravilo's pages move to the bottom</h2>
+  <small>R267 gave the phone a <b>two-row top bar</b> — identity and actions above, pages below — and recorded as its open question 1 whether the pages belong at the bottom instead. Owner direction, 2026-09-18: <b>put them at the bottom</b>. This canvas draws four ways to do that, on one axis: <b>how the selected page is marked</b>, because that is the only thing the four differ on that a viewer would ever notice. Everything else — what the top bar keeps, what the bar does in the player, where the cast mini bar goes — is decided once, below, and is the same in all four.<br><br>Nothing here is built into <b>Ravilo Mobile.html</b> yet. Pick a direction and the build follows; R267 then gains the bottom bar and its FR-R267-5 (the page row) is superseded.</small>
+</div>
+
+<div class="panel" style="left:0;top:392px;width:1420px">
+  <h2>Decided before any direction</h2>
+  <p class="lead">These are consequences of moving the pages, not choices between the four. They are the same in every frame.</p>
+  <table class="tbl">
+    <tr><th style="width:210px">Decided</th><th>Why</th></tr>
+    <tr><td><b>The top bar keeps its one row</b></td><td>Brand · cast (when the server says Chromecast is set up, R245 FR-R245-1) · search · avatar — R267's row one, unchanged, <b>still no clock</b> (the platform draws one in the status bar directly above). Moving the pages down empties row two; it does not change row one.</td></tr>
+    <tr><td><b>Four items, never five</b></td><td>Home · Movies · Series · Discover — <span class="mono">raviloNavItems()</span>. My List stays in the avatar menu (R170) and Search stays an icon (R52). Four is what makes a bottom bar readable; a fifth would force icon-only or a scroller, and <b>a bottom bar that scrolls is a broken bottom bar</b>.</td></tr>
+    <tr><td><b>Discover's five chips stay at the top of Discover</b></td><td>They are that page's own content (R243/R262/R268: Networks · Studios · Genres · Coming Soon · Request, scrollable). They are not app navigation and must not be confused with it — which is exactly why the two rows of chips stacked on top of each other read badly today.</td></tr>
+    <tr><td><b>Absent in the player, and on any pushed screen</b></td><td>Detail pages, the player, the cast remote, the profile picker and a seeded grid have their own Back and no nav — the bar belongs to the four pages only. It never overlays video.</td></tr>
+    <tr><td><b>The cast mini bar sits directly above it</b></td><td>R245 FR-R245-6: 64 dp, never dismissible while a cast runs. It docks on top of the nav bar, the pair moves as one, and the mini bar keeps the tap target it has today. This is the collision R267 OQ1 worried about, and it resolves by stacking — see §3.</td></tr>
+    <tr><td><b>Safe areas, targets, type floor</b></td><td>The bar sits above the home indicator / gesture pill, every item is a <b>≥ 46 dp</b> target, no label under <b>13 sp</b>… <i>except</i> where a direction says otherwise — see the warning below.</td></tr>
+    <tr><td><b>Always visible on its four pages</b></td><td>No hide-on-scroll. It is the one affordance that says where you are; a bar that disappears while you read a row is a bar you have to go looking for.</td></tr>
+  </table>
+  <div class="warn"><b>One real tension, and it is a rule this project already set.</b> R234/R244 put a <b>13 px floor</b> on any label a viewer reads. Platform bottom bars habitually use 11–12 px, and the four directions below are drawn at <b>11.5 px</b> (A, B) and <b>11 px</b> (C) to look like what people expect — so either the floor bends for a permanent, four-word, icon-paired label, or the labels go up to 13 px and the bar gets ~4 px taller. <b>Direction D avoids the question</b> by only ever showing one label, at 13 px. Flagged as decision 2.</div>
+</div>
+
+<!-- ============ 1 · BASELINE ============ -->
+<div class="lbl" style="left:1500px;top:392px">
+  <span class="tag">Baseline · today</span>
+  <h3>Two rows at the top</h3>
+  <small>What R267 built and what this replaces: row one is identity and actions, row two is the pages. It works, it is honest, and it costs <b>two of the four thumb-reachable rows of the screen</b> to say where you are — while the pages themselves sit at the far end of the reach.</small>
+</div>
+<div class="dv and" style="left:1500px;top:660px" data-screen-label="Baseline · two top rows">
+  <div class="pnch"></div>
+  <div class="scn">
+    <div class="sbar"><span>9:41</span><span class="ic">▮▮▮ ⌃ ▰</span></div>
+    <div class="abar">
+      <svg class="mk" viewBox="12 20 76 76"><defs><linearGradient id="g0" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="var(--accent)"/><stop offset="1" stop-color="var(--accent-2)"/></linearGradient></defs><path d="M22 52 C22 24 78 24 78 52 C66 45 59 45 50 49 C41 45 34 45 22 52 Z" fill="url(#g0)"/><g stroke="url(#g0)" stroke-width="4.5" stroke-linecap="round" fill="none"><path d="M33 51 q-5 12 1 20 q5 8 0 14" opacity=".9"/><path d="M44 52 q-4 13 1 21 q4 9 0 13" opacity=".72"/><path d="M56 52 q4 13 -1 21 q-4 9 0 13" opacity=".72"/><path d="M67 51 q5 12 -1 20 q-5 8 0 14" opacity=".9"/></g></svg>
+      <span class="wm">Ravilo</span><span class="sp"></span>
+      <span class="ib"><svg viewBox="0 0 24 24"><path d="M3 17h2v2H3zM3 13h2a4 4 0 0 1 4 4v2H7a4 4 0 0 0-4-4z"/><path d="M3 9a10 10 0 0 1 10 10"/><path d="M3 5a14 14 0 0 1 14 14"/></svg></span>
+      <span class="ib"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg></span>
+      <span class="av">ER</span>
+    </div>
+    <div class="toprow"><span class="c on">Home</span><span class="c">Movies</span><span class="c">Series</span><span class="c">Discover</span></div>
+    <div class="body">
+      <div class="hero"><img src="assets/bbb-backdrop-landscape.png" alt=""><div class="sc"></div><div class="bd"><div class="k">Continue watching</div><div class="t">Chikhai Bardo</div><div class="m">S2 · E7 · 14 min left</div></div></div>
+      <div class="rw"><h4>Newly added</h4><div class="strip">
+        <div class="pst"><div class="a" style="background:linear-gradient(150deg,#3b4a7a,#1d2340)">AR</div><div class="n">Arvur</div><div class="s">2023 · Drama</div></div>
+        <div class="pst"><div class="a" style="background:linear-gradient(150deg,#6b3550,#2a1526)">NV</div><div class="n">Nordvest</div><div class="s">2023 · Crime</div></div>
+        <div class="pst"><div class="a" style="background:linear-gradient(150deg,#2f5b52,#13251f)">HH</div><div class="n">Havets Hjarta</div><div class="s">2022 · Drama</div></div>
+        <div class="pst"><div class="a" style="background:linear-gradient(150deg,#5a4a2c,#241c10)">MÝ</div><div class="n">Mýrin</div><div class="s">2021 · Crime</div></div>
+      </div></div>
+    </div>
+    <div class="navsafe"></div>
+  </div>
+  <div class="gpill"></div>
+</div>
+
+<div class="panel" style="left:1980px;top:660px;width:940px">
+  <h2>What moving them down buys</h2>
+  <div class="good"><b>Reach.</b> The four pages become the four easiest taps on the phone. Today they sit ~800 px from the thumb on a 915 px screen.</div>
+  <div class="good"><b>One row back.</b> The top bar drops to a single 56 px row, so the hero starts ~48 px higher and one more poster row lands above the fold.</div>
+  <div class="good"><b>No more two-strips-stacked confusion.</b> Discover's own five chips are the only chip row on screen once the app's pages are glyphs at the bottom — the ambiguity R262 §3 and R268 both dance around disappears.</div>
+  <div class="good"><b>It is what the platform does.</b> A bottom bar is the shape every phone viewer already knows, and the one Android's own predictive-back and gesture model is built around.</div>
+  <h2 style="margin-top:18px">And what it costs</h2>
+  <div class="no"><b>A row of screen, permanently.</b> ~74 px of the 915 is gone on every page — that is the trade, and it is why the bar must not also carry a clock, a search field or a fifth item.</div>
+  <div class="no"><b>Two navigation idioms in one app.</b> The TV keeps a top row; the phone gets a bottom bar. Defensible (they are different devices, and R256/R267 already split on form factor) but it is a second layout to maintain in <span class="mono">AppBar.kt</span>'s file.</div>
+  <div class="no"><b>The mini bar has to move.</b> It docks above the nav instead of over the content — drawn in §3, and the one thing to check on a real phone before the phase is closed.</div>
+</div>
+
+<!-- ============ 2 · THE FOUR DIRECTIONS ============ -->
+<div class="lbl w3" style="left:0;top:1720px">
+  <span class="tag new">§2 · the axis</span>
+  <h2>How the selected page is marked</h2>
+  <small>All four are the same bar: four items, icon over label, 56–60 px tall, above the gesture pill, always visible. They differ only in how <i>selected</i> reads — which on a phone is the whole job, because there is no focus ring and no hover to help.</small>
+</div>
+
+<!-- A -->
+<div class="lbl" style="left:0;top:1960px">
+  <span class="tag">A · Standard</span>
+  <h3>Ink and weight</h3>
+  <small>Selected = full-ink icon and label, heavier stroke; the rest muted. A hairline above, the page's own background below. The most conventional thing possible, and the cheapest to build.</small>
+</div>
+<div class="dv and" style="left:0;top:2300px" data-screen-label="A · standard labelled bar">
+  <div class="pnch"></div>
+  <div class="scn">
+    <div class="sbar"><span>9:41</span><span class="ic">▮▮▮ ⌃ ▰</span></div>
+    <div class="abar">
+      <svg class="mk" viewBox="12 20 76 76"><path d="M22 52 C22 24 78 24 78 52 C66 45 59 45 50 49 C41 45 34 45 22 52 Z" fill="url(#g0)"/><g stroke="url(#g0)" stroke-width="4.5" stroke-linecap="round" fill="none"><path d="M33 51 q-5 12 1 20 q5 8 0 14" opacity=".9"/><path d="M44 52 q-4 13 1 21 q4 9 0 13" opacity=".72"/><path d="M56 52 q4 13 -1 21 q-4 9 0 13" opacity=".72"/><path d="M67 51 q5 12 -1 20 q-5 8 0 14" opacity=".9"/></g></svg>
+      <span class="wm">Ravilo</span><span class="sp"></span>
+      <span class="ib"><svg viewBox="0 0 24 24"><path d="M3 17h2v2H3zM3 13h2a4 4 0 0 1 4 4v2H7a4 4 0 0 0-4-4z"/><path d="M3 9a10 10 0 0 1 10 10"/><path d="M3 5a14 14 0 0 1 14 14"/></svg></span>
+      <span class="ib"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg></span>
+      <span class="av">ER</span>
+    </div>
+    <div class="body">
+      <div class="hero"><img src="assets/bbb-backdrop-landscape.png" alt=""><div class="sc"></div><div class="bd"><div class="k">Continue watching</div><div class="t">Chikhai Bardo</div><div class="m">S2 · E7 · 14 min left</div></div></div>
+      <div class="rw"><h4>Newly added</h4><div class="strip">
+        <div class="pst"><div class="a" style="background:linear-gradient(150deg,#3b4a7a,#1d2340)">AR</div><div class="n">Arvur</div><div class="s">2023 · Drama</div></div>
+        <div class="pst"><div class="a" style="background:linear-gradient(150deg,#6b3550,#2a1526)">NV</div><div class="n">Nordvest</div><div class="s">2023 · Crime</div></div>
+        <div class="pst"><div class="a" style="background:linear-gradient(150deg,#2f5b52,#13251f)">HH</div><div class="n">Havets Hjarta</div><div class="s">2022 · Drama</div></div>
+        <div class="pst"><div class="a" style="background:linear-gradient(150deg,#5a4a2c,#241c10)">MÝ</div><div class="n">Mýrin</div><div class="s">2021 · Crime</div></div>
+      </div></div>
+      <div class="rw"><h4>Danish drama</h4><div class="strip">
+        <div class="pst"><div class="a" style="background:linear-gradient(150deg,#45356b,#1c1630)">GB</div><div class="n">Glasberget</div><div class="s">2024 · Drama</div></div>
+        <div class="pst"><div class="a" style="background:linear-gradient(150deg,#2b4a6b,#121d2b)">T1</div><div class="n">Tórshavn 1918</div><div class="s">2021 · Drama</div></div>
+        <div class="pst"><div class="a" style="background:linear-gradient(150deg,#6b4a2b,#2b1d12)">FB</div><div class="n">Frostbarn</div><div class="s">2024 · Crime</div></div>
+      </div></div>
+    </div>
+    <div class="nav a"><div class="row">
+      <span class="it on"><svg viewBox="0 0 24 24"><path d="M4 11l8-7 8 7"/><path d="M6 10v9h12v-9"/></svg><b>Home</b></span>
+      <span class="it"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M8 5v14M16 5v14"/></svg><b>Movies</b></span>
+      <span class="it"><svg viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="12" rx="2.5"/><path d="M8 3l4 4 4-4"/></svg><b>Series</b></span>
+      <span class="it"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M15.5 8.5l-2 5-5 2 2-5z"/></svg><b>Discover</b></span>
+    </div><div class="navsafe"></div></div>
+  </div>
+  <div class="gpill"></div>
+</div>
+
+<!-- B -->
+<div class="lbl" style="left:520px;top:1960px">
+  <span class="tag pick">B · Pill · recommended</span>
+  <h3>The selected icon sits in Ravilo's gradient</h3>
+  <small>Selected = the icon inside a filled pill in the brand gradient, label in full ink beneath. It is the shape every current Android app uses (Material 3's navigation bar) and the one place a bottom bar can carry Ravilo's own colour without tinting content.</small>
+</div>
+<div class="dv and" style="left:520px;top:2300px" data-screen-label="B · pill indicator">
+  <div class="pnch"></div>
+  <div class="scn">
+    <div class="sbar"><span>9:41</span><span class="ic">▮▮▮ ⌃ ▰</span></div>
+    <div class="abar">
+      <svg class="mk" viewBox="12 20 76 76"><path d="M22 52 C22 24 78 24 78 52 C66 45 59 45 50 49 C41 45 34 45 22 52 Z" fill="url(#g0)"/><g stroke="url(#g0)" stroke-width="4.5" stroke-linecap="round" fill="none"><path d="M33 51 q-5 12 1 20 q5 8 0 14" opacity=".9"/><path d="M44 52 q-4 13 1 21 q4 9 0 13" opacity=".72"/><path d="M56 52 q4 13 -1 21 q-4 9 0 13" opacity=".72"/><path d="M67 51 q5 12 -1 20 q-5 8 0 14" opacity=".9"/></g></svg>
+      <span class="wm">Ravilo</span><span class="sp"></span>
+      <span class="ib"><svg viewBox="0 0 24 24"><path d="M3 17h2v2H3zM3 13h2a4 4 0 0 1 4 4v2H7a4 4 0 0 0-4-4z"/><path d="M3 9a10 10 0 0 1 10 10"/><path d="M3 5a14 14 0 0 1 14 14"/></svg></span>
+      <span class="ib"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg></span>
+      <span class="av">ER</span>
+    </div>
+    <div class="body">
+      <div class="hero"><img src="assets/bbb-backdrop-rodents.png" alt=""><div class="sc"></div><div class="bd"><div class="k">Continue watching</div><div class="t">Chikhai Bardo</div><div class="m">S2 · E7 · 14 min left</div></div></div>
+      <div class="rw"><h4>Newly added</h4><div class="strip">
+        <div class="pst"><div class="a" style="background:linear-gradient(150deg,#3b4a7a,#1d2340)">AR</div><div class="n">Arvur</div><div class="s">2023 · Drama</div></div>
+        <div class="pst"><div class="a" style="background:linear-gradient(150deg,#6b3550,#2a1526)">NV</div><div class="n">Nordvest</div><div class="s">2023 · Crime</div></div>
+        <div class="pst"><div class="a" style="background:linear-gradient(150deg,#2f5b52,#13251f)">HH</div><div class="n">Havets Hjarta</div><div class="s">2022 · Drama</div></div>
+        <div class="pst"><div class="a" style="background:linear-gradient(150deg,#5a4a2c,#241c10)">MÝ</div><div class="n">Mýrin</div><div class="s">2021 · Crime</div></div>
+      </div></div>
+      <div class="rw"><h4>Danish drama</h4><div class="strip">
+        <div class="pst"><div class="a" style="background:linear-gradient(150deg,#45356b,#1c1630)">GB</div><div class="n">Glasberget</div><div class="s">2024 · Drama</div></div>
+        <div class="pst"><div class="a" style="background:linear-gradient(150deg,#2b4a6b,#121d2b)">T1</div><div class="n">Tórshavn 1918</div><div class="s">2021 · Drama</div></div>
+        <div class="pst"><div class="a" style="background:linear-gradient(150deg,#6b4a2b,#2b1d12)">FB</div><div class="n">Frostbarn</div><div class="s">2024 · Crime</div></div>
+      </div></div>
+    </div>
+    <div class="nav b"><div class="row">
+      <span class="it on"><span class="p"><svg viewBox="0 0 24 24"><path d="M4 11l8-7 8 7"/><path d="M6 10v9h12v-9"/></svg></span><b>Home</b></span>
+      <span class="it"><span class="p"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M8 5v14M16 5v14"/></svg></span><b>Movies</b></span>
+      <span class="it"><span class="p"><svg viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="12" rx="2.5"/><path d="M8 3l4 4 4-4"/></svg></span><b>Series</b></span>
+      <span class="it"><span class="p"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M15.5 8.5l-2 5-5 2 2-5z"/></svg></span><b>Discover</b></span>
+    </div><div class="navsafe"></div></div>
+  </div>
+  <div class="gpill"></div>
+</div>
+
+<!-- C -->
+<div class="lbl" style="left:1040px;top:1960px">
+  <span class="tag">C · Floating</span>
+  <h3>A capsule that hovers over the content</h3>
+  <small>Detached from the edge, blurred ground, a real shadow; selected = a light pill. Looks the most "designed" of the four and photographs beautifully — and it is the one that pays for it in practice: content runs under it, and the mini bar has to stack on top of a floating thing.</small>
+</div>
+<div class="dv and" style="left:1040px;top:2300px" data-screen-label="C · floating capsule">
+  <div class="pnch"></div>
+  <div class="scn">
+    <div class="sbar"><span>9:41</span><span class="ic">▮▮▮ ⌃ ▰</span></div>
+    <div class="abar">
+      <svg class="mk" viewBox="12 20 76 76"><path d="M22 52 C22 24 78 24 78 52 C66 45 59 45 50 49 C41 45 34 45 22 52 Z" fill="url(#g0)"/><g stroke="url(#g0)" stroke-width="4.5" stroke-linecap="round" fill="none"><path d="M33 51 q-5 12 1 20 q5 8 0 14" opacity=".9"/><path d="M44 52 q-4 13 1 21 q4 9 0 13" opacity=".72"/><path d="M56 52 q4 13 -1 21 q-4 9 0 13" opacity=".72"/><path d="M67 51 q5 12 -1 20 q-5 8 0 14" opacity=".9"/></g></svg>
+      <span class="wm">Ravilo</span><span class="sp"></span>
+      <span class="ib"><svg viewBox="0 0 24 24"><path d="M3 17h2v2H3zM3 13h2a4 4 0 0 1 4 4v2H7a4 4 0 0 0-4-4z"/><path d="M3 9a10 10 0 0 1 10 10"/><path d="M3 5a14 14 0 0 1 14 14"/></svg></span>
+      <span class="ib"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg></span>
+      <span class="av">ER</span>
+    </div>
+    <div class="body">
+      <div class="hero"><img src="assets/bbb-backdrop-opening.png" alt=""><div class="sc"></div><div class="bd"><div class="k">Continue watching</div><div class="t">Chikhai Bardo</div><div class="m">S2 · E7 · 14 min left</div></div></div>
+      <div class="rw"><h4>Newly added</h4><div class="strip">
+        <div class="pst"><div class="a" style="background:linear-gradient(150deg,#3b4a7a,#1d2340)">AR</div><div class="n">Arvur</div><div class="s">2023 · Drama</div></div>
+        <div class="pst"><div class="a" style="background:linear-gradient(150deg,#6b3550,#2a1526)">NV</div><div class="n">Nordvest</div><div class="s">2023 · Crime</div></div>
+        <div class="pst"><div class="a" style="background:linear-gradient(150deg,#2f5b52,#13251f)">HH</div><div class="n">Havets Hjarta</div><div class="s">2022 · Drama</div></div>
+        <div class="pst"><div class="a" style="background:linear-gradient(150deg,#5a4a2c,#241c10)">MÝ</div><div class="n">Mýrin</div><div class="s">2021 · Crime</div></div>
+      </div></div>
+      <div class="rw"><h4>Danish drama</h4><div class="strip">
+        <div class="pst"><div class="a" style="background:linear-gradient(150deg,#45356b,#1c1630)">GB</div><div class="n">Glasberget</div><div class="s">2024 · Drama</div></div>
+        <div class="pst"><div class="a" style="background:linear-gradient(150deg,#2b4a6b,#121d2b)">T1</div><div class="n">Tórshavn 1918</div><div class="s">2021 · Drama</div></div>
+        <div class="pst"><div class="a" style="background:linear-gradient(150deg,#6b4a2b,#2b1d12)">FB</div><div class="n">Frostbarn</div><div class="s">2024 · Crime</div></div>
+      </div></div>
+    </div>
+    <div class="nav c"><div class="row">
+      <span class="it on"><span class="p"><svg viewBox="0 0 24 24"><path d="M4 11l8-7 8 7"/><path d="M6 10v9h12v-9"/></svg></span><b>Home</b></span>
+      <span class="it"><span class="p"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M8 5v14M16 5v14"/></svg></span><b>Movies</b></span>
+      <span class="it"><span class="p"><svg viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="12" rx="2.5"/><path d="M8 3l4 4 4-4"/></svg></span><b>Series</b></span>
+      <span class="it"><span class="p"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M15.5 8.5l-2 5-5 2 2-5z"/></svg></span><b>Discover</b></span>
+    </div></div>
+  </div>
+  <div class="gpill"></div>
+</div>
+
+<!-- D -->
+<div class="lbl" style="left:1560px;top:1960px">
+  <span class="tag">D · One label</span>
+  <h3>Only the page you are on says its name</h3>
+  <small>Icons alone; the selected item expands sideways into an ink pill carrying its label at a full 13 px. The most compact and the only direction that needs no exception to the type floor — at the cost of three unlabelled glyphs, which is a real ask for <i>Discover</i>.</small>
+</div>
+<div class="dv and" style="left:1560px;top:2300px" data-screen-label="D · label on active only">
+  <div class="pnch"></div>
+  <div class="scn">
+    <div class="sbar"><span>9:41</span><span class="ic">▮▮▮ ⌃ ▰</span></div>
+    <div class="abar">
+      <svg class="mk" viewBox="12 20 76 76"><path d="M22 52 C22 24 78 24 78 52 C66 45 59 45 50 49 C41 45 34 45 22 52 Z" fill="url(#g0)"/><g stroke="url(#g0)" stroke-width="4.5" stroke-linecap="round" fill="none"><path d="M33 51 q-5 12 1 20 q5 8 0 14" opacity=".9"/><path d="M44 52 q-4 13 1 21 q4 9 0 13" opacity=".72"/><path d="M56 52 q4 13 -1 21 q-4 9 0 13" opacity=".72"/><path d="M67 51 q5 12 -1 20 q-5 8 0 14" opacity=".9"/></g></svg>
+      <span class="wm">Ravilo</span><span class="sp"></span>
+      <span class="ib"><svg viewBox="0 0 24 24"><path d="M3 17h2v2H3zM3 13h2a4 4 0 0 1 4 4v2H7a4 4 0 0 0-4-4z"/><path d="M3 9a10 10 0 0 1 10 10"/><path d="M3 5a14 14 0 0 1 14 14"/></svg></span>
+      <span class="ib"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg></span>
+      <span class="av">ER</span>
+    </div>
+    <div class="body">
+      <div class="hero"><img src="assets/bbb-backdrop-bunny.png" alt=""><div class="sc"></div><div class="bd"><div class="k">Continue watching</div><div class="t">Chikhai Bardo</div><div class="m">S2 · E7 · 14 min left</div></div></div>
+      <div class="rw"><h4>Newly added</h4><div class="strip">
+        <div class="pst"><div class="a" style="background:linear-gradient(150deg,#3b4a7a,#1d2340)">AR</div><div class="n">Arvur</div><div class="s">2023 · Drama</div></div>
+        <div class="pst"><div class="a" style="background:linear-gradient(150deg,#6b3550,#2a1526)">NV</div><div class="n">Nordvest</div><div class="s">2023 · Crime</div></div>
+        <div class="pst"><div class="a" style="background:linear-gradient(150deg,#2f5b52,#13251f)">HH</div><div class="n">Havets Hjarta</div><div class="s">2022 · Drama</div></div>
+        <div class="pst"><div class="a" style="background:linear-gradient(150deg,#5a4a2c,#241c10)">MÝ</div><div class="n">Mýrin</div><div class="s">2021 · Crime</div></div>
+      </div></div>
+      <div class="rw"><h4>Danish drama</h4><div class="strip">
+        <div class="pst"><div class="a" style="background:linear-gradient(150deg,#45356b,#1c1630)">GB</div><div class="n">Glasberget</div><div class="s">2024 · Drama</div></div>
+        <div class="pst"><div class="a" style="background:linear-gradient(150deg,#2b4a6b,#121d2b)">T1</div><div class="n">Tórshavn 1918</div><div class="s">2021 · Drama</div></div>
+        <div class="pst"><div class="a" style="background:linear-gradient(150deg,#6b4a2b,#2b1d12)">FB</div><div class="n">Frostbarn</div><div class="s">2024 · Crime</div></div>
+      </div></div>
+    </div>
+    <div class="nav d"><div class="row">
+      <span class="it on"><svg viewBox="0 0 24 24"><path d="M4 11l8-7 8 7"/><path d="M6 10v9h12v-9"/></svg><b>Home</b></span>
+      <span class="it"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M8 5v14M16 5v14"/></svg></span>
+      <span class="it"><svg viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="12" rx="2.5"/><path d="M8 3l4 4 4-4"/></svg></span>
+      <span class="it"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M15.5 8.5l-2 5-5 2 2-5z"/></svg></span>
+    </div><div class="navsafe"></div></div>
+  </div>
+  <div class="gpill"></div>
+</div>
+
+<div class="panel" style="left:2100px;top:1960px;width:1000px">
+  <h2>The four, compared</h2>
+  <table class="tbl">
+    <tr><th style="width:130px">Axis</th><th>A · Standard</th><th>B · Pill <b>(rec.)</b></th><th>C · Floating</th><th>D · One label</th></tr>
+    <tr><td><b>Selected reads from…</b></td><td>Ink + stroke weight</td><td><b>A filled shape</b></td><td>A filled shape, over blur</td><td>A filled shape + the only label</td></tr>
+    <tr><td><b>At arm's length</b></td><td>Weakest — two greys apart</td><td><b>Strongest</b></td><td>Strong, but the ground moves with the content</td><td>Strong</td></tr>
+    <tr><td><b>Every page named</b></td><td>Yes</td><td><b>Yes</b></td><td>Yes</td><td>No — one at a time</td></tr>
+    <tr><td><b>13 px floor</b></td><td>Bends to 11.5</td><td>Bends to 11.5</td><td>Bends to 11</td><td><b>Kept</b></td></tr>
+    <tr><td><b>Content under it</b></td><td>No — opaque, content ends above</td><td><b>No</b></td><td>Yes — a poster row slides under the capsule</td><td>No</td></tr>
+    <tr><td><b>Mini bar stacks cleanly</b></td><td>Yes</td><td><b>Yes</b></td><td>Awkward — two floating things</td><td>Yes</td></tr>
+    <tr><td><b>Ravilo's own colour</b></td><td>Nowhere</td><td><b>The selected pill</b></td><td>Nowhere (glass is neutral)</td><td>Nowhere (ink pill)</td></tr>
+    <tr><td><b>Build cost</b></td><td>Lowest</td><td>Low</td><td>Medium (blur + insets on every page)</td><td>Low + one animation</td></tr>
+  </table>
+  <div class="good"><b>Why B.</b> On a phone the selected state has no help from focus or hover, so it has to be carried by a <b>shape</b>, not by two shades of grey — that rules out A. It names every page, which D does not, and <i>Discover</i> is exactly the label a viewer cannot infer from a glyph. It stays opaque, so nothing slides under it and the mini bar docks against a straight edge — which C cannot promise. And it is the one direction where Ravilo's gradient does real work instead of decorating: the brand marks <i>where you are</i>.</div>
+  <div class="no"><b>Why not C, concretely.</b> A translucent capsule over a scrolling poster wall is the one place in this app where ink sits on a picture — the exact trap the casting round rejected direction 1 for (“ink on a solid surface always clears 4.5:1; a scrimmed photo does not”). It is the prettiest frame on this canvas and the least defensible one.</div>
+</div>
+
+<!-- ============ 3 · THE CONSEQUENCES ============ -->
+<div class="lbl w3" style="left:0;top:3420px">
+  <span class="tag new">§3 · the three places it touches something else</span>
+  <h2>Casting, the player, and Discover</h2>
+  <small>Drawn on the recommended direction. These are the frames that decide whether a bottom bar survives contact with the rest of the app.</small>
+</div>
+
+<div class="lbl" style="left:0;top:3640px"><span class="tag">3a</span><h3>The mini bar docks on top of it</h3><small>R245's cast mini bar keeps its size and its rule (never dismissible while a cast runs). It sits directly above the nav, the two move as one block, and the content's bottom padding is the sum.</small></div>
+<div class="dv and" style="left:0;top:3960px" data-screen-label="3a · mini bar above the nav">
+  <div class="pnch"></div>
+  <div class="scn">
+    <div class="sbar"><span>9:41</span><span class="ic">▮▮▮ ⌃ ▰</span></div>
+    <div class="abar">
+      <svg class="mk" viewBox="12 20 76 76"><path d="M22 52 C22 24 78 24 78 52 C66 45 59 45 50 49 C41 45 34 45 22 52 Z" fill="url(#g0)"/><g stroke="url(#g0)" stroke-width="4.5" stroke-linecap="round" fill="none"><path d="M33 51 q-5 12 1 20 q5 8 0 14" opacity=".9"/><path d="M44 52 q-4 13 1 21 q4 9 0 13" opacity=".72"/><path d="M56 52 q4 13 -1 21 q-4 9 0 13" opacity=".72"/><path d="M67 51 q5 12 -1 20 q-5 8 0 14" opacity=".9"/></g></svg>
+      <span class="wm">Ravilo</span><span class="sp"></span>
+      <span class="ib" style="background:var(--grad);color:#fff"><svg viewBox="0 0 24 24"><path d="M3 17h2v2H3zM3 13h2a4 4 0 0 1 4 4v2H7a4 4 0 0 0-4-4z"/><path d="M3 9a10 10 0 0 1 10 10"/><path d="M3 5a14 14 0 0 1 14 14"/></svg></span>
+      <span class="ib"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg></span>
+      <span class="av">ER</span>
+    </div>
+    <div class="body">
+      <div class="hero"><img src="assets/bbb-backdrop-landscape.png" alt=""><div class="sc"></div><div class="bd"><div class="k">Continue watching</div><div class="t">Chikhai Bardo</div><div class="m">S2 · E7 · 14 min left</div></div></div>
+      <div class="rw"><h4>Newly added</h4><div class="strip">
+        <div class="pst"><div class="a" style="background:linear-gradient(150deg,#3b4a7a,#1d2340)">AR</div><div class="n">Arvur</div><div class="s">2023 · Drama</div></div>
+        <div class="pst"><div class="a" style="background:linear-gradient(150deg,#6b3550,#2a1526)">NV</div><div class="n">Nordvest</div><div class="s">2023 · Crime</div></div>
+        <div class="pst"><div class="a" style="background:linear-gradient(150deg,#2f5b52,#13251f)">HH</div><div class="n">Havets Hjarta</div><div class="s">2022 · Drama</div></div>
+      </div></div>
+    </div>
+    <div class="mini" style="bottom:100px">
+      <div class="th"><img src="assets/bbb-backdrop-rodents.png" alt=""></div>
+      <div class="tx"><div class="n">Chikhai Bardo</div><div class="d">Playing on Stovan</div></div>
+      <span class="pp"><svg viewBox="0 0 24 24"><rect x="7" y="5" width="3.6" height="14" rx="1.2"/><rect x="13.4" y="5" width="3.6" height="14" rx="1.2"/></svg></span>
+      <div class="pb"><i></i></div>
+    </div>
+    <div class="nav b"><div class="row">
+      <span class="it on"><span class="p"><svg viewBox="0 0 24 24"><path d="M4 11l8-7 8 7"/><path d="M6 10v9h12v-9"/></svg></span><b>Home</b></span>
+      <span class="it"><span class="p"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M8 5v14M16 5v14"/></svg></span><b>Movies</b></span>
+      <span class="it"><span class="p"><svg viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="12" rx="2.5"/><path d="M8 3l4 4 4-4"/></svg></span><b>Series</b></span>
+      <span class="it"><span class="p"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M15.5 8.5l-2 5-5 2 2-5z"/></svg></span><b>Discover</b></span>
+    </div><div class="navsafe"></div></div>
+  </div>
+  <div class="gpill"></div>
+</div>
+
+<div class="lbl" style="left:520px;top:3640px"><span class="tag">3b</span><h3>Discover keeps its own chips — at the top of its own page</h3><small>The five segments (R268's order, scrollable) belong to the page, not to the app. With the app's pages at the bottom there is exactly one chip row on screen, and no question about which is which.</small></div>
+<div class="dv and" style="left:520px;top:3960px" data-screen-label="3b · Discover with the bottom nav">
+  <div class="pnch"></div>
+  <div class="scn">
+    <div class="sbar"><span>9:41</span><span class="ic">▮▮▮ ⌃ ▰</span></div>
+    <div class="abar">
+      <svg class="mk" viewBox="12 20 76 76"><path d="M22 52 C22 24 78 24 78 52 C66 45 59 45 50 49 C41 45 34 45 22 52 Z" fill="url(#g0)"/><g stroke="url(#g0)" stroke-width="4.5" stroke-linecap="round" fill="none"><path d="M33 51 q-5 12 1 20 q5 8 0 14" opacity=".9"/><path d="M44 52 q-4 13 1 21 q4 9 0 13" opacity=".72"/><path d="M56 52 q4 13 -1 21 q-4 9 0 13" opacity=".72"/><path d="M67 51 q5 12 -1 20 q-5 8 0 14" opacity=".9"/></g></svg>
+      <span class="wm">Ravilo</span><span class="sp"></span>
+      <span class="ib"><svg viewBox="0 0 24 24"><path d="M3 17h2v2H3zM3 13h2a4 4 0 0 1 4 4v2H7a4 4 0 0 0-4-4z"/><path d="M3 9a10 10 0 0 1 10 10"/><path d="M3 5a14 14 0 0 1 14 14"/></svg></span>
+      <span class="ib"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg></span>
+      <span class="av">ER</span>
+    </div>
+    <div class="body">
+      <div class="dstrip"><span class="c on">Networks</span><span class="c">Studios</span><span class="c">Genres</span><span class="c">Coming So</span></div>
+      <div style="padding:0 18px 10px;font-size:12px;color:var(--ink-dim)"><b style="color:var(--ink-soft)">41 networks</b> · 307 titles · series by network</div>
+      <div class="wall">
+        <div><div class="cd">Kringvarp</div><div class="cp">24 titles</div></div>
+        <div><div class="cd">DR</div><div class="cp">31 titles</div></div>
+        <div><div class="cd">Viaplay</div><div class="cp">18 titles</div></div>
+        <div><div class="cd">SVT</div><div class="cp">12 titles</div></div>
+        <div><div class="cd">Netflix</div><div class="cp">44 titles</div></div>
+        <div><div class="cd">Dansk TV</div><div class="cp">9 titles</div></div>
+      </div>
+    </div>
+    <div class="nav b"><div class="row">
+      <span class="it"><span class="p"><svg viewBox="0 0 24 24"><path d="M4 11l8-7 8 7"/><path d="M6 10v9h12v-9"/></svg></span><b>Home</b></span>
+      <span class="it"><span class="p"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M8 5v14M16 5v14"/></svg></span><b>Movies</b></span>
+      <span class="it"><span class="p"><svg viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="12" rx="2.5"/><path d="M8 3l4 4 4-4"/></svg></span><b>Series</b></span>
+      <span class="it on"><span class="p"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M15.5 8.5l-2 5-5 2 2-5z"/></svg></span><b>Discover</b></span>
+    </div><div class="navsafe"></div></div>
+  </div>
+  <div class="gpill"></div>
+</div>
+
+<div class="lbl" style="left:1040px;top:3640px"><span class="tag">3c</span><h3>The player has no bar, and neither does a detail page</h3><small>The bar belongs to the four pages. Anything pushed on top of them — the player, a title, the cast remote, a seeded grid — has its own Back and no nav, so nothing ever sits over video.</small></div>
+<div class="dv and" style="left:1040px;top:3960px" data-screen-label="3c · player, no nav bar">
+  <div class="pnch"></div>
+  <div class="plr">
+    <img src="assets/bbb-backdrop-opening.png" alt="">
+    <div class="ctr">
+      <span class="b"><svg viewBox="0 0 24 24"><path d="M11 5.2V2.4L6 6.3l5 3.9V7.4a5 5 0 1 1-5 5H4a7 7 0 1 0 7-7z"/></svg></span>
+      <span class="b big"><svg viewBox="0 0 24 24"><rect x="7" y="5" width="3.6" height="14" rx="1.2"/><rect x="13.4" y="5" width="3.6" height="14" rx="1.2"/></svg></span>
+      <span class="b"><svg viewBox="0 0 24 24"><path d="M13 5.2V2.4l5 3.9-5 3.9V7.4a5 5 0 1 0 5 5h2a7 7 0 1 1-7-7z"/></svg></span>
+    </div>
+    <div class="sk"><div class="bar"><i></i></div><div class="t"><span>00:14:22</span><span>−00:31:09</span></div></div>
+  </div>
+  <div class="gpill"></div>
+</div>
+
+<div class="panel" style="left:1560px;top:3640px;width:1000px">
+  <h2>Decisions this needs from you</h2>
+  <div class="opt">
+    <div><h5>1 · Which direction</h5><p>The axis is how <i>selected</i> reads. B marks it with Ravilo's gradient and names every page; D is the compact one that keeps the 13 px floor; A is the safe one; C is the pretty one that puts ink over pictures.</p>
+      <div class="ch"><span class="lean">B · Pill</span></div></div>
+    <div><h5>2 · The 13 px label floor</h5><p>Bend it to 11.5 px for the nav's four permanent labels (what every platform bar does), or hold the floor and let the bar be ~4 px taller?</p>
+      <div class="ch"><span class="lean">Bend it, for these four labels only</span></div></div>
+    <div><h5>3 · Does the bar animate between pages</h5><p>The pill can slide from the old item to the new one (~180 ms) or simply appear on the new one. Sliding is the M3 default and reads as one bar rather than four states.</p>
+      <div class="ch"><span class="lean">Slide the pill</span></div></div>
+    <div><h5>4 · Tapping the page you are already on</h5><p>Standard platform behaviour is scroll-to-top, and on Discover the R170 rule already says the nav button steps to the next segment. Keep both, or make it scroll-to-top everywhere?</p>
+      <div class="ch"><span class="lean">Scroll to top; Discover keeps R170's step</span></div></div>
+    <div><h5>5 · Web</h5><p>R267 kept the web app on the TV's single top row. A narrow browser window is not a phone — but a touch tablet is closer to one. Does the bottom bar follow <span class="mono">isHandset</span> only?</p>
+      <div class="ch"><span class="lean">Handset only, as R267/R256</span></div></div>
+    <div><h5>6 · Does the top row keep the brand</h5><p>With pages at the bottom, row one is brand + three controls. The brand could go, leaving a taller hero — or stay, because it is the only place the app says its name.</p>
+      <div class="ch"><span class="lean">Keep it</span></div></div>
+  </div>
+  <div class="warn"><b>Spec consequence.</b> Whichever direction wins, <b>R267</b> changes shape: its row two becomes a bottom bar, FR-R267-5 (the page row) and FR-R267-10 (the bar's height) are rewritten, FR-R267-2/3/4 (row one, no clock, cast present-or-absent) stand unchanged, and the mini-bar stacking of §3a joins it as a new FR. R267 is <b>not pushed yet</b>, so it is edited in place rather than superseded — no new number is burned.</div>
+</div>
+
+<!-- ============ 4 · WHAT GOES IN THE FIVE SLOTS ============ -->
+<div class="lbl w3" style="left:0;top:4720px">
+  <span class="tag new">§4 · round 2 · 2026-09-18</span>
+  <h2>Search wants the middle, and Movies/Series don't want to be split by it</h2>
+  <small>Owner: <b>Search in the middle, Home on the left</b> — and <i>Movies</i> and <i>Series</i> sitting either side of Search reads badly, which it does: they are a pair and the bar breaks them up. A centre slot needs an <b>odd</b> number of items, so the question is really <b>what the other slots are</b>. Four compositions below; the bars are drawn at real phone width. <b>Movies and Series are the same screen in the app already</b> — <span class="mono">Dest.Browse(kind)</span> with a type parameter — so merging them is a rename plus one toggle, not a new screen.</small>
+</div>
+
+<div class="panel" style="left:0;top:4950px;width:1400px">
+  <h2>The four compositions</h2>
+  <table class="tbl">
+    <tr><th style="width:104px">Option</th><th style="width:300px">The bar</th><th>What it costs, and what it buys</th></tr>
+    <tr><td><b>1 · Three</b></td><td><b>Home · Search · Discover</b></td><td>Search is <i>literally</i> the centre, Home is left, nothing is split. Movies and Series become two more Discover segments (so Discover reads <i>Movies · Series · Networks · Studios · Genres · Coming Soon · Request</i>). Cheapest bar, most phone-like. <b>Cost:</b> "show me all films" goes from one tap to two, and Discover starts to look like a drawer with seven chips in it.</td></tr>
+    <tr><td><b>2 · Library</b> <span class="mono">(rec.)</span></td><td><b>Home · Library · Search · Discover · My List</b></td><td>The pair merges into one <b>Library</b> page whose first row is a <i>Movies / Series / All</i> toggle — which is what the code already does. Five slots, Search dead centre, Home left, nothing split, and the fifth slot goes to <b>My List</b>, which on a phone is a real destination and is currently two taps deep in the avatar menu (R170 put it there for a TV, where the avatar is two D-pad presses away). <b>Cost:</b> one new label, <i>Library</i>, in three languages.</td></tr>
+    <tr><td><b>3 · Four</b></td><td><b>Home · Library · Search · Discover</b></td><td>Same merge, no fifth item. Honest and tidy — but Search is the <b>third of four</b>, i.e. just right of centre, not in it. If the middle matters, four items cannot give it to you.</td></tr>
+    <tr><td><b>4 · Keep both</b></td><td><b>Home · Movies · Search · Series · Discover</b></td><td>What is built now. Everything stays one tap; the pair is split by a control that has nothing to do with either. <b>Included so the comparison is fair</b> — it is the only option where "all series" is one tap and no new string is written.</td></tr>
+  </table>
+  <div class="good"><b>Recommendation: option 2.</b> It is the only one that satisfies both of the owner's constraints (Home left, Search centre) <i>and</i> keeps every destination one tap away — and the merge it depends on is not a redesign: <span class="mono">Dest.Browse(kind)</span> is already one screen with a parameter, so <i>Library</i> is that screen with its parameter exposed as a toggle instead of as two nav items. The fifth slot then pays for itself: <b>My List</b> is the household's own shelf, it is the thing a viewer opens on a phone while the TV is busy, and nothing else in the app competes for that slot (Live TV is woven into Home by config, never a tab — R177).</div>
+  <div class="warn"><b>If a new string is the objection, option 1 is the fallback</b>, not option 4: it writes no new label either (<i>Movies</i> and <i>Series</i> already exist as words, they just move into Discover's strip) and it keeps the middle slot. The thing to weigh is whether Discover can carry seven chips without becoming a drawer — R268 already made that strip scrollable, so it <i>fits</i>; whether it <i>reads</i> is the judgement call.</div>
+</div>
+
+<div class="lbl" style="left:1480px;top:4950px"><span class="tag">1 · three</span><h3>Home · Search · Discover</h3><small>Search is the exact centre. Movies and Series live in Discover.</small></div>
+<div style="position:absolute;left:1480px;top:5180px;width:412px;border-radius:14px;overflow:hidden;box-shadow:0 0 0 1px #2a2d36">
+  <div class="nav b" style="position:static">
+    <div class="row">
+      <span class="it on"><span class="p"><svg viewBox="0 0 24 24"><path d="M4 11l8-7 8 7"/><path d="M6 10v9h12v-9"/></svg></span><b>Home</b></span>
+      <span class="it"><span class="p"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20.5 20.5l-4.2-4.2"/></svg></span><b>Search</b></span>
+      <span class="it"><span class="p"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M15.5 8.5l-2 5-5 2 2-5z"/></svg></span><b>Discover</b></span>
+    </div><div class="navsafe"></div>
+  </div>
+</div>
+
+<div class="lbl" style="left:1480px;top:5340px"><span class="tag pick">2 · library · recommended</span><h3>Home · Library · Search · Discover · My List</h3><small>The pair merges; the middle is Search; the fifth slot promotes My List out of the avatar menu.</small></div>
+<div style="position:absolute;left:1480px;top:5620px;width:412px;border-radius:14px;overflow:hidden;box-shadow:0 0 0 1px #2a2d36">
+  <div class="nav b" style="position:static">
+    <div class="row">
+      <span class="it"><span class="p"><svg viewBox="0 0 24 24"><path d="M4 11l8-7 8 7"/><path d="M6 10v9h12v-9"/></svg></span><b>Home</b></span>
+      <span class="it"><span class="p"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="13" height="16" rx="2"/><path d="M19 6v14M7 8h5M7 12h5"/></svg></span><b>Library</b></span>
+      <span class="it on"><span class="p"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20.5 20.5l-4.2-4.2"/></svg></span><b>Search</b></span>
+      <span class="it"><span class="p"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M15.5 8.5l-2 5-5 2 2-5z"/></svg></span><b>Discover</b></span>
+      <span class="it"><span class="p"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></span><b>My List</b></span>
+    </div><div class="navsafe"></div>
+  </div>
+</div>
+<div class="panel" style="left:1480px;top:5800px;width:412px">
+  <h2 style="font-size:1rem">…and what <i>Library</i> is</h2>
+  <p class="lead" style="font-size:.9rem">The screen that ships today, with its type parameter as its first row instead of as two nav items.</p>
+  <div style="display:flex;gap:8px;padding:6px 0 2px">
+    <span class="tab" style="background:var(--ink);color:#0a0c13;flex:none;padding:7px 15px;border-radius:999px;font-size:13.5px;font-weight:600">All</span>
+    <span class="tab" style="flex:none;padding:7px 15px;border-radius:999px;font-size:13.5px;font-weight:600;background:rgba(255,255,255,.06);color:var(--ink-soft)">Movies</span>
+    <span class="tab" style="flex:none;padding:7px 15px;border-radius:999px;font-size:13.5px;font-weight:600;background:rgba(255,255,255,.06);color:var(--ink-soft)">Series</span>
+  </div>
+  <p style="font-size:.86rem;margin-top:10px">Same grid, same filters, same See-all behaviour — one destination instead of two, and the toggle is where R187's own facets already live.</p>
+</div>
+
+<div class="lbl" style="left:1980px;top:5340px"><span class="tag">3 · four</span><h3>Home · Library · Search · Discover</h3><small>Tidiest, but Search is third of four — beside the middle, not in it.</small></div>
+<div style="position:absolute;left:1980px;top:5620px;width:412px;border-radius:14px;overflow:hidden;box-shadow:0 0 0 1px #2a2d36">
+  <div class="nav b" style="position:static">
+    <div class="row">
+      <span class="it"><span class="p"><svg viewBox="0 0 24 24"><path d="M4 11l8-7 8 7"/><path d="M6 10v9h12v-9"/></svg></span><b>Home</b></span>
+      <span class="it"><span class="p"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="13" height="16" rx="2"/><path d="M19 6v14M7 8h5M7 12h5"/></svg></span><b>Library</b></span>
+      <span class="it on"><span class="p"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20.5 20.5l-4.2-4.2"/></svg></span><b>Search</b></span>
+      <span class="it"><span class="p"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M15.5 8.5l-2 5-5 2 2-5z"/></svg></span><b>Discover</b></span>
+    </div><div class="navsafe"></div>
+  </div>
+</div>
+
+<div class="lbl" style="left:1980px;top:5180px"><span class="tag no">4 · as built</span><h3>Home · Movies · Search · Series · Discover</h3><small>The pair split by Search — what the owner flagged.</small></div>
+<div style="position:absolute;left:2480px;top:5180px;width:412px;border-radius:14px;overflow:hidden;box-shadow:0 0 0 1px #2a2d36;opacity:.72">
+  <div class="nav b" style="position:static">
+    <div class="row">
+      <span class="it on"><span class="p"><svg viewBox="0 0 24 24"><path d="M4 11l8-7 8 7"/><path d="M6 10v9h12v-9"/></svg></span><b>Home</b></span>
+      <span class="it"><span class="p"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M8 5v14M16 5v14"/></svg></span><b>Movies</b></span>
+      <span class="it"><span class="p"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20.5 20.5l-4.2-4.2"/></svg></span><b>Search</b></span>
+      <span class="it"><span class="p"><svg viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="12" rx="2.5"/><path d="M8 3l4 4 4-4"/></svg></span><b>Series</b></span>
+      <span class="it"><span class="p"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M15.5 8.5l-2 5-5 2 2-5z"/></svg></span><b>Discover</b></span>
+    </div><div class="navsafe"></div>
+  </div>
+</div>
+
+</body>
+</html>

@@ -193,7 +193,7 @@ that only a compile check cannot verify.
 
 ## Dev-review addendum update (2026-08-02 — Seerr blocker resolved, full implementation starting)
 
-Checked the real, live Seerr instance (`stream.example.net`) directly with the configured API key rather
+Checked the real, live Seerr instance (`stream.jebster.net`) directly with the configured API key rather
 than relying on the vendored OpenAPI doc:
 
 ```

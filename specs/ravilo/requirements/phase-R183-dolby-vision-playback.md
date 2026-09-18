@@ -11,7 +11,7 @@
 `Playback stopped reported by app "Ravilo" … Stopped at "0" ms` eleven seconds after start. The same
 title plays in Jellyfin's own clients.
 
-## Investigation (live, against jellyfin.example.net · Jellyfin 10.11.11)
+## Investigation (live, against jellyfin.jebster.net · Jellyfin 10.11.11)
 - The file: `Disclosure Day (2026) (2160p iT WEB-DL Hybrid H265 DV HDR10+ DDP Atmos 5.1 …).mkv`, 26.6 GB.
   Jellyfin reports `hevc Main 10, 3840x1606, VideoRange=HDR, VideoRangeType=DOVIWithHDR10Plus,
   DvProfile=8, DvLevel=6, 24.4 Mbps`. With **no** DeviceProfile: `SupportsDirectPlay=true`.

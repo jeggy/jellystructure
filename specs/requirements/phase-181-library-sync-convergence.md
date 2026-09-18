@@ -7,9 +7,8 @@
 
 **Status:** ✓ Built 2026-09-02 (not yet dev-reviewed, not yet live-verified against production traffic —
 unit-tested and compiled clean). FR-181-2 was already built/test-verified 2026-08-31. FR-181-1, FR-181-1a,
-FR-181-4 and FR-181-5 are now built too. **FR-181-3 (per-series count reconciliation) was removed
-2026-09-13** — it was never built, and FR-181-1's id-level sweep already runs at the same cadence and
-strictly subsumes what a count check would catch (see FR-181-1's build note and §6 Q2 for why).
+FR-181-4 and FR-181-5 are now built too; FR-181-3 is **not implemented as its own mechanism** — see its
+own section below for why.
 
 **Build summary:** `sweepJellyfinLibrary()`/`computeLibraryDiff()` (new `media/LibrarySweep.kt`) run from
 inside every `RunTarget.Library` pipeline run (`PipelineEngine.kt`, right where `computeFreshnessFilter`
@@ -25,12 +24,8 @@ off. `IngestStatus`'s `listener_connected`/`last_event_at` fields are replaced w
 `last_successful_ingest_at`/`outstanding_retry_count`, surfaced on both the `/api/health` check and the
 Settings ▸ Download tools ▸ Realtime ingest card (`src/wasmJsMain/.../Settings.kt`). 8 new unit tests in
 `LibrarySweepTest.kt` cover the Klovn case directly (a missing episode resolves to its series id, not the
-episode id) and the same-size-swap case a per-series count comparison couldn't catch (id diff can).
+episode id) and the same-size-swap case FR-181-3 worried about (id diff catches it; a count wouldn't).
 `verifyCommonMainJellystructureDbMigration` and the full `linuxX64Test` suite are green.
-
-**Update 2026-09-13:** FR-181-3 removed from this spec outright (was never built, and there is no plan to
-build it — see the note above). Text throughout this document that referenced FR-181-3 as a deferred/future
-mechanism has been trimmed accordingly.
 
 ## 1. The reported case
 
@@ -156,8 +151,8 @@ work for some releases (Klovn's STROMPEBUKSER release sorted correctly, second i
 silently failing for others — the worst available failure mode.
 
 **Consequence for the design:** the only sound basis for convergence is a comparison that does not
-involve timestamps at all. FR-181-1 is therefore a **set difference on ids** — the mechanism this phase
-now converges on entirely.
+involve timestamps at all. FR-181-1 is therefore a **set difference on ids**, and FR-181-3's drift
+detection is promoted from safety-net to a first-class part of the same mechanism.
 
 ## 3. Design principle
 
@@ -209,7 +204,10 @@ Movie/Series set on the Jellyfin side to compare against anyway, so one enumerat
 size check against this deployment 2026-09-02: 8 135 items, 6.7 MB, ~0.5 s — Jellyfin returned the whole
 library **unpaged** despite no `Limit` being sent (`getAllLibraryItemIds` still pages defensively to
 `TotalRecordCount` rather than trusting that forever — R219 already paid for the "a bare Limit is a trap"
-lesson once).
+lesson once). `Limit=0` was independently verified live as the correct **cheap per-series count** shape
+(`/Items?ParentId={id}&IncludeItemTypes=Episode&Recursive=true&Limit=0` → `TotalRecordCount` with an empty
+`Items` array, confirmed against Klovn: 101, matching §1) — recorded here for FR-181-3 even though it
+ended up not being built as its own mechanism; see that section.
 
 ### FR-181-1a — Deletion/replacement detection (the other half of the diff) — ✅ Built 2026-09-02
 
@@ -230,7 +228,8 @@ The cadence tier must be chosen from **whether the title is active**, not when i
 signals were named in the original draft:
 
 - it has a `sonarrNextAiringDate` in the future (already stored — see §2.1) — **implemented**;
-- it gained an episode within the last N days — **not implemented**, see below.
+- it gained an episode within the last N days — **not implemented**, see below;
+- Jellyfin reports a child count differing from ours (FR-181-3) — deferred with FR-181-3 itself.
 
 **Shipped:** `isDueForRecheck` (`FreshnessFilter.kt`) gained an `isActivelyAiring: Boolean = false`
 parameter, `true || releaseYear >= currentYear -> refreshThisYear` — the override sits ahead of the
@@ -259,6 +258,32 @@ far more often than genuine episode additions, so it would flood most of the lib
 permanently rather than narrowly targeting recent growth. This signal is better served by FR-181-1's
 ingest events (a real "new episode arrived" marker) than by inventing a second, noisier proxy here — left
 for when FR-181-1 lands rather than worked around now.
+
+### FR-181-3 — Per-series count reconciliation (cheap continuous check) — **not built, subsumed by FR-181-1**
+
+FR-181-1's id diff is authoritative and already catches everything this would, so this is **not** the
+primary detector — it is the cheap check that can run more often than a full enumeration if FR-181-1
+turns out to be too heavy to run at the desired frequency (see §6 Q2).
+
+Compare stored `media.episode_count` against Jellyfin's per-series episode count. A mismatch marks the
+series dirty (FR-181-5) and forces a rescan irrespective of cadence. Klovn was `100` vs Jellyfin's `101`
+at the time of the report.
+
+Note the known weakness that stops this from replacing FR-181-1: **counts miss same-size changes** — one
+episode deleted and another added nets to an identical count while the two sides genuinely disagree.
+Only the id diff catches that, which is why FR-181-1 is the backstop and this is the optimisation.
+
+**Decision (2026-09-02): not built as a separate mechanism.** This FR's entire reason to exist was a
+*cheaper, faster-cadence* check to run between full sweeps (§6 Q2). But FR-181-1 as built runs the full
+id-level sweep on **every** `RunTarget.Library` trigger — the same cadence a separate count check would
+have run at — and an id-level diff is strictly a superset of what a count comparison catches (it also
+catches the same-size-swap case a count can't, see above). Building a second mechanism at the identical
+cadence that detects a strict subset of what the first one already catches would be redundant code with
+zero additional detection value. If a future deployment needs FR-181-1 to run on a *slower* cadence than
+every Library trigger (§6 Q2, e.g. a much larger library where 0.5s/7MB stops being trivial), *then*
+FR-181-3 becomes worth building as a genuinely faster-cadence tier — and the shape to use is confirmed
+live (`/Items?ParentId={id}&IncludeItemTypes=Episode&Recursive=true&Limit=0` → `TotalRecordCount`, not the
+`ChildCount`/`RecursiveItemCount` fields, which are confirmed `null`), not designed from scratch.
 
 ### FR-181-4 — Realtime path: fix, or fail loudly — ✅ Built 2026-09-02
 
@@ -304,7 +329,8 @@ retry-once-then-log ending now marks the id dirty on the second failure instead 
 `RunTarget.Library` run reads `dirtyItemStore.all()` and retries each one through the same `enqueue()`
 path; a success from *any* trigger (retry, sweep, or an unrelated webhook reaching the same id first)
 clears it. **Not built**, because FR-181-1's own sweep already makes it unnecessary: "set-difference
-sweep" as a *source* of dirtiness, and "manual action"/"a failed pipeline step" as general write points beyond
+sweep" and "count reconciliation" (FR-181-3, itself not built — see its own section) as *sources* of
+dirtiness, and "manual action"/"a failed pipeline step" as general write points beyond
 `RealtimeIngestService`'s own retry exhaustion. A missing item is never silently forgotten even without
 those extra write points, because FR-181-1 re-derives "what's missing" from Jellyfin's truth on every
 cycle rather than depending on something having remembered to mark it dirty in the first place — the
@@ -350,12 +376,21 @@ interface rather than around it.
    enumeration measured **0.5 s / 6.7 MB / 8 135 items** live 2026-09-02 (this library has grown since the
    2 026-08-30 measurement) — cheap enough that FR-181-1 runs it on **every** `RunTarget.Library` trigger
    uniformly (scheduled scan, manual click, `SCAN_ON_START`) rather than giving it its own, separately-
-   tuned schedule. Revisit only if a much larger library makes 0.5s/7MB non-trivial.
+   tuned schedule. This is also why FR-181-3 wasn't built as a separate faster-cadence tier — there's no
+   longer a latency gap between "the cheap check" and "the full sweep" for it to close, since the full
+   sweep already runs at the fastest cadence the pipeline offers. Revisit only if a much larger library
+   makes 0.5s/7MB non-trivial (see FR-181-3's own note).
 3. Can the enumeration payload be slimmed? `EnableImages=false&EnableUserData=false` still returned
    `ImageBlurHashes` and a dozen other fields per item. **Not pursued** — at 6.7 MB / 0.5 s this is not a
    real cost on this deployment, and Q2's resolution removed the reason (a faster cadence) that would have
    made slimming worth chasing.
-4. Should the diff be global, or per-library? Per-library is more robust if one library's scanning
+4. ~~FR-181-3 needs one bulk call for per-series episode counts…~~ **Answered, for the record, even
+   though FR-181-3 wasn't built:** `/Items?ParentId={seriesId}&IncludeItemTypes=Episode&Recursive=true&Limit=0`
+   returns `{"Items":[],"TotalRecordCount":N}` — confirmed live against Klovn (101, matching §1) — not
+   `ChildCount`/`RecursiveItemCount` (confirmed `null`, as suspected) and not `/Shows/{id}/Episodes` (also
+   works, but the `/Items` shape matches this codebase's existing paging convention). Whoever eventually
+   builds the faster-cadence tier from Q2's "revisit" clause should use this, not rediscover it.
+5. Should the diff be global, or per-library? Per-library is more robust if one library's scanning
    stalls, at the cost of more state. **Left as designed (global)** — the sweep as built enumerates the
    whole configured scope in one call and filters by library path prefix client-side afterward
    (`sweepJellyfinLibrary`'s `inScope`), the same pattern `JellyfinLibraryListener.flush` used to use. A

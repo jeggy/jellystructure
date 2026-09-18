@@ -17,7 +17,7 @@
 <style>
   :root{
     --bg:#0a0c13; --bg-2:#0e111b; --ink:#f3f4fb; --ink-soft:#aeb4cb; --ink-dim:#6b7290;
-    --line:rgba(255,255,255,.09); --card:#161a28; --card-2:#1b2031;
+    --line:rgba(255,255,255,.09); --line-2:rgba(255,255,255,.16); --card:#161a28; --card-2:#1b2031;
     --accent:#7b6ef0; --accent-2:#3fb6f5; --grad:linear-gradient(120deg,#7b6ef0,#3fb6f5);
     --good:#2dd49a; --ease:cubic-bezier(.22,.61,.36,1);
   }
@@ -45,7 +45,7 @@
   .homeind{ display:none; position:absolute; bottom:8px; left:50%; transform:translateX(-50%); width:140px; height:5px; border-radius:3px; background:var(--ink); opacity:.9; z-index:62; }
   .phone.ios .homeind{ display:block; }
   .phone.ios .statusbar{ height:54px; align-items:flex-end; padding:0 30px 6px 34px; }
-  .phone.ios .scroll{ padding-bottom:22px; }
+  .phone.ios .scroll{ padding-bottom:100px; }
   .devpick{ position:absolute; bottom:-72px; left:0; right:0; display:flex; justify-content:center; gap:6px; }
   .devpick b{ align-self:center; font-size:10px; letter-spacing:1.4px; color:#54596b; font-family:'Space Grotesk',sans-serif; margin-right:4px; }
   .devpick button{ border:1px solid rgba(255,255,255,.12); background:rgba(255,255,255,.05); color:#8b91a8;
@@ -68,7 +68,7 @@
   .statusbar .ic{ display:flex; gap:5px; align-items:center; opacity:.95; }
   .statusbar svg{ display:block; }
 
-  .scroll{ flex:1; overflow-y:auto; overflow-x:hidden; -webkit-overflow-scrolling:touch; scrollbar-width:none; }
+  .scroll{ flex:1; overflow-y:auto; overflow-x:hidden; -webkit-overflow-scrolling:touch; scrollbar-width:none; padding-bottom:86px; }
   .scroll::-webkit-scrollbar{ display:none; }
 
   /* app bar. The background is SOLID, not a fade: with a gradient that reached
@@ -78,26 +78,93 @@
      between them. */
   .appbar{ position:sticky; top:0; z-index:41; display:flex; align-items:center; gap:14px; padding:8px 18px 10px;
     background:var(--bg); }
-    background:var(--bg); }
-  .wm{ font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:21px; letter-spacing:-.02em; }
-  .wm .g{ background:var(--grad); -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent; }
+  .brand{ display:flex; align-items:center; gap:8px; flex:none; }
+  .brand .mark{ width:22px; height:22px; flex:none; }
+  .wm{ font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:21px; letter-spacing:-.02em; color:var(--ink); }
   .appbar .sp{ flex:1; }
   .iconbtn{ width:38px; height:38px; border-radius:50%; display:flex; align-items:center; justify-content:center; background:rgba(255,255,255,.07); color:var(--ink); border:none; cursor:pointer; }
   .iconbtn:active{ background:rgba(255,255,255,.15); }
   .avatar{ width:34px; height:34px; border-radius:50%; background:var(--grad); display:flex; align-items:center; justify-content:center; font-weight:700; font-size:13px; color:#fff; font-family:'Space Grotesk',sans-serif; }
 
-  /* tab chips */
-  .tabs{ position:sticky; top:56px; z-index:40; display:flex; gap:8px; padding:6px 18px 12px; overflow-x:auto; background:var(--bg); scrollbar-width:none; }
-  /* A short fade pinned directly under the tab strip. Without it a row of
-     posters is guillotined mid-tile by the opaque bar — art stops dead and only
-     the titles remain, which reads as a layout fault. The strip takes no layout
-     space (negative margin), so nothing below it moves. `.tabs` cannot carry it
-     as a pseudo-element because `overflow-x:auto` clips in both axes. */
-  .stickfade{ position:sticky; top:105px; z-index:38; height:26px; margin-bottom:-26px; flex:none; pointer-events:none;
-    background:linear-gradient(180deg, var(--bg) 18%, rgba(10,12,19,0)); }
+  /* chip rows. Only Discover's own five-segment strip uses these now — the app's four pages
+     moved to the bottom bar (R267, direction B), so nothing is pinned under the app bar any
+     more, and the guillotine fade that used to sit below the old page strip went with it. */
+  .tabs{ display:flex; gap:8px; padding:6px 18px 12px; overflow-x:auto; background:var(--bg); scrollbar-width:none; }
   .tabs::-webkit-scrollbar{ display:none; }
   .tab{ flex:none; padding:7px 15px; border-radius:999px; font-size:14px; font-weight:600; color:var(--ink-soft); background:rgba(255,255,255,.06); cursor:pointer; white-space:nowrap; transition:.18s var(--ease); }
   .tab.on{ background:var(--ink); color:#0a0c13; }
+
+  /* ---- bottom navigation (R267 · direction B · "pill") ----------------------------------
+     The four pages live at the bottom of a phone, where the thumb is: Home · Movies · Series ·
+     Discover, never a fifth (My List is in the avatar menu per R170, Search is an icon per R52).
+     Selected is carried by a SHAPE, not by two shades of grey — touch has no focus ring and no
+     hover to help — and the shape is Ravilo's own gradient, sliding between items so the bar
+     reads as one object rather than four states. Opaque, so nothing scrolls under it and the cast
+     mini bar docks against a straight edge. Absent on anything pushed over a page (detail,
+     player, remote, account): those sit on higher layers and have their own Back. */
+  .bnav{ position:absolute; left:0; right:0; bottom:0; z-index:36; padding-top:9px;
+    background:var(--bg-2); border-top:1px solid var(--line); }
+  .bnav .brow{ position:relative; display:flex; align-items:flex-end; }
+  .bnind{ position:absolute; top:0; left:0; width:56px; height:32px; border-radius:17px; background:var(--grad);
+    transition:transform .18s var(--ease); pointer-events:none; }
+  .bn{ flex:1; position:relative; display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:4px; min-height:56px; background:none; border:0; padding:0; cursor:pointer; color:var(--ink-dim);
+    font-family:'Sora',sans-serif; -webkit-tap-highlight-color:transparent; }
+  /* five items on a 393–411 dp phone: the pill takes 56 dp and still sits inside its own item */
+  .bnind{ width:56px; }
+  .bn .p{ width:56px; height:32px; display:flex; align-items:center; justify-content:center; }
+  .avatar.sm{ width:24px; height:24px; font-size:10px; }
+
+  /* R267 FR-R267-5c — the Library page's type filter lives in the top row, left of the cast button,
+     and ONLY while the Library page is showing (TV2 Play's "Kategorier" position, without its mistake:
+     the slot is empty on every other page, so no page carries a filter that does not apply to it). */
+  .libslot{ position:relative; display:flex; align-items:center; }
+  .libslot:empty{ display:none; }
+  .libpill{ display:inline-flex; align-items:center; gap:6px; height:38px; padding:0 10px 0 14px; border-radius:19px;
+    background:rgba(255,255,255,.09); border:1px solid var(--line); color:var(--ink); font-family:'Sora',sans-serif;
+    font-size:13.5px; font-weight:600; cursor:pointer; white-space:nowrap; }
+  .libpill svg{ width:15px; height:15px; fill:none; stroke:currentColor; stroke-width:2.2; stroke-linecap:round; transition:transform .18s var(--ease); }
+  .libslot.open .libpill svg{ transform:rotate(180deg); }
+  .libmeta{ padding:2px 18px 12px; font-size:12px; color:var(--ink-dim); }
+  .libmenu{ position:absolute; right:0; top:44px; z-index:50; min-width:196px; padding:6px; border-radius:14px;
+    background:var(--bg-2); border:1px solid var(--line); box-shadow:0 18px 40px rgba(0,0,0,.55); display:none; }
+  .libslot.open .libmenu{ display:block; }
+  .libmenu button{ display:flex; align-items:center; gap:10px; width:100%; min-height:44px; padding:0 12px; border:0;
+    border-radius:10px; background:none; color:var(--ink); font-family:'Sora',sans-serif; font-size:14.5px; cursor:pointer; text-align:left; }
+  .libmenu button:active{ background:rgba(255,255,255,.07); }
+  .libmenu button .tk{ margin-left:auto; color:var(--accent-2); opacity:0; }
+  .libmenu button.on .tk{ opacity:1; }
+  .libmenu button .ct{ color:var(--ink-dim); font-size:12px; }
+  .bn svg{ width:23px; height:23px; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round;
+    transition:stroke .18s var(--ease); }
+  /* 11.5px sits below the 13px floor R234/R244 set for body copy — a deliberate exception for
+     four permanent, icon-paired, one-word labels, and the only one in the phone design. */
+  .bn b{ font-size:11.5px; font-weight:600; letter-spacing:.01em; transition:color .18s var(--ease); }
+  .bn.on{ color:#fff; }
+  .bn.on b{ color:var(--ink); }
+  .bnsafe{ height:22px; }
+  .phone.ios .bnsafe{ height:30px; }
+  /* R267: the cast mini bar docks directly ON TOP of the nav rather than over the content — the
+     two move as one block and the mini bar keeps the tap target it has today (R245 FR-R245-6).
+     Only while the nav is actually on screen: on a pushed screen (detail, player, remote, account)
+     there is no nav to clear, so the bar returns to its own inset (FR-R267-8). */
+  .rc-mini.abovenav{ bottom:96px; }
+  .phone.ios .rc-mini.abovenav{ bottom:104px; }
+  /* R267 — Search is a page on the phone, not an icon: the field sits at the top of its own page
+     and the library filters live beneath it. Re-tapping the Search item focuses this field. */
+  .srch{ padding:4px 18px 12px; }
+  .srch .fld{ display:flex; align-items:center; gap:10px; height:46px; padding:0 14px; border-radius:23px;
+    background:rgba(255,255,255,.07); border:1px solid var(--line); }
+  .srch .fld svg{ width:18px; height:18px; flex:none; fill:none; stroke:var(--ink-dim); stroke-width:2.2; stroke-linecap:round; }
+  .srch .fld input{ flex:1; min-width:0; background:none; border:0; outline:none; color:var(--ink);
+    font-family:'Sora',sans-serif; font-size:15px; }
+  .srch .fld input::placeholder{ color:var(--ink-dim); }
+  .srchmeta{ padding:0 18px 10px; font-size:12px; color:var(--ink-dim); }
+
+  /* R268 — Discover's own five-chip strip, inside the page rather than pinned: it scrolls (five
+     chips never fit a portrait phone), the first chip is flush with the gutter, and no label is
+     shrunk or ellipsised to make them fit — the strip gets longer, not denser. */
+  .discsegs{ position:static; top:auto; z-index:auto; padding:2px 18px 14px; }
 
   /* hero carousel */
   .hero{ display:flex; overflow-x:auto; scroll-snap-type:x mandatory; gap:0; scrollbar-width:none; }
@@ -338,29 +405,46 @@
       </div>
       <div class="scroll" id="scroll">
         <div class="appbar">
-          <div class="wm"><span class="g">Ravilo</span></div>
+          <div class="brand">
+            <svg class="mark" viewBox="12 20 76 76" aria-hidden="true">
+              <defs><linearGradient id="ravJelly" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="var(--accent)"/><stop offset="1" stop-color="var(--accent-2)"/></linearGradient></defs>
+              <path d="M22 52 C22 24 78 24 78 52 C66 45 59 45 50 49 C41 45 34 45 22 52 Z" fill="url(#ravJelly)"/>
+              <g stroke="url(#ravJelly)" stroke-width="4.5" stroke-linecap="round" fill="none">
+                <path d="M33 51 q-5 12 1 20 q5 8 0 14" opacity=".9"/>
+                <path d="M44 52 q-4 13 1 21 q4 9 0 13" opacity=".72"/>
+                <path d="M56 52 q4 13 -1 21 q-4 9 0 13" opacity=".72"/>
+                <path d="M67 51 q5 12 -1 20 q-5 8 0 14" opacity=".9"/>
+              </g>
+            </svg>
+            <span class="wm">Ravilo</span>
+          </div>
           <span class="sp"></span>
-          <button class="iconbtn" id="searchBtn" aria-label="Search">
-            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
-          </button>
-          <!-- R245 FR: the cast button is server-pushed. It is present here because the
-               mockup's Chromecast switch is on; when the server says Chromecast is off it
-               is ABSENT, never greyed. -->
+          <!-- filled only on the Library page (FR-R267-5c) -->
+          <div class="libslot" id="libSlot"></div>
+          <!-- R267: the cast button is server-pushed (R245 FR-R245-1) — present because the mockup's
+               Chromecast switch is on; when the server says Chromecast is off it is ABSENT, never
+               greyed. Search and the profile both moved to the bottom bar, so row one is brand · cast
+               — and deliberately NOT a "Kategorier"-style dropdown: the type filter belongs to the
+               Library page, not to every page's chrome. No clock (FR-R267-3). -->
           <button class="iconbtn" id="castBtn" aria-label="Cast"><span class="rc-ic" id="castGlyph"><span class="bx"></span><span class="fl"></span></span></button>
-          <div class="avatar" id="avatarBtn">ER</div>
         </div>
-        <div class="tabs" id="tabs">
-          <div class="tab on" data-tab="home">Home</div>
-          <div class="tab" data-tab="movies">Movies</div>
-          <div class="tab" data-tab="series">Series</div>
-          <div class="tab" data-tab="top10">Top 10</div>
-          <div class="tab" data-tab="studios">Studios</div>
-          <div class="tab" data-tab="networks">Networks</div>
-          <div class="tab" data-tab="genres">Genres</div>
-        </div>
-        <div class="stickfade"></div>
         <div id="app"></div>
       </div>
+
+      <!-- R267 · direction B — the four pages, at the bottom, where the thumb is. -->
+      <nav class="bnav" id="bnav" data-screen-label="Bottom nav">
+        <div class="brow">
+          <i class="bnind" id="bnind"></i>
+          <button class="bn on" data-tab="home"><span class="p"><svg viewBox="0 0 24 24"><path d="M4 11l8-7 8 7"/><path d="M6 10v9h12v-9"/></svg></span><b>Home</b></button>
+          <button class="bn" data-tab="library"><span class="p"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="13" height="16" rx="2"/><path d="M19 6v14M7 8h5M7 12h5"/></svg></span><b>Library</b></button>
+          <button class="bn" data-tab="search"><span class="p"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20.5 20.5l-4.2-4.2"/></svg></span><b>Search</b></button>
+          <button class="bn" data-tab="discover"><span class="p"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M15.5 8.5l-2 5-5 2 2-5z"/></svg></span><b>Discover</b></button>
+          <!-- the profile picture itself is the icon, bottom right (TV2 Play's "Min side" idiom).
+               It opens the profile sheet, so it never takes the selected pill — a menu is not a page. -->
+          <button class="bn" data-tab="profile"><span class="p"><span class="avatar sm" id="avatarBtn">ER</span></span><b>Profile</b></button>
+        </div>
+        <div class="bnsafe"></div>
+      </nav>
 
       <div class="detail" id="detail">
         <div class="dscroll" id="dscroll"></div>
@@ -448,7 +532,14 @@
           <button class="mp-b big" id="rcPP" aria-label="Pause"><svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><rect x="7" y="5" width="3.6" height="14" rx="1.2"/><rect x="13.4" y="5" width="3.6" height="14" rx="1.2"/></svg></button>
           <div class="mp-sk"><button class="mp-b" id="rcFwd30" aria-label="Forward 30 seconds"><svg viewBox="0 0 24 24"><path d="M13 5.2V2.4L18 6.3l-5 3.9V7.4a5 5 0 1 0 5 5"/></svg></button><span>30 s</span></div>
         </div>
-        <div class="rc-note" id="rcNote"></div>
+        <!-- FR-R245-19 (Kotlin, CastRemoteScreen.kt) — the receiver's stream is a conversion of
+             the file, not the file: a small drawn ⓘ + "Converted for {device}", tap opens one
+             card explaining it. Shown only while media is loaded and the receiver is reachable;
+             the mockup proxies "transcoding" with "is casting" since there is no real ticket here. -->
+        <button class="rc-conv" id="rcConv" style="display:none" aria-label="Converted for this device">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="8.4" r="1" fill="currentColor" stroke="none"/><path d="M12 11v5" stroke-linecap="round"/></svg>
+          <span>Converted for <b id="rcConvDev">—</b></span>
+        </button>
         <div class="rc-foot" id="rcFoot">
           <button id="rcSubs"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M7 14h4M14 14h3"/></svg> Subtitles &amp; audio</button>
           <button id="rcNext"><svg viewBox="0 0 24 24"><path d="M5 6l9 6-9 6z"/><path d="M19 6v12"/></svg> Next episode</button>
@@ -456,6 +547,15 @@
         </div>
         <div class="mp-scrim" id="rcScrim"></div>
         <div class="mp-sheet" id="rcSheet"></div>
+      </div>
+
+      <!-- FR-R245-19's popover: one card, tap anywhere to dismiss. -->
+      <div class="rc-conv-scrim" id="rcConvScrim">
+        <div class="rc-conv-card">
+          <div class="h"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="8.4" r="1" fill="currentColor" stroke="none"/><path d="M12 11v5" stroke-linecap="round"/></svg><b>Converted for <span id="rcConvDev2">—</span></b></div>
+          <p id="rcConvBody">—</p>
+          <button id="rcConvClose">Close</button>
+        </div>
       </div>
 
       <div class="acct" id="acct"><div id="acctInner"></div></div>
@@ -495,11 +595,27 @@
   const scroll = document.getElementById('scroll');
   const detail = document.getElementById('detail');
   const dscroll = document.getElementById('dscroll');
-  const esc = s => (s==null?'':String(s)).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+  /* Escapes for BOTH text and attribute positions — quotes included, because most call sites here
+     interpolate into attributes (`data-title="…"`, `data-tx="…"`). Without the quote pair a title or
+     a search query containing `"` breaks out of its attribute and re-parses the surrounding markup. */
+  const esc = s => (s==null?'':String(s)).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   let tab = 'home';
-  const TAXO_TABS = ['studios', 'networks', 'genres'];
+  const TAXO_TABS = ['networks', 'studios', 'genres'];
   const TAXO_LABEL = { studios: 'Studios', networks: 'Networks', genres: 'Genres' };
   const TAXO_SUB = { studios: 'Films by studio', networks: 'Series by network', genres: 'Everything by genre' };
+  /* R268 — one declared order, library first, gating FILTERS it and never re-orders it. Coming Soon
+     needs Sonarr/Radarr and Request needs Seerr (R243 FR-R243-1), so either may be absent; the three
+     taxonomy tabs index the library itself, which is why Networks is the first chip on every
+     household. The strip scrolls — five chips do not fit a portrait phone. */
+  const SEG_ORDER = ['networks', 'studios', 'genres', 'coming', 'request'];
+  const SEG_LABEL = { networks:'Networks', studios:'Studios', genres:'Genres', coming:'Coming Soon', request:'Request' };
+  const segAvailable = s => s==='coming' ? !!(R.config && (R.config.sonarr || R.config.radarr))
+                          : s==='request' ? !!(R.config && R.config.seerr) : true;
+  const discSegs = () => SEG_ORDER.filter(segAvailable);
+  let discSeg = discSegs()[0];   // always Networks: a taxonomy tab cannot be gated off
+  const discSegHTML = active => '<div class="tabs discsegs">'
+    + discSegs().map(s=>'<div class="tab'+(s===active?' on':'')+'" data-discseg="'+s+'">'+SEG_LABEL[s]+'</div>').join('')
+    + '</div>';
   let txsel = null;   // a picked studio / network / genre, i.e. the filtered grid
   const me = (R.profiles || []).find(p => p.signedIn) || null;
 
@@ -509,6 +625,10 @@
     const ios = ph.classList.contains('ios');
     const s = Math.min(window.innerWidth/(ios?433:452), (window.innerHeight-152)/(ios?918:981), 1);
     ph.style.transform = 'scale('+s+')';
+    // The device picker swaps the bezel (412×915 ↔ 393×852), which changes the nav's width — the
+    // pill's offset is measured, so it has to be re-measured here or it stays where the previous
+    // frame put it (and on the narrower iPhone frame it hangs off the last item).
+    paintNav();
   }
   window.addEventListener('resize', fit); fit();
 
@@ -556,11 +676,15 @@
     return '<div class="hero" id="hero">'+slides+'</div><div class="hdots" id="hdots">'+dots+'</div>';
   }
 
-  function rowsForTab(){
-    if(tab==='movies') return R.rows.filter(r=>r.items.some(i=>i.kind==='film')).map(r=>({title:r.title,items:r.items.filter(i=>i.kind==='film')})).filter(r=>r.items.length);
-    if(tab==='series') return R.rows.filter(r=>r.items.some(i=>i.kind==='series')).map(r=>({title:r.title,items:r.items.filter(i=>i.kind==='series')})).filter(r=>r.items.length);
-    return R.rows;
+  /* R267 (round 2) — Movies and Series are no longer top-level pages on a phone: the bar is three
+     items (Home · Search · Discover) so Search can hold the middle, and the two type browses became
+     the first two Discover segments. One helper serves both. */
+  function rowsForKind(kind){
+    const k = kind === 'movies' ? 'film' : 'series';
+    return R.rows.filter(r=>r.items.some(i=>i.kind===k))
+      .map(r=>({title:r.title, items:r.items.filter(i=>i.kind===k)})).filter(r=>r.items.length);
   }
+  function rowsForTab(){ return R.rows; }
 
   function renderHome(){
     const heroItems = tab==='movies' ? R.hero.filter(h=>h.kind==='film') : tab==='series' ? R.hero.filter(h=>h.kind==='series') : R.hero;
@@ -576,11 +700,56 @@
     wireHero();
   }
 
-  function renderTop10(){
+  /* R267 — Library: Movies and Series are one page on a phone, with the type as a dropdown (the
+     "Kategorier" idiom, on this page only — never in the app bar). Music videos are a real library
+     type (phase 172) and are offered even where the household holds none: an honest empty state
+     beats hiding a filter that the admin can fill next week. */
+  const LIB_KINDS = [
+    { id:'all',    label:'All' },
+    { id:'movies', label:'Movies', kind:'film' },
+    { id:'series', label:'Series', kind:'series' },
+    { id:'music',  label:'Music',  kind:'music' },
+  ];
+  let libKind = 'all', libOpen = false;
+  function libRows(){
+    const k = (LIB_KINDS.find(x=>x.id===libKind)||{}).kind;
+    if(!k) return R.rows;
+    return R.rows.filter(r=>r.items.some(i=>i.kind===k))
+      .map(r=>({title:r.title, items:r.items.filter(i=>i.kind===k)})).filter(r=>r.items.length);
+  }
+  function libCount(id){
+    const k = (LIB_KINDS.find(x=>x.id===id)||{}).kind;
+    const lib = R.libraryFor ? R.libraryFor(me) : [];
+    return k ? lib.filter(i=>i.kind===k).length : lib.length;
+  }
+  function paintLibSlot(){
+    const slot = document.getElementById('libSlot');
+    if(tab !== 'library'){ slot.innerHTML = ''; slot.classList.remove('open'); return; }
+    const cur = LIB_KINDS.find(x=>x.id===libKind) || LIB_KINDS[0];
+    slot.classList.toggle('open', libOpen);
+    slot.innerHTML = '<button class="libpill" id="libPill">' + esc(cur.label)
+      + '<svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>'
+      + '<div class="libmenu">' + LIB_KINDS.map(k=>'<button data-libkind="'+k.id+'"'+(k.id===libKind?' class="on"':'')+'>'
+          + esc(k.label) + ' <span class="ct">' + libCount(k.id) + '</span><span class="tk">✓</span></button>').join('')
+      + '</div>';
+  }
+  function renderLibrary(){
+    const cur = LIB_KINDS.find(x=>x.id===libKind) || LIB_KINDS[0];
+    const rows = libRows(), n = libCount(libKind);
+    app.innerHTML = '<div class="libmeta">' + countLabel(n) + ' · ' + esc(cur.label.toLowerCase())
+      + (me && me.kid ? ' · only what this profile can watch' : '') + '</div>'
+      + (rows.length ? rows.map(rowHTML).join('')
+          : '<div class="txmeta" style="padding-top:18px;">Nothing filed as ' + esc(cur.label.toLowerCase()) + ' yet</div>')
+      + '<div style="height:30px;"></div>';
+  }
+
+  /* Request (R170/R171) — Seerr-backed trending, with the live request status per title. */
+  function renderRequest(){
     const list = R.discover.lists[0];
     const statusClass = s => s==='available'?'avail':(s==='downloading'||s==='fetching'?'fetch':'none');
     const statusText = it => it.status==='available'?'In library':(it.status==='downloading'||it.status==='fetching'?'Fetching…':'Not in library');
-    app.innerHTML = '<div class="row" style="margin-top:8px;"><h3 style="padding-bottom:4px;">'+esc(list.title)+'</h3>'
+    app.innerHTML = discSegHTML('request')
+      + '<div class="row" style="margin-top:0;"><h3 style="padding-bottom:4px;">'+esc(list.title)+'</h3>'
       + '<div class="tiny" style="padding:0 18px 6px;color:var(--ink-dim);font-size:12px;">'+esc(list.note||'')+'</div></div>'
       + '<div class="t10">'
       + list.items.slice(0,10).map((it,i)=>'<div class="t10row" data-title="'+esc(it.title)+'">'
@@ -592,6 +761,38 @@
       + '</div><div style="height:30px;"></div>';
   }
 
+  /* Coming Soon (R160/R188) — the merged Sonarr/Radarr calendar, grouped by day, with the
+     overdue set last. Phone half of the TV's date-railed screen; no speculation the profile
+     is not allowed to see (R188), which R.upcomingByDay already scopes. */
+  function renderComing(){
+    const days = R.upcomingByDay();
+    const dayLabel = iso => {
+      const d = new Date(iso + 'T00:00:00'), today = new Date(); today.setHours(0,0,0,0);
+      const off = Math.round((d - today) / 86400000);
+      if(off === 0) return 'Today';
+      if(off === 1) return 'Tomorrow';
+      return d.toLocaleDateString(undefined, { weekday:'short', day:'numeric', month:'short' });
+    };
+    const card = it => '<div class="t10row" data-title="'+esc(it.title)+'">'
+      + '<div class="t10p" style="background:'+(it.grad||R.grad(it.title))+';">'+esc(it.initials||R.initials(it.title))+'</div>'
+      + '<div class="t10b"><div class="nm">'+esc(it.title)+'</div>'
+      + '<div class="mt">'+[it.ep ? esc(it.ep) : esc(it.release||'Film'), it.time?esc(it.time):'', it.network?esc(it.network):''].filter(Boolean).join(' · ')+'</div>'
+      + (it.status==='available' ? '<span class="st avail"><span class="dot"></span>Already available</span>'
+        : it.status==='missing' ? '<span class="st none"><span class="dot"></span>Missing</span>'
+        : it.status==='downloading' ? '<span class="st fetch"><span class="dot"></span>Fetching…</span>' : '')
+      + '</div></div>';
+    let html = discSegHTML('coming');
+    days.forEach(d => {
+      html += '<div class="row" style="margin-top:2px;"><h3 style="padding-bottom:4px;">'+esc(dayLabel(d.date))
+        + '<span class="more">'+d.items.length+'</span></h3></div><div class="t10">'+d.items.map(card).join('')+'</div>';
+    });
+    const missing = (R.overdue||[]).filter(it => it.status === 'missing');
+    if(missing.length) html += '<div class="row" style="margin-top:2px;"><h3 style="padding-bottom:4px;">Released, still missing'
+      + '<span class="more">'+missing.length+'</span></h3></div><div class="t10">'+missing.map(card).join('')+'</div>';
+    if(!days.length && !missing.length) html += '<div class="txmeta" style="padding-top:20px;">Nothing scheduled</div>';
+    app.innerHTML = html + '<div style="height:30px;"></div>';
+  }
+
   /* ---- Discover → library taxonomies ----
      Counts and grouping come from R.taxonomy / R.taxoValues, the same resolver the TV wall
      uses and scoped to this profile, so the two surfaces can never state different numbers. */
@@ -599,8 +800,8 @@
   function renderTaxo(kind){
     const list = R.taxonomy ? R.taxonomy(kind, me) : [];
     const sum = R.taxonomySummary ? R.taxonomySummary(kind, me) : {groups:list.length, titles:0};
-    let html = '<div class="row" style="margin-top:8px;"><h3>'+TAXO_LABEL[kind]+'</h3></div>'
-      + '<div class="txmeta"><b>'+sum.groups+' '+kind+'</b> · '+countLabel(sum.titles)+' · '+TAXO_SUB[kind].toLowerCase()
+    let html = discSegHTML(kind)
+      + '<div class="txmeta" style="padding-top:0;"><b>'+sum.groups+' '+kind+'</b> · '+countLabel(sum.titles)+' · '+TAXO_SUB[kind].toLowerCase()
       + (me && me.kid ? ' · counting only what this profile can watch' : '') + '</div>';
     html += '<div class="txwall'+(kind==='genres'?' gen':'')+'">'
       + list.map(e=>'<div class="txc" data-tx="'+esc(e.name)+'">'
@@ -621,11 +822,84 @@
       + '<div style="height:30px;"></div>';
   }
 
+  /* R268 FR-R268-7 — the selected chip must be visible, whatever the strip's width. The mockup
+     rebuilds the strip on every segment change (R262 FR-R262-1 is the architectural fix: one
+     segment bar in the frame, only the region below it swaps), so rather than remember a scroll
+     offset we DERIVE it from the selection — which also means re-entering Discover on a household
+     whose last segment was Request opens scrolled to it, not at Networks with the selection off-screen. */
+  function paintSegScroll(){
+    const put = () => {
+      const strip = app.querySelector('.discsegs'); if(!strip) return;
+      const on = strip.querySelector('.tab.on'); if(!on) return;
+      strip.scrollLeft = Math.max(0, on.offsetLeft - 18);   // 18px = the page gutter, so chip 1 stays flush
+    };
+    // Twice, deliberately: on the first paint of a cold load the webfont has not swapped in yet, so
+    // the chips are narrower, the strip is not yet overflowing and the assignment clamps to 0 —
+    // the offset has to be re-applied once layout is final, or the selected chip stays off-screen.
+    put(); requestAnimationFrame(put);
+    if(document.fonts && document.fonts.ready) document.fonts.ready.then(put);
+  }
+
+  /* R267 — Search as a page. The shell (field + results) is built once and only the results are
+     re-filled as you type, so the input keeps focus and its caret across keystrokes; re-rendering
+     the whole page on every letter is what makes a mockup search field feel broken. */
+  let srchQ = '';
+  function searchHits(){
+    const q = srchQ.trim().toLowerCase();
+    if(!q) return [];
+    return (R.libraryFor ? R.libraryFor(me) : []).filter(it =>
+      String(it.title).toLowerCase().includes(q) || String(it.genre||'').toLowerCase().includes(q));
+  }
+  function fillSearch(){
+    const hits = searchHits();
+    const meta = document.getElementById('srchMeta'), res = document.getElementById('srchRes');
+    if(!meta || !res) return;
+    meta.textContent = !srchQ.trim() ? 'Titles and genres — everything this profile can watch'
+      : hits.length ? countLabel(hits.length) + ' found'
+      : 'Nothing matches “' + srchQ.trim() + '”';
+    res.innerHTML = hits.length ? '<div class="txgrid">' + hits.map(tile).join('') + '</div>' : '';
+  }
+  function renderSearch(){
+    app.innerHTML = '<div class="srch"><div class="fld">'
+      + '<svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20.5 20.5l-4.2-4.2"/></svg>'
+      + '<input id="srchInput" type="search" placeholder="Search Ravilo" autocomplete="off">'
+      + '</div></div><div class="srchmeta" id="srchMeta"></div><div id="srchRes"></div><div style="height:30px;"></div>';
+    const input = document.getElementById('srchInput');
+    input.value = srchQ;   // assigned, never interpolated into the attribute — nothing to escape
+    input.addEventListener('input', () => { srchQ = input.value; fillSearch(); });
+    fillSearch();
+  }
+  function focusSearch(){ const i = document.getElementById('srchInput'); if(i) i.focus(); }
+
+  /* R267 · the bottom bar: paint the selected page and slide the gradient pill onto it. The pill
+     is one element that moves, not four that light up — which is what makes the bar read as a
+     single object (and is the M3 behaviour a phone viewer already expects). */
+  function paintNav(){
+    const items = [...document.querySelectorAll('#bnav .bn')];
+    if(!items.length) return;
+    const on = items.find(b => b.dataset.tab === tab) || items[0];
+    items.forEach(b => b.classList.toggle('on', b === on));
+    const ind = document.getElementById('bnind'), p = on.querySelector('.p');
+    if(ind && p) ind.style.transform = 'translateX(' + (p.offsetLeft + on.offsetLeft) + 'px)';
+  }
+  /* Belt and braces: any box change on the bar re-seats the pill, so no future width tweak,
+     orientation change or font swap can leave it at a stale offset. */
+  if(window.ResizeObserver) new ResizeObserver(() => paintNav()).observe(document.getElementById('bnav'));
+
   function render(){
-    document.querySelectorAll('#tabs .tab').forEach(t=>t.classList.toggle('on', t.dataset.tab===tab));
+    paintNav();
+    paintLibSlot();
+    document.querySelectorAll('#bnav .bn').forEach(t=>t.classList.toggle('on', t.dataset.tab===tab));
     scroll.scrollTop = 0;
-    if(TAXO_TABS.indexOf(tab)>=0){ if(txsel) renderTaxoList(tab, txsel); else renderTaxo(tab); }
-    else if(tab==='top10') renderTop10(); else renderHome();
+    if(tab==='discover'){
+      if(TAXO_TABS.indexOf(discSeg) >= 0) { if(txsel) renderTaxoList(discSeg, txsel); else renderTaxo(discSeg); }
+      else if(discSeg === 'coming') renderComing();
+      else renderRequest();
+      paintSegScroll();
+    }
+    else if(tab==='library') renderLibrary();
+    else if(tab==='search') renderSearch();
+    else renderHome();
   }
 
   /* ---- hero dots on scroll ---- */
@@ -801,12 +1075,44 @@
       + '<div style="height:24px;"></div></div>';
     detail.classList.add('on');
     dscroll.scrollTop = 0;
+    paintMiniOffset();
   }
-  function closeDetail(){ detail.classList.remove('on'); }
+  function closeDetail(){ detail.classList.remove('on'); paintMiniOffset(); }
 
   /* ---- events ---- */
-  document.getElementById('tabs').addEventListener('click', e=>{ const t=e.target.closest('[data-tab]'); if(t){ tab=t.dataset.tab; txsel=null; render(); } });
+  /* Re-tapping the page you are already on always scrolls that page back to the top — the platform
+     behaviour on every phone bottom bar. Two pages do one more thing on top of that: Discover also
+     returns to its FIRST available segment (R268's declared order, so Networks on every household),
+     and Search also puts the caret back in its field. */
+  document.getElementById('bnav').addEventListener('click', e=>{
+    const b = e.target.closest('[data-tab]'); if(!b) return;
+    const next = b.dataset.tab, again = next === tab;
+    // Profile is a menu, not a page: it opens the sheet and never claims the selected pill.
+    if(next === 'profile'){ openSheet(true); return; }
+    if(again && next === 'discover'){ discSeg = discSegs()[0]; txsel = null; render(); }
+    else if(again && next === 'search'){ focusSearch(); }
+    else if(again && next === 'library'){ libOpen = false; render(); }
+    else if(!again){ tab = next; txsel = null; libOpen = false; render(); if(next === 'search') focusSearch(); }
+    scroll.scrollTo({ top:0, behavior:'smooth' });
+  });
+  /* the type dropdown lives in the app bar now, so its handlers do too; a tap anywhere else
+     closes it, which is what a menu in a bar has to do. */
+  document.getElementById('libSlot').addEventListener('click', e=>{
+    const slot = document.getElementById('libSlot');
+    // toggle the class only — rebuilding the slot's innerHTML here would detach the very node this
+    // click is still bubbling from, and the document handler below would then read it as an
+    // outside tap and close the menu in the same gesture that opened it.
+    if(e.target.closest('#libPill')){ libOpen = !libOpen; slot.classList.toggle('open', libOpen); return; }
+    const lk = e.target.closest('[data-libkind]');
+    if(lk){ libKind = lk.dataset.libkind; libOpen = false; render(); }
+  });
+  document.addEventListener('click', e=>{
+    if(!libOpen || !e.target.isConnected) return;
+    if(!e.target.closest('#libSlot')){ libOpen = false; paintLibSlot(); }
+  });
+
   app.addEventListener('click', e=>{
+    const ds = e.target.closest('[data-discseg]'); if(ds){ discSeg=ds.dataset.discseg; txsel=null; render(); return; }
     const tb = e.target.closest('[data-txback]'); if(tb){ txsel=null; render(); return; }
     const tx = e.target.closest('[data-tx]'); if(tx){ txsel=tx.dataset.tx; render(); return; }
     const play = e.target.closest('[data-play]'); if(play){ openDetail(play.dataset.play); return; }
@@ -816,7 +1122,7 @@
     if(e.target.closest('#dback')){ closeDetail(); return; }
     const el = e.target.closest('[data-title]'); if(el){ openDetail(el.dataset.title); }
   });
-  document.getElementById('searchBtn').addEventListener('click', ()=>{ tab='top10'; render(); });
+  document.getElementById('searchBtn') && document.getElementById('searchBtn').addEventListener('click', ()=>{ tab='search'; render(); focusSearch(); });
 
   /* ---- profile sheet → Your profile (photo) + Settings → Account (password) ----
      R234. Photo picking is the real control the product would ship: a file input for the
@@ -843,8 +1149,8 @@
     const big = document.getElementById('pfAv'); if(big) paintFace(big);
   }
   function openSheet(on){ pmSheet.classList.toggle('on', on); pmScrim.classList.toggle('on', on); }
-  function openAcct(html){ acctNote=null; acctInner.innerHTML = html; acct.classList.add('on'); acct.scrollTop = 0; }
-  function closeAcct(){ acct.classList.remove('on'); }
+  function openAcct(html){ acctNote=null; acctInner.innerHTML = html; acct.classList.add('on'); acct.scrollTop = 0; paintMiniOffset(); }
+  function closeAcct(){ acct.classList.remove('on'); paintMiniOffset(); }
   function noteHTML(){ return acctNote ? '<div class="pf-note '+acctNote.kind+'">'+(acctNote.kind==='ok'?'✓':'⚠')+' <span>'+esc(acctNote.text)+'</span></div>' : ''; }
 
   function profileHTML(){
@@ -904,7 +1210,7 @@
     const a = b.dataset.pm; openSheet(false);
     if(a==='profile') openAcct(profileHTML());
     else if(a==='settings') openAcct(settingsHTML());
-    else if(a==='mylist'){ tab='top10'; render(); }
+    else if(a==='mylist'){ tab='discover'; render(); }
   });
   acct.addEventListener('click', e=>{
     const b = e.target.closest('[data-acct]'); if(!b) return;
@@ -951,8 +1257,23 @@
      destinations, local and cast · no playback speed, at all (owner
      decision 2026-09-16 — no control, no sheet, no seam, no string).
      ============================================================ */
-  let CAST = null;                 // null | {device}
-  const DEVICES = ['Stovan', 'Køkið', 'Barnarúmið'];
+  let CAST = null;                 // null | {device}  — playing on a screen, through the backend
+  let AP = null;                   // null | {device}  — AirPlay: the picture left, the player stayed
+  let TIER2 = false;               // "All your TVs" remembers its open state (FR-R265-3)
+  /* R265 · the device list is the SERVER's answer, never a scan: `nearby` is a flag on
+     GET /api/remote/devices, so the phone has no discovery code and no spinner. A row is a
+     screen (R264's receiver-only TV app) or, on the Android app only, a Chromecast the Cast
+     SDK found. `mine` marks a screen playing something this profile started — the only
+     playing row that is tappable; someone else's is busy and must never be hijacked (236's 409). */
+  const SCREENS = [
+    { name:'Stovan',            kind:'tv',   nearby:true,  state:'ready' },
+    { name:'Køkið',             kind:'tv',   nearby:true,  state:'playing', title:'Bluey · S3 E12', mine:true },
+    { name:'Barnarúmið',        kind:'tv',   nearby:false, state:'busy',    user:'Eydun' },
+    { name:'Summarhúsið',       kind:'tv',   nearby:false, state:'offline', when:'Tuesday' },
+    { name:'Stovan Chromecast', kind:'cast', nearby:false, state:'ready', androidOnly:true }
+  ];
+  const PAIR_CODE = 'K7F3Q2';      // what the receiver mockup is showing on its idle screen
+  const isIOS = () => document.querySelector('.phone').classList.contains('ios');
   const HIDE_MS = 3000;            // picked over the TV's 3600 — see the directions canvas
 
   const SUBS = [
@@ -992,7 +1313,16 @@
     const v = g.vers[S.ver] || g.vers[0]; return v.nm + (v.bdg ? ' · ' + v.bdg : ''); };
 
   /* ---- shared render ---- */
+  /* FR-R267-8 — the mini bar is raised by the nav's height only while the nav is on screen. On a
+     pushed screen (a title, the player, the remote, an account screen) the nav is not drawn, so a
+     raised mini bar would float over that page's own content with dead space beneath it. */
+  function paintMiniOffset(){
+    const pushed = detail.classList.contains('on') || acct.classList.contains('on')
+      || mp.classList.contains('on') || rcRem.classList.contains('on');
+    rcMini.classList.toggle('abovenav', !pushed);
+  }
   function paint(){
+    paintMiniOffset();
     const pct = Math.min(100, S.pos / S.dur * 100);
     $('mpDone').style.width = pct + '%'; $('mpKnob').style.left = pct + '%';
     $('mpPos').textContent = fmt(S.pos); $('mpLeft').textContent = '−' + fmt(S.dur - S.pos);
@@ -1131,7 +1461,7 @@
       if(id === 'mpSkip'){ S.pos = 92; paint(); showChrome(); return; }
       if(id === 'mpNupGo'){ S.ep = (S.ep || 7) + 1; S.pos = 0; $('mpTitle').textContent = 'Sweet Vitriol'; $('mpKick').textContent = S.title + ' · S2 E' + S.ep; paint(); return; }
       if(id === 'mpNupNo'){ S.dur = S.pos + 600; paint(); return; }
-      if(id === 'mpCast'){ openDeviceSheet(); return; }
+      if(id === 'mpCast'){ openScreensSheet(); return; }
       if(id === 'mpRotate'){ $('mpToast').textContent = 'Rotate to full screen'; $('mpToast').classList.add('on'); setTimeout(()=>$('mpToast').classList.remove('on'), 900); return; }
       if(act === 'closesheet'){ closeSheet(); return; }
       if(act === 'leave'){ closeSheet(); closePlayer(); return; }
@@ -1221,26 +1551,130 @@
   wireBar($('mpBar'), x => { const b = $('mpBub'); b.classList.add('on'); b.style.left = (x * 100) + '%'; b.textContent = fmt(S.pos); });
   wireBar($('rcBarSeek'), () => {});
 
-  /* ---- casting ---- */
-  function deviceSheetHTML(){
-    return '<div class="mp-grab"></div>'
-      + '<div class="mp-sh"><h4>' + (CAST ? 'Casting to ' + esc(CAST.device) : 'Cast to') + '</h4><span class="sp"></span><button class="mp-b flat" data-mp="closesheet" aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>'
-      + '<div class="mp-note" style="padding-top:0;padding-bottom:10px">On a real phone this is the <b style="color:var(--ink-soft);font-weight:600">platform\'s own</b> Cast dialog. Drawn here so the moment works in the mockup.</div>'
-      + DEVICES.map(d => '<button class="mp-row' + (CAST && CAST.device === d ? ' on' : '') + '" data-dev="' + esc(d) + '">'
-          + '<span class="rc-ic' + (CAST && CAST.device === d ? ' rc-on' : '') + '" style="width:20px;height:16px"><span class="bx"></span><span class="fl"></span></span>'
-          + '<span class="nm">' + esc(d) + '</span>' + (CAST && CAST.device === d ? '<span class="rt">' + tick + '</span>' : '') + '</button>').join('')
-      + (CAST ? '<button class="mp-row" data-mp="stopcast"><span class="nm" style="color:#ff9b8a">Stop casting</span></button>' : '');
+  /* ---- casting → "Play on a TV": one glyph, three tiers (R265) ----------------------
+     This replaces the 2026-09-16 frame that drew the PLATFORM's Cast dialog. The brief of
+     2026-09-18 supersedes FR-R245-2: the picker is Ravilo's own sheet on every platform, so
+     a Tizen TV, a Chromecast and AirPlay are reachable from one place. Rules held here:
+       · tier 1 is absent when empty — no empty box, no "searching…", ever;
+       · a busy or offline row is dimmed and not tappable;
+       · AirPlay is drawn only where the browser reports it (iPhone frame), one step below
+         the TV rows, with its notice as a second line — never a tooltip;
+       · a Chromecast row exists only in the Android app. */
+  const tvGlyph = '<svg viewBox="0 0 24 24" style="width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M9 21h6"/></svg>';
+  function screenState(s){
+    if(CAST && CAST.device === s.name) return 'Playing ' + esc(S.title || '');
+    if(s.state === 'ready')   return 'Ready';
+    if(s.state === 'playing') return 'Playing ' + esc(s.title);
+    if(s.state === 'busy')    return 'Busy · ' + esc(s.user) + ' is watching';
+    return 'Offline · last seen ' + esc(s.when);
   }
-  function openDeviceSheet(){ csSheetOpen(deviceSheetHTML()); }
+  function screenRow(s){
+    const live = CAST && CAST.device === s.name;
+    const off = s.state === 'busy' || s.state === 'offline';
+    const tappable = !off;
+    return '<button class="mp-row sc-row' + (off ? ' sc-off' : '') + (live ? ' on' : '') + '"'
+      + (tappable ? ' data-dev="' + esc(s.name) + '"' : ' disabled aria-disabled="true"') + '>'
+      + '<span class="sc-ic">' + (s.kind === 'cast'
+          ? '<span class="rc-ic" style="width:20px;height:18px"><span class="bx"></span><span class="fl"></span></span>' : tvGlyph) + '</span>'
+      + '<span class="tx"><span class="nm">' + esc(s.name) + '</span>'
+      + '<span class="sub' + ((live || (s.state === 'playing' && s.mine)) ? ' sc-play' : '') + '">' + screenState(s) + '</span></span>'
+      + (tappable ? '<span class="rt"><svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></span>' : '') + '</button>';
+  }
+  function screensSheetHTML(){
+    const list = SCREENS.filter(s => !(s.androidOnly && isIOS()));
+    const near = list.filter(s => s.nearby), rest = list.filter(s => !s.nearby);
+    let h = '<div class="mp-grab"></div>'
+      + '<div class="mp-sh"><h4>Play on a TV</h4><span class="sp"></span><button class="mp-b flat" data-mp="closesheet" aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>';
+    // tier 1 — the server's judgement, and absent rather than empty
+    if(near.length) h += '<div class="sc-sec">On this network</div>' + near.map(screenRow).join('');
+    // tier 2 — collapsed by default, remembers
+    if(rest.length){
+      h += '<button class="mp-row sc-col" data-mp="tier2"><span class="nm">All your TVs</span>'
+        + '<span class="sc-n">(' + rest.length + ')</span><span class="rt">'
+        + '<svg viewBox="0 0 24 24"><path d="' + (TIER2 ? 'M18 15l-6-6-6 6' : 'M6 9l6 6 6-6') + '"/></svg></span></button>';
+      if(TIER2) h += rest.map(screenRow).join('');
+    }
+    // tier 3 — only where the browser reported AirPlay. OWNER PICK 2026-09-18: the FOOTNOTE
+    // form, not a full row — one quiet line under the collapsible, with the caveat inside the
+    // label itself so the row cannot be read as the recommended route. (The full-row
+    // alternative, with the notice as a second line, is drawn in the directions canvas.)
+    if(isIOS()){
+      h += '<button class="sc-air" data-mp="airplay">'
+        + '<span class="sc-ic"><svg viewBox="0 0 24 24" style="width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round"><path d="M5 17a9 9 0 0 1 14 0"/><path d="M8.5 20.5 12 16l3.5 4.5z"/></svg></span>'
+        + '<span class="nm">AirPlay (phone must stay on)</span></button>';
+    }
+    h += '<button class="mp-row sc-add" data-mp="addtv"><span class="sc-ic"><svg viewBox="0 0 24 24" style="width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:2.1;stroke-linecap:round"><path d="M12 5v14M5 12h14"/></svg></span><span class="nm">Add a TV</span></button>';
+    if(CAST) h += '<button class="mp-row" data-mp="stopcast"><span class="nm" style="color:#ff9b8a">Stop casting</span></button>';
+    return h;
+  }
+  /* Add a TV · FR-R265-5. A phone has a keyboard, so this is a native input — never a
+     hand-rolled one (R234 FR-R234-6's rule, from the other direction). Unknown, expired and
+     already-used are ONE string: the household's fix is the same for all three. */
+  function codeSheetHTML(err){
+    return '<div class="mp-grab"></div>'
+      + '<div class="mp-sh"><h4>Add a TV</h4><span class="sp"></span><button class="mp-b flat" data-mp="screens" aria-label="Back"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>'
+      + '<div class="sc-code"><input id="scCode" class="sc-inp" maxlength="6" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="······" aria-label="Code from the TV">'
+      + (err ? '<div class="sc-err">That code didn\'t work</div>'
+             : '<div class="sc-hint">The code is on the TV\'s screen.</div>') + '</div>';
+  }
+  function openScreensSheet(){ csSheetOpen(screensSheetHTML()); }
+  function openCodeSheet(err){
+    csSheetOpen(codeSheetHTML(err));
+    const i = $('scCode'); if(i){ i.focus();
+      i.addEventListener('input', () => {
+        i.value = i.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+        if(i.value.length < 6) return;
+        if(i.value === PAIR_CODE){
+          // success: the sheet you were in comes back with the TV in place, briefly outlined
+          const s = SCREENS.find(x => x.name === 'Stovan'); if(s) s.justPaired = true;
+          openScreensSheet();
+          const row = $('csSheet').querySelector('[data-dev="Stovan"]');
+          if(row){ row.classList.add('sc-new'); setTimeout(()=>row.classList.remove('sc-new'), 2200); }
+        } else { openCodeSheet(true); }
+      });
+    }
+  }
+  /* AirPlay · FR-R265-4. Tapping hands over to Apple's picker, which we do not redraw — the
+     mockup names it and moves on. While it runs there is NO mini bar and NO remote: the
+     phone's own player IS the remote, because it drives the <video> the TV is mirroring.
+     Anything else would be a drawing of a control that cannot work. The notice the footnote
+     compresses is shown in full here, once, at the moment it becomes true. */
+  function startAirplay(){
+    csSheetClose();
+    AP = { device: 'Stovan TV' };
+    if(!S.title){ const lib = R.libraryFor ? R.libraryFor(me) : (R.library || []);
+      const first = lib[0]; if(first){ S.title = first.title; S.kind = first.kind || 'movie'; S.ep = 7;
+        S.art = STILLS[(first.title.length) % STILLS.length]; } }
+    if(!mp.classList.contains('on')) openPlayer(S.title);
+    mp.classList.add('mp-ap');
+    apChip();
+    bar('<span class="dot"></span> Playing on ' + esc(AP.device) + ' · keep Ravilo open');
+    setTimeout(()=>{ rcBar.classList.remove('on'); }, 2600);
+    paintCast();
+  }
+  function apChip(){
+    let c = $('mpApChip');
+    if(!AP){ if(c) c.remove(); return; }
+    if(!c){ c = document.createElement('div'); c.id = 'mpApChip'; c.className = 'sc-apchip';
+      $('mpCast').insertAdjacentElement('beforebegin', c); }
+    c.innerHTML = '<span class="rc-ic rc-on" style="width:16px;height:14px"><span class="bx"></span><span class="fl"></span></span>' + esc(AP.device);
+  }
+  function stopAirplay(){ AP = null; mp.classList.remove('mp-ap'); apChip(); paintCast(); }
   function csSheetOpen(html){ $('csSheet').innerHTML = html; $('csSheet').classList.add('on'); $('csScrim').classList.add('on'); }
   function csSheetClose(){ $('csSheet').classList.remove('on'); $('csScrim').classList.remove('on'); }
   $('csScrim').addEventListener('click', csSheetClose);
   $('csSheet').addEventListener('click', e => {
-    const b = e.target.closest('button'); if(!b) return;
-    if(b.dataset.mp === 'closesheet'){ csSheetClose(); return; }
-    if(b.dataset.mp === 'stopcast'){ csSheetClose(); stopCast(); return; }
+    const b = e.target.closest('button'); if(!b || b.disabled) return;
+    const act = b.dataset.mp;
+    if(act === 'closesheet'){ csSheetClose(); return; }
+    if(act === 'screens'){ openScreensSheet(); return; }
+    if(act === 'tier2'){ TIER2 = !TIER2; openScreensSheet(); return; }
+    if(act === 'addtv'){ openCodeSheet(false); return; }
+    if(act === 'airplay'){ startAirplay(); return; }
+    if(act === 'stopcast'){ csSheetClose(); stopCast(); return; }
     if(b.dataset.dev !== undefined){
       csSheetClose();
+      if(AP) stopAirplay();
       // pressing cast inside the player hands the current position over and swaps
       // straight to the remote (decision 6, 2026-09-16)
       const at = mp.classList.contains('on') ? S.pos : null;
@@ -1249,13 +1683,17 @@
     }
   });
   function bar(html, cls){ rcBar.className = 'rc-bar on'; rcBar.innerHTML = html; if(cls) rcBar.classList.add(cls); }
+  /* FR-R265-7 — nothing is "connecting": the phone asks the backend to start a title on a
+     screen, so the two moments are "Sending to X…" and "Playing on X", and the bar then
+     retires itself. On app start there is no bar at all — either the mini bar with the live
+     position, or nothing. */
   function connect(device, handoffPos){
     CAST = { device: device };
-    bar('<span class="sp"></span> Connecting to ' + esc(device) + '…');
+    bar('<span class="sp"></span> Sending to ' + esc(device) + '…');
     paintCast();
     setTimeout(()=>{
-      bar('<span class="dot"></span> Casting to ' + esc(device));
-      setTimeout(()=>{ rcBar.classList.remove('on'); }, 1800);
+      bar('<span class="dot"></span> Playing on ' + esc(device));
+      setTimeout(()=>{ rcBar.classList.remove('on'); }, 2000);
       if(handoffPos != null) S.pos = handoffPos;
       openRemote();
     }, 1400);
@@ -1265,7 +1703,7 @@
     rcMini.classList.remove('on'); paintCast();
   }
   function paintCast(){
-    $('castGlyph').className = 'rc-ic' + (CAST ? ' rc-on' : '');
+    $('castGlyph').className = 'rc-ic' + ((CAST || AP) ? ' rc-on' : '');
     $('rcDevName').textContent = CAST ? CAST.device : '—';
     $('rcMiniDev').textContent = CAST ? CAST.device : '—';
     $('rcMiniTitle').textContent = S.kind === 'series' ? 'Chikhai Bardo' : (S.title || '—');
@@ -1274,6 +1712,15 @@
     $('rcTitle').textContent = S.kind === 'series' ? 'Chikhai Bardo' : (S.title || '—');
     // mini bar shows only while casting, and never dismisses while it runs
     rcMini.classList.toggle('on', !!CAST && !rcRem.classList.contains('on'));
+    // FR-R245-19 — the receiver's stream is a conversion, not the file. Mockup proxy:
+    // "is casting" stands in for the real ticket's directPlay==false, since there is no
+    // real transcode signal here. Verbatim copy from the built Kotlin (CastRemoteScreen.kt).
+    $('rcConv').style.display = CAST ? '' : 'none';
+    if (CAST) {
+      $('rcConvDev').textContent = CAST.device;
+      $('rcConvDev2').textContent = CAST.device;
+      $('rcConvBody').textContent = CAST.device + " can't play this file as it is, so your server is converting it while it plays. The picture is a step below the original. For the best quality, play it in the Ravilo app on the TV.";
+    }
     paint();
   }
   function openRemote(){
@@ -1284,6 +1731,8 @@
     paintCast();
   }
   function closeRemote(){ rcRem.classList.remove('on'); paintCast(); }
+  $('rcConv').addEventListener('click', () => { $('rcConvScrim').classList.add('on'); });
+  $('rcConvScrim').addEventListener('click', () => { $('rcConvScrim').classList.remove('on'); });
 
   $('castBtn').addEventListener('click', ()=>{
     if(CAST){ openRemote(); return; }
@@ -1292,7 +1741,7 @@
       const first = (lib || []).find(i => i && i.title);
       if(first){ S.title = first.title; S.kind = first.kind || 'movie'; S.ep = 7; S.art = STILLS[(first.title.length) % STILLS.length]; }
     }
-    openDeviceSheet();
+    openScreensSheet();
   });
   mp.addEventListener('click', e => {
     if(e.target.closest('[data-mp="stopcast"]')){ closeSheet(); stopCast(); return; }
@@ -1309,7 +1758,7 @@
     if(id === 'rcBack10'){ S.pos = Math.max(0, S.pos - 10); paint(); return; }
     if(id === 'rcFwd30'){ S.pos = Math.min(S.dur, S.pos + 30); paint(); return; }
     if(id === 'rcStop'){ stopCast(); return; }
-    if(id === 'rcDev'){ rcSheetOpen(deviceSheetHTML()); return; }
+    if(id === 'rcDev'){ rcSheetOpen(screensSheetHTML()); return; }
     if(id === 'rcNext'){ S.ep = (S.ep || 7) + 1; S.pos = 0; paintCast(); return; }
     if(id === 'rcSubs'){ S.tab = 'subs'; rcSheetOpen(pickerHTML('cast')); return; }
     if(act === 'closesheet'){ rcSheetClose(); return; }

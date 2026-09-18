@@ -5,7 +5,7 @@
 > and I pick one of those in the sub-menu, then it successfully picks it, but it doesn't close the
 > picker. Let's fix this, so it also closes the picker."*
 
-**Status:** ✓ Done — see `STATUS.md`, which is authoritative. (Header as originally written: Planned) — dev-authored, not yet built. This is a deliberate reversal of an R195 design
+**Status:** Planned — dev-authored, not yet built. This is a deliberate reversal of an R195 design
 decision, not an implementation defect.
 
 ## 1. What's happening, and why
