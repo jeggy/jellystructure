@@ -39,71 +39,12 @@
     <canvas id="ComposeTarget" tabindex="0"></canvas>
     <button id="fs-btn" title="Toggle fullscreen">⛶ Fullscreen</button>
 
-    <script>
-        // Fullscreen toggle (F key or button)
-        var fsBtn = document.getElementById('fs-btn');
-        if (document.fullscreenEnabled || document.webkitFullscreenEnabled) {
-            fsBtn.style.display = 'block';
-            function toggleFs() {
-                if (document.fullscreenElement || document.webkitFullscreenElement) {
-                    (document.exitFullscreen || document.webkitExitFullscreen).call(document);
-                } else {
-                    var el = document.documentElement;
-                    (el.requestFullscreen || el.webkitRequestFullscreen).call(el);
-                }
-            }
-            fsBtn.onclick = toggleFs;
-            document.addEventListener('keydown', function(e) {
-                if ((e.key === 'f' || e.key === 'F') && !window.raviloTextFieldFocused) toggleFs();
-            });
-        }
-
-        // Ensure canvas receives focus immediately for keyboard events
-        window.addEventListener('load', function() {
-            var canvas = document.getElementById('ComposeTarget');
-            if (canvas) canvas.focus();
-        });
-
-        // Gamepad polling — re-fires gamepad axis/button presses as keyboard events
-        // so the Compose focus engine handles them identically to hardware D-pad
-        (function() {
-            var AXES = {0: 'ArrowLeft', 1: 'ArrowLeft', 2: 'ArrowRight', 3: 'ArrowRight'};
-            var BUTTONS = {0: 'Enter', 1: 'Escape', 12: 'ArrowUp', 13: 'ArrowDown', 14: 'ArrowLeft', 15: 'ArrowRight'};
-            var THRESHOLD = 0.5;
-            var prevAxes = {}, prevButtons = {};
-
-            function fireKey(key) {
-                var canvas = document.getElementById('ComposeTarget');
-                if (!canvas) return;
-                ['keydown', 'keyup'].forEach(function(t) {
-                    canvas.dispatchEvent(new KeyboardEvent(t, {key: key, bubbles: true}));
-                });
-            }
-
-            function poll() {
-                var pads = navigator.getGamepads ? navigator.getGamepads() : [];
-                for (var i = 0; i < pads.length; i++) {
-                    var gp = pads[i];
-                    if (!gp) continue;
-                    gp.axes.forEach(function(v, ai) {
-                        var key = ai < 2 ? (v < -THRESHOLD ? 'ArrowLeft' : v > THRESHOLD ? 'ArrowRight' : null)
-                                         : (v < -THRESHOLD ? 'ArrowUp'   : v > THRESHOLD ? 'ArrowDown'  : null);
-                        if (key && prevAxes[ai] !== key) fireKey(key);
-                        prevAxes[ai] = key;
-                    });
-                    gp.buttons.forEach(function(btn, bi) {
-                        var key = BUTTONS[bi];
-                        var pressed = btn.pressed;
-                        if (key && pressed && !prevButtons[bi]) fireKey(key);
-                        prevButtons[bi] = pressed;
-                    });
-                }
-                requestAnimationFrame(poll);
-            }
-            window.addEventListener('gamepadconnected', function() { poll(); });
-        })();
-    </script>
-
+    <!-- FR-235-8 — no inline script: the corrected CSP's script-src has no 'unsafe-inline' (a nonce
+         would make this file uncacheable by a future service worker). runtime-config.js is generated
+         per request (DEFAULT_SERVER_URL / RAVILO_VERSION); boot.js is the old inline block, moved out
+         verbatim. -->
+    <script src="runtime-config.js"></script>
+    <script src="boot.js"></script>
     <script src="ravilo.js"></script>
 </body>
 </html>

@@ -19,7 +19,9 @@ WORKDIR /app
 # Same Node.js + libatomic1 setup as the main Dockerfile's builder stage (webpack + Gradle's own
 # Kotlin/Wasm npm tooling) — see that file's comment for why both are needed. No libsqlite3-dev here:
 # this build never touches the main linuxX64 executable{} target.
-RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates libatomic1 && \
+#   - brotli (FR-235-2): :precompressWasmJsDistribution shells out to this CLI for .br siblings when
+#     it's on PATH, silently skipping them (gzip-only) otherwise.
+RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates libatomic1 brotli && \
     curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
     apt-get install -y --no-install-recommends nodejs && \
     rm -rf /var/lib/apt/lists/*

@@ -20,6 +20,8 @@ kotlin {
             dependencies {
                 implementation(libs.ktor.server.core)
                 implementation(libs.ktor.server.cio)
+                // FR-235-5 — HEAD answers every GET route with the same headers and no body.
+                implementation(libs.ktor.server.auto.head.response)
                 implementation(libs.kotlinx.io.core)
             }
         }
