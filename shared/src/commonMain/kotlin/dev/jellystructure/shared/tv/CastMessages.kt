@@ -80,6 +80,9 @@ data class CastReceiverMessage(
     @SerialName("selected_sub") val selectedSub: Int = -1,
     @SerialName("sub_size") val subSize: String = "M",
     @SerialName("receiver_id") val receiverId: String? = null,
+    /** FR-R245-19 — the stream the receiver is playing is a server-side conversion of the file, not the
+     *  file itself (`StreamTicket.directPlay == false`). Null from a receiver older than this field. */
+    @SerialName("transcoding") val transcoding: Boolean? = null,
 )
 
 /** Phone → receiver. */

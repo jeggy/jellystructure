@@ -213,6 +213,7 @@ class CastSenderAndroid(private val appContext: Context) : CastSender {
             subtitleTracks = subs.ifEmpty { prev.subtitleTracks },
             selectedAudio = if (audios.isNotEmpty()) selectedAudio else prev.selectedAudio,
             selectedSub = if (subs.isNotEmpty()) selectedSub else prev.selectedSub,
+            transcoding = said?.transcoding ?: prev.transcoding,
             subSize = said?.subSize?.firstOrNull() ?: prev.subSize,
             receiverId = said?.receiverId ?: prev.receiverId,
         )
