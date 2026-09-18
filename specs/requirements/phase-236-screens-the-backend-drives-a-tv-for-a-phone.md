@@ -14,8 +14,10 @@
 `Planned` — written 2026-09-18 from the research report `ravilo-web-pwa-player-cast-2026-09-18.md`
 (§5, §12) and a trace of `TvEventBus.kt`, `RemoteRoutes.kt`, `CastService.kt`, `PlaybackService.kt`
 and `RaviloDeviceService.kt`. Not dev-reviewed, not built. Backend + shared DTOs. Pair: **R264** (the
-receiver app) and **R265** (the phone remote). Nothing here changes the Android TV client, the Chromecast
-receiver's Cast-namespace path, or phase 111's API-key routes.
+receiver app) and **R265** (the phone remote). Phase 111's `/api/remote/**` is extended in place and
+becomes the one device-control API (FR-236-3); every Ravilo client gains the command handlers and the
+status report that make it in-depth (FR-236-11). The Chromecast receiver's Cast-namespace path is
+untouched.
 
 **Numbering:** verified against `STATUS.md` and the spec directories 2026-09-18 — admin taken through
 **235**, Ravilo through **R263**.
