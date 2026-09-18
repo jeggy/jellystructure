@@ -121,7 +121,7 @@ shared/                 code shared between backend and clients
 ravilo-ui/              Compose UI shared by every Ravilo target
 ravilo-android/         Android TV + phone, one APK
 ravilo-web/             browser build
-ravilo-tizen/           Samsung TV models from 2016 to 2018
+ravilo-screen/          receiver-only Tizen TV app (no navigation, driven entirely by the backend)
 web-static-server/      static-file server for the browser build
 design/                 HTML and CSS mockups, and the CSS the frontend actually ships
 specs/                  requirements, one file per phase

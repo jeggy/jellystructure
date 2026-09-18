@@ -1,0 +1,63 @@
+<!doctype html>
+<!-- R264 — the Ravilo receiver-only Tizen app. No navigation: everything on screen is driven by the
+     backend over the events socket (Phase 236), the same non-interactive-screens discipline
+     cast-receiver/index.html established (FR-R245-15/16/17's rules apply here too — no product name, no
+     protocol, no codec, no status code ever rendered). -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="ravilo-screen" content="R264">
+  <title>Ravilo</title>
+  <style>
+    :root { --ink: #fff; --ink-soft: rgba(255,255,255,.72); --ink-dim: rgba(255,255,255,.45); --accent: #7b6ef0; --accent2: #00a4dc; }
+    html, body { margin: 0; height: 100%; background: #000; color: var(--ink); font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; overflow: hidden; }
+    #video { position: fixed; inset: 0; width: 100%; height: 100%; background: #000; object-fit: contain; z-index: 0; }
+    .screen { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; flex-direction: column; text-align: center; z-index: 1; }
+    .screen.on { display: flex; }
+    #idle, #loading, #noserver, #busy { background: #000; }
+    .mark { width: 64px; height: 64px; border-radius: 18px; background: linear-gradient(135deg, #AA5CC3, #00A4DC); box-shadow: 0 0 48px rgba(0,164,220,.35); margin-bottom: 26px; }
+    .sentence { font-size: 30px; color: var(--ink-soft); font-weight: 500; }
+    .kicker { font-size: 18px; letter-spacing: 3px; color: var(--accent2); font-weight: 700; text-transform: uppercase; margin-bottom: 8px; }
+    .title { font-size: 44px; font-weight: 700; letter-spacing: -.8px; }
+    .sub { font-size: 22px; color: var(--ink-dim); margin-top: 14px; }
+    .pulse { display: flex; gap: 14px; margin-bottom: 34px; }
+    .pulse i { width: 16px; height: 16px; border-radius: 50%; background: var(--ink); animation: pulse 1.2s infinite ease-in-out; }
+    .pulse i:nth-child(2) { animation-delay: .2s; } .pulse i:nth-child(3) { animation-delay: .4s; }
+    @keyframes pulse { 0%, 80%, 100% { opacity: .25; transform: scale(.85); } 40% { opacity: 1; transform: scale(1); } }
+    .sweep { width: 280px; height: 4px; border-radius: 2px; background: rgba(255,255,255,.14); overflow: hidden; margin-top: 34px; }
+    .sweep i { display: block; width: 40%; height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent2)); animation: sweep 1.6s infinite linear; }
+    @keyframes sweep { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
+    #idle-code { font-variant-numeric: tabular-nums; font-size: 64px; font-weight: 700; letter-spacing: 8px; margin-top: 22px; color: var(--ink); }
+    #idle-code:empty { display: none; }
+    /* paused / seeked overlay */
+    #overlay { position: fixed; left: 0; right: 0; bottom: 0; padding: 40px 64px 48px; background: linear-gradient(transparent, rgba(0,0,0,.78)); display: none; z-index: 2; }
+    #overlay.on { display: block; }
+    #overlay .row { display: flex; align-items: center; gap: 22px; }
+    #overlay .bar { height: 6px; border-radius: 3px; background: rgba(255,255,255,.22); margin: 18px 0 10px; }
+    #overlay .bar i { display: block; height: 100%; width: 0; border-radius: 3px; background: linear-gradient(90deg, var(--accent), var(--accent2)); }
+    #overlay .time { color: var(--ink-dim); font-size: 20px; }
+    /* buffering: the frozen frame stays; a spinner and nothing else */
+    #buffering { background: rgba(0,0,0,.38); }
+    .spinner { width: 56px; height: 56px; border: 5px solid rgba(255,255,255,.2); border-top-color: var(--ink); border-radius: 50%; animation: spin .9s infinite linear; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .wait { font-size: 20px; color: var(--ink-dim); margin-top: 10px; }
+  </style>
+</head>
+<body>
+  <video id="video" playsinline></video>
+
+  <section id="idle" class="screen on"><div class="mark"></div><div id="idle-sentence" class="sentence">Ready to play from your phone</div><div id="idle-code"></div></section>
+  <section id="loading" class="screen"><div class="pulse"><i></i><i></i><i></i></div><div id="loading-kicker" class="kicker"></div><div id="loading-title" class="title"></div><div class="sweep"><i></i></div><div id="loading-label" class="sub">Loading…</div></section>
+  <section id="buffering" class="screen"><div class="spinner"></div></section>
+  <section id="noserver" class="screen"><div class="mark"></div><div id="noserver-t" class="title"></div><div id="noserver-s" class="sub"></div></section>
+  <section id="busy" class="screen"><div class="mark"></div><div id="busy-t" class="title"></div><div id="busy-s" class="sub"></div><div id="busy-wait" class="wait"></div></section>
+  <div id="overlay"><div class="row"><div><div id="ov-kicker" class="kicker"></div><div id="ov-title" class="title" style="font-size:30px"></div></div></div><div class="bar"><i id="ov-fill"></i></div><div id="ov-time" class="time"></div></div>
+
+  <script>
+    // Sideload-only config: no on-screen server setup yet (a follow-on phase's scope — see Screen.kt's
+    // main() doc). Point this at your own jellystructure instance before packaging the .wgt.
+    window.RAVILO_SERVER_URL = "https://your-jellystructure-server.example";
+  </script>
+  <script src="ravilo-screen.js"></script>
+</body>
+</html>

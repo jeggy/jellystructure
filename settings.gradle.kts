@@ -5,7 +5,8 @@ enableFeaturePreview("TYPESAFE_PROJECT_ACCESSORS")
 include(":shared")
 include(":ravilo-ui")
 include(":ravilo-web")
-include(":ravilo-tizen") // R189 — Samsung Tizen TV client (2016-2018 models)
+include(":ravilo-screen") // R264 — receiver-only TV app (Tizen first, webOS as a follow-on package); supersedes R189/:ravilo-tizen
+include(":ravilo-receiver-core") // R264 — the CAF-free receiver state machine shared with :ravilo-cast
 include(":ravilo-cast")  // R245 — the Chromecast receiver (Kotlin/JS + CAF), served at /cast/ (218)
 // FR-167-5 — tiny standalone linuxX64 static-file server (Ktor CIO), deliberately not dependent on the
 // root project (which would drag in the whole backend's SQLDelight/config/media stack). Packages the

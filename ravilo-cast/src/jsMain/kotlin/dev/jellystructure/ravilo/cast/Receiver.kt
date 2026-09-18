@@ -1,11 +1,15 @@
 package dev.jellystructure.ravilo.cast
 
+import dev.jellystructure.ravilo.receiver.ReceiverStrings
+import dev.jellystructure.ravilo.receiver.audioTracksOf
+import dev.jellystructure.ravilo.receiver.hms
+import dev.jellystructure.ravilo.receiver.nowMs
+import dev.jellystructure.ravilo.receiver.subtitleTracksOf
 import dev.jellystructure.shared.tv.CAST_NAMESPACE
 import dev.jellystructure.shared.tv.CastCommand
 import dev.jellystructure.shared.tv.CastEpisode
 import dev.jellystructure.shared.tv.CastLoadData
 import dev.jellystructure.shared.tv.CastReceiverMessage
-import dev.jellystructure.shared.tv.CastTrack
 import dev.jellystructure.shared.tv.ClientCapabilities
 import dev.jellystructure.shared.tv.RaviloConfig
 import dev.jellystructure.shared.tv.SkipMode
@@ -38,33 +42,6 @@ import kotlin.js.Promise
  * CAF is reached through `dynamic` — the SDK is a global the page loads before this bundle.
  */
 private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true; isLenient = true }
-
-private object Strings {
-    private val en = mapOf(
-        "ready" to "Ready to play from your phone", "loading" to "Loading…",
-        "noserver" to "Can’t reach your Ravilo server", "noserver_s" to "Check that the server is on and try again from your phone.",
-        "busy" to "The server is busy right now", "busy_s" to "It will start as soon as it can.", "waiting" to "waiting {n} s",
-        "nextep" to "UP NEXT", "startsin" to "Starts in {n} s",
-    )
-    private val da = mapOf(
-        "ready" to "Klar til at spille fra din telefon", "loading" to "Indlæser…",
-        "noserver" to "Kan ikke nå din Ravilo-server", "noserver_s" to "Tjek at serveren er tændt, og prøv igen fra din telefon.",
-        "busy" to "Serveren er travl lige nu", "busy_s" to "Den starter, så snart den kan.", "waiting" to "venter {n} s",
-        "nextep" to "NÆSTE", "startsin" to "Starter om {n} s",
-    )
-    private val fo = mapOf(
-        "ready" to "Klár at spæla frá telefonini", "loading" to "Løðir…",
-        "noserver" to "Kann ikki ná Ravilo-servaranum", "noserver_s" to "Kanna um servarin er á, og royn aftur frá telefonini.",
-        "busy" to "Servarin hevur mikið at gera nú", "busy_s" to "Hon byrjar, so skjótt sum gjørligt.", "waiting" to "bíðar {n} s",
-        "nextep" to "NÆSTA", "startsin" to "Byrjar um {n} s",
-    )
-    var lang = "en"
-    fun t(key: String, n: Int? = null): String {
-        val table = when (lang) { "da" -> da; "fo" -> fo; else -> en }
-        val s = table[key] ?: en[key] ?: key
-        return if (n != null) s.replace("{n}", n.toString()) else s
-    }
-}
 
 private const val TOKEN_KEY = "ravilo.cast.token"
 private const val RECEIVER_ID_KEY = "ravilo.cast.receiverId"
@@ -99,13 +76,13 @@ private class Receiver {
         for (id in listOf("idle", "loading", "buffering", "noserver", "busy")) el(id).classList.toggle("on", id in on)
     }
     private fun idle() {
-        el("idle-sentence").textContent = Strings.t("ready")
+        el("idle-sentence").textContent = ReceiverStrings.t("ready")
         el("nextup").classList.remove("on"); el("overlay").classList.remove("on")
         show("idle")
     }
 
     fun start() {
-        el("idle-sentence").textContent = Strings.t("ready")
+        el("idle-sentence").textContent = ReceiverStrings.t("ready")
         val messages = cast.framework.messages
         // FR-R245-13 — the LOAD interceptor: enrol if needed, negotiate our own ticket, then hand CAF the
         // real media. The phone never hands us a media URL.
@@ -142,14 +119,14 @@ private class Receiver {
         val raw = request.media?.customData ?: request.customData
         val data = runCatching { json.decodeFromString(CastLoadData.serializer(), JSON.stringify(raw) as String) }.getOrNull()
             ?: return request
-        Strings.lang = data.lang
+        ReceiverStrings.lang = data.lang
         subSize = data.subSize
         current = data
         introSkipped = false
         val api = apiFor(data.serverUrl)
         el("loading-kicker").textContent = data.kicker ?: ""
         el("loading-title").textContent = data.title
-        el("loading-label").textContent = Strings.t("loading")
+        el("loading-label").textContent = ReceiverStrings.t("loading")
         el("nextup").classList.remove("on")
         show("loading")
         // 218 FR-218-9 — enrol once per receiver when storage survived, else per cast.
@@ -160,7 +137,7 @@ private class Receiver {
             localStorage.setItem(TOKEN_KEY, pr.deviceToken); localStorage.setItem(RECEIVER_ID_KEY, pr.session.deviceId)
         }
         if (config == null) config = runCatching { api.getConfig() }.getOrNull()
-        config?.uiLanguage?.let { if (it.isNotBlank()) Strings.lang = it }
+        config?.uiLanguage?.let { if (it.isNotBlank()) ReceiverStrings.lang = it }
         val t = negotiate(api, data.itemId) ?: return null   // busy/noserver screens already showing
         ticket = t
         val messages = cast.framework.messages
@@ -198,7 +175,7 @@ private class Receiver {
     }
 
     private fun failLoad(e: Throwable): dynamic {
-        el("noserver-t").textContent = Strings.t("noserver"); el("noserver-s").textContent = Strings.t("noserver_s")
+        el("noserver-t").textContent = ReceiverStrings.t("noserver"); el("noserver-s").textContent = ReceiverStrings.t("noserver_s")
         show("noserver")
         send(CastReceiverMessage(type = "noserver", itemId = current?.itemId, title = current?.title, kicker = current?.kicker, artUrl = current?.artUrl, receiverId = receiverId))
         return null
@@ -238,11 +215,11 @@ private class Receiver {
             if (http != null && http.status == 503) {
                 val wait = http.retryAfterSeconds ?: 5
                 if (busySinceMs == null) busySinceMs = nowMs()
-                el("busy-t").textContent = Strings.t("busy"); el("busy-s").textContent = Strings.t("busy_s")
+                el("busy-t").textContent = ReceiverStrings.t("busy"); el("busy-s").textContent = ReceiverStrings.t("busy_s")
                 show("busy")
                 send(CastReceiverMessage(type = "busy", itemId = itemId, title = current?.title, kicker = current?.kicker, artUrl = current?.artUrl, retryAfter = wait, sinceMs = busySinceMs, receiverId = receiverId))
                 repeat(wait) { s ->
-                    el("busy-wait").textContent = Strings.t("waiting", ((nowMs() - (busySinceMs ?: nowMs())) / 1000).toInt())
+                    el("busy-wait").textContent = ReceiverStrings.t("waiting", ((nowMs() - (busySinceMs ?: nowMs())) / 1000).toInt())
                     delay(1_000)
                 }
                 continue
@@ -321,12 +298,12 @@ private class Receiver {
     private fun startNextUp() {
         val next = nextEpisode() ?: return
         val secs = config?.skipSecs ?: 6
-        el("nu-k").textContent = Strings.t("nextep"); el("nu-t").textContent = next.title
+        el("nu-k").textContent = ReceiverStrings.t("nextep"); el("nu-t").textContent = next.title
         el("nextup").classList.add("on")
         nextUpJob = GlobalScope.launch {
             var left = secs
             while (left > 0) {
-                el("nu-c").textContent = Strings.t("startsin", left)
+                el("nu-c").textContent = ReceiverStrings.t("startsin", left)
                 send(CastReceiverMessage(type = "nextup", nextupSecs = left, nextTitle = next.title, receiverId = receiverId))
                 delay(1_000)
                 left--
@@ -389,10 +366,8 @@ private class Receiver {
     private fun sendStatus() {
         val d = current ?: return
         val t = ticket
-        val subs = t?.subtitles?.filter { it.url != null && it.deliveryMethod != "encode" }?.mapIndexed { i, s ->
-            CastTrack(index = i, label = s.label, language = s.language, forced = s.forced, isDefault = s.isDefault, trackId = (100 + i).toLong())
-        } ?: emptyList()
-        val audios = t?.audio?.mapIndexed { i, a -> CastTrack(index = i, label = a.label, language = a.language, isDefault = a.isDefault) } ?: emptyList()
+        val subs = subtitleTracksOf(t, trackIdBase = 100)
+        val audios = audioTracksOf(t)
         val active: dynamic = runCatching { playerManager.getMediaInformation()?.let { playerManager.getPlayerState(); playerManager.getStats() } }.getOrNull()
         send(CastReceiverMessage(
             type = "status", itemId = d.itemId, title = d.title, kicker = d.kicker, artUrl = d.artUrl,
@@ -405,13 +380,6 @@ private class Receiver {
     private fun send(msg: CastReceiverMessage) {
         runCatching { context.sendCustomMessage(CAST_NAMESPACE, undefined, JSON.parse(json.encodeToString(CastReceiverMessage.serializer(), msg))) }
     }
-}
-
-private fun nowMs(): Long = (js("Date.now()") as Double).toLong()
-private fun hms(ms: Long): String {
-    val total = (ms / 1000).coerceAtLeast(0)
-    val h = total / 3600; val m = (total % 3600) / 60; val s = total % 60
-    return if (h > 0) "$h:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}" else "$m:${s.toString().padStart(2, '0')}"
 }
 
 fun main() {

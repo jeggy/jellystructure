@@ -2,6 +2,7 @@ package dev.jellystructure.shared.tv
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonObject
 
 // ─── Enums ────────────────────────────────────────────────────────────────────
 
@@ -651,6 +652,9 @@ data class PlayItemEnvelope(
     val kind: String = "movie",
     val title: String? = null,
     @SerialName("start_position_ms") val startPositionMs: Long = 0,
+    // Phase 236 (FR-236-4) — which of a shared screen's own tokens to play this under; absent on a
+    // single-session device (today's TVs), which keeps its one and only behaviour unchanged.
+    @SerialName("session_user_id") val sessionUserId: String? = null,
 )
 
 /** R155 — a remote playstate command (stop/pause/unpause/seek) for whichever item is currently
@@ -667,6 +671,17 @@ data class PlaystateCommandEnvelope(
 data class NavigateEnvelope(
     val type: String = "",
     val destination: String = "",
+)
+
+/** Phase 236 (FR-236-3) — everything past the original stop/pause/unpause/home quartet: seek, skip,
+ *  next/previous, track selection, subtitle size, next-up, segment skip, volume. [args] is the
+ *  command's own field object; a device honouring only some commands simply ignores the rest and
+ *  answers via its own next status report (FR-236-11's rule), never silently. */
+@Serializable
+data class PlayerCommandEnvelope(
+    val type: String = "",
+    val command: String = "",
+    val args: JsonObject? = null,
 )
 
 // ─── Config ───────────────────────────────────────────────────────────────────

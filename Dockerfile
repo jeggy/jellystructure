@@ -25,16 +25,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certifi
 COPY gradlew ./
 COPY gradle ./gradle
 COPY build.gradle.kts settings.gradle.kts gradle.properties ./
-# settings.gradle.kts unconditionally includes :shared, :ravilo-ui, :ravilo-web, :ravilo-tizen, and
-# (FR-167-5) :web-static-server (the Android-only modules stay out since no Android SDK is present
-# here) -- Gradle configures the WHOLE project graph before running any task, so every included
-# module's directory has to exist before even a dependency-resolution pass, let alone the real build
-# below. Without these, ./gradlew fails immediately with "Configuring project ':shared' without an
-# existing directory".
+# settings.gradle.kts unconditionally includes :shared, :ravilo-ui, :ravilo-web, :ravilo-screen,
+# :ravilo-receiver-core, and (FR-167-5) :web-static-server (the Android-only modules stay out since no
+# Android SDK is present here) -- Gradle configures the WHOLE project graph before running any task, so
+# every included module's directory has to exist before even a dependency-resolution pass, let alone the
+# real build below. Without these, ./gradlew fails immediately with "Configuring project ':shared'
+# without an existing directory".
 COPY shared ./shared
 COPY ravilo-ui ./ravilo-ui
 COPY ravilo-web ./ravilo-web
-COPY ravilo-tizen ./ravilo-tizen
+COPY ravilo-screen ./ravilo-screen
+COPY ravilo-receiver-core ./ravilo-receiver-core
 COPY ravilo-cast ./ravilo-cast
 COPY cast-receiver ./cast-receiver
 COPY web-static-server ./web-static-server

@@ -2,7 +2,7 @@
 #
 # FR-167-5 — standalone image for Ravilo web, additional to (not a replacement for) the existing
 # RAVILO_WEB_DIR in-backend serving at /tv/** (see the main Dockerfile). Built from the repo root so it
-# can reach the shared/ravilo-ui/ravilo-web/ravilo-tizen modules exactly like the main Dockerfile does —
+# can reach the shared/ravilo-ui/ravilo-web modules exactly like the main Dockerfile does —
 # `docker build -f ravilo-web/Dockerfile .` from the repo root, not from ravilo-web/.
 #
 # A plain Kotlin service, no reverse-proxy technology baked in — the operator fronts it with whatever
@@ -35,11 +35,13 @@ COPY build.gradle.kts settings.gradle.kts gradle.properties ./
 COPY shared ./shared
 COPY ravilo-ui ./ravilo-ui
 COPY ravilo-web ./ravilo-web
-COPY ravilo-tizen ./ravilo-tizen
-# R245 added :ravilo-cast to settings.gradle.kts; without its directory here Gradle refuses to configure
-# the graph at all ("Configuring project ':ravilo-cast' without an existing directory is not allowed"),
-# which turned publish.yml and ci.yml red on 2026-09-16. Never built by this image, only configured.
+# R245 added :ravilo-cast (and R264 :ravilo-screen/:ravilo-receiver-core) to settings.gradle.kts; without
+# their directories here Gradle refuses to configure the graph at all ("Configuring project ':ravilo-cast'
+# without an existing directory is not allowed"), which turned publish.yml and ci.yml red on 2026-09-16.
+# Never built by this image, only configured.
 COPY ravilo-cast ./ravilo-cast
+COPY ravilo-screen ./ravilo-screen
+COPY ravilo-receiver-core ./ravilo-receiver-core
 COPY web-static-server ./web-static-server
 COPY design ./design
 RUN --mount=type=cache,id=gradle-ravilo-web,target=/root/.gradle \
