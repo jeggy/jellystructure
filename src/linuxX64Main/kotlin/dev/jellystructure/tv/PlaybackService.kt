@@ -242,11 +242,15 @@ internal class PlaybackTracker(private val clock: () -> Long = ::nowMs) {
 
     /** The display names of every device [anyActive] currently covers (active + within grace) — for a
      *  "Paused — TV is watching {name}" UI (FR-178-4) without a second device-store lookup. */
-    fun activeDevices(): List<String> {
+    fun activeDevices(): List<String> = activeDeviceObjects().map { it.displayName.ifBlank { it.deviceId } }
+
+    /** Phase 236 (FR-236-9) — the ceiling and the cast status card need to filter by [DeviceData.kind],
+     *  which a display-name string throws away; everything else keeps calling [activeDevices]. */
+    fun activeDeviceObjects(): List<DeviceData> {
         val now = clock()
         val active = snapshot.values.map { it.device }
         val grace = lastSeenSnapshot.values.filter { (_, ts) -> now - ts <= PLAYBACK_DEFER_GRACE_MS }.map { it.first }
-        return (active + grace).distinctBy { it.deviceId }.map { it.displayName.ifBlank { it.deviceId } }
+        return (active + grace).distinctBy { it.deviceId }
     }
 
     /** Has [playback] gone [STOP_WATCHDOG_MS] without a heartbeat (app kill / network drop / HDMI-off)? */
@@ -254,15 +258,20 @@ internal class PlaybackTracker(private val clock: () -> Long = ::nowMs) {
         clock() - playback.heartbeatMs > STOP_WATCHDOG_MS
 
     companion object {
-        /** 218 amendment (FR-218-11) — which devices the watchdog may judge by their TV-events socket. A
-         *  Ravilo TV or phone holds that socket for as long as the app is open, so "socket gone" means
-         *  "app gone". The Chromecast receiver never opens one — it is a receiver page, driven by the
-         *  phone over the Cast channel — so for it the socket test read as "disconnected" 11 s into every
-         *  cast, the playback was force-stopped, Jellyfin was told so (an empty Now Playing card while
-         *  the TV kept playing), and every later progress report was ignored. A receiver is judged by
-         *  its heartbeat alone (it reports progress every 10 s, well inside [STOP_WATCHDOG_MS]). */
-        fun needsEventsSocket(device: DeviceData): Boolean = device.platform != CAST_PLATFORM
-        const val CAST_PLATFORM = "cast"
+        /** 218 amendment (FR-218-11), extended by Phase 236 (FR-236-8) — which devices the watchdog may
+         *  judge by their TV-events socket. A Ravilo TV or phone holds that socket for as long as the app
+         *  is open, so "socket gone" means "app gone". A Chromecast receiver never opens one — it is a
+         *  receiver page, driven by the phone over the Cast channel — so for it the socket test read as
+         *  "disconnected" 11 s into every cast, the playback was force-stopped, Jellyfin was told so (an
+         *  empty Now Playing card while the TV kept playing), and every later progress report was
+         *  ignored. FR-236-8 extends the same reasoning to a Tizen/webOS screen: it is driven entirely by
+         *  the backend's own push, not by holding this socket open, so the events socket closing must not
+         *  end its play either. Both kinds are judged by heartbeat alone (reported every 10 s, well
+         *  inside [STOP_WATCHDOG_MS]) — checked via [DeviceData.kind], not `platform` (kind is the field
+         *  47.sqm's migration and every enrolment path since keep authoritative; a receiver's own
+         *  X-Ravilo-Platform report was never guaranteed to be this exact string). */
+        fun needsEventsSocket(device: DeviceData): Boolean = device.kind !in NO_SOCKET_KINDS
+        private val NO_SOCKET_KINDS = setOf("cast", "screen")
     }
 
     /** With per-item keying a device can briefly hold several entries (an overlapping stop/start), so
@@ -299,6 +308,10 @@ fun isPlaybackActive(): Boolean = playbackTracker.anyActive()
  *  UI state (FR-178-4). */
 fun activePlaybackDeviceNames(): List<String> = playbackTracker.activeDevices()
 
+/** Phase 236 (FR-236-9) — same live set as [activePlaybackDeviceNames], as full [DeviceData] so a
+ *  [kind]-based filter (the cast ceiling, the cast status card) doesn't have to guess from a name. */
+fun activePlaybackDevices(): List<DeviceData> = playbackTracker.activeDeviceObjects()
+
 private fun playSessionIdFor(device: DeviceData, jellyfinId: String): String = "${device.deviceId}-$jellyfinId"
 
 /** Security fix (2026-08-02 review, finding H2) — thrown by [PlaybackService.startPlayback] /
@@ -333,6 +346,12 @@ class PlaybackService(
      *  route right after it responds — before this the route's own invalidation raced the queued write
      *  and could rebuild Continue Watching from Jellyfin's *pre-stop* state. */
     val queuesStops: Boolean get() = writer != null
+
+    /** Phase 236 (FR-236-8) — called with a device id every time [stopWatchdogTick] reaps a stale
+     *  playback, so a screen's last-known status doesn't linger as "playing" once the backend itself
+     *  has decided otherwise. Main wires this to clear [screenStatusTracker] and fan out the resulting
+     *  `loaded=false` status to subscribers. */
+    var onDeviceReaped: (suspend (String) -> Unit)? = null
 
     /** R248 (FR-R248-2) — called with the device once a queued STOP has landed in Jellyfin (Main wires
      *  it to `HomeFeedService.invalidatePlaystate`, which ends with the `home_changed` push). Never
@@ -404,7 +423,7 @@ class PlaybackService(
         requireVisible(device, jellyfinId)
         // Phase 218 (FR-218-8) — a receiver past `max_sessions` gets phase 182's 503 + Retry-After
         // (CastCeilingException → Server.kt StatusPages), never a spinner forever. A TV is never gated.
-        castService?.checkCeiling(device, playbackTracker.activeDevices())
+        castService?.checkCeiling(device, playbackTracker.activeDeviceObjects())
         // Phase 185 (FR-185-1) — every negotiation that reports at least one decode ceiling persists it,
         // regardless of what this particular file needs (ClientCapabilities always reports both
         // hevc/h264 ceilings together, not just the one this session happens to select).
@@ -629,6 +648,10 @@ class PlaybackService(
             Logger.info("Stop watchdog: force-stopping stale playback item=${p.jellyfinId} device=${p.device.deviceId}", "tv")
             runCatching { stopPlayback(p.device, p.jellyfinId, p.positionMs) }
                 .onFailure { Logger.warn("Stop watchdog: force-stop failed: ${it.message}", "tv") }
+            // Phase 236 (FR-236-8) — a screen's status is display state, not tied to the Jellyfin stop
+            // call's own success; clear it regardless of whether the stop above landed.
+            runCatching { onDeviceReaped?.invoke(p.device.deviceId) }
+                .onFailure { Logger.warn("Stop watchdog: onDeviceReaped failed: ${it.message}", "tv") }
         }
     }
 

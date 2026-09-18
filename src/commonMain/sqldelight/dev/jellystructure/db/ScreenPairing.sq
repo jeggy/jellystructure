@@ -1,0 +1,33 @@
+-- Phase 236 (FR-236-2, dev review item 1) — the receiver-shows-a-code pairing flow. Single-use: the row
+-- exists only between `screen/code` (mint) and the TV's first successful `screen/claim` poll after
+-- `remote/pair` claims it, then it's deleted. Must stay byte-for-byte in sync with 47.sqm's CREATE TABLE.
+CREATE TABLE screen_pairing (
+    code TEXT NOT NULL PRIMARY KEY,
+    device_id TEXT NOT NULL,
+    device_name TEXT,
+    platform TEXT,
+    -- The code is shown on screen to the whole room; the secret travels only over the TV's own poll
+    -- request (never displayed), so a poll keyed on the code alone can't hand out someone else's token.
+    claim_secret_hash TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    expires_at INTEGER NOT NULL,
+    -- NULL until `remote/pair` claims the code; both set together.
+    claimed_by_user TEXT,
+    claimed_token TEXT
+);
+
+insert:
+INSERT INTO screen_pairing(code, device_id, device_name, platform, claim_secret_hash, created_at, expires_at, claimed_by_user, claimed_token)
+VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL);
+
+getByCode:
+SELECT * FROM screen_pairing WHERE code = ?;
+
+claim:
+UPDATE screen_pairing SET claimed_by_user = :claimed_by_user, claimed_token = :claimed_token WHERE code = :code;
+
+deleteByCode:
+DELETE FROM screen_pairing WHERE code = ?;
+
+sweep:
+DELETE FROM screen_pairing WHERE expires_at < ?;

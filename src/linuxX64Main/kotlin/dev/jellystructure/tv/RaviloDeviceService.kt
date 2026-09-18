@@ -73,6 +73,10 @@ class RaviloDeviceService(private val db: JellystructureDb) {
         // already knew (an older client signing in again must not blank a newer client's report).
         appVersion: String? = null,
         platform: String? = null,
+        // Phase 236 (FR-236-1) — tv | phone | web | cast | screen. Kept on a re-login the same way
+        // appVersion/platform are (an older caller passing the historical default must not downgrade an
+        // already-known kind).
+        kind: String? = null,
     ): Pair<DeviceData, String> {
         val normalizedAllowed = allowedLibraries?.map { normalizeGuid(it) }?.toSet()
         val normalizedAllowedTags = allowedTags.map { it.lowercase() }.toSet()
@@ -85,6 +89,7 @@ class RaviloDeviceService(private val db: JellystructureDb) {
         val displayName = deviceName?.take(80)?.ifBlank { null }
             ?: existing?.display_name?.takeIf { it.isNotBlank() }
             ?: "Ravilo TV ${deviceId.take(6)}"
+        val resolvedKind = kind ?: existing?.kind ?: "tv"
         db.raviloDeviceQueries.insertDevice(
             device_id = deviceId,
             jellyfin_user_id = jellyfinUserId,
@@ -101,6 +106,7 @@ class RaviloDeviceService(private val db: JellystructureDb) {
             blocked_tags = encodeTags(normalizedBlockedTags),
             app_version = appVersion ?: existing?.app_version,
             platform = platform ?: existing?.platform,
+            kind = resolvedKind,
         )
         // Force a fresh DB read on the next validateDeviceToken call — the token/policy may have
         // changed even though the device_token itself was reused (re-login as the same user).
@@ -122,6 +128,8 @@ class RaviloDeviceService(private val db: JellystructureDb) {
                 blockedTags = normalizedBlockedTags,
                 appVersion = appVersion ?: existing?.app_version,
                 platform = platform ?: existing?.platform,
+                kind = resolvedKind,
+                lastPublicAddress = existing?.last_public_address,
             ).also { DeviceIdentityRegistry.remember(it) },
             deviceToken,
         )
@@ -170,6 +178,8 @@ class RaviloDeviceService(private val db: JellystructureDb) {
             blockedTags = decodeTags(row.blocked_tags),
             appVersion = row.app_version,
             platform = row.platform,
+            kind = row.kind,
+            lastPublicAddress = row.last_public_address,
         ).let { recordAppInfo(it, appVersion, platform) }
         tokenCache[token] = TokenEntry(data, now, now)
         DeviceIdentityRegistry.remember(data)
@@ -184,6 +194,15 @@ class RaviloDeviceService(private val db: JellystructureDb) {
         if (v == data.appVersion && p == data.platform) return data
         db.raviloDeviceQueries.updateAppInfo(app_version = v, platform = p, device_token = data.deviceToken)
         return data.copy(appVersion = v, platform = p)
+    }
+
+    /** Phase 236 (FR-236-6) — stamped on an events-socket open and a playback/status post, never on
+     *  every request (a screen doesn't move networks mid-session, and this would otherwise be a DB
+     *  write on the hottest path in the app). Best-effort: an empty/blank address is a no-op, not a
+     *  clear — a proxy that occasionally fails to set the header must not un-group an already-placed TV. */
+    fun recordAddress(deviceId: String, jellyfinUserId: String, address: String?) {
+        val a = address?.trim()?.ifBlank { null } ?: return
+        db.raviloDeviceQueries.updatePublicAddress(last_public_address = a, device_id = deviceId, jellyfin_user_id = jellyfinUserId)
     }
 
     fun unpair(deviceToken: String) {
@@ -210,6 +229,8 @@ class RaviloDeviceService(private val db: JellystructureDb) {
                 blockedTags = decodeTags(row.blocked_tags),
                 appVersion = row.app_version,
                 platform = row.platform,
+                kind = row.kind,
+                lastPublicAddress = row.last_public_address,
             )
         }
 
@@ -246,6 +267,8 @@ class RaviloDeviceService(private val db: JellystructureDb) {
                 blockedTags = decodeTags(row.blocked_tags),
                 appVersion = row.app_version,
                 platform = row.platform,
+                kind = row.kind,
+                lastPublicAddress = row.last_public_address,
             ).also { DeviceIdentityRegistry.remember(it) }
         }
 
@@ -311,6 +334,8 @@ class RaviloDeviceService(private val db: JellystructureDb) {
                 blockedTags = decodeTags(row.blocked_tags),
                 appVersion = row.app_version,
                 platform = row.platform,
+                kind = row.kind,
+                lastPublicAddress = row.last_public_address,
             )
         }
 }

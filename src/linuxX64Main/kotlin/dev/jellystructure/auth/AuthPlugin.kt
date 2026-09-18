@@ -14,6 +14,17 @@ val SessionKey = AttributeKey<SessionData>("JsSession")
 val DeviceKey = AttributeKey<DeviceData>("RaviloDevice")
 val ApiKeyAttr = AttributeKey<ApiKeyData>("RaviloApiKey")
 
+// Phase 236 (FR-236-3, dev review item 5) — every /api/remote/ route now accepts either credential;
+// each one reads this one attribute instead of ApiKeyAttr directly. deviceId is null for an API-key
+// caller (an API key is bound to a user, not a device) and non-null for a device-token caller —
+// viaApiKey is what /api/remote/pair refuses (FR-236-2: an API key has no Jellyfin user token to copy
+// onto a receiver's row).
+// (Line comments on purpose: Kotlin block comments nest, so a literal "/*" inside "/api/remote/**"
+// would open an inner comment that never closes and breaks the whole file — the exact hazard
+// web-static-server/Main.kt's own file header already documents.)
+data class RemoteCaller(val jellyfinUserId: String, val deviceId: String?, val viaApiKey: Boolean)
+val RemoteCallerAttr = AttributeKey<RemoteCaller>("RemoteCaller")
+
 private val OPEN_API_PATHS = listOf(
     "/api/auth/login",
     "/api/setup",
@@ -27,6 +38,15 @@ private val OPEN_API_PATHS = listOf(
     // /api/tv/events is the live-config WebSocket (R33); browsers can't send a bearer header on the
     // handshake, so the route validates a device token from the query string itself.
     "/api/tv/events",
+    // Phase 236 (FR-236-2, dev review item 1) — the receiver-shows-a-code pairing flow. Both open
+    // (a receiver holds no credential yet) and rate-limited by the same LoginRateLimiter as /tv/login,
+    // same reasoning as /tv/cast/redeem above.
+    "/api/tv/screen/code",
+    "/api/tv/screen/claim",
+    // Phase 236 (FR-236-3) — the API-caller status stream is a WebSocket; same reasoning as
+    // /api/tv/events above (a browser/HA client can't set a header on the handshake), validated from
+    // the query string inside the route itself, either credential.
+    "/api/remote/events",
     // /api/tv/channel-logos/<file> serves channel-button brand logos (R36); not sensitive, and the TV
     // <img>/Coil loader can't attach a device token. Admin upload/list stays at /api/tv/admin/...
     "/api/tv/channel-logos/",
@@ -112,20 +132,38 @@ fun Application.installAuthPlugin(
             return@intercept
         }
 
-        if (path.startsWith("/api/remote/") && validateApiKey != null) {
+        // Phase 236 (FR-236-3, dev review item 5) — one device-control API, two credentials: an API key
+        // (bound to a user) or a Ravilo device token (bound to a device+user) — both `Bearer`, tried in
+        // that order so an existing Home Assistant integration's request shape is unchanged.
+        if (path.startsWith("/api/remote/") && (validateApiKey != null || validateDeviceToken != null)) {
             val bearer = call.request.headers["Authorization"]
                 ?.takeIf { it.startsWith("Bearer ") }
                 ?.removePrefix("Bearer ")
                 ?: call.request.headers["X-JS-Api-Key"]
 
-            val keyData = bearer?.let { validateApiKey(it) }
+            val keyData = bearer?.let { validateApiKey?.invoke(it) }
             if (keyData != null) {
                 call.attributes.put(ApiKeyAttr, keyData)
+                call.attributes.put(RemoteCallerAttr, RemoteCaller(keyData.jellyfinUserId, deviceId = null, viaApiKey = true))
                 proceed()
                 return@intercept
             }
 
-            call.respond(HttpStatusCode.Unauthorized, mapOf("error" to "Invalid or missing API key"))
+            val device = bearer?.let {
+                validateDeviceToken?.invoke(
+                    it,
+                    call.request.headers[dev.jellystructure.shared.RaviloHeaders.VERSION],
+                    call.request.headers[dev.jellystructure.shared.RaviloHeaders.PLATFORM],
+                )
+            }
+            if (device != null) {
+                call.attributes.put(DeviceKey, device)
+                call.attributes.put(RemoteCallerAttr, RemoteCaller(device.jellyfinUserId, deviceId = device.deviceId, viaApiKey = false))
+                proceed()
+                return@intercept
+            }
+
+            call.respond(HttpStatusCode.Unauthorized, mapOf("error" to "Invalid or missing API key or device token"))
             finish()
             return@intercept
         }

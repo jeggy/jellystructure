@@ -11,17 +11,57 @@
 
 ## Status
 
-`Planned` — written 2026-09-18 from the research report `ravilo-web-pwa-player-cast-2026-09-18.md`
+`✓ Built` 2026-09-18 — written from the research report `ravilo-web-pwa-player-cast-2026-09-18.md`
 (§5, §12) and a trace of `TvEventBus.kt`, `RemoteRoutes.kt`, `CastService.kt`, `PlaybackService.kt`
 and `RaviloDeviceService.kt`. **Dev-reviewed 2026-09-18 against `main` `05195d1f`** (see §Dev review at
 the bottom: 218's code is minted by a signed-in phone, so a TV that *shows* a code needs a new pairing
 flow — FR-236-2 rewritten; a device token is per `(device, user)`, so the receiver picks its token from
 `session_user_id` and the event bus needs a device-level lookup — FR-236-4 rewritten, FR-236-4a added;
-FR-236-11 carved out as its own client phase). Not built. Backend + shared DTOs. Pair: **R264** (the
+FR-236-11 carved out as its own client phase). Backend + shared DTOs, built as specified below every
+FR except FR-236-11 (deliberately deferred — see its own note). Pair: **R264** (the
 receiver app) and **R265** (the phone remote). Phase 111's `/api/remote/**` is extended in place and
-becomes the one device-control API (FR-236-3); every Ravilo client gains the command handlers and the
-status report that make it in-depth (FR-236-11). The Chromecast receiver's Cast-namespace path is
+becomes the one device-control API (FR-236-3). The Chromecast receiver's Cast-namespace path is
 untouched.
+
+**Build notes (2026-09-18):**
+- FR-236-1: `ravilo_device.kind` (migration `47.sqm`), backfilled from the `Chromecast via Ravilo` name
+  prefix, then from R252's `platform` column (whose `tv`/`phone`/`web` values are the enum's own
+  strings), else the historical `tv` default. `CastService.isCastDevice`/`checkCeiling`/`status` and
+  `redeem` (which now passes `kind = "cast"` explicitly) all switched off the name prefix onto this
+  field; `PlaybackTracker.needsEventsSocket` too (extended to `screen`, per FR-236-8).
+- FR-236-2: rewritten exactly as the dev review specifies — `ScreenPairingService` + a new
+  `screen_pairing` table (same migration). `POST /api/tv/screen/code` (open, rate-limited) mints;
+  `POST /api/remote/pair` (device token only — 403 for an API key) claims by copying the phone's
+  session onto the pairing row's device id via the existing `loginDevice`; `POST /api/tv/screen/claim`
+  (open, rate-limited) polls with the claim secret and collects the token once, deleting the row.
+- FR-236-3/4/4a/5/6/7/8/9/10: built into `RemoteRoutes.kt`, `TvRoutes.kt`, `TvEventBus.kt`,
+  `AuthPlugin.kt` (a new `RemoteCaller` attribute, tried API-key-then-device-token),
+  `RaviloDeviceService.kt` (`recordAddress`, stamped on an events-socket open and a `playback/status`
+  post — not every request), and a new `ScreenNetwork.kt` (`isNearby`, pure) and
+  `ScreenStatusTracker.kt` (in-memory latest status per device, cleared by the stop watchdog via a new
+  `PlaybackService.onDeviceReaped` hook). `TvEventBus.targetFor` is FR-236-4a's device-level fallback;
+  `subscribeDeviceStatus`/`notifyDeviceStatus` back both `GET /api/remote/events` and a
+  `subscribe_device` message on a Ravilo client's own `/api/tv/events` socket (open question 1,
+  resolved as the dev review leaned).
+- FR-236-11 is **not built** — carved out of this phase's own "done" by the dev review (item 7); no
+  Ravilo client (Android TV, phone, web) yet sends `player_command`/`ScreenStatus`. Correspondingly,
+  `ravilo-ui`'s existing R245 `CastRemoteStatus` (the Android Cast sender) was **not** converted into a
+  typealias for the new shared `ScreenStatus`, though the dev review's item 6 suggests exactly that —
+  doing so would force `subSize: Char → String` and a dropped `receiverId` through the real Android
+  Chromecast implementation (`CastSenderAndroid.kt`, `CastRemoteScreen.kt`), which is client-side work
+  belonging to FR-236-11/R265, not this phase's stated backend+DTOs scope. `ScreenStatus` in `shared`
+  is the DTO the new routes actually use; the two types simply coexist until FR-236-11 is written.
+- Verification: `linuxX64Test` 400+/0, including two new dedicated suites — `ScreenNetworkTest`
+  (IPv4 exact, IPv6 /64, the CGNAT case as an accepted limitation, malformed input) and
+  `ScreenPairingServiceTest` (secret required — the code alone never retrieves a token, single-use,
+  expiry, an unknown code, two users claiming the same receiver over time). `tests/e2e/screens.spec.ts`
+  was written to the Acceptance section's own fake-screen scenario (real WebSocket connections from
+  inside a same-origin browser page — Node's own runtime in this project's Playwright image has no
+  global `WebSocket`, confirmed empirically) but **was not run to completion this session**: the
+  docker-compose e2e stack's build step was OOM-killed three times in a row, every time at the same
+  Kotlin/Native link step, by this shared host's own unrelated background services (not this code) —
+  a plain host-side `./gradlew :compileKotlinLinuxX64`/`:linuxX64Test` succeeded cleanly outside Docker
+  each time. Owed: a real e2e run (CI, or a quieter moment on this host).
 
 **Numbering:** verified against `STATUS.md` and the spec directories 2026-09-18 — admin taken through
 **235**, Ravilo through **R263**.

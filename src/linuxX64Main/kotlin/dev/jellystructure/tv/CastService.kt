@@ -64,7 +64,9 @@ class CastService(
          *  enough that a stale LOAD cannot enrol a device later (open question 4 — 5 min, stated). */
         const val HANDOFF_TTL_MS = 5 * 60_000L
         private const val CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789" // no 0/O/1/I
-        fun isCastDevice(device: DeviceData): Boolean = device.displayName.startsWith(DEVICE_PREFIX)
+        // Phase 236 (FR-236-1, dev review item 4) — kind, not the display name; DEVICE_PREFIX is kept
+        // only as the string actually shown (this card, the Jellyfin dashboard identity).
+        fun isCastDevice(device: DeviceData): Boolean = device.kind == "cast"
     }
 
     /** FR-218-3/11 — null unless enabled AND an 8-hex application id is set. Nothing derived from the
@@ -120,16 +122,19 @@ class CastService(
             appVersion = appVersion,
             platform = platform,
             blockedTags = phone.blockedTags,
+            kind = "cast",
         )
     }
 
     // ── FR-218-8: the ceiling ─────────────────────────────────────────────────
 
     /** Throws [CastCeilingException] when [device] is a receiver and `max_sessions` OTHER receivers are
-     *  already playing. A receiver starting its next episode never counts against itself. */
-    fun checkCeiling(device: DeviceData, activeDeviceNames: List<String>) {
+     *  already playing. A receiver starting its next episode never counts against itself. Phase 236
+     *  (FR-236-9) — a Tizen/webOS screen counts like a TV (one transcode per playing device), never
+     *  against this ceiling; only `kind == "cast"` does. */
+    fun checkCeiling(device: DeviceData, activeDevices: List<DeviceData>) {
         if (!isCastDevice(device)) return
-        val others = activeDeviceNames.count { it.startsWith(DEVICE_PREFIX) && it != device.displayName }
+        val others = activeDevices.count { isCastDevice(it) && it.deviceId != device.deviceId }
         val max = maxSessions()
         if (others >= max) {
             throw CastCeilingException(30, "All $max cast sessions are in use — try again in a moment")
@@ -164,9 +169,9 @@ class CastService(
 
     // ── FR-218-7: honest status ───────────────────────────────────────────────
 
-    fun status(activeDeviceNames: List<String>): ChromecastStatus {
+    fun status(activeDevices: List<DeviceData>): ChromecastStatus {
         val cc = configStore.current.chromecast
-        val receivers = deviceService.allDevices().filter { it.displayName.startsWith(DEVICE_PREFIX) }
+        val receivers = deviceService.allDevices().filter { isCastDevice(it) }
         return ChromecastStatus(
             enabled = cc?.enabled == true,
             appIdSet = cc?.hasAppId() == true,
@@ -175,7 +180,7 @@ class CastService(
             devices = receivers.sortedByDescending { it.lastSeen }.map { CastDeviceSummary(it.displayName.removePrefix("$DEVICE_PREFIX · "), it.lastSeen) },
             lastCastAt = receivers.maxOfOrNull { it.lastSeen },
             maxSessions = cc?.effectiveMaxSessions() ?: 2,
-            activeSessions = activeDeviceNames.count { it.startsWith(DEVICE_PREFIX) },
+            activeSessions = activeDevices.count { isCastDevice(it) },
         )
     }
 }
