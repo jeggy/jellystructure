@@ -413,8 +413,9 @@ MSE-driven playback anyway.
 
 R263 and 235 are small and independent of the player; R264 is a day and fixes the black screen on
 iPhones by itself; R265 is the real work and hinges on one spike that should run before it is spec'd.
-**Order after §11:** 235 → R264 → R266 (Cast from Chrome + guide, the owner's priority) → R263 → R265 →
-R267 → the TLS spike → 236/R268.
+**Order after §11 (revised by follow-up 4):** 235 → R264 → **236/R268 (the backend launcher + the PWA cast experience, both
+phones, no browser dependency)** → R263 → R265 → R267. R266 (Chrome Web Sender) is dropped from the plan unless a
+self-hoster's backend and TV are on different networks.
 
 ## 11. Owner answers (2026-09-18) and what each changed
 
@@ -424,6 +425,29 @@ R267 → the TLS spike → 236/R268.
 | 2 | How important is Cast, and is "install Chrome, then the PWA" an acceptable ask? | *"Google Cast is one of the most important functionality … the experience must be perfect. If that means you have to install Chrome and install the PWA from there, that's fine. Just guide the user to set it up properly."* | §5.3 added: a per-device table and a three-state setup guide (Install / Open in Chrome / Not from this device), decided from SDK availability + standalone mode, never the UA. R266 becomes "Cast from Chrome, guided" and moves to the front of the order. The backend launcher (236/R268) is promoted from "later" to the iPhone-in-this-house route, TLS spike first. **New open question 3b:** nothing on the web reaches *parents' iPhones → their own stick*; Chrome on iOS cannot cast either. |
 
 | 3 | *"I'm not sure if Chrome is best? We just need to make sure that the PWA, both on Android and iOS, have Google Cast support, so people can cast from the PWA to their TVs."* | — | **Chrome is not a preference, it is the only place a web page can cast.** Google Cast from a web page exists only where the browser itself ships the Cast SDK: Chrome (and Chromium browsers that carry it, such as Edge) on Android, macOS, Windows, Linux and ChromeOS. **No browser on an iPhone can do it** — Safari has no Presentation API, and Google states "casting is not supported on the iOS Chrome browser" (Chrome on iOS is WebKit). Re-checked 2026-09-18: unchanged. So "a PWA on iOS with Google Cast support" **cannot exist as a client feature**; on iOS the web app casts only through something that is not the browser — the backend launcher on the TV's LAN (236/R268, this house and every self-hoster) or a native app. This makes 236/R268 a **requirement**, not an option, and Q3b (the parents' LAN) the open decision. |
+
+| 4 | *"The Google Cast on the TV will be handled by the jellystructure or Ravilo backend, as we already have support for this from the Android Ravilo app. We just need the same experience in the Ravilo PWA for iOS and Android."* | — | **Half of that is true today, and the other half is the phase.** The backend hosts the receiver (`/cast/`), checks reachability, mints/redeems the hand-off code, enforces the ceiling and reports status (`CastService.kt`). It has **no Cast protocol code**: discovery, launch and every remote command are done by Google Play services on the Android phone (`CastSenderAndroid.kt`: `CastContext`, `MediaRouteButton`, `setReceiverApplicationId`, `session.sendMessage(CAST_NAMESPACE, …)` straight to the dongle). So "the same experience" on both PWAs means the backend takes over those three jobs — **236/R268 is the design, not an option**, and the Chrome Web Sender (R266) becomes unnecessary for the PWA: one path, browser-agnostic, which is the real answer to follow-up 3. Design consequence: Ravilo draws **its own device list** (from the backend), departing from R245 FR-R245-2's "the picker is the platform's". |
+
+### 11.1 The launcher's two unknowns, measured the same day
+
+- **TLS from the backend:** `libssl.so.3` / `libcrypto.so.3` are already in the production image (curl links
+  them), so the Cast v2 client is an OpenSSL cinterop, not a new dependency. All three Cast devices in the
+  house accept a **TLS 1.3** handshake on `:8009` with a self-signed certificate (`openssl s_client` from the
+  host: Stue TV `192.0.2.22`, Soveværelse TV `192.0.2.23`, Køkken hub `192.0.2.24`). Verification must be
+  off; that is the protocol's norm.
+- **Reachability from the container:** the `jellystructure` container, on its `caddy` bridge network, opens
+  TCP to `192.0.2.22:8009` and `192.0.2.23:8009` directly — the host LAN is one flat `/23`
+  (`192.0.2.20/23`), and a bridge network routes unicast to the LAN. **No host networking is needed to
+  launch or control.**
+- **Discovery without multicast:** each device answers its **name** on its own setup endpoint —
+  `GET https://<ip>:8443/setup/eureka_info?params=name` → `{"name":"Stue TV"}` (and `:8008` for the wider
+  info block). So the backend can verify and name a device from an address alone. Address input for v1:
+  the admin types it on the 218 Settings → Chromecast card (a *Devices* list), or the backend sweeps the
+  local `/23` for `:8443` (512 addresses, seconds) — mDNS (`_googlecast._tcp`) only if the container is
+  ever given host networking. `avahi-browse` is not on this host, so multicast discovery was not tested.
+- What is **not** measured: an actual `LAUNCH` of the Ravilo receiver over the protocol (protobuf
+  `CastMessage` framing, `connection`/`heartbeat`/`receiver` namespaces). That is the first thing 236 builds
+  and the acceptance test is an iPhone in Safari starting a cast on the stue TV.
 
 ## 10. Sources
 
