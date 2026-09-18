@@ -17,7 +17,10 @@
 `PlayerScreen.kt`/`TizenPlatform.kt`/`LiveTvPlayerScreen.kt`). Not dev-reviewed, not built. Client:
 a new `ravilo-screen` module (Kotlin/JS, DOM, no WebAssembly) packaged for **Tizen first**; webOS is the
 same bundle in an `.ipk` and is listed as a follow-on package, not a second app. Depends on **236**.
-Sibling **R265**.
+Sibling **R265**. **Supersedes R189** (the full Samsung Tizen client): owner decision 2026-09-18 — "we
+already have a Tizen app which has never been tested; these specs scratch that and this receiver app
+takes over instead." `ravilo-tizen` (2 405 lines, M1+M2 build-verified, never run on a TV) is **removed**
+by this phase (FR-R264-10); its AVPlay wrapper is the one thing carried over.
 
 **Numbering:** verified against `STATUS.md` and the spec directories 2026-09-18 — Ravilo taken through
 **R263**, admin through **235**. Admin pair: **236**.
@@ -91,6 +94,17 @@ the exact `sdb`/Tizen Studio steps and the Apps2Samsung path in `README`. webOS:
 bundle with `appinfo.json`, submitted to the LG Content Store as a follow-on once the Tizen one is on a
 real TV. No Play Store, no App Store.
 
+**FR-R264-10 · `ravilo-tizen` is removed, not kept beside this.** The module directory, its
+`include(":ravilo-tizen")` in `settings.gradle.kts`, the `COPY ravilo-tizen` lines in **both** Dockerfiles
+(the graph refuses to configure without an included module's directory — the R245 lesson), the
+`README.md` lines describing it, and the "same shape as :ravilo-tizen" comment in `ravilo-cast`'s build
+file all go in the same commit that adds `ravilo-screen`. The AVPlay wrapper (`TizenPlatform.kt`'s
+media calls, the R189 findings on `required_version`, privileges and the `.wgt` signing) is moved into
+`ravilo-screen`, not copied. R189's spec file and its `STATUS.md` row are **kept**, marked *Removed →
+R264* (the 162 → 217 precedent: the record of a built phase is worth more than a tidy directory). R190's
+"deliberate Tizen omission" note becomes moot and is left as history. CI drops the `ravilo-tizen`
+compile step and gains the `ravilo-screen` bundle + `.wgt` packaging.
+
 **FR-R264-9 · Strings.** The idle screen's two lines and the *no server* variant × en/da/fo; everything
 else reuses R245's `cast.*`/`srv.*` keys and the player's existing keys.
 
@@ -132,7 +146,8 @@ else reuses R245's `cast.*`/`srv.*` keys and the player's existing keys.
   custom-namespace message listener, the sender-connected/disconnected events, and `stop`. Everything
   else (ticket, HLS attach, tracks, status object, next-up, segments, the ten screens) is the core to
   share.
-- `ravilo-tizen`'s AVPlay wrapper (`TizenPlatform.kt`) is the media backend for the Tizen shell; the
-  webOS shell uses the plain `<video>` + hls.js path the Chromecast receiver already uses.
+- `ravilo-tizen`'s AVPlay wrapper (`TizenPlatform.kt`) becomes the media backend for the Tizen shell of
+  `ravilo-screen` (moved, then the old module deleted — FR-R264-10); the webOS shell uses the plain
+  `<video>` + hls.js path the Chromecast receiver already uses.
 - R252: send `platform=tizen-screen` and the app version so the Jellyfin dashboard names it *Ravilo on
   Samsung TV*.
