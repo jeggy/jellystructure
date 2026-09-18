@@ -136,14 +136,30 @@ class TvEventBus(private val scope: CoroutineScope) {
         }
     }
 
-    /** Jellyfin Play command from the dashboard cast menu / Home Assistant (→ R155). [kind] is resolved
-     *  server-side ("movie" | "series" | "episode") so the app never has to look it up. */
-    fun notifyPlayItem(userId: String, deviceId: String, jellyfinId: String, kind: String, title: String?, startPositionMs: Long) {
+    /**
+     * Must be called while holding [mutex]. Phase 236 (FR-236-4a, dev review item 3) — a shared screen's
+     * socket is registered under whichever of its own tokens it happened to open with, which may not be
+     * [userId] (a play for user B on a TV whose live socket opened as user A). Falls back to a
+     * device-level lookup across every user's sessions when the direct hit misses, so a screen paired by
+     * several people is reachable regardless of who is driving it right now — the route layer has
+     * already authorized [userId] against this [deviceId] (`listSessions` includes them) before any
+     * notify* call is made, so this fallback never reaches a device the caller wasn't already allowed to
+     * command.
+     */
+    private fun targetFor(userId: String, deviceId: String): DefaultWebSocketServerSession? =
+        sessions[userId]?.get(deviceId) ?: sessions.values.firstNotNullOfOrNull { it[deviceId] }
+
+    /** Jellyfin Play command from the dashboard cast menu / Home Assistant (→ R155), and Phase 236's
+     *  `POST /api/remote/play`. [kind] is resolved server-side ("movie" | "series" | "episode") so the
+     *  app never has to look it up. [sessionUserId] (FR-236-4) tells a screen which of its own tokens to
+     *  use for this play — absent (null) preserves today's single-session behaviour exactly. */
+    fun notifyPlayItem(userId: String, deviceId: String, jellyfinId: String, kind: String, title: String?, startPositionMs: Long, sessionUserId: String? = null) {
         scope.launch {
-            val target = mutex.withLock { sessions[userId]?.get(deviceId) } ?: return@launch
+            val target = mutex.withLock { targetFor(userId, deviceId) } ?: return@launch
             val msg = buildString {
                 append("""{"type":"play_item","jellyfin_id":"$jellyfinId","kind":"$kind","start_position_ms":$startPositionMs""")
                 if (title != null) append(""","title":${title.jsonEsc()}""")
+                if (sessionUserId != null) append(""","session_user_id":${sessionUserId.jsonEsc()}""")
                 append("}")
             }
             runCatching { target.send(Frame.Text(msg)) }
@@ -153,7 +169,7 @@ class TvEventBus(private val scope: CoroutineScope) {
     /** Jellyfin Playstate command (Stop/Pause/Unpause/Seek) from the dashboard/Home Assistant (→ R155). */
     fun notifyPlaystateCommand(userId: String, deviceId: String, command: String, seekPositionMs: Long?) {
         scope.launch {
-            val target = mutex.withLock { sessions[userId]?.get(deviceId) } ?: return@launch
+            val target = mutex.withLock { targetFor(userId, deviceId) } ?: return@launch
             val seek = seekPositionMs?.let { ""","seek_position_ms":$it""" } ?: ""
             val msg = """{"type":"playstate_command","command":${command.jsonEsc()}$seek}"""
             runCatching { target.send(Frame.Text(msg)) }
@@ -163,9 +179,58 @@ class TvEventBus(private val scope: CoroutineScope) {
     /** Phase 111 (FR B.3) — the `home` remote-control command: send the TV back to its home screen. */
     fun notifyNavigate(userId: String, deviceId: String, destination: String) {
         scope.launch {
-            val target = mutex.withLock { sessions[userId]?.get(deviceId) } ?: return@launch
+            val target = mutex.withLock { targetFor(userId, deviceId) } ?: return@launch
             val msg = """{"type":"navigate","destination":${destination.jsonEsc()}}"""
             runCatching { target.send(Frame.Text(msg)) }
+        }
+    }
+
+    /** Phase 236 (FR-236-3) — everything `POST /api/remote/command` accepts beyond the original
+     *  stop/pause/unpause/home quartet: seek/skip/next/previous/track selection/subtitle size/next-up/
+     *  segment skip/volume. [argsJson] is the command's own already-encoded field object (e.g.
+     *  `{"position_ms":30000}`), or `null` for a command with no arguments. */
+    fun notifyPlayerCommand(userId: String, deviceId: String, command: String, argsJson: String?) {
+        scope.launch {
+            val target = mutex.withLock { targetFor(userId, deviceId) } ?: return@launch
+            val args = argsJson?.let { ""","args":$it""" } ?: ""
+            val msg = """{"type":"player_command","command":${command.jsonEsc()}$args}"""
+            runCatching { target.send(Frame.Text(msg)) }
+        }
+    }
+
+    // ── Phase 236 (FR-236-5) — device-status subscriptions, for the phone's remote and API callers ────
+
+    // deviceId -> subscribed sessions. A session may subscribe to several devices (an API caller
+    // watching its whole fleet); a device may have several subscribers (two phones paired to one TV).
+    // Deliberately a flat map, not keyed by user — a subscribe request is authorized once, at the route
+    // layer, against the caller's own device list before this is ever touched.
+    private val statusSubscribers = mutableMapOf<String, MutableSet<DefaultWebSocketServerSession>>()
+
+    suspend fun subscribeDeviceStatus(deviceId: String, session: DefaultWebSocketServerSession) = mutex.withLock {
+        statusSubscribers.getOrPut(deviceId) { mutableSetOf() }.add(session)
+    }
+
+    suspend fun unsubscribeDeviceStatus(deviceId: String, session: DefaultWebSocketServerSession) = mutex.withLock {
+        statusSubscribers[deviceId]?.remove(session)
+        if (statusSubscribers[deviceId]?.isEmpty() == true) statusSubscribers.remove(deviceId)
+    }
+
+    /** Called when [session] itself closes, so a socket that subscribed to several devices doesn't leak
+     *  a dangling reference in every one of them. */
+    suspend fun unsubscribeAllDeviceStatus(session: DefaultWebSocketServerSession) = mutex.withLock {
+        statusSubscribers.values.forEach { it.remove(session) }
+        statusSubscribers.entries.removeAll { it.value.isEmpty() }
+    }
+
+    /** Pushes `{"type":"device_status", device_id, status}` to every subscriber of [deviceId] — the
+     *  phone's own `/api/tv/events` socket (via `subscribe_device`) and any `/api/remote/events` caller
+     *  alike. [statusJson] is the caller's own already-serialized [dev.jellystructure.shared.tv.ScreenStatus]. */
+    fun notifyDeviceStatus(deviceId: String, statusJson: String) {
+        scope.launch {
+            val targets = mutex.withLock { statusSubscribers[deviceId]?.toList() ?: emptyList() }
+            if (targets.isEmpty()) return@launch
+            val msg = """{"type":"device_status","device_id":"$deviceId","status":$statusJson}"""
+            for (s in targets) runCatching { s.send(Frame.Text(msg)) }
         }
     }
 

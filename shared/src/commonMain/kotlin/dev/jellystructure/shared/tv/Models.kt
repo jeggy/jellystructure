@@ -939,6 +939,10 @@ data class RaviloConfig(
     // NO cast button — not a greyed one (R245 FR-R245-1). Same shape as [focusDetail]: one resolved
     // field, overwritten by RaviloConfigService on every read path before the config leaves the server.
     val cast: CastCapability? = null,
+    // Phase 236 (dev review item 9) — server-pushed like [cast], so R265's Cast-glyph sheet can draw
+    // itself without a request per Home. [ScreensCapability.paired] is this viewer's own device list,
+    // never the whole household's — a device token is per (device, user) throughout this codebase.
+    val screens: ScreensCapability? = null,
 ) {
     /** The skin actually rendered: the viewer's override when allowed, else the operator default. */
     fun effectiveSkin(): Skin = if (allowSkinOverride) (viewerSkinOverride ?: defaultSkin) else defaultSkin
@@ -1173,6 +1177,182 @@ data class CastRedeemRequest(
     val code: String,
     @SerialName("device_name") val deviceName: String? = null,
     @SerialName("receiver_id") val receiverId: String? = null,
+)
+
+// ─── Screens (Phase 236) — the backend drives a TV for a phone ────────────────
+//
+// The Chromecast receiver model (218 / R245) with Google removed from the middle: a receiver-only TV
+// app (R264) holds its own device identity and plays what the backend pushes; the phone (R265) lists its
+// TVs, starts a title, and drives it, entirely through the server. Everything here is shared between the
+// backend, the phone (Compose) and the receiver (Kotlin/JS) so the three cannot drift — the R245 lesson
+// (dev notes) where a receiver declared fields the backend never read.
+
+/** Phase 236 (dev review item 9) — server-pushed like [CastCapability], so the phone can draw the Cast
+ *  glyph without a request per Home. [paired] is scoped to the viewer THIS config was resolved for, not
+ *  the whole household — a device token is per (device, user) throughout this codebase. */
+@Serializable
+data class ScreensCapability(
+    val enabled: Boolean,
+    val paired: Boolean,
+)
+
+/** Phase 236 (FR-236-3) — one track the phone's picker (or an API caller) can select by index, same
+ *  shape the local player already uses (R180/R195). */
+@Serializable
+data class ScreenTrack(
+    val index: Int,
+    val label: String? = null,
+    val language: String? = null,
+    val forced: Boolean = false,
+    @SerialName("is_default") val isDefault: Boolean = false,
+)
+
+/**
+ * Phase 236 (FR-236-5, dev review item 6) — what a receiver posts to `POST /api/tv/playback/status` and
+ * what a subscriber (a phone's remote, an API caller) receives as `device_status`. Moved here from
+ * `ravilo-ui`'s `CastRemoteStatus` (dev review item 6): [subSize] is a string (a Char doesn't serialise
+ * cleanly), and `receiverId` is dropped — the route already carries the device id, so the field would
+ * just be the same value restated.
+ */
+@Serializable
+data class ScreenStatus(
+    @SerialName("item_id") val itemId: String? = null,
+    val title: String? = null,
+    val kicker: String? = null,
+    @SerialName("art_url") val artUrl: String? = null,
+    @SerialName("position_ms") val positionMs: Long = 0L,
+    @SerialName("duration_ms") val durationMs: Long = 0L,
+    val playing: Boolean = false,
+    val buffering: Boolean = false,
+    /** Media is loaded on the receiver (the mini bar and the remote have something to show). */
+    val loaded: Boolean = false,
+    /** The receiver reported the item finished (FR-R245-9 · Ended). */
+    val ended: Boolean = false,
+    @SerialName("has_next") val hasNext: Boolean = false,
+    @SerialName("next_up_secs") val nextUpSecs: Int? = null,
+    @SerialName("next_title") val nextTitle: String? = null,
+    /** Phase 182's 503 as the receiver saw it, with when it started waiting. */
+    @SerialName("busy_retry_after") val busyRetryAfter: Int? = null,
+    @SerialName("busy_since_ms") val busySinceMs: Long? = null,
+    @SerialName("no_server") val noServer: Boolean = false,
+    @SerialName("audio_tracks") val audioTracks: List<ScreenTrack> = emptyList(),
+    @SerialName("subtitle_tracks") val subtitleTracks: List<ScreenTrack> = emptyList(),
+    @SerialName("selected_audio") val selectedAudio: Int = 0,
+    @SerialName("selected_sub") val selectedSub: Int = -1,
+    @SerialName("sub_size") val subSize: String = "M",
+    /** FR-R245-19 — the receiver's stream is a server-side conversion, not the file itself. */
+    val transcoding: Boolean = false,
+    /** FR-236-4 — which of the receiver's own tokens this status describes; absent on a single-session
+     *  device (today's TVs and receivers, unchanged). */
+    @SerialName("session_user_id") val sessionUserId: String? = null,
+)
+
+/** Phase 236 (FR-236-1) — a device kind, not a name prefix; `cast`/`screen` behave alike except at the
+ *  two sites that still care which is which (218's session ceiling, the Jellyfin dashboard identity). */
+@Serializable
+enum class DeviceKind {
+    @SerialName("tv") TV,
+    @SerialName("phone") PHONE,
+    @SerialName("web") WEB,
+    @SerialName("cast") CAST,
+    @SerialName("screen") SCREEN,
+}
+
+/** The backend stores `kind` as the DB's raw TEXT column (`dev.jellystructure.auth.DeviceData.kind`);
+ *  this is the one place that string becomes the wire enum. Unknown/legacy values read as TV — the
+ *  historical default every row had before this phase. */
+fun deviceKindOf(raw: String): DeviceKind = when (raw) {
+    "phone" -> DeviceKind.PHONE
+    "web" -> DeviceKind.WEB
+    "cast" -> DeviceKind.CAST
+    "screen" -> DeviceKind.SCREEN
+    else -> DeviceKind.TV
+}
+
+/** Phase 236 (FR-236-3) — `GET /api/remote/devices`, extended in place (phase 111's original
+ *  [nowPlayingTitle] stays for compatibility; a caller that only ever read that field keeps working). */
+@Serializable
+data class RemoteDevice(
+    @SerialName("device_id") val deviceId: String,
+    val name: String,
+    val kind: DeviceKind,
+    val platform: String? = null,
+    /** Renamed from `connected` (FR-236-3) — kept as the same boolean a Home Assistant integration
+     *  written against phase 111 already reads under the old name via [connected]. */
+    val online: Boolean,
+    @SerialName("last_seen") val lastSeen: Long,
+    /** FR-236-6 — "on the same network as the caller"; the phone renders this as its first tier and
+     *  never computes it itself. */
+    val nearby: Boolean = false,
+    /** Household display names of every user paired to this device (FR-236-10, dev review item 8d). */
+    @SerialName("paired_users") val pairedUsers: List<String> = emptyList(),
+    @SerialName("now_playing_title") val nowPlayingTitle: String? = null,
+    @SerialName("now_playing") val nowPlaying: ScreenStatus? = null,
+) {
+    /** Phase 111 compatibility name — an existing Home Assistant `media_player` built against the
+     *  original shape reads `connected`, not `online`. */
+    val connected: Boolean get() = online
+}
+
+@Serializable
+data class RemotePlayRequest(
+    @SerialName("device_id") val deviceId: String,
+    @SerialName("jellyfin_item_id") val jellyfinItemId: String,
+    @SerialName("start_position_ms") val startPositionMs: Long = 0,
+)
+
+/** Phase 236 (FR-236-3) — every command `POST /api/remote/command` accepts. Only the fields a given
+ *  [command] uses are read; the rest are ignored (never validated as "must be absent"), so an API caller
+ *  can send one shape without a command-specific request type. */
+@Serializable
+data class RemoteCommandRequest(
+    @SerialName("device_id") val deviceId: String,
+    /** stop | pause | unpause | home | seek | skip | next | previous | set_audio | set_subtitle |
+     *  set_subtitle_size | cancel_next_up | skip_segment | set_volume | mute */
+    val command: String,
+    @SerialName("position_ms") val positionMs: Long? = null,
+    @SerialName("delta_ms") val deltaMs: Long? = null,
+    val index: Int? = null,
+    /** set_subtitle_size: S | M | L. */
+    val size: String? = null,
+    /** set_volume: 0–100. */
+    val volume: Int? = null,
+)
+
+/** Phase 236 (FR-236-2, dev review item 1) — `POST /api/tv/screen/code` mints this for an unpaired
+ *  receiver; open path, rate-limited like `/tv/login`. */
+@Serializable
+data class ScreenCodeRequest(
+    @SerialName("device_id") val deviceId: String,
+    @SerialName("device_name") val deviceName: String? = null,
+    val platform: String? = null,
+)
+
+@Serializable
+data class ScreenCodeResponse(
+    val code: String,
+    @SerialName("expires_at") val expiresAt: Long,
+    @SerialName("claim_secret") val claimSecret: String,
+)
+
+/** Phase 236 (FR-236-2) — `POST /api/remote/pair`, device token only (an API key has no Jellyfin user
+ *  token to copy onto the receiver's row, and is refused with 403). */
+@Serializable
+data class RemotePairRequest(val code: String)
+
+@Serializable
+data class RemotePairResponse(
+    @SerialName("device_id") val deviceId: String,
+    @SerialName("device_name") val deviceName: String,
+)
+
+/** Phase 236 (FR-236-2) — the receiver polls `POST /api/tv/screen/claim` with this; open path,
+ *  rate-limited. The secret never appears on screen (dev review item 1) — only the six-character code
+ *  does, and the code alone can't retrieve a token. */
+@Serializable
+data class ScreenClaimRequest(
+    val code: String,
+    @SerialName("claim_secret") val claimSecret: String,
 )
 
 // ─── Browse facets ────────────────────────────────────────────────────────────

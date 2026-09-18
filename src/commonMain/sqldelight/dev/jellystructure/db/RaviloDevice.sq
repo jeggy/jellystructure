@@ -39,12 +39,19 @@ CREATE TABLE ravilo_device (
     -- un-updated client); never a placeholder, and the Jellyfin header then carries no Version at all.
     app_version TEXT,
     platform TEXT,
+    -- Phase 236 (FR-236-1) — tv | phone | web | cast | screen. Migrated from the DEVICE_PREFIX name
+    -- check and R252's platform column (see 47.sqm's backfill); a Chromecast receiver and a Tizen/webOS
+    -- receiver both behave as 'screen' everywhere except the two sites that still care which one (218's
+    -- session ceiling, the Jellyfin dashboard identity string).
+    kind TEXT NOT NULL DEFAULT 'tv',
+    -- Phase 236 (FR-236-6) — stamped on an events-socket open and a playback/status post.
+    last_public_address TEXT,
     PRIMARY KEY (device_id, jellyfin_user_id)
 );
 
 insertDevice:
-INSERT OR REPLACE INTO ravilo_device(device_id, jellyfin_user_id, jellyfin_username, jellyfin_user_token, is_admin, is_kids, device_token, display_name, created_at, last_seen, allowed_libraries, allowed_tags, blocked_tags, app_version, platform)
-VALUES (:device_id, :jellyfin_user_id, :jellyfin_username, :jellyfin_user_token, :is_admin, :is_kids, :device_token, :display_name, :created_at, :last_seen, :allowed_libraries, :allowed_tags, :blocked_tags, :app_version, :platform);
+INSERT OR REPLACE INTO ravilo_device(device_id, jellyfin_user_id, jellyfin_username, jellyfin_user_token, is_admin, is_kids, device_token, display_name, created_at, last_seen, allowed_libraries, allowed_tags, blocked_tags, app_version, platform, kind)
+VALUES (:device_id, :jellyfin_user_id, :jellyfin_username, :jellyfin_user_token, :is_admin, :is_kids, :device_token, :display_name, :created_at, :last_seen, :allowed_libraries, :allowed_tags, :blocked_tags, :app_version, :platform, :kind);
 
 -- Phase 224 (FR-224-2) — one write per change: RaviloDeviceService compares the request's headers with
 -- the cached row and calls this only when the pair differs.
@@ -70,6 +77,11 @@ SELECT * FROM ravilo_device ORDER BY jellyfin_user_id, last_seen DESC;
 
 updateLastSeen:
 UPDATE ravilo_device SET last_seen = :last_seen WHERE device_token = :device_token;
+
+-- Phase 236 (FR-236-6) — stamped on an events-socket open and a playback/status post, not every
+-- request (see RaviloDeviceService.recordAddress's doc for why).
+updatePublicAddress:
+UPDATE ravilo_device SET last_public_address = :last_public_address WHERE device_id = :device_id AND jellyfin_user_id = :jellyfin_user_id;
 
 deleteByToken:
 DELETE FROM ravilo_device WHERE device_token = :device_token;

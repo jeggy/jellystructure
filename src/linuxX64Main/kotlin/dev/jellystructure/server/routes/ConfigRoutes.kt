@@ -164,7 +164,7 @@ fun Route.configureConfigRoutes(
     // Phase 218 (FR-218-7) — `verified` is true only once a real cast has enrolled a receiver.
     get("/config/chromecast/status") {
         val svc = castService ?: return@get call.respond(HttpStatusCode.NotFound)
-        call.respond(svc.status(dev.jellystructure.tv.activePlaybackDeviceNames()))
+        call.respond(svc.status(dev.jellystructure.tv.activePlaybackDevices()))
     }
     get("/config") {
         call.respond(ConfigResponse(maskSecrets(configStore.current), effectiveScanThreads))

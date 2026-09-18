@@ -160,6 +160,8 @@ fun startServer(
     // Phase 218 — the cast service (hand-off, ceiling, reachability, status) and the receiver bundle dir.
     castService: dev.jellystructure.tv.CastService? = null,
     castDir: String? = null,
+    // Phase 236 (FR-236-2) — the receiver-shows-a-code pairing flow.
+    screenPairingService: dev.jellystructure.tv.ScreenPairingService? = null,
 ): suspend () -> Unit {
     // Fire-and-forget work (scans, NFO/artwork pushes, image fetches) runs as appScope.launch{}.
     // On Kotlin/Native an exception escaping a launched coroutine reaches the global handler and
@@ -555,7 +557,7 @@ fun startServer(
                 metadataRoutes(mediaStore, jsTagStore, logoDownloader, seedingSnapshot, configStore)
                 trackRoutes(mediaStore, configStore, jellyfinClient, mediaHistory, seedingGuard, arrRescan, appScope, broadcaster, mediaJobQueue)
                 jobsRoutes(mediaJobQueue)
-                remoteRoutes(deviceService, tvEventBus, mediaStore)
+                remoteRoutes(deviceService, tvEventBus, mediaStore, apiKeyStore, screenPairingService)
                 apiKeyManagementRoutes(apiKeyStore)
                 webhookRoutes(configStore, jellyfinClient, realtimeIngest, appScope, dirtyItemStore)
                 acquisitionService?.let { acquisitionRoutes(it, requestLifecycleService) }
@@ -566,7 +568,7 @@ fun startServer(
                 // R171 — the TV Request tab's Seerr-backed discover/search/request service; null (tab
                 // reports unavailable) until a SeerrClient is wired, exactly like the other optional *arr services above.
                 val seerrDiscoverService = seerrClient?.let { dev.jellystructure.seerr.SeerrDiscoverService(configStore, it, raviloConfigService, mediaStore, requestLanguageService, requestIntentStore, acquisitionService) }
-                tvRoutes(deviceService, raviloConfigService, homeFeedService, browseService, detailService, playbackService, sessionService, jellyfinClient, configStore, channelLogoStore, imageProxyService, logoDownloader, castService, tvEventBus, upcomingService, seerrDiscoverService, mediaStore, loginRateLimiter, playbackQoeStore)
+                tvRoutes(deviceService, raviloConfigService, homeFeedService, browseService, detailService, playbackService, sessionService, jellyfinClient, configStore, channelLogoStore, imageProxyService, logoDownloader, castService, tvEventBus, upcomingService, seerrDiscoverService, mediaStore, loginRateLimiter, playbackQoeStore, screenPairingService)
                 liveTvRoutes(liveTvService)
             }
 
@@ -623,13 +625,25 @@ fun startServer(
                     close(CloseReason(CloseReason.Codes.TRY_AGAIN_LATER, "TV event session limit reached"))
                     return@webSocket
                 }
+                // Phase 236 (FR-236-6) — one of the two moments a device's "on this network" address is
+                // refreshed (see RaviloDeviceService.recordAddress's doc for why not every request).
+                val eventsAddress = call.request.headers["X-Forwarded-For"]?.substringBefore(',')?.trim()?.takeIf { it.isNotBlank() }
+                    ?: call.request.local.remoteHost
+                deviceService.recordAddress(device.deviceId, device.jellyfinUserId, eventsAddress)
                 // Phase 110 — while this TV is connected, bridge one outbound session to Jellyfin for
                 // it (dashboard messages, remote control). Best-effort: never let a bridge problem take
                 // down the TV's own event socket.
                 runCatching { sessionBridge.connect(device) }
+                // Phase 236 (FR-236-3, open question 1) — a Ravilo client subscribes to another device's
+                // status on this same authenticated, already-reconnecting socket rather than opening a
+                // second one; scoped to this device's own user, exactly like every other event on it.
+                val subscriber = dev.jellystructure.auth.RemoteCaller(device.jellyfinUserId, deviceId = device.deviceId, viaApiKey = false)
                 try {
                     for (frame in incoming) {
                         if (frame is Frame.Close) break
+                        if (frame is Frame.Text) {
+                            dev.jellystructure.server.routes.handleSubscribeMessage(frame.readText(), subscriber, deviceService, tvEventBus, this)
+                        }
                     }
                 } catch (e: CancellationException) {
                     throw e
@@ -639,6 +653,7 @@ fun startServer(
                     Logger.warn("WS /api/tv/events device connection dropped: ${e.message}", "tv")
                 } finally {
                     tvEventBus.unregister(device.jellyfinUserId, device.deviceId, this)
+                    tvEventBus.unsubscribeAllDeviceStatus(this)
                     runCatching { sessionBridge.disconnect(device.deviceId) }
                     // Phase 110 (FR B.2) — a TV disconnecting clears its Now Playing immediately rather
                     // than waiting out the 90s heartbeat timeout.

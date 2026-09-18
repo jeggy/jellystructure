@@ -97,9 +97,9 @@ class CastServiceTest {
         val (r1, _) = assertNotNull(cast.redeem(cast.mint(p).code, "One", null))
         val (r2, _) = assertNotNull(cast.redeem(cast.mint(p).code, "Two", null))
         cast.checkCeiling(r1, emptyList())                       // nothing playing ⇒ fine
-        cast.checkCeiling(r1, listOf(r1.displayName))            // its own session never counts against it
-        val e = assertFailsWith<CastCeilingException> { cast.checkCeiling(r2, listOf(r1.displayName)) }
+        cast.checkCeiling(r1, listOf(r1))                        // its own session never counts against it
+        val e = assertFailsWith<CastCeilingException> { cast.checkCeiling(r2, listOf(r1)) }
         assertEquals(30, e.retryAfterSeconds)
-        cast.checkCeiling(p, listOf(r1.displayName, r2.displayName))   // a phone/TV is never gated
+        cast.checkCeiling(p, listOf(r1, r2))   // a phone/TV is never gated
     }
 }

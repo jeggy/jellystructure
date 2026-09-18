@@ -202,6 +202,20 @@ private data class AdminConfigEnvelope(
     val isGlobal: Boolean,
 )
 
+// Phase 111 (FR D.1) — the Ravilo config editor's Pair-a-TV device list. Deliberately its own, smaller
+// shape rather than the Phase 236 dev.jellystructure.shared.tv.RemoteDevice this route predates: this
+// surface is cookie-gated admin UI, not the /api/remote/ API, and has no caller to compute "nearby"
+// against or reason to carry a full ScreenStatus.
+// (Line comments on purpose — see AuthPlugin.kt's RemoteCaller doc for why.)
+@Serializable
+private data class AdminDeviceSummary(
+    @SerialName("device_id") val deviceId: String,
+    val name: String,
+    val connected: Boolean,
+    @SerialName("last_seen") val lastSeen: Long,
+    @SerialName("now_playing") val nowPlaying: String? = null,
+)
+
 @Serializable
 private data class TvDiscoverRequest(
     val mediaKind: String? = null,   // "movie" | "tv"
@@ -237,6 +251,8 @@ fun Route.tvRoutes(
     loginRateLimiter: dev.jellystructure.auth.LoginRateLimiter,
     // Phase 177 §FR-177-5 — per-device recent-quality summary for the Users & devices overview.
     playbackQoeStore: dev.jellystructure.tv.PlaybackQoeStore,
+    // Phase 236 (FR-236-2) — the receiver-shows-a-code pairing flow (screen/code, screen/claim).
+    screenPairingService: dev.jellystructure.tv.ScreenPairingService? = null,
 ) {
     // Phase 141 — proxied username/password login, replacing the code+poll+admin-approve pairing flow.
     // No device token exists yet (OPEN_API_PATHS); jellystructure authenticates the credentials against
@@ -598,6 +614,65 @@ fun Route.tvRoutes(
         ))
     }
 
+    // ── Phase 236 (FR-236-2): the receiver-shows-a-code pairing flow ───────────
+    // An unpaired receiver has no origin to reach a server through (it's a sideloaded .wgt, not a
+    // browser tab) and no credential yet — it mints a code, shows it, and polls for the phone to have
+    // typed it in. Both routes are pre-auth (AuthPlugin OPEN_API_PATHS) and rate-limited exactly like
+    // /tv/login and /tv/cast/redeem above — a code is guessable in principle, and screen/claim is the
+    // second unauthenticated path (after cast/redeem) that hands back a device token.
+    post("/tv/screen/code") {
+        val svc = screenPairingService ?: return@post call.respond(HttpStatusCode.NotFound, mapOf("error" to "screens are not available"))
+        val clientKey = call.request.headers["X-Forwarded-For"]?.substringBefore(',')?.trim()?.takeIf { it.isNotBlank() }
+            ?: call.request.local.remoteHost
+        if (!loginRateLimiter.tryAcquire(clientKey)) {
+            call.response.headers.append(HttpHeaders.RetryAfter, "60")
+            return@post call.respond(HttpStatusCode.TooManyRequests, mapOf("error" to "Too many attempts — try again in a minute"))
+        }
+        val req = runCatching { call.receive<dev.jellystructure.shared.tv.ScreenCodeRequest>() }.getOrElse {
+            return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Invalid request"))
+        }
+        if (req.deviceId.isBlank()) return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "device_id is required"))
+        val (code, expiresAt, claimSecret) = svc.mintCode(req.deviceId, req.deviceName, req.platform)
+        call.respond(dev.jellystructure.shared.tv.ScreenCodeResponse(
+            code = code, expiresAt = expiresAt, claimSecret = claimSecret,
+        ))
+    }
+    post("/tv/screen/claim") {
+        val svc = screenPairingService ?: return@post call.respond(HttpStatusCode.NotFound, mapOf("error" to "screens are not available"))
+        val clientKey = call.request.headers["X-Forwarded-For"]?.substringBefore(',')?.trim()?.takeIf { it.isNotBlank() }
+            ?: call.request.local.remoteHost
+        if (!loginRateLimiter.tryAcquire(clientKey)) {
+            call.response.headers.append(HttpHeaders.RetryAfter, "60")
+            return@post call.respond(HttpStatusCode.TooManyRequests, mapOf("error" to "Too many attempts — try again in a minute"))
+        }
+        val req = runCatching { call.receive<dev.jellystructure.shared.tv.ScreenClaimRequest>() }.getOrElse {
+            return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Invalid request"))
+        }
+        when (val result = svc.poll(req.code, req.claimSecret)) {
+            null -> call.respond(HttpStatusCode.Unauthorized, mapOf("error" to "That code is not valid any more"))
+            is dev.jellystructure.tv.ScreenPairingService.PollResult.Waiting -> call.respond(HttpStatusCode.Accepted, mapOf("ok" to true))
+            is dev.jellystructure.tv.ScreenPairingService.PollResult.Claimed -> call.respond(result.result)
+        }
+    }
+
+    // ── Phase 236 (FR-236-5): status reported by a screen, fanned out to subscribers ───────────────
+    post("/tv/playback/status") {
+        val device = call.attributes[DeviceKey]
+        val status = runCatching { call.receive<dev.jellystructure.shared.tv.ScreenStatus>() }.getOrElse {
+            return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Invalid status"))
+        }
+        // Phase 236 (FR-236-6) — the other of the two moments a device's address is refreshed.
+        val statusAddress = call.request.headers["X-Forwarded-For"]?.substringBefore(',')?.trim()?.takeIf { it.isNotBlank() }
+            ?: call.request.local.remoteHost
+        deviceService.recordAddress(device.deviceId, device.jellyfinUserId, statusAddress)
+        dev.jellystructure.tv.screenStatusTracker.update(device.deviceId, status)
+        tvEventBus?.notifyDeviceStatus(
+            device.deviceId,
+            kotlinx.serialization.json.Json.encodeToString(dev.jellystructure.shared.tv.ScreenStatus.serializer(), status),
+        )
+        call.respond(HttpStatusCode.OK, mapOf("ok" to true))
+    }
+
     // ── Playback ─────────────────────────────────────────────────────────────
     post("/tv/playback/start") {
         val device = call.attributes[DeviceKey]
@@ -786,7 +861,7 @@ fun Route.tvRoutes(
         val userId = call.request.queryParameters["userId"]
             ?: return@get call.respond(HttpStatusCode.BadRequest, mapOf("error" to "userId is required"))
         val devices = deviceService.listByUser(userId).map { d ->
-            RemoteDevice(
+            AdminDeviceSummary(
                 deviceId = d.deviceId,
                 name = d.displayName,
                 connected = tvEventBus?.isConnected(d.deviceId) ?: false,

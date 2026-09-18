@@ -42,6 +42,13 @@ data class DeviceData(
     // never reported; the Jellyfin header then carries no Version, and the admin row says so.
     val appVersion: String? = null,
     val platform: String? = null,
+    // Phase 236 (FR-236-1): tv | phone | web | cast | screen. Defaults to "tv" for every construction
+    // site that predates this phase (tests, and any code not yet updated) — the same historical default
+    // 47.sqm backfills a pre-R252 row to.
+    val kind: String = "tv",
+    // Phase 236 (FR-236-6): stamped on an events-socket open and a playback/status post. Null until
+    // either has happened since this column existed.
+    val lastPublicAddress: String? = null,
 )
 
 @Serializable

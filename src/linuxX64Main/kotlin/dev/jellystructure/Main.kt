@@ -208,6 +208,8 @@ fun main() = runBlocking {
     val requestIntentStore = dev.jellystructure.seerr.RequestIntentStore(db)
     // Phase 218 (FR-218-3) — cast capability rides every RaviloConfig read, resolved from config.toml.
     val castService = dev.jellystructure.tv.CastService(db, configStore, raviloDeviceService)
+    // Phase 236 (FR-236-2) — the receiver-shows-a-code pairing flow (screen/code, remote/pair, screen/claim).
+    val screenPairingService = dev.jellystructure.tv.ScreenPairingService(db, raviloDeviceService)
     val raviloConfigService = RaviloConfigService(db, tvEventBus, requestLanguageService, castCapability = { castService.capability() })
     raviloConfigService.migrateAllLegacyBehaviourFields()  // R162: one-time, idempotent
     val homeFeedService = HomeFeedService(mediaStore, raviloConfigService, jellyfinClient, configStore, tvEventBus, artworkDownloader)
@@ -236,6 +238,13 @@ fun main() = runBlocking {
     // R248 (FR-R248-2) — once a queued stop has landed in Jellyfin, fold it into the Home feed and tell
     // the user's devices (`home_changed`); the stop route itself no longer invalidates (see TvRoutes).
     playbackService.onStopLanded = { device, stoppedId -> homeFeedService.invalidatePlaystate(device, stoppedId) }
+    // Phase 236 (FR-236-8) — a reaped device's status is cleared and the "gone" snapshot fanned out to
+    // whoever is watching it (a phone's remote, an API subscriber).
+    playbackService.onDeviceReaped = { deviceId ->
+        dev.jellystructure.tv.screenStatusTracker.clear(deviceId)?.let { finalStatus ->
+            tvEventBus.notifyDeviceStatus(deviceId, kotlinx.serialization.json.Json.encodeToString(dev.jellystructure.shared.tv.ScreenStatus.serializer(), finalStatus))
+        }
+    }
     val mediaHistory = MediaHistory(db)
     val imageProxyService = dev.jellystructure.tv.RaviloArtworkService(dataDir, configStore, mediaStore, artworkDownloader)
     val channelLogoStore = dev.jellystructure.tv.ChannelLogoStore(dataDir)
@@ -314,6 +323,7 @@ fun main() = runBlocking {
         frontendDir, raviloWebDir = raviloWebDir, port = port, scanDispatcher = scanDispatcher, effectiveScanThreads = effectiveScanThreads, jsTagStore = jsTagStore, seedingGuard = seedingGuard, seedingSnapshot = seedingSnapshot, logoDownloader = logoDownloader, qbClient = qbClient, arrClient = arrClient, arrRescan = arrRescan, sonarrEnrich = sonarrEnrich, acquisitionService = acquisitionService, seerrClient = seerrClient, bazarrClient = bazarrClient, tvEventBus = tvEventBus, imageProxyService = imageProxyService, mediaJobQueue = mediaJobQueue, sessionBridge = sessionBridge, apiKeyStore = apiKeyStore, realtimeIngest = realtimeIngest, dirtyItemStore = dirtyItemStore, fdWatchdog = fdWatchdog, imdbClient = imdbClient, upcomingService = upcomingService, requestLanguageService = requestLanguageService, requestIntentStore = requestIntentStore, requestLifecycleService = requestLifecycleService, liveTvService = liveTvService, fingerprintService = fingerprintService, mediaSegmentStore = mediaSegmentStore,
         playbackQoeStore = playbackQoeStore,
         castService = castService, castDir = castDir,
+        screenPairingService = screenPairingService,
     )
 
     // R149: populate Sonarr next-airing data for all TV shows on startup (background, non-blocking).

@@ -1,0 +1,31 @@
+-- Phase 236 (FR-236-1) — a screen is a device kind, not a name prefix. See RaviloDevice.sq; this
+-- migration must stay byte-for-byte in sync with its CREATE TABLE (the SQLDelight-migration rule).
+-- Backfill order matters: the Chromecast name-prefix check runs first (dev review item 4 — a receiver's
+-- platform header is not guaranteed to carry a useful value), then platform (R252's 'tv'/'phone'/'web' —
+-- the enum's values for those three kinds are the exact same strings), else the DEFAULT 'tv' from before
+-- R252 existed.
+ALTER TABLE ravilo_device ADD COLUMN kind TEXT NOT NULL DEFAULT 'tv';
+UPDATE ravilo_device SET kind = 'cast' WHERE display_name LIKE 'Chromecast via Ravilo%';
+UPDATE ravilo_device SET kind = platform WHERE platform IN ('tv', 'phone', 'web') AND kind != 'cast';
+
+-- Phase 236 (FR-236-6) — stamped on an events-socket open and a playback/status post; NULL until either
+-- has happened since this column existed. "On this network" is judged from this, never from anything the
+-- client claims about itself.
+ALTER TABLE ravilo_device ADD COLUMN last_public_address TEXT;
+
+-- Phase 236 (FR-236-2, dev review item 1) — the receiver-shows-a-code pairing flow: `screen/code` mints
+-- a row here (unclaimed), `remote/pair` claims it (the phone's session becomes the row's identity, a real
+-- ravilo_device row is created, and its token is stashed here for the TV to collect), `screen/claim`
+-- polls and deletes it once delivered (single-use). Swept like cast_handoff. See ScreenPairing.sq; this
+-- migration must stay byte-for-byte in sync with its CREATE TABLE.
+CREATE TABLE screen_pairing (
+    code TEXT NOT NULL PRIMARY KEY,
+    device_id TEXT NOT NULL,
+    device_name TEXT,
+    platform TEXT,
+    claim_secret_hash TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    expires_at INTEGER NOT NULL,
+    claimed_by_user TEXT,
+    claimed_token TEXT
+);
