@@ -1,6 +1,6 @@
 # Phase 214 — stopping background work must actually stop it, and say what it cannot stop
 
-**Status:** ✓ Built — see `STATUS.md`, which is authoritative. (Header as originally written: Planned)
+**Status:** Planned
 **Authored:** 2026-09-15 (design-authored with the owner, not dev-reviewed)
 **Depends on:** Phase 182 (`cancelRun` actually cancels), Phase 164 (per-lane job cancel),
 Phase 178 (defer while playing)

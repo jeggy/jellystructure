@@ -1,0 +1,1012 @@
+<!doctype html>
+<html lang="en" data-skin="aurora">
+<head>
+<meta charset="utf-8">
+<title>Ravilo — Play on a TV: directions (R265 · R264 · 236)</title>
+<meta name="design_doc_mode" content="canvas">
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="mobile-directions.css">
+<link rel="stylesheet" href="../app/wf.css">
+<style>
+/* ============================================================
+   Page-local only. Everything device-shaped (.dv/.pnch/.isl/.hind),
+   every sheet primitive (.scrim/.sheet/.srow), the cast glyph
+   (.castic), the connecting bar (.cbar), the mini bar (.mini), the
+   remote (.rem) and the 1920×1080 receiver (.shot/.tvs/.tvov/.tvnup)
+   come from mobile-directions.css, drawn 2026-09-16. New here:
+   the three-tier sheet's own furniture (pt-*), the pairing code on
+   the TV, the TV's picker panel, and the admin screens table.
+   ============================================================ */
+
+/* a compact stand-in Home, so every sheet is judged over real content.
+   NOTE: mobile-directions.css positions .sbar absolutely (it owns the top
+   inset in the built frames); here the status bar is a flow row above the
+   app bar, so it must be reset to static or it lands on top of .abar. */
+.scn{position:absolute;inset:0;background:var(--bg);display:flex;flex-direction:column;overflow:hidden}
+.sbar{position:static;display:flex;align-items:center;justify-content:space-between;padding:14px 18px 4px;height:auto;font-size:13px;color:var(--ink-soft);font-variant-numeric:tabular-nums;flex:none}
+.ios .sbar{padding-top:26px;height:auto}
+.abar{display:flex;align-items:center;gap:11px;padding:6px 18px 10px}
+.abar .mk{width:22px;height:22px;flex:none;border-radius:6px;background:var(--grad)}
+.abar .wm{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:21px;letter-spacing:-.02em;color:var(--ink)}
+.abar .sp{flex:1}
+.abar .ib{width:40px;height:40px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.07);color:var(--ink)}
+.abar .ib.lit{background:var(--chip);color:var(--accent-2)}
+.noir .abar .ib.lit{color:var(--ink)}
+.abar .ib svg{width:19px;height:19px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round}
+.abar .av{width:34px;height:34px;border-radius:50%;background:var(--grad);display:flex;align-items:center;justify-content:center;font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:13px;color:#fff}
+.body{flex:1;overflow:hidden}
+.hero{margin:0 18px;height:190px;border-radius:16px;position:relative;overflow:hidden;background:linear-gradient(150deg,#2b3350,#161b2c 60%,#101420)}
+.hero img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:.9}
+.hero .sc{position:absolute;inset:0;background:linear-gradient(0deg,rgba(10,12,19,.95) 4%,rgba(10,12,19,.2) 55%,transparent)}
+.hero .bd{position:absolute;left:14px;right:14px;bottom:13px}
+.hero .k{font-size:11px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--accent-2)}
+.hero .t{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:24px;letter-spacing:-.5px;margin-top:4px;color:var(--ink)}
+.rw{margin-top:17px}
+.rw h4{margin:0 0 9px;padding:0 18px;font-family:'Space Grotesk',sans-serif;font-size:15px;font-weight:700;color:var(--ink)}
+.strip{display:flex;gap:10px;padding:0 18px}
+.pst{width:96px;flex:none}
+.pst .a{height:142px;border-radius:11px;display:flex;align-items:center;justify-content:center;font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:18px;color:#fff;letter-spacing:-.5px;text-align:center;padding:0 6px}
+.pst .n{font-size:11.5px;font-weight:600;margin-top:6px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* the bottom bar as built 2026-09-18 (R267 · direction B · pill) — three items */
+.bn{position:absolute;left:0;right:0;bottom:0;z-index:30;background:var(--bg-2);border-top:1px solid var(--line);padding-top:9px}
+.bn .row{display:flex;align-items:flex-end}
+.bn .it{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;min-height:56px;color:var(--ink-dim)}
+.bn .it .p{width:62px;height:32px;border-radius:17px;display:flex;align-items:center;justify-content:center}
+.bn .it svg{width:23px;height:23px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.bn .it b{font-size:11.5px;font-weight:600}
+.bn .it.on{color:var(--ink)}
+.bn .it.on .p{background:var(--grad)}
+.bn .it.on .p svg{stroke:#fff}
+.bnsafe{height:22px}
+.ios .bnsafe{height:30px}
+
+/* ---- the three-tier sheet ---------------------------------------------------
+   One row shape for every TV (46 px target, name + one line of state). The
+   tiers are labels, not tabs: a section that is empty is ABSENT, and the
+   phone never scans, so there is no spinner anywhere in this sheet. */
+.pt-sec{padding:14px 20px 6px;font-size:12px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-dim)}
+.srow.pt{border-top:1px solid var(--line);min-height:62px}
+.srow.pt .tvic{width:30px;height:30px;flex:none;color:var(--ink-soft);display:flex;align-items:center;justify-content:center}
+.srow.pt .tvic svg{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+.srow.pt .tvic .castic{width:20px;height:18px}
+.srow.pt .tx{display:flex;flex-direction:column;min-width:0;flex:1}
+.srow.pt .nm{font-size:15.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.srow.pt .st{font-size:13px;color:var(--ink-soft);margin-top:3px}
+.srow.pt .st.play{color:var(--accent-2)}
+.noir .srow.pt .st.play{color:var(--ink-soft)}
+/* NOT .dim: mobile-directions.css already owns that name as a full-frame
+   overlay (position:absolute;inset:0), which would lay the row over the sheet. */
+.srow.pt.pt-off{opacity:.46}
+.srow.pt.pt-off .st{color:var(--ink-dim)}
+.srow.pt .go{margin-left:auto;color:var(--ink-dim);display:flex;align-items:center}
+.srow.pt .go svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round}
+.pt-col{display:flex;align-items:center;gap:12px;min-height:56px;padding:9px 20px;border-top:1px solid var(--line);font-size:14.5px;font-weight:600;color:var(--ink)}
+.pt-col .ct{margin-left:auto;color:var(--ink-dim);display:flex}
+.pt-col .ct svg{width:19px;height:19px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round}
+.pt-col .n{color:var(--ink-dim);font-weight:500}
+/* AirPlay sits one step below the TV rows: a heavier hairline and quieter ink,
+   so it reads supported-with-caveats and never as the recommended route. */
+.pt-air{border-top:1px solid var(--line-2);padding:12px 20px 10px;display:flex;gap:13px;align-items:flex-start;min-height:62px}
+.pt-air .ap{width:30px;height:30px;flex:none;color:var(--ink-dim);display:flex;align-items:center;justify-content:center}
+.pt-air .ap svg{width:23px;height:23px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+.pt-air .tx{display:flex;flex-direction:column;min-width:0}
+.pt-air .nm{display:block;font-size:15px;font-weight:600;color:var(--ink-soft)}
+.pt-air .note{display:block;font-size:13px;line-height:1.45;color:var(--ink-dim);margin-top:4px;max-width:268px}
+.pt-air.foot{min-height:46px;align-items:center;padding:12px 20px}
+.pt-air.foot .nm{font-size:13.5px;font-weight:500;color:var(--ink-dim)}
+.pt-add{display:flex;align-items:center;gap:13px;min-height:56px;padding:9px 20px;border-top:1px solid var(--line);font-size:14.5px;font-weight:600;color:var(--accent-2)}
+.noir .pt-add{color:var(--ink)}
+.pt-add svg{width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:2.1;stroke-linecap:round}
+.pt-new{box-shadow:inset 0 0 0 1px var(--accent-2);border-radius:12px}
+.noir .pt-new{box-shadow:inset 0 0 0 1px var(--ink-soft)}
+
+/* code entry + its keyboard */
+.pt-code{padding:10px 20px 4px}
+.pt-code .bx{display:flex;gap:9px}
+.pt-code .bx i{flex:1;height:60px;border-radius:12px;background:rgba(255,255,255,.055);border:1px solid var(--line-2);display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:26px;font-weight:700;font-style:normal;color:var(--ink);font-variant-numeric:tabular-nums}
+.pt-code .bx i.e{color:var(--ink-dim);border-style:dashed}
+.pt-code .bx i.car{border-color:var(--accent-2)}
+.pt-code .hint{font-size:13px;color:var(--ink-soft);margin-top:12px}
+.pt-code .err{font-size:13px;color:#ff9b8a;margin-top:12px;display:flex;align-items:center;gap:7px}
+.pt-code .err svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2.2}
+.pt-kb{margin-top:14px;background:rgba(255,255,255,.04);padding:8px 5px 12px;border-top:1px solid var(--line)}
+.pt-kb .kr{display:flex;gap:5px;justify-content:center;margin-bottom:6px}
+.pt-kb .kr b{flex:1;max-width:37px;height:42px;border-radius:7px;background:var(--card-2);display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:500;color:var(--ink)}
+.pt-kb .kr b.w{max-width:none;flex:2.4;font-size:13px;color:var(--ink-soft)}
+
+/* the TV's pairing code (drawn in 1920 space) */
+.pt-tvcode{position:absolute;right:96px;bottom:84px;text-align:right}
+.pt-tvcode .g{font-family:'JetBrains Mono',monospace;font-size:96px;font-weight:700;letter-spacing:.1em;color:var(--ink);font-variant-numeric:tabular-nums;line-height:1}
+.pt-tvcode .l{font-size:30px;color:var(--ink-soft);margin-top:16px}
+.pt-tvcode .l.warn{color:#ffb4a2}
+.pt-tvname{position:absolute;left:96px;bottom:84px;font-size:32px;color:var(--ink-soft)}
+.pt-tvname i{display:block;font-style:normal;font-size:26px;color:var(--ink-dim);margin-top:10px;font-family:'JetBrains Mono',monospace}
+
+/* ---- §C0 · the server, before anything else (the gap R264 does not cover) ----
+   The Chromecast receiver is SERVED BY the backend, so its origin is the server
+   and it never asks. A sideloaded .wgt is a local file with no origin: it cannot
+   mint a code, enrol or reach anything until someone tells it where Ravilo is.
+   This is R175's login-screen keyboard and R225/R226's ServerSetupScreen, reused. */
+.pt-srv{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:0 240px}
+.pt-srv .mk{width:96px;height:96px;border-radius:26px;background:var(--grad);margin-bottom:34px}
+.pt-srv h3{margin:0;font-family:'Space Grotesk',sans-serif;font-size:60px;font-weight:700;letter-spacing:-1.4px}
+.pt-srv .hl{margin-top:16px;font-size:30px;color:var(--ink-soft);text-align:center}
+.pt-srv .fld{margin-top:40px;width:1100px;height:112px;border-radius:18px;background:rgba(255,255,255,.06);border:2px solid var(--line-2);display:flex;align-items:center;padding:0 30px;gap:14px}
+.pt-srv .fld.foc{border-color:var(--ink);background:rgba(255,255,255,.1)}
+.pt-srv .fld .v{font-family:'JetBrains Mono',monospace;font-size:40px;color:var(--ink)}
+.pt-srv .fld .ph{font-family:'JetBrains Mono',monospace;font-size:40px;color:var(--ink-dim)}
+.pt-srv .fld .car{width:3px;height:48px;background:var(--accent-2)}
+.pt-srv .fld .sch{margin-left:auto;font-size:24px;color:var(--ink-dim);font-family:'JetBrains Mono',monospace}
+.pt-srv .msg{margin-top:26px;font-size:28px;color:var(--ink-soft);display:flex;align-items:center;gap:16px;min-height:34px}
+.pt-srv .msg.bad{color:#ffb4a2}
+.pt-srv .msg .sp{width:26px;height:26px;border-radius:50%;border:3px solid rgba(255,255,255,.2);border-top-color:var(--accent-2);flex:none}
+.pt-kbtv{margin-top:34px;display:grid;gap:12px}
+.pt-kbtv .kr{display:flex;gap:12px;justify-content:center}
+.pt-kbtv .kr b{width:82px;height:82px;border-radius:14px;background:rgba(255,255,255,.07);display:flex;align-items:center;justify-content:center;font-size:32px;font-weight:600;color:var(--ink-soft)}
+.pt-kbtv .kr b.w{width:210px;font-size:26px}
+.pt-kbtv .kr b.foc{background:var(--ink);color:#0a0c13}
+
+/* the TV's audio & subtitles picker + skip pill (1920 space) */
+.pt-tvpick{position:absolute;right:96px;top:96px;bottom:96px;width:720px;border-radius:24px;background:rgba(10,12,19,.94);border:1px solid var(--line-2);padding:34px 0 0;overflow:hidden}
+.pt-tvpick h4{margin:0 0 6px;padding:0 34px;font-family:'Space Grotesk',sans-serif;font-size:40px;font-weight:700;letter-spacing:-.8px}
+.pt-tvpick .sub{padding:0 34px;font-size:26px;color:var(--ink-dim)}
+.pt-tvpick .lv{display:flex;gap:12px;padding:24px 34px 8px}
+.pt-tvpick .lv b{padding:12px 26px;border-radius:999px;font-size:26px;font-weight:600;background:rgba(255,255,255,.07);color:var(--ink-soft)}
+.pt-tvpick .lv b.on{background:var(--ink);color:#0a0c13}
+.pt-tvr{display:flex;align-items:center;gap:22px;padding:22px 34px;border-top:1px solid var(--line);font-size:30px}
+.pt-tvr .fi{width:48px;height:36px;border-radius:5px;flex:none;box-shadow:0 0 0 1px rgba(255,255,255,.2)}
+.pt-tvr .rt{margin-left:auto;font-size:26px;color:var(--ink-dim)}
+.pt-tvr.foc{background:var(--ink);color:#0a0c13;border-radius:16px;border-top-color:transparent}
+.pt-tvr.foc .rt{color:rgba(10,12,19,.6)}
+.pt-tvsz{display:flex;align-items:center;gap:18px;padding:24px 34px;border-top:1px solid var(--line);font-size:28px;color:var(--ink-soft)}
+.pt-tvsz b{width:78px;height:62px;border-radius:14px;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.07);font-size:28px;font-weight:700;color:var(--ink-soft)}
+.pt-tvsz b.on{background:var(--grad);color:#fff}
+.pt-skip{position:absolute;right:96px;bottom:96px;display:flex;align-items:center;gap:18px;padding:26px 44px;border-radius:999px;background:rgba(10,12,19,.9);border:2px solid var(--ink);font-size:32px;font-weight:600;color:var(--ink)}
+.pt-skip.foc{background:var(--ink);color:#0a0c13}
+/* the transport badge (.pz, right:96px bottom:78px) sits in the same band as the
+   times row, so the remaining time has to clear it: 96 badge + 96 inset + gap. */
+.tvov .tm{padding-right:232px}
+
+/* paired frames: a TV and a phone reading the same status */
+.pt-pair{position:absolute;border:1px dashed rgba(255,255,255,.18);border-radius:16px}
+.pt-pairnote{position:absolute;font-family:'JetBrains Mono',monospace;font-size:.7rem;letter-spacing:.06em;text-transform:uppercase;color:#8f95aa}
+
+/* admin — Settings → Users & devices, the screens table */
+.jsadmin.wide{width:1080px}
+.jfa-tbl{width:100%;border-collapse:collapse;margin-top:10px}
+.jfa-tbl th{text-align:left;font-family:'JetBrains Mono',monospace;font-size:.64rem;letter-spacing:.08em;text-transform:uppercase;color:#7c8396;font-weight:600;padding:0 12px 8px 0}
+.jfa-tbl td{font-size:.79rem;line-height:1.5;color:#9aa0b4;padding:12px 12px 12px 0;border-top:1px solid rgba(255,255,255,.07);vertical-align:top}
+.jfa-tbl td b{color:#dde1ec;font-weight:600;display:block}
+.jfa-kind{display:inline-flex;align-items:center;gap:7px;font-size:.72rem;font-weight:600;color:#dde1ec;padding:4px 9px;border-radius:7px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1)}
+.jfa-chip{display:inline-block;font-size:.72rem;font-weight:600;color:#dde1ec;padding:4px 9px;border-radius:999px;background:rgba(123,110,240,.16);border:1px solid rgba(123,110,240,.35);margin:0 5px 5px 0}
+.jfa-np{color:#dde1ec}
+.jfa-np i{display:block;font-style:normal;color:#8f95aa;font-size:.74rem;margin-top:3px}
+.jfa-rev{font-size:.72rem;font-weight:600;color:#ff9b8a;background:rgba(255,155,138,.1);border:1px solid rgba(255,155,138,.28);border-radius:7px;padding:5px 9px;display:inline-block;margin:0 5px 5px 0}
+.jfa-help{margin-top:14px;font-size:.76rem;line-height:1.6;color:#8f95aa}
+.jsadmin .hd{padding:20px 24px 4px}
+.jsadmin .hd h3{margin:0;font-family:'Space Grotesk',sans-serif;font-size:1.05rem;color:#eef0f6}
+.jsadmin .hd p{margin:6px 0 0;font-size:.79rem;color:#8f95aa}
+.jsadmin .bd{padding:6px 24px 24px}
+
+/* strings table, dark on the canvas */
+.pt-str{position:absolute;background:#12141c;border:1px solid rgba(255,255,255,.09);border-radius:14px;padding:24px 26px;color:#c9cedd}
+.pt-str h3{margin:0 0 4px;font-family:'Space Grotesk',sans-serif;font-size:1.05rem;color:#eef0f6}
+.pt-str p{margin:0 0 12px;font-size:.76rem;color:#8f95aa;line-height:1.6}
+.pt-str table{width:100%;border-collapse:collapse}
+.pt-str th{text-align:left;font-family:'JetBrains Mono',monospace;font-size:.62rem;letter-spacing:.08em;text-transform:uppercase;color:#7c8396;padding:0 10px 7px 0;font-weight:600}
+.pt-str td{font-size:.75rem;line-height:1.45;padding:8px 10px 8px 0;border-top:1px solid rgba(255,255,255,.07);vertical-align:top}
+.pt-str td.k{font-family:'JetBrains Mono',monospace;font-size:.68rem;color:#9b93f0;white-space:nowrap}
+.pt-str td.en{color:#dde1ec}
+/* the mini bar's two lines are spans here, not divs as in the built mockup */
+.mini .tx{display:flex;flex-direction:column;min-width:0}
+.mini .n,.mini .d{display:block}
+</style>
+</head>
+<body style="width:5180px;height:11540px;position:relative">
+
+<!-- ================= 0 · INTRO ================= -->
+<div class="lbl w3" style="left:0;top:0">
+  <span class="tag new">Round 1 · directions · 2026-09-18</span>
+  <h2>Play on a TV — one glyph, three tiers</h2>
+  <small>The brief of 2026-09-18 (<b>design-brief-screens-and-web-install</b>) answers the owner's picture: <i>an iPhone installs the web app and streams to the Samsung TV</i>. The TV runs a <b>receiver-only</b> Ravilo app with no navigation (R264); the phone drives it <b>through the backend</b> (236), so the phone can be closed and the picture continues; and everything hides behind <b>the same Cast glyph</b> (R265). Two things this brief reverses: the device picker is now <b>Ravilo's own sheet</b>, not the platform's, and <b>AirPlay is drawn</b> after all — one tier down, with a notice.<br><br>This canvas draws §B (the sheet, ten states), the two round-1 questions as marked options, the AirPlay-active player, §C's receiver frames, and §D's admin table. Nothing here is built into <b>Ravilo Mobile.html</b> or <b>Ravilo Receiver.html</b> yet: §A (the install card, the notice, the icons) and §C1 need no pick and can be built straight away — say the word and they go in next.</small>
+</div>
+
+<div class="panel" style="left:1560px;top:0;width:820px">
+  <h2>Decided in the brief — the same in every frame</h2>
+  <p class="lead">These are not options. They are what the sheet <i>is</i>, so the two questions below are the only thing to judge.</p>
+  <table class="tbl">
+    <tr><th style="width:190px">Rule</th><th>Consequence in the frames</th></tr>
+    <tr><td><b>One glyph</b></td><td>The Cast mark on Home, Detail and Player — outline, and filled + accent when connected. Present when the user has ≥ 1 paired TV <i>or</i> AirPlay is here; otherwise <b>absent, never greyed</b>.</td></tr>
+    <tr><td><b>The server decides "nearby"</b></td><td>The phone never scans. So: no spinner, no <i>Searching…</i>, no permission prompt, and an empty tier is <b>absent</b> rather than an empty box. <span class="mono">GET /api/remote/devices</span> carries the <span class="mono">nearby</span> flag.</td></tr>
+    <tr><td><b>One row shape</b></td><td>Platform mark · name · one line of state: <i>Ready</i> · <i>Playing {title}</i> · <i>Busy · {user} is watching</i> (dimmed, not tappable) · <i>Offline · last seen {when}</i>. 46 px target; long names truncate, never wrap.</td></tr>
+    <tr><td><b>Nothing is "connecting"</b></td><td>The bar reads <i>Sending to Stue TV…</i> → <i>Playing on Stue TV</i> and retires after ~2 s. On app start there is <b>no bar at all</b>: either the mini bar with the live position, or nothing.</td></tr>
+    <tr><td><b>The remote is R245's</b></td><td>The remote, the mini bar, the subtitles sheet and the seven states are reused <b>as drawn</b>. What changes is where the list comes from and what carries the commands — neither is visible.</td></tr>
+    <tr><td><b>No product names</b></td><td>Google is named on the admin's Chromecast card and nowhere else. <i>AirPlay</i> is Apple's own affordance name, which is why it is the one exception the brief allows.</td></tr>
+  </table>
+  <div class="warn"><b>Numbering, before anything else.</b> <span class="mono">main</span> took <b>235 · 236 · R263 · R264 · R265</b> for this work while our four drafts still held four of those numbers. Ours moved, again: <b>235 → 237</b> (Chromecast publish + Cast Connect), <b>R263 → R266</b> (Cast Connect on the TV), <b>R264 → R267</b> (the phone's top row + bottom bar), <b>R265 → R268</b> (Discover's tab order). Next free: <b>238 / R269</b>. Every comment in the mockups moved with them.</div>
+  <div class="warn"><b>And one thing for the owner to know.</b> Our <b>R266</b> (Cast Connect) and the new <b>R264 + 236</b> answer the same wish — <i>a TV that runs Ravilo plays it itself, and keeps playing when the phone is closed</i> — by two different roads: Google's cast hand-off, and the backend. They are complementary (Cast Connect covers the Chromecast-built-in TV; 236/R264 covers the Samsung set and any phone without the Cast SDK), but the <b>hand-off payload and the enrolment path should be one mechanism, not two</b>. If 236 lands first, R266 shrinks to a sender flag and a launch intent.</div>
+</div>
+
+<!-- ================= 1 · THE SHEET, TEN STATES ================= -->
+<div class="lbl w3" style="left:0;top:660px">
+  <span class="tag">§B · the sheet</span>
+  <h3>Ten states, both frames, two skins</h3>
+  <small>Pixel 9 (412 × 915) and iPhone 16 (393 × 852) from the 2026-09-16 round. The sheet is Ravilo's own: title <i>Play on a TV</i>, section labels rather than tabs, and one row shape for every TV whatever it runs.</small>
+</div>
+
+<!-- 1 · default -->
+<div class="cap" style="left:0;top:920px">1 · Default · both tiers · Pixel 9 · Aurora</div>
+<div class="dv and" style="left:0;top:960px" data-screen-label="Sheet · default">
+  <div class="pnch"></div>
+  <div class="scn">
+    <div class="sbar"><span>20.42</span><span>▾ ▾ ▮</span></div>
+    <div class="abar"><span class="mk"></span><span class="wm">Ravilo</span><span class="sp"></span><span class="ib lit"><span class="castic"></span></span><span class="av">E</span></div>
+    <div class="body">
+      <div class="hero"><img src="assets/bbb-backdrop-landscape.png" alt=""><div class="sc"></div><div class="bd"><div class="k">Fortsæt</div><div class="t">Big Buck Bunny</div></div></div>
+      <div class="rw"><h4>Fortsæt med at se</h4><div class="strip">
+        <div class="pst"><div class="a" style="background:linear-gradient(150deg,#2f3a5c,#161b2c)">Ruffy</div><div class="n">Ruffy</div></div>
+        <div class="pst"><div class="a" style="background:linear-gradient(150deg,#3c2f5e,#181428)">Sinter</div><div class="n">Sintel</div></div>
+        <div class="pst"><div class="a" style="background:linear-gradient(150deg,#14384a,#0d1e2a)">Tears</div><div class="n">Tears of Steel</div></div>
+      </div></div>
+    </div>
+    <div class="scrim"></div>
+    <div class="sheet">
+      <div class="grab"></div>
+      <div class="sh"><h4>Play on a TV</h4></div>
+      <div class="pt-sec">On this network</div>
+      <div class="srow pt"><span class="tvic"><svg viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="13" rx="2"></rect><path d="M9 21h6"></path></svg></span><span class="tx"><span class="nm">Stue TV</span><span class="st">Ready</span></span><span class="go"><svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"></path></svg></span></div>
+      <div class="srow pt"><span class="tvic"><svg viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="13" rx="2"></rect><path d="M9 21h6"></path></svg></span><span class="tx"><span class="nm">Soveværelse</span><span class="st play">Playing Ruffy · S3 E12</span></span><span class="go"><svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"></path></svg></span></div>
+      <div class="pt-col"><span>All your TVs</span><span class="n">(2)</span><span class="ct"><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"></path></svg></span></div>
+      <div class="pt-add"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"></path></svg><span>Add a TV</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- 2 · tier 1 absent -->
+<div class="cap" style="left:520px;top:920px">2 · Tier 1 absent · mobile data · iPhone 16</div>
+<div class="dv ios" style="left:520px;top:960px" data-screen-label="Sheet · tier 1 absent">
+  <div class="isl"></div>
+  <div class="scn">
+    <div class="sbar"><span>20.42</span><span>▾ ▮</span></div>
+    <div class="abar"><span class="mk"></span><span class="wm">Ravilo</span><span class="sp"></span><span class="ib lit"><span class="castic"></span></span><span class="av">E</span></div>
+    <div class="body">
+      <div class="hero"><img src="assets/bbb-backdrop-opening.png" alt=""><div class="sc"></div><div class="bd"><div class="k">Fortsæt</div><div class="t">Big Buck Bunny</div></div></div>
+    </div>
+    <div class="scrim"></div>
+    <div class="sheet">
+      <div class="grab"></div>
+      <div class="sh"><h4>Play on a TV</h4></div>
+      <div class="pt-col"><span>All your TVs</span><span class="n">(4)</span><span class="ct"><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"></path></svg></span></div>
+      <div class="pt-air"><span class="ap"><svg viewBox="0 0 24 24"><path d="M5 17a9 9 0 0 1 14 0"></path><path d="M8.5 20.5 12 16l3.5 4.5z"></path></svg></span><span class="tx"><span class="nm">AirPlay</span><span class="note">Your phone has to stay on and in Ravilo — the TV stops when you close the app.</span></span></div>
+      <div class="pt-add"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"></path></svg><span>Add a TV</span></div>
+    </div>
+  </div>
+  <div class="hind"></div>
+</div>
+<div class="lbl" style="left:520px;top:1900px;width:400px"><small>The household's TVs are all reachable, but this phone came in over mobile data, so the server groups none of them with it. <b>No empty box, no "none found", no spinner</b> — the section simply is not there, and every TV is one tap down. This is also exactly what a VPN looks like, which is why §D's help text explains the rule to the admin rather than to the viewer.</small></div>
+
+<!-- 3 · tier 2 open -->
+<div class="cap" style="left:1040px;top:920px">3 · Tier 2 open · remembered per device · Pixel 9</div>
+<div class="dv and" style="left:1040px;top:960px" data-screen-label="Sheet · tier 2 open">
+  <div class="pnch"></div>
+  <div class="scn">
+    <div class="sbar"><span>20.42</span><span>▾ ▾ ▮</span></div>
+    <div class="abar"><span class="mk"></span><span class="wm">Ravilo</span><span class="sp"></span><span class="ib lit"><span class="castic"></span></span><span class="av">E</span></div>
+    <div class="body"><div class="hero"><img src="assets/bbb-backdrop-rodents.png" alt=""><div class="sc"></div><div class="bd"><div class="k">Fortsæt</div><div class="t">Big Buck Bunny</div></div></div></div>
+    <div class="scrim"></div>
+    <div class="sheet">
+      <div class="grab"></div>
+      <div class="sh"><h4>Play on a TV</h4></div>
+      <div class="pt-sec">On this network</div>
+      <div class="srow pt"><span class="tvic"><svg viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="13" rx="2"></rect><path d="M9 21h6"></path></svg></span><span class="tx"><span class="nm">Stue TV</span><span class="st">Ready</span></span><span class="go"><svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"></path></svg></span></div>
+      <div class="pt-col"><span>All your TVs</span><span class="n">(3)</span><span class="ct"><svg viewBox="0 0 24 24"><path d="M18 15l-6-6-6 6"></path></svg></span></div>
+      <div class="srow pt"><span class="tvic"><svg viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="13" rx="2"></rect><path d="M9 21h6"></path></svg></span><span class="tx"><span class="nm">Soveværelse</span><span class="st">Ready</span></span><span class="go"><svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"></path></svg></span></div>
+      <div class="srow pt pt-off"><span class="tvic"><svg viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="13" rx="2"></rect><path d="M9 21h6"></path></svg></span><span class="tx"><span class="nm">Mormor &amp; morfar</span><span class="st">Busy · Eydun is watching</span></span></div>
+      <div class="srow pt pt-off"><span class="tvic"><svg viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="13" rx="2"></rect><path d="M9 21h6"></path></svg></span><span class="tx"><span class="nm">Sommerhus</span><span class="st">Offline · last seen Tuesday</span></span></div>
+      <div class="pt-add"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"></path></svg><span>Add a TV</span></div>
+    </div>
+  </div>
+</div>
+<div class="lbl" style="left:1040px;top:1960px;width:400px"><small>States <b>4 (busy)</b> and <b>5 (offline)</b> are drawn here, in the tier they actually occur in. Both are dimmed and neither is tappable — a busy TV is never hijacked (236 answers a second user's play with a 409 and a name). <i>Last seen Tuesday</i> is a weekday inside a week and a date beyond it; never a timestamp.</small></div>
+
+<!-- 4 · AirPlay absent (Android) -->
+<div class="cap" style="left:1560px;top:920px">6 · AirPlay absent · Android · Aurora</div>
+<div class="dv and" style="left:1560px;top:960px" data-screen-label="Sheet · AirPlay absent">
+  <div class="pnch"></div>
+  <div class="scn">
+    <div class="sbar"><span>20.42</span><span>▾ ▾ ▮</span></div>
+    <div class="abar"><span class="mk"></span><span class="wm">Ravilo</span><span class="sp"></span><span class="ib lit"><span class="castic"></span></span><span class="av">E</span></div>
+    <div class="body"><div class="hero"><img src="assets/bbb-backdrop-bunny.png" alt=""><div class="sc"></div><div class="bd"><div class="k">Fortsæt</div><div class="t">Big Buck Bunny</div></div></div></div>
+    <div class="scrim"></div>
+    <div class="sheet">
+      <div class="grab"></div>
+      <div class="sh"><h4>Play on a TV</h4></div>
+      <div class="pt-sec">On this network</div>
+      <div class="srow pt"><span class="tvic"><svg viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="13" rx="2"></rect><path d="M9 21h6"></path></svg></span><span class="tx"><span class="nm">Stue TV</span><span class="st">Ready</span></span><span class="go"><svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"></path></svg></span></div>
+      <div class="pt-col"><span>All your TVs</span><span class="n">(3)</span><span class="ct"><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"></path></svg></span></div>
+      <div class="pt-add"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"></path></svg><span>Add a TV</span></div>
+    </div>
+  </div>
+</div>
+<div class="lbl" style="left:1560px;top:1900px;width:400px"><small>The same phone, the same household, no AirPlay row and no hairline where one would go: the browser never reported it. <b>Absent, never greyed</b> — and never a row that explains what you cannot have.</small></div>
+
+<!-- 5 · Android app with a Chromecast row -->
+<div class="cap" style="left:2080px;top:920px">10 · Android <i>app</i> · a Chromecast in tier 2</div>
+<div class="dv and" style="left:2080px;top:960px" data-screen-label="Sheet · Chromecast row">
+  <div class="pnch"></div>
+  <div class="scn">
+    <div class="sbar"><span>20.42</span><span>▾ ▾ ▮</span></div>
+    <div class="abar"><span class="mk"></span><span class="wm">Ravilo</span><span class="sp"></span><span class="ib lit"><span class="castic"></span></span><span class="av">E</span></div>
+    <div class="body"><div class="hero"><img src="assets/bbb-backdrop-landscape.png" alt=""><div class="sc"></div><div class="bd"><div class="k">Fortsæt</div><div class="t">Big Buck Bunny</div></div></div></div>
+    <div class="scrim"></div>
+    <div class="sheet">
+      <div class="grab"></div>
+      <div class="sh"><h4>Play on a TV</h4></div>
+      <div class="pt-sec">On this network</div>
+      <div class="srow pt"><span class="tvic"><svg viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="13" rx="2"></rect><path d="M9 21h6"></path></svg></span><span class="tx"><span class="nm">Stue TV</span><span class="st">Ready</span></span><span class="go"><svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"></path></svg></span></div>
+      <div class="pt-col"><span>All your TVs</span><span class="n">(3)</span><span class="ct"><svg viewBox="0 0 24 24"><path d="M18 15l-6-6-6 6"></path></svg></span></div>
+      <div class="srow pt"><span class="tvic"><svg viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="13" rx="2"></rect><path d="M9 21h6"></path></svg></span><span class="tx"><span class="nm">Soveværelse</span><span class="st">Ready</span></span><span class="go"><svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"></path></svg></span></div>
+      <div class="srow pt"><span class="tvic"><span class="castic"></span></span><span class="tx"><span class="nm">Stue Chromecast</span><span class="st">Ready</span></span><span class="go"><svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"></path></svg></span></div>
+      <div class="pt-add"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"></path></svg><span>Add a TV</span></div>
+    </div>
+  </div>
+</div>
+<div class="lbl" style="left:2080px;top:1960px;width:400px"><small>Only in the Android <b>app</b>: Google's SDK discovers the stick, and it joins the same list with the Cast mark instead of a TV outline — so there is <b>one picker on every platform</b> and no second dialog to learn. On iPhone and on the web these rows cannot exist.</small></div>
+
+<!-- 6 · Noir default -->
+<div class="cap" style="left:2600px;top:920px">1b · Default in Noir · no accent tints</div>
+<div class="dv and noir" data-skin="noir" style="left:2600px;top:960px" data-screen-label="Sheet · Noir">
+  <div class="pnch"></div>
+  <div class="scn">
+    <div class="sbar"><span>20.42</span><span>▾ ▾ ▮</span></div>
+    <div class="abar"><span class="mk" style="background:var(--ink)"></span><span class="wm">Ravilo</span><span class="sp"></span><span class="ib lit"><span class="castic"></span></span><span class="av" style="background:var(--chip);color:var(--ink)">E</span></div>
+    <div class="body"><div class="hero"><img src="assets/bbb-backdrop-opening.png" alt=""><div class="sc"></div><div class="bd"><div class="k">Fortsæt</div><div class="t">Big Buck Bunny</div></div></div></div>
+    <div class="scrim"></div>
+    <div class="sheet">
+      <div class="grab"></div>
+      <div class="sh"><h4>Play on a TV</h4></div>
+      <div class="pt-sec">On this network</div>
+      <div class="srow pt"><span class="tvic"><svg viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="13" rx="2"></rect><path d="M9 21h6"></path></svg></span><span class="tx"><span class="nm">Stue TV</span><span class="st">Ready</span></span><span class="go"><svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"></path></svg></span></div>
+      <div class="srow pt"><span class="tvic"><svg viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="13" rx="2"></rect><path d="M9 21h6"></path></svg></span><span class="tx"><span class="nm">Soveværelse</span><span class="st play">Playing Ruffy · S3 E12</span></span><span class="go"><svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"></path></svg></span></div>
+      <div class="pt-col"><span>All your TVs</span><span class="n">(2)</span><span class="ct"><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"></path></svg></span></div>
+      <div class="pt-add"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"></path></svg><span>Add a TV</span></div>
+    </div>
+  </div>
+</div>
+<div class="lbl" style="left:2600px;top:1900px;width:400px"><small>Noir drops the accent tints (R221/R222), so <i>Playing…</i> and <i>Add a TV</i> fall back to ink rather than colour — the row states still differ by <b>words and dimming</b>, never by hue alone.</small></div>
+
+<!-- 7 · code entry -->
+<div class="cap" style="left:3120px;top:920px">8 · Add a TV · code entry · iPhone 16</div>
+<div class="dv ios" style="left:3120px;top:960px" data-screen-label="Sheet · code entry">
+  <div class="isl"></div>
+  <div class="scn">
+    <div class="sbar"><span>20.43</span><span>▾ ▮</span></div>
+    <div class="abar"><span class="mk"></span><span class="wm">Ravilo</span><span class="sp"></span><span class="ib lit"><span class="castic"></span></span><span class="av">E</span></div>
+    <div class="body"><div class="hero"><img src="assets/bbb-backdrop-landscape.png" alt=""><div class="sc"></div></div></div>
+    <div class="scrim"></div>
+    <div class="sheet">
+      <div class="grab"></div>
+      <div class="sh"><h4>Add a TV</h4></div>
+      <div class="pt-code">
+        <div class="bx"><i>K</i><i>7</i><i>F</i><i class="car">3</i><i class="e">·</i><i class="e">·</i></div>
+        <div class="hint">The code is on the TV's screen.</div>
+      </div>
+      <div class="pt-kb">
+        <div class="kr"><b>Q</b><b>W</b><b>E</b><b>R</b><b>T</b><b>Y</b><b>U</b><b>I</b><b>O</b><b>P</b></div>
+        <div class="kr"><b>A</b><b>S</b><b>D</b><b>F</b><b>G</b><b>H</b><b>J</b><b>K</b><b>L</b></div>
+        <div class="kr"><b>Z</b><b>X</b><b>C</b><b>V</b><b>B</b><b>N</b><b>M</b><b>⌫</b></div>
+        <div class="kr"><b class="w">123</b><b class="w">mellemrum</b><b class="w">retur</b></div>
+      </div>
+    </div>
+  </div>
+  <div class="hind"></div>
+</div>
+
+<!-- 8 · code error -->
+<div class="cap" style="left:3640px;top:920px">9 · That code didn't work · one string for all three causes</div>
+<div class="dv ios" style="left:3640px;top:960px" data-screen-label="Sheet · code error">
+  <div class="isl"></div>
+  <div class="scn">
+    <div class="sbar"><span>20.43</span><span>▾ ▮</span></div>
+    <div class="abar"><span class="mk"></span><span class="wm">Ravilo</span><span class="sp"></span><span class="ib lit"><span class="castic"></span></span><span class="av">E</span></div>
+    <div class="body"><div class="hero"><img src="assets/bbb-backdrop-landscape.png" alt=""><div class="sc"></div></div></div>
+    <div class="scrim"></div>
+    <div class="sheet">
+      <div class="grab"></div>
+      <div class="sh"><h4>Add a TV</h4></div>
+      <div class="pt-code">
+        <div class="bx"><i>K</i><i>7</i><i>F</i><i>3</i><i>Q</i><i>2</i></div>
+        <div class="err"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"></circle><path d="M12 8v4M12 16h.01"></path></svg><span>That code didn't work</span></div>
+      </div>
+      <div class="pt-kb">
+        <div class="kr"><b>Q</b><b>W</b><b>E</b><b>R</b><b>T</b><b>Y</b><b>U</b><b>I</b><b>O</b><b>P</b></div>
+        <div class="kr"><b>A</b><b>S</b><b>D</b><b>F</b><b>G</b><b>H</b><b>J</b><b>K</b><b>L</b></div>
+        <div class="kr"><b>Z</b><b>X</b><b>C</b><b>V</b><b>B</b><b>N</b><b>M</b><b>⌫</b></div>
+        <div class="kr"><b class="w">123</b><b class="w">mellemrum</b><b class="w">retur</b></div>
+      </div>
+    </div>
+  </div>
+  <div class="hind"></div>
+</div>
+<div class="lbl" style="left:3640px;top:1900px;width:400px"><small><b>Unknown, expired and already-used are one string.</b> The three differ only in what an attacker learns; a household learns the same thing from all of them — look at the TV and type what it says now.</small></div>
+
+<!-- 9 · pairing success -->
+<div class="cap" style="left:4160px;top:920px">8b · Success · the sheet returns, the new TV highlighted</div>
+<div class="dv ios" style="left:4160px;top:960px" data-screen-label="Sheet · paired">
+  <div class="isl"></div>
+  <div class="scn">
+    <div class="sbar"><span>20.44</span><span>▾ ▮</span></div>
+    <div class="abar"><span class="mk"></span><span class="wm">Ravilo</span><span class="sp"></span><span class="ib lit"><span class="castic"></span></span><span class="av">E</span></div>
+    <div class="body"><div class="hero"><img src="assets/bbb-backdrop-rodents.png" alt=""><div class="sc"></div></div></div>
+    <div class="scrim"></div>
+    <div class="sheet">
+      <div class="grab"></div>
+      <div class="sh"><h4>Play on a TV</h4></div>
+      <div class="pt-sec">On this network</div>
+      <div class="srow pt pt-new"><span class="tvic"><svg viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="13" rx="2"></rect><path d="M9 21h6"></path></svg></span><span class="tx"><span class="nm">Stue TV</span><span class="st">Ready</span></span><span class="go"><svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"></path></svg></span></div>
+      <div class="pt-col"><span>All your TVs</span><span class="n">(3)</span><span class="ct"><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"></path></svg></span></div>
+      <div class="pt-air"><span class="ap"><svg viewBox="0 0 24 24"><path d="M5 17a9 9 0 0 1 14 0"></path><path d="M8.5 20.5 12 16l3.5 4.5z"></path></svg></span><span class="tx"><span class="nm">AirPlay</span><span class="note">Your phone has to stay on and in Ravilo — the TV stops when you close the app.</span></span></div>
+      <div class="pt-add"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"></path></svg><span>Add a TV</span></div>
+    </div>
+  </div>
+  <div class="hind"></div>
+</div>
+<div class="lbl" style="left:4160px;top:1900px;width:400px"><small>No confirmation screen, no toast: the sheet you were in comes back with the TV <b>in place</b> and briefly outlined. The highlight retires by itself; nothing has to be dismissed.</small></div>
+
+<!-- ================= 2 · QUESTION 1 ================= -->
+<div class="lbl w2" style="left:0;top:2560px">
+  <span class="tag pick">Decided · 2026-09-18 · direction b</span>
+  <h3>How much weight does the AirPlay tier carry?</h3>
+  <small>The owner's words were <i>"shown to be supported but expect bad behaviour"</i>. Both drawings say that; they disagree on how loudly. Both are on the iPhone, because AirPlay exists nowhere else.</small>
+</div>
+
+<div class="cap" style="left:0;top:2830px">1a · A full row, the notice as its second line · <i>not chosen</i></div>
+<div class="dv ios" style="left:0;top:2870px" data-screen-label="Q1a · AirPlay full row">
+  <div class="isl"></div>
+  <div class="scn">
+    <div class="sbar"><span>20.42</span><span>▾ ▮</span></div>
+    <div class="abar"><span class="mk"></span><span class="wm">Ravilo</span><span class="sp"></span><span class="ib lit"><span class="castic"></span></span><span class="av">E</span></div>
+    <div class="body"><div class="hero"><img src="assets/bbb-backdrop-landscape.png" alt=""><div class="sc"></div></div></div>
+    <div class="scrim"></div>
+    <div class="sheet">
+      <div class="grab"></div>
+      <div class="sh"><h4>Play on a TV</h4></div>
+      <div class="pt-sec">On this network</div>
+      <div class="srow pt"><span class="tvic"><svg viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="13" rx="2"></rect><path d="M9 21h6"></path></svg></span><span class="tx"><span class="nm">Stue TV</span><span class="st">Ready</span></span><span class="go"><svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"></path></svg></span></div>
+      <div class="pt-col"><span>All your TVs</span><span class="n">(3)</span><span class="ct"><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"></path></svg></span></div>
+      <div class="pt-air"><span class="ap"><svg viewBox="0 0 24 24"><path d="M5 17a9 9 0 0 1 14 0"></path><path d="M8.5 20.5 12 16l3.5 4.5z"></path></svg></span><span class="tx"><span class="nm">AirPlay</span><span class="note">Your phone has to stay on and in Ravilo — the TV stops when you close the app.</span></span></div>
+      <div class="pt-add"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"></path></svg><span>Add a TV</span></div>
+    </div>
+  </div>
+  <div class="hind"></div>
+</div>
+
+<div class="cap" style="left:520px;top:2830px">1b · A footnote under the collapsible · <i>CHOSEN · built</i></div>
+<div class="dv ios" style="left:520px;top:2870px" data-screen-label="Q1b · AirPlay footnote">
+  <div class="isl"></div>
+  <div class="scn">
+    <div class="sbar"><span>20.42</span><span>▾ ▮</span></div>
+    <div class="abar"><span class="mk"></span><span class="wm">Ravilo</span><span class="sp"></span><span class="ib lit"><span class="castic"></span></span><span class="av">E</span></div>
+    <div class="body"><div class="hero"><img src="assets/bbb-backdrop-landscape.png" alt=""><div class="sc"></div></div></div>
+    <div class="scrim"></div>
+    <div class="sheet">
+      <div class="grab"></div>
+      <div class="sh"><h4>Play on a TV</h4></div>
+      <div class="pt-sec">On this network</div>
+      <div class="srow pt"><span class="tvic"><svg viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="13" rx="2"></rect><path d="M9 21h6"></path></svg></span><span class="tx"><span class="nm">Stue TV</span><span class="st">Ready</span></span><span class="go"><svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"></path></svg></span></div>
+      <div class="pt-col"><span>All your TVs</span><span class="n">(3)</span><span class="ct"><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"></path></svg></span></div>
+      <div class="pt-air foot"><span class="ap"><svg viewBox="0 0 24 24"><path d="M5 17a9 9 0 0 1 14 0"></path><path d="M8.5 20.5 12 16l3.5 4.5z"></path></svg></span><span class="nm">AirPlay (phone must stay on)</span></div>
+      <div class="pt-add"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"></path></svg><span>Add a TV</span></div>
+    </div>
+  </div>
+  <div class="hind"></div>
+</div>
+
+<div class="panel" style="left:1040px;top:2870px;width:720px">
+  <h2>Q1 · decided: the footnote</h2>
+  <div class="opt">
+    <div><h5>a · Full row, notice on its second line <span style="color:#8f95aa">— drawn, not chosen</span></h5><p>The caveat is <b>in the interface at the moment of choosing</b>, in words a parent can act on: <i>the TV stops when you close the app</i>. It costs one line of sheet and reads as a normal, supported route that happens to have a condition — which is exactly the truth.</p><p>It also survives the case the tier exists for: grandparents' AirPlay-2 TV, nothing else in the room, nobody to ask.</p><div class="ch"><span>Drawn, kept on this canvas</span><span>2 lines of sheet</span></div></div>
+    <div><h5>b · Footnote link under the collapsible <span style="color:#1f7a55">— the owner's pick, and what is built</span></h5><p>Cheapest and quietest: one 13 px line, unmistakably a lesser route. But the caveat is compressed into a parenthesis, and a parenthesis is what people skip — the first time the picture dies on close, the app looks broken rather than honest.</p><p>It also sits <i>below</i> the collapsible, so on a household with many TVs it is off the bottom of the sheet entirely.</p><div class="ch"><span class="lean">Chosen 2026-09-18</span><span>46 px target kept</span><span>screens.airplay_footnote</span></div></div>
+  </div>
+  <div class="good"><b>So the caveat moves, it does not vanish (R270 FR-R270-2):</b> the full sentence — <i>your phone has to stay on and in Ravilo</i> — is shown as the connecting bar <b>the moment an AirPlay session starts</b>, and verbatim in the admin's Connections help text. A parenthesis is what people skip; a bar at the moment it becomes true is not.<br><br><b>Three things hold either way.</b> The row is below a heavier hairline and in quieter ink; tapping hands over to <b>Apple's own picker</b>, which we do not redraw; and while AirPlay runs there is <b>no mini bar and no remote</b> — the phone's own player <i>is</i> the remote, drawn at §4.</div>
+  <div class="warn"><b>One open question the device must answer</b> (R265 OQ 1): does a standalone iOS web app keep an AirPlay session alive when merely backgrounded? The notice is written for the worst case; if the test passes it can soften to <i>"…stays on"</i> — which is a string change, not a redesign, in both directions.</div>
+</div>
+
+<!-- ================= 3 · QUESTION 2 ================= -->
+<div class="lbl w2" style="left:1820px;top:2560px">
+  <span class="tag pick">Decided · 2026-09-18 · direction a</span>
+  <h3>Does a busy TV say <i>who</i> is watching?</h3>
+  <small>Same row, same TV, same moment — one names Eydun, one does not. The household is four people who share three TVs and one library.</small>
+</div>
+
+<div class="cap" style="left:1820px;top:2830px">2a · With the name · <i>CHOSEN · built</i></div>
+<div class="dv and" style="left:1820px;top:2870px" data-screen-label="Q2a · busy with name">
+  <div class="pnch"></div>
+  <div class="scn">
+    <div class="sbar"><span>20.42</span><span>▾ ▾ ▮</span></div>
+    <div class="abar"><span class="mk"></span><span class="wm">Ravilo</span><span class="sp"></span><span class="ib lit"><span class="castic"></span></span><span class="av">E</span></div>
+    <div class="body"><div class="hero"><img src="assets/bbb-backdrop-bunny.png" alt=""><div class="sc"></div></div></div>
+    <div class="scrim"></div>
+    <div class="sheet">
+      <div class="grab"></div>
+      <div class="sh"><h4>Play on a TV</h4></div>
+      <div class="pt-sec">On this network</div>
+      <div class="srow pt"><span class="tvic"><svg viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="13" rx="2"></rect><path d="M9 21h6"></path></svg></span><span class="tx"><span class="nm">Stue TV</span><span class="st">Ready</span></span><span class="go"><svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"></path></svg></span></div>
+      <div class="srow pt pt-off"><span class="tvic"><svg viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="13" rx="2"></rect><path d="M9 21h6"></path></svg></span><span class="tx"><span class="nm">Soveværelse</span><span class="st">Busy · Eydun is watching</span></span></div>
+      <div class="srow pt pt-off"><span class="tvic"><svg viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="13" rx="2"></rect><path d="M9 21h6"></path></svg></span><span class="tx"><span class="nm">Sommerhus</span><span class="st">Offline · last seen Tuesday</span></span></div>
+      <div class="pt-add"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"></path></svg><span>Add a TV</span></div>
+    </div>
+  </div>
+</div>
+
+<div class="cap" style="left:2340px;top:2830px">2b · Without · <i>not chosen</i></div>
+<div class="dv and" style="left:2340px;top:2870px" data-screen-label="Q2b · busy without name">
+  <div class="pnch"></div>
+  <div class="scn">
+    <div class="sbar"><span>20.42</span><span>▾ ▾ ▮</span></div>
+    <div class="abar"><span class="mk"></span><span class="wm">Ravilo</span><span class="sp"></span><span class="ib lit"><span class="castic"></span></span><span class="av">E</span></div>
+    <div class="body"><div class="hero"><img src="assets/bbb-backdrop-bunny.png" alt=""><div class="sc"></div></div></div>
+    <div class="scrim"></div>
+    <div class="sheet">
+      <div class="grab"></div>
+      <div class="sh"><h4>Play on a TV</h4></div>
+      <div class="pt-sec">On this network</div>
+      <div class="srow pt"><span class="tvic"><svg viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="13" rx="2"></rect><path d="M9 21h6"></path></svg></span><span class="tx"><span class="nm">Stue TV</span><span class="st">Ready</span></span><span class="go"><svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"></path></svg></span></div>
+      <div class="srow pt pt-off"><span class="tvic"><svg viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="13" rx="2"></rect><path d="M9 21h6"></path></svg></span><span class="tx"><span class="nm">Soveværelse</span><span class="st">In use</span></span></div>
+      <div class="srow pt pt-off"><span class="tvic"><svg viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="13" rx="2"></rect><path d="M9 21h6"></path></svg></span><span class="tx"><span class="nm">Sommerhus</span><span class="st">Offline</span></span></div>
+      <div class="pt-add"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"></path></svg><span>Add a TV</span></div>
+    </div>
+  </div>
+</div>
+
+<div class="panel" style="left:2860px;top:2870px;width:700px">
+  <h2>Q2 · decided: name them</h2>
+  <div class="opt">
+    <div><h5>a · Name the person <span style="color:#1f7a55">— the owner's pick, and what is built</span></h5><p>A dimmed row with no reason invites a second tap, then a third. <b>A name ends the question</b>: you either go and ask Eydun or you pick another TV. It is also the only version of this row that makes 236's refusal legible when it happens anyway — the same name comes back with the 409.</p><p>The owner's per-user model already puts names on devices in the admin, and everyone in this household is in the same room.</p><div class="ch"><span class="lean">Chosen 2026-09-18</span><span>Matches 236's 409</span></div></div>
+    <div><h5>b · Say only that it is in use</h5><p>Tells you what you need to decide <i>this</i> tap and nothing about anyone else. Defensible if Ravilo is ever handed to a lodger, a guest profile or grandparents' own household — and then names become a leak rather than a courtesy.</p><p>It costs one string fewer and needs no <span class="mono">user</span> field on the device list.</p><div class="ch"><span>Drawn, not chosen</span><span>Invites a second tap</span></div></div>
+  </div>
+  <div class="warn"><b>Offline followed the same pick — it keeps its weekday.</b> <i>Offline · last seen Tuesday</i> is the same class of disclosure (it says when someone last watched). Draw both from one decision, not two: <b>a</b> keeps the weekday, <b>b</b> drops it.</div>
+</div>
+
+<!-- ================= 4 · AIRPLAY ACTIVE, AND THE BAR ================= -->
+<div class="lbl w2" style="left:0;top:3900px">
+  <span class="tag">§B4 · §B6</span>
+  <h3>AirPlay while it runs, and the two words the bar says</h3>
+  <small>AirPlay is the one route where nothing is sent through the backend, so the R245 remote and mini bar are not just unnecessary — they would be lying. The phone's own player <i>is</i> the remote. Beside it: the connecting bar's two moments, and the reconnect case that shows nothing at all.</small>
+</div>
+
+<div class="cap" style="left:0;top:4170px">4 · AirPlay active · the player is the remote</div>
+<div class="dv ios" style="left:0;top:4210px" data-screen-label="AirPlay active">
+  <div class="isl"></div>
+  <div class="scn" style="background:#000">
+    <div style="position:absolute;inset:0"><img src="assets/bbb-backdrop-landscape.png" alt="" style="width:100%;height:100%;object-fit:cover;opacity:.9"></div>
+    <div style="position:absolute;inset:0;background:linear-gradient(0deg,rgba(0,0,0,.85) 6%,rgba(0,0,0,.15) 46%,rgba(0,0,0,.5))"></div>
+    <div style="position:absolute;left:0;right:0;top:0;display:flex;align-items:center;gap:12px;padding:58px 18px 0">
+      <span class="ib" style="background:rgba(0,0,0,.42);color:#fff;width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center"><svg viewBox="0 0 24 24" style="width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:2.3;stroke-linecap:round"><path d="M15 6l-6 6 6 6"></path></svg></span>
+      <span style="flex:1"></span>
+      <span style="display:flex;align-items:center;gap:9px;height:44px;padding:0 15px;border-radius:22px;background:rgba(0,0,0,.42);border:1px solid rgba(255,255,255,.22);font-size:13px;font-weight:600;color:#fff"><span class="castic conn" style="width:18px;height:16px;color:#8fd9ff"></span>Stue TV</span>
+    </div>
+    <div style="position:absolute;left:0;right:0;bottom:214px;text-align:center;font-size:20px;color:#fff;text-shadow:0 2px 10px rgba(0,0,0,.9);padding:0 26px">Vi ses i morgen, lille ven.</div>
+    <div style="position:absolute;left:18px;right:18px;bottom:52px">
+      <div style="height:4px;border-radius:3px;background:rgba(255,255,255,.3)"><i style="display:block;height:100%;width:46%;border-radius:3px;background:var(--accent)"></i></div>
+      <div style="display:flex;justify-content:space-between;font-family:'JetBrains Mono',monospace;font-size:12px;color:rgba(255,255,255,.78);margin-top:9px"><span>04:31</span><span>−05:19</span></div>
+      <div style="display:flex;align-items:center;justify-content:center;gap:34px;margin-top:14px">
+        <span style="width:52px;height:52px;border-radius:50%;background:rgba(0,0,0,.4);border:1px solid rgba(255,255,255,.2);display:flex;flex-direction:column;align-items:center;justify-content:center;color:#fff;font-size:11px;font-weight:600;gap:1px"><svg viewBox="0 0 24 24" style="width:19px;height:19px;fill:none;stroke:currentColor;stroke-width:2.1;stroke-linecap:round"><path d="M11 5 4 12l7 7"></path><path d="M20 5l-7 7 7 7"></path></svg>10 s</span>
+        <span style="width:74px;height:74px;border-radius:50%;background:rgba(255,255,255,.95);color:#0a0c13;display:flex;align-items:center;justify-content:center"><svg viewBox="0 0 24 24" style="width:26px;height:26px;fill:currentColor"><path d="M7 5h4v14H7zM13 5h4v14h-4z"></path></svg></span>
+        <span style="width:52px;height:52px;border-radius:50%;background:rgba(0,0,0,.4);border:1px solid rgba(255,255,255,.2);display:flex;flex-direction:column;align-items:center;justify-content:center;color:#fff;font-size:11px;font-weight:600;gap:1px"><svg viewBox="0 0 24 24" style="width:19px;height:19px;fill:none;stroke:currentColor;stroke-width:2.1;stroke-linecap:round"><path d="M13 5l7 7-7 7"></path><path d="M4 5l7 7-7 7"></path></svg>30 s</span>
+      </div>
+    </div>
+  </div>
+  <div class="hind"></div>
+</div>
+<div class="lbl" style="left:0;top:5110px;width:400px"><small>Everything on this screen still works, because it all drives the <span class="mono">&lt;video&gt;</span> that AirPlay is mirroring: scrub, skip, subtitles, Skip Intro, next-up. The only changes are the <b>connected glyph naming the TV</b> and the picture being elsewhere. No mini bar, no remote — and if you leave Ravilo, the TV stops, which is what the notice promised.</small></div>
+
+<div class="cap" style="left:520px;top:4170px">6a · Sending to Stue TV…</div>
+<div class="dv and" style="left:520px;top:4210px" data-screen-label="Connecting bar · sending">
+  <div class="pnch"></div>
+  <div class="scn">
+    <div class="sbar"><span>20.42</span><span>▾ ▾ ▮</span></div>
+    <div class="abar"><span class="mk"></span><span class="wm">Ravilo</span><span class="sp"></span><span class="ib lit"><span class="castic"></span></span><span class="av">E</span></div>
+    <div class="body">
+      <div class="hero"><img src="assets/bbb-backdrop-landscape.png" alt=""><div class="sc"></div><div class="bd"><div class="k">Film · 2008</div><div class="t">Big Buck Bunny</div></div></div>
+      <div class="rw"><h4>Fortsæt med at se</h4><div class="strip">
+        <div class="pst"><div class="a" style="background:linear-gradient(150deg,#2f3a5c,#161b2c)">Ruffy</div><div class="n">Ruffy</div></div>
+        <div class="pst"><div class="a" style="background:linear-gradient(150deg,#3c2f5e,#181428)">Sintel</div><div class="n">Sintel</div></div>
+        <div class="pst"><div class="a" style="background:linear-gradient(150deg,#14384a,#0d1e2a)">Tears</div><div class="n">Tears of Steel</div></div>
+      </div></div>
+    </div>
+    <div class="cbar" style="position:absolute;left:10px;right:10px;bottom:104px;display:flex;align-items:center;gap:11px;padding:0 16px;height:52px;border-radius:14px;background:var(--card-2);border:1px solid var(--line-2);font-size:14px;z-index:29"><span class="sp"></span><span>Sending to Stue TV…</span></div>
+    <nav class="bn"><div class="row">
+      <div class="it on"><span class="p"><svg viewBox="0 0 24 24"><path d="M4 11l8-7 8 7"></path><path d="M6 10v10h12V10"></path></svg></span><b>Home</b></div>
+      <div class="it"><span class="p"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-4-4"></path></svg></span><b>Search</b></div>
+      <div class="it"><span class="p"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"></circle><path d="M9 15l2-4 4-2-2 4z"></path></svg></span><b>Discover</b></div>
+    </div><div class="bnsafe"></div></nav>
+  </div>
+</div>
+
+<div class="cap" style="left:1040px;top:4170px">6b · Playing on Stue TV · then the mini bar</div>
+<div class="dv and" style="left:1040px;top:4210px" data-screen-label="Connecting bar · playing">
+  <div class="pnch"></div>
+  <div class="scn">
+    <div class="sbar"><span>20.42</span><span>▾ ▾ ▮</span></div>
+    <div class="abar"><span class="mk"></span><span class="wm">Ravilo</span><span class="sp"></span><span class="ib lit"><span class="castic conn"></span></span><span class="av">E</span></div>
+    <div class="body">
+      <div class="hero"><img src="assets/bbb-backdrop-landscape.png" alt=""><div class="sc"></div><div class="bd"><div class="k">Film · 2008</div><div class="t">Big Buck Bunny</div></div></div>
+      <div class="rw"><h4>Fortsæt med at se</h4><div class="strip">
+        <div class="pst"><div class="a" style="background:linear-gradient(150deg,#2f3a5c,#161b2c)">Ruffy</div><div class="n">Ruffy</div></div>
+        <div class="pst"><div class="a" style="background:linear-gradient(150deg,#3c2f5e,#181428)">Sintel</div><div class="n">Sintel</div></div>
+        <div class="pst"><div class="a" style="background:linear-gradient(150deg,#14384a,#0d1e2a)">Tears</div><div class="n">Tears of Steel</div></div>
+      </div></div>
+    </div>
+    <div class="mini" style="bottom:96px">
+      <span class="th"><img src="assets/bbb-backdrop-landscape.png" alt=""></span>
+      <span class="tx"><span class="n">Big Buck Bunny</span><span class="d"><span class="castic"></span>Playing on Stue TV</span></span>
+      <span class="pp"><svg viewBox="0 0 24 24"><path d="M7 5h4v14H7zM13 5h4v14h-4z"></path></svg></span>
+      <span class="bar"><i style="width:8%"></i></span>
+    </div>
+    <nav class="bn"><div class="row">
+      <div class="it on"><span class="p"><svg viewBox="0 0 24 24"><path d="M4 11l8-7 8 7"></path><path d="M6 10v10h12V10"></path></svg></span><b>Home</b></div>
+      <div class="it"><span class="p"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-4-4"></path></svg></span><b>Search</b></div>
+      <div class="it"><span class="p"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"></circle><path d="M9 15l2-4 4-2-2 4z"></path></svg></span><b>Discover</b></div>
+    </div><div class="bnsafe"></div></nav>
+  </div>
+</div>
+<div class="lbl" style="left:1040px;top:5170px;width:400px"><small>The bar retires after ~2 s and the <b>mini bar</b> takes over, docked above the bottom nav exactly as built on 2026-09-18. The glyph is in its connected form from this moment until the TV stops.</small></div>
+
+<div class="cap" style="left:1560px;top:4170px">6c · Reopened after the app was closed · nothing at all</div>
+<div class="dv and" style="left:1560px;top:4210px" data-screen-label="Reconnect · nothing shown">
+  <div class="pnch"></div>
+  <div class="scn">
+    <div class="sbar"><span>21.06</span><span>▾ ▾ ▮</span></div>
+    <div class="abar"><span class="mk"></span><span class="wm">Ravilo</span><span class="sp"></span><span class="ib lit"><span class="castic"></span></span><span class="av">E</span></div>
+    <div class="body">
+      <div class="hero"><img src="assets/bbb-backdrop-opening.png" alt=""><div class="sc"></div><div class="bd"><div class="k">Fortsæt</div><div class="t">Big Buck Bunny</div></div></div>
+      <div class="rw"><h4>Fortsæt med at se</h4><div class="strip">
+        <div class="pst"><div class="a" style="background:linear-gradient(150deg,#2f3a5c,#161b2c)">Ruffy</div><div class="n">Ruffy</div></div>
+        <div class="pst"><div class="a" style="background:linear-gradient(150deg,#3c2f5e,#181428)">Sintel</div><div class="n">Sintel</div></div>
+        <div class="pst"><div class="a" style="background:linear-gradient(150deg,#14384a,#0d1e2a)">Tears</div><div class="n">Tears of Steel</div></div>
+      </div></div>
+    </div>
+    <nav class="bn"><div class="row">
+      <div class="it on"><span class="p"><svg viewBox="0 0 24 24"><path d="M4 11l8-7 8 7"></path><path d="M6 10v10h12V10"></path></svg></span><b>Home</b></div>
+      <div class="it"><span class="p"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-4-4"></path></svg></span><b>Search</b></div>
+      <div class="it"><span class="p"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"></circle><path d="M9 15l2-4 4-2-2 4z"></path></svg></span><b>Discover</b></div>
+    </div><div class="bnsafe"></div></nav>
+  </div>
+</div>
+<div class="lbl" style="left:1560px;top:5170px;width:400px"><small>The episode finished while the phone was in a pocket. <b>No bar, no toast, no error</b> — the device list simply has no <span class="mono">now_playing</span> for this user, so Ravilo says nothing and the title is back in <i>Fortsæt med at se</i>. Drawn explicitly because "nothing" is a state someone has to decide not to fill.</small></div>
+
+<!-- ================= 5 · THE RECEIVER ================= -->
+<div class="lbl w3" style="left:0;top:5560px">
+  <span class="tag">§C · the receiver-only TV app (R264)</span>
+  <h3>Two screens on the TV: a code, and a player</h3>
+  <small>1920 × 1080, from <b>Ravilo Receiver.html</b>'s ten screens. There is no browse, no search, no settings and no profile: if a frame needs a nav item, the frame is wrong. The set is a 2019 Samsung UE55RU7440 — Kotlin/JS and AVPlay, so nothing here may depend on a modern engine, and the idle screen holds no artwork at all.</small>
+</div>
+
+<div class="cap" style="left:0;top:5830px">C1 · Idle, with the pairing code · always visible while valid · <i>see §C0 at the bottom: this screen cannot exist until the TV knows its server</i></div>
+<div class="shot w2" style="left:0;top:5870px" data-screen-label="Receiver · idle with code">
+  <div class="inner"><div class="tvs">
+    <div class="tvc"><div class="mark" style="border-radius:44px;background:var(--grad)"></div><div class="lock">Ravilo</div><div class="rd">Vælg en titel på telefonen</div></div>
+    <div class="pt-tvname">Stue TV<i>ravilo.mit-hus.dk</i></div>
+    <div class="pt-tvcode"><div class="g">K7F3Q2</div><div class="l">Enter this code in Ravilo on your phone</div></div>
+  </div></div>
+</div>
+
+<div class="cap" style="left:1040px;top:5830px">C1b · The backend is unreachable · the code line is replaced</div>
+<div class="shot w2" style="left:1040px;top:5870px" data-screen-label="Receiver · no server">
+  <div class="inner"><div class="tvs">
+    <div class="tvc"><div class="mark" style="border-radius:44px;background:var(--grad);opacity:.6"></div><div class="lock">Ravilo</div><div class="rd" style="opacity:.6">Vælg en titel på telefonen</div></div>
+    <div class="pt-tvname">Stue TV<i>ravilo.mit-hus.dk</i></div>
+    <div class="pt-tvcode"><div class="l warn">Can't reach the server</div></div>
+  </div></div>
+</div>
+
+<div class="cap" style="left:2080px;top:5830px">C1c · The idle screen names its server · Noir</div>
+<div class="shot w2" style="left:2080px;top:5870px" data-screen-label="Receiver · idle names its server">
+  <div class="inner"><div class="tvs noir" data-skin="noir">
+    <div class="tvc"><div class="mark" style="border-radius:44px;background:var(--ink);opacity:.9"></div><div class="lock">Ravilo</div><div class="rd">Vælg en titel på telefonen</div></div>
+    <div class="pt-tvname">Stue TV<i>ravilo.mit-hus.dk</i></div>
+    <div class="pt-tvcode"><div class="g">K7F3Q2</div><div class="l">Enter this code in Ravilo on your phone</div></div>
+  </div></div>
+</div>
+<div class="lbl" style="left:2080px;top:6430px;width:460px"><small>The second line under the TV's name is the <b>server this screen is pointed at</b> — the one piece of state a receiver holds that nobody can otherwise see, and the first thing to check when a household has two servers, or a TV that was set up at the old address. Added to C1 and C1b as well.<br><br><b>No dimming after ten minutes.</b> R264's open question 2 proposed dimming the idle screen to 20 %; <b>the owner scratched it</b> — a code you have to wake with a remote you may not be holding is worse than a lit mark, and the screen is deliberately artwork-free already.</small></div>
+
+<div class="cap" style="left:3120px;top:5830px">C · Code anatomy — read from a sofa</div>
+<div class="panel" style="left:3120px;top:5870px;width:700px">
+  <h2>The code, and why it looks like this</h2>
+  <p class="lead">218 already mints it: six characters, server-side, valid until it expires, re-minted on expiry, and a paired phone never sees it again.</p>
+  <ul>
+    <li><b>96 px glyphs</b> in 1920 space — a shade over the brief's 72 px floor, because this is read across a living room, not from a keyboard.</li>
+    <li><b>Tabular figures</b>, so the string never reflows as characters land, and 218's alphabet already excludes the ambiguous ones (no O/0, no I/1).</li>
+    <li><b>Bottom-right, the TV's name bottom-left.</b> A household with two receivers must be able to tell which screen it is typing at, and the name is the only thing that answers that.</li>
+    <li><b>No QR, no camera.</b> R264's input surface is the backend and the TV remote; a phone camera is neither, and the code is faster than a scan at sofa distance.</li>
+    <li><b>Visible to anyone in the room, by design.</b> Fine for a household (R264 OQ 3); it is the guest-mode TV, if one is ever wanted, that would change this.</li>
+  </ul>
+  <div class="good"><b>Idle carries no artwork</b> — mark, name, code, one sentence. That is FR-R264-7 (a 2013 stick and a 2019 Samsung must both hold it) and it is also the honest screen: nothing is playing, so nothing should be pictured.</div>
+</div>
+
+<!-- receiver player row -->
+<div class="cap" style="left:0;top:6700px">C2 · Chrome up · the TV remote was used</div>
+<div class="shot w2" style="left:0;top:6740px" data-screen-label="Receiver · chrome up">
+  <div class="inner"><div class="tvs">
+    <div class="vid"><img src="assets/bbb-backdrop-landscape.png" alt=""></div>
+    <div class="tvov">
+      <div class="k">Film · 2008</div>
+      <h3>Big Buck Bunny</h3>
+      <div class="bar"><span class="d"></span><span class="kn"></span></div>
+      <div class="tm"><span>04:31</span><span>−05:19</span></div>
+      <div class="pz">❙❙</div>
+    </div>
+  </div></div>
+</div>
+
+<div class="cap" style="left:1040px;top:6700px">C2b · Audio &amp; subtitles · level 1 · the TV's own picker</div>
+<div class="shot w2" style="left:1040px;top:6740px" data-screen-label="Receiver · picker level 1">
+  <div class="inner"><div class="tvs">
+    <div class="vid"><img src="assets/bbb-backdrop-landscape.png" alt="" style="opacity:.45"></div>
+    <div class="pt-tvpick">
+      <h4>Lyd &amp; undertekster</h4>
+      <div class="sub">Big Buck Bunny</div>
+      <div class="lv"><b class="on">Undertekster</b><b>Lyd</b></div>
+      <div class="pt-tvr foc"><span class="fi" style="background:linear-gradient(180deg,#c8102e 50%,#fff 50%)"></span><span>Dansk</span><span class="rt">2 valg</span></div>
+      <div class="pt-tvr"><span class="fi" style="background:linear-gradient(90deg,#0b4ea2 33%,#fff 33% 66%,#0b4ea2 66%)"></span><span>Føroyskt</span><span class="rt">1 valg</span></div>
+      <div class="pt-tvr"><span class="fi" style="background:linear-gradient(180deg,#012169,#fff)"></span><span>English</span><span class="rt">3 valg</span></div>
+      <div class="pt-tvr"><span class="fi" style="background:rgba(255,255,255,.14)"></span><span>Fra</span></div>
+      <div class="pt-tvsz"><span>Størrelse</span><b>S</b><b class="on">M</b><b>L</b></div>
+    </div>
+  </div></div>
+</div>
+
+<div class="cap" style="left:2080px;top:6700px">C2c · Level 2 · the tracks inside one language</div>
+<div class="shot w2" style="left:2080px;top:6740px" data-screen-label="Receiver · picker level 2">
+  <div class="inner"><div class="tvs">
+    <div class="vid"><img src="assets/bbb-backdrop-landscape.png" alt="" style="opacity:.45"></div>
+    <div class="pt-tvpick">
+      <h4>Dansk</h4>
+      <div class="sub">Undertekster · 2 spor</div>
+      <div class="lv"><b>◀ Tilbage</b></div>
+      <div class="pt-tvr foc"><span class="fi" style="background:linear-gradient(180deg,#c8102e 50%,#fff 50%)"></span><span>Dansk</span><span class="rt">Valgt</span></div>
+      <div class="pt-tvr"><span class="fi" style="background:linear-gradient(180deg,#c8102e 50%,#fff 50%)"></span><span>Dansk · for hørehæmmede</span></div>
+      <div class="pt-tvsz"><span>Størrelse</span><b>S</b><b class="on">M</b><b>L</b></div>
+    </div>
+  </div></div>
+</div>
+
+<div class="cap" style="left:3120px;top:6700px">C2d · Skip Intro, from either remote</div>
+<div class="shot w2" style="left:3120px;top:6740px" data-screen-label="Receiver · skip intro">
+  <div class="inner"><div class="tvs">
+    <div class="vid"><img src="assets/bbb-backdrop-opening.png" alt=""></div>
+    <div class="pt-skip foc">Spring intro over</div>
+  </div></div>
+</div>
+
+<div class="cap" style="left:0;top:7340px">C2e · Next up · the countdown and auto-advance</div>
+<div class="shot w2" style="left:0;top:7380px" data-screen-label="Receiver · next up">
+  <div class="inner"><div class="tvs">
+    <div class="vid"><img src="assets/bbb-backdrop-rodents.png" alt="" style="opacity:.5"></div>
+    <div class="tvnup">
+      <div class="th"><img src="assets/bbb-backdrop-bunny.png" alt=""></div>
+      <div class="bd"><div class="k">Næste</div><h4>Ruffy · S3 E13 · Camping</h4><div class="cd">Starter om 8 sekunder</div></div>
+    </div>
+  </div></div>
+</div>
+
+<!-- C3 paired -->
+<div class="cap" style="left:1040px;top:7340px">C3 · The TV remote pauses — and the phone knows, within one push</div>
+<div class="shot w2" style="left:1040px;top:7380px" data-screen-label="Receiver · paused by TV remote">
+  <div class="inner"><div class="tvs">
+    <div class="vid"><img src="assets/bbb-backdrop-landscape.png" alt="" style="opacity:.6"></div>
+    <div class="tvov">
+      <div class="k">Film · 2008</div>
+      <h3>Big Buck Bunny</h3>
+      <div class="bar"><span class="d"></span><span class="kn"></span></div>
+      <div class="tm"><span>04:31</span><span>−05:19</span></div>
+      <div class="pz">▶</div>
+    </div>
+  </div></div>
+</div>
+<div class="dv and" style="left:2080px;top:7380px" data-screen-label="Remote · paused">
+  <div class="pnch"></div>
+  <div class="rem">
+    <div class="rtop"><span class="devc"><span class="castic"></span>Stue TV</span></div>
+    <div class="art"><img src="assets/bbb-backdrop-landscape.png" alt=""><div class="ov"><svg viewBox="0 0 24 24" style="width:44px;height:44px;fill:#fff;opacity:.92"><path d="M8 5v14l11-7z"></path></svg></div></div>
+    <div class="meta"><div class="k">Film · 2008</div><h3>Big Buck Bunny</h3><div class="on">Paused on Stue TV</div></div>
+    <div class="sk"><div style="height:4px;border-radius:3px;background:rgba(255,255,255,.22)"><i style="display:block;height:100%;width:46%;border-radius:3px;background:var(--accent)"></i></div><div style="display:flex;justify-content:space-between;font-family:'JetBrains Mono',monospace;font-size:13px;color:var(--ink-dim);margin-top:9px"><span>04:31</span><span>−05:19</span></div></div>
+    <div class="tr">
+      <span style="width:56px;height:56px;border-radius:50%;background:var(--chip);border:1px solid var(--line);display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--ink);font-size:11px;font-weight:600"><svg viewBox="0 0 24 24" style="width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:2.1;stroke-linecap:round"><path d="M11 5 4 12l7 7"></path><path d="M20 5l-7 7 7 7"></path></svg>10 s</span>
+      <span style="width:76px;height:76px;border-radius:50%;background:var(--ink);color:#0a0c13;display:flex;align-items:center;justify-content:center"><svg viewBox="0 0 24 24" style="width:28px;height:28px;fill:currentColor"><path d="M8 5v14l11-7z"></path></svg></span>
+      <span style="width:56px;height:56px;border-radius:50%;background:var(--chip);border:1px solid var(--line);display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--ink);font-size:11px;font-weight:600"><svg viewBox="0 0 24 24" style="width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:2.1;stroke-linecap:round"><path d="M13 5l7 7-7 7"></path><path d="M4 5l7 7-7 7"></path></svg>30 s</span>
+    </div>
+    <div class="foot">
+      <b><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h10M4 18h13"></path></svg>Lyd &amp; undertekster</b>
+      <b><svg viewBox="0 0 24 24"><path d="M5 5l9 7-9 7z"></path><path d="M19 5v14"></path></svg>Næste afsnit</b>
+      <b class="stop"><svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"></rect></svg>Stop</b>
+    </div>
+  </div>
+</div>
+<div class="pt-pair" style="left:1024px;top:7364px;width:1524px;height:960px"></div>
+<div class="pt-pairnote" style="left:1040px;top:8344px;width:900px">One push · the TV reports, the backend pushes, the phone's art dims and the word changes — no polling, no local clock</div>
+
+<div class="lbl" style="left:2600px;top:7380px;width:440px"><small><b>The art dims and the label reads <i>Paused on Stue TV</i></b> — R245's remote, unchanged, reading a status it now gets from the backend instead of a Cast session. That is the whole point of FR-R264-4: a TV in a living room must never need a phone to pause, and a phone must never show a stale picture of the TV.<br><br>Positions tick <b>only from pushes</b>. A remote that runs its own clock is a remote that lies every time someone else touches the TV.</small></div>
+
+<!-- ================= 6 · ADMIN ================= -->
+<div class="lbl w2" style="left:0;top:8420px">
+  <span class="tag">§D · admin (236 FR-236-10)</span>
+  <h3>Settings → Users &amp; devices gains <i>screens</i></h3>
+  <small>A TV is not a person's device: it is shared, and each person pairs with it separately. So the row carries <b>paired users as chips</b> and <b>revoke per user</b> — the existing revoke, scoped to one person's session on a shared screen.</small>
+</div>
+
+<div class="jsadmin wide" style="left:0;top:8700px">
+  <div class="hd"><h3>Screens</h3><p>TVs and receivers paired to this household. A screen plays under the profile that asked for the title.</p></div>
+  <div class="bd">
+    <table class="jfa-tbl">
+      <tr><th style="width:150px">Screen</th><th style="width:118px">Kind</th><th style="width:170px">Paired users</th><th style="width:250px">Now playing</th><th style="width:118px">Last seen</th><th>Revoke</th></tr>
+      <tr>
+        <td><b>Stue TV</b>Samsung TV · Tizen 5.0</td>
+        <td><span class="jfa-kind">TV app</span></td>
+        <td><span class="jfa-chip">Eydun</span><span class="jfa-chip">Marjun</span></td>
+        <td>Idle</td>
+        <td>Now</td>
+        <td><span class="jfa-rev">Eydun</span><span class="jfa-rev">Marjun</span></td>
+      </tr>
+      <tr>
+        <td><b>Soveværelse</b>LG TV · webOS</td>
+        <td><span class="jfa-kind">TV app</span></td>
+        <td><span class="jfa-chip">Eydun</span><span class="jfa-chip">Hanus</span></td>
+        <td class="jfa-np">Ruffy · S3 E12<i>Hanus · 12:04 / 24:00</i></td>
+        <td>Now</td>
+        <td><span class="jfa-rev">Eydun</span><span class="jfa-rev">Hanus</span></td>
+      </tr>
+      <tr>
+        <td><b>Stue Chromecast</b>Chromecast</td>
+        <td><span class="jfa-kind"><span class="castic" style="width:15px;height:13px"></span>Chromecast</span></td>
+        <td><span class="jfa-chip">Marjun</span></td>
+        <td>Idle</td>
+        <td>2 hours ago</td>
+        <td><span class="jfa-rev">Marjun</span></td>
+      </tr>
+    </table>
+    <p class="jfa-help">Ravilo groups a TV with a phone when both reach the server from the same internet address. A VPN or mobile data puts the TV under “All your TVs” instead.</p>
+  </div>
+</div>
+<div class="lbl" style="left:0;top:9260px;width:1080px"><small>Three rows, three shapes: a screen two people share and nobody is using; the same kind of screen mid-episode, naming <b>who</b> and <b>where</b> (this is where Q2's answer shows up on the admin side — and the admin always names people, whatever the viewer's sheet does); and a Chromecast, whose row shape does not change at all. Classes are <span class="mono">jfa-*</span> / <span class="mono">cc-*</span>, never <span class="mono">adv-*</span> — an ad blocker's filter list hides that prefix outright.</small></div>
+
+<!-- ================= 7 · STRINGS + WHAT GETS BUILT ================= -->
+<div class="pt-str" style="left:1200px;top:8700px;width:900px">
+  <h3>New strings · en · da · fo (drafts)</h3>
+  <p>The shipped <span style="font-family:'JetBrains Mono',monospace">ravilo-i18n.js</span> wins wherever a key already exists. Danish and Faroese are drafts for the owner to correct. No product, protocol or status code in any of them — <i>AirPlay</i> is Apple's own affordance name, the one exception the brief allows.</p>
+  <table>
+    <tr><th>Key</th><th>English</th><th>Dansk</th><th>Føroyskt</th></tr>
+    <tr><td class="k">screens.title</td><td class="en">Play on a TV</td><td>Vis på et tv</td><td>Vís á einum tv</td></tr>
+    <tr><td class="k">screens.nearby</td><td class="en">On this network</td><td>På dette netværk</td><td>Á hesum netinum</td></tr>
+    <tr><td class="k">screens.all</td><td class="en">All your TVs</td><td>Alle dine tv</td><td>Øll tínn tv</td></tr>
+    <tr><td class="k">screens.ready</td><td class="en">Ready</td><td>Klar</td><td>Klárt</td></tr>
+    <tr><td class="k">screens.playing</td><td class="en">Playing {title}</td><td>Viser {title}</td><td>Vísir {title}</td></tr>
+    <tr><td class="k">screens.busy</td><td class="en">Busy · {user} is watching</td><td>I brug · {user} ser med</td><td>Í nýtslu · {user} hyggur</td></tr>
+    <tr><td class="k">screens.offline</td><td class="en">Offline · last seen {when}</td><td>Offline · sidst set {when}</td><td>Ikki á · seinast sæð {when}</td></tr>
+    <tr><td class="k">screens.add</td><td class="en">Add a TV</td><td>Tilføj et tv</td><td>Legg eitt tv til</td></tr>
+    <tr><td class="k">screens.code_hint</td><td class="en">The code is on the TV's screen</td><td>Koden står på tv-skærmen</td><td>Koduna sært tú á tv-skerminum</td></tr>
+    <tr><td class="k">screens.code_failed</td><td class="en">That code didn't work</td><td>Koden virkede ikke</td><td>Kodan virkaði ikki</td></tr>
+    <tr><td class="k">screens.airplay</td><td class="en">AirPlay</td><td>AirPlay</td><td>AirPlay</td></tr>
+    <tr><td class="k">screens.airplay_notice</td><td class="en">Your phone has to stay on and in Ravilo — the TV stops when you close the app.</td><td>Din telefon skal være tændt og i Ravilo — tv'et stopper, når du lukker appen.</td><td>Telefonin má vera tendrað og í Ravilo — tvið steðgar, tá tú letur appina.</td></tr>
+    <tr><td class="k">screens.sending</td><td class="en">Sending to {tv}…</td><td>Sender til {tv}…</td><td>Sendir til {tv}…</td></tr>
+    <tr><td class="k">screens.playing_on</td><td class="en">Playing on {tv}</td><td>Vises på {tv}</td><td>Vísist á {tv}</td></tr>
+    <tr><td class="k">receiver.code_hint</td><td class="en">Enter this code in Ravilo on your phone</td><td>Indtast denne kode i Ravilo på din telefon</td><td>Skriva hesa koduna í Ravilo á telefonini</td></tr>
+    <tr><td class="k">receiver.no_server</td><td class="en">Can't reach the server</td><td>Kan ikke få forbindelse til serveren</td><td>Fær ikki samband við servaran</td></tr>
+  </table>
+</div>
+
+<div class="panel" style="left:2200px;top:8700px;width:760px">
+  <h2>What happens after the two picks</h2>
+  <p class="lead">§A, §C1 and §D need no pick at all — say go and they are built next. §B and §C2/C3 wait on Q1 and Q2, and neither answer moves a frame more than one row.</p>
+  <table class="tbl">
+    <tr><th style="width:230px">Goes into</th><th>What lands there</th></tr>
+    <tr><td><b>Ravilo Mobile.html</b><br><span class="mono">no pick needed</span></td><td>§A: the unsupported-device notice (iPhone below iOS 18.2), the install card on sign-in and in Settings, the <i>Ravilo updated · Reload</i> toast, and the two standalone frames where the app bar clears the Dynamic Island.</td></tr>
+    <tr><td><b>Ravilo Mobile.html</b><br><span class="mono">after Q1 + Q2</span></td><td>§B: the three-tier sheet behind the cast glyph, <b>replacing</b> the 2026-09-16 frame that showed the platform's dialog; the code entry; the AirPlay-active player.</td></tr>
+    <tr><td><b>Ravilo Receiver.html</b></td><td>§C1 as new STATE entries (idle + code, no-server, dimmed) straight away; §C2/C3's player, picker and paired frames after the picks.</td></tr>
+    <tr><td><b>app/settings.html</b></td><td>§D's screens table in Users &amp; devices. The Chromecast card in Connections is untouched.</td></tr>
+    <tr><td><b>New: Ravilo - Web App Icons.html</b></td><td>§A3: 192/512 <span class="mono">any</span>, 512 maskable under a circle, a squircle and a rounded square, 96 monochrome on a Material You tint, 180 apple-touch, and the two splash grounds.</td></tr>
+  </table>
+  <div class="warn"><b>Not in this round, on purpose:</b> the web player's chrome rebuild (the transparent-canvas question — the AirPlay frame above uses today's chrome), launching or waking a TV from the phone, LG store screenshots, tablets, and Chromecast-for-iOS.</div>
+  <div class="good"><b>Two things to settle on a real device before any of it is closed:</b> whether a backgrounded standalone iOS web app keeps an AirPlay session alive (R265 OQ 1 — it decides the notice's wording, not its existence), and whether the RU7440 can layer HTML chrome over AVPlay at all (R264 OQ 1 — it decides whether §C2's picker is drawn by us or by the set).</div>
+</div>
+
+<!-- ================= 8 · §C0 · THE SERVER, FIRST ================= -->
+<div class="lbl w3" style="left:0;top:9540px">
+  <span class="tag pick">§C0 · found missing 2026-09-18 · owner's catch · now R269, decided</span>
+  <h2>Before any of §C can happen: the TV has to be told where Ravilo is</h2>
+  <small><b>R264 has a hole.</b> FR-R264-1 says the app enrols with 218's hand-off code and FR-R264-2 says idle always shows a pairing code — but a code is <b>minted server-side</b>, so neither is possible until the TV can reach a server, and nothing in the phase says where that address comes from.<br><br><b>Why the Chromecast receiver never needed this:</b> it is <i>served by</i> the backend at <span class="mono">/cast/</span>, so its own origin <b>is</b> the server — it can ask before it can be configured wrong. A sideloaded Tizen <span class="mono">.wgt</span> is a local file with <b>no origin at all</b>. It boots knowing nothing.<br><br>So the receiver gets <b>one screen the household sees exactly once</b>, and it is not new work: it is R225/R226's <b>ServerSetupScreen</b> with R175's on-screen keyboard, which the TV client already ships and this household has already used. Drawn below in the states that actually occur.</small>
+</div>
+
+<div class="cap" style="left:0;top:9830px">C0a · First boot · nothing typed</div>
+<div class="shot w2" style="left:0;top:9870px" data-screen-label="Receiver · server entry">
+  <div class="inner"><div class="tvs">
+    <div class="pt-srv">
+      <div class="mk"></div>
+      <h3>Hvor er Ravilo?</h3>
+      <div class="hl">Skriv adressen på jeres Ravilo-server</div>
+      <div class="fld foc"><span class="ph">192.168.1.40:8096</span></div>
+      <div class="msg"></div>
+      <div class="pt-kbtv">
+        <div class="kr"><b class="foc">1</b><b>2</b><b>3</b><b>4</b><b>5</b><b>6</b><b>7</b><b>8</b><b>9</b><b>0</b><b>.</b><b>:</b></div>
+        <div class="kr"><b>A</b><b>B</b><b>C</b><b>D</b><b>E</b><b>F</b><b>G</b><b>H</b><b>I</b><b>J</b><b>K</b><b>L</b></div>
+        <div class="kr"><b class="w">Slet</b><b class="w">Mere…</b><b class="w">Forbind</b></div>
+      </div>
+    </div>
+  </div></div>
+</div>
+
+<div class="cap" style="left:1040px;top:9830px">C0b · Typing · the scheme is inferred, never asked (R226)</div>
+<div class="shot w2" style="left:1040px;top:9870px" data-screen-label="Receiver · server typed">
+  <div class="inner"><div class="tvs">
+    <div class="pt-srv">
+      <div class="mk"></div>
+      <h3>Hvor er Ravilo?</h3>
+      <div class="hl">Skriv adressen på jeres Ravilo-server</div>
+      <div class="fld foc"><span class="v">ravilo.mit-hus.dk</span><span class="car"></span><span class="sch">https:// tilføjes</span></div>
+      <div class="msg"></div>
+      <div class="pt-kbtv">
+        <div class="kr"><b>1</b><b>2</b><b>3</b><b>4</b><b>5</b><b>6</b><b>7</b><b>8</b><b>9</b><b>0</b><b>.</b><b>:</b></div>
+        <div class="kr"><b>A</b><b>B</b><b>C</b><b>D</b><b>E</b><b>F</b><b>G</b><b>H</b><b>I</b><b>J</b><b>K</b><b>L</b></div>
+        <div class="kr"><b class="w">Slet</b><b class="w">Mere…</b><b class="w foc">Forbind</b></div>
+      </div>
+    </div>
+  </div></div>
+</div>
+
+<div class="cap" style="left:2080px;top:9830px">C0c · Trying · the only spinner on this TV</div>
+<div class="shot w2" style="left:2080px;top:9870px" data-screen-label="Receiver · server checking">
+  <div class="inner"><div class="tvs">
+    <div class="pt-srv">
+      <div class="mk"></div>
+      <h3>Hvor er Ravilo?</h3>
+      <div class="hl">Skriv adressen på jeres Ravilo-server</div>
+      <div class="fld"><span class="v">ravilo.mit-hus.dk</span></div>
+      <div class="msg"><span class="sp"></span>Prøver at få forbindelse…</div>
+    </div>
+  </div></div>
+</div>
+
+<div class="cap" style="left:3120px;top:9830px">C0d · Wrong address · the text stays, so it can be corrected</div>
+<div class="shot w2" style="left:3120px;top:9870px" data-screen-label="Receiver · server failed">
+  <div class="inner"><div class="tvs">
+    <div class="pt-srv">
+      <div class="mk"></div>
+      <h3>Hvor er Ravilo?</h3>
+      <div class="hl">Skriv adressen på jeres Ravilo-server</div>
+      <div class="fld foc"><span class="v">ravilo.mit-hus.dk</span><span class="car"></span></div>
+      <div class="msg bad">Der er ingen Ravilo-server på den adresse</div>
+      <div class="pt-kbtv">
+        <div class="kr"><b>1</b><b>2</b><b>3</b><b>4</b><b>5</b><b>6</b><b>7</b><b>8</b><b>9</b><b>0</b><b>.</b><b>:</b></div>
+        <div class="kr"><b>A</b><b>B</b><b>C</b><b>D</b><b>E</b><b>F</b><b>G</b><b>H</b><b>I</b><b>J</b><b>K</b><b>L</b></div>
+        <div class="kr"><b class="w">Slet</b><b class="w">Mere…</b><b class="w foc">Forbind</b></div>
+      </div>
+    </div>
+  </div></div>
+</div>
+
+<div class="panel" style="left:0;top:10500px;width:1060px">
+  <h2>What this costs, and what it is not allowed to become</h2>
+  <p class="lead">One screen, once, on a TV that otherwise has no navigation at all. That exception is the whole design risk, so it is fenced:</p>
+  <ul>
+    <li><b>It is reached only when there is no server</b> — never from the idle screen, never mid-playback, and never as a menu. A configured receiver has no route back to it (see the question below).</li>
+    <li><b>The scheme is not a question.</b> R226 already settled this: type a host, Ravilo infers <span class="mono">https://</span> and falls back to <span class="mono">http://</span> on a private address. No toggle, no dropdown.</li>
+    <li><b>It is the last thing the app draws before it becomes a renderer.</b> After <i>Forbind</i>, the token is stored on the TV and every subsequent screen comes from the backend (FR-R264-5) — including the pairing code, which only now can exist.</li>
+    <li><b>Idle names the server from then on</b> (C1c): one quiet mono line under the TV's name. It is the only way a household can see that a TV is pointed at a server that moved.</li>
+  </ul>
+  <div class="good"><b>Two states that read the same today and must not.</b> <i>"Can't reach the server"</i> (C1b) means <b>configured, unreachable, retrying</b> — do nothing, it will come back. <b>No server at all</b> means <b>type an address</b>. R264's FR-R264-6 currently uses one sentence for both, which sends a household hunting for a network fault when the app simply was never set up.</div>
+  <div class="warn"><b>Considered and rejected: discovery instead of typing.</b> mDNS/Bonjour from the TV would remove the keyboard, but Tizen 5.0's web runtime has no usable mDNS, the phone side already refused LAN discovery as a non-goal (R265), and a receiver that <i>sometimes</i> finds the server is worse than one that always asks once. Rejected for the same reason the phone's "on this network" is the server's judgement and not the phone's.</div>
+</div>
+
+<div class="panel" style="left:1140px;top:10500px;width:1000px">
+  <h2>Two questions this opened — both answered</h2>
+  <div class="opt">
+    <div><h5>1 · How does a household change the server later, on an app with no navigation?</h5><p><b>a · A hold on the idle screen.</b> Hold <i>Back</i> (or OK) for three seconds on idle and the setup screen returns, with the current address in the field. Nothing is drawn to advertise it; it is the same class of affordance as a factory reset.</p><p><b>b · Nothing at all.</b> Reinstall, or clear the app's data from Tizen's own settings. Honest, zero surface, and brutal the first time the server's address changes.</p><p><b>c · From the phone.</b> Cannot work: the phone reaches the TV <i>through</i> the server it is trying to replace.</p><div class="ch"><span class="lean">Chosen: a · hold Back three seconds</span><span>c is impossible</span></div></div>
+    <div><h5>2 · Does the code screen wait for the server, or show a stale code?</h5><p><b>a · Wait.</b> No code until the server answers; the screen says <i>Prøver at få forbindelse…</i> under the mark. A code that cannot be redeemed is worse than no code, because the viewer types it and gets <i>"That code didn't work"</i> on the phone — a failure that points at the wrong device.</p><p><b>b · Keep the last code.</b> Faster in the common case (the server is up, the socket blipped) and 218's codes outlive a blip.</p><div class="ch"><span class="lean">Chosen: a · wait, and say so</span></div></div>
+  </div>
+  <div class="warn"><b>Spec consequence.</b> R264 is <span class="mono">Planned</span> and dev-authored, so this is written as <b>R269</b> rather than edited into it: <i>the receiver needs a server before it can pair</i> — the setup screen, the inferred scheme, the two distinct no-server states, the server line on idle, the return path, and the ordering rule (server → code → pair). It supersedes <b>FR-R264-2's</b> "always shows its code" and <b>FR-R264-6's</b> single no-server sentence. Next free after it: <b>238 / R270</b>.</div>
+</div>
+
+</body>
+</html>

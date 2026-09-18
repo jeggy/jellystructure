@@ -61,6 +61,20 @@
   .cc-fvv { display: flex; align-items: center; gap: 10px; margin-top: 7px; padding: 7px 9px; border: 1px solid var(--line); border-radius: 8px;
     background: var(--fill-3); font-family: 'JetBrains Mono', monospace; font-size: .82rem; color: var(--ink); word-break: break-all; }
   .cc-fvv .btn { flex: none; }
+  .cc-fvv.pick { font-family: Sora, sans-serif; word-break: normal; }
+  .cc-fvv.pick em { font-style: normal; color: var(--ink-dim); font-size: .74rem; flex: none; }
+  .cc-fvv .sans { font-family: Sora, sans-serif; word-break: normal; }
+  .cc-fv .cc-note { margin-top: 7px; font-size: .76rem; line-height: 1.5; color: var(--ink-soft); }
+  /* the steps fall into three groups with three different consequences (cast at home ·
+     let the TV app take it · let any Chromecast use it), so the groups are labelled —
+     an admin who only wants the first can see where to stop. */
+  .cc-grp { display: flex; align-items: center; gap: 10px; margin: 18px 0 10px; font-size: .68rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-dim); }
+  .cc-grp:first-child { margin-top: 0; }
+  .cc-grp em { font-style: normal; font-weight: 500; letter-spacing: 0; text-transform: none; color: var(--ink-soft); }
+  .cc-grp::after { content: ''; flex: 1; height: 1px; background: var(--line); }
+  /* the 512² icon Google asks for, generated from the same mark the receiver's idle screen shows */
+  .cc-icon { width: 44px; height: 44px; flex: none; border-radius: 9px; background: #000B25; border: 1px solid var(--line-2); display: grid; place-items: center; }
+  .cc-icon img { width: 27px; height: 27px; display: block; }
 
   /* age-rating region cascade (Metadata tab) */
   .rc-list { list-style: none; margin: 12px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
@@ -329,17 +343,45 @@
         <div id="cc-on" style="display:none;">
           <hr class="dash">
           <div class="box flat" id="cc-steps" style="padding:14px 15px;">
-            <div class="cc-step"><span class="step-n">1</span><p><b>Open the Google Cast Developer Console</b> — <a href="https://cast.google.com/publish/" target="_blank" rel="noopener">cast.google.com/publish</a> — and sign in with the Google account that should own this receiver. Google charges a <b>one-time US$5</b> developer fee the first time. Nothing else in Ravilo costs money.</p></div>
+            <div class="cc-grp">Register the receiver <em>· works on any Chromecast, with or without Ravilo on it</em></div>
+            <div class="cc-step"><span class="step-n">1</span><p><b>Open the Google Cast Developer Console</b> — <a href="https://cast.google.com/publish/" target="_blank" rel="noopener">cast.google.com/publish</a> — with the Google account that should own this receiver. Google charges a <b>one-time US$5</b> fee the first time.</p></div>
             <div class="cc-step"><span class="step-n">2</span><p>Click <b>Add New Application</b> and choose <b>Custom Receiver</b>.</p></div>
-            <div class="cc-step"><span class="step-n">3</span><p><b>Fill in two fields.</b> Name it anything; everything else can stay as it is.</p>
+            <div class="cc-step"><span class="step-n">3</span><p><b>Fill in the receiver, then one sender.</b> Name it anything. Under <b>Sender Details</b> add an Android sender with the Package Name below; <b>Intent to Join URI</b> and <b>Website URL</b> can stay empty. Leave everything else as it is.</p>
               <div class="cc-fv">
                 <div><span class="cc-fvk">Receiver Application URL <em>· your public address + /cast/</em></span>
                   <div class="cc-fvv" id="cc-fv-url"><span>https://js.heimatún.fo/cast/</span><span class="spacer"></span><span class="btn sm ghost">Copy</span></div></div>
-                <div><span class="cc-fvk">Package Name <em>· the Ravilo app on your phone</em></span>
+                <div><span class="cc-fvk">Package Name <em>· Sender Details → Android · the Ravilo app on your phone</em></span>
                   <div class="cc-fvv"><span>dev.jellystructure.ravilo</span><span class="spacer"></span><span class="btn sm ghost">Copy</span></div></div>
               </div></div>
-            <div class="cc-step"><span class="step-n">4</span><p><b>Save.</b> The console then shows an <b>Application ID</b> — 8 characters like <span class="mono">A1B2C3D4</span>. Copy it into the field below.</p></div>
-            <div class="cc-step" style="margin-bottom:0;"><span class="step-n">5</span><p><b>Let your Chromecast use it.</b> Either add the device as a <b>test device</b> (the console asks for its serial number, which the Google Home app shows under the device's settings), or <b>publish</b> the application so any Chromecast can use it. Publishing is not instant — if the first cast does nothing, give it a while and try again.</p></div>
+            <div class="cc-step"><span class="step-n">4</span><p><b>Save.</b> The console shows an <b>Application ID</b> — 8 characters like <span class="mono">A1B2C3D4</span>. Paste it into the field below.</p></div>
+            <div class="cc-step"><span class="step-n">5</span><p><b>Add your devices as test devices.</b> A Chromecast's serial is in the Google Home app. A TV with Chromecast built in has two — use the <b>software serial</b> under <b>Settings › Device Preferences › Google Cast</b>, not the printed one; it changes after a factory reset. <b>This is enough for a household</b> — nothing below is required.</p></div>
+
+            <div class="cc-grp">A TV that runs Ravilo opens Ravilo itself <em>· Google calls this Cast Connect</em></div>
+            <div class="cc-step"><span class="step-n">6</span><p><b>Add the Android TV package name</b> to the same application. A TV with Ravilo installed then opens <b>Ravilo itself</b> when cast to; a TV without it opens the receiver from step 3. The phone does nothing differently.</p>
+              <div class="cc-fv">
+                <div><span class="cc-fvk">Android TV package name <em>· the Ravilo app on the TV · the same build as the phone's</em></span>
+                  <div class="cc-fvv"><span>dev.jellystructure.ravilo</span><span class="spacer"></span><span class="btn sm ghost">Copy</span></div>
+                  <div class="cc-note">If Ravilo on that TV was installed from an APK rather than Google Play, the TV <b>must</b> be a test device from step 5 — publishing does not change that.</div></div>
+              </div></div>
+
+            <div class="cc-grp">Publish <em>· optional — lets any Chromecast use it, not only the ones you listed</em></div>
+            <div class="cc-step"><span class="step-n">7</span><p><b>Fill in Listing Details.</b> Google will not publish without a listing and one sender (step 3). The listing describes Ravilo, not your library.</p>
+              <div class="cc-fv">
+                <div><span class="cc-fvk">Category</span>
+                  <div class="cc-fvv pick"><span>TV &amp; Movies</span><span class="spacer"></span><em>choose from the list</em></div></div>
+                <div><span class="cc-fvk">Countries <em>· where your household is</em></span>
+                  <div class="cc-fvv pick"><span>Casting works everywhere; only the listing is limited.</span><span class="spacer"></span><em>choose</em></div></div>
+                <div><span class="cc-fvk">Title</span>
+                  <div class="cc-fvv"><span>Ravilo</span><span class="spacer"></span><span class="btn sm ghost">Copy</span></div></div>
+                <div><span class="cc-fvk">Description <em>· one line</em></span>
+                  <div class="cc-fvv"><span>Your family's own film and series library, cast to the TV.</span><span class="spacer"></span><span class="btn sm ghost">Copy</span></div></div>
+                <div><span class="cc-fvk">Icon <em>· 512 × 512 · PNG</em></span>
+                  <div class="cc-fvv"><span class="cc-icon"><img src="../ravilo/assets/brand/ravilo-mark.svg" alt=""></span><span class="sans">ravilo-icon-512.png <span class="muted">· the receiver's idle mark</span></span><span class="spacer"></span><span class="btn sm ghost" id="cc-icon-dl">Download</span></div></div>
+                <div><span class="cc-fvk">Additional Translations <em>· optional · Ravilo's other two languages</em></span>
+                  <div class="cc-fvv"><span><span class="lang">da</span> Familiens egen film- og seriesamling, castet til tv'et.</span><span class="spacer"></span><span class="btn sm ghost">Copy</span></div>
+                  <div class="cc-fvv"><span><span class="lang">fo</span> Familjunnar egna filma- og røðsavn, sent á sjónvarpið.</span><span class="spacer"></span><span class="btn sm ghost">Copy</span></div></div>
+              </div></div>
+            <div class="cc-step" style="margin-bottom:0;"><span class="step-n">8</span><p><b>Publish.</b> Not instant — if the first cast on an unlisted device does nothing, give it a while. Your test devices keep working meanwhile.</p></div>
           </div>
 
           <div class="field" style="margin-top:14px;"><label>Application ID</label>
@@ -572,7 +614,7 @@
               hint = document.getElementById('cc-appid-hint'), stat = document.getElementById('cc-stat');
         const OFF_BLURB = blurb.innerHTML;
         const ON_BLURB = 'Ravilo shows a cast button on every screen. A Chromecast appears in <b>Users &amp; devices</b> as its own device, and the Jellyfin dashboard can pause and seek it like any other client.';
-        const STEP_BLURB = 'Five one-time steps, and only two fields to type. Nothing recurring, and nothing leaves this page except the two values you paste at Google.';
+        const STEP_BLURB = 'Eight one-time steps in three groups. Five register the receiver — enough for your own devices; one lets a TV that already runs Ravilo open Ravilo itself; two publish it so any Chromecast can use it. Nothing recurring, and nothing leaves this page except what you paste at Google.';
         function set(state) {
           const isOff = state === 'off', okd = state === 'ok';
           on.style.display = isOff ? 'none' : '';
@@ -592,6 +634,7 @@
           stat.innerHTML = okd
             ? '<div><span class="cc-dot"></span> Receiver <b>reachable</b> at your public address + <span class="mono">/cast/</span></div>'
               + '<div><span class="cc-dot"></span> Application ID <b>set and confirmed by a real cast</b></div>'
+              + '<div><span class="cc-dot"></span> Living room TV <b>opens Ravilo itself</b> when cast to · other devices get the receiver</div>'
               + '<div><span class="cc-dot"></span> Last cast <b>yesterday 21:14</b> · Living room TV · 38 min</div>'
               + '<div><span class="cc-dot"></span> <b>2 devices</b> have cast · <a href="ravilo-users.html">Users &amp; devices</a></div>'
               + '<div><span class="cc-dot"></span> Jellyfin shows it as <b>Chromecast via Ravilo · Living room</b></div>'
@@ -603,6 +646,18 @@
         seg.addEventListener('click', e => { const s = e.target.closest('[data-cc]'); if (s) set(s.dataset.cc); });
         tog.addEventListener('click', () => set(tog.classList.contains('on') ? 'off' : 'unreg'));
         set('off');
+
+        /* The icon Google asks for is served by jellystructure (GET /cast/icon-512.png); the
+           mockup renders it the same way the server would — the mark on the brand ground. */
+        document.getElementById('cc-icon-dl').addEventListener('click', () => {
+          const img = new Image(); img.src = '../ravilo/assets/brand/ravilo-mark.svg';
+          img.onload = () => {
+            const c = document.createElement('canvas'); c.width = c.height = 512;
+            const x = c.getContext('2d'); x.fillStyle = '#000B25'; x.fillRect(0, 0, 512, 512);
+            x.drawImage(img, 102, 102, 308, 308);
+            c.toBlob(b => { const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = 'ravilo-icon-512.png'; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000); }, 'image/png');
+          };
+        });
 
         /* Public address (phase 227). One field feeds the registration URL; with it unset there
            is nothing to paste, so the row says where to set it instead of showing a broken URL.

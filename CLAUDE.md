@@ -36,7 +36,208 @@ GitHub is the **source of truth**; we layer designs on top of it.
 - `specs/research-reports/` — dated deep-dives (research, not spec; may go stale).
 
 ## Where the work stands (read the repo `STATUS.md` for the live table)
-- **2026-09-17 (latest) — sync: everything from 2026-09-16 shipped in a day; per-row ORDER drawn, built into the
+- **2026-09-18 (latest) — the picks came in, the phone build landed, and the TV receiver app got its own
+  file.** Ravilo drafts now run to **R270**; **next free: 238 / R271**.
+  - **Owner picks:** AirPlay is the **footnote** (*"AirPlay (phone must stay on)"*, not a full row — against
+    my lean, so the full sentence moves to the connecting bar the moment a session starts, plus the admin's
+    help text); a busy TV **names its viewer** (*Busy · Eydun is watching*, and *Offline · last seen Tuesday*
+    keeps its weekday); the receiver's server is changed by a **three-second hold on *Back***; and an
+    unreachable server makes the code screen **wait and say so**, never show a stale code.
+  - **Built into `ravilo/Ravilo Mobile.html` + `mobile/ravilo-mobile-player.css`** (new `sc-*` layer): the
+    **three-tier sheet** behind the one cast glyph — *On this network* (absent when empty, no spinner
+    anywhere), a **collapsible *All your TVs (n)*** that remembers its state, the four row states (ready ·
+    playing-mine-and-tappable · busy-dimmed-and-not · offline-dimmed), the **Chromecast row only in the
+    Android frame**, the **AirPlay footnote only in the iPhone frame**, ***Add a TV*** with a native
+    6-character input (one error string for unknown/expired/used, success returns the sheet with the TV
+    outlined), and **AirPlay-active**: the phone's own player *is* the remote — connected glyph, the TV's
+    name beside it, **no mini bar, no R245 remote**. The bar now says *Sending to …* → *Playing on …*.
+    This **replaces** the old frame that stood in for the platform's Cast dialog (FR-R245-2, superseded).
+  - **New file: `ravilo/Ravilo Receiver App.html`** — the maintained mockup for the receiver-only TV app,
+    deliberately **not** an extension of `Ravilo Receiver.html` (that one is the Chromecast's screen, served
+    by the backend, so it never asks for a server and has no remote pointed at it). 18 states behind three
+    pickers × 3 skins × 3 languages × caption size: the five **server-setup** states (incl. the hold-*Back*
+    return), idle-with-code, idle-waiting, R218's loading and buffering, playing with captions, chrome up,
+    paused, the **two-level picker with Subtitle size**, Skip Intro, next-up, phase 182's *server busy* and
+    R237's failure. `?state=&skin=&lang=` all work.
+  - **Specs written:** **R269** (the receiver needs a server first — updated with both owner decisions and
+    pointed at the new mockup) and **R270** (*AirPlay is a footnote, and a busy TV names its viewer*), which
+    **supersedes `main`'s R265 FR-R265-4 row shape** and confirms FR-R265-2's busy/offline wording. Both
+    `Planned`, not dev-reviewed, **pending export**.
+  - Still unbuilt and needing no pick: §A (the install card, the unsupported-device notice, the update
+    toast, the standalone frames), §D's screens table in `app/settings.html`, and `Ravilo - Web App
+    Icons.html`.
+- **2026-09-18 — two owner notes on the round-1 receiver frames: the missing server step, and no
+  dimmed idle.** Ravilo drafts now run to **R269**; **next free: 238 / R270**.
+  - **R269 — the receiver needs a server before it can pair** (`phase-R269-receiver-needs-a-server-first.md`,
+    `Planned`, not dev-reviewed). The owner caught a real hole in `main`'s R264: the app enrols with 218's
+    hand-off code and idle *always* shows a pairing code — but a code is **minted server-side**, and nothing
+    says where the address comes from. `ravilo-cast` never needed it (**it is served by the backend, so its
+    origin *is* the server**); a sideloaded Tizen `.wgt` is a local file with **no origin at all**.
+    R269 adds **one screen, seen once** — R225/R226's `ServerSetupScreen` with R175's keyboard, re-drawn in
+    DOM — plus the ordering rule **server → code → pair**, the inferred scheme (no http/https toggle), the
+    typed text kept on failure, **two states that currently read the same and must not** (*no address* vs
+    *configured but unreachable*), the server's address as a quiet line under the TV's name on idle, a
+    hold-*Back*-three-seconds way back (no menu — this app has no navigation), **no mDNS/discovery**, and the
+    TV's own UI language as the pre-server default. Supersedes **FR-R264-2**'s "always shows its code" and
+    **FR-R264-6**'s single no-server sentence.
+  - **Drawn: §C0 in `ravilo/Play on a TV - Directions.html`** — four TV frames (first boot · typing with
+    *https:// tilføjes* · trying · wrong address), the fencing panel (why this one screen is allowed on an
+    app with no navigation), the rejected-discovery note, and **two questions with leans**: how a household
+    changes the server later (**lean: a three-second hold on idle**; from the phone is impossible — it reaches
+    the TV *through* the server being replaced) and whether the code screen waits or shows a stale code
+    (**lean: wait, and say so** — a code that cannot be redeemed fails on the phone, pointing at the wrong
+    device). Seven new strings × en/da/fo.
+  - **⚠ Scratched: R264's open question 2 (dimming idle to 20 % after ten minutes).** Owner decision — the
+    idle screen stays lit. The frame and its note are gone from the canvas; the slot now draws **C1c: idle
+    naming its server** (Noir). Recorded in R269's dev notes, since R264 is dev-authored.
+- **2026-09-18 — sync: `main` took FOUR of the numbers our drafts held, and handed us a new design
+  brief. Round 1 drawn: play on a TV.** Admin now tops at **236**, Ravilo at **R265**; **next free: 238 / R269**.
+  - **Renumbered (fourth time this shape has happened; the dev tracker always wins):** our **235 → 237**
+    (Chromecast publish + Cast Connect + listing) · **R263 → R266** (Cast Connect, the TV app as receiver) ·
+    **R264 → R267** (the phone's top row + bottom bar) · **R265 → R268** (Discover's tab order and scrolling).
+    Files renamed, every in-file FR reference rewritten, and the mockups' own comments moved with them
+    (`Ravilo Mobile.html`, `Bottom Nav - Directions.html`, `ravilo-app.js`, `ravilo.css`). All four still
+    `Planned`, not dev-reviewed, **pending export**. ⚠ **Entries below this one say R264/R265 meaning our own
+    drafts — those are R267/R268 now.**
+  - **What `main` put there instead:** **235** (serve the web app like an app — CSP, caching, headers), **236**
+    (*screens*: the backend drives a TV for a phone — `/api/remote/**`, `ScreenStatus`, the `nearby` rule, a 409
+    naming the user who is watching), **R263** (the web app installs — PWA, icons, the iOS 18.2 floor),
+    **R264** (a **receiver-only** Tizen app, no navigation, **supersedes R189** and deletes `ravilo-tizen`),
+    **R265** (play on a TV from the phone — one glyph, three tiers, AirPlay kept with a caveat).
+  - **New brief — and it is ours to answer:** `specs/ravilo/design-brief-screens-and-web-install-2026-09-18.md`.
+    The owner's most important use case, stated plainly: *an iPhone installs the PWA and streams to the Samsung
+    TV*. **Two reversals of the 2026-09-16 brief:** AirPlay's "never draw it" is **withdrawn** (draw it as the
+    third tier, with a persistent notice that the phone must stay on), and R245's "the device picker is the
+    platform's dialog" is **superseded** — the picker is **Ravilo's own bottom sheet**. The remote, the mini
+    bar, the subtitles sheet and the receiver's ten screens are reused **as drawn**.
+  - **Drawn: `ravilo/Play on a TV - Directions.html`** (canvas): the sheet's **ten states** across Pixel 9 and
+    iPhone 16 plus a Noir pass; the **two round-1 questions** as marked options — (1) the AirPlay tier's weight,
+    a full row with the notice as its second line vs a footnote link (**lean: the full row** — the caveat has to
+    be readable at the moment of choosing) and (2) whether a busy TV names *who* is watching (**lean: yes**, and
+    *Offline · last seen Tuesday* follows the same decision); the **AirPlay-active player**, where the phone's
+    own player **is** the remote (no mini bar, no R245 remote — anything else would be a lie); the connecting
+    bar's two moments (*Sending to…* → *Playing on…*) and the **reconnect case that shows nothing at all**; the
+    receiver's **idle-with-code** (96 px tabular glyphs bottom-right, the TV's name bottom-left, no artwork)
+    with its **no-server** and **dimmed-after-ten-minutes** variants; the **player on the TV** (chrome, the
+    two-level audio & subtitles picker with **Subtitle size**, Skip Intro, next-up); the **TV-remote-pauses →
+    phone-shows-paused** pair drawn side by side; **§D's screens table** for `app/settings.html` (kind ·
+    platform · paired-user chips · now playing · last seen · **revoke per user**, plus the one-sentence
+    "same internet address" help text); and **17 new strings × en/da/fo**.
+  - **⚠ Flagged for the owner:** our **R266** (Cast Connect) and `main`'s **R264 + 236** answer the same wish —
+    *a TV that runs Ravilo plays it itself and keeps playing when the phone is closed* — by two different roads
+    (Google's cast hand-off vs the backend). They are complementary (Cast Connect covers the
+    Chromecast-built-in TV; 236/R264 covers the Samsung set and any phone with no Cast SDK), but the **hand-off
+    payload and the enrolment path should be one mechanism, not two**; if 236 lands first, R266 shrinks to a
+    sender flag, a launch intent and `receiver_kind`. Recorded at the top of R266 itself.
+  - **Ready to build the moment the owner says go (no pick needed):** §A into `Ravilo Mobile.html` — the
+    unsupported-device notice (iPhone below iOS 18.2), the **install card** (iPhone's Share → Add to Home
+    Screen; Android's one *Install* button), the *Ravilo updated · Reload* toast, and the two **standalone**
+    frames; §C1 into `Ravilo Receiver.html`; §D into `app/settings.html`; and a new `Ravilo - Web App Icons.html`
+    (192/512 `any`, 512 maskable judged under circle/squircle/rounded-square, 96 monochrome, 180 apple-touch).
+  - **Two things only a device can answer**, named in the specs rather than guessed: whether a backgrounded
+    standalone iOS web app keeps an AirPlay session alive (decides the notice's wording, not its existence),
+    and whether the RU7440 can layer HTML chrome over AVPlay (decides who draws the receiver's picker).
+- **2026-09-18 — the phone's pages moved to a bottom bar, and R267 (then numbered R264) was rewritten around it.**
+  Drew `ravilo/Bottom Nav - Directions.html`: the baseline, **four directions** on Pixel 9 frames (A ink
+  + weight · **B the selected icon in Ravilo's gradient pill** · C a floating blurred capsule · D one
+  label on the active item), the comparison, and the three frames where a bottom bar meets the app —
+  the cast mini bar docking above it, Discover keeping its own five chips, the player with no bar.
+  - **Owner said *decide for me*, so:** **B · pill**; the 13 sp label floor bends to **11.5 sp** for
+    these four labels only (the one exception in the phone design); tap-on-active **scrolls to top**,
+    with **Discover keeping R170's step-to-next-segment**; the pill **slides** (~180 ms); the brand
+    **stays** in the top row; **handset only** (R256's seam — a narrow browser window is not a phone);
+    the mini bar **docks above** the nav; **no hide-on-scroll**.
+  - **Why not the other three, recorded:** A leans on two shades of grey, and a phone has no focus ring
+    or hover to help; C puts ink over a scrolling poster wall (the trap the casting round rejected
+    direction 1 for) and leaves the mini bar nothing to dock against; D cannot name *Discover*, which is
+    the one page a glyph does not carry.
+  - **R264 rewritten and renamed** (`phase-R264-phone-navigation-top-row-and-bottom-bar.md`): row one's
+    FRs stand (brand · cast · search · avatar, **no clock**), the page row becomes the bottom bar, and
+    new FRs cover the sliding pill, opacity + absence on pushed screens, the mini-bar stack,
+    tap-on-active, always-visible, Discover's chips, and geometry from one place. **Built into
+    `ravilo/Ravilo Mobile.html`** (`.bnav`/`.bn`/`.bnind`; the old second row and its fade are gone).
+- **2026-09-18 (later) — Discover's tabs reordered and made scrollable (R265), and our two drafts
+  renumbered a second time as `main` raced ahead.** Pulled **R260** (the player's Back is the phone's
+  Back), **R261** (fullscreen only while playing) and **R262** (Discover is one page with five tabs) —
+  which took the numbers our own drafts held, so **Cast Connect is now R263** (R254 → R260 → R263) and
+  **the phone's two-row top bar is R264** (R261 → R264). Admin still tops at 234, so **235** stands.
+  - **R265 — Discover's tabs lead with the library, and the strip scrolls** (`Planned`). Order is
+    **Networks · Studios · Genres · Coming Soon · Request**, declared once as a list that gating
+    *filters* and never re-orders — so entry is always **Networks**, gated or not, and a household with
+    no Seerr/*arr simply sees three chips. The strip scrolls everywhere: touch on the phone (five chips
+    never fit portrait), and on a TV the D-pad carries the focused chip into view with `scrollRowTo`'s
+    tween. Supersedes **R243 FR-R243-1's order only**; pairs with R262. Next free: **R266**.
+  - **Built into both mockups:** `ravilo/ravilo-app.js` + `ravilo/ravilo.css` for the TV (declared
+    `SEG_ORDER`, `.discseg` as a scroller with the Seerr pill pinned right, the focus-scroll helper
+    extended to the strip, Discover's nav entry opening `discTabs()[0]`), and `ravilo/Ravilo Mobile.html`
+    for the phone (five gated chips, scrollable, plus **two views the phone never had**: *Coming Soon*
+    from `R.upcomingByDay()`/`R.overdue`, and *Request* from the discover feed).
+  - **R264 — the phone's top bar is two rows** (`Planned`, written the same day): identity and actions
+    above (brand · cast if available · search · avatar, **no clock** — the platform draws one in the
+    status bar directly above), pages below (Home · Movies · Series · Discover), gated on R256's
+    `isHandset` seam so the TV and the web app keep the single row and their clock. Written because
+    `LocalCompact` "fixes" a phone by making the whole bar scroll sideways, which pushes the brand, the
+    cast button and the avatar off-screen at rest.
+- **2026-09-18 (sync) — our 225/226/227/R253 came back canonical + dev-reviewed; 12 new dev specs pulled
+  (all `✓ Built`, none touching a design mockup); a double numbering collision resolved by renumbering our
+  side.** `github_compare` against the last recorded tree found 170 files / 47 commits changed.
+  - **225/226/227/R253 are canonical, dev-reviewed against `main` `8873cea7`, `✓ Built`.** One real design
+    correction: there is **no client-side trim to 10** — a row's default `limit` is **30**, not the 10 the
+    design assumed — and the shipped row-order **editor is Kotlin** (`Workbench.kt`), not
+    `app/ravilo-builders.js`, which is not in the served bundle and stays our reference implementation.
+  - **⚠ Our unpushed 2026-09-18 drafts (228 Chromecast-publish/Cast-Connect, R254 Cast Connect on the TV)
+    collided with numbers the dev team had independently taken the same day for unrelated phases** — admin
+    228 is a Kotlin/Native GC-leak fix, Ravilo R254 restricts J to TV platforms. **Renumbered: 228 → 235**
+    (`specs/requirements/phase-235-chromecast-publish-cast-connect-and-listing.md`), **R254 → R260**
+    (`specs/ravilo/requirements/phase-R260-cast-connect-tv-app-as-receiver.md`). Both still `Planned`, not
+    dev-reviewed, **pending export** — `app/settings.html`'s eight-step/three-group Cast-Connect card is
+    local-only and unchanged by this sync (the canonical 226/227 build has no publish extension to conflict
+    with; ours is a superset). Next free: **236 / R261**.
+  - **12 new dev-authored specs, all `✓ Built` 2026-09-17, none needing a design surface:** admin **229**
+    (a stop no longer drops Continue Watching off Home for 5 minutes), **230** (the playstate refresher
+    fetched everything every 20s — 94 requests/user; now paced), **231** (nothing publishes before CI
+    passes — CI never ran a unit test; a release-only crash shipped twice), **232** (which ink a logo is
+    drawn in, judged once server-side; extended same evening to title clearlogos), **233** (a credits
+    marker starting inside the intro — one position rule), **234** (an edit reporting success over a
+    corrupted file); Ravilo **R254** (J is TV-only — collides with our own draft, see above), **R255** (the
+    backdrop scrim **shipped as one flat 0.75 opacity layer, not a gradient** — owner rejected the gradient
+    on the stue TV the same day), **R256** (a TV was rendering the phone's player — `LocalHandset`'s 600dp
+    threshold caught a 540dp-short-side TV), **R257** (a TV sweep: focus after selecting a taxonomy tile,
+    dark logos on dark cards, no hero tint, a heading under the app bar, swapped skip-arrow glyphs),
+    **R258** (a scrub preview surviving an episode switch — whose first fix attempt itself crashed the TV
+    by tripping ART's register-count verifier), **R259** (the rest of the sweep, incl. **walls going 6-up
+    on a TV**, superseding R243's mockup-derived 4/5-up). Plus two research reports on Kotlin/Native GC
+    pacing and MKV payload corruption.
+- **2026-09-18 (earlier, superseded above) — Chromecast to "fully working": 228 / R254 written, the card redrawn. Next unassigned:
+  229 / R255.** The owner walked Google's console past 226's five steps and hit the wall: **publishing is refused**
+  without Sender Details, Listing Details (Category · Countries · Title · one-line Description) and a 512² Icon — and
+  the household has **both kinds of TV**: a Chromecast with no Ravilo on it, and the stue TV running the Ravilo app,
+  which must open **Ravilo itself** when cast to (owner: *support both*; reverses the 2026-09-16 "Cast Connect not
+  drawn" note).
+  - **`app/settings.html` → Chromecast card:** `#cc-steps` is now **eight steps in three labelled groups**, each
+    header stating its consequence so the admin can see where to stop — *Register the receiver* (1–5; step 3 keeps
+    226's two rows and says Intent to Join URI / Website URL stay empty; step 5 is test devices, names the Cast
+    **software** serial under Settings › Device Preferences › Google Cast — not the printed one, changes on factory
+    reset — and ends *this is enough for a household*), *A TV that runs Ravilo opens Ravilo itself · Cast Connect*
+    (6 — the Android TV package name row, same `dev.jellystructure.ravilo`, plus the note that a **sideloaded**
+    Ravilo needs the TV as a test device and publishing does not change that), *Publish · optional* (7–8 — every
+    Listing field verbatim in Google's order: Category *TV & Movies* and Countries as *choose*, no Copy; Title,
+    Description and da/fo drafts with Copy; **Icon → Download**, which the mockup genuinely renders as a 512² PNG
+    from `ravilo-mark.svg` on `#000B25`). Countries are **not** derived from the Metadata tab's age-rating regions
+    (`DK · US · GB` is a rating cascade, not a residence). Registered state gained *Living room TV opens Ravilo itself
+    when cast to*.
+  - **228** (`phase-228-chromecast-publish-cast-connect-and-listing.md`, supersedes FR-226-1/-3): the eight steps,
+    `GET /cast/icon-512.png` as a build-time static in 218's bundle (works with `public_url` unset — fetched from the
+    admin's own session), the listing describes Ravilo not the library, description strings live in the admin's
+    table not `ravilo-i18n.js`. Open: the console's exact label for the Android TV field; square vs the asset pack's
+    pre-rounded `ic_launcher-512.png` (lean square); whether publish state affects the sideload check (lean no).
+  - **R254** (`phase-R254-cast-connect-tv-app-as-receiver.md`): `androidReceiverCompatible` on the sender; launch
+    intent + `CastReceiverContext` on the TV build; a load request is a **Ravilo play request by hand-off code, never
+    a Jellyfin URL**, so 180/R216/ACL/kids gating see a normal play; one remote drives both receivers; enrolment
+    reports `receiver_kind`; web-receiver fallback is silent, not an error; **zero new i18n keys**. Open: a cast-only
+    `MediaSessionCompat` vs R193; payload in `customData`; whether a Cast Connect play counts against 218's ceiling
+    (lean no — it is not a transcode).
+- **2026-09-17 — sync: everything from 2026-09-16 shipped in a day; per-row ORDER drawn, built into the
   row editor, and spec'd as 225 / R253; the Chromecast registration card now names its fields (226) and the
   public address became one field of its own (227). Next unassigned numbers: 228 / R254.**
   - **227 — One public address, configured once** (supersedes FR-218-5's storage location + FR-218-4's *Your

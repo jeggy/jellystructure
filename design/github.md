@@ -1,9 +1,242 @@
 repo: jeggy/jellystructure
 branch: main
 path: specs/   (plus root STATUS.md — both mirrored read-only from the repo); presentation/ (full mirror, ours to build on); design/ (our export — now confirmed to flow BOTH ways, see 2026-09-15)
-tree: main @ 7f22d328d5cb (2026-09-17 pull, 07:43)
+tree: main @ `ad3244eaf2af` (2026-09-18 pull, 15:37 — head of `main`; resolved tree hash, not a commit)
 
-## Last sync (2026-09-17, 07:43 — sync check: repo unchanged where we mirror it; three design files pulled; four specs + five design files owed OUT)
+## Last sync (2026-09-18, 16:40 — no repo I/O: the picks built into the phone, a new receiver-app mockup, R269 + R270)
+date: 2026-09-18T16:40:00Z
+direction: none — design work only, on top of the 15:40 pull. Nothing fetched, nothing exported.
+- **Owner picks recorded on the canvas and built:** AirPlay = the **footnote** row (against the drawn lean,
+  so the full notice moves to the connecting bar + the admin help text — R270 FR-R270-2); a busy TV **names
+  its viewer**, and offline keeps its weekday; the receiver's server changes by a **three-second hold on
+  *Back***; an unreachable server makes the code screen **wait**, never show a stale code.
+- **`ravilo/Ravilo Mobile.html` + `mobile/ravilo-mobile-player.css`:** the three-tier *Play on a TV* sheet
+  (`sc-*`), its four row states, the collapsible tier 2, the Android-only Chromecast row, the iPhone-only
+  AirPlay footnote, *Add a TV* with a native code input, AirPlay-active (the player is the remote — no mini
+  bar), and the *Sending to …* → *Playing on …* bar. Replaces the platform-dialog stand-in.
+- **New: `ravilo/Ravilo Receiver App.html`** — 18 states × 3 skins × 3 languages for the receiver-only TV
+  app (R264 + R269), including the five server-setup states. Kept separate from `Ravilo Receiver.html`.
+- **Specs:** **R269** updated with both decisions and repointed at the new mockup; **R270** written
+  (*AirPlay is a footnote, and a busy TV names its viewer*) — supersedes R265 FR-R265-4's row shape.
+  **Next free: 238 / R271.** Both `Planned`, **pending export**.
+
+## Previous sync (2026-09-18, 16:05 — no repo I/O: the owner's two notes on the receiver — R269 written, the dimmed idle scratched)
+date: 2026-09-18T16:05:00Z
+direction: none — design work only, on top of the 15:40 pull. Nothing fetched, nothing exported.
+- **R269 written** (`specs/ravilo/requirements/phase-R269-receiver-needs-a-server-first.md`, `Planned`): the
+  receiver cannot mint or show a pairing code before it knows a server, and `main`'s R264 never says where
+  that address comes from — `ravilo-cast` is served by the backend so its origin *is* the server, while a
+  sideloaded `.wgt` has none. One setup screen (R225/R226 + R175's keyboard, re-drawn in DOM), the ordering
+  rule **server → code → pair**, the inferred scheme, the two distinct no-server states, the address named on
+  idle, a hold-*Back* way back, no discovery. Supersedes FR-R264-2 and FR-R264-6 in part. **Next free: 238 / R270.**
+- **§C0 drawn into `ravilo/Play on a TV - Directions.html`** — four TV frames, the fencing panel, the
+  rejected-discovery note and two questions with leans; §C1/C1b gained the server line under the TV's name.
+- **Dimmed idle scratched** (owner): R264 OQ 2 is answered *no*. The frame is replaced by **C1c · idle naming
+  its server** in Noir.
+- Also fixed on the way: three class collisions with `mobile-directions.css` in the new canvas (`.dim` →
+  `.pt-off`, stacked row text, `.sbar` reset to static — the last one applied to `Bottom Nav - Directions.html`
+  too), and two text overlaps (the AirPlay caption over the chrome; `.tvov .tm` under the transport badge).
+  ⚠ The same `.pz`/`.tm` collision exists in the built `ravilo/Ravilo Receiver.html` — one line, not yet fixed.
+
+## Previous sync (2026-09-18, 15:40 — pull: the screens + web-install brief and its five specs; ALL FOUR of our drafts renumbered; round 1 drawn)
+date: 2026-09-18T15:40:00Z
+direction: pull (repo → this project) — 8 files mirrored, nothing exported. A filtered tree scan at `main`
+(`phase-(2[3-9][0-9]|R2[5-9][0-9])`, briefs, 2026-09 research reports) found **five new specs, a new design
+brief and a 54 KB research report**, all dated 2026-09-18. Admin now tops at **236**, Ravilo at **R265**.
+- **⚠ A four-way numbering collision — the worst so far. Every unpushed draft we held was overtaken the
+  same afternoon.** `main` took **235** (serve the web app like an app), **236** (screens: the backend drives
+  a TV for a phone), **R263** (Ravilo web installs), **R264** (receiver-only TV app) and **R265** (play on a TV
+  from the phone). Ours moved, files renamed and every in-file FR reference rewritten:
+  **235 → 237** (Chromecast publish + Cast Connect + listing) · **R263 → R266** (Cast Connect, TV app as
+  receiver) · **R264 → R267** (the phone's top row + bottom bar) · **R265 → R268** (Discover's tab order and
+  scrolling). All four still `Planned`, not dev-reviewed, **pending export**. Next free: **238 / R269**.
+  *(Earlier entries in this file say R264/R265 meaning our drafts — they are R267/R268 from here on.)*
+- **The mockups' own comments were renumbered with them:** `ravilo/Ravilo Mobile.html`,
+  `ravilo/Bottom Nav - Directions.html`, `ravilo/ravilo-app.js`, `ravilo/ravilo.css`. `app/` had no mentions.
+- **New brief, and it is a design round:** `specs/ravilo/design-brief-screens-and-web-install-2026-09-18.md`.
+  The owner's picture: *an iPhone installs the PWA and streams to the Samsung TV — our most important use
+  case*. The TV runs a **receiver-only** app (no navigation); the phone lists its TVs (**on this network**
+  first, then a collapsible **all your TVs**) and drives the TV **through the backend**, so the phone can be
+  closed and the picture continues; all of it behind **the same Cast glyph**. **Two reversals:** AirPlay's
+  "never draw it" is **withdrawn** (third tier, with a notice that the phone must stay on), and R245's "the
+  picker is the platform's dialog" is **superseded** — the picker is now **Ravilo's own sheet**.
+- **Drawn: `ravilo/Play on a TV - Directions.html`** (canvas) — the sheet's **ten states** in both phone
+  frames plus Noir, the **two round-1 questions** as marked options (the AirPlay tier's weight: a full row
+  with the notice vs a footnote link — **lean: the full row**; and whether a busy TV names *who* is watching
+  — **lean: yes, and Offline keeps its weekday from the same decision**), the **AirPlay-active player** (the
+  phone's own player is the remote — no mini bar, no R245 remote), the connecting bar's two moments and the
+  **reconnect-shows-nothing** case, the receiver's **idle-with-code** (96 px tabular glyphs, no-server and
+  dimmed-after-10-min variants) and its **player on the TV** (chrome, the two-level picker with Subtitle
+  size, Skip Intro, next-up), the **TV-remote-pauses → phone-shows-paused** pair, §D's **screens table** for
+  `app/settings.html`, and the 17 new strings × en/da/fo.
+- **Flagged for the owner:** our **R266** (Cast Connect) and `main`'s **R264 + 236** answer the same wish by
+  two roads (Google's cast hand-off vs the backend). Complementary, but the hand-off payload and the
+  enrolment path should be **one mechanism, not two** — recorded as a ⚠ note at the top of R266.
+- **Pulled:** the brief, `specs/research-reports/ravilo-web-pwa-player-cast-2026-09-18.md`, admin 235 + 236,
+  Ravilo R263 + R264 + R265, and a fresh `STATUS.md`.
+- **Not done in this round (needs no pick, waiting on a go):** §A into `Ravilo Mobile.html` (the
+  unsupported-device notice, the install card, the update toast, the two standalone frames), §C1 into
+  `Ravilo Receiver.html`, §D into `app/settings.html`, and a new `Ravilo - Web App Icons.html`.
+
+## Previous sync (2026-09-18, 08:30 — no repo I/O: the phone's pages moved to a bottom bar, direction B built)
+date: 2026-09-18T08:30:00Z
+direction: none — design work only, on top of the 08:17 pull. Nothing fetched, nothing exported.
+- **Drawn: `ravilo/Bottom Nav - Directions.html`** (canvas) — the baseline (R264's two top rows), **four
+  directions** on Pixel 9 frames with real content behind them (**A** ink + stroke weight · **B** the
+  selected icon in Ravilo's gradient pill · **C** a floating blurred capsule · **D** one label, on the
+  active item only), a comparison table, and the three frames where a bottom bar meets the rest of the
+  app: the **cast mini bar docking above it**, **Discover keeping its own five chips** at the top of its
+  page, and the **player with no bar at all**.
+- **Owner answered *decide for me*, so the picks are recorded in the spec:** direction **B · pill**; the
+  13 sp label floor **bends to 11.5 sp** for these four labels only; tap-on-active **scrolls to top**
+  with **Discover keeping R170's step-to-next-segment**; the pill **slides**; the brand **stays**;
+  **handset only** (R256's seam); the mini bar **docks above** the nav; **no hide-on-scroll**.
+- **R264 rewritten around it** and renamed —
+  `specs/ravilo/requirements/phase-R264-phone-navigation-top-row-and-bottom-bar.md` (was
+  `-phone-top-bar-two-rows.md`). Row one's FRs stand (brand · cast · search · avatar, no clock); the
+  page row becomes **FR-R264-5/6/6a** (four items, a sliding gradient pill, the one type-floor
+  exception), plus new FRs for opacity and absence on pushed screens (**-7**), the mini-bar stack
+  (**-8**), tap-on-active (**-9**), always-visible (**-10**), Discover's chips (**-11**) and geometry
+  from one place (**-12**). Still `Planned`, not dev-reviewed, **pending export**.
+- **Built into `ravilo/Ravilo Mobile.html`:** the second top row and its guillotine fade are gone;
+  `.bnav`/`.bn`/`.bnind` carry the four pages at the bottom with the gradient pill sliding between
+  them; `.rc-mini` now docks above the bar; `.scroll` carries the bar's height as bottom padding; the
+  nav's click handler owns tap-on-active (scroll-to-top, and the Discover segment step).
+
+## Previous sync (2026-09-18, 08:17 — pull: three more dev specs incl. R262 Discover-as-one-frame; our two drafts renumbered again; R265 written and built)
+date: 2026-09-18T08:17:00Z
+direction: pull (repo → this project) — 3 spec files mirrored, nothing exported. A filtered tree scan for
+`phase-(2[3-9][0-9]|R2[5-9][0-9])` at `main` — admin still tops out at **234** (so our **235** stands),
+Ravilo now at **R262**.
+- **Three new dev-authored Ravilo specs pulled, all `Planned`, written 2026-09-18:** **R260** (the
+  player's Back is the phone's Back), **R261** (fullscreen only while something plays) and **R262**
+  (**Discover is one page with five tabs, not five pages** — one frame, one app bar, one segment bar;
+  loading/error become content states not page states; no slide between sections; TV Back is two stages
+  defined by scroll, phone/web Back is one; warm all three stores on entry).
+- **⚠ Our two unpushed drafts collided again and were renumbered again.** `main` took R260 · R261 · R262
+  within hours of our 06:49 sync:
+  - Cast Connect: **R254 → R260 → R263** (`phase-R263-cast-connect-tv-app-as-receiver.md`) — renumbered
+    twice in one day; admin **235**'s cross-references updated with it.
+  - The phone's two-row top bar: **R261 → R264** (`phase-R264-phone-top-bar-two-rows.md`).
+- **Written this turn: R265 — Discover's tabs lead with the library, and the strip scrolls**
+  (`phase-R265-discover-tab-order-and-scrolling.md`, `Planned`, not dev-reviewed). Owner direction: the
+  order becomes **Networks · Studios · Genres · Coming Soon · Request** — left to right, what the
+  household owns before what it does not — declared **once** as a list that gating *filters* and never
+  re-orders (R243 FR-R243-1 stands), so entry is always **Networks** on every household, gated or not.
+  Plus the strip scrolls on every platform: touch on the phone (five chips never fit portrait), and on a
+  TV the D-pad carries the focused chip into view with `scrollRowTo`'s tween. Supersedes **R243
+  FR-R243-1's order only**; pairs with R262. **Next free: R266.**
+- **Built into both mockups the same turn:** `ravilo/ravilo-app.js` (a declared `SEG_ORDER`, `discTabs()`
+  filters it, `TAXO_TABS` reordered, Discover's nav entry opens `discTabs()[0]`, and the focus-scroll
+  helper now also scrolls `.discseg`), `ravilo/ravilo.css` (`.discseg` is a flex scroller with no
+  scrollbar; the Seerr search pill stays pinned right — R265 OQ2), and `ravilo/Ravilo Mobile.html` (all
+  five chips in the new order, gated and scrollable as `.discsegs`, with **two new phone views**:
+  *Coming Soon* from `R.upcomingByDay()` + `R.overdue` day-grouped, and *Request* from
+  `R.discover.lists[0]` — the old `renderTop10` body, now named for what it is). Verified on both: the TV
+  opens Discover on *Støðir/Networks* with the strip in order; the phone shows five scrollable chips.
+- **Also corrected on the phone, per the owner's instruction in the same breath:** the clock is **gone**
+  from the phone's app bar (R264 FR-R264-3 — the platform already draws one in the status bar directly
+  above); the TV and web keep `ClockDisplay`.
+
+## Previous sync (2026-09-18, 08:12 — read-only: matched the phone's top nav to AppBar.kt + NavItems.kt)
+date: 2026-09-18T08:11:58Z
+direction: read-only (repo → this project). Nothing copied, nothing exported — two files read to ground
+the mobile top-nav fix in the real component instead of the mockup's own (stale) shape.
+- **Read `AppBar.kt` and `NavItems.kt`** (current `main`). Real shape: brand mark (drawn jellyfish SVG,
+  matches the one already in `ravilo/ravilo-app.js`) + a plain ink-coloured wordmark (not gradient-clipped
+  text); right cluster order is **Cast → Search → Clock → Avatar** (mobile had Search → Cast → Avatar,
+  no clock at all). Real nav items are **Home · Movies · Series · Discover** (`raviloNavItems()`,
+  `NavItems.kt:39`) — *not* the Compose default fallback's "My List" and *not* the mobile mockup's
+  Home/Movies/Series/**Top 10**/Studios/Networks/Genies. Top 10 was retired end-to-end by phase 136/137
+  (the Seerr pivot, long before R243); Studios/Networks/Genres are **Discover's own segments** (R170's
+  avatar-menu/Discover merge + R243's taxonomy tabs), not top-level nav items.
+  `ravilo/Ravilo Mobile.html` updated: appbar gets the mark + plain wordmark + Cast/Search/Clock/Avatar
+  order + a live clock; the tab strip is now Home/Movies/Series/Discover, with Studios/Networks/Genres
+  folded into a segment row inside the Discover tab (reusing the existing `renderTaxo`/`renderTaxoList`
+  unchanged). The two stale `tab='top10'` aliases (the search icon, and the profile menu's "My List" row)
+  now point at `discover` instead of a retired tab.
+- **⚠ Left deliberately unfixed, flagged rather than guessed:** the search icon and "My List" still don't
+  have their own real screens — they always aliased to a list tab (formerly Top 10, now Discover) rather
+  than opening dedicated Search/My-List content. That gap pre-dates this pass and is a real product
+  decision (what My List and Search look like on the phone), not a small nav-bar fix — worth its own turn.
+
+## Previous sync (2026-09-18, 07:57 — read-only: matched the remote's "Converted" note to the built Kotlin, not invented copy)
+date: 2026-09-18T07:57:30Z
+direction: read-only (repo → this project). Nothing copied, nothing exported — one file read to ground a
+mockup fix in the real component instead of guessing at its copy.
+- **Read `CastRemoteScreen.kt`** (current `main`) after a first pass at a "Chromecast = transcode" warning
+  invented its own text. The real, shipped UI is **FR-R245-19** ("Amendment 4", 2026-09-18, same day):
+  a small drawn ⓘ glyph + *"Converted for {device}"* under the remote's state line, shown only while
+  media is loaded and the receiver is reachable; tapping it opens one card (scrim + centered dialog) with
+  the exact body copy pulled from `Strings.kt`'s `cast.converted` / `cast.converted_body` keys. Also read
+  `R245`'s full spec off `main` to confirm this and three other amendments (1–4, all 2026-09-18: a
+  `FragmentActivity` crash on the first real cast-button tap, a nonexistent CAF event type killing the
+  receiver, an off-main-thread SDK call, and this note) are **not yet in our local mirror** — our copy of
+  `phase-R245-cast-sender-receiver-and-remote.md` predates all four and is stale.
+  `ravilo/Ravilo Mobile.html` (`#rcConv`/`#rcConvScrim`, verbatim copy) and
+  `ravilo/mobile/ravilo-mobile-player.css` (`.rc-conv*`) updated to match.
+- **⚠ Owed on the next real sync (not done this turn — read-only):** pull the canonical, amended
+  `phase-R245-cast-sender-receiver-and-remote.md` over our stale draft, and check whether **R254**
+  (Cast-Connect-is-TV-only, already in our mirror) or anything else references R245's pre-amendment shape.
+
+## Previous sync (2026-09-18, 06:49 — full sync: our 225/226/227/R253 came back canonical + dev-reviewed; 12 new dev specs pulled; a double numbering collision resolved)
+date: 2026-09-18T06:49:00Z
+direction: pull (repo → this project), plus two local renumbers. `github_compare` against the last recorded
+tree hash `7f22d328d5cb` returned 170 changed files across 47 commits.
+- **Our whole 2026-09-17 export landed and is canonical, dev-reviewed, `✓ Built`.** `phase-225`, `-226`, `-227`
+  and `phase-R253` all carry a 2026-09-17 dev-review addendum against `main` `8873cea7` and are `✓ Built` —
+  pulled over our drafts. One real correction worth knowing: dev review found there is **no client-side trim
+  to 10** (`StaticContentRow` draws every item it's sent), so a row's default `limit` is **30**, not the design's
+  assumed 10 — FR-225-1b and R253 were corrected accordingly. The shipped row-order **editor is Kotlin**
+  (`Workbench.kt`), not `design/app/ravilo-builders.js` — that file is not in the served bundle; our mockup stays
+  the reference implementation the Kotlin port was built against. Pulled the four canonical specs plus the
+  design files the row-order work touched: `app/ravilo-builders.js`/`.css`, `app/ravilo-config.html`,
+  `app/Row Sorting - Directions.html` + `row-sorting-directions.js`, `screenshots/order-editor.png`,
+  `ravilo/ravilo-app.js`, `ravilo/ravilo.css`.
+- **⚠ Double numbering collision, both resolved by renumbering our side (repo wins, as with R196→R208,
+  179→180, 186→R230→R234).** Our unpushed 2026-09-18 drafts had claimed **228** and **R254** the same day the
+  dev team, working independently, took the *same two numbers* for unrelated phases — and then kept going six
+  more admin phases and five more Ravilo phases before either side synced:
+  - Admin **228** is on `main` as `phase-228-backend-memory-growth-curl-stableref-leak.md` (a Kotlin/Native
+    `StableRef` GC leak in Ktor's Curl engine — unrelated). **Our Chromecast-publish/Cast-Connect draft is
+    renumbered 228 → 235** (`specs/requirements/phase-235-chromecast-publish-cast-connect-and-listing.md`).
+  - Ravilo **R254** is on `main` as `phase-R254-row-open-is-a-tv-thing.md` (J restricted to TV platforms only —
+    unrelated). **Our Cast Connect draft is renumbered R254 → R260**
+    (`specs/ravilo/requirements/phase-R260-cast-connect-tv-app-as-receiver.md`). All internal cross-references
+    (228↔R254 → 235↔R260) updated in both files; a note flags that Ravilo's own "R235" (signs-only subtitles,
+    pre-existing) is unrelated to admin's new phase 235 — same digits, different tracks, coincidence only.
+  - **Both still `Planned`, not dev-reviewed, not exported** — this was a pure local renumber before either
+    ever reached `main`. Verified against `main` on 2026-09-18: admin taken through **234**, Ravilo through
+    **R259**. **Next free: 236 / R261.**
+- **12 new dev-authored specs pulled, all `✓ Built` the same day (2026-09-17), none dev-reviewed:** admin
+  **229** (a stop no longer takes Continue Watching off Home for 5 minutes — an ordering bug in
+  `invalidatePlaystate`), **230** (the playstate refresher fetched *everything* every 20s — 94 requests/user;
+  now titles every cycle + episodes on a 15-slice rotation), **231** (nothing publishes before CI passes — CI
+  never ran a single unit test; a release-only `VerifyError` shipped to production twice), **232** (which ink a
+  studio/network/title logo is drawn in — computed once server-side, extended same evening to title
+  clearlogos after *Gone Missing*'s was found invisible), **233** (a credits marker starting inside the intro —
+  775 episodes affected, three root causes, one position rule), **234** (an mkvpropedit edit reporting success
+  over a corrupted file — the post-edit gate only checked one of two broken layouts, plus one-file-one-writer);
+  Ravilo **R254** (J restricted to TV platforms — see collision above), **R255** (the backdrop scrim: **shipped
+  as a flat 0.75 opacity layer, not the gradient the spec describes** — owner rejected the gradient on the stue
+  TV the same day: "we only want an opacity … not only for the small parts where there is text"), **R256** (a TV
+  was rendering the phone's player — `LocalHandset` used a bare 600dp threshold that a 540dp-short-side TV
+  satisfies), **R257** (a TV sweep: focus lands on Home after selecting a taxonomy tile, dark logos on dark
+  cards, no hero tint on detail pages, a heading under the app bar, swapped skip-arrow glyphs), **R258** (a
+  scrub preview surviving an episode switch — and the fix's first attempt, a `LaunchedEffect`, itself crashed
+  the TV by pushing `PlayerScreen` past ART's 256-register verifier ceiling), **R259** (the rest of the sweep:
+  Search losing its query on Back, a general heading-clearance fix, TV Guide label pinning, the phone's profile
+  picker wrapping, the two 232 ink rules reaching the client, and **walls going 6-up on a TV**, superseding
+  R243's 4/5-up which were mockup numbers never seen on a real screen). Plus two research reports:
+  `kotlin-native-gc-pacing-jetbrains-issue-2026-09-17.md` (228's GC-pacing write-up, drafted for JetBrains) and
+  `mkv-payload-corruption-beyond-first-cluster-2026-09-17.md` (66 files with mid-file payload damage from the
+  2026-09-13 repair race — data loss, not a layout bug; became phase 234).
+- **No design/mockup work owed from any of the 12** — all are backend/Compose-only bug fixes and sweeps with
+  no admin-mockup surface (232's client half rides R259; none of R254–R259 touch a file under `app/`).
+- **STATUS.md re-pulled** (554 KB, read-only per CLAUDE.md — too large to fully re-render here; treat the repo
+  copy as authoritative, this file's counters below are as of this sync).
+
+## Previous sync (2026-09-17, 07:43 — sync check: repo unchanged where we mirror it; three design files pulled; four specs + five design files owed OUT)
 date: 2026-09-17T07:43:14Z
 direction: pull-side verified, **export owed**. `STATUS.md` (535 338 B), both constitutions, both plans and every
 README are **byte-identical** to `main` — nothing to re-pull there. **No new phase specs upstream:** a regex sweep
@@ -716,20 +949,27 @@ direction: pull (repo → this project)
 | (none — backend/client-only) | **203–211** (cold health cache, reader-blocking writes, Ravilo reads waiting on Jellyfin, collection fan-out, three `prewarm_subtitles` defects, undocumented Jellyfin routes, sidecar bulk-reorder no-op, `PlaystateCache` episode ids), **R241** (remembered track vs ISO-639 granularity) |
 | ravilo/Ravilo TV.html, ravilo/ravilo-app.js, ravilo/ravilo-browse.js, ravilo/ravilo-data.js, ravilo/ravilo.css, ravilo/ravilo-i18n.js, ravilo/Ravilo Mobile.html | **216** + **R243** — Discover's Studios / Networks / Genres tabs (the viewer-side of `app/metadata.html`). Design-authored: mockups 2026-09-15, both specs 2026-09-16, both `Planned`, neither dev-reviewed. **Pending export** |
 | ravilo/Ravilo Mobile.html, ravilo/mobile/ravilo-mobile-player.css, ravilo/Ravilo Receiver.html, ravilo/ravilo-i18n.js, app/settings.html (Connections → Chromecast) | **R244** (`phase-R244-phone-player-chrome.md`) · **218** (`phase-218-chromecast-receiver-and-registration.md`) · **R245** (`phase-R245-cast-sender-receiver-and-remote.md`) — the phone player (direction 2 · Thumb rail, **no playback speed**), casting (remote direction 2 · Now playing, mini bar, server-pushed cast button), the receiver's ten screens, and the admin Chromecast card. Design-authored: mockups + specs 2026-09-16, all three `Planned`, none dev-reviewed. **Pending export** |
-| app/settings.html (Connections) | **218** (built) + **226** (`phase-226-chromecast-registration-fields.md`, supersedes FR-218-6) — the guided Google registration: five steps, the console URL as a link, one copyable row per console field (Receiver Application URL · Package Name) — and **227** (`phase-227-one-public-address.md`, supersedes FR-218-5's storage location) — a single root-level **Public address** field every external URL derives from; the Chromecast card's own address field deleted. Written + built 2026-09-17, both `Planned`, not dev-reviewed. **Pending export** |
+| app/settings.html (Connections) | **218** (built) + **226** + **227** — all three `✓ Built` and canonical as of 2026-09-18 (five-step registration, the two console fields, the root-level **Public address** field) — plus **235** (`phase-235-chromecast-publish-cast-connect-and-listing.md`, renumbered from 228 the same day; supersedes FR-226-1/-3) — the eight-step/three-group Cast-Connect + publish + listing extension, still `Planned`, local-only, **pending export** |
+| (none — backend/client-only) | **229** (a stop keeps Continue Watching on Home), **230** (playstate refresh paced), **231** (CI gates publish), **232** (logo ink, server-computed) + client half **R259** FR-R259-5/6, **233** (credits/intro position rule), **234** (one file one writer) — all `✓ Built` 2026-09-17, no admin design surface |
+| ravilo/Ravilo TV.html, ravilo/ravilo-app.js, ravilo/ravilo.css, ravilo/ravilo-focus.js | **R254** (J is TV-only; unrelated to our own renumbered draft, see below) · **R255** (backdrop scrim — shipped as flat 0.75 opacity, not the spec's gradient) · **R256** (`isTvPlatform` fixes `LocalHandset` on a TV) · **R257** (TV sweep: focus, logos, hero tint, heading clearance, skip-arrow glyphs) · **R258** (scrub preview dies with its episode) · **R259** (Search query, general heading fix, guide label, phone picker wrap, ink on client, 6-up walls) — all `✓ Built` 2026-09-17, all client-only, no design-mockup surface touched |
+| ravilo/ (no file — local draft only) | **R260** (`phase-R260-cast-connect-tv-app-as-receiver.md`, renumbered from R254 the same day; pairs with admin **235**) — Cast Connect on the TV app side, `Planned`, not dev-reviewed, **pending export** |
 | app/ravilo-config.html, app/ravilo-builders.js, app/ravilo-builders.css, app/Row Sorting - Directions.html (+ row-sorting-directions.js) | **225** (`phase-225-row-order-sort-and-hand-picked-prefix.md`) + **R253** (`phase-R253-see-all-opens-in-row-order.md`) — per-row Order for workbench rows: Date added · Title · Release year in either direction, or Hand-picked first with a fallback key; server resolves, TV renders, See all opens in the same order. Design-authored: canvas + build + both specs 2026-09-17, both `Planned`, neither dev-reviewed. Constrained by R187, R219/R233 (system rows exempt), R59/R143 (rows inside collections), 202 (mirror resolved config onto the feed). **Pending export** |
 | ravilo/Mobile Player - Directions.html (+ -print), ravilo/Casting - Directions.html (+ -print), ravilo/mobile-directions.css | **Design brief** `specs/ravilo/design-brief-mobile-player-and-cast-2026-09-16.md` §A/§B/§C/§F + research report `ravilo-mobile-player-chromecast-ios-2026-09-16.md`. **Round 1 directions only, drawn 2026-09-16 — no spec written, nothing built into the main mockups.** Constrained by R218 (waiting states, reused verbatim), R237 (failure copy), R180/R195 (the picker as a sheet), R234 (46 px / 13 px floors), R193 (no local MediaSession), R182 (the busy state), R222. Prospective phases **218 + R244** (mobile data) · **R245** (player chrome) · **219 + R248** (Chromecast). **Pending export** |
 | presentation/presentation-context.md, presentation/observed-issues-2026-08-18.md, presentation/screenshots/ | (not a spec — talk source material; documents R202 as its centerpiece and the R203–R207 triage) |
 
 ## Pending export
-- **2026-09-17 — Chromecast registration fields + one public address (226 · 227).** New:
-  `specs/requirements/phase-226-chromecast-registration-fields.md`, `specs/requirements/phase-227-one-public-address.md`.
-  Modified: `app/settings.html`.
-- **2026-09-17 — row order (225 / R253).** New: `specs/requirements/phase-225-row-order-sort-and-hand-picked-prefix.md`,
-  `specs/ravilo/requirements/phase-R253-see-all-opens-in-row-order.md`, `app/Row Sorting - Directions.html`,
-  `app/row-sorting-directions.js`. Modified: `app/ravilo-builders.js`, `app/ravilo-builders.css`, `app/ravilo-config.html`.
-  Nothing else is owed back — every repo-side edit to our mockups was pulled *in* this turn, not out.
-- ~~Everything below this line landed on `main` and is `✓ Built` as of the 2026-09-17 pull.~~
+- **2026-09-18 — four design-authored specs, all `Planned`, none dev-reviewed, none pushed:**
+  `specs/requirements/phase-235-chromecast-publish-cast-connect-and-listing.md` (renumbered from 228),
+  `specs/ravilo/requirements/phase-R263-cast-connect-tv-app-as-receiver.md` (renumbered R254 → R260 →
+  R263), `specs/ravilo/requirements/phase-R264-phone-navigation-top-row-and-bottom-bar.md` (renumbered
+  from R261; rewritten around the bottom bar) and
+  `specs/ravilo/requirements/phase-R265-discover-tab-order-and-scrolling.md`. New design file:
+  `ravilo/Bottom Nav - Directions.html`. Modified mockups: `app/settings.html` (the eight-step/three-group
+  Chromecast card, local-only), `ravilo/Ravilo Mobile.html` (one top row + the bottom nav, the
+  FR-R245-19 *Converted for {device}* note + popover, Discover's five scrollable tabs and its two new
+  phone views), `ravilo/mobile/ravilo-mobile-player.css` (`.rc-conv*`), `ravilo/ravilo-app.js` +
+  `ravilo/ravilo.css` (R265 on the TV). **Next free numbers: 236 / R266.**
+- ~~Everything below this line landed on `main` and is `✓ Built` as of the 2026-09-17 or 2026-09-18 pull.~~
 - **2026-09-16 (latest) — the picks BUILT, and three specs.** New: `specs/ravilo/requirements/phase-R244-phone-player-chrome.md`,
   `specs/requirements/phase-218-chromecast-receiver-and-registration.md`,
   `specs/ravilo/requirements/phase-R245-cast-sender-receiver-and-remote.md`,
@@ -786,6 +1026,8 @@ direction: pull (repo → this project)
   check on next export pass.
 
 ## Sync history
+- 2026-09-18 (08:17): pulled **R260 · R261 · R262** (Discover as one frame); **our drafts renumbered again** — Cast Connect R254→R260→**R263**, the phone top bar R261→**R264**; wrote **R265** (Discover order Networks · Studios · Genres · Coming Soon · Request + a scrolling strip) and built it into both mockups; dropped the phone's clock. Next free **236 / R266**.
+- 2026-09-18 (06:49): `github_compare` against `7f22d328d5cb` → `main`, 170 files/47 commits; **225/226/227/R253 came back canonical + dev-reviewed** (the "no client-side trim to 10" correction, editor is Kotlin not JS); 12 new dev specs pulled (admin 229–234, Ravilo R254–R259, all `✓ Built`, none needing design work) + 2 research reports; **double numbering collision** — our unpushed 228/R254 renumbered to **235/R260** (repo had independently taken both numbers the same day for unrelated phases). Next free **236 / R261**.
 - 2026-09-17: base commit unreachable, byte-size diff of every design file; **the entire 2026-09-16 export is canonical and `✓ Built`** (216 · 217 · 218 · R243 · R244 · R245, `claude-console/` deleted upstream); 13 new dev specs pulled (admin 219–224, Ravilo R246–R252, all `✓ Built`) + the stue-TV test-sweep report; **10 design files pulled BACK** (segments.js/.css for 222/223, wf.css, app.css, new `app/fonts/`, library.html, ravilo-app.js, ravilo.css); no design backlog from the specs; drew the Row Sorting directions canvas, **built direction 2 into the row editor** and wrote **225 / R253** (both `Planned`); next free **226 / R254**.
 - 2026-09-16 (latest, same turn): no repo I/O — the picks were **built** into `Ravilo Mobile.html` (+ a new served `mobile/ravilo-mobile-player.css`), a new `Ravilo Receiver.html` was drawn, the Chromecast card was added to `app/settings.html`, the player + casting strings landed in `ravilo-i18n.js`, and **three specs were written: R244 · 218 · R245** (all `Planned`, none dev-reviewed). Next free **219 / R246**.
 - 2026-09-16 (latest, same turn): no repo I/O — the round-1 picks were applied to both canvases and both print copies, playback **Speed removed from the design entirely** (owner decision), and the casting remote gained a **Subtitles &amp; audio** frame.

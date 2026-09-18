@@ -7,7 +7,7 @@
 > YouTube/Vimeo, they **can't** run through the Media3/ExoPlayer engine (no direct stream) — this is a
 > deliberately **embedded provider player**, the same way the real player streams from Jellyfin.
 
-**Status:** ✓ Done — see `STATUS.md`, which is authoritative. (Header as originally written: Planned) — **design built**, app integration unbuilt.
+**Status:** Planned — **design built**, app integration unbuilt.
 
 ## Problem
 The Movie/Series detail hero already shows a **Trailer** button, but it is a **stub**: it is shown on **every**

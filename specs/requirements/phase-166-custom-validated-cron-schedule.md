@@ -5,7 +5,7 @@
 > easily say every 1 or 3 hours etc. Now that it's possible to enter own cron rules, we should also make
 > sure to validate anything entered here, so it will also in fact work when user clicks save."*
 
-**Status:** ✓ Done — see `STATUS.md`, which is authoritative. (Header as originally written: Planned) — dev-authored, not yet built.
+**Status:** Planned — dev-authored, not yet built.
 
 ## 1. What's there now
 

@@ -227,7 +227,7 @@ read the same column. They cannot drift.
 ## Open questions
 
 1. ~~**Is the R216 build actually installed on the living-room TV?**~~ **Answered on-device 2026-09-02:
-   yes, and it has been since 2026-08-30.** The stue TV (`BRAVIA_4K_VH21`, 192.0.2.11) was running a
+   yes, and it has been since 2026-08-30.** The stue TV (`BRAVIA_4K_VH21`, 192.0.2.22) was running a
    build installed 2026-08-30 20:37, from `e684a516` — two days *after* R216 landed in `87235de8`
    (2026-08-28). Confirmed independently by the data rather than by timestamps alone: `playback_qoe`
    holds **105 rows** for that device (`84a57080…`), populated with exactly the fields R216 added
