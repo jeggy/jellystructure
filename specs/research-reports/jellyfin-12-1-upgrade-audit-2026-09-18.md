@@ -131,8 +131,8 @@ The IP-spoofing variant is **CVE-2025-32012**, CVSS 7.5, patched in 10.10.7. The
 no spoofing at all.
 
 **Action: set `KnownProxies` to Caddy's address on the household server.** Not filed upstream; a
-hardening suggestion is noted in the upstream report instead. jellystructure should also detect this
-— added as FR-242-8.
+hardening suggestion is noted in the upstream report instead. jellystructure detects it itself in
+phase **244**.
 
 ### 6. The OpenAPI document is gone
 
@@ -211,10 +211,11 @@ matching 400. The rest were not re-checked.
 | **241** | The mock refusing what the real server refuses |
 | **242** | Metadata ownership as an advisor finding |
 | **243** | The 12.x floor, a reported version, and no compatibility branches |
+| **244** | The exposure advisor: an empty `KnownProxies`, and the media routes |
 | **R271** | Ravilo clients no longer building Jellyfin URLs |
 
 Finding 4 produced no phase — it is Jellyfin's own behaviour and the response is an upstream
 question, drafted at `jellyfin-upstream-report-unauthenticated-media-2026-09-18.md`.
 
-Finding 5 produced **FR-242-8** (the advisor detects an empty `KnownProxies` behind a proxy) plus one
-immediate configuration action on the household server.
+Finding 5 produced phase **244** — jellystructure detects the empty `KnownProxies` itself and guides
+the fix — plus one immediate configuration action on the household server.
