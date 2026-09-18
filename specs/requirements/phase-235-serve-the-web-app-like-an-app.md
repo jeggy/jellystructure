@@ -11,7 +11,10 @@
 ## Status
 
 `Planned` — written 2026-09-18 from live measurements of `ravilo.example.net` and a read of
-`web-static-server/.../Main.kt` and `server/Server.kt`. Not dev-reviewed, not built. Backend / static
+`web-static-server/.../Main.kt` and `server/Server.kt`. **Dev-reviewed 2026-09-18 against `main`
+`05195d1f`** (see §Dev review at the bottom: only the `.wasm` files are hashed, so FR-235-1 narrows; the
+CSP would block the page's own inline runtime-config script, so FR-235-8 removes inline script; hls.js and
+JASSUB self-hosting moves here from R265 as FR-235-9 so production playback never breaks). Not built. Backend / static
 server only; no client, DTO, string or design change. Siblings: **R263** (the app installs), **R264**
 (honest browser capabilities), **R265** (AirPlay).
 
@@ -35,7 +38,8 @@ same hourly cache but does carry the CSP. Both paths must end up identical in be
 
 ## Requirements
 
-**FR-235-1 · Hashed assets are immutable, `index.html` is not.** A file whose name carries a content hash
+**FR-235-1 · Hashed assets are immutable, `index.html` is not.** *(Narrowed in dev review, item 1: only
+the two `.wasm` files are hashed; `ravilo.js` and `composeResources/**` are `no-cache`.)* A file whose name carries a content hash
 (`[0-9a-f]{20}\.wasm`, `ravilo.js`'s chunks, `composeResources/**`) is served with
 `Cache-Control: public, max-age=31536000, immutable`. `index.html`, `manifest.webmanifest` and `sw.js` are
 served `Cache-Control: no-cache` (ETag revalidation stays). Both `web-static-server` and the backend's
@@ -60,7 +64,8 @@ the fallback (Ravilo routes on the URL hash, so this is only deep-link hygiene).
 
 **FR-235-5 · `HEAD` works.** Every `GET` route answers `HEAD` with the same headers and no body.
 
-**FR-235-6 · One security posture.** `web-static-server` sends the same `X-Content-Type-Options`,
+**FR-235-6 · One security posture.** *(Dev review items 2–3: ships together with FR-235-8 and FR-235-9,
+never before them.)* `web-static-server` sends the same `X-Content-Type-Options`,
 `Referrer-Policy`, `Strict-Transport-Security` and `Content-Security-Policy` as `Server.kt` sends for
 `/tv/**`, with two additions both paths get: `manifest-src 'self'` and `worker-src 'self'` (the service
 worker), and `media-src` keeps `https:` (Jellyfin streams are cross-origin). `frame-ancestors 'none'` and
@@ -106,3 +111,67 @@ stays byte-identical to the bundle's own.
 - `HEAD` in Ktor CIO: `head("{...}")` sharing the handler, or `AutoHeadResponse`.
 - The e2e image is `mcr.microsoft.com/playwright:v1.61.0-noble` locally (WebKit runs there; the host lacks
   `libgtk-4`, `libevent`, `libwoff2dec`) — the header spec needs only `request`, not a browser.
+
+## Dev review (2026-09-18, against `main` `05195d1f`)
+
+Every row of the *Current state* table was re-checked against `web-static-server/…/Main.kt`, `Server.kt`
+and a real `wasmJsBrowserDistribution` output. The measurements stand. Three premises do not, and two of
+them would have taken the production web client down on the day this shipped.
+
+1. **Only the two `.wasm` files are content-hashed.** The distribution is `<hash>.wasm` ×2, **`ravilo.js`
+   (fixed name, 607 KB)**, `index.html` and 45 files under `composeResources/**` with **stable names**
+   (`font/sora.ttf`, `drawable/flag_fo.png`, …). FR-235-1 as written marks `ravilo.js`'s "chunks" and
+   `composeResources/**` immutable — a changed string table, flag or font would then never reach a
+   browser that had seen the old one, and `ravilo.js` would pin a whole build for a year.
+   **FR-235-1 corrected:** `immutable` only for a file whose *name* carries a ≥ 16-hex-digit segment
+   (today: the two `.wasm`). `ravilo.js`, `composeResources/**`, `index.html`, `manifest.webmanifest`,
+   `sw.js`, `boot.js` and `runtime-config.js` are `no-cache` with the existing ETag (a 304 per launch is
+   cheap; R263's service worker removes even that). The comment above `injectRuntimeConfig` claiming every
+   other asset is "content-addressed" is wrong and goes. Hashing `ravilo.js` via webpack
+   `output.filename` is a possible follow-on, not this phase.
+2. **FR-235-6's CSP blocks the page's own inline scripts — including the one that tells the app where
+   the backend is.** `index.html` carries an inline block (lines 42–105: the fullscreen button and the
+   gamepad poller) and `injectRuntimeConfig` adds a second inline `<script>` assigning
+   `window.__RAVILO_DEFAULT_SERVER__` / `__RAVILO_VERSION__`. `script-src 'self' 'wasm-unsafe-eval'
+   'unsafe-eval'` has no `'unsafe-inline'`, so both are refused. On the static origin that is the
+   2026-09-17 login-404 again: with no default server the app calls its own origin for the API. (It is
+   already the case on the backend's `/tv/` path today — invisible there only because same-origin happens
+   to be the right default; the gamepad poller and the fullscreen button are dead on `/tv/`.)
+   **New FR-235-8 · No inline script.** The inline block moves to `boot.js`; the runtime config is served
+   as **`GET /runtime-config.js`** (generated per request from the two env vars, `application/javascript`,
+   `no-cache`; an empty file when neither is set; the backend's `/tv/` path serves it too) and referenced
+   by a static `<script src>` ahead of `ravilo.js`. `injectRuntimeConfig` and its string-match on
+   `<script src="ravilo.js">` are deleted, so **`index.html` is byte-identical to the bundle's own in
+   every deployment** (FR-235-7 amended accordingly). R263's WasmGC probe and service-worker registration
+   live in `boot.js` for the same reason — R263 must not add an inline script. `'unsafe-inline'` and
+   nonces are rejected: a nonce makes `index.html` uncacheable by R263's worker.
+3. **The CSP also blocks the player's CDN loads, and that is not acceptable as "the point".**
+   `RaviloPlayerWasm.kt:199` loads hls.js and `:221–222` loads JASSUB's worker and wasm from
+   `cdn.jsdelivr.net`. Under FR-235-6 every transcoded (HLS) play in Chrome/Firefox and every ASS subtitle
+   breaks on the production web origin until R265 ships — a large phase that depends on 236 and a TV app.
+   Production has live users. **New FR-235-9 · hls.js and JASSUB are self-hosted here**, moved out of
+   R265 FR-R265-8: npm dependencies of `ravilo-web`, copied into the distribution, loaded from `'self'`.
+   R265 keeps the capability probing only. The CSP and the self-hosting ship in the same release, in that
+   order of dependency.
+4. **Brotli needs a tool the builder does not have.** A Gradle task can gzip with the JDK alone;
+   brotli needs the `brotli` binary in both Dockerfiles' builder stage (or a JVM library on the build
+   classpath). Decision: `.gz` siblings always; `.br` siblings when the binary is present, which the two
+   Dockerfiles guarantee. The serving rule is unchanged: prefer `br`, then `gzip`, else identity.
+   `serveBytes` reads the whole file per request — unchanged, and cheaper with a 3 MB sibling than an 8 MB
+   original. The 304 path must carry `Cache-Control` and `Vary` too (today it returns before setting them).
+5. **Sibling references are the research report's prospective numbers, not the specs that were
+   written.** "R264 (honest browser capabilities)", "R265 (AirPlay)" and "R264 self-hosts hls.js" do not
+   exist: the real **R264** is the receiver-only TV app and the real **R265** is *play on a TV*, which
+   contains both the capability probing and AirPlay. Read every such reference in this file as R265 (and,
+   for the self-hosting, as FR-235-9 above).
+6. **`manifest-src` / `worker-src`** already fall back to `default-src 'self'`; adding them is explicit,
+   not functional. Keep them — a later tightening of `default-src` should not silently break the install.
+7. **Open question 1:** precompress (item 4). **Open question 2:** keep `/tv/` — it is the
+   single-container self-hoster's only way to serve Ravilo web, and R263 already specifies the
+   `/tv/`-scoped manifest.
+8. The two serving paths stay two functions in two modules (`web-static-server` has no dependency on the
+   backend); parity is enforced by the e2e spec running the same assertions against both, as the
+   acceptance already says. `AutoHeadResponse` is available to both.
+
+**Build order:** FR-235-8 and FR-235-9 first (they are safe on their own), then the headers. Nothing here
+waits on any other phase; **R263 waits on this one**.

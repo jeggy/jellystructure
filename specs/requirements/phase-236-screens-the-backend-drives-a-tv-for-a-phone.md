@@ -13,7 +13,11 @@
 
 `Planned` — written 2026-09-18 from the research report `ravilo-web-pwa-player-cast-2026-09-18.md`
 (§5, §12) and a trace of `TvEventBus.kt`, `RemoteRoutes.kt`, `CastService.kt`, `PlaybackService.kt`
-and `RaviloDeviceService.kt`. Not dev-reviewed, not built. Backend + shared DTOs. Pair: **R264** (the
+and `RaviloDeviceService.kt`. **Dev-reviewed 2026-09-18 against `main` `05195d1f`** (see §Dev review at
+the bottom: 218's code is minted by a signed-in phone, so a TV that *shows* a code needs a new pairing
+flow — FR-236-2 rewritten; a device token is per `(device, user)`, so the receiver picks its token from
+`session_user_id` and the event bus needs a device-level lookup — FR-236-4 rewritten, FR-236-4a added;
+FR-236-11 carved out as its own client phase). Not built. Backend + shared DTOs. Pair: **R264** (the
 receiver app) and **R265** (the phone remote). Phase 111's `/api/remote/**` is extended in place and
 becomes the one device-control API (FR-236-3); every Ravilo client gains the command handlers and the
 status report that make it in-depth (FR-236-11). The Chromecast receiver's Cast-namespace path is
@@ -69,7 +73,9 @@ a receiver app enrols as `screen` with `platform` `tizen-screen` / `webos-screen
 applies to `screen` and, unchanged in behaviour, to `cast` (a Chromecast receiver is a screen that Google
 launched).
 
-**FR-236-2 · Pairing is the hand-off code, once per user per TV.** The receiver's idle screen shows its
+**FR-236-2 · Pairing is the hand-off code, once per user per TV.** *(Rewritten in dev review, item 1 —
+218's code runs phone → receiver; this direction needs `screen/code`, `remote/pair` and `screen/claim`.
+The paragraph below is kept for the record and is not the build.)* The receiver's idle screen shows its
 code whenever it is not playing; a phone enters it (R265) and `redeem` **adds a session for that user to
 the existing device** (`receiverId` reuse) instead of minting a new device — the TV keeps one identity
 and one name across users. A user un-pairs from Settings → Users & devices (existing revoke). The 6-char
@@ -107,7 +113,9 @@ integration written against them keeps working); new fields and commands are add
   (the Settings revoke, exposed).
 - Rate limits and logging as phase 111 (`"remote"` logger names the key *or* the device).
 
-**FR-236-4 · The play carries the user; the TV never holds a credential.** `play_item` gains
+**FR-236-4 · The play carries the user; the TV never holds a credential.** *(Rewritten in dev review,
+items 2–3 — the receiver holds one device token per paired user and picks by `session_user_id`; no
+server-side identity binding. The paragraph below is kept for the record.)* `play_item` gains
 `session_user_id`. The receiver starts playback with its device token as today; the backend resolves the
 Jellyfin identity for `/playback/start`, progress, stop, QoE and Continue Watching from **the session
 named by the last `play_item`** for that device, not from "the device's user". A device with one session
@@ -148,7 +156,8 @@ Phase 182's 503 + `Retry-After` reaches the phone as `busy_retry_after` in statu
 **FR-236-10 · Admin.** Settings → Users & devices lists screens with `kind`, platform, paired users and
 *now playing*; revoke per user. The Chromecast card (218 / 226 / 227) is untouched.
 
-**FR-236-11 · Every Ravilo device honours the whole command set and reports status.** The API's promise
+**FR-236-11 · Every Ravilo device honours the whole command set and reports status.** *(Carved out in
+dev review, item 7 — its own Ravilo phase; not part of this phase's done.)* The API's promise
 is only true if the *targets* keep it. The Android TV client, the phone app and the web build already
 act on `play_item`, `playstate_command` and `navigate` (`RaviloApp.kt`); they gain handlers for
 `player_command` (next/previous, audio and subtitle selection, subtitle size, cancel next-up, skip
@@ -207,3 +216,96 @@ subtitle from `device_status`). Admin → Settings → Advanced's API-key card l
   way, and a `session_user_id` field to `play_item` (absent ⇒ today's single-session behaviour).
 - Keep `ScreenStatus` in `shared` so the receiver (Kotlin/JS), the phone (Compose) and the backend share
   one serializer — the R245 lesson where the receiver declared fields the backend never read.
+
+## Dev review (2026-09-18, against `main` `05195d1f`)
+
+The *Current state* section was traced line by line (`RemoteRoutes.kt`, `TvEventBus.kt`, `CastService.kt`,
+`RaviloDeviceService.kt`, `AuthPlugin.kt`, `RaviloDevice.sq`, `CastHandoff.sq`). Push, reporting and the
+client-address read are as described. **Two load-bearing premises are not, and both change the shape of
+the build** — they also reach R264, R265 and the design-authored R269.
+
+1. **218's code runs the other way. "Nothing new is invented" is wrong.** `CastService.mint(phone)` is
+   called by an **authenticated phone** (`POST /api/tv/cast/handoff`), binds the code to that phone's
+   `(device, user)`, and the code travels *to* the receiver inside the Cast launch; the receiver redeems
+   it (`/api/tv/cast/redeem`, open path, rate-limited) and enrols *as that user*. FR-236-2, R264
+   FR-R264-1/2, R265 FR-R265-5 and R269 FR-R269-4 all describe the opposite: **an unpaired TV, holding no
+   credential, shows a code and a phone types it in.** `mint` cannot serve that — there is no phone to
+   mint for — and `redeem` cannot either, because its caller is the side that *lacks* the user. This is
+   the device-code flow phase 141 retired (`/api/tv/pair/{start,poll,approve}`, removed in `9c6325e3`),
+   coming back for one device kind. **FR-236-2 is rewritten:**
+   - `POST /api/tv/screen/code` — **open path**, behind `LoginRateLimiter` (it is the second
+     unauthenticated route that leads to a device token). Body `{device_id, device_name, platform}`; the
+     TV generates `device_id` once (`screen-…`) and keeps it. Returns `{code, expires_at, claim_secret}`.
+     New table `screen_pairing(code PK, device_id, device_name, platform, claim_secret_hash, created_at,
+     expires_at, claimed_by_user, claimed_token)`, swept like `cast_handoff`; **next free migration is
+     `47.sqm`**.
+   - `POST /api/remote/pair {code}` — the phone, **device token only**. It calls `loginDevice(deviceId =
+     row.device_id, …)` copying the caller's session exactly as `redeem` copies the minting phone's today
+     (Jellyfin token, ACL, tags, kids). **An API key cannot pair:** `ApiKeyData` has a user id but no
+     Jellyfin user token, and a device session cannot exist without one — the route answers 403 to an API
+     key, and FR-236-3's "identical for both credentials" gains this one stated exception.
+   - `POST /api/tv/screen/claim {code, claim_secret}` — open, rate-limited; `202` while unclaimed, `200
+     PairResult` once. The TV polls it every few seconds while the code is on screen. **The secret is not
+     optional:** the code is visible to the whole room by design, so a poll keyed on the code alone would
+     hand the pairing user's device token to anyone who read the screen.
+   - One error sentence for unknown / expired / used (R265 FR-R265-5 already says so); attempts on
+     `/api/remote/pair` are rate-limited per credential.
+   - *Alternative, recorded:* keep 218's direction — the phone mints, the viewer types six characters on
+     the TV with R269's keyboard. Zero new open routes, worse for the viewer, and contrary to what the
+     owner picked and design has drawn. Not taken.
+2. **A device token is a `(device, user)` pair — a screen paired by two people holds two tokens.**
+   `ravilo_device`'s primary key is `(device_id, jellyfin_user_id)` with `device_token UNIQUE` per row;
+   `validateDeviceToken` returns that row's user, Jellyfin token, ACL and kids flags. There is no
+   device-level credential, so FR-236-4's "starts playback with its device token … the backend resolves
+   the identity from the session named by the last `play_item`" describes a server-side binding that is
+   neither needed nor safe (a route authenticated as A acting as B). **FR-236-4 is rewritten:** the
+   receiver stores `{user_id → token}`; `play_item.session_user_id` tells it **which of its own tokens to
+   use**, and every call after that (`/playback/start`, progress, status, stop, QoE) is ordinary token
+   auth — identity, `visibleTo`, kids gating and Continue Watching resolve exactly as for any device, with
+   no new state on the server. A single-session device ignores the field.
+3. **The event bus cannot reach a shared screen as written.** `TvEventBus.sessions` is `userId →
+   deviceId → socket`, and a socket is registered under the user of the token that opened it. A TV that
+   opened its socket with A's token is invisible to `notifyPlayItem(B, deviceId, …)` — which `return`s
+   silently while the route has already answered 202. **New FR-236-4a:** a screen opens **one** socket
+   (with any token it holds); for `kind ∈ {screen, cast}` the bus falls back to a device-level lookup when
+   `sessions[userId][deviceId]` is absent, and the route answers 409 `device_offline` when neither exists
+   rather than 202. If the socket's user is un-paired the server closes it and the receiver reopens with
+   another token, or returns to the code screen when it has none. (`isConnected(deviceId)` is already
+   device-level; `MAX_TV_EVENT_SESSIONS = 128` is untouched by one socket per TV.)
+4. **`kind` has to replace four name-prefix sites, not one.** `CastService.isCastDevice`, `checkCeiling`,
+   `status()` and `redeem`'s `"$DEVICE_PREFIX · …"` naming all key on the display name *Chromecast via
+   Ravilo*; `redeem` also refuses any `receiverId` not starting `cast-`. A Tizen TV enrolled through
+   today's code would be named a Chromecast and counted under 218's ceiling. FR-236-1's migration
+   (`47.sqm`, same file as item 1) backfills `kind`: `cast` where the name carries the prefix, else from
+   `platform` (R252), else `tv`; the four sites switch to `kind`; the prefix stays only as the Chromecast's
+   display name (phase 110's Jellyfin identity reads it).
+5. **Auth is a small change, in one place.** `AuthPlugin.kt:115` accepts only an API key on
+   `/api/remote/`. Both credentials are `Bearer`, so: try the API key, then the device token, and put one
+   `RemoteCaller(userId, deviceId?)` attribute where the three routes read `ApiKeyAttr` today.
+   `GET /api/remote/events` is a WebSocket and a browser cannot set a header on one — it takes the
+   credential the way `/api/tv/events` already does.
+6. **`ScreenStatus` is not yet a shared type.** `CastRemoteStatus` lives in `ravilo-ui` commonMain
+   (`seams/CastSender.kt`), not in `shared`, and carries two fields FR-236-5's list omits —
+   `busySinceMs` and `receiverId` — plus `subSize: Char`, which does not serialise cleanly. The class moves
+   to `shared` as `ScreenStatus` (`sub_size` a string), `CastRemoteStatus` becomes a typealias, and
+   `busy_since_ms` joins the DTO; `receiver_id` is the route's `device_id` and is dropped.
+7. **FR-236-11 is a client phase inside a backend spec.** `player_command` handlers and a status reporter
+   in `PlayerStore` for Android TV, phone and web are what make the API in-depth for *existing* devices;
+   neither R264 nor R265 needs them (the receiver reports because R264 says so). **236 is done when the
+   backend, the DTOs and the e2e with a fake device are done**; FR-236-11 is carved out as its own Ravilo
+   phase, to be numbered when written, so this phase's status does not wait on three clients.
+8. **Smaller points.** (a) `X-Forwarded-For`'s first hop is client-controlled wherever a proxy appends
+   instead of replacing; the only consequence is which tier a TV is listed in, never whether it is listed
+   — accepted, and said in the admin help text. (b) Status is memory-only and is lost on a backend
+   restart; R264 FR-R264-6's re-post on reconnect is what restores it, so that requirement is
+   load-bearing. (c) A status post refreshes `PlaybackTracker`'s liveness; the 10 s heartbeat stays as the
+   playstate write path. (d) `paired_users` shows household names to every paired user — consistent with
+   the owner's R270 decision that a busy TV names its viewer.
+9. **One addition asked for by R265's dev review (item 5):** the client's existing config payload gains
+   `screens: { enabled, paired }`, server-pushed like the Chromecast capability, so the phone can draw the
+   glyph without a request per Home and a household's *first* TV can be added from the sheet.
+10. **Open question 1:** the phone uses its own events socket (lean confirmed — it exists, is
+   authenticated and reconnects). **Open question 2** stays the owner's. **Open question 3:** `/64`.
+
+**Build order:** 236 → R264 → R265. Item 1 is the long pole: a new open route pair is security-sensitive
+and wants its own unit tests (secret required, single use, expiry, rate limit, API key refused).

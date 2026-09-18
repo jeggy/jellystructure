@@ -11,7 +11,10 @@
 ## Status
 
 `Planned` — written 2026-09-18 from the research report and a read of `ravilo-web/` and
-`ravilo-ui/src/wasmJsMain/`. Not dev-reviewed, not built. Client (`ravilo-web` resources and webpack
+`ravilo-ui/src/wasmJsMain/`. **Dev-reviewed 2026-09-18 against `main` `05195d1f`** (see §Dev review at the
+bottom: no inline script — the probe is `boot.js` and loads `ravilo.js` itself; the notice strings are
+owned by that file; the precache needs per-file revisions and never holds `runtime-config.js`; the inset
+seam is the app's own). Not built. Client (`ravilo-web` resources and webpack
 config, `ravilo-ui` wasmJs actuals + one commonMain seam) plus **design work** for the install card and
 the icons. Depends on **235** (a manifest answered with `index.html` cannot install). Siblings **R264**,
 **R265**.
@@ -153,3 +156,46 @@ The install card's state is per-device UI state, the same class as the remembere
   loader, so put the probe **before** the patched bootstrap, not inside it.
 - `check-mobile-css.sh` fences served stylesheets; the install card's styles are Compose, not CSS, but
   the notice page's minimal CSS lives inline in `index.html` and is exempt.
+
+## Dev review (2026-09-18, against `main` `05195d1f`)
+
+`index.html` is as described (viewport + theme colour present; no manifest, no Apple meta; the inline
+`#fs-btn` + gamepad block; a fixed `<script src="ravilo.js">`). Five corrections, three of them forced
+by 235's dev review.
+
+1. **No inline script — FR-R263-1's probe is a file.** 235's CSP (`script-src 'self'`, no
+   `'unsafe-inline'`) refuses any inline `<script>`; 235 FR-235-8 therefore moves the existing inline
+   block to `boot.js` and the runtime config to `/runtime-config.js`. The WasmGC probe, the notice and
+   the service-worker registration live in **`boot.js`**, and because a static `<script src="ravilo.js">`
+   would be fetched whatever the probe said, **`boot.js` appends the `ravilo.js` tag itself on success**.
+   That is what makes "no request for `ravilo.js` or any `.wasm`" true. The dev note about placing the
+   probe ahead of the await-skiko-patched bootstrap still holds — `boot.js` is outside the webpack bundle.
+2. **The notice strings do not come from a table.** The shipped strings live in Kotlin
+   (`ravilo-ui/…/i18n/Strings.kt`); `ravilo-i18n.js` is the design mockup's file and is not in the build.
+   There is nothing to "copy at build time" without a Gradle task that parses Kotlin. The two sentences ×
+   en/da/fo are owned by `boot.js` — they can never render from Kotlin, by definition — and the keys
+   `web.unsupported_*` are not added to `Strings.kt`.
+3. **The service worker's assumptions about hashing are wrong in the same way 235's were.** Only the two
+   `.wasm` files carry a content hash; `ravilo.js` and all 45 `composeResources/**` files have stable
+   names. The generated precache list must carry a **per-file revision** (a build-time hash), and the
+   cache name is the build id. **`runtime-config.js` is never precached** (network-first, falling back to
+   the last good copy): it is per-deployment, and an env-only change (`DEFAULT_SERVER_URL`) does not
+   change `sw.js`, so a precached copy would pin an installed app to the old backend forever. For the same
+   reason the *updated* toast compares the **worker's build id**, not `window.__RAVILO_VERSION__`, which
+   is injected from the server's environment at serve time and is not a property of the bundle.
+4. **FR-R263-6's seam cannot deliver `WindowInsets`.** On wasm Compose's `WindowInsets.safeDrawing` has
+   no source and commonMain cannot give it one. The seam is the app's own —
+   `rememberSafeAreaPadding()` — and it replaces the 12 `WindowInsets.safeDrawing` call sites; it is the
+   same seam R261's dev review (item 5) asks for on Android. Whichever phase is built first introduces it.
+5. **Stale references.** "R266 (the web player as the phone player)" and the `ComposeViewport` migration
+   are the research report's prospective numbers; no such spec was written, and **R266 is now the
+   design-authored Cast Connect phase**. "R264/R265 own the player" likewise: the self-hosted player
+   libraries are **235 FR-235-9**, the capability probing is **R265 FR-R265-8**, and R264 is the TV app.
+   Non-goal 2 reads: *no `ComposeViewport` migration and no player change in this phase* — full stop.
+6. **Design status.** The install card, the unsupported notice, the update toast and the standalone
+   frames are listed in the design project's notes as *ready to build, not yet drawn*, and
+   `Ravilo - Web App Icons.html` does not exist yet. FR-R263-1…7 do not wait on design; **FR-R263-4 and
+   FR-R263-8 do.**
+7. Open questions 1 and 2 remain device questions. Open question 3: no.
+
+**Build order:** after 235. Independent of 236 / R264 / R265.

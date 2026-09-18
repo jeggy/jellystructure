@@ -14,7 +14,10 @@
 `Planned` — written 2026-09-18 from the owner's decisions, the research report
 `ravilo-web-pwa-player-cast-2026-09-18.md` (§12) and a read of `ravilo-cast/…/Receiver.kt` (419 lines,
 11 CAF touchpoints) and `ravilo-tizen/` (`config.xml` `required_version="2.4"`, AVPlay in
-`PlayerScreen.kt`/`TizenPlatform.kt`/`LiveTvPlayerScreen.kt`). Not dev-reviewed, not built. Client:
+`PlayerScreen.kt`/`TizenPlatform.kt`/`LiveTvPlayerScreen.kt`). **Dev-reviewed 2026-09-18 against `main`
+`05195d1f`** (see §Dev review at the bottom: 218's code is minted by a phone, so this app pairs through
+236's new `screen/code` + `screen/claim`; it stores one device token per paired user; the core
+extraction is its own no-behaviour-change commit; R269 amends FR-R264-2/6). Not built. Client:
 a new `ravilo-screen` module (Kotlin/JS, DOM, no WebAssembly) packaged for **Tizen first**; webOS is the
 same bundle in an `.ipk` and is listed as a follow-on package, not a second app. Depends on **236**.
 Sibling **R265**. **Supersedes R189** (the full Samsung Tizen client): owner decision 2026-09-18 — "we
@@ -151,3 +154,55 @@ else reuses R245's `cast.*`/`srv.*` keys and the player's existing keys.
   `<video>` + hls.js path the Chromecast receiver already uses.
 - R252: send `platform=tizen-screen` and the app version so the Jellyfin dashboard names it *Ravilo on
   Samsung TV*.
+
+## Dev review (2026-09-18, against `main` `05195d1f`)
+
+The inventory is right: `ravilo-cast/…/Receiver.kt` is 419 lines of Kotlin/JS (IR) with its CAF surface
+confined to a handful of calls; `ravilo-tizen` is 2 405 lines across 22 files with the AVPlay layer in
+`TizenPlatform.kt`, `config.xml` at the module root; `PlaybackStartRequest.hlsOnly` exists
+(`shared/…/tv/Models.kt:67`); both Dockerfiles `COPY ravilo-tizen` (`Dockerfile:33`,
+`ravilo-web/Dockerfile:36`) and `settings.gradle.kts:8` includes it. What does not hold is how the app
+gets its identity.
+
+1. **FR-R264-1 and FR-R264-2 rest on a code that runs the other way.** `/api/tv/cast/redeem` redeems a
+   code that a **signed-in phone** minted (`/api/tv/cast/handoff`) and that reached the Chromecast inside
+   the Cast launch. A Tizen TV that *shows* a code has no phone behind it and nothing to redeem. **236's
+   dev review (item 1) replaces the flow;** for this app it means:
+   - first run: generate and store `device_id` (`screen-…`), call `POST /api/tv/screen/code`, show the
+     code, keep the returned `claim_secret` in memory only, poll `POST /api/tv/screen/claim` until it
+     returns a `PairResult`; re-mint on expiry;
+   - **the app stores one device token per paired user** (`{user_id → token}` in `localStorage`), because
+     a device token *is* a `(device, user)` pair (236 dev review, item 2). `play_item.session_user_id`
+     picks the token for `/playback/start` and everything after it. It opens **one** events socket with
+     any token it holds (236 FR-236-4a) and re-opens with another if that user is un-paired;
+   - while paired and idle the code stays on screen (a second household member pairs the same way) — the
+     mint-and-poll loop simply keeps running on idle.
+2. **Two design-authored drafts already amend this spec** and should be read with it: **R269** (the app
+   needs a server address before it can ask for a code — it is a local `.wgt` with no origin; supersedes
+   FR-R264-2's "always shows its code" and FR-R264-6's single no-server sentence) and the owner's decision
+   recorded there that **idle is never dimmed — open question 2 is closed, answer: no.** R269 FR-R269-4
+   inherits item 1 above: "asks the backend to mint a code" is `screen/code`, not 218's mint.
+   `design/ravilo/Ravilo Receiver App.html` is the maintained mockup (18 states); `Ravilo Receiver.html`
+   remains the Chromecast's screen.
+3. **The shared core is the risk, and the acceptance already says how to fence it.** Extracting the
+   CAF-free state machine out of `Receiver.kt` changes a shipped, only-just-working receiver (first real
+   cast: 2026-09-18). Do the extraction as its **own commit with no behaviour change**, verified on the
+   Chromecast path, *before* `ravilo-screen` exists. `ravilo-cast` is a single-target `js(IR)` module, so
+   the core is a second Kotlin/JS module both depend on (`ravilo-receiver-core`), not a source set.
+4. **FR-R264-10 has one more site and one inconsistency.** `README.md:124` lists `ravilo-tizen`; the
+   main `Dockerfile:24` comment names it too. There is **no** CI step that compiles `ravilo-tizen` to
+   drop. And `STATUS.md` already reads *R189 · Removed → R264* while the module is still in the tree and
+   in the build graph — the row was flipped ahead of the code. Left as is (it is true of intent), but
+   whoever builds this phase should not take the row as evidence the deletion happened.
+5. **The `.wgt` signing is a release-process item, not a code one.** A Samsung author + distributor
+   certificate is needed to sign for a TV in Developer Mode, and the distributor certificate is bound to
+   the TV's DUID. CI can build an **unsigned** `.wgt`; the signed artefact for the first user's RU7440 is
+   produced locally until a Partner account exists. FR-R264-8's "signed `.wgt` published as a release
+   asset" is therefore: unsigned asset in CI, signing steps in the README.
+6. **Open question 1 decides who draws the picker, and no code can answer it.** Tizen 5.0's AVPlay
+   renders on a plane *behind* the web layer; a transparent hole in the DOM is the documented pattern and
+   R189's player was written to it — but R189 never ran on a TV. **First task of the build is a
+   fifty-line probe on the RU7440** (AVPlay + one absolutely-positioned `<div>` + one text cue), before
+   any chrome is written.
+
+**Build order:** 236 (with its new pairing flow) → the core extraction → this app → R265.
