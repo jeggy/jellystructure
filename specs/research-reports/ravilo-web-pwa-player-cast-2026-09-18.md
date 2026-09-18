@@ -35,7 +35,7 @@ PWA, with a proper media player, Chromecast support, and installable on iOS and 
    Chrome on iOS cannot cast either — and it cannot settle *parents' iPhones → their own stick* at all
    without something on their LAN (§5.3).
 6. **Serving needs fixing regardless.** The live site ships 15.3 MB of wasm **uncompressed** (gzip would be
-   5.2 MB), with a one-hour cache and no Content-Security-Policy at all on `ravilo.jebster.net`.
+   5.2 MB), with a one-hour cache and no Content-Security-Policy at all on `ravilo.example.net`.
 
 ## 1. What the web client is today (measured 2026-09-18)
 
@@ -44,15 +44,15 @@ PWA, with a proper media player, Chromecast support, and installable on iOS and 
 - `:ravilo-web` is a 30-line wasmJs executable around `RaviloRoot()` using the **deprecated
   `CanvasBasedWindow`** (CMP 1.9 escalated it to an error, suppressed with a TODO). The `index.html` is
   hand-written: an opaque `<canvas id="ComposeTarget">`, a DOM *Fullscreen* button, gamepad polling.
-- Served two ways: the standalone `:web-static-server` image at `ravilo.jebster.net` (prod, with
-  `DEFAULT_SERVER_URL=https://jelly.jebster.net`, so the app is **cross-origin** to its API), and
+- Served two ways: the standalone `:web-static-server` image at `ravilo.example.net` (prod, with
+  `DEFAULT_SERVER_URL=https://jelly.example.net`, so the app is **cross-origin** to its API), and
   optionally by the backend at `/tv/**` when `RAVILO_WEB_DIR` is set (prod does not set it).
 - **Bundle:** `81efe6ce…wasm` 6.9 MB (app) + `bccfa839…wasm` 8.4 MB (Skiko) + `ravilo.js` 0.6 MB + 0.5 MB
   of fonts. Content-hashed, so cacheable forever — but served with `max-age=3600, must-revalidate`.
 
 ### 1.2 What the live server does and does not send
 
-| Check | `ravilo.jebster.net` | Consequence |
+| Check | `ravilo.example.net` | Consequence |
 |---|---|---|
 | `Content-Encoding` on `.wasm` / `.js` | **none** (gzip −66 %: 6.9→1.9 MB, 8.4→3.2 MB) | 15.9 MB per cold load on a phone; Caddy does not compress unless `encode` is configured, and the static server never does |
 | `Cache-Control` on hashed assets | `max-age=3600, must-revalidate` | Revalidates every hour; should be `immutable, max-age=1y` |
@@ -346,7 +346,7 @@ MSE-driven playback anyway.
 
 ## 6. Serving and deployment
 
-- **Keep one app origin (`ravilo.jebster.net`)** for the service worker scope, the manifest `id` and the
+- **Keep one app origin (`ravilo.example.net`)** for the service worker scope, the manifest `id` and the
   installed app's identity; cross-origin API stays (CORS is already configured). Serving at `/tv/` from the
   backend remains an option for single-container self-hosters — but then the manifest `start_url`/`scope`
   must be `/tv/` and the CSP must admit the Cast SDK; support both, with `/tv/` the documented default for
@@ -379,7 +379,7 @@ MSE-driven playback anyway.
 1. ~~Which iOS do the parents' iPhones run?~~ **Answered (§11): below 18.2 is unsupported; one notice.**
    Their actual version still matters — if either phone is on 17 or 18.0/18.1, the notice is the first
    thing the parents see, and the household should know that before sending them a link.
-2. **One origin (`ravilo.jebster.net`) or `/tv/` on the backend** as the canonical home of the web
+2. **One origin (`ravilo.example.net`) or `/tv/` on the backend** as the canonical home of the web
    app for self-hosters? My lean: keep the origin for this house, support `/tv/` in the manifest/SW
    for single-container installs.
 3. ~~Is *Play on Stue TV* enough for iPhones for now?~~ **Superseded by §11's "Cast must be perfect":**
@@ -435,11 +435,11 @@ self-hoster's backend and TV are on different networks.
 - **TLS from the backend:** `libssl.so.3` / `libcrypto.so.3` are already in the production image (curl links
   them), so the Cast v2 client is an OpenSSL cinterop, not a new dependency. All three Cast devices in the
   house accept a **TLS 1.3** handshake on `:8009` with a self-signed certificate (`openssl s_client` from the
-  host: Stue TV `10.10.11.128`, Soveværelse TV `10.10.11.20`, Køkken hub `10.10.11.187`). Verification must be
+  host: Stue TV `192.0.2.11`, Soveværelse TV `192.0.2.12`, Køkken hub `192.0.2.13`). Verification must be
   off; that is the protocol's norm.
 - **Reachability from the container:** the `jellystructure` container, on its `caddy` bridge network, opens
-  TCP to `10.10.11.128:8009` and `10.10.11.20:8009` directly — the host LAN is one flat `/23`
-  (`10.10.10.10/23`), and a bridge network routes unicast to the LAN. **No host networking is needed to
+  TCP to `192.0.2.11:8009` and `192.0.2.12:8009` directly — the host LAN is one flat `/23`
+  (`192.0.2.10/23`), and a bridge network routes unicast to the LAN. **No host networking is needed to
   launch or control.**
 - **Discovery without multicast:** each device answers its **name** on its own setup endpoint —
   `GET https://<ip>:8443/setup/eureka_info?params=name` → `{"name":"Stue TV"}` (and `:8008` for the wider

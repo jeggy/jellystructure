@@ -3,14 +3,14 @@
 > Ravilo web is about to become the phone client for households with iPhones (research report
 > `ravilo-web-pwa-player-cast-2026-09-18.md`, owner direction 2026-09-18: *"an iPhone installs the PWA and
 > streams to the Samsung TV — our most important use case"*). An installed web app is judged by how it
-> loads from its icon, and today the static server behind `ravilo.jebster.net` ships **15.3 MB of
+> loads from its icon, and today the static server behind `ravilo.example.net` ships **15.3 MB of
 > WebAssembly uncompressed**, revalidates every hour, sends **no Content-Security-Policy**, answers
 > `HEAD` with 404, and answers `GET /manifest.webmanifest` with `index.html`. None of the client work in
 > R263–R265 can be judged honestly until this is fixed, and every fix here is a header.
 
 ## Status
 
-`Planned` — written 2026-09-18 from live measurements of `ravilo.jebster.net` and a read of
+`Planned` — written 2026-09-18 from live measurements of `ravilo.example.net` and a read of
 `web-static-server/.../Main.kt` and `server/Server.kt`. Not dev-reviewed, not built. Backend / static
 server only; no client, DTO, string or design change. Siblings: **R263** (the app installs), **R264**
 (honest browser capabilities), **R265** (AirPlay).
@@ -18,7 +18,7 @@ server only; no client, DTO, string or design change. Siblings: **R263** (the ap
 **Numbering:** verified against `STATUS.md` and the spec directories 2026-09-18 — admin taken through
 **234**, Ravilo through **R262**. The report's prospective "235" is this phase.
 
-## Current state (measured 2026-09-18 against `ravilo.jebster.net`, traced against `main`)
+## Current state (measured 2026-09-18 against `ravilo.example.net`, traced against `main`)
 
 | Fact | Where | Consequence |
 |---|---|---|
@@ -73,13 +73,13 @@ stays byte-identical to the bundle's own.
 
 ## Acceptance
 
-- `curl -sI -H 'Accept-Encoding: br, gzip' https://ravilo.jebster.net/<hash>.wasm` shows
+- `curl -sI -H 'Accept-Encoding: br, gzip' https://ravilo.example.net/<hash>.wasm` shows
   `content-encoding`, `cache-control: public, max-age=31536000, immutable`, `vary: accept-encoding`, and
   `content-length` under 3.5 MB for the Skiko module.
-- `curl -sI https://ravilo.jebster.net/` → 200; `curl -sI .../manifest.webmanifest` → 200
+- `curl -sI https://ravilo.example.net/` → 200; `curl -sI .../manifest.webmanifest` → 200
   `application/manifest+json`; `curl -s -o /dev/null -w '%{http_code}' .../nope.png` → 404;
   `curl -s -o /dev/null -w '%{http_code}' .../some/route` → 200 `text/html`.
-- `curl -sI https://ravilo.jebster.net/ | grep -i content-security-policy` is non-empty and equal to the
+- `curl -sI https://ravilo.example.net/ | grep -i content-security-policy` is non-empty and equal to the
   backend's `/tv/` policy plus `manifest-src`/`worker-src`.
 - The e2e suite gains `ravilo-web-headers.spec.ts` asserting the five lines above against the test stack's
   `ravilo-web` container **and** the backend's `/tv/` route.
@@ -96,7 +96,7 @@ stays byte-identical to the bundle's own.
 1. **Precompress vs runtime.** Gradle can emit `.gz`/`.br` siblings with a small task (or the webpack
    `compression-webpack-plugin` already in the toolchain's reach); a Kotlin/Native runtime gzip would need
    a zlib cinterop. Lean: precompress; the runtime path is out of scope.
-2. **Should `/tv/**` on the backend stay at all** once `ravilo.jebster.net` is the app's origin (R263
+2. **Should `/tv/**` on the backend stay at all** once `ravilo.example.net` is the app's origin (R263
    needs a stable origin for the service worker and manifest `id`)? Lean: keep it for single-container
    self-hosters, documented as "manifest `start_url`/`scope` become `/tv/`".
 

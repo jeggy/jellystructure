@@ -106,7 +106,7 @@ The install card's state is per-device UI state, the same class as the remembere
 
 ## Acceptance
 
-- **iPhone (real device, iOS ≥ 18.2, Safari):** open `ravilo.jebster.net` → Share → Add to Home Screen →
+- **iPhone (real device, iOS ≥ 18.2, Safari):** open `ravilo.example.net` → Share → Add to Home Screen →
   the icon is the lit mark, the name is *Ravilo*, it opens full-screen with the app bar below the Dynamic
   Island and the sign-in screen painted; second launch shows the sign-in (or Home) in **≤ 1.0 s** to first
   paint from the icon on Wi-Fi (cache-first shell). Rotating to landscape keeps the layout; pull-down at the
