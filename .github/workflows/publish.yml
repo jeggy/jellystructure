@@ -33,7 +33,9 @@ on:
         required: true
 
 permissions:
-  contents: read
+  # R264 — contents: write (not just read) so the tizen-tv job below can attach the signed .wgt to the
+  # release via `gh release upload`.
+  contents: write
   packages: write
 
 # Phase 231 — a newer push to main supersedes the pipeline of the one before it (each run is a full CI:
@@ -145,5 +147,17 @@ jobs:
     with:
       version: ${{ needs.version.outputs.version }}
       track: internal
+      skip_ci: true   # this pipeline's own `ci` job already gated it
+    secrets: inherit
+
+  # R264 — the Tizen TV .wgt, signed with the Ravilo Samsung certificate and attached to the release, on
+  # a published release only, and only after CI (231). Does not touch the Samsung TV Seller Office —
+  # see deploy-tizen-tv.yml's header for why that step stays manual.
+  tizen-tv:
+    needs: [version, ci, publish]
+    if: github.event_name == 'release'
+    uses: ./.github/workflows/deploy-tizen-tv.yml
+    with:
+      version: ${{ needs.version.outputs.version }}
       skip_ci: true   # this pipeline's own `ci` job already gated it
     secrets: inherit
