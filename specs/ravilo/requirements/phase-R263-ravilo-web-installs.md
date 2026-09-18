@@ -10,14 +10,23 @@
 
 ## Status
 
-`Planned` — written 2026-09-18 from the research report and a read of `ravilo-web/` and
+`✓ Built` — written 2026-09-18 from the research report and a read of `ravilo-web/` and
 `ravilo-ui/src/wasmJsMain/`. **Dev-reviewed 2026-09-18 against `main` `05195d1f`** (see §Dev review at the
 bottom: no inline script — the probe is `boot.js` and loads `ravilo.js` itself; the notice strings are
 owned by that file; the precache needs per-file revisions and never holds `runtime-config.js`; the inset
-seam is the app's own). Not built. Client (`ravilo-web` resources and webpack
+seam is the app's own). **Built 2026-09-18.** Icons and the install card were built directly from the
+spec's own prose and numeric rules (the 80% maskable safe zone, the exact strings) rather than a drawn
+mockup — design's sign-off on the visual polish is still open, but the mechanism is complete and
+functionally correct: the manifest is a real, valid installable manifest today, not a placeholder.
+**Full-stack e2e run, 2026-09-18**: caught one genuine regression in a pre-existing test
+(`ravilo-login.spec.ts` grepped `index.html`'s own HTML for the runtime-config assignment FR-235-8
+moved to `/runtime-config.js` — fixed, not a product bug) and one test-methodology bug in the new
+`ravilo-web-headers.spec.ts` (Playwright's `request` client transparently decompresses a `Content-
+Encoding` body, so the wire-size assertion needs `content-length`, not the fetched body's actual byte
+count — fixed). Client (`ravilo-web` resources and webpack
 config, `ravilo-ui` wasmJs actuals + one commonMain seam) plus **design work** for the install card and
-the icons. Depends on **235** (a manifest answered with `index.html` cannot install). Siblings **R264**,
-**R265**.
+the icons, flagged above as the one remaining gap. Depends on **235** (a manifest answered with
+`index.html` cannot install). Siblings **R264**, **R265**.
 
 **Numbering:** verified against `STATUS.md` and the spec directories 2026-09-18 — Ravilo taken through
 **R262**, admin through **234**. Admin pair: **235**.

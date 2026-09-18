@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -30,8 +31,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import dev.jellystructure.ravilo.ui.components.InstallCardIfEligible
 import dev.jellystructure.ravilo.ui.focus.dpadFocusable
 import dev.jellystructure.ravilo.ui.i18n.str
+import dev.jellystructure.ravilo.ui.seams.isWebPlatform
 import dev.jellystructure.ravilo.ui.theme.LocalCompact
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import dev.jellystructure.shared.tv.RaviloConfig
@@ -172,6 +175,8 @@ fun SettingsScreen(
     // ordinary D-pad navigation slip signed the device out with zero warning. Same confirm-overlay
     // treatment as Unpair now applies.
     var showSignOutConfirm by remember { mutableStateOf(false) }
+    // R263 (FR-R263-8) — the only way back to the install card once dismissed.
+    var showInstallCard by remember { mutableStateOf(false) }
 
     // R33: silently re-pull settings when the user's config changes elsewhere.
     val live = dev.jellystructure.ravilo.ui.LocalLiveConfig.current
@@ -231,7 +236,19 @@ fun SettingsScreen(
                     onSkinChange = onSkinChange,
                     onUnpairRequest = { showUnpairConfirm = true },
                     onChangePassword = onChangePassword,
+                    onInstallRavilo = { showInstallCard = true },
                 )
+            }
+        }
+        if (showInstallCard) {
+            Box(
+                modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.6f))
+                    .dpadFocusable(onBack = { showInstallCard = false }),
+                contentAlignment = Alignment.Center,
+            ) {
+                Box(modifier = Modifier.padding(40.dp).widthIn(max = 480.dp)) {
+                    InstallCardIfEligible(forceShow = true, onDismiss = { showInstallCard = false })
+                }
             }
         }
         // R161: 2-D nav is "steps out one level" for Back/Esc — the confirm overlay owns input while
@@ -366,6 +383,9 @@ private fun SettingsContent(
     onSkinChange: (Skin) -> Unit,
     onUnpairRequest: () -> Unit,
     onChangePassword: () -> Unit = {},
+    // R263 (FR-R263-8) — "re-surfaced only from Settings → Install Ravilo"; absent entirely off the
+    // web (isWebPlatform), never a greyed/inert row.
+    onInstallRavilo: () -> Unit = {},
 ) {
     val colors = RaviloTheme.colors
 
@@ -380,6 +400,7 @@ private fun SettingsContent(
     val progressFR = remember { FocusRequester() }
     val autoplayFR = remember { FocusRequester() }
     val changePwFR = remember { FocusRequester() }
+    val installFR = remember { FocusRequester() }
     val signOutFR = remember { FocusRequester() }
     val unpairFR = remember { FocusRequester() }
 
@@ -510,7 +531,7 @@ private fun SettingsContent(
                 onFocused = { changePwFocused = true },
                 onBlurred = { changePwFocused = false },
                 onUp = { autoplayFR.requestFocus() },
-                onDown = { signOutFR.requestFocus() },
+                onDown = { (if (isWebPlatform) installFR else signOutFR).requestFocus() },
                 onSelect = onChangePassword,
             )
             .padding(horizontal = 24.dp, vertical = 12.dp),
@@ -519,6 +540,27 @@ private fun SettingsContent(
         Text(str("account.pw_change"), color = colors.text, fontSize = 14.sp)
     }
     Spacer(Modifier.height(16.dp))
+    if (isWebPlatform) {
+        var installFocused by remember { mutableStateOf(false) }
+        Box(
+            modifier = Modifier
+                .background(colors.surfaceVariant, RoundedCornerShape(8.dp))
+                .then(if (installFocused) Modifier.border(2.dp, colors.focusRing, RoundedCornerShape(8.dp)) else Modifier)
+                .dpadFocusable(
+                    focusRequester = installFR,
+                    onFocused = { installFocused = true },
+                    onBlurred = { installFocused = false },
+                    onUp = { changePwFR.requestFocus() },
+                    onDown = { signOutFR.requestFocus() },
+                    onSelect = onInstallRavilo,
+                )
+                .padding(horizontal = 24.dp, vertical = 12.dp),
+            contentAlignment = Alignment.CenterStart,
+        ) {
+            Text(str("settings.install"), color = colors.text, fontSize = 14.sp)
+        }
+        Spacer(Modifier.height(16.dp))
+    }
     var focused by remember { mutableStateOf(false) }
     Box(
         modifier = Modifier
@@ -530,7 +572,7 @@ private fun SettingsContent(
                 // Bug fix (found via live TV testing) — onBlurred was never wired; Sign out's focus
                 // ring would have stuck the same way ToggleRow's did.
                 onBlurred = { focused = false },
-                onUp = { changePwFR.requestFocus() },
+                onUp = { (if (isWebPlatform) installFR else changePwFR).requestFocus() },
                 onDown = { unpairFR.requestFocus() },
                 onSelect = onSignOut,
             )

@@ -94,6 +94,7 @@ import dev.jellystructure.ravilo.ui.i18n.str
 import coil3.compose.LocalPlatformContext
 import dev.jellystructure.ravilo.ui.components.ProfileMenu
 import dev.jellystructure.ravilo.ui.components.ServerMessageHost
+import dev.jellystructure.ravilo.ui.components.UpdateToast
 import dev.jellystructure.ravilo.ui.perf.FrameTrackerOverlay
 import dev.jellystructure.ravilo.ui.seams.prefetchImage
 import dev.jellystructure.ravilo.ui.seams.safeAreaPadding
@@ -1366,6 +1367,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
         // own (a plain 6dp corner offset), so without this it could sit under a notch/status bar.
         Box(Modifier.fillMaxSize().safeAreaPadding()) { FrameTrackerOverlay(fpsOverlay) }  // R94: F5 toggles; no-op when false
         ServerMessageHost()  // R152: floats over every screen incl. the player (reads LocalServerMessages)
+        UpdateToast()  // R263 (FR-R263-5): no-op off the web
         } // Box (back-intercept)
         } // CompositionLocalProvider (live config)
     } // WithLocale
