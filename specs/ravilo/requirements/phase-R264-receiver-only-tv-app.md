@@ -11,19 +11,48 @@
 
 ## Status
 
-`Planned` — written 2026-09-18 from the owner's decisions, the research report
+`⚠ Partial` — written 2026-09-18 from the owner's decisions, the research report
 `ravilo-web-pwa-player-cast-2026-09-18.md` (§12) and a read of `ravilo-cast/…/Receiver.kt` (419 lines,
 11 CAF touchpoints) and `ravilo-tizen/` (`config.xml` `required_version="2.4"`, AVPlay in
 `PlayerScreen.kt`/`TizenPlatform.kt`/`LiveTvPlayerScreen.kt`). **Dev-reviewed 2026-09-18 against `main`
 `05195d1f`** (see §Dev review at the bottom: 218's code is minted by a phone, so this app pairs through
 236's new `screen/code` + `screen/claim`; it stores one device token per paired user; the core
-extraction is its own no-behaviour-change commit; R269 amends FR-R264-2/6). Not built. Client:
+extraction is its own no-behaviour-change commit; R269 amends FR-R264-2/6).
+
+**Built 2026-09-19**, compile-clean, **not yet installed/verified on real hardware**. The core extraction
+landed first as its own no-behaviour-change commit: `ravilo-receiver-core` (Kotlin/JS) carries
+`ReceiverStrings`/`nowMs`/`hms`/`subtitleTracksOf`/`audioTracksOf`, extracted verbatim out of
+`ravilo-cast/Receiver.kt`, which now depends on it instead of duplicating them. `ravilo-screen` is a new
+Kotlin/JS module: `MediaBackend`/`AvPlayBackend`/`HtmlVideoBackend`/`detectMediaBackend()` (the backend
+choice from FR-R264-8), `TizenPlatform.kt` (moved from `ravilo-tizen`), and `Screen.kt` — the pairing loop
+(`screenCode`/`screenClaim`, one device token per paired user, kept minting/polling while idle so a second
+household member can pair), the events-socket connection with reconnect/backoff, `play_item` negotiation
+via `startPlayback` (busy/no-server handling matches `ravilo-cast`'s own), `playstate_command`/
+`player_command`/`navigate` handling, both-remotes key handling, and `ScreenStatus` reporting on every
+change and at least every 5 s while loaded (FR-236-5). Unlike `ravilo-cast`, this receiver owns no local
+episode queue — it plays exactly what the latest `play_item` names and reports `ended`; autoplay-next is
+decided phone/backend-side, arriving as the next `play_item`. `config.xml`/`index.html`/`icon.png` live at
+`ravilo-screen/wgt/` (the `.wgt` project root); `package="RaviloScrn"` is exactly 10 characters (the
+empirically-found Samsung installer constraint this phase's dev notes describe). `:ravilo-screen:
+compileKotlinJs` and `:ravilo-screen:syncScreenReceiver` (full production webpack) both clean.
+
+**Not done in this pass, tracked here rather than guessed:** (1) open question 1 — whether HTML can draw
+over AVPlay's video plane on the target hardware — is still unanswered; a throwaway probe app was built
+and packaged during this session's emulator/certificate setup but never actually installed to observe the
+result, so subtitle-overlay rendering is unimplemented (container-track *selection* is wired via
+`MediaBackend.selectAudioTrack`/`selectSubtitleTrack`, rendering of a sideloaded VTT track is not); (2) no
+on-screen server-address setup — `index.html` sets `window.RAVILO_SERVER_URL` at package time, a
+sideload-only stopgap until a real config screen exists (out of this phase's scope); (3) never installed
+on the `ravilo-screen-tv` Tizen 10.0 emulator or the target UE55RU7440 — a real Samsung certificate
+profile now exists (created this session) but signing/installing/on-device verification hasn't happened
+yet; (4) no CI `.wgt` packaging (FR-R264-8's asset) yet. Client:
 a new `ravilo-screen` module (Kotlin/JS, DOM, no WebAssembly) packaged for **Tizen first**; webOS is the
 same bundle in an `.ipk` and is listed as a follow-on package, not a second app. Depends on **236**.
 Sibling **R265**. **Supersedes R189** (the full Samsung Tizen client): owner decision 2026-09-18 — "we
 already have a Tizen app which has never been tested; these specs scratch that and this receiver app
 takes over instead." `ravilo-tizen` (2 405 lines, M1+M2 build-verified, never run on a TV) is **removed**
-by this phase (FR-R264-10); its AVPlay wrapper is the one thing carried over.
+by this phase (FR-R264-10, done in the same commit as the build above); its AVPlay wrapper is the one
+thing carried over.
 
 **Numbering:** verified against `STATUS.md` and the spec directories 2026-09-18 — Ravilo taken through
 **R263**, admin through **235**. Admin pair: **236**.

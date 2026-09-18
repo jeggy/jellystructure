@@ -1,13 +1,16 @@
-package dev.jellystructure.ravilo.tizen
+package dev.jellystructure.ravilo.screen
 
 /**
- * R189 — external bindings for the Tizen WebAPIs this app touches: `tizen.tvinputdevice` (remote-key
- * registration) and `webapis.avplay` (Samsung's native video pipeline — required on 2016-2018 Tizen;
- * the plain HTML5 `<video>` tag has no real HLS/DASH support on that era's WebKit/Chromium, per the
- * phase spec's research). **Unverified against real Tizen hardware** — this repo has no Tizen Studio
- * install to package/sideload a `.wgt` for on-device testing (see the spec's Verification section);
- * these signatures follow Samsung's public developer docs as closely as reasoning-without-a-device
- * allows, and may need correction once tested on a real 2016-2018 TV.
+ * R189, moved here by R264 (FR-R264-10) — external bindings for the Tizen WebAPIs this app touches:
+ * `tizen.tvinputdevice` (remote-key registration) and `webapis.avplay` (Samsung's native video
+ * pipeline — the plain HTML5 `<video>` tag has no real HLS/DASH support on Tizen's older WebKit
+ * builds; [dev.jellystructure.ravilo.screen.HtmlVideoBackend] is the alternative for webOS/newer sets
+ * where `<video>` is viable). Partially exercised in a real Tizen 10.0 TV emulator during R264's own
+ * build (a hand-assembled AVPlay + absolutely-positioned-`<div>` probe loaded and ran its JS
+ * correctly) but **not yet verified end to end** — that emulator only trusts Samsung-issued
+ * distributor certificates, which this project didn't have at the time; still unverified on the
+ * actual target hardware (a 2019 Samsung UE55RU7440). These signatures follow Samsung's public
+ * developer docs and may need correction once verified for real.
  */
 @JsName("tizen")
 external object TizenGlobal {

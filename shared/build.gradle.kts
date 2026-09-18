@@ -29,9 +29,9 @@ kotlin {
         browser()
     }
 
-    // R189 — Kotlin/JS IR (distinct from wasmJs above): compiles to plain, old-engine-compatible JS
-    // (no WasmGC requirement), so ravilo-tizen can target 2016-2018 Samsung Tizen TVs, whose bundled
-    // WebKit/Chromium predates even non-GC WebAssembly (Chrome 57, 2017).
+    // R189, superseded by R264 — Kotlin/JS IR (distinct from wasmJs above): compiles to plain,
+    // old-engine-compatible JS (no WasmGC requirement), so ravilo-screen can target 2016-2018 Samsung
+    // Tizen TVs, whose bundled WebKit/Chromium predates even non-GC WebAssembly (Chrome 57, 2017).
     js(IR) {
         browser()
     }

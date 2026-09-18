@@ -294,6 +294,41 @@ class TvApiClient(
         return json.decodeFromString<PairResult>(r.bodyAsText())
     }
 
+    // ─── Phase 236 — the receiver-shows-a-code pairing flow ─────────────────
+
+    /** POST /api/tv/screen/code — open path, rate-limited. Mints a fresh code for an unpaired screen;
+     *  the receiver keeps [ScreenCodeResponse.claimSecret] in memory only. */
+    suspend fun screenCode(deviceId: String, deviceName: String?, platform: String?): ScreenCodeResponse {
+        val r = client.post("$baseUrl/api/tv/screen/code") {
+            identify()
+            jsonBody(json.encodeToString(ScreenCodeRequest(deviceId, deviceName, platform)))
+        }
+        r.assertSuccess()
+        return json.decodeFromString<ScreenCodeResponse>(r.bodyAsText())
+    }
+
+    /** POST /api/tv/screen/claim — open path, polled while unclaimed. `null` while still waiting (202)
+     *  or once the code stops being valid (401 — unknown, expired, or already collected once); the
+     *  receiver can't tell those two apart, matching every other single-use code in this codebase. */
+    suspend fun screenClaim(code: String, claimSecret: String): PairResult? {
+        val r = client.post("$baseUrl/api/tv/screen/claim") {
+            identify()
+            jsonBody(json.encodeToString(ScreenClaimRequest(code, claimSecret)))
+        }
+        if (!r.status.isSuccess() || r.status == HttpStatusCode.Accepted) return null
+        return json.decodeFromString<PairResult>(r.bodyAsText())
+    }
+
+    /** POST /api/tv/playback/status (236 FR-236-5) — sent on every change and at least every 5s while
+     *  loaded; fanned out to whoever is subscribed to this device (a phone's remote, an API caller). */
+    suspend fun postScreenStatus(status: ScreenStatus) {
+        val r = client.post("$baseUrl/api/tv/playback/status") {
+            auth()
+            jsonBody(json.encodeToString(ScreenStatus.serializer(), status))
+        }
+        r.assertSuccess()
+    }
+
     suspend fun getConfig(): RaviloConfig {
         val r = client.get("$baseUrl/api/tv/config") { auth() }
         r.assertSuccess()
@@ -521,6 +556,8 @@ class TvApiClient(
         onPlayItem: suspend (PlayItemEnvelope) -> Unit = {},
         onPlaystateCommand: suspend (PlaystateCommandEnvelope) -> Unit = {},
         onNavigate: suspend (NavigateEnvelope) -> Unit = {},
+        // Phase 236 (FR-236-3) — the command set past stop/pause/unpause/home.
+        onPlayerCommand: suspend (PlayerCommandEnvelope) -> Unit = {},
         // Pushed once a live Jellyfin playstate fetch completes for this user (see PlaystateChangedEnvelope) —
         // patch already-rendered tiles in place, the same way onAcquisition does for acquisition status.
         onPlaystateChanged: suspend (Map<String, CardPlayState>) -> Unit = {},
@@ -568,6 +605,9 @@ class TvApiClient(
                     }
                     "navigate" -> {
                         runCatching { json.decodeFromString<NavigateEnvelope>(text) }.getOrNull()?.let { onNavigate(it) }
+                    }
+                    "player_command" -> {
+                        runCatching { json.decodeFromString<PlayerCommandEnvelope>(text) }.getOrNull()?.let { onPlayerCommand(it) }
                     }
                     "playstate_changed" -> {
                         runCatching { json.decodeFromString<PlaystateChangedEnvelope>(text).patch }.getOrNull()?.let { onPlaystateChanged(it) }

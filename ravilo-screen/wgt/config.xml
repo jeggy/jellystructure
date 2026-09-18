@@ -1,16 +1,19 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-    R189 — Tizen widget manifest. Scaffolded per Samsung's documented Tizen Studio TV project layout;
-    NOT verified against a real `tizen package`/sideload — this environment has no Tizen Studio install
-    (see the phase spec's Verification section). The `<tizen:profile name="tv"/>` + `required_version`
-    pair is what actually gates which TV generations can install this; 2.4 covers the 2016 floor.
+    R264 — Tizen widget manifest, superseding ravilo-tizen's (R189). `package` MUST stay exactly 10
+    characters — Samsung's installer fails with "Load archive info fail" on any other length, an
+    undocumented constraint found empirically against a real Tizen 10.0 TV emulator (ravilo-tizen's own
+    "RaviloTizen" is 11 chars and has always carried this same latent bug). The TV emulator (Samsung TV
+    Extension 7.0.1+) also only installs a .wgt signed with a genuine Samsung-issued certificate profile,
+    not a generic Tizen distributor certificate — see the Certificate Manager section of the phase's dev
+    notes for how the "Ravilo" profile was created.
 -->
 <widget xmlns="http://www.w3.org/ns/widgets"
         xmlns:tizen="http://tizen.org/ns/widgets"
-        id="http://jellystructure.dev/ravilo-tizen"
+        id="http://jellystructure.dev/ravilo-screen"
         version="1.0.0"
         viewmodes="fullscreen">
-    <tizen:application id="RaviloTizen.RaviloTizen" package="RaviloTizen" required_version="2.4"/>
+    <tizen:application id="RaviloScrn.RaviloScrn" package="RaviloScrn" required_version="2.4"/>
     <name>Ravilo</name>
     <icon src="icon.png"/>
     <content src="index.html"/>
