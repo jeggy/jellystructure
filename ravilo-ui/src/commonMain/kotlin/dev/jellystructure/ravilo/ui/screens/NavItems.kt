@@ -94,6 +94,11 @@ fun discoverSegmentLabel(seg: DiscoverSegment): String = when (seg) {
  * segments. Switching tabs keeps focus on the tab you pressed — the screen that renders next passes
  * [focusActiveOnEntry] and the bar re-focuses its current chip, so the segment stays steerable and
  * Down drops into the content. Left/Right along the bar is plain Compose focus order.
+ *
+ * R262 (dev review item 2) — [onFocusConsumed] fires once, right after the chip actually takes focus,
+ * so the caller can clear the press token on the destination that requested it (`focusSegment` lives on
+ * the stack entry, not here, so it survives a drill-in/Back round trip — the token itself has to be
+ * consumed there too, or a return from a seeded grid re-steals focus from R257's tile restore).
  */
 @Composable
 fun DiscoverSegmentBar(
@@ -101,12 +106,16 @@ fun DiscoverSegmentBar(
     active: DiscoverSegment,
     onSelect: (DiscoverSegment) -> Unit,
     focusActiveOnEntry: Boolean = false,
+    onFocusConsumed: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val colors = RaviloTheme.colors
     val activeFR = remember { FocusRequester() }
     LaunchedEffect(focusActiveOnEntry, active) {
-        if (focusActiveOnEntry) runCatching { activeFR.requestFocus() }
+        if (focusActiveOnEntry) {
+            runCatching { activeFR.requestFocus() }
+            onFocusConsumed()
+        }
     }
     Row(
         modifier = modifier

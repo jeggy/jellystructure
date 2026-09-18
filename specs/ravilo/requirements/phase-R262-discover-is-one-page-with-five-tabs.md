@@ -12,10 +12,14 @@
 
 ## Status
 
-`Planned` — written 2026-09-18 from the owner's direction, a trace of `main` and a same-day run on the
+`✓ Built` — written 2026-09-18 from the owner's direction, a trace of `main` and a same-day run on the
 Stue TV (release `1.23-dirty` sideload) and the Pixel 9 (Play 1.26). **Dev-reviewed 2026-09-18 against `main` `05195d1f`** (see
 §Dev review at the bottom: nine `backToTopOnBack` sites, the focus token must be consumed, and R267/R268
-touch the same page). Not built.
+touch the same page). **Built 2026-09-18** — compiles clean on `ravilo-ui` (commonMain/Android/wasmJs),
+`ravilo-android` and `ravilo-web`. FR-R262-3 implemented for the full nav-bar section group
+(Home/Movies/Series/Discover), not Discover's own segments alone, since acceptance 1 and 5 require it.
+**Not yet device-tested** — acceptance 1–8 need the Stue TV, the bedroom TV (dev review item 5) and a
+real Pixel 9/browser, none run this session.
 Client-only (`ravilo-ui` commonMain). No backend change: the three endpoints are already server-cached
 and fast (the Coming Soon and Studios walls both had their data on screen inside the first
 screenshot, < 0.5 s after the tap, on both devices). Nothing new to draw: `design/ravilo/ravilo-app.js`

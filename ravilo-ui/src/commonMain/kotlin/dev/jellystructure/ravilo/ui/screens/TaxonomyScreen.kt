@@ -16,14 +16,12 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -33,7 +31,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
@@ -42,9 +39,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.jellystructure.ravilo.ui.LocalLiveConfig
-import dev.jellystructure.ravilo.ui.components.AppBar
-import dev.jellystructure.ravilo.ui.components.HomeLoadingShell
-import dev.jellystructure.ravilo.ui.focus.backToTopOnBack
 import dev.jellystructure.ravilo.ui.focus.dpadFocusable
 import dev.jellystructure.ravilo.ui.focus.rememberEdgeBringIntoViewSpec
 import dev.jellystructure.ravilo.ui.i18n.str
@@ -85,58 +79,28 @@ internal fun DiscoverSegment.seedFacet(): String = when (this) {
  * FR-R243-4: the header states the scope, plus one line when Phase 216 answers `scoped: true`.
  * FR-R243-7: wall rows are ordinary D-pad rows; Up from the first row reaches the segment bar; nothing
  * auto-focuses a tile on load; no focus-detail behaviour applies here.
+ *
+ * R262 — content-only: the frame (`screens/DiscoverScreen.kt`) owns the app bar, the page header
+ * (title/subtitle) and the segment bar now; this renders everything below them, anchored on the
+ * frame's shared [navBarFR]/[columnFR]/[listState].
  */
 @Composable
-fun TaxonomyScreen(
-    store: TaxonomyStore,
-    segment: DiscoverSegment,
-    displayName: String,
-    segments: List<DiscoverSegment>,
-    onSegment: (DiscoverSegment) -> Unit,
-    focusSegmentOnEntry: Boolean,
-    onNavSelect: (Int) -> Unit,
-    onProfile: () -> Unit,
-    onSearch: () -> Unit,
-    /** Select on a tile: the segment it came from, the value, and the crumb naming the path. */
-    onTileSelect: (segment: DiscoverSegment, item: FacetItem, crumb: String) -> Unit,
-) {
-    val colors = RaviloTheme.colors
-    val state by store.state.collectAsState()
-    val navItems = raviloNavItems()
-
-    val live = LocalLiveConfig.current
-    LaunchedEffect(live) { live?.collect { store.refresh(silent = true) } }
-
-    Box(Modifier.fillMaxSize().background(colors.background)) {
-        when (val s = state) {
-            is TaxonomyState.Loading -> HomeLoadingShell()
-            is TaxonomyState.Error -> Column(Modifier.fillMaxSize().padding(40.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                Spacer(Modifier.height(200.dp)); Text(str("nav.discover"), color = colors.text, fontSize = 20.sp)
-                Spacer(Modifier.height(8.dp)); Text(s.message, color = colors.textSecondary, fontSize = 14.sp)
-            }
-            is TaxonomyState.Loaded -> TaxonomyLoaded(
-                store, s.facets, segment, displayName, navItems, segments, onSegment, focusSegmentOnEntry,
-                onNavSelect, onProfile, onSearch, onTileSelect,
-            )
-        }
-    }
-}
-
-@Composable
-private fun TaxonomyLoaded(
+fun TaxonomyContent(
     store: TaxonomyStore,
     facets: BrowseFacets,
     segment: DiscoverSegment,
-    displayName: String,
-    navItems: List<String>,
-    segments: List<DiscoverSegment>,
-    onSegment: (DiscoverSegment) -> Unit,
+    listState: LazyListState,
+    navBarFR: FocusRequester,
+    columnFR: FocusRequester,
     focusSegmentOnEntry: Boolean,
-    onNavSelect: (Int) -> Unit,
-    onProfile: () -> Unit,
-    onSearch: () -> Unit,
-    onTileSelect: (DiscoverSegment, FacetItem, String) -> Unit,
+    /** Select on a tile: the segment it came from, the value, and the crumb naming the path. */
+    onTileSelect: (segment: DiscoverSegment, item: FacetItem, crumb: String) -> Unit,
 ) {
+    // R33 — only runs while a taxonomy segment is the one actually composed (FR-R262-8: unchanged from
+    // before the merge, when switching segments tore this down the same way).
+    val live = LocalLiveConfig.current
+    LaunchedEffect(live) { live?.collect { store.refresh(silent = true) } }
+
     val colors = RaviloTheme.colors
     val handset = LocalHandset.current
     val kind = segment.taxonomyKind()
@@ -157,10 +121,7 @@ private fun TaxonomyLoaded(
     // FR-R243-5 — the crumb the seeded page shows: `Discover · Networks` (the page title is the value).
     val crumb = "${str("nav.discover")} · ${discoverSegmentLabel(segment)}"
 
-    val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
-    val navBarFR = remember { FocusRequester() }
-    val columnFR = remember { FocusRequester() }
     val restoreFR = remember { FocusRequester() }
     // remember{}: the key is consumed (cleared) by the restore below; a recomposition must not drop the
     // tile's requester before the restore has run.
@@ -168,7 +129,8 @@ private fun TaxonomyLoaded(
     val willRestore = remember { restoreKey != null && list.any { "$kind:${it.name}" == restoreKey } }
 
     // Fresh entry ⇒ focus the AppBar (the same rule every tab screen follows); a segment switch keeps
-    // focus on the pressed chip (the bar does that itself); a Back-return re-focuses the opened tile.
+    // focus on the pressed chip (the frame's shared segment bar suppresses its own focus request when
+    // a restore is pending — see DiscoverScreen.kt); a Back-return re-focuses the opened tile.
     LaunchedEffect(Unit) {
         when {
             // R257 (FR-R257-2) — a pending tile restore wins over the chip: the destination on the stack
@@ -178,7 +140,7 @@ private fun TaxonomyLoaded(
             willRestore -> {
                 store.lastSelectedKey = null
                 val ri = rows.indexOfFirst { row -> row.any { "$kind:${it.name}" == restoreKey } }
-                if (ri >= 0) listState.scrollToItem(ri + 2)  // +2: header + meta items
+                if (ri >= 0) listState.scrollToItem(ri + 1)  // +1: meta item (the title/segment bar are the frame's now)
                 repeat(10) { if (runCatching { restoreFR.requestFocus() }.isSuccess) return@LaunchedEffect; kotlinx.coroutines.delay(16) }
             }
             focusSegmentOnEntry -> Unit
@@ -186,32 +148,15 @@ private fun TaxonomyLoaded(
         }
     }
 
-    var navBarFocused by remember { mutableStateOf(false) }
-    Box(
-        modifier = Modifier.fillMaxSize().backToTopOnBack(
-            atTop = { navBarFocused },
-            onBackToTop = {
-                runCatching { navBarFR.requestFocus() }
-                scope.launch { listState.scrollToItem(0) }
-            },
-        ),
-    ) {
-        val edgeBringIntoViewSpec = rememberEdgeBringIntoViewSpec(peekDp = 120.dp, topInsetDp = RaviloDimens.appBarHeight + 64.dp, centerLineFraction = 0.3f)
+    Box(Modifier.fillMaxSize()) {
+        val edgeBringIntoViewSpec = rememberEdgeBringIntoViewSpec(peekDp = 120.dp, topInsetDp = 64.dp, centerLineFraction = 0.3f)
         @OptIn(ExperimentalFoundationApi::class)
         CompositionLocalProvider(LocalBringIntoViewSpec provides edgeBringIntoViewSpec) {
             LazyColumn(
                 state = listState,
                 modifier = Modifier.fillMaxSize().focusRequester(columnFR),
-                contentPadding = PaddingValues(top = RaviloDimens.appBarHeight + 24.dp, bottom = 240.dp),
+                contentPadding = PaddingValues(bottom = 240.dp),
             ) {
-                item(key = "taxo-head") {
-                    Column(Modifier.padding(horizontal = raviloHPad, vertical = 8.dp)) {
-                        Text(str("nav.discover"), color = colors.text, fontSize = 22.sp, fontWeight = FontWeight.Bold, fontFamily = SpaceGrotesk)
-                        Text(str("tx.sub_$kind"), color = colors.textSecondary, fontSize = 13.sp)
-                        Spacer(Modifier.height(12.dp))
-                        DiscoverSegmentBar(segments = segments, active = segment, onSelect = onSegment, focusActiveOnEntry = focusSegmentOnEntry && !willRestore)
-                    }
-                }
                 item(key = "taxo-meta") {
                     // FR-R243-4 — "{n} networks · {n} titles", plus the scoped line when 216 says so.
                     Row(Modifier.padding(horizontal = raviloHPad).padding(top = 14.dp, bottom = 6.dp), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -254,26 +199,6 @@ private fun TaxonomyLoaded(
                     }
                 }
             }
-        }
-
-        val initials = remember(displayName) {
-            displayName.split(' ').filter { it.isNotBlank() }.take(2).joinToString("") { it.first().uppercase() }
-        }
-        val appBarScrolled by remember { derivedStateOf {
-            listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 0
-        } }
-        Box(Modifier.onFocusChanged { navBarFocused = it.hasFocus }) {
-            AppBar(
-                navItems = navItems,
-                activeNav = DISCOVER_NAV_INDEX,
-                onNavSelect = onNavSelect,
-                navFR = navBarFR,
-                onDown = { runCatching { columnFR.requestFocus() } },
-                userInitials = initials,
-                onProfile = onProfile,
-                onSearch = onSearch,
-                scrolled = appBarScrolled,
-            )
         }
     }
 }
