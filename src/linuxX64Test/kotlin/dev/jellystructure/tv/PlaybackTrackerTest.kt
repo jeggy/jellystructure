@@ -209,4 +209,14 @@ class PlaybackTrackerTest {
         // The tracker itself now reflects only the new session.
         assertEquals("jf-second", t.stopped(tv, "movie"))
     }
+
+    /** 218 amendment (FR-218-11) — the Chromecast receiver never opens the TV-events socket, so the
+     *  watchdog must not read "no socket" as "gone" for it; a TV or phone is still judged by its socket. */
+    @Test
+    fun aCastReceiverIsJudgedByHeartbeatNotBySocket() {
+        assertFalse(PlaybackTracker.needsEventsSocket(device("cast-1").copy(platform = "cast")))
+        assertTrue(PlaybackTracker.needsEventsSocket(device("tv1").copy(platform = "android")))
+        assertTrue(PlaybackTracker.needsEventsSocket(device("old").copy(platform = null)))
+    }
 }
+

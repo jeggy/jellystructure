@@ -362,3 +362,20 @@ URL and fed it to a player that expects HLS.
   the receiver rather than remuxed. A fragmented-MP4 HLS profile carrying HEVC when the receiver's
   `video_codecs` include it is the next step, once one cast plays end to end.
 
+## Amendment 3 (2026-09-18) — the stop watchdog ended every cast 11 s in, on paper
+
+First cast that played (Pixel 9 → Stue TV, v1.25): the TV played on, the phone's remote followed,
+and Jellyfin's dashboard showed the *Chromecast via Ravilo · Stue TV* session with **no Now Playing**.
+The backend log: `Stop watchdog: force-stopping stale playback … device=cast-…` 11 s after the start,
+then `Ignoring progress for already-stopped playback` every 10 s. Phase 110's watchdog stops a
+playback whose device has no TV-events socket — right for a TV or phone, which hold that socket while
+the app is open — but the receiver is a page driven over the Cast channel and never opens one. So
+every cast was reported stopped to Jellyfin (position 25 ms), its encode released (Jellyfin restarts
+it on the next segment request, which is why the picture survived), and its progress dropped, so
+Continue Watching never learned where the viewer got to.
+
+- **FR-218-11** — a device enrolled as platform `cast` is judged by its heartbeat alone (it reports
+  progress every 10 s, inside the 90 s window). Every other device keeps the socket test.
+- Open: the receiver could open the TV-events socket instead, which would also make it a target for
+  phase 111's remote control and R248's pushes. Not done here.
+
