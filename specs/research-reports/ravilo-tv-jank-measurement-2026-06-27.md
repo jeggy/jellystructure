@@ -1,7 +1,7 @@
 # Ravilo TV — Jank round (R96–R102) implementation + on-device measurement
 
 **Date:** 2026-06-27
-**Device:** stue TV — Sony BRAVIA XR-65X93K (Android TV), `192.0.2.22`
+**Device:** stue TV — Sony BRAVIA XR-65X93K (Android TV), `192.0.2.11`
 **Build under test:** `dev.jellystructure.ravilo` release APK
 **Method:** `dumpsys gfxinfo` frame stats, driven by scripted `adb input` D-pad
 navigation, with **forced AOT compilation** (`cmd package compile -m speed -f`) and
@@ -86,7 +86,7 @@ definitive*, pending a clean re-measure against a live backend.
 
 ## 3. Incidental finding — backend "Connection refused"
 
-The backend at `192.0.2.20` served the app fine at 09:22 and became **unreachable ~09:24**
+The backend at `192.0.2.10` served the app fine at 09:22 and became **unreachable ~09:24**
 (the whole app showed "Connection refused"; it is also unreachable from the dev host on
 :9505/:8080). This is the user's separate server and was not redeployed by this work. It
 matters because **a backend that intermittently refuses connections is itself a major source
@@ -194,7 +194,7 @@ addresses it.
 
 ### R105 — Backend outage + redeploy
 - **Where it runs:** the backend is a bare `jellystructure.kexe` on the dev host itself
-  (`192.0.2.20`), pointed at the live `config/` data (DB + pairing). Not the docker-compose
+  (`192.0.2.10`), pointed at the live `config/` data (DB + pairing). Not the docker-compose
   service (no such container exists).
 - **The outage:** it stopped mid-measurement (~09:22–24). **Root cause undetermined** — the
   original process's output was not captured, so there is no crash trace. It coincided with

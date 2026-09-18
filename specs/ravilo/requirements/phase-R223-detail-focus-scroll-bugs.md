@@ -131,7 +131,7 @@ build R8/baseline-profile path R213 verified) also succeeds.
 
 **Deployed to both TVs same session** (user-requested): release APK (`ravilo-1.0-release.apk`) installed
 via `adb install -r` and AOT-compiled (`cmd package compile -m speed -f dev.jellystructure.ravilo`) on
-`BRAVIA 4K VH21` (stue TV, `192.0.2.22`) and `BRAVIA 4K VH2` (`192.0.2.23`, the household's second TV,
+`BRAVIA 4K VH21` (stue TV, `192.0.2.11`) and `BRAVIA 4K VH2` (`192.0.2.12`, the household's second TV,
 identified via the `ravilo_device` table's `display_name` + confirmed against each device's own
 `ro.product.model`) — both installs and both compiles reported `Success`. Neither device was launched
 into Ravilo afterward (confirmed via `dumpsys window` immediately after: stue TV sat at the Android TV
