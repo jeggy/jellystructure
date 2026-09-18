@@ -23,6 +23,11 @@ invalid token was expected to answer 401 like every other privileged route. It a
 restarted the server**, causing roughly one minute of downtime and four failed progress writes for a
 viewer who was mid-playback. Lifecycle routes are now on a written deny-list.
 
+**Every finding below was subsequently double-proved on clean, isolated containers** of both
+`jellyfin/jellyfin:12.1` and `jellyfin/jellyfin:10.11.11`, each installed from scratch with the
+startup wizard completed via the API and a one-file movie library. The production server was not
+touched again. Both probe containers were removed afterwards.
+
 ## Findings
 
 ### 1. `/socket` no longer accepts `api_key` — one live regression
@@ -64,28 +69,70 @@ use `api_key`. None is broken, because every route they target answers with **no
 all**: image routes 200, `/Videos/{id}/stream` 206 with real `video/mp4`, subtitle `.vtt` 200. The
 token is ignored, not honoured. → **239**, **R271**.
 
-### 4. Media is served to anonymous callers over the public URL
+### 4. Media is served to anonymous callers — confirmed, and it is not a 12.x regression
 
-Confirmed against `https://jellyfin.example.net` with no credential, fresh request, no cookies:
-`/Videos/{id}/stream` returns 206 and `video/mp4`; a nonexistent id returns 400, so the route is
-genuinely evaluating rather than short-circuiting. `network.xml` has no LAN allowlist, no
-`KnownProxies` and no `RemoteIPFilter`.
+**Double-proved 2026-09-18 on clean, isolated containers of both versions**, wizard completed, one
+movie library, `KnownProxies` set so `X-Forwarded-For` is honoured and the caller resolves to
+`8.8.8.8` — definitively not local access. No credential sent.
 
-Anyone who can reach the host and holds an item id can pull the file. Item ids are not secret; they
-ride in Ravilo payloads and image URLs. This is Jellyfin's behaviour, not jellystructure's, and this
-report does not propose a code change. **Open:** is there a Jellyfin setting that requires auth on
-media routes, and was this also true on 10.11.11? Both unanswered — every Jellyfin instance on this
-host is now 12.1, so there was nothing left to A/B against.
+| Request | 12.1.0 | 10.11.11 |
+|---|---|---|
+| `GET /Videos/{id}/stream` | 206 `video/mp4` | 206 `video/mp4` |
+| `GET /Videos/{id}/stream.mp4` | 206 `video/mp4` | 206 `video/mp4` |
+| `GET /Items/{id}/Images/Primary` | 200 `image/jpeg` | 200 `image/jpeg` |
+| `GET /Items?…` (control) | 401 | 401 |
+| `POST /System/Restart` (control) | 401 | — |
 
-### 5. `POST /System/Restart` executed with an invalid token
+The two controls are the proof that authentication works on these servers and only the media routes
+ignore it. No header, an invalid token and a valid admin token all return 206.
 
-204 and a real restart, while `/System/Configuration`, `/System/Logs`, `/System/ActivityLog/Entries`,
-`/ScheduledTasks`, `/Users`, `/Library/VirtualFolders`, `/System/Endpoint` and `/Devices` all
-correctly returned 401 for the same token. Jellyfin's log shows the request being rejected as
-`Invalid token` and the shutdown beginning in the same second.
+**Intentional, or at least long-known.** `VideosController` carries no `[Authorize]` attribute at
+class or method level in current master. Jellyfin issue **#1501** ("Video streams completely
+unauthenticated", opened 2019-07-01) is labelled `bug`, `confirmed`, `security`; **#5415** collects
+the same family and was closed as a duplicate, framed as needing breaking changes in a hypothetical
+11.0+; **#13986** carries the source comment *"TODO: In order to authenticate this in the future,
+Dlna playback will require updating"*. The `HlsSegmentController` comment cites Chrome sending
+requests without the full query string.
 
-Not re-tested, deliberately. **Confirm on a disposable instance and report upstream if it holds.**
-Treat as one observation, not a confirmed vulnerability.
+→ Upstream report drafted at `jellyfin-upstream-report-unauthenticated-media-2026-09-18.md`. It is
+written to **ask whether this is still intentional in 12.x** rather than to assert a vulnerability,
+and it says to check for an open tracker before filing.
+
+### 5. `POST /System/Restart` is unauthenticated — by design, and our exposure was our own config
+
+**Corrected.** The first pass reported this as possibly specific to 12.1 and did not isolate the
+cause. Re-tested properly on clean containers of both versions with real settle delays between
+requests:
+
+| Credential | 12.1.0 | 10.11.11 |
+|---|---|---|
+| no `Authorization` header | 204, **restarts** | 204, **restarts** |
+| invalid token | 204, **restarts** | 204, **restarts** |
+| valid admin token (control) | 204, restarts | 204, restarts |
+
+The earlier "no-header does not restart" result was a timing artifact from too short a settle window.
+
+**This is working as designed.** `SystemController.RestartApplication` carries
+`[Authorize(Policy = Policies.LocalAccessOrRequiresElevation)]` — local callers are allowed without
+authentication. `ShutdownApplication` by contrast requires elevation outright.
+
+**Our exposure was an empty `KnownProxies`.** Jellyfin sits behind Caddy at `172.28.0.17`, a private
+address on the Docker network. With `KnownProxies` unset, Jellyfin ignores `X-Forwarded-For` and
+classifies every internet request as local, so the restart route was open to the internet. Proven,
+and the fix proven with it:
+
+| `KnownProxies` | Caller presented as | Result |
+|---|---|---|
+| empty | anything via the proxy | 204, restarts |
+| set to the proxy | `8.8.8.8` | **401, refused** |
+| set to the proxy | `192.168.1.50` | 204, restarts — by design |
+
+The IP-spoofing variant is **CVE-2025-32012**, CVSS 7.5, patched in 10.10.7. The proxy variant needs
+no spoofing at all.
+
+**Action: set `KnownProxies` to Caddy's address on the household server.** Not filed upstream; a
+hardening suggestion is noted in the upstream report instead. jellystructure should also detect this
+— added as FR-242-8.
 
 ### 6. The OpenAPI document is gone
 
@@ -166,4 +213,8 @@ matching 400. The rest were not re-checked.
 | **243** | The 12.x floor, a reported version, and no compatibility branches |
 | **R271** | Ravilo clients no longer building Jellyfin URLs |
 
-Findings 4 and 5 produced no phase. Both are Jellyfin's behaviour and need a decision, not code.
+Finding 4 produced no phase — it is Jellyfin's own behaviour and the response is an upstream
+question, drafted at `jellyfin-upstream-report-unauthenticated-media-2026-09-18.md`.
+
+Finding 5 produced **FR-242-8** (the advisor detects an empty `KnownProxies` behind a proxy) plus one
+immediate configuration action on the household server.
