@@ -45,6 +45,8 @@ data class CastRemoteStatus(
     val selectedSub: Int = -1,
     val subSize: Char = 'M',
     val receiverId: String? = null,
+    /** FR-R245-19 — the receiver said its stream is a server-side conversion, not the original file. */
+    val transcoding: Boolean = false,
 )
 
 interface CastSender {

@@ -373,3 +373,15 @@ owns the SDK, so it owns the thread: every command (`setAppId`, `load`, `play`, 
 `stop`, `selectSubtitle`, `selectAudio`, `send`) hops to the main looper before touching the SDK.
 Verified on the Pixel 9: the hand-off no longer crashes, the remote appears.
 
+## Amendment 4 (2026-09-18) — the remote says when the picture is a conversion
+
+Owner decision after amendment 3: a Chromecast plays an H.264 conversion of an HEVC file (218
+FR-218-10), and the viewer should be able to tell. **FR-R245-19** — the receiver's status message
+gains `transcoding` (`StreamTicket.directPlay == false`); the phone's remote shows, under the state
+line and only while media is loaded and the receiver reachable, a small drawn ⓘ with *Converted for
+{device}*; tapping it opens one card: the file cannot be played as it is by that device, the server
+converts it as it plays, the picture is a step below the original, and the Ravilo app on the TV gives
+the best quality. Names no product, protocol, codec or status code (FR-R245-16 stands); the word
+*server* is the only system named. Three strings × en/da/fo (da/fo drafts). Absent field (an older
+receiver) ⇒ nothing shown.
+

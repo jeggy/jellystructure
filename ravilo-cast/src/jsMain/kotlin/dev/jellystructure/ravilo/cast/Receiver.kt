@@ -398,6 +398,7 @@ private class Receiver {
             type = "status", itemId = d.itemId, title = d.title, kicker = d.kicker, artUrl = d.artUrl,
             hasNext = nextEpisode() != null, audioTracks = audios, subtitleTracks = subs,
             selectedAudio = 0, selectedSub = subs.indexOfFirst { it.isDefault }, subSize = subSize, receiverId = receiverId,
+            transcoding = t?.let { !it.directPlay },
         ))
     }
 

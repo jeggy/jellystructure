@@ -99,6 +99,7 @@ fun CastRemoteScreen(
     val name = device ?: ""
     val unreachable = link != CastLinkState.CONNECTED
     var sheetOpen by remember { mutableStateOf(false) }
+    var convertedOpen by remember { mutableStateOf(false) }
     // Optimistic on drag, resolved to the receiver's number on release (open question 3: it eases by
     // simply adopting the next report; nothing animates a snap).
     var scrubbing by remember { mutableStateOf(false) }
@@ -171,6 +172,20 @@ fun CastRemoteScreen(
             s.noServer -> Text(str("cast.no_server_sub"), color = colors.textDim, fontSize = 13.sp, fontFamily = Sora, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 4.dp))
             s.busyRetryAfter != null -> Text("${str("srv.busy_sub")} · ${str("cast.waiting", mapOf("n" to busyElapsed.toString()))}", color = colors.textDim, fontSize = 13.sp, fontFamily = Sora, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 4.dp))
         }
+        // ── FR-R245-19 — the stream is a conversion, not the file: say so, quietly, and explain on tap.
+        // Shown only while the receiver has media and is reachable; never a codec, protocol or product name.
+        if (s.transcoding && s.loaded && !unreachable && !s.noServer && !s.ended) {
+            Row(
+                Modifier.padding(top = 6.dp).clip(RoundedCornerShape(14.dp))
+                    .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { convertedOpen = true }
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                InfoGlyph(colors.textDim)
+                Spacer(Modifier.width(6.dp))
+                Text(str("cast.converted", mapOf("device" to name)), color = colors.textDim, fontSize = 13.sp, fontFamily = Sora)
+            }
+        }
         Spacer(Modifier.height(18.dp))
 
         // ── Next-up mirrored (the receiver owns the countdown; cancelling is SENT) ──
@@ -237,6 +252,43 @@ fun CastRemoteScreen(
 
     // ── FR-R245-8 — subtitles & audio: the SAME picker component the local player opens ──
     CastTrackSheet(cast = cast, status = s, deviceName = name, open = sheetOpen, onClose = { sheetOpen = false })
+    if (convertedOpen) ConvertedPopover(deviceName = name, colors = colors) { convertedOpen = false }
+}
+
+/** FR-R245-19 — a small ⓘ: a ring with a dot and a stem, drawn, so it needs no icon asset on any platform. */
+@Composable
+private fun InfoGlyph(color: Color) {
+    Canvas(Modifier.size(15.dp)) {
+        val r = size.minDimension / 2
+        drawCircle(color, radius = r - 1.dp.toPx(), style = Stroke(width = 1.6.dp.toPx()))
+        drawCircle(color, radius = 1.1.dp.toPx(), center = Offset(size.width / 2, size.height * 0.30f))
+        drawLine(color, Offset(size.width / 2, size.height * 0.45f), Offset(size.width / 2, size.height * 0.74f), strokeWidth = 1.8.dp.toPx(), cap = StrokeCap.Round)
+    }
+}
+
+/** FR-R245-19 — the explanation, one card over a scrim; tap anywhere to dismiss. */
+@Composable
+private fun ConvertedPopover(deviceName: String, colors: RaviloColors, onClose: () -> Unit) {
+    Box(
+        Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.55f))
+            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onClose)
+            .windowInsetsPadding(WindowInsets.safeDrawing).padding(24.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            Modifier.widthIn(max = 420.dp).background(colors.surfaceVariant, RoundedCornerShape(20.dp)).padding(22.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                InfoGlyph(colors.text)
+                Spacer(Modifier.width(8.dp))
+                Text(str("cast.converted", mapOf("device" to deviceName)), color = colors.text, fontSize = 17.sp, fontWeight = FontWeight.Bold, fontFamily = SpaceGrotesk)
+            }
+            Spacer(Modifier.height(10.dp))
+            Text(str("cast.converted_body", mapOf("device" to deviceName)), color = colors.textSecondary, fontSize = 14.sp, fontFamily = Sora, lineHeight = 20.sp)
+            Spacer(Modifier.height(16.dp))
+            RemotePill(str("action.close"), primary = true, modifier = Modifier.fillMaxWidth(), onClick = onClose)
+        }
+    }
 }
 
 /** The same sheet as R244's local one — one component, two destinations; the only difference is the line naming the device. */
