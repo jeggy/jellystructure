@@ -46,13 +46,13 @@ floors) instead of a platform dialog. On Android the native Cast SDK path (R245)
 every platform. The owner accepts that the glyph is a little misleading for a Tizen TV; the sheet's
 first line makes it plain: *"Play on a TV"*.
 
-**FR-R265-2 · Tier 1 — on this network.** `GET /api/tv/screens`'s `nearby` list: name, platform mark,
+**FR-R265-2 · Tier 1 — on this network.** `GET /api/remote/devices` filtered to `nearby=true`: name, platform mark,
 and one line of state — *Ready* · *Playing {title}* (yours, tappable to the remote) · *Busy · {user} is
 watching* (236's 409 shape, not tappable) · *Offline · last seen {when}*. Empty tier ⇒ the section is
 absent, not an empty box.
 
 **FR-R265-3 · Tier 2 — all your TVs, collapsed.** A collapsible row *"All your TVs ({n})"*, closed by
-default, remembering its open state per device. Same rows as tier 1 for `others`. On Android, Google's
+default, remembering its open state per device. Same rows as tier 1 for the devices with `nearby=false`. On Android, Google's
 Cast-discovered Chromecasts appear here too (with the Cast mark), so the sheet is the *only* picker on
 every platform; on web/iOS there are none to show.
 
@@ -71,16 +71,18 @@ no R245 remote for AirPlay: the local player *is* the remote. Never on Android, 
 is on the TV's screen"*. Success adds the TV to the list in place. Errors: *"That code didn't work"*
 (unknown/expired/used) — no protocol words (FR-R245-16).
 
-**FR-R265-6 · Play, and everything after, over the backend.** A new `CastSender` implementation in
-commonMain (`ScreenSender`) backed by 236's routes and the phone's events socket: `load` → `POST
-/screens/{id}/play`; `play/pause/seekTo/stop/selectAudio/selectSubtitle/setSubtitleSize/next/cancelNextUp`
-→ `POST /screens/{id}/command`; `status` ← `screen_status` pushes (`subscribe_screen` on open,
-`unsubscribe_screen` on leaving the app, re-subscribe on reconnect). The remote, mini bar, subtitles sheet
+**FR-R265-6 · Play, and everything after, over the backend — the same API an API key uses.** A new
+`CastSender` implementation in commonMain (`ScreenSender`) backed by 236's **`/api/remote/**`** routes
+under the phone's ordinary device token (owner decision: one device-control API for API users and Ravilo
+clients alike): `load` → `POST /api/remote/play`; `play/pause/seekTo/stop/selectAudio/selectSubtitle/
+setSubtitleSize/next/cancelNextUp` → `POST /api/remote/command`; `status` ← `device_status` pushes
+(`subscribe_device` on the phone's own events socket on open, `unsubscribe_device` on leaving the app,
+re-subscribe on reconnect). The TV list is `GET /api/remote/devices` with its `nearby` flag. The remote, mini bar, subtitles sheet
 and states are **unchanged** — they already read `CastRemoteStatus`, which 236's `ScreenStatus` mirrors
 field for field. Positions tick only from pushes (never a local clock). *Play on {TV}* on Detail and the
 in-player hand-over (FR-R245-4) work exactly as for a Chromecast.
 
-**FR-R265-7 · Reconnect is a list, not a session.** On app start / return, `GET /api/tv/screens` decides:
+**FR-R265-7 · Reconnect is a list, not a session.** On app start / return, `GET /api/remote/devices` decides:
 a screen with `now_playing` for this user ⇒ mini bar with the live position; none ⇒ nothing shown at all
 (FR-R245-5's two outcomes, without an SDK). The connecting bar (FR-R245-3) reads *"Sending to {TV}…"* /
 *"Playing on {TV}"* and retires itself.
