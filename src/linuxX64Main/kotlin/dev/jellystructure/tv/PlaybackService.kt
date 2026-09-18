@@ -253,6 +253,18 @@ internal class PlaybackTracker(private val clock: () -> Long = ::nowMs) {
     fun isHeartbeatStale(playback: TrackedPlayback): Boolean =
         clock() - playback.heartbeatMs > STOP_WATCHDOG_MS
 
+    companion object {
+        /** 218 amendment (FR-218-11) — which devices the watchdog may judge by their TV-events socket. A
+         *  Ravilo TV or phone holds that socket for as long as the app is open, so "socket gone" means
+         *  "app gone". The Chromecast receiver never opens one — it is a receiver page, driven by the
+         *  phone over the Cast channel — so for it the socket test read as "disconnected" 11 s into every
+         *  cast, the playback was force-stopped, Jellyfin was told so (an empty Now Playing card while
+         *  the TV kept playing), and every later progress report was ignored. A receiver is judged by
+         *  its heartbeat alone (it reports progress every 10 s, well inside [STOP_WATCHDOG_MS]). */
+        fun needsEventsSocket(device: DeviceData): Boolean = device.platform != CAST_PLATFORM
+        const val CAST_PLATFORM = "cast"
+    }
+
     /** With per-item keying a device can briefly hold several entries (an overlapping stop/start), so
      *  report the most recently heartbeated one — that is the one actually on screen. */
     fun nowPlaying(deviceId: String): String? =
@@ -610,7 +622,7 @@ class PlaybackService(
         // a plain `.filter { }` lambda is not inline and can't call a suspend function.
         val stale = buildList {
             for (p in tracked) {
-                if (playbackTracker.isHeartbeatStale(p) || !isDeviceConnected(p.device.deviceId)) add(p)
+                if (playbackTracker.isHeartbeatStale(p) || (PlaybackTracker.needsEventsSocket(p.device) && !isDeviceConnected(p.device.deviceId))) add(p)
             }
         }
         for (p in stale) {
