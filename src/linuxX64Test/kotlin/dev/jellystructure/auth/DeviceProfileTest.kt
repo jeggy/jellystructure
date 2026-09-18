@@ -91,4 +91,19 @@ class DeviceProfileTest {
         assertContains(json, """"Property":"VideoRangeType","Value":"${allowedVideoRangeTypes(hdrCapable).joinToString("|")}","IsRequired":true""")
         assertTrue(json.contains(""""Codec":"h264","Conditions":["""))
     }
+
+    /** 218/R245 amendment — the Chromecast receiver says hls_only + containers=[mp4,ts]; both were ignored,
+     *  and an MKV was offered for direct play as if it were HLS. */
+    @Test
+    fun hlsOnlyGetsNoDirectPlayAndNamedContainersGetOnlyThose() {
+        val receiver = deviceProfile(ClientCapabilities(containers = listOf("mp4", "ts"), hlsOnly = true))
+        assertTrue(receiver.contains("\"DirectPlayProfiles\":[]"), receiver)
+        assertTrue(receiver.contains("\"Protocol\":\"hls\""), receiver)
+        val named = deviceProfile(ClientCapabilities(containers = listOf("mp4", "ts")))
+        assertTrue(named.contains("\"Container\":\"mp4,ts\",\"Type\":\"Video\""), named)
+        assertFalse(named.contains("mkv,mp4"), named)
+        val silent = deviceProfile(ClientCapabilities())
+        assertTrue(silent.contains("\"Container\":\"mkv,mp4,webm"), silent)
+    }
 }
+

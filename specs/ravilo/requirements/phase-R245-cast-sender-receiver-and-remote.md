@@ -363,3 +363,13 @@ black screen. **FR-R245-15a** — player state is followed through the three eve
 (`PLAYING`, `PAUSE`, `BUFFERING`). The receiver was written without ever being run against the real
 framework; a headless load of `/cast/` that asserts the idle screen is up is the missing guard (open).
 
+## Amendment 3 (2026-09-18) — the Cast SDK is main-thread only
+
+Second real cast, v1.24 on the Pixel 9: tapping *Play on Stue TV* killed the app —
+`IllegalStateException: Must be called from the main thread` on `DefaultDispatcher-worker`. The shared
+`CastController.cast()` fetches the hand-off code on `Dispatchers.Default` and then calls the sender's
+`load`, and every Cast SDK entry point throws off the main thread. **FR-R245-4a** — the Android seam
+owns the SDK, so it owns the thread: every command (`setAppId`, `load`, `play`, `pause`, `seekTo`,
+`stop`, `selectSubtitle`, `selectAudio`, `send`) hops to the main looper before touching the SDK.
+Verified on the Pixel 9: the hand-off no longer crashes, the remote appears.
+
