@@ -57,6 +57,10 @@ fun Application.installGzipCompression() {
             override val headers = Headers.build {
                 appendAll(original.headers)
                 append(HttpHeaders.ContentEncoding, "gzip")
+                // FR-235-2 — a cache between an encoding-aware server and a client must know the
+                // response varies by this header; without it, a shared cache could serve gzip bytes to
+                // a client that never said it could decode them.
+                append(HttpHeaders.Vary, HttpHeaders.AcceptEncoding)
             }
             override fun bytes() = compressed
         })

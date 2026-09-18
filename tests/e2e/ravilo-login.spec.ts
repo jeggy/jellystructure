@@ -63,9 +63,12 @@ test.describe("Ravilo sign-in", () => {
 
 test.describe("Ravilo web reaches its backend", () => {
   test("the page is told where the backend is, and that address signs in", async ({ request }) => {
-    const html = await (await request.get(WEB)).text();
-    const m = html.match(/window\.__RAVILO_DEFAULT_SERVER__\s*=\s*"([^"]+)"/);
-    expect(m, "ravilo-web served no default server: the app would sign in against its own origin").toBeTruthy();
+    // Phase 235 (FR-235-8) moved this out of an inline <script> injected into index.html's own HTML
+    // (the corrected CSP has no 'unsafe-inline') and into a separate /runtime-config.js the page loads
+    // — checking index.html's raw text for the assignment stopped working the moment that shipped.
+    const js = await (await request.get(`${WEB}/runtime-config.js`)).text();
+    const m = js.match(/window\.__RAVILO_DEFAULT_SERVER__\s*=\s*"([^"]+)"/);
+    expect(m, "ravilo-web's runtime-config.js served no default server: the app would sign in against its own origin").toBeTruthy();
     const login = await request.post(`${m![1]}/api/tv/login`, { data: body({ device_id: "e2e-device-web" }), headers: R252 });
     expect(login.status(), await login.text()).toBe(200);
   });

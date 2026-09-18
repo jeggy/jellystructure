@@ -13,7 +13,11 @@ WORKDIR /app
 #   - libatomic1: Gradle downloads its OWN Node.js (v25, separate from the apt-installed one below,
 #     used for Kotlin/Wasm's yarn/npm tooling) which dynamically links libatomic.so.1 -- absent from
 #     this minimal image, so kotlinWasmNpmInstall fails with "error while loading shared libraries".
-RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates libsqlite3-dev libatomic1 && \
+#   - brotli (FR-235-2): ravilo-web's :precompressWasmJsDistribution task shells out to this CLI for
+#     .br siblings when it's on PATH, silently skipping them otherwise — this Dockerfile also builds
+#     (bare, unprefixed) wasmJsBrowserDistribution, which Gradle runs in every project that declares it,
+#     ravilo-web included, whether or not this image's own COPY layer below ends up shipping that output.
+RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates libsqlite3-dev libatomic1 brotli && \
     curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
     apt-get install -y --no-install-recommends nodejs && \
     rm -rf /var/lib/apt/lists/*
@@ -84,6 +88,11 @@ RUN adduser --system --uid 1000 jellystructure
 # form duplicated the whole copied content (33MB) into a second layer just to flip permissions.
 COPY --from=builder --chmod=755 --chown=jellystructure /app/build/bin/linuxX64/releaseExecutable/jellystructure.kexe /app/jellystructure
 COPY --from=builder --chown=jellystructure /app/build/dist/wasmJs/productionExecutable/ /app/frontend/
+# Phase 235 — ravilo-web's own bundle, so RAVILO_WEB_DIR (unset by default; opt-in for a
+# single-container self-hoster, see the phase's open question 2) can point at it without needing a
+# second image or a shared volume. The bare `wasmJsBrowserDistribution` run above already builds this
+# as a side effect (Gradle runs it in every project that declares it); this just also ships it.
+COPY --from=builder --chown=jellystructure /app/ravilo-web/build/dist/wasmJs/productionExecutable/ /app/ravilo-web-frontend/
 # Phase 218 (FR-218-1) — the Chromecast receiver, served at /cast/ (a plain static directory). Taken from
 # the BUILDER stage, not the build context: cast-receiver/ravilo-cast.js is gitignored (it is what
 # :ravilo-cast:syncCastReceiver above writes), so a CI checkout's context holds only index.html and the

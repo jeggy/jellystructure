@@ -196,7 +196,10 @@ private fun attachSource(video: HTMLVideoElement, url: String): Unit = js(
         if (!window.__hlsLoading) {
             window.__hlsLoading = true;
             var s = document.createElement('script');
-            s.src = 'https://cdn.jsdelivr.net/npm/hls.js@1.5.13/dist/hls.min.js';
+            // FR-235-9 — self-hosted (was cdn.jsdelivr.net): the corrected CSP's script-src 'self'
+            // would otherwise fail every transcoded play on the production web origin, see
+            // ravilo-web/src/wasmJsMain/resources/vendor/NOTICE.md.
+            s.src = 'vendor/hls.min.js';
             s.onload = attach; s.onerror = native;
             document.head.appendChild(s);
         } else {
@@ -218,8 +221,12 @@ private fun mountAss(video: HTMLVideoElement, url: String): Unit = js(
                 video._jassub = new window.JASSUB({
                     video: video,
                     subUrl: url,
-                    workerUrl: 'https://cdn.jsdelivr.net/npm/jassub@1.7.0/dist/jassub-worker.js',
-                    wasmUrl: 'https://cdn.jsdelivr.net/npm/jassub@1.7.0/dist/jassub-worker.wasm'
+                    // FR-235-9 — self-hosted (was cdn.jsdelivr.net), see
+                    // ravilo-web/src/wasmJsMain/resources/vendor/NOTICE.md. default.woff2 (JASSUB's
+                    // fallback font, resolved by the library itself as './default.woff2') sits alongside
+                    // these two in the same vendor/ directory.
+                    workerUrl: 'vendor/jassub-worker.js',
+                    wasmUrl: 'vendor/jassub-worker.wasm'
                 });
             } catch(e) {}
         }
@@ -227,7 +234,7 @@ private fun mountAss(video: HTMLVideoElement, url: String): Unit = js(
         if (!window.__jassubLoading) {
             window.__jassubLoading = true;
             var s = document.createElement('script');
-            s.src = 'https://cdn.jsdelivr.net/npm/jassub@1.7.0/dist/jassub.umd.js';
+            s.src = 'vendor/jassub.umd.js';
             s.onload = go;
             document.head.appendChild(s);
         } else {

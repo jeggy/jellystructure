@@ -67,6 +67,7 @@ import io.ktor.server.application.call
 import io.ktor.server.application.install
 import io.ktor.server.cio.CIO
 import io.ktor.server.engine.embeddedServer
+import io.ktor.server.plugins.autohead.AutoHeadResponse
 import io.ktor.server.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.server.plugins.cors.routing.CORS
 import io.ktor.server.plugins.statuspages.StatusPages
@@ -181,6 +182,12 @@ fun startServer(
             connectionIdleTimeoutSeconds = 10
         },
     ) {
+        // FR-235-5 — every GET route also answers HEAD with the same headers and no body (the plugin
+        // runs the GET handler and strips the body at response time; it changes nothing about GET,
+        // POST or any other method). Installed backend-wide rather than scoped to just /tv/**/cast/**
+        // — scoping would mean restructuring those three route blocks under a route(...) parent for no
+        // behavioural gain, since "an API route now also answers HEAD, body-free" has no downside.
+        install(AutoHeadResponse)
         install(ContentNegotiation) { json(Json { ignoreUnknownKeys = true }) }
         install(WebSockets) {
             pingPeriodMillis = 30_000L
@@ -330,6 +337,11 @@ fun startServer(
                     "font-src 'self' data:; " +
                     "connect-src 'self' ws: wss: https:; " +
                     "media-src 'self' blob: https:; " +
+                    // FR-235-6 — explicit rather than relying on the default-src 'self' fallback both
+                    // already have, so a later tightening of default-src can't silently break the
+                    // service worker or the PWA manifest (R263) on either serving path.
+                    "manifest-src 'self'; " +
+                    "worker-src 'self'; " +
                     "frame-src https://www.youtube-nocookie.com https://player.vimeo.com; " +
                     "object-src 'none'; " +
                     "frame-ancestors 'none'; " +
@@ -649,6 +661,15 @@ fun startServer(
 
             // Ravilo web app — serve under /tv/** (separate bundle, different entry HTML)
             if (raviloWebDir != null) {
+                // FR-235-8 — same static <script src="runtime-config.js"> tag web-static-server serves
+                // dynamically; the backend never reads DEFAULT_SERVER_URL (that env var only means
+                // something for a standalone ravilo-web deployment — this /tv/ path already *is* the
+                // server) and has no RAVILO_VERSION equivalent for this bundle, so it's always empty.
+                // Registered before the catch-all below so it never falls into the SPA-fallback logic.
+                get("/tv/runtime-config.js") {
+                    call.response.cacheControl(CacheControl.NoCache(null))
+                    call.respondText("", ContentType.Application.JavaScript)
+                }
                 get("/tv/{...}") {
                     val path = call.request.path().removePrefix("/tv")
                     call.serveFrontendFile(raviloWebDir, path)
@@ -700,6 +721,12 @@ private suspend fun runShell(command: String): String? = dev.jellystructure.ops.
     }
 }
 
+// FR-235-1 (dev review item 1) — only a file whose *name* carries a real content hash may be cached
+// forever: today that's ravilo-web's two `<hash>.wasm` files (ravilo.js and composeResources/** have
+// stable names and must revalidate). Shared by the admin frontend, /cast/** and /tv/** — whichever of
+// them turns out to hash a filename gets the same treatment; none of them are worse off if none do.
+private val HASHED_FRONTEND_ASSET_NAME = Regex("[0-9a-f]{16,}")
+
 private suspend fun io.ktor.server.application.ApplicationCall.serveFrontendFile(
     dir: String,
     requestPath: String,
@@ -717,7 +744,12 @@ private suspend fun io.ktor.server.application.ApplicationCall.serveFrontendFile
         return
     }
 
-    // SPA fallback — never cache index.html (it bootstraps the WASM app)
+    // FR-235-3 — the SPA fallback applies only to routes: an asset-shaped path (its last segment
+    // contains a '.') that doesn't exist is a real 404, never index.html.
+    if ('.' in rel.substringAfterLast('/')) {
+        respond(HttpStatusCode.NotFound)
+        return
+    }
     val index = Path("$dir/index.html")
     if (SystemFileSystem.exists(index)) {
         val bytes = FileIo.readBytes(index)
@@ -739,11 +771,17 @@ private suspend fun io.ktor.server.application.ApplicationCall.serveStaticBytes(
         return
     }
     response.headers.append(HttpHeaders.ETag, etag)
-    if (rel == "index.html") {
-        response.cacheControl(CacheControl.NoCache(null))
-    } else {
-        response.cacheControl(CacheControl.MaxAge(maxAgeSeconds = 3600, mustRevalidate = true))
-    }
+    // FR-235-1 — immutable iff the filename itself carries a content hash; everything else
+    // (index.html included) revalidates every time. Built by hand: Ktor's own CacheControl.MaxAge has
+    // no `immutable` field (checked against its 3.6.0 class file), so response.cacheControl(MaxAge(...))
+    // cannot produce it.
+    response.headers.append(
+        HttpHeaders.CacheControl,
+        if (rel != "index.html" && HASHED_FRONTEND_ASSET_NAME.containsMatchIn(rel.substringAfterLast('/')))
+            "public, max-age=31536000, immutable"
+        else
+            "no-cache",
+    )
     respondBytes(bytes, contentTypeFor(rel))
 }
 
@@ -758,16 +796,19 @@ private fun ByteArray.crc32Hex(): String {
 }
 
 private fun contentTypeFor(path: String): ContentType = when (path.substringAfterLast('.').lowercase()) {
-    "html"       -> ContentType.Text.Html
-    "css"        -> ContentType.Text.CSS
-    "js", "mjs"  -> ContentType.Application.JavaScript
-    "wasm"       -> ContentType.parse("application/wasm")
-    "json"       -> ContentType.Application.Json
-    "png"        -> ContentType.Image.PNG
-    "jpg", "jpeg"-> ContentType.Image.JPEG
-    "svg"        -> ContentType.Image.SVG
-    "ico"        -> ContentType.parse("image/x-icon")
-    else         -> ContentType.Application.OctetStream
+    "html"        -> ContentType.Text.Html
+    "css"         -> ContentType.Text.CSS
+    "js", "mjs"   -> ContentType.Application.JavaScript
+    "wasm"        -> ContentType.parse("application/wasm")
+    "json", "map" -> ContentType.Application.Json
+    // FR-235-4 — a manifest served as application/octet-stream is silently ignored by Chrome.
+    "webmanifest" -> ContentType.parse("application/manifest+json")
+    "txt"         -> ContentType.Text.Plain
+    "png"         -> ContentType.Image.PNG
+    "jpg", "jpeg" -> ContentType.Image.JPEG
+    "svg"         -> ContentType.Image.SVG
+    "ico"         -> ContentType.parse("image/x-icon")
+    else          -> ContentType.Application.OctetStream
 }
 
 /** Phase 218 amendment — the receiver page's own policy: everything the site-wide one allows, plus

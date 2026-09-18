@@ -10,11 +10,24 @@
 
 ## Status
 
-`Planned` — written 2026-09-18 from live measurements of `ravilo.example.net` and a read of
+`✓ Built` — written 2026-09-18 from live measurements of `ravilo.example.net` and a read of
 `web-static-server/.../Main.kt` and `server/Server.kt`. **Dev-reviewed 2026-09-18 against `main`
 `05195d1f`** (see §Dev review at the bottom: only the `.wasm` files are hashed, so FR-235-1 narrows; the
 CSP would block the page's own inline runtime-config script, so FR-235-8 removes inline script; hls.js and
-JASSUB self-hosting moves here from R265 as FR-235-9 so production playback never breaks). Not built. Backend / static
+JASSUB self-hosting moves here from R265 as FR-235-9 so production playback never breaks). **Built
+2026-09-18** in the dev review's own build order (FR-235-8/FR-235-9 first, then the headers).
+**Container-tested the same day**: built `ravilo-web/Dockerfile`'s image for real (with `brotli` now
+installed in its builder stage) and ran it standalone — confirmed live with curl: br/gzip negotiation on
+the hashed `.wasm` (1.4 MB served over the wire for the 6.9 MB module, matching the spec's own reference
+numbers), `Cache-Control: public, max-age=31536000, immutable` only on the two hash-named files,
+`no-cache` elsewhere, `Vary: Accept-Encoding`, the full CSP with `manifest-src`/`worker-src`, `HEAD`
+matching `GET`, `nope.png` → 404, an extension-less path → the SPA shell, and `/runtime-config.js`
+correctly empty/populated depending on `RAVILO_VERSION`/`DEFAULT_SERVER_URL` — with `index.html` itself
+now carrying no injected script at all. `tests/e2e/ravilo-web-headers.spec.ts` added asserting the same
+against both serving paths (needed wiring `RAVILO_WEB_DIR` into the test stack's backend service, unset
+in every real deployment, so `/tv/**` is reachable there at all); the full docker-compose e2e run was
+in progress against the real stack as this note was written — see the commit history for its outcome if
+this line hasn't been updated since. Backend / static
 server only; no client, DTO, string or design change. Siblings: **R263** (the app installs), **R264**
 (honest browser capabilities), **R265** (AirPlay).
 
