@@ -435,11 +435,11 @@ self-hoster's backend and TV are on different networks.
 - **TLS from the backend:** `libssl.so.3` / `libcrypto.so.3` are already in the production image (curl links
   them), so the Cast v2 client is an OpenSSL cinterop, not a new dependency. All three Cast devices in the
   house accept a **TLS 1.3** handshake on `:8009` with a self-signed certificate (`openssl s_client` from the
-  host: Stue TV `192.0.2.22`, Soveværelse TV `192.0.2.23`, Køkken hub `192.0.2.24`). Verification must be
+  host: Stue TV `192.0.2.11`, Soveværelse TV `192.0.2.12`, Køkken hub `192.0.2.13`). Verification must be
   off; that is the protocol's norm.
 - **Reachability from the container:** the `jellystructure` container, on its `caddy` bridge network, opens
-  TCP to `192.0.2.22:8009` and `192.0.2.23:8009` directly — the host LAN is one flat `/23`
-  (`192.0.2.20/23`), and a bridge network routes unicast to the LAN. **No host networking is needed to
+  TCP to `192.0.2.11:8009` and `192.0.2.12:8009` directly — the host LAN is one flat `/23`
+  (`192.0.2.10/23`), and a bridge network routes unicast to the LAN. **No host networking is needed to
   launch or control.**
 - **Discovery without multicast:** each device answers its **name** on its own setup endpoint —
   `GET https://<ip>:8443/setup/eureka_info?params=name` → `{"name":"Stue TV"}` (and `:8008` for the wider
