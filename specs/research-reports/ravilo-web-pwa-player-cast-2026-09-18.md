@@ -428,6 +428,8 @@ self-hoster's backend and TV are on different networks.
 
 | 4 | *"The Google Cast on the TV will be handled by the jellystructure or Ravilo backend, as we already have support for this from the Android Ravilo app. We just need the same experience in the Ravilo PWA for iOS and Android."* | — | **Half of that is true today, and the other half is the phase.** The backend hosts the receiver (`/cast/`), checks reachability, mints/redeems the hand-off code, enforces the ceiling and reports status (`CastService.kt`). It has **no Cast protocol code**: discovery, launch and every remote command are done by Google Play services on the Android phone (`CastSenderAndroid.kt`: `CastContext`, `MediaRouteButton`, `setReceiverApplicationId`, `session.sendMessage(CAST_NAMESPACE, …)` straight to the dongle). So "the same experience" on both PWAs means the backend takes over those three jobs — **236/R268 is the design, not an option**, and the Chrome Web Sender (R266) becomes unnecessary for the PWA: one path, browser-agnostic, which is the real answer to follow-up 3. Design consequence: Ravilo draws **its own device list** (from the backend), departing from R245 FR-R245-2's "the picker is the platform's". |
 
+| 5 | *"No iPhones in this household, but I will have users in a household with iPhones who want to stream to their TV — an LG webOS or Samsung Tizen TV with a Chromecast attached. I want the very best way from the iPhone PWA to that TV. If another approach is needed I'm fine dropping Chromecast for iOS — e.g. a Tizen or webOS app only for streaming, no navigation except from the phone PWA."* | — | §12 added. The phone and the TV are together; the backend is not. Chromecast for iOS is **dropped** for these users (no browser can launch it, and the backend launcher cannot reach a stick on another LAN). Two routes remain and both are cheaper than they look: **AirPlay from the PWA's own `<video>`** (free on the web — which changes the premise of the 2026-09-16 "drop AirPlay" decision) and **a receiver-only TV app** that is the existing Chromecast receiver repackaged for webOS/Tizen, launched and driven over the backend's own socket. Recommendation: both, AirPlay first. |
+
 ### 11.1 The launcher's two unknowns, measured the same day
 
 - **TLS from the backend:** `libssl.so.3` / `libcrypto.so.3` are already in the production image (curl links
@@ -449,6 +451,87 @@ self-hoster's backend and TV are on different networks.
   `CastMessage` framing, `connection`/`heartbeat`/`receiver` namespaces). That is the first thing 236 builds
   and the acceptance test is an iPhone in Safari starting a cast on the stue TV.
 
+## 12. The remote household: an iPhone PWA and an LG or Samsung TV, backend elsewhere (follow-up 5)
+
+**The shape of the problem.** The phone and the TV share a LAN; jellystructure and Jellyfin are on the
+internet. Anything that needs the *backend* on the TV's LAN (the 236 launcher) is out. Anything that needs a
+Cast SDK on the phone is out (§11 rows 3–4). What is left is whatever the phone's browser can do natively,
+and whatever a TV app can do over the internet.
+
+### 12.1 Route A — AirPlay from the PWA (free, iPhone only, TV ≥ 2018/2019)
+
+Safari's `<video>` element carries AirPlay natively: `webkitShowPlaybackTargetPicker()` opens Apple's
+route picker, and for a **native HLS** source the TV fetches the stream URL itself — the phone hands over a
+URL, not pixels, so quality is the TV's, not the phone's. Ravilo's playback URLs are Jellyfin URLs with
+`api_key` in the query on a public `https://` server (owner: "Jellyfin is always public"), so the TV can
+fetch them. LG webOS (2018 OLED, 2019+ everything) and Samsung Tizen (2018+) ship AirPlay 2.
+
+- **What it costs:** one button in the web player (only where `WebKitPlaybackTargetAvailabilityEvent`
+  fires — absent elsewhere, never greyed), and **the web client must send `hls_only`** (§4.3, R264) so the
+  source is native HLS rather than a raw MKV. That is it. No TV app, no store, no pairing, no LAN
+  requirement on the backend, and the household's Android phones are unaffected.
+- **What holds:** the phone's `<video>` stays the session owner — `timeupdate` keeps firing while the
+  picture is on the TV, so progress, phase 180 teardown, R216 QoE, the per-user ACL and kids gating all see
+  exactly what they see today. The R244 chrome, the picker, Skip Intro and next-up stay on the phone, which
+  becomes the remote for free.
+- **Verify on a device:** sideloaded `<track>` VTT probably does **not** render on the TV during AirPlay —
+  Jellyfin's HLS subtitle delivery (in-manifest WebVTT) or burn-in for AirPlay sessions is the fix; whether
+  playback survives the phone locking (it should — the TV pulls the stream); HDR/DV passthrough (a bonus
+  the phone's own screen never gives).
+- **The 2026-09-16 decision.** AirPlay was dropped on the condition *"if AirPlay is not free, then fully
+  stop it"*. In a native iOS app it was not free (AVPlayer-only, engine choice). In the PWA it is one
+  element attribute on a player that must exist anyway. The premise changed, so the decision deserves a
+  second look; it is the owner's, not this report's.
+
+### 12.2 Route B — a receiver-only TV app (universal, any phone, any TV with an app store or dev mode)
+
+The owner's own suggestion, and the repo is closer to it than it looks. **The Chromecast receiver already
+is a receiver-only, phone-driven, no-navigation Ravilo device** (`ravilo-cast`, Kotlin/JS, 419 lines, 11
+CAF touchpoints): it enrols with a hand-off code (218), plays HLS with sideloaded VTT, shows R245's ten
+non-interactive screens, auto-advances, reports progress and QoE, and is judged by its heartbeat. Only its
+*launch* and its *command channel* are Chromecast-specific. Replace those with the backend's own
+per-device `/api/tv/events` socket — the channel phase 111 already pushes play/pause/stop through — and
+the same bundle is a **webOS app and a Tizen app**: both platforms run HTML5 apps, and `ravilo-tizen`
+(R189, Kotlin/JS, M1+M2 built) proves the toolchain for the older Samsung runtimes.
+
+- **The viewer's experience:** open *Ravilo* on the TV with the TV remote (it shows the lit mark and a
+  six-character code the first time; afterwards it just waits), then on the phone — any browser, any
+  platform — the TV appears as a target: *Play on Living room TV*. R245's remote, mini bar, subtitles sheet
+  and seven states are the phone side, unchanged, over the backend instead of a Cast namespace. The one
+  thing it cannot do is *turn the TV on or launch itself* — there is no LAN presence to send a wake or a
+  launch — so the first step is always the TV remote. Chromecast could do that; this cannot, and the
+  design should say so once rather than pretend.
+- **What it costs is distribution, not code.** LG Content Store review (Jellyfin's webOS app is approved
+  there — feasible, a review cycle, free); Samsung: Tizen 6+ has a store path, older sets are sideload-only
+  (Jellyfin's own history, and R189's private-app stance). A receiver-only app is small, has no text
+  entry, no navigation and no settings — the easiest possible thing to get through a TV store review.
+  Two TV packages to keep alive, one codebase.
+- **Also covers:** Android phones in those households without any Cast SDK, this house's bedroom TV if a
+  Ravilo TV is not wanted there, and every self-hoster whose backend is off-LAN. It is the *universal*
+  answer; AirPlay is the *cheap* one.
+
+### 12.3 What is dropped
+
+- **Chromecast for iOS**, entirely (owner's offer accepted): no browser can launch it, and the backend
+  launcher only reaches sticks on the backend's own LAN. 236/R268 stays valuable for *this* house and for
+  self-hosters with the server beside the TV; it is no longer the iPhone answer.
+- **A native iOS app** stays off the table.
+
+### 12.4 Recommendation and order
+
+1. **R264 + AirPlay** in the web player — the first week: honest capabilities (`hls_only` on Safari) make
+   AirPlay work; the button is a day. Acceptance: an iPhone in Safari, a 2019+ LG or Samsung, a film with
+   a subtitle.
+2. **The receiver-only TV app** — the receiver bundle over the backend socket, webOS package first (store
+   path is proven), Tizen second (sideload, then Tizen 6+ store). Acceptance: any phone browser → *Play on
+   {TV}* → R245's remote, with the TV app started from the TV remote.
+3. **236/R268 backend launcher** — for households where the backend sits beside a Chromecast (this one).
+   Unchanged in scope, moved behind the two above.
+
+Prospective numbers: **R263** installs · **235** serving · **R264** capabilities (+ AirPlay button, or its
+own **R269**) · **R270 + 237** the receiver-only TV app (client + the backend's launch/command channel for
+receivers, the hand-off enrolment reused) · **236/R268** the launcher.
+
 ## 10. Sources
 
 - Kotlin docs — [Supported versions and configuration (Kotlin/Wasm)](https://kotlinlang.org/docs/wasm-configuration.html)
@@ -460,6 +543,9 @@ self-hoster's backend and TV are on different networks.
 - Google Cast — [Web Sender](https://developers.google.com/cast/docs/web_sender)
 - web.dev — [Install criteria](https://web.dev/articles/install-criteria)
 - caniuse — [Fullscreen API](https://caniuse.com/fullscreen)
+- WebKit — [How to use Media Source Extensions with AirPlay](https://webkit.org/blog/15036/how-to-use-media-source-extensions-with-airplay/)
+- LG — [Which LG TVs support AirPlay 2](https://www.lg.com/us/support/help-library/lg-tv-which-lg-tvs-support-airplay-2--20151097893431)
+- Jellyfin — [LG webOS app approved in the Content Store](https://x.com/jellyfin/status/1770519636833956036); [jellyfin-webos](https://github.com/jellyfin/jellyfin-webos); Samsung Tizen install is sideload for older sets ([forum](https://forum.jellyfin.org/t-jellyfin-on-samsung-tv-tizen))
 - This repo: `ravilo-ui/src/wasmJsMain/.../RaviloPlayerWasm.kt`, `PlayerChromeBridgeWasm.kt`,
   `CastSenderWasm.kt`, `RaviloRootActuals.kt`; `ravilo-web/src/wasmJsMain/resources/index.html`;
   `web-static-server/.../Main.kt`; `src/linuxX64Main/.../auth/JellyfinClient.kt` (`deviceProfile`),
