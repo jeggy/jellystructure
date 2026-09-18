@@ -1,0 +1,218 @@
+name: Deploy Ravilo Screen to Tizen
+
+# R264 — builds and Samsung-signs the ravilo-screen .wgt whenever a GitHub Release is published,
+# mirroring publish.yml/deploy-play-store.yml's vMAJOR.MINOR tag convention, and attaches the signed
+# package as a release asset.
+#
+# This is deliberately NOT a "publish to the Samsung TV store" pipeline. Samsung's TV Seller Office has
+# no public submission API (confirmed 2026-09-19 against developer.samsung.com — Galaxy Store has a
+# documented Content Publish API, the TV store does not) and publishing there is a manual, human-reviewed
+# workflow: create an Application ID, upload the .wgt through a web form, Samsung runs an automatic
+# pre-test, then a human reviewer does certification/verification testing and can kick a submission back
+# with defects to fix. No CI can get around that review — see jellyfin-tizen's own submission
+# (github.com/jellyfin/jellyfin-tizen issue #222), a 109-comment saga through exactly this process for a
+# nearly identical client app.
+#
+# So the scope here stops at the one thing that IS safely automatable: producing a correctly Samsung-cert
+# -signed .wgt (author-signature.xml + signature1.xml present, per the Seller Office's own package
+# requirements) and attaching it to the release. Uploading that file to the Seller Office — and the whole
+# one-time Application registration before the first upload — stays a manual step, by design: it needs a
+# human decision-maker filling in store metadata, and doing it via browser automation would mean storing
+# a Samsung account password in CI with no vendor-sanctioned automation surface behind it.
+#
+# ── One-time manual setup required before this can sign anything ──
+#   1. A Samsung-issued certificate profile already exists for this project (created via Tizen Studio's
+#      Certificate Manager, OAuth-signed in with a Samsung Developer account) — see
+#      [[reference-tizen-docker-emulator-setup]]. Its two halves are author.p12 + distributor.p12, each
+#      with its own password.
+#   2. Add four repository secrets (Settings -> Secrets and variables -> Actions -> New repository secret):
+#        TIZEN_AUTHOR_P12_BASE64        - `base64 -w0 author.p12`
+#        TIZEN_AUTHOR_P12_PASSWORD      - the author certificate's password
+#        TIZEN_DISTRIBUTOR_P12_BASE64   - `base64 -w0 distributor.p12`
+#        TIZEN_DISTRIBUTOR_P12_PASSWORD - the distributor certificate's password
+#      None of these ever reach a log line; `tz security-profiles add` takes them as flags, not stdin, so
+#      the passwords are also not persisted anywhere GitHub's own secret redaction wouldn't already mask.
+#   3. That's it for this workflow. Uploading the signed .wgt to the TV Seller Office, and the one-time
+#      Application registration there (Application ID, store listing, a demo/test server for Samsung's
+#      reviewers — see the jellyfin-tizen issue above for what that entailed), stays a manual step you do
+#      yourself when you're ready to submit a version.
+#
+# ── The `tz` CLI + headless signing recipe below was verified end-to-end in this project's own Tizen dev
+#    container (2026-09-19) against a throwaway self-signed certificate, entirely headless (no VNC, no X,
+#    no XFCE — those were only ever needed for the interactive Samsung-account OAuth sign-in that CREATED
+#    the certificate, not for signing with one that already exists). Specifically confirmed:
+#    - `tz security-profiles add -p <pw> -P <pw>` still routes the password through gnome-keyring's Secret
+#      Service even when passed as a CLI flag (profiles.xml stores a *.pwd lookup key, never the literal
+#      password) — so a keyring must be running, but a full desktop session is not: `dbus-run-session` +
+#      `gnome-keyring-daemon --start --components=secrets` + a hand-written passwordless login.keyring is
+#      sufficient on a stock Ubuntu runner with no X server at all.
+#    - `tz build`/`tz pack` both emit a harmless "couldn't find dependencies: .project file is not found"
+#      warning on a plain (non-Tizen-Studio-scaffolded) project directory and still exit 0.
+#    - `tz pack`'s output filename is the basename of the packed project directory, NOT config.xml's
+#      package id or the generated tizen_web_project.yaml's output_name — hence the explicit `mv` below
+#      rather than trusting a derived name.
+#    Not yet verified: this exact workflow file has never had a real CI run (that needs the four secrets
+#    above, which only a human can create), and it has never signed with the REAL Ravilo certificate —
+#    only a throwaway one made for this test. First real run may need one small fix.
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        type: string
+        required: true
+      skip_ci:
+        description: "true only when the caller has already run ci.yml for this commit"
+        type: boolean
+        required: false
+        default: false
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to (re-)sign, e.g. 1.0 — must match an existing vX.Y release tag"
+        required: true
+
+env:
+  TIZEN_STUDIO_VERSION: "5.6"
+
+permissions:
+  contents: write
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.resolve.outputs.tag }}
+      tizen_version: ${{ steps.resolve.outputs.tizen_version }}
+    steps:
+      - name: Resolve and validate version
+        id: resolve
+        run: |
+          TAG="v${{ inputs.version }}"
+          RAW="${TAG#v}"
+          if ! [[ "$RAW" =~ ^([0-9]+)\.([0-9]+)$ ]]; then
+            echo "::error::Version '$RAW' (from tag '$TAG') is not a plain MAJOR.MINOR number (e.g. 1.0) — refusing to sign."
+            exit 1
+          fi
+          MAJOR="${BASH_REMATCH[1]}"
+          MINOR="${BASH_REMATCH[2]}"
+          # Tizen's own config.xml version ceiling: [0-255].[0-255].[0-65535].
+          if [ "$MAJOR" -gt 255 ] || [ "$MINOR" -gt 255 ]; then
+            echo "::error::Version '$RAW' exceeds Tizen's [0-255].[0-255] ceiling for config.xml's version attribute."
+            exit 1
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "tizen_version=$MAJOR.$MINOR.0" >> "$GITHUB_OUTPUT"
+
+  ci:
+    needs: version
+    if: ${{ !inputs.skip_ci }}
+    uses: ./.github/workflows/ci.yml
+    with:
+      ref: ${{ needs.version.outputs.tag }}
+
+  build:
+    needs: [version, ci]
+    if: ${{ always() && needs.version.result == 'success' && (needs.ci.result == 'success' || needs.ci.result == 'skipped') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.version.outputs.tag }}
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Build the ravilo-screen JS bundle
+        run: ./gradlew :ravilo-screen:syncScreenReceiver --no-daemon
+
+      - name: Set the release version in config.xml
+        run: |
+          sed -i 's/version="[0-9]\+\.[0-9]\+\.[0-9]\+"/version="${{ needs.version.outputs.tizen_version }}"/' ravilo-screen/wgt/config.xml
+          grep -o 'version="[^"]*"' ravilo-screen/wgt/config.xml
+
+      # Cached across runs — only the SDK/toolchain tree, never anything cert- or profile-related (those
+      # are recreated from secrets every run, so no signing material is ever written into the cache).
+      - name: Cache Tizen Studio
+        id: tizen-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/tizen-studio
+          key: tizen-studio-${{ env.TIZEN_STUDIO_VERSION }}-nativecli-cert-add-on
+
+      - name: Install Tizen Studio (headless CLI)
+        if: steps.tizen-cache.outputs.cache-hit != 'true'
+        run: |
+          curl -fsSL "https://download.tizen.org/sdk/Installer/tizen-studio_${TIZEN_STUDIO_VERSION}/web-cli_Tizen_Studio_${TIZEN_STUDIO_VERSION}_ubuntu-64.bin" -o tizen-installer.bin
+          chmod +x tizen-installer.bin
+          ./tizen-installer.bin --accept-license "${{ runner.temp }}/tizen-studio"
+          rm tizen-installer.bin
+          # NativeCLI provides the `tz` binary itself (not bundled with the base web-cli install);
+          # cert-add-on is required to import/use a Samsung-issued (non-sample) certificate profile.
+          "${{ runner.temp }}/tizen-studio/package-manager/package-manager-cli.bin" \
+              install --accept-license --no-java-check --latest || true
+          "${{ runner.temp }}/tizen-studio/package-manager/package-manager-cli.bin" \
+              install --accept-license --no-java-check NativeCLI cert-add-on
+
+      - name: Install headless keyring support
+        run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends gnome-keyring dbus-user-session libsecret-tools
+
+      - name: Decode Tizen certificate
+        run: |
+          echo "${{ secrets.TIZEN_AUTHOR_P12_BASE64 }}" | base64 -d > "${{ runner.temp }}/author.p12"
+          echo "${{ secrets.TIZEN_DISTRIBUTOR_P12_BASE64 }}" | base64 -d > "${{ runner.temp }}/distributor.p12"
+
+      - name: Sign and package the .wgt
+        env:
+          TZ_BIN: ${{ runner.temp }}/tizen-studio/tools/tizen-core/tz
+          WGT_DIR: ${{ github.workspace }}/ravilo-screen/wgt
+          AUTHOR_PW: ${{ secrets.TIZEN_AUTHOR_P12_PASSWORD }}
+          DIST_PW: ${{ secrets.TIZEN_DISTRIBUTOR_P12_PASSWORD }}
+        run: |
+          # A gnome-keyring Secret Service must be running for `tz security-profiles add`/`build`/`pack`
+          # to work at all — profiles.xml's password="..." is always a keyring lookup key, never the
+          # literal password, even when the password was supplied via -p/-P here. A hand-written
+          # passwordless login keyring is the standard headless-CI workaround (this runner is thrown away
+          # after the job, so there is nothing left to protect once it's done).
+          mkdir -p ~/.local/share/keyrings
+          printf '[keyring]\ndisplay-name=login\nctime=0\nmtime=0\nlock-on-idle=false\nlock-after=false\n' > ~/.local/share/keyrings/login.keyring
+          printf 'login' > ~/.local/share/keyrings/default
+
+          dbus-run-session -- bash -c '
+            set -euo pipefail
+            eval "$(gnome-keyring-daemon --start --components=secrets)"
+            export GNOME_KEYRING_CONTROL
+
+            "$TZ_BIN" security-profiles add -n Ravilo \
+                -a "${{ runner.temp }}/author.p12" -p "$AUTHOR_PW" \
+                -d "${{ runner.temp }}/distributor.p12" -P "$DIST_PW" -A
+
+            "$TZ_BIN" build -w "$WGT_DIR" -s Ravilo -b Release
+
+            "$TZ_BIN" pack -w "$WGT_DIR/Release/projects/wgt" -t wgt -s Ravilo
+          '
+
+          OUT_WGT=$(find "$WGT_DIR" -name '*.wgt' | head -1)
+          if [ -z "$OUT_WGT" ]; then
+            echo "::error::No .wgt was produced — see the build/pack output above."
+            exit 1
+          fi
+          mkdir -p "${{ runner.temp }}/out"
+          mv "$OUT_WGT" "${{ runner.temp }}/out/ravilo-screen-${{ inputs.version }}.wgt"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ravilo-screen-wgt
+          path: ${{ runner.temp }}/out/*.wgt
+          retention-days: 30
+
+      - name: Attach to the GitHub Release
+        run: gh release upload "${{ needs.version.outputs.tag }}" "${{ runner.temp }}/out/"*.wgt --clobber
+        env:
+          GH_TOKEN: ${{ github.token }}
