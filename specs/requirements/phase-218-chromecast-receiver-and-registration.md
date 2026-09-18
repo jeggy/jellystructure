@@ -345,3 +345,20 @@ FR-218-7's "only a real cast can confirm this" was right, and this is what the f
 - e2e: every external script origin in `/cast/` must appear in its `script-src`; the admin page still
   carries `X-Frame-Options: DENY` and no Google origin.
 
+## Amendment 2 (2026-09-18) — the receiver's capabilities were declared and never read
+
+Second real cast (Pixel 9 → Stue TV, v1.24): the receiver enrolled, negotiated, and the TV's player
+process was killed 12 s after the load (`Render process for main frame exited unexpectedly`,
+`error_code=-9`). The backend had logged `directPlay=true`. FR-R245-13's receiver sends
+`hls_only=true, containers=[mp4,ts]`; `deviceProfile()` read neither and declared
+`Container: mkv,…` direct-playable for every client, so the receiver got a raw MKV `/stream?Static=true`
+URL and fed it to a player that expects HLS.
+
+- **FR-218-10** — a client with `hls_only` gets **no** `DirectPlayProfiles`: Jellyfin then always
+  answers with a `TranscodingUrl` (a codec-copy remux when the codecs fit the transcoding profile, a
+  transcode otherwise). A client that names `containers` direct-plays only those. A client that names
+  nothing keeps today's list — no TV or phone changes behaviour.
+- Open: the transcoding profile is still H.264 in TS with AAC/AC-3; an HEVC file is re-encoded for
+  the receiver rather than remuxed. A fragmented-MP4 HLS profile carrying HEVC when the receiver's
+  `video_codecs` include it is the next step, once one cast plays end to end.
+

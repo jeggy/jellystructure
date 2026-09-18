@@ -60,7 +60,20 @@ internal fun deviceProfile(capabilities: ClientCapabilities): String {
         addAll(videoBitrateConditions(capabilities))
         audioChannelCondition(capabilities)?.let { add(it) }
     }.joinToString(",")
-    return """{"MaxStreamingBitrate":${maxStreamingBitrate(capabilities)},"DirectPlayProfiles":[{"Container":"mkv,mp4,webm,mov,avi,ts,m2ts,flv,3gp,mpegts","Type":"Video","VideoCodec":"h264,hevc,vp8,vp9,av1,mpeg4,mpeg2video,vc1","AudioCodec":"$audioCodecs"}],"CodecProfiles":[$codecProfiles],"TranscodingProfiles":[{"Container":"ts","Type":"Video","VideoCodec":"h264","AudioCodec":"aac,ac3,mp3","Protocol":"hls","Context":"Streaming"}],"SubtitleProfiles":[{"Format":"vtt","Method":"External"},{"Format":"srt","Method":"External"},{"Format":"subrip","Method":"External"},{"Format":"ass","Method":"External"},{"Format":"ssa","Method":"External"},{"Format":"vobsub","Method":"Embed"},{"Format":"dvdsub","Method":"Embed"},{"Format":"dvbsub","Method":"Embed"},{"Format":"pgssub","Method":"Encode"},{"Format":"pgs","Method":"Encode"}]}"""
+    // 218/R245 amendment (2026-09-18) — `hls_only` and `containers` were declared by the Chromecast
+    // receiver (FR-R245-13) and never read here: this list said "mkv direct-plays" for every client, so
+    // the receiver was handed a raw MKV URL labelled as HLS and the TV's player process died on it (the
+    // first real cast). A client that can only take HLS gets NO direct-play profile — Jellyfin then always
+    // answers with a TranscodingUrl (a codec-copy remux when the codecs fit, a transcode otherwise). A
+    // client that names its containers direct-plays only those. A client that says nothing keeps today's list.
+    val directPlayProfiles = when {
+        capabilities.hlsOnly -> ""
+        capabilities.containers.isNotEmpty() ->
+            """{"Container":"${capabilities.containers.joinToString(",")}","Type":"Video","VideoCodec":"h264,hevc,vp8,vp9,av1,mpeg4,mpeg2video,vc1","AudioCodec":"$audioCodecs"}"""
+        else ->
+            """{"Container":"mkv,mp4,webm,mov,avi,ts,m2ts,flv,3gp,mpegts","Type":"Video","VideoCodec":"h264,hevc,vp8,vp9,av1,mpeg4,mpeg2video,vc1","AudioCodec":"$audioCodecs"}"""
+    }
+    return """{"MaxStreamingBitrate":${maxStreamingBitrate(capabilities)},"DirectPlayProfiles":[$directPlayProfiles],"CodecProfiles":[$codecProfiles],"TranscodingProfiles":[{"Container":"ts","Type":"Video","VideoCodec":"h264","AudioCodec":"aac,ac3,mp3","Protocol":"hls","Context":"Streaming"}],"SubtitleProfiles":[{"Format":"vtt","Method":"External"},{"Format":"srt","Method":"External"},{"Format":"subrip","Method":"External"},{"Format":"ass","Method":"External"},{"Format":"ssa","Method":"External"},{"Format":"vobsub","Method":"Embed"},{"Format":"dvdsub","Method":"Embed"},{"Format":"dvbsub","Method":"Embed"},{"Format":"pgssub","Method":"Encode"},{"Format":"pgs","Method":"Encode"}]}"""
 }
 
 /**

@@ -2,6 +2,8 @@ package dev.jellystructure.ravilo.ui.seams
 
 import android.content.Context
 import android.net.Uri
+import android.os.Handler
+import android.os.Looper
 import android.view.ContextThemeWrapper
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -126,7 +128,7 @@ class CastSenderAndroid(private val appContext: Context) : CastSender {
 
     private val sessionListener = object : SessionManagerListener<CastSession> {
         override fun onSessionStarting(s: CastSession) { _link.value = CastLinkState.CONNECTING; _device.value = s.castDevice?.friendlyName }
-        override fun onSessionStarted(s: CastSession, sessionId: String) { attach(s); _link.value = CastLinkState.CONNECTED; pendingLoad?.let { load(it) } }
+        override fun onSessionStarted(s: CastSession, sessionId: String) { attach(s); _link.value = CastLinkState.CONNECTED; pendingLoad?.let { loadOnMain(it) } }
         override fun onSessionStartFailed(s: CastSession, error: Int) { detach(); _link.value = CastLinkState.NONE }
         override fun onSessionEnding(s: CastSession) {}
         override fun onSessionEnded(s: CastSession, error: Int) { detach(); _link.value = CastLinkState.NONE; _status.value = null; receiverSaid = null }
@@ -216,11 +218,23 @@ class CastSenderAndroid(private val appContext: Context) : CastSender {
         )
     }
 
-    override fun setAppId(appId: String) {
+    // R245 amendment 3 (2026-09-18) — every Cast SDK entry point (CastContext, SessionManager,
+    // RemoteMediaClient, CastSession.sendMessage) throws "Must be called from the main thread" off it.
+    // The shared CastController drives `load` from a Dispatchers.Default coroutine (the hand-off code is
+    // fetched first), which killed the app the moment a title was cast — the second crash of the first
+    // real cast. The seam owns the SDK, so the seam owns the thread: every command hops to main.
+    private val main = Handler(Looper.getMainLooper())
+    private inline fun onMain(crossinline block: () -> Unit) {
+        if (Looper.myLooper() == Looper.getMainLooper()) block() else main.post { block() }
+    }
+
+    override fun setAppId(appId: String) = onMain {
         runCatching { castContext.setReceiverApplicationId(appId) }
     }
 
-    override fun load(data: CastLoadData) {
+    override fun load(data: CastLoadData) = onMain { loadOnMain(data) }
+
+    private fun loadOnMain(data: CastLoadData) {
         val s = session ?: run { pendingLoad = data; return }
         pendingLoad = null
         val rmc = s.remoteMediaClient ?: return
@@ -249,21 +263,21 @@ class CastSenderAndroid(private val appContext: Context) : CastSender {
         rmc.load(req)
     }
 
-    override fun play() { session?.remoteMediaClient?.play() }
-    override fun pause() { session?.remoteMediaClient?.pause() }
-    override fun seekTo(positionMs: Long) {
+    override fun play() = onMain { session?.remoteMediaClient?.play() }
+    override fun pause() = onMain { session?.remoteMediaClient?.pause() }
+    override fun seekTo(positionMs: Long) = onMain {
         session?.remoteMediaClient?.seek(com.google.android.gms.cast.MediaSeekOptions.Builder().setPosition(positionMs.coerceAtLeast(0)).build())
     }
-    override fun stop() { castContext.sessionManager.endCurrentSession(true) }
-    override fun selectSubtitle(trackId: Long?) {
-        val rmc = session?.remoteMediaClient ?: return
+    override fun stop() = onMain { castContext.sessionManager.endCurrentSession(true) }
+    override fun selectSubtitle(trackId: Long?) = onMain {
+        val rmc = session?.remoteMediaClient ?: return@onMain
         val keepAudio = rmc.mediaStatus?.activeTrackIds?.filter { id -> rmc.mediaInfo?.mediaTracks?.any { it.id == id && it.type == MediaTrack.TYPE_AUDIO } == true } ?: emptyList()
         rmc.setActiveMediaTracks((keepAudio + listOfNotNull(trackId)).toLongArray())
     }
-    override fun selectAudio(trackId: Long?) {
-        val rmc = session?.remoteMediaClient ?: return
+    override fun selectAudio(trackId: Long?) = onMain {
+        val rmc = session?.remoteMediaClient ?: return@onMain
         val keepText = rmc.mediaStatus?.activeTrackIds?.filter { id -> rmc.mediaInfo?.mediaTracks?.any { it.id == id && it.type == MediaTrack.TYPE_TEXT } == true } ?: emptyList()
         rmc.setActiveMediaTracks((keepText + listOfNotNull(trackId)).toLongArray())
     }
-    override fun send(json: String) { runCatching { session?.sendMessage(CAST_NAMESPACE, json) } }
+    override fun send(json: String) = onMain { runCatching { session?.sendMessage(CAST_NAMESPACE, json) } }
 }
