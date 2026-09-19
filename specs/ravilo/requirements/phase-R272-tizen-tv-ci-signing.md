@@ -13,7 +13,9 @@
 
 ## Status
 
-`⚠ Partial` — built 2026-09-19, `.github/workflows/deploy-tizen-tv.yml` wired into `publish.yml` as a new
+`⚠ Partial` — built 2026-09-19, **dev-reviewed 2026-09-19 against `main` `dcb97f2c`** (see §Dev review
+at the foot; ⚠ §3's "not done yet" and §4's closing "never had a real CI run" are both stale — see item
+6). `.github/workflows/deploy-tizen-tv.yml` wired into `publish.yml` as a new
 `tizen-tv` job (same `needs: [version, ci, publish]` / `if: github.event_name == 'release'` shape as the
 existing `play-store` job). The exact `tz` CLI + headless-signing recipe was verified end-to-end against a
 throwaway self-signed certificate in this project's own Tizen dev container and in a clean disposable
@@ -113,3 +115,72 @@ and signing has only been exercised against a throwaway certificate, never the r
 - The one-time Application registration on the Seller Office (Application ID, store listing, demo server
   for reviewers) — human-only, §3.
 - Installing/testing on real or emulated Tizen hardware — R264's own remaining scope, untouched here.
+
+## Dev review (2026-09-19, against `main` `dcb97f2c`)
+
+Traced against `.github/workflows/deploy-tizen-tv.yml` (254 lines) and `publish.yml`. The research
+conclusion is sound, the scope decision is the right one, the wiring matches the `play-store` job's shape
+(`publish.yml:156-163`, `needs: [version, ci, publish]`, `if: github.event_name == 'release'`,
+`skip_ci: true`), `permissions: contents: write` is correctly raised at the caller (`:35-39`), and the
+cache holds only `${{ runner.temp }}/tizen-studio` — no signing material, as claimed. **Two changes would
+materially shorten the retry loop the phase is currently stuck in**, and three smaller things are worth
+fixing while the file is open.
+
+1. **Verify the certificate *before* the 20-minute build, not after it.** The step order is checkout →
+   Java → Gradle → `syncScreenReceiver` → config.xml patch → SDK install → keyring → **Decode Tizen
+   certificate** → sign. That is why the v1.29 run spent the entire build and SDK install before
+   discovering a malformed base64 paste. The decode step needs **nothing** from any step before it. Move
+   it to immediately after `checkout` and the next attempt fails in about thirty seconds instead of
+   twenty minutes. The same-day hardening was exactly right about wanting a precise error; this is the
+   other half of the same fix, and it is a two-line move.
+2. **`workflow_dispatch` has no `skip_ci`, so every manual retry re-runs the full CI.** `workflow_call`
+   takes `skip_ci` (`:64-69`) and `publish.yml` passes `true`; the `workflow_dispatch` inputs (`:70-74`)
+   do not, so the `ci` job's `if: ${{ !inputs.skip_ci }}` is always true on a manual run — roughly 40
+   minutes of e2e (`publish.yml:41-42`'s own figure) per attempt, against a tag whose commit already
+   passed CI when it was released. The manual path is precisely the one that will be used to retry after
+   the secret is re-pasted. Add `skip_ci` to the dispatch inputs, defaulting `false` so the safe
+   behaviour stays the default and a deliberate retry can opt out.
+3. **`find … | head -1` can ship the wrong artefact, and the phase's own §4 explains why it is a `find`
+   in the first place.** `OUT_WGT=$(find "$WGT_DIR" -name '*.wgt' | head -1)` searches
+   `ravilo-screen/wgt`, which *contains* the build tree `tz build` writes into. `find` has no defined
+   ordering, so the moment a second `.wgt` exists anywhere under that root — a restored artefact, an
+   intermediate a future `tz` leaves behind, a packaging change — the workflow silently uploads a
+   nondeterministic one. On a clean runner today there is exactly one, so this is latent rather than
+   broken. Make it deterministic: assert exactly one match
+   (`[ "$(find … | wc -l)" -eq 1 ]`) before the `mv`, or pack into a dedicated empty output directory.
+   Cheap, and it removes a whole class of "the release has the wrong file in it" that would be very hard
+   to notice.
+4. **`install --latest || true` hides the failure the next step will be blamed for.** The package-manager
+   call at `:158-159` swallows every non-zero exit. If that genuinely fails — network, mirror, a changed
+   package name — the run continues and the error surfaces later, in `NativeCLI cert-add-on` or in `tz`
+   not existing at all, which reads as a Tizen problem rather than an install problem. The `|| true` is
+   presumably there because `--latest` exits non-zero when there is nothing to update; scope it to that,
+   or capture the code and log it. Same reasoning as item 1: this phase already decided that a cryptic
+   failure is a defect worth fixing.
+5. **The cache key's package list is a hand-written label, so it cannot invalidate itself.**
+   `key: tizen-studio-${{ env.TIZEN_STUDIO_VERSION }}-nativecli-cert-add-on` names the two packages in a
+   string. The install step is gated on `cache-hit != 'true'`, so if a third package is ever added to
+   that step without someone remembering to edit the key, a stale cache is restored **missing the new
+   package** and nothing re-installs. Either hash the install step into the key or write the maintenance
+   rule into the spec — this is the kind of thing that costs an hour of debugging a year later, and one
+   sentence prevents it.
+6. **§3's heading and §4's closing paragraph are both stale, in opposite directions.** §3 is titled
+   "One-time manual setup (**not automatable, not done yet**)" while the Status records that the owner
+   added all four secrets — three of them good, one malformed. §4 ends "Not verified: the actual workflow
+   YAML has not had a real GitHub Actions run", which the Status directly contradicts with two named runs.
+   The workflow's own header carries the same stale line (`deploy-tizen-tv.yml:55-57`: "*this exact
+   workflow file has never had a real CI run … First real run may need one small fix*"). Re-stamp all
+   three with what v1.28/v1.29 actually established — SDK install, Gradle build, `config.xml` patch,
+   headless keyring and NativeCLI/cert-add-on install all proven in real GitHub Actions — so the only
+   genuinely unproven step is signing with the real Ravilo certificate. As written, the spec undersells
+   its own verification, which is the opposite of the failure mode this project usually guards against
+   and just as misleading.
+7. **Confirmed, no change needed.** `gh release upload --clobber` makes a re-run idempotent; the
+   `-A` on `security-profiles add` is what makes the profile active for the subsequent `build`/`pack`;
+   the `MAJOR.MINOR` → `MAJOR.MINOR.0` mapping and the 255 guard (`:99-103`) fail closed exactly as R215's
+   `versionCode` guard does; and the cache genuinely never sees certificate material, which was the right
+   thing to be careful about.
+
+**Nothing here blocks the owner's next step.** Re-pasting `TIZEN_AUTHOR_P12_BASE64` is still the one
+thing standing between this phase and a signed artefact; items 1 and 2 just mean the attempt after that
+one costs seconds rather than an hour.
