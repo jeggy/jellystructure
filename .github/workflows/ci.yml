@@ -131,7 +131,7 @@ jobs:
     # steps hit CACHED and the whole build+test step dropped from 34m13s to 3m40s. But the FIRST build
     # after any source change is always cold, and GitHub's 2-core ubuntu-latest runners (private repo
     # tier) are meaningfully slower than a dev box for CPU-bound Kotlin/Wasm compilation, building two
-    # full images (app + ravilo-web) plus the mock stack + Playwright run. 60min was cutting a
+    # full images (app + ravilo-web + ravilo-screen) plus the mock stack + Playwright run. 60min was cutting a
     # genuinely-slow-but-not-hung cold run too close; the actual hang risk (headless Chromium/WebGL) is
     # already fixed at the test level, so a generous ceiling here is just headroom, not risk.
     timeout-minutes: 120
@@ -179,26 +179,29 @@ jobs:
         uses: actions/cache@v4
         with:
           path: /tmp/.buildx-cache
-          # Hashes both Dockerfiles (app + ravilo-web) and the webpack loaders that patch the
-          # generated wasm bootstrap, since a change to either invalidates only that image's cache
-          # scope (docker-compose.test.yml gives app/ and ravilo-web/ each their own subdirectory
-          # under this path).
-          key: ${{ runner.os }}-buildx-${{ hashFiles('Dockerfile', 'ravilo-web/Dockerfile', 'build.gradle.kts', 'gradle/libs.versions.toml', 'ravilo-web/webpack.config.d/**') }}
+          # Hashes all three Dockerfiles (app + ravilo-web + ravilo-screen, phase 247) and the webpack
+          # loaders that patch the generated wasm bootstrap, since a change to any one invalidates only
+          # that image's cache scope (docker-compose.test.yml gives each its own subdirectory under
+          # this path).
+          key: ${{ runner.os }}-buildx-${{ hashFiles('Dockerfile', 'ravilo-web/Dockerfile', 'ravilo-screen/Dockerfile', 'build.gradle.kts', 'gradle/libs.versions.toml', 'ravilo-web/webpack.config.d/**') }}
           restore-keys: ${{ runner.os }}-buildx-
 
       - name: Run test stack
         run: |
-          # 2026-08-18: `up --build` builds app + ravilo-web concurrently by default, each spinning up
-          # its own Gradle/Kotlin-Native/Kotlin-Wasm toolchain -- two Gradle daemons at
+          # 2026-08-18: `up --build` builds every image concurrently by default, each spinning up its
+          # own Gradle/Kotlin-Native/Kotlin-Wasm toolchain -- two Gradle daemons at
           # org.gradle.jvmargs=-Xmx4g each already want 8GB of heap alone, before Docker/buildkit/the
           # OS need anything, on this private repo's 2-core/8GB runner tier. Building one at a time
           # keeps peak memory to one Kotlin toolchain's worth. `docker buildx prune` between them
-          # reclaims the first build's intermediate builder-stage layers (JDK+Gradle+Node, several GB)
-          # before the second build starts -- it only touches BuildKit's build cache, never the tagged
-          # app image itself, so the later `up` step still finds it without rebuilding.
+          # reclaims the previous build's intermediate builder-stage layers (JDK+Gradle+Node, several
+          # GB) before the next build starts -- it only touches BuildKit's build cache, never the
+          # tagged image itself, so the later `up` step still finds it without rebuilding. Phase 247
+          # added ravilo-screen as a third, smaller (plain Kotlin/JS, no wasm) image to this sequence.
           docker compose -f docker-compose.test.yml build app
           docker buildx prune -f
           docker compose -f docker-compose.test.yml build ravilo-web
+          docker buildx prune -f
+          docker compose -f docker-compose.test.yml build ravilo-screen
           docker buildx prune -f
           echo "Disk space before starting stack:"
           df -h /
@@ -217,7 +220,7 @@ jobs:
       - name: Move Docker cache
         if: always()
         run: |
-          for img in app ravilo-web; do
+          for img in app ravilo-web ravilo-screen; do
             rm -rf "/tmp/.buildx-cache/$img"
             mv "/tmp/.buildx-cache/$img-new" "/tmp/.buildx-cache/$img" 2>/dev/null || true
           done
