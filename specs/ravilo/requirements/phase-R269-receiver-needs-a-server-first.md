@@ -9,11 +9,104 @@
 
 ## Status
 
-`Planned` — written 2026-09-18, **not dev-reviewed**. Client only (`ravilo-screen`, the new Kotlin/JS
-module R264 introduces); no backend, route, DTO or config change. Extends **R264** and supersedes two of
-its clauses (FR-R264-2's *always shows its code*, FR-R264-6's single no-server sentence). Reuses
-**R225**/**R226** (`ServerSetupScreen`, the inferred scheme) and **R175** (the on-screen keyboard)
-verbatim — the TV client already ships both and this household has already used them.
+`⚠ Partial` — written 2026-09-18. **Dev-reviewed and built 2026-09-19 against `main`
+(post-R264/R272/R265 build)** — see §Dev review below: FR-R269-3's premise (the TV client already probes
+the server) is wrong, but the fix is good news — `GET /api/health` already exists, unauthenticated, and
+answers Open Question 1 outright with zero backend change; FR-R269-2's LAN-http-fallback claim describes
+behavior R226 never actually shipped, corrected to match what R226 really does. Client only
+(`ravilo-screen`); no backend, route, DTO or config change, confirming the spec's own claim. Extends
+**R264** and supersedes two of its clauses (FR-R264-2's *always shows its code*, FR-R264-6's single
+no-server sentence).
+
+**Built**: `Screen.kt`'s `main()` now checks `localStorage` for a stored address before anything else;
+absent, it shows the setup screen (`index.html`'s new `#setup` section — mark, title, a plain `<input>`
+relying on Tizen's own system IME rather than R175's Compose keyboard, a Connect button, a hint/error
+line), probes `GET {url}/api/health` for `"status":"ok"`, and only stores the address on success — a
+failed probe keeps the typed text and shows the *not found* sentence (FR-R269-3). Idle now shows the
+configured address (FR-R269-6) and a stored-but-unreachable server reuses the existing `noserver` screen
+with a retry loop (FR-R269-5) instead of silently doing nothing. Holding Back on idle for three seconds
+(FR-R269-7) reloads the page with the current address prefilled via a `localStorage` handoff key — no
+live teardown of the running instance, the simplest correct implementation of a rare action. Three new
+strings × en/da/fo added to `ravilo-receiver-core`'s `ReceiverStrings` (shared with `ravilo-cast`, which
+never reads the new keys). `TizenPlatform`'s `KeyboardEvent`-based key handling was restructured so the
+hold-detection runs independent of the existing `!loaded` guard.
+
+**Verified**: `:ravilo-receiver-core:compileKotlinJs`/`:ravilo-screen:compileKotlinJs`/
+`:ravilo-cast:compileKotlinJs` all clean; the full production webpack bundle
+(`:ravilo-screen:syncScreenReceiver`) builds. **Real browser verification performed** (Playwright/Chromium
+against the actual built bundle, a tiny local mock `/api/health`): fresh load shows setup; a bad/unreachable
+host shows the *not found* sentence and keeps the typed text; a reachable mock succeeds. This is
+real, but limited — see finding 6 below for what it does NOT prove.
+
+**Not done / found, tracked here rather than guessed:**
+- **A real, previously-unconsidered risk found by this verification**: the backend's CORS policy is
+  deliberately restrictive (an allowlist, no wildcard — see finding 6), and a sideloaded `.wgt` has no
+  origin `allowHost()` can represent. Whether a packaged Tizen widget's networking bypasses browser CORS
+  the way other privileged app runtimes do is **unconfirmed** — this can only be resolved by installing
+  the actual `.wgt` on the Tizen emulator/hardware and watching whether its calls succeed, which is also
+  R264's own still-open verification step.
+- No hardware verification at all — same standing caveat as R264/R265/R272 tonight.
+
+### Dev review (2026-09-19, against `main` post-R264/R272/R265)
+
+1. **FR-R269-3's premise is false — read the real code, not the description.** `ServerSetupScreen.kt`
+   (`ravilo-ui`) does **no reachability or identity probing at all**: `onUrlSaved(fullUrl)` fires the
+   instant "Go" is pressed, straight from inferring the scheme — no fetch, no check. `RaviloRoot.kt`
+   confirms it: `saveBaseUrl(url); baseUrl = url` with nothing in between. "The same probe the TV client's
+   setup screen already performs" describes a probe that doesn't exist anywhere in this codebase today.
+2. **Open question 1 is answered, and the news is good: no backend change needed.** `GET /api/health`
+   already exists (`Server.kt`), is explicitly exempted from auth (`AuthPlugin.kt`'s `path == "/api/health"`
+   check — built for "orchestration health checks that can't carry a session cookie"), and returns
+   `{"status":"ok","version":"…", …}` — a shape no non-Ravilo web server would produce by accident. Use it
+   as FR-R269-3's probe verbatim: fetch it, treat a response containing `"status":"ok"` as "reachable and
+   Ravilo", anything else (non-JSON, wrong shape, network failure, timeout) as the one *not found* sentence
+   FR-R269-3 already specifies. This is a *better* answer than the spec assumed — it's an endpoint that
+   already exists for an unrelated reason, not a new one to add.
+3. **FR-R269-2 misdescribes what R226 shipped.** There is no automatic "falls back to `http://` for a
+   private/LAN address" anywhere in `ServerSetupScreen.kt`, `RaviloRoot.kt`, or the actuals — the real rule
+   is simpler: `https://` is inferred unless the user types a scheme themselves (verified: `hasScheme`
+   check, then `if (hasScheme) host else "https://$host"`, no IP-range logic at all). A household on a
+   plain-HTTP LAN box must type `http://` explicitly today, same as everywhere else in this codebase.
+   Build `ravilo-screen`'s version to match **actual** R226 behavior (correct the FR's wording rather than
+   inventing new LAN-detection logic no other client has) — consistency across clients matters more here
+   than the (unbuilt) smarter behavior the FR assumed existed.
+4. **Storage fits the pattern R264 already established.** `Screen.kt` already persists `deviceId` and the
+   per-user token map under `localStorage` keys `ravilo.screen.deviceId`/`ravilo.screen.tokens` — a third
+   key (`ravilo.screen.serverUrl`) for FR-R269-1's stored address is the same mechanism, not a new one.
+5. **FR-R269-1's on-screen-keyboard reference needs no action, and the spec's own dev note already says
+   so** — confirmed correct on inspection: R175's keyboard is a Compose composable and cannot be reused
+   from `ravilo-screen`'s DOM code. A focused `<input>` on a real Tizen TV should raise Samsung's own
+   system IME automatically (standard Tizen web-app behavior); nothing here needs building beyond a plain
+   `<input>` element — noted as an assumption to confirm on real hardware alongside R264's own unverified
+   acceptance criteria, not a new open question.
+
+**Build order:** straightforward given the above — `Screen.kt`'s `main()` currently reads
+`window.RAVILO_SERVER_URL` (a package-time stopgap this phase replaces) and returns early if blank; this
+becomes "check `localStorage`, else render the setup screen, probe `/api/health` on submit, store on
+success, then proceed to the existing `Screen(serverUrl).start()`". Everything else in `Screen.kt` is
+unaffected.
+
+6. **A real risk this review found empirically, affecting R264 as a whole, not just this phase's setup
+   screen.** Browser-testing the built bundle (Playwright/Chromium, a real backend-shaped mock at a
+   different origin) surfaced that the server's own `install(CORS) { … }` (`Server.kt`) is deliberately
+   restrictive since a 2026-08-02 security fix: cross-origin requests are allowed only from
+   `CORS_ALLOWED_ORIGINS` (an admin-set allowlist of `host:port` pairs meant for a local webpack/vite dev
+   server), never a wildcard. `ravilo-cast` never hits this because it's served *from* the backend
+   (same-origin, per this phase's own "why the Chromecast receiver never needed this" section) — but a
+   sideloaded `ravilo-screen` `.wgt` is, by this phase's own diagnosis, "a local file with no origin at
+   all", meaning **every one of its calls to the backend — this phase's `/api/health` probe, and R264's
+   own pairing/status/events calls — is cross-origin**, and `allowHost()` has no way to express a Tizen
+   widget's actual origin (`file://`, or whatever scheme Tizen's WebKit assigns a packaged `.wgt`) even if
+   an admin wanted to allowlist it. **Unconfirmed which way this resolves**: a packaged Tizen widget
+   running with the `http://tizen.org/privilege/internet` privilege may bypass browser-tab CORS
+   enforcement entirely (the standard behavior for privileged/hybrid app runtimes — Cordova, Electron,
+   etc. — which is *why* that privilege exists), in which case nothing here needs to change; or it may
+   not, in which case every receiver call fails silently against a real, correctly-configured production
+   server, and the backend's CORS policy needs a real answer for this device class (a Tizen-widget-shaped
+   exception is not obviously safe to add given the finding M1 security history documented right there in
+   `Server.kt`). This can only be resolved by installing the actual signed `.wgt` on the Tizen emulator or
+   real hardware and watching whether its network calls succeed — the one verification step still open
+   from R264 itself (its own open question 1, plus this one, are both blocked on the same missing step).
 
 **Numbering:** verified against `main` and `STATUS.md` on 2026-09-18 — Ravilo taken through **R265**
 (with **R266 · R267 · R268** ours, written the same day), admin through **236** (with **237** ours).
