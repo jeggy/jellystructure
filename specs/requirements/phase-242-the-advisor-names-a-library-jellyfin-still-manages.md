@@ -6,7 +6,9 @@
 ## Status
 
 `Planned` — written 2026-09-18 after a live audit of the household server on **12.1.0** found one
-managed library with Jellyfin's NFO saver switched on and no surface reporting it, not dev-reviewed,
+managed library with Jellyfin's NFO saver switched on and no surface reporting it, **dev-reviewed
+2026-09-19 against `main` `dcb97f2c`** (see §Dev review at the foot: the new model fields must be
+nullable or FR-242-3's checks fail open, and FR-242-7's cited precedent was drawn but never built),
 not built. Extends phase **212**'s advisor. Backend + admin UI.
 
 ## What is wrong
@@ -132,3 +134,68 @@ other half of this and catches it at build time.
    `MusicVideo` items and nothing else, and jellystructure tracks all 22 as `MUSIC_VIDEO`. It is an
    ordinary managed library and the NFO saver there is a genuine conflict, not a deliberate "Jellyfin
    owns music" setting.
+
+## Dev review (2026-09-19, against `main` `dcb97f2c`)
+
+Traced against `advisor/JellyfinAdvisorService.kt`, `auth/Models.kt`, `server/Server.kt` and the shipped
+renderer in `ui/Settings.kt`. The diagnosis is right in every particular, and the scoping FR-242-1 asks
+for turns out to be free. **Two things need correcting: the one modelling decision that decides whether
+FR-242-7 can work at all, and a precedent FR-242-7 cites that was drawn but never built.**
+
+1. **FR-242-1's scoping already exists — and `/health/full` uses a different one.** `computeFindings`
+   already filters `cfg.libraries.filter { !it.skip && it.jellyfinId.isNotBlank() }` (`:67`) and skips any
+   Jellyfin library not in that set (`:74`), so acceptance 3 (Blandet silent despite its NFO saver) holds
+   structurally the moment the finding is added. But `/health/full` builds its own set with
+   `filter { !it.skip }` and no `jellyfinId` condition (`Server.kt:473`). FR-242-6 says the two consumers
+   must not be able to disagree; they already can. The shared resolver takes the advisor's stricter form,
+   which is a small, intentional behaviour change to the health endpoint — worth stating so it is not
+   discovered as a regression.
+2. **Make the new fields nullable. This is the decision FR-242-7 stands or falls on, and the spec
+   identifies the hazard without naming the fix.** Every field on `JellyfinLibraryOptions`
+   (`Models.kt:85-95`) carries a value default, so under `ignoreUnknownKeys = true` a renamed key and a
+   genuinely-unset one produce the identical value. For `MetadataSavers` that means a rename silently
+   stops the NFO warning — which the spec says. For **FR-242-3 it is structurally worse**, because
+   `emptyList()` is *also* the correct, healthy value for `MetadataFetchers`/`ImageFetchers`: those checks
+   would fail open by construction, silently, forever, and no test that asserts "Film produces no finding"
+   could tell the difference. Declare the fields FR-242-4 adds as **nullable with `= null`**
+   (`List<String>? = null`, `List<JellyfinTypeOptions>? = null`), so *absent* is a third state the finding
+   logic can branch on, and re-declare `MetadataSavers` the same way on the same touch. Phase 240's
+   model-field guard catches this at build time; nullability is what catches it at run time, and FR-242-7
+   asks for run time.
+3. **`perLibraryFindings` already violates FR-242-7, at one line.** `val opts = lib.libraryOptions ?:
+   return emptyList()` (`:98`) — a managed library whose entire `LibraryOptions` object is missing yields
+   zero findings, no section, and therefore renders exactly like a library whose settings are perfect.
+   FR-242-7 is not an additive requirement; it edits this line. Worth naming the line, because the
+   requirement reads as though it only governs the new checks.
+4. **The precedent FR-242-7 leans on exists in the design, not in the product.** FR-242-7 says "the
+   advisor already has the vocabulary for this", citing 212's explicit `4K Movies` *no findings* row. The
+   shipped renderer does the opposite and documents it: "*a library/section with no findings gets no
+   card, no 'all clear' message — nothing at all*" (`Settings.kt:1251`), and it iterates only
+   `result.perLibrary` (`:1275`), which the backend only populates when a library has at least one
+   finding (`JellyfinAdvisorService.kt:77`). The explicit no-findings row lives in
+   `design/app/settings.html` and was never built. Two consequences: FR-242-7 needs a **transport** for
+   the state — an empty `findings` list is already how "fine" is expressed, so it wants a field on
+   `LibraryAdvisorSection` such as `options_unavailable` — and it needs **frontend work**, which this
+   spec currently reads as backend-only. Either build the design's row now or say plainly that FR-242-7
+   ships as a health-endpoint signal only.
+5. **Re-stamp the model's provenance, don't just extend it.** `Models.kt:87-88` reads "*Phase 212 — the
+   flags FR-212-4's findings read. Confirmed live against 10.11.11 (GET /Library/VirtualFolders,
+   2026-09-15)*". The 2026-09-18 audit re-confirmed all six names on 12.x, and FR-242-4 adds new fields
+   with a fresh date. If the old comment is left alone the class carries two provenance claims and a
+   reader will trust the older one for the older fields — precisely the drift FR-242-4's
+   record-the-date rule exists to prevent.
+6. **Open question 2 is answerable from the table already in this spec.** `Serier` has
+   `EnableInternetProviders: false` and an empty `MetadataFetchers`, so there is no fetcher for
+   `PreferredMetadataLanguage = fo` to steer: it is inert **by construction**, not by coincidence. It
+   could only become live at the exact moment FR-242-2 or FR-242-3 fires on that library — which is when
+   the advisor is already complaining about the real cause. So no separate consistency finding is needed;
+   record it as subsumed by the two checks this phase adds, and close the question.
+7. **Acceptance 6 is the only item in this whole cluster that is causing harm right now, and it should
+   not wait for the phase.** Musik is a managed library with Jellyfin's NFO saver on, dated March —
+   meaning Jellyfin has been rewriting jellystructure's NFO output there after every refresh for months.
+   That is ongoing loss of this product's own work, entirely independent of whether 242 is ever built, and
+   unchecking the box is a two-minute configuration change. Do it now; keep acceptance 6 as the
+   verification (including the "were the NFO files overwritten in the meantime" half, which is the part
+   that actually needs looking at).
+8. **Open question 1 stands.** `SimilarItemProviders` cannot be resolved from this repository. When it is
+   answered, the check it joins is FR-242-3 and item 2's nullability rule applies to it as well.
