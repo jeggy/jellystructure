@@ -48,18 +48,29 @@ object ReceiverStrings {
         "noserver" to "Can’t reach your Ravilo server", "noserver_s" to "Check that the server is on and try again from your phone.",
         "busy" to "The server is busy right now", "busy_s" to "It will start as soon as it can.", "waiting" to "waiting {n} s",
         "nextep" to "UP NEXT", "startsin" to "Starts in {n} s",
+        // R269 — the receiver's one exception to no-navigation: the setup screen shown only with no
+        // server address stored yet.
+        "setup_title" to "Where is Ravilo?", "setup_hint" to "Type your Ravilo server’s address",
+        "setup_connect" to "Connect", "setup_trying" to "Trying to connect…",
+        "setup_not_found" to "There’s no Ravilo server at that address",
     )
     private val da = mapOf(
         "ready" to "Klar til at spille fra din telefon", "loading" to "Indlæser…",
         "noserver" to "Kan ikke nå din Ravilo-server", "noserver_s" to "Tjek at serveren er tændt, og prøv igen fra din telefon.",
         "busy" to "Serveren er travl lige nu", "busy_s" to "Den starter, så snart den kan.", "waiting" to "venter {n} s",
         "nextep" to "NÆSTE", "startsin" to "Starter om {n} s",
+        "setup_title" to "Hvor er Ravilo?", "setup_hint" to "Skriv adressen på jeres Ravilo-server",
+        "setup_connect" to "Forbind", "setup_trying" to "Prøver at få forbindelse…",
+        "setup_not_found" to "Der er ingen Ravilo-server på den adresse",
     )
     private val fo = mapOf(
         "ready" to "Klár at spæla frá telefonini", "loading" to "Løðir…",
         "noserver" to "Kann ikki ná Ravilo-servaranum", "noserver_s" to "Kanna um servarin er á, og royn aftur frá telefonini.",
         "busy" to "Servarin hevur mikið at gera nú", "busy_s" to "Hon byrjar, so skjótt sum gjørligt.", "waiting" to "bíðar {n} s",
         "nextep" to "NÆSTA", "startsin" to "Byrjar um {n} s",
+        "setup_title" to "Hvar er Ravilo?", "setup_hint" to "Skriva adressuna á tygara Ravilo-servara",
+        "setup_connect" to "Sambind", "setup_trying" to "Roynir at sambinda…",
+        "setup_not_found" to "Eingin Ravilo-servari er á hasi adressuni",
     )
     var lang = "en"
     fun t(key: String, n: Int? = null): String {

@@ -19,9 +19,13 @@ import dev.jellystructure.shared.tv.TvApiClient
 import dev.jellystructure.shared.tv.TvApiError
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.js.Js
+import io.ktor.client.request.get
+import io.ktor.client.statement.bodyAsText
+import io.ktor.http.isSuccess
 import kotlinx.browser.document
 import kotlinx.browser.localStorage
 import kotlinx.browser.window
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -34,6 +38,7 @@ import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
 import org.w3c.dom.HTMLElement
+import org.w3c.dom.HTMLInputElement
 import org.w3c.dom.events.KeyboardEvent
 import kotlin.random.Random
 
@@ -48,13 +53,15 @@ private val json = Json { ignoreUnknownKeys = true }
 
 private const val DEVICE_ID_KEY = "ravilo.screen.deviceId"
 private const val TOKENS_KEY = "ravilo.screen.tokens"
+private const val SERVER_URL_KEY = "ravilo.screen.serverUrl"
+private const val SETUP_PREFILL_KEY = "ravilo.screen.serverUrl.prefill"
 private const val PROGRESS_EVERY_MS = 10_000L
 private const val STATUS_EVERY_MS = 5_000L
 private const val PAIR_POLL_MS = 3_000L
 private const val RECONNECT_BASE_MS = 2_000L
 private const val RECONNECT_MAX_MS = 30_000L
 
-private class Screen(serverUrl: String) {
+private class Screen(private val serverUrl: String) {
     private val backend = detectMediaBackend()
     private val deviceId = loadOrCreateDeviceId()
     // FR-236-4 — a screen can hold one device token PER PAIRED USER (a device token is always
@@ -95,6 +102,9 @@ private class Screen(serverUrl: String) {
     fun start() {
         registerTvKeys()
         window.addEventListener("keydown", { e -> onKey(e as KeyboardEvent) })
+        // R269 (FR-R269-7) — releasing Back before three seconds cancels the hold; a plain tap must
+        // never reopen setup.
+        window.addEventListener("keyup", { e -> if ((e as KeyboardEvent).key == "Backspace" || e.key == "Exit") backHeldSince = null })
         backend.setListener(object : MediaBackendListener {
             override fun onBufferingStart() { buffering = true; if (loaded) show("buffering"); sendStatus() }
             override fun onBufferingComplete() { buffering = false; if (loaded) show(); sendStatus() }
@@ -112,17 +122,29 @@ private class Screen(serverUrl: String) {
     private fun idle() {
         loaded = false; playing = false; buffering = false; itemId = null; title = null; kicker = null; artUrl = null; ticket = null
         el("idle-sentence").textContent = ReceiverStrings.t("ready")
+        // R269 (FR-R269-6) — a quiet line naming the configured server; the only way a household can see
+        // a TV is pointed at a server that has since moved.
+        document.getElementById("idle-server")?.textContent = serverUrl.removePrefix("https://").removePrefix("http://")
         show("idle")
     }
 
     // ── pairing: mints a code and polls it while idle. Per the dev review, this keeps running on idle
-    // even once a token exists, so a second household member can pair the same screen. ──
+    // even once a token exists, so a second household member can pair the same screen. R269 (FR-R269-5)
+    // — a stored-but-unreachable server is its own state (the noserver screen, retrying), never confused
+    // with "no address at all" (that's runServerSetup(), never reached once an address is stored). ──
     private suspend fun pairingLoop() {
         while (true) {
             if (loaded) { delay(2_000); continue }
             val minted = runCatching { api.screenCode(deviceId, deviceName(), "tizen") }.getOrNull()
-            if (minted == null) { delay(5_000); continue }
+            if (minted == null) {
+                el("noserver-t").textContent = ReceiverStrings.t("noserver")
+                el("noserver-s").textContent = ReceiverStrings.t("noserver_s")
+                show("noserver")
+                delay(5_000)
+                continue
+            }
             el("idle-code").textContent = minted.code
+            idle()
             while (nowMs() < minted.expiresAt) {
                 if (loaded) break
                 val result = runCatching { api.screenClaim(minted.code, minted.claimSecret) }.getOrNull()
@@ -297,9 +319,24 @@ private class Screen(serverUrl: String) {
         }
     }
 
+    private var backHeldSince: Long? = null
+
     // ── remote control: Tizen's registered keys arrive as ordinary keydown events (same names as
     // TizenKeys.REQUIRED) alongside a normal D-pad's KeyboardEvent.key vocabulary. ──
     private fun onKey(e: KeyboardEvent) {
+        // R269 (FR-R269-7) — the only way back to server setup: hold Back on IDLE for three seconds.
+        // Tracked outside the `!loaded` guard below since idle is exactly where loaded is false, and
+        // outside the `when` since it needs the key-repeat/-up pair, not a single keydown.
+        if ((e.key == "Backspace" || e.key == "Exit") && !loaded) {
+            if (!e.repeat && backHeldSince == null) {
+                val since = nowMs(); backHeldSince = since
+                GlobalScope.launch {
+                    delay(3_000)
+                    if (backHeldSince == since) { backHeldSince = null; reopenServerSetup() }
+                }
+            }
+            return
+        }
         if (!loaded) return
         when (e.key) {
             "Enter", "MediaPlayPause" -> if (playing) backend.pause() else backend.play()
@@ -310,6 +347,16 @@ private class Screen(serverUrl: String) {
             "MediaFastForward" -> { backend.seekTo(backend.positionMs() + 30_000); flashOverlay() }
             "Backspace", "Exit" -> stopAndIdle()
         }
+    }
+
+    /** R269 (FR-R269-7) — no live teardown of this running instance: store the current address as the
+     *  setup screen's prefill, drop the stored one, and reload — `main()`'s normal "no address stored"
+     *  path then shows setup with today's address already in the field. The simplest correct
+     *  implementation of a hold that should be rare enough to never need to be fast. */
+    private fun reopenServerSetup() {
+        localStorage.setItem(SETUP_PREFILL_KEY, serverUrl)
+        localStorage.removeItem(SERVER_URL_KEY)
+        window.location.reload()
     }
 
     private fun flashOverlay() {
@@ -381,14 +428,64 @@ private fun randomHex(length: Int): String {
     return buildString { repeat(length) { append(chars[Random.nextInt(chars.length)]) } }
 }
 
-fun main() {
-    // The receiver's server address has no on-screen setup yet (an open item for a follow-on phase —
-    // this build's scope is the pairing/playback loop) — index.html sets this global at package time.
-    val configured: dynamic = js("window.RAVILO_SERVER_URL")
-    val serverUrl = (configured as? String)?.trim().orEmpty()
-    if (serverUrl.isBlank()) {
-        console.error("Ravilo screen: no server URL configured — set window.RAVILO_SERVER_URL in index.html")
-        return
+/**
+ * R269 — the one exception to this app's no-navigation rule: reached only when the TV holds no server
+ * address at all (FR-R269-1). Probes `GET /api/health` — already unauthenticated, already returns
+ * `{"status":"ok",…}` (see the phase's dev review: no backend change was needed, the endpoint already
+ * existed for an unrelated reason) — and stores the address only once that succeeds, so a half-typed
+ * address can never brick the boot path (the dev notes' own requirement). Scheme inference matches what
+ * R226's `ServerSetupScreen` actually ships (verified against that code, not the FR's own — since
+ * corrected — description of it): `https://` unless the household types a scheme themselves.
+ */
+private suspend fun runServerSetup(): String {
+    val root = document.getElementById("setup") as HTMLElement
+    val input = document.getElementById("setupHost") as HTMLInputElement
+    val hint = document.getElementById("setupHint") as HTMLElement
+    val button = document.getElementById("setupConnect") as HTMLElement
+    document.getElementById("setupTitle")?.textContent = ReceiverStrings.t("setup_title")
+    button.textContent = ReceiverStrings.t("setup_connect")
+    hint.textContent = ReceiverStrings.t("setup_hint")
+    // FR-R269-7 — a hold-Back reopen prefills the address that was just working, never a blank field.
+    localStorage.getItem(SETUP_PREFILL_KEY)?.let { input.value = it.removePrefix("https://").removePrefix("http://") }
+    localStorage.removeItem(SETUP_PREFILL_KEY)
+    root.classList.add("on")
+
+    val probeClient = HttpClient(Js)
+    val resolved = CompletableDeferred<String>()
+
+    suspend fun tryConnect() {
+        val host = input.value.trim()
+        if (host.isBlank()) return
+        val hasScheme = host.startsWith("http://", ignoreCase = true) || host.startsWith("https://", ignoreCase = true)
+        val url = (if (hasScheme) host else "https://$host").trimEnd('/')
+        hint.textContent = ReceiverStrings.t("setup_trying")
+        val ok = runCatching {
+            val r = probeClient.get("$url/api/health")
+            r.status.isSuccess() && r.bodyAsText().contains("\"status\":\"ok\"")
+        }.getOrDefault(false)
+        if (ok) resolved.complete(url) else hint.textContent = ReceiverStrings.t("setup_not_found")
     }
-    window.addEventListener("load", { runCatching { Screen(serverUrl).start() }.onFailure { console.error("Ravilo screen failed to start: ${it.message}") } })
+    button.addEventListener("click", { GlobalScope.launch { tryConnect() } })
+    input.addEventListener("keydown", { e -> if ((e as KeyboardEvent).key == "Enter") GlobalScope.launch { tryConnect() } })
+
+    val url = resolved.await()
+    localStorage.setItem(SERVER_URL_KEY, url)
+    root.classList.remove("on")
+    return url
+}
+
+fun main() {
+    // FR-R269-9 — the setup screen has no server yet to take a language default from, so it follows the
+    // TV's own reported language (the standard Web API, not a Tizen-specific systeminfo call — works
+    // identically wherever this bundle runs) and falls back to English.
+    ReceiverStrings.lang = (window.navigator.language.takeIf { it.isNotBlank() } ?: "en").substringBefore('-')
+    window.addEventListener("load", {
+        GlobalScope.launch {
+            runCatching {
+                val stored = localStorage.getItem(SERVER_URL_KEY)?.trim()?.takeIf { it.isNotBlank() }
+                val serverUrl = stored ?: runServerSetup()
+                Screen(serverUrl).start()
+            }.onFailure { console.error("Ravilo screen failed to start: ${it.message}") }
+        }
+    })
 }

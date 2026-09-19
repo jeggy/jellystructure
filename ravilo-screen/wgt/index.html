@@ -2,7 +2,8 @@
 <!-- R264 — the Ravilo receiver-only Tizen app. No navigation: everything on screen is driven by the
      backend over the events socket (Phase 236), the same non-interactive-screens discipline
      cast-receiver/index.html established (FR-R245-15/16/17's rules apply here too — no product name, no
-     protocol, no codec, no status code ever rendered). -->
+     protocol, no codec, no status code ever rendered). R269 adds the one exception: a setup screen,
+     shown only with no server address stored yet (Screen.kt's runServerSetup()). -->
 <html lang="en">
 <head>
   <meta charset="utf-8">
@@ -29,6 +30,12 @@
     @keyframes sweep { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
     #idle-code { font-variant-numeric: tabular-nums; font-size: 64px; font-weight: 700; letter-spacing: 8px; margin-top: 22px; color: var(--ink); }
     #idle-code:empty { display: none; }
+    #idle-server { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 15px; color: var(--ink-dim); margin-top: 14px; }
+    /* R269 — the receiver's one exception to no-navigation: server setup, shown only with no address stored. */
+    #setup input { font-size: 26px; padding: 14px 18px; width: 480px; max-width: 80vw; border-radius: 10px; border: 2px solid rgba(255,255,255,.18); background: rgba(255,255,255,.06); color: var(--ink); text-align: center; outline: none; }
+    #setup input:focus { border-color: var(--accent2); }
+    #setup button { margin-top: 22px; font-size: 20px; font-weight: 700; padding: 14px 40px; border-radius: 999px; border: none; background: linear-gradient(90deg, var(--accent), var(--accent2)); color: #fff; cursor: pointer; }
+    #setupHint { font-size: 16px; color: var(--ink-dim); margin-top: 16px; max-width: 480px; }
     /* paused / seeked overlay */
     #overlay { position: fixed; left: 0; right: 0; bottom: 0; padding: 40px 64px 48px; background: linear-gradient(transparent, rgba(0,0,0,.78)); display: none; z-index: 2; }
     #overlay.on { display: block; }
@@ -46,18 +53,14 @@
 <body>
   <video id="video" playsinline></video>
 
-  <section id="idle" class="screen on"><div class="mark"></div><div id="idle-sentence" class="sentence">Ready to play from your phone</div><div id="idle-code"></div></section>
+  <section id="idle" class="screen on"><div class="mark"></div><div id="idle-sentence" class="sentence">Ready to play from your phone</div><div id="idle-code"></div><div id="idle-server"></div></section>
+  <section id="setup" class="screen"><div class="mark"></div><div id="setupTitle" class="title" style="margin-bottom:18px"></div><input id="setupHost" type="text" autocomplete="off" spellcheck="false" placeholder="ravilo.example.com"><button id="setupConnect"></button><div id="setupHint"></div></section>
   <section id="loading" class="screen"><div class="pulse"><i></i><i></i><i></i></div><div id="loading-kicker" class="kicker"></div><div id="loading-title" class="title"></div><div class="sweep"><i></i></div><div id="loading-label" class="sub">Loading…</div></section>
   <section id="buffering" class="screen"><div class="spinner"></div></section>
   <section id="noserver" class="screen"><div class="mark"></div><div id="noserver-t" class="title"></div><div id="noserver-s" class="sub"></div></section>
   <section id="busy" class="screen"><div class="mark"></div><div id="busy-t" class="title"></div><div id="busy-s" class="sub"></div><div id="busy-wait" class="wait"></div></section>
   <div id="overlay"><div class="row"><div><div id="ov-kicker" class="kicker"></div><div id="ov-title" class="title" style="font-size:30px"></div></div></div><div class="bar"><i id="ov-fill"></i></div><div id="ov-time" class="time"></div></div>
 
-  <script>
-    // Sideload-only config: no on-screen server setup yet (a follow-on phase's scope — see Screen.kt's
-    // main() doc). Point this at your own jellystructure instance before packaging the .wgt.
-    window.RAVILO_SERVER_URL = "https://your-jellystructure-server.example";
-  </script>
   <script src="ravilo-screen.js"></script>
 </body>
 </html>
