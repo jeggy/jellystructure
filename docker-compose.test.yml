@@ -100,7 +100,10 @@ services:
       LOGIN_RATE_LIMIT_MAX: "1000"
       # The Ravilo web app is served from another origin (ravilo-web) and signs in here cross-origin —
       # the same shape as production. tests/e2e/ravilo-login.spec.ts checks the preflight.
-      CORS_ALLOWED_ORIGINS: "ravilo-web:8080"
+      # ravilo-screen-cast (phase 248) is the `ravilo-screen` container's SECOND hostname (see that
+      # service's own comment) — allow-listed so the cast e2e spec can actually cast, while the bare
+      # `ravilo-screen` hostname 247's specs use stays deliberately unlisted.
+      CORS_ALLOWED_ORIGINS: "ravilo-web:8080,ravilo-screen-cast:8080"
     depends_on:
       jellyfin-mock:
         condition: service_healthy
@@ -145,6 +148,13 @@ services:
   # ravilo-screen-cors.spec.ts / ravilo-screen.spec.ts is proving what happens today when a
   # sideloaded-widget origin is NOT on that list (it never can be, in production — see the phase's
   # spec). Never published; test-stack only.
+  #
+  # Phase 248 needs the SAME bundle reachable from a SECOND, allow-listed hostname — casting has
+  # nothing to do with the sideloaded-origin question 247 tests, and re-proving CORS refusal there
+  # would just be 247's test again. Rather than build (and pay for) a second image, this one
+  # container gets a second DNS name on the test network via `aliases`: `ravilo-screen` stays
+  # unlisted (247's own origin), `ravilo-screen-cast` goes on `app`'s CORS_ALLOWED_ORIGINS above,
+  # and 248's spec navigates to that alias instead. Same container, same bundle, two hostnames.
   ravilo-screen:
     build:
       context: .
@@ -159,7 +169,9 @@ services:
       timeout: 3s
       retries: 15
     networks:
-      - testnet
+      testnet:
+        aliases:
+          - ravilo-screen-cast
 
   playwright:
     image: mcr.microsoft.com/playwright:v1.45.0-noble
@@ -171,6 +183,10 @@ services:
       APP_URL: http://app:9505
       RAVILO_WEB_URL: http://ravilo-web:8080
       RAVILO_SCREEN_URL: http://ravilo-screen:8080
+      # Phase 248 — the SAME container's second, allow-listed hostname (see the ravilo-screen
+      # service's own comment). ravilo-screen-cast.spec.ts's default (http://app:9505) for
+      # APP_URL_FROM_SCREEN already matches this network's naming, so it's left unset here.
+      RAVILO_SCREEN_CAST_URL: http://ravilo-screen-cast:8080
       FIXTURE_DIR: ${FIXTURE_DIR:-/tmp/jellystructure-fixtures}
       JELLYFIN_USER: ${JELLYFIN_USER:-admin}
       JELLYFIN_PASS: ${JELLYFIN_PASS:-password}

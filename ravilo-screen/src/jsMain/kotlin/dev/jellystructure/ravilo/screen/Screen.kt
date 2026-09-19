@@ -19,6 +19,7 @@ import dev.jellystructure.shared.tv.TvApiClient
 import dev.jellystructure.shared.tv.TvApiError
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.js.Js
+import io.ktor.client.plugins.websocket.WebSockets
 import io.ktor.client.request.get
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.isSuccess
@@ -70,7 +71,7 @@ private class Screen(private val serverUrl: String) {
     private val tokens = loadTokens().toMutableMap()
     private var activeUserId: String? = tokens.keys.firstOrNull()
     private val api = TvApiClient(
-        client = HttpClient(Js),
+        client = HttpClient(Js) { install(WebSockets) },
         baseUrl = serverUrl,
         deviceToken = { tokens[activeUserId] ?: tokens.values.firstOrNull() },
         platform = "screen",
@@ -257,7 +258,12 @@ private class Screen(private val serverUrl: String) {
 
     private fun onPlaystateCommand(env: PlaystateCommandEnvelope) {
         if (!loaded) return
-        when (env.command) {
+        // Bug fix — RemoteRoutes.kt sends this quartet capitalized ("Stop"/"Pause"/"Unpause", Phase 111's
+        // original wire shape); every other consumer normalizes it (PlayerScreen.kt's identical `when`
+        // calls .lowercase() first) but this one didn't, so stop/pause/unpause silently no-op on every
+        // real receiver — found 2026-09-19 building phase 248's cast e2e test, which drives this exact
+        // code path for the first time ever.
+        when (env.command.lowercase()) {
             "stop" -> { stopAndIdle(); return }
             "pause" -> backend.pause()
             "unpause" -> backend.play()
@@ -272,6 +278,15 @@ private class Screen(private val serverUrl: String) {
         if (!loaded) return
         val args = env.args
         when (env.command) {
+            // Bug fix — the real sender (ravilo-ui's ScreenSender.seekTo()) only ever sends absolute
+            // "seek" with position_ms (RemoteRoutes.kt maps it to this same player_command event); no
+            // client in this codebase sends "seek_relative" at all. Found 2026-09-19 building phase
+            // 248's cast e2e test, which drives this exact real sender/receiver pair for the first time.
+            "seek" -> {
+                val pos = args?.get("position_ms")?.jsonPrimitive?.longOrNull ?: return
+                backend.seekTo(pos.coerceAtLeast(0))
+                flashOverlay()
+            }
             "seek_relative" -> {
                 val delta = args?.get("delta_ms")?.jsonPrimitive?.longOrNull ?: return
                 backend.seekTo((backend.positionMs() + delta).coerceAtLeast(0))

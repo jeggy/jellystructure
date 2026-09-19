@@ -109,6 +109,32 @@ const server = http.createServer(async (req, res) => {
     return send(res, 204, {});
   }
 
+  // Phase 248 — the minimum PlaybackService.startPlayback() needs for a real cast test: item detail,
+  // a direct-play PlaybackInfo answer, and fire-and-forget session bookkeeping. No media bytes are
+  // ever served — the cast test's fake AVPlay records the stream URL but never fetches it.
+  const itemMatch = path.match(/^\/Items\/([^/]+)$/);
+  if (method === "GET" && itemMatch) {
+    const item = ITEMS.find((i) => i.Id === itemMatch[1]);
+    return send(res, 200, {
+      Id: itemMatch[1],
+      Name: item?.Name ?? itemMatch[1],
+      RunTimeTicks: 60_000_000_0, // 60s, arbitrary — nothing plays a real stream in this suite
+      UserData: { PlaybackPositionTicks: 0, Played: false, IsFavorite: false },
+      MediaStreams: [],
+    });
+  }
+  const playbackInfoMatch = path.match(/^\/Items\/([^/]+)\/PlaybackInfo$/);
+  if (method === "POST" && playbackInfoMatch) {
+    const id = playbackInfoMatch[1];
+    return send(res, 200, {
+      MediaSources: [{ Id: id, Container: "mkv", SupportsDirectPlay: true, SupportsDirectStream: true, SupportsTranscoding: false, MediaStreams: [] }],
+      PlaySessionId: "mock-play-session-" + id,
+    });
+  }
+  if (method === "POST" && (path === "/Sessions/Playing" || path === "/Sessions/Playing/Progress" || path === "/Sessions/Playing/Stopped")) {
+    return send(res, 204, {});
+  }
+
   // POST /Items/{id}/Refresh
   if (method === "POST" && /^\/Items\/[^/]+\/Refresh$/.test(path)) {
     return send(res, 204, {});
