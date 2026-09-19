@@ -187,17 +187,47 @@ Same reasoning as 242's FR-242-6.
 
 ## Open questions
 
-1. Does Jellyfin need a restart for a `KnownProxies` change to take effect? On the clean 12.1.0
-   instance the value was set through `POST /System/Configuration/network` and the container was
-   restarted before testing, so the two were not separated. If a restart is required, FR-244-4's
-   **Re-check** must say so, or an operator will set the value correctly, re-check, still see the
-   finding, and conclude the guidance is wrong.
+1. ~~Does Jellyfin need a restart for a `KnownProxies` change to take effect?~~ **Answered
+   2026-09-19: yes, and Jellyfin says so itself.** The field's own help text, read out of the shipped
+   web bundle on 12.1.0, ends *"Requires a reboot after saving."* — so the Re-check copy's restart
+   sentence is not a hedge, it is the documented behaviour, and it stays. The same string also settles
+   what the field accepts: *"Comma separated list of IP addresses or hostnames of known proxies"* — no
+   CIDR, which is why FR-244-4 must not suggest one.
+
+   **Applied and verified on the household server the same day**, which also produced the measurement
+   the dev review's item 1 said was missing, and it lands on the side the review feared:
+   `KnownProxies = 172.28.0.17`, Jellyfin restarted, and the probe **still** reports
+   `IsInNetwork: true`. That answer is correct rather than a failure — jellystructure and the probe
+   both reach Jellyfin from `10.10.10.10`, Caddy appends that to `X-Forwarded-For`, and Jellyfin
+   rightly takes the last hop, which is private. **A probe issued from inside the network can never
+   return `false`, fixed or not.** FR-244-1's two-signal design is therefore not a precaution, it is
+   load-bearing, and the `known_proxies_unconfirmed` finding is the state this household is in right
+   now with a correctly configured server.
+
+   The fix was confirmed by a different route, and it suggests a better mechanism (see open question
+   4): Jellyfin's attributed client address changed at the restart from `172.28.0.17` ×28 — Caddy's
+   own container, i.e. blind to the caller — to the real clients `10.10.11.129` and `10.10.10.10`.
+   `GET /Sessions`' `RemoteEndPoint` shows the same thing live.
 2. Should the finding also fire when `public_url` is unset but Jellyfin's own `EnableRemoteAccess` is
    true? That is a second, weaker signal that the server is reachable from outside, and it would
    catch an installation exposed by something other than jellystructure's own configuration.
-3. Is there any legitimate deployment where `KnownProxies` is empty, requests arrive from a private
+3. ~~Is there any legitimate deployment where `KnownProxies` is empty, requests arrive from a private
    address, and the operator genuinely wants unauthenticated LAN restarts to be reachable from the
-   internet? If not, FR-244-2's `public_url` condition may be unnecessary caution.
+   internet?~~ **Closed with the dev review's item 5**: there is none. The condition exists because
+   jellystructure cannot see Jellyfin's exposure directly, and it now reads `EnableRemoteAccess`,
+   which can.
+
+4. **New, 2026-09-19 — should FR-244-1's second signal be `GET /Sessions` rather than the probe?**
+   `RemoteEndPoint` on each session is the address Jellyfin attributed to that caller, and it answers
+   the question the probe is trying to ask — *is this server honouring `X-Forwarded-For`* — from
+   inside the network, read-only, with no header spoofing at all. If **every** session's
+   `RemoteEndPoint` equals the configured known proxy, the header is being ignored and the hole is
+   open; if they differ from it, it is being honoured. Measured on this household both before and
+   after the fix, and it discriminated cleanly where the probe could not. It would turn
+   `known_proxies_unconfirmed` from "jellystructure cannot tell from here" into a real answer.
+
+   Not built. The caveat to check first is a server with exactly one active session that genuinely
+   originates on the Docker network, where the two would coincide for an innocent reason.
 
 ## Dev review (2026-09-19, against `main` `dcb97f2c`)
 
