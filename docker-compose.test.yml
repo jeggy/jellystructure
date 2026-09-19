@@ -163,6 +163,11 @@ services:
         - type=local,src=${BUILDX_CACHE_DIR:-/tmp/.buildx-cache}/ravilo-screen
       cache_to:
         - type=local,dest=${BUILDX_CACHE_DIR:-/tmp/.buildx-cache}/ravilo-screen-new
+    environment:
+      # Phase 249 — the mock stack talks plain http throughout; web-static-server's CSP otherwise
+      # blocks connect-src to it (found via 248's first real CI run). Opt-in and default-off — see
+      # cspHeader()'s own doc comment. ravilo-web's real production CSP is untouched by this.
+      CSP_ALLOW_HTTP_CONNECT: "1"
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:8080/"]
       interval: 3s

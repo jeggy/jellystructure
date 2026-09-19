@@ -66,6 +66,8 @@ fun main() {
     // compiled into the bundle, which in an image is always "dev" (no .git in the build context, by
     // design — it keeps a release build a cache hit).
     val raviloVersion = env("RAVILO_VERSION", "").ifBlank { null }
+    // Phase 249 — see cspHeader()'s own doc comment. Default off; no real deployment sets this.
+    val allowHttpConnect = env("CSP_ALLOW_HTTP_CONNECT", "").isNotBlank()
 
     embeddedServer(
         CIO,
@@ -85,7 +87,7 @@ fun main() {
             call.response.headers.append("Referrer-Policy", "strict-origin-when-cross-origin")
             call.response.headers.append("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
             call.response.headers.append("X-Frame-Options", "DENY")
-            call.response.headers.append("Content-Security-Policy", RAVILO_WEB_CSP)
+            call.response.headers.append("Content-Security-Policy", cspHeader(allowHttpConnect))
             proceed()
         }
 
@@ -232,13 +234,20 @@ private fun contentTypeFor(path: String): ContentType = when (path.substringAfte
 // 6). No CDN host: R265 has not shipped yet, so the web player's CDN loads fail under this exactly as
 // they already fail on /tv/** today, which is the point (dev review item 3) — FR-235-9 self-hosts
 // hls.js/JASSUB in this same release so nothing actually breaks.
-internal const val RAVILO_WEB_CSP: String =
+//
+// Phase 249 — [allowHttpConnect] is off for every real deployment (ravilo-web included), so the
+// emitted string stays byte-for-byte what it always was, preserving the comparison above. It exists
+// only for this module's OTHER caller — the ravilo-screen test-stack container (247/248) — whose mock
+// backend talks plain http, which browsers refuse under connect-src without an explicit http: scheme.
+// ravilo-screen is never served over http in production at all (its only real distribution is the
+// packaged .wgt), so this changes nothing about ravilo-web's or the backend's real security posture.
+internal fun cspHeader(allowHttpConnect: Boolean): String =
     "default-src 'self'; " +
         "script-src 'self' 'wasm-unsafe-eval' 'unsafe-eval'; " +
         "style-src 'self' 'unsafe-inline'; " +
         "img-src 'self' data: blob: https:; " +
         "font-src 'self' data:; " +
-        "connect-src 'self' ws: wss: https:; " +
+        "connect-src 'self' ws: wss: https:${if (allowHttpConnect) " http:" else ""}; " +
         "media-src 'self' blob: https:; " +
         "manifest-src 'self'; " +
         "worker-src 'self'; " +
