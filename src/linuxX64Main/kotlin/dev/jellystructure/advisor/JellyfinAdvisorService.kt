@@ -157,7 +157,7 @@ object JellyfinAdvisorService {
         )
     }
 
-    private fun List<AdvisorFinding>.sortedBySeverity(): List<AdvisorFinding> =
+    internal fun List<AdvisorFinding>.sortedBySeverity(): List<AdvisorFinding> =
         sortedBy { SEVERITY_ORDER.indexOf(it.severity).let { i -> if (i < 0) SEVERITY_ORDER.size else i } }
 
     // ── FR-212-4 / FR-246-12 — per-library findings ─────────────────────────────
@@ -719,7 +719,7 @@ object JellyfinAdvisorService {
      *  `/media/` -> `/mnt/media/jellyfin/`. Returns null when they share no trailing segment at all (as
      *  `/media/series/` and `/mnt/series/jellyfin/` do here), because then nothing can be derived from
      *  that pair and inventing a relationship is exactly what FR-212-6 forbids. */
-    private fun rootPair(jellyfinPath: String, localPath: String): Pair<String, String>? {
+    internal fun rootPair(jellyfinPath: String, localPath: String): Pair<String, String>? {
         val j = jellyfinPath.trimEnd('/').split('/')
         val l = localPath.trimEnd('/').split('/')
         var shared = 0
