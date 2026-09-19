@@ -19,8 +19,20 @@ existing `play-store` job). The exact `tz` CLI + headless-signing recipe was ver
 throwaway self-signed certificate in this project's own Tizen dev container and in a clean disposable
 `ubuntu:22.04` container matching a GitHub Actions runner (see §4) — entirely headless, no VNC/X/XFCE
 required for signing (only ever needed for the interactive Samsung-account sign-in that *created* the
-certificate). **Not yet run for real**: needs the four repo secrets in §3 before a live CI run can sign
-with the actual Ravilo certificate rather than fail at that step.
+certificate).
+
+**Two real CI runs performed 2026-09-19 (releases v1.28, v1.29).** v1.28 ran before any secrets existed
+and failed as expected once it reached the signing step. v1.29 (after the owner added the four secrets)
+got much further — Tizen Studio install, the Gradle build, `config.xml` version patching, the headless
+keyring setup, and NativeCLI/cert-add-on installation all ran clean in real GitHub Actions — but failed at
+"Decode Tizen certificate" with `base64: invalid input` on `TIZEN_AUTHOR_P12_BASE64`, meaning that secret's
+pasted value isn't valid base64 (a stray character from copying the terminal output is the likely cause,
+confirmed reproducible locally with e.g. a trailing shell-prompt `%`). Hardened the same day: the decode
+step now verifies each secret individually — non-empty, decodes cleanly, *and* opens as a real PKCS12 with
+its paired password via `openssl pkcs12 -info` — before ever reaching `tz`, so the next attempt gets a
+precise, actionable error instead of a bare cryptic one. **Still blocked on the owner re-generating and
+re-pasting `TIZEN_AUTHOR_P12_BASE64`** (`base64 -w0 author.p12` on the Debian server, pasted with no
+surrounding quotes/whitespace) — everything else in the pipeline is verified working.
 
 ## 1. Scope
 
