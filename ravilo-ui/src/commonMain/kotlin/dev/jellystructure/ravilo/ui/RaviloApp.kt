@@ -319,10 +319,14 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
 
     // R245 / 218 (FR-218-3/11) — the cast capability rides the config snapshot: absent ⇒ no button.
     var castAppId by remember { mutableStateOf<String?>(null) }
+    // R265 (dev review item 5) — same shape as castAppId: server-pushed, so the glyph can be present
+    // for a household's very first screen (an empty device list alone can't answer "is this on at all").
+    var screensEnabled by remember { mutableStateOf(false) }
     fun refreshConfig() {
         configScope.launch {
             runCatching { apiClient.getConfig() }.getOrNull()?.let { cfg ->
                 castAppId = cfg.cast?.appId
+                screensEnabled = cfg.screens?.enabled == true
                 lang = cfg.uiLanguage
                 themeState.skin = cfg.effectiveSkin()
                 tileScale = cfg.uiDensity.tileScale()
@@ -629,14 +633,20 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
             windowInfo.containerSize.height > windowInfo.containerSize.width
         }
 
-        // R245 — one sender per app (the platform SDK), one controller per server; null when this platform
-        // cannot cast or the server has no capability, in which case nothing anywhere draws a button.
-        val castSender = rememberCastSender()
-        val castController = remember(castSender, apiClient) { castSender?.let { CastController(it, apiClient, apiClient.baseUrl) } }
-        LaunchedEffect(castController, castAppId) { castController?.appId = castAppId }
-        val castActive = if (castController != null && castAppId != null) castController else null
+        // R245/R265 — one sender per app (composed: the platform Chromecast SDK where one exists, plus
+        // the common ScreenSender always), one controller per server. Unlike R245 alone, the sender is
+        // never null now (a screen needs no platform SDK) — presence of ANY button/sheet is instead
+        // gated on castActive below, true when the server has EITHER capability (FR-R265-1).
+        val castSender = rememberCastSender(apiClient)
+        val castController = remember(castSender, apiClient) { CastController(castSender, apiClient, apiClient.baseUrl) }
+        LaunchedEffect(castController, castAppId) { castAppId?.let { castController.appId = it } }
+        val castActive = if (castAppId != null || screensEnabled) castController else null
         val currentDisplayNameForCast = destDisplayName(dest)
-        CompositionLocalProvider(LocalCast provides castActive, LocalCastHandoff provides (if (castActive != null && dest is Dest.Player) { pos: Long ->
+        // R265 — this in-player quick hand-off is still Chromecast's own hand-off-code flow
+        // (CastController.cast()); a screen has no hand-off code (FR-R265-6) and isn't offered this
+        // shortcut yet — gated on castAppId specifically, not the broader castActive, so enabling
+        // screens alone can't accidentally route through Chromecast's castHandoff() call.
+        CompositionLocalProvider(LocalCast provides castActive, LocalCastHandoff provides (if (castActive != null && castAppId != null && dest is Dest.Player) { pos: Long ->
             val d = dest as Dest.Player
             castActive.cast(
                 itemId = d.itemId, title = d.title, kicker = d.kicker,

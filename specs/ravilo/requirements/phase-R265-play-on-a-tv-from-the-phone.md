@@ -12,16 +12,55 @@
 
 ## Status
 
-`Planned` — written 2026-09-18 from the owner's decisions and the research report
+`⚠ Partial` — written 2026-09-18 from the owner's decisions and the research report
 `ravilo-web-pwa-player-cast-2026-09-18.md` (§5, §12). **Dev-reviewed 2026-09-18 against `main`
 `05195d1f`** (see §Dev review at the bottom: pairing is 236's new `remote/pair`; self-hosting the player
 libraries moved to 235; the glyph's presence is server-pushed so a first TV can be added; two senders
-need a one-linked-at-a-time rule; R270 supersedes FR-R265-4's row). Not built. Client
-(`ravilo-ui` commonMain: the sheet, the tiers, a backend-transport `CastSender`; wasmJs actuals: the
-AirPlay seam; Android: nothing new), plus **design work** for the three-tier sheet and the AirPlay
-notice. Depends on **236**; needs **R264** on a TV to be tested; **R263** for the installed-app
-experience; **R264**'s honest-capabilities work for AirPlay's native HLS is folded into FR-R265-8.
-Sibling of **R245**, which it extends and partly supersedes (FR-R245-2's "the picker is the platform's").
+need a one-linked-at-a-time rule; R270 supersedes FR-R265-4's row).
+
+**Built 2026-09-19** (client-side; the backend half — `/api/remote/**`, `RemoteDevice`,
+`RaviloConfig.screens` — turned out to already exist from 236's own build): `TvApiClient` gained
+`remoteDevices`/`remotePlay`/`remoteCommand`/`remotePair`/`connectRemoteEvents` (FR-R265-6); a new
+commonMain `ScreenSender` implements `CastSender` over those routes, mapping `ScreenStatus` onto the
+same `CastRemoteStatus` the shared remote UI already reads (dev review item 2's "field for field" holds
+in effect via a mapping function, not a typealias — `ravilo-ui` doesn't depend on `shared`'s `ScreenTrack`
+shape being identical to Cast's `CastTrack`); a new `ActiveCastSender` composes it with the platform's
+Chromecast sender and applies dev review item 4's "at most one linked at a time" rule; `CastController`
+gained `castOnScreen`/`joinScreen`/`pairScreen`/`screenDevices`, and its existing `cast()` now checks
+which side is actually connected before ever minting a Chromecast hand-off code, so every existing
+Detail/Player call site keeps working unchanged whether the connected device turns out to be a screen or
+a Chromecast; a new `ScreensSheet` composable draws tiers 1/2 + Add-a-TV (code entry → `remotePair`) +
+R270's AirPlay footnote row (visual only — see below); `RaviloApp.kt`'s `castActive` now reads
+`RaviloConfig.screens?.enabled` alongside the existing `cast?.appId`; three languages of strings added.
+Compiles clean across every target (backend, `shared` ×4, `ravilo-ui` wasmJs+Android, `ravilo-android`,
+`ravilo-web`); existing `ravilo-ui` unit tests pass unchanged. **No hardware verification performed** — no
+Tizen TV, no live Chromecast session, no device install — everything above is proven by compilation and
+the pre-existing test suite only.
+
+**Not done, tracked here rather than guessed:**
+- **A true single unified glyph** (Chromecast rows living inside the same sheet as screens, FR-R265-3)
+  needs enumerating Cast SDK routes outside the SDK's own picker dialog — untested Android `MediaRouter`
+  surface, deliberately not risked in this pass. Tonight's honest middle ground: Chromecast keeps its
+  exact existing glyph/dialog when configured; the new sheet is the entry point for screens specifically,
+  shown instead of (never alongside) the Chromecast glyph — see `CastButton`'s own doc comment.
+- **FR-R265-8 (AirPlay)** — the footnote row is drawn but wired to an always-`false` `airplayAvailable`
+  parameter; the wasmJs seam (`webkitShowPlaybackTargetPicker`, capability probing, HLS subtitle
+  delivery) is unbuilt, exactly as the spec's own text allows ("if the team prefers, this FR is its own
+  small phase") — it also depends on the still-unconfirmed Jellyfin 10.11.11 HLS-subtitle-delivery probe.
+- **Detail/Player don't yet pass a play context into the sheet** — `ScreensSheet` accepts a
+  `ScreenPlayContext` (itemId + start position) precisely so a not-yet-connected screen row can start a
+  title immediately, but only `CastButton`'s context-free path (join an existing session, or just look at
+  what's on) is wired into the app tonight. Wiring `MovieDetailScreen`/`SeriesDetailScreen`'s "Play on TV"
+  action through it is the natural next step.
+- Tier 2's "remember which TVs list is expanded" (open question 3) is session-only, not persisted.
+- Every acceptance-criteria line in this spec needs a real iPhone + a real screen or Chromecast, which
+  wasn't available this session (R264 itself is also unverified on real hardware) — none of the criteria
+  in the Acceptance section below have been checked against real devices.
+
+Depends on **236** (built); needs **R264** on a TV to be tested (also not yet done); **R263** for the
+installed-app experience; **R264**'s honest-capabilities work for AirPlay's native HLS is folded into
+FR-R265-8. Sibling of **R245**, which it extends and partly supersedes (FR-R245-2's "the picker is the
+platform's").
 
 **Numbering:** verified against `STATUS.md` and the spec directories 2026-09-18 — Ravilo taken through
 **R264**, admin through **236**.

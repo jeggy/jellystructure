@@ -1309,6 +1309,16 @@ data class RemoteDevice(
     val connected: Boolean get() = online
 }
 
+/** R265 — the envelope `POST /api/tv/playback/status` fans out over `/api/remote/events` (and
+ *  `/api/tv/events`) via `TvEventBus.notifyDeviceStatus`; see that function's own doc for the wire shape
+ *  this mirrors (`{"type":"device_status","device_id":…,"status":…}`). */
+@Serializable
+data class DeviceStatusEnvelope(
+    val type: String = "",
+    @SerialName("device_id") val deviceId: String = "",
+    val status: ScreenStatus = ScreenStatus(),
+)
+
 @Serializable
 data class RemotePlayRequest(
     @SerialName("device_id") val deviceId: String,
