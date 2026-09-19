@@ -236,6 +236,10 @@ data class AdvisorFinding(
     @SerialName("field_label") val fieldLabel: String,
     val recommendation: String,
     val tradeoff: String,
+    // Phase 246 FR-246-9/10 — "critical" | "warning" | "info". Defaulted so an older backend (or the
+    // memory-budget calculator, which produces findings of its own) still deserialises unchanged.
+    val severity: String = "warning",
+    val action: String? = null,
 )
 
 @Serializable
