@@ -69,6 +69,13 @@ private fun onSignal(sig: Int) {
     shutdownRequested.value = 1
 }
 
+// Bug fix — see TvRoutes.kt's screenStatusJson doc: a ScreenStatus re-broadcast to WS subscribers must
+// carry every field, including ones at their Kotlin default, or a JS/TS subscriber reads a missing key as
+// `undefined` instead of `0`/`false`. This is the device-reaped path's own re-broadcast; TvRoutes.kt's
+// live-status path has its own identically-configured instance (file-local, matching this project's
+// existing per-file `Json {...}` convention rather than one shared cross-file instance).
+private val screenStatusJson = kotlinx.serialization.json.Json { encodeDefaults = true }
+
 @OptIn(ExperimentalForeignApi::class, ExperimentalCoroutinesApi::class, kotlinx.coroutines.DelicateCoroutinesApi::class)
 fun main() = runBlocking {
     val configFile = env("CONFIG_FILE", "./data/config.toml")
@@ -242,7 +249,7 @@ fun main() = runBlocking {
     // whoever is watching it (a phone's remote, an API subscriber).
     playbackService.onDeviceReaped = { deviceId ->
         dev.jellystructure.tv.screenStatusTracker.clear(deviceId)?.let { finalStatus ->
-            tvEventBus.notifyDeviceStatus(deviceId, kotlinx.serialization.json.Json.encodeToString(dev.jellystructure.shared.tv.ScreenStatus.serializer(), finalStatus))
+            tvEventBus.notifyDeviceStatus(deviceId, screenStatusJson.encodeToString(dev.jellystructure.shared.tv.ScreenStatus.serializer(), finalStatus))
         }
     }
     val mediaHistory = MediaHistory(db)

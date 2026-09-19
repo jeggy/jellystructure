@@ -128,10 +128,14 @@ test.describe("Phase 236 — screens API", () => {
         });
         out.playStatus = playRes.status;
 
-        async function waitForType(bag: any[], type: string, timeoutMs = 5_000): Promise<any> {
+        // Bug fix — [fromIndex] lets a caller ignore messages already in [bag] before some action it's
+        // about to trigger, so it waits for a NEW message of [type] rather than re-matching a stale one
+        // already sitting in the buffer (the phone's own subscribe_device push and the seek's push are
+        // both "device_status" — without this, waitForType always returned the first/stale one).
+        async function waitForType(bag: any[], type: string, timeoutMs = 5_000, fromIndex = 0): Promise<any> {
           const start = Date.now();
           while (Date.now() - start < timeoutMs) {
-            const found = bag.find((m) => m.type === type);
+            const found = bag.slice(fromIndex).find((m) => m.type === type);
             if (found) return found;
             await new Promise((r) => setTimeout(r, 100));
           }
@@ -177,14 +181,16 @@ test.describe("Phase 236 — screens API", () => {
         out.legacyPauseStatus = pauseRes.status;
 
         // The screen "acts on" the seek and reports the new position — the phone's subscription
-        // should see it as a device_status push.
+        // should see it as a device_status push. Recorded BEFORE posting, so waitForType below skips
+        // the earlier device_status push from step 8's position_ms:0 report rather than re-matching it.
+        const beforeSeekStatusCount = phoneMessages.length;
         await fetch("/api/tv/playback/status", {
           method: "POST",
           headers: { "content-type": "application/json", authorization: `Bearer ${screenToken}` },
           body: JSON.stringify({ item_id: "e2e-fake-item-1", loaded: true, playing: true, position_ms: 30000, session_user_id: phoneUserId }),
         });
 
-        const statusMsg = await waitForType(phoneMessages, "device_status");
+        const statusMsg = await waitForType(phoneMessages, "device_status", 5_000, beforeSeekStatusCount);
         out.subscribedDeviceId = statusMsg?.device_id;
         out.subscribedPositionMs = statusMsg?.status?.position_ms;
 

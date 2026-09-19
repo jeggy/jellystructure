@@ -195,6 +195,13 @@ private fun groupHistoryEntries(items: List<dev.jellystructure.auth.JellyfinPlay
 
 private const val SESSION_ID_PREFIX_LEN = 12
 
+// Bug fix — a ScreenStatus re-broadcast to WS subscribers must carry every field, including ones sitting
+// at their Kotlin default (position_ms=0, buffering=false, ...): the subscriber is a JS/TS client with no
+// concept of a Kotlin default, so a field the bare Json.Default omits (encodeDefaults=false) reads back
+// as `undefined`, not `0`/`false`. Same footgun HomeFeedService/PlaystateCache/AcquisitionService's own
+// wire-JSON instances already guard against with encodeDefaults=true — this call site had been missed.
+private val screenStatusJson = kotlinx.serialization.json.Json { encodeDefaults = true }
+
 @Serializable
 private data class AdminConfigEnvelope(
     val config: RaviloConfig,
@@ -668,7 +675,7 @@ fun Route.tvRoutes(
         dev.jellystructure.tv.screenStatusTracker.update(device.deviceId, status)
         tvEventBus?.notifyDeviceStatus(
             device.deviceId,
-            kotlinx.serialization.json.Json.encodeToString(dev.jellystructure.shared.tv.ScreenStatus.serializer(), status),
+            screenStatusJson.encodeToString(dev.jellystructure.shared.tv.ScreenStatus.serializer(), status),
         )
         call.respond(HttpStatusCode.OK, mapOf("ok" to true))
     }
