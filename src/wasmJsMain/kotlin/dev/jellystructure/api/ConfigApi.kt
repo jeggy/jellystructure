@@ -351,6 +351,13 @@ object ConfigApi {
         httpClient.get("/api/jellyfin/advisor").body<AdvisorResponse>()
     }.getOrNull()
 
+    // Phase 244 FR-244-4 — the Re-check action. A dedicated route, not a force flag on the advisor:
+    // the advisor's 5-minute cache would otherwise answer a Re-check with a result from before the
+    // change the operator just made.
+    suspend fun recheckJellyfinExposure(): List<AdvisorFinding>? = runCatching {
+        httpClient.get("/api/jellyfin/exposure-recheck").body<List<AdvisorFinding>>()
+    }.getOrNull()
+
     // Phase 215 — the memory budget calculator.
     suspend fun calculateMemoryBudget(budgetGb: Double): MemoryBudgetResult? = runCatching {
         httpClient.post("/api/jellyfin/memory-budget") {

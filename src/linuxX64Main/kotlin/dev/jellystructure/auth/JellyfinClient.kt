@@ -476,6 +476,33 @@ class JellyfinClient {
             .bodyOrNull<JellyfinSystemInfoAuth>("getSystemInfoAuth")
     }.getOrElse { Logger.warn("Jellyfin getSystemInfoAuth failed: ${it.message}"); null }
 
+    // ── Phase 244 — exposure advisor (read-only; FR-244-7 forbids any lifecycle route) ──────────
+
+    /** `GET /System/Configuration/network` — `KnownProxies` and `EnableRemoteAccess`, the two facts
+     *  FR-244-1 and FR-244-2 read. */
+    suspend fun getNetworkConfiguration(baseUrl: String, token: String): JellyfinNetworkConfig? = runCatching {
+        httpGet(baseUrl.trimEnd('/') + "/System/Configuration/network") { jellyfinAuth(token) }
+            .bodyOrNull<JellyfinNetworkConfig>("getNetworkConfiguration")
+    }.getOrElse { Logger.warn("Jellyfin getNetworkConfiguration failed: ${it.message}"); null }
+
+    /** FR-244-1's capability probe: ask Jellyfin how it would classify a caller presenting a public
+     *  address, rather than reading a setting and reasoning about what it implies.
+     *
+     *  The address is **mandatorily** from `203.0.113.0/24` (RFC 5737 TEST-NET-3). A real address such
+     *  as `8.8.8.8` must never be used here, because the probe would then be asserting something about
+     *  a third party's network.
+     *
+     *  Read-only, and deliberately so: the audit that produced phase 244 caused roughly a minute of
+     *  household downtime by probing `POST /System/Restart` expecting a 401, so FR-244-7 puts lifecycle
+     *  routes on a deny-list and this phase reads a classification instead of testing a restart by
+     *  performing one. */
+    suspend fun probeEndpointClassification(baseUrl: String, token: String): JellyfinEndpointInfo? = runCatching {
+        httpGet(baseUrl.trimEnd('/') + "/System/Endpoint") {
+            jellyfinAuth(token)
+            header("X-Forwarded-For", EXPOSURE_PROBE_ADDRESS)
+        }.bodyOrNull<JellyfinEndpointInfo>("probeEndpointClassification")
+    }.getOrElse { Logger.warn("Jellyfin probeEndpointClassification failed: ${it.message}"); null }
+
     /** The default repository's plugin catalog (`GET /Packages`) — used to find the Webhook plugin's
      *  latest installable version when it isn't installed yet. */
     suspend fun getAvailablePackages(baseUrl: String, token: String): List<JellyfinPackageInfo>? = runCatching {
@@ -1256,6 +1283,10 @@ internal fun jellyfinIdentityHeader(identity: JellyfinDeviceIdentity?, versionRe
  *  an [identity] swaps in a per-device Client/Device/DeviceId instead of the shared server identity.
  *  Phase 224 (FR-224-4): a call site that passes no identity still gets the device's own when the token
  *  is a device's — [DeviceIdentityRegistry] — so a device token never travels under `Device="Server"`. */
+/** Phase 244 FR-244-1 — RFC 5737 TEST-NET-3. Documentation-only by standard, so the probe cannot be
+ *  making a claim about anyone's real network. */
+internal const val EXPOSURE_PROBE_ADDRESS = "203.0.113.9"
+
 private fun HttpRequestBuilder.jellyfinAuth(token: String, identity: JellyfinDeviceIdentity? = null) {
     val resolved = identity ?: DeviceIdentityRegistry.identityFor(token)
     header("Authorization", """${jellyfinIdentityHeader(resolved)}, Token="$token"""")

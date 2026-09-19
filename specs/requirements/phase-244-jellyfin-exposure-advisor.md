@@ -6,12 +6,61 @@
 
 ## Status
 
-`Planned` — written 2026-09-18 from the upgrade audit, **dev-reviewed 2026-09-19 against `main`
-`dcb97f2c`** (see §Dev review at the foot: one measurement is missing that decides whether FR-244-1's
-probe can distinguish the two states at all, and FR-244-2 gates on the wrong server), not built. Extends phase
+`✓ Built` — written 2026-09-18 from the upgrade audit, **dev-reviewed 2026-09-19 against `main`
+`dcb97f2c`** (see §Dev review at the foot), **built 2026-09-19** on top of phase **246**, which landed
+the shared `AdvisorFinding` severity/action extension the review asked for. Extends phase
 **212**'s advisor with a security section. Sibling of **242** (metadata ownership); the two share the
 advisor surface and nothing else. Evidence:
 `specs/research-reports/jellyfin-12-1-upgrade-audit-2026-09-18.md`.
+
+### How the build answers the dev review
+
+**Item 1 — the blocking one — is answered without needing the missing measurement, by not depending on
+it.** The review was right that the probe alone cannot be trusted here: jellystructure reaches Jellyfin
+*through* the very proxy the finding is about, Caddy appends to `X-Forwarded-For`, and the
+discriminating case was never measured through that path. So FR-244-1 is built as **two signals**, and
+is definitive only where it genuinely is:
+
+- **`KnownProxies` empty is decisive on its own, and is not inference about proxies.** With it empty
+  Jellyfin ignores `X-Forwarded-For` outright, so every caller is classified by the address the request
+  arrived from — behind any reverse proxy, a private one. Measured live 2026-09-19: `GET /System/Endpoint`
+  returned `IsInNetwork: true` **identically with and without** the RFC 5737 header. That is the header
+  being ignored, *observed* rather than assumed, and it is the household's current state.
+- **`KnownProxies` set hands the question to the probe.** `IsInNetwork: false` clears the finding.
+  `IsInNetwork: true` is the one state jellystructure cannot resolve from where it stands — a wrong proxy
+  address and the append-hazard look identical — so it renders a distinct, lower-severity
+  *`known_proxies_unconfirmed`* finding that says exactly that, naming a restart and a wrong value as the
+  two candidates. It never claims the hole is open or closed on evidence it does not have.
+
+This also means **acceptance 3 changes shape**: a wrong address leaves a finding standing, as required,
+but it is the unconfirmed one rather than the original.
+
+**Item 2 — the cache.** Re-check is a dedicated route, `GET /api/jellyfin/exposure-recheck`, running
+only the probe, never a `force` flag on the advisor pass. It drops the cached pass on the way out so the
+page agrees with the answer the operator was just given. `/health/full` calls the *non*-invalidating
+`exposureCheck` instead, because a polled endpoint must not clear an advisory cache as a side effect.
+
+**Item 3 — severity and action.** Landed in phase 246 as `AdvisorFinding.severity` and
+`AdvisorFinding.action`, once, for both phases. `critical` sorts first with no second ordering rule
+needed, and `action = "recheck_exposure"` is what the frontend binds the button to.
+
+**Item 4 — the gate.** FR-244-2 now reads Jellyfin's own `EnableRemoteAccess`, not jellystructure's
+`public_url`. **Open questions 2 and 3 close with it**, as the review predicted.
+
+**Item 6 — open question 1's wording.** Both the finding's recommendation and the Re-check button's
+"still reported open" reply say a restart may be needed and say to do it when nobody is watching. The
+answer to whether a restart is *required* is still unknown; the copy is written so that it does not
+matter which way it falls.
+
+**Item 7 — FR-244-5 is not softened.** It ships naming the problem, stating that no fix exists, citing
+`#1501`/`#5415`/`#13986`, and explicitly forbidding proxy-level auth on those paths because Ravilo's own
+playback depends on them answering anonymously.
+
+**FR-244-7 held throughout.** The only routes this phase touches are `GET /System/Configuration/network`
+and `GET /System/Endpoint`. No lifecycle route is contacted by any code path.
+
+**Acceptance 2 is a configuration action and is outstanding by design** — `KnownProxies` is still empty
+on the household server as of 2026-09-19, and setting it is the operator's to do.
 
 ## What is wrong
 
