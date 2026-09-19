@@ -9,7 +9,9 @@
 
 ## Status
 
-`Planned` — written 2026-09-18 from the owner's direction. Not dev-reviewed, not built. Client-only
+`Planned` — written 2026-09-18 from the owner's direction. **Dev-reviewed 2026-09-19 against `main`
+`dcb97f2c`** (see §Dev review at the foot: scope claims verified accurate; the declared order is also a
+correctness fix, and the enum should be reordered with it). Not built. Client-only
 (`ravilo-ui` commonMain), **no new string in any language** (all five labels exist in en/da/fo), no
 backend, DTO or config change. Supersedes **R243 FR-R243-1**'s tab order only; its gating rule, the
 walls, the counts and the scoped line are untouched. Pairs with **R262** (Discover as one frame with one
@@ -158,3 +160,48 @@ This phase moves chips and lets them scroll.
    is that search is always reachable.
 3. **A remembered segment per household or per device?** FR-R268-7 assumes whatever R262 retains. Not
    this phase's call; flagged so the two do not disagree.
+
+## Dev review (2026-09-19, against `main` `dcb97f2c`)
+
+Traced against `screens/NavItems.kt` and `RaviloApp.kt`. **This is the cleanest spec of the 2026-09-18
+batch: its scope claims are accurate.** All five labels exist (`seg.coming`, `seg.request`,
+`seg.studios`, `seg.networks`, `seg.genres` — `NavItems.kt:84-88`), and nothing here touches a route, a
+DTO or the backend. Four notes, one of which strengthens the phase's own argument.
+
+1. **FR-R268-1/-2 are a correctness fix, not only an ordering one — and the code already paid for the
+   proof.** Three functions independently encode order today: `discoverSegments()` assembles by
+   availability (`:59-63`), `defaultDiscoverSegment()` re-implements the same precedence from scratch
+   (`:68-72`), and `nextDiscoverSegment()` is a third. The comment at `:65-67` records that they
+   **already drifted once**: *"this used to answer only the first two, so a household with neither
+   integration would have reached Discover and landed on a segment that is not rendered"* — a bug R243's
+   own dev review had to find and fix by hand. Under FR-R268-2 the default becomes
+   `discoverSegments(...).first()` and that entire class of bug is unrepresentable. This is the
+   strongest argument the phase has and it is currently only implied; put it in FR-R268-2 so the next
+   reader does not treat the requirement as cosmetic and reintroduce a parallel branch.
+2. **Reorder the enum as well, and it is safe to.** `DiscoverSegment` is declared
+   `COMING_SOON, REQUEST, STUDIOS, NETWORKS, GENRES` (`:53`) and `TAXONOMY_SEGMENTS` is
+   `STUDIOS, NETWORKS, GENRES` (`:56`) — both the old order. Leaving either while introducing a new
+   declared list puts two orders in one file, and anything reaching for `entries` or an ordinal would
+   disagree with the bar. **Checked and cleared:** the segment travels only in
+   `Dest.Discover(displayName, segment, focusSegment)` (`RaviloApp.kt:229`), which is in-memory, and
+   `toRoute()` renders Discover as a bare `"/discover"` with no segment component (`:284`) — so no
+   ordinal is persisted or serialised anywhere and the enum can be reordered with no migration. Do it,
+   and make `TAXONOMY_SEGMENTS` the gating set only, never an order.
+3. **Open question 1 has a live consequence worth naming.** `defaultDiscoverSegment`'s `else` branch is
+   `DiscoverSegment.STUDIOS` (`:71`), so today a household with neither integration lands on **Studios**.
+   The reorder changes that to **Networks** — intended, and covered by acceptance 2, but it is a real
+   behaviour change for the one configuration that gets no other change from this phase. Name it in the
+   spec rather than letting it fall out of the ordering, because it is the household most likely to
+   notice and least likely to have been considered.
+4. **Open question 2: confirmed, chips scroll and the pill stays pinned.** The lean is right and it
+   already follows from FR-R268-4's "the scroll is confined to the bar" — but say it explicitly about
+   `.dischead-controls`, because the two requirements are in different places and a builder reading only
+   FR-R268-6 could reasonably scroll the whole row.
+5. **One implementation warning for FR-R268-6/-7 on the TV, drawn from this project's own history.**
+   Entering Discover must both scroll the strip so the selected chip is visible (FR-R268-7) and give a
+   chip focus (R262's entry-focus effect). **Sequence them; never race them.** This codebase has been
+   bitten by exactly this three times — R232 (the season row: the scroll and the focus request ran as
+   concurrent coroutines, so the first Down only *looked* like it focused), R223 (season-picker focus
+   with rapid-Up scroll-stranding) and R200/R201 (a `FocusRequester` whose target was never placed). The
+   settled shape is R232's: await the scroll, then request focus. A line in FR-R268-6 costs nothing and
+   is cheaper than rediscovering it on the stue TV.
