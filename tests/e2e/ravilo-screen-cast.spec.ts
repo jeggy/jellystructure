@@ -117,7 +117,7 @@ async function waitForAvplayCall(page: import("@playwright/test").Page, name: st
 
 test.describe("Phase 248 — casting to a screen, driven through the real bundle", () => {
   test("pair, play, pause, seek and stop all reach the real ravilo-screen code", async ({ page, request }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(120_000); // generous — a shared, busy backend's own scan decides most of this
 
     await page.addInitScript(fakeAvPlayInitScript);
 
@@ -169,7 +169,21 @@ test.describe("Phase 248 — casting to a screen, driven through the real bundle
     const screenDeviceId = devices.find((d: any) => d.kind === "screen").device_id as string;
 
     // ── 3. A real, scanned library item — never a fake id (requireVisible() checks jellystructure's
-    //    own MediaStore, not the mock Jellyfin, so an unscanned id would 403 at the receiver). ──────
+    //    own MediaStore, not the mock Jellyfin, so an unscanned id would 403 at the receiver). This
+    //    spec must not depend on scan-fixture.spec.ts having already run (file order is not a
+    //    contract — confirmed missing exactly this way on the first real CI run), so it triggers its
+    //    own scan via the admin cookie session, no browser UI needed (Playwright's `request` context
+    //    carries the cookie automatically to the follow-up calls). No `full=true` — this only needs
+    //    Sintel matched at all, not freshly re-pulled, and skipping it avoids redundant TMDB churn if
+    //    another spec file already scanned this same shared backend. A concurrent 409 from another
+    //    file's own scan is fine — either way, waiting for `running` to clear is what matters. A
+    //    generous timeout: a busy shared runner, not just this one scan, decides how long this takes. ──
+    await request.post("/api/auth/login", { data: { username: JF_USER, password: JF_PASS } });
+    await request.post("/api/scan");
+    await expect
+      .poll(async () => (await (await request.get("/api/scan/status")).json())?.running, { timeout: 90_000 })
+      .toBe(false);
+
     const search = await (await request.get("/api/tv/search?q=Sintel", { headers: { authorization: `Bearer ${phoneToken}`, ...R252 } })).json();
     const sintelId = search.items?.[0]?.id as string;
     expect(sintelId, "Sintel was not found via /api/tv/search — was the fixture scan run first?").toBeTruthy();

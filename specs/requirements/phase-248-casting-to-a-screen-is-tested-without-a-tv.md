@@ -165,10 +165,17 @@ later and is deliberately not part of this phase — most of what it would asser
 
 ## Open questions
 
-1. ~~`requireVisible()` needs a real library item~~ — **closed.** The spec triggers its own scan via
-   `POST /api/scan?full=true` under the same admin cookie session `POST /api/auth/login` establishes
-   (no browser UI needed — Playwright's `request` context carries the cookie automatically), then
-   looks up the real jellyfinId via `/api/tv/search`, independent of any other spec file's run order.
+1. ~~`requireVisible()` needs a real library item~~ — **closed, on the second try.** This was written
+   as the intended design before the code existed, and the intent didn't make it into the first
+   committed version of the spec file — local verification passed anyway because the local rig always
+   ran a manual scan by hand first, a step that never made it into the test. A real CI run on a truly
+   fresh backend caught it exactly as described here: `/api/tv/search` found nothing. Fixed: the spec
+   now really does trigger `POST /api/scan` (no `full=true` — nothing here needs a forced re-pull, and
+   skipping it avoids redundant TMDB work if another file already scanned) and polls `/api/scan/status`
+   for up to 90s, under the same admin cookie session `POST /api/auth/login` establishes (no browser UI
+   needed — Playwright's `request` context carries the cookie automatically), then looks up the real
+   jellyfinId via `/api/tv/search`, independent of any other spec file's run order. Re-verified against
+   a fully fresh, isolated local backend with no manual pre-scan step of any kind.
 2. ~~Does a code-paired screen have a Jellyfin token?~~ — **closed, yes.**
    `ScreenPairingService.claim()` copies the claiming phone's own `jellyfinUserToken` onto the
    receiver's device row (`ScreenPairingService.kt`) — confirmed live, `startPlayback`'s
