@@ -1257,6 +1257,10 @@ private suspend fun renderJellyfinAdvisor() {
         return
     }
 
+    // FR-246-9 — `info` findings are real and worth showing, but they ask for nothing, so they must not
+    // inflate the count an operator uses to decide whether the page is worth opening.
+    val actionable = result.serverWide.count { it.severity != "info" }
+    val informational = result.serverWide.size - actionable
     if (result.serverWide.isEmpty()) {
         serverWideEl.style.display = "none"
     } else {
@@ -1265,7 +1269,7 @@ private suspend fun renderJellyfinAdvisor() {
         <div class="card set-section" style="margin-bottom:14px">
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
             <h3 style="font-size:1rem;margin:0">Jellyfin settings advisor — server-wide</h3>
-            <span class="badge warn" style="font-size:.72rem">${result.serverWide.size} finding${if (result.serverWide.size == 1) "" else "s"}</span>
+            <span class="badge warn" style="font-size:.72rem">$actionable finding${if (actionable == 1) "" else "s"}${if (informational > 0) " + $informational for information" else ""}</span>
           </div>
           <p class="hint" style="margin:0 0 8px">Read-only. jellystructure never writes to Jellyfin — every row below is something to change yourself, with exact steps.</p>
           ${result.serverWide.joinToString("") { advisorFindingHtml(it) }}
@@ -1324,19 +1328,35 @@ private suspend fun runMemoryBudgetCalculator() {
             </div>"""
 }
 
-internal fun advisorFindingHtml(f: dev.jellystructure.api.AdvisorFinding): String = """
-    <div class="note warn" style="margin-top:8px;display:flex;gap:9px;align-items:flex-start;">
-      <span style="flex:none;">⚠</span>
+/** Phase 246 FR-246-9 — a finding's severity decides its glyph, its tint and its place in the list.
+ *  `info` exists because two of phase 212's findings recommend doing nothing, and a page that warns
+ *  about things it does not want changed teaches the reader to skim it. The backend has already sorted
+ *  by severity; this only has to render the distinction. */
+internal fun advisorFindingHtml(f: dev.jellystructure.api.AdvisorFinding): String {
+    val info = f.severity == "info"
+    val critical = f.severity == "critical"
+    val cls = if (info) "note blue" else "note warn"
+    val glyph = if (info) "ℹ" else "⚠"
+    val border = if (critical) "border-left:3px solid var(--bad);padding-left:9px;" else ""
+    // An `info` row states a fact and asks for nothing, so the two action-shaped rows are suppressed
+    // rather than filled with "n/a" the way phase 212's restart finding had to.
+    val actionRows = if (info && f.tradeoff == "n/a") """
+        <b>Note:</b> ${f.recommendation.esc()}"""
+    else """
+        <b>Set to:</b> ${f.recommendation.esc()}<br>
+        <b>You lose:</b> ${f.tradeoff.esc()}"""
+    return """
+    <div class="$cls" style="margin-top:8px;display:flex;gap:9px;align-items:flex-start;$border">
+      <span style="flex:none;">$glyph</span>
       <div class="tiny" style="line-height:1.65">
-        <b>${f.summary.esc()}</b><br>
+        <b>${f.summary.esc()}</b>${if (critical) """ <span class="badge bad" style="font-size:.68rem">act on this first</span>""" else ""}<br>
         <b>Now:</b> ${f.currentValue.esc()}<br>
         <b>Costs here:</b> ${f.costHere.esc()}<br>
-        <b>Where:</b> ${f.navigationPath.esc()} → ${f.fieldLabel.esc()}<br>
-        <b>Set to:</b> ${f.recommendation.esc()}<br>
-        <b>You lose:</b> ${f.tradeoff.esc()}
+        <b>Where:</b> ${f.navigationPath.esc()} → ${f.fieldLabel.esc()}<br>$actionRows
       </div>
     </div>
-""".trimIndent()
+    """.trimIndent()
+}
 
 private fun buildLibraryCardHtml(i: Int, lib: LibraryMapping): String {
     val skipped = lib.skip

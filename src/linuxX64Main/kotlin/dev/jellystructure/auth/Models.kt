@@ -370,6 +370,12 @@ data class JellyfinPackageInfo(
 @Serializable
 data class JellyfinEncodingConfig(
     @SerialName("TranscodingTempPath") val transcodingTempPath: String? = null,
+    // Phase 246 (FR-246-1) — the field that decides whether [enableHardwareEncoding] means anything.
+    // Confirmed live against 12.1.0 (GET /System/Configuration/encoding, 2026-09-19): a string enum
+    // whose disabled value is "none". `EnableHardwareEncoding` is true on this server while this reads
+    // "none", i.e. hardware encoding is advertised and inert — which is precisely the state phase 212
+    // could not see and reported as "Hardware encoding: On".
+    @SerialName("HardwareAccelerationType") val hardwareAccelerationType: String? = null,
     @SerialName("EnableThrottling") val enableThrottling: Boolean = false,
     @SerialName("ThrottleDelaySeconds") val throttleDelaySeconds: Int = 0,
     @SerialName("EnableSegmentDeletion") val enableSegmentDeletion: Boolean = false,
@@ -385,6 +391,13 @@ data class JellyfinEncodingConfig(
 @Serializable
 data class JellyfinSystemInfoAuth(
     @SerialName("HasPendingRestart") val hasPendingRestart: Boolean = false,
+    // Phase 246 (FR-246-4) — the RESOLVED transcode directory, which is not the same thing as the
+    // encoding configuration's `TranscodingTempPath`: that one is unset (meaning "use the default")
+    // on this server, while this one reports the default Jellyfin actually picked. Confirmed live
+    // against 12.1.0 (GET /System/Info, 2026-09-19), where it reads "/cache/transcodes" — having read
+    // "/transcode" before the 10.11.11 -> 12.1.0 upgrade. Printing the unset value as "(default)" is
+    // what hid that move.
+    @SerialName("TranscodingTempPath") val transcodingTempPath: String? = null,
 )
 
 // Phase 165 amendment (2026-08-14, FR-165-8) — GET /ScheduledTasks, used to find the Webhook plugin's
@@ -395,4 +408,17 @@ data class JellyfinTaskInfo(
     @SerialName("Id") val id: String,
     @SerialName("Key") val key: String? = null,
     @SerialName("Name") val name: String? = null,
+    // Phase 246 (FR-246-12) — what the task is doing right now, so the extraction findings can state
+    // observed work instead of a hypothetical cost. Confirmed live against 12.1.0 (GET /ScheduledTasks,
+    // 2026-09-19): `State` is "Idle"/"Running"/"Cancelling", `CurrentProgressPercentage` is present
+    // only while running, and `LastExecutionResult` is null until the task has completed once.
+    @SerialName("State") val state: String? = null,
+    @SerialName("CurrentProgressPercentage") val currentProgressPercentage: Double? = null,
+    @SerialName("LastExecutionResult") val lastExecutionResult: JellyfinTaskResult? = null,
+)
+
+@Serializable
+data class JellyfinTaskResult(
+    @SerialName("EndTimeUtc") val endTimeUtc: String? = null,
+    @SerialName("Status") val status: String? = null,
 )

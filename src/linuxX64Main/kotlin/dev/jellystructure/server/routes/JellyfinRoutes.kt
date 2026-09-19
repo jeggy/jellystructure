@@ -4,7 +4,6 @@ import dev.jellystructure.advisor.JellyfinAdvisorService
 import dev.jellystructure.advisor.MemoryBudgetService
 import dev.jellystructure.auth.JellyfinClient
 import dev.jellystructure.config.ConfigStore
-import dev.jellystructure.tv.RaviloDeviceService
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.request.receive
 import io.ktor.server.response.respond
@@ -24,7 +23,7 @@ data class JellyfinUserDto(
 @Serializable
 data class MemoryBudgetRequest(@SerialName("budget_gb") val budgetGb: Double)
 
-fun Route.jellyfinRoutes(configStore: ConfigStore, jellyfinClient: JellyfinClient, raviloDeviceService: RaviloDeviceService) {
+fun Route.jellyfinRoutes(configStore: ConfigStore, jellyfinClient: JellyfinClient) {
     route("/jellyfin") {
         get("/libraries") {
             val config = configStore.current
@@ -49,7 +48,7 @@ fun Route.jellyfinRoutes(configStore: ConfigStore, jellyfinClient: JellyfinClien
 
         // Phase 212 — Settings → Libraries' Jellyfin settings advisor.
         get("/advisor") {
-            call.respond(JellyfinAdvisorService.findings(jellyfinClient, configStore.current, raviloDeviceService))
+            call.respond(JellyfinAdvisorService.findings(jellyfinClient, configStore.current))
         }
 
         // Phase 215 — the memory budget calculator: one number in, concrete changes out.
