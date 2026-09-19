@@ -5,11 +5,31 @@
 
 ## Status
 
-`Planned` — written 2026-09-18 after a live audit of the household server on **12.1.0** found one
+`✓ Built` — written 2026-09-18 after a live audit of the household server on **12.1.0** found one
 managed library with Jellyfin's NFO saver switched on and no surface reporting it, **dev-reviewed
 2026-09-19 against `main` `dcb97f2c`** (see §Dev review at the foot: the new model fields must be
 nullable or FR-242-3's checks fail open, and FR-242-7's cited precedent was drawn but never built),
-not built. Extends phase **212**'s advisor. Backend + admin UI.
+**built 2026-09-19** on top of phase **246**, which landed the shared `AdvisorFinding` extension the
+dev review asked for. Extends phase **212**'s advisor. Backend + admin UI.
+
+**Every dev-review item is honoured in the build.** The new fields are nullable (item 2), including
+`MetadataSavers`, which is re-declared on the same touch. `perLibraryFindings`' bare
+`?: return emptyList()` (item 3) is gone: a managed library whose whole `LibraryOptions` object is
+missing now emits a section carrying `options_unavailable`, and the frontend renders an explicit
+"nothing was checked for this library" row — so FR-242-7 ships as a real surface, not only as a health
+signal (item 4). `/health/full` and the advisor now read one resolver,
+`JellyfinAdvisorService.metadataOwnershipFindings`, behind one gate,
+`JellyfinAdvisorService.managedJellyfinIds`, which adopts the advisor's stricter form (item 1) — an
+intentional behaviour change to the health endpoint. The model's provenance comment is re-stamped with
+the 2026-09-19 date rather than extended (item 5). Open question 2 is closed as subsumed (item 6): with
+`EnableInternetProviders: false` and empty `MetadataFetchers`, `Serier`'s `PreferredMetadataLanguage`
+is inert by construction, and it could only become live at the moment FR-242-2 or FR-242-3 already
+fires. Field names re-confirmed live against 12.1.0 on 2026-09-19, which also showed `MetadataSavers`
+genuinely **absent** on two libraries and `[]` on two others — the exact distinction item 2 exists to
+preserve.
+
+**Acceptance 6 is a configuration action and is still outstanding**, deliberately: this phase reports,
+the operator applies. `Musik`'s NFO saver is on as of 2026-09-19 and has been since March.
 
 ## What is wrong
 
