@@ -13,7 +13,7 @@
 
 ## Status
 
-`⚠ Partial` — built 2026-09-19, **dev-reviewed twice 2026-09-19** (§Dev review at the foot, against
+`✓ Built` — built 2026-09-19, **dev-reviewed twice 2026-09-19** (§Dev review at the foot, against
 `dcb97f2c`; all 6 actionable findings applied same day — see below). `.github/workflows/deploy-tizen-tv.yml`
 wired into `publish.yml` as a new `tizen-tv` job (same `needs: [version, ci, publish]` /
 `if: github.event_name == 'release'` shape as the existing `play-store` job). The exact `tz` CLI +
@@ -47,9 +47,17 @@ certificate was exported with a different password than the author one and `DIST
 `DIST_B64` was generated/copied with the same malformed-paste issue run 2 hit (stray character, missing
 bytes, a line-ending artifact from `base64 -w0`/`pbcopy`).
 
-**Next real run is the one that tells us whether the corrected `DIST_B64`/`DIST_PW` are right** — the
-author half of the pipeline is now fully verified; only the distributor cert's secret values remain
-unconfirmed.
+**Sixth real CI run, same day, after the owner re-checked the distributor password locally with the
+file-based `openssl -passin file:` method (bypassing shell quoting of `^`/`%` entirely) and re-pasted both
+`DIST_B64`/`DIST_PW`: full green.** Both certs decode and verify, `tz security-profiles add` /
+`build` / `pack` all succeed, the resulting `ravilo-screen-1.29.wgt` (256,705 bytes, a real signed package
+— not an empty/placeholder file) is attached to the `v1.29` GitHub Release via `gh release upload`. This
+is the first fully successful end-to-end run of the pipeline against the real production certificate.
+
+**Scope now fully delivered**: every release from here on will have a signed `.wgt` waiting on its GitHub
+Release page, ready for the owner to hand-upload to Samsung's TV Seller Office (which, per §1, has no
+submission API — that upload step is and remains manual). Nothing left to build in this phase; the six
+real CI runs above are the acceptance record.
 
 ## 1. Scope
 
