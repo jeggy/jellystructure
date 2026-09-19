@@ -9,7 +9,9 @@
 
 ## Status
 
-`Planned` — written 2026-09-18, **not dev-reviewed**. Pairs with admin **237** (the console steps
+`Planned` — written 2026-09-18, **dev-reviewed 2026-09-19 against `main` `dcb97f2c`** (see §Dev review
+at the foot: 236 has landed, so the shrink this spec anticipates is now the situation — the play travels
+236's `play_item`, not a hand-off redemption). Pairs with admin **237** (the console steps
 that associate the TV app's package name and the sideload/test-device rule). Depends on **R245**
 (sender, remote, web receiver) and **218** (the `/cast/` bundle and Application ID).
 
@@ -132,3 +134,64 @@ are unchanged.
 3. **Session ceiling accounting (218):** does a Cast Connect play count against the concurrent-cast
    ceiling (it is not a server transcode; the TV direct-plays)? Design leans **no** — the ceiling
    exists because each *web* cast is a transcode.
+
+## Dev review (2026-09-19, against `main` `dcb97f2c`)
+
+**The conditional in this spec's own header has become unconditional.** 236 is `✓ Built` (2026-09-18) and
+R264/R265 landed 2026-09-19, so "if the team builds 236 first, this phase shrinks to the sender flag, the
+launch intent and `receiver_kind`" is now the situation, not a scenario. Three requirements should be
+rewritten around what shipped, and two open questions close against the code.
+
+1. **FR-R266-3 must not go through the hand-off code, and no longer needs to.** `CastService.redeem`
+   (`:102`) rejects any `receiverId` not starting `cast-` (`:109`), forces the display name to
+   *Chromecast via Ravilo · …* (`:110`) and passes `kind = "cast"` (`:126`) — it *mints a device row*. But
+   a Cast Connect launch lands in the **Android TV Ravilo app, which is already an enrolled device holding
+   its own token**. Redeeming there would create a second `ravilo_device` row for one physical TV, name it
+   a Chromecast, and count it under 218's ceiling. Meanwhile 236 shipped the mechanism this phase wants:
+   `play_item` carries `session_user_id` (`TvEventBus.kt:160-162`, `shared/…/Models.kt:657`) and
+   `POST /api/remote/play` resolves an item through `mediaStore.resolvePlayTarget`
+   (`RemoteRoutes.kt:100-124`).
+   **Recommended shape: Cast Connect carries the launch and the transport; the play travels 236's road.**
+   The phone's `MediaLoadRequestData` puts the jellystructure item id, the position and the casting
+   viewer's user id in `customData` (OQ2 answered: `customData`, because none of it is media data); the TV
+   accepts that user id **only if it already holds a token for it**, which is 236's rewritten FR-236-4 and
+   is exactly what makes trusting a phone-supplied identity safe. No redemption, no new payload format,
+   and FR-R266-3's real requirement — *never a Jellyfin stream URL* — is satisfied by construction.
+2. **FR-R266-6 describes an enrolment that will never happen.** "When a receiver enrols by hand-off code
+   (218), it reports `receiver_kind`" holds for the web receiver and cannot hold for the TV app, which
+   does not enrol on a cast — per item 1, it is already a device. Two consequences. `receiver_kind` is not
+   a new field: 236 shipped `kind` on `ravilo_device`, read by `CastService.isCastDevice` (`:69`). And a
+   native launch is **not an enrolment event**, so nothing records it today. What this phase needs is a
+   *launch observation* — the TV reporting, when `CastReceiverContext` delivers a launch, that it took
+   one — most cheaply as a field on the status it already posts under 236. **Phase 237's dev review moved
+   FR-237-7's admin status line into this phase**, so R266 now owns both halves: the signal and the
+   sentence.
+3. **Open question 3 is already answered in code: no.** `checkCeiling` returns immediately unless
+   `kind == "cast"` (`CastService.kt:130-137`), and its comment records 236 FR-236-9's decision verbatim —
+   a Tizen/webOS screen counts like a TV, one transcode per playing device, never against this ceiling.
+   The Android TV app is `kind = "tv"`. The design lean was right and the question can be closed with the
+   citation rather than left open.
+4. **Open question 1's premise is wrong, and its lean is probably backwards.** It says "R193 chose not to
+   expose [a media session] for local playback". On the phone, yes. **On the TV there already is one:**
+   `RaviloPlayerAndroid.kt:183` binds a Media3 `MediaSession` to the player (R44, so the OS routes
+   hardware transport keys), `RaviloAppContext.kt:41` gates it to TV only, and R192 toggles its visibility
+   through a nullable ref rather than `isActive`. Cast Connect runs on exactly the platform that already
+   has the session. So the hazard is not "R193 must be revisited" — it is **two sessions competing for the
+   same player**, which a cast-only second session would create. Flip the lean: reuse R44's session, hand
+   its token to `CastReceiverContext`'s `MediaManager`, and verify that R192's visibility toggle cannot
+   deactivate the session a live cast is driving. That last check is the real risk in this phase and is
+   worth its own acceptance line.
+5. **Acceptance 5 becomes true by construction, and should say why.** "Users & devices shows one device
+   for the TV, not two" is currently a hope; under item 1 it is a consequence of never enrolling. Restate
+   it as such, because the version that would produce two devices is the one a builder reaches for first
+   (it is the only documented path today).
+6. **FR-R266-1, -2, -5, -7 and -8 stand as written.** The sender flag is one line, the launch intent and
+   `ReceiverOptionsProvider` are Google's own shape, the remote genuinely needs no new commands under
+   item 1, the silent fallback is right (and 237's step 6 note is the only place the reason belongs), and
+   the no-new-strings claim holds — every state reachable from a cast already has copy. The inline note
+   distinguishing Ravilo's R237 from admin phase 237 should stay; it earned its place.
+
+**Net effect.** This phase is now roughly: `androidReceiverCompatible` on the sender, the launch intent
+and `CastReceiverContext` on the TV build, `customData` → 236's play, a launch observation, and the
+media-session reconciliation in item 4. Everything else it described is either already shipped by 236 or
+must not be built the way it is written.
