@@ -9,10 +9,11 @@
 
 ## Status
 
-`Planned` — written 2026-09-18, **not dev-reviewed**. Client-only (`ravilo-ui`), gated on R256's
-`isHandset` seam. **No backend, DTO, config or wire change, and no new string in any language** —
-every label rendered (`nav.home`, `nav.movies`, `nav.series`, `nav.discover`) already exists in
-en/da/fo.
+`Planned` — written 2026-09-18, **dev-reviewed 2026-09-19 against `main` `dcb97f2c`**. Gated on R256's
+`isHandset` seam. ⚠ **The two claims that used to stand here are wrong and are corrected in §Dev review:**
+FR-R267-5c's Music type and its four simultaneous counts need **backend work** (no music browse kind, no
+music facets slice, one slice per call), and the five-item bar needs about **six new strings** ×
+en/da/fo. The four nav labels that already exist were the four-item bar's.
 
 **Numbering:** written 2026-09-18 as R261, renumbered **R261 → R264** the same day (`main` took R260 ·
 R261 · R262 within hours), and renumbered again **R264 → R267** the same afternoon when `main` took
@@ -286,3 +287,62 @@ handset; `onNavSelect` is what the bottom bar calls).
 4. **Does the brand lockup need to shrink?** 26 dp mark + 22 sp wordmark is a TV measurement; beside
    three controls on a 393 dp screen it fits but is tight. If it does not in da/fo, shrink the
    wordmark, never the targets.
+
+## Dev review (2026-09-19, against `main` `dcb97f2c`)
+
+The diagnosis of `AppBar`'s compact mode is exact, the seam is the right one, and the load-bearing
+structural claim holds. **But the Status section describes a smaller phase than the requirements do:**
+it was written for the four-item bar and not updated when the composition changed to five, and two of
+its headline claims are now false. Nothing here challenges the design; it changes what the phase costs.
+
+1. **"No backend, DTO, config or wire change" is false — FR-R267-5c needs three.** (a) `BrowseKind` is
+   `ALL, MOVIES, SERIES, MY_LIST` (`BrowseScreen.kt:65-67`) and `BrowseService.browse`'s own contract is
+   *"kind: `movie` | `series` | `mylist` | null (all)"* (`:130`), mapped at `:150-151`. **There is no
+   music-video browse kind on the Ravilo path at all**, although `MediaKind.MUSIC_VIDEO` exists in the
+   shared model and is filtered in one unrelated place (`BrowseService.kt:79`). (b) `facets()` caches and
+   slices exactly three ways — `all` / `movie` / `series` (`:244-251`) — so there is no music slice, and
+   **any other `kind` silently falls through to `all`**, which would render a wrong count rather than an
+   error. (c) The dropdown shows **four counts at once**, and `facets(kind)` returns one slice per call:
+   four counts means four round trips or a new field on the response, and the client may not sum them
+   itself (render-never-compute). Fix the Status line, and decide explicitly whether Music ships in v1 —
+   FR-R267-5c's argument for offering an empty Music is good, and it is also the single most expensive
+   item in the phase.
+2. **"No new string in any language" contradicts FR-R267-5.** The Status and the Non-goals both claim
+   zero, justified by "*every label rendered (`nav.home`, `nav.movies`, `nav.series`, `nav.discover`)
+   already exists*" — a list written for the four-item bar. FR-R267-5's bar is **Home · Library · Search
+   · Discover · Profile**, and FR-R267-5c adds *All*, *Music*, a per-type count line and *Nothing filed
+   as music yet*. Measured against the shipped table: `nav.search` **does** exist (and `nav.my_list`,
+   `nav.settings`); `nav.library`, a Profile label, *All*, *Music*, the count line and the empty state do
+   **not**. That is about six new keys × en/da/fo, which is also da/fo draft work. The Decisions section
+   records that the composition went through two rejected rounds — the Status simply did not follow it.
+3. **Acceptance 1 contradicts FR-R267-2, from the same revision.** It asserts "the brand at the left edge
+   and **the avatar at the right edge** at rest, with cast … **and search** between", while FR-R267-2
+   says the top row is brand, the Library dropdown and cast, *nothing else*, because search and profile
+   became bottom items. Rewrite acceptance 1 against FR-R267-2; acceptance 2/2a/2b already test the new
+   composition, so it is only this one line.
+4. **Open question 1: there is no scaffold to place the bar in.** `AppBar(` is called from **13 sites
+   across 9 files** — every screen draws its own. So "the app scaffold draws it" is **new structure**, not
+   a choice of where to put something in existing structure: a wrapper around `RaviloApp`'s `when (dest)`
+   branch. The lean is still right (a bar that animates in and out with a content transition is exactly
+   R262 FR-R262-3's problem), but FR-R267-13's "every screen that calls `AppBar` today keeps its call
+   site" hides a consequence: if the bar is drawn outside the screens, each of the four still has to
+   leave FR-R267-7's bottom padding, so this touches four screens rather than none. Say that, or the
+   first build will clip a poster row.
+5. **FR-R267-5b holds, and it is the claim the whole five-item composition rests on.** `Dest.Browse(val
+   kind: BrowseKind, val displayName: String)` (`RaviloApp.kt:194`) really is one screen with a type
+   parameter, so Library is that screen with its parameter exposed as a control. Confirmed rather than
+   corrected — worth stating, because if it had been two screens the merge would have been a rewrite.
+6. **FR-R267-1's seam is in place.** `isHandset(isTv, widthPx, heightPx, density)` (`Platform.kt:23`) and
+   `LocalHandset` (`Dimens.kt:24`) both shipped with R256, so acceptance 9 — a 380 px `ravilo-web` window
+   keeps the single row and its clock — is enforceable the day this is built, with no new seam.
+7. **Build order: R268 before R267, or FR-R267-9 must stop naming a segment.** R262 is `✓ Built`, so
+   FR-R267-11's "exactly one chip row" premise is live. **R268 is not built**, so today the first
+   Discover segment is R243's order, not R268's — and FR-R267-9's re-tap table says the phone lands on
+   *Networks*. The parenthetical already gets this right ("the rule stays written as *first available* so
+   order and re-tap cannot disagree"); the table above it does not. Either land R268 first or let the
+   table say *first available* too, and leave the naming to R268.
+8. **Smaller, all fine.** FR-R267-3's clock removal is a `LocalHandset` branch around the existing
+   `ClockDisplay()`; FR-R267-4 restates R245 FR-R245-1 unchanged; FR-R267-12's one-place geometry is the
+   right lesson from R257 FR-R257-5 and R259 FR-R259-2; and FR-R267-6a's 11.5 sp exception is argued
+   properly and fenced to five labels. Open questions 2 (predictive back), 3 (screen-level title) and 4
+   (brand lockup width in da/fo) are all genuinely device questions and none blocks the build.
