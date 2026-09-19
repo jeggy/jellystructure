@@ -12,7 +12,10 @@
 
 ## Status
 
-`Planned` — written 2026-09-18, **not dev-reviewed**. Client only (`ravilo-ui` commonMain: the sheet's
+`Planned` — written 2026-09-18, **dev-reviewed 2026-09-19 against `main` `dcb97f2c`**. ⚠ **FR-R270-1 is
+already built (R265) and FR-R270-3 is built wrong — it names the wrong household member on `main`
+today; and naming the viewer needs a route + DTO change, so the "client only" claim below does not
+hold.** See §Dev review at the foot. Client only (`ravilo-ui` commonMain: the sheet's
 tier-3 row and its row-state strings; wasmJs: nothing new — the AirPlay seam of R265 FR-R265-4 is
 unchanged). No backend, route, DTO or config change. **Supersedes R265 FR-R265-4's row shape and
 FR-R265-9's `screens.airplay_notice`**; confirms FR-R265-2's busy/offline copy as shipped wording.
@@ -101,3 +104,58 @@ FR-R270-2's bar and the admin help text. `screens.busy` *Busy · {user} is watch
   FR is one swap, not a new round.
 - FR-R270-3's name comes from the same field 236's 409 uses; if that field is ever absent for privacy
   reasons, the row must fall back to *"In use"* rather than rendering an empty *"Busy · is watching"*.
+
+## Dev review (2026-09-19, against `main` `dcb97f2c`)
+
+Traced against `ScreensSheet.kt`, `RemoteRoutes.kt`, `shared/…/tv/Models.kt` and `i18n/Strings.kt`.
+**Two things have changed since this was written: FR-R270-1 is already built, and FR-R270-3 is built
+wrong** — it currently names the wrong household member on `main`. The Status line's "no backend,
+route, DTO or config change" does not hold.
+
+1. **FR-R270-1 already shipped with R265.** `ScreensSheet.kt:53` documents tier 3 as "R270's
+   footnote-link AirPlay row", with `airplayAvailable` plumbed through (`:63`, `:89`, `:100`, `:122`).
+   The phase is therefore **partly built while marked `Planned`** — worth saying in the Status, because
+   what is left is FR-R270-2 through -6, not the row.
+2. **FR-R270-3's premise is false, and this is the real work in the phase.** It states that
+   `GET /api/remote/devices` "already carries the user for a screen in use". It does not.
+   `remoteDeviceOf` (`RemoteRoutes.kt:64-80`) returns `pairedUsers` — **every** user paired to that
+   screen, as `jellyfinUsername` — plus `nowPlayingTitle` and `nowPlaying: ScreenStatus?`. The only
+   identity of the actual viewer anywhere is `ScreenStatus.sessionUserId` (`Models.kt:1262`), which is a
+   Jellyfin **user id**, not a name. FR-R270-3 forbids both forms it can currently reach: "display name
+   as the household knows it, **never a username or an id**". So this needs a resolved display name on
+   `RemoteDevice`, or a server-side resolution of `sessionUserId` — **a DTO change and a route change**,
+   which is precisely what the Status line says the phase does not have. Correct the Status and size the
+   phase accordingly.
+3. **And the shipped client already renders the wrong person.** `ScreensSheet.kt:213` fills
+   `screens.busy` from `device.pairedUsers.firstOrNull()` — the *first paired* user, not the one
+   watching. On a TV two people have paired with, that names the wrong household member roughly half the
+   time, and it is a `jellyfinUsername` either way. This is a live, user-visible defect on `main` today,
+   introduced by R265's build reaching ahead of this spec. It is also why item 2 matters more than it
+   reads: the row is not missing, it is **confidently wrong**, which is worse. Note too that
+   `pairedUsers` is only populated for `kind == "screen" || "cast"` (`RemoteRoutes.kt:65`), so an Android
+   TV (`kind = "tv"`) renders *"Busy · is watching"* with an empty name — the exact failure this spec's
+   own Dev notes already anticipated.
+4. **The 409 cannot name anyone either, so acceptance's "the list and the 409 agree" is satisfied
+   vacuously.** The conflict responds with the raw `ScreenStatus` (`RemoteRoutes.kt:116-117`), whose only
+   identity field is the same `sessionUserId`. Both surfaces need the one resolution from item 2 — which
+   is the right outcome, because it is one fix, but the acceptance criterion should say *"both name the
+   same person by display name"* rather than "agree".
+5. **FR-R270-6's string plan disagrees with the shipped table.** It says `screens.airplay_footnote`
+   replaces `screens.airplay_notice` in the sheet, and `screens.airplay_notice` is kept for FR-R270-2's
+   bar and the admin help text. What shipped is the opposite: **`screens.airplay_notice` *is* the
+   footnote** — *"AirPlay (phone must stay on)"*, with da/fo drafts (`Strings.kt:351`, `:714`, `:1074`) —
+   and there is **no `screens.airplay_footnote` at all**. Worse, the full sentence FR-R270-2 needs
+   ("Your phone has to stay on and in Ravilo — the TV stops when you close the app.") and the bar's
+   *"Playing on {TV} · keep Ravilo open"* **do not exist in the table in any language**. Cheapest correct
+   path: rename the shipped key to `screens.airplay_footnote` (the three translations move with it) and
+   add two genuinely new keys for the sentence and the bar. Either way, FR-R270-6 as written would leave
+   the notice key holding the footnote's words, which is how a bar ends up displaying a parenthetical.
+6. **FR-R270-4 needs its helper checked against its own three rules.** `lastSeenLabel(device.lastSeen)`
+   already exists and feeds `screens.offline` (`ScreensSheet.kt:212`), so the requirement is about
+   whether that helper actually does weekday-within-seven-days, date beyond, and **never "just now"**.
+   Verify it rather than assume it — "just now" for a device the list is simultaneously calling offline
+   is the kind of contradiction this spec exists to prevent.
+7. **FR-R270-5 is the best thing in the spec and costs nothing to honour now.** Making busy and offline
+   one flag rather than two strings is exactly right, and item 2's resolution is where it should be
+   implemented — one server-side decision about whether to emit a name, not two client branches that can
+   drift. Build it that way the first time.
