@@ -10,7 +10,9 @@
 
 ## Status
 
-`Planned` — written 2026-09-18, **not dev-reviewed**. Supersedes **FR-226-1** and **FR-226-3** (the
+`Planned` — written 2026-09-18, **dev-reviewed 2026-09-19 against `main` `dcb97f2c`** (see §Dev
+review at the foot: the listing half stands, the icon becomes a committed artefact, and FR-237-7's
+Cast Connect status line moves to R266). Supersedes **FR-226-1** and **FR-226-3** (the
 step list); FR-226-2's two field rows stand verbatim inside step 3. Pairs with **R266** (the TV app as
 a Cast Connect receiver, and the phone sender flag) and adds one static file to 218's `/cast/` bundle.
 
@@ -174,3 +176,97 @@ that a TV opens Ravilo rather than the receiver.
 4. **Does publishing change anything for the sideloaded TV?** Design's reading of Google's docs is
    *no* — the whitelisted-installer check is independent of publish state. If dev finds otherwise, the
    FR-237-3 note softens; it does not disappear.
+
+## Dev review (2026-09-19, against `main` `dcb97f2c`)
+
+Traced line by line against the shipped card (`src/wasmJsMain/kotlin/dev/jellystructure/ui/Settings.kt`),
+the receiver route (`Server.kt`), `CastService.kt`, `Main.kt`, `Dockerfile`, `build.gradle.kts` and
+`gradle.properties`. The card's five steps, the two field rows and the derived address are as described.
+**The listing half (steps 7–8, the icon) is sound and can be built as written, with one change to how the
+icon is produced. The Cast Connect half rests on a mechanism that does not exist and would, if built on
+today's route, produce the wrong device.**
+
+1. **The enrolment FR-237-7 reports on cannot happen, and today's route would mint a second device for
+   the same TV.** `CastService.redeem` (`:102`) rejects any `receiverId` that does not start `cast-`
+   (`:109`), forces the display name to `"Chromecast via Ravilo · …"` (`:110`) and passes `kind = "cast"`
+   (`:126`). A Cast Connect launch lands in the **Android TV Ravilo app**, which is already an enrolled
+   device holding its own token and its own `kind`. Redeeming a hand-off code from there would create a
+   *second* `ravilo_device` row for one physical TV, name it a Chromecast, and put it under 218's ceiling —
+   `checkCeiling` (`:134`) gates on exactly `kind == "cast"`, and 236 FR-236-9 says a TV must never count
+   there. **Recommendation: R266 needs no redemption at all.** 236 shipped the mechanism already — the TV
+   is an enrolled device, so the play arrives as `play_item` over `TvEventBus`. R266 shrinks to three
+   things: `androidReceiverCompatible` on the sender, the launch intent, and `CastReceiverContext`
+   translating Google's load request into 236's existing play against the token the app already holds.
+   (If a redemption is ever genuinely wanted, `redeem` needs a `kind` + id-prefix parameter *and*
+   `checkCeiling` must keep ignoring the result — but a device that already holds a token should not be
+   redeeming a code to get one.)
+2. **FR-237-7's status line has nothing to read, and should leave this phase.** `CastService.status()`
+   (`:174`) builds its device list from `allDevices().filter { isCastDevice }` — `kind == "cast"` only —
+   and `renderChromecastStatus` (`Settings.kt:3164-3172`) renders from that list. A Cast Connect launch
+   produces a `kind == "tv"` device that never enters it, so *Living room TV opens Ravilo itself* cannot be
+   sourced from `ChromecastStatus` as it stands; it needs its own field (a `lastNativeLaunchAt`) set where
+   the launch is observed, and per item 1 there is no such place yet. **FR-237-7's status line is carved
+   out of this phase and lands with R266**, the same way 236's dev review carved out FR-236-11. Steps 1–8
+   do not depend on it, and the card should not wait on a Ravilo phase. FR-237-7's *two honest timing
+   facts* (publishing is not instant; your test devices keep working meanwhile) stay here.
+3. **Step 5's shipped parenthetical is wrong for this household's own TV — fix it, don't just split it.**
+   `Settings.kt:211` reads *"Add your Chromecast as a **test device** (its serial number is on the device
+   and in the Google Home app), or **publish**…"*. For a TV with Chromecast built in that is the printed
+   hardware serial, which is **not** the one the console wants; FR-237-2 is right that it is the software
+   serial under *Settings › Device Preferences › Google Cast*. When the step splits, the old parenthetical
+   must not travel with it — the Chromecast stick keeps the Google Home hint, the built-in TV gets
+   FR-237-2's wording, and both live in step 5.
+4. **The Package Name row already exists, and FR-237-3 makes it appear twice with two explanations.**
+   Shipped step 3 (`Settings.kt:206`) renders it under Google's label **Package Name**, qualified *the
+   Ravilo app on your phone*; FR-237-3's step 6 renders **the same string** qualified *the Ravilo app on
+   the TV*. One value, two rows, two stories — an admin will reasonably conclude they are different
+   packages and go looking for a second one. **Step 3's qualifier drops the platform** (*the Ravilo app*),
+   and step 6's row says in one clause that it is *the same package as step 3 — the phone and the TV are
+   one app*.
+5. **Acceptance 2 already holds by construction; the source reference is wrong.** `applicationId` is not a
+   literal at `ravilo-android/build.gradle.kts:15`. Phase 226 moved it to `gradle.properties:19`
+   (`ravilo.applicationId=dev.jellystructure.ravilo`), read by `ravilo-android/build.gradle.kts:16` and by
+   the root `build.gradle.kts:437-451`, which generates `BuildInfo.androidApplicationId`; the card reads
+   that constant (`Settings.kt:3287`). Both rows therefore move together with one property edit, and
+   nothing new is needed for step 6's value. Correct the reference.
+6. **The icon must not be generated at build time from the design tree.** Two independent reasons.
+   (a) **Nothing in the build can rasterize an SVG** — no `rsvg`, `inkscape`, `resvg` or `cairosvg` in
+   `Dockerfile`, `build.gradle.kts` or `scripts/`; FR-237-5 as written adds a toolchain dependency to the
+   builder image for one 512² PNG that changes when the brand changes, i.e. almost never. (b) The vector
+   master exists **only** at `design/ravilo/assets/brand/ravilo-mark.svg` — under `design/`, which the
+   "updated designs" sync overwrites wholesale (STATUS.md's own standing warning; the same class of
+   incident as `specs/research-reports/`). A build step that reads from `design/` is a build the next
+   design export can break silently, at image-build time, in CI. **Recommendation: commit the artefact.**
+   `cast-receiver/` is a plain static directory whose `index.html` is committed and whose `ravilo-cast.js`
+   is gitignored and produced by `:ravilo-cast:syncCastReceiver` (`Dockerfile:39-40, 63-67, 101`). Add
+   `cast-receiver/icon-512.png` as a checked-in file beside `index.html`, with the SVG it was rendered
+   from copied to a **code-owned** path and a one-line regeneration note next to it. Zero new toolchain,
+   acceptance 4 ("byte-identical across requests") true by construction, and immune to the sync. FR-237-5's
+   *never rendered per request* survives unchanged; only *generated at build time from the vector master*
+   goes.
+7. **The route already behaves the way acceptance 4 and 5 need — no backend work beyond the file.**
+   `/cast/{...}` (`Server.kt:669-673`) is a plain static route outside the API auth plugin, so the
+   Download carries no credential and `public_url` is not involved (acceptance 5 holds as written).
+   `serveFrontendFile` returns a real 404 for an asset-shaped path that does not exist rather than falling
+   back to `index.html` (FR-235-3, `Server.kt:762-766`) — so a missing icon is an honest 404, not an HTML
+   page saved as a `.png`. `contentTypeFor` already maps `png → image/png` (`:822`). ETag plus `no-cache`
+   revalidation apply (`:779-799`) and the name carries no content hash, so it is never cached immutably —
+   correct for a file that may be re-rendered. One caveat worth a line on the card: the route exists only
+   `if (castDir != null)` (`Server.kt:669`, `Main.kt:88` — `CAST_DIR` or `cast-receiver/`, and only if the
+   directory is present), so the Download is the single step that fails as a 404 rather than as a message.
+   Committing the PNG (item 6) also makes the directory non-empty in every checkout.
+8. **The filename disagrees with itself.** FR-237-4's table shows the file to the admin as
+   `ravilo-icon-512.png`; FR-237-5 and acceptance 3/4 serve it at `/cast/icon-512.png`. Pick one — the
+   served path is the one that has to be typed nowhere, so the table's label becomes `icon-512.png`.
+9. **Open questions.** **OQ3 — square, and for a sharper reason than the lean gives.**
+   `design/ravilo/assets/store/ic_launcher-512.png` is the Android asset pack's *pre-rounded* file;
+   reusing it is exactly what puts a hairline of `#000B25` inside Google's own mask. Render square from
+   the mark. **OQ1** (the console's label for the Android TV field), **OQ2** (serial stability across a
+   factory reset) and **OQ4** (whether publishing affects the whitelisted-installer check) are all outside
+   this repo and none of them blocks the card — FR-237-3's note is the safe reading either way, and OQ1 is
+   a one-place string correction after one look at the live form, as 226 OQ1 already established.
+
+**Build order.** Steps 1–5 corrections (items 3, 4) and steps 7–8 with the committed icon (items 6, 7, 8)
+are buildable now and are the whole admin-facing value of this phase. Step 6's row is buildable now too
+(item 5). **FR-237-7's status line and everything Cast Connect actually does move to R266** (items 1, 2),
+which itself shrinks to a sender flag, a launch intent and a translation into 236's `play_item`.
