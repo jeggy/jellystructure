@@ -6,7 +6,9 @@
 
 ## Status
 
-`Planned` — written 2026-09-18 from the upgrade audit, not dev-reviewed, not built. Extends phase
+`Planned` — written 2026-09-18 from the upgrade audit, **dev-reviewed 2026-09-19 against `main`
+`dcb97f2c`** (see §Dev review at the foot: one measurement is missing that decides whether FR-244-1's
+probe can distinguish the two states at all, and FR-244-2 gates on the wrong server), not built. Extends phase
 **212**'s advisor with a security section. Sibling of **242** (metadata ownership); the two share the
 advisor surface and nothing else. Evidence:
 `specs/research-reports/jellyfin-12-1-upgrade-audit-2026-09-18.md`.
@@ -147,3 +149,76 @@ Same reasoning as 242's FR-242-6.
 3. Is there any legitimate deployment where `KnownProxies` is empty, requests arrive from a private
    address, and the operator genuinely wants unauthenticated LAN restarts to be reachable from the
    internet? If not, FR-244-2's `public_url` condition may be unnecessary caution.
+
+## Dev review (2026-09-19, against `main` `dcb97f2c`)
+
+The finding is real, the direction is right, and phase 212's advisor is the right home. Traced against
+`advisor/JellyfinAdvisorService.kt`, `config/AppConfig.kt`, `ui/Settings.kt` and the household's live
+`config.toml`. **One measurement is missing and it decides whether FR-244-1 works at all**; two smaller
+things block FR-244-4 as written.
+
+1. **The probe may not be able to tell the two states apart, because of the path it takes.** The
+   household's `jellyfin_url` is **`https://jellyfin.jebster.net`** — jellystructure reaches Jellyfin
+   *through Caddy*, not directly. So FR-244-1's probe arrives at Jellyfin with an `X-Forwarded-For` that
+   Caddy has already touched. Caddy's `reverse_proxy` **appends** the client address to an existing
+   `X-Forwarded-For` rather than replacing it, so what Jellyfin evaluates is plausibly
+   `203.0.113.9, <jellystructure's own private address>` — and which entry Jellyfin selects from that
+   list decides the answer. If it takes the rightmost untrusted hop (the ASP.NET Core default shape),
+   the probe reports `IsInNetwork: true` **whether or not `KnownProxies` is set**, the finding never
+   clears, and acceptance 2 and 3 both fail.
+   Crucially, **the audit's own table does not settle this**, because its two rows were measured in
+   different topologies: the `KnownProxies: empty → IsInNetwork: true` row came from the household server
+   (where XFF is ignored entirely, so both readings agree), and the `KnownProxies: set → 401` row came
+   from "a clean 12.1.0 instance", which was not behind this Caddy. The discriminating case was never
+   measured through the path jellystructure will actually use. This is the same hazard 236's dev review
+   recorded as item 8(a) — "`X-Forwarded-For`'s first hop is client-controlled wherever a proxy appends
+   instead of replacing" — arriving here as a correctness problem rather than a cosmetic one.
+   **Run one measurement before building:** set `KnownProxies` on the household Jellyfin, then issue the
+   exact probe jellystructure would issue — through `jellyfin.jebster.net`, with the RFC 5737 header —
+   and confirm it flips to `IsInNetwork: false`. If it does not, FR-244-1 needs a different mechanism:
+   either a header form Caddy does not merge, or reading `KnownProxies` from
+   `GET /System/Configuration/network` and comparing it against the remote address `/System/Endpoint`
+   reports. The second is inference, which FR-244-1 rightly dislikes — but honest inference beats a
+   capability probe that cannot observe the capability.
+2. **The advisor's 5-minute cache defeats FR-244-4's Re-check.** `findings()` returns `cached` for
+   `CACHE_TTL_SEC = 300` (`JellyfinAdvisorService.kt:27-34`). A Re-check that calls the same endpoint
+   gets the stale answer, so the operator sets `KnownProxies` correctly, presses Re-check, watches the
+   finding stay, and concludes the guidance is wrong — precisely the failure OQ1 is worried about,
+   reached by a different route and without any Jellyfin restart being involved. Re-check needs a
+   cache-bypassing path: a `force` parameter on the advisor route, or better, a dedicated endpoint that
+   runs **only** this probe, since re-running the whole advisor pass to answer one question is both
+   slower and noisier. Keep it on the BACKGROUND gate either way (`:44`) — operator-initiated is still
+   advisory.
+3. **FR-244-3 and FR-244-4 both need model and frontend work the spec does not mention, and 242 needs
+   the same.** `AdvisorFinding` is eight strings with no severity and no action (`:415-424`), and
+   `advisorFindingHtml` renders static markup into a per-library or server-wide card
+   (`Settings.kt:1258-1279`). "Renders **first**, visually distinct" needs a severity field and ordering;
+   "carries a **Re-check** action" needs an action affordance and a click handler. Phase 242's review
+   raised the sibling gap (its FR-242-7 state also has nowhere to live in the DTO). **Extend
+   `AdvisorFinding` once, for both phases** — a severity and an optional action — rather than each
+   growing its own special case. Whichever lands first does it.
+4. **FR-244-2 gates on the wrong server, and this household proves it.** `public_url` is
+   **jellystructure's** public address (`AppConfig.kt:27`) — on this server `https://jelly.jebster.net`
+   — while Jellyfin is exposed separately at `https://jellyfin.jebster.net`. So `public_url` being set is
+   evidence that *jellystructure* is reachable from outside, and the finding is about whether *Jellyfin*
+   is. They happen to correlate here; nothing makes them. **This is the answer to open question 2, and it
+   upgrades it from a nice-to-have to the right condition:** gate on Jellyfin's own `EnableRemoteAccess`,
+   which is a fact about the server the finding describes, with `public_url` kept only as a secondary
+   signal. A LAN-only Jellyfin behind an exposed jellystructure would otherwise get a security finding it
+   cannot act on, and an exposed Jellyfin behind a LAN-only jellystructure — the more dangerous case —
+   would get silence.
+5. **Open question 3 closes, but not in the direction it leans.** There is no legitimate deployment
+   wanting internet-reachable unauthenticated restarts, so the condition is not there to protect a valid
+   configuration — it is there because jellystructure cannot see Jellyfin's exposure directly. Item 4
+   gives it something that can. Keep a condition; change what it reads.
+6. **Open question 1 stands, and its wording matters more than its answer.** If a `KnownProxies` change
+   needs a Jellyfin restart, the Re-check copy must say so — and it must say it in household terms, not
+   as an instruction to restart immediately: this server has live viewers, and a restart mid-playback is
+   exactly the one-minute outage FR-244-7 exists to avoid causing. "Jellyfin may need a restart before
+   this takes effect — do it when nobody is watching" is the shape.
+7. **FR-244-5 is the best-written requirement in the cluster and should not be softened in review.**
+   Naming a problem, stating that no fix exists, linking upstream, and explicitly forbidding the
+   plausible-but-wrong mitigation (proxy-level auth, which phase 239 confirms would break every client
+   because the token in those URLs is ignored) is exactly right. Worth one addition: say *when* it was
+   verified and against which versions inline in the finding, per 243's FR-243-5, so a future reader can
+   tell whether it is still true.
