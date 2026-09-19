@@ -133,47 +133,9 @@ jobs:
         with:
           ref: ${{ needs.version.outputs.tag }}
 
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "21"
-
-      - uses: gradle/actions/setup-gradle@v4
-
-      - name: Build the ravilo-screen JS bundle
-        run: ./gradlew :ravilo-screen:syncScreenReceiver --no-daemon
-
-      - name: Set the release version in config.xml
-        run: |
-          sed -i 's/version="[0-9]\+\.[0-9]\+\.[0-9]\+"/version="${{ needs.version.outputs.tizen_version }}"/' ravilo-screen/wgt/config.xml
-          grep -o 'version="[^"]*"' ravilo-screen/wgt/config.xml
-
-      # Cached across runs — only the SDK/toolchain tree, never anything cert- or profile-related (those
-      # are recreated from secrets every run, so no signing material is ever written into the cache).
-      - name: Cache Tizen Studio
-        id: tizen-cache
-        uses: actions/cache@v4
-        with:
-          path: ${{ runner.temp }}/tizen-studio
-          key: tizen-studio-${{ env.TIZEN_STUDIO_VERSION }}-nativecli-cert-add-on
-
-      - name: Install Tizen Studio (headless CLI)
-        if: steps.tizen-cache.outputs.cache-hit != 'true'
-        run: |
-          curl -fsSL "https://download.tizen.org/sdk/Installer/tizen-studio_${TIZEN_STUDIO_VERSION}/web-cli_Tizen_Studio_${TIZEN_STUDIO_VERSION}_ubuntu-64.bin" -o tizen-installer.bin
-          chmod +x tizen-installer.bin
-          ./tizen-installer.bin --accept-license "${{ runner.temp }}/tizen-studio"
-          rm tizen-installer.bin
-          # NativeCLI provides the `tz` binary itself (not bundled with the base web-cli install);
-          # cert-add-on is required to import/use a Samsung-issued (non-sample) certificate profile.
-          "${{ runner.temp }}/tizen-studio/package-manager/package-manager-cli.bin" \
-              install --accept-license --no-java-check --latest || true
-          "${{ runner.temp }}/tizen-studio/package-manager/package-manager-cli.bin" \
-              install --accept-license --no-java-check NativeCLI cert-add-on
-
-      - name: Install headless keyring support
-        run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends gnome-keyring dbus-user-session libsecret-tools
-
+      # Dev review — this step needs nothing from any step below (no SDK, no Gradle, no build output), so
+      # it runs FIRST: a malformed secret now fails in ~30s instead of after a ~20min build+SDK-install,
+      # which is exactly how the first real attempt at this phase spent its whole run discovering a typo.
       - name: Decode Tizen certificate
         env:
           AUTHOR_B64: ${{ secrets.TIZEN_AUTHOR_P12_BASE64 }}
@@ -221,6 +183,55 @@ jobs:
           decode_and_verify distributor DIST_B64 DIST_PW "${{ runner.temp }}/distributor.p12" || ok=0
           [ "$ok" = "1" ]
 
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Build the ravilo-screen JS bundle
+        run: ./gradlew :ravilo-screen:syncScreenReceiver --no-daemon
+
+      - name: Set the release version in config.xml
+        run: |
+          sed -i 's/version="[0-9]\+\.[0-9]\+\.[0-9]\+"/version="${{ needs.version.outputs.tizen_version }}"/' ravilo-screen/wgt/config.xml
+          grep -o 'version="[^"]*"' ravilo-screen/wgt/config.xml
+
+      # Cached across runs — only the SDK/toolchain tree, never anything cert- or profile-related (those
+      # are recreated from secrets every run, so no signing material is ever written into the cache).
+      # Dev review — the key names the two extra packages by hand; if a third is ever added to the install
+      # step below without also updating this key, a stale cache would silently restore without it. Bump
+      # the trailing label (or hash the install step) if that ever happens.
+      - name: Cache Tizen Studio
+        id: tizen-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/tizen-studio
+          key: tizen-studio-${{ env.TIZEN_STUDIO_VERSION }}-nativecli-cert-add-on
+
+      - name: Install Tizen Studio (headless CLI)
+        if: steps.tizen-cache.outputs.cache-hit != 'true'
+        run: |
+          curl -fsSL "https://download.tizen.org/sdk/Installer/tizen-studio_${TIZEN_STUDIO_VERSION}/web-cli_Tizen_Studio_${TIZEN_STUDIO_VERSION}_ubuntu-64.bin" -o tizen-installer.bin
+          chmod +x tizen-installer.bin
+          ./tizen-installer.bin --accept-license "${{ runner.temp }}/tizen-studio"
+          rm tizen-installer.bin
+          # NativeCLI provides the `tz` binary itself (not bundled with the base web-cli install);
+          # cert-add-on is required to import/use a Samsung-issued (non-sample) certificate profile.
+          # Dev review — `--latest` alone exits non-zero merely when there's nothing to update, which is
+          # why `|| true` is here; but that also swallows a genuine failure (network, mirror, a renamed
+          # package), which would then surface later as a confusing "NativeCLI not found" instead of an
+          # install problem. Log the exit code so a real failure is at least visible in this step's output.
+          "${{ runner.temp }}/tizen-studio/package-manager/package-manager-cli.bin" \
+              install --accept-license --no-java-check --latest \
+              || echo "package-manager --latest exited $? (normal when there's nothing to update)"
+          "${{ runner.temp }}/tizen-studio/package-manager/package-manager-cli.bin" \
+              install --accept-license --no-java-check NativeCLI cert-add-on
+
+      - name: Install headless keyring support
+        run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends gnome-keyring dbus-user-session libsecret-tools
+
       - name: Sign and package the .wgt
         env:
           TZ_BIN: ${{ runner.temp }}/tizen-studio/tools/tizen-core/tz
@@ -251,13 +262,20 @@ jobs:
             "$TZ_BIN" pack -w "$WGT_DIR/Release/projects/wgt" -t wgt -s Ravilo
           '
 
-          OUT_WGT=$(find "$WGT_DIR" -name '*.wgt' | head -1)
-          if [ -z "$OUT_WGT" ]; then
+          # Dev review — `find | head -1` has no defined ordering, so if a second .wgt ever exists under
+          # $WGT_DIR (a restored artefact, a future `tz` leaving an intermediate behind), this would
+          # silently ship whichever one `find` happened to list first. Assert exactly one match instead.
+          MATCHES=$(find "$WGT_DIR" -name '*.wgt')
+          COUNT=$(echo -n "$MATCHES" | grep -c . || true)
+          if [ "$COUNT" -eq 0 ]; then
             echo "::error::No .wgt was produced — see the build/pack output above."
+            exit 1
+          elif [ "$COUNT" -gt 1 ]; then
+            echo "::error::Found $COUNT .wgt files under $WGT_DIR, expected exactly one: $MATCHES"
             exit 1
           fi
           mkdir -p "${{ runner.temp }}/out"
-          mv "$OUT_WGT" "${{ runner.temp }}/out/ravilo-screen-${{ inputs.version }}.wgt"
+          mv "$MATCHES" "${{ runner.temp }}/out/ravilo-screen-${{ inputs.version }}.wgt"
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4

@@ -13,28 +13,33 @@
 
 ## Status
 
-`⚠ Partial` — built 2026-09-19, **dev-reviewed 2026-09-19 against `main` `dcb97f2c`** (see §Dev review
-at the foot; ⚠ §3's "not done yet" and §4's closing "never had a real CI run" are both stale — see item
-6). `.github/workflows/deploy-tizen-tv.yml` wired into `publish.yml` as a new
-`tizen-tv` job (same `needs: [version, ci, publish]` / `if: github.event_name == 'release'` shape as the
-existing `play-store` job). The exact `tz` CLI + headless-signing recipe was verified end-to-end against a
-throwaway self-signed certificate in this project's own Tizen dev container and in a clean disposable
-`ubuntu:22.04` container matching a GitHub Actions runner (see §4) — entirely headless, no VNC/X/XFCE
-required for signing (only ever needed for the interactive Samsung-account sign-in that *created* the
-certificate).
+`⚠ Partial` — built 2026-09-19, **dev-reviewed twice 2026-09-19** (§Dev review at the foot, against
+`dcb97f2c`; all 6 actionable findings applied same day — see below). `.github/workflows/deploy-tizen-tv.yml`
+wired into `publish.yml` as a new `tizen-tv` job (same `needs: [version, ci, publish]` /
+`if: github.event_name == 'release'` shape as the existing `play-store` job). The exact `tz` CLI +
+headless-signing recipe was verified end-to-end against a throwaway self-signed certificate in this
+project's own Tizen dev container and in a clean disposable `ubuntu:22.04` container matching a GitHub
+Actions runner (see §4) — entirely headless, no VNC/X/XFCE required for signing (only ever needed for the
+interactive Samsung-account sign-in that *created* the certificate).
 
-**Two real CI runs performed 2026-09-19 (releases v1.28, v1.29).** v1.28 ran before any secrets existed
-and failed as expected once it reached the signing step. v1.29 (after the owner added the four secrets)
-got much further — Tizen Studio install, the Gradle build, `config.xml` version patching, the headless
-keyring setup, and NativeCLI/cert-add-on installation all ran clean in real GitHub Actions — but failed at
-"Decode Tizen certificate" with `base64: invalid input` on `TIZEN_AUTHOR_P12_BASE64`, meaning that secret's
-pasted value isn't valid base64 (a stray character from copying the terminal output is the likely cause,
-confirmed reproducible locally with e.g. a trailing shell-prompt `%`). Hardened the same day: the decode
-step now verifies each secret individually — non-empty, decodes cleanly, *and* opens as a real PKCS12 with
-its paired password via `openssl pkcs12 -info` — before ever reaching `tz`, so the next attempt gets a
-precise, actionable error instead of a bare cryptic one. **Still blocked on the owner re-generating and
-re-pasting `TIZEN_AUTHOR_P12_BASE64`** (`base64 -w0 author.p12` on the Debian server, pasted with no
-surrounding quotes/whitespace) — everything else in the pipeline is verified working.
+**Four real CI runs against `main`, 2026-09-19** (releases v1.28/v1.29 plus two manual `workflow_dispatch`
+retries), each finding and fixing one distinct real issue:
+1. v1.28 (pre-secrets) failed as expected once it reached signing.
+2. v1.29 (secrets added) reached "Decode Tizen certificate" and failed: `base64: invalid input` on
+   `TIZEN_AUTHOR_P12_BASE64` — a malformed paste. Hardened same day: the decode step verifies each secret
+   individually (non-empty, decodes, opens as a real PKCS12 with its password) before ever reaching `tz`.
+3. Dev review (below) found the verify-late-cost problem and 5 smaller things; all applied.
+4. A corrected re-paste got past the base64 check but failed the *new* PKCS12-open check:
+   `AUTHOR_B64` → `unsupported ... Algorithm RC2-40-CBC`; `DIST_B64` → `Mac verify error: invalid
+   password?`. **Root cause: not the secrets — the verification step itself.** This certificate was
+   deliberately created with SHA1-MAC/RC2-or-3DES so Tizen's own `tz` (a Go PKCS12 implementation with no
+   legacy-provider concept) can read it; OpenSSL 3.x's *default* provider refuses those algorithms outright
+   unless `-legacy` is passed. `tz` itself needs no such flag — only this project's own diagnostic
+   `openssl pkcs12 -info` check did, and now has it.
+
+**Next real run is the one that tells us whether the actual secrets are correct** — everything found so
+far has been a CI-side bug (base64 handling, then a missing OpenSSL flag), not a wrong password, so this
+may resolve on the very next attempt with no further owner action.
 
 ## 1. Scope
 
@@ -66,7 +71,10 @@ downloadable asset. Explicitly **not** in scope: anything past that — see §5.
   certificate/profile files themselves, which are recreated from secrets on every run, so no signing
   material is ever written into a cache entry.
 
-## 3. One-time manual setup (not automatable, not done yet)
+## 3. One-time manual setup
+
+Done as of 2026-09-19 — the owner added all four secrets (see §Status for what's been found while
+getting them right). Kept here as the reference for what each secret is and how to regenerate it.
 
 1. A Samsung-issued "Ravilo" certificate profile already exists (created via Tizen Studio's Certificate
    Manager, OAuth-signed with a Samsung Developer account, in this project's own Tizen dev container —
@@ -104,8 +112,11 @@ against two environments:
   `config.xml`'s package id or the generated `tizen_web_project.yaml`'s `output_name` — the workflow
   renames the output explicitly rather than trusting a derived name.
 
-Not verified: the actual workflow YAML has not had a real GitHub Actions run (blocked on §3's secrets),
-and signing has only been exercised against a throwaway certificate, never the real Ravilo one.
+Not verified as of this writing: signing has only been exercised against a throwaway certificate, never
+the real Ravilo one — see §Status for the four real CI runs against `main` that got progressively closer
+to that (SDK install, Gradle build, config.xml patching, headless keyring, and the cert/password decode
+chain are ALL now proven in real GitHub Actions; only the final `tz build`/`pack`/upload with the actual
+certificate remains unconfirmed).
 
 ## 5. Non-goals
 
@@ -184,3 +195,12 @@ fixing while the file is open.
 **Nothing here blocks the owner's next step.** Re-pasting `TIZEN_AUTHOR_P12_BASE64` is still the one
 thing standing between this phase and a signed artefact; items 1 and 2 just mean the attempt after that
 one costs seconds rather than an hour.
+
+**All six actionable items applied 2026-09-19, same day.** Cert decode now runs immediately after
+checkout (item 1); `workflow_dispatch` gained a `skip_ci` input, default `false` (item 2); the `.wgt`
+selection now asserts exactly one match rather than trusting `find`'s ordering (item 3); the
+package-manager `--latest` step logs its exit code instead of a bare `|| true` (item 4); the cache key's
+own comment now states the manual-bump rule explicitly (item 5); §3/§4/the workflow header's stale text is
+re-stamped (item 6, folded into the rewritten §Status above). Doing so surfaced item 4's real value
+immediately: it's how the RC2/`-legacy` finding above got isolated to one step's output instead of buried
+in the SDK/Gradle log preceding it.
