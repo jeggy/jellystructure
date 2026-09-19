@@ -163,9 +163,45 @@ jobs:
         run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends gnome-keyring dbus-user-session libsecret-tools
 
       - name: Decode Tizen certificate
+        env:
+          AUTHOR_B64: ${{ secrets.TIZEN_AUTHOR_P12_BASE64 }}
+          DIST_B64: ${{ secrets.TIZEN_DISTRIBUTOR_P12_BASE64 }}
+          AUTHOR_PW: ${{ secrets.TIZEN_AUTHOR_P12_PASSWORD }}
+          DIST_PW: ${{ secrets.TIZEN_DISTRIBUTOR_P12_PASSWORD }}
         run: |
-          echo "${{ secrets.TIZEN_AUTHOR_P12_BASE64 }}" | base64 -d > "${{ runner.temp }}/author.p12"
-          echo "${{ secrets.TIZEN_DISTRIBUTOR_P12_BASE64 }}" | base64 -d > "${{ runner.temp }}/distributor.p12"
+          # Bug fix — a bare `base64 -d` on a malformed secret fails with the unhelpful "base64: invalid
+          # input" and no hint which of the two secrets was wrong or why. Decode each separately, verify
+          # the result is actually a PKCS12 openssl can open with its paired password, and say so in
+          # plain language — never printing the secret value itself either way.
+          decode_and_verify() {
+            local name="$1" b64_var="$2" pw_var="$3" out="$4"
+            local b64="${!b64_var}" pw="${!pw_var}"
+            if [ -z "$b64" ]; then
+              echo "::error::Secret $b64_var is empty or not set — add it as a repository secret (see this workflow's header comment)."
+              return 1
+            fi
+            if ! printf '%s' "$b64" | base64 -d > "$out" 2>/tmp/b64err; then
+              echo "::error::$b64_var does not decode as base64 ($(cat /tmp/b64err)). Re-generate it with: base64 -w0 $name.p12 — and paste the WHOLE output with no surrounding quotes or extra whitespace."
+              return 1
+            fi
+            if [ ! -s "$out" ]; then
+              echo "::error::$b64_var decoded to an empty file — the secret's value is likely empty or was truncated when pasted."
+              return 1
+            fi
+            if [ -z "$pw" ]; then
+              echo "::error::Secret $pw_var is empty or not set."
+              return 1
+            fi
+            if ! openssl pkcs12 -info -in "$out" -passin "pass:$pw" -noout 2>/tmp/pwerr; then
+              echo "::error::$out decoded from base64 fine but openssl can't open it as a PKCS12 with the password in $pw_var ($(cat /tmp/pwerr | tail -1)). Either the .p12 file or the password doesn't match what's actually in $b64_var/$pw_var."
+              return 1
+            fi
+            echo "$name.p12: decoded and verified against its password."
+          }
+          ok=1
+          decode_and_verify author AUTHOR_B64 AUTHOR_PW "${{ runner.temp }}/author.p12" || ok=0
+          decode_and_verify distributor DIST_B64 DIST_PW "${{ runner.temp }}/distributor.p12" || ok=0
+          [ "$ok" = "1" ]
 
       - name: Sign and package the .wgt
         env:
