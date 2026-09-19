@@ -37,7 +37,7 @@ name: Deploy Ravilo Screen to Tizen
 #      reviewers — see the jellyfin-tizen issue above for what that entailed), stays a manual step you do
 #      yourself when you're ready to submit a version.
 #
-# ── The `tz` CLI + headless signing recipe below was verified end-to-end in this project's own Tizen dev
+# ── The `tz` CLI + headless signing recipe was verified end-to-end in this project's own Tizen dev
 #    container (2026-09-19) against a throwaway self-signed certificate, entirely headless (no VNC, no X,
 #    no XFCE — those were only ever needed for the interactive Samsung-account OAuth sign-in that CREATED
 #    the certificate, not for signing with one that already exists). Specifically confirmed:
@@ -51,9 +51,16 @@ name: Deploy Ravilo Screen to Tizen
 #    - `tz pack`'s output filename is the basename of the packed project directory, NOT config.xml's
 #      package id or the generated tizen_web_project.yaml's output_name — hence the explicit `mv` below
 #      rather than trusting a derived name.
-#    Not yet verified: this exact workflow file has never had a real CI run (that needs the four secrets
-#    above, which only a human can create), and it has never signed with the REAL Ravilo certificate —
-#    only a throwaway one made for this test. First real run may need one small fix.
+#    - The certificate was deliberately created with SHA1-MAC/RC2-or-3DES so `tz` (a Go PKCS12
+#      implementation with no legacy-provider concept) can read it. OpenSSL 3.x's *default* provider
+#      refuses those algorithms outright, so this workflow's own diagnostic `openssl pkcs12 -info` check
+#      needs `-legacy` — `tz` itself needs no such flag.
+#
+#    **Real CI runs against `main`, 2026-09-19**: v1.28 (pre-secrets, failed as expected), v1.29 x3
+#    (post-secrets) — each attempt found and fixed a real, distinct issue: a malformed base64 paste, then
+#    the `-legacy` gap above. SDK install, the Gradle build, `config.xml` patching, the headless keyring
+#    and NativeCLI/cert-add-on install are all proven working in real GitHub Actions; signing with the
+#    actual Ravilo certificate is the remaining unproven step.
 
 on:
   workflow_call:
@@ -71,6 +78,11 @@ on:
       version:
         description: "Version to (re-)sign, e.g. 1.0 — must match an existing vX.Y release tag"
         required: true
+      skip_ci:
+        description: "Skip the ~40min CI gate (only for retrying a tag whose commit already passed CI)"
+        type: boolean
+        required: false
+        default: false
 
 env:
   TIZEN_STUDIO_VERSION: "5.6"
@@ -192,7 +204,13 @@ jobs:
               echo "::error::Secret $pw_var is empty or not set."
               return 1
             fi
-            if ! openssl pkcs12 -info -in "$out" -passin "pass:$pw" -noout 2>/tmp/pwerr; then
+            # -legacy: this cert was deliberately created with SHA1-MAC/RC2-or-3DES so Tizen's own `tz`
+            # CLI (a Go PKCS12 implementation with no legacy-provider concept at all) can read it — see
+            # this phase's own dev notes. OpenSSL 3.x's default provider refuses those algorithms outright
+            # ("unsupported ... Algorithm RC2-40-CBC", or a misleading "Mac verify error: invalid
+            # password?" for a legacy MAC digest) unless the legacy provider is loaded for this one call.
+            # `tz` itself needs no such flag; only this diagnostic openssl check does.
+            if ! openssl pkcs12 -info -in "$out" -passin "pass:$pw" -noout -legacy 2>/tmp/pwerr; then
               echo "::error::$out decoded from base64 fine but openssl can't open it as a PKCS12 with the password in $pw_var ($(cat /tmp/pwerr | tail -1)). Either the .p12 file or the password doesn't match what's actually in $b64_var/$pw_var."
               return 1
             fi
