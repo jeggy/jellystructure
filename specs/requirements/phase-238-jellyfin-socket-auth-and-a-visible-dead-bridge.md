@@ -6,8 +6,10 @@
 
 ## Status
 
-`Planned` — written 2026-09-18 from a live audit of the upgraded household server (12.1.0), not
-dev-reviewed, not built. Pair: **239** (the remaining query-string tokens), **240** (the guard test
+`Planned` — written 2026-09-18 from a live audit of the upgraded household server (12.1.0),
+**dev-reviewed 2026-09-19 against `main` `dcb97f2c`** (see §Dev review at the foot: open question 1 is
+answered from the Ktor artefact — the Curl engine does send `Authorization` on a WS upgrade — and
+FR-238-3's per-device block moves to `/api/health/full`), not built. Pair: **239** (the remaining query-string tokens), **240** (the guard test
 that should have caught this), **241** (the mock that could not). Research report:
 `specs/research-reports/jellyfin-12-1-upgrade-audit-2026-09-18.md`.
 
@@ -118,3 +120,89 @@ path for a Jellyfin older than 12. A 403 is a real failure and is reported as on
    forever at 60 s? Leaning no: the TV is still paired and the failure may be transient server-side.
    But an hours-long loop against a server that will never accept it is pure waste, and FR-238-3 now
    makes the decision observable either way.
+
+## Dev review (2026-09-19, against `main` `dcb97f2c`)
+
+Traced against `JellyfinSessionBridge.kt`, `JellyfinClient.kt`, `AuthPlugin.kt`, `Server.kt`, `Main.kt`,
+`Dockerfile` and the Ktor artefact on the build path. **The diagnosis is correct and FR-238-1 is safe to
+build — open question 1 is answered below, not deferred.** Three things change: where FR-238-3's block
+lives, what `last_error` may contain, and the concurrency the new state needs.
+
+1. **Open question 1 is answered: yes, and no probe is needed.** The engine is
+   `HttpClient(Curl) { install(WebSockets) }` (`:53`), and the artefact this build links against is
+   `ktor-client-curl-linuxX64Main-3.6.0.klib`. Its `CurlAdapters.kt` declares
+   `DISALLOWED_WEBSOCKET_HEADERS = setOf("Upgrade", "Connection", "Sec-WebSocket-Version",
+   "Sec-WebSocket-Key")`, and `headersToCurl(request: HttpRequestData)` appends every header to the curl
+   slist, skipping a header only when it is in that set *and* `request.isUpgradeRequest()`.
+   `Authorization` is not in the set, and `toCurlRequest` builds the slist the same way for an upgrade as
+   for any other request. **Ktor 3.6.0's Curl engine sends a custom `Authorization` header on the
+   WebSocket upgrade.** FR-238-1 stands as written; the `apikey` fallback is not needed and FR-238-4's
+   "one handshake shape" costs nothing. (Method worth reusing: a `.klib` is a zip, and
+   `default/ir/strings.knt` carries declaration names and string literals — enough to settle questions
+   like this without a probe build.)
+2. **The helper FR-238-1 names cannot be called from here.** `jellyfinAuth` (`JellyfinClient.kt:1259`)
+   is `private` and is an extension on `HttpRequestBuilder` declared inside that file; the bridge owns a
+   separate `HttpClient` and has no access. `jellyfinIdentityHeader` (`:1243`) is `internal` and does
+   reach. Either the bridge writes
+   `header("Authorization", """${jellyfinIdentityHeader(identity)}, Token="$effectiveToken"""")` itself,
+   or `jellyfinAuth` is widened to `internal` and used. **Widen it** — FR-238-1's own justification
+   ("exactly one place in the codebase where a Jellyfin credential becomes wire format") is only true in
+   the second form.
+3. **The `DeviceId` already agrees; nothing to enforce.** `JellyfinDeviceIdentity.forDevice` (`:1228`)
+   composes `"ravilo-${device.deviceId}-${device.jellyfinUserId}"`, and the existing URL already sends
+   that same composed value as its `deviceId` query parameter (`:92`). Passing the same `identity` object
+   into the header makes `DeviceId="…"` byte-identical to the query parameter by construction, so
+   FR-238-1's last sentence is satisfied by changing nothing. Say so, so nobody adds a check.
+4. **`/api/health` is unauthenticated, so FR-238-3 as written publishes device ids and an exception
+   string to anyone who can reach the server.** `AuthPlugin.kt:125` exempts exactly `/api/health` — for
+   orchestration probes that cannot carry a session, which is `Dockerfile:130` — while `/api/health/full`
+   is *not* exempt. Two consequences. (a) A per-device list of ids plus failure state becomes world-
+   readable; on this household's server that means the internet (phase 244's premise). (b) `last_error`
+   taken from an exception message is worse than it looks: curl and Ktor failure text routinely carries
+   the request URL, and today that URL is the one with `api_key=<token>` in it. **Split the requirement:**
+   `/api/health` gains counts only — `bridges_connected`, `bridges_failing` — and the per-device block
+   lives in `/api/health/full`, which is authenticated and is where audit-shaped detail belongs. And
+   `last_error` is a **classified reason** ("403 at handshake", "connect timeout", "no Jellyfin URL
+   configured"), never a raw `e.message`.
+   **Sibling finding, recorded rather than fixed here:** the precedent FR-238-3 cites has the same
+   problem already. Phase 219's `refreshers` block (`Server.kt:427`) keys `playstate_age_ms` and
+   `continue_age_ms` by **Jellyfin user id**, on that same open endpoint. That belongs to 244's sweep, not
+   to this phase, but it should not be repeated here on the strength of being a precedent.
+5. **The bridge's shared state is unsynchronised today, and FR-238-2/-3 add a third thread to it.**
+   `active: HashMap` (`:56`) and `bridgeDropLogged: HashSet` (`:60`) are mutated by `connect`/`disconnect`
+   from the `/api/tv/events` route (`Server.kt:636`, `:657`) and read by the retry loop from `rootScope`,
+   which is `CoroutineScope(SupervisorJob() + CoroutineExceptionHandler)` with **no dispatcher**
+   (`Main.kt:126`) — `Dispatchers.Default`, genuinely multi-threaded on Kotlin/Native under coroutines
+   1.11.0. That is already a latent race; FR-238-2's counters and suppression timestamps and FR-238-3's
+   health read make it a certainty, and the health read is on yet another thread. The package already
+   knows better: `TvEventBus` guards its `sessions` map with a `Mutex` (`TvEventBus.kt:29`). **Hold the
+   new per-device bridge state in one `SpinLock`-guarded map** (`ops/SpinLock.kt`, exactly as
+   `TmdbClient:86` and `MediaStore:160` do for cheap reads from a request thread) and move
+   `active`/`bridgeDropLogged` behind it while there. A `Mutex` will not serve: the health handler's read
+   must not suspend on a lock the retry loop holds.
+6. **One failure mode FR-238-2 cannot see, because it throws nothing.** `runLoop`'s guard (`:82-85`):
+   a blank `jellyfinUrl` or a blank `device.jellyfinUserToken` does `delay(RECONNECT_MAX_MS); continue`
+   with **no exception and therefore no log at all — not even the first one**. FR-238-2 only rewrites the
+   `catch` branch, so this device stays invisible, and in FR-238-3's block it would read as
+   `connected: false` with a null `last_error`, indistinguishable from a device whose handshake is being
+   refused. Model it as a third state — `never_attempted`, with the reason — distinct from a real
+   handshake failure.
+7. **Open question 2: the semaphore makes the waste worse than the question assumes.**
+   `bridgeSemaphore.withPermit { while (isActive) { … } }` (`:76`) holds the permit for the **whole retry
+   loop**, not per attempt, and `MAX_BRIDGE_CONNECTIONS = 16` (`:34`). A permanently failing bridge
+   therefore occupies one of sixteen slots forever while achieving nothing, and a 17th TV blocks at
+   `withPermit` and never attempts a handshake at all. On 12.1 today *every* bridge is in that state. The
+   lean (keep retrying) is still right for a household of this size, and FR-238-3 is the right answer to
+   the visibility half — but record the interaction, and if a give-up rule is ever added it must
+   **release the permit**, not merely stop logging.
+8. **FR-238-4 must not be read as deleting the token fallback.** `jellyfinClient.tvToken(base, device,
+   cfg.apiKeys.jellyfinToken)` (`:90`) is phase 141's negative-cache plus server-token fallback: it
+   chooses *which credential* to present, not *which wire format*. FR-238-4 forbids the second and says
+   nothing about the first. Spell that out, because "no fallback" next to a line that is literally a
+   fallback is exactly the sort of thing a builder resolves the wrong way. Note also that the fallback has
+   never been exercised against the real 12.1 failure — a dead device token and a good server token both
+   fail the handshake identically today, so the first genuine test of that path comes after FR-238-1.
+
+**Acceptance.** Sound. One refinement: acceptance 2's "17 in 15 minutes" is a per-device count for one
+TV, so capture the pre-fix baseline per device id — the household has several, and the aggregate will not
+match. Acceptance 5's `/api/health` reference follows item 4 to `/api/health/full`.
