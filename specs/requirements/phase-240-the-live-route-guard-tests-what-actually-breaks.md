@@ -3,7 +3,9 @@
 ## Status
 
 `Planned` — written 2026-09-18 after the 12.1 upgrade audit found that the one test built to catch
-this class of breakage is itself broken on 12.x, not dev-reviewed, not built. Pair: **241** (the mock
+this class of breakage is itself broken on 12.x, **dev-reviewed 2026-09-19 against `main` `dcb97f2c`**
+(see §Dev review at the foot: FR-240-3's existence probe should use a method the route does not
+implement, so it can never execute one), not built. Pair: **241** (the mock
 side of the same gap).
 
 ## What is wrong
@@ -118,3 +120,70 @@ rediscovering that the same way.
    the difference between the guard covering three shapes and covering eleven.
 2. Should the model-field guard also flag fields the server sends that no model reads? That finds
    capability we are ignoring rather than breakage, which is a different and lower-priority signal.
+
+## Dev review (2026-09-19, against `main` `dcb97f2c`)
+
+All three diagnoses check out: `JellyfinLiveRouteGuardTest.kt:50` does send `X-Emby-Token`, the guard
+only calls `get(...)` so it cannot reach `/socket`, and every route named in FR-240-3 exists in the
+product. **One requirement should change technique, because as written it can repeat the outage it was
+written in response to.**
+
+1. **FR-240-3's probe executes any route that does not enforce, and the deny-list only covers the ones
+   we happened to find.** The technique is "send the real method with an intentionally invalid token and
+   assert 401", justified as proving existence "without executing it". That holds only for routes that
+   authenticate *before* acting. FR-240-6 records the counterexample in this spec's own text: `POST
+   /System/Restart` with a deliberately invalid token returned **204 and restarted the household's
+   Jellyfin**. A deny-list defends against the routes someone thought to list; the next route that
+   authenticates late is discovered the same way this one was.
+   **Use a method the route does not implement instead.** Jellyfin is ASP.NET Core: its routing answers
+   **405** when the path matches but the method does not, and **404** when the path does not exist. So
+   `GET /Sessions/Playing` distinguishes existence from absence, needs no credential at all, and cannot
+   mutate anything under any authentication behaviour. Two consequences worth having: FR-240-6's
+   deny-list becomes defence in depth rather than the only thing standing between a future run and
+   another outage, and the guard can then cover `POST /System/Restart` itself — a route the product
+   genuinely calls (`JellyfinClient.kt:497`) and which the deny-list currently leaves permanently
+   untested. Caveat to write in: for a path that implements both methods the GET will simply answer, so
+   the assertion is **"not 404"** rather than "405", and the chosen method must be a read.
+2. **FR-240-1 needs the widening 238 and 239 also need.** `jellyfinAuth` is `private`
+   (`JellyfinClient.kt:1259`). `linuxX64Test` is a friend compilation of `linuxX64Main`, so `internal`
+   is visible from the test — widen it once and this requirement is satisfied by calling it. If it stays
+   private, FR-240-1's own rule ("the test must not invent its own credential format") cannot be met,
+   because the test would have to re-implement the header string, which is precisely the drift the rule
+   forbids. Three phases now want this one-word change; whichever lands first should make it.
+3. **FR-240-2 needs a client the test does not have.** The guard's `get(...)` uses
+   `OutboundHttp.client` (`OutboundHttp.kt:188`), which installs ContentNegotiation, HttpTimeout and
+   HttpRequestRetry but **not** `WebSockets`. The socket assertion therefore brings its own
+   `HttpClient(Curl) { install(WebSockets) }`, mirroring `JellyfinSessionBridge.kt:53`. Worth saying,
+   because "add an assertion that the handshake returns 101" reads like one line and is not.
+   *Checked and cleared:* the shared client's retry is connection-layer only and only for GET/HEAD/OPTIONS
+   (`OutboundHttp.kt:205-211`), so it cannot silently retry a status the guard is asserting on — FR-240-3
+   does not need a separate client.
+4. **FR-240-4's requirement is right; its stated mechanism is not.** `ignoreUnknownKeys = true`
+   (`OutboundHttp.kt:190`) governs keys the **server sends that the model does not declare**. A field the
+   server *stops sending* is defaulted because the property **has a default or is nullable** — that
+   happens with or without the flag. The two only combine on a **rename**: the new key is ignored as
+   unknown (which without the flag would throw) while the old key is absent, so the default applies. So
+   the guard's two buckets are discriminated by exactly what FR-240-4 already parses — default-or-nullable
+   versus required — and the sentence should say `ignoreUnknownKeys` is what hides a *rename*, not an
+   absence. Also a count correction: `auth/Models.kt` carries **38** `@Serializable` declarations, not 36.
+5. **FR-240-5 is closer than it reads, and its remaining cost answers open question 1.** `ci.yml:65`
+   already runs `./gradlew linuxX64Test --no-daemon`, so the guard is *already* in CI and already returns
+   early — what is missing is only a server and three env vars. But a fresh `jellyfin/jellyfin` container
+   issues no token until its **startup wizard** is completed (`/Startup/Configuration`, `/Startup/User`,
+   `/Startup/Complete`), so "a fresh container with an empty library" is not the cheap option it sounds
+   like: the wizard has to be scripted either way, and once it is, adding one small media file and
+   triggering a scan is a few more lines. **OQ1 therefore answers itself — seed it.** Eight of the eleven
+   shapes in the existing guard are item-specific and `return@runBlocking` without an item
+   (`JellyfinLiveRouteGuardTest.kt:71`), so an unseeded container buys a guard that tests roughly a third
+   of what it claims, which is the weakness this phase exists to remove. Put the provisioning in
+   `scripts/` beside the other check scripts so it is runnable by hand as well as by CI.
+6. **Open question 2 — no, and for a sharper reason than priority.** Flagging fields the server sends
+   that no model reads would fire on nearly every response: Jellyfin returns large objects and the
+   product deliberately models a thin slice of each. The output would be thousands of lines on the first
+   run and the check would be muted within a week, taking the useful half of the guard's credibility with
+   it. If that capability sweep is ever wanted it is a one-off report, not something that gates a publish.
+
+**Acceptance.** Sound, with two notes. Acceptance 2 requires 238 to have landed, so the build order is
+**238 → 240** and this acceptance encodes that dependency — say so. Acceptance 5 ("no test in the
+repository issues a lifecycle call") becomes much easier to hold under item 1, since the probe stops
+issuing the real method at all.
