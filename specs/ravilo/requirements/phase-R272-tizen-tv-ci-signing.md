@@ -37,9 +37,19 @@ retries), each finding and fixing one distinct real issue:
    unless `-legacy` is passed. `tz` itself needs no such flag — only this project's own diagnostic
    `openssl pkcs12 -info` check did, and now has it.
 
-**Next real run is the one that tells us whether the actual secrets are correct** — everything found so
-far has been a CI-side bug (base64 handling, then a missing OpenSSL flag), not a wrong password, so this
-may resolve on the very next attempt with no further owner action.
+**Fifth real CI run, same day, after `-legacy` landed:** `AUTHOR_B64`/`AUTHOR_PW` now decode **and**
+verify cleanly end-to-end — the verification code path itself is proven correct. `DIST_B64` still decodes
+from base64 fine but `openssl pkcs12 -info -legacy` cannot open it with the password in `DIST_PW` (`Mac
+verify error: invalid password?`). Since the exact same code just succeeded for the author cert, this is
+no longer a tooling question — **`DIST_B64` and/or `DIST_PW` themselves need to be re-checked/re-pasted**,
+the same way `TIZEN_AUTHOR_P12_BASE64` needed a re-paste in run 2. Likely candidates: the distributor
+certificate was exported with a different password than the author one and `DIST_PW` doesn't match it, or
+`DIST_B64` was generated/copied with the same malformed-paste issue run 2 hit (stray character, missing
+bytes, a line-ending artifact from `base64 -w0`/`pbcopy`).
+
+**Next real run is the one that tells us whether the corrected `DIST_B64`/`DIST_PW` are right** — the
+author half of the pipeline is now fully verified; only the distributor cert's secret values remain
+unconfirmed.
 
 ## 1. Scope
 
