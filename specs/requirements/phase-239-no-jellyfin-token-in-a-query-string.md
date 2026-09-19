@@ -2,8 +2,10 @@
 
 ## Status
 
-`Planned` — written 2026-09-18 from a live audit of the household server on **12.1.0**, not
-dev-reviewed, not built. Backend half. Pair: **R271** (the two URLs a Ravilo client builds itself)
+`Planned` — written 2026-09-18 from a live audit of the household server on **12.1.0**,
+**dev-reviewed 2026-09-19 against `main` `dcb97f2c`** (see §Dev review at the foot: the transcode URL is
+Jellyfin's own and this phase cannot respell it, and open question 1 is answered by the audit's own
+no-credential 206), not built. Backend half. Pair: **R271** (the two URLs a Ravilo client builds itself)
 and **238** (the socket, which is the same mistake but is actually broken today).
 
 ## What is wrong
@@ -94,3 +96,73 @@ undefined and we do not accommodate it.
    in the build note rather than described as a fix.
 2. Is there a Jellyfin server setting that requires authentication on media routes? If one exists,
    turning it on is the real mitigation and would convert open question 1 into a test.
+
+## Dev review (2026-09-19, against `main` `dcb97f2c`)
+
+The table is accurate: all eight sites exist at the cited lines, and `grep` finds no ninth Jellyfin one
+(`RemoteRoutes.kt:202` reads `api_key` as a query parameter, but that is *jellystructure's own* API key
+on the `/api/remote/events` handshake, correctly out of scope; `ravilo-ui/PlayerScreen.kt:868` is R271's).
+The classification into FR-239-1 and FR-239-2 is right — `JellyfinClient.kt:1031` really is an ordinary
+outbound fetch (`warmSubtitleExtraction` → `httpGet(url)`), and `:823`/`:487` really are handed to a
+player. **One thing the phase does not currently reach changes what it can claim, and open question 1 is
+already answered by the audit's own measurement.**
+
+1. **The transcode URL is Jellyfin's, not ours, and this phase cannot respell it.** `PlaybackService.kt`
+   has two branches. The direct-play URL at `:487` is ours. The transcode URL is
+   `source.transcodingUrl` (`:484-486`), taken verbatim from Jellyfin's `PlaybackInfo` response, and
+   Jellyfin templates its own credential parameter into that string. The same shape repeats in the
+   burn-in path: `:892` prefers Jellyfin's `negotiated` URL and `:895-903` is only the **fallback** used
+   when `PlaybackInfo` is unavailable — so the line the table cites is the branch that runs *least*
+   often. Consequence: after this phase, acceptance 1's grep passes while the product still hands clients
+   a Jellyfin-spelled token URL on every transcoded play, because we never wrote it. **Add a requirement
+   and an open question.** The requirement: state explicitly that a negotiated `transcodingUrl` is passed
+   through verbatim and its spelling is Jellyfin's to get right, so nobody later "fixes" it by rewriting a
+   server-generated URL. The open question: **what does 12.1 actually template into `TranscodingUrl`** —
+   if it is `api_key=` and 12.1 ignores `api_key=`, then Jellyfin is handing out a URL its own server
+   will not authenticate, which is worth knowing and is not something this phase can fix. Measure it once
+   from a real `PlaybackInfo` response; it is one field.
+2. **Open question 1 is answered, by evidence already in this spec.** The *What is wrong* section records
+   that `/Videos/{id}/stream` returns 206 with real `video/mp4` bytes when requested **with no credential
+   at all**. That is exactly the test that distinguishes the two cases OQ1 says it could not distinguish:
+   an enforcing route answers 401 to no-credential, an anonymous one answers 206. It answered 206.
+   **The route is anonymous, and FR-239-2 is future-proofing with no present effect** — which is the
+   honest framing OQ1 asked for, so write it into the build note now rather than leaving it open.
+   Acceptance 3 follows: its second assertion (401/403 with an invalid `apikey`) **cannot be satisfied**,
+   and its own escape clause is the outcome rather than the exception. Reword it as "record the measured
+   anonymity per route", which is testable today.
+3. **`apikey` is not equivalent to the header, and FR-239-2 should say what is lost.** A query parameter
+   carries the token and nothing else. `Client`, `Device`, `DeviceId` and `Version` exist only in the
+   `Authorization` header (`jellyfinIdentityHeader`, `JellyfinClient.kt:1243`). The existing URLs work
+   around this by passing `DeviceId=` as a separate query parameter (`:487`, `SegmentRoutes.kt:451/463`),
+   which those endpoints do read — but `Client`/`Device`/`Version` do not travel at all. So if Jellyfin
+   ever does enforce on these routes, `apikey` alone authenticates the request while giving the session no
+   client identity, and phase 110's dashboard name and R216's QoE attribution both depend on that
+   identity. Not a reason to change FR-239-2 — there is no alternative for a `<video>` element — but state
+   it, so the future "it authenticates now, we're fine" reading does not get made.
+4. **FR-239-1 needs the same widening 238 does.** `jellyfinAuth` (`JellyfinClient.kt:1259`) is `private`.
+   `JellyfinClient.kt:1031` is inside that file and can use it. The other two cannot:
+   `RaviloArtworkService.kt:182` and `LiveTvService.kt:344` each hold their own `OutboundHttp.client`
+   (`:48`, `:59`) in a different file. Both are one-line changes once `jellyfinAuth` is `internal` —
+   `http.get(url) { jellyfinAuth(token) }` — and `JellyfinClient.kt:1031`'s `httpGet` already takes an
+   `HttpRequestBuilder.() -> Unit` block (`:225`), so it needs no new plumbing either. **238's review asks
+   for the same widening; do it once, in whichever phase lands first, and let the other cite it.** Both
+   sites pass the *server* token, so `jellyfinAuth`'s `DeviceIdentityRegistry` lookup correctly resolves
+   to the server identity and nothing else changes.
+5. **FR-239-3's helper should own the separator, not just the parameter name.** "Returns the parameter
+   fragment" leaves each of the five call sites writing its own `?` or `&`, which is the half of the
+   problem that actually breaks (`:903` is a multi-line string concatenation whose first character is
+   `&`). Make it append to a URL — `internal fun withJellyfinToken(url: String, token: String): String` —
+   so the separator is decided in the same one place as the spelling. It belongs beside
+   `jellyfinIdentityHeader` in `auth/JellyfinClient.kt`, which is already the "one place a Jellyfin
+   credential becomes wire format" this phase is trying to restore.
+6. **Open question 2 is answered by 244, which already looked.** Phase 244's research records Jellyfin's
+   unauthenticated media routes as a finding it deliberately offers **no fix** for, because none exists,
+   and explicitly warns that proxy-level authentication would break Ravilo playback. So there is no server
+   setting to turn on; OQ2 closes as "no", with the cross-reference, and the operational item stays where
+   244 put it.
+
+**Acceptance.** 1 is sound as written (the surviving `api_key` hits — `@SerialName("api_key")`,
+`api_key = "***"` in the TOML preview, `queryParameters["api_key"]` — none match the literal `api_key=`).
+2 is the right shape. 3 becomes item 2's reworded version. 4 is unaffected. Add a fifth: **a transcoded
+play still works**, since item 1 means that path is untouched by this phase and should be confirmed
+untouched rather than assumed.
