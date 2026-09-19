@@ -31,6 +31,7 @@ import com.google.android.gms.common.images.WebImage
 import dev.jellystructure.shared.tv.CAST_NAMESPACE
 import dev.jellystructure.shared.tv.CastLoadData
 import dev.jellystructure.shared.tv.CastReceiverMessage
+import dev.jellystructure.shared.tv.TvApiClient
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.serialization.json.Json
@@ -77,10 +78,15 @@ private object CastSenderHolder {
     var sender: CastSenderAndroid? = null
 }
 
+/** R265 — [ScreenSender] is not held in a process-singleton holder like [CastSenderAndroid]: it carries
+ *  no SDK singleton to protect and is cheap to recreate, but must be recreated if [api]'s identity ever
+ *  changes (a different server), which [remember]'s key already covers. */
 @Composable
-actual fun rememberCastSender(): CastSender? {
+actual fun rememberCastSender(api: TvApiClient): ActiveCastSender {
     val ctx = LocalContext.current.applicationContext
-    return remember { CastSenderHolder.sender ?: runCatching { CastSenderAndroid(ctx) }.getOrNull()?.also { CastSenderHolder.sender = it } }
+    val chromecast = remember { CastSenderHolder.sender ?: runCatching { CastSenderAndroid(ctx) }.getOrNull()?.also { CastSenderHolder.sender = it } }
+    val screen = remember(api) { ScreenSender(api) }
+    return remember(chromecast, screen) { ActiveCastSender(chromecast, screen) }
 }
 
 @Composable

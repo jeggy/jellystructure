@@ -4,6 +4,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import dev.jellystructure.shared.tv.CastLoadData
 import dev.jellystructure.shared.tv.CastTrack
+import dev.jellystructure.shared.tv.TvApiClient
 import kotlinx.coroutines.flow.StateFlow
 
 /**
@@ -68,8 +69,13 @@ interface CastSender {
     fun send(json: String)
 }
 
+/**
+ * R265 — never null: every platform has at least [ScreenSender] (commonMain, no platform SDK needed).
+ * The returned [ActiveCastSender] composes it with the platform's own Chromecast sender where one exists
+ * (Android only) — see that class's own doc for the "at most one linked at a time" rule.
+ */
 @Composable
-expect fun rememberCastSender(): CastSender?
+expect fun rememberCastSender(api: TvApiClient): ActiveCastSender
 
 /** FR-R245-1/2 — the platform's own Cast mark and the platform's own device dialog. Nothing bespoke. */
 @Composable

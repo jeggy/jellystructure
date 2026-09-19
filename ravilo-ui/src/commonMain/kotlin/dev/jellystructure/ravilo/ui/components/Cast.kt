@@ -36,18 +36,21 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.jellystructure.ravilo.ui.i18n.str
+import dev.jellystructure.ravilo.ui.seams.ActiveCastSender
 import dev.jellystructure.ravilo.ui.seams.CastLinkState
-import dev.jellystructure.ravilo.ui.seams.CastSender
 import dev.jellystructure.ravilo.ui.seams.PlatformCastButton
 import dev.jellystructure.ravilo.ui.seams.RemoteImage
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
@@ -55,6 +58,7 @@ import dev.jellystructure.ravilo.ui.theme.Sora
 import dev.jellystructure.shared.tv.CastCommand
 import dev.jellystructure.shared.tv.CastEpisode
 import dev.jellystructure.shared.tv.CastLoadData
+import dev.jellystructure.shared.tv.RemoteDevice
 import dev.jellystructure.shared.tv.TvApiClient
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -70,7 +74,7 @@ import kotlinx.serialization.json.Json
  * this platform or from this server.
  */
 class CastController(
-    val sender: CastSender,
+    val sender: ActiveCastSender,
     private val api: TvApiClient,
     val serverUrl: String,
     /** The phone's own device name — the receiver's row is named after the Chromecast, not this. */
@@ -87,12 +91,22 @@ class CastController(
      * position (null = the server resolves the resume point, as for a TV). [lastReceiverId] rides
      * along so a receiver whose storage survived reuses its own device row (218 open question on
      * storage durability, handled both ways).
+     *
+     * R265 — when a SCREEN is already the connected device (not Chromecast), there is no hand-off code
+     * to mint (FR-R265-6): the screen's socket is already open, so this just posts the new item to it
+     * directly and returns. Every existing Chromecast call site (Detail/Player's "Play" while
+     * `connected`) keeps working unchanged either way — it's this method that now looks at which side
+     * is actually connected, not the caller.
      */
     fun cast(
         itemId: String, title: String, kicker: String?, artUrl: String?, positionMs: Long?,
         episodes: List<CastEpisode> = emptyList(), currentIndex: Int = -1, lang: String = "en", subSize: Char = 'M',
         onError: (Throwable) -> Unit = {},
     ) {
+        if (sender.screen.link.value == CastLinkState.CONNECTED) {
+            sender.screen.playItem(itemId, positionMs ?: 0)
+            return
+        }
         scope.launch {
             val code = runCatching { api.castHandoff() }.getOrElse { onError(it); return@launch }
             sender.load(CastLoadData(
@@ -107,6 +121,31 @@ class CastController(
         }
     }
 
+    /**
+     * R265 (FR-R265-6) — starts [itemId] on a specific, not-yet-linked screen (a sheet row tapped with
+     * something queued to play). Stops whichever side is currently connected first (dev review item 4's
+     * "at most one linked at a time" — this covers the Chromecast-was-live direction; [cast] above covers
+     * the reverse by checking [sender]'s own linked side before ever minting a hand-off code).
+     */
+    fun castOnScreen(device: RemoteDevice, itemId: String, startPositionMs: Long? = null) {
+        if (sender.link.value == CastLinkState.CONNECTED) sender.stop()
+        sender.screen.link(device)
+        sender.screen.playItem(itemId, startPositionMs ?: 0)
+    }
+
+    /** R265 (FR-R265-5) — claims a code the TV is showing. Null = the sheet's one error sentence. */
+    suspend fun pairScreen(code: String) = api.remotePair(code)
+
+    /** R265 (FR-R265-2/3) — the sheet's own device list; `nearby` already resolved server-side. */
+    suspend fun screenDevices() = runCatching { api.remoteDevices() }.getOrDefault(emptyList())
+
+    /** R265 (FR-R265-7) — join an already-playing (or idle) screen without starting anything new: app
+     *  start / a sheet row tapped with no item in mind. */
+    fun joinScreen(device: RemoteDevice) {
+        if (sender.link.value == CastLinkState.CONNECTED && sender.screen.link.value != CastLinkState.CONNECTED) sender.stop()
+        sender.screen.link(device)
+    }
+
     fun command(type: String, index: Int? = null, size: String? = null) {
         sender.send(json.encodeToString(CastCommand.serializer(), CastCommand(type, index, size)))
     }
@@ -119,14 +158,41 @@ val LocalCast = staticCompositionLocalOf<CastController?> { null }
 val LocalCastHandoff = staticCompositionLocalOf<((positionMs: Long) -> Unit)?> { null }
 
 /**
- * FR-R245-1 — the cast button, on every app bar, present only when the server says Chromecast is set up
- * AND this platform has a sender. The glyph and the dialog are the platform's own.
+ * FR-R245-1 / R265 FR-R265-1 — the cast button, on every app bar, present when EITHER capability exists
+ * ([LocalCast] is non-null exactly then — see [dev.jellystructure.ravilo.ui.RaviloApp]'s `castActive`).
+ *
+ * R265 note: a true single unified glyph would list Chromecast rows inside the same sheet the screens
+ * live in (FR-R265-3); that needs enumerating Cast SDK routes outside the SDK's own dialog, which is
+ * untested here and deliberately deferred (see the R265 spec's status). Tonight's honest middle ground:
+ * when Chromecast is configured, its own tested glyph/dialog ([PlatformCastButton]) keeps working exactly
+ * as before, unchanged; the sheet below is the entry point for screens specifically, shown instead of
+ * (never alongside) the Chromecast glyph.
  */
 @Composable
 fun CastButton(modifier: Modifier = Modifier) {
     val cast = LocalCast.current ?: return
-    if (cast.appId == null) return
-    PlatformCastButton(modifier.size(40.dp))
+    if (cast.appId != null) { PlatformCastButton(modifier.size(40.dp)); return }
+    var sheetOpen by remember { mutableStateOf(false) }
+    Box(
+        modifier.size(40.dp).clip(CircleShape)
+            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
+                if (cast.connected) { /* the mini bar / CastRemote push, wired at the call site, covers "already linked" */ }
+                sheetOpen = true
+            },
+        contentAlignment = Alignment.Center,
+    ) { ScreenCastGlyph(tint = RaviloTheme.colors.text, on = cast.connected) }
+    ScreensSheet(cast = cast, open = sheetOpen, onClose = { sheetOpen = false }, playContext = null)
+}
+
+/** A plain TV-outline mark — screens have no brand glyph of their own the way Chromecast does. */
+@Composable
+internal fun ScreenCastGlyph(tint: Color, on: Boolean, sizeDp: Int = 22) {
+    Canvas(Modifier.size(sizeDp.dp)) {
+        val w = size.width; val h = size.height
+        val bodyH = h * 0.72f
+        drawRoundRect(if (on) tint else tint.copy(alpha = 0.85f), topLeft = Offset(w * 0.06f, 0f), size = Size(w * 0.88f, bodyH), cornerRadius = CornerRadius(w * 0.08f), style = Stroke(width = h * 0.09f))
+        drawLine(tint, Offset(w * 0.36f, h * 0.94f), Offset(w * 0.64f, h * 0.94f), strokeWidth = h * 0.09f, cap = StrokeCap.Round)
+    }
 }
 
 /** FR-R245-3 — connecting is a bar, not a screen: "Connecting to {device}…" → "Casting to {device}",

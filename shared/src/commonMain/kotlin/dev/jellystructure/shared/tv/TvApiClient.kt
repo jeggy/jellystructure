@@ -329,6 +329,86 @@ class TvApiClient(
         r.assertSuccess()
     }
 
+    // ─── R265 — play on a TV from the phone, over the same /api/remote/** an API key uses ────
+
+    /** The caller's own devices — every kind (screen/cast/tv/phone/web), `nearby` already resolved
+     *  server-side (FR-236-6) so the client never guesses at network topology. */
+    suspend fun remoteDevices(): List<RemoteDevice> {
+        val r = client.get("$baseUrl/api/remote/devices") { auth() }
+        r.assertSuccess()
+        return json.decodeFromString(r.bodyAsText())
+    }
+
+    /** Starts [jellyfinItemId] on [deviceId]. 202 = accepted (the device will report its own status);
+     *  409 with a body = a shared screen already playing for a different user (FR-236-3) — the caller
+     *  reads [TvApiError.Http.body] for that user's name via [ScreenStatus], same shape as any other
+     *  status the device already reports. */
+    suspend fun remotePlay(deviceId: String, jellyfinItemId: String, startPositionMs: Long = 0) {
+        val r = client.post("$baseUrl/api/remote/play") {
+            auth()
+            jsonBody(json.encodeToString(RemotePlayRequest(deviceId, jellyfinItemId, startPositionMs)))
+        }
+        r.assertSuccess()
+    }
+
+    /** Every command past play itself: stop/pause/unpause/home need no extra field; seek/skip/next/
+     *  previous/set_audio/set_subtitle/set_subtitle_size/cancel_next_up/skip_segment/set_volume/mute read
+     *  whichever of [positionMs]/[deltaMs]/[index]/[size]/[volume] they need and ignore the rest. */
+    suspend fun remoteCommand(
+        deviceId: String, command: String,
+        positionMs: Long? = null, deltaMs: Long? = null, index: Int? = null, size: String? = null, volume: Int? = null,
+    ) {
+        val r = client.post("$baseUrl/api/remote/command") {
+            auth()
+            jsonBody(json.encodeToString(RemoteCommandRequest(deviceId, command, positionMs, deltaMs, index, size, volume)))
+        }
+        r.assertSuccess()
+    }
+
+    /** Claims a code the TV is showing on its own screen (FR-236-2/dev review item 1) — device token
+     *  only, never an API key (the server refuses that with 403; there's no Jellyfin user token on an
+     *  API key to copy onto the receiver's row). Null on a bad/expired/already-used code — one error
+     *  sentence, the caller can't and shouldn't distinguish which (FR-R265-5). */
+    suspend fun remotePair(code: String): RemotePairResponse? {
+        val r = client.post("$baseUrl/api/remote/pair") {
+            auth()
+            jsonBody(json.encodeToString(RemotePairRequest(code)))
+        }
+        if (r.status == HttpStatusCode.Unauthorized || r.status == HttpStatusCode.Forbidden) return null
+        r.assertSuccess()
+        return json.decodeFromString(r.bodyAsText())
+    }
+
+    /**
+     * Opens `/api/remote/events`, subscribes to [deviceId]'s `device_status` pushes, and calls [onStatus]
+     * for each one until the socket closes — the same "caller owns reconnect" shape as [connectEvents].
+     * A phone's own device token works here exactly like an API key does (`RemoteCaller` resolves either);
+     * this is a second, independent socket from [connectEvents]'s `/api/tv/events` rather than sharing it,
+     * so linking/unlinking a screen never disturbs the app's own Home-feed event stream.
+     */
+    suspend fun connectRemoteEvents(deviceId: String, onOpen: suspend () -> Unit = {}, onStatus: suspend (ScreenStatus) -> Unit) {
+        val token = deviceToken() ?: return
+        val wsUrl = baseUrl.replaceFirst("http", "ws").trimEnd('/') +
+            "/api/remote/events?token=" + token.encodeURLParameter()
+        wsClient.webSocket(wsUrl, request = {
+            identify()
+            timeout {
+                requestTimeoutMillis = HttpTimeoutConfig.INFINITE_TIMEOUT_MS
+                socketTimeoutMillis = HttpTimeoutConfig.INFINITE_TIMEOUT_MS
+            }
+        }) {
+            send(Frame.Text("""{"type":"subscribe_device","device_id":${deviceId.jsonStr()}}"""))
+            onOpen()
+            for (frame in incoming) {
+                if (frame !is Frame.Text) continue
+                val text = frame.readText()
+                val env = runCatching { json.decodeFromString<DeviceStatusEnvelope>(text) }.getOrNull() ?: continue
+                if (env.type != "device_status" || env.deviceId != deviceId) continue
+                onStatus(env.status)
+            }
+        }
+    }
+
     suspend fun getConfig(): RaviloConfig {
         val r = client.get("$baseUrl/api/tv/config") { auth() }
         r.assertSuccess()
