@@ -2,8 +2,10 @@
 
 ## Status
 
-`Planned` — written 2026-09-18 from the 12.1 upgrade audit, not dev-reviewed, not built. Client half
-of **239**; the policy behind both is **243**.
+`Planned` — written 2026-09-18 from the 12.1 upgrade audit, **dev-reviewed 2026-09-19 against `main`
+`dcb97f2c`**, not built. Client half of **239**; the policy behind both is **243**. ⚠ **Half the subject
+is gone:** R264 deleted `ravilo-tizen`, so `ravilo-ui/…/PlayerScreen.kt:868` is the only remaining site —
+see §Dev review at the foot.
 
 ## What is wrong
 
@@ -89,3 +91,51 @@ existing per-cause copy.
 2. Is the `hlsUrl`-null fallback still reachable at all? If R183/R216's negotiation always yields an
    HLS URL in practice, these two lines are dead code and the phase is a deletion rather than a
    refactor. Worth measuring before building, because the answer changes the work substantially.
+
+## Dev review (2026-09-19, against `main` `dcb97f2c`)
+
+**Half this phase's subject no longer exists.** `ravilo-tizen` was deleted by **R264** (built
+2026-09-19, same commit that added `:ravilo-screen`): it has **zero tracked files**, only a stale
+`build/` directory on disk, and `settings.gradle.kts:8` now reads
+*"R264 — receiver-only TV app … supersedes R189/:ravilo-tizen"*. The second quoted line, its
+`static=true`, and everything this spec says about two clients disagreeing went with it.
+
+1. **One site remains, and the successor module did not inherit the defect.** A grep for `/Videos/`,
+   `api_key` and `apikey` across `ravilo-ui`, `ravilo-screen`, `ravilo-cast` and `ravilo-receiver-core`
+   returns **exactly one hit**: `ravilo-ui/…/screens/PlayerScreen.kt:868`, unchanged from the quote
+   above. **`ravilo-screen` — R264's new Tizen receiver, which plays media over AVPlay — composes no
+   Jellyfin URL at all.** That is worth recording: the successor to the module this phase was half
+   written about was built clean, so the argument landed before the phase did.
+2. **FR-R271-4 is answerable now, and the answer is "remove it".** `StreamTicket.accessToken`
+   (`shared/…/tv/Models.kt:174`) has **exactly one consumer in the entire codebase — line 868 itself**,
+   the line FR-R271-2 deletes. So the audit does not need to be deferred to a build note: after
+   FR-R271-2, no Ravilo client holds a raw Jellyfin access token for any purpose, and the field comes
+   out of the DTO. Record it as decided rather than as a question. **One carve-out:** the Live TV ticket
+   carries its *own* `access_token` (`shared/…/tv/LiveTvModels.kt:97`), a different field on a different
+   model that this phase does not survey — name it so it is neither removed by association nor assumed
+   checked.
+3. **Open question 2 is now the whole shape of the phase, not a detail.** With one site left and its
+   only consumer being the token, the two outcomes are much further apart than when this was written.
+   If the `hlsUrl`-null fallback is unreachable, this phase is **a deletion**: four lines and one DTO
+   field, no FR-R271-1, no new ticket field, no FR-R271-3 decision to make. If it is reachable, it is
+   the refactor as specified. Measure it first — the spec already says so, and it is now the only thing
+   that decides what gets built.
+4. **Three requirements and three acceptance criteria have lost their subject.** FR-R271-3's "the two
+   clients stop disagreeing" is moot — there is one client, and the disagreement was resolved by
+   deletion rather than by decision (though *whether* `static=true` belongs on the URL is still a real
+   question if item 3 lands on "refactor", so keep the requirement and drop its justification).
+   Acceptance 1's grep should drop `ravilo-tizen` and **add `ravilo-screen` and `ravilo-cast`**, which
+   are clean today — turning it from a cleanup check into a regression guard on a module that plays
+   media and could easily grow one. Acceptance 2's "and on the Tizen build" has no subject; its
+   replacement, if any, is R264's receiver, which does not take this path. Acceptance 3 ("the two
+   clients issue byte-identical stream URLs") is unsatisfiable and should go.
+5. **Open question 1 closes by deletion.** "Does the Tizen build's AVPlay need `static=true` where
+   ExoPlayer does not" has no Tizen build to ask about. If the question ever returns it returns for
+   `ravilo-screen`, and only if that module ever takes a direct-play URL from a ticket — which today it
+   does not.
+6. **The argument in *What is wrong* survives all of this intact, and is the reason to still do it.**
+   The parameter spelling and the two-client divergence were always symptoms; the defect is a client
+   deriving state the server already holds, against the constitution's own rule and against
+   `PlaybackService.kt:487`, which builds the same string. That is still true of line 868, and item 2
+   means fixing it also takes a credential off the wire. Both remain good reasons whichever way item 3
+   resolves.
