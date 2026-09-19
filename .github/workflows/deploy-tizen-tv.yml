@@ -275,7 +275,7 @@ jobs:
             exit 1
           fi
           mkdir -p "${{ runner.temp }}/out"
-          mv "$MATCHES" "${{ runner.temp }}/out/ravilo-screen-${{ inputs.version }}.wgt"
+          mv "$MATCHES" "${{ runner.temp }}/out/ravilo-tizen-${{ inputs.version }}.wgt"
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
