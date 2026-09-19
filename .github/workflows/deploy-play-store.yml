@@ -9,6 +9,13 @@ name: Deploy Ravilo to Play Store
 # both a TV/leanback entry point and a phone entry point). Nothing below changed for that merge — the
 # same bundleRelease task and upload now simply ships both experiences at once.
 #
+# R273 — this file also attaches a real, signed release APK to the GitHub Release, the same way
+# deploy-tizen-tv.yml (R272) attaches the signed Tizen .wgt: it's the only way to get an installable
+# Ravilo build onto a device that isn't opted into the Play Store's internal testing track. This does
+# NOT contradict the "different deploy target, different secrets, different failure domain" reasoning
+# above — the APK shares the exact same secrets and the exact same signed build as the AAB this file
+# already produces; it's one build reaching a second destination, not a second deploy target.
+#
 # Internal track only, never production/beta — promoting a build is a deliberate Play Console action,
 # not an implicit side effect of tagging a release. Google also requires a closed test with 12+ opted-in
 # testers for 14+ continuous days before a new developer account can publish to production at all.
@@ -64,7 +71,10 @@ on:
         options: [internal, alpha, beta, production]
 
 permissions:
-  contents: read
+  # R273 — contents: write (not just read) so the deploy job below can also attach the real, signed
+  # release APK to the GitHub Release via `gh release upload`, the same way deploy-tizen-tv.yml already
+  # does for the signed .wgt.
+  contents: write
 
 jobs:
   version:
@@ -123,15 +133,46 @@ jobs:
       - name: Decode upload keystore
         run: echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > "${{ runner.temp }}/upload.keystore"
 
-      - name: Build release AAB
+      # R273 — bundleRelease AND assembleRelease in one invocation: the same real upload keystore signs
+      # both, one keystore-decode step covers both, and Gradle shares the compiled/R8-shrunk classes
+      # between the two output tasks rather than building twice.
+      - name: Build release AAB + APK
         run: |
-          ./gradlew :ravilo-android:bundleRelease \
+          ./gradlew :ravilo-android:bundleRelease :ravilo-android:assembleRelease \
             -Pravilo.versionCode=${{ needs.version.outputs.versionCode }} \
             -Pravilo.versionName=${{ needs.version.outputs.versionName }} \
             -Pravilo.keystore.file="${{ runner.temp }}/upload.keystore" \
             -Pravilo.keystore.password="${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" \
             -Pravilo.keystore.alias="${{ secrets.ANDROID_KEY_ALIAS }}" \
             -Pravilo.keystore.keyPassword="${{ secrets.ANDROID_KEY_PASSWORD }}"
+
+      # R273 (FR-R273-2) — attached BEFORE the Play Store upload is attempted: a Google Play API hiccup
+      # must not be able to prevent the simpler, more foundational distribution channel (a direct
+      # download link on the release) from shipping. Same find-count-guard style as R272's .wgt attach.
+      - name: Verify exactly one release APK was produced
+        run: |
+          MATCHES=$(find ravilo-android/build/outputs/apk/release -name '*.apk')
+          COUNT=$(echo -n "$MATCHES" | grep -c . || true)
+          if [ "$COUNT" -eq 0 ]; then
+            echo "::error::No release .apk was produced — see the Gradle build output above."
+            exit 1
+          elif [ "$COUNT" -gt 1 ]; then
+            echo "::error::Found $COUNT .apk files, expected exactly one: $MATCHES"
+            exit 1
+          fi
+          echo "APK_PATH=$MATCHES" >> "$GITHUB_ENV"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ravilo-android-apk
+          path: ravilo-android/build/outputs/apk/release/*.apk
+          retention-days: 30
+
+      - name: Attach to the GitHub Release
+        run: gh release upload "${{ needs.version.outputs.tag }}" "$APK_PATH" --clobber
+        env:
+          GH_TOKEN: ${{ github.token }}
 
       - name: Upload to Play Store
         uses: r0adkll/upload-google-play@v1
