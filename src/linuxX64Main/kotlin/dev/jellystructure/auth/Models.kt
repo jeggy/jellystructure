@@ -84,14 +84,35 @@ data class JellyfinAuthResponse(
 
 @Serializable
 data class JellyfinLibraryOptions(
-    @SerialName("MetadataSavers") val metadataSavers: List<String> = emptyList(),
+    // Phase 242 (FR-242-4) — NULLABLE, deliberately, and this is the decision FR-242-7 stands or falls
+    // on. `OutboundHttp` parses with `ignoreUnknownKeys = true`, so a key Jellyfin renames deserialises
+    // to whatever default is declared here. For a list whose healthy value is *also* empty — every field
+    // below except the booleans — a value default makes "Jellyfin renamed this" and "this is correctly
+    // empty" the same observation, and the check fails open, silently, forever. Null is the third state
+    // that makes them distinguishable. Confirmed live against 12.1.0 (GET /Library/VirtualFolders,
+    // 2026-09-19), where `MetadataSavers` is genuinely absent on two libraries and `[]` on two others.
+    @SerialName("MetadataSavers") val metadataSavers: List<String>? = null,
+    @SerialName("EnableInternetProviders") val enableInternetProviders: Boolean? = null,
+    @SerialName("TypeOptions") val typeOptions: List<JellyfinTypeOptions>? = null,
     // Phase 212 — the flags FR-212-4's findings read. Confirmed live against 10.11.11
-    // (GET /Library/VirtualFolders, 2026-09-15) — every key here is the real JSON field name.
+    // (GET /Library/VirtualFolders, 2026-09-15) and re-confirmed unchanged on 12.1.0 by the
+    // 2026-09-18 upgrade audit — every key here is the real JSON field name.
     @SerialName("EnableChapterImageExtraction") val enableChapterImageExtraction: Boolean = false,
     @SerialName("ExtractChapterImagesDuringLibraryScan") val extractChapterImagesDuringLibraryScan: Boolean = false,
     @SerialName("EnableTrickplayImageExtraction") val enableTrickplayImageExtraction: Boolean = false,
     @SerialName("ExtractTrickplayImagesDuringLibraryScan") val extractTrickplayImagesDuringLibraryScan: Boolean = false,
     @SerialName("EnableLUFSScan") val enableLufsScan: Boolean = false,
+)
+
+// Phase 242 (FR-242-4) — the per-item-type fetcher lists, i.e. whether Jellyfin goes to an external
+// metadata or image provider itself for this library. Confirmed live against 12.1.0
+// (GET /Library/VirtualFolders, 2026-09-19): `TypeOptions` is absent entirely on libraries Jellyfin
+// does not scan for media (`Recordings`, `Samlinger` here), which is why it is nullable.
+@Serializable
+data class JellyfinTypeOptions(
+    @SerialName("Type") val type: String? = null,
+    @SerialName("MetadataFetchers") val metadataFetchers: List<String>? = null,
+    @SerialName("ImageFetchers") val imageFetchers: List<String>? = null,
 )
 
 @Serializable

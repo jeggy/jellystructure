@@ -1280,8 +1280,22 @@ private suspend fun renderJellyfinAdvisor() {
         val idx = libraryMappings.indexOfFirst { it.name == section.libraryName }
         if (idx < 0) continue
         val el = document.getElementById("lib-advisor-$idx") as? HTMLElement ?: continue
+        // Phase 242 FR-242-7 — the one case where the advisor says something about a library with no
+        // findings: it could not read that library's options, so "nothing to report" would be a claim it
+        // has not earned.
+        val body = if (section.optionsUnavailable) """
+            <div class="note blue" style="margin-top:8px;display:flex;gap:9px;align-items:flex-start;">
+              <span style="flex:none;">ℹ</span>
+              <div class="tiny" style="line-height:1.65">
+                <b>Nothing was checked for this library.</b><br>
+                Jellyfin returned no settings for it, so none of the checks below ran. This is not the
+                same as "no findings" — try again, and if it persists it usually means Jellyfin has
+                renamed or stopped returning the field this reads.
+              </div>
+            </div>"""
+        else section.findings.joinToString("") { advisorFindingHtml(it) }
         el.innerHTML = """<div style="margin-top:8px;padding-top:8px;border-top:1px dashed var(--border)">""" +
-            section.findings.joinToString("") { advisorFindingHtml(it) } + "</div>"
+            body + "</div>"
     }
 }
 

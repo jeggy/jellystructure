@@ -469,16 +469,21 @@ fun startServer(
                     checks.add(HealthCheck("Jellyfin", jfOk, if (cfg.apiKeys.jellyfinUrl.isBlank()) "URL not configured" else if (jfOk) "Connected to ${cfg.apiKeys.jellyfinUrl}" else "Connection failed"))
                     // Check managed Jellyfin libraries for settings that conflict with Jellystructure
                     // taking over metadata management (e.g. NFO Metadata Saver overwrites our NFO files).
+                    // Phase 242 FR-242-6 — one resolver, both consumers. This used to build its own
+                    // managed set (`filter { !it.skip }`, no `jellyfinId` condition) and re-implement the
+                    // NFO test inline, so the health endpoint and the advisor could disagree about which
+                    // libraries this product manages and about what counts as a conflict. Both now come
+                    // from JellyfinAdvisorService. Adopting the advisor's stricter gate is an intentional
+                    // behaviour change: a mapping with a blank `jellyfinId` names no Jellyfin library.
                     if (jfOk) {
-                        val managedIds = cfg.libraries.filter { !it.skip }.map { it.jellyfinId }.toSet()
+                        val managedIds = dev.jellystructure.advisor.JellyfinAdvisorService.managedJellyfinIds(cfg)
                         val jfLibs = runCatching { jellyfinClient.getLibraries(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken) }.getOrDefault(emptyList())
                         for (lib in jfLibs.filter { it.id in managedIds }) {
-                            val savers = lib.libraryOptions?.metadataSavers ?: emptyList()
-                            if ("Nfo" in savers) {
+                            for (f in dev.jellystructure.advisor.JellyfinAdvisorService.metadataOwnershipFindings(lib)) {
                                 checks.add(HealthCheck(
                                     name = "Jellyfin library: ${lib.name}",
                                     ok = false,
-                                    detail = "NFO Metadata Saver is ON — Jellyfin re-writes NFO files after every refresh, overwriting Jellystructure's metadata. Fix: Administration → Libraries → ⋯ Edit ${lib.name} → Metadata savers → uncheck Nfo"
+                                    detail = "${f.summary} — ${f.costHere} Fix: ${f.navigationPath} → ${f.fieldLabel}",
                                 ))
                             }
                         }

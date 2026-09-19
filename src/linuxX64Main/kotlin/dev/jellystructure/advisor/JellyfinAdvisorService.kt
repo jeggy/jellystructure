@@ -64,6 +64,11 @@ object JellyfinAdvisorService {
     private const val TASK_TRICKPLAY = "RefreshTrickplayImages"
     private const val TASK_CHAPTER_IMAGES = "RefreshChapterImages"
 
+    // Phase 242 FR-242-3 — the carve-out, as a named allow-list rather than a substring guess. Both of
+    // these read the file already on disk and reach no external service, so flagging them would be
+    // wrong; on the household server they are the only image fetchers configured anywhere.
+    private val LOCAL_ONLY_IMAGE_FETCHERS = setOf("Embedded Image Extractor", "Screen Grabber")
+
     suspend fun findings(jellyfinClient: JellyfinClient, cfg: AppConfig): AdvisorResponse {
         val now = nowEpochSec()
         cached?.let { if (now - cachedAt < CACHE_TTL_SEC) return it }
@@ -105,9 +110,26 @@ object JellyfinAdvisorService {
         // ones) is a skipped one, so the old managed-only gate rendered nothing for it.
         val storageByLibrary: Map<String, DeviceInfo?> = libraries.associate { it.id to resolveLibraryDevice(it, cfg) }
 
+        // Phase 242 FR-242-1 — metadata-ownership findings, unlike the performance ones above, DO gate on
+        // jellystructure managing the library: a skipped library is Jellyfin's to manage and a finding
+        // there would be noise. `Blandet` has the NFO saver on and is deliberately silent for that reason,
+        // while still receiving 246's storage findings, because the two questions are genuinely different.
+        val managedIds = managedJellyfinIds(cfg)
+
         val perLibrary = mutableListOf<LibraryAdvisorSection>()
         for (lib in libraries) {
-            val libFindings = perLibraryFindings(lib, storageByLibrary[lib.id], tasks).sortedBySeverity()
+            val managed = lib.id in managedIds
+            // Phase 242 FR-242-7 — a managed library whose whole LibraryOptions object is missing used to
+            // yield zero findings and therefore render exactly like one whose settings are perfect. It is
+            // now a distinct, transported state rather than silence.
+            if (managed && lib.libraryOptions == null) {
+                perLibrary += LibraryAdvisorSection(lib.name, emptyList(), optionsUnavailable = true)
+                continue
+            }
+            val libFindings = (
+                perLibraryFindings(lib, storageByLibrary[lib.id], tasks) +
+                    (if (managed) metadataOwnershipFindings(lib) else emptyList())
+                ).sortedBySeverity()
             if (libFindings.isNotEmpty()) perLibrary += LibraryAdvisorSection(lib.name, libFindings)
         }
 
@@ -231,6 +253,94 @@ object JellyfinAdvisorService {
         val progress = task.currentProgressPercentage?.let { " at ${(it * 10).toInt() / 10.0}%" } ?: ""
         val last = task.lastExecutionResult?.endTimeUtc?.take(19)?.let { " · last completed pass $it UTC" } ?: " · never completed a pass"
         return if (running) " · \"$name\" is running now$progress$last" else " · \"$name\" is ${task.state ?: "idle"}$last"
+    }
+
+    // ── Phase 242 — metadata ownership ──────────────────────────────────────────
+
+    /** FR-242-6 — the one gate both consumers read. `/health/full` used to build its own set with
+     *  `filter { !it.skip }` and no `jellyfinId` condition, so the two surfaces could disagree about
+     *  which libraries this product manages. They now cannot. This is deliberately the advisor's
+     *  stricter form: a mapping with no `jellyfinId` names no Jellyfin library at all. */
+    fun managedJellyfinIds(cfg: AppConfig): Set<String> =
+        cfg.libraries.filter { !it.skip && it.jellyfinId.isNotBlank() }.map { it.jellyfinId }.toSet()
+
+    /** FR-242-1/2/3 — whether Jellyfin is configured to write metadata over jellystructure's, or to go
+     *  and fetch its own. Pure, and shared with `/health/full` per FR-242-6: the advisor is the human
+     *  surface and the health endpoint the machine-readable one, and they must read one resolver.
+     *
+     *  The whole premise of this product is that jellystructure owns metadata and Jellyfin reads what is
+     *  on disk, and until phase 242 exactly one setting was checked against that premise, on an endpoint
+     *  nobody opens. */
+    fun metadataOwnershipFindings(lib: JellyfinLibrary): List<AdvisorFinding> {
+        val opts = lib.libraryOptions ?: return emptyList()
+        val path = "Dashboard → Libraries → ${lib.name} → Manage library"
+        val out = mutableListOf<AdvisorFinding>()
+
+        // FR-242-1. Note `metadataSavers` is nullable: absent means Jellyfin did not tell us, which is
+        // not the same as "none configured" and must not be reported as either.
+        if (opts.metadataSavers?.any { it.equals("Nfo", ignoreCase = true) } == true) {
+            out += AdvisorFinding(
+                id = "nfo_saver_${lib.id}",
+                severity = CRITICAL,
+                summary = "Jellyfin's NFO metadata saver is on for a library jellystructure manages",
+                currentValue = "Metadata savers: ${opts.metadataSavers.joinToString(", ")}",
+                costHere = "Jellyfin re-writes the NFO files in ${lib.name} after every refresh, on top of the ones jellystructure wrote. This product's entire arrangement is that it owns metadata and Jellyfin reads what is on disk; with this on, the two write to the same files and the last writer wins.",
+                navigationPath = path,
+                fieldLabel = "\"Metadata savers\" → uncheck \"Nfo\"",
+                recommendation = "Uncheck Nfo. Then check whether the NFO files jellystructure wrote for this library still say what it wrote — a saver that has been on for a while has already overwritten them.",
+                tradeoff = "Jellyfin stops maintaining its own copy of the metadata on disk. That is the intended arrangement here: jellystructure writes the NFOs.",
+            )
+        }
+
+        // FR-242-2 — the master switch for Jellyfin fetching metadata itself, read by nothing before 242.
+        if (opts.enableInternetProviders == true) {
+            out += AdvisorFinding(
+                id = "internet_providers_${lib.id}",
+                severity = WARNING,
+                summary = "Jellyfin fetches its own metadata for a library jellystructure manages",
+                currentValue = "Enable internet providers: On",
+                costHere = "Jellyfin goes to external metadata providers for ${lib.name} itself, in parallel with jellystructure doing the same job — two sources of truth for one library, and outbound requests that none of this product's pacing (phase 183) knows about.",
+                navigationPath = path,
+                fieldLabel = "\"Enable internet providers\" (EnableInternetProviders)",
+                recommendation = "Turn off, so metadata for this library comes from one place.",
+                tradeoff = "Jellyfin will show only what jellystructure has written. That is the point, but it does mean a gap in jellystructure's metadata is now visible rather than being papered over by Jellyfin's own fetch.",
+            )
+        }
+
+        // FR-242-3 — per-type fetchers, with the local-extractor carve-out.
+        for (t in opts.typeOptions.orEmpty()) {
+            val type = t.type ?: continue
+            val metadataFetchers = t.metadataFetchers.orEmpty().filter { it.isNotBlank() }
+            if (metadataFetchers.isNotEmpty()) {
+                out += AdvisorFinding(
+                    id = "metadata_fetchers_${lib.id}_$type",
+                    severity = WARNING,
+                    summary = "Jellyfin has metadata fetchers configured for $type in ${lib.name}",
+                    currentValue = "$type → Metadata downloaders: ${metadataFetchers.joinToString(", ")}",
+                    costHere = "Even with the master switch off, a configured fetcher is a second route to an external metadata provider for a library jellystructure already owns.",
+                    navigationPath = path,
+                    fieldLabel = "\"Metadata downloaders\" for $type",
+                    recommendation = "Clear them, unless this library is deliberately Jellyfin's to enrich.",
+                    tradeoff = "Same as above: one source of truth, and its gaps become visible.",
+                )
+            }
+            val external = t.imageFetchers.orEmpty().filter { it.isNotBlank() && it !in LOCAL_ONLY_IMAGE_FETCHERS }
+            if (external.isNotEmpty()) {
+                out += AdvisorFinding(
+                    id = "image_fetchers_${lib.id}_$type",
+                    severity = WARNING,
+                    summary = "Jellyfin fetches its own artwork for $type in ${lib.name}",
+                    currentValue = "$type → Image fetchers: ${external.joinToString(", ")}",
+                    costHere = "Jellyfin downloads artwork for ${lib.name} itself, alongside the artwork jellystructure resolves, writes and serves — so which image a viewer sees depends on which one wrote last.",
+                    navigationPath = path,
+                    fieldLabel = "\"Image fetchers\" for $type",
+                    // The carve-out is stated, not just applied, so nobody re-adds the two local ones.
+                    recommendation = "Clear the external ones. Purely local extractors (${LOCAL_ONLY_IMAGE_FETCHERS.joinToString(", ")}) read the file on disk, reach no external service, and are deliberately not flagged.",
+                    tradeoff = "Artwork comes only from jellystructure, which is the arrangement — a title it has no art for now shows none rather than showing Jellyfin's pick.",
+                )
+            }
+        }
+        return out
     }
 
     // ── FR-212-5 / FR-246-1..4 — server-wide encoding findings ──────────────────
@@ -608,6 +718,10 @@ data class AdvisorFinding(
 data class LibraryAdvisorSection(
     @SerialName("library_name") val libraryName: String,
     val findings: List<AdvisorFinding>,
+    // Phase 242 FR-242-7 — an empty `findings` list already means "this library is fine", so the state
+    // "Jellyfin did not return this library's options at all, and nothing here was checked" needs its own
+    // transport or it renders identically to being fine.
+    @SerialName("options_unavailable") val optionsUnavailable: Boolean = false,
 )
 
 @Serializable

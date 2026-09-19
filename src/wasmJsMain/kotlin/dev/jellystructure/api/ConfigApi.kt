@@ -246,6 +246,9 @@ data class AdvisorFinding(
 data class LibraryAdvisorSection(
     @SerialName("library_name") val libraryName: String,
     val findings: List<AdvisorFinding> = emptyList(),
+    // Phase 242 FR-242-7 — "Jellyfin returned no options for this library, so nothing was checked",
+    // which an empty findings list would otherwise render as "this library is fine".
+    @SerialName("options_unavailable") val optionsUnavailable: Boolean = false,
 )
 
 @Serializable
