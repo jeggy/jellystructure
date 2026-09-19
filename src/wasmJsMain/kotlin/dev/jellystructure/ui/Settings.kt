@@ -1274,6 +1274,29 @@ private suspend fun renderJellyfinAdvisor() {
           <p class="hint" style="margin:0 0 8px">Read-only. jellystructure never writes to Jellyfin — every row below is something to change yourself, with exact steps.</p>
           ${result.serverWide.joinToString("") { advisorFindingHtml(it) }}
         </div>"""
+        for (f in result.serverWide) {
+            if (f.action != "recheck_exposure") continue
+            val btn = document.getElementById("advisor-action-${f.id}") as? HTMLElement ?: continue
+            val out = document.getElementById("advisor-action-out-${f.id}") as? HTMLElement
+            btn.addEventListener("click", {
+                out?.textContent = "Checking\u2026"
+                // The page's own scope, not a throwaway MainScope() — cancelled when the admin
+                // navigates away, consistent with every other async action on this page (and with the
+                // bug fix recorded above `refreshApiKeyList`).
+                settingsScope?.launch {
+                    val findings = ConfigApi.recheckJellyfinExposure()
+                    // FR-244-4 — the operator confirms the fix rather than being told it worked: the
+                    // finding disappearing IS the confirmation, and a wrong value leaves it standing.
+                    val stillOpen = findings?.any { it.id == "known_proxies_empty" || it.id == "known_proxies_unconfirmed" }
+                    out?.textContent = when {
+                        findings == null -> "Couldn't reach the server."
+                        stillOpen == true -> "Still reported open. Jellyfin may need a restart before the change takes effect \u2014 do that when nobody is watching."
+                        else -> "Closed. Reloading the advisor\u2026"
+                    }
+                    if (findings != null && stillOpen != true) renderJellyfinAdvisor()
+                }
+            })
+        }
     }
 
     for (section in result.perLibrary) {
@@ -1359,6 +1382,12 @@ internal fun advisorFindingHtml(f: dev.jellystructure.api.AdvisorFinding): Strin
     else """
         <b>Set to:</b> ${f.recommendation.esc()}<br>
         <b>You lose:</b> ${f.tradeoff.esc()}"""
+    // Phase 244 FR-244-4 — a finding that carries an action gets a button that re-runs its own check,
+    // so a fix is confirmed in place rather than taken on trust.
+    val actionButton = if (f.action == "recheck_exposure") """
+        <br><button class="btn" id="advisor-action-${f.id.esc()}" style="margin-top:6px;font-size:.78rem;padding:2px 10px">Re-check</button>
+        <span id="advisor-action-out-${f.id.esc()}" class="tiny" style="margin-left:8px"></span>"""
+    else ""
     return """
     <div class="$cls" style="margin-top:8px;display:flex;gap:9px;align-items:flex-start;$border">
       <span style="flex:none;">$glyph</span>
@@ -1366,7 +1395,7 @@ internal fun advisorFindingHtml(f: dev.jellystructure.api.AdvisorFinding): Strin
         <b>${f.summary.esc()}</b>${if (critical) """ <span class="badge bad" style="font-size:.68rem">act on this first</span>""" else ""}<br>
         <b>Now:</b> ${f.currentValue.esc()}<br>
         <b>Costs here:</b> ${f.costHere.esc()}<br>
-        <b>Where:</b> ${f.navigationPath.esc()} → ${f.fieldLabel.esc()}<br>$actionRows
+        <b>Where:</b> ${f.navigationPath.esc()} → ${f.fieldLabel.esc()}<br>$actionRows$actionButton
       </div>
     </div>
     """.trimIndent()

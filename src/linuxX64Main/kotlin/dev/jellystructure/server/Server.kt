@@ -488,6 +488,19 @@ fun startServer(
                             }
                         }
                     }
+                    // Phase 244 FR-244-8 — the advisor is the human surface, the health endpoint the
+                    // machine-readable one, and they read the same probe so they cannot disagree. Same
+                    // reasoning as 242's FR-242-6 directly above.
+                    if (jfOk) {
+                        for (f in dev.jellystructure.advisor.JellyfinAdvisorService.exposureCheck(jellyfinClient, cfg)) {
+                            if (f.severity == dev.jellystructure.advisor.JellyfinAdvisorService.INFO) continue
+                            checks.add(HealthCheck(
+                                name = "Jellyfin exposure",
+                                ok = false,
+                                detail = "${f.summary} — ${f.costHere} Fix: ${f.navigationPath} → ${f.fieldLabel}",
+                            ))
+                        }
+                    }
                     // TMDB key
                     // Security fix (2026-08-02 review, finding L11) — this used to shell out via curl
                     // with the key on the command line (visible in /proc/*/cmdline to any local user for

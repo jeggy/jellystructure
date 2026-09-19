@@ -421,6 +421,27 @@ data class JellyfinSystemInfoAuth(
     @SerialName("TranscodingTempPath") val transcodingTempPath: String? = null,
 )
 
+// Phase 244 (FR-244-1) — GET /System/Configuration/network. `KnownProxies` is the field that decides
+// whether Jellyfin honours `X-Forwarded-For` at all: with it empty Jellyfin ignores the header entirely
+// and classifies every caller by the address it sees, which behind a reverse proxy is the proxy's own
+// private address — so every internet request is "in network". `EnableRemoteAccess` is what FR-244-2
+// gates on, per the dev review: it is a fact about the server the finding describes, whereas
+// jellystructure's own `public_url` is a fact about a different server that merely correlates here.
+// Confirmed live against 12.1.0, 2026-09-19.
+@Serializable
+data class JellyfinNetworkConfig(
+    @SerialName("KnownProxies") val knownProxies: List<String>? = null,
+    @SerialName("EnableRemoteAccess") val enableRemoteAccess: Boolean? = null,
+)
+
+// Phase 244 (FR-244-1) — GET /System/Endpoint. The capability probe's answer: how Jellyfin classifies
+// the caller it is currently answering. Confirmed live against 12.1.0, 2026-09-19.
+@Serializable
+data class JellyfinEndpointInfo(
+    @SerialName("IsLocal") val isLocal: Boolean = false,
+    @SerialName("IsInNetwork") val isInNetwork: Boolean = false,
+)
+
 // Phase 165 amendment (2026-08-14, FR-165-8) — GET /ScheduledTasks, used to find the Webhook plugin's
 // own "Webhook Item Added Notifier" task by its stable Key (never assume the Id is stable across
 // installs) so the live delivery probe can trigger it.

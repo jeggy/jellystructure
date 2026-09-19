@@ -97,6 +97,7 @@ object JellyfinAdvisorService {
         val systemInfo = jellyfinClient.getSystemInfoAuth(base, token)
         val plugins = jellyfinClient.getPlugins(base, token)
         val tasks = jellyfinClient.getScheduledTasks(base, token).orEmpty()
+        val network = jellyfinClient.getNetworkConfiguration(base, token)
 
         // FR-212-1 — a Jellyfin that cannot answer renders "Couldn't reach Jellyfin" for the whole
         // surface, never an empty finding list (which would read as "everything is fine").
@@ -134,6 +135,9 @@ object JellyfinAdvisorService {
         }
 
         val serverWide = mutableListOf<AdvisorFinding>()
+        // Phase 244 — the security section. Its findings carry CRITICAL severity, so 246's sort puts
+        // them above every performance finding without needing a second ordering rule.
+        serverWide += exposureFindings(jellyfinClient, cfg, base, token, network)
         if (encoding != null) serverWide += serverWideEncodingFindings(encoding, systemInfo)
 
         // FR-212-6 — host storage, deduped by device: several libraries can share one spindle (Film,
@@ -253,6 +257,129 @@ object JellyfinAdvisorService {
         val progress = task.currentProgressPercentage?.let { " at ${(it * 10).toInt() / 10.0}%" } ?: ""
         val last = task.lastExecutionResult?.endTimeUtc?.take(19)?.let { " · last completed pass $it UTC" } ?: " · never completed a pass"
         return if (running) " · \"$name\" is running now$progress$last" else " · \"$name\" is ${task.state ?: "idle"}$last"
+    }
+
+    // ── Phase 244 — exposure ────────────────────────────────────────────────────
+
+    /** FR-244-4's **Re-check**, and FR-244-8's health-endpoint source.
+     *
+     *  Deliberately NOT a `force` flag on [findings]: the advisor's 5-minute cache would otherwise hand
+     *  a Re-check the stale answer, so an operator would set `KnownProxies` correctly, press the button,
+     *  watch the finding stay, and conclude the guidance is wrong — which is the failure this phase's own
+     *  open question 1 worries about, reached without any Jellyfin restart being involved. Re-running the
+     *  whole advisor pass to answer one question would also be slower and noisier, so this runs only the
+     *  probe.
+     *
+     *  It invalidates the cached pass on the way out, so the page's own findings agree with the answer
+     *  the operator was just given rather than disagreeing for up to five minutes.
+     *
+     *  Stays on the BACKGROUND gate: operator-initiated is still advisory, and must never take a
+     *  reserved interactive permit from playback negotiation. */
+    suspend fun exposureCheck(jellyfinClient: JellyfinClient, cfg: AppConfig): List<AdvisorFinding> {
+        val base = cfg.apiKeys.jellyfinUrl
+        val token = cfg.apiKeys.jellyfinToken
+        if (base.isBlank() || token.isBlank()) return emptyList()
+        return kotlinx.coroutines.withContext(dev.jellystructure.ops.GateClass.BACKGROUND) {
+            val network = jellyfinClient.getNetworkConfiguration(base, token)
+            exposureFindings(jellyfinClient, cfg, base, token, network)
+        }
+    }
+
+    /** The Re-check button's own path: [exposureCheck] plus dropping the cached full pass, so the page's
+     *  findings agree with the answer the operator was just given instead of disagreeing for up to five
+     *  minutes. Deliberately NOT done inside [exposureCheck] — `/health/full` calls that one too, and a
+     *  polled endpoint must not be able to invalidate an advisory cache as a side effect. */
+    suspend fun exposureRecheck(jellyfinClient: JellyfinClient, cfg: AppConfig): List<AdvisorFinding> =
+        exposureCheck(jellyfinClient, cfg).also { cached = null; cachedAt = 0 }
+
+
+    /** FR-244-1/2/3/4/5 — the two security findings, shared with `/health/full` per FR-244-8.
+     *
+     *  **How FR-244-1's check is built, and why it is not the probe alone.** The dev review's blocking
+     *  item was that jellystructure reaches Jellyfin *through* the same reverse proxy the finding is
+     *  about (`jellyfin_url` is `https://jellyfin.example.net` on this household), and Caddy **appends**
+     *  to `X-Forwarded-For` rather than replacing it — so once `KnownProxies` is set, which entry
+     *  Jellyfin selects from that list decides the probe's answer, and the discriminating case was never
+     *  measured through this path. A probe that cannot observe the capability is worse than no probe.
+     *
+     *  So the check reads two signals and is only definitive where it genuinely is:
+     *
+     *  - **`KnownProxies` empty** is decisive on its own, and needs no inference about proxies: with it
+     *    empty Jellyfin ignores `X-Forwarded-For` outright, so every caller is classified by the address
+     *    it arrived from, which behind any reverse proxy is private. Measured live 2026-09-19 — the
+     *    probe returned `IsInNetwork: true` *identically with and without* the header, which is the
+     *    header being ignored, observed rather than assumed.
+     *  - **`KnownProxies` set** hands the question to the probe. `IsInNetwork: false` clears the
+     *    finding. `IsInNetwork: true` is the case jellystructure cannot tell apart — a wrong proxy
+     *    address and the append-hazard look the same from here — so it says exactly that instead of
+     *    claiming the hole is open or closed. An advisor that guesses in the one state it cannot see is
+     *    how an operator stops believing the rest of the page. */
+    private suspend fun exposureFindings(
+        jellyfinClient: JellyfinClient, cfg: AppConfig, base: String, token: String,
+        network: dev.jellystructure.auth.JellyfinNetworkConfig?,
+    ): List<AdvisorFinding> {
+        network ?: return emptyList()
+        // FR-244-2, corrected by the dev review: gate on Jellyfin's OWN remote access, not on
+        // jellystructure's `public_url`. `public_url` says *this* product is reachable from outside; the
+        // finding is about whether *Jellyfin* is. They correlate on this household and nothing makes
+        // them: a LAN-only Jellyfin behind an exposed jellystructure would get a finding it cannot act
+        // on, and an exposed Jellyfin behind a LAN-only jellystructure — the more dangerous case — would
+        // get silence.
+        if (network.enableRemoteAccess != true) return emptyList()
+
+        val out = mutableListOf<AdvisorFinding>()
+        val proxies = network.knownProxies.orEmpty().filter { it.isNotBlank() }
+        val path = "Dashboard → Networking"
+
+        if (proxies.isEmpty()) {
+            out += AdvisorFinding(
+                id = "known_proxies_empty",
+                severity = CRITICAL,
+                action = "recheck_exposure",
+                summary = "Anyone who can reach this server from the internet can restart it, with no password",
+                currentValue = "Known proxies: (empty) · Remote access: enabled",
+                // FR-244-3 — state the consequence, not the setting.
+                costHere = "Jellyfin lets a caller it considers in-network restart it without authenticating, and it decides that from the address the request arrived from. With no known proxies configured it ignores the forwarded-for header, so every request coming through the reverse proxy — including every request from the internet — is classified as in-network. That is the impact of CVE-2025-32012 with none of the IP spoofing that CVE describes, reachable by anyone who knows the address.",
+                navigationPath = path,
+                fieldLabel = "\"Known proxies\" (KnownProxies)",
+                // FR-244-4 — guide the fix, and do not guess the value. A wrong one silently leaves the
+                // hole open while looking fixed.
+                recommendation = "Set it to the address Jellyfin sees requests arriving *from* — your reverse proxy — not the client's address. jellystructure will not guess it: it cannot see that address, and a wrong value leaves this open while looking fixed. Set it, then use Re-check below. Jellyfin may need a restart before it takes effect — do that when nobody is watching.",
+                tradeoff = "None for a proxied installation. It is what makes Jellyfin's own in-network rules mean what they are supposed to mean.",
+            )
+        } else {
+            val endpoint = jellyfinClient.probeEndpointClassification(base, token)
+            if (endpoint != null && endpoint.isInNetwork) {
+                out += AdvisorFinding(
+                    id = "known_proxies_unconfirmed",
+                    severity = WARNING,
+                    action = "recheck_exposure",
+                    summary = "Known proxies is set, but this server still classifies a public caller as in-network",
+                    currentValue = "Known proxies: ${proxies.joinToString(", ")} · a caller presenting ${dev.jellystructure.auth.EXPOSURE_PROBE_ADDRESS} is still reported IsInNetwork: true",
+                    costHere = "Either the configured address is not the one Jellyfin actually sees requests arriving from, or Jellyfin needs a restart to pick the change up, or the header was rewritten on the way here — jellystructure reaches Jellyfin through the same proxy this setting is about, so it cannot tell those apart from where it stands. What it can say is that the classification has not changed, and unauthenticated restart is reachable while that is true.",
+                    navigationPath = path,
+                    fieldLabel = "\"Known proxies\" (KnownProxies)",
+                    recommendation = "Check the value against what Jellyfin logs as the remote address for an incoming request, and restart Jellyfin if it has not been restarted since the change — when nobody is watching. Then Re-check.",
+                    tradeoff = "n/a — this is a state jellystructure cannot resolve from here, reported rather than guessed at.",
+                )
+            }
+        }
+
+        // FR-244-5 — honest, and offers no fix, because there is none. Not softened: naming a problem,
+        // saying no fix exists, linking upstream and explicitly forbidding the plausible-but-wrong
+        // remedy is the whole requirement.
+        out += AdvisorFinding(
+            id = "anonymous_media_routes",
+            severity = INFO,
+            summary = "Jellyfin serves media to callers with no credential at all",
+            currentValue = "Remote access: enabled · GET /Videos/{id}/stream and GET /Items/{id}/Images/* answer without authentication",
+            costHere = "Anyone holding an item id can download the file or fetch its artwork from this server without signing in. Verified on both 12.1.0 and 10.11.11 — no header, an invalid token and a valid admin token all return the same 206.",
+            navigationPath = "Not a setting — upstream behaviour (Jellyfin issues #1501, #5415, #13986)",
+            fieldLabel = "n/a — there is nothing here to set",
+            recommendation = "No fix exists. `VideosController` carries no authorize attribute and this appears to be a deliberate compatibility trade for DLNA and browser clients. The only real levers are not exposing the server, or accepting it knowingly. **Do not put authentication in front of those paths at the reverse proxy** — Ravilo's own playback depends on them answering anonymously, so it would break every client in the household.",
+            tradeoff = "n/a",
+        )
+        return out
     }
 
     // ── Phase 242 — metadata ownership ──────────────────────────────────────────

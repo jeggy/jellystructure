@@ -51,6 +51,13 @@ fun Route.jellyfinRoutes(configStore: ConfigStore, jellyfinClient: JellyfinClien
             call.respond(JellyfinAdvisorService.findings(jellyfinClient, configStore.current))
         }
 
+        // Phase 244 FR-244-4 — Re-check: runs ONLY the exposure probe, bypassing the advisor's
+        // 5-minute cache, so an operator who has just set Known proxies gets the answer to the question
+        // they actually asked rather than a cached one from before the change.
+        get("/exposure-recheck") {
+            call.respond(JellyfinAdvisorService.exposureRecheck(jellyfinClient, configStore.current))
+        }
+
         // Phase 215 — the memory budget calculator: one number in, concrete changes out.
         post("/memory-budget") {
             val req = runCatching { call.receive<MemoryBudgetRequest>() }.getOrNull()
