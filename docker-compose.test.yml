@@ -140,6 +140,27 @@ services:
     networks:
       - testnet
 
+  # Phase 247 — a second, real HTTP origin for the sideloaded Tizen widget's bundle (ravilo-screen),
+  # deliberately NOT added to `app`'s CORS_ALLOWED_ORIGINS above: the whole point of
+  # ravilo-screen-cors.spec.ts / ravilo-screen.spec.ts is proving what happens today when a
+  # sideloaded-widget origin is NOT on that list (it never can be, in production — see the phase's
+  # spec). Never published; test-stack only.
+  ravilo-screen:
+    build:
+      context: .
+      dockerfile: ravilo-screen/Dockerfile
+      cache_from:
+        - type=local,src=${BUILDX_CACHE_DIR:-/tmp/.buildx-cache}/ravilo-screen
+      cache_to:
+        - type=local,dest=${BUILDX_CACHE_DIR:-/tmp/.buildx-cache}/ravilo-screen-new
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/"]
+      interval: 3s
+      timeout: 3s
+      retries: 15
+    networks:
+      - testnet
+
   playwright:
     image: mcr.microsoft.com/playwright:v1.45.0-noble
     working_dir: /tests
@@ -149,6 +170,7 @@ services:
     environment:
       APP_URL: http://app:9505
       RAVILO_WEB_URL: http://ravilo-web:8080
+      RAVILO_SCREEN_URL: http://ravilo-screen:8080
       FIXTURE_DIR: ${FIXTURE_DIR:-/tmp/jellystructure-fixtures}
       JELLYFIN_USER: ${JELLYFIN_USER:-admin}
       JELLYFIN_PASS: ${JELLYFIN_PASS:-password}
@@ -162,6 +184,8 @@ services:
       app:
         condition: service_healthy
       ravilo-web:
+        condition: service_healthy
+      ravilo-screen:
         condition: service_healthy
     networks:
       - testnet
