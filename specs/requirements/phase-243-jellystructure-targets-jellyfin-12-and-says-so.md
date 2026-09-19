@@ -5,7 +5,9 @@
 
 ## Status
 
-`Planned` — written 2026-09-18, not dev-reviewed, not built. The umbrella decision behind **238**,
+`Planned` — written 2026-09-18, **dev-reviewed 2026-09-19 against `main` `dcb97f2c`** (see §Dev review
+at the foot: read the version from the *public* probe, which already runs and still answers when
+authentication is broken). The umbrella decision behind **238**,
 **239**, **240**, **241**, **242** and **R271**; those are the individual repairs, this is the policy
 that makes them legitimate and stops the next one being written as a compatibility shim.
 
@@ -97,3 +99,62 @@ new version string and the bridge state from FR-238-3. The 2026-09-18 audit is t
 2. Should the below-floor state be sticky — once seen, recorded — so that an operator who downgrades
    mid-session is caught? Leaning no. The check is cheap and runs per request; a transient wrong
    answer during a restart would be worse than a late one.
+
+## Dev review (2026-09-19, against `main` `dcb97f2c`)
+
+The policy is right and the gap is real: `JellyfinSystemInfoAuth` carries exactly one field
+(`Models.kt:386-388`), nothing reads a version anywhere, and neither `specs/constitution.md` nor
+`README.md` mentions a Jellyfin version at all — so FR-243-1 is purely additive and acceptance 4 starts
+from zero. Four refinements, one of which changes where FR-243-2 reads from.
+
+1. **Read the version from the public probe, not only the authenticated one — it is absent precisely
+   when it matters most.** FR-243-2 adds `Version` to `JellyfinSystemInfoAuth`, which is `GET
+   /System/Info` (authenticated). But the failure mode this whole cluster exists for is *the credential
+   form changing*: on such a server `getSystemInfoAuth` returns null, `computeFindings` may fall through
+   to `reachable = false` (`JellyfinAdvisorService.kt:64-66`), and the version — the one fact that would
+   have explained everything — is the field that goes missing with it. Meanwhile `testConnection` already
+   fetches `GET /System/Info/Public` (`JellyfinClient.kt:315-319`), which **returns `Version`, needs no
+   credential, and whose body the code currently throws away**, keeping only the status. Read it there:
+   it costs nothing, it is already on the hot path, and it still answers when authentication is broken.
+   Keep the authenticated field too if 212's advisor wants it, but the public read is the one that has to
+   exist for FR-243-2 to do its job.
+2. **Acceptance 3 is not greppable as written, but it can be made so.** "grep for a version comparison in
+   the request-building paths finds nothing" has no mechanical form — there is no token to search for.
+   There is a better one available for free: FR-243-2 introduces exactly one new value, so a script can
+   assert that the *symbol* appears only in the allowed files. That is precisely the shape of the
+   existing `scripts/check-css-scoping.sh` / `check-fd-hygiene.sh` family, it runs in CI already
+   (`ci.yml:31-35`), and it turns FR-243-4 from a rule people remember into a rule the build enforces.
+   Recommend `scripts/check-jellyfin-version-use.sh`, allow-listing the two reporting sites by path.
+3. **Open question 1 closes: 12.0, and the question is academic for a reason worth writing down.**
+   FR-243-3 already specifies the comparison on the **major** version ("when the connected server's major
+   version is below 12"). A 12.0 server therefore passes under either answer, and no code path can
+   distinguish them. So the choice only affects one sentence of prose in the constitution and README —
+   declare **12.0**, the safer statement, and note inline that the check is major-only, which is what
+   makes the minor version irrelevant. If a minor-level floor is ever genuinely needed it will be because
+   a specific behaviour demands it, and that behaviour is what should carry the number.
+4. **Open question 2's lean is right, with a concrete reason.** `/api/health` is hit every 30 seconds by
+   the container's own `HEALTHCHECK` (`Dockerfile:129`), so a sticky below-floor flag would latch on any
+   blip inside a Jellyfin restart window and then need a manual reset — a worse failure than a late
+   answer, and one that would be indistinguishable from the real thing. Keep it per-request, and close
+   the question.
+5. **FR-243-6's checklist would cite two things that do not exist yet.** It names phase 240's live route
+   guard and its model-field check; both are `Planned`. Write the checklist now with the **manual
+   equivalents the 2026-09-18 audit actually used** — the auth-form matrix, the `/socket` handshake
+   probe, the `@SerialName` sweep by hand — so it is usable on the next upgrade whether or not 240 has
+   landed, and mark each step with the automation that will replace it. A checklist that can only be run
+   after another phase ships is a checklist that will not be run.
+6. **FR-243-5's count, measured.** There are **18** `10.11.11`/`10.11.x` citations in code today, across
+   **10** files (`.kt`/`.js`/`.kts`, excluding build output), plus further occurrences in the spec tree.
+   The spec says nineteen across nine, which is close enough to be the same sweep counted differently —
+   but since FR-243-5's whole value is being "a finite task rather than an open-ended sweep", the list
+   should live in exactly one place and be reproducible by a command. Put the command in the research
+   report next to the list. Also worth noting which one is load-bearing rather than historical:
+   `JellyfinClient.kt:1240`'s `Version`-header rule, which the spec has already re-verified on 12.1 and
+   which should be re-stamped first, since `tests/mock-jellyfin/server.js` justifies its only real
+   refusal by citing it (see 241's review, item 4).
+
+**One cross-phase note.** FR-243-4's "a version check is permitted for refusing a known-broken
+combination" is the one clause in this phase that could be read as licence for the branching it forbids.
+Tighten it: the permitted refusal produces a *finding or a health failure* and nothing else — it may not
+select a request shape, a header form or an endpoint. That is what 238, 239 and 241 each assume, and
+stating it here in those terms is what stops the next phase re-arguing it.
