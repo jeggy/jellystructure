@@ -5,13 +5,31 @@ import android.content.Context
 import android.content.pm.ActivityInfo
 import android.media.AudioManager
 import android.provider.Settings
+import android.view.WindowManager
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
 
 @Composable
 actual fun rememberHandsetPlayerControls(): HandsetPlayerControls {
     val context = LocalContext.current
+    // R276 (FR-R276-1/-2) — the override's lifetime is this composable's, and the undo lives beside the
+    // setter rather than at the call site. Ravilo is a single-Activity app, so a screenBrightness set
+    // while the player was up otherwise outlives the player and every screen after it: Android then
+    // reports the brightness as app-controlled in the shade, and the phone sits at whatever level a
+    // swipe left it at. Keyed on the window, and covering every exit (Back, auto-advance, casting out,
+    // a re-auth reset) because it is tied to composition and not to an exit path.
+    val exitWindow = (context as? Activity)?.window
+    DisposableEffect(exitWindow) {
+        onDispose {
+            exitWindow?.let { w ->
+                val lp = w.attributes
+                lp.screenBrightness = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
+                w.attributes = lp
+            }
+        }
+    }
     return remember(context) {
         val activity = context as? Activity
         val audio = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
