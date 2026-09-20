@@ -9,30 +9,53 @@
 
 ## Status
 
-`Planned` — written 2026-09-18, **dev-reviewed 2026-09-19 against `main` `dcb97f2c`** (see §Dev review
-at the foot: 236 has landed, so the shrink this spec anticipates is now the situation — the play travels
-236's `play_item`, not a hand-off redemption). Pairs with admin **237** (the console steps
-that associate the TV app's package name and the sideload/test-device rule). Depends on **R245**
-(sender, remote, web receiver) and **218** (the `/cast/` bundle and Application ID).
+`Planned` — design-authored 2026-09-18, **dev-reviewed 2026-09-19 against `main` `dcb97f2c`**, **not
+built, deliberately.** Two of its three open questions are closed below from the review's code
+citations; the build itself is the only remaining phase in this batch that was left alone, and the
+reason is worth stating rather than leaving as a gap.
 
-**Numbering:** written 2026-09-18 as R254, renumbered **R254 → R260** the same day when `main`'s own
-R254 (row-open-is-a-tv-thing) landed, and renumbered again **R260 → R266** hours later when `main`
-took R260 · R261 · R262 (the player's Back on the phone · fullscreen only while playing · Discover is
-one page with five tabs) before this draft was ever pushed, and a **third** time **R263 → R266** when
-`main` took R263 · R264 · R265 the same afternoon. The dev tracker's number wins, three times.
-Verified against `main` on 2026-09-18 — Ravilo taken through **R265**, admin through **236**. Next
-free: **238 / R269**.
+### Why this one was not built on 2026-09-20
 
-**⚠ Read together with `main`'s R264 + 236 before implementing.** Those specs answer the same owner
-wish — *a TV that runs Ravilo plays the title itself, and keeps playing when the phone is closed* — by a
-different road: the phone tells the **backend**, and the TV app (receiver-only, Tizen first) takes
-`play_item` off its events socket. This spec's road is Google's: a *cast* to a TV with the Ravilo
-package installed launches Ravilo natively instead of the web receiver. They are complementary (Cast
-Connect covers the Chromecast-built-in Android TV the household already owns; 236/R264 covers the
-Samsung set, and any phone with no Cast SDK), but the **hand-off payload and the enrolment path should
-be one mechanism, not two** — FR-R266-4's *play request by hand-off code, never a Jellyfin URL* is
-already 236's `play_item` in all but name. If the team builds 236 first, this phase shrinks to the
-sender flag, the launch intent and `receiver_kind`.
+Everything else in the 237/R264–R271 batch was buildable and checkable without hardware. This is not:
+
+- It adds the **Cast Connect SDK** (`play-services-cast-tv`), a `com.google.android.gms.cast.tv.action.LAUNCH`
+  intent filter and a `CastReceiverContext` to the **shipped Android TV build**. That is a manifest and
+  dependency change to the artifact the household actually installs, and this project has already paid
+  once for a release-only failure that no debug build could show
+  (`PlayerScreen`'s `VerifyError` — see `scripts/verify-release-apk-on-art.sh`, which exists because of it).
+- **Nothing about it can be verified without casting from a real phone to the stue TV.** A launch
+  intent that never fires, a `customData` payload the receiver silently ignores, and a correct
+  implementation look identical from here. Building it blind would produce a phase marked built whose
+  only real acceptance criterion had not been attempted — the exact shape phase 246 was written to
+  remove from the advisor.
+- Review item 4 adds a real hazard on top: the TV **already has** a Media3 `MediaSession` (R44,
+  `RaviloPlayerAndroid.kt`, TV-gated), so this is a reconciliation of two competing sessions, not a new
+  one. That is precisely the kind of thing that behaves differently on the device than in a compile.
+
+Nothing else waits on it: 237's admin card shipped without it (its own review carved FR-237-7's status
+line into this phase), and 236 already gives the household a working phone → TV path that does not
+involve Google at all.
+
+### Closed from the dev review
+
+- **OQ2 — `customData`.** None of the payload (jellystructure item id, position, the casting viewer's
+  user id) is media data, so it does not belong in `MediaLoadRequestData`'s media fields. Review item 1.
+- **OQ3 — no, and by citation rather than by lean.** `CastService.checkCeiling` returns immediately
+  unless `kind == "cast"`, and its own comment records 236 FR-236-9's decision verbatim. The Android TV
+  app is `kind = "tv"`, so a Cast Connect play cannot reach the ceiling. Review item 3.
+- **OQ1 stays open** and is now sharper: its premise was wrong (the TV *does* have a media session), so
+  the question is which session wins, not whether to create one.
+
+### The shape it should take when it is built
+
+Per review items 1 and 2, and unchanged by this decision: **Cast Connect carries the launch and the
+transport; the play travels 236's road.** No hand-off redemption — `CastService.redeem` forces a
+`cast-` id, the Chromecast display name and `kind = "cast"`, so redeeming from the TV app would mint a
+second device row for one physical TV and put it under 218's ceiling. The TV is already an enrolled
+device holding its own token; it accepts a phone-supplied user id **only if it already holds a token
+for that user**, which is what makes trusting it safe. And a native launch is a **launch observation**,
+not an enrolment, most cheaply a field on the status the TV already posts under 236 — which is what
+237's carved-out status line would then read.
 
 ## Functional requirements
 
