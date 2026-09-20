@@ -2,6 +2,7 @@ package dev.jellystructure.ravilo.ui.components
 
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -26,7 +27,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
@@ -183,7 +191,7 @@ private fun ProfileDot(initials: String) {
     val colors = RaviloTheme.colors
     val avatarUrl = LocalUserAvatarUrl.current
     Box(
-        Modifier.size(24.dp).background(colors.surfaceVariant, CircleShape),
+        Modifier.size(GLYPH_BOX).background(colors.surfaceVariant, CircleShape),
         contentAlignment = Alignment.Center,
     ) {
         if (avatarUrl != null) {
@@ -192,7 +200,7 @@ private fun ProfileDot(initials: String) {
             Text(
                 text = initials.ifEmpty { "?" },
                 color = colors.text,
-                fontSize = 10.sp,
+                fontSize = 12.sp,
                 fontWeight = FontWeight.Bold,
                 fontFamily = Sora,
             )
@@ -201,20 +209,85 @@ private fun ProfileDot(initials: String) {
 }
 
 /**
- * Text glyphs rather than vector icons, matching how this codebase already draws its small
- * affordances (`ScreensSheet`'s TV and AirPlay glyphs, the picker's chevrons) — no new asset
- * pipeline, and they follow the skin's ink automatically.
+ * R274 — the four page marks, drawn as **the design's own icons**: one stroked path set on a shared
+ * 24-unit grid (`design/ravilo/Ravilo Mobile.html`'s `.bn svg`, `viewBox="0 0 24 24"`,
+ * `stroke-width: 2`, round caps and joins), scaled into one fixed box.
+ *
+ * ## Why not text glyphs any more
+ *
+ * R267 drew these as Unicode characters — `⌂ ▤ ⌕ ✧` — to avoid an asset pipeline. They cost one
+ * instead: **a font size is not an optical size**. Measured on a Pixel 9 at a shared 26 sp, the ink
+ * came out `✧` 20.0 dp, `▤` 15.6 dp, `⌕` 14.2 dp — the magnifier at 71 % of the star, which is what
+ * it looked like. Per-glyph sizes could paper over that on *this* phone, but the ratios are the
+ * system font's, so any device that substitutes a different one brings the unevenness straight back.
+ *
+ * A path set has no such freedom: every icon is drawn into the same box, from the same grid, with the
+ * same stroke, so their heights and their centres agree by construction. This is not an asset
+ * pipeline either — no file, no loader, and `tint` still follows the skin exactly as before.
+ *
+ * It also puts Discover back: the design draws a **compass**, and `✧` had quietly become a sparkle.
  */
 @Composable
 private fun BottomNavGlyph(item: BottomNavItem, tint: Color) {
-    val glyph = when (item) {
-        BottomNavItem.HOME -> "⌂"
-        BottomNavItem.LIBRARY -> "▤"
-        BottomNavItem.SEARCH -> "⌕"
-        BottomNavItem.DISCOVER -> "✧"
-        BottomNavItem.PROFILE -> "●"
+    Canvas(Modifier.size(GLYPH_BOX)) {
+        val u = size.minDimension / 24f           // one viewBox unit
+        val sw = 2f * u                           // the design's stroke-width: 2, the SAME for all four
+        val stroke = Stroke(width = sw, cap = StrokeCap.Round, join = StrokeJoin.Round)
+
+        // Each icon's own drawn extent, and the scale that makes every one of them exactly
+        // GEOM_UNITS tall. The design's paths are not the same height on the grid — measured on the
+        // device they rendered 19.6 / 20.9 / 21.8 / 23.6 dp — which is ordinary optical sizing (a
+        // circle is drawn a little larger to *look* equal to a square). Equal-by-measurement is what
+        // was asked for, so each icon is scaled about its own centre to one ink height and one centre
+        // line. The stroke is deliberately left OUT of the scale: scaling it too would make the
+        // compass's outline visibly thinner than the house's, which is the unevenness this is fixing.
+        val (cx, cy, span) = when (item) {
+            BottomNavItem.HOME -> Triple(12f, 11.5f, 15f)      // x 4..20, y 4..19
+            BottomNavItem.LIBRARY -> Triple(11f, 12f, 16f)     // x 3..19, y 4..20
+            BottomNavItem.SEARCH -> Triple(12.25f, 12.25f, 16.5f)
+            BottomNavItem.DISCOVER -> Triple(12f, 12f, 18f)    // the r9 circle is the tallest
+            BottomNavItem.PROFILE -> Triple(12f, 12f, 16f)     // unreachable; see below
+        }
+        val g = GEOM_UNITS / span
+        fun at(x: Float, y: Float) =
+            Offset(size.width / 2f + (x - cx) * g * u, size.height / 2f + (y - cy) * g * u)
+        fun len(v: Float) = v * g * u
+        fun path(vararg pts: Pair<Float, Float>, close: Boolean = false) = Path().apply {
+            pts.forEachIndexed { i, (x, y) ->
+                val o = at(x, y); if (i == 0) moveTo(o.x, o.y) else lineTo(o.x, o.y)
+            }
+            if (close) close()
+        }
+        when (item) {
+            // M4 11l8-7 8 7 · M6 10v9h12v-9
+            BottomNavItem.HOME -> {
+                drawPath(path(4f to 11f, 12f to 4f, 20f to 11f), tint, style = stroke)
+                drawPath(path(6f to 10f, 6f to 19f, 18f to 19f, 18f to 10f), tint, style = stroke)
+            }
+            // rect 3,4 13x16 r2 · M19 6v14 · M7 8h5 · M7 12h5
+            BottomNavItem.LIBRARY -> {
+                drawRoundRect(tint, at(3f, 4f), Size(len(13f), len(16f)), CornerRadius(len(2f), len(2f)), stroke)
+                drawLine(tint, at(19f, 6f), at(19f, 20f), sw, StrokeCap.Round)
+                drawLine(tint, at(7f, 8f), at(12f, 8f), sw, StrokeCap.Round)
+                drawLine(tint, at(7f, 12f), at(12f, 12f), sw, StrokeCap.Round)
+            }
+            // circle 11,11 r7 · M20.5 20.5l-4.2-4.2
+            BottomNavItem.SEARCH -> {
+                drawCircle(tint, len(7f), at(11f, 11f), style = stroke)
+                drawLine(tint, at(16.3f, 16.3f), at(20.5f, 20.5f), sw, StrokeCap.Round)
+            }
+            // circle 12,12 r9 · M15.5 8.5l-2 5-5 2 2-5z — a compass, not a sparkle
+            BottomNavItem.DISCOVER -> {
+                drawCircle(tint, len(9f), at(12f, 12f), style = stroke)
+                drawPath(
+                    path(15.5f to 8.5f, 13.5f to 13.5f, 8.5f to 15.5f, 10.5f to 10.5f, close = true),
+                    tint, style = stroke,
+                )
+            }
+            // The profile item draws the viewer's own avatar instead (FR-R267-5d); this is unreachable.
+            BottomNavItem.PROFILE -> Unit
+        }
     }
-    Text(text = glyph, color = tint, fontSize = 18.sp)
 }
 
 @Composable
@@ -234,9 +307,26 @@ private fun BoxWithItemWidth(content: @Composable (Dp) -> Unit) {
     }
 }
 
-private val PILL_WIDTH = 56.dp
-private val PILL_HEIGHT = 32.dp
-/** Also the cell's top padding — see [BottomNavCell]. Mirrors the mockup's `.bnav { padding-top: 9px }`. */
-private val PILL_TOP = 9.dp
+// R274 — sized on the device rather than from the mockup's 393 px frame: the pill grew so the icons
+// read at arm's length, and RaviloDimens.bottomNavHeight grew with it.
+// The label did not grow: 11.5 sp is R267 FR-R267-6a's one fenced exception to the 13 sp floor, and
+// bigger glyphs are not a reason to reopen it.
+/**
+ * The box every page mark is drawn into — and the avatar's diameter, so all five items in the row are
+ * the same height and share one centre line. The mockup holds the same relationship (`.bn svg` 23 px
+ * beside `.avatar.sm` 24 px); this states it as one number so they cannot drift apart again.
+ */
+private val GLYPH_BOX = 28.dp
+
+/**
+ * The drawn height every page mark is scaled to, in the design's own 24-unit grid — so the four icons
+ * have one ink height and one centre line, whatever each path's natural extent on the grid is. 16 of
+ * 24 units leaves room for the 2-unit stroke on both sides without any icon touching its box.
+ */
+private const val GEOM_UNITS = 16f
+private val PILL_WIDTH = 60.dp
+private val PILL_HEIGHT = 36.dp
+/** Also the cell's top padding — see [BottomNavCell]. The mockup's `.bnav { padding-top: 9px }`, +1. */
+private val PILL_TOP = 10.dp
 private val HAIRLINE = 1.dp
 private const val PILL_SLIDE_MS = 180

@@ -16,9 +16,12 @@ build), **built and verified on that Pixel the same day**. Not dev-reviewed.
 - **FR-R274-5** — `Modifier.safeAreaPadding(includeIme, plusBottom)`, defaults `true` / `0.dp`, so
   every existing call site is unchanged in meaning. Android actual sums before it unions; the wasm
   actual takes the same signature with `includeIme` inert.
-- **FR-R274-1** — `RaviloDimens.bottomNavHeight` 56 → **68 dp**, now the whole bar: the hairline is
-  subtracted inside `RaviloBottomNav` rather than sitting on top of the token, and the cell pads
-  9 dp above (the same constant the pill is offset by, so the two cannot drift) and **8 dp below**.
+- **FR-R274-1** — `RaviloDimens.bottomNavHeight` 56 → 68 → **74 dp**, now the whole bar: the hairline
+  is subtracted inside `RaviloBottomNav` rather than sitting on top of the token, and the cell pads
+  10 dp above (the same constant the pill is offset by, so the two cannot drift) and **8 dp below**.
+  The second step is the owner's, after seeing 68 dp on the phone: pill 32 → 36 dp, the glyphs became
+  the design's stroked paths in a **28 dp** box equalised to one ink height, and the avatar takes the
+  same box. The label is unchanged throughout.
 - **FR-R274-2/-3** — the bar's host takes `includeIme = false`; the per-destination content takes
   `plusBottom = navBarInset` instead of a trailing `.padding(bottom = …)`.
 - **FR-R274-4** — `CastMiniBar`'s own `windowInsetsPadding(WindowInsets.safeDrawing)` becomes
@@ -29,7 +32,10 @@ build), **built and verified on that Pixel the same day**. Not dev-reviewed.
 Acceptance 1, 2, 3 and 4 pass. Search with the keyboard up: **the bar is behind the keyboard and does
 not move**, and the suggestions grid runs to the keyboard's top edge with no dead band. Keyboard
 dismissed: the bar returns with visible space under its labels, pill on Search. Home → Library →
-Search → Discover → back: identical geometry on every page. A title opened from Library and Back:
+Search → Discover → back: identical geometry on every page. Re-checked at 74 dp after the size
+amendment, and again after the glyph's second step: bigger glyphs and avatar, the same spacing under
+the labels, nothing clipped. Measured off the screenshots — the bar's top edge moved 13 px (5.8 dp at
+2.25×) against the 6 dp intended, and the gesture inset beneath it is unchanged at ~23 dp. A title opened from Library and Back:
 the bar returns in the same place (acceptance 5).
 
 ⚠ **FR-R274-4 is the one thing not device-verified** — no cast was running, so the mini bar was never
@@ -69,9 +75,34 @@ keyboard — and wrong for the nav bar, which is a fixed piece of window furnitu
 
 `RaviloDimens.bottomNavHeight` becomes the **whole bar** (hairline included) and is large enough that
 the label has real space beneath it, following the mockup's geometry rather than inventing one: a
-1 dp hairline, 9 dp above the pill, and ~8 dp under the label. Nothing else changes about the bar —
-the pill's size, slide and colour, the glyphs, the 11.5 sp labels and FR-R267-6a's fenced exception
-to the 13 sp floor all stand.
+1 dp hairline, 9 dp above the pill, and ~8 dp under the label.
+
+**Amended on the device the same day, at the owner's ask:** the bar is **74 dp**, carrying a 36 dp
+pill, a **26 sp** glyph and a **32 dp** avatar — the mockup was drawn in a 393 px frame and its icons
+read small on the real phone. The glyph's last step (22 → 26 sp) needed no further height: its line
+box is ~31 dp and the pill that holds it is 36.
+
+**One font size is not one optical size, so the page marks stopped being text.** R267 drew them as
+Unicode characters (`⌂ ▤ ⌕ ✧`) to avoid an asset pipeline. Measured on the Pixel at a shared 26 sp
+the ink came out `✧` 20.0 dp, `▤` 15.6, `⌕` **14.2** — the magnifier at 71 % of the star, which is
+exactly what it looked like. Per-glyph sizes could level that on *this* phone, but the ratios belong
+to the system font, so any device substituting another brings the unevenness straight back.
+
+They are now **the design's own icons**, drawn as paths: `design/ravilo/Ravilo Mobile.html`'s `.bn svg`
+set, `viewBox="0 0 24 24"`, `stroke-width: 2`, round caps and joins. No file and no loader, so this is
+not an asset pipeline either, and `tint` still follows the skin. It also puts **Discover** back to the
+compass the design draws — `✧` had quietly become a sparkle — and Library to its book.
+
+Each icon is then **scaled about its own centre to one ink height**, because the design's paths are
+not equally tall on the grid (19.6 / 20.9 / 21.8 / 23.6 dp as drawn — ordinary optical sizing, where a
+circle is drawn a little larger to *look* equal). The owner asked for equal-by-measurement, and the
+four now render at **20.9 dp of ink on one centre line, to the pixel**. The stroke is deliberately
+left out of that scale: scaling it too would make the compass's outline visibly thinner than the
+house's, which is the unevenness being fixed. The avatar takes the same 28 dp box, so all five items
+in the row share one height — the relationship the mockup already holds (`.bn svg` 23 px beside
+`.avatar.sm` 24 px), stated here as one constant so they cannot drift apart again.
+
+The pill's vertical offset and the cell's top padding remain the same value for the same reason.
 
 The pill's vertical offset and the cell's top padding are **the same value**, because they are the
 same edge: the pill is drawn in the parent `Box` and the glyph in the child cell, and the two only

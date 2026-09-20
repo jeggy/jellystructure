@@ -43,9 +43,14 @@ object RaviloDimens {
      * 56 dp it was one dp *shorter* than its own cell (8 top + 32 pill + 2 + ~15 label), so the label
      * sat flush against — in fact just past — the bar's bottom edge. The mockup's geometry
      * (`design/ravilo/Ravilo Mobile.html`, `.bnav`/`.bn`: a hairline, 9 px above the pill, a 56 px
-     * item centring its content) is what this now follows.
+     * item centring its content) is what this first followed, at 68 dp.
+     *
+     * Then, on the device: **74 dp**, to carry a 36 dp pill and a glyph big enough to read at arm's
+     * length on a phone the mockup was drawn smaller than. Still under Material's own 80 dp bar, and
+     * the label stays at 11.5 sp — R267 FR-R267-6a's fenced exception is not reopened by making the
+     * glyphs bigger.
      */
-    val bottomNavHeight = 68.dp
+    val bottomNavHeight = 74.dp
     val screenPadH    = 48.dp   // left/right padding on all screens
     val trackPadV     = 20.dp   // LazyRow contentPadding top/bottom (also covers scale-overflow)
     val itemSpacing   = 16.dp   // gap between tiles / channel cards / cast circles
