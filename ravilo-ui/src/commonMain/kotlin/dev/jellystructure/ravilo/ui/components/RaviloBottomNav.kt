@@ -22,8 +22,11 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -87,7 +90,14 @@ fun RaviloBottomNav(
     val items = BottomNavItem.entries
     // The pill's horizontal position is derived from the selected item's index, so one animated value
     // moves one element rather than five states cross-fading (FR-R267-6).
-    val selectedIndex = selected?.let { items.indexOf(it) } ?: 0
+    //
+    // R278 (FR-R278-2) — [selected] is now genuinely nullable: My List and the account screens are
+    // none of the four, and the bar is drawn on them. The pill is then not drawn at all rather than
+    // defaulting to index 0, which would light Home on a page that is not Home. Its last position is
+    // parked so that coming back to a page slides it from where it was, not in from the left.
+    val selectedIndex = selected?.let { items.indexOf(it) }
+    var parkedIndex by remember { mutableIntStateOf(selectedIndex ?: 0) }
+    LaunchedEffect(selectedIndex) { if (selectedIndex != null) parkedIndex = selectedIndex }
 
     Column(
         modifier = modifier
@@ -107,16 +117,18 @@ fun RaviloBottomNav(
             // The sliding pill, drawn under the items so an item's own icon and label sit on top of it.
             BoxWithItemWidth { itemWidth ->
                 val pillX by animateDpAsState(
-                    targetValue = itemWidth * selectedIndex + (itemWidth - PILL_WIDTH) / 2,
+                    targetValue = itemWidth * parkedIndex + (itemWidth - PILL_WIDTH) / 2,
                     animationSpec = tween(PILL_SLIDE_MS),
                     label = "bottomNavPill",
                 )
-                Box(
-                    Modifier
-                        .offset(x = pillX, y = PILL_TOP)
-                        .size(PILL_WIDTH, PILL_HEIGHT)
-                        .background(colors.accentGradient, RoundedCornerShape(PILL_HEIGHT / 2)),
-                )
+                if (selected != null) {
+                    Box(
+                        Modifier
+                            .offset(x = pillX, y = PILL_TOP)
+                            .size(PILL_WIDTH, PILL_HEIGHT)
+                            .background(colors.accentGradient, RoundedCornerShape(PILL_HEIGHT / 2)),
+                    )
+                }
             }
             Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.SpaceEvenly) {
                 items.forEach { item ->

@@ -632,6 +632,19 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
         //
         // My List is a pushed Browse (it arrives from the profile menu), so it is deliberately NOT
         // Library: `Dest.Browse` alone is not enough to decide.
+        // R278 (FR-R278-1) — whether there IS a bar, which is a different question from which item is
+        // lit and must not be answered by bottomItemOf() again. Absent only where the picture is
+        // playing, where the page is one title's detail, and before a profile has been chosen (that
+        // last one is R275 FR-R275-2's reasoning: four pages that do not exist for a signed-out
+        // viewer). Everything else keeps it, including every pushed list and the account screens —
+        // superseding R267 FR-R267-7's "absent on anything pushed over a page".
+        fun bottomBarShows(d: Dest): Boolean = when (d) {
+            is Dest.Player, is Dest.LiveTv, is Dest.CastRemote -> false
+            is Dest.MovieDetail, is Dest.SeriesDetail, is Dest.DiscoverItem, is Dest.UpcomingDetail -> false
+            is Dest.Login, is Dest.ProfilePicker -> false
+            else -> true
+        }
+
         fun bottomItemOf(d: Dest): BottomNavItem? = when {
             d is Dest.Home -> BottomNavItem.HOME
             d is Dest.Browse && d.kind != BrowseKind.MY_LIST -> BottomNavItem.LIBRARY
@@ -810,7 +823,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
             // by one bar is exactly how a heading ends up underneath one, twice already (R257
             // FR-R257-5, R259 FR-R259-2). Applied here, where the per-destination insets already are,
             // so the four pages do not each have to remember it.
-            val navBarInset = if (handset && bottomItemOf(dest) != null) RaviloDimens.bottomNavHeight else 0.dp
+            val navBarInset = if (handset && bottomBarShows(dest)) RaviloDimens.bottomNavHeight else 0.dp
             Box(
                 modifier = if (playingFullscreen) Modifier.fillMaxSize()
                 // R274 (FR-R274-3) — the bar's height goes INTO the seam, not after it: the result is
@@ -1450,19 +1463,27 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
         //
         // No hide-on-scroll (FR-R267-10): it is the one affordance that says where you are, and a bar
         // that disappears while you read a row is a bar you have to go looking for.
-        val bottomItem = bottomItemOf(dest)
-        if (handset && bottomItem != null) {
+        // R278 (FR-R278-2) — the page itself when it is one of the four, else the nearest one below it
+        // on the stack, so a list opened from Discover keeps Discover lit. Null when nothing below it
+        // answers either (My List, the account screens): the bar draws with no pill, which is honest —
+        // it is none of the four.
+        val pageItem = bottomItemOf(dest)
+        val litItem = pageItem ?: stack.lastOrNull { bottomItemOf(it) != null }?.let { bottomItemOf(it) }
+        if (handset && bottomBarShows(dest)) {
             // R274 (FR-R274-2) — includeIme = false: the bar is window furniture, so the keyboard is
             // drawn OVER it. Unioning the IME here is what made it climb onto the keyboard's top edge,
             // and (since union takes the larger side) swallowed its own navigation-bar inset on the way,
             // leaving the labels flush against the keys.
             Box(Modifier.fillMaxSize().safeAreaPadding(includeIme = false), contentAlignment = Alignment.BottomCenter) {
                 RaviloBottomNav(
-                    selected = bottomItem,
+                    selected = litItem,
                     // Same derivation every other AppBar call site uses (ChannelScreen, HomeScreen, …).
                     userInitials = destDisplayName(dest).take(2).uppercase(),
                     onSelect = { item ->
-                        val alreadyHere = item == bottomItem
+                        // FR-R278-3 — "already here" is THIS DESTINATION being that page, never
+                        // "this page belongs to that section": otherwise tapping Discover from a list
+                        // opened out of Discover would count as a re-tap and do nothing.
+                        val alreadyHere = item == pageItem
                         when (item) {
                             // FR-R267-5d — Profile is a menu, not a page, and never takes the pill:
                             // nothing about WHICH PAGE YOU ARE ON has changed when you open it.
@@ -1474,8 +1495,13 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                             // presentation change, not a new screen: Dest.Browse is already one screen
                             // with a type parameter, so Library is that screen with its parameter
                             // exposed as a control instead of as two nav items.
+                            // FR-R278-3 — resetTo, not replaceTop: from a pushed page, replacing the
+                            // top would leave the section it came from underneath ([Discover, Search]),
+                            // and Back would then return there instead of following R275's ladder. On
+                            // one of the four pages the stack is already size 1, so the two are the
+                            // same act.
                             BottomNavItem.LIBRARY ->
-                                if (!alreadyHere) replaceTop(Dest.Browse(BrowseKind.ALL, destDisplayName(dest)))
+                                if (!alreadyHere) resetTo(Dest.Browse(BrowseKind.ALL, destDisplayName(dest)))
                             // FR-R267-5a — search is a PAGE on a phone, not the TV's right-cluster
                             // magnifier: a phone has a keyboard and a thumb, so it is one of the
                             // places a viewer goes.
@@ -1485,14 +1511,14 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                             // and consumed by the screen, so it works on every tap and not just the
                             // first.
                             BottomNavItem.SEARCH ->
-                                replaceTop(Dest.Search(destDisplayName(dest), focusInput = alreadyHere))
+                                resetTo(Dest.Search(destDisplayName(dest), focusInput = alreadyHere))
                             // FR-R267-9 — re-tapping Discover returns to the FIRST AVAILABLE segment,
                             // written that way (not "Networks") so this and R268's declared order
                             // cannot disagree. This replaces R170's step-to-the-next-segment on the
                             // phone only; R170 stands on the TV, where the nav item is reached by
                             // D-pad and stepping is the cheaper gesture.
                             BottomNavItem.DISCOVER ->
-                                replaceTop(Dest.Discover(
+                                resetTo(Dest.Discover(
                                     destDisplayName(dest),
                                     defaultDiscoverSegment(upcomingAvailable, discoverAvailable),
                                 ))
@@ -1542,7 +1568,8 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                 Box(
                     Modifier
                         .align(Alignment.BottomCenter)
-                        .padding(bottom = if (handset && bottomItemOf(dest) != null) RaviloDimens.bottomNavHeight else 0.dp),
+                        // R278 (FR-R278-4) — the same "is there a bar" answer the content pads by.
+                        .padding(bottom = if (handset && bottomBarShows(dest)) RaviloDimens.bottomNavHeight else 0.dp),
                 ) { CastMiniBar(onOpen = { push(Dest.CastRemote(currentDisplayNameForCast)) }) }
             }
         }
