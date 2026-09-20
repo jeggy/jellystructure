@@ -32,6 +32,8 @@ import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.unit.dp
 import dev.jellystructure.ravilo.ui.focus.BackToTopRegistry
 import dev.jellystructure.ravilo.ui.focus.LocalBackToTop
+import dev.jellystructure.ravilo.i18n.resolveAndRememberLanguage
+import dev.jellystructure.ravilo.ui.screens.installDeviceLanguageStore
 import dev.jellystructure.ravilo.ui.screens.BrowseKind
 import dev.jellystructure.ravilo.ui.screens.BrowseScreen
 import dev.jellystructure.ravilo.ui.screens.BrowseStore
@@ -317,7 +319,12 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
     // handled live by refreshConfig(), independent of this seed.
     val initialSnapshot = remember { MultiTokenStore.getActive()?.userId?.let { HomeSnapshotCache.load(it) } }
 
-    var lang by remember { mutableStateOf(initialSnapshot?.uiLanguage ?: "en") }
+    // R279 — the language ladder: the signed-in user's own setting (carried on the cached snapshot
+    // at cold start, refreshed by refreshConfig() below), else whatever this device last drew in,
+    // else English. The middle rung is what makes the login screen, the profile picker and the
+    // pre-config frames of a cold start come up in the household's language instead of English.
+    remember { installDeviceLanguageStore() }
+    var lang by remember { mutableStateOf(resolveAndRememberLanguage(initialSnapshot?.uiLanguage)) }
     var tileScale by remember { mutableStateOf(initialSnapshot?.tileScale ?: 1f) }
     // R174 — grid columns, server-pushed on the config; portrait falls back to the built-in 2.
     var gridColumns by remember { mutableStateOf(initialSnapshot?.gridColumns ?: 6) }
@@ -337,7 +344,9 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
             runCatching { apiClient.getConfig() }.getOrNull()?.let { cfg ->
                 castAppId = cfg.cast?.appId
                 screensEnabled = cfg.screens?.enabled == true
-                lang = cfg.uiLanguage
+                // Remembered as well as applied, so signing out of this profile does not take the
+                // household's language with it.
+                lang = resolveAndRememberLanguage(cfg.uiLanguage)
                 themeState.skin = cfg.effectiveSkin()
                 tileScale = cfg.uiDensity.tileScale()
                 gridColumns = cfg.gridColumns

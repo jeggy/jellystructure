@@ -18,6 +18,7 @@ kotlin {
         val jsMain by getting {
             dependencies {
                 implementation(projects.shared)
+                api(projects.raviloI18n) // R279 — the shared string table; `api` so the receivers can call t() directly
                 implementation(libs.kotlinx.serialization.json)
             }
         }

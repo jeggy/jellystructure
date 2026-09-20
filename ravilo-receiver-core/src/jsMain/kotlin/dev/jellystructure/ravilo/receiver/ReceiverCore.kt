@@ -1,7 +1,13 @@
 package dev.jellystructure.ravilo.receiver
 
+import dev.jellystructure.ravilo.i18n.LastLanguage
+import dev.jellystructure.ravilo.i18n.LastLanguageStore
+import dev.jellystructure.ravilo.i18n.normalizeLanguage
+import dev.jellystructure.ravilo.i18n.resolveLanguage
+import dev.jellystructure.ravilo.i18n.t as translate
 import dev.jellystructure.shared.tv.CastTrack
 import dev.jellystructure.shared.tv.StreamTicket
+import kotlinx.browser.localStorage
 
 /**
  * R264 — extracted verbatim from ravilo-cast/Receiver.kt (the phase's own "no behaviour change" core
@@ -37,45 +43,57 @@ fun audioTracksOf(ticket: StreamTicket?): List<CastTrack> =
     ticket?.audio?.mapIndexed { i, a -> CastTrack(index = i, label = a.label, language = a.language, isDefault = a.isDefault) } ?: emptyList()
 
 /**
- * The receiver's own on-screen strings (idle/loading/busy/no-server/next-up), extracted verbatim from
- * ravilo-cast/Receiver.kt's private `Strings` object — a receiver draws these itself rather than reading
- * them from the shared `ravilo-ui` string table (dev review, R263 §Build notes: nothing Kotlin/Compose
- * exists in a plain Kotlin/JS receiver for that table to live in).
+ * R279 — the receiver's language, and the `localStorage` it remembers it in.
+ *
+ * A receiver spends most of its life with nobody signed in: a Chromecast sits idle between casts, a
+ * Tizen set shows its pairing code from the moment it is switched on. Both used to draw those
+ * screens in English whatever the household spoke, because the only language they ever saw arrived
+ * with a cast. So the ladder is [resolveLanguage]'s: the casting user's configured language while a
+ * cast is running, else whatever this receiver drew last, else English.
+ *
+ * Installing the store here rather than in each receiver's `main()` is deliberate — both receivers
+ * are already `localStorage` clients (token, receiver id), and neither should be able to forget.
+ */
+private const val LANG_KEY = "ravilo.lang"
+
+/**
+ * The mutable [lang] stays, because a receiver is plain Kotlin/JS with no Compose runtime and so no
+ * `CompositionLocal` to carry it.
  */
 object ReceiverStrings {
-    private val en = mapOf(
-        "ready" to "Ready to play from your phone", "loading" to "Loading…",
-        "noserver" to "Can’t reach your Ravilo server", "noserver_s" to "Check that the server is on and try again from your phone.",
-        "busy" to "The server is busy right now", "busy_s" to "It will start as soon as it can.", "waiting" to "waiting {n} s",
-        "nextep" to "UP NEXT", "startsin" to "Starts in {n} s",
-        // R269 — the receiver's one exception to no-navigation: the setup screen shown only with no
-        // server address stored yet.
-        "setup_title" to "Where is Ravilo?", "setup_hint" to "Type your Ravilo server’s address",
-        "setup_connect" to "Connect", "setup_trying" to "Trying to connect…",
-        "setup_not_found" to "There’s no Ravilo server at that address",
-    )
-    private val da = mapOf(
-        "ready" to "Klar til at spille fra din telefon", "loading" to "Indlæser…",
-        "noserver" to "Kan ikke nå din Ravilo-server", "noserver_s" to "Tjek at serveren er tændt, og prøv igen fra din telefon.",
-        "busy" to "Serveren er travl lige nu", "busy_s" to "Den starter, så snart den kan.", "waiting" to "venter {n} s",
-        "nextep" to "NÆSTE", "startsin" to "Starter om {n} s",
-        "setup_title" to "Hvor er Ravilo?", "setup_hint" to "Skriv adressen på jeres Ravilo-server",
-        "setup_connect" to "Forbind", "setup_trying" to "Prøver at få forbindelse…",
-        "setup_not_found" to "Der er ingen Ravilo-server på den adresse",
-    )
-    private val fo = mapOf(
-        "ready" to "Klár at spæla frá telefonini", "loading" to "Løðir…",
-        "noserver" to "Kann ikki ná Ravilo-servaranum", "noserver_s" to "Kanna um servarin er á, og royn aftur frá telefonini.",
-        "busy" to "Servarin hevur mikið at gera nú", "busy_s" to "Hon byrjar, so skjótt sum gjørligt.", "waiting" to "bíðar {n} s",
-        "nextep" to "NÆSTA", "startsin" to "Byrjar um {n} s",
-        "setup_title" to "Hvar er Ravilo?", "setup_hint" to "Skriva adressuna á tygara Ravilo-servara",
-        "setup_connect" to "Sambind", "setup_trying" to "Roynir at sambinda…",
-        "setup_not_found" to "Eingin Ravilo-servari er á hasi adressuni",
-    )
-    var lang = "en"
-    fun t(key: String, n: Int? = null): String {
-        val table = when (lang) { "da" -> da; "fo" -> fo; else -> en }
-        val s = table[key] ?: en[key] ?: key
-        return if (n != null) s.replace("{n}", n.toString()) else s
+    // Runs before `lang`'s initializer below — Kotlin runs init blocks and property initializers in
+    // declaration order — so the seed already reads through this store rather than the in-memory
+    // default. Both sides swallow: `localStorage` throws outright when site data is blocked, and a
+    // language that will not persist is not worth failing a receiver's whole boot over.
+    init {
+        LastLanguage.store = object : LastLanguageStore {
+            override fun read(): String? = runCatching { localStorage.getItem(LANG_KEY) }.getOrNull()
+            override fun write(code: String) { runCatching { localStorage.setItem(LANG_KEY, code) } }
+        }
     }
+
+    /**
+     * What this receiver draws in. Seeded from the remembered language so the idle and pairing
+     * screens are right before any user is known; set again, and remembered, once a cast names one.
+     */
+    var lang: String = resolveLanguage(lastSession = LastLanguage.read())
+        private set
+
+    /**
+     * Adopts the first of [candidates] this build has strings for and remembers it, so the idle
+     * screen after this cast — and after the next power cycle — stays in the same language.
+     *
+     * The order at the call site is the point: the hand-off payload carries the *casting user's*
+     * own configured language, which is the only thing that knows which of a household's viewers
+     * pressed play. A config fetched by the receiver can be a previous viewer's.
+     */
+    fun adopt(vararg candidates: String?) {
+        val chosen = candidates.firstNotNullOfOrNull { normalizeLanguage(it) } ?: return
+        lang = chosen
+        LastLanguage.remember(chosen)
+    }
+
+    /** [n] fills the `{n}` placeholder — the only one any receiver string has. */
+    fun t(key: String, n: Int? = null): String =
+        if (n == null) translate(key, lang) else translate(key, lang, n)
 }

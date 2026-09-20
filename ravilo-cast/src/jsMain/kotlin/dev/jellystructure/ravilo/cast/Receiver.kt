@@ -76,13 +76,13 @@ private class Receiver {
         for (id in listOf("idle", "loading", "buffering", "noserver", "busy")) el(id).classList.toggle("on", id in on)
     }
     private fun idle() {
-        el("idle-sentence").textContent = ReceiverStrings.t("ready")
+        el("idle-sentence").textContent = ReceiverStrings.t("cast.ready")
         el("nextup").classList.remove("on"); el("overlay").classList.remove("on")
         show("idle")
     }
 
     fun start() {
-        el("idle-sentence").textContent = ReceiverStrings.t("ready")
+        el("idle-sentence").textContent = ReceiverStrings.t("cast.ready")
         val messages = cast.framework.messages
         // FR-R245-13 — the LOAD interceptor: enrol if needed, negotiate our own ticket, then hand CAF the
         // real media. The phone never hands us a media URL.
@@ -119,7 +119,11 @@ private class Receiver {
         val raw = request.media?.customData ?: request.customData
         val data = runCatching { json.decodeFromString(CastLoadData.serializer(), JSON.stringify(raw) as String) }.getOrNull()
             ?: return request
-        ReceiverStrings.lang = data.lang
+        // R279 — the hand-off payload's `lang` is the CASTING USER's own configured uiLanguage
+        // (the sender reads it off their config before minting the code), so it is the only thing
+        // on this device that knows which of a household's viewers pressed play. Adopted first, and
+        // remembered, so the idle screen after this cast stays in their language too.
+        ReceiverStrings.adopt(data.lang)
         subSize = data.subSize
         current = data
         introSkipped = false
@@ -137,7 +141,10 @@ private class Receiver {
             localStorage.setItem(TOKEN_KEY, pr.deviceToken); localStorage.setItem(RECEIVER_ID_KEY, pr.session.deviceId)
         }
         if (config == null) config = runCatching { api.getConfig() }.getOrNull()
-        config?.uiLanguage?.let { if (it.isNotBlank()) ReceiverStrings.lang = it }
+        // …and the receiver's own config only as a fallback. It used to overwrite `lang` outright,
+        // which was wrong twice over: `config` is fetched once and cached across casts, so a second
+        // viewer casting to the same Chromecast was drawn in the FIRST viewer's language.
+        ReceiverStrings.adopt(data.lang, config?.uiLanguage)
         val t = negotiate(api, data.itemId) ?: return null   // busy/noserver screens already showing
         ticket = t
         val messages = cast.framework.messages
@@ -175,7 +182,7 @@ private class Receiver {
     }
 
     private fun failLoad(e: Throwable): dynamic {
-        el("noserver-t").textContent = ReceiverStrings.t("noserver"); el("noserver-s").textContent = ReceiverStrings.t("noserver_s")
+        el("noserver-t").textContent = ReceiverStrings.t("cast.no_server"); el("noserver-s").textContent = ReceiverStrings.t("cast.no_server_sub")
         show("noserver")
         send(CastReceiverMessage(type = "noserver", itemId = current?.itemId, title = current?.title, kicker = current?.kicker, artUrl = current?.artUrl, receiverId = receiverId))
         return null
@@ -215,11 +222,11 @@ private class Receiver {
             if (http != null && http.status == 503) {
                 val wait = http.retryAfterSeconds ?: 5
                 if (busySinceMs == null) busySinceMs = nowMs()
-                el("busy-t").textContent = ReceiverStrings.t("busy"); el("busy-s").textContent = ReceiverStrings.t("busy_s")
+                el("busy-t").textContent = ReceiverStrings.t("srv.busy"); el("busy-s").textContent = ReceiverStrings.t("srv.busy_sub")
                 show("busy")
                 send(CastReceiverMessage(type = "busy", itemId = itemId, title = current?.title, kicker = current?.kicker, artUrl = current?.artUrl, retryAfter = wait, sinceMs = busySinceMs, receiverId = receiverId))
                 repeat(wait) { s ->
-                    el("busy-wait").textContent = ReceiverStrings.t("waiting", ((nowMs() - (busySinceMs ?: nowMs())) / 1000).toInt())
+                    el("busy-wait").textContent = ReceiverStrings.t("cast.waiting", ((nowMs() - (busySinceMs ?: nowMs())) / 1000).toInt())
                     delay(1_000)
                 }
                 continue
@@ -298,12 +305,12 @@ private class Receiver {
     private fun startNextUp() {
         val next = nextEpisode() ?: return
         val secs = config?.skipSecs ?: 6
-        el("nu-k").textContent = ReceiverStrings.t("nextep"); el("nu-t").textContent = next.title
+        el("nu-k").textContent = ReceiverStrings.t("player.up_next"); el("nu-t").textContent = next.title
         el("nextup").classList.add("on")
         nextUpJob = GlobalScope.launch {
             var left = secs
             while (left > 0) {
-                el("nu-c").textContent = ReceiverStrings.t("startsin", left)
+                el("nu-c").textContent = ReceiverStrings.t("receiver.starts_in", left)
                 send(CastReceiverMessage(type = "nextup", nextupSecs = left, nextTitle = next.title, receiverId = receiverId))
                 delay(1_000)
                 left--

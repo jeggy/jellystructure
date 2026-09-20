@@ -51,10 +51,13 @@
   </style>
 </head>
 <body>
+  <!-- R279 (FR-R279-8) — every sentence on this page is filled by the bundle from the
+       shared string table, in the household's own language. Nothing here carries English:
+       a Danish household used to see "Ready to play from your phone" for the first frame. -->
   <cast-media-player id="player"></cast-media-player>
 
-  <section id="idle" class="screen on"><div class="mark"></div><div id="idle-sentence" class="sentence">Ready to play from your phone</div></section>
-  <section id="loading" class="screen"><div class="pulse"><i></i><i></i><i></i></div><div id="loading-kicker" class="kicker"></div><div id="loading-title" class="title"></div><div class="sweep"><i></i></div><div id="loading-label" class="sub">Loading…</div></section>
+  <section id="idle" class="screen on"><div class="mark"></div><div id="idle-sentence" class="sentence"></div></section>
+  <section id="loading" class="screen"><div class="pulse"><i></i><i></i><i></i></div><div id="loading-kicker" class="kicker"></div><div id="loading-title" class="title"></div><div class="sweep"><i></i></div><div id="loading-label" class="sub"></div></section>
   <section id="buffering" class="screen"><div class="spinner"></div></section>
   <section id="noserver" class="screen"><div class="mark"></div><div id="noserver-t" class="title"></div><div id="noserver-s" class="sub"></div></section>
   <section id="busy" class="screen"><div class="mark"></div><div id="busy-t" class="title"></div><div id="busy-s" class="sub"></div><div id="busy-wait" class="wait"></div></section>

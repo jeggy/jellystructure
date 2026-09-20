@@ -32,6 +32,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.jellystructure.ravilo.ui.focus.dpadFocusable
+import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 
 @Composable
@@ -61,7 +62,7 @@ fun ServerSetupScreen(onUrlSaved: (String) -> Unit) {
         ) {
             Text("Ravilo", color = colors.accent, fontSize = 32.sp, fontWeight = FontWeight.Bold, letterSpacing = 3.sp)
             Text(
-                "Enter your jellystructure server address",
+                str("setup.server_prompt"),
                 color = colors.textSecondary,
                 fontSize = 15.sp,
             )
@@ -74,7 +75,7 @@ fun ServerSetupScreen(onUrlSaved: (String) -> Unit) {
                     .fillMaxWidth()
                     .onFocusChanged { if (it.isFocused) keyboardController?.show() },
                 singleLine = true,
-                label = { Text("Server address") },
+                label = { Text(str("setup.server_label")) },
                 placeholder = { Text("192.168.1.1:8097") },
                 keyboardOptions = KeyboardOptions(
                     keyboardType = KeyboardType.Uri,

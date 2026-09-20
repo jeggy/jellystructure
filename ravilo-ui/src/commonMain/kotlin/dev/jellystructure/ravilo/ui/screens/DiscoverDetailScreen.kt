@@ -46,6 +46,7 @@ import dev.jellystructure.ravilo.ui.components.RaviloButton
 import dev.jellystructure.ravilo.ui.components.RequestLanguagePicker
 import dev.jellystructure.ravilo.ui.components.requestLanguageFlag
 import dev.jellystructure.ravilo.ui.components.requestLanguageLabel
+import dev.jellystructure.ravilo.ui.i18n.LocalLang
 import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.seams.RemoteImage
 import dev.jellystructure.ravilo.ui.theme.raviloHPad
@@ -131,7 +132,7 @@ private fun DetailContent(
                 if (detail.isSeries) "$base / ep" else base
             }
             Text(
-                listOfNotNull(e.year?.toString(), if (e.mediaKind == MediaKind.SERIES) "Series" else "Movie", runtimeLabel).joinToString("  ·  "),
+                listOfNotNull(e.year?.toString(), str(if (e.mediaKind == MediaKind.SERIES) "discover.kind_series" else "up.movie"), runtimeLabel).joinToString("  ·  "),
                 color = colors.textSecondary, fontSize = 14.sp,
             )
             // genre chips
@@ -154,7 +155,7 @@ private fun DetailContent(
             // PrimaryAction button below is the only "Request" affordance). Phase 139 §C — the chosen
             // language's flag rides along every status state.
             val statusText = if (a.languageStrictWaiting) str("request.waiting_for", mapOf("lang" to requestLanguageLabel(detail.languages, a.language).orEmpty()))
-                else discoverStatusLabel(a)
+                else discoverStatusLabel(a, LocalLang.current)
             if (statusText != null) {
                 Spacer(Modifier.height(6.dp))
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -229,21 +230,21 @@ private fun PrimaryAction(
         // In library (or ≥1 episode): play a movie, or open the proper library series detail.
         itemId != null && (a.status == AcquisitionStatus.AVAILABLE || a.firstAvailable) -> {
             if (detail.entry.mediaKind == MediaKind.SERIES) {
-                RaviloButton("Go to series", focusRequester = fr, onSelect = { onGoToSeries(itemId) })
+                RaviloButton(str("discover.go_to_series"), focusRequester = fr, onSelect = { onGoToSeries(itemId) })
             } else {
-                RaviloButton("Watch Now", focusRequester = fr, onSelect = { onWatchMovie(itemId, detail.entry.title) })
+                RaviloButton(str("action.watch_now"), focusRequester = fr, onSelect = { onWatchMovie(itemId, detail.entry.title) })
             }
         }
         // In flight — a non-actionable progress button reflecting the live stage.
         a.status == AcquisitionStatus.DOWNLOADING || a.status == AcquisitionStatus.QUEUED ||
             a.status == AcquisitionStatus.REQUESTED || a.status == AcquisitionStatus.IMPORTING -> {
-            RaviloButton(discoverStatusLabel(a) ?: "Working…", focusRequester = fr, style = ButtonStyle.GHOST)
+            RaviloButton(discoverStatusLabel(a, LocalLang.current) ?: str("discover.working"), focusRequester = fr, style = ButtonStyle.GHOST)
         }
         a.status == AcquisitionStatus.FAILED -> {
-            RaviloButton("Retry request", focusRequester = fr, onSelect = { requestWithLanguage { lang -> store.request(lang) } })
+            RaviloButton(str("discover.retry_request"), focusRequester = fr, onSelect = { requestWithLanguage { lang -> store.request(lang) } })
         }
         else -> {
-            RaviloButton("Request", focusRequester = fr, onSelect = { requestWithLanguage { lang -> store.request(lang) } })
+            RaviloButton(str("action.request"), focusRequester = fr, onSelect = { requestWithLanguage { lang -> store.request(lang) } })
         }
     }
 }
@@ -252,7 +253,7 @@ private fun PrimaryAction(
 private fun CastSection(cast: List<Person>) {
     val colors = RaviloTheme.colors
     Column {
-        Text("Cast", color = colors.textSecondary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+        Text(str("up.cast"), color = colors.textSecondary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
         Spacer(Modifier.height(10.dp))
         LazyRow(
             modifier = Modifier.focusRestorer(),

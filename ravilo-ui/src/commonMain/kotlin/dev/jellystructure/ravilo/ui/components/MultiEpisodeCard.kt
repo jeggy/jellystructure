@@ -143,7 +143,7 @@ fun MultiEpisodeCard(
                         .background(upNextGradient, RoundedCornerShape(topEnd = 8.dp))
                         .padding(horizontal = 10.dp, vertical = 4.dp),
                 ) {
-                    Text("UP NEXT", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = sora, letterSpacing = 0.5.sp)
+                    Text(str("player.up_next"), color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = sora, letterSpacing = 0.5.sp)
                 }
             }
 

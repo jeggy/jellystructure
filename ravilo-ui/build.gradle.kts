@@ -47,6 +47,7 @@ kotlin {
         commonMain {
             dependencies {
                 implementation(projects.shared)
+                api(projects.raviloI18n) // R279 — the generated string table; `api` so screens can name RaviloLanguage
                 implementation(libs.compose.runtime)
                 implementation(libs.compose.foundation)
                 implementation(libs.compose.ui)

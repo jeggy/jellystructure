@@ -31,6 +31,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import dev.jellystructure.ravilo.i18n.LastLanguage
+import dev.jellystructure.ravilo.i18n.SUPPORTED_LANGUAGES
 import dev.jellystructure.ravilo.ui.components.InstallCardIfEligible
 import dev.jellystructure.ravilo.ui.focus.dpadFocusable
 import dev.jellystructure.ravilo.ui.i18n.str
@@ -105,6 +107,9 @@ class SettingsStore(private val apiClient: TvApiClient) {
         val cur = (_state.value as? SettingsState.Loaded)?.config ?: return
         val updated = cur.copy(uiLanguage = lang)
         _state.value = SettingsState.Loaded(updated)
+        // R279 — remembered device-wide the moment it is chosen, not only when the config push comes
+        // back: choosing a language and then signing out must not drop the screen back to English.
+        LastLanguage.remember(lang)
         scope.launch { runCatching { apiClient.putViewerSettings(uiLanguage = lang) } }
     }
 
@@ -372,7 +377,10 @@ fun SignOutConfirmOverlay(displayName: String, onCancel: () -> Unit, onConfirm: 
 
 // R161 — endonyms, not translated (a language picker names languages in themselves regardless of
 // the currently active UI language, same convention the admin editor's language list already uses).
-private val UI_LANGUAGES = listOf("en" to "English", "da" to "Dansk", "fo" to "Føroyskt")
+// R279 — the list is no longer written here. It is whatever `i18n/*.json` declares, so dropping an
+// `es.json` in makes Spanish appear on this screen with no Kotlin edit.
+private val UI_LANGUAGES: List<Pair<String, String>>
+    get() = SUPPORTED_LANGUAGES.map { it.code to it.name }
 
 @Composable
 private fun SettingsContent(

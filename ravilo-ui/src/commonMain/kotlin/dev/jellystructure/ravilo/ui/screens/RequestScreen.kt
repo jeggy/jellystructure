@@ -37,7 +37,9 @@ import dev.jellystructure.ravilo.ui.components.StaticContentRow
 import dev.jellystructure.ravilo.ui.components.Tile
 import dev.jellystructure.ravilo.ui.focus.dpadFocusable
 import dev.jellystructure.ravilo.ui.focus.rememberEdgeBringIntoViewSpec
+import dev.jellystructure.ravilo.ui.i18n.LocalLang
 import dev.jellystructure.ravilo.ui.i18n.str
+import dev.jellystructure.ravilo.ui.i18n.t
 import dev.jellystructure.ravilo.ui.theme.RaviloDimens
 import dev.jellystructure.ravilo.ui.theme.raviloHPad
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
@@ -184,7 +186,7 @@ internal fun RequestTile(e: DiscoverEntry, focusRequester: FocusRequester? = nul
         title = e.entry.title,
         posterUrl = tmdbPoster(e.entry.posterPath) ?: tmdbImg(e.entry.backdropPath),
         subtitle = requestSubline(e.entry),
-        episodeBadge = discoverStatusLabel(e.acquisition),
+        episodeBadge = discoverStatusLabel(e.acquisition, LocalLang.current),
         episodeBadgeColor = discoverStatusColor(e.acquisition.status, colors.accent).copy(alpha = 0.92f),
         focusRequester = focusRequester,
         onFocused = onFocused,
@@ -204,17 +206,27 @@ internal fun tmdbPoster(path: String?): String? =
 internal fun requestSubline(e: RequestEntry): String =
     listOfNotNull(e.year?.toString(), e.genre, e.rating?.let { "★$it" }).joinToString("  ·  ")
 
-internal fun discoverStatusLabel(a: AcquisitionRecord): String? = when (a.status) {
-    AcquisitionStatus.AVAILABLE -> "✓ In Library"
-    AcquisitionStatus.REQUESTED -> "Requested"
-    AcquisitionStatus.QUEUED -> a.queuePosition?.let { "In queue · #$it" } ?: "In queue"
+/**
+ * R279 — was nine English sentences written straight into this `when`, on every device in every
+ * language. [lang] is the viewer's, from `LocalLang` at both call sites.
+ */
+internal fun discoverStatusLabel(a: AcquisitionRecord, lang: String): String? = when (a.status) {
+    AcquisitionStatus.AVAILABLE -> t("acq.in_library", lang)
+    AcquisitionStatus.REQUESTED -> t("acq.requested", lang)
+    AcquisitionStatus.QUEUED -> a.queuePosition
+        ?.let { t("acq.in_queue_n", lang, mapOf("n" to it.toString())) }
+        ?: t("acq.in_queue", lang)
     AcquisitionStatus.DOWNLOADING -> {
         val amt = if (a.episodesTotal > 0) "${a.episodesDone}/${a.episodesTotal}" else "${a.progress}%"
-        val flag = when { a.flags.stalled -> " · stalled"; a.flags.metadata -> " · starting"; else -> "" }
-        "Fetching · $amt$flag"
+        val flag = when {
+            a.flags.stalled -> " · " + t("acq.flag_stalled", lang)
+            a.flags.metadata -> " · " + t("acq.flag_starting", lang)
+            else -> ""
+        }
+        t("acq.fetching", lang, mapOf("amount" to amt)) + flag
     }
-    AcquisitionStatus.IMPORTING -> "Importing…"
-    AcquisitionStatus.FAILED -> "Failed"
+    AcquisitionStatus.IMPORTING -> t("acq.importing", lang)
+    AcquisitionStatus.FAILED -> t("acq.failed", lang)
     // Bug fix (2026-07-05): every not-yet-requested tile showed a "Request" badge — every title in a
     // feed always has this state until acted on, so it added noise rather than information. No badge
     // at all is the tile's neutral/default look; a real status only appears once one exists.

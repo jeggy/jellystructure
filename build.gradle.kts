@@ -359,6 +359,9 @@ tasks.named("wasmJsBrowserDistribution") {
         val wasmJsMain by getting {
             dependencies {
                 implementation(projects.shared)
+                // R279 — the admin's Ravilo config editor lists the interface languages; it reads the
+                // generated table rather than keeping its own copy of en/da/fo.
+                implementation(projects.raviloI18n)
                 implementation(libs.kotlinx.browser)
                 implementation(libs.ktor.client.core)
                 implementation(libs.ktor.client.js)

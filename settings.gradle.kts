@@ -3,6 +3,7 @@ rootProject.name = "jellystructure"
 enableFeaturePreview("TYPESAFE_PROJECT_ACCESSORS")
 
 include(":shared")
+include(":ravilo-i18n") // R279 — the one string table, generated from i18n/*.json; every client reads it
 include(":ravilo-ui")
 include(":ravilo-web")
 include(":ravilo-screen") // R264 — receiver-only TV app (Tizen first, webOS as a follow-on package); supersedes R189/:ravilo-tizen

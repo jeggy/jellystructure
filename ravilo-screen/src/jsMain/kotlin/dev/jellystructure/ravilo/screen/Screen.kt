@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.screen
 
+import dev.jellystructure.ravilo.i18n.LastLanguage
 import dev.jellystructure.ravilo.receiver.ReceiverStrings
 import dev.jellystructure.ravilo.receiver.audioTracksOf
 import dev.jellystructure.ravilo.receiver.hms
@@ -115,6 +116,10 @@ private class Screen(private val serverUrl: String) {
             override fun onError(detail: String) { console.error("Ravilo screen: backend error: $detail"); failLoad() }
         })
         idle()
+        // R279 — idle already drew in the remembered language (ReceiverStrings seeds itself from it),
+        // so the pairing screen is never English in a Danish house just because nothing has loaded
+        // yet. If this set is already enrolled, the active viewer's own setting supersedes it.
+        if (activeUserId != null) GlobalScope.launch { adoptLanguageOfActiveUser() }
         GlobalScope.launch { pairingLoop() }
         GlobalScope.launch { eventLoop() }
         GlobalScope.launch { tickLoop() }
@@ -122,7 +127,7 @@ private class Screen(private val serverUrl: String) {
 
     private fun idle() {
         loaded = false; playing = false; buffering = false; itemId = null; title = null; kicker = null; artUrl = null; ticket = null
-        el("idle-sentence").textContent = ReceiverStrings.t("ready")
+        el("idle-sentence").textContent = ReceiverStrings.t("cast.ready")
         // R269 (FR-R269-6) — a quiet line naming the configured server; the only way a household can see
         // a TV is pointed at a server that has since moved.
         document.getElementById("idle-server")?.textContent = serverUrl.removePrefix("https://").removePrefix("http://")
@@ -138,8 +143,8 @@ private class Screen(private val serverUrl: String) {
             if (loaded) { delay(2_000); continue }
             val minted = runCatching { api.screenCode(deviceId, deviceName(), "tizen") }.getOrNull()
             if (minted == null) {
-                el("noserver-t").textContent = ReceiverStrings.t("noserver")
-                el("noserver-s").textContent = ReceiverStrings.t("noserver_s")
+                el("noserver-t").textContent = ReceiverStrings.t("cast.no_server")
+                el("noserver-s").textContent = ReceiverStrings.t("cast.no_server_sub")
                 show("noserver")
                 delay(5_000)
                 continue
@@ -159,10 +164,26 @@ private class Screen(private val serverUrl: String) {
         tokens[pr.session.userId] = pr.deviceToken
         if (activeUserId == null) activeUserId = pr.session.userId
         saveTokens()
-        GlobalScope.launch {
-            config = runCatching { api.getConfig() }.getOrNull()
-            config?.uiLanguage?.let { if (it.isNotBlank()) ReceiverStrings.lang = it }
-        }
+        GlobalScope.launch { adoptLanguageOfActiveUser() }
+    }
+
+    /**
+     * R279 — draws this set in the language of whichever viewer it is currently acting for.
+     *
+     * A Tizen receiver holds a token per (device, user), so "the user" changes: whoever last sent it
+     * something to play is who it is acting for, and [onPlayItem] moves `activeUserId` accordingly.
+     * The config used to be fetched exactly once, on the first pairing, so a household's second
+     * viewer got the first one's language forever.
+     *
+     * Re-renders whatever is on screen now, since idle is a long-lived screen that would otherwise
+     * keep the previous language until something else redrew it.
+     */
+    private suspend fun adoptLanguageOfActiveUser() {
+        val fresh = runCatching { api.getConfig() }.getOrNull() ?: return
+        config = fresh
+        val before = ReceiverStrings.lang
+        ReceiverStrings.adopt(fresh.uiLanguage)
+        if (ReceiverStrings.lang != before && !loaded) idle()
     }
 
     // ── events socket: reconnect with backoff (FR-R264-6) ──
@@ -201,7 +222,11 @@ private class Screen(private val serverUrl: String) {
 
     // ── backend → screen ──
     private suspend fun onPlayItem(env: PlayItemEnvelope) {
+        val previousUser = activeUserId
         env.sessionUserId?.let { if (tokens.containsKey(it)) activeUserId = it }
+        // R279 — a play names the viewer this set is acting for; their language, not the first
+        // viewer who ever paired with it.
+        if (activeUserId != previousUser) adoptLanguageOfActiveUser()
         itemId = env.jellyfinId
         title = env.title
         kicker = null
@@ -231,11 +256,11 @@ private class Screen(private val serverUrl: String) {
             if (http != null && http.status == 503) {
                 val wait = http.retryAfterSeconds ?: 5
                 if (busySinceMs == null) busySinceMs = nowMs()
-                el("busy-t").textContent = ReceiverStrings.t("busy")
-                el("busy-s").textContent = ReceiverStrings.t("busy_s")
+                el("busy-t").textContent = ReceiverStrings.t("srv.busy")
+                el("busy-s").textContent = ReceiverStrings.t("srv.busy_sub")
                 show("busy")
                 repeat(wait) {
-                    el("busy-wait").textContent = ReceiverStrings.t("waiting", ((nowMs() - (busySinceMs ?: nowMs())) / 1000).toInt())
+                    el("busy-wait").textContent = ReceiverStrings.t("cast.waiting", ((nowMs() - (busySinceMs ?: nowMs())) / 1000).toInt())
                     delay(1_000)
                 }
                 continue
@@ -249,8 +274,8 @@ private class Screen(private val serverUrl: String) {
     }
 
     private fun failLoad() {
-        el("noserver-t").textContent = ReceiverStrings.t("noserver")
-        el("noserver-s").textContent = ReceiverStrings.t("noserver_s")
+        el("noserver-t").textContent = ReceiverStrings.t("cast.no_server")
+        el("noserver-s").textContent = ReceiverStrings.t("cast.no_server_sub")
         show("noserver")
         loaded = false
         sendStatus()
@@ -457,9 +482,9 @@ private suspend fun runServerSetup(): String {
     val input = document.getElementById("setupHost") as HTMLInputElement
     val hint = document.getElementById("setupHint") as HTMLElement
     val button = document.getElementById("setupConnect") as HTMLElement
-    document.getElementById("setupTitle")?.textContent = ReceiverStrings.t("setup_title")
-    button.textContent = ReceiverStrings.t("setup_connect")
-    hint.textContent = ReceiverStrings.t("setup_hint")
+    document.getElementById("setupTitle")?.textContent = ReceiverStrings.t("receiver.setup_title")
+    button.textContent = ReceiverStrings.t("receiver.setup_connect")
+    hint.textContent = ReceiverStrings.t("receiver.setup_hint")
     // FR-R269-7 — a hold-Back reopen prefills the address that was just working, never a blank field.
     localStorage.getItem(SETUP_PREFILL_KEY)?.let { input.value = it.removePrefix("https://").removePrefix("http://") }
     localStorage.removeItem(SETUP_PREFILL_KEY)
@@ -473,12 +498,12 @@ private suspend fun runServerSetup(): String {
         if (host.isBlank()) return
         val hasScheme = host.startsWith("http://", ignoreCase = true) || host.startsWith("https://", ignoreCase = true)
         val url = (if (hasScheme) host else "https://$host").trimEnd('/')
-        hint.textContent = ReceiverStrings.t("setup_trying")
+        hint.textContent = ReceiverStrings.t("receiver.setup_trying")
         val ok = runCatching {
             val r = probeClient.get("$url/api/health")
             r.status.isSuccess() && r.bodyAsText().contains("\"status\":\"ok\"")
         }.getOrDefault(false)
-        if (ok) resolved.complete(url) else hint.textContent = ReceiverStrings.t("setup_not_found")
+        if (ok) resolved.complete(url) else hint.textContent = ReceiverStrings.t("receiver.setup_not_found")
     }
     button.addEventListener("click", { GlobalScope.launch { tryConnect() } })
     input.addEventListener("keydown", { e -> if ((e as KeyboardEvent).key == "Enter") GlobalScope.launch { tryConnect() } })
@@ -490,10 +515,13 @@ private suspend fun runServerSetup(): String {
 }
 
 fun main() {
-    // FR-R269-9 — the setup screen has no server yet to take a language default from, so it follows the
-    // TV's own reported language (the standard Web API, not a Tizen-specific systeminfo call — works
-    // identically wherever this bundle runs) and falls back to English.
-    ReceiverStrings.lang = (window.navigator.language.takeIf { it.isNotBlank() } ?: "en").substringBefore('-')
+    // R279 + FR-R269-9 — the ladder for a set with no user signed in: what this set last drew in,
+    // then the TV's own reported language (the standard Web API, not a Tizen-specific systeminfo
+    // call — works identically wherever this bundle runs), then English. The remembered language
+    // leads because a set that has been used before knows more about the household than the TV's
+    // factory locale does; R269's rung is what is left for a set out of its box, which is the only
+    // case the setup screen it was written for can occur in.
+    ReceiverStrings.adopt(LastLanguage.read(), window.navigator.language)
     window.addEventListener("load", {
         GlobalScope.launch {
             runCatching {

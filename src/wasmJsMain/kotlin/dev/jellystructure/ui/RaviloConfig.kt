@@ -1,5 +1,6 @@
 package dev.jellystructure.ui
 
+import dev.jellystructure.ravilo.i18n.SUPPORTED_LANGUAGES
 import dev.jellystructure.api.BatchCountRequest
 import dev.jellystructure.api.JellyfinUser
 import dev.jellystructure.api.AdminConfigResponse
@@ -2342,7 +2343,10 @@ private val DENSITY_LABELS = mapOf(UiDensity.COMPACT to "Compact (smaller)", UiD
 // R182 — Skip Intro / Skip Credits behaviour.
 private val SKIP_MODE_LABELS = mapOf(SkipMode.OFF to "Off", SkipMode.PROMPT to "Prompt", SkipMode.AUTO to "Auto")
 private val SKIP_SECS_CHOICES = listOf(4, 6, 8)
-private val LANGS = listOf("en" to "English", "da" to "Dansk", "fo" to "Føroyskt")
+// R279 — Ravilo's interface languages, from the one place that knows them: `i18n/*.json`.
+// This list used to be written out here AND in Ravilo's own SettingsScreen, so adding a language
+// meant remembering both. Endonyms, per R161.
+private val LANGS: List<Pair<String, String>> get() = SUPPORTED_LANGUAGES.map { it.code to it.name }
 
 // R162: cache of the resolved per-user behaviour overlay, keyed by user id so a scope/user switch
 // re-fetches rather than showing stale state. Null value = not fetched yet / fetch failed.
