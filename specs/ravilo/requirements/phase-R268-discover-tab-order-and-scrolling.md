@@ -46,8 +46,8 @@ backend, DTO or config change. Supersedes **R243 FR-R243-1**'s tab order only. P
   that every gated view is a *subsequence* of the declared order (the mechanical form of "filters,
   never re-orders"), the always-rendered default, and that R170's step walks the rendered list.
 
-Acceptance 1–2, 6–8 hold. **3, 4 and 5 are on-device (stue TV D-pad reach, Pixel 9 swipe and the
-strip's scroll offset surviving a tap) and are verified on device.**
+Acceptance 1–2, 6–8 hold. **3, 4 and 5 are on-device checks — stue TV D-pad reach, Pixel 9 swipe, and
+the strip's scroll offset surviving a tap — and are NOT yet done.**
 
 ## Current state (traced against `main`, 2026-09-18)
 
