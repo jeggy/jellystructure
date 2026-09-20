@@ -227,7 +227,10 @@ private sealed class Dest {
          *  channel's own Continue row; forwarded to [SeededBrowseStore] unchanged. */
         val channelId: String? = null,
     ) : Dest()
-    data class Search(val displayName: String) : Dest()
+    /** R277 — [focusInput] is set by tapping the bottom bar's Search item while Search is already
+     *  showing, and is consumed by the screen (replaceTop with it cleared) so the next tap sets a
+     *  fresh one. Same shape as [Discover.focusSegment], and for the same reason. */
+    data class Search(val displayName: String, val focusInput: Boolean = false) : Dest()
     // R170 — Coming Soon (the old Upcoming tab) and Request (the old Top-10/Discover tab) are now the
     // two segments of one merged Discover tab; `segment` decides which of UpcomingScreen/DiscoverScreen
     // actually renders (see DiscoverSegment/defaultDiscoverSegment in NavItems.kt).
@@ -1109,6 +1112,8 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                     store = store,
                     onBack = { pop() },
                     onItemSelect = { openDetail(it, dest.displayName) },
+                    focusInputOnEntry = dest.focusInput,
+                    onFocusInputConsumed = { replaceTop(dest.copy(focusInput = false)) },
                 )
             }
 
@@ -1474,8 +1479,13 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                             // FR-R267-5a — search is a PAGE on a phone, not the TV's right-cluster
                             // magnifier: a phone has a keyboard and a thumb, so it is one of the
                             // places a viewer goes.
+                            // R277 (FR-R277-2) — re-tapping Search while on Search raises the
+                            // keyboard, which is the one thing the bar's own item could not do (this
+                            // was `if (!alreadyHere)`, i.e. a no-op). The flag is carried on the Dest
+                            // and consumed by the screen, so it works on every tap and not just the
+                            // first.
                             BottomNavItem.SEARCH ->
-                                if (!alreadyHere) replaceTop(Dest.Search(destDisplayName(dest)))
+                                replaceTop(Dest.Search(destDisplayName(dest), focusInput = alreadyHere))
                             // FR-R267-9 — re-tapping Discover returns to the FIRST AVAILABLE segment,
                             // written that way (not "Networks") so this and R268's declared order
                             // cannot disagree. This replaces R170's step-to-the-next-segment on the

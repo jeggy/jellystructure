@@ -45,12 +45,15 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import dev.jellystructure.ravilo.ui.LocalGridColumns
 import dev.jellystructure.ravilo.ui.LocalPortrait
 import dev.jellystructure.ravilo.ui.LocalPortraitGridColumns
 import dev.jellystructure.ravilo.ui.components.Tile
 import dev.jellystructure.ravilo.ui.focus.backToTopOnBack
 import dev.jellystructure.ravilo.ui.i18n.str
+import dev.jellystructure.ravilo.ui.theme.LocalHandset
 import dev.jellystructure.ravilo.ui.theme.RaviloDimens
 import dev.jellystructure.ravilo.ui.theme.raviloHPad
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
@@ -123,6 +126,11 @@ fun SearchScreen(
     store: SearchStore,
     onBack: () -> Unit,
     onItemSelect: (MediaCard) -> Unit,
+    // R277 (FR-R277-2) — set by a tap on the bottom bar's Search item while Search is already showing,
+    // and consumed immediately, so the next tap sets a fresh one. A flag left true would raise the
+    // keyboard once and then be indistinguishable from false for the rest of the page's life.
+    focusInputOnEntry: Boolean = false,
+    onFocusInputConsumed: () -> Unit = {},
 ) {
     val colors = RaviloTheme.colors
     val sora = Sora
@@ -147,17 +155,34 @@ fun SearchScreen(
     val scope = rememberCoroutineScope()
     val keyboardController = LocalSoftwareKeyboardController.current
 
+    // R277 (FR-R277-1) — on a TV this screen IS the keyboard: the viewer arrives with a D-pad and no
+    // other way in, so the field takes focus on entry and the IME comes with it. On a phone the same
+    // two effects are the bug — the keyboard is half the screen and it arrives before anyone has said
+    // they want to type, covering the suggestions the page exists to show. A phone viewer who wants to
+    // type taps the field.
+    val handset = LocalHandset.current
+    val focusInput: () -> Unit = {
+        textFieldFR.requestFocus()
+        // Called even when the field already holds focus: Back dismisses the IME without moving focus,
+        // so requestFocus() is a no-op there and show() is the half that does the work (FR-R277-2).
+        keyboardController?.show()
+    }
+
     // Auto-focus and open IME on screen entry
     LaunchedEffect(Unit) {
-        textFieldFR.requestFocus()
-        keyboardController?.show()
+        if (!handset) focusInput()
     }
 
     // Return focus to the text field and re-open IME when leaving the results grid
     LaunchedEffect(inGrid) {
-        if (!inGrid) {
-            textFieldFR.requestFocus()
-            keyboardController?.show()
+        if (!inGrid && !handset) focusInput()
+    }
+
+    // FR-R277-2 — the bottom bar's own Search item, tapped while already here.
+    LaunchedEffect(focusInputOnEntry) {
+        if (focusInputOnEntry) {
+            focusInput()
+            onFocusInputConsumed()
         }
     }
 
@@ -165,7 +190,10 @@ fun SearchScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(colors.background)
-            .padding(top = RaviloDimens.appBarHeight + 24.dp)
+            // R277 (FR-R277-4) — the gap is for the app bar this screen is drawn under. On a handset
+            // R267 gave Search no top row at all, so reserving 84 dp for it wastes the top of the one
+            // page with the least room. The safe-area inset above this is untouched.
+            .padding(top = if (LocalHandset.current) 16.dp else RaviloDimens.appBarHeight + 24.dp)
             // Back from results grid → text field + IME; Back from text field → pops screen.
             .backToTopOnBack(
                 atTop = { !inGrid },
@@ -189,7 +217,29 @@ fun SearchScreen(
             )
             Spacer(Modifier.weight(1f))
             if (query.isNotEmpty()) {
-                Text(str("search.clear"), color = colors.accent, fontSize = 16.sp, fontFamily = sora)
+                // R277 (FR-R277-3) — this was a plain Text: an accent-coloured affordance that had
+                // never been clickable. It clears and nothing else; raising the keyboard is the
+                // field's job and the bar's, and clearing mid-typing keeps the IME up on its own
+                // because focus never moves.
+                //
+                // Handset only, and NOT because a TV has no pointer: Modifier.clickable is focusable,
+                // so applying it unconditionally would insert a new node into the TV's D-pad graph on
+                // this screen — reachable by Up from the field, ahead of whatever the viewer expects.
+                // The TV's search flow is this phase's own non-goal; a focusable header control there
+                // is a change someone should make deliberately, with a TV in front of them.
+                Text(
+                    str("search.clear"),
+                    color = colors.accent,
+                    fontSize = 16.sp,
+                    fontFamily = sora,
+                    modifier = if (!handset) Modifier else Modifier
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                        ) { query = ""; store.onQuery("") }
+                        // Past the 46 dp touch floor without moving the label off the title's baseline.
+                        .padding(vertical = 12.dp, horizontal = 4.dp),
+                )
             }
         }
         Spacer(Modifier.height(12.dp))
