@@ -3,7 +3,7 @@
 > Client half of [[phase-253-every-track-choice-is-a-server-side-choice-on-a-single-audio-stream]] for
 > the two `RaviloPlayer` actuals. Read 253's table first.
 
-**Status:** Planned (written 2026-09-20, not dev-reviewed).
+**Status:** ✓ Built 2026-09-20 (same day as written), not dev-reviewed, **not verified on a device or in a browser.** Android + wasmJs compile clean; `SingleAudioSessionTest` 6/6, `BurnedInSubtitleTest` 12/12, `PlayerScreenTrackResolutionTest` 20/20, whole `:ravilo-ui` suite 172/172. ⚠ **Release dex guard: 239 registers (limit 250, cliff 256)** — up from 227; the next change to `PlayerScreen` should move `choosePick`/`resolveTrackSelection` out of the composable first. Found and fixed on the way: the web player listed every PGS track **twice** (its own list kept URL-less entries that `PlayerScreen` also lists as burn-in candidates), and its `<track default>` attribute was a second, browser-run chooser — removed now that the resolver really selects. ⚠ FR-R284-6 (Android `hlsHevc = true`) rests on Media3's documented fMP4-HLS support, not on a test here.
 
 ## Requirements
 

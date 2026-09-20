@@ -4,7 +4,7 @@
 > Read 253's table first: on the TV app **no subtitle has ever been drawn**, and neither receiver
 > offers PGS or a working audio switch.
 
-**Status:** Planned (written 2026-09-20, not dev-reviewed).
+**Status:** ✓ Built 2026-09-20 (same day as written), not dev-reviewed, **no receiver hardware touched.** `:ravilo-receiver-core`, `:ravilo-screen`, `:ravilo-cast` and the Android sender compile clean; `ReceiverSubtitlesTest` 18/18 (parser + list order + pick rule live in `:shared`, the only place a test can reach them). The parser was additionally run once over *Honeyman*'s real Danish VTT from the live Jellyfin — **741/741 cues, æ/ø/å intact** (not committed: copyrighted text) — and that same request confirmed Jellyfin answers the subtitle URL with `Access-Control-Allow-Origin: *`, so the TV app's cross-origin fetch is allowed. **Found while wiring it, and fixed:** phase 236 defines `set_audio` / `set_subtitle {index|null}` / `set_subtitle_size` / `skip`, `RemoteRoutes` forwards exactly those, and the TV app matched `audio_track` / `subtitle_track` / `sub_size` / `seek_relative` — so **no phone has ever changed a track or a caption size on the TV app**; it now answers to the spec's names (old ones kept as aliases). Chromecast: the `audio`/`subtitle` commands `CastCommand`'s own doc named were handled nowhere; `selectedAudio` was the constant `0` and `selectedSub` "whichever track is flagged default". ⚠ Unverified and only hardware can say: that HTML draws over AVPlay on the RU7440 (R264's standing question), CAF's `getTextTracksManager()` calls, and a self-issued `playerManager.load()` mid-session.
 
 ## Requirements
 

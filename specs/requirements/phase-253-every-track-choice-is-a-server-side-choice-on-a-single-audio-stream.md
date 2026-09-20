@@ -5,7 +5,7 @@
 > [[phase-R285-audio-and-subtitles-work-on-every-receiver]]. Owner, 2026-09-20: *"Do not leave
 > anything alone. We want this to be fully supported across all platforms."*
 
-**Status:** Planned (written 2026-09-20, not dev-reviewed).
+**Status:** ✓ Built 2026-09-20 (same day as written), not dev-reviewed, **not deployed.** `compileKotlinLinuxX64` clean; `SingleAudioStreamTest` 7/7, `DeviceProfileTest` 9/9 (existing), `BurnInTicketWireTest` 9/9. Measured read-only against the live Jellyfin 12.1.0 on *Honeyman*: `AudioStreamIndex=5` is honoured and echoed in the `TranscodingUrl` (`AudioCodec=ac3`, the audio is then *copied*), composes with `SubtitleStreamIndex=6&SubtitleMethod=Encode`, and the `hls_hevc` profile returns `SegmentContainer=mp4` with `VideoCodecNotSupported` gone. ⚠ No `PlaybackService` harness — the restream branches are compile- and read-verified only.
 
 ## Investigation — what each platform can do today (read from the code, 2026-09-20)
 | | text subtitles | PGS subtitles | audio switch |
