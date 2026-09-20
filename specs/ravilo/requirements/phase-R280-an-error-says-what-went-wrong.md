@@ -50,6 +50,23 @@ history is made of:
   caller each one, wiring the primary's Down to the secondary itself — so a site with a second action
   cannot forget half the chain.
 
+### Verified, and not verified
+
+**Not verified on a device.** Every claim below is from tests, CI or a local run — no TV or phone
+ran this build. What that leaves genuinely open is how the surface *looks* at 10 feet: line lengths
+in Danish and Faroese, whether the focused button reads as focused against each of the three skins,
+and whether `fillMaxSize()` inside `SettingsScreen`'s already-padded column crowds the heading.
+
+What **is** established:
+
+- `ci / android-release` green, which runs `scripts/verify-release-apk-on-art.sh` on an emulator —
+  so the release-only ART `VerifyError` class of failure (the reason `LoadErrorState` is its own
+  `@Composable`) is ruled out by CI rather than by argument.
+- The kind → sentence mapping, the Retry rule and the 401 classification are unit-tested, including
+  that every sentence is really translated in en/da/fo.
+- Every module compiles: `ravilo-android`, `ravilo-web`, `ravilo-cast`, `ravilo-screen`, plus the
+  three `ravilo-ui` targets.
+
 **Tests: 587 green** (backend + client), including five new in `LoadErrorStringsTest` and one new in
 `PlayerStartFailureClassificationTest` for the 401. `every_cause_has_a_real_sentence_in_every_language`
 was **proved non-vacuous** by deleting `error.load.reauth.body` from `da.json` and watching it fail —
