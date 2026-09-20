@@ -530,6 +530,9 @@ class PlaybackService(
 
         return StreamTicket(
             jellyfinBaseUrl = jellyfinBase,
+            // R271 — empty, never the token. See StreamTicket.accessToken's own doc for why the field
+            // still exists at all.
+            accessToken = "",
             itemId = jellyfinId,
             container = "mkv", // conservative; Jellyfin transcodes if needed
             directPlay = !needsTranscode,
@@ -947,6 +950,9 @@ class PlaybackService(
 
         return StreamTicket(
             jellyfinBaseUrl = jellyfinBase,
+            // R271 — empty, never the token. See StreamTicket.accessToken's own doc for why the field
+            // still exists at all.
+            accessToken = "",
             itemId = jellyfinId,
             container = "mkv",
             directPlay = false,
@@ -1083,9 +1089,9 @@ internal suspend fun JellyfinClient.tvToken(baseUrl: String, device: DeviceData,
  * [restream]: those embed the token directly into the stream URL the client is handed (see
  * `withJellyfinToken`) — so any signed-in device (including a Kids/library-restricted profile) would
  * receive full Jellyfin **admin** credentials the moment its own token went stale, which the
- * surrounding negative-cache logic treats as routine. (R271 removed `StreamTicket.accessToken`, which
- * used to be a second copy of the same credential; the URL is still the mechanism, so this fix is
- * unchanged by that.) This variant never falls back — it returns
+ * surrounding negative-cache logic treats as routine. (R271 stopped populating `StreamTicket.accessToken`,
+ * which used to be a second copy of the same credential — the field itself survives, always empty,
+ * for wire compatibility; the URL is still the mechanism, so this fix is unchanged either way.) This variant never falls back — it returns
  * null so the caller can surface a clear "re-pair this device" error instead of silently handing out
  * server-admin access.
  *

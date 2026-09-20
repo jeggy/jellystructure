@@ -80,11 +80,29 @@ while IFS= read -r hit; do
   fail=1
 done < <(grep -rn '/Videos/' --include='*.kt' ravilo-ui/src ravilo-screen/src ravilo-cast/src ravilo-receiver-core/src ravilo-phone/src 2>/dev/null || true)
 
-if grep -rq 'access_token' shared/src/commonMain/kotlin/dev/jellystructure/shared/tv/Models.kt 2>/dev/null; then
-  if grep -n 'access_token' shared/src/commonMain/kotlin/dev/jellystructure/shared/tv/Models.kt | grep -qv '//'; then
-    echo "shared/.../tv/Models.kt still declares access_token outside a comment (R271 FR-R271-4 removed it)."
+# R271 — `StreamTicket.access_token` still EXISTS (removing it broke a pre-v1.31 client, which cannot
+# deserialize a ticket without it — the stue TV, 2026-09-20). What must never come back is a
+# credential inside it, so the fence checks the VALUE, not the field: every StreamTicket construction
+# site must pass the empty string.
+#
+# Scoped to PlaybackService, the only place a StreamTicket is built. Live TV's ticket has its own
+# `access_token` on its own model (LiveTvModels.kt) and legitimately carries a token — R271's spec
+# carves it out by name, and widening this to every `accessToken =` in the tree flagged it at once.
+TICKET_FILE="src/linuxX64Main/kotlin/dev/jellystructure/tv/PlaybackService.kt"
+while IFS= read -r hit; do
+  line=${hit#*:}
+  if ! grep -q 'accessToken = ""' <<<"$line"; then
+    echo "$hit"
+    printf '    ^ R271: StreamTicket.accessToken must always be the empty string, never a credential.\n'
     fail=1
   fi
+done < <(grep -n 'accessToken = ' "$TICKET_FILE" 2>/dev/null || true)
+
+if ! grep -q 'val accessToken: String,' shared/src/commonMain/kotlin/dev/jellystructure/shared/tv/Models.kt 2>/dev/null; then
+  echo "StreamTicket.accessToken is gone, or has gained a default."
+  echo "    ^ It must stay present AND non-defaulted: encodeDefaults = false omits a property equal to"
+  echo "      its default, which is the same wire breakage as deleting it (stue TV, v1.27, 2026-09-20)."
+  fail=1
 fi
 
 if [ "$fail" -ne 0 ]; then

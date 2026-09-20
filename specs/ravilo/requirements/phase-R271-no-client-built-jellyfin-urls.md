@@ -35,10 +35,39 @@ to the module half this phase was written about was built clean.
   any Ravilo module, and `access_token` may not come back to `StreamTicket`. Verified by putting the
   field back and watching it fail.
 
-⚠ **Rollout consequence, stated rather than discovered.** A client built before this change declares
-`access_token` as required, so it cannot deserialize a ticket from a server that no longer sends one.
-`ravilo-web` and `ravilo-cast` are served by the backend and move with it; an **already-installed
-Android APK must be updated**. This belongs in the release notes.
+### ⚠ The field is back, always empty — and this is the interesting part of the phase
+
+The rollout consequence was **stated and then discovered anyway**, which is worse than either alone.
+The original build removed `access_token` from `StreamTicket` on the reasoning that it had no readers
+left. It shipped in **v1.31**, and within the hour the **stue TV** (running **v1.27**) could not play
+anything: the backend negotiated `PlaybackInfo` fine — five times, `directPlay=true`, no server-side
+error — and the TV showed ***"Couldn't reach the server"***. That is a client-side
+`MissingFieldException` wearing R237's unreachable copy, because a pre-change client declares
+`access_token` as **required**.
+
+Two things made it worse than the note anticipated:
+
+- **Re-signing was not an escape.** Installing the v1.31 APK on the TV failed with
+  `INSTALL_FAILED_UPDATE_INCOMPATIBLE` — the installed build predates the real upload keystore
+  (R273), so updating that TV means uninstall and re-pair. "Just update the client" was not a
+  same-minute remedy for the one device that mattered.
+- **"No reader left" was never the binding constraint.** Deserialization requires the field whether
+  or not anything reads it. The audit that justified removal answered a different question from the
+  one that decides whether removal is safe.
+
+**The fix keeps the security win and drops the breakage:** the field stays, and is **always the empty
+string**. No credential travels — which was FR-R271-4's actual goal — and every installed client
+deserializes. **No default, deliberately**: `encodeDefaults = false` omits a property equal to its
+default, which would reproduce the breakage exactly (the same trap as phase 238's `never_attempted`,
+one day apart).
+
+`scripts/check-jellyfin-query-token.sh` now fences the **value**, not the field: every
+`StreamTicket` construction must pass `""`, and the field must stay present and non-defaulted.
+(Scoped to `PlaybackService` — Live TV's ticket has its own `access_token` that legitimately carries a
+token, and a tree-wide check flagged it on the first run.)
+
+Removing the field for real is a future phase, gated on **every installed client being past v1.31** —
+not on there being no reader.
 
 Acceptance 2 (direct play against 12.1 for a title with no HLS URL) is unreachable as written — there
 is no such title, which is the same finding as open question 2. Acceptance 3's "two clients" no longer

@@ -171,19 +171,34 @@ data class AudioTrack(
 @Serializable
 data class StreamTicket(
     @SerialName("jellyfin_base_url") val jellyfinBaseUrl: String,
-    // R271 (FR-R271-4) — `access_token` is GONE. It carried a raw Jellyfin access token to every
-    // client, and after FR-R271-2 it had exactly zero consumers: its only reader in the whole product
-    // was `PlayerScreen`'s dead URL-templating fallback. A credential that travels to a client for no
-    // reason is a credential that can leak for no reason.
-    //
-    // Not to be confused with Live TV's own `access_token` (`LiveTvModels.kt`), a different field on a
-    // different model that this phase did not survey — it stays.
-    //
-    // ⚠ Wire compatibility: a client built before this change declares `access_token` as required, so
-    // it cannot deserialize a ticket from a server that no longer sends one. The Ravilo clients ship
-    // from this repo alongside the backend; `ravilo-web` and `ravilo-cast` are served by the backend
-    // itself and so move with it, but an already-installed Android APK must be updated. Called out in
-    // the release notes for that reason.
+    /**
+     * R271 (FR-R271-4) — **always the empty string.** The credential is gone; the field is not.
+     *
+     * It used to carry a raw Jellyfin access token to every client, and after FR-R271-2 it had
+     * exactly zero consumers: its only reader in the whole product was `PlayerScreen`'s dead
+     * URL-templating fallback. A credential that travels to a client for no reason is a credential
+     * that can leak for no reason — so nothing populates it any more.
+     *
+     * ⚠ **But removing the field outright broke the household TV, and this is why it is still here.**
+     * Deleting it from the DTO looked free — no reader left — and it is not: a client built before
+     * the change declares `access_token` as **required**, so it cannot deserialize a ticket from a
+     * server that stops sending one. Shipped in v1.31 and caught the same morning on the stue TV
+     * (running v1.27): the backend negotiated `PlaybackInfo` fine, five times, and the TV showed
+     * *"Couldn't reach the server"* — a client-side `MissingFieldException` wearing R237's
+     * unreachable copy. Re-signing was not an escape either, since the installed build predates the
+     * real upload keystore, so an update would have meant uninstall + re-pair.
+     *
+     * **No default, deliberately**: the server's `Json` has `encodeDefaults = false`, so a property
+     * equal to its default is omitted from the wire — which is exactly the breakage again. It must be
+     * present and empty, not absent. (Same trap as phase 238's `never_attempted`.)
+     *
+     * Removing it for real is a future phase, gated on every installed client being past v1.31 — not
+     * on there being no reader, which was never the binding constraint.
+     *
+     * Not to be confused with Live TV's own `access_token` (`LiveTvModels.kt`), a different field on
+     * a different model that this phase did not survey — it stays.
+     */
+    @SerialName("access_token") val accessToken: String,
     @SerialName("item_id") val itemId: String,
     val container: String,
     @SerialName("direct_play") val directPlay: Boolean,
