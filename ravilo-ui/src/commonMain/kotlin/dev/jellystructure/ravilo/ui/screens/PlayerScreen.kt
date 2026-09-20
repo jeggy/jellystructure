@@ -269,6 +269,12 @@ private class PlayerBookkeeping(initialCastLink: CastLinkState) {
     var resolvedTrackSig by mutableStateOf<String?>(null)
     var resolvedTrackCount by mutableIntStateOf(0)
     var manualPickSinceResolve by mutableStateOf(false)
+    // R282 — the current ticket's burned-in subtitle (252's `burned_subtitle_index`), null when none.
+    // Server-pushed: written only by the load effect, from the ticket, never remembered across one.
+    var burnedSubIndex by mutableStateOf<Int?>(null)
+    // R282 (FR-R282-4) — an un-burn restream is in flight: when its ticket loads, re-arm R181's
+    // resolver so the just-persisted pick is matched against the FRESH track set.
+    var rearmResolveOnLoad by mutableStateOf(false)
     var loadedForItemId by mutableStateOf<String?>(null)
     var positionKnownForItemId by mutableStateOf<String?>(null)
     var advanceRequestedForItemId by mutableStateOf<String?>(null)
@@ -698,8 +704,10 @@ fun PlayerScreen(
         val result = resolveTrackChoice(seriesChoice, globalChoice, tickAudio, tickSubs)
         player.selectAudioTrack(result.audioIndex)
         selectedAudio = result.audioIndex
-        player.selectSubtitleTrack(result.subIndex)
-        selectedSub = result.subIndex
+        // R282 (FR-R282-2) — while a subtitle is burned in, nothing automatic may add a text track.
+        val subIndex = if (bk.burnedSubIndex != null) -1 else result.subIndex
+        player.selectSubtitleTrack(subIndex)
+        selectedSub = subIndex
         bk.resolvedTrackSig = trackSetSignature(tickAudio, tickSubs)
         bk.resolvedTrackCount = tickAudio.size + tickSubs.size
         bk.manualPickSinceResolve = false
@@ -716,23 +724,24 @@ fun PlayerScreen(
             selectedAudio = version.flatIndex
             player.selectAudioTrack(version.flatIndex)
             persistChoice(newAudioLanguage = group.language, newAudioVariant = version.signature())
-        } else if (group.isOff) {
-            selectedSub = -1
-            player.selectSubtitleTrack(-1)
-            persistChoice(newSubtitlesOff = true)
         } else {
-            val sub = subVersionOptions.getOrNull(version.flatIndex)
-            if (sub != null && sub.deliveryMethod == "encode") {
-                // R56: PGS burn-in — restream with subtitle index baked into the Jellyfin transcode.
-                store.restreamWithSub(itemId, sub.jellyfinStreamIndex, player.positionMs)
-            } else {
-                selectedSub = version.flatIndex
-                player.selectSubtitleTrack(version.flatIndex)
+            // R282 (FR-R282-4) — persisted FIRST: an un-burn re-resolves from this choice. (R181: a
+            // PGS pick is still worth remembering — it helps other titles and a rewatch where the
+            // language exists as a native track — though the resolver never auto-starts a burn-in.)
+            val sub = if (group.isOff) null else subVersionOptions.getOrNull(version.flatIndex)
+            if (group.isOff) persistChoice(newSubtitlesOff = true)
+            else persistChoice(newSubtitleLanguage = group.language, newSubtitlesOff = false, newSubtitleVariant = version.signature())
+            when (subPickAction(sub?.deliveryMethod == "encode", sub?.jellyfinStreamIndex, bk.burnedSubIndex)) {
+                SubPickAction.NONE -> Unit
+                // R56: PGS burn-in — restream with the subtitle baked into the Jellyfin transcode.
+                SubPickAction.BURN_IN -> store.restreamWithSub(itemId, sub?.jellyfinStreamIndex ?: -1, player.positionMs)
+                // Off or a text track while one is burned in: only a restream can take it out again.
+                SubPickAction.UNBURN -> { bk.rearmResolveOnLoad = true; store.restreamWithSub(itemId, -1, player.positionMs) }
+                SubPickAction.SELECT -> {
+                    selectedSub = if (group.isOff) -1 else version.flatIndex
+                    player.selectSubtitleTrack(selectedSub)
+                }
             }
-            // R181 — still worth remembering even for the PGS/encode branch (helps other titles'
-            // global tier and a rewatch where the language exists as a native track), even though the
-            // resolver above never auto-selects a PGS track back in.
-            persistChoice(newSubtitleLanguage = group.language, newSubtitlesOff = false, newSubtitleVariant = version.signature())
         }
     }
 
@@ -748,7 +757,7 @@ fun PlayerScreen(
         val group = pickerGroups.getOrNull(pickerIdx) ?: return
         if (pickerLevel == 0 && group.versions.size > 1) {
             pickerLevel = 1
-            val currentFlat = if (pickerTab == 0) selectedAudio else selectedSub
+            val currentFlat = if (pickerTab == 0) selectedAudio else shownSelectedSub(selectedSub, subtitleTracks.size, encodeSubTracks, bk.burnedSubIndex)
             pickerVersionIdx = group.versions.indexOfFirst { it.flatIndex == currentFlat }.coerceAtLeast(0)
             wake()
             return
@@ -777,7 +786,7 @@ fun PlayerScreen(
         pickerIdx = if (tab == 0) {
             audioGroups.indexOfFirst { g -> g.versions.any { it.flatIndex == selectedAudio } }.coerceAtLeast(0)
         } else {
-            subGroupsWithOff.indexOfFirst { g -> g.versions.any { it.flatIndex == selectedSub } }.coerceAtLeast(0)
+            subGroupsWithOff.indexOfFirst { g -> g.versions.any { it.flatIndex == shownSelectedSub(selectedSub, subtitleTracks.size, encodeSubTracks, bk.burnedSubIndex) } }.coerceAtLeast(0)
         }
         wake()
     }
@@ -884,6 +893,18 @@ fun PlayerScreen(
         // EpisodePlayContext.seriesPosterUrl) or the movie's poster for movies — a single fallback.
         val artworkUrl = resolveImageUrl(episodes?.getOrNull(currentEpIndex)?.seasonPosterUrl ?: posterUrl)
         player.load(streamUrl, s.ticket.startPositionMs, s.ticket.subtitles, s.ticket.audio, title = itemTitle, subtitle = itemKicker, artworkUrl = artworkUrl)
+        // R282 (FR-R282-1/-4) — relate the two subtitle mechanisms, here, on every ticket. A burn-in
+        // ticket turns the text renderer OFF unconditionally: the reload reuses this ExoPlayer, whose
+        // text selection survives load(), so a text track that was on kept rendering over the
+        // burned-in one ("two subtitles at once", Honeyman). An un-burn ticket re-arms the resolver.
+        bk.burnedSubIndex = s.ticket.burnedSubtitleIndex
+        if (s.ticket.burnedSubtitleIndex != null) {
+            player.selectSubtitleTrack(-1)
+            selectedSub = -1
+        } else if (bk.rearmResolveOnLoad) {
+            bk.resolvedForItemId = null
+        }
+        bk.rearmResolveOnLoad = false
         player.play()
         isPlaying = true
         bk.loadedForItemId = itemId   // Bug fix: see loadedForItemId's declaration comment above.
@@ -949,7 +970,7 @@ fun PlayerScreen(
                 if (playerLoadedForCurrentItem && bk.resolvedForItemId != currentItemId && tickAudio.isNotEmpty()) {
                     resolveTrackSelection(tickAudio, tickSubs)
                     bk.resolvedForItemId = currentItemId
-                } else if (playerLoadedForCurrentItem && bk.resolvedForItemId == currentItemId && !bk.manualPickSinceResolve && selectedSub == -1) {
+                } else if (playerLoadedForCurrentItem && bk.resolvedForItemId == currentItemId && !bk.manualPickSinceResolve && selectedSub == -1 && bk.burnedSubIndex == null) {
                     // R246 (FR-R246-5) — the set grew after the first resolve: run once more, keyed on
                     // the set's signature, only while nothing is selected that a grown set could change.
                     val sig = trackSetSignature(tickAudio, tickSubs)
@@ -1438,7 +1459,7 @@ fun PlayerScreen(
                         focus == PlFocus.TRACKS    -> {
                             pickerOpen = true
                             pickerLevel = 0
-                            val currentFlat = if (pickerTab == 0) selectedAudio else selectedSub
+                            val currentFlat = if (pickerTab == 0) selectedAudio else shownSelectedSub(selectedSub, subtitleTracks.size, encodeSubTracks, bk.burnedSubIndex)
                             pickerIdx = pickerGroups.indexOfFirst { g -> g.versions.any { it.flatIndex == currentFlat } }.coerceAtLeast(0)
                         }
                         focus == PlFocus.NEXT_EP   -> advanceNext()
@@ -1789,7 +1810,7 @@ fun PlayerScreen(
                         PlFocus.TRACKS    -> {
                             pickerOpen = true
                             pickerLevel = 0
-                            val currentFlat = if (pickerTab == 0) selectedAudio else selectedSub
+                            val currentFlat = if (pickerTab == 0) selectedAudio else shownSelectedSub(selectedSub, subtitleTracks.size, encodeSubTracks, bk.burnedSubIndex)
                             pickerIdx = pickerGroups.indexOfFirst { g -> g.versions.any { it.flatIndex == currentFlat } }.coerceAtLeast(0)
                         }
                         PlFocus.NEXT_EP   -> advanceNext()
@@ -1844,7 +1865,7 @@ fun PlayerScreen(
                 pickerIdx        = pickerIdx,
                 pickerVersionIdx = pickerVersionIdx,
                 selectedAudio    = selectedAudio,
-                selectedSub      = selectedSub,
+                selectedSub      = shownSelectedSub(selectedSub, subtitleTracks.size, encodeSubTracks, bk.burnedSubIndex),
                 onTapLanguage = { idx -> pickerIdx = idx; pickerSelect() },
                 onTapVersion  = { idx -> pickerVersionIdx = idx; pickerSelect() },
                 onTapBack     = { pickerBack() },
@@ -1881,7 +1902,7 @@ fun PlayerScreen(
                 pickerIdx        = pickerIdx,
                 pickerVersionIdx = pickerVersionIdx,
                 selectedAudio    = selectedAudio,
-                selectedSub      = selectedSub,
+                selectedSub      = shownSelectedSub(selectedSub, subtitleTracks.size, encodeSubTracks, bk.burnedSubIndex),
                 // R195 — touch parity with the D-pad: a tap just moves the target index then runs the
                 // EXACT SAME pickerSelect()/pickerBack() logic Select/Back already use, so touch (phone)
                 // and D-pad (TV) can never diverge in behaviour.
@@ -3764,6 +3785,33 @@ internal data class PickerLanguage(
 /** R246 (FR-R246-5) — one string per track set, so a set that changed after the first resolve is detectable. */
 internal fun trackSetSignature(audio: List<PlayerAudioTrack>, subs: List<PlayerSubtitleTrack>): String =
     audio.joinToString(";") { "a:${it.index}:${it.language}:${it.label}" } + "|" + subs.joinToString(";") { "s:${it.index}:${it.language}:${it.label}:${it.forced}" }
+
+/**
+ * R282 (FR-R282-3) — the subtitle the picker shows as selected: the burned-in track's flat index
+ * (`nativeCount + its position among the encode subs`, the same scheme `subVersionOptions` uses) while
+ * a burn-in is active, else the text selection. One derivation for every display site, so the picker
+ * always names what is on screen. A burn-in the ticket's own list does not contain shows as [selectedSub].
+ */
+internal fun shownSelectedSub(selectedSub: Int, nativeCount: Int, encodeSubs: List<PlayerSubtitleTrack>, burnedIndex: Int?): Int {
+    if (burnedIndex == null) return selectedSub
+    val i = encodeSubs.indexOfFirst { it.jellyfinStreamIndex == burnedIndex }
+    return if (i >= 0) nativeCount + i else selectedSub
+}
+
+/** R282 (FR-R282-4) — what a subtitle pick does, given what is already burned into the picture. */
+internal enum class SubPickAction { SELECT, BURN_IN, UNBURN, NONE }
+
+/**
+ * R282 (FR-R282-4). [pickIsEncode]/[pickStreamIndex] describe the picked version (Off = not encode);
+ * [burnedIndex] is the current ticket's burn-in. The invariant this encodes: a text selection and a
+ * burn-in never coexist — leaving a burn-in is always a restream, never a second renderer.
+ */
+internal fun subPickAction(pickIsEncode: Boolean, pickStreamIndex: Int?, burnedIndex: Int?): SubPickAction = when {
+    pickIsEncode && pickStreamIndex == burnedIndex -> SubPickAction.NONE
+    pickIsEncode -> SubPickAction.BURN_IN
+    burnedIndex != null -> SubPickAction.UNBURN
+    else -> SubPickAction.SELECT
+}
 
 /** R196 (FR-RV-TRK2-4) — result of [resolveTrackChoice]: the flat index to hand to
  *  `RaviloPlayer.selectAudioTrack`/`selectSubtitleTrack` (subtitle `-1` = off). */

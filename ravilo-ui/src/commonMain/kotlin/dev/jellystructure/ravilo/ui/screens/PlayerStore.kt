@@ -4,6 +4,7 @@ import dev.jellystructure.ravilo.ui.seams.PlayerQoeSnapshot
 import dev.jellystructure.ravilo.ui.seams.detectDecoderLimits
 import dev.jellystructure.ravilo.ui.seams.detectHdrSupport
 import dev.jellystructure.ravilo.ui.seams.detectLinkState
+import dev.jellystructure.ravilo.ui.seams.supportedAudioCodecs
 import dev.jellystructure.ravilo.ui.seams.supportsEmbeddedTextSubtitles
 import dev.jellystructure.shared.tv.CardPlayState
 import dev.jellystructure.shared.tv.ClientCapabilities
@@ -138,28 +139,29 @@ class PlayerStore(private val apiClient: TvApiClient) {
                     // sideload of the same stream (bug: it used to always sideload, double-delivering
                     // every text subtitle on a direct-played title — see PlaybackService.buildSubtracks).
                     val embeddedSubs = supportsEmbeddedTextSubtitles()
-                    val ticket = apiClient.startPlayback(
-                        itemId = itemId,
-                        capabilities = ClientCapabilities(
-                            containers = listOf("mkv", "mp4", "avi", "mov"),
-                            videoCodecs = listOf("h264", "hevc", "vp9", "av1"),
-                            audioCodecs = listOf("aac", "mp3", "flac", "opus", "ac3", "eac3"),
-                            maxAudioChannels = 8,
-                            supportsHdr10 = hdr.hdr10,
-                            supportsHlg = hdr.hlg,
-                            supportsDolbyVision = hdr.dolbyVision,
-                            supportsDolbyVisionEl = hdr.dolbyVisionEl,
-                            maxH264Width = decoderLimits.maxWidth,
-                            maxH264Height = decoderLimits.maxHeight,
-                            maxH264Level = decoderLimits.maxLevel,
-                            supportsEmbeddedTextSubs = embeddedSubs,
-                            maxVideoBitrate = decoderLimits.maxVideoBitrate,
-                            maxHevcBitrate = decoderLimits.maxHevcBitrate,
-                            maxH264Bitrate = decoderLimits.maxH264Bitrate,
-                            linkKind = link.kind,
-                            linkMbps = link.mbps,
-                        ),
+                    val capabilities = ClientCapabilities(
+                        containers = listOf("mkv", "mp4", "avi", "mov"),
+                        videoCodecs = listOf("h264", "hevc", "vp9", "av1"),
+                        // R283 — what this build really decodes (the Android actual adds TrueHD/DTS
+                        // when the FFmpeg extension is installed); was a literal that omitted both.
+                        audioCodecs = supportedAudioCodecs(),
+                        maxAudioChannels = 8,
+                        supportsHdr10 = hdr.hdr10,
+                        supportsHlg = hdr.hlg,
+                        supportsDolbyVision = hdr.dolbyVision,
+                        supportsDolbyVisionEl = hdr.dolbyVisionEl,
+                        maxH264Width = decoderLimits.maxWidth,
+                        maxH264Height = decoderLimits.maxHeight,
+                        maxH264Level = decoderLimits.maxLevel,
+                        supportsEmbeddedTextSubs = embeddedSubs,
+                        maxVideoBitrate = decoderLimits.maxVideoBitrate,
+                        maxHevcBitrate = decoderLimits.maxHevcBitrate,
+                        maxH264Bitrate = decoderLimits.maxH264Bitrate,
+                        linkKind = link.kind,
+                        linkMbps = link.mbps,
                     )
+                    lastCapabilities = capabilities   // R282 (FR-R282-5)
+                    val ticket = apiClient.startPlayback(itemId = itemId, capabilities = capabilities)
                     qoeLinkKind = link.kind
                     qoeLinkMbps = link.mbps
                     ticket
@@ -212,12 +214,17 @@ class PlayerStore(private val apiClient: TvApiClient) {
         }
     }
 
-    /** R56 — Re-stream with a PGS subtitle burned in; keeps the heartbeat running (same item). */
+    // R282 (FR-R282-5) — what startSession last told the server this device can do, re-sent with every
+    // restream so an un-burn (252) negotiates as the real device instead of conservative defaults.
+    private var lastCapabilities: ClientCapabilities? = null
+
+    /** R56 — Re-stream with a PGS subtitle burned in; keeps the heartbeat running (same item).
+     *  R282 — a negative [subtitleStreamIndex] re-streams with NO burn-in (252 FR-252-2). */
     fun restreamWithSub(itemId: String, subtitleStreamIndex: Int, positionMs: Long) {
         scope.launch {
             _state.value = PlayerSessionState.Loading()
             _state.value = runCatching {
-                PlayerSessionState.Ready(apiClient.restream(itemId, subtitleStreamIndex, positionMs))
+                PlayerSessionState.Ready(apiClient.restream(itemId, subtitleStreamIndex, positionMs, lastCapabilities))
             }.getOrElse {
                 val f = classifyLoadFailure(it)
                 PlayerSessionState.Error(it.message ?: "", f.kind, f.status)
