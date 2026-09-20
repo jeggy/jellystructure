@@ -233,8 +233,33 @@ Found by sweep, all user-facing, all currently English on every device:
 - `ServerSetupScreen` — `setup.server_label`, `setup.server_prompt`.
 - `MultiEpisodeCard`'s `"UP NEXT"` reuses `player.up_next`.
 
-`192.168.1.1:8097` (an example address), the brand word `Ravilo`, `✓`, `·` and `★` stay as they are:
-they are not prose.
+`192.168.1.1:8097` (an example address), the brand words `Ravilo` and `IMDb`, `✓`, `·` and `★` stay
+as they are: they are not prose.
+
+⚠ **The first draft of this list was incomplete, and the incompleteness was the point.** It was
+assembled by reading `grep` output, which is how the strings below survived the first pass and were
+only caught when the sweep was redone properly (see FR-R279-14):
+
+- **`AudioFlagStrip`'s `AUDIO` and `SUBTITLES`** headings — keys already existed (`fd.audio` /
+  `fd.subs`, from the focus-detail line); the flag strip simply never used them.
+- **`EpisodeCard`'s `UP NEXT`** — `MultiEpisodeCard`'s copy of the same badge was fixed in the first
+  pass and this one, four files away, was not.
+- **`Tile`'s `NEW` and `Soon • {label}` corner badges** → `tile.badge_new`, `tile.badge_soon`.
+- **A series' `{watched} of {total} episodes watched`** → `detail.episodes_watched`.
+- **`ImdbChip`'s `contentDescription`** → `imdb.a11y`. Read aloud, never drawn, so no sweep of
+  `Text(` would ever have found it.
+- **Twelve English month names and seven English weekday names**, in two separate private tables
+  (`EpisodeCard`'s `EP_AIR_MONTHS`, `UpcomingScreen`'s `weekdayAbbrev`/`monthAbbrev`) → one shared
+  `month.*` / `wd.abbr.*` set. **The entire Upcoming calendar rail was English in every language.**
+- **Two date orders** → `date.month_day_year`, `date.weekday_day_month`. `Sep 22, 2003` is how
+  English writes a date; the order belongs to the translator, not to a `String` template.
+- **The Request tab's empty state** → `request.empty`.
+- **A film's `Resume · {n} min left`** → `action.resume_mins_left`.
+- **`ServerSetupScreen`'s `Connect` button** → `receiver.setup_connect`, the string the Tizen
+  receiver's own setup screen already draws. Found only by FR-R279-14's checker, after two manual
+  passes had missed it.
+- **The Chromecast's CAF subtitle-track name fallback** → `pl.subtitles`.
+- **The web app's `⛶ Fullscreen` shell button** — see FR-R279-13.
 
 Danish and Faroese for the new keys ship as **drafts carrying a `note` that says so**, per the
 convention the existing table already uses for R244/R245.
@@ -310,6 +335,31 @@ remembered language: a set that has been used before knows more about the househ
 locale does. Only a set with nothing remembered can reach it — which is the only situation the setup
 screen it was written for occurs in.
 
+### FR-R279-13 — the web app's pre-boot shell has strings too
+
+`ravilo-web`'s `index.html` draws a fullscreen button before the Wasm bundle exists, so it cannot
+call `t()`. `generateRaviloStrings` also emits `ravilo-shell-strings.js` — the two keys that shell
+needs, from the same `i18n` files — and `boot.js` picks a language out of it using the same
+`localStorage["ravilo.lang"]` that FR-R279-12 writes. Generated, never committed: a hand-written
+copy in the shell is exactly the drift this phase exists to remove.
+
+### FR-R279-14 — a check that fails when viewer-facing text is written into Kotlin
+
+`scripts/check-ravilo-strings.sh`. Thirteen strings had never reached a table, none was visible to
+any test, and two manual sweeps each missed some — the second one found what the first had not, and
+the checker then found one the second had not. A rule nothing enforces is a rule that decays, and
+this one decayed before the phase was even finished.
+
+It reads only the positions that actually paint text — `Text(…)`, `RaviloButton(…)` and the
+`label` / `title` / `placeholder` / `contentDescription` family — and fails on a literal in one. It
+does **not** try to judge prose anywhere else: a check that guesses is a check people switch off.
+Its allow-list is short and each entry carries its reason (the brand words, the `OK` key cap, a
+number with an SI unit, Compose's `animate*AsState(label = …)` debug names).
+
+It needs a real Kotlin string reader rather than a regex, because `Text("▷ ${str("action.play")}")`
+has a quote inside an interpolation and a regex stops at it — which is how the first version of the
+check reported ten false positives and one real miss in the same run.
+
 ## Acceptance
 
 1. `i18n/en.json` has every key `Strings.kt` had, with the same text, byte for byte.
@@ -330,3 +380,32 @@ screen it was written for occurs in.
 11. Sign out of the phone app: the login screen is in the language that was just being used, not
     English.
 12. A device that has never drawn anything, with nobody signed in, is English.
+13. `scripts/check-ravilo-strings.sh` passes, and fails when a `Text("…")` literal is planted.
+14. The Upcoming calendar's day rail, and an episode's air date, are in the viewer's language.
+
+## Found and deliberately not fixed
+
+Two things this phase's sweep turned up that are real, and are not translation problems:
+
+- **The player draws `DIRECT PLAY` / `HLS`** (`PlayerScreen`'s `StreamPill`, unconditionally, in the
+  top chrome). It is untranslated English — and **R180 FR-RV-ASP1-2 says a delivery cue must not be
+  drawn at all**. Translating it would be doing the wrong work carefully. It is allow-listed in the
+  checker with that reasoning written down, so the next person meets the argument rather than the
+  string.
+- **Seven screens render a store's raw error sentence** (`Text(s.message)` in `ChannelScreen`,
+  `DiscoverDetailScreen`, `SettingsScreen`, `LiveTvGuideScreen`, `UpcomingDetailScreen`,
+  `SeededBrowseScreen`, `BrowseScreen`; `HomeScreen` draws it under a translated headline). That
+  message is either a raw exception's text — Ktor's, in English, usually technical — or one of a
+  dozen hardcoded English fallbacks (`"Unknown error"`, `"Couldn't load channels"`, `"Channel not
+  found"`, `"Failed to load settings"`, `"Not found"`, `"Failed to restream"`, …).
+
+  This cannot be fixed by extraction: the stores are plain classes with no language, so a store must
+  carry a **cause** and let the screen say the sentence. **R237 already did exactly this** for
+  playback — `PlayerErrorKind` plus the `error.play.*` keys — so the pattern exists and the work is
+  applying it to the other nine stores. Its own phase.
+
+- **Language and region names** (`LanguageIdentity`'s `LANGUAGE_TABLE`, `PlayerScreen`'s
+  `REGION_MARKERS`) are untouched, and mostly correctly so: what the viewer sees is the **endonym**
+  (`Dansk`, `Føroyskt`, `中文`), which is right in every interface language by R180's flag-forward
+  rule. The eleven region qualifiers (`Latin American`, `Brazilian`, `Simplified`, …) genuinely are
+  English and genuinely are drawn; they belong with that table, not this one.

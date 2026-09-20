@@ -459,7 +459,7 @@ private fun CornerBadgeContent(
         CornerBadge.NEW -> Box(
             modifier = modifier.padding(8.dp).background(colors.accentGradient, RoundedCornerShape(4.dp)).padding(horizontal = 7.dp, vertical = 3.dp),
         ) {
-            Text(text = "NEW", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = sora, letterSpacing = 0.5.sp)
+            Text(text = str("tile.badge_new"), color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = sora, letterSpacing = 0.5.sp)
         }
         // R113: season/episode badge — small dark pill over the image for TV shows in Continue Watching.
         // Neutral translucent black so it reads on any backdrop.
@@ -475,7 +475,7 @@ private fun CornerBadgeContent(
         ) {
             Box(modifier = Modifier.size(5.dp).background(Color.White, CircleShape))
             Spacer(Modifier.width(4.dp))
-            Text(text = "Soon • ${upcomingLabel.orEmpty()}", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = sora)
+            Text(text = str("tile.badge_soon", mapOf("label" to upcomingLabel.orEmpty())), color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = sora)
         }
     }
 }

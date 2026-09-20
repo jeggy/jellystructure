@@ -127,7 +127,8 @@ fun ServerSetupScreen(onUrlSaved: (String) -> Unit) {
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
-                    "Connect",
+                    // R279 — the same string the Tizen receiver's own setup screen draws.
+                    str("receiver.setup_connect"),
                     color = if (connectFocused) colors.onAccent else if (canConnect) colors.text else colors.textSecondary,
                     fontSize = 16.sp,
                     fontWeight = FontWeight.SemiBold,

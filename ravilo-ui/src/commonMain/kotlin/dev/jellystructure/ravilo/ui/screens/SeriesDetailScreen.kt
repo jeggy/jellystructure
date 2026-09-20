@@ -434,7 +434,7 @@ private fun SeriesDetailLoaded(
                     )
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        text = "$watchedCount of ${allEps.size} episodes watched",
+                        text = str("detail.episodes_watched", mapOf("watched" to watchedCount.toString(), "total" to allEps.size.toString())),
                         color = colors.textDim,
                         fontSize = 13.sp,
                         modifier = Modifier.alpha(progressAlpha),

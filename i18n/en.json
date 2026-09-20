@@ -522,5 +522,121 @@
   "action.request": {
     "text": "Request",
     "note": "R279 — the button that asks for a title. Deliberately NOT seg.request, which is the Discover tab of the same English name."
+  },
+  "tile.badge_new": {
+    "text": "NEW",
+    "note": "R279 — the gradient corner badge on a poster. Upper case in English; use whatever upper case means in yours."
+  },
+  "tile.badge_soon": {
+    "text": "Soon • {label}",
+    "note": "R279 — the corner badge on a title that has not arrived yet. {label} is an episode code like S02E04, already formatted."
+  },
+  "detail.episodes_watched": {
+    "text": "{watched} of {total} episodes watched",
+    "note": "R279 — under a series' hero. Both numbers are plain integers."
+  },
+  "imdb.a11y": {
+    "text": "IMDb {rating} out of 10, {votes} votes",
+    "note": "R279 — read aloud by a screen reader for the IMDb chip; never drawn. {votes} is already abbreviated, e.g. 1.2M."
+  },
+  "date.month_day_year": {
+    "text": "{month} {day}, {year}",
+    "note": "R279 — an episode's air date. Reorder the parts as your language writes a date; {month} comes from the month.* keys."
+  },
+  "date.weekday_day_month": {
+    "text": "{weekday} {day} {month}",
+    "note": "R279 — a day header on the Upcoming calendar. Reorder as needed."
+  },
+  "month.jan": {
+    "text": "Jan",
+    "note": "R279 — a three-letter month, as it appears on an episode card and on the Upcoming calendar. The calendar draws it upper-cased, so keep it short."
+  },
+  "month.feb": {
+    "text": "Feb",
+    "note": "R279 — a three-letter month, as it appears on an episode card and on the Upcoming calendar. The calendar draws it upper-cased, so keep it short."
+  },
+  "month.mar": {
+    "text": "Mar",
+    "note": "R279 — a three-letter month, as it appears on an episode card and on the Upcoming calendar. The calendar draws it upper-cased, so keep it short."
+  },
+  "month.apr": {
+    "text": "Apr",
+    "note": "R279 — a three-letter month, as it appears on an episode card and on the Upcoming calendar. The calendar draws it upper-cased, so keep it short."
+  },
+  "month.may": {
+    "text": "May",
+    "note": "R279 — a three-letter month, as it appears on an episode card and on the Upcoming calendar. The calendar draws it upper-cased, so keep it short."
+  },
+  "month.jun": {
+    "text": "Jun",
+    "note": "R279 — a three-letter month, as it appears on an episode card and on the Upcoming calendar. The calendar draws it upper-cased, so keep it short."
+  },
+  "month.jul": {
+    "text": "Jul",
+    "note": "R279 — a three-letter month, as it appears on an episode card and on the Upcoming calendar. The calendar draws it upper-cased, so keep it short."
+  },
+  "month.aug": {
+    "text": "Aug",
+    "note": "R279 — a three-letter month, as it appears on an episode card and on the Upcoming calendar. The calendar draws it upper-cased, so keep it short."
+  },
+  "month.sep": {
+    "text": "Sep",
+    "note": "R279 — a three-letter month, as it appears on an episode card and on the Upcoming calendar. The calendar draws it upper-cased, so keep it short."
+  },
+  "month.oct": {
+    "text": "Oct",
+    "note": "R279 — a three-letter month, as it appears on an episode card and on the Upcoming calendar. The calendar draws it upper-cased, so keep it short."
+  },
+  "month.nov": {
+    "text": "Nov",
+    "note": "R279 — a three-letter month, as it appears on an episode card and on the Upcoming calendar. The calendar draws it upper-cased, so keep it short."
+  },
+  "month.dec": {
+    "text": "Dec",
+    "note": "R279 — a three-letter month, as it appears on an episode card and on the Upcoming calendar. The calendar draws it upper-cased, so keep it short."
+  },
+  "wd.abbr.mon": {
+    "text": "Mon",
+    "note": "R279 — a three-letter weekday for the Upcoming calendar rail, drawn upper-cased. Distinct from wd.mon, which is the full name used in a sentence (\"last seen Tuesday\")."
+  },
+  "wd.abbr.tue": {
+    "text": "Tue",
+    "note": "R279 — a three-letter weekday for the Upcoming calendar rail, drawn upper-cased. Distinct from wd.tue, which is the full name used in a sentence (\"last seen Tuesday\")."
+  },
+  "wd.abbr.wed": {
+    "text": "Wed",
+    "note": "R279 — a three-letter weekday for the Upcoming calendar rail, drawn upper-cased. Distinct from wd.wed, which is the full name used in a sentence (\"last seen Tuesday\")."
+  },
+  "wd.abbr.thu": {
+    "text": "Thu",
+    "note": "R279 — a three-letter weekday for the Upcoming calendar rail, drawn upper-cased. Distinct from wd.thu, which is the full name used in a sentence (\"last seen Tuesday\")."
+  },
+  "wd.abbr.fri": {
+    "text": "Fri",
+    "note": "R279 — a three-letter weekday for the Upcoming calendar rail, drawn upper-cased. Distinct from wd.fri, which is the full name used in a sentence (\"last seen Tuesday\")."
+  },
+  "wd.abbr.sat": {
+    "text": "Sat",
+    "note": "R279 — a three-letter weekday for the Upcoming calendar rail, drawn upper-cased. Distinct from wd.sat, which is the full name used in a sentence (\"last seen Tuesday\")."
+  },
+  "wd.abbr.sun": {
+    "text": "Sun",
+    "note": "R279 — a three-letter weekday for the Upcoming calendar rail, drawn upper-cased. Distinct from wd.sun, which is the full name used in a sentence (\"last seen Tuesday\")."
+  },
+  "web.fullscreen": {
+    "text": "⛶ Fullscreen",
+    "note": "R279 — a button in the web app's HTML shell, drawn before the app itself boots. Keep the ⛶."
+  },
+  "web.fullscreen_title": {
+    "text": "Toggle fullscreen",
+    "note": "R279 — the hover tooltip on web.fullscreen."
+  },
+  "request.empty": {
+    "text": "Nothing to request yet — add feeds in the Ravilo config editor.",
+    "note": "R279 — the Discover → Request tab with no feeds configured. 'Ravilo config editor' is the admin page's own name."
+  },
+  "action.resume_mins_left": {
+    "text": "{resume} · {n} min left",
+    "note": "R279 — the Play button on a half-watched film. {resume} is the already-translated action.resume, {n} is whole minutes."
   }
 }

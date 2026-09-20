@@ -477,5 +477,121 @@
   "action.request": {
     "text": "Bið um",
     "note": "Draft Faroese — review before release."
+  },
+  "tile.badge_new": {
+    "text": "NÝTT",
+    "note": "Draft Faroese — review before release."
+  },
+  "tile.badge_soon": {
+    "text": "Skjótt • {label}",
+    "note": "Draft Faroese — review before release."
+  },
+  "detail.episodes_watched": {
+    "text": "{watched} av {total} evnum sædd",
+    "note": "Draft Faroese — review before release."
+  },
+  "imdb.a11y": {
+    "text": "IMDb {rating} av 10, {votes} atkvøður",
+    "note": "Draft Faroese — review before release."
+  },
+  "date.month_day_year": {
+    "text": "{day}. {month} {year}",
+    "note": "Draft Faroese — review before release."
+  },
+  "date.weekday_day_month": {
+    "text": "{weekday} {day}. {month}",
+    "note": "Draft Faroese — review before release."
+  },
+  "month.jan": {
+    "text": "Jan",
+    "note": "Draft Faroese — review before release."
+  },
+  "month.feb": {
+    "text": "Feb",
+    "note": "Draft Faroese — review before release."
+  },
+  "month.mar": {
+    "text": "Mar",
+    "note": "Draft Faroese — review before release."
+  },
+  "month.apr": {
+    "text": "Apr",
+    "note": "Draft Faroese — review before release."
+  },
+  "month.may": {
+    "text": "Mai",
+    "note": "Draft Faroese — review before release."
+  },
+  "month.jun": {
+    "text": "Jun",
+    "note": "Draft Faroese — review before release."
+  },
+  "month.jul": {
+    "text": "Jul",
+    "note": "Draft Faroese — review before release."
+  },
+  "month.aug": {
+    "text": "Aug",
+    "note": "Draft Faroese — review before release."
+  },
+  "month.sep": {
+    "text": "Sep",
+    "note": "Draft Faroese — review before release."
+  },
+  "month.oct": {
+    "text": "Okt",
+    "note": "Draft Faroese — review before release."
+  },
+  "month.nov": {
+    "text": "Nov",
+    "note": "Draft Faroese — review before release."
+  },
+  "month.dec": {
+    "text": "Des",
+    "note": "Draft Faroese — review before release."
+  },
+  "wd.abbr.mon": {
+    "text": "Mán",
+    "note": "Draft Faroese — review before release."
+  },
+  "wd.abbr.tue": {
+    "text": "Týs",
+    "note": "Draft Faroese — review before release."
+  },
+  "wd.abbr.wed": {
+    "text": "Mik",
+    "note": "Draft Faroese — review before release."
+  },
+  "wd.abbr.thu": {
+    "text": "Hós",
+    "note": "Draft Faroese — review before release."
+  },
+  "wd.abbr.fri": {
+    "text": "Frí",
+    "note": "Draft Faroese — review before release."
+  },
+  "wd.abbr.sat": {
+    "text": "Ley",
+    "note": "Draft Faroese — review before release."
+  },
+  "wd.abbr.sun": {
+    "text": "Sun",
+    "note": "Draft Faroese — review before release."
+  },
+  "web.fullscreen": {
+    "text": "⛶ Fullur skermur",
+    "note": "Draft Faroese — review before release."
+  },
+  "web.fullscreen_title": {
+    "text": "Skift fullan skerm",
+    "note": "Draft Faroese — review before release."
+  },
+  "request.empty": {
+    "text": "Einki er at biðja um enn — legg feeds afturat í Ravilo-uppsetingini.",
+    "note": "Draft Faroese — review before release."
+  },
+  "action.resume_mins_left": {
+    "text": "{resume} · {n} min eftir",
+    "note": "Draft Faroese — review before release."
   }
 }

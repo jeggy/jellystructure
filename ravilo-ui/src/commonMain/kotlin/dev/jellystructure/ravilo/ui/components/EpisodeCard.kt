@@ -34,6 +34,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.jellystructure.ravilo.ui.focus.dpadFocusable
 import dev.jellystructure.ravilo.ui.seams.RemoteImage
+import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.theme.RaviloMotion
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import dev.jellystructure.ravilo.ui.theme.Sora
@@ -153,7 +154,7 @@ fun EpisodeCard(
                         .padding(horizontal = 10.dp, vertical = 4.dp),
                 ) {
                     Text(
-                        text = "UP NEXT",
+                        text = str("player.up_next"),
                         color = Color.White,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
@@ -242,15 +243,23 @@ fun EpisodeCard(
     }
 }
 
-private val EP_AIR_MONTHS = arrayOf(
-    "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+// R279 — was twelve English literals here. The month names are now the shared `month.*` keys, the
+// same ones the Upcoming calendar draws, so a library and a calendar can never disagree about what
+// September is called.
+private val EP_AIR_MONTH_KEYS = arrayOf(
+    "month.jan", "month.feb", "month.mar", "month.apr", "month.may", "month.jun",
+    "month.jul", "month.aug", "month.sep", "month.oct", "month.nov", "month.dec",
 )
 
 /**
  * R148 — format an ISO `yyyy-MM-dd` air date as e.g. "Sep 22, 2003". Parses the y/m/d parts directly
  * (no Instant / timezone), so the calendar day is UTC-pinned by construction and never drifts. Returns
  * null for a blank/malformed string so the caller renders no date line.
+ *
+ * R279 — the **order** of the parts is `date.month_day_year`, not this function: "Sep 22, 2003" is
+ * how English writes a date and not how Danish or Faroese do.
  */
+@Composable
 private fun formatAirDate(iso: String): String? {
     val p = iso.trim().split("-")
     if (p.size != 3) return null
@@ -258,5 +267,8 @@ private fun formatAirDate(iso: String): String? {
     val m = p[1].toIntOrNull() ?: return null
     val d = p[2].toIntOrNull() ?: return null
     if (m !in 1..12 || d !in 1..31) return null
-    return "${EP_AIR_MONTHS[m - 1]} $d, $y"
+    return str(
+        "date.month_day_year",
+        mapOf("month" to str(EP_AIR_MONTH_KEYS[m - 1]), "day" to d.toString(), "year" to y.toString()),
+    )
 }

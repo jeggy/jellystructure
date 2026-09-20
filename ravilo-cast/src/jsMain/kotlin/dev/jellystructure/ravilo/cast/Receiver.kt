@@ -163,7 +163,8 @@ private class Receiver {
             track.trackContentType = "text/vtt"
             track.subtype = if (sub.forced) messages.TextTrackType.FORCED else messages.TextTrackType.SUBTITLES
             track.language = sub.language
-            track.name = sub.label ?: sub.language ?: "Subtitles"
+            // R279 — the CAF track name, which the platform's own caption list can surface.
+            track.name = sub.label ?: sub.language ?: ReceiverStrings.t("pl.subtitles")
             tracks.push(track)
             if (sub.isDefault && defaultSub == null) defaultSub = id
         }

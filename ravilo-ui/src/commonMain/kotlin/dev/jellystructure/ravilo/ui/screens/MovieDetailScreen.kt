@@ -338,7 +338,10 @@ private fun MovieDetailLoaded(
                             // — when it does, minsLeft goes negative ("Resume · -1 min left"). The
                             // metadata is untrustworthy here, not the resume position, so drop the
                             // estimate rather than show a nonsensical or fabricated number.
-                            isResume && minsLeft > 0 -> "${str("action.resume")} · $minsLeft min left"
+                            isResume && minsLeft > 0 -> str(
+                                "action.resume_mins_left",
+                                mapOf("resume" to str("action.resume"), "n" to minsLeft.toString()),
+                            )
                             isResume -> str("action.resume")
                             else -> str("action.play")
                         }

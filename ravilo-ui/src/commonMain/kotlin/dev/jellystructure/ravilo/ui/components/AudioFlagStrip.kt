@@ -20,6 +20,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.theme.Sora
 import jellystructure.ravilo_ui.generated.resources.Res
 import dev.jellystructure.ravilo.ui.seams.canonicalLanguage
@@ -204,10 +205,10 @@ fun AudioSubtitleFlagLine(audioLanguages: List<String>, subtitleLanguages: List<
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        if (hasAudio) AudioFlagStrip(audioLanguages, label = "AUDIO")
+        if (hasAudio) AudioFlagStrip(audioLanguages, label = str("fd.audio"))
         if (hasAudio && hasSub) {
             Text("·", color = Color.White.copy(alpha = 0.35f), fontSize = 14.sp, fontFamily = Sora)
         }
-        if (hasSub) AudioFlagStrip(subtitleLanguages, label = "SUBTITLES")
+        if (hasSub) AudioFlagStrip(subtitleLanguages, label = str("fd.subs"))
     }
 }

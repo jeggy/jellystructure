@@ -14,6 +14,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import dev.jellystructure.ravilo.ui.theme.Sora
 import dev.jellystructure.shared.tv.TvImdbRating
@@ -45,9 +46,11 @@ fun ImdbChip(rating: TvImdbRating?, modifier: Modifier = Modifier) {
     val colors = RaviloTheme.colors
     val sora = Sora
     val ratingStr = trimTrailingZero(rating.aggregateRating).let { if ('.' in it) it else "$it.0" }
+    // R279 — read aloud, never drawn, and it was the one string a sweep of Text() would miss.
+    val a11y = str("imdb.a11y", mapOf("rating" to ratingStr, "votes" to fmtVotes(rating.voteCount)))
     Row(
         modifier = modifier.semantics {
-            contentDescription = "IMDb $ratingStr out of 10, ${rating.voteCount} votes"
+            contentDescription = a11y
         },
         verticalAlignment = Alignment.CenterVertically,
     ) {

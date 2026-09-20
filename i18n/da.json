@@ -477,5 +477,121 @@
   "action.request": {
     "text": "Anmod",
     "note": "Draft Danish — review before release."
+  },
+  "tile.badge_new": {
+    "text": "NY",
+    "note": "Draft Danish — review before release."
+  },
+  "tile.badge_soon": {
+    "text": "Snart • {label}",
+    "note": "Draft Danish — review before release."
+  },
+  "detail.episodes_watched": {
+    "text": "{watched} af {total} afsnit set",
+    "note": "Draft Danish — review before release."
+  },
+  "imdb.a11y": {
+    "text": "IMDb {rating} ud af 10, {votes} stemmer",
+    "note": "Draft Danish — review before release."
+  },
+  "date.month_day_year": {
+    "text": "{day}. {month} {year}",
+    "note": "Draft Danish — review before release."
+  },
+  "date.weekday_day_month": {
+    "text": "{weekday} {day}. {month}",
+    "note": "Draft Danish — review before release."
+  },
+  "month.jan": {
+    "text": "Jan",
+    "note": "Draft Danish — review before release."
+  },
+  "month.feb": {
+    "text": "Feb",
+    "note": "Draft Danish — review before release."
+  },
+  "month.mar": {
+    "text": "Mar",
+    "note": "Draft Danish — review before release."
+  },
+  "month.apr": {
+    "text": "Apr",
+    "note": "Draft Danish — review before release."
+  },
+  "month.may": {
+    "text": "Maj",
+    "note": "Draft Danish — review before release."
+  },
+  "month.jun": {
+    "text": "Jun",
+    "note": "Draft Danish — review before release."
+  },
+  "month.jul": {
+    "text": "Jul",
+    "note": "Draft Danish — review before release."
+  },
+  "month.aug": {
+    "text": "Aug",
+    "note": "Draft Danish — review before release."
+  },
+  "month.sep": {
+    "text": "Sep",
+    "note": "Draft Danish — review before release."
+  },
+  "month.oct": {
+    "text": "Okt",
+    "note": "Draft Danish — review before release."
+  },
+  "month.nov": {
+    "text": "Nov",
+    "note": "Draft Danish — review before release."
+  },
+  "month.dec": {
+    "text": "Dec",
+    "note": "Draft Danish — review before release."
+  },
+  "wd.abbr.mon": {
+    "text": "Man",
+    "note": "Draft Danish — review before release."
+  },
+  "wd.abbr.tue": {
+    "text": "Tir",
+    "note": "Draft Danish — review before release."
+  },
+  "wd.abbr.wed": {
+    "text": "Ons",
+    "note": "Draft Danish — review before release."
+  },
+  "wd.abbr.thu": {
+    "text": "Tor",
+    "note": "Draft Danish — review before release."
+  },
+  "wd.abbr.fri": {
+    "text": "Fre",
+    "note": "Draft Danish — review before release."
+  },
+  "wd.abbr.sat": {
+    "text": "Lør",
+    "note": "Draft Danish — review before release."
+  },
+  "wd.abbr.sun": {
+    "text": "Søn",
+    "note": "Draft Danish — review before release."
+  },
+  "web.fullscreen": {
+    "text": "⛶ Fuld skærm",
+    "note": "Draft Danish — review before release."
+  },
+  "web.fullscreen_title": {
+    "text": "Slå fuld skærm til/fra",
+    "note": "Draft Danish — review before release."
+  },
+  "request.empty": {
+    "text": "Der er ikke noget at anmode om endnu — tilføj feeds i Ravilo-konfigurationen.",
+    "note": "Draft Danish — review before release."
+  },
+  "action.resume_mins_left": {
+    "text": "{resume} · {n} min tilbage",
+    "note": "Draft Danish — review before release."
   }
 }

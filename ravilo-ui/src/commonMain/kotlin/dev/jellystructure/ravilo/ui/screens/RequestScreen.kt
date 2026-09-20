@@ -125,7 +125,7 @@ fun RequestContent(
                 item(key = "discover-empty") {
                     Column(Modifier.padding(horizontal = raviloHPad, vertical = 32.dp)) {
                         Text(
-                            "Nothing to request yet — add feeds in the Ravilo config editor.",
+                            str("request.empty"),
                             color = colors.textSecondary, fontSize = 14.sp,
                         )
                     }

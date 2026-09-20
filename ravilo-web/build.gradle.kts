@@ -29,6 +29,11 @@ kotlin {
                 implementation(libs.compose.runtime)
                 implementation(libs.compose.ui)
             }
+            // R279 — the HTML shell draws a fullscreen button before this bundle exists, so it
+            // cannot call t(). :ravilo-i18n generates the two strings it needs as a plain JS object
+            // from the same i18n/*.json, and boot.js picks a language out of it. Generated, never
+            // committed: a hand-written copy in the shell is exactly the drift this phase removed.
+            resources.srcDir(project(":ravilo-i18n").extra["raviloShellStrings"]!!)
         }
     }
 }

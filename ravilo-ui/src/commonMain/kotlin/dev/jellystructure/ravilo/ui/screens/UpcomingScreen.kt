@@ -310,7 +310,7 @@ private fun DateRail(days: List<String>, grouped: Map<String, List<UpcomingItem>
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Text(
-                    date?.let { weekdayAbbrev(it.dayOfWeek) } ?: "",
+                    date?.let { weekdayAbbrev(it.dayOfWeek).uppercase() } ?: "",
                     color = colors.textSecondary, fontSize = 10.sp, fontWeight = FontWeight.SemiBold,
                 )
                 Text(
@@ -318,7 +318,7 @@ private fun DateRail(days: List<String>, grouped: Map<String, List<UpcomingItem>
                     color = colors.text, fontSize = 16.sp, fontWeight = FontWeight.Bold,
                 )
                 Text(
-                    date?.let { monthAbbrev(it.month) } ?: "",
+                    date?.let { monthAbbrev(it.month).uppercase() } ?: "",
                     color = colors.textSecondary, fontSize = 10.sp,
                 )
                 Spacer(Modifier.height(2.dp))
@@ -454,22 +454,42 @@ private fun dayLabel(dateStr: String): String {
         0 -> str("up.day_today")
         1 -> str("up.day_tomorrow")
         -1 -> str("up.day_yesterday")
-        else -> "${weekdayAbbrev(date.dayOfWeek)} ${date.day} ${monthAbbrev(date.month)}"
+        else -> str(
+            "date.weekday_day_month",
+            mapOf(
+                "weekday" to weekdayAbbrev(date.dayOfWeek),
+                "day" to date.day.toString(),
+                "month" to monthAbbrev(date.month),
+            ),
+        )
     }
 }
 
 private fun todayUtc(): LocalDate = Clock.System.now().toLocalDateTime(TimeZone.UTC).date
 
-private fun weekdayAbbrev(d: DayOfWeek): String = when (d) {
-    DayOfWeek.MONDAY -> "MON"; DayOfWeek.TUESDAY -> "TUE"; DayOfWeek.WEDNESDAY -> "WED"
-    DayOfWeek.THURSDAY -> "THU"; DayOfWeek.FRIDAY -> "FRI"; DayOfWeek.SATURDAY -> "SAT"
-    DayOfWeek.SUNDAY -> "SUN"
-}
+/**
+ * R279 — was seven English literals. The calendar rail draws these upper-cased, which is a
+ * presentational choice and not part of the string, so it is applied here rather than baked into
+ * every translation.
+ */
+@Composable
+private fun weekdayAbbrev(d: DayOfWeek): String = str(
+    when (d) {
+        DayOfWeek.MONDAY -> "wd.abbr.mon"; DayOfWeek.TUESDAY -> "wd.abbr.tue"; DayOfWeek.WEDNESDAY -> "wd.abbr.wed"
+        DayOfWeek.THURSDAY -> "wd.abbr.thu"; DayOfWeek.FRIDAY -> "wd.abbr.fri"; DayOfWeek.SATURDAY -> "wd.abbr.sat"
+        else -> "wd.abbr.sun"
+    },
+)
 
-private fun monthAbbrev(m: Month): String = when (m) {
-    Month.JANUARY -> "JAN"; Month.FEBRUARY -> "FEB"; Month.MARCH -> "MAR"; Month.APRIL -> "APR"
-    Month.MAY -> "MAY"; Month.JUNE -> "JUN"; Month.JULY -> "JUL"; Month.AUGUST -> "AUG"
-    Month.SEPTEMBER -> "SEP"; Month.OCTOBER -> "OCT"; Month.NOVEMBER -> "NOV"; Month.DECEMBER -> "DEC"
+/** R279 — see [weekdayAbbrev]; `month.*` is shared with the episode card's air date. */
+@Composable
+internal fun monthAbbrev(m: Month): String = str(monthKey(m))
+
+internal fun monthKey(m: Month): String = when (m) {
+    Month.JANUARY -> "month.jan"; Month.FEBRUARY -> "month.feb"; Month.MARCH -> "month.mar"
+    Month.APRIL -> "month.apr"; Month.MAY -> "month.may"; Month.JUNE -> "month.jun"
+    Month.JULY -> "month.jul"; Month.AUGUST -> "month.aug"; Month.SEPTEMBER -> "month.sep"
+    Month.OCTOBER -> "month.oct"; Month.NOVEMBER -> "month.nov"; else -> "month.dec"
 }
 
 // internal, not private: UpcomingDetailScreen.kt (a different file, same package) reuses this too.

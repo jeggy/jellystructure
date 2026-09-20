@@ -56,7 +56,10 @@
 </head>
 <body>
     <canvas id="ComposeTarget" tabindex="0"></canvas>
-    <button id="fs-btn" title="Toggle fullscreen">⛶ Fullscreen</button>
+    <!-- R279 (FR-R279-13) — no text here: boot.js fills both the label and the tooltip from
+         ravilo-shell-strings.js, which is generated from i18n/*.json, in the language this device
+         last drew in. -->
+    <button id="fs-btn" title=""></button>
     <div id="ravilo-safe-area-probe"></div>
 
     <!-- FR-235-8 — no inline script: the corrected CSP's script-src has no 'unsafe-inline' (a nonce
@@ -65,6 +68,7 @@
          (FR-R263-1) plus the old inline block — and, on success, boot.js appends ravilo.js itself, so
          there is no static <script src="ravilo.js"> here for an unsupported browser to fetch. -->
     <script src="runtime-config.js"></script>
+    <script src="ravilo-shell-strings.js"></script>
     <script src="boot.js"></script>
 </body>
 </html>

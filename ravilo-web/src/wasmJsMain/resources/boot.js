@@ -66,6 +66,15 @@ if (!raviloSupportsWasmGC()) {
     // installed app has no need to ask for the fullscreen API it's already effectively in.
     var fsBtn = document.getElementById('fs-btn');
     if (!raviloStandalone && (document.fullscreenEnabled || document.webkitFullscreenEnabled)) {
+        // R279 — the only two strings drawn before the bundle exists. The table is generated from
+        // i18n/*.json, and the language is the one LastLanguage remembered, so this button is in the
+        // household's language on every visit after the first. Falls back to the base language.
+        var shell = (window.raviloShellStrings || {});
+        var remembered = null;
+        try { remembered = localStorage.getItem('ravilo.lang'); } catch (e) { /* blocked site data */ }
+        var shellStrings = shell[remembered] || shell['en'] || {};
+        fsBtn.textContent = shellStrings['web.fullscreen'] || '\u26F6 Fullscreen';
+        fsBtn.title = shellStrings['web.fullscreen_title'] || 'Toggle fullscreen';
         fsBtn.style.display = 'block';
         function toggleFs() {
             if (document.fullscreenElement || document.webkitFullscreenElement) {
