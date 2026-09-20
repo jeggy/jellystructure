@@ -47,6 +47,7 @@ import dev.jellystructure.ravilo.ui.LocalUserAvatarUrl
 import dev.jellystructure.ravilo.ui.focus.dpadFocusable
 import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.seams.RemoteImage
+import dev.jellystructure.ravilo.ui.theme.LocalHandset
 import dev.jellystructure.ravilo.ui.theme.LocalCompact
 import dev.jellystructure.ravilo.ui.theme.RaviloDimens
 import dev.jellystructure.ravilo.ui.theme.raviloHPad
@@ -80,6 +81,16 @@ fun AppBar(
     // rail lit by the backdrop used to show through the 0.95 surface as clutter behind the nav.
     opaque: Boolean = false,
     title: String? = null,   // R136: page context (e.g. channel name) shown after the brand lockup
+    /**
+     * R267 (FR-R267-2) — the one slot in the handset top row that belongs to a **page**: today the
+     * Library type dropdown, and nothing else. It is deliberately a slot and not a growing list of
+     * optional controls: the whole difference between this and a permanent *Kategorier* button is
+     * that it is **empty on every page that does not own it**, so it can never become a home for
+     * controls with nowhere else to live.
+     *
+     * Ignored when [LocalHandset] is false — the TV and the web app keep the single row.
+     */
+    handsetTopSlot: (@Composable () -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val colors = RaviloTheme.colors
@@ -123,6 +134,10 @@ fun AppBar(
     // no scroll, same weight-based layout as before.
     val compact = LocalCompact.current
     val navScrollState = rememberScrollState()
+    // R267 (FR-R267-1) — the handset layout, gated on R256's platform-class seam. Not a width
+    // breakpoint: a phone in landscape is still a phone, and a narrow `ravilo-web` window is not one.
+    // When false, everything below is exactly what shipped.
+    val handset = LocalHandset.current
 
     Box(
         modifier = modifier
@@ -131,6 +146,43 @@ fun AppBar(
             .background(solidBg)         // R62: solid layer (transparent when at top)
             .background(barGradient),    // gradient vignette on top
     ) {
+        if (handset) {
+            // R267 (FR-R267-2) — brand · the page's own control if it has one · cast. Nothing else:
+            // search and the profile are bottom-bar items now (FR-R267-5), there is no page-context
+            // text, and there is no clock (FR-R267-3 — the platform draws one in the status bar
+            // directly above this, and a second one 40 px below it is furniture).
+            //
+            // No horizontal scroll here either. `LocalCompact`'s scroll was the defect this phase was
+            // written against: it "fixes" a crowded bar by letting the brand, the cast button and the
+            // avatar slide off-screen at rest.
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = raviloHPad).matchParentSize(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    BrandMark(size = 26.dp)
+                    Text(
+                        text = "Ravilo",
+                        color = colors.text,
+                        fontSize = 22.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = spaceGrotesk,
+                        letterSpacing = (-1).sp,
+                    )
+                }
+                Box(modifier = Modifier.weight(1f))
+                handsetTopSlot?.invoke()
+                // FR-R267-4 — present or absent, never a gap. CastButton renders nothing when
+                // Chromecast is not set up or the platform has no sender, and the spacing closes up.
+                CastButton()
+            }
+            return@Box
+        }
+
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -373,6 +425,10 @@ private fun SearchIcon(
 
 @Composable
 private fun ClockDisplay() {
+    // R267 (FR-R267-3) — never on a handset. The handset row does not call this, but the guard lives
+    // here too so a future call site cannot reintroduce a second clock 40 px under the platform's own.
+    // On a TV it is the only clock in the room, so nothing changes there.
+    if (LocalHandset.current) return
     val colors = RaviloTheme.colors
     val sora = Sora
     var timeStr by remember { mutableStateOf("") }

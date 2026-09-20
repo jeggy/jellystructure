@@ -92,6 +92,11 @@ import dev.jellystructure.ravilo.ui.screens.WatchedBus
 import dev.jellystructure.ravilo.ui.i18n.WithLocale
 import dev.jellystructure.ravilo.ui.i18n.str
 import coil3.compose.LocalPlatformContext
+import androidx.compose.foundation.layout.padding
+import dev.jellystructure.ravilo.ui.theme.RaviloDimens
+import dev.jellystructure.ravilo.ui.components.BottomNavItem
+import dev.jellystructure.ravilo.ui.components.LibraryTypePill
+import dev.jellystructure.ravilo.ui.components.RaviloBottomNav
 import dev.jellystructure.ravilo.ui.components.ProfileMenu
 import dev.jellystructure.ravilo.ui.components.ServerMessageHost
 import dev.jellystructure.ravilo.ui.components.UpdateToast
@@ -613,6 +618,23 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
 
         val dest = stack.last()
 
+        // R267 (FR-R267-5/-7) — which bottom item this destination IS, or null when the bar is absent.
+        //
+        // Absent on every PUSHED destination — detail pages, the player, the cast remote, the profile
+        // picker, account screens, seeded grids — each of which has its own Back and sits on a higher
+        // layer. The bar belongs to the four pages and nowhere else, which is also what stops it
+        // overlaying video.
+        //
+        // My List is a pushed Browse (it arrives from the profile menu), so it is deliberately NOT
+        // Library: `Dest.Browse` alone is not enough to decide.
+        fun bottomItemOf(d: Dest): BottomNavItem? = when {
+            d is Dest.Home -> BottomNavItem.HOME
+            d is Dest.Browse && d.kind != BrowseKind.MY_LIST -> BottomNavItem.LIBRARY
+            d is Dest.Search -> BottomNavItem.SEARCH
+            d is Dest.Discover -> BottomNavItem.DISCOVER
+            else -> null
+        }
+
         // R145: detect a handset-width screen → tighter gutters + full-width detail content (phone target).
         val windowInfo = LocalWindowInfo.current
         val density = LocalDensity.current
@@ -760,7 +782,16 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
             // first frame, instead of jumping once the bars finish animating back in (the measured 69 px
             // this phase fixes).
             val playingFullscreen = dest is Dest.Player || dest is Dest.LiveTv || dest is Dest.CastRemote
-            Box(modifier = if (playingFullscreen) Modifier.fillMaxSize() else Modifier.fillMaxSize().safeAreaPadding()) {
+            // R267 (FR-R267-7/-12) — nothing scrolls under the bottom bar and nothing is clipped by
+            // it. The height comes from RaviloDimens, never repeated as a literal: a phone value wrong
+            // by one bar is exactly how a heading ends up underneath one, twice already (R257
+            // FR-R257-5, R259 FR-R259-2). Applied here, where the per-destination insets already are,
+            // so the four pages do not each have to remember it.
+            val navBarInset = if (handset && bottomItemOf(dest) != null) RaviloDimens.bottomNavHeight else 0.dp
+            Box(
+                modifier = if (playingFullscreen) Modifier.fillMaxSize()
+                else Modifier.fillMaxSize().safeAreaPadding().padding(bottom = navBarInset),
+            ) {
             when (dest) {
             is Dest.ProfilePicker -> {
                 val store = remember { ProfilePickerStore() }
@@ -949,7 +980,54 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
             // as a row's "→ See all" drill-in — full facet bar, sort, everything. My List keeps the old
             // BrowseStore/BrowseScreen: it isn't expressible as a ConditionGroup seed (it's per-user saved-
             // list membership, a different backend query shape entirely), so unifying it isn't a same-day change.
-            is Dest.Browse -> if (dest.kind == BrowseKind.MOVIES || dest.kind == BrowseKind.SERIES) {
+            // R267 (FR-R267-5b/-5c) — on a handset, Movies and Series are one page called **Library**,
+            // and the type is a control in the top row rather than two nav items. This is a
+            // presentation change, not a new screen: `Dest.Browse` is already one screen with a type
+            // parameter, so Library is that screen with its parameter exposed. Its rows, grid, facets
+            // and See-all behaviour are R187's, unchanged.
+            //
+            // My List keeps the old path — it arrives from the profile menu as a pushed destination,
+            // it is not a Library type, and it is not expressible as a seed (see the R187 note below).
+            is Dest.Browse -> if (handset && dest.kind != BrowseKind.MY_LIST) {
+                val kind = dest.kind
+                val seedKind = when (kind) {
+                    BrowseKind.MOVIES -> "MOVIE"
+                    BrowseKind.SERIES -> "SERIES"
+                    BrowseKind.MUSIC -> "MUSIC_VIDEO"
+                    else -> null   // ALL — no kind filter at all
+                }
+                val store = keptStore("library:${dest.displayName}:$kind") {
+                    SeededBrowseStore(apiClient, seedQuery = null, seedMediaKind = seedKind, continueWatching = false)
+                }
+                // FR-R267-5c — all four counts from ONE call. `getFacets(kind = null)` answers with
+                // `kind_counts` for every type (phase R267's backend half), so the dropdown never
+                // needs four round trips and the client never sums anything itself.
+                var kindCounts by remember { mutableStateOf<Map<String, Int>>(emptyMap()) }
+                LaunchedEffect(Unit) {
+                    kindCounts = runCatching { apiClient.getFacets(kind = null).kindCounts }.getOrDefault(emptyMap())
+                }
+                SeededBrowseScreen(
+                    store = store,
+                    title = str("nav.library"),
+                    breadcrumb = null,
+                    subtitle = null,
+                    showTypeFacet = false,
+                    showFacetBar = true,
+                    displayName = dest.displayName,
+                    activeNav = -1,   // the phone's selection lives in the bottom bar, not this row
+                    onBack = { pop() },
+                    onItemSelect = { openDetail(it, dest.displayName) },
+                    handsetTopSlot = {
+                        LibraryTypePill(
+                            current = kind,
+                            counts = kindCounts,
+                            // The choice is a browse control, not a setting: it rides the destination
+                            // and does not persist across app restarts.
+                            onSelect = { replaceTop(Dest.Browse(it, dest.displayName)) },
+                        )
+                    },
+                )
+            } else if (dest.kind == BrowseKind.MOVIES || dest.kind == BrowseKind.SERIES) {
                 val storeKey = "seededTab:${dest.displayName}:${dest.kind}"
                 // /tv/browse/seeded's mediaKind matches MediaKind's enum name ("MOVIE"/"SERIES", see
                 // BrowseService.browseByQuery) — NOT BrowseKind.apiKey's "movie"/"series", which is the
@@ -1337,6 +1415,56 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                 },
             )
         } } } // Box (per-dest insets, R261) / when / AnimatedContent
+
+        // R267 (FR-R267-5/-7/-10) — the phone's page navigation. Drawn HERE, as a child of the root
+        // Box, deliberately outside AnimatedContent: a bar that animated in and out with every content
+        // transition is exactly the two-bars-mid-slide problem R262 FR-R262-3 exists to prevent.
+        //
+        // No hide-on-scroll (FR-R267-10): it is the one affordance that says where you are, and a bar
+        // that disappears while you read a row is a bar you have to go looking for.
+        val bottomItem = bottomItemOf(dest)
+        if (handset && bottomItem != null) {
+            Box(Modifier.fillMaxSize().safeAreaPadding(), contentAlignment = Alignment.BottomCenter) {
+                RaviloBottomNav(
+                    selected = bottomItem,
+                    // Same derivation every other AppBar call site uses (ChannelScreen, HomeScreen, …).
+                    userInitials = destDisplayName(dest).take(2).uppercase(),
+                    onSelect = { item ->
+                        val alreadyHere = item == bottomItem
+                        when (item) {
+                            // FR-R267-5d — Profile is a menu, not a page, and never takes the pill:
+                            // nothing about WHICH PAGE YOU ARE ON has changed when you open it.
+                            // Re-tapping while it is open closes it, as tapping the scrim does.
+                            BottomNavItem.PROFILE -> profileMenuOpen = !profileMenuOpen
+                            BottomNavItem.HOME ->
+                                if (!alreadyHere) resetTo(Dest.Home(destDisplayName(dest)))
+                            // FR-R267-5b — Movies and Series are one page on a phone. This is a
+                            // presentation change, not a new screen: Dest.Browse is already one screen
+                            // with a type parameter, so Library is that screen with its parameter
+                            // exposed as a control instead of as two nav items.
+                            BottomNavItem.LIBRARY ->
+                                if (!alreadyHere) replaceTop(Dest.Browse(BrowseKind.ALL, destDisplayName(dest)))
+                            // FR-R267-5a — search is a PAGE on a phone, not the TV's right-cluster
+                            // magnifier: a phone has a keyboard and a thumb, so it is one of the
+                            // places a viewer goes.
+                            BottomNavItem.SEARCH ->
+                                if (!alreadyHere) replaceTop(Dest.Search(destDisplayName(dest)))
+                            // FR-R267-9 — re-tapping Discover returns to the FIRST AVAILABLE segment,
+                            // written that way (not "Networks") so this and R268's declared order
+                            // cannot disagree. This replaces R170's step-to-the-next-segment on the
+                            // phone only; R170 stands on the TV, where the nav item is reached by
+                            // D-pad and stepping is the cheaper gesture.
+                            BottomNavItem.DISCOVER ->
+                                replaceTop(Dest.Discover(
+                                    destDisplayName(dest),
+                                    defaultDiscoverSegment(upcomingAvailable, discoverAvailable),
+                                ))
+                        }
+                    },
+                )
+            }
+        }
+
         // R170 — the avatar's dropdown: My List/Settings/Switch profile/Unpair, replacing the old
         // straight-to-picker click. Rendered over whatever screen is current, same tier as the
         // debug/message overlays below.
@@ -1370,7 +1498,15 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
         if (castActive != null && dest !is Dest.Player && dest !is Dest.LiveTv && dest !is Dest.CastRemote) {
             Box(Modifier.fillMaxSize()) {
                 Box(Modifier.align(Alignment.TopCenter)) { CastConnectingBar() }
-                Box(Modifier.align(Alignment.BottomCenter)) { CastMiniBar(onOpen = { push(Dest.CastRemote(currentDisplayNameForCast)) }) }
+                // R267 (FR-R267-8) — the mini bar DOCKS directly above the nav bar; the pair moves as
+                // one block and the mini bar keeps its own tap target and its rule (never dismissible
+                // while a cast runs). On a pushed screen, where the nav bar is absent, it returns to
+                // its own inset exactly as before. Same one-place height as the content padding.
+                Box(
+                    Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = if (handset && bottomItemOf(dest) != null) RaviloDimens.bottomNavHeight else 0.dp),
+                ) { CastMiniBar(onOpen = { push(Dest.CastRemote(currentDisplayNameForCast)) }) }
             }
         }
         // R261 — see the profile-menu comment above; the overlay itself has no inset awareness of its

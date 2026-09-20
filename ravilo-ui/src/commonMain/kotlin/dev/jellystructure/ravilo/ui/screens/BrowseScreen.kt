@@ -52,6 +52,7 @@ import dev.jellystructure.shared.tv.FacetItem
 import dev.jellystructure.shared.tv.MediaCard
 import dev.jellystructure.shared.tv.SearchResults
 import dev.jellystructure.shared.tv.TvApiClient
+import dev.jellystructure.shared.tv.MUSIC_KIND
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -63,7 +64,10 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 
 enum class BrowseKind(val apiKey: String?) {
-    ALL(null), MOVIES("movie"), SERIES("series"), MY_LIST("mylist")
+    // R267 (FR-R267-5c) — MUSIC is new. Music videos are a real library type (phase 172) and the
+    // phone's Library dropdown offers them; before this, any kind other than movie/series fell
+    // through to `all` server-side and would have rendered the whole library under a Music heading.
+    ALL(null), MOVIES("movie"), SERIES("series"), MUSIC(MUSIC_KIND), MY_LIST("mylist")
 }
 
 sealed class BrowseState {
@@ -221,6 +225,9 @@ fun BrowseScreen(
         BrowseKind.SERIES -> 2
         BrowseKind.MY_LIST -> -1
         BrowseKind.ALL -> 0
+        // R267 — a phone-only Library type; it has no TV nav tab to highlight, and this screen is
+        // only ever reached with MUSIC on a handset, where the selection lives in the bottom bar.
+        BrowseKind.MUSIC -> -1
     }
 
     Box(

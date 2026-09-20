@@ -9,23 +9,79 @@
 
 ## Status
 
-`Planned` — written 2026-09-18, **dev-reviewed 2026-09-19 against `main` `dcb97f2c`**. Gated on R256's
-`isHandset` seam. ⚠ **The two claims that used to stand here are wrong and are corrected in §Dev review:**
-FR-R267-5c's Music type and its four simultaneous counts need **backend work** (no music browse kind, no
-music facets slice, one slice per call), and the five-item bar needs about **six new strings** ×
-en/da/fo. The four nav labels that already exist were the four-item bar's.
+`⚠ Partial` — design-authored 2026-09-18, dev-reviewed 2026-09-19 against `main` `dcb97f2c`, **built
+2026-09-20 and verified on a real Pixel 9** (debug build). The structure ships; three refinements and
+FR-R267-9's scroll-to-top are listed as not done at the foot.
 
-**Numbering:** written 2026-09-18 as R261, renumbered **R261 → R264** the same day (`main` took R260 ·
-R261 · R262 within hours), and renumbered again **R264 → R267** the same afternoon when `main` took
-R263 · R264 · R265 (the web app installs · the receiver-only TV app · play on a TV from the phone).
-Verified against `main` on 2026-09-18 — Ravilo taken through **R265**, admin through **236**.
-Ravilo-only, no admin pair. Next free: **238 / R269** (R266 is Cast Connect and R268 the Discover tab
-order — both ours, same day).
+⚠ **Two of this phase's own Status claims were false**, exactly as the dev review found, and both are
+now corrected: it needed **backend changes** (FR-R267-5c) and it needed **new strings**.
 
-Design: `design/ravilo/Bottom Nav - Directions.html` — the baseline, four directions on Pixel 9
-frames, the comparison, and the three frames where a bottom bar meets the rest of the app (the cast
-mini bar, Discover, the player). **Direction B · "pill" was chosen** (owner, 2026-09-18) and is built
-into `design/ravilo/Ravilo Mobile.html` (`.bnav` / `.bn` / `.bnind`).
+### Build (2026-09-20)
+
+- **FR-R267-1/-2/-3/-4/-13** — `AppBar` gains a `LocalHandset` branch: brand · the page's own control
+  · cast, and nothing else. No clock (guarded inside `ClockDisplay` too, so a future call site cannot
+  reintroduce a second one 40 px under the platform's). **No horizontal scroll**, which was the whole
+  defect: `LocalCompact` "fixed" a crowded bar by letting the brand, the cast button and the avatar
+  slide off-screen at rest. The wide path is byte-for-byte what shipped.
+- **FR-R267-5/-6/-6a/-7/-10/-12** — `RaviloBottomNav`: five items, one gradient pill that **slides**
+  (~180 ms) rather than five states cross-fading, 11.5 sp labels (the single fenced exception to the
+  13 sp floor), opaque with a hairline, and `RaviloDimens.bottomNavHeight` as the one place anything
+  offsets by. Drawn as a child of the root `Box`, **outside `AnimatedContent`** per review item 4 — a
+  bar that animated in and out with every content transition is the two-bars-mid-slide problem R262
+  FR-R262-3 exists to prevent.
+- **FR-R267-5b** — review item 5's claim held: `Dest.Browse(kind)` really is one screen with a type
+  parameter, so Library is that screen with its parameter exposed. My List keeps the old path (it is a
+  pushed destination from the profile menu, not a Library type).
+- **FR-R267-5c, and the backend the Status said it did not need** (review item 1). `BrowseKind.MUSIC`
+  + a real `musicvideo` slice in `BrowseService` — which also closes a hazard of its own: **any kind
+  other than `movie`/`series` used to fall through to `all`**, so a music browse would have rendered
+  the whole library's counts rather than an error. `BrowseFacets.kind_counts` carries all four counts
+  in **one** response, because `facets(kind)` answers for one slice per call and the client may not sum
+  them itself.
+- **FR-R267-5d** — Profile opens the existing menu and **never takes the pill**; re-tapping closes it.
+  Verified on device.
+- **New strings** (review item 2): `nav.library`, `nav.profile`, `lib.type.all`, `lib.type.music`,
+  `lib.count`, `lib.empty_music` × en/da/fo. Danish and Faroese are drafts.
+
+### Found by running it on a Pixel 9 — three real bugs, all fixed
+
+1. **Switching the Library type left the page on "Loading…" forever.** Each type gets its own store,
+   but R262's `contentKey = "section"` deliberately keeps Home/Browse/Discover as one entry in the
+   content transition, so the screen is **not** recomposed when only the type changes and
+   `LaunchedEffect(Unit) { store.load() }` never re-ran. Keyed on the **store** now, which is also just
+   the honest statement of what the effect is for.
+2. **A D-pad focus ring was drawn around the first poster on a touch screen.** R257 hands focus to the
+   first cell so a D-pad has somewhere to land; a phone has no D-pad and the viewer cannot clear it.
+   Suppressed on handsets, along with the entry focus request into a nav row that no longer exists
+   there. FR-R267-6's "selection may never be carried by focus" now holds in fact, not only in intent.
+3. **The type dropdown rendered full-width across the top of the screen** instead of under its own
+   pill — the anchor box had stretched across the row. Anchored and given a real width.
+
+### Verified on the Pixel 9
+
+Home → Library → type dropdown → Movies (491 → 270 titles) → Search (field focused, keyboard up) →
+Discover → Profile (sheet opens, **pill stays on Discover**) → re-tap Profile (closes) → Home → Back
+(exits the app, correct for a root destination). The pill slides; the top row's slot is present on
+Library and **empty everywhere else**. Discover also confirmed **R268** on device: it opens on
+*Networks* with the strip scrolling.
+
+### Not built, and three things the owner should look at
+
+- **FR-R267-9's scroll-to-top on re-tap** is NOT implemented. The navigation half is (Discover
+  re-tap returns to the first available segment — written as *first available*, per review item 7, so
+  it and R268's order cannot disagree). Scrolling a page to its top needs each of the four screens to
+  expose its scroll state, which is a bigger diff than the rest of this phase put together and is
+  better done as its own change than bolted on at the end of this one.
+- **The profile menu is still anchored where the TV's avatar used to be** (upper right), while its
+  trigger is now bottom-right. It should become a bottom sheet. It also draws a D-pad focus ring on
+  its first item — same class as bug 2 above, different component.
+- **The Search page has no top row at all** (no brand, no cast) — that screen never called `AppBar`.
+  FR-R267-2 implies it should.
+- **The bottom bar rides above the software keyboard on Search**, so the bar stays reachable but the
+  results area shrinks to about three tiles. Platform-typical would be to let the keyboard cover it.
+  An owner call, not a defect.
+- Open questions 2 (predictive back), 3 (screen-level title) and 4 (brand lockup width in da/fo)
+  remain open; none blocked the build.
 
 ## Current state (traced against `main`, 2026-09-18)
 

@@ -58,6 +58,7 @@ import dev.jellystructure.ravilo.ui.focus.dpadFocusable
 import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.seams.PrefetchLazyGridEffect
 import dev.jellystructure.ravilo.ui.seams.languageName
+import dev.jellystructure.ravilo.ui.theme.LocalHandset
 import dev.jellystructure.ravilo.ui.theme.RaviloDimens
 import dev.jellystructure.ravilo.ui.theme.raviloHPad
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
@@ -353,9 +354,19 @@ fun SeededBrowseScreen(
     // R190 §C — opens the existing Seerr request flow for an overflow-row tile; null when this page
     // isn't a person seed (the row itself is hidden then too, see [SeededBrowseStore.seerrOverflow]).
     onRequestSelect: ((dev.jellystructure.shared.tv.DiscoverEntry) -> Unit)? = null,
+    /** R267 (FR-R267-2/-5c) — the Library page's type dropdown, drawn in the handset top row. Null on
+     *  every other use of this screen, which is the point: the slot is empty on a page it does not
+     *  belong to. */
+    handsetTopSlot: (@Composable () -> Unit)? = null,
 ) {
     val colors = RaviloTheme.colors
-    LaunchedEffect(Unit) { store.load() }
+    // R267 — keyed on the STORE, not on Unit. Found on the Pixel 9: switching the Library type swaps
+    // in a different store (one per kind), but this screen is not recomposed from scratch when only
+    // the type changes — R262's `contentKey = "section"` keeps Home/Browse/Discover as one entry in
+    // the content transition on purpose — so a `LaunchedEffect(Unit)` never re-ran and the new store
+    // was never loaded. The page sat on "Loading…" forever. Keying on the store is also just more
+    // honest: the effect's job is "load THIS store".
+    LaunchedEffect(store) { store.load() }
     val state by store.state.collectAsState()
     val scope = rememberCoroutineScope()
     val gridState = store.gridState
@@ -368,7 +379,14 @@ fun SeededBrowseScreen(
     val facetChipFRs = remember { BrowseFacetKey.entries.associateWith { FocusRequester() } }
     val sortChipFR = remember { FocusRequester() }
     val firstFacetFR = facetChipFRs.getValue(BrowseFacetKey.GENRE)
-    LaunchedEffect(Unit) { if (store.focusItemKey == null) runCatching { navBarFR.requestFocus() } }
+    // R267 (FR-R267-6) — on a handset there is no nav row in the AppBar to focus (the pages moved to
+    // the bottom bar), so this request fell through to the first grid cell and drew a D-pad focus ring
+    // around a poster on a touch screen. Found on the Pixel 9. Selection on a phone is never carried
+    // by focus; the bar's own pill carries it.
+    val handsetLayout = LocalHandset.current
+    LaunchedEffect(Unit) {
+        if (!handsetLayout && store.focusItemKey == null) runCatching { navBarFR.requestFocus() }
+    }
     // R257 (FR-R257-1) — a seeded page is pushed from a tile / See all / a cast face: the viewer's
     // attention is on the content, not the app bar (whose first item, with activeNav = -1, is *Home* —
     // one stray OK left the page). The bar only HOLDS focus until the first results compose (R60:
@@ -461,7 +479,12 @@ fun SeededBrowseScreen(
                         items = filtered.map { it.card },
                         gridState = gridState,
                         firstCellFR = firstCellFR,
-                        focusFirstOnLoad = freshEntry && !movedOffBar,
+                        // R267 (FR-R267-6) — never on a handset. R257 hands focus to the first cell so
+                        // a D-pad has somewhere to land; a touch screen has no D-pad, and the result
+                        // is a focus ring drawn around one poster that the viewer never asked for and
+                        // cannot clear. Seen on the Pixel 9. Selection on a phone is carried by the
+                        // bottom bar's pill, never by focus.
+                        focusFirstOnLoad = freshEntry && !movedOffBar && !handsetLayout,
                         restoreItemKey = store.focusItemKey,
                         onItemSelect = { card -> store.focusItemKey = card.id; onItemSelect(card) },
                         seerrOverflow = if (onRequestSelect != null) seerrOverflow else emptyList(),
@@ -484,6 +507,7 @@ fun SeededBrowseScreen(
             userInitials = displayName.take(2).uppercase(),
             onProfile = onProfile,
             onSearch = onSearch,
+            handsetTopSlot = handsetTopSlot,
             scrolled = barScrolled,
         )
     }

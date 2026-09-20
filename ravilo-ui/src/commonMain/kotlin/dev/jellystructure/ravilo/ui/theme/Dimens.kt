@@ -30,6 +30,16 @@ val raviloHPad: Dp
 
 object RaviloDimens {
     val appBarHeight  = 60.dp   // overlay nav bar height (R65 tokenized)
+    /**
+     * R267 (FR-R267-12) — the phone's bottom navigation bar, **from one place**.
+     *
+     * Anything that offsets content by it — a page's bottom padding, the cast mini bar's own offset —
+     * reads this value rather than repeating a number. A phone value wrong by one bar is exactly how
+     * a heading ends up underneath one, which this project has now paid for twice (R257 FR-R257-5 and
+     * R259 FR-R259-2). Excludes the navigation-bar / home-indicator inset, which is applied
+     * separately by `safeDrawing`.
+     */
+    val bottomNavHeight = 56.dp
     val screenPadH    = 48.dp   // left/right padding on all screens
     val trackPadV     = 20.dp   // LazyRow contentPadding top/bottom (also covers scale-overflow)
     val itemSpacing   = 16.dp   // gap between tiles / channel cards / cast circles
