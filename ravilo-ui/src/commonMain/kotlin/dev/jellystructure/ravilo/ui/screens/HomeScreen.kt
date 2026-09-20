@@ -784,7 +784,6 @@ private fun HomeErrorState(
 ) {
     val colors = RaviloTheme.colors
     val scope = rememberCoroutineScope()
-    val signOutFR = remember { FocusRequester() }
     var signOutFocused by remember { mutableStateOf(false) }
     // R280 (FR-R280-3) — the heading, the sentence and the cause-appropriate action are the shared
     // surface now; Home keeps Sign out as its own second action, because Home is where a viewer with
@@ -793,7 +792,7 @@ private fun HomeErrorState(
         kind,
         onRetry = onRetry,
         onSignIn = onSignOut,
-        extraAction = { primaryFR ->
+        extraAction = { primaryFR, signOutFR ->
             Box(
                 modifier = Modifier
                     .background(colors.surfaceVariant, RoundedCornerShape(8.dp))

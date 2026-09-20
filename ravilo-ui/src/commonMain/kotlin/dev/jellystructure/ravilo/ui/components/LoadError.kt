@@ -123,8 +123,12 @@ fun LoadErrorState(
     onRetry: (() -> Unit)? = null,
     onSignIn: (() -> Unit)? = null,
     onBack: (() -> Unit)? = null,
-    /** Home's own second action — R237 already treats signing out as Home's case, not every screen's. */
-    extraAction: (@Composable (FocusRequester) -> Unit)? = null,
+    /**
+     * Home's own second action — R237 already treats signing out as Home's case, not every screen's.
+     * Receives both requesters so the D-pad chain closes in both directions: this composable wires
+     * the primary button's Down to [secondary], and the caller wires its own Up back to [primary].
+     */
+    extraAction: (@Composable (primary: FocusRequester, secondary: FocusRequester) -> Unit)? = null,
 ) {
     val colors = RaviloTheme.colors
     val title = loadErrorTitleKey(kind)
@@ -137,7 +141,11 @@ fun LoadErrorState(
     val showBack = onBack != null && !showRetry && !showSignIn
 
     val primaryFR = remember { FocusRequester() }
+    val secondaryFR = remember { FocusRequester() }
     LaunchedEffect(kind) { runCatching { primaryFR.requestFocus() } }
+    // The chain has to close both ways. The first cut of this drew Home's Sign out with an Up back to
+    // Retry and gave Retry no Down — so the second action was reachable only by never leaving it.
+    val onDown: (() -> Unit)? = if (extraAction != null) ({ runCatching { secondaryFR.requestFocus() }; Unit }) else null
 
     Box(modifier.fillMaxSize().padding(40.dp), contentAlignment = Alignment.Center) {
         Column(
@@ -152,14 +160,14 @@ fun LoadErrorState(
             if (showRetry || showSignIn || showBack) {
                 Spacer(Modifier.height(24.dp))
                 when {
-                    showSignIn -> RaviloButton(str("action.sign_in"), focusRequester = primaryFR, onSelect = onSignIn)
-                    showRetry -> RaviloButton(str("action.retry"), focusRequester = primaryFR, onSelect = onRetry)
-                    else -> RaviloButton(str("action.back"), focusRequester = primaryFR, onSelect = onBack)
+                    showSignIn -> RaviloButton(str("action.sign_in"), focusRequester = primaryFR, onDown = onDown, onSelect = onSignIn)
+                    showRetry -> RaviloButton(str("action.retry"), focusRequester = primaryFR, onDown = onDown, onSelect = onRetry)
+                    else -> RaviloButton(str("action.back"), focusRequester = primaryFR, onDown = onDown, onSelect = onBack)
                 }
             }
             if (extraAction != null) {
                 Spacer(Modifier.height(12.dp))
-                extraAction(primaryFR)
+                extraAction(primaryFR, secondaryFR)
             }
         }
     }
