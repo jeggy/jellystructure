@@ -39,6 +39,10 @@ jobs:
         run: ./scripts/check-jellyfin-version-use.sh
       - name: No Jellyfin token in a query string
         run: ./scripts/check-jellyfin-query-token.sh
+      # R279 FR-R279-14 — thirteen viewer-facing strings had never reached the string table, and no
+      # test could see any of them. This is the thing that would have.
+      - name: No hardcoded viewer-facing text in Ravilo
+        run: ./scripts/check-ravilo-strings.sh
 
   # ── Backend unit tests (Kotlin/Native). 342 tests that CI had never run before 231. ──
   unit:

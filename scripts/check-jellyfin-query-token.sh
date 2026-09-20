@@ -50,7 +50,7 @@ while IFS= read -r hit; do
     echo "    ^ Jellyfin does not honour api_key on 12.1 (measured 401). Use a header, or withJellyfinToken()."
     fail=1
   fi
-done < <(grep -rn 'api_key=' --include='*.kt' src/ ravilo-ui/src ravilo-screen/src ravilo-cast/src ravilo-receiver-core/src ravilo-phone/src shared/src 2>/dev/null || true)
+done < <(grep -rn 'api_key=' --include='*.kt' src/ ravilo-ui/src ravilo-screen/src ravilo-cast/src ravilo-receiver-core/src ravilo-i18n/src ravilo-phone/src shared/src 2>/dev/null || true)
 
 # ── 2. Only the shared helper writes the query parameter ────────────────────────
 ALLOWED_TOKEN_QUERY_FILE="src/linuxX64Main/kotlin/dev/jellystructure/auth/JellyfinClient.kt"
@@ -61,7 +61,7 @@ while IFS= read -r hit; do
   echo "$hit"
   echo "    ^ FR-239-3: only withJellyfinToken() in $ALLOWED_TOKEN_QUERY_FILE writes this parameter."
   fail=1
-done < <(grep -rniE '[?&]apikey=' --include='*.kt' src/ ravilo-ui/src ravilo-screen/src ravilo-cast/src ravilo-receiver-core/src ravilo-phone/src shared/src 2>/dev/null || true)
+done < <(grep -rniE '[?&]apikey=' --include='*.kt' src/ ravilo-ui/src ravilo-screen/src ravilo-cast/src ravilo-receiver-core/src ravilo-i18n/src ravilo-phone/src shared/src 2>/dev/null || true)
 
 if [ ! -f "$ALLOWED_TOKEN_QUERY_FILE" ] || ! grep -q 'fun withJellyfinToken' "$ALLOWED_TOKEN_QUERY_FILE"; then
   echo "MISSING: withJellyfinToken() — phase 239's single spelling site is gone, so this fence proves nothing."
@@ -78,7 +78,7 @@ while IFS= read -r hit; do
   echo "$hit"
   echo "    ^ R271: a client SELECTS a URL the ticket carries, it never composes one."
   fail=1
-done < <(grep -rn '/Videos/' --include='*.kt' ravilo-ui/src ravilo-screen/src ravilo-cast/src ravilo-receiver-core/src ravilo-phone/src 2>/dev/null || true)
+done < <(grep -rn '/Videos/' --include='*.kt' ravilo-ui/src ravilo-screen/src ravilo-cast/src ravilo-receiver-core/src ravilo-i18n/src ravilo-phone/src 2>/dev/null || true)
 
 # R271 — `StreamTicket.access_token` still EXISTS (removing it broke a pre-v1.31 client, which cannot
 # deserialize a ticket without it — the stue TV, 2026-09-20). What must never come back is a

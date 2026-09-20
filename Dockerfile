@@ -36,6 +36,12 @@ COPY ravilo-ui ./ravilo-ui
 COPY ravilo-web ./ravilo-web
 COPY ravilo-screen ./ravilo-screen
 COPY ravilo-receiver-core ./ravilo-receiver-core
+# R279 — :ravilo-i18n is in that same unconditional list, and `i18n/` is its input: the whole Ravilo
+# string table is generated from i18n/*.json at build time, so the module directory has to exist for
+# Gradle to configure and the JSON has to exist for the generator to run. Missing them fails the
+# build at configuration with "Configuring project ':ravilo-i18n' without an existing directory".
+COPY ravilo-i18n ./ravilo-i18n
+COPY i18n ./i18n
 COPY ravilo-cast ./ravilo-cast
 COPY cast-receiver ./cast-receiver
 COPY web-static-server ./web-static-server
