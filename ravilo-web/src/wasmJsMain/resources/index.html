@@ -56,6 +56,15 @@
 </head>
 <body>
     <canvas id="ComposeTarget" tabindex="0"></canvas>
+    <!-- R281 — CanvasBasedWindow has no DOM text field, so a touchscreen has nothing to raise its
+         software keyboard for (document.activeElement is always the canvas above). On a coarse-pointer
+         device only, boot.js focuses this real, invisible, tabindex=-1 (so it never appears in Tab
+         order) input in place of the canvas whenever a Compose text field reports focus, and rewrites
+         what the on-screen keyboard produces into the same synthetic KeyboardEvents on #ComposeTarget
+         the gamepad bridge below already uses — see boot.js. -->
+    <input id="ravilo-kb-bridge" type="text" tabindex="-1" aria-hidden="true"
+           autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
+           style="position:fixed; top:0; left:0; width:1px; height:1px; opacity:0; border:none; padding:0; margin:0; pointer-events:none;">
     <!-- R279 (FR-R279-13) — no text here: boot.js fills both the label and the tooltip from
          ravilo-shell-strings.js, which is generated from i18n/*.json, in the language this device
          last drew in. -->

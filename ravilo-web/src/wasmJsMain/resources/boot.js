@@ -96,6 +96,65 @@ if (!raviloSupportsWasmGC()) {
         if (canvas) canvas.focus();
     });
 
+    // Shared by the mobile-keyboard bridge and the gamepad poller below — both feed Compose's key
+    // handling by re-firing whatever they receive as a synthetic KeyboardEvent on the canvas, since
+    // CanvasBasedWindow has no DOM text field of its own for either to target instead.
+    function raviloFireCanvasKey(key) {
+        var canvas = document.getElementById('ComposeTarget');
+        if (!canvas) return;
+        ['keydown', 'keyup'].forEach(function(t) {
+            canvas.dispatchEvent(new KeyboardEvent(t, {key: key, bubbles: true}));
+        });
+    }
+
+    // R281 — mobile on-screen keyboard bridge. CanvasBasedWindow routes all text entry through
+    // Compose's own focus system on a single canvas (see TextFieldFocusBridge.kt's doc comment) —
+    // there is no DOM `<input>` for document.activeElement to ever become, and no mobile browser
+    // raises its keyboard for anything else. On a coarse-pointer (touch) device only, the hidden
+    // #ravilo-kb-bridge input steps in as that DOM anchor: window.raviloMobileKeyboardBridge(focused)
+    // — called from TextFieldFocusBridge.kt on every Compose text-field focus/blur, the same edge
+    // that already drives the fullscreen-toggle guard above — focuses or blurs it, and its own
+    // beforeinput/keydown handlers translate what the on-screen keyboard produces into a
+    // raviloFireCanvasKey call each (proved to reach Compose's own key handling, single Unicode
+    // characters included, the same way the gamepad poller below already does for D-pad keys).
+    // Composition input (CJK IME) isn't bridged — this household's languages (en/da/fo) don't need
+    // it, and beforeinput.preventDefault() below is what keeps the hidden input's own value from
+    // ever accumulating anything to bridge in the first place.
+    (function() {
+        var isTouch = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+        var bridge = document.getElementById('ravilo-kb-bridge');
+        if (!isTouch || !bridge) return;
+
+        window.raviloMobileKeyboardBridge = function(focused) {
+            if (focused) {
+                bridge.value = '';
+                bridge.focus();
+            } else if (document.activeElement === bridge) {
+                bridge.blur();
+            }
+        };
+
+        bridge.addEventListener('beforeinput', function(e) {
+            if (e.inputType === 'deleteContentBackward') {
+                e.preventDefault();
+                raviloFireCanvasKey('Backspace');
+            } else if (e.inputType === 'deleteContentForward') {
+                e.preventDefault();
+                raviloFireCanvasKey('Delete');
+            } else if (e.inputType && e.inputType.indexOf('insert') === 0 && e.data) {
+                e.preventDefault();
+                Array.from(e.data).forEach(raviloFireCanvasKey);
+            }
+        });
+
+        bridge.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                raviloFireCanvasKey('Enter');
+            }
+        });
+    })();
+
     // Gamepad polling — re-fires gamepad axis/button presses as keyboard events so the Compose focus
     // engine handles them identically to hardware D-pad. Harmless in standalone mode (FR-R263-7);
     // still runs there.
@@ -103,14 +162,6 @@ if (!raviloSupportsWasmGC()) {
         var BUTTONS = {0: 'Enter', 1: 'Escape', 12: 'ArrowUp', 13: 'ArrowDown', 14: 'ArrowLeft', 15: 'ArrowRight'};
         var THRESHOLD = 0.5;
         var prevAxes = {}, prevButtons = {};
-
-        function fireKey(key) {
-            var canvas = document.getElementById('ComposeTarget');
-            if (!canvas) return;
-            ['keydown', 'keyup'].forEach(function(t) {
-                canvas.dispatchEvent(new KeyboardEvent(t, {key: key, bubbles: true}));
-            });
-        }
 
         function poll() {
             var pads = navigator.getGamepads ? navigator.getGamepads() : [];
@@ -120,13 +171,13 @@ if (!raviloSupportsWasmGC()) {
                 gp.axes.forEach(function(v, ai) {
                     var key = ai < 2 ? (v < -THRESHOLD ? 'ArrowLeft' : v > THRESHOLD ? 'ArrowRight' : null)
                                      : (v < -THRESHOLD ? 'ArrowUp'   : v > THRESHOLD ? 'ArrowDown'  : null);
-                    if (key && prevAxes[ai] !== key) fireKey(key);
+                    if (key && prevAxes[ai] !== key) raviloFireCanvasKey(key);
                     prevAxes[ai] = key;
                 });
                 gp.buttons.forEach(function(btn, bi) {
                     var key = BUTTONS[bi];
                     var pressed = btn.pressed;
-                    if (key && pressed && !prevButtons[bi]) fireKey(key);
+                    if (key && pressed && !prevButtons[bi]) raviloFireCanvasKey(key);
                     prevButtons[bi] = pressed;
                 });
             }
