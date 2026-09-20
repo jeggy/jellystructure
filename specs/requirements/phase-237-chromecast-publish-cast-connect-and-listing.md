@@ -10,24 +10,56 @@
 
 ## Status
 
-`Planned` — written 2026-09-18, **dev-reviewed 2026-09-19 against `main` `dcb97f2c`** (see §Dev
-review at the foot: the listing half stands, the icon becomes a committed artefact, and FR-237-7's
-Cast Connect status line moves to R266). Supersedes **FR-226-1** and **FR-226-3** (the
-step list); FR-226-2's two field rows stand verbatim inside step 3. Pairs with **R266** (the TV app as
-a Cast Connect receiver, and the phone sender flag) and adds one static file to 218's `/cast/` bundle.
+`⚠ Partial` — design-authored 2026-09-18, dev-reviewed 2026-09-19 against `main` `dcb97f2c`, **the
+admin-facing half built 2026-09-20.** Renumbered from design drafts 228 → 235 → 237.
 
-**Numbering:** originally written and numbered 228 on 2026-09-18, renumbered **228 → 235** the same day
-(`main` had taken 228 for an unrelated backend memory-leak phase), and renumbered again **235 → 237**
-hours later when `main` took **235** (serve the web app like an app) and **236** (screens: the backend
-drives a TV for a phone) before this draft was ever pushed. Same shape as R196→R208, 179→180, 186→187:
-the dev tracker's number wins, ours moves — twice in one day. Verified against `main` on 2026-09-18 —
-admin taken through **236**, Ravilo through **R265**. Next free: 238 / R269.
+**FR-237-7's Cast Connect status line, and everything Cast Connect actually does, have moved to
+R266** — dev review items 1 and 2, the same carve-out shape 236's review used for FR-236-11. FR-237-7's
+two honest *timing* facts (publishing is not instant; your test devices keep working meanwhile) stayed
+here and are built, on step 8.
 
-Design: built into `design/app/settings.html` (Connections → Chromecast, `#cc-steps`; new page-local
-classes `.cc-grp`, `.cc-note`, `.cc-fvv.pick`, `.cc-icon`; the Download button really produces the
-512² PNG in the mockup, the way the server will). The card's base five steps (1–5) now match the
-canonical, dev-reviewed **226**/**227** build pulled from `main` on 2026-09-18; this phase's three
-groups/eight-step structure and steps 6–8 are layered on top of that base, unbuilt.
+### Build (2026-09-20)
+
+The card is eight steps in three labelled groups, each heading stating its consequence so an admin can
+see where it is safe to stop.
+
+- **Group 1 · Register the receiver (1–5).** Steps 1–4 unchanged from 226. **Step 5 is rewritten**
+  (review item 3): it now says outright that test devices are **enough for a household**, and gives the
+  two device kinds their **different** serials. The old single parenthetical was wrong for this
+  household's own TV — for a set with Chromecast built in, the console wants the *Cast software* serial
+  under **Settings › Device Preferences › Google Cast**, not the one printed on the back, and it
+  changes on a factory reset.
+- **Review item 4 taken**: step 3's Package Name qualifier drops the platform (*the Ravilo app*), and
+  step 6 says in one clause that it is *the same package as step 3 — the phone and the TV are one app*.
+  One value, one story; the previous wording would have had an admin looking for a second package.
+- **Group 2 · A TV that runs Ravilo opens Ravilo itself (6).** The Android TV Package Name row, fed
+  from the same `BuildInfo.androidApplicationId` as step 3, so one `ravilo.applicationId` edit moves
+  both (review item 5 — the spec's `build.gradle.kts:15` reference was stale; phase 226 moved it to
+  `gradle.properties`). Plus the note that a **sideloaded** Ravilo still needs that TV as a test device.
+- **Group 3 · Publish, optional (7–8).** Every Listing Details field in Google's order with Google's
+  labels: Category and Countries as *choose* with no Copy, Title / Description / da / fo with Copy, and
+  the Icon with a thumbnail and a **Download**. Countries are deliberately **not** derived from the
+  Metadata tab's age-rating regions — `DK · US · GB` is a rating cascade, not a residence.
+- **FR-237-5 — the icon is a committed artefact** (review item 6). `cast-receiver/icon-512.png`, beside
+  `index.html`, with its code-owned vector master at `cast-receiver/brand/icon-512.svg` carrying the
+  regeneration command. No new toolchain, immune to the design sync, and byte-identical across requests
+  by construction. Square, not the asset pack's pre-rounded `ic_launcher-512.png` (review item 9 / OQ3:
+  reusing that is exactly what puts a hairline of `#000B25` inside Google's own mask).
+  **Worth recording: ImageMagick silently dropped the gradient** — its SVG reader ignores
+  `fill="url(#…)"` and produced a solid-black mark on navy, which would have shipped an unusable icon.
+  Rendered with headless Chromium instead and checked by eye.
+- Filename settled as `icon-512.png` everywhere (review item 8).
+
+**Tests:** `tests/e2e/cast-icon.spec.ts` asserts the PNG magic bytes and the IHDR dimensions (an HTML
+error page saved as a `.png` is the failure this rules out), that two requests are byte-identical, and
+that a missing asset under `/cast/` is an honest 404 rather than `index.html` — which is what lets the
+first assertion trust its own 200.
+
+**Not built here:** FR-237-7's *Living room TV opens Ravilo itself* status line, which has nothing to
+read until R266 observes a native launch (`CastService.status()` lists `kind == "cast"` devices only,
+and a Cast Connect launch produces a `kind == "tv"` one).
+
+Open questions 1, 2 and 4 are all outside this repo and none blocked the card.
 
 ## The two kinds of TV — the requirement behind the phase
 

@@ -22,7 +22,12 @@ services:
       JELLYFIN_PASS: ${JELLYFIN_PASS:-password}
       MEDIA_ROOT: /media
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8096/Library/VirtualFolders"]
+      # Phase 241 — /Library/VirtualFolders now requires a credential, like the real server. The
+      # healthcheck has to probe a route that is anonymous BY MEASUREMENT, and /System/Info/Public is
+      # exactly that (200 with no Authorization header on the live 12.1.0 server, 2026-09-20) — it is
+      # also what the product itself probes in testConnection. Caught by running the suite: the old
+      # probe started getting 401 and every container downstream refused to start.
+      test: ["CMD", "wget", "-qO-", "http://localhost:8096/System/Info/Public"]
       interval: 3s
       timeout: 3s
       retries: 10

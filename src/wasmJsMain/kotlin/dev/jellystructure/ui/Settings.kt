@@ -203,12 +203,87 @@ X-JS-Api-Key: jsk_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx</pre>
                         <div style="display:flex;gap:8px;align-items:center;margin-top:5px"><code class="mono" id="cc-field-url" style="flex:1;min-width:0;overflow-wrap:anywhere"></code><button id="cc-copy-url" type="button" class="btn sm ghost" style="flex:none">Copy</button></div>
                       </div>
                       <div style="padding:10px 12px">
-                        <div class="tiny"><b>Package Name</b> <span class="muted">· the Ravilo app on your phone</span></div>
+                        <!-- Phase 237 (dev review item 4) — the qualifier drops the PLATFORM. Step 6
+                             renders the same string for the Android TV field, and "on your phone" here
+                             next to "on the TV" there reads as two different packages; an admin would
+                             reasonably go looking for a second one that does not exist. -->
+                        <div class="tiny"><b>Package Name</b> <span class="muted">· the Ravilo app</span></div>
                         <div style="display:flex;gap:8px;align-items:center;margin-top:5px"><code class="mono" id="cc-field-pkg" style="flex:1;min-width:0"></code><button id="cc-copy-pkg" type="button" class="btn sm ghost" style="flex:none">Copy</button></div>
                       </div>
                     </div></div></div>
                   <div class="cc-step"><span class="step-n">4</span><p><b>Save.</b> The console now shows the <b>Application ID</b> — copy it into the field below.</p></div>
-                  <div class="cc-step" style="margin-bottom:0;"><span class="step-n">5</span><p>Add your Chromecast as a <b>test device</b> (its serial number is on the device and in the Google Home app), or <b>publish</b> the application so any Chromecast can use it — publishing is not instant.</p></div>
+                  <div class="cc-step" style="margin-bottom:0;"><span class="step-n">5</span><div style="flex:1;min-width:0">
+                    <p style="margin:0 0 6px">Add each TV as a <b>test device</b>. <b>This is enough for a household</b> — publishing (steps 7–8) is only needed if you want anyone else's Chromecast to be able to use it.</p>
+                    <!-- Phase 237 FR-237-2 / dev review item 3 — the two device kinds want DIFFERENT
+                         serials, and the old single parenthetical gave the wrong one for a TV with
+                         Chromecast built in: the printed hardware serial is not what the console
+                         wants. -->
+                    <p class="tiny muted" style="margin:0 0 4px"><b>A Chromecast dongle:</b> the serial number is printed on the device and shown in the Google Home app.</p>
+                    <p class="tiny muted" style="margin:0"><b>A TV with Chromecast built in:</b> the <i>Cast software</i> serial, under <b>Settings › Device Preferences › Google Cast</b> on the TV itself — <b>not</b> the serial printed on the back, and it changes if the TV is factory reset.</p>
+                  </div></div>
+                </div>
+
+                <!-- Phase 237 (FR-237-3) — group 2. The heading states the consequence, so an admin can
+                     see what this group buys before reading it. -->
+                <div class="tiny" style="margin:14px 0 6px;font-weight:600">A TV that runs Ravilo opens Ravilo itself · <span class="muted" style="font-weight:400">optional</span></div>
+                <div class="box flat" id="cc-steps-cc" style="padding:14px 15px;">
+                  <div class="cc-step" style="margin-bottom:0;"><span class="step-n">6</span><div style="flex:1;min-width:0">
+                    <p style="margin:0 0 8px">If a TV in the house runs the Ravilo app, add it here and casting to that TV opens <b>Ravilo</b> rather than the web receiver.</p>
+                    <div class="box" style="padding:0;overflow:hidden">
+                      <div style="padding:10px 12px">
+                        <div class="tiny"><b>Android TV Package Name</b> <span class="muted">· the same package as step 3 — the phone and the TV are one app</span></div>
+                        <div style="display:flex;gap:8px;align-items:center;margin-top:5px"><code class="mono" id="cc-field-tvpkg" style="flex:1;min-width:0"></code><button id="cc-copy-tvpkg" type="button" class="btn sm ghost" style="flex:none">Copy</button></div>
+                      </div>
+                    </div>
+                    <p class="tiny muted" style="margin:8px 0 0">A <b>sideloaded</b> Ravilo still needs that TV added as a test device in step 5; publishing does not change that.</p>
+                  </div></div>
+                </div>
+
+                <!-- Phase 237 (FR-237-4) — group 3. -->
+                <div class="tiny" style="margin:14px 0 6px;font-weight:600">Publish · <span class="muted" style="font-weight:400">optional</span></div>
+                <div class="box flat" id="cc-steps-pub" style="padding:14px 15px;">
+                  <div class="cc-step"><span class="step-n">7</span><div style="flex:1;min-width:0">
+                    <p style="margin:0 0 4px">Fill in <b>Listing Details</b>. Google will not publish without a listing and at least one sender (step 3).</p>
+                    <p class="tiny muted" style="margin:0 0 8px">The listing describes <b>Ravilo</b>, not your library — nothing about what you have reaches Google.</p>
+                    <div class="box" style="padding:0;overflow:hidden">
+                      <div style="padding:10px 12px;border-bottom:1px solid var(--line)">
+                        <div class="tiny"><b>Category</b></div>
+                        <div class="tiny muted" style="margin-top:4px">Choose <b>TV &amp; Movies</b> from the list.</div>
+                      </div>
+                      <div style="padding:10px 12px;border-bottom:1px solid var(--line)">
+                        <div class="tiny"><b>Countries</b></div>
+                        <!-- NOT derived from the Metadata tab's age-rating regions: that is a rating
+                             cascade, not a residence, and a guessed country list that is wrong is worse
+                             than asking. -->
+                        <div class="tiny muted" style="margin-top:4px">Choose where your household is. Only the <i>listing</i> is limited to these — casting works everywhere.</div>
+                      </div>
+                      <div style="padding:10px 12px;border-bottom:1px solid var(--line)">
+                        <div class="tiny"><b>Title</b></div>
+                        <div style="display:flex;gap:8px;align-items:center;margin-top:5px"><code class="mono" id="cc-field-title" style="flex:1;min-width:0">Ravilo</code><button id="cc-copy-title" type="button" class="btn sm ghost" style="flex:none">Copy</button></div>
+                      </div>
+                      <div style="padding:10px 12px;border-bottom:1px solid var(--line)">
+                        <div class="tiny"><b>Description</b></div>
+                        <div style="display:flex;gap:8px;align-items:center;margin-top:5px"><code class="mono" id="cc-field-desc" style="flex:1;min-width:0;overflow-wrap:anywhere">Your family&#39;s own film and series library, cast to the TV.</code><button id="cc-copy-desc" type="button" class="btn sm ghost" style="flex:none">Copy</button></div>
+                      </div>
+                      <div style="padding:10px 12px;border-bottom:1px solid var(--line)">
+                        <div class="tiny"><b>Icon</b> <span class="muted">· 512 × 512 · PNG</span></div>
+                        <div style="display:flex;gap:10px;align-items:center;margin-top:6px">
+                          <img id="cc-icon-thumb" src="/cast/icon-512.png" alt="" width="44" height="44" style="border-radius:8px;flex:none;background:#000B25">
+                          <code class="mono tiny" style="flex:1;min-width:0">icon-512.png</code>
+                          <a id="cc-icon-dl" class="btn sm ghost" style="flex:none" href="/cast/icon-512.png" download="icon-512.png">Download</a>
+                        </div>
+                      </div>
+                      <div style="padding:10px 12px">
+                        <div class="tiny"><b>Additional Translations</b> <span class="muted">· optional</span></div>
+                        <div style="display:flex;gap:8px;align-items:center;margin-top:5px"><span class="tiny muted" style="width:26px;flex:none">da</span><code class="mono tiny" id="cc-field-desc-da" style="flex:1;min-width:0;overflow-wrap:anywhere">Jeres eget film- og seriebibliotek, vist på tv&#39;et.</code><button id="cc-copy-desc-da" type="button" class="btn sm ghost" style="flex:none">Copy</button></div>
+                        <div style="display:flex;gap:8px;align-items:center;margin-top:6px"><span class="tiny muted" style="width:26px;flex:none">fo</span><code class="mono tiny" id="cc-field-desc-fo" style="flex:1;min-width:0;overflow-wrap:anywhere">Tykkara egna filma- og seriusavn, víst á sjónvarpinum.</code><button id="cc-copy-desc-fo" type="button" class="btn sm ghost" style="flex:none">Copy</button></div>
+                      </div>
+                    </div>
+                  </div></div>
+                  <div class="cc-step" style="margin-bottom:0;"><span class="step-n">8</span><div style="flex:1;min-width:0">
+                    <p style="margin:0 0 4px">Choose <b>Publish</b>.</p>
+                    <p class="tiny muted" style="margin:0"><b>Publishing is not instant</b> — Google reviews it, and it can take days. <b>Your test devices from step 5 keep working the whole time</b>, so nothing in the house stops while you wait.</p>
+                  </div></div>
                 </div>
 
                 <div class="field" style="margin-top:14px;"><label>Application ID</label>
@@ -3193,7 +3268,14 @@ private fun renderChromecastState() {
     blurb?.innerHTML = "Five one-time steps. Nothing recurring, and nothing leaves this page except the address you paste at Google."
     badgeWarn?.style?.display = if (idOk) "none" else ""
     badgeOk?.style?.display = "none"
-    (document.getElementById("cc-steps") as? HTMLElement)?.style?.display = if (ccShowSteps) "" else "none"
+    // Phase 237 — the card is three groups now, and they hide and show together: an admin who has
+    // finished registering does not want group 1 gone and groups 2-3 still hanging there. The group
+    // HEADINGS are siblings of these boxes, so they are hidden with them.
+    for (id in listOf("cc-steps", "cc-steps-cc", "cc-steps-pub")) {
+        (document.getElementById(id) as? HTMLElement)?.style?.display = if (ccShowSteps) "" else "none"
+        ((document.getElementById(id) as? HTMLElement)?.previousElementSibling as? HTMLElement)
+            ?.style?.display = if (ccShowSteps) "" else "none"
+    }
     (document.getElementById("cc-steps-again") as? HTMLElement)?.style?.display = if (ccShowSteps) "none" else ""
 }
 
@@ -3298,6 +3380,24 @@ private fun wireChromecast(scope: CoroutineScope) {
     document.getElementById("cc-copy-pkg")?.addEventListener("click") {
         window.navigator.clipboard.writeText(dev.jellystructure.BuildInfo.androidApplicationId); flashCopied("cc-copy-pkg")
     }
+    // Phase 237 (FR-237-3) — the Android TV field takes the SAME value as step 3's Package Name. One
+    // property (`ravilo.applicationId`) feeds both rows through BuildInfo, so they cannot drift.
+    document.getElementById("cc-copy-tvpkg")?.addEventListener("click") {
+        window.navigator.clipboard.writeText(dev.jellystructure.BuildInfo.androidApplicationId); flashCopied("cc-copy-tvpkg")
+    }
+    // Phase 237 (FR-237-4) — the Listing Details fields. Fixed strings, copied verbatim from the
+    // markup above so the Copy and what the admin reads cannot disagree.
+    for ((btn, el) in listOf(
+        "cc-copy-title" to "cc-field-title",
+        "cc-copy-desc" to "cc-field-desc",
+        "cc-copy-desc-da" to "cc-field-desc-da",
+        "cc-copy-desc-fo" to "cc-field-desc-fo",
+    )) {
+        document.getElementById(btn)?.addEventListener("click") {
+            val text = (document.getElementById(el) as? HTMLElement)?.textContent.orEmpty()
+            if (text.isNotBlank()) { window.navigator.clipboard.writeText(text); flashCopied(btn) }
+        }
+    }
     document.getElementById("pub-check-btn")?.addEventListener("click") {
         scope.launch {
             val el = document.getElementById("pub-reach") as? HTMLElement ?: return@launch
@@ -3348,6 +3448,7 @@ private fun renderPublicAddress() {
     }
     (document.getElementById("cc-copy-url") as? HTMLElement)?.style?.display = if (url != null) "" else "none"
     (document.getElementById("cc-field-pkg") as? HTMLElement)?.textContent = dev.jellystructure.BuildInfo.androidApplicationId
+    (document.getElementById("cc-field-tvpkg") as? HTMLElement)?.textContent = dev.jellystructure.BuildInfo.androidApplicationId
 }
 
 // ── Phase 221 — webhook delivery status + findings ─────────────────────────────

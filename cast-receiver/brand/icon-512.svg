@@ -1,0 +1,38 @@
+<!--
+  Phase 237 (FR-237-5) — the CODE-OWNED master for cast-receiver/icon-512.png, the 512² icon the Google
+  Cast Developer Console's Listing Details requires.
+
+  Why it lives here and not under design/: the only vector master of the Ravilo mark is
+  design/ravilo/assets/brand/ravilo-mark.svg, and `design/` is overwritten wholesale by the "updated
+  designs" sync (STATUS.md's standing warning — the same class of incident as specs/research-reports/).
+  A build step that read from there is a build the next design export could break silently, at image
+  build time, in CI. So the mark is copied here, and the PNG beside it is COMMITTED.
+
+  Square on purpose (dev review OQ3): design/ravilo/assets/store/ic_launcher-512.png is the Android
+  asset pack's *pre-rounded* file, and reusing that is exactly what puts a hairline of #000B25 inside
+  Google's own mask. Google rounds this itself.
+
+  To regenerate after a brand change:
+      magick -background none cast-receiver/brand/icon-512.svg -resize 512x512 \
+             -background '#000B25' -flatten cast-receiver/icon-512.png
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="Ravilo">
+  <defs>
+    <linearGradient id="rg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#AA5CC3"></stop>
+      <stop offset="1" stop-color="#00A4DC"></stop>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" fill="#000B25"></rect>
+  <!-- The mark from design/ravilo/assets/brand/ravilo-mark.svg (viewBox 12 20 76 76), scaled to sit
+       inside a 512 square with room to breathe: 76 -> 384 (×5.0526), offset so 12,20 lands at 64,64. -->
+  <g transform="translate(64,64) scale(5.0526) translate(-12,-20)">
+    <path d="M22 52 C22 24 78 24 78 52 C66 45 59 45 50 49 C41 45 34 45 22 52 Z" fill="url(#rg)"></path>
+    <g stroke="url(#rg)" stroke-width="4.5" stroke-linecap="round" fill="none">
+      <path d="M33 51 q-5 12 1 20 q5 8 0 14" opacity=".9"></path>
+      <path d="M44 52 q-4 13 1 21 q4 9 0 13" opacity=".72"></path>
+      <path d="M56 52 q4 13 -1 21 q-4 9 0 13" opacity=".72"></path>
+      <path d="M67 51 q5 12 -1 20 q-5 8 0 14" opacity=".9"></path>
+    </g>
+  </g>
+</svg>
