@@ -16,6 +16,7 @@ import dev.jellystructure.shared.tv.ClientCapabilities
 import dev.jellystructure.shared.tv.PlaybackQoeReport
 import dev.jellystructure.shared.tv.StreamTicket
 import dev.jellystructure.shared.tv.SubTrack
+import dev.jellystructure.auth.withJellyfinToken
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.alloc
 import kotlinx.cinterop.memScoped
@@ -481,10 +482,20 @@ class PlaybackService(
         val audio = buildAudioTracks(itemDetail)
 
         val streamUrl = if (needsTranscode) {
+            // Phase 239 (FR-239-5) — this URL is **Jellyfin's own**, taken verbatim from PlaybackInfo's
+            // `TranscodingUrl`, and its credential spelling is Jellyfin's to get right. Nothing here may
+            // rewrite it. Measured from a real PlaybackInfo on 12.1.0 (2026-09-20): Jellyfin templates
+            // `ApiKey=`, which is the same parameter `withJellyfinToken` emits (the name is matched
+            // case-insensitively and has no underscore) — so the server is not handing out URLs it will
+            // refuse to authenticate.
             val tu = source.transcodingUrl
             if (tu.startsWith("http")) tu else "$jellyfinBase$tu"
         } else {
-            "$jellyfinBase/Videos/$jellyfinId/stream?Static=true&MediaSourceId=$jellyfinId&DeviceId=${identity.deviceId}&api_key=$token"
+            // FR-239-2 — handed to a player, which cannot attach a header. One spelling, one place.
+            withJellyfinToken(
+                "$jellyfinBase/Videos/$jellyfinId/stream?Static=true&MediaSourceId=$jellyfinId&DeviceId=${identity.deviceId}",
+                token,
+            )
         }
 
         val startResult = playbackTracker.started(device, jellyfinId, startPositionMs, jellyfinPlaySessionId)
@@ -519,7 +530,6 @@ class PlaybackService(
 
         return StreamTicket(
             jellyfinBaseUrl = jellyfinBase,
-            accessToken = token,
             itemId = jellyfinId,
             container = "mkv", // conservative; Jellyfin transcodes if needed
             directPlay = !needsTranscode,
@@ -820,7 +830,8 @@ class PlaybackService(
                         label = s.displayTitle ?: s.title,
                         forced = s.isForced,
                         isDefault = s.isDefault,
-                        url = "$jellyfinBase/Videos/$jellyfinId/$jellyfinId/Subtitles/${s.index}/0/Stream.vtt?api_key=$token",
+                        // FR-239-2 — sideloaded by the client's own player.
+                        url = withJellyfinToken("$jellyfinBase/Videos/$jellyfinId/$jellyfinId/Subtitles/${s.index}/0/Stream.vtt", token),
                         deliveryMethod = "external",
                     )
                     // R56: VobSub/DVDSub — native in-container rendering via MatroskaExtractor.
@@ -892,15 +903,23 @@ class PlaybackService(
         val negotiated = playbackInfo?.mediaSources?.firstOrNull()?.transcodingUrl
             ?.let { if (it.startsWith("http")) it else "$jellyfinBase$it" }
         Logger.info("PlaybackInfo(burn-in): item=$jellyfinId sub=$subtitleStreamIndex negotiated=${negotiated != null}", "tv")
-        val transcodingUrl = negotiated ?: ("$jellyfinBase/Videos/$jellyfinId/master.m3u8" +
-            "?DeviceId=${identity.deviceId}" +
-            "&MediaSourceId=$jellyfinId" +
-            "&VideoCodec=h264" +
-            "&AudioCodec=aac" +
-            "&MaxWidth=1920&MaxHeight=1080" +
-            "&SubtitleMethod=Encode" +
-            "&SubtitleStreamIndex=$subtitleStreamIndex" +
-            "&api_key=$token")
+        // FR-239-2/-5 — `negotiated` is Jellyfin's own URL and is passed through untouched (see the
+        // note at [startPlayback]'s streamUrl). Only the hand-built FALLBACK, used when PlaybackInfo is
+        // unavailable, is ours to spell — and it is the branch that runs least often, which is exactly
+        // why the pre-239 grep would have looked clean while every real transcoded play still carried a
+        // Jellyfin-spelled token. `withJellyfinToken` owns the separator too: this concatenation used
+        // to start its last fragment with a hand-written `&`.
+        val transcodingUrl = negotiated ?: withJellyfinToken(
+            "$jellyfinBase/Videos/$jellyfinId/master.m3u8" +
+                "?DeviceId=${identity.deviceId}" +
+                "&MediaSourceId=$jellyfinId" +
+                "&VideoCodec=h264" +
+                "&AudioCodec=aac" +
+                "&MaxWidth=1920&MaxHeight=1080" +
+                "&SubtitleMethod=Encode" +
+                "&SubtitleStreamIndex=$subtitleStreamIndex",
+            token,
+        )
 
         // Phase 180 — found live 2026-08-29: this path forces a transcode on EVERY call (burn-in always
         // transcodes) yet never registered with playbackTracker at all, so its own real Jellyfin
@@ -928,7 +947,6 @@ class PlaybackService(
 
         return StreamTicket(
             jellyfinBaseUrl = jellyfinBase,
-            accessToken = token,
             itemId = jellyfinId,
             container = "mkv",
             directPlay = false,
@@ -1062,10 +1080,12 @@ internal suspend fun JellyfinClient.tvToken(baseUrl: String, device: DeviceData,
  * Security fix (2026-08-02 review, finding H2) — [tvToken] falls back to the long-lived **server**
  * token when the device's paired token has gone stale, which is fine for calls the server makes on
  * the device's behalf without ever showing the token to it. It is NOT fine for [startPlayback]/
- * [restream]: those embed the token directly into a stream URL and return it to the client as
- * `StreamTicket.accessToken` — so any signed-in device (including a Kids/library-restricted profile)
- * would receive full Jellyfin **admin** credentials the moment its own token went stale, which the
- * surrounding negative-cache logic treats as routine. This variant never falls back — it returns
+ * [restream]: those embed the token directly into the stream URL the client is handed (see
+ * `withJellyfinToken`) — so any signed-in device (including a Kids/library-restricted profile) would
+ * receive full Jellyfin **admin** credentials the moment its own token went stale, which the
+ * surrounding negative-cache logic treats as routine. (R271 removed `StreamTicket.accessToken`, which
+ * used to be a second copy of the same credential; the URL is still the mechanism, so this fix is
+ * unchanged by that.) This variant never falls back — it returns
  * null so the caller can surface a clear "re-pair this device" error instead of silently handing out
  * server-admin access.
  *

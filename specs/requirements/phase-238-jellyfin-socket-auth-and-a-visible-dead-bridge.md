@@ -6,12 +6,65 @@
 
 ## Status
 
-`Planned` — written 2026-09-18 from a live audit of the upgraded household server (12.1.0),
-**dev-reviewed 2026-09-19 against `main` `dcb97f2c`** (see §Dev review at the foot: open question 1 is
-answered from the Ktor artefact — the Curl engine does send `Authorization` on a WS upgrade — and
-FR-238-3's per-device block moves to `/api/health/full`), not built. Pair: **239** (the remaining query-string tokens), **240** (the guard test
-that should have caught this), **241** (the mock that could not). Research report:
+`✓ Built` 2026-09-20 — written 2026-09-18 from a live audit of the upgraded household server (12.1.0),
+dev-reviewed 2026-09-19 against `main` `dcb97f2c`, built 2026-09-20 with every review item taken.
+Pair: **239** (the remaining query-string tokens), **240** (the guard test that should have caught
+this), **241** (the mock that could not). Research report:
 `specs/research-reports/jellyfin-12-1-upgrade-audit-2026-09-18.md`.
+
+### Build (2026-09-20)
+
+**The measured table was re-measured first, against the live server, with a real token** — because the
+whole phase turns on it and one wrong row would have moved the fix to the wrong mechanism
+(`jellyfin.example.net`, 12.1.0, 2026-09-20, `curl --http1.1`; note HTTP/2 answers 404 to an upgrade
+attempt and tells you nothing):
+
+| handshake | result |
+|---|---|
+| no credential | 403 |
+| `?api_key=<valid>` | **403** |
+| `?apikey=<valid>` | 101 |
+| `Authorization: MediaBrowser … Token="<valid>"` | **101** |
+| `X-Emby-Token: <valid>` | 403 |
+
+- **FR-238-1** — the bridge sends `Authorization` and keeps `deviceId` as a plain query parameter.
+  Review item 2 taken: `jellyfinAuth` widened `private` → `internal` rather than hand-rolling the
+  header, so FR-238-1's own justification ("one place a credential becomes wire format") is actually
+  true. Review item 3: the header's `DeviceId` is byte-identical to the query parameter **by
+  construction** (both from the same `identity`), so there is nothing to check and no check was added.
+  Open question 1 needed no probe — the review settled it from the Ktor artefact, and the live 101
+  above confirms it end to end.
+- **FR-238-2** — the log-once-**ever** `HashSet` is gone. First failure logs; a device that keeps
+  failing logs again at most every 15 minutes with its consecutive-failure count and how long since
+  its last success; a connect resets both. "This has been broken for three hours" is now something the
+  log can say.
+- **FR-238-3** — split per review item 4. `/api/health` (unauthenticated — the container HEALTHCHECK
+  hits it) carries **counts only**: `session_bridges: {connected, failing}`. The per-device block
+  lives on `/api/health/full`, which is authenticated. `last_error` is a **classified** reason
+  (`BridgeFailure`), never `e.message`: curl and Ktor failure text routinely carries the request URL,
+  and until FR-238-1 that URL had the household's Jellyfin token in it — so the obvious
+  implementation would have published a live credential to a health endpoint. `BridgeFailureTest`
+  pins that with the exact pre-fix URL as its input.
+- **FR-238-6, new, from review item 6** — `never_attempted`. The blank-URL / blank-token guard throws
+  nothing, so it logged nothing at all, not even the first line, and would have read as
+  `connected: false, last_error: null` — indistinguishable from a handshake being refused. It is its
+  own state with its own reason now.
+- **Review item 5** — all cross-thread bridge state (`active`, the new per-device state) sits behind
+  one `SpinLock`. Not a `Mutex`: the health handler's read must not suspend on a lock the retry loop
+  holds.
+- **Review items 7 and 8** are recorded in the code rather than changed: the permit is held for the
+  whole retry loop (a give-up rule must *release* it), and `tvToken`'s server-token fallback chooses a
+  **credential**, not a wire format, so FR-238-4 does not touch it. Note the fallback has never been
+  exercised against real 12.1, because until FR-238-1 a dead device token and a good server token
+  failed identically.
+- **Tests.** `BridgeFailureTest` (6, green) for the classifier and the leak.
+  `tests/e2e/jellyfin-session-bridge.spec.ts` opens a real TV events socket and asserts the bridge
+  reaches **connected** on `/api/health/full`, plus that no device id appears on `/api/health`. That
+  spec is what makes phase 241's headline acceptance possible at all — see its review item 1.
+
+Acceptance 1–4 hold in CI against the tightened mock; **acceptance 2 and 3 (the real server's log
+count, and a dashboard pause reaching the TV) need the household server and are verified on deploy.**
+Open question 2 stays open with its lean, now observable either way.
 
 ## What is wrong
 

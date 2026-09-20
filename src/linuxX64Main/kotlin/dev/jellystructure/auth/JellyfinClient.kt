@@ -1066,9 +1066,11 @@ class JellyfinClient {
      * not move on to the next stream index (the behaviour that built the 2026-09-15 backlog).
      */
     suspend fun warmSubtitleExtraction(baseUrl: String, token: String, jellyfinId: String, streamIndex: Int): WarmResult {
-        val url = baseUrl.trimEnd('/') + "/Videos/$jellyfinId/$jellyfinId/Subtitles/$streamIndex/0/Stream.vtt?api_key=$token"
+        // FR-239-1 — an ordinary outbound fetch with no reason to put a credential in a URL. The
+        // token used to ride here as `api_key`, which 12.1 does not honour at all.
+        val url = baseUrl.trimEnd('/') + "/Videos/$jellyfinId/$jellyfinId/Subtitles/$streamIndex/0/Stream.vtt"
         return try {
-            httpGet(url)
+            httpGet(url) { jellyfinAuth(token) }
             WarmResult.Success
         } catch (e: CancellationException) {
             throw e
@@ -1298,7 +1300,55 @@ internal fun jellyfinIdentityHeader(identity: JellyfinDeviceIdentity?, versionRe
  *  making a claim about anyone's real network. */
 internal const val EXPOSURE_PROBE_ADDRESS = "203.0.113.9"
 
-private fun HttpRequestBuilder.jellyfinAuth(token: String, identity: JellyfinDeviceIdentity? = null) {
+/**
+ * Phase 239 (FR-239-3) — the ONE place a Jellyfin token becomes a query parameter.
+ *
+ * Only for URLs handed to a **player** — a Ravilo client's ExoPlayer/AVPlay, an admin `<video>`
+ * element — which cannot attach a header. Everything the backend fetches on its own behalf uses
+ * [jellyfinAuth] instead. This is a short list and it should stay short; `scripts/check-jellyfin-query-token.sh`
+ * keeps it that way.
+ *
+ * The helper owns the **separator** as well as the name (dev review item 5): five call sites each
+ * writing their own `?` or `&` is the half of the problem that actually breaks — one of them was a
+ * multi-line string concatenation whose first character was `&`.
+ *
+ * ## The spelling, measured
+ *
+ * Jellyfin 12.1 no longer honours `api_key`. Measured live against jellyfin.example.net (12.1.0) on
+ * 2026-09-20, on `/Users`, which is genuinely enforcing (401 with no credential):
+ *
+ * | query form | result |
+ * |---|---|
+ * | `api_key=<valid>`  | **401** |
+ * | `apikey=<valid>`   | 200 |
+ * | `ApiKey=<valid>`   | 200 |
+ * | `apikey=<bogus>`   | 401 |
+ *
+ * So the name is `apikey`, matched case-insensitively — which is also what Jellyfin templates into its
+ * own `TranscodingUrl` (`ApiKey=`, measured from a real `PlaybackInfo` on the same server, same day).
+ * That settles a worry the dev review raised: Jellyfin is **not** handing out URLs its own server
+ * refuses to authenticate.
+ *
+ * ## What a query parameter cannot carry
+ *
+ * The token and nothing else. `Client`, `Device`, `DeviceId` and `Version` live only in the
+ * `Authorization` header. The URLs using this helper pass `DeviceId=` separately, which those
+ * endpoints do read, but `Client`/`Device`/`Version` do not travel at all. So if Jellyfin ever
+ * enforces on these routes, the request authenticates while giving the session **no client identity**
+ * — and phase 110's dashboard name and R216's QoE attribution both depend on that identity. There is
+ * no alternative for a `<video>` element, but nobody should later read "it authenticates now" as
+ * "we're fine".
+ */
+internal fun withJellyfinToken(url: String, token: String): String {
+    val sep = if (url.contains('?')) "&" else "?"
+    return "$url${sep}apikey=$token"
+}
+
+// Phase 238 (dev review item 2) — widened from `private` to `internal` so [JellyfinSessionBridge],
+// which owns its own HttpClient, can use it for the WebSocket upgrade. FR-238-1's justification —
+// "exactly one place in the codebase where a Jellyfin credential becomes wire format" — is only true
+// if the bridge calls this rather than hand-rolling the same header. Phase 239 needs it too.
+internal fun HttpRequestBuilder.jellyfinAuth(token: String, identity: JellyfinDeviceIdentity? = null) {
     val resolved = identity ?: DeviceIdentityRegistry.identityFor(token)
     header("Authorization", """${jellyfinIdentityHeader(resolved)}, Token="$token"""")
 }

@@ -864,8 +864,17 @@ fun PlayerScreen(
     // Load player when the StreamTicket is ready (initial load or R56 restream)
     LaunchedEffect(sessionState) {
         val s = sessionState as? PlayerSessionState.Ready ?: return@LaunchedEffect
-        val streamUrl = s.ticket.hlsUrl
-            ?: "${s.ticket.jellyfinBaseUrl}/Videos/${s.ticket.itemId}/stream.${s.ticket.container}?api_key=${s.ticket.accessToken}"
+        // R271 (FR-R271-2) — a client selects, it never composes. This line used to template a
+        // Jellyfin stream URL from the ticket when `hlsUrl` was null, with `api_key=` — a spelling
+        // Jellyfin 12.1 does not honour at all (measured 401 on an enforcing route, 2026-09-20) — and
+        // it was the only consumer of the raw `accessToken` anywhere in the product.
+        //
+        // The fallback was also **dead code**: both server-side producers set `hls_url`
+        // unconditionally (`PlaybackService.kt`'s direct-play/TranscodingUrl branch and the burn-in
+        // restream), so it never ran. A null here is a real failure and is reported as one rather
+        // than papered over with a URL that would not have worked either.
+        // Unreachable: PlayerStore rejects a ticket with no stream URL before it can become Ready.
+        val streamUrl = s.ticket.hlsUrl ?: return@LaunchedEffect
         // R192/R194 — feed title/episode-kicker/artwork into the OS media session (TV-only; see
         // RaviloPlayer.load doc). Artwork prefers the current episode's SEASON poster over an episode
         // still (season art reads better at media-session size); falls back to the series' own poster

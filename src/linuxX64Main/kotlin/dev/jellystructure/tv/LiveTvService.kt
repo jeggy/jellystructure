@@ -15,6 +15,7 @@ import dev.jellystructure.shared.tv.LiveTvOverview
 import dev.jellystructure.shared.tv.LiveTvProgramInfo
 import dev.jellystructure.shared.tv.LiveTvStreamTicket
 import dev.jellystructure.util.isoToEpochSeconds
+import dev.jellystructure.auth.jellyfinAuth
 import io.ktor.client.request.get
 import io.ktor.client.statement.readRawBytes
 import io.ktor.http.contentType
@@ -341,7 +342,9 @@ class LiveTvService(
             readCached(cachePath, ctPath)?.let { return@withPermit it }
             val base = jellyfinBase(); val token = jellyfinToken()
             if (base.isBlank() || token.isBlank()) return@withPermit null
-            val resp = runCatching { http.get("$base/Items/$channelId/Images/Primary?api_key=$token&quality=90") }
+            // Phase 239 (FR-239-1) — header, not query parameter. Same reasoning as the avatar fetch
+            // in RaviloArtworkService: this is jellystructure fetching bytes for itself.
+            val resp = runCatching { http.get("$base/Items/$channelId/Images/Primary?quality=90") { jellyfinAuth(token) } }
                 .getOrElse { Logger.warn("LiveTv: logo fetch failed $channelId — ${it.message}", "livetv"); return@withPermit null }
             val bytes = runCatching { resp.readRawBytes() }.getOrNull() ?: return@withPermit null
             val ct = resp.contentType()?.toString() ?: "image/png"

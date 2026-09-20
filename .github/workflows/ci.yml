@@ -37,6 +37,8 @@ jobs:
         run: ./scripts/check-docker-cache-ids.sh
       - name: No Jellyfin version branching
         run: ./scripts/check-jellyfin-version-use.sh
+      - name: No Jellyfin token in a query string
+        run: ./scripts/check-jellyfin-query-token.sh
 
   # ── Backend unit tests (Kotlin/Native). 342 tests that CI had never run before 231. ──
   unit:

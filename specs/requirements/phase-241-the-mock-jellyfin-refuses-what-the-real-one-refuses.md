@@ -2,9 +2,40 @@
 
 ## Status
 
-`Planned` — written 2026-09-18, **dev-reviewed 2026-09-19 against `main` `dcb97f2c`** (see §Dev review
-at the foot: acceptance 2 needs 238's FR-238-3 health signal, so the build order is **238 → 241**), not
-built. Pair: **240** (the live guard), **238** (the regression neither of them caught).
+`✓ Built` 2026-09-20 — written 2026-09-18, dev-reviewed 2026-09-19 against `main` `dcb97f2c`, built
+2026-09-20 **after 238 including FR-238-3**, which is the build order the review established: a
+tightened mock plus a silent bridge is a broken bridge and a green suite, which is this phase's own
+failure mode one level up.
+
+### Build (2026-09-20)
+
+- **FR-241-1** — the upgrade handler distinguishes absent / wrong / valid and answers **403** to the
+  first two, matching the real server. Measured live with a real token (`jellyfin.example.net`,
+  12.1.0, 2026-09-20, `curl --http1.1`): `api_key=<valid>` → 403, `apikey=<valid>` → 101,
+  `Authorization` header → 101, `X-Emby-Token=<valid>` → 403, anything bogus → 403. The table is in
+  the mock's own comment, next to the code that implements it.
+- **FR-241-2** — one shared guard at the top of the handler, not a check per route. Seven data routes
+  checked nothing at all before.
+- **FR-241-3** — the `x-emby-authorization` fallback is deleted.
+- **FR-241-4** — `/System/Info/Public` was **added** (review item 3): the product calls it on every
+  `testConnection` and the mock 404'd it for the whole life of the suite. It is exempt from FR-241-2
+  **by measurement** — it answers 200 with no credential on the real server — with the measurement
+  inline, not because it is convenient. The media/image carve-out stays as written even though the
+  mock has no such routes: it is the note that stops someone later making the mock *stricter* than the
+  real server, which hides a regression just as well in the other direction.
+- **FR-241-5** — the stale `JellyfinLibraryListener` comment is replaced with what actually opens that
+  socket: `JellyfinSessionBridge`, phase 110, one per connected TV.
+- **FR-241-6** — `JELLYFIN_VERSION` + `VERIFIED_AGAINST`, printed in the startup line so a CI log
+  answers "which Jellyfin does this suite claim to be?" without reading the file. **Review item 4
+  taken: the 400 was re-probed on 12.1 before the constant was stamped** — full identity header with
+  bad credentials → 401, the same header without `Version` → 400, no `Authorization` at all → 400. The
+  mock's one genuine assertion is still true.
+- **Review item 1's missing half is built**: `tests/e2e/jellyfin-session-bridge.spec.ts` asserts the
+  bridge reaches connected on `/api/health/full`. Without it this phase could be built in full and
+  prove nothing.
+- **Open question 1 closes as no** (review item 2): `config-test/config.toml` pre-sets
+  `jellyfin_token = "mock-access-token"`, the exact string `AuthenticateByName` mints, so every
+  backend call already carried a valid credential and no fixture relied on permissiveness.
 
 ## What is wrong
 

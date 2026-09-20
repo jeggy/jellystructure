@@ -194,6 +194,21 @@ class PlayerStore(private val apiClient: TvApiClient) {
                 }
                 if (result.isSuccess) {
                     val ticket = result.getOrThrow()
+                    // R271 (FR-R271-2) — a ticket with no stream URL is a failed start, said once
+                    // here. The player used to answer it by TEMPLATING a Jellyfin URL out of the
+                    // ticket's raw access token, with a parameter spelling 12.1 does not honour — so
+                    // the "fallback" could only ever have produced a second, quieter failure. Both
+                    // server-side producers set `hls_url` unconditionally, so this is unreachable
+                    // today; it is here so that if it ever becomes reachable it surfaces through
+                    // R237's existing per-cause copy instead of through a dead URL.
+                    if (ticket.hlsUrl == null) {
+                        _state.value = PlayerSessionState.Error(
+                            "The server did not return a stream URL",
+                            PlayerErrorKind.GENERIC,
+                        )
+                        reportStartFailure(itemId, null)
+                        return@launch
+                    }
                     qoeDirectPlay = ticket.directPlay
                     startHeartbeat(itemId, positionProvider, isPausedProvider)
                     _state.value = PlayerSessionState.Ready(ticket)

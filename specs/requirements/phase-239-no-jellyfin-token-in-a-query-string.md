@@ -2,11 +2,52 @@
 
 ## Status
 
-`Planned` — written 2026-09-18 from a live audit of the household server on **12.1.0**,
-**dev-reviewed 2026-09-19 against `main` `dcb97f2c`** (see §Dev review at the foot: the transcode URL is
-Jellyfin's own and this phase cannot respell it, and open question 1 is answered by the audit's own
-no-credential 206), not built. Backend half. Pair: **R271** (the two URLs a Ravilo client builds itself)
-and **238** (the socket, which is the same mistake but is actually broken today).
+`✓ Built` 2026-09-20 — written 2026-09-18, dev-reviewed 2026-09-19 against `main` `dcb97f2c`, built
+2026-09-20. Client half: **R271**, built the same day. Policy: **243**.
+
+### Build (2026-09-20)
+
+**Both open questions were answered by measurement against the live household server** (12.1.0,
+2026-09-20), not by argument.
+
+**The spelling.** On `/Users`, which genuinely enforces (401 with no credential):
+`?api_key=<valid>` → **401**; `?apikey=<valid>`, `?ApiKey=<valid>`, `?APIKEY=<valid>` → 200;
+`?apikey=<bogus>` → 401. So `api_key` is not merely the old fashion — it does not authenticate.
+
+**Open question 1 closes: the route is anonymous, and FR-239-2 is future-proofing with no present
+effect.** `/Videos/{id}/stream` answered **206 `video/mp4` identically** with no credential, with a
+bogus `apikey`, and with a valid one. That is the exact test the audit said it could not perform, and
+it says the credential on that URL is doing nothing today. Worth doing anyway; not a fix. Acceptance 3
+is therefore recorded as measured anonymity rather than claimed coverage.
+
+**Review item 1's new open question closes too, and the answer is reassuring.** A real `PlaybackInfo`
+on 12.1 templates `ApiKey=` into `TranscodingUrl` — the same parameter, matched case-insensitively.
+Jellyfin is **not** handing out URLs its own server refuses to authenticate. A negotiated
+`transcodingUrl` is passed through verbatim (**FR-239-5**, added from review item 1): its spelling is
+Jellyfin's to get right, and nothing here may rewrite a server-generated URL. That also explains why
+the pre-239 grep would have looked clean while every real transcoded play still carried a
+Jellyfin-spelled token: the hand-built URL is the branch that runs *least* often.
+
+- **FR-239-1** — `RaviloArtworkService`'s avatar fetch, `LiveTvService`'s channel-logo fetch and
+  `warmSubtitleExtraction` now send a header. Review item 4: `jellyfinAuth` was widened to `internal`
+  (phase 238 landed that; both phases needed it).
+- **FR-239-3** — `withJellyfinToken(url, token)` in `auth/JellyfinClient.kt`, beside
+  `jellyfinIdentityHeader`. Per review item 5 it owns the **separator** as well as the name: one call
+  site was a multi-line concatenation whose last fragment began with a hand-written `&`.
+- **Review item 3 recorded in the helper's own doc:** a query parameter carries the token and nothing
+  else, so `Client`/`Device`/`Version` do not travel — meaning if Jellyfin ever enforces on these
+  routes, the request authenticates while the session gets no client identity, which phase 110's
+  dashboard name and R216's QoE both depend on. No alternative exists for a `<video>` element; the
+  point is that "it authenticates now, we're fine" must not be the reading.
+- **Open question 2 closes as no**, via 244's research: there is no server setting, and proxy-level
+  authentication would break Ravilo playback.
+- **Fence:** `scripts/check-jellyfin-query-token.sh` (in `ci / checks`) rejects any `api_key=` in a
+  Jellyfin URL, any hand-written `apikey=` outside the helper, and R271's client-side half. Verified
+  by reintroducing the old line and watching it fail.
+- **Tests:** `WithJellyfinTokenTest` (4, green) pins the spelling and the separator.
+
+Acceptance 2 and 5 (subtitles, artwork, Live TV logos, segment-editor playback, normal playback and a
+**transcoded** play, all against 12.1) are verified by use on deploy.
 
 ## What is wrong
 

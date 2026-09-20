@@ -8,6 +8,7 @@ import dev.jellystructure.media.ArtworkDownloader
 import dev.jellystructure.media.FfmpegRunner
 import dev.jellystructure.media.MediaStore
 import dev.jellystructure.model.MediaItem
+import dev.jellystructure.auth.jellyfinAuth
 import io.ktor.client.request.get
 import io.ktor.client.statement.readRawBytes
 import io.ktor.http.contentType
@@ -179,7 +180,9 @@ class RaviloArtworkService(
             val base = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
             val token = configStore.current.apiKeys.jellyfinToken
             if (base.isBlank() || token.isBlank()) return@withPermit null
-            val resp = runCatching { http.get("$base/UserImage?userId=$userId&api_key=$token") }
+            // Phase 239 (FR-239-1) — an ordinary outbound fetch: the credential is a header, never a
+            // query parameter. `api_key` is not honoured at all on 12.1 (measured 2026-09-20).
+            val resp = runCatching { http.get("$base/UserImage?userId=$userId") { jellyfinAuth(token) } }
                 .getOrElse { Logger.warn("RaviloArtwork: avatar fetch failed $userId — ${it.message}", "tv-image"); return@withPermit null }
             val bytes = runCatching { resp.readRawBytes() }.getOrNull() ?: return@withPermit null
             val ct = resp.contentType()?.toString() ?: "image/jpeg"

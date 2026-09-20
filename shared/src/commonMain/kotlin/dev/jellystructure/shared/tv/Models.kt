@@ -171,7 +171,19 @@ data class AudioTrack(
 @Serializable
 data class StreamTicket(
     @SerialName("jellyfin_base_url") val jellyfinBaseUrl: String,
-    @SerialName("access_token") val accessToken: String,
+    // R271 (FR-R271-4) — `access_token` is GONE. It carried a raw Jellyfin access token to every
+    // client, and after FR-R271-2 it had exactly zero consumers: its only reader in the whole product
+    // was `PlayerScreen`'s dead URL-templating fallback. A credential that travels to a client for no
+    // reason is a credential that can leak for no reason.
+    //
+    // Not to be confused with Live TV's own `access_token` (`LiveTvModels.kt`), a different field on a
+    // different model that this phase did not survey — it stays.
+    //
+    // ⚠ Wire compatibility: a client built before this change declares `access_token` as required, so
+    // it cannot deserialize a ticket from a server that no longer sends one. The Ravilo clients ship
+    // from this repo alongside the backend; `ravilo-web` and `ravilo-cast` are served by the backend
+    // itself and so move with it, but an already-installed Android APK must be updated. Called out in
+    // the release notes for that reason.
     @SerialName("item_id") val itemId: String,
     val container: String,
     @SerialName("direct_play") val directPlay: Boolean,

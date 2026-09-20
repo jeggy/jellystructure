@@ -98,6 +98,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import platform.posix.exit
 import platform.posix.fgets
@@ -429,6 +430,12 @@ fun startServer(
                     // public probe. Latched, never fetched here: this endpoint is hit every 30s by the
                     // container HEALTHCHECK and must make no outbound call. `null` means nothing has
                     // successfully probed Jellyfin yet in this process.
+                    // Phase 238 (FR-238-3) — COUNTS only here. This endpoint is unauthenticated
+                    // (AuthPlugin exempts it for the container's own HEALTHCHECK), so a per-device list
+                    // of ids and failure reasons would be world-readable — which on this household's
+                    // internet-facing server means the internet. The per-device block lives on
+                    // /api/health/full, which is authenticated. Cheap: two spin-locked map reads.
+                    val (bridgesConnected, bridgesFailing) = sessionBridge.healthCounts()
                     val jfVersion = dev.jellystructure.auth.JellyfinServerVersion.current()
                         ?.let { "\"${it.replace("\\", "\\\\").replace("\"", "\\\"")}\"" } ?: "null"
                     call.respondText(
@@ -437,6 +444,7 @@ fun startServer(
                             """"tmdb_pacing":${Json.encodeToString(TmdbPacingStats.serializer(), tmdbPacing)},""" +
                             """"mkv_health_swept_at":${mkvHealthSweptAt ?: "null"},"job_queues":${jobQueues.toJson()},""" +
                             """"playback_writer":$writerJson,"refreshers":$refreshersJson,""" +
+                            """"session_bridges":{"connected":$bridgesConnected,"failing":$bridgesFailing},""" +
                             """"tv_image":${imageProxyService?.stats()?.toJson() ?: "null"},""" +
                             """"memory":${dev.jellystructure.ops.MemoryStats.snapshot().toJson()}}""",
                         ContentType.Application.Json,
@@ -456,7 +464,6 @@ fun startServer(
                 }
 
                 get("/health/full") {
-                    @Serializable data class HealthCheck(val name: String, val ok: Boolean, val detail: String)
                     val checks = mutableListOf<HealthCheck>()
                     val cfg = configStore.current
                     // Phase 118 (FR C.4) — the FD budget itself. The 1024 ceiling is glibc's fd_set
@@ -582,7 +589,11 @@ fun startServer(
                         }
                         checks.add(HealthCheck("Realtime ingest", healthy, detail))
                     }
-                    call.respond(mapOf("checks" to checks))
+                    // Phase 238 (FR-238-3) — the per-device bridge block, on the AUTHENTICATED
+                    // endpoint. This is the signal that makes a dead bridge observable without reading
+                    // container logs: before it, a permanently broken bridge produced one warn line and
+                    // then silence for the life of the process.
+                    call.respond(HealthFullResponse(checks, sessionBridge.healthSnapshot()))
                 }
 
                 authRoutes(sessionService, jellyfinClient, configStore, loginRateLimiter)
@@ -754,6 +765,19 @@ fun startServer(
         Logger.info("Server stopped")
     }
 }
+
+// Phase 238 (FR-238-3) — `/health/full` used to respond `mapOf("checks" to checks)` with HealthCheck
+// declared locally inside the handler. It now carries a second, differently-typed field, so both the
+// check and the envelope are real top-level types. `session_bridges` is defaulted, so the admin
+// frontend's own HealthReport keeps deserializing unchanged.
+@Serializable
+data class HealthCheck(val name: String, val ok: Boolean, val detail: String)
+
+@Serializable
+data class HealthFullResponse(
+    val checks: List<HealthCheck>,
+    @SerialName("session_bridges") val sessionBridges: List<dev.jellystructure.tv.BridgeHealth> = emptyList(),
+)
 
 // Phase 118 (FR C.3) — shared ProcessGate; callers are all inside the /health/full suspend handler.
 @OptIn(ExperimentalForeignApi::class)

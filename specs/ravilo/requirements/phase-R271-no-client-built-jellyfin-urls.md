@@ -2,10 +2,47 @@
 
 ## Status
 
-`Planned` — written 2026-09-18 from the 12.1 upgrade audit, **dev-reviewed 2026-09-19 against `main`
-`dcb97f2c`**, not built. Client half of **239**; the policy behind both is **243**. ⚠ **Half the subject
-is gone:** R264 deleted `ravilo-tizen`, so `ravilo-ui/…/PlayerScreen.kt:868` is the only remaining site —
-see §Dev review at the foot.
+`✓ Built` 2026-09-20 — written 2026-09-18, dev-reviewed 2026-09-19 against `main` `dcb97f2c`, built
+2026-09-20. Client half of **239**. Policy: **243**.
+
+### Build (2026-09-20) — it was the deletion, not the refactor
+
+**Open question 2 decided the shape of the phase, and it is answered by the code.** Both server-side
+producers of a `StreamTicket` set `hls_url` **unconditionally** — `PlaybackService`'s direct-play /
+`TranscodingUrl` branch and the burn-in restream — so the `hlsUrl`-null fallback at
+`PlayerScreen.kt:868` was **dead code**. It never ran. And it was the only consumer of
+`StreamTicket.accessToken` in the entire product.
+
+So there is no FR-R271-1 (no new ticket field), no FR-R271-3 decision to make, and open question 1 is
+moot: the two clients that could disagree about `static=true` are now one, because **R264 deleted
+`ravilo-tizen`** — and `ravilo-screen`, its successor, composes no Jellyfin URL at all. The successor
+to the module half this phase was written about was built clean.
+
+- **FR-R271-2** — the fallback is gone. The null case is handled **once, in `PlayerStore`**, where the
+  ticket arrives and R237's failure classification already lives, rather than in the screen: a ticket
+  with no stream URL is a failed start and surfaces through R237's existing copy. The old line's
+  "fallback" could only ever have produced a second, quieter failure anyway — it templated `api_key=`,
+  which 12.1 answers 401 to.
+- **FR-R271-4 — removed.** `access_token` is out of `StreamTicket`. No Ravilo client holds a raw
+  Jellyfin access token for any purpose now. **Carve-out named:** Live TV's own `access_token`
+  (`LiveTvModels.kt`) is a different field on a different model, not surveyed here, and stays.
+  `PlaybackService`'s `tvTokenForClient` security note was updated — the token still rides the stream
+  **URL**, so the 2026-08-02 H2 fix is unchanged by this; the DTO field was a second copy of the same
+  credential.
+- **FR-R271-5** — nothing branches on a Jellyfin version anywhere in a client; 243's
+  `scripts/check-jellyfin-version-use.sh` allow-lists the backend files that may even name the symbol.
+- **Fence:** `scripts/check-jellyfin-query-token.sh` covers the client half — no `/Videos/` literal in
+  any Ravilo module, and `access_token` may not come back to `StreamTicket`. Verified by putting the
+  field back and watching it fail.
+
+⚠ **Rollout consequence, stated rather than discovered.** A client built before this change declares
+`access_token` as required, so it cannot deserialize a ticket from a server that no longer sends one.
+`ravilo-web` and `ravilo-cast` are served by the backend and move with it; an **already-installed
+Android APK must be updated**. This belongs in the release notes.
+
+Acceptance 2 (direct play against 12.1 for a title with no HLS URL) is unreachable as written — there
+is no such title, which is the same finding as open question 2. Acceptance 3's "two clients" no longer
+exist. Acceptance 1, 4 and 5 hold.
 
 ## What is wrong
 

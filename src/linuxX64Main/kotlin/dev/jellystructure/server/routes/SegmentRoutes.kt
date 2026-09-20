@@ -22,6 +22,7 @@ import dev.jellystructure.model.Track
 import dev.jellystructure.model.TrackKind
 import dev.jellystructure.model.fileDurationMs
 import dev.jellystructure.model.SegmentEditRules
+import dev.jellystructure.auth.withJellyfinToken
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.request.receive
 import io.ktor.server.response.respond
@@ -448,7 +449,12 @@ fun Route.segmentRoutes(store: MediaStore, segmentStore: MediaSegmentStore, conf
             }
             val directPlay = isBrowserSafeDirectPlay(tracks, path)
             if (directPlay) {
-                val url = "$base/Videos/$jellyfinId/stream?Static=true&MediaSourceId=$jellyfinId&DeviceId=$SEGMENTS_STREAM_DEVICE_ID&api_key=${session.jellyfinUserToken}"
+                // Phase 239 (FR-239-2) — handed to the admin page's own <video> element, which cannot
+                // attach a header. One spelling, one place.
+                val url = withJellyfinToken(
+                    "$base/Videos/$jellyfinId/stream?Static=true&MediaSourceId=$jellyfinId&DeviceId=$SEGMENTS_STREAM_DEVICE_ID",
+                    session.jellyfinUserToken,
+                )
                 return@get call.respond(SegmentStreamInfo(url = url, mode = "direct"))
             }
             val psid = segmentsPlaySessionId(jellyfinId, episodeKey, nextStreamNonce())
@@ -459,8 +465,13 @@ fun Route.segmentRoutes(store: MediaStore, segmentStore: MediaSegmentStore, conf
             val keyframeSec = if (requested > 0) FfprobeRunner.keyframeAtOrBefore(path, requested / 1000.0) else 0.0
             val startedAtMs = keyframeSec?.let { (it * 1000).toLong().coerceAtLeast(0L) } ?: requested
             val startParam = if (requested > 0) "&StartTimeTicks=${requested * 10_000}" else ""
-            val url = "$base/Videos/$jellyfinId/stream.mp4?Static=false&VideoCodec=copy&AudioCodec=aac&AudioChannels=2" +
-                "&MediaSourceId=$jellyfinId&DeviceId=$SEGMENTS_STREAM_DEVICE_ID&PlaySessionId=$psid$startParam&api_key=${session.jellyfinUserToken}"
+            // Phase 239 (FR-239-2/-3) — same <video> element, same one place. The helper owns the
+            // separator as well as the name, which is why the trailing fragment no longer hand-writes `&`.
+            val url = withJellyfinToken(
+                "$base/Videos/$jellyfinId/stream.mp4?Static=false&VideoCodec=copy&AudioCodec=aac&AudioChannels=2" +
+                    "&MediaSourceId=$jellyfinId&DeviceId=$SEGMENTS_STREAM_DEVICE_ID&PlaySessionId=$psid$startParam",
+                session.jellyfinUserToken,
+            )
             call.respond(SegmentStreamInfo(url = url, mode = "remux", playSessionId = psid, startedAtMs = startedAtMs, startedAtExact = keyframeSec != null))
         }
 
