@@ -12,3 +12,7 @@ actual fun supportedAudioCodecs(): List<String> =
     else BASE_AUDIO_CODECS
 
 private val FFMPEG_AUDIO_CODECS = listOf("truehd", "dts")
+
+/** R284 (FR-R284-6) — Media3's HLS source plays fMP4 segments, and HEVC decode is the platform's
+ *  (the same MediaCodec path direct play already uses for every HEVC title in the library). */
+actual fun supportsHevcOverHls(): Boolean = true

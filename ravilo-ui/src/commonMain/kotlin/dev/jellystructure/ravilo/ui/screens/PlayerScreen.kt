@@ -275,6 +275,14 @@ private class PlayerBookkeeping(initialCastLink: CastLinkState) {
     // R282 (FR-R282-4) — an un-burn restream is in flight: when its ticket loads, re-arm R181's
     // resolver so the just-persisted pick is matched against the FRESH track set.
     var rearmResolveOnLoad by mutableStateOf(false)
+    // R284 — a SINGLE-AUDIO session (the ticket is a transcode that names the one audio track it
+    // carries, 253 FR-253-2): the ticket's full audio list, and the Jellyfin index of the carried
+    // track. Empty/null on direct play, where the player's own track list is the truth.
+    var sessionAudio by mutableStateOf<List<dev.jellystructure.shared.tv.AudioTrack>>(emptyList())
+    var sessionAudioIndex by mutableStateOf<Int?>(null)
+    // R284 (FR-R284-3) — the item an automatic audio restream was already tried for: at most one, so
+    // a server that does not honour the request can never loop the player.
+    var audioRestreamTriedFor by mutableStateOf<String?>(null)
     var loadedForItemId by mutableStateOf<String?>(null)
     var positionKnownForItemId by mutableStateOf<String?>(null)
     var advanceRequestedForItemId by mutableStateOf<String?>(null)
@@ -702,8 +710,21 @@ fun PlayerScreen(
         val globalChoice = profileId?.let { PlaybackPrefsStore.getGlobalChoice(it) }
 
         val result = resolveTrackChoice(seriesChoice, globalChoice, tickAudio, tickSubs)
-        player.selectAudioTrack(result.audioIndex)
-        selectedAudio = result.audioIndex
+        // R284 (FR-R284-3) — on a single-audio session the player has nothing to select: if the stream
+        // does not carry the resolved track, ask the server for it — once per item — else show the truth.
+        val carried = carriedAudioPosition(bk.sessionAudio, bk.sessionAudioIndex)
+        val wanted = bk.sessionAudio.getOrNull(result.audioIndex)
+        if (carried == null) {
+            player.selectAudioTrack(result.audioIndex)
+            selectedAudio = result.audioIndex
+        } else if (wanted != null && result.audioIndex != carried && bk.audioRestreamTriedFor != currentItemId) {
+            bk.audioRestreamTriedFor = currentItemId
+            selectedAudio = result.audioIndex
+            bk.rearmResolveOnLoad = true
+            store.restreamWithSub(itemId, bk.burnedSubIndex ?: -1, player.positionMs, wanted.index)
+        } else {
+            selectedAudio = carried
+        }
         // R282 (FR-R282-2) — while a subtitle is burned in, nothing automatic may add a text track.
         val subIndex = if (bk.burnedSubIndex != null) -1 else result.subIndex
         player.selectSubtitleTrack(subIndex)
@@ -721,9 +742,19 @@ fun PlayerScreen(
         val version = group.versions.getOrNull(if (pickerLevel == 1) pickerVersionIdx else 0) ?: return
         bk.manualPickSinceResolve = true   // R246 (FR-R246-5) — a grown track set never overrides a manual pick
         if (pickerTab == 0) {
-            selectedAudio = version.flatIndex
-            player.selectAudioTrack(version.flatIndex)
             persistChoice(newAudioLanguage = group.language, newAudioVariant = version.signature())
+            // R284 (FR-R284-2) — a single-audio stream changes audio by restream (keeping the burn-in);
+            // re-picking the carried track does nothing. Direct play selects in the player, as always.
+            val carried = carriedAudioPosition(bk.sessionAudio, bk.sessionAudioIndex)
+            val wanted = bk.sessionAudio.getOrNull(version.flatIndex)
+            if (carried == null) {
+                selectedAudio = version.flatIndex
+                player.selectAudioTrack(version.flatIndex)
+            } else if (wanted != null && version.flatIndex != carried) {
+                selectedAudio = version.flatIndex
+                bk.rearmResolveOnLoad = true
+                store.restreamWithSub(itemId, bk.burnedSubIndex ?: -1, player.positionMs, wanted.index)
+            }
         } else {
             // R282 (FR-R282-4) — persisted FIRST: an un-burn re-resolves from this choice. (R181: a
             // PGS pick is still worth remembering — it helps other titles and a rewatch where the
@@ -734,9 +765,9 @@ fun PlayerScreen(
             when (subPickAction(sub?.deliveryMethod == "encode", sub?.jellyfinStreamIndex, bk.burnedSubIndex)) {
                 SubPickAction.NONE -> Unit
                 // R56: PGS burn-in — restream with the subtitle baked into the Jellyfin transcode.
-                SubPickAction.BURN_IN -> store.restreamWithSub(itemId, sub?.jellyfinStreamIndex ?: -1, player.positionMs)
+                SubPickAction.BURN_IN -> store.restreamWithSub(itemId, sub?.jellyfinStreamIndex ?: -1, player.positionMs, bk.sessionAudioIndex)
                 // Off or a text track while one is burned in: only a restream can take it out again.
-                SubPickAction.UNBURN -> { bk.rearmResolveOnLoad = true; store.restreamWithSub(itemId, -1, player.positionMs) }
+                SubPickAction.UNBURN -> { bk.rearmResolveOnLoad = true; store.restreamWithSub(itemId, -1, player.positionMs, bk.sessionAudioIndex) }
                 SubPickAction.SELECT -> {
                     selectedSub = if (group.isOff) -1 else version.flatIndex
                     player.selectSubtitleTrack(selectedSub)
@@ -898,6 +929,10 @@ fun PlayerScreen(
         // text selection survives load(), so a text track that was on kept rendering over the
         // burned-in one ("two subtitles at once", Honeyman). An un-burn ticket re-arms the resolver.
         bk.burnedSubIndex = s.ticket.burnedSubtitleIndex
+        // R284 (FR-R284-1) — on a single-audio session the ticket, not the player, knows the tracks.
+        bk.sessionAudioIndex = s.ticket.audioStreamIndex.takeIf { !s.ticket.directPlay }
+        bk.sessionAudio = if (bk.sessionAudioIndex != null) s.ticket.audio else emptyList()
+        carriedAudioPosition(bk.sessionAudio, bk.sessionAudioIndex)?.let { selectedAudio = it }
         if (s.ticket.burnedSubtitleIndex != null) {
             player.selectSubtitleTrack(-1)
             selectedSub = -1
@@ -955,7 +990,7 @@ fun PlayerScreen(
                 }
                 bufferedMs  = player.bufferedMs
                 isPlaying   = player.isPlaying
-                audioTracks = player.audioTracks
+                audioTracks = sessionAudioTracks(bk.sessionAudio, bk.sessionAudioIndex, player.audioTracks)
                 subtitleTracks = player.subtitleTracks
 
                 // R181 — resolve once per item, the first tick after the (now-current) stream's tracks
@@ -3797,6 +3832,24 @@ internal fun shownSelectedSub(selectedSub: Int, nativeCount: Int, encodeSubs: Li
     val i = encodeSubs.indexOfFirst { it.jellyfinStreamIndex == burnedIndex }
     return if (i >= 0) nativeCount + i else selectedSub
 }
+
+/**
+ * R284 (FR-R284-1) — the audio list the picker and the resolver see. On a single-audio session
+ * ([carriedIndex] non-null) an HLS stream exposes ONE track to the player — on Android it was even
+ * labelled with the first ticket track's name — so the ticket's list is the real one. Waits for the
+ * player to report its own tracks first ([playerTracks] non-empty), so "tracks are ready" keeps
+ * meaning what R181's resolver gate assumes. Direct play: the player's list, untouched.
+ */
+internal fun sessionAudioTracks(sessionAudio: List<dev.jellystructure.shared.tv.AudioTrack>, carriedIndex: Int?, playerTracks: List<PlayerAudioTrack>): List<PlayerAudioTrack> =
+    if (carriedIndex == null || sessionAudio.isEmpty() || playerTracks.isEmpty()) playerTracks
+    else sessionAudio.mapIndexed { i, a ->
+        PlayerAudioTrack(i, a.label?.takeIf { it.isNotBlank() } ?: languageName(a.language) ?: a.language?.uppercase() ?: "Track ${i + 1}", a.language, a.channels, a.isDefault)
+    }
+
+/** R284 — the carried track's position in the session's audio list; null = not a single-audio session
+ *  (or the ticket names a track its own list lacks — then the player's list is all there is). */
+internal fun carriedAudioPosition(sessionAudio: List<dev.jellystructure.shared.tv.AudioTrack>, carriedIndex: Int?): Int? =
+    carriedIndex?.let { c -> sessionAudio.indexOfFirst { it.index == c }.takeIf { it >= 0 } }
 
 /** R282 (FR-R282-4) — what a subtitle pick does, given what is already burned into the picture. */
 internal enum class SubPickAction { SELECT, BURN_IN, UNBURN, NONE }

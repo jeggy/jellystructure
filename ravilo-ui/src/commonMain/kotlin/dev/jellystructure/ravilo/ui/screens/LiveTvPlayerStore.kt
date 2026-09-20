@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.seams.supportedAudioCodecs
 import dev.jellystructure.ravilo.ui.components.LoadErrorKind
 import dev.jellystructure.ravilo.ui.seams.detectDecoderLimits
 import dev.jellystructure.ravilo.ui.seams.detectHdrSupport
@@ -52,7 +53,7 @@ class LiveTvPlayerStore(private val apiClient: TvApiClient) {
         return ClientCapabilities(
             containers = listOf("ts", "mp4"),
             videoCodecs = listOf("h264", "hevc"),
-            audioCodecs = listOf("aac", "ac3", "eac3", "mp3"),
+            audioCodecs = supportedAudioCodecs(), // R284 (FR-R284-7) — one list, the same as VOD; was a literal
             maxAudioChannels = 8,
             hlsOnly = true, // live channels are always HLS (IsInfiniteStream — Phase 147 addendum D)
             supportsHdr10 = hdr.hdr10,

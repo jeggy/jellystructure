@@ -5,6 +5,7 @@ import dev.jellystructure.ravilo.ui.seams.detectDecoderLimits
 import dev.jellystructure.ravilo.ui.seams.detectHdrSupport
 import dev.jellystructure.ravilo.ui.seams.detectLinkState
 import dev.jellystructure.ravilo.ui.seams.supportedAudioCodecs
+import dev.jellystructure.ravilo.ui.seams.supportsHevcOverHls
 import dev.jellystructure.ravilo.ui.seams.supportsEmbeddedTextSubtitles
 import dev.jellystructure.shared.tv.CardPlayState
 import dev.jellystructure.shared.tv.ClientCapabilities
@@ -219,12 +220,14 @@ class PlayerStore(private val apiClient: TvApiClient) {
     private var lastCapabilities: ClientCapabilities? = null
 
     /** R56 — Re-stream with a PGS subtitle burned in; keeps the heartbeat running (same item).
-     *  R282 — a negative [subtitleStreamIndex] re-streams with NO burn-in (252 FR-252-2). */
-    fun restreamWithSub(itemId: String, subtitleStreamIndex: Int, positionMs: Long) {
+     *  R282 — a negative [subtitleStreamIndex] re-streams with NO burn-in (252 FR-252-2).
+     *  R284 — [audioStreamIndex] is the audio track the new stream must carry (253 FR-253-1); callers
+     *  pass the current one on a subtitle change so the two choices never reset each other. */
+    fun restreamWithSub(itemId: String, subtitleStreamIndex: Int, positionMs: Long, audioStreamIndex: Int? = null) {
         scope.launch {
             _state.value = PlayerSessionState.Loading()
             _state.value = runCatching {
-                PlayerSessionState.Ready(apiClient.restream(itemId, subtitleStreamIndex, positionMs, lastCapabilities))
+                PlayerSessionState.Ready(apiClient.restream(itemId, subtitleStreamIndex, positionMs, lastCapabilities, audioStreamIndex))
             }.getOrElse {
                 val f = classifyLoadFailure(it)
                 PlayerSessionState.Error(it.message ?: "", f.kind, f.status)

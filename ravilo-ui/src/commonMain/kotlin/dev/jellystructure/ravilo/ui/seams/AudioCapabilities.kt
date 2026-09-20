@@ -17,3 +17,10 @@ expect fun supportedAudioCodecs(): List<String>
 
 /** What every platform's player decodes without an extension — the pre-R283 list, unchanged. */
 internal val BASE_AUDIO_CODECS = listOf("aac", "mp3", "flac", "opus", "ac3", "eac3")
+
+/**
+ * R284 (FR-R284-6) / 253 (FR-253-3) — whether this player takes HEVC in fMP4 HLS, so a transcode that
+ * is not about the video can copy it instead of re-encoding to h264. Lives here with the other
+ * "what can this build really play" answer. A wrong yes is a black screen, so: only where known.
+ */
+expect fun supportsHevcOverHls(): Boolean

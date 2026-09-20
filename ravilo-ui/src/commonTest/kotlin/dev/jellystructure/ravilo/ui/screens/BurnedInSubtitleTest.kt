@@ -44,3 +44,28 @@ class BurnedInSubtitleTest {
         // Before R282 this ADDED Danish on top of burned-in English — the report, from the other side.
         assertEquals(SubPickAction.UNBURN, subPickAction(false, -1, 6))
 }
+
+/** R284 — the single-audio session helpers. Fixture: Honeyman's two audio tracks (Jellyfin 4 and 5). */
+class SingleAudioSessionTest {
+    private val ticketAudio = listOf(
+        dev.jellystructure.shared.tv.AudioTrack(index = 4, language = "eng", label = "TrueHD Atmos 7.1", codec = "truehd", channels = 8, isDefault = true),
+        dev.jellystructure.shared.tv.AudioTrack(index = 5, language = "eng", label = "AC-3 5.1", codec = "ac3", channels = 6, isDefault = false),
+    )
+    private val oneHlsTrack = listOf(dev.jellystructure.ravilo.ui.seams.PlayerAudioTrack(0, "TrueHD Atmos 7.1", "eng", 2, true))
+
+    @Test fun direct_play_keeps_the_players_own_list() =
+        assertEquals(oneHlsTrack, sessionAudioTracks(ticketAudio, null, oneHlsTrack))
+
+    @Test fun a_single_audio_session_lists_every_real_track() {
+        val l = sessionAudioTracks(ticketAudio, 5, oneHlsTrack)
+        assertEquals(listOf("TrueHD Atmos 7.1", "AC-3 5.1"), l.map { it.label })
+        assertEquals(listOf(0, 1), l.map { it.index })
+    }
+
+    @Test fun it_waits_for_the_player_before_claiming_tracks_are_ready() =
+        assertEquals(emptyList(), sessionAudioTracks(ticketAudio, 5, emptyList()))
+
+    @Test fun the_carried_track_is_found_by_jellyfin_index_not_position() = assertEquals(1, carriedAudioPosition(ticketAudio, 5))
+    @Test fun direct_play_carries_nothing() = assertEquals(null, carriedAudioPosition(ticketAudio, null))
+    @Test fun an_index_the_list_lacks_is_not_a_single_audio_session() = assertEquals(null, carriedAudioPosition(ticketAudio, 9))
+}

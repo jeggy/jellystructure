@@ -49,6 +49,7 @@ actual class RaviloPlayer actual constructor() {
     }
 
     private var loadedSubtitles: List<SubTrack> = emptyList()
+    private var subtitleSlots: List<SubtitleSlot> = emptyList()
     private var loadedAudio: List<AudioTrack> = emptyList()
 
     // R192 — title/subtitle/artworkUrl are accepted but unused: this only feeds the browser's own local
@@ -57,7 +58,11 @@ actual class RaviloPlayer actual constructor() {
     // here. Wiring `navigator.mediaSession.metadata` for a nicer browser lock-screen/OS overlay is a
     // reasonable future enhancement, just not the scope of this phase (Android-native controls only).
     actual fun load(streamUrl: String, startPositionMs: Long, subtitles: List<SubTrack>, audio: List<AudioTrack>, title: String, subtitle: String?, artworkUrl: String?) {
-        loadedSubtitles = subtitles
+        // R284 (FR-R284-4) — only subtitles this player can DRAW are its tracks. A URL-less entry is a
+        // burn-in candidate (PGS), which PlayerScreen lists itself from the ticket; keeping it here too
+        // showed every PGS track twice on the web, the first copy selecting nothing.
+        loadedSubtitles = subtitles.filter { it.url != null }
+        subtitleSlots = emptyList()
         loadedAudio = audio
         // Remove existing <track> children
         while (video.childElementCount > 0) {
@@ -71,37 +76,55 @@ actual class RaviloPlayer actual constructor() {
         wireMediaSession(video)
         // R110: match the TV's white-text + black-outline caption look for native <track> (VTT) cues.
         installCueStyle()
-        subtitles.forEach { sub ->
+        // R284 (FR-R284-4) — one slot per entry of [loadedSubtitles], in order: how that subtitle is
+        // shown. Either the position of its <track> among the element's text tracks, or an ASS url.
+        val slots = mutableListOf<SubtitleSlot>()
+        var trackEls = 0
+        loadedSubtitles.forEach { sub ->
             val url = sub.url ?: return@forEach
             // R17: native .ass/.ssa subs render with JASSUB (libass) for full styling; the rest are
             // delivered as VTT and use a plain <track>. JASSUB is lazy-loaded only when first needed.
             if (url.endsWith(".ass", ignoreCase = true) || url.endsWith(".ssa", ignoreCase = true)) {
-                if (sub.isDefault) mountAss(video, url)
-                return@forEach
+                slots += SubtitleSlot(textTrack = -1, assUrl = url)
+                return@forEach   // mounted by selectSubtitleTrack(), like every other subtitle
             }
+            slots += SubtitleSlot(textTrack = trackEls++, assUrl = null)
             val trackEl = document.createElement("track")
             trackEl.setAttribute("kind", if (sub.forced) "forced" else "subtitles")
             sub.language?.let { trackEl.setAttribute("srclang", it) }
             sub.label?.let { trackEl.setAttribute("label", it) }
-            if (sub.isDefault) trackEl.setAttribute("default", "")
+            // R284 — no `default` attribute any more. It was the ONLY selection mechanism while
+            // selectSubtitleTrack() was a stub; now R181's resolver decides (its source-default tier
+            // already honours isDefault), and a second, browser-run chooser could re-show a track the
+            // resolver just turned off — the web's own version of "two deciders".
             video.appendChild(trackEl)
             // R68: fetch VTT, strip ASS/SSA override tags, attach as blob: URL
             fetchAndCleanVtt(url) { cleanUrl -> trackEl.setAttribute("src", cleanUrl) }
         }
+        subtitleSlots = slots
     }
 
     actual fun play() { video.play() }
     actual fun pause() { video.pause() }
     actual fun seekTo(positionMs: Long) { video.currentTime = positionMs / 1000.0 }
 
-    actual fun selectAudioTrack(index: Int) {
-        // Browser manages audio track selection; multi-audio streams require hls.js API
-    }
+    /**
+     * R284 (FR-R284-5) — deliberately nothing. A browser session is an HLS transcode carrying ONE
+     * audio track (253 FR-253-2); there is no second track to select. Audio changes on the web are a
+     * restream, decided in PlayerScreen from the ticket — not a stub awaiting an hls.js bridge.
+     */
+    actual fun selectAudioTrack(index: Int) {}
 
+    /**
+     * R284 (FR-R284-4) — really switches. Until this phase it was an empty stub, so the only subtitle
+     * a browser ever showed was whichever `<track>` carried `default`; the picker changed nothing and
+     * "Off" did not turn it off. [index] is a position in [subtitleTracks]; -1 = off. Exactly one of
+     * {a text track showing, JASSUB mounted, nothing} holds afterwards.
+     */
     actual fun selectSubtitleTrack(index: Int) {
-        // TextTrackList item-by-index access is not bridged in Kotlin/WASM DOM bindings.
-        // Subtitle switching is deferred to a future JS-interop bridge; the <track default>
-        // attribute set in load() handles the initial selection. (index -1 = off.)
+        val slot = subtitleSlots.getOrNull(index)
+        showTextTrack(video, slot?.textTrack ?: -1)
+        if (slot?.assUrl != null) mountAss(video, slot.assUrl) else unmountAss(video)
     }
 
     actual fun release() {
@@ -299,6 +322,23 @@ private fun fetchAndCleanVtt(url: String, callback: (String) -> Unit): Unit = js
 )
 
 /** R17 — destroy any hls.js / JASSUB instance attached to the element (called on release). */
+/** R284 — how one entry of the player's subtitle list is shown: a `<track>` (by its position among
+ *  the element's text tracks) or an ASS file through JASSUB. */
+private class SubtitleSlot(val textTrack: Int, val assUrl: String?)
+
+/** R284 (FR-R284-4) — `showing` for text track [show], `disabled` for every other; -1 disables all.
+ *  `disabled` rather than `hidden`: a hidden track still fires cue events and keeps its cues loaded. */
+private fun showTextTrack(video: HTMLVideoElement, show: Int): Unit = js(
+    """{
+        var t = video.textTracks;
+        for (var i = 0; i < t.length; i++) { t[i].mode = (i === show) ? 'showing' : 'disabled'; }
+    }"""
+)
+
+private fun unmountAss(video: HTMLVideoElement): Unit = js(
+    """{ if (video._jassub) { try { video._jassub.destroy(); } catch(e){} video._jassub = null; } }"""
+)
+
 private fun destroyOverlays(video: HTMLVideoElement): Unit = js(
     """{
         if (video._hls) { try { video._hls.destroy(); } catch(e){} video._hls = null; }
