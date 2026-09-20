@@ -532,6 +532,8 @@ class PlaybackService(
             audio = audio,
             trickplayUrl = null,
             expiresAt = nowMs() + TICKET_TTL_MS,
+            // Phase 253 (FR-253-2) — which audio a single-audio (transcoded) stream carries.
+            audioStreamIndex = if (needsTranscode) carriedAudioIndex(source?.transcodingUrl, null) else null,
         )
     }
 
@@ -881,8 +883,9 @@ class PlaybackService(
         subtitleStreamIndex: Int,
         positionMs: Long,
         capabilities: ClientCapabilities? = null,
+        audioStreamIndex: Int? = null,
     ): StreamTicket {
-        if (subtitleStreamIndex < 0) return restreamWithoutBurnIn(device, jellyfinId, positionMs, capabilities ?: ClientCapabilities())
+        if (subtitleStreamIndex < 0) return restreamWithoutBurnIn(device, jellyfinId, positionMs, capabilities ?: ClientCapabilities(), audioStreamIndex)
         requireVisible(device, jellyfinId)
         val jellyfinBase = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
         val token = jellyfinClient.tvTokenForClient(jellyfinBase, device)
@@ -901,7 +904,7 @@ class PlaybackService(
         // `capabilities` parameter slot — named args here since burn-in restream doesn't have the
         // original session's capabilities on hand; ClientCapabilities()'s conservative SDR-only default
         // is fine since this path already forces a transcode for the subtitle burn-in regardless.
-        val playbackInfo = jellyfinClient.getPlaybackInfo(jellyfinBase, token, device.jellyfinUserId, jellyfinId, subtitleStreamIndex = subtitleStreamIndex, identity = identity)
+        val playbackInfo = jellyfinClient.getPlaybackInfo(jellyfinBase, token, device.jellyfinUserId, jellyfinId, subtitleStreamIndex = subtitleStreamIndex, identity = identity, audioStreamIndex = audioStreamIndex)
         val negotiated = playbackInfo?.mediaSources?.firstOrNull()?.transcodingUrl
             ?.let { if (it.startsWith("http")) it else "$jellyfinBase$it" }
         Logger.info("PlaybackInfo(burn-in): item=$jellyfinId sub=$subtitleStreamIndex negotiated=${negotiated != null}", "tv")
@@ -964,6 +967,7 @@ class PlaybackService(
             // Phase 252 (FR-252-1) — the one fact the client cannot get anywhere else: this subtitle
             // is already in the pixels, so no text track may render beside it.
             burnedSubtitleIndex = subtitleStreamIndex,
+            audioStreamIndex = carriedAudioIndex(transcodingUrl, audioStreamIndex),
         )
     }
 
@@ -980,6 +984,7 @@ class PlaybackService(
         jellyfinId: String,
         positionMs: Long,
         capabilities: ClientCapabilities,
+        audioStreamIndex: Int?,
     ): StreamTicket {
         requireVisible(device, jellyfinId)
         val jellyfinBase = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
@@ -987,7 +992,7 @@ class PlaybackService(
             ?: throw JellyfinReauthRequiredException("This device's Jellyfin sign-in has expired — re-pair it to continue watching.")
         val identity = JellyfinDeviceIdentity.forDevice(device)
         val itemDetail = jellyfinClient.getItemDetail(jellyfinBase, token, device.jellyfinUserId, jellyfinId)
-        val playbackInfo = jellyfinClient.getPlaybackInfo(jellyfinBase, token, device.jellyfinUserId, jellyfinId, capabilities = capabilities, identity = identity)
+        val playbackInfo = jellyfinClient.getPlaybackInfo(jellyfinBase, token, device.jellyfinUserId, jellyfinId, capabilities = capabilities, identity = identity, audioStreamIndex = audioStreamIndex)
         val source = playbackInfo?.mediaSources?.firstOrNull()
         val needsTranscode = source != null && !source.supportsDirectPlay && source.transcodingUrl != null
         Logger.info("PlaybackInfo(un-burn): item=$jellyfinId directPlay=${source?.supportsDirectPlay} transcode=$needsTranscode", "tv")
@@ -1016,6 +1021,7 @@ class PlaybackService(
             audio = buildAudioTracks(itemDetail),
             trickplayUrl = null,
             expiresAt = nowMs() + TICKET_TTL_MS,
+            audioStreamIndex = if (needsTranscode) carriedAudioIndex(source?.transcodingUrl, audioStreamIndex) else null,
         )
     }
 
@@ -1059,6 +1065,16 @@ class PlaybackService(
     private fun isPgsSubCodec(c: String): Boolean =
         c in setOf("hdmv_pgs_subtitle", "pgssub", "pgs")
 }
+
+/**
+ * Phase 253 (FR-253-2) — the audio track a transcoded stream really carries: the `AudioStreamIndex`
+ * Jellyfin wrote into its own `TranscodingUrl` (measured on 12.1.0: present whether or not one was
+ * requested, and equal to the request when one was), else what was [requested], else unknown. What
+ * Jellyfin DID outranks what it was asked — a ticket states facts.
+ */
+internal fun carriedAudioIndex(transcodingUrl: String?, requested: Int?): Int? =
+    transcodingUrl?.let { Regex("[?&]AudioStreamIndex=(\\d+)", RegexOption.IGNORE_CASE).find(it)?.groupValues?.get(1)?.toIntOrNull() }
+        ?: requested
 
 /**
  * Phase 179 — moved out of [PlaybackService] (was `private`) so [dev.jellystructure.media.PipelineStepOps]

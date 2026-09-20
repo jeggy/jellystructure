@@ -43,6 +43,26 @@ class BurnInTicketWireTest {
         assertNull(req.capabilities)
     }
 
+    // ── Phase 253 ─────────────────────────────────────────────────────────────────────────────────
+    @Test fun a_direct_play_ticket_does_not_mention_an_audio_index() {
+        assertFalse("audio_stream_index" in server.encodeToString(StreamTicket.serializer(), ticket(null)))
+    }
+
+    @Test fun a_transcode_ticket_names_its_audio_and_round_trips() {
+        val wire = server.encodeToString(StreamTicket.serializer(), ticket(6).copy(audioStreamIndex = 5))
+        assertEquals(5, client.decodeFromString(StreamTicket.serializer(), wire).audioStreamIndex)
+    }
+
+    @Test fun a_restream_request_composes_audio_and_burn_in() {
+        val wire = server.encodeToString(PlaybackRestreamRequest.serializer(), PlaybackRestreamRequest("i", 6, 1000, null, 5))
+        val back = Json.decodeFromString(PlaybackRestreamRequest.serializer(), wire)
+        assertEquals(6 to 5, back.subtitleStreamIndex to back.audioStreamIndex)
+    }
+
+    @Test fun capabilities_from_a_pre_253_client_mean_no_hevc_over_hls() {
+        assertFalse(Json.decodeFromString(ClientCapabilities.serializer(), """{"hls_only":true,"video_codecs":["hevc"]}""").hlsHevc)
+    }
+
     @Test fun an_un_burn_request_carries_minus_one_and_the_capabilities() {
         val wire = server.encodeToString(
             PlaybackRestreamRequest.serializer(),

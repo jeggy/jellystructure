@@ -66,6 +66,13 @@ data class ClientCapabilities(
     @SerialName("audio_codecs") val audioCodecs: List<String> = emptyList(),
     @SerialName("max_audio_channels") val maxAudioChannels: Int = 8,
     @SerialName("hls_only") val hlsOnly: Boolean = false,
+    /**
+     * Phase 253 (FR-253-3) — this client plays **HEVC in fMP4 HLS**. The transcode profile is
+     * h264/ts unless a client says this, so an `hls_only` client that lists `hevc` still had every
+     * HEVC title re-encoded to h264. Opt-in, default false: a wrong yes is a black screen on a title
+     * that plays today, so only a client that has verified it (or probed it) sets this.
+     */
+    @SerialName("hls_hevc") val hlsHevc: Boolean = false,
     // Bug fix: an HDR10/HDR10+ (PQ) or HLG source used to always direct-play regardless of whether
     // the device could actually display it correctly — Jellyfin's DeviceProfile declared no VideoRange
     // constraint at all, so it never had a reason to tone-map-transcode to SDR. These default to
@@ -216,6 +223,13 @@ data class StreamTicket(
      * and `encodeDefaults = false` keeps a null off the wire entirely (contrast [accessToken]).
      */
     @SerialName("burned_subtitle_index") val burnedSubtitleIndex: Int? = null,
+    /**
+     * Phase 253 (FR-253-2) — on a TRANSCODE, Jellyfin's index of the one audio track this stream
+     * carries (matches an [AudioTrack.index] in [audio]); a fact read back from Jellyfin's own URL,
+     * never an echo of the request. Null on direct play, where the container carries every track and
+     * the player selects. It is how a picker shows — and changes — the audio of an HLS session.
+     */
+    @SerialName("audio_stream_index") val audioStreamIndex: Int? = null,
 )
 
 @Serializable
@@ -1158,6 +1172,10 @@ data class PlaybackRestreamRequest(
     /** Phase 252 (FR-252-3) — the session's own capabilities, so an un-burn negotiates as the real
      *  device (it may well direct-play). Absent from a pre-252 client ⇒ conservative defaults. */
     val capabilities: ClientCapabilities? = null,
+    /** Phase 253 (FR-253-1) — Jellyfin's index of the audio track the restreamed session must carry;
+     *  null ⇒ Jellyfin's default. Composes with [subtitleStreamIndex]: a subtitle pick keeps the
+     *  audio, an audio pick keeps the burn-in. */
+    @SerialName("audio_stream_index") val audioStreamIndex: Int? = null,
 )
 
 /** On-device viewer-tweakable settings (PUT /api/tv/settings). All fields optional = unchanged. */

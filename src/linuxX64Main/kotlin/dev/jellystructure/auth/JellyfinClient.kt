@@ -73,7 +73,15 @@ internal fun deviceProfile(capabilities: ClientCapabilities): String {
         else ->
             """{"Container":"mkv,mp4,webm,mov,avi,ts,m2ts,flv,3gp,mpegts","Type":"Video","VideoCodec":"h264,hevc,vp8,vp9,av1,mpeg4,mpeg2video,vc1","AudioCodec":"$audioCodecs"}"""
     }
-    return """{"MaxStreamingBitrate":${maxStreamingBitrate(capabilities)},"DirectPlayProfiles":[$directPlayProfiles],"CodecProfiles":[$codecProfiles],"TranscodingProfiles":[{"Container":"ts","Type":"Video","VideoCodec":"h264","AudioCodec":"aac,ac3,mp3","Protocol":"hls","Context":"Streaming"}],"SubtitleProfiles":[{"Format":"vtt","Method":"External"},{"Format":"srt","Method":"External"},{"Format":"subrip","Method":"External"},{"Format":"ass","Method":"External"},{"Format":"ssa","Method":"External"},{"Format":"vobsub","Method":"Embed"},{"Format":"dvdsub","Method":"Embed"},{"Format":"dvbsub","Method":"Embed"},{"Format":"pgssub","Method":"Encode"},{"Format":"pgs","Method":"Encode"}]}"""
+    // Phase 253 (FR-253-3) — h264 in TS unless the client says it takes HEVC over HLS, in which case
+    // fMP4 segments (the only HLS shape Jellyfin emits HEVC in) with hevc FIRST so a fitting HEVC
+    // source is copied rather than re-encoded. Measured on 12.1.0 ("Honeyman", 4K HEVC): this removes
+    // `VideoCodecNotSupported` from TranscodeReasons and the URL comes back `SegmentContainer=mp4`.
+    val transcodingProfile = if (capabilities.hlsHevc)
+        """{"Container":"mp4","Type":"Video","VideoCodec":"hevc,h264","AudioCodec":"aac,ac3,eac3,mp3","Protocol":"hls","Context":"Streaming"}"""
+    else
+        """{"Container":"ts","Type":"Video","VideoCodec":"h264","AudioCodec":"aac,ac3,mp3","Protocol":"hls","Context":"Streaming"}"""
+    return """{"MaxStreamingBitrate":${maxStreamingBitrate(capabilities)},"DirectPlayProfiles":[$directPlayProfiles],"CodecProfiles":[$codecProfiles],"TranscodingProfiles":[$transcodingProfile],"SubtitleProfiles":[{"Format":"vtt","Method":"External"},{"Format":"srt","Method":"External"},{"Format":"subrip","Method":"External"},{"Format":"ass","Method":"External"},{"Format":"ssa","Method":"External"},{"Format":"vobsub","Method":"Embed"},{"Format":"dvdsub","Method":"Embed"},{"Format":"dvbsub","Method":"Embed"},{"Format":"pgssub","Method":"Encode"},{"Format":"pgs","Method":"Encode"}]}"""
 }
 
 /**
@@ -823,8 +831,11 @@ class JellyfinClient {
         subtitleStreamIndex: Int? = null,
         identity: JellyfinDeviceIdentity? = null,
         mediaSourceId: String? = itemId,
+        /** Phase 253 (FR-253-1) — the audio track a transcode must carry; null = Jellyfin's default. */
+        audioStreamIndex: Int? = null,
     ): JellyfinPlaybackInfoResponse? = runCatching {
-        val subBody = subtitleStreamIndex?.let { ""","SubtitleStreamIndex":$it""" } ?: ""
+        val subBody = (subtitleStreamIndex?.let { ""","SubtitleStreamIndex":$it""" } ?: "") +
+            (audioStreamIndex?.let { ""","AudioStreamIndex":$it""" } ?: "")
         val mediaSourceBody = mediaSourceId?.let { ""","MediaSourceId":"$it"""" } ?: ""
         httpPost(baseUrl.trimEnd('/') + "/Items/$itemId/PlaybackInfo?UserId=$userId") {
             jellyfinAuth(userToken, identity)
