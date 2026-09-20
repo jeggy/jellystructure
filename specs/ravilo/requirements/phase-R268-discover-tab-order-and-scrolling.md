@@ -9,24 +9,45 @@
 
 ## Status
 
-`Planned` — written 2026-09-18 from the owner's direction. **Dev-reviewed 2026-09-19 against `main`
-`dcb97f2c`** (see §Dev review at the foot: scope claims verified accurate; the declared order is also a
-correctness fix, and the enum should be reordered with it). Not built. Client-only
-(`ravilo-ui` commonMain), **no new string in any language** (all five labels exist in en/da/fo), no
-backend, DTO or config change. Supersedes **R243 FR-R243-1**'s tab order only; its gating rule, the
-walls, the counts and the scoped line are untouched. Pairs with **R262** (Discover as one frame with one
-segment bar) — R262 moves the bar out of the lazy list, this phase fixes what the bar contains and how
-it overflows; either can land first.
+`✓ Built` 2026-09-20 — written 2026-09-18 from the owner's direction, dev-reviewed 2026-09-19 against
+`main` `dcb97f2c`, built 2026-09-20 with every review item taken. Client-only (`ravilo-ui` commonMain),
+**no new string in any language** (acceptance 7 verified: the i18n diff across this phase is empty), no
+backend, DTO or config change. Supersedes **R243 FR-R243-1**'s tab order only. Pairs with **R262**.
 
-**Numbering:** written 2026-09-18 as R265 and renumbered **R265 → R268** the same afternoon, when
-`main` took R263 · R264 · R265 (the web app installs · the receiver-only TV app · play on a TV from the
-phone). Verified against `main` on 2026-09-18 — Ravilo taken through **R265**, admin through **236**.
-R266 (Cast Connect) and R267 (the phone's top row + bottom bar) are ours, written the same day.
-Ravilo-only, no admin pair. Next free: **238 / R269**.
+### Build (2026-09-20)
 
-Design: built into both mockups the same day — `design/ravilo/ravilo-app.js` (`discTabs()` order) +
-`design/ravilo/ravilo.css` (`.discseg` scrolls) for the TV, and `design/ravilo/Ravilo Mobile.html` (the
-Discover segment row, all five chips, scrolling) for the phone.
+- **FR-R268-1/-2, and review item 1's point taken as the headline** — the order is declared once
+  (`DISCOVER_SEGMENT_ORDER`) and gating **filters** it. `defaultDiscoverSegment` is now literally
+  `discoverSegments(...).first()`, so the three functions that used to encode precedence independently
+  cannot disagree. That is a correctness fix, not a cosmetic one: they had **already drifted once**, and
+  `DiscoverSegmentOrderTest.theDefaultIsAlwaysARenderedChip` asserts across all four gating
+  combinations that the entry segment is one the bar actually renders — the exact bug R243's dev review
+  had to find by hand, now unrepresentable.
+- **Review item 2 taken** — the enum itself is reordered to `NETWORKS, STUDIOS, GENRES, COMING_SOON,
+  REQUEST`, so there is only ever one order in the file and anything reaching for `entries` or an
+  ordinal agrees with the bar by construction. Safe, as the review established: the segment travels
+  only in `Dest.Discover` (in-memory) and `toRoute()` emits a bare `/discover`, so no ordinal is
+  persisted. `TAXONOMY_SEGMENTS` became a `Set` — a gating set, never an order.
+- **Review item 3 named in the code** — the household with neither integration moves from **Studios**
+  to **Networks**. Real behaviour change, for the one configuration that gets nothing else from this
+  phase, so it is called out in `defaultDiscoverSegment`'s own doc and asserted in
+  `theFirstChipIsNetworksOnEveryHousehold`.
+- **FR-R268-4/-5/-6/-7** — `DiscoverSegmentBar` scrolls horizontally, with each chip's bounds measured
+  against the scroller's own content so a chip can be carried into view. A focused chip reveals with an
+  animated scroll and a ~48 px margin, so the neighbour peeks and focus never lands at the edge; entry
+  reveals the **selected** chip. Chips are never shrunk or ellipsised — the strip gets longer, not
+  denser.
+- **Review item 5 taken, and it is the one most likely to have bitten on the TV** — entry
+  **sequences** the reveal and the focus request instead of racing them (`revealChip(...)` then
+  `requestFocus()`), which is R232's settled shape. R232, R223 and R200/R201 were all this mistake.
+- **Review item 4** — the scroll is confined to the bar, so `.dischead-controls`' *Search on Seerr*
+  pill stays pinned.
+- **Tests:** `DiscoverSegmentOrderTest` (7, green) pins the declared order, the enum agreeing with it,
+  that every gated view is a *subsequence* of the declared order (the mechanical form of "filters,
+  never re-orders"), the always-rendered default, and that R170's step walks the rendered list.
+
+Acceptance 1–2, 6–8 hold. **3, 4 and 5 are on-device (stue TV D-pad reach, Pixel 9 swipe and the
+strip's scroll offset surviving a tap) and are verified on device.**
 
 ## Current state (traced against `main`, 2026-09-18)
 

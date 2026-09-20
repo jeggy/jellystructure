@@ -2,8 +2,28 @@
 
 ## Status
 
-`Planned` — written 2026-09-19, **measured against a live local instance of the real binary the same
-day** (not a mock, not a guess about Ktor internals), not built, not dev-reviewed.
+`✓ Built` 2026-09-19 (FR-247-1, FR-247-2), **measured against a live local instance of the real
+binary** (not a mock, not a guess about Ktor internals), not dev-reviewed. FR-247-3 is deliberately
+**not** built — it names the reasoning an eventual fix must check itself against, and the fix is
+blocked on open question 1, which needs real Tizen hardware or the emulator.
+
+**Open question 2 is answered, 2026-09-20, from the artefact rather than by experiment** (the same
+technique 238's review used on the Curl engine's header handling). In
+`ktor-server-cors-linuxX64Main-3.6.0.klib`:
+
+- `io.ktor.server.plugins.cors.routing.CORS` — the one this project already imports
+  (`Server.kt:72`) — is built with **`createRouteScopedPlugin`**. So **yes**: CORS can be installed
+  on a route rather than the whole application, and the eventual FR-247-3 fix is a small scoped
+  addition, not a custom intercept ahead of routing.
+- The older `io.ktor.server.plugins.cors.CORS` is `createApplicationPlugin` and carries
+  `@Deprecated(level = ERROR)` — *"This plugin was moved to io.ktor.server.plugins.cors.routing"*.
+- Worth knowing before implementing: the route-scoped variant registers its own
+  `options("{cors-options-wildcard...}")` handler on the route it is installed into, so installing a
+  second, looser CORS on `/api/tv` + `/api/remote` adds a preflight handler under those prefixes
+  rather than replacing the application-wide one.
+
+Open question 1 stays open and is still the blocker: nothing may be shipped against a guessed
+`Origin` string.
 
 ## What is wrong
 

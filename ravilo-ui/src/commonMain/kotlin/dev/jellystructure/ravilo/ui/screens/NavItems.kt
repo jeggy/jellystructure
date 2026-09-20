@@ -1,6 +1,7 @@
 package dev.jellystructure.ravilo.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
@@ -9,12 +10,19 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.onPlaced
+import androidx.compose.ui.layout.positionInParent
+import androidx.compose.ui.layout.onSizeChanged
+import kotlinx.coroutines.launch
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -49,27 +57,67 @@ fun raviloNavTarget(index: Int): RaviloNavTarget = when (index) {
     else -> RaviloNavTarget.HOME
 }
 
-/** R170 — the segments folded under the single Discover tab. R243 added the three taxonomy walls. */
-enum class DiscoverSegment { COMING_SOON, REQUEST, STUDIOS, NETWORKS, GENRES }
+/**
+ * R170 — the segments folded under the single Discover tab. R243 added the three taxonomy walls.
+ *
+ * R268 — **reordered**, library first. The enum's own declaration order is the shipped order, so there
+ * is only ever one order in this file: anything reaching for `entries` or an ordinal agrees with the
+ * bar by construction. Safe to reorder — the segment travels only in `Dest.Discover`, which is
+ * in-memory, and `toRoute()` renders Discover as a bare `"/discover"` with no segment component, so no
+ * ordinal is persisted or serialised anywhere.
+ */
+enum class DiscoverSegment { NETWORKS, STUDIOS, GENRES, COMING_SOON, REQUEST }
 
-/** R243 — the three segments that index the viewer's own library (never gated). */
-val TAXONOMY_SEGMENTS: List<DiscoverSegment> = listOf(DiscoverSegment.STUDIOS, DiscoverSegment.NETWORKS, DiscoverSegment.GENRES)
+/**
+ * R268 (FR-R268-1) — the one declared order: **Networks · Studios · Genres · Coming Soon · Request**.
+ *
+ * Why this order, so it is not re-litigated: Networks and Studios are the two walls a viewer browses by
+ * habit ("what's on DR?", "the Pixar shelf"); Genres is the widest and least specific of the three, so
+ * it follows them; Coming Soon is about titles the household does not have yet, and Request is about
+ * asking for one. Left to right the strip runs from what you own to what you don't, and the first chip
+ * is the same one on every household.
+ */
+val DISCOVER_SEGMENT_ORDER: List<DiscoverSegment> = DiscoverSegment.entries.toList()
 
-/** The segment bar's contents for this household, in the order the bar shows them (FR-R243-1). */
-fun discoverSegments(upcomingAvailable: Boolean, discoverAvailable: Boolean): List<DiscoverSegment> = buildList {
-    if (upcomingAvailable) add(DiscoverSegment.COMING_SOON)
-    if (discoverAvailable) add(DiscoverSegment.REQUEST)
-    addAll(TAXONOMY_SEGMENTS)
-}
+/** R243 — the segments that index the viewer's own library. Never gated.
+ *
+ *  R268 (dev review item 2) — a **gating set**, never an order. It used to be a `List` spliced into the
+ *  bar's contents, which made it a second place order was decided. */
+val TAXONOMY_SEGMENTS: Set<DiscoverSegment> =
+    setOf(DiscoverSegment.NETWORKS, DiscoverSegment.STUDIOS, DiscoverSegment.GENRES)
 
-/** Where pressing Discover lands: Coming Soon if it exists, else Request, else Studios (FR-R243-1).
- *  R243 dev review — this used to answer only the first two, so a household with neither integration
- *  would have reached Discover and landed on a segment that is not rendered. */
-fun defaultDiscoverSegment(upcomingAvailable: Boolean, discoverAvailable: Boolean): DiscoverSegment = when {
-    upcomingAvailable -> DiscoverSegment.COMING_SOON
-    discoverAvailable -> DiscoverSegment.REQUEST
-    else -> DiscoverSegment.STUDIOS
-}
+/**
+ * The segment bar's contents for this household, in the order the bar shows them.
+ *
+ * R268 (FR-R268-2) — **gating filters the declared order; it never re-orders and never assembles.**
+ * That is a correctness fix as much as a cosmetic one. Three functions used to encode order
+ * independently — this one, [defaultDiscoverSegment] and [nextDiscoverSegment] — and they had
+ * **already drifted once**: `defaultDiscoverSegment` answered only the first two cases, so a household
+ * with neither integration reached Discover and landed on a segment that was not rendered. With one
+ * declared list and a filter, that entire class of bug is unrepresentable.
+ */
+fun discoverSegments(upcomingAvailable: Boolean, discoverAvailable: Boolean): List<DiscoverSegment> =
+    DISCOVER_SEGMENT_ORDER.filter { seg ->
+        when (seg) {
+            DiscoverSegment.COMING_SOON -> upcomingAvailable
+            DiscoverSegment.REQUEST -> discoverAvailable
+            else -> seg in TAXONOMY_SEGMENTS
+        }
+    }
+
+/**
+ * Where pressing Discover lands: the first **available** chip.
+ *
+ * R268 (FR-R268-2) — derived from [discoverSegments] rather than re-deciding precedence, which is what
+ * makes the two incapable of disagreeing. Since the taxonomy segments cannot be gated off, this is
+ * always **Networks** now.
+ *
+ * ⚠ Real behaviour change for one configuration: a household with neither Sonarr/Radarr nor Seerr used
+ * to land on **Studios** and now lands on **Networks**. Intended, and named here because that household
+ * gets no other change from this phase and is the one most likely to notice.
+ */
+fun defaultDiscoverSegment(upcomingAvailable: Boolean, discoverAvailable: Boolean): DiscoverSegment =
+    discoverSegments(upcomingAvailable, discoverAvailable).first()
 
 /** The segment after [current] in [segments] (wrapping) — what the Discover nav button does while a
  *  Discover screen is already showing, so the button is never inert under focus. */
@@ -111,33 +159,75 @@ fun DiscoverSegmentBar(
 ) {
     val colors = RaviloTheme.colors
     val activeFR = remember { FocusRequester() }
-    LaunchedEffect(focusActiveOnEntry, active) {
-        if (focusActiveOnEntry) {
-            runCatching { activeFR.requestFocus() }
-            onFocusConsumed()
-        }
+    // R268 (FR-R268-4) — the strip scrolls rather than clipping. Five chips do not fit a portrait
+    // phone, and on a TV they used to run past the `Search on Seerr` pill that shares the row. The
+    // scroll is confined to this bar: it never moves the page or the nav row above it.
+    val scrollState = rememberScrollState()
+    // FR-R268-6/-7 — where each chip sits in the scroller, so a chip can be carried into view. Keyed
+    // by segment rather than index so a gated segment appearing or disappearing cannot shift them.
+    val chipBounds = remember { mutableStateMapOf<DiscoverSegment, IntRange>() }
+    var viewportWidth by remember { mutableStateOf(0) }
+
+    suspend fun revealChip(seg: DiscoverSegment, animate: Boolean) {
+        val b = chipBounds[seg] ?: return
+        if (viewportWidth <= 0) return
+        // Leave a chip's worth of margin so the neighbour peeks — FR-R268-6's affordance, and what
+        // keeps a focused chip off the very edge of the screen.
+        val margin = 48
+        val target = when {
+            b.first - margin < scrollState.value -> b.first - margin
+            b.last + margin > scrollState.value + viewportWidth -> b.last + margin - viewportWidth
+            else -> return
+        }.coerceIn(0, scrollState.maxValue)
+        if (animate) scrollState.animateScrollTo(target) else scrollState.scrollTo(target)
     }
+
+    LaunchedEffect(focusActiveOnEntry, active, chipBounds[active], viewportWidth) {
+        if (!focusActiveOnEntry) return@LaunchedEffect
+        // FR-R268-7 + dev review item 5 — SEQUENCE the scroll and the focus request; never race them.
+        // This codebase has been bitten by exactly that three times: R232 (the season row's scroll and
+        // focus ran as concurrent coroutines, so the first Down only *looked* like it focused), R223
+        // (season-picker focus with rapid-Up stranding) and R200/R201 (a FocusRequester whose target
+        // was never placed). Await the scroll, then request focus.
+        revealChip(active, animate = false)
+        runCatching { activeFR.requestFocus() }
+        onFocusConsumed()
+    }
+
     Row(
         modifier = modifier
             .background(colors.surfaceVariant.copy(alpha = 0.55f), RoundedCornerShape(16.dp))
+            .onSizeChanged { viewportWidth = it.width }
+            .horizontalScroll(scrollState)
             .padding(5.dp),
         horizontalArrangement = Arrangement.spacedBy(5.dp),
     ) {
         segments.forEach { seg ->
             var focused by remember { mutableStateOf(false) }
             val isCur = seg == active
+            val scope = rememberCoroutineScope()
             Text(
                 text = discoverSegmentLabel(seg),
                 color = if (focused) colors.background else if (isCur) colors.text else colors.textSecondary,
                 fontSize = 14.sp,
                 fontWeight = if (isCur || focused) FontWeight.SemiBold else FontWeight.Medium,
                 fontFamily = Sora,
+                // FR-R268-5 — a chip is never shrunk, truncated or ellipsised to make five fit. The
+                // strip gets longer, not denser: the 13 sp floor and the 46 dp target win over fitting
+                // everything on screen at once.
                 maxLines = 1,
                 modifier = Modifier
                     .background(if (focused) colors.text else Color.Transparent, RoundedCornerShape(12.dp))
+                    // Measured against the scroller's own content, so the bounds are scroll-independent.
+                    .onPlaced { chipBounds[seg] = it.positionInParent().x.toInt()..(it.positionInParent().x.toInt() + it.size.width) }
                     .dpadFocusable(
                         focusRequester = if (isCur) activeFR else null,
-                        onFocused = { focused = true },
+                        onFocused = {
+                            focused = true
+                            // FR-R268-6 — D-pad Left/Right carries the newly focused chip into view,
+                            // with the neighbour peeking. Focus never lands on an off-screen chip.
+                            scope.launch { revealChip(seg, animate = true) }
+                        },
                         onBlurred = { focused = false },
                         onSelect = { if (!isCur) onSelect(seg) },
                     )
