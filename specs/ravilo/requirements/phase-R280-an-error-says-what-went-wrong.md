@@ -52,7 +52,12 @@ history is made of:
 
 ### Verified, and not verified
 
-**Not verified on a device.** Every claim below is from tests, CI or a local run — no TV or phone
+**Not verified on a device.** The build is ready for one whenever it is approved: v1.34's CI is green
+end to end and the release carries `ravilo-1.34-release.apk`, signed with the real upload keystore, so
+it installs over an existing TV app with `adb install -r -d` and the pairing intact (a locally built
+release APK no longer can — CI holds the key).
+
+ Every claim below is from tests, CI or a local run — no TV or phone
 ran this build. What that leaves genuinely open is how the surface *looks* at 10 feet: line lengths
 in Danish and Faroese, whether the focused button reads as focused against each of the three skins,
 and whether `fillMaxSize()` inside `SettingsScreen`'s already-padded column crowds the heading.
