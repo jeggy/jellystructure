@@ -62,9 +62,24 @@ attempt and tells you nothing):
   reaches **connected** on `/api/health/full`, plus that no device id appears on `/api/health`. That
   spec is what makes phase 241's headline acceptance possible at all — see its review item 1.
 
-Acceptance 1–4 hold in CI against the tightened mock; **acceptance 2 and 3 (the real server's log
-count, and a dashboard pause reaching the TV) need the household server and are verified on deploy.**
-Open question 2 stays open with its lean, now observable either way.
+### Verified on production (v1.31, 2026-09-20)
+
+- **Acceptance 1** — `Jellyfin session bridge connected: device=16149cda… user=7450a8c6…` in the
+  backend log within seconds of the recreate, and `/api/health` reporting
+  `session_bridges: {connected: 1, failing: 0}`.
+- **Acceptance 2** — Jellyfin's own `Token is required. URL GET /socket` went from **one every 60
+  seconds** to **zero**, from the moment the new bridge connected. (Mind the clocks: Jellyfin logs in
+  UTC, the host is UTC+2 — the last rejection at `04:25:06Z` is one minute *before* the connect at
+  `04:26:14Z`, not an hour after it.)
+- **Acceptance 3, mechanism** — `GET /Sessions` on the household server now shows the connected device
+  with `SupportsMediaControl: true` / `SupportsRemoteControl: true`. That is `postCapabilities`
+  landing, which is the thing that has been silently false since the upgrade and the reason the
+  dashboard could not pause or seek. **The pause-reaches-the-TV half is still untested**: the stue TV
+  was powered off at the time, so no bridge exists for it and its session row still carries the stale
+  `SupportsMediaControl: false`. It should flip the next time the TV connects — worth a glance.
+
+Acceptance 4 and 5 hold in CI against the tightened mock. Open question 2 stays open with its lean,
+now observable either way.
 
 ## What is wrong
 
