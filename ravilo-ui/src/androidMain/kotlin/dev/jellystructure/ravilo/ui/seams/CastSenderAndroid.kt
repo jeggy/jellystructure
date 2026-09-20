@@ -195,9 +195,13 @@ class CastSenderAndroid(private val appContext: Context) : CastSender {
         val ended = event == "ended" || (ms != null && ms.playerState == MediaStatus.PLAYER_STATE_IDLE && ms.idleReason == MediaStatus.IDLE_REASON_FINISHED)
         val active = ms?.activeTrackIds?.toSet() ?: emptySet()
         val subs = said?.subtitleTracks ?: emptyList()
+        // R285 — an active CAF text track is the selection; with none active, a burned-in subtitle
+        // (which has no CAF track at all) is — and only the receiver can know that. Audio is never a
+        // CAF track on an HLS cast, so the receiver's word is the only word.
         val selectedSub = subs.indexOfFirst { it.trackId != null && it.trackId in active }
+            .takeIf { it >= 0 } ?: said?.selectedSub?.takeIf { isBurnIn(subs.getOrNull(it)) } ?: -1
         val audios = said?.audioTracks ?: emptyList()
-        val selectedAudio = audios.indexOfFirst { it.trackId != null && it.trackId in active }.coerceAtLeast(0)
+        val selectedAudio = said?.selectedAudio ?: 0
         _status.value = prev.copy(
             itemId = said?.itemId ?: prev.itemId,
             title = said?.title ?: meta?.getString(MediaMetadata.KEY_TITLE) ?: prev.title,
@@ -276,13 +280,33 @@ class CastSenderAndroid(private val appContext: Context) : CastSender {
         session?.remoteMediaClient?.seek(com.google.android.gms.cast.MediaSeekOptions.Builder().setPosition(positionMs.coerceAtLeast(0)).build())
     }
     override fun stop() = onMain { castContext.sessionManager.endCurrentSession(true) }
+    /** R285 — a listed subtitle with no CAF Track behind it is a burn-in (PGS) candidate. */
+    private fun isBurnIn(track: dev.jellystructure.shared.tv.CastTrack?): Boolean {
+        val id = track?.trackId ?: return false
+        return session?.remoteMediaClient?.mediaInfo?.mediaTracks?.none { it.id == id } ?: false
+    }
+
+    private fun command(type: String, index: Int) =
+        send(json.encodeToString(dev.jellystructure.shared.tv.CastCommand.serializer(), dev.jellystructure.shared.tv.CastCommand(type, index = index)))
+
     override fun selectSubtitle(trackId: Long?) = onMain {
         val rmc = session?.remoteMediaClient ?: return@onMain
+        // R285 (FR-R285-4) — CAF can only switch between text tracks. Picking a burn-in, or picking
+        // ANYTHING (Off included) while one is burned in, needs the receiver to restream — so it goes
+        // to the receiver as a position in its own list. Plain text-to-text stays CAF, which is also
+        // what keeps this sender working against a receiver that predates the command.
+        val subs = receiverSaid?.subtitleTracks ?: emptyList()
+        val target = subs.indexOfFirst { it.trackId == trackId }
+        val burnedNow = isBurnIn(subs.getOrNull(receiverSaid?.selectedSub ?: -1))
+        if (burnedNow || isBurnIn(subs.getOrNull(target))) { command("subtitle", if (trackId == null) -1 else target); return@onMain }
         val keepAudio = rmc.mediaStatus?.activeTrackIds?.filter { id -> rmc.mediaInfo?.mediaTracks?.any { it.id == id && it.type == MediaTrack.TYPE_AUDIO } == true } ?: emptyList()
         rmc.setActiveMediaTracks((keepAudio + listOfNotNull(trackId)).toLongArray())
     }
     override fun selectAudio(trackId: Long?) = onMain {
         val rmc = session?.remoteMediaClient ?: return@onMain
+        // R285 (FR-R285-4) — an HLS cast carries one audio track: changing it is the receiver's restream.
+        val position = receiverSaid?.audioTracks?.indexOfFirst { it.trackId != null && it.trackId == trackId } ?: -1
+        if (position >= 0 && rmc.mediaInfo?.mediaTracks?.none { it.id == trackId } != false) { command("audio", position); return@onMain }
         val keepText = rmc.mediaStatus?.activeTrackIds?.filter { id -> rmc.mediaInfo?.mediaTracks?.any { it.id == id && it.type == MediaTrack.TYPE_TEXT } == true } ?: emptyList()
         rmc.setActiveMediaTracks((keepText + listOfNotNull(trackId)).toLongArray())
     }

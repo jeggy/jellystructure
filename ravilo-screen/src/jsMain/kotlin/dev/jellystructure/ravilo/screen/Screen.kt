@@ -18,6 +18,14 @@ import dev.jellystructure.shared.tv.ScreenTrack
 import dev.jellystructure.shared.tv.StreamTicket
 import dev.jellystructure.shared.tv.TvApiClient
 import dev.jellystructure.shared.tv.TvApiError
+import dev.jellystructure.shared.tv.ReceiverSubPick
+import dev.jellystructure.shared.tv.VttCue
+import dev.jellystructure.shared.tv.activeCueText
+import dev.jellystructure.shared.tv.parseVtt
+import dev.jellystructure.shared.tv.receiverSelectedAudio
+import dev.jellystructure.shared.tv.receiverSelectedSub
+import dev.jellystructure.shared.tv.receiverSubPick
+import dev.jellystructure.shared.tv.receiverSubtitles
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.js.Js
 import io.ktor.client.plugins.websocket.WebSockets
@@ -93,6 +101,15 @@ private class Screen(private val serverUrl: String) {
     private var selectedSub = -1
     private var subSize = "M"
     private var ticket: StreamTicket? = null
+    // R285 (FR-R285-3) — the cues of the text subtitle being drawn (empty = none), and a generation
+    // counter so a slow VTT fetch that finishes after the viewer picked something else is discarded.
+    private val http = HttpClient(Js)   // subtitle files only; the API has its own client
+    private var cues: List<VttCue> = emptyList()
+    private var cueGeneration = 0
+    private var shownCue: String? = null
+    // R285 (FR-R285-2) — a restream reopens the stream, and AVPlay/<video> start playing on open; a
+    // viewer who changed a track while paused stays paused.
+    private var pauseOnNextPlaying = false
     private var overlayJob: Job? = null
 
     // ── screens ──
@@ -110,7 +127,10 @@ private class Screen(private val serverUrl: String) {
         backend.setListener(object : MediaBackendListener {
             override fun onBufferingStart() { buffering = true; if (loaded) show("buffering"); sendStatus() }
             override fun onBufferingComplete() { buffering = false; if (loaded) show(); sendStatus() }
-            override fun onPlaying() { playing = true; buffering = false; loaded = true; show(); sendStatus() }
+            override fun onPlaying() {
+                if (pauseOnNextPlaying) { pauseOnNextPlaying = false; backend.pause(); return }
+                playing = true; buffering = false; loaded = true; show(); sendStatus()
+            }
             override fun onPaused() { playing = false; flashOverlay(); sendStatus() }
             override fun onStreamCompleted() { onFinished() }
             override fun onError(detail: String) { console.error("Ravilo screen: backend error: $detail"); failLoad() }
@@ -123,10 +143,12 @@ private class Screen(private val serverUrl: String) {
         GlobalScope.launch { pairingLoop() }
         GlobalScope.launch { eventLoop() }
         GlobalScope.launch { tickLoop() }
+        GlobalScope.launch { cueLoop() }
     }
 
     private fun idle() {
         loaded = false; playing = false; buffering = false; itemId = null; title = null; kicker = null; artUrl = null; ticket = null
+        showSubtitle(-1)
         el("idle-sentence").textContent = ReceiverStrings.t("cast.ready")
         // R269 (FR-R269-6) — a quiet line naming the configured server; the only way a household can see
         // a TV is pointed at a server that has since moved.
@@ -236,8 +258,10 @@ private class Screen(private val serverUrl: String) {
         show("loading")
         val t = negotiate(env.jellyfinId) ?: return
         ticket = t
-        selectedAudio = 0
-        selectedSub = t.subtitles.indexOfFirst { it.isDefault }
+        selectedAudio = receiverSelectedAudio(t)
+        // R285 — positions in receiverSubtitles(), the list the remote is shown; this used to index
+        // the ticket's raw list, which stops matching the moment a ticket interleaves PGS and text.
+        showSubtitle(receiverSubtitles(t).indexOfFirst { it.isDefault && it.url != null })
         loaded = true
         playing = false
         lastProgressAt = nowMs()
@@ -312,22 +336,39 @@ private class Screen(private val serverUrl: String) {
                 backend.seekTo(pos.coerceAtLeast(0))
                 flashOverlay()
             }
-            "seek_relative" -> {
+            "skip", "seek_relative" -> {   // R285 — 236's name is `skip {delta_ms}`; see the note on "set_audio" below
                 val delta = args?.get("delta_ms")?.jsonPrimitive?.longOrNull ?: return
                 backend.seekTo((backend.positionMs() + delta).coerceAtLeast(0))
                 flashOverlay()
             }
-            "audio_track" -> {
+            // R285 (FR-R285-2) — an HLS stream carries ONE audio track and no picture subtitles, so
+            // `backend.selectAudioTrack/selectSubtitleTrack` had nothing to select: both commands were
+            // accepted, reported back as applied, and changed nothing. Audio and PGS are a restream;
+            // text is drawn here (FR-R285-3).
+            //
+            // R285 — and the NAMES: phase 236 defines `set_audio {index}`, `set_subtitle {index|null}`,
+            // `set_subtitle_size`, `skip {delta_ms}`, and RemoteRoutes forwards exactly those. This
+            // `when` matched `audio_track`/`subtitle_track`/`sub_size`/`seek_relative`, which nothing
+            // sends, so every one of them fell to `else -> return`: no phone has ever changed a track
+            // or a caption size on this app. The old names stay as aliases; they cost nothing.
+            "set_audio", "audio_track" -> {
                 val idx = args?.get("index")?.jsonPrimitive?.intOrNull ?: return
-                selectedAudio = idx
-                backend.selectAudioTrack(idx)
+                val wanted = ticket?.audio?.getOrNull(idx) ?: return
+                if (wanted.index == ticket?.audioStreamIndex) return
+                GlobalScope.launch { restream(ticket?.burnedSubtitleIndex ?: -1, wanted.index, thenShow = selectedSub) }
+                return
             }
-            "subtitle_track" -> {
-                val idx = args?.get("index")?.jsonPrimitive?.intOrNull ?: return
-                selectedSub = idx
-                backend.selectSubtitleTrack(idx)
+            "set_subtitle", "subtitle_track" -> {
+                val idx = args?.get("index")?.jsonPrimitive?.intOrNull ?: -1   // 236: a null index is Off
+                when (val pick = receiverSubPick(ticket, idx)) {
+                    ReceiverSubPick.Nothing -> return
+                    is ReceiverSubPick.Burn -> { GlobalScope.launch { restream(pick.streamIndex, ticket?.audioStreamIndex, thenShow = -1) }; return }
+                    is ReceiverSubPick.Text ->
+                        if (pick.unburnFirst) { GlobalScope.launch { restream(-1, ticket?.audioStreamIndex, thenShow = idx) }; return }
+                        else showSubtitle(idx)
+                }
             }
-            "sub_size" -> subSize = args?.get("size")?.jsonPrimitive?.contentOrNull ?: subSize
+            "set_subtitle_size", "sub_size" -> { subSize = args?.get("size")?.jsonPrimitive?.contentOrNull ?: subSize; applySubSize() }
             else -> return
         }
         sendStatus()
@@ -411,6 +452,60 @@ private class Screen(private val serverUrl: String) {
         overlayJob = GlobalScope.launch { delay(3_000); if (playing) el("overlay").classList.remove("on") }
     }
 
+    // ── R285: track changes and drawn subtitles ──
+
+    /**
+     * FR-R285-2 — the one restream path: the same item at the current position with [subIndex]
+     * burned in (negative = none) and [audioIndex] carried. Keeps play/pause. A failure leaves the
+     * running stream alone — a track change that did not happen is better than a player that stopped.
+     */
+    private suspend fun restream(subIndex: Int, audioIndex: Int?, thenShow: Int) {
+        val id = itemId ?: return
+        val pos = backend.positionMs()
+        val wasPlaying = playing
+        val t = runCatching { api.restream(id, subIndex, pos, backend.capabilities(), audioIndex) }.getOrNull() ?: run { sendStatus(); return }
+        if (itemId != id) return                       // the viewer moved on while we were negotiating
+        ticket = t
+        selectedAudio = receiverSelectedAudio(t)
+        showSubtitle(if (t.burnedSubtitleIndex != null) -1 else thenShow)   // never draw over a burn-in
+        pauseOnNextPlaying = !wasPlaying
+        backend.close()
+        backend.open(t.hlsUrl ?: "", pos)
+        sendStatus()
+    }
+
+    /** FR-R285-3 — draw text subtitle [index] of [receiverSubtitles] (anything else = none). */
+    private fun showSubtitle(index: Int) {
+        val url = receiverSubtitles(ticket).getOrNull(index)?.takeIf { it.deliveryMethod != "encode" }?.url
+        selectedSub = if (url != null) index else -1
+        cues = emptyList()
+        val generation = ++cueGeneration
+        applySubSize()
+        if (url == null) return
+        GlobalScope.launch {
+            val body = runCatching { http.get(url).takeIf { it.status.isSuccess() }?.bodyAsText() }.getOrNull() ?: return@launch
+            if (generation == cueGeneration) cues = parseVtt(body)
+        }
+    }
+
+    private fun applySubSize() {
+        val layer = el("cues")
+        for (size in listOf("s", "m", "l")) layer.classList.toggle("size-$size", subSize.lowercase() == size)
+    }
+
+    /** The playback clock drives the cue layer: AVPlay has no cue events, and one loop serves both backends. */
+    private suspend fun cueLoop() {
+        while (true) {
+            delay(200)
+            val text = if (loaded && cues.isNotEmpty()) activeCueText(cues, backend.positionMs()) else null
+            if (text == shownCue) continue
+            shownCue = text
+            val layer = el("cues")
+            layer.textContent = text.orEmpty()       // textContent, never innerHTML: a subtitle file is untrusted input
+            layer.classList.toggle("on", text != null)
+        }
+    }
+
     // ── screen → backend (FR-236-5: on every change + at least every 5s while loaded) ──
     private fun sendStatus() {
         lastStatusAt = nowMs()
@@ -431,7 +526,8 @@ private class Screen(private val serverUrl: String) {
             audioTracks = t?.let { audioTracksOf(it).map(CastTrack::toScreenTrack) } ?: emptyList(),
             subtitleTracks = t?.let { subtitleTracksOf(it, trackIdBase = 100).map(CastTrack::toScreenTrack) } ?: emptyList(),
             selectedAudio = selectedAudio,
-            selectedSub = selectedSub,
+            // R285 — while a subtitle is burned in, THAT is the selection (R282's rule, on the wire).
+            selectedSub = receiverSelectedSub(t, selectedSub),
             subSize = subSize,
             transcoding = t?.let { !it.directPlay } ?: false,
             sessionUserId = activeUserId,

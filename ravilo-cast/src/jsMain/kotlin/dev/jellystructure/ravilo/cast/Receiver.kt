@@ -11,6 +11,11 @@ import dev.jellystructure.shared.tv.CastEpisode
 import dev.jellystructure.shared.tv.CastLoadData
 import dev.jellystructure.shared.tv.CastReceiverMessage
 import dev.jellystructure.shared.tv.ClientCapabilities
+import dev.jellystructure.shared.tv.ReceiverSubPick
+import dev.jellystructure.shared.tv.receiverSelectedAudio
+import dev.jellystructure.shared.tv.receiverSelectedSub
+import dev.jellystructure.shared.tv.receiverSubPick
+import dev.jellystructure.shared.tv.receiverSubtitles
 import dev.jellystructure.shared.tv.RaviloConfig
 import dev.jellystructure.shared.tv.SkipMode
 import dev.jellystructure.shared.tv.StreamTicket
@@ -60,6 +65,9 @@ private class Receiver {
 
     private var current: CastLoadData? = null
     private var ticket: StreamTicket? = null
+    // R285 (FR-R285-4) — a track change that needs a new stream: set by onCommand, consumed by the
+    // very next LOAD the receiver issues to itself. (burn-in index or -1, audio index, then-show text position)
+    private var pendingRestream: Triple<Int, Int?, Int>? = null
     private var lastProgressAt = 0L
     private var positionMs = 0L
     private var durationMs = 0L
@@ -145,7 +153,12 @@ private class Receiver {
         // which was wrong twice over: `config` is fetched once and cached across casts, so a second
         // viewer casting to the same Chromecast was drawn in the FIRST viewer's language.
         ReceiverStrings.adopt(data.lang, config?.uiLanguage)
-        val t = negotiate(api, data.itemId) ?: return null   // busy/noserver screens already showing
+        // R285 (FR-R285-4) — a reload we asked for ourselves is a restream of the running session, not
+        // a new negotiation. If it fails, keep what is playing: returning null cancels this LOAD only.
+        val restream = pendingRestream.also { pendingRestream = null }
+        val t = if (restream != null) {
+            runCatching { api.restream(data.itemId, restream.first, data.positionMs ?: positionMs, capabilities(), restream.second) }.getOrNull() ?: return null
+        } else negotiate(api, data.itemId) ?: return null   // busy/noserver screens already showing
         ticket = t
         val messages = cast.framework.messages
         request.media.contentId = t.hlsUrl
@@ -154,7 +167,9 @@ private class Receiver {
         request.media.streamType = messages.StreamType.BUFFERED
         val tracks = js("[]")
         var defaultSub: Int? = null
-        t.subtitles.filter { it.url != null && it.deliveryMethod != "encode" }.forEachIndexed { i, sub ->
+        // receiverSubtitles() lists text first, so a text track's position — and its CAF id — is what
+        // it always was; the appended burn-in candidates get no CAF Track (there is no file to load).
+        receiverSubtitles(t).filter { it.deliveryMethod != "encode" }.forEachIndexed { i, sub ->
             val id = 100 + i
             val track = js("new cast.framework.messages.Track(0, 'TEXT')")
             track.trackId = id
@@ -168,6 +183,10 @@ private class Receiver {
             tracks.push(track)
             if (sub.isDefault && defaultSub == null) defaultSub = id
         }
+        // R282's invariant on a Chromecast: a burned-in subtitle is the only subtitle. And after an
+        // un-burn (or an audio change) the text track the viewer had — or just picked — comes back.
+        if (t.burnedSubtitleIndex != null) defaultSub = null
+        else if (restream != null) defaultSub = restream.third.takeIf { it >= 0 }?.let { 100 + it }
         request.media.tracks = tracks
         request.media.textTrackStyle = textStyle()
         request.media.metadata = request.media.metadata ?: js("new cast.framework.messages.GenericMediaMetadata()")
@@ -175,9 +194,11 @@ private class Receiver {
         request.media.metadata.subtitle = data.kicker ?: ""
         if (defaultSub != null) { val active = js("[]"); active.push(defaultSub); request.activeTrackIds = active }
         request.currentTime = ((data.positionMs ?: t.startPositionMs) / 1000.0)
-        request.autoplay = true
+        // R285 — a track change made while paused stays paused; every other load autoplays, as before.
+        val keepPaused = restream != null && paused
+        request.autoplay = !keepPaused
         positionMs = data.positionMs ?: t.startPositionMs
-        paused = false
+        paused = keepPaused
         sendStatus()
         return request
     }
@@ -203,6 +224,10 @@ private class Receiver {
             audioCodecs = listOf("aac", "mp3", "opus", "ac3", "eac3"),
             maxAudioChannels = 6,
             hlsOnly = true,
+            // R285 (FR-R285-5) / 253 — CAF plays fMP4 HLS, and `hevc` here is this device's own answer
+            // to canDisplayType('video/mp4', hev1…): fMP4-HEVC is exactly what was probed. Without this
+            // every HEVC title was re-encoded to h264 for a stick that had just said it decodes HEVC.
+            hlsHevc = hevc,
             supportsHdr10 = hdr10,
             supportsHlg = hdr10,
             supportsDolbyVision = false,
@@ -367,7 +392,47 @@ private class Receiver {
             "nextup_cancel" -> cancelNextUp()
             "nextup_play" -> { nextUpJob?.cancel(); nextUpJob = null; el("nextup").classList.remove("on"); loadNext() }
             "status" -> sendStatus()
+            // R285 (FR-R285-4) — both were named in CastCommand's own doc and handled nowhere. An HLS
+            // cast carries one audio track and no picture subtitles, so both are a restream.
+            "audio" -> {
+                val wanted = ticket?.audio?.getOrNull(cmd.index ?: return) ?: return
+                if (wanted.index == ticket?.audioStreamIndex) return
+                reload(ticket?.burnedSubtitleIndex ?: -1, wanted.index, thenShow = activeTextPosition())
+            }
+            "subtitle" -> when (val pick = receiverSubPick(ticket, cmd.index ?: -1)) {
+                ReceiverSubPick.Nothing -> Unit
+                is ReceiverSubPick.Burn -> reload(pick.streamIndex, ticket?.audioStreamIndex, thenShow = -1)
+                is ReceiverSubPick.Text ->
+                    if (pick.unburnFirst) reload(-1, ticket?.audioStreamIndex, thenShow = cmd.index ?: -1)
+                    else { setActiveText(cmd.index ?: -1); sendStatus() }
+            }
         }
+    }
+
+    /** Position (in receiverSubtitles) of the CAF text track showing now; -1 = none. Ids are 100 + position. */
+    private fun activeTextPosition(): Int = runCatching {
+        val ids = playerManager.getTextTracksManager().getActiveIds()
+        if (ids != null && (ids.length as Int) > 0) (ids[0] as Int) - 100 else -1
+    }.getOrDefault(-1)
+
+    private fun setActiveText(position: Int) {
+        runCatching {
+            val ids = js("[]"); if (position >= 0) ids.push(100 + position)
+            playerManager.getTextTracksManager().setActiveByIds(ids)
+        }
+    }
+
+    /** R285 (FR-R285-4) — re-LOAD the running item at the current position; [intercept] turns it into a restream. */
+    private fun reload(subIndex: Int, audioIndex: Int?, thenShow: Int) {
+        val d = current ?: return
+        pendingRestream = Triple(subIndex, audioIndex, thenShow)
+        val pos = runCatching { ((playerManager.getCurrentTimeSec() as Double) * 1000).toLong() }.getOrDefault(positionMs)
+        val req = js("new cast.framework.messages.LoadRequestData()")
+        req.media = js("new cast.framework.messages.MediaInformation()")
+        req.customData = JSON.parse(json.encodeToString(CastLoadData.serializer(), d.copy(positionMs = pos, code = "")))
+        req.media.customData = req.customData
+        req.autoplay = !paused
+        playerManager.load(req)
     }
 
     // ── receiver → phone ──
@@ -375,12 +440,14 @@ private class Receiver {
         val d = current ?: return
         val t = ticket
         val subs = subtitleTracksOf(t, trackIdBase = 100)
-        val audios = audioTracksOf(t)
+        val audios = audioTracksOf(t, trackIdBase = 200)   // R285 — a handle for the sender, not a CAF id
         val active: dynamic = runCatching { playerManager.getMediaInformation()?.let { playerManager.getPlayerState(); playerManager.getStats() } }.getOrNull()
         send(CastReceiverMessage(
             type = "status", itemId = d.itemId, title = d.title, kicker = d.kicker, artUrl = d.artUrl,
             hasNext = nextEpisode() != null, audioTracks = audios, subtitleTracks = subs,
-            selectedAudio = 0, selectedSub = subs.indexOfFirst { it.isDefault }, subSize = subSize, receiverId = receiverId,
+            // R285 — facts, not constants: these were `0` and "whichever track is flagged default",
+            // whatever was actually playing. The burned-in track IS the selection while one is burned in.
+            selectedAudio = receiverSelectedAudio(t), selectedSub = receiverSelectedSub(t, activeTextPosition()), subSize = subSize, receiverId = receiverId,
             transcoding = t?.let { !it.directPlay },
         ))
     }

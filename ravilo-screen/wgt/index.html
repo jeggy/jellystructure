@@ -37,6 +37,15 @@
     #setup button { margin-top: 22px; font-size: 20px; font-weight: 700; padding: 14px 40px; border-radius: 999px; border: none; background: linear-gradient(90deg, var(--accent), var(--accent2)); color: #fff; cursor: pointer; }
     #setupHint { font-size: 16px; color: var(--ink-dim); margin-top: 16px; max-width: 480px; }
     /* paused / seeked overlay */
+    /* R285 (FR-R285-3) — drawn text subtitles. Above the video, BELOW the chrome (#overlay, z 2) and
+       every full screen, so chrome-up never fights a caption. White on a black outline: R110's caption
+       look, the one the Compose player and ravilo-web already share. Sizes are R244's S/M/L. */
+    #cues { position: fixed; left: 8%; right: 8%; bottom: 7%; z-index: 1; display: none; text-align: center;
+            white-space: pre-line; color: #fff; font-weight: 600; line-height: 1.25; font-size: 46px; pointer-events: none;
+            text-shadow: -2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000, 2px 2px 0 #000, 0 0 8px rgba(0,0,0,.9); }
+    #cues.on { display: block; }
+    #cues.size-s { font-size: 36px; }
+    #cues.size-l { font-size: 58px; }
     #overlay { position: fixed; left: 0; right: 0; bottom: 0; padding: 40px 64px 48px; background: linear-gradient(transparent, rgba(0,0,0,.78)); display: none; z-index: 2; }
     #overlay.on { display: block; }
     #overlay .row { display: flex; align-items: center; gap: 22px; }
@@ -55,6 +64,7 @@
        shared string table, in the household's own language. Nothing here carries English:
        a Danish household used to see "Ready to play from your phone" for the first frame. -->
   <video id="video" playsinline></video>
+  <div id="cues" aria-live="off"></div>
 
   <section id="idle" class="screen on"><div class="mark"></div><div id="idle-sentence" class="sentence"></div><div id="idle-code"></div><div id="idle-server"></div></section>
   <section id="setup" class="screen"><div class="mark"></div><div id="setupTitle" class="title" style="margin-bottom:18px"></div><input id="setupHost" type="text" autocomplete="off" spellcheck="false" placeholder="ravilo.example.com"><button id="setupConnect"></button><div id="setupHint"></div></section>

@@ -7,6 +7,7 @@ import dev.jellystructure.ravilo.i18n.resolveLanguage
 import dev.jellystructure.ravilo.i18n.t as translate
 import dev.jellystructure.shared.tv.CastTrack
 import dev.jellystructure.shared.tv.StreamTicket
+import dev.jellystructure.shared.tv.receiverSubtitles
 import kotlinx.browser.localStorage
 
 /**
@@ -35,12 +36,17 @@ fun hms(ms: Long): String {
  * AVPlay side.
  */
 fun subtitleTracksOf(ticket: StreamTicket?, trackIdBase: Long = 0): List<CastTrack> =
-    ticket?.subtitles?.filter { it.url != null && it.deliveryMethod != "encode" }?.mapIndexed { i, s ->
+    // R285 (FR-R285-1) — text tracks first, then the burn-in (PGS) candidates this list used to drop:
+    // a receiver offered no picture subtitle at all. Order and rule live in :shared's receiverSubtitles().
+    receiverSubtitles(ticket).mapIndexed { i, s ->
         CastTrack(index = i, label = s.label, language = s.language, forced = s.forced, isDefault = s.isDefault, trackId = trackIdBase + i)
-    } ?: emptyList()
+    }
 
-fun audioTracksOf(ticket: StreamTicket?): List<CastTrack> =
-    ticket?.audio?.mapIndexed { i, a -> CastTrack(index = i, label = a.label, language = a.language, isDefault = a.isDefault) } ?: emptyList()
+fun audioTracksOf(ticket: StreamTicket?, trackIdBase: Long? = null): List<CastTrack> =
+    // R285 — index is the position a receiver is addressed by ("audio" command / "audio_track").
+    // [trackIdBase] gives a Cast sender a handle to send back (its remote UI speaks in trackIds); it is
+    // deliberately NOT a CAF track id — an HLS stream has one audio track, there is nothing to activate.
+    ticket?.audio?.mapIndexed { i, a -> CastTrack(index = i, label = a.label, language = a.language, isDefault = a.isDefault, trackId = trackIdBase?.plus(i)) } ?: emptyList()
 
 /**
  * R279 — the receiver's language, and the `localStorage` it remembers it in.
