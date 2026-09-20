@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+# Phase 250 — the three Dockerfiles the e2e job builds (app, ravilo-web, ravilo-screen) must share one
+# BuildKit cache-mount id per toolchain kind, or each build downloads the same ~600 MB Gradle
+# distribution and Kotlin/Native toolchain from scratch.
+#
+# Measured live on CI run 35448419659: `ci / e2e` took 34 minutes, of which the Playwright run itself
+# was 33.7 seconds. All three builds independently downloaded gradle-9.2.1-bin.zip and the Konan LLVM
+# + sysroot, back to back, in one job — because BuildKit shares a cache mount ONLY when the id matches
+# and each Dockerfile used its own suffixed id (gradle-jellystructure / gradle-ravilo-web / ...).
+#
+# This fence is the mechanical form of FR-250-1: no per-project suffix may come back.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+DOCKERFILES=(Dockerfile ravilo-web/Dockerfile ravilo-screen/Dockerfile)
+ALLOWED_IDS='gradle-shared|konan-shared|npm-shared'
+fail=0
+
+for f in "${DOCKERFILES[@]}"; do
+  [ -f "$f" ] || { echo "MISSING: $f (phase 250 fence expects it)"; fail=1; continue; }
+  # Every cache mount in these files must carry an explicit id, and that id must be a shared one.
+  while IFS= read -r line; do
+    case "$line" in
+      *"type=cache"*) ;;
+      *) continue ;;
+    esac
+    if ! grep -qE 'type=cache,id=' <<<"$line"; then
+      echo "$f: cache mount with no explicit id (an anonymous mount is per-target, never shared):"
+      echo "    $line"
+      fail=1
+      continue
+    fi
+    id=$(sed -nE 's/.*type=cache,id=([A-Za-z0-9_.-]+).*/\1/p' <<<"$line")
+    if ! grep -qE "^($ALLOWED_IDS)$" <<<"$id"; then
+      echo "$f: cache-mount id '$id' is not shared across the three e2e images (phase 250 FR-250-1)."
+      echo "    expected one of: gradle-shared, konan-shared, npm-shared"
+      fail=1
+    fi
+  done < "$f"
+done
+
+if [ "$fail" -ne 0 ]; then
+  echo
+  echo "FAILED: see specs/requirements/phase-250-e2e-docker-builds-share-one-toolchain-cache.md"
+  exit 1
+fi
+
+echo "OK: all cache mounts in ${#DOCKERFILES[@]} Dockerfiles use shared toolchain ids."

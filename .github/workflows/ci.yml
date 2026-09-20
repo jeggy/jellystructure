@@ -33,6 +33,8 @@ jobs:
         run: ./scripts/check-css-scoping.sh
       - name: Design-sync-fragile CSS
         run: ./scripts/check-mobile-css.sh
+      - name: Shared Docker toolchain cache ids
+        run: ./scripts/check-docker-cache-ids.sh
 
   # ── Backend unit tests (Kotlin/Native). 342 tests that CI had never run before 231. ──
   unit:

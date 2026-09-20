@@ -2,8 +2,16 @@
 
 ## Status
 
-`Planned` — written 2026-09-19, **not built: owner asked for this spec now, the fix later.** Measured
+`✓ Built` 2026-09-20 — written 2026-09-19 ("the spec now, the fix later"), built the next day. Measured
 against a real CI run (`35448419659`), not guessed.
+
+**Build note.** All 24 cache mounts across the three Dockerfiles now carry `gradle-shared` /
+`konan-shared` / `npm-shared`. The mechanical form of FR-250-1 is a new fence,
+`scripts/check-docker-cache-ids.sh`, run by `ci / checks` beside the other three: it rejects any
+per-project suffix coming back **and** any cache mount with no explicit `id=` at all (an anonymous
+mount is per-target, so it is the same bug spelled differently). Verified by breaking one id on
+purpose and watching the fence fail. FR-250-2's measurement — the real CI run showing one download
+instead of three — is recorded below once the first cold-cache run lands.
 
 ## What is wrong
 
