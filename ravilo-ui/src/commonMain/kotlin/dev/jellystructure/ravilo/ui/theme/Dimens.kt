@@ -37,9 +37,15 @@ object RaviloDimens {
      * reads this value rather than repeating a number. A phone value wrong by one bar is exactly how
      * a heading ends up underneath one, which this project has now paid for twice (R257 FR-R257-5 and
      * R259 FR-R259-2). Excludes the navigation-bar / home-indicator inset, which is applied
-     * separately by `safeDrawing`.
+     * separately by `safeAreaPadding()`.
+     *
+     * R274 (FR-R274-1) — **the whole bar, hairline included**, and big enough for what it draws. At
+     * 56 dp it was one dp *shorter* than its own cell (8 top + 32 pill + 2 + ~15 label), so the label
+     * sat flush against — in fact just past — the bar's bottom edge. The mockup's geometry
+     * (`design/ravilo/Ravilo Mobile.html`, `.bnav`/`.bn`: a hairline, 9 px above the pill, a 56 px
+     * item centring its content) is what this now follows.
      */
-    val bottomNavHeight = 56.dp
+    val bottomNavHeight = 68.dp
     val screenPadH    = 48.dp   // left/right padding on all screens
     val trackPadV     = 20.dp   // LazyRow contentPadding top/bottom (also covers scale-overflow)
     val itemSpacing   = 16.dp   // gap between tiles / channel cards / cast circles

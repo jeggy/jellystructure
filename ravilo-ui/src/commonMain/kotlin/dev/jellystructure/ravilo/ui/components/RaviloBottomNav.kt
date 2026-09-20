@@ -90,9 +90,12 @@ fun RaviloBottomNav(
             .background(colors.surface),
     ) {
         // No dedicated hairline token in the palette; a low-alpha ink is the idiom the rest of
-            // the app uses for a divider, and it reads correctly in all three skins.
-            Box(Modifier.fillMaxWidth().height(1.dp).background(colors.textDim.copy(alpha = 0.25f)))
-        Box(Modifier.fillMaxWidth().height(RaviloDimens.bottomNavHeight)) {
+        // the app uses for a divider, and it reads correctly in all three skins.
+        Box(Modifier.fillMaxWidth().height(HAIRLINE).background(colors.textDim.copy(alpha = 0.25f)))
+        // R274 (FR-R274-1) — bottomNavHeight is the WHOLE bar, so the row of items gets what is left
+        // after the hairline. It used to be the row's own height while the token was also what
+        // content offset by, which is how the bar ended up one dp shorter than the cell inside it.
+        Box(Modifier.fillMaxWidth().height(RaviloDimens.bottomNavHeight - HAIRLINE)) {
             // The sliding pill, drawn under the items so an item's own icon and label sit on top of it.
             BoxWithItemWidth { itemWidth ->
                 val pillX by animateDpAsState(
@@ -143,7 +146,11 @@ private fun BottomNavCell(
                 indication = null,
                 onClick = onClick,
             )
-            .padding(top = 8.dp),
+            // R274 (FR-R274-1) — the top padding IS PILL_TOP, because it is the same edge: the pill is drawn in the parent Box, the glyph in this cell, and they line up
+            // only while the two agree. The bottom padding is the point of the phase — the label used
+            // to end at the bar's own edge, so on a phone whose gesture inset the keyboard had
+            // subsumed it ended at the keys.
+            .padding(top = PILL_TOP, bottom = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Box(Modifier.height(PILL_HEIGHT), contentAlignment = Alignment.Center) {
@@ -154,7 +161,7 @@ private fun BottomNavCell(
                 else -> BottomNavGlyph(item, if (isSelected) colors.onAccent else colors.textSecondary)
             }
         }
-        Spacer(Modifier.height(2.dp))
+        Spacer(Modifier.height(3.dp))
         Text(
             text = bottomNavLabel(item),
             color = if (isSelected) colors.text else colors.textSecondary,
@@ -229,5 +236,7 @@ private fun BoxWithItemWidth(content: @Composable (Dp) -> Unit) {
 
 private val PILL_WIDTH = 56.dp
 private val PILL_HEIGHT = 32.dp
-private val PILL_TOP = 8.dp
+/** Also the cell's top padding — see [BottomNavCell]. Mirrors the mockup's `.bnav { padding-top: 9px }`. */
+private val PILL_TOP = 9.dp
+private val HAIRLINE = 1.dp
 private const val PILL_SLIDE_MS = 180

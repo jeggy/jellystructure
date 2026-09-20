@@ -53,6 +53,7 @@ import dev.jellystructure.ravilo.ui.seams.ActiveCastSender
 import dev.jellystructure.ravilo.ui.seams.CastLinkState
 import dev.jellystructure.ravilo.ui.seams.PlatformCastButton
 import dev.jellystructure.ravilo.ui.seams.RemoteImage
+import dev.jellystructure.ravilo.ui.seams.safeAreaPadding
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import dev.jellystructure.ravilo.ui.theme.Sora
 import dev.jellystructure.shared.tv.CastCommand
@@ -244,7 +245,11 @@ fun CastMiniBar(onOpen: () -> Unit) {
     AnimatedVisibility(visible = visible, enter = slideInVertically { it } + fadeIn(tween(180)), exit = slideOutVertically { it } + fadeOut(tween(160))) {
         val s = st ?: return@AnimatedVisibility
         Column(
-            Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.safeDrawing).padding(horizontal = 12.dp, vertical = 8.dp)
+            // R274 (FR-R274-4) — the seam with the IME excluded, not plain safeDrawing: the mini bar
+            // docks above the nav bar (FR-R267-8) and the pair has to move as one block, so when the
+            // keyboard covers the bar it covers this too. safeDrawing also tracks live bar VISIBILITY,
+            // which is what R261 FR-R261-5 replaced everywhere else.
+            Modifier.fillMaxWidth().safeAreaPadding(includeIme = false).padding(horizontal = 12.dp, vertical = 8.dp)
                 .clip(RoundedCornerShape(12.dp)).background(Color(0xFF0E1119).copy(alpha = 0.97f))
                 .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onOpen),
         ) {

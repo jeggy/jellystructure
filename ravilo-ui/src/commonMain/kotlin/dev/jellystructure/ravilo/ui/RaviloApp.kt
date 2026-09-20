@@ -790,7 +790,10 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
             val navBarInset = if (handset && bottomItemOf(dest) != null) RaviloDimens.bottomNavHeight else 0.dp
             Box(
                 modifier = if (playingFullscreen) Modifier.fillMaxSize()
-                else Modifier.fillMaxSize().safeAreaPadding().padding(bottom = navBarInset),
+                // R274 (FR-R274-3) — the bar's height goes INTO the seam, not after it: the result is
+                // max(ime, systemBars + bar), so a keyboard-up page ends at the keys rather than 68 dp
+                // above them, and a keyboard-down page still clears the gesture inset AND the bar.
+                else Modifier.fillMaxSize().safeAreaPadding(plusBottom = navBarInset),
             ) {
             when (dest) {
             is Dest.ProfilePicker -> {
@@ -1424,7 +1427,11 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
         // that disappears while you read a row is a bar you have to go looking for.
         val bottomItem = bottomItemOf(dest)
         if (handset && bottomItem != null) {
-            Box(Modifier.fillMaxSize().safeAreaPadding(), contentAlignment = Alignment.BottomCenter) {
+            // R274 (FR-R274-2) — includeIme = false: the bar is window furniture, so the keyboard is
+            // drawn OVER it. Unioning the IME here is what made it climb onto the keyboard's top edge,
+            // and (since union takes the larger side) swallowed its own navigation-bar inset on the way,
+            // leaving the labels flush against the keys.
+            Box(Modifier.fillMaxSize().safeAreaPadding(includeIme = false), contentAlignment = Alignment.BottomCenter) {
                 RaviloBottomNav(
                     selected = bottomItem,
                     // Same derivation every other AppBar call site uses (ChannelScreen, HomeScreen, …).

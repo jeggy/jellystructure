@@ -5,6 +5,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 
@@ -21,8 +22,13 @@ import kotlinx.coroutines.delay
 // both rare enough that a short poll is indistinguishable from an event in practice, and this avoids
 // building a second bridge mechanism next to the one seams/InstallPrompt.kt already uses for the same
 // reason.
+//
+// R274 — same signature as the Android actual. `includeIme` is inert here: this seam's only source is
+// the DOM probe, which reports env(safe-area-inset-*) and knows nothing about an on-screen keyboard,
+// and the web app draws no bottom bar outside a handset window. `plusBottom` is added to whatever the
+// probe reports, exactly as the Android actual adds it to the system bars.
 @Composable
-actual fun Modifier.safeAreaPadding(): Modifier {
+actual fun Modifier.safeAreaPadding(includeIme: Boolean, plusBottom: Dp): Modifier {
     val insets by produceState(initialValue = readSafeAreaInsetsPx()) {
         while (true) {
             delay(500)
@@ -33,7 +39,7 @@ actual fun Modifier.safeAreaPadding(): Modifier {
         start = insets.left.dp,
         top = insets.top.dp,
         end = insets.right.dp,
-        bottom = insets.bottom.dp,
+        bottom = insets.bottom.dp + plusBottom,
     )
 }
 
