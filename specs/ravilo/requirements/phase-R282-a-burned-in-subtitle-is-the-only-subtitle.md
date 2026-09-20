@@ -80,6 +80,6 @@ R180 FR-RV-ASP1-2: nothing may vary by delivery method.
 
 ## Verification
 - Unit (pure): the derived-selection helper and the pick-decision helper.
-- Compile: `:ravilo-ui` Android + wasmJs. ⚠ `check-player-dex.sh` needs a release APK — not run here.
+- Compile: `:ravilo-ui` Android + wasmJs; `check-player-dex.sh` against a local R8 release APK (run: 227 registers).
 - On device (owner-gated, Pixel 9 debug **and** a release build before the TV): 252's three-step
   script, plus navigate away and back (Back → detail → Play) with English still remembered.
