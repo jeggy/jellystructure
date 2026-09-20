@@ -74,6 +74,37 @@ fun classifyLoadFailure(t: Throwable?): FailureClass {
 fun loadErrorKindOf(t: Throwable?): LoadErrorKind = classifyLoadFailure(t).kind
 
 /**
+ * R280 (FR-R280-5) — the heading for a cause. Pure, and outside the composable, so the mapping and
+ * the existence of every key it names are covered by a test rather than by looking at a screen.
+ */
+fun loadErrorTitleKey(kind: LoadErrorKind): String = when (kind) {
+    LoadErrorKind.REAUTH -> "error.load.reauth.title"
+    LoadErrorKind.FORBIDDEN -> "error.load.forbidden.title"
+    LoadErrorKind.GONE -> "error.load.gone.title"
+    // Reused verbatim: "Couldn't reach the server" is already exactly right for a failed screen load,
+    // and a second key saying the same thing is the drift R279 spent a phase removing.
+    LoadErrorKind.UNREACHABLE -> "error.play.unreachable.title"
+    LoadErrorKind.GENERIC -> "error.generic"
+}
+
+/** R280 (FR-R280-5) — the sentence under the heading, or null where there is no honest next step. */
+fun loadErrorBodyKey(kind: LoadErrorKind): String? = when (kind) {
+    LoadErrorKind.REAUTH -> "error.load.reauth.body"
+    LoadErrorKind.FORBIDDEN -> "error.load.forbidden.body"
+    LoadErrorKind.UNREACHABLE -> "error.play.unreachable.body"
+    // GONE has no next step, and GENERIC has no honest sentence beyond its heading.
+    LoadErrorKind.GONE, LoadErrorKind.GENERIC -> null
+}
+
+/**
+ * R280 (FR-R280-3) — Retry only where trying again can plausibly change the answer. Offering it for
+ * a verdict that is deterministic is the same mistake as R237's retry loop, moved into the viewer's
+ * hands: it is why 401 leaving GENERIC matters, since GENERIC is one of the two that offer it.
+ */
+fun loadErrorOffersRetry(kind: LoadErrorKind): Boolean =
+    kind == LoadErrorKind.UNREACHABLE || kind == LoadErrorKind.GENERIC
+
+/**
  * R280 (FR-R280-3) — one error surface for every failed screen load.
  *
  * Before this, ten render sites drew a store's raw `message`, which is `TvApiError.Http.message` —
@@ -96,23 +127,11 @@ fun LoadErrorState(
     extraAction: (@Composable (FocusRequester) -> Unit)? = null,
 ) {
     val colors = RaviloTheme.colors
-    val title = when (kind) {
-        LoadErrorKind.REAUTH -> "error.load.reauth.title"
-        LoadErrorKind.FORBIDDEN -> "error.load.forbidden.title"
-        LoadErrorKind.GONE -> "error.load.gone.title"
-        LoadErrorKind.UNREACHABLE -> "error.play.unreachable.title"
-        LoadErrorKind.GENERIC -> "error.generic"
-    }
-    val body = when (kind) {
-        LoadErrorKind.REAUTH -> "error.load.reauth.body"
-        LoadErrorKind.FORBIDDEN -> "error.load.forbidden.body"
-        LoadErrorKind.UNREACHABLE -> "error.play.unreachable.body"
-        // GONE has no next step, and GENERIC has no honest sentence beyond its heading.
-        LoadErrorKind.GONE, LoadErrorKind.GENERIC -> null
-    }
+    val title = loadErrorTitleKey(kind)
+    val body = loadErrorBodyKey(kind)
     // FR-R280-3 — the action the cause allows, and only that one. A REAUTH offers the thing that
     // resolves it; a deterministic 403/404 offers the way out rather than a button that re-asks.
-    val showRetry = onRetry != null && (kind == LoadErrorKind.UNREACHABLE || kind == LoadErrorKind.GENERIC)
+    val showRetry = onRetry != null && loadErrorOffersRetry(kind)
     val showSignIn = onSignIn != null && kind == LoadErrorKind.REAUTH
     // Never a dead end: with no cause-appropriate action, Back is drawn so focus has somewhere to land.
     val showBack = onBack != null && !showRetry && !showSignIn
