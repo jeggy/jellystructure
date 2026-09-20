@@ -425,6 +425,32 @@ class JellyfinClient {
         result.getOrDefault(emptyList())
     }
 
+    /**
+     * Phase 251 (FR-251-1) — Jellyfin's lock state for one item, from the shape that actually carries
+     * it.
+     *
+     * [getItem] uses the list shape (`/Items?Ids=…&Fields=…`), and **Jellyfin 12.1 does not send
+     * `LockData`/`LockedFields` there at all**, even when asked for them by name — measured
+     * 2026-09-20 against a fresh 12.1.0 with the lock deliberately set (accepted with 204) and then
+     * read back absent. `GET /Items/{id}?userId=…` returns both unconditionally, with or without a
+     * `Fields` parameter.
+     *
+     * That route needs a user context — it 400s without one (phase 207's finding) — so the caller
+     * passes the server's own admin [userId]. A lock is a property of the item, not of a viewer, so
+     * which user asks does not change the answer.
+     *
+     * Returns null when the call fails, which the caller must treat as **unknown** rather than
+     * "nothing is locked": writing a guessed `false` over a real lock is the defect this phase exists
+     * to fix, and doing it from the error path instead would be the same bug wearing a different hat.
+     */
+    suspend fun getItemLocks(baseUrl: String, token: String, jellyfinId: String, userId: String): JellyfinItem? = runCatching {
+        val url = baseUrl.trimEnd('/') + "/Items/$jellyfinId?userId=${userId.encodeURLParameter()}"
+        httpGet(url) { jellyfinAuth(token) }.bodyOrNull<JellyfinItem>("getItemLocks")
+    }.let { result ->
+        if (result.isFailure) Logger.warn("Jellyfin getItemLocks failed: ${result.exceptionOrNull()?.message}")
+        result.getOrNull()
+    }
+
     suspend fun getItem(baseUrl: String, token: String, jellyfinId: String): JellyfinItem? = runCatching {
         // Fetch via the same list-endpoint shape getItems uses, filtered to one id.
         // Phase 207/208 correction (2026-09-13, verified live against this server's Jellyfin): the

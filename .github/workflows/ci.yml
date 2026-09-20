@@ -69,6 +69,27 @@ jobs:
         env:
           TZ: Europe/Copenhagen
         run: ./gradlew linuxX64Test --no-daemon
+
+      # Phase 240 (FR-240-5) — the live route guard, pointed at a disposable SEEDED Jellyfin.
+      #
+      # It has technically been "in CI" since 231, and it has been returning early the whole time: no
+      # env vars, no server, nothing asserted. That is why the 12.1 upgrade broke three route
+      # behaviours with a green pipeline. Provisioning a container is the difference between a guard
+      # that exists and a guard that runs.
+      #
+      # Seeded, not empty: eight of the eleven route shapes are item-specific and return early
+      # without one, and the startup wizard has to be scripted either way (a fresh Jellyfin issues no
+      # token until it is completed), so the media file is a few extra lines on top of work that was
+      # unavoidable.
+      - name: Live Jellyfin route + model guard
+        run: |
+          set -e
+          eval "$(./scripts/jellyfin-test-server.sh up)"
+          ./scripts/check-jellyfin-models.sh
+          ./gradlew linuxX64Test --no-daemon --tests '*JellyfinLiveRouteGuard*'
+      - name: Tear down the disposable Jellyfin
+        if: always()
+        run: ./scripts/jellyfin-test-server.sh down || true
       - name: Upload test reports
         if: failure()
         uses: actions/upload-artifact@v4

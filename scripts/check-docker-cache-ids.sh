@@ -36,6 +36,17 @@ for f in "${DOCKERFILES[@]}"; do
       echo "    expected one of: gradle-shared, konan-shared, npm-shared"
       fail=1
     fi
+    # A shared id without sharing=locked is worse than a per-project id, not better: BuildKit's
+    # default is sharing=shared (concurrent access ALLOWED), and a plain `docker compose build`
+    # builds targets in parallel, so three Gradle processes then contend on
+    # /root/.gradle/caches/journal-1.lock — whose lock has a TIMEOUT and fails the build rather than
+    # waiting. Measured locally 2026-09-20: "Timeout waiting to lock journal cache … Owner PID: 59".
+    if ! grep -q 'sharing=locked' <<<"$line"; then
+      echo "$f: cache mount '$id' is shared but not sharing=locked:"
+      echo "    $line"
+      echo "    ^ without it, a parallel `docker compose build` fails on Gradle's own journal lock."
+      fail=1
+    fi
   done < "$f"
 done
 

@@ -137,8 +137,15 @@ data class JellyfinItem(
     @SerialName("Path") val path: String? = null,
     @SerialName("ProviderIds") val providerIds: JellyfinProviderIds? = null,
     @SerialName("Type") val type: String,
-    @SerialName("LockData") val lockData: Boolean = false,
-    @SerialName("LockedFields") val lockedFields: List<String> = emptyList(),
+    // Phase 251 (FR-251-2) — NULLABLE on purpose: null means "this payload does not carry the field",
+    // which is a different fact from "Jellyfin says nothing is locked". Jellyfin 12.1 stopped sending
+    // both on the `/Items?Ids=…&Fields=…` list shape (measured 2026-09-20 with the lock deliberately
+    // SET and the request explicitly asking for them), while `GET /Items/{id}?userId=…` still returns
+    // them unconditionally. With a `false`/`emptyList()` default the difference was invisible, so the
+    // product quietly concluded nothing was ever locked — and then wrote that conclusion to its own
+    // database. Every write site must keep the prior value on null.
+    @SerialName("LockData") val lockData: Boolean? = null,
+    @SerialName("LockedFields") val lockedFields: List<String>? = null,
     @SerialName("Tags") val tags: List<String> = emptyList(),
     // The library "date added" (ISO-8601 UTC), e.g. "2021-06-27T18:51:37.0000000Z". Display only as of
     // Phase 108 (JS-owned createdAt/updatedAt now drive "recently added"; scannedAt is the scan timestamp).
@@ -146,6 +153,11 @@ data class JellyfinItem(
     /** Phase 225 (FR-225-3) — Jellyfin's own sort name ("Bear, The" / "bear"), so a title-sorted row files a title where Jellyfin does. */
     @SerialName("SortName") val sortName: String? = null,
     // Phase 108: Jellyfin's own "last updated" timestamp, display only (Overview ▸ Timestamps).
+    // ⚠ Phase 251 (FR-251-3): **Jellyfin 12.1 sends this on no shape at all** — not the list form, not
+    // `GET /Items/{id}?userId=…`, with or without `Fields=DateLastSaved` (measured 2026-09-20). It is
+    // kept declared so that if a future server starts sending it again the value flows through, but
+    // nothing may treat a null here as "never saved": it means "not reported". See
+    // [dev.jellystructure.model.MediaItem.jellyfinUpdatedAt].
     @SerialName("DateLastSaved") val dateLastSaved: String? = null,
     // Phase 114 — set on Episode-type items; used to resolve a new episode back to its parent series
     // for a targeted re-scan (jellystructure has no standalone "episode" ingest path).

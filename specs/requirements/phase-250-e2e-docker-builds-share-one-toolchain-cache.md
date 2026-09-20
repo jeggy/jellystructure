@@ -13,6 +13,25 @@ mount is per-target, so it is the same bug spelled differently). Verified by bre
 purpose and watching the fence fail. FR-250-2's measurement — the real CI run showing one download
 instead of three — is recorded below once the first cold-cache run lands.
 
+**⚠ Correction to FR-250-1, found by running it.** The requirement claimed "BuildKit's own locking on
+a shared cache mount id makes concurrent local `docker compose build` safe too, at worst serializing
+rather than corrupting." **That is wrong.** BuildKit's default is `sharing=shared` — concurrent
+access is *allowed*, not serialized — and a plain `docker compose build` builds targets in parallel.
+Measured locally on the first run after this change: three Gradle processes contended on
+`/root/.gradle/caches/journal-1.lock`, whose lock has a **timeout** and fails the build rather than
+waiting:
+
+```
+> Timeout waiting to lock journal cache (/root/.gradle/caches/journal-1). It is currently in use by
+  another process.  Owner PID: 59  Our PID: 58
+```
+
+So a shared id *without* `sharing=locked` is strictly worse than the per-project ids it replaced. All
+24 mounts now carry `sharing=locked`, which is what the requirement assumed was happening for free,
+and the fence requires it. CI was never exposed to this (`ci.yml` builds the three images in three
+separate sequential steps on purpose), which is precisely why it had to be caught by running the
+local path rather than reasoned about.
+
 ## What is wrong
 
 The `ci / e2e` job builds three images in sequence — `app`, `ravilo-web`, `ravilo-screen` — each its own

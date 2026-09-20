@@ -2,11 +2,55 @@
 
 ## Status
 
-`Planned` — written 2026-09-18 after the 12.1 upgrade audit found that the one test built to catch
-this class of breakage is itself broken on 12.x, **dev-reviewed 2026-09-19 against `main` `dcb97f2c`**
-(see §Dev review at the foot: FR-240-3's existence probe should use a method the route does not
-implement, so it can never execute one), not built. Pair: **241** (the mock
-side of the same gap).
+`✓ Built` 2026-09-20 — written 2026-09-18, dev-reviewed 2026-09-19 against `main` `dcb97f2c`, built
+2026-09-20 **after 238**, which acceptance 2 depends on. Every review item taken, including the one
+that changed the probe technique.
+
+### Build (2026-09-20)
+
+**The guard now runs.** It has technically been "in CI" since 231 and has been returning early the
+whole time — no env vars, no server, nothing asserted. That is why the 12.1 upgrade broke three route
+behaviours with a green pipeline.
+
+- **FR-240-1** — authenticates through `jellyfinAuth` (widened to `internal` by 238; three phases
+  wanted that one word). The test can no longer invent its own credential format, which is what made
+  it report the whole surface as broken when only `X-Emby-Token` had died.
+- **FR-240-2** — a new test opens `/socket` with its own `HttpClient(Curl) { install(WebSockets) }`,
+  mirroring the bridge, because the shared `OutboundHttp` client has no WebSockets plugin (review item
+  3). **Acceptance 2 verified by doing it**: reverting FR-238-1 to `?api_key=` makes exactly this test
+  fail with `WebSocketException`, and nothing else.
+- **FR-240-3, technique changed per review item 1** — the probe is now a **read of a method the route
+  does not implement**, never the route's real method. Measured on the live server (12.1.0,
+  2026-09-20): `GET` on the eleven mutating routes answered **405**, except `/Users/Password` and
+  `/Items/{id}/PlaybackInfo` at **401**, while a nonexistent path answered **404** — so the assertion
+  is **"not 404"**. It needs no credential and cannot mutate anything under any authentication
+  behaviour, which means the guard can now cover **`POST /System/Restart` itself**, a route the
+  product really calls and which the deny-list previously left permanently untested.
+- **FR-240-6** — the deny-list survives as **defence in depth** rather than the mechanism, and is
+  asserted as data so a lifecycle route added to the probe list fails rather than firing.
+- **FR-240-4** — `scripts/check-jellyfin-models.sh`. Parses every `@Serializable` in `auth/Models.kt`
+  (40 classes / 162 `@SerialName` fields — the review's 38 counted differently), fetches one live
+  payload per model, and reports every declared field the server did not send, split into **THROWS**
+  (no default — you find out in minutes) and **SILENT** (default or nullable — no error anywhere,
+  ever). Review item 4's correction is in the script's own header: `ignoreUnknownKeys` hides a
+  **rename**, not an absence.
+  Two things learned by running it. Each probe URL must request the **same `Fields` the product
+  requests**, or the report is nine lines of noise on the first run and muted by the second. And a
+  small `CONDITIONAL_FIELDS` allow-list is needed for fields Jellyfin legitimately omits when there is
+  nothing to report — each entry carrying its reason, because an unexplained exemption is how a real
+  rename gets waved through.
+- **FR-240-5** — `scripts/jellyfin-test-server.sh` provisions a disposable, **seeded** Jellyfin
+  (wizard scripted, one 2-second ffmpeg-generated file, library created, scan awaited) and prints the
+  three env vars. **Open question 1 answers itself, as review item 5 predicted**: a fresh container
+  issues no token until the wizard completes, so the wizard is unavoidable, and once it is scripted
+  the seed is a few more lines — while an unseeded container leaves eight of eleven shapes returning
+  early. `ci / unit` now provisions it, runs both guards, and tears it down with `if: always()`.
+  The container runs as the invoking user, so `down` can actually remove its state directory.
+- **Open question 2 closes as no**, per review item 6.
+
+**It found a live regression on its first real run.** `LockData`, `LockedFields` and `DateLastSaved`
+are no longer sent on the endpoint shape the product uses, silently, with defaults papering over it —
+which is precisely the SILENT bucket FR-240-4 exists for. Written up as phase **251**.
 
 ## What is wrong
 

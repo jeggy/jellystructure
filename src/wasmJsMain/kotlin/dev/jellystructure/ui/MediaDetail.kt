@@ -357,6 +357,14 @@ private fun buildTimestampsCard(item: MediaItem): String {
         (if (item.kind == MediaKind.TV_SHOW)
             "Ravilo's <b>Newly Added</b> rows sort a series by its <b>most-recently-added episode</b> (see Seasons &amp; episodes)."
         else "This is the timestamp Ravilo's <b>Newly Added</b> rows sort by.")
+    // Phase 251 (FR-251-3) — this reads "—" on every title since the Jellyfin 12 upgrade, and an
+    // empty cell reads as "never updated", which is a different claim from "not reported". Jellyfin
+    // 12.1 sends `DateLastSaved` on no endpoint shape at all: not the list form, not
+    // `GET /Items/{id}?userId=…`, with or without an explicit `Fields=DateLastSaved` (measured
+    // 2026-09-20). Say so rather than leaving a blank that looks like a fact.
+    val jellyfinUpdatedHelp = "<b>Jellyfin's own last-saved time.</b> Jellyfin 12 no longer reports " +
+        "this for an item on any endpoint, so it stays empty — that means <i>not reported</i>, not " +
+        "<i>never updated</i>. A value here was recorded by an older Jellyfin."
     return """
     <div class="card" id="ts-card" style="margin-top:16px;">
       <div class="row center"><h4 style="margin:0;">Timestamps</h4><span class="tiny muted" style="margin-left:8px;">when this ${if (item.kind == MediaKind.TV_SHOW) "series" else "title"} was created, updated &amp; scanned — in Jellystructure and in Jellyfin</span></div>
@@ -371,7 +379,7 @@ private fun buildTimestampsCard(item: MediaItem): String {
         <div>
           <div class="ts-h">Jellyfin</div>
           ${tsRow("Created", item.addedAt, first = true)}
-          ${tsRow("Updated", item.jellyfinUpdatedAt)}
+          ${tsRow("Updated", item.jellyfinUpdatedAt, helpTip = jellyfinUpdatedHelp)}
         </div>
       </div>
     </div>"""

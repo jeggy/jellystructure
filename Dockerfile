@@ -50,24 +50,24 @@ COPY design ./design
 # ravilo-web/Dockerfile concurrently doesn't collide on the same shared BuildKit cache storage: two
 # Gradle processes writing the same unnamed /root/.gradle cache hit Gradle's own file lock
 # (journal-1.lock) and one build fails outright. Confirmed live building both images at once.
-RUN --mount=type=cache,id=gradle-shared,target=/root/.gradle \
-    --mount=type=cache,id=konan-shared,target=/root/.konan \
-    --mount=type=cache,id=npm-shared,target=/root/.npm \
+RUN --mount=type=cache,id=gradle-shared,sharing=locked,target=/root/.gradle \
+    --mount=type=cache,id=konan-shared,sharing=locked,target=/root/.konan \
+    --mount=type=cache,id=npm-shared,sharing=locked,target=/root/.npm \
     ./gradlew dependencies --no-daemon 2>/dev/null || true
 
 COPY src ./src
-RUN --mount=type=cache,id=gradle-shared,target=/root/.gradle \
-    --mount=type=cache,id=konan-shared,target=/root/.konan \
-    --mount=type=cache,id=npm-shared,target=/root/.npm \
+RUN --mount=type=cache,id=gradle-shared,sharing=locked,target=/root/.gradle \
+    --mount=type=cache,id=konan-shared,sharing=locked,target=/root/.konan \
+    --mount=type=cache,id=npm-shared,sharing=locked,target=/root/.npm \
     ./gradlew linkReleaseExecutableLinuxX64 --no-daemon
 # R245 — the Chromecast receiver bundle (Kotlin/JS), dropped next to cast-receiver/index.html.
-RUN --mount=type=cache,id=gradle-shared,target=/root/.gradle \
-    --mount=type=cache,id=konan-shared,target=/root/.konan \
-    --mount=type=cache,id=npm-shared,target=/root/.npm \
+RUN --mount=type=cache,id=gradle-shared,sharing=locked,target=/root/.gradle \
+    --mount=type=cache,id=konan-shared,sharing=locked,target=/root/.konan \
+    --mount=type=cache,id=npm-shared,sharing=locked,target=/root/.npm \
     ./gradlew :ravilo-cast:syncCastReceiver --no-daemon
-RUN --mount=type=cache,id=gradle-shared,target=/root/.gradle \
-    --mount=type=cache,id=konan-shared,target=/root/.konan \
-    --mount=type=cache,id=npm-shared,target=/root/.npm \
+RUN --mount=type=cache,id=gradle-shared,sharing=locked,target=/root/.gradle \
+    --mount=type=cache,id=konan-shared,sharing=locked,target=/root/.konan \
+    --mount=type=cache,id=npm-shared,sharing=locked,target=/root/.npm \
     ./gradlew wasmJsBrowserDistribution --no-daemon
 
 FROM debian:bookworm-slim

@@ -673,6 +673,10 @@ class MediaStore(
         // Phase 184: same idea again — an operator's chosen fetch language must survive a fresh scan
         // exactly like the artwork lock and the TMDB match lock do.
         merged = preserveMetadataLanguage(merged, old)
+        // Phase 251 (FR-251-2): the Scanner reads Jellyfin's LIST shape, which on 12.1 does not carry
+        // LockData/LockedFields at all — so a fresh scan item always says "nothing is locked", and
+        // without this guard every scan would write that over whatever was really recorded.
+        merged = preserveJellyfinLockState(merged, old)
         if (existing != null && existing.titlesByLang.isNotEmpty()) {
             merged = merged.copy(titlesByLang = existing.titlesByLang + item.titlesByLang)
         }
@@ -723,6 +727,11 @@ class MediaStore(
         // reset route, and its history revert) — same contract as [respectTmdbMatchLock].
         respectMetadataLanguageLock: Boolean = true,
         respectJsTags: Boolean = true,
+        // Phase 251 (FR-251-2) — defaults to TRUE, i.e. carry the stored lock state forward, because
+        // almost every caller here builds its item from Jellyfin's list shape, which on 12.1 cannot
+        // carry it. Exactly one caller may pass false: `GET /api/media/{id}/jellyfin-locks`, which has
+        // just read the detail shape and therefore genuinely knows the answer.
+        respectJellyfinLocks: Boolean = true,
         // Phase 196 (FR-196-2) — true ONLY when the caller has just re-read this title's files from disk
         // (today: Scanner.syncSeriesEpisodes and the season re-sync). Every other caller here is a
         // metadata write — an NFO stamp, a Jellyfin sync stamp, an artwork fetch, a Sonarr enrichment, a
@@ -740,6 +749,7 @@ class MediaStore(
         if (respectTmdbMatchLock) merged = preserveTmdbMatchLock(merged, existing)
         if (respectMetadataLanguageLock) merged = preserveMetadataLanguage(merged, existing)
         if (respectJsTags) merged = preserveJsTags(merged, existing, jsTagStore.nameSet())
+        if (respectJellyfinLocks) merged = preserveJellyfinLockState(merged, existing)
         merged = merged.copy(episodes = stampEpisodeCreatedAt(merged.episodes, existing?.episodes))
         val (stamped, changed) = stampTimestamps(merged, existing)
         merged = stamped

@@ -6,6 +6,7 @@ import dev.jellystructure.nextRunDelayMs
 import dev.jellystructure.nowEpochSec
 import dev.jellystructure.runTagged
 import dev.jellystructure.auth.JellyfinClient
+import dev.jellystructure.auth.SessionKey
 import dev.jellystructure.auth.JellyfinItem
 import dev.jellystructure.io.FileIo
 import dev.jellystructure.config.ConfigStore
@@ -1551,11 +1552,25 @@ fun Route.mediaRoutes(
                 call.respond(JellyfinLocksResponse(lockData = false, lockedFields = emptyList()))
                 return@get
             }
-            val jItem = jellyfinClient.getItem(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken, jid)
-            val lockData = jItem?.lockData ?: false
-            val lockedFields = jItem?.lockedFields ?: emptyList()
+            // Phase 251 (FR-251-1) — the DETAIL shape, not the list shape. 12.1 does not send
+            // LockData/LockedFields on `/Items?Ids=…&Fields=…` at all, so this route used to answer
+            // "nothing is locked" for every title on the server — and then write that over the truth.
+            val session = runCatching { call.attributes[SessionKey] }.getOrNull()
+            val jItem = session?.jellyfinUserId?.takeIf { it.isNotBlank() }?.let { uid ->
+                jellyfinClient.getItemLocks(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken, jid, uid)
+            }
+            if (jItem?.lockData == null && jItem?.lockedFields == null) {
+                // FR-251-2 — unknown is not false. Report what is stored rather than inventing a
+                // negative answer and persisting it, which is precisely the bug this phase fixes.
+                call.respond(JellyfinLocksResponse(lockData = item.jellyfinLockData, lockedFields = item.jellyfinLockedFields))
+                return@get
+            }
+            val lockData = jItem.lockData ?: false
+            val lockedFields = jItem.lockedFields ?: emptyList()
             val updated = item.copy(jellyfinLockData = lockData, jellyfinLockedFields = lockedFields)
-            store.updateOne(updated)
+            // The one caller allowed to overwrite stored lock state: it has just read the shape that
+            // carries it.
+            store.updateOne(updated, respectJellyfinLocks = false)
             call.respond(JellyfinLocksResponse(lockData = lockData, lockedFields = lockedFields))
         }
 

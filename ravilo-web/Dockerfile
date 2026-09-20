@@ -44,15 +44,15 @@ COPY ravilo-screen ./ravilo-screen
 COPY ravilo-receiver-core ./ravilo-receiver-core
 COPY web-static-server ./web-static-server
 COPY design ./design
-RUN --mount=type=cache,id=gradle-shared,target=/root/.gradle \
-    --mount=type=cache,id=konan-shared,target=/root/.konan \
-    --mount=type=cache,id=npm-shared,target=/root/.npm \
+RUN --mount=type=cache,id=gradle-shared,sharing=locked,target=/root/.gradle \
+    --mount=type=cache,id=konan-shared,sharing=locked,target=/root/.konan \
+    --mount=type=cache,id=npm-shared,sharing=locked,target=/root/.npm \
     ./gradlew :ravilo-web:dependencies --no-daemon 2>/dev/null || true
 
 COPY src ./src
-RUN --mount=type=cache,id=gradle-shared,target=/root/.gradle \
-    --mount=type=cache,id=konan-shared,target=/root/.konan \
-    --mount=type=cache,id=npm-shared,target=/root/.npm \
+RUN --mount=type=cache,id=gradle-shared,sharing=locked,target=/root/.gradle \
+    --mount=type=cache,id=konan-shared,sharing=locked,target=/root/.konan \
+    --mount=type=cache,id=npm-shared,sharing=locked,target=/root/.npm \
     ./gradlew :ravilo-web:wasmJsBrowserDistribution :web-static-server:linkReleaseExecutableLinuxX64 --no-daemon
 
 FROM debian:bookworm-slim

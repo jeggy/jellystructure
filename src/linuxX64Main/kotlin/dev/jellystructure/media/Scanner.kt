@@ -419,9 +419,16 @@ class Scanner(
             scannedAt = epochSeconds(),
             addedAt = jItem.dateCreated?.let { isoToEpochSeconds(it) },
             sortName = jItem.sortName,   // Phase 225 (FR-225-3)
+            // Phase 251 (FR-251-3) — Jellyfin 12.1 sends DateLastSaved on no shape at all, so this
+            // always evaluated to null and overwrote whatever an older Jellyfin had recorded. Left in
+            // place (the field still deserializes if a future server sends it) but no longer written
+            // from a payload that cannot carry it.
             jellyfinUpdatedAt = jItem.dateLastSaved?.let { isoToEpochSeconds(it) },
-            jellyfinLockData = jItem.lockData,
-            jellyfinLockedFields = jItem.lockedFields,
+            // Phase 251 (FR-251-2) — deliberately NOT set here. The Scanner reads Jellyfin's list
+            // shape, which on 12.1 carries neither LockData nor LockedFields, so anything written
+            // from it would be a guess — and the guess it used to make was "nothing is locked",
+            // written over the truth on every scan. MediaStore.preserveJellyfinLockState carries
+            // the stored value forward instead, the same way phase 153 handles nfoWrittenAt.
             tags = jItem.tags,
             titlesByLang = titlesByLang,
             cast = cast,
@@ -505,9 +512,16 @@ class Scanner(
             scannedAt = epochSeconds(),
             addedAt = jItem.dateCreated?.let { isoToEpochSeconds(it) },
             sortName = jItem.sortName,   // Phase 225 (FR-225-3)
+            // Phase 251 (FR-251-3) — Jellyfin 12.1 sends DateLastSaved on no shape at all, so this
+            // always evaluated to null and overwrote whatever an older Jellyfin had recorded. Left in
+            // place (the field still deserializes if a future server sends it) but no longer written
+            // from a payload that cannot carry it.
             jellyfinUpdatedAt = jItem.dateLastSaved?.let { isoToEpochSeconds(it) },
-            jellyfinLockData = jItem.lockData,
-            jellyfinLockedFields = jItem.lockedFields,
+            // Phase 251 (FR-251-2) — deliberately NOT set here. The Scanner reads Jellyfin's list
+            // shape, which on 12.1 carries neither LockData nor LockedFields, so anything written
+            // from it would be a guess — and the guess it used to make was "nothing is locked",
+            // written over the truth on every scan. MediaStore.preserveJellyfinLockState carries
+            // the stored value forward instead, the same way phase 153 handles nfoWrittenAt.
             tags = jItem.tags,
             cast = cast,
             crew = crew,
@@ -800,9 +814,16 @@ class Scanner(
                 scannedAt = epochSeconds(),
                 addedAt = jItem.dateCreated?.let { isoToEpochSeconds(it) },
                 sortName = jItem.sortName,   // Phase 225 (FR-225-3)
-                jellyfinUpdatedAt = jItem.dateLastSaved?.let { isoToEpochSeconds(it) },
-                jellyfinLockData = jItem.lockData,
-                jellyfinLockedFields = jItem.lockedFields,
+                // Phase 251 (FR-251-3) — Jellyfin 12.1 sends DateLastSaved on no shape at all, so this
+            // always evaluated to null and overwrote whatever an older Jellyfin had recorded. Left in
+            // place (the field still deserializes if a future server sends it) but no longer written
+            // from a payload that cannot carry it.
+            jellyfinUpdatedAt = jItem.dateLastSaved?.let { isoToEpochSeconds(it) },
+                // Phase 251 (FR-251-2) — deliberately NOT set here. The Scanner reads Jellyfin's list
+                // shape, which on 12.1 carries neither LockData nor LockedFields, so anything written
+                // from it would be a guess — and the guess it used to make was "nothing is locked",
+                // written over the truth on every scan. MediaStore.preserveJellyfinLockState carries
+                // the stored value forward instead, the same way phase 153 handles nfoWrittenAt.
                 tags = jItem.tags,
                 titlesByLang = mixTitlesByLang,
                 cast = mixCast,
@@ -859,9 +880,16 @@ class Scanner(
             scannedAt = epochSeconds(),
             addedAt = jItem.dateCreated?.let { isoToEpochSeconds(it) },
             sortName = jItem.sortName,   // Phase 225 (FR-225-3)
+            // Phase 251 (FR-251-3) — Jellyfin 12.1 sends DateLastSaved on no shape at all, so this
+            // always evaluated to null and overwrote whatever an older Jellyfin had recorded. Left in
+            // place (the field still deserializes if a future server sends it) but no longer written
+            // from a payload that cannot carry it.
             jellyfinUpdatedAt = jItem.dateLastSaved?.let { isoToEpochSeconds(it) },
-            jellyfinLockData = jItem.lockData,
-            jellyfinLockedFields = jItem.lockedFields,
+            // Phase 251 (FR-251-2) — deliberately NOT set here. The Scanner reads Jellyfin's list
+            // shape, which on 12.1 carries neither LockData nor LockedFields, so anything written
+            // from it would be a guess — and the guess it used to make was "nothing is locked",
+            // written over the truth on every scan. MediaStore.preserveJellyfinLockState carries
+            // the stored value forward instead, the same way phase 153 handles nfoWrittenAt.
             tags = jItem.tags,
             titlesByLang = tvTitlesByLang,
             cast = tvCast,
