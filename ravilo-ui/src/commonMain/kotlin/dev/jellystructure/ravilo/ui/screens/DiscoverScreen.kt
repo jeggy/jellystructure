@@ -158,7 +158,7 @@ fun DiscoverScreen(
                                 val upcomingState by store.state.collectAsState()
                                 when (val s = upcomingState) {
                                     is UpcomingState.Loading -> DiscoverLoading()
-                                    is UpcomingState.Error -> DiscoverError(s.kind)
+                                    is UpcomingState.Error -> DiscoverError(s.kind, onRetry = { store.load() })
                                     is UpcomingState.Loaded -> UpcomingContent(
                                         store = store,
                                         feed = s.feed,
@@ -177,7 +177,7 @@ fun DiscoverScreen(
                                 val requestState by store.state.collectAsState()
                                 when (val s = requestState) {
                                     is DiscoverState.Loading -> DiscoverLoading()
-                                    is DiscoverState.Error -> DiscoverError(s.kind)
+                                    is DiscoverState.Error -> DiscoverError(s.kind, onRetry = { store.load() })
                                     is DiscoverState.Loaded -> RequestContent(
                                         store = store,
                                         data = s.data,
@@ -194,7 +194,7 @@ fun DiscoverScreen(
                             val taxState by taxonomyStore.state.collectAsState()
                             when (val s = taxState) {
                                 is TaxonomyState.Loading -> DiscoverLoading()
-                                is TaxonomyState.Error -> DiscoverError(s.kind)
+                                is TaxonomyState.Error -> DiscoverError(s.kind, onRetry = { taxonomyStore.load() })
                                 is TaxonomyState.Loaded -> TaxonomyContent(
                                     store = taxonomyStore,
                                     facets = s.facets,
