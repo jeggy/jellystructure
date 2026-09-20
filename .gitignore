@@ -53,3 +53,16 @@ backend.log
 .qodana/
 qodana.sarif.json
 qodana-baseline.sarif.json
+
+# Running the e2e stack locally leaves its runtime state in config-test/, written by the app
+# container as root: a scanned database, artwork, the activity log. Only config.toml is tracked (it is
+# the fixture the stack starts from) — everything the run PRODUCES is not, or a local `docker compose
+# -f docker-compose.test.yml up` leaves a dirty tree that is easy to commit by accident.
+config-test/jellystructure.db
+config-test/jellystructure.db-shm
+config-test/jellystructure.db-wal
+config-test/activity-log.json
+config-test/activity-log.json.runs
+config-test/livetv.json
+config-test/artwork/
+config-test/fingerprints/
