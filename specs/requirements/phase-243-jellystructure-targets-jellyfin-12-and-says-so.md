@@ -49,6 +49,24 @@ Every dev-review item was taken, including the one that moved where the version 
 Open question 1 closed as **12.0** per review item 3. FR-243-5 remains a standing rule with the sweep
 command in the checklist's step 6; the 18 citations are not rewritten here, per the phase's own non-goal.
 
+### Amendment, found by deploying it (2026-09-20)
+
+**FR-243-2 was not actually met in practice, and only production showed it.** `testConnection` — the
+only thing that latches the version — is called from exactly two places, `/api/health/full` and the
+setup route, and **both are admin-triggered**. On the live server after deploy, `/api/health` reported
+`jellyfin_version: null` and would have kept reporting it until somebody happened to open the health
+panel. That defeats the requirement's whole purpose: the version is meant to be the fact that **is**
+there when a server changes underneath us, not one that appears if a person goes looking.
+
+Fixed with a probe of its own in `Main.kt`: one unauthenticated `GET /System/Info/Public` at startup
+and every 30 minutes after, on the **BACKGROUND** gate so it can never compete with playback
+negotiation for a reserved permit. Startup is deliberate — it is when a version change is most likely
+to be news.
+
+The lesson is the phase's own: a reporting surface that only reports when observed is the same shape
+as the `listener_connected = true` that concealed 181's dead listener, and as the guard in 240 that
+had been silently returning early since 231.
+
 ## What is wrong
 
 **Nothing in the product knows what Jellyfin it is talking to.** `JellyfinSystemInfoAuth`

@@ -283,6 +283,28 @@ fun main() = runBlocking {
         runCatching { mediaJobQueue.enqueueWaveformBackfill() }
             .onFailure { Logger.warn("Phase 222 waveform backfill could not be queued: ${it.message}", "media") }
     }
+    // Phase 243 (FR-243-2) — keep the connected Jellyfin's version fresh on its own.
+    //
+    // Found by deploying it: `testConnection` (the only thing that latches the version) is called
+    // from exactly two places — `/api/health/full` and the setup route — both of which are
+    // admin-triggered. So `/api/health`'s `jellyfin_version` read **null indefinitely** until
+    // somebody happened to open the health panel, which defeats the requirement's whole purpose:
+    // the version is meant to be the fact that IS there when a server changes underneath us, not one
+    // that appears if a person goes looking.
+    //
+    // One unauthenticated GET per half hour against a route that needs no credential, on the
+    // BACKGROUND gate so it can never compete with playback negotiation for a reserved permit. The
+    // first probe runs at startup, which is also when a version change is most likely to be news.
+    rootScope.launch(dev.jellystructure.ops.GateClass.BACKGROUND) {
+        while (true) {
+            val cfg = configStore.current
+            if (cfg.apiKeys.jellyfinUrl.isNotBlank() && cfg.apiKeys.jellyfinToken.isNotBlank()) {
+                runCatching { jellyfinClient.testConnection(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken) }
+            }
+            kotlinx.coroutines.delay(30 * 60 * 1000L)
+        }
+    }
+
     // Phase 110 — one outbound Jellyfin WS per connected Ravilo TV (dashboard messages, remote control).
     val sessionBridge = dev.jellystructure.tv.JellyfinSessionBridge(configStore, tvEventBus, rootScope, mediaStore)
     // Phase 111 — jellystructure-issued API keys for external tools (Home Assistant etc.), fenced to /api/remote/**.
