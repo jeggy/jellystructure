@@ -38,6 +38,18 @@ Shipped in **v1.34**.
 - **FR-R280-6** — `RAW_MESSAGE` in `check_ravilo_strings.py`. Proved by planting `Text(s.message)` in
   `ChannelScreen`: it fails, naming file and line.
 
+**Two things the self-review caught after the first pass**, both the kind of defect this project's
+history is made of:
+
+- `DiscoverError` was left as the one site with no action at all. Its three states (Coming Soon,
+  Request, the taxonomy walls) each own a store that can reload, so the dead end was avoidable
+  rather than inherent. Fixed.
+- **A D-pad regression of my own.** The first cut of `HomeErrorState` gave Sign out an `onUp` back to
+  Retry and gave Retry no `onDown`, so the second action was reachable only by never leaving it. On a
+  TV that is the whole interaction. `LoadErrorState` now owns **both** focus requesters and hands the
+  caller each one, wiring the primary's Down to the secondary itself — so a site with a second action
+  cannot forget half the chain.
+
 **Tests: 587 green** (backend + client), including five new in `LoadErrorStringsTest` and one new in
 `PlayerStartFailureClassificationTest` for the 401. `every_cause_has_a_real_sentence_in_every_language`
 was **proved non-vacuous** by deleting `error.load.reauth.body` from `da.json` and watching it fail —
