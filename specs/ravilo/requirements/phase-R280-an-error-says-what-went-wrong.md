@@ -244,6 +244,25 @@ the exact shape all ten sites share.
 10. Every screen in the FR-R280-3 table has something focusable when it errors, and focus lands on it
     without a D-pad press.
 
+## Found and deliberately not fixed
+
+**A failed search says "0 results".** `SearchState.Error` and `SeerrSearchState.Error` are the two
+`Error` states in the app that are **constructed and never rendered** — no screen has a branch for
+them. Both screens derive their item list with `(state as? …Loaded)?.results?.items.orEmpty()`, so a
+search that failed produces an empty list, and the label falls through to
+`str("search.results", count = 0)` — or, on the Seerr screen, sits one condition away from
+*"No results for X"*.
+
+That is worse than an untranslated sentence: it is a confident, translated, **false** statement. A
+viewer whose server is unreachable is told their library does not contain the thing they are looking
+for.
+
+Both states carry a `LoadErrorKind` after this phase, so the data is there. It is not fixed here
+because it is not the same decision: every other screen in R280 had a failure surface that was
+merely wrong, and these two have none at all — what a failed search should show (the error surface?
+the previous results with a quiet note? the suggestions?) is a design question this phase did not
+ask. Its own phase.
+
 ## Open questions
 
 1. **Should a 401 sign the viewer out by itself**, rather than offering the action? It would be one
