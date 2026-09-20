@@ -7,15 +7,22 @@ import { test, expect } from "@playwright/test";
 // watching. These assertions are the "something is watching" part: they fail if the version stops
 // reaching /api/health (a broken public probe, a renamed field, a reverted read).
 //
-// /api/health is deliberately unauthenticated (AuthPlugin) — the container's own HEALTHCHECK hits it
-// — so this spec needs no login.
+// /api/health is deliberately unauthenticated (AuthPlugin) — the container's own HEALTHCHECK hits it.
+// /api/health/full is NOT, which is the whole point of phase 238's split: audit-shaped detail belongs
+// behind a session. So anything here that touches /full signs in first.
+
+const JF_USER = process.env.JELLYFIN_USER ?? "admin";
+const JF_PASS = process.env.JELLYFIN_PASS ?? "password";
 
 test.describe("Jellyfin version reporting (243)", () => {
   test("/api/health reports the connected Jellyfin's version", async ({ request }) => {
+    const login = await request.post("/api/auth/login", { data: { username: JF_USER, password: JF_PASS } });
+    expect(login.status(), await login.text()).toBe(200);
+
     // The version is latched from the public probe by whoever last called testConnection, so make
     // sure that has happened at least once in this process before reading it.
     const full = await request.get("/api/health/full");
-    expect(full.ok()).toBeTruthy();
+    expect(full.ok(), `/api/health/full -> ${full.status()}`).toBeTruthy();
 
     const res = await request.get("/api/health");
     expect(res.ok()).toBeTruthy();
@@ -30,8 +37,11 @@ test.describe("Jellyfin version reporting (243)", () => {
   test("/api/health/full carries a Jellyfin version check that passes above the floor", async ({
     request,
   }) => {
+    const login = await request.post("/api/auth/login", { data: { username: JF_USER, password: JF_PASS } });
+    expect(login.status(), await login.text()).toBe(200);
+
     const res = await request.get("/api/health/full");
-    expect(res.ok()).toBeTruthy();
+    expect(res.ok(), `/api/health/full -> ${res.status()}`).toBeTruthy();
     const body = await res.json();
 
     const check = (body.checks ?? []).find((c: { name: string }) => c.name === "Jellyfin version");

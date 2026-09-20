@@ -79,7 +79,7 @@ test.describe("Jellyfin session bridge (238/241)", () => {
     let bridge: Record<string, unknown> | undefined;
     for (let i = 0; i < 30; i++) {
       const res = await request.get("/api/health/full");
-      expect(res.ok()).toBeTruthy();
+      expect(res.ok(), `/api/health/full -> ${res.status()} (is the admin session still valid?)`).toBeTruthy();
       const body = await res.json();
       // FR-238-3 — the per-device block lives on the AUTHENTICATED endpoint. Device ids and failure
       // reasons must never reach /api/health, which is world-readable.

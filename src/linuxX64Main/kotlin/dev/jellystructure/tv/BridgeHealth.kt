@@ -28,8 +28,14 @@ data class BridgeHealth(
      * `runLoop`'s guard found no Jellyfin URL or no device token. That branch throws nothing, so it
      * logged nothing at all — not even the first line — and in a plain connected/failed model it reads
      * as `connected: false, last_error: null`, indistinguishable from a handshake being refused.
+     *
+     * **No default, deliberately.** The server's `Json` has `encodeDefaults = false`, so a property
+     * equal to its default is omitted from the wire entirely — which would make this field *absent*
+     * on every healthy bridge and turn "absent" and "false" back into the same thing. That is the
+     * exact ambiguity this state exists to remove (and the same shape as phase 251's lock fields).
+     * Caught by the e2e suite reading `undefined` where it expected `false`.
      */
-    @SerialName("never_attempted") val neverAttempted: Boolean = false,
+    @SerialName("never_attempted") val neverAttempted: Boolean,
 )
 
 /**
