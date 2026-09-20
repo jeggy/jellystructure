@@ -12,7 +12,39 @@
 
 ## Status
 
-`Planned` — design-authored 2026-09-20 from R279's deferred finding. Not dev-reviewed.
+`✓ Built` — design-authored and built 2026-09-20 from R279's deferred finding. Not dev-reviewed.
+Shipped in **v1.34**.
+
+### Build (2026-09-20)
+
+- **FR-R280-1** — `classifyStartFailure` and `FailureClass` moved verbatim to
+  `ravilo-ui/.../components/LoadError.kt`; `PlayerErrorKind` → `LoadErrorKind`. One row added:
+  `401 || 409 → REAUTH`, not retryable. `PlayerStore` keeps a one-line `classifyStartFailure`
+  delegating to it, so R237's own call site reads unchanged.
+- **FR-R280-2** — **fifteen** stores carry a kind, not thirteen: the sweep for the spec missed
+  `SearchScreen`'s and `SeerrSearchStore`'s, whose `Error` states are constructed and **never
+  rendered** — a different dead end, and out of this phase's render-site scope, but the same invented
+  English (`"Error"`), so they were converted with the rest. `LiveTvGuideStore` used `getOrNull()`
+  and threw the cause away before anyone could classify it; it now keeps the `Result`.
+  `UpcomingDetailStore` raises its own `error("Not found")`, which carries no status, so it maps to
+  `GONE` directly rather than through the classifier.
+- **FR-R280-3** — one `LoadErrorState`. Three call sites needed a way out that did not exist:
+  `UpcomingDetailStore` loaded in `init` with no retry (extracted to `retry()`), `SettingsStore.load`
+  was `private`, and `DiscoverDetailScreen`/`UpcomingDetailScreen` took no `onBack` (added, wired
+  from `RaviloApp`'s `pop()`).
+- **FR-R280-5** — the kind → key mapping is `loadErrorTitleKey` / `loadErrorBodyKey` / 
+  `loadErrorOffersRetry`, **pure and outside the composable**, so what an error screen says is
+  covered by a test instead of by looking at a screen.
+- **FR-R280-6** — `RAW_MESSAGE` in `check_ravilo_strings.py`. Proved by planting `Text(s.message)` in
+  `ChannelScreen`: it fails, naming file and line.
+
+**Tests: 587 green** (backend + client), including five new in `LoadErrorStringsTest` and one new in
+`PlayerStartFailureClassificationTest` for the 401. `every_cause_has_a_real_sentence_in_every_language`
+was **proved non-vacuous** by deleting `error.load.reauth.body` from `da.json` and watching it fail —
+`t()` falls back to English per key, so an untranslated error screen is otherwise silent.
+
+⚠ **One thing the spec claimed that was wrong:** it said ten render sites over thirteen stores. The
+render sites are ten; the stores are fifteen.
 
 ## Context
 
