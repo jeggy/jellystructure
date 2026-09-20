@@ -10,8 +10,14 @@ against a real CI run (`35448419659`), not guessed.
 `scripts/check-docker-cache-ids.sh`, run by `ci / checks` beside the other three: it rejects any
 per-project suffix coming back **and** any cache mount with no explicit `id=` at all (an anonymous
 mount is per-target, so it is the same bug spelled differently). Verified by breaking one id on
-purpose and watching the fence fail. FR-250-2's measurement — the real CI run showing one download
-instead of three — is recorded below once the first cold-cache run lands.
+purpose and watching the fence fail.
+
+**FR-250-2 is NOT yet satisfied, and this is the honest state rather than a claim.** The first CI run
+after the change (`35485630597`, 2026-09-20) took **36m37s** for `ci / e2e` against the reference
+run's 34 minutes — but it is not a like-for-like comparison: it changed all three Dockerfiles (so the
+layer cache was cold for every image by construction), added five new spec files, and ran the whole
+suite green. The measurement this FR wants is a run where the layer cache is warm for two of the three
+images and the Gradle/Konan download appears **once** in the log. Recorded as outstanding.
 
 **⚠ Correction to FR-250-1, found by running it.** The requirement claimed "BuildKit's own locking on
 a shared cache mount id makes concurrent local `docker compose build` safe too, at worst serializing
