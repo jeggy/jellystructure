@@ -30,6 +30,8 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.unit.dp
+import dev.jellystructure.ravilo.ui.focus.BackToTopRegistry
+import dev.jellystructure.ravilo.ui.focus.LocalBackToTop
 import dev.jellystructure.ravilo.ui.screens.BrowseKind
 import dev.jellystructure.ravilo.ui.screens.BrowseScreen
 import dev.jellystructure.ravilo.ui.screens.BrowseStore
@@ -659,6 +661,9 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
         // the common ScreenSender always), one controller per server. Unlike R245 alone, the sender is
         // never null now (a screen needs no platform SDK) — presence of ANY button/sheet is instead
         // gated on castActive below, true when the server has EITHER capability (FR-R265-1).
+        // R275 (FR-R275-5) — where a page declares its own top, for the one Back handler that a phone's
+        // system Back actually reaches. Empty on the TV, which keeps the key-event path.
+        val backToTop = remember { BackToTopRegistry() }
         val castSender = rememberCastSender(apiClient)
         val castController = remember(castSender, apiClient) { CastController(castSender, apiClient, apiClient.baseUrl) }
         LaunchedEffect(castController, castAppId) { castAppId?.let { castController.appId = it } }
@@ -677,6 +682,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
             )
             replaceTop(Dest.CastRemote(d.displayName))
         } else null),
+            LocalBackToTop provides backToTop,
             LocalLiveConfig provides liveConfig, LocalLiveAcquisition provides liveAcquisition, LocalServerMessages provides liveServerMessages, LocalPlaystateCommands provides livePlaystateCommands, LocalTileScale provides tileScale, LocalGridColumns provides gridColumns, LocalPortraitGridColumns provides portraitGridColumns, LocalCompact provides compact, LocalHandset provides handset, LocalPortrait provides portrait, LocalServerBaseUrl provides apiClient.baseUrl, LocalUserAvatarUrl provides activeAvatarUrl,
             LocalReauthRequired provides {
                 configScope.launch {
@@ -716,9 +722,23 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
         // screen underneath it or exited the app while the menu stayed on screen. Reported live on
         // mobile as "can't be closed." Checking profileMenuOpen first here — and consuming it — fixes
         // both the gesture-back and physical-back-with-a-non-KeyEvent-dispatch cases in one place.
-        PlatformBackHandler(enabled = !ownsItsOwnBack && (profileMenuOpen || stack.size > 1 || atHomeRoot)) {
-            if (profileMenuOpen) profileMenuOpen = false
-            else if (stack.size > 1) pop() else exitApp()
+        // R275 — the four bottom-bar pages all arrive by replaceTop, so the stack is size 1 on every one
+        // of them: on Library, Search and Discover this handler was not even enabled, the platform
+        // default ran, and Back closed the app (R260 measured that default as an outright Activity
+        // finish). FR-R275-2 gives them Home instead, scoped by the same bottomItemOf() the bar is drawn
+        // from so the two cannot drift — and NOT extended to Login/ProfilePicker, which have no Home to
+        // go to and keep the platform default per rememberExitAction's doc comment.
+        val backGoesHome = handset && bottomItemOf(dest) != null && dest !is Dest.Home
+        PlatformBackHandler(enabled = !ownsItsOwnBack && (profileMenuOpen || stack.size > 1 || backGoesHome || atHomeRoot)) {
+            // FR-R275-4 — one order, stated once, first match wins. backToTop sits above the stack: a
+            // scrolled pushed screen goes to its top before it pops, exactly as it does on the TV.
+            when {
+                profileMenuOpen -> profileMenuOpen = false
+                backToTop.consumeBack() -> Unit
+                stack.size > 1 -> pop()
+                backGoesHome -> resetTo(Dest.Home(destDisplayName(dest)))
+                atHomeRoot -> exitApp()
+            }
         }
         // R261 (FR-R261-3/5, dev review item 4) — safe-area padding used to be applied here, wrapping
         // every destination including the player. It now lives per-destination inside AnimatedContent's
