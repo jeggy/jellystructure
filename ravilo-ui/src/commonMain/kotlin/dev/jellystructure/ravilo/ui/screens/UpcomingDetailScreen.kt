@@ -1,5 +1,9 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import androidx.compose.runtime.getValue
+import dev.jellystructure.ravilo.ui.components.LoadErrorState
+import dev.jellystructure.ravilo.ui.components.LoadErrorKind
+import dev.jellystructure.ravilo.ui.components.loadErrorKindOf
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -25,7 +29,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -70,7 +73,7 @@ sealed class UpcomingDetailState {
         val runtime: Int? = null,
         val cast: List<Person> = emptyList(),
     ) : UpcomingDetailState()
-    data class Error(val message: String) : UpcomingDetailState()
+    data class Error(val message: String, val kind: LoadErrorKind = LoadErrorKind.GENERIC) : UpcomingDetailState()
 }
 
 /**
@@ -84,7 +87,11 @@ class UpcomingDetailStore(private val apiClient: TvApiClient, private val id: St
     private val _state = MutableStateFlow<UpcomingDetailState>(UpcomingDetailState.Loading)
     val state: StateFlow<UpcomingDetailState> = _state.asStateFlow()
 
-    init {
+    init { retry() }
+
+    /** R280 (FR-R280-3) — the load, reachable again, so a failed one is not a dead end. */
+    fun retry() {
+        _state.value = UpcomingDetailState.Loading
         scope.launch {
             val enriched = runCatching { apiClient.getUpcomingItem(id) }.getOrNull()
             if (enriched != null) {
@@ -97,14 +104,19 @@ class UpcomingDetailStore(private val apiClient: TvApiClient, private val id: St
                     ?: error("Not found")
             }.fold(
                 onSuccess = { UpcomingDetailState.Loaded(it) },
-                onFailure = { UpcomingDetailState.Error(it.message ?: "Unknown error") },
+                // R280 — a title that is not in the feed is GONE, not an unclassifiable fault; the
+                // `error("Not found")` below is thrown by us, so it carries no status to classify.
+                onFailure = {
+                    val kind = if (it is IllegalStateException) LoadErrorKind.GONE else loadErrorKindOf(it)
+                    UpcomingDetailState.Error(it.message ?: "", kind)
+                },
             )
         }
     }
 }
 
 @Composable
-fun UpcomingDetailScreen(store: UpcomingDetailStore) {
+fun UpcomingDetailScreen(store: UpcomingDetailStore, onBack: () -> Unit = {}) {
     val colors = RaviloTheme.colors
     val state by store.state.collectAsState()
 
@@ -124,7 +136,7 @@ fun UpcomingDetailScreen(store: UpcomingDetailStore) {
             is UpcomingDetailState.Loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator(color = colors.textSecondary)
             }
-            is UpcomingDetailState.Error -> Text(s.message, color = colors.textSecondary, modifier = Modifier.padding(48.dp))
+            is UpcomingDetailState.Error -> LoadErrorState(s.kind, onRetry = { store.retry() }, onBack = onBack)
             is UpcomingDetailState.Loaded -> UpcomingDetailContent(s.item, s.genres, s.runtime, s.cast)
         }
     }

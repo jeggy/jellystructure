@@ -1,5 +1,7 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.components.LoadErrorKind
+import dev.jellystructure.ravilo.ui.components.loadErrorKindOf
 import dev.jellystructure.shared.tv.BrowseFacets
 import dev.jellystructure.shared.tv.TvApiClient
 import kotlinx.coroutines.CoroutineScope
@@ -14,7 +16,7 @@ import kotlinx.coroutines.launch
 sealed class TaxonomyState {
     data object Loading : TaxonomyState()
     data class Loaded(val facets: BrowseFacets) : TaxonomyState()
-    data class Error(val message: String) : TaxonomyState()
+    data class Error(val message: String, val kind: LoadErrorKind = LoadErrorKind.GENERIC) : TaxonomyState()
 }
 
 /**
@@ -40,7 +42,7 @@ class TaxonomyStore(private val apiClient: TvApiClient) {
         _state.value = TaxonomyState.Loading
         loadJob = scope.launch {
             _state.value = runCatching { TaxonomyState.Loaded(apiClient.getFacets(null)) }
-                .getOrElse { TaxonomyState.Error(it.message ?: "Unknown error") }
+                .getOrElse { TaxonomyState.Error(it.message ?: "", loadErrorKindOf(it)) }
         }
     }
 

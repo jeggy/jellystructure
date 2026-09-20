@@ -1,5 +1,7 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.components.LoadErrorKind
+import dev.jellystructure.ravilo.ui.components.loadErrorKindOf
 import androidx.compose.foundation.lazy.LazyListState
 import dev.jellystructure.ravilo.ui.focus.FocusDetailController
 import dev.jellystructure.shared.tv.HomeFeed
@@ -24,7 +26,8 @@ private fun HomeFeed.deduped() = copy(rows = rows.map { r -> r.copy(items = r.it
 sealed class HomeState {
     data object Loading : HomeState()
     data class Loaded(val feed: HomeFeed) : HomeState()
-    data class Error(val message: String) : HomeState()
+    /** R280 (FR-R280-4) — [message] is for the log. Nothing renders it: it is the response body. */
+    data class Error(val message: String, val kind: LoadErrorKind = LoadErrorKind.GENERIC) : HomeState()
 }
 
 class HomeStore(
@@ -95,8 +98,8 @@ class HomeStore(
      * setup on any success and returns null; returns the last error message if every attempt failed,
      * leaving the caller to decide what that means (a visible Error vs a quiet staleness flag).
      */
-    private suspend fun retryGetHome(): String? {
-        var lastErr = "Unknown error"
+    private suspend fun retryGetHome(): Throwable? {
+        var lastErr: Throwable? = null
         var delayMs = 1_000L
         repeat(10) { attempt ->
             val result = runCatching { apiClient.getHome() }
@@ -107,7 +110,7 @@ class HomeStore(
                 setUpLiveTvPolling(feed)
                 return null
             }
-            lastErr = result.exceptionOrNull()?.message ?: "Unknown error"
+            lastErr = result.exceptionOrNull()
             if (attempt < 9) {
                 delay(delayMs)
                 delayMs *= 2
@@ -121,7 +124,7 @@ class HomeStore(
         _state.value = HomeState.Loading
         loadJob = scope.launch {
             val err = retryGetHome()
-            if (err != null) _state.value = HomeState.Error(err)
+            if (err != null) _state.value = HomeState.Error(err.message ?: "", loadErrorKindOf(err))
         }
         refreshDiscoverAvailable()
         refreshUpcomingAvailable()

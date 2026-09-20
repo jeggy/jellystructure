@@ -1,5 +1,7 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.components.LoadErrorKind
+import dev.jellystructure.ravilo.ui.components.loadErrorKindOf
 import dev.jellystructure.shared.tv.AcquisitionRecord
 import dev.jellystructure.shared.tv.DiscoverEntry
 import dev.jellystructure.shared.tv.DiscoverResponse
@@ -17,7 +19,7 @@ import kotlinx.coroutines.launch
 sealed class DiscoverState {
     data object Loading : DiscoverState()
     data class Loaded(val data: DiscoverResponse) : DiscoverState()
-    data class Error(val message: String) : DiscoverState()
+    data class Error(val message: String, val kind: LoadErrorKind = LoadErrorKind.GENERIC) : DiscoverState()
 }
 
 /** R171 — Request (Seerr) store, replacing the retired R49 chart Top 10. Loads the composed feed and
@@ -44,7 +46,7 @@ class DiscoverStore(private val apiClient: TvApiClient) {
         _state.value = DiscoverState.Loading
         loadJob = scope.launch {
             _state.value = runCatching { DiscoverState.Loaded(apiClient.getDiscover()) }
-                .getOrElse { DiscoverState.Error(it.message ?: "Unknown error") }
+                .getOrElse { DiscoverState.Error(it.message ?: "", loadErrorKindOf(it)) }
             loadMyRequests()
         }
     }

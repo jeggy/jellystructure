@@ -1,5 +1,8 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import dev.jellystructure.ravilo.ui.components.LoadErrorState
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -35,10 +38,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -183,9 +184,7 @@ fun LiveTvGuideScreen(
             is LiveTvGuideState.Loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator(color = colors.accent)
             }
-            is LiveTvGuideState.Error -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text(s.message, color = colors.textSecondary, fontSize = 14.sp)
-            }
+            is LiveTvGuideState.Error -> LoadErrorState(s.kind, onRetry = { store.load() }, onBack = onBack)
             is LiveTvGuideState.Loaded -> {
                 val categories = remember(s.channels) { s.channels.map { it.category }.filter { it.isNotBlank() }.distinct().sorted() }
                 val visibleChannels = remember(s.channels, selectedCategory) {

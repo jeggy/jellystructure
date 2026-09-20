@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.components.LoadErrorKind
 import dev.jellystructure.shared.tv.TvApiError
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -24,23 +25,37 @@ class PlayerStartFailureClassificationTest {
     fun reauthIsTerminalAndNamesItself() {
         val c = http(409)
         assertFalse(c.retryable, "a 409 cannot succeed on retry — surfacing it is the whole phase")
-        assertEquals(PlayerErrorKind.REAUTH, c.kind)
+        assertEquals(LoadErrorKind.REAUTH, c.kind)
         assertEquals(409, c.status)
+    }
+
+    /**
+     * R280 (FR-R280-1) — the hole this phase closes. R237 was written against the playback route,
+     * where a dead session is a `409`, so `401` fell through to `400..499 -> GENERIC`: "Something
+     * went wrong", offering a Retry that cannot ever succeed. Every other TV route answers `401` for
+     * a dead device token (nineteen `TvRoutes.kt` sites), so that was the app's most common failure.
+     */
+    @Test
+    fun unauthorizedIsReauthNotGeneric() {
+        val c = http(401)
+        assertEquals(LoadErrorKind.REAUTH, c.kind, "401 means the session is gone, exactly as 409 does")
+        assertFalse(c.retryable, "a dead token is a verdict — retrying it is a spinner in front of it")
+        assertEquals(401, c.status)
     }
 
     @Test
     fun forbiddenAndGoneAreTerminal() {
         assertFalse(http(403).retryable)
-        assertEquals(PlayerErrorKind.FORBIDDEN, http(403).kind)
+        assertEquals(LoadErrorKind.FORBIDDEN, http(403).kind)
         assertFalse(http(404).retryable)
-        assertEquals(PlayerErrorKind.GONE, http(404).kind)
+        assertEquals(LoadErrorKind.GONE, http(404).kind)
     }
 
     @Test
     fun otherClientErrorsAreAnswersNotFaults() {
         val c = http(422)
         assertFalse(c.retryable)
-        assertEquals(PlayerErrorKind.GENERIC, c.kind)
+        assertEquals(LoadErrorKind.GENERIC, c.kind)
     }
 
     @Test
@@ -67,7 +82,7 @@ class PlayerStartFailureClassificationTest {
         // The auto-advance blip this retry loop was originally written for. Unchanged by R237.
         val c = classifyStartFailure(RuntimeException("connection reset"))
         assertTrue(c.retryable)
-        assertEquals(PlayerErrorKind.UNREACHABLE, c.kind)
+        assertEquals(LoadErrorKind.UNREACHABLE, c.kind)
         assertNull(c.status)
     }
 }

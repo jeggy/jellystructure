@@ -375,6 +375,14 @@
     "note": "R279 — was accent-stripped (`Indlaeder...`); replaced with ReceiverCore.kt's own shipped spelling of the same string."
   },
   "error.generic": "Noget gik galt",
+  "error.load.reauth.title": {
+    "text": "Log ind igen",
+    "note": "Draft — the shipped table wins wherever a string already exists."
+  },
+  "error.load.reauth.body": "Denne enheds session er udløbet. Log ind igen for at fortsætte.",
+  "error.load.forbidden.title": "Ikke tilgængelig på denne profil",
+  "error.load.forbidden.body": "Denne profil kan ikke se dette.",
+  "error.load.gone.title": "Dette findes ikke længere",
   "error.play.reauth.title": {
     "text": "Dette TV skal logge ind igen",
     "note": "R237 (FR-R237-2)"

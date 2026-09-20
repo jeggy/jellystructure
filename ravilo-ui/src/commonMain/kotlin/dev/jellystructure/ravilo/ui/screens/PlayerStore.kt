@@ -17,19 +17,15 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import dev.jellystructure.ravilo.ui.components.FailureClass
+import dev.jellystructure.ravilo.ui.components.LoadErrorKind
+import dev.jellystructure.ravilo.ui.components.classifyLoadFailure
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-
-/**
- * R237 (FR-R237-2) — why a start failed, in the only terms that change what the viewer is told or can
- * do. [GENERIC] is the honest fallback for a failure we could not classify; [UNREACHABLE] means we
- * exhausted a retryable failure's budget.
- */
-enum class PlayerErrorKind { REAUTH, FORBIDDEN, GONE, UNREACHABLE, GENERIC }
 
 sealed class PlayerSessionState {
     data object Idle : PlayerSessionState()
@@ -38,46 +34,22 @@ sealed class PlayerSessionState {
      *  ordinary cold start. Drives one extra line in R218's existing presentation, nothing more. */
     data class Loading(val retrying: Boolean = false) : PlayerSessionState()
     data class Ready(val ticket: StreamTicket) : PlayerSessionState()
+
+    /**
+     * R280 (FR-R280-4) — [message] is the raw failure text and is for the log. Nothing renders it:
+     * it is `TvApiError.Http.message`, which is the HTTP response body verbatim.
+     */
     data class Error(
         val message: String,
-        val kind: PlayerErrorKind = PlayerErrorKind.GENERIC,
+        val kind: LoadErrorKind = LoadErrorKind.GENERIC,
         val httpStatus: Int? = null,
     ) : PlayerSessionState()
 }
 
-/** R237 (FR-R237-1) — the verdict on a single failed attempt: can trying again plausibly change it? */
-internal data class FailureClass(
-    val retryable: Boolean,
-    val kind: PlayerErrorKind,
-    val status: Int?,
-    val retryAfterMs: Long?,
-)
-
-/**
- * R237 (FR-R237-1) — classify before deciding to retry. The old loop never asked what the failure was,
- * so a `409` that the server knew would not change for the next ten minutes got the same five attempts
- * and ~15 s of spinner as a dropped packet. All five were guaranteed to fail identically before the
- * first was sent, and the viewer — given nothing but elapsed time to read — backed out after 4 s
- * without the re-pair message ever being rendered.
- */
-internal fun classifyStartFailure(t: Throwable?): FailureClass {
-    // No HTTP response at all: the transport blip this retry loop was originally written for
-    // (an auto-advance across a momentary network drop). Still retryable, exactly as before.
-    val http = t as? TvApiError.Http
-        ?: return FailureClass(retryable = true, PlayerErrorKind.UNREACHABLE, status = null, retryAfterMs = null)
-    val retryAfterMs = http.retryAfterSeconds?.takeIf { it in 0..60 }?.let { it * 1_000L }
-    return when {
-        http.status == 409 -> FailureClass(false, PlayerErrorKind.REAUTH, http.status, null)
-        http.status == 403 -> FailureClass(false, PlayerErrorKind.FORBIDDEN, http.status, null)
-        http.status == 404 -> FailureClass(false, PlayerErrorKind.GONE, http.status, null)
-        // "Busy, try again shortly" — including Phase 182's 503 + Retry-After on gate saturation.
-        http.status == 408 || http.status == 429 -> FailureClass(true, PlayerErrorKind.UNREACHABLE, http.status, retryAfterMs)
-        http.status in 500..599 -> FailureClass(true, PlayerErrorKind.UNREACHABLE, http.status, retryAfterMs)
-        // Any other 4xx is an answer, not a fault. Retrying it is a delay with a spinner in front of it.
-        http.status in 400..499 -> FailureClass(false, PlayerErrorKind.GENERIC, http.status, null)
-        else -> FailureClass(true, PlayerErrorKind.UNREACHABLE, http.status, retryAfterMs)
-    }
-}
+// R280 (FR-R280-1) — the classifier and its verdict type moved to `components/LoadError.kt`; every
+// store in the app shares them now, and `PlayerErrorKind` became `LoadErrorKind`. Kept here so
+// R237's own call site reads unchanged.
+internal fun classifyStartFailure(t: Throwable?): FailureClass = classifyLoadFailure(t)
 
 private const val PROGRESS_INTERVAL_MS = 10_000L
 // R216 (FR-R216-4) — "a long-session interval" for QoE reporting so an abandoned/crashed session isn't
@@ -143,7 +115,7 @@ class PlayerStore(private val apiClient: TvApiClient) {
             // quiet retry survives a blip without leaving a spinner up for minutes. PlayerScreen now
             // also renders PlayerSessionState.Error with a manual Retry as the final fallback.
             var lastErr = "Failed to start playback"
-            var lastKind = PlayerErrorKind.UNREACHABLE
+            var lastKind = LoadErrorKind.UNREACHABLE
             var lastStatus: Int? = null
             var delayMs = 1_000L
             repeat(5) { attempt ->
@@ -204,7 +176,7 @@ class PlayerStore(private val apiClient: TvApiClient) {
                     if (ticket.hlsUrl == null) {
                         _state.value = PlayerSessionState.Error(
                             "The server did not return a stream URL",
-                            PlayerErrorKind.GENERIC,
+                            LoadErrorKind.GENERIC,
                         )
                         reportStartFailure(itemId, null)
                         return@launch
@@ -246,7 +218,10 @@ class PlayerStore(private val apiClient: TvApiClient) {
             _state.value = PlayerSessionState.Loading()
             _state.value = runCatching {
                 PlayerSessionState.Ready(apiClient.restream(itemId, subtitleStreamIndex, positionMs))
-            }.getOrElse { PlayerSessionState.Error(it.message ?: "Failed to restream") }
+            }.getOrElse {
+                val f = classifyLoadFailure(it)
+                PlayerSessionState.Error(it.message ?: "", f.kind, f.status)
+            }
         }
     }
 

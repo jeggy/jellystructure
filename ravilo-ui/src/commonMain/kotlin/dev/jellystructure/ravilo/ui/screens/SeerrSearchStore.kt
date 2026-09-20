@@ -1,5 +1,7 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.components.LoadErrorKind
+import dev.jellystructure.ravilo.ui.components.loadErrorKindOf
 import dev.jellystructure.shared.tv.AcquisitionRecord
 import dev.jellystructure.shared.tv.DiscoverEntry
 import dev.jellystructure.shared.tv.SeerrSearchResults
@@ -17,7 +19,7 @@ import kotlinx.coroutines.launch
 sealed class SeerrSearchState {
     data object Loading : SeerrSearchState()
     data class Loaded(val results: SeerrSearchResults) : SeerrSearchState()
-    data class Error(val message: String) : SeerrSearchState()
+    data class Error(val message: String, val kind: LoadErrorKind = LoadErrorKind.GENERIC) : SeerrSearchState()
 }
 
 /**
@@ -41,7 +43,7 @@ class SeerrSearchStore(private val apiClient: TvApiClient) {
             delay(250)
             _state.value = SeerrSearchState.Loading
             _state.value = runCatching { SeerrSearchState.Loaded(apiClient.searchSeerr(query)) }
-                .getOrElse { SeerrSearchState.Error(it.message ?: "Error") }
+                .getOrElse { SeerrSearchState.Error(it.message ?: "", loadErrorKindOf(it)) }
         }
     }
 

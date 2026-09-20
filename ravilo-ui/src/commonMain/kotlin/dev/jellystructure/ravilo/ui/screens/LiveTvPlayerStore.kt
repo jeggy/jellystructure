@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.components.LoadErrorKind
 import dev.jellystructure.ravilo.ui.seams.detectDecoderLimits
 import dev.jellystructure.ravilo.ui.seams.detectHdrSupport
 import dev.jellystructure.shared.tv.ClientCapabilities
@@ -20,7 +21,7 @@ import kotlinx.coroutines.launch
 sealed class LiveTvPlayerState {
     data object Loading : LiveTvPlayerState()
     data class Ready(val channel: LiveTvChannel, val ticket: LiveTvStreamTicket) : LiveTvPlayerState()
-    data class Error(val message: String) : LiveTvPlayerState()
+    data class Error(val message: String, val kind: LoadErrorKind = LoadErrorKind.GENERIC) : LiveTvPlayerState()
 }
 
 private const val HEARTBEAT_INTERVAL_MS = 20_000L
@@ -80,7 +81,8 @@ class LiveTvPlayerStore(private val apiClient: TvApiClient) {
             ensureChannelList()
             val channel = channels.firstOrNull { it.channelId == channelId }
             if (channel == null) {
-                _state.value = LiveTvPlayerState.Error("Channel not found")
+                // R280 (FR-R280-2) — this one knows its own cause outright; no throwable to classify.
+                _state.value = LiveTvPlayerState.Error("channel not found", LoadErrorKind.GONE)
                 return@launch
             }
             val ticket = runCatching { apiClient.tuneLiveTv(channelId, capabilities()) }.getOrNull()

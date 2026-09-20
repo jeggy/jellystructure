@@ -1,8 +1,11 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import dev.jellystructure.ravilo.ui.LocalPlaystateCommands
 import dev.jellystructure.ravilo.ui.LocalReauthRequired
 import dev.jellystructure.ravilo.ui.LocalServerBaseUrl
+import dev.jellystructure.ravilo.ui.components.LoadErrorKind
 import dev.jellystructure.ravilo.ui.components.EpisodeTriptych
 import dev.jellystructure.ravilo.ui.components.flagFor
 import androidx.compose.animation.AnimatedVisibility
@@ -56,13 +59,11 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -3955,24 +3956,24 @@ private fun PlayerSessionErrorOverlay(
     onBack: () -> Unit,
 ) {
     val errTitle = when (error.kind) {
-        PlayerErrorKind.REAUTH -> "error.play.reauth.title"
-        PlayerErrorKind.FORBIDDEN -> "error.play.forbidden.title"
-        PlayerErrorKind.GONE -> "error.play.gone.title"
-        PlayerErrorKind.UNREACHABLE -> "error.play.unreachable.title"
-        PlayerErrorKind.GENERIC -> "error.generic"
+        LoadErrorKind.REAUTH -> "error.play.reauth.title"
+        LoadErrorKind.FORBIDDEN -> "error.play.forbidden.title"
+        LoadErrorKind.GONE -> "error.play.gone.title"
+        LoadErrorKind.UNREACHABLE -> "error.play.unreachable.title"
+        LoadErrorKind.GENERIC -> "error.generic"
     }
     val errBody = when (error.kind) {
-        PlayerErrorKind.REAUTH -> "error.play.reauth.body"
-        PlayerErrorKind.FORBIDDEN -> "error.play.forbidden.body"
-        PlayerErrorKind.UNREACHABLE -> "error.play.unreachable.body"
+        LoadErrorKind.REAUTH -> "error.play.reauth.body"
+        LoadErrorKind.FORBIDDEN -> "error.play.forbidden.body"
+        LoadErrorKind.UNREACHABLE -> "error.play.unreachable.body"
         // GONE has no next step, and GENERIC has no honest sentence to offer beyond its heading.
-        PlayerErrorKind.GONE, PlayerErrorKind.GENERIC -> null
+        LoadErrorKind.GONE, LoadErrorKind.GENERIC -> null
     }
     // FR-R237-3 — Retry stays only where trying again can plausibly change the answer. Offering it for
     // a verdict that is deterministic for ten minutes is the same mistake as the retry loop, moved into
     // the viewer's hands. REAUTH gets the action that actually resolves it; 403/404 get Back alone.
-    val showRetry = error.kind == PlayerErrorKind.UNREACHABLE || error.kind == PlayerErrorKind.GENERIC
-    val showSignIn = error.kind == PlayerErrorKind.REAUTH && onReauthRequired != null
+    val showRetry = error.kind == LoadErrorKind.UNREACHABLE || error.kind == LoadErrorKind.GENERIC
+    val showSignIn = error.kind == LoadErrorKind.REAUTH && onReauthRequired != null
     val retryFR = remember { FocusRequester() }
     val backFR = remember { FocusRequester() }
     LaunchedEffect(error) {

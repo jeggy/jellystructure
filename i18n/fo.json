@@ -375,6 +375,14 @@
     "note": "R279 — was accent-stripped (`Ledur inn...`); replaced with ReceiverCore.kt's own shipped spelling of the same string."
   },
   "error.generic": "Nakad gjekk skeivt",
+  "error.load.reauth.title": {
+    "text": "Rita inn av nýggjum",
+    "note": "Draft — the shipped table wins wherever a string already exists."
+  },
+  "error.load.reauth.body": "Setan hjá hesi eindini er runnin út. Rita inn av nýggjum fyri at halda fram.",
+  "error.load.forbidden.title": "Ikki tøkt á hesi vangamyndini",
+  "error.load.forbidden.body": "Henda vangamyndin kann ikki síggja hetta.",
+  "error.load.gone.title": "Hetta er ikki her longur",
   "error.play.reauth.title": {
     "text": "Hetta sjónvarpid má rita inn av nýggjum",
     "note": "R237 (FR-R237-2)"

@@ -1,5 +1,9 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import androidx.compose.foundation.layout.padding
+import androidx.compose.runtime.getValue
+import dev.jellystructure.ravilo.ui.components.LoadErrorState
+import dev.jellystructure.ravilo.ui.components.loadErrorKindOf
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
@@ -8,7 +12,6 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.material3.Text
@@ -16,7 +19,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
@@ -90,7 +92,7 @@ class ChannelStore(private val apiClient: TvApiClient) {
         _state.value = HomeState.Loading
         loadJob = scope.launch {
             _state.value = runCatching { HomeState.Loaded(apiClient.getChannel(channelId).deduped()) }
-                .getOrElse { HomeState.Error(it.message ?: "Unknown error") }
+                .getOrElse { HomeState.Error(it.message ?: "", loadErrorKindOf(it)) }
         }
     }
 
@@ -171,9 +173,11 @@ fun ChannelScreen(
             is HomeState.Loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text(str("loading"), color = colors.textSecondary, fontSize = 16.sp)
             }
-            is HomeState.Error -> Box(Modifier.fillMaxSize().padding(40.dp), contentAlignment = Alignment.Center) {
-                Text(s.message, color = colors.textSecondary, fontSize = 14.sp)
-            }
+            is HomeState.Error -> LoadErrorState(
+                s.kind,
+                onRetry = { store.refresh() },
+                onBack = onBack,
+            )
             is HomeState.Loaded -> {
                 val hasHero = s.feed.heroes.isNotEmpty()
                 val nonEmpty = s.feed.rows.filter { it.items.isNotEmpty() }

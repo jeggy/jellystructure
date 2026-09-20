@@ -1,5 +1,9 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import dev.jellystructure.ravilo.ui.components.LoadErrorKind
+import dev.jellystructure.ravilo.ui.components.loadErrorKindOf
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
@@ -26,11 +30,9 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithCache
@@ -79,7 +81,7 @@ import kotlin.time.Clock
 sealed class UpcomingState {
     data object Loading : UpcomingState()
     data class Loaded(val feed: UpcomingFeed) : UpcomingState()
-    data class Error(val message: String) : UpcomingState()
+    data class Error(val message: String, val kind: LoadErrorKind = LoadErrorKind.GENERIC) : UpcomingState()
 }
 
 /** R160 — the calendar is the same for every viewer; `getUpcoming()` is itself server-cached
@@ -100,7 +102,7 @@ class UpcomingStore(private val apiClient: TvApiClient) {
         _state.value = UpcomingState.Loading
         scope.launch {
             _state.value = runCatching { UpcomingState.Loaded(apiClient.getUpcoming()) }
-                .getOrElse { UpcomingState.Error(it.message ?: "Unknown error") }
+                .getOrElse { UpcomingState.Error(it.message ?: "", loadErrorKindOf(it)) }
         }
     }
 

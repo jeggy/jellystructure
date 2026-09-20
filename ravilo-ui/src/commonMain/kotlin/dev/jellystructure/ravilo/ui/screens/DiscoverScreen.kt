@@ -1,5 +1,10 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import dev.jellystructure.ravilo.ui.components.LoadErrorState
+import dev.jellystructure.ravilo.ui.components.LoadErrorKind
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,11 +19,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -156,7 +158,7 @@ fun DiscoverScreen(
                                 val upcomingState by store.state.collectAsState()
                                 when (val s = upcomingState) {
                                     is UpcomingState.Loading -> DiscoverLoading()
-                                    is UpcomingState.Error -> DiscoverError(s.message)
+                                    is UpcomingState.Error -> DiscoverError(s.kind)
                                     is UpcomingState.Loaded -> UpcomingContent(
                                         store = store,
                                         feed = s.feed,
@@ -175,7 +177,7 @@ fun DiscoverScreen(
                                 val requestState by store.state.collectAsState()
                                 when (val s = requestState) {
                                     is DiscoverState.Loading -> DiscoverLoading()
-                                    is DiscoverState.Error -> DiscoverError(s.message)
+                                    is DiscoverState.Error -> DiscoverError(s.kind)
                                     is DiscoverState.Loaded -> RequestContent(
                                         store = store,
                                         data = s.data,
@@ -192,7 +194,7 @@ fun DiscoverScreen(
                             val taxState by taxonomyStore.state.collectAsState()
                             when (val s = taxState) {
                                 is TaxonomyState.Loading -> DiscoverLoading()
-                                is TaxonomyState.Error -> DiscoverError(s.message)
+                                is TaxonomyState.Error -> DiscoverError(s.kind)
                                 is TaxonomyState.Loaded -> TaxonomyContent(
                                     store = taxonomyStore,
                                     facets = s.facets,
@@ -254,8 +256,6 @@ private fun DiscoverLoading() {
 }
 
 @Composable
-private fun DiscoverError(message: String) {
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Text(message, color = RaviloTheme.colors.textSecondary, fontSize = 14.sp)
-    }
+private fun DiscoverError(kind: LoadErrorKind, onRetry: (() -> Unit)? = null) {
+    LoadErrorState(kind, onRetry = onRetry)
 }

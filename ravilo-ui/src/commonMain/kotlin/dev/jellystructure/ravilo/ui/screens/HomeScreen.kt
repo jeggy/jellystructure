@@ -1,5 +1,9 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import dev.jellystructure.ravilo.ui.components.LoadErrorKind
+import dev.jellystructure.ravilo.ui.components.LoadErrorState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -27,11 +31,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusDirection
@@ -117,7 +119,7 @@ fun HomeScreen(
         when (val s = state) {
             is HomeState.Loading -> HomeLoadingShell()
             is HomeState.Error   -> HomeErrorState(
-                message = s.message,
+                kind = s.kind,
                 apiClient = apiClient,
                 onRetry = { store.refresh() },
                 onSignOut = onSignOut,
@@ -775,53 +777,36 @@ private fun LiveTvGuideTile(onClick: () -> Unit, focusRequester: FocusRequester?
  */
 @Composable
 private fun HomeErrorState(
-    message: String,
+    kind: LoadErrorKind,
     apiClient: TvApiClient,
     onRetry: () -> Unit,
     onSignOut: () -> Unit,
 ) {
     val colors = RaviloTheme.colors
     val scope = rememberCoroutineScope()
-    val retryFR = remember { FocusRequester() }
     val signOutFR = remember { FocusRequester() }
-    LaunchedEffect(Unit) { runCatching { retryFR.requestFocus() } }
-    Column(
-        modifier = Modifier.fillMaxSize().padding(40.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Spacer(Modifier.height(200.dp))
-        Text(str("error.generic"), color = colors.text, fontSize = 20.sp)
-        Spacer(Modifier.height(12.dp))
-        Text(message, color = colors.textSecondary, fontSize = 14.sp)
-        Spacer(Modifier.height(28.dp))
-        var retryFocused by remember { mutableStateOf(false) }
-        Box(
-            modifier = Modifier
-                .background(colors.surfaceVariant, RoundedCornerShape(8.dp))
-                .then(if (retryFocused) Modifier.border(2.dp, colors.focusRing, RoundedCornerShape(8.dp)) else Modifier)
-                .dpadFocusable(
-                    focusRequester = retryFR,
-                    onFocused = { retryFocused = true },
-                    onBlurred = { retryFocused = false },
-                    onDown = { runCatching { signOutFR.requestFocus() } },
-                    onSelect = onRetry,
-                )
-                .padding(horizontal = 24.dp, vertical = 12.dp),
-        ) { Text(str("action.retry"), color = colors.text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold) }
-        Spacer(Modifier.height(12.dp))
-        var signOutFocused by remember { mutableStateOf(false) }
-        Box(
-            modifier = Modifier
-                .background(colors.surfaceVariant, RoundedCornerShape(8.dp))
-                .then(if (signOutFocused) Modifier.border(2.dp, colors.focusRing, RoundedCornerShape(8.dp)) else Modifier)
-                .dpadFocusable(
-                    focusRequester = signOutFR,
-                    onFocused = { signOutFocused = true },
-                    onBlurred = { signOutFocused = false },
-                    onUp = { runCatching { retryFR.requestFocus() } },
-                    onSelect = { scope.launch { unpairAllSessions(apiClient); onSignOut() } },
-                )
-                .padding(horizontal = 24.dp, vertical = 12.dp),
-        ) { Text(str("profile.sign_out"), color = colors.textSecondary, fontSize = 14.sp, fontWeight = FontWeight.SemiBold) }
-    }
+    var signOutFocused by remember { mutableStateOf(false) }
+    // R280 (FR-R280-3) — the heading, the sentence and the cause-appropriate action are the shared
+    // surface now; Home keeps Sign out as its own second action, because Home is where a viewer with
+    // a dead session lands and R237 already treats signing out as Home's case, not every screen's.
+    LoadErrorState(
+        kind,
+        onRetry = onRetry,
+        onSignIn = onSignOut,
+        extraAction = { primaryFR ->
+            Box(
+                modifier = Modifier
+                    .background(colors.surfaceVariant, RoundedCornerShape(8.dp))
+                    .then(if (signOutFocused) Modifier.border(2.dp, colors.focusRing, RoundedCornerShape(8.dp)) else Modifier)
+                    .dpadFocusable(
+                        focusRequester = signOutFR,
+                        onFocused = { signOutFocused = true },
+                        onBlurred = { signOutFocused = false },
+                        onUp = { runCatching { primaryFR.requestFocus() } },
+                        onSelect = { scope.launch { unpairAllSessions(apiClient); onSignOut() } },
+                    )
+                    .padding(horizontal = 24.dp, vertical = 12.dp),
+            ) { Text(str("profile.sign_out"), color = colors.textSecondary, fontSize = 14.sp, fontWeight = FontWeight.SemiBold) }
+        },
+    )
 }

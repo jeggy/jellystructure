@@ -1,5 +1,7 @@
 package dev.jellystructure.ravilo.ui
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -15,10 +17,8 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -1203,6 +1203,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                     store = store,
                     onWatchMovie = { itemId, title -> push(Dest.Player(itemId, title, displayName = dest.displayName, seriesId = itemId)) },
                     onGoToSeries = { itemId -> push(Dest.SeriesDetail(itemId, dest.displayName)) },
+                    onBack = { pop() },
                 )
             }
 
@@ -1217,7 +1218,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
 
             is Dest.UpcomingDetail -> {
                 val store = remember(dest.id) { UpcomingDetailStore(apiClient, dest.id) }
-                UpcomingDetailScreen(store = store)
+                UpcomingDetailScreen(store = store, onBack = { pop() })
             }
 
             is Dest.MovieDetail -> {

@@ -1,5 +1,9 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import dev.jellystructure.ravilo.ui.components.LoadErrorKind
+import dev.jellystructure.ravilo.ui.components.loadErrorKindOf
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -22,12 +26,10 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -74,7 +76,7 @@ import kotlinx.coroutines.launch
 sealed class SearchState {
     data object Loading : SearchState()
     data class Loaded(val results: SearchResults, val query: String) : SearchState()
-    data class Error(val message: String) : SearchState()
+    data class Error(val message: String, val kind: LoadErrorKind = LoadErrorKind.GENERIC) : SearchState()
 }
 
 class SearchStore(private val apiClient: TvApiClient) {
@@ -97,14 +99,14 @@ class SearchStore(private val apiClient: TvApiClient) {
             _state.value = SearchState.Loading
             _state.value = runCatching {
                 SearchState.Loaded(apiClient.search(query), query)
-            }.getOrElse { SearchState.Error(it.message ?: "Error") }
+            }.getOrElse { SearchState.Error(it.message ?: "", loadErrorKindOf(it)) }
         }
     }
 
     private suspend fun loadSuggestions() {
         _state.value = runCatching {
             SearchState.Loaded(apiClient.search(""), "")
-        }.getOrElse { SearchState.Error(it.message ?: "Error") }
+        }.getOrElse { SearchState.Error(it.message ?: "", loadErrorKindOf(it)) }
     }
 
     init {

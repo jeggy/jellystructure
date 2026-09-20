@@ -1,5 +1,7 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.components.LoadErrorKind
+import dev.jellystructure.ravilo.ui.components.loadErrorKindOf
 import dev.jellystructure.shared.tv.AcquisitionRecord
 import dev.jellystructure.shared.tv.DiscoverDetail
 import dev.jellystructure.shared.tv.TvApiClient
@@ -14,7 +16,7 @@ import kotlinx.coroutines.launch
 sealed class DiscoverDetailState {
     data object Loading : DiscoverDetailState()
     data class Loaded(val detail: DiscoverDetail) : DiscoverDetailState()
-    data class Error(val message: String) : DiscoverDetailState()
+    data class Error(val message: String, val kind: LoadErrorKind = LoadErrorKind.GENERIC) : DiscoverDetailState()
 }
 
 /** R171 — the dedicated Request detail (separate from the R13 library detail), replacing the retired
@@ -41,7 +43,7 @@ class DiscoverDetailStore(
     fun load() {
         scope.launch {
             _state.value = runCatching { DiscoverDetailState.Loaded(apiClient.getDiscoverItem(mediaType, tmdbId)) }
-                .getOrElse { DiscoverDetailState.Error(it.message ?: "Unknown error") }
+                .getOrElse { DiscoverDetailState.Error(it.message ?: "", loadErrorKindOf(it)) }
         }
     }
 
@@ -71,7 +73,7 @@ class DiscoverDetailStore(
             if (runCatching { apiClient.changeRequestLanguage(mediaType, tmdbId, language) }.getOrDefault(false)) {
                 // Not load() — that launches its own coroutine and would race with the read below.
                 val loaded = runCatching { DiscoverDetailState.Loaded(apiClient.getDiscoverItem(mediaType, tmdbId)) }
-                    .getOrElse { DiscoverDetailState.Error(it.message ?: "Unknown error") }
+                    .getOrElse { DiscoverDetailState.Error(it.message ?: "", loadErrorKindOf(it)) }
                 _state.value = loaded
                 (loaded as? DiscoverDetailState.Loaded)?.detail?.acquisition?.let { onLocalAcquisition(it) }
             }

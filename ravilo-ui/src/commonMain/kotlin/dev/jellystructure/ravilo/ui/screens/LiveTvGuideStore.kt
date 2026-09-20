@@ -1,5 +1,7 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.components.LoadErrorKind
+import dev.jellystructure.ravilo.ui.components.loadErrorKindOf
 import dev.jellystructure.shared.tv.LiveTvChannel
 import dev.jellystructure.shared.tv.LiveTvGuideProgram
 import dev.jellystructure.shared.tv.TvApiClient
@@ -14,7 +16,7 @@ import kotlinx.coroutines.launch
 sealed class LiveTvGuideState {
     data object Loading : LiveTvGuideState()
     data class Loaded(val channels: List<LiveTvChannel>, val programs: List<LiveTvGuideProgram>) : LiveTvGuideState()
-    data class Error(val message: String) : LiveTvGuideState()
+    data class Error(val message: String, val kind: LoadErrorKind = LoadErrorKind.GENERIC) : LiveTvGuideState()
 }
 
 /** Phase R177 §C — the full EPG guide grid: channels × time. Category filtering is channel-level
@@ -28,9 +30,13 @@ class LiveTvGuideStore(private val apiClient: TvApiClient) {
     fun load(days: Int = 2, hoursBack: Int = 4) {
         _state.value = LiveTvGuideState.Loading
         scope.launch {
-            val channels = runCatching { apiClient.getLiveTvChannels() }.getOrNull()
+            // R280 (FR-R280-2) — the failure is classified, not replaced by a sentence this store
+            // invented. `getOrNull()` used to throw the cause away before anyone could look at it.
+            val attempt = runCatching { apiClient.getLiveTvChannels() }
+            val channels = attempt.getOrNull()
             if (channels == null) {
-                _state.value = LiveTvGuideState.Error("Couldn't load channels")
+                val cause = attempt.exceptionOrNull()
+                _state.value = LiveTvGuideState.Error(cause?.message ?: "", loadErrorKindOf(cause))
                 return@launch
             }
             val programs = runCatching { apiClient.getLiveTvGuide(days, hoursBack) }.getOrDefault(emptyList())

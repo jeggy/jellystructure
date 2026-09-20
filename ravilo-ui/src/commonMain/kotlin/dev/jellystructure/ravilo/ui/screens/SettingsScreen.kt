@@ -1,5 +1,10 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import dev.jellystructure.ravilo.ui.components.LoadErrorState
+import dev.jellystructure.ravilo.ui.components.LoadErrorKind
+import dev.jellystructure.ravilo.ui.components.loadErrorKindOf
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -19,11 +24,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -53,7 +56,7 @@ import kotlinx.coroutines.launch
 sealed class SettingsState {
     data object Loading : SettingsState()
     data class Loaded(val config: RaviloConfig) : SettingsState()
-    data class Error(val message: String) : SettingsState()
+    data class Error(val message: String, val kind: LoadErrorKind = LoadErrorKind.GENERIC) : SettingsState()
 }
 
 class SettingsStore(private val apiClient: TvApiClient) {
@@ -63,11 +66,12 @@ class SettingsStore(private val apiClient: TvApiClient) {
 
     init { load() }
 
-    private fun load() {
+    // R280 (FR-R280-3) — the error surface offers Retry, so the load has to be reachable.
+    fun load() {
         _state.value = SettingsState.Loading
         scope.launch {
             _state.value = runCatching { SettingsState.Loaded(apiClient.getConfig()) }
-                .getOrElse { SettingsState.Error(it.message ?: "Failed to load settings") }
+                .getOrElse { SettingsState.Error(it.message ?: "", loadErrorKindOf(it)) }
         }
     }
 
@@ -232,7 +236,7 @@ fun SettingsScreen(
 
             when (val s = state) {
                 is SettingsState.Loading -> Text(str("loading"), color = colors.textSecondary, fontSize = 16.sp)
-                is SettingsState.Error   -> Text(s.message, color = colors.textSecondary, fontSize = 14.sp)
+                is SettingsState.Error   -> LoadErrorState(s.kind, onRetry = { store.load() }, onBack = onBack)
                 is SettingsState.Loaded  -> SettingsContent(
                     config = s.config,
                     displayName = displayName,

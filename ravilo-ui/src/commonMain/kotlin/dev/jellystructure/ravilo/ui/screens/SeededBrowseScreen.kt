@@ -1,5 +1,9 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import androidx.compose.runtime.setValue
+import dev.jellystructure.ravilo.ui.components.LoadErrorState
+import dev.jellystructure.ravilo.ui.components.LoadErrorKind
+import dev.jellystructure.ravilo.ui.components.loadErrorKindOf
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
@@ -37,7 +41,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -117,7 +120,7 @@ data class MaturityRange(val from: Int? = null, val upTo: Int? = null) {
 sealed class SeededBrowseState {
     data object Loading : SeededBrowseState()
     data class Loaded(val items: List<BrowseCard>) : SeededBrowseState()
-    data class Error(val message: String) : SeededBrowseState()
+    data class Error(val message: String, val kind: LoadErrorKind = LoadErrorKind.GENERIC) : SeededBrowseState()
 }
 
 /**
@@ -207,7 +210,7 @@ class SeededBrowseStore(
                     val resp = apiClient.browseSeeded(seedQuery, seedMediaKind)
                     SeededBrowseState.Loaded(resp.items)
                 }
-            }.getOrElse { SeededBrowseState.Error(it.message ?: "Unknown error") }
+            }.getOrElse { SeededBrowseState.Error(it.message ?: "", loadErrorKindOf(it)) }
         }
     }
 }
@@ -432,8 +435,8 @@ fun SeededBrowseScreen(
                 is SeededBrowseState.Loading -> Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
                     Text(str("loading"), color = colors.textSecondary, fontSize = 16.sp)
                 }
-                is SeededBrowseState.Error -> Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
-                    Text(s.message, color = colors.textSecondary, fontSize = 14.sp)
+                is SeededBrowseState.Error -> Box(Modifier.fillMaxWidth().weight(1f)) {
+                    LoadErrorState(s.kind, onRetry = { store.load() }, onBack = onBack)
                 }
                 is SeededBrowseState.Loaded -> {
                     if (showFacetBar) {

@@ -402,6 +402,14 @@
   "screens.playing_on": "Playing on {device}",
   "loading": "Loading...",
   "error.generic": "Something went wrong",
+  "error.load.reauth.title": {
+    "text": "Sign in again",
+    "note": "R280 (FR-R280-5) — a screen failed to load because this device's session no longer works (401 or 409). Deliberately not the player's wording: that one says \"to keep watching\", which is wrong on Settings. Names what the viewer must do, never the component that failed."
+  },
+  "error.load.reauth.body": "This device's session has ended. Sign in again to carry on.",
+  "error.load.forbidden.title": "Not available on this profile",
+  "error.load.forbidden.body": "This profile can't see this.",
+  "error.load.gone.title": "This isn't here any more",
   "error.play.reauth.title": {
     "text": "This TV needs to be signed in again",
     "note": "R237 (FR-R237-2) — a start that failed for a reason we know, said in words the viewer can act on. Per the constitution's copy rule (and R234's rejected \"Your Jellyfin password\"), these name what the viewer must do, never the component that failed: no product name, no protocol, no status code."

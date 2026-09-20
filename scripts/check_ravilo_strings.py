@@ -10,6 +10,18 @@ TRIGGER = re.compile(
     r'|caption|note|badge|episodeBadge|liveLine)\s*=\s*(?=")'
 )
 INTERP_NAMED = re.compile(r'\$[A-Za-z_][A-Za-z0-9_]*')
+
+# R280 (FR-R280-6) — the shape the literal rule above cannot see. Thirteen stores drifted into
+# putting `TvApiError.Http.message` — the HTTP response body, verbatim — on a state, and ten screens
+# drew it, so a household with an expired token read `{"error":"Not logged in"}` on their TV. It is
+# not a literal, so nothing flagged it for as long as it existed. A store has no language: it carries
+# a cause (LoadErrorKind) and the screen says the sentence.
+PAINT = (r'\b(?:Text|BasicText|RaviloButton)\(\s*'
+         r'|\b(?:label|text|title|subtitle|placeholder|contentDescription|hint|message|kicker'
+         r'|caption|note|badge|episodeBadge|liveLine)\s*=\s*')
+RAW_MESSAGE = re.compile(
+    '(?:' + PAINT + r')([A-Za-z_][A-Za-z0-9_]*(?:[?!]?\.[A-Za-z_][A-Za-z0-9_]*)*\.message)\b'
+)
 LETTER = re.compile(r'[^\W\d_]', re.UNICODE)
 
 # Allowed in a rendering position, each for a stated reason:
@@ -59,7 +71,7 @@ def read_literal(src, i):
 
 
 def violations():
-    bad = []
+    bad, raw = [], []
     for root in ('ravilo-ui/src', 'ravilo-cast/src', 'ravilo-screen/src', 'ravilo-receiver-core/src'):
         for dirpath, _, filenames in os.walk(root):
             parts = dirpath.split(os.sep)
@@ -77,11 +89,17 @@ def violations():
                     if not bare or not LETTER.search(bare): continue
                     if ALLOW.match(bare): continue
                     bad.append((p, line, lit))
-    return bad
+                # R280 (FR-R280-6) — a store's raw failure text reaching a screen.
+                for m in RAW_MESSAGE.finditer(src):
+                    line = src.count('\n', 0, m.start()) + 1
+                    ctx = src[src.rfind('\n', 0, m.start()) + 1:m.start()].lstrip()
+                    if ctx.startswith('//') or ctx.startswith('*'): continue
+                    raw.append((p, line, m.group(1)))
+    return bad, raw
 
 
 def main():
-    bad = violations()
+    bad, raw = violations()
     for p, line, lit in bad:
         print(f'  {p}:{line}  "{lit}"')
     if bad:
@@ -89,6 +107,14 @@ def main():
         print(f'FAIL — {len(bad)} literal string(s) in a text-rendering position.')
         print('Add the string to i18n/en.json (plus da/fo) and call str("your.key") instead.')
         print('If it genuinely is not prose (a glyph, a brand, a unit), add it to ALLOW in this script.')
+    for p, line, expr in raw:
+        print(f'  {p}:{line}  {expr}')
+    if raw:
+        print()
+        print(f'FAIL — {len(raw)} raw failure message(s) in a text-rendering position.')
+        print("That text is TvApiError.Http.message: the HTTP response body, verbatim, in no language.")
+        print('Give the state a LoadErrorKind (loadErrorKindOf(cause)) and render LoadErrorState(kind).')
+    if bad or raw:
         return 1
     print("OK — no hardcoded viewer-facing text in Ravilo's clients.")
     return 0

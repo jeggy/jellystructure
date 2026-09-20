@@ -1,5 +1,8 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import dev.jellystructure.ravilo.ui.components.LoadErrorState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
@@ -25,10 +28,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -63,6 +64,7 @@ fun DiscoverDetailScreen(
     store: DiscoverDetailStore,
     onWatchMovie: (itemId: String, title: String) -> Unit,
     onGoToSeries: (itemId: String) -> Unit,
+    onBack: () -> Unit = {},
 ) {
     val colors = RaviloTheme.colors
     val state by store.state.collectAsState()
@@ -73,7 +75,7 @@ fun DiscoverDetailScreen(
     Box(Modifier.fillMaxSize().background(colors.background)) {
         when (val s = state) {
             is DiscoverDetailState.Loading -> {}
-            is DiscoverDetailState.Error -> Text(s.message, color = colors.textSecondary, modifier = Modifier.padding(48.dp))
+            is DiscoverDetailState.Error -> LoadErrorState(s.kind, onRetry = { store.load() }, onBack = onBack)
             is DiscoverDetailState.Loaded -> DetailContent(s.detail, store, onWatchMovie, onGoToSeries)
         }
     }

@@ -1,5 +1,10 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import dev.jellystructure.ravilo.ui.components.LoadErrorState
+import dev.jellystructure.ravilo.ui.components.LoadErrorKind
+import dev.jellystructure.ravilo.ui.components.loadErrorKindOf
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -20,11 +25,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -73,7 +76,7 @@ enum class BrowseKind(val apiKey: String?) {
 sealed class BrowseState {
     data object Loading : BrowseState()
     data class Loaded(val results: SearchResults, val facets: BrowseFacets) : BrowseState()
-    data class Error(val message: String) : BrowseState()
+    data class Error(val message: String, val kind: LoadErrorKind = LoadErrorKind.GENERIC) : BrowseState()
 }
 
 // Bug fix (R118 follow-up): items fetched per page. The grid pages in as the user scrolls near its
@@ -128,7 +131,7 @@ class BrowseStore(private val apiClient: TvApiClient) {
                 endReached = results.items.size < BROWSE_PAGE_SIZE
                 val facets = apiClient.getFacets(kind = kind.apiKey)
                 BrowseState.Loaded(results, facets)
-            }.getOrElse { BrowseState.Error(it.message ?: "Unknown error") }
+            }.getOrElse { BrowseState.Error(it.message ?: "", loadErrorKindOf(it)) }
         }
     }
 
@@ -153,7 +156,7 @@ class BrowseStore(private val apiClient: TvApiClient) {
                 BrowseState.Loaded(results, facets)
             }.getOrElse { cur ->
                 currentFacets?.let { BrowseState.Loaded((_state.value as? BrowseState.Loaded)?.results ?: emptyResults, it) }
-                    ?: BrowseState.Error(cur.message ?: "Unknown error")
+                    ?: BrowseState.Error(cur.message ?: "", loadErrorKindOf(cur))
             }
         }
     }
@@ -249,8 +252,8 @@ fun BrowseScreen(
                 is BrowseState.Loading -> Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
                     Text(str("loading"), color = colors.textSecondary, fontSize = 16.sp)
                 }
-                is BrowseState.Error -> Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                    Text(s.message, color = colors.textSecondary, fontSize = 14.sp)
+                is BrowseState.Error -> Box(Modifier.weight(1f)) {
+                    LoadErrorState(s.kind, onRetry = { store.load(kind) }, onBack = onBack)
                 }
                 is BrowseState.Loaded -> {
                     // Genre chips (skip for My List)

@@ -1,5 +1,7 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.components.LoadErrorKind
+import dev.jellystructure.ravilo.ui.components.loadErrorKindOf
 import dev.jellystructure.shared.tv.CardPlayState
 import dev.jellystructure.shared.tv.MovieDetail
 import dev.jellystructure.shared.tv.SeriesDetail
@@ -16,13 +18,13 @@ import kotlinx.coroutines.launch
 sealed class MovieDetailState {
     data object Loading : MovieDetailState()
     data class Loaded(val detail: MovieDetail) : MovieDetailState()
-    data class Error(val message: String) : MovieDetailState()
+    data class Error(val message: String, val kind: LoadErrorKind = LoadErrorKind.GENERIC) : MovieDetailState()
 }
 
 sealed class SeriesDetailState {
     data object Loading : SeriesDetailState()
     data class Loaded(val detail: SeriesDetail) : SeriesDetailState()
-    data class Error(val message: String) : SeriesDetailState()
+    data class Error(val message: String, val kind: LoadErrorKind = LoadErrorKind.GENERIC) : SeriesDetailState()
 }
 
 class MovieDetailStore(private val apiClient: TvApiClient) {
@@ -59,7 +61,8 @@ class MovieDetailStore(private val apiClient: TvApiClient) {
                 runCatching { apiClient.getPlaystate(listOf(id)) }.getOrNull()
                     ?.let { _playstateOverlay.value = it }
             } else {
-                _state.value = MovieDetailState.Error(result.exceptionOrNull()?.message ?: "Unknown error")
+                val cause = result.exceptionOrNull()
+                _state.value = MovieDetailState.Error(cause?.message ?: "", loadErrorKindOf(cause))
             }
         }
     }
@@ -135,7 +138,8 @@ class SeriesDetailStore(private val apiClient: TvApiClient) {
                         ?.let { _playstateOverlay.value = it }
                 }
             } else {
-                _state.value = SeriesDetailState.Error(result.exceptionOrNull()?.message ?: "Unknown error")
+                val cause = result.exceptionOrNull()
+                _state.value = SeriesDetailState.Error(cause?.message ?: "", loadErrorKindOf(cause))
             }
         }
     }
