@@ -71,12 +71,30 @@ attempt and tells you nothing):
   seconds** to **zero**, from the moment the new bridge connected. (Mind the clocks: Jellyfin logs in
   UTC, the host is UTC+2 — the last rejection at `04:25:06Z` is one minute *before* the connect at
   `04:26:14Z`, not an hour after it.)
-- **Acceptance 3, mechanism** — `GET /Sessions` on the household server now shows the connected device
-  with `SupportsMediaControl: true` / `SupportsRemoteControl: true`. That is `postCapabilities`
-  landing, which is the thing that has been silently false since the upgrade and the reason the
-  dashboard could not pause or seek. **The pause-reaches-the-TV half is still untested**: the stue TV
-  was powered off at the time, so no bridge exists for it and its session row still carries the stale
-  `SupportsMediaControl: false`. It should flip the next time the TV connects — worth a glance.
+- **Acceptance 3 — fully verified on the stue TV (v1.32, 2026-09-20).** Its session row flipped from
+  the stale `SupportsMediaControl: false` to **`true`** the moment its bridge connected
+  (`device=84a570800cc828ec…`), which is `postCapabilities` landing — the thing that has been silently
+  false since the upgrade.
+
+  Then, end to end, with nobody at the TV:
+
+  | step | result |
+  |---|---|
+  | `POST /Sessions/{id}/Playing` (dashboard *Play*) | Big Buck Bunny started on the TV |
+  | `POST /Sessions/{id}/Command` (*DisplayMessage*) | the card rendered over the playing video |
+  | `POST /Sessions/{id}/Playing/Unpause` | playing, 51 s → 61 s (advancing) |
+  | **`POST /Sessions/{id}/Playing/Pause`** | **`IsPaused: true` at 62 s** |
+  | 10 s later | still `IsPaused: true`, still 62 s |
+  | `POST /Sessions/{id}/Playing/Stop` | playback ended |
+
+  Every one of those travels Jellyfin → `/socket` (the connection that was answering 403) →
+  `handleIncoming` → `TvEventBus` → the TV's own `/api/tv/events` socket. This is the phase 110
+  guarantee, restored.
+
+  **One false alarm worth recording.** A pause issued *before* playback had established did nothing —
+  the client only collects `LocalPlaystateCommands` while `PlayerScreen` is composed, which is
+  FR-R155-2's deliberate "ignore when no player is open". It briefly looked like the Playstate path
+  was broken while `GeneralCommand` worked; it was not.
 
 Acceptance 4 and 5 hold in CI against the tightened mock. Open question 2 stays open with its lean,
 now observable either way.
