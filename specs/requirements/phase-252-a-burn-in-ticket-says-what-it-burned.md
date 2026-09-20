@@ -6,7 +6,7 @@
 > listed twice). This one is different: the list is right, and the ticket still does not carry the one
 > fact the client needs — *which subtitle is already in the picture*.
 
-**Status:** Planned (written 2026-09-20, not dev-reviewed).
+**Status:** ✓ Built 2026-09-20 (same day as written), not dev-reviewed, **not deployed, not verified against a live session.** `compileKotlinLinuxX64` clean; `BurnInTicketWireTest` 5/5 (the additive-field wire contract, both directions). ⚠ No `PlaybackService` test harness exists — `restreamWithoutBurnIn` is compile-verified and read-verified only. `startPlayback`'s stream-URL choice moved into a shared `streamUrlFor()` (behaviour-identical, but it is a touched hot path).
 
 ## Bug report
 Owner, 2026-09-20: *"Subtitles do not really work on movies like Honeyman in Ravilo. Wholphin works

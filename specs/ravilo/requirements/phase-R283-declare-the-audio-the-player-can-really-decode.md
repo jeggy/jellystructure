@@ -6,7 +6,7 @@
 > Wholphin there are 2 audio tracks while in Ravilo there are not"* and *"Ravilo should at least
 > support everything the same as Wholphin."*
 
-**Status:** Planned (written 2026-09-20, not dev-reviewed).
+**Status:** ✓ Built 2026-09-20 (same day as written), not dev-reviewed, **not verified on a device.** Compiles on Android + wasmJs. Checked in the local release APK: `libffmpegJNI.so` ships for all four ABIs and contains `ff_truehd_decoder` and `DCA (DTS Coherent Acoustics)` — the declaration is true of the binary. Needs a client release to take effect; **no backend change.**
 
 ## Investigation (measured, 2026-09-20)
 `PlayerStore.startSession()` sends a hard-coded list that has not changed since R14:

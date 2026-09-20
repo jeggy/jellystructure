@@ -4,7 +4,7 @@
 > the measurements live there. Supersedes R56's restream handling and R209's *"no way to undo it
 > short of restarting playback"*.
 
-**Status:** Planned (written 2026-09-20, not dev-reviewed).
+**Status:** ✓ Built 2026-09-20 (same day as written), not dev-reviewed, **not verified on a device.** `:ravilo-ui` Android + wasmJs compile clean; `BurnedInSubtitleTest` 12/12 and the existing `PlayerScreenTrackResolutionTest` 20/20; a local R8 release APK passes `check-player-dex.sh` at **227** registers (was 234; limit 250) — all new state went into `PlayerBookkeeping`. ⚠ The load-effect wiring itself (text off on a burn-in ticket, resolver re-arm on an un-burn) is only exercisable on a device.
 
 ## The bug, client side
 Report: on *Honeyman*, picking English reloads the film and then shows **two subtitles at once**.
