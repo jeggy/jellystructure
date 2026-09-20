@@ -2,8 +2,11 @@
 
 ## Status
 
-`Planned` — written and built 2026-09-20, mirroring R272's precedent (the signed Tizen `.wgt` attached
-to every release). Not dev-reviewed.
+`✓ Built` — written and built 2026-09-20, and **proven by release `v1.31` the same day**: that
+release carries `ravilo-1.31-release.apk` (9,461,747 bytes), signed with the real upload keystore,
+attached alongside R272's `ravilo-tizen-1.31.wgt`. Before this, the only artifacts a release produced
+were an `.aab` nobody can install directly and `ci.yml`'s throwaway-keystore APK that was never meant
+to be installed.
 
 ## What is wrong
 
