@@ -722,7 +722,7 @@ fun Route.tvRoutes(
     post("/tv/playback/restream") {
         val device = call.attributes[DeviceKey]
         val req = call.receive<PlaybackRestreamRequest>()
-        call.respond(playbackService.restream(device, req.itemId, req.subtitleStreamIndex, req.positionMs))
+        call.respond(playbackService.restream(device, req.itemId, req.subtitleStreamIndex, req.positionMs, req.capabilities))
     }
 
     post("/tv/mark") {

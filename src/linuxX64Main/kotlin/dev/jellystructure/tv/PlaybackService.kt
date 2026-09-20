@@ -481,22 +481,12 @@ class PlaybackService(
         // ticket. Order matches the container's audio-stream order so the player can map by index.
         val audio = buildAudioTracks(itemDetail)
 
-        val streamUrl = if (needsTranscode) {
-            // Phase 239 (FR-239-5) — this URL is **Jellyfin's own**, taken verbatim from PlaybackInfo's
-            // `TranscodingUrl`, and its credential spelling is Jellyfin's to get right. Nothing here may
-            // rewrite it. Measured from a real PlaybackInfo on 12.1.0 (2026-09-20): Jellyfin templates
-            // `ApiKey=`, which is the same parameter `withJellyfinToken` emits (the name is matched
-            // case-insensitively and has no underscore) — so the server is not handing out URLs it will
-            // refuse to authenticate.
-            val tu = source.transcodingUrl
-            if (tu.startsWith("http")) tu else "$jellyfinBase$tu"
-        } else {
-            // FR-239-2 — handed to a player, which cannot attach a header. One spelling, one place.
-            withJellyfinToken(
-                "$jellyfinBase/Videos/$jellyfinId/stream?Static=true&MediaSourceId=$jellyfinId&DeviceId=${identity.deviceId}",
-                token,
-            )
-        }
+        // Phase 239 (FR-239-5) — on a transcode this is **Jellyfin's own** URL, verbatim from
+        // PlaybackInfo's `TranscodingUrl`. Measured from a real PlaybackInfo on 12.1.0 (2026-09-20):
+        // Jellyfin templates `ApiKey=`, the same parameter `withJellyfinToken` emits (matched
+        // case-insensitively, no underscore) — so the server is not handing out URLs it will refuse to
+        // authenticate. See [streamUrlFor].
+        val streamUrl = streamUrlFor(jellyfinBase, jellyfinId, token, identity, source?.transcodingUrl?.takeIf { needsTranscode })
 
         val startResult = playbackTracker.started(device, jellyfinId, startPositionMs, jellyfinPlaySessionId)
 
@@ -877,13 +867,22 @@ class PlaybackService(
             }
     }
 
-    /** R56 — Re-stream the item with a PGS subtitle burned in via Jellyfin HLS transcode. */
+    /**
+     * R56 — Re-stream the item with a PGS subtitle burned in via Jellyfin HLS transcode.
+     *
+     * Phase 252 — a NEGATIVE [subtitleStreamIndex] is the inverse: the same item at [positionMs] with
+     * no burn-in at all, negotiated the way [startPlayback] negotiates (see [restreamWithoutBurnIn]).
+     * Until 252 this function could only ever add a burn-in, so once a subtitle was in the picture
+     * neither "Off" nor another subtitle could take it out again for the rest of the session.
+     */
     suspend fun restream(
         device: DeviceData,
         jellyfinId: String,
         subtitleStreamIndex: Int,
         positionMs: Long,
+        capabilities: ClientCapabilities? = null,
     ): StreamTicket {
+        if (subtitleStreamIndex < 0) return restreamWithoutBurnIn(device, jellyfinId, positionMs, capabilities ?: ClientCapabilities())
         requireVisible(device, jellyfinId)
         val jellyfinBase = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
         val token = jellyfinClient.tvTokenForClient(jellyfinBase, device)
@@ -962,8 +961,76 @@ class PlaybackService(
             audio = audio,
             trickplayUrl = null,
             expiresAt = nowMs() + TICKET_TTL_MS,
+            // Phase 252 (FR-252-1) — the one fact the client cannot get anywhere else: this subtitle
+            // is already in the pixels, so no text track may render beside it.
+            burnedSubtitleIndex = subtitleStreamIndex,
         )
     }
+
+    /**
+     * Phase 252 (FR-252-2/-3/-4) — [restream]'s un-burn branch: a fresh ticket for the same item at
+     * [positionMs], negotiated exactly as [startPlayback] does (so it may direct-play, and then
+     * 161/R209's in-container rule applies to its subtitle list), minus everything that belongs to a
+     * session's FIRST start: no resume-position read, no `Sessions/Playing` report — the session is
+     * already running and its heartbeat continues. Goes through the same [PlaybackTracker.started]
+     * supersede handling as the burn-in branch, which is what releases the burn-in encode it replaces.
+     */
+    private suspend fun restreamWithoutBurnIn(
+        device: DeviceData,
+        jellyfinId: String,
+        positionMs: Long,
+        capabilities: ClientCapabilities,
+    ): StreamTicket {
+        requireVisible(device, jellyfinId)
+        val jellyfinBase = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
+        val token = jellyfinClient.tvTokenForClient(jellyfinBase, device)
+            ?: throw JellyfinReauthRequiredException("This device's Jellyfin sign-in has expired — re-pair it to continue watching.")
+        val identity = JellyfinDeviceIdentity.forDevice(device)
+        val itemDetail = jellyfinClient.getItemDetail(jellyfinBase, token, device.jellyfinUserId, jellyfinId)
+        val playbackInfo = jellyfinClient.getPlaybackInfo(jellyfinBase, token, device.jellyfinUserId, jellyfinId, capabilities = capabilities, identity = identity)
+        val source = playbackInfo?.mediaSources?.firstOrNull()
+        val needsTranscode = source != null && !source.supportsDirectPlay && source.transcodingUrl != null
+        Logger.info("PlaybackInfo(un-burn): item=$jellyfinId directPlay=${source?.supportsDirectPlay} transcode=$needsTranscode", "tv")
+        val subtitles = buildSubtracks(itemDetail, jellyfinId, jellyfinBase, token, embedContainerSubs = !needsTranscode && capabilities.supportsEmbeddedTextSubs)
+
+        val startResult = playbackTracker.started(device, jellyfinId, positionMs, playbackInfo?.playSessionId)
+        startResult.superseded?.let { old ->
+            withContext(NonCancellable) { releaseSession(device, jellyfinId, old.positionMs, old.jellyfinPlaySessionId) }
+        }
+        if (startResult.stopAlreadyArrived) {
+            withContext(NonCancellable) {
+                playbackTracker.stopped(device, jellyfinId)
+                releaseSession(device, jellyfinId, positionMs, playbackInfo?.playSessionId)
+            }
+        }
+
+        return StreamTicket(
+            jellyfinBaseUrl = jellyfinBase,
+            accessToken = "", // R271 — see StreamTicket.accessToken
+            itemId = jellyfinId,
+            container = "mkv",
+            directPlay = !needsTranscode,
+            hlsUrl = streamUrlFor(jellyfinBase, jellyfinId, token, identity, source?.transcodingUrl?.takeIf { needsTranscode }),
+            startPositionMs = positionMs,
+            subtitles = subtitles,
+            audio = buildAudioTracks(itemDetail),
+            trickplayUrl = null,
+            expiresAt = nowMs() + TICKET_TTL_MS,
+        )
+    }
+
+    /**
+     * The stream URL for a negotiated session: Jellyfin's own `TranscodingUrl` verbatim when it is
+     * transcoding (FR-239-5 — its credential spelling is Jellyfin's to get right, never rewritten
+     * here), else our static direct-play URL (FR-239-2 — handed to a player, which cannot attach a
+     * header). One spelling, shared by [startPlayback] and [restreamWithoutBurnIn].
+     */
+    private fun streamUrlFor(jellyfinBase: String, jellyfinId: String, token: String, identity: JellyfinDeviceIdentity, transcodingUrl: String?): String =
+        if (transcodingUrl != null) {
+            if (transcodingUrl.startsWith("http")) transcodingUrl else "$jellyfinBase$transcodingUrl"
+        } else {
+            withJellyfinToken("$jellyfinBase/Videos/$jellyfinId/stream?Static=true&MediaSourceId=$jellyfinId&DeviceId=${identity.deviceId}", token)
+        }
 
     private fun buildAudioTracks(itemDetail: JellyfinItemDetail?): List<AudioTrack> {
         val streams = itemDetail?.mediaStreams ?: return emptyList()

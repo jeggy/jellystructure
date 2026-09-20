@@ -208,6 +208,14 @@ data class StreamTicket(
     val audio: List<AudioTrack> = emptyList(),
     @SerialName("trickplay_url") val trickplayUrl: String? = null,
     @SerialName("expires_at") val expiresAt: Long,
+    /**
+     * Phase 252 (FR-252-1) — Jellyfin's stream index of the subtitle **encoded into this stream's
+     * video**, null when none. Only a burn-in restream sets it. Without it a client cannot know a
+     * subtitle is already in the picture, and leaves its own text track rendering on top — the
+     * "two subtitles at once" report. Additive with a default on purpose: an older client ignores it,
+     * and `encodeDefaults = false` keeps a null off the wire entirely (contrast [accessToken]).
+     */
+    @SerialName("burned_subtitle_index") val burnedSubtitleIndex: Int? = null,
 )
 
 @Serializable
@@ -1142,8 +1150,14 @@ data class PlaybackStopRequest(
 @Serializable
 data class PlaybackRestreamRequest(
     @SerialName("item_id") val itemId: String,
+    /** Phase 252 (FR-252-2) — negative = "this stream at [positionMs], with NO burn-in" (how a
+     *  burn-in is undone). `-1` rather than a nullable so the wire type never changed: a backend that
+     *  predates 252 forwards it to Jellyfin, where -1 already means "no subtitle". */
     @SerialName("subtitle_stream_index") val subtitleStreamIndex: Int,
     @SerialName("position_ms") val positionMs: Long = 0,
+    /** Phase 252 (FR-252-3) — the session's own capabilities, so an un-burn negotiates as the real
+     *  device (it may well direct-play). Absent from a pre-252 client ⇒ conservative defaults. */
+    val capabilities: ClientCapabilities? = null,
 )
 
 /** On-device viewer-tweakable settings (PUT /api/tv/settings). All fields optional = unchanged. */
