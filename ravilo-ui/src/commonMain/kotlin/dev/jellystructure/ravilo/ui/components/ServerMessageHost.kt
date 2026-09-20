@@ -13,13 +13,9 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
@@ -36,10 +32,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import dev.jellystructure.ravilo.ui.LocalServerMessages
 import dev.jellystructure.ravilo.ui.theme.RaviloMotion
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
@@ -129,6 +127,25 @@ private fun ServerMessageToast(toast: ToastItem, onDismiss: () -> Unit) {
     )
     val colors = RaviloTheme.colors
 
+    // Both of the design's decorations — `border-left: 4px solid var(--accent)` and the absolutely
+    // positioned `.rv-msg-bar` — are PAINTED, not laid out. That is the whole fix.
+    //
+    // They used to be child `Box`es with `fillMaxHeight()` and `fillMaxWidth()`, and a child that
+    // fills takes the incoming maximum, which here is the whole screen: the card then sized itself to
+    // its tallest child and rendered as a screen-high mostly-empty panel with a full-height stripe
+    // down its side. The width one is the same mistake in the other axis — `fillMaxWidth()` pinned
+    // every toast to the 460 dp maximum, so a short message could never hug its text the way
+    // `min-width: 300px` in the design intends.
+    //
+    // In CSS neither decoration affects the box: a border is drawn on the box's own resolved size,
+    // and `.rv-msg-bar` is `position: absolute`. `drawBehind` is the Compose equivalent — it reads the
+    // card's resolved size and contributes nothing to measurement. It also makes the countdown a pure
+    // redraw rather than a relayout.
+    // Captured outside the draw scope: DrawScope has no composition access.
+    val accentColor = colors.accent
+    val stripeBrush = remember(colors.accent, colors.accentSecondary) {
+        Brush.linearGradient(listOf(colors.accent, colors.accentSecondary))
+    }
     Box(
         modifier = Modifier
             .graphicsLayer {
@@ -139,6 +156,18 @@ private fun ServerMessageToast(toast: ToastItem, onDismiss: () -> Unit) {
             .clip(RoundedCornerShape(15.dp))
             .background(colors.surface.copy(alpha = 0.93f))
             .border(1.dp, colors.textDim.copy(alpha = 0.25f), RoundedCornerShape(15.dp))
+            .drawBehind {
+                // design: `border-left: 4px solid var(--accent)` — the card's own height, always.
+                drawRect(color = accentColor, size = Size(4.dp.toPx(), size.height))
+                // design: `.rv-msg-bar` — 3px, bottom, drains left-to-right over the display duration.
+                val barH = 3.dp.toPx()
+                drawRect(
+                    brush = stripeBrush,
+                    topLeft = Offset(0f, size.height - barH),
+                    size = Size(size.width * (1f - barProgress), barH),
+                    alpha = 0.9f,
+                )
+            }
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
@@ -153,32 +182,12 @@ private fun ServerMessageToast(toast: ToastItem, onDismiss: () -> Unit) {
                 modifier = Modifier
                     .size(40.dp)
                     .clip(RoundedCornerShape(12.dp))
-                    .background(Brush.linearGradient(listOf(colors.accent, colors.accentSecondary))),
+                    .background(stripeBrush),
                 contentAlignment = Alignment.Center,
             ) {
                 Text("✉", color = Color.White, fontSize = 21.sp)
             }
             Text(toast.text, color = colors.text, fontSize = 19.sp, lineHeight = 26.sp)
         }
-        // Left accent stripe (design's border-left: 4px solid --accent).
-        Box(
-            modifier = Modifier
-                .align(Alignment.CenterStart)
-                .fillMaxHeight()
-                .width(4.dp)
-                .background(colors.accent),
-        )
-        // Countdown bar: full width while entering, drains left-to-right over the display duration.
-        Box(
-            modifier = Modifier
-                .align(Alignment.BottomStart)
-                .fillMaxWidth()
-                .height(3.dp)
-                .graphicsLayer {
-                    scaleX = 1f - barProgress
-                    transformOrigin = TransformOrigin(0f, 0.5f)
-                }
-                .background(Brush.linearGradient(listOf(colors.accent, colors.accentSecondary))),
-        )
     }
 }
