@@ -13,6 +13,19 @@ import * as path from "path";
  *  - Big Buck Bunny: 2 untagged audio tracks (→ triage queue)
  *  - Jellystructure config maps the fixture movie dir as a library
  *
+ * ⚠ THIS SUITE MUTATES ITS OWN FIXTURES, so it is **not** locally re-runnable without rebuilding
+ * them. The "set default ★" step below really does apply the change, and TrackEditor's applyChanges()
+ * really does run `mkvpropedit` against the file in /media (mounted `rw`). Once it has run, Sintel's
+ * default audio IS eng, the "set default ★" control is a `★ default` BADGE instead of a button, and
+ * every later run fails at a locator that can never match again — including Playwright's own retry
+ * of a first attempt that got far enough to apply and then timed out for an unrelated reason, which
+ * makes a slow machine look like a logic bug.
+ *
+ * CI never sees this because it builds fixtures fresh and runs once. Locally:
+ *     rm -rf /tmp/jellystructure-fixtures && ./scripts/build-fixtures.sh
+ * before every run, and reset config-test/ too (the app writes its scanned DB and config there as
+ * root — see .gitignore).
+ *
  * One shared login (beforeAll/afterAll), not one per test: the app's login-rate-limiter (a few
  * attempts/minute) is shared across the WHOLE Playwright run, not per file -- by the time this
  * suite's 3rd/4th test tried to log in on top of auth.spec.ts's + bazarr-dashboard.spec.ts's own
