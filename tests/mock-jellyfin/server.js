@@ -6,6 +6,10 @@
 const http = require("http");
 const crypto = require("crypto");
 const PORT = process.env.PORT ?? 8096;
+// Phase 243 — the version this mock claims to be. Kept above the 12.0 floor deliberately: the
+// suite should exercise the supported path, and a below-floor mock would put a permanent
+// advisor finding into every e2e run.
+const JELLYFIN_VERSION = "12.1.0";
 const ADMIN_USER = process.env.JELLYFIN_USER ?? "admin";
 const ADMIN_PASS = process.env.JELLYFIN_PASS ?? "password";
 // Media mount point as seen by the app container
@@ -91,6 +95,18 @@ const server = http.createServer(async (req, res) => {
       User: { Id: "user-id-1", Name: ADMIN_USER, Policy: { IsAdministrator: true } },
       AccessToken: "mock-access-token",
       ServerId: "mock-server-id",
+    });
+  }
+
+  // GET /System/Info/Public — anonymous on the real server (measured 12.1.0, 2026-09-19), and the one
+  // place phase 243 reads the Jellyfin version from. The mock reports a version above 243's floor so
+  // the e2e suite exercises the supported path; the backend's testConnection 404'd here before this.
+  if (method === "GET" && path === "/System/Info/Public") {
+    return send(res, 200, {
+      Id: "mock-server-id",
+      ServerName: "mock-jellyfin",
+      Version: JELLYFIN_VERSION,
+      StartupWizardCompleted: true,
     });
   }
 

@@ -315,7 +315,18 @@ class JellyfinClient {
     suspend fun testConnection(baseUrl: String, token: String): Boolean = runCatching {
         val url = baseUrl.trimEnd('/') + "/System/Info/Public"
         val response = httpGet(url) { jellyfinAuth(token) }
-        response.status.value in 200..299
+        val ok = response.status.value in 200..299
+        // Phase 243 (FR-243-2) — this body used to be thrown away, keeping only the status. It carries
+        // `Version`, needs no credential, and is the one read that still answers when the credential
+        // form has changed underneath us (which is exactly when the version explains everything).
+        // Parsing it is free: the response is already here. A parse failure records nothing and never
+        // affects the returned Boolean, which is the only thing any existing caller reads.
+        if (ok) {
+            runCatching { response.body<JellyfinSystemInfoPublic>().version }
+                .getOrNull()
+                ?.let { JellyfinServerVersion.record(it) }
+        }
+        ok
     }.getOrDefault(false)
 
     /**

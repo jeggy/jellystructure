@@ -40,7 +40,11 @@ Tizen from one codebase. TV and phone ship as a single APK. The browser build is
 
 ## Requirements
 
-- Jellyfin, reachable over HTTP, with an admin account and an API token.
+- Jellyfin **12.0 or later**, reachable over HTTP, with an admin account and an API token.
+  Older Jellyfin is not supported: route shapes and authentication forms are only verified
+  against 12.x, and the product carries no compatibility branches for earlier versions
+  (phase 243). A server below the floor is reported — `/api/health/full` fails a check and the
+  Jellyfin advisor shows a finding — not blocked.
 - A TMDB v3 API key.
 - Read/write access to the media directories, mounted at the same paths the container sees.
 - `ffmpeg`, `ffprobe`, `mkvpropedit` and `fpcalc` on `PATH` (all installed in the Docker image).

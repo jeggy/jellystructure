@@ -148,6 +148,9 @@ object JellyfinAdvisorService {
         swappinessFinding()?.let { serverWide += it }
 
         restartPendingFinding(systemInfo, plugins)?.let { serverWide += it }
+        // Phase 243 (FR-243-3) — the same fact `/health/full` fails a check on, said once here in the
+        // human surface. Reporting only: nothing in the product branches on this (FR-243-4).
+        belowFloorFinding()?.let { serverWide += it }
 
         return AdvisorResponse(
             reachable = true,
@@ -666,6 +669,34 @@ object JellyfinAdvisorService {
             fieldLabel = "n/a — nothing here to set",
             recommendation = "Not offered. Restarting the household's media server is not an admin-panel side effect — decide when, yourself, and preferably when nobody is watching.",
             tradeoff = "n/a",
+        )
+    }
+
+    /**
+     * Phase 243 (FR-243-3) — the connected Jellyfin is below the supported floor.
+     *
+     * Reads the version the public probe latched, which `computeFindings` has necessarily refreshed by
+     * the time it gets here only if something called [JellyfinClient.testConnection] — `/health/full`
+     * does, on every hit. An unobserved version yields no finding at all: silence is the honest answer
+     * to "we have not asked", and inventing a warning from it is exactly the class of untrue finding
+     * phase 246 existed to remove.
+     */
+    private fun belowFloorFinding(): AdvisorFinding? {
+        val v = dev.jellystructure.auth.JellyfinServerVersion.current() ?: return null
+        if (!dev.jellystructure.auth.JellyfinServerVersion.isBelowFloor(v)) return null
+        return AdvisorFinding(
+            id = "jellyfin_below_floor",
+            severity = WARNING,
+            summary = "This Jellyfin is older than jellystructure supports",
+            currentValue = dev.jellystructure.auth.JellyfinServerVersion.belowFloorDetail(v),
+            costHere = "Nothing is deliberately degraded, and nothing refuses to start. The product simply " +
+                "stops claiming its behaviour against this server is defined: route shapes, authentication " +
+                "forms and payload fields are only verified against ${dev.jellystructure.auth.JellyfinServerVersion.FLOOR_MAJOR}.x.",
+            navigationPath = "Dashboard → your Jellyfin server's own update channel (not something this panel can do)",
+            fieldLabel = "n/a — nothing here to set",
+            recommendation = "Upgrade Jellyfin to ${dev.jellystructure.auth.JellyfinServerVersion.FLOOR_MAJOR}.0 or later.",
+            tradeoff = "A Jellyfin major upgrade changes route behaviour — see specs/jellyfin-upgrade-checklist.md " +
+                "for what to re-check afterwards.",
         )
     }
 

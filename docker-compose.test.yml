@@ -195,6 +195,9 @@ services:
       FIXTURE_DIR: ${FIXTURE_DIR:-/tmp/jellystructure-fixtures}
       JELLYFIN_USER: ${JELLYFIN_USER:-admin}
       JELLYFIN_PASS: ${JELLYFIN_PASS:-password}
+      # Phase 243 — jellyfin-version.spec.ts asserts the version reaches /api/health AND that the
+      # endpoint it is read from answers anonymously, which needs the mock's own address.
+      JELLYFIN_URL: http://jellyfin-mock:8096
       # Reachable from the "app" container over the shared testnet network — Bazarr's mock is
       # always up in this stack, so bazarr-dashboard.spec.ts never needs a real instance.
       BAZARR_URL: http://bazarr-mock:6767

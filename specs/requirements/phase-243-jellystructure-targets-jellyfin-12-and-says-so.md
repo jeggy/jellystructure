@@ -5,11 +5,49 @@
 
 ## Status
 
-`Planned` — written 2026-09-18, **dev-reviewed 2026-09-19 against `main` `dcb97f2c`** (see §Dev review
-at the foot: read the version from the *public* probe, which already runs and still answers when
-authentication is broken). The umbrella decision behind **238**,
+`✓ Built` 2026-09-20 — written 2026-09-18, dev-reviewed 2026-09-19 against `main` `dcb97f2c` (see
+§Dev review at the foot), built 2026-09-20 with every review item taken. The umbrella decision behind **238**,
 **239**, **240**, **241**, **242** and **R271**; those are the individual repairs, this is the policy
 that makes them legitimate and stops the next one being written as a compatibility shim.
+
+## Build (2026-09-20)
+
+Every dev-review item was taken, including the one that moved where the version is read from.
+
+- **`JellyfinServerVersion`** (`auth/JellyfinServerVersion.kt`) — a `SpinLock`-guarded latch holding
+  the last version the **public** probe reported, plus `FLOOR_MAJOR = 12`, `majorOf`, `isBelowFloor`
+  and the one `belowFloorDetail` sentence both reporting sites share. Review item 1: the read moved
+  to `GET /System/Info/Public`, whose body `testConnection` was already fetching and throwing away.
+  Two rules are encoded rather than commented: an **unobserved** version is not below the floor, and
+  an **unparseable** one is not either — "we have not asked" must never render as "your server is too
+  old", which is exactly the class of untrue finding phase 246 was written to remove.
+- **FR-243-2** — `/api/health` reports `jellyfin_version`. Latched, never fetched there: that
+  endpoint is hit every 30 s by the container's own `HEALTHCHECK` and may make no outbound call.
+  `null` means nothing has probed Jellyfin yet in this process, which is itself a finding.
+- **FR-243-3** — `/health/full` gains a **Jellyfin version** check (it calls `testConnection` one line
+  above, so the latch is fresh), and `JellyfinAdvisorService` gains a `jellyfin_below_floor`
+  server-wide finding. Both use `belowFloorDetail`, so they cannot disagree about the numbers.
+- **FR-243-4, mechanically** — review item 2: `scripts/check-jellyfin-version-use.sh` allow-lists the
+  five files permitted to mention `JellyfinServerVersion` at all (definition, the recorder, the two
+  reporting sites, its tests). Anything else is a compatibility branch until argued otherwise. Wired
+  into `ci / checks` beside the existing three fences.
+- **FR-243-1** — the floor is stated in `specs/constitution.md` (new § *Supported Jellyfin*) and in
+  `README.md`'s Requirements list, in the same words. Review item 3 taken: **12.0**, with the
+  major-only comparison noted inline as the reason the minor is unreachable.
+- **FR-243-6** — `specs/jellyfin-upgrade-checklist.md`, written with the **manual** commands the
+  2026-09-18 audit actually used (auth-form matrix, `/socket` handshake, the 405-not-401 route probe,
+  the `@SerialName` sweep, the OpenAPI 500), each marked with the automation that will replace it, so
+  it is usable whether or not 238/240 have landed. Review item 5.
+- **Tests.** `JellyfinServerVersionTest` (8 cases, green) pins the unobserved/unparseable/at-the-floor
+  cases and that a failed probe cannot erase a version genuinely observed. `tests/e2e/jellyfin-version.spec.ts`
+  asserts the version reaches `/api/health`, that the `/health/full` check exists and names the
+  version, and — pinning the *mechanism*, not just the outcome — that the endpoint it is read from
+  answers anonymously. The mock Jellyfin gained `GET /System/Info/Public` (`JELLYFIN_VERSION = "12.1.0"`),
+  which it did not have: `testConnection` had been 404ing against it for the whole life of the suite.
+- **Review item 4** taken: the below-floor state is per-request, not sticky. Open question 2 closed.
+
+Open question 1 closed as **12.0** per review item 3. FR-243-5 remains a standing rule with the sweep
+command in the checklist's step 6; the 18 citations are not rewritten here, per the phase's own non-goal.
 
 ## What is wrong
 

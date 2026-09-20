@@ -24,6 +24,23 @@ Jellyfin. The system owns:
 The metadata language is driven by the actual audio tracks present in each file — not a global
 default — using a language-resolution algorithm backed by TMDB.
 
+### Supported Jellyfin (phase 243)
+
+jellystructure targets **Jellyfin 12.0 and later**. Below that is unsupported: not blocked, not
+shimmed, undefined. The comparison is on the **major version only**, which is what makes the
+12.0-vs-12.1 distinction academic — no code path can tell them apart.
+
+**No compatibility branches, ever.** No code path may branch on Jellyfin's version to support an
+older one. Where a newer Jellyfin changes a contract, the product moves; it does not carry both. A
+version check is permitted for *reporting* — a `/api/health/full` check and an advisor finding — and
+for refusing a known-broken combination, and that refusal may produce a finding or a health failure
+and nothing else: it may never select a request shape, a header form, an endpoint or a payload.
+`scripts/check-jellyfin-version-use.sh` enforces this mechanically.
+
+Verification notes in code state the version **and the date** they were measured against
+(`verified against Jellyfin 12.1.0, 2026-09-19`), so a reader can tell which are still true.
+After a Jellyfin major upgrade, run [`specs/jellyfin-upgrade-checklist.md`](jellyfin-upgrade-checklist.md).
+
 ---
 
 ## Technology Mandates

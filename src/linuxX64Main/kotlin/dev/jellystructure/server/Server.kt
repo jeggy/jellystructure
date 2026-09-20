@@ -425,8 +425,14 @@ fun startServer(
                     val writerJson = playbackService.writerStats()?.toJson() ?: "null"
                     fun ages(m: Map<String, Long>) = m.entries.joinToString(",", "{", "}") { "\"${it.key}\":${it.value}" }
                     val refreshersJson = """{"playstate_age_ms":${ages(dev.jellystructure.tv.PlaystateCache.refresherAges())},"continue_age_ms":${ages(homeFeedService.continueRefreshAges())}}"""
+                    // Phase 243 (FR-243-2) — the connected Jellyfin's version, last as observed by the
+                    // public probe. Latched, never fetched here: this endpoint is hit every 30s by the
+                    // container HEALTHCHECK and must make no outbound call. `null` means nothing has
+                    // successfully probed Jellyfin yet in this process.
+                    val jfVersion = dev.jellystructure.auth.JellyfinServerVersion.current()
+                        ?.let { "\"${it.replace("\\", "\\\\").replace("\"", "\\\"")}\"" } ?: "null"
                     call.respondText(
-                        """{"status":"ok","version":"${dev.jellystructure.ServerVersion.current.replace("\\", "\\\\").replace("\"", "\\\"")}","fd_count":${fdWatchdog.currentCount},"fd_high_water_mark":${fdWatchdog.highWaterMark},"fd_census":${census?.toJson() ?: "null"},""" +
+                        """{"status":"ok","version":"${dev.jellystructure.ServerVersion.current.replace("\\", "\\\\").replace("\"", "\\\"")}","jellyfin_version":$jfVersion,"fd_count":${fdWatchdog.currentCount},"fd_high_water_mark":${fdWatchdog.highWaterMark},"fd_census":${census?.toJson() ?: "null"},""" +
                             """"outbound_http_gate":${outboundHttp.toJson()},"process_gate":${processGate.toJson()},""" +
                             """"tmdb_pacing":${Json.encodeToString(TmdbPacingStats.serializer(), tmdbPacing)},""" +
                             """"mkv_health_swept_at":${mkvHealthSweptAt ?: "null"},"job_queues":${jobQueues.toJson()},""" +
@@ -467,6 +473,21 @@ fun startServer(
                         runCatching { jellyfinClient.testConnection(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken) }.getOrDefault(false)
                     } else false
                     checks.add(HealthCheck("Jellyfin", jfOk, if (cfg.apiKeys.jellyfinUrl.isBlank()) "URL not configured" else if (jfOk) "Connected to ${cfg.apiKeys.jellyfinUrl}" else "Connection failed"))
+                    // Phase 243 (FR-243-3) — below the floor is a visible finding, not a crash. The
+                    // check above just refreshed the latched version (testConnection reads the public
+                    // probe's body), so this is a pure comparison. An unknown version is NOT a failure:
+                    // "we haven't asked yet" must never render as "your server is too old".
+                    val jfVersionSeen = dev.jellystructure.auth.JellyfinServerVersion.current()
+                    checks.add(HealthCheck(
+                        "Jellyfin version",
+                        !dev.jellystructure.auth.JellyfinServerVersion.isBelowFloor(jfVersionSeen),
+                        when {
+                            jfVersionSeen == null -> "not reported yet — jellystructure targets ${dev.jellystructure.auth.JellyfinServerVersion.FLOOR_MAJOR}.0 and later"
+                            dev.jellystructure.auth.JellyfinServerVersion.isBelowFloor(jfVersionSeen) ->
+                                dev.jellystructure.auth.JellyfinServerVersion.belowFloorDetail(jfVersionSeen)
+                            else -> "Jellyfin $jfVersionSeen (supported: ${dev.jellystructure.auth.JellyfinServerVersion.FLOOR_MAJOR}.0 and later)"
+                        },
+                    ))
                     // Check managed Jellyfin libraries for settings that conflict with Jellystructure
                     // taking over metadata management (e.g. NFO Metadata Saver overwrites our NFO files).
                     // Phase 242 FR-242-6 — one resolver, both consumers. This used to build its own
