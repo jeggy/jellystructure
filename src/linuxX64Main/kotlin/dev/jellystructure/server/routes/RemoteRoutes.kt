@@ -6,6 +6,7 @@ import dev.jellystructure.auth.RemoteCaller
 import dev.jellystructure.auth.RemoteCallerAttr
 import dev.jellystructure.log.Logger
 import dev.jellystructure.media.MediaStore
+import dev.jellystructure.shared.tv.ScreenBusy
 import dev.jellystructure.shared.tv.RemoteCommandRequest
 import dev.jellystructure.shared.tv.RemoteDevice
 import dev.jellystructure.shared.tv.RemotePairRequest
@@ -61,6 +62,26 @@ fun Route.remoteRoutes(
     fun callerAddressOf(headers: io.ktor.http.Headers, remoteHost: String): String =
         headers["X-Forwarded-For"]?.substringBefore(',')?.trim()?.takeIf { it.isNotBlank() } ?: remoteHost
 
+    /**
+     * R270 (FR-R270-3/-5) — the display name of the person **actually watching** [deviceId], or null.
+     *
+     * One resolution, used by both the device list and `/play`'s 409, so the two cannot name different
+     * people. Resolved from the screen's own `sessionUserId` against the sessions paired to that
+     * device; a user id with no session on this device (signed out since, or a device this caller
+     * cannot see the sessions of) resolves to null rather than to a guess.
+     *
+     * This is the one place FR-R270-5's disclosure flag would live: returning null here makes both the
+     * busy row and the refusal fall back to *"In use"* together.
+     */
+    suspend fun viewerNameOf(deviceId: String): String? {
+        val sessionUserId = screenStatusTracker.get(deviceId)?.status?.takeIf { it.loaded }?.sessionUserId
+            ?: return null
+        return deviceService.listSessions(deviceId)
+            .firstOrNull { it.jellyfinUserId == sessionUserId }
+            ?.jellyfinUsername
+            ?.takeIf { it.isNotBlank() }
+    }
+
     suspend fun remoteDeviceOf(d: dev.jellystructure.auth.DeviceData, callerAddress: String?): RemoteDevice {
         val pairedUsers = if (d.kind == "screen" || d.kind == "cast") {
             deviceService.listSessions(d.deviceId).map { it.jellyfinUsername }.distinct()
@@ -76,6 +97,9 @@ fun Route.remoteRoutes(
             pairedUsers = pairedUsers,
             nowPlayingTitle = nowPlayingItem(d.deviceId)?.let { mediaStore.titleForJellyfinId(it) ?: it },
             nowPlaying = screenStatusTracker.get(d.deviceId)?.status,
+            // R270 (FR-R270-3) — resolved here, not on the client. `pairedUsers.firstOrNull()` was
+            // the wrong person on any TV two people had paired with, and empty for kind = "tv".
+            nowPlayingUser = viewerNameOf(d.deviceId),
         )
     }
 
@@ -114,7 +138,10 @@ fun Route.remoteRoutes(
             // disagree with the caller and is always reachable, exactly as before this phase.
             val live = screenStatusTracker.get(device.deviceId)?.status
             if (live != null && live.loaded && live.sessionUserId != null && live.sessionUserId != caller.jellyfinUserId) {
-                call.respond(HttpStatusCode.Conflict, live)
+                // R270 (FR-R270-3) — the refusal names the same person the device list does, from the
+                // same resolution. It used to respond with the bare ScreenStatus, whose only identity
+                // is a user id, so "the list and the 409 agree" could only ever be vacuously true.
+                call.respond(HttpStatusCode.Conflict, ScreenBusy(live, viewerNameOf(device.deviceId)))
                 return@post
             }
             val (kind, title) = mediaStore.resolvePlayTarget(req.jellyfinItemId) ?: ("movie" to null)

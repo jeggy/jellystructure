@@ -42,6 +42,10 @@ import dev.jellystructure.ravilo.ui.theme.Sora
 import dev.jellystructure.shared.tv.DeviceKind
 import dev.jellystructure.shared.tv.RemoteDevice
 import kotlin.time.Clock
+import kotlin.time.Instant
+import kotlinx.datetime.DayOfWeek
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toLocalDateTime
 
 /** R265 (FR-R265-6) — what to start on the screen the sheet's user picks; null when the sheet is opened
  *  with nothing queued (join-only — the app-bar glyph's case, FR-R265-7's "reconnect is a list" path). */
@@ -126,7 +130,7 @@ private fun ScreensSheetBody(
         // Tier 3 — R270's footnote form: one quiet line, the caveat inside the label itself, one step
         // below the TV rows, never a full row with its own second line (supersedes FR-R265-4's original shape).
         if (airplayAvailable) {
-            SimpleRow(icon = { AirplayGlyph(colors.textSecondary) }, label = str("screens.airplay_notice"), onClick = onAirplay, labelColor = colors.textSecondary)
+            SimpleRow(icon = { AirplayGlyph(colors.textSecondary) }, label = str("screens.airplay_footnote"), onClick = onAirplay, labelColor = colors.textSecondary)
         }
         SimpleRow(icon = { PlusGlyph(colors.text) }, label = str("screens.add"), onClick = onAddTv)
     }
@@ -210,7 +214,16 @@ private fun DeviceRow(device: RemoteDevice, onClick: () -> Unit) {
     val tappable = !offline
     val state = when {
         !device.online -> str("screens.offline", mapOf("when" to lastSeenLabel(device.lastSeen)))
-        busy -> str("screens.busy", mapOf("user" to (device.pairedUsers.firstOrNull() ?: "")))
+        // R270 (FR-R270-3) — the person ACTUALLY watching, resolved server-side. This used to read
+        // `device.pairedUsers.firstOrNull()`, which is the first user *paired to the TV*: on a set two
+        // people had paired with it named the wrong household member about half the time, and for
+        // `kind = "tv"` (where pairedUsers is never populated) it rendered "Busy · is watching" with a
+        // hole in it. A row that is confidently wrong is worse than one that is vague, so an
+        // unresolvable viewer falls back to "In use" rather than to an empty name (FR-R270-5: one
+        // disclosure decision, made once on the server, for busy and offline together).
+        busy -> device.nowPlayingUser
+            ?.let { str("screens.busy", mapOf("user" to it)) }
+            ?: str("screens.in_use")
         np?.loaded == true -> str("screens.playing", mapOf("title" to (np.title ?: "")))
         else -> str("screens.ready")
     }
@@ -252,13 +265,45 @@ private fun SimpleRow(icon: @Composable () -> Unit, label: String, onClick: () -
 
 /** A plain relative-time label for an offline device's row — no calendar/weekday logic (R270's
  *  "keeps its weekday" polish is a design-side follow-up, not built here). */
-private fun lastSeenLabel(lastSeenMs: Long): String {
-    val deltaMs = (Clock.System.now().toEpochMilliseconds() - lastSeenMs).coerceAtLeast(0)
-    val mins = deltaMs / 60_000
-    return when {
-        mins < 1 -> "just now"
-        mins < 60 -> "$mins min ago"
-        mins < 24 * 60 -> "${mins / 60} h ago"
-        else -> "${mins / (24 * 60)} d ago"
-    }
+/**
+ * R270 (FR-R270-4) — *"Offline · last seen {when}"*: a **weekday** inside the last seven days, a
+ * **date** beyond that, and **never a duration and never "just now"**.
+ *
+ * The shipped helper broke all three rules — it answered "just now", "17 min ago", "3 h ago", "2 d
+ * ago" — so an offline row could read *"Offline · last seen just now"*, which is a contradiction on
+ * one line. Dev review item 6 asked for this to be verified rather than assumed; it was, and it was
+ * wrong.
+ *
+ * A weekday is the right grain because it is how a household actually talks about a TV nobody has
+ * turned on ("it's been off since Tuesday"), and it does not imply a precision the `lastSeen` stamp
+ * does not have.
+ */
+@Composable
+internal fun lastSeenLabel(lastSeenMs: Long, nowMs: Long = Clock.System.now().toEpochMilliseconds()): String {
+    val key = lastSeenKey(lastSeenMs, nowMs)
+    return if (key.startsWith("wd.")) str(key) else key
+}
+
+/**
+ * The decidable half, split out so it is testable without a composition: returns either a `wd.*`
+ * string key (a weekday, inside the last seven days) or a literal date (beyond that).
+ */
+internal fun lastSeenKey(lastSeenMs: Long, nowMs: Long): String {
+    val tz = TimeZone.currentSystemDefault()
+    val seen = Instant.fromEpochMilliseconds(lastSeenMs).toLocalDateTime(tz).date
+    val today = Instant.fromEpochMilliseconds(nowMs).toLocalDateTime(tz).date
+    // Whole calendar days, not elapsed hours: a TV last seen at 23:50 yesterday is "yesterday's
+    // weekday", not "8 hours".
+    val days = today.toEpochDays() - seen.toEpochDays()
+    return if (days in 0..6) weekdayKey(seen.dayOfWeek) else "${seen.day}/${seen.monthNumber}/${seen.year}"
+}
+
+private fun weekdayKey(d: DayOfWeek): String = when (d) {
+    DayOfWeek.MONDAY -> "wd.mon"
+    DayOfWeek.TUESDAY -> "wd.tue"
+    DayOfWeek.WEDNESDAY -> "wd.wed"
+    DayOfWeek.THURSDAY -> "wd.thu"
+    DayOfWeek.FRIDAY -> "wd.fri"
+    DayOfWeek.SATURDAY -> "wd.sat"
+    else -> "wd.sun"
 }

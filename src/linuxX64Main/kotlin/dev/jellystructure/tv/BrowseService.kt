@@ -20,6 +20,8 @@ import dev.jellystructure.shared.tv.SearchResults
 import dev.jellystructure.shared.tv.SeededBrowseResponse
 import dev.jellystructure.shared.tv.TvImdbRating
 import dev.jellystructure.shared.tv.effectiveQuery
+import dev.jellystructure.shared.tv.ALL_KIND
+import dev.jellystructure.shared.tv.MUSIC_KIND
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import platform.posix.time
@@ -51,7 +53,19 @@ class BrowseService(
     // home-feed regression) and allowedHash (the Phase 142 visibility scope). Never keyed on the
     // requested kind or a selected value: filtering is a view, never a re-derivation (R233 FR-R233-5).
     // The entry holds all three kind slices (all / movie / series) from ONE pass over the library.
-    private class FacetsEntry(val all: BrowseFacets, val movie: BrowseFacets, val series: BrowseFacets, val builtAt: Long, val feedVer: Long, val allowedHash: Int)
+    // R267 (FR-R267-5c) — `music` is new. Before it, `facets(kind)` sliced exactly three ways and
+    // **any other kind silently fell through to `all`**, so a music-video browse would have rendered
+    // the whole library's counts rather than an error. The phone's Library dropdown offers Music, so
+    // the slice has to be real.
+    private class FacetsEntry(
+        val all: BrowseFacets,
+        val movie: BrowseFacets,
+        val series: BrowseFacets,
+        val music: BrowseFacets,
+        val builtAt: Long,
+        val feedVer: Long,
+        val allowedHash: Int,
+    )
     private val facetsCache = HashMap<String, FacetsEntry>()
     /**
      * R187 — resolves a "→ See all" seed (a [Row.seedQuery] condition tree, already channel-ANDed
@@ -147,9 +161,13 @@ class BrowseService(
         val allDeferred   = async { mediaStore.liveItems(device) }
 
         val mediaKind = when (kind) {
-            "movie"  -> MediaKind.MOVIE
-            "series" -> MediaKind.TV_SHOW
-            else     -> null
+            "movie"    -> MediaKind.MOVIE
+            "series"   -> MediaKind.TV_SHOW
+            // R267 (FR-R267-5c) — music videos are a real library type (phase 172) and the phone's
+            // Library dropdown offers them. Without this they fell into the `else` and browsed
+            // everything.
+            MUSIC_KIND -> MediaKind.MUSIC_VIDEO
+            else       -> null
         }
 
         val token = tokenDeferred.await()
@@ -243,11 +261,12 @@ class BrowseService(
         val now = nowMs()
         val entry = facetsCache[userId]?.takeIf {
             it.feedVer == feedVer && it.allowedHash == allowedHash && (now - it.builtAt) < FACETS_TTL_MS
-        } ?: buildFacets(device).also { facetsCache[userId] = FacetsEntry(it.all, it.movie, it.series, now, feedVer, allowedHash) }
+        } ?: buildFacets(device).also { facetsCache[userId] = FacetsEntry(it.all, it.movie, it.series, it.music, now, feedVer, allowedHash) }
         return when (kind) {
-            "movie"  -> entry.movie
-            "series" -> entry.series
-            else     -> entry.all
+            "movie"       -> entry.movie
+            "series"      -> entry.series
+            MUSIC_KIND    -> entry.music
+            else          -> entry.all
         }
     }
 
@@ -284,12 +303,13 @@ class BrowseService(
 
     private suspend fun buildFacets(device: DeviceData): FacetsEntry {
         val visible = mediaStore.liveItems(device)
-        val all = FacetsAcc(); val movie = FacetsAcc(); val series = FacetsAcc()
+        val all = FacetsAcc(); val movie = FacetsAcc(); val series = FacetsAcc(); val music = FacetsAcc()
         for (item in visible) {
             all.add(item)
             when (item.kind) {
-                MediaKind.MOVIE   -> movie.add(item)
-                MediaKind.TV_SHOW -> series.add(item)
+                MediaKind.MOVIE       -> movie.add(item)
+                MediaKind.TV_SHOW     -> series.add(item)
+                MediaKind.MUSIC_VIDEO -> music.add(item)
                 else -> {}
             }
         }
@@ -302,7 +322,18 @@ class BrowseService(
         }
         // Phase 232 (FR-232-3) — a sidecar READ only; judging happens in the background (LogoDownloader).
         val logoInk: (String, String) -> String? = { k, name -> if (logoDownloader?.hasLogo(k, name) == true) logoDownloader.logoInk(k, name) else null }
-        return FacetsEntry(all.toFacets(scoped, logoUrl, logoInk), movie.toFacets(scoped, logoUrl, logoInk), series.toFacets(scoped, logoUrl, logoInk), 0L, 0L, 0)
+        // R267 (FR-R267-5c) — every kind's count, in ONE response. The phone's Library dropdown shows
+        // four counts at once, and `facets(kind)` answers for one slice per call: four round trips
+        // would be four chances to disagree, and the client may not sum them itself
+        // (render-never-compute). The accumulators are all built here anyway, so this is free.
+        val counts = mapOf(
+            ALL_KIND to all.library,
+            "movie" to movie.library,
+            "series" to series.library,
+            MUSIC_KIND to music.library,
+        )
+        fun FacetsAcc.facets() = toFacets(scoped, logoUrl, logoInk).copy(kindCounts = counts)
+        return FacetsEntry(all.facets(), movie.facets(), series.facets(), music.facets(), 0L, 0L, 0)
     }
 
     private fun MediaItem.toMediaCard(): MediaCard {

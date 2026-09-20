@@ -12,23 +12,59 @@
 
 ## Status
 
-`Planned` — written 2026-09-18, **dev-reviewed 2026-09-19 against `main` `dcb97f2c`**. ⚠ **FR-R270-1 is
-already built (R265) and FR-R270-3 is built wrong — it names the wrong household member on `main`
-today; and naming the viewer needs a route + DTO change, so the "client only" claim below does not
-hold.** See §Dev review at the foot. Client only (`ravilo-ui` commonMain: the sheet's
-tier-3 row and its row-state strings; wasmJs: nothing new — the AirPlay seam of R265 FR-R265-4 is
-unchanged). No backend, route, DTO or config change. **Supersedes R265 FR-R265-4's row shape and
-FR-R265-9's `screens.airplay_notice`**; confirms FR-R265-2's busy/offline copy as shipped wording.
-Sibling of **R269** (the receiver's server), from the same round.
+`⚠ Partial` — written 2026-09-18, dev-reviewed 2026-09-19 against `main` `dcb97f2c`, **built
+2026-09-20 except FR-R270-2's connecting bar, which has nothing to attach to yet.**
 
-**Numbering:** verified against `main` and `STATUS.md` on 2026-09-18 — Ravilo taken through **R265**,
-with **R266 · R267 · R268 · R269** ours from the same day; admin through **236**, with **237** ours.
-Ravilo-only, no admin pair. Next free: **238 / R271**.
+⚠ **The Status line this phase was written with — "no backend, route, DTO or config change" — was
+wrong**, exactly as the dev review found. FR-R270-3 needed all four.
 
-Design: built into `design/ravilo/Ravilo Mobile.html` (the `sc-*` layer in
-`design/ravilo/mobile/ravilo-mobile-player.css`); both alternatives for each decision are drawn side by
-side in `design/ravilo/Play on a TV - Directions.html` §Q1/§Q2, with the rejected one and its reason
-kept on the canvas.
+### Build (2026-09-20)
+
+**FR-R270-1 was already shipped by R265** (`ScreensSheet.kt`'s tier 3), as review item 1 recorded.
+Only the string it renders changed (see FR-R270-6 below).
+
+- **FR-R270-3 — the real work, and it was a live defect, not a gap.** The client rendered
+  `device.pairedUsers.firstOrNull()`: the first user *paired to the TV*, which on a set two people had
+  paired with named **the wrong household member** about half the time, and for `kind = "tv"` (where
+  `pairedUsers` is never populated) rendered *"Busy · is watching"* with a hole in it. A row that is
+  confidently wrong is worse than one that is vague.
+  `RemoteDevice` gains `now_playing_user`, **resolved server-side** in one function (`viewerNameOf`)
+  from the screen's own `sessionUserId` against the sessions paired to that device. An id with no
+  session resolves to **null**, not to a guess.
+- **FR-R270-5 honoured on the first build, as review item 7 asked** — that one resolver is the single
+  disclosure decision. A future guest mode stops emitting the field and *both* rows lose their detail
+  together; there are no two client branches to drift apart. Null makes the row read **"In use"**
+  (new string `screens.in_use`), never a sentence with a hole in it.
+- **The 409 now names the same person, from the same resolution** (review item 4). It used to respond
+  with the bare `ScreenStatus`, whose only identity is a user id — so "the list and the 409 agree" was
+  satisfiable only vacuously. New `ScreenBusy(status, user)` envelope. ⚠ **Wire change**: nothing
+  decodes that body today (the client reads the status code only), but it is a change.
+- **FR-R270-4 — the helper was verified, as review item 6 insisted, and it was wrong on all three
+  rules.** `lastSeenLabel` answered *"just now"*, *"17 min ago"*, *"3 h ago"*, *"2 d ago"* — so an
+  offline row could read **"Offline · last seen just now"**, a contradiction on one line. Rewritten to
+  whole **calendar days**: a weekday inside the last seven, a date beyond. Seven days exactly is a
+  date, not a weekday, because at seven the weekday repeats and would be ambiguous with today.
+  `LastSeenLabelTest` (7, green) asserts the whole rejected vocabulary is unreachable across a
+  fortnight, and that a future-dated `lastSeen` (clock skew between a TV and the server is real) stays
+  in the weekday window.
+- **FR-R270-6 — the string plan was inverted against the shipped table**, as review item 5 found. What
+  shipped as `screens.airplay_notice` *is* the footnote's words. Fixed by renaming it to
+  `screens.airplay_footnote` (all three translations moved with it) and adding the two strings that
+  existed **in no language at all**: `screens.airplay_notice` (the full sentence) and
+  `screens.airplay_bar`. Plus `screens.in_use` and seven `wd.*` weekday names — localised rather than
+  hard-coded, because this is user-facing copy inside a sentence in a trilingual household.
+
+### Not built, and why
+
+- **FR-R270-2's connecting bar.** `ScreensSheet`'s `airplayAvailable` is defaulted `false` and **no
+  call site passes it**, so AirPlay's actual wiring is still R265 FR-R265-8's unbuilt follow-on and
+  there is no session for a bar to react to. The strings it needs now exist, which was the concrete
+  gap; the bar lands with the session.
+- **FR-R270-2's admin help text.** Settings → Connections has no screens surface yet — that is phase
+  236 §D, also unbuilt.
+
+Acceptance: the two-user busy case and the weekday/date boundary are covered by unit tests; the
+AirPlay rows and the on-device checks are **not** done and need an iPhone with an AirPlay-2 TV.
 
 ## Requirements
 

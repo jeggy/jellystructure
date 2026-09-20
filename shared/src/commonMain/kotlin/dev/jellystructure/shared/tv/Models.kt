@@ -1315,11 +1315,42 @@ data class RemoteDevice(
     @SerialName("paired_users") val pairedUsers: List<String> = emptyList(),
     @SerialName("now_playing_title") val nowPlayingTitle: String? = null,
     @SerialName("now_playing") val nowPlaying: ScreenStatus? = null,
+    /**
+     * R270 (FR-R270-3) — the household display name of **the person actually watching**, resolved
+     * server-side, or null when it cannot be resolved.
+     *
+     * This is not [pairedUsers]. The client used to render `pairedUsers.firstOrNull()`, which is the
+     * first user *paired to the TV* — on a set two people have paired with, that named the wrong
+     * household member roughly half the time, and it was empty for `kind = "tv"` (where `pairedUsers`
+     * is never populated at all), producing *"Busy · is watching"*. The only identity the screen
+     * itself reports is [ScreenStatus.sessionUserId], a Jellyfin user **id**, which FR-R270-3 forbids
+     * showing.
+     *
+     * Resolved in ONE place on the server (FR-R270-5): busy and offline are one disclosure decision,
+     * so if a future guest mode ever needs anonymity, this field stops being emitted and **both** rows
+     * lose their detail together — one flag, not two client branches that can drift. A null here means
+     * the client says *"In use"*, never *"Busy · is watching"* with a hole in it.
+     */
+    @SerialName("now_playing_user") val nowPlayingUser: String? = null,
 ) {
     /** Phase 111 compatibility name — an existing Home Assistant `media_player` built against the
      *  original shape reads `connected`, not `online`. */
     val connected: Boolean get() = online
 }
+
+/**
+ * R270 (FR-R270-3) — the body of `POST /api/remote/play`'s 409.
+ *
+ * It used to be the bare [ScreenStatus], whose only identity is a user id — so the list and the
+ * refusal could not possibly name the same person, and the acceptance criterion "the list and the 409
+ * agree" was satisfied vacuously. One resolution, both surfaces.
+ */
+@Serializable
+data class ScreenBusy(
+    val status: ScreenStatus,
+    /** Same value, same rules, same null meaning as [RemoteDevice.nowPlayingUser]. */
+    val user: String? = null,
+)
 
 /** R265 — the envelope `POST /api/tv/playback/status` fans out over `/api/remote/events` (and
  *  `/api/tv/events`) via `TvEventBus.notifyDeviceStatus`; see that function's own doc for the wire shape
@@ -1430,7 +1461,24 @@ data class BrowseFacets(
     val library: Int = 0,
     val titles: Map<String, Int> = emptyMap(),
     val scoped: Boolean = false,
+    /**
+     * R267 (FR-R267-5c) — one count per browse kind (`"all"`, `"movie"`, `"series"`, `"musicvideo"`),
+     * for this profile, in **one** response.
+     *
+     * The phone's Library type dropdown shows all four at once. `facets(kind)` answers for a single
+     * slice per call, so four counts would otherwise be four round trips — four chances to disagree,
+     * on a page whose whole point is that the count and the grid agree. The client may not sum them
+     * itself either (render-never-compute). The server builds all four accumulators anyway.
+     *
+     * Defaulted, so a client reading an older server simply shows no counts rather than failing.
+     */
+    @SerialName("kind_counts") val kindCounts: Map<String, Int> = emptyMap(),
 )
+
+/** R267 (FR-R267-5c) — the wire keys for [BrowseFacets.kindCounts] and the `kind` query parameter,
+ *  declared once so the server's slices and the client's dropdown cannot spell them differently. */
+const val ALL_KIND = "all"
+const val MUSIC_KIND = "musicvideo"
 
 // ─── Errors ───────────────────────────────────────────────────────────────────
 

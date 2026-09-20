@@ -12,6 +12,13 @@ private val EN = mapOf(
     "nav.my_list"         to "My List",
     "nav.search"          to "Search",
     "nav.settings"        to "Settings",
+    // R267 — the phone's bottom bar and the Library page's type dropdown.
+    "nav.library"         to "Library",
+    "nav.profile"         to "Profile",
+    "lib.type.all"        to "All",
+    "lib.type.music"      to "Music",
+    "lib.count"           to "{n} titles",
+    "lib.empty_music"     to "Nothing filed as music yet",
     "pm.switch"           to "Switch profile",
     "pm.my_list"          to "My List",
     "pm.settings"         to "Settings",
@@ -348,7 +355,21 @@ private val EN = mapOf(
     "screens.add"         to "Add a TV",
     "screens.code_hint"   to "The code is on the TV’s screen.",
     "screens.code_failed" to "That code didn’t work",
-    "screens.airplay_notice" to "AirPlay (phone must stay on)",
+    // R270 (FR-R270-6, dev review item 5) — RENAMED. This key has always held the footnote's own
+    // words; leaving it called `_notice` is how a connecting bar ends up displaying a parenthetical.
+    "screens.airplay_footnote" to "AirPlay (phone must stay on)",
+    // The full caveat the footnote compresses. Shown once, at the moment it becomes true (the
+    // connecting bar), and in the admin's Settings → Connections help text. New: it did not exist in
+    // any language.
+    "screens.airplay_notice" to "Your phone has to stay on and in Ravilo — the TV stops when you close the app.",
+    "screens.airplay_bar"    to "Playing on {device} · keep Ravilo open",
+    // FR-R270-3/-5 — the fallback when the viewer cannot be named. Never "Busy · is watching" with a
+    // hole where the name should be.
+    "screens.in_use"      to "In use",
+    // R270 (FR-R270-4) — full weekday names for "Offline · last seen {when}". Localised rather than
+    // hard-coded: this is user-facing copy inside a sentence, in a trilingual household.
+    "wd.mon" to "Monday", "wd.tue" to "Tuesday", "wd.wed" to "Wednesday", "wd.thu" to "Thursday",
+    "wd.fri" to "Friday", "wd.sat" to "Saturday", "wd.sun" to "Sunday",
     "screens.sending"     to "Sending to {device}…",
     "screens.playing_on"  to "Playing on {device}",
     "loading"             to "Loading...",
@@ -388,6 +409,13 @@ private val DA = mapOf(
     "nav.my_list"         to "Min liste",
     "nav.search"          to "Sog",
     "nav.settings"        to "Indstillinger",
+    // R267 — telefonens bundlinje og bibliotekets typevælger. Dansk er et udkast.
+    "nav.library"         to "Bibliotek",
+    "nav.profile"         to "Profil",
+    "lib.type.all"        to "Alle",
+    "lib.type.music"      to "Musik",
+    "lib.count"           to "{n} titler",
+    "lib.empty_music"     to "Intet er arkiveret som musik endnu",
     "pm.switch"           to "Skift profil",
     "pm.my_list"          to "Min liste",
     "pm.settings"         to "Indstillinger",
@@ -711,7 +739,12 @@ private val DA = mapOf(
     "screens.add"         to "Tilføj et tv",
     "screens.code_hint"   to "Koden vises på tv’ets skærm.",
     "screens.code_failed" to "Den kode virkede ikke",
-    "screens.airplay_notice" to "AirPlay (telefonen skal blive tændt)",
+    "screens.airplay_footnote" to "AirPlay (telefonen skal blive tændt)",
+    "screens.airplay_notice" to "Din telefon skal være tændt og i Ravilo — tv\u2019et stopper, når du lukker appen.",
+    "screens.airplay_bar"    to "Spiller på {device} · lad Ravilo være åben",
+    "screens.in_use"      to "Optaget",
+    "wd.mon" to "mandag", "wd.tue" to "tirsdag", "wd.wed" to "onsdag", "wd.thu" to "torsdag",
+    "wd.fri" to "fredag", "wd.sat" to "lørdag", "wd.sun" to "søndag",
     "screens.sending"     to "Sender til {device}…",
     "screens.playing_on"  to "Spiller på {device}",
     "loading"             to "Indlaeder...",
@@ -748,6 +781,13 @@ private val FO = mapOf(
     "nav.my_list"         to "Mitt listi",
     "nav.search"          to "Leita",
     "nav.settings"        to "Stillingar",
+    // R267 — botnlinjan á telefonini og týpuveljarin á savninum. Føroyskt er eitt uppskot.
+    "nav.library"         to "Savn",
+    "nav.profile"         to "Vangi",
+    "lib.type.all"        to "Øll",
+    "lib.type.music"      to "Tónleikur",
+    "lib.count"           to "{n} heiti",
+    "lib.empty_music"     to "Einki er goymt sum tónleikur enn",
     "pm.switch"           to "Skift profil",
     "pm.my_list"          to "Mitt listi",
     "pm.settings"         to "Stillingar",
@@ -1071,7 +1111,12 @@ private val FO = mapOf(
     "screens.add"         to "Legg sjónvarp afturat",
     "screens.code_hint"   to "Kotan er á skíggja sjónvarpsins.",
     "screens.code_failed" to "Henda kotan riggaði ikki",
-    "screens.airplay_notice" to "AirPlay (telefonurin má vera kveiktur)",
+    "screens.airplay_footnote" to "AirPlay (telefonurin má vera kveiktur)",
+    "screens.airplay_notice" to "Telefonurin má vera kveiktur og í Ravilo — sjónvarpið steðgar, tá tú letur appina aftur.",
+    "screens.airplay_bar"    to "Spælir á {device} · lat Ravilo vera opna",
+    "screens.in_use"      to "Upptikið",
+    "wd.mon" to "mánadag", "wd.tue" to "týsdag", "wd.wed" to "mikudag", "wd.thu" to "hósdag",
+    "wd.fri" to "fríggjadag", "wd.sat" to "leygardag", "wd.sun" to "sunnudag",
     "screens.sending"     to "Sendir til {device}…",
     "screens.playing_on"  to "Spælir á {device}",
     "loading"             to "Ledur inn...",
