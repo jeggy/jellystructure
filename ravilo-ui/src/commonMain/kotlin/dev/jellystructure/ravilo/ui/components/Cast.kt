@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.components
 
+import dev.jellystructure.ravilo.ui.isTvPlatform
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -171,6 +172,12 @@ val LocalCastHandoff = staticCompositionLocalOf<((positionMs: Long) -> Unit)?> {
  */
 @Composable
 fun CastButton(modifier: Modifier = Modifier) {
+    // R286 (FR-R286-1) — never on a TV. Casting sends playback *to* a screen and the TV is the screen
+    // (236/R264 make it a receiver), so the glyph was backwards there; it was also unreachable, because
+    // the TV app bar's D-pad chain hops nav -> search -> avatar and never through it. The gate lives
+    // here rather than at the three call sites so a fourth inherits it — which is how it reached the
+    // player's chrome to begin with. `isTvPlatform`, not a width: R256 is why (a 540dp TV is a TV).
+    if (isTvPlatform) return
     val cast = LocalCast.current ?: return
     if (cast.appId != null) { PlatformCastButton(modifier.size(40.dp)); return }
     var sheetOpen by remember { mutableStateOf(false) }
