@@ -1,6 +1,6 @@
 name: Deploy Ravilo to Play Store
 
-# R215 — ships :ravilo-android to the Play Store "internal" testing track whenever a GitHub Release is
+# R215 — ships :ravilo-android to the Play Store closed testing track whenever a GitHub Release is
 # published, mirroring publish.yml's vMAJOR.MINOR tag convention (Phase 167) so cutting a release ships
 # Docker images AND a Play Console build from the same action. Deliberately a separate workflow file
 # from publish.yml: different deploy target, different secrets, different failure domain.
@@ -11,14 +11,19 @@ name: Deploy Ravilo to Play Store
 #
 # R273 — this file also attaches a real, signed release APK to the GitHub Release, the same way
 # deploy-tizen-tv.yml (R272) attaches the signed Tizen .wgt: it's the only way to get an installable
-# Ravilo build onto a device that isn't opted into the Play Store's internal testing track. This does
+# Ravilo build onto a device that isn't opted into the Play Store's testing track. This does
 # NOT contradict the "different deploy target, different secrets, different failure domain" reasoning
 # above — the APK shares the exact same secrets and the exact same signed build as the AAB this file
 # already produces; it's one build reaching a second destination, not a second deploy target.
 #
-# Internal track only, never production/beta — promoting a build is a deliberate Play Console action,
-# not an implicit side effect of tagging a release. Google also requires a closed test with 12+ opted-in
-# testers for 14+ continuous days before a new developer account can publish to production at all.
+# Closed testing by default (2026-09-21, was internal), never production/beta — promoting a build is a
+# deliberate Play Console action, not an implicit side effect of tagging a release. Google requires a
+# closed test with 12+ opted-in testers for 14+ continuous days before a new developer account can
+# publish to production at all, and internal-track builds do not count towards that.
+#
+# `alpha` is the Publishing API's name for Play Console's default "Closed testing" track; a closed track
+# created by hand in the Console is addressed by its own custom name instead. Unlike internal, a closed
+# testing release goes through Google's review before testers see it.
 #
 # ⚠ Known trigger gap (see R215 spec §4 / publish.yml's header comment): `release: published` did not
 # fire when the release was created via `gh release create` under a fine-grained PAT — workflow_dispatch
@@ -52,7 +57,7 @@ on:
       track:
         type: string
         required: false
-        default: internal
+        default: alpha
       skip_ci:
         description: "true only when the caller has already run ci.yml for this commit"
         type: boolean
@@ -66,7 +71,7 @@ on:
       track:
         description: "Play Store track to upload to"
         required: true
-        default: internal
+        default: alpha
         type: choice
         options: [internal, alpha, beta, production]
 

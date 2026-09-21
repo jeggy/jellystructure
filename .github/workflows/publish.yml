@@ -139,14 +139,15 @@ jobs:
           cache-from: type=gha,scope=${{ matrix.image }}
           cache-to: type=gha,mode=max,scope=${{ matrix.image }}
 
-  # R215 — the Play Store internal track, on a published release only, and only after CI (231).
+  # R215 — the Play Store closed testing track (`alpha` is the Publishing API's name for it), on a
+  # published release only, and only after CI (231).
   play-store:
     needs: [version, ci, publish]
     if: github.event_name == 'release'
     uses: ./.github/workflows/deploy-play-store.yml
     with:
       version: ${{ needs.version.outputs.version }}
-      track: internal
+      track: alpha
       skip_ci: true   # this pipeline's own `ci` job already gated it
     secrets: inherit
 

@@ -39,6 +39,16 @@ before, `uses-feature-not-required` after adding an explicit
 for any manifest combining an orientation-locked activity with TV distribution in the same app; worth
 remembering if another orientation-locked entry point is ever added.
 
+**2026-09-21 addendum — the release now ships to closed testing, not internal.** Owner request. §2's
+"internal track only" is superseded on the *which testing track* point and stands on everything else:
+still never production, promotion still manual. `publish.yml` passes `track: alpha` and
+`deploy-play-store.yml`'s two defaults (the `workflow_call` input and the dispatch choice) are `alpha`
+too — `alpha` is the Publishing API's name for Play Console's default **Closed testing** track; a closed
+track created by hand is addressed by its custom name instead. `internal` stays a dispatch option for a
+one-off. Two consequences: a closed-testing release passes Google's review before testers see it (internal
+did not), and these builds now count towards the 12-testers-for-14-days production gate, which internal
+builds never did. The service account's Release-manager grant already covers every testing track.
+
 ## 1. Scope
 
 Ship `ravilo-android` (`dev.jellystructure.ravilo`, the TV/leanback app) to the Google Play **internal
