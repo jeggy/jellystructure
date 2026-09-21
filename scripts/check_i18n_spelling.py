@@ -6,7 +6,8 @@ import json, os, re, sys, unicodedata, collections
 # Each is here because a real string breaks otherwise; nothing is excluded on a hunch.
 #   browse.sort.*   `A–Á` / `A–Å` are the first and last letters of the alphabet, a range label.
 #   {placeholder}   `Partar {a}–{b}` — `a` is a placeholder name, not a word.
-#   adjacent to `/` `Innloggin/ur` — `ur` is a grammatical ending, not the word `úr`.
+#   after a `/`    `Innloggin/ur` — `ur` is a grammatical ending, not the word `úr`. Only the part
+#                  AFTER the slash is exempt; the stem before it is an ordinary word.
 EXCLUDED_KEYS = {"browse.sort.az", "browse.sort.za"}
 PLACEHOLDER = re.compile(r"\{[^}]*\}")
 WORD = re.compile(r"[^\W\d_]+", re.UNICODE)
@@ -24,7 +25,9 @@ def words_of(text):
     for m in WORD.finditer(masked):
         before = masked[m.start() - 1] if m.start() else ""
         after = masked[m.end()] if m.end() < len(masked) else ""
-        if before == "/" or after == "/":
+        # Only what follows the slash is the grammatical ending (`Innloggin/ur`). The stem before it
+        # is an ordinary word and must still be checked — the first cut excluded both and hid it.
+        if before == "/":
             continue
         yield m.group()
 
