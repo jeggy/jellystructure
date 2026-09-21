@@ -751,6 +751,46 @@ fun Route.trackRoutes(
         )
         call.respond(HttpStatusCode.Accepted, mapOf("jobId" to job.id))
     }
+
+    // Phase 254 (FR-254-8) — this title's deep-check state, per file, with the clean source found for
+    // each damaged one and the command that would repair it. Reads the stored results + one `stat` per
+    // file; never reads a media file on the request path.
+    get("/media/{mediaId}/health/integrity") {
+        val mediaId = call.parameters["mediaId"] ?: return@get call.respond(HttpStatusCode.BadRequest)
+        val item = store.resolve(mediaId) ?: return@get call.respond(HttpStatusCode.NotFound)
+        val service = dev.jellystructure.media.FileDamage.service ?: return@get call.respond(HttpStatusCode.ServiceUnavailable)
+        call.respond(service.statusFor(item, configStore.current))
+    }
+
+    // Phase 254 (FR-254-6) — an operator's "Check now": this title's unchecked files (every file with
+    // ?force=true), queued on the segments queue and never playback-deferred.
+    post("/media/{mediaId}/health/integrity/check") {
+        val mediaId = call.parameters["mediaId"] ?: return@post call.respond(HttpStatusCode.BadRequest)
+        val item = store.resolve(mediaId) ?: return@post call.respond(HttpStatusCode.NotFound)
+        val service = dev.jellystructure.media.FileDamage.service ?: return@post call.respond(HttpStatusCode.ServiceUnavailable)
+        val all = service.videoPaths(listOf(item))
+        val paths = if (call.request.queryParameters["force"] == "true") all
+        else all.filter { service.resultFor(it).state == dev.jellystructure.media.FileIntegrityState.UNCHECKED }
+        if (paths.isEmpty()) return@post call.respond(mapOf("jobId" to null, "files" to 0))
+        val r = mediaJobQueue.enqueueIntegrityTitle(item, paths)
+        call.respond(HttpStatusCode.Accepted, mapOf("jobId" to r.snapshot.id, "files" to paths.size))
+    }
+
+    // Phase 254 (FR-254-10/11) — the repair, always an operator's click. `lossy=false` replaces each
+    // file from its clean copy; `lossy=true` is the discard-what-can't-be-read remux, accepted only for
+    // files the server itself finds no source for.
+    post("/media/health/integrity/repair") {
+        @Serializable data class IntegrityRepairReq(val mediaId: String, val paths: List<String>, val lossy: Boolean = false)
+        val req = call.receive<IntegrityRepairReq>()
+        val item = store.resolve(req.mediaId) ?: return@post call.respond(HttpStatusCode.NotFound)
+        val service = dev.jellystructure.media.FileDamage.service ?: return@post call.respond(HttpStatusCode.ServiceUnavailable)
+        val own = service.videoPaths(listOf(item)).toSet()
+        val damaged = req.paths.filter { it in own && service.resultFor(it).state == dev.jellystructure.media.FileIntegrityState.DAMAGED }
+        val paths = if (req.lossy) damaged.filter { service.findSourceCandidate(it, configStore.current) == null } else damaged
+        if (paths.isEmpty()) return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "no damaged files of this title in the request"))
+        val job = mediaJobQueue.enqueueFileDamageRepair(item, paths, req.lossy)
+        call.respond(HttpStatusCode.Accepted, mapOf("jobId" to job.id))
+    }
 }
 
 // ── Phase 96 helpers ─────────────────────────────────────────────────────────

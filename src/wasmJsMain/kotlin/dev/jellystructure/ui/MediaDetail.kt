@@ -859,6 +859,7 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
         </div>""" else ""}
         $coverBannerHtml
         <div id="mkv-banner" style="display:none;margin-bottom:14px"></div>
+        <div id="integrity-banner" style="display:none;margin-bottom:14px"></div>
         <div id="drift-banner" style="display:none;margin-bottom:14px"></div>
         <div id="jf-lock-banner" style="display:${if (item.jellyfinLockData || item.jellyfinLockedFields.isNotEmpty()) "block" else "none"};margin-bottom:14px">
           <div style="background:var(--bad-soft);border:1px solid var(--bad);border-radius:6px;padding:10px 14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
@@ -1164,6 +1165,7 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
     if (activeTab == "artwork") scope.launch { loadArtworkTab(item, scope) }
     scope.launch { loadDrift(item.id, scope) }
     scope.launch { loadMkvHealth(item, scope) }
+    scope.launch { loadFileIntegrity(item, scope) }
     scope.launch { loadSeedingReport(item.id, item.kind == MediaKind.TV_SHOW) }
     if (activeTab == "tracks" && !isTvShow) {
         wireUnifiedTrackEditor("trk", item.tracks, item.id, null, scope, item.resolvedLanguage, item.path)
@@ -2995,6 +2997,93 @@ private suspend fun loadMkvHealth(item: MediaItem, scope: CoroutineScope) {
     }
 
     render(broken)
+}
+
+// Phase 254 (FR-254-8) — damage past the first Cluster, which the banner above cannot see (its check
+// stops there on purpose). Three states, never two: damaged files get the banner and both ways to fix
+// them (a button, and the command that button runs); merely-unverified files get one quiet line; a
+// title whose every file has been read end to end renders nothing.
+private suspend fun loadFileIntegrity(item: MediaItem, scope: CoroutineScope) {
+    val banner = document.getElementById("integrity-banner") as? HTMLElement ?: return
+    val status = MediaApi.fileIntegrityStatus(item.id) ?: run { banner.style.display = "none"; return }
+    val damaged = status.files.filter { it.state == "damaged" }
+
+    fun label(path: String): String {
+        val name = path.substringAfterLast('/')
+        return Regex("S\\d+E\\d+(?:-?E\\d+)*", RegexOption.IGNORE_CASE).find(name)?.value?.uppercase() ?: name
+    }
+
+    if (damaged.isEmpty()) {
+        if (status.unchecked == 0) { banner.style.display = "none"; return }
+        banner.innerHTML = """
+        <div class="tiny muted" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+          <span>${status.unchecked} of ${status.total} file${if (status.total != 1) "s" else ""} not verified yet — a verified file has been read end to end, so damage in the middle of it would be known.</span>
+          <button id="integrity-check-btn" class="btn sm ghost">Check now</button>
+        </div>"""
+        banner.style.display = "block"
+        document.getElementById("integrity-check-btn")?.addEventListener("click") {
+            document.getElementById("integrity-check-btn")?.setAttribute("disabled", "true")
+            scope.launch {
+                if (MediaApi.checkFileIntegrity(item.id)) showDetailMsg("Verifying ${status.unchecked} file(s) — queued. Progress in Activity ▸ Jobs; reload this page when it's done.", true)
+                else showDetailMsg("Couldn't queue the check — check the server connection.", false)
+            }
+        }
+        return
+    }
+
+    val withSource = damaged.filter { it.sourcePath != null }
+    val noSource = damaged.filter { it.sourcePath == null }
+    val isTvShow = item.kind == MediaKind.TV_SHOW
+    val what = if (isTvShow) "${damaged.size} episode${if (damaged.size != 1) "s" else ""} in this series ${if (damaged.size != 1) "are" else "is"} damaged part-way through"
+    else "This file is damaged part-way through"
+    val rows = damaged.joinToString("") { f ->
+        """<details style="margin-top:6px;">
+             <summary style="cursor:pointer;font-size:.8rem;"><b>${label(f.path).esc()}</b>
+               <span class="muted"> · ${f.damageCount} unreadable spot${if (f.damageCount != 1) "s" else ""} · ${if (f.sourcePath != null) "clean copy found" else "no clean copy found"}</span></summary>
+             <div class="tiny muted" style="margin:4px 0 2px;line-height:1.6;">
+               ${(f.firstDamage ?: "").esc()}
+               ${if (f.sourcePath != null) "<br>Clean copy: <code>${f.sourcePath.esc()}</code>" else ""}
+             </div>
+             ${f.command?.let { permCopyBlock(it, if (f.sourcePath != null) null else "LOSSY: discards what it cannot read") } ?: ""}
+           </details>"""
+    }
+    banner.innerHTML = """
+    <div style="background:var(--bad-soft);border:1px solid var(--bad);border-radius:6px;padding:10px 14px;display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap;">
+      <span class="badge bad" style="flex:none;margin-top:1px;">⚠ Damaged file${if (damaged.size != 1) "s" else ""}</span>
+      <div style="flex:1;min-width:200px;">
+        <b style="font-size:.9rem;">${what.esc()}.</b>
+        <div class="tiny muted" style="margin-top:5px;line-height:1.6;">
+          Reading ${if (isTvShow) "these files" else "it"} end to end found spots that cannot be read: data in the middle of the file was overwritten.
+          The start of the file is fine, which is why nothing else on this page looks wrong and why Jellyfin still lists it —
+          a viewer gets a stall, a skip or a smeared picture part-way through.
+          ${if (withSource.isNotEmpty()) "qBittorrent is still seeding a clean copy of ${withSource.size} of ${damaged.size}. Replacing copies it over the damaged file, keeps your track languages, titles and default/forced flags, verifies the result, and moves the damaged file to <code>.js-quarantine</code> instead of deleting it." else ""}
+          ${if (noSource.isNotEmpty()) "${noSource.size} ${if (noSource.size != 1) "have" else "has"} no clean copy jellystructure can find: re-download ${if (noSource.size != 1) "them" else "it"} in Sonarr/Radarr (delete the file, search again), or make ${if (noSource.size != 1) "them" else "it"} playable by discarding the damaged moments — that loss is permanent." else ""}
+        </div>
+        <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">
+          ${if (withSource.isNotEmpty()) """<button id="integrity-replace-btn" class="btn sm bad">Replace from clean copy (${withSource.size})</button>""" else ""}
+          ${if (noSource.isNotEmpty()) """<button id="integrity-lossy-btn" class="btn sm ghost">Make playable, losing the damaged moments (${noSource.size})</button>""" else ""}
+        </div>
+        <div class="tiny muted" style="margin-top:10px;">Or run it yourself — each file's exact command:</div>
+        $rows
+      </div>
+    </div>"""
+    banner.style.display = "block"
+
+    fun wire(buttonId: String, files: List<MediaApi.FileIntegrityFile>, lossy: Boolean) {
+        document.getElementById(buttonId)?.addEventListener("click") {
+            val btn = document.getElementById(buttonId)
+            btn?.setAttribute("disabled", "true")
+            scope.launch {
+                val jobId = MediaApi.repairFileDamage(item.id, files.map { it.path }, lossy)
+                if (jobId == null) {
+                    showDetailMsg("Couldn't queue the repair — check the server connection.", false)
+                    btn?.removeAttribute("disabled")
+                } else showDetailMsg("${if (lossy) "Remuxing" else "Replacing"} ${files.size} file${if (files.size != 1) "s" else ""} — queued. Progress in Activity ▸ Jobs. Don't reload-and-click again.", true)
+            }
+        }
+    }
+    wire("integrity-replace-btn", withSource, lossy = false)
+    wire("integrity-lossy-btn", noSource, lossy = true)
 }
 
 /** Phase 115 (FR E) — after a sync-triggering action, Jellyfin's refresh is async: poll the drift state

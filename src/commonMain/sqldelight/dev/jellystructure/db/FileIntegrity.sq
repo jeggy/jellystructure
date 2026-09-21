@@ -1,0 +1,27 @@
+-- Phase 254 (FR-254-3) — one row per video file that has had a deep check (a whole-file demux pass).
+-- A row is CURRENT only while the file's size and mtime still equal the ones stored here: anything
+-- that rewrites the file makes it unchecked again with no bookkeeping. damage_count = 0 is "checked,
+-- and clean"; no row (or a stale one) is "unchecked" — never the same thing (FR-254-4).
+CREATE TABLE file_integrity (
+    path TEXT NOT NULL PRIMARY KEY,
+    size INTEGER NOT NULL,
+    mtime INTEGER NOT NULL,
+    checked_at INTEGER NOT NULL,
+    damage_count INTEGER NOT NULL,
+    first_damage TEXT
+);
+
+CREATE INDEX file_integrity_damaged ON file_integrity(damage_count);
+
+put:
+INSERT OR REPLACE INTO file_integrity(path, size, mtime, checked_at, damage_count, first_damage)
+VALUES (:path, :size, :mtime, :checked_at, :damage_count, :first_damage);
+
+all:
+SELECT * FROM file_integrity;
+
+damaged:
+SELECT * FROM file_integrity WHERE damage_count > 0;
+
+remove:
+DELETE FROM file_integrity WHERE path = :path;

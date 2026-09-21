@@ -82,6 +82,7 @@ private val ISSUE_FILTER_LABELS = mapOf(
     "segments_lowconf" to "Low-confidence segments",   // Phase 150/163
     "no_segments" to "No intro/credits detected",   // Phase 150/163
     "mkv_track_layout" to "Unplayable in Ravilo (MKV structure)",   // Phase 201 amendment (2026-09-13) — covers both TRACKS_AFTER_CLUSTER and ELEMENT_SIZE_OVERFLOW; the detail page's banner gives the specific one
+    "file_damage" to "Damaged video files",   // Phase 254
 )
 private var libSearch: String? = null
 private var libSort: String? = null

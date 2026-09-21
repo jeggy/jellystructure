@@ -109,12 +109,13 @@ private data class AssignLanguageRequest(val language: String)
 @Serializable
 private data class AssignLanguageResponse(val ok: Boolean, val language: String)
 
-private var triageCountCache: Pair<Long, TriageCount>? = null
+private var triageCountCache: Pair<String, TriageCount>? = null
 
 fun Route.triageRoutes(store: MediaStore, jellyfinClient: JellyfinClient, configStore: ConfigStore, mediaHistory: MediaHistory, seedingGuard: SeedingGuard, segmentStore: MediaSegmentStore) {
     route("/triage") {
         get("/count") {
-            val ver = store.libraryVersion
+            // Phase 254 — a deep check's finding changes the count without touching the library version.
+            val ver = "${store.libraryVersion}:${dev.jellystructure.media.FileDamage.revision}"
             triageCountCache?.let { (v, c) -> if (v == ver) { call.respond(c); return@get } }
             val all = store.allItems()
 
@@ -202,6 +203,14 @@ fun Route.triageRoutes(store: MediaStore, jellyfinClient: JellyfinClient, config
                     "Either a flag edit moved the file's Tracks element after its first Cluster, or a prior repair left an element with a corrupted declared size. Jellyfin seeks/resyncs past both and plays the file fine, which is why nothing else here looks wrong — Ravilo reads linearly and buffers forever. Repair rewrites the header in place, no re-encode.",
                     mkvLayoutInstances, mkvLayoutTitles,
                 ) else null,
+                // Phase 254 (FR-254-7) — omitted while unknown, like the type above.
+                dev.jellystructure.media.FileDamage.damagedPathsOrNull()?.let { damaged ->
+                    TriageTypeCount(
+                        "file_damage", "Damaged video files",
+                        "A deep check (reading the whole file) found parts of these files that cannot be read — data was overwritten mid-file. Jellyfin resyncs past it; a viewer sees a stall, a skip or a smear part-way through. Open the title: jellystructure can replace the file from the clean copy qBittorrent is still seeding.",
+                        all.sumOf { TriageDetection.fileDamageCount(it, damaged) }, all.count { TriageDetection.fileDamageCount(it, damaged) > 0 },
+                    )
+                },
             )
             val result = TriageCount(types = types, total = types.sumOf { it.instances })
             triageCountCache = Pair(ver, result)

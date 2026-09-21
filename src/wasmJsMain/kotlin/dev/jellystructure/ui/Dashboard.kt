@@ -279,6 +279,7 @@ private val ATTENTION_ROW_ORDER = listOf(
     "duplicate_episode" to "bad",
     "missing_from_source" to "bad",
     "mkv_track_layout" to "bad",  // Phase 201 amendment (2026-09-13) — unplayable in Ravilo
+    "file_damage" to "bad",  // Phase 254 — damaged past the first Cluster
 )
 
 private suspend fun loadRecentActivity() {

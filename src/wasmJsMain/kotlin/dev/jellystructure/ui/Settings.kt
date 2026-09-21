@@ -808,6 +808,8 @@ private var fetchImages = true
 private var tellJellyfin = true
 private var scanWorkers = 1
 private var jobWorkers = 2
+// Phase 254 — no control yet (TOML only); carried through so a Settings save cannot reset it.
+private var verifyFiles = true
 private var scanThreads = 4
 private var scanEpisodeCap = 0
 private var tvImageCacheMb = 2048
@@ -915,6 +917,7 @@ private fun populateForm(response: ConfigResponse) {
     tellJellyfin = config.behavior.tellJellyfin
     scanWorkers = config.behavior.scanWorkers
     jobWorkers = config.behavior.jobWorkers
+    verifyFiles = config.behavior.verifyFiles
     scanThreads = config.behavior.scanThreads
     scanEpisodeCap = config.behavior.scanEpisodeCap
     tvImageCacheMb = config.behavior.tvImageCacheMb
@@ -1632,6 +1635,7 @@ private fun readForm(): AppConfig = AppConfig(
         tellJellyfin = tellJellyfin,
         scanWorkers = scanWorkers,
         jobWorkers = jobWorkers,
+        verifyFiles = verifyFiles,
         scanThreads = scanThreads,
         scanEpisodeCap = scanEpisodeCap,
         tvImageCacheMb = tvImageCacheMb,
@@ -1714,6 +1718,7 @@ private fun buildToml(c: AppConfig): String = buildString {
     appendLine("tell_jellyfin = ${c.behavior.tellJellyfin}")
     appendLine("scan_workers = ${c.behavior.scanWorkers}")
     appendLine("job_workers = ${c.behavior.jobWorkers}")
+    appendLine("verify_files = ${c.behavior.verifyFiles}")
     appendLine("scan_threads = ${c.behavior.scanThreads}")
     appendLine("tv_image_cache_mb = ${c.behavior.tvImageCacheMb}")
     if (c.scanSchedule.isNotBlank()) {

@@ -1,0 +1,12 @@
+-- Phase 254 (FR-254-3) — deep-check results, per file. See FileIntegrity.sq; this migration must stay
+-- byte-for-byte in sync with its CREATE TABLE (the SQLDelight-migration rule).
+CREATE TABLE file_integrity (
+    path TEXT NOT NULL PRIMARY KEY,
+    size INTEGER NOT NULL,
+    mtime INTEGER NOT NULL,
+    checked_at INTEGER NOT NULL,
+    damage_count INTEGER NOT NULL,
+    first_damage TEXT
+);
+
+CREATE INDEX file_integrity_damaged ON file_integrity(damage_count);

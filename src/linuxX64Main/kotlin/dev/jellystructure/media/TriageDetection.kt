@@ -147,4 +147,8 @@ object TriageDetection {
     fun mkvLayoutBrokenCount(item: MediaItem, broken: Set<String>): Int = if (item.kind == MediaKind.TV_SHOW) {
         item.episodes.count { it.path in broken }
     } else if (item.path in broken) 1 else 0
+
+    /** Phase 254 (FR-254-7) — files a deep check found damaged past the first `Cluster`. Same shape as
+     *  [mkvLayoutBrokenCount] for the same reason: the answer is not in the item. */
+    fun fileDamageCount(item: MediaItem, damaged: Set<String>): Int = mkvLayoutBrokenCount(item, damaged)
 }

@@ -861,6 +861,45 @@ object MediaApi {
         response.body<JobIdResp>().jobId
     }.getOrNull()
 
+    // ── Phase 254: a file damaged past its first Cluster ────────────────────────────────────────
+
+    @Serializable
+    data class FileIntegrityFile(
+        val path: String,
+        val state: String,                 // "damaged" | "unchecked" (clean files are only counted)
+        val damageCount: Int = 0,
+        val firstDamage: String? = null,
+        val checkedAt: Long? = null,
+        val sourcePath: String? = null,    // the clean copy the server found, if any
+        val command: String? = null,       // what the repair job runs, for copy-and-paste
+    )
+
+    @Serializable
+    data class FileIntegrityStatus(val total: Int = 0, val clean: Int = 0, val unchecked: Int = 0, val files: List<FileIntegrityFile> = emptyList())
+
+    suspend fun fileIntegrityStatus(id: String): FileIntegrityStatus? = runCatching {
+        httpClient.get("/api/media/$id/health/integrity").body<FileIntegrityStatus>()
+    }.getOrNull()
+
+    /** FR-254-6 — queue a deep check of this title's unchecked files. True if the request was accepted. */
+    suspend fun checkFileIntegrity(id: String): Boolean = runCatching {
+        httpClient.post("/api/media/$id/health/integrity/check").status.value in 200..299
+    }.getOrDefault(false)
+
+    @Serializable
+    private data class IntegrityRepairReq(val mediaId: String, val paths: List<String>, val lossy: Boolean)
+
+    /** FR-254-10/11 — queue the repair; the job id, or null if it couldn't be queued. */
+    suspend fun repairFileDamage(mediaId: String, paths: List<String>, lossy: Boolean): String? = runCatching {
+        val response = httpClient.post("/api/media/health/integrity/repair") {
+            contentType(ContentType.Application.Json)
+            setBody(IntegrityRepairReq(mediaId, paths, lossy))
+        }
+        if (response.status.value !in 200..299) return@runCatching null
+        @Serializable data class JobIdResp(val jobId: String)
+        response.body<JobIdResp>().jobId
+    }.getOrNull()
+
     suspend fun getRecentActivity(): List<HistoryEntry> = runCatching {
         httpClient.get("/api/activity/recent").body<List<HistoryEntry>>()
     }.getOrDefault(emptyList())

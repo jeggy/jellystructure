@@ -270,8 +270,23 @@ fun main() = runBlocking {
     val upcomingService = dev.jellystructure.tv.UpcomingService(configStore, arrClient, mediaStore, tmdbClient, artworkDownloader)
     // Phase 109: single-worker persistent queue for heavy media edits (ffmpeg remuxes) — see the class
     // doc for why enqueue-then-drain replaces running ffmpeg inline on the request thread.
-    val mediaJobQueue = dev.jellystructure.media.MediaJobQueue(db, mediaStore, broadcaster, jellyfinClient, configStore, mediaHistory, seedingGuard, arrRescan, rootScope, mediaSegmentStore, fingerprintService, artworkService = imageProxyService)
+    // Phase 254 — deep checks + replace-from-source repairs. One instance: the queue runs the jobs,
+    // Triage/Library/the detail routes read it through FileDamage.
+    val fileIntegrity = dev.jellystructure.media.FileIntegrityService(db, seedingSnapshot)
+    dev.jellystructure.media.FileDamage.service = fileIntegrity
+    val mediaJobQueue = dev.jellystructure.media.MediaJobQueue(db, mediaStore, broadcaster, jellyfinClient, configStore, mediaHistory, seedingGuard, arrRescan, rootScope, mediaSegmentStore, fingerprintService, artworkService = imageProxyService, fileIntegrity = fileIntegrity)
     mediaJobQueue.start()
+    // Phase 254 (FR-254-5) — keep a bounded verification slice queued while anything is unchecked. A
+    // file that changes (new download, an edit) turns unchecked by itself and is picked up within one
+    // interval. Deduped, playback-deferred, and a no-op once every file has been read.
+    rootScope.launch(dev.jellystructure.ops.GateClass.BACKGROUND) {
+        kotlinx.coroutines.delay(5 * 60_000L)   // let boot-time work (scan, presize, waveforms) go first
+        while (true) {
+            runCatching { mediaJobQueue.enqueueIntegritySweep() }
+                .onFailure { Logger.warn("Phase 254 verification sweep could not be queued: ${it.message}", "integrity") }
+            kotlinx.coroutines.delay(15 * 60_000L)
+        }
+    }
     // Phase 220 (FR-220-4) — once, in the background, until the marker exists: every served variant for
     // the existing library, so the first viewer to scroll a season never pays for it on the request path.
     rootScope.launch(dev.jellystructure.ops.GateClass.BACKGROUND) { runCatching { mediaJobQueue.enqueuePresizeBackfill() } }

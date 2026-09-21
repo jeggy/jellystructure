@@ -100,6 +100,8 @@ class MediaJobQueue(
     private val fingerprintService: FingerprintService? = null,
     // Phase 220 (FR-220-4) — the TV image cache the one-time backfill fills.
     private val artworkService: dev.jellystructure.tv.RaviloArtworkService? = null,
+    // Phase 254 — deep checks (segments queue) and replace-from-source repairs (media queue).
+    private val fileIntegrity: FileIntegrityService? = null,
 ) {
     private val json = Json { ignoreUnknownKeys = true }
     private val queries get() = db.mediaJobQueries
@@ -487,6 +489,7 @@ class MediaJobQueue(
             "reorder" -> runReorder(row, params)
             "remove" -> runRemove(row, params)
             "mkv_layout_repair" -> runMkvLayoutRepair(row, params)
+            "file_replace_from_source", "file_lossy_repair" -> runFileDamageRepair(row, params)
             "presize_artwork" -> runPresizeArtwork(row)
             else -> Failure("Unknown job type '${row.type}'")
         }
@@ -611,6 +614,78 @@ class MediaJobQueue(
         return if (failed == 0) Success else Failure("$failed of ${paths.size} file(s) could not be repaired")
     }
 
+    // ── Phase 254: a file damaged past its first Cluster ────────────────────────────────────────
+
+    /** FR-254-5/6 — deep-check a worklist, one file at a time. The library sweep is a bounded slice
+     *  (it ends itself after [INTEGRITY_SLICE_SEC] so it can never sit ahead of `detect_segments` for a
+     *  day) and yields between files the moment a TV starts playing; a title check an operator asked
+     *  for does neither. */
+    private suspend fun runFileIntegrityCheck(row: Media_job, isCancelled: () -> Boolean): Outcome {
+        val service = fileIntegrity ?: return Failure("File integrity service not available")
+        val sweep = row.type == "file_integrity_sweep"
+        val paths = if (sweep) service.uncheckedMostRecentFirst(store.allItems())
+        else runCatching { json.decodeFromString(MediaJobParams.serializer(), row.params) }.getOrNull()?.repairPaths ?: return Failure("Corrupt job parameters")
+        val startedAt = epochSeconds()
+        var damaged = 0
+        for ((i, path) in paths.withIndex()) {
+            if (isCancelled()) return Cancelled()
+            if (sweep && dev.jellystructure.tv.isPlaybackActive()) return Requeue(inPlace = true, reason = "playback started — ${paths.size - i} file(s) still to verify")
+            if (sweep && epochSeconds() - startedAt > INTEGRITY_SLICE_SEC) break
+            if (service.check(path)?.state == FileIntegrityState.DAMAGED) damaged++
+            segmentsProgress(row.id, i + 1, paths.size)
+        }
+        if (damaged > 0) Logger.warn("${row.type}: $damaged damaged file(s) found", "integrity")
+        return Success
+    }
+
+    /** FR-254-5 — idempotent: one active sweep at a time, none when nothing is unchecked. */
+    suspend fun enqueueIntegritySweep(): MediaJobSnapshot? {
+        val service = fileIntegrity ?: return null
+        if (!configStore.current.behavior.verifyFiles) return null
+        val missing = service.uncheckedMostRecentFirst(store.allItems()).size
+        if (missing == 0) return null
+        val r = enqueueSegments("file_integrity_sweep", "library", "Verify video files ($missing not yet read end to end)", MediaJobParams(deferWhilePlaying = true), missing, "integrity:library")
+        return if (r.deduped) null else r.snapshot
+    }
+
+    /** FR-254-6 — an operator's explicit request: never deferred. */
+    suspend fun enqueueIntegrityTitle(item: dev.jellystructure.model.MediaItem, paths: List<String>): SegmentEnqueueResult =
+        enqueueSegments("file_integrity_title", item.id, "Verify files · ${item.title}", MediaJobParams(repairPaths = paths), paths.size, "integrity:${item.id}")
+
+    /** FR-254-10/11 — replace each damaged file from its clean copy, or (only where the operator chose
+     *  it, for a file with no source) the lossy remux. One writer per file via [MediaFileLock]. */
+    private suspend fun runFileDamageRepair(row: Media_job, params: MediaJobParams): Outcome {
+        val service = fileIntegrity ?: return Failure("File integrity service not available")
+        val paths = params.repairPaths?.takeIf { it.isNotEmpty() } ?: return Failure("Missing paths")
+        val lossy = row.type == "file_lossy_repair"
+        val refusals = mutableListOf<String>()
+        for ((index, path) in paths.withIndex()) {
+            if (cancelRunning) return Cancelled()
+            val refusal = if (lossy) {
+                if (FfmpegRunner.repairTracksLayout(path)) { service.check(path); null } else "ffmpeg couldn't remux it"
+            } else service.replaceFromSource(path, configStore.current)
+            if (refusal != null) refusals += "${path.substringAfterLast('/')}: $refusal"
+            val done = index + 1
+            queries.updateProgress(done.toDouble() / paths.size * 100.0, null, done.toLong(), null, row.id)
+            broadcastSnapshot(row.id)
+        }
+        val fixed = paths.size - refusals.size
+        mediaHistory.record(
+            row.media_id, row.type,
+            (if (lossy) "LOSSY remux (damaged moments discarded)" else "replaced from the clean copy in qBittorrent; damaged originals kept in .js-quarantine") +
+                " — fixed=$fixed failed=${refusals.size} of ${paths.size}" + refusals.joinToString("") { " · $it" },
+        )
+        if (fixed > 0) store.resolve(row.media_id)?.let { runCatching { postWriteSync(it) } }
+        return if (refusals.isEmpty()) Success else Failure(refusals.joinToString(" · "))
+    }
+
+    suspend fun enqueueFileDamageRepair(item: dev.jellystructure.model.MediaItem, paths: List<String>, lossy: Boolean): MediaJobSnapshot =
+        enqueue(
+            if (lossy) "file_lossy_repair" else "file_replace_from_source", item.id,
+            (if (lossy) "Make playable (lossy)" else "Replace from clean copy") + ": ${paths.size} file${if (paths.size != 1) "s" else ""}",
+            MediaJobParams(repairPaths = paths), fileCount = paths.size,
+        )
+
     /**
      * Phase 220 (FR-220-4) — the one-time backfill: every served variant for every item in the library,
      * on the media lane (BACKGROUND gate, like every job here), resumable because [RaviloArtworkService.presize]
@@ -649,6 +724,8 @@ class MediaJobQueue(
 
     private suspend fun runSegmentsJobBody(row: Media_job): Outcome {
         fun isCancelled() = row.id in cooperativeCancelledIds
+        // Phase 254 — read-only whole-file checks ride this queue; they need no segment store.
+        if (row.type == "file_integrity_sweep" || row.type == "file_integrity_title") return runFileIntegrityCheck(row, isCancelled = ::isCancelled)
         val segStore = segmentStore ?: return Failure("Segments store not available")
         // Phase 222 — the library-wide envelope backfill has no single item (media_id = "library").
         if (row.type == "waveform_backfill") return runWaveformBackfill(row, segStore, isCancelled = ::isCancelled)
@@ -945,6 +1022,8 @@ class MediaJobQueue(
 
     private companion object {
         val QUEUE_NAMES = listOf("media", "segments", "subtitles")
+        /** Phase 254 (FR-254-5) — one library sweep job reads for at most this long, then ends. */
+        const val INTEGRITY_SLICE_SEC = 20 * 60L
     }
 }
 

@@ -256,6 +256,9 @@ data class Behavior(
     // run at a time, same as before, just no longer split into per-lane knobs that duplicated each other.
     // Coerced 1..3 wherever read: a 4th worker could never find a 4th queue to occupy.
     @SerialName("job_workers") val jobWorkers: Int = 2,
+    // Phase 254 (FR-254-5) — read every video file end to end once (and again whenever it changes), in
+    // the background, playback-deferred, so damage past the first Cluster is found without being asked.
+    @SerialName("verify_files") val verifyFiles: Boolean = true,
     @SerialName("scan_threads") val scanThreads: Int = 4,
     @SerialName("scan_interval_hours") val scanIntervalHours: Int = 0,
     @SerialName("scan_episode_cap") val scanEpisodeCap: Int = 0, // 0 = unlimited (probe every episode); Phase 49

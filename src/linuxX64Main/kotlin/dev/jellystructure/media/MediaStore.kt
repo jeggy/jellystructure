@@ -450,6 +450,10 @@ class MediaStore(
                     val broken = MkvHealthCache.brokenPathsOrNull()?.keys.orEmpty()
                     items = items.filter { TriageDetection.mkvLayoutBrokenCount(it, broken) > 0 }
                 }
+                "file_damage" -> {  // Phase 254 (FR-254-7)
+                    val damaged = FileDamage.damagedPathsOrNull().orEmpty()
+                    items = items.filter { TriageDetection.fileDamageCount(it, damaged) > 0 }
+                }
             }
             items
         }.let { items ->
