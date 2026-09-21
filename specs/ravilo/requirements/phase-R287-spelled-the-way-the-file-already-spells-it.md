@@ -118,6 +118,42 @@ passed.
 5. The key set of every `i18n/*.json` is unchanged, and the existing build check still passes.
 6. `scripts/check-i18n-spelling.sh` passes, and fails when `på` is changed back to `pa` in one string.
 
+## Verified on the stue TV, 2026-09-21
+
+Settings in Faroese, before → after:
+
+| before | after |
+|---|---|
+| `Vis framgongd a Halt fram at siggja` | **`Vis framgongd á Halt fram at síggja`** |
+| `Spael naesta evni sjalvvirkandi` | **`Spæl næsta evni sjalvvirkandi`** |
+| `A` (the On toggle) | **`Á`** |
+| `Skift loyniord` | **`Skift loyniorð`** |
+| `rita ut` | **`Rita út`** |
+| `Innloggin/ur sum {name}` | unchanged — acceptance 3 |
+
+## What is still wrong, and why I did not fix it
+
+Five words are stripped **everywhere** in the file, so there is no correct twin and no digraph to
+learn from — and the checker cannot see them either, because it detects *inconsistency*, not
+*wrongness*. Fixing them means knowing the language, not reading the file, so they are the owner's
+call rather than my guess:
+
+| key | now | probably |
+|---|---|---|
+| `settings.language` | `Mal` | `Mál` |
+| `settings.playback` | `Spaling` | `Spæling`? (the file's own stem is `spæl`) |
+| `settings.autoplay_next` | `sjalvvirkandi` | `sjálvvirkandi` |
+| `up.*` (8 keys) | `Latid` / `latid` | `Latið` |
+| `login.success` | `Innritad/ur` | `Innritað/ur` |
+
+Also spotted and **not** a spelling question: `up.subtitle` and `up.foot_upcoming` contain
+`bogvahandan`, which does not look like a word at all — more likely a mangled *bókasavnið*. That is a
+translation defect, not an accent one.
+
+A stem-matching heuristic was tried to reach these automatically and **rejected**: its own output was
+mostly false positives (`Heim`, `samband`, `Hjem`, `Stor` are all correctly unaccented), so it would
+have introduced errors while claiming to remove them.
+
 ## Open questions
 
 1. **Is `A–Á` the right sort label at all?** In English it is `A–Z`, first-to-last. Faroese runs
