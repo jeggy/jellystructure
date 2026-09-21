@@ -2,6 +2,7 @@ package dev.jellystructure.ravilo.i18n
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
@@ -74,11 +75,26 @@ class RaviloStringsTest {
         }
     }
 
+    /**
+     * R279 FR-R279-9 — the app table used to carry `NAESTE`/`NAESTA` while the receiver table
+     * carried `NÆSTE`/`NÆSTA` for the same moment on screen. One table now, the correct one.
+     *
+     * R288 — this asserted those two words exactly, and broke when the Faroese became `NÆSTI`,
+     * agreeing with `partur`, which is masculine. That is a legitimate change to the copy, and this
+     * file's own contract is that these tests assert the generator's promises and not the copy. The
+     * wording is the translator's; the digraph is not. So the digraph is what is pinned.
+     *
+     * The general case is no longer this test's to carry: `scripts/check-i18n-spelling.sh` fails on
+     * an `ae`/`oe`/`aa` digraph in *any* string of *any* language, which is strictly more than the
+     * two keys here. This stays as the unit-level witness that the generated table — not just the
+     * JSON — arrives with its letters intact.
+     */
     @Test
     fun the_danish_and_faroese_next_up_kept_their_diacritics() {
-        // R279 FR-R279-9 — the app table used to carry `NAESTE`/`NAESTA` while the receiver table
-        // carried `NÆSTE`/`NÆSTA` for the same moment on screen. One table now, the correct one.
-        assertEquals("NÆSTE", t("player.up_next", "da"))
-        assertEquals("NÆSTA", t("player.up_next", "fo"))
+        for (lang in listOf("da", "fo")) {
+            val text = t("player.up_next", lang)
+            assertTrue(text.contains("Æ"), "$lang lost the Æ in player.up_next: '$text'")
+            assertFalse(text.contains("AE"), "$lang wrote the AE digraph in player.up_next: '$text'")
+        }
     }
 }
