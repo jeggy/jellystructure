@@ -65,6 +65,46 @@ language has to be able to ship, or nobody starts one.
 strings still identical to English, `...` where `…` was meant. It never fails anything. It is a list
 of things for a person to look at.
 
+## Spelling: use the real letters
+
+**Write `Næst`, never `Naest`. Write `Mál`, never `Mal`.** Accents and `æ` `ø` `ð` are letters, not
+decoration, and they render fine on every screen Ravilo draws on — a TV, a phone, a Chromecast.
+
+`scripts/check-i18n-spelling.sh` enforces that, and it is worth knowing how, because it decides what
+you have to do when you add a word:
+
+- It fails when one file spells a word **two ways** that differ only by accents. Pick the spelling the
+  file already uses.
+- It fails when a word is **not in `lexicon/<code>.txt`** but an accented version of it is — `Mal`
+  when the lexicon has `mál`. This is the half that catches a word you stripped *everywhere*, which
+  is otherwise perfectly self-consistent and invisible.
+- It fails when a **new** word contains `ae`, `oe` or `aa`.
+
+`lexicon/<code>.txt` is every word form that language really uses, one per line. It is ground truth,
+not a dictionary: a word is in it because somebody read the string it appears in. `Heim` is in there
+and is correct — it never needed an accent.
+
+So when you write a genuinely new word, the check will stop and ask about it once. Add the line:
+
+```
+scripts/check-i18n-spelling.sh --update-lexicon
+```
+
+and commit the lexicon **with** the strings that needed it, so whoever reads the diff sees that the
+new spelling was a decision and not a slip. If you are starting a new language, the first run writes
+your whole lexicon in one go.
+
+A few rules are about **word choice**, not spelling. In Faroese: a bare `TV` fails, because a TV is
+a `sjónvarp` (`TV` is only for a line genuinely too narrow for the word, and there is no such line
+today); and `telefonurin` fails, because `telefon` is feminine — `telefonin` / `telefonina` /
+`telefonini`. Both of those existed in this file for months, because each string read perfectly well
+on its own and only the whole file showed the disagreement. Danish is untouched by these: `dette tv`
+is ordinary Danish.
+
+A word can legitimately be the odd one out. `Ambætaraadressa` keeps its `aa` because it is a word
+join (*Ambætara* + *adressa*) and Faroese has no `å` for an `aa` rule to produce. Unit abbreviations
+are exempt too — `min` is minutes in every language, and is not a misspelling of Faroese `mín`.
+
 ## Which language a viewer sees
 
 ```

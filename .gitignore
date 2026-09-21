@@ -66,3 +66,7 @@ config-test/activity-log.json.runs
 config-test/livetv.json
 config-test/artwork/
 config-test/fingerprints/
+
+# Python bytecode — R287 committed one by accident; running a check script must not dirty the tree.
+__pycache__/
+*.pyc
