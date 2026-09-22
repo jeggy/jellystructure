@@ -24,7 +24,13 @@ What is **new**, and what makes this its own problem:
 2. **Phase 201 deliberately left the client alone** — FR-201-7: *"Ravilo says nothing new… A
    client-side guard, if ever wanted, belongs in its own phase."* The owner has now asked for exactly
    that: **Ravilo should play it no matter what, like Wholphin and Jellyfin do.**
-3. **The 2026-09-08 population is gone.** A full sweep today of **8 314 `.mkv` files** finds
+3. **Parity is feasible and cheaper than assumed.** Media3's `MatroskaExtractor` **already** jumps to
+   a `SeekHead`-referenced element mid-parse and resumes — it does it for **Cues**, on every file, and
+   there is even a `FLAG_DISABLE_SEEK_FOR_CUES` to switch it off. It simply discards the `Tracks`
+   entry. So Phase 201's reason for ruling the client fix out — *"reading the tail of an HTTP stream
+   before the head is not something to build into a player"* — is contradicted by the player we ship.
+   See §7.
+4. **The 2026-09-08 population is gone.** A full sweep today of **8 314 `.mkv` files** finds
    **one** broken file — this one. The 164/165 files of 2026-09-08/12 no longer have the defect.
    So this is not a backlog; it is **new arrivals**, one at a time, indefinitely.
 
@@ -158,41 +164,83 @@ case. A 4K remux would be hopeless.
 
 ## 7. Part 1 — Ravilo must play it anyway
 
-The owner's requirement: *Ravilo should play it no matter what, just like Wholphin and Jellyfin.*
+The owner's bar, 2026-09-22: *"Jellyfin and Wholphin can play it without issues, then we should also
+be able to play without issues."* That rules out the easy answer. Falling back to a transcode would
+make it *start*, but Jellyfin and Wholphin **direct-play** this file; matching them means our demuxer
+must do what theirs does — **follow `SeekHead` to a track list that isn't where it expected it.**
 
-Four candidate roads. They are not exclusive.
+### The good news: Media3 already does exactly this, for Cues
 
-| | what it does | pro | con |
-|---|---|---|---|
-| **A · server refuses direct play** | backend walks the EBML header during negotiation; a bad layout is not offered as direct play, so Jellyfin remuxes/transcodes instead | no client change; fixes every existing client incl. installed ones | needs the check on the hot path; only helps titles our backend negotiates |
-| **B · client preflight** | app range-reads the first ~64 KB, walks the header itself, asks for a transcode ticket when `Tracks` is missing | client owns its own correctness | one extra round trip on every start; re-implements the walk on the client |
-| **C · start watchdog** | no first frame within N seconds ⇒ re-negotiate the same item as a transcode, once | **cause-agnostic** — covers this bug and every future unknown one; this is what "no matter what" actually means | needs a threshold that does not fire on a legitimately slow cold start (R218/R222 territory) |
-| **D · patch the extractor** | fork/extend Media3's `MatroskaExtractor` to follow `SeekHead` for `Tracks` | fixes it properly at the layer that is wrong | [ravilo-player-fork-decision] is **DEFERRED**; large, and Media3 upgrades get painful |
+Read out of `media3-extractor-1.8.0`'s own bytecode, not from docs:
 
-**Note that Phase 201 put D out of scope in as many words** — *"Changing ExoPlayer/`MatroskaExtractor`
-behaviour or making a player seek to a trailing `Tracks` element. Reading the tail of an HTTP stream
-before the head is not something to build into a player."* The owner's *"no matter what"* reopens the
-question, but that reasoning still stands on its own merits, which is part of why the lean is A + C
-rather than D. A needs no persisted state, so it does not collide with FR-201-13: the header walk is a
-few hundred bytes off local disk at negotiation time.
+- `MatroskaExtractor` parses **every** `SeekHead` entry into `seekEntryId` / `seekEntryPosition`.
+- In `endMasterElement(ID_SEEK)` it then compares:
+  `if (seekEntryId != 475249515) return;` — `475249515` is `0x1C53BB6B`, **`ID_CUES`**. Only the Cues
+  entry is kept, into `cuesContentPosition`. **`ID_TRACKS` (`0x1654AE6B` = `374648427`) is parsed and
+  thrown away.**
+- `private boolean maybeSeekForCues(PositionHolder, long)` is called from `read()`; when it fires,
+  `read()` returns `RESULT_SEEK` and the player jumps to `cuesContentPosition`, with
+  `seekPositionAfterBuildingCues` remembering where to come back to.
+- There is even a public `FLAG_DISABLE_SEEK_FOR_CUES` to turn that behaviour off.
 
-**Lean: A + C.** A makes the common case correct and costs the client nothing — importantly it also
-fixes the **TVs already in the house** without an app release. C is the honest answer to "no matter
-what": a player that can sit on a loading card indefinitely with no bound is a defect regardless of
-cause, and the stue TV has now hit that state twice for two different reasons (this, and R220's black
-frame). B is redundant once A exists. D stays deferred.
+So the machinery to jump to a `SeekHead`-referenced element mid-parse, use it, and resume **is already
+shipped and already on**. The defect is only that it is hard-coded to one element id.
 
-Open design questions for the spec:
-- What N is, and how C interacts with **R218**'s three moments and **R222**'s *"slow to start on this
-  TV"* note — C must not fire on a file that is merely slow, and must not contradict copy that already
-  tells the viewer to be patient.
-- Whether C's fallback is silent (preferred — R218's existing waiting state already covers it) or
-  says something. Phase 201 FR-201-7's instinct was *say nothing*; a fallback that works needs no copy.
-- Whether the re-negotiation counts against phase 218's concurrent-session ceiling.
-- Cast/receiver parity: the Chromecast receiver and the Tizen receiver have the same exposure and are
-  not ExoPlayer. **Unverified** — worth probing before scoping.
+**This means Phase 201's stated reason for ruling the fix out is factually wrong.** Its Out-of-scope
+reads: *"Changing ExoPlayer/`MatroskaExtractor` behaviour or making a player seek to a trailing
+`Tracks` element. Reading the tail of an HTTP stream before the head is not something to build into a
+player."* The player we ship **already reads the tail before the head**, on every Matroska file whose
+Cues sit at the end. That sentence should be retracted in whatever phase supersedes it.
 
-Verified today, so A/C are known-viable: forcing an empty `DirectPlayProfiles` on this exact item
+The change itself is small: keep the `ID_TRACKS` entry alongside the Cues one, and if the first
+`Cluster` is reached with no `Tracks` seen and a position is known, seek there, parse it, and resume —
+the same round trip the Cues path already performs.
+
+### The cost: it cannot be done by subclassing
+
+`MatroskaExtractor` is not final and has a deliberately broad `protected` surface
+(`startMasterElement`, `endMasterElement`, `integerElement`, `floatElement`, `stringElement`,
+`binaryElement`, `isLevel1Element`, `getElementType`). A subclass can therefore **observe** the
+`SeekHead` and learn where `Tracks` lives.
+
+It cannot **act** on it: `read(ExtractorInput, PositionHolder)` is **`final`**, and `maybeSeekForCues`,
+`seekEntryId`, `seekEntryPosition` and `cuesContentPosition` are all `private`. The seek can only be
+issued from inside `read`.
+
+So parity requires **vendoring the class** — it is Apache-2.0, so this is permitted — into
+`:ravilo-player` (which already exists as the module that carries player internals and the FFmpeg
+decoder), patched, and wired in through a custom `ExtractorsFactory` in place of
+`DefaultExtractorsFactory`. That is a ~2 600-line file pinned to a Media3 version and re-synced on
+upgrade: a real maintenance cost, but a contained one, and far smaller than the "fork the player"
+framing that got this deferred before. **Upstreaming the same patch to Media3 is the good-citizen
+route and would retire the vendored copy**; it should be attempted in parallel, not waited on.
+
+### The three roads, re-scored against the owner's bar
+
+| | what it does | meets "play without issues"? |
+|---|---|---|
+| **A · server refuses direct play** | backend walks the EBML header at negotiation; a bad layout is not offered as direct play, so Jellyfin remuxes | **partly** — it plays, but as a transcode. Not parity. Its real virtue is that it needs **no app release**, so it fixes the TVs already in the house today |
+| **C · start watchdog** | no first frame in N seconds ⇒ re-negotiate once as a transcode | **no** — a safety net, not parity. But it is the only thing that bounds *unknown* future hangs, and the stue TV has now hit an unbounded hang twice for two unrelated reasons (this, and R220's black frame) |
+| **D · vendored + patched `MatroskaExtractor`** | follow `SeekHead` to `Tracks`, exactly as the Cues path already does | **yes** — direct play, no transcode, byte-for-byte what Wholphin and Jellyfin do |
+
+**Recommendation: D is the answer to the owner's question, with A shipped first and C as a standing
+net.** D alone leaves every currently-installed TV broken until an app release reaches it; A closes
+that gap immediately and costs nothing on the client. C is independent of this bug and worth its own
+small requirement.
+
+Open questions for the spec:
+- Exactly where the re-entry lands: the Cues path seeks *away* and returns via
+  `seekPositionAfterBuildingCues`. Tracks must be parsed **before** any Cluster is consumed, so the
+  return position and the `sentSeekMap` interaction need care. Needs a build, not a guess.
+- Whether `sniff()` (also `final`) still behaves on a header with no `Tracks`. Untested.
+- What N is for C, and how it meets **R218**'s three moments and **R222**'s *"slow to start on this
+  TV"* note — C must not fire on a file that is merely slow, nor contradict copy telling the viewer
+  to be patient.
+- **Cast and Tizen receivers are not ExoPlayer and have the same exposure.** Untested; the Chromecast
+  receiver is CAF (browser media stack) and the Tizen app uses AVPlay. Probe before scoping.
+- Media3 upgrade policy for the vendored file: pin, diff on upgrade, or block upgrades until re-synced.
+
+Verified today, so A and C are known-viable: forcing an empty `DirectPlayProfiles` on this exact item
 returns `SupportsDirectPlay: false` **with a working `TranscodingUrl`**. Jellyfin has no trouble with
 the file; it seeks.
 
@@ -222,14 +270,16 @@ What today's finding **adds** to that scope, and what a new spec has to say:
    *arrive*, not only after mkvpropedit. Candidate seam: the scan/ingest path that already probes
    every file — it is one EBML walk of a few hundred bytes, no subprocess, no ffprobe (ffprobe seeks
    and therefore always passes). Cost is trivial next to the ffprobe already being run.
-2. **Persisting a verdict is a real decision, and it contradicts FR-201-13.** A per-file verdict
-   stored at scan time would turn the dashboard from "run a sweep and wait" into a fact we already
-   hold, and `file_integrity` (phase 254) is the obvious neighbour. But **FR-201-13 says the sweep is
-   the only source of truth and forbids exactly this**, on the reasoning that a fixed file should
-   leave no residue. Both positions are defensible and the new requirement tips the balance: a
-   *dashboard* that must be cheap on every load wants a stored fact, where a *sweep-on-demand* card
-   did not. This needs deciding in the spec, not assumed — and if FR-201-13 is overruled, say so in
-   the new phase rather than quietly diverging.
+2. **The verdict is stored at scan time — owner decision, 2026-09-22 — and this overrules
+   FR-201-13.** A per-file layout verdict is recorded when the file is scanned, making the dashboard
+   cheap on every load and letting negotiation (Part 1's option A) answer without touching the disk.
+   `file_integrity` (phase 254) is the obvious neighbour and probably the right home. **FR-201-13 says
+   the opposite** — *"no new state is invented … re-running the sweep is the only source of truth"* —
+   on the reasoning that a fixed file should leave no residue. That reasoning was sound for a
+   sweep-on-demand card and does not survive a dashboard that must be cheap on load. The superseding
+   phase must **say it is overruling FR-201-13**, and must say what happens to a stored verdict when a
+   file is repaired or replaced (clear it on re-scan; a stale "broken" row is worse than no row).
+
 3. **The suggested fix is already known and measured**: `ffmpeg -i <f> -map 0 -c copy -cues_to_front 1`,
    ~0.6 s for 92 MB, lossless, every stream/language/disposition byte-identical (FR-201-3). The
    surface should offer it, name what it does, and say it does not re-encode. Note FR-201-4: **mkvmerge
