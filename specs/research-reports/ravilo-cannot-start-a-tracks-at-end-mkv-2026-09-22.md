@@ -21,16 +21,19 @@ What is **new**, and what makes this its own problem:
    `Lavf62.12.102`; our container writes `Lavf59.27.100` and the host `Lavf61.7.100`. **It arrived
    broken from the source.** Phase 201's guard (FR-201-2: *check the layout after every mkvpropedit
    edit*) structurally cannot catch a file we never edit.
-2. **Phase 201 deliberately left the client alone** — FR-201-7: *"Ravilo says nothing new… A
+2. **The backend half already ships** (corrected 2026-09-23 — see §8): detector, scan-time sweep,
+   Triage row, Dashboard, Library label, detail banner and Fix now are all built, and E19 is flagged
+   in the admin today. What is left there is persistence and one wrong sentence of copy.
+3. **Phase 201 deliberately left the client alone** — FR-201-7: *"Ravilo says nothing new… A
    client-side guard, if ever wanted, belongs in its own phase."* The owner has now asked for exactly
    that: **Ravilo should play it no matter what, like Wholphin and Jellyfin do.**
-3. **Parity is feasible and cheaper than assumed.** Media3's `MatroskaExtractor` **already** jumps to
+4. **Parity is feasible and cheaper than assumed.** Media3's `MatroskaExtractor` **already** jumps to
    a `SeekHead`-referenced element mid-parse and resumes — it does it for **Cues**, on every file, and
    there is even a `FLAG_DISABLE_SEEK_FOR_CUES` to switch it off. It simply discards the `Tracks`
    entry. So Phase 201's reason for ruling the client fix out — *"reading the tail of an HTTP stream
    before the head is not something to build into a player"* — is contradicted by the player we ship.
    See §7.
-4. **The 2026-09-08 population is gone.** A full sweep today of **8 314 `.mkv` files** finds
+5. **The 2026-09-08 population is gone.** A full sweep today of **8 314 `.mkv` files** finds
    **one** broken file — this one. The 164/165 files of 2026-09-08/12 no longer have the defect.
    So this is not a backlog; it is **new arrivals**, one at a time, indefinitely.
 
@@ -244,55 +247,58 @@ Verified today, so A and C are known-viable: forcing an empty `DirectPlayProfile
 returns `SupportsDirectPlay: false` **with a working `TranscodingUrl`**. Jellyfin has no trouble with
 the file; it seeks.
 
-## 8. Part 2 — the backend must find it and say so
+## 8. Part 2 — the backend already finds it and says so
 
-Most of this is **already specified and not built**. Phase 201's amendment of 2026-09-12 says it
-outright: the sweep and repair *routes* exist (`GET /media/health/mkv-layout`,
-`POST /media/health/mkv-layout/repair`) and work, but *"there is no reference to `mkv-layout` anywhere
-in the frontend. An operator has no way to discover a single one of these files is broken except
-calling the route by hand."* FR-201-9 … FR-201-13 were written to close that and are marked **not yet
-built**:
+**Correction, 2026-09-23.** An earlier draft of this report said FR-201-9…13 were "written and never
+built". **That was wrong** — it trusted phase 201's own Status header instead of reading the code. The
+owner found the banner in the running admin the next day. What actually ships today:
 
-- **FR-201-9** — sweep result grouped by title (id, title, kind, affected episodes), not a flat path list.
-- **FR-201-10** — an **MKV track layout** health card on `app/activity.html`; absent entirely at zero;
-  run on demand, not as a page-load side effect.
-- **FR-201-11** — a **fix banner** on `app/media.html` / `app/series.html` for the open title, in the
-  existing drift/Jellyfin-lock banner family.
-- **FR-201-12** — **Fix now** calls the repair scoped to that title only; write-through, busy state,
-  honest partial-failure reporting.
-- **FR-201-13** — **no new state is invented**: the card and the banner read straight off a sweep
-  result, nothing is written to `media_history`, `issueCount` or any persisted field, and a fixed
-  title simply stops appearing in the next sweep.
+| piece | where |
+|---|---|
+| detector, two defect kinds (`TRACKS_AFTER_CLUSTER`, `ELEMENT_SIZE_OVERFLOW`) | `media/MkvLayout.kt` |
+| **the sweep runs as part of scanning** | `7d140419` |
+| per-item live header check | `GET /api/media/{id}/health/mkv-layout` |
+| Triage row *"Unplayable in Ravilo (MKV structure)"*, counted by instances and titles | `TriageRoutes.kt:201` |
+| Dashboard severity | `Dashboard.kt:281` |
+| Library filter label | `Library.kt:84` |
+| detail-page banner + **Fix now**, queued through the Phase 109 media job queue | `MediaDetail.kt:2927+` |
+| one `needsRepair` predicate shared by sweep, Fix now and the post-mkvpropedit gate; per-file lock | phase 234, `9b6215a6` |
+| cold-cache handling: a count is **omitted**, never reported as 0 | phase 203, `MkvHealthCache` |
 
-What today's finding **adds** to that scope, and what a new spec has to say:
+So Part 2 is largely **done**, and it worked: E19 is flagged in the admin today. Two real gaps remain.
 
-1. **Detection must not be limited to our own edits.** The layout check has to run where files
-   *arrive*, not only after mkvpropedit. Candidate seam: the scan/ingest path that already probes
-   every file — it is one EBML walk of a few hundred bytes, no subprocess, no ffprobe (ffprobe seeks
-   and therefore always passes). Cost is trivial next to the ffprobe already being run.
-2. **The verdict is stored at scan time — owner decision, 2026-09-22 — and this overrules
-   FR-201-13.** A per-file layout verdict is recorded when the file is scanned, making the dashboard
-   cheap on every load and letting negotiation (Part 1's option A) answer without touching the disk.
-   `file_integrity` (phase 254) is the obvious neighbour and probably the right home. **FR-201-13 says
-   the opposite** — *"no new state is invented … re-running the sweep is the only source of truth"* —
-   on the reasoning that a fixed file should leave no residue. That reasoning was sound for a
-   sweep-on-demand card and does not survive a dashboard that must be cheap on load. The superseding
-   phase must **say it is overruling FR-201-13**, and must say what happens to a stored verdict when a
-   file is repaired or replaced (clear it on re-scan; a stale "broken" row is worse than no row).
+**Gap 1 — the verdict is not persisted.** `MkvHealthCache.brokenPathsOrNull()` is an in-memory cache
+populated by the scan sweep. After a restart it is cold, and Triage omits the row entirely until a
+sweep repopulates it (correct per FR-203-1, but it means the dashboard can be silent about a real
+defect). **Owner decision 2026-09-22: store the verdict at scan time**, which overrules FR-201-13's
+"no new state is invented". `file_integrity` (phase 254) is the likely home. A stored verdict must be
+cleared on re-scan — a stale "broken" row is worse than no row.
 
-3. **The suggested fix is already known and measured**: `ffmpeg -i <f> -map 0 -c copy -cues_to_front 1`,
-   ~0.6 s for 92 MB, lossless, every stream/language/disposition byte-identical (FR-201-3). The
-   surface should offer it, name what it does, and say it does not re-encode. Note FR-201-4: **mkvmerge
-   is not a substitute** — it keeps `Tracks` at the front but writes `Cues` at EOF, trading this bug
-   for the 2026-08-16 slow-start one.
-4. **The dashboard is now in scope** — the owner asked for it explicitly, alongside the series detail
-   page. FR-201-10 put the card on Activity; a dashboard summary needs deciding (its own card, or a
-   line in an existing health block).
-5. **A repaired-on-arrival policy is worth considering and is a real decision, not a detail.** FR-201-5
-   was explicit that repairing existing files is *"an operator action on the media library, not
-   something a scan may do on its own initiative."* Auto-repairing arrivals would reverse that. It is
-   also the only version of Part 2 that makes the defect never reach a viewer — but Part 1 already
-   does that, which is a good argument for leaving repair manual and letting the player cope.
+**Gap 2 — the banner asserts a cause it does not know, and for this file the assertion is false.**
+`MediaDetail.kt:2954` hard-codes:
+
+> *"A flag edit moved this file's `Tracks` element behind its first `Cluster`"*
+
+For S01E19 that is **provably untrue**: `media_history` holds one row (`realtime_ingest`), there is no
+mkvpropedit in the logs, and the muxer is the release group's `Lavf62.12.102`, not our container's
+`Lavf59.27.100`. **The file arrived broken.** The copy was written when every known instance came from
+our own bulk-reorder path (§4 of phase 201 ties the two largest runs to `bulk_reorder_tracks`), and
+that is no longer the only source.
+
+The honest fix is to stop naming a cause the surface cannot know. The symptom, the consequence and the
+repair are all true regardless of who muxed the file; *"a flag edit"* is the one clause that is a
+guess. Something like *"This file's `Tracks` element sits behind its first `Cluster`"* states what was
+measured and nothing more. If attribution is wanted, `media_history` can actually answer it — a file
+we edited can say so, a file that arrived this way should say that instead.
+
+**Still worth deciding:**
+
+- Should an arrival be **repaired automatically**? FR-201-5 was explicit that repairing is *"an
+  operator action on the media library, not something a scan may do on its own initiative."* Auto-repair
+  on ingest is the only version that guarantees the defect never reaches a viewer — but Part 1 makes
+  the player cope, which is a good argument for leaving repair manual.
+- Does the operator need to be **told**, rather than find out by opening the page? The defect was
+  detected and displayed correctly; nobody looked. That is a notification question, not a detection one.
 
 ## 9. Open questions
 
