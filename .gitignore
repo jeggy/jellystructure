@@ -70,3 +70,9 @@ config-test/fingerprints/
 # Python bytecode — R287 committed one by accident; running a check script must not dirty the tree.
 __pycache__/
 *.pyc
+
+# Purged from all history on 2026-09-23 (real library posters/titles in captures). A design-tool
+# export must not bring them back — see scripts/check-deanonymization.sh.
+design/presentation/
+design/uploads/
+design/screenshots/
