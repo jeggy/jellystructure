@@ -32,6 +32,12 @@ Two defects compound, both measured on the device through the receiver's DevTool
    whatever its `endedReason`, and advances to the next episode. So one bad stream walks the whole
    queue at ~2 s per item, which is what the phone's remote shows as the episode changing by itself.
 
+3. **The backend ignored the declaration anyway.** With the probing receiver hot-swapped into prod
+   (2026-09-24, bedroom TV), the receiver no longer declared AC-3 (`isTypeSupported('…ac-3') -> false`
+   in the TV's own log), yet Jellyfin's command line was still `-codec:a:0 copy` and the load died the
+   same way. `deviceProfile()` wrote the `TranscodingProfiles` `AudioCodec` as a fixed
+   `aac,ac3,eac3,mp3` (fMP4) / `aac,ac3,mp3` (TS), ignoring `capabilities.audioCodecs`.
+
 *First hypothesis, withdrawn:* that CAF needed `hlsSegmentFormat = FMP4` for 253's fMP4 profile. The
 console shows CAF plays HLS through Shaka, which detects fMP4 itself; the failure is the audio codec.
 
@@ -40,6 +46,10 @@ console shows CAF plays HLS through Shaka, which detects fMP4 itself; the failur
 - **FR-R297-1 — Audio is probed like video.** The receiver declares AC-3, E-AC-3 and Opus only when
   `canDisplayType('audio/mp4', …)` says the device plays them; AAC and MP3 always. A Chromecast that
   passes AC-3 through to an amplifier keeps it; one that cannot gets AAC from Jellyfin instead.
+- **FR-R297-4 — A transcode carries only audio the client declared.** The transcoding profile's
+  `AudioCodec` is the segment type's own list intersected with `capabilities.audioCodecs`, AAC when
+  nothing is left. A client that declares nothing keeps today's list; the Android app (which declares
+  AC-3 and E-AC-3) gets exactly today's profile.
 - **FR-R297-2 — Only a real end moves on.** `MEDIA_FINISHED` advances to the next episode only when its
   `endedReason` is `END_OF_STREAM` (or absent, as older frameworks send it). On `ERROR` (and any other
   reason) the receiver stops the session, returns to its idle screen and tells the phone the item
@@ -57,6 +67,14 @@ console shows CAF plays HLS through Shaka, which detects fMP4 itself; the failur
 - The Tizen receiver (`ravilo-screen`) has its own hard-coded capability list; it is not this phase.
 - The tracks-at-end MKV (R294) on the receiver. It transcodes through Jellyfin, which reads the file
   itself; testable once casting works at all.
+
+## Verified so far
+
+- **FR-R297-2 (bedroom TV, receiver hot-swapped into prod, 2026-09-24):** a failing cast now produces
+  one `PlaybackInfo` and the idle screen; no other episode is loaded.
+- **FR-R297-1 (same):** the receiver's probes appear in the TV's own log: `ac-3` false, `ec-3` false,
+  `opus` true.
+- **FR-R297-4:** unit tests only; needs a backend deploy.
 
 ## Acceptance (a TV's built-in Chromecast, cast from the Pixel's release app)
 

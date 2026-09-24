@@ -77,10 +77,19 @@ internal fun deviceProfile(capabilities: ClientCapabilities): String {
     // fMP4 segments (the only HLS shape Jellyfin emits HEVC in) with hevc FIRST so a fitting HEVC
     // source is copied rather than re-encoded. Measured on 12.1.0 ("Honeyman", 4K HEVC): this removes
     // `VideoCodecNotSupported` from TranscodeReasons and the URL comes back `SegmentContainer=mp4`.
+    // R297 (FR-R297-4) — a transcode carries only audio the client declared: the segment type's own
+    // list intersected with capabilities.audioCodecs, AAC if nothing is left. This list used to be
+    // fixed, so an AC-3 source was copied into the stream for a Chromecast that had just said it
+    // cannot play AC-3, and every cast failed (Shaka 4032). A client that declares nothing keeps it all.
+    fun transcodeAudio(segmentCodecs: List<String>): String {
+        val declared = capabilities.audioCodecs
+        val allowed = if (declared.isEmpty()) segmentCodecs else segmentCodecs.filter { it in declared }
+        return allowed.ifEmpty { listOf("aac") }.joinToString(",")
+    }
     val transcodingProfile = if (capabilities.hlsHevc)
-        """{"Container":"mp4","Type":"Video","VideoCodec":"hevc,h264","AudioCodec":"aac,ac3,eac3,mp3","Protocol":"hls","Context":"Streaming"}"""
+        """{"Container":"mp4","Type":"Video","VideoCodec":"hevc,h264","AudioCodec":"${transcodeAudio(listOf("aac", "ac3", "eac3", "mp3"))}","Protocol":"hls","Context":"Streaming"}"""
     else
-        """{"Container":"ts","Type":"Video","VideoCodec":"h264","AudioCodec":"aac,ac3,mp3","Protocol":"hls","Context":"Streaming"}"""
+        """{"Container":"ts","Type":"Video","VideoCodec":"h264","AudioCodec":"${transcodeAudio(listOf("aac", "ac3", "mp3"))}","Protocol":"hls","Context":"Streaming"}"""
     return """{"MaxStreamingBitrate":${maxStreamingBitrate(capabilities)},"DirectPlayProfiles":[$directPlayProfiles],"CodecProfiles":[$codecProfiles],"TranscodingProfiles":[$transcodingProfile],"SubtitleProfiles":[{"Format":"vtt","Method":"External"},{"Format":"srt","Method":"External"},{"Format":"subrip","Method":"External"},{"Format":"ass","Method":"External"},{"Format":"ssa","Method":"External"},{"Format":"vobsub","Method":"Embed"},{"Format":"dvdsub","Method":"Embed"},{"Format":"dvbsub","Method":"Embed"},{"Format":"pgssub","Method":"Encode"},{"Format":"pgs","Method":"Encode"}]}"""
 }
 

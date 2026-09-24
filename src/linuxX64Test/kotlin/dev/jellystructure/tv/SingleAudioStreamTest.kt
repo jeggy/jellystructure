@@ -24,6 +24,26 @@ class SingleAudioStreamTest {
         assertFalse(""""Container":"mp4","Type":"Video","VideoCodec":"hevc""" in p)
     }
 
+    // R297 — the transcode's audio is what the client declared, never a codec it said it cannot play.
+    @Test fun a_chromecast_without_ac3_gets_no_ac3_in_its_transcode() {
+        val p = deviceProfile(ClientCapabilities(videoCodecs = listOf("h264", "hevc"), audioCodecs = listOf("aac", "mp3", "opus"), hlsOnly = true, hlsHevc = true))
+        assertTrue(""""Container":"mp4","Type":"Video","VideoCodec":"hevc,h264","AudioCodec":"aac,mp3",""" in p, p)
+    }
+
+    @Test fun a_client_that_plays_ac3_keeps_the_full_list() {
+        val android = ClientCapabilities(videoCodecs = listOf("h264", "hevc"), audioCodecs = listOf("aac", "mp3", "flac", "opus", "ac3", "eac3", "truehd", "dts"), hlsOnly = true, hlsHevc = true)
+        assertTrue(""""AudioCodec":"aac,ac3,eac3,mp3","Protocol":"hls"""" in deviceProfile(android))
+        assertTrue(""""Container":"ts","Type":"Video","VideoCodec":"h264","AudioCodec":"aac,ac3,mp3",""" in deviceProfile(android.copy(hlsHevc = false)))
+    }
+
+    @Test fun a_client_that_declares_no_audio_keeps_todays_profile() {
+        assertTrue(""""AudioCodec":"aac,ac3,mp3","Protocol":"hls"""" in deviceProfile(ClientCapabilities(hlsOnly = true)))
+    }
+
+    @Test fun nothing_in_common_still_transcodes_to_aac() {
+        assertTrue(""""AudioCodec":"aac","Protocol":"hls"""" in deviceProfile(ClientCapabilities(audioCodecs = listOf("opus"), hlsOnly = true)))
+    }
+
     @Test fun hls_hevc_asks_for_fmp4_with_hevc_first() {
         val p = deviceProfile(ClientCapabilities(videoCodecs = listOf("h264", "hevc"), hlsOnly = true, hlsHevc = true))
         assertTrue(""""TranscodingProfiles":[{"Container":"mp4","Type":"Video","VideoCodec":"hevc,h264"""" in p)
