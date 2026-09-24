@@ -1352,29 +1352,7 @@ private suspend fun renderJellyfinAdvisor() {
           <p class="hint" style="margin:0 0 8px">Read-only. jellystructure never writes to Jellyfin — every row below is something to change yourself, with exact steps.</p>
           ${result.serverWide.joinToString("") { advisorFindingHtml(it) }}
         </div>"""
-        for (f in result.serverWide) {
-            if (f.action != "recheck_exposure") continue
-            val btn = document.getElementById("advisor-action-${f.id}") as? HTMLElement ?: continue
-            val out = document.getElementById("advisor-action-out-${f.id}") as? HTMLElement
-            btn.addEventListener("click", {
-                out?.textContent = "Checking\u2026"
-                // The page's own scope, not a throwaway MainScope() — cancelled when the admin
-                // navigates away, consistent with every other async action on this page (and with the
-                // bug fix recorded above `refreshApiKeyList`).
-                settingsScope?.launch {
-                    val findings = ConfigApi.recheckJellyfinExposure()
-                    // FR-244-4 — the operator confirms the fix rather than being told it worked: the
-                    // finding disappearing IS the confirmation, and a wrong value leaves it standing.
-                    val stillOpen = findings?.any { it.id == "known_proxies_empty" || it.id == "known_proxies_unconfirmed" }
-                    out?.textContent = when {
-                        findings == null -> "Couldn't reach the server."
-                        stillOpen == true -> "Still reported open. Jellyfin may need a restart before the change takes effect \u2014 do that when nobody is watching."
-                        else -> "Closed. Reloading the advisor\u2026"
-                    }
-                    if (findings != null && stillOpen != true) renderJellyfinAdvisor()
-                }
-            })
-        }
+        wireAdvisorActions(result.serverWide, settingsScope) { renderJellyfinAdvisor() }
     }
 
     for (section in result.perLibrary) {
@@ -1441,6 +1419,35 @@ private suspend fun runMemoryBudgetCalculator() {
               <span style="flex:none;">ℹ</span>
               <div class="tiny" style="line-height:1.6;">${result.survivalNote.esc()}</div>
             </div>"""
+}
+
+/**
+ * Phase 244 FR-244-4 / phase 257 FR-257-4 — wires every *Re-check* button [advisorFindingHtml] drew for
+ * [findings]. Shared by Settings and the Dashboard so an action works identically in both places;
+ * [onClosed] re-renders whichever page asked once the check says the finding is closed.
+ */
+internal fun wireAdvisorActions(findings: List<dev.jellystructure.api.AdvisorFinding>, scope: CoroutineScope?, onClosed: suspend () -> Unit) {
+    for (f in findings) {
+        if (f.action != "recheck_exposure") continue
+        val btn = document.getElementById("advisor-action-${f.id}") as? HTMLElement ?: continue
+        val out = document.getElementById("advisor-action-out-${f.id}") as? HTMLElement
+        btn.addEventListener("click", {
+            out?.textContent = "Checking\u2026"
+            // The page's own scope, not a throwaway MainScope() — cancelled when the admin navigates away.
+            scope?.launch {
+                val rechecked = ConfigApi.recheckJellyfinExposure()
+                // FR-244-4 — the operator confirms the fix rather than being told it worked: the finding
+                // disappearing IS the confirmation, and a wrong value leaves it standing.
+                val stillOpen = rechecked?.any { it.id == "known_proxies_empty" || it.id == "known_proxies_unconfirmed" }
+                out?.textContent = when {
+                    rechecked == null -> "Couldn't reach the server."
+                    stillOpen == true -> "Still reported open. Jellyfin may need a restart before the change takes effect \u2014 do that when nobody is watching."
+                    else -> "Closed. Reloading the advisor\u2026"
+                }
+                if (rechecked != null && stillOpen != true) onClosed()
+            }
+        })
+    }
 }
 
 /** Phase 246 FR-246-9 — a finding's severity decides its glyph, its tint and its place in the list.

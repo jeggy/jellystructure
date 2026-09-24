@@ -40,6 +40,8 @@ fun renderDashboard(container: Element, scope: CoroutineScope) {
 
         <!-- Phase 221 (FR-221-3/4) — operator findings (webhook failing, deprecated *arr route); empty = silent. -->
         <div id="dash-findings" style="margin-bottom:14px"></div>
+        <!-- Phase 257 — every Jellyfin settings advisor finding, most urgent first; empty = silent. -->
+        <div id="dash-advisor" style="margin-bottom:14px"></div>
         <div id="dash-scan-banner" style="margin-bottom:14px"></div>
 
         <div class="statgrid">
@@ -164,6 +166,7 @@ fun renderDashboard(container: Element, scope: CoroutineScope) {
         loadDashboardStats()
 
         loadDashFindings()
+        loadDashAdvisor(scope)
         loadAttentionBreakdown()
         loadRecentActivity()
         loadDashSubtitlesCard()
@@ -195,6 +198,44 @@ private suspend fun loadDashFindings() {
     val el = document.getElementById("dash-findings") as? HTMLElement ?: return
     val st = dev.jellystructure.api.ConfigApi.webhookStatus() ?: return
     el.innerHTML = st.findings.joinToString("") { advisorFindingHtml(it) }
+}
+
+/**
+ * Phase 257 — the Jellyfin settings advisor on the page an admin actually lands on. Every finding the
+ * Settings advisor shows (FR-257-1), through the same [advisorFindingHtml]; critical → warning → info,
+ * server-wide before per-library (FR-257-2); nothing at all when there is nothing to say or Jellyfin
+ * is unreachable (FR-257-3); Re-check wired by the same function as Settings (FR-257-4).
+ */
+private suspend fun loadDashAdvisor(scope: CoroutineScope) {
+    val el = document.getElementById("dash-advisor") as? HTMLElement ?: return
+    val result = dev.jellystructure.api.ConfigApi.getJellyfinAdvisor()
+    if (result == null || !result.reachable) { el.innerHTML = ""; return }
+    val rank = mapOf("critical" to 0, "warning" to 1, "info" to 2)
+    val all = result.serverWide.map { null as String? to it } +
+        result.perLibrary.flatMap { sec -> sec.findings.map { sec.libraryName to it } }
+    if (all.isEmpty()) { el.innerHTML = ""; return }
+    val ordered = all.withIndex().sortedWith(compareBy({ rank[it.value.second.severity] ?: 1 }, { it.index })).map { it.value }
+    fun row(lib: String?, f: dev.jellystructure.api.AdvisorFinding): String =
+        (if (lib != null) """<div class="tiny muted" style="margin:10px 0 -4px">Library · ${lib.esc()}</div>""" else "") + advisorFindingHtml(f)
+    val (notes, asks) = ordered.partition { it.second.severity == "info" }
+    val critical = asks.count { it.second.severity == "critical" }
+    el.innerHTML = """
+    <div class="card" style="padding:14px 16px">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <h3 style="font-size:1rem;margin:0">Jellyfin settings advisor</h3>
+        ${if (asks.isNotEmpty()) """<span class="badge ${if (critical > 0) "bad" else "warn"}" style="font-size:.72rem">${asks.size} to change${if (critical > 0) " · $critical critical" else ""}</span>""" else ""}
+        <span class="spacer" style="flex:1"></span>
+        <a class="btn sm ghost" href="#/settings?tab=libraries">Open the advisor in Settings →</a>
+      </div>
+      <p class="hint" style="margin:6px 0 0">Read-only. jellystructure never writes to Jellyfin — every row below is something to change yourself, with exact steps.</p>
+      ${asks.joinToString("") { row(it.first, it.second) }}
+      ${if (notes.isNotEmpty()) """
+      <details style="margin-top:10px">
+        <summary class="tiny" style="cursor:pointer">${notes.size} for information</summary>
+        ${notes.joinToString("") { row(it.first, it.second) }}
+      </details>""" else ""}
+    </div>"""
+    wireAdvisorActions(ordered.map { it.second }, scope) { loadDashAdvisor(scope) }
 }
 
 private suspend fun loadDashboardStats() {
