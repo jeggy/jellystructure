@@ -20,6 +20,8 @@ class RaviloExtractorsFactory : ExtractorsFactory {
     private val delegate = DefaultExtractorsFactory()
     private var subtitleParserFactory: SubtitleParser.Factory = DefaultSubtitleParserFactory()
     private var textTrackTranscodingEnabled = true
+    // R294 dev review (item 3) — the one DefaultExtractorsFactory setting the swap used to drop.
+    private var matroskaFlags = 0
 
     @Synchronized
     override fun createExtractors(): Array<Extractor> = swap(delegate.createExtractors())
@@ -48,12 +50,22 @@ class RaviloExtractorsFactory : ExtractorsFactory {
         return this
     }
 
+    /** R294 dev review (item 3) — forwarded to the delegate *and* carried into the patched copy, so a
+     *  flag set here (`FLAG_DISABLE_SEEK_FOR_CUES` is the only one) reaches the extractor that runs.
+     *  Nobody sets it today; the wrapper is complete rather than currently-complete. */
+    @Synchronized
+    fun setMatroskaExtractorFlags(flags: Int): RaviloExtractorsFactory {
+        matroskaFlags = flags
+        delegate.setMatroskaExtractorFlags(flags)
+        return this
+    }
+
     private fun swap(extractors: Array<Extractor>): Array<Extractor> {
         for (i in extractors.indices) {
             if (extractors[i] is MatroskaExtractor) {
                 extractors[i] = RaviloMatroskaExtractor(
                     subtitleParserFactory,
-                    if (textTrackTranscodingEnabled) 0 else RaviloMatroskaExtractor.FLAG_EMIT_RAW_SUBTITLE_DATA,
+                    matroskaFlags or (if (textTrackTranscodingEnabled) 0 else RaviloMatroskaExtractor.FLAG_EMIT_RAW_SUBTITLE_DATA),
                 )
             }
         }

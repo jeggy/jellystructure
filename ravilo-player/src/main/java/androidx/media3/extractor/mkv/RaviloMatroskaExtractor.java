@@ -15,6 +15,11 @@
  */
 package androidx.media3.extractor.mkv;
 
+// RAVILO R294 (FR-R294-6) — upstream carries the same fix since Media3 1.11.0: androidx/media
+// d386bbf954 ("MKV: Handle tracks defined in the last cluster") and eb2965ce41 ("Matroska: Fix seekable
+// timeline with Tracks after Clusters", issue #3377). Delete this copy the moment
+// org.jellyfin.media3:media3-ffmpeg-decoder lets Media3 move past 1.8.0; the version test in
+// RaviloMatroskaExtractorTest is what makes that upgrade impossible to forget.
 // RAVILO R294 — a copy of Media3 1.8.0's MatroskaExtractor, renamed and kept in this package so its
 // package-private collaborators (DefaultEbmlReader, VarintReader, Sniffer) resolve. The only change
 // is marked "RAVILO R294": when the first Cluster arrives before Tracks, follow SeekHead to Tracks

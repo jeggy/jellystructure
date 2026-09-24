@@ -6,7 +6,8 @@
 investigation; verified on the stue TV (release build). **Dev-reviewed 2026-09-24 against `main`
 `9d2636bb`** (see §Dev review at the bottom: FR-1 to -5 are in the code and the tests; the factory drops
 one setting it claims to forward; FR-R294-6 is re-aimed — upstream already carries the fix; acceptance 2
-and 4 are not recorded). `⚠ Partial` until those are. Spec first. **Reverses Phase 201 FR-201-7** ("Ravilo says nothing new … a client-side
+and 4 are not recorded). **Acceptance 2 and 4 recorded 2026-09-24 on the Pixel 9** (see §Device run, Pixel 9 below); the factory
+now forwards its Matroska flags; the file header names upstream's two commits. **✓ Built.** Spec first. **Reverses Phase 201 FR-201-7** ("Ravilo says nothing new … a client-side
 guard, if ever wanted, belongs in its own phase") and **retracts 201's Out-of-scope reasoning** for
 it (see *Why 201 was wrong*). Companion change built in the same pass: **R292 FR-R292-11's rung 2**
 (a recovery seek that moves), which R292 assigns to this work.
@@ -80,7 +81,9 @@ Matroska file whose Cues are elsewhere. The fix below is that same jump, applied
   the vendored copy is deleted on the next Media3 upgrade.~~ **Re-aimed 2026-09-24 (dev review item 5,
   owner's call):** upstream Media3 already carries an equivalent fix (1.11.0); the file header names the
   upstream commits, no report is filed, and the copy is deleted when `media3-ffmpeg-decoder` lets Media3
-  move past 1.8.0. The version test is what makes that upgrade impossible to forget.
+  move past 1.8.0. The version test is what makes that upgrade impossible to forget. *Verified 2026-09-24
+  against androidx/media:* `d386bbf954` ("MKV: Handle tracks defined in the last cluster") and
+  `eb2965ce41` ("Matroska: Fix seekable timeline with Tracks after Clusters", issue #3377).
 
 ### Companion: R292 rung 2
 
@@ -159,3 +162,27 @@ than editing R264) that note lives here, not in 201.
 
 **Net effect.** Nothing to change in the extractor. One forwarded flag, one device run, one measurement,
 and FR-6 re-aimed at the upstream fix.
+
+## Device run, Pixel 9 (2026-09-24, debug build `1.37-68-gade0523d`, WiFi, prod backend)
+
+The broken episode (E19, unrepaired) and the clean control (E18), each started from 0:00 from the
+series page, measured with `logcat` (`ExoPlayerImpl: Init` → the video `MediaCodec` adapter), the
+phone's `/proc/net/dev` `wlan0` counter, the backend log and phase 185's start samples.
+
+| run | init → video decoder | stall lines | `PlaybackInfo` | rx first 10 s | rx next 10 s | 185 sample |
+|---|---|---|---|---|---|---|
+| E19, first start on this build | **0.98 s** | 0 | 1 | *(counter not readable that run)* | 4 MiB | 2 s |
+| E18, clean control | **0.63 s** | 0 | 1 | 39 MiB | 5 MiB | 1 s |
+| E19, second start | **0.84 s** | 0 | 1 | **41 MiB** | 4 MiB | 1 s |
+
+- **Acceptance 2 — passes.** The broken episode's picture is up within a second, the same as a clean
+  episode of the same size (0.84–0.98 s vs 0.63 s); no `video output stalled` line; exactly one
+  `PlaybackInfo` per start. The chrome showed 1:20 of 34:28 seventy-five seconds after the tap:
+  continuous playback from 0:00.
+- **Acceptance 4 — passes, and the number is the ordinary one.** The first ten seconds read 41 MiB —
+  Media3's normal initial buffer fill, indistinguishable from the clean episode's 39 MiB — then 4 MiB
+  per ten seconds of steady playback. A full-file read would have been ~950 MiB before the first frame.
+- Seen on the way, not this phase's: with the chrome up in portrait, the caption sits behind the
+  Subtitles · Next · Lock rail (the R300 leftover already recorded); and Back from the player lands the
+  series page at the top with the episode row reset to E1, so a viewer who wants the next episode
+  re-scrolls (R137 restores Home/Channel/Browse, not the series page — worth its own small phase).
