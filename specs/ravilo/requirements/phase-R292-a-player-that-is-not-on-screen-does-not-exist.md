@@ -2,8 +2,12 @@
 
 ## Status
 
-`Planned` — written 2026-09-24 from a household report and a same-day investigation on the stue TV,
-not dev-reviewed, not built. Spec first. **Supersedes R220 FR-R220-4** and R192's *"resume without a
+`Planned` — written 2026-09-24 from a household report and a same-day investigation on the stue TV.
+**Dev-reviewed 2026-09-24 against `main` `9d2636bb`** (see §Dev review at the bottom: every finding
+holds in the code; the recorded position cannot reach a transcode without a `start_position_ms` on the
+start request; FR-R292-6's saved state is smaller than it reads and must be; the resume machinery may
+not live in `PlayerScreen`'s body; rung 2 is already built). Not built beyond FR-R292-11's rung 2. Spec
+first. **Supersedes R220 FR-R220-4** and R192's *"resume without a
 full player rebuild"* design note; keeps R220's detector and ladder for mid-playback loss (FR-R292-11).
 
 > *"This has been reported before, but seems like it's still not fixed. When watching something on
@@ -258,6 +262,8 @@ in `onStop`, create it in `onStart`.
    Lean: play if away under 30 minutes, paused at the position otherwise.
 3. **Which lifecycle events the BRAVIA sends** for standby, CEC power-off, HDMI input switch and the
    launcher's own video previews. FR-R292-8 requires a device trace; this spec cannot answer it.
+   *Dev review:* trial 2 does not answer it either — it went through HOME first, so its `ON_STOP` came
+   from HOME. The trace must be standby **from the player**, with no HOME press before it.
 4. **Is releasing on `ON_STOP` enough on the phone,** where the OS may deliver `ON_STOP` for a
    notification shade pull on some OEMs? Lean: yes. The shade delivers `ON_PAUSE` only on stock
    Android; verify on the Pixel 9.
@@ -283,3 +289,106 @@ Device trials need the owner's go-ahead for the TV. The phone rows run on the Pi
    `playback_qoe` row carries `video_output_recoveries ≥ 1` and `background_returns ≥ 1`.
 7. **Unit:** the resume record round-trips through saved state; the engine re-bind function attaches every
    binding listed in FR-R292-10 to a fresh engine (a fake engine records each call).
+
+## Dev review (2026-09-24, against `main` `9d2636bb`)
+
+The seven findings are all as the code reads. `PlayerLifecycleEffect.kt:33-65` pauses on `ON_PAUSE`,
+stops the session + deactivates the media session + detaches the surface on `ON_STOP`, re-arms on
+`ON_START` and calls `player.play()` on `ON_RESUME` — never `release()`, which only runs when the screen
+leaves composition (`PlayerScreen.kt:1351-1353`). `LiveTvPlayerScreen.kt:93/156-159` has no lifecycle
+effect at all. `videoOutputRecoveries` exists only in `PlayerQoeSnapshot` (`RaviloPlayer.kt:148`) — not in
+`Models.kt`'s QoE DTO (`:143` ends at `subtitle_load_errors`), not in `PlaybackQoe.sq`, not in
+`PlaybackQoeStore.kt`. No `AudioAttributes`, no `handleAudioFocus`, no `ACTION_SCREEN_OFF` anywhere in
+`ravilo-ui`/`ravilo-android`. `android:configChanges` lists no `colorMode` on either activity
+(`AndroidManifest.xml:46`, `:59`). The navigation stack is `remember`, not `rememberSaveable`
+(`RaviloApp.kt:447`) — and `rememberSaveable` is used **nowhere** in `ravilo-ui`. Nine items.
+
+1. **Finding 3's double transcode is structural, and the `ON_RESUME → play()` branch has to go with
+   FR-R292-1.** The order on a return is: `ON_START` → `armSession` → `store.startSession` (a network
+   round trip) → `ON_RESUME` → `player.play()` on the engine still holding the **old** HLS URL
+   (`PlayerLifecycleEffect.kt:63-65`) → the new ticket arrives → `LaunchedEffect(sessionState)` calls
+   `player.load(newUrl, ticket.startPositionMs, …)` on the same engine (`PlayerScreen.kt:909-933`). The
+   old URL's segment request is the first `TranscodeManager` line in the Jellyfin log; the `load` is the
+   second. FR-R292-1 removes the engine, but the spec keeps "`ON_PAUSE` still only pauses" and says
+   nothing about `ON_RESUME`: state explicitly that the resume branch is deleted and the play intent
+   lives in the record (FR-R292-2), or a builder keeps it and calls `play()` on a released engine.
+2. **"Load at the recorded position" cannot reach a transcode as the request stands — add
+   `start_position_ms` to the start.** The backend resolves the start position from Jellyfin's user data
+   at negotiation (`PlaybackService.kt:446-448`, `itemDetail.userData.playbackPositionTicks`), and
+   `PlaybackStartRequest` carries only `item_id` + `capabilities` (`Models.kt:1140-1142`). Two
+   consequences. (a) **The race the spec wants to close is real today:** `stopSession` posts the final
+   position fire-and-forget with retries on `exitScope` (`PlayerStore.kt:257-270`) and `armSession`
+   negotiates immediately, so the start can read Jellyfin *before* the stop has landed — up to a
+   heartbeat behind. (b) **A client-side `load(url, recordedPosition)` only works for direct play.** A
+   transcode's HLS is cut server-side at the ticket's position; loading it elsewhere is a seek into an
+   unencoded region — a restream, which is exactly what R290 FR-R290-4 rations. The fix is the shape the
+   restream paths already have: `PlaybackRestreamRequest` carries `positionMs` and the service uses it as
+   `startPositionMs` (`PlaybackService.kt:962`, `:1021`). Give `PlaybackStartRequest` an optional
+   `start_position_ms`; when present it wins over Jellyfin's user data. Additive (never remove a field —
+   installed clients deserialise it), one line in the service, and it makes FR-R292-2's "can never
+   disagree" true rather than hoped. This is also the mechanism R290 FR-R290-3 needs.
+3. **The record's position must come from the engine, under R184's guard.** The spec says "from the
+   player at `ON_STOP`", but today's `onBackground` reports the *polled* `positionMs`, gated by
+   `bk.positionKnownForItemId == currentItemId` (`PlayerScreen.kt:1302-1305`, R184). Read
+   `player.positionMs` directly before the release — it is the exact value, not a tick stale — but keep
+   the guard: during a binge `replaceTop` the engine may already be loading the next episode, and a
+   record of (episode 2, position from episode 1) is the R184 bug in a new place. Capture `(currentItemId,
+   position)` as one unit, or record nothing.
+4. **FR-R292-6 is smaller than it reads, and must be.** `Dest` is a private sealed class in
+   `RaviloApp.kt` (`:202-292`); `Player` carries `episodes: List<PlayerEpisodeEntry>?` and `segments:
+   TvSegmentMarkers` (`:257-277`), `ChannelView` carries a whole `Channel`. Making "the destinations
+   saveable" means a `Saver` for every one of them, in a codebase with no `rememberSaveable` at all. Take
+   the FR's own minimum literally: save **one string** — the resume record, serialised with
+   kotlinx.serialization (already a dependency; `TvSegmentMarkers` is already `@Serializable`) — through
+   `rememberSaveable`, and on restore rebuild the stack as `[Home, Player]` from it. A `String` needs no
+   platform `Saver`, survives a low-mem destroy, a recreation and a recents restore alike, and nothing
+   about the other destinations changes. Everything above `Player` on the stack that a viewer might
+   have had is lost on a low-mem destroy, and that is fine: the viewer pressed HOME from the player.
+5. **None of this may go into `PlayerScreen`'s body.** `PlayerScreen.kt` is 4,175 lines; the release
+   dex guard (`scripts/check-player-dex.sh`, limit 250 of a 256-register cliff) last measured it at 239.
+   Capture, restore, re-apply (FR-R292-5) and the saved-state plumbing are exactly the kind of state
+   logic that has tipped this class into a release-only `VerifyError` twice. The resume record and its
+   capture/restore belong in a state-holder class (`PlayerResume` or on `PlayerStore`), called from the
+   screen in one line each. Write it as an invariant, beside the two already there.
+6. **FR-R292-10 is R192's own pattern applied to the engine — say so, and fix two bindings' homes.**
+   R192 hit the same wall for the session: "`lazy` can't be reset, hence the manual ref"
+   (`RaviloPlayerAndroid.kt:192-195`); `exo` is still `by lazy` (`:45`), and `release()` (`:367-371`)
+   *creates* an engine if none exists just to release it. The engine becomes a nullable ref like
+   `mediaSessionRef`. Two bindings the list names are registered from the wrong place for a rebuild:
+   `setSubtitleView` adds its cue listener to `exo` **per call** (`:309-319`) from `PlayerVideoSurface`'s
+   `AndroidView` factory (`:172-176`), which runs once per surface generation, not per engine; and the
+   `onVideoSizeChanged` listener + `qoeListener` live inside the lazy (`:82-87`). All three move into the
+   single re-bind function, with the cue listener registered once per engine against the *current*
+   `subtitleViewRef` — which also ends today's one-listener-per-`setSubtitleView` accumulation.
+7. **FR-R292-11's rung 2 is built and verified; the telemetry bullet needs one more line.** Rung 2 shipped
+   as `f6ae399e`: `recoverySeekTargetMs` (`seams/PlayerRecovery.kt:10`, forward below one second, back
+   otherwise, unit-tested), `SEEK_RUNG_SETTLE_MS = 4_000` (`PlayerVideoSurface.kt:49`), verified on the
+   stue TV against a forced stall at 0:00. The bullet's "being built in parallel" is history. For the
+   counters: `PlaybackQoeStore.hasIssue` (`PlaybackQoeStore.kt:35`) is the one consumer that decides
+   whether a session is worth a second look — add `video_output_recoveries > 0` and `background_returns`
+   to it, or the column is written and never read, which is the state FR-R220-6 is in now. Migration:
+   the next numbered `.sqm`, on the model of `35.sqm` (`subtitle_load_errors`).
+8. **FR-R292-12: Media3 ducks on `AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK`, it does not pause.** With
+   `handleAudioFocus = true` ExoPlayer pauses on permanent loss and plain transient loss, and lowers the
+   volume (to 0.2) on may-duck, restoring afterwards. The FR's "transient losses (the assistant) pause and
+   resume" is right for the assistant's usual request and wrong for a may-duck one; let the FR say
+   "pause or duck, as the other app asked". Also worth noting: audio focus is the one line in this phase
+   that reaches Live TV *before* FR-R292-9 does — another app playing would at least pause it.
+9. **Acceptance 3's first half is the system's decision, not ours.** Releasing ~150 MB of decoder buffers
+   makes the low-mem destroy less likely; it cannot make it impossible, and a run that sees one is not a
+   failure of this phase. Keep the measurement, make the second half — a forced destroy (`am kill` and
+   *Don't keep activities*, both) returns to the player at the position — the pass/fail line.
+
+**Small corrections.** "R192's *resume without a full player rebuild* design note" is not in R192's spec;
+it is two code comments (`RaviloPlayer.kt:63-66`, `RaviloPlayerAndroid.kt:372-374`) — both get rewritten
+by FR-R292-10, so cite them as such. FR-R292-7 says "the activity": there are two (`.android.MainActivity`
+and `.phone.MainActivity`), and `colorMode` goes on both. R218's shutter already gates on
+`Loading || (Ready && !hasRenderedFirstFrame)` (`PlayerScreen.kt:1584`), so FR-R292-3's "presented as one
+start" follows once the return goes through `Loading` — which `startSession` does; nothing new to draw.
+The `wasmJs` `PlayerLifecycleEffect` (a 15-line no-op) and `RaviloPlayer` actuals must still compile
+against any expect-signature change; the spec's "may treat these calls as no-ops" covers it.
+
+**Net effect.** The phase is right about what to delete and what to keep. Before building: one additive
+request field (item 2), the record captured from the engine under R184's guard (item 3), saved state as
+one serialised string (item 4), all of it outside `PlayerScreen`'s body (item 5), and the engine as a
+nullable ref with one re-bind function that owns every listener (item 6).
