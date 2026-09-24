@@ -61,7 +61,10 @@ console shows CAF plays HLS through Shaka, which detects fMP4 itself; the failur
 
 - A dedicated "couldn't play on {device}" state on the phone. The receiver's message set
   (`status | busy | noserver | nextup | ended | tracks`) has no failure type, and installed phones would
-  ignore a new one; that needs a phone release and its own copy in three languages. Follow-up.
+  ignore a new one; that needs a phone release and its own copy in three languages. Follow-up. Seen
+  2026-09-24 on the bedroom TV: after a failed load the phone's remote says *"Lost contact with
+  Soveværelse TV. It may still be playing. Ravilo cannot reach it to check."* while the TV sits idle,
+  so today's wording is actively wrong for this case, not merely vague.
 - Turning `hls_hevc` off for the Chromecast. fMP4 is the only HLS shape Jellyfin emits HEVC in, and
   losing it would re-encode every HEVC title for a device that decodes HEVC (253's reason).
 - The Tizen receiver (`ravilo-screen`) has its own hard-coded capability list; it is not this phase.
