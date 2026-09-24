@@ -8,8 +8,10 @@
 
 ## Status
 
-**Built 2026-09-24** (FR-R289-1/-2/-4; FR-R289-3 — a release whose Play job is green — is the next
-release's to prove). Written 2026-09-24 from a failed release, found during the soveværelse-TV test sweep.
+**✓ Built and proven 2026-09-25.** FR-R289-1/-2/-4 built 2026-09-24; **FR-R289-3 met by v1.38** (run
+`36065731242`): the fence passed against the real bundle in CI and again before the upload, and
+`play-store / deploy` went green — the first Play upload accepted since v1.36. Version code 1038 is on
+the closed-testing track. Written 2026-09-24 from a failed release, found during the soveværelse-TV test sweep.
 **Dev-reviewed 2026-09-24 against `main` `9d2636bb`** (see §Dev review at the bottom: FR-R289-4 has to
 be rewritten as a CI fence plus a failure summary, because the upload action cannot report Google's
 reason; FR-R289-1 and -2 are one change, not two; open question 2 closes against the workflow). Not
