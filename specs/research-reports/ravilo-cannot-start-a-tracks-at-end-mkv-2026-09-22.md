@@ -450,13 +450,15 @@ played briefly on the phone; the casts recorded stops at 0 ms for E18, E19 and E
 
 | finding (§11) | outcome |
 |---|---|
-| Ravilo cannot start a tracks-at-end MKV | **Fixed, R294** (`84558f96`): a patched copy of Media3 1.8.0's `MatroskaExtractor` follows `SeekHead` to `Tracks` before the first Cluster. Stue TV, release build: decoder in under 1 s (was 33 s + a stall loop), one `PlaybackInfo`, seeking works, clean files unchanged. 8 Robolectric tests on three fixtures. Upstream report drafted, not filed. |
-| R220 rung 2 is a no-op | **Fixed under R292** (`bc1e8bf3`): the seek moves by 1 ms and waits 4 s. With R294 disabled, a real stall at 0:00 recovered at rung 2 in 5.5 s. |
-| Single-season Watched pill traps focus | **Fixed, R296** (`916d3c70`), verified on the stue TV. |
-| Casting broken for every file | **Root cause found, fix built, R297** (`254025ac`): the Chromecast gets Jellyfin's fMP4 HLS (253/R285) and the receiver never declares `FMP4` to CAF; `onFinished` also advanced on errors. Not yet deployed or device-verified: the receiver ships in the backend image. |
+| Ravilo cannot start a tracks-at-end MKV | **Fixed, R294** (`58a0f552`): a patched copy of Media3 1.8.0's `MatroskaExtractor` follows `SeekHead` to `Tracks` before the first Cluster. Stue TV, release build: decoder in under 1 s (was 33 s + a stall loop), one `PlaybackInfo`, seeking works, clean files unchanged. 8 Robolectric tests on three fixtures. Upstream report drafted, not filed. |
+| R220 rung 2 is a no-op | **Fixed under R292** (`f6ae399e`): the seek moves by 1 ms and waits 4 s. With R294 disabled, a real stall at 0:00 recovered at rung 2 in 5.5 s. |
+| Single-season Watched pill traps focus | **Fixed, R296** (`fe249939`), verified on the stue TV. |
+| Casting broken for every file | **Fixed and verified, R297** (`fe4a07ee`, `41a65968`): not the fMP4 guess but AC-3. Read through the receiver's DevTools: Shaka error 4032, the TV's Chromecast cannot play AC-3/E-AC-3, and both the receiver and the backend's transcoding profile claimed it could. Verified on the bedroom TV with prod on a local build: AC-3 converted to AAC, E18 and E19 play, seek/pause work, a failure no longer walks the queue. |
 | Back needs two presses during the loader | Handed to the session building R295 (R290 FR-R290-5), which was editing that code. |
 | Phone ANR "no focused window" | **Not a bug.** Two sessions were driving the same phone: this session's `monkey` launch landed mid-rotation of the other session's player. Withdrawn. |
 | Jellyfin `AuthenticateByName` 3×/min | **Not ours:** PVR Live (a third-party app on the stue TV) fails to log in since Jellyfin 12.1 requires a client name. Stops whenever the TV sleeps. |
+| Upstream Media3 already fixed the extractor | `d386bbf954` + `eb2965ce41`, released in **1.11.0**; blocked for us by `org.jellyfin.media3:media3-ffmpeg-decoder` (newest `1.9.0+1`). Backport logged in `~/patches` as `0006`. |
+| Phone (Play 1.36), noticed while casting, not investigated | Portrait player: subtitles render very large and overlap the Subtitles/Next/Lock rail. Cast remote: the −10 s / +30 s arrow glyphs look mirrored. |
 | Jellyfin's keyframe extractor fails on the file | Upstream Jellyfin; falls back on its own. Not filed. |
 
 ## Related
