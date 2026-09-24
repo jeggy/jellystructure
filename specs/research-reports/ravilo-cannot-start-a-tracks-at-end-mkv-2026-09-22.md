@@ -458,7 +458,10 @@ played briefly on the phone; the casts recorded stops at 0 ms for E18, E19 and E
 | Phone ANR "no focused window" | **Not a bug.** Two sessions were driving the same phone: this session's `monkey` launch landed mid-rotation of the other session's player. Withdrawn. |
 | Jellyfin `AuthenticateByName` 3×/min | **Not ours:** PVR Live (a third-party app on the stue TV) fails to log in since Jellyfin 12.1 requires a client name. Stops whenever the TV sleeps. |
 | Upstream Media3 already fixed the extractor | `d386bbf954` + `eb2965ce41`, released in **1.11.0**; blocked for us by `org.jellyfin.media3:media3-ffmpeg-decoder` (newest `1.9.0+1`). Backport logged in `~/patches` as `0006`. |
-| Phone (Play 1.36), noticed while casting, not investigated | Portrait player: subtitles render very large and overlap the Subtitles/Next/Lock rail. Cast remote: the −10 s / +30 s arrow glyphs look mirrored. |
+| Phone: portrait subtitles huge, cast remote glyphs mirrored | **Fixed, R300 + R301**, verified on the Pixel 9 (debug): captions are sized from the picture's height, not the window's; the remote draws the local player's glyph. |
+| Phone says *Lost contact* after a failed cast | **Fixed, R299**, verified with a deliberately failing receiver: *"{device} couldn't play this"*, *Play on this phone* ends the cast and plays locally. R297's remaining phone follow-up. |
+| Web app claims AC-3 it cannot play | **Built, R302** (`3077f92c`): the browser is probed like the receiver is. Not deployed or verified — needs a `ravilo-web` image rebuild. |
+| Pixel run for R294 | **Done** (debug 1.37-41): E19 from 0:00, decoder in ~1.5 s, one `PlaybackInfo`, no stall; seeking fine. |
 | Jellyfin's keyframe extractor fails on the file | Upstream Jellyfin; falls back on its own. Not filed. |
 
 ## Related
