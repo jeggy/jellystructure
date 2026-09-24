@@ -54,21 +54,47 @@ Picking another audio track on any stream keeps the picture moving and changes t
 No cold-start screen, no black frame, no position jump, no chrome flash. This is the requirement; the
 mechanism is chosen after FR-R291-3's measurement, from these, in order of preference:
 
-1. **Every audio track in the stream.** Ask Jellyfin for an HLS transcode that carries *all* the file's
-   audio tracks as alternate renditions (`EXT-X-MEDIA TYPE=AUDIO` groups) — video encoded once, each
-   audio track copied or encoded alongside it. The player then switches locally, exactly as on direct
-   play. Costs: extra encode per audio track that cannot be copied; many tracks (*Tenfold* has 9)
-   multiply that — so the set may be limited to the tracks the picker would show at level 1 plus the
-   remembered one.
+1. **Every audio track as a rendition, composed by jellystructure.** Jellyfin cannot emit them itself
+   (measured, FR-R291-3), but it can serve each audio track alone. The ticket's HLS URL becomes a
+   master playlist *jellystructure* writes: Jellyfin's video variant plus one `EXT-X-MEDIA TYPE=AUDIO`
+   per track, each pointing at `/Audio/{id}/main.m3u8?AudioStreamIndex=N`. Only the selected rendition
+   is fetched, so an unused track costs nothing. A switch costs one audio-only segment (1.7–5.2 s cold),
+   and the player can **warm** it: when the picker opens (or its focus rests on a language), fetch that
+   rendition's segment at the current position so it is ready before OK is pressed. Blockers: the
+   three open measurements in FR-R291-3.
 2. **Copy the video, not re-encode it.** Where the transcode exists only because of audio or a
    container issue (not the video's bitrate or codec), R284 FR-R284-6's HEVC-over-HLS and video copy
-   make a restream a remux, which starts in well under a second — close enough to meet FR-R291-2
-   without any client trick.
+   make a restream a remux, which starts in well under a second. It rarely applies in this household:
+   the measured transcode's reasons were `VideoCodecNotSupported, AudioCodecNotSupported,
+   ContainerBitrateExceedsLimit`, i.e. an 86 Mbps file against a 60 Mbps TV. The video has to be
+   re-encoded whatever the audio.
 3. **Swap behind the picture.** Keep the current stream playing while a second player prepares the new
    one at the same position; when its first frame is ready, cut over on a frame boundary. The viewer
    hears the old audio for the seconds the new stream needs, then the new one — no loader, no gap.
 
 ### FR-R291-3 — Measure before choosing
+**Measured 2026-09-24** (household Jellyfin 12.1.0, the 86 Mbps HEVC film from the Status section, all
+read-only or stopped with `DELETE /Videos/ActiveEncodings` within seconds; no 4K video encode was started
+for this, because two household Chromecast transcodes were running at the time):
+
+| Question | Answer |
+|---|---|
+| Does Jellyfin put several audio tracks in one HLS transcode? | **No.** Its `master.m3u8` has one `EXT-X-STREAM-INF` and no `EXT-X-MEDIA TYPE=AUDIO`; `AudioStreamIndex` picks the one track. Fetching `master.m3u8`/`main.m3u8` starts no ffmpeg. |
+| Can Jellyfin serve ONE audio track of a video file on its own? | **Yes.** `GET /Audio/{videoId}/main.m3u8?MediaSourceId=…&AudioStreamIndex=N&AudioCodec=aac&SegmentContainer=ts` → 200, a VOD audio-only playlist with 3.000 s segments (`/Audio/{id}/master.m3u8` → 500; use `main`). ffmpeg: `-ss <pos> -vn -acodec libfdk_aac -ac 6 -copyts -avoid_negative_ts disabled -f hls -hls_time 3`. |
+| What does the first audio segment cost after a jump? | **1.7–1.8 s** to first byte at 5:00 and 12:30, **5.2 s** at 20:00; the following segment 2 ms. |
+| Is the audio right? | **Content yes, timestamps shifted.** Segment 100 is exactly media time 300 s (envelope cross-correlation 1.00 at 299.98 s against the source), but its first PTS is **309.957 s**: a constant **+9.957 s** at every position probed (5:00, 12:30, 20:00). The source's own `start_time` is 0. |
+| Do the video variant's segments line up? | Video segments are 3.003 s (72 frames at 23.976 fps); its transcode uses the same `-copyts -avoid_negative_ts disabled` and muxer. **Its PTS offset is not measured yet.** It needs one video segment, i.e. one 4K software encode. |
+| Hardware encoding on vs off | **Not measured.** Production has no accelerator selected (phase 246's `hwaccel_none`, now on the Dashboard per phase 257). |
+
+Still to measure, in a quiet window and before any code:
+1. The video variant's first PTS at the same segment index. If it is also +9.957 s, Media3's shared
+   per-discontinuity `TimestampAdjuster` keeps sound and picture in step. If not, the audio renditions
+   are off by the difference, and jellystructure must re-time them (or serve them itself).
+2. Whether the video variant can be requested **without** audio, or whether Media3 ignores the muxed
+   audio once the variant names an `AUDIO` group.
+3. What Media3 does on the TV and phone when the selected audio rendition changes: a seamless switch,
+   or a rebuffer lasting as long as the first segment.
+
 Before any code, measured against the household's Jellyfin (12.1) and written into this spec:
 - whether Jellyfin will emit multiple audio renditions in one HLS transcode, and by which request
   parameters (and whether its `master.m3u8` then lists them);

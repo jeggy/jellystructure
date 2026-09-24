@@ -40,6 +40,15 @@ audio, and asks for a restream (R284 FR-R284-3). The first stream's startup is t
 cold start begins — which is why the loader appears only *after* two chrome flashes. R291 removes this
 cause; this phase makes sure no other cause can show it either.
 
+### Measured again 2026-09-24, after R295
+R295 put a black shutter over the *picture* until a stream's first frame (and, on a phone, until the
+window has rotated). That removed the green frame and the portrait start, **not** the chrome. Frame
+captures of that day's builds, bedroom and stue TVs and the Pixel 9:
+- a restream's first frame is the full transport chrome over black, then R218's loader;
+- the phone's first landscape frame is the chrome *and* the loader at once, seek bar at 0:00;
+- a TV resume shows the chrome at 0:00 before the loader.
+So FR-R290-1 and FR-R290-3 still describe exactly what is on screen.
+
 ## Requirements
 
 ### FR-R290-1 — Nothing but the start screen until the first frame
@@ -84,8 +93,10 @@ changed the same way.
   history). This phase is about what the wait *looks like*.
 
 ## Open questions
-1. Does ExoPlayer report the resume seek's first frame reliably enough to key FR-R290-1 on it for both
-   direct play and HLS, or does HLS need `onRenderedFirstFrame` after the seek specifically?
+1. ~~Does ExoPlayer report the resume seek's first frame reliably enough?~~ **Answered 2026-09-24:** yes,
+   in practice. R295's shutter is keyed on the same `hasRenderedFirstFrame` (reset at `load()`), and in
+   every capture that day, direct play and HLS, first start and restream, TV and phone, it lifted on the
+   first real frame of the resumed position. No frame of the pre-seek position appeared.
 2. Moment A today has its own small centred overlay. Merge it into the start screen (lean: yes — the
    viewer cannot tell negotiation from buffering, and should not have to).
 
