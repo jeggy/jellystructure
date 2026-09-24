@@ -7,7 +7,11 @@
 **Built 2026-09-21** (`6afda557`, the same day it was written: seven lines in `components/Cast.kt`),
 design-authored from an owner report observed on the stue TV. **Dev-reviewed 2026-09-24 against `main`
 `9d2636bb`** — the code is FR-R286-1 verbatim, FR-R286-2 holds by construction, acceptance 4–5 hold from
-the diff; **acceptance 1–3 (the stue TV) have not been run** and need the owner's go-ahead.
+the diff; **acceptance 1–3 run on the stue TV 2026-09-25** (build `1.37-29-g916d3c70`, which carries
+`6afda557`; the server has Chromecast configured — the phone drew the glyph the same evening): the top
+row is Home · Movies · Series · Discover … search · clock · avatar with no glyph; Right from Discover
+lands on search and Left from search lands on Discover; the player's chrome (Back · title · seek ·
+−10s/pause/+30s · Audio & Subs · Next · Episodes) draws no glyph. **All five acceptance lines met.**
 
 ## Context
 
