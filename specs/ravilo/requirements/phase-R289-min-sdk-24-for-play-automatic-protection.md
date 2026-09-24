@@ -8,8 +8,11 @@
 
 ## Status
 
-`Planned` — written 2026-09-24 from a failed release, found during the soveværelse-TV test sweep. Not
-dev-reviewed, not built.
+`Planned` — written 2026-09-24 from a failed release, found during the soveværelse-TV test sweep.
+**Dev-reviewed 2026-09-24 against `main` `9d2636bb`** (see §Dev review at the bottom: FR-R289-4 has to
+be rewritten as a CI fence plus a failure summary, because the upload action cannot report Google's
+reason; FR-R289-1 and -2 are one change, not two; open question 2 closes against the workflow). Not
+built.
 
 ## Context
 
@@ -92,8 +95,84 @@ release run sees *why* before opening logs.
    owner should see the number before the release, not after.
 2. Must v1.37's missing Android build be re-uploaded on its own, or does the next release simply carry
    everything since v1.36? (Lean: the next release carries it; Play version codes only need to rise.)
+   **Closed — dev review item 4:** the next release carries it, and v1.37 cannot be re-run at all.
 
 ## Verification
 - Compile: every Android module, `:ravilo-android:assembleRelease`.
 - `scripts/check-player-dex.sh`, the ART verify step in CI.
 - A GitHub Release whose Play job uploads successfully (FR-R289-3).
+
+## Dev review (2026-09-24, against `main` `9d2636bb`)
+
+Every citation in Context holds: `minSdk = 21` at the five lines named, the benchmark module at 28
+(`ravilo-android-benchmark/build.gradle.kts:28`), no `uses-sdk` or `tools:overrideLibrary` in any
+manifest, no `@RequiresApi`/`@TargetApi` anywhere, no `values-vNN` resource folder. The phase is as small
+as it reads. Seven corrections and closures.
+
+1. **Only `:ravilo-android`'s number reaches Play; the other four matter for FR-R289-2, not for the
+   upload.** A library's `minSdk` is a floor the manifest merger checks against the app's, never a value
+   that propagates upward, so `ravilo-android/build.gradle.kts:17` alone decides what the AAB declares.
+   The reason to raise all five anyway is lint: `NewApi` runs per module against *that module's* floor,
+   and the three guards FR-R289-2 removes all live in `:ravilo-ui` — `HdrCapabilities.kt:43` and `:56`
+   on `N` (`HEVCProfileMain10HDR10` and `MIMETYPE_VIDEO_DOLBY_VISION` are both API 24 constants) and
+   `:58` on `M` (`maxSupportedInstances`, API 23). Take them out with `:ravilo-ui` still at 21 and lint
+   flags every one. FR-1 and FR-2 are one change, and FR-1's single declaration is what stops a module
+   drifting back to 21 and re-flagging them later.
+2. **"Six places" is ten guard sites in three files, of which three go.** `HdrCapabilities.kt`
+   `:43/:45/:50/:56/:58/:126`, `ReducedMotion.kt:17`, `PlayerImmersiveEffect.kt` `:27/:48/:62`. Only the
+   two `N` guards and the one `M` guard become dead at 24; the `O`, `P` and `Q` ones stay, as the FR
+   says. One more edit rides with them: the comment at `HdrCapabilities.kt:47-49` reasons from "minSdk 21
+   devices" and should say 24 — a comment that names the old floor is how the next reader concludes it
+   never moved.
+3. **FR-R289-4 asks the upload action for something it cannot give; what the FR wants is better served
+   by a fence.** The upload is `r0adkll/upload-google-play@v1` (`deploy-play-store.yml:183`). Its failure
+   text lives only in the step log — a step cannot read its own job's log, and the action exposes no
+   output on failure — so "one line naming the reason Play gave" is unreachable without replacing the
+   action. Two things do reach the goal. **(a)** A pre-flight check on the release APK the job already
+   holds in `$APK_PATH` (`:168`): `aapt2 dump badging` prints `sdkVersion:'NN'` (`aapt2` sits in the same
+   build-tools directory `check-player-dex.sh` already finds `dexdump` in), and a `scripts/check-min-sdk.sh`
+   failing with *"the bundle declares minSdk 21; Play's automatic protection refuses anything below 24"*
+   names the reason more plainly than Google did. It belongs in **`ci.yml`, next to the dex guard
+   (`:135`)**, not only in the deploy job: 231 made every release run its own CI, so a commit that lowers
+   the floor goes red on push, before a tag exists. In the deploy job it sits after *Attach to the GitHub
+   Release* (`:177`) — R273 attaches first on purpose, and a low-floor APK is still a perfectly
+   sideloadable one. **(b)** An `if: failure()` step after the upload writing the version, the track and
+   *"Google's reason is in the 'Upload to Play Store' step"* to `$GITHUB_STEP_SUMMARY`. Rewrite the FR
+   as (a) + (b); the sentence "the reason Play gave" goes.
+4. **Open question 2 closes: the next release carries it, and v1.37 cannot be re-shipped at all.**
+   `versionCode = MAJOR*1000 + MINOR` (`deploy-play-store.yml:112`): Play holds 1036, refused 1037, the
+   next tag is 1038 — Play needs only a code above the last one it *accepted*. The other half is stronger
+   than the lean: a `workflow_dispatch` re-deploy checks out the tag it is given (`:130`), and `v1.37`
+   has `minSdk 21` in it, so re-running 1.37 fails identically. The fix ships in a new tag or not at all.
+5. **The "no behaviour change" invariant is real work for D8, and CI already does it.** AGP passes the
+   floor to D8/R8 as `--min-api`; at 24 the compiler stops desugaring default and static interface
+   methods (native from API 24), so the shipped dex changes even though no source does — exactly the
+   class of change the 231 fences exist for. Both run on every push (`ci.yml:135` the register guard,
+   `:141` ART on an API 31 emulator), so the invariant is checked by construction rather than by a
+   manual step; the spec should say so. The emulator at 31 needs no change.
+6. **Context's "nothing depends on that inertness" misreads R261.** R261's dev review says the opposite
+   of inert: at `minSdk 21`, `setDecorFitsSystemWindows(false)` is *what lets the player draw behind the
+   bars* on Android 14 and below, and the calls were **kept** for that reason (R261 dev review item 1).
+   None of that changes at 24 — API 24–34 devices still need the call — so the conclusion (nothing
+   depends on the floor) is right, for the reverse reason. Drop the sentence or restate it.
+7. **Open question 1 stays with the owner, and the repo cannot help.** `ravilo_device` stores no API
+   level (`RaviloDevice.sq` — display name, policy, ceilings; nothing from `Build.VERSION`), and the
+   client never sends one, so the Context table is inferred from model names exactly as it says. The only
+   measured source is Play Console → *Statistics → Android version* (or *Reach and devices*), and only
+   Play-track testers are in scope: the household's own devices are all 7.0+ by model, and a sideloaded
+   APK from the GitHub Release is not subject to Play's rule — though an API 21–23 device could not
+   install a 24-floor APK from either channel. One minute in the Console, before tagging.
+
+**Precision on FR-R289-3.** `track: alpha` (`publish.yml:150`) is Play's closed testing, and a
+closed-testing release passes Google's review before testers see it (R215's 2026-09-21 addendum).
+"Appears on the track" means the release shows in the Console under closed testing — not that a
+tester's TV has it, which can lag by a day.
+
+**Catalog mechanics, for the build.** `[versions] android-minSdk = "24"` in `gradle/libs.versions.toml`,
+read as `libs.versions.android.minSdk.get().toInt()`. `compileSdk = 36` is repeated in the same six files
+and can ride the same entry set in the same edit — recommended, not required; it is the same drift, not a
+new floor.
+
+**Net effect.** Five one-line edits plus one catalog entry, three guards and one comment in
+`HdrCapabilities.kt`, a `check-min-sdk.sh` in CI, a failure-summary step, and a tag. Nothing about the
+household's devices, R215's track or 231's fences needs touching.
