@@ -2,8 +2,11 @@
 
 ## Status
 
-`Planned` — written 2026-09-24 from a household report and a same-day device investigation, not
-dev-reviewed. Spec first. **Reverses Phase 201 FR-201-7** ("Ravilo says nothing new … a client-side
+**Built 2026-09-24** (`58a0f552`), written the same day from a household report and a device
+investigation; verified on the stue TV (release build). **Dev-reviewed 2026-09-24 against `main`
+`9d2636bb`** (see §Dev review at the bottom: FR-1 to -5 are in the code and the tests; the factory drops
+one setting it claims to forward; FR-R294-6 is re-aimed — upstream already carries the fix; acceptance 2
+and 4 are not recorded). `⚠ Partial` until those are. Spec first. **Reverses Phase 201 FR-201-7** ("Ravilo says nothing new … a client-side
 guard, if ever wanted, belongs in its own phase") and **retracts 201's Out-of-scope reasoning** for
 it (see *Why 201 was wrong*). Companion change built in the same pass: **R292 FR-R292-11's rung 2**
 (a recovery seek that moves), which R292 assigns to this work.
@@ -102,3 +105,54 @@ Matroska file whose Cues are elsewhere. The fix below is that same jump, applied
    clean episode still plays; seeking in both works.
 4. **Traffic:** during the start of the broken file the TV reads a few MB, not the whole file.
 5. **Rung 2:** with the fix disabled (stock factory), a forced stall at 0:00 recovers at rung 2.
+
+## Dev review (2026-09-24, against `main` `9d2636bb`)
+
+Built before it could be reviewed (`58a0f552`: 10 files, +2,937 lines), so this reviews what shipped.
+
+1. **FR-R294-1 and -3 are as written.** `RaviloMatroskaExtractor.java` is Media3 1.8.0's extractor in the
+   `androidx.media3.extractor.mkv` package, Apache-2.0 header kept, eight `RAVILO R294` hunks: the
+   `SeekHead` entry for `ID_TRACKS` is recorded (`:843`), a Cluster arriving before Tracks triggers the
+   jump (`:776`), Tracks first and then the unchanged Cues logic (`:1964`). The version test
+   (`RaviloMatroskaExtractorTest.kt:99-102`, `MediaLibraryInfo.VERSION == "1.8.0"`) is what makes
+   "a test fails if the copy is left behind" true.
+2. **FR-R294-2 is tested, not assumed.** `aNormalFileIsUntouched` (`:85`) and
+   `trackFetchIsTwoSeeksWhenCuesAreAtTheFront` (`:75`), plus a third fixture the spec does not list —
+   `tracks-and-cues-at-end.mkv`, the real file's layout, `trackFetchThenCuesWhenBothAreAtTheEnd` (`:80`).
+   `make-fixtures.sh` regenerates all three. Add the third to FR-R294-5's list.
+3. **FR-R294-4 forwards three settings and silently drops a fourth.** `RaviloExtractorsFactory`
+   overrides `setSubtitleParserFactory`, `experimentalSetTextTrackTranscodingEnabled` and
+   `experimentalSetCodecsToParseWithinGopSampleDependencies`, and `swap()` rebuilds the Matroska
+   extractor from the first two. It does not override `setMatroskaExtractorFlags`: a caller setting
+   `FLAG_DISABLE_SEEK_FOR_CUES` on the factory would be honoured by the delegate's instance and then
+   discarded by the swap. Nobody sets it today; forward it (one override, one field, one constructor
+   argument) so "forwards its settings" is true by construction rather than currently.
+4. **FR-R294-5 holds, and the stock-extractor test is the line that proves it.**
+   `stockExtractorFindsTracksAtTheEndAndHasDroppedEveryFrame` (`:55`): stock Media3 keeps zero frames on
+   both broken fixtures, the copy keeps them all. The eight tests run in CI's `android-release` job
+   (`ci.yml:127`, `:ravilo-player:testDebugUnitTest`), added the same day.
+5. **FR-R294-6 changes shape: upstream already has the fix.** The fix round's notes record that Media3's
+   `main` corrected this same Tracks-after-Cluster case for 1.11.0 (two upstream commits), and that moving
+   there is blocked by `org.jellyfin.media3:media3-ffmpeg-decoder` (`libs.versions.toml:72`, `1.8.0+1`;
+   newest published 1.9.0+1). If the changelog confirms it, FR-R294-6 is not "file a report" but "name the
+   upstream commits in the file header, and delete the copy when the decoder catches up".
+   `~/patches/0006-media3-matroska-tracks-after-clusters.patch` is the diff in upstream's own layout,
+   ready either way. Check before closing the FR; a report for a fixed bug is noise.
+6. **Acceptance: 1, 3 and 5 are done; 2 and 4 are not recorded.** The stue TV run is in STATUS (decoder up
+   in under 1 s, one `PlaybackInfo`, no stall, seeking works, a clean episode unchanged) and rung 2 was
+   verified against a forced stall. The Pixel 9 debug run (acceptance 2) has not happened, and acceptance
+   4 — a few MB read during the start, not the whole file — is implied by the sub-second start but was
+   not measured. One reading closes it.
+7. **R292 FR-R292-10 is satisfied at `RaviloPlayerAndroid.kt:57-61`**: the factory is read from
+   `RaviloPlayerEngine.extractorsFactoryProvider` when the engine is built, so the rebuilt engine R292
+   introduces carries it — as long as that line lives in the single re-bind function R292's review asks
+   for.
+
+**Small correction.** Phase 201's `mkv_track_layout` finding still rests on "unplayable in Ravilo"
+(`Dashboard.kt:347`), which R294 has made false. Its Triage description and 201's Fix-now banner need one
+wording pass — the layout is still worth repairing (Jellyfin's own keyframe extractor fails on it, other
+clients may), but not for the reason the copy gives. By convention (R269 recording in its own notes rather
+than editing R264) that note lives here, not in 201.
+
+**Net effect.** Nothing to change in the extractor. One forwarded flag, one device run, one measurement,
+and FR-6 re-aimed at the upstream fix.
