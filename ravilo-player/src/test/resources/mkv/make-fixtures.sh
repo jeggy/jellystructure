@@ -2,6 +2,8 @@
 # Regenerates the two Matroska fixtures. tracks-after-cluster.mkv is clean.mkv after one
 # mkvpropedit flag edit: Tracks outgrows its slot, the slot becomes a Void, and Tracks is
 # appended at EOF, reachable only through SeekHead. A linear reader sees no tracks at all.
+# tracks-and-cues-at-end.mkv is the shape of the real arrival: Cues left at the end by the muxer,
+# then the same edit, so Tracks ends up directly after Cues at EOF.
 set -euo pipefail
 cd "$(dirname "$0")"
 tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
@@ -19,14 +21,19 @@ ffmpeg -v error -y \
   -metadata:s:a:0 language=dan -metadata:s:a:1 language=eng \
   -metadata:s:s:0 language=dan -metadata:s:s:1 language=nor -metadata:s:s:2 language=swe \
   -cues_to_front 1 clean.mkv
-cp clean.mkv tracks-after-cluster.mkv
-mkvpropedit -q tracks-after-cluster.mkv \
-  --edit track:a1 --set flag-default=0 --set language-ietf=da \
-  --edit track:a2 --set flag-default=0 --set language-ietf=en \
-  --edit track:s1 --set flag-default=0 --set language-ietf=da \
-  --edit track:s2 --set flag-default=0 --set language-ietf=nb \
-  --edit track:s3 --set flag-default=0 --set language-ietf=sv
+ffmpeg -v error -y -i clean.mkv -map 0 -c copy "$tmp/cues-at-end.mkv"
+evict() {
+  mkvpropedit -q "$1" \
+    --edit track:a1 --set flag-default=0 --set language-ietf=da \
+    --edit track:a2 --set flag-default=0 --set language-ietf=en \
+    --edit track:s1 --set flag-default=0 --set language-ietf=da \
+    --edit track:s2 --set flag-default=0 --set language-ietf=nb \
+    --edit track:s3 --set flag-default=0 --set language-ietf=sv
+}
+cp clean.mkv tracks-after-cluster.mkv && evict tracks-after-cluster.mkv
+cp "$tmp/cues-at-end.mkv" tracks-and-cues-at-end.mkv && evict tracks-and-cues-at-end.mkv
 linear() { cat "$1" | ffprobe -v quiet -show_entries stream=index -of csv=p=0 -i pipe:0 | wc -l; }
 [ "$(linear clean.mkv)" = 6 ] || { echo "clean.mkv: expected 6 streams read linearly" >&2; exit 1; }
 [ "$(linear tracks-after-cluster.mkv)" = 0 ] || { echo "tracks-after-cluster.mkv: mkvpropedit did not evict Tracks" >&2; exit 1; }
+[ "$(linear tracks-and-cues-at-end.mkv)" = 0 ] || { echo "tracks-and-cues-at-end.mkv: mkvpropedit did not evict Tracks" >&2; exit 1; }
 echo "ok: clean.mkv 6 streams linear; tracks-after-cluster.mkv 0 linear, $(ffprobe -v quiet -show_entries stream=index -of csv=p=0 tracks-after-cluster.mkv | wc -l) seeking"

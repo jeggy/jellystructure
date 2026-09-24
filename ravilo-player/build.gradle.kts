@@ -17,6 +17,9 @@ android {
         minSdk = 21
     }
 
+    // R294 — the extractor tests read the MKV fixtures in src/test/resources under Robolectric.
+    testOptions { unitTests { isIncludeAndroidResources = true } }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
@@ -34,4 +37,14 @@ tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach 
 dependencies {
     implementation(libs.androidx.media3.exoplayer)
     implementation(libs.jellyfin.media3.ffmpeg.decoder)
+    // R294 — the vendored RaviloMatroskaExtractor keeps upstream's annotations verbatim (so it stays
+    // diff-able against Media3), and Media3 declares these compile-only, so they are not transitive.
+    compileOnly("androidx.annotation:annotation:1.6.0")
+    compileOnly("org.checkerframework:checker-qual:3.43.0")
+
+    testImplementation("junit:junit:4.13.2")
+    testImplementation(libs.androidx.test.ext.junit)
+    testImplementation("androidx.media3:media3-test-utils:1.8.0")
+    testImplementation("androidx.media3:media3-test-utils-robolectric:1.8.0")
+    testImplementation("org.robolectric:robolectric:4.14.1")
 }

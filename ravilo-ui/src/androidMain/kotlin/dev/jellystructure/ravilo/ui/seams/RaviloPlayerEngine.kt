@@ -2,6 +2,7 @@ package dev.jellystructure.ravilo.ui.seams
 
 import android.content.Context
 import androidx.media3.exoplayer.RenderersFactory
+import androidx.media3.extractor.ExtractorsFactory
 
 /**
  * Indirection so `:ravilo-ui` can build ExoPlayer with an FFmpeg-capable [RenderersFactory] without
@@ -14,4 +15,8 @@ import androidx.media3.exoplayer.RenderersFactory
  */
 object RaviloPlayerEngine {
     var renderersFactoryProvider: ((Context) -> RenderersFactory)? = null
+
+    /** R294 — the extractor set, so a Matroska file with `Tracks` after its first Cluster starts at once.
+     *  Unset (e.g. unit tests) means Media3's defaults. */
+    var extractorsFactoryProvider: (() -> ExtractorsFactory)? = null
 }

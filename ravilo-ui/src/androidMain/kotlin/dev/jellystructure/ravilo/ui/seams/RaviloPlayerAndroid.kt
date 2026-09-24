@@ -43,8 +43,10 @@ internal fun cleanCueText(text: String): String =
 actual class RaviloPlayer actual constructor() {
     private val ctx: Context get() = RaviloAppContext.get()
     private val exo: ExoPlayer by lazy {
-        // R56: Media3's MatroskaExtractor already parses embedded VobSub/DVDSub and PGS tracks
-        // from MKV containers by default; no custom ExtractorsFactory is needed.
+        // R56: Media3's MatroskaExtractor already parses embedded VobSub/DVDSub and PGS tracks.
+        // R294: the Matroska extractor is swapped for :ravilo-player's patched copy, which follows
+        // SeekHead to a Tracks element stored after the first Cluster instead of reading the file to
+        // the end; every other extractor is Media3's own.
         // Phase 179 (FR-179-2) — a sideloaded text-subtitle track (the `.../Subtitles/{index}/0/
         // Stream.vtt` URL PlaybackService.buildSubtracks() builds) used Media3's plain default policy,
         // which gave up and permanently disabled the track on the first load failure — observed live as
@@ -52,8 +54,11 @@ actual class RaviloPlayer actual constructor() {
         // for the rest of playback. SubtitleRetryingLoadErrorHandlingPolicy only widens the retry
         // allowance for that one URL pattern; every other load (video/audio HLS segments, manifests)
         // delegates straight through to Media3's own DefaultLoadErrorHandlingPolicy, unchanged.
-        val mediaSourceFactory = androidx.media3.exoplayer.source.DefaultMediaSourceFactory(ctx)
-            .setLoadErrorHandlingPolicy(SubtitleRetryingLoadErrorHandlingPolicy())
+        val extractors = RaviloPlayerEngine.extractorsFactoryProvider?.invoke()
+        val mediaSourceFactory = (
+            if (extractors != null) androidx.media3.exoplayer.source.DefaultMediaSourceFactory(ctx, extractors)
+            else androidx.media3.exoplayer.source.DefaultMediaSourceFactory(ctx)
+        ).setLoadErrorHandlingPolicy(SubtitleRetryingLoadErrorHandlingPolicy())
         val builder = ExoPlayer.Builder(ctx, mediaSourceFactory)
         RaviloPlayerEngine.renderersFactoryProvider?.invoke(ctx)?.let { builder.setRenderersFactory(it) }
         // R216 (FR-R216-3) — an explicit LoadControl instead of inheriting DefaultLoadControl's stock

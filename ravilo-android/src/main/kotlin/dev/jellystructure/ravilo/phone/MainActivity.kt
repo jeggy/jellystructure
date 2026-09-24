@@ -4,6 +4,7 @@ import android.os.Bundle
 import androidx.fragment.app.FragmentActivity
 import androidx.activity.compose.setContent
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
+import dev.jellystructure.ravilo.player.RaviloExtractorsFactory
 import dev.jellystructure.ravilo.player.RaviloRenderers
 import dev.jellystructure.ravilo.ui.RaviloAppContext
 import dev.jellystructure.ravilo.ui.RaviloRoot
@@ -36,6 +37,7 @@ class MainActivity : FragmentActivity() {
         RaviloAppContext.init(this) // also wires SvgDecoder via SingletonImageLoader
         // R31: route player renderers through the GPL-contained FFmpeg decoders (DTS/TrueHD/AC3).
         RaviloPlayerEngine.renderersFactoryProvider = { ctx -> RaviloRenderers.create(ctx) }
+        RaviloPlayerEngine.extractorsFactoryProvider = { RaviloExtractorsFactory() }
 
         setContent {
             RaviloRoot()

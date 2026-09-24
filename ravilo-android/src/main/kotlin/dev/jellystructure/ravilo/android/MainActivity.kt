@@ -8,6 +8,7 @@ import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import dev.jellystructure.ravilo.player.RaviloExtractorsFactory
 import dev.jellystructure.ravilo.player.RaviloRenderers
 import dev.jellystructure.ravilo.ui.RaviloAppContext
 import dev.jellystructure.ravilo.ui.RaviloRoot
@@ -24,6 +25,7 @@ class MainActivity : FragmentActivity() {
         RaviloAppContext.init(this) // also wires SvgDecoder via SingletonImageLoader
         // R31: route player renderers through the GPL-contained FFmpeg decoders (DTS/TrueHD/AC3).
         RaviloPlayerEngine.renderersFactoryProvider = { ctx -> RaviloRenderers.create(ctx) }
+        RaviloPlayerEngine.extractorsFactoryProvider = { RaviloExtractorsFactory() }
 
         // Keep screen on during playback; go full-screen (leanback style)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
