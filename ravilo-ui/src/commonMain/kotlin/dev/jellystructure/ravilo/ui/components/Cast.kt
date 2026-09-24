@@ -248,7 +248,7 @@ fun CastMiniBar(onOpen: () -> Unit) {
     val status by cast.sender.status.collectAsState()
     val device by cast.sender.deviceName.collectAsState()
     val st = status
-    val visible = link == CastLinkState.CONNECTED && st != null && st.loaded && !st.ended
+    val visible = link == CastLinkState.CONNECTED && st != null && st.loaded && !st.ended && !st.failed
     AnimatedVisibility(visible = visible, enter = slideInVertically { it } + fadeIn(tween(180)), exit = slideOutVertically { it } + fadeOut(tween(160))) {
         val s = st ?: return@AnimatedVisibility
         Column(

@@ -110,6 +110,10 @@ private class Receiver {
         // R297 (FR-R297-3) — record why a stream failed, so the next failure is read through DevTools, not guessed.
         playerManager.addEventListener(et.ERROR) { ev: dynamic ->
             console.error("ravilo-cast: media error", ev.detailedErrorCode, ev.reason, ev.error)
+            // R299 (FR-R299-1) — a load that never reached a media session gets no MEDIA_FINISHED; CAF
+            // reports it here with the player still IDLE. Say so once; a mid-play error is followed by
+            // MEDIA_FINISHED(ERROR), which onFinished turns into the same message.
+            if ((playerManager.getPlayerState() as String) == "IDLE" && current != null) { stopSession(); failed() }
         }
         playerManager.addEventListener(et.SEEKED) { _: dynamic -> flashOverlay() }
         context.addCustomMessageListener(CAST_NAMESPACE) { ev: dynamic -> onCommand(JSON.stringify(ev.data) as String) }
@@ -382,8 +386,17 @@ private class Receiver {
         // R297 (FR-R297-2) — only a real end moves on. An error used to walk the whole queue, ~2 s an episode.
         val reachedEnd = endedReason == null || endedReason == cast.framework.events.EndedReason.END_OF_STREAM
         if (reachedEnd && nextEpisode() != null && config?.autoplayNext != false && config?.skipCredits != SkipMode.OFF) { loadNext(); return }
+        // R299 (FR-R299-1) — a load that failed is not an end. The phone used to read "ended" with no
+        // media session as R245's "Lost contact… it may still be playing", every clause of it false.
+        if (!reachedEnd) { failed(); return }
         // FR-R245-15 — ended is literally the idle view.
         send(CastReceiverMessage(type = "ended", itemId = current?.itemId, title = current?.title, kicker = current?.kicker, artUrl = current?.artUrl, hasNext = nextEpisode() != null, receiverId = receiverId))
+        idle()
+    }
+
+    /** R299 (FR-R299-1) — the item could not be played here; the phone says so and offers itself. */
+    private fun failed() {
+        send(CastReceiverMessage(type = "failed", itemId = current?.itemId, title = current?.title, kicker = current?.kicker, artUrl = current?.artUrl, receiverId = receiverId))
         idle()
     }
 

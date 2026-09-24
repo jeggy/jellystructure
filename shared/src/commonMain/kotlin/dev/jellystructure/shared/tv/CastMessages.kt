@@ -64,7 +64,7 @@ data class CastTrack(
 /** Receiver → phone. One message type, optional fields; the receiver sends it on every state change. */
 @Serializable
 data class CastReceiverMessage(
-    val type: String,                                  // status | busy | noserver | nextup | ended | tracks
+    val type: String,                                  // status | busy | noserver | nextup | ended | tracks | failed (R299)
     @SerialName("item_id") val itemId: String? = null,
     val title: String? = null,
     val kicker: String? = null,

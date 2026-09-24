@@ -213,6 +213,8 @@ class CastSenderAndroid(private val appContext: Context) : CastSender {
             buffering = ms?.playerState == MediaStatus.PLAYER_STATE_BUFFERING || ms?.playerState == MediaStatus.PLAYER_STATE_LOADING,
             loaded = !idle || said?.type == "status",
             ended = ended,
+            // R299 — set by the receiver's own word, cleared by the next load's status.
+            failed = if (event == "failed") true else if (event == "status" || event == "tracks") false else prev.failed,
             hasNext = said?.hasNext ?: prev.hasNext,
             nextUpSecs = if (event == "nextup") said?.nextupSecs else if (event == "status" || ended) null else prev.nextUpSecs,
             nextTitle = said?.nextTitle ?: prev.nextTitle,

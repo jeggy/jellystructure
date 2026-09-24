@@ -32,6 +32,8 @@ data class CastRemoteStatus(
     val loaded: Boolean = false,
     /** The receiver reported the item finished (FR-R245-9 · Ended). */
     val ended: Boolean = false,
+    /** R299 (FR-R299-2) — the receiver could not play the item; it is idle and reachable. */
+    val failed: Boolean = false,
     val hasNext: Boolean = false,
     /** FR-R245-9 · Next-up mirrored — the RECEIVER owns this countdown. */
     val nextUpSecs: Int? = null,
