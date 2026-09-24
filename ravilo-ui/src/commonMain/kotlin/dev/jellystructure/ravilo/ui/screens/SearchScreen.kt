@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.focus.requestFocusRetrying
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import dev.jellystructure.ravilo.ui.components.LoadErrorKind
@@ -79,6 +80,14 @@ sealed class SearchState {
     data class Error(val message: String, val kind: LoadErrorKind = LoadErrorKind.GENERIC) : SearchState()
 }
 
+/** R295 (FR-R295-1) — which result was opened on which visit of Search; read once, on the way back. */
+internal class SearchReturnTarget {
+    private var target: Pair<Long, String>? = null
+    fun remember(visit: Long, itemId: String) { target = visit to itemId }
+    /** The id to land on when [visit] is the visit it was opened from, else null. Forgets either way. */
+    fun take(visit: Long): String? = target?.takeIf { it.first == visit }?.second.also { target = null }
+}
+
 class SearchStore(private val apiClient: TvApiClient) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val _state = MutableStateFlow<SearchState>(SearchState.Loaded(
@@ -87,6 +96,12 @@ class SearchStore(private val apiClient: TvApiClient) {
     val state: StateFlow<SearchState> = _state.asStateFlow()
 
     private var debounceJob: kotlinx.coroutines.Job? = null
+
+    // R295 (FR-R295-1) — the result the viewer opened, and on which visit of the page. The store
+    // outlives the composable (R259); the composable's own focus and scroll do not, so without this
+    // Back from a detail page landed on the text field with the keyboard up (and, on a phone, on a
+    // grid scrolled back to the top) instead of on the tile that was pressed.
+    internal val returnTarget = SearchReturnTarget()
 
     fun onQuery(query: String) {
         debounceJob?.cancel()
@@ -126,6 +141,7 @@ class SearchStore(private val apiClient: TvApiClient) {
 @Composable
 fun SearchScreen(
     store: SearchStore,
+    visit: Long = 0L,
     onBack: () -> Unit,
     onItemSelect: (MediaCard) -> Unit,
     // R277 (FR-R277-2) — set by a tap on the bottom bar's Search item while Search is already showing,
@@ -143,17 +159,27 @@ fun SearchScreen(
     // did not: Back from a result showed the previous results under an EMPTY field, relabelled
     // "Suggestions" (stue TV, 2026-09-17). The field starts from the query the results belong to.
     var query by remember { mutableStateOf((store.state.value as? SearchState.Loaded)?.query.orEmpty()) }
-    var inGrid by remember { mutableStateOf(false) }
 
     val items = when (val s = state) {
         is SearchState.Loaded -> s.results.items
         else -> emptyList()
     }
+    // R174 — server-configured items per row; portrait viewports use the smaller portrait count.
+    val cols = if (LocalPortrait.current) LocalPortraitGridColumns.current else LocalGridColumns.current
+
+    // R295 (FR-R295-1) — Back from a result: the index of the tile that was opened, if it is still in
+    // the list. Resolved once, when the page is composed again.
+    val returnIndex = remember {
+        store.returnTarget.take(visit)?.let { id -> items.indexOfFirst { it.id == id } }?.takeIf { it >= 0 }
+    }
+    var inGrid by remember { mutableStateOf(returnIndex != null) }
 
     val gridFR = remember { FocusRequester() }
     val textFieldFR = remember { FocusRequester() }
-    var focusedGridIdx by remember { mutableIntStateOf(0) }
-    val gridState = rememberLazyGridState()
+    val returnFR = remember { FocusRequester() }
+    var focusedGridIdx by remember { mutableIntStateOf(returnIndex ?: 0) }
+    // Opened scrolled to the returning tile's row, so it is on screen (and composed) from the first frame.
+    val gridState = rememberLazyGridState(initialFirstVisibleItemIndex = returnIndex?.let { it - it % cols.coerceAtLeast(1) } ?: 0)
     val scope = rememberCoroutineScope()
     val keyboardController = LocalSoftwareKeyboardController.current
 
@@ -170,9 +196,14 @@ fun SearchScreen(
         keyboardController?.show()
     }
 
-    // Auto-focus and open IME on screen entry
+    // Auto-focus and open IME on screen entry — unless this is Back from a result, which lands on that
+    // result (R295 FR-R295-1). A phone takes no focus either way; it only keeps its place in the grid.
     LaunchedEffect(Unit) {
-        if (!handset) focusInput()
+        when {
+            handset -> Unit
+            returnIndex != null -> requestFocusRetrying(scope, returnFR)
+            else -> focusInput()
+        }
     }
 
     // Return focus to the text field and re-open IME when leaving the results grid
@@ -311,8 +342,6 @@ fun SearchScreen(
         Spacer(Modifier.height(12.dp))
 
         if (items.isNotEmpty()) {
-            // R174 — server-configured items per row; portrait viewports use the smaller portrait count.
-            val cols = if (LocalPortrait.current) LocalPortraitGridColumns.current else LocalGridColumns.current
             LazyVerticalGrid(
                 columns = GridCells.Fixed(cols),
                 state = gridState,
@@ -346,8 +375,9 @@ fun SearchScreen(
                         progressPct = card.progressPct ?: 0f,
                         watched = card.watched,
                         upcomingLabel = card.upcomingEpisode,
+                        focusRequester = if (i == returnIndex) returnFR else null,
                         onFocused = { focusedGridIdx = i; inGrid = true },
-                        onSelect = { onItemSelect(card) },
+                        onSelect = { store.returnTarget.remember(visit, card.id); onItemSelect(card) },
                     )
                 }
             }

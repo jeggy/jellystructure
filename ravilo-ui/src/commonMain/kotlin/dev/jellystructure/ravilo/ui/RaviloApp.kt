@@ -195,6 +195,10 @@ private enum class NavDir { Forward, Back, Reset }
 
 // ─── Navigation destinations ──────────────────────────────────────────────────
 
+private var searchVisitCounter = 0L
+/** R295 — see [Dest.Search.visit]. Main-thread only, like every navigation call. */
+private fun nextSearchVisit(): Long = ++searchVisitCounter
+
 private sealed class Dest {
     data object Login : Dest()
     data object ProfilePicker : Dest()
@@ -231,8 +235,11 @@ private sealed class Dest {
     ) : Dest()
     /** R277 — [focusInput] is set by tapping the bottom bar's Search item while Search is already
      *  showing, and is consumed by the screen (replaceTop with it cleared) so the next tap sets a
-     *  fresh one. Same shape as [Discover.focusSegment], and for the same reason. */
-    data class Search(val displayName: String, val focusInput: Boolean = false) : Dest()
+     *  fresh one. Same shape as [Discover.focusSegment], and for the same reason.
+     *  R295 (FR-R295-1) — [visit] is new on every push and kept by copy(), so Search can tell "the
+     *  viewer came Back to me" (same visit: land on the result they opened) from "the viewer came here
+     *  afresh" (new visit: R277's text field and keyboard). */
+    data class Search(val displayName: String, val focusInput: Boolean = false, val visit: Long = nextSearchVisit()) : Dest()
     // R170 — Coming Soon (the old Upcoming tab) and Request (the old Top-10/Discover tab) are now the
     // two segments of one merged Discover tab; `segment` decides which of UpcomingScreen/DiscoverScreen
     // actually renders (see DiscoverSegment/defaultDiscoverSegment in NavItems.kt).
@@ -1132,6 +1139,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                 val store = keptStore("search:${dest.displayName}") { SearchStore(apiClient) }
                 SearchScreen(
                     store = store,
+                    visit = dest.visit,
                     onBack = { pop() },
                     onItemSelect = { openDetail(it, dest.displayName) },
                     focusInputOnEntry = dest.focusInput,
