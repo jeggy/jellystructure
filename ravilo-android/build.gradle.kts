@@ -14,7 +14,7 @@ android {
     defaultConfig {
         // Phase 226 — from gradle.properties, so the admin card's "Package Name" can never drift from it.
         applicationId = providers.gradleProperty("ravilo.applicationId").get()
-        minSdk = 21
+        minSdk = libs.versions.android.minSdk.get().toInt()
         targetSdk = 36
         // R215: deploy-play-store.yml overrides both via -Pravilo.versionCode/-Pravilo.versionName,
         // derived from the release tag. Unset for local/sideload builds, which keep versionCode 1.

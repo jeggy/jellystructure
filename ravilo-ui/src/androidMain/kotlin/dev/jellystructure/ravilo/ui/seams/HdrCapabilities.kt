@@ -40,26 +40,24 @@ actual fun detectHdrSupport(): HdrSupport {
         }
 
     val hevcMain10 = hasDecoder(MediaFormat.MIMETYPE_VIDEO_HEVC, CodecProfileLevel.HEVCProfileMain10, CodecProfileLevel.HEVCMainTierLevel4)
-    val hevcHdr10 = Build.VERSION.SDK_INT >= Build.VERSION_CODES.N &&
-        hasDecoder(MediaFormat.MIMETYPE_VIDEO_HEVC, CodecProfileLevel.HEVCProfileMain10HDR10, CodecProfileLevel.HEVCMainTierLevel4)
+    // R289 — the N/M guards that used to sit on the three lines below are gone: the floor is API 24.
+    val hevcHdr10 = hasDecoder(MediaFormat.MIMETYPE_VIDEO_HEVC, CodecProfileLevel.HEVCProfileMain10HDR10, CodecProfileLevel.HEVCMainTierLevel4)
     val hevcHdr10Plus = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
         hasDecoder(MediaFormat.MIMETYPE_VIDEO_HEVC, CodecProfileLevel.HEVCProfileMain10HDR10Plus, CodecProfileLevel.HEVCMainTierLevel4)
     // AV1: Jellyfin falls back to raw AOSP hex ints pre-Q for OEM firmware (e.g. Fire OS) that expose
     // AV1 decode below the official API level — skipped here as a known Ravilo TV fleet, not an
-    // arbitrary-AOSP-fork client; minSdk 21 devices are exceedingly unlikely to have AV1 decode at all.
+    // arbitrary-AOSP-fork client; pre-Q devices are exceedingly unlikely to have AV1 decode at all.
     val av1Hdr10 = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
         hasDecoder(MediaFormat.MIMETYPE_VIDEO_AV1, CodecProfileLevel.AV1ProfileMain10HDR10, CodecProfileLevel.AV1Level5)
 
     // R183 — Dolby Vision. `video/dolby-vision` decoders appear on API 24+; the dual-layer (profile 7)
     // case additionally needs the dvhe.07 profile AND an HEVC decoder that can run two instances at once
     // (base + enhancement layer), exactly the pair of checks Jellyfin's Android TV client makes.
-    val dolbyVision = Build.VERSION.SDK_INT >= Build.VERSION_CODES.N &&
-        decoders.any { info -> info.supportedTypes.any { it.equals(MediaFormat.MIMETYPE_VIDEO_DOLBY_VISION, ignoreCase = true) } }
-    val multiInstanceHevc = Build.VERSION.SDK_INT >= Build.VERSION_CODES.M &&
-        decoders.any { info ->
-            val caps = runCatching { info.getCapabilitiesForType(MediaFormat.MIMETYPE_VIDEO_HEVC) }.getOrNull()
-            (caps?.maxSupportedInstances ?: 0) >= 2
-        }
+    val dolbyVision = decoders.any { info -> info.supportedTypes.any { it.equals(MediaFormat.MIMETYPE_VIDEO_DOLBY_VISION, ignoreCase = true) } }
+    val multiInstanceHevc = decoders.any { info ->
+        val caps = runCatching { info.getCapabilitiesForType(MediaFormat.MIMETYPE_VIDEO_HEVC) }.getOrNull()
+        (caps?.maxSupportedInstances ?: 0) >= 2
+    }
     val dolbyVisionEl = dolbyVision && multiInstanceHevc && hasDecoder(
         MediaFormat.MIMETYPE_VIDEO_DOLBY_VISION,
         CodecProfileLevel.DolbyVisionProfileDvheDtb,

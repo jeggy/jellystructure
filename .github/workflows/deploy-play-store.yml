@@ -179,7 +179,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
 
+      # R289 (FR-R289-4) — after the attach on purpose (R273: a low-floor APK is still sideloadable) and
+      # before the upload: the reason Play would give, said plainly, before Google says it.
+      - name: The bundle's floor is what Play requires (FR-R289-4)
+        run: ./scripts/check-min-sdk.sh "$APK_PATH"
+
       - name: Upload to Play Store
+        id: play_upload
         uses: r0adkll/upload-google-play@v1
         with:
           serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
@@ -187,3 +193,14 @@ jobs:
           releaseFiles: ravilo-android/build/outputs/bundle/release/*.aab
           track: ${{ needs.version.outputs.track }}
           status: completed
+
+      # R289 (FR-R289-4) — the upload action's own error lives only in its log, and a job cannot read its
+      # own log; this names the version, the track and where to look, on the run's summary page.
+      - name: Say why the Play upload failed
+        if: failure() && steps.play_upload.outcome == 'failure'
+        run: |
+          {
+            echo "## Play upload failed"
+            echo "Version ${{ needs.version.outputs.versionName }} (code ${{ needs.version.outputs.versionCode }}) did not reach the \`${{ needs.version.outputs.track }}\` track."
+            echo "Google's reason is in the **Upload to Play Store** step's log. The rest of the release (GHCR images, the attached APK) is published — only Play is missing."
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -9,7 +9,7 @@ plugins {
 android {
     namespace = "dev.jellystructure.shared"
     compileSdk = 36
-    defaultConfig { minSdk = 21 }
+    defaultConfig { minSdk = libs.versions.android.minSdk.get().toInt() }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11

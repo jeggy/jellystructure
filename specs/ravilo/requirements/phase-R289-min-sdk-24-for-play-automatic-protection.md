@@ -8,7 +8,8 @@
 
 ## Status
 
-`Planned` — written 2026-09-24 from a failed release, found during the soveværelse-TV test sweep.
+**Built 2026-09-24** (FR-R289-1/-2/-4; FR-R289-3 — a release whose Play job is green — is the next
+release's to prove). Written 2026-09-24 from a failed release, found during the soveværelse-TV test sweep.
 **Dev-reviewed 2026-09-24 against `main` `9d2636bb`** (see §Dev review at the bottom: FR-R289-4 has to
 be rewritten as a CI fence plus a failure summary, because the upload action cannot report Google's
 reason; FR-R289-1 and -2 are one change, not two; open question 2 closes against the workflow). Not
@@ -73,11 +74,19 @@ The phase is done when a published GitHub Release's `play-store / deploy` job go
 build appears on Play's closed-testing track (R215). A green compile is not the acceptance test; the
 upload is.
 
-### FR-R289-4 — A failed Play upload is not silent
+### FR-R289-4 — A low floor never reaches the upload, and a failed upload is not silent
 The `publish.yml` release run already fails red; that is not enough, because the release *looks*
-published everywhere else. The Play job's failure message is surfaced in the run summary
-(`$GITHUB_STEP_SUMMARY`) as one line naming the reason Play gave, so the next person reading the
-release run sees *why* before opening logs.
+published everywhere else — the images are on GHCR and the signed APK is attached to the GitHub Release
+before the Play step runs. Two things, neither of which asks the upload action for its error text (a job
+cannot read its own log — dev review, item 3):
+1. **A fence, in CI and before the upload.** `scripts/check-min-sdk.sh` reads the release APK's declared
+   `minSdkVersion` (`aapt2 dump badging`) and fails, with the reason in plain words, when it is below 24.
+   It runs in `ci.yml`'s release job beside the dex guard — a commit that lowers the floor goes red on
+   push, before any tag exists — and again in the deploy job after the APK is attached (R273 attaches
+   first on purpose; a low-floor APK is still sideloadable) and before *Upload to Play Store*.
+2. **A summary line on failure.** If the upload step itself fails, an `if: failure()` step writes the
+   version, the track and *where Google's reason is* to `$GITHUB_STEP_SUMMARY`, so the next person
+   reading the release run sees what is missing before opening logs.
 
 ## Invariants
 - No behaviour change on any device at API 24 or above. The APK a TV installs from Play behaves exactly
@@ -93,6 +102,7 @@ release run sees *why* before opening logs.
 1. Does the Play Console list **any** install below API 24 (its *Android vitals → Devices* or
    *Statistics → Android version* page)? If it does, raising the floor stops that device's updates — the
    owner should see the number before the release, not after.
+   **Closed 2026-09-24 (owner):** the Play Console lists Android 9 and up. Nothing below API 24.
 2. Must v1.37's missing Android build be re-uploaded on its own, or does the next release simply carry
    everything since v1.36? (Lean: the next release carries it; Play version codes only need to rise.)
    **Closed — dev review item 4:** the next release carries it, and v1.37 cannot be re-run at all.
@@ -100,6 +110,8 @@ release run sees *why* before opening logs.
 ## Verification
 - Compile: every Android module, `:ravilo-android:assembleRelease`.
 - `scripts/check-player-dex.sh`, the ART verify step in CI.
+- `scripts/check-min-sdk.sh` against the release APK (and, deliberately, against a `minSdk = 21` build
+  once, to see it fail).
 - A GitHub Release whose Play job uploads successfully (FR-R289-3).
 
 ## Dev review (2026-09-24, against `main` `9d2636bb`)
@@ -129,7 +141,7 @@ as it reads. Seven corrections and closures.
    text lives only in the step log — a step cannot read its own job's log, and the action exposes no
    output on failure — so "one line naming the reason Play gave" is unreachable without replacing the
    action. Two things do reach the goal. **(a)** A pre-flight check on the release APK the job already
-   holds in `$APK_PATH` (`:168`): `aapt2 dump badging` prints `sdkVersion:'NN'` (`aapt2` sits in the same
+   holds in `$APK_PATH` (`:168`): `aapt2 dump badging` prints `minSdkVersion:'NN'` (`aapt2` sits in the same
    build-tools directory `check-player-dex.sh` already finds `dexdump` in), and a `scripts/check-min-sdk.sh`
    failing with *"the bundle declares minSdk 21; Play's automatic protection refuses anything below 24"*
    names the reason more plainly than Google did. It belongs in **`ci.yml`, next to the dex guard

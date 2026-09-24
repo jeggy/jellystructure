@@ -1,4 +1,7 @@
 [versions]
+# R289 (FR-R289-1) — Ravilo's Android floor, declared once and read by every shipped Android module.
+# Play's automatic protection refuses any bundle below 24; scripts/check-min-sdk.sh fences it in CI.
+android-minSdk = "24"
 kotlin = "2.3.21"
 ktor = "3.6.0"
 kotlinx-coroutines = "1.11.0"

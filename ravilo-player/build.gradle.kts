@@ -14,7 +14,7 @@ android {
     compileSdk = 36
 
     defaultConfig {
-        minSdk = 21
+        minSdk = libs.versions.android.minSdk.get().toInt()
     }
 
     // R294 — the extractor tests read the MKV fixtures in src/test/resources under Robolectric.
