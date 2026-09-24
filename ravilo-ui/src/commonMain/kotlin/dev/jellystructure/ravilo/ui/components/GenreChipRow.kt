@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.components
 
+import dev.jellystructure.ravilo.ui.focus.rememberFocusVisual
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -135,7 +136,7 @@ private fun GenreChip(
     val colors = RaviloTheme.colors
     val skin = LocalRaviloSkin.current
     val sora = Sora
-    var focused by remember { mutableStateOf(false) }
+    var focused by rememberFocusVisual()
     val arrowAlpha by animateFloatAsState(if (focused && onSelect != null) 0.75f else 0f, label = "genreArrow")
     val shape = remember { RoundedCornerShape(50) }
 

@@ -17,6 +17,12 @@ package dev.jellystructure.ravilo.ui.focus
  * **or** the system prefers reduced motion. [isTv] is `isTvPlatform` (R234's seam) — never
  * LocalCompact/LocalHandset (R256: a TV is 960 x 540 dp; a phone in landscape is still a phone).
  * Client-side like reduced motion; the wire and the server's per-user resolution are untouched.
+ *
+ * R298 (FR-R298-3) — and on a [handset] there is no focus detail at all: no remote moves focus there, so
+ * a line stating "the focused title" only ever described whichever card focus had been restored to.
  */
-fun effectiveFocusDetailMode(resolvedMode: String, reduceMotion: Boolean, isTv: Boolean): String =
-    if (resolvedMode == "rowOpen" && (reduceMotion || !isTv)) "line" else resolvedMode
+fun effectiveFocusDetailMode(resolvedMode: String, reduceMotion: Boolean, isTv: Boolean, handset: Boolean = false): String = when {
+    handset -> "none"
+    resolvedMode == "rowOpen" && (reduceMotion || !isTv) -> "line"
+    else -> resolvedMode
+}

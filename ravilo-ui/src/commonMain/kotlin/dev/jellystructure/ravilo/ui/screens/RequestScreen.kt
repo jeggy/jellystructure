@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.focus.rememberFocusVisual
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -158,7 +159,7 @@ fun RequestContent(
 @Composable
 internal fun SeerrSearchPill(onSelect: () -> Unit) {
     val colors = RaviloTheme.colors
-    var focused by remember { mutableStateOf(false) }
+    var focused by rememberFocusVisual()
     Text(
         text = str("search_seerr"),
         color = if (focused) colors.background else colors.text,

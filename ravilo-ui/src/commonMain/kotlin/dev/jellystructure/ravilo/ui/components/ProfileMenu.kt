@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.components
 
+import dev.jellystructure.ravilo.ui.focus.rememberFocusVisual
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -160,7 +161,7 @@ private fun ProfileMenuRow(
     danger: Boolean = false,
 ) {
     val colors = RaviloTheme.colors
-    var focused by remember { mutableStateOf(false) }
+    var focused by rememberFocusVisual()
     val textColor = if (danger) DANGER_RED else colors.text
     Row(
         modifier = Modifier

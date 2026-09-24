@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.focus.rememberFocusVisual
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -208,7 +209,7 @@ private fun ProfileTile(
     onSelect: () -> Unit,
 ) {
     val colors = RaviloTheme.colors
-    var focused by remember { mutableStateOf(false) }
+    var focused by rememberFocusVisual()
 
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -273,7 +274,7 @@ private fun ActionTile(
     onRight: () -> Unit = {},
 ) {
     val colors = RaviloTheme.colors
-    var focused by remember { mutableStateOf(false) }
+    var focused by rememberFocusVisual()
 
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,

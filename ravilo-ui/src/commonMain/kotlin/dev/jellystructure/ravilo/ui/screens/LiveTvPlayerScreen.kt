@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.focus.rememberFocusVisual
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -412,7 +413,7 @@ private fun NowNextOverlay(
             LazyColumn(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 items(channels, key = { it.channelId }) { ch ->
                     val fr = remember { FocusRequester() }
-                    var focused by remember { mutableStateOf(false) }
+                    var focused by rememberFocusVisual()
                     Row(
                         modifier = Modifier.fillMaxWidth()
                             .background(if (focused) colors.accentDim else Color.Transparent, RoundedCornerShape(8.dp))

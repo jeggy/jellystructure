@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.components
 
+import dev.jellystructure.ravilo.ui.focus.rememberFocusVisual
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -100,7 +101,7 @@ private fun RequestLanguageOptionRow(
     onSelect: () -> Unit,
     onBack: () -> Unit,
 ) {
-    var focused by remember { mutableStateOf(false) }
+    var focused by rememberFocusVisual()
     Row(
         modifier = Modifier
             .fillMaxWidth()

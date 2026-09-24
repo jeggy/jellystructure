@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.components
 
+import dev.jellystructure.ravilo.ui.focus.rememberFocusVisual
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
@@ -341,7 +342,7 @@ private fun ProfileAvatar(
     onSelect: () -> Unit,
 ) {
     val colors = RaviloTheme.colors
-    var focused by remember { mutableStateOf(false) }
+    var focused by rememberFocusVisual()
     val avatarUrl = LocalUserAvatarUrl.current
     Box(
         modifier = Modifier
@@ -386,7 +387,7 @@ private fun SearchIcon(
     onSelect: () -> Unit,
 ) {
     val colors = RaviloTheme.colors
-    var focused by remember { mutableStateOf(false) }
+    var focused by rememberFocusVisual()
     Box(
         modifier = Modifier
             .size(40.dp)

@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.components
 
+import dev.jellystructure.ravilo.ui.focus.rememberFocusVisual
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
@@ -274,7 +275,7 @@ fun <T> StaticContentRow(
                     // captured but never invoked, so "See All" / "TV Guide" links were dead on every
                     // platform (confirmed live: tapping "TV Guide" on the Home screen did nothing).
                     // dpadFocusable's onSelect covers both D-pad Enter and a pointer tap (see its doc).
-                    var seeAllFocused by remember { mutableStateOf(false) }
+                    var seeAllFocused by rememberFocusVisual()
                     Text(
                         text = seeAllLabel,
                         color = colors.accent,

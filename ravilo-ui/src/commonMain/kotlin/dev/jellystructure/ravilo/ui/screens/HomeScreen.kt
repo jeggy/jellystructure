@@ -1,5 +1,7 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.theme.LocalHandset
+import dev.jellystructure.ravilo.ui.focus.rememberFocusVisual
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import dev.jellystructure.ravilo.ui.components.LoadErrorKind
@@ -220,7 +222,7 @@ private fun HomeLoaded(
     // Read once per composition, not live-observed — the same tradeoff R216's link-state sampling
     // makes (a mid-session toggle is vanishingly rare; a ContentObserver for it isn't worth the seam).
     val reduceMotion = remember { systemPrefersReducedMotion() }
-    val effectiveFocusDetail = effectiveFocusDetailMode(feed.focusDetail, reduceMotion, dev.jellystructure.ravilo.ui.isTvPlatform)
+    val effectiveFocusDetail = effectiveFocusDetailMode(feed.focusDetail, reduceMotion, dev.jellystructure.ravilo.ui.isTvPlatform, LocalHandset.current)
     val lineActive = effectiveFocusDetail == "line"
     // FR-R240-13 — a config change re-runs the reveal rule for whichever tile is focused right now,
     // through the same path a real focus move takes (not merely "the next natural refetch").
@@ -458,7 +460,7 @@ private fun ContentRowItem(
 ) {
     // Compute variant here so urlResolver and Tile use the same value.
     val rowVariant = if (row.kind == RowKind.CONTINUE) TileVariant.LANDSCAPE else feed.tileShape.toTileVariant()
-    val effectiveFocusDetail = effectiveFocusDetailMode(feed.focusDetail, reduceMotion, dev.jellystructure.ravilo.ui.isTvPlatform)
+    val effectiveFocusDetail = effectiveFocusDetailMode(feed.focusDetail, reduceMotion, dev.jellystructure.ravilo.ui.isTvPlatform, LocalHandset.current)
     // J's panel takes whatever a grown tile of THIS row's variant leaves — see focusDetailPanelWidthFor.
     // Passed to StaticContentRow too so its scroll target and the panel it scrolls agree on one number.
     val panelWidth = focusDetailPanelWidthFor(rowVariant)
@@ -726,7 +728,7 @@ private fun LiveDot() {
 @Composable
 private fun LiveTvGuideTile(onClick: () -> Unit, focusRequester: FocusRequester? = null) {
     val colors = RaviloTheme.colors
-    var focused by remember { mutableStateOf(false) }
+    var focused by rememberFocusVisual()
     val scale by animateFloatAsState(if (focused) RaviloMotion.TILE_FOCUS_SCALE else 1f, label = "guideTileScale")
     val tileShape = remember(colors.tileRadius) { RoundedCornerShape(colors.tileRadius) }
     Column(
@@ -784,7 +786,7 @@ private fun HomeErrorState(
 ) {
     val colors = RaviloTheme.colors
     val scope = rememberCoroutineScope()
-    var signOutFocused by remember { mutableStateOf(false) }
+    var signOutFocused by rememberFocusVisual()
     // R280 (FR-R280-3) — the heading, the sentence and the cause-appropriate action are the shared
     // surface now; Home keeps Sign out as its own second action, because Home is where a viewer with
     // a dead session lands and R237 already treats signing out as Home's case, not every screen's.

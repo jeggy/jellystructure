@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.focus.rememberFocusVisual
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -102,7 +103,7 @@ fun ServerSetupScreen(onUrlSaved: (String) -> Unit) {
             Spacer(Modifier.height(4.dp))
 
             // Connect button
-            var connectFocused by remember { mutableStateOf(false) }
+            var connectFocused by rememberFocusVisual()
             Box(
                 modifier = Modifier
                     .fillMaxWidth()

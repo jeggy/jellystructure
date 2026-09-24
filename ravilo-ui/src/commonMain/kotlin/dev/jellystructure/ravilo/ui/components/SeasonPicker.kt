@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.components
 
+import dev.jellystructure.ravilo.ui.focus.rememberFocusVisual
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -92,7 +93,7 @@ fun SeasonPicker(
         ) {
             items(seasons.size, key = { i -> seasons[i].index }) { i ->
                 val isSelected = i == selectedIndex
-                var focused by remember { mutableStateOf(false) }
+                var focused by rememberFocusVisual()
                 val scale        by animateFloatAsState(if (focused) RaviloMotion.PILL_FOCUS_SCALE else 1f, focusSpec, label = "pillScale$i")
                 // R223 FR-1: a focused pill is always visibly focused, selected or not. `focusRing` sits
                 // deliberately close to `accent` in hue/lightness in every skin, so a focusRing border drawn

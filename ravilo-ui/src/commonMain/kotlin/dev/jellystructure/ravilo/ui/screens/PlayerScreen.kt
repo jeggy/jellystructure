@@ -1,5 +1,7 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.focus.LocalFocusVisible
+import dev.jellystructure.ravilo.ui.focus.rememberFocusVisual
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import dev.jellystructure.ravilo.ui.LocalPlaystateCommands
@@ -2911,6 +2913,8 @@ private fun PickerLanguageRow(
     isSubtitle: Boolean,
     onTap: () -> Unit,
 ) {
+    // R298 (FR-R298-4) — the phone's sheet has no remote; the selected row's tick and tint are enough.
+    val focused = focused && LocalFocusVisible.current
     val single = group.versions.size <= 1
     val badges = if (group.isOff) emptyList() else languageRowBadges(group, selectedFlat)
     Row(
@@ -2969,6 +2973,7 @@ private fun PickerVersionRow(
     lang: String,
     onTap: () -> Unit,
 ) {
+    val focused = focused && LocalFocusVisible.current   // R298 (FR-R298-4)
     val headerFlag = flagFor(group.language)
     val regionFlag = version.region?.flag?.takeIf { it != headerFlag }
     val baseName = if (group.isUnnamed) t("player.version_n", lang, mapOf("n" to (version.ordinal + 1).toString()))
@@ -4115,8 +4120,8 @@ private fun PlayerSessionErrorOverlay(
     LaunchedEffect(error) {
         runCatching { if (showRetry || showSignIn) retryFR.requestFocus() else backFR.requestFocus() }
     }
-    var retryFocused by remember { mutableStateOf(false) }
-    var backFocused by remember { mutableStateOf(false) }
+    var retryFocused by rememberFocusVisual()
+    var backFocused by rememberFocusVisual()
     Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.82f)), contentAlignment = Alignment.Center) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,

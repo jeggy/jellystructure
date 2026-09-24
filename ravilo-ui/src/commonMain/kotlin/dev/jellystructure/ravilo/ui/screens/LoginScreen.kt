@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.focus.rememberFocusVisual
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
@@ -313,7 +314,7 @@ private fun ServerIndicator(baseUrl: String) {
 @Composable
 private fun ChangeServerLink(focusRequester: FocusRequester, onSelect: () -> Unit) {
     val colors = RaviloTheme.colors
-    var focused by remember { mutableStateOf(false) }
+    var focused by rememberFocusVisual()
     Box(
         modifier = Modifier
             .dpadFocusable(focusRequester = focusRequester, onFocused = { focused = true }, onBlurred = { focused = false }, onSelect = onSelect)
@@ -331,7 +332,7 @@ private fun ChangeServerLink(focusRequester: FocusRequester, onSelect: () -> Uni
 @Composable
 private fun LoginButton(label: String, focusRequester: FocusRequester, enabled: Boolean, onSelect: () -> Unit) {
     val colors = RaviloTheme.colors
-    var focused by remember { mutableStateOf(false) }
+    var focused by rememberFocusVisual()
     Box(
         modifier = Modifier
             .fillMaxWidth()

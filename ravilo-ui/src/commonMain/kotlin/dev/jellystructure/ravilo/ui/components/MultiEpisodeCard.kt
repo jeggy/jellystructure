@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.components
 
+import dev.jellystructure.ravilo.ui.focus.rememberFocusVisual
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
@@ -63,7 +64,7 @@ fun MultiEpisodeCard(
 ) {
     val colors = RaviloTheme.colors
     val sora = Sora
-    var focused by remember { mutableStateOf(false) }
+    var focused by rememberFocusVisual()
     val focusSpec = remember { RaviloMotion.softSpring<Float>() }
     val dpSpec    = remember { RaviloMotion.softSpring<Dp>() }
     val scale         by animateFloatAsState(if (focused) RaviloMotion.CARD_FOCUS_SCALE else 1f, focusSpec, label = "mepScale")

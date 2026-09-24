@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.focus.rememberFocusVisual
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import dev.jellystructure.ravilo.ui.components.LoadErrorState
@@ -349,7 +350,7 @@ private fun GenreChips(
         items(chips.size, key = { i -> chips[i] ?: "all" }) { i ->
             val label = chips[i] ?: str("browse.all")
             val isActive = chips[i] == activeGenre
-            var focused by remember { mutableStateOf(false) }
+            var focused by rememberFocusVisual()
 
             Box(
                 modifier = Modifier

@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.components
 
+import dev.jellystructure.ravilo.ui.focus.rememberFocusVisual
 import dev.jellystructure.ravilo.ui.i18n.str
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.layout.Column
@@ -40,7 +41,7 @@ fun DetailSynopsis(
     modifier: Modifier = Modifier,
 ) {
     val colors = RaviloTheme.colors
-    var focused by remember { mutableStateOf(false) }
+    var focused by rememberFocusVisual()
     var expanded by remember { mutableStateOf(false) }
     var truncated by remember { mutableStateOf(false) }
     val spec = remember { RaviloMotion.softSpring<Float>() }

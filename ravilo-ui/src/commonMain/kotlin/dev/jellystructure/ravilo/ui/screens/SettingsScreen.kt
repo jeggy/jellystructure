@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.focus.rememberFocusVisual
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import dev.jellystructure.ravilo.ui.components.LoadErrorState
@@ -195,7 +196,7 @@ fun SettingsScreen(
     // affordance on every input platform. Also gives Loading/Error something to focus (previously
     // nothing was focused until SettingsContent's progressFR, once Loaded).
     val backFR = remember { FocusRequester() }
-    var backFocused by remember { mutableStateOf(false) }
+    var backFocused by rememberFocusVisual()
     LaunchedEffect(Unit) { runCatching { backFR.requestFocus() } }
 
     // R229 bug fix: 80dp/side was sized for a TV's 10-foot canvas and never adapted for a phone
@@ -319,7 +320,7 @@ fun ConfirmOverlay(title: String, description: String, confirmLabel: String, onC
             Text(description, color = colors.textSecondary, fontSize = 14.sp)
             Spacer(Modifier.height(28.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                var cancelFocused by remember { mutableStateOf(false) }
+                var cancelFocused by rememberFocusVisual()
                 Box(
                     modifier = Modifier
                         .background(colors.surfaceVariant, RoundedCornerShape(8.dp))
@@ -334,7 +335,7 @@ fun ConfirmOverlay(title: String, description: String, confirmLabel: String, onC
                         )
                         .padding(horizontal = 24.dp, vertical = 12.dp),
                 ) { Text(str("action.cancel"), color = colors.text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold) }
-                var confirmFocused by remember { mutableStateOf(false) }
+                var confirmFocused by rememberFocusVisual()
                 Box(
                     modifier = Modifier
                         .background(Color(0xFFE0393A), RoundedCornerShape(8.dp))
@@ -423,7 +424,7 @@ private fun SettingsContent(
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Skin.entries.forEachIndexed { i, skin ->
                 val isActive = config.effectiveSkin() == skin
-                var focused by remember { mutableStateOf(false) }
+                var focused by rememberFocusVisual()
 
                 Box(
                     modifier = Modifier
@@ -469,7 +470,7 @@ private fun SettingsContent(
     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         UI_LANGUAGES.forEachIndexed { i, (code, label) ->
             val isActive = config.uiLanguage == code
-            var focused by remember { mutableStateOf(false) }
+            var focused by rememberFocusVisual()
             Box(
                 modifier = Modifier
                     .background(if (isActive) colors.accent else colors.surfaceVariant, RoundedCornerShape(10.dp))
@@ -533,7 +534,7 @@ private fun SettingsContent(
     Spacer(Modifier.height(16.dp))
     // R234 (FR-R234-4) — a password is a credential, not a preference, so it lives here on every
     // platform (TV included) rather than gated like the phone/web-only "Your profile" photo screen.
-    var changePwFocused by remember { mutableStateOf(false) }
+    var changePwFocused by rememberFocusVisual()
     Box(
         modifier = Modifier
             .background(colors.surfaceVariant, RoundedCornerShape(8.dp))
@@ -553,7 +554,7 @@ private fun SettingsContent(
     }
     Spacer(Modifier.height(16.dp))
     if (isWebPlatform) {
-        var installFocused by remember { mutableStateOf(false) }
+        var installFocused by rememberFocusVisual()
         Box(
             modifier = Modifier
                 .background(colors.surfaceVariant, RoundedCornerShape(8.dp))
@@ -573,7 +574,7 @@ private fun SettingsContent(
         }
         Spacer(Modifier.height(16.dp))
     }
-    var focused by remember { mutableStateOf(false) }
+    var focused by rememberFocusVisual()
     Box(
         modifier = Modifier
             .background(colors.surfaceVariant, RoundedCornerShape(8.dp))
@@ -600,7 +601,7 @@ private fun SettingsContent(
     // (revokes every session this device holds). Danger-styled; requires the confirm overlay.
     SectionHeader(str("settings.unpair").uppercase())
     Spacer(Modifier.height(12.dp))
-    var unpairFocused by remember { mutableStateOf(false) }
+    var unpairFocused by rememberFocusVisual()
     Box(
         modifier = Modifier
             .background(Color(0xFFE0393A).copy(alpha = 0.14f), RoundedCornerShape(8.dp))
@@ -638,7 +639,7 @@ private fun ToggleRow(
     onDown: (() -> Unit)? = null,
 ) {
     val colors = RaviloTheme.colors
-    var focused by remember { mutableStateOf(false) }
+    var focused by rememberFocusVisual()
 
     Row(
         modifier = Modifier

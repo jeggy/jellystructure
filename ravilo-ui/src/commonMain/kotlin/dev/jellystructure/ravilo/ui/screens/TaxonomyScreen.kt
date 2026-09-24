@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.focus.rememberFocusVisual
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -226,7 +227,7 @@ private fun TaxonomyTile(
 ) {
     val colors = RaviloTheme.colors
     val handset = LocalHandset.current
-    var focused by remember { mutableStateOf(false) }
+    var focused by rememberFocusVisual()
     val cardHeight = when {
         handset -> if (genre) 64.dp else 96.dp
         else -> if (genre) 72.dp else 88.dp      // a ~130 dp tile: roughly 3:2, was 158 dp at 4-up

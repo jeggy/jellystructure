@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.focus.rememberFocusVisual
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Brush
@@ -865,7 +866,7 @@ private fun SeriesDetailLoaded(
 @Composable
 private fun EpisodeWatchToggle(watched: Boolean, onToggle: () -> Unit) {
     val colors = RaviloTheme.colors
-    var focused by remember { mutableStateOf(false) }
+    var focused by rememberFocusVisual()
     val shape = RoundedCornerShape(8.dp)
     val bg = if (watched) colors.badgeWatched.copy(alpha = 0.16f) else colors.surfaceVariant
     Row(

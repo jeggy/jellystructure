@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.focus.rememberFocusVisual
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -119,7 +120,7 @@ private fun AccountField(
 private fun AccountScreenHeader(title: String, onBack: () -> Unit) {
     val colors = RaviloTheme.colors
     val backFR = remember { FocusRequester() }
-    var backFocused by remember { mutableStateOf(false) }
+    var backFocused by rememberFocusVisual()
     LaunchedEffect(Unit) { runCatching { backFR.requestFocus() } }
     Text(
         "‹ ${str("action.back")}",
@@ -138,7 +139,7 @@ private fun AccountScreenHeader(title: String, onBack: () -> Unit) {
 @Composable
 private fun AccountActionButton(label: String, focusRequester: FocusRequester, onSelect: () -> Unit, danger: Boolean = false) {
     val colors = RaviloTheme.colors
-    var focused by remember { mutableStateOf(false) }
+    var focused by rememberFocusVisual()
     val textColor = if (danger) DangerRed else colors.text
     Box(
         modifier = Modifier

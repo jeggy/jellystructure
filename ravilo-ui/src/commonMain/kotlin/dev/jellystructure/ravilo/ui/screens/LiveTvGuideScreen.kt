@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.focus.rememberFocusVisual
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import dev.jellystructure.ravilo.ui.components.LoadErrorState
@@ -374,7 +375,7 @@ fun LiveTvGuideScreen(
 @Composable
 private fun CategoryChip(label: String, selected: Boolean, onSelect: () -> Unit) {
     val colors = RaviloTheme.colors
-    var focused by remember { mutableStateOf(false) }
+    var focused by rememberFocusVisual()
     Box(
         modifier = Modifier
             .background(if (selected) colors.accent else colors.surfaceVariant, RoundedCornerShape(20.dp))
@@ -477,7 +478,7 @@ private fun GuideChannelRow(
         // Its own focus target, independent of the program cells below — selecting it tunes this
         // channel immediately (no details popup), a quick "just watch this channel" path alongside
         // the cells' richer per-program flow.
-        var chFocused by remember { mutableStateOf(false) }
+        var chFocused by rememberFocusVisual()
         Row(
             modifier = Modifier.width(CHANNEL_COL_WIDTH_DP.dp).fillMaxSize()
                 .background(if (chFocused) colors.accentDim else colors.surface)
@@ -616,7 +617,7 @@ private fun GuideChannelRow(
                     // handles revealing it instead) — onCellFocused below is what keeps every OTHER
                     // row's viewport truthful about wherever native search lands, without needing to
                     // hand-roll the cell-to-cell traversal ourselves.
-                    var pFocused by remember { mutableStateOf(false) }
+                    var pFocused by rememberFocusVisual()
                     var cellLeftPx by remember { mutableStateOf(0f) }
                     val startMinutes = remember(p.startMs, guideOriginMs) { (p.startMs - guideOriginMs) / 60_000f }
                     val endMinutes = remember(p.endMs, guideOriginMs) { (p.endMs - guideOriginMs) / 60_000f }
@@ -724,7 +725,7 @@ private fun ProgramDetailsOverlay(
                 color = colors.textDim, fontSize = 14.sp,
             )
             Spacer(Modifier.height(24.dp))
-            var wlFocused by remember { mutableStateOf(false) }
+            var wlFocused by rememberFocusVisual()
             Box(
                 modifier = Modifier
                     .background(if (wlFocused) colors.accent else colors.accentDim, RoundedCornerShape(10.dp))

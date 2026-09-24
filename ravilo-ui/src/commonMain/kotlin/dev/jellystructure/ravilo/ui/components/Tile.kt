@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.components
 
+import dev.jellystructure.ravilo.ui.focus.rememberFocusVisual
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -127,7 +128,7 @@ fun Tile(
     // R87: per-title placeholder tint — the poster crossfades in over a related color, not blank.
     val fallbackHue = remember(title) { (title.hashCode().toLong() and 0xFFFFFFFFL) % 360L }
     val posterPlaceholder = remember(fallbackHue) { Color.hsl(fallbackHue.toFloat(), 0.30f, 0.18f) }
-    var focused by remember { mutableStateOf(false) }
+    var focused by rememberFocusVisual()
     // Snappier focus feel (R43): StiffnessMedium settles fast; soft StiffnessMediumLow read laggy.
     val focusSpec = remember { RaviloMotion.focusSpring<Float>() }
     val dpSpec    = remember { RaviloMotion.focusSpring<Dp>() }
@@ -343,7 +344,7 @@ fun SeeAllTile(
 ) {
     val colors = RaviloTheme.colors
     val sora = Sora
-    var focused by remember { mutableStateOf(false) }
+    var focused by rememberFocusVisual()
     val focusSpec = remember { RaviloMotion.focusSpring<Float>() }
     val dpSpec    = remember { RaviloMotion.focusSpring<Dp>() }
     val scale         by animateFloatAsState(if (focused) RaviloMotion.TILE_FOCUS_SCALE else 1f, focusSpec, label = "seeAllScale")

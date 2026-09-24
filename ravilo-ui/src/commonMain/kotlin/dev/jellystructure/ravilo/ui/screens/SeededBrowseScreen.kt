@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.focus.rememberFocusVisual
 import androidx.compose.runtime.setValue
 import dev.jellystructure.ravilo.ui.components.LoadErrorState
 import dev.jellystructure.ravilo.ui.components.LoadErrorKind
@@ -549,7 +550,7 @@ private fun FacetBar(
                 else -> store.selectionFor(key).isNotEmpty()
             }
             val badge = facetChipSummary(store, key)
-            var focused by remember { mutableStateOf(false) }
+            var focused by rememberFocusVisual()
             // R187 fix — was an instant color snap; a short tween reads as one more small, restrained
             // bit of polish rather than a jarring toggle (same idiom as AppBar's own scrolled-bg tween).
             val chipBg by animateColorAsState(if (active) colors.accent else colors.surfaceVariant, tween(150), label = "facetChipBg")
@@ -583,7 +584,7 @@ private fun FacetBar(
         }
         item(key = "reset") {
             if (store.hasActiveFilters) {
-                var focused by remember { mutableStateOf(false) }
+                var focused by rememberFocusVisual()
                 Box(
                     Modifier
                         .background(colors.surfaceVariant, chipShape)
@@ -595,7 +596,7 @@ private fun FacetBar(
             }
         }
         item(key = "sort") {
-            var focused by remember { mutableStateOf(false) }
+            var focused by rememberFocusVisual()
             Box(
                 Modifier
                     .background(colors.surfaceVariant, chipShape)
@@ -711,7 +712,7 @@ private fun FacetPopover(store: SeededBrowseStore, all: List<BrowseCard>, key: B
                     items(values.size, key = { i -> values[i].value }) { i ->
                         val v = values[i]
                         val selected = v.value in store.selectionFor(key)
-                        var focused by remember { mutableStateOf(false) }
+                        var focused by rememberFocusVisual()
                         Row(
                             Modifier.fillMaxWidth()
                                 .background(if (focused) colors.surface else androidx.compose.ui.graphics.Color.Transparent, RoundedCornerShape(8.dp))
@@ -790,7 +791,7 @@ private fun MaturityRangePicker(store: SeededBrowseStore, firstRowFR: FocusReque
         Triple(str("browse.maturity.from"), store.maturity.from?.toString() ?: str("browse.maturity.any"), 0),
         Triple(str("browse.maturity.upto"), store.maturity.upTo?.toString() ?: str("browse.maturity.any"), 1),
     ).forEach { (label, value, idx) ->
-        var focused by remember { mutableStateOf(false) }
+        var focused by rememberFocusVisual()
         Row(
             Modifier.fillMaxWidth()
                 .background(if (focused) colors.surface else androidx.compose.ui.graphics.Color.Transparent, RoundedCornerShape(8.dp))
@@ -826,7 +827,7 @@ private fun SortPopover(store: SeededBrowseStore, onClose: () -> Unit) {
     Box(Modifier.padding(horizontal = raviloHPad).dpadFocusable(onBack = onClose)) {
         Column(Modifier.width(260.dp).background(colors.surfaceVariant, RoundedCornerShape(12.dp)).padding(12.dp)) {
             SortField.entries.forEachIndexed { i, opt ->
-                var focused by remember { mutableStateOf(false) }
+                var focused by rememberFocusVisual()
                 val active = store.sortField == opt
                 Row(
                     Modifier.fillMaxWidth()

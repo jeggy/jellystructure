@@ -33,4 +33,12 @@ class FocusDetailReducedMotionTest {
         assertEquals("line", effectiveFocusDetailMode("line", reduceMotion = false, isTv = false))
         assertEquals("none", effectiveFocusDetailMode("none", reduceMotion = false, isTv = false))
     }
+
+    // R298 (FR-R298-3) — a handset has no focus detail: no remote moves focus there.
+    @Test fun aHandsetHasNoFocusDetail() {
+        for (mode in listOf("line", "rowOpen", "none")) {
+            assertEquals("none", effectiveFocusDetailMode(mode, reduceMotion = false, isTv = false, handset = true), mode)
+        }
+    }
+    @Test fun notAHandsetKeepsTheOldRules() = assertEquals("line", effectiveFocusDetailMode("line", reduceMotion = false, isTv = false, handset = false))
 }

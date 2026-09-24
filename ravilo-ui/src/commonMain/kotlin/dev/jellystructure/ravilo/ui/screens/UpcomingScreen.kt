@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.focus.rememberFocusVisual
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import dev.jellystructure.ravilo.ui.components.LoadErrorKind
@@ -243,7 +244,7 @@ private fun FilterChips(active: UpcomingFilter, onFilterChange: (UpcomingFilter)
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         chips.forEachIndexed { i, (kind, labelKey) ->
             val isActive = active == kind
-            var focused by remember { mutableStateOf(false) }
+            var focused by rememberFocusVisual()
             Box(
                 modifier = Modifier
                     .background(if (isActive) colors.accent else colors.surfaceVariant, RoundedCornerShape(20.dp))
@@ -276,7 +277,7 @@ private fun FilterChips(active: UpcomingFilter, onFilterChange: (UpcomingFilter)
 @Composable
 private fun MissingJumpPill(count: Int, onClick: () -> Unit) {
     val fr = remember { FocusRequester() }
-    var focused by remember { mutableStateOf(false) }
+    var focused by rememberFocusVisual()
     Box(
         modifier = Modifier
             .background(Color(0xFFE0393A).copy(alpha = if (focused) 0.9f else 0.75f), RoundedCornerShape(20.dp))
@@ -295,7 +296,7 @@ private fun DateRail(days: List<String>, grouped: Map<String, List<UpcomingItem>
         items(days.size, key = { i -> "rail:${days[i]}" }) { i ->
             val day = days[i]
             val date = remember(day) { runCatching { LocalDate.parse(day) }.getOrNull() }
-            var focused by remember { mutableStateOf(false) }
+            var focused by rememberFocusVisual()
             Column(
                 modifier = Modifier
                     .background(colors.surfaceVariant, RoundedCornerShape(10.dp))
@@ -336,7 +337,7 @@ private fun DateRail(days: List<String>, grouped: Map<String, List<UpcomingItem>
 @Composable
 private fun UpcomingCard(item: UpcomingItem, focusRequester: FocusRequester?, onSelect: () -> Unit) {
     val colors = RaviloTheme.colors
-    var focused by remember { mutableStateOf(false) }
+    var focused by rememberFocusVisual()
     val gradient = remember(item.title) { gradientFor(item.title) }
     // Same draw-only focus treatment as Tile.kt (R42/R43): scale + shadow in graphicsLayer, ring in
     // drawWithCache — no animated value is read at composition, so the card never recomposes per frame.

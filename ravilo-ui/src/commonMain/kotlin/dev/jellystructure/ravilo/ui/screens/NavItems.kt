@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.focus.rememberFocusVisual
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -203,7 +204,7 @@ fun DiscoverSegmentBar(
         horizontalArrangement = Arrangement.spacedBy(5.dp),
     ) {
         segments.forEach { seg ->
-            var focused by remember { mutableStateOf(false) }
+            var focused by rememberFocusVisual()
             val isCur = seg == active
             val scope = rememberCoroutineScope()
             Text(
