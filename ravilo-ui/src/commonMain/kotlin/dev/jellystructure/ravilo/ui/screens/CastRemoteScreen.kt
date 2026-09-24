@@ -159,23 +159,24 @@ fun CastRemoteScreen(
         s.kicker?.let { Text(it.uppercase(), color = colors.accentSecondary, fontSize = 13.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp, maxLines = 1) }
         Text(s.title ?: "", color = colors.text, fontSize = 20.sp, fontWeight = FontWeight.Bold, fontFamily = SpaceGrotesk, textAlign = TextAlign.Center, maxLines = 2, overflow = TextOverflow.Ellipsis)
         Spacer(Modifier.height(4.dp))
-        val stateLine = when {
-            // R299 (FR-R299-3) — a receiver that answered "failed" is reachable; check it first.
-            s.failed && !unreachable -> str("cast.failed", mapOf("device" to name))
-            unreachable -> str("cast.lost", mapOf("device" to name))
-            s.noServer -> str("cast.no_server")
-            s.busyRetryAfter != null -> str("srv.busy")
-            s.ended -> str("player.end_of_episode").takeIf { s.hasNext } ?: str("player.end_of_movie")
-            s.playing -> str("cast.playing_on", mapOf("device" to name))
-            else -> str("cast.paused_on", mapOf("device" to name))
+        val state = remoteState(s, unreachable)
+        val stateLine = when (state) {
+            RemoteState.FAILED -> str("cast.failed", mapOf("device" to name))
+            RemoteState.UNREACHABLE -> str("cast.lost", mapOf("device" to name))
+            RemoteState.NO_SERVER -> str("cast.no_server")
+            RemoteState.BUSY -> str("srv.busy")
+            RemoteState.ENDED -> str("player.end_of_episode").takeIf { s.hasNext } ?: str("player.end_of_movie")
+            RemoteState.PLAYING -> str("cast.playing_on", mapOf("device" to name))
+            RemoteState.PAUSED -> str("cast.paused_on", mapOf("device" to name))
         }
         Text(stateLine, color = colors.textSecondary, fontSize = 14.sp, fontFamily = Sora, textAlign = TextAlign.Center)
         // second line for the two "cannot" states + the busy wait
-        when {
-            s.failed && !unreachable -> Text(str("cast.failed_sub"), color = colors.textDim, fontSize = 13.sp, fontFamily = Sora, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 4.dp))
-            unreachable -> Text(str("cast.lost_sub"), color = colors.textDim, fontSize = 13.sp, fontFamily = Sora, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 4.dp))
-            s.noServer -> Text(str("cast.no_server_sub"), color = colors.textDim, fontSize = 13.sp, fontFamily = Sora, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 4.dp))
-            s.busyRetryAfter != null -> Text("${str("srv.busy_sub")} · ${str("cast.waiting", mapOf("n" to busyElapsed.toString()))}", color = colors.textDim, fontSize = 13.sp, fontFamily = Sora, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 4.dp))
+        when (state) {
+            RemoteState.FAILED -> Text(str("cast.failed_sub"), color = colors.textDim, fontSize = 13.sp, fontFamily = Sora, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 4.dp))
+            RemoteState.UNREACHABLE -> Text(str("cast.lost_sub"), color = colors.textDim, fontSize = 13.sp, fontFamily = Sora, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 4.dp))
+            RemoteState.NO_SERVER -> Text(str("cast.no_server_sub"), color = colors.textDim, fontSize = 13.sp, fontFamily = Sora, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 4.dp))
+            RemoteState.BUSY -> Text("${str("srv.busy_sub")} · ${str("cast.waiting", mapOf("n" to busyElapsed.toString()))}", color = colors.textDim, fontSize = 13.sp, fontFamily = Sora, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 4.dp))
+            else -> {}
         }
         // ── FR-R245-19 — the stream is a conversion, not the file: say so, quietly, and explain on tap.
         // Shown only while the receiver has media and is reachable; never a codec, protocol or product name.
@@ -211,7 +212,7 @@ fun CastRemoteScreen(
         }
 
         // ── Seek bar + times ──
-        val transportEnabled = !unreachable && s.loaded && !s.ended && !s.failed && s.busyRetryAfter == null && !s.noServer
+        val transportEnabled = remoteTransportEnabled(s, unreachable)
         RemoteSeekBar(
             colors = colors, positionMs = if (scrubbing) scrubPos else s.positionMs, durationMs = s.durationMs, enabled = transportEnabled,
             onSeekStart = { ms -> scrubbing = true; scrubPos = ms },
@@ -241,7 +242,7 @@ fun CastRemoteScreen(
 
         // ── Footer / state actions ──
         when {
-            s.failed && !unreachable -> Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            state == RemoteState.FAILED -> Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 s.itemId?.let { id -> RemotePill(str("cast.play_here"), primary = true) { onPlayHere(id, s.title ?: "", s.kicker) } }
                 RemotePill(str("cast.stop"), primary = false) { cast.sender.stop(); onBack() }
             }

@@ -295,12 +295,11 @@ internal fun SkipGlyph(back: Boolean, tint: Color, size: Dp = 22.dp) {
         val stroke = Stroke(width = 2.2.dp.toPx(), cap = StrokeCap.Round)
         val r = this.size.minDimension * 0.36f
         val c = Offset(this.size.width / 2, this.size.height / 2)
-        val start = if (back) 240f else -60f
-        val sweep = if (back) 270f else -270f
-        drawArc(tint, start, sweep, false, Offset(c.x - r, c.y - r), Size(r * 2, r * 2), style = stroke)
-        val tipX = if (back) c.x - r * 0.5f else c.x + r * 0.5f
+        val arc = skipArc(back)
+        drawArc(tint, arc.startAngle, arc.sweepAngle, false, Offset(c.x - r, c.y - r), Size(r * 2, r * 2), style = stroke)
+        val d = arc.tipSide.toFloat()
+        val tipX = c.x + d * r * 0.5f
         val tipY = c.y - r
-        val d = if (back) -1f else 1f
         val head = Path().apply {
             moveTo(tipX - d * 5.dp.toPx(), tipY - 3.dp.toPx())
             lineTo(tipX, tipY)

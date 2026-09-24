@@ -127,7 +127,10 @@ jobs:
           keytool -genkeypair -keystore ~/.android/debug.keystore -storepass android -keypass android \
             -alias androiddebugkey -dname "CN=Android Debug,O=Android,C=US" -keyalg RSA -keysize 2048 -validity 10000
       - name: Client unit tests + release APK
-        run: ./gradlew :ravilo-ui:testDebugUnitTest :ravilo-android:assembleRelease --no-daemon
+        # R294 — :ravilo-player's tests run the vendored MatroskaExtractor over the committed MKV
+        # fixtures (stock Media3 must still fail on them, the patched copy must not) and fail the build
+        # the moment Media3 moves off the version the copy was taken from.
+        run: ./gradlew :ravilo-ui:testDebugUnitTest :ravilo-player:testDebugUnitTest :ravilo-android:assembleRelease --no-daemon
       - name: Player dex register guard (FR-231-2)
         run: ./scripts/check-player-dex.sh
       - name: Enable KVM

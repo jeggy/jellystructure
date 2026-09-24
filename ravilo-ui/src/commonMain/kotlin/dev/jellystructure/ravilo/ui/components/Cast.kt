@@ -52,6 +52,7 @@ import androidx.compose.ui.unit.sp
 import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.seams.ActiveCastSender
 import dev.jellystructure.ravilo.ui.seams.CastLinkState
+import dev.jellystructure.ravilo.ui.screens.castMiniBarVisible
 import dev.jellystructure.ravilo.ui.seams.PlatformCastButton
 import dev.jellystructure.ravilo.ui.seams.RemoteImage
 import dev.jellystructure.ravilo.ui.seams.safeAreaPadding
@@ -248,7 +249,7 @@ fun CastMiniBar(onOpen: () -> Unit) {
     val status by cast.sender.status.collectAsState()
     val device by cast.sender.deviceName.collectAsState()
     val st = status
-    val visible = link == CastLinkState.CONNECTED && st != null && st.loaded && !st.ended && !st.failed
+    val visible = castMiniBarVisible(link, st)
     AnimatedVisibility(visible = visible, enter = slideInVertically { it } + fadeIn(tween(180)), exit = slideOutVertically { it } + fadeOut(tween(160))) {
         val s = st ?: return@AnimatedVisibility
         Column(

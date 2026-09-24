@@ -104,10 +104,7 @@ actual fun PlayerVideoSurface(
         // R300 (FR-R300-1) — the picture's height, for caption sizing: the DAR box in fit mode, the
         // window otherwise (fill mode and an unknown DAR both cover the window in height or width).
         val boxHeightPx = with(LocalDensity.current) {
-            when {
-                dar <= 0f || fill -> maxHeight.roundToPx()
-                else -> minOf(maxHeight, maxWidth / dar).roundToPx()
-            }
+            captionBaseHeight(maxWidth.toPx(), maxHeight.toPx(), dar, fill).let { kotlin.math.round(it).toInt() }
         }
         LaunchedEffect(boxHeightPx) { player.setSubtitleBaseHeightPx(boxHeightPx) }
         key(surfaceGeneration) {
@@ -236,8 +233,7 @@ actual fun PlayerVideoSurface(
             // Forward 1 ms below one second (a step back would clamp to 0:00, i.e. no move), else back.
             if (!recovered) {
                 val before = player.renderedVideoFrameCount()
-                val position = player.positionMs
-                player.seekTo(if (position < 1_000L) position + 1L else position - 1L)
+                player.seekTo(recoverySeekTargetMs(player.positionMs))
                 delay(SEEK_RUNG_SETTLE_MS)
                 recovered = player.renderedVideoFrameCount() != before
             }
