@@ -923,6 +923,10 @@ fun PlayerScreen(
         // `posterUrl` already carries the series' own poster for episodes (threaded from
         // EpisodePlayContext.seriesPosterUrl) or the movie's poster for movies — a single fallback.
         val artworkUrl = resolveImageUrl(episodes?.getOrNull(currentEpIndex)?.seasonPosterUrl ?: posterUrl)
+        // 2026-09-24 — a new stream has no frame yet, from THIS moment: the poll tick would otherwise keep
+        // the outgoing stream's `true` for up to POLL_MS, and VideoShutter below would let the decoder's
+        // reconfiguration show through (a green frame with a quarter-size stale picture, soveværelse TV).
+        hasRenderedFirstFrame = false
         player.load(streamUrl, s.ticket.startPositionMs, s.ticket.subtitles, s.ticket.audio, title = itemTitle, subtitle = itemKicker, artworkUrl = artworkUrl)
         // R282 (FR-R282-1/-4) — relate the two subtitle mechanisms, here, on every ticket. A burn-in
         // ticket turns the text renderer OFF unconditionally: the reload reuses this ExoPlayer, whose
@@ -1566,6 +1570,7 @@ fun PlayerScreen(
             fill = fillMode,   // R244 (FR-R244-6)
             subtitleBottomInset = subtitleInset,   // R251 (FR-R251-4)
         )
+        VideoShutter(sessionState is PlayerSessionState.Loading || (sessionState is PlayerSessionState.Ready && !hasRenderedFirstFrame))
 
         // ── Dim scrim (deepens when chrome is up, paused, or R218's moment C stalls) ──
         val dimAlpha = when {
@@ -1827,8 +1832,6 @@ fun PlayerScreen(
                 epRailOpen      = epRailOpen,
                 pickerOpen      = pickerOpen,
                 nextUpVisible   = nextUpVisible,
-                directPlay      = (sessionState as? PlayerSessionState.Ready)?.ticket?.directPlay ?: true,
-                container       = (sessionState as? PlayerSessionState.Ready)?.ticket?.container ?: "",
                 stallActive      = stallActive,
                 seekMomentActive = displayedBufferMoment == PlBufferMoment.SEEK,
                 onTransportBandHeight = { transportBandPx = it },  // R251 (FR-R251-4)
@@ -2036,8 +2039,6 @@ private fun PlayerChrome(
     epRailOpen: Boolean,
     pickerOpen: Boolean,
     nextUpVisible: Boolean,
-    directPlay: Boolean,
-    container: String,
     // R218 (FR-R218-1, moment C) — the chrome is forced up while this is true (see this composable's
     // call site) and the play button shows a spinner in place of its glyph instead of the usual icon.
     stallActive: Boolean = false,
@@ -2082,8 +2083,9 @@ private fun PlayerChrome(
                 onClick = { onControlClick(PlFocus.BACK) },
                 onHover = { onControlHover(PlFocus.BACK) },
             )
+            // 2026-09-24 — the DIRECT PLAY / HLS + container pill (R14) is gone: R180 FR-RV-ASP1-2, no
+            // delivery-method cue may reach a viewer, and it shipped in every release build.
             Spacer(Modifier.weight(1f))
-            StreamPill(colors = colors, directPlay = directPlay, container = container)
         }
 
         // Bottom transport
@@ -2507,51 +2509,16 @@ private fun BackButton(focused: Boolean, onClick: () -> Unit = {}, onHover: () -
     }
 }
 
+/**
+ * 2026-09-24 — plain black over the video surface while a stream is being negotiated or has not drawn
+ * its first frame. Between two streams (a restream: burn-in, un-burn, audio) the surface otherwise shows
+ * whatever the decoder's reconfiguration leaves in it — on the soveværelse TV's MediaTek decoder, a green
+ * frame with the old picture shrunk into its top-left corner. Everything R218 draws for the wait sits
+ * above this, unchanged. Its own composable so the check-player-dex budget is not spent in PlayerScreen.
+ */
 @Composable
-private fun StreamPill(colors: RaviloColors, directPlay: Boolean, container: String) {
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-        PillBox {
-            Box(
-                Modifier
-                    .size(7.dp)
-                    .clip(CircleShape)
-                    .background(if (directPlay) Color(0xFF2DD49A) else colors.accentSecondary)
-            )
-            Spacer(Modifier.width(7.dp))
-            Text(
-                text = if (directPlay) "DIRECT PLAY" else "HLS",
-                color = Color.White,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.SemiBold,
-                letterSpacing = 0.5.sp,
-            )
-        }
-        if (container.isNotEmpty()) {
-            PillBox {
-                Text(
-                    text = container.uppercase(),
-                    color = Color.White.copy(alpha = 0.6f),
-                    fontSize = 11.sp,
-                    fontFamily = FontFamily.Monospace,
-                    fontWeight = FontWeight.Medium,
-                    letterSpacing = 1.sp,
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun PillBox(content: @Composable () -> Unit) {
-    Row(
-        modifier = Modifier
-            .height(32.dp)
-            .clip(RoundedCornerShape(8.dp))
-            .background(Color.Black.copy(alpha = 0.42f))
-            .border(1.dp, Color.White.copy(alpha = 0.15f), RoundedCornerShape(8.dp))
-            .padding(horizontal = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) { content() }
+private fun VideoShutter(visible: Boolean) {
+    if (visible) Box(Modifier.fillMaxSize().background(Color.Black))
 }
 
 @Composable
@@ -2645,18 +2612,24 @@ internal fun TrackPicker(
 
             val listState = rememberLazyListState()
             val rowCount = if (pickerLevel == 0) groups.size else (group?.versions?.size ?: 0)
+            // An Unnamed cluster's hint is list item 0 at level 2, so rows sit one item further down.
+            val headerItems = if (pickerLevel == 1 && group?.isUnnamed == true) 1 else 0
             val focusedIdx = if (pickerLevel == 0) pickerIdx else pickerVersionIdx
             val lastIdx = (rowCount - 1).coerceAtLeast(0)
 
             // R180 — open pre-scrolled to the active row (jump, no animation); R195 — also whenever the
-            // level itself changes (entering/leaving level 2 always starts scrolled to the top row).
+            // level itself changes. 2026-09-24: with ONE row of context above it — pinning the active
+            // row to the top hid *Off* just above *English* on the soveværelse TV, and OK was pressed on
+            // the wrong row.
             LaunchedEffect(pickerTab, pickerLevel) {
-                listState.scrollToItem(focusedIdx.coerceIn(0, lastIdx))
+                listState.scrollToItem((headerItems + focusedIdx.coerceIn(0, lastIdx) - 1).coerceAtLeast(0))
             }
             // R180 — keep the D-pad-focused row visible as it moves (10+ track titles genuinely
             // overflow a fixed-height list — verified: a real title has 7 audio + 13 subtitle tracks).
+            // 2026-09-24: scroll only when the row (or its neighbour) would leave the list, instead of
+            // re-pinning every move to the top, which made the whole list jump on each press.
             LaunchedEffect(focusedIdx) {
-                listState.animateScrollToItem(focusedIdx.coerceIn(0, lastIdx))
+                listState.revealPickerRow(headerItems + focusedIdx.coerceIn(0, lastIdx), headerItems + lastIdx)
             }
 
             LazyColumn(
@@ -2754,6 +2727,31 @@ private fun PickerCrumbHeader(group: PickerLanguage, colors: RaviloColors, onBac
     Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(Color.White.copy(0.10f)))
 }
 
+/**
+ * 2026-09-24 — where the picker list should scroll so the focused row is visible with one neighbour of
+ * context on the side it is moving towards. Pure, so the rule is unit-tested without a LazyColumn:
+ * returns the item index to put at the top of the list, or null when nothing needs to move.
+ * [firstFull]/[lastFull] are the first and last FULLY visible item indices.
+ */
+internal fun pickerScrollTarget(idx: Int, lastItem: Int, firstFull: Int, lastFull: Int): Int? {
+    val above = (idx - 1).coerceAtLeast(0)
+    val below = (idx + 1).coerceAtMost(lastItem)
+    val window = (lastFull - firstFull).coerceAtLeast(0)
+    return when {
+        above < firstFull -> above
+        below > lastFull -> (below - window).coerceAtLeast(0)
+        else -> null
+    }
+}
+
+private suspend fun androidx.compose.foundation.lazy.LazyListState.revealPickerRow(idx: Int, lastItem: Int) {
+    val info = layoutInfo
+    val full = info.visibleItemsInfo.filter { it.offset >= info.viewportStartOffset && it.offset + it.size <= info.viewportEndOffset }
+    if (full.isEmpty()) { scrollToItem((idx - 1).coerceAtLeast(0)); return }
+    val target = pickerScrollTarget(idx, lastItem, full.first().index, full.last().index) ?: return
+    animateScrollToItem(target)
+}
+
 @Composable
 private fun PickerTab(label: String, active: Boolean, flagRes: DrawableResource? = null, onTap: (() -> Unit)? = null) {
     val colors = RaviloTheme.colors
@@ -2761,12 +2759,12 @@ private fun PickerTab(label: String, active: Boolean, flagRes: DrawableResource?
         modifier = Modifier
             .height(34.dp)
             .clip(RoundedCornerShape(30.dp))
-            .background(Color.Transparent)
-            .border(
-                width = if (active) 2.dp else 1.dp,
-                color = if (active) colors.accent else Color.White.copy(0.18f),
-                shape = RoundedCornerShape(30.dp),
-            )
+            // 2026-09-24 — the current tab is a FILLED chip, not a ring. It used to carry the same 2dp
+            // accent ring as the focused row, so after Left/Right the picker showed two focus rings and
+            // the viewer could not tell that Up/Down move the list, not the tabs. The picker's only ring
+            // is the focused row's.
+            .background(if (active) colors.accent.copy(alpha = 0.28f) else Color.White.copy(0.06f))
+            .border(1.dp, if (active) colors.accent.copy(alpha = 0.45f) else Color.White.copy(0.12f), RoundedCornerShape(30.dp))
             .then(if (onTap != null) Modifier.clickable(onClick = onTap) else Modifier)
             .padding(horizontal = 18.dp),
         contentAlignment = Alignment.Center,
@@ -3625,7 +3623,10 @@ private enum class TrackVariant { SDH, DESCRIBES_ACTION, COMMENTARY, NONE }
 // badge and no distinct variant signature from the file's other (forced) Danish track.
 private val SDH_RE = Regex("""\bsdh\b|\bhi\b|hard of hearing|hearing impaired|\bhearing\b|\bcc\b|closed caption""", RegexOption.IGNORE_CASE)
 private val AD_RE = Regex("""synstolkning|audio description|\bad\b|\bdescribed\b""", RegexOption.IGNORE_CASE)
-private val COMMENTARY_RE = Regex("""commentary""", RegexOption.IGNORE_CASE)
+// 2026-09-24 — the word in the languages this library's release titles are written in, not only
+// English: a Norwegian-titled *Kommentarspor med regissører* track got no Commentary badge.
+// `kommentar` covers da/no/sv/de (incl. compounds like Kommentarspor), the rest fi/fr/es/pt/it/nl.
+private val COMMENTARY_RE = Regex("""commentary|kommentar|kommentti|commentaire|coment[aá]rio|commento|commentaar""", RegexOption.IGNORE_CASE)
 // DB-verified low-coverage "this track is the source's own original" marker (~20 tracks in the library,
 // e.g. "English [Original]", "dansk [original]", "Original | Dansk (Danmark)") — see R180 addendum §4.
 private val ORIGINAL_MARKER_RE = Regex("""\[\s*original\s*]|^\s*original\s*\|""", RegexOption.IGNORE_CASE)
@@ -3680,6 +3681,8 @@ internal fun audioBadges(track: PlayerAudioTrack, originalLanguage: String?, lan
     if (track.isDefault) badges += t("player.badge_default", lang)
     track.channels?.let { ch ->
         when {
+            // 2026-09-24 — a TrueHD 7.1 Atmos track (8 channels) was badged "Surround 5.1".
+            ch >= 7 -> badges += t("player.badge_surround71", lang)
             ch > 2 -> badges += t("player.badge_surround51", lang)
             ch == 2 -> badges += t("player.badge_stereo", lang)
             // mono/unknown: no fitting word in the fixed vocabulary — omit rather than guess (non-goal).

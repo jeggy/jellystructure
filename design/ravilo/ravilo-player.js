@@ -248,10 +248,9 @@
       els.kicker.textContent = ctx.kicker || '';
       els.title.textContent = ctx.title || '';
       els.sub2.innerHTML = ctx.sub2 || '';
-      const s = ctx.stream;
-      els.stream.innerHTML =
-        `<span class="pl-pill ${s.hls ? 'hls' : ''}"><span class="dot"></span>${s.mode}</span>` +
-        `<span class="pl-pill mono"><span class="mut">${s.detail}</span></span>`;
+      // 2026-09-24 — no delivery pill (Direct Play / HLS / codec). R180 FR-RV-ASP1-2: nothing a viewer
+      // sees may vary by delivery method; the Compose player dropped it the same day.
+      els.stream.innerHTML = '';
       els.nextBtn.style.display = ctx.nextMeta ? '' : 'none';
       // subtitle demo line shows only when a subtitle track is selected
       renderSub();
