@@ -2,8 +2,13 @@
 
 ## Status
 
-`Planned` — written 2026-09-24 from a server-side investigation, not dev-reviewed, not built. Spec
-first. Pairs with **phase 256** (the backend half: close reasons, flap detection, bridge debounce).
+`Planned` — written 2026-09-24 from a server-side investigation. **Dev-reviewed 2026-09-24 against
+`main` `9d2636bb`** (see §Dev review at the bottom: every client claim holds; the lifecycle hook is the
+Activity's, not a new `ProcessLifecycleOwner` dependency; the catch-up needs `onOpen` to stop emitting an
+unconditional refresh; FR-R293-4 has a second socket to cover; FR-R293-7 blinds one server-side lookup
+unless 256 reads the header too; acceptance 1 is reachable because `app_version` refreshes on every
+request, not only at login). Not built. Spec first. Pairs with **phase 256** (the backend half: close
+reasons, flap detection, bridge debounce).
 Complements **R292**, which applies the same rule to the player.
 
 > Owner, 2026-09-24: *"That household is getting the app from the Google Play store. So we need to fix
@@ -151,6 +156,9 @@ reaches this TV until all three are resolved** (FR-R293-8).
 3. **The Android version of aleks's TV** (Play Console's device catalogue has it). If it predates
    Android 12's cached-app freezer, that is the "why only this TV" answer, and every pre-12 TV in the
    field is exposed the same way today.
+   *Dev review:* the backend never records an API level (`ravilo_device` has none, no client sends one —
+   R289's review, item 7); the Play Console is the only source. FR-R293-6's header could carry
+   `SDK_INT` at no cost, which would answer this for the next device without the Console.
 
 ## Acceptance
 
@@ -168,3 +176,71 @@ Measured from the server; nobody needs to touch the remote TV.
    only after a 5-minute hold; commands received in a non-started state are dropped.
 5. No Android build puts the device token in the events URL (a check script, like
    `check-jellyfin-query-token.sh`).
+
+## Dev review (2026-09-24, against `main` `9d2636bb`)
+
+Every client claim holds. The socket loop is `LaunchedEffect(activeUserId)` in `RaviloApp.kt:387-418`
+— tied to composition, `runCatching` around `connectEvents` (`:399`), `onOpen = { …; liveConfig.emit(0L) }`
+(`:401`), backoff reset by any socket held ≥ 2 s and capped at 15 s (`:416`). `liveConfig` drives both
+`refreshConfig()` (`:386`) and, through `LocalLiveConfig`, `HomeScreen`'s `store.refresh(silent = true)`
+(`HomeScreen.kt:117-118`) — so every open is a config pull *and* a Home rebuild, as measured. The R141
+poll is `:424-431` (15 s); the Live TV poll is `HomeStore.liveTvPollJob` (`HomeStore.kt:22`, `:155-160`,
+60 s), a store-level coroutine that outlives composition. The token is a query parameter
+(`TvApiClient.kt:651-652`); the server takes `?token=` **or** `Authorization: Bearer` on the route; the
+Android WebSocket client is Ktor CIO (`RaviloRootActuals.kt:48`), which sets handshake headers. Nine
+items.
+
+1. **FR-R293-1's hook is the Activity's lifecycle, not a new dependency.** Nothing in the catalog brings
+   `lifecycle-process`, and it is not needed: each entry point is one Activity, so `LocalLifecycleOwner`
+   at the root of `RaviloApp` *is* the process's foreground state — the pattern `PlayerLifecycleEffect`
+   already uses. One new expect, `AppLifecycleEffect(onStart, onStop)`: the Android actual is a
+   `LifecycleEventObserver` plus the `ACTION_SCREEN_OFF`/`SCREEN_ON` receiver R292 FR-R292-8 needs (one
+   seam, two consumers); the wasm actual is a no-op. Then the socket effect is keyed on
+   `(activeUserId, foreground)`: leaving the foreground cancels the effect, which cancels the loop *and*
+   its `delay(backoff)` — "no reconnects, no backoff timer" falls out of structured concurrency, nothing
+   to write. The R141 poll is the same effect shape. The Live TV poll is not: it is a job on a retained
+   store, so `HomeStore` needs an explicit pause/resume (or a foreground gate inside its loop), or
+   FR-R293-2 is half true.
+2. **FR-R293-3's catch-up needs `onOpen` to stop emitting `0L`.** Every collector treats any emission as
+   "refresh"; the rev is only used by the poll, which already has the right shape (`seenRev`, emit on
+   change only, `:426-429`). On open: fetch `/api/tv/config/rev`; emit only if it moved, or if the gap
+   exceeded the threshold. And separate the two consumers: R248's `liveHome` (`:474`) is the Home-specific
+   channel; `HomeScreen` collecting `liveConfig` as a rebuild trigger (`HomeScreen.kt:118`) is exactly the
+   "Home rebuild for nobody" and should refresh on `liveHome` and a *moved* config rev, not on every open.
+3. **FR-R293-4 has a second socket the spec does not name.** `ScreenSender.runSocket`
+   (`ScreenSender.kt:65-81`) carries the identical 2 s/15 s rule for `/api/remote/events`; a phone whose
+   remote socket dies every minute has the same storm against the same server. Make the backoff one pure
+   helper (acceptance 4's unit test) used by both, or say why the remote socket is exempt. Lean: share.
+4. **FR-R293-5 is half built.** `livePlayItem.collect` drops when signed out or on Login/ProfilePicker
+   (`RaviloApp.kt:604-606`); `liveNavigate` drops only when signed out (`:621-623`); neither knows the
+   lifecycle. With item 1's foreground state in the same composable it is one more condition on each, and
+   the log line the FR asks for.
+5. **FR-R293-6 has its slot, and needs `connectEvents` to report how it ended.** `identify()`
+   (`TvApiClient.kt:714-719`) is the one place every request *and* the WebSocket handshake (`:659`) get
+   their headers — `X-Ravilo-Events-Prev` goes there, gated to the events call. But today the frame loop
+   skips non-text frames and `runCatching` in the app swallows the throwable, so the close reason never
+   exists anywhere: `connectEvents` must return an end record — `closeReason.await()` after the loop for
+   a clean close, the exception class otherwise, "closed by us" when the effect cancelled it.
+6. **FR-R293-7 blinds one server-side lookup unless 256 fixes it.** The outer exception handler at
+   `Server.kt:236-241` names the device for its INFO line from the *query* token only; once Android sends
+   Bearer, every such line reads `device=unknown`. Phase 256 FR-256-1 must use the same `token ?:
+   Authorization` expression the route's top already does. `RemoteRoutes.kt:232` (the remote events
+   socket) reads only the query token as well — the header form should land there too, or the phone's
+   remote socket keeps the token in proxy logs. Acceptance 5's script is `check-jellyfin-query-token.sh`
+   (phase 239) with one pattern, the wasm client exempt.
+7. **FR-R293-8 and acceptance 1 are reachable.** `app_version` is not login-only: the auth plugin passes
+   the version and platform headers on every request (`AuthPlugin.kt:182`, `Server.kt:283`) and
+   `recordAppInfo` writes when they change (`RaviloDeviceService.kt:191-197`). A TV updated from Play
+   reports its new build on its first request. (The events route validates without the headers,
+   `Server.kt:667`; harmless, since REST follows.)
+8. **One cost the bill missed.** Each connect also stamps the device's address (`recordAddress`, at the
+   handler's top; "stamped on an events-socket open") — a DB write per flap, 1,326 of them. Harmless,
+   and gone with the storm; worth a line so the next reader does not rediscover it.
+9. **Open question 2.** With item 2's rev check on every open, the 30 s threshold only decides the Home
+   refresh when the rev did *not* move — and R248's `home_changed` carries no rev, so a push missed while
+   disconnected is invisible; the gap is the only signal. Keep the lean.
+
+**Net effect.** One lifecycle seam shared with R292, the socket and poll effects keyed on it, a store-level
+pause for the Live TV loop, `onOpen` demoted to a rev check, a shared backoff helper, a returned end
+record, and the header. Nothing about the server's ping period, the protocol or the tester list changes
+from this side.
