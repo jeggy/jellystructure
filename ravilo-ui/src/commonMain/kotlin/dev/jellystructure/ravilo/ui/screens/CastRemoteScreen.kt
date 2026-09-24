@@ -89,6 +89,8 @@ fun CastRemoteScreen(
     onBack: () -> Unit,
     /** Ended · "Play again" — the app re-casts the same item from the start. */
     onPlayAgain: (itemId: String) -> Unit,
+    /** R299 (FR-R299-2) · Failed · "Play on this phone" — the app ends the cast and opens its own player. */
+    onPlayHere: (itemId: String, title: String, kicker: String?) -> Unit,
 ) {
     val colors = RaviloTheme.colors
     val portrait = LocalPortrait.current
@@ -240,7 +242,7 @@ fun CastRemoteScreen(
         // ── Footer / state actions ──
         when {
             s.failed && !unreachable -> Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                s.itemId?.let { id -> RemotePill(str("cast.play_here"), primary = true) { onPlayAgain(id) } }
+                s.itemId?.let { id -> RemotePill(str("cast.play_here"), primary = true) { onPlayHere(id, s.title ?: "", s.kicker) } }
                 RemotePill(str("cast.stop"), primary = false) { cast.sender.stop(); onBack() }
             }
             unreachable -> RemotePill(str("action.retry"), primary = true) { cast.command("status") }

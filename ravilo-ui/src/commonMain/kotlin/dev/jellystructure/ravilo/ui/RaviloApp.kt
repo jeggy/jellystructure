@@ -1391,6 +1391,13 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                         val st = cc.sender.status.value
                         cc.cast(itemId = itemId, title = st?.title ?: "", kicker = st?.kicker, artUrl = st?.artUrl, positionMs = 0L, lang = lang)
                     },
+                    // R299 (FR-R299-2) — the receiver could not play it; end the cast (or Play would cast
+                    // again, FR-R245-4) and open this phone's own player at the start.
+                    onPlayHere = { itemId, title, kicker ->
+                        cc.sender.stop()
+                        pop()
+                        push(Dest.Player(itemId = itemId, title = title, kicker = kicker, displayName = dest.displayName))
+                    },
                 )
             }
 
