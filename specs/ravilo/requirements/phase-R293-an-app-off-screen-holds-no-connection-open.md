@@ -151,6 +151,9 @@ reaches this TV until all three are resolved** (FR-R293-8).
    today's internal-only households updated without asking them to opt in again. Lean: add them to
    closed testing, and have the workflow warn when a release leaves any known household device (by
    `app_version` in `ravilo_device`) more than one version behind for a week.
+   **Decided 2026-09-24 (owner): closed testing only.** The tester account was added the same day; CI's
+   billing block is lifted; R289 is built. FR-R293-8's steps 1–3 are done — step 4 (the track carries
+   the new version code) is the next release's.
 2. **How long may a return be "quick"?** FR-R293-3's catch-up threshold for a full Home refresh:
    lean 30 s, the longest gap the server's push stream can be assumed to have covered.
 3. **The Android version of aleks's TV** (Play Console's device catalogue has it). If it predates

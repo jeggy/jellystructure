@@ -76,8 +76,11 @@ Matroska file whose Cues are elsewhere. The fix below is that same jump, applied
   with a seek-honouring input and asserts: tracks are published, and the **first video sample is from
   the first Cluster**. The same test over Media3's stock extractor must show the current failure, so
   the test proves it tests the defect.
-- **FR-R294-6 — Upstream.** The same change is offered to androidx/media as an issue or PR; if accepted,
-  the vendored copy is deleted on the next Media3 upgrade.
+- **FR-R294-6 — Upstream.** ~~The same change is offered to androidx/media as an issue or PR; if accepted,
+  the vendored copy is deleted on the next Media3 upgrade.~~ **Re-aimed 2026-09-24 (dev review item 5,
+  owner's call):** upstream Media3 already carries an equivalent fix (1.11.0); the file header names the
+  upstream commits, no report is filed, and the copy is deleted when `media3-ffmpeg-decoder` lets Media3
+  move past 1.8.0. The version test is what makes that upgrade impossible to forget.
 
 ### Companion: R292 rung 2
 

@@ -260,6 +260,8 @@ in `onStop`, create it in `onStart`.
 2. **Coming back after a long absence.** A viewer who returns after hours to a restored player
    (FR-R292-6): auto-play (the R220 report calls *"the video continues"* correct) or land paused?
    Lean: play if away under 30 minutes, paused at the position otherwise.
+   **Decided 2026-09-24 (owner): the lean.** Under 30 minutes away ⇒ playing; longer ⇒ paused at the
+   position, presented as the same start.
 3. **Which lifecycle events the BRAVIA sends** for standby, CEC power-off, HDMI input switch and the
    launcher's own video previews. FR-R292-8 requires a device trace; this spec cannot answer it.
    *Dev review:* trial 2 does not answer it either — it went through HOME first, so its `ON_STOP` came
