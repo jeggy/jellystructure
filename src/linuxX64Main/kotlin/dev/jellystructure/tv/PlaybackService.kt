@@ -907,7 +907,7 @@ class PlaybackService(
         val playbackInfo = jellyfinClient.getPlaybackInfo(jellyfinBase, token, device.jellyfinUserId, jellyfinId, subtitleStreamIndex = subtitleStreamIndex, identity = identity, audioStreamIndex = audioStreamIndex)
         val negotiated = playbackInfo?.mediaSources?.firstOrNull()?.transcodingUrl
             ?.let { if (it.startsWith("http")) it else "$jellyfinBase$it" }
-        Logger.info("PlaybackInfo(burn-in): item=$jellyfinId sub=$subtitleStreamIndex negotiated=${negotiated != null}", "tv")
+        Logger.info("PlaybackInfo(restream, burn-in): item=$jellyfinId sub=$subtitleStreamIndex audio=${audioStreamIndex ?: "default"} negotiated=${negotiated != null}", "tv")
         // FR-239-2/-5 — `negotiated` is Jellyfin's own URL and is passed through untouched (see the
         // note at [startPlayback]'s streamUrl). Only the hand-built FALLBACK, used when PlaybackInfo is
         // unavailable, is ours to spell — and it is the branch that runs least often, which is exactly
@@ -995,7 +995,9 @@ class PlaybackService(
         val playbackInfo = jellyfinClient.getPlaybackInfo(jellyfinBase, token, device.jellyfinUserId, jellyfinId, capabilities = capabilities, identity = identity, audioStreamIndex = audioStreamIndex)
         val source = playbackInfo?.mediaSources?.firstOrNull()
         val needsTranscode = source != null && !source.supportsDirectPlay && source.transcodingUrl != null
-        Logger.info("PlaybackInfo(un-burn): item=$jellyfinId directPlay=${source?.supportsDirectPlay} transcode=$needsTranscode", "tv")
+        // 2026-09-24 — this path serves an un-burn AND a plain audio switch (R284), and cannot tell them
+        // apart; it used to log every one of them as "un-burn", which misread the soveværelse-TV sweep.
+        Logger.info("PlaybackInfo(restream, no burn-in): item=$jellyfinId audio=${audioStreamIndex ?: "default"} directPlay=${source?.supportsDirectPlay} transcode=$needsTranscode", "tv")
         val subtitles = buildSubtracks(itemDetail, jellyfinId, jellyfinBase, token, embedContainerSubs = !needsTranscode && capabilities.supportsEmbeddedTextSubs)
 
         val startResult = playbackTracker.started(device, jellyfinId, positionMs, playbackInfo?.playSessionId)
