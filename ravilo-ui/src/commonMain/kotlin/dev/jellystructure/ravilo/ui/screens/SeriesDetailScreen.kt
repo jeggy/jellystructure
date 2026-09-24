@@ -719,15 +719,19 @@ private fun SeriesDetailLoaded(
                     Spacer(Modifier.height(RaviloDimens.rowHeadPadB))
                     LazyRow(
                         state = epRowState,
+                        // R296 — the single-season Up bridge to the hero lives on each card (cardUp below),
+                        // not on this row: on the row it also swallowed Up from the Watched toggle under a
+                        // card, so the card became unreachable and focusRestorer kept returning to the toggle.
+                        modifier = Modifier.focusRestorer(),
+                        contentPadding = PaddingValues(horizontal = raviloHPad, vertical = RaviloDimens.trackPadV),
+                        horizontalArrangement = Arrangement.spacedBy(RaviloDimens.itemSpacing),
+                    ) {
                         // Bug fix: with a single season there's no season picker row above to catch native
                         // search, so this rail sits directly under the (often-unmounted-once-scrolled)
                         // hero — same "UP does nothing" gap as the season picker itself. With multiple
                         // seasons the picker is right above and stays composed, so native search already
                         // reaches it reliably; no bridge needed there.
-                        modifier = if (detail.seasons.size <= 1) Modifier.focusRestorer().onKeyEvent(upToHero) else Modifier.focusRestorer(),
-                        contentPadding = PaddingValues(horizontal = raviloHPad, vertical = RaviloDimens.trackPadV),
-                        horizontalArrangement = Arrangement.spacedBy(RaviloDimens.itemSpacing),
-                    ) {
+                        val cardUp = if (detail.seasons.size <= 1) Modifier.onKeyEvent(upToHero) else Modifier
                         items(episodeGroups.size, key = { i -> episodeGroups[i].first().id }) { i ->
                             val group = episodeGroups[i]
                             if (group.size > 1) {
@@ -737,12 +741,14 @@ private fun SeriesDetailLoaded(
                                 val targetEp = groupEntryPoint(group, overlay)
                                 val groupWatched = group.all { overlay[it.id]?.played == true }
                                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    MultiEpisodeCard(
-                                        episodes = group,
-                                        isResumeGroup = overlayLoaded && group.any { it.id == resumeEpId },
-                                        playstateOverlay = overlay,
-                                        onSelect = { onPlay(buildEpisodeContext(detail, selectedSeasonIdx, episodes, targetEp.id, overlay)) },
-                                    )
+                                    Box(cardUp) {
+                                        MultiEpisodeCard(
+                                            episodes = group,
+                                            isResumeGroup = overlayLoaded && group.any { it.id == resumeEpId },
+                                            playstateOverlay = overlay,
+                                            onSelect = { onPlay(buildEpisodeContext(detail, selectedSeasonIdx, episodes, targetEp.id, overlay)) },
+                                        )
+                                    }
                                     Spacer(Modifier.height(6.dp))
                                     EpisodeWatchToggle(watched = groupWatched, onToggle = { onMarkEpisode(targetEp.id, !groupWatched) })
                                 }
@@ -750,13 +756,15 @@ private fun SeriesDetailLoaded(
                                 val ep = group.first()
                                 val epWatched = overlay[ep.id]?.played == true
                                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    EpisodeCard(
-                                        episode = ep,
-                                        // R84: overlay-driven; no "UP NEXT" ribbon until playstate arrives
-                                        isResumeEpisode = overlayLoaded && ep.id == resumeEpId,
-                                        playstateOverride = overlay[ep.id],
-                                        onSelect = { onPlay(buildEpisodeContext(detail, selectedSeasonIdx, episodes, ep.id, overlay)) },
-                                    )
+                                    Box(cardUp) {
+                                        EpisodeCard(
+                                            episode = ep,
+                                            // R84: overlay-driven; no "UP NEXT" ribbon until playstate arrives
+                                            isResumeEpisode = overlayLoaded && ep.id == resumeEpId,
+                                            playstateOverride = overlay[ep.id],
+                                            onSelect = { onPlay(buildEpisodeContext(detail, selectedSeasonIdx, episodes, ep.id, overlay)) },
+                                        )
+                                    }
                                     Spacer(Modifier.height(6.dp))
                                     EpisodeWatchToggle(watched = epWatched, onToggle = { onMarkEpisode(ep.id, !epWatched) })
                                 }
