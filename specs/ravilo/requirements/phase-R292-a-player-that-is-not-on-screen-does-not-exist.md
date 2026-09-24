@@ -212,8 +212,10 @@ in `onStop`, create it in `onStart`.
     **Fix rung 2 while here.** Rung 2 (`PlayerVideoSurface.kt`, `player.seekTo(player.positionMs)`) is a
     seek to the current position. Across ~12 ladder runs on a TV and the Pixel 9 (2026-09-24, the
     tracks-at-end investigation) it never recovered a stalled picture, while a seek to a *different*
-    position recovered in 1.5 s. Rung 2 must be a real flush: a seek that moves (e.g. back one second),
-    or an explicit decoder flush, verified against a stall on a device.
+    position recovered in 1.5 s. Rung 2 must be a real flush: a seek that **moves**, or an explicit
+    decoder flush, verified against a stall on a device. "Back one second" is not enough on its own: at
+    0:00, where the tracks-at-end stall sits, it clamps to the same position. Move forward by a
+    millisecond below one second, back otherwise (being built in parallel by the tracks-at-end session).
   - **Make FR-R220-6 real.** `videoOutputRecoveries` goes into the shared QoE DTO, a `playback_qoe`
     column (additive migration) and the backend's QoE write, and gains the breakdown R220 asked for and
     never built: the rung that recovered, and time to first frame after. Two new counters beside it:
