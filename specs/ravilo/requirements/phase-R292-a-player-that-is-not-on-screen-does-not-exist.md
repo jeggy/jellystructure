@@ -97,6 +97,13 @@ in the field. **The next occurrence of this bug must be diagnosable from the dat
 handleAudioFocus = true)`. Ravilo never asks Android for focus and is never told to yield it, so
 nothing arbitrates Ravilo's audio against another app's (see 4).
 
+**7. A long-lived process brought back into an old player can hang the app (phone, release build).**
+Found the same day by the session investigating tracks-at-end MKVs: bringing a long-backgrounded
+process back into its old player screen flipped the activity landscape→portrait, tore down a decoder
+buffer pool, and never regained a focused window: *"Input dispatching timed out — application does not
+have a focused window"* (an ANR, main thread idle in its looper). The same class as findings 1–2: a player
+that outlived its screen, re-bound on return.
+
 ### What that means for the black screen
 
 The exact mechanism is **not proven**. Two candidates fit the symptom (audio continues, picture black,
@@ -188,7 +195,9 @@ in `onStop`, create it in `onStart`.
   and `release()` is final. The Android actual gains an explicit engine lifecycle (e.g.
   `releaseEngine()` / an engine rebuilt on the next `load`), and **everything bound to the engine is
   re-bound to each new one from a single place**: the renderers factory (R31 FFmpeg audio), the
-  `LoadControl` (R216), the load-error policy (phase 179), the QoE analytics listener, the video-size
+  `LoadControl` (R216), the load-error policy (phase 179), the **extractors factory** (the vendored
+  `MatroskaExtractor` that follows `SeekHead` to a `Tracks` element at the end of the file, being wired into
+  `DefaultMediaSourceFactory` by the tracks-at-end work in parallel), the QoE analytics listener, the video-size
   listener (R77), the cue listener that feeds the `SubtitleView` (R55/R110/R244), the current
   `SurfaceView` (tracked since R220), and (TV only) the `MediaSession` (R192/R193 metadata re-fed from
   the resume record). A new engine that misses one of these is this phase's most likely regression, so
@@ -200,6 +209,11 @@ in `onStop`, create it in `onStart`.
     background half of `PlayerVideoSurface`'s re-attach hooks (`SurfaceHolder.Callback` /
     `onWindowVisibilityChanged`). There is no surviving decoder to re-attach.
   - **Keep** R220's detector and ladder: a picture can still be lost mid-playback, in the foreground.
+    **Fix rung 2 while here.** Rung 2 (`PlayerVideoSurface.kt`, `player.seekTo(player.positionMs)`) is a
+    seek to the current position. Across ~12 ladder runs on a TV and the Pixel 9 (2026-09-24, the
+    tracks-at-end investigation) it never recovered a stalled picture, while a seek to a *different*
+    position recovered in 1.5 s. Rung 2 must be a real flush: a seek that moves (e.g. back one second),
+    or an explicit decoder flush, verified against a stall on a device.
   - **Make FR-R220-6 real.** `videoOutputRecoveries` goes into the shared QoE DTO, a `playback_qoe`
     column (additive migration) and the backend's QoE write, and gains the breakdown R220 asked for and
     never built: the rung that recovered, and time to first frame after. Two new counters beside it:
