@@ -63,7 +63,7 @@ dd0246f0f154d2578b07 dd275e3fbd5d5af77930 de703f1fe9ae64015b1d deab03fe91f520d7b
 dfa4f91901a821afae3b dfbafe58522dca7e36eb e105601cd0304e4e6c83 e1b46393c127d03bc75f
 e2caf830e87e47c7ba6a ee2e1307ab1b7fe6a381 ef18b21bc6e38c7ea585 efa1f0fef81de7536c5f
 f037f38881bd9bacb43b f1dd07991029d5fc97b9 f5c4ca5d22052e1875b1 f894d864ebbed3485195
-fbbe2f24e692ace7470c fcf5a488cc8b7ede23f8 ff45d0a515b093cd2031
+fbbe2f24e692ace7470c fcf5a488cc8b7ede23f8 ff45d0a515b093cd2031 9873beaef82ee5701c26
 """.split())
 
 SKIP_SUFFIX = ('.min.js', '.lock', '.map', '.svg', '.png', '.jpg', '.jpeg', '.webp', '.gif', '.ico',
