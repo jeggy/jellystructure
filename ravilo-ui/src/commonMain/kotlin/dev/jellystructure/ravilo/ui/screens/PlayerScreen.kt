@@ -84,6 +84,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -1362,6 +1363,14 @@ fun PlayerScreen(
     // a KeyEvent) run the exact same decision.
     val playerBack: () -> Unit = {
         when {
+            // R290 (FR-R290-5) — Back while nothing is playing yet (negotiating, or the start screen)
+            // leaves at once. chromeVisible starts true, so this used to take two presses on a phone:
+            // the first only hid a chrome drawn behind the loader.
+            sessionState !is PlayerSessionState.Ready || displayedBufferMoment == PlBufferMoment.COLD -> onBack()
+            // R295 (FR-R295-2) — a phone's sheet sits over the chrome it was opened from; Back out of it
+            // goes back to the picture, not to the chrome (which cost a fourth Back to leave from the
+            // versions list). The TV keeps its focus on Audio & Subs, as before.
+            pickerOpen && handset && pickerLevel == 0 -> { pickerOpen = false; hideChrome() }
             pickerOpen    -> pickerBack()
             epRailOpen    -> { epRailOpen = false; wake() }
             nextUpVisible -> stayThrough()
@@ -2017,7 +2026,30 @@ fun PlayerScreen(
         if (handset && locked) {
             HandsetLockOverlay(onUnlock = { locked = false; tick(); wake() })
         }
+
+        // R295 (FR-R295-5) — last, so it covers everything: a phone shows plain black until the window
+        // has rotated into the player's orientation (or 700 ms pass), never a portrait frame first.
+        VideoShutter(!rememberWindowShapeSettled(handset))
     }
+}
+
+/**
+ * R295 (FR-R295-5) — true once the window has taken its final shape for the player. A phone's screens
+ * are pinned to portrait in the manifest and the player switches to follow the sensor (R244 FR-R244-7)
+ * from an effect, after its first frame; the rotation that follows is asynchronous, so anything drawn
+ * before it lands is drawn in the wrong shape. Settles on the first change of shape or after 700 ms
+ * (a phone held upright never rotates), and stays settled: a later rotation by the viewer is not a
+ * reason to go black. Always true where [waitForRotation] is false (a TV never rotates).
+ */
+@Composable
+private fun rememberWindowShapeSettled(waitForRotation: Boolean): Boolean {
+    val size = LocalWindowInfo.current.containerSize
+    val landscapeNow = size.width > size.height
+    val initialLandscape = remember { landscapeNow }
+    var settled by remember { mutableStateOf(false) }
+    LaunchedEffect(landscapeNow) { if (landscapeNow != initialLandscape) settled = true }
+    LaunchedEffect(Unit) { delay(700); settled = true }
+    return settled || !waitForRotation
 }
 
 // ─── Player chrome overlay ────────────────────────────────────────────────────
