@@ -2,7 +2,11 @@
 
 ## Status
 
-`Planned` — written 2026-09-24, not dev-reviewed, not built. Spec first. The backend half of **R293**
+`Planned` — written 2026-09-24. **Dev-reviewed 2026-09-24 against `main` `9d2636bb`** (see §Dev
+review at the bottom: every server claim holds; "replaced" is already detectable in `unregister`; the
+bridge's `connect` is already idempotent, so the grace is a deferred `disconnect`; FR-256-5 compares
+against the deployed backend's own version, not GitHub; the device row and its mockup both gain the two
+lines). Not built. Spec first. The backend half of **R293**
 (read its "What happens" for the measurements; they are not repeated here).
 
 In one line: a Ravilo TV in another household reopened its `/api/tv/events` socket 1,326 times in 29
@@ -67,6 +71,8 @@ device alone.
 
 1. **Grace length.** 90 s covers every measured reconnect gap (0–27 s) with room; long enough that a
    TV genuinely switched off still leaves Jellyfin's dashboard within two minutes. Lean: 90 s.
+   *Dev review:* the bridge posts a keepalive every 30 s (`JellyfinSessionBridge.kt:38`), so a 90 s grace
+   is at most three posts for an absent device — bounded and cheap. Lean stands.
 2. **Threshold.** 12/h (one every five minutes) is far above any of our own devices (≤ 19 cycles in two
    days) and far below the flapping one (35–43/h). Lean: 12/h.
 
@@ -79,3 +85,59 @@ device alone.
 3. On production after deploy: every `disconnected` line for a Ravilo device carries a cause; while any
    1.35 device still flaps, Settings → Users & devices shows it as unstable and as releases behind, and
    Jellyfin's activity log gains at most one session pair per 90 s gap rather than one per reconnect.
+
+## Dev review (2026-09-24, against `main` `9d2636bb`)
+
+Every server claim holds. `tryRegister`/`unregister` log connect and disconnect with no cause
+(`TvEventBus.kt:49`, `:58`); the handler's catch logs `WS /api/tv/events device connection dropped:
+${e.message}` with `device` in scope and unused (`Server.kt`, the events handler); the outer exception
+handler (`:236-241`) finds the device by the query token only; `sessionBridge.connect` runs on every
+connect and `disconnect` in the handler's `finally`; ping 30 s / timeout 15 s (`:195-198`); nothing
+counts anything. Six items.
+
+1. **"Replaced" is already detectable, in one place.** `tryRegister` overwrites a same-device entry
+   (`TvEventBus.kt:47`) and `unregister` removes it only when `map[deviceId] === session` (`:54`). The
+   `else` branch of that identity check *is* the `replaced` cause — the older socket's cleanup finding a
+   newer one in its slot. Classify there, not from timing.
+2. **FR-256-1's other three causes come from Ktor and the exception.** After the frame loop,
+   `closeReason.await()` on the server session yields the client's code and reason for a clean close and
+   `null` for an abrupt end (`eof`/`reset`); a ping timeout and anything else arrive as the throwable
+   the catch already holds — classify by its class, with the message kept out of the line unless it is
+   one of the known shapes. The outer handler at `:236-241` covers a close thrown *outside* the handler
+   (upgrade or close handshake) and must (a) read `token ?: Authorization` exactly as the route's top
+   does — R293 FR-R293-7 makes the query form disappear from Android, and this line would read
+   `device=unknown` for every TV afterwards — and (b) emit the same one-line shape as the `finally`
+   path, so a reader has one format to grep.
+3. **FR-256-4 is a deferred `disconnect`, because `connect` is already idempotent.** `connect` returns
+   early when the device is `active` (`JellyfinSessionBridge.kt:95-100`); so the grace is: the handler's
+   `finally` schedules `disconnect(deviceId)` 90 s out (one cancellable job per device, the map guarded by
+   the same lock), and `connect` cancels a pending one before its own guard. No change to `runLoop`, to
+   `postCapabilities`, or to `tvEventBus.isConnected` (`TvEventBus.kt:63`) — which is what the stop
+   watchdog and Now Playing read, so FR-256-4's "unchanged" clause is true by construction: the grace
+   touches the bridge only. Acceptance 2's fake bridge tests exactly the schedule-and-cancel.
+4. **FR-256-5 compares against the deployed backend, not GitHub.** Nothing in the backend queries
+   releases (no `releases/latest` anywhere), and it need not: `ServerVersion.current`
+   (`ServerVersion.kt:11`, the env override or `BuildInfo.version`) is the release the backend was built
+   from, and "a client older than its server" is the comparison that matters. Versions are plain
+   `MAJOR.MINOR` (231): "more than one release behind" is a MINOR gap ≥ 2 on the same MAJOR. Two exemptions
+   the spec should state: a client on a `-dirty`/`-g…` build (already listed) **and a server on one** —
+   production runs a dev build as this is written, and `1.37-6-g…` parses as 1.37 only if the code says
+   so. Seven days of "behind" needs a first-seen timestamp per device, in memory is enough.
+5. **FR-256-3's admin line has its row, and its mockup.** The device row is `RaviloUsers.kt:185-187`
+   (`usr-cap` lines: created/last seen, `appVersionLine`); `OverviewDevice` (`RaviloApi.kt:42-52`) gains
+   `reconnects_last_hour` and the behind-since fields, additive. The mirror is
+   `design/app/ravilo-users.html:75-76` — add both lines there in the same pass, or the next design export
+   removes them from the served page (the 187/185 lesson: `.usr-cap` itself once lived only in the mockup).
+   `/api/health/full` extends `healthSnapshot()` (`JellyfinSessionBridge.kt:118`), which is already the
+   per-device shape.
+6. **FR-256-2's header is bounded on arrival.** Ktor gives the handshake headers inside the route
+   (`call.request.headers`); take the first 512 bytes, keep only the five documented fields per entry,
+   drop the rest silently. Log it once, on the connect line, never on the close line — the close line is
+   what the flap counter will be grepped from.
+
+**Small correction.** "Nothing tells the admin that a household's devices stopped receiving updates" is
+right, but `app_version` itself is fresh: the auth plugin records it on every request
+(`AuthPlugin.kt:182` → `recordAppInfo`), so FR-256-5 reads a live value, not a login-time one.
+
+**Net effect.** One classifier in `unregister` + the catch, a deferred `disconnect`, a rolling counter, two
+DTO fields, two admin lines (and their mockup), and a version comparison against `ServerVersion.current`.
