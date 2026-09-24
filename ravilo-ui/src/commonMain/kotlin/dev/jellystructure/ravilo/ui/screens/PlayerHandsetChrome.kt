@@ -279,28 +279,34 @@ private fun HandsetIconButton(
 /** FR-R244-1 — the amount is a label under the arrow ("10 s" / "30 s"), never a numeral inside the glyph. */
 @Composable
 private fun HandsetSkipButton(label: String, back: Boolean, onClick: () -> Unit) {
-    HandsetIconButton(size = 50.dp, onClick = onClick, label = label) { tint ->
-        Canvas(Modifier.size(22.dp)) {
-            val stroke = Stroke(width = 2.2.dp.toPx(), cap = StrokeCap.Round)
-            val r = size.minDimension * 0.36f
-            val c = Offset(size.width / 2, size.height / 2)
-            // three-quarter arc, opening at the top, arrowhead at the open end
-            // R257 (FR-R257-6) — back turns COUNTER-clockwise with its head at the upper left pointing
-            // left; forward turns clockwise with its head at the upper right pointing right. These were
-            // swapped (the back glyph was every platform's "forward").
-            val start = if (back) 240f else -60f
-            val sweep = if (back) 270f else -270f
-            drawArc(tint, start, sweep, false, Offset(c.x - r, c.y - r), Size(r * 2, r * 2), style = stroke)
-            val tipX = if (back) c.x - r * 0.5f else c.x + r * 0.5f
-            val tipY = c.y - r
-            val d = if (back) -1f else 1f
-            val head = Path().apply {
-                moveTo(tipX - d * 5.dp.toPx(), tipY - 3.dp.toPx())
-                lineTo(tipX, tipY)
-                lineTo(tipX - d * 5.dp.toPx(), tipY + 4.dp.toPx())
-            }
-            drawPath(head, tint, style = stroke)
+    HandsetIconButton(size = 50.dp, onClick = onClick, label = label) { tint -> SkipGlyph(back, tint) }
+}
+
+/**
+ * The −10 s / +30 s arrow: a three-quarter arc opening at the top, arrowhead at the open end.
+ * R257 (FR-R257-6) — back turns COUNTER-clockwise with its head at the upper left pointing left;
+ * forward turns clockwise with its head at the upper right pointing right. These were swapped (the
+ * back glyph was every platform's "forward"). R301 — one drawing, shared with the cast remote, which
+ * had kept its own copy of the swapped version.
+ */
+@Composable
+internal fun SkipGlyph(back: Boolean, tint: Color, size: Dp = 22.dp) {
+    Canvas(Modifier.size(size)) {
+        val stroke = Stroke(width = 2.2.dp.toPx(), cap = StrokeCap.Round)
+        val r = this.size.minDimension * 0.36f
+        val c = Offset(this.size.width / 2, this.size.height / 2)
+        val start = if (back) 240f else -60f
+        val sweep = if (back) 270f else -270f
+        drawArc(tint, start, sweep, false, Offset(c.x - r, c.y - r), Size(r * 2, r * 2), style = stroke)
+        val tipX = if (back) c.x - r * 0.5f else c.x + r * 0.5f
+        val tipY = c.y - r
+        val d = if (back) -1f else 1f
+        val head = Path().apply {
+            moveTo(tipX - d * 5.dp.toPx(), tipY - 3.dp.toPx())
+            lineTo(tipX, tipY)
+            lineTo(tipX - d * 5.dp.toPx(), tipY + 4.dp.toPx())
         }
+        drawPath(head, tint, style = stroke)
     }
 }
 

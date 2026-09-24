@@ -140,7 +140,7 @@ fun CastRemoteScreen(
         Spacer(Modifier.height(18.dp))
 
         // ── Art card (16:9, solid ground) ──
-        val artDim = !s.playing || unreachable
+        val artDim = !s.playing || unreachable || s.failed
         Box(
             Modifier.fillMaxWidth(if (portrait) 1f else 0.6f).aspectRatio(16f / 9f).clip(RoundedCornerShape(16.dp))
                 .background(colors.surfaceVariant).alpha(if (artDim) 0.6f else 1f),
@@ -158,6 +158,8 @@ fun CastRemoteScreen(
         Text(s.title ?: "", color = colors.text, fontSize = 20.sp, fontWeight = FontWeight.Bold, fontFamily = SpaceGrotesk, textAlign = TextAlign.Center, maxLines = 2, overflow = TextOverflow.Ellipsis)
         Spacer(Modifier.height(4.dp))
         val stateLine = when {
+            // R299 (FR-R299-3) — a receiver that answered "failed" is reachable; check it first.
+            s.failed && !unreachable -> str("cast.failed", mapOf("device" to name))
             unreachable -> str("cast.lost", mapOf("device" to name))
             s.noServer -> str("cast.no_server")
             s.busyRetryAfter != null -> str("srv.busy")
@@ -168,6 +170,7 @@ fun CastRemoteScreen(
         Text(stateLine, color = colors.textSecondary, fontSize = 14.sp, fontFamily = Sora, textAlign = TextAlign.Center)
         // second line for the two "cannot" states + the busy wait
         when {
+            s.failed && !unreachable -> Text(str("cast.failed_sub"), color = colors.textDim, fontSize = 13.sp, fontFamily = Sora, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 4.dp))
             unreachable -> Text(str("cast.lost_sub"), color = colors.textDim, fontSize = 13.sp, fontFamily = Sora, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 4.dp))
             s.noServer -> Text(str("cast.no_server_sub"), color = colors.textDim, fontSize = 13.sp, fontFamily = Sora, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 4.dp))
             s.busyRetryAfter != null -> Text("${str("srv.busy_sub")} · ${str("cast.waiting", mapOf("n" to busyElapsed.toString()))}", color = colors.textDim, fontSize = 13.sp, fontFamily = Sora, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 4.dp))
@@ -206,7 +209,7 @@ fun CastRemoteScreen(
         }
 
         // ── Seek bar + times ──
-        val transportEnabled = !unreachable && s.loaded && !s.ended && s.busyRetryAfter == null && !s.noServer
+        val transportEnabled = !unreachable && s.loaded && !s.ended && !s.failed && s.busyRetryAfter == null && !s.noServer
         RemoteSeekBar(
             colors = colors, positionMs = if (scrubbing) scrubPos else s.positionMs, durationMs = s.durationMs, enabled = transportEnabled,
             onSeekStart = { ms -> scrubbing = true; scrubPos = ms },
@@ -236,6 +239,10 @@ fun CastRemoteScreen(
 
         // ── Footer / state actions ──
         when {
+            s.failed && !unreachable -> Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                s.itemId?.let { id -> RemotePill(str("cast.play_here"), primary = true) { onPlayAgain(id) } }
+                RemotePill(str("cast.stop"), primary = false) { cast.sender.stop(); onBack() }
+            }
             unreachable -> RemotePill(str("action.retry"), primary = true) { cast.command("status") }
             s.ended -> Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 s.itemId?.let { id -> RemotePill(str("action.play_again"), primary = true) { onPlayAgain(id) } }
@@ -375,13 +382,8 @@ private fun RemoteSkip(label: String, back: Boolean, enabled: Boolean, colors: R
                 .clickable(enabled = enabled, interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onClick),
             contentAlignment = Alignment.Center,
         ) {
-            Canvas(Modifier.size(22.dp)) {
-                val stroke = Stroke(width = 2.2.dp.toPx(), cap = StrokeCap.Round)
-                val r = size.minDimension * 0.36f; val c = Offset(size.width / 2, size.height / 2)
-                drawArc(colors.text, if (back) -60f else 240f, if (back) -270f else 270f, false, Offset(c.x - r, c.y - r), Size(r * 2, r * 2), style = stroke)
-                val tipX = if (back) c.x + r * 0.5f else c.x - r * 0.5f; val tipY = c.y - r; val d = if (back) 1f else -1f
-                drawPath(Path().apply { moveTo(tipX - d * 5.dp.toPx(), tipY - 3.dp.toPx()); lineTo(tipX, tipY); lineTo(tipX - d * 5.dp.toPx(), tipY + 4.dp.toPx()) }, colors.text, style = stroke)
-            }
+            // R301 — the local player's glyph (R257 FR-R257-6), not a second copy of it.
+            SkipGlyph(back = back, tint = colors.text)
         }
         Spacer(Modifier.height(3.dp))
         Text(label, color = colors.textSecondary, fontSize = 13.sp, fontFamily = Sora)
