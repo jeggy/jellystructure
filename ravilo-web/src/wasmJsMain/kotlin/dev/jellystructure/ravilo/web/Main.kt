@@ -15,6 +15,9 @@ fun main() {
     // Multiplatform version (verified directly against its signature), so the canvas can't be made
     // transparent. Video visibility while the player's chrome is hidden is instead achieved by
     // RaviloPlayer.setChromeVisible's z-index swap — see RaviloPlayerWasm.kt / RaviloPlayer.kt.
+    // R302 — probe what this browser can decode once, at boot, so the answer is ready before the first
+    // play and visible to the e2e suite; the list itself is only ever read by a playback start.
+    dev.jellystructure.ravilo.ui.seams.supportedAudioCodecs()
     CanvasBasedWindow(title = "Ravilo") {
         RaviloRoot()
     }

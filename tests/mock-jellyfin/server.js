@@ -53,7 +53,12 @@ function credentialOf(headers) {
 // inline (both are genuinely anonymous on 12.1: 206 video/mp4 and 200 respectively). Putting one
 // behind the guard instead would make this mock STRICTER than the real server, which fails in the
 // opposite direction and hides a regression just as well.
-const ANONYMOUS_ROUTES = new Set(["/Users/AuthenticateByName", "/System/Info/Public"]);
+const ANONYMOUS_ROUTES = new Set(["/Users/AuthenticateByName", "/System/Info/Public", "/__mock/last-playback-info", "/__mock/stats"]);
+// Test-only introspection (R297/R299's receiver spec): the last DeviceProfile the backend negotiated
+// with, and how many playback stops it reported. Not part of Jellyfin's API — the `__mock/` prefix
+// says so. Anonymous because the spec's Playwright request context carries no Jellyfin credential.
+let lastPlaybackInfo = null;
+const stats = { playbackInfo: 0, playing: 0, stopped: 0 };
 // A subtitle file (`/Videos/{id}/{msid}/Subtitles/{index}/0/Stream.vtt`) — measured on the household's
 // 12.1.0, 2026-09-24: 200 text/vtt with NO credential, 200 with a wrong `apikey=`, and
 // `Access-Control-Allow-Origin: *` on every answer (an OPTIONS preflight: 204, same header). The TV
@@ -227,12 +232,16 @@ const server = http.createServer(async (req, res) => {
       MediaStreams: itemMatch[1] === TRACKS_ITEM_ID ? TRACKS_ITEM_STREAMS : [],
     });
   }
+  if (method === "GET" && path === "/__mock/last-playback-info") return send(res, 200, lastPlaybackInfo ?? {});
+  if (method === "GET" && path === "/__mock/stats") return send(res, 200, stats);
   const playbackInfoMatch = path.match(/^\/Items\/([^/]+)\/PlaybackInfo$/);
   if (method === "POST" && playbackInfoMatch) {
     const id = playbackInfoMatch[1];
+    let asked = {};
+    try { asked = JSON.parse((await readBody(req)) || "{}"); } catch { /* a malformed body negotiates the defaults */ }
+    lastPlaybackInfo = { itemId: id, body: asked };
+    stats.playbackInfo += 1;
     if (id === TRACKS_ITEM_ID) {
-      let asked = {};
-      try { asked = JSON.parse((await readBody(req)) || "{}"); } catch { /* a malformed body negotiates the defaults */ }
       const audio = Number.isInteger(asked.AudioStreamIndex) ? asked.AudioStreamIndex : 1;
       const sub = asked.SubtitleStreamIndex;
       const burn = Number.isInteger(sub) && TRACKS_ITEM_STREAMS.some((s) => s.Index === sub && s.Codec === "hdmv_pgs_subtitle");
@@ -255,6 +264,8 @@ const server = http.createServer(async (req, res) => {
     return sendText(res, 200, "text/vtt; charset=utf-8", TRACKS_ITEM_VTT);
   }
   if (method === "POST" && (path === "/Sessions/Playing" || path === "/Sessions/Playing/Progress" || path === "/Sessions/Playing/Stopped")) {
+    if (path === "/Sessions/Playing") stats.playing += 1;
+    if (path === "/Sessions/Playing/Stopped") stats.stopped += 1;
     return send(res, 204, {});
   }
 

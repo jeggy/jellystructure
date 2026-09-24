@@ -1,7 +1,17 @@
+# R297/R299's receiver spec (tests/e2e/cast-receiver.spec.ts) mints a hand-off code, which needs casting
+# enabled: a Cast application id (any 8 hex characters here — nothing contacts Google) and the public
+# address the receiver URL is derived from (Phase 227). `app` is the backend's name on the test network.
+public_url = "http://app:9505"
+
 [api_keys]
 tmdb_v3_key = "test-key"
 jellyfin_token = "mock-access-token"
 jellyfin_url = "http://jellyfin-mock:8096"
+
+[chromecast]
+enabled = true
+app_id = "E2ECAF00"
+max_sessions = 2
 
 [language_rules]
 fallback_language = "en"

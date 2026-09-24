@@ -7,6 +7,10 @@ package dev.jellystructure.ravilo.ui.seams
  * instead of direct-played silent. Answered once per page.
  */
 private val probed: List<String> by lazy {
+    probe().also { jsPublishAudioCodecs(it.joinToString(",")) }
+}
+
+private fun probe(): List<String> =
     listOfNotNull(
         "aac", "mp3",
         "flac".takeIf { jsCanDecode("audio/mp4; codecs=\"flac\"") || jsCanDecode("audio/flac") },
@@ -14,9 +18,12 @@ private val probed: List<String> by lazy {
         "ac3".takeIf { jsCanDecode("audio/mp4; codecs=\"ac-3\"") },
         "eac3".takeIf { jsCanDecode("audio/mp4; codecs=\"ec-3\"") },
     )
-}
 
 actual fun supportedAudioCodecs(): List<String> = probed
+
+/** R302 — the answer, readable by the e2e suite (`window.__raviloAudioCodecs`), the way the install
+ *  prompt's state already is; the app itself never reads it back. */
+private fun jsPublishAudioCodecs(csv: String): Unit = js("{ window.__raviloAudioCodecs = csv; }")
 
 /** R284 (FR-R284-6) — most browsers have no HEVC decoder at all; the web stays on h264. */
 actual fun supportsHevcOverHls(): Boolean = false
