@@ -17,6 +17,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.Placeable
+import androidx.compose.ui.layout.SubcomposeLayout
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -112,7 +115,7 @@ internal data class FlagStripCounts(
 }
 
 /** Phase R239 (FR-R239-1) — counts every language the group has, not every flag it can draw. */
-internal fun countFlagStrip(languages: List<String>): FlagStripCounts {
+internal fun countFlagStrip(languages: List<String>, maxFlags: Int = FLAG_MAX): FlagStripCounts {
     // R247 (FR-R247-2) — identity is the canonical code, so `da`+`dan` or `sr`+`hbs-srp` are one
     // language whether or not a flag exists for it.
     val keys = languages.map { canonicalLanguage(it) ?: it.lowercase() }
@@ -123,7 +126,7 @@ internal fun countFlagStrip(languages: List<String>): FlagStripCounts {
     val mappedFlags = keys.mapNotNull { flagFor(it) }.distinct()
     val unmappedCount = keys.filter { flagFor(it) == null }.distinct().size
     val totalDistinct = mappedFlags.size + unmappedCount
-    val shown = mappedFlags.take(FLAG_MAX)
+    val shown = mappedFlags.take(maxFlags.coerceIn(0, FLAG_MAX))
     return FlagStripCounts(shown, totalDistinct - shown.size)
 }
 
@@ -140,8 +143,8 @@ internal fun countFlagStrip(languages: List<String>): FlagStripCounts {
  * mapped or not — and the label renders as a bare count when nothing maps, never nothing.
  */
 @Composable
-fun AudioFlagStrip(audioLanguages: List<String>, label: String = "AUDIO", modifier: Modifier = Modifier) {
-    val counts = countFlagStrip(audioLanguages)
+fun AudioFlagStrip(audioLanguages: List<String>, label: String = "AUDIO", modifier: Modifier = Modifier, maxFlags: Int = FLAG_MAX) {
+    val counts = countFlagStrip(audioLanguages, maxFlags)
     if (!counts.hasAnyLanguage) return
     val (shown, extra) = counts
     val sora = Sora
@@ -200,15 +203,40 @@ fun AudioSubtitleFlagLine(audioLanguages: List<String>, subtitleLanguages: List<
     val hasAudio = audioLanguages.isNotEmpty()
     val hasSub = subtitleLanguages.isNotEmpty()
     if (!hasAudio && !hasSub) return
+    // 2026-09-24 — the line FITS its width by showing fewer flags, never by clipping. With five audio and
+    // five subtitle flags the detail hero's column cut the subtitle strip's "+N" to a bare "+" at its
+    // right edge (Creatures, Ltd., soveværelse TV) — the one number R239 exists to state honestly. Each
+    // attempt that overflows moves one flag from the larger group into its "+N", which R239's counting
+    // already folds in, until the line fits.
+    SubcomposeLayout(modifier) { constraints ->
+        var audioMax = FLAG_MAX
+        var subMax = FLAG_MAX
+        var attempt = 0
+        var line: Placeable
+        while (true) {
+            val a = audioMax; val sm = subMax
+            line = subcompose(attempt) { FlagLineContent(audioLanguages, subtitleLanguages, a, sm) }
+                .first().measure(Constraints(maxHeight = constraints.maxHeight))
+            if (!constraints.hasBoundedWidth || line.width <= constraints.maxWidth || (audioMax == 0 && subMax == 0)) break
+            if (subMax >= audioMax && subMax > 0) subMax-- else audioMax--
+            attempt++
+        }
+        layout(line.width.coerceAtMost(constraints.maxWidth), line.height) { line.place(0, 0) }
+    }
+}
+
+@Composable
+private fun FlagLineContent(audioLanguages: List<String>, subtitleLanguages: List<String>, audioMax: Int, subMax: Int) {
+    val hasAudio = audioLanguages.isNotEmpty()
+    val hasSub = subtitleLanguages.isNotEmpty()
     Row(
-        modifier = modifier,
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        if (hasAudio) AudioFlagStrip(audioLanguages, label = str("fd.audio"))
+        if (hasAudio) AudioFlagStrip(audioLanguages, label = str("fd.audio"), maxFlags = audioMax)
         if (hasAudio && hasSub) {
             Text("·", color = Color.White.copy(alpha = 0.35f), fontSize = 14.sp, fontFamily = Sora)
         }
-        if (hasSub) AudioFlagStrip(subtitleLanguages, label = str("fd.subs"))
+        if (hasSub) AudioFlagStrip(subtitleLanguages, label = str("fd.subs"), maxFlags = subMax)
     }
 }

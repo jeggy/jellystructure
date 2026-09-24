@@ -112,4 +112,18 @@ class AudioFlagStripTest {
         assertEquals(1, counts.shownFlags.size) // "cat" maps
         assertEquals(2, counts.extra) // "tam"/"tel" counted, just not shown as flags
     }
+
+    // 2026-09-24 — a line too narrow for every flag folds the flags it drops into "+N", so the count
+    // stays honest instead of being clipped off the edge.
+    @Test
+    fun aSmallerFlagBudgetFoldsTheDroppedFlagsIntoTheCount() {
+        val langs = listOf("eng", "dan", "fin", "nor", "swe", "fre", "ger")
+        val full = countFlagStrip(langs)
+        assertEquals(5, full.shownFlags.size); assertEquals(2, full.extra)
+        val three = countFlagStrip(langs, maxFlags = 3)
+        assertEquals(3, three.shownFlags.size); assertEquals(4, three.extra)
+        val none = countFlagStrip(langs, maxFlags = 0)
+        assertEquals(0, none.shownFlags.size); assertEquals(7, none.extra)
+        assertEquals(true, none.hasAnyLanguage)
+    }
 }
