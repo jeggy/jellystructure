@@ -106,8 +106,11 @@ private class Receiver {
         for (type in listOf(et.PLAYING, et.PAUSE, et.BUFFERING)) {
             playerManager.addEventListener(type) { _: dynamic -> onPlayerState() }
         }
-        playerManager.addEventListener(et.MEDIA_FINISHED) { _: dynamic -> onFinished() }
-        playerManager.addEventListener(et.ERROR) { _: dynamic -> /* a media error surfaces as buffering/finished; the phone's remote shows what it can */ }
+        playerManager.addEventListener(et.MEDIA_FINISHED) { ev: dynamic -> onFinished(ev.endedReason as String?) }
+        // R297 (FR-R297-3) — record why a stream failed, so the next failure is read through DevTools, not guessed.
+        playerManager.addEventListener(et.ERROR) { ev: dynamic ->
+            console.error("ravilo-cast: media error", ev.detailedErrorCode, ev.reason, ev.error)
+        }
         playerManager.addEventListener(et.SEEKED) { _: dynamic -> flashOverlay() }
         context.addCustomMessageListener(CAST_NAMESPACE) { ev: dynamic -> onCommand(JSON.stringify(ev.data) as String) }
         context.addEventListener(cast.framework.system.EventType.SHUTDOWN) { _: dynamic -> stopSession() }
@@ -164,6 +167,12 @@ private class Receiver {
         request.media.contentId = t.hlsUrl
         request.media.contentUrl = t.hlsUrl
         request.media.contentType = "application/x-mpegURL"
+        // R297 (FR-R297-1) — 253's hls_hevc profile makes Jellyfin emit fMP4 segments. CAF assumes
+        // MPEG-TS unless told otherwise, and every cast died about two seconds in.
+        if (t.hlsUrl?.contains("SegmentContainer=mp4", ignoreCase = true) == true) {
+            request.media.hlsSegmentFormat = messages.HlsSegmentFormat.FMP4
+            request.media.hlsVideoSegmentFormat = messages.HlsVideoSegmentFormat.FMP4
+        }
         request.media.streamType = messages.StreamType.BUFFERED
         val tracks = js("[]")
         var defaultSub: Int? = null
@@ -366,11 +375,13 @@ private class Receiver {
         playerManager.load(req)
     }
 
-    private fun onFinished() {
+    private fun onFinished(endedReason: String?) {
         nextUpJob?.cancel(); nextUpJob = null
         el("nextup").classList.remove("on")
         stopSession()
-        if (nextEpisode() != null && config?.autoplayNext != false && config?.skipCredits != SkipMode.OFF) { loadNext(); return }
+        // R297 (FR-R297-2) — only a real end moves on. An error used to walk the whole queue, ~2 s an episode.
+        val reachedEnd = endedReason == null || endedReason == cast.framework.events.EndedReason.END_OF_STREAM
+        if (reachedEnd && nextEpisode() != null && config?.autoplayNext != false && config?.skipCredits != SkipMode.OFF) { loadNext(); return }
         // FR-R245-15 — ended is literally the idle view.
         send(CastReceiverMessage(type = "ended", itemId = current?.itemId, title = current?.title, kicker = current?.kicker, artUrl = current?.artUrl, hasNext = nextEpisode() != null, receiverId = receiverId))
         idle()
