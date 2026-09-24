@@ -101,6 +101,15 @@ actual fun PlayerVideoSurface(
                 else Modifier.wrapContentSize(unbounded = true).requiredSize(cw, cw / dar)
             }
         }
+        // R300 (FR-R300-1) — the picture's height, for caption sizing: the DAR box in fit mode, the
+        // window otherwise (fill mode and an unknown DAR both cover the window in height or width).
+        val boxHeightPx = with(LocalDensity.current) {
+            when {
+                dar <= 0f || fill -> maxHeight.roundToPx()
+                else -> minOf(maxHeight, maxWidth / dar).roundToPx()
+            }
+        }
+        LaunchedEffect(boxHeightPx) { player.setSubtitleBaseHeightPx(boxHeightPx) }
         key(surfaceGeneration) {
             AndroidView(
                 factory = { ctx ->

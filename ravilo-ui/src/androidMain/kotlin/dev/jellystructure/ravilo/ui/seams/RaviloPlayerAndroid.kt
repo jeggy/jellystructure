@@ -304,7 +304,7 @@ actual class RaviloPlayer actual constructor() {
             Color.argb(204, 0, 0, 0), // ~80% black — gentle outline, not a hard solid border
             null,
         ))
-        view.setFractionalTextSize(SubtitleView.DEFAULT_TEXT_SIZE_FRACTION * 0.9f * subtitleScale)
+        applySubtitleSize(view)
         subtitleViewRef = view
         exo.addListener(object : Player.Listener {
             override fun onCues(cueGroup: CueGroup) {
@@ -390,7 +390,24 @@ actual class RaviloPlayer actual constructor() {
 
     actual fun setSubtitleScale(scale: Float) {
         subtitleScale = scale.coerceIn(0.5f, 2f)
-        subtitleViewRef?.setFractionalTextSize(SubtitleView.DEFAULT_TEXT_SIZE_FRACTION * 0.9f * subtitleScale)
+        subtitleViewRef?.let { applySubtitleSize(it) }
+    }
+
+    // R300 (FR-R300-1) — the height captions are sized against: the video box's, not the window's. The
+    // SubtitleView spans the whole window (so its inset measures from the true screen edge, see
+    // PlayerVideoSurface), and Media3's fractional size is a fraction of the VIEW — in portrait on a
+    // phone that view is ~2.2× taller than the picture, so captions came out ~3× too big and covered
+    // the rail. 0 means "unknown yet": fall back to the view's own height, as before.
+    private var subtitleBasePx: Int = 0
+    fun setSubtitleBaseHeightPx(px: Int) {
+        if (px == subtitleBasePx) return
+        subtitleBasePx = px
+        subtitleViewRef?.let { applySubtitleSize(it) }
+    }
+    private fun applySubtitleSize(view: SubtitleView) {
+        val fraction = SubtitleView.DEFAULT_TEXT_SIZE_FRACTION * 0.9f * subtitleScale
+        if (subtitleBasePx > 0) view.setFixedTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, fraction * subtitleBasePx)
+        else view.setFractionalTextSize(fraction)
     }
 
     actual val positionMs: Long get() = exo.currentPosition.coerceAtLeast(0)
