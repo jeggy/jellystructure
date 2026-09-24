@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.components
 
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -269,8 +270,20 @@ fun Tile(
             // same TopStart, and only the second one drawn was visible — on the one row whose tiles exist
             // to say which episode you are on.
             val corners = resolveCornerBadges(episodeBadge = episodeBadge, upcomingLabel = upcomingLabel, isNew = isNew, watched = watched)
-            CornerBadgeContent(corners.topStart, Modifier.align(Alignment.TopStart), episodeBadge, episodeBadgeColor, upcomingLabel, colors, sora)
-            CornerBadgeContent(corners.topEnd, Modifier.align(Alignment.TopEnd), episodeBadge, episodeBadgeColor, upcomingLabel, colors, sora)
+            // R295 (FR-R295-6) — both corners in ONE row: the top-end badge keeps its place and the
+            // top-start badge gets what is left, ellipsizing. Anchored separately, a long "Soon • S01E21"
+            // on a narrow phone tile ran underneath the ✓. Same 8 dp inset as before, so a wide TV tile
+            // draws exactly what it did.
+            Row(
+                modifier = Modifier.align(Alignment.TopStart).fillMaxWidth().padding(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.Top,
+            ) {
+                Box(Modifier.weight(1f)) {
+                    CornerBadgeContent(corners.topStart, Modifier, episodeBadge, episodeBadgeColor, upcomingLabel, colors, sora)
+                }
+                CornerBadgeContent(corners.topEnd, Modifier, episodeBadge, episodeBadgeColor, upcomingLabel, colors, sora)
+            }
             }
         }
 
@@ -450,32 +463,32 @@ private fun CornerBadgeContent(
         null -> {}
         // R142: watched ✓.
         CornerBadge.WATCHED -> Box(
-            modifier = modifier.padding(8.dp).size(24.dp).background(colors.badgeWatched, CircleShape),
+            modifier = modifier.size(24.dp).background(colors.badgeWatched, CircleShape),
             contentAlignment = Alignment.Center,
         ) {
             Text("✓", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
         }
         // "NEW" gradient badge.
         CornerBadge.NEW -> Box(
-            modifier = modifier.padding(8.dp).background(colors.accentGradient, RoundedCornerShape(4.dp)).padding(horizontal = 7.dp, vertical = 3.dp),
+            modifier = modifier.background(colors.accentGradient, RoundedCornerShape(4.dp)).padding(horizontal = 7.dp, vertical = 3.dp),
         ) {
-            Text(text = str("tile.badge_new"), color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = sora, letterSpacing = 0.5.sp)
+            Text(text = str("tile.badge_new"), color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = sora, letterSpacing = 0.5.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         // R113: season/episode badge — small dark pill over the image for TV shows in Continue Watching.
         // Neutral translucent black so it reads on any backdrop.
         CornerBadge.EPISODE -> Box(
-            modifier = modifier.padding(8.dp).background(episodeBadgeColor, RoundedCornerShape(4.dp)).padding(horizontal = 6.dp, vertical = 2.dp),
+            modifier = modifier.background(episodeBadgeColor, RoundedCornerShape(4.dp)).padding(horizontal = 6.dp, vertical = 2.dp),
         ) {
-            Text(text = episodeBadge.orEmpty(), color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = sora, letterSpacing = 0.3.sp)
+            Text(text = episodeBadge.orEmpty(), color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = sora, letterSpacing = 0.3.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         // R149: "Soon • SxxExx" badge. Solid accent background so it reads on any poster.
         CornerBadge.UPCOMING -> Row(
-            modifier = modifier.padding(8.dp).background(colors.accent, RoundedCornerShape(4.dp)).padding(horizontal = 6.dp, vertical = 3.dp),
+            modifier = modifier.background(colors.accent, RoundedCornerShape(4.dp)).padding(horizontal = 6.dp, vertical = 3.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(modifier = Modifier.size(5.dp).background(Color.White, CircleShape))
             Spacer(Modifier.width(4.dp))
-            Text(text = str("tile.badge_soon", mapOf("label" to upcomingLabel.orEmpty())), color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = sora)
+            Text(text = str("tile.badge_soon", mapOf("label" to upcomingLabel.orEmpty())), color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = sora, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
 }

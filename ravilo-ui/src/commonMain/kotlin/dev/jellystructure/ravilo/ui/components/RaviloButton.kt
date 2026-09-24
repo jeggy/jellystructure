@@ -71,6 +71,11 @@ fun RaviloButton(
             onLeft = onLeft, onRight = onRight, onUp = onUp, onDown = onDown, onSelect = onSelect,
         ),
         contentAlignment = Alignment.Center,
+        // R295 (FR-R295-4) — a caller's min width (the detail page's Play/Resume is widthIn(min = 200.dp))
+        // reaches the VISIBLE pill. It used to stop at this invisible outer box, so a short label ("Play",
+        // "Resume · S2E19") drew a narrow pill centred in a 200 dp slot: indented from the page's left
+        // edge, with a gap before the next button, on the TV and the phone alike.
+        propagateMinConstraints = true,
     ) {
     Box(
         modifier = Modifier
