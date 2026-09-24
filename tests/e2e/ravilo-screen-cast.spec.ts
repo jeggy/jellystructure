@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { fakeAvPlayInitScript, avplayCalls, waitForAvplayCall, scannedItemId } from "./helpers/screen-cast";
 
 // Phase 248 — the phone -> backend -> Samsung TV path (236/R264/R265) is the owner's most important
 // use case and the owner rarely has a real Samsung TV to test on. This drives the ACTUAL
@@ -29,91 +30,6 @@ import { test, expect } from "@playwright/test";
 const SCREEN_URL = process.env.RAVILO_SCREEN_CAST_URL ?? "http://localhost:8092";
 const JF_USER = process.env.JELLYFIN_USER ?? "admin";
 const JF_PASS = process.env.JELLYFIN_PASS ?? "password";
-
-// Records every call the real AvPlayBackend (MediaBackend.kt) makes, in order, onto window.__avplayCalls
-// — read back via page.evaluate rather than asserting on transient DOM state (the loading screen closes
-// again within milliseconds of the fake's prepareAsync succeeding; polling for the call log is the
-// deterministic signal FR-248-3 asks for).
-function fakeAvPlayInitScript() {
-  (window as any).__avplayCalls = [];
-  let state = "IDLE";
-  let posMs = 0;
-  let ticking: any = null;
-  let listener: any = {};
-  (window as any).webapis = {
-    avplay: {
-      open(url: string) {
-        (window as any).__avplayCalls.push(["open", url]);
-        state = "IDLE";
-      },
-      setDisplayRect(...args: number[]) {
-        (window as any).__avplayCalls.push(["setDisplayRect", ...args]);
-      },
-      setDisplayMethod(method: string) {
-        (window as any).__avplayCalls.push(["setDisplayMethod", method]);
-      },
-      setListener(l: any) {
-        listener = l;
-      },
-      prepareAsync(onSuccess: () => void, _onError: (e: unknown) => void) {
-        (window as any).__avplayCalls.push(["prepareAsync"]);
-        state = "READY";
-        setTimeout(() => { try { onSuccess(); } catch { /* Kotlin's own callback, not ours to swallow */ } }, 10);
-      },
-      play() {
-        (window as any).__avplayCalls.push(["play"]);
-        state = "PLAYING";
-        if (!ticking) ticking = setInterval(() => { posMs += 250; }, 250);
-      },
-      pause() {
-        (window as any).__avplayCalls.push(["pause"]);
-        state = "PAUSED";
-        if (ticking) { clearInterval(ticking); ticking = null; }
-      },
-      stop() {
-        (window as any).__avplayCalls.push(["stop"]);
-        state = "IDLE";
-      },
-      seekTo(ms: number, onSuccess?: () => void) {
-        (window as any).__avplayCalls.push(["seekTo", ms]);
-        posMs = ms;
-        onSuccess?.();
-      },
-      close() {
-        (window as any).__avplayCalls.push(["close"]);
-        if (ticking) { clearInterval(ticking); ticking = null; }
-        state = "NONE";
-        posMs = 0;
-      },
-      getState() { return state; },
-      getCurrentTime() { return posMs; },
-      getDuration() { return 60_000; },
-      getTotalTrackInfo() { return []; },
-      setSelectTrack(type: string, index: number) {
-        (window as any).__avplayCalls.push(["setSelectTrack", type, index]);
-      },
-      setStreamingProperty() {},
-    },
-  };
-}
-
-async function avplayCalls(page: import("@playwright/test").Page): Promise<Array<[string, ...unknown[]]>> {
-  return page.evaluate(() => (window as any).__avplayCalls ?? []);
-}
-
-/** Waits for a call named [name] to appear at index >= [fromIndex] in the fake's recorded call log —
- *  the "no fixed sleeps" rule (FR-248-3) applied to a DOM-external signal, same shape as
- *  screens.spec.ts's waitForType/fromIndex pattern. */
-async function waitForAvplayCall(page: import("@playwright/test").Page, name: string, fromIndex = 0, timeoutMs = 10_000) {
-  const start = Date.now();
-  while (Date.now() - start < timeoutMs) {
-    const calls = await avplayCalls(page);
-    const idx = calls.findIndex((c, i) => i >= fromIndex && c[0] === name);
-    if (idx >= 0) return { index: idx, call: calls[idx] };
-    await new Promise((r) => setTimeout(r, 100));
-  }
-  throw new Error(`avplay never called "${name}" (from index ${fromIndex}) within ${timeoutMs}ms — got: ${JSON.stringify(await avplayCalls(page))}`);
-}
 
 test.describe("Phase 248 — casting to a screen, driven through the real bundle", () => {
   test("pair, play, pause, seek and stop all reach the real ravilo-screen code", async ({ page, request }) => {
@@ -171,22 +87,11 @@ test.describe("Phase 248 — casting to a screen, driven through the real bundle
     // ── 3. A real, scanned library item — never a fake id (requireVisible() checks jellystructure's
     //    own MediaStore, not the mock Jellyfin, so an unscanned id would 403 at the receiver). This
     //    spec must not depend on scan-fixture.spec.ts having already run (file order is not a
-    //    contract — confirmed missing exactly this way on the first real CI run), so it triggers its
-    //    own scan via the admin cookie session, no browser UI needed (Playwright's `request` context
-    //    carries the cookie automatically to the follow-up calls). No `full=true` — this only needs
-    //    Sintel matched at all, not freshly re-pulled, and skipping it avoids redundant TMDB churn if
-    //    another spec file already scanned this same shared backend. A concurrent 409 from another
-    //    file's own scan is fine — either way, waiting for `running` to clear is what matters. A
-    //    generous timeout: a busy shared runner, not just this one scan, decides how long this takes. ──
-    await request.post("/api/auth/login", { data: { username: JF_USER, password: JF_PASS } });
-    await request.post("/api/scan");
-    await expect
-      .poll(async () => (await (await request.get("/api/scan/status")).json())?.running, { timeout: 90_000 })
-      .toBe(false);
-
-    const search = await (await request.get("/api/tv/search?q=Sintel", { headers: { authorization: `Bearer ${phoneToken}`, ...R252 } })).json();
-    const sintelId = search.items?.[0]?.id as string;
-    expect(sintelId, "Sintel was not found via /api/tv/search — was the fixture scan run first?").toBeTruthy();
+    //    contract — confirmed missing exactly this way on the first real CI run), so if Sintel is not
+    //    searchable yet it starts a scan itself (a 409 from another file's scan is just as good). It
+    //    then polls SEARCH, not /api/scan/status: since 2026-09-24 a second full pipeline run queued
+    //    behind another spec's outlasted 90 s on a busy stack. See scannedItemId. ──
+    const sintelId = await scannedItemId(request, phoneToken, "Sintel", { username: JF_USER, password: JF_PASS });
 
     // ── 4. The phone plays it; the RECEIVER'S OWN CODE negotiates and opens the fake player. ───────
     const playRes = await request.post("/api/remote/play", {

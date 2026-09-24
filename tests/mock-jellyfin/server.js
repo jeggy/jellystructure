@@ -54,6 +54,12 @@ function credentialOf(headers) {
 // behind the guard instead would make this mock STRICTER than the real server, which fails in the
 // opposite direction and hides a regression just as well.
 const ANONYMOUS_ROUTES = new Set(["/Users/AuthenticateByName", "/System/Info/Public"]);
+// A subtitle file (`/Videos/{id}/{msid}/Subtitles/{index}/0/Stream.vtt`) — measured on the household's
+// 12.1.0, 2026-09-24: 200 text/vtt with NO credential, 200 with a wrong `apikey=`, and
+// `Access-Control-Allow-Origin: *` on every answer (an OPTIONS preflight: 204, same header). The TV
+// receiver (R285) fetches these from its own origin, so behind the guard the mock refused what the real
+// server serves — the stricter-than-real failure described above.
+const ANONYMOUS_ROUTE_PATTERNS = [/^\/Videos\/[^/]+\/[^/]+\/Subtitles\/\d+\/\d+\/Stream\.vtt$/];
 const ADMIN_USER = process.env.JELLYFIN_USER ?? "admin";
 const ADMIN_PASS = process.env.JELLYFIN_PASS ?? "password";
 // Media mount point as seen by the app container
@@ -113,6 +119,29 @@ const ITEMS = [
   },
 ];
 
+// R285 CI (2026-09-24) — ONE item that negotiates like a real transcode, so the receiver's track paths
+// (audio restream, text subtitles drawn from VTT, PGS burn-in and un-burn, caption size) can be driven
+// end to end without a Samsung TV. Big Buck Bunny, because no other spec reads its item detail or
+// negotiates it (Sintel stays a plain direct play for phase 248's own spec). Shapes are Jellyfin
+// 12.1's: MediaStreams on the item, the indices in PlaybackInfo's JSON body, and a TranscodingUrl
+// that carries AudioStreamIndex whether or not one was requested (measured, phase 253).
+const TRACKS_ITEM_ID = "bbb-id";
+const TRACKS_ITEM_STREAMS = [
+  { Type: "Video", Index: 0, Codec: "h264" },
+  { Type: "Audio", Index: 1, Codec: "ac3", Language: "eng", DisplayTitle: "English - Dolby Digital - 5.1", Channels: 6, IsDefault: true },
+  { Type: "Audio", Index: 2, Codec: "aac", Language: "dan", DisplayTitle: "Dansk - AAC - Stereo", Channels: 2 },
+  { Type: "Subtitle", Index: 3, Codec: "subrip", Language: "eng", DisplayTitle: "English", IsTextSubtitleStream: true },
+  { Type: "Subtitle", Index: 4, Codec: "hdmv_pgs_subtitle", Language: "dan", DisplayTitle: "Dansk" },
+];
+const TRACKS_ITEM_VTT = "WEBVTT\n\n1\n00:00:00.000 --> 01:00:00.000\nMock subtitle line\n";
+
+function sendText(res, status, type, body) {
+  // Jellyfin answers subtitle files with Access-Control-Allow-Origin: * — the TV receiver fetches them
+  // from its own origin, so the mock must too.
+  res.writeHead(status, { "Content-Type": type, "Content-Length": Buffer.byteLength(body), "Access-Control-Allow-Origin": "*" });
+  res.end(body);
+}
+
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://localhost:${PORT}`);
   const path = url.pathname;
@@ -122,7 +151,7 @@ const server = http.createServer(async (req, res) => {
   // in ANONYMOUS_ROUTES requires the credential form 12.1 actually authenticates. Before this phase
   // seven data routes checked nothing at all, so the e2e suite could not tell a product that sends a
   // correct credential from one that sends none — which is how phase 238's regression shipped green.
-  if (!ANONYMOUS_ROUTES.has(path)) {
+  if (!ANONYMOUS_ROUTES.has(path) && !ANONYMOUS_ROUTE_PATTERNS.some((re) => re.test(path))) {
     const cred = credentialOf(req.headers);
     if (cred !== "valid") {
       return send(res, 401, { message: cred === "absent" ? "Token is required." : "Invalid token." });
@@ -195,16 +224,35 @@ const server = http.createServer(async (req, res) => {
       Name: item?.Name ?? itemMatch[1],
       RunTimeTicks: 60_000_000_0, // 60s, arbitrary — nothing plays a real stream in this suite
       UserData: { PlaybackPositionTicks: 0, Played: false, IsFavorite: false },
-      MediaStreams: [],
+      MediaStreams: itemMatch[1] === TRACKS_ITEM_ID ? TRACKS_ITEM_STREAMS : [],
     });
   }
   const playbackInfoMatch = path.match(/^\/Items\/([^/]+)\/PlaybackInfo$/);
   if (method === "POST" && playbackInfoMatch) {
     const id = playbackInfoMatch[1];
+    if (id === TRACKS_ITEM_ID) {
+      let asked = {};
+      try { asked = JSON.parse((await readBody(req)) || "{}"); } catch { /* a malformed body negotiates the defaults */ }
+      const audio = Number.isInteger(asked.AudioStreamIndex) ? asked.AudioStreamIndex : 1;
+      const sub = asked.SubtitleStreamIndex;
+      const burn = Number.isInteger(sub) && TRACKS_ITEM_STREAMS.some((s) => s.Index === sub && s.Codec === "hdmv_pgs_subtitle");
+      const transcodingUrl = `/videos/${id}/master.m3u8?MediaSourceId=${id}&VideoCodec=h264&AudioCodec=aac` +
+        `&AudioStreamIndex=${audio}` + (burn ? `&SubtitleStreamIndex=${sub}&SubtitleMethod=Encode` : "") +
+        `&PlaySessionId=mock-play-session-${id}&ApiKey=mock`;
+      return send(res, 200, {
+        MediaSources: [{ Id: id, Container: "mkv", SupportsDirectPlay: false, SupportsDirectStream: false, SupportsTranscoding: true,
+          TranscodingUrl: transcodingUrl, TranscodingSubProtocol: "hls", MediaStreams: TRACKS_ITEM_STREAMS }],
+        PlaySessionId: "mock-play-session-" + id,
+      });
+    }
     return send(res, 200, {
       MediaSources: [{ Id: id, Container: "mkv", SupportsDirectPlay: true, SupportsDirectStream: true, SupportsTranscoding: false, MediaStreams: [] }],
       PlaySessionId: "mock-play-session-" + id,
     });
+  }
+  const vttMatch = path.match(/^\/Videos\/([^/]+)\/[^/]+\/Subtitles\/(\d+)\/\d+\/Stream\.vtt$/);
+  if (method === "GET" && vttMatch && vttMatch[1] === TRACKS_ITEM_ID) {
+    return sendText(res, 200, "text/vtt; charset=utf-8", TRACKS_ITEM_VTT);
   }
   if (method === "POST" && (path === "/Sessions/Playing" || path === "/Sessions/Playing/Progress" || path === "/Sessions/Playing/Stopped")) {
     return send(res, 204, {});
