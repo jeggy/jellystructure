@@ -57,6 +57,11 @@ one `PlaybackInfo` line and one QoE row; every other title that evening did. Zer
 Phase 201 signature: a player that never had a track to decode, so it never reported a decoder, a
 rebuffer or a dropped frame.
 
+**Correction, 2026-09-24 (§11).** These were **not six attempts by the viewer.** They are one attempt
+looping: every ~35–57 s R220's black-screen recovery hands off to rung 4, which re-prepares the item,
+which calls `PlaybackInfo` again and re-reads the entire file. The same cadence reproduced on demand
+on 2026-09-24 (~38 s on the BRAVIA, ~20 s on the Pixel). Each lap downloads the whole ~1 GB file.
+
 ## 2. Everything that is not wrong
 
 Measured today, so none of this needs re-litigating:
@@ -156,14 +161,9 @@ Pixel 9 Pro, Ravilo `1.36` release, over WiFi, 2026-09-22 21:29 local:
 21:29:42.074  CCodec: Created component [c2.exynos.h264.decoder]
 ```
 
-The screen held R218's cold-start card (*"Heintar…"*) for that whole window, then played. **A phone
-on fast WiFi needs ~18 s to scan far enough into a 996 MB body to reach the track list.** The BRAVIA
-did not get there inside the four minutes the owner gave it across six attempts — which is why it
-presents as "doesn't work" rather than "slow".
-
-This also means the failure is **not binary**: it is "unbounded time to first frame, proportional to
-how far into the file `Tracks` sits and how fast the link is." A 1080p 35-minute episode is the mild
-case. A 4K remux would be hopeless.
+It then played. **The first draft of this section read that as "the phone is fast enough to get
+there eventually". That was wrong** — see §11. The phone played because that start **resumed at
+5:19**, and a resume is a seek. Started from 0:00, the phone loops forever exactly like the TV.
 
 ## 7. Part 1 — Ravilo must play it anyway
 
@@ -230,6 +230,24 @@ route and would retire the vendored copy**; it should be attempted in parallel, 
 net.** D alone leaves every currently-installed TV broken until an app release reaches it; A closes
 that gap immediately and costs nothing on the client. C is independent of this bug and worth its own
 small requirement.
+
+### A stopgap in code we own (found 2026-09-24, §11)
+
+The device test showed the player **does** eventually build its track list — it reads the whole file
+to reach it — and then sits "playing" at 0:00 with nothing buffered. **Any seek to a different
+position rescues it within ~1.5 s**, because the seek goes back into the file with tracks now known.
+
+R220's recovery ladder already has a seek rung, and it never works here: rung 2 is
+`player.seekTo(player.positionMs)` (`PlayerVideoSurface.kt:224`), a seek to the position the player
+is already at. Across ~12 firings on two devices it recovered nothing, while a seek elsewhere always
+did. That points at ExoPlayer treating a same-position seek as a no-op — **strongly indicated, not
+isolated**; the one clean test (rewind, which clamps to 0:00) was spoiled by a saved position.
+
+If so, rung 2 has never flushed anything for **any** cause, which is an R220 defect in its own right.
+Making it a real flush would turn this bug from "never plays" into "plays after one full read of the
+file" (~35 s on the BRAVIA, ~15 s on the Pixel) with no Media3 change. It is **not parity** — the
+viewer still waits, and still pulls the whole file before the first frame — so it is a stopgap to
+ship while the extractor fix is built, not a replacement for it.
 
 Open questions for the spec:
 - Exactly where the re-entry lands: the Cues path seeks *away* and returns via
@@ -364,6 +382,69 @@ ffprobe -v error -show_entries format_tags=encoder -of default=nw=1 <file>
 curl -s -o /dev/null -w '%{http_code}\n' -H 'Range: bytes=0-1048575' \
   "$JF/Videos/$ID/stream?Static=true&MediaSourceId=$ID&DeviceId=probe&apikey=$TK"
 ```
+
+## 11. Device test, 2026-09-24
+
+Stue TV (BRAVIA, Ravilo `1.36-dirty`) and Pixel 9 Pro (Ravilo `1.36` release), E19 unrepaired.
+
+**The mechanism, corrected.** The player does not stay blind. It reads the entire body, parses the
+`Tracks` element at EOF, creates the decoder — and has consumed every frame on the way, so it reports
+*playing* at 0:00 with nothing to render:
+
+```
+13:23:02.724  ExoPlayerImpl: Init
+13:23:36.099  Creating an asynchronous MediaCodec adapter for track type video   ← +33 s, full file read
+13:23:37.800  PlayerVideoSurface: video output stalled (playing, frame count stuck at 0)
+13:23:42.309  … did not recover after rungs 1-3 — handing off to onVideoOutputStuck (rung 4)
+13:24:18.339  video output stalled …                                             ← next lap
+13:24:55.881  video output stalled …
+```
+
+Backend: a fresh `PlaybackInfo` for E19 at every lap (11:23:03, :43, 11:24:23, 11:25:01 UTC). The TV
+was pulling **224 Mbit/s** during the loop. Traffic dropped to zero the moment the player was closed.
+
+| test | result |
+|---|---|
+| TV, from 0:00 | loops forever, one full-file read per ~38 s lap |
+| Pixel, from 0:00 | loops forever, ~20 s laps |
+| Pixel, media fast-forward sent at the stall | **"video output recovered" 1.5 s later, plays** |
+| Pixel, start with a saved position (resume) | plays after one full read (~13 s) — the 2026-09-22 result |
+| cast to the TV's built-in Chromecast | **inconclusive — casting is broken for every file**, see below |
+
+**Casting is broken generally, not by E19.** Casting a clean control (E18) did the same thing: the
+receiver requested E18, then E19 two seconds later, then E20 three seconds after that. Jellyfin started
+a transcode for each; each was stopped within ~2 s (*"stopped playback of 'Afsnit 19' at 0ms"*, client
+*"Ravilo dev"*), and the phone's remote was left on the last item at 0:00 / 0:00 with play disabled.
+So the receiver's behaviour on this file cannot be judged until casting itself works. That is its own
+bug and bigger than this one.
+
+**Jellyfin has the same weakness, and survives it by falling back.** During the cast, Jellyfin's HLS
+keyframe planner failed on E19:
+
+```
+MatroskaKeyframeExtractor: Extracting keyframes from …S01E19….mkv
+NEbml.Core.EbmlDataFormatException: invalid position, seeking backwards is not supported
+```
+
+NEbml is a forward-only EBML reader, the same shape of reader as ExoPlayer's. Jellyfin wraps it in
+`TryExtractKeyframes` and carries on without keyframe data. Worth an upstream Jellyfin report alongside
+the Media3 one.
+
+**Unrelated things noticed on the way — each worth its own look, none investigated:**
+- **TV series detail, single-season shows:** UP from an episode's *Watched* pill skips the card above
+  it and jumps to the hero, because the whole row carries `upToHero`; `focusRestorer()` then returns
+  every DOWN to the pill. The card becomes unreachable by D-pad until the page is re-entered — and OK
+  on the pill un-marks the episode.
+- **Phone, release build:** an ANR (*"Input dispatching timed out — application does not have a focused
+  window"*) when a long-lived process was brought back into an old player screen. The main thread was
+  idle in its looper; the activity simply never got a window. Trace kept in the session scratchpad.
+- **Phone:** Back during the loading loop did not leave the player on the first press; R218 says Back
+  always ends the session during a wait.
+- **Jellyfin:** `POST /Users/AuthenticateByName` failing three times a minute, every minute — something
+  in the house is retrying a bad login.
+
+**Side effects of the test on real data:** E19 now carries a saved position of a few minutes; E18
+played briefly on the phone; the casts recorded stops at 0 ms for E18, E19 and E20.
 
 ## Related
 
