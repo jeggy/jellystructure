@@ -53,6 +53,11 @@ signature matches on. Two ways, for dev review to pick:
 Lean: the first. It is one request field, every start path gets it for free, and the resolver already
 has no platform dependency.
 
+**Decided 2026-09-24 — the first.** Owner: *"just take the best decision. The only important thing is
+the user using Ravilo should get the very best experience. It should feel performant and nice and not
+laggy."* That criterion also decides FR-R291-2's mechanism when the measurements are in: whichever
+switch is fastest *as felt* on the TV, not whichever is cheapest to build.
+
 ### FR-R291-2 — A picked audio track plays within about a second, with no loader
 Picking another audio track on any stream keeps the picture moving and changes the sound within ~1 s.
 No cold-start screen, no black frame, no position jump, no chrome flash. This is the requirement; the
