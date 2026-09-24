@@ -23,18 +23,23 @@ RAW_MESSAGE = re.compile(
     '(?:' + PAINT + r')([A-Za-z_][A-Za-z0-9_]*(?:[?!]?\.[A-Za-z_][A-Za-z0-9_]*)*\.message)\b'
 )
 LETTER = re.compile(r'[^\W\d_]', re.UNICODE)
+# 2026-09-24 — a paint position whose value is `if (…) "a" else "b"`. TRIGGER needs the literal
+# immediately after `text =`, so DetailSynopsis's `text = if (expanded) "▴ less" else "▾ more"` drew
+# English on every Danish and Faroese TV while this check stayed green. Each branch literal on the
+# same line (after the condition's `)` or after `else`) is read like any other.
+PAINT_IF = re.compile('(?:' + PAINT + r')if\s*\(')
+BRANCH_LITERAL = re.compile(r'(?:\)\s*|\belse\s+)(?=")')
 
 # Allowed in a rendering position, each for a stated reason:
 #   Ravilo           the brand
 #   OK               the key cap printed on the remote, beside "Skip Intro"
-#   HLS/DIRECT PLAY  a delivery cue R180 FR-RV-ASP1-2 says should not be drawn at all. See the R279
-#                    spec's findings — translating it would be the wrong fix, removing it is R180's.
 #   10 s / −10s      a number and an SI unit, identical in every language we ship
 #   camelCase        Compose's animate*AsState(label = "tileScale") — a debug name, not text
 #   IMDb             a brand, like Ravilo
+#   YouTube/Vimeo    brands: where a trailer is hosted
 #   E · / E          what is left of "E${n} · ${title}" once the interpolations are removed
 ALLOW = re.compile(
-    r'^(?:Ravilo|IMDb|OK|HLS|DIRECT PLAY'
+    r'^(?:Ravilo|IMDb|YouTube|Vimeo|OK'
     r'|[-+\u2212]?\d+\s?s'
     r'|[a-z][a-zA-Z0-9]*'
     r'|E[\s\u00b7]*'
@@ -80,10 +85,19 @@ def violations():
                 if not fn.endswith('.kt') or fn.endswith('Test.kt') or fn in SKIP_FILES: continue
                 p = os.path.join(dirpath, fn)
                 src = open(p, encoding='utf-8').read()
-                for m in TRIGGER.finditer(src):
-                    lit, _ = read_literal(src, m.end())
-                    line = src.count('\n', 0, m.end()) + 1
-                    ctx = src[src.rfind('\n', 0, m.start()) + 1:m.start()].lstrip()
+                starts = [m.end() for m in TRIGGER.finditer(src)]
+                for m in PAINT_IF.finditer(src):
+                    eol = src.find('\n', m.end())
+                    rest = src[m.end():eol if eol >= 0 else len(src)]
+                    done = 0  # a `)` or `else` INSIDE a branch literal is not a new branch
+                    for b in BRANCH_LITERAL.finditer(rest):
+                        if b.end() < done: continue
+                        starts.append(m.end() + b.end())
+                        done = read_literal(rest, b.end())[1]
+                for start in sorted(set(starts)):
+                    lit, _ = read_literal(src, start)
+                    line = src.count('\n', 0, start) + 1
+                    ctx = src[src.rfind('\n', 0, start) + 1:start].lstrip()
                     if ctx.startswith('//') or ctx.startswith('*'): continue
                     bare = INTERP_NAMED.sub('', lit.replace('\x00', '')).strip()
                     if not bare or not LETTER.search(bare): continue

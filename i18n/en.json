@@ -175,6 +175,8 @@
   "detail.director": "Director",
   "detail.genre": "Genre",
   "detail.genres": "Genres",
+  "detail.synopsis_more": "▾ more",
+  "detail.synopsis_less": "▴ less",
   "fd.audio": {
     "text": "AUDIO",
     "note": "R240 (Phase 202) — the focus-detail status line (L) / row-open panel (J). Facts only; every number is server-resolved (FocusDetailFacts), these four strings are the only presentation."
@@ -285,6 +287,7 @@
   "player.tab_subtitles": "Subtitles",
   "player.badge_default": "Default",
   "player.badge_surround51": "Surround 5.1",
+  "player.badge_surround71": "Surround 7.1",
   "player.badge_stereo": "Stereo",
   "player.badge_signs_only": "Signs only",
   "player.badge_sound_described": "Sound described",

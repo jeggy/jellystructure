@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.components
 
+import dev.jellystructure.ravilo.ui.i18n.str
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -68,7 +69,7 @@ fun DetailSynopsis(
         if (truncated || expanded) {
             Spacer(Modifier.height(3.dp))
             Text(
-                text = if (expanded) "▴ less" else "▾ more",
+                text = str(if (expanded) "detail.synopsis_less" else "detail.synopsis_more"),
                 color = if (focused) colors.accent else colors.textSecondary.copy(alpha = 0.6f),
                 fontSize = 11.sp,
                 fontWeight = FontWeight.SemiBold,
