@@ -380,6 +380,7 @@ private class Receiver {
     }
 
     private fun onFinished(endedReason: String?) {
+        if (current == null) return   // R299 — already reported as failed
         nextUpJob?.cancel(); nextUpJob = null
         el("nextup").classList.remove("on")
         stopSession()
@@ -396,7 +397,12 @@ private class Receiver {
 
     /** R299 (FR-R299-1) — the item could not be played here; the phone says so and offers itself. */
     private fun failed() {
-        send(CastReceiverMessage(type = "failed", itemId = current?.itemId, title = current?.title, kicker = current?.kicker, artUrl = current?.artUrl, receiverId = receiverId))
+        val d = current ?: return
+        send(CastReceiverMessage(type = "failed", itemId = d.itemId, title = d.title, kicker = d.kicker, artUrl = d.artUrl, receiverId = receiverId))
+        // Said once. CAF reports a failed load on ERROR and again on MEDIA_FINISHED(ERROR); with the
+        // item forgotten here, the second path finds nothing to stop or report (seen live: two
+        // "stopped at 0ms" on one failed cast).
+        current = null
         idle()
     }
 
