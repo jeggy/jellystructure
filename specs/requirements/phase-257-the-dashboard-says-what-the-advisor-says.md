@@ -52,6 +52,31 @@ same function as in Settings. When the re-check says it is closed, the Dashboard
 The card ends with *Open the advisor in Settings →* (`#/settings?tab=libraries`). Settings keeps its
 per-library placement, its memory-budget calculator (phase 215) and everything else it has today.
 
+### Amendment 2026-09-24 — one finding, then *+N more*
+
+> Owner, on production's card reading *"27 to change · 2 critical"*: *"Let's instead of having this huge
+> list of warnings, let's make sure to sort them properly and then have them collapsable, so we can only
+> see one item and then a plus sign showing how many more there are."*
+
+Built as FR-257-2 first described, the card rendered all 27 findings in full: about two screens of
+Dashboard before the stat grid. The Dashboard only has to make sure the admin sees that something needs
+doing and what comes first. The full list is Settings' job.
+
+**FR-257-2 (amended) — Sorted, then folded to its first finding.**
+- **Order**, stated in full so the one finding left visible is the right one: `critical`, then `warning`,
+  then `info`. Within a severity, server-wide findings come first, because they cost every library.
+  Per-library findings follow in Jellyfin's library order, with each library's rows kept together
+  (they are fixed on the same *Manage library* screen). Within a library, the backend's own order is kept.
+- **Only the first finding is shown.** Under it, one control reads **+N more**, where N is the number of
+  remaining findings that ask for something. If there are notes, it adds *· M for information*; if the
+  rest are only notes, it reads *+M more for information*. One click opens the rest in the same order,
+  and the notes follow under a *For information* label, so a note is still one click from open (the
+  separate *"N for information"* fold is gone). An opened list ends with **− Show fewer**.
+- **Folded by default** every time the Dashboard is rendered. A reload caused by *Re-check* (FR-257-4)
+  keeps the list as the admin left it, so it does not close under them.
+- No control at all when there is only one finding. The header badge keeps counting every finding that asks
+  for something (*"27 to change · 2 critical"*), not only the one on show.
+
 ## Invariants
 - One source: the same endpoint and its 5-minute cache. The Dashboard adds no request pattern the
   Settings page does not already make.

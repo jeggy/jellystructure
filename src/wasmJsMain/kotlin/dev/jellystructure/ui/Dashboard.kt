@@ -202,23 +202,35 @@ private suspend fun loadDashFindings() {
 
 /**
  * Phase 257 — the Jellyfin settings advisor on the page an admin actually lands on. Every finding the
- * Settings advisor shows (FR-257-1), through the same [advisorFindingHtml]; critical → warning → info,
- * server-wide before per-library (FR-257-2); nothing at all when there is nothing to say or Jellyfin
- * is unreachable (FR-257-3); Re-check wired by the same function as Settings (FR-257-4).
+ * Settings advisor shows (FR-257-1), through the same [advisorFindingHtml]; nothing at all when there is
+ * nothing to say or Jellyfin is unreachable (FR-257-3); Re-check wired by the same function as Settings
+ * (FR-257-4). FR-257-2 (amended 2026-09-24): critical → warning → info, server-wide before per-library,
+ * each library's rows together — then folded to the first finding, the rest behind one *+N more*.
+ * [keepOpen] is only ever true for a Re-check reload, so the list does not close under the admin.
  */
-private suspend fun loadDashAdvisor(scope: CoroutineScope) {
+private suspend fun loadDashAdvisor(scope: CoroutineScope, keepOpen: Boolean = false) {
     val el = document.getElementById("dash-advisor") as? HTMLElement ?: return
     val result = dev.jellystructure.api.ConfigApi.getJellyfinAdvisor()
     if (result == null || !result.reachable) { el.innerHTML = ""; return }
     val rank = mapOf("critical" to 0, "warning" to 1, "info" to 2)
+    // Index order is server-wide (already severity-sorted by the backend) then each library in
+    // Jellyfin's order, so a stable sort on severity alone yields the whole of FR-257-2's order.
     val all = result.serverWide.map { null as String? to it } +
         result.perLibrary.flatMap { sec -> sec.findings.map { sec.libraryName to it } }
     if (all.isEmpty()) { el.innerHTML = ""; return }
     val ordered = all.withIndex().sortedWith(compareBy({ rank[it.value.second.severity] ?: 1 }, { it.index })).map { it.value }
     fun row(lib: String?, f: dev.jellystructure.api.AdvisorFinding): String =
         (if (lib != null) """<div class="tiny muted" style="margin:10px 0 -4px">Library · ${lib.esc()}</div>""" else "") + advisorFindingHtml(f)
-    val (notes, asks) = ordered.partition { it.second.severity == "info" }
+    val asks = ordered.filter { it.second.severity != "info" }
     val critical = asks.count { it.second.severity == "critical" }
+    val first = ordered.first()
+    val (restNotes, restAsks) = ordered.drop(1).partition { it.second.severity == "info" }
+    val moreLabel = when {
+        restAsks.isEmpty() -> "+${restNotes.size} more for information"
+        restNotes.isEmpty() -> "+${restAsks.size} more"
+        else -> "+${restAsks.size} more · ${restNotes.size} for information"
+    }
+    val lessLabel = "− Show fewer"
     el.innerHTML = """
     <div class="card" style="padding:14px 16px">
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
@@ -228,14 +240,27 @@ private suspend fun loadDashAdvisor(scope: CoroutineScope) {
         <a class="btn sm ghost" href="#/settings?tab=libraries">Open the advisor in Settings →</a>
       </div>
       <p class="hint" style="margin:6px 0 0">Read-only. jellystructure never writes to Jellyfin — every row below is something to change yourself, with exact steps.</p>
-      ${asks.joinToString("") { row(it.first, it.second) }}
-      ${if (notes.isNotEmpty()) """
-      <details style="margin-top:10px">
-        <summary class="tiny" style="cursor:pointer">${notes.size} for information</summary>
-        ${notes.joinToString("") { row(it.first, it.second) }}
-      </details>""" else ""}
+      ${row(first.first, first.second)}
+      ${if (restAsks.isEmpty() && restNotes.isEmpty()) "" else """
+      <div id="dash-advisor-rest" style="display:${if (keepOpen) "block" else "none"}">
+        ${restAsks.joinToString("") { row(it.first, it.second) }}
+        ${if (restNotes.isNotEmpty()) """<div class="tiny muted" style="margin:16px 0 -2px;font-weight:600">For information</div>""" + restNotes.joinToString("") { row(it.first, it.second) } else ""}
+      </div>
+      <button class="btn sm ghost" id="dash-advisor-more" aria-controls="dash-advisor-rest" aria-expanded="$keepOpen" style="margin-top:10px">${if (keepOpen) lessLabel else moreLabel}</button>"""}
     </div>"""
-    wireAdvisorActions(ordered.map { it.second }, scope) { loadDashAdvisor(scope) }
+    val rest = document.getElementById("dash-advisor-rest") as? HTMLElement
+    val more = document.getElementById("dash-advisor-more") as? HTMLElement
+    if (rest != null && more != null) {
+        more.addEventListener("click", {
+            val open = rest.style.display == "none"
+            rest.style.display = if (open) "block" else "none"
+            more.textContent = if (open) lessLabel else moreLabel
+            more.setAttribute("aria-expanded", open.toString())
+        })
+    }
+    wireAdvisorActions(ordered.map { it.second }, scope) {
+        loadDashAdvisor(scope, keepOpen = (document.getElementById("dash-advisor-rest") as? HTMLElement)?.style?.display == "block")
+    }
 }
 
 private suspend fun loadDashboardStats() {
