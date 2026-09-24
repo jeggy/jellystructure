@@ -2,7 +2,11 @@
 
 ## Status
 
-`Planned` — written 2026-09-24 from a household report, not dev-reviewed, not built. Spec first.
+`Planned` — written 2026-09-24 from a household report. **Dev-reviewed 2026-09-24 against `main`
+`9d2636bb`** (see §Dev review at the bottom: every gap named is real and every phase-254 piece it reuses
+exists; FR-255-1 is two fields because the `DURATION` tag is already parsed; a triage type is five
+sites, not one; the advice must print the stream's own index, never a list position — 254's own
+mislabelling bug; open question 4's premise is not in the skill). Not built. Spec first.
 
 > *"Starhaul played without audio yesterday evening, but playing same episode again this morning
 > worked. Yesterday was tested via Wholphin and today was tested via Ravilo, both on Stue TV."*
@@ -212,6 +216,9 @@ Two lessons the requirements below are built on:
    Danish source for those two episodes was itself a stub. Worth checking the onboarding step's own
    output length — a finding here that jellystructure's own tooling caused should be preventable at mux
    time.
+   *Dev review:* the skill as written tags KVF's audio `language=fao` and muxes nothing else — no `-map`,
+   no Danish step in `SKILL.md`. The stubs came from a mux outside it; worth finding where, but the
+   skill is not the place for a length check.
 
 ## Acceptance
 
@@ -227,3 +234,59 @@ Two lessons the requirements below are built on:
    files, 3 titles) and *File claims to be longer than it is* (2 files, 2 titles); *Starhaul*'s page
    says the Opus track stops at 4:41, that players picking the first track get silence, and suggests
    removing it; *Beetlemania* and *Playroom 3* show nothing from this phase.
+
+## Dev review (2026-09-24, against `main` `9d2636bb`)
+
+The gaps the spec names are real. `Track` (`model/Media.kt:66`) has one `durationMs` (`:98`) — the
+container's declared length, read from the video track by `fileDurationMs()` (`:117`); `FfprobeStream`
+(`FfprobeRunner.kt:29-48`) parses `tags` and drops `duration`; `zero_audio` counts absence; phase 254's
+check is a demux pass (`FileIntegrity.checkCommand`). And every shape the spec wants to reuse exists:
+the `-read_intervals` probe (`FfprobeRunner.kt:271`, phase 222), the sweep job on the segments queue with
+`deferWhilePlaying = true` (`MediaJobQueue.kt:647`, `:728`), the size+mtime currency rule (`isCurrent`,
+`FileIntegrityService.kt:98-101`), the niced gate (`SegmentProcessGate.withPermit`, `:145`), the
+count-cache revision (`bump()`, `:39`). Seven items.
+
+1. **FR-255-1 is two fields, and the tag is already in hand.** `FfprobeStream.tags` (`:39`) carries
+   `DURATION`/`DURATION-eng` today; `streams[].duration` is the one JSON field the DTO drops. Add it
+   there and `streamDurationMs` on `Track`; the scan already runs `-show_streams -show_format` (phase
+   185). `Track.durationMs`'s own doc (`:96`) explains why TMDB's runtime is not a length; the new
+   field's doc says why a tag is not one either.
+2. **FR-255-3's probe has a sibling to copy.** Phase 222's keyframe probe is
+   `-read_intervals '<at>%+#1'` with the path escaped through the same helper (`FfprobeRunner.kt:271`);
+   the tail probe is that line with `packet=stream_index,pts_time` and `%+60`. Same escaping, same
+   `runCommand`, same `2>/dev/null` — so `check-fd-hygiene.sh` and the process gate see one shape.
+3. **A triage type is five sites, and 254 shows all of them.** `TriageRoutes.kt:209` (the breakdown
+   entry), `MediaStore.kt:453` (the per-item `issueCount` `when`), `Library.kt:85` (the filter label),
+   `Dashboard.kt:348` (severity), and the revision key (`FileIntegrityService.bump`, `:39`). Both of
+   FR-255-7's types go through all five; missing one is how a finding counts on the Dashboard and not in
+   the Library. Name the two `?filter=` keys once, in the shared model, as 254 did.
+4. **Routes: follow 254's naming, not the spec's guess.** 254's title route is
+   `GET /media/{mediaId}/health/integrity` with `POST …/health/integrity/check` (`TrackRoutes.kt:758-782`);
+   `/health/tracks` fits the pattern, and FR-255-6's *Check now* is the existing `POST …/check` running
+   both checks — one button, one route, as the FR says.
+5. **The classifier and the advice go beside `FileIntegrity`, and one 254 lesson goes in from the
+   start.** `FileIntegrity`/`FileRepairPlan` (`src/commonMain/…/media/FileIntegrity.kt`) are the pure
+   precedent; their tests are `src/linuxX64Test/…/media/FileIntegrityTest.kt`. `FileRepairPlan.copyCommand`
+   keys `-disposition`/`-metadata` by stream **index**, and against this library — whose audio is
+   reordered Danish-first — it mislabels the source's English track (found 2026-09-22, not yet fixed).
+   FR-255-10's `-map -0:<n>` is by index too, correctly for a removal; the builder must print the
+   stream's *own* `Track.streamIndex` from the probe, never a position in a jellystructure list, and a
+   unit test asserts it on a reordered file.
+6. **Kind E's "never marked watched" is a client fact, and the server has no 90 % rule of its own.**
+   The ≥ 90 % mark-played is `PlayerStore.stopSession` (`:270`), against the duration the player reports
+   — the header. Nothing in `PlaybackService` marks by percentage. The symptom is as described for
+   Ravilo and for any client that trusts the container; after a remux the header changes, the row goes
+   stale (FR-255-4), and the next sweep clears it. FR-255-7's description should say "players" rather
+   than imply the server.
+7. **The design mirror has no triage precedent to copy.** `file_damage`/*Damaged video files* is in the
+   served admin (`Dashboard.kt`, `Library.kt`) and in neither `design/app/index.html`'s attention list nor
+   `library.html`'s filter list — 254's type never reached the mockups. 255's two would be the second and
+   third served-only types; add all three in one pass, or record that the design is behind on this page.
+
+**Open question 1.** As leaned — with one addition: 255's sweep and 254's share the segments lane and
+`SegmentProcessGate`'s permits, and 254's own first pass over 8,300 files has not run in production yet.
+Run 254's first; the two together on a cold library are one disk reading everything twice.
+
+**Net effect.** Two fields, one probe beside 222's, one classifier + one advice builder with tests beside
+254's, one table and migration, five triage sites, one route pair on 254's pattern, two lines on the track
+rows. Nothing writes a media file.
