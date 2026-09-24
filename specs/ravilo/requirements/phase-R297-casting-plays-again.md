@@ -77,7 +77,10 @@ console shows CAF plays HLS through Shaka, which detects fMP4 itself; the failur
   one `PlaybackInfo` and the idle screen; no other episode is loaded.
 - **FR-R297-1 (same):** the receiver's probes appear in the TV's own log: `ac-3` false, `ec-3` false,
   `opus` true.
-- **FR-R297-4:** unit tests only; needs a backend deploy.
+- **FR-R297-4 (prod, 2026-09-24):** first on the local build the bedroom-TV cast ran on (Jellyfin's ffmpeg
+  log: `-codec:a:0 libfdk_aac`, `-codec:v:0 copy`), then on the deployed dev image through
+  `/api/tv/playback/start` with `audio_codecs = aac, mp3, opus` for an AC-3/TrueHD title: master playlist
+  `CODECS="avc1.640029,mp4a.40.2"`, `AudioCodec=aac`, `TranscodeReasons=AudioCodecNotSupported`.
 
 ## Acceptance (a TV's built-in Chromecast, cast from the Pixel's release app)
 

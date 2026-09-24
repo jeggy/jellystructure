@@ -2,7 +2,9 @@
 
 ## Status
 
-`Planned` — written 2026-09-24, not dev-reviewed. Spec first. Amends **R283** FR-R283-1's web line
+`✓ Done` — written and built 2026-09-24 (`3077f92c`), deployed to prod the same day (dev image), not
+dev-reviewed. Verified in headless Chromium against prod: the page publishes `aac,mp3,flac,opus`; the
+backend negotiates AAC for that list (FR-R297-4). Acceptance 2 not run as a signed-in viewer. Amends **R283** FR-R283-1's web line
 ("exactly the pre-R283 list") and pairs with **R297** FR-R297-1 (the Chromecast) and FR-R297-4 (the
 backend honours the declaration).
 
