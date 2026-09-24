@@ -6,7 +6,11 @@
 ## Status
 
 `Planned` — written 2026-09-24 from the soveværelse-TV sweep (Play Store v1.36 and a debug build of
-`1.37-6-g2c2aca48`, both reproduced). Not dev-reviewed, not built. Pairs with **R291** (instant audio
+`1.37-6-g2c2aca48`, both reproduced). **Dev-reviewed 2026-09-24 against `main` `9d2636bb`** (see §Dev
+review at the bottom: FR-R290-1 is two edits — the default *and* the `wake()` after every load; FR-R290-2
+needs a per-item start latch, because a restream clears the debounced moment at once by design;
+FR-R290-3 is one assignment from the ticket; FR-R290-4 is prepare-resolve-then-play; FR-R290-5 already
+holds through Phase 180; open question 2 closes). Not built. Pairs with **R291** (instant audio
 switching), which removes the most common cause of the third moment below.
 
 ## What the viewer sees today
@@ -99,9 +103,72 @@ changed the same way.
    first real frame of the resumed position. No frame of the pre-seek position appeared.
 2. Moment A today has its own small centred overlay. Merge it into the start screen (lean: yes — the
    viewer cannot tell negotiation from buffering, and should not have to).
+   **Closed — dev review item 7:** merge; R237's *retrying* line is the one variation that stays.
 
 ## Verification
 - Unit: the derived "what is on screen" state for the start sequence (pure helper).
 - Device, soveværelse TV and Pixel 9, release build: resume a transcoded title with a non-default
   remembered audio, and a direct-play title; frame-capture the first 15 s; no frame shows chrome or
   0:00 before the film. Navigate Back during the start and after it.
+
+## Dev review (2026-09-24, against `main` `9d2636bb`)
+
+The three wrongs are all in the code, one line number off. `chromeVisible` defaults `true` at
+`PlayerScreen.kt:430` (the spec says `:427`). The chrome gate is `(chromeVisible || stallActive) &&
+!coldActive && !(handset && locked)` (`:1797`); `rawBufferMoment` is `NONE` whenever `sessionState !is
+Ready` (`:1134`, "moment A owns this wait"), so nothing can suppress the chrome during negotiation, and
+after Ready `displayedBufferMoment` lags the raw moment by the 400 ms debounce (`:1148-1154`) — that is
+the chrome's window over black. The 2026-08-29 comment at `:1786-1793` already names the default as the
+cause and marks moment A "unrelated, out of scope". `positionMs` is written only by the 500 ms poll
+(`:978`, `POLL_MS` at `:156`), never from the ticket — hence 0:00. Seven items.
+
+1. **FR-R290-1 is two edits, not one.** The default at `:430`, and `wake()` at `:953` — called right after
+   *every* `load()`, a restream's included — which sets `chromeVisible = true` and re-arms the hide timer.
+   With the default alone the chrome still comes up on each load. Both move to the moment the latch in
+   item 2 opens: the chrome is raised, and its timer armed, on the first frame the viewer will keep, not
+   on a stream loading.
+2. **FR-R290-2's blink is structural, and needs a latch per item, not per ticket.** `restreamWithSub` sets
+   `Loading` (`PlayerStore.kt:228`) → `rawBufferMoment` becomes `NONE` → `displayedBufferMoment = NONE`
+   **immediately** (clearing is deliberately undebounced, `:1149-1151`) → the start screen drops, the
+   small Loading overlay and the chrome return, and on the new Ready the 400 ms runs again before COLD
+   comes back. R237's retry does the same through `Loading(retrying = true)` (`PlayerStore.kt:208`). The
+   fix is one derived start phase per **item**: `BLACK` (under 400 ms from the press), `START` (until the
+   latch), `PLAYING`. The latch is two facts the screen already holds: `hasRenderedFirstFrame` for the
+   *current* stream (reset on every `load()`, `:932`) **and** the resolver has settled for this item with
+   no restream requested (`bk.resolvedForItemId == currentItemId`, `:736`) — "the stream the viewer will
+   actually watch" is precisely the one the resolver did not send back. One pure helper returning one
+   enum, unit-tested in `commonTest/…/screens` the way `recoverySeekTargetMs` is.
+3. **FR-R290-3 is one assignment.** `ticket.startPositionMs` is in hand at Ready (`:933`); write it into
+   `positionMs` beside the `load()`, and the first chrome frame cannot show the poll's 0 whether or not a
+   tick has run. R292's dev review (item 2) puts a `start_position_ms` on the start request; once that
+   lands the client knows the target before Ready and seeds `positionMs` from its own record on the way
+   in. A restream already carries the position (`restreamWithSub(…, player.positionMs, …)`,
+   `:727/:759/:771`).
+4. **FR-R290-4's "no audio from the discarded stream" has no mechanism today — prepare, resolve, then
+   play.** `player.play()` follows every `load()` unconditionally (`:950`); on a transcode the audio
+   decodes ahead of the first video frame, and R295's shutter hides only the picture. Rather than a
+   `setMuted` on the seam, hold `play()` until the latch opens: ExoPlayer renders the first frame on
+   READY whether or not `playWhenReady` is set, and the tracks arrive at prepare, so the resolver's
+   verdict and the first frame are both in hand before a sample is heard — a discarded stream is
+   prepared, never *played*. (Its Jellyfin transcode still ran; R291 removes that.) Verify on a device
+   that the first frame does render before `play()` on a resume seek; if it does not, mute until the
+   latch is the fallback — a `setMuted(Boolean)` seam member, `exo.volume` on Android, `video.muted` on
+   the web. Also: "a burn-in chosen by R181's resolver" is not a real cause — the resolver never
+   auto-starts a burn-in (`:764`). R284's audio restream and R237's retry are the two.
+5. **FR-R290-5 already holds, through Phase 180.** Back during any wait is `onBack()` at `:1371`
+   (`sessionState !is Ready || COLD`); `close()` stops the session first and cancels the scope after
+   (`PlayerStore.kt:341-350`); both restream paths register with `playbackTracker.started`
+   (`PlaybackService.kt:940`, `:1003`), so a stop that lands before the restream does is caught by
+   `pendingStops` (`:162`, FR-180-3). Keep the acceptance line; nothing to build.
+6. **FR-R290-6 is the same default.** There is one `chromeVisible` for both chromes; the phone differs
+   only in `!(handset && locked)` and R244's timer. "Its own chrome defaults" is item 1's edit, once. The
+   phone's "chrome and loader at once" is the same 400 ms window under `rememberWindowShapeSettled`'s
+   shutter (`:2034`).
+7. **Open question 2 closes: merge, and keep one line.** The Loading overlay (`:1678-1700`) and the COLD
+   screen (`:1625`) become the one start screen of item 2; R237's *retrying* line (`:1697`, FR-R237-5) is
+   the only variation and stays. The invariant's "new state lives in `PlayerBookkeeping`" (`:264`) is
+   right; add that the derived phase is one `val` from a pure helper — every extra derived local in the
+   body also spends registers.
+
+**Net effect.** Two chrome edits, one assignment, one enum + helper, `play()` deferred to the latch, one
+overlay merged. No new strings, no seam change unless item 4's device check says otherwise.
