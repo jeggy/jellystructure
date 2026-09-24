@@ -1,4 +1,4 @@
-# Phase R297 — Casting plays again: tell the receiver the stream is fMP4, and never skip on an error
+# Phase R297 — Casting plays again: probe audio like video, and never skip on an error
 
 ## Status
 
@@ -16,25 +16,30 @@ and a damaged one alike):
 - it loads the **next episode**, which fails the same way, and so on down the queue. The phone's remote
   is left on the last item at 0:00 / 0:00 with Play disabled; the TV shows the idle screen.
 
-Two defects compound:
+Two defects compound, both measured on the device through the receiver's DevTools
+(`@cast_shell_devtools_remote`, forwarded over adb):
 
-1. **The stream is fMP4 and the receiver never says so.** Since 253/R285 the receiver declares
-   `hls_hevc` whenever `canDisplayType('video/mp4', 'hev1…')` answers yes (it does on the BRAVIA), and
-   the backend then asks Jellyfin for its fMP4 HLS profile. Replayed 2026-09-24: `SegmentContainer=mp4`,
-   an `#EXT-X-MAP` init segment and `.mp4` media segments, AC-3 copied. The receiver hands CAF only
-   `contentType = application/x-mpegURL`; CAF's HLS player assumes MPEG-TS segments unless
-   `media.hlsSegmentFormat` / `media.hlsVideoSegmentFormat` say `FMP4`. Casting worked on 2026-09-18,
-   before this profile existed.
+1. **The receiver claims audio codecs it cannot play.** Every load fails with
+   `[cast.framework.PlayerManager] Load failed: Shaka Error 4032` (`CONTENT_UNSUPPORTED_BY_BROWSER`:
+   no variant is playable). Asked on the device, `MediaSource.isTypeSupported('audio/mp4;
+   codecs="ac-3"')` and `"ec-3"` are **false**, as is `canDisplayType('audio/mp4', 'ac-3'/'ec-3')`,
+   while AAC, Opus, H.264 and HEVC are true. `capabilities()` probes video but hard-codes
+   `audioCodecs = aac, mp3, opus, ac3, eac3`, so for an AC-3 source Jellyfin copies AC-3 through
+   (master playlist `CODECS="avc1.4D4029,ac-3"`) and Shaka rejects the whole stream. Negotiated without
+   AC-3, the same episode comes back `CODECS="avc1.4D4029,mp4a.40.2"`; loaded with Shaka in the
+   receiver page it reaches `readyState 4` with 13 s buffered, where the AC-3 variant fails 4032.
 2. **An error is treated as the end of the episode.** `onFinished()` runs on CAF's `MEDIA_FINISHED`
    whatever its `endedReason`, and advances to the next episode. So one bad stream walks the whole
-   queue at ~2 s per item. The `ERROR` listener is empty, so nothing records why.
+   queue at ~2 s per item, which is what the phone's remote shows as the episode changing by itself.
+
+*First hypothesis, withdrawn:* that CAF needed `hlsSegmentFormat = FMP4` for 253's fMP4 profile. The
+console shows CAF plays HLS through Shaka, which detects fMP4 itself; the failure is the audio codec.
 
 ## Requirements
 
-- **FR-R297-1 — fMP4 is declared.** When the ticket's HLS URL is Jellyfin's fMP4 profile
-  (`SegmentContainer=mp4`), the LOAD the receiver hands CAF sets `hlsSegmentFormat` and
-  `hlsVideoSegmentFormat` to `FMP4`. A TS stream is left exactly as today. This covers a restream
-  (R285's track change) as well as a first load, since both pass through the same interceptor.
+- **FR-R297-1 — Audio is probed like video.** The receiver declares AC-3, E-AC-3 and Opus only when
+  `canDisplayType('audio/mp4', …)` says the device plays them; AAC and MP3 always. A Chromecast that
+  passes AC-3 through to an amplifier keeps it; one that cannot gets AAC from Jellyfin instead.
 - **FR-R297-2 — Only a real end moves on.** `MEDIA_FINISHED` advances to the next episode only when its
   `endedReason` is `END_OF_STREAM` (or absent, as older frameworks send it). On `ERROR` (and any other
   reason) the receiver stops the session, returns to its idle screen and tells the phone the item
@@ -49,13 +54,14 @@ Two defects compound:
   ignore a new one; that needs a phone release and its own copy in three languages. Follow-up.
 - Turning `hls_hevc` off for the Chromecast. fMP4 is the only HLS shape Jellyfin emits HEVC in, and
   losing it would re-encode every HEVC title for a device that decodes HEVC (253's reason).
+- The Tizen receiver (`ravilo-screen`) has its own hard-coded capability list; it is not this phase.
 - The tracks-at-end MKV (R294) on the receiver. It transcodes through Jellyfin, which reads the file
   itself; testable once casting works at all.
 
-## Acceptance (stue TV's built-in Chromecast, cast from the Pixel's release app)
+## Acceptance (a TV's built-in Chromecast, cast from the Pixel's release app)
 
-1. **Before the fix, from DevTools on the receiver:** the load fails with a CAF error, confirming
-   defect 1 (recorded here before the fix is deployed).
+1. **Before the fix (done 2026-09-24, stue TV):** Shaka 4032 on every load; AC-3/E-AC-3 unsupported;
+   the AAC-negotiated stream loads in the receiver page.
 2. A clean episode cast from the phone plays on the TV, with sound, from the phone's position; pause,
    seek and stop from the phone work.
 3. Changing audio or subtitles from the phone (R285 restream) keeps playing.

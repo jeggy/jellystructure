@@ -167,12 +167,6 @@ private class Receiver {
         request.media.contentId = t.hlsUrl
         request.media.contentUrl = t.hlsUrl
         request.media.contentType = "application/x-mpegURL"
-        // R297 (FR-R297-1) — 253's hls_hevc profile makes Jellyfin emit fMP4 segments. CAF assumes
-        // MPEG-TS unless told otherwise, and every cast died about two seconds in.
-        if (t.hlsUrl?.contains("SegmentContainer=mp4", ignoreCase = true) == true) {
-            request.media.hlsSegmentFormat = messages.HlsSegmentFormat.FMP4
-            request.media.hlsVideoSegmentFormat = messages.HlsVideoSegmentFormat.FMP4
-        }
         request.media.streamType = messages.StreamType.BUFFERED
         val tracks = js("[]")
         var defaultSub: Int? = null
@@ -225,12 +219,18 @@ private class Receiver {
             runCatching { context.canDisplayType(mime, codec, w, h) as Boolean }.getOrDefault(false)
         val hevc = can("video/mp4", "hev1.1.6.L153.B0")
         val vp9 = can("video/webm", "vp09.00.10.08")
+        // R297 (FR-R297-1) — audio is probed like video. The stue TV's built-in Chromecast answers no
+        // to AC-3 and E-AC-3, yet this list claimed both, so Jellyfin copied AC-3 through and Shaka
+        // rejected every variant (error 4032): every cast failed about two seconds in.
+        val ac3 = can("audio/mp4", "ac-3")
+        val eac3 = can("audio/mp4", "ec-3")
+        val opus = can("audio/mp4", "opus")
         val hdr10 = can("video/mp4", "hev1.2.6.L153.B0", 3840, 2160)
         val uhd = can("video/mp4", "avc1.640033", 3840, 2160) || can("video/mp4", "hev1.1.6.L153.B0", 3840, 2160)
         return ClientCapabilities(
             containers = listOf("mp4", "ts"),
             videoCodecs = listOfNotNull("h264", "hevc".takeIf { hevc }, "vp9".takeIf { vp9 }),
-            audioCodecs = listOf("aac", "mp3", "opus", "ac3", "eac3"),
+            audioCodecs = listOfNotNull("aac", "mp3", "opus".takeIf { opus }, "ac3".takeIf { ac3 }, "eac3".takeIf { eac3 }),
             maxAudioChannels = 6,
             hlsOnly = true,
             // R285 (FR-R285-5) / 253 — CAF plays fMP4 HLS, and `hevc` here is this device's own answer
