@@ -2,7 +2,12 @@
 
 ## Status
 
-`Planned` — written 2026-09-24 from a production finding, not dev-reviewed, not built. Spec first.
+`Planned` — written 2026-09-24 from a production finding. **Dev-reviewed 2026-09-24 against `main`
+`9d2636bb`** (see §Dev review at the bottom: every cited path holds; FR-258-4's "by construction" is
+defeated for up to five minutes by `validateDeviceToken`'s token cache unless the reconciler evicts it;
+`getUsers()` cannot report a failure today, which FR-258-3 needs; no `updatePolicy` query exists; the
+reconciler must normalise exactly as `loginDevice` does or every pass rewrites every row). Not built.
+Spec first.
 Amends **Phase 142** (FR-AUTH2: the per-device library allow-list) and its tag follow-up; no Ravilo
 client change, no new payload field.
 
@@ -99,12 +104,17 @@ R202/R231: a rule the spec states, a copy the code keeps, and no mechanism keepi
    operator edits a user? If yes, it becomes an extra trigger (with the poll as backstop); measure
    before relying on it — Phase 181's listener is the precedent for a message that was assumed and
    never arrived.
+   *Dev review:* lean — do not spend the probe. Jellyfin's session manager addresses `UserUpdated` to the
+   *edited user's* own sessions, and the 2026-08-30 probe showed the socket delivers nothing it was not
+   subscribed to; an admin-key socket would hear about the admin. The connect trigger is the fast path.
 2. A user deleted in Jellyfin: `getUsers()` omits them. Today their rows keep working until the
    Jellyfin user token fails. Should the reconciler treat "absent from `/Users`" as a signal at all
    (FR-258-3 says no, deliberately), and is the answer a separate phase that signs those devices out?
 3. Interval. 5 minutes is a guess that keeps `/Users` at ~300 calls/day; the household will not
    notice one minute versus five, an operator toggling a tag and checking the TV will. 60 s on the
    connect path is the one number that matters to them.
+   *Dev review:* with the token-cache eviction of item 1 below, five minutes is fine; without it, the
+   worst case is interval **plus** the cache's own five minutes.
 
 ## Acceptance (prod backend, no client change)
 
@@ -123,3 +133,60 @@ R202/R231: a rule the spec states, a copy the code keeps, and no mechanism keepi
    line for the failed pass and no `Policy refreshed` line. Start it; the next pass is quiet.
 6. Settings → Users & devices: with a row deliberately edited to an older policy (SQL), the user's
    line carries *"a device is still on an older policy"*; after the next pass the clause is gone.
+
+## Dev review (2026-09-24, against `main` `9d2636bb`)
+
+Every cited path holds: the login writes all five fields from the `AuthenticateByName` policy
+(`TvRoutes.kt:317-334`; `isKids = maxParentalRating != null` at `:325`); `validateDeviceToken` touches
+`last_seen` and nothing else (`RaviloDeviceService.kt:143-150`); `visibleTo` is the allow-list and the tag
+policy (`media/MediaStore.kt`); the overview builds its access line from the live `getUsers()`
+(`TvRoutes.kt:906-932`); a paired screen is minted from the phone's row, token included
+(`ScreenPairingService.kt:70-82`); and `allowedHash` is libraries × allowed × blocked in both
+`HomeFeedService.kt:164` and `BrowseService.kt:260`. Seven items.
+
+1. **FR-258-4's "by construction" is defeated for five minutes by a cache the spec did not see.**
+   `validateDeviceToken` serves `DeviceData` from `tokenCache` for `TOKEN_CACHE_TTL_MS = 5 min`
+   (`RaviloDeviceService.kt:16`, `:147`). Every `/api/tv/**` request's `device` — and so its `allowedHash`
+   — comes from that cache, not the row; a rewritten row is invisible until the entry ages out, and
+   FR-258-2's "a TV that just woke up gets today's policy before its first Home fetch" is false on the
+   connect path unless the reconciler evicts first. The revoke paths already do this
+   (`tokenCache.remove(...)` at `:245` and `:281`); the reconciler evicts every token of the user it
+   rewrote — `remove` only, not `DeviceIdentityRegistry.forget`: the Jellyfin user token has not changed.
+   Phase 142's own comment (`:241`) recorded this exact trap for revocation.
+2. **`getUsers()` cannot say it failed, and FR-258-3 needs it to.** `JellyfinClient.getUsers`
+   (`:381-384`) is `runCatching { … }.getOrDefault(emptyList())`: an unreachable Jellyfin, a non-2xx and
+   a body that deserialises to nothing are all the empty list. FR-258-3's "leave the row" is then safe by
+   accident (every user is "missing"), but acceptance 5's *one line for the failed pass* and FR-258-7's
+   silence on a quiet pass cannot be told apart. Add a `getUsersOrNull()` — `List<JellyfinUser>?`, `null`
+   = the fetch failed — R231's shape (`buildCanonicalContinueList`), for the same reason: a failure must
+   never look like an answer. The overview's `allFolders = policy?.enableAllFolders ?: true`
+   (`TvRoutes.kt:928`) is the same trap in display form — "All libraries" when Jellyfin is down — and can
+   read *policy unknown* once it has a way to know.
+3. **No `updatePolicy` query exists.** `RaviloDevice.sq` has `insertDevice` (INSERT OR REPLACE),
+   `updateAppInfo`, `updateLastSeen` and `updatePublicAddress` (`:52-84`). The reconciler needs one
+   `UPDATE … WHERE jellyfin_user_id = ?` covering the five fields and `policy_refreshed_at`, so a user's
+   phone, screens and cast rows change in one statement. `policy_refreshed_at` is migration `49.sqm`
+   (48 is the highest) **and** the column in the `.sq` `CREATE TABLE` — both, or the generated interface
+   and the live schema disagree.
+4. **Compare after normalising, exactly as `loginDevice` does, or every pass rewrites every row.**
+   `loginDevice` lowercases tags (`encodeTags`) and normalises library GUIDs (`normalizeGuid`, `:81`)
+   before storing; Jellyfin's `EnabledFolders` are raw. A reconciler that compares raw against stored
+   sees a difference on every row every five minutes and FR-258-7 logs a change that is not one. Route
+   the fetched policy through the same two helpers, then compare; `enableAllFolders ⇒ null` and
+   `maxParentalRating != null ⇒ isKids` are the other two rules to copy from `TvRoutes.kt:322-325`.
+5. **The connect trigger's place is the events handler's top**, after `validateDeviceToken` and before
+   `sessionBridge.connect` (`Server.kt`, the `/api/tv/events` route) — and item 1's eviction has to
+   happen there before the Home fetch the trigger exists for. Note the handler's own `validateDeviceToken`
+   call (`:667`) is a cache hit too.
+6. **"Before any request" is stronger than a start hook can promise; drop it.** Run the first pass in
+   the root scope at start, beside the 30 s watchdog loop (`Main.kt:440-444`); a request in the first
+   second sees the old row for a moment, which is today's behaviour, not a regression. Acceptance 2's
+   "within one minute of start" is the right claim.
+7. **FR-258-6's clause has its row and its mockup.** The access chips are `RaviloUsers.kt:163-166`
+   (`OverviewPolicy` → "N of M libraries · allowed tags …"); the mirror is
+   `design/app/ravilo-users.html:124/141` (`usr-access` chips). Add the clause in both in one pass, or
+   the next design export removes it from the served page.
+
+**Net effect.** One `getUsersOrNull`, one query + one migration, one normalise-then-compare, one
+eviction, one start hook, one connect hook, one clause in two files. The design is right; the cache is
+the part that would have made the first deploy look like it had not worked.
