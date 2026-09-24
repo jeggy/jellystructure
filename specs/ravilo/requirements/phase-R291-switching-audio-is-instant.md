@@ -5,7 +5,11 @@
 
 ## Status
 
-`Planned` — written 2026-09-24 from the soveværelse-TV sweep. Not dev-reviewed, not built. Amends
+`Planned` — written 2026-09-24 from the soveværelse-TV sweep. **Dev-reviewed 2026-09-24 against `main`
+`9d2636bb`** (see §Dev review at the bottom: FR-R291-1's lean holds and closes open question 2 — the
+server resolves on the same list the picker shows; land its field with R292's `start_position_ms`;
+mechanism 1 needs a playlist route jellystructure does not serve today, and a fourth measurement before
+the three — whether an audio-only job kills the video job's play session). Not built. Amends
 **R284** FR-R284-2/3 and **253** (the restream carries the audio). Pairs with **R290**.
 
 ## What happens today
@@ -125,11 +129,72 @@ As today (R284 FR-R284-2): switching audio keeps the burned-in subtitle, whichev
 ## Open questions
 1. How many audio renditions can a transcode carry before the encode cost hurts other viewers (the
    session ceiling, 218/phase 182's gates)?
+   **Closed — dev review item 5:** under mechanism 1 the cost is per *switch* (one `-vn` job), not per
+   track; an unfetched rendition is a playlist line. What must be bounded is warming.
 2. Does R181's variant signature resolve identically against the detail payload's track list and the
    ticket's (FR-R291-1)? If not, the start and the picker could disagree about which English is which.
+   **Closed — dev review item 1:** with the lean, the server resolves on `buildAudioTracks(itemDetail)`,
+   which is the very list the ticket — and so the picker — carries. There is no second list.
 
 ## Verification
 - Unit: the start request carries the resolver's pick; the pure resolver on the detail payload's list.
 - Device, soveværelse TV, release build: re-enter *Dreadful Me 4* with a non-default remembered audio →
   exactly one negotiation in the backend log. Switch audio mid-playback → frame capture shows no loader
   and no black; audio changes within ~1 s.
+
+## Dev review (2026-09-24, against `main` `9d2636bb`)
+
+The premise holds end to end. `PlaybackStartRequest` is `{item_id, capabilities}` (`Models.kt:1140-1142`);
+the start path calls `getPlaybackInfo` with no `audioStreamIndex` (`PlaybackService.kt:458`) while both
+restream paths pass one (`:907`, `:995`), and `carriedAudioIndex` (`:1077`) only *reports* the index
+Jellyfin chose (`:536`). The remembered choice is `RememberedChoice{audioLanguage, audioVariant =
+"<kind>|<region>|<ordinal>"}` (`PlaybackPrefsStore.kt:8-21`; the signature at `PlayerScreen.kt:3845`),
+client-only per R181. Six items.
+
+1. **FR-R291-1's lean is right, and open question 2 closes with it.** `resolveTrackChoice`
+   (`PlayerScreen.kt:3931`) is pure: `RememberedChoice` + the two track lists → `buildLanguageGroups`
+   (`:4019`) → `PickerVersion.signature()`. Its inputs are exactly the fields the ticket's `AudioTrack`
+   carries — `index, language, label = DisplayTitle, codec, channels, isDefault` — which `buildAudioTracks`
+   (`:1044-1062`) derives from Jellyfin's `MediaStreams`. A server-side resolve therefore runs on the
+   **same list the picker will show**, because the picker's list *is* `buildAudioTracks(itemDetail)`; the
+   start and the picker cannot name a different English. What moves to `:shared`: the resolver, the
+   grouping, `PickerVersion`/`VariantKind`/`RegionInfo`, R195's SDH and region tables, the signature, and
+   R241's granularity-tolerant language match (`:3946`) — none of it touches Compose. The request carries
+   `{audio_language, audio_variant}`; the service resolves an index and passes it exactly as `:995` does.
+   The subtitle half needs nothing: text tracks ride the ticket, and the resolver never auto-starts a
+   burn-in (`PlayerScreen.kt:764`).
+2. **Land it with R292's field, in one change.** R292's dev review (item 2) adds `start_position_ms` to
+   the same request for the same reason — a start that does not know what the viewer wants restreams to
+   find out. Two optional fields, additive (an installed client never loses one), one change of
+   expectations. With both in, R290 FR-R290-4's "at most once" is a fence rather than a path.
+3. **Mechanism 1 assumes an HLS jellystructure serves; today it does not.** `hlsUrl` is Jellyfin's own
+   `TranscodingUrl` with the token appended (`streamUrlFor`, `:1036-1040`; `withJellyfinToken`, `:917`) —
+   the player fetches playlists and segments **from Jellyfin directly**. A master playlist "jellystructure
+   writes" is a new device-token route (say `GET /api/tv/stream/{session}/master.m3u8`) whose entries are
+   absolute Jellyfin URLs carrying the token; the bytes still flow from Jellyfin. Two consequences the
+   spec must own: the web app is served from a different origin than the backend, so hls.js
+   needs CORS on that route — the question phase 247 already holds for the receiver; and a served playlist
+   is one more place the Jellyfin token appears, no worse than `hls_url` today.
+4. **Add a fourth measurement, before the three: does an audio-only job share the video job's
+   `PlaySessionId`, or kill it?** Jellyfin starts a segment job by first killing this device's other jobs
+   for the same play session; an audio rendition under the video's `PlaySessionId` may therefore end the
+   video encode, and one under its own becomes a second Jellyfin session — which Phase 180's teardown
+   (`DELETE /Videos/ActiveEncodings`, keyed by play session) and the tracker (`playbackTracker.started`,
+   one key per item) know nothing about. Whichever way it falls, 180 must stop every rendition's job on
+   Back, and the tracker must count one playing device, not two. This is cheaper to measure than the PTS
+   question and decides more.
+5. **Warming must be bounded.** "Fetch that rendition's segment when the picker's focus rests on a
+   language" makes a D-pad sweep through five languages five `-vn` ffmpeg jobs, each alive until
+   Jellyfin's idle timeout. One warm at a time, after a dwell, the previous one abandoned — and open
+   question 1 then answers itself: the cost is per *switch*, not per track.
+6. **Mechanism 3 is the least likely to work on the TV that motivated the phase.** A second player is a
+   second hardware decoder and a second buffer set on a device R292 measured at 236 MB PSS for *one*
+   Dolby Vision session, with a 192 MB heap ceiling and codec reclaim already observed — and it doubles
+   the server encode for the overlap. Keep it third, and rule it out on the stue TV specifically rather
+   than in general.
+
+**Small correction.** FR-R291-3's second list ("Before any code, measured…") repeats the table's questions
+after the table answered them; fold what is left into the "still to measure" list, with item 4 first.
+
+**Net effect.** FR-R291-1 is one shared resolver, two request fields (with R292) and one
+`getPlaybackInfo` argument — buildable now. FR-R291-2 stays gated on four measurements, the new one first.
