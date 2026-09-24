@@ -41,9 +41,11 @@ async function openBazarrSettings(page: Page) {
 
 async function saveSettings(page: Page) {
   await page.click("#save-settings");
-  // #settings-msg is the save-feedback element (success or error) -- wait for it rather than a
-  // fixed timeout so this doesn't flake under load.
-  await expect(page.locator("#settings-msg")).toBeVisible({ timeout: 10_000 });
+  // #settings-msg is the save-feedback element -- wait for it rather than a fixed timeout so this
+  // doesn't flake under load, and insist on the SUCCESS badge: a rejected save (400, e.g. a fixture
+  // value Phase 227's validation refuses) also shows a message, and once let this suite believe Bazarr
+  // had been enabled when it had not (2026-09-24).
+  await expect(page.locator("#settings-msg .badge.ok")).toBeVisible({ timeout: 10_000 });
 }
 
 async function setBazarrEnabled(page: Page, on: boolean) {

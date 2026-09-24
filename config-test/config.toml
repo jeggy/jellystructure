@@ -1,36 +1,68 @@
-# R297/R299's receiver spec (tests/e2e/cast-receiver.spec.ts) mints a hand-off code, which needs casting
-# enabled: a Cast application id (any 8 hex characters here — nothing contacts Google) and the public
-# address the receiver URL is derived from (Phase 227). `app` is the backend's name on the test network.
-public_url = "http://app:9505"
+public_url = ""
+scan_schedule = ""
 
 [api_keys]
-tmdb_v3_key = "test-key"
-jellyfin_token = "mock-access-token"
-jellyfin_url = "http://jellyfin-mock:8096"
-
-[chromecast]
-enabled = true
-app_id = "E2ECAF00"
-max_sessions = 2
+    tmdb_v3_key = "test-key"
+    jellyfin_token = "mock-access-token"
+    jellyfin_url = "http://jellyfin-mock:8096"
 
 [language_rules]
-fallback_language = "en"
+    fallback_language = "en"
+
+[metadata]
+    age_rating_cascade = [ ]
+
+    [metadata.age_rating_map]
 
 [behavior]
-overwrite_nfo = true
-fetch_images = false
-watch_enabled = false
+    overwrite_nfo = true
+    fetch_images = false
+    tell_jellyfin = true
+    scan_workers = 1
+    job_workers = 2
+    verify_files = true
+    scan_threads = 4
+    scan_interval_hours = 0
+    scan_episode_cap = 0
+    tv_image_cache_mb = 2048
+    notifications_webhook = ""
+    notify_on_scan_done = true
+    notify_on_no_match = false
+    notify_on_write_failed = true
+    notify_on_drift = false
+    notify_on_crash = true
 
 [[libraries]]
-jellyfin_id = "movies-lib-id"
-name = "Movies"
-collection_type = "movies"
-local_path = "/media/movies"
-skip = false
+    jellyfin_id = "movies-lib-id"
+    name = "Movies"
+    collection_type = "movies"
+    jellyfin_path = ""
+    local_path = "/media/movies"
+    skip = false
 
 [[libraries]]
-jellyfin_id = "tv-lib-id"
-name = "TV Shows"
-collection_type = "tvshows"
-local_path = "/media/tv"
-skip = false
+    jellyfin_id = "tv-lib-id"
+    name = "TV Shows"
+    collection_type = "tvshows"
+    jellyfin_path = ""
+    local_path = "/media/tv"
+    skip = false
+
+[chromecast]
+    enabled = true
+    app_id = "E2ECAF00"
+    max_sessions = 2
+    public_url = ""
+
+[scan]
+    defer_while_playing = true
+
+
+
+
+
+[ingest]
+    realtime = true
+    webhook_secret = "18bb144436db511e3d12962c15d1ed17f0396d4cca6e34b743dc8dd83d16fc7f"
+    jellyfin_reach_url = ""
+
