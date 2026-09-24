@@ -2,7 +2,7 @@
 
 **Date:** 2026-09-22 · **Status:** research only, nothing built, no spec yet · **Author:** dev (Claude) with the owner
 
-> Live report, 2026-09-22 ~21:20: *"Why doesn't it work to stream temptation island on stue tv?"*
+> Live report, 2026-09-22 ~21:20: *"Why doesn't it work to stream fristelsens ø on stue tv?"*
 > followed by *"I moved to wholphin. So its ravilo thats not working for some reason."*
 
 ## Short answer
