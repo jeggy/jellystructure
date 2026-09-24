@@ -44,6 +44,10 @@ private const val STALL_TICKS_TO_TRIGGER = 4
  *  the next one. */
 private const val RUNG_SETTLE_MS = 1_500L
 
+/** R292 (FR-R292-11, rung 2) — a recovery seek re-reads from the network before it can show a frame;
+ *  on a Pixel 9 a seek out of a stall took ~1.5 s, the whole [RUNG_SETTLE_MS] budget. */
+private const val SEEK_RUNG_SETTLE_MS = 4_000L
+
 /** Phase R220 (FR-R220-3) — after a full ladder run (whether it recovered or exhausted into rung 4),
  *  don't re-trigger for this long — a fresh cold-start/track-switch right after a recovery must not be
  *  immediately re-diagnosed as another stall. */
@@ -218,11 +222,14 @@ actual fun PlayerVideoSurface(
                 recovered = player.renderedVideoFrameCount() != frameCount
             }
 
-            // Rung 2: force a video-renderer flush via a no-op seek to the current position.
+            // Rung 2 (R292 FR-R292-11): flush with a seek that MOVES. ExoPlayer ignores a seek to the
+            // position it is already at, so the original seekTo(positionMs) never recovered anything.
+            // Forward 1 ms below one second (a step back would clamp to 0:00, i.e. no move), else back.
             if (!recovered) {
                 val before = player.renderedVideoFrameCount()
-                player.seekTo(player.positionMs)
-                delay(RUNG_SETTLE_MS)
+                val position = player.positionMs
+                player.seekTo(if (position < 1_000L) position + 1L else position - 1L)
+                delay(SEEK_RUNG_SETTLE_MS)
                 recovered = player.renderedVideoFrameCount() != before
             }
 
