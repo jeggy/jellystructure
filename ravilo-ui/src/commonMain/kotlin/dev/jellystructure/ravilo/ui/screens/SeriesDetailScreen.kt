@@ -46,7 +46,6 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.focus.onFocusChanged
@@ -264,8 +263,6 @@ private fun SeriesDetailLoaded(
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
-    val containerH = LocalWindowInfo.current.containerSize.height
-    val heroHeight = if (containerH > 0) with(density) { containerH.toDp() } else 540.dp
 
     // R84: key on series id (not whole detail object) so overlay hydration never resets the season picker
     var selectedSeasonIdx by remember(detail.card.id) { mutableIntStateOf(0) }
@@ -367,7 +364,11 @@ private fun SeriesDetailLoaded(
         LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
             // Full-bleed hero: title · meta · progress · synopsis · resume · actions overlaid in the lower third.
             item(key = "hero") {
-            Box(modifier = Modifier.fillMaxWidth().height(heroHeight)) {
+            // R295 (FR-R295-3) — the hero fills the LIST'S visible height, not the window's. The list sits
+            // inside the safe-area insets, so a window-sized hero always overhung it by the system bars —
+            // and by a different amount right after the landscape, bars-hidden player, which pushed Play
+            // below the fold on a phone. On a TV (no insets) the two heights are the same number.
+            Box(modifier = Modifier.fillMaxWidth().fillParentMaxHeight()) {
                 val backdropUrl = detail.card.backdropUrl ?: detail.card.posterUrl
                 if (backdropUrl != null) {
                     RemoteImage(
