@@ -31,6 +31,11 @@ and none of the three cache mounts. The two prunes *between* builds now carry th
 still takes everything — nothing builds after it), and `scripts/check-docker-cache-ids.sh` fails on any
 prune that precedes a later `docker compose … build` without it (checked by reverting one line).
 
+**FR-250-2 measured the same day — satisfied.** Run `36140580070` (the fix's own push, `65036ec7`): the
+Gradle distribution and the Kotlin/Native LLVM + sysroot are downloaded **once**, by the first build
+(`app`, 13:25 / 13:27); the `ravilo-web` and `ravilo-screen` builds download neither — exactly the
+acceptance above. `ci / e2e` 34m (13:23 → 13:57) against 38m43s for the run before the fix; 54 passed.
+
 **⚠ Correction to FR-250-1, found by running it.** The requirement claimed "BuildKit's own locking on
 a shared cache mount id makes concurrent local `docker compose build` safe too, at worst serializing
 rather than corrupting." **That is wrong.** BuildKit's default is `sharing=shared` — concurrent
