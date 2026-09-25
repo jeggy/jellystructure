@@ -289,6 +289,16 @@ private class PlayerBookkeeping(initialCastLink: CastLinkState) {
     var loadedForItemId by mutableStateOf<String?>(null)
     var positionKnownForItemId by mutableStateOf<String?>(null)
     var advanceRequestedForItemId by mutableStateOf<String?>(null)
+    // R290 — the start latch, per item (see PlayerStart.kt): the item whose latch has opened; whether
+    // R218's 400 ms have passed since the press (before that the start is plain black); a `play()` held
+    // back until the latch (FR-R290-4: a discarded stream is prepared, never played); a restream the
+    // resolver asked for that has not become a new ticket yet; and when the current stream's first frame
+    // rendered, for the silent-stream grace.
+    var latchedForItemId by mutableStateOf<String?>(null)
+    var startScreenDue by mutableStateOf(false)
+    var playHeldForLatch by mutableStateOf(false)
+    var startRestreamPending by mutableStateOf(false)
+    var firstFrameAtMs by mutableStateOf<Long?>(null)
     var pauseFlash by mutableStateOf(false)
     var pauseFlashIsPlay by mutableStateOf(true)
     var stallDeepened by mutableStateOf(false)
@@ -430,8 +440,10 @@ fun PlayerScreen(
     // armSession hands PlayerStore as this session's startupMsProvider, read once at stop time; null is
     // an honest "never measured" (still buffering, or the session ended some other way), not an error.
 
-    // Chrome visibility — bumping chromeRevision restarts the auto-hide timer
-    var chromeVisible  by remember { mutableStateOf(true) }
+    // Chrome visibility — bumping chromeRevision restarts the auto-hide timer.
+    // R290 (FR-R290-1, dev review item 1) — starts FALSE: the chrome is raised, and its timer armed, on
+    // the first frame the viewer will keep (the latch in the poll loop), never on a stream loading.
+    var chromeVisible  by remember { mutableStateOf(false) }
     // R251 (FR-R251-4) — the bottom transport band's measured height, reported by PlayerChrome.
     var transportBandPx by remember { mutableStateOf(0) }
     var chromeRevision by remember { mutableLongStateOf(0L) }
@@ -728,6 +740,7 @@ fun PlayerScreen(
             bk.audioRestreamTriedFor = currentItemId
             selectedAudio = result.audioIndex
             bk.rearmResolveOnLoad = true
+            bk.startRestreamPending = true   // R290 (FR-R290-4) — this stream is not the one the viewer will keep
             store.restreamWithSub(itemId, bk.burnedSubIndex ?: -1, player.positionMs, wanted.index)
         } else {
             selectedAudio = carried
@@ -894,7 +907,14 @@ fun PlayerScreen(
         isBuffering = false
         isSeeking = false
         bk.measuredStartupMs = null  // R185/R222 — a stale prior episode's number must never carry over
+        // R290 — a fresh start for this item: black for R218's 400 ms, then the start screen, until the latch.
+        bk.startScreenDue = false
+        bk.startRestreamPending = false
+        bk.firstFrameAtMs = null
+        bk.playHeldForLatch = false
         armSession(itemId)
+        delay(BUFFER_MOMENT_DEBOUNCE_MS)
+        bk.startScreenDue = true   // FR-R290-2 — the start screen fades in once, and stays up across a restream
     }
 
     // R182 — resolve skip behaviour in parallel with session start (not blocking playback start on an
@@ -934,6 +954,10 @@ fun PlayerScreen(
         // the outgoing stream's `true` for up to POLL_MS, and VideoShutter below would let the decoder's
         // reconfiguration show through (a green frame with a quarter-size stale picture, soveværelse TV).
         hasRenderedFirstFrame = false
+        bk.firstFrameAtMs = null
+        bk.startRestreamPending = false   // R290 — the restream the resolver asked for is this ticket
+        // R290 (FR-R290-3, dev review item 3) — the first position shown is the target, never the poll's 0.
+        positionMs = s.ticket.startPositionMs
         player.load(streamUrl, s.ticket.startPositionMs, s.ticket.subtitles, s.ticket.audio, title = itemTitle, subtitle = itemKicker, artworkUrl = artworkUrl)
         // R282 (FR-R282-1/-4) — relate the two subtitle mechanisms, here, on every ticket. A burn-in
         // ticket turns the text renderer OFF unconditionally: the reload reuses this ExoPlayer, whose
@@ -951,10 +975,19 @@ fun PlayerScreen(
             bk.resolvedForItemId = null
         }
         bk.rearmResolveOnLoad = false
-        player.play()
-        isPlaying = true
+        if (bk.latchedForItemId == itemId) {
+            // A restream after the start (a subtitle burn-in, a manual audio pick): as before this phase.
+            player.play()
+            isPlaying = true
+            wake()
+        } else {
+            // R290 (FR-R290-4, dev review item 4) — prepare, resolve, then play: ExoPlayer renders the
+            // first frame on READY whether or not it is playing, and the tracks arrive at prepare, so the
+            // resolver's verdict and the frame are both in hand before a sample is heard. The poll loop's
+            // latch calls play() — a stream the resolver sends back is never played at all.
+            bk.playHeldForLatch = true
+        }
         bk.loadedForItemId = itemId   // Bug fix: see loadedForItemId's declaration comment above.
-        wake()
     }
 
     // Poll player state
@@ -994,6 +1027,7 @@ fun PlayerScreen(
                             bk.measuredStartupMs = kotlin.time.Clock.System.now().toEpochMilliseconds() - start
                         }
                         bk.negotiationStartMs = null
+                        bk.firstFrameAtMs = kotlin.time.Clock.System.now().toEpochMilliseconds()   // R290
                     }
                     hasRenderedFirstFrame = renderedNow
                     isBuffering = player.isBuffering
@@ -1022,6 +1056,19 @@ fun PlayerScreen(
                     val sig = trackSetSignature(tickAudio, tickSubs)
                     if (bk.resolvedTrackSig != null && sig != bk.resolvedTrackSig && tickSubs.size + tickAudio.size > bk.resolvedTrackCount) {
                         resolveTrackSelection(tickAudio, tickSubs)
+                    }
+                }
+
+                // R290 (FR-R290-1/4) — the latch: the first frame of the stream the viewer will keep. Opens
+                // once per item, AFTER this tick's resolver ran (so a restream it asked for is already
+                // pending); the held play() runs, the chrome is raised and its hide timer armed — here, and
+                // never on a load.
+                if (playerLoadedForCurrentItem && bk.latchedForItemId != currentItemId) {
+                    val renderedFor = bk.firstFrameAtMs?.let { kotlin.time.Clock.System.now().toEpochMilliseconds() - it } ?: 0L
+                    if (startLatchOpens(sessionState is PlayerSessionState.Ready, hasRenderedFirstFrame, bk.resolvedForItemId == currentItemId, bk.startRestreamPending, renderedFor)) {
+                        bk.latchedForItemId = currentItemId
+                        if (bk.playHeldForLatch) { player.play(); isPlaying = true; bk.playHeldForLatch = false }
+                        wake()
                     }
                 }
 
@@ -1145,6 +1192,8 @@ fun PlayerScreen(
         else -> PlBufferMoment.NONE
     }
     var displayedBufferMoment by remember { mutableStateOf(PlBufferMoment.NONE) }
+    // R290 — the one derived start phase (dev review item 7: one val from a pure helper).
+    val startPhase = startPhase(latched = bk.latchedForItemId == itemId, startScreenDue = bk.startScreenDue)
     // R218 (FR-R218-2) — ~400ms debounce before ANY presentation appears (a direct play that starts
     // immediately must show nothing at all); clearing is immediate — a wait that just ended should stop
     // being shown right away, not linger for its own debounce. Keyed on the raw (undebounced) moment so
@@ -1372,7 +1421,7 @@ fun PlayerScreen(
             // R290 (FR-R290-5) — Back while nothing is playing yet (negotiating, or the start screen)
             // leaves at once. chromeVisible starts true, so this used to take two presses on a phone:
             // the first only hid a chrome drawn behind the loader.
-            sessionState !is PlayerSessionState.Ready || displayedBufferMoment == PlBufferMoment.COLD -> onBack()
+            startPhase != StartPhase.PLAYING || sessionState !is PlayerSessionState.Ready || displayedBufferMoment == PlBufferMoment.COLD -> onBack()
             // R295 (FR-R295-2) — a phone's sheet sits over the chrome it was opened from; Back out of it
             // goes back to the picture, not to the chrome (which cost a fourth Back to leave from the
             // versions list). The TV keeps its focus on Audio & Subs, as before.
@@ -1585,7 +1634,8 @@ fun PlayerScreen(
             fill = fillMode,   // R244 (FR-R244-6)
             subtitleBottomInset = subtitleInset,   // R251 (FR-R251-4)
         )
-        VideoShutter(sessionState is PlayerSessionState.Loading || (sessionState is PlayerSessionState.Ready && !hasRenderedFirstFrame))
+        // R290 (FR-R290-4) — also shut until the latch: a discarded stream's first frame must not show through.
+        VideoShutter(startPhase != StartPhase.PLAYING || sessionState is PlayerSessionState.Loading || (sessionState is PlayerSessionState.Ready && !hasRenderedFirstFrame))
 
         // ── Dim scrim (deepens when chrome is up, paused, or R218's moment C stalls) ──
         val dimAlpha = when {
@@ -1626,51 +1676,14 @@ fun PlayerScreen(
         // information) + an indeterminate sweep so a long wait never looks frozen + the existing
         // undebounced "Loading…" string — the SAME string moment A uses (FR-R218-4: one string,
         // already translated, no drift between moments).
-        if (displayedBufferMoment == PlBufferMoment.COLD) {
-            // R218 (FR-R218-6) — "same three parts, scaled: 40px spinner, 26px title, 15px label."
-            // TV sizes below are the already on-device-verified treatment (stue TV, 2026-08-29);
-            // phone gets the design file's own explicit phone-frame numbers.
-            val isPhone = LocalHandset.current
-            Box(Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    BrandPulse(
-                        colors,
-                        dotSize = if (isPhone) 10.dp else 16.dp,
-                        gap = if (isPhone) 9.dp else 14.dp,
-                    )
-                    Spacer(Modifier.height(if (isPhone) 20.dp else 34.dp))
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        itemKicker?.let { kicker ->
-                            // R180 (FR-RV-ASP1-2) — the kicker/title split already exists for the
-                            // chrome's own metadata block (see PlayerChrome below); reused verbatim here,
-                            // not a second source of truth for what's playing.
-                            Text(
-                                kicker.uppercase(), color = colors.accentSecondary,
-                                fontSize = if (isPhone) 11.sp else 12.sp,
-                                fontWeight = FontWeight.Bold, letterSpacing = 2.sp,
-                            )
-                            Spacer(Modifier.height(if (isPhone) 4.dp else 6.dp))
-                        }
-                        Text(
-                            itemTitle, color = Color.White,
-                            // FR-R218-6's literal number (26px) for phone; TV keeps its own already-
-                            // verified 30sp rather than the raw 54px design-canvas value — see this
-                            // block's own header comment.
-                            fontSize = if (isPhone) 26.sp else 30.sp,
-                            fontWeight = FontWeight.Bold,
-                            fontFamily = SpaceGrotesk, letterSpacing = (-0.8).sp,
-                        )
-                    }
-                    Spacer(Modifier.height(if (isPhone) 20.dp else 34.dp))
-                    IndeterminateSweep(
-                        colors,
-                        width = if (isPhone) 200.dp else 280.dp,
-                        height = if (isPhone) 3.dp else 4.dp,
-                    )
-                    Spacer(Modifier.height(if (isPhone) 18.dp else 28.dp))
-                    Text(str("loading"), color = Color.White.copy(0.7f), fontSize = if (isPhone) 15.sp else 18.sp)
-                }
-            }
+        // R290 (FR-R290-1/2, open question 2) — ONE start screen from the press to the latch (negotiation,
+        // cold start, a restream, R237's retry) — and R218's own COLD moment for a restream after it. Its
+        // own composable, outside this body (dex budget). R237's "still trying" line is the one variation.
+        if (startPhase == StartPhase.START || (startPhase == StartPhase.PLAYING && displayedBufferMoment == PlBufferMoment.COLD)) {
+            PlayerStartScreen(
+                colors = colors, itemKicker = itemKicker, itemTitle = itemTitle,
+                retrying = startPhase == StartPhase.START && (sessionState as? PlayerSessionState.Loading)?.retrying == true,
+            )
         }
 
         // R218 moment C (deepened, 60s+): the chrome-up spinner (PlayerChrome's play button, forced
@@ -1681,7 +1694,7 @@ fun PlayerScreen(
 
         // ── Loading overlay ───────────────────────────────────────────────────
         val sessionLoading = sessionState as? PlayerSessionState.Loading
-        if (sessionLoading != null) {
+        if (sessionLoading != null && startPhase == StartPhase.PLAYING) {   // R290 — during the start it is the start screen
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 // Incidental layout correction: these were direct children of the Box above, which
                 // centre-stacks its children — so the 48.dp Spacer did nothing and "Loading..." was
@@ -1798,7 +1811,7 @@ fun PlayerScreen(
         val stallActive = displayedBufferMoment == PlBufferMoment.STALL
         val coldActive = displayedBufferMoment == PlBufferMoment.COLD
         AnimatedVisibility(
-            visible = (chromeVisible || stallActive) && !coldActive && !(handset && locked),
+            visible = startPhase == StartPhase.PLAYING && (chromeVisible || stallActive) && !coldActive && !(handset && locked),   // R290 (FR-R290-1)
             enter = fadeIn(tween(RaviloMotion.CHROME_FADE_IN_MS)),
             exit = fadeOut(tween(RaviloMotion.CHROME_FADE_OUT_MS)),
         ) {
@@ -3581,6 +3594,39 @@ private fun BufferingSpinner(colors: RaviloColors) {
  * with a simple symmetric breathe (RepeatMode.Reverse) — visually equivalent for a continuous ambient
  * loop, not a cut corner that changes what it communicates.
  */
+/**
+ * R218's Direction B "Grounded", unchanged (FR-R218-6: "same three parts, scaled: 40px spinner, 26px
+ * title, 15px label"; TV sizes are the on-device-verified treatment, stue TV 2026-08-29; the phone gets
+ * the design file's own numbers). R290 draws it from the press to the latch and R218 for a later COLD
+ * moment — one composable, so the two cannot drift. [retrying] is R237's FR-R237-5 line, the only variation.
+ */
+@Composable
+private fun PlayerStartScreen(colors: RaviloColors, itemKicker: String?, itemTitle: String, retrying: Boolean) {
+    val isPhone = LocalHandset.current
+    Box(Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            BrandPulse(colors, dotSize = if (isPhone) 10.dp else 16.dp, gap = if (isPhone) 9.dp else 14.dp)
+            Spacer(Modifier.height(if (isPhone) 20.dp else 34.dp))
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                itemKicker?.let { kicker ->
+                    // R180 (FR-RV-ASP1-2) — the chrome's own kicker/title split, reused verbatim.
+                    Text(kicker.uppercase(), color = colors.accentSecondary, fontSize = if (isPhone) 11.sp else 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
+                    Spacer(Modifier.height(if (isPhone) 4.dp else 6.dp))
+                }
+                Text(itemTitle, color = Color.White, fontSize = if (isPhone) 26.sp else 30.sp, fontWeight = FontWeight.Bold, fontFamily = SpaceGrotesk, letterSpacing = (-0.8).sp)
+            }
+            Spacer(Modifier.height(if (isPhone) 20.dp else 34.dp))
+            IndeterminateSweep(colors, width = if (isPhone) 200.dp else 280.dp, height = if (isPhone) 3.dp else 4.dp)
+            Spacer(Modifier.height(if (isPhone) 18.dp else 28.dp))
+            Text(str("loading"), color = Color.White.copy(0.7f), fontSize = if (isPhone) 15.sp else 18.sp)
+            if (retrying) {
+                Spacer(Modifier.height(10.dp))
+                Text(str("loading.still_trying"), color = Color.White.copy(0.45f), fontSize = 14.sp)
+            }
+        }
+    }
+}
+
 @Composable
 private fun BrandPulse(colors: RaviloColors, dotSize: Dp = 16.dp, gap: Dp = 14.dp) {
     val dotColors = remember(colors.accent, colors.accentSecondary) {

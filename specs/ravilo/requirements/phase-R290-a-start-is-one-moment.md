@@ -5,13 +5,31 @@
 
 ## Status
 
-`Planned` — written 2026-09-24 from the soveværelse-TV sweep (Play Store v1.36 and a debug build of
-`1.37-6-g2c2aca48`, both reproduced). **Dev-reviewed 2026-09-24 against `main` `9d2636bb`** (see §Dev
-review at the bottom: FR-R290-1 is two edits — the default *and* the `wake()` after every load; FR-R290-2
-needs a per-item start latch, because a restream clears the debounced moment at once by design;
-FR-R290-3 is one assignment from the ticket; FR-R290-4 is prepare-resolve-then-play; FR-R290-5 already
-holds through Phase 180; open question 2 closes). Not built. Pairs with **R291** (instant audio
-switching), which removes the most common cause of the third moment below.
+`✓ Built` 2026-09-25 from the dev review below (all seven items); **not yet frame-captured on a device** —
+the stue TV was in standby when the release build (`1.38-14-g34d63619-dirty`, dex guard 230/250) was
+ready, and a living-room TV is not woken at 07:00 for a test. The device rows of §Verification are the
+owner's. `Planned` when written 2026-09-24 from the soveværelse-TV sweep (Play Store v1.36 and a debug
+build of `1.37-6-g2c2aca48`, both reproduced). **Dev-reviewed 2026-09-24 against `main` `9d2636bb`.**
+Pairs with **R291** (instant audio switching), which removes the most common cause of the third moment
+below.
+
+### Build (2026-09-25)
+
+- `PlayerStart.kt` (new): `StartPhase { BLACK, START, PLAYING }` from `startPhase(latched, startScreenDue)`
+  and the latch `startLatchOpens(sessionReady, renderedFirstFrame, resolverSettled, restreamPending,
+  renderedForMs)` — pure, `PlayerStartPhaseTest` (4). The latch is per **item** (item 2): the current
+  stream's first frame **and** the resolver settled without asking for a restream; a silent stream (no
+  track list for the resolver) opens it after a 1.5 s grace rather than never.
+- `chromeVisible` starts false and `wake()` left the load effect (item 1): the chrome is raised, and its
+  hide timer armed, when the latch opens in the poll loop. `positionMs = ticket.startPositionMs` beside
+  `load()` (item 3). `play()` is **held** until the latch on a first start (item 4) — a mid-play restream
+  plays at once, as before; the automatic audio restream marks `startRestreamPending` so the discarded
+  stream never opens the latch. The video shutter also stays until the latch (no frame of a discarded
+  stream). `playerBack` leaves at once while not PLAYING (item 5 holds).
+- One `PlayerStartScreen` composable (R218's Direction B verbatim, R237's *still trying* line the one
+  variation) from the press to the latch — negotiation, cold start, restream, retry (item 7) — and for
+  R218's own COLD moment after it. The old Loading overlay only shows after the start. Extracting it took
+  `PlayerScreen`'s widest method from 241 to 230 registers. Same code on the phone (item 6).
 
 ## What the viewer sees today
 
