@@ -3,8 +3,10 @@
 ## Status
 
 `Planned` — written 2026-09-25 from the owner's ask and the mockup in `design/app/ravilo-users.html`
-(drawn the same day; the owner answered the design questions before this was written). Not dev-reviewed.
-Not built. Spec first. Builds on **224** (`ravilo_device.app_version`, the `X-Ravilo-Version` header) and
+(drawn the same day; the owner answered the design questions before this was written). **Dev-reviewed 2026-09-25 against `main` `e7991df3`**
+(see §Dev review at the bottom: no release list exists server-side, so *skipped* is arithmetic on the plain
+`MAJOR.MINOR` numbering or nothing; the three write sites are not in a transaction today; the seed must
+pick one of a TV's two rows; the history's delete hook has three sites). Not built. Spec first. Builds on **224** (`ravilo_device.app_version`, the `X-Ravilo-Version` header) and
 **256** (FR-256-5's behind count against the deployed backend's own version). Answers 224's §7 open
 question 4: history is **a new table**, not a column.
 
@@ -83,9 +85,14 @@ when the release list is unavailable; *· all up to date* when N is 0.
 
 1. Does 256's release list give enough to name *skipped* versions (every tag between two), or only the
    latest? If only the latest, drop *skipped …* and keep the rest.
+   **Closed — dev review item 1:** there is no list at all, and none is needed. Versions are plain
+   `MAJOR.MINOR` (231), consecutive releases differ by one in MINOR, so a step from 1.36 to 1.38 *skipped
+   1.37* by arithmetic; from 1.33 to 1.36, *skipped 1.34 – 1.35*. Nothing is said across a MAJOR change.
 2. The web app's version moves when the server is deployed, not when a viewer updates. It is recorded the
    same way (a reload is the first request) — confirm the web platform should have history at all, or
    only a current version.
+   *Dev review:* record it. A `platform = "web"` row's history is the history of deploys that browser saw,
+   which is true and cheap; the *dev build* note (FR-259-8) covers a dev-compose deploy the same way.
 
 ## Acceptance
 
@@ -93,3 +100,51 @@ when the release list is unavailable; *· all up to date* when N is 0.
 2. Two viewers on one TV produce one history.
 3. After migration every versioned device shows exactly one *already on it when history began* row.
 4. The mockup's six devices render from the payload with no client-side version logic beyond formatting.
+
+## Dev review (2026-09-25, against `main` `e7991df3`)
+
+The premise holds: `ravilo_device`'s key is `(device_id, jellyfin_user_id)` (`RaviloDevice.sq:49`), and
+224's one `app_version` is overwritten in place by `recordAppInfo` (`RaviloDeviceService.kt:191-197`,
+change-only), by `loginDevice`'s `INSERT OR REPLACE` (`:86-110`) and by `CastService.redeem`
+(`CastService.kt:122`). The overview builder is `TvRoutes.kt:937-944` and its DTO `RaviloApi.kt:42-52`
+— both additive. Seven items.
+
+1. **Open question 1 closes: no release list exists, and *skipped* needs none.** Nothing in the backend
+   queries GitHub (256's review found the same); the only version the server knows is its own
+   (`ServerVersion.kt:11`). But releases are plain `MAJOR.MINOR` with MINOR rising by one per release
+   (231, `deploy-play-store.yml:100-112`), so the versions skipped between two history rows are the
+   integers between them — `1.36 → 1.38` skipped 1.37, by arithmetic. Say nothing across a MAJOR change
+   (there has never been one). The *behind* count in FR-259-9 is 256 FR-256-5's comparison against
+   `ServerVersion.current`, which is what "the release list" meant there too.
+2. **"The same transaction" is not what those three sites do today.** `RaviloDeviceService` uses no
+   transaction anywhere; each write is one statement. Wrap `updateAppInfo` + the history insert in
+   `queries.transaction { }` (the shape `AcquisitionStore.kt:41` and `DirtyItemStore.kt:36` use), in one
+   helper called from all three sites, so a crash between the two cannot leave a version without its
+   history row. The "latest history row differs" test is one query, `latestForDevice`, inside the same
+   transaction.
+3. **The seed has to choose between a TV's two rows.** Two viewers' rows on one TV can carry different
+   `app_version`s — a viewer not seen since an update still holds the old one (the policy drift 258
+   measured has the same shape). Seed from the row with the greatest `last_seen` per `device_id`, not
+   from "the current `app_version`" as if there were one.
+4. **The history's delete hook is three sites, one helper.** `unpair` (`:208-210`, by token), the
+   per-viewer revoke (`:246`, by device+user) and `deleteByUser` (`:282`) all remove `ravilo_device`
+   rows; after each, if `getByDevice(deviceId)` is empty, delete the history. Miss one and a revoked TV's
+   history lingers with nothing to show it on.
+5. **The token cache is on this phase's side.** `recordAppInfo` compares against the cached `DeviceData`
+   (`:153`), so a version change is seen on the first request after an update — the 258 trap (a rewritten
+   row invisible for five minutes) does not apply here, because the *request* carries the new value.
+6. **Migration number.** 258's review also claims `49.sqm`; whichever lands first takes 49, the other 50 —
+   and the `.sq` `CREATE TABLE` in the same commit, or the generated interface and the live schema
+   disagree (the SQLDelight rule this repo has hit before).
+7. **Dev builds are recognisable by two suffixes, not one.** `git describe` yields `1.37-68-gade0523d`
+   and, with local changes, `1.37-68-gade0523d-dirty`; the `-g<sha>` test covers both, and a plain `1.38`
+   is what GHCR and Play builds carry. FR-259-8's rule holds as written; say `-dirty` once so nobody adds a
+   second test for it.
+
+**Small corrections.** FR-259-2's "cached `DeviceData`" is the token cache's copy, refreshed on change —
+right, and worth naming (`tokenCache`, `:47`). FR-259-7's "from the same release list 256 FR-256-5 reads"
+becomes "by arithmetic on the plain numbering". The mockup the sync delivered (`design/app/ravilo-users.html`)
+is the design side; the served row is `RaviloUsers.kt:185-187` with `appVersionLine` at `:85-94`.
+
+**Net effect.** One table + migration, one transactional helper at three sites, one seed query per device,
+one delete hook at three sites, two additive DTO fields, the row and the chip in `RaviloUsers.kt`.
