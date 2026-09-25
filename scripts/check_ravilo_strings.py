@@ -39,7 +39,7 @@ BRANCH_LITERAL = re.compile(r'(?:\)\s*|\belse\s+)(?=")')
 #   YouTube/Vimeo    brands: where a trailer is hosted
 #   E · / E          what is left of "E${n} · ${title}" once the interpolations are removed
 ALLOW = re.compile(
-    r'^(?:Ravilo|IMDb|YouTube|Vimeo|OK'
+    r'^(?:Ravilo[\s\u00b7]*|IMDb|YouTube|Vimeo|OK'
     r'|[-+\u2212]?\d+\s?s'
     r'|[a-z][a-zA-Z0-9]*'
     r'|E[\s\u00b7]*'
