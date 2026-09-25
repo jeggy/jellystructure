@@ -274,6 +274,12 @@ private sealed class Dest {
         val posterUrl: String? = null,
         /** Phase 150 — this title's own intro/credits segments (R182 Skip Intro / Skip Credits). */
         val segments: dev.jellystructure.shared.tv.TvSegmentMarkers = dev.jellystructure.shared.tv.TvSegmentMarkers(),
+        /** R303 (FR-R303-2) — what the chrome shows top right: the film's or the SERIES' clearlogo (R214's
+         *  versioned proxy URL, straight from the detail payload or the play push) and its ink (Phase 232);
+         *  [seriesName] only for an episode, the text fallback when there is no logo. The player fetches nothing. */
+        val logoUrl: String? = null,
+        val logoInk: String? = null,
+        val seriesName: String? = null,
     ) : Dest()
     data class Settings(val displayName: String) : Dest()
     // R234 (FR-R234-1) — phone/web only; the caller gates the ProfileMenu row that reaches this on
@@ -611,8 +617,10 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                     else -> push(Dest.Player(
                         itemId = env.jellyfinId,
                         title = env.title.orEmpty(),
+                        kicker = env.kicker,          // R303 — the push now carries the S·E kicker for an episode
                         displayName = displayName,
                         seriesId = env.jellyfinId,   // R181 — a movie is its own remembered bucket
+                        logoUrl = env.logoUrl, logoInk = env.logoInk, seriesName = env.seriesName,   // R303 (FR-R303-2)
                     ))
                 }
             }
@@ -1253,6 +1261,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                             originalLanguage = detail.originalLanguage,
                             segments = detail.segments,  // Phase 150
                             posterUrl = detail.card.posterUrl,  // R192
+                            logoUrl = detail.logoUrl, logoInk = detail.logoInk,  // R303 — a film shows its own logo, no name fallback
                         ))
                     },
                     onRelatedSelect = { openDetail(it, dest.displayName) },
@@ -1298,6 +1307,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                             episodes      = ctx.episodes,
                             currentEpIndex = ctx.currentEpIndex,
                             seriesId      = ctx.seriesId,
+                            logoUrl = ctx.logoUrl, logoInk = ctx.logoInk, seriesName = ctx.seriesName,  // R303 — the SERIES' logo, never an episode's
                             originalLanguage = ctx.originalLanguage,
                             segments      = ctx.segments,  // Phase 150
                             posterUrl     = ctx.seriesPosterUrl,  // R194
@@ -1343,6 +1353,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                     originalLanguage = dest.originalLanguage,
                     segments         = dest.segments,  // Phase 150
                     posterUrl        = dest.posterUrl,  // R192
+                    logoUrl          = dest.logoUrl, logoInk = dest.logoInk, seriesName = dest.seriesName,  // R303
                     store            = store,
                     onBack           = { pop() },
                     onNavigateToEpisode = { nextId ->
@@ -1376,6 +1387,8 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                             // the next-up countdown from the start of the new stream).
                             segments         = newEp?.segments ?: dev.jellystructure.shared.tv.TvSegmentMarkers(),
                             posterUrl        = dest.posterUrl,  // R194 — same series poster fallback for the whole binge
+                            // R303 — same series, same logo and name for the whole binge.
+                            logoUrl = dest.logoUrl, logoInk = dest.logoInk, seriesName = dest.seriesName,
                         ))
                     },
                 )

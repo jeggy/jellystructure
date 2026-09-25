@@ -704,6 +704,15 @@ data class PlayItemEnvelope(
     // Phase 236 (FR-236-4) — which of a shared screen's own tokens to play this under; absent on a
     // single-session device (today's TVs), which keeps its one and only behaviour unchanged.
     @SerialName("session_user_id") val sessionUserId: String? = null,
+    // R303 (FR-R303-2/7, dev review item 2) — what the player shows top right, resolved server-side so
+    // the phone-driven TV play and the receiver-only app fetch nothing. Additive, never removed once
+    // shipped. `kicker` is the episode's `S2 · E7` (the TV/phone build it from the detail; a receiver has
+    // no detail to build it from); `series_name` is set for an episode only; `logo_url` is the FILM's or
+    // the SERIES' clearlogo (never a season's or an episode's) and is absent when the title has none.
+    val kicker: String? = null,
+    @SerialName("series_name") val seriesName: String? = null,
+    @SerialName("logo_url") val logoUrl: String? = null,
+    @SerialName("logo_ink") val logoInk: String? = null,
 )
 
 /** R155 — a remote playstate command (stop/pause/unpause/seek) for whichever item is currently

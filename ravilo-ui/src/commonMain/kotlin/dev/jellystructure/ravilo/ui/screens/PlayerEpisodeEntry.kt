@@ -44,4 +44,8 @@ data class EpisodePlayContext(
     /** R194 — the series' own poster, for the player's OS media-session artwork fallback when the
      *  current episode's season has no poster of its own (see PlayerEpisodeEntry.seasonPosterUrl). */
     val seriesPosterUrl: String? = null,
+    /** R303 (FR-R303-2) — the SERIES' clearlogo + ink and its name, for the player's top-right slot. */
+    val logoUrl: String? = null,
+    val logoInk: String? = null,
+    val seriesName: String? = null,
 )

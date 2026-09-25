@@ -160,6 +160,8 @@ fun startServer(
     playbackQoeStore: dev.jellystructure.tv.PlaybackQoeStore,
     // Phase 258 (FR-258-2) — the events-socket connect trigger; null only in tests that build no reconciler.
     devicePolicyReconciler: dev.jellystructure.tv.DevicePolicyReconciler? = null,
+    // R303 (FR-R303-2) — the remote play push's title/kicker/series/logo; null = kind + title only.
+    playPushResolver: dev.jellystructure.tv.PlayPushResolver? = null,
     // Phase 218 — the cast service (hand-off, ceiling, reachability, status) and the receiver bundle dir.
     castService: dev.jellystructure.tv.CastService? = null,
     castDir: String? = null,
@@ -609,7 +611,7 @@ fun startServer(
                 metadataRoutes(mediaStore, jsTagStore, logoDownloader, seedingSnapshot, configStore)
                 trackRoutes(mediaStore, configStore, jellyfinClient, mediaHistory, seedingGuard, arrRescan, appScope, broadcaster, mediaJobQueue)
                 jobsRoutes(mediaJobQueue)
-                remoteRoutes(deviceService, tvEventBus, mediaStore, apiKeyStore, screenPairingService)
+                remoteRoutes(deviceService, tvEventBus, mediaStore, apiKeyStore, screenPairingService, playPushResolver)
                 apiKeyManagementRoutes(apiKeyStore)
                 webhookRoutes(configStore, jellyfinClient, realtimeIngest, appScope, dirtyItemStore)
                 acquisitionService?.let { acquisitionRoutes(it, requestLifecycleService) }

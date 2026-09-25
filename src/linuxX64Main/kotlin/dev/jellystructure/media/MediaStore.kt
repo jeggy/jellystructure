@@ -60,6 +60,9 @@ fun MediaItem.passesTagPolicy(allowedTags: Set<String>, blockedTags: Set<String>
 fun MediaItem.visibleTo(device: DeviceData): Boolean =
     visibleTo(device.allowedLibraries) && passesTagPolicy(device.allowedTags, device.blockedTags)
 
+/** R303 — see [MediaStore.resolvePlayPush]. [logoItem] is resolved to a URL + ink by `PlayPushResolver`. */
+data class PlayPush(val kind: String, val title: String?, val kicker: String?, val seriesName: String?, val logoItem: MediaItem?)
+
 class MediaStore(
     private val db: JellystructureDb,
     private val jsTagStore: JsTagStore,
@@ -534,13 +537,29 @@ class MediaStore(
     /** Phase 111/R155 — resolves a Jellyfin id to what the remote-control `play_item` event needs:
      *  "movie" | "series" (both O(1) via [resolveByJellyfinId]) or "episode" (O(n) scan over series —
      *  no index exists for nested episode ids). Null if the id isn't in this library at all. */
-    suspend fun resolvePlayTarget(jellyfinId: String): Pair<String, String?>? {
+    suspend fun resolvePlayTarget(jellyfinId: String): Pair<String, String?>? =
+        resolvePlayPush(jellyfinId)?.let { it.kind to it.title }
+
+    /**
+     * R303 (FR-R303-2, dev review item 2) — everything a `play_item` push needs to name what is playing:
+     * the kind, the title (an episode's own — this used to be null for an episode, so a phone-driven TV
+     * play showed no title at all), the `S2 · E7` kicker in the exact shape the TV and phone build from a
+     * detail (`SeriesDetailScreen.episodeKicker`), the series' name for an episode, and the item whose
+     * clearlogo the player shows top right — the film itself, or the SERIES for an episode, never a
+     * season or an episode. Null when the id is not in this library.
+     */
+    suspend fun resolvePlayPush(jellyfinId: String): PlayPush? {
         resolveByJellyfinId(jellyfinId)?.let { item ->
-            return (if (item.kind == MediaKind.TV_SHOW) "series" else "movie") to item.title
+            val kind = if (item.kind == MediaKind.TV_SHOW) "series" else "movie"
+            return PlayPush(kind = kind, title = item.title, kicker = null, seriesName = null, logoItem = item)
         }
-        allItems().asSequence()
-            .filter { it.kind == MediaKind.TV_SHOW }
-            .forEach { series -> series.episodes.firstOrNull { it.jellyfinId == jellyfinId }?.let { return "episode" to null } }
+        for (series in allItems()) {
+            if (series.kind != MediaKind.TV_SHOW) continue
+            val ep = series.episodes.firstOrNull { it.jellyfinId == jellyfinId } ?: continue
+            val kicker = if (ep.seasonNumber != null && ep.episodeNumber != null) "S${ep.seasonNumber} · E${ep.episodeNumber}" else null
+            val title = ep.title?.takeIf { it.isNotBlank() } ?: ep.episodeNumber?.let { "Episode $it" } ?: series.title
+            return PlayPush(kind = "episode", title = title, kicker = kicker, seriesName = series.title, logoItem = series)
+        }
         return null
     }
 

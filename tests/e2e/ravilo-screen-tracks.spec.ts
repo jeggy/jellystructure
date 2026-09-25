@@ -129,6 +129,17 @@ test.describe("R285 — audio and subtitles on the TV receiver, driven through t
     const skipped = await waitForAvplayCall(page, "seekTo", from);
     expect(Number(skipped.call[1])).toBeGreaterThanOrEqual(30_000);
 
+    // ── 8b. R303 — the seek flashed the overlay: the bottom block names the film; the top-right slot
+    //    never shows a NAME for a film (FR-R303-3: a film with no logo shows nothing, its title is already
+    //    in the bottom block; with a logo the slot shows the logo and only the logo). ───────────────
+    const overlay = page.locator("#overlay");
+    await expect(overlay).toHaveClass(/\bon\b/);
+    await expect(page.locator("#ov-title")).toHaveText("Big Buck Bunny");
+    await expect(page.locator("#ov-ident")).not.toHaveClass(/\bname\b/);
+    if (/\blogo\b/.test((await page.locator("#ov-ident").getAttribute("class")) ?? "")) {
+      expect(await page.locator("#ov-logo").getAttribute("src")).toContain("/api/tv/image/");
+    }
+
     // ── 9. Stop, and nothing thrown on the way. ─────────────────────────────────────────────────
     from = (await avplayCalls(page)).length;
     await request.post("/api/remote/command", { headers: auth, data: { device_id: screenId, command: "stop" } });

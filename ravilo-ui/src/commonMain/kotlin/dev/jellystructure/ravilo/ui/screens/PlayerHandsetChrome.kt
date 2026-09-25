@@ -122,6 +122,10 @@ internal fun HandsetPlayerChrome(
     colors: RaviloColors,
     itemTitle: String,
     itemKicker: String?,
+    // R303 (FR-R303-1/2) — the identity slot between the title and the cast glyph.
+    logoUrl: String? = null,
+    logoInk: String? = null,
+    seriesName: String? = null,
     positionMs: Long,
     durationMs: Long,
     bufferedMs: Long,
@@ -186,6 +190,15 @@ internal fun HandsetPlayerChrome(
                     }
                     Text(itemTitle, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold, fontFamily = SpaceGrotesk, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
+                // R303 (FR-R303-1) — immediately left of the cast glyph; the title column's weight(1f) is what
+                // yields to it. FR-R303-6's AirPlay chip does not exist in this build (no iOS target), so
+                // nothing hides it here yet.
+                PlayerIdentSlot(
+                    logoUrl = logoUrl, logoInk = logoInk, seriesName = seriesName,
+                    maxWidth = PHONE_IDENT_MAX_WIDTH, maxHeight = PHONE_IDENT_MAX_HEIGHT,
+                    nameFontSize = 14.sp, nameLineHeight = 16.sp,
+                    modifier = Modifier.padding(horizontal = 4.dp),
+                )
                 castSlot?.invoke()
                 if (showRotate) {
                     HandsetIconButton(size = HANDSET_TARGET, onClick = onRotate, label = str("pl.rotate"), showLabel = false) { tint ->

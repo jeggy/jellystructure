@@ -58,6 +58,8 @@ fun Route.remoteRoutes(
     // Phase 236 (FR-236-2) — null keeps /pair answering 404, same "not available yet" shape castService
     // uses elsewhere in this codebase.
     screenPairingService: ScreenPairingService? = null,
+    // R303 (FR-R303-2) — null keeps the pre-R303 push (kind + title only); Main always passes one.
+    playPushResolver: dev.jellystructure.tv.PlayPushResolver? = null,
 ) {
     fun callerAddressOf(headers: io.ktor.http.Headers, remoteHost: String): String =
         headers["X-Forwarded-For"]?.substringBefore(',')?.trim()?.takeIf { it.isNotBlank() } ?: remoteHost
@@ -144,8 +146,14 @@ fun Route.remoteRoutes(
                 call.respond(HttpStatusCode.Conflict, ScreenBusy(live, viewerNameOf(device.deviceId)))
                 return@post
             }
-            val (kind, title) = mediaStore.resolvePlayTarget(req.jellyfinItemId) ?: ("movie" to null)
-            tvEventBus.notifyPlayItem(caller.jellyfinUserId, device.deviceId, req.jellyfinItemId, kind, title, req.startPositionMs, sessionUserId = caller.jellyfinUserId)
+            // R303 (FR-R303-2, dev review item 2) — the push names what is playing (title, S·E kicker, series
+            // name, the film's or series' logo + ink) so neither the TV nor the receiver-only app fetches.
+            val push = playPushResolver?.resolve(req.jellyfinItemId)
+            val (kind, title) = push?.let { it.kind to it.title } ?: mediaStore.resolvePlayTarget(req.jellyfinItemId) ?: ("movie" to null)
+            tvEventBus.notifyPlayItem(
+                caller.jellyfinUserId, device.deviceId, req.jellyfinItemId, kind, title, req.startPositionMs, sessionUserId = caller.jellyfinUserId,
+                kicker = push?.kicker, seriesName = push?.seriesName, logoUrl = push?.logoUrl, logoInk = push?.logoInk,
+            )
             Logger.info("remote play: user=${caller.jellyfinUserId} device=${device.deviceId} item=${req.jellyfinItemId}", "remote")
             call.respond(HttpStatusCode.Accepted, mapOf("ok" to true))
         }

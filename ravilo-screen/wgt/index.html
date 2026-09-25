@@ -52,6 +52,15 @@
     #overlay .bar { height: 6px; border-radius: 3px; background: rgba(255,255,255,.22); margin: 18px 0 10px; }
     #overlay .bar i { display: block; height: 100%; width: 0; border-radius: 3px; background: linear-gradient(90deg, var(--accent), var(--accent2)); }
     #overlay .time { color: var(--ink-dim); font-size: 20px; }
+    /* R303 — what is playing, top right; it lives inside #overlay so it rides the same show/hide. */
+    #ov-ident { position: fixed; top: 40px; right: 64px; display: none; align-items: center; justify-content: flex-end; max-width: 440px; }
+    #ov-ident.logo, #ov-ident.name { display: flex; }
+    #ov-logo { display: none; max-width: 400px; max-height: 84px; width: auto; height: auto; object-fit: contain; filter: drop-shadow(0 2px 14px rgba(0,0,0,.55)); }
+    #ov-ident.logo #ov-logo { display: block; }
+    #ov-ident.plate { padding: 12px 20px; border-radius: 14px; background: rgba(244,246,250,.92); box-shadow: 0 6px 24px rgba(0,0,0,.35); }
+    #ov-ident.plate #ov-logo { max-height: 64px; max-width: 360px; filter: none; }
+    #ov-showname { display: none; font-weight: 700; font-size: 32px; line-height: 1.08; letter-spacing: -.4px; color: var(--ink); text-align: right; text-shadow: 0 2px 14px rgba(0,0,0,.6); overflow: hidden; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+    #ov-ident.name #ov-showname { display: -webkit-box; }
     /* buffering: the frozen frame stays; a spinner and nothing else */
     #buffering { background: rgba(0,0,0,.38); }
     .spinner { width: 56px; height: 56px; border: 5px solid rgba(255,255,255,.2); border-top-color: var(--ink); border-radius: 50%; animation: spin .9s infinite linear; }
@@ -72,7 +81,7 @@
   <section id="buffering" class="screen"><div class="spinner"></div></section>
   <section id="noserver" class="screen"><div class="mark"></div><div id="noserver-t" class="title"></div><div id="noserver-s" class="sub"></div></section>
   <section id="busy" class="screen"><div class="mark"></div><div id="busy-t" class="title"></div><div id="busy-s" class="sub"></div><div id="busy-wait" class="wait"></div></section>
-  <div id="overlay"><div class="row"><div><div id="ov-kicker" class="kicker"></div><div id="ov-title" class="title" style="font-size:30px"></div></div></div><div class="bar"><i id="ov-fill"></i></div><div id="ov-time" class="time"></div></div>
+  <div id="overlay"><div id="ov-ident"><img id="ov-logo" alt=""><div id="ov-showname"></div></div><div class="row"><div><div id="ov-kicker" class="kicker"></div><div id="ov-title" class="title" style="font-size:30px"></div></div></div><div class="bar"><i id="ov-fill"></i></div><div id="ov-time" class="time"></div></div>
 
   <script src="ravilo-screen.js"></script>
 </body>

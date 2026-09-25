@@ -48,6 +48,7 @@ import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
 import org.w3c.dom.HTMLElement
+import org.w3c.dom.HTMLImageElement
 import org.w3c.dom.HTMLInputElement
 import org.w3c.dom.events.KeyboardEvent
 import kotlin.random.Random
@@ -91,6 +92,10 @@ private class Screen(private val serverUrl: String) {
     private var title: String? = null
     private var kicker: String? = null
     private var artUrl: String? = null
+    // R303 (FR-R303-2/7) — from the play push, never fetched: the film's or SERIES' logo + ink, the series' name.
+    private var seriesName: String? = null
+    private var logoUrl: String? = null
+    private var logoInk: String? = null
     private var loaded = false
     private var playing = false
     private var buffering = false
@@ -148,6 +153,7 @@ private class Screen(private val serverUrl: String) {
 
     private fun idle() {
         loaded = false; playing = false; buffering = false; itemId = null; title = null; kicker = null; artUrl = null; ticket = null
+        seriesName = null; logoUrl = null; logoInk = null   // R303
         showSubtitle(-1)
         el("idle-sentence").textContent = ReceiverStrings.t("cast.ready")
         // R269 (FR-R269-6) — a quiet line naming the configured server; the only way a household can see
@@ -251,9 +257,14 @@ private class Screen(private val serverUrl: String) {
         if (activeUserId != previousUser) adoptLanguageOfActiveUser()
         itemId = env.jellyfinId
         title = env.title
-        kicker = null
+        // R303 (FR-R303-2/5/7) — the push carries the S·E kicker, the series' name and the logo; the
+        // receiver used to show a bare title (or none: an episode's title was not even resolved).
+        kicker = env.kicker
+        seriesName = env.seriesName
+        logoUrl = env.logoUrl
+        logoInk = env.logoInk
         el("loading-title").textContent = env.title.orEmpty()
-        el("loading-kicker").textContent = ""
+        el("loading-kicker").textContent = env.kicker.orEmpty()
         el("loading-label").textContent = ReceiverStrings.t("loading")
         show("loading")
         val t = negotiate(env.jellyfinId) ?: return
@@ -444,12 +455,39 @@ private class Screen(private val serverUrl: String) {
         val pos = backend.positionMs(); val dur = backend.durationMs()
         el("ov-kicker").textContent = kicker.orEmpty()
         el("ov-title").textContent = title.orEmpty()
+        paintIdent()
         val frac = if (dur > 0) (pos.toDouble() / dur).coerceIn(0.0, 1.0) else 0.0
         el("ov-fill").style.width = "${(frac * 100).toInt()}%"
         el("ov-time").textContent = "${hms(pos)} / ${hms(dur)}"
         el("overlay").classList.add("on")
         overlayJob?.cancel()
         overlayJob = GlobalScope.launch { delay(3_000); if (playing) el("overlay").classList.remove("on") }
+    }
+
+    /**
+     * R303 (FR-R303-1/3/4) — what is playing, top right, inside the overlay so it shows and hides with it.
+     * A logo when the push carries one (the series' for an episode); a dark-ink logo on a light plate,
+     * never recoloured; no logo ⇒ a series shows its name in text, a film shows nothing (its title is in
+     * the bottom block). A logo that fails to load falls back the same way as none — the `<img>`'s own
+     * onerror, decided here and nowhere else.
+     */
+    private fun paintIdent() {
+        val ident = el("ov-ident")
+        val img = el("ov-logo") as HTMLImageElement
+        val name = el("ov-showname")
+        val logo = logoUrl?.takeIf { it.isNotBlank() }?.let { if (it.startsWith("/")) serverUrl.trimEnd('/') + it else it }
+        val fallback = seriesName?.takeIf { it.isNotBlank() }
+        fun showName() {
+            img.removeAttribute("src")
+            name.textContent = fallback.orEmpty()
+            ident.className = if (fallback != null) "name" else ""
+        }
+        if (logo == null) { showName(); return }
+        img.onerror = { _, _, _, _, _ -> showName(); null }
+        if (img.getAttribute("src") != logo) img.src = logo
+        img.alt = fallback ?: title.orEmpty()
+        name.textContent = ""
+        ident.className = "logo" + (if (logoInk == "dark") " plate" else "")
     }
 
     // ── R285: track changes and drawn subtitles ──

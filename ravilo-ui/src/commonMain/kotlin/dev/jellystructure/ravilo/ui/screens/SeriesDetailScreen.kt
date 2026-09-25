@@ -237,6 +237,7 @@ private fun buildEpisodeContext(
         originalLanguage = detail.originalLanguage,
         segments = ep.segments,  // Phase 150 — the CURRENTLY PLAYING episode's own segments
         seriesPosterUrl = detail.card.posterUrl,  // R194
+        logoUrl = detail.logoUrl, logoInk = detail.logoInk, seriesName = detail.card.title,  // R303 (FR-R303-2)
     )
 }
 

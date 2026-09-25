@@ -2,13 +2,31 @@
 
 ## Status
 
-`Planned` — written 2026-09-25 from the owner's ask and the mockups (`design/ravilo/ravilo-player.js/.css`,
-`ravilo-app.js`, `Ravilo Mobile.html` + `mobile/ravilo-mobile-player.css`, `Ravilo Receiver App.html`),
-drawn the same day. **Dev-reviewed 2026-09-25 against `main` `e7991df3`** (see §Dev review at the bottom: the
-detail payloads already carry logo and ink, so the TV, phone and web halves are a `Dest.Player` field and
-one composable; the receiver and the phone→TV push need the fields on their play message; FR-R303-5
-describes a repetition that does not exist; the TV slot must not go into `PlayerScreen`'s body). Not
-built. Uses **232**'s `logo_ink` and **R214**'s versioned `logoUrl`.
+`✓ Built` 2026-09-25 from the dev review below (all six items). `Planned` when written 2026-09-25 from the
+owner's ask and the mockups (`design/ravilo/ravilo-player.js/.css`, `ravilo-app.js`, `Ravilo Mobile.html` +
+`mobile/ravilo-mobile-player.css`, `Ravilo Receiver App.html`), drawn the same day. Uses **232**'s
+`logo_ink` and **R214**'s versioned `logoUrl`.
+
+### Build (2026-09-25)
+
+- **TV, phone, web (one commonMain):** three fields on `Dest.Player` / `PlayerScreen` (`logoUrl`, `logoInk`,
+  `seriesName`), threaded from both detail push sites, the binge's `replaceTop` and the `play_item` push
+  (item 1). `PlayerIdent.kt` (new): `playerIdent()` — the one decision (logo · plate when ink is `dark` ·
+  series name in text · nothing), tested in `PlayerIdentTest` — and `PlayerIdentSlot`, its own composable
+  outside `PlayerScreen`'s body (item 5), holding the failed-load state (item 6). TV: top-right of the top
+  bar, 200 × 42 dp (= 400 × 84 px on the 1920 frame); phone: 112 × 36 dp between the title column and the
+  cast glyph. FR-R303-5 confirmed a no-op (item 3); OQ2 closed, the TV's top right was empty (item 4).
+  FR-R303-6: no AirPlay chip exists in this build (no iOS target), so nothing hides the slot yet.
+- **The play push (item 2):** `PlayItemEnvelope` gains `kicker`, `series_name`, `logo_url`, `logo_ink`
+  (additive, never removed). `PlayPushResolver` (new) resolves them where `RemoteRoutes` and the Phase 110
+  bridge already resolved the item — `MediaStore.resolvePlayPush` now also answers an **episode's own title**
+  (it was `null`: a phone-driven TV play showed no title) and the `S2 · E7` kicker in the detail screens'
+  own shape. A logo URL is sent only when the clearlogo is on disk, so a receiver's `<img>` never flashes a
+  404. `PlayPushResolverTest` (4) in `linuxX64Test`.
+- **Receiver-only TV app (`ravilo-screen`):** `#ov-ident` top right inside `#overlay` (rides its show/hide),
+  logo / plate / name / nothing per the same rule, the `<img>` `onerror` as the fallback; the loading screen
+  shows the kicker. `ravilo-screen-tracks.spec.ts` step 8b asserts a film never shows a name there.
+- **Verified:** see below.
 
 > *"When in the media player and the item has a logo artwork available, it should be shown when the media
 > controls are shown (maybe top right). Especially for series, which currently do not show the title of the

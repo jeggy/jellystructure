@@ -58,6 +58,8 @@ class JellyfinSessionBridge(
     private val tvEventBus: TvEventBus,
     private val scope: CoroutineScope,
     private val mediaStore: MediaStore,
+    // R303 (FR-R303-2) — the dashboard's own *Play on* names what is playing too; null = kind + title only.
+    private val playPushResolver: PlayPushResolver? = null,
 ) {
     private val http = HttpClient(Curl) { install(WebSockets) }
     private val jellyfinClient = JellyfinClient()
@@ -303,8 +305,12 @@ class JellyfinSessionBridge(
             "Play" -> {
                 val itemId = data?.get("ItemIds")?.jsonArray?.firstOrNull()?.jsonPrimitive?.contentOrNull ?: return
                 val startTicks = data["StartPositionTicks"]?.jsonPrimitive?.longOrNull ?: 0L
-                val (kind, title) = mediaStore.resolvePlayTarget(itemId) ?: ("movie" to null)
-                tvEventBus.notifyPlayItem(device.jellyfinUserId, device.deviceId, itemId, kind, title, startTicks / 10_000L)
+                val push = playPushResolver?.resolve(itemId)
+                val (kind, title) = push?.let { it.kind to it.title } ?: mediaStore.resolvePlayTarget(itemId) ?: ("movie" to null)
+                tvEventBus.notifyPlayItem(
+                    device.jellyfinUserId, device.deviceId, itemId, kind, title, startTicks / 10_000L,
+                    kicker = push?.kicker, seriesName = push?.seriesName, logoUrl = push?.logoUrl, logoInk = push?.logoInk,
+                )
             }
             "Playstate" -> {
                 val command = data?.get("Command")?.jsonPrimitive?.contentOrNull ?: return

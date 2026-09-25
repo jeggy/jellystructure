@@ -153,13 +153,21 @@ class TvEventBus(private val scope: CoroutineScope) {
      *  `POST /api/remote/play`. [kind] is resolved server-side ("movie" | "series" | "episode") so the
      *  app never has to look it up. [sessionUserId] (FR-236-4) tells a screen which of its own tokens to
      *  use for this play — absent (null) preserves today's single-session behaviour exactly. */
-    fun notifyPlayItem(userId: String, deviceId: String, jellyfinId: String, kind: String, title: String?, startPositionMs: Long, sessionUserId: String? = null) {
+    fun notifyPlayItem(
+        userId: String, deviceId: String, jellyfinId: String, kind: String, title: String?, startPositionMs: Long, sessionUserId: String? = null,
+        // R303 (FR-R303-2) — what the player shows top right; see PlayItemEnvelope's doc. All optional, all additive.
+        kicker: String? = null, seriesName: String? = null, logoUrl: String? = null, logoInk: String? = null,
+    ) {
         scope.launch {
             val target = mutex.withLock { targetFor(userId, deviceId) } ?: return@launch
             val msg = buildString {
                 append("""{"type":"play_item","jellyfin_id":"$jellyfinId","kind":"$kind","start_position_ms":$startPositionMs""")
                 if (title != null) append(""","title":${title.jsonEsc()}""")
                 if (sessionUserId != null) append(""","session_user_id":${sessionUserId.jsonEsc()}""")
+                if (kicker != null) append(""","kicker":${kicker.jsonEsc()}""")
+                if (seriesName != null) append(""","series_name":${seriesName.jsonEsc()}""")
+                if (logoUrl != null) append(""","logo_url":${logoUrl.jsonEsc()}""")
+                if (logoInk != null) append(""","logo_ink":${logoInk.jsonEsc()}""")
                 append("}")
             }
             runCatching { target.send(Frame.Text(msg)) }

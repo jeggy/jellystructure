@@ -321,7 +321,9 @@ fun main() = runBlocking {
     }
 
     // Phase 110 — one outbound Jellyfin WS per connected Ravilo TV (dashboard messages, remote control).
-    val sessionBridge = dev.jellystructure.tv.JellyfinSessionBridge(configStore, tvEventBus, rootScope, mediaStore)
+    // R303 (FR-R303-2) — the play push names what is playing: the same logo URL + ink the detail payloads carry.
+    val playPushResolver = dev.jellystructure.tv.PlayPushResolver(mediaStore, artworkDownloader, clearlogoInk)
+    val sessionBridge = dev.jellystructure.tv.JellyfinSessionBridge(configStore, tvEventBus, rootScope, mediaStore, playPushResolver)
     // Phase 111 — jellystructure-issued API keys for external tools (Home Assistant etc.), fenced to /api/remote/**.
     val apiKeyStore = dev.jellystructure.auth.ApiKeyStore(db)
     // Phase 114 — realtime ingest: *arr webhooks + Jellyfin's own LibraryChanged reach Ravilo in
@@ -392,6 +394,7 @@ fun main() = runBlocking {
         castService = castService, castDir = castDir,
         screenPairingService = screenPairingService,
         devicePolicyReconciler = devicePolicyReconciler,
+        playPushResolver = playPushResolver,
     )
 
     // R149: populate Sonarr next-airing data for all TV shows on startup (background, non-blocking).

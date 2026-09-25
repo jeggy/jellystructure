@@ -319,6 +319,10 @@ fun PlayerScreen(
     // Phase 150 — this title's own intro/credits segments (R182 Skip Intro / Skip Credits consumes
     // this; this stage only threads it in).
     segments: dev.jellystructure.shared.tv.TvSegmentMarkers = dev.jellystructure.shared.tv.TvSegmentMarkers(),
+    // R303 (FR-R303-2) — the top-right identity: the film's or series' logo + ink, the series' name.
+    logoUrl: String? = null,
+    logoInk: String? = null,
+    seriesName: String? = null,
     store: PlayerStore,
     onBack: () -> Unit,
     onNavigateToEpisode: ((String) -> Unit)? = null,
@@ -1802,6 +1806,7 @@ fun PlayerScreen(
             // the TV layout below is untouched.
             if (handset) HandsetPlayerChrome(
                 colors = colors, itemTitle = itemTitle, itemKicker = itemKicker,
+                logoUrl = logoUrl, logoInk = logoInk, seriesName = seriesName,  // R303
                 positionMs = positionMs, durationMs = durationMs, bufferedMs = bufferedMs,
                 scrubbing = scrubbing, scrubPos = scrubPos, isPlaying = isPlaying,
                 railItems = handsetRailFor(hasNextEp = resolvedNextEpisodeId != null, hasSeason = episodes != null),
@@ -1831,6 +1836,7 @@ fun PlayerScreen(
                 colors          = colors,
                 itemTitle       = itemTitle,
                 itemKicker      = itemKicker,
+                logoUrl = logoUrl, logoInk = logoInk, seriesName = seriesName,  // R303
                 positionMs      = positionMs,
                 durationMs      = durationMs,
                 bufferedMs      = bufferedMs,
@@ -2061,6 +2067,10 @@ private fun PlayerChrome(
     colors: RaviloColors,
     itemTitle: String,
     itemKicker: String?,
+    // R303 (FR-R303-1/2) — the top-right slot's inputs; PlayerIdentSlot decides what to draw.
+    logoUrl: String? = null,
+    logoInk: String? = null,
+    seriesName: String? = null,
     positionMs: Long,
     durationMs: Long,
     bufferedMs: Long,
@@ -2120,6 +2130,13 @@ private fun PlayerChrome(
             // 2026-09-24 — the DIRECT PLAY / HLS + container pill (R14) is gone: R180 FR-RV-ASP1-2, no
             // delivery-method cue may reach a viewer, and it shipped in every release build.
             Spacer(Modifier.weight(1f))
+            // R303 (FR-R303-1) — what is playing, top right, inside the chrome so it fades with it. Its
+            // own composable (dev review item 5) — nothing more of it may be inlined here.
+            PlayerIdentSlot(
+                logoUrl = logoUrl, logoInk = logoInk, seriesName = seriesName,
+                maxWidth = TV_IDENT_MAX_WIDTH, maxHeight = TV_IDENT_MAX_HEIGHT,
+                nameFontSize = 16.sp, nameLineHeight = 17.sp,
+            )
         }
 
         // Bottom transport
