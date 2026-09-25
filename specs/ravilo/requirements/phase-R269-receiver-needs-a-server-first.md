@@ -9,7 +9,15 @@
 
 ## Status
 
-`⚠ Partial` — written 2026-09-18. **Dev-reviewed and built 2026-09-19 against `main`
+
+**2026-09-25 — the CORS question is answered, on the Tizen 10.0 TV emulator.** Installed and driven over
+DevTools: the widget's origin is `file://`; with the `<access origin="*">` element it lacked (without it,
+*every* request failed with `net::ERR_UNKNOWN_URL_SCHEME` — the setup probe could never have succeeded on
+a TV), `GET /api/health` on the production server returns 200 with a readable body and no
+`Access-Control-Allow-Origin` header, and a preflighted JSON POST reaches the server directly. A packaged
+Tizen widget does not enforce CORS; no backend exception is needed. The RU7440's Tizen 5.0 is older and
+unverified. Also fixed: with no server stored, setup was drawn over the idle screen.
+`✓ Built` — written 2026-09-18. **Dev-reviewed and built 2026-09-19 against `main`
 (post-R264/R272/R265 build)** — see §Dev review below: FR-R269-3's premise (the TV client already probes
 the server) is wrong, but the fix is good news — `GET /api/health` already exists, unauthenticated, and
 answers Open Question 1 outright with zero backend change; FR-R269-2's LAN-http-fallback claim describes

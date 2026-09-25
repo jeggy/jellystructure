@@ -733,6 +733,13 @@ data class PlayItemEnvelope(
     @SerialName("series_name") val seriesName: String? = null,
     @SerialName("logo_url") val logoUrl: String? = null,
     @SerialName("logo_ink") val logoInk: String? = null,
+    // R264 (FR-R264-3) — a receiver that fetches nothing still offers Skip Intro and a next-up card: the
+    // title's intro/credits markers (the detail payloads' own lookup) and the episode after this one.
+    // All optional and additive; an older push simply has neither.
+    val segments: TvSegmentMarkers? = null,
+    @SerialName("next_id") val nextId: String? = null,
+    @SerialName("next_title") val nextTitle: String? = null,
+    @SerialName("next_kicker") val nextKicker: String? = null,
 )
 
 /** R155 — a remote playstate command (stop/pause/unpause/seek) for whichever item is currently

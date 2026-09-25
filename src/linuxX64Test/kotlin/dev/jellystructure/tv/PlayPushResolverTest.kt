@@ -94,4 +94,39 @@ class PlayPushResolverTest {
     fun `an id this library does not hold is the pre-R303 push`() = runBlocking {
         assertEquals(PlayPushResolver.Resolved("movie", null, null, null, null, null), resolver.resolve("nope"))
     }
+
+    // ── R264 (FR-R264-3) — a receiver that fetches nothing still gets Skip Intro and a next-up card ──
+
+    @Test
+    fun `an episode names the next one in season order skipping its own file and specials`() = runBlocking {
+        mediaStore.addOrUpdate(series("hh", "Havets Hjarta", listOf(
+            episode("jf-s2e1", 2, 1, "Ashore"),
+            episode("jf-s1e2", 1, 2, "The Storm"),
+            episode("jf-s0e1", 0, 1, "Behind the scenes"),
+            episode("jf-s1e1", 1, 1, "Harbour"),
+            episode("jf-s1e2", 1, 3, "The Storm, part two"),   // a multi-episode file: same id, next row
+        )))
+        val first = resolver.resolve("jf-s1e1")
+        assertEquals("jf-s1e2", first.next?.jellyfinId); assertEquals("S1 · E2", first.next?.kicker); assertEquals("The Storm", first.next?.title)
+        assertEquals("jf-s2e1", resolver.resolve("jf-s1e2").next?.jellyfinId, "never the same file again")
+        assertNull(resolver.resolve("jf-s2e1").next, "the last episode has no next")
+        assertNull(resolver.resolve("jf-s0e1").next, "a special has no next")
+    }
+
+    @Test
+    fun `a film has no next and the segments come from the detail lookup keyed like the detail payloads`() = runBlocking {
+        mediaStore.addOrUpdate(movie("bbb", "Big Buck Bunny"))
+        mediaStore.addOrUpdate(series("hh", "Havets Hjarta", listOf(episode("jf-ep", 2, 7, "The Storm"))))
+        val asked = mutableListOf<String>()
+        val withSegments = PlayPushResolver(mediaStore, ArtworkDownloader(TmdbClient(ConfigStore("/tmp/jellystructure-test-playpush-${getpid()}.toml")), Screengrabber()),
+            segments = { itemId, episodeKey, episodeNumber, _ ->
+                asked += "$itemId|$episodeKey|$episodeNumber"
+                dev.jellystructure.shared.tv.TvSegmentMarkers(introStartMs = 1_000, introEndMs = 61_000)
+            })
+        val film = withSegments.resolve("jf-bbb")
+        assertNull(film.next)
+        assertEquals(61_000, film.segments?.introEndMs)
+        withSegments.resolve("jf-ep")
+        assertEquals(listOf("bbb||0", "hh|e.mkv|7"), asked)
+    }
 }

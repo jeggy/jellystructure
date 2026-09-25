@@ -153,6 +153,7 @@ fun Route.remoteRoutes(
             tvEventBus.notifyPlayItem(
                 caller.jellyfinUserId, device.deviceId, req.jellyfinItemId, kind, title, req.startPositionMs, sessionUserId = caller.jellyfinUserId,
                 kicker = push?.kicker, seriesName = push?.seriesName, logoUrl = push?.logoUrl, logoInk = push?.logoInk,
+                segments = push?.segments, next = push?.next,
             )
             Logger.info("remote play: user=${caller.jellyfinUserId} device=${device.deviceId} item=${req.jellyfinItemId}", "remote")
             call.respond(HttpStatusCode.Accepted, mapOf("ok" to true))

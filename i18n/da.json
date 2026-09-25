@@ -434,6 +434,8 @@
   "receiver.setup_connect": "Forbind",
   "receiver.setup_trying": "Prøver at få forbindelse…",
   "receiver.setup_not_found": "Der er ingen Ravilo-server på den adresse",
+  "receiver.failed": "Det kunne ikke starte",
+  "receiver.failed_sub": "Prøv igen fra telefonen.",
   "acq.in_library": {
     "text": "✓ I biblioteket",
     "note": "Draft Danish — review before release."

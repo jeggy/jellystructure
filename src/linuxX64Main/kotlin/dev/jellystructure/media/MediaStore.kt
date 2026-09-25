@@ -61,7 +61,18 @@ fun MediaItem.visibleTo(device: DeviceData): Boolean =
     visibleTo(device.allowedLibraries) && passesTagPolicy(device.allowedTags, device.blockedTags)
 
 /** R303 — see [MediaStore.resolvePlayPush]. [logoItem] is resolved to a URL + ink by `PlayPushResolver`. */
-data class PlayPush(val kind: String, val title: String?, val kicker: String?, val seriesName: String?, val logoItem: MediaItem?)
+data class PlayPush(
+    val kind: String, val title: String?, val kicker: String?, val seriesName: String?, val logoItem: MediaItem?,
+    /** R264 (FR-R264-3) — what the intro/credits lookup is keyed by: the catalog item, the episode's file
+     *  (`""` for a film) and number, and the legacy TMDB stinger — the same key the detail payloads use. */
+    val segmentItemId: String? = null, val episodeKey: String = "", val episodeNumber: Int = 0,
+    val legacyStinger: dev.jellystructure.model.Stinger? = null,
+    /** R264 (FR-R264-3) — the episode that plays after this one; null for a film, a special, the last. */
+    val next: NextEpisode? = null,
+)
+
+/** R264 — the next episode as a play push names it: what to play, and what the next-up card says. */
+data class NextEpisode(val jellyfinId: String, val title: String?, val kicker: String?)
 
 class MediaStore(
     private val db: JellystructureDb,
@@ -559,16 +570,36 @@ class MediaStore(
     suspend fun resolvePlayPush(jellyfinId: String): PlayPush? {
         resolveByJellyfinId(jellyfinId)?.let { item ->
             val kind = if (item.kind == MediaKind.TV_SHOW) "series" else "movie"
-            return PlayPush(kind = kind, title = item.title, kicker = null, seriesName = null, logoItem = item)
+            return PlayPush(kind = kind, title = item.title, kicker = null, seriesName = null, logoItem = item,
+                segmentItemId = item.id, legacyStinger = item.segments.stinger)
         }
         for (series in allItems()) {
             if (series.kind != MediaKind.TV_SHOW) continue
             val ep = series.episodes.firstOrNull { it.jellyfinId == jellyfinId } ?: continue
             val kicker = if (ep.seasonNumber != null && ep.episodeNumber != null) "S${ep.seasonNumber} · E${ep.episodeNumber}" else null
             val title = ep.title?.takeIf { it.isNotBlank() } ?: ep.episodeNumber?.let { "Episode $it" } ?: series.title
-            return PlayPush(kind = "episode", title = title, kicker = kicker, seriesName = series.title, logoItem = series)
+            return PlayPush(kind = "episode", title = title, kicker = kicker, seriesName = series.title, logoItem = series,
+                segmentItemId = series.id, episodeKey = ep.filename, episodeNumber = ep.episodeNumber ?: 0,
+                legacyStinger = ep.segments.stinger, next = nextEpisodeAfter(series, ep))
         }
         return null
+    }
+
+    /**
+     * R264 (FR-R264-3) — the episode after [ep] in [series]: season then episode order, specials (season 0)
+     * never, only one Jellyfin can play, and never [ep]'s own file again (a multi-episode file, phase 149,
+     * is several catalog rows on one id). Null after the last — and for a special, which has no "next".
+     */
+    internal fun nextEpisodeAfter(series: MediaItem, ep: dev.jellystructure.model.Episode): NextEpisode? {
+        if ((ep.seasonNumber ?: 0) < 1) return null
+        val ordered = series.episodes
+            .filter { it.jellyfinId != null && (it.seasonNumber ?: 0) >= 1 }
+            .sortedWith(compareBy({ it.seasonNumber ?: 0 }, { it.episodeNumber ?: 0 }, { it.partIndex }))
+        val at = ordered.indexOfFirst { it.jellyfinId == ep.jellyfinId }
+        if (at < 0) return null
+        val next = ordered.drop(at + 1).firstOrNull { it.jellyfinId != ep.jellyfinId } ?: return null
+        val kicker = if (next.seasonNumber != null && next.episodeNumber != null) "S${next.seasonNumber} · E${next.episodeNumber}" else null
+        return NextEpisode(jellyfinId = next.jellyfinId!!, title = next.title?.takeIf { it.isNotBlank() }, kicker = kicker)
     }
 
     /**

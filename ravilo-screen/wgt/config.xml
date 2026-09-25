@@ -19,6 +19,11 @@
     <content src="index.html"/>
     <tizen:profile name="tv"/>
     <feature name="http://tizen.org/feature/screen.size.normal.d"/>
+    <!-- Without this the web runtime refuses every request to another origin before CORS is even asked
+         (`net::ERR_UNKNOWN_URL_SCHEME` for https://…, measured on the Tizen 10.0 TV emulator 2026-09-25):
+         the app could reach no server at all. The household's server address is typed at setup (R269), so
+         the origin cannot be named here. -->
+    <access origin="*" subdomains="true"></access>
     <tizen:privilege name="http://tizen.org/privilege/internet"/>
     <tizen:privilege name="http://tizen.org/privilege/tv.inputdevice"/>
     <tizen:privilege name="http://developer.samsung.com/privilege/avplay"/>

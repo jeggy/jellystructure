@@ -7,6 +7,13 @@ binary** (not a mock, not a guess about Ktor internals), not dev-reviewed. FR-24
 **not** built — it names the reasoning an eventual fix must check itself against, and the fix is
 blocked on open question 1, which needs real Tizen hardware or the emulator.
 
+**Open question 1 answered 2026-09-25 on the Tizen 10.0 TV emulator:** the widget runs at `file://`, and
+once its `config.xml` declares `<access origin="*" subdomains="true">` (it did not — without it the web
+runtime refused every external request as `net::ERR_UNKNOWN_URL_SCHEME`), its requests reach the server
+and their responses are readable with no `Access-Control-Allow-Origin` header; a preflighted POST is sent
+directly. The runtime does not enforce CORS for a packaged widget, so FR-247-3's route-scoped exception
+is **not needed**. Tizen 5.0 (the RU7440) is unverified.
+
 **Open question 2 is answered, 2026-09-20, from the artefact rather than by experiment** (the same
 technique 238's review used on the Curl engine's header handling). In
 `ktor-server-cors-linuxX64Main-3.6.0.klib`:

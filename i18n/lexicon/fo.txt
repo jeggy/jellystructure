@@ -53,6 +53,7 @@ brúkt
 burtur
 byrja
 byrjar
+byrjaði
 bíðar
 børn
 cast

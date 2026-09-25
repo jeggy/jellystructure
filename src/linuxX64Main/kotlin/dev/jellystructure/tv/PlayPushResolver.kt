@@ -17,6 +17,9 @@ class PlayPushResolver(
     private val artwork: ArtworkDownloader,
     /** Phase 232 — null in tests (= every logo's ink unknown, so no plate is ever drawn). */
     private val clearlogoInk: ClearlogoInk? = null,
+    /** R264 (FR-R264-3) — the detail payloads' own intro/credits lookup ([DetailService.segmentsFor]), so a
+     *  TV that plays from a push offers Skip Intro at exactly the moment the phone and the TV app do. */
+    private val segments: ((itemId: String, episodeKey: String, episodeNumber: Int, legacyStinger: dev.jellystructure.model.Stinger?) -> dev.jellystructure.shared.tv.TvSegmentMarkers)? = null,
 ) {
     data class Resolved(
         val kind: String,
@@ -25,6 +28,10 @@ class PlayPushResolver(
         val seriesName: String?,
         val logoUrl: String?,
         val logoInk: String?,
+        /** R264 — intro/credits for Skip Intro and the next-up card; null when not wired or not in the library. */
+        val segments: dev.jellystructure.shared.tv.TvSegmentMarkers? = null,
+        /** R264 — what plays next, for the receiver's next-up card and auto-advance. */
+        val next: dev.jellystructure.media.NextEpisode? = null,
     )
 
     /** `("movie", no title, nothing)` for an id this library does not hold — the pre-R303 behaviour. */
@@ -41,6 +48,8 @@ class PlayPushResolver(
             seriesName = push.seriesName,
             logoUrl = logoItem?.let { RaviloImageUrl.logo(it.id, artwork.assetVersion(it, "clearlogo")) },
             logoInk = logoItem?.let { clearlogoInk?.inkFor(it) },
+            segments = push.segmentItemId?.let { id -> segments?.invoke(id, push.episodeKey, push.episodeNumber, push.legacyStinger) },
+            next = push.next,
         )
     }
 }

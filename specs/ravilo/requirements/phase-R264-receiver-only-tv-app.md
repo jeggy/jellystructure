@@ -57,6 +57,48 @@ thing carried over.
 **Numbering:** verified against `STATUS.md` and the spec directories 2026-09-18 — Ravilo taken through
 **R263**, admin through **235**. Admin pair: **236**.
 
+### Built 2026-09-25 — the player, and the first install on a Tizen TV
+
+The owner asked for every ⚠ Partial phase to be finished. Built, e2e-covered, and installed on the
+`ravilo-screen-tv` emulator (Tizen 10.0 TV); the UE55RU7440 itself is not available.
+
+- **FR-R264-3 — a whole player, which it was not.** The receiver paired, played, drew text subtitles and
+  reported status; the TV remote could only play/pause, ±seek and stop, and there was no picker, no
+  Skip Intro, no next-up and one failure sentence for everything. Now: the chrome shows play/pause and
+  a *↓ Audio & Subs* hint; **← / →** seek −10 s / +30 s, **OK** plays/pauses, **↓** opens R180/R195's
+  two-level picker **on the TV** (Subtitles · Audio tabs, one row per language from `:shared`'s
+  `groupVersions` — the same grouping the phone and the TV app use — a language with several versions
+  opening level 2 with R195's one-line descriptions, and the Subtitle size row), a pick closes it (R197).
+  **Skip Intro** appears inside the intro window and OK (or the phone's `skip_segment`) skips to its end;
+  the **next-up card** appears at the credits (or the last 20 s with no credits marker, never before a
+  post-credits scene) with R245's countdown, OK plays the next episode now, Back cancels. The phone's
+  *Next episode* and next-up buttons (`next`, `cancel_next_up`) were accepted by the backend and fell
+  to `else` here — nothing happened; they work now. Back is R112's two steps (close what is up, then
+  stop). The loading screen adds R237's one *Still trying…* line at 5 s.
+- **Where segments and "next" come from:** the play push. The receiver fetches nothing, so the backend's
+  `play_item` now carries the title's intro/credits markers (the detail payloads' own lookup,
+  `DetailService.segmentsFor`, so the TV and the phone can never disagree about where an intro ends) and
+  the next episode (season then episode order, never a special, never the same multi-episode file
+  twice). Auto-advance goes back through the backend: the set asks `POST /api/remote/play` to play the
+  next episode on itself, so the push that comes back is complete — its own segments and its own next.
+  `PlayPushResolverTest` covers the ordering and the lookup key.
+- **One sentence per cause (R237):** a refused start now says *why* — this set's sign-in (401), the
+  profile (403), a title that is gone (404/410), the network (no answer) — in R237's own words, and
+  anything else (the player failing) *"That didn't start · Try again from your phone."* (two new strings
+  × en/da/fo from the mockup's drafts). It used to say *"Can't reach the server"* for all of them. Back
+  to idle after 10 s.
+- **Back on a Samsung remote** arrives as `XF86Back` (key code 10009); the app listened for `Backspace`
+  and `Exit` only, so on a real set Back may never have stopped anything. All the names are accepted.
+- **FR-R264-8** was already done by R272: every GitHub Release builds, signs and attaches the `.wgt`.
+
+**Found by installing it — the app could reach no server at all.** `config.xml` declared the internet
+privilege but no `<access>` element, and Tizen's web runtime refuses every request to another origin
+without one: `fetch("https://…")` failed with `net::ERR_UNKNOWN_URL_SCHEME` inside the widget. With
+`<access origin="*" subdomains="true">` the same request returns 200 with a readable body, although the
+server sends no `Access-Control-Allow-Origin` — **the packaged widget does not enforce CORS** (phase
+247's open question 1 and R269's, answered on the emulator; a preflighted JSON POST reached the server
+directly). Also: with no server stored, the setup screen was drawn over the idle screen (both `on`).
+
 ## The target device, concretely
 
 The first user's TV is a **Samsung UE55RU7440 (2019, RU7400, Tizen 5.0)**: Chromium far below WasmGC, so

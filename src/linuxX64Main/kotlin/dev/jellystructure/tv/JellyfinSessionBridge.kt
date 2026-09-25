@@ -327,6 +327,7 @@ class JellyfinSessionBridge(
                 tvEventBus.notifyPlayItem(
                     device.jellyfinUserId, device.deviceId, itemId, kind, title, startTicks / 10_000L,
                     kicker = push?.kicker, seriesName = push?.seriesName, logoUrl = push?.logoUrl, logoInk = push?.logoInk,
+                    segments = push?.segments, next = push?.next,   // R264
                 )
             }
             "Playstate" -> {

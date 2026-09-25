@@ -175,6 +175,8 @@ class TvEventBus(private val scope: CoroutineScope) {
         userId: String, deviceId: String, jellyfinId: String, kind: String, title: String?, startPositionMs: Long, sessionUserId: String? = null,
         // R303 (FR-R303-2) — what the player shows top right; see PlayItemEnvelope's doc. All optional, all additive.
         kicker: String? = null, seriesName: String? = null, logoUrl: String? = null, logoInk: String? = null,
+        // R264 (FR-R264-3) — Skip Intro and the next-up card for a player that fetches nothing.
+        segments: dev.jellystructure.shared.tv.TvSegmentMarkers? = null, next: dev.jellystructure.media.NextEpisode? = null,
     ) {
         scope.launch {
             val target = mutex.withLock { targetFor(userId, deviceId) } ?: return@launch
@@ -186,6 +188,12 @@ class TvEventBus(private val scope: CoroutineScope) {
                 if (seriesName != null) append(""","series_name":${seriesName.jsonEsc()}""")
                 if (logoUrl != null) append(""","logo_url":${logoUrl.jsonEsc()}""")
                 if (logoInk != null) append(""","logo_ink":${logoInk.jsonEsc()}""")
+                if (segments != null) append(""","segments":${kotlinx.serialization.json.Json.encodeToString(dev.jellystructure.shared.tv.TvSegmentMarkers.serializer(), segments)}""")
+                if (next != null) {
+                    append(""","next_id":${next.jellyfinId.jsonEsc()}""")
+                    next.title?.let { append(""","next_title":${it.jsonEsc()}""") }
+                    next.kicker?.let { append(""","next_kicker":${it.jsonEsc()}""") }
+                }
                 append("}")
             }
             runCatching { target.send(Frame.Text(msg)) }

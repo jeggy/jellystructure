@@ -434,6 +434,8 @@
   "receiver.setup_connect": "Sambind",
   "receiver.setup_trying": "Roynir at sambinda…",
   "receiver.setup_not_found": "Eingin Ravilo-ambætari er á hasi adressuni",
+  "receiver.failed": "Tað byrjaði ikki",
+  "receiver.failed_sub": "Royn aftur frá telefonini.",
   "acq.in_library": {
     "text": "✓ Í savninum",
     "note": "Draft Faroese — review before release."

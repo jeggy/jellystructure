@@ -296,6 +296,11 @@ class DetailService(
      *  doesn't add a stinger detector, but the trim view's manual edit path (kind is one of
      *  [SegmentKind.ALL]) can create one — and falls back to the legacy TMDB-keyword presence flag
      *  ([legacyStinger], `atMs == null`) untouched since Phase 150. */
+    /** R264 — the same markers for a play push (PlayPushResolver), so the TV that plays from a push and
+     *  the detail that started it can never disagree about where the intro ends. */
+    fun segmentsFor(itemId: String, episodeKey: String, episodeNumber: Int, legacyStinger: Stinger?): TvSegmentMarkers =
+        toTv(itemId, episodeKey, episodeNumber, legacyStinger)
+
     private fun toTv(itemId: String, episodeKey: String, episodeNumber: Int, legacyStinger: Stinger?): TvSegmentMarkers {
         val rows = segmentStore.segmentsForEpisode(itemId, episodeKey, episodeNumber)
         var intro = rows.firstOrNull { it.kind == SegmentKind.INTRO }

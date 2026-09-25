@@ -479,6 +479,14 @@
     "text": "There’s no Ravilo server at that address",
     "note": "R269 — the probe failed. Deliberately does not name a status code or a protocol."
   },
+  "receiver.failed": {
+    "text": "That didn’t start",
+    "note": "R264 — the receiver-only TV app, a title that did not play for a reason R237 has no sentence of its own for (the player itself failed, an unexpected answer). No status code, no product, no protocol."
+  },
+  "receiver.failed_sub": {
+    "text": "Try again from your phone.",
+    "note": "R264 — under receiver.failed (and under a title that is gone): the TV has no menu, so the phone is where to try again."
+  },
   "acq.in_library": {
     "text": "✓ In Library",
     "note": "R279 — swept out of RequestScreen.discoverStatusLabel. The ✓ is part of the label."

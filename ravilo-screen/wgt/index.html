@@ -66,6 +66,36 @@
     .spinner { width: 56px; height: 56px; border: 5px solid rgba(255,255,255,.2); border-top-color: var(--ink); border-radius: 50%; animation: spin .9s infinite linear; }
     @keyframes spin { to { transform: rotate(360deg); } }
     .wait { font-size: 20px; color: var(--ink-dim); margin-top: 10px; }
+    /* R264 (FR-R264-3/4) — a whole player driven by the TV remote: play/pause on the chrome, a hint for
+       the picker, Skip Intro, the next-up card, the two-level picker and one plain failure sentence.
+       Layout follows design/ravilo/Ravilo Receiver App.html. */
+    #overlay .row { justify-content: space-between; }
+    #ov-hint { font-size: 20px; color: var(--ink-dim); white-space: nowrap; }
+    #ov-pz { width: 64px; height: 64px; border-radius: 50%; flex: none; background: var(--ink); color: #0a0c13; display: flex; align-items: center; justify-content: center; font-size: 26px; font-weight: 700; }
+    #skip { position: fixed; right: 64px; bottom: 150px; z-index: 3; display: none; padding: 18px 34px; border-radius: 999px; background: var(--ink); color: #0a0c13; font-size: 24px; font-weight: 700; }
+    #skip.on { display: block; }
+    #nextup { position: fixed; right: 64px; bottom: 150px; z-index: 3; display: none; width: 480px; border-radius: 16px; background: rgba(10,12,19,.94); border: 1px solid rgba(255,255,255,.16); padding: 22px 26px 24px; text-align: left; }
+    #nextup.on { display: block; }
+    #nextup .k { font-size: 16px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; color: var(--accent2); }
+    #nextup .t { font-size: 28px; font-weight: 700; margin-top: 8px; }
+    #nextup .c { font-size: 20px; color: var(--ink-soft); margin-top: 10px; }
+    #picker { position: fixed; right: 64px; top: 64px; bottom: 64px; width: 560px; z-index: 4; display: none; flex-direction: column; border-radius: 20px; background: rgba(10,12,19,.95); border: 1px solid rgba(255,255,255,.16); overflow: hidden; }
+    #picker.on { display: flex; }
+    #pk-head { padding: 26px 28px 8px; font-size: 30px; font-weight: 700; }
+    #pk-tabs { display: flex; gap: 10px; padding: 8px 28px 14px; }
+    #pk-tabs b { padding: 9px 20px; border-radius: 999px; font-size: 20px; background: rgba(255,255,255,.07); color: var(--ink-soft); }
+    #pk-tabs b.on { background: var(--ink); color: #0a0c13; }
+    #pk-rows { flex: 1; overflow: hidden; }
+    .pkr { display: flex; align-items: center; gap: 14px; padding: 16px 28px; border-top: 1px solid rgba(255,255,255,.08); font-size: 24px; }
+    .pkr .l { display: flex; flex-direction: column; min-width: 0; }
+    .pkr .l i { font-style: normal; font-size: 17px; color: var(--ink-dim); margin-top: 4px; }
+    .pkr .rt { margin-left: auto; font-size: 20px; color: var(--ink-dim); white-space: nowrap; }
+    .pkr.sel .rt::before { content: "✓ "; }
+    .pkr.foc { background: var(--ink); color: #0a0c13; border-radius: 12px; }
+    .pkr.foc .l i, .pkr.foc .rt { color: rgba(10,12,19,.6); }
+    .pksz b { width: 54px; height: 44px; border-radius: 10px; display: inline-flex; align-items: center; justify-content: center; background: rgba(255,255,255,.08); font-size: 20px; font-weight: 700; margin-left: 8px; }
+    .pksz b.on { background: linear-gradient(120deg, var(--accent), var(--accent2)); color: #fff; }
+    #failed { background: rgba(4,5,9,.94); }
   </style>
 </head>
 <body>
@@ -81,7 +111,11 @@
   <section id="buffering" class="screen"><div class="spinner"></div></section>
   <section id="noserver" class="screen"><div class="mark"></div><div id="noserver-t" class="title"></div><div id="noserver-s" class="sub"></div></section>
   <section id="busy" class="screen"><div class="mark"></div><div id="busy-t" class="title"></div><div id="busy-s" class="sub"></div><div id="busy-wait" class="wait"></div></section>
-  <div id="overlay"><div id="ov-ident"><img id="ov-logo" alt=""><div id="ov-showname"></div></div><div class="row"><div><div id="ov-kicker" class="kicker"></div><div id="ov-title" class="title" style="font-size:30px"></div></div></div><div class="bar"><i id="ov-fill"></i></div><div id="ov-time" class="time"></div></div>
+  <section id="failed" class="screen"><div class="mark"></div><div id="failed-t" class="title"></div><div id="failed-s" class="sub"></div></section>
+  <div id="overlay"><div id="ov-ident"><img id="ov-logo" alt=""><div id="ov-showname"></div></div><div class="row"><div><div id="ov-kicker" class="kicker"></div><div id="ov-title" class="title" style="font-size:30px"></div></div><div class="row"><div id="ov-hint"></div><div id="ov-pz"></div></div></div><div class="bar"><i id="ov-fill"></i></div><div id="ov-time" class="time"></div></div>
+  <div id="skip"></div>
+  <div id="nextup"><div id="nu-k" class="k"></div><div id="nu-t" class="t"></div><div id="nu-c" class="c"></div></div>
+  <div id="picker"><div id="pk-head"></div><div id="pk-tabs"></div><div id="pk-rows"></div></div>
 
   <script src="ravilo-screen.js"></script>
 </body>
