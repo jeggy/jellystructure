@@ -19,6 +19,18 @@ layer cache was cold for every image by construction), added five new spec files
 suite green. The measurement this FR wants is a run where the layer cache is warm for two of the three
 images and the Gradle/Konan download appears **once** in the log. Recorded as outstanding.
 
+**2026-09-25 — measured, and FR-250-1 had never taken effect.** Run `36134323199` (`ci / e2e` 38m43s)
+downloads `gradle-9.2.1-bin.zip` and the Konan LLVM + sysroot **three times**, at 12:26 (app), 12:43
+(ravilo-web) and 12:51 (ravilo-screen) — exactly the pattern this phase was written against, five days
+after the shared ids landed. The ids were right; **`ci.yml` deleted the cache between the builds.** Its
+"Run test stack" step runs `docker buildx prune -f` after each build to stay inside the runner's disk,
+and an unfiltered prune removes BuildKit's `exec.cachemount` records along with the layers — so every
+build found `gradle-shared`/`konan-shared` empty. Checked locally on buildx 0.37.1:
+`docker buildx du --filter 'type!=exec.cachemount'` lists 1 082 regular + 8 source + 2 frontend records
+and none of the three cache mounts. The two prunes *between* builds now carry that filter (the last one
+still takes everything — nothing builds after it), and `scripts/check-docker-cache-ids.sh` fails on any
+prune that precedes a later `docker compose … build` without it (checked by reverting one line).
+
 **⚠ Correction to FR-250-1, found by running it.** The requirement claimed "BuildKit's own locking on
 a shared cache mount id makes concurrent local `docker compose build` safe too, at worst serializing
 rather than corrupting." **That is wrong.** BuildKit's default is `sharing=shared` — concurrent

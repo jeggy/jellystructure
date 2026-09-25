@@ -238,10 +238,15 @@ jobs:
           # GB) before the next build starts -- it only touches BuildKit's build cache, never the
           # tagged image itself, so the later `up` step still finds it without rebuilding. Phase 247
           # added ravilo-screen as a third, smaller (plain Kotlin/JS, no wasm) image to this sequence.
+          # Phase 250 FR-250-2: the prunes BETWEEN builds keep BuildKit's cache mounts. A bare prune
+          # deletes them too, which is what kept all three builds downloading the same Gradle
+          # distribution and Kotlin/Native LLVM + sysroot after 250 gave them one shared id (measured
+          # on run 36134323199: three downloads at 12:26, 12:43, 12:51). The last prune may take
+          # everything -- nothing builds after it. Fenced by scripts/check-docker-cache-ids.sh.
           docker compose -f docker-compose.test.yml build app
-          docker buildx prune -f
+          docker buildx prune -f --filter 'type!=exec.cachemount'
           docker compose -f docker-compose.test.yml build ravilo-web
-          docker buildx prune -f
+          docker buildx prune -f --filter 'type!=exec.cachemount'
           docker compose -f docker-compose.test.yml build ravilo-screen
           docker buildx prune -f
           echo "Disk space before starting stack:"

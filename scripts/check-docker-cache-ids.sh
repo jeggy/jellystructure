@@ -50,6 +50,29 @@ for f in "${DOCKERFILES[@]}"; do
   done < "$f"
 done
 
+# FR-250-2: a shared id is worthless if the cache mount is deleted before the next build reads it.
+# `docker buildx prune` with no filter removes cache mounts along with layers, and ci.yml prunes
+# between the three builds to stay inside the runner's disk. Measured on CI run 36134323199: all three
+# builds still downloaded gradle-9.2.1-bin.zip and the Konan LLVM + sysroot. So every prune that is
+# followed by another `docker compose ... build` in the same workflow must keep exec.cachemount records.
+CI=.github/workflows/ci.yml
+if [ -f "$CI" ]; then
+  bad=$(awk '
+    /^[[:space:]]*#/ { next }
+    /docker (buildx|builder) prune/ { p[++n] = NR; t[n] = $0 }
+    /docker compose .* build / { last_build = NR }
+    END {
+      for (i = 1; i <= n; i++)
+        if (p[i] < last_build && t[i] !~ /type!=exec\.cachemount/) print p[i] ": " t[i]
+    }' "$CI")
+  if [ -n "$bad" ]; then
+    echo "$CI: a prune between image builds deletes the shared toolchain cache mounts (phase 250 FR-250-2):"
+    echo "$bad" | sed 's/^/    /'
+    echo "    ^ add --filter 'type!=exec.cachemount'"
+    fail=1
+  fi
+fi
+
 if [ "$fail" -ne 0 ]; then
   echo
   echo "FAILED: see specs/requirements/phase-250-e2e-docker-builds-share-one-toolchain-cache.md"
