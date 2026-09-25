@@ -2,13 +2,33 @@
 
 ## Status
 
-`Planned` — written 2026-09-25 from the owner's ask and the mockup in `design/app/ravilo-users.html`
-(drawn the same day; the owner answered the design questions before this was written). **Dev-reviewed 2026-09-25 against `main` `e7991df3`**
-(see §Dev review at the bottom: no release list exists server-side, so *skipped* is arithmetic on the plain
-`MAJOR.MINOR` numbering or nothing; the three write sites are not in a transaction today; the seed must
-pick one of a TV's two rows; the history's delete hook has three sites). Not built. Spec first. Builds on **224** (`ravilo_device.app_version`, the `X-Ravilo-Version` header) and
-**256** (FR-256-5's behind count against the deployed backend's own version). Answers 224's §7 open
-question 4: history is **a new table**, not a column.
+`✓ Built` 2026-09-25 from the dev review below (all seven items). `Planned` when written 2026-09-25 from the
+owner's ask and the mockup in `design/app/ravilo-users.html` (drawn the same day; the owner answered the
+design questions before this was written). **Dev-reviewed 2026-09-25 against `main` `e7991df3`.** Builds on
+**224** (`ravilo_device.app_version`, the `X-Ravilo-Version` header) and **256** (FR-256-5's behind count
+against the deployed backend's own version). Answers 224's §7 open question 4: history is **a new table**,
+not a column.
+
+### Build (2026-09-25)
+
+- `ravilo_device_version` (`RaviloDeviceVersion.sq` + migration **50** — 258 took 49, item 6), seeded per
+  `device_id` from the row with the greatest `last_seen` (item 3), `observed = 0`, dated at migration time.
+- `RaviloDeviceService.recordVersionSeen` inside `db.transaction { }` at both 224 write sites (`recordAppInfo`
+  and `loginDevice`, which `CastService.redeem` calls — item 2): a row only when the device's latest history
+  row names a different version. `dropHistoryIfGone` at `unpair`, `removeSession` and `deleteAllForUser`
+  (item 4). `versionHistory(deviceId)` for the overview.
+- `shared/.../RaviloVersion.kt`: `parseRaviloRelease`, `isRaviloDevBuild` (both `git describe` shapes, item
+  7), `raviloSkippedBetween` (arithmetic on MAJOR.MINOR, nothing across a MAJOR change — item 1),
+  `raviloReleasesBehind`; `RaviloVersionTest` (4) in `shared`'s commonTest.
+- Overview: `OverviewDevice.version_since` + `versions[]` (FR-259-6); new `GET /api/tv/admin/ravilo-version`
+  → `{latest, release, behind, devices}` for FR-259-9 (latest = `ServerVersion.current`; hidden when the
+  server itself runs a dev build).
+- Users & devices (`RaviloUsers.kt`): `Ravilo 1.38 · TV · since …` + *N versions ▾* / *no update seen*, the
+  timeline (current · skipped … · dev build · already on it when history began), the one dev-build footnote,
+  the page intro's one sentence about dating, the page-bar chip. Timeline CSS in the served `wf.css`, fenced
+  by `check-mobile-css.sh`.
+- Tests: `RaviloDeviceVersionHistoryTest` (5) covers acceptance 1, 2 and the three delete sites. Acceptance 3
+  (the seed) is checked on the deployed prod DB — see below.
 
 > *"We want to start tracking what Ravilo versions these devices are on. So every time the jellystructure
 > backend sees a new version from that device, it should be stored and possible to see the update history

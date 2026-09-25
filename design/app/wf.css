@@ -796,6 +796,22 @@ hr.dash { border: none; border-top: 1px solid var(--line); margin: 18px 0; }
    both were caught missing from the same page in the same pass. */
 .usr-cap { display: block; font-size: .68rem; color: var(--ink-soft); margin-top: 3px; }
 .usr-cap b { color: var(--ink-soft); font-weight: 600; }
+/* Phase 259 — per-device version history on Users & devices. The mockup (design/app/ravilo-users.html)
+   draws the timeline as a table row; the served page renders a block under the device's caption lines,
+   so the wrapper is .usr-vh-wrap (open/closed) rather than a table-row. Fenced by check-mobile-css.sh. */
+.usr-vh-btn { margin-left: 8px; color: var(--hi); font-weight: 600; cursor: pointer; white-space: nowrap; }
+.usr-vh-btn:hover { text-decoration: underline; }
+.usr-vh-wrap { display: none; }
+.usr-vh-wrap.open { display: block; }
+.usr-vh { border-left: 2px solid var(--line-2, rgba(255,255,255,.22)); margin: 4px 0 4px 7px; padding: 0 0 2px 16px; max-width: 760px; }
+.vh-r { position: relative; display: grid; grid-template-columns: minmax(150px, max-content) minmax(0, 1fr) auto; gap: 2px 16px; align-items: baseline; padding: 5px 0; font-size: .74rem; }
+.vh-r::before { content: ''; position: absolute; left: -21px; top: 10px; width: 8px; height: 8px; border-radius: 50%; background: var(--fill-3); border: 1px solid var(--line-2, rgba(255,255,255,.22)); }
+.vh-r.now::before { background: var(--ok); border-color: var(--ok); box-shadow: 0 0 0 3px var(--ok-soft); }
+.vh-v { font-family: 'JetBrains Mono', monospace; font-weight: 600; color: var(--ink); overflow-wrap: anywhere; }
+.vh-when { color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+.vh-note { font-size: .7rem; color: var(--ink-dim); text-align: right; }
+.vh-foot { font-size: .68rem; color: var(--ink-dim); margin-top: 3px; line-height: 1.5; }
+@media (max-width: 640px) { .vh-r { grid-template-columns: minmax(0, 1fr); } .vh-note { text-align: left; } }
 .usr-cap.unknown b { font-weight: 500; font-style: italic; }
 .usr-av { width: 34px; height: 34px; border-radius: 50%; flex: none; display: inline-flex; align-items: center; justify-content: center;
   font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: .8rem; color: #fff; margin-right: 10px; }

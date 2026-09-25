@@ -32,6 +32,9 @@ private fun encodeTags(tags: Set<String>): String? = tags.takeIf { it.isNotEmpty
 private fun decodeTags(raw: String?): Set<String> =
     raw?.split(",")?.filter { it.isNotBlank() }?.toSet() ?: emptySet()
 
+/** Phase 259 (FR-259-6) — one version a device was seen on. [observed] is false for the migration's seed row. */
+data class DeviceVersionSeen(val appVersion: String, val platform: String?, val firstSeenAt: Long, val observed: Boolean)
+
 /** Phase 185 — a device's persisted decode ceiling (bps), per codec, plus when it was last measured
  *  (epoch millis). Every field null means "not measured yet" (FR-185-2). */
 data class DeviceDecodeCapabilities(
@@ -135,6 +138,10 @@ class RaviloDeviceService(private val db: JellystructureDb) {
             ?: existing?.display_name?.takeIf { it.isNotBlank() }
             ?: "Ravilo TV ${deviceId.take(6)}"
         val resolvedKind = kind ?: existing?.kind ?: "tv"
+        val seenVersion = appVersion?.trim()?.take(64)?.ifBlank { null }
+        val seenPlatform = platform?.trim()?.take(64)?.ifBlank { null }
+        // Phase 259 (FR-259-2, dev review item 2) — the row and its history row land together or not at all.
+        db.transaction {
         db.raviloDeviceQueries.insertDevice(
             device_id = deviceId,
             jellyfin_user_id = jellyfinUserId,
@@ -154,6 +161,8 @@ class RaviloDeviceService(private val db: JellystructureDb) {
             kind = resolvedKind,
             policy_refreshed_at = now,   // Phase 258 (FR-258-5/6) — the AuthenticateByName policy is the freshest copy there is
         )
+        if (seenVersion != null) recordVersionSeen(deviceId, seenVersion, seenPlatform, now)
+        }
         // Force a fresh DB read on the next validateDeviceToken call — the token/policy may have
         // changed even though the device_token itself was reused (re-login as the same user).
         tokenCache.remove(deviceToken)
@@ -238,9 +247,39 @@ class RaviloDeviceService(private val db: JellystructureDb) {
         val v = appVersion?.trim()?.take(64)?.ifBlank { null } ?: return data
         val p = platform?.trim()?.take(64)?.ifBlank { null }
         if (v == data.appVersion && p == data.platform) return data
-        db.raviloDeviceQueries.updateAppInfo(app_version = v, platform = p, device_token = data.deviceToken)
+        // Phase 259 (FR-259-2, dev review item 2) — one transaction: a crash between the two statements
+        // could otherwise leave a version without its history row.
+        db.transaction {
+            db.raviloDeviceQueries.updateAppInfo(app_version = v, platform = p, device_token = data.deviceToken)
+            recordVersionSeen(data.deviceId, v, p, nowMs())
+        }
         return data.copy(appVersion = v, platform = p)
     }
+
+    /**
+     * Phase 259 (FR-259-2/3) — one history row per CHANGE of the device's version, dated when this request
+     * carried it (never the install time). Keyed by device, not viewer: a second viewer's row catching up to
+     * a version the device already reported writes nothing. Callers run this inside their own transaction.
+     */
+    private fun recordVersionSeen(deviceId: String, version: String, platform: String?, now: Long) {
+        val latest = db.raviloDeviceVersionQueries.latestForDevice(deviceId).executeAsOneOrNull()
+        if (latest?.app_version == version) return
+        db.raviloDeviceVersionQueries.insertVersion(device_id = deviceId, app_version = version, platform = platform, first_seen_at = now, observed = 1L)
+    }
+
+    /** Phase 259 (FR-259-5, dev review item 4) — after any of the three revoke paths: a device with no
+     *  `ravilo_device` row left has nothing to show a history on, so the history goes with the last row. */
+    private fun dropHistoryIfGone(deviceId: String) {
+        if (db.raviloDeviceQueries.getByDevice(deviceId).executeAsList().isEmpty()) {
+            db.raviloDeviceVersionQueries.deleteForDevice(deviceId)
+        }
+    }
+
+    /** Phase 259 (FR-259-6) — every version this device has been seen on, newest first. */
+    fun versionHistory(deviceId: String): List<DeviceVersionSeen> =
+        db.raviloDeviceVersionQueries.historyForDevice(deviceId).executeAsList().map {
+            DeviceVersionSeen(appVersion = it.app_version, platform = it.platform, firstSeenAt = it.first_seen_at, observed = it.observed == 1L)
+        }
 
     /** Phase 236 (FR-236-6) — stamped on an events-socket open and a playback/status post, never on
      *  every request (a screen doesn't move networks mid-session, and this would otherwise be a DB
@@ -253,7 +292,9 @@ class RaviloDeviceService(private val db: JellystructureDb) {
 
     fun unpair(deviceToken: String) {
         tokenCache.remove(deviceToken)?.let { DeviceIdentityRegistry.forget(it.data.jellyfinUserToken) }
+        val deviceId = db.raviloDeviceQueries.getByToken(deviceToken).executeAsOneOrNull()?.device_id
         db.raviloDeviceQueries.deleteByToken(deviceToken)
+        deviceId?.let { dropHistoryIfGone(it) }   // Phase 259 (FR-259-5)
     }
 
     /**
@@ -326,6 +367,7 @@ class RaviloDeviceService(private val db: JellystructureDb) {
         db.raviloDeviceQueries.getByDeviceAndUser(device_id = deviceId, jellyfin_user_id = jellyfinUserId)
             .executeAsOneOrNull()?.let { tokenCache.remove(it.device_token); DeviceIdentityRegistry.forget(it.jellyfin_user_token) }
         db.raviloDeviceQueries.deleteByDeviceAndUser(device_id = deviceId, jellyfin_user_id = jellyfinUserId)
+        dropHistoryIfGone(deviceId)   // Phase 259 (FR-259-5) — one viewer of two keeps it; the last takes it
     }
 
     /** Phase 143 — every device row across every user, for the Users & Devices admin overview.
@@ -359,9 +401,10 @@ class RaviloDeviceService(private val db: JellystructureDb) {
         // Security fix (2026-08-02 review, finding M3) — same tokenCache gap as removeSession above:
         // "sign out everywhere" reported success while every signed-out device token kept working for
         // up to 5 more minutes, served straight from the cache.
-        db.raviloDeviceQueries.getByUser(jellyfin_user_id = jellyfinUserId).executeAsList()
-            .forEach { tokenCache.remove(it.device_token); DeviceIdentityRegistry.forget(it.jellyfin_user_token) }
+        val rows = db.raviloDeviceQueries.getByUser(jellyfin_user_id = jellyfinUserId).executeAsList()
+        rows.forEach { tokenCache.remove(it.device_token); DeviceIdentityRegistry.forget(it.jellyfin_user_token) }
         db.raviloDeviceQueries.deleteByUser(jellyfin_user_id = jellyfinUserId)
+        rows.map { it.device_id }.distinct().forEach { dropHistoryIfGone(it) }   // Phase 259 (FR-259-5)
     }
 
     /**

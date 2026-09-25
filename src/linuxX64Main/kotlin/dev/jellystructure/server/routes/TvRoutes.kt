@@ -75,6 +75,29 @@ private data class OverviewDevice(
     // device has never said (an un-updated client); the row spells that out.
     @SerialName("app_version") val appVersion: String? = null,
     val platform: String? = null,
+    // Phase 259 (FR-259-6) — when the current version was first seen (null for a seed row / no history) and
+    // every version this device was seen on, newest first. The client computes durations and formatting only.
+    @SerialName("version_since") val versionSince: Long? = null,
+    val versions: List<OverviewVersion> = emptyList(),
+)
+
+/** Phase 259 (FR-259-6) — one row of a device's version history. `observed = false` is the migration's seed. */
+@Serializable
+private data class OverviewVersion(
+    @SerialName("app_version") val appVersion: String,
+    @SerialName("first_seen_at") val firstSeenAt: Long,
+    val observed: Boolean,
+)
+
+/** Phase 259 (FR-259-9) — the page-bar chip: this backend's own version (the latest there is, 256 FR-256-5)
+ *  and how many devices run an older release. [release] is false when the server itself runs a dev build,
+ *  in which case there is no "latest" to compare against and the chip is hidden. */
+@Serializable
+private data class RaviloVersionSummary(
+    val latest: String,
+    val release: Boolean,
+    val behind: Int,
+    val devices: Int,
 )
 
 @Serializable
@@ -946,6 +969,7 @@ fun Route.tvRoutes(
                 avatarUrl = RaviloImageUrl.avatar(uid, jfAvatarTags[uid]),
                 devices = userDevices.map { d ->
                     val decode = deviceService.decodeCapabilities(d.deviceId, d.jellyfinUserId)
+                    val history = deviceService.versionHistory(d.deviceId)   // Phase 259 (FR-259-6)
                     OverviewDevice(
                         deviceId = d.deviceId,
                         name = d.displayName,
@@ -962,6 +986,8 @@ fun Route.tvRoutes(
                         decodeMeasuredAt = decode?.measuredAt,
                         appVersion = d.appVersion,
                         platform = d.platform,
+                        versionSince = history.firstOrNull()?.takeIf { it.observed }?.firstSeenAt,
+                        versions = history.map { OverviewVersion(it.appVersion, it.firstSeenAt, it.observed) },
                     )
                 },
                 sessions = userSessions.map { s ->
@@ -976,6 +1002,24 @@ fun Route.tvRoutes(
             )
         }
         call.respond(users)
+    }
+
+    // Phase 259 (FR-259-9) — the Users & devices page-bar chip. "Latest" is this backend's own version (the
+    // only version the server knows — dev review item 1); a device counts as behind by arithmetic on
+    // MAJOR.MINOR, one count per physical device (its most recently seen viewer row), dev builds never.
+    get("/tv/admin/ravilo-version") {
+        runCatching { call.attributes[SessionKey] }.getOrNull()
+            ?: return@get call.respond(HttpStatusCode.Unauthorized, mapOf("error" to "Not logged in"))
+        val latest = dev.jellystructure.ServerVersion.current
+        val perDevice = deviceService.allDevices().groupBy { it.deviceId }.values
+            .map { rows -> rows.maxBy { it.lastSeen }.appVersion }
+        val behind = perDevice.count { v -> (dev.jellystructure.shared.tv.raviloReleasesBehind(v, latest) ?: 0) > 0 }
+        call.respond(RaviloVersionSummary(
+            latest = latest,
+            release = dev.jellystructure.shared.tv.parseRaviloRelease(latest) != null,
+            behind = behind,
+            devices = perDevice.size,
+        ))
     }
 
     // Phase 177 §FR-177-5 — the Activity page's "Playback quality" card: recent sessions across every

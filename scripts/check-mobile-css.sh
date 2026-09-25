@@ -156,6 +156,10 @@ check "$RAVMOB"  "R222 episode-row note render, phone"             "function epS
 # stylesheet at all until now (found while building 187's admin photo chip, on the same page).
 check "$WF" "Users & devices: decode-ceiling line (.usr-cap)" ".usr-cap {"
 check "$WF" "Users & devices: read-only photo chip (.usr-av)" ".usr-av {"
+# Phase 259 — the per-device version history's timeline lives in the served wf.css, not only in the
+# mockup's inline <style>; a sync that strips it leaves the toggle opening an unstyled block.
+check "$WF" "Users & devices: version history (.usr-vh)" ".usr-vh {"
+check "$WF" "Users & devices: version history rows (.vh-r)" ".vh-r {"
 # Phase 218 — the Chromecast card's page-local rules live in the served wf.css, not only in the
 # design's inline <style>; a sync that strips them leaves the Settings card unstyled.
 check "$WF" "Chromecast card steps (.cc-step)" \

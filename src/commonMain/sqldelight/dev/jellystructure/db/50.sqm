@@ -1,0 +1,19 @@
+-- Phase 259 (FR-259-1/4) — the per-device version history. See RaviloDeviceVersion.sq; this migration must
+-- stay byte-for-byte in sync with its CREATE TABLE (the SQLDelight-migration rule).
+CREATE TABLE ravilo_device_version (
+    device_id TEXT NOT NULL,
+    app_version TEXT NOT NULL,
+    platform TEXT,
+    first_seen_at INTEGER NOT NULL,
+    observed INTEGER NOT NULL DEFAULT 1
+);
+
+CREATE INDEX ravilo_device_version_by_device ON ravilo_device_version(device_id, first_seen_at);
+
+-- FR-259-4 — history begins honestly: one seed row per device that has ever reported a version, marked
+-- observed = 0 ("already on it when history began") and dated now, the migration time. A TV's two viewer
+-- rows can disagree (a viewer not seen since an update still holds the old value — dev review item 3), so
+-- the seed takes the row seen most recently: SQLite's bare columns beside MAX() come from that row.
+INSERT INTO ravilo_device_version(device_id, app_version, platform, first_seen_at, observed)
+SELECT device_id, app_version, platform, CAST(strftime('%s', 'now') AS INTEGER) * 1000, 0
+FROM (SELECT device_id, app_version, platform, MAX(last_seen) AS last_seen FROM ravilo_device WHERE app_version IS NOT NULL GROUP BY device_id);

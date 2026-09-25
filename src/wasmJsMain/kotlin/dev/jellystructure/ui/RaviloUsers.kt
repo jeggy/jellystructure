@@ -43,9 +43,10 @@ fun renderRaviloUsers(container: Element, scope: CoroutineScope) {
           <h1>Users &amp; devices</h1><span class="badge info" style="margin-left:2px">Ravilo · from Jellyfin</span>
           <span class="spacer"></span>
           <span id="users-summary" class="tiny muted" style="margin-right:10px"></span>
+          <span id="users-version-chip" class="chip" style="font-size:.72rem;display:none;margin-right:8px" title="This server's own version, and the devices on an older release (a -g… development build is never counted)"></span>
           <button id="users-refresh-btn" class="btn sm ghost">Refresh</button>
         </div>
-        <p class="page-sub">Every Jellyfin user with their <b>Ravilo devices</b> and <b>admin web sessions</b> — created, last used, and whether it's connected now. <b>Revoke</b> signs one device/browser out; <b>Sign out everywhere</b> clears all of a user's devices <i>and</i> web sessions. The <b>access</b> line mirrors each user's Jellyfin policy — Ravilo serves only what it permits. <b>Now watching</b> / <b>recently watched</b> come from Jellyfin. Read-only against Jellyfin — edit accounts &amp; policies there.</p>
+        <p class="page-sub">Every Jellyfin user with their <b>Ravilo devices</b> and <b>admin web sessions</b> — created, last used, and whether it's connected now. <b>Revoke</b> signs one device/browser out; <b>Sign out everywhere</b> clears all of a user's devices <i>and</i> web sessions. The <b>access</b> line mirrors each user's Jellyfin policy — Ravilo serves only what it permits. <b>Now watching</b> / <b>recently watched</b> come from Jellyfin. A device's <b>version history</b> is dated when this server first saw the version in a request — a TV that stays off updates on its first request after it wakes. Read-only against Jellyfin — edit accounts &amp; policies there.</p>
         <div id="users-list"><span class="muted tiny">Loading…</span></div>
     """.trimIndent()
 
@@ -54,6 +55,7 @@ fun renderRaviloUsers(container: Element, scope: CoroutineScope) {
 
 private suspend fun loadUsersCard(scope: CoroutineScope) {
     refreshUsersList(scope)
+    scope.launch { loadVersionChip() }
     document.getElementById("users-refresh-btn")?.addEventListener("click") {
         scope.launch { refreshUsersList(scope) }
     }
@@ -81,16 +83,72 @@ private fun decodeCapabilityLine(d: dev.jellystructure.api.OverviewDevice): Stri
 
 // Phase 224 (FR-224-5) — which build this device runs, from the headers R252 clients send on every
 // request. "not reported yet" is the honest state for a client that predates R252 — same idiom as the
-// decode line's "not measured yet" above.
-private fun appVersionLine(d: dev.jellystructure.api.OverviewDevice): String {
+// decode line's "not measured yet" above. Phase 259 (FR-259-7) — "· since {first seen}" and the history
+// toggle; [vhId] is the id of this device's timeline block (rendered by [versionHistoryBlock]).
+private fun appVersionLine(d: dev.jellystructure.api.OverviewDevice, vhId: String): String {
     val platform = when (d.platform) {
         null -> null
         "tv" -> "TV"; "phone" -> "Phone"; "web" -> "Web"; "tizen" -> "Tizen"; "cast" -> "Chromecast"
         else -> d.platform.esc()
     }
-    val version = d.appVersion?.let { "Ravilo ${it.esc()}" }
+    val version = d.appVersion?.let { "Ravilo <b>${it.esc()}</b>" }
     if (version == null && platform == null) return "version · not reported yet"
-    return listOfNotNull(version, platform).joinToString(" · ")
+    val since = d.versionSince?.let { "since ${usersAt(it)}" }
+    val toggle = when {
+        d.versions.isEmpty() -> ""
+        d.versions.size == 1 -> """ <span class="muted">· no update seen</span>"""
+        else -> """<span class="usr-vh-btn" data-vh="$vhId">${d.versions.size} versions ▾</span>"""
+    }
+    return listOfNotNull(version, platform, since).joinToString(" · ") + toggle
+}
+
+/** Phase 259 (FR-259-7/8) — the timeline, newest first: version · first seen → next first seen (span) · one
+ *  note (current / skipped … / dev build / already on it when history began). Closed until toggled. */
+private fun versionHistoryBlock(d: dev.jellystructure.api.OverviewDevice, vhId: String): String {
+    if (d.versions.size < 2) return ""
+    val rows = d.versions.mapIndexed { i, v ->
+        val next = d.versions.getOrNull(i - 1)          // newest first ⇒ the row before this one came after it
+        val older = d.versions.getOrNull(i + 1)
+        val end = next?.firstSeenAt
+        val isDev = dev.jellystructure.shared.tv.isRaviloDevBuild(v.appVersion)
+        val skipped = if (v.observed && !isDev) dev.jellystructure.shared.tv.raviloSkippedBetween(older?.appVersion, v.appVersion)?.let { "skipped $it" } else null
+        val note = when {
+            !v.observed -> "already on it when history began · ${usersAt(v.firstSeenAt)}"
+            isDev -> "dev build"
+            i == 0 -> listOfNotNull("current", skipped).joinToString(" · ")
+            else -> skipped ?: ""
+        }
+        val whenText = when {
+            !v.observed -> if (end != null) "→ ${usersAt(end)}" else ""
+            end == null -> "${usersAt(v.firstSeenAt)} → now"
+            else -> "${usersAt(v.firstSeenAt)} → ${usersAt(end)} <span class=\"muted\">· ${spanLabel(end - v.firstSeenAt)}</span>"
+        }
+        """<div class="vh-r${if (i == 0) " now" else ""}"><span class="vh-v">${v.appVersion.esc()}</span><span class="vh-when">$whenText</span><span class="vh-note">${note.esc()}</span></div>"""
+    }.joinToString("")
+    val devFoot = if (d.versions.any { dev.jellystructure.shared.tv.isRaviloDevBuild(it.appVersion) })
+        """<div class="vh-foot">A version with a -g… suffix is a development build — never counted as behind.</div>""" else ""
+    return """<div class="usr-vh-wrap" id="$vhId"><div class="usr-vh">$rows$devFoot</div></div>"""
+}
+
+private fun spanLabel(ms: Long): String {
+    val min = ms / 60_000
+    return when {
+        min < 1 -> "moments"
+        min < 60 -> "$min min"
+        min < 60 * 48 -> "${min / 60} hours"
+        else -> "${min / (60 * 24)} days"
+    }
+}
+
+/** Phase 259 (FR-259-9) — `latest Ravilo 1.38 · N devices behind` / `· all up to date`; hidden while this
+ *  server runs a dev build (no "latest" to compare against). */
+private suspend fun loadVersionChip() {
+    val chip = document.getElementById("users-version-chip") as? HTMLElement ?: return
+    val v = runCatching { dev.jellystructure.api.RaviloApi.getRaviloVersionSummary() }.getOrNull()
+    if (v == null || !v.release) { chip.style.display = "none"; return }
+    val tail = if (v.behind == 0) "all up to date" else "${v.behind} device${if (v.behind == 1) "" else "s"} behind"
+    chip.innerHTML = """latest Ravilo <b class="mono">${v.latest.esc()}</b> <span class="muted">· $tail</span>"""
+    chip.style.display = ""
 }
 
 private fun usersAgo(epochMs: Long): String = if (epochMs <= 0) "never" else dev.jellystructure.formatRelativeAgo((epochMs / 1000).toString())
@@ -176,6 +234,7 @@ private suspend fun refreshUsersList(scope: CoroutineScope) {
         }
 
         val deviceRows = if (u.devices.isEmpty()) """<div class="tiny muted" style="padding:6px 0">No Ravilo devices.</div>""" else u.devices.joinToString("") { d ->
+            val vhId = "vh-${u.userId.filter { it.isLetterOrDigit() }}-${d.deviceId.filter { it.isLetterOrDigit() }}"   // Phase 259
             val connBadge = if (d.connected) """<span class="badge ok" style="margin-left:6px">connected</span>""" else ""
             val playing = d.nowPlaying?.let { """<div class="tiny" style="color:var(--acc-ink)">▶ playing ${it.esc()}</div>""" } ?: ""
             // Phase 177 §FR-177-5 — a clean session is never badged; only rebuffers/dropped frames are.
@@ -191,7 +250,8 @@ private suspend fun refreshUsersList(scope: CoroutineScope) {
                    <b class="tiny">${d.name.esc()}</b>$connBadge
                    <div class="tiny muted">created ${usersAt(d.createdAt)} · last seen ${usersAgo(d.lastSeen)}</div>
                    <div class="tiny muted usr-cap">${decodeCapabilityLine(d)}</div>
-                   <div class="tiny muted usr-cap">${appVersionLine(d)}</div>
+                   <div class="tiny muted usr-cap">${appVersionLine(d, vhId)}</div>
+                   ${versionHistoryBlock(d, vhId)}
                    $playing
                    $quality
                  </div>
@@ -231,6 +291,18 @@ private suspend fun refreshUsersList(scope: CoroutineScope) {
            </div>"""
     }
 
+    // Phase 259 (FR-259-7) — the history toggle; all rows start closed, nothing is remembered across loads.
+    listEl.querySelectorAll(".usr-vh-btn").let { nodes ->
+        for (i in 0 until nodes.length) {
+            val btn = nodes.item(i) as? HTMLElement ?: continue
+            btn.addEventListener("click") {
+                val id = btn.getAttribute("data-vh") ?: return@addEventListener
+                val wrap = document.getElementById(id) as? HTMLElement ?: return@addEventListener
+                val open = wrap.classList.toggle("open")
+                btn.textContent = btn.textContent?.replace(if (open) "▾" else "▴", if (open) "▴" else "▾")
+            }
+        }
+    }
     listEl.querySelectorAll(".users-revoke-device").let { nodes ->
         for (i in 0 until nodes.length) {
             val btn = nodes.item(i) as? HTMLElement ?: continue

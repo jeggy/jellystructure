@@ -1,0 +1,30 @@
+-- Phase 259 (FR-259-1) — every Ravilo version this server has seen a device on, one row per change, dated
+-- when a request FIRST carried it (the X-Ravilo-Version header, Phase 224) — never the install time. Keyed
+-- by device_id only: a TV with two viewers is two ravilo_device rows and ONE history. `observed = 0` marks
+-- the migration's seed row ("already on it when history began"); no retention cap (FR-259-5, owner).
+-- 50.sqm must stay byte-for-byte in sync with this CREATE TABLE (the SQLDelight-migration rule).
+CREATE TABLE ravilo_device_version (
+    device_id TEXT NOT NULL,
+    app_version TEXT NOT NULL,
+    platform TEXT,
+    first_seen_at INTEGER NOT NULL,
+    observed INTEGER NOT NULL DEFAULT 1
+);
+
+CREATE INDEX ravilo_device_version_by_device ON ravilo_device_version(device_id, first_seen_at);
+
+-- FR-259-2 — the "does the latest row already name this version" test, inside the same transaction as the write.
+latestForDevice:
+SELECT * FROM ravilo_device_version WHERE device_id = :device_id ORDER BY first_seen_at DESC, rowid DESC LIMIT 1;
+
+insertVersion:
+INSERT INTO ravilo_device_version(device_id, app_version, platform, first_seen_at, observed)
+VALUES (:device_id, :app_version, :platform, :first_seen_at, :observed);
+
+-- FR-259-6 — newest first, for the overview.
+historyForDevice:
+SELECT * FROM ravilo_device_version WHERE device_id = :device_id ORDER BY first_seen_at DESC, rowid DESC;
+
+-- FR-259-5 — a device whose LAST ravilo_device row was revoked has nothing left to show a history on.
+deleteForDevice:
+DELETE FROM ravilo_device_version WHERE device_id = :device_id;

@@ -58,7 +58,22 @@ data class OverviewDevice(
     // Phase 224 (FR-224-5) — the build and platform this device last reported; both null ⇒ never said.
     @SerialName("app_version") val appVersion: String? = null,
     val platform: String? = null,
+    // Phase 259 (FR-259-6) — when the current version was first seen, and the whole history newest first.
+    @SerialName("version_since") val versionSince: Long? = null,
+    val versions: List<OverviewVersion> = emptyList(),
 )
+
+/** Phase 259 (FR-259-6) — one row of a device's version history; `observed = false` is the migration's seed. */
+@Serializable
+data class OverviewVersion(
+    @SerialName("app_version") val appVersion: String,
+    @SerialName("first_seen_at") val firstSeenAt: Long,
+    val observed: Boolean,
+)
+
+/** Phase 259 (FR-259-9) — the page-bar chip's numbers; `release = false` ⇒ hidden. */
+@Serializable
+data class RaviloVersionSummary(val latest: String, val release: Boolean, val behind: Int, val devices: Int)
 
 /** Phase 177 §FR-177-5 — mirrors the backend's `dev.jellystructure.tv.QoeSummary`. [hasIssue] matches
  *  the backend's own field-for-field so a clean session is never badged, same rule both places. */
@@ -231,6 +246,10 @@ object RaviloApi {
     // Phase 143 — Users & Devices Settings tab.
     suspend fun getOverview(): List<OverviewUser> =
         httpClient.get("/api/tv/admin/overview").body()
+
+    /** Phase 259 (FR-259-9). */
+    suspend fun getRaviloVersionSummary(): RaviloVersionSummary =
+        httpClient.get("/api/tv/admin/ravilo-version").body()
 
     /** Phase 177 §FR-177-5 — the Activity page's "Playback quality" card. */
     suspend fun getRecentPlaybackQuality(): List<QoeActivityRow>? = runCatching {
