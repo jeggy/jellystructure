@@ -259,35 +259,10 @@ fun startServer(
                 call.respond(status, mapOf("error" to "method not allowed"))
             }
         }
-        install(CORS) {
-            // Security fix (2026-08-02 review, finding M1) — this was `anyHost()` + `allowCredentials
-            // = true`. Verified against the Ktor 3.5.0 CORS plugin source
-            // (`val headerOrigin = if (allowsAnyHost && !allowCredentials) "*" else origin`): with
-            // credentials on, Ktor does NOT send `*` back — it REFLECTS the caller's Origin and adds
-            // `Access-Control-Allow-Credentials: true`. Confirmed live during the audit (an
-            // Origin: https://evil.example.com preflight got that Origin echoed back). The only thing
-            // stopping full cross-origin credentialed access today is `SameSite=Lax` on the js_session
-            // cookie — one attribute away from account takeover, with no CSRF token as a second layer.
-            //
-            // Same-origin requests (the normal deployment: this server serves its own admin/Ravilo-web
-            // frontends) need no CORS headers at all. The only legitimate cross-origin case is a
-            // separately-hosted dev server (webpack/vite) during local development — allow that
-            // explicitly via CORS_ALLOWED_ORIGINS (comma-separated "host:port", e.g.
-            // "localhost:8080,localhost:5173"), never via a blanket wildcard.
-            val extraOrigins = dev.jellystructure.env("CORS_ALLOWED_ORIGINS", "")
-                .split(",").map { it.trim() }.filter { it.isNotBlank() }
-            extraOrigins.forEach { origin -> allowHost(origin, schemes = listOf("http", "https")) }
-            allowHeaders { true }              // includes Authorization (Bearer device token), Content-Type, Cookie…
-            allowNonSimpleContentTypes = true  // application/json request bodies
-            allowMethod(HttpMethod.Get)
-            allowMethod(HttpMethod.Head)
-            allowMethod(HttpMethod.Post)
-            allowMethod(HttpMethod.Put)
-            allowMethod(HttpMethod.Delete)
-            allowMethod(HttpMethod.Patch)
-            allowMethod(HttpMethod.Options)
-            allowCredentials = true
-        }
+        // Phase 247 (FR-247-3) — CORS is installed at the routing root (below), not here: Ktor refuses a
+        // route-scoped install beside an application-level one, and `/api/tv/events` needs its own. The
+        // policy and its history (finding M1) live in CorsPolicy.kt.
+        val corsOrigins = corsAllowedOrigins()
 
         installAuthPlugin(sessionService, validateDeviceToken = { token, appVersion, platform -> deviceService.validateDeviceToken(token, appVersion, platform) }, validateApiKey = { apiKeyStore.validate(it) })
 
@@ -404,6 +379,7 @@ fun startServer(
         }
 
         routing {
+            install(CORS) { jellystructurePolicy(corsOrigins) }
             route("/api") {
                 get("/health") {
                     // Phase 118 (FR C.4) — FD count on the lightweight probe too, so a monitoring
@@ -667,87 +643,91 @@ fun startServer(
 
             // R33 — per-user live config push. Device token comes via query param (browsers can't set
             // a handshake header); this path is exempt from the bearer-gate AuthPlugin and validates here.
-            webSocket("/api/tv/events") {
-                // Phase 118 (FR C.5), superseded by Phase 129's global Setup-phase shed intercept above
-                // — a shed 503 is sent before the WS upgrade ever reaches this handler, so there's
-                // nothing left to check here; already-connected TVs keep their socket either way.
-                val token = call.request.queryParameters["token"]?.takeIf { it.isNotBlank() }
-                    ?: call.request.headers["Authorization"]?.removePrefix("Bearer ")?.takeIf { it.isNotBlank() }
-                val device = token?.let { deviceService.validateDeviceToken(it) }
-                if (device == null) {
-                    close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, "Invalid or missing device token"))
-                    return@webSocket
-                }
-                // Phase 134 (FR-OPS2 §D) — defensive hard cap; a reconnect of an already-registered
-                // device always succeeds, only a genuinely new device can be refused.
-                if (!tvEventBus.tryRegister(device.jellyfinUserId, device.deviceId, this)) {
-                    close(CloseReason(CloseReason.Codes.TRY_AGAIN_LATER, "TV event session limit reached"))
-                    return@webSocket
-                }
-                val openedAtMs = dev.jellystructure.nowEpochSec() * 1000L
-                // Phase 256 (FR-256-2) — the client's own account of its previous sockets (R293 FR-R293-6),
-                // bounded and whitelisted on arrival, logged once here and never on the close line.
-                dev.jellystructure.tv.sanitizeEventsPrev(call.request.headers[dev.jellystructure.shared.tv.EVENTS_PREV_HEADER])
-                    ?.let { Logger.info("TV events: device ${device.deviceId} previous sockets: $it", "tv") }
-                // Phase 256 (FR-256-3) — one WARN per device per hour while it reconnects more than 12×/h.
-                tvEventBus.flapWarningDue(device.deviceId)?.let { st ->
-                    Logger.warn("TV events: device ${device.deviceId} reconnected ${st.connectsLastHour} times in the last hour (Ravilo ${device.appVersion ?: "?"}, ${device.platform ?: device.kind}); median connection ${(st.medianLifetimeMs ?: 0L) / 1000} s", "tv")
-                }
-                // Phase 236 (FR-236-6) — one of the two moments a device's "on this network" address is
-                // refreshed (see RaviloDeviceService.recordAddress's doc for why not every request).
-                val eventsAddress = call.request.headers["X-Forwarded-For"]?.substringBefore(',')?.trim()?.takeIf { it.isNotBlank() }
-                    ?: call.request.local.remoteHost
-                deviceService.recordAddress(device.deviceId, device.jellyfinUserId, eventsAddress)
-                // Phase 258 (FR-258-2, dev review items 1 and 5) — a device that just woke up gets today's
-                // policy before its first Home fetch: one `/Users` call when this user's last pass is older
-                // than 60 s, and the rewrite evicts the token cache the `device` above was just served from.
-                // Bounded, so a slow Jellyfin can never hold the socket open unregistered; a timeout is a
-                // failed pass and changes nothing (FR-258-3).
-                if (devicePolicyReconciler != null) {
-                    runCatching { kotlinx.coroutines.withTimeoutOrNull(3_000L) { devicePolicyReconciler.reconcileOnConnect(device.jellyfinUserId) } }
-                        .onFailure { Logger.warn("Policy refresh (connect) failed: ${it.message}", "auth") }
-                }
-                // Phase 110 — while this TV is connected, bridge one outbound session to Jellyfin for
-                // it (dashboard messages, remote control). Best-effort: never let a bridge problem take
-                // down the TV's own event socket.
-                runCatching { sessionBridge.connect(device) }
-                // Phase 236 (FR-236-3, open question 1) — a Ravilo client subscribes to another device's
-                // status on this same authenticated, already-reconnecting socket rather than opening a
-                // second one; scoped to this device's own user, exactly like every other event on it.
-                val subscriber = dev.jellystructure.auth.RemoteCaller(device.jellyfinUserId, deviceId = device.deviceId, viaApiKey = false)
-                var closeError: Throwable? = null
-                try {
-                    for (frame in incoming) {
-                        if (frame is Frame.Close) break
-                        if (frame is Frame.Text) {
-                            dev.jellystructure.server.routes.handleSubscribeMessage(frame.readText(), subscriber, deviceService, tvEventBus, this)
-                        }
+            // Phase 247 (FR-247-3) — its own CORS: a Tizen widget's handshake carries `Origin: file://`.
+            route("/api/tv/events") {
+                install(CORS) { tvEventsPolicy(corsOrigins) }
+                webSocket {
+                    // Phase 118 (FR C.5), superseded by Phase 129's global Setup-phase shed intercept above
+                    // — a shed 503 is sent before the WS upgrade ever reaches this handler, so there's
+                    // nothing left to check here; already-connected TVs keep their socket either way.
+                    val token = call.request.queryParameters["token"]?.takeIf { it.isNotBlank() }
+                        ?: call.request.headers["Authorization"]?.removePrefix("Bearer ")?.takeIf { it.isNotBlank() }
+                    val device = token?.let { deviceService.validateDeviceToken(it) }
+                    if (device == null) {
+                        close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, "Invalid or missing device token"))
+                        return@webSocket
                     }
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Throwable) {
-                    // Device dropped the connection (ECONNRESET). See note on /ws above — must not
-                    // escape the handler or it crashes the Kotlin/Native process. Phase 256: classified
-                    // on the one close line below, never echoed raw.
-                    closeError = e
-                } finally {
-                    // Phase 256 (FR-256-1) — every close says why, with the device: the client's close
-                    // frame for a clean end, the throwable's class otherwise, `replaced` when a newer
-                    // socket of the same device already holds the slot.
-                    val openMs = dev.jellystructure.nowEpochSec() * 1000L - openedAtMs
-                    val closeReason = if (closeError == null) runCatching { kotlinx.coroutines.withTimeoutOrNull(1_000L) { closeReason.await() } }.getOrNull() else null
-                    val replaced = tvEventBus.unregister(device.jellyfinUserId, device.deviceId, this, openMs)
-                    val cause = dev.jellystructure.tv.EventsCloseCause.classify(closeReason, closeError, replaced)
-                    Logger.info("TV events: device ${device.deviceId} closed user=${device.jellyfinUserId} open=${openMs / 1000}s cause=$cause", "tv")
-                    tvEventBus.unsubscribeAllDeviceStatus(this)
-                    // Phase 256 (FR-256-4) — not a new Jellyfin session on the next reconnect: the bridge is
-                    // kept for the grace period. A replaced socket owns nothing — the newer one does.
-                    if (!replaced) runCatching { sessionBridge.disconnectAfterGrace(device.deviceId) }
-                    // Phase 110 (FR B.2) — a TV disconnecting clears its Now Playing immediately rather
-                    // than waiting out the 90s heartbeat timeout.
-                    runCatching { playbackService.stopWatchdogTick { deviceId -> tvEventBus.isConnected(deviceId) } }
-                    // Phase 147 — same immediate-close behavior for an open live-TV stream.
-                    runCatching { liveTvService.stopWatchdogTick { deviceId -> tvEventBus.isConnected(deviceId) } }
+                    // Phase 134 (FR-OPS2 §D) — defensive hard cap; a reconnect of an already-registered
+                    // device always succeeds, only a genuinely new device can be refused.
+                    if (!tvEventBus.tryRegister(device.jellyfinUserId, device.deviceId, this)) {
+                        close(CloseReason(CloseReason.Codes.TRY_AGAIN_LATER, "TV event session limit reached"))
+                        return@webSocket
+                    }
+                    val openedAtMs = dev.jellystructure.nowEpochSec() * 1000L
+                    // Phase 256 (FR-256-2) — the client's own account of its previous sockets (R293 FR-R293-6),
+                    // bounded and whitelisted on arrival, logged once here and never on the close line.
+                    dev.jellystructure.tv.sanitizeEventsPrev(call.request.headers[dev.jellystructure.shared.tv.EVENTS_PREV_HEADER])
+                        ?.let { Logger.info("TV events: device ${device.deviceId} previous sockets: $it", "tv") }
+                    // Phase 256 (FR-256-3) — one WARN per device per hour while it reconnects more than 12×/h.
+                    tvEventBus.flapWarningDue(device.deviceId)?.let { st ->
+                        Logger.warn("TV events: device ${device.deviceId} reconnected ${st.connectsLastHour} times in the last hour (Ravilo ${device.appVersion ?: "?"}, ${device.platform ?: device.kind}); median connection ${(st.medianLifetimeMs ?: 0L) / 1000} s", "tv")
+                    }
+                    // Phase 236 (FR-236-6) — one of the two moments a device's "on this network" address is
+                    // refreshed (see RaviloDeviceService.recordAddress's doc for why not every request).
+                    val eventsAddress = call.request.headers["X-Forwarded-For"]?.substringBefore(',')?.trim()?.takeIf { it.isNotBlank() }
+                        ?: call.request.local.remoteHost
+                    deviceService.recordAddress(device.deviceId, device.jellyfinUserId, eventsAddress)
+                    // Phase 258 (FR-258-2, dev review items 1 and 5) — a device that just woke up gets today's
+                    // policy before its first Home fetch: one `/Users` call when this user's last pass is older
+                    // than 60 s, and the rewrite evicts the token cache the `device` above was just served from.
+                    // Bounded, so a slow Jellyfin can never hold the socket open unregistered; a timeout is a
+                    // failed pass and changes nothing (FR-258-3).
+                    if (devicePolicyReconciler != null) {
+                        runCatching { kotlinx.coroutines.withTimeoutOrNull(3_000L) { devicePolicyReconciler.reconcileOnConnect(device.jellyfinUserId) } }
+                            .onFailure { Logger.warn("Policy refresh (connect) failed: ${it.message}", "auth") }
+                    }
+                    // Phase 110 — while this TV is connected, bridge one outbound session to Jellyfin for
+                    // it (dashboard messages, remote control). Best-effort: never let a bridge problem take
+                    // down the TV's own event socket.
+                    runCatching { sessionBridge.connect(device) }
+                    // Phase 236 (FR-236-3, open question 1) — a Ravilo client subscribes to another device's
+                    // status on this same authenticated, already-reconnecting socket rather than opening a
+                    // second one; scoped to this device's own user, exactly like every other event on it.
+                    val subscriber = dev.jellystructure.auth.RemoteCaller(device.jellyfinUserId, deviceId = device.deviceId, viaApiKey = false)
+                    var closeError: Throwable? = null
+                    try {
+                        for (frame in incoming) {
+                            if (frame is Frame.Close) break
+                            if (frame is Frame.Text) {
+                                dev.jellystructure.server.routes.handleSubscribeMessage(frame.readText(), subscriber, deviceService, tvEventBus, this)
+                            }
+                        }
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Throwable) {
+                        // Device dropped the connection (ECONNRESET). See note on /ws above — must not
+                        // escape the handler or it crashes the Kotlin/Native process. Phase 256: classified
+                        // on the one close line below, never echoed raw.
+                        closeError = e
+                    } finally {
+                        // Phase 256 (FR-256-1) — every close says why, with the device: the client's close
+                        // frame for a clean end, the throwable's class otherwise, `replaced` when a newer
+                        // socket of the same device already holds the slot.
+                        val openMs = dev.jellystructure.nowEpochSec() * 1000L - openedAtMs
+                        val closeReason = if (closeError == null) runCatching { kotlinx.coroutines.withTimeoutOrNull(1_000L) { closeReason.await() } }.getOrNull() else null
+                        val replaced = tvEventBus.unregister(device.jellyfinUserId, device.deviceId, this, openMs)
+                        val cause = dev.jellystructure.tv.EventsCloseCause.classify(closeReason, closeError, replaced)
+                        Logger.info("TV events: device ${device.deviceId} closed user=${device.jellyfinUserId} open=${openMs / 1000}s cause=$cause", "tv")
+                        tvEventBus.unsubscribeAllDeviceStatus(this)
+                        // Phase 256 (FR-256-4) — not a new Jellyfin session on the next reconnect: the bridge is
+                        // kept for the grace period. A replaced socket owns nothing — the newer one does.
+                        if (!replaced) runCatching { sessionBridge.disconnectAfterGrace(device.deviceId) }
+                        // Phase 110 (FR B.2) — a TV disconnecting clears its Now Playing immediately rather
+                        // than waiting out the 90s heartbeat timeout.
+                        runCatching { playbackService.stopWatchdogTick { deviceId -> tvEventBus.isConnected(deviceId) } }
+                        // Phase 147 — same immediate-close behavior for an open live-TV stream.
+                        runCatching { liveTvService.stopWatchdogTick { deviceId -> tvEventBus.isConnected(deviceId) } }
+                    }
                 }
             }
 
