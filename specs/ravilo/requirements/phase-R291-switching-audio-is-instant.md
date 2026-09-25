@@ -66,6 +66,16 @@ Built after the measurements below (item 4 first, as the review asked):
   first and the renditions after it, not in the ticket's order).
 - **FR-R291-4:** the web (hls.js / Safari) and the two receivers do **not** declare the capability and keep
   R284's restream — neither is built or measured, and this note is the "says so" the FR requires.
+- **⚠ Shipped switched off.** Before the device measurement could run, the owner withdrew device access
+  for the rest of the day (2026-09-25). Android's `switchesHlsAudioRenditions()` is therefore `false`: the
+  backend and the player path are built, tested (`AudioRenditionsTest`, compile, the release-build dex
+  guard at 245/250 registers) and inert until a client declares the capability. **What closes FR-R291-2
+  and FR-R291-3's item 3:** set it to `true`, and on the soveværelse TV (release build) re-enter a
+  transcoded film with several audio tracks and switch audio — measure the time to the new audio and
+  whether R218's stall shows. If the first audio-only segment's 2–3 s shows as a stall, warm the
+  rendition the way the dev review's item 5 describes (one at a time, after a dwell): the player's
+  requests use Media3's default user agent, so a prefetch with that same agent lands in the same
+  Jellyfin job.
 
 ## What happens today
 
