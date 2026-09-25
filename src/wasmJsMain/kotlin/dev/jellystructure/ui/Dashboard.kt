@@ -346,6 +346,8 @@ private val ATTENTION_ROW_ORDER = listOf(
     "missing_from_source" to "bad",
     "mkv_track_layout" to "bad",  // Phase 201 amendment (2026-09-13) — unplayable in Ravilo
     "file_damage" to "bad",  // Phase 254 — damaged past the first Cluster
+    "track_ends_early" to "bad",  // Phase 255 — silence or black from that point on
+    "duration_header_wrong" to "warn",  // Phase 255 — never marked watched, wrong length shown
 )
 
 private suspend fun loadRecentActivity() {

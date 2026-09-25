@@ -762,15 +762,26 @@ fun Route.trackRoutes(
         call.respond(service.statusFor(item, configStore.current))
     }
 
+    // Phase 255 (FR-255-8, dev review item 4) — this title's track-coverage state, per file, each finding
+    // with its advice. Stored results + one `stat` per file; never reads a media file on the request path.
+    get("/media/{mediaId}/health/tracks") {
+        val mediaId = call.parameters["mediaId"] ?: return@get call.respond(HttpStatusCode.BadRequest)
+        val item = store.resolve(mediaId) ?: return@get call.respond(HttpStatusCode.NotFound)
+        val service = dev.jellystructure.media.TrackCoverageFlags.service ?: return@get call.respond(HttpStatusCode.ServiceUnavailable)
+        call.respond(service.statusFor(item))
+    }
+
     // Phase 254 (FR-254-6) — an operator's "Check now": this title's unchecked files (every file with
-    // ?force=true), queued on the segments queue and never playback-deferred.
+    // ?force=true), queued on the segments queue and never playback-deferred. Phase 255 (FR-255-6): one
+    // button, both checks — a file unchecked by either is included, and the job runs both.
     post("/media/{mediaId}/health/integrity/check") {
         val mediaId = call.parameters["mediaId"] ?: return@post call.respond(HttpStatusCode.BadRequest)
         val item = store.resolve(mediaId) ?: return@post call.respond(HttpStatusCode.NotFound)
         val service = dev.jellystructure.media.FileDamage.service ?: return@post call.respond(HttpStatusCode.ServiceUnavailable)
+        val coverage = dev.jellystructure.media.TrackCoverageFlags.service
         val all = service.videoPaths(listOf(item))
         val paths = if (call.request.queryParameters["force"] == "true") all
-        else all.filter { service.resultFor(it).state == dev.jellystructure.media.FileIntegrityState.UNCHECKED }
+        else all.filter { service.resultFor(it).state == dev.jellystructure.media.FileIntegrityState.UNCHECKED || coverage?.resultFor(it)?.state == dev.jellystructure.media.TrackCoverageState.UNCHECKED }
         if (paths.isEmpty()) return@post call.respond(mapOf("jobId" to null, "files" to 0))
         val r = mediaJobQueue.enqueueIntegrityTitle(item, paths)
         call.respond(HttpStatusCode.Accepted, mapOf("jobId" to r.snapshot.id, "files" to paths.size))

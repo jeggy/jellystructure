@@ -96,6 +96,12 @@ data class Track(
      *  Never TMDB's runtime — that is a whole-minute broadcast figure, shorter than the file for most
      *  credits, and the segment editor's timeline was wrong for exactly as long as it used it. */
     val durationMs: Long? = null,
+    /** Phase 255 (FR-255-1): this stream's OWN length hint in milliseconds — the matroska `DURATION` tag,
+     *  else ffprobe's `streams[].duration` — for AUDIO and VIDEO tracks only. **A hint, never a verdict**:
+     *  a muxer writes the tag for the file it meant to write (a stopped download keeps whole-file tags), and
+     *  one measured file's tags were an hour short of its packets. Only a tail probe's packet times decide
+     *  anything (see `TrackCoverage`); a surface shows this as a length only when the probe agreed. */
+    val streamDurationMs: Long? = null,
     /** Phase 200 (FR-200-2): true for a subtitle track discovered as a sidecar file beside the video
      *  rather than probed out of the container itself. Additive/defaulted — no migration. A surface
      *  that wants to distinguish "in the file" from "beside the file" can; one that doesn't, doesn't

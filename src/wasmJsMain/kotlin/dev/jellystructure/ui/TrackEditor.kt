@@ -29,6 +29,18 @@ internal data class TrkModel(
 
 private fun Track.toModel() = TrkModel(specifier, kind, codec, title, language, default, forced, streamIndex)
 
+/** Phase 255 (FR-255-9) — measured short-track ends per file (`path → streamIndex → (endsMs, referenceMs)`),
+ *  set by the detail page once `/health/tracks` answers. A row whose stream is here carries *ends at 4:41
+ *  of 22:34* in `--bad` ink, so the warning and the track it is about cannot be read apart. Only measured
+ *  ends reach this map — a tag hint is never shown as a length. */
+object TrackCoverageMarks {
+    var byFile: Map<String, Map<Int, Pair<Long, Long>>> = emptyMap()
+    fun html(filePath: String, streamIndex: Int): String {
+        val (ends, ref) = byFile[filePath]?.get(streamIndex) ?: return ""
+        return """<span class="trk-short" style="color:var(--bad);font-weight:600;font-size:.72rem;white-space:nowrap;">ends at ${dev.jellystructure.media.TrackCoverage.mmss(ends)} of ${dev.jellystructure.media.TrackCoverage.mmss(ref)}</span>"""
+    }
+}
+
 // Phase 127: shared by buildCommandText/renderPending/applyChanges for both audio and subtitle blocks —
 // factored out after the Phase 120 bug where this exact diff, duplicated per call site, was fixed
 // incorrectly in one place at a time. A per-track flag diff (not just comparing the first default)
@@ -403,7 +415,7 @@ fun wireUnifiedTrackEditor(
                 if (isUntagged) add("untagged")
                 if (t.def) add("isdef")
             }.joinToString(" ")
-            """<div class="trk $trkCls" data-trk-i="$i" draggable="true">
+            """<div class="trk $trkCls" data-trk-i="$i" data-stream="${t.streamIndex}" data-file="${filePath.esc()}" draggable="true">
               <div class="trk-main">
                 <span class="grip" title="Drag to reorder">⠿</span>
                 <span class="ord">
@@ -415,6 +427,7 @@ fun wireUnifiedTrackEditor(
                   <span class="num" style="width:48px;font-size:.75rem;">${t.sp.esc()}</span>
                   $langCell
                   $metaCell
+                  ${TrackCoverageMarks.html(filePath, t.streamIndex)}
                 </span>
                 <span class="trk-right">$forcedCell $starBtn</span>
               </div>

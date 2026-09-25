@@ -274,7 +274,10 @@ fun main() = runBlocking {
     // Triage/Library/the detail routes read it through FileDamage.
     val fileIntegrity = dev.jellystructure.media.FileIntegrityService(db, seedingSnapshot)
     dev.jellystructure.media.FileDamage.service = fileIntegrity
-    val mediaJobQueue = dev.jellystructure.media.MediaJobQueue(db, mediaStore, broadcaster, jellyfinClient, configStore, mediaHistory, seedingGuard, arrRescan, rootScope, mediaSegmentStore, fingerprintService, artworkService = imageProxyService, fileIntegrity = fileIntegrity)
+    // Phase 255 — a track that stops before the file does: the tail probe, its table, and the two Triage types.
+    val trackCoverage = dev.jellystructure.media.TrackCoverageService(db, fileIntegrity)
+    dev.jellystructure.media.TrackCoverageFlags.service = trackCoverage
+    val mediaJobQueue = dev.jellystructure.media.MediaJobQueue(db, mediaStore, broadcaster, jellyfinClient, configStore, mediaHistory, seedingGuard, arrRescan, rootScope, mediaSegmentStore, fingerprintService, artworkService = imageProxyService, fileIntegrity = fileIntegrity, trackCoverage = trackCoverage)
     mediaJobQueue.start()
     // Phase 254 (FR-254-5) — keep a bounded verification slice queued while anything is unchecked. A
     // file that changes (new download, an edit) turns unchecked by itself and is picked up within one
@@ -284,6 +287,10 @@ fun main() = runBlocking {
         while (true) {
             runCatching { mediaJobQueue.enqueueIntegritySweep() }
                 .onFailure { Logger.warn("Phase 254 verification sweep could not be queued: ${it.message}", "integrity") }
+            // Phase 255 (FR-255-5) — queued after 254's, on the same lane, so a cold library is read once before
+            // its tails are probed (dev review, open question 1).
+            runCatching { mediaJobQueue.enqueueTrackCoverageSweep() }
+                .onFailure { Logger.warn("Phase 255 track-coverage sweep could not be queued: ${it.message}", "integrity") }
             kotlinx.coroutines.delay(15 * 60_000L)
         }
     }

@@ -45,6 +45,10 @@ private data class FfprobeStream(
     // (`"bit_rate":"9000000"`), even though it's numeric — parse with toLongOrNull(), never toInt()
     // directly. `null` for two thirds of this library's video streams (matroska routinely omits it).
     @SerialName("bit_rate") val bitRate: String? = null,
+    // Phase 255 (FR-255-1, dev review item 1) — the one JSON field this DTO used to drop: the stream's own
+    // declared length in seconds (a string, like every ffprobe number). MP4 carries it per stream; matroska
+    // usually carries the `DURATION` tag instead, which `tags` already holds.
+    val duration: String? = null,
 )
 
 @Serializable
@@ -173,6 +177,11 @@ object FfprobeRunner {
                     videoBitrate = bitrateResult?.first,
                     videoBitrateSource = bitrateResult?.second,
                     durationMs = if (kind == TrackKind.VIDEO) probe.format.duration?.toDoubleOrNull()?.takeIf { it > 0 }?.let { (it * 1000).toLong() } else null,
+                    // Phase 255 (FR-255-1) — the stream's own hint: `DURATION`/`DURATION-eng` tag first, then
+                    // `streams[].duration`. A hint only; TrackCoverage never treats it as evidence.
+                    streamDurationMs = if (kind == TrackKind.AUDIO || kind == TrackKind.VIDEO)
+                        TrackCoverage.parseDurationHint(stream.tags.entries.firstOrNull { it.key.equals("DURATION", true) || it.key.startsWith("DURATION-", true) }?.value, stream.duration)
+                    else null,
                 )
             }
         }

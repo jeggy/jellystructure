@@ -860,6 +860,7 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
         $coverBannerHtml
         <div id="mkv-banner" style="display:none;margin-bottom:14px"></div>
         <div id="integrity-banner" style="display:none;margin-bottom:14px"></div>
+        <div id="coverage-banner" style="display:none;margin-bottom:14px"></div>
         <div id="drift-banner" style="display:none;margin-bottom:14px"></div>
         <div id="jf-lock-banner" style="display:${if (item.jellyfinLockData || item.jellyfinLockedFields.isNotEmpty()) "block" else "none"};margin-bottom:14px">
           <div style="background:var(--bad-soft);border:1px solid var(--bad);border-radius:6px;padding:10px 14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
@@ -1166,6 +1167,7 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
     scope.launch { loadDrift(item.id, scope) }
     scope.launch { loadMkvHealth(item, scope) }
     scope.launch { loadFileIntegrity(item, scope) }
+    scope.launch { loadTrackCoverage(item) }   // Phase 255
     scope.launch { loadSeedingReport(item.id, item.kind == MediaKind.TV_SHOW) }
     if (activeTab == "tracks" && !isTvShow) {
         wireUnifiedTrackEditor("trk", item.tracks, item.id, null, scope, item.resolvedLanguage, item.path)
@@ -3084,6 +3086,68 @@ private suspend fun loadFileIntegrity(item: MediaItem, scope: CoroutineScope) {
     }
     wire("integrity-replace-btn", withSource, lossy = false)
     wire("integrity-lossy-btn", noSource, lossy = true)
+}
+
+// Phase 255 (FR-255-8/9) — a track that stops before the file does, beside phase 254's banner and never
+// merged into it. One block per file with findings: what, what a viewer experiences, who is affected, the
+// suggested fix with its command. Unchecked files get nothing here — 254's one quiet line already covers
+// them, and its Check now runs both checks (FR-255-6).
+private suspend fun loadTrackCoverage(item: MediaItem) {
+    val banner = document.getElementById("coverage-banner") as? HTMLElement ?: return
+    val status = MediaApi.trackCoverageStatus(item.id) ?: run { banner.style.display = "none"; return }
+    val flagged = status.files.filter { it.state == "findings" && it.findings.isNotEmpty() }
+    // FR-255-9 — the track rows say it too: measured ends only, per stream.
+    TrackCoverageMarks.byFile = flagged.associate { f -> f.path to f.findings.filter { it.streamIndex != null }.associate { it.streamIndex!! to (it.endsMs to it.referenceMs) } }
+    for (f in flagged) for (fd in f.findings) if (fd.streamIndex != null) {
+        val rows = document.querySelectorAll(""".trk[data-stream="${fd.streamIndex}"]""")
+        for (i in 0 until rows.length) {
+            val row = rows.item(i) as? HTMLElement ?: continue
+            if (row.getAttribute("data-file") != f.path || row.querySelector(".trk-short") != null) continue
+            row.querySelector(".trk-mid")?.let { mid -> (mid as HTMLElement).innerHTML += TrackCoverageMarks.html(f.path, fd.streamIndex) }
+        }
+    }
+    if (flagged.isEmpty()) { banner.style.display = "none"; return }
+
+    fun label(path: String): String {
+        val name = path.substringAfterLast('/')
+        return Regex("S\\d+E\\d+(?:-?E\\d+)*", RegexOption.IGNORE_CASE).find(name)?.value?.uppercase() ?: name
+    }
+    fun block(f: MediaApi.TrackCoverageFile): String = f.findings.joinToString("") { fd ->
+        val sev = if (fd.kind == "E") "warn" else "bad"
+        """<div style="margin-top:8px;padding:8px 10px;border-left:3px solid var(--$sev);background:var(--$sev-soft);border-radius:4px;">
+             <b style="font-size:.84rem;">${fd.what.esc()}</b>
+             <div class="tiny" style="margin-top:3px;line-height:1.6;">
+               <span class="muted">What a viewer gets:</span> ${fd.experience.esc()}<br>
+               <span class="muted">Who is affected:</span> ${fd.who.esc()}<br>
+               <span class="muted">Suggested fix:</span> ${fd.suggestion.esc()}
+             </div>
+             ${fd.command?.let { permCopyBlock(it, null) } ?: ""}
+           </div>"""
+    }
+    val isTvShow = item.kind == MediaKind.TV_SHOW
+    val early = flagged.count { f -> f.findings.any { it.kind != "E" } }
+    val wrong = flagged.count { f -> f.findings.any { it.kind == "E" } }
+    val headline = buildList {
+        if (early > 0) add(if (isTvShow) "$early episode${if (early != 1) "s" else ""} ha${if (early != 1) "ve" else "s"} a track that stops before the file ends" else "A track stops before the file ends")
+        if (wrong > 0) add(if (isTvShow) "$wrong file${if (wrong != 1) "s" else ""} claim${if (wrong != 1) "" else "s"} to be longer than ${if (wrong != 1) "they are" else "it is"}" else "The file claims to be longer than it is")
+    }.joinToString(" · ")
+    val body = if (isTvShow) {
+        flagged.groupBy { it.season }.entries.sortedBy { it.key ?: -1 }.joinToString("") { (season, files) ->
+            """<details style="margin-top:6px;"><summary style="cursor:pointer;font-size:.8rem;"><b>${season?.let { "S${it.toString().padStart(2, '0')}" } ?: "Specials"}: ${files.size} episode${if (files.size != 1) "s" else ""}</b></summary>
+               ${files.sortedBy { it.path }.joinToString("") { f -> """<div style="margin:6px 0 0 8px;"><b class="tiny">${label(f.path).esc()}</b>${block(f)}</div>""" }}
+               </details>"""
+        }
+    } else flagged.joinToString("") { block(it) }
+    banner.innerHTML = """
+    <div style="background:var(--surface-2,transparent);border:1px solid var(--${if (early > 0) "bad" else "warn"});border-radius:6px;padding:10px 14px;display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap;">
+      <span class="badge ${if (early > 0) "bad" else "warn"}" style="flex:none;margin-top:1px;">⚠ Track length</span>
+      <div style="flex:1;min-width:200px;">
+        <b style="font-size:.9rem;">${headline.esc()}.</b>
+        <div class="tiny muted" style="margin-top:4px;">Measured from the file's own packets, not its header. After a fix the file changes, the next sweep re-checks it, and this clears itself.</div>
+        $body
+      </div>
+    </div>"""
+    banner.style.display = "block"
 }
 
 /** Phase 115 (FR E) — after a sync-triggering action, Jellyfin's refresh is async: poll the drift state

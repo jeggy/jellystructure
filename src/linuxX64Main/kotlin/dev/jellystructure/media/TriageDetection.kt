@@ -151,4 +151,8 @@ object TriageDetection {
     /** Phase 254 (FR-254-7) — files a deep check found damaged past the first `Cluster`. Same shape as
      *  [mkvLayoutBrokenCount] for the same reason: the answer is not in the item. */
     fun fileDamageCount(item: MediaItem, damaged: Set<String>): Int = mkvLayoutBrokenCount(item, damaged)
+
+    /** Phase 255 (FR-255-7) — files whose coverage check found a short track (`track_ends_early`) or a
+     *  wrong header (`duration_header_wrong`); [flagged] is the matching path set. Same shape again. */
+    fun trackCoverageCount(item: MediaItem, flagged: Set<String>): Int = mkvLayoutBrokenCount(item, flagged)
 }

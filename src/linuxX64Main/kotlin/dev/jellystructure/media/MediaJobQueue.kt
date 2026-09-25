@@ -102,6 +102,8 @@ class MediaJobQueue(
     private val artworkService: dev.jellystructure.tv.RaviloArtworkService? = null,
     // Phase 254 — deep checks (segments queue) and replace-from-source repairs (media queue).
     private val fileIntegrity: FileIntegrityService? = null,
+    // Phase 255 — the coverage sweep and the title check's second half.
+    private val trackCoverage: TrackCoverageService? = null,
 ) {
     private val json = Json { ignoreUnknownKeys = true }
     private val queries get() = db.mediaJobQueries
@@ -672,10 +674,43 @@ class MediaJobQueue(
             if (sweep && dev.jellystructure.tv.isPlaybackActive()) return Requeue(inPlace = true, reason = "playback started — ${paths.size - i} file(s) still to verify")
             if (sweep && epochSeconds() - startedAt > INTEGRITY_SLICE_SEC) break
             if (service.check(path)?.state == FileIntegrityState.DAMAGED) damaged++
+            // Phase 255 (FR-255-6) — an operator's Check now runs both checks on the file.
+            if (!sweep) trackCoverage?.let { runCatching { it.check(path) } }
             segmentsProgress(row.id, i + 1, paths.size)
         }
         if (damaged > 0) Logger.warn("${row.type}: $damaged damaged file(s) found", "integrity")
         return Success
+    }
+
+    // ── Phase 255: a track that stops before the file does ─────────────────────────────────────
+
+    /** FR-255-5 — the coverage sweep: the same loop and slice as the deep check's, read-only, deferred while
+     *  anything plays, unchecked files most recently modified first. */
+    private suspend fun runTrackCoverageSweep(row: Media_job, isCancelled: () -> Boolean): Outcome {
+        val service = trackCoverage ?: return Failure("Track coverage service not available")
+        val paths = service.uncheckedMostRecentFirst(store.allItems())
+        val startedAt = epochSeconds()
+        var flagged = 0
+        for ((i, path) in paths.withIndex()) {
+            if (isCancelled()) return Cancelled()
+            if (dev.jellystructure.tv.isPlaybackActive()) return Requeue(inPlace = true, reason = "playback started — ${paths.size - i} file(s) still to check")
+            if (epochSeconds() - startedAt > INTEGRITY_SLICE_SEC) break
+            if (service.check(path)?.state == TrackCoverageState.FINDINGS) flagged++
+            segmentsProgress(row.id, i + 1, paths.size)
+        }
+        if (flagged > 0) Logger.warn("${row.type}: $flagged file(s) with a short track or a wrong header", "integrity")
+        return Success
+    }
+
+    /** FR-255-5 — idempotent: one active sweep at a time, none when nothing is unchecked; gated by the same
+     *  `verify_files` switch as phase 254's. */
+    suspend fun enqueueTrackCoverageSweep(): MediaJobSnapshot? {
+        val service = trackCoverage ?: return null
+        if (!configStore.current.behavior.verifyFiles) return null
+        val missing = service.uncheckedMostRecentFirst(store.allItems()).size
+        if (missing == 0) return null
+        val r = enqueueSegments("track_coverage_sweep", "library", "Check track lengths ($missing file(s) not yet checked)", MediaJobParams(deferWhilePlaying = true), missing, "coverage:library")
+        return if (r.deduped) null else r.snapshot
     }
 
     /** FR-254-5 — idempotent: one active sweep at a time, none when nothing is unchecked. */
@@ -766,6 +801,7 @@ class MediaJobQueue(
         fun isCancelled() = row.id in cooperativeCancelledIds
         // Phase 254 — read-only whole-file checks ride this queue; they need no segment store.
         if (row.type == "file_integrity_sweep" || row.type == "file_integrity_title") return runFileIntegrityCheck(row, isCancelled = ::isCancelled)
+        if (row.type == "track_coverage_sweep") return runTrackCoverageSweep(row, isCancelled = ::isCancelled)   // Phase 255
         val segStore = segmentStore ?: return Failure("Segments store not available")
         // Phase 222 — the library-wide envelope backfill has no single item (media_id = "library").
         if (row.type == "waveform_backfill") return runWaveformBackfill(row, segStore, isCancelled = ::isCancelled)

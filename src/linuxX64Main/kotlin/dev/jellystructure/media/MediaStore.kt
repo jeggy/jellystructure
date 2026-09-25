@@ -457,6 +457,14 @@ class MediaStore(
                     val damaged = FileDamage.damagedPathsOrNull().orEmpty()
                     items = items.filter { TriageDetection.fileDamageCount(it, damaged) > 0 }
                 }
+                TrackCoverageFlags.TYPE_TRACK_ENDS_EARLY -> {  // Phase 255 (FR-255-7)
+                    val flagged = TrackCoverageFlags.flaggedOrNull().orEmpty().filterValues { TrackCoverageFlags.endsEarly(it) }.keys
+                    items = items.filter { TriageDetection.trackCoverageCount(it, flagged) > 0 }
+                }
+                TrackCoverageFlags.TYPE_DURATION_HEADER_WRONG -> {  // Phase 255 (FR-255-7)
+                    val flagged = TrackCoverageFlags.flaggedOrNull().orEmpty().filterValues { TrackCoverageFlags.headerWrong(it) }.keys
+                    items = items.filter { TriageDetection.trackCoverageCount(it, flagged) > 0 }
+                }
             }
             items
         }.let { items ->

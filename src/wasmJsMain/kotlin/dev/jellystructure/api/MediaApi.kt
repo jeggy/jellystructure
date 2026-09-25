@@ -903,6 +903,33 @@ object MediaApi {
         httpClient.post("/api/media/$id/health/integrity/check").status.value in 200..299
     }.getOrDefault(false)
 
+    // ── Phase 255: a track that stops before the file does ─────────────────────────────────────
+
+    @Serializable
+    data class TrackCoverageFinding(
+        val kind: String, val streamIndex: Int? = null, val trackKind: String? = null, val language: String? = null, val codec: String? = null,
+        val endsMs: Long, val referenceMs: Long, val headerMs: Long? = null,
+        val what: String, val experience: String, val who: String, val suggestion: String, val command: String? = null,
+    )
+
+    @Serializable
+    data class TrackCoverageFile(
+        val path: String,
+        val state: String,                 // "findings" | "unchecked" (clean files are only counted)
+        val contentEndMs: Long? = null,
+        val headerMs: Long? = null,
+        val checkedAt: Long? = null,
+        val season: Int? = null,
+        val findings: List<TrackCoverageFinding> = emptyList(),
+    )
+
+    @Serializable
+    data class TrackCoverageStatus(val total: Int = 0, val clean: Int = 0, val unchecked: Int = 0, val files: List<TrackCoverageFile> = emptyList())
+
+    suspend fun trackCoverageStatus(id: String): TrackCoverageStatus? = runCatching {
+        httpClient.get("/api/media/$id/health/tracks").body<TrackCoverageStatus>()
+    }.getOrNull()
+
     @Serializable
     private data class IntegrityRepairReq(val mediaId: String, val paths: List<String>, val lossy: Boolean)
 

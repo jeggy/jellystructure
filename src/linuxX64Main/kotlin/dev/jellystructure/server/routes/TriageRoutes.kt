@@ -115,7 +115,7 @@ fun Route.triageRoutes(store: MediaStore, jellyfinClient: JellyfinClient, config
     route("/triage") {
         get("/count") {
             // Phase 254 — a deep check's finding changes the count without touching the library version.
-            val ver = "${store.libraryVersion}:${dev.jellystructure.media.FileDamage.revision}"
+            val ver = "${store.libraryVersion}:${dev.jellystructure.media.FileDamage.revision}:${dev.jellystructure.media.TrackCoverageFlags.revision}"   // Phase 255 — a coverage finding changes the count too
             triageCountCache?.let { (v, c) -> if (v == ver) { call.respond(c); return@get } }
             val all = store.allItems()
 
@@ -209,6 +209,23 @@ fun Route.triageRoutes(store: MediaStore, jellyfinClient: JellyfinClient, config
                         "file_damage", "Damaged video files",
                         "A deep check (reading the whole file) found parts of these files that cannot be read — data was overwritten mid-file. Jellyfin resyncs past it; a viewer sees a stall, a skip or a smear part-way through. Open the title: jellystructure can replace the file from the clean copy qBittorrent is still seeding.",
                         all.sumOf { TriageDetection.fileDamageCount(it, damaged) }, all.count { TriageDetection.fileDamageCount(it, damaged) > 0 },
+                    )
+                },
+                // Phase 255 (FR-255-7) — two types, because they mean different things; omitted while unknown.
+                dev.jellystructure.media.TrackCoverageFlags.flaggedOrNull()?.let { flagged ->
+                    val early = flagged.filterValues { dev.jellystructure.media.TrackCoverageFlags.endsEarly(it) }.keys
+                    TriageTypeCount(
+                        dev.jellystructure.media.TrackCoverageFlags.TYPE_TRACK_ENDS_EARLY, "Audio or video stops before the file ends",
+                        "A track in these files ends early. Viewers who get that track hear silence (or see black) from that point on, and which track they get depends on the player. Open the title for the exact time and the suggested fix.",
+                        all.sumOf { TriageDetection.trackCoverageCount(it, early) }, all.count { TriageDetection.trackCoverageCount(it, early) > 0 },
+                    )
+                },
+                dev.jellystructure.media.TrackCoverageFlags.flaggedOrNull()?.let { flagged ->
+                    val wrong = flagged.filterValues { dev.jellystructure.media.TrackCoverageFlags.headerWrong(it) }.keys
+                    TriageTypeCount(
+                        dev.jellystructure.media.TrackCoverageFlags.TYPE_DURATION_HEADER_WRONG, "File claims to be longer than it is",
+                        "Everything in these files ends before the length the file reports. Players show the wrong length, and a player that marks watched at 90 % never gets there, so the episode never leaves Continue Watching.",
+                        all.sumOf { TriageDetection.trackCoverageCount(it, wrong) }, all.count { TriageDetection.trackCoverageCount(it, wrong) > 0 },
                     )
                 },
             )

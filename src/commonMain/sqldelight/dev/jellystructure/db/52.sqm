@@ -1,0 +1,11 @@
+-- Phase 255 (FR-255-4) — track-coverage results, per file. See FileTrackCoverage.sq; this migration must
+-- stay byte-for-byte in sync with its CREATE TABLE (the SQLDelight-migration rule).
+CREATE TABLE file_track_coverage (
+    path TEXT NOT NULL PRIMARY KEY,
+    size INTEGER NOT NULL,
+    mtime INTEGER NOT NULL,
+    checked_at INTEGER NOT NULL,
+    content_end_ms INTEGER,
+    header_ms INTEGER,
+    findings TEXT NOT NULL
+);

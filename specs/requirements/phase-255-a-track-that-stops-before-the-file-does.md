@@ -2,11 +2,58 @@
 
 ## Status
 
-`Planned` — written 2026-09-24 from a household report. **Dev-reviewed 2026-09-24 against `main`
-`9d2636bb`** (see §Dev review at the bottom: every gap named is real and every phase-254 piece it reuses
-exists; FR-255-1 is two fields because the `DURATION` tag is already parsed; a triage type is five
-sites, not one; the advice must print the stream's own index, never a list position — 254's own
-mislabelling bug; open question 4's premise is not in the skill). Not built. Spec first.
+`✓ Built` — **built 2026-09-25 from the dev review, all seven items** (see §Build below), deployed to the
+household backend the same day; the first library sweep is queued behind phase 254's and runs in
+playback-deferred slices, so acceptance 4's production figures arrive as it progresses (nothing had been
+observed at the time of writing beyond the unit rows). `Planned` when written 2026-09-24 from a household
+report. **Dev-reviewed 2026-09-24 against `main` `9d2636bb`** (see §Dev review at the bottom: every gap
+named is real and every phase-254 piece it reuses exists; FR-255-1 is two fields because the `DURATION`
+tag is already parsed; a triage type is five sites, not one; the advice must print the stream's own index,
+never a list position — 254's own mislabelling bug; open question 4's premise is not in the skill).
+
+### Build (2026-09-25)
+
+- **FR-255-1** — `FfprobeStream.duration` is read (item 1) and `Track.streamDurationMs` carries the
+  stream's own hint (`DURATION`/`DURATION-*` tag first, else `streams[].duration`) for AUDIO/VIDEO tracks,
+  documented as a hint; `durationMs` keeps its phase-222 meaning. Additive, no migration.
+- **FR-255-2 — the classifier** (`src/commonMain/…/media/TrackCoverage.kt`, beside `FileIntegrity`, item 5):
+  audio/video only; cover art (`attached_pic`, an image codec, ≤ 1 packet) is never a track; a stream is
+  short when it ends ≥ `max(30 s, 5 %)` before the reference; the header is wrong when every real stream
+  ends that far before it. **One deliberate deviation:** the reference end is the latest measured end among
+  *all* real audio/video streams, not the video streams alone — with the video as reference, kind D (a
+  picture that stops while the sound continues) can never be found. Unmeasured streams are skipped, never
+  judged. `TrackCoverageTest` runs every row of the table above: A for the two-track episode, B for both
+  KVF episodes, C, D, E for both wrong-header files, nothing for the tag-lies file, nothing for cover art,
+  nothing for a silent credit tail.
+- **FR-255-3 — measured, never tagged** (`TrackCoverageService.check`, item 2): one `-show_streams
+  -show_format` probe, then the tail probe (`-read_intervals '<D−60>%+60'`, `packet=stream_index,pts_time`,
+  the same escaping and gate as phase 222's keyframe probe, niced, through `SegmentProcessGate`). A stream
+  absent from the window is resolved at its tag end (±10 s) or by a binary search of at most eight 60 s
+  windows; when *no* stream reaches the window (kind E or an incomplete download) the lead stream's end is
+  searched first and every stream re-read around it.
+- **FR-255-4 — stored per file** (`FileTrackCoverage.sq`, migration `52.sqm`): `file_track_coverage(path,
+  size, mtime, checked_at, content_end_ms, header_ms, findings JSON)`; current only while size and mtime
+  match; three states (`findings` · `clean` · `unchecked`), unchecked never counted as fine.
+- **FR-255-5/6 — when it happens:** `track_coverage_sweep` on the segments queue, `deferWhilePlaying`,
+  deduped, the same bounded slice and ordering as 254's, queued **after** 254's sweep in the same 15-minute
+  loop (open question 1: a cold library is read once before its tails are probed), gated by
+  `behavior.verify_files`. The title's *Check now* (`POST …/health/integrity/check`) includes a file unchecked
+  by either check and its job runs both (FR-255-6, item 4).
+- **FR-255-7 — the five sites** (item 3): `track_ends_early` (`bad`) and `duration_header_wrong` (`warn`) in
+  the Triage breakdown (omitted until a sweep has stored something), the count cache keyed on this table's
+  revision too, the Library filter, its label, the Dashboard severity, `TriageDetection.trackCoverageCount`.
+  The wrong-header description says *players* mark watched, not the server (item 6).
+- **FR-255-8/9/10 — saying it:** `GET /media/{id}/health/tracks` (item 4) answers per file with each finding's
+  what / experience / who / suggestion / command, built by `TrackCoverageAdvice` (one builder, commonMain,
+  `-map -0:<n>` with the probe's own stream index, paths shell-quoted, `<in>.fixed.mkv` never the input —
+  tested on a path with a `'` and a reordered index). The detail page renders one block per file beside 254's
+  banner, grouped per season on a series, and the Tracks & subtitles rows carry *ends at 4:41 of 22:34* in
+  `--bad` ink from measured ends only (`TrackCoverageMarks`). Language names in the advice are the tag's own
+  code (`"dan"`), since no name table lives in commonMain.
+- **Design mirror (item 7):** `design/app/index.html` and `library.html` already carry both types (drawn
+  design-side); the detail page's block is not drawn — the served page leads the mockup there.
+- **Tests:** `TrackCoverageTest` (9) — acceptance 1–2; acceptance 3's currency rule is phase 254's
+  `isCurrent`, reused unchanged.
 
 > *"Starhaul played without audio yesterday evening, but playing same episode again this morning
 > worked. Yesterday was tested via Wholphin and today was tested via Ravilo, both on Stue TV."*

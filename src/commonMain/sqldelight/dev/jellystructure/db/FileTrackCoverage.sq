@@ -1,0 +1,26 @@
+-- Phase 255 (FR-255-4) — one row per video file whose tracks have had a coverage check (a tail probe
+-- resolving where each audio/video stream really ends). A row is CURRENT only while the file's size and
+-- mtime still equal the ones stored here — exactly phase 254's rule. findings = '[]' is "checked, fine";
+-- no row (or a stale one) is "unchecked" — never the same thing.
+CREATE TABLE file_track_coverage (
+    path TEXT NOT NULL PRIMARY KEY,
+    size INTEGER NOT NULL,
+    mtime INTEGER NOT NULL,
+    checked_at INTEGER NOT NULL,
+    content_end_ms INTEGER,
+    header_ms INTEGER,
+    findings TEXT NOT NULL
+);
+
+put:
+INSERT OR REPLACE INTO file_track_coverage(path, size, mtime, checked_at, content_end_ms, header_ms, findings)
+VALUES (:path, :size, :mtime, :checked_at, :content_end_ms, :header_ms, :findings);
+
+all:
+SELECT * FROM file_track_coverage;
+
+flagged:
+SELECT * FROM file_track_coverage WHERE findings != '[]';
+
+remove:
+DELETE FROM file_track_coverage WHERE path = :path;
