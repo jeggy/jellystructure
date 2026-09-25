@@ -4,7 +4,14 @@
 
 `⚠ Partial` — **FR-R293-1 to -7 built 2026-09-25 from the dev review, all nine items** (see §Build below)
 and device-verified the same day; **FR-R293-8 (delivery) is open**: the phase is `✓ Built` only once a
-release carrying it is on the closed-testing track, and cutting a release is the owner's act. `Planned` when
+release carrying it is on the closed-testing track, and cutting a release is the owner's act.
+
+**2026-09-25 (evening) — v1.39 is on the closed-testing track; step 3 is the owner's.** The release run
+(`36157696626`) passed CI and uploaded the bundle to Play's `alpha` (closed testing) track with status
+`completed` — its minSdk 24 guard passed (step 1), CI ran (step 2), and the upload was accepted (step 4:
+*"Finished uploading to the Play Store"*, edit committed). What no job can see is **step 3: whether aleks's
+account (and any other household still only on internal testing) is on the closed track's tester list**
+— a Play Console check. The phase stays `⚠ Partial` until the owner confirms it. `Planned` when
 written 2026-09-24 from a server-side investigation. **Dev-reviewed 2026-09-24 against `main` `9d2636bb`**
 (see §Dev review at the bottom: every client claim holds; the lifecycle hook is the Activity's, not a new
 `ProcessLifecycleOwner` dependency; the catch-up needs `onOpen` to stop emitting an unconditional refresh;
