@@ -160,6 +160,9 @@ check "$WF" "Users & devices: read-only photo chip (.usr-av)" ".usr-av {"
 # mockup's inline <style>; a sync that strips it leaves the toggle opening an unstyled block.
 check "$WF" "Users & devices: version history (.usr-vh)" ".usr-vh {"
 check "$WF" "Users & devices: version history rows (.vh-r)" ".vh-r {"
+# Phase 256 — the unstable-connection and releases-behind lines on a device row (server-decided).
+check "$WF" "Users & devices: unstable-connection line (.usr-cap.unstable)" ".usr-cap.unstable"
+check "$WF" "Users & devices: releases-behind line (.usr-cap.behind)" ".usr-cap.behind"
 # Phase 260 — the empty-queues panel on Activity ▸ Jobs & workers lives in the served wf.css.
 check "$WF" "Jobs & workers: empty-queues panel (.qe)" ".qe {"
 check "$WF" "Jobs & workers: empty-queues option row (.qe-opt)" ".qe-opt {"

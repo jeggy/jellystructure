@@ -58,6 +58,11 @@ data class OverviewDevice(
     // Phase 224 (FR-224-5) — the build and platform this device last reported; both null ⇒ never said.
     @SerialName("app_version") val appVersion: String? = null,
     val platform: String? = null,
+    // Phase 256 (FR-256-3/5) — present only while the server says so: reconnects above 12/h; ≥ 2 releases
+    // behind this backend for ≥ 7 days (with when that was first seen). The row renders the line or nothing.
+    @SerialName("reconnects_last_hour") val reconnectsLastHour: Int? = null,
+    @SerialName("releases_behind") val releasesBehind: Int? = null,
+    @SerialName("behind_since") val behindSince: Long? = null,
     // Phase 259 (FR-259-6) — when the current version was first seen, and the whole history newest first.
     @SerialName("version_since") val versionSince: Long? = null,
     val versions: List<OverviewVersion> = emptyList(),

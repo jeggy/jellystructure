@@ -2,12 +2,48 @@
 
 ## Status
 
-`Planned` — written 2026-09-24. **Dev-reviewed 2026-09-24 against `main` `9d2636bb`** (see §Dev
-review at the bottom: every server claim holds; "replaced" is already detectable in `unregister`; the
-bridge's `connect` is already idempotent, so the grace is a deferred `disconnect`; FR-256-5 compares
-against the deployed backend's own version, not GitHub; the device row and its mockup both gain the two
-lines). Not built. Spec first. The backend half of **R293**
-(read its "What happens" for the measurements; they are not repeated here).
+`✓ Built` — **built 2026-09-25 from the dev review, all six items** (see §Build below), deployed to the
+household backend the same day. `Planned` when written 2026-09-24. **Dev-reviewed 2026-09-24 against `main`
+`9d2636bb`** (see §Dev review at the bottom: every server claim holds; "replaced" is already detectable in
+`unregister`; the bridge's `connect` is already idempotent, so the grace is a deferred `disconnect`; FR-256-5
+compares against the deployed backend's own version, not GitHub; the device row and its mockup both gain the
+two lines). The backend half of **R293** (read its "What happens" for the measurements; they are not repeated
+here).
+
+### Build (2026-09-25)
+
+- **FR-256-1 — one close line, classified** (`tv/EventsSocketHealth.kt`, `EventsCloseCause`): `TV events:
+  device <id> closed user=<id> open=<s>s cause=<…>` with `client close <code> <reason>` from the client's
+  close frame (`closeReason.await()`, bounded to 1 s), `ping timeout` (Ktor's own close reason or the
+  throwable's text, never echoed), `eof` / `reset` from the throwable's class or text, `replaced` from
+  `TvEventBus.unregister`'s identity check (item 1 — it now returns whether a newer socket held the slot),
+  else `server error <Class>`. The old `connection dropped: <message>` WARN is gone (the message could carry
+  a URL). The outer StatusPages handler reads `token ?: Authorization` and emits the same shape with
+  `open=0s` (item 2).
+- **FR-256-2 — the client's account** (`sanitizeEventsPrev`): R293's `X-Ravilo-Events-Prev` taken at 512
+  bytes, ten entries, six fields each, every field reduced to `[A-Za-z0-9._:+-]` × 40; logged once as
+  `TV events: device <id> previous sockets: …` on connect, never on the close line (item 6).
+- **FR-256-3 — the flap counter** (`DeviceFlapCounter`, owned by `TvEventBus` under its mutex): connects and
+  lifetimes per device over a rolling hour; above 12/h one WARN per device per hour (*reconnected N times in
+  the last hour (Ravilo 1.35, tv); median connection 68 s*), `unstable_devices` on `/api/health/full`, and
+  `reconnects_last_hour` on the admin overview's device — present only while unstable, so the row's
+  *Unstable connection: N reconnects in the last hour* line renders or does not (server-decided). In memory.
+- **FR-256-4 — the grace** (`tv/DeferredDisconnects.kt`, item 3): the handler's `finally` calls
+  `sessionBridge.disconnectAfterGrace(deviceId)` (90 s, one cancellable job per device); `connect` cancels a
+  pending one before its own idempotence guard, logging *bridge kept*. A **replaced** socket schedules
+  nothing — the newer socket owns the bridge (a detail the review did not name: without it the old socket's
+  timer would have closed the bridge under a connected device). `isConnected`, the stop watchdog and Now
+  Playing are untouched, so Phase 110 FR B.2 holds by construction.
+- **FR-256-5 — releases behind** (`VersionBehindTracker`, item 4): `raviloReleasesBehind(app, ServerVersion
+  .current)` (259's arithmetic) ≥ 2, first seen per (device, version) in memory, said after seven days as
+  `releases_behind` + `behind_since` on the overview; a dev build on either side says nothing — **which
+  means a household running a `-g…` dev deploy (as this one does today) never sees the line**; only a
+  released backend does. The admin row renders *Ravilo 1.35 — 3 releases behind since …* with the
+  Play-tester hint; the mockup's bedroom TV carries both lines (item 5); `.usr-cap.unstable`/`.behind` in the
+  served `wf.css`, fenced by `check-mobile-css.sh`.
+- **Tests:** `EventsSocketHealthTest` (4: the four causes + reset/error, the sanitizer, the counter crossing
+  and clearing, the seven-day rule) and `DeferredDisconnectsTest` (2: cancel inside the grace, fire once
+  after it) — acceptance 1 and 2.
 
 In one line: a Ravilo TV in another household reopened its `/api/tv/events` socket 1,326 times in 29
 hours, about once a minute while nobody watched. The server noticed nothing, logged no reason for any

@@ -102,6 +102,22 @@ private fun appVersionLine(d: dev.jellystructure.api.OverviewDevice, vhId: Strin
     return listOfNotNull(version, platform, since).joinToString(" · ") + toggle
 }
 
+/** Phase 256 (FR-256-3) — *Unstable connection: 38 reconnects in the last hour*; nothing when the server
+ *  did not send the count (the device is under the threshold). */
+private fun unstableLine(d: dev.jellystructure.api.OverviewDevice): String {
+    val n = d.reconnectsLastHour ?: return ""
+    return """<div class="tiny usr-cap unstable"><b>Unstable connection:</b> $n reconnects in the last hour</div>"""
+}
+
+/** Phase 256 (FR-256-5) — a device that stopped updating: more than one release behind this backend for
+ *  more than seven days. Read-only; the Play-track hint is R293 FR-R293-8's. */
+private fun behindLine(d: dev.jellystructure.api.OverviewDevice): String {
+    val n = d.releasesBehind ?: return ""
+    val since = d.behindSince?.let { " since ${usersAt(it)}" } ?: ""
+    val version = d.appVersion?.esc() ?: "?"
+    return """<div class="tiny usr-cap behind"><b>Ravilo $version — $n releases behind</b>$since. If this device installs from Google Play, check that its account is a tester on the track releases go to.</div>"""
+}
+
 /** Phase 259 (FR-259-7/8) — the timeline, newest first: version · first seen → next first seen (span) · one
  *  note (current / skipped … / dev build / already on it when history began). Closed until toggled. */
 private fun versionHistoryBlock(d: dev.jellystructure.api.OverviewDevice, vhId: String): String {
@@ -252,6 +268,8 @@ private suspend fun refreshUsersList(scope: CoroutineScope) {
                    <div class="tiny muted usr-cap">${decodeCapabilityLine(d)}</div>
                    <div class="tiny muted usr-cap">${appVersionLine(d, vhId)}</div>
                    ${versionHistoryBlock(d, vhId)}
+                   ${unstableLine(d)}
+                   ${behindLine(d)}
                    $playing
                    $quality
                  </div>

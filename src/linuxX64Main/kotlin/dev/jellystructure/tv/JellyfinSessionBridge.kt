@@ -36,6 +36,9 @@ import kotlinx.serialization.json.longOrNull
 // (scan, artwork, metadata) behind it. Documented as part of the Phase 118 FD budget.
 private const val MAX_BRIDGE_CONNECTIONS = 16
 private const val KEEPALIVE_INTERVAL_MS = 30_000L
+/** Phase 256 (FR-256-4, open question 1) — covers every measured reconnect gap (0–27 s) with room, and a TV
+ *  genuinely switched off still leaves Jellyfin's dashboard within two minutes: at most three keepalives. */
+private const val BRIDGE_GRACE_MS = 90_000L
 private const val RECONNECT_BASE_MS = 2_000L
 private const val RECONNECT_MAX_MS = 60_000L
 
@@ -80,6 +83,8 @@ class JellyfinSessionBridge(
      */
     private val lock = SpinLock()
     private val active = HashMap<String, Job>() // deviceId -> connection loop job
+    // Phase 256 (FR-256-4) — a close schedules the disconnect 90 s out; a reconnect in time cancels it.
+    private val deferred = DeferredDisconnects(scope, BRIDGE_GRACE_MS) { disconnect(it) }
     private val state = HashMap<String, BridgeState>() // deviceId -> FR-238-2/-3 observability state
 
     /** Mutable per-device bridge state. Only ever touched under [lock]. */
@@ -95,6 +100,9 @@ class JellyfinSessionBridge(
 
     /** Starts (or no-ops if already running) the bridge for [device]. Safe to call repeatedly. */
     fun connect(device: DeviceData) {
+        // Phase 256 (FR-256-4, dev review item 3) — the device came back inside the grace: the pending
+        // disconnect goes, and the guard below finds the bridge still active — no new Jellyfin session.
+        if (deferred.cancel(device.deviceId)) scope.launch { Logger.info("Jellyfin session bridge kept: device=${device.deviceId} reconnected within the grace", "tv") }
         val start = lock.withLock {
             if (active.containsKey(device.deviceId)) return@withLock false
             state.getOrPut(device.deviceId) { BridgeState() }
@@ -107,8 +115,17 @@ class JellyfinSessionBridge(
         lock.withLock { active[device.deviceId] = job }
     }
 
+    /** Phase 256 (FR-256-4) — the events socket closed: keep the bridge for the grace period, then
+     *  [disconnect] unless the device reconnected. Nothing else changes — `TvEventBus.isConnected`, which
+     *  Now Playing and the stop watchdog read, is untouched by this. */
+    fun disconnectAfterGrace(deviceId: String) = deferred.schedule(deviceId)
+
+    /** Phase 256 — is a disconnect pending for [deviceId]? (health/tests) */
+    fun disconnectPending(deviceId: String): Boolean = deferred.isPending(deviceId)
+
     /** Stops the bridge for [deviceId] — closes the Jellyfin session promptly on the dashboard. */
     fun disconnect(deviceId: String) {
+        deferred.cancel(deviceId)
         val job = lock.withLock {
             state.remove(deviceId)
             active.remove(deviceId)

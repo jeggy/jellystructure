@@ -238,8 +238,13 @@ fun startServer(
                 // server error: one INFO line with the device, no Activity entry, no 500. 43 a day
                 // were landing in the Activity log as errors before this.
                 if (call.request.path().startsWith("/api/tv/events")) {
-                    val device = call.request.queryParameters["token"]?.takeIf { it.isNotBlank() }?.let { deviceService.validateDeviceToken(it) }
-                    Logger.info("TV event socket closed by peer device=${device?.deviceId ?: "unknown"}: ${cause.message}", "tv")
+                    // Phase 256 (dev review item 2) — the same `token ?: Authorization` the route's top
+                    // reads: R293 moved Android's token into the header, and this line would otherwise
+                    // read `device=unknown` for every TV. Same one-line shape as the handler's close.
+                    val token = call.request.queryParameters["token"]?.takeIf { it.isNotBlank() }
+                        ?: call.request.headers["Authorization"]?.removePrefix("Bearer ")?.takeIf { it.isNotBlank() }
+                    val device = token?.let { deviceService.validateDeviceToken(it) }
+                    Logger.info("TV events: device ${device?.deviceId ?: "unknown"} closed user=${device?.jellyfinUserId ?: "unknown"} open=0s cause=${dev.jellystructure.tv.EventsCloseCause.classify(null, cause, false)}", "tv")
                     runCatching { call.respond(HttpStatusCode.OK) }
                     return@exception
                 }
@@ -597,7 +602,7 @@ fun startServer(
                     // endpoint. This is the signal that makes a dead bridge observable without reading
                     // container logs: before it, a permanently broken bridge produced one warn line and
                     // then silence for the life of the process.
-                    call.respond(HealthFullResponse(checks, sessionBridge.healthSnapshot()))
+                    call.respond(HealthFullResponse(checks, sessionBridge.healthSnapshot(), tvEventBus.unstableDevices()))
                 }
 
                 authRoutes(sessionService, jellyfinClient, configStore, loginRateLimiter)
@@ -679,6 +684,15 @@ fun startServer(
                     close(CloseReason(CloseReason.Codes.TRY_AGAIN_LATER, "TV event session limit reached"))
                     return@webSocket
                 }
+                val openedAtMs = dev.jellystructure.nowEpochSec() * 1000L
+                // Phase 256 (FR-256-2) — the client's own account of its previous sockets (R293 FR-R293-6),
+                // bounded and whitelisted on arrival, logged once here and never on the close line.
+                dev.jellystructure.tv.sanitizeEventsPrev(call.request.headers[dev.jellystructure.shared.tv.EVENTS_PREV_HEADER])
+                    ?.let { Logger.info("TV events: device ${device.deviceId} previous sockets: $it", "tv") }
+                // Phase 256 (FR-256-3) — one WARN per device per hour while it reconnects more than 12×/h.
+                tvEventBus.flapWarningDue(device.deviceId)?.let { st ->
+                    Logger.warn("TV events: device ${device.deviceId} reconnected ${st.connectsLastHour} times in the last hour (Ravilo ${device.appVersion ?: "?"}, ${device.platform ?: device.kind}); median connection ${(st.medianLifetimeMs ?: 0L) / 1000} s", "tv")
+                }
                 // Phase 236 (FR-236-6) — one of the two moments a device's "on this network" address is
                 // refreshed (see RaviloDeviceService.recordAddress's doc for why not every request).
                 val eventsAddress = call.request.headers["X-Forwarded-For"]?.substringBefore(',')?.trim()?.takeIf { it.isNotBlank() }
@@ -701,6 +715,7 @@ fun startServer(
                 // status on this same authenticated, already-reconnecting socket rather than opening a
                 // second one; scoped to this device's own user, exactly like every other event on it.
                 val subscriber = dev.jellystructure.auth.RemoteCaller(device.jellyfinUserId, deviceId = device.deviceId, viaApiKey = false)
+                var closeError: Throwable? = null
                 try {
                     for (frame in incoming) {
                         if (frame is Frame.Close) break
@@ -712,12 +727,22 @@ fun startServer(
                     throw e
                 } catch (e: Throwable) {
                     // Device dropped the connection (ECONNRESET). See note on /ws above — must not
-                    // escape the handler or it crashes the Kotlin/Native process.
-                    Logger.warn("WS /api/tv/events device connection dropped: ${e.message}", "tv")
+                    // escape the handler or it crashes the Kotlin/Native process. Phase 256: classified
+                    // on the one close line below, never echoed raw.
+                    closeError = e
                 } finally {
-                    tvEventBus.unregister(device.jellyfinUserId, device.deviceId, this)
+                    // Phase 256 (FR-256-1) — every close says why, with the device: the client's close
+                    // frame for a clean end, the throwable's class otherwise, `replaced` when a newer
+                    // socket of the same device already holds the slot.
+                    val openMs = dev.jellystructure.nowEpochSec() * 1000L - openedAtMs
+                    val closeReason = if (closeError == null) runCatching { kotlinx.coroutines.withTimeoutOrNull(1_000L) { closeReason.await() } }.getOrNull() else null
+                    val replaced = tvEventBus.unregister(device.jellyfinUserId, device.deviceId, this, openMs)
+                    val cause = dev.jellystructure.tv.EventsCloseCause.classify(closeReason, closeError, replaced)
+                    Logger.info("TV events: device ${device.deviceId} closed user=${device.jellyfinUserId} open=${openMs / 1000}s cause=$cause", "tv")
                     tvEventBus.unsubscribeAllDeviceStatus(this)
-                    runCatching { sessionBridge.disconnect(device.deviceId) }
+                    // Phase 256 (FR-256-4) — not a new Jellyfin session on the next reconnect: the bridge is
+                    // kept for the grace period. A replaced socket owns nothing — the newer one does.
+                    if (!replaced) runCatching { sessionBridge.disconnectAfterGrace(device.deviceId) }
                     // Phase 110 (FR B.2) — a TV disconnecting clears its Now Playing immediately rather
                     // than waiting out the 90s heartbeat timeout.
                     runCatching { playbackService.stopWatchdogTick { deviceId -> tvEventBus.isConnected(deviceId) } }
@@ -790,6 +815,8 @@ data class HealthCheck(val name: String, val ok: Boolean, val detail: String)
 data class HealthFullResponse(
     val checks: List<HealthCheck>,
     @SerialName("session_bridges") val sessionBridges: List<dev.jellystructure.tv.BridgeHealth> = emptyList(),
+    // Phase 256 (FR-256-3) — devices reconnecting more than 12×/h right now; empty when none.
+    @SerialName("unstable_devices") val unstableDevices: List<dev.jellystructure.tv.FlapStats> = emptyList(),
 )
 
 // Phase 118 (FR C.3) — shared ProcessGate; callers are all inside the /health/full suspend handler.

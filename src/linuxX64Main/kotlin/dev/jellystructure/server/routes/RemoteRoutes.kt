@@ -233,7 +233,10 @@ fun Route.remoteRoutes(
         // Phase 236 (FR-236-3) — the API-caller status stream. A browser/HA client can't set a header on
         // a WebSocket handshake, so the credential is a query param, exactly like /api/tv/events.
         webSocket("/events") {
+            // R293 (FR-R293-7, dev review item 6) — a Ravilo phone sends its token as a Bearer header now;
+            // the query form stays for browsers and HA, which cannot set one.
             val token = call.request.queryParameters["token"]?.takeIf { it.isNotBlank() }
+                ?: call.request.headers["Authorization"]?.removePrefix("Bearer ")?.takeIf { it.isNotBlank() }
             val apiKeyParam = call.request.queryParameters["api_key"]?.takeIf { it.isNotBlank() }
             val caller = when {
                 apiKeyParam != null -> apiKeyStore.validate(apiKeyParam)?.let { RemoteCaller(it.jellyfinUserId, deviceId = null, viaApiKey = true) }

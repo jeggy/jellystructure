@@ -51,6 +51,9 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 // Phase 143 — Users & Devices admin overview DTOs.
+// Phase 256 (FR-256-5) — one tracker for the process: when each device was first seen ≥ 2 releases behind.
+private val versionBehind = dev.jellystructure.tv.VersionBehindTracker()
+
 @Serializable
 private data class OverviewDevice(
     @SerialName("device_id") val deviceId: String,
@@ -75,6 +78,13 @@ private data class OverviewDevice(
     // device has never said (an un-updated client); the row spells that out.
     @SerialName("app_version") val appVersion: String? = null,
     val platform: String? = null,
+    // Phase 256 (FR-256-3) — connects in the last hour, present only while the device is above the
+    // 12/h threshold (the server decides; the row renders the line or nothing).
+    @SerialName("reconnects_last_hour") val reconnectsLastHour: Int? = null,
+    // Phase 256 (FR-256-5) — how many releases behind this backend, present only when ≥ 2 for ≥ 7 days
+    // (never for a dev build on either side), with when that was first seen.
+    @SerialName("releases_behind") val releasesBehind: Int? = null,
+    @SerialName("behind_since") val behindSince: Long? = null,
     // Phase 259 (FR-259-6) — when the current version was first seen (null for a seed row / no history) and
     // every version this device was seen on, newest first. The client computes durations and formatting only.
     @SerialName("version_since") val versionSince: Long? = null,
@@ -970,6 +980,7 @@ fun Route.tvRoutes(
                 devices = userDevices.map { d ->
                     val decode = deviceService.decodeCapabilities(d.deviceId, d.jellyfinUserId)
                     val history = deviceService.versionHistory(d.deviceId)   // Phase 259 (FR-259-6)
+                    val behind = versionBehind.observe(d.deviceId, d.appVersion, dev.jellystructure.ServerVersion.current, dev.jellystructure.nowEpochSec() * 1000L)
                     OverviewDevice(
                         deviceId = d.deviceId,
                         name = d.displayName,
@@ -986,6 +997,9 @@ fun Route.tvRoutes(
                         decodeMeasuredAt = decode?.measuredAt,
                         appVersion = d.appVersion,
                         platform = d.platform,
+                        reconnectsLastHour = tvEventBus?.unstable(d.deviceId)?.connectsLastHour,   // Phase 256 (FR-256-3)
+                        releasesBehind = behind?.releases,   // Phase 256 (FR-256-5)
+                        behindSince = behind?.sinceMs,
                         versionSince = history.firstOrNull()?.takeIf { it.observed }?.firstSeenAt,
                         versions = history.map { OverviewVersion(it.appVersion, it.firstSeenAt, it.observed) },
                     )

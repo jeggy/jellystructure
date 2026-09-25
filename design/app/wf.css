@@ -832,6 +832,10 @@ hr.dash { border: none; border-top: 1px solid var(--line); margin: 18px 0; }
 .vh-foot { font-size: .68rem; color: var(--ink-dim); margin-top: 3px; line-height: 1.5; }
 @media (max-width: 640px) { .vh-r { grid-template-columns: minmax(0, 1fr); } .vh-note { text-align: left; } }
 .usr-cap.unknown b { font-weight: 500; font-style: italic; }
+/* Phase 256 — Users & devices: the unstable-connection line (FR-256-3) and the releases-behind line
+   (FR-256-5), both server-decided (present in the payload or not). Fenced by check-mobile-css.sh. */
+.usr-cap.unstable, .usr-cap.unstable b { color: var(--warn); }
+.usr-cap.behind, .usr-cap.behind b { color: var(--warn); }
 .usr-av { width: 34px; height: 34px; border-radius: 50%; flex: none; display: inline-flex; align-items: center; justify-content: center;
   font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: .8rem; color: #fff; margin-right: 10px; }
 .usr-av.has-photo { color: transparent; overflow: hidden; }

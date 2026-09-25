@@ -31,6 +31,8 @@ class TvEventBus(private val scope: CoroutineScope) {
     private val sessions = mutableMapOf<String, MutableMap<String, DefaultWebSocketServerSession>>()
     private var rev = 0L
     private var homeRev = 0L  // R248 — home_changed has its own counter (see notifyHomeChanged)
+    // Phase 256 (FR-256-3) — connects per device over a rolling hour; touched only under [mutex].
+    private val flaps = DeviceFlapCounter()
 
     /**
      * Phase 134 (FR-OPS2 §D) — returns `false` (refuse) only when [deviceId] would be a genuinely NEW
@@ -46,17 +48,33 @@ class TvEventBus(private val scope: CoroutineScope) {
             return@withLock false
         }
         sessions.getOrPut(userId) { mutableMapOf() }[deviceId] = session
+        flaps.connected(deviceId)
         Logger.info("TV events: device $deviceId connected for user $userId (${sessions[userId]?.size} live)", "tv")
         true
     }
 
-    suspend fun unregister(userId: String, deviceId: String, session: DefaultWebSocketServerSession) = mutex.withLock {
+    /**
+     * Phase 256 (FR-256-1, dev review item 1) — returns `true` when this session had already been REPLACED
+     * by a newer socket of the same device (the `else` branch of the identity check *is* the `replaced`
+     * cause: the older socket's cleanup finding a newer one in its slot). The caller logs the one close
+     * line with the cause; [openMs] feeds the flap counter's median.
+     */
+    suspend fun unregister(userId: String, deviceId: String, session: DefaultWebSocketServerSession, openMs: Long = 0L): Boolean = mutex.withLock {
+        var replaced = false
         sessions[userId]?.let { map ->
-            if (map[deviceId] === session) map.remove(deviceId)
+            if (map[deviceId] === session) map.remove(deviceId) else if (map.containsKey(deviceId)) replaced = true
             if (map.isEmpty()) sessions.remove(userId)
         }
-        Logger.info("TV events: device $deviceId disconnected for user $userId (${sessions[userId]?.size ?: 0} remaining)", "tv")
+        flaps.closed(deviceId, openMs)
+        replaced
     }
+
+    /** Phase 256 (FR-256-3) — the WARN, at most once per device per hour while it is unstable. */
+    suspend fun flapWarningDue(deviceId: String): FlapStats? = mutex.withLock { flaps.warnDue(deviceId) }
+    /** Phase 256 (FR-256-3) — this device's figures while it is above the threshold, else null. */
+    suspend fun unstable(deviceId: String): FlapStats? = mutex.withLock { flaps.unstable(deviceId) }
+    /** Phase 256 (FR-256-3) — every unstable device, for `/api/health/full`. */
+    suspend fun unstableDevices(): List<FlapStats> = mutex.withLock { flaps.unstableSnapshot() }
 
     /** Phase 110 — is this device's `/api/tv/events` socket currently open? Used by the stop watchdog
      *  to force-stop playback the moment a TV disconnects, not just after the heartbeat timeout. */
