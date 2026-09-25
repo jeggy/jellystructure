@@ -112,6 +112,15 @@ if [ -n "$missing_flags" ]; then
   echo "MISSING      flag asset(s) for flags.css rule(s):$missing_flags  (design/flags/4x3/<code>.svg)"
   fail=1
 fi
+# 15th incident (2026-09-25) removed BOTH the .fi-ct rule and ct.svg in one export, so the generic
+# rule→asset check above passed vacuously. The Catalan flag exists only in this repo (the design tool
+# ships lipis's 99), so it is asserted positively: the rule and the file, each on its own.
+check "design/flags.css" "Catalan flag rule .fi-ct (R239 amendment; repo-only, not in the design tool)" \
+  '.fi-ct { background-image: url("flags/4x3/ct.svg"); }'
+if [ ! -s "design/flags/4x3/ct.svg" ]; then
+  echo "MISSING      design/flags/4x3/ct.svg (Catalan flag, hand-authored — restore from git, it is not in the design tool)"
+  fail=1
+fi
 
 # ---- segments.css / ravilo-player.js --------------------------------------------------------------
 SEGCSS="design/app/segments.css"

@@ -959,15 +959,14 @@ GitHub is the **source of truth**; we layer designs on top of it.
     line worth keeping for the talk: this is the same failure shape as R202 — *shipped code not matching
     its own documented invariant* — caught by re-reading the owning phase's spec against the code.
   - **R232 — series detail & player D-pad polish** (✓ Built 2026-09-04, live-tested on stue TV against
-    Klovn, not dev-reviewed). Player Right past the last transport control teleported focus to the
+    Fjollerne, not dev-reviewed). Player Right past the last transport control teleported focus to the
     top-bar Back button; Down from the hero landed the season row clipped under the overlay AppBar; and
     the first Down press only *looked* like it focused a season pill — the scroll and the focus request
     ran as concurrent coroutines and R84's async playstate overlay ate the 30-frame retry budget, so real
     focus stayed on the hero with no visual cue. Now sequenced (await the scroll, then request focus).
     **No mockup change** — focus behaviour, not layout.
   - **R233 — a system row shows what is available where it is shown** (Planned, design-authored
-    2026-09-04 with the owner). Standing inside Thriller / Gyser, Continue Watching led with *Two and a
-    Half Men*, *Klovn* and *Sjit Happens* while Newly Added directly below it was correctly filtered —
+    2026-09-04 with the owner). Standing inside Thriller / Gyser, Continue Watching led with *Three and a Half Uncles*, *Fjollerne* and *Lort Sker* while Newly Added directly below it was correctly filtered —
     two system rows on one page disagreeing about what page they were on. Partially reverses R202 and
     R219 §5: both system rows are always scoped to the surface they render on, in **both** row-list
     modes, and the per-channel `scope` field is retired (no live channel sets it). Guard requirement
@@ -1082,7 +1081,7 @@ GitHub is the **source of truth**; we layer designs on top of it.
     is reachable in practice, not just implemented-but-dead. **Open question 1 is answered, on-device,
     for good:** R216 has been live on the stue TV since **2026-08-30** — 105 `playback_qoe` rows carry its
     fields, heavy 2026-09-01 sessions show `direct_play=0` (transcode fallback firing) and
-    `dropped_frames=0` throughout. The *Until Dawn* stutter that started this whole thread was a
+    `dropped_frames=0` throughout. The *Till Daybreak* stutter that started this whole thread was a
     **Wholphin** session, architecturally unreachable by any of this. Through Ravilo the file re-encodes
     and starts slowly — it does not stutter — so `slow_lead`/`slow_tail_measured`/`slow_tail_expected` are
     the right copy, translation unblocked. `basis: "measured"` is still unreached on any real device
@@ -1123,7 +1122,7 @@ GitHub is the **source of truth**; we layer designs on top of it.
 - **2026-08-31 sync — both our 2026-08-28 specs shipped, and 5 new dev-authored specs landed.**
   Next unassigned numbers: **184 / R221**.
   - **R218 (player loading & buffering) is `Implemented`** — built the day it was spec'd, Android/Compose
-    only, **on-device verified 2026-08-29** (stue TV, Severance S2E4 resume). **Phase 180 (session
+    only, **on-device verified 2026-08-29** (stue TV, Offboarding S2E4 resume). **Phase 180 (session
     teardown) is `✓ Done`** — the Jellyfin stop call was confirmed against 10.11.11's OpenAPI before any
     code was written (the open question we flagged), and verified live against a real forced 4K/DV/HDR
     NVENC transcode.
@@ -1144,7 +1143,7 @@ GitHub is the **source of truth**; we layer designs on top of it.
     change. **Drawn here 2026-08-31** as frame **E** on
     `ravilo/Player Loading and Buffering - Directions.html` — R218's stall treatment verbatim, new trigger.
   - **181 — converge on Jellyfin's library, don't predict it** (FR-181-2 built; the rest `Planned`).
-    Klovn S11E07 sat in Jellyfin for 15 h unnoticed: premiere-year freshness bucketing files a
+    Fjollerne S11E07 sat in Jellyfin for 15 h unnoticed: premiere-year freshness bucketing files a
     currently-airing 2005 show as monthly archive (9 of 16 provably-airing series were starved — now fixed
     via `sonarrNextAiringDate`), nothing ever compares our item set against Jellyfin's, and the
     Jellyfin-based realtime ingest has delivered **nothing, ever** since phase 165 (the WS listener
@@ -1172,7 +1171,7 @@ GitHub is the **source of truth**; we layer designs on top of it.
     drawn; the **Capacity** card stays as read-only reporting; FR-182-9's banner was **dropped** (see
     above). Everything else is backend/platform. Nothing exported to the repo yet.
 - **2026-09-02 — research pulled, design pass done, no spec yet.** New repo report
-  `specs/research-reports/ravilo-per-device-decode-ceiling-warning-2026-09-02.md`: *Until Dawn (2025)*, an
+  `specs/research-reports/ravilo-per-device-decode-ceiling-warning-2026-09-02.md`: *Till Daybreak (2025)*, an
   82 Mbps 4K DV/HDR10+ REMUX, stuttered on stue TV (decoder rated 60 Mbps) and was abandoned — third
   stutter on that TV in three weeks. The owner wants a per-device "this might not play well" warning on the
   Ravilo detail page. The report finds the measuring half already shipped (**177 + R216**) but three
@@ -1235,7 +1234,7 @@ GitHub is the **source of truth**; we layer designs on top of it.
 - **2026-09-01 — two design-authored specs written, both `Planned`, neither dev-reviewed.**
   Next unassigned numbers: **185 / R222**.
   - **184 — choose the TMDB metadata language for a single title** (`specs/requirements/phase-184-choose-metadata-language.md`).
-    올드보이's Korean first audio track makes the resolver fetch Korean metadata — correct by the rules,
+    열배's Korean first audio track makes the resolver fetch Korean metadata — correct by the rules,
     wrong for this house. Adds a nullable `metadataLanguage` consulted **above** the resolver (the
     cascade is not modified and its trace stays on screen, dimmed, after a choice), a picker offering
     only what TMDB actually holds for the title with per-language coverage (title · overview · poster
@@ -1347,7 +1346,7 @@ GitHub is the **source of truth**; we layer designs on top of it.
     parse fails (found immediately after deploying R198). **R200/R201** fix the same underlying focus-
     bridge failure shape (a `FocusRequester` never attached because its target composable was off-
     screen/torn down) — R200 in content-row back-return restore (could permanently strand Down-nav,
-    only an app restart recovered), R201 in the season picker (Klovn's 11-season, fully-watched case
+    only an app restart recovered), R201 in the season picker (Fjollerne's 11-season, fully-watched case
     auto-selected the last season, which the picker never scrolled itself to reach). **R202** is the
     project's own case-study bug: a misleading code comment attributed an inherit-mode channel's missing
     Continue Watching row to R59; the user pushed back, `git log -S` traced it to an R05 leftover R143

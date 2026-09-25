@@ -35,8 +35,7 @@ plus a byte-size comparison of every mockup against `design/` on `main`.
   mostly built, 4 research reports (Jellyfin 12.1 audit, unauthenticated-media upstream report, FOSS cast sender,
   tracks-at-end MKV), the root + Ravilo constitutions/plans, and a fresh `STATUS.md`. **Next free: 259 / R303.**
 - **Repo-side mockup edits adopted (11 files):** the dev team replaced every real show title with a fictional one
-  (Severance → *Offboarding*, Bluey → *Ruffy*, Klovn → *Fjollerne*, Silicon Valley → *Server Farm*, Red Notice →
-  *Blue Warrant*, KPop Demon Hunters → *JRock Ghost Chasers*…) and removed `ravilo-player.js`'s delivery pill
+  (the map itself is deliberately written down nowhere in the tree — `scripts/check-deanonymization.sh` holds hashes only) and removed `ravilo-player.js`'s delivery pill
   (R180). The sweep had missed 13 of our files; the same map was applied to them.
 - **Built to match what shipped:** `Ravilo Mobile.html` — R274's 74 dp bar (36 dp pill, 28 dp glyphs), R278's bar on
   pushed pages (account screens stop above it, any item leaves them), R277's Search (no keyboard on arrival, re-tap
@@ -615,7 +614,7 @@ direction: pull (repo → this project) — 31 commits since the 2026-09-02 sync
   because R216/R183 force an AVC transcode target, so a single column would silently record the wrong
   codec's ceiling for an HEVC file. **Open question 1 answered on-device 2026-09-02**: R216 has been live on
   the stue TV since 2026-08-30 (105 `playback_qoe` rows carrying its fields, `direct_play=0` on heavy
-  sessions, `dropped_frames=0` throughout) — the *Until Dawn* stutter was a Wholphin session, architecturally
+  sessions, `dropped_frames=0` throughout) — the *Till Daybreak* stutter was a Wholphin session, architecturally
   unreachable by any of this. Through Ravilo the file re-encodes and starts slowly; it does not stutter.
   `slow_lead`/`slow_tail_measured`/`slow_tail_expected` are the right copy, unblocked for translation.
   `basis: "measured"` is reachable in practice now (timer built) but unreached on any real device yet —
@@ -655,7 +654,7 @@ direction: pull (repo → this project) — 31 commits since the 2026-09-02 sync
 date: 2026-09-02T07:25:03Z
 direction: pull (repo → this project) — one research report, then a design pass
 - **Pulled `specs/research-reports/ravilo-per-device-decode-ceiling-warning-2026-09-02.md`** (new repo-side,
-  19 KB). Triggered by *Until Dawn (2025)* — a 82 Mbps 4K DV/HDR10+ REMUX — stuttering on stue TV and
+  19 KB). Triggered by *Till Daybreak (2025)* — a 82 Mbps 4K DV/HDR10+ REMUX — stuttering on stue TV and
   being abandoned mid-watch, the third stutter on that TV in three weeks. Owner's proposal: record what
   bitrate each device can take and warn on the Ravilo detail page before Play.
 - **What the report establishes:** the *measuring* half already exists (Phase 177 + R216, 2026-08-28 —
@@ -730,7 +729,7 @@ direction: pull (repo → this project)
     presentation with no new copy or visual language. Build note admits that signal is **not wired**
     (open question 7) — so a viewer can still see several seconds of frozen black frame with no chrome.
   - **181 — converge on Jellyfin's library, don't predict it** (partially implemented; FR-181-2 built).
-    Klovn S11E07 missing for 15h: premiere-year freshness bucketing filed a currently-airing 2005 show as
+    Fjollerne S11E07 missing for 15h: premiere-year freshness bucketing filed a currently-airing 2005 show as
     monthly-archive (9 of 16 provably-airing series were starved), nothing ever compared our item set to
     Jellyfin's, and the Jellyfin-based realtime ingest has delivered **nothing, ever** since phase 165
     (the WS listener subscribes to nothing and `LibraryChanged` is never sent — dead code reporting
