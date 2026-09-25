@@ -25,11 +25,12 @@ Handset only (**R256**'s `isHandset` seam); the TV's avatar dropdown is unchange
   (item 1; *this phone only* dropped).
 - Ten `profile.*` strings × en/da/fo (item 5), lexicon regenerated with `--update-lexicon` and committed;
   `ProfileStringsTest` (3): every key resolves in every language and none names Jellyfin (FR-R304-6).
-- No backend change. **Not yet seen on a phone:** the debug build (`1.38-13-g5541667e-dirty-debug`) is installed
-  on the Pixel 9 (`dev.jellystructure.ravilo.debug`), but the phone was behind its fingerprint lock at 03:06 and
-  nothing here unlocks a phone. Compile, the wasm web target and `ProfileStringsTest` are green; the acceptance
-  walk (avatar → page, pill under it, photo → photo screen, Sign out asks first, no Switch profile, no
-  *Jellyfin*) is the owner's first tap in the morning.
+- No backend change. **Verified on the Pixel 9 (debug build, 2026-09-25 07:18):** the avatar opens the page
+  and the pill slides under it with the ring; photo, name, *Admin*; My List (8) with *See all*; the three
+  Account rows; Sign out opens the sheet with FR-R304-3's copy; App language lists the three endonyms with the
+  check on the current one; Back from App language returns to Profile, and from Profile to Home. One bug found
+  and fixed on the way: Back with the sheet open went to Home (R275's ladder) instead of closing the sheet — the
+  screen now owns Back while the sheet is up.
 
 > *"When on Ravilo mobile and clicking on the profile picture, we get a super ugly and buggy dropdown. On
 > TV this dropdown is good. But on mobile it's not really working."*

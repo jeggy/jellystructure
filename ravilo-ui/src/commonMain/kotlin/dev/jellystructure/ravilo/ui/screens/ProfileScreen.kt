@@ -102,6 +102,10 @@ fun ProfileScreen(
             .onFailure { myList = emptyList() }
     }
     LaunchedEffect(scrollToTopTick) { if (scrollToTopTick > 0) scroll.animateScrollTo(0) }
+    // FR-R304-3 — Back with the sheet up closes the sheet, not the page (seen on the Pixel 9: R275's
+    // ladder took Back straight to Home with the sheet still open). Registered after RaviloApp's own
+    // handler, so it wins while enabled.
+    dev.jellystructure.ravilo.ui.PlatformBackHandler(enabled = showSignOut) { showSignOut = false }
 
     Box(Modifier.fillMaxSize().background(colors.background)) {
         Column(
