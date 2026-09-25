@@ -26,7 +26,12 @@ owner's ask and the mockups (`design/ravilo/ravilo-player.js/.css`, `ravilo-app.
 - **Receiver-only TV app (`ravilo-screen`):** `#ov-ident` top right inside `#overlay` (rides its show/hide),
   logo / plate / name / nothing per the same rule, the `<img>` `onerror` as the fallback; the loading screen
   shows the kicker. `ravilo-screen-tracks.spec.ts` step 8b asserts a film never shows a name there.
-- **Verified:** see below.
+- **Verified on the stue TV (release build `1.38-10-g87867b01`, 2026-09-25 02:45):** a film with a logo
+  shows it top right *and* its title bottom left (intended — the review's small correction); a series episode
+  shows the SERIES' logo top right with the kicker still `S1 · E1` and the episode's title below; nothing
+  with the chrome down; Back out of the player, the detail, the grid and into Home all sound; no
+  `VerifyError` in logcat (dex guard 241/250). The name fallback and the plate are covered by
+  `PlayerIdentTest`; the play push by `PlayPushResolverTest` and, once deployed, a `POST /api/remote/play`.
 
 > *"When in the media player and the item has a logo artwork available, it should be shown when the media
 > controls are shown (maybe top right). Especially for series, which currently do not show the title of the
