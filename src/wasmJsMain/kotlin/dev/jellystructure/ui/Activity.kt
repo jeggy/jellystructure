@@ -646,6 +646,15 @@ private fun jobTypeLabel(type: String): String = when (type) {
     "waveform_unit" -> "waveform for the intro & credits editor"
     // Phase 213
     "prewarm_subtitles" -> "subtitle pre-warm"
+    // Phase 254 / 255 / 260 / 262 — the read-only file checks ride the segments queue too; without a
+    // label their raw type sat beside the queue badge and read like a queue name.
+    "file_integrity_sweep" -> "whole-file verification (library)"
+    "file_integrity_title" -> "whole-file verification"
+    "track_coverage_sweep" -> "track-length check (library)"
+    "file_damage_repair" -> "replace damaged file from clean copy"
+    "file_lossy_repair" -> "lossy remux of damaged file"
+    "presize_artwork" -> "pre-size TV artwork"
+    "queue_emptied" -> "queue emptied"
     else -> type
 }
 
@@ -656,7 +665,7 @@ private fun laneBadge(lane: String): String = """<span class="badge" style="back
 private var lastJobsSummary: dev.jellystructure.api.JobsSummary? = null
 
 private fun laneHuman(lane: String): String = when (lane) {
-    "segments" -> "intro & credits detection"; "subtitles" -> "subtitle pre-warm"; else -> "media edits"
+    "segments" -> "file checks & intro/credits detection"; "subtitles" -> "subtitle pre-warm"; else -> "media edits"
 }
 
 /** Phase 260 (FR-260-4) — the "Empty" button on a lane with something waiting (hidden at 0). */
@@ -763,9 +772,10 @@ private fun renderJobsPanel(container: Element, s: dev.jellystructure.api.JobsSu
         <span class="chip ok" style="background:var(--ok-soft);">${media?.doneToday ?: 0} done today</span>
         ${laneEmptyButton("media", media?.queuedCount ?: 0)}${laneEmptiedNote(s, "media")}"""
     (container.querySelector("#jobs-worker-line-segments") as? HTMLElement)?.innerHTML = """
-        <span class="wk-dot ${if ((segments?.runningCount ?: 0) > 0) "busy" else "idle"}"></span><b>Intro &amp; credits detection</b>
+        <span class="wk-dot ${if ((segments?.runningCount ?: 0) > 0) "busy" else "idle"}"></span><b>File checks &amp; intro/credits detection</b>
+        <span class="muted tiny">(queue: segments)</span>
         <span class="badge ${if ((segments?.runningCount ?: 0) > 0) "warn" else ""}">${if ((segments?.runningCount ?: 0) > 0) "busy" else "idle"}</span>
-        <span class="muted tiny">shares $poolSize job worker${if (poolSize == 1) "" else "s"} with the other queues · pauses while a TV is playing · low CPU/IO priority</span>
+        <span class="muted tiny">shares $poolSize job worker${if (poolSize == 1) "" else "s"} with the other queues · whole-file verification, track lengths, waveforms and intro/credits detection · pauses while a TV is playing when <i>Defer scans while a TV is watching</i> is on · low CPU/IO priority</span>
         <span class="spacer"></span>
         <span class="chip"><b>${segments?.runningCount ?: 0}</b> running</span>
         <span class="chip"><b>${segments?.queuedCount ?: 0}</b> queued</span>
@@ -774,7 +784,7 @@ private fun renderJobsPanel(container: Element, s: dev.jellystructure.api.JobsSu
     (container.querySelector("#jobs-worker-line-subtitles") as? HTMLElement)?.innerHTML = """
         <span class="wk-dot ${if ((subtitles?.runningCount ?: 0) > 0) "busy" else "idle"}"></span><b>Subtitle pre-warm</b>
         <span class="badge ${if ((subtitles?.runningCount ?: 0) > 0) "warn" else ""}">${if ((subtitles?.runningCount ?: 0) > 0) "busy" else "idle"}</span>
-        <span class="muted tiny">shares $poolSize job worker${if (poolSize == 1) "" else "s"} with the other queues · pauses while a TV is playing, and between every stream</span>
+        <span class="muted tiny">shares $poolSize job worker${if (poolSize == 1) "" else "s"} with the other queues · pauses while a TV is playing when <i>Defer scans while a TV is watching</i> is on, and between every stream</span>
         <span class="spacer"></span>
         <span class="chip"><b>${subtitles?.runningCount ?: 0}</b> running</span>
         <span class="chip"><b>${subtitles?.queuedCount ?: 0}</b> queued</span>
