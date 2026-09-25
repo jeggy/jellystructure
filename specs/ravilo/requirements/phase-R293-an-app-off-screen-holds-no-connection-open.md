@@ -52,6 +52,13 @@ Complements **R292**, which applies the same rule to the player.
   server logged 1006 until the close moved inside the session), and the Play build and the debug build are
   two packages on a phone (`dev.jellystructure.ravilo` vs `….debug`) — the first phone run exercised the
   installed 1.36 by mistake and reproduced the 1006.
+- **The keyguard (found on the Pixel 9 the same morning, fixed in `AppOnScreen.kt`):** waking a locked phone
+  starts the activity for ~2 s before the keyguard stops it again (`ON_START` · connect · `ON_STOP` — one
+  zero-second socket per wake), and the unlock's own `ON_START` still reports the keyguard as locked. So an
+  `ON_START` behind the keyguard is not "on screen"; `ON_RESUME` (which only fires once the keyguard is gone)
+  and `ACTION_USER_PRESENT` are. Verified: launch behind the lock → nothing; screen-off → `1000 background`;
+  wake → nothing (`SCREEN_ON → not yet`); unlock → exactly one connect with the header and the bridge kept. A
+  TV has no keyguard, so its wake path is unchanged. The seam logs each decision under the `R293` logcat tag.
 - **Tests:** `ReconnectBackoffTest` (3: the 1…60 s sequence, the five-minute reset, the jitter bound),
   `EventsCatchUpTest` (5: first open, quick reconnect, moved rev / long gap, failed check, the command gate)
   and `EventsSocketLogTest` (4) — acceptance 4.
