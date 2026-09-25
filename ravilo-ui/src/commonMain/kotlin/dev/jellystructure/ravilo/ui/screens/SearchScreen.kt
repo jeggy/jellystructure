@@ -57,6 +57,7 @@ import dev.jellystructure.ravilo.ui.components.Tile
 import dev.jellystructure.ravilo.ui.focus.backToTopOnBack
 import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.theme.LocalHandset
+import dev.jellystructure.ravilo.ui.components.AppBar
 import dev.jellystructure.ravilo.ui.theme.RaviloDimens
 import dev.jellystructure.ravilo.ui.theme.raviloHPad
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
@@ -212,21 +213,26 @@ fun SearchScreen(
     }
 
     // FR-R277-2 — the bottom bar's own Search item, tapped while already here.
+    // R267 (FR-R267-9) — and the results scroll back to their top; the query is kept. The scroll runs in
+    // the screen's own scope: consuming the flag restarts this effect, which would cancel it mid-scroll
+    // (seen on the Pixel 9 — the keyboard came up and the grid stayed where it was).
     LaunchedEffect(focusInputOnEntry) {
         if (focusInputOnEntry) {
+            scope.launch { runCatching { gridState.animateScrollToItem(0) } }
             focusInput()
             onFocusInputConsumed()
         }
     }
 
+    Box(Modifier.fillMaxSize().background(colors.background)) {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(colors.background)
-            // R277 (FR-R277-4) — the gap is for the app bar this screen is drawn under. On a handset
-            // R267 gave Search no top row at all, so reserving 84 dp for it wastes the top of the one
-            // page with the least room. The safe-area inset above this is untouched.
-            .padding(top = if (LocalHandset.current) 16.dp else RaviloDimens.appBarHeight + 24.dp)
+            // The gap is for the app bar this screen is drawn under. R277 (FR-R277-4) cut it to 16 dp on
+            // a handset while Search had no top row; R267's open item closed 2026-09-25 by giving it
+            // the same brand · cast row as every other page (FR-R267-2, and the mockup's persistent
+            // row), so the gap is the ordinary one again on every platform.
+            .padding(top = RaviloDimens.appBarHeight + 24.dp)
             // Back from results grid → text field + IME; Back from text field → pops screen.
             .backToTopOnBack(
                 atTop = { !inGrid },
@@ -382,5 +388,9 @@ fun SearchScreen(
                 }
             }
         }
+    }
+    // R267 (FR-R267-2) — the handset's top row: brand · cast, as on every other page. The TV keeps no
+    // bar here (unchanged), and the phone's search and profile live in the bottom bar.
+    if (handset) AppBar()
     }
 }

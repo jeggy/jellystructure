@@ -26,6 +26,8 @@ that Pixel the same day**. Not dev-reviewed.
   46 dp touch floor without moving its baseline. The gate is not about pointers: `clickable` is
   focusable, and an ungated one would have added a node to the TV's D-pad graph.
 - **FR-R277-4** — top padding is `16.dp` on a handset, `appBarHeight + 24.dp` everywhere else.
+  *Superseded 2026-09-25 by R267's Search top row: the handset has the bar again, so the padding is
+  `appBarHeight + 24.dp` everywhere.*
 
 ### Verified on the Pixel 9 Pro, 2026-09-20 (debug)
 

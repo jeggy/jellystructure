@@ -9,9 +9,10 @@
 
 ## Status
 
-`⚠ Partial` — design-authored 2026-09-18, dev-reviewed 2026-09-19 against `main` `dcb97f2c`, **built
-2026-09-20 and verified on a real Pixel 9** (debug build). The structure ships; three refinements and
-FR-R267-9's scroll-to-top are listed as not done at the foot.
+`✓ Built` — design-authored 2026-09-18, dev-reviewed 2026-09-19 against `main` `dcb97f2c`, **built
+2026-09-20 and verified on a real Pixel 9** (debug build). **Finished 2026-09-25**: FR-R267-9's
+scroll-to-top and Search's top row built and verified on the Pixel 9; the other two owner items were
+closed by R304 and R274 (see *Finished (2026-09-25)* below).
 
 ⚠ **Two of this phase's own Status claims were false**, exactly as the dev review found, and both are
 now corrected: it needed **backend changes** (FR-R267-5c) and it needed **new strings**.
@@ -65,7 +66,33 @@ Discover → Profile (sheet opens, **pill stays on Discover**) → re-tap Profil
 Library and **empty everywhere else**. Discover also confirmed **R268** on device: it opens on
 *Networks* with the strip scrolling.
 
-### Not built, and three things the owner should look at
+### Finished (2026-09-25)
+
+- **FR-R267-9 — re-tapping the page you are on scrolls it to its top.** One counter in `RaviloApp`
+  (`reselectTick`), bumped when the bar's item for the page already on screen is tapped, read by each
+  page through one helper, `OnReselect`, which fires only when the counter changes **after the page
+  composed**. That rule is the point: a counter compared against zero (R304's first form on Profile,
+  now replaced) fires again when Back returns to a page that was re-tapped before it was left, and
+  scrolls R295's restored position straight back to the top. Per page: Home scrolls the store-held
+  list (R137); Library scrolls its grid and closes the type menu, keeping the type; Discover returns to
+  the first available segment and scrolls it to the top (the scroll matters when the viewer is
+  already on that segment, where the destination does not change at all); Search puts the caret back
+  with the keyboard up and scrolls the results to the top, keeping the query; Profile scrolls to top.
+  **Found on the Pixel 9:** Search's first build raised the keyboard and left the grid where it was —
+  consuming the re-tap flag restarts the effect that was scrolling, which cancelled it. The scroll now
+  runs in the screen's own scope.
+- **Search's top row** (FR-R267-2; R277 FR-R277-4 left it open as this phase's item): brand · cast, as
+  on every other page and as the mockup's persistent row draws it. The handset-only 16 dp top padding
+  R277 used while there was no row is the ordinary `appBarHeight + 24 dp` again. TV unchanged.
+- **The profile menu** — superseded by R304: Profile is a page on a phone, with no menu to anchor.
+- **The bar over the keyboard** — decided and built by R274: the keyboard covers the bar.
+
+**Verified on the Pixel 9 Pro (debug, 2026-09-25):** Home, Library, Discover (from Networks and from
+Genres), Search and Profile each scrolled down and re-tapped → top (Search confirmed by a scroll-up
+that moved nothing); Library's type menu open → Library tapped → closed, type kept; re-tap Home, scroll,
+open a title, Back → Home comes back where it was, not at the top.
+
+### Not built at the time (2026-09-20), kept as the record
 
 - **FR-R267-9's scroll-to-top on re-tap** is NOT implemented. The navigation half is (Discover
   re-tap returns to the first available segment — written as *first available*, per review item 7, so

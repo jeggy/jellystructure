@@ -77,6 +77,8 @@ fun DiscoverScreen(
     onSearchSeerr: () -> Unit,
     taxonomyStore: TaxonomyStore,
     onTileSelect: (segment: DiscoverSegment, item: FacetItem, crumb: String) -> Unit,
+    /** R267 (FR-R267-9) — the phone's bottom-bar Discover item tapped while on Discover. */
+    reselectTick: Int = 0,
 ) {
     val colors = RaviloTheme.colors
     val navItems = raviloNavItems()
@@ -95,6 +97,11 @@ fun DiscoverScreen(
         DiscoverSegment.COMING_SOON -> upcomingStore?.listState ?: requestListState
         DiscoverSegment.REQUEST -> requestListState
         else -> taxonomyListState
+    }
+    // R267 (FR-R267-9) — a re-tap scrolls the segment on screen to its top. RaviloApp moves to the first
+    // available segment in the same tap, so this runs against that segment's own state.
+    dev.jellystructure.ravilo.ui.components.OnReselect(reselectTick) {
+        runCatching { activeListState.animateScrollToItem(0) }
     }
     val activeColumnFR = when (segment) {
         DiscoverSegment.COMING_SOON -> upcomingColumnFR

@@ -150,6 +150,21 @@ fun RaviloBottomNav(
 /** The five items, in the order they are drawn. Search is deliberately the middle one. */
 enum class BottomNavItem { HOME, LIBRARY, SEARCH, DISCOVER, PROFILE }
 
+/**
+ * R267 (FR-R267-9) — runs [onReselect] each time the bar's item for the page on screen is tapped
+ * again, i.e. each time [tick] changes **after this page composed**.
+ *
+ * A page composed with a tick already past zero is not being re-tapped: that is Back to a page that
+ * was re-tapped before it was left, and firing then would scroll the position R295 just restored
+ * straight back to the top. Comparing against the tick the page was composed with, rather than
+ * against zero, is what tells the two apart.
+ */
+@Composable
+fun OnReselect(tick: Int, onReselect: suspend () -> Unit) {
+    val composedWith = remember { tick }
+    LaunchedEffect(tick) { if (tick != composedWith) onReselect() }
+}
+
 @Composable
 private fun BottomNavCell(
     item: BottomNavItem,

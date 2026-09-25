@@ -17,6 +17,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -107,6 +108,7 @@ import androidx.compose.foundation.layout.padding
 import dev.jellystructure.ravilo.ui.theme.RaviloDimens
 import dev.jellystructure.ravilo.ui.components.BottomNavItem
 import dev.jellystructure.ravilo.ui.components.LibraryTypePill
+import dev.jellystructure.ravilo.ui.components.OnReselect
 import dev.jellystructure.ravilo.ui.components.RaviloBottomNav
 import dev.jellystructure.ravilo.ui.components.ProfileMenu
 import dev.jellystructure.ravilo.ui.components.ServerMessageHost
@@ -292,10 +294,10 @@ private sealed class Dest {
     ) : Dest()
     data class Settings(val displayName: String) : Dest()
     // R304 (FR-R304-1) — the phone's Profile PAGE: the fifth bottom-bar item, on the stack like the other
-    // four, so Back, the pill and scroll-to-top all work the way they do everywhere else. [scrollTick] is
-    // bumped by a re-tap of the bar's item (FR-R304-1: tap-on-active scrolls to top). Handset only — the
-    // TV keeps R170's dropdown.
-    data class Profile(val displayName: String, val scrollTick: Int = 0) : Dest()
+    // four, so Back, the pill and scroll-to-top all work the way they do everywhere else. A re-tap of the
+    // bar's item scrolls it to the top through the same [reselectTick] as the other four (FR-R304-1,
+    // R267 FR-R267-9). Handset only — the TV keeps R170's dropdown.
+    data class Profile(val displayName: String) : Dest()
     // R304 (FR-R304-4) — App language, pushed from Profile; the per-viewer setting R161/R162 shipped.
     data class AppLanguage(val displayName: String) : Dest()
     // R234 (FR-R234-1) — phone/web only; the caller gates the ProfileMenu row that reaches this on
@@ -543,6 +545,11 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
         // R170 — the avatar opens this dropdown (My List/Settings/Switch profile/Unpair) instead of
         // pushing straight to the profile picker.
         var profileMenuOpen by remember { mutableStateOf(false) }
+        // R267 (FR-R267-9) — bumped when the bottom bar's item for the page already on screen is tapped
+        // again. One counter for all five pages: each reads it through OnReselect, which ignores the
+        // value a page was composed with, so a page reached by Back never mistakes an old re-tap for a
+        // new one. Never changes on a TV (no bottom bar there).
+        var reselectTick by remember { mutableIntStateOf(0) }
 
         // R58: first-ever launch — initialDest called setActive() after activeUserId was already
         // initialized to null; sync the value so the WS LaunchedEffect fires and self-heals.
@@ -1008,6 +1015,9 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                 // which also re-pulled skin/lang on every return, work config_changed already covers.
                 LaunchedEffect(Unit) { store.onReturn() }
                 DisposableEffect(Unit) { onDispose { store.onLeave() } }
+                // R267 (FR-R267-9) — re-tapping Home scrolls the page to its top. The list state is the
+                // store's own (R137), so this needs nothing from HomeScreen.
+                OnReselect(reselectTick) { runCatching { store.listState.animateScrollToItem(0) } }
                 // R212 — write through the combined feed + display-settings snapshot whenever Home has
                 // fresh content, so the next cold start can seed instantly instead of a bare shimmer.
                 // Always an exact copy of what's already on screen — never computed/derived.
@@ -1169,6 +1179,9 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                 LaunchedEffect(Unit) {
                     kindCounts = runCatching { apiClient.getFacets(kind = null).kindCounts }.getOrDefault(emptyMap())
                 }
+                // R267 (FR-R267-9) — re-tapping Library scrolls the grid to its top (the pill below
+                // closes its menu on the same tick); the type itself is kept.
+                OnReselect(reselectTick) { runCatching { store.gridState.animateScrollToItem(0) } }
                 SeededBrowseScreen(
                     store = store,
                     title = str("nav.library"),
@@ -1184,6 +1197,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                         LibraryTypePill(
                             current = kind,
                             counts = kindCounts,
+                            closeTick = reselectTick,
                             // The choice is a browse control, not a setting: it rides the destination
                             // and does not persist across app restarts.
                             onSelect = { replaceTop(Dest.Browse(it, dest.displayName)) },
@@ -1308,6 +1322,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                     onSearchSeerr = { push(Dest.SeerrSearch(dest.displayName)) },
                     taxonomyStore = taxonomyStore,
                     onTileSelect = { seg, item, crumb -> openTaxonomyBrowse(seg, item, crumb, dest.displayName) },
+                    reselectTick = reselectTick,
                 )
             }
 
@@ -1571,7 +1586,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                     // R191's shape: this one profile is revoked/forgotten; another cached profile goes to
                     // the picker, none goes to Login.
                     onSignedOut = { resetTo(if (MultiTokenStore.getAll().isEmpty()) Dest.Login else Dest.ProfilePicker) },
-                    scrollToTopTick = dest.scrollTick,
+                    scrollToTopTick = reselectTick,
                 )
             }
 
@@ -1658,10 +1673,13 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                             // R304 (FR-R304-1) — Profile is a PAGE on a phone (R267 FR-R267-5d superseded):
                             // it takes the pill, and a re-tap scrolls it to the top like the other four.
                             BottomNavItem.PROFILE ->
-                                if (alreadyHere) replaceTop((dest as Dest.Profile).copy(scrollTick = dest.scrollTick + 1))
+                                if (alreadyHere) reselectTick++
                                 else resetTo(Dest.Profile(destDisplayName(dest)))
+                            // FR-R267-9 — a re-tap scrolls the page to its top (OnReselect in each
+                            // page's branch below); it never rebuilds the page or reloads it.
                             BottomNavItem.HOME ->
-                                if (!alreadyHere) resetTo(Dest.Home(destDisplayName(dest)))
+                                if (alreadyHere) reselectTick++
+                                else resetTo(Dest.Home(destDisplayName(dest)))
                             // FR-R267-5b — Movies and Series are one page on a phone. This is a
                             // presentation change, not a new screen: Dest.Browse is already one screen
                             // with a type parameter, so Library is that screen with its parameter
@@ -1671,8 +1689,11 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                             // and Back would then return there instead of following R275's ladder. On
                             // one of the four pages the stack is already size 1, so the two are the
                             // same act.
+                            // FR-R267-9 — a re-tap keeps the type: a viewer who filtered to Series and
+                            // scrolled down wants the top of Series.
                             BottomNavItem.LIBRARY ->
-                                if (!alreadyHere) resetTo(Dest.Browse(BrowseKind.ALL, destDisplayName(dest)))
+                                if (alreadyHere) reselectTick++
+                                else resetTo(Dest.Browse(BrowseKind.ALL, destDisplayName(dest)))
                             // FR-R267-5a — search is a PAGE on a phone, not the TV's right-cluster
                             // magnifier: a phone has a keyboard and a thumb, so it is one of the
                             // places a viewer goes.
@@ -1688,11 +1709,15 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                             // cannot disagree. This replaces R170's step-to-the-next-segment on the
                             // phone only; R170 stands on the TV, where the nav item is reached by
                             // D-pad and stepping is the cheaper gesture.
-                            BottomNavItem.DISCOVER ->
+                            // The tick also scrolls the segment's content to its top: when the viewer
+                            // is already on the first segment the destination does not change at all.
+                            BottomNavItem.DISCOVER -> {
+                                if (alreadyHere) reselectTick++
                                 resetTo(Dest.Discover(
                                     destDisplayName(dest),
                                     defaultDiscoverSegment(upcomingAvailable, discoverAvailable),
                                 ))
+                            }
                         }
                     },
                 )

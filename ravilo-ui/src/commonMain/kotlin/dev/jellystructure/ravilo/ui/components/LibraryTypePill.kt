@@ -58,9 +58,12 @@ fun LibraryTypePill(
     current: BrowseKind,
     counts: Map<String, Int>,
     onSelect: (BrowseKind) -> Unit,
+    /** R267 (FR-R267-9) — re-tapping Library closes the menu if it is open (the type is kept). */
+    closeTick: Int = 0,
 ) {
     val colors = RaviloTheme.colors
     var open by remember { mutableStateOf(false) }
+    OnReselect(closeTick) { open = false }
     val types = listOf(BrowseKind.ALL, BrowseKind.MOVIES, BrowseKind.SERIES, BrowseKind.MUSIC)
 
     // The anchor wraps its content, so the popup below is positioned relative to the PILL rather
