@@ -3,8 +3,11 @@
 ## Status
 
 `Planned` — written 2026-09-25 from the owner's ask and the mockup in `design/ravilo/Ravilo Mobile.html`
-(`?tab=profile`), drawn the same day; owner answered the design questions before this was written. Not
-dev-reviewed. Not built. Handset only (**R256**'s `isHandset` seam); the TV's avatar dropdown is
+(`?tab=profile`), drawn the same day; owner answered the design questions before this was written.
+**Dev-reviewed 2026-09-25 against `main` `e7991df3`** (see §Dev review at the bottom: open question 1 closes — the
+viewer-side language write already exists and is per viewer; FR-R304-5 deletes more than it lists, because
+the phone's Settings screen holds sign-out, unpair and the viewer settings too; the keys follow R279's
+`profile.*` namespace; My List is the browse kind that already exists). Not built. Handset only (**R256**'s `isHandset` seam); the TV's avatar dropdown is
 unchanged. Uses **R267**'s bottom bar, **187**'s photo and password screens, **R161/R162**'s viewer
 language.
 
@@ -60,11 +63,56 @@ the role reads *Admin*, the sign-out copy says *your name and password*.
    reuse the existing per-viewer setting and drop *this phone only* from the row — one setting, not two. If
    the owner really means per-device, it is a new local preference that R279's resolution order must rank
    above `RaviloConfig.uiLanguage`.
+   **Closed — dev review item 1: per viewer, through the write that exists.** `SettingsScreen.saveUiLanguage`
+   (`:111-118`) already calls `putViewerSettings(uiLanguage)` → `applyViewerSettings` (`TvRoutes.kt:1223`,
+   `RaviloConfigService.kt:245`), remembers it in `LastLanguage`, and the config re-pull re-sets
+   `WithLocale`. The phone's row calls the same thing; *this phone only* comes off the mockup.
 2. My List on the phone: the phone had no My List view before (the old menu sent it to Discover). Confirm
    `GET /api/tv/mylist` (or whatever the TV reads) serves the phone unchanged.
+   **Closed — dev review item 4:** My List is `BrowseKind.MY_LIST("mylist")` (`BrowseScreen.kt:70-74`), a
+   kind of the shared browse page — `Dest.Browse(BrowseKind.MY_LIST, …)` is the *See all*, and the row on
+   the Profile page reads the same endpoint with a small limit.
 
 ## Acceptance
 
 On a handset the avatar opens a page, not a menu; the pill sits under it; the photo opens the photo
 screen; Sign out asks first; there is no Switch profile and no *Jellyfin* anywhere on the page. On a TV
 nothing changes.
+
+## Dev review (2026-09-25, against `main` `e7991df3`)
+
+The complaint is where the spec says: on the phone the avatar opens `profileMenuOpen`, an overlay that is
+not part of the navigation stack (`RaviloApp.kt:457`, `:924`), which is why Back needed its own
+special-casing (`:748-768`) and why it closes on scroll. Five items.
+
+1. **Open question 1 closes: reuse the per-viewer setting.** The viewer-side write exists and is what the
+   TV's Settings already uses: `saveUiLanguage` → `putViewerSettings(uiLanguage)` (`SettingsScreen.kt:111-118`)
+   → `applyViewerSettings` (`TvRoutes.kt:1223`, `RaviloConfigService.kt:245-253`), with `LastLanguage`
+   remembering it across sign-out and `WithLocale` redrawing on the config re-pull (`:110`). The phone's
+   *App language* row is that call; *Menus redraw in place* is already true. No new preference, no
+   change to R279's ladder.
+2. **FR-R304-5 deletes more than it names.** The phone's Settings screen does not hold "only photo and
+   password": it holds sign-out (`SettingsScreen.kt:269-277`), unpair (`:284-286`, `:362-364`), the
+   language (`:111`) and the viewer settings `applyViewerSettings` accepts — skin, continue-progress,
+   autoplay-next, tile shape (`RaviloConfigService.kt:245`). Deleting the screen orphans those. Either the
+   Profile page gains a *Settings* row that pushes the existing screen (least work, keeps R229/R234's
+   phone layout), or the FR lists each setting and where it now lives. Lean: the row.
+3. **Sign-out's copy is true by construction.** `signOutSession` is `DELETE /api/tv/sessions/{userId}`
+   (`TvApiClient.kt:463-464`) against this device's token; tokens are per `(device, user)` (141), so the
+   TVs really do stay signed in. The role label is available: the session carries `is_admin`
+   (`Models.kt:48`). Nothing to build for FR-R304-6 beyond the strings.
+4. **My List is the browse kind that already exists** (`BrowseKind.MY_LIST`, `BrowseScreen.kt:74`);
+   *See all* pushes it, the Profile row reads it with a limit. Open question 2 closes.
+5. **Keys follow R279's namespace, and the lexicon rides with them.** `i18n/en.json` has 365 dotted keys
+   (`profile.who`, `profile.switch`, …) and six legacy underscored ones; the ten new strings are
+   `profile.mylist_empty`, `profile.account`, … not `pf_*`. R288's `i18n/lexicon/*.txt` is ground truth
+   for the Faroese and Danish spellings — regenerate with `--update-lexicon` and commit it with the
+   strings, or `check-i18n-spelling.sh` goes red.
+
+**Small corrections.** The TV's dropdown is untouched because the gate is `isHandset` (R256), not the
+window: a narrow browser is not a phone and keeps the TV path. FR-R304-2's *Admin* under the name reads
+from `is_admin`, never from a Jellyfin policy fetch.
+
+**Net effect.** A `Dest.Profile` page on the handset stack replacing `profileMenuOpen` there, a Settings
+row rather than a deleted screen, the language row on the existing write, ten `profile.*` strings ×
+three languages plus the lexicon, and the avatar ring in the bottom bar. No backend change.
