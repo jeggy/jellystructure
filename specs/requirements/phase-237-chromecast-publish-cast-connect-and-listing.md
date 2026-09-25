@@ -10,8 +10,14 @@
 
 ## Status
 
-`⚠ Partial` — design-authored 2026-09-18, dev-reviewed 2026-09-19 against `main` `dcb97f2c`, **the
+`✓ Built` — design-authored 2026-09-18, dev-reviewed 2026-09-19 against `main` `dcb97f2c`, **the
 admin-facing half built 2026-09-20.** Renumbered from design drafts 228 → 235 → 237.
+
+**Closed 2026-09-25 (owner decision):** the one line this phase could not pass, acceptance 6 (*the
+registered state shows the "opens Ravilo itself" line only once a native launch is on record*), has
+moved to **R266** as its acceptance 8 — it tests R266's launch observation, not this card, and
+FR-237-7's status line already moved there on 2026-09-19. Everything this phase still owns is built and
+its acceptance 1–5 and 7 are covered by the card and `tests/e2e/cast-icon.spec.ts`. R266 stays `Planned`.
 
 **FR-237-7's Cast Connect status line, and everything Cast Connect actually does, have moved to
 R266** — dev review items 1 and 2, the same carve-out shape 236's review used for FR-236-11. FR-237-7's
@@ -176,8 +182,8 @@ that a TV opens Ravilo rather than the receiver.
    byte-identical across requests (a build artefact, not a render).
 5. With `public_url` unset, step 3's URL row shows *Set your public address above first* (227) and the
    icon Download **still works**.
-6. The registered state shows the *opens Ravilo itself* line only when R266's enrolment has recorded
-   at least one native launch; never on the strength of the console's settings.
+6. *Moved to R266 (acceptance 8) on 2026-09-25* — the *opens Ravilo itself* line depends on R266's
+   launch observation, which does not exist yet.
 7. No string added by this phase names any product except Google.
 
 ## Source references

@@ -137,6 +137,9 @@ are unchanged.
 6. Exiting the player on the TV (Back, or a phase 180 teardown) ends the Cast session; the phone's
    mini bar goes away per R245's silent outcome.
 7. Zero new keys in `ravilo-i18n.js`.
+8. *(Moved from 237's acceptance 6, 2026-09-25.)* Settings → Connections → Chromecast's registered
+   state shows the *Living room TV opens Ravilo itself when cast to* line only when at least one
+   `android_tv` launch is on record (FR-R266-6), never on the strength of the console's settings.
 
 ## Source references
 
