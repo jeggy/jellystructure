@@ -40,6 +40,18 @@ Complements **R292**, which applies the same rule to the player.
   for Android and native, true for the two browser targets — gates one `wsUrl()`/`wsAuth()` pair used by
   both sockets. `/api/remote/events` reads `Authorization: Bearer` too. `scripts/check-events-query-token.sh`
   (acceptance 5) fences it in CI.
+- **Device trials (acceptance 3), 2026-09-25.** Stue TV (local release build): HOME → `closed … open=9s
+  cause=client close 1000 background` within 3 s, zero server lines in the next 25 s, relaunch → `connected` +
+  `previous sockets: 9;close:1000:background;created;on;wifi+ok;31` + `bridge kept` within 4 s; standby
+  (`KEYCODE_SLEEP`) → the same close with the probe reporting the display off, wake → the same return; a
+  100 s absence ends the Jellyfin session at exactly 90 s and the return opens a fresh bridge. Pixel 9 Pro
+  (debug build, Android 17): HOME → `client close 1000 background` within 3 s, zero lines while off screen,
+  relaunch → header (`…;created;on;wifi+ok;37`) + `bridge kept`; screen-off → the same close within 4 s. The
+  screen-on return on the phone re-locks behind the fingerprint, so only the TV exercised that half. **Two
+  things learned on the way:** cancelling a Ktor client `webSocket {}` sends no close frame at all (the
+  server logged 1006 until the close moved inside the session), and the Play build and the debug build are
+  two packages on a phone (`dev.jellystructure.ravilo` vs `….debug`) — the first phone run exercised the
+  installed 1.36 by mistake and reproduced the 1006.
 - **Tests:** `ReconnectBackoffTest` (3: the 1…60 s sequence, the five-minute reset, the jitter bound),
   `EventsCatchUpTest` (5: first open, quick reconnect, moved rev / long gap, failed check, the command gate)
   and `EventsSocketLogTest` (4) — acceptance 4.
