@@ -355,6 +355,13 @@ X-JS-Api-Key: jsk_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx</pre>
                 <input id="scan-episode-cap" class="input" type="number" min="0" max="100000" style="width:90px">
                 <span class="hint"><strong>0 = unlimited</strong> — probe every episode. Set a positive number to sample only that many files per series on a full scan (very large libraries). The on-demand "Re-probe episode files" button always probes everything.</span>
               </div>
+              <div class="field">
+                <label>Defer while a TV is watching</label>
+                <div style="display:flex;align-items:center;gap:12px">
+                  <span id="defer-while-playing-toggle" class="toggle" style="cursor:pointer;flex-shrink:0"></span>
+                  <span class="hint" style="margin:0">Scheduled scans/pipeline runs and realtime ingest (never a manual "Scan library" click) wait for playback to stop before the heavy steps (file probing, artwork fetch), and so do the background queue jobs — whole-file verification, track-length checks, intro/credits detection and subtitle pre-warm (Phase 178/262). Off: they all run through playback. Takes effect at once, no re-queue needed. A single-user household and a many-viewer one may want opposite answers.</span>
+                </div>
+              </div>
               <div id="scan-threads-restart-banner" style="display:none;margin-top:10px;padding:8px 12px;border-radius:6px;background:var(--warn-fill,#7c5100);color:var(--warn-ink,#fff);font-size:.83rem"></div>
               <div class="row center" style="justify-content:space-between;margin-top:12px;">
                 <div>
@@ -643,15 +650,6 @@ X-JS-Api-Key: jsk_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx</pre>
                 <label>TV image cache size (MB)</label>
                 <input id="tv-image-cache" class="input" type="number" min="0" max="1000000" style="width:110px">
                 <span class="hint">Disk cache for Ravilo TV artwork (the image proxy). <strong>0 = unlimited.</strong> Once over the cap the oldest images are evicted. Applies live — no restart.</span>
-              </div>
-              <hr class="dash">
-              <div style="font-size:.83rem;font-weight:500;margin:14px 0 8px;color:var(--ink-soft)">Playback-aware background work (Phase 178)</div>
-              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:2px">
-                <div>
-                  <span style="font-size:.9rem">Defer scans while a TV is watching</span>
-                  <div class="hint" style="margin-top:2px">Scheduled scans/pipeline runs and realtime ingest (never a manual "Scan library" click) wait for playback to stop before starting the heavy steps (file probing, artwork fetch), and so do the background queue jobs — whole-file verification, track-length checks, intro/credits detection and subtitle pre-warm (Phase 262). Off: they all run through playback. Takes effect at once, no re-queue needed. A single-user household and a many-viewer one may want opposite answers.</div>
-                </div>
-                <span id="defer-while-playing-toggle" class="toggle" style="cursor:pointer;flex-shrink:0;margin-left:12px"></span>
               </div>
               <hr class="dash">
               <div style="font-size:.83rem;font-weight:500;margin:14px 0 8px;color:var(--ink-soft)">Memory budget calculator (Phase 215)</div>

@@ -33,6 +33,9 @@
   `deferWhilePlaying = true` as before (they are background work), and the decision above is what makes
   the setting count. No producer reads the setting itself, so a later change of mind is one line, in one
   place.
+- **FR-262-3a — the toggle lives with the worker settings.** Settings → Libraries → *Scanning*, beside Scan
+  workers and Job workers (owner, 2026-09-25: *"move this toggle into the libraries configuration, so it's
+  alongside all the worker settings"*), no longer under Advanced. Same key, same behaviour.
 - **FR-262-3 — the toggle says what it covers.** Its hint on the Settings page names the background
   queue jobs (whole-file verification, track lengths, intro/credits detection, subtitle pre-warm) beside
   the scans it already named, and says the change takes effect at once.
