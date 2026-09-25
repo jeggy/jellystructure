@@ -3,6 +3,14 @@ package dev.jellystructure.ravilo.ui.components
 import dev.jellystructure.ravilo.ui.isTvPlatform
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
+import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.ClipOp
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
@@ -28,6 +36,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -53,9 +62,9 @@ import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.seams.ActiveCastSender
 import dev.jellystructure.ravilo.ui.seams.CastLinkState
 import dev.jellystructure.ravilo.ui.screens.castMiniBarVisible
-import dev.jellystructure.ravilo.ui.seams.PlatformCastButton
 import dev.jellystructure.ravilo.ui.seams.RemoteImage
 import dev.jellystructure.ravilo.ui.seams.safeAreaPadding
+import dev.jellystructure.ravilo.ui.theme.RaviloDimens
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import dev.jellystructure.ravilo.ui.theme.Sora
 import dev.jellystructure.shared.tv.CastCommand
@@ -67,6 +76,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 
@@ -84,8 +94,19 @@ class CastController(
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
-    var appId: String? = null
-        set(value) { field = value; if (value != null) sender.setAppId(value) }
+    // Snapshot state, not plain fields: the sheet's route listener keys on [appId], and a plain field
+    // set after the config loads never recomposed it — the passive listener then only registered once
+    // the sheet was opened, so the SDK could not resume a session at start-up.
+    private var appIdState by mutableStateOf<String?>(null)
+    var appId: String?
+        get() = appIdState
+        set(value) { appIdState = value; if (value != null) sender.setAppId(value) }
+    /** R265 (dev review item 5) — the server's `RaviloConfig.screens.enabled`: the sheet lists screens
+     *  and offers *Add a TV* only when this is true, exactly as [appId] gates the Chromecast rows. */
+    var screensEnabled by mutableStateOf(false)
+    /** The active viewer's (Jellyfin) user id — what a screen's `session_user_id` is compared with to
+     *  tell *mine* (Playing, tappable) from *someone else's* (Busy, not tappable) — FR-R270-3. */
+    var userId by mutableStateOf<String?>(null)
 
     val connected: Boolean get() = sender.link.value == CastLinkState.CONNECTED
 
@@ -136,6 +157,30 @@ class CastController(
         sender.screen.playItem(itemId, startPositionMs ?: 0)
     }
 
+    /**
+     * R265 (FR-R265-3) — a Chromecast row in Ravilo's own sheet. A linked screen is unlinked first (dev
+     * review item 4: at most one linked at a time) — unlinked, not stopped: the phone stops watching
+     * that TV, the TV keeps playing. The SDK then starts the session from the selected route exactly as
+     * its own dialog would, and the in-player hand-off (FR-R245-4) fires on the connection as before.
+     */
+    fun castOnChromecast(route: dev.jellystructure.ravilo.ui.seams.CastRoute) {
+        if (sender.screen.link.value != CastLinkState.NONE) sender.screen.unlink()
+        route.select()
+    }
+
+    /**
+     * R265 — the sheet is drawn ONCE, at the app's root ([dev.jellystructure.ravilo.ui.RaviloApp]), over
+     * every screen; a glyph only asks for it. Found on the Pixel 9: drawn inside the glyph, as the first
+     * build had it, the full-height sheet was laid out inside a 40 dp box in a 60 dp app bar, so tapping
+     * the glyph never showed anything. Null = closed; otherwise what to start on a tapped screen.
+     */
+    val sheet = MutableStateFlow<SheetRequest?>(null)
+    fun openSheet(playContext: ScreenPlayContext? = null) { sheet.value = SheetRequest(playContext) }
+    fun closeSheet() { sheet.value = null }
+
+    /** FR-R245-10 — the sheet's *Stop casting*: explicit, ends the session on whichever side is linked. */
+    fun stopCasting() = sender.stop()
+
     /** R265 (FR-R265-5) — claims a code the TV is showing. Null = the sheet's one error sentence. */
     suspend fun pairScreen(code: String) = api.remotePair(code)
 
@@ -154,6 +199,19 @@ class CastController(
     }
 }
 
+/**
+ * R265 (FR-R265-7) — the one screen the phone reconnects to on start or return: online, something loaded
+ * and not finished, started by [userId]. Someone else's session is never adopted (236's 409 rule), and a
+ * screen that does not say whose it is (`session_user_id` absent) is not assumed to be this viewer's.
+ */
+fun reconnectsTo(d: RemoteDevice, userId: String): Boolean {
+    val np = d.nowPlaying ?: return false
+    return d.online && np.loaded && !np.ended && np.sessionUserId == userId
+}
+
+/** R265 — an open "Play on a TV" sheet, and what it should start on a tapped screen (null: join only). */
+data class SheetRequest(val playContext: ScreenPlayContext?)
+
 val LocalCast = staticCompositionLocalOf<CastController?> { null }
 
 /** R245 (FR-R245-4) — set by the app while the local player is on screen: called with the live position
@@ -164,15 +222,14 @@ val LocalCastHandoff = staticCompositionLocalOf<((positionMs: Long) -> Unit)?> {
  * FR-R245-1 / R265 FR-R265-1 — the cast button, on every app bar, present when EITHER capability exists
  * ([LocalCast] is non-null exactly then — see [dev.jellystructure.ravilo.ui.RaviloApp]'s `castActive`).
  *
- * R265 note: a true single unified glyph would list Chromecast rows inside the same sheet the screens
- * live in (FR-R265-3); that needs enumerating Cast SDK routes outside the SDK's own dialog, which is
- * untested here and deliberately deferred (see the R265 spec's status). Tonight's honest middle ground:
- * when Chromecast is configured, its own tested glyph/dialog ([PlatformCastButton]) keeps working exactly
- * as before, unchanged; the sheet below is the entry point for screens specifically, shown instead of
- * (never alongside) the Chromecast glyph.
+ * One glyph, one sheet, on every platform: the Cast mark in its two forms (idle · connected, with a pulse
+ * while connecting), opening Ravilo's own "Play on a TV" sheet — never the platform's dialog. On Android
+ * the SDK's Chromecasts are rows inside that sheet ([rememberCastRoutes]); a TV running R264's receiver
+ * and (on Safari) AirPlay are rows beside them. The owner accepted that the mark is a little misleading
+ * for a TV that is not a Chromecast; the sheet's first line, *Play on a TV*, is what makes it plain.
  */
 @Composable
-fun CastButton(modifier: Modifier = Modifier) {
+fun CastButton(modifier: Modifier = Modifier, playContext: ScreenPlayContext? = null) {
     // R286 (FR-R286-1) — never on a TV. Casting sends playback *to* a screen and the TV is the screen
     // (236/R264 make it a receiver), so the glyph was backwards there; it was also unreachable, because
     // the TV app bar's D-pad chain hops nav -> search -> avatar and never through it. The gate lives
@@ -180,17 +237,57 @@ fun CastButton(modifier: Modifier = Modifier) {
     // player's chrome to begin with. `isTvPlatform`, not a width: R256 is why (a 540dp TV is a TV).
     if (isTvPlatform) return
     val cast = LocalCast.current ?: return
-    if (cast.appId != null) { PlatformCastButton(modifier.size(40.dp)); return }
-    var sheetOpen by remember { mutableStateOf(false) }
+    val link by cast.sender.link.collectAsState()
     Box(
         modifier.size(40.dp).clip(CircleShape)
-            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
-                if (cast.connected) { /* the mini bar / CastRemote push, wired at the call site, covers "already linked" */ }
-                sheetOpen = true
-            },
+            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { cast.openSheet(playContext) },
         contentAlignment = Alignment.Center,
-    ) { ScreenCastGlyph(tint = RaviloTheme.colors.text, on = cast.connected) }
-    ScreensSheet(cast = cast, open = sheetOpen, onClose = { sheetOpen = false }, playContext = null)
+    ) { CastMarkGlyph(tint = RaviloTheme.colors.text, link = link) }
+}
+
+/** R265 — the root-level host for [CastController.sheet]; RaviloApp draws it once, above every screen. */
+@Composable
+fun CastSheetHost(cast: CastController) {
+    val request by cast.sheet.collectAsState()
+    ScreensSheet(cast = cast, open = request != null, onClose = cast::closeSheet, playContext = request?.playContext)
+}
+
+/**
+ * FR-R245-1's two forms of the Cast mark, drawn rather than borrowed from the SDK's `MediaRouteButton`
+ * (which opens the SDK's dialog and exists only on Android): a frame open at its lower-left corner with
+ * three waves; **connected** fills the frame. While connecting or reconnecting the waves pulse.
+ */
+@Composable
+internal fun CastMarkGlyph(tint: Color, link: CastLinkState, sizeDp: Int = 24) {
+    val pulsing = link == CastLinkState.CONNECTING || link == CastLinkState.RECONNECTING
+    val pulse = if (pulsing) {
+        val t = rememberInfiniteTransition(label = "castPulse")
+        t.animateFloat(0.35f, 1f, infiniteRepeatable(tween(700), RepeatMode.Reverse), label = "castPulseAlpha").value
+    } else 1f
+    val connected = link == CastLinkState.CONNECTED
+    Canvas(Modifier.size(sizeDp.dp)) {
+        val w = size.width; val h = size.height
+        val stroke = w * 0.085f
+        val l = w * 0.08f; val t = h * 0.17f; val r = w * 0.92f; val b = h * 0.83f
+        val frame = Path().apply {
+            moveTo(l, t + h * 0.20f); lineTo(l, t); lineTo(r, t); lineTo(r, b); lineTo(l + w * 0.40f, b)
+        }
+        drawPath(frame, tint, style = Stroke(width = stroke, cap = StrokeCap.Round, join = StrokeJoin.Round))
+        if (connected) {
+            val hole = Path().apply { addOval(Rect(center = Offset(l, b), radius = w * 0.50f)) }
+            clipPath(hole, clipOp = ClipOp.Difference) {
+                drawRect(tint, topLeft = Offset(l + w * 0.13f, t + h * 0.13f), size = Size(r - l - w * 0.26f, b - t - h * 0.26f))
+            }
+        }
+        val waves = tint.copy(alpha = tint.alpha * pulse)
+        drawArc(waves, startAngle = -90f, sweepAngle = 90f, useCenter = true,
+            topLeft = Offset(l - w * 0.13f, b - w * 0.13f), size = Size(w * 0.26f, w * 0.26f))
+        for (radius in listOf(w * 0.27f, w * 0.41f)) {
+            drawArc(waves, startAngle = -90f, sweepAngle = 90f, useCenter = false,
+                topLeft = Offset(l - radius, b - radius), size = Size(radius * 2, radius * 2),
+                style = Stroke(width = stroke, cap = StrokeCap.Round))
+        }
+    }
 }
 
 /** A plain TV-outline mark — screens have no brand glyph of their own the way Chromecast does. */
@@ -217,9 +314,15 @@ fun CastConnectingBar() {
         shownConnectedUntil = link == CastLinkState.CONNECTED
         if (link == CastLinkState.CONNECTED) { delay(2_000); shownConnectedUntil = false }
     }
-    val visible = (link == CastLinkState.CONNECTING || link == CastLinkState.RECONNECTING || (link == CastLinkState.CONNECTED && shownConnectedUntil))
+    // Nothing without a name: "Casting to" with a hole where the TV should be (seen on the Pixel 9 during
+    // a resume, before the SDK had the device again) is worse than no bar — R270 FR-R270-5's rule.
+    // The last name seen, for the bar's exit animation, which outlives the name itself.
+    val lastName = remember { mutableStateOf<String?>(null) }
+    SideEffect { device?.let { lastName.value = it } }
+    val visible = device != null &&
+        (link == CastLinkState.CONNECTING || link == CastLinkState.RECONNECTING || (link == CastLinkState.CONNECTED && shownConnectedUntil))
     AnimatedVisibility(visible = visible, enter = slideInVertically { -it } + fadeIn(tween(160)), exit = slideOutVertically { -it } + fadeOut(tween(200))) {
-        val name = device ?: ""
+        val name = device ?: lastName.value.orEmpty()
         val text = when (link) {
             CastLinkState.CONNECTING -> str("cast.connecting", mapOf("device" to name))
             CastLinkState.RECONNECTING -> str("cast.reconnecting", mapOf("device" to name))
@@ -257,11 +360,11 @@ fun CastMiniBar(onOpen: () -> Unit) {
             // docks above the nav bar (FR-R267-8) and the pair has to move as one block, so when the
             // keyboard covers the bar it covers this too. safeDrawing also tracks live bar VISIBILITY,
             // which is what R261 FR-R261-5 replaced everywhere else.
-            Modifier.fillMaxWidth().safeAreaPadding(includeIme = false).padding(horizontal = 12.dp, vertical = 8.dp)
+            Modifier.fillMaxWidth().safeAreaPadding(includeIme = false).padding(horizontal = 12.dp, vertical = RaviloDimens.castMiniBarMargin)
                 .clip(RoundedCornerShape(12.dp)).background(Color(0xFF0E1119).copy(alpha = 0.97f))
                 .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onOpen),
         ) {
-            Row(Modifier.fillMaxWidth().height(60.dp).padding(horizontal = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth().height(RaviloDimens.castMiniBarRowHeight).padding(horizontal = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.width(64.dp).height(36.dp).clip(RoundedCornerShape(6.dp)).background(Color(0xFF1A1D28))) {
                     val art = s.artUrl
                     if (art != null) RemoteImage(url = art, contentDescription = null, modifier = Modifier.size(64.dp, 36.dp), contentScale = ContentScale.Crop, requestedWidth = 320)

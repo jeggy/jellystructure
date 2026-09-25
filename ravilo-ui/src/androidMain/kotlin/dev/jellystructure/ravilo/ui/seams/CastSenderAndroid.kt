@@ -4,19 +4,14 @@ import android.content.Context
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
-import android.view.ContextThemeWrapper
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
-import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.viewinterop.AndroidView
-import androidx.mediarouter.app.MediaRouteButton
 import com.google.android.gms.cast.MediaInfo
 import com.google.android.gms.cast.MediaLoadRequestData
 import com.google.android.gms.cast.MediaMetadata
 import com.google.android.gms.cast.MediaStatus
 import com.google.android.gms.cast.MediaTrack
-import com.google.android.gms.cast.framework.CastButtonFactory
 import com.google.android.gms.cast.framework.CastContext
 import com.google.android.gms.cast.framework.CastOptions
 import com.google.android.gms.cast.framework.CastSession
@@ -61,14 +56,28 @@ class RaviloCastOptionsProvider : OptionsProvider {
             // No expanded controller is set: the remote is Ravilo's own screen.
             .build()
         return CastOptions.Builder()
-            // A syntactically valid placeholder; CastContext.setReceiverApplicationId replaces it.
-            .setReceiverApplicationId(PLACEHOLDER_APP_ID)
+            // The app id the server gave last time (218 FR-218-11), else a syntactically valid placeholder
+            // that CastContext.setReceiverApplicationId replaces once the config loads. R265: the stored
+            // id is what makes FR-R245-5's re-connect work at all — the SDK attempts a resume once, at
+            // start-up, against THIS id, and a session with the real receiver never matched the
+            // placeholder, so after the app process died the phone never rejoined a TV that was still
+            // playing (seen on the Pixel 9 against the soveværelse TV).
+            .setReceiverApplicationId(lastAppId(context) ?: PLACEHOLDER_APP_ID)
             .setCastMediaOptions(media)
             .setStopReceiverApplicationWhenEndingSession(true)
             .build()
     }
     override fun getAdditionalSessionProviders(context: Context): List<SessionProvider>? = null
-    companion object { const val PLACEHOLDER_APP_ID = "CC1AD845" }
+    companion object {
+        const val PLACEHOLDER_APP_ID = "CC1AD845"
+        private const val PREFS = "ravilo_cast"
+        private const val KEY_APP_ID = "receiver_app_id"
+        fun lastAppId(context: Context): String? =
+            runCatching { context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_APP_ID, null) }.getOrNull()
+        fun rememberAppId(context: Context, appId: String) {
+            runCatching { context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(KEY_APP_ID, appId).apply() }
+        }
+    }
 }
 
 private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
@@ -87,19 +96,6 @@ actual fun rememberCastSender(api: TvApiClient): ActiveCastSender {
     val chromecast = remember { CastSenderHolder.sender ?: runCatching { CastSenderAndroid(ctx) }.getOrNull()?.also { CastSenderHolder.sender = it } }
     val screen = remember(api) { ScreenSender(api) }
     return remember(chromecast, screen) { ActiveCastSender(chromecast, screen) }
-}
-
-@Composable
-actual fun PlatformCastButton(modifier: Modifier) {
-    // FR-R245-1/2 — the platform's own Cast mark, in its two standard forms, opening the SYSTEM dialog.
-    AndroidView(
-        modifier = modifier,
-        factory = { ctx ->
-            MediaRouteButton(ContextThemeWrapper(ctx, androidx.mediarouter.R.style.Theme_MediaRouter)).also { btn ->
-                runCatching { CastButtonFactory.setUpMediaRouteButton(ctx.applicationContext, btn) }
-            }
-        },
-    )
 }
 
 class CastSenderAndroid(private val appContext: Context) : CastSender {
@@ -139,19 +135,28 @@ class CastSenderAndroid(private val appContext: Context) : CastSender {
         override fun onSessionEnding(s: CastSession) {}
         override fun onSessionEnded(s: CastSession, error: Int) { detach(); _link.value = CastLinkState.NONE; _status.value = null; receiverSaid = null }
         // FR-R245-5 — re-connect on app start: the SDK resumes; then ONE of two things happens (see onSessionResumed).
-        override fun onSessionResuming(s: CastSession, sessionId: String) { _link.value = CastLinkState.RECONNECTING; _device.value = s.castDevice?.friendlyName }
+        override fun onSessionResuming(s: CastSession, sessionId: String) { _link.value = CastLinkState.RECONNECTING; _device.value = s.castDevice?.friendlyName ?: selectedRouteName() }
         override fun onSessionResumed(s: CastSession, wasSuspended: Boolean) {
             attach(s)
             _link.value = CastLinkState.CONNECTED
             val rmc = s.remoteMediaClient
-            val alive = rmc != null && rmc.mediaInfo != null && rmc.playerState != MediaStatus.PLAYER_STATE_IDLE
-            if (!alive) {
-                // Finished or gone ⇒ silence: no bar, no toast, no error — the glyph returns to idle.
-                castContext.sessionManager.endCurrentSession(false)
-            } else {
-                send(json.encodeToString(dev.jellystructure.shared.tv.CastCommand.serializer(), dev.jellystructure.shared.tv.CastCommand("status")))
-                rebuildStatus()
+            // Decide from the receiver's ANSWER, never from the client's state at this instant. R265,
+            // seen on the Pixel 9 after the app process died with the soveværelse TV still playing: right
+            // after a resume the client has received no media status yet, so `mediaInfo` is null, and
+            // the check that stood here read that as "finished" and ended the session — the mini bar
+            // vanished while the TV played on. FR-R245-5's silence is for a receiver that SAYS it is idle.
+            fun decide() {
+                val alive = rmc != null && rmc.mediaInfo != null && rmc.playerState != MediaStatus.PLAYER_STATE_IDLE
+                if (!alive) {
+                    // Finished or gone ⇒ silence: no bar, no toast, no error — the glyph returns to idle.
+                    castContext.sessionManager.endCurrentSession(false)
+                } else {
+                    send(json.encodeToString(dev.jellystructure.shared.tv.CastCommand.serializer(), dev.jellystructure.shared.tv.CastCommand("status")))
+                    rebuildStatus()
+                }
             }
+            if (rmc == null) decide()
+            else runCatching { rmc.requestStatus().setResultCallback { decide() } }.onFailure { decide() }
         }
         override fun onSessionResumeFailed(s: CastSession, error: Int) { detach(); _link.value = CastLinkState.NONE }
         override fun onSessionSuspended(s: CastSession, reason: Int) { _link.value = CastLinkState.RECONNECTING }
@@ -160,19 +165,29 @@ class CastSenderAndroid(private val appContext: Context) : CastSender {
     init {
         castContext.sessionManager.addSessionManagerListener(sessionListener, CastSession::class.java)
         castContext.sessionManager.currentCastSession?.let { s ->
+            // A resume the SDK began before this sender existed (it starts at CastContext's creation and
+            // again on entering the foreground) is RECONNECTING, not connected: the sheet's route list
+            // scans actively while it is, which is what lets the SDK find the route and finish it.
+            if (!s.isConnected) { _link.value = CastLinkState.RECONNECTING; _device.value = s.castDevice?.friendlyName ?: selectedRouteName(); return@let }
             attach(s); _link.value = CastLinkState.CONNECTED; _device.value = s.castDevice?.friendlyName; rebuildStatus()
         }
     }
 
     private fun attach(s: CastSession) {
         session = s
-        _device.value = s.castDevice?.friendlyName
+        // Right after a resume the session may not carry its device yet; the route the SDK selected
+        // for it does, and it is the same name the viewer picked it by.
+        _device.value = s.castDevice?.friendlyName ?: selectedRouteName()
         runCatching { s.setMessageReceivedCallbacks(CAST_NAMESPACE, messageCallback) }
         s.remoteMediaClient?.let { rmc ->
             rmc.registerCallback(mediaCallback)
             rmc.addProgressListener(progressListener, 1_000L)
         }
     }
+
+    private fun selectedRouteName(): String? = runCatching {
+        androidx.mediarouter.media.MediaRouter.getInstance(appContext).selectedRoute.takeIf { !it.isDefaultOrBluetooth }?.name
+    }.getOrNull()
 
     private fun detach() {
         session?.remoteMediaClient?.let { rmc ->
@@ -241,7 +256,17 @@ class CastSenderAndroid(private val appContext: Context) : CastSender {
         if (Looper.myLooper() == Looper.getMainLooper()) block() else main.post { block() }
     }
 
+    /** The receiver id the SDK is using now: what [RaviloCastOptionsProvider] started it with. */
+    private var appliedAppId: String? = RaviloCastOptionsProvider.lastAppId(appContext)
+
     override fun setAppId(appId: String) = onMain {
+        RaviloCastOptionsProvider.rememberAppId(appContext, appId)
+        // Only on a real change: setReceiverApplicationId ENDS the current session, even when handed the
+        // id it already has (seen on the Pixel 9 — "End session" 200 ms into a resume, the moment the
+        // config loaded). Re-applying the same id on every config load was the other half of why the
+        // phone never rejoined a TV after a restart.
+        if (appId == appliedAppId) return@onMain
+        appliedAppId = appId
         runCatching { castContext.setReceiverApplicationId(appId) }
     }
 

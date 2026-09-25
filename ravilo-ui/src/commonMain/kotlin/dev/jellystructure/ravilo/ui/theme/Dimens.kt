@@ -51,6 +51,15 @@ object RaviloDimens {
      * glyphs bigger.
      */
     val bottomNavHeight = 74.dp
+    /**
+     * R245/R267 (FR-R267-8) — the cast mini bar as tall as it draws: an 8 dp margin, the 60 dp row, the
+     * 2 dp progress hairline, an 8 dp margin. The content under it pads by this (on top of the nav bar)
+     * while it shows, so the last row of a page can always scroll clear of it — the bar and the padding
+     * read the same numbers, which is the one-place rule [bottomNavHeight] exists for.
+     */
+    val castMiniBarRowHeight = 60.dp
+    val castMiniBarMargin = 8.dp
+    val castMiniBarHeight = castMiniBarRowHeight + castMiniBarMargin * 2 + 2.dp
     val screenPadH    = 48.dp   // left/right padding on all screens
     val trackPadV     = 20.dp   // LazyRow contentPadding top/bottom (also covers scale-overflow)
     val itemSpacing   = 16.dp   // gap between tiles / channel cards / cast circles

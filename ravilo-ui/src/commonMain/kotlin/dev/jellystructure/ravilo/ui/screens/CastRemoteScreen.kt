@@ -65,7 +65,6 @@ import dev.jellystructure.ravilo.ui.i18n.LocalLang
 import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.seams.CastLinkState
 import dev.jellystructure.ravilo.ui.seams.CastRemoteStatus
-import dev.jellystructure.ravilo.ui.seams.PlatformCastButton
 import dev.jellystructure.ravilo.ui.seams.PlayerAudioTrack
 import dev.jellystructure.ravilo.ui.seams.PlayerSubtitleTrack
 import dev.jellystructure.ravilo.ui.seams.RemoteImage
@@ -136,7 +135,8 @@ fun CastRemoteScreen(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(name, color = colors.text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 180.dp))
-                PlatformCastButton(Modifier.size(40.dp))
+                // R265 — the same glyph and sheet as everywhere else (Stop casting lives in it), not the SDK's dialog.
+                dev.jellystructure.ravilo.ui.components.CastButton()
             }
         }
         Spacer(Modifier.height(18.dp))

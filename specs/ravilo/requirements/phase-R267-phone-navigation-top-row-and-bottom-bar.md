@@ -86,6 +86,11 @@ Library and **empty everywhere else**. Discover also confirmed **R268** on devic
   R277 used while there was no row is the ordinary `appBarHeight + 24 dp` again. TV unchanged.
 - **The profile menu** — superseded by R304: Profile is a page on a phone, with no menu to anchor.
 - **The bar over the keyboard** — decided and built by R274: the keyboard covers the bar.
+- **FR-R267-8's padding was never built.** The mini bar docked on the bar, but the page under it padded by
+  the bar alone, so a page's last row sat under the mini bar. The content now pads by the bar *and* the
+  mini bar while the mini bar shows (`RaviloDimens.castMiniBarHeight`, the mini bar's own margin + row +
+  hairline, read by the mini bar itself too). Verified on the Pixel 9 with a cast running: Discover
+  scrolled to its end stops above the mini bar.
 
 **Verified on the Pixel 9 Pro (debug, 2026-09-25):** Home, Library, Discover (from Networks and from
 Genres), Search and Profile each scrolled down and re-tapped → top (Search confirmed by a scroll-up

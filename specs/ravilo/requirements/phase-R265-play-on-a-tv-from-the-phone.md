@@ -65,6 +65,60 @@ platform's").
 **Numbering:** verified against `STATUS.md` and the spec directories 2026-09-18 — Ravilo taken through
 **R264**, admin through **236**.
 
+### Built 2026-09-25 — one glyph on Android, and the first device test
+
+The owner asked for every ⚠ Partial phase to be finished, with the Pixel 9 and the soveværelse TV. Built
+and verified on the Pixel 9 Pro (debug) against the soveværelse TV's built-in Chromecast:
+
+- **FR-R265-1/-3 — one glyph, Ravilo's sheet, Chromecasts inside it.** `CastButton` always draws the Cast
+  mark (`CastMarkGlyph`: idle · connected, waves pulsing while connecting) and always opens Ravilo's
+  sheet; the SDK's `MediaRouteButton` and its dialog are gone (`PlatformCastButton` deleted). The SDK's
+  Chromecasts are tier-2 rows with the Cast mark, read from the same `MediaRouter` the SDK's dialog read
+  (`rememberCastRoutes`), and a row is selected the way that dialog selected it — `route.select()`, which
+  `CastContext` turns into a session through the unchanged sender. A linked screen is unlinked first (dev
+  review item 4). Seen on the device: *All your TVs (3)* → Køkken hub · Stue TV · Soveværelse TV →
+  *Connecting to Soveværelse TV…* → the connected mark → Detail's button reads *Play on Soveværelse TV* →
+  the remote → Home with the mini bar.
+- **The sheet never opened before today.** It was drawn *inside* the glyph — a full-height sheet laid
+  out in a 40 dp box in a 60 dp app bar — so a tap showed nothing, and its full-width box also pushed the
+  glyph against the brand. The sheet is now drawn once at the app's root (`CastSheetHost`, above the
+  bottom bar and the mini bar), and every glyph asks for it (`CastController.openSheet`).
+- **The in-player hand-off works for a screen too** (FR-R265-6's "exactly as for a Chromecast"). It was
+  gated on the Chromecast app id; `cast()` already posts to a linked screen first, so the gate is now just
+  "something can be cast to". Seen on the device: the phone's player → glyph → sheet over the video →
+  Soveværelse TV → the TV continues at the position and the phone swaps to the remote.
+- **Open question 3 — yes:** the TV used last leads its tier, and tier 2 remembers whether it was left
+  open (`ScreensSheetPrefs`, per device; its own storage, so a sign-out keeps it). Seen: reopened, the
+  sheet came back expanded with Soveværelse TV first.
+- **FR-R265-7 — reconnect is a list:** on app start and on every return to the screen, `GET
+  /api/remote/devices` decides; a screen playing something *this* viewer started (`session_user_id` equal
+  to the viewer's id, online, loaded, not ended) is joined and the mini bar shows it; otherwise nothing.
+  Never someone else's session, never over a link that already stands. (Not seen on a device: screens
+  are switched off on this server, so the path is compile- and code-verified only.)
+- **FR-R270-3 held, two rows were wrong.** R265's row marked *any* loaded session busy, so a screen
+  playing this viewer's own title read *Busy · {me} is watching* — and every busy row was tappable,
+  though 236's 409 refuses the play. Busy is now someone else's session only, dimmed and not tappable.
+- **A connected Chromecast read "Ready".** A Cast session selects a group route (`…-groupRoute`), not the
+  TV's own, so the row is matched by the SDK's device name; it now shows the filled mark and *Playing
+  {title}*. *Stop casting* is a row while anything is linked (FR-R245-10), in the design's `#ff9b8a`.
+- **Discovery:** passive while the app has a Cast app id, active while the app is on screen — never off
+  screen (R293). The platform norm for a Cast app, and what a resume needs (below).
+
+**Found on the way, R245's re-connect (FR-R245-5), and only partly closed.** After the app process died
+with the TV still playing, the phone never rejoined it. Three causes, each fixed: the SDK started with a
+placeholder receiver id and learned the real one only after the config loaded, so its start-up resume
+looked for the wrong app (the id the server gave is now stored and handed to the SDK at start-up);
+re-applying the id on every config load ends the session even when it is the same id (now applied only
+on a change); and `onSessionResumed` decided "finished" from a client that had no media status yet, and
+ended a session whose TV was still playing (it now asks the receiver first). Plus: the connecting bar
+no longer shows *Casting to* with a hole where the name should be. **Result:** one kill-and-relaunch
+rejoined the TV with the mini bar live; two later ones did not — the SDK logs *resuming session* and
+never reaches its route wait. The saved route is a group route, which may be why. Left open here.
+
+**R305 was found by this test:** the relaunch after a process death killed the app outright (see R305).
+
+**Still not built:** FR-R265-8 (AirPlay on the web) — see below.
+
 ## Current state (traced against `main`, 2026-09-18)
 
 - `seams/CastSender.kt` (commonMain) is the seam: `link`, `deviceName`, `status: CastRemoteStatus`,

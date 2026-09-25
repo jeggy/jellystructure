@@ -22,6 +22,10 @@ import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import dev.jellystructure.ravilo.ui.seams.rememberCastRoutes
+import dev.jellystructure.ravilo.ui.seams.CastRoute
+import dev.jellystructure.ravilo.ui.seams.CastLinkState
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -53,10 +57,15 @@ data class ScreenPlayContext(val itemId: String, val startPositionMs: Long? = nu
 
 /**
  * R265 — the three-tier "Play on a TV" sheet (FR-R265-1..5), reusing [HandsetSheet]'s chrome. Tier 1 is
- * absent when empty, never an empty box or a "searching…" state (FR-R265-2); tier 2 is collapsed by
- * default (FR-R265-3); tier 3 is R270's footnote-link AirPlay row, shown only where [airplayAvailable] —
- * true and its actual wiring (FR-R265-8) is a deliberate follow-up, not built yet (see the R265 spec's
- * status: the wasmJs seam needs a live Jellyfin HLS-subtitle-delivery probe first).
+ * absent when empty, never an empty box or a "searching…" state (FR-R265-2); tier 2 is collapsed until the
+ * viewer opens it, and this phone remembers that choice (FR-R265-3); the TV used last is pinned to the top
+ * of its tier (open question 3). On Android the SDK's Chromecasts are tier-2 rows with the Cast mark, so
+ * the sheet is the only picker on every platform. Tier 3 is R270's footnote-link AirPlay row, shown only
+ * where [airplayAvailable].
+ *
+ * [playContext] is what to start on a screen the moment it is tapped; null opens it join-only (FR-R265-7).
+ * Inside the player a tap is the hand-off instead (FR-R245-4, `LocalCastHandoff`): the new connection
+ * carries the live position over, for a screen exactly as for a Chromecast.
  */
 @Composable
 fun ScreensSheet(
@@ -69,28 +78,52 @@ fun ScreensSheet(
 ) {
     var devices by remember { mutableStateOf<List<RemoteDevice>>(emptyList()) }
     var loaded by remember { mutableStateOf(false) }
-    var tier2Open by remember { mutableStateOf(false) }
+    var tier2Open by remember { mutableStateOf(ScreensSheetPrefs.tier2Open()) }
     var addTvOpen by remember { mutableStateOf(false) }
+    val link by cast.sender.link.collectAsState()
+    val deviceName by cast.sender.deviceName.collectAsState()
+    // Scan for Chromecasts while the app is on screen (and never while it is not — R293's rule): the SDK
+    // cannot finish resuming a session (FR-R245-5) until the route is found again, and its resume starts
+    // before this sheet or the sender exist, so "scan only while resuming" had nothing to key on (tried on
+    // the Pixel 9: the resume waited forever). A Cast app scanning while it is open is the platform norm.
+    val routes = rememberCastRoutes(cast.appId, discovering = dev.jellystructure.ravilo.ui.seams.rememberAppOnScreen())
+    val status by cast.sender.status.collectAsState()
     LaunchedEffect(open) {
         if (!open) return@LaunchedEffect
         addTvOpen = false
         loaded = false
-        devices = cast.screenDevices()
+        devices = if (cast.screensEnabled) cast.screenDevices() else emptyList()
         loaded = true
     }
     fun tapDevice(d: RemoteDevice) {
         onClose()
+        ScreensSheetPrefs.setLastDevice(d.deviceId)
         val ctx = playContext
         if (ctx != null) cast.castOnScreen(d, ctx.itemId, ctx.startPositionMs) else cast.joinScreen(d)
+    }
+    // The Chromecast this phone is casting to. Its own route is not the one MediaRouter marks selected —
+    // a Cast session selects a group route (`…-groupRoute`) — so the row is matched by the SDK's device
+    // name, which is the route's name (seen on the Pixel 9: the connected TV read "Ready").
+    val castingTo = deviceName.takeIf { link == CastLinkState.CONNECTED && cast.sender.screen.link.value == CastLinkState.NONE }
+    fun connectedTo(r: CastRoute) = r.selected || (castingTo != null && r.name == castingTo)
+    fun tapRoute(r: CastRoute) {
+        onClose()
+        ScreensSheetPrefs.setLastDevice(r.id)
+        if (!connectedTo(r)) cast.castOnChromecast(r)
     }
     HandsetSheet(visible = open, onDismiss = onClose) {
         if (addTvOpen) {
             AddTvSheetBody(cast = cast, onBack = { addTvOpen = false }, onPaired = { addTvOpen = false })
         } else {
             ScreensSheetBody(
-                devices = devices, loaded = loaded, tier2Open = tier2Open, onToggleTier2 = { tier2Open = !tier2Open },
-                onTapDevice = ::tapDevice, onAddTv = { addTvOpen = true },
+                devices = devices, routes = routes, loaded = loaded, lastDevice = ScreensSheetPrefs.lastDevice(), myUserId = cast.userId,
+                playingTitle = status?.takeIf { it.loaded }?.title,
+                tier2Open = tier2Open,
+                onToggleTier2 = { tier2Open = !tier2Open; ScreensSheetPrefs.setTier2Open(tier2Open) },
+                onTapDevice = ::tapDevice, onTapRoute = ::tapRoute, isConnected = ::connectedTo,
+                onAddTv = if (cast.screensEnabled) ({ addTvOpen = true }) else null,
                 airplayAvailable = airplayAvailable, onAirplay = { onClose(); onAirplay() },
+                onStop = if (link != CastLinkState.NONE) ({ onClose(); cast.stopCasting() }) else null,
                 onClose = onClose,
             )
         }
@@ -99,14 +132,19 @@ fun ScreensSheet(
 
 @Composable
 private fun ScreensSheetBody(
-    devices: List<RemoteDevice>, loaded: Boolean, tier2Open: Boolean, onToggleTier2: () -> Unit,
-    onTapDevice: (RemoteDevice) -> Unit, onAddTv: () -> Unit,
-    airplayAvailable: Boolean, onAirplay: () -> Unit, onClose: () -> Unit,
+    devices: List<RemoteDevice>, routes: List<CastRoute>, loaded: Boolean, lastDevice: String?, myUserId: String?,
+    playingTitle: String?, tier2Open: Boolean, onToggleTier2: () -> Unit,
+    onTapDevice: (RemoteDevice) -> Unit, onTapRoute: (CastRoute) -> Unit, isConnected: (CastRoute) -> Boolean, onAddTv: (() -> Unit)?,
+    airplayAvailable: Boolean, onAirplay: () -> Unit, onStop: (() -> Unit)?, onClose: () -> Unit,
 ) {
     val colors = RaviloTheme.colors
+    // Open question 3 — the TV used last leads its own tier; the server's order holds for the rest.
     val screens = devices.filter { it.kind == DeviceKind.SCREEN || it.kind == DeviceKind.CAST }
+        .sortedByDescending { it.deviceId == lastDevice }
     val near = screens.filter { it.nearby }
     val rest = screens.filter { !it.nearby }
+    val castRows = routes.sortedByDescending { it.id == lastDevice }
+    val tier2Count = rest.size + castRows.size
     Column(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp)) {
         SheetHeader(str("screens.title"), onClose)
         if (!loaded) {
@@ -117,13 +155,18 @@ private fun ScreensSheetBody(
             // FR-R265-2 — absent when empty, never an empty box.
             if (near.isNotEmpty()) {
                 SectionLabel(str("screens.nearby"))
-                near.forEach { DeviceRow(it, onClick = { onTapDevice(it) }) }
+                near.forEach { DeviceRow(it, myUserId, onClick = { onTapDevice(it) }) }
             }
-            if (rest.isNotEmpty()) {
-                CollapsibleRow(str("screens.all"), rest.size, tier2Open, onToggleTier2)
-                if (tier2Open) rest.forEach { DeviceRow(it, onClick = { onTapDevice(it) }) }
+            // FR-R265-3 — every paired TV the server does not call nearby, and (Android) every Chromecast
+            // the SDK can see, behind one collapsible. The design draws the Chromecast here too.
+            if (tier2Count > 0) {
+                CollapsibleRow(str("screens.all"), tier2Count, tier2Open, onToggleTier2)
+                if (tier2Open) {
+                    rest.forEach { DeviceRow(it, myUserId, onClick = { onTapDevice(it) }) }
+                    castRows.forEach { ChromecastRow(it, isConnected(it), playingTitle, onClick = { onTapRoute(it) }) }
+                }
             }
-            if (near.isEmpty() && rest.isEmpty() && !airplayAvailable) {
+            if (near.isEmpty() && tier2Count == 0 && !airplayAvailable && onAddTv != null) {
                 Text(str("screens.add"), color = colors.textDim, fontSize = 13.sp, fontFamily = Sora, modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp))
             }
         }
@@ -132,7 +175,33 @@ private fun ScreensSheetBody(
         if (airplayAvailable) {
             SimpleRow(icon = { AirplayGlyph(colors.textSecondary) }, label = str("screens.airplay_footnote"), onClick = onAirplay, labelColor = colors.textSecondary)
         }
-        SimpleRow(icon = { PlusGlyph(colors.text) }, label = str("screens.add"), onClick = onAddTv)
+        if (onAddTv != null) SimpleRow(icon = { PlusGlyph(colors.text) }, label = str("screens.add"), onClick = onAddTv)
+        // FR-R245-10 — ending a session is only ever explicit, and this is where the sheet says so.
+        // The design's own warning ink for this row (`#ff9b8a`); the palette has no token for it.
+        if (onStop != null) SimpleRow(icon = {}, label = str("cast.stop"), onClick = onStop, labelColor = Color(0xFFFF9B8A))
+    }
+}
+
+/** R265 (FR-R265-3) — a Chromecast the SDK found: the Cast mark, its name, and Ready or what it plays. */
+@Composable
+private fun ChromecastRow(route: CastRoute, connected: Boolean, playingTitle: String?, onClick: () -> Unit) {
+    val colors = RaviloTheme.colors
+    val state = if (connected && playingTitle != null) str("screens.playing", mapOf("title" to playingTitle)) else str("screens.ready")
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = 54.dp)
+            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.height(36.dp).width(36.dp).background(colors.surfaceVariant, CircleShape), contentAlignment = Alignment.Center) {
+            CastMarkGlyph(tint = colors.text, link = if (connected) CastLinkState.CONNECTED else CastLinkState.NONE, sizeDp = 20)
+        }
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(route.name, color = colors.text, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(state, color = colors.textDim, fontSize = 13.sp, fontFamily = Sora, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        Text("›", color = colors.textDim, fontSize = 18.sp)
     }
 }
 
@@ -206,12 +275,16 @@ private fun CollapsibleRow(label: String, count: Int, expanded: Boolean, onToggl
 }
 
 @Composable
-private fun DeviceRow(device: RemoteDevice, onClick: () -> Unit) {
+private fun DeviceRow(device: RemoteDevice, myUserId: String?, onClick: () -> Unit) {
     val colors = RaviloTheme.colors
     val np = device.nowPlaying
-    val busy = np != null && np.loaded && np.sessionUserId != null
+    // FR-R270-3 — busy is SOMEONE ELSE's session. R265's first build marked any loaded session busy,
+    // so a screen playing this viewer's own title read "Busy · {me} is watching" — and every busy row was
+    // tappable, although 236's 409 would refuse the play. Mine reads "Playing {title}" and opens the
+    // remote; someone else's is dimmed and not tappable, as the spec and the design draw it.
+    val busy = np != null && np.loaded && np.sessionUserId != null && np.sessionUserId != myUserId
     val offline = !device.online
-    val tappable = !offline
+    val tappable = !offline && !busy
     val state = when {
         !device.online -> str("screens.offline", mapOf("when" to lastSeenLabel(device.lastSeen)))
         // R270 (FR-R270-3) — the person ACTUALLY watching, resolved server-side. This used to read
@@ -263,8 +336,6 @@ private fun SimpleRow(icon: @Composable () -> Unit, label: String, onClick: () -
 @Composable private fun PlusGlyph(tint: Color) { Text("+", color = tint, fontSize = 20.sp, fontWeight = FontWeight.Bold) }
 @Composable private fun AirplayGlyph(tint: Color) { Text("▲", color = tint, fontSize = 14.sp) }
 
-/** A plain relative-time label for an offline device's row — no calendar/weekday logic (R270's
- *  "keeps its weekday" polish is a design-side follow-up, not built here). */
 /**
  * R270 (FR-R270-4) — *"Offline · last seen {when}"*: a **weekday** inside the last seven days, a
  * **date** beyond that, and **never a duration and never "just now"**.

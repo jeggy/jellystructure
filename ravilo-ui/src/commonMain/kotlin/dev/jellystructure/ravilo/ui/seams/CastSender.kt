@@ -1,7 +1,6 @@
 package dev.jellystructure.ravilo.ui.seams
 
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Modifier
 import dev.jellystructure.shared.tv.CastLoadData
 import dev.jellystructure.shared.tv.CastTrack
 import dev.jellystructure.shared.tv.TvApiClient
@@ -14,7 +13,8 @@ import kotlinx.coroutines.flow.StateFlow
  * phone remembered before it died.
  *
  * Android: the Cast SDK (`CastContext` / `RemoteMediaClient` / a custom-namespace channel). Web: there
- * is no sender — [rememberCastSender] returns null and [PlatformCastButton] draws nothing.
+ * is no Chromecast sender, only the screen one (R265). Either way the entry point is Ravilo's own sheet
+ * behind [dev.jellystructure.ravilo.ui.components.CastButton] — R265 retired the SDK's `MediaRouteButton`.
  */
 enum class CastLinkState { NONE, CONNECTING, CONNECTED, RECONNECTING }
 
@@ -79,6 +79,19 @@ interface CastSender {
 @Composable
 expect fun rememberCastSender(api: TvApiClient): ActiveCastSender
 
-/** FR-R245-1/2 — the platform's own Cast mark and the platform's own device dialog. Nothing bespoke. */
+
+/**
+ * R265 (FR-R265-3) — a Chromecast the platform's Cast SDK can see right now, listed as a row in Ravilo's
+ * own "Play on a TV" sheet instead of in the platform's dialog. [select] hands the route to the SDK, which
+ * starts the session exactly as its own dialog would (the dialog does nothing more than select a route),
+ * so the sender, the hand-off code and the remote are untouched.
+ */
+class CastRoute(val id: String, val name: String, val selected: Boolean, val select: () -> Unit)
+
+/**
+ * R265 (FR-R265-3) — the Chromecasts that answer for [appId], actively scanned for only while
+ * [discovering] (the app is on screen — R293), listened for passively otherwise. Empty where there is no Cast SDK (the web)
+ * and while [appId] is null (the server has no Chromecast capability: absent, never greyed).
+ */
 @Composable
-expect fun PlatformCastButton(modifier: Modifier = Modifier)
+expect fun rememberCastRoutes(appId: String?, discovering: Boolean): List<CastRoute>

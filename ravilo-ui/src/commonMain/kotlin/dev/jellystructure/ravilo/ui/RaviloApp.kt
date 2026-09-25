@@ -56,6 +56,9 @@ import dev.jellystructure.ravilo.ui.screens.CastRemoteScreen
 import dev.jellystructure.ravilo.ui.components.CastController
 import dev.jellystructure.ravilo.ui.components.CastConnectingBar
 import dev.jellystructure.ravilo.ui.components.CastMiniBar
+import dev.jellystructure.ravilo.ui.components.CastSheetHost
+import dev.jellystructure.ravilo.ui.components.reconnectsTo
+import dev.jellystructure.ravilo.ui.screens.castMiniBarVisible
 import dev.jellystructure.ravilo.ui.components.LocalCast
 import dev.jellystructure.ravilo.ui.components.LocalCastHandoff
 import dev.jellystructure.ravilo.ui.components.castArtFor
@@ -814,13 +817,31 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
         val castSender = rememberCastSender(apiClient)
         val castController = remember(castSender, apiClient) { CastController(castSender, apiClient, apiClient.baseUrl) }
         LaunchedEffect(castController, castAppId) { castAppId?.let { castController.appId = it } }
+        SideEffect { castController.screensEnabled = screensEnabled; castController.userId = activeUserId }
         val castActive = if (castAppId != null || screensEnabled) castController else null
+        // R265 (FR-R265-7) — reconnect is a list, not a session: on app start and on every return to the
+        // screen, the server's device list decides. A screen playing something THIS viewer started ⇒
+        // link to it, and the mini bar shows its live position; none ⇒ nothing at all (R245's silent
+        // outcome). Never while a Chromecast or a screen is already linked — that one stands.
+        LaunchedEffect(castActive, screensEnabled, activeUserId, appOnScreen) {
+            val c = castActive ?: return@LaunchedEffect
+            val me = activeUserId ?: return@LaunchedEffect
+            if (!screensEnabled || !appOnScreen || c.sender.link.value != dev.jellystructure.ravilo.ui.seams.CastLinkState.NONE) return@LaunchedEffect
+            c.screenDevices().firstOrNull { d -> reconnectsTo(d, me) }?.let { d -> c.joinScreen(d) }
+        }
+        // FR-R267-8 — whether the cast mini bar is floating over [d] right now: the mini bar's own
+        // visibility rule, on the same screens it is drawn over (the overlay below).
+        val castLinkNow by castController.sender.link.collectAsState()
+        val castStatusNow by castController.sender.status.collectAsState()
+        fun miniBarOver(d: Dest) = castActive != null && d !is Dest.Player && d !is Dest.LiveTv && d !is Dest.CastRemote &&
+            castMiniBarVisible(castLinkNow, castStatusNow)
         val currentDisplayNameForCast = destDisplayName(dest)
-        // R265 — this in-player quick hand-off is still Chromecast's own hand-off-code flow
-        // (CastController.cast()); a screen has no hand-off code (FR-R265-6) and isn't offered this
-        // shortcut yet — gated on castAppId specifically, not the broader castActive, so enabling
-        // screens alone can't accidentally route through Chromecast's castHandoff() call.
-        CompositionLocalProvider(LocalCast provides castActive, LocalCastHandoff provides (if (castActive != null && castAppId != null && dest is Dest.Player) { pos: Long ->
+        // R245 (FR-R245-4) / R265 (FR-R265-6) — the in-player hand-off, for a screen exactly as for a
+        // Chromecast: CastController.cast() posts straight to a linked screen (no hand-off code) and only
+        // mints one when the Chromecast is the side that connected, so the hand-off needs no gate beyond
+        // "something can be cast to" (R265's first build gated it on castAppId, leaving a screen-only
+        // household with no way to move a playing title to the TV).
+        CompositionLocalProvider(LocalCast provides castActive, LocalCastHandoff provides (if (castActive != null && dest is Dest.Player) { pos: Long ->
             val d = dest as Dest.Player
             castActive.cast(
                 itemId = d.itemId, title = d.title, kicker = d.kicker,
@@ -954,7 +975,10 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
             // by one bar is exactly how a heading ends up underneath one, twice already (R257
             // FR-R257-5, R259 FR-R259-2). Applied here, where the per-destination insets already are,
             // so the four pages do not each have to remember it.
-            val navBarInset = if (handset && bottomBarShows(dest)) RaviloDimens.bottomNavHeight else 0.dp
+            val navBarInset = (if (handset && bottomBarShows(dest)) RaviloDimens.bottomNavHeight else 0.dp) +
+                // FR-R267-8 — "the content's bottom padding is the sum of the two": while the cast mini
+                // bar floats over this page, the page pads by it as well, or its last row sits under it.
+                (if (miniBarOver(dest)) RaviloDimens.castMiniBarHeight else 0.dp)
             Box(
                 modifier = if (playingFullscreen) Modifier.fillMaxSize()
                 // R274 (FR-R274-3) — the bar's height goes INTO the seam, not after it: the result is
@@ -1769,6 +1793,10 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                 ) { CastMiniBar(onOpen = { push(Dest.CastRemote(currentDisplayNameForCast)) }) }
             }
         }
+        // R265 — the "Play on a TV" sheet, drawn once over every screen (incl. the player), above the bottom
+        // bar AND the cast mini bar (drawn before it here, the mini bar sat on top of the open sheet — seen
+        // on the Pixel 9). Every cast glyph only asks for it (CastController.openSheet).
+        castActive?.let { CastSheetHost(it) }
         // R261 — see the profile-menu comment above; the overlay itself has no inset awareness of its
         // own (a plain 6dp corner offset), so without this it could sit under a notch/status bar.
         Box(Modifier.fillMaxSize().safeAreaPadding()) { FrameTrackerOverlay(fpsOverlay) }  // R94: F5 toggles; no-op when false
