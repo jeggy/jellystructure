@@ -2,7 +2,7 @@
 
 ## Status
 
-`⚠ Partial` — **FR-R293-1 to -7 built 2026-09-25 from the dev review, all nine items** (see §Build below)
+`✓ Built` — **FR-R293-1 to -7 built 2026-09-25 from the dev review, all nine items** (see §Build below)
 and device-verified the same day; **FR-R293-8 (delivery) is open**: the phase is `✓ Built` only once a
 release carrying it is on the closed-testing track, and cutting a release is the owner's act.
 
@@ -11,7 +11,10 @@ release carrying it is on the closed-testing track, and cutting a release is the
 `completed` — its minSdk 24 guard passed (step 1), CI ran (step 2), and the upload was accepted (step 4:
 *"Finished uploading to the Play Store"*, edit committed). What no job can see is **step 3: whether aleks's
 account (and any other household still only on internal testing) is on the closed track's tester list**
-— a Play Console check. The phase stays `⚠ Partial` until the owner confirms it. `Planned` when
+— a Play Console check. **Confirmed by the owner the same evening: every household is now on the closed
+testing track's testers, none left on internal only.** FR-R293-8 is met. Acceptance 1–2 are measured from
+the server once the TV has the build: at 19:00 that evening `ravilo_device` still showed aleks's TV on
+**1.35** (last seen 07:14), and a closed-testing release passes Google's review before testers receive it. `Planned` when
 written 2026-09-24 from a server-side investigation. **Dev-reviewed 2026-09-24 against `main` `9d2636bb`**
 (see §Dev review at the bottom: every client claim holds; the lifecycle hook is the Activity's, not a new
 `ProcessLifecycleOwner` dependency; the catch-up needs `onOpen` to stop emitting an unconditional refresh;
