@@ -97,7 +97,11 @@ without one: `fetch("https://…")` failed with `net::ERR_UNKNOWN_URL_SCHEME` in
 `<access origin="*" subdomains="true">` the same request returns 200 with a readable body, although the
 server sends no `Access-Control-Allow-Origin` — **the packaged widget does not enforce CORS** (phase
 247's open question 1 and R269's, answered on the emulator; a preflighted JSON POST reached the server
-directly). Also: with no server stored, the setup screen was drawn over the idle screen (both `on`).
+directly). **But its events WebSocket was refused** — a handshake carries `Origin: file://` (a WebSocket
+is not governed by the widget's CORS, so the runtime sends the origin regardless) and the server's CORS
+answered 403, so a paired TV could never receive `play_item`. Fixed by phase 247's FR-247-3: that one
+route admits exactly `file://`. Also: with no server stored, the setup screen was drawn over the idle
+screen (both `on`).
 
 ## The target device, concretely
 

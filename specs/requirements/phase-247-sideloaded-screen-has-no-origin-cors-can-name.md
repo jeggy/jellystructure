@@ -2,17 +2,26 @@
 
 ## Status
 
-`✓ Built` 2026-09-19 (FR-247-1, FR-247-2), **measured against a live local instance of the real
-binary** (not a mock, not a guess about Ktor internals), not dev-reviewed. FR-247-3 is deliberately
-**not** built — it names the reasoning an eventual fix must check itself against, and the fix is
-blocked on open question 1, which needs real Tizen hardware or the emulator.
+`✓ Built` 2026-09-19 (FR-247-1, FR-247-2); **FR-247-3 built 2026-09-25** for the one route that needed
+it, measured on the Tizen 10.0 TV emulator and against the real binary, not dev-reviewed, not yet on a real
+Samsung TV.
 
-**Open question 1 answered 2026-09-25 on the Tizen 10.0 TV emulator:** the widget runs at `file://`, and
-once its `config.xml` declares `<access origin="*" subdomains="true">` (it did not — without it the web
-runtime refused every external request as `net::ERR_UNKNOWN_URL_SCHEME`), its requests reach the server
-and their responses are readable with no `Access-Control-Allow-Origin` header; a preflighted POST is sent
-directly. The runtime does not enforce CORS for a packaged widget, so FR-247-3's route-scoped exception
-is **not needed**. Tizen 5.0 (the RU7440) is unverified.
+**Open question 1 answered 2026-09-25 on the Tizen 10.0 TV emulator — in two halves, and the first answer
+was half wrong.** The widget runs at `file://`. Once its `config.xml` declares
+`<access origin="*" subdomains="true">` (it did not — without it the web runtime refused every external
+request as `net::ERR_UNKNOWN_URL_SCHEME`), its **HTTP** requests reach the server **with no `Origin`
+header at all**, and their responses are readable with no `Access-Control-Allow-Origin`; a preflighted
+POST is sent directly. So REST needs no exception — that part stands.
+
+**The events WebSocket does.** The same morning's note said *"no backend exception is needed"*; that was
+written from `fetch` alone. The first time the emulator app was paired and left running, its
+`/api/tv/events` socket was refused — `Error during WebSocket handshake: Unexpected response code: 403` —
+and a listener on the host captured the handshake: **`Origin: file://`**. A WebSocket is not governed by
+the browser's CORS, so Chromium sends the document's origin on every handshake whatever the widget's
+`<access>` policy says, and the server's CORS plugin is the only thing that looks at it. A paired TV could
+therefore never receive `play_item`, a command or a status push — pairing worked, casting to it could not.
+Every e2e run missed it because the test stack serves the bundle from `ravilo-screen-cast:8080`, an
+allow-listed origin (248). Tizen 5.0 (the RU7440) is unverified: it may send `file://`, `null`, or nothing.
 
 **Open question 2 is answered, 2026-09-20, from the artefact rather than by experiment** (the same
 technique 238's review used on the Curl engine's header handling). In
@@ -29,8 +38,10 @@ technique 238's review used on the Curl engine's header handling). In
   second, looser CORS on `/api/tv` + `/api/remote` adds a preflight handler under those prefixes
   rather than replacing the application-wide one.
 
-Open question 1 stays open and is still the blocker: nothing may be shipped against a guessed
-`Origin` string.
+Measured 2026-09-25 as well: the application-level and route-level installs cannot coexist — Ktor throws
+`DuplicatePluginException: Installing RouteScopedPlugin to application and route is not supported.
+Consider moving application level install to routing root.` — and a child route's CORS **replaces** its
+parent's rather than adding to it. FR-247-3 is built around both facts.
 
 ## What is wrong
 
@@ -114,29 +125,35 @@ the typed address preserved and its hint text changed from "trying" to the not-f
 today-true, misleading symptom described above, proven end-to-end in the shipped client rather than
 inferred from headers.
 
-**FR-247-3 — The eventual fix must not reopen finding M1, and is not this phase's job.** Not implemented
-here — recorded so it isn't guessed at under time pressure later, by whoever picks this up once hardware
-answers open question 1:
-- The TV/screen API (`/api/tv/**`, `/api/remote/**`) is Bearer-token-authenticated, never cookie-based.
-  A page that forges `Origin: null` (trivially done from any site via a `sandbox`ed iframe with no
-  `allow-same-origin`) still cannot produce a valid device token it was never given — unlike a cookie,
-  which the browser attaches automatically. Allowing `Origin: null` (or whatever exact value Tizen turns
-  out to send) on these routes is therefore not the same class of hole as the `anyHost()` +
-  `allowCredentials` finding from the 2026-08-02 audit: that one was exploitable *because* credentials
-  ride along for free.
-- `/api/health` is unauthenticated but already fully readable by anyone who can reach the host directly
-  (`curl`, another server) with no CORS involved at all — CORS on it only stops a browser script running
-  on an unrelated page from reading it silently, and its payload is operational/diagnostic (queue depths,
-  GC stats), not a secret.
-- This reasoning is offered for whoever implements the fix to check against real measurements, not as a
-  decision already made — see open question 2 on whether Ktor's CORS plugin can even be scoped to those
-  two route prefixes, which decides whether this is a small change or needs a custom intercept.
+**FR-247-3 — The one route a widget cannot reach gets exactly the one origin it sends, and finding M1
+stays closed.** Built 2026-09-25.
+- **Scope: `/api/tv/events` only.** It is the only socket `ravilo-screen` opens, and its only credential is
+  the device token in the query (or `Authorization`) — no cookie is read on it. `/api/remote/events` is
+  untouched (the receiver never opens it; phones are native or same-origin), and so is the admin `/ws`,
+  which *is* cookie-authenticated: a cross-site WebSocket to it would carry `js_session`, which is exactly
+  the class of hole the 2026-08-02 audit closed.
+- **The origin is `file://`, exactly — never `null`.** `null` can be sent by any web page (a `sandbox`ed
+  iframe), and desktop browsers serialise a `file:` document's origin as `null`, so no web page can send
+  `file://`. Admitting it on a token-only route lets a widget in and lets no website in.
+- **One policy, restated.** The global CORS install moves from the application to the routing root (Ktor
+  refuses both); `/api/tv/events` installs its own, which is the shared policy plus the one origin — because
+  a child's config replaces its parent's, anything less would quietly drop `CORS_ALLOWED_ORIGINS` (the dev
+  server's origin) from that route. Both live in `server/CorsPolicy.kt`, so they cannot drift apart.
+- **What the move changes, and why it is safe:** the CORS check now runs inside routing, after
+  `AuthPlugin`. A disallowed origin still never reaches a handler (the route's own CORS runs first), but a
+  request that fails *both* checks now answers 401 rather than 403, and a path no route matches answers
+  404 without a CORS verdict. Preflights are unchanged: `AuthPlugin` already lets them through (R225's
+  amendment), and the root's `options("{cors-options-wildcard...}")` answers them.
+- **Tests:** `CorsPolicyTest` (backend) runs both policies in a real in-process application — `file://`
+  admitted on the events route and refused everywhere else, `null` and `https://evil.example.com` refused
+  everywhere, an allow-listed dev origin still admitted on both. `ravilo-screen-cors.spec.ts` asks the same
+  questions as real WebSocket handshakes against the real binary: `file://` → 101 on `/api/tv/events` and
+  403 on `/ws`; `null` and the evil origin → 403 on both.
 
 ## Non-goals
 
-- Actually changing `CORS_ALLOWED_ORIGINS` / `Server.kt`'s CORS policy. Blocked on knowing the real
-  `Origin` value a production Tizen device sends — see open question 1. Guessing at the string and
-  shipping a fix for the wrong one is worse than leaving the gap named and tested.
+- Any change to `CORS_ALLOWED_ORIGINS`, or to the policy on any route but `/api/tv/events`. REST from a
+  widget needs no exception (open question 1), and no other socket is opened from one.
 - Publishing the new `ravilo-screen` test-stack image anywhere. It exists only inside
   `docker-compose.test.yml`; the real `.wgt` stays `deploy-tizen-tv.yml`'s job (Phase R272), untouched.
 - Any change to `ravilo-web`'s or the admin frontend's CORS handling — both already work and are already
@@ -155,14 +172,16 @@ answers open question 1:
    proven in the product's own code, not just via `curl`.
 4. `STATUS.md` gets a row for this phase; `reference-ravilo-screen-cors-open-question.md` is updated to
    point at it.
+5. (FR-247-3) A paired `ravilo-screen` on the Tizen emulator holds its `/api/tv/events` socket open and
+   plays what a phone sends it; `/ws` and every other route refuse `file://` exactly as before.
 
 ## Open questions
 
-1. **What `Origin` (or lack of one) does the real Tizen 10.0 WebKit runtime send** for a cross-origin
-   `fetch` from a packaged/sideloaded `.wgt`? Only answerable on the emulator/hardware described in
-   `reference-tizen-docker-emulator-setup` — FR-247-3's reasoning is written to hold regardless of the
-   answer, but the actual fix cannot be built until it's known.
-2. **Can Ktor's CORS plugin be installed scoped to a route prefix** (`/api/tv/**` + `/api/remote/**`
+1. ~~**What `Origin` does the real Tizen 10.0 WebKit runtime send?**~~ **Answered 2026-09-25 on the
+   emulator:** none on `fetch`, `file://` on a WebSocket handshake. **Still open for Tizen 5.0** (the
+   RU7440) — if it sends `null` on the handshake, this route needs a different answer, since `null` is the
+   one value that cannot simply be admitted.
+2. ~~**Can Ktor's CORS plugin be installed scoped to a route prefix**~~ (answered — see Status) (`/api/tv/**` + `/api/remote/**`
    only, leaving the cookie-authenticated admin API on today's stricter policy untouched), or does
    `install(CORS)` only apply application-wide in the Ktor version this project is on? Decides whether
    FR-247-3's eventual fix is a small, scoped addition or needs a custom intercept ahead of routing.

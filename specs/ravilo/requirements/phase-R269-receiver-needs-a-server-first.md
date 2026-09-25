@@ -15,8 +15,9 @@ DevTools: the widget's origin is `file://`; with the `<access origin="*">` eleme
 *every* request failed with `net::ERR_UNKNOWN_URL_SCHEME` — the setup probe could never have succeeded on
 a TV), `GET /api/health` on the production server returns 200 with a readable body and no
 `Access-Control-Allow-Origin` header, and a preflighted JSON POST reaches the server directly. A packaged
-Tizen widget does not enforce CORS; no backend exception is needed. The RU7440's Tizen 5.0 is older and
-unverified. Also fixed: with no server stored, setup was drawn over the idle screen.
+Tizen widget does not enforce CORS on HTTP. **Correction, the same afternoon:** its events WebSocket sends
+`Origin: file://` on the handshake and was refused with a 403 — REST needed no exception, the socket did
+(phase 247 FR-247-3, `/api/tv/events` only). The RU7440's Tizen 5.0 is older and unverified. Also fixed: with no server stored, setup was drawn over the idle screen.
 `✓ Built` — written 2026-09-18. **Dev-reviewed and built 2026-09-19 against `main`
 (post-R264/R272/R265 build)** — see §Dev review below: FR-R269-3's premise (the TV client already probes
 the server) is wrong, but the fix is good news — `GET /api/health` already exists, unauthenticated, and
