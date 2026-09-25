@@ -359,8 +359,16 @@ X-JS-Api-Key: jsk_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx</pre>
                 <label>Defer while a TV is watching</label>
                 <div style="display:flex;align-items:center;gap:12px">
                   <span id="defer-while-playing-toggle" class="toggle" style="cursor:pointer;flex-shrink:0"></span>
-                  <span class="hint" style="margin:0">Scheduled scans/pipeline runs and realtime ingest (never a manual "Scan library" click) wait for playback to stop before the heavy steps (file probing, artwork fetch), and so do the background queue jobs — whole-file verification, track-length checks, intro/credits detection and subtitle pre-warm (Phase 178/262). Off: they all run through playback. Takes effect at once, no re-queue needed. A single-user household and a many-viewer one may want opposite answers.</span>
+                  <span class="hint" style="margin:0">Background work pauses while anyone is watching. Takes effect at once.</span>
                 </div>
+                <details style="margin-top:6px;font-size:.84rem">
+                  <summary style="cursor:pointer;color:var(--ink-soft)">What it covers</summary>
+                  <div class="hint" style="margin-top:6px;line-height:1.5">
+                    On: scheduled scans, pipeline runs and realtime ingest wait for playback to stop before the heavy steps (file probing, artwork fetch), and so do the queue jobs — whole-file verification, track-length checks, intro/credits detection and subtitle pre-warm. A running check finishes its current file, then waits.<br>
+                    Off: all of it runs through playback.<br>
+                    A manual <b>Scan library</b> click never waits. Switching either way takes effect immediately — nothing needs re-queuing. A single-user household and a many-viewer one may want opposite answers. (Phase 178/262)
+                  </div>
+                </details>
               </div>
               <div id="scan-threads-restart-banner" style="display:none;margin-top:10px;padding:8px 12px;border-radius:6px;background:var(--warn-fill,#7c5100);color:var(--warn-ink,#fff);font-size:.83rem"></div>
               <div class="row center" style="justify-content:space-between;margin-top:12px;">
