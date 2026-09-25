@@ -217,7 +217,18 @@ fun main() = runBlocking {
     val castService = dev.jellystructure.tv.CastService(db, configStore, raviloDeviceService)
     // Phase 236 (FR-236-2) — the receiver-shows-a-code pairing flow (screen/code, remote/pair, screen/claim).
     val screenPairingService = dev.jellystructure.tv.ScreenPairingService(db, raviloDeviceService)
-    val raviloConfigService = RaviloConfigService(db, tvEventBus, requestLanguageService, castCapability = { castService.capability() })
+    val raviloConfigService = RaviloConfigService(
+        db, tvEventBus, requestLanguageService,
+        castCapability = { castService.capability() },
+        // 236 item 9 — screens are always served (the routes exist on every installation), so `enabled`
+        // is true and the phone can add a household's FIRST TV from the sheet; `paired` is this viewer's.
+        screensCapability = { userId ->
+            dev.jellystructure.shared.tv.ScreensCapability(
+                enabled = true,
+                paired = raviloDeviceService.listByUser(userId).any { it.kind == "screen" },
+            )
+        },
+    )
     raviloConfigService.migrateAllLegacyBehaviourFields()  // R162: one-time, idempotent
     val homeFeedService = HomeFeedService(mediaStore, raviloConfigService, jellyfinClient, configStore, tvEventBus, artworkDownloader)
     // Phase 205 (FR-205-2) — background-refresh Continue Watching and the whole-catalog playstate map

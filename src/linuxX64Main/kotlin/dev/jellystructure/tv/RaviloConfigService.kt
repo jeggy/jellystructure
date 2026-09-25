@@ -56,6 +56,11 @@ class RaviloConfigService(
     // Phase 218 (FR-218-3) — resolves the installation's cast capability (from config.toml, never from
     // stored per-user JSON) on every read path, the way focusDetail is resolved. Null = never a button.
     private val castCapability: (() -> dev.jellystructure.shared.tv.CastCapability?)? = null,
+    // Phase 236 (dev review item 9) / R265 (dev review item 5) — the viewer's screens capability, resolved
+    // on every per-user read the way [castCapability] is. It was specified, given a DTO, and never set:
+    // `RaviloConfig.screens` reached every phone as null, so the sheet's TV tiers, *Add a TV* and R265's
+    // reconnect were unreachable in production (found 2026-09-25 finishing R265). Null = not wired.
+    private val screensCapability: ((userId: String) -> dev.jellystructure.shared.tv.ScreensCapability?)? = null,
 ) {
 
     /**
@@ -86,7 +91,7 @@ class RaviloConfigService(
             skipIntro = resolved.skipIntro.value,
             skipCredits = resolved.skipCredits.value,
             skipSecs = resolved.skipSecs.value,
-        ).withResolvedFocusDetail()
+        ).withResolvedFocusDetail().let { cfg -> screensCapability?.invoke(userId)?.let { cfg.copy(screens = it) } ?: cfg }
     }
 
     fun getGlobalConfig(): RaviloConfig {

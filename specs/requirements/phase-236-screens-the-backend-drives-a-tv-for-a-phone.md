@@ -344,6 +344,9 @@ the build** — they also reach R264, R265 and the design-authored R269.
 9. **One addition asked for by R265's dev review (item 5):** the client's existing config payload gains
    `screens: { enabled, paired }`, server-pushed like the Chromecast capability, so the phone can draw the
    glyph without a request per Home and a household's *first* TV can be added from the sheet.
+   ⚠ **Not built until 2026-09-25** — the DTO landed, the server never set it, so every phone read `null`
+   and the phone's TV tiers were unreachable. Now resolved per viewer in `RaviloConfigService`
+   (`enabled = true`; `paired` from the viewer's own devices), with `ScreensCapabilityConfigTest`.
 10. **Open question 1:** the phone uses its own events socket (lean confirmed — it exists, is
    authenticated and reconnects). **Open question 2** stays the owner's. **Open question 3:** `/64`.
 
