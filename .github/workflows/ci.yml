@@ -39,6 +39,9 @@ jobs:
         run: ./scripts/check-jellyfin-version-use.sh
       - name: No Jellyfin token in a query string
         run: ./scripts/check-jellyfin-query-token.sh
+      # R293 FR-R293-7 — the device token rides a Bearer header on every native WebSocket handshake.
+      - name: No device token in a socket URL
+        run: ./scripts/check-events-query-token.sh
       # R279 FR-R279-14 — thirteen viewer-facing strings had never reached the string table, and no
       # test could see any of them. This is the thing that would have.
       - name: No hardcoded viewer-facing text in Ravilo

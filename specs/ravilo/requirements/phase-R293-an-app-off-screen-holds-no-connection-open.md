@@ -2,14 +2,47 @@
 
 ## Status
 
-`Planned` — written 2026-09-24 from a server-side investigation. **Dev-reviewed 2026-09-24 against
-`main` `9d2636bb`** (see §Dev review at the bottom: every client claim holds; the lifecycle hook is the
-Activity's, not a new `ProcessLifecycleOwner` dependency; the catch-up needs `onOpen` to stop emitting an
-unconditional refresh; FR-R293-4 has a second socket to cover; FR-R293-7 blinds one server-side lookup
-unless 256 reads the header too; acceptance 1 is reachable because `app_version` refreshes on every
-request, not only at login). Not built. Spec first. Pairs with **phase 256** (the backend half: close
-reasons, flap detection, bridge debounce).
+`⚠ Partial` — **FR-R293-1 to -7 built 2026-09-25 from the dev review, all nine items** (see §Build below)
+and device-verified the same day; **FR-R293-8 (delivery) is open**: the phase is `✓ Built` only once a
+release carrying it is on the closed-testing track, and cutting a release is the owner's act. `Planned` when
+written 2026-09-24 from a server-side investigation. **Dev-reviewed 2026-09-24 against `main` `9d2636bb`**
+(see §Dev review at the bottom: every client claim holds; the lifecycle hook is the Activity's, not a new
+`ProcessLifecycleOwner` dependency; the catch-up needs `onOpen` to stop emitting an unconditional refresh;
+FR-R293-4 has a second socket to cover; FR-R293-7 blinds one server-side lookup unless 256 reads the header
+too; acceptance 1 is reachable because `app_version` refreshes on every request, not only at login). Pairs
+with **phase 256** (the backend half: close reasons, flap detection, bridge debounce), built the same day.
 Complements **R292**, which applies the same rule to the player.
+
+### Build (2026-09-25)
+
+- **FR-R293-1/2 — one seam, three effects** (item 1): `seams/AppOnScreen.kt` — `rememberAppOnScreen()`, true
+  from the activity's `ON_START` (or `ACTION_SCREEN_ON` with the activity started) to `ON_STOP` or
+  `ACTION_SCREEN_OFF`, the same pair `PlayerLifecycleEffect` listens to; the web actual is always true. The
+  events-socket effect and R141's poll are keyed on `(activeUserId, appOnScreen)`, so leaving the screen
+  cancels the loop and its `delay` — no reconnects, no timer. Home's Live TV poll is a job on a retained
+  store, so `HomeStore.setOnScreen()` cancels and restarts it (the last feed's placement is kept).
+- **FR-R293-3 — a rev check, not a refresh** (`seams/EventsCatchUp.kt`, items 2 and 9): `onOpen` no longer
+  emits `0L`; it fetches `/api/tv/config/rev` and emits on `liveConfig` only when the rev moved (or on the
+  process's first open, which is the start-up pull), and on `liveHome` — the stores' silent refresh, not the
+  screen's — only when the app was disconnected longer than 30 s. The poll shares the same seen rev.
+- **FR-R293-4 — one backoff** (`seams/ReconnectBackoff.kt`, item 3): healthy after 5 minutes, 1 s → 60 s
+  doubling with ±20 % jitter, used by `RaviloApp` and `ScreenSender.runSocket` alike.
+- **FR-R293-5 — nothing acts off screen** (item 4): `acceptsRemoteCommand(onScreen, signedIn)` gates
+  `play_item`, `navigate`, `playstate_command` and `player_command` at the socket's callbacks and again at
+  the two collectors, each drop logged.
+- **FR-R293-6 — every end recorded** (`seams/EventsSocketLog.kt`, item 5): `connectEvents` now **returns**
+  how the socket ended (`close:<code>:<reason>` from `closeReason.await()`, `eof`), the app records
+  `err:<Class>` for a throwable and `us:background` / `us:user-switch` for its own cancellation, with the
+  device's state from `rememberDeviceStateProbe()` (lifecycle, `isInteractive`, network type + validation,
+  **`SDK_INT`** — open question 3's answer for the next device, so the entry has six fields, not five). The
+  last ten travel as `X-Ravilo-Events-Prev` on the next connect; 256 logs them.
+- **FR-R293-7 — the token in a header** (item 6): `WS_TOKEN_IN_QUERY`, an `expect val` in `:shared` — false
+  for Android and native, true for the two browser targets — gates one `wsUrl()`/`wsAuth()` pair used by
+  both sockets. `/api/remote/events` reads `Authorization: Bearer` too. `scripts/check-events-query-token.sh`
+  (acceptance 5) fences it in CI.
+- **Tests:** `ReconnectBackoffTest` (3: the 1…60 s sequence, the five-minute reset, the jitter bound),
+  `EventsCatchUpTest` (5: first open, quick reconnect, moved rev / long gap, failed check, the command gate)
+  and `EventsSocketLogTest` (4) — acceptance 4.
 
 > Owner, 2026-09-24: *"That household is getting the app from the Google Play store. So we need to fix
 > it and provide a fix ourselves so it's all handled properly."*

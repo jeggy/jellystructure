@@ -7,6 +7,7 @@ import io.ktor.client.request.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
 import io.ktor.websocket.*
+import kotlinx.coroutines.launch
 import dev.jellystructure.shared.RaviloHeaders
 import dev.jellystructure.shared.raviloVersion
 import kotlinx.serialization.json.Json
@@ -30,6 +31,9 @@ private const val PLAYSTATE_ID_BATCH = 100
  * around a live client-side CIO connect bug ([[bug-ravilo-tv-cio-connect-timeout]]) while keeping
  * CIO for the WebSocket (the Android engine has no WS support at all).
  */
+/** R293 (FR-R293-6) — the header the previous sockets' ends travel in; phase 256 reads it. */
+const val EVENTS_PREV_HEADER = "X-Ravilo-Events-Prev"
+
 class TvApiClient(
     private val client: HttpClient,
     val baseUrl: String,
@@ -388,10 +392,9 @@ class TvApiClient(
      */
     suspend fun connectRemoteEvents(deviceId: String, onOpen: suspend () -> Unit = {}, onStatus: suspend (ScreenStatus) -> Unit) {
         val token = deviceToken() ?: return
-        val wsUrl = baseUrl.replaceFirst("http", "ws").trimEnd('/') +
-            "/api/remote/events?token=" + token.encodeURLParameter()
-        wsClient.webSocket(wsUrl, request = {
+        wsClient.webSocket(wsUrl("/api/remote/events", token), request = {
             identify()
+            wsAuth(token)
             timeout {
                 requestTimeoutMillis = HttpTimeoutConfig.INFINITE_TIMEOUT_MS
                 socketTimeoutMillis = HttpTimeoutConfig.INFINITE_TIMEOUT_MS
@@ -623,10 +626,19 @@ class TvApiClient(
      * Opens the `/api/tv/events` WebSocket and streams [TvEvent]s until the socket closes (then
      * returns; the caller is responsible for reconnect/backoff). [onOpen] fires once the socket is
      * established — use it to trigger a full refresh so changes missed while disconnected are caught.
-     * The device token is passed as a query param because browsers can't set a WS handshake header.
+     * The device token is a Bearer header, except on a browser build, which cannot set a WS handshake
+     * header and so passes it as a query param (R293 FR-R293-7). Returns how the socket ended.
      * Requires the `WebSockets` client plugin to be installed on [client].
      */
     suspend fun connectEvents(
+        // R293 (FR-R293-6) — the previous sockets' ends, as the device saw them (EventsSocketLog's header
+        // value); null on the first connect of a process. Phase 256 logs it beside the device id.
+        previousSockets: String? = null,
+        // R293 (FR-R293-1) — a suspending "close me" signal: when it returns, the socket is closed from
+        // inside the session with a NORMAL close frame carrying the returned reason, so the server logs
+        // `client close 1000 background` rather than an abrupt end. (Cancelling the call instead tears the
+        // session's writer down before any close frame can leave — measured on the stue TV: 1006.)
+        closeWhen: (suspend () -> String)? = null,
         onOpen: suspend () -> Unit = {},
         onEvent: suspend (TvEvent) -> Unit,
         onAcquisition: suspend (AcquisitionRecord) -> Unit = {},
@@ -644,10 +656,9 @@ class TvApiClient(
         // R248 (FR-R248-2) — the server folded a stop (or a played/mark write) into this user's Home feed;
         // re-pull Home / the open channel page. A signal only, like config_changed.
         onHomeChanged: suspend (Long) -> Unit = {},
-    ) {
-        val token = deviceToken() ?: return
-        val wsUrl = baseUrl.replaceFirst("http", "ws").trimEnd('/') +
-            "/api/tv/events?token=" + token.encodeURLParameter()
+    ): String {
+        val token = deviceToken() ?: return "no-token"
+        var ended = "eof"
         // Bug fix: the shared HttpClient's HttpTimeout plugin (requestTimeoutMillis/socketTimeoutMillis
         // = 10s, installed to bound ordinary REST calls) applies to this WebSocket session too, since
         // Ktor treats a WS as one continuous request — it silently force-closed this otherwise-idle
@@ -657,14 +668,23 @@ class TvApiClient(
         // Exempt only this call from the client-wide REST bound; regular requests are unaffected.
         // R210 — wsClient (not client): on Android this is the CIO-backed client, kept solely for
         // this WebSocket upgrade after REST calls moved to a different engine.
-        wsClient.webSocket(wsUrl, request = {
+        wsClient.webSocket(wsUrl("/api/tv/events", token), request = {
             identify()
+            wsAuth(token)
+            previousSockets?.let { headers { append(EVENTS_PREV_HEADER, it) } }
             timeout {
                 requestTimeoutMillis = HttpTimeoutConfig.INFINITE_TIMEOUT_MS
                 socketTimeoutMillis = HttpTimeoutConfig.INFINITE_TIMEOUT_MS
             }
         }) {
             onOpen()
+            val closer = closeWhen?.let { signal ->
+                launch {
+                    val reason = signal()
+                    runCatching { close(CloseReason(CloseReason.Codes.NORMAL, reason)) }
+                }
+            }
+            try {
             for (frame in incoming) {
                 if (frame !is Frame.Text) continue
                 val text = frame.readText()
@@ -696,7 +716,26 @@ class TvApiClient(
                     else -> onEvent(ev)
                 }
             }
+            } finally {
+                closer?.cancel()
+            }
+            // R293 (FR-R293-6, dev review item 5) — how it ended, now that the loop is over: the server's
+            // close frame (code + reason) for a clean close, "eof" when the peer simply vanished. An
+            // exception propagates to the caller, which records its class instead.
+            ended = runCatching { closeReason.await() }.getOrNull()
+                ?.let { "close:${it.code}:${it.message}" } ?: "eof"
         }
+        return ended
+    }
+
+    // R293 (FR-R293-7) — one place composes a socket URL and one place authenticates it: the token is a
+    // query parameter only on a browser build (WS_TOKEN_IN_QUERY), a Bearer header everywhere else.
+    private fun wsUrl(path: String, token: String): String =
+        baseUrl.replaceFirst("http", "ws").trimEnd('/') + path +
+            (if (WS_TOKEN_IN_QUERY) "?token=" + token.encodeURLParameter() else "")
+
+    private fun HttpRequestBuilder.wsAuth(token: String) {
+        if (!WS_TOKEN_IN_QUERY) headers { append(HttpHeaders.Authorization, "Bearer $token") }
     }
 
     // ─── Helpers ─────────────────────────────────────────────────────────────

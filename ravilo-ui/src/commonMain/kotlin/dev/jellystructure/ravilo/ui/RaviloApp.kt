@@ -19,6 +19,7 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -58,6 +59,12 @@ import dev.jellystructure.ravilo.ui.components.LocalCast
 import dev.jellystructure.ravilo.ui.components.LocalCastHandoff
 import dev.jellystructure.ravilo.ui.components.castArtFor
 import dev.jellystructure.ravilo.ui.components.castEpisodes
+import dev.jellystructure.ravilo.ui.seams.EventsCatchUp
+import dev.jellystructure.ravilo.ui.seams.EventsSocketLog
+import dev.jellystructure.ravilo.ui.seams.ReconnectBackoff
+import dev.jellystructure.ravilo.ui.seams.acceptsRemoteCommand
+import dev.jellystructure.ravilo.ui.seams.rememberAppOnScreen
+import dev.jellystructure.ravilo.ui.seams.rememberDeviceStateProbe
 import dev.jellystructure.ravilo.ui.seams.rememberCastSender
 import dev.jellystructure.ravilo.ui.screens.TaxonomyStore
 import dev.jellystructure.ravilo.ui.screens.HomeScreen
@@ -129,6 +136,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.launch
 import kotlin.time.Clock
@@ -398,50 +407,93 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
     var activeUserId by remember { mutableStateOf(MultiTokenStore.getActive()?.userId) }
     var activeAvatarUrl by remember { mutableStateOf(MultiTokenStore.getActive()?.avatarUrl) }
 
+    // R293 (FR-R293-1/2) — an app that is off screen holds no connection open: the events socket, R141's
+    // poll and Home's Live TV poll are all keyed on this, so leaving the foreground cancels their effects
+    // (loop, backoff delay and all) and coming back restarts them. The probe and the log are FR-R293-6's
+    // "next time, we know why"; the catch-up rule is FR-R293-3's "coming back catches up once".
+    val appOnScreen = rememberAppOnScreen()
+    val onScreenNow by rememberUpdatedState(appOnScreen)
+    // The socket loop reads this flow rather than being cancelled: leaving the screen must send a proper
+    // close frame (`1000 background`), and only a live session can send one.
+    val onScreenFlow = remember { MutableStateFlow(true) }
+    LaunchedEffect(appOnScreen) { onScreenFlow.value = appOnScreen }
+    val deviceStateProbe = rememberDeviceStateProbe()
+    val eventsCatchUp = remember { EventsCatchUp() }
+    val eventsSocketLog = remember { EventsSocketLog() }
+
     LaunchedEffect(Unit) { liveConfig.collect { refreshConfig() } }
     LaunchedEffect(activeUserId) {
         if (activeUserId == null) return@LaunchedEffect
-        var backoff = 1000L
+        val backoff = ReconnectBackoff()
         while (true) {
-            // Bug fix: a device whose token no longer matches any ravilo_device row (stale local
-            // storage after a re-pair/DB reset) still completes the WS *upgrade* — the server only
-            // rejects the token afterward, inside the handler — so onOpen() fires and used to reset
-            // backoff to 1000ms on every single doomed attempt. That defeated the backoff entirely and
-            // reconnected roughly once a second forever instead of backing off to the 15s cap. Only
-            // treat the attempt as healthy (and reset backoff) if the socket stayed open a meaningful
-            // duration; a near-instant open-then-close is treated like any other failed attempt.
+            // FR-R293-1 — off screen there is no socket, no reconnect and no timer: the loop parks here
+            // (suspended on the flow, not on a delay) until the app is back.
+            onScreenFlow.first { it }
+            // Bug fix (kept from before R293): a device whose token no longer matches any ravilo_device
+            // row still completes the WS *upgrade* — the server rejects the token afterward, inside the
+            // handler — so onOpen() fires for a doomed attempt. Only a socket held open a meaningful
+            // time counts as healthy; ReconnectBackoff decides what "meaningful" is (5 minutes now, not
+            // 2 seconds: FR-R293-4's rule, so a socket that dies every minute backs off to 60 s).
             var openedAt: kotlin.time.Instant? = null
-            runCatching {
-                apiClient.connectEvents(
-                    onOpen = { openedAt = Clock.System.now(); liveConfig.emit(0L) },
+            var how = "eof"
+            try {
+                how = apiClient.connectEvents(
+                    previousSockets = eventsSocketLog.headerValue(),
+                    closeWhen = { onScreenFlow.first { !it }; "background" },
+                    onOpen = {
+                        openedAt = Clock.System.now()
+                        // FR-R293-3 (dev review item 2) — an open is a config-rev check, not a refresh:
+                        // the config re-pulls only when the rev moved, and Home only when the app was
+                        // away longer than the server's push stream can be assumed to have covered.
+                        val rev = runCatching { apiClient.getConfigRev() }.getOrNull()
+                        val d = eventsCatchUp.onOpen(rev, Clock.System.now().toEpochMilliseconds())
+                        if (d.refreshConfig) liveConfig.emit(rev ?: 0L)
+                        if (d.refreshHome) liveHome.emit(0L)
+                    },
                     onEvent = { liveConfig.emit(it.rev) },
                     onAcquisition = { liveAcquisition.emit(it) },
                     onServerMessage = { liveServerMessages.emit(it) },
-                    onPlayItem = { livePlayItem.emit(it) },
-                    onPlaystateCommand = { livePlaystateCommands.emit(it) },
-                    onNavigate = { liveNavigate.emit(it) },
+                    // FR-R293-5 — a command that lands in the gap between ON_STOP and the socket's close is
+                    // dropped and logged, never applied: nothing may act while nobody is looking.
+                    onPlayItem = { if (acceptsRemoteCommand(onScreenNow, true)) livePlayItem.emit(it) else println("R293: dropped play_item while off screen") },
+                    onPlaystateCommand = { if (acceptsRemoteCommand(onScreenNow, true)) livePlaystateCommands.emit(it) else println("R293: dropped playstate_command while off screen") },
+                    onNavigate = { if (acceptsRemoteCommand(onScreenNow, true)) liveNavigate.emit(it) else println("R293: dropped navigate while off screen") },
+                    onPlayerCommand = { if (!acceptsRemoteCommand(onScreenNow, true)) println("R293: dropped player_command while off screen") },
                     onHomeChanged = { liveHome.emit(it) },
                     // Home-feed playstate cache/concurrency fix — a live Jellyfin fetch made to satisfy
                     // this or another device's own /api/tv/home request lands here; reuse the existing
                     // R147 patch-in-place path (WatchedBus) instead of forcing a re-fetch.
                     onPlaystateChanged = { patch -> WatchedBus.publish(patch) },
                 )
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                // The effect was cancelled by a profile switch (leaving the screen is a close, not a
+                // cancellation). Recorded, then rethrown — structured concurrency owns the rest.
+                how = "us:user-switch"
+                throw e
+            } catch (e: Throwable) {
+                how = "err:" + (e::class.simpleName ?: "Throwable")
+            } finally {
+                val now = Clock.System.now()
+                val heldOpenMs = openedAt?.let { (now - it).inWholeMilliseconds } ?: 0L
+                eventsSocketLog.record(heldOpenMs, how, deviceStateProbe())
+                eventsCatchUp.onClosed(now.toEpochMilliseconds())
             }
             val heldOpenMs = openedAt?.let { (Clock.System.now() - it).inWholeMilliseconds } ?: 0L
-            backoff = if (heldOpenMs >= 2_000L) 1_000L else (backoff * 2).coerceAtMost(15_000L)
-            delay(backoff)
+            val wait = backoff.next(heldOpenMs)
+            // A close we asked for is not a failure: no delay, the loop parks on the flow above instead.
+            if (onScreenFlow.value) delay(wait)
         }
     }
     // R141: degrade-to-poll fallback — safety net for when the WS is down or a single event is missed.
     // Polls /api/tv/config/rev every 15 s; if the rev has advanced since last seen, emits on liveConfig
     // so the visible screen does its existing silent refresh (same path as WS events — no duplication risk).
-    LaunchedEffect("r141-poll:$activeUserId") {
-        if (activeUserId == null) return@LaunchedEffect
-        var seenRev = 0L
+    // R293 (FR-R293-2) — only while the app is on screen; the seen rev is shared with the socket's own check.
+    LaunchedEffect("r141-poll:$activeUserId", appOnScreen) {
+        if (activeUserId == null || !appOnScreen) return@LaunchedEffect
         while (true) {
             delay(15_000L)
             val rev = runCatching { apiClient.getConfigRev() }.getOrNull() ?: continue
-            if (rev != seenRev) { seenRev = rev; liveConfig.emit(rev) }
+            if (eventsCatchUp.onPollRev(rev)) liveConfig.emit(rev)
         }
     }
 
@@ -515,6 +567,11 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                     }
                 }
             }
+        }
+        // R293 (FR-R293-2, dev review item 1) — the Live TV "On now" poll is a job on a retained store, not
+        // an effect, so it is told explicitly; every retained Home store hears the same answer.
+        LaunchedEffect(appOnScreen) {
+            storeRegistry.values.forEach { s -> if (s is HomeStore) s.setOnScreen(appOnScreen) }
         }
 
         // Load config when already on Home (single-session fast path)
@@ -642,6 +699,8 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                 if (activeUserId == null || stack.lastOrNull() is Dest.ProfilePicker || stack.lastOrNull() is Dest.Login) {
                     return@collect
                 }
+                // R293 (FR-R293-5, dev review item 4) — never while the app is off screen.
+                if (!acceptsRemoteCommand(onScreenNow, true)) { println("R293: dropped play_item while off screen"); return@collect }
                 val displayName = destDisplayName(stack.lastOrNull())
                 when (env.kind) {
                     "series" -> push(Dest.SeriesDetail(env.jellyfinId, displayName))
@@ -659,6 +718,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
         LaunchedEffect(Unit) {
             liveNavigate.collect { env ->
                 if (activeUserId == null) return@collect
+                if (!acceptsRemoteCommand(onScreenNow, true)) { println("R293: dropped navigate while off screen"); return@collect }   // R293 (FR-R293-5)
                 if (env.destination == "home") {
                     resetTo(Dest.Home(MultiTokenStore.getActive()?.displayName.orEmpty()))
                 }

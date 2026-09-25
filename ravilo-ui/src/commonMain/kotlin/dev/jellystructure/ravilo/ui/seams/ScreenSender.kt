@@ -63,7 +63,7 @@ class ScreenSender(private val api: TvApiClient) : CastSender {
     }
 
     private suspend fun runSocket(id: String) {
-        var backoff = 1_000L
+        val backoff = ReconnectBackoff()   // R293 (FR-R293-4, dev review item 3) — the same rule as /api/tv/events
         while (deviceId == id) {
             var openedAt: kotlin.time.Instant? = null
             runCatching {
@@ -76,8 +76,7 @@ class ScreenSender(private val api: TvApiClient) : CastSender {
             if (deviceId != id) return
             _link.value = CastLinkState.RECONNECTING
             val heldOpenMs = openedAt?.let { (Clock.System.now() - it).inWholeMilliseconds } ?: 0L
-            backoff = if (heldOpenMs >= 2_000L) 1_000L else (backoff * 2).coerceAtMost(15_000L)
-            delay(backoff)
+            delay(backoff.next(heldOpenMs))
         }
     }
 

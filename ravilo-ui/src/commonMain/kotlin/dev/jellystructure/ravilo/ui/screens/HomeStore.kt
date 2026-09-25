@@ -61,6 +61,18 @@ class HomeStore(
     val liveTvChannels: StateFlow<List<LiveTvChannel>> = _liveTvChannels.asStateFlow()
     private var loadJob: Job? = null
     private var liveTvPollJob: Job? = null
+    // R293 (FR-R293-2) — the "On now" poll runs only while the app is on screen; the last feed is kept so
+    // a return can restart it with the same placement decision.
+    private var onScreen = true
+    private var lastFeedForLiveTv: HomeFeed? = null
+
+    /** R293 (FR-R293-2) — told by the app: off screen stops the Live TV poll, on screen restarts it. */
+    fun setOnScreen(on: Boolean) {
+        if (onScreen == on) return
+        onScreen = on
+        if (!on) { liveTvPollJob?.cancel(); liveTvPollJob = null }
+        else lastFeedForLiveTv?.let { setUpLiveTvPolling(it) }
+    }
 
     // R248 (FR-R248-1/2) — the return-vs-event refresh rule; see ReturnRefreshGate.
     private val returnGate = ReturnRefreshGate()
@@ -145,12 +157,14 @@ class HomeStore(
     /** (Re)starts the "On now" poll loop iff [feed] places it on Home; a no-op restart when the
      *  placement is unchanged just keeps the existing loop running instead of resetting its cadence. */
     private fun setUpLiveTvPolling(feed: HomeFeed) {
+        lastFeedForLiveTv = feed
         val wants = feed.liveTvHome?.showOnNowRow == true
         if (!wants) {
             liveTvPollJob?.cancel(); liveTvPollJob = null
             _liveTvChannels.value = emptyList()
             return
         }
+        if (!onScreen) return   // R293 (FR-R293-2) — a backgrounded Ravilo makes no requests of its own
         if (liveTvPollJob?.isActive == true) return
         liveTvPollJob = scope.launch {
             while (true) {
