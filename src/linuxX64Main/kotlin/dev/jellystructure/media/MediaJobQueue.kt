@@ -460,8 +460,13 @@ class MediaJobQueue(
 
     /** Phase 178 §FR-178-2 — a corrupt/unparseable params blob (should never happen; every enqueue path
      *  writes valid JSON) defaults to non-deferrable rather than silently starving the queue. */
+    // Phase 262 (FR-262-1) — the row's own flag AND the household switch, read live: switching
+    // `scan.defer_while_playing` off releases everything waiting, with no re-enqueue.
     private fun Media_job.deferWhilePlaying(): Boolean =
-        runCatching { json.decodeFromString(MediaJobParams.serializer(), params).deferWhilePlaying }.getOrDefault(false)
+        deferDecision(runCatching { json.decodeFromString(MediaJobParams.serializer(), params).deferWhilePlaying }.getOrDefault(false), configStore.current.scan.deferWhilePlaying)
+
+    /** Phase 262 (FR-262-1) — should a job that asked to defer actually wait for playback right now? */
+    private fun deferNow(): Boolean = deferDecision(true, configStore.current.scan.deferWhilePlaying) && dev.jellystructure.tv.isPlaybackActive()
 
     /** Runs a claimed job (any of the three queues) and applies its [Outcome] generically: this is what
      *  replaces the old per-lane `runJob`/`runSegmentsJob`'s own duplicated markFinished/broadcast/
@@ -671,7 +676,7 @@ class MediaJobQueue(
         var damaged = 0
         for ((i, path) in paths.withIndex()) {
             if (isCancelled()) return Cancelled()
-            if (sweep && dev.jellystructure.tv.isPlaybackActive()) return Requeue(inPlace = true, reason = "playback started — ${paths.size - i} file(s) still to verify")
+            if (sweep && deferNow()) return Requeue(inPlace = true, reason = "playback started — ${paths.size - i} file(s) still to verify")   // Phase 262: honours the household switch
             if (sweep && epochSeconds() - startedAt > INTEGRITY_SLICE_SEC) break
             if (service.check(path)?.state == FileIntegrityState.DAMAGED) damaged++
             // Phase 255 (FR-255-6) — an operator's Check now runs both checks on the file.
@@ -693,7 +698,7 @@ class MediaJobQueue(
         var flagged = 0
         for ((i, path) in paths.withIndex()) {
             if (isCancelled()) return Cancelled()
-            if (dev.jellystructure.tv.isPlaybackActive()) return Requeue(inPlace = true, reason = "playback started — ${paths.size - i} file(s) still to check")
+            if (deferNow()) return Requeue(inPlace = true, reason = "playback started — ${paths.size - i} file(s) still to check")   // Phase 262
             if (epochSeconds() - startedAt > INTEGRITY_SLICE_SEC) break
             if (service.check(path)?.state == TrackCoverageState.FINDINGS) flagged++
             segmentsProgress(row.id, i + 1, paths.size)
@@ -1097,6 +1102,10 @@ class MediaJobQueue(
     private fun epochSeconds(): Long = dev.jellystructure.nowEpochSec()
 
     companion object {
+        /** Phase 262 (FR-262-1) — one rule: a row waits for playback only if it asked to AND the household
+         *  switch (`scan.defer_while_playing`) is on. */
+        fun deferDecision(rowDefers: Boolean, householdDefers: Boolean): Boolean = rowDefers && householdDefers
+
         /** The three queue names — Phase 260's route validates against THIS list, not a copy. */
         val QUEUE_NAMES = listOf("media", "segments", "subtitles")
         /** Phase 260 (FR-260-6) — the synthetic Recent record's type. */

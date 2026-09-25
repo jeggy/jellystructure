@@ -649,7 +649,7 @@ X-JS-Api-Key: jsk_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx</pre>
               <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:2px">
                 <div>
                   <span style="font-size:.9rem">Defer scans while a TV is watching</span>
-                  <div class="hint" style="margin-top:2px">Scheduled scans/pipeline runs and realtime ingest (never a manual "Scan library" click) wait for playback to stop before starting the heavy steps (file probing, artwork fetch, intro/credits detection) — so they don't compete with a TV for disk I/O. A single-user household and a many-viewer one may want opposite answers.</div>
+                  <div class="hint" style="margin-top:2px">Scheduled scans/pipeline runs and realtime ingest (never a manual "Scan library" click) wait for playback to stop before starting the heavy steps (file probing, artwork fetch), and so do the background queue jobs — whole-file verification, track-length checks, intro/credits detection and subtitle pre-warm (Phase 262). Off: they all run through playback. Takes effect at once, no re-queue needed. A single-user household and a many-viewer one may want opposite answers.</div>
                 </div>
                 <span id="defer-while-playing-toggle" class="toggle" style="cursor:pointer;flex-shrink:0;margin-left:12px"></span>
               </div>
