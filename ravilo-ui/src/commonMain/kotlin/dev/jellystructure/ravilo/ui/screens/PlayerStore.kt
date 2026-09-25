@@ -5,6 +5,8 @@ import dev.jellystructure.ravilo.ui.seams.detectDecoderLimits
 import dev.jellystructure.ravilo.ui.seams.detectHdrSupport
 import dev.jellystructure.ravilo.ui.seams.detectLinkState
 import dev.jellystructure.ravilo.ui.seams.supportedAudioCodecs
+import dev.jellystructure.ravilo.ui.seams.supportedVideoCodecs
+import dev.jellystructure.ravilo.ui.seams.playsHlsForAirPlay
 import dev.jellystructure.ravilo.ui.seams.supportsHevcOverHls
 import dev.jellystructure.ravilo.ui.seams.supportsEmbeddedTextSubtitles
 import dev.jellystructure.shared.tv.CardPlayState
@@ -146,9 +148,14 @@ class PlayerStore(private val apiClient: TvApiClient) {
                     // sideload of the same stream (bug: it used to always sideload, double-delivering
                     // every text subtitle on a direct-played title — see PlaybackService.buildSubtracks).
                     val embeddedSubs = supportsEmbeddedTextSubtitles()
+                    // R265 (FR-R265-8) — Safari takes only HLS and shows the manifest's subtitles, so
+                    // AirPlay has a stream to hand to the TV with its subtitles inside it.
+                    val airplayHls = playsHlsForAirPlay()
                     val capabilities = ClientCapabilities(
                         containers = listOf("mkv", "mp4", "avi", "mov"),
-                        videoCodecs = listOf("h264", "hevc", "vp9", "av1"),
+                        videoCodecs = supportedVideoCodecs(),
+                        hlsOnly = airplayHls,
+                        hlsSubtitles = airplayHls,
                         // R283 — what this build really decodes (the Android actual adds TrueHD/DTS
                         // when the FFmpeg extension is installed); was a literal that omitted both.
                         audioCodecs = supportedAudioCodecs(),

@@ -57,6 +57,8 @@ import dev.jellystructure.ravilo.ui.components.CastController
 import dev.jellystructure.ravilo.ui.components.CastConnectingBar
 import dev.jellystructure.ravilo.ui.components.CastMiniBar
 import dev.jellystructure.ravilo.ui.components.CastSheetHost
+import dev.jellystructure.ravilo.ui.components.AirPlayNoticeBar
+import dev.jellystructure.ravilo.ui.seams.platformAirPlay
 import dev.jellystructure.ravilo.ui.components.reconnectsTo
 import dev.jellystructure.ravilo.ui.screens.castMiniBarVisible
 import dev.jellystructure.ravilo.ui.components.LocalCast
@@ -818,7 +820,9 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
         val castController = remember(castSender, apiClient) { CastController(castSender, apiClient, apiClient.baseUrl) }
         LaunchedEffect(castController, castAppId) { castAppId?.let { castController.appId = it } }
         SideEffect { castController.screensEnabled = screensEnabled; castController.userId = activeUserId }
-        val castActive = if (castAppId != null || screensEnabled) castController else null
+        // R265 (FR-R265-1) — present when the user has a TV to send to OR AirPlay is available here.
+        val airplayAvailable by (platformAirPlay?.available ?: remember { MutableStateFlow(false) }).collectAsState()
+        val castActive = if (castAppId != null || screensEnabled || airplayAvailable) castController else null
         // R265 (FR-R265-7) — reconnect is a list, not a session: on app start and on every return to the
         // screen, the server's device list decides. A screen playing something THIS viewer started ⇒
         // link to it, and the mini bar shows its live position; none ⇒ nothing at all (R245's silent
@@ -1797,6 +1801,8 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
         // bar AND the cast mini bar (drawn before it here, the mini bar sat on top of the open sheet — seen
         // on the Pixel 9). Every cast glyph only asks for it (CastController.openSheet).
         castActive?.let { CastSheetHost(it) }
+        // R270 (FR-R270-2) — the AirPlay caveat, once, when the picture moves to the TV (web only).
+        AirPlayNoticeBar()
         // R261 — see the profile-menu comment above; the overlay itself has no inset awareness of its
         // own (a plain 6dp corner offset), so without this it could sit under a notch/status bar.
         Box(Modifier.fillMaxSize().safeAreaPadding()) { FrameTrackerOverlay(fpsOverlay) }  // R94: F5 toggles; no-op when false

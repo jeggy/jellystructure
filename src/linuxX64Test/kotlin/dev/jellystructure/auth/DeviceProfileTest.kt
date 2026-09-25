@@ -105,5 +105,18 @@ class DeviceProfileTest {
         val silent = deviceProfile(ClientCapabilities())
         assertTrue(silent.contains("\"Container\":\"mkv,mp4,webm"), silent)
     }
-}
 
+    /** R265 (FR-R265-8) — text subtitles ride the HLS manifest only for a client that says it shows them
+     *  (Safari, for AirPlay) AND takes only HLS; the Chromecast receiver (hls_only, no flag) keeps them
+     *  sideloaded. Live-verified on Jellyfin 12.1.0: `Method: Hls` lists every SubRip track in master.m3u8. */
+    @Test
+    fun hlsSubtitlesOnlyForAnHlsOnlyClientThatAsksForThem() {
+        val safari = deviceProfile(ClientCapabilities(hlsOnly = true, hlsSubtitles = true))
+        assertTrue(safari.contains("""{"Format":"subrip","Method":"Hls"}"""), safari)
+        assertTrue(safari.contains("""{"Format":"pgssub","Method":"Encode"}"""), safari)
+        val receiver = deviceProfile(ClientCapabilities(hlsOnly = true))
+        assertTrue(receiver.contains("""{"Format":"subrip","Method":"External"}"""), receiver)
+        val notHlsOnly = deviceProfile(ClientCapabilities(hlsSubtitles = true))
+        assertTrue(notHlsOnly.contains("""{"Format":"subrip","Method":"External"}"""), notHlsOnly)
+    }
+}

@@ -12,7 +12,9 @@
 
 ## Status
 
-`⚠ Partial` — written 2026-09-18 from the owner's decisions and the research report
+`✓ Built` — every FR built by 2026-09-25 (see the two *Built 2026-09-25* sections); on-device: the
+Android/Chromecast half verified on the Pixel 9 + soveværelse TV, the iPhone/AirPlay half not (no
+iPhone), the screens half pending a TV that runs R264. Written 2026-09-18 from the owner's decisions and the research report
 `ravilo-web-pwa-player-cast-2026-09-18.md` (§5, §12). **Dev-reviewed 2026-09-18 against `main`
 `05195d1f`** (see §Dev review at the bottom: pairing is 236's new `remote/pair`; self-hosting the player
 libraries moved to 235; the glyph's presence is server-pushed so a first TV can be added; two senders
@@ -117,7 +119,50 @@ never reaches its route wait. The saved route is a group route, which may be why
 
 **R305 was found by this test:** the relaunch after a process death killed the app outright (see R305).
 
-**Still not built:** FR-R265-8 (AirPlay on the web) — see below.
+### Built 2026-09-25 — the screens capability the phone never received, and AirPlay on the web
+
+- **`RaviloConfig.screens` was never sent.** 236's dev review (item 9) asked for it and this phase's dev
+  review (item 5) built the phone against it, but no server code ever set it — every phone read `null`,
+  so tiers 1–2, *Add a TV* and FR-R265-7 were unreachable in production (the Pixel 9's sheet showed no
+  *Add a TV*). `RaviloConfigService` now resolves it per viewer on every read, like `cast`:
+  `enabled = true` (the routes are on every installation; there is no switch to be absent behind),
+  `paired` = this viewer has a paired screen. `ScreensCapabilityConfigTest`.
+- **FR-R265-8 — the web player sends the truth.** Video codecs are asked of the browser
+  (`supportedVideoCodecs()`: h264, plus HEVC/VP9/AV1 only where the browser says yes; the web used to
+  declare all four everywhere). `navigator.connection.type` feeds `link_kind` where a browser has it
+  (never a rate — `downlink` is capped at 10 Mb/s and would trip phase 177's link cap). And **Safari —
+  HLS natively and WebKit's AirPlay — declares `hls_only`** (it cannot play an MKV, which is most of the
+  library) **and the new `hls_subtitles`**: text subtitles come as renditions *in* the HLS manifest,
+  because an AirPlay hand-over takes the stream to the TV and the page's `<track>`s stay behind. Chrome
+  on Android plays HLS natively too, but has no AirPlay and plays the files as they are, so it keeps its
+  negotiation. `hls_subtitles` is opt-in and honoured only with `hls_only`: the Chromecast receiver is
+  `hls_only` and keeps its sideloaded VTT (`DeviceProfileTest`).
+  **The dev note's probe, done first:** Jellyfin 12.1.0 with `{"Format":"vtt","Method":"Hls"}` lists
+  every embedded SubRip track of a 32-track film in `master.m3u8` as an `EXT-X-MEDIA TYPE=SUBTITLES`
+  rendition (Danish among them), and fetching the manifest starts no encode.
+  The ticket marks such a track `delivery_method = "hls"` with no URL; the web player gives each one a
+  picker slot after its own `<track>`s (the order the `TextTrackList` uses) and re-applies the chosen
+  one as Safari adds the manifest's tracks — which arrive after the pick, and one may be flagged
+  `DEFAULT` (a Croatian sidecar was, in the probe).
+- **FR-R265-4 / R270 FR-R270-1 — the AirPlay row.** A common `AirPlay` seam (null on Android), fed by the
+  web player's `<video>` (`x-webkit-airplay="allow"`, `webkitplaybacktargetavailabilitychanged`,
+  `webkitcurrentplaybacktargetiswirelesschanged`): the sheet's footnote row appears only where WebKit
+  reported a target and opens Apple's picker (`webkitShowPlaybackTargetPicker`) inside the tap; the glyph
+  takes its connected form while the picture is on the TV, and exists at all when AirPlay is the only
+  way to a TV (FR-R265-1). No mini bar and no remote: the phone's own player is the remote.
+- **WebKit never names the TV.** It reports that the target is wireless, not which one, so the glyph's
+  "naming the target" and R270's *"Playing on {TV} · keep Ravilo open"* cannot be drawn as written — see
+  R270 FR-R270-2's build note for what the bar says instead.
+- **Detail's play context:** a screen tapped in the sheet is linked, and Detail's button then reads *Play
+  on {TV}* — the same two steps as a Chromecast (FR-R265-6's "exactly as for a Chromecast"); inside the
+  player the tap is the hand-off. `ScreenPlayContext` stays available for a one-tap start.
+
+**Verified:** `tests/e2e/ravilo-web-airplay-probe.spec.ts` against a local build of the web app —
+Chromium's video list agrees with the browser's own answers and is not an AirPlay browser; with WebKit's
+AirPlay event and native HLS simulated it declares HLS-only; native HLS alone (Chrome on Android) keeps
+its negotiation. The R302 audio probe still passes. **Not verified, and it cannot be here:** anything on
+an iPhone — the row appearing, Apple's picker, the picture on an AirPlay TV with Danish subtitles, the
+bar. That needs an iPhone and an AirPlay-2 TV.
 
 ## Current state (traced against `main`, 2026-09-18)
 

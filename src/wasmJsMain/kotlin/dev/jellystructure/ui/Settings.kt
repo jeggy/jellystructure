@@ -305,6 +305,17 @@ X-JS-Api-Key: jsk_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx</pre>
               </div>
             </div>
 
+            <!-- R270 (FR-R270-2) / R265 — how a phone reaches a TV, for the admin a household asks. No switch:
+                 screens are served on every installation (236). AirPlay's caveat is said here in full, as
+                 the phone says it once when a session starts; the phone's sheet carries only the footnote. -->
+            <div class="card set-section" id="sect-screens-help" data-tab="connections">
+              <div class="row center"><h3 style="font-size:1.05rem;margin:0;">Play on a TV</h3><span class="badge info" style="margin-left:8px;">Ravilo</span></div>
+              <div class="tiny muted" style="margin-top:10px;line-height:1.6;">
+                <p style="margin:0 0 6px">A phone sends a title to a TV from its cast button. A TV running the Ravilo receiver shows a six-character code; a viewer types it once under <b>Add a TV</b>, and that TV is theirs from then on. TVs on the same internet address as the phone are listed first.</p>
+                <p style="margin:0">On an iPhone, <b>AirPlay</b> is offered too. Your phone has to stay on and in Ravilo — the TV stops when you close the app.</p>
+              </div>
+            </div>
+
             <div class="card set-section" id="sect-libraries" data-tab="libraries">
               <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
                 <h3 style="font-size:1rem;margin:0">Library mapping</h3>

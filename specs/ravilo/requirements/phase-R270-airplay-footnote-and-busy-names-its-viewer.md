@@ -12,8 +12,9 @@
 
 ## Status
 
-`⚠ Partial` — written 2026-09-18, dev-reviewed 2026-09-19 against `main` `dcb97f2c`, **built
-2026-09-20 except FR-R270-2's connecting bar, which has nothing to attach to yet.**
+`✓ Built` — written 2026-09-18, dev-reviewed 2026-09-19 against `main` `dcb97f2c`, built 2026-09-20
+except FR-R270-2, **which was built 2026-09-25** with R265's AirPlay seam (see *FR-R270-2, built* below).
+Not verified on an iPhone (none available).
 
 ⚠ **The Status line this phase was written with — "no backend, route, DTO or config change" — was
 wrong**, exactly as the dev review found. FR-R270-3 needed all four.
@@ -54,7 +55,22 @@ Only the string it renders changed (see FR-R270-6 below).
   `screens.airplay_bar`. Plus `screens.in_use` and seven `wd.*` weekday names — localised rather than
   hard-coded, because this is user-facing copy inside a sentence in a trilingual household.
 
-### Not built, and why
+### FR-R270-2, built (2026-09-25)
+
+- **The bar.** When the web player's picture moves to an AirPlay TV (WebKit's
+  `webkitCurrentPlaybackTargetIsWireless` turning true), `AirPlayNoticeBar` shows for ~2.5 s over every
+  screen, the player included — that is where an AirPlay session starts. **It says the full sentence,
+  `screens.airplay_notice`, not `screens.airplay_bar`'s *"Playing on {TV} · keep Ravilo open"*:** WebKit
+  never tells a page which TV it is playing on, only that the target is wireless, so the `{TV}` in that
+  string cannot be filled, and this phase's own rule (FR-R270-5's reasoning) is never a sentence with a
+  hole where a name should be. The sentence the footnote compresses is exactly what FR-R270-2 says must
+  not be dropped. `screens.airplay_bar` stays in the table, unused, for a platform that can name its TV.
+- **The admin help text.** Settings → Connections gains a short *Play on a TV* card under the Chromecast
+  card: how a household adds a TV (the code under *Add a TV*), that TVs on the phone's internet address
+  come first, and AirPlay's caveat in full. There was no screens surface to put it in (236's FR-236-10
+  list is not built), so it stands alone rather than waiting for one.
+
+### Not built at the time (2026-09-20), kept as the record
 
 - **FR-R270-2's connecting bar.** `ScreensSheet`'s `airplayAvailable` is defaulted `false` and **no
   call site passes it**, so AirPlay's actual wiring is still R265 FR-R265-8's unbuilt follow-on and

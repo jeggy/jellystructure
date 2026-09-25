@@ -32,6 +32,11 @@ actual class RaviloPlayer actual constructor() {
         v.style.cssText = "position:fixed;top:0;left:0;width:100%;height:100%;object-fit:contain;background:#000;z-index:0;pointer-events:none"
         v.controls = false
         document.body?.appendChild(v)
+        // R265 (FR-R265-4/-8) — offer this element to AirPlay and report what WebKit says about it.
+        WebAirPlay.bind(v)
+        // R265 — the chosen subtitle is re-applied as Safari adds the manifest's own tracks, which
+        // arrive after load() (and one may arrive marked DEFAULT, e.g. a Croatian sidecar in the probe).
+        watchTextTracks(v)
     }
 
     actual fun setChromeVisible(visible: Boolean) {
@@ -61,7 +66,9 @@ actual class RaviloPlayer actual constructor() {
         // R284 (FR-R284-4) — only subtitles this player can DRAW are its tracks. A URL-less entry is a
         // burn-in candidate (PGS), which PlayerScreen lists itself from the ticket; keeping it here too
         // showed every PGS track twice on the web, the first copy selecting nothing.
-        loadedSubtitles = subtitles.filter { it.url != null }
+        // R265 (FR-R265-8) — plus the manifest's own subtitles (`hls`): drawn by the browser from the
+        // stream itself, which is what an AirPlay hand-over carries to the TV.
+        loadedSubtitles = subtitles.filter { it.url != null || it.deliveryMethod == "hls" }
         subtitleSlots = emptyList()
         loadedAudio = audio
         // Remove existing <track> children
@@ -80,8 +87,15 @@ actual class RaviloPlayer actual constructor() {
         // shown. Either the position of its <track> among the element's text tracks, or an ASS url.
         val slots = mutableListOf<SubtitleSlot>()
         var trackEls = 0
+        // The TextTrackList lists the element's <track>s first and the manifest's renditions after them,
+        // in manifest order — which is stream order, the order the ticket lists them in.
+        val elementTracks = loadedSubtitles.count { s -> s.url?.let { !it.endsWith(".ass", true) && !it.endsWith(".ssa", true) } == true }
+        var manifestTracks = 0
         loadedSubtitles.forEach { sub ->
-            val url = sub.url ?: return@forEach
+            val url = sub.url ?: run {
+                slots += SubtitleSlot(textTrack = elementTracks + manifestTracks++, assUrl = null)
+                return@forEach
+            }
             // R17: native .ass/.ssa subs render with JASSUB (libass) for full styling; the rest are
             // delivered as VTT and use a plain <track>. JASSUB is lazy-loaded only when first needed.
             if (url.endsWith(".ass", ignoreCase = true) || url.endsWith(".ssa", ignoreCase = true)) {
@@ -128,6 +142,7 @@ actual class RaviloPlayer actual constructor() {
     }
 
     actual fun release() {
+        WebAirPlay.unbind(video)
         runCatching { destroyOverlays(video) } // R17: tear down any hls.js / JASSUB instance
         runCatching { document.body?.removeChild(video) }
     }
@@ -331,11 +346,28 @@ private fun fetchAndCleanVtt(url: String, callback: (String) -> Unit): Unit = js
 private class SubtitleSlot(val textTrack: Int, val assUrl: String?)
 
 /** R284 (FR-R284-4) — `showing` for text track [show], `disabled` for every other; -1 disables all.
- *  `disabled` rather than `hidden`: a hidden track still fires cue events and keeps its cues loaded. */
+ *  `disabled` rather than `hidden`: a hidden track still fires cue events and keeps its cues loaded.
+ *  R265 — remembered on the element, so [watchTextTracks] can apply it to tracks that arrive later. */
 private fun showTextTrack(video: HTMLVideoElement, show: Int): Unit = js(
     """{
+        video._raviloShow = show;
         var t = video.textTracks;
         for (var i = 0; i < t.length; i++) { t[i].mode = (i === show) ? 'showing' : 'disabled'; }
+    }"""
+)
+
+/** R265 (FR-R265-8) — a manifest's subtitle renditions become text tracks only once Safari has read the
+ *  manifest, after the selection was made; each one that arrives gets the remembered selection (and a
+ *  DEFAULT rendition the resolver did not pick is turned off rather than shown by the browser). */
+private fun watchTextTracks(video: HTMLVideoElement): Unit = js(
+    """{
+        video._raviloShow = -1;
+        try {
+            video.textTracks.addEventListener('addtrack', function () {
+                var t = video.textTracks, show = video._raviloShow;
+                for (var i = 0; i < t.length; i++) { t[i].mode = (i === show) ? 'showing' : 'disabled'; }
+            });
+        } catch (e) {}
     }"""
 )
 

@@ -493,7 +493,7 @@ class PlaybackService(
         // (MatroskaExtractor), so sideloading/burning it too used to double-deliver it (see
         // buildSubtracks' own doc).
         val embedContainerSubs = !needsTranscode && capabilities.supportsEmbeddedTextSubs
-        val subtitles = buildSubtracks(itemDetail, jellyfinId, jellyfinBase, token, embedContainerSubs)
+        val subtitles = buildSubtracks(itemDetail, jellyfinId, jellyfinBase, token, embedContainerSubs, hlsSubtitles = capabilities.hlsOnly && capabilities.hlsSubtitles)
 
         // Audio-track metadata (R46): the player labels embedded audio from the container, which often
         // lacks a track title — so carry Jellyfin's rich DisplayTitle (e.g. "Synstolkning") through the
@@ -818,6 +818,9 @@ class PlaybackService(
         jellyfinBase: String,
         token: String,
         embedContainerSubs: Boolean,
+        // R265 (FR-R265-8) — text subtitles ride the HLS manifest (the client asked for them there, see
+        // ClientCapabilities.hlsSubtitles); the same condition deviceProfile() uses to ask Jellyfin for it.
+        hlsSubtitles: Boolean = false,
     ): List<SubTrack> {
         val streams = itemDetail?.mediaStreams ?: return emptyList()
         return streams
@@ -836,6 +839,17 @@ class PlaybackService(
                         isDefault = s.isDefault,
                         url = null,
                         deliveryMethod = "embed",
+                    )
+                    // R265 (FR-R265-8) — in the manifest, not sideloaded: no URL, the client selects the
+                    // rendition itself. Same stream order as the manifest's renditions.
+                    (s.isTextSubtitleStream || isTextSubCodec(s.codec)) && hlsSubtitles -> SubTrack(
+                        index = s.index,
+                        language = s.language,
+                        label = s.displayTitle ?: s.title,
+                        forced = s.isForced,
+                        isDefault = s.isDefault,
+                        url = null,
+                        deliveryMethod = "hls",
                     )
                     // R55: text subs (SRT/ASS/SSA/VTT/muxed, or external — R209) — sideloaded via
                     // Jellyfin's VTT extractor.
@@ -916,7 +930,7 @@ class PlaybackService(
         // below), and a transcoded output doesn't carry the source's original embedded subtitle
         // streams (text or PGS), so there's nothing to double by sideloading/burning; this path's subs
         // were never affected by either bug.
-        val subtitles = buildSubtracks(itemDetail, jellyfinId, jellyfinBase, token, embedContainerSubs = false)
+        val subtitles = buildSubtracks(itemDetail, jellyfinId, jellyfinBase, token, embedContainerSubs = false, hlsSubtitles = capabilities?.let { it.hlsOnly && it.hlsSubtitles } ?: false)
         val audio = buildAudioTracks(itemDetail)
         // R56: ask Jellyfin (PlaybackInfo + DeviceProfile, with the sub index for Encode burn-in) for the
         // real TranscodingUrl; fall back to a hand-built HLS burn-in URL if PlaybackInfo is unavailable.
@@ -1018,7 +1032,7 @@ class PlaybackService(
         // 2026-09-24 — this path serves an un-burn AND a plain audio switch (R284), and cannot tell them
         // apart; it used to log every one of them as "un-burn", which misread the soveværelse-TV sweep.
         Logger.info("PlaybackInfo(restream, no burn-in): item=$jellyfinId audio=${audioStreamIndex ?: "default"} directPlay=${source?.supportsDirectPlay} transcode=$needsTranscode", "tv")
-        val subtitles = buildSubtracks(itemDetail, jellyfinId, jellyfinBase, token, embedContainerSubs = !needsTranscode && capabilities.supportsEmbeddedTextSubs)
+        val subtitles = buildSubtracks(itemDetail, jellyfinId, jellyfinBase, token, embedContainerSubs = !needsTranscode && capabilities.supportsEmbeddedTextSubs, hlsSubtitles = capabilities.hlsOnly && capabilities.hlsSubtitles)
 
         val startResult = playbackTracker.started(device, jellyfinId, positionMs, playbackInfo?.playSessionId)
         startResult.superseded?.let { old ->

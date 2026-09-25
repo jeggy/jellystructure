@@ -24,3 +24,22 @@ internal val BASE_AUDIO_CODECS = listOf("aac", "mp3", "flac", "opus", "ac3", "ea
  * "what can this build really play" answer. A wrong yes is a black screen, so: only where known.
  */
 expect fun supportsHevcOverHls(): Boolean
+
+/**
+ * R265 (FR-R265-8) — the video codecs this player decodes, asked of the platform rather than copied
+ * from the TV's list (the web used to declare h264/hevc/vp9/av1 on every browser, so a browser with
+ * no HEVC decoder was handed HEVC to direct-play). Jellyfin's names.
+ */
+expect fun supportedVideoCodecs(): List<String>
+
+/** The pre-R265 list every platform declared; still the Android answer (Media3 + the device's codecs). */
+internal val BASE_VIDEO_CODECS = listOf("h264", "hevc", "vp9", "av1")
+
+/**
+ * R265 (FR-R265-8) — the player's `<video>` plays HLS by itself and can hand it to AirPlay: Safari.
+ * Such a client takes ONLY HLS (`hls_only` — Safari cannot play an MKV, which is most of the library)
+ * and shows subtitles from the manifest (`hls_subtitles` — an AirPlay hand-over takes the stream to the
+ * TV, and the page's own `<track>`s stay behind). False on Android and on every other browser, which
+ * keep what they negotiated before.
+ */
+expect fun playsHlsForAirPlay(): Boolean

@@ -60,6 +60,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.seams.ActiveCastSender
+import dev.jellystructure.ravilo.ui.seams.platformAirPlay
 import dev.jellystructure.ravilo.ui.seams.CastLinkState
 import dev.jellystructure.ravilo.ui.screens.castMiniBarVisible
 import dev.jellystructure.ravilo.ui.seams.RemoteImage
@@ -238,18 +239,56 @@ fun CastButton(modifier: Modifier = Modifier, playContext: ScreenPlayContext? = 
     if (isTvPlatform) return
     val cast = LocalCast.current ?: return
     val link by cast.sender.link.collectAsState()
+    // R265 (FR-R265-4) — AirPlay has no sender and no session here, only the <video>'s own state; while
+    // the picture is on an AirPlay TV the glyph takes its connected form (WebKit names no TV to show).
+    val airplaying by (platformAirPlay?.wireless ?: remember { MutableStateFlow(false) }).collectAsState()
     Box(
         modifier.size(40.dp).clip(CircleShape)
             .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { cast.openSheet(playContext) },
         contentAlignment = Alignment.Center,
-    ) { CastMarkGlyph(tint = RaviloTheme.colors.text, link = link) }
+    ) { CastMarkGlyph(tint = RaviloTheme.colors.text, link = if (airplaying) CastLinkState.CONNECTED else link) }
 }
 
 /** R265 — the root-level host for [CastController.sheet]; RaviloApp draws it once, above every screen. */
 @Composable
 fun CastSheetHost(cast: CastController) {
     val request by cast.sheet.collectAsState()
-    ScreensSheet(cast = cast, open = request != null, onClose = cast::closeSheet, playContext = request?.playContext)
+    val airplay = platformAirPlay
+    val airplayAvailable by (airplay?.available ?: remember { MutableStateFlow(false) }).collectAsState()
+    ScreensSheet(
+        cast = cast, open = request != null, onClose = cast::closeSheet, playContext = request?.playContext,
+        // R265 (FR-R265-4) / R270 (FR-R270-1) — the footnote row, only where WebKit reported a target.
+        airplayAvailable = airplayAvailable, onAirplay = { airplay?.showPicker() },
+    )
+}
+
+/**
+ * R270 (FR-R270-2) — the full caveat, shown once, at the moment it becomes true: when the picture moves
+ * to an AirPlay TV, *"Your phone has to stay on and in Ravilo — the TV stops when you close the app."*
+ * for ~2.5 s, then gone. The spec's *"Playing on {TV} · keep Ravilo open"* needs the TV's name, which
+ * WebKit never gives a page (it reports only that the target is wireless), so the bar says the sentence
+ * the footnote compresses instead — never a line with a hole where a name should be. Drawn over every
+ * screen, the player included: that is where an AirPlay session starts.
+ */
+@Composable
+fun AirPlayNoticeBar() {
+    val airplay = platformAirPlay ?: return
+    val wireless by airplay.wireless.collectAsState()
+    var shown by remember { mutableStateOf(false) }
+    var was by remember { mutableStateOf(wireless) }
+    LaunchedEffect(wireless) {
+        val started = wireless && !was
+        was = wireless
+        if (started) { shown = true; delay(2_500); shown = false } else if (!wireless) shown = false
+    }
+    AnimatedVisibility(visible = shown, enter = slideInVertically { -it } + fadeIn(tween(160)), exit = slideOutVertically { -it } + fadeOut(tween(200))) {
+        Box(Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.safeDrawing).padding(top = 60.dp).padding(horizontal = 12.dp)) {
+            Text(
+                str("screens.airplay_notice"), color = Color.White, fontSize = 13.sp, fontFamily = Sora, fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.fillMaxWidth().background(RaviloTheme.colors.accent.copy(alpha = 0.92f), RoundedCornerShape(10.dp)).padding(horizontal = 14.dp, vertical = 9.dp),
+            )
+        }
+    }
 }
 
 /**

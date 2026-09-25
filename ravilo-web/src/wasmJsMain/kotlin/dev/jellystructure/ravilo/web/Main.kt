@@ -18,6 +18,9 @@ fun main() {
     // R302 — probe what this browser can decode once, at boot, so the answer is ready before the first
     // play and visible to the e2e suite; the list itself is only ever read by a playback start.
     dev.jellystructure.ravilo.ui.seams.supportedAudioCodecs()
+    // R265 (FR-R265-8) — the same, for the video codecs and for "Safari: HLS only, subtitles in the manifest".
+    dev.jellystructure.ravilo.ui.seams.supportedVideoCodecs()
+    dev.jellystructure.ravilo.ui.seams.playsHlsForAirPlay()
     CanvasBasedWindow(title = "Ravilo") {
         RaviloRoot()
     }

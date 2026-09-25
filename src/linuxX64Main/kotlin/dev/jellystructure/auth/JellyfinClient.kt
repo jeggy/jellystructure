@@ -90,7 +90,11 @@ internal fun deviceProfile(capabilities: ClientCapabilities): String {
         """{"Container":"mp4","Type":"Video","VideoCodec":"hevc,h264","AudioCodec":"${transcodeAudio(listOf("aac", "ac3", "eac3", "mp3"))}","Protocol":"hls","Context":"Streaming"}"""
     else
         """{"Container":"ts","Type":"Video","VideoCodec":"h264","AudioCodec":"${transcodeAudio(listOf("aac", "ac3", "mp3"))}","Protocol":"hls","Context":"Streaming"}"""
-    return """{"MaxStreamingBitrate":${maxStreamingBitrate(capabilities)},"DirectPlayProfiles":[$directPlayProfiles],"CodecProfiles":[$codecProfiles],"TranscodingProfiles":[$transcodingProfile],"SubtitleProfiles":[{"Format":"vtt","Method":"External"},{"Format":"srt","Method":"External"},{"Format":"subrip","Method":"External"},{"Format":"ass","Method":"External"},{"Format":"ssa","Method":"External"},{"Format":"vobsub","Method":"Embed"},{"Format":"dvdsub","Method":"Embed"},{"Format":"dvbsub","Method":"Embed"},{"Format":"pgssub","Method":"Encode"},{"Format":"pgs","Method":"Encode"}]}"""
+    // R265 (FR-R265-8) — a client that shows in-manifest HLS subtitles (Safari, whose AirPlay hand-over
+    // takes the stream and not the page's <track>s) gets its text subtitles as HLS renditions; everyone
+    // else keeps them sideloaded. Image subtitles are unchanged either way.
+    val textSubMethod = if (capabilities.hlsOnly && capabilities.hlsSubtitles) "Hls" else "External"
+    return """{"MaxStreamingBitrate":${maxStreamingBitrate(capabilities)},"DirectPlayProfiles":[$directPlayProfiles],"CodecProfiles":[$codecProfiles],"TranscodingProfiles":[$transcodingProfile],"SubtitleProfiles":[{"Format":"vtt","Method":"$textSubMethod"},{"Format":"srt","Method":"$textSubMethod"},{"Format":"subrip","Method":"$textSubMethod"},{"Format":"ass","Method":"$textSubMethod"},{"Format":"ssa","Method":"$textSubMethod"},{"Format":"vobsub","Method":"Embed"},{"Format":"dvdsub","Method":"Embed"},{"Format":"dvbsub","Method":"Embed"},{"Format":"pgssub","Method":"Encode"},{"Format":"pgs","Method":"Encode"}]}"""
 }
 
 /**

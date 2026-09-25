@@ -33,3 +33,38 @@ actual fun supportsHevcOverHls(): Boolean = false
 private fun jsCanDecode(type: String): Boolean = js(
     """((window.MediaSource && window.MediaSource.isTypeSupported) ? window.MediaSource.isTypeSupported(type) : (document.createElement('video').canPlayType(type) !== ''))"""
 )
+
+/**
+ * R265 (FR-R265-8) — asked of the browser, like the audio list above: h264 always; HEVC, VP9 and AV1
+ * only where this browser says it decodes them. A codec left off is transcoded to h264 instead of
+ * direct-played into a decoder that is not there.
+ */
+private val probedVideo: List<String> by lazy {
+    probeVideo().also { jsPublishVideoCodecs(it.joinToString(",")) }
+}
+
+private fun probeVideo(): List<String> =
+    listOfNotNull(
+        "h264",
+        "hevc".takeIf { jsCanDecode("video/mp4; codecs=\"hvc1.1.6.L120.90\"") || jsCanDecode("video/mp4; codecs=\"hev1.1.6.L120.90\"") },
+        "vp9".takeIf { jsCanDecode("video/webm; codecs=\"vp9\"") || jsCanDecode("video/mp4; codecs=\"vp09.00.10.08\"") },
+        "av1".takeIf { jsCanDecode("video/mp4; codecs=\"av01.0.05M.08\"") },
+    )
+
+actual fun supportedVideoCodecs(): List<String> = probedVideo
+
+/** R265 — the answer, readable by the e2e suite (`window.__raviloVideoCodecs`), like the audio list's. */
+private fun jsPublishVideoCodecs(csv: String): Unit = js("{ window.__raviloVideoCodecs = csv; }")
+
+/**
+ * R265 (FR-R265-8) — Safari: plays HLS natively AND can AirPlay (WebKit's playback-target event exists).
+ * Chrome on Android also plays HLS natively, but has no AirPlay and plays the library's files as they
+ * are, so it keeps its negotiation. Published for the e2e suite as `window.__raviloAirPlayHls`.
+ */
+private val airplayHls: Boolean by lazy { jsAirPlayHls().also { jsPublishAirPlayHls(it) } }
+actual fun playsHlsForAirPlay(): Boolean = airplayHls
+
+private fun jsAirPlayHls(): Boolean = js(
+    """(typeof window.WebKitPlaybackTargetAvailabilityEvent !== 'undefined') && (document.createElement('video').canPlayType('application/vnd.apple.mpegurl') !== '')"""
+)
+private fun jsPublishAirPlayHls(v: Boolean): Unit = js("{ window.__raviloAirPlayHls = v; }")

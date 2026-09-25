@@ -73,6 +73,16 @@ data class ClientCapabilities(
      * that plays today, so only a client that has verified it (or probed it) sets this.
      */
     @SerialName("hls_hevc") val hlsHevc: Boolean = false,
+    /**
+     * R265 (FR-R265-8) — this client shows **in-manifest HLS subtitles** (`EXT-X-MEDIA TYPE=SUBTITLES`),
+     * so text subtitles are asked of Jellyfin with `Method: Hls` rather than sideloaded as VTT. Honoured
+     * only together with [hlsOnly]. Opt-in, default false: the Chromecast receiver is `hls_only` too and
+     * keeps its sideloaded tracks. Today only Safari sets it, because an AirPlay hand-over takes the HLS
+     * stream to the TV and a page's own `<track>` elements do not travel with it. Measured on Jellyfin
+     * 12.1.0 (2026-09-25): with a `{"Format":"vtt","Method":"Hls"}` profile every embedded SubRip track is
+     * listed in `master.m3u8` as a subtitles rendition, and fetching the manifest starts no encode.
+     */
+    @SerialName("hls_subtitles") val hlsSubtitles: Boolean = false,
     // Bug fix: an HDR10/HDR10+ (PQ) or HLG source used to always direct-play regardless of whether
     // the device could actually display it correctly — Jellyfin's DeviceProfile declared no VideoRange
     // constraint at all, so it never had a reason to tone-map-transcode to SDR. These default to

@@ -16,3 +16,9 @@ private val FFMPEG_AUDIO_CODECS = listOf("truehd", "dts")
 /** R284 (FR-R284-6) — Media3's HLS source plays fMP4 segments, and HEVC decode is the platform's
  *  (the same MediaCodec path direct play already uses for every HEVC title in the library). */
 actual fun supportsHevcOverHls(): Boolean = true
+
+/** R265 — unchanged: Media3 with the device's own decoders, the list every platform used to send. */
+actual fun supportedVideoCodecs(): List<String> = BASE_VIDEO_CODECS
+
+/** R265 — never: AirPlay is Apple's, and this player takes files as well as HLS. */
+actual fun playsHlsForAirPlay(): Boolean = false
