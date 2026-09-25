@@ -361,6 +361,29 @@ fun main() = runBlocking {
     // Cheap (one Jellyfin GET, see sync()'s own doc comment) and safe to call unconditionally — it no-ops
     // if Jellyfin isn't configured/reachable yet.
     rootScope.launch { runCatching { liveTvService.sync() } }
+    // Phase 258 (FR-258-2) — the five policy fields on ravilo_device follow Jellyfin: one pass at start
+    // (the drifted rows are corrected within a minute of a deploy — dev review item 6: not "before any
+    // request", a start hook cannot promise that), then every five minutes; the events-socket connect
+    // trigger lives in Server.kt. Skipped silently while Jellyfin is not configured yet: a fresh install
+    // must not log a failed pass every five minutes.
+    val devicePolicyReconciler = dev.jellystructure.tv.DevicePolicyReconciler(
+        deviceService = raviloDeviceService,
+        fetchUsers = {
+            val keys = configStore.current.apiKeys
+            if (keys.jellyfinUrl.isBlank() || keys.jellyfinToken.isBlank()) emptyList()
+            else jellyfinClient.getUsersOrNull(keys.jellyfinUrl, keys.jellyfinToken)
+        },
+        onPolicyChanged = { userId -> tvEventBus.notifyHomeChanged(userId) },
+    )
+    rootScope.launch {
+        runCatching { devicePolicyReconciler.reconcileAll("start") }
+            .onFailure { Logger.warn("Policy refresh (start) failed: ${it.message}", "auth") }
+        while (shutdownRequested.value == 0) {
+            delay(dev.jellystructure.tv.DevicePolicyReconciler.INTERVAL_MS)
+            runCatching { devicePolicyReconciler.reconcileAll("interval") }
+                .onFailure { Logger.warn("Policy refresh (interval) failed: ${it.message}", "auth") }
+        }
+    }
     val shutdown = startServer(
         configStore, sessionService, raviloDeviceService, raviloConfigService, channelLogoStore, homeFeedService, browseService, detailService, playbackService, jellyfinClient, mediaStore, scanner,
         artworkDownloader, tmdbClient, scanTracker, mediaHistory, activityLog, broadcaster,
@@ -368,6 +391,7 @@ fun main() = runBlocking {
         playbackQoeStore = playbackQoeStore,
         castService = castService, castDir = castDir,
         screenPairingService = screenPairingService,
+        devicePolicyReconciler = devicePolicyReconciler,
     )
 
     // R149: populate Sonarr next-airing data for all TV shows on startup (background, non-blocking).

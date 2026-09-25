@@ -1,0 +1,5 @@
+-- Phase 258 (FR-258-6) — when this row's five policy fields were last confirmed against Jellyfin: written by
+-- login (the AuthenticateByName policy) and by every reconciler pass. NULL = never confirmed since the
+-- column existed (a row the first pass after this migration will stamp). See RaviloDevice.sq; this migration
+-- must stay byte-for-byte in sync with its CREATE TABLE (the SQLDelight-migration rule).
+ALTER TABLE ravilo_device ADD COLUMN policy_refreshed_at INTEGER;

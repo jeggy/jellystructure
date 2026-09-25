@@ -378,10 +378,24 @@ class JellyfinClient {
         }
     }
 
-    suspend fun getUsers(baseUrl: String, token: String): List<JellyfinUser> = runCatching {
+    suspend fun getUsers(baseUrl: String, token: String): List<JellyfinUser> =
+        getUsersOrNull(baseUrl, token).orEmpty()
+
+    /**
+     * Phase 258 (dev review item 2) — `/Users` with a way to say it failed: `null` when Jellyfin was
+     * unreachable, answered non-2xx, or sent a body that is not a user list; a real (possibly empty)
+     * list otherwise. R231's shape (`buildCanonicalContinueList`), for the same reason: the policy
+     * reconciler must leave every row alone on a failure (FR-258-3), and a failure that looks like
+     * "no users" would be told apart from a quiet pass by nothing. Cancellation is rethrown, never
+     * defaulted (Phase 205's rule for this file).
+     */
+    suspend fun getUsersOrNull(baseUrl: String, token: String): List<JellyfinUser>? = runCatching {
         httpGet(baseUrl.trimEnd('/') + "/Users") { jellyfinAuth(token) }
-            .bodyOrNull<List<JellyfinUser>>("getUsers").orEmpty()
-    }.getOrDefault(emptyList())
+            .bodyOrNull<List<JellyfinUser>>("getUsers")
+    }.let { r ->
+        r.exceptionOrNull()?.let { if (it is CancellationException) throw it }
+        r.getOrNull()
+    }
 
     suspend fun getLibraries(baseUrl: String, token: String): List<JellyfinLibrary> = runCatching {
         val url = baseUrl.trimEnd('/') + "/Library/VirtualFolders"

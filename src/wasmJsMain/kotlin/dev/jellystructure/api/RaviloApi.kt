@@ -114,6 +114,10 @@ data class OverviewPolicy(
     @SerialName("allowed_tags") val allowedTags: List<String> = emptyList(),
     @SerialName("blocked_tags") val blockedTags: List<String> = emptyList(),
     @SerialName("max_rating") val maxRating: Int? = null,
+    /** Phase 258 — false when Jellyfin did not answer; the line then reads *policy unknown*. */
+    @SerialName("known") val known: Boolean = true,
+    /** Phase 258 (FR-258-6) — a device row still carries an older policy than Jellyfin's live one. */
+    @SerialName("stale") val stale: Boolean = false,
 )
 
 @Serializable

@@ -46,12 +46,30 @@ CREATE TABLE ravilo_device (
     kind TEXT NOT NULL DEFAULT 'tv',
     -- Phase 236 (FR-236-6) — stamped on an events-socket open and a playback/status post.
     last_public_address TEXT,
+    -- Phase 258 (FR-258-6) — epoch millis when the five policy fields above (allowed_libraries,
+    -- allowed_tags, blocked_tags, is_admin, is_kids) were last confirmed against Jellyfin's live policy:
+    -- by login and by every reconciler pass (changed or not). Those five are a CACHE of Jellyfin's policy
+    -- with a bounded age (FR-258-1), not a sign-in record. NULL = not confirmed since the column existed.
+    policy_refreshed_at INTEGER,
     PRIMARY KEY (device_id, jellyfin_user_id)
 );
 
 insertDevice:
-INSERT OR REPLACE INTO ravilo_device(device_id, jellyfin_user_id, jellyfin_username, jellyfin_user_token, is_admin, is_kids, device_token, display_name, created_at, last_seen, allowed_libraries, allowed_tags, blocked_tags, app_version, platform, kind)
-VALUES (:device_id, :jellyfin_user_id, :jellyfin_username, :jellyfin_user_token, :is_admin, :is_kids, :device_token, :display_name, :created_at, :last_seen, :allowed_libraries, :allowed_tags, :blocked_tags, :app_version, :platform, :kind);
+INSERT OR REPLACE INTO ravilo_device(device_id, jellyfin_user_id, jellyfin_username, jellyfin_user_token, is_admin, is_kids, device_token, display_name, created_at, last_seen, allowed_libraries, allowed_tags, blocked_tags, app_version, platform, kind, policy_refreshed_at)
+VALUES (:device_id, :jellyfin_user_id, :jellyfin_username, :jellyfin_user_token, :is_admin, :is_kids, :device_token, :display_name, :created_at, :last_seen, :allowed_libraries, :allowed_tags, :blocked_tags, :app_version, :platform, :kind, :policy_refreshed_at);
+
+-- Phase 258 (FR-258-2, dev review item 3) — one statement per user: every row this Jellyfin user has
+-- (their phone, the screens and cast receivers it minted, their TVs) takes the live policy at once, so a
+-- derived receiver is corrected by the same pass as the device that created it.
+updatePolicy:
+UPDATE ravilo_device
+SET allowed_libraries = :allowed_libraries, allowed_tags = :allowed_tags, blocked_tags = :blocked_tags,
+    is_admin = :is_admin, is_kids = :is_kids, policy_refreshed_at = :policy_refreshed_at
+WHERE jellyfin_user_id = :jellyfin_user_id;
+
+-- Phase 258 (FR-258-6) — a pass that found every row already right still records that it looked.
+stampPolicyRefreshed:
+UPDATE ravilo_device SET policy_refreshed_at = :policy_refreshed_at WHERE jellyfin_user_id = :jellyfin_user_id;
 
 -- Phase 224 (FR-224-2) — one write per change: RaviloDeviceService compares the request's headers with
 -- the cached row and calls this only when the pair differs.

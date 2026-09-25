@@ -166,7 +166,14 @@ private suspend fun refreshUsersList(scope: CoroutineScope) {
             if (p.allowedTags.isNotEmpty()) add("allowed tags " + p.allowedTags.joinToString(", "))
             p.maxRating?.let { add("max rating $it") }
         }
-        val accessLine = (listOf(access) + tagBits).joinToString(" · ")
+        // Phase 258 — the line reads the LIVE policy, so it must say when it is not the policy a device
+        // enforces (FR-258-6: one clause, no per-device detail), and must not claim "All libraries" when
+        // Jellyfin simply did not answer (dev review item 2).
+        val accessLine = when {
+            !p.known -> "policy unknown · Jellyfin did not answer"
+            p.stale -> (listOf(access) + tagBits).joinToString(" · ") + " · a device is still on an older policy"
+            else -> (listOf(access) + tagBits).joinToString(" · ")
+        }
 
         val deviceRows = if (u.devices.isEmpty()) """<div class="tiny muted" style="padding:6px 0">No Ravilo devices.</div>""" else u.devices.joinToString("") { d ->
             val connBadge = if (d.connected) """<span class="badge ok" style="margin-left:6px">connected</span>""" else ""

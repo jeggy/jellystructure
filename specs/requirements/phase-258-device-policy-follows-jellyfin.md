@@ -2,12 +2,28 @@
 
 ## Status
 
-`Planned` — written 2026-09-24 from a production finding. **Dev-reviewed 2026-09-24 against `main`
-`9d2636bb`** (see §Dev review at the bottom: every cited path holds; FR-258-4's "by construction" is
-defeated for up to five minutes by `validateDeviceToken`'s token cache unless the reconciler evicts it;
-`getUsers()` cannot report a failure today, which FR-258-3 needs; no `updatePolicy` query exists; the
-reconciler must normalise exactly as `loginDevice` does or every pass rewrites every row). Not built.
-Spec first.
+`✓ Built` 2026-09-25 — from the dev review below, all seven items. `Planned` when written 2026-09-24
+from a production finding; **dev-reviewed 2026-09-24 against `main` `9d2636bb`**.
+
+### Build (2026-09-25)
+
+- `DevicePolicyReconciler` (new): one `getUsersOrNull()` per pass; every user with a row compared after
+  `DevicePolicy.of()`'s normalisation (the login's four rules, copied — item 4); `refreshPolicy()` rewrites
+  all of a user's rows in one `updatePolicy` statement (item 3, migration `49.sqm` + the `.sq` CREATE
+  TABLE) and evicts every one of their tokens from `validateDeviceToken`'s five-minute cache (item 1);
+  `home_changed` to that user (FR-258-4); one `Policy refreshed` line per (device, field) and silence on a
+  quiet pass (FR-258-7). Runs at start in the root scope beside the watchdog loop (item 6), every five
+  minutes, and at the top of the `/api/tv/events` handler after registration, bounded to 3 s, when the
+  user's last pass is older than 60 s (item 5). A `null` fetch (unreachable, non-2xx, unparseable) or a user
+  absent from the answer changes nothing (FR-258-3). `loginDevice` also stamps `policy_refreshed_at`.
+- Settings → Users & devices: `OverviewPolicy.known`/`stale` — *policy unknown · Jellyfin did not answer*
+  when `/Users` failed (item 2), *· a device is still on an older policy* when any row differs from the live
+  policy (FR-258-6, same comparison); the mockup `design/app/ravilo-users.html` carries the chip (item 7).
+- Tests: `RaviloDevicePolicyTest` (6) and `DevicePolicyReconcilerTest` (5) in `linuxX64Test`; the
+  acceptance script is `scripts/check-device-policy-drift.py`.
+- Acceptance 1 reproduced on a copy of prod's DB before deploying: **17 rows · 4 drifted** (the two
+  household TVs and the test account's two rows, all on tags). Acceptance 2–6: see below once deployed.
+
 Amends **Phase 142** (FR-AUTH2: the per-device library allow-list) and its tag follow-up; no Ravilo
 client change, no new payload field.
 

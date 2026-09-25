@@ -99,6 +99,13 @@ private data class OverviewPolicy(
     @SerialName("allowed_tags") val allowedTags: List<String> = emptyList(),
     @SerialName("blocked_tags") val blockedTags: List<String> = emptyList(),
     @SerialName("max_rating") val maxRating: Int? = null,
+    /** Phase 258 (dev review item 2) — false when Jellyfin did not answer `/Users` or this user was not in
+     *  the answer; the fields above are then fallbacks, and the page says *policy unknown* instead of
+     *  "All libraries". */
+    @SerialName("known") val known: Boolean = true,
+    /** Phase 258 (FR-258-6) — true when any of this user's device rows still carries a policy that differs
+     *  from Jellyfin's live one (a reconcile has not run yet, or has been failing). */
+    @SerialName("stale") val stale: Boolean = false,
 )
 
 /** Phase 177 §FR-177-5 — one row for the Activity page's "Playback quality" card; device/title are
@@ -902,8 +909,9 @@ fun Route.tvRoutes(
         val allSessions = sessionService.list()
         // Every admin's full Policy, in one call — already fetched for admin login elsewhere; reused
         // here rather than a per-user round-trip. Skipped gracefully if Jellyfin isn't configured yet.
+        // Phase 258 (dev review item 2) — a failed fetch is known to have failed, not an empty household.
         val jfUsers = if (config.apiKeys.jellyfinUrl.isNotBlank() && config.apiKeys.jellyfinToken.isNotBlank()) {
-            jellyfinClient.getUsers(config.apiKeys.jellyfinUrl, config.apiKeys.jellyfinToken)
+            jellyfinClient.getUsersOrNull(config.apiKeys.jellyfinUrl, config.apiKeys.jellyfinToken).orEmpty()
         } else emptyList()
         val jfPolicies = jfUsers.associate { it.id to it.policy }
         // Phase 187 (FR-187-9) — read-only photo per user row, same PrimaryImageTag cache-busting
@@ -930,6 +938,10 @@ fun Route.tvRoutes(
                     allowedTags = policy?.allowedTags ?: emptyList(),
                     blockedTags = policy?.blockedTags ?: emptyList(),
                     maxRating = policy?.maxParentalRating,
+                    known = policy != null,
+                    // FR-258-6 — the live policy is what this line shows; name it when a device's own copy
+                    // (the one that decides what plays) is behind it. Same comparison the reconciler makes.
+                    stale = policy?.let { live -> val p = dev.jellystructure.tv.DevicePolicy.of(live); userDevices.any { dev.jellystructure.tv.policyChanges(it, p).isNotEmpty() } } ?: false,
                 ),
                 avatarUrl = RaviloImageUrl.avatar(uid, jfAvatarTags[uid]),
                 devices = userDevices.map { d ->

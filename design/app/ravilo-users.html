@@ -20,7 +20,7 @@
   .usr-access > .muted:first-child { font-size: .6rem; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--ink-dim); }
   .usr-access .chip { font-size: .72rem; cursor: default; }
   .usr-tagdot { width: 8px; height: 8px; border-radius: 50%; flex: none; display: inline-block; margin-right: 6px; }
-  .usr-tagdot.ok { background: var(--ok); } .usr-tagdot.bad { background: var(--bad); }
+  .usr-tagdot.ok { background: var(--ok); } .usr-tagdot.bad { background: var(--bad); } .usr-tagdot.warn { background: var(--warn); }
   .usr-more-row { display: none; }
   .usr-table.hist-open .usr-more-row { display: table-row; }
   .usr-showmore td { padding-top: 9px; border-bottom: none; }
@@ -163,7 +163,7 @@
             <span class="spacer"></span>
             <span class="btn sm ghost usr-signout-all">⏻ Sign out everywhere</span>
           </div>
-          <div class="usr-access tiny"><span class="muted">access</span><span class="chip"><span class="usr-tagdot ok"></span>allowed tag <b>kids-safe</b> only</span><span class="chip">max rating <b>7</b></span><span class="chip">2 of 5 libraries <span class="muted">· Movies · Series</span></span></div>
+          <div class="usr-access tiny"><span class="muted">access</span><span class="chip"><span class="usr-tagdot ok"></span>allowed tag <b>kids-safe</b> only</span><span class="chip">max rating <b>7</b></span><span class="chip">2 of 5 libraries <span class="muted">· Movies · Series</span></span><span class="chip" title="Phase 258 — the chips read Jellyfin's live policy; one of this user's devices still enforces the copy it signed in with, until the next refresh"><span class="usr-tagdot warn"></span>a device is still on an older policy</span></div>
           <div class="usr-now"><span class="usr-now-ic">▶</span><div class="usr-now-main"><div class="usr-now-t">Caminandes 3: Llamigos</div><div class="usr-now-sub">now watching · Playroom TV</div></div><div class="usr-now-bar"><div class="bar"><i style="width:68%"></i></div></div><span class="usr-now-pct">08:12 / 12:00</span></div>
           <table class="wf-table usr-table" style="margin-top:11px;">
             <tr class="usr-hd"><td>Ravilo devices</td><td>created</td><td>last seen</td><td></td><td></td></tr>

@@ -40,6 +40,51 @@ data class DeviceDecodeCapabilities(
     val measuredAt: Long?,
 )
 
+/**
+ * Phase 258 — one Jellyfin user's policy in the exact shape `ravilo_device` stores it: library GUIDs
+ * normalised, tags lowercased, `EnableAllFolders` ⇒ `null` (unrestricted), `MaxParentalRating != null` ⇒
+ * kids. Built from a live `/Users` policy by [of] and from a stored row by [of], so the two compare equal
+ * whenever they mean the same thing and a reconciler pass never "changes" a row into what it already was.
+ */
+data class DevicePolicy(
+    val allowedLibraries: Set<String>?,
+    val allowedTags: Set<String>,
+    val blockedTags: Set<String>,
+    val isAdmin: Boolean,
+    val isKids: Boolean,
+) {
+    companion object {
+        /** The four rules of `TvRoutes`' login, copied rather than referenced (dev review item 4). */
+        fun of(policy: dev.jellystructure.auth.JellyfinPolicy): DevicePolicy = DevicePolicy(
+            allowedLibraries = if (policy.enableAllFolders) null else policy.enabledFolders.map { normalizeGuid(it) }.toSet(),
+            allowedTags = policy.allowedTags.map { it.lowercase() }.toSet(),
+            blockedTags = policy.blockedTags.map { it.lowercase() }.toSet(),
+            isAdmin = policy.isAdministrator,
+            isKids = policy.maxParentalRating != null,
+        )
+
+        fun of(row: DeviceData): DevicePolicy =
+            DevicePolicy(row.allowedLibraries, row.allowedTags, row.blockedTags, row.isAdmin, row.isKids)
+    }
+}
+
+/** Phase 258 (FR-258-7) — one (row, field) that differed from Jellyfin, in the words the log line uses. */
+data class PolicyChange(val deviceId: String, val deviceName: String, val field: String, val from: String, val to: String)
+
+/** Phase 258 — which of [row]'s five policy fields disagree with [live]; empty when the row is current. */
+fun policyChanges(row: DeviceData, live: DevicePolicy): List<PolicyChange> {
+    val stored = DevicePolicy.of(row)
+    fun libs(s: Set<String>?) = s?.let { if (it.isEmpty()) "none" else it.sorted().joinToString(",") { id -> id.take(8) } } ?: "all"
+    fun tags(s: Set<String>) = if (s.isEmpty()) "none" else s.sorted().joinToString(",")
+    return buildList {
+        if (stored.allowedLibraries != live.allowedLibraries) add(PolicyChange(row.deviceId, row.displayName, "libraries", libs(stored.allowedLibraries), libs(live.allowedLibraries)))
+        if (stored.allowedTags != live.allowedTags) add(PolicyChange(row.deviceId, row.displayName, "allowed tags", tags(stored.allowedTags), tags(live.allowedTags)))
+        if (stored.blockedTags != live.blockedTags) add(PolicyChange(row.deviceId, row.displayName, "blocked tags", tags(stored.blockedTags), tags(live.blockedTags)))
+        if (stored.isAdmin != live.isAdmin) add(PolicyChange(row.deviceId, row.displayName, "admin", stored.isAdmin.toString(), live.isAdmin.toString()))
+        if (stored.isKids != live.isKids) add(PolicyChange(row.deviceId, row.displayName, "kids", stored.isKids.toString(), live.isKids.toString()))
+    }
+}
+
 class RaviloDeviceService(private val db: JellystructureDb) {
 
     // token → (DeviceData, cachedAtMs, lastSeenWrittenMs)
@@ -107,6 +152,7 @@ class RaviloDeviceService(private val db: JellystructureDb) {
             app_version = appVersion ?: existing?.app_version,
             platform = platform ?: existing?.platform,
             kind = resolvedKind,
+            policy_refreshed_at = now,   // Phase 258 (FR-258-5/6) — the AuthenticateByName policy is the freshest copy there is
         )
         // Force a fresh DB read on the next validateDeviceToken call — the token/policy may have
         // changed even though the device_token itself was reused (re-login as the same user).
@@ -208,6 +254,42 @@ class RaviloDeviceService(private val db: JellystructureDb) {
     fun unpair(deviceToken: String) {
         tokenCache.remove(deviceToken)?.let { DeviceIdentityRegistry.forget(it.data.jellyfinUserToken) }
         db.raviloDeviceQueries.deleteByToken(deviceToken)
+    }
+
+    /**
+     * Phase 258 (FR-258-1/2/4) — make every row of [jellyfinUserId] carry [live], Jellyfin's policy for that
+     * user as it is now. Returns one [PolicyChange] per (row, field) that actually differed — empty when every
+     * row already agreed, in which case only `policy_refreshed_at` is stamped (FR-258-6) and nothing is logged
+     * by the caller (FR-258-7). A change rewrites all of the user's rows in one statement (the phone, the
+     * screens and cast receivers it minted, the TVs — dev review item 3) and evicts every one of their tokens
+     * from [tokenCache] (dev review item 1): `validateDeviceToken` serves `DeviceData` from that cache for
+     * five minutes, and every feed cache keys on the `DeviceData` it is handed, so without the eviction a
+     * rewritten row is invisible for exactly the interval this phase exists to remove. `remove` only — the
+     * Jellyfin user token has not changed, so `DeviceIdentityRegistry` keeps its entry.
+     *
+     * [live] must already be normalised the way `loginDevice` stores its fields ([DevicePolicy.of] does
+     * that) — comparing raw Jellyfin values against stored ones would see a difference on every row every
+     * pass (dev review item 4).
+     */
+    fun refreshPolicy(jellyfinUserId: String, live: DevicePolicy, now: Long = nowMs()): List<PolicyChange> {
+        val rows = listByUser(jellyfinUserId)
+        if (rows.isEmpty()) return emptyList()
+        val changes = rows.flatMap { policyChanges(it, live) }
+        if (changes.isEmpty()) {
+            db.raviloDeviceQueries.stampPolicyRefreshed(policy_refreshed_at = now, jellyfin_user_id = jellyfinUserId)
+            return changes
+        }
+        db.raviloDeviceQueries.updatePolicy(
+            allowed_libraries = encodeAllowedLibraries(live.allowedLibraries),
+            allowed_tags = encodeTags(live.allowedTags),
+            blocked_tags = encodeTags(live.blockedTags),
+            is_admin = if (live.isAdmin) 1L else 0L,
+            is_kids = if (live.isKids) 1L else 0L,
+            policy_refreshed_at = now,
+            jellyfin_user_id = jellyfinUserId,
+        )
+        rows.forEach { tokenCache.remove(it.deviceToken) }
+        return changes
     }
 
     /** Lists all users currently signed in on [deviceId]. */

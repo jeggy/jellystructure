@@ -158,6 +158,8 @@ fun startServer(
     fingerprintService: dev.jellystructure.media.FingerprintService,
     mediaSegmentStore: dev.jellystructure.media.MediaSegmentStore,
     playbackQoeStore: dev.jellystructure.tv.PlaybackQoeStore,
+    // Phase 258 (FR-258-2) — the events-socket connect trigger; null only in tests that build no reconciler.
+    devicePolicyReconciler: dev.jellystructure.tv.DevicePolicyReconciler? = null,
     // Phase 218 — the cast service (hand-off, ceiling, reachability, status) and the receiver bundle dir.
     castService: dev.jellystructure.tv.CastService? = null,
     castDir: String? = null,
@@ -680,6 +682,15 @@ fun startServer(
                 val eventsAddress = call.request.headers["X-Forwarded-For"]?.substringBefore(',')?.trim()?.takeIf { it.isNotBlank() }
                     ?: call.request.local.remoteHost
                 deviceService.recordAddress(device.deviceId, device.jellyfinUserId, eventsAddress)
+                // Phase 258 (FR-258-2, dev review items 1 and 5) — a device that just woke up gets today's
+                // policy before its first Home fetch: one `/Users` call when this user's last pass is older
+                // than 60 s, and the rewrite evicts the token cache the `device` above was just served from.
+                // Bounded, so a slow Jellyfin can never hold the socket open unregistered; a timeout is a
+                // failed pass and changes nothing (FR-258-3).
+                if (devicePolicyReconciler != null) {
+                    runCatching { kotlinx.coroutines.withTimeoutOrNull(3_000L) { devicePolicyReconciler.reconcileOnConnect(device.jellyfinUserId) } }
+                        .onFailure { Logger.warn("Policy refresh (connect) failed: ${it.message}", "auth") }
+                }
                 // Phase 110 — while this TV is connected, bridge one outbound session to Jellyfin for
                 // it (dashboard messages, remote control). Best-effort: never let a bridge problem take
                 // down the TV's own event socket.
