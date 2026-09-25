@@ -115,6 +115,14 @@ fun LiveTvPlayerScreen(
     fun wake() { chromeVisible = true; chromeRevision++ }
 
     LaunchedEffect(channelId) { store.tune(channelId) }
+    // R292 (FR-R292-9) — Live TV follows the same rule: the engine is released off screen (pressing HOME
+    // stops the audio), and coming back re-tunes the channel it was on — the channel is its resume record.
+    dev.jellystructure.ravilo.ui.seams.PlayerLifecycleEffect(
+        player,
+        wasPlaying = { !paused },
+        onBackground = { store.stop() },
+        onForeground = { paused = false; store.tune(channelId) },
+    )
 
     LaunchedEffect(state) {
         val s = state

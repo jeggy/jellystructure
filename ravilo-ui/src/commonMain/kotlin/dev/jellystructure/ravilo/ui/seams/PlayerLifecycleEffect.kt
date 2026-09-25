@@ -20,6 +20,9 @@ import androidx.compose.runtime.Composable
 expect fun PlayerLifecycleEffect(
     player: RaviloPlayer,
     wasPlaying: () -> Boolean,
-    onBackground: () -> Unit,
+    /** R292 (FR-R292-2) — fires BEFORE the engine is released, with the viewer's play intent: the caller
+     *  captures its resume record from the live engine here and stops the session. */
+    onBackground: (wasPlaying: Boolean) -> Unit,
+    /** R292 (FR-R292-3) — the engine is gone; the caller starts again from its record. */
     onForeground: () -> Unit,
 )

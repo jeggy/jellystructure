@@ -24,6 +24,14 @@ CREATE TABLE playback_qoe (
     -- reached Ready. NULL is the normal case: this session played. Without it a failed start leaves a
     -- row of nulls and zeroes that proves it failed and not why.
     start_failure_status INTEGER,
+    -- R292 (FR-R292-11) — R220's FR-R220-6 made real: the recovery ladder's count, the rung that recovered
+    -- last (0 = none) and its time to a new frame; the returns from the background (FR-R292-3 starts) and
+    -- the restores after an activity recreation (FR-R292-6). 51.sqm.
+    video_output_recoveries INTEGER NOT NULL DEFAULT 0,
+    video_output_recovery_rung INTEGER NOT NULL DEFAULT 0,
+    video_output_recovery_ms INTEGER NOT NULL DEFAULT 0,
+    background_returns INTEGER NOT NULL DEFAULT 0,
+    restored_after_recreate INTEGER NOT NULL DEFAULT 0,
     updated_at INTEGER NOT NULL,
     PRIMARY KEY (device_id, jellyfin_id, play_session_id)
 );
@@ -31,8 +39,8 @@ CREATE INDEX playback_qoe_device ON playback_qoe(device_id);
 CREATE INDEX playback_qoe_updated ON playback_qoe(updated_at);
 
 upsertQoe:
-INSERT OR REPLACE INTO playback_qoe(device_id, jellyfin_id, play_session_id, dropped_frames, rebuffer_count, rebuffer_ms, bandwidth_estimate_bps, video_decoder, direct_play, link_kind, link_mbps, subtitle_load_errors, start_failure_status, updated_at)
-VALUES (:device_id, :jellyfin_id, :play_session_id, :dropped_frames, :rebuffer_count, :rebuffer_ms, :bandwidth_estimate_bps, :video_decoder, :direct_play, :link_kind, :link_mbps, :subtitle_load_errors, :start_failure_status, :updated_at);
+INSERT OR REPLACE INTO playback_qoe(device_id, jellyfin_id, play_session_id, dropped_frames, rebuffer_count, rebuffer_ms, bandwidth_estimate_bps, video_decoder, direct_play, link_kind, link_mbps, subtitle_load_errors, start_failure_status, video_output_recoveries, video_output_recovery_rung, video_output_recovery_ms, background_returns, restored_after_recreate, updated_at)
+VALUES (:device_id, :jellyfin_id, :play_session_id, :dropped_frames, :rebuffer_count, :rebuffer_ms, :bandwidth_estimate_bps, :video_decoder, :direct_play, :link_kind, :link_mbps, :subtitle_load_errors, :start_failure_status, :video_output_recoveries, :video_output_recovery_rung, :video_output_recovery_ms, :background_returns, :restored_after_recreate, :updated_at);
 
 recentForDevice:
 SELECT * FROM playback_qoe WHERE device_id = :device_id ORDER BY updated_at DESC LIMIT :result_limit;

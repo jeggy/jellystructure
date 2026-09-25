@@ -1,0 +1,7 @@
+-- R292 (FR-R292-11) — R220 FR-R220-6 made real, plus the two return counters. See PlaybackQoe.sq; this
+-- migration must stay byte-for-byte in sync with its CREATE TABLE (the SQLDelight-migration rule).
+ALTER TABLE playback_qoe ADD COLUMN video_output_recoveries INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE playback_qoe ADD COLUMN video_output_recovery_rung INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE playback_qoe ADD COLUMN video_output_recovery_ms INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE playback_qoe ADD COLUMN background_returns INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE playback_qoe ADD COLUMN restored_after_recreate INTEGER NOT NULL DEFAULT 0;

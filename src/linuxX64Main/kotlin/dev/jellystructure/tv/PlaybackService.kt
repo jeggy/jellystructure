@@ -420,6 +420,10 @@ class PlaybackService(
         device: DeviceData,
         jellyfinId: String,
         capabilities: ClientCapabilities,
+        // R292 (FR-R292-2, dev review item 2) — the client's own position wins over Jellyfin's user data
+        // when present: a return from the background must start where the engine stopped, not where a
+        // stop that has not landed yet says. Null = an ordinary start.
+        startPositionMsOverride: Long? = null,
     ): StreamTicket {
         requireVisible(device, jellyfinId)
         // Phase 218 (FR-218-8) — a receiver past `max_sessions` gets phase 182's 503 + Retry-After
@@ -444,8 +448,11 @@ class PlaybackService(
 
         // Resolve resume position from Jellyfin user-data
         val itemDetail = jellyfinClient.getItemDetail(jellyfinBase, token, device.jellyfinUserId, jellyfinId)
-        val startPositionTicks = itemDetail?.userData?.playbackPositionTicks ?: 0L
+        val startPositionTicks = startPositionMsOverride?.coerceAtLeast(0L)?.let { it * TICKS_PER_MS }
+            ?: (itemDetail?.userData?.playbackPositionTicks ?: 0L)
         val startPositionMs = startPositionTicks / TICKS_PER_MS
+        // R292 — one line per return, so a return that landed at the wrong place is readable from the log.
+        if (startPositionMsOverride != null) Logger.info("playback start: device=${device.deviceId} item=$jellyfinId cut at ${startPositionMs}ms (the client's own position; Jellyfin held ${(itemDetail?.userData?.playbackPositionTicks ?: 0L) / TICKS_PER_MS}ms)", "tv")
 
         // Start a Jellyfin playback session so the server tracks Now Playing + resume
         jellyfinClient.startPlaybackSession(jellyfinBase, token, jellyfinId, startPositionTicks, jellyfinId, identity, playSessionId)
@@ -566,6 +573,7 @@ class PlaybackService(
         // Playing" in Jellyfin forever, which is worse than the (already access-gated-at-start) cost
         // of letting an in-flight stop go through.
         val jellyfinPlaySessionId = playbackTracker.stopped(device, jellyfinId)
+        Logger.info("playback stop: device=${device.deviceId} item=$jellyfinId at ${positionMs}ms", "tv")   // R292 — the number the resume record carries
         releaseSession(device, jellyfinId, positionMs, jellyfinPlaySessionId)
         // Phase 185 (FR-185-4) — session genuinely completed (this IS the stop path, not a mid-session
         // heartbeat) and the client reported a real startup duration: record one sample. The watchdog's

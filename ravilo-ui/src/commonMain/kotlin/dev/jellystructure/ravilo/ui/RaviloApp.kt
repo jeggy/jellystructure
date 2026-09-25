@@ -447,10 +447,15 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
 
     RaviloTheme(state = themeState) {
     WithLocale(lang) {
+        // R292 (FR-R292-6, dev review item 4) — the ONE piece of saved state: the player's resume record as a
+        // string. A low-memory destroy, a configuration recreation or a recents restore brings the viewer
+        // back into the player at their position, never to Home. Nothing else on the stack is saved.
+        val resumeJson = androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf("") }
+        val playerResume = remember { dev.jellystructure.ravilo.ui.screens.PlayerResumeStore(resumeJson.value) { resumeJson.value = it } }
         // Determine starting screen based on cached sessions
-        val initialDest = remember {
+        val initialStack: List<Dest> = remember {
             val sessions = MultiTokenStore.getAll()
-            when {
+            val base = when {
                 sessions.isEmpty() -> Dest.Login
                 sessions.size == 1 -> {
                     MultiTokenStore.setActive(sessions.first().userId)
@@ -458,8 +463,24 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                 }
                 else -> Dest.ProfilePicker
             }
+            val record = playerResume.record
+            val active = MultiTokenStore.getActive()
+            if (base is Dest.Home && record != null && active != null &&
+                dev.jellystructure.ravilo.ui.screens.resumeRestorable(record, kotlin.time.Clock.System.now().toEpochMilliseconds())
+            ) {
+                listOf(base, Dest.Player(
+                    itemId = record.itemId, title = record.title, kicker = record.kicker,
+                    nextEpId = record.nextEpId, nextEpLabel = record.nextEpLabel, nextEpTitle = record.nextEpTitle,
+                    displayName = record.displayName.ifBlank { active.displayName },
+                    seriesId = record.seriesId, originalLanguage = record.originalLanguage, posterUrl = record.posterUrl,
+                    logoUrl = record.logoUrl, logoInk = record.logoInk, seriesName = record.seriesName,
+                ))
+            } else {
+                playerResume.clear()   // a record with nowhere to go (signed out, too old) is dropped, not kept
+                listOf(base)
+            }
         }
-        var stack by remember { mutableStateOf(listOf(initialDest)) }
+        var stack by remember { mutableStateOf(initialStack) }
         // R92: direction that drives the AnimatedContent transitionSpec.
         var navDir by remember { mutableStateOf(NavDir.Forward) }
         var fpsOverlay by remember { mutableStateOf(false) }  // R94: toggle with F5
@@ -473,7 +494,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
 
         // R58: first-ever launch — initialDest called setActive() after activeUserId was already
         // initialized to null; sync the value so the WS LaunchedEffect fires and self-heals.
-        LaunchedEffect(initialDest) {
+        LaunchedEffect(Unit) {
             if (activeUserId == null) activeUserId = MultiTokenStore.getActive()?.userId
         }
 
@@ -497,7 +518,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
         }
 
         // Load config when already on Home (single-session fast path)
-        if (initialDest is Dest.Home) {
+        if (initialStack.first() is Dest.Home) {
             androidx.compose.runtime.LaunchedEffect(Unit) { refreshConfig() }
         }
 
@@ -1373,8 +1394,10 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                     segments         = dest.segments,  // Phase 150
                     posterUrl        = dest.posterUrl,  // R192
                     logoUrl          = dest.logoUrl, logoInk = dest.logoInk, seriesName = dest.seriesName,  // R303
+                    resume           = playerResume,  // R292
                     store            = store,
-                    onBack           = { pop() },
+                    // R292 — leaving the player on purpose drops the record: the next launch must not restore it.
+                    onBack           = { playerResume.clear(); pop() },
                     onNavigateToEpisode = { nextId ->
                         // Bug fix: this used to bail out silently whenever `dest.episodes` was absent or
                         // `nextId` wasn't in it — the player had no way to know the navigation never

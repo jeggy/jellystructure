@@ -1,72 +1,88 @@
 package dev.jellystructure.ravilo.ui.seams
 
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import dev.jellystructure.ravilo.ui.seams.PlayerLifecycleGate.Action
+import dev.jellystructure.ravilo.ui.seams.PlayerLifecycleGate.Signal
 
+/**
+ * R292 (FR-R292-1/3/8) — the engine does not survive the app going off screen. `ON_PAUSE` pauses;
+ * `ON_STOP` (or `ACTION_SCREEN_OFF`, for a TV standby that sends no `ON_STOP`) lets the caller capture its
+ * resume record and stop the session, then **releases the engine**: decoders, `AudioTrack`, buffers,
+ * network, media session. `ON_START` (or `ACTION_SCREEN_ON` with the activity still started) is a new
+ * start from that record, never a re-attach. Which signal fires is [PlayerLifecycleGate]'s decision,
+ * tested without a device; this file only wires Android to it. Supersedes R220 FR-R220-4.
+ */
 @Composable
 actual fun PlayerLifecycleEffect(
     player: RaviloPlayer,
     wasPlaying: () -> Boolean,
-    onBackground: () -> Unit,
+    onBackground: (wasPlaying: Boolean) -> Unit,
     onForeground: () -> Unit,
 ) {
     val lifecycle = LocalLifecycleOwner.current.lifecycle
-    // rememberUpdatedState: the observer below is installed once per lifecycle owner, so a plain capture
-    // would pin the callbacks from the FIRST composition — i.e. the first episode's PlayerStore — and a
-    // background in episode 5 would stop episode 1's session instead (the same stale-capture bug the
-    // player's cleanup effect used to have). These always call the current episode's callbacks.
+    val context = LocalContext.current.applicationContext
+    // rememberUpdatedState: the observer is installed once per lifecycle owner; a plain capture would pin
+    // the FIRST episode's callbacks for the whole binge (the stale-capture bug this file has had before).
+    val currentWasPlaying by rememberUpdatedState(wasPlaying)
     val currentOnBackground by rememberUpdatedState(onBackground)
     val currentOnForeground by rememberUpdatedState(onForeground)
     DisposableEffect(lifecycle) {
-        var resumeOnForeground = false
-        // ON_START/ON_RESUME are replayed to a freshly added observer to sync it up to the owner's
-        // current state, so "did we actually go away?" needs its own latch — without it, entering the
-        // player would immediately look like a return from the background and re-start the session.
-        var backgrounded = false
+        val gate = PlayerLifecycleGate()
+        fun act(action: Action) {
+            when (action) {
+                Action.None -> Unit
+                Action.Pause -> player.pause()
+                Action.ResumePlayback -> player.play()
+                is Action.Background -> {
+                    // Order matters: the record is captured from the LIVE engine, then the session is
+                    // stopped with that same position, then the engine goes (FR-R292-2).
+                    currentOnBackground(action.wasPlaying)
+                    player.setSessionActive(false)
+                    player.releaseEngine()
+                }
+                Action.Foreground -> {
+                    currentOnForeground()
+                    player.setSessionActive(true)
+                }
+            }
+        }
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
-                Lifecycle.Event.ON_PAUSE -> {
-                    resumeOnForeground = wasPlaying()
-                    player.pause()
-                }
-                // ON_STOP, not ON_PAUSE: the player is genuinely off-screen now, and this is the last
-                // callback we are guaranteed to get before a swipe-kill/OOM. End the session here so
-                // Jellyfin stops listing us as streaming and the resume position is final. R192: also
-                // deactivate the OS MediaSession here — TV sleep/power-off never reaches player.release()
-                // (that only fires when the Compose screen itself leaves composition), so without this the
-                // session keeps being advertised to Android's cross-device media surfacing indefinitely.
-                Lifecycle.Event.ON_STOP -> {
-                    backgrounded = true
-                    currentOnBackground()
-                    player.setSessionActive(false)
-                    // Phase R220 (FR-R220-4) — deterministic detach instead of leaving it entirely to
-                    // Media3's own SurfaceHolder.Callback (§2.3's original finding); pairs with the
-                    // re-attach below.
-                    player.detachVideoSurfaceForBackground()
-                }
-                Lifecycle.Event.ON_START -> {
-                    if (backgrounded) {
-                        backgrounded = false
-                        currentOnForeground()
-                        player.setSessionActive(true)
-                        // Phase R220 (FR-R220-4) — the deterministic re-attach paired with ON_STOP's
-                        // detach above; the recovery ladder (FR-R220-2/3) remains a full safety net
-                        // underneath this for whatever it doesn't catch.
-                        player.reattachVideoSurfaceForForeground()
-                    }
-                }
-                Lifecycle.Event.ON_RESUME -> {
-                    if (resumeOnForeground) player.play()
-                }
+                Lifecycle.Event.ON_PAUSE -> act(gate.on(Signal.PAUSE, playing = { currentWasPlaying() }))
+                Lifecycle.Event.ON_RESUME -> act(gate.on(Signal.RESUME))
+                Lifecycle.Event.ON_STOP -> act(gate.on(Signal.STOP))
+                Lifecycle.Event.ON_START -> act(gate.on(Signal.START))
                 else -> {}
             }
         }
+        // FR-R292-8 — display standby on an Android TV may deliver no ON_STOP: the screen-off broadcast is
+        // handled exactly like one, at most once per transition (the gate), and screen-on like ON_START
+        // when the activity is still started.
+        val screenReceiver = object : BroadcastReceiver() {
+            override fun onReceive(ctx: Context?, intent: Intent?) {
+                when (intent?.action) {
+                    Intent.ACTION_SCREEN_OFF -> act(gate.on(Signal.SCREEN_OFF, playing = { currentWasPlaying() }))
+                    Intent.ACTION_SCREEN_ON -> act(gate.on(Signal.SCREEN_ON, onScreen = { lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED) }))
+                }
+            }
+        }
+        val filter = IntentFilter().apply { addAction(Intent.ACTION_SCREEN_OFF); addAction(Intent.ACTION_SCREEN_ON) }
+        runCatching { context.registerReceiver(screenReceiver, filter) }
         lifecycle.addObserver(observer)
-        onDispose { lifecycle.removeObserver(observer) }
+        onDispose {
+            lifecycle.removeObserver(observer)
+            runCatching { context.unregisterReceiver(screenReceiver) }
+        }
     }
 }

@@ -42,7 +42,21 @@ internal fun cleanCueText(text: String): String =
  */
 actual class RaviloPlayer actual constructor() {
     private val ctx: Context get() = RaviloAppContext.get()
-    private val exo: ExoPlayer by lazy {
+    // R292 (FR-R292-10) — the engine is a nullable ref, not a lazy: it is released on ON_STOP/screen-off
+    // ([releaseEngine]) and rebuilt by the next [load], with EVERY binding re-applied from [bindEngine] —
+    // R192's own "lazy can't be reset" pattern, applied to the engine. Null = no engine: every read answers
+    // "nothing", every transport call is a no-op (FR-R292-4: nothing can touch a stream whose session ended).
+    @Volatile private var engine: ExoPlayer? = null
+    // R292 (FR-R292-3) — set by releaseEngine(); the next build counts as a return from the background.
+    private var releasedForBackground = false
+
+    private fun exo(): ExoPlayer = engine ?: buildEngine().also { built ->
+        engine = built
+        bindEngine(built)
+        if (releasedForBackground) { releasedForBackground = false; qoeBackgroundReturns++ }
+    }
+
+    private fun buildEngine(): ExoPlayer {
         // R56: Media3's MatroskaExtractor already parses embedded VobSub/DVDSub and PGS tracks.
         // R294: the Matroska extractor is swapped for :ravilo-player's patched copy, which follows
         // SeekHead to a Tracks element stored after the first Cluster instead of reading the file to
@@ -78,14 +92,68 @@ actual class RaviloPlayer actual constructor() {
                 )
                 .build()
         )
-        builder.build().also { player ->
-            // R77: capture video geometry so PlayerVideoSurface can apply the correct aspect ratio.
-            player.addListener(object : Player.Listener {
-                override fun onVideoSizeChanged(size: VideoSize) { _videoSize.value = size }
-            })
-            player.addAnalyticsListener(qoeListener)
+        // R292 (FR-R292-12) — take audio focus as a movie: Ravilo pauses when another app takes focus and
+        // never plays over it; a may-duck transient ducks rather than pausing (Media3's own behaviour).
+        builder.setAudioAttributes(
+            androidx.media3.common.AudioAttributes.Builder()
+                .setUsage(C.USAGE_MEDIA)
+                .setContentType(C.AUDIO_CONTENT_TYPE_MOVIE)
+                .build(),
+            /* handleAudioFocus = */ true,
+        )
+        return builder.build()
+    }
+
+    /**
+     * R292 (FR-R292-10) — EVERYTHING bound to an engine, bound here and nowhere else, so a rebuilt engine
+     * misses nothing: the video-size listener (R77), the QoE analytics listener (R216/R218/179/R220), the
+     * cue listener that feeds the current SubtitleView (R55/R110/R244 — one listener per engine, reading
+     * the CURRENT view at callback time, which also ends the one-listener-per-setSubtitleView
+     * accumulation), the current SurfaceView (R220's tracking), and (TV only) the MediaSession (R192/R193).
+     * The renderers factory, LoadControl, load-error policy, extractors factory and audio attributes are
+     * construction-time and live in [buildEngine].
+     */
+    private fun bindEngine(player: ExoPlayer) {
+        player.addListener(videoSizeListener)
+        player.addAnalyticsListener(qoeListener)
+        player.addListener(cueListener)
+        currentSurfaceView?.let { player.setVideoSurfaceView(it) }
+        if (RaviloAppContext.isTelevision && mediaSessionRef == null) {
+            mediaSessionRef = MediaSession.Builder(ctx, player).setId("ravilo-player").build()
         }
     }
+
+    private val videoSizeListener = object : Player.Listener {
+        override fun onVideoSizeChanged(size: VideoSize) { _videoSize.value = size }
+    }
+
+    private val cueListener = object : Player.Listener {
+        override fun onCues(cueGroup: CueGroup) {
+            val view = subtitleViewRef ?: return
+            val cleaned = cueGroup.cues.map { cue ->
+                val raw = cue.text?.toString() ?: return@map cue
+                val clean = cleanCueText(raw)
+                if (clean == raw) cue else cue.buildUpon().setText(clean).build()
+            }
+            view.setCues(cleaned)
+        }
+    }
+
+    /** R292 (FR-R292-1) — see the expect's doc. Safe to call with no engine. */
+    actual fun releaseEngine() {
+        mediaSessionRef?.release()
+        mediaSessionRef = null
+        val e = engine ?: return
+        engine = null
+        releasedForBackground = true
+        _hasRenderedFirstFrame = false
+        _isBuffering = false
+        _isSeeking = false
+        _videoSize.value = VideoSize.UNKNOWN
+        e.release()
+    }
+
+    actual fun recordRestoredAfterRecreate() { qoeRestoredAfterRecreate++ }
 
     // R216 (FR-R216-4) — accumulated playback-quality counters for this session; read by [qoeSnapshot].
     // @Volatile: read from PlayerStore's coroutine, written from whichever thread Media3 dispatches
@@ -108,6 +176,11 @@ actual class RaviloPlayer actual constructor() {
     // qoe* counters (not the R218 per-item ones below), since "did this happen at all this session" is
     // the useful signal.
     @Volatile private var qoeVideoOutputRecoveries: Int = 0
+    // R292 (FR-R292-11) — the rung that recovered last and its time; the two return counters.
+    @Volatile private var qoeVideoOutputRecoveryRung: Int = 0
+    @Volatile private var qoeVideoOutputRecoveryMs: Long = 0
+    @Volatile private var qoeBackgroundReturns: Int = 0
+    @Volatile private var qoeRestoredAfterRecreate: Int = 0
     // Rebuffer bookkeeping: only counted once the first frame has rendered (excludes initial buffering)
     // and only when the buffering wasn't itself caused by a seek (excludes user-initiated seeks) — see
     // the phase's FR-R216-4 doc.
@@ -199,9 +272,11 @@ actual class RaviloPlayer actual constructor() {
     // R244 (FR-R244-10) — the attached caption view and the phone's chosen size multiplier.
     private var subtitleViewRef: SubtitleView? = null
     private var subtitleScale: Float = 1f
+    // R292 — a session only ever wraps a LIVE engine: with none, nothing to advertise (bindEngine creates it).
     private fun ensureMediaSession(): MediaSession? {
         if (!RaviloAppContext.isTelevision) return null
-        return mediaSessionRef ?: MediaSession.Builder(ctx, exo).setId("ravilo-player").build().also { mediaSessionRef = it }
+        val e = engine ?: return null
+        return mediaSessionRef ?: MediaSession.Builder(ctx, e).setId("ravilo-player").build().also { mediaSessionRef = it }
     }
 
     // R77: video geometry for automatic aspect-ratio correction in PlayerVideoSurface.
@@ -251,42 +326,25 @@ actual class RaviloPlayer actual constructor() {
             .setSubtitleConfigurations(subConfigs)
             .setMediaMetadata(mediaMetadata)
             .build()
-        exo.setMediaItem(mediaItem)
-        exo.seekTo(startPositionMs)
-        exo.prepare()
+        val p = exo()   // R292 — builds and binds a fresh engine after a background release
+        p.setMediaItem(mediaItem)
+        p.seekTo(startPositionMs)
+        p.prepare()
         ensureMediaSession() // touch/recreate the session so it's active for the OS while this item plays (R44)
     }
 
-    // Phase R220 (FR-R220-4) — tracked here (not just in PlayerVideoSurface's own Compose state) so
-    // PlayerLifecycleEffect's ON_STOP/ON_START can detach/reattach deterministically without reaching
-    // into another composable's state; every caller that (re)binds a surface goes through this same
-    // setter, so this stays in sync with whichever SurfaceView PlayerVideoSurface currently owns.
+    // R292 — the SurfaceView PlayerVideoSurface currently owns, so a rebuilt engine is bound to it from
+    // bindEngine(); every caller that (re)binds a surface goes through this setter.
     @Volatile private var currentSurfaceView: SurfaceView? = null
 
     fun setVideoSurfaceView(sv: SurfaceView) {
         currentSurfaceView = sv
-        exo.setVideoSurfaceView(sv)
+        engine?.setVideoSurfaceView(sv)
     }
 
-    /** Phase R220 (FR-R220-4) — mirrors PlayerVideoSurface's own onRelease nulling: once a SurfaceView
-     *  is torn down it must never be the one a later background/foreground transition acts on. */
+    /** Once a SurfaceView is torn down it must never be the one a later engine is bound to. */
     fun forgetVideoSurfaceView(sv: SurfaceView) {
         if (currentSurfaceView === sv) currentSurfaceView = null
-    }
-
-    /** Phase R220 (FR-R220-4) — explicit detach for PlayerLifecycleEffect's ON_STOP: the deterministic
-     *  version of what used to be left entirely to Media3's own SurfaceHolder.Callback (see phase-R220
-     *  §2.3). A no-op if the surface was already torn down (view released before the lifecycle event). */
-    fun detachVideoSurfaceForBackground() {
-        currentSurfaceView?.let { exo.clearVideoSurfaceView(it) }
-    }
-
-    /** Phase R220 (FR-R220-4) — paired explicit re-attach for ON_START, so returning from the background
-     *  is always a real re-attach rather than a Media3-internal no-op it silently skips because it still
-     *  thinks the (possibly now-invalid) surface is already bound — the exact failure this phase exists
-     *  to guard against. */
-    fun reattachVideoSurfaceForForeground() {
-        currentSurfaceView?.let { exo.setVideoSurfaceView(it) }
     }
 
     /** R55 — attach a SubtitleView so ExoPlayer's text renderer can forward cues to the UI. */
@@ -305,24 +363,18 @@ actual class RaviloPlayer actual constructor() {
             null,
         ))
         applySubtitleSize(view)
+        // R292 (FR-R292-10) — the cue listener is bound once per engine (bindEngine) and reads this ref at
+        // callback time; no listener is added here any more.
         subtitleViewRef = view
-        exo.addListener(object : Player.Listener {
-            override fun onCues(cueGroup: CueGroup) {
-                val cleaned = cueGroup.cues.map { cue ->
-                    val raw = cue.text?.toString() ?: return@map cue
-                    val clean = cleanCueText(raw)
-                    if (clean == raw) cue else cue.buildUpon().setText(clean).build()
-                }
-                view.setCues(cleaned)
-            }
-        })
     }
 
-    actual fun play() { exo.play() }
-    actual fun pause() { exo.pause() }
-    actual fun seekTo(positionMs: Long) { exo.seekTo(positionMs) }
+    // R292 (FR-R292-4) — no engine, no-op: a released engine's stream was stopped and is never touched again.
+    actual fun play() { engine?.play() }
+    actual fun pause() { engine?.pause() }
+    actual fun seekTo(positionMs: Long) { engine?.seekTo(positionMs) }
 
     actual fun selectAudioTrack(index: Int) {
+        val exo = engine ?: return
         val tracks = exo.currentTracks
         var audioGroupIdx = 0
         for (i in 0 until tracks.groups.size) {
@@ -341,6 +393,7 @@ actual class RaviloPlayer actual constructor() {
     }
 
     actual fun selectSubtitleTrack(index: Int) {
+        val exo = engine ?: return
         if (index < 0) {
             exo.trackSelectionParameters = exo.trackSelectionParameters.buildUpon()
                 .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
@@ -365,16 +418,15 @@ actual class RaviloPlayer actual constructor() {
     }
 
     actual fun release() {
-        mediaSessionRef?.release()
-        mediaSessionRef = null
-        exo.release()
+        releaseEngine()
+        releasedForBackground = false   // the screen is gone; nothing will rebuild this
     }
 
     // R192: release (not just pause) on backgrounding, so the session stops being advertised to
-    // Android's cross-device media surfacing; recreated on demand when foregrounded/reactivated, bound
-    // to the SAME still-alive `exo` instance, so an in-app resume doesn't need a full player rebuild.
-    // A `false` on an already-released session is a no-op — never forces one into existence just to
-    // tear it right back down.
+    // Android's cross-device media surfacing; recreated on demand when foregrounded/reactivated. R292:
+    // only ever around a LIVE engine — after releaseEngine() there is nothing to advertise until the
+    // next load builds one (bindEngine creates the session then). A `false` on an already-released
+    // session is a no-op.
     actual fun setSessionActive(active: Boolean) {
         if (active) {
             ensureMediaSession()
@@ -410,11 +462,11 @@ actual class RaviloPlayer actual constructor() {
         else view.setFractionalTextSize(fraction)
     }
 
-    actual val positionMs: Long get() = exo.currentPosition.coerceAtLeast(0)
-    actual val durationMs: Long get() = exo.duration.let { if (it == C.TIME_UNSET) 0L else it.coerceAtLeast(0) }
-    actual val bufferedMs: Long get() = exo.bufferedPosition.coerceAtLeast(0)
-    actual val isPlaying: Boolean get() = exo.isPlaying
-    actual val isEnded: Boolean get() = exo.playbackState == Player.STATE_ENDED
+    actual val positionMs: Long get() = engine?.currentPosition?.coerceAtLeast(0) ?: 0L
+    actual val durationMs: Long get() = engine?.duration?.let { if (it == C.TIME_UNSET) 0L else it.coerceAtLeast(0) } ?: 0L
+    actual val bufferedMs: Long get() = engine?.bufferedPosition?.coerceAtLeast(0) ?: 0L
+    actual val isPlaying: Boolean get() = engine?.isPlaying == true
+    actual val isEnded: Boolean get() = engine?.playbackState == Player.STATE_ENDED
     actual val hasRenderedFirstFrame: Boolean get() = _hasRenderedFirstFrame
     actual val isBuffering: Boolean get() = _isBuffering
     actual val isSeeking: Boolean get() = _isSeeking
@@ -422,7 +474,7 @@ actual class RaviloPlayer actual constructor() {
     actual val audioTracks: List<PlayerAudioTrack>
         get() {
             val result = mutableListOf<PlayerAudioTrack>()
-            val tracks = exo.currentTracks
+            val tracks = engine?.currentTracks ?: return result
             var idx = 0
             for (i in 0 until tracks.groups.size) {
                 val group = tracks.groups[i]
@@ -450,7 +502,7 @@ actual class RaviloPlayer actual constructor() {
     actual val subtitleTracks: List<PlayerSubtitleTrack>
         get() {
             val result = mutableListOf<PlayerSubtitleTrack>()
-            val tracks = exo.currentTracks
+            val tracks = engine?.currentTracks ?: return result
             var idx = 0
             for (i in 0 until tracks.groups.size) {
                 val group = tracks.groups[i]
@@ -481,6 +533,10 @@ actual class RaviloPlayer actual constructor() {
         videoDecoder = qoeVideoDecoder,
         subtitleLoadErrors = qoeSubtitleLoadErrors,
         videoOutputRecoveries = qoeVideoOutputRecoveries,
+        videoOutputRecoveryRung = qoeVideoOutputRecoveryRung,
+        videoOutputRecoveryMs = qoeVideoOutputRecoveryMs,
+        backgroundReturns = qoeBackgroundReturns,
+        restoredAfterRecreate = qoeRestoredAfterRecreate,
     )
 
     /**
@@ -491,7 +547,7 @@ actual class RaviloPlayer actual constructor() {
      * `ensureUpdated()` is required by [DecoderCounters]'s own contract before a cross-thread read.
      */
     fun renderedVideoFrameCount(): Long = try {
-        exo.videoDecoderCounters?.let { counters ->
+        engine?.videoDecoderCounters?.let { counters ->
             counters.ensureUpdated()
             counters.renderedOutputBufferCount.toLong()
         } ?: 0L
@@ -500,14 +556,17 @@ actual class RaviloPlayer actual constructor() {
     }
 
     /** Used directly by [PlayerVideoSurface]'s recovery-ladder rung 1 (detach immediately followed by
-     *  re-[setVideoSurfaceView] on the same instance); background/foreground detach goes through
-     *  [detachVideoSurfaceForBackground]/[reattachVideoSurfaceForForeground] instead, which don't
-     *  require the caller to hold its own surface reference. */
-    fun clearVideoSurfaceView(sv: SurfaceView) { exo.clearVideoSurfaceView(sv) }
+     *  re-[setVideoSurfaceView] on the same instance). */
+    fun clearVideoSurfaceView(sv: SurfaceView) { engine?.clearVideoSurfaceView(sv) }
 
-    /** Phase R220 (FR-R220-6) — called by [PlayerVideoSurface]'s recovery ladder every time it fires,
-     *  whichever rung ends up working. */
-    fun recordVideoOutputRecovery() { qoeVideoOutputRecoveries++ }
+    /** R292 (FR-R292-11, R220 FR-R220-6 made real) — called by [PlayerVideoSurface]'s recovery ladder every
+     *  time it fires: [rung] is the one that recovered (0 = exhausted into rung 4), [ms] the ladder's time
+     *  from its start to the first new frame. */
+    fun recordVideoOutputRecovery(rung: Int, ms: Long) {
+        qoeVideoOutputRecoveries++
+        qoeVideoOutputRecoveryRung = rung
+        qoeVideoOutputRecoveryMs = ms
+    }
 }
 
 /**

@@ -132,6 +132,10 @@ actual class RaviloPlayer actual constructor() {
         runCatching { document.body?.removeChild(video) }
     }
 
+    // R292 — a browser tab has no decoder to leak (the phase's non-goal); the element stays, paused.
+    actual fun releaseEngine() { runCatching { video.pause() } }
+    actual fun recordRestoredAfterRecreate() {}
+
     // R192: no OS-level MediaSession/cross-device surfacing on web — nothing to toggle.
     actual fun setSessionActive(active: Boolean) {}
 

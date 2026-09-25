@@ -94,6 +94,9 @@ class PlayerStore(private val apiClient: TvApiClient) {
 
     fun startSession(
         itemId: String,
+        // R292 (FR-R292-2) — a return from the background asks for the stream cut at the record's position;
+        // null = an ordinary start, Jellyfin's user data decides.
+        startPositionMs: Long? = null,
         positionProvider: () -> Long,
         isPausedProvider: () -> Boolean,
         durationProvider: () -> Long = { 0L },
@@ -162,7 +165,7 @@ class PlayerStore(private val apiClient: TvApiClient) {
                         linkMbps = link.mbps,
                     )
                     lastCapabilities = capabilities   // R282 (FR-R282-5)
-                    val ticket = apiClient.startPlayback(itemId = itemId, capabilities = capabilities)
+                    val ticket = apiClient.startPlayback(itemId = itemId, capabilities = capabilities, startPositionMs = startPositionMs)
                     qoeLinkKind = link.kind
                     qoeLinkMbps = link.mbps
                     ticket

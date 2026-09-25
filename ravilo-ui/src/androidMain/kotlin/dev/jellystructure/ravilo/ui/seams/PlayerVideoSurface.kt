@@ -1,6 +1,5 @@
 package dev.jellystructure.ravilo.ui.seams
 
-import android.view.SurfaceHolder
 import android.view.SurfaceView
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -117,33 +116,14 @@ actual fun PlayerVideoSurface(
                     // the display tone-maps correctly, with no app-level color-mode API needed — verified
                     // against Jellyfin's own Android TV client, which does exactly this (a bare SurfaceView
                     // wired via `ExoPlayer.setVideoSurfaceView`, nothing else).
-                    // Phase R220 (FR-R220-4) — onWindowVisibilityChanged override is a second, independent
-                    // re-attach trigger alongside the SurfaceHolder.Callback below, for the TV-standby case
-                    // (§2.4) where neither surfaceCreated/surfaceDestroyed may fire at all. Not confirmed
-                    // this device actually needs it (FR-R220-1's own on-device capture never ran — no
-                    // device access this session, and TVs are off-limits now) — shipped as a cheap,
-                    // idempotent bet the same way rungs 1-4 of the ladder were.
-                    val surface = object : SurfaceView(ctx) {
-                        override fun onWindowVisibilityChanged(visibility: Int) {
-                            super.onWindowVisibilityChanged(visibility)
-                            if (visibility == VISIBLE) player.setVideoSurfaceView(this)
-                        }
-                    }
+                    // R292 (FR-R292-11) — R220 FR-R220-4's onWindowVisibilityChanged / SurfaceHolder.Callback
+                    // re-attach hooks are gone: there is no surviving decoder to re-attach after a
+                    // background any more (the engine is released), and a rebuilt engine is bound to this
+                    // view from RaviloPlayer.bindEngine(). The ladder below covers a picture lost in the
+                    // foreground.
+                    val surface = SurfaceView(ctx)
                     player.setVideoSurfaceView(surface)
                     currentSurface.value = surface
-                    // Phase R220 (FR-R220-4) — a second line of defence alongside Media3's own internal
-                    // SurfaceHolder.Callback (the one this whole phase exists because it can silently fail
-                    // to re-attach on): re-attach independently on surfaceCreated too. A redundant
-                    // setVideoSurfaceView when Media3 already re-attached fine is the one risk the spec
-                    // itself flags as needing on-device verification (phase-R220 §5 open question 2) — not
-                    // verified this session, shipped per the spec's explicit instruction regardless.
-                    surface.holder.addCallback(object : SurfaceHolder.Callback {
-                        override fun surfaceCreated(holder: SurfaceHolder) {
-                            player.setVideoSurfaceView(surface)
-                        }
-                        override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {}
-                        override fun surfaceDestroyed(holder: SurfaceHolder) {}
-                    })
                     surface
                 },
                 // R77: constrain to DAR when known — Compose fits the view inside the available space
@@ -216,6 +196,8 @@ actual fun PlayerVideoSurface(
             // its own ~400ms debounce (PlayerScreen wires this into rawBufferMoment), so a rung that takes
             // longer than a flash never leaves a viewer on a frozen frame with no chrome change.
             onVideoOutputRecoveringState.value(true)
+            val ladderStartMs = elapsedMs
+            var recoveredRung = 0
 
             // Rung 1: detach + reattach the existing surface — cheapest, and the one most likely to be
             // exactly what Media3's own SurfaceHolder.Callback failed to do on its own.
@@ -225,7 +207,9 @@ actual fun PlayerVideoSurface(
                 player.clearVideoSurfaceView(sv)
                 player.setVideoSurfaceView(sv)
                 delay(RUNG_SETTLE_MS)
+                elapsedMs += RUNG_SETTLE_MS
                 recovered = player.renderedVideoFrameCount() != frameCount
+                if (recovered) recoveredRung = 1
             }
 
             // Rung 2 (R292 FR-R292-11): flush with a seek that MOVES. ExoPlayer ignores a seek to the
@@ -235,7 +219,9 @@ actual fun PlayerVideoSurface(
                 val before = player.renderedVideoFrameCount()
                 player.seekTo(recoverySeekTargetMs(player.positionMs))
                 delay(SEEK_RUNG_SETTLE_MS)
+                elapsedMs += SEEK_RUNG_SETTLE_MS
                 recovered = player.renderedVideoFrameCount() != before
+                if (recovered) recoveredRung = 2
             }
 
             // Rung 3: recreate the SurfaceView outright (bumps the AndroidView factory's key).
@@ -243,17 +229,19 @@ actual fun PlayerVideoSurface(
                 val before = player.renderedVideoFrameCount()
                 surfaceGeneration++
                 delay(RUNG_SETTLE_MS)
+                elapsedMs += RUNG_SETTLE_MS
                 recovered = player.renderedVideoFrameCount() != before
+                if (recovered) recoveredRung = 3
             }
 
             if (recovered) {
-                player.recordVideoOutputRecovery()
-                Log.w(TAG, "video output recovered")
+                player.recordVideoOutputRecovery(recoveredRung, elapsedMs - ladderStartMs)   // R292 (FR-R292-11)
+                Log.w(TAG, "video output recovered at rung $recoveredRung")
             } else {
                 // Rung 4: hand off to PlayerScreen — re-prepare the item outright. Recorded as a
                 // recovery regardless of whether rung 4 itself visibly succeeds (a full re-prepare is
                 // PlayerScreen's own responsibility from here; this ladder's job ends at handing off).
-                player.recordVideoOutputRecovery()
+                player.recordVideoOutputRecovery(0, elapsedMs - ladderStartMs)
                 Log.w(TAG, "video output did not recover after rungs 1-3 — handing off to onVideoOutputStuck (rung 4)")
             }
             // FR-R220-5 — clear the forced STALL before handing off rung 4: a re-prepare (armSession)

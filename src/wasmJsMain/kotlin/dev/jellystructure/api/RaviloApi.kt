@@ -92,9 +92,15 @@ data class QoeSummary(
     @SerialName("link_mbps") val linkMbps: Int = 0,
     // Phase 179 (FR-179-3).
     @SerialName("subtitle_load_errors") val subtitleLoadErrors: Int = 0,
+    // R292 (FR-R292-11) — mirrors the backend field-for-field.
+    @SerialName("video_output_recoveries") val videoOutputRecoveries: Int = 0,
+    @SerialName("video_output_recovery_rung") val videoOutputRecoveryRung: Int = 0,
+    @SerialName("video_output_recovery_ms") val videoOutputRecoveryMs: Long = 0,
+    @SerialName("background_returns") val backgroundReturns: Int = 0,
+    @SerialName("restored_after_recreate") val restoredAfterRecreate: Int = 0,
     @SerialName("updated_at") val updatedAt: Long,
 ) {
-    val hasIssue: Boolean get() = rebufferCount > 0 || droppedFrames > 0 || subtitleLoadErrors > 0
+    val hasIssue: Boolean get() = rebufferCount > 0 || droppedFrames > 0 || subtitleLoadErrors > 0 || videoOutputRecoveries > 0 || restoredAfterRecreate > 0
 }
 
 /** Phase 177 §FR-177-5 — mirrors the backend's `QoeActivityRow` (device/title already resolved). */

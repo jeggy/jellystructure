@@ -299,6 +299,12 @@ private class PlayerBookkeeping(initialCastLink: CastLinkState) {
     var playHeldForLatch by mutableStateOf(false)
     var startRestreamPending by mutableStateOf(false)
     var firstFrameAtMs by mutableStateOf<Long?>(null)
+    // R292 — a return from the background is R290's one start moment, with three differences the record
+    // carries: whether the latch plays or lands paused (open question 2), the one restream that restores
+    // a burn-in / single-audio choice (FR-R292-5), and the track indices to re-apply on the new engine.
+    var playOnLatch by mutableStateOf(true)
+    var returnRecord by mutableStateOf<ResumeRecord?>(null)
+    var reapplyChoicesForItemId by mutableStateOf<String?>(null)
     var pauseFlash by mutableStateOf(false)
     var pauseFlashIsPlay by mutableStateOf(true)
     var stallDeepened by mutableStateOf(false)
@@ -333,6 +339,8 @@ fun PlayerScreen(
     logoUrl: String? = null,
     logoInk: String? = null,
     seriesName: String? = null,
+    // R292 (FR-R292-2/6) — the resume record's holder (saved state lives in RaviloApp); see PlayerResume.kt.
+    resume: PlayerResumeStore = PlayerResumeStore("") {},
     store: PlayerStore,
     onBack: () -> Unit,
     onNavigateToEpisode: ((String) -> Unit)? = null,
@@ -848,7 +856,7 @@ fun PlayerScreen(
     // background re-arm (PlayerLifecycleEffect's onForeground) so both hand the store the same providers.
     // durationProvider lets the store take the ≥90% mark-played decision itself if it is closed without
     // an explicit stopSession — see PlayerStore.close().
-    fun armSession(id: String) {
+    fun armSession(id: String, startPositionMs: Long? = null) {
         // Phase 185/R222 (FR-185-4 client half) — a real StreamTicket negotiation starts the instant
         // startSession below is called, whether this is the episode's initial start or a background/
         // foreground re-arm (both reload the player — see RaviloPlayerAndroid.load()'s own
@@ -856,6 +864,7 @@ fun PlayerScreen(
         bk.negotiationStartMs = kotlin.time.Clock.System.now().toEpochMilliseconds()
         store.startSession(
             id,
+            startPositionMs = startPositionMs,   // R292 (FR-R292-2) — the record's position on a return, else Jellyfin's
             positionProvider = { positionMs },
             isPausedProvider = { !isPlaying },
             durationProvider = { durationMs },
@@ -912,7 +921,21 @@ fun PlayerScreen(
         bk.startRestreamPending = false
         bk.firstFrameAtMs = null
         bk.playHeldForLatch = false
-        armSession(itemId)
+        // R292 (FR-R292-6) — the app composed from saved state with a record for THIS item: start from it,
+        // exactly as a return from the background does, and count the restore.
+        val restored = resume.recordFor(itemId)?.takeIf { resume.consumeRestored() }
+        if (restored != null) {
+            bk.playOnLatch = resumePlayIntent(restored, kotlin.time.Clock.System.now().toEpochMilliseconds())
+            bk.returnRecord = restored
+            bk.reapplyChoicesForItemId = itemId
+            selectedAudio = restored.audioIndex
+            selectedSub = restored.subIndex
+            player.recordRestoredAfterRecreate()
+            armSession(itemId, restored.positionMs)
+        } else {
+            bk.playOnLatch = true
+            armSession(itemId)
+        }
         delay(BUFFER_MOMENT_DEBOUNCE_MS)
         bk.startScreenDue = true   // FR-R290-2 — the start screen fades in once, and stays up across a restream
     }
@@ -975,6 +998,18 @@ fun PlayerScreen(
             bk.resolvedForItemId = null
         }
         bk.rearmResolveOnLoad = false
+        // R292 (FR-R292-5) — a return's ticket comes from the server's rules; the viewer's burn-in or
+        // single-audio choice is restored by ONE restream, invisibly under R290's start screen.
+        bk.returnRecord?.let { r ->
+            bk.returnRecord = null
+            val wantAudio = r.sessionAudioIndex
+            val needsRestream = (r.burnedSubIndex != null && s.ticket.burnedSubtitleIndex != r.burnedSubIndex) ||
+                (wantAudio != null && !s.ticket.directPlay && s.ticket.audioStreamIndex != wantAudio)
+            if (needsRestream) {
+                bk.startRestreamPending = true
+                store.restreamWithSub(itemId, r.burnedSubIndex ?: -1, s.ticket.startPositionMs, wantAudio)
+            }
+        }
         if (bk.latchedForItemId == itemId) {
             // A restream after the start (a subtitle burn-in, a manual audio pick): as before this phase.
             player.play()
@@ -1047,6 +1082,13 @@ fun PlayerScreen(
                 // never against groups composed earlier.
                 val tickAudio = audioTracks
                 val tickSubs = subtitleTracks
+                // R292 (FR-R292-5) — the viewer's own choice, re-applied to the NEW engine once its tracks
+                // are known; the resolver is not re-run for this item (it already ran before the background).
+                if (playerLoadedForCurrentItem && bk.reapplyChoicesForItemId == currentItemId && tickAudio.isNotEmpty()) {
+                    bk.reapplyChoicesForItemId = null
+                    if (carriedAudioPosition(bk.sessionAudio, bk.sessionAudioIndex) == null) player.selectAudioTrack(selectedAudio)
+                    player.selectSubtitleTrack(if (bk.burnedSubIndex != null) -1 else selectedSub)
+                }
                 if (playerLoadedForCurrentItem && bk.resolvedForItemId != currentItemId && tickAudio.isNotEmpty()) {
                     resolveTrackSelection(tickAudio, tickSubs)
                     bk.resolvedForItemId = currentItemId
@@ -1067,7 +1109,8 @@ fun PlayerScreen(
                     val renderedFor = bk.firstFrameAtMs?.let { kotlin.time.Clock.System.now().toEpochMilliseconds() - it } ?: 0L
                     if (startLatchOpens(sessionState is PlayerSessionState.Ready, hasRenderedFirstFrame, bk.resolvedForItemId == currentItemId, bk.startRestreamPending, renderedFor)) {
                         bk.latchedForItemId = currentItemId
-                        if (bk.playHeldForLatch) { player.play(); isPlaying = true; bk.playHeldForLatch = false }
+                        // R292 (open question 2) — a return after more than 30 minutes lands paused at the position.
+                        if (bk.playHeldForLatch) { if (bk.playOnLatch) { player.play(); isPlaying = true }; bk.playHeldForLatch = false }
                         wake()
                     }
                 }
@@ -1345,15 +1388,37 @@ fun PlayerScreen(
     PlayerLifecycleEffect(
         player,
         wasPlaying = { isPlaying },
-        // R184 (FR-RV-POS1-2): belt-and-suspenders alongside the itemId-reset above — even if this fires
-        // before positionKnownForItemId has ever been set fresh for currentItemId (e.g. ON_STOP landing
-        // before the poll loop's first tick for the new episode), never report a position that isn't
-        // known to belong to the item store.stopSession is about to close out.
-        onBackground = {
-            val positionIsFresh = bk.positionKnownForItemId == currentItemId
-            store.stopSession(if (positionIsFresh) positionMs else 0L, if (positionIsFresh) durationMs else 0L)
+        // R292 (FR-R292-2, dev review item 3) — the record is captured from the ENGINE (exact, not a tick
+        // stale) under R184's guard: during a binge replaceTop the engine may already be loading the next
+        // episode, and (episode 2, position of episode 1) is that bug in a new place — then nothing is
+        // recorded and nothing is reported. Stop and record carry the same number, so they cannot disagree.
+        onBackground = { wasPlaying ->
+            val positionIsFresh = bk.loadedForItemId == currentItemId && bk.positionKnownForItemId == currentItemId
+            val enginePos = if (positionIsFresh) player.positionMs else 0L
+            if (positionIsFresh) resume.capture(ResumeRecord(
+                itemId = currentItemId, positionMs = enginePos, playIntent = wasPlaying,
+                awayAtMs = kotlin.time.Clock.System.now().toEpochMilliseconds(),
+                audioIndex = selectedAudio, subIndex = selectedSub, burnedSubIndex = bk.burnedSubIndex,
+                sessionAudioIndex = bk.sessionAudioIndex, subtitleScale = when (subtitleSize) { 'S' -> 0.85f; 'L' -> 1.25f; else -> 1f },
+                title = itemTitle, kicker = itemKicker, seriesId = seriesId, originalLanguage = originalLanguage,
+                posterUrl = posterUrl, logoUrl = logoUrl, logoInk = logoInk, seriesName = seriesName,
+                nextEpId = nextEpisodeId, nextEpLabel = nextEpisodeLabel, nextEpTitle = nextEpisodeTitle,
+                displayName = resume.record?.displayName ?: "",
+            ))
+            store.stopSession(enginePos, if (positionIsFresh) durationMs else 0L)
         },
-        onForeground = { armSession(currentItemId) },
+        // R292 (FR-R292-3) — coming back is a START, not a re-attach: a new engine, a fresh ticket cut at the
+        // record's position, R290's one start moment (the latch is re-armed), play only if the intent says so.
+        onForeground = {
+            val r = resume.recordFor(currentItemId)
+            val now = kotlin.time.Clock.System.now().toEpochMilliseconds()
+            bk.playOnLatch = r?.let { resumePlayIntent(it, now) } ?: true
+            bk.returnRecord = r
+            bk.reapplyChoicesForItemId = currentItemId
+            bk.latchedForItemId = null
+            isPlaying = false
+            armSession(currentItemId, r?.positionMs)
+        },
     )
     // Bug fix: force landscape + hide system bars for as long as the player is on screen — the
     // phone app is portrait-locked with visible system bars everywhere else, which left the player

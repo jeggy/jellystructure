@@ -28,11 +28,20 @@ data class QoeSummary(
     @SerialName("link_mbps") val linkMbps: Int,
     // Phase 179 (FR-179-3).
     @SerialName("subtitle_load_errors") val subtitleLoadErrors: Int = 0,
+    // R292 (FR-R292-11) — the ladder's count/rung/time and the two return counters; see PlaybackQoe.sq.
+    @SerialName("video_output_recoveries") val videoOutputRecoveries: Int = 0,
+    @SerialName("video_output_recovery_rung") val videoOutputRecoveryRung: Int = 0,
+    @SerialName("video_output_recovery_ms") val videoOutputRecoveryMs: Long = 0,
+    @SerialName("background_returns") val backgroundReturns: Int = 0,
+    @SerialName("restored_after_recreate") val restoredAfterRecreate: Int = 0,
     // R237 (FR-R237-6) — non-null only when the start never reached the player.
     @SerialName("start_failure_status") val startFailureStatus: Int? = null,
     @SerialName("updated_at") val updatedAt: Long,
 ) {
-    val hasIssue: Boolean get() = rebufferCount > 0 || droppedFrames > 0 || subtitleLoadErrors > 0 || startFailureStatus != null
+    // R292 (dev review item 7) — a recovery-ladder firing and a restore after a recreation are worth a second
+    // look; a plain return from the background is not (it is what HOME does), so it is carried, not badged.
+    val hasIssue: Boolean get() = rebufferCount > 0 || droppedFrames > 0 || subtitleLoadErrors > 0 || startFailureStatus != null ||
+        videoOutputRecoveries > 0 || restoredAfterRecreate > 0
 }
 
 private const val QOE_RETENTION_DAYS = 90L
@@ -63,6 +72,11 @@ class PlaybackQoeStore(private val db: JellystructureDb) {
             link_mbps = report.linkMbps.toLong(),
             subtitle_load_errors = report.subtitleLoadErrors.toLong(),
             start_failure_status = report.startFailureStatus?.toLong(),
+            video_output_recoveries = report.videoOutputRecoveries.toLong(),
+            video_output_recovery_rung = report.videoOutputRecoveryRung.toLong(),
+            video_output_recovery_ms = report.videoOutputRecoveryMs,
+            background_returns = report.backgroundReturns.toLong(),
+            restored_after_recreate = report.restoredAfterRecreate.toLong(),
             updated_at = nowEpochSec(),
         )
     }
@@ -94,5 +108,10 @@ private fun Playback_qoe.toSummary() = QoeSummary(
     linkMbps = link_mbps.toInt(),
     subtitleLoadErrors = subtitle_load_errors.toInt(),
     startFailureStatus = start_failure_status?.toInt(),
+    videoOutputRecoveries = video_output_recoveries.toInt(),
+    videoOutputRecoveryRung = video_output_recovery_rung.toInt(),
+    videoOutputRecoveryMs = video_output_recovery_ms,
+    backgroundReturns = background_returns.toInt(),
+    restoredAfterRecreate = restored_after_recreate.toInt(),
     updatedAt = updated_at,
 )

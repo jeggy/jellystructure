@@ -59,6 +59,20 @@ expect class RaviloPlayer() {
     fun release()
 
     /**
+     * R292 (FR-R292-1/10) — release the ENGINE (decoders, audio track, buffers, network source, the TV's
+     * media session, the surface binding) while this seam object stays: the next [load] builds a new
+     * engine and re-binds everything to it from one place. Called by the lifecycle effect on `ON_STOP`/
+     * screen-off. A released engine is gone: [play], [pause], [seekTo] on it are no-ops, every read
+     * answers "nothing" — no code path can touch a stream whose session was stopped (FR-R292-4). Web:
+     * a `<video>` element holds no decoder to leak — pauses only.
+     */
+    fun releaseEngine()
+
+    /** R292 (FR-R292-6/11) — the screen restarted this player from saved state after an activity recreation;
+     *  counted into [qoeSnapshot]. No-op where there is no such thing. */
+    fun recordRestoredAfterRecreate()
+
+    /**
      * R192 — toggle the OS-level media session's visibility (e.g. Android's `MediaSession.isActive`)
      * without releasing the underlying player/session objects. Android backgrounding (TV sleep,
      * remote/HDMI-CEC power-off) should deactivate the session so it stops being advertised to other
@@ -146,6 +160,13 @@ data class PlayerQoeSnapshot(
      *  at 0 across the fleet, the recovery ladder was never needed and phase-R220's rungs 1-3 are dead
      *  weight; if it's never 0, rung 4 (or prevention, FR-R220-4) needs another look. */
     val videoOutputRecoveries: Int = 0,
+    /** R292 (FR-R292-11) — the rung that recovered last (0 = none), and the ladder's time to a new frame. */
+    val videoOutputRecoveryRung: Int = 0,
+    val videoOutputRecoveryMs: Long = 0,
+    /** R292 (FR-R292-3) — engines rebuilt after a background release this session. */
+    val backgroundReturns: Int = 0,
+    /** R292 (FR-R292-6) — starts from saved state after an activity recreation this session. */
+    val restoredAfterRecreate: Int = 0,
 )
 
 // R247 — `languageName()` and its table live in LanguageIdentity.kt (one table, keyed by canonical code).

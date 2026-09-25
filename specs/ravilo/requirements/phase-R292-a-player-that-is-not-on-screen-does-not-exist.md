@@ -2,13 +2,70 @@
 
 ## Status
 
-`Planned` — written 2026-09-24 from a household report and a same-day investigation on the stue TV.
-**Dev-reviewed 2026-09-24 against `main` `9d2636bb`** (see §Dev review at the bottom: every finding
-holds in the code; the recorded position cannot reach a transcode without a `start_position_ms` on the
-start request; FR-R292-6's saved state is smaller than it reads and must be; the resume machinery may
-not live in `PlayerScreen`'s body; rung 2 is already built). Not built beyond FR-R292-11's rung 2. Spec
-first. **Supersedes R220 FR-R220-4** and R192's *"resume without a
-full player rebuild"* design note; keeps R220's detector and ladder for mid-playback loss (FR-R292-11).
+`✓ Built` 2026-09-25 from the dev review below (all nine items), **device-tried on the stue TV the same
+morning** (release build `1.38-17-g16709146-dirty`, dex guard 238/250): see *Trials* under Build. `Planned`
+when written 2026-09-24 from a household report and a same-day investigation on the stue TV. **Dev-reviewed
+2026-09-24 against `main` `9d2636bb`.** **Supersedes R220 FR-R220-4** and R192's *"resume without a full
+player rebuild"* code comments; keeps R220's detector and ladder for mid-playback loss (FR-R292-11).
+
+### Build (2026-09-25)
+
+- **The engine (FR-R292-1/10, item 6):** `RaviloPlayerAndroid`'s `exo` is a nullable ref built by the next
+  `load()` and bound in ONE `bindEngine()` — video-size listener, QoE analytics listener, the cue listener
+  (one per engine, reading the current `SubtitleView` at callback time; the per-`setSubtitleView`
+  accumulation is gone), the current `SurfaceView`, the TV's `MediaSession`. Renderers factory, `LoadControl`,
+  load-error policy, extractors factory and audio attributes are construction-time. `releaseEngine()` drops
+  decoders, `AudioTrack`, buffers, network, session; a released engine answers nothing and `play()`/
+  `pause()`/`seekTo()` on it are no-ops (FR-R292-4, structural). `handleAudioFocus = true` with
+  `USAGE_MEDIA`/`CONTENT_TYPE_MOVIE` (FR-R292-12; a may-duck transient ducks, item 8). R220 FR-R220-4's
+  `detachVideoSurfaceForBackground`/`reattach…` and the surface's `onWindowVisibilityChanged` /
+  `SurfaceHolder.Callback` hooks are deleted (FR-R292-11).
+- **The lifecycle (FR-R292-1/8, item 1):** `PlayerLifecycleGate` (commonMain, pure, `PlayerLifecycleGateTest`
+  4) decides the transitions once — `ON_PAUSE` pauses, `ON_STOP` **or** `ACTION_SCREEN_OFF` is one
+  `Background(wasPlaying)` (a real `ON_STOP` after `SCREEN_OFF` is nothing), `ON_START` or `SCREEN_ON`-while-
+  started one `Foreground`; `ON_RESUME` never plays after a background (the intent lives in the record). The
+  Android effect registers the screen broadcasts while the player is up.
+- **The record (FR-R292-2/5/6, items 3–5):** `PlayerResume.kt` — `ResumeRecord` (item, position from the
+  ENGINE under R184's guard, play intent, the track choices, the burn-in / single-audio state, the subtitle
+  size, and the `Dest.Player` fields a restore needs), `PlayerResumeStore` (one record, mirrored into
+  `rememberSaveable` as ONE string in `RaviloApp` — the serialization plugin now applies to `ravilo-ui`),
+  `resumePlayIntent` (owner: under 30 min ⇒ playing, else paused) and `resumeRestorable` (12 h cap).
+  `PlayerResumeTest` (4). Nothing of it in `PlayerScreen`'s body beyond one capture, one return and one
+  restore call.
+- **The return (FR-R292-3):** `onForeground` re-arms R290's latch and starts again from the record —
+  `startSession(startPositionMs)` → `PlaybackStartRequest.start_position_ms` (additive, item 2; the service
+  lets it win over Jellyfin's user data and logs one line per return) — presented as R290's one start moment,
+  `play()` only if the intent says so; the viewer's audio/subtitle indices are re-applied to the new engine
+  once its tracks are known, and a burn-in or single-audio choice is restored by ONE restream under the
+  start screen (FR-R292-5, not re-resolved). The stop now logs its position too, so stop and record are
+  readable side by side.
+- **Recreation (FR-R292-6, item 4):** on composition with a saved record the stack is `[Home, Player]` from
+  it and the player starts from it (`recordRestoredAfterRecreate` counted); leaving the player by Back clears
+  the record. `colorMode` is in both activities' `configChanges` (FR-R292-7). Live TV gets the same effect:
+  released off screen, re-tuned on return (FR-R292-9).
+- **Telemetry (FR-R292-11, item 7):** `PlaybackQoeReport` + `playback_qoe` (migration **51**) carry
+  `video_output_recoveries`, the rung that recovered, its time to a new frame, `background_returns` and
+  `restored_after_recreate`; `hasIssue` badges a recovery or a restore (not a plain return), both on the
+  backend and in the admin mirror. `PlaybackQoeStoreRecoveryTest` (2), `PlaybackStartRequestWireTest` (3).
+
+### Trials (stue TV, 2026-09-25 07:47–07:52, SDR direct play)
+
+1. **Nothing survives a background.** HOME while playing: `media.resource_manager` logged
+   `removeResource` for Ravilo's video codec within 2 s; `dumpsys audio` `releasing player` for its
+   `AudioTrack` (now `CONTENT_TYPE_MOVIE`) — acceptance 1 ✓.
+2. **Coming back is a start:** relaunch → a NEW codec and a NEW `AudioTrack` (new client id, new piid), the
+   picture up within 2 s presented as R290's start. **Position** (re-run at 07:59 against the backend that
+   carries `start_position_ms`): the server log reads `playback stop … at 1017822ms` and `playback start …
+   cut at 1017822ms (the client's own position; Jellyfin held 998094ms)` — the stop and the start carry the
+   same number, and Jellyfin's own record was 20 s behind (dev review item 2's race, made moot); the chrome
+   read 17:05 seven seconds after the return ✓. (The first run, against the previous backend without the
+   field, came back at 0:00 — the record is what makes the position true.)
+3. **Forced destroy (acceptance 3, second half):** HOME → `am kill` → relaunch: back **into the player** at
+   the position (2:53), playing — never Home ✓.
+4. **Standby (FR-R292-8):** `KEYCODE_SLEEP` while playing released the codec and the `AudioTrack`
+   (07:51:17); `KEYCODE_WAKEUP` rebuilt the engine (07:51:24) and the picture resumed ✓. The BRAVIA paused the
+   activity on standby (its launcher's `DispatchActivity` took the foreground), so both roads exist and the
+   gate takes whichever comes first.
 
 > *"This has been reported before, but seems like it's still not fixed. When watching something on
 > Ravilo TV app and then going out of the app (without a proper close) and then coming back, then the

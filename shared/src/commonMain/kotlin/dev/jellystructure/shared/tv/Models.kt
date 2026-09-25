@@ -145,6 +145,16 @@ data class PlaybackQoeReport(
      *  reached Ready. Null on every ordinary report. Makes a failed start readable from `playback_qoe`
      *  alone instead of by hand-correlating log lines against row timestamps. */
     @SerialName("start_failure_status") val startFailureStatus: Int? = null,
+    /** R292 (FR-R292-11, R220 FR-R220-6 made real) — how many times this session's video-output recovery
+     *  ladder fired, the rung that recovered last (0 = none / exhausted into rung 4) and how long from the
+     *  ladder's start to the first new frame; plus the counts of returns from the background (FR-R292-3
+     *  starts) and of restores after an activity recreation (FR-R292-6). All 0 on every platform without
+     *  the signal. Additive. */
+    @SerialName("video_output_recoveries") val videoOutputRecoveries: Int = 0,
+    @SerialName("video_output_recovery_rung") val videoOutputRecoveryRung: Int = 0,
+    @SerialName("video_output_recovery_ms") val videoOutputRecoveryMs: Long = 0,
+    @SerialName("background_returns") val backgroundReturns: Int = 0,
+    @SerialName("restored_after_recreate") val restoredAfterRecreate: Int = 0,
 )
 
 @Serializable
@@ -1149,6 +1159,11 @@ data class PickerOption(
 data class PlaybackStartRequest(
     @SerialName("item_id") val itemId: String,
     val capabilities: ClientCapabilities,
+    /** R292 (FR-R292-2/3, dev review item 2) — the position the client wants the stream cut at. Present on
+     *  a return from the background (the position the engine held at `ON_STOP`, the same value the stop
+     *  reported) so the start can never disagree with a stop that has not landed in Jellyfin yet; absent
+     *  on an ordinary start, where Jellyfin's user data decides as before. Additive — never removed. */
+    @SerialName("start_position_ms") val startPositionMs: Long? = null,
 )
 
 @Serializable

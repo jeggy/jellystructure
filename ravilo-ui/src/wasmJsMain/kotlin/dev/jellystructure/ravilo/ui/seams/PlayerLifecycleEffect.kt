@@ -6,7 +6,7 @@ import androidx.compose.runtime.Composable
 actual fun PlayerLifecycleEffect(
     player: RaviloPlayer,
     wasPlaying: () -> Boolean,
-    onBackground: () -> Unit,
+    onBackground: (wasPlaying: Boolean) -> Unit,
     onForeground: () -> Unit,
 ) {
     // Browser tab visibility is handled by the <video> element's native behaviour. A backgrounded tab
