@@ -407,11 +407,51 @@ class MediaJobQueue(
             val playing = if (queued.any { it.deferWhilePlaying() }) dev.jellystructure.tv.isPlaybackActive() else false
             queued.firstOrNull { !playing || !it.deferWhilePlaying() }?.let { candidates += it }
         }
-        val chosen = candidates.minByOrNull { it.created_at } ?: return null
-        occupiedQueues += chosen.lane
-        if (chosen.lane == "media") runningJobId = chosen.id
-        queries.markRunning(epochSeconds(), chosen.id)
-        return snapshotRowOf(chosen.id) ?: chosen
+        for (chosen in candidates.sortedBy { it.created_at }) {
+            // Phase 260 (FR-260-2, dev review item 1) — the claim is conditional on `queued`: a row that
+            // emptyQueues() cancelled between the read above and this write is NOT flipped back to
+            // running; changes() == 0 means this worker lost that race and takes the next candidate.
+            // In one transaction so `changes()` reads the SAME connection the UPDATE ran on — the native
+            // driver pools connections, and a bare SELECT changes() after a bare UPDATE answers 0 from another.
+            val won = queries.transactionWithResult { queries.markRunning(epochSeconds(), chosen.id); queries.changes().executeAsOne() > 0L }
+            if (!won) continue
+            occupiedQueues += chosen.lane
+            if (chosen.lane == "media") runningJobId = chosen.id
+            return snapshotRowOf(chosen.id) ?: chosen
+        }
+        return null
+    }
+
+    /**
+     * Phase 260 (FR-260-1/2/3/6) — empty the WAITING part of one or more queues, in one transaction, without
+     * touching what runs: a running `segments_season` finishes its season (FR-260-3). Per emptied queue,
+     * one `queue_emptied` record for the Recent list (FR-260-6); the cancelled rows themselves carry
+     * `error = 'emptied'` and are filtered out of Recent. No undo (FR-260-5): a waiting job has touched no
+     * file. Returns what was removed per queue and the running jobs that were left alone.
+     */
+    suspend fun emptyQueues(lanes: List<String>, by: String): EmptyQueuesResult {
+        val wanted = lanes.filter { it in QUEUE_NAMES }.distinct()
+        val now = epochSeconds()
+        val removed = LinkedHashMap<String, Int>()
+        val kept = ArrayList<MediaJobSnapshot>()
+        queries.transaction {
+            for (lane in wanted) {
+                val running = queries.listRunningByLane(lane).executeAsList().map { toSnapshot(it) }
+                queries.emptyLane(finished_at = now, lane = lane)
+                val n = queries.changes().executeAsOne().toInt()
+                removed[lane] = n
+                kept += running
+                if (n > 0) queries.insertRecord(
+                    id = "mj-${genId()}", type = QUEUE_EMPTIED_TYPE, media_id = "", label = emptiedLabel(lane, n), params = "{}",
+                    enqueued_by = by, created_at = now, started_at = now, finished_at = now, file_count = n.toLong(), lane = lane,
+                    speed = running.firstOrNull()?.let { "kept the running job — ${it.label}" },
+                )
+            }
+        }
+        if (removed.values.any { it > 0 }) {
+            Logger.info("jobs: $by emptied ${removed.filterValues { it > 0 }.entries.joinToString { "${it.key} (${it.value} waiting)" }}; ${kept.size} running job(s) untouched", "jobs")
+        }
+        return EmptyQueuesResult(removed, kept)
     }
 
     private fun snapshotRowOf(id: String): Media_job? = queries.findById(id).executeAsOneOrNull()
@@ -1020,11 +1060,32 @@ class MediaJobQueue(
 
     private fun epochSeconds(): Long = dev.jellystructure.nowEpochSec()
 
-    private companion object {
+    companion object {
+        /** The three queue names — Phase 260's route validates against THIS list, not a copy. */
         val QUEUE_NAMES = listOf("media", "segments", "subtitles")
+        /** Phase 260 (FR-260-6) — the synthetic Recent record's type. */
+        const val QUEUE_EMPTIED_TYPE = "queue_emptied"
         /** Phase 254 (FR-254-5) — one library sweep job reads for at most this long, then ends. */
         const val INTEGRITY_SLICE_SEC = 20 * 60L
     }
+}
+
+/** Phase 260 (FR-260-1) — `POST /api/jobs/empty`'s answer: removed per queue, and the running jobs left alone. */
+@kotlinx.serialization.Serializable
+data class EmptyQueuesResult(
+    val removed: Map<String, Int>,
+    @kotlinx.serialization.SerialName("kept_running") val keptRunning: List<MediaJobSnapshot>,
+)
+
+/** Phase 260 (FR-260-6) — the Recent record's own sentence: *Emptied the segments queue · 6 waiting intro &
+ *  credits detections removed*. Pure, so the wording is tested rather than eyeballed. */
+internal fun emptiedLabel(lane: String, removed: Int): String {
+    val what = when (lane) {
+        "segments" -> if (removed == 1) "intro & credits detection" else "intro & credits detections"
+        "subtitles" -> if (removed == 1) "subtitle pre-warm" else "subtitle pre-warms"
+        else -> if (removed == 1) "job" else "jobs"
+    }
+    return "Emptied the $lane queue · $removed waiting $what removed"
 }
 
 // Concurrent HTTP handlers can call enqueue() at the same time — AtomicInt (not a plain var) keeps the

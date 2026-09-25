@@ -131,6 +131,14 @@ data class JobsSummary(
     val queued: List<MediaJobSnapshot> = emptyList(), val recent: List<MediaJobSnapshot> = emptyList(),
 )
 
+/** Phase 260 (FR-260-1) — `POST /api/jobs/empty`'s answer. */
+@Serializable
+data class EmptyQueuesResponse(
+    val removed: Map<String, Int> = emptyMap(),
+    @SerialName("kept_running") val keptRunning: List<MediaJobSnapshot> = emptyList(),
+    val lanes: List<LaneSummary> = emptyList(),
+)
+
 @Serializable
 data class TriageTypeCount(val key: String, val label: String, val description: String, val instances: Int, val titles: Int)
 
@@ -708,6 +716,15 @@ object MediaApi {
 
     suspend fun getJobsSummary(): JobsSummary? = runCatching {
         httpClient.get("/api/jobs").body<JobsSummary>()
+    }.getOrNull()
+
+    /** Phase 260 (FR-260-1) — null on any failure (400/401/network); the panel then says so and re-polls. */
+    suspend fun emptyQueues(queues: List<String>): EmptyQueuesResponse? = runCatching {
+        val response = httpClient.post("/api/jobs/empty") {
+            contentType(ContentType.Application.Json)
+            setBody(mapOf("queues" to queues))
+        }
+        if (response.status.value in 200..299) response.body<EmptyQueuesResponse>() else null
     }.getOrNull()
 
     suspend fun cancelJob(id: String): Boolean = runCatching {

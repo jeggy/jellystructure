@@ -160,6 +160,9 @@ check "$WF" "Users & devices: read-only photo chip (.usr-av)" ".usr-av {"
 # mockup's inline <style>; a sync that strips it leaves the toggle opening an unstyled block.
 check "$WF" "Users & devices: version history (.usr-vh)" ".usr-vh {"
 check "$WF" "Users & devices: version history rows (.vh-r)" ".vh-r {"
+# Phase 260 — the empty-queues panel on Activity ▸ Jobs & workers lives in the served wf.css.
+check "$WF" "Jobs & workers: empty-queues panel (.qe)" ".qe {"
+check "$WF" "Jobs & workers: empty-queues option row (.qe-opt)" ".qe-opt {"
 # Phase 218 — the Chromecast card's page-local rules live in the served wf.css, not only in the
 # design's inline <style>; a sync that strips them leaves the Settings card unstyled.
 check "$WF" "Chromecast card steps (.cc-step)" \

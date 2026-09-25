@@ -58,11 +58,32 @@ SELECT * FROM media_job WHERE state = 'running' ORDER BY started_at ASC;
 listRunningByLane:
 SELECT * FROM media_job WHERE lane = :lane AND state = 'running' ORDER BY started_at ASC;
 
+-- Phase 260 (FR-260-6, dev review item 3) — rows an admin emptied out of a queue carry error = 'emptied'
+-- and are NOT listed one by one; the one `queue_emptied` record per emptied queue is listed instead.
 listRecent:
-SELECT * FROM media_job WHERE state IN ('done', 'failed', 'cancelled') ORDER BY COALESCE(finished_at, created_at) DESC LIMIT :max_rows;
+SELECT * FROM media_job WHERE state IN ('done', 'failed', 'cancelled') AND (state != 'cancelled' OR error IS NULL OR error != 'emptied')
+ORDER BY COALESCE(finished_at, created_at) DESC LIMIT :max_rows;
 
+-- Phase 260 (FR-260-2, dev review item 1) — conditional on `queued`: a row emptied between a worker's
+-- read and this write must not be flipped back to running. The caller checks `changes` — 0 = lost the race.
 markRunning:
-UPDATE media_job SET state = 'running', started_at = :started_at WHERE id = :id;
+UPDATE media_job SET state = 'running', started_at = :started_at WHERE id = :id AND state = 'queued';
+
+changes:
+SELECT changes();
+
+-- Phase 260 (FR-260-2) — only what is WAITING in one queue; running rows are not read, touched or
+-- signalled. One statement per selected queue inside one transaction (dev review item 5). A cancelled
+-- row leaves the partial unique index, so the same work can be queued again later.
+emptyLane:
+UPDATE media_job SET state = 'cancelled', finished_at = :finished_at, error = 'emptied'
+WHERE lane = :lane AND state = 'queued';
+
+-- Phase 260 (FR-260-6) — the synthetic `queue_emptied` record: already finished when inserted; file_count
+-- carries how many were removed, speed the "kept the running job — …" clause (164's precedent for detail text).
+insertRecord:
+INSERT INTO media_job(id, type, media_id, label, params, state, enqueued_by, created_at, started_at, finished_at, file_count, lane, speed)
+VALUES (:id, :type, :media_id, :label, :params, 'done', :enqueued_by, :created_at, :started_at, :finished_at, :file_count, :lane, :speed);
 
 updateProgress:
 UPDATE media_job SET pct = :pct, speed = :speed, files_done = :files_done, eta_seconds = :eta_seconds WHERE id = :id;

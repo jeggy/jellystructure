@@ -151,6 +151,17 @@ fun renderActivity(container: Element, scope: CoroutineScope, query: Map<String,
             <div class="tiny" style="line-height:1.6;">Three queues share one worker pool (Settings ▸ Job workers). Heavy media edits — an audio <b>re-order</b> is an <span class="mono">ffmpeg</span> remux (a full stream copy, 4K included) — go through the <b>media</b> queue; <b>intro &amp; credits detection</b> through <b>segments</b>; <b>subtitle pre-warming</b> (a full read of the source file, in Jellyfin's own process) through <b>subtitles</b>. Each queue only ever runs one job at a time no matter how many workers are configured — that's what keeps a re-order safe from racing another edit on the same file — so the pool size really just decides how many of the three queues can be busy at once.</div>
           </div>
           <div class="card" style="margin-bottom:14px;">
+            <div class="row center" style="gap:10px;flex-wrap:wrap;"><h4 style="margin:0;">Queues</h4><span class="spacer"></span><span class="muted tiny">occupancy · one worker per queue, maximum</span><span class="btn sm ghost" id="qe-open-all" style="display:none;">Empty queues…</span></div>
+            <!-- Phase 260 (FR-260-4) — one panel, two ways in (all queues · one queue); what runs, finishes. -->
+            <div class="qe" id="qe" hidden>
+              <div class="qe-h"><b id="qe-title">Empty queues</b><span class="tiny muted">removes jobs that are waiting · what a worker is already doing finishes</span></div>
+              <div class="qe-list" id="qe-list"></div>
+              <div class="qe-foot">
+                <span class="btn sm bad" id="qe-go">Nothing picked</span><span class="btn sm ghost" id="qe-cancel">Keep them</span>
+                <span class="tiny muted">Removed jobs are listed under <b>Recent</b>. Nothing is undone on disk — a waiting job has not touched a file yet. Detection and pre-warm jobs return on the next scan for the items that still need them.</span>
+              </div>
+            </div>
+            <hr class="dash" style="margin:10px 0;">
             <div id="jobs-worker-lines">
               <div class="row center" style="gap:10px;flex-wrap:wrap;" id="jobs-worker-line-media"><span class="muted tiny">Loading…</span></div>
               <hr class="dash" style="margin:10px 0;">
@@ -640,7 +651,96 @@ private fun jobTypeLabel(type: String): String = when (type) {
 
 private fun laneBadge(lane: String): String = """<span class="badge" style="background:var(--fill-2);font-size:.68rem;">${lane.esc()}</span>"""
 
+// Phase 260 — the latest summary, read by the empty-queues panel when it opens (the worker lines are
+// re-rendered every poll, so the buttons never carry counts of their own — one number source, FR-260-7).
+private var lastJobsSummary: dev.jellystructure.api.JobsSummary? = null
+
+private fun laneHuman(lane: String): String = when (lane) {
+    "segments" -> "intro & credits detection"; "subtitles" -> "subtitle pre-warm"; else -> "media edits"
+}
+
+/** Phase 260 (FR-260-4) — the "Empty" button on a lane with something waiting (hidden at 0). */
+private fun laneEmptyButton(lane: String, queued: Int): String =
+    if (queued > 0) """<span class="btn sm ghost lane-empty" data-lane="$lane">Empty</span>""" else ""
+
+/** Phase 260 (FR-260-6) — *Emptied 14:02 · 6 removed · the running job finishes*, shown until the lane's
+ *  next job: i.e. while the lane has nothing waiting and its newest Recent entry is the emptying. */
+private fun laneEmptiedNote(s: dev.jellystructure.api.JobsSummary, lane: String): String {
+    val queued = s.lanes.firstOrNull { it.lane == lane }?.queuedCount ?: 0
+    if (queued > 0) return ""
+    val newest = s.recent.firstOrNull { it.lane == lane } ?: return ""
+    if (newest.type != "queue_emptied") return ""
+    val at = newest.finishedAt?.let { dev.jellystructure.formatStoredTs(it.toString()) } ?: ""
+    val running = if (newest.speed != null) " · the running job finishes" else ""
+    return """<span class="tiny muted lane-gone">Emptied $at · ${newest.fileCount} removed$running</span>"""
+}
+
+private fun jobsToast(msg: String) {
+    val t = document.createElement("div") as HTMLElement
+    t.className = "toast"; t.textContent = msg
+    document.body?.appendChild(t)
+    activityScope?.launch { delay(2400); t.remove() }
+}
+
+/** Phase 260 (FR-260-4) — open the panel for every queue, or for [only]; counts from [lastJobsSummary]. */
+private fun openEmptyPanel(container: Element, only: String?) {
+    val s = lastJobsSummary ?: return
+    val panel = container.querySelector("#qe") as? HTMLElement ?: return
+    val list = container.querySelector("#qe-list") as? HTMLElement ?: return
+    (container.querySelector("#qe-title") as? HTMLElement)?.textContent = if (only != null) "Empty the $only queue?" else "Empty queues"
+    list.innerHTML = listOf("media", "segments", "subtitles").filter { only == null || it == only }.joinToString("") { lane ->
+        val n = s.lanes.firstOrNull { it.lane == lane }?.queuedCount ?: 0
+        val keep = s.running.firstOrNull { it.lane == lane }?.let { "keeps running: <b>${jobTypeLabel(it.type).esc()} · ${it.label.esc()}</b>" } ?: "nothing running"
+        val off = n == 0
+        """<label class="qe-opt${if (off) " off" else ""}"><input type="checkbox" data-q="$lane" data-n="$n"${if (off) " disabled" else " checked"}><span class="qe-q">$lane</span><span class="qe-n">${if (off) "nothing waiting" else "$n waiting"}</span><span class="qe-keep">$keep</span></label>"""
+    }
+    panel.hidden = false
+    paintEmptyGo(container)
+}
+
+private fun pickedQueues(container: Element): List<Pair<String, Int>> {
+    val nodes = container.querySelectorAll("#qe-list input:checked")
+    return (0 until nodes.length).mapNotNull { i ->
+        val el = nodes.item(i) as? HTMLElement ?: return@mapNotNull null
+        val q = el.getAttribute("data-q") ?: return@mapNotNull null
+        q to (el.getAttribute("data-n")?.toIntOrNull() ?: 0)
+    }
+}
+
+private fun paintEmptyGo(container: Element) {
+    val go = container.querySelector("#qe-go") as? HTMLElement ?: return
+    val n = pickedQueues(container).sumOf { it.second }
+    go.textContent = if (n > 0) "Remove $n waiting job${if (n == 1) "" else "s"}" else "Nothing picked"
+    go.classList.toggle("disabled", n == 0)
+}
+
+private fun wireEmptyPanel(container: Element) {
+    val panel = container.querySelector("#qe") as? HTMLElement ?: return
+    if (panel.getAttribute("data-wired") == "1") return
+    panel.setAttribute("data-wired", "1")
+    (container.querySelector("#qe-open-all") as? HTMLElement)?.addEventListener("click") { openEmptyPanel(container, null) }
+    (container.querySelector("#qe-cancel") as? HTMLElement)?.addEventListener("click") { panel.hidden = true }
+    (container.querySelector("#qe-list") as? HTMLElement)?.addEventListener("change") { paintEmptyGo(container) }
+    (container.querySelector("#qe-go") as? HTMLElement)?.addEventListener("click") {
+        val picked = pickedQueues(container).filter { it.second > 0 }.map { it.first }
+        if (picked.isEmpty()) return@addEventListener
+        activityScope?.launch {
+            val r = MediaApi.emptyQueues(picked)
+            panel.hidden = true
+            if (r == null) jobsToast("Could not empty the queue — try again")
+            else {
+                val removed = r.removed.values.sum()
+                jobsToast("$removed waiting job${if (removed == 1) "" else "s"} removed · running jobs untouched")
+            }
+            refreshJobsPanel(container)   // FR-260-7 — one source: the view re-polls at once
+        }
+    }
+}
+
 private fun renderJobsPanel(container: Element, s: dev.jellystructure.api.JobsSummary) {
+    lastJobsSummary = s   // Phase 260
+    wireEmptyPanel(container)
+    (container.querySelector("#qe-open-all") as? HTMLElement)?.style?.display = if (s.queued.isEmpty()) "none" else ""
     (container.querySelector("#jobs-count-badge") as? HTMLElement)?.let {
         val n = s.queued.size + s.running.size
         it.textContent = n.toString()
@@ -660,7 +760,8 @@ private fun renderJobsPanel(container: Element, s: dev.jellystructure.api.JobsSu
         <span class="spacer"></span>
         <span class="chip"><b>${media?.runningCount ?: 0}</b> running</span>
         <span class="chip"><b>${media?.queuedCount ?: 0}</b> queued</span>
-        <span class="chip ok" style="background:var(--ok-soft);">${media?.doneToday ?: 0} done today</span>"""
+        <span class="chip ok" style="background:var(--ok-soft);">${media?.doneToday ?: 0} done today</span>
+        ${laneEmptyButton("media", media?.queuedCount ?: 0)}${laneEmptiedNote(s, "media")}"""
     (container.querySelector("#jobs-worker-line-segments") as? HTMLElement)?.innerHTML = """
         <span class="wk-dot ${if ((segments?.runningCount ?: 0) > 0) "busy" else "idle"}"></span><b>Intro &amp; credits detection</b>
         <span class="badge ${if ((segments?.runningCount ?: 0) > 0) "warn" else ""}">${if ((segments?.runningCount ?: 0) > 0) "busy" else "idle"}</span>
@@ -668,7 +769,8 @@ private fun renderJobsPanel(container: Element, s: dev.jellystructure.api.JobsSu
         <span class="spacer"></span>
         <span class="chip"><b>${segments?.runningCount ?: 0}</b> running</span>
         <span class="chip"><b>${segments?.queuedCount ?: 0}</b> queued</span>
-        <span class="chip ok" style="background:var(--ok-soft);">${segments?.doneToday ?: 0} done today</span>"""
+        <span class="chip ok" style="background:var(--ok-soft);">${segments?.doneToday ?: 0} done today</span>
+        ${laneEmptyButton("segments", segments?.queuedCount ?: 0)}${laneEmptiedNote(s, "segments")}"""
     (container.querySelector("#jobs-worker-line-subtitles") as? HTMLElement)?.innerHTML = """
         <span class="wk-dot ${if ((subtitles?.runningCount ?: 0) > 0) "busy" else "idle"}"></span><b>Subtitle pre-warm</b>
         <span class="badge ${if ((subtitles?.runningCount ?: 0) > 0) "warn" else ""}">${if ((subtitles?.runningCount ?: 0) > 0) "busy" else "idle"}</span>
@@ -676,7 +778,8 @@ private fun renderJobsPanel(container: Element, s: dev.jellystructure.api.JobsSu
         <span class="spacer"></span>
         <span class="chip"><b>${subtitles?.runningCount ?: 0}</b> running</span>
         <span class="chip"><b>${subtitles?.queuedCount ?: 0}</b> queued</span>
-        <span class="chip ok" style="background:var(--ok-soft);">${subtitles?.doneToday ?: 0} done today</span>"""
+        <span class="chip ok" style="background:var(--ok-soft);">${subtitles?.doneToday ?: 0} done today</span>
+        ${laneEmptyButton("subtitles", subtitles?.queuedCount ?: 0)}${laneEmptiedNote(s, "subtitles")}"""
 
     val runningCard = container.querySelector("#jobs-running-card") as? HTMLElement
     if (s.running.isNotEmpty()) {
@@ -729,6 +832,16 @@ private fun renderJobsPanel(container: Element, s: dev.jellystructure.api.JobsSu
     val recentEl = container.querySelector("#jobrecent") as? HTMLElement
     recentEl?.innerHTML = if (s.recent.isEmpty()) """<span class="muted tiny">Nothing yet.</span>""" else
         s.recent.joinToString("") { j ->
+            // Phase 260 (FR-260-6) — the one record per emptied queue; the removed rows are not listed.
+            if (j.type == "queue_emptied") {
+                val at = j.finishedAt?.let { dev.jellystructure.formatStoredTs(it.toString()) } ?: ""
+                val kept = j.speed?.let { " · ${it.esc()}" } ?: ""
+                return@joinToString """<div class="jobrow">
+                     <span class="jq-ic" style="color:var(--ink-soft);">⌫</span>
+                     <div class="jq-main"><div class="jq-title">${j.label.esc()}</div><div class="jq-sub">by ${j.enqueuedBy.esc()} · $at$kept</div></div>
+                     <span class="badge">emptied</span>
+                   </div>"""
+            }
             val ic = if (j.state == "done") """<span class="jq-ic ok">✓</span>""" else """<span class="jq-ic bad">✗</span>"""
             val took = if (j.startedAt != null && j.finishedAt != null) "took ${(j.finishedAt - j.startedAt).coerceAtLeast(0)}s" else ""
             val sub = when (j.state) {
@@ -747,6 +860,13 @@ private fun renderJobsPanel(container: Element, s: dev.jellystructure.api.JobsSu
                </div>"""
         }
 
+    // Phase 260 (FR-260-4) — the per-lane way in; re-wired each render like the cancel buttons below.
+    container.querySelectorAll(".lane-empty").let { nodes ->
+        for (i in 0 until nodes.length) {
+            val btn = nodes.item(i) as? HTMLElement ?: continue
+            btn.addEventListener("click") { openEmptyPanel(container, btn.getAttribute("data-lane")) }
+        }
+    }
     // Wire cancel/retry buttons fresh each render (innerHTML was just replaced).
     container.querySelectorAll(".jq-cancel, .jobs-cancel-running").let { nodes ->
         for (i in 0 until nodes.length) {

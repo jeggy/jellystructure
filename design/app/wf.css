@@ -431,6 +431,25 @@ hr.dash { border: none; border-top: 1px solid var(--line); margin: 18px 0; }
 .jq-main { flex: 1; min-width: 0; }
 .jq-title { font-size: .86rem; }
 .jq-sub { font-size: .72rem; color: var(--ink-dim); margin-top: 2px; }
+/* Phase 260 — the empty-queues panel on Activity ▸ Jobs & workers (mockup: design/app/activity.html #qe).
+   Served from here, not only the mockup's inline <style>; fenced by check-mobile-css.sh. */
+.qe { margin-top: 10px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--fill-1); }
+.qe[hidden] { display: none; }
+.qe-h { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.qe-h b { font-size: .9rem; }
+.qe-list { margin-top: 9px; display: grid; gap: 2px; }
+.qe-opt { display: grid; grid-template-columns: 18px 110px 88px minmax(0, 1fr); gap: 10px; align-items: baseline; padding: 7px 4px; border-top: 1px dashed var(--line); cursor: pointer; font-size: .8rem; }
+.qe-opt:first-child { border-top: none; }
+.qe-opt input { accent-color: var(--bad); margin: 0; transform: translateY(2px); }
+.qe-opt.off { cursor: default; color: var(--ink-dim); }
+.qe-q { font-family: 'JetBrains Mono', monospace; font-weight: 600; }
+.qe-n { font-variant-numeric: tabular-nums; }
+.qe-keep { font-size: .74rem; color: var(--ink-soft); }
+.qe-keep b { color: var(--ink); font-weight: 600; }
+.qe-foot { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
+.qe-foot .btn.disabled { opacity: .45; pointer-events: none; }
+.lane-gone { display: block; width: 100%; margin-top: 4px; }
+@media (max-width: 640px) { .qe-opt { grid-template-columns: 18px minmax(0, 1fr); } }
 
 /* Ravilo config's hero-carousel row thumbnail (design/app/ravilo-config.html) — the
    element's own dynamic style= only sets `background`, so the box shape/overlay-label

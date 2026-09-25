@@ -2,13 +2,36 @@
 
 ## Status
 
-`Planned` — written 2026-09-25 from the owner's ask and the mockup in `design/app/activity.html` → *Jobs &
-workers* (`?view=jobs`, drawn the same day; owner answered the design questions before this was written).
-**Dev-reviewed 2026-09-25 against `main` `e7991df3`** (see §Dev review at the bottom: the claim statement is not
-conditional on `queued` today, so FR-260-2's race guarantee needs one `WHERE`; the Jobs view polls, it
-does not receive a WS event; the Recent entry is best a synthetic `media_job` row; open question 1 is
-yes). Not built. Spec first. Builds on **164** (lanes, dedupe keys, per-job cancel) and **213**
-(three queues — `media`, `segments`, `subtitles` — over one `behavior.job_workers` pool).
+`✓ Built` 2026-09-25 from the dev review below (all five items). `Planned` when written 2026-09-25 from the
+owner's ask and the mockup in `design/app/activity.html` → *Jobs & workers* (`?view=jobs`, drawn the same
+day; owner answered the design questions before this was written). **Dev-reviewed 2026-09-25 against `main`
+`e7991df3`.** Builds on **164** (lanes, dedupe keys, per-job cancel) and **213** (three queues — `media`,
+`segments`, `subtitles` — over one `behavior.job_workers` pool).
+
+### Build (2026-09-25)
+
+- `markRunning` is now `WHERE id = ? AND state = 'queued'` and `claimNext()` reads `changes()` in the same
+  transaction — 0 = lost the race, take the next candidate (item 1; found on the way: the native driver pools
+  connections, so a bare `SELECT changes()` after a bare `UPDATE` answers 0 from another connection —
+  `transactionWithResult` keeps both on one).
+- `MediaJobQueue.emptyQueues(lanes, by)`: one `queries.transaction { }`, one `emptyLane` statement per
+  selected queue (item 5), running rows never read/touched/signalled; cancelled rows get `error = 'emptied'`
+  and `listRecent` filters them out; one synthetic `type = 'queue_emptied'` row per emptied queue
+  (`state = 'done'`, `label` = FR-260-6's sentence via `emptiedLabel()`, `enqueued_by` = the admin,
+  `file_count` = removed, `speed` = *kept the running job — …*, 164's precedent for detail text; item 3). No
+  migration.
+- `POST /api/jobs/empty` `{queues: [...]}` → 400 on an empty list or a name not in
+  `MediaJobQueue.QUEUE_NAMES`; 200 `{removed, kept_running, lanes}` — the fresh lane counts ride the answer
+  and the view re-polls at once (item 2).
+- Activity ▸ Jobs & workers: *Empty queues…* in the Queues header (hidden at 0 waiting), *Empty* on each lane
+  with something waiting, one panel (checkbox · *N waiting* · *keeps running: …* / *nothing running*; a
+  queue with nothing waiting listed dimmed and unchecked; *Remove N waiting jobs* / *Nothing picked*; *Keep
+  them*), the *they return on the next scan* line (item 4), the toast, the *Emptied 14:02 · N removed · the
+  running job finishes* lane note until the lane's next job, and the ⌫ *emptied* Recent record. Panel CSS in
+  the served `wf.css`, fenced.
+- Tests: `MediaJobEmptyQueueTest` (4, SQL layer like the dedupe test): only the waiting rows of the named
+  queue; the lost-race claim changes nothing (acceptance 3); emptied rows leave Recent and free their dedupe
+  key; the record's sentence.
 
 > *"Let's add an empty queue to Jobs & workers. It should both support empty all queues, or empty only
 > segment detection queue etc. When emptying it should not empty the currently running items."*
