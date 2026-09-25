@@ -8,8 +8,9 @@
 
 ## Status
 
-`⚠ Partial` — design-authored 2026-09-20 from an owner report on a Pixel 9 Pro (Android 17, debug
-build), **built and verified on that Pixel the same day**. Not dev-reviewed.
+`✓ Built` — design-authored 2026-09-20 from an owner report on a Pixel 9 Pro (Android 17, debug
+build), **built and verified on that Pixel the same day**; FR-R274-4 seen on the device 2026-09-25. Not
+dev-reviewed.
 
 ### Build (2026-09-20)
 
@@ -38,8 +39,10 @@ the labels, nothing clipped. Measured off the screenshots — the bar's top edge
 2.25×) against the 6 dp intended, and the gesture inset beneath it is unchanged at ~23 dp. A title opened from Library and Back:
 the bar returns in the same place (acceptance 5).
 
-⚠ **FR-R274-4 is the one thing not device-verified** — no cast was running, so the mini bar was never
-on screen. It is a one-line inset change of the same shape as the bar's, but it has not been seen.
+~~FR-R274-4 is the one thing not device-verified~~ — **verified 2026-09-25** on the Pixel 9 (debug) with
+a cast to the soveværelse TV running: on Home and on Search the mini bar sits directly on the bottom
+bar, and with the keyboard up on Search the keyboard covers both — the mini bar does not climb onto the
+keys.
 
 ## Context — what is actually happening
 
