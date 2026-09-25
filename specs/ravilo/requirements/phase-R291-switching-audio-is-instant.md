@@ -123,6 +123,16 @@ for this, because two household Chromecast transcodes were running at the time):
 | Do the video variant's segments line up? | Video segments are 3.003 s (72 frames at 23.976 fps); its transcode uses the same `-copyts -avoid_negative_ts disabled` and muxer. **Its PTS offset is not measured yet.** It needs one video segment, i.e. one 4K software encode. |
 | Hardware encoding on vs off | **Not measured.** Production has no accelerator selected (phase 246's `hwaccel_none`, now on the Dashboard per phase 257). |
 
+**Measured 2026-09-25** (household Jellyfin 12.1, nobody watching; a 4K HEVC film at 84 Mbps with five DTS
+tracks, under a 60 Mbps h264/ts profile — `VideoCodecNotSupported, AudioCodecNotSupported,
+ContainerBitrateExceedsLimit`; one 4K software encode, stopped by `DELETE /Videos/ActiveEncodings` right
+after, nothing left transcoding):
+
+| Question | Answer |
+|---|---|
+| **Item 4 — an audio-only job under the video's `PlaySessionId`?** | **It does not kill the video job — it returns the video job's own segment.** With the same `PlaySessionId` and `DeviceId`, `/Audio/{id}/main.m3u8?AudioStreamIndex=5` segment 100 came back in 0.0 s, byte-for-byte the size of the video's segment 100: Jellyfin keys a job's output on media path · user agent · device · play session, so the two requests share one directory. The video job carried on (segment 101 in 0.9 s). **Every audio rendition needs its own `PlaySessionId`**, which makes it a job of its own — and phase 180's teardown must stop each one by its own id. |
+| The video variant's first PTS at segment 100 | **310.300 s** for media time 300.300 s (3.003 s segments): an offset of **+10.000 s**. The audio-only offset measured on 2026-09-24 was +9.957 s at segment 100 (3.000 s segments). The two differ by **43 ms** — two AAC frames at 48 kHz — so a separate audio rendition would lead the picture by ~43 ms: constant, inside common lip-sync tolerance, and correctable by one fixed offset if it shows. |
+
 Still to measure, in a quiet window and before any code:
 1. The video variant's first PTS at the same segment index. If it is also +9.957 s, Media3's shared
    per-discontinuity `TimestampAdjuster` keeps sound and picture in step. If not, the audio renditions
