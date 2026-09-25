@@ -5,12 +5,40 @@
 
 ## Status
 
-`Planned` — written 2026-09-24 from the soveværelse-TV sweep. **Dev-reviewed 2026-09-24 against `main`
-`9d2636bb`** (see §Dev review at the bottom: FR-R291-1's lean holds and closes open question 2 — the
-server resolves on the same list the picker shows; land its field with R292's `start_position_ms`;
-mechanism 1 needs a playlist route jellystructure does not serve today, and a fourth measurement before
-the three — whether an audio-only job kills the video job's play session). Not built. Amends
-**R284** FR-R284-2/3 and **253** (the restream carries the audio). Pairs with **R290**.
+`⚠ Partial` — **FR-R291-1 built 2026-09-25** from the dev review below (items 1 and 2); **FR-R291-2/3 not
+built**: the mechanism is chosen after FR-R291-3's remaining measurements (the video variant's PTS at the same
+segment index — one 4K software encode — and item 4's `PlaySessionId` question), which need a quiet window on
+the household's Jellyfin and are not this session's to spend. `Planned` when written 2026-09-24 from the
+soveværelse-TV sweep (owner: *"we even want this to be instant"*). **Dev-reviewed 2026-09-24 against `main`
+`9d2636bb`.** Amends R284 FR-R284-2/3.
+
+### Build (2026-09-25, FR-R291-1)
+
+- **One resolver, in `:shared` (item 1):** `LanguageCodes.kt` (R247's `canonicalLanguage`/`sameLanguage` and
+  the ISO alias table, moved; `:ravilo-ui`'s `LanguageIdentity.kt` delegates and keeps only the display
+  names) and `TrackVariants.kt` (R195's `VariantKind`, the SDH/AD/commentary regexes, the region table as
+  code + name, the provenance collapse, `groupVersions()` — the (kind, region, ordinal) clustering in stream
+  order — the `"<kind>|<region>|<ordinal>"` signature, and `resolveAudioChoice()`: R181's audio tier). The
+  picker's `buildLanguageGroups`, `variantKind`, `resolveRegion` and `PickerVersion.signature()` now delegate
+  to it, so the signature a pick remembers is the one the next start asks for; the flag stays the UI's.
+  `TrackVariantsTest` (4); the 20 existing `PlayerScreenTrackResolutionTest` cases pass unchanged through
+  the shared grouping.
+- **The request (item 2, landed with R292's `start_position_ms`):** `PlaybackStartRequest.audio_language` +
+  `audio_variant`, additive; `PlaybackStartRequestWireTest` (4). `armSession` sends the remembered choice
+  (series, else global) with the FIRST negotiation; `PlaybackService.startPlayback` resolves it on
+  `buildAudioTracks(itemDetail)` — the very list the ticket carries — and passes the match as the
+  negotiation's `AudioStreamIndex`, exactly as a restream does, logging one line (`… audio da/plain||0 →
+  stream 2 (R291)`). Open question 2 closes with it.
+- FR-R291-4/5 hold for FR-R291-1 by construction: every player sends the same request field, and a burn-in
+  is untouched by it.
+- **Device trial (stue TV, 2026-09-25, local release build of `852b228b`+ this change, backend build 6):** an
+  animated series episode carrying five stereo audio tracks (English default at stream 1, Danish at stream 2).
+  Danish picked once in the picker, two Backs out, Resume from the detail page: the backend logged
+  `playback start: … audio dan/plain||0 → stream 2 (R291)` followed by exactly **one** `PlaybackInfo` line
+  (direct play), and the picker opened on the playing stream showed Danish ticked. Before this change the
+  same re-entry was two negotiations. The transcode case (where the second negotiation was a ~12–15 s
+  restream) is not yet captured on a device — it needs a file the stue TV cannot direct-play with a
+  remembered non-default track.
 
 ## What happens today
 

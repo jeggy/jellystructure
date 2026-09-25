@@ -191,10 +191,10 @@ class TvApiClient(
 
     // ─── Playback ────────────────────────────────────────────────────────────
 
-    suspend fun startPlayback(itemId: String, capabilities: ClientCapabilities, startPositionMs: Long? = null): StreamTicket {
+    suspend fun startPlayback(itemId: String, capabilities: ClientCapabilities, startPositionMs: Long? = null, audioLanguage: String? = null, audioVariant: String? = null): StreamTicket {
         val r = client.post("$baseUrl/api/tv/playback/start") {
             auth()
-            jsonBody(json.encodeToString(PlaybackStartRequest(itemId, capabilities, startPositionMs)))
+            jsonBody(json.encodeToString(PlaybackStartRequest(itemId, capabilities, startPositionMs, audioLanguage, audioVariant)))
         }
         r.assertSuccess()
         return json.decodeFromString<StreamTicket>(r.bodyAsText())

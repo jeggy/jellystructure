@@ -1164,6 +1164,13 @@ data class PlaybackStartRequest(
      *  reported) so the start can never disagree with a stop that has not landed in Jellyfin yet; absent
      *  on an ordinary start, where Jellyfin's user data decides as before. Additive — never removed. */
     @SerialName("start_position_ms") val startPositionMs: Long? = null,
+    /** R291 (FR-R291-1) — the audio the viewer will get: R181's remembered choice (series, else global) as
+     *  `{language, variant signature}`. The server resolves it against the file's own track list with the
+     *  picker's grouping (`TrackVariants.kt`) and asks Jellyfin for that stream on the FIRST negotiation, so
+     *  R284's automatic restream only runs when the server could not honour it. The remembered choice stays
+     *  client-local (R181); the request carries the answer, not the store. Absent = Jellyfin's default. */
+    @SerialName("audio_language") val audioLanguage: String? = null,
+    @SerialName("audio_variant") val audioVariant: String? = null,
 )
 
 @Serializable

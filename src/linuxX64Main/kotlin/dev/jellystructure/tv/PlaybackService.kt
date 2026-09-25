@@ -424,6 +424,10 @@ class PlaybackService(
         // when present: a return from the background must start where the engine stopped, not where a
         // stop that has not landed yet says. Null = an ordinary start.
         startPositionMsOverride: Long? = null,
+        // R291 (FR-R291-1) — the viewer's remembered audio choice, resolved below against this file's own
+        // track list (the one the ticket carries) and asked of Jellyfin on the FIRST negotiation.
+        audioLanguage: String? = null,
+        audioVariant: String? = null,
     ): StreamTicket {
         requireVisible(device, jellyfinId)
         // Phase 218 (FR-218-8) — a receiver past `max_sessions` gets phase 182's 503 + Retry-After
@@ -462,7 +466,15 @@ class PlaybackService(
         // Bug fix: [capabilities] used to be discarded here — an HDR10/HLG source always direct-played
         // regardless of what the device could actually display correctly (see deviceProfile()'s doc).
         // Phase 161: moved before buildSubtracks() below — it now needs to know `needsTranscode`.
-        val playbackInfo = jellyfinClient.getPlaybackInfo(jellyfinBase, token, device.jellyfinUserId, jellyfinId, capabilities = capabilities, identity = identity)
+        // R291 (FR-R291-1) — one resolver, the picker's own (TrackVariants.kt in :shared), on the list the
+        // ticket will carry; a match becomes the negotiation's AudioStreamIndex exactly as a restream's does.
+        val wantedAudioIndex = audioLanguage?.let { lang ->
+            val tracks = buildAudioTracks(itemDetail)
+            dev.jellystructure.shared.tv.resolveAudioChoice(lang, audioVariant, tracks.map { dev.jellystructure.shared.tv.VersionInput(it.language, it.label, forced = false, isDefault = it.isDefault) })
+                ?.let { tracks[it].index }
+                ?.also { Logger.info("playback start: device=${device.deviceId} item=$jellyfinId audio $lang/${audioVariant ?: "-"} → stream $it (R291)", "tv") }
+        }
+        val playbackInfo = jellyfinClient.getPlaybackInfo(jellyfinBase, token, device.jellyfinUserId, jellyfinId, capabilities = capabilities, identity = identity, audioStreamIndex = wantedAudioIndex)
         val source = playbackInfo?.mediaSources?.firstOrNull()
         val needsTranscode = source != null && !source.supportsDirectPlay && source.transcodingUrl != null
         // Phase 180 (FR-180-2) — Jellyfin's OWN play-session id, distinct from playSessionIdFor()'s

@@ -16,24 +16,12 @@ package dev.jellystructure.ravilo.ui.seams
  * `resolveRegion` keeps reading the raw title, and a BCP-47 region/script subtag (`pt-br`,
  * `zh-hans`) is dropped here because the key is for identity only.
  */
-fun canonicalLanguage(code: String?): String? {
-    val raw = code?.trim()?.lowercase()?.takeIf { it.isNotEmpty() } ?: return null
-    val parts = raw.split('-', '_').filter { it.isNotEmpty() }
-    if (parts.isEmpty()) return raw
-    // ExoPlayer's macrolanguage form: `hbs-srp` / `hbs-hrv` / `hbs-bos` / `hbs-cnr` — the second
-    // subtag is the individual language, the first is only Serbo-Croatian's umbrella.
-    val base = if (parts[0] in MACROLANGUAGE_PREFIXES && parts.size > 1) parts[1] else parts[0]
-    return ISO_ALIASES[base] ?: base
-}
+fun canonicalLanguage(code: String?): String? = dev.jellystructure.shared.tv.canonicalLanguage(code)   // R291 — one implementation, in :shared
 
 /** R247 (FR-R247-2) — the one language comparison the player uses: the resolver's tiers (R241), the
  *  Dubbed rule, `buildLanguageGroups`' grouping key and the R239 flag strip all go through here. Two
  *  nulls are the same (no language); a null and a code are not. */
-fun sameLanguage(a: String?, b: String?): Boolean {
-    val ca = canonicalLanguage(a)
-    val cb = canonicalLanguage(b)
-    return ca == cb
-}
+fun sameLanguage(a: String?, b: String?): Boolean = dev.jellystructure.shared.tv.sameLanguage(a, b)   // R291 — one implementation, in :shared
 
 /** English display name (R46) for any code the canonicaliser recognises; null otherwise so callers
  *  can fall back to the raw code. */
@@ -49,7 +37,6 @@ fun endonymOf(code: String?): String? =
 fun isKnownLanguage(code: String?): Boolean =
     canonicalLanguage(code)?.let { LANGUAGE_TABLE.containsKey(it) } == true
 
-private val MACROLANGUAGE_PREFIXES = setOf("hbs", "sh")
 
 internal data class LanguageEntry(val english: String, val endonym: String?)
 
@@ -152,83 +139,4 @@ internal val LANGUAGE_TABLE: Map<String, LanguageEntry> = mapOf(
  * ISO-639-2/B, ISO-639-2/T and the deprecated / macrolanguage forms ExoPlayer emits, each → the
  * canonical key of [LANGUAGE_TABLE]. A 639-1 code that is already canonical needs no row.
  */
-internal val ISO_ALIASES: Map<String, String> = mapOf(
-    "eng" to "en",
-    "dan" to "da",
-    "fao" to "fo",
-    "swe" to "sv",
-    "nor" to "no", "nob" to "no", "nb" to "no", "nno" to "no", "nn" to "no",
-    "ger" to "de", "deu" to "de",
-    "fre" to "fr", "fra" to "fr",
-    "spa" to "es",
-    "fin" to "fi",
-    "dut" to "nl", "nld" to "nl",
-    "chi" to "zh", "zho" to "zh",
-    "por" to "pt",
-    "ita" to "it",
-    "pol" to "pl",
-    "rus" to "ru",
-    "jpn" to "ja",
-    "kor" to "ko",
-    "ara" to "ar",
-    "hin" to "hi",
-    "cze" to "cs", "ces" to "cs",
-    "tur" to "tr",
-    "ice" to "is", "isl" to "is",
-    "gre" to "el", "ell" to "el",
-    "srp" to "sr", "scc" to "sr",
-    "hrv" to "hr", "scr" to "hr",
-    "bos" to "bs",
-    "hun" to "hu",
-    "rum" to "ro", "ron" to "ro",
-    "slo" to "sk", "slk" to "sk",
-    "slv" to "sl",
-    "bul" to "bg",
-    "ukr" to "uk",
-    "heb" to "he", "iw" to "he",
-    "tha" to "th",
-    "vie" to "vi",
-    "ind" to "id", "in" to "id",
-    "may" to "ms", "msa" to "ms",
-    "lav" to "lv",
-    "lit" to "lt",
-    "est" to "et",
-    "tel" to "te",
-    "tam" to "ta",
-    "mac" to "mk", "mkd" to "mk",
-    "fil" to "tl", "tgl" to "tl",
-    "cat" to "ca",
-    "glg" to "gl",
-    "baq" to "eu", "eus" to "eu",
-    "mal" to "ml",
-    "kan" to "kn",
-    "mon" to "mn",
-    "ben" to "bn",
-    "urd" to "ur",
-    "pan" to "pa",
-    "nep" to "ne",
-    "mar" to "mr",
-    "guj" to "gu",
-    "sin" to "si",
-    "alb" to "sq", "sqi" to "sq",
-    "tah" to "ty",
-    "per" to "fa", "fas" to "fa",
-    "kir" to "ky",
-    "khm" to "km",
-    "kaz" to "kk",
-    "geo" to "ka", "kat" to "ka",
-    "aze" to "az",
-    "arm" to "hy", "hye" to "hy",
-    "bur" to "my", "mya" to "my",
-    "wel" to "cy", "cym" to "cy",
-    "tib" to "bo", "bod" to "bo",
-    "mao" to "mi", "mri" to "mi",
-    "yid" to "yi", "ji" to "yi",
-    "lat" to "la",
-    "afr" to "af",
-    "swa" to "sw",
-    "gle" to "ga",
-    "ltz" to "lb",
-    "mlt" to "mt",
-    "bel" to "be",
-)
+internal val ISO_ALIASES: Map<String, String> get() = dev.jellystructure.shared.tv.ISO_ALIASES   // R291 — lives in :shared now

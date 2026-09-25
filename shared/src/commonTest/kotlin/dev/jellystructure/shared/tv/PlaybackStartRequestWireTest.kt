@@ -31,6 +31,15 @@ class PlaybackStartRequestWireTest {
     }
 
     @Test
+    fun `the audio preference rides the start request and is absent when there is none`() {
+        val withAudio = client.encodeToString(PlaybackStartRequest.serializer(), PlaybackStartRequest("i1", caps, audioLanguage = "da", audioVariant = "plain||0"))
+        assertTrue(withAudio.contains("\"audio_language\":\"da\"") && withAudio.contains("\"audio_variant\":\"plain||0\""), withAudio)
+        val back = server.decodeFromString(PlaybackStartRequest.serializer(), withAudio)
+        assertEquals("da", back.audioLanguage); assertEquals("plain||0", back.audioVariant)
+        assertFalse(server.encodeToString(PlaybackStartRequest.serializer(), PlaybackStartRequest("i1", caps)).contains("audio_"))
+    }
+
+    @Test
     fun `a qoe report from before R292 parses with the new counters at zero`() {
         val old = """{"item_id":"i1","dropped_frames":2,"direct_play":true}"""
         val r = server.decodeFromString(PlaybackQoeReport.serializer(), old)

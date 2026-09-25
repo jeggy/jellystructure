@@ -862,9 +862,15 @@ fun PlayerScreen(
         // foreground re-arm (both reload the player — see RaviloPlayerAndroid.load()'s own
         // _hasRenderedFirstFrame reset), so both get timed the same way from this one chokepoint.
         bk.negotiationStartMs = kotlin.time.Clock.System.now().toEpochMilliseconds()
+        // R291 (FR-R291-1) — the FIRST negotiation asks for the audio R181's resolver would pick (series
+        // choice, else global choice), so a remembered non-default audio no longer costs a second start.
+        val remembered = MultiTokenStore.getActive()?.userId?.let { pid ->
+            PlaybackPrefsStore.getSeriesChoice(pid, currentSeriesId ?: id) ?: PlaybackPrefsStore.getGlobalChoice(pid)
+        }
         store.startSession(
             id,
             startPositionMs = startPositionMs,   // R292 (FR-R292-2) — the record's position on a return, else Jellyfin's
+            audioLanguage = remembered?.audioLanguage, audioVariant = remembered?.audioVariant,   // R291
             positionProvider = { positionMs },
             isPausedProvider = { !isPlaying },
             durationProvider = { durationMs },
@@ -3786,12 +3792,12 @@ private enum class TrackVariant { SDH, DESCRIBES_ACTION, COMMENTARY, NONE }
 // R235 (FR-R235-5) — "cc"/"closed caption" is the same descriptive-subtitle concept as SDH and was
 // unmatched (the reported file's full track is titled "Dansk (CC)"), so it grouped as PLAIN with no
 // badge and no distinct variant signature from the file's other (forced) Danish track.
-private val SDH_RE = Regex("""\bsdh\b|\bhi\b|hard of hearing|hearing impaired|\bhearing\b|\bcc\b|closed caption""", RegexOption.IGNORE_CASE)
-private val AD_RE = Regex("""synstolkning|audio description|\bad\b|\bdescribed\b""", RegexOption.IGNORE_CASE)
+private val SDH_RE get() = dev.jellystructure.shared.tv.SDH_RE   // R291 — one regex, in :shared
+private val AD_RE get() = dev.jellystructure.shared.tv.AD_RE   // R291 — :shared
 // 2026-09-24 — the word in the languages this library's release titles are written in, not only
 // English: a Norwegian-titled *Kommentarspor med regissører* track got no Commentary badge.
 // `kommentar` covers da/no/sv/de (incl. compounds like Kommentarspor), the rest fi/fr/es/pt/it/nl.
-private val COMMENTARY_RE = Regex("""commentary|kommentar|kommentti|commentaire|coment[aá]rio|commento|commentaar""", RegexOption.IGNORE_CASE)
+private val COMMENTARY_RE get() = dev.jellystructure.shared.tv.COMMENTARY_RE   // R291 — :shared
 // DB-verified low-coverage "this track is the source's own original" marker (~20 tracks in the library,
 // e.g. "English [Original]", "dansk [original]", "Original | Dansk (Danmark)") — see R180 addendum §4.
 private val ORIGINAL_MARKER_RE = Regex("""\[\s*original\s*]|^\s*original\s*\|""", RegexOption.IGNORE_CASE)
@@ -3891,15 +3897,10 @@ internal fun subtitleBadges(track: PlayerSubtitleTrack, lang: String): List<Stri
 // flat single-version case's muted suffix); the grouping/kind/region types below are the new,
 // two-level-picker-specific layer.
 
-internal enum class VariantKind { PLAIN, SDH, FORCED, DESCRIBE, COMMENTARY }
+// R291 (FR-R291-1) — one definition, in :shared, so the server's resolve and the picker cannot disagree.
+internal typealias VariantKind = dev.jellystructure.shared.tv.VariantKind
 
-private fun variantKind(title: String?, forced: Boolean): VariantKind = when {
-    title != null && COMMENTARY_RE.containsMatchIn(title) -> VariantKind.COMMENTARY
-    title != null && SDH_RE.containsMatchIn(title) -> VariantKind.SDH
-    title != null && AD_RE.containsMatchIn(title) -> VariantKind.DESCRIBE
-    forced -> VariantKind.FORCED
-    else -> VariantKind.PLAIN
-}
+private fun variantKind(title: String?, forced: Boolean): VariantKind = dev.jellystructure.shared.tv.variantKind(title, forced)   // R291 — :shared
 
 /**
  * R195 (FR-RV §5.2) — region synonym table: extends [REGION_MARKERS] (which only ever produced a muted
@@ -3911,29 +3912,19 @@ private fun variantKind(title: String?, forced: Boolean): VariantKind = when {
  */
 internal data class RegionInfo(val code: String, val name: String, val flag: DrawableResource?)
 
-private val REGION_TABLE: List<Pair<Regex, RegionInfo>> = listOf(
-    Regex("""\bcastilian\b|\bspain\b|\bes[- ]es\b""", RegexOption.IGNORE_CASE) to RegionInfo("es", "España", flagFor("es")),
-    Regex("""\blatin american?\b|\bes[- ]419\b""", RegexOption.IGNORE_CASE) to RegionInfo("419", "Latinoamérica", null),
-    Regex("""\bbrazil(ian)?\b|\bpt[- ]br\b""", RegexOption.IGNORE_CASE) to RegionInfo("br", "Brasil", null),
-    Regex("""\bportugal\b|\biberian\b|\bpt[- ]pt\b""", RegexOption.IGNORE_CASE) to RegionInfo("pt", "Portugal", flagFor("pt")),
-    Regex("""\bsimplified\b|\bzh[- ]hans\b|\bzh[- ]cn\b""", RegexOption.IGNORE_CASE) to RegionInfo("cn", "简体", flagFor("zh")),
-    Regex("""\btraditional\b|\bzh[- ]hant\b|\bzh[- ]tw\b""", RegexOption.IGNORE_CASE) to RegionInfo("tw", "繁體", null),
-    Regex("""\bcanad(a|ian)\b""", RegexOption.IGNORE_CASE) to RegionInfo("ca", "Canada", null),
-    Regex("""\beuropean\b""", RegexOption.IGNORE_CASE) to RegionInfo("eu", "European", null),
-)
-
-private fun resolveRegion(title: String?): RegionInfo? {
-    if (title.isNullOrBlank()) return null
-    for ((re, info) in REGION_TABLE) if (re.containsMatchIn(title)) return info
-    return null
+// R291 — the region table (code + name) is :shared's REGION_TABLE; only the flag is this module's.
+// `flag = null` stays the honest gap for Brazil/Taiwan/Latin America/Canada/European (no drawable).
+private fun regionInfoOf(region: dev.jellystructure.shared.tv.RegionCode?): RegionInfo? = region?.let {
+    RegionInfo(it.code, it.name, when (it.code) { "es" -> flagFor("es"); "pt" -> flagFor("pt"); "cn" -> flagFor("zh"); else -> null })
 }
+
+private fun resolveRegion(title: String?): RegionInfo? = regionInfoOf(dev.jellystructure.shared.tv.regionOf(title))
 
 /** R195 (FR-RV §5.3) — release-provenance tokens that are never a viewer-meaningful choice on their
  *  own. Used ONLY to detect a collapse-worthy duplicate in [buildLanguageGroups] (positive evidence
  *  the difference between two otherwise-identical tracks is release plumbing) — never to classify a
  *  track's [VariantKind]. */
-private val PROVENANCE_RE = Regex("""\b(bluray|blu-ray|web-?dl|webrip|itunes|amzn|netflix|hdtv|remux|dvdrip)\b""", RegexOption.IGNORE_CASE)
-private fun hasProvenanceMarker(title: String?): Boolean = title != null && PROVENANCE_RE.containsMatchIn(title)
+private fun hasProvenanceMarker(title: String?): Boolean = dev.jellystructure.shared.tv.hasProvenanceMarker(title)   // R291 — :shared
 
 /** Per-row input to [buildLanguageGroups] — the shape both audio and subtitle tracks flatten to, so
  *  the grouping logic stays generic over R195's "audio gets the identical treatment for free" non-goal. */
@@ -3970,7 +3961,7 @@ internal data class PickerVersion(
 /** R195 (FR-RV §5.4) — the opaque signature a [PickerVersion] resolves to for [RememberedChoice].
  *  Never contains `:` or `,` — see [RememberedChoice]'s doc (the wasm actual's hand-rolled parser
  *  splits on both). Format: `"<kind>|<regionCode>|<ordinal>"`. */
-internal fun PickerVersion.signature(): String = "${kind.name.lowercase()}|${region?.code ?: ""}|$ordinal"
+internal fun PickerVersion.signature(): String = dev.jellystructure.shared.tv.variantSignature(kind, region?.code, ordinal)   // R291 — the server signs the same way
 
 internal data class PickerLanguage(
     val language: String?,
@@ -4145,51 +4136,29 @@ internal fun resolveTrackChoice(
  * never renumbers the underlying tracks.
  */
 internal fun buildLanguageGroups(entries: List<PickerEntryInput>): List<PickerLanguage> {
-    // R247 (FR-R247-2) — grouped by canonical identity, so a file that mixes `da` and `dan` (or `sr`
-    // and `hbs-srp`) is one language with several versions, and R195's "indistinguishable" test runs
-    // across them (open question 2: yes).
-    val byLanguage = entries.withIndex().groupBy { (_, e) -> canonicalLanguage(e.language) }
-    // Group order = each language's first-occurrence position in the original track list (not
-    // alphabetical) — preserves the pre-R195 flat picker's stream order, which callers/track
-    // authoring already treat as meaningful (e.g. the source's own primary-language-first ordering).
-    return byLanguage.entries.sortedBy { (_, indexed) -> indexed.first().index }.map { (_, indexed) ->
-        val language = indexed.first().value.language
-        val withMeta = indexed.map { (flatIdx, e) ->
-            Triple(flatIdx, e, variantKind(e.title, e.forced) to resolveRegion(e.title))
+    // R291 (FR-R291-1) — the grouping, clustering, numbering and provenance collapse are :shared's
+    // groupVersions(): the server resolves a remembered audio choice with the very same function, so
+    // the signature a pick remembers here is the signature the next start asks for.
+    val groups = dev.jellystructure.shared.tv.groupVersions(entries.map { dev.jellystructure.shared.tv.VersionInput(it.language, it.title, it.forced, it.isDefault) })
+    return groups.map { g ->
+        val versions = g.versions.map { v ->
+            PickerVersion(
+                flatIndex = v.flatIndex,
+                kind = v.kind,
+                region = regionInfoOf(v.region),
+                badges = entries[v.flatIndex].badges,
+                forced = v.forced,
+                isDefault = v.isDefault,
+                hadTitleText = v.hadTitleText,
+                ordinal = v.ordinal,
+                clusterSize = v.clusterSize,
+            )
         }
-        // §5.3 — collapse a (kind, region) cluster to ONE only when at least one member carries a
-        // provenance marker (positive evidence the only difference is release plumbing) AND every
-        // member has SOME title text (never blind-merge untitled tracks — that's §3.8's hard floor).
-        // `ordinal`/`clusterSize` are scoped PER CLUSTER (not the whole group) — bug fix: this used to
-        // number across the entire flattened group, which both mislabeled "Recording N" and made
-        // `clusterSize` impossible to compute at all (see PickerVersion's doc).
-        val versions = withMeta.groupBy { it.third }.values.flatMap { cluster ->
-            val anyProvenance = cluster.any { hasProvenanceMarker(it.second.title) }
-            val allHaveTitles = cluster.all { !it.second.title.isNullOrBlank() }
-            val effective = if (cluster.size > 1 && anyProvenance && allHaveTitles) listOf(cluster.first()) else cluster
-            effective.mapIndexed { ordinal, (flatIdx, e, kindRegion) ->
-                PickerVersion(
-                    flatIndex = flatIdx,
-                    kind = kindRegion.first,
-                    region = kindRegion.second,
-                    badges = e.badges,
-                    forced = e.forced,
-                    isDefault = e.isDefault,
-                    hadTitleText = !e.title.isNullOrBlank(),
-                    ordinal = ordinal,
-                    clusterSize = effective.size,
-                )
-            }
-        }.sortedBy { it.flatIndex } // preserve original stream order within the group after re-flattening clusters
-        // R247 (FR-R247-4) — a platform's last-resort label is the code itself uppercased (`QQQ`); that is
-        // not a title, so it never becomes the row's primary — the code rides in the secondary style once.
-        val sampleTitle = indexed.firstNotNullOfOrNull { (_, e) ->
+        val sampleTitle = entries.filter { sameLanguage(it.language, g.language) }.firstNotNullOfOrNull { e ->
             e.title?.trim()?.takeIf { it.isNotEmpty() && !it.equals(e.language?.trim(), ignoreCase = true) }
         }
-        val isUnnamed = versions.size > 1 && versions.all {
-            it.kind == VariantKind.PLAIN && it.region == null && !it.hadTitleText
-        }
-        PickerLanguage(language, isOff = false, versions = versions, isUnnamed = isUnnamed, sampleTitle = sampleTitle)
+        val isUnnamed = versions.size > 1 && versions.all { it.kind == VariantKind.PLAIN && it.region == null && !it.hadTitleText }
+        PickerLanguage(g.language, isOff = false, versions = versions, isUnnamed = isUnnamed, sampleTitle = sampleTitle)
     }
 }
 
