@@ -2,6 +2,10 @@
 
 ## Status
 
+**`⏸ Paused` 2026-09-25 — owner: *"Lets stop all tizen development for a while and lets mark them as paused."*** No Tizen work (building, testing on the
+emulator or a TV, or the Samsung store submission) happens until the owner resumes it. Where it stood: FR-247-3 is built and ships in v1.40; what Tizen 5.0 sends on a WebSocket handshake is the one open question.
+The status below is the state it was paused in.
+
 `✓ Built` 2026-09-19 (FR-247-1, FR-247-2); **FR-247-3 built 2026-09-25** for the one route that needed
 it, measured on the Tizen 10.0 TV emulator and against the real binary, not dev-reviewed, not yet on a real
 Samsung TV.

@@ -2,6 +2,10 @@
 
 ## Status
 
+**`⏸ Paused` 2026-09-25 — owner: *"Lets stop all tizen development for a while and lets mark them as paused."*** No Tizen work (building, testing on the
+emulator or a TV, or the Samsung store submission) happens until the owner resumes it. Where it stood: The CI test keeps running against its stand-in AVPlay; nothing else is being built on it.
+The status below is the state it was paused in.
+
 `✓ Built` — written 2026-09-19 with the owner (**owner: spec first, build only after an explicit
 go-ahead**), go-ahead given the same day, built and verified locally against a real backend the same
 day, not dev-reviewed. Builds on 247's test-stack `ravilo-screen` image. **Building this test found

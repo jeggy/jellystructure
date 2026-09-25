@@ -2,6 +2,10 @@
 
 ## Status
 
+**`⏸ Paused` 2026-09-25 — owner: *"Lets stop all tizen development for a while and lets mark them as paused."*** No Tizen work (building, testing on the
+emulator or a TV, or the Samsung store submission) happens until the owner resumes it. Where it stood: Test-infrastructure only; nothing open.
+The status below is the state it was paused in.
+
 `✓ Built` — written and built 2026-09-19, following straight on from 248's first real CI run (which
 failed on exactly this), verified locally against the real `web-static-server` binary before and after
 the fix. Not dev-reviewed.

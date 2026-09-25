@@ -9,6 +9,10 @@
 
 ## Status
 
+**`⏸ Paused` 2026-09-25 — owner: *"Lets stop all tizen development for a while and lets mark them as paused."*** No Tizen work (building, testing on the
+emulator or a TV, or the Samsung store submission) happens until the owner resumes it. Where it stood: Setup is verified on the Tizen 10.0 emulator; Tizen 5.0 (the UE55RU7440) is unverified.
+The status below is the state it was paused in.
+
 
 **2026-09-25 — the CORS question is answered, on the Tizen 10.0 TV emulator.** Installed and driven over
 DevTools: the widget's origin is `file://`; with the `<access origin="*">` element it lacked (without it,

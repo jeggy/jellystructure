@@ -11,6 +11,10 @@
 
 ## Status
 
+**`⏸ Paused` 2026-09-25 — owner: *"Lets stop all tizen development for a while and lets mark them as paused."*** No Tizen work (building, testing on the
+emulator or a TV, or the Samsung store submission) happens until the owner resumes it. Where it stood: The player is built and was installed and driven on the Tizen 10.0 TV emulator; it has never run on a real Samsung TV, and open question 1 (HTML chrome over AVPlay on the UE55RU7440's Tizen 5.0) is unanswered. The phone → Samsung TV path needs phase 247's FR-247-3, which ships in v1.40.
+The status below is the state it was paused in.
+
 `⚠ Partial` — written 2026-09-18 from the owner's decisions, the research report
 `ravilo-web-pwa-player-cast-2026-09-18.md` (§12) and a read of `ravilo-cast/…/Receiver.kt` (419 lines,
 11 CAF touchpoints) and `ravilo-tizen/` (`config.xml` `required_version="2.4"`, AVPlay in

@@ -13,6 +13,10 @@
 
 ## Status
 
+**`⏸ Paused` 2026-09-25 — owner: *"Lets stop all tizen development for a while and lets mark them as paused."*** No Tizen work (building, testing on the
+emulator or a TV, or the Samsung store submission) happens until the owner resumes it. Where it stood: The release workflow still builds, signs and attaches the `.wgt` to every GitHub Release; nothing else is being done with it. The Samsung Seller Office submission started the same day is paused with it (nothing was created or uploaded there).
+The status below is the state it was paused in.
+
 `✓ Built` — built 2026-09-19, **dev-reviewed twice 2026-09-19** (§Dev review at the foot, against
 `dcb97f2c`; all 6 actionable findings applied same day — see below). `.github/workflows/deploy-tizen-tv.yml`
 wired into `publish.yml` as a new `tizen-tv` job (same `needs: [version, ci, publish]` /
