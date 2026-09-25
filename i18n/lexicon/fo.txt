@@ -27,6 +27,8 @@ ambætaranum
 ambætari
 ambætarin
 angra
+annan
+app
 appini
 apr
 arbeiðir
@@ -34,6 +36,7 @@ at
 atkvøður
 aug
 av
+aðrar
 aðrir
 beinanvegin
 beinleiðis
@@ -73,6 +76,7 @@ einari
 eind
 eindin
 eindina
+eindir
 eindum
 eingin
 einki
@@ -115,6 +119,7 @@ fríggjadag
 fulla
 fullan
 fullur
+fylgja
 fyll
 fyri
 fyrst
@@ -155,6 +160,7 @@ hesum
 hetta
 hevur
 higar
+hjá
 hon
 hoyrist
 hvar
@@ -171,6 +177,7 @@ imdb
 inn
 innihald
 innritað
+innritaðar
 innritaðir
 innset
 intro
@@ -185,6 +192,7 @@ kanska
 keldur
 kemur
 klárt
+knøttar
 knýta
 kom
 komandi
@@ -212,6 +220,7 @@ ljóðlýsing
 longu
 longur
 loyniorð
+loyniorði
 loyniorðini
 loyniorðið
 loys
@@ -246,12 +255,14 @@ myndin
 myndina
 má
 mál
+málunum
 mán
 mánadag
 mín
 mínum
 nakað
 navn
+navni
 netverki
 nov
 ná
@@ -408,6 +419,7 @@ tvey
 tá
 tí
 tín
+tínar
 tíni
 tínum
 títt
@@ -439,6 +451,7 @@ uppskot
 upptikin
 upptikið
 uttan
+valmyndir
 vanga
 vanganum
 vangar
@@ -451,6 +464,7 @@ vend
 vera
 verandi
 verið
+verð
 verða
 verður
 virkar

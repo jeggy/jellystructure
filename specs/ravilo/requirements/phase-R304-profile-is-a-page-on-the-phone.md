@@ -2,14 +2,34 @@
 
 ## Status
 
-`Planned` — written 2026-09-25 from the owner's ask and the mockup in `design/ravilo/Ravilo Mobile.html`
-(`?tab=profile`), drawn the same day; owner answered the design questions before this was written.
-**Dev-reviewed 2026-09-25 against `main` `e7991df3`** (see §Dev review at the bottom: open question 1 closes — the
-viewer-side language write already exists and is per viewer; FR-R304-5 deletes more than it lists, because
-the phone's Settings screen holds sign-out, unpair and the viewer settings too; the keys follow R279's
-`profile.*` namespace; My List is the browse kind that already exists). Not built. Handset only (**R256**'s `isHandset` seam); the TV's avatar dropdown is
-unchanged. Uses **R267**'s bottom bar, **187**'s photo and password screens, **R161/R162**'s viewer
-language.
+`✓ Built` 2026-09-25 from the dev review below (all five items). `Planned` when written 2026-09-25 from the
+owner's ask and the mockup in `design/ravilo/Ravilo Mobile.html` (`?tab=profile`), drawn the same day; owner
+answered the design questions before this was written. **Dev-reviewed 2026-09-25 against `main` `e7991df3`.**
+Handset only (**R256**'s `isHandset` seam); the TV's avatar dropdown is unchanged. Uses **R267**'s bottom bar,
+**187**'s photo and password screens, **R161/R162**'s viewer language.
+
+### Build (2026-09-25)
+
+- `Dest.Profile` (+ `scrollTick`) and `Dest.AppLanguage` on the stack; `bottomItemOf` lights PROFILE, so the
+  pill slides under it and R275's Back-to-Home ladder covers it (FR-R304-1). One `openProfile()` behind the
+  nine AppBar avatar sites: the page on a handset, R170's dropdown on a TV — the phone's dropdown is gone by
+  construction (FR-R304-5). The lit avatar in the bar gets the white ring (2 dp gap, 1.5 dp).
+- `ProfileScreen.kt` (new): photo (tap → 187's photo screen, no separate row) + name + *Admin* from the
+  session's `is_admin`; **My List** row from `browse(kind = "mylist", pageSize = 12)` with the count and *See
+  all* → `Dest.Browse(MY_LIST)` (item 4), or FR-R304-2's empty sentence; **Account**: *App language* (current
+  endonym) → `AppLanguageScreen`, *Change password*, and a **Settings** row that pushes the existing screen
+  (item 2 — it still holds skin, autoplay, tile shape, unpair); **Sign out** with FR-R304-3's sheet
+  (`HandsetSheet`, R191's `signOutActiveSession`); the `Ravilo {version} · signed in to {host}` line.
+- `AppLanguageScreen`: endonyms from `SUPPORTED_LANGUAGES`, a check on the current one, the one note, and the
+  choice written through `putViewerSettings(uiLanguage)` + `LastLanguage.remember` — the per-viewer setting
+  (item 1; *this phone only* dropped).
+- Ten `profile.*` strings × en/da/fo (item 5), lexicon regenerated with `--update-lexicon` and committed;
+  `ProfileStringsTest` (3): every key resolves in every language and none names Jellyfin (FR-R304-6).
+- No backend change. **Not yet seen on a phone:** the debug build (`1.38-13-g5541667e-dirty-debug`) is installed
+  on the Pixel 9 (`dev.jellystructure.ravilo.debug`), but the phone was behind its fingerprint lock at 03:06 and
+  nothing here unlocks a phone. Compile, the wasm web target and `ProfileStringsTest` are green; the acceptance
+  walk (avatar → page, pill under it, photo → photo screen, Sign out asks first, no Switch profile, no
+  *Jellyfin*) is the owner's first tap in the morning.
 
 > *"When on Ravilo mobile and clicking on the profile picture, we get a super ugly and buggy dropdown. On
 > TV this dropdown is good. But on mobile it's not really working."*

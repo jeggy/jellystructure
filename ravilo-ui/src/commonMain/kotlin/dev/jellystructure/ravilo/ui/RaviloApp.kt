@@ -282,6 +282,13 @@ private sealed class Dest {
         val seriesName: String? = null,
     ) : Dest()
     data class Settings(val displayName: String) : Dest()
+    // R304 (FR-R304-1) — the phone's Profile PAGE: the fifth bottom-bar item, on the stack like the other
+    // four, so Back, the pill and scroll-to-top all work the way they do everywhere else. [scrollTick] is
+    // bumped by a re-tap of the bar's item (FR-R304-1: tap-on-active scrolls to top). Handset only — the
+    // TV keeps R170's dropdown.
+    data class Profile(val displayName: String, val scrollTick: Int = 0) : Dest()
+    // R304 (FR-R304-4) — App language, pushed from Profile; the per-viewer setting R161/R162 shipped.
+    data class AppLanguage(val displayName: String) : Dest()
     // R234 (FR-R234-1) — phone/web only; the caller gates the ProfileMenu row that reaches this on
     // !isTvPlatform, but the destination itself is reachable by any platform that pushes it.
     data class YourProfile(val displayName: String) : Dest()
@@ -316,6 +323,8 @@ private sealed class Dest {
         is Settings       -> "/settings"
         is YourProfile    -> "/account/profile"
         is ChangePassword -> "/account/password"
+        is Profile        -> "/profile"            // R304
+        is AppLanguage    -> "/account/language"   // R304
         is LiveTv         -> "/livetv/$channelId"
         is LiveTvGuide    -> "/livetv-guide"
         is CastRemote     -> "/cast"
@@ -599,6 +608,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
             is Dest.MovieDetail -> d.displayName; is Dest.SeriesDetail -> d.displayName
             is Dest.Player -> d.displayName; is Dest.Settings -> d.displayName; is Dest.CastRemote -> d.displayName
             is Dest.YourProfile -> d.displayName; is Dest.ChangePassword -> d.displayName
+            is Dest.Profile -> d.displayName; is Dest.AppLanguage -> d.displayName   // R304
             else -> null
         } ?: MultiTokenStore.getActive()?.displayName.orEmpty()
 
@@ -674,6 +684,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
             d is Dest.Browse && d.kind != BrowseKind.MY_LIST -> BottomNavItem.LIBRARY
             d is Dest.Search -> BottomNavItem.SEARCH
             d is Dest.Discover -> BottomNavItem.DISCOVER
+            d is Dest.Profile -> BottomNavItem.PROFILE   // R304 (FR-R304-1) — a page, so it takes the pill
             else -> null
         }
 
@@ -689,6 +700,14 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
         // R256 — never from dp alone: a TV is 960 x 540 dp, i.e. "handset-sized". See [isHandset].
         val handset = remember(windowInfo.containerSize.width, windowInfo.containerSize.height, density) {
             isHandset(isTvPlatform, windowInfo.containerSize.width, windowInfo.containerSize.height, density.density)
+        }
+        // R304 (FR-R304-1/5) — the avatar opens a PAGE on a phone and the dropdown on a TV. One place, so
+        // the nine AppBar call sites cannot disagree; the phone's dropdown is gone by construction.
+        fun openProfile() {
+            if (handset) {
+                val top = stack.lastOrNull()
+                if (top !is Dest.Profile) resetTo(Dest.Profile(destDisplayName(top)))
+            } else profileMenuOpen = true
         }
         // R159 — orientation, not width: a resized browser window or a rotated phone flips this live.
         // Compact controls *sizing*; portrait controls *these overrides* — a portrait phone is usually
@@ -929,7 +948,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                     store = store,
                     apiClient = apiClient,
                     displayName = dest.displayName,
-                    onProfile = { profileMenuOpen = true },
+                    onProfile = { openProfile() },
                     onSignOut = { resetTo(Dest.Login) },
                     onNavSelect = { idx ->
                         when (raviloNavTarget(idx)) {
@@ -984,7 +1003,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                             RaviloNavTarget.DISCOVER -> push(Dest.Discover(dest.displayName, defaultDiscoverSegment(upcomingAvailable, discoverAvailable)))
                         }
                     },
-                    onProfile = { profileMenuOpen = true },
+                    onProfile = { openProfile() },
                     onSearch = { push(Dest.Search(dest.displayName)) },
                     onItemSelect = { openDetail(it, dest.displayName) },
                     onSeeAll = { row ->
@@ -1028,7 +1047,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                             RaviloNavTarget.DISCOVER -> push(Dest.Discover(dest.displayName, defaultDiscoverSegment(upcomingAvailable, discoverAvailable)))
                         }
                     },
-                    onProfile = { profileMenuOpen = true },
+                    onProfile = { openProfile() },
                     onSearch = { push(Dest.Search(dest.displayName)) },
                     onItemSelect = { openDetail(it, dest.displayName) },
                     personRoleLine = dest.personRoleLine,
@@ -1118,7 +1137,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                             RaviloNavTarget.DISCOVER -> push(Dest.Discover(dest.displayName, defaultDiscoverSegment(upcomingAvailable, discoverAvailable)))
                         }
                     },
-                    onProfile = { profileMenuOpen = true },
+                    onProfile = { openProfile() },
                     onSearch = { push(Dest.Search(dest.displayName)) },
                     onItemSelect = { openDetail(it, dest.displayName) },
                 )
@@ -1138,7 +1157,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                         }
                     },
                     onItemSelect = { openDetail(it, dest.displayName) },
-                    onProfile = { profileMenuOpen = true },
+                    onProfile = { openProfile() },
                     onSearch = { push(Dest.Search(dest.displayName)) },
                 )
             }
@@ -1192,7 +1211,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                     onFocusSegmentConsumed = { replaceTop(dest.copy(focusSegment = false)) },
                     displayName = dest.displayName,
                     onNavSelect = onNav,
-                    onProfile = { profileMenuOpen = true },
+                    onProfile = { openProfile() },
                     onSearch = { push(Dest.Search(dest.displayName)) },
                     upcomingStore = upcomingStore,
                     onUpcomingItemSelect = { item ->
@@ -1276,7 +1295,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                             RaviloNavTarget.DISCOVER -> resetTo(Dest.Discover(dest.displayName, defaultDiscoverSegment(upcomingAvailable, discoverAvailable)))
                         }
                     },
-                    onProfile = { profileMenuOpen = true },
+                    onProfile = { openProfile() },
                     onSearch = { push(Dest.Search(dest.displayName)) },
                 )
             }
@@ -1325,7 +1344,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                             RaviloNavTarget.DISCOVER -> resetTo(Dest.Discover(dest.displayName, defaultDiscoverSegment(upcomingAvailable, discoverAvailable)))
                         }
                     },
-                    onProfile = { profileMenuOpen = true },
+                    onProfile = { openProfile() },
                     onSearch = { push(Dest.Search(dest.displayName)) },
                 )
             }
@@ -1446,10 +1465,37 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                             RaviloNavTarget.DISCOVER -> push(Dest.Discover(dest.displayName, defaultDiscoverSegment(upcomingAvailable, discoverAvailable)))
                         }
                     },
-                    onProfile = { profileMenuOpen = true },
+                    onProfile = { openProfile() },
                     onSearch = { push(Dest.Search(dest.displayName)) },
                 )
             }
+
+            // R304 — the phone's Profile page and its App language screen.
+            is Dest.Profile -> {
+                val active = MultiTokenStore.getActive()
+                dev.jellystructure.ravilo.ui.screens.ProfileScreen(
+                    apiClient = apiClient,
+                    displayName = dest.displayName,
+                    isAdmin = active?.isAdmin == true,
+                    avatarUrl = activeAvatarUrl,
+                    serverHost = apiClient.baseUrl.removePrefix("https://").removePrefix("http://").trimEnd('/'),
+                    onPhoto = { push(Dest.YourProfile(dest.displayName)) },
+                    onMyListSeeAll = { push(Dest.Browse(BrowseKind.MY_LIST, dest.displayName)) },
+                    onItemSelect = { openDetail(it, dest.displayName) },
+                    onAppLanguage = { push(Dest.AppLanguage(dest.displayName)) },
+                    onChangePassword = { push(Dest.ChangePassword(dest.displayName)) },
+                    onSettings = { push(Dest.Settings(dest.displayName)) },
+                    // R191's shape: this one profile is revoked/forgotten; another cached profile goes to
+                    // the picker, none goes to Login.
+                    onSignedOut = { resetTo(if (MultiTokenStore.getAll().isEmpty()) Dest.Login else Dest.ProfilePicker) },
+                    scrollToTopTick = dest.scrollTick,
+                )
+            }
+
+            is Dest.AppLanguage -> dev.jellystructure.ravilo.ui.screens.AppLanguageScreen(
+                apiClient = apiClient,
+                onBack = { pop() },
+            )
 
             is Dest.Settings -> {
                 val store = remember { SettingsStore(apiClient) }
@@ -1526,7 +1572,11 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                             // FR-R267-5d — Profile is a menu, not a page, and never takes the pill:
                             // nothing about WHICH PAGE YOU ARE ON has changed when you open it.
                             // Re-tapping while it is open closes it, as tapping the scrim does.
-                            BottomNavItem.PROFILE -> profileMenuOpen = !profileMenuOpen
+                            // R304 (FR-R304-1) — Profile is a PAGE on a phone (R267 FR-R267-5d superseded):
+                            // it takes the pill, and a re-tap scrolls it to the top like the other four.
+                            BottomNavItem.PROFILE ->
+                                if (alreadyHere) replaceTop((dest as Dest.Profile).copy(scrollTick = dest.scrollTick + 1))
+                                else resetTo(Dest.Profile(destDisplayName(dest)))
                             BottomNavItem.HOME ->
                                 if (!alreadyHere) resetTo(Dest.Home(destDisplayName(dest)))
                             // FR-R267-5b — Movies and Series are one page on a phone. This is a

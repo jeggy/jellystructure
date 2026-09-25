@@ -32,6 +32,7 @@ aldrig
 alle
 allerede
 alt
+anden
 andre
 anmod
 anmode
@@ -115,6 +116,8 @@ forbind
 forbindelse
 forbindelsen
 forbinder
+forbliv
+forbliver
 forkert
 forslag
 fortsæt
@@ -133,6 +136,7 @@ få
 får
 føj
 føjes
+følger
 først
 galt
 gang
@@ -155,6 +159,7 @@ går
 gælder
 har
 henter
+her
 herind
 hjem
 hjemmeskærm
@@ -194,6 +199,7 @@ kanaler
 kanalnummer
 kategori
 klar
+knapper
 kode
 koden
 kodeord
@@ -243,6 +249,7 @@ medvirkende
 mellem
 men
 mens
+menuer
 mere
 mindre
 mindst
@@ -289,6 +296,7 @@ planlagt
 premiere
 profil
 profiler
+profils
 programinfo
 prøv
 prøver
@@ -403,6 +411,7 @@ torsdag
 trailer
 travl
 trin
+tryk
 trykker
 træk
 tv

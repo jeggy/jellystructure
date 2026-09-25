@@ -4,6 +4,7 @@ import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -74,10 +75,11 @@ import dev.jellystructure.ravilo.ui.theme.accentGradient
  * by hover, or by two shades of grey alone: touch has none of the first two, and the third is what
  * direction A was rejected for.
  *
- * ## Profile never takes the pill
+ * ## Profile takes the pill too (R304)
  *
- * It opens a menu, not a page (FR-R267-5d) — nothing about *which page you are on* has changed when
- * you open it, so the pill stays where it was.
+ * R267 FR-R267-5d drew Profile as a menu that never took the pill. R304 made it a page like the other
+ * four, so it does — and because a photo or initials on the gradient could be unreadable, the lit
+ * avatar gets a white ring (2 dp gap, 1.5 dp ring; FR-R304-1).
  */
 @Composable
 fun RaviloBottomNav(
@@ -177,7 +179,7 @@ private fun BottomNavCell(
             when (item) {
                 // FR-R267-5d — the profile item's icon is the viewer's own avatar: the photo when
                 // there is one, initials when there is not.
-                BottomNavItem.PROFILE -> ProfileDot(userInitials)
+                BottomNavItem.PROFILE -> ProfileDot(userInitials, isSelected)
                 else -> BottomNavGlyph(item, if (isSelected) colors.onAccent else colors.textSecondary)
             }
         }
@@ -199,11 +201,14 @@ private fun BottomNavCell(
 }
 
 @Composable
-private fun ProfileDot(initials: String) {
+private fun ProfileDot(initials: String, selected: Boolean) {
     val colors = RaviloTheme.colors
     val avatarUrl = LocalUserAvatarUrl.current
+    // R304 (FR-R304-1) — the ring only while lit: a 1.5 dp white ring with a 2 dp gap around the avatar,
+    // so the photo never sits on the pill's gradient unreadably.
+    val ring = if (selected) Modifier.border(RING_WIDTH, Color.White, CircleShape).padding(RING_WIDTH + RING_GAP) else Modifier.padding(RING_WIDTH + RING_GAP)
     Box(
-        Modifier.size(GLYPH_BOX).background(colors.surfaceVariant, CircleShape),
+        Modifier.size(GLYPH_BOX + (RING_WIDTH + RING_GAP) * 2).then(ring).background(colors.surfaceVariant, CircleShape),
         contentAlignment = Alignment.Center,
     ) {
         if (avatarUrl != null) {
@@ -336,6 +341,8 @@ private val GLYPH_BOX = 28.dp
  * 24 units leaves room for the 2-unit stroke on both sides without any icon touching its box.
  */
 private const val GEOM_UNITS = 16f
+private val RING_WIDTH = 1.5.dp
+private val RING_GAP = 2.dp
 private val PILL_WIDTH = 60.dp
 private val PILL_HEIGHT = 36.dp
 /** Also the cell's top padding — see [BottomNavCell]. The mockup's `.bnav { padding-top: 9px }`, +1. */
