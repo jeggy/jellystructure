@@ -58,6 +58,21 @@
 .pl-back.focused .chev { background: #fff; color: #0a0c13; box-shadow: 0 0 0 4px var(--ring); }
 .pl-top .spacer { flex: 1; }
 
+/* what is playing — top-right, rides the chrome's own fade (it lives inside .pl-chrome) */
+.pl-ident { display: none; align-items: center; justify-content: flex-end; max-width: 440px; min-width: 0; }
+.pl-ident.logo, .pl-ident.name { display: flex; }
+.pl-logo { display: none; max-width: 400px; max-height: 84px; width: auto; height: auto; object-fit: contain;
+  filter: drop-shadow(0 2px 14px rgba(0,0,0,.55)); }
+.pl-ident.logo .pl-logo { display: block; }
+/* dark-ink logo (phase 232): a light plate behind it, never recoloured */
+.pl-ident.plate { padding: 12px 20px; border-radius: 14px; background: rgba(244,246,250,.92); box-shadow: 0 6px 24px rgba(0,0,0,.35); }
+.pl-ident.plate .pl-logo { max-height: 64px; max-width: 360px; filter: none; }
+.pl-showname { font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 32px; line-height: 1.08;
+  letter-spacing: -.4px; color: var(--ink); text-align: right; text-shadow: 0 2px 14px rgba(0,0,0,.6);
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; text-wrap: balance; }
+.pl-ident:not(.name) .pl-showname { display: none; }
+.pl-kicker:empty { display: none; }
+
 /* stream / quality badge (direct-play vs HLS — R08/R14) */
 .pl-stream { display: flex; align-items: center; gap: 14px; }
 .pl-pill { display: inline-flex; align-items: center; gap: 9px; height: 40px; padding: 0 16px; border-radius: 10px;

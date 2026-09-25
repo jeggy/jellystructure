@@ -3,11 +3,11 @@
   const T=(t,y,a,k,n,s)=>({t,y,a,k,n,s:s||t});
   // a = days since added (smaller = newer). n = network/tag for the collection-scope frame.
   const TITLES=[
-    T('Fjollerne',2005,2,'series','dk'), T('Borgen',2010,40,'series','dk'), T('The Patriarch',1972,120,'movie','us','Godfather'),
+    T('Fjollerne',2005,2,'series','dk'), T('Borgen',2010,40,'series','dk'), T('The Godfather',1972,120,'movie','us','Godfather'),
     T('Offboarding',2022,5,'series','us'), T('Trom',2022,9,'series','fo'), T('Riget',1994,300,'series','dk'),
     T('Badehotellet',2013,60,'series','dk'), T('Oppenheimer',2023,15,'movie','us'), T('Succession',2018,210,'series','us'),
     T('Chernobyl',2019,180,'series','us'), T('Dune',2021,30,'movie','us'), T('Arven',2014,75,'series','dk'),
-    T('The Bear',2022,12,'series','us','Bear'), T('Tunnelen',2011,400,'series','dk'), T('Parasite',2019,95,'movie','kr'),
+    T('The Bear',2022,12,'series','us','Bear'), T('Broen',2011,400,'series','dk'), T('Parasite',2019,95,'movie','kr'),
     T('Efterforskningen',2007,250,'series','dk'), T('Anatomy of a Fall',2023,22,'movie','fr'), T('Herrens Veje',2017,130,'series','dk'),
     T('Kongekabale',2004,330,'movie','dk'), T('Druk',2020,50,'movie','dk'), T('Skam',2015,160,'series','no'), T('A Real Pain',2024,1,'movie','us','Real Pain')
   ];

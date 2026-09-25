@@ -28,6 +28,16 @@
 .mp-kick{font-size:13px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--accent-2);line-height:1}
 [data-skin="noir"] .mp-kick{color:var(--ink-soft)}
 .mp-nm{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:17px;letter-spacing:-.01em;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--ink)}
+.mp-ident{display:none;flex:none;align-items:center;justify-content:flex-end;max-width:34%;min-width:0}
+.mp-ident.logo,.mp-ident.name{display:flex}
+.mp-ident img{display:none;max-width:112px;max-height:36px;width:auto;height:auto;object-fit:contain;filter:drop-shadow(0 1px 8px rgba(0,0,0,.55))}
+.mp-ident.logo img{display:block}
+.mp-ident.plate{padding:6px 10px;border-radius:9px;background:rgba(244,246,250,.92)}
+.mp-ident.plate img{max-height:28px;max-width:96px;filter:none}
+.mp-ident span{display:none;font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:14px;line-height:1.15;color:var(--ink);text-align:right;text-shadow:0 1px 8px rgba(0,0,0,.6);overflow:hidden;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.mp-ident.name span{display:-webkit-box}
+/* AirPlay-active names the TV in that slot; the title's identity gives way rather than crowd it */
+.mp-top:has(.sc-apchip) .mp-ident{display:none}
 .mp-b{width:46px;height:46px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;color:var(--ink);background:rgba(0,0,0,.34);-webkit-backdrop-filter:blur(7px);backdrop-filter:blur(7px);border:0;cursor:pointer}
 .mp-b svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 .mp-b.flat{background:transparent}
@@ -249,6 +259,16 @@
 .rc-acts button.pri{background:#fff;color:#0a0c13;border-color:transparent}
 .rc-acts.col{flex-direction:column}
 .rc-dim .rc-sk,.rc-dim .rc-tr{opacity:.32;pointer-events:none}
+/* R299 — "{device} couldn't play this": art dimmed, transport greyed, one way forward */
+.rc-fail{display:none;padding:22px 20px 0}
+.rc-fail p{font-size:14px;line-height:1.5;color:var(--ink-soft);margin:0}
+.rc-fail .rc-acts{padding:16px 0 0}
+.rc-fail .rc-acts button{flex:none;height:auto;min-height:52px;border-radius:26px;font-size:15px}
+.rc-failed .rc-fail{display:block}
+.rc-failed .rc-art img{opacity:.35}
+.rc-failed .rc-art .ov{display:none}
+.rc-failed .rc-meta .on-tv{color:var(--ink)}
+.rc-failed .rc-foot,.rc-failed .rc-conv{display:none!important}
 
 /* the device sheet the chip opens (ours only lists what is connected — the
    picker that finds devices is the platform's, and is never redrawn here) */

@@ -98,6 +98,9 @@
     <span class="chip fchip" data-quick="attention">Needs attention</span>
     <span class="chip fchip" data-quick="missing_artwork" title="No poster.jpg on disk">Missing artwork</span>
     <span class="chip fchip" data-quick="cover_as_video" title="Cover art muxed as a selectable video track — playback-hostile, repairable">Cover-as-video</span>
+    <span class="chip fchip" data-quick="file_damage" title="Damage past the first cluster (254) — repair from a clean copy, or make playable">Damaged files</span>
+    <span class="chip fchip" data-quick="track_ends_early" title="A track ends before the file does (255)">Track ends early</span>
+    <span class="chip fchip" data-quick="duration_header_wrong" title="The file reports a longer length than it has (255)">Wrong length</span>
     <span class="seedfilter" id="seedfilter" title="Show only items seeded on a tracker (qBittorrent). Not a workbench facet — a library view.">
       <span class="muted tiny" style="margin-left:4px;">🌱 seeded on:</span>
       <select class="seedsel" id="seed-tracker">
@@ -163,6 +166,11 @@
     'Laugh Track': { k: 'missing_artwork', label: 'no poster on disk', cls: 'warn' },
     'Little Robots': { k: 'missing_artwork', label: 'no poster on disk', cls: 'warn' },
     'Comedy Central Hour': { k: 'missing_artwork', label: 'no poster on disk', cls: 'warn' },
+    // 254 (built) + 255 (planned) — the served admin's three file-health types, now in the mirror too
+    'Spring': { k: 'file_damage', label: 'damaged file', cls: 'bad' },
+    'Havets Hjarta': { k: 'file_damage', label: '3 eps damaged', cls: 'bad' },
+    'Cosmos Laundromat': { k: 'track_ends_early', label: 'audio stops at 41:07', cls: 'bad' },
+    'Hraðar Ljós': { k: 'duration_header_wrong', label: 'claims 2 min longer', cls: 'warn' },
   };
 
   let quick = 'all';
@@ -402,7 +410,7 @@
   try {
     const fp = new URLSearchParams(location.search).get('filter');
     if (fp) {
-      const chipFor = ['all', 'attention', 'missing_artwork', 'cover_as_video'].includes(fp) ? fp : 'attention';
+      const chipFor = ['all', 'attention', 'missing_artwork', 'cover_as_video', 'file_damage', 'track_ends_early', 'duration_header_wrong'].includes(fp) ? fp : 'attention';
       quick = chipFor;
       document.querySelectorAll('.filterbar .fchip[data-quick]').forEach(x => x.classList.toggle('on', x.dataset.quick === chipFor));
     }

@@ -1,9 +1,52 @@
 repo: jeggy/jellystructure
 branch: main
 path: specs/   (plus root STATUS.md — both mirrored read-only from the repo); presentation/ (full mirror, ours to build on); design/ (our export — now confirmed to flow BOTH ways, see 2026-09-15)
-tree: main @ `ad3244eaf2af` (2026-09-18 pull, 15:37 — head of `main`; resolved tree hash, not a commit)
+tree: main @ `348d3bbbdffa` (2026-09-24 pull, 23:56 — head of `main`; resolved tree hash, not a commit)
 
-## Last sync (2026-09-18, 16:40 — no repo I/O: the picks built into the phone, a new receiver-app mockup, R269 + R270)
+## Last sync (2026-09-24, 23:56 — pull: 88 upstream-edited specs/reports + STATUS.md; our 259 · 260 · R303 · R304 and the four designs kept)
+date: 2026-09-24T23:56:50Z
+direction: pull (repo → this project). Drift found by a full `specs/` tree scan at `main` and a byte-size diff
+against every local mirror file (history was rewritten again, so compare is noise).
+- **Pulled over our mirror (repo wins):** `STATUS.md`, 36 admin specs (144–234 range: dev-review addenda and
+  small edits), 40 Ravilo specs (R166–R286; the large ones — R260/R261/R262 dev reviews, R225's cross-origin
+  amendment, R215, R226, R286's on-device acceptance), one design brief, 11 research reports. **No new phase
+  numbers upstream:** admin still tops at 258, Ravilo at R302, so **259 · 260 · R303 · R304 stand** and the
+  next free are **261 / R305**.
+- **Kept, untouched:** our four new specs (not upstream yet) and every local design file. The repo's copies of
+  `activity.html`, `ravilo-users.html`, `Ravilo Mobile.html`, `Ravilo Receiver App.html`, `ravilo-app.js`,
+  `ravilo-player.js/.css` and `mobile/ravilo-mobile-player.css` were line-diffed against ours: every
+  repo-only line is either something we just edited or **older** than our copy (pre-R274 bar geometry, the
+  R175 keyboard R269 dropped) — the repo has not edited our mockups since our last export. Nothing pulled back.
+- **Correction, same session:** the byte-size diff missed **18 files whose edits kept their size** (the owner
+  caught 17 of them). Re-checked every mirror file by **git blob SHA-1** against the tree's blob ids; exactly 18
+  differed and were pulled: R171 · R190 · R250 · R257 · R258, admin 139 · 160 · 173 · 174 · 186 · 187 · 212 ·
+  229, `jellyfin-upgrade-checklist.md`, and four research reports (README, internet-exposure, request-language,
+  session-user-device). **Use blob hashes, not sizes, for drift from now on.**
+### Updated in this project
+- 106 mirror files refreshed from `main` (88 + 18 found by hash); STATUS.md refreshed.
+- 259 · 260 · R303 · R304 and their mockups preserved, pending export.
+
+## Previous sync (2026-09-24, 22:53 — pull: 21 admin + 32 Ravilo phases, a repo-side title sweep, and the mockups brought up to what shipped)
+date: 2026-09-24T22:53:22Z
+direction: pull (repo → this project). ⚠ **Upstream history was rewritten** since `ad3244eaf2af` (compare reports
+the base diverged by 1,361 commits), so the compare list was noise; drift was found by a filtered `specs/` tree scan
+plus a byte-size comparison of every mockup against `design/` on `main`.
+- **Pulled:** admin **238–258** (21 files), Ravilo **R271–R302** (32), our **237 / R263–R270** back dev-reviewed and
+  mostly built, 4 research reports (Jellyfin 12.1 audit, unauthenticated-media upstream report, FOSS cast sender,
+  tracks-at-end MKV), the root + Ravilo constitutions/plans, and a fresh `STATUS.md`. **Next free: 259 / R303.**
+- **Repo-side mockup edits adopted (11 files):** the dev team replaced every real show title with a fictional one
+  (Severance → *Offboarding*, Bluey → *Ruffy*, Klovn → *Fjollerne*, Silicon Valley → *Server Farm*, Red Notice →
+  *Blue Warrant*, KPop Demon Hunters → *JRock Ghost Chasers*…) and removed `ravilo-player.js`'s delivery pill
+  (R180). The sweep had missed 13 of our files; the same map was applied to them.
+- **Built to match what shipped:** `Ravilo Mobile.html` — R274's 74 dp bar (36 dp pill, 28 dp glyphs), R278's bar on
+  pushed pages (account screens stop above it, any item leaves them), R277's Search (no keyboard on arrival, re-tap
+  focuses, a real Clear), R270's *In use* fallback, and R299's **Couldn't play** remote state (+ a PREVIEW button).
+  `Ravilo Receiver App.html` — R269 as built: a plain input on **Samsung's own keyboard** (R175's cannot run in
+  DOM), a Connect button, a host-name placeholder (https is inferred, no LAN rule). `app/index.html` +
+  `library.html` — 254's *Damaged video files* and 255's two types. `ravilo-i18n.js` — 41 strings re-taken from
+  the shipped `i18n/*.json` after R288, plus R299/R270's new keys.
+
+## Previous sync (2026-09-18, 16:40 — no repo I/O: the picks built into the phone, a new receiver-app mockup, R269 + R270)
 date: 2026-09-18T16:40:00Z
 direction: none — design work only, on top of the 15:40 pull. Nothing fetched, nothing exported.
 - **Owner picks recorded on the canvas and built:** AirPlay = the **footnote** row (against the drawn lean,
@@ -214,7 +257,7 @@ tree hash `7f22d328d5cb` returned 170 changed files across 47 commits.
   now titles every cycle + episodes on a 15-slice rotation), **231** (nothing publishes before CI passes — CI
   never ran a single unit test; a release-only `VerifyError` shipped to production twice), **232** (which ink a
   studio/network/title logo is drawn in — computed once server-side, extended same evening to title
-  clearlogos after *Gone Missing*'s was found invisible), **233** (a credits marker starting inside the intro —
+  clearlogos after *Last Seen*'s was found invisible), **233** (a credits marker starting inside the intro —
   775 episodes affected, three root causes, one position rule), **234** (an mkvpropedit edit reporting success
   over a corrupted file — the post-edit gate only checked one of two broken layouts, plus one-file-one-writer);
   Ravilo **R254** (J restricted to TV platforms — see collision above), **R255** (the backdrop scrim: **shipped
@@ -414,7 +457,7 @@ our own local copies**, nothing exported. Repo wins on every disagreement, per C
   need no design work (backend or Compose-only).
 - **⚠ Four shipped admin surfaces are NOT in our mockups — this sync's entire design backlog: 212, 213,
   214, 215.** All design-authored with the owner repo-side on 2026-09-15, built the same day, from one
-  playback incident (*The Patriarch* stalling every ~10 s — 10 concurrent Jellyfin ffmpeg subtitle
+  playback incident (*The Godfather* stalling every ~10 s — 10 concurrent Jellyfin ffmpeg subtitle
   extractions starving the disk at 80.8 % utilisation; the owner found **no UI to cancel it**, restarted
   the whole backend, and playback was still broken). **Their spec files still read `Status: Planned` —
   that header is stale; `STATUS.md` says `✓ Built` and STATUS.md is the declared source of truth.**
@@ -572,7 +615,7 @@ direction: pull (repo → this project) — 31 commits since the 2026-09-02 sync
   because R216/R183 force an AVC transcode target, so a single column would silently record the wrong
   codec's ceiling for an HEVC file. **Open question 1 answered on-device 2026-09-02**: R216 has been live on
   the stue TV since 2026-08-30 (105 `playback_qoe` rows carrying its fields, `direct_play=0` on heavy
-  sessions, `dropped_frames=0` throughout) — the *Till Daybreak* stutter was a Wholphin session, architecturally
+  sessions, `dropped_frames=0` throughout) — the *Until Dawn* stutter was a Wholphin session, architecturally
   unreachable by any of this. Through Ravilo the file re-encodes and starts slowly; it does not stutter.
   `slow_lead`/`slow_tail_measured`/`slow_tail_expected` are the right copy, unblocked for translation.
   `basis: "measured"` is reachable in practice now (timer built) but unreached on any real device yet —
@@ -612,7 +655,7 @@ direction: pull (repo → this project) — 31 commits since the 2026-09-02 sync
 date: 2026-09-02T07:25:03Z
 direction: pull (repo → this project) — one research report, then a design pass
 - **Pulled `specs/research-reports/ravilo-per-device-decode-ceiling-warning-2026-09-02.md`** (new repo-side,
-  19 KB). Triggered by *Till Daybreak (2025)* — a 82 Mbps 4K DV/HDR10+ REMUX — stuttering on stue TV and
+  19 KB). Triggered by *Until Dawn (2025)* — a 82 Mbps 4K DV/HDR10+ REMUX — stuttering on stue TV and
   being abandoned mid-watch, the third stutter on that TV in three weeks. Owner's proposal: record what
   bitrate each device can take and warn on the Ravilo detail page before Play.
 - **What the report establishes:** the *measuring* half already exists (Phase 177 + R216, 2026-08-28 —
@@ -687,7 +730,7 @@ direction: pull (repo → this project)
     presentation with no new copy or visual language. Build note admits that signal is **not wired**
     (open question 7) — so a viewer can still see several seconds of frozen black frame with no chrome.
   - **181 — converge on Jellyfin's library, don't predict it** (partially implemented; FR-181-2 built).
-    Fjollerne S11E07 missing for 15h: premiere-year freshness bucketing filed a currently-airing 2005 show as
+    Klovn S11E07 missing for 15h: premiere-year freshness bucketing filed a currently-airing 2005 show as
     monthly-archive (9 of 16 provably-airing series were starved), nothing ever compared our item set to
     Jellyfin's, and the Jellyfin-based realtime ingest has delivered **nothing, ever** since phase 165
     (the WS listener subscribes to nothing and `LibraryChanged` is never sent — dead code reporting

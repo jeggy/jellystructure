@@ -25,7 +25,7 @@
   const TITLES = {
     news: ['Kvøldnýtíðindi', 'Nordic News at Nine', 'World Report', 'Business Tonight', 'The Briefing', 'Weather & Seas', 'Regional Roundup', 'Late Edition'],
     sport: ['Premier League Live', 'Handball: KÍ vs HB', 'Match of the Day', 'Sailing: Atlantic Cup', 'Cycling Highlights', 'Football Weekly', 'Rowing Championship', 'Darts Night'],
-    ent: ['Mesterholdet', 'The Great Bake', 'Quiz Night', 'Talk of the Town', 'Dancing on Ice', 'Comedy Hour', 'Game Show Gold', 'Saturday Live'],
+    ent: ['Stormester', 'The Great Bake', 'Quiz Night', 'Talk of the Town', 'Dancing on Ice', 'Comedy Hour', 'Game Show Gold', 'Saturday Live'],
     film: ['The Last Fjord', 'Iron Veil', 'Midnight Sun Patrol', 'Snowbound', 'Crimson Tide Rising', 'Phantom Circuit', 'Edge of Tomorrow Bay', 'The Quiet Coast'],
     kids: ['Little Robots', 'Cartoon Corner', 'Adventure Bay', 'Draw With Me', 'Dino Squad', 'Bedtime Tales', 'Puppet Playhouse', 'Space Cadets'],
     doc: ['Havets Hjarta', 'Wild Scandinavia', 'Engineering Giants', 'Deep Ocean', 'Ancient Roads', 'The Human Body', 'Cosmos Explained', 'Vanishing Glaciers'],

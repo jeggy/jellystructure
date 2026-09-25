@@ -77,11 +77,15 @@ html,body{height:100%;background:#05060a;font-family:'Sora',sans-serif;overflow:
 .srv .fld .sch{margin-left:auto;font-family:'JetBrains Mono',monospace;font-size:24px;color:var(--ink-dim)}
 .srv .msg{margin-top:26px;min-height:36px;font-size:28px;color:var(--ink-soft);display:flex;align-items:center;gap:16px}
 .srv .msg.bad{color:#ffb4a2}
-.kb{margin-top:34px;display:grid;gap:12px}
-.kb .kr{display:flex;gap:12px;justify-content:center}
-.kb .kr b{width:82px;height:82px;border-radius:14px;background:rgba(255,255,255,.07);display:flex;align-items:center;justify-content:center;font-size:32px;font-weight:600;color:var(--ink-soft)}
-.kb .kr b.w{width:210px;font-size:26px}
-.kb .kr b.foc{background:var(--ink);color:#0a0c13}
+/* R269 as built (2026-09-19): a plain <input> on Samsung's OWN on-screen keyboard. R175's keyboard
+   is a Compose composable and cannot run in this DOM app, so the band below is the platform's, drawn
+   only as a fenced stand-in — Ravilo does not design it. Connect is the app's one button. */
+.srv.withime{padding-bottom:330px}
+.srv .go{margin-top:30px;height:84px;min-width:300px;padding:0 44px;border-radius:42px;background:rgba(255,255,255,.08);display:flex;align-items:center;justify-content:center;font-size:30px;font-weight:600;color:var(--ink-soft)}
+.srv .go.foc{background:var(--ink);color:#0a0c13}
+.ime{position:absolute;left:0;right:0;bottom:0;height:300px;background:#1b1d22;border-top:1px solid rgba(255,255,255,.08);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px}
+.ime b{font-family:'Space Grotesk',sans-serif;font-size:22px;letter-spacing:3px;color:#6b7290;text-transform:uppercase}
+.ime i{font-style:normal;font-size:24px;color:#8b91a8}
 
 /* ---- the player chrome: this receiver HAS a remote ---- */
 .ov{position:absolute;left:0;right:0;bottom:0;padding:0 96px 78px;background:linear-gradient(0deg,rgba(0,0,0,.9) 8%,rgba(0,0,0,.4) 48%,transparent)}
@@ -95,6 +99,9 @@ html,body{height:100%;background:#05060a;font-family:'Sora',sans-serif;overflow:
    a 96px inset, so the row stops short of it rather than running underneath */
 .ov .tm{display:flex;justify-content:space-between;font-family:'JetBrains Mono',monospace;font-size:26px;color:var(--ink-soft);padding-right:232px}
 .ov .pz{position:absolute;right:96px;bottom:78px;width:96px;height:96px;border-radius:50%;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.3);display:flex;align-items:center;justify-content:center;font-size:36px}
+/* the title's logo, top-right, only while the chrome is up — same rule as the TV and phone players */
+.ov-id{position:absolute;top:0;left:0;right:0;height:240px;background:linear-gradient(180deg,rgba(0,0,0,.66),transparent);display:flex;justify-content:flex-end;align-items:flex-start;padding:72px 96px 0}
+.ov-id img{max-width:440px;max-height:96px;object-fit:contain;filter:drop-shadow(0 2px 14px rgba(0,0,0,.55))}
 .ov .pz.foc{background:var(--ink);color:#0a0c13;border-color:transparent}
 .sub{position:absolute;left:0;right:0;bottom:104px;text-align:center;font-weight:500;color:#fff;text-shadow:-2px -2px 0 #000,2px -2px 0 #000,-2px 2px 0 #000,2px 2px 0 #000,0 0 14px rgba(0,0,0,.8)}
 .sub.s{font-size:38px}.sub.m{font-size:48px}.sub.l{font-size:60px}
@@ -232,7 +239,7 @@ html,body{height:100%;background:#05060a;font-family:'Sora',sans-serif;overflow:
          starts:'Byrjar um 8 sekund', busy_t:'Ravilo hevur mikið at gera', busy_p:'Ein annar skermur verður tænaður. Tað byrjar av sær sjálvum.',
          fail_t:'Tað byrjaði ikki', fail_p:'Royn aftur frá telefonini.', elapsed:'12 s' }
   };
-  var ITEM = { kick:'Film · 2008', title:'Big Buck Bunny', pos:'04:31', left:'−05:19', pct:46 };
+  var ITEM = { kick:'Film · 2008', title:'Big Buck Bunny', logo:'assets/bbb-logo.png', pos:'04:31', left:'−05:19', pct:46 };
   var TVNAME = 'Stue TV', SERVER = 'ravilo.mit-hus.dk', CODE = 'K7F3Q2';
   var STILL = 'assets/bbb-backdrop-landscape.png', NEXT_ART = 'assets/bbb-backdrop-bunny.png';
   var state = 'idle', lang = 'en', size = 'm';
@@ -240,28 +247,27 @@ html,body{height:100%;background:#05060a;font-family:'Sora',sans-serif;overflow:
   function t(k){ return T[lang][k]; }
   function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]; }); }
 
-  function keyboard(focus){
-    var r1 = '1234567890.:'.split(''), r2 = 'ABCDEFGHIJKL'.split('');
-    return '<div class="kb">'
-      + '<div class="kr">' + r1.map(function(c,i){ return '<b' + (focus === 'k' && i === 0 ? ' class="foc"' : '') + '>' + c + '</b>'; }).join('') + '</div>'
-      + '<div class="kr">' + r2.map(function(c){ return '<b>' + c + '</b>'; }).join('') + '</div>'
-      + '<div class="kr"><b class="w">' + esc(t('delete')) + '</b><b class="w">' + esc(t('more')) + '</b>'
-      + '<b class="w' + (focus === 'go' ? ' foc' : '') + '">' + esc(t('connect')) + '</b></div></div>';
+  function keyboard(){
+    return '<div class="ime"><b>Samsung on-screen keyboard</b><i>the TV\u2019s own \u2014 raised by the focused field, not drawn by Ravilo</i></div>';
   }
   /* R269 · one screen, seen once: the address, the inferred scheme, and the probe's
      one honest sentence. The typed text is kept on failure — a 40-character address
-     typed with a D-pad is not something to make anyone do twice. */
+     typed with a D-pad is not something to make anyone do twice. As built, https:// is
+     inferred unless a scheme is typed (R226's real rule — no LAN detection), so the
+     placeholder is a host name, not a bare LAN address that would be sent as https. */
   function setup(o){
     o = o || {};
-    return '<div class="srv"><div class="mk"></div><h3>' + esc(t('setup_title')) + '</h3>'
+    var ime = o.kb !== false && !o.blur && o.focus !== 'go';
+    return '<div class="srv' + (ime ? ' withime' : '') + '"><div class="mk"></div><h3>' + esc(t('setup_title')) + '</h3>'
       + '<div class="hl">' + esc(t('setup_hint')) + '</div>'
-      + '<div class="fld' + (o.blur ? '' : ' foc') + '">'
-        + (o.value ? '<span class="v">' + esc(o.value) + '</span>' + (o.blur ? '' : '<span class="car"></span>')
-                   : '<span class="ph">192.168.1.40:8096</span>')
+      + '<div class="fld' + (o.blur || o.focus === 'go' ? '' : ' foc') + '">'
+        + (o.value ? '<span class="v">' + esc(o.value) + '</span>' + (o.blur || o.focus === 'go' ? '' : '<span class="car"></span>')
+                   : '<span class="ph">ravilo.example.net</span>')
         + (o.scheme ? '<span class="sch">' + esc(t('scheme')) + '</span>' : '')
       + '</div>'
       + '<div class="msg' + (o.bad ? ' bad' : '') + '">' + (o.busy ? '<span class="sp"></span>' : '') + esc(o.msg || '') + '</div>'
-      + (o.kb === false ? '' : keyboard(o.focus)) + '</div>';
+      + (o.kb === false ? '' : '<div class="go' + (o.focus === 'go' ? ' foc' : '') + '">' + esc(t('connect')) + '</div>')
+      + (ime ? keyboard() : '') + '</div>';
   }
   /* Idle. No artwork beyond the mark (FR-R264-7), the TV's name and its server
      bottom-left (FR-R269-6), the code bottom-right. Owner pick 2026-09-18: when the
@@ -281,7 +287,8 @@ html,body{height:100%;background:#05060a;font-family:'Sora',sans-serif;overflow:
   function pic(){ return '<div class="vid"><img src="' + STILL + '" alt=""></div>'; }
   function caption(){ return '<div class="sub ' + size + '">Vi ses i morgen, lille ven.</div>'; }
   function chrome(paused, focusPz){
-    return '<div class="ov"><div class="k">' + esc(ITEM.kick) + '</div><h3>' + esc(ITEM.title) + '</h3>'
+    return (ITEM.logo ? '<div class="ov-id"><img src="' + ITEM.logo + '" alt="' + esc(ITEM.title) + '"></div>' : '')
+      + '<div class="ov"><div class="k">' + esc(ITEM.kick) + '</div><h3>' + esc(ITEM.title) + '</h3>'
       + '<div class="bar"><i style="width:' + ITEM.pct + '%"></i><u style="left:' + ITEM.pct + '%"></u></div>'
       + '<div class="tm"><span>' + ITEM.pos + '</span><span>' + ITEM.left + '</span></div>'
       + '<div class="pz' + (focusPz ? ' foc' : '') + '">' + (paused ? '▶' : '❙❙') + '</div></div>';

@@ -36,7 +36,51 @@ GitHub is the **source of truth**; we layer designs on top of it.
 - `specs/research-reports/` — dated deep-dives (research, not spec; may go stale).
 
 ## Where the work stands (read the repo `STATUS.md` for the live table)
-- **2026-09-18 (latest) — the picks came in, the phone build landed, and the TV receiver app got its own
+- **2026-09-25 — four owner asks drawn into the full mockups, then spec'd: 259 · 260 · R303 · R304. Next free: 261 / R305.**
+  - **Specs (all `Planned`, not dev-reviewed, pending export; numbers verified free on `main` the same day):**
+    **259** device version history · **260** empty a job queue · **R303** the player says what is playing, top
+    right · **R304** Profile is a page on the phone. **⚠ R304 open question 1:** the mockup says App language is
+    *this phone only*, but shipped R161/R162 `ui_language` is **per viewer** — lean: reuse it and drop the phrase.
+    **260 open question 1:** does the next scan re-enqueue what was emptied?
+  - **Owner answers (same day):** keep **all** version history; keep the *latest · N behind* chip and the dev-build
+    footnote, **drop** the *went back* flag and the per-device *releases behind* warning; a **dark-ink logo sits on a
+    light plate** (supersedes "counts as no logo" below); phone logo stays top-right; a running whole-season job
+    **finishes the season**; **no undo** on emptying; Profile stays a page, **no Switch profile**, and gains **App
+    language** (en/da/fo, this phone only, menus not audio/subtitles). **No mention of Jellyfin anywhere a viewer can
+    read it** in Ravilo (the profile says *Admin*, sign-out says *your name and password*).
+  - **Device version history** (`app/ravilo-users.html`): every device row says *Ravilo 1.38 · TV · since today 08:14*
+    and a *N versions ▾* toggle opens a timeline — version, first-seen → next, how long, and a note (*skipped 1.37*,
+    *dev build*, *went back from 1.38*, *already on it when history began*). Dated when a request first carried the
+    version, never install time. Kitchen TV carries 256 FR-256-5's *behind* line; pagebar chip *latest Ravilo 1.38 · 1
+    device behind*. Answers 224's open question 4 (a new table, not a column).
+  - **Logo in the player** (`ravilo-player.js/.css`, `ravilo-app.js`, `Ravilo Mobile.html` + `mobile/ravilo-mobile-player.css`,
+    `Ravilo Receiver App.html`): top-right while the chrome is up; a series shows the **series** logo; no logo ⇒ series
+    shows its name in text, a film shows nothing; a dark-ink logo (232) counts as no logo. The bottom kicker no longer
+    repeats the series name. Phone: left of the cast glyph; gives way to the AirPlay chip.
+  - **Empty queues** (`app/activity.html` → Jobs &amp; workers): *Empty queues…* in the Queues card plus *Empty* per lane,
+    one confirmation panel for both (checkbox per queue, count, and **what keeps running**), waiting jobs only, a
+    *Recent* entry per emptied queue. `?view=jobs` opens the tab. Pool chip + tab badge now sum the lanes (50 / 52).
+  - **Profile is a page on the phone** (`Ravilo Mobile.html`, `?tab=profile`): the fifth tab takes the pill (white ring
+    on the lit avatar); photo + name, **My List** row (stand-in data — the phone had no My List and the old sheet sent
+    it to Discover), Account (App language · password; the photo row was removed — tap the photo), **Sign out behind a confirmation sheet**, and *Ravilo 1.38 · signed
+    in to …*. The old menu sheet and the Settings screen are gone (Settings held only those two rows).
+- **2026-09-24 (latest) — sync: `main` ran from R270 to R302 and 237 to 258 in six days; the mockups caught up.**
+  **Next free: 259 / R303.** Upstream history was rewritten, so drift was found by tree scan + byte-size diff.
+  - **Our drafts came back built:** R263 ✓, R264/R265/R267/R269/R270 ⚠ Partial, R268 ✓, 237 ⚠ (Cast Connect moved
+    to R266, deliberately *not* built). R269 shipped on **Samsung's own keyboard**, not R175's; R270's viewer name is
+    resolved server-side and falls back to *In use*; last-seen is whole calendar days.
+  - **The phone as shipped, now in `Ravilo Mobile.html`:** R274 (74 dp bar, 36 dp pill, 28 dp glyphs, the keyboard
+    covers the bar), R277 (Search never raises the keyboard on arrival; re-tapping Search does, every time; Clear
+    works), R278 (the bar on every page except player/remote, a title's detail, and before a profile — account
+    screens stop above it), R299 (*{device} couldn't play this* · *Play on this phone*, not *Lost contact*). R298
+    (no focus visuals on a phone) and R301 (skip-arrow direction) needed nothing — the mockup was already right.
+  - **Repo-side title sweep adopted:** no real show or film titles anywhere in the mockups any more (fictional
+    stand-ins; keep it that way). R288 rewrote Faroese in the shipped table — *ambætari* not *servari*, *seriur*,
+    a TV is a *sjónvarp* — and `ravilo-i18n.js` took 41 of those strings; **the shipped `i18n/*.json` wins.**
+  - **Admin:** 254/255's three file-health types added to `index.html`'s attention list and `library.html`'s chips.
+    Unbuilt and still ours: §A install card (R263 built it from prose; design sign-off open), 236 §D screens table,
+    web-app icons sheet, R300's portrait caption size (not drawn), 257's dashboard-says-what-the-advisor-says.
+- **2026-09-18 — the picks came in, the phone build landed, and the TV receiver app got its own
   file.** Ravilo drafts now run to **R270**; **next free: 238 / R271**.
   - **Owner picks:** AirPlay is the **footnote** (*"AirPlay (phone must stay on)"*, not a full row — against
     my lean, so the full sentence moves to the connecting bar the moment a session starts, plus the admin's
@@ -599,7 +643,8 @@ GitHub is the **source of truth**; we layer designs on top of it.
       itself an assumption — and copy-pasteable output for both compose files, the tmpfs cap paired
       inseparably with "Delete segments", and the sysctl. Over-budget produces **the refusal and nothing
       else**. Page cache is never offered as capacity, and the neighbour case is answered by memory kind.
-  - **The incident behind 212/213/214/215, worth keeping in one place:** a viewer 30 minutes into *The Patriarch* (19.3 Mbps HEVC DV, inside every ceiling) stalled every ~10 s — **10 concurrent Jellyfin
+  - **The incident behind 212/213/214/215, worth keeping in one place:** a viewer 30 minutes into *The
+    Godfather* (19.3 Mbps HEVC DV, inside every ceiling) stalled every ~10 s — **10 concurrent Jellyfin
     ffmpeg subtitle extractions**, each linearly reading a 20–80 GB remux, pushed the disk to 80.8 %
     utilisation. The owner then found **there was no UI to cancel it**, restarted the entire backend, and
     playback was *still* broken. 213 bounds the work, 214 is how you stop it, 212/215 are the standing
@@ -914,14 +959,15 @@ GitHub is the **source of truth**; we layer designs on top of it.
     line worth keeping for the talk: this is the same failure shape as R202 — *shipped code not matching
     its own documented invariant* — caught by re-reading the owning phase's spec against the code.
   - **R232 — series detail & player D-pad polish** (✓ Built 2026-09-04, live-tested on stue TV against
-    Fjollerne, not dev-reviewed). Player Right past the last transport control teleported focus to the
+    Klovn, not dev-reviewed). Player Right past the last transport control teleported focus to the
     top-bar Back button; Down from the hero landed the season row clipped under the overlay AppBar; and
     the first Down press only *looked* like it focused a season pill — the scroll and the focus request
     ran as concurrent coroutines and R84's async playstate overlay ate the 30-frame retry budget, so real
     focus stayed on the hero with no visual cue. Now sequenced (await the scroll, then request focus).
     **No mockup change** — focus behaviour, not layout.
   - **R233 — a system row shows what is available where it is shown** (Planned, design-authored
-    2026-09-04 with the owner). Standing inside Thriller / Gyser, Continue Watching led with *Three and a Half Uncles*, *Fjollerne* and *Lort Sker* while Newly Added directly below it was correctly filtered —
+    2026-09-04 with the owner). Standing inside Thriller / Gyser, Continue Watching led with *Two and a
+    Half Men*, *Klovn* and *Sjit Happens* while Newly Added directly below it was correctly filtered —
     two system rows on one page disagreeing about what page they were on. Partially reverses R202 and
     R219 §5: both system rows are always scoped to the surface they render on, in **both** row-list
     modes, and the per-channel `scope` field is retired (no live channel sets it). Guard requirement
@@ -1036,7 +1082,7 @@ GitHub is the **source of truth**; we layer designs on top of it.
     is reachable in practice, not just implemented-but-dead. **Open question 1 is answered, on-device,
     for good:** R216 has been live on the stue TV since **2026-08-30** — 105 `playback_qoe` rows carry its
     fields, heavy 2026-09-01 sessions show `direct_play=0` (transcode fallback firing) and
-    `dropped_frames=0` throughout. The *Till Daybreak* stutter that started this whole thread was a
+    `dropped_frames=0` throughout. The *Until Dawn* stutter that started this whole thread was a
     **Wholphin** session, architecturally unreachable by any of this. Through Ravilo the file re-encodes
     and starts slowly — it does not stutter — so `slow_lead`/`slow_tail_measured`/`slow_tail_expected` are
     the right copy, translation unblocked. `basis: "measured"` is still unreached on any real device
@@ -1077,7 +1123,7 @@ GitHub is the **source of truth**; we layer designs on top of it.
 - **2026-08-31 sync — both our 2026-08-28 specs shipped, and 5 new dev-authored specs landed.**
   Next unassigned numbers: **184 / R221**.
   - **R218 (player loading & buffering) is `Implemented`** — built the day it was spec'd, Android/Compose
-    only, **on-device verified 2026-08-29** (stue TV, Offboarding S2E4 resume). **Phase 180 (session
+    only, **on-device verified 2026-08-29** (stue TV, Severance S2E4 resume). **Phase 180 (session
     teardown) is `✓ Done`** — the Jellyfin stop call was confirmed against 10.11.11's OpenAPI before any
     code was written (the open question we flagged), and verified live against a real forced 4K/DV/HDR
     NVENC transcode.
@@ -1098,7 +1144,7 @@ GitHub is the **source of truth**; we layer designs on top of it.
     change. **Drawn here 2026-08-31** as frame **E** on
     `ravilo/Player Loading and Buffering - Directions.html` — R218's stall treatment verbatim, new trigger.
   - **181 — converge on Jellyfin's library, don't predict it** (FR-181-2 built; the rest `Planned`).
-    Fjollerne S11E07 sat in Jellyfin for 15 h unnoticed: premiere-year freshness bucketing files a
+    Klovn S11E07 sat in Jellyfin for 15 h unnoticed: premiere-year freshness bucketing files a
     currently-airing 2005 show as monthly archive (9 of 16 provably-airing series were starved — now fixed
     via `sonarrNextAiringDate`), nothing ever compares our item set against Jellyfin's, and the
     Jellyfin-based realtime ingest has delivered **nothing, ever** since phase 165 (the WS listener
@@ -1126,7 +1172,7 @@ GitHub is the **source of truth**; we layer designs on top of it.
     drawn; the **Capacity** card stays as read-only reporting; FR-182-9's banner was **dropped** (see
     above). Everything else is backend/platform. Nothing exported to the repo yet.
 - **2026-09-02 — research pulled, design pass done, no spec yet.** New repo report
-  `specs/research-reports/ravilo-per-device-decode-ceiling-warning-2026-09-02.md`: *Till Daybreak (2025)*, an
+  `specs/research-reports/ravilo-per-device-decode-ceiling-warning-2026-09-02.md`: *Until Dawn (2025)*, an
   82 Mbps 4K DV/HDR10+ REMUX, stuttered on stue TV (decoder rated 60 Mbps) and was abandoned — third
   stutter on that TV in three weeks. The owner wants a per-device "this might not play well" warning on the
   Ravilo detail page. The report finds the measuring half already shipped (**177 + R216**) but three
@@ -1189,7 +1235,7 @@ GitHub is the **source of truth**; we layer designs on top of it.
 - **2026-09-01 — two design-authored specs written, both `Planned`, neither dev-reviewed.**
   Next unassigned numbers: **185 / R222**.
   - **184 — choose the TMDB metadata language for a single title** (`specs/requirements/phase-184-choose-metadata-language.md`).
-    열배's Korean first audio track makes the resolver fetch Korean metadata — correct by the rules,
+    올드보이's Korean first audio track makes the resolver fetch Korean metadata — correct by the rules,
     wrong for this house. Adds a nullable `metadataLanguage` consulted **above** the resolver (the
     cascade is not modified and its trace stays on screen, dimmed, after a choice), a picker offering
     only what TMDB actually holds for the title with per-language coverage (title · overview · poster
@@ -1301,7 +1347,7 @@ GitHub is the **source of truth**; we layer designs on top of it.
     parse fails (found immediately after deploying R198). **R200/R201** fix the same underlying focus-
     bridge failure shape (a `FocusRequester` never attached because its target composable was off-
     screen/torn down) — R200 in content-row back-return restore (could permanently strand Down-nav,
-    only an app restart recovered), R201 in the season picker (Fjollerne's 11-season, fully-watched case
+    only an app restart recovered), R201 in the season picker (Klovn's 11-season, fully-watched case
     auto-selected the last season, which the picker never scrolled itself to reach). **R202** is the
     project's own case-study bug: a misleading code comment attributed an inherit-mode channel's missing
     Continue Watching row to R59; the user pushed back, `git log -S` traced it to an R05 leftover R143

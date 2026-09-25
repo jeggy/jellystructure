@@ -109,6 +109,10 @@
           <div class="pl-back foc" data-pf="back"><span class="chev">${I.chev}</span><span class="bk-label">Back</span></div>
           <div class="spacer"></div>
           <div class="pl-stream"></div>
+          <!-- What is playing, top-right, only while the chrome is up. A logo when the title has one
+               (a series shows the SERIES logo, never an episode's); no logo ⇒ a series shows its name
+               in text, a film shows nothing — its title already sits at the bottom. -->
+          <div class="pl-ident"><img class="pl-logo" alt=""><div class="pl-showname"></div></div>
         </div>
 
         <div class="pl-bottom">
@@ -185,6 +189,7 @@
       sub: q('.pl-sub'),
       stream: q('.pl-stream'),
       kicker: q('.pl-kicker'), title: q('.pl-title'), sub2: q('.pl-sub2'),
+      ident: q('.pl-ident'), logo: q('.pl-logo'), showName: q('.pl-showname'),
       cur: q('.pl-time.cur'), dur: q('.pl-time.dur'),
       barWrap: q('.pl-bar-wrap'), buffered: q('.pl-buffered'), played: q('.pl-played'),
       ghost: q('.pl-ghost'), handle: q('.pl-handle'),
@@ -244,10 +249,21 @@
     }
 
     /* ---------- render ---------- */
+    function paintIdent() {
+      // a logo drawn in dark ink (phase 232) would vanish on the top scrim — it sits on a light plate
+      const logo = ctx.logo || '';
+      const name = !logo && ctx.type === 'episode' ? (ctx.showName || '') : '';
+      els.logo.onerror = () => { els.logo.removeAttribute('src'); els.ident.className = 'pl-ident' + (ctx.type === 'episode' && ctx.showName ? ' name' : ''); els.showName.textContent = ctx.type === 'episode' ? (ctx.showName || '') : ''; };
+      if (logo) els.logo.src = logo; else els.logo.removeAttribute('src');
+      els.logo.alt = logo ? (ctx.showName || ctx.title || '') : '';
+      els.showName.textContent = name;
+      els.ident.className = 'pl-ident' + (logo ? ' logo' + (ctx.logoInk === 'dark' ? ' plate' : '') : name ? ' name' : '');
+    }
     function paintMeta() {
       els.kicker.textContent = ctx.kicker || '';
       els.title.textContent = ctx.title || '';
       els.sub2.innerHTML = ctx.sub2 || '';
+      paintIdent();
       // 2026-09-24 — no delivery pill (Direct Play / HLS / codec). R180 FR-RV-ASP1-2: nothing a viewer
       // sees may vary by delivery method; the Compose player dropped it the same day.
       els.stream.innerHTML = '';

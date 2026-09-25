@@ -49,7 +49,7 @@
      hosts in any order. We resolve a torrent's announce URLs to one named tracker
      by host; the passkey in the path is per-user and ignored. ------------------- */
   const TRACKERS = [
-    { name: 'FrostSeed', priv: true, hosts: ['t.nordicswarm.org', 't.polarswarm.org', 't.nordicvault.org'] },
+    { name: 'NordicHD', priv: true, hosts: ['t.nordicswarm.org', 't.polarswarm.org', 't.nordicbytes.org'] },
     { name: 'FilmBytes', priv: true, hosts: ['announce.filmbytes.org'] },
     { name: 'OpenTrackers', priv: false, hosts: ['open.tracker.net', 'tracker.opentrackr.org'] },
   ];
@@ -68,14 +68,14 @@
   const MOVIE = {
     file: 'Sintel (2010).mkv',
     torrents: [
-      { hash: 'b1f4c0a9e2', name: 'Sintel.2010.1080p.BluRay.x264-AMIANA', tracker: 'FrostSeed', priv: true, scope: 'movie',
-        announce: ['https://t.polarswarm.org/announce/a1b2c3d4e5f60718', 'https://t.nordicswarm.org/announce/a1b2c3d4e5f60718', 'https://t.nordicvault.org/announce/a1b2c3d4e5f60718'],
+      { hash: 'b1f4c0a9e2', name: 'Sintel.2010.1080p.BluRay.x264-AMIANA', tracker: 'NordicHD', priv: true, scope: 'movie',
+        announce: ['https://t.polarswarm.org/announce/0021b118ead08ed4', 'https://t.nordicswarm.org/announce/0021b118ead08ed4', 'https://t.nordicbytes.org/announce/0021b118ead08ed4'],
         state: 'seeding', ratio: 5.42, seeders: 11, leechers: 0, uploaded: '58.1 GB', added: '2024-11-02', seedTime: '7mo',
-        arr: { app: 'radarr', indexer: 'FrostSeed (Prowlarr)' }, xseed: 'g1' },
+        arr: { app: 'radarr', indexer: 'NordicHD (Prowlarr)' }, xseed: 'g1' },
       { hash: '7c2d8b3f10', name: 'Sintel.2010.1080p.BluRay.x264-AMIANA', tracker: 'FilmBytes', priv: true, scope: 'movie',
         announce: ['https://announce.filmbytes.org/announce/9f3c2a71'],
         state: 'seeding', ratio: 2.10, seeders: 4, leechers: 1, uploaded: '8.4 GB', added: '2024-11-02', seedTime: '7mo',
-        arr: null, xseed: 'g1', xseedNote: 'cross-seeded from FrostSeed grab' },
+        arr: null, xseed: 'g1', xseedNote: 'cross-seeded from NordicHD grab' },
     ],
   };
 
@@ -83,22 +83,22 @@
   const SERIES = {
     seasons: [{ n: 1, episodes: 8 }, { n: 2, episodes: 6 }],
     torrents: [
-      { hash: 'aa11bb22cc', name: 'Nordvest.S01-S02.COMPLETE.1080p.WEB-DL.x264-NORD', tracker: 'FrostSeed', priv: true,
-        announce: ['https://t.nordicvault.org/announce/a1b2c3d4e5f60718', 'https://t.nordicswarm.org/announce/a1b2c3d4e5f60718', 'https://t.polarswarm.org/announce/a1b2c3d4e5f60718'],
+      { hash: 'aa11bb22cc', name: 'Nordvest.S01-S02.COMPLETE.1080p.WEB-DL.x264-NORD', tracker: 'NordicHD', priv: true,
+        announce: ['https://t.nordicbytes.org/announce/0021b118ead08ed4', 'https://t.nordicswarm.org/announce/0021b118ead08ed4', 'https://t.polarswarm.org/announce/0021b118ead08ed4'],
         scope: 'complete', covers: 'all', state: 'seeding', ratio: 4.18, seeders: 6, leechers: 0, uploaded: '142 GB',
-        added: '2024-12-18', seedTime: '6mo', arr: { app: 'sonarr', indexer: 'FrostSeed (Prowlarr)' }, xseed: null },
-      { hash: 'dd33ee44ff', name: 'Nordvest.S01.1080p.WEB-DL.x264-NORD', tracker: 'FrostSeed', priv: true,
-        announce: ['https://t.polarswarm.org/announce/a1b2c3d4e5f60718', 'https://t.nordicvault.org/announce/a1b2c3d4e5f60718', 'https://t.nordicswarm.org/announce/a1b2c3d4e5f60718'],
+        added: '2024-12-18', seedTime: '6mo', arr: { app: 'sonarr', indexer: 'NordicHD (Prowlarr)' }, xseed: null },
+      { hash: 'dd33ee44ff', name: 'Nordvest.S01.1080p.WEB-DL.x264-NORD', tracker: 'NordicHD', priv: true,
+        announce: ['https://t.polarswarm.org/announce/0021b118ead08ed4', 'https://t.nordicbytes.org/announce/0021b118ead08ed4', 'https://t.nordicswarm.org/announce/0021b118ead08ed4'],
         scope: 'season', covers: { s: 1 }, state: 'seeding', ratio: 6.91, seeders: 9, leechers: 0, uploaded: '88 GB',
-        added: '2024-03-04', seedTime: '15mo', arr: { app: 'sonarr', indexer: 'FrostSeed (Prowlarr)' }, xseed: 'gs1' },
+        added: '2024-03-04', seedTime: '15mo', arr: { app: 'sonarr', indexer: 'NordicHD (Prowlarr)' }, xseed: 'gs1' },
       { hash: '5566778899', name: 'Nordvest.S01.1080p.WEB-DL.x264-NORD', tracker: 'FilmBytes', priv: true,
         announce: ['https://announce.filmbytes.org/announce/9f3c2a71'],
         scope: 'season', covers: { s: 1 }, state: 'seeding', ratio: 1.07, seeders: 3, leechers: 0, uploaded: '12 GB',
-        added: '2024-03-05', seedTime: '15mo', arr: null, xseed: 'gs1', xseedNote: 'cross-seeded from FrostSeed S01 pack' },
-      { hash: 'ab12cd34ef', name: 'Nordvest.S02.1080p.WEB-DL.x264-NORD', tracker: 'FrostSeed', priv: true,
-        announce: ['https://t.nordicswarm.org/announce/a1b2c3d4e5f60718', 'https://t.polarswarm.org/announce/a1b2c3d4e5f60718'],
+        added: '2024-03-05', seedTime: '15mo', arr: null, xseed: 'gs1', xseedNote: 'cross-seeded from NordicHD S01 pack' },
+      { hash: 'ab12cd34ef', name: 'Nordvest.S02.1080p.WEB-DL.x264-NORD', tracker: 'NordicHD', priv: true,
+        announce: ['https://t.nordicswarm.org/announce/0021b118ead08ed4', 'https://t.polarswarm.org/announce/0021b118ead08ed4'],
         scope: 'season', covers: { s: 2 }, state: 'paused', ratio: 0.42, seeders: 2, leechers: 0, uploaded: '3.1 GB',
-        added: '2024-12-12', seedTime: '6mo', arr: { app: 'sonarr', indexer: 'FrostSeed (Prowlarr)' }, xseed: null },
+        added: '2024-12-12', seedTime: '6mo', arr: { app: 'sonarr', indexer: 'NordicHD (Prowlarr)' }, xseed: null },
       { hash: '99fe88dc77', name: 'Nordvest.S01E03.Hvalvik.1080p.WEB.x264-PUBLIC', tracker: 'OpenTrackers', priv: false,
         announce: ['http://open.tracker.net:1337/announce', 'udp://tracker.opentrackr.org:1337/announce'],
         scope: 'episode', covers: { s: 1, e: 3 }, state: 'seeding', ratio: 0.88, seeders: 1, leechers: 4, uploaded: '0.9 GB',

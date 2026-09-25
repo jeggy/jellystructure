@@ -194,6 +194,7 @@
       const resume = (mp > 0 && mp < 100) ? Math.round(dur * mp / 100) : 0;
       return {
         type: 'film', kicker: item.tagline || 'Film', title: item.title,
+        logo: (R.artFor && R.artFor(item).logo) || '', logoInk: item.logoInk || null,
         sub2: `${item.year || ''} · ${item.genre || ''} · <b>${item.rating}+</b>`,
         duration: dur, position: resume,
         resumeNote: resume ? Math.round((dur - resume) / 60) + ' min left' : null,
@@ -210,7 +211,10 @@
       const resume = (est.pct > 0 && est.pct < 100) ? Math.round(dur * est.pct / 100) : 0;
       const ni = idx + 1, hasNext = ni < eps.length;
       return {
-        type: 'episode', kicker: seriesItem.title, title: e.title,
+        // the series' identity lives top-right now (logo, else its name) — the bottom block is the
+        // episode's own: S:E, name, runtime. The kicker stays empty rather than saying it twice.
+        type: 'episode', kicker: '', title: e.title,
+        showName: seriesItem.title, logo: (R.artFor && R.artFor(seriesItem).logo) || '', logoInk: seriesItem.logoInk || null,
         sub2: `S${season + 1}:E${e.n} · ${e.dur} · <b>${seriesItem.rating}+</b>`,
         duration: dur, position: resume,
         resumeNote: resume ? Math.round((dur - resume) / 60) + ' min left' : null,

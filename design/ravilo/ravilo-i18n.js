@@ -17,6 +17,8 @@
       cast_playing_on: 'Playing on {device}', cast_paused_on: 'Paused on {device}', cast_play_on: 'Play on {device}',
       cast_stop: 'Stop casting', cast_applies_on: 'Applies on {device}',
       cast_lost: 'Lost contact with {device}', cast_lost_sub: 'It may still be playing. Ravilo cannot reach it to check.',
+      /* R299 · R270 as built — verbatim from the shipped i18n/en.json */
+      cast_failed: '{device} couldn’t play this', cast_failed_sub: 'Try another title, or play it on this phone.', cast_play_here: 'Play on this phone', screens_in_use: 'In use',
       cast_no_server: 'Can\u2019t reach your Ravilo server', cast_no_server_sub: 'Check that the server is on and try again from your phone.',
       srv_busy: 'The server is busy right now', srv_busy_sub: 'It will start as soon as it can.', cast_waiting: 'waiting {n} s',
       nav_top10: 'Top 10', request_fetch: 'Request', requesting: 'Requesting…', fetching: 'Fetching', in_library: 'In Library',
@@ -67,6 +69,8 @@
       cast_playing_on: 'Spiller på {device}', cast_paused_on: 'Pauset på {device}', cast_play_on: 'Spil på {device}',
       cast_stop: 'Stop casting', cast_applies_on: 'Gælder på {device}',
       cast_lost: 'Mistede forbindelsen til {device}', cast_lost_sub: 'Den spiller måske stadig. Ravilo kan ikke nå den.',
+      /* R299 · R270 as built — verbatim from the shipped i18n/da.json */
+      cast_failed: '{device} kunne ikke afspille dette', cast_failed_sub: 'Prøv en anden titel, eller afspil den på denne telefon.', cast_play_here: 'Afspil på denne telefon', screens_in_use: 'Optaget',
       cast_no_server: 'Kan ikke nå din Ravilo-server', cast_no_server_sub: 'Tjek at serveren er tændt, og prøv igen fra din telefon.',
       srv_busy: 'Serveren er travl lige nu', srv_busy_sub: 'Den starter, så snart den kan.', cast_waiting: 'venter {n} s',
       br_genre: 'Genre', br_type: 'Type', br_maturity: 'Aldersgrænse', br_year: 'Årti', br_watched: 'Set',
@@ -90,8 +94,8 @@
       channels: 'Kanaler & samlinger', channels_sub: 'Konfigureret i Jellystructure',
       more_like_this: 'Mere som dette', back_home: 'Hjem', channel: 'Kanal',
       channel_sub: 'De samme r\u00e6kker, filtreret til {name}. Forts\u00e6t med at se, nyligt tilf\u00f8jet og alle genrer — afgr\u00e6nset til denne kanal.',
-      row_continue: 'Forts\u00e6t med at se', row_new_movies: 'Nyligt tilf\u00f8jede film',
-      row_new_series: 'Nyligt tilf\u00f8jede serier', row_newly_added: 'Nyligt tilf\u00f8jet',
+      row_continue: 'Forts\u00e6t med at se', row_new_movies: 'Nye film',
+      row_new_series: 'Nye serier', row_newly_added: 'Nyligt tilf\u00f8jet',
       whos_watching: 'Hvem ser med?', switch_profile: 'Skift profil', add_user: 'Tilf\u00f8j bruger',
       admin: 'admin', kids: 'B\u00d8RN', cancel: 'Annull\u00e9r', back: 'Tilbage',
       profiles_hint: 'Tilmeldte brugere bliver p\u00e5 dette tv — skift er \u00f8jeblikkeligt. Administr\u00e9r i Jellystructure.',
@@ -106,18 +110,20 @@
     },
     fo: {
       /* R244 / R245 — drafts, not reviewed by a Faroese speaker. */
-      pl_subtitles: 'Undirtekstir', pl_episodes: 'Rað', pl_next: 'Næsta', pl_lock: 'Lás', pl_guide: 'Skrá',
-      pl_locked_hint: 'Lást · trýst og hald til at lata upp', pl_rotate: 'Vend fyri fulla skerm',
+      pl_subtitles: 'Undirtekstir', pl_episodes: 'Partar', pl_next: 'Næsti', pl_lock: 'Læs', pl_guide: 'Skrá',
+      pl_locked_hint: 'Stongt · trýst og hald til at lata upp', pl_rotate: 'Vend fyri fullan skerm',
       pl_fit: 'Tilpassa', pl_fill: 'Fyll', pl_play_now: 'Spæl nú',
       pl_sub_size: 'Stødd á undirtekstum', pl_size_s: 'Lítil', pl_size_m: 'Miðal', pl_size_l: 'Stór',
-      pl_sub_size_note: 'Virkar bert á hesi telefon.',
+      pl_sub_size_note: 'Virkar bert á hesi telefonini.',
       cast_ready: 'Klár at spæla frá telefonini', cast_connecting: 'Sambindur við {device}…',
-      cast_connected: 'Sendir til {device}', cast_reconnecting: 'Sambindur aftur við {device}…',
+      cast_connected: 'Cast til {device}', cast_reconnecting: 'Sambindur aftur við {device}…',
       cast_playing_on: 'Spælir á {device}', cast_paused_on: 'Steðgað á {device}', cast_play_on: 'Spæl á {device}',
-      cast_stop: 'Stovna casting', cast_applies_on: 'Virkar á {device}',
-      cast_lost: 'Missti sambandið við {device}', cast_lost_sub: 'Hon spælir kanska enn. Ravilo kann ikki ná henni.',
-      cast_no_server: 'Kann ikki ná Ravilo-servaranum', cast_no_server_sub: 'Kanna um servarin er á, og royn aftur frá telefonini.',
-      srv_busy: 'Servarin hevur mikið at gera nú', srv_busy_sub: 'Hon byrjar, so skjótt sum gjørligt.', cast_waiting: 'bíðar {n} s',
+      cast_stop: 'Steðga casting', cast_applies_on: 'Virkar á {device}',
+      cast_lost: 'Missti sambandið við {device}', cast_lost_sub: 'Sjónvarpið spælir kanska enn. Ravilo kann ikki ná tí.',
+      /* R299 · R270 as built — verbatim from the shipped i18n/fo.json */
+      cast_failed: '{device} kundi ikki spæla hetta', cast_failed_sub: 'Royn ein annan heiti, ella spæl tað á hesi telefonini.', cast_play_here: 'Spæl á hesi telefonini', screens_in_use: 'Upptikið',
+      cast_no_server: 'Kann ikki ná Ravilo-ambætaranum', cast_no_server_sub: 'Kanna um ambætarin er á, og royn aftur frá telefonini.',
+      srv_busy: 'Ambætarin hevur mikið at gera nú', srv_busy_sub: 'Byrjar, so skjótt sum gjørligt.', cast_waiting: 'bíðar {n} s',
       br_genre: 'Sjanra', br_type: 'Slag', br_maturity: 'Aldursmark', br_year: 'Áratíggju', br_watched: 'Sætt',
       br_audio: 'Ljóð', br_channel: 'Rás', br_quality: 'Góðska', br_sort: 'Raða', br_titles: 'heiti', br_person: 'Leikarar',
       br_s_added: 'Nýliga lagt afturat', br_s_year: 'Útgávuár', br_s_maturity: 'Aldursmark', br_s_imdb: 'IMDb-meting',
@@ -133,14 +139,14 @@
       upcoming: 'Kemur skjótt', next_ep: 'Næsti táttur', airs: 'verður sendur', via_sonarr: 'Sonarr',
       top10_sub: 'Vinsælt nú · {region}', weeks_on: '{n} vikur á listanum', new_this_week: 'Nýtt hesa viku',
       why_trending: 'Hví tað er vinsælt', rank_in: '#{n} í {region}', views_week: '{v} hesa viku', via_source: 'via {src}',
-      nav_home: 'Heim', nav_movies: 'Filmar', nav_series: 'S\u00f8gur', nav_mylist: 'M\u00edn listi',
+      nav_home: 'Heim', nav_movies: 'Filmar', nav_series: 'Seriur', nav_mylist: 'M\u00edn listi',
       play: 'Spæl', resume: 'Hald fram', more_info: 'Meira', trailer: 'Trailer',
       add_list: 'M\u00edn listi', close: 'Lat aftur', see_all: 'S\u00edgj \u00f8ll', next_episode: 'N\u00e6sti part',
       channels: 'R\u00e1sir & savn', channels_sub: 'Sett upp \u00ed Jellystructure',
       more_like_this: 'Meira sum hetta', back_home: 'Heim', channel: 'R\u00e1s',
       channel_sub: 'Somu r\u00f8\u00f0irnar, sila\u00f0ar til {name}. Hald fram, n\u00fdtt og allir sjangrar — avmarka\u00f0 til hesa r\u00e1s.',
-      row_continue: 'Hald fram at s\u00edgaccept', row_new_movies: 'N\u00fdggjar filmar',
-      row_new_series: 'N\u00fdggjar s\u00f8gur', row_newly_added: 'N\u00fdtt tilskriva\u00f0',
+      row_continue: 'Halt fram at síggja', row_new_movies: 'Nýggjir filmar',
+      row_new_series: 'Nýggjar seriur', row_newly_added: 'N\u00fdtt tilskriva\u00f0',
       whos_watching: 'Hv\u00f8r s\u00e6r?', switch_profile: 'Skift vangamynd', add_user: 'Legg afturat brúkara',
       admin: 'admin', kids: 'B\u00d8RN', cancel: 'Avlýs', back: 'Aftur',
       profiles_hint: 'Innrita\u00f0ir br\u00fakarar ver\u00f0a verandi \u00e1 hesum sj\u00f3nvarpi — skift er beinanvegin. Stj\u00f3rna \u00ed Jellystructure.',
@@ -166,7 +172,7 @@
   // ---- R222: per-device slow-start note. Three strings, split so the lead sentence can be
   // emphasised structurally instead of with markup inside a translatable string. ----
   Object.assign(STR.en, { slow_lead: 'Slow to start on {device}.', slow_tail_expected: 'Give it a moment after you press play.',
-    slow_tail_measured: 'The last few times it took about {n} seconds.', this_tv: 'this TV', this_phone: 'this phone' });
+    slow_tail_measured: 'Seinastu ferðirnar tók tað umleið {n} sekund.', this_tv: 'this TV', this_phone: 'this phone' });
   Object.assign(STR.da, { slow_lead: 'Langsom at starte p\u00e5 {device}.', slow_tail_expected: 'Giv den et \u00f8jeblik, n\u00e5r du trykker afspil.',
     slow_tail_measured: 'De sidste par gange tog det omkring {n} sekunder.', this_tv: 'dette tv', this_phone: 'denne telefon' });
   Object.assign(STR.fo, { slow_lead: 'Seint at byrja \u00e1 {device}.', slow_tail_expected: 'Gev t\u00ed eitt eygnabrag\u00f0, t\u00e1 t\u00fa tr\u00fdstir sp\u00e6l.',
@@ -174,7 +180,7 @@
 
   // ---- Focus detail (the plate) + the detail page's About section. ----
   Object.assign(STR.en, {
-    fd_audio: 'Audio', fd_subs: 'Subs', fd_nodesc: 'No description yet', fd_min_left: '{n} min left',
+    fd_audio: 'Audio', fd_subs: 'Subs', fd_nodesc: 'Eingin lýsing enn', fd_min_left: '{n} min left',
     about: 'About', about_sub: 'From your library \u00b7 scanned by Jellystructure',
     fact_runtime: 'Runtime', fact_per_ep: '{n} min per episode', fact_min: '{n} min',
     fact_first_aired: 'First aired', fact_released: 'Released', fact_director: 'Director',
@@ -221,19 +227,19 @@
     toast_all_unwatched: 'S\u00e6son markeret som uset \u00b7 synket til Jellyfin',
   });
   // ---- Profile menu + Discover tabs (nav restructure) ----
-  Object.assign(STR.en, { nav_discover: 'Discover', pm_switch: 'Switch', pm_continue: 'Continue Watching', pm_settings: 'Settings', pm_unpair: 'Unpair this TV', seg_coming: 'Coming Soon', seg_request: 'Request', request_sub: 'Browse the catalogue and request what is missing', search_seerr: 'Search Seerr' });
+  Object.assign(STR.en, { nav_discover: 'Discover', pm_switch: 'Switch', pm_continue: 'Continue Watching', pm_settings: 'Stillingar', pm_unpair: 'Loys hetta sjónvarpið', seg_coming: 'Komandi skjótt', seg_request: 'Umbøn', request_sub: 'Browse the catalogue and request what is missing', search_seerr: 'Search Seerr' });
   Object.assign(STR.da, { nav_discover: 'Opdag', pm_switch: 'Skift', pm_continue: 'Fortsæt', pm_settings: 'Indstillinger', pm_unpair: 'Frakobl dette TV', seg_coming: 'Kommende', seg_request: 'Anmod', request_sub: 'Gennemse kataloget og anmod om det, der mangler', search_seerr: 'Søg i Seerr' });
   Object.assign(STR.fo, { nav_discover: 'Uppdaga', pm_switch: 'Skift', pm_continue: 'Hald fram', pm_settings: 'Innstillingar', pm_unpair: 'Frákopla sjónvarp', seg_coming: 'Kemur', seg_request: 'Bið', request_sub: 'Kaga í savninum og bið um tað, sum vantar', search_seerr: 'Leita í Seerr' });
 
   // ---- Upcoming calendar ----
   Object.assign(STR.en, {
-    nav_upcoming: 'Upcoming', upcoming_sub: 'New episodes & movie premieres, coming soon',
-    up_today: 'Today', up_tomorrow: 'Tomorrow', up_all: 'All', up_series: 'Series', up_movies: 'Movies',
+    nav_upcoming: 'Komandi', upcoming_sub: 'New episodes & movie premieres, coming soon',
+    up_today: 'Today', up_tomorrow: 'Tomorrow', up_all: 'Alt', up_series: 'Seriur', up_movies: 'Movies',
     up_release: '{n} release', up_releases: '{n} releases', up_nothing: 'Nothing scheduled',
-    up_airs_in: 'Airs in {n} days', up_airs_today: 'Airs today', up_airs_tomorrow: 'Airs tomorrow',
+    up_airs_in: 'Kemur út um {n} dagar', up_airs_today: 'Kemur út í dag', up_airs_tomorrow: 'Kemur út í morgin',
     up_schedule: 'Schedule', up_airdate: 'Air date', up_airtime: 'Air time', up_release_type: 'Release',
     up_network: 'Network', up_studio: 'Studio', up_monitored: 'Monitored', up_unmonitored: 'Not monitored',
-    up_quality: 'Quality', up_arriving: 'Arriving soon', up_episode: 'Episode', up_movie: 'Movie', up_new_episode: 'New Episode', up_premiere: 'Premiere', up_reldate: 'Release date',
+    up_quality: 'Quality', up_arriving: 'Arriving soon', up_episode: 'Partur', up_movie: 'Movie', up_new_episode: 'Nýggjur partur', up_premiere: 'Premiere', up_reldate: 'Release date',
   });
   Object.assign(STR.da, {
     nav_upcoming: 'Kommende', upcoming_sub: 'Nye afsnit & filmpremierer, kommer snart',
@@ -262,9 +268,9 @@
 
   // ---- Upcoming: available + missing/overdue ----
   Object.assign(STR.en, {
-    up_available: 'Already available', up_missing: 'Missing', up_due: 'Was due',
-    up_missing_title: 'Missing from your library', up_missing_sub: 'Released, but not downloaded yet',
-    up_aired_ago: 'Aired {n} days ago', up_released_ago: 'Released {n} days ago',
+    up_available: 'Already available', up_missing: 'Manglar', up_due: 'Was due',
+    up_missing_title: 'Manglar í savninum tínum', up_missing_sub: 'Released, but not downloaded yet',
+    up_aired_ago: 'Kom út fyri {n} døgum síðan', up_released_ago: 'Varð útgivið fyri {n} døgum síðan',
     up_aired_yest: 'Aired yesterday', up_released_yest: 'Released yesterday',
   });
   Object.assign(STR.da, {
@@ -392,14 +398,14 @@
 
   // ---- Discover → library taxonomies (Studios / Networks / Genres) ----
   Object.assign(STR.en, {
-    seg_studios: 'Studios', seg_networks: 'Networks', seg_genres: 'Genres',
+    seg_studios: 'Studios', seg_networks: 'Sjónvarpsrásir', seg_genres: 'Genres',
     tx_sub_studios: 'Films in your library, by studio',
-    tx_sub_networks: 'Series in your library, by network',
+    tx_sub_networks: 'Seriur í tínum savni, eftir sjónvarpsrás',
     tx_sub_genres: 'Everything in your library, by genre',
-    tx_n_studios: '{n} studios', tx_n_networks: '{n} networks', tx_n_genres: '{n} genres',
+    tx_n_studios: '{n} studios', tx_n_networks: '{n} sjónvarpsrásir', tx_n_genres: '{n} genres',
     tx_titles: '{n} titles', tx_title_one: '1 title',
     tx_kid_note: 'counting only what this profile can watch',
-    tx_empty: 'Nothing here for this profile yet',
+    tx_empty: 'Einki til henda vanga enn',
   });
   Object.assign(STR.da, {
     seg_studios: 'Studier', seg_networks: 'Stationer', seg_genres: 'Genrer',

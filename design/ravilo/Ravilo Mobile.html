@@ -45,7 +45,7 @@
   .homeind{ display:none; position:absolute; bottom:8px; left:50%; transform:translateX(-50%); width:140px; height:5px; border-radius:3px; background:var(--ink); opacity:.9; z-index:62; }
   .phone.ios .homeind{ display:block; }
   .phone.ios .statusbar{ height:54px; align-items:flex-end; padding:0 30px 6px 34px; }
-  .phone.ios .scroll{ padding-bottom:100px; }
+  .phone.ios .scroll{ padding-bottom:112px; }
   .devpick{ position:absolute; bottom:-72px; left:0; right:0; display:flex; justify-content:center; gap:6px; }
   .devpick b{ align-self:center; font-size:10px; letter-spacing:1.4px; color:#54596b; font-family:'Space Grotesk',sans-serif; margin-right:4px; }
   .devpick button{ border:1px solid rgba(255,255,255,.12); background:rgba(255,255,255,.05); color:#8b91a8;
@@ -68,7 +68,7 @@
   .statusbar .ic{ display:flex; gap:5px; align-items:center; opacity:.95; }
   .statusbar svg{ display:block; }
 
-  .scroll{ flex:1; overflow-y:auto; overflow-x:hidden; -webkit-overflow-scrolling:touch; scrollbar-width:none; padding-bottom:86px; }
+  .scroll{ flex:1; overflow-y:auto; overflow-x:hidden; -webkit-overflow-scrolling:touch; scrollbar-width:none; padding-bottom:104px; }
   .scroll::-webkit-scrollbar{ display:none; }
 
   /* app bar. The background is SOLID, not a fade: with a gradient that reached
@@ -100,20 +100,22 @@
      Selected is carried by a SHAPE, not by two shades of grey — touch has no focus ring and no
      hover to help — and the shape is Ravilo's own gradient, sliding between items so the bar
      reads as one object rather than four states. Opaque, so nothing scrolls under it and the cast
-     mini bar docks against a straight edge. Absent on anything pushed over a page (detail,
-     player, remote, account): those sit on higher layers and have their own Back. */
-  .bnav{ position:absolute; left:0; right:0; bottom:0; z-index:36; padding-top:9px;
+     mini bar docks against a straight edge. R278 (built 2026-09-20): present on EVERY page —
+     pushed lists, My List, Settings and Your profile included, lighting the page beneath —
+     and absent only where the picture is (player, remote), on one title's detail, and before a
+     profile exists. R274: 74 dp tall — 10 above the 36 dp pill, 8 under the label. */
+  .bnav{ position:absolute; left:0; right:0; bottom:0; z-index:36; padding-top:10px;
     background:var(--bg-2); border-top:1px solid var(--line); }
   .bnav .brow{ position:relative; display:flex; align-items:flex-end; }
-  .bnind{ position:absolute; top:0; left:0; width:56px; height:32px; border-radius:17px; background:var(--grad);
+  .bnind{ position:absolute; top:0; left:0; width:56px; height:36px; border-radius:18px; background:var(--grad);
     transition:transform .18s var(--ease); pointer-events:none; }
   .bn{ flex:1; position:relative; display:flex; flex-direction:column; align-items:center; justify-content:center;
-    gap:4px; min-height:56px; background:none; border:0; padding:0; cursor:pointer; color:var(--ink-dim);
+    gap:2px; background:none; border:0; padding:0 0 8px; cursor:pointer; color:var(--ink-dim);
     font-family:'Sora',sans-serif; -webkit-tap-highlight-color:transparent; }
   /* five items on a 393–411 dp phone: the pill takes 56 dp and still sits inside its own item */
   .bnind{ width:56px; }
-  .bn .p{ width:56px; height:32px; display:flex; align-items:center; justify-content:center; }
-  .avatar.sm{ width:24px; height:24px; font-size:10px; }
+  .bn .p{ width:56px; height:36px; display:flex; align-items:center; justify-content:center; }
+  .avatar.sm{ width:28px; height:28px; font-size:11px; }
 
   /* R267 FR-R267-5c — the Library page's type filter lives in the top row, left of the cast button,
      and ONLY while the Library page is showing (TV2 Play's "Kategorier" position, without its mistake:
@@ -135,11 +137,11 @@
   .libmenu button .tk{ margin-left:auto; color:var(--accent-2); opacity:0; }
   .libmenu button.on .tk{ opacity:1; }
   .libmenu button .ct{ color:var(--ink-dim); font-size:12px; }
-  .bn svg{ width:23px; height:23px; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round;
+  .bn svg{ width:28px; height:28px; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round;
     transition:stroke .18s var(--ease); }
   /* 11.5px sits below the 13px floor R234/R244 set for body copy — a deliberate exception for
      four permanent, icon-paired, one-word labels, and the only one in the phone design. */
-  .bn b{ font-size:11.5px; font-weight:600; letter-spacing:.01em; transition:color .18s var(--ease); }
+  .bn b{ font-size:11.5px; line-height:16px; font-weight:600; letter-spacing:.01em; transition:color .18s var(--ease); }
   .bn.on{ color:#fff; }
   .bn.on b{ color:var(--ink); }
   .bnsafe{ height:22px; }
@@ -148,8 +150,8 @@
      two move as one block and the mini bar keeps the tap target it has today (R245 FR-R245-6).
      Only while the nav is actually on screen: on a pushed screen (detail, player, remote, account)
      there is no nav to clear, so the bar returns to its own inset (FR-R267-8). */
-  .rc-mini.abovenav{ bottom:96px; }
-  .phone.ios .rc-mini.abovenav{ bottom:104px; }
+  .rc-mini.abovenav{ bottom:104px; }
+  .phone.ios .rc-mini.abovenav{ bottom:112px; }
   /* R267 — Search is a page on the phone, not an icon: the field sits at the top of its own page
      and the library filters live beneath it. Re-tapping the Search item focuses this field. */
   .srch{ padding:4px 18px 12px; }
@@ -160,6 +162,11 @@
     font-family:'Sora',sans-serif; font-size:15px; }
   .srch .fld input::placeholder{ color:var(--ink-dim); }
   .srchmeta{ padding:0 18px 10px; font-size:12px; color:var(--ink-dim); }
+  /* R277 FR-R277-3 — Clear is a real control, drawn only while there is something to clear.
+     It empties the field and never grabs focus: only the field and the bar's Search item do. */
+  .srch .clr{ flex:none; height:46px; margin-right:-14px; padding:0 14px; border:0; background:none; color:var(--accent-2);
+    font-family:'Sora',sans-serif; font-size:13.5px; font-weight:600; cursor:pointer; }
+  .srch .clr[hidden]{ display:none; }
 
   /* R268 — Discover's own five-chip strip, inside the page rather than pinned: it scrolls (five
      chips never fit a portrait phone), the first chip is flush with the gutter, and no label is
@@ -347,10 +354,62 @@
   .psheet .prow .pic{ width:22px; text-align:center; color:var(--ink-soft); font-size:15px; }
   .psheet .prow.danger{ color:#f5667a; }
 
+  /* ---- Profile is a PAGE (the fifth tab), not a menu ----------------------------------------
+     The TV's avatar dropdown is right for a remote — a short column of focus stops over the page —
+     and wrong on a phone, where it floated, clipped under the bar and closed on scroll. On a phone
+     everything that dropdown held is one page: who you are, your list, your account, and signing
+     out — the last one behind a confirmation, because it is the only thing here that cannot be
+     undone from this phone alone. */
+  .bn.on .avatar{ box-shadow:0 0 0 2px var(--bg), 0 0 0 3.5px #fff; }
+  .pft{ padding:0 18px; }
+  .pft-id{ display:flex; align-items:center; gap:16px; padding:18px 0 4px; }
+  .pft-av{ position:relative; width:76px; height:76px; border-radius:50%; flex:none; border:none; padding:0; cursor:pointer;
+    display:flex; align-items:center; justify-content:center; font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:26px; color:#fff; }
+  .pft-av.has-photo{ color:transparent; }
+  .pft-av .av-img{ border-radius:50%; }
+  .pft-av .ed{ position:absolute; right:-3px; bottom:-3px; width:28px; height:28px; border-radius:50%; background:var(--card-2); border:2px solid var(--bg);
+    display:flex; align-items:center; justify-content:center; color:var(--ink); }
+  .pft-av .ed svg{ width:13px; height:13px; fill:none; stroke:currentColor; stroke-width:2.2; stroke-linecap:round; stroke-linejoin:round; }
+  .pft-nm{ font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:25px; letter-spacing:-.01em; line-height:1.1; }
+  .pft-sub{ font-size:13px; color:var(--ink-dim); margin-top:5px; }
+  .pft-empty{ margin:0 18px; padding:16px; border-radius:14px; border:1px dashed var(--line-2); font-size:13.5px; line-height:1.5; color:var(--ink-soft); }
+  .pft-grp{ border:1px solid var(--line); border-radius:14px; background:rgba(255,255,255,.04); overflow:hidden; }
+  .pft-row{ display:flex; align-items:center; gap:13px; width:100%; min-height:58px; padding:8px 14px; background:none; border:0; border-top:1px solid var(--line);
+    color:var(--ink); font-family:'Sora',sans-serif; font-size:15px; text-align:left; cursor:pointer; }
+  .pft-row:first-child{ border-top:0; }
+  .pft-row:active{ background:rgba(255,255,255,.06); }
+  .pft-out .ic{ width:20px; height:20px; flex:none; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
+  .pft-row .ic{ width:22px; height:22px; flex:none; fill:none; stroke:var(--ink-soft); stroke-width:1.9; stroke-linecap:round; stroke-linejoin:round; }
+  .pft-row .rsub{ font-size:12.5px; color:var(--ink-dim); margin-top:2px; }
+  .pft-row .chev{ margin-left:auto; flex:none; width:18px; height:18px; fill:none; stroke:var(--ink-dim); stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
+  .pft-out{ display:flex; align-items:center; justify-content:center; gap:9px; width:100%; min-height:54px; margin-top:22px; border-radius:14px;
+    border:1px solid rgba(245,102,122,.38); background:rgba(245,102,122,.06); color:#f5667a; font-family:'Sora',sans-serif; font-size:15px; font-weight:600; cursor:pointer; }
+  .pft-ver{ text-align:center; font-size:12.5px; line-height:1.6; color:var(--ink-dim); margin:18px 0 0; }
+  .pft-ver b{ color:var(--ink-soft); font-weight:600; font-family:'JetBrains Mono',monospace; font-size:12px; }
+  .pft-foot{ height:34px; }
+  /* sign-out confirmation — the one bottom sheet left on this page */
+  .psheet .so{ padding:2px 20px 8px; }
+  .psheet .so h4{ font-family:'Space Grotesk',sans-serif; font-size:20px; font-weight:700; margin:0 0 8px; }
+  .psheet .so p{ font-size:14px; line-height:1.55; color:var(--ink-soft); margin:0 0 18px; }
+  .psheet .so .acts{ display:grid; gap:10px; }
+  .psheet .so button{ min-height:52px; border-radius:14px; font-family:'Sora',sans-serif; font-size:15px; font-weight:600; cursor:pointer; }
+  .psheet .so .go{ background:#f5667a; color:#1a0509; border:0; }
+  .psheet .so .no{ background:none; color:var(--ink); border:1px solid var(--line-2); }
+  .ph-toast{ position:absolute; left:50%; bottom:120px; transform:translateX(-50%); z-index:60; padding:11px 16px; border-radius:12px; background:var(--card-2);
+    border:1px solid var(--line-2); font-size:13.5px; color:var(--ink); white-space:nowrap; box-shadow:0 10px 30px rgba(0,0,0,.4); }
+
   /* account screens share the detail panel's slide-in, so Back feels the same everywhere */
   .acct{ position:absolute; inset:34px 0 0; z-index:45; background:var(--bg); transform:translateX(100%); transition:transform .24s cubic-bezier(.2,.8,.2,1); overflow-y:auto; -webkit-overflow-scrolling:touch; scrollbar-width:none; }
   .acct::-webkit-scrollbar{ display:none; }
   .acct.on{ transform:none; }
+  /* R278 — an account screen is pushed over a page and keeps the bar: it runs to the bottom edge,
+     sits UNDER the bar (z 45 vs 46, both above the app bar's 41), and pads its own foot by the
+     bar's height, so no gap can open. The profile sheet sits above both (47/48). */
+  .acct{ z-index:45; }
+  .bnav{ z-index:46; }
+  .sheet-scrim{ z-index:47; }
+  .psheet{ z-index:48; }
+  .acct-body{ padding-bottom:120px; }
   .acct-bar{ position:sticky; top:0; display:flex; align-items:center; gap:6px; height:52px; padding:0 8px; background:linear-gradient(180deg,var(--bg) 70%,transparent); z-index:2; }
   .acct-bar button{ width:44px; height:44px; border-radius:50%; border:none; background:none; color:var(--ink); font-size:26px; line-height:1; cursor:pointer; }
   .acct-bar h2{ font-family:'Space Grotesk',sans-serif; font-size:19px; font-weight:700; }
@@ -440,7 +499,8 @@
           <button class="bn" data-tab="search"><span class="p"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20.5 20.5l-4.2-4.2"/></svg></span><b>Search</b></button>
           <button class="bn" data-tab="discover"><span class="p"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M15.5 8.5l-2 5-5 2 2-5z"/></svg></span><b>Discover</b></button>
           <!-- the profile picture itself is the icon, bottom right (TV2 Play's "Min side" idiom).
-               It opens the profile sheet, so it never takes the selected pill — a menu is not a page. -->
+               It is a PAGE like the other four and takes the pill; the lit avatar gets a white ring
+               so a photo or initials never sit on the gradient unreadably. -->
           <button class="bn" data-tab="profile"><span class="p"><span class="avatar sm" id="avatarBtn">ER</span></span><b>Profile</b></button>
         </div>
         <div class="bnsafe"></div>
@@ -478,6 +538,9 @@
         <div class="mp-top">
           <button class="mp-b flat" id="mpBack" aria-label="Back"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
           <div class="mp-ttl"><div class="mp-kick" id="mpKick">—</div><div class="mp-nm" id="mpTitle">—</div></div>
+          <!-- what is playing: the title's logo (a series' own, never an episode's); no logo ⇒ a series
+               shows its name here in text, a film shows nothing. Rides the chrome's fade. -->
+          <div class="mp-ident" id="mpIdent"><img id="mpLogo" alt=""><span id="mpShow"></span></div>
           <button class="mp-b flat" id="mpRotate" aria-label="Rotate" style="display:none"><svg viewBox="0 0 24 24"><path d="M4 8a8 8 0 0 1 13-2M20 6v5h-5"/><path d="M20 16a8 8 0 0 1-13 2M4 18v-5h5"/></svg></button>
           <button class="mp-b flat" id="mpCast" aria-label="Cast"><span class="rc-ic"><span class="bx"></span><span class="fl"></span></span></button>
         </div>
@@ -540,6 +603,12 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="8.4" r="1" fill="currentColor" stroke="none"/><path d="M12 11v5" stroke-linecap="round"/></svg>
           <span>Converted for <b id="rcConvDev">—</b></span>
         </button>
+        <!-- R299 — the receiver is reachable and idle, and said the load failed. Not "Lost contact".
+             Below the greyed transport, so the one way forward is the last thing on the screen. -->
+        <div class="rc-fail" id="rcFail">
+          <p>Try another title, or play it on this phone.</p>
+          <div class="rc-acts col"><button class="pri" id="rcPlayHere">Play on this phone</button><button id="rcFailStop">Stop casting</button></div>
+        </div>
         <div class="rc-foot" id="rcFoot">
           <button id="rcSubs"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M7 14h4M14 14h3"/></svg> Subtitles &amp; audio</button>
           <button id="rcNext"><svg viewBox="0 0 24 24"><path d="M5 6l9 6-9 6z"/><path d="M19 6v12"/></svg> Next episode</button>
@@ -562,14 +631,11 @@
       <div class="sheet-scrim" id="pmScrim"></div>
       <div class="psheet" id="pmSheet">
         <div class="grab"></div>
-        <div class="ph-head">
-          <div class="ph-av" id="pmAv">ER</div>
-          <div><div class="ph-nm">Eyð</div><div class="ph-sub">Jellyfin · admin</div></div>
+        <div class="so">
+          <h4>Sign out of this phone?</h4>
+          <p>Your TVs and other devices stay signed in. To watch here again you sign in with your name and password.</p>
+          <div class="acts"><button class="go" data-pm="signout-go">Sign out</button><button class="no" data-pm="cancel">Stay signed in</button></div>
         </div>
-        <button class="prow" data-pm="profile"><span class="pic">☺</span> Your profile</button>
-        <button class="prow" data-pm="mylist"><span class="pic">＋</span> My List</button>
-        <button class="prow" data-pm="settings"><span class="pic">⚙</span> Settings</button>
-        <button class="prow danger" data-pm="signout"><span class="pic">⏏</span> Sign out</button>
       </div>
     </div>
     <div class="label" id="devLabel">Ravilo · Pixel 9 · portrait</div>
@@ -582,6 +648,7 @@
       <b>PREVIEW</b>
       <button data-pv="fail">Failed start · R237</button>
       <button data-pv="portraitlock">System portrait lock</button>
+      <button data-pv="castfail">Cast couldn’t play · R299</button>
     </div>
   </div>
 </div>
@@ -599,7 +666,7 @@
      interpolate into attributes (`data-title="…"`, `data-tx="…"`). Without the quote pair a title or
      a search query containing `"` breaks out of its attribute and re-parses the surrounding markup. */
   const esc = s => (s==null?'':String(s)).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-  let tab = 'home';
+  let tab = (new URLSearchParams(location.search).get('tab')) || 'home';
   const TAXO_TABS = ['networks', 'studios', 'genres'];
   const TAXO_LABEL = { studios: 'Studios', networks: 'Networks', genres: 'Genres' };
   const TAXO_SUB = { studios: 'Films by studio', networks: 'Series by network', genres: 'Everything by genre' };
@@ -863,10 +930,14 @@
     app.innerHTML = '<div class="srch"><div class="fld">'
       + '<svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20.5 20.5l-4.2-4.2"/></svg>'
       + '<input id="srchInput" type="search" placeholder="Search Ravilo" autocomplete="off">'
+      + '<button class="clr" id="srchClr" type="button" hidden>Clear</button>'
       + '</div></div><div class="srchmeta" id="srchMeta"></div><div id="srchRes"></div><div style="height:30px;"></div>';
     const input = document.getElementById('srchInput');
     input.value = srchQ;   // assigned, never interpolated into the attribute — nothing to escape
-    input.addEventListener('input', () => { srchQ = input.value; fillSearch(); });
+    const clr = document.getElementById('srchClr');
+    clr.hidden = !srchQ;
+    input.addEventListener('input', () => { srchQ = input.value; clr.hidden = !srchQ; fillSearch(); });
+    clr.addEventListener('click', () => { srchQ = ''; input.value = ''; clr.hidden = true; fillSearch(); });
     fillSearch();
   }
   function focusSearch(){ const i = document.getElementById('srchInput'); if(i) i.focus(); }
@@ -899,6 +970,7 @@
     }
     else if(tab==='library') renderLibrary();
     else if(tab==='search') renderSearch();
+    else if(tab==='profile') renderProfile();
     else renderHome();
   }
 
@@ -1057,7 +1129,7 @@
     const it = findItem(title);
     const art = R.artFor ? R.artFor(it) : { backdrop: it.backdrop, grad: it.grad };
     const bg = art.backdrop ? 'url('+art.backdrop+') center/cover' : art.grad;
-    const syn = (R.synFor ? R.synFor(it) : it.syn) || 'A standout title from your Jellyfin library, organised and ready to play through Ravilo.';
+    const syn = (R.synFor ? R.synFor(it) : it.syn) || 'A standout title from your library, ready to play.';
     const more = (R.relatedFor ? R.relatedFor(it) : R.rows[0].items).slice(0,10);
     dscroll.innerHTML = '<div class="dhero" style="background:'+bg+';"><button class="dback" id="dback">‹</button><div class="scrim"></div></div>'
       + '<div class="dbody">'
@@ -1083,16 +1155,20 @@
   /* Re-tapping the page you are already on always scrolls that page back to the top — the platform
      behaviour on every phone bottom bar. Two pages do one more thing on top of that: Discover also
      returns to its FIRST available segment (R268's declared order, so Networks on every household),
-     and Search also puts the caret back in its field. */
+     and Search also puts the caret back in its field — every time (R277 FR-R277-2). ARRIVING at
+     Search never does: the keyboard is half the screen and the viewer has not asked to type yet
+     (FR-R277-1). R278: from a pushed screen (Settings, Your profile), any item — the lit one too —
+     leaves for that page rather than counting as a re-tap. */
   document.getElementById('bnav').addEventListener('click', e=>{
     const b = e.target.closest('[data-tab]'); if(!b) return;
-    const next = b.dataset.tab, again = next === tab;
-    // Profile is a menu, not a page: it opens the sheet and never claims the selected pill.
-    if(next === 'profile'){ openSheet(true); return; }
+    const next = b.dataset.tab;
+    const fromPushed = acct.classList.contains('on');
+    if(fromPushed) closeAcct();
+    const again = next === tab && !fromPushed;
     if(again && next === 'discover'){ discSeg = discSegs()[0]; txsel = null; render(); }
     else if(again && next === 'search'){ focusSearch(); }
     else if(again && next === 'library'){ libOpen = false; render(); }
-    else if(!again){ tab = next; txsel = null; libOpen = false; render(); if(next === 'search') focusSearch(); }
+    else if(!again){ tab = next; txsel = null; libOpen = false; render(); }
     scroll.scrollTo({ top:0, behavior:'smooth' });
   });
   /* the type dropdown lives in the app bar now, so its handlers do too; a tap anywhere else
@@ -1112,6 +1188,14 @@
   });
 
   app.addEventListener('click', e=>{
+    const pf = e.target.closest('[data-pf]');
+    if(pf){ const a = pf.dataset.pf;
+      if(a==='photo') openAcct(profileHTML());
+      else if(a==='password') openAcct(passwordHTML(null));
+      else if(a==='lang') openAcct(langHTML());
+      else if(a==='mylist') openAcct(myListHTML());
+      else if(a==='signout') openSheet(true);
+      return; }
     const ds = e.target.closest('[data-discseg]'); if(ds){ discSeg=ds.dataset.discseg; txsel=null; render(); return; }
     const tb = e.target.closest('[data-txback]'); if(tb){ txsel=null; render(); return; }
     const tx = e.target.closest('[data-tx]'); if(tx){ txsel=tx.dataset.tx; render(); return; }
@@ -1138,6 +1222,7 @@
 
   function faceOf(){ return AV.avatarFace ? AV.avatarFace(ME) : { photo:null, style:'background:'+ME.color, label:ME.initials }; }
   function paintFace(node, label){
+    if(!node) return;
     const f = faceOf();
     node.classList.toggle('has-photo', !!f.photo);
     node.style.cssText = f.style;
@@ -1174,16 +1259,62 @@
       + '<input type="file" accept="image/*" capture="user" id="pfCam" hidden>'
       + '</div>';
   }
-  function settingsHTML(){
-    const f = faceOf();
-    return '<div class="acct-bar"><button data-acct="back">‹</button><h2>Settings</h2></div>'
-      + '<div class="acct-body">'
-      + '<div class="acct-sec">Account</div>'
-      + '<button class="acct-row" data-acct="profile"><span class="ph-av'+(f.photo?' has-photo':'')+'" style="'+f.style+';width:34px;height:34px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-family:\'Space Grotesk\',sans-serif;font-weight:700;font-size:13px;color:'+(f.photo?'transparent':'#fff')+';flex:none;overflow:hidden;">'+(f.photo?'<img class="av-img" src="'+f.photo+'" alt="">':esc(f.label))+'</span><span><b>'+esc(ME.name)+'</b><div class="rsub">Your photo</div></span><span class="chev">›</span></button>'
-      + '<div style="height:10px"></div>'
-      + '<button class="acct-row" data-acct="password"><span style="width:22px;text-align:center">🔑</span><span>Change password<div class="rsub">Used when you sign in</div></span><span class="chev">›</span></button>'
-      + noteHTML()
+  /* ---- the Profile page ---- */
+  let pftNote = null;
+  const PF_IC = {
+    photo: '<svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="9" r="4"/><path d="M4.5 20a7.5 7.5 0 0 1 15 0"/></svg>',
+    lang:  '<svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.6-3.8-9S9.5 5.6 12 3z"/></svg>',
+    key:   '<svg class="ic" viewBox="0 0 24 24"><circle cx="8" cy="14" r="4"/><path d="M11 11l9-9M16 6l3 3"/></svg>',
+    out:   '<svg class="ic" viewBox="0 0 24 24" style="stroke:currentColor"><path d="M14 5H6v14h8"/><path d="M10 12h10M17 9l3 3-3 3"/></svg>',
+    chev:  '<svg class="chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>',
+    pen:   '<svg viewBox="0 0 24 24"><path d="M4 20l4-1 11-11-3-3L5 16z"/></svg>',
+  };
+  // Stand-in: this project has no My List data of its own, so a fixed slice of what the profile
+  // can watch plays the part. The page shape is the point, not which titles are in it.
+  function myList(){ return (R.libraryFor ? R.libraryFor(me) : []).filter((_, i) => i % 4 === 1).slice(0, 7); }
+  function renderProfile(){
+    const f = faceOf(), list = myList();
+    app.innerHTML = '<div class="pft"><div class="pft-id">'
+      +   '<button class="pft-av'+(f.photo?' has-photo':'')+'" id="pftAv" data-pf="photo" aria-label="Change your photo" style="'+f.style+'">'
+      +     (f.photo ? '<img class="av-img" src="'+f.photo+'" alt="">' : esc(f.label)) + '<span class="ed">'+PF_IC.pen+'</span></button>'
+      +   '<div><div class="pft-nm">'+esc(ME.name)+'</div><div class="pft-sub">Admin</div></div>'
+      + '</div></div>'
+      + (pftNote ? '<div class="pft" style="margin-top:14px"><div class="pf-note ok">✓ <span>'+esc(pftNote)+'</span></div></div>' : '')
+      + '<div class="row"><h3>My List'+(list.length ? '<span style="font-family:Sora,sans-serif;font-size:12px;font-weight:500;color:var(--ink-dim)">'+list.length+'</span><span class="more" data-pf="mylist">See all ›</span>' : '')+'</h3>'
+      +   (list.length ? '<div class="track">'+list.map(tile).join('')+'</div>'
+                       : '<div class="pft-empty">Nothing here yet. Tap <b>＋ My List</b> on any title and it waits for you here — and on your TV.</div>')
+      + '</div>'
+      + '<div class="pft"><div class="acct-sec" style="margin-top:26px">Account</div>'
+      +   '<div class="pft-grp">'
+      +     '<button class="pft-row" data-pf="lang">'+PF_IC.lang+'<span>App language<div class="rsub">'+LANGS[pfLang]+' · this phone only</div></span>'+PF_IC.chev+'</button>'
+      +     '<button class="pft-row" data-pf="password">'+PF_IC.key+'<span>Change password<div class="rsub">Used when you sign in</div></span>'+PF_IC.chev+'</button>'
+      +   '</div>'
+      +   '<button class="pft-out" data-pf="signout">'+PF_IC.out+'Sign out</button>'
+      +   '<div class="pft-ver">Ravilo <b>1.38</b> · signed in to ravilo.mit-hus.dk</div>'
+      +   '<div class="pft-foot"></div>'
       + '</div>';
+    pftNote = null;
+  }
+  // App language: Ravilo's own words on this phone. Not the audio or subtitle language (those follow
+  // the profile), and not the server's — a household can read Danish on one phone and English on another.
+  const LANGS = { en:'English', da:'Dansk', fo:'Føroyskt' };
+  let pfLang = 'en';
+  function langHTML(){
+    return '<div class="acct-bar"><button data-acct="back">‹</button><h2>App language</h2></div>'
+      + '<div class="pft" style="padding-top:6px"><div class="pft-grp">'
+      + Object.entries(LANGS).map(([k,v])=>'<button class="pft-row" data-lang="'+k+'"><span>'+v+'</span>'
+          + (k===pfLang ? '<svg class="chev" viewBox="0 0 24 24" style="stroke:var(--ink)"><path d="M5 12l5 5 9-10"/></svg>' : '')+'</button>').join('')
+      + '</div><p class="pft-ver" style="text-align:left">Menus and buttons only. Audio and subtitles keep following your profile’s languages.</p></div>';
+  }
+  function myListHTML(){
+    const list = myList();
+    return '<div class="acct-bar"><button data-acct="back">‹</button><h2>My List</h2></div>'
+      + '<div style="padding:4px 0 0"><div class="txgrid">'+list.map(tile).join('')+'</div></div>';
+  }
+  function phToast(msg){
+    const ph = document.getElementById('pmSheet').parentNode;
+    const t = document.createElement('div'); t.className = 'ph-toast'; t.textContent = msg; ph.appendChild(t);
+    setTimeout(()=>t.remove(), 2200);
   }
   function passwordHTML(err){
     return '<div class="acct-bar"><button data-acct="back-settings">‹</button><h2>Change password</h2></div>'
@@ -1203,20 +1334,17 @@
     fr.onload = ()=>{ if(AV.setPhoto) AV.setPhoto(ME.id, fr.result); acctNote={kind:'ok',text:'Photo updated.'}; acctInner.innerHTML = profileHTML(); paintAvatars(); };
     fr.readAsDataURL(file);
   }
-  document.getElementById('avatarBtn').addEventListener('click', ()=>openSheet(true));
   pmScrim.addEventListener('click', ()=>openSheet(false));
   pmSheet.addEventListener('click', e=>{
     const b = e.target.closest('[data-pm]'); if(!b) return;
     const a = b.dataset.pm; openSheet(false);
-    if(a==='profile') openAcct(profileHTML());
-    else if(a==='settings') openAcct(settingsHTML());
-    else if(a==='mylist'){ tab='discover'; render(); }
+    if(a==='signout-go') phToast('Signed out · the sign-in screen would open here');
   });
   acct.addEventListener('click', e=>{
     const b = e.target.closest('[data-acct]'); if(!b) return;
     const a = b.dataset.acct;
-    if(a==='back') closeAcct();
-    else if(a==='back-settings') openAcct(settingsHTML());
+    if(a==='back'){ closeAcct(); if(tab==='profile') renderProfile(); }
+    else if(a==='back-settings'){ closeAcct(); if(tab==='profile') renderProfile(); }
     else if(a==='profile') openAcct(profileHTML());
     else if(a==='password') openAcct(passwordHTML(null));
     else if(a==='choose') document.getElementById('pfFile').click();
@@ -1228,8 +1356,14 @@
       if(nw.length<6){ acctInner.innerHTML = passwordHTML('Use at least 6 characters.'); return; }
       if(nw!==rp){ acctInner.innerHTML = passwordHTML('The two new passwords don’t match.'); return; }
       if(cur==='wrong'){ acctInner.innerHTML = passwordHTML('That current password isn’t right.'); return; }
-      acctNote={kind:'ok',text:'Password changed.'}; acctInner.innerHTML = settingsHTML();
+      closeAcct(); pftNote = 'Password changed.'; tab = 'profile'; render();
     }
+  });
+  acct.addEventListener('click', e=>{
+    const lg = e.target.closest('[data-lang]');
+    if(lg){ pfLang = lg.dataset.lang; closeAcct(); pftNote = 'App language: ' + LANGS[pfLang] + '.'; render(); return; }
+    const t = e.target.closest('[data-title]'); if(!t || !acct.contains(t)) return;
+    closeAcct(); openDetail(t.dataset.title);
   });
   acct.addEventListener('change', e=>{ if(e.target.id==='pfFile'||e.target.id==='pfCam') readPhoto(e.target); });
   acct.addEventListener('dragover', e=>{ const av=e.target.closest('#pfAv'); if(av){ e.preventDefault(); av.classList.add('drop'); } });
@@ -1313,11 +1447,11 @@
     const v = g.vers[S.ver] || g.vers[0]; return v.nm + (v.bdg ? ' · ' + v.bdg : ''); };
 
   /* ---- shared render ---- */
-  /* FR-R267-8 — the mini bar is raised by the nav's height only while the nav is on screen. On a
-     pushed screen (a title, the player, the remote, an account screen) the nav is not drawn, so a
-     raised mini bar would float over that page's own content with dead space beneath it. */
+  /* FR-R267-8 / R278 FR-R278-4 — the mini bar is raised by the nav's height only while the nav is
+     on screen. Where the nav is absent (a title, the player, the remote) a raised mini bar would
+     float over that page's own content; an account screen keeps the nav, so it keeps the dock. */
   function paintMiniOffset(){
-    const pushed = detail.classList.contains('on') || acct.classList.contains('on')
+    const pushed = detail.classList.contains('on')
       || mp.classList.contains('on') || rcRem.classList.contains('on');
     rcMini.classList.toggle('abovenav', !pushed);
   }
@@ -1333,7 +1467,10 @@
     $('rcMiniPP').innerHTML = ppIcon(S.playing);
     $('rcMiniBar').style.width = pct + '%';
     rcRem.classList.toggle('paused', !S.playing);
-    $('rcOn').textContent = (S.playing ? 'Playing on ' : 'Paused on ') + (CAST ? CAST.device : '—');
+    const failed = !!(CAST && CAST.failed);
+    rcRem.classList.toggle('rc-failed', failed); rcRem.classList.toggle('rc-dim', failed);
+    $('rcOn').textContent = failed ? CAST.device + ' couldn’t play this'
+      : (S.playing ? 'Playing on ' : 'Paused on ') + (CAST ? CAST.device : '—');
     // Skip intro lives in the first 30s; next-up in the last 60. Neither may overlap the rail.
     $('mpSkip').classList.toggle('on', !S.locked && S.pos < 30 && !sheetOpen);
     $('mpSkipCd').textContent = Math.max(0, Math.ceil(30 - S.pos)) + ' s';
@@ -1370,7 +1507,12 @@
     S.art = STILLS[(S.title.length) % STILLS.length];
     S.pos = 862; S.dur = 2280; S.playing = true; S.locked = false; S.buffering = true;
     $('mpArt').src = S.art;
-    $('mpKick').textContent = S.kind === 'series' ? S.title + ' · S2 E' + S.ep : (it.year ? String(it.year) : 'Film');
+    $('mpKick').textContent = S.kind === 'series' ? 'S2 · E' + S.ep : (it.year ? String(it.year) : 'Film');
+    const logo = (R.artFor ? R.artFor(it).logo : it.logo) || '';
+    const ident = $('mpIdent'), lg = $('mpLogo');
+    const showName = () => { lg.removeAttribute('src'); $('mpShow').textContent = S.kind === 'series' ? S.title : ''; ident.className = 'mp-ident' + (S.kind === 'series' ? ' name' : ''); };
+    if (logo) { lg.onerror = showName; lg.src = logo; lg.alt = S.title; $('mpShow').textContent = ''; ident.className = 'mp-ident logo' + (it.logoInk === 'dark' ? ' plate' : ''); }
+    else showName();
     $('mpTitle').textContent = S.kind === 'series' ? 'Threshold Night' : S.title;
     $('mpBufKick').textContent = S.title;
     $('mpBufTitle').textContent = S.kind === 'series' ? 'Threshold Night' : S.title;
@@ -1459,7 +1601,7 @@
       if(id === 'mpLockBtn'){ S.locked = true; mp.classList.add('lock'); clearTimeout(hideTimer); paint(); return; }
       if(id === 'mpUnlock'){ $('mpLockNote').classList.add('on'); setTimeout(()=>$('mpLockNote').classList.remove('on'), 1200); return; }
       if(id === 'mpSkip'){ S.pos = 92; paint(); showChrome(); return; }
-      if(id === 'mpNupGo'){ S.ep = (S.ep || 7) + 1; S.pos = 0; $('mpTitle').textContent = 'Bitter Honey'; $('mpKick').textContent = S.title + ' · S2 E' + S.ep; paint(); return; }
+      if(id === 'mpNupGo'){ S.ep = (S.ep || 7) + 1; S.pos = 0; $('mpTitle').textContent = 'Bitter Honey'; $('mpKick').textContent = 'S2 · E' + S.ep; paint(); return; }
       if(id === 'mpNupNo'){ S.dur = S.pos + 600; paint(); return; }
       if(id === 'mpCast'){ openScreensSheet(); return; }
       if(id === 'mpRotate'){ $('mpToast').textContent = 'Rotate to full screen'; $('mpToast').classList.add('on'); setTimeout(()=>$('mpToast').classList.remove('on'), 900); return; }
@@ -1565,7 +1707,10 @@
     if(CAST && CAST.device === s.name) return 'Playing ' + esc(S.title || '');
     if(s.state === 'ready')   return 'Ready';
     if(s.state === 'playing') return 'Playing ' + esc(s.title);
-    if(s.state === 'busy')    return 'Busy · ' + esc(s.user) + ' is watching';
+    // R270 as built: the name is resolved server-side (now_playing_user); null reads "In use",
+    // never a sentence with a hole in it. Last seen is whole calendar days — a weekday inside
+    // seven, a date beyond — so "Offline · last seen just now" cannot happen.
+    if(s.state === 'busy')    return s.user ? 'Busy · ' + esc(s.user) + ' is watching' : 'In use';
     return 'Offline · last seen ' + esc(s.when);
   }
   function screenRow(s){
@@ -1711,11 +1856,11 @@
     $('rcKick').textContent = S.kind === 'series' ? S.title + ' · S2 E' + S.ep : (S.kind === 'movie' && S.title ? 'Film' : (S.title || '—'));
     $('rcTitle').textContent = S.kind === 'series' ? 'Threshold Night' : (S.title || '—');
     // mini bar shows only while casting, and never dismisses while it runs
-    rcMini.classList.toggle('on', !!CAST && !rcRem.classList.contains('on'));
+    rcMini.classList.toggle('on', !!CAST && !CAST.failed && !rcRem.classList.contains('on'));
     // FR-R245-19 — the receiver's stream is a conversion, not the file. Mockup proxy:
     // "is casting" stands in for the real ticket's directPlay==false, since there is no
     // real transcode signal here. Verbatim copy from the built Kotlin (CastRemoteScreen.kt).
-    $('rcConv').style.display = CAST ? '' : 'none';
+    $('rcConv').style.display = CAST && !CAST.failed ? '' : 'none';
     if (CAST) {
       $('rcConvDev').textContent = CAST.device;
       $('rcConvDev2').textContent = CAST.device;
@@ -1757,7 +1902,8 @@
     if(id === 'rcPP'){ S.playing = !S.playing; paint(); return; }
     if(id === 'rcBack10'){ S.pos = Math.max(0, S.pos - 10); paint(); return; }
     if(id === 'rcFwd30'){ S.pos = Math.min(S.dur, S.pos + 30); paint(); return; }
-    if(id === 'rcStop'){ stopCast(); return; }
+    if(id === 'rcStop' || id === 'rcFailStop'){ stopCast(); return; }
+    if(id === 'rcPlayHere'){ const t = S.title || 'Big Buck Bunny'; stopCast(); S.pos = 0; openPlayer(t); return; }
     if(id === 'rcDev'){ rcSheetOpen(screensSheetHTML()); return; }
     if(id === 'rcNext'){ S.ep = (S.ep || 7) + 1; S.pos = 0; paintCast(); return; }
     if(id === 'rcSubs'){ S.tab = 'subs'; rcSheetOpen(pickerHTML('cast')); return; }
@@ -1803,6 +1949,13 @@
       if(!mp.classList.contains('on')) openPlayer(S.title || 'Big Buck Bunny');
       S.buffering = false; $('mpBuf').classList.remove('on');
       openSheetHTML('fail', failHTML());
+      return;
+    }
+    if(b.dataset.pv === 'castfail'){
+      if(!CAST) CAST = { device:'Soveværelse TV' };
+      if(!S.title){ S.title = 'Big Buck Bunny'; S.kind = 'movie'; S.ep = null; S.art = STILLS[S.title.length % STILLS.length]; S.pos = 0; S.dur = 2280; }
+      S.playing = false;
+      CAST.failed = true; rcBar.classList.remove('on'); openRemote();
       return;
     }
     if(b.dataset.pv === 'portraitlock'){

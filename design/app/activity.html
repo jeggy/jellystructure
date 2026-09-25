@@ -97,6 +97,26 @@
   .lane-note { font-size:.74rem; color:var(--ink-soft); margin-top:5px; line-height:1.55; }
   .occ { width:9px; height:9px; border-radius:50%; flex:none; background:var(--ink-dim); }
   .occ.on { background:var(--warn); box-shadow:0 0 0 3px var(--warn-soft); }
+  /* emptying a queue — removes WAITING jobs only; the job a worker already holds runs to its end. */
+  .lane-end { display:flex; align-items:center; gap:8px; justify-content:flex-end; }
+  .lane-empty[hidden] { display:none; }
+  .lane-gone { font-size:.72rem; color:var(--ink-dim); margin-top:5px; }
+  .qe { margin:10px 0 4px; padding:13px 14px 12px; border-radius:10px; border:1px solid var(--line-2); background:var(--fill-2); }
+  .qe[hidden] { display:none; }
+  .qe-h { display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; }
+  .qe-h b { font-size:.9rem; }
+  .qe-list { margin-top:9px; display:grid; gap:2px; }
+  .qe-opt { display:grid; grid-template-columns:18px 110px 88px minmax(0,1fr); gap:10px; align-items:baseline; padding:7px 4px; border-top:1px dashed var(--line); cursor:pointer; font-size:.8rem; }
+  .qe-opt:first-child { border-top:none; }
+  .qe-opt input { accent-color:var(--bad); margin:0; transform:translateY(2px); }
+  .qe-opt.off { cursor:default; color:var(--ink-dim); }
+  .qe-q { font-family:'JetBrains Mono',monospace; font-weight:600; }
+  .qe-n { font-variant-numeric:tabular-nums; }
+  .qe-keep { font-size:.74rem; color:var(--ink-soft); }
+  .qe-keep b { color:var(--ink); font-weight:600; }
+  .qe-foot { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-top:11px; padding-top:11px; border-top:1px solid var(--line); }
+  .qe-foot .tiny { flex:1 1 240px; line-height:1.55; }
+  @media (max-width:640px) { .qe-opt { grid-template-columns:18px minmax(0,1fr) auto; } .qe-keep { grid-column:2 / -1; } .lane { grid-template-columns:minmax(0,1fr) auto; } .lane-body { grid-column:1 / -1; grid-row:2; } }
 </style>
 </head>
 <body class="wf-body app-body">
@@ -114,7 +134,7 @@
   </div>
   <p class="page-sub">The full console for the job that's also shown in the ambient dock. Everything streams over WebSocket — no polling, no page reloads. Items with problems are flagged for attention and the run keeps going.</p>
 
-  <div class="row center" style="margin-bottom:14px;"><span class="seg viewseg" id="viewseg"><span class="on" data-view="console">Scan console</span><span data-view="jobs">Jobs &amp; workers <span class="jobs-count">4</span></span></span></div>
+  <div class="row center" style="margin-bottom:14px;"><span class="seg viewseg" id="viewseg"><span class="on" data-view="console">Scan console</span><span data-view="jobs">Jobs &amp; workers <span class="jobs-count">52</span></span></span></div>
 
   <div id="view-console">
 
@@ -368,7 +388,7 @@
         <span class="wk-dot busy"></span><b>Job workers</b><span class="badge warn">2 of 2 busy</span>
         <span class="muted tiny"><span class="mono">behavior.job_workers = 2</span> · shared by every queue below · capped at 3</span>
         <span class="spacer"></span>
-        <span class="chip"><b>2</b> running</span><span class="chip"><b id="q-count">3</b> queued</span><span class="chip ok" style="background:var(--ok-soft);">12 done today</span>
+        <span class="chip"><b>2</b> running</span><span class="chip"><b id="q-count">50</b> queued</span><span class="chip ok" style="background:var(--ok-soft);">12 done today</span>
         <a class="btn sm ghost" href="settings.html?tab=libraries">Change →</a>
       </div>
       <div class="tiny muted" style="margin-top:9px;line-height:1.6;">A free worker takes the oldest eligible job from any queue that isn't already occupied. At <b>1</b> nothing overlaps at all; at <b>3</b> all three queues can run at once — the ceiling this host was at on 15 Sep, when ten subtitle extractions saturated the disk. Default is <b>2</b>.</div>
@@ -378,32 +398,40 @@
          being a step that fans out and became a lane that does one item at a time. FR-213-7 exists
          because every gate jellystructure owns reported idle while Jellyfin's disk sat at 81%. -->
     <div class="card" style="margin-bottom:14px;">
-      <div class="row center"><h4 style="margin:0;">Queues</h4><span class="spacer"></span><span class="muted tiny">occupancy · one worker per queue, maximum</span></div>
+      <div class="row center" style="gap:10px;flex-wrap:wrap;"><h4 style="margin:0;">Queues</h4><span class="spacer"></span><span class="muted tiny">occupancy · one worker per queue, maximum</span><span class="btn sm ghost" id="qe-open-all">Empty queues…</span></div>
+      <div class="qe" id="qe" hidden>
+        <div class="qe-h"><b id="qe-title">Empty queues</b><span class="tiny muted">removes jobs that are waiting · what a worker is already doing finishes</span></div>
+        <div class="qe-list" id="qe-list"></div>
+        <div class="qe-foot">
+          <span class="btn sm bad" id="qe-go">Remove 50 waiting jobs</span><span class="btn sm ghost" id="qe-cancel">Keep them</span>
+          <span class="tiny muted">Removed jobs are listed under <b>Recent</b>. Nothing is undone on disk — a waiting job has not touched a file yet.</span>
+        </div>
+      </div>
       <hr class="dash" style="margin:10px 0 2px;">
-      <div class="lane">
+      <div class="lane" data-lane="media">
         <span class="lane-name"><span class="occ on"></span>media</span>
         <div class="lane-body">
           <b class="tiny">Re-ordering audio · Sintel (2010)</b>
           <div class="lane-kinds">reorder · remove · bulk_reorder · mkv_layout_repair</div>
         </div>
-        <span class="chip"><b>3</b> queued</span>
+        <span class="lane-end"><span class="chip"><b class="lane-n">3</b> queued</span><span class="btn sm ghost lane-empty">Empty</span></span>
       </div>
-      <div class="lane">
+      <div class="lane" data-lane="segments">
         <span class="lane-name"><span class="occ on"></span>segments</span>
         <div class="lane-body">
           <b class="tiny">Detecting intro &amp; credits · Fjollerne S11E04</b>
           <div class="lane-kinds">segments_movie · segments_season · segments_episodes</div>
         </div>
-        <span class="chip"><b>6</b> queued</span>
+        <span class="lane-end"><span class="chip"><b class="lane-n">6</b> queued</span><span class="btn sm ghost lane-empty">Empty</span></span>
       </div>
-      <div class="lane">
+      <div class="lane" data-lane="subtitles">
         <span class="lane-name"><span class="occ"></span>subtitles</span>
         <div class="lane-body">
           <b class="tiny" style="color:var(--ink-soft);">Waiting — a TV is playing</b>
           <div class="lane-kinds">prewarm_subtitles</div>
           <div class="lane-note">Re-checked before every item <i>and</i> between every subtitle stream, so a film that starts mid-job stops it rather than riding it out. Last failure: <b>Dreadful Me 4</b> — Jellyfin didn't answer within 120s, 3rd attempt, given up.</div>
         </div>
-        <span class="chip"><b>41</b> queued</span>
+        <span class="lane-end"><span class="chip"><b class="lane-n">41</b> queued</span><span class="btn sm ghost lane-empty">Empty</span></span>
       </div>
       <hr class="dash" style="margin:2px 0 10px;">
       <div class="tiny" style="line-height:1.6;color:var(--ink-soft);">A subtitle pre-warm asks <b>Jellyfin</b> to extract a track, and that ffmpeg reads the whole file — inside Jellyfin's own container, where none of the gates on the <b>Capacity</b> card can see it. That is why this queue exists and why it runs one at a time: the count of outstanding requests is the only number jellystructure can honestly report about it.</div>
@@ -422,7 +450,7 @@
     </div>
 
     <div class="card" style="margin-bottom:14px;">
-      <div class="row center"><h4 style="margin:0;">Media queue</h4><span class="chip" style="margin-left:8px;"><b>3</b> waiting</span><span class="spacer"></span><span class="tiny muted">processed in order (FIFO)</span></div>
+      <div class="row center"><h4 style="margin:0;">Media queue</h4><span class="chip" style="margin-left:8px;"><b id="mq-count">3</b> waiting</span><span class="spacer"></span><span class="tiny muted">processed in order (FIFO)</span></div>
       <hr class="dash" style="margin:10px 0 4px;">
       <div id="jobqueue">
         <div class="jobrow" data-job="q1"><span class="jq-pos">1</span><div class="jq-main"><div class="jq-title">Re-order audio · <b>Big Buck Bunny (2008)</b></div><div class="jq-sub">4K remux · 12.1 GB · queued by Eyð · 14:03</div></div><span class="badge">queued</span><span class="btn sm ghost jq-cancel">Cancel</span></div>
@@ -577,18 +605,79 @@
     const left = Math.max(0, Math.round((100 - jp) * 2.4));
     if (jobff) jobff.textContent = 'frame=' + (52180 + Math.round(jp * 900)) + ' fps=734 time=00:' + String(12 + Math.floor(jp / 8)).padStart(2, '0') + ':20 speed=6.2x · ~' + Math.floor(left / 60) + 'm' + (left % 60) + 's left';
   }, 700);
+  /* queue counts — one source, so the pool chip, the tab badge and each lane never disagree */
+  const RUNNING = 2;
+  const Q = {
+    media:     { n: 3,  keep: 'Re-ordering audio · Sintel (2010)', what: 'audio re-orders & repairs' },
+    segments:  { n: 6,  keep: 'Detecting intro &amp; credits · Fjollerne S11E04', what: 'intro &amp; credits detections' },
+    subtitles: { n: 41, keep: null, what: 'subtitle pre-warms' },
+  };
+  const qTotal = () => Object.values(Q).reduce((s, q) => s + q.n, 0);
+  function paintCounts() {
+    document.getElementById('q-count').textContent = qTotal();
+    document.querySelectorAll('#viewseg .jobs-count').forEach(c => c.textContent = qTotal() + RUNNING);
+    document.querySelectorAll('.lane[data-lane]').forEach(l => {
+      const q = Q[l.dataset.lane];
+      l.querySelector('.lane-n').textContent = q.n;
+      l.querySelector('.lane-empty').hidden = q.n === 0;
+    });
+    document.getElementById('qe-open-all').classList.toggle('disabled', qTotal() === 0);
+    document.getElementById('mq-count').textContent = Q.media.n;
+  }
   function reindex() {
     const rows = [...document.querySelectorAll('#jobqueue .jobrow')];
     rows.forEach((r, i) => { const p = r.querySelector('.jq-pos'); if (p) p.textContent = i + 1; });
-    const n = rows.length;
-    document.getElementById('q-count').textContent = n;
-    document.querySelectorAll('#viewseg .jobs-count').forEach(c => c.textContent = n + 1);
+    Q.media.n = rows.length; paintCounts();
   }
   document.getElementById('jobqueue').addEventListener('click', e => {
     if (!e.target.closest('.jq-cancel')) return;
     const row = e.target.closest('.jobrow'); row.classList.add('leaving');
     setTimeout(() => { row.remove(); reindex(); }, 250);
   });
+
+  /* ---- empty queues: one panel, two ways in (all queues · one queue) ---- */
+  const qe = document.getElementById('qe'), qeList = document.getElementById('qe-list'), qeGo = document.getElementById('qe-go');
+  function openEmpty(only) {
+    document.getElementById('qe-title').textContent = only ? 'Empty the ' + only + ' queue?' : 'Empty queues';
+    qeList.innerHTML = Object.entries(Q).filter(([k]) => !only || k === only).map(([k, q]) => {
+      const off = q.n === 0;
+      return '<label class="qe-opt' + (off ? ' off' : '') + '">'
+        + '<input type="checkbox" data-q="' + k + '"' + (off ? ' disabled' : ' checked') + '>'
+        + '<span class="qe-q">' + k + '</span>'
+        + '<span class="qe-n">' + (off ? 'nothing waiting' : q.n + ' waiting') + '</span>'
+        + '<span class="qe-keep">' + (q.keep ? 'keeps running: <b>' + q.keep + '</b>' : 'nothing running') + '</span></label>';
+    }).join('');
+    qe.hidden = false; paintGo();
+  }
+  function picked() { return [...qeList.querySelectorAll('input:checked')].map(i => i.dataset.q); }
+  function paintGo() {
+    const n = picked().reduce((s, k) => s + Q[k].n, 0);
+    qeGo.textContent = n ? 'Remove ' + n + ' waiting job' + (n === 1 ? '' : 's') : 'Nothing picked';
+    qeGo.classList.toggle('disabled', !n);
+  }
+  qeList.addEventListener('change', paintGo);
+  document.getElementById('qe-open-all').addEventListener('click', () => { if (qTotal()) openEmpty(null); });
+  document.querySelectorAll('.lane-empty').forEach(b => b.addEventListener('click', () => openEmpty(b.closest('.lane').dataset.lane)));
+  document.getElementById('qe-cancel').addEventListener('click', () => { qe.hidden = true; });
+  qeGo.addEventListener('click', () => {
+    const ks = picked(); if (!ks.length) return;
+    const recent = document.getElementById('jobrecent');
+    const now = new Date(), hm = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
+    let removed = 0;
+    ks.forEach(k => {
+      const q = Q[k]; removed += q.n;
+      recent.insertAdjacentHTML('afterbegin', '<div class="jobrow"><span class="jq-ic" style="color:var(--ink-soft);">⌫</span><div class="jq-main"><div class="jq-title">Emptied the <b class="mono">' + k + '</b> queue · ' + q.n + ' waiting ' + q.what + ' removed</div><div class="jq-sub">by Jógvan · ' + hm + (q.keep ? ' · kept the running job — ' + q.keep : '') + '</div></div><span class="badge">emptied</span></div>');
+      const lane = document.querySelector('.lane[data-lane="' + k + '"] .lane-body');
+      lane.querySelectorAll('.lane-gone').forEach(x => x.remove());
+      lane.insertAdjacentHTML('beforeend', '<div class="lane-gone">Emptied ' + hm + ' · ' + q.n + ' removed' + (q.keep ? ' · the running job finishes' : '') + '</div>');
+      if (k === 'media') document.getElementById('jobqueue').innerHTML = '<div class="tiny muted" style="padding:14px 4px;">Nothing waiting. The re-order running above finishes on its own.</div>';
+      q.n = 0;
+    });
+    qe.hidden = true; paintCounts();
+    const t = document.createElement('div'); t.className = 'toast'; t.textContent = removed + ' waiting job' + (removed === 1 ? '' : 's') + ' removed · running jobs untouched'; document.body.appendChild(t); setTimeout(() => t.remove(), 2200);
+  });
+  paintCounts();
+  if (new URLSearchParams(location.search).get('view') === 'jobs') viewseg.querySelector('[data-view="jobs"]').click();
   document.getElementById('cancel-run').addEventListener('click', function () {
     this.textContent = 'Cancelling…'; this.classList.add('disabled');
   });
