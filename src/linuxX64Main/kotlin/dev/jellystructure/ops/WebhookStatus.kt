@@ -17,8 +17,9 @@ import kotlinx.serialization.json.Json
  * hit on the retired route. Small, persisted next to the database (FR-221-5) — never in `config.toml`.
  *
  * [findings] turns that into phase 212's `AdvisorFinding` shape with the silence rule: nothing while
- * deliveries succeed, nothing when no webhook is configured, nothing 30 quiet days after the last
- * deprecated hit.
+ * deliveries succeed, nothing when no webhook is configured, nothing 7 quiet days after the last
+ * deprecated hit (30 until the 2026-09-25 amendment — a week is long enough to see that the *arr
+ * connection is gone, and the operator has no way to dismiss the note sooner).
  */
 @Serializable
 data class WebhookTargetStatus(
@@ -56,7 +57,7 @@ data class OperatorFinding(
 object WebhookStatus {
     const val FAILURES_TO_RAISE = 3
     const val RECENT_FAILURE_WINDOW_MS = 60 * 60_000L
-    const val ARR_FINDING_WINDOW_MS = 30L * 24 * 3_600_000L
+    const val ARR_FINDING_WINDOW_MS = 7L * 24 * 3_600_000L
 
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true; prettyPrint = true }
     private var path: String? = null
@@ -105,10 +106,11 @@ object WebhookStatus {
 
     /**
      * FR-221-3/4 — the findings, or nothing. [configuredUrl] blank ⇒ no delivery finding (unconfigured is
-     * not broken). [jellyfinWebhookSince] is the Jellyfin webhook's first/last delivery for the *arr
-     * finding's wording; null ⇒ it has never delivered and the recommendation says so.
+     * not broken). [jellyfinWebhookLastAt] is the Jellyfin webhook's LAST delivery, in epoch **ms**
+     * (the ingest service keeps seconds — convert at the call site). It is held in memory only, so null
+     * means "not since jellystructure last started", not "never"; the wording says exactly that.
      */
-    fun findings(configuredUrl: String, jellyfinWebhookSince: Long?): List<OperatorFinding> {
+    fun findings(configuredUrl: String, jellyfinWebhookLastAt: Long?): List<OperatorFinding> {
         val out = ArrayList<OperatorFinding>()
         val now = clock()
         val url = configuredUrl.trim()
@@ -130,18 +132,22 @@ object WebhookStatus {
             }
         }
         for ((source, at) in data.arrLastHit) {
-            if (now - at > ARR_FINDING_WINDOW_MS) continue
+            val quietFor = now - at
+            if (quietFor > ARR_FINDING_WINDOW_MS) continue
             val name = source.replaceFirstChar { it.uppercase() }
-            val since = jellyfinWebhookSince?.let { "has been delivering since ${dateOf(it)}" } ?: "is the supported path (Settings → Download tools → Realtime ingest)"
+            val jellyfin = jellyfinWebhookLastAt?.let { "Jellyfin's webhook last delivered ${ago(now, it)}" }
+                ?: "Jellyfin's webhook has not delivered since jellystructure last started"
             out += OperatorFinding(
                 id = "arr-deprecated-$source",
-                summary = "$name is still configured to call jellystructure's deprecated webhook",
-                currentValue = "last hit ${ago(now, at)}; the Jellyfin webhook (phase 165) $since",
-                costHere = "a redundant call per import that does nothing but nudge Jellyfin; the route will be retired",
+                summary = "$name is still calling jellystructure's old import webhook",
+                currentValue = "last call ${ago(now, at)}. This note clears itself ${ARR_FINDING_WINDOW_MS / 86_400_000L} days " +
+                    "after the last call, so ${until(ARR_FINDING_WINDOW_MS - quietFor)} if $name stops calling. $jellyfin.",
+                costHere = "one extra request per import that only asks Jellyfin to look for the file sooner; a later release removes this route",
                 navigationPath = "$name → Settings → Connect",
-                fieldLabel = "the jellystructure webhook connection",
-                recommendation = "remove the connection in $name; keep the Jellyfin webhook",
-                tradeoff = "none — the Jellyfin webhook already delivers what this used to",
+                fieldLabel = "the Webhook connection whose URL ends in /api/webhooks/$source",
+                recommendation = "delete that connection; leave Jellyfin's webhook as it is",
+                tradeoff = if (jellyfinWebhookLastAt != null) "nothing — Jellyfin's webhook already brings each import in"
+                           else "nothing, as long as Jellyfin's webhook works — check it with Test delivery now under Settings → Download tools → Realtime ingest",
             )
         }
         return out
@@ -158,20 +164,14 @@ object WebhookStatus {
         }
     }
 
-    private fun dateOf(ms: Long): String {
-        val days = ms / 86_400_000L
-        // civil-from-days (Howard Hinnant), enough for a date in a sentence
-        val z = days + 719_468
-        val era = (if (z >= 0) z else z - 146_096) / 146_097
-        val doe = z - era * 146_097
-        val yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365
-        val y = yoe + era * 400
-        val doy = doe - (365 * yoe + yoe / 4 - yoe / 100)
-        val mp = (5 * doy + 2) / 153
-        val d = doy - (153 * mp + 2) / 5 + 1
-        val m = if (mp < 10) mp + 3 else mp - 9
-        val yy = if (m <= 2) y + 1 else y
-        return "$yy-${m.toString().padStart(2, '0')}-${d.toString().padStart(2, '0')}"
+    /** How long until [ms] from now, rounded UP so "in 0 days" never appears while the note still shows. */
+    private fun until(ms: Long): String {
+        val s = ((ms + 999) / 1000).coerceAtLeast(1)
+        return when {
+            s < 3600 -> "within the hour"
+            s < 86_400 -> "in ${(s + 3599) / 3600} h"
+            else -> "in ${(s + 86_399) / 86_400} day${if ((s + 86_399) / 86_400 == 1L) "" else "s"}"
+        }
     }
 }
 

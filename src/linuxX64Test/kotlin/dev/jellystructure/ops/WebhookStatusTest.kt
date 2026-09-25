@@ -7,7 +7,8 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /** Phase 221 — verification 1: three failures raise the finding, one success clears it; a blank URL never
- *  raises it; the deprecated route's finding appears on a hit and not after 30 quiet days. */
+ *  raises it; the deprecated route's finding appears on a hit and not after 7 quiet days (30 until the
+ *  2026-09-25 amendment). */
 class WebhookStatusTest {
     private var now = 1_700_000_000_000L
     private val url = "http://hook.example:8585/notify"
@@ -41,15 +42,23 @@ class WebhookStatusTest {
     }
 
     @Test
-    fun `a deprecated arr hit is a finding for 30 days logged once per day`() {
+    fun `a deprecated arr hit is a finding for 7 days logged once per day`() {
+        val day = 24 * 3_600_000L
         assertTrue(WebhookStatus.recordArrHit("radarr"), "first hit of the day logs")
         assertFalse(WebhookStatus.recordArrHit("radarr"), "second hit the same day is silent")
-        val f = WebhookStatus.findings("", jellyfinWebhookSince = now - 5 * 24 * 3_600_000L)
+        val f = WebhookStatus.findings("", jellyfinWebhookLastAt = now - 5 * day)
         assertEquals(listOf("arr-deprecated-radarr"), f.map { it.id })
         assertTrue(f.single().summary.startsWith("Radarr"))
-        assertTrue(f.single().currentValue.contains("has been delivering since"))
-        now += 31L * 24 * 3_600_000L
-        assertTrue(WebhookStatus.findings("", null).isEmpty(), "silent after 30 quiet days")
+        assertTrue(f.single().currentValue.contains("so in 7 days if Radarr stops calling"), f.single().currentValue)
+        assertTrue(f.single().currentValue.contains("Jellyfin's webhook last delivered 5 days ago"), f.single().currentValue)
+        assertTrue(f.single().fieldLabel.endsWith("/api/webhooks/radarr"))
+        now += 6 * day + 12 * 3_600_000L
+        val late = WebhookStatus.findings("", null).single()
+        assertTrue(late.currentValue.contains("in 12 h"), "the countdown rounds up and never says 0 days: ${late.currentValue}")
+        assertTrue(late.currentValue.contains("has not delivered since jellystructure last started"))
+        assertTrue(late.tradeoff.contains("Test delivery now"), "no Jellyfin delivery on record ⇒ say how to check it")
+        now += 13 * 3_600_000L
+        assertTrue(WebhookStatus.findings("", null).isEmpty(), "silent after 7 quiet days")
         assertTrue(WebhookStatus.recordArrHit("radarr"), "a new day logs again")
     }
 }

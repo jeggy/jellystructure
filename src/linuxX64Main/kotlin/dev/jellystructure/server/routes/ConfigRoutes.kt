@@ -147,7 +147,9 @@ fun Route.configureConfigRoutes(
     // Phase 221 (FR-221-2/3/4) — the standing status line and the findings (empty = silent).
     get("/config/webhook-status") {
         val url = configStore.current.behavior.notificationsWebhook.trim()
-        val since = realtimeIngest?.lastWebhookReceivedAt
+        // lastWebhookReceivedAt is epoch SECONDS; findings() takes ms (it was passed raw until 2026-09-25,
+        // which dated a working Jellyfin webhook to January 1970).
+        val since = realtimeIngest?.lastWebhookReceivedAt?.let { it * 1000 }
         call.respond(WebhookStatusResponse(
             configured = url.isNotBlank(),
             target = if (url.isNotBlank()) dev.jellystructure.ops.WebhookStatus.target(url) else null,

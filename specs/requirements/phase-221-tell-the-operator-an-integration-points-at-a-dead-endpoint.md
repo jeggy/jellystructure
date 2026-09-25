@@ -53,7 +53,8 @@ since when, the reason, and the field to fix. It clears itself on the next succe
 deliveries succeed and silent when `notifications_webhook` is blank — unconfigured is not broken.
 
 **FR-221-4 — The deprecated *arr route becomes a finding, not a log line.** Each hit records `last hit
-at <time> from radarr|sonarr`. When hit within the last 30 days, one finding: *"Radarr is still
+at <time> from radarr|sonarr`. When hit within the last **7** days (30 until the 2026-09-25
+amendment below), one finding: *"Radarr is still
 configured to call jellystructure's deprecated webhook; the Jellyfin webhook (phase 165) has been
 delivering since <date>. Remove the connection in Radarr → Settings → Connect."* Silent otherwise.
 The per-hit WARN drops to one INFO per day per source.
@@ -71,7 +72,7 @@ in `config.toml`.
 ## Verification
 
 1. Unit: three failures raise the finding, one success clears it; a blank URL never raises it; the
-   deprecated route's finding appears on a hit and not after 30 quiet days.
+   deprecated route's finding appears on a hit and not after 7 quiet days.
 2. Live: point the webhook at a closed port, run a scan, see the status line and the finding; fix the
    URL, run again, see both clear.
 
@@ -97,9 +98,39 @@ in `config.toml`.
   `advisorFindingHtml` (now `internal`) under the field and on the Dashboard (`#dash-findings`), and
   literally empty while deliveries succeed or the URL is blank.
 - **FR-221-4** — `handleArrWebhook` records the hit per source and writes one INFO line per source per
-  day (the per-hit WARN is gone); `arr-deprecated-<source>` is a finding for 30 days after the last hit,
+  day (the per-hit WARN is gone); `arr-deprecated-<source>` is a finding for 30 days (7 since the
+  2026-09-25 amendment) after the last hit,
   worded with the Jellyfin webhook's own last delivery (`RealtimeIngestService.lastWebhookReceivedAt`)
   when it has one.
 - **FR-221-5** — everything above lives in memory with one small JSON file next to the database
   (`<dataDir>/webhook-status.json`); `config.toml` is untouched.
 - **Verification 2 (live)** was not run — no deploy this session.
+
+## Amendment (2026-09-25) — a week, not a month, and the note says when it will go
+
+The owner read the Sonarr finding and asked the one question it left open:
+*how long do I need to wait before this message goes away?* The note had no answer, no dismiss, and a
+30-day window, so an operator who had already deleted the Sonarr connection would keep reading the
+same instruction for a month. Owner decision: **7 days**. Changed with it, in `WebhookStatus.findings`:
+
+- **`ARR_FINDING_WINDOW_MS` = 7 days.** A week is still long enough that an *arr which imports weekly
+  keeps the note up between imports; a later hit restarts the clock, as before.
+- **The note states its own expiry:** *"last call 2 days ago. This note clears itself 7 days after the
+  last call, so in 5 days if Sonarr stops calling."* Rounded up, so it never says *in 0 days* while it
+  is still showing.
+- **Plain wording.** *"(phase 165)"* is gone from operator-facing text; *Where* names the connection by
+  the URL an operator can see in Sonarr (*the Webhook connection whose URL ends in
+  /api/webhooks/sonarr*); *Costs here* says what the call does (*asks Jellyfin to look for the file
+  sooner*).
+- **The Jellyfin half was wrong twice, now fixed.** (1) `RealtimeIngestService.lastWebhookReceivedAt`
+  is epoch **seconds** and was passed to `findings()` as milliseconds, so a working Jellyfin webhook
+  would have been reported as *delivering since 1970-01-21*; the call site in `ConfigRoutes` now
+  converts. (2) The value is the **last** delivery, not the first, and it lives in memory only — so the
+  wording is *"Jellyfin's webhook last delivered 3 h ago"*, and when it is null *"has not delivered
+  since jellystructure last started"*, never *"has never delivered"*.
+- **You lose** no longer claims *nothing* unconditionally. With a Jellyfin delivery on record it says
+  so; without one it says *nothing, as long as Jellyfin's webhook works* and points at **Test delivery
+  now** under Settings → Download tools → Realtime ingest.
+
+`WebhookStatusTest`'s *arr case covers the 7-day cutoff, the rounded-up countdown, both Jellyfin
+wordings and the *Where* URL.
