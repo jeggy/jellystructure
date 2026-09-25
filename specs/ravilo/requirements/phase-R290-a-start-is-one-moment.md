@@ -5,10 +5,12 @@
 
 ## Status
 
-`✓ Built` 2026-09-25 from the dev review below (all seven items); **not yet frame-captured on a device** —
-the stue TV was in standby when the release build (`1.38-14-g34d63619-dirty`, dex guard 230/250) was
-ready, and a living-room TV is not woken at 07:00 for a test. The device rows of §Verification are the
-owner's. `Planned` when written 2026-09-24 from the soveværelse-TV sweep (Play Store v1.36 and a debug
+`✓ Built` 2026-09-25 from the dev review below (all seven items). **Frame-captured on the stue TV 2026-09-25
+07:29** (release build `1.38-14-g34d63619-dirty`, dex guard 230/250), a direct-play episode resumed from the
+detail page: at 1.3 s the start screen alone (pulse · `S1 · E1` · title · sweep · *Loading…*, no chrome, no seek
+bar); at 2.5 s the film with the chrome at **0:49**, the resume point — never 0:00; Back out clean. The
+transcode-with-remembered-audio case (FR-R290-4's restream) was not reproduced in this capture and stays on the
+owner's device list. `Planned` when written 2026-09-24 from the soveværelse-TV sweep (Play Store v1.36 and a debug
 build of `1.37-6-g2c2aca48`, both reproduced). **Dev-reviewed 2026-09-24 against `main` `9d2636bb`.**
 Pairs with **R291** (instant audio switching), which removes the most common cause of the third moment
 below.
