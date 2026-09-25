@@ -35,7 +35,7 @@ private const val PLAYSTATE_ID_BATCH = 100
 const val EVENTS_PREV_HEADER = "X-Ravilo-Events-Prev"
 
 class TvApiClient(
-    private val client: HttpClient,
+    client: HttpClient,
     val baseUrl: String,
     private val deviceToken: () -> String?,
     private val wsClient: HttpClient = client,
@@ -44,6 +44,8 @@ class TvApiClient(
     // tizen · cast. Each entry point passes its own; the version is never passed (see identify()).
     private val platform: String = "unknown",
 ) {
+    /** R305 — every REST call goes through here, detached from its caller's job (see [DetachedHttp]). */
+    private val client = DetachedHttp(client)
 
     // ─── Login (no auth) ─────────────────────────────────────────────────────
 
