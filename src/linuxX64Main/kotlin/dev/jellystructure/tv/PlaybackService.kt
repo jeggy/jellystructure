@@ -342,6 +342,38 @@ class PlaybackService(
 ) {
     private val writer: PlaybackWriter? = writerScope?.let { PlaybackWriter(it, JellyfinSink()) }
 
+    /** R291 (FR-R291-2) — the composed masters behind `/api/tv/stream/{id}/master.m3u8`, and the audio
+     *  rendition sessions phase 180's teardown must stop one by one. */
+    val audioRenditions = AudioRenditions(jellyfinClient::fetchPlaylist)
+
+    /** Phase 180 + R291 — releases the encode AND every audio rendition job minted for it: one
+     *  `DELETE /Videos/ActiveEncodings` stops one job (measured), so each rendition by its own session. */
+    private suspend fun releaseEncodes(jellyfinBase: String, token: String, identity: JellyfinDeviceIdentity, jellyfinPlaySessionId: String) {
+        jellyfinClient.stopActiveEncoding(jellyfinBase, token, identity, jellyfinPlaySessionId)
+        for (s in audioRenditions.sessionsFor(jellyfinPlaySessionId)) jellyfinClient.stopActiveEncoding(jellyfinBase, token, identity, s)
+    }
+
+    /**
+     * R291 (FR-R291-2) — for a player that switches HLS audio renditions in place (it said so), a
+     * transcode's ticket points at the composed master instead of Jellyfin's own: every audio track, the
+     * carried one muxed. Untouched for direct play (the container already has every track), for one audio
+     * track, for a player that did not ask, and for a start the viewer has already abandoned (FR-180-3).
+     */
+    private suspend fun withRenditions(
+        ticket: StreamTicket, capabilities: ClientCapabilities?, jellyfinBase: String, jellyfinId: String,
+        token: String, identity: JellyfinDeviceIdentity, jellyfinPlaySessionId: String?, abandoned: Boolean,
+    ): StreamTicket {
+        if (ticket.directPlay || capabilities?.hlsAudioRenditions != true || jellyfinPlaySessionId == null || abandoned) return ticket
+        val master = ticket.hlsUrl ?: return ticket
+        val id = audioRenditions.register(
+            jellyfinBase, jellyfinId, mediaSourceId = jellyfinId, token = token, identity = identity,
+            jellyfinPlaySessionId = jellyfinPlaySessionId, jellyfinMasterUrl = master,
+            audio = ticket.audio, carriedIndex = ticket.audioStreamIndex, expiresAt = ticket.expiresAt,
+        ) ?: return ticket
+        Logger.info("playback: item=$jellyfinId audio renditions=${ticket.audio.size} (R291)", "tv")
+        return ticket.copy(hlsUrl = "/api/tv/stream/$id/master.m3u8", audioRenditions = true)
+    }
+
     /** R248 — true when stops are queued on the [PlaybackWriter] (production): the Home-feed
      *  invalidation then runs from [onStopLanded] once Jellyfin has acknowledged the stop, not from the
      *  route right after it responds — before this the route's own invalidation raced the queued write
@@ -378,7 +410,7 @@ class PlaybackService(
             )
             // Phase 180 — release the encode once the stop has landed (idempotent; a release for a
             // session that never transcoded or already ended is a success, not an error).
-            if (ok && w.jellyfinPlaySessionId != null) jellyfinClient.stopActiveEncoding(jellyfinBase, token, identity, w.jellyfinPlaySessionId)
+            if (ok && w.jellyfinPlaySessionId != null) releaseEncodes(jellyfinBase, token, identity, w.jellyfinPlaySessionId)
             // R248 — Jellyfin has the stop: now (and only now) the Home feed can be rebuilt to show it.
             if (ok) onStopLanded?.let { hook -> runCatching { hook(w.device, w.jellyfinId) }.onFailure { Logger.warn("Home refresh after stop failed for ${w.jellyfinId}: ${it.message}", "tv") } }
             return ok
@@ -537,7 +569,7 @@ class PlaybackService(
             }
         }
 
-        return StreamTicket(
+        return withRenditions(StreamTicket(
             jellyfinBaseUrl = jellyfinBase,
             // R271 — empty, never the token. See StreamTicket.accessToken's own doc for why the field
             // still exists at all.
@@ -553,7 +585,7 @@ class PlaybackService(
             expiresAt = nowMs() + TICKET_TTL_MS,
             // Phase 253 (FR-253-2) — which audio a single-audio (transcoded) stream carries.
             audioStreamIndex = if (needsTranscode) carriedAudioIndex(source?.transcodingUrl, null) else null,
-        )
+        ), capabilities, jellyfinBase, jellyfinId, token, identity, jellyfinPlaySessionId, abandoned = startResult.stopAlreadyArrived)
     }
 
     suspend fun reportProgress(device: DeviceData, jellyfinId: String, positionMs: Long, isPaused: Boolean) {
@@ -634,7 +666,7 @@ class PlaybackService(
             positionMs * TICKS_PER_MS, jellyfinId, identity, playSessionIdFor(device, jellyfinId),
         )
         if (jellyfinPlaySessionId != null) {
-            jellyfinClient.stopActiveEncoding(jellyfinBase, token, identity, jellyfinPlaySessionId)
+            releaseEncodes(jellyfinBase, token, identity, jellyfinPlaySessionId)
         }
     }
 
@@ -1002,7 +1034,7 @@ class PlaybackService(
             // is already in the pixels, so no text track may render beside it.
             burnedSubtitleIndex = subtitleStreamIndex,
             audioStreamIndex = carriedAudioIndex(transcodingUrl, audioStreamIndex),
-        )
+        ).let { withRenditions(it, capabilities, jellyfinBase, jellyfinId, token, identity, playbackInfo?.playSessionId, abandoned = startResult.stopAlreadyArrived) }
     }
 
     /**
@@ -1058,7 +1090,7 @@ class PlaybackService(
             trickplayUrl = null,
             expiresAt = nowMs() + TICKET_TTL_MS,
             audioStreamIndex = if (needsTranscode) carriedAudioIndex(source?.transcodingUrl, audioStreamIndex) else null,
-        )
+        ).let { withRenditions(it, capabilities, jellyfinBase, jellyfinId, token, identity, playbackInfo?.playSessionId, abandoned = startResult.stopAlreadyArrived) }
     }
 
     /**

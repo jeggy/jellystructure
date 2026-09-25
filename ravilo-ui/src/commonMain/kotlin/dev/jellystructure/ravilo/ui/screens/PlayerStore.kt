@@ -7,6 +7,7 @@ import dev.jellystructure.ravilo.ui.seams.detectLinkState
 import dev.jellystructure.ravilo.ui.seams.supportedAudioCodecs
 import dev.jellystructure.ravilo.ui.seams.supportedVideoCodecs
 import dev.jellystructure.ravilo.ui.seams.playsHlsForAirPlay
+import dev.jellystructure.ravilo.ui.seams.switchesHlsAudioRenditions
 import dev.jellystructure.ravilo.ui.seams.supportsHevcOverHls
 import dev.jellystructure.ravilo.ui.seams.supportsEmbeddedTextSubtitles
 import dev.jellystructure.shared.tv.CardPlayState
@@ -156,6 +157,8 @@ class PlayerStore(private val apiClient: TvApiClient) {
                         videoCodecs = supportedVideoCodecs(),
                         hlsOnly = airplayHls,
                         hlsSubtitles = airplayHls,
+                        // R291 (FR-R291-2) — every audio track in one master, switched in the player.
+                        hlsAudioRenditions = switchesHlsAudioRenditions(),
                         // R283 — what this build really decodes (the Android actual adds TrueHD/DTS
                         // when the FFmpeg extension is installed); was a literal that omitted both.
                         audioCodecs = supportedAudioCodecs(),
@@ -199,7 +202,7 @@ class PlayerStore(private val apiClient: TvApiClient) {
                     }
                     qoeDirectPlay = ticket.directPlay
                     startHeartbeat(itemId, positionProvider, isPausedProvider)
-                    _state.value = PlayerSessionState.Ready(ticket)
+                    _state.value = PlayerSessionState.Ready(ticket.onThisServer())
                     return@launch
                 }
                 val cause = result.exceptionOrNull()
@@ -228,6 +231,11 @@ class PlayerStore(private val apiClient: TvApiClient) {
         }
     }
 
+    /** R291 (FR-R291-2) — a composed master is a path on THIS server (`/api/tv/stream/{id}/master.m3u8`):
+     *  resolved against the address the app already talks to, never a host the server guessed. */
+    private fun StreamTicket.onThisServer(): StreamTicket =
+        hlsUrl?.takeIf { it.startsWith("/") }?.let { copy(hlsUrl = apiClient.baseUrl.trimEnd('/') + it) } ?: this
+
     // R282 (FR-R282-5) — what startSession last told the server this device can do, re-sent with every
     // restream so an un-burn (252) negotiates as the real device instead of conservative defaults.
     private var lastCapabilities: ClientCapabilities? = null
@@ -240,7 +248,7 @@ class PlayerStore(private val apiClient: TvApiClient) {
         scope.launch {
             _state.value = PlayerSessionState.Loading()
             _state.value = runCatching {
-                PlayerSessionState.Ready(apiClient.restream(itemId, subtitleStreamIndex, positionMs, lastCapabilities, audioStreamIndex))
+                PlayerSessionState.Ready(apiClient.restream(itemId, subtitleStreamIndex, positionMs, lastCapabilities, audioStreamIndex).onThisServer())
             }.getOrElse {
                 val f = classifyLoadFailure(it)
                 PlayerSessionState.Error(it.message ?: "", f.kind, f.status)

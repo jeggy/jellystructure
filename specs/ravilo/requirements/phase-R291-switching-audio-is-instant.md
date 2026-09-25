@@ -40,6 +40,33 @@ soveværelse-TV sweep (owner: *"we even want this to be instant"*). **Dev-review
   restream) is not yet captured on a device — it needs a file the stue TV cannot direct-play with a
   remembered non-default track.
 
+### Build (2026-09-25, FR-R291-2 — mechanism 1)
+
+Built after the measurements below (item 4 first, as the review asked):
+
+- **Backend — `AudioRenditions`.** For a client that declares the new `hls_audio_renditions` capability
+  and a start that transcodes with two or more audio tracks, the ticket's `hls_url` becomes
+  `/api/tv/stream/{id}/master.m3u8` on this server (`audio_renditions = true`), and `composeMaster` writes
+  what Jellyfin cannot: Jellyfin's own video variant, joined to an `aud` group whose DEFAULT is the audio
+  the transcode already carries (muxed, no URI), plus one `EXT-X-MEDIA` per other track pointing at
+  `/Audio/{id}/main.m3u8?AudioStreamIndex=N` on **its own `PlaySessionId`** (`{session}a{N}`, same device
+  id). Others are `AUTOSELECT=NO`, so no player swaps track by the device's locale; `NAME` is
+  `a{position} {label}` — unique (Media3 merges renditions that share a name) and the key the player maps
+  back to the ticket. All three ticket paths (start, burn-in restream, un-burn/audio restream) go through
+  one `withRenditions`. The route is public like the image proxy (a player cannot put a device token on a
+  playlist fetch); its 128-bit id is the capability and lives as long as the ticket; what it serves carries
+  only Jellyfin's own credential, exactly as `hls_url` did. `AudioRenditionsTest` (4).
+- **Phase 180's teardown stops every rendition job:** one `DELETE /Videos/ActiveEncodings` stops one job
+  (measured), so `releaseEncodes` stops the video's session and then each rendition session the service
+  handed out — on the direct path and the queued writer's path alike.
+- **Android — the pick is a track selection.** `PlayerStore` resolves the server-relative URL against the
+  address the app already uses; PlayerScreen no longer calls a rendition stream "single-audio"
+  (`sessionAudioIndex` is null when `audio_renditions`), so R284's restream is skipped and the pick goes to
+  `selectAudioTrack`, which finds the rendition by its `a{position}` name (Media3 lists the muxed track
+  first and the renditions after it, not in the ticket's order).
+- **FR-R291-4:** the web (hls.js / Safari) and the two receivers do **not** declare the capability and keep
+  R284's restream — neither is built or measured, and this note is the "says so" the FR requires.
+
 ## What happens today
 
 On **direct play** switching audio is already instant: every track is in the file and ExoPlayer selects

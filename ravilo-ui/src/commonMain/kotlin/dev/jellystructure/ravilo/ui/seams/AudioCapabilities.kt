@@ -43,3 +43,11 @@ internal val BASE_VIDEO_CODECS = listOf("h264", "hevc", "vp9", "av1")
  * keep what they negotiated before.
  */
 expect fun playsHlsForAirPlay(): Boolean
+
+/**
+ * R291 (FR-R291-2) — this player switches HLS audio renditions in place, so a transcode may offer every
+ * audio track in one master and an audio pick is a track selection, not a new stream. Only where it has
+ * been built and measured: FR-R291-4's rule is that a platform that cannot falls back to R284's restream
+ * and says so, never silently.
+ */
+expect fun switchesHlsAudioRenditions(): Boolean

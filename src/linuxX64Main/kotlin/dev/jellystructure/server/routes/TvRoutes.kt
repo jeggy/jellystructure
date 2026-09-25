@@ -39,6 +39,7 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.request.receive
 import io.ktor.server.response.respond
+import io.ktor.server.response.respondText
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.delete
 import io.ktor.server.routing.get
@@ -1208,6 +1209,13 @@ fun Route.tvRoutes(
     // ── Channel-logo asset library (R36 §F) ──────────────────────────────────
     // R133: public artwork — serves jellystructure's OWN on-disk poster/backdrop/logo (resized + cached),
     // no Jellyfin call (AuthPlugin OPEN_API_PATHS; Coil can't attach a token, images aren't sensitive).
+    // R291 (FR-R291-2) — every audio track as an HLS rendition; public, the id is the capability (see AuthPlugin).
+    get("/tv/stream/{id}/master.m3u8") {
+        val id = call.parameters["id"] ?: return@get call.respond(HttpStatusCode.NotFound)
+        val text = playbackService.audioRenditions.master(id) ?: return@get call.respond(HttpStatusCode.NotFound)
+        call.respondText(text, ContentType.parse("application/vnd.apple.mpegurl"))
+    }
+
     get("/tv/image/{itemId}/{type}") {
         val itemId = call.parameters["itemId"] ?: return@get call.respond(HttpStatusCode.BadRequest)
         val type   = call.parameters["type"]   ?: return@get call.respond(HttpStatusCode.BadRequest)

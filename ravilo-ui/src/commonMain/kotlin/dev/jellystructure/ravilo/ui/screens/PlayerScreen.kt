@@ -994,7 +994,9 @@ fun PlayerScreen(
         // burned-in one ("two subtitles at once", Honeyman). An un-burn ticket re-arms the resolver.
         bk.burnedSubIndex = s.ticket.burnedSubtitleIndex
         // R284 (FR-R284-1) — on a single-audio session the ticket, not the player, knows the tracks.
-        bk.sessionAudioIndex = s.ticket.audioStreamIndex.takeIf { !s.ticket.directPlay }
+        // R291 (FR-R291-2) — a master with every audio track as a rendition carries no single track: an
+        // audio pick is a player track selection, exactly as on direct play, never a restream.
+        bk.sessionAudioIndex = s.ticket.audioStreamIndex.takeIf { !s.ticket.directPlay && !s.ticket.audioRenditions }
         bk.sessionAudio = if (bk.sessionAudioIndex != null) s.ticket.audio else emptyList()
         carriedAudioPosition(bk.sessionAudio, bk.sessionAudioIndex)?.let { selectedAudio = it }
         if (s.ticket.burnedSubtitleIndex != null) {

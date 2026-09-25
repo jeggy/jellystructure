@@ -376,6 +376,21 @@ actual class RaviloPlayer actual constructor() {
     actual fun selectAudioTrack(index: Int) {
         val exo = engine ?: return
         val tracks = exo.currentTracks
+        // R291 (FR-R291-2) — a composed master names every rendition `a{position} …` (the backend's
+        // composeMaster), because Media3 lists the muxed audio first and the audio-only renditions after
+        // it, not in the ticket's order. A rendition is found by that name; anything else (a file's own
+        // tracks on direct play) keeps the ordinal match below.
+        for (i in 0 until tracks.groups.size) {
+            val group = tracks.groups[i]
+            if (group.type != C.TRACK_TYPE_AUDIO) continue
+            if ((0 until group.length).any { t -> group.getTrackFormat(t).label?.startsWith("a$index ") == true || group.getTrackFormat(t).label == "a$index" }) {
+                exo.trackSelectionParameters = exo.trackSelectionParameters
+                    .buildUpon()
+                    .setOverrideForType(TrackSelectionOverride(group.mediaTrackGroup, 0))
+                    .build()
+                return
+            }
+        }
         var audioGroupIdx = 0
         for (i in 0 until tracks.groups.size) {
             val group = tracks.groups[i]

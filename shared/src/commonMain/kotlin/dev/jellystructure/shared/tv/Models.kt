@@ -83,6 +83,13 @@ data class ClientCapabilities(
      * listed in `master.m3u8` as a subtitles rendition, and fetching the manifest starts no encode.
      */
     @SerialName("hls_subtitles") val hlsSubtitles: Boolean = false,
+    /**
+     * R291 (FR-R291-2) — this player switches between HLS **audio renditions** in place (Media3 does), so a
+     * transcode with several audio tracks is offered all of them in one master and an audio pick costs
+     * one audio-only segment instead of a new ~12 s start. Opt-in: a player that does not declare it keeps
+     * R284's restream, exactly as before (FR-R291-4 — the web and the receivers, until each is measured).
+     */
+    @SerialName("hls_audio_renditions") val hlsAudioRenditions: Boolean = false,
     // Bug fix: an HDR10/HDR10+ (PQ) or HLG source used to always direct-play regardless of whether
     // the device could actually display it correctly — Jellyfin's DeviceProfile declared no VideoRange
     // constraint at all, so it never had a reason to tone-map-transcode to SDR. These default to
@@ -250,6 +257,14 @@ data class StreamTicket(
      * the player selects. It is how a picker shows — and changes — the audio of an HLS session.
      */
     @SerialName("audio_stream_index") val audioStreamIndex: Int? = null,
+    /**
+     * R291 (FR-R291-2) — this transcode's master lists EVERY audio track as an HLS rendition (the carried
+     * one muxed, the others audio-only; see the backend's `AudioRenditions`), so the player switches audio
+     * by selecting a rendition instead of asking for a new stream. [hlsUrl] is then a path on this server,
+     * `/api/tv/stream/{id}/master.m3u8`, which the client resolves against its own server address. Set
+     * only for a client that declared [ClientCapabilities.hlsAudioRenditions]; false everywhere else.
+     */
+    @SerialName("audio_renditions") val audioRenditions: Boolean = false,
 )
 
 @Serializable

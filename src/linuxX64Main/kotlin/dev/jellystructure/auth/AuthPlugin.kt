@@ -56,6 +56,11 @@ private val OPEN_API_PATHS = listOf(
     // Phase 147 — Live TV channel logos (proxied from Jellyfin's ImageTags.Primary); same reasoning as
     // channel-logos/image above — not sensitive, and an <img>/Coil request can't carry a device token.
     "/api/tv/livetv/logo/",
+    // R291 (FR-R291-2) — the composed HLS master a player fetches for a transcode with several audio
+    // tracks. Media3/hls.js cannot attach a device token to a playlist fetch; the path's 128-bit random
+    // id is the capability, lives as long as the ticket, and what it returns carries only Jellyfin's own
+    // credential the ticket's `hls_url` already carries.
+    "/api/tv/stream/",
     // Phase 114 — *arr webhooks: authenticated by their own per-install secret query param, since *arr's
     // webhook sender can't attach a cookie/device-token/API-key like every other caller.
     "/api/webhooks/",

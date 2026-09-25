@@ -253,6 +253,16 @@ class JellyfinClient {
     // Phase 129 (FR-OPS1 §B.1) — shared client, one idle connection pool for all outbound callers.
     private val http = OutboundHttp.client
 
+    /**
+     * R291 (FR-R291-2) — the text of one of Jellyfin's own HLS playlists, for [dev.jellystructure.tv.AudioRenditions]
+     * to rewrite. [url] carries its own credential (Jellyfin templates `ApiKey=` into a TranscodingUrl), so
+     * no header is sent. A master playlist starts no encode (measured 2026-09-24). Null on any failure.
+     */
+    suspend fun fetchPlaylist(url: String): String? = runCatching {
+        val r = httpGet(url)
+        if (r.status.isSuccess()) r.bodyAsText() else null
+    }.getOrNull()
+
     suspend fun authenticateByName(
         baseUrl: String,
         username: String,

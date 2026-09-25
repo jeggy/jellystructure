@@ -22,3 +22,6 @@ actual fun supportedVideoCodecs(): List<String> = BASE_VIDEO_CODECS
 
 /** R265 — never: AirPlay is Apple's, and this player takes files as well as HLS. */
 actual fun playsHlsForAirPlay(): Boolean = false
+
+/** R291 — Media3 plays a master's EXT-X-MEDIA audio renditions and switches them by track selection. */
+actual fun switchesHlsAudioRenditions(): Boolean = true
