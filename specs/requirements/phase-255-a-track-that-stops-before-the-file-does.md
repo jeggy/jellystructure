@@ -31,6 +31,17 @@ never a list position — 254's own mislabelling bug; open question 4's premise 
   absent from the window is resolved at its tag end (±10 s) or by a binary search of at most eight 60 s
   windows; when *no* stream reaches the window (kind E or an incomplete download) the lead stream's end is
   searched first and every stream re-read around it.
+- **FR-255-3, corrected the same day from the first sweep's results:** `-read_intervals` reads from wherever
+  the seek *lands*, not from the requested time. On a file whose cues stop early (a matroska whose header said
+  24 min while its content ran 42 — the cues ended at 700 s; an AVI; an old MP4) every seek past the last cue
+  answered with packets ending at the same early time, and the first pass called five such files kind E. A
+  window's packets now count only when they sit at or after the requested start; a stream's tag end is
+  accepted only when its packets really stop inside that window; and everything still unresolved gets the one
+  honest answer — a single sequential read of the file, reduced to one last timestamp per stream by `awk` in
+  the same pipe. The binary search is gone (its result was the landing point, not the end). Cost: a demux pass
+  for the rare file seeking cannot resolve (6 of the first 6,705). One shape the spec does not name, seen on the
+  way: a **header shorter than its content** (the 24-min header on a 42-min file) — no finding today, worth its
+  own line later.
 - **FR-255-4 — stored per file** (`FileTrackCoverage.sq`, migration `52.sqm`): `file_track_coverage(path,
   size, mtime, checked_at, content_end_ms, header_ms, findings JSON)`; current only while size and mtime
   match; three states (`findings` · `clean` · `unchecked`), unchecked never counted as fine.

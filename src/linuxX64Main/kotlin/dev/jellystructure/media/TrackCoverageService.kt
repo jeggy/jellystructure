@@ -139,20 +139,23 @@ class TrackCoverageService(private val db: JellystructureDb, private val integri
                 )
             }.filterNot { TrackCoverage.isCoverArt(it) }
         if (real.isEmpty() || headerSec == null) return null
-        // The tail window: any stream with packets in [D−60, D] reaches the end.
-        val tail = windowEnds(path, null, (headerSec - 60.0).coerceAtLeast(0.0), 60.0)
-        val ends = HashMap<Int, Double>(tail)
-        var contentEndSec: Double? = tail.values.maxOrNull()
-        if (contentEndSec == null) {
-            // Nobody reached the header's end: kind E or an incomplete download. Find where the content
-            // ends on the lead stream, then read every stream around it.
-            val lead = (real.firstOrNull { it.kind == TrackKind.VIDEO } ?: real.first())
-            contentEndSec = lastPacketSec(path, lead.index, lead.hintMs?.let { it / 1000.0 }, headerSec)
-            if (contentEndSec != null) ends += windowEnds(path, null, (contentEndSec - 60.0).coerceAtLeast(0.0), 120.0)
-        }
+        // The tail window: any stream with packets in [D−60, D] reaches the end. `-read_intervals` reads
+        // from wherever the seek LANDS, not from the requested time (measured 2026-09-25: a matroska whose
+        // cues stop at 700 s answers every seek past it with packets ending at 702 s, while its content runs
+        // to 2558 s), so a window's packets count only when they sit at or after the requested start.
+        val tailStart = (headerSec - 60.0).coerceAtLeast(0.0)
+        val ends = HashMap<Int, Double>(windowEnds(path, null, tailStart, 60.0).filterValues { it >= tailStart })
+        // A stream absent from the tail: the tag's own end first, accepted only when the packets really stop
+        // inside that window (a landing before it, or a stream that runs on past it, both say nothing).
         for (s in real) if (s.index !in ends) {
-            lastPacketSec(path, s.index, s.hintMs?.let { it / 1000.0 }, headerSec)?.let { ends[s.index] = it }
+            val hs = s.hintMs?.let { it / 1000.0 } ?: continue
+            val start = (hs - 10.0).coerceAtLeast(0.0)
+            windowEnds(path, s.index, start, 20.0)[s.index]?.takeIf { it >= start && it < start + 19.0 }?.let { ends[s.index] = it }
         }
+        // Everything still unresolved gets the one honest answer when seeking cannot reach the end — a
+        // cue-less matroska, an AVI, a header shorter than the content, or a track that truly stops early:
+        // a single sequential read of the file, reduced to one last timestamp per stream.
+        if (real.any { it.index !in ends }) sequentialEnds(path)?.forEach { (i, e) -> if (i !in ends) ends[i] = e }
         val measured = real.map { it.copy(measuredEndMs = ends[it.index]?.let { e -> (e * 1000).toLong() }) }
         val findings = TrackCoverage.classify((headerSec * 1000).toLong(), measured)
         val after = FileIntegrityService.stampOf(path) ?: return null
@@ -183,19 +186,21 @@ class TrackCoverageService(private val db: JellystructureDb, private val integri
         return ends
     }
 
-    /** FR-255-3's bounded follow-up: the tag's end first (±10 s), else a binary search of at most 8 probes. */
-    private suspend fun lastPacketSec(path: String, streamIndex: Int, hintSec: Double?, headerSec: Double): Double? {
-        if (hintSec != null && hintSec > 0) {
-            windowEnds(path, streamIndex, (hintSec - 10.0).coerceAtLeast(0.0), 20.0)[streamIndex]?.let { return it }
+    /** The last packet time per stream over the whole file: `ffprobe` streaming every packet through `awk`
+     *  inside the shell, so the process reads the file once and jellystructure reads a dozen lines. */
+    private suspend fun sequentialEnds(path: String): Map<Int, Double>? {
+        val cmd = "nice -n 19 ffprobe -v error -show_entries packet=stream_index,pts_time -of csv=p=0 '${FileIntegrity.esc(path)}' 2>/dev/null" +
+            " | awk -F, '\$2!=\"N/A\" && \$2+0>m[\$1]+0 {m[\$1]=\$2} END {for (k in m) print k\",\"m[k]}'"
+        val out = dev.jellystructure.ops.SegmentProcessGate.withPermit { captureShell(cmd) } ?: return null
+        val ends = HashMap<Int, Double>()
+        for (line in out.lineSequence()) {
+            val parts = line.trim().split(',')
+            if (parts.size < 2) continue
+            val idx = parts[0].toIntOrNull() ?: continue
+            val pts = parts[1].toDoubleOrNull() ?: continue
+            ends[idx] = pts
         }
-        var lo = 0.0; var hi = headerSec; var best: Double? = null
-        repeat(8) {
-            val mid = (lo + hi) / 2
-            val m = windowEnds(path, streamIndex, mid, 60.0)[streamIndex]
-            if (m != null) { if ((best ?: -1.0) < m) best = m; lo = mid } else hi = mid
-            if (hi - lo < 15.0) return best
-        }
-        return best
+        return ends.takeIf { it.isNotEmpty() }
     }
 
     private suspend fun probeStreams(path: String): CovProbe? {
