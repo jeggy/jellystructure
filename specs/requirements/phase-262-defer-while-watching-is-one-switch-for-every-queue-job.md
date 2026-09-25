@@ -36,6 +36,10 @@
 - **FR-262-3 — the toggle says what it covers.** Its hint on the Settings page names the background
   queue jobs (whole-file verification, track lengths, intro/credits detection, subtitle pre-warm) beside
   the scans it already named, and says the change takes effect at once.
+- **FR-262-5 — the pipeline's own wait obeys it live too.** A scheduled or realtime run sitting in
+  *Pipeline deferred — TV playing* re-reads the switch every 2 s (the same tick as *Run anyway*), so
+  switching it off releases the run at once; a manual *Scan library* click never deferred and still does
+  not. Before this the run read the setting once at its start.
 - **FR-262-4 — health tells the same story.** `/api/health`'s `job_queues.subtitles_deferred_by_playback`
   is computed with the same rule, so it can never say *deferred* while the switch is off.
 
@@ -56,4 +60,4 @@
 
 `MediaJobQueue.deferDecision()` (pure, companion) is the one rule; `Media_job.deferWhilePlaying()` — used by
 `claimNext` and the health snapshot — and the two sweeps' between-files check now go through it with
-`configStore.current.scan.deferWhilePlaying`. The Settings hint names the queue jobs. `DeferDecisionTest` (1).
+`configStore.current.scan.deferWhilePlaying`. The Settings hint names the queue jobs. `DeferDecisionTest` (1). `awaitPlaybackClear` takes a `stillDefers` lambda and checks it on every tick (FR-262-5).

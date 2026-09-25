@@ -96,13 +96,16 @@ object PipelineDeferOverride {
  * [deferEligible] — this function doesn't re-read config so a mid-wait config flip takes effect on the
  * NEXT deferral check, not by aborting one already in progress). A no-op (returns immediately) when
  * [deferEligible] is false or nothing is playing.
+ * Phase 262 (FR-262-5/FR-262-1) — [stillDefers] is read on EVERY tick now: switching `[scan]
+ * defer_while_playing` off releases a run already waiting, the same way it releases a queued job.
  */
-private suspend fun awaitPlaybackClear(deferEligible: Boolean, jobId: String, broadcaster: WsBroadcaster, scanTracker: ScanTracker) {
-    if (!deferEligible) return
+private suspend fun awaitPlaybackClear(stillDefers: () -> Boolean, jobId: String, broadcaster: WsBroadcaster, scanTracker: ScanTracker) {
+    if (!stillDefers()) return
     if (!dev.jellystructure.tv.isPlaybackActive()) return
     var announced = false
     while (dev.jellystructure.tv.isPlaybackActive()) {
         if (PipelineDeferOverride.consume(jobId)) break  // FR-178-4 "Run anyway"
+        if (!stillDefers()) break                        // Phase 262 — the switch was turned off mid-wait
         if (!announced) {
             val devices = dev.jellystructure.tv.activePlaybackDeviceNames()
             Logger.info("Pipeline deferred — TV playing (${devices.joinToString(", ")})", "pipeline")
@@ -219,7 +222,7 @@ suspend fun runPipeline(
     // Phase 178 §FR-178-2 — defer the whole run's start (covers scan_files' probe-heavy work, which
     // isn't itself a skippable step — see RunTarget.Library below) rather than starting it only to have
     // it compete with a TV for disk I/O the moment it begins.
-    awaitPlaybackClear(deferEligible, jobId, broadcaster, scanTracker)
+    awaitPlaybackClear({ deferEligible && configStore.current.scan.deferWhilePlaying }, jobId, broadcaster, scanTracker)
 
     val workingSet: List<MediaItem> = when (target) {
         is RunTarget.Library -> {
@@ -337,7 +340,7 @@ suspend fun runPipeline(
             "fetch_artwork" -> {
                 // Phase 178 §FR-178-2 — re-checked here (not just at the run's start above): playback
                 // may have started after this run began but before its turn came.
-                awaitPlaybackClear(deferEligible, jobId, broadcaster, scanTracker)
+                awaitPlaybackClear({ deferEligible && configStore.current.scan.deferWhilePlaying }, jobId, broadcaster, scanTracker)
                 val toProcess = if (step.scope == "all") workingSet
                     else workingSet.filter { artworkDownloader.isArtworkIncomplete(it) }
                 Logger.info("fetch_artwork: ${toProcess.size} items (scope=${step.scope})")
