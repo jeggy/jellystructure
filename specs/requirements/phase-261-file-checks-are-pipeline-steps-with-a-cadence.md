@@ -2,7 +2,7 @@
 
 ## Status
 
-`Planned` — written 2026-09-25 with the owner, not dev-reviewed, not built. Spec first. Reshapes how phases
+`Planned` — written 2026-09-25 with the owner; **dev-reviewed 2026-09-26 against `31dc2d9a`** (nine items, below), not built. Spec first. Reshapes how phases
 **254** (whole-file verification) and **255** (track lengths) are scheduled and shown; changes neither check.
 
 > Owner, 2026-09-25, on the sweep jobs: *"I'm not a fan of these jobs. […] If there is no real reason for
@@ -143,3 +143,95 @@
 `design/app/settings.html`'s pipeline palette needs the two new blocks and the two cadence values;
 `design/app/media.html` / `series.html` need the Checks card; `design/app/activity.html`'s Jobs view needs
 the grouped per-file rows. None are drawn yet — this spec leads the mockups.
+
+## Dev review (2026-09-26, against `main` `31dc2d9a`)
+
+Every shape the spec reuses exists: the dedupe index (`MediaJob.sq:32`), `requeueRunning` (`:94`), 260's
+`emptyLane`, the tier table (`isDueForRecheck`, `FreshnessFilter.kt:56`), 254/255's size+mtime currency
+(`FileIntegrityService.isCurrent`, `:284`) and their `checked_at` columns. Production today: 8,957
+`file_integrity` rows (44 damaged), 9,415 `file_track_coverage` rows (15 flagged), **152 segments jobs
+waiting since 1790343031 (~21 h)** with the verification sweep queued behind them. Nine items.
+
+1. **The cost FR-261-2 misses is `GET /api/jobs`, not the socket.** No admin page renders a `media_job`
+   event — `Dashboard.kt:395` and `Shell.kt:593` decode `JobEvent` and have no branch for it. The Jobs
+   view polls `GET /api/jobs` every 2 s (`Activity.kt:583`), and that answers **every** queued row
+   (`listQueued`, no `LIMIT`; `JobsRoutes.kt:55`) and renders each one. Two thousand waiting rows is two
+   thousand DOM rows every two seconds. So the grouping is server-side: `/api/jobs` gains `groups` (per
+   per-file type: waiting, the running row, done today, failed today, findings today) and leaves per-file
+   rows out of `queued` and `recent`; the rows come from `GET /api/jobs/groups/{type}` when the line is
+   expanded. Per-file rows broadcast nothing — there is no consumer, so "coalesced" is simply "not sent".
+   *Findings today* is read from the per-file tables (`checked_at` ≥ midnight with a finding): the job
+   itself succeeds whether or not the file is damaged.
+2. **FIFO would park the segments lane, and FR-261-3 cannot be FIFO.** `claimNext` takes each lane's
+   oldest `created_at` (`MediaJobQueue.kt:403`). The sweep bounds itself to 20 minutes precisely *"so it
+   can never sit ahead of `detect_segments` for a day"* (`:666`, `INTEGRITY_SLICE_SEC`); per-file rows have
+   no slice, so a pass of N rows sits ahead of every segments job enqueued after it — and a fresh download
+   enqueued after a waiting pass is *behind* it, the opposite of FR-261-3. A `priority` column: rows due
+   by **cadence** enqueue at −1 (they yield to everything else in the lane), rows with **no current
+   result** (new or changed file) at 0 (FIFO with segment work, as the sweep is today), **Check now** at 1.
+   The claim orders `priority DESC, created_at, rowid` — `created_at` is in seconds, and `rowid` keeps a
+   batch's newest-modified-first order inside one second. A Check now that meets the dedupe index on a
+   waiting row **promotes** it (priority 1, defer off) rather than answering "already queued": otherwise the
+   operator's click sits deferred at the back of the lane.
+3. **The claim reads one candidate per lane, with the defer flag a column.** Migration 53 adds
+   `media_job.defer_while_playing` and `media_job.priority`, backfills the flag from `params` (kotlinx omits
+   defaults, so `LIKE '%"deferWhilePlaying":true%'` is exact), and indexes `(lane, state, priority,
+   created_at)`. The claim is at most two `LIMIT 1` reads per lane: while a TV plays and 262's switch is on,
+   the first row with `defer_while_playing = 0`, otherwise the first row. `healthSnapshot`'s
+   `listRecent(50)` scan (`:321`) becomes a `lastFailure(lane)` query — for correctness more than cost: fifty
+   finished verify rows push a subtitles failure out of that window. The migration cancels the waiting
+   `file_integrity_sweep` / `track_coverage_sweep` / `file_integrity_title` rows (`error = 'retired'`); the
+   types and the `Main.kt` loop go.
+4. **The airing floor must not reach a file check.** `isDueForRecheck` caps an actively-airing title at
+   24 h whatever the cadence (`FreshnessFilter.kt:70-71`, phase 196). Reused as-is, every file of a
+   long-running airing series is read end to end every day. The floor exists so a new episode is not
+   missed — and a new episode is a new file, which has no row and is due regardless. The file steps pass
+   `isActivelyAiring = false`. (Units: the file tables store seconds; `isDueForRecheck` takes ms.)
+5. **The pipeline's working set is the wrong list.** Every step after `scan_files` iterates `workingSet`,
+   the output of `scan_files`' own freshness filter (`PipelineEngine.kt:281`). A title the scan skips
+   (production runs `6months`/`yearly` on the older tiers) would never have its files' cadence looked at.
+   On a Library run the two steps read `store.allItems()`, as `MkvHealthCache` and `sync_jellyfin` already do;
+   on a SingleItem run, the item. **That SingleItem run is FR-261-3's "the moment it is ingested"**: realtime
+   ingest runs every configured step for the new title (`runPipeline`, `RunTarget.SingleItem`), so
+   `scan_files` itself needs no change.
+6. **"Next due" needs one function, and most steps have no cadence of their own.** Only `scan_files` has
+   the tier table (`pipeScanCfgEl`, `Settings.kt:2980`; the `refresh_*` keys on the other steps in
+   production's `config.toml` are unused defaults). The other steps run over the scan's working set, so
+   their next due is the title's next scan; `sync_jellyfin` runs when an NFO changed (library-wide);
+   `detect_segments` with scope *missing* runs when a marker is missing. So: `nextDueMs(...)` beside
+   `isDueForRecheck`, which becomes `now >= nextDueMs(...)` — one rule, tested for agreement. The card:
+   `scan_files` and the working-set steps read *with the next scan · 3 Oct*, the two file steps their own
+   date, `sync_jellyfin` *when its NFO changes*, `detect_segments` *when a marker is missing*; a step's
+   *Refresh on a schedule* off reads *every run* for the scan and *when the file changes* for a file step.
+7. **`item_step_run` is written in two places, not "where `last_examined_at` is stamped".** That stamp is
+   the scan's upsert alone (`MediaStore.kt:1017`). The one generic place is `runPipelineStepPool`'s
+   per-item wrapper: `ok`, or `failed` with the exception's message; `write_nfo`, `detect_drift` and
+   `sync_imdb_ratings` map their own results to `changed` / `ok` / `skipped`. The enqueue-only steps
+   (`detect_segments`, `prewarm_subtitles`) record when their job finishes (`runClaimed`, by `media_id`).
+   `scan_files`' line reads `last_examined_at`.
+8. **Config: the defaults and the migration need a marker.** `PipelineStep` defaults to
+   weekly/monthly/6months (`AppConfig.kt:75-77`), so a `verify_files` step decoded without `refresh_*` keys
+   would re-read the library weekly. Persisting is a full ktoml encode (`ConfigStore.kt:99`), so the values
+   stay once written; the risk is the first add, so the boot-time seed and the palette's add handler both
+   set the step's own defaults. The seed runs **once**, behind `scan.file_check_steps_seeded`: a step the
+   operator later removes with ✕ must not return on the next boot. `behavior.verify_files = false` seeds
+   both disabled. The TOML preview (`Settings.kt:1758`) writes `refresh_*` for `scan_files` only; the two
+   steps join it (acceptance 3's round-trip).
+9. **Check now answers one `jobId` today** (`TrackRoutes.kt:788`); it now queues up to two rows per file.
+   The page reads only the status (`MediaApi.kt:903`), so the answer becomes `{files, queued, promoted}`.
+
+**Open question 1 — the premise is wrong: the first pass is not empty.** "Due" includes *no current
+result*, and production holds 459 files never read end to end and 1 without a track-length result. The
+first pass queues about 460 rows at priority 0. As leaned: no cap, the count in the run summary.
+**Open question 2** — as leaned, no. **Open question 3** — as leaned: every row kept, grouped, pruned by
+`pruneOld` at 14 days; **Recent** lists a per-file row only when it failed (a failure is an event), and the
+group line carries the rest.
+
+**Design mirror.** Still undrawn; the served admin leads the mockups here, as it did for 254's and 255's
+Triage types.
+
+**Net effect.** One migration (two columns, one index, one table, the retired rows), a claim of two
+indexed reads per lane, grouped `/api/jobs` plus one expand route, `2years`/`5years`, `nextDueMs`, two
+steps that enqueue per file from the whole library, `item_step_run` written from the step pool and the
+queue, one-time config seeding, `GET /api/media/{id}/checks` and the card. Nothing changes what 254 or 255
+check or store.
