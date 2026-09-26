@@ -5,7 +5,10 @@
 
 ## Status
 
-`⚠ Partial` — **2026-09-26: mechanism 1 cannot use Jellyfin as the rendition source** (its audio-only job
+`⚠ Partial` — **2026-09-26 evening: mechanism 1 rebuilt on jellystructure's own renditions, verified on the Pixel 9**
+(598–907 ms per switch, the picked track mapped, the picture never stops; see *Build + device measurement,
+2026-09-26 evening*) — the stue TV is the last check before the Android switch goes on. Earlier the same day:
+**mechanism 1 cannot use Jellyfin as the rendition source** (its audio-only job
 never maps the requested track; see *Device measurement, 2026-09-26 afternoon*). **FR-R291-1 built 2026-09-25** from the dev review below (items 1 and 2); **FR-R291-2/3 not
 built**: the mechanism is chosen after FR-R291-3's remaining measurements (the video variant's PTS at the same
 segment index — one 4K software encode — and item 4's `PlaySessionId` question), which need a quiet window on
@@ -170,6 +173,36 @@ start transcoded (4K HEVC → H.264, 3.003 s segments, English TrueHD carried as
 - **So mechanism 1, with Jellyfin as the rendition source, cannot work.** The switch stays `false`. What would
   work is the spec's own fallback — **jellystructure serves each rendition itself** (its own ffmpeg with
   `-map 0:<index>`, the video's +10.000 s offset, `-sn`), or mechanism 3 (swap behind the picture).
+
+### Build + device measurement (2026-09-26 evening) — the renditions are this server's own
+
+Owner: *"Just pick the best option. I want it to be fast and even with good on not so fast tvs."* Mechanism 1
+stays — only the rendition **source** changes. Each rendition is `audio/{position}/main.m3u8` next to the
+composed master: a VOD playlist of the whole file in 3.000 s segments, each segment made on demand by
+`AudioRenditionJobs` from the file on jellystructure's own disk — `-map 0:<track> -sn`, Jellyfin's timing
+arguments (`-copyts -avoid_negative_ts disabled -max_delay 5000000`, 3 s HLS), `-hls_flags temp_file`, in the
+codec of the video variant's audio. One ffmpeg per (stream, track): paused 2 min ahead of the last request,
+resumed as requests close in, replaced by a request it cannot reach soon (a seek), killed idle (90 s) or with
+its playback (phase 180), its segments deleted as the player passes them. For a slow TV this is the lightest
+path there is: the player fetches one ~265 KB audio segment per 3 s and keeps its video buffer.
+
+Measured in the production container first: first segment **0.6 s** (AC3 source) / **0.8 s** (TrueHD 7.1), 5–7×
+real time; segment 100 starts at **309.979 s** against the video variant's 310.000 s — a **21 ms** lead (Jellyfin's
+own audio jobs led by 43 ms). Then on the Pixel 9 (debug build, switch on; prod backend on this branch's image,
+owner-approved), the same film, starting on the remembered French (AC3, carried and copied, so the renditions
+are AC3):
+
+| Switch | Pick → READY | Server's ffmpeg | Segments |
+|---|---|---|---|
+| French (carried) → Spanish | **598 ms** (cold, no warm on a touch pick) | `-map 0:2` | 265 644 B |
+| Spanish → English — the stue TV's stall case | **907 ms** (TrueHD source) | `-map 0:1` | 265 644 B |
+| English → Italian | **840 ms** | `-map 0:4` | 265 644 B |
+| Italian → French (carried) | **no BUFFERING at all** | — | — |
+
+No video load was cancelled or repeated across the four switches: the picture never stopped. Back stopped all
+three rendition jobs (`stopped (playback stopped)`), removed their folders, and left no ffmpeg in the container.
+Still to see: the stue TV (D-pad picker with the warm) before the switch goes on for a release — the owner's
+rule since 2026-09-25 is that an audio path is seen on a set before it reaches the household.
 
 ## What happens today
 

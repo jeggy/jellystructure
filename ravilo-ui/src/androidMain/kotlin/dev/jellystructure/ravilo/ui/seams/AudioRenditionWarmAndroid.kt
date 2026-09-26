@@ -26,13 +26,12 @@ actual fun warmAudioRendition(index: Int) {
 /**
  * R291 — fetches one rendition's segment at the playhead, off the main thread, through
  * [DefaultHttpDataSource] — the same class and the same (default) user agent Media3's own
- * `DefaultMediaSourceFactory` loads the stream with, so Jellyfin files the request under the job the
- * switch will read from rather than starting a second one.
+ * `DefaultMediaSourceFactory` loads the stream with. Since 2026-09-26 the rendition is jellystructure's own:
+ * the warm starts that track's job at the playhead, and the switch reads the segment it already made.
  *
  * Bounded (dev review item 5): one thread, so at most one warm is in flight; a warm that has not started
  * when the focus moves on is dropped; a rendition warmed in the last [REWARM_AFTER_MS] is not warmed again.
- * Every job it starts is on a play session the backend minted and hands phase 180's teardown, so Back
- * stops it like any other.
+ * Every job it starts belongs to the stream's capability id, so phase 180's teardown stops it with the playback.
  */
 internal object AudioRenditionWarmer {
     private const val TAG = "RaviloPlayer"
