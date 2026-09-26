@@ -1,0 +1,22 @@
+-- Phase 261 (FR-261-2, dev review items 2-3) — the defer flag becomes a column (backfilled from params: kotlinx
+-- omits default values, so a row that defers carries exactly `"deferWhilePlaying":true`), the lane gets a
+-- priority, and the claim an index. Column order must match MediaJob.sq's CREATE TABLE.
+ALTER TABLE media_job ADD COLUMN defer_while_playing INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE media_job ADD COLUMN priority INTEGER NOT NULL DEFAULT 0;
+UPDATE media_job SET defer_while_playing = 1 WHERE params LIKE '%"deferWhilePlaying":true%';
+CREATE INDEX media_job_claim ON media_job(lane, state, priority DESC, created_at);
+
+-- FR-261-1 — the library sweeps and the whole-title check are retired; their waiting rows are cancelled
+-- (the next pipeline run queues the same work per file).
+UPDATE media_job SET state = 'cancelled', finished_at = CAST(strftime('%s', 'now') AS INTEGER), error = 'retired'
+WHERE type IN ('file_integrity_sweep', 'track_coverage_sweep', 'file_integrity_title') AND state IN ('queued', 'running');
+
+-- FR-261-9 — see ItemStepRun.sq; must stay byte-for-byte in sync with its CREATE TABLE.
+CREATE TABLE item_step_run (
+    item_id TEXT NOT NULL,
+    step TEXT NOT NULL,
+    ran_at INTEGER NOT NULL,
+    outcome TEXT NOT NULL,
+    detail TEXT,
+    PRIMARY KEY (item_id, step)
+);

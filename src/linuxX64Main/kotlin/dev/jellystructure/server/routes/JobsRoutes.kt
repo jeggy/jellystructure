@@ -25,6 +25,8 @@ data class JobsSummary(
     val running: List<dev.jellystructure.jobs.MediaJobSnapshot> = emptyList(),
     val queued: List<dev.jellystructure.jobs.MediaJobSnapshot> = emptyList(),
     val recent: List<dev.jellystructure.jobs.MediaJobSnapshot> = emptyList(),
+    // Phase 261 (FR-261-2) — one line per per-file check type; the number of jobs is the status.
+    val groups: List<dev.jellystructure.media.JobGroup> = emptyList(),
 )
 
 /** Phase 260 (FR-260-1) — `POST /api/jobs/empty` body. */
@@ -52,9 +54,20 @@ fun Route.jobsRoutes(mediaJobQueue: MediaJobQueue) {
                 doneToday = lanes.sumOf { it.doneToday },
                 lanes = lanes,
                 running = mediaJobQueue.running(),
-                queued = mediaJobQueue.queued(),
-                recent = mediaJobQueue.recent(),
+                // Phase 261 (FR-261-2, dev review item 1) — per-file checks are one group line each, never
+                // thousands of rows on a 2-second poll; their rows come from /jobs/groups/{type}.
+                queued = mediaJobQueue.queuedUngrouped(),
+                recent = mediaJobQueue.recentUngrouped(),
+                groups = mediaJobQueue.groups(),
             ))
+        }
+
+        // Phase 261 (FR-261-2) — the expanded group line: running, the next waiting rows in claim order, the latest finished.
+        get("/groups/{type}") {
+            val type = call.parameters["type"] ?: return@get call.respond(HttpStatusCode.BadRequest)
+            val limit = call.request.queryParameters["limit"]?.toIntOrNull()?.coerceIn(1, 500) ?: 100
+            val rows = mediaJobQueue.groupRows(type, limit) ?: return@get call.respond(HttpStatusCode.NotFound)
+            call.respond(rows)
         }
 
         // Phase 260 (FR-260-1) — empty the waiting part of one or more queues; what runs, finishes.

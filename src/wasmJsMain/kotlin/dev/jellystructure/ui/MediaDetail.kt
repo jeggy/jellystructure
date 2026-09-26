@@ -720,6 +720,7 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
           </div>
           ${buildTrailerCard(item)}
           ${buildImdbCard(item)}
+          <div class="card" id="checks-card" style="margin-top:16px;"><div class="row center"><h4 style="margin:0;">Checks</h4></div><div class="tiny muted" style="margin-top:8px;">Loading…</div></div>
           ${buildTimestampsCard(item)}"""
 
     // The tab bar + all tab panels.
@@ -1168,6 +1169,7 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
     scope.launch { loadMkvHealth(item, scope) }
     scope.launch { loadFileIntegrity(item, scope) }
     scope.launch { loadTrackCoverage(item) }   // Phase 255
+    scope.launch { loadChecksCard(item, scope) }   // Phase 261
     scope.launch { loadSeedingReport(item.id, item.kind == MediaKind.TV_SHOW) }
     if (activeTab == "tracks" && !isTvShow) {
         wireUnifiedTrackEditor("trk", item.tracks, item.id, null, scope, item.resolvedLanguage, item.path)
@@ -3092,6 +3094,83 @@ private suspend fun loadFileIntegrity(item: MediaItem, scope: CoroutineScope) {
 // merged into it. One block per file with findings: what, what a viewer experiences, who is affected, the
 // suggested fix with its command. Unchecked files get nothing here — 254's one quiet line already covers
 // them, and its Check now runs both checks (FR-255-6).
+/**
+ * Phase 261 (FR-261-10/11) — the Overview's *Checks* card: one line per pipeline step for this title, in
+ * pipeline order — *Verify files · 3 Aug · clean · next due 2031*. Every word and date is the server's
+ * (`GET /api/media/{id}/checks`); this only lays them out. The two file steps open to their files, a series
+ * grouped per season. A ↻ appears only where the title already has that action.
+ */
+private suspend fun loadChecksCard(item: MediaItem, scope: CoroutineScope) {
+    val card = document.getElementById("checks-card") as? HTMLElement ?: return
+    val checks = MediaApi.getTitleChecks(item.id)
+    if (checks == null) {
+        card.innerHTML = """<div class="row center"><h4 style="margin:0;">Checks</h4></div><div class="tiny muted" style="margin-top:8px;">Could not load what this title has been checked against.</div>"""
+        return
+    }
+    fun badge(outcome: String?): String {
+        val cls = when (outcome) {
+            "ok", "clean" -> "ok"; "changed" -> "info"; "failed", "finding" -> "bad"; "partial" -> "warn"; else -> ""
+        }
+        return if (outcome == null) """<span class="badge" style="opacity:.6;">not yet</span>""" else """<span class="badge $cls">${outcome.esc()}</span>"""
+    }
+    fun fileRow(f: dev.jellystructure.api.FileCheckRow): String =
+        """<div class="row center tiny" style="gap:10px;padding:3px 0 3px 8px;flex-wrap:wrap;">
+             <span class="mono" style="min-width:74px;">${(f.episodeTag ?: f.name).esc()}</span>
+             <span class="muted" style="min-width:84px;">${f.checked.esc()}</span>
+             ${badge(if (f.state == "unchecked") null else f.state)}
+             <span class="muted">${f.nextDue.esc()}</span>
+             ${f.detail?.let { """<span style="flex-basis:100%;padding-left:84px;color:var(--bad);">${it.esc()}</span>""" } ?: ""}
+           </div>"""
+    val isTvShow = item.kind == MediaKind.TV_SHOW
+    val lines = checks.steps.joinToString("") { st ->
+        val act = st.action?.takeIf { st.enabled }?.let {
+            """<span class="btn sm ghost chk-act" data-action="$it" title="Run it for this title now" style="padding:2px 8px;">↻</span>"""
+        } ?: ""
+        val files = if (st.files.isEmpty()) "" else {
+            val body = if (isTvShow) st.files.groupBy { it.season }.entries.sortedBy { it.key ?: -1 }.joinToString("") { (season, rows) ->
+                """<div class="tiny" style="margin:6px 0 2px;"><b>${season?.let { "S${it.toString().padStart(2, '0')}" } ?: "Specials"}</b> <span class="muted">· ${rows.size} file${if (rows.size != 1) "s" else ""}</span></div>""" +
+                    rows.joinToString("") { fileRow(it) }
+            } else st.files.joinToString("") { fileRow(it) }
+            """<details style="margin:2px 0 6px 0;"><summary class="tiny muted" style="cursor:pointer;">${st.files.size} file${if (st.files.size != 1) "s" else ""}</summary>$body</details>"""
+        }
+        """<div style="border-bottom:1px dashed var(--line);padding:6px 0;${if (!st.enabled) "opacity:.55;" else ""}">
+             <div class="row center" style="gap:10px;flex-wrap:wrap;">
+               <b style="min-width:150px;font-size:.86rem;">${st.label.esc()}</b>
+               <span class="tiny muted" style="min-width:84px;">${st.last.esc()}</span>
+               ${if (st.enabled) badge(st.outcome) else """<span class="badge">off</span>"""}
+               <span class="tiny">${st.nextDue.esc()}</span>
+               ${st.detail?.let { """<span class="tiny muted" title="${it.esc()}" style="max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${it.esc()}</span>""" } ?: ""}
+               <span class="spacer"></span>
+               $act
+             </div>
+             $files
+           </div>"""
+    }
+    card.innerHTML = """<div class="row center"><h4 style="margin:0;">Checks</h4><span class="spacer"></span><span class="tiny muted">what this title has been checked against, and when</span></div>
+        <hr class="dash" style="margin:10px 0 4px;">$lines"""
+    val buttons = card.querySelectorAll(".chk-act")
+    for (i in 0 until buttons.length) {
+        val btn = buttons.item(i) as? HTMLElement ?: continue
+        btn.addEventListener("click") {
+            val action = btn.getAttribute("data-action") ?: return@addEventListener
+            btn.textContent = "…"
+            scope.launch {
+                when (action) {
+                    "sync" -> MediaApi.syncMedia(item.id)
+                    "sync_metadata" -> MediaApi.syncMedia(item.id, "series")
+                    "fetch_artwork" -> MediaApi.fetchArtwork(item.id)
+                    "write_nfo" -> MediaApi.writeNfo(item.id)
+                    "jellyfin_refresh" -> MediaApi.jellyfinRefresh(item.id)
+                    "sync_imdb" -> MediaApi.syncImdbRating(item.id)
+                    "check_verify" -> MediaApi.checkFileIntegrity(item.id, check = "verify", force = true)
+                    "check_lengths" -> MediaApi.checkFileIntegrity(item.id, check = "lengths", force = true)
+                }
+                loadChecksCard(item, scope)
+            }
+        }
+    }
+}
+
 private suspend fun loadTrackCoverage(item: MediaItem) {
     val banner = document.getElementById("coverage-banner") as? HTMLElement ?: return
     val status = MediaApi.trackCoverageStatus(item.id) ?: run { banner.style.display = "none"; return }

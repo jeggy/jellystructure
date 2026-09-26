@@ -6,6 +6,7 @@ import dev.jellystructure.arr.SonarrEnrichService
 import dev.jellystructure.auth.JellyfinClient
 import dev.jellystructure.config.AppConfig
 import dev.jellystructure.config.ConfigStore
+import dev.jellystructure.config.FileCheckSteps
 import dev.jellystructure.config.PipelineStep
 import dev.jellystructure.imdb.ImdbClient
 import dev.jellystructure.jobs.JobEvent
@@ -132,6 +133,8 @@ fun effectivePipeline(cfg: AppConfig): List<PipelineStep> =
             add(PipelineStep(step = "scan_files"))
             add(PipelineStep(step = "pull_tmdb", scope = "all"))
             if (cfg.behavior.fetchImages) add(PipelineStep(step = "fetch_artwork"))
+            // Phase 261 (FR-261-4) — the built-in pipeline checks files too, on their own cadence.
+            FileCheckSteps.ALL.forEach { add(FileCheckSteps.defaultStep(it)) }
         }
     }
 
@@ -313,6 +316,11 @@ suspend fun runPipeline(
         .onFailure { Logger.warn("MKV structure sweep failed: ${it.message}", "scan") }
 
     val cfg = configStore.current
+    // Phase 261 (FR-261-9, dev review item 7) — every pooled step records, per title, that it ran and what came
+    // of it; a per-item failure (thrown or timed out) records why. The enqueue-only steps record from the queue.
+    val stepRuns = mediaJobQueue.stepRuns   // one store, shared with the queue (every PipelineDeps site gets it)
+    fun ran(item: MediaItem, step: String, outcome: String = StepRunStore.OK, detail: String? = null) { stepRuns?.record(item.id, step, outcome, detail) }
+    fun failedRun(step: String): (MediaItem, Throwable) -> Unit = { item, e -> stepRuns?.record(item.id, step, StepRunStore.FAILED, e.message ?: "failed") }
     try {
     for (step in pipeline) {
         if (step.step == "scan_files") continue
@@ -334,8 +342,8 @@ suspend fun runPipeline(
                 Logger.info("pull_tmdb: ${toProcess.size} items (scope=${step.scope})")
                 runPipelineStepPool(
                     jobId, step.step, toProcess, { pipelineStepConcurrency(step.step, configStore.current.behavior.scanWorkers) },
-                    scanTracker, broadcaster, labelOf = { it.title },
-                ) { item, _ -> PipelineStepOps.pullTmdb(item, scanner, store, dirtyItemStore) }
+                    scanTracker, broadcaster, labelOf = { it.title }, onItemFailure = failedRun(step.step),
+                ) { item, _ -> PipelineStepOps.pullTmdb(item, scanner, store, dirtyItemStore); ran(item, step.step) }
             }
             "fetch_artwork" -> {
                 // Phase 178 §FR-178-2 — re-checked here (not just at the run's start above): playback
@@ -346,9 +354,10 @@ suspend fun runPipeline(
                 Logger.info("fetch_artwork: ${toProcess.size} items (scope=${step.scope})")
                 runPipelineStepPool(
                     jobId, step.step, toProcess, { pipelineStepConcurrency(step.step, configStore.current.behavior.scanWorkers) },
-                    scanTracker, broadcaster, labelOf = { it.title },
+                    scanTracker, broadcaster, labelOf = { it.title }, onItemFailure = failedRun(step.step),
                 ) { item, _ ->
                     PipelineStepOps.fetchArtwork(item, store, artworkDownloader)
+                    ran(item, step.step)
                     // Phase 220 (FR-220-1) — pre-size in the same step, on the same (background) gate.
                     deps.artworkPresize?.let { presize -> runCatching { presize(store.get(item.id) ?: item) }.onFailure { Logger.warn("fetch_artwork: presize failed for ${item.id}: ${it.message}", "tv-image") } }
                 }
@@ -394,16 +403,16 @@ suspend fun runPipeline(
                 val includeEpisodes = target is RunTarget.SingleItem
                 runPipelineStepPool(
                     jobId, step.step, workingSet, { pipelineStepConcurrency(step.step, configStore.current.behavior.scanWorkers) },
-                    scanTracker, broadcaster, labelOf = { it.title },
+                    scanTracker, broadcaster, labelOf = { it.title }, onItemFailure = failedRun(step.step),
                 ) { item, _ ->
                     when (PipelineStepOps.writeNfo(
                         item, store, serverUrl, cfg.metadata.ageRatingCascade,
                         allowForeign = step.overwrite || cfg.behavior.overwriteNfo,
                         includeEpisodes = includeEpisodes,
                     )) {
-                        PipelineStepOps.NfoResult.WRITTEN -> written.incrementAndGet()
-                        PipelineStepOps.NfoResult.UNCHANGED -> unchanged.incrementAndGet()
-                        PipelineStepOps.NfoResult.FOREIGN_SKIPPED -> foreignSkipped.incrementAndGet()
+                        PipelineStepOps.NfoResult.WRITTEN -> { written.incrementAndGet(); ran(item, step.step, StepRunStore.CHANGED, "NFO written") }
+                        PipelineStepOps.NfoResult.UNCHANGED -> { unchanged.incrementAndGet(); ran(item, step.step) }
+                        PipelineStepOps.NfoResult.FOREIGN_SKIPPED -> { foreignSkipped.incrementAndGet(); ran(item, step.step, StepRunStore.SKIPPED, "another tool's NFO is there (overwrite is off)") }
                     }
                 }
                 Logger.info("write_nfo: ${written.value} written, ${unchanged.value} unchanged" +
@@ -423,15 +432,16 @@ suspend fun runPipeline(
                 runPipelineStepPool(
                     jobId, step.step, if (jellyfinReady) toSync else emptyList(),
                     { pipelineStepConcurrency(step.step, configStore.current.behavior.scanWorkers) }, scanTracker, broadcaster, labelOf = { it.title },
-                ) { item, _ -> PipelineStepOps.syncJellyfin(item, store, jellyfinClient, cfg) }
+                    onItemFailure = failedRun(step.step),
+                ) { item, _ -> PipelineStepOps.syncJellyfin(item, store, jellyfinClient, cfg); ran(item, step.step) }
             }
             "rescan_arr" -> {
                 Logger.info("rescan_arr: ${workingSet.size} items")
                 if (arrRescan != null) {
                     runPipelineStepPool(
                         jobId, step.step, workingSet, { pipelineStepConcurrency(step.step, configStore.current.behavior.scanWorkers) },
-                        scanTracker, broadcaster, labelOf = { it.title },
-                    ) { item, _ -> arrRescan.nudge(item) }
+                        scanTracker, broadcaster, labelOf = { it.title }, onItemFailure = failedRun(step.step),
+                    ) { item, _ -> arrRescan.nudge(item); ran(item, step.step) }
                 } else {
                     scanTracker.setActiveStep(step.step)
                     broadcaster.broadcast(JobEvent.StepStarted(jobId, step.step, 0))
@@ -443,13 +453,13 @@ suspend fun runPipeline(
                 val jfBehind = AtomicInt(0); val external = AtomicInt(0)
                 runPipelineStepPool(
                     jobId, step.step, workingSet, { pipelineStepConcurrency(step.step, configStore.current.behavior.scanWorkers) },
-                    scanTracker, broadcaster, labelOf = { it.title },
+                    scanTracker, broadcaster, labelOf = { it.title }, onItemFailure = failedRun(step.step),
                 ) { item, _ ->
                     when (PipelineStepOps.detectDrift(item, store, jellyfinClient, cfg, step.autoReassert)) {
-                        PipelineStepOps.DriftOutcome.NFO_STALE -> nfoStale.incrementAndGet()
-                        PipelineStepOps.DriftOutcome.JELLYFIN_BEHIND -> jfBehind.incrementAndGet()
-                        PipelineStepOps.DriftOutcome.EXTERNAL_DRIFT -> external.incrementAndGet()
-                        PipelineStepOps.DriftOutcome.CONVERGED -> converged.incrementAndGet()
+                        PipelineStepOps.DriftOutcome.NFO_STALE -> { nfoStale.incrementAndGet(); ran(item, step.step, detail = "NFO stale") }
+                        PipelineStepOps.DriftOutcome.JELLYFIN_BEHIND -> { jfBehind.incrementAndGet(); ran(item, step.step, detail = "Jellyfin behind") }
+                        PipelineStepOps.DriftOutcome.EXTERNAL_DRIFT -> { external.incrementAndGet(); ran(item, step.step, detail = "changed outside jellystructure") }
+                        PipelineStepOps.DriftOutcome.CONVERGED -> { converged.incrementAndGet(); ran(item, step.step, detail = "in step") }
                     }
                 }
                 Logger.info("detect_drift: ${converged.value} converged, ${nfoStale.value} NFO stale, ${jfBehind.value} Jellyfin behind" +
@@ -532,12 +542,30 @@ suspend fun runPipeline(
                 val updated = AtomicInt(0)
                 runPipelineStepPool(
                     jobId, step.step, toSync, { pipelineStepConcurrency(step.step, configStore.current.behavior.scanWorkers) },
-                    scanTracker, broadcaster, labelOf = { it.title },
+                    scanTracker, broadcaster, labelOf = { it.title }, onItemFailure = failedRun(step.step),
                 ) { item, _ ->
-                    if (PipelineStepOps.syncImdb(item, store, imdbClient)) updated.incrementAndGet()
+                    if (PipelineStepOps.syncImdb(item, store, imdbClient)) { updated.incrementAndGet(); ran(item, step.step, StepRunStore.CHANGED, "rating updated") }
+                    else ran(item, step.step)
                     delay(250)
                 }
                 Logger.info("sync_imdb_ratings: ${updated.value} of ${toSync.size} ratings updated")
+            }
+            FileCheckSteps.VERIFY, FileCheckSteps.LENGTHS -> {
+                // Phase 261 (FR-261-3/8, dev review item 5) — enqueue-only, like detect_segments: one row per due
+                // file on the segments queue. A Library run reads the WHOLE library, not the scan's freshness-
+                // filtered working set (a file's cadence is its own); a SingleItem run — realtime ingest of a
+                // new download — is the "checked the moment it is ingested" path, the file having no result yet.
+                scanTracker.setActiveStep(step.step)
+                val items = if (target is RunTarget.SingleItem) workingSet else store.allItems()
+                broadcaster.broadcast(JobEvent.StepStarted(jobId, step.step, items.size))
+                val pass = mediaJobQueue.enqueueDueFileChecks(step, items) { scanTracker.stepStopRequested }
+                val noun = if (step.step == FileCheckSteps.VERIFY) "verification" else "a track-length check"
+                val summary = "${pass.queued} file${if (pass.queued == 1) "" else "s"} queued for $noun" +
+                    (if (pass.queued > 0) " (${pass.newOrChanged} new or changed, ${pass.byCadence} due by cadence)" else "") +
+                    (if (pass.alreadyQueued > 0) " · ${pass.alreadyQueued} already queued" else "") +
+                    (if (pass.stoppedEarly) " — stopped early" else "")
+                Logger.info("${step.step}: $summary", "pipeline")
+                broadcaster.broadcast(JobEvent.StepFinished(jobId, step.step, summary))
             }
             "wait" -> {
                 Logger.info("wait: ${step.minutes} min")

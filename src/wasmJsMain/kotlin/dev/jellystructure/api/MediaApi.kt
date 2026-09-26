@@ -129,6 +129,44 @@ data class JobsSummary(
     val busy: Boolean, val doneToday: Int, val lanes: List<LaneSummary> = emptyList(),
     val running: List<MediaJobSnapshot> = emptyList(),
     val queued: List<MediaJobSnapshot> = emptyList(), val recent: List<MediaJobSnapshot> = emptyList(),
+    // Phase 261 (FR-261-2) — per-file checks as one line each; `queued`/`recent` no longer carry their rows.
+    val groups: List<JobGroup> = emptyList(),
+)
+
+/** Phase 261 (FR-261-2) — mirrors dev.jellystructure.media.JobGroup: *Verify files · 2,261 waiting · 41 done today · 1 finding*. */
+@Serializable
+data class JobGroup(
+    val type: String, val label: String, val waiting: Int = 0, val running: List<MediaJobSnapshot> = emptyList(),
+    @SerialName("done_today") val doneToday: Int = 0, @SerialName("failed_today") val failedToday: Int = 0,
+    @SerialName("findings_today") val findingsToday: Int = 0,
+)
+
+/** Phase 261 — `GET /api/jobs/groups/{type}`: the expanded group line. */
+@Serializable
+data class JobGroupRows(
+    val running: List<MediaJobSnapshot> = emptyList(), val queued: List<MediaJobSnapshot> = emptyList(),
+    val recent: List<MediaJobSnapshot> = emptyList(),
+)
+
+/** Phase 261 (FR-261-10/11) — mirrors dev.jellystructure.media.TitleChecksDto; every date and state is the server's. */
+@Serializable
+data class TitleChecks(val steps: List<StepCheck> = emptyList())
+
+@Serializable
+data class StepCheck(
+    val step: String, val label: String, val enabled: Boolean = true,
+    @SerialName("last_at") val lastAt: Long? = null, val last: String = "not yet",
+    val outcome: String? = null, val detail: String? = null,
+    @SerialName("next_due_at") val nextDueAt: Long? = null, @SerialName("next_due") val nextDue: String = "",
+    val action: String? = null, val files: List<FileCheckRow> = emptyList(),
+)
+
+@Serializable
+data class FileCheckRow(
+    val path: String, val name: String, val season: Int? = null, @SerialName("episode_tag") val episodeTag: String? = null,
+    val state: String, @SerialName("checked_at") val checkedAt: Long? = null, val checked: String = "not yet",
+    @SerialName("next_due_at") val nextDueAt: Long? = null, @SerialName("next_due") val nextDue: String = "",
+    val detail: String? = null,
 )
 
 /** Phase 260 (FR-260-1) — `POST /api/jobs/empty`'s answer. */
@@ -718,6 +756,16 @@ object MediaApi {
         httpClient.get("/api/jobs").body<JobsSummary>()
     }.getOrNull()
 
+    /** Phase 261 (FR-261-2) — one per-file group's rows, fetched only when its line is expanded. */
+    suspend fun getJobGroup(type: String, limit: Int = 100): JobGroupRows? = runCatching {
+        httpClient.get("/api/jobs/groups/$type?limit=$limit").body<JobGroupRows>()
+    }.getOrNull()
+
+    /** Phase 261 (FR-261-10/11) — the title page's Checks card. */
+    suspend fun getTitleChecks(id: String): TitleChecks? = runCatching {
+        httpClient.get("/api/media/$id/checks").body<TitleChecks>()
+    }.getOrNull()
+
     /** Phase 260 (FR-260-1) — null on any failure (400/401/network); the panel then says so and re-polls. */
     suspend fun emptyQueues(queues: List<String>): EmptyQueuesResponse? = runCatching {
         val response = httpClient.post("/api/jobs/empty") {
@@ -898,9 +946,11 @@ object MediaApi {
         httpClient.get("/api/media/$id/health/integrity").body<FileIntegrityStatus>()
     }.getOrNull()
 
-    /** FR-254-6 — queue a deep check of this title's unchecked files. True if the request was accepted. */
-    suspend fun checkFileIntegrity(id: String): Boolean = runCatching {
-        httpClient.post("/api/media/$id/health/integrity/check").status.value in 200..299
+    /** FR-254-6 — queue a deep check of this title's unchecked files. True if the request was accepted.
+     *  Phase 261: per file; [check] = "verify" | "lengths" narrows it to one check, [force] re-runs checked files too. */
+    suspend fun checkFileIntegrity(id: String, check: String? = null, force: Boolean = false): Boolean = runCatching {
+        val q = listOfNotNull(check?.let { "check=$it" }, "force=true".takeIf { force }).joinToString("&")
+        httpClient.post("/api/media/$id/health/integrity/check" + (if (q.isEmpty()) "" else "?$q")).status.value in 200..299
     }.getOrDefault(false)
 
     // ── Phase 255: a track that stops before the file does ─────────────────────────────────────

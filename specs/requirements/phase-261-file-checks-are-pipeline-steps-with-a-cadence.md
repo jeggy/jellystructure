@@ -2,7 +2,7 @@
 
 ## Status
 
-`Planned` — written 2026-09-25 with the owner; **dev-reviewed 2026-09-26 against `31dc2d9a`** (nine items, below), not built. Spec first. Reshapes how phases
+`Built` — written 2026-09-25 with the owner; **dev-reviewed 2026-09-26 against `31dc2d9a`** (nine items, below) and built the same day. Not yet deployed: acceptance 4 is production's. Reshapes how phases
 **254** (whole-file verification) and **255** (track lengths) are scheduled and shown; changes neither check.
 
 > Owner, 2026-09-25, on the sweep jobs: *"I'm not a fan of these jobs. […] If there is no real reason for
@@ -15,6 +15,36 @@
 > see what things these items have been checked against and when."* On the read cost of re-verifying whole
 > files: *"let's change it, so it's configurable within the pipeline setup configuration page. So a
 > standard setup could be every 5 years."*
+
+### Build (2026-09-26)
+
+All nine review items. **Queue** — migration 53: `media_job.defer_while_playing` + `priority` (backfilled from
+`params`), the claim index `(lane, state, priority DESC, created_at)` (the ORDER BY mixes directions, so the
+index carries `DESC`: with `ASC` the plan fell back to a temp B-tree, seen on a copy of production), the retired
+sweep/title rows cancelled, `item_step_run`. `claimNext` reads `nextQueued` / `nextQueuedNotDeferred` per lane;
+`healthSnapshot` two counts and `lastFailure`. **Steps** — `FileCheckSteps` (defaults, the one-time seed ahead of
+trailing wait/notify; an empty pipeline stays empty and `effectivePipeline`'s built-in list carries both),
+`FileCheckSchedule` (the due rule, `nextCadenceDueMs`, priorities, labels, dedupe keys), `enqueueDueFileChecks`
+(new/changed first, then cadence, each newest-modified first), `runFileCheck` (one file, one check; a vanished
+file is *cancelled*, an unreadable one *failed*), `enqueueTitleChecks` (Check now, `?check=verify|lengths`,
+`?force=true`). `nextDueMs` beside `isDueForRecheck`, which now calls it; `isActivelyAiring` shared with the
+Checks card. **Read side** — `/api/jobs` `groups` + `GET /api/jobs/groups/{type}`; `GET /api/media/{id}/checks`
+(`TitleChecks`: every date and phrase decided server-side). **Admin** — the two pipeline blocks with the cadence
+table and their own copy, `every 2 years` / `every 5 years` for every step, palette defaults, TOML preview; the
+Jobs view's group lines (expand to running / next 100 waiting / latest finished); the Overview's *Checks* card
+with ↻ only on actions a title already had. The segments lane's *Emptied* sentence now names file checks too.
+
+**Tests** (18 new, 542 pass): `FileCheckScheduleTest` (acceptance 1's due rules, no airing floor, units/labels),
+`FreshnessFilterTest` (`2years`/`5years`; due exactly at `nextDueMs` on every tier), `MediaJobPerFileTest`
+(acceptance 2: one row per file and check, priority/age/insertion order, defer only while holding, promote,
+grouped lists, `lastFailure` behind 60 newer rows), `FileCheckStepsConfigTest` (acceptance 3: `verify_files =
+false` → both off before a trailing notify, the cadence round-trips through the written file, a removed step stays
+removed, an empty pipeline), `TitleChecksTextTest`.
+
+**Production dry-run** (a `.backup` copy, 2026-09-26 13:20): migration 53 applies on the live schema; 134 waiting
+segments rows carry the defer flag; the waiting `file_integrity_sweep` and `track_coverage_sweep` rows are
+retired; both claim queries plan as `SEARCH … USING INDEX media_job_claim` with no sort. Production's pipeline has
+no trailing wait/notify, so the two steps are appended, enabled.
 
 ## What happens today
 

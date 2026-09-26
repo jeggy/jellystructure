@@ -36,7 +36,7 @@ class MediaJobEmptyQueueTest {
 
     private fun insert(id: String, lane: String, state: String, dedupe: String? = null, type: String = "segments_season") {
         q.insert(id = id, type = type, media_id = "m-$id", label = "Title $id", params = "{}", state = state, enqueued_by = "admin",
-            created_at = 1_000L + id.hashCode() % 100, file_count = 1, lane = lane, dedupe_key = dedupe)
+            created_at = 1_000L + id.hashCode() % 100, file_count = 1, lane = lane, dedupe_key = dedupe, defer_while_playing = 0, priority = 0)
         if (state == "running") q.markRunning(2_000L, id)
     }
 
@@ -77,12 +77,12 @@ class MediaJobEmptyQueueTest {
             enqueued_by = "jeggy", created_at = 3_000L, started_at = 3_000L, finished_at = 3_000L, file_count = 2, lane = "segments", speed = null)
         val recent = q.listRecent(20).executeAsList()
         assertEquals(listOf("rec-1", "old-done"), recent.map { it.id }, "the two emptied rows are not listed one by one")
-        assertEquals("Emptied the segments queue · 2 waiting intro & credits detections removed", recent.first().label)
+        assertEquals("Emptied the segments queue · 2 waiting file checks and intro & credits detections removed", recent.first().label)
     }
 
     @Test
     fun `the record's sentence counts and names what was removed`() {
-        assertEquals("Emptied the segments queue · 1 waiting intro & credits detection removed", emptiedLabel("segments", 1))
+        assertEquals("Emptied the segments queue · 1 waiting file check or intro & credits detection removed", emptiedLabel("segments", 1))
         assertEquals("Emptied the subtitles queue · 41 waiting subtitle pre-warms removed", emptiedLabel("subtitles", 41))
         assertEquals("Emptied the media queue · 3 waiting jobs removed", emptiedLabel("media", 3))
     }

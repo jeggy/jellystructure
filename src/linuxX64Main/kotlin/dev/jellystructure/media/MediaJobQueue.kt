@@ -3,6 +3,7 @@ package dev.jellystructure.media
 import dev.jellystructure.arr.ArrRescanService
 import dev.jellystructure.auth.JellyfinClient
 import dev.jellystructure.config.ConfigStore
+import dev.jellystructure.config.PipelineStep
 import dev.jellystructure.db.JellystructureDb
 import dev.jellystructure.db.Media_job
 import dev.jellystructure.jobs.JobEvent
@@ -11,6 +12,7 @@ import dev.jellystructure.jobs.MediaJobParams
 import dev.jellystructure.jobs.MediaJobSnapshot
 import dev.jellystructure.jobs.WsBroadcaster
 import dev.jellystructure.log.Logger
+import dev.jellystructure.model.MediaItem
 import dev.jellystructure.model.TrackKind
 import dev.jellystructure.resolver.LanguageResolver
 import dev.jellystructure.resolver.primaryAudioLanguage
@@ -104,6 +106,8 @@ class MediaJobQueue(
     private val fileIntegrity: FileIntegrityService? = null,
     // Phase 255 — the coverage sweep and the title check's second half.
     private val trackCoverage: TrackCoverageService? = null,
+    // Phase 261 (FR-261-9) — the enqueue-only steps' per-title record, written when their job finishes.
+    val stepRuns: StepRunStore? = null,
 ) {
     private val json = Json { ignoreUnknownKeys = true }
     private val queries get() = db.mediaJobQueries
@@ -158,7 +162,7 @@ class MediaJobQueue(
 
     suspend fun enqueue(type: String, mediaId: String, label: String, params: MediaJobParams, fileCount: Int = 1): MediaJobSnapshot {
         val id = "mj-${genId()}"
-        queries.insert(id, type, mediaId, label, json.encodeToString(MediaJobParams.serializer(), params), "queued", "admin", epochSeconds(), fileCount.toLong(), "media", null)
+        queries.insert(id, type, mediaId, label, json.encodeToString(MediaJobParams.serializer(), params), "queued", "admin", epochSeconds(), fileCount.toLong(), "media", null, params.deferWhilePlaying.toLong(), 0L)
         val snap = snapshotOf(id)!!
         broadcaster.broadcast(JobEvent.MediaJobUpdate(snap))
         return snap
@@ -182,7 +186,7 @@ class MediaJobQueue(
     private suspend fun enqueueDeduped(type: String, mediaId: String, label: String, params: MediaJobParams, fileCount: Int, dedupeKey: String, lane: String): SegmentEnqueueResult {
         val id = "mj-${genId()}"
         val inserted = runCatching {
-            queries.insert(id, type, mediaId, label, json.encodeToString(MediaJobParams.serializer(), params), "queued", "admin", epochSeconds(), fileCount.toLong(), lane, dedupeKey)
+            queries.insert(id, type, mediaId, label, json.encodeToString(MediaJobParams.serializer(), params), "queued", "admin", epochSeconds(), fileCount.toLong(), lane, dedupeKey, params.deferWhilePlaying.toLong(), 0L)
         }.isSuccess
         if (inserted) {
             val snap = snapshotOf(id)!!
@@ -269,7 +273,16 @@ class MediaJobQueue(
     suspend fun retry(jobId: String): MediaJobSnapshot? {
         val row = queries.findById(jobId).executeAsOneOrNull() ?: return null
         if (row.state != "failed" && row.state != "cancelled") return null
+        // Phase 261 — the library sweeps and the whole-title check are retired; the pipeline queues their work per file.
+        if (row.type in RETIRED_TYPES) return null
         val params = runCatching { json.decodeFromString(MediaJobParams.serializer(), row.params) }.getOrNull() ?: return null
+        if (row.type in FileCheckSchedule.JOB_TYPES) {
+            val path = params.filePath ?: return null
+            val item = store.resolve(row.media_id) ?: return null
+            val unit = FileCheckSchedule.units(item).firstOrNull { it.path == path } ?: FileUnit(item, path, null)
+            enqueueFileCheck(row.type, unit, FileCheckSchedule.PRIORITY_OPERATOR, defer = false)
+            return queries.findByDedupeKeyActive(FileCheckSchedule.dedupeKey(row.type, path)).executeAsOneOrNull()?.let { toSnapshot(it) }
+        }
         return when (row.lane) {
             "segments" -> {
                 // dedupe_key survives a retry unchanged — a retried job is still "this exact work unit",
@@ -291,6 +304,45 @@ class MediaJobQueue(
     fun running(): List<MediaJobSnapshot> = queries.listRunning().executeAsList().map { toSnapshot(it) }
     fun queued(): List<MediaJobSnapshot> = queries.listQueued().executeAsList().map { toSnapshot(it) }
     fun recent(limit: Int = 20): List<MediaJobSnapshot> = queries.listRecent(limit.toLong()).executeAsList().map { toSnapshot(it) }
+
+    /** Phase 261 (FR-261-2, dev review item 1) — what `GET /api/jobs` lists row by row: everything but the
+     *  per-file checks, which are one [groups] line each (Recent keeps a per-file row only when it failed). */
+    fun queuedUngrouped(): List<MediaJobSnapshot> = queries.listQueuedExcept(FileCheckSchedule.JOB_TYPES).executeAsList().map { toSnapshot(it) }
+    fun recentUngrouped(limit: Int = 20): List<MediaJobSnapshot> = queries.listRecentExcept(FileCheckSchedule.JOB_TYPES, limit.toLong()).executeAsList().map { toSnapshot(it) }
+
+    /** FR-261-2 — *Verify files · 2,261 waiting · 41 done today · 1 finding*: one line per per-file type, the
+     *  number of jobs being the status. Findings are read from the results, not the rows (a check succeeds
+     *  whether or not the file is damaged). */
+    fun groups(): List<JobGroup> {
+        val since = midnightToday()
+        val counts = queries.groupCounts(FileCheckSchedule.JOB_TYPES, since).executeAsList().associate { (it.type to it.state) to it.n.toInt() }
+        return FileCheckSchedule.JOB_TYPES.map { type ->
+            JobGroup(
+                type = type,
+                label = if (type == FileCheckSchedule.VERIFY_JOB) "Verify files" else "Check track lengths",
+                waiting = counts[type to "queued"] ?: 0,
+                running = queries.listByTypeRunning(type).executeAsList().map { toSnapshot(it) },
+                doneToday = counts[type to "done"] ?: 0,
+                failedToday = counts[type to "failed"] ?: 0,
+                findingsToday = runCatching {
+                    if (type == FileCheckSchedule.VERIFY_JOB) db.fileIntegrityQueries.countFindingsSince(since).executeAsOne().toInt()
+                    else db.fileTrackCoverageQueries.countFindingsSince(since).executeAsOne().toInt()
+                }.getOrDefault(0),
+            )
+        }
+    }
+
+    /** FR-261-2 — the expanded group line: its running rows, the next waiting ones in claim order, the latest finished. */
+    fun groupRows(type: String, limit: Int = 100): JobGroupRows? {
+        if (type !in FileCheckSchedule.JOB_TYPES) return null
+        return JobGroupRows(
+            running = queries.listByTypeRunning(type).executeAsList().map { toSnapshot(it) },
+            queued = queries.listByTypeQueued(type, limit.toLong()).executeAsList().map { toSnapshot(it) },
+            recent = queries.listByTypeFinished(type, limit.toLong()).executeAsList().map { toSnapshot(it) },
+        )
+    }
+
+    private fun midnightToday(): Long = epochSeconds() - (epochSeconds() % 86_400L)
 
     /** Phase 164 (FR-164-6), widened by Phase 213 to three queues — the worker-line summary chips:
      *  busy/running/queued/done-today, split by queue, so the Jobs page can show each queue's own state
@@ -314,11 +366,11 @@ class MediaJobQueue(
     /** Phase 213 (FR-213-7) — surfaced on `GET /api/health` as `job_queues`. */
     fun healthSnapshot(): JobQueueHealth {
         val counts = queries.countByLaneState().executeAsList().associate { (it.lane to it.state) to it.n.toInt() }
-        val subtitlesQueuedRows = queries.listQueuedByLane("subtitles").executeAsList()
-        val deferredByPlayback = subtitlesQueuedRows.isNotEmpty() &&
-            subtitlesQueuedRows.all { it.deferWhilePlaying() } &&
-            dev.jellystructure.tv.isPlaybackActive()
-        val lastFailure = queries.listRecent(50).executeAsList().firstOrNull { it.lane == "subtitles" && it.state == "failed" }?.error
+        // Phase 261 (dev review item 3) — two counts instead of reading and JSON-parsing every waiting row.
+        val deferredByPlayback = (counts["subtitles" to "queued"] ?: 0) > 0 &&
+            queries.countQueuedNotDeferredByLane("subtitles").executeAsOne() == 0L &&
+            deferNow()
+        val lastFailure = queries.lastFailure("subtitles").executeAsOneOrNull()?.error
         return JobQueueHealth(
             configuredWorkers = poolTargetWorkers.value,
             activeWorkers = poolActiveWorkers.value,
@@ -384,7 +436,7 @@ class MediaJobQueue(
                 }
                 val row = claimMutex.withLock { claimNext() }
                 if (row == null) { delay(1000); continue }
-                broadcastSnapshot(row.id)
+                if (row.type !in FileCheckSchedule.JOB_TYPES) broadcastSnapshot(row.id)   // Phase 261: per-file rows broadcast nothing
                 runClaimed(row)
             }
         } finally {
@@ -402,12 +454,15 @@ class MediaJobQueue(
      *  question 6 in the phase-213 spec). */
     private fun claimNext(): Media_job? {
         val candidates = mutableListOf<Media_job>()
+        // Phase 261 (FR-261-2, dev review item 3) — ONE candidate per lane, read through the claim index:
+        // the lane's next row, or while a TV plays (and the household defers, 262) its next row that does
+        // not wait. Was: every waiting row of every lane, each one's params JSON-parsed, on every claim.
+        val holding = deferNow()
         for (lane in QUEUE_NAMES) {
             if (lane in occupiedQueues) continue
             if (lane == "media" && bulkRunning) continue
-            val queued = queries.listQueuedByLane(lane).executeAsList()
-            val playing = if (queued.any { it.deferWhilePlaying() }) dev.jellystructure.tv.isPlaybackActive() else false
-            queued.firstOrNull { !playing || !it.deferWhilePlaying() }?.let { candidates += it }
+            val next = if (holding) queries.nextQueuedNotDeferred(lane).executeAsOneOrNull() else queries.nextQueued(lane).executeAsOneOrNull()
+            next?.let { candidates += it }
         }
         for (chosen in candidates.sortedBy { it.created_at }) {
             // Phase 260 (FR-260-2, dev review item 1) — the claim is conditional on `queued`: a row that
@@ -458,14 +513,9 @@ class MediaJobQueue(
 
     private fun snapshotRowOf(id: String): Media_job? = queries.findById(id).executeAsOneOrNull()
 
-    /** Phase 178 §FR-178-2 — a corrupt/unparseable params blob (should never happen; every enqueue path
-     *  writes valid JSON) defaults to non-deferrable rather than silently starving the queue. */
-    // Phase 262 (FR-262-1) — the row's own flag AND the household switch, read live: switching
-    // `scan.defer_while_playing` off releases everything waiting, with no re-enqueue.
-    private fun Media_job.deferWhilePlaying(): Boolean =
-        deferDecision(runCatching { json.decodeFromString(MediaJobParams.serializer(), params).deferWhilePlaying }.getOrDefault(false), configStore.current.scan.deferWhilePlaying)
-
-    /** Phase 262 (FR-262-1) — should a job that asked to defer actually wait for playback right now? */
+    /** Phase 262 (FR-262-1) — should a job that asked to defer actually wait for playback right now? The
+     *  row's own flag is the `defer_while_playing` column (Phase 261); this is the household half, read live:
+     *  switching `scan.defer_while_playing` off releases everything waiting, with no re-enqueue. */
     private fun deferNow(): Boolean = deferDecision(true, configStore.current.scan.deferWhilePlaying) && dev.jellystructure.tv.isPlaybackActive()
 
     /** Runs a claimed job (any of the three queues) and applies its [Outcome] generically: this is what
@@ -511,10 +561,29 @@ class MediaJobQueue(
             }
         }
 
+        recordStepRun(row, outcome)
         if (row.lane == "media") { runningJobId = null; cancelRunning = false }
         cooperativeCancelledIds = cooperativeCancelledIds - row.id
         claimMutex.withLock { occupiedQueues -= row.lane }
-        broadcastSnapshot(row.id)
+        // Phase 261 (dev review item 1) — no page renders a per-file row's event; the Jobs view polls.
+        if (row.type !in FileCheckSchedule.JOB_TYPES) broadcastSnapshot(row.id)
+    }
+
+    /** Phase 261 (FR-261-9, dev review item 7) — the enqueue-only pipeline steps' per-title record, written
+     *  when the work itself finishes (a requeue for playback is not a run). */
+    private fun recordStepRun(row: Media_job, outcome: Outcome) {
+        val runs = stepRuns ?: return
+        val step = when (row.type) {
+            "segments_movie", "segments_season", "segments_episodes" -> "detect_segments"
+            "prewarm_subtitles" -> "prewarm_subtitles"
+            else -> return
+        }
+        when (outcome) {
+            is Success -> runs.record(row.media_id, step, StepRunStore.OK, row.label)
+            is Failure -> runs.record(row.media_id, step, StepRunStore.FAILED, outcome.reason)
+            is Cancelled -> runs.record(row.media_id, step, StepRunStore.SKIPPED, outcome.reason ?: "cancelled")
+            is Requeue -> if (!outcome.inPlace) runs.record(row.media_id, step, StepRunStore.FAILED, outcome.reason)
+        }
     }
 
     private sealed class Outcome
@@ -663,74 +732,122 @@ class MediaJobQueue(
 
     // ── Phase 254: a file damaged past its first Cluster ────────────────────────────────────────
 
-    /** FR-254-5/6 — deep-check a worklist, one file at a time. The library sweep is a bounded slice
-     *  (it ends itself after [INTEGRITY_SLICE_SEC] so it can never sit ahead of `detect_segments` for a
-     *  day) and yields between files the moment a TV starts playing; a title check an operator asked
-     *  for does neither. */
-    private suspend fun runFileIntegrityCheck(row: Media_job, isCancelled: () -> Boolean): Outcome {
-        val service = fileIntegrity ?: return Failure("File integrity service not available")
-        val sweep = row.type == "file_integrity_sweep"
-        val paths = if (sweep) service.uncheckedMostRecentFirst(store.allItems())
-        else runCatching { json.decodeFromString(MediaJobParams.serializer(), row.params) }.getOrNull()?.repairPaths ?: return Failure("Corrupt job parameters")
-        val startedAt = epochSeconds()
-        var damaged = 0
-        for ((i, path) in paths.withIndex()) {
-            if (isCancelled()) return Cancelled()
-            if (sweep && deferNow()) return Requeue(inPlace = true, reason = "playback started — ${paths.size - i} file(s) still to verify")   // Phase 262: honours the household switch
-            if (sweep && epochSeconds() - startedAt > INTEGRITY_SLICE_SEC) break
-            if (service.check(path)?.state == FileIntegrityState.DAMAGED) damaged++
-            // Phase 255 (FR-255-6) — an operator's Check now runs both checks on the file.
-            if (!sweep) trackCoverage?.let { runCatching { it.check(path) } }
-            segmentsProgress(row.id, i + 1, paths.size)
+    /** Phase 261 (FR-261-1) — one file, one check: `verify_file` is 254's whole-file demux pass,
+     *  `check_track_lengths` 255's tail probe. Each result is persisted by its service under the size+mtime
+     *  rule; a file rewritten while it was read stays without a current result and is due again next pass. */
+    private suspend fun runFileCheck(row: Media_job, isCancelled: () -> Boolean): Outcome {
+        if (isCancelled()) return Cancelled()
+        val path = runCatching { json.decodeFromString(MediaJobParams.serializer(), row.params) }.getOrNull()?.filePath
+            ?: return Failure("Corrupt job parameters")
+        if (FileIntegrityService.stampOf(path) == null) return Cancelled("the file is no longer on disk")
+        when (row.type) {
+            FileCheckSchedule.VERIFY_JOB -> {
+                val service = fileIntegrity ?: return Failure("File integrity service not available")
+                service.check(path) ?: return Failure("ffmpeg could not read the file")
+            }
+            else -> {
+                val service = trackCoverage ?: return Failure("Track coverage service not available")
+                service.check(path) ?: return Failure("ffprobe could not read the file")
+            }
         }
-        if (damaged > 0) Logger.warn("${row.type}: $damaged damaged file(s) found", "integrity")
+        queries.updateProgress(100.0, null, 1L, null, row.id)
         return Success
     }
 
-    // ── Phase 255: a track that stops before the file does ─────────────────────────────────────
+    /** What each check has stored, per path, in [StoredFileCheck]'s terms — null when the check's service
+     *  is not wired (a test/bootstrap context). */
+    private fun storedChecks(jobType: String): Map<String, StoredFileCheck>? = when (jobType) {
+        FileCheckSchedule.VERIFY_JOB -> fileIntegrity?.rowsByPath()?.mapValues { (_, r) -> StoredFileCheck(r.size, r.mtime, r.checked_at, r.damage_count > 0) }
+        FileCheckSchedule.LENGTHS_JOB -> trackCoverage?.rowsByPath()?.mapValues { (_, r) -> StoredFileCheck(r.size, r.mtime, r.checked_at, r.findings != "[]") }
+        else -> null
+    }
 
-    /** FR-255-5 — the coverage sweep: the same loop and slice as the deep check's, read-only, deferred while
-     *  anything plays, unchecked files most recently modified first. */
-    private suspend fun runTrackCoverageSweep(row: Media_job, isCancelled: () -> Boolean): Outcome {
-        val service = trackCoverage ?: return Failure("Track coverage service not available")
-        val paths = service.uncheckedMostRecentFirst(store.allItems())
-        val startedAt = epochSeconds()
-        var flagged = 0
-        for ((i, path) in paths.withIndex()) {
-            if (isCancelled()) return Cancelled()
-            if (deferNow()) return Requeue(inPlace = true, reason = "playback started — ${paths.size - i} file(s) still to check")   // Phase 262
-            if (epochSeconds() - startedAt > INTEGRITY_SLICE_SEC) break
-            if (service.check(path)?.state == TrackCoverageState.FINDINGS) flagged++
-            segmentsProgress(row.id, i + 1, paths.size)
+    /** Phase 261 — the outcome of queuing one per-file row. */
+    enum class FileEnqueue { INSERTED, PROMOTED, ALREADY_QUEUED }
+
+    /** FR-261-1 — one row per file on the segments lane, deduped per path by the partial unique index (a
+     *  duplicate insert is a no-op, not a check-then-insert). No snapshot, no broadcast: nothing renders one
+     *  (dev review item 1). An operator's request that meets a waiting row raises it (dev review item 2). */
+    fun enqueueFileCheck(jobType: String, unit: FileUnit, priority: Long, defer: Boolean): FileEnqueue {
+        val key = FileCheckSchedule.dedupeKey(jobType, unit.path)
+        val params = json.encodeToString(MediaJobParams.serializer(), MediaJobParams(filePath = unit.path, deferWhilePlaying = defer))
+        val inserted = runCatching {
+            queries.insert(
+                "mj-${genId()}", jobType, unit.item.id, FileCheckSchedule.label(jobType, unit), params, "queued",
+                if (priority >= FileCheckSchedule.PRIORITY_OPERATOR) "admin" else "pipeline", epochSeconds(), 1L, "segments", key, defer.toLong(), priority,
+            )
+        }.isSuccess
+        if (inserted) return FileEnqueue.INSERTED
+        if (priority < FileCheckSchedule.PRIORITY_OPERATOR) return FileEnqueue.ALREADY_QUEUED
+        val raised = queries.transactionWithResult { queries.promoteQueued(priority, key); queries.changes().executeAsOne() > 0L }
+        return if (raised) FileEnqueue.PROMOTED else FileEnqueue.ALREADY_QUEUED
+    }
+
+    /** Phase 261 (FR-261-8) — what one pass of a file step queued. */
+    data class FileCheckPass(val newOrChanged: Int, val byCadence: Int, val alreadyQueued: Int, val stoppedEarly: Boolean) {
+        val queued get() = newOrChanged + byCadence
+    }
+
+    /**
+     * FR-261-3/7/8 — a step's pass is an enqueue, not a job: every due file of [items], new or changed files
+     * first (priority 0, with segment work), then cadence re-checks (priority −1, behind everything), each
+     * group most recently modified first (254's rule). Rows ask to wait while a TV plays (FR-261-1).
+     */
+    fun enqueueDueFileChecks(step: PipelineStep, items: List<MediaItem>, shouldStop: () -> Boolean = { false }): FileCheckPass {
+        val jobType = FileCheckSchedule.jobTypeFor(step.step) ?: return FileCheckPass(0, 0, 0, false)
+        val stored = storedChecks(jobType) ?: return FileCheckPass(0, 0, 0, false)
+        val nowMs = store.nowMs()
+        val currentYear = yearFromEpochMs(nowMs)
+        val due = ArrayList<Triple<FileUnit, FileCheckDue, Long>>()
+        for (item in items) for (unit in FileCheckSchedule.units(item)) {
+            val stamp = FileIntegrityService.stampOf(unit.path) ?: continue
+            val why = FileCheckSchedule.due(stored[unit.path], stamp.size, stamp.mtime, nowMs, item.year, currentYear, step) ?: continue
+            due += Triple(unit, why, stamp.mtime)
         }
-        if (flagged > 0) Logger.warn("${row.type}: $flagged file(s) with a short track or a wrong header", "integrity")
-        return Success
+        due.sortWith(compareBy<Triple<FileUnit, FileCheckDue, Long>> { it.second.ordinal }.thenByDescending { it.third })
+        var fresh = 0; var cadence = 0; var already = 0
+        for ((unit, why, _) in due) {
+            if (shouldStop()) return FileCheckPass(fresh, cadence, already, true)
+            val priority = if (why == FileCheckDue.NO_RESULT) FileCheckSchedule.PRIORITY_NEW else FileCheckSchedule.PRIORITY_CADENCE
+            when (enqueueFileCheck(jobType, unit, priority, defer = true)) {
+                FileEnqueue.INSERTED -> if (why == FileCheckDue.NO_RESULT) fresh++ else cadence++
+                else -> already++
+            }
+        }
+        return FileCheckPass(fresh, cadence, already, false)
     }
 
-    /** FR-255-5 — idempotent: one active sweep at a time, none when nothing is unchecked; gated by the same
-     *  `verify_files` switch as phase 254's. */
-    suspend fun enqueueTrackCoverageSweep(): MediaJobSnapshot? {
-        val service = trackCoverage ?: return null
-        if (!configStore.current.behavior.verifyFiles) return null
-        val missing = service.uncheckedMostRecentFirst(store.allItems()).size
-        if (missing == 0) return null
-        val r = enqueueSegments("track_coverage_sweep", "library", "Check track lengths ($missing file(s) not yet checked)", MediaJobParams(deferWhilePlaying = true), missing, "coverage:library")
-        return if (r.deduped) null else r.snapshot
-    }
+    /** Phase 261 (FR-261-10) — the title page's Checks card, from this queue's own collaborators. */
+    fun titleChecks(item: MediaItem, config: dev.jellystructure.config.AppConfig): TitleChecksDto =
+        TitleChecks(db, store, stepRuns, fileIntegrity, trackCoverage).forItem(item, config)
 
-    /** FR-254-5 — idempotent: one active sweep at a time, none when nothing is unchecked. */
-    suspend fun enqueueIntegritySweep(): MediaJobSnapshot? {
-        val service = fileIntegrity ?: return null
-        if (!configStore.current.behavior.verifyFiles) return null
-        val missing = service.uncheckedMostRecentFirst(store.allItems()).size
-        if (missing == 0) return null
-        val r = enqueueSegments("file_integrity_sweep", "library", "Verify video files ($missing not yet read end to end)", MediaJobParams(deferWhilePlaying = true), missing, "integrity:library")
-        return if (r.deduped) null else r.snapshot
-    }
+    /** Phase 261 — Check now's answer: how many files it looked at, rows it queued, waiting rows it raised. */
+    @kotlinx.serialization.Serializable
+    data class TitleChecks(val files: Int, val queued: Int, val promoted: Int)
 
-    /** FR-254-6 — an operator's explicit request: never deferred. */
-    suspend fun enqueueIntegrityTitle(item: dev.jellystructure.model.MediaItem, paths: List<String>): SegmentEnqueueResult =
-        enqueueSegments("file_integrity_title", item.id, "Verify files · ${item.title}", MediaJobParams(repairPaths = paths), paths.size, "integrity:${item.id}")
+    /** FR-254-6 / FR-255-6 via FR-261-1 — an operator's Check now: the same per-file rows, first in the lane,
+     *  never deferred. Without [force], each check takes only the files it has no current result for. */
+    fun enqueueTitleChecks(item: MediaItem, force: Boolean, jobTypes: List<String> = FileCheckSchedule.JOB_TYPES): TitleChecks {
+        val units = FileCheckSchedule.units(item)
+        var queued = 0; var promoted = 0
+        val touched = mutableSetOf<String>()
+        for (jobType in jobTypes) {
+            val stored = storedChecks(jobType) ?: continue
+            for (unit in units) {
+                if (!force) {
+                    val stamp = FileIntegrityService.stampOf(unit.path) ?: continue
+                    val row = stored[unit.path]
+                    if (row != null && row.size == stamp.size && row.mtime == stamp.mtime) continue
+                }
+                when (enqueueFileCheck(jobType, unit, FileCheckSchedule.PRIORITY_OPERATOR, defer = false)) {
+                    FileEnqueue.INSERTED -> { queued++; touched += unit.path }
+                    FileEnqueue.PROMOTED -> { promoted++; touched += unit.path }
+                    FileEnqueue.ALREADY_QUEUED -> touched += unit.path
+                }
+            }
+        }
+        return TitleChecks(touched.size, queued, promoted)
+    }
 
     /** FR-254-10/11 — replace each damaged file from its clean copy, or (only where the operator chose
      *  it, for a file with no source) the lossy remux. One writer per file via [MediaFileLock]. */
@@ -804,9 +921,8 @@ class MediaJobQueue(
 
     private suspend fun runSegmentsJobBody(row: Media_job): Outcome {
         fun isCancelled() = row.id in cooperativeCancelledIds
-        // Phase 254 — read-only whole-file checks ride this queue; they need no segment store.
-        if (row.type == "file_integrity_sweep" || row.type == "file_integrity_title") return runFileIntegrityCheck(row, isCancelled = ::isCancelled)
-        if (row.type == "track_coverage_sweep") return runTrackCoverageSweep(row, isCancelled = ::isCancelled)   // Phase 255
+        // Phase 254/255, per file since Phase 261 — read-only file checks ride this queue; they need no segment store.
+        if (row.type in FileCheckSchedule.JOB_TYPES) return runFileCheck(row, isCancelled = ::isCancelled)
         val segStore = segmentStore ?: return Failure("Segments store not available")
         // Phase 222 — the library-wide envelope backfill has no single item (media_id = "library").
         if (row.type == "waveform_backfill") return runWaveformBackfill(row, segStore, isCancelled = ::isCancelled)
@@ -1108,12 +1224,30 @@ class MediaJobQueue(
 
         /** The three queue names — Phase 260's route validates against THIS list, not a copy. */
         val QUEUE_NAMES = listOf("media", "segments", "subtitles")
+        /** Phase 261 (FR-261-1) — job types migration 53 cancelled; kept in Recent until pruned, never retried. */
+        val RETIRED_TYPES = setOf("file_integrity_sweep", "track_coverage_sweep", "file_integrity_title")
         /** Phase 260 (FR-260-6) — the synthetic Recent record's type. */
         const val QUEUE_EMPTIED_TYPE = "queue_emptied"
-        /** Phase 254 (FR-254-5) — one library sweep job reads for at most this long, then ends. */
-        const val INTEGRITY_SLICE_SEC = 20 * 60L
     }
 }
+
+private fun Boolean.toLong(): Long = if (this) 1L else 0L
+
+/** Phase 261 (FR-261-2) — one line of the Jobs view per per-file check type; the number of jobs is the status. */
+@kotlinx.serialization.Serializable
+data class JobGroup(
+    val type: String,
+    val label: String,
+    val waiting: Int,
+    val running: List<MediaJobSnapshot>,
+    @kotlinx.serialization.SerialName("done_today") val doneToday: Int,
+    @kotlinx.serialization.SerialName("failed_today") val failedToday: Int,
+    @kotlinx.serialization.SerialName("findings_today") val findingsToday: Int,
+)
+
+/** Phase 261 — `GET /api/jobs/groups/{type}`: the expanded group line. */
+@kotlinx.serialization.Serializable
+data class JobGroupRows(val running: List<MediaJobSnapshot>, val queued: List<MediaJobSnapshot>, val recent: List<MediaJobSnapshot>)
 
 /** Phase 260 (FR-260-1) — `POST /api/jobs/empty`'s answer: removed per queue, and the running jobs left alone. */
 @kotlinx.serialization.Serializable
@@ -1126,7 +1260,8 @@ data class EmptyQueuesResult(
  *  credits detections removed*. Pure, so the wording is tested rather than eyeballed. */
 internal fun emptiedLabel(lane: String, removed: Int): String {
     val what = when (lane) {
-        "segments" -> if (removed == 1) "intro & credits detection" else "intro & credits detections"
+        // Phase 261 — the segments queue holds the per-file checks too; the sentence names both.
+        "segments" -> if (removed == 1) "file check or intro & credits detection" else "file checks and intro & credits detections"
         "subtitles" -> if (removed == 1) "subtitle pre-warm" else "subtitle pre-warms"
         else -> if (removed == 1) "job" else "jobs"
     }

@@ -4,13 +4,17 @@ import dev.jellystructure.auth.JellyfinItem
 import dev.jellystructure.config.PipelineStep
 import dev.jellystructure.log.Logger
 
-/** ms duration for a freshness cadence string: "daily", "weekly", "monthly", "6months", "yearly", "never" */
+/** ms duration for a freshness cadence string: "daily", "weekly", "monthly", "6months", "yearly", "2years",
+ *  "5years", "never". Phase 261 (FR-261-5) added the last two — a whole-file read of the library is
+ *  200–300 GB, so the file checks want cadences no metadata step ever did. */
 fun cadenceMs(cadence: String): Long? = when (cadence.trim().lowercase()) {
     "daily"   -> 24 * 3_600_000L
     "weekly"  -> 7  * 24 * 3_600_000L
     "monthly" -> 30 * 24 * 3_600_000L
     "6months" -> 180 * 24 * 3_600_000L
     "yearly"  -> 365 * 24 * 3_600_000L
+    "2years"  -> 2 * 365 * 24 * 3_600_000L
+    "5years"  -> 5 * 365 * 24 * 3_600_000L
     "never"   -> null  // never recheck
     else      -> 30 * 24 * 3_600_000L  // default monthly
 }
@@ -56,7 +60,17 @@ private fun dateStringFromEpochMs(epochMs: Long): String {
 fun isDueForRecheck(
     nowMs: Long, lastExaminedMs: Long, releaseYear: Int, currentYear: Int, scanStep: PipelineStep,
     isActivelyAiring: Boolean = false,
-): Boolean {
+): Boolean = nextDueMs(lastExaminedMs, releaseYear, currentYear, scanStep, isActivelyAiring)?.let { nowMs >= it } ?: false
+
+/**
+ * Phase 261 (FR-261-7/10, dev review item 6) — WHEN [isDueForRecheck] turns true, or null for never. The
+ * scheduler asks "is it due", the title page's Checks card prints "next due"; both come from this one
+ * function, so the two cannot disagree.
+ */
+fun nextDueMs(
+    lastExaminedMs: Long, releaseYear: Int, currentYear: Int, scanStep: PipelineStep,
+    isActivelyAiring: Boolean = false,
+): Long? {
     val cadenceStr = when {
         isActivelyAiring || releaseYear >= currentYear -> scanStep.refreshThisYear
         (currentYear - releaseYear) <= 5                -> scanStep.refresh1To5y
@@ -67,9 +81,19 @@ fun isDueForRecheck(
     // excluded forever; a floor here costs one examination per `refreshThisYear` period at worst, and is
     // cheap insurance against a future variant of the bug this phase fixes.
     val thresh = cadenceMs(cadenceStr)
-        ?: return isActivelyAiring && (nowMs - lastExaminedMs) >= AIRING_FLOOR_MS
-    return (nowMs - lastExaminedMs) >= if (isActivelyAiring) minOf(thresh, AIRING_FLOOR_MS) else thresh
+    val gap = when {
+        thresh == null -> if (isActivelyAiring) AIRING_FLOOR_MS else return null
+        isActivelyAiring -> minOf(thresh, AIRING_FLOOR_MS)
+        else -> thresh
+    }
+    return lastExaminedMs + gap
 }
+
+/** FR-181-2 — a title Sonarr says is airing again soon is "hot" regardless of premiere year. ISO date strings
+ *  compare correctly lexicographically, so no parsing needed. Phase 261: shared by the scheduler's filter and
+ *  the Checks card's "next due", so the two read the same tier. */
+fun isActivelyAiring(item: dev.jellystructure.model.MediaItem, nowMs: Long): Boolean =
+    item.sonarrNextAiringDate?.let { it >= dateStringFromEpochMs(nowMs) } == true
 
 /** Phase 196 (FR-196-6) — the longest an actively-airing title may go unexamined, regardless of config. */
 private const val AIRING_FLOOR_MS = 24 * 3_600_000L
@@ -98,7 +122,6 @@ suspend fun computeFreshnessFilter(
 
     val now = store.nowMs()
     val currentYear = yearFromEpochMs(now)
-    val today = dateStringFromEpochMs(now)
     val skipped = mutableListOf<Triple<String, Long, Boolean>>()  // Phase 196 FR-196-5: id, examinedAt, airing
     val skipJellyfinIds = store.allItems().mapNotNull { item ->
         val jid = item.jellyfinId ?: return@mapNotNull null
@@ -106,13 +129,11 @@ suspend fun computeFreshnessFilter(
         // A null here (never examined, or reset by FR-196-4's backfill) always keeps the item.
         val lc = store.lastExaminedAt(item.id) ?: return@mapNotNull null
         val ry = item.year ?: return@mapNotNull null
-        // FR-181-2: a title Sonarr says is airing again soon is "hot" regardless of premiere year —
-        // ISO date strings compare correctly lexicographically, so no parsing needed.
-        val isActivelyAiring = item.sonarrNextAiringDate?.let { it >= today } == true
-        if (isDueForRecheck(now, lc, ry, currentYear, scanStep, isActivelyAiring)) {
+        val airing = isActivelyAiring(item, now)
+        if (isDueForRecheck(now, lc, ry, currentYear, scanStep, airing)) {
             null  // due → keep
         } else {
-            skipped += Triple(item.id, lc, isActivelyAiring)
+            skipped += Triple(item.id, lc, airing)
             jid  // not due → skip
         }
     }.toSet()

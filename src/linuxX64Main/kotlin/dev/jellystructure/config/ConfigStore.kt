@@ -32,7 +32,29 @@ class ConfigStore(private val filePath: String) {
             _config = toml.decodeFromString(AppConfig.serializer(), content)
         }
         if (result.isFailure) Logger.warn("Failed to parse config, using defaults: ${result.exceptionOrNull()?.message}")
-        else { fixAgeRatingMapKeys(); adoptNestedPublicUrl() }
+        else { fixAgeRatingMapKeys(); adoptNestedPublicUrl(); seedFileCheckSteps() }
+    }
+
+    /** Phase 261 (FR-261-4, dev review item 8) — once: add `verify_files` / `check_track_lengths` to the
+     *  operator's pipeline with their own defaults, enabled unless `behavior.verify_files = false`, then
+     *  remember it was done so a step the operator removes stays removed. Persisted at once, so the file
+     *  on disk shows what the scheduler will do. */
+    private suspend fun seedFileCheckSteps() {
+        val scan = _config.scan
+        if (scan.fileCheckStepsSeeded) return
+        val seeded = FileCheckSteps.seed(scan.pipeline, enabled = _config.behavior.verifyFiles)
+        _config = _config.copy(scan = scan.copy(pipeline = seeded, fileCheckStepsSeeded = true))
+        persist()
+        Logger.info(
+            "Config: file checks are pipeline steps now — ${FileCheckSteps.ALL.joinToString()} " +
+                when {
+                    scan.pipeline.isEmpty() -> "(the built-in default pipeline carries them)"
+                    seeded.size == scan.pipeline.size -> "(already in the pipeline)"
+                    _config.behavior.verifyFiles -> "added"
+                    else -> "added, disabled (verify_files = false)"
+                },
+            "config",
+        )
     }
 
     /** Phase 227 (FR-227-2) — 218's dev review had put `public_url` inside `[chromecast]`. Carry the

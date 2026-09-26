@@ -148,7 +148,7 @@ fun renderActivity(container: Element, scope: CoroutineScope, query: Map<String,
         <div id="view-jobs" style="display:none;">
           <div class="note blue" style="margin-bottom:14px;display:flex;gap:11px;align-items:flex-start;">
             <span style="flex:none;">ℹ</span>
-            <div class="tiny" style="line-height:1.6;">Three queues share one worker pool (Settings ▸ Job workers). Heavy media edits — an audio <b>re-order</b> is an <span class="mono">ffmpeg</span> remux (a full stream copy, 4K included) — go through the <b>media</b> queue; <b>intro &amp; credits detection</b> through <b>segments</b>; <b>subtitle pre-warming</b> (a full read of the source file, in Jellyfin's own process) through <b>subtitles</b>. Each queue only ever runs one job at a time no matter how many workers are configured — that's what keeps a re-order safe from racing another edit on the same file — so the pool size really just decides how many of the three queues can be busy at once.</div>
+            <div class="tiny" style="line-height:1.6;">Three queues share one worker pool (Settings ▸ Job workers). Heavy media edits — an audio <b>re-order</b> is an <span class="mono">ffmpeg</span> remux (a full stream copy, 4K included) — go through the <b>media</b> queue; <b>intro &amp; credits detection</b> and the per-file <b>checks</b> (whole-file verification, track lengths — one job per file) through <b>segments</b>; <b>subtitle pre-warming</b> (a full read of the source file, in Jellyfin's own process) through <b>subtitles</b>. Each queue only ever runs one job at a time no matter how many workers are configured — that's what keeps a re-order safe from racing another edit on the same file — so the pool size really just decides how many of the three queues can be busy at once.</div>
           </div>
           <div class="card" style="margin-bottom:14px;">
             <div class="row center" style="gap:10px;flex-wrap:wrap;"><h4 style="margin:0;">Queues</h4><span class="spacer"></span><span class="muted tiny">occupancy · one worker per queue, maximum</span><span class="btn sm ghost" id="qe-open-all" style="display:none;">Empty queues…</span></div>
@@ -176,7 +176,7 @@ fun renderActivity(container: Element, scope: CoroutineScope, query: Map<String,
             <div id="jobs-running-body"></div>
           </div>
           <div class="card" style="margin-bottom:14px;">
-            <div class="row center"><h4 style="margin:0;">Queue</h4><span class="chip" style="margin-left:8px;"><b id="jobs-q-count">0</b> waiting</span><span class="spacer"></span><span class="tiny muted">processed in order (FIFO)</span></div>
+            <div class="row center"><h4 style="margin:0;">Queue</h4><span class="chip" style="margin-left:8px;"><b id="jobs-q-count">0</b> waiting</span><span class="spacer"></span><span class="tiny muted">processed in order (FIFO) — file checks due by cadence wait behind everything else</span></div>
             <hr class="dash" style="margin:10px 0 4px;">
             <div id="jobqueue"><span class="muted tiny">Queue is empty.</span></div>
           </div>
@@ -651,11 +651,61 @@ private fun jobTypeLabel(type: String): String = when (type) {
     "file_integrity_sweep" -> "whole-file verification (library)"
     "file_integrity_title" -> "whole-file verification"
     "track_coverage_sweep" -> "track-length check (library)"
+    // Phase 261 — one job per file (the three above are retired; old rows keep their labels in Recent).
+    "verify_file" -> "whole-file verification"
+    "check_track_lengths" -> "track-length check"
     "file_damage_repair" -> "replace damaged file from clean copy"
     "file_lossy_repair" -> "lossy remux of damaged file"
     "presize_artwork" -> "pre-size TV artwork"
     "queue_emptied" -> "queue emptied"
     else -> type
+}
+
+// Phase 261 (FR-261-2) — the per-file groups the operator opened, and their last fetched rows (rendered at once on
+// the next poll, then refreshed, so an open group does not flash empty every two seconds).
+private val expandedJobGroups = mutableSetOf<String>()
+private val jobGroupRowsCache = mutableMapOf<String, dev.jellystructure.api.JobGroupRows>()
+
+private fun fmtCount(n: Int): String = n.toString().reversed().chunked(3).joinToString(",").reversed()
+
+/** FR-261-2 — *Verify files · 2,261 waiting · 41 done today · 1 finding*: the number of jobs is the status. */
+private fun jobGroupHtml(g: dev.jellystructure.api.JobGroup): String {
+    val open = g.type in expandedJobGroups
+    val parts = buildList {
+        add("${fmtCount(g.waiting)} waiting")
+        if (g.running.isNotEmpty()) add("${g.running.size} running")
+        add("${fmtCount(g.doneToday)} done today")
+        if (g.failedToday > 0) add("${fmtCount(g.failedToday)} failed")
+        add(if (g.findingsToday == 1) "1 finding" else "${fmtCount(g.findingsToday)} findings")
+    }
+    val rows = if (!open) "" else """<div id="jq-group-rows-${g.type}" class="jq-group-rows" style="margin:0 0 8px 34px;">${
+        jobGroupRowsCache[g.type]?.let { jobGroupRowsHtml(g, it) } ?: """<span class="muted tiny">Loading…</span>"""
+    }</div>"""
+    return """<div class="jobrow jq-group" data-group="${g.type}" style="cursor:pointer;">
+         <span class="jq-pos">${if (open) "▾" else "▸"}</span>
+         <div class="jq-main"><div class="jq-title">${laneBadge("segments")} <b>${g.label.esc()}</b> · ${parts.joinToString(" · ")}</div>
+           <div class="jq-sub">one job per file · ${if (open) "click to fold" else "click to list them"} · a restart keeps the count: only the running file starts over</div></div>
+         <span class="badge">${fmtCount(g.waiting + g.running.size)} jobs</span>
+       </div>$rows"""
+}
+
+private fun jobGroupRowsHtml(g: dev.jellystructure.api.JobGroup, r: dev.jellystructure.api.JobGroupRows): String = buildString {
+    for (j in r.running) append("""<div class="jobrow"><span class="jq-pos">▶</span><div class="jq-main"><div class="jq-title">${j.label.esc()}</div><div class="jq-sub">running · started ${j.startedAt?.let { dev.jellystructure.formatStoredTs(it.toString()) } ?: "?"}</div></div><span class="badge warn">running</span></div>""")
+    r.queued.forEachIndexed { idx, j ->
+        val why = when {
+            j.enqueuedBy == "admin" -> "Check now"
+            else -> "queued by the pipeline"
+        }
+        append("""<div class="jobrow" data-job="${j.id}"><span class="jq-pos">${idx + 1}</span><div class="jq-main"><div class="jq-title">${j.label.esc()}</div><div class="jq-sub">$why · ${dev.jellystructure.formatStoredTs(j.createdAt.toString())}</div></div><span class="badge">queued</span><span class="btn sm ghost jq-cancel" data-job-id="${j.id}">Cancel</span></div>""")
+    }
+    if (g.waiting > r.queued.size) append("""<div class="tiny muted" style="padding:6px 2px;">…and ${fmtCount(g.waiting - r.queued.size)} more waiting, in this order.</div>""")
+    if (r.recent.isNotEmpty()) {
+        append("""<div class="tiny muted" style="padding:8px 2px 2px;">Latest finished</div>""")
+        for (j in r.recent.take(20)) {
+            val ok = j.state == "done"
+            append("""<div class="jobrow"><span class="jq-ic ${if (ok) "ok" else "bad"}">${if (ok) "✓" else "✗"}</span><div class="jq-main"><div class="jq-title">${j.label.esc()}</div><div class="jq-sub">${(if (ok) "done" else (j.error ?: j.state)).esc()} · ${j.finishedAt?.let { dev.jellystructure.formatStoredTs(it.toString()) } ?: ""}</div></div>${if (!ok) """<span class="btn sm ghost jq-retry" data-job-id="${j.id}">Retry</span>""" else ""}</div>""")
+        }
+    }
 }
 
 private fun laneBadge(lane: String): String = """<span class="badge" style="background:var(--fill-2);font-size:.68rem;">${lane.esc()}</span>"""
@@ -749,9 +799,10 @@ private fun wireEmptyPanel(container: Element) {
 private fun renderJobsPanel(container: Element, s: dev.jellystructure.api.JobsSummary) {
     lastJobsSummary = s   // Phase 260
     wireEmptyPanel(container)
-    (container.querySelector("#qe-open-all") as? HTMLElement)?.style?.display = if (s.queued.isEmpty()) "none" else ""
+    val groupWaiting = s.groups.sumOf { it.waiting }   // Phase 261 — per-file rows are counted, not listed
+    (container.querySelector("#qe-open-all") as? HTMLElement)?.style?.display = if (s.queued.isEmpty() && groupWaiting == 0) "none" else ""
     (container.querySelector("#jobs-count-badge") as? HTMLElement)?.let {
-        val n = s.queued.size + s.running.size
+        val n = s.queued.size + groupWaiting + s.running.size
         it.textContent = n.toString()
         it.style.display = if (n > 0) "" else "none"
     }
@@ -799,14 +850,16 @@ private fun renderJobsPanel(container: Element, s: dev.jellystructure.api.JobsSu
             // Phase 164 (FR-164-5), extended by Phase 213 to subtitles — neither queue has a temp file
             // to kill (their calls only ever READ the source), so cancel is cooperative; say so rather
             // than implying an instant stop the media queue's own Cancel genuinely provides.
+            val perFile = r.type == "verify_file" || r.type == "check_track_lengths"   // Phase 261
             val cancelLabel = when (r.lane) {
-                "segments" -> "Stop after this episode"
+                "segments" -> if (perFile) "Stop after this file" else "Stop after this episode"
                 "subtitles" -> "Stop after this stream"
                 else -> "Cancel"
             }
             val detailLine = when (r.lane) {
                 "segments" -> {
-                    val progress = if (r.fileCount > 1) "episode ${r.filesDone.coerceAtMost(r.fileCount)} of ${r.fileCount}" else "${r.pct.toInt()}%"
+                    val progress = if (perFile) "reading one file — the result is stored when it finishes"
+                        else if (r.fileCount > 1) "episode ${r.filesDone.coerceAtMost(r.fileCount)} of ${r.fileCount}" else "${r.pct.toInt()}%"
                     (r.speed?.let { "${it.esc()} · " } ?: "") + progress
                 }
                 "subtitles" -> "warming subtitle streams — stops on its own if a TV starts playing"
@@ -827,9 +880,11 @@ private fun renderJobsPanel(container: Element, s: dev.jellystructure.api.JobsSu
         runningCard?.style?.display = "none"
     }
 
-    (container.querySelector("#jobs-q-count") as? HTMLElement)?.textContent = s.queued.size.toString()
+    (container.querySelector("#jobs-q-count") as? HTMLElement)?.textContent = fmtCount(s.queued.size + groupWaiting)
     val queueEl = container.querySelector("#jobqueue") as? HTMLElement
-    queueEl?.innerHTML = if (s.queued.isEmpty()) """<span class="muted tiny">Queue is empty.</span>""" else
+    val activeGroups = s.groups.filter { it.waiting > 0 || it.running.isNotEmpty() || it.doneToday > 0 || it.failedToday > 0 }
+    queueEl?.innerHTML = if (s.queued.isEmpty() && activeGroups.isEmpty()) """<span class="muted tiny">Queue is empty.</span>""" else
+        activeGroups.joinToString("") { jobGroupHtml(it) } +
         s.queued.mapIndexed { idx, j ->
             """<div class="jobrow" data-job="${j.id}">
                  <span class="jq-pos">${idx + 1}</span>
@@ -860,7 +915,9 @@ private fun renderJobsPanel(container: Element, s: dev.jellystructure.api.JobsSu
                 else -> "failed · ${j.error ?: "unknown error"}"
             }
             val badgeCls = if (j.state == "done") "badge ok" else "badge bad"
-            val retryBtn = if (j.state == "failed" || j.state == "cancelled")
+            // Phase 261 — a retired library sweep has nothing to retry: the pipeline queues its work per file now.
+            val retired = j.error == "retired"
+            val retryBtn = if ((j.state == "failed" || j.state == "cancelled") && !retired)
                 """<span class="btn sm ghost jq-retry" data-job-id="${j.id}">Retry</span>""" else ""
             """<div class="jobrow">
                  $ic
@@ -870,6 +927,29 @@ private fun renderJobsPanel(container: Element, s: dev.jellystructure.api.JobsSu
                </div>"""
         }
 
+    // Phase 261 (FR-261-2) — a group line expands to its rows; the rows are fetched only while it is open.
+    container.querySelectorAll(".jq-group").let { nodes ->
+        for (i in 0 until nodes.length) {
+            val line = nodes.item(i) as? HTMLElement ?: continue
+            line.addEventListener("click") {
+                val type = line.getAttribute("data-group") ?: return@addEventListener
+                if (!expandedJobGroups.remove(type)) expandedJobGroups += type
+                activityScope?.launch { refreshJobsPanel(container) }
+            }
+        }
+    }
+    for (type in expandedJobGroups.toList()) {
+        if (s.groups.none { it.type == type }) continue
+        activityScope?.launch {
+            val rows = MediaApi.getJobGroup(type) ?: return@launch
+            jobGroupRowsCache[type] = rows
+            (container.querySelector("#jq-group-rows-$type") as? HTMLElement)?.let { el ->
+                el.innerHTML = jobGroupRowsHtml(s.groups.first { it.type == type }, rows)
+                wireJobRowButtons(container, el)
+            }
+        }
+    }
+
     // Phase 260 (FR-260-4) — the per-lane way in; re-wired each render like the cancel buttons below.
     container.querySelectorAll(".lane-empty").let { nodes ->
         for (i in 0 until nodes.length) {
@@ -877,8 +957,13 @@ private fun renderJobsPanel(container: Element, s: dev.jellystructure.api.JobsSu
             btn.addEventListener("click") { openEmptyPanel(container, btn.getAttribute("data-lane")) }
         }
     }
-    // Wire cancel/retry buttons fresh each render (innerHTML was just replaced).
-    container.querySelectorAll(".jq-cancel, .jobs-cancel-running").let { nodes ->
+    wireJobRowButtons(container, container)
+}
+
+/** Wire cancel/retry buttons under [root] fresh each render (innerHTML was just replaced). Phase 261: shared
+ *  with a group's rows, which arrive after the panel itself. */
+private fun wireJobRowButtons(container: Element, root: Element) {
+    root.querySelectorAll(".jq-cancel, .jobs-cancel-running").let { nodes ->
         for (i in 0 until nodes.length) {
             val btn = nodes.item(i) as? HTMLElement ?: continue
             btn.addEventListener("click") {
@@ -887,7 +972,7 @@ private fun renderJobsPanel(container: Element, s: dev.jellystructure.api.JobsSu
             }
         }
     }
-    container.querySelectorAll(".jq-retry").let { nodes ->
+    root.querySelectorAll(".jq-retry").let { nodes ->
         for (i in 0 until nodes.length) {
             val btn = nodes.item(i) as? HTMLElement ?: continue
             btn.addEventListener("click") {
@@ -1163,6 +1248,8 @@ private fun stepLabel(step: String): String = when (step) {
     // the one step most likely to be looked for, now that it can be skipped per run.
     "detect_segments" -> "Segments"
     "prewarm_subtitles" -> "Subtitles"
+    "verify_files" -> "Verify"            // Phase 261
+    "check_track_lengths" -> "Lengths"    // Phase 261
     "wait" -> "Wait"
     "notify" -> "Notify"
     else -> step

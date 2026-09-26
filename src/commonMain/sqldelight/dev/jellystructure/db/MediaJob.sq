@@ -21,9 +21,15 @@ CREATE TABLE media_job (
     -- never have more than one worker drawing from it at once, so this column is still what enforces
     -- "at most one active X at a time" per queue, same as it always has. See MediaJobQueue.kt.
     lane TEXT NOT NULL DEFAULT 'media',   -- media | segments | subtitles
-    dedupe_key TEXT                       -- segments/subtitles only: enforces "never queued/running
+    dedupe_key TEXT,                      -- segments/subtitles only: enforces "never queued/running
                                            -- twice for the same item" via the partial unique index
                                            -- below, not a check-then-insert
+    -- Phase 261 (FR-261-2, dev review items 2-3) — the row's own "wait while a TV plays" flag as a column
+    -- (was only inside `params`, JSON-parsed for every queued row on every claim), and its place in the
+    -- lane: -1 = a file check due by cadence (yields to everything else), 0 = everything else, 1 = an
+    -- operator's Check now. The claim orders priority DESC, then created_at, then rowid.
+    defer_while_playing INTEGER NOT NULL DEFAULT 0,
+    priority INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE INDEX media_job_state ON media_job(state);
@@ -32,10 +38,69 @@ CREATE INDEX media_job_lane_state ON media_job(lane, state);
 CREATE UNIQUE INDEX media_job_dedupe_active
     ON media_job(dedupe_key)
     WHERE dedupe_key IS NOT NULL AND state IN ('queued', 'running');
+CREATE INDEX media_job_claim ON media_job(lane, state, priority DESC, created_at);
 
 insert:
-INSERT INTO media_job(id, type, media_id, label, params, state, enqueued_by, created_at, file_count, lane, dedupe_key)
-VALUES (:id, :type, :media_id, :label, :params, :state, :enqueued_by, :created_at, :file_count, :lane, :dedupe_key);
+INSERT INTO media_job(id, type, media_id, label, params, state, enqueued_by, created_at, file_count, lane, dedupe_key, defer_while_playing, priority)
+VALUES (:id, :type, :media_id, :label, :params, :state, :enqueued_by, :created_at, :file_count, :lane, :dedupe_key, :defer_while_playing, :priority);
+
+-- Phase 261 (FR-261-2) — the claim reads ONE candidate per lane, never the whole queue: the lane's next row,
+-- or (while a TV plays and the household defers) its next row that does not wait for playback.
+nextQueued:
+SELECT * FROM media_job WHERE lane = :lane AND state = 'queued'
+ORDER BY priority DESC, created_at ASC, rowid ASC LIMIT 1;
+
+nextQueuedNotDeferred:
+SELECT * FROM media_job WHERE lane = :lane AND state = 'queued' AND defer_while_playing = 0
+ORDER BY priority DESC, created_at ASC, rowid ASC LIMIT 1;
+
+-- Phase 261 (dev review item 2) — an operator's Check now that meets a waiting cadence row for the same file
+-- raises that row instead of answering "already queued": otherwise the click sits deferred at the back.
+promoteQueued:
+UPDATE media_job SET priority = :priority, defer_while_playing = 0
+WHERE dedupe_key = :dedupe_key AND state = 'queued' AND (priority < :priority OR defer_while_playing != 0);
+
+countQueuedByLane:
+SELECT COUNT(*) FROM media_job WHERE lane = :lane AND state = 'queued';
+
+countQueuedNotDeferredByLane:
+SELECT COUNT(*) FROM media_job WHERE lane = :lane AND state = 'queued' AND defer_while_playing = 0;
+
+-- Phase 261 (dev review item 3) — replaces a scan of the last 50 finished rows, which per-file rows flood.
+lastFailure:
+SELECT error FROM media_job WHERE lane = :lane AND state = 'failed' ORDER BY finished_at DESC LIMIT 1;
+
+-- Phase 261 (FR-261-2, dev review item 1) — the Jobs view lists per-file types as one group line each, so
+-- GET /api/jobs never answers thousands of rows every 2 s. These two leave them out of the flat lists
+-- (Recent keeps a per-file row only when it failed — a failure is an event, OQ3).
+listQueuedExcept:
+SELECT * FROM media_job WHERE state = 'queued' AND type NOT IN :types ORDER BY created_at ASC;
+
+listRecentExcept:
+SELECT * FROM media_job WHERE state IN ('done', 'failed', 'cancelled') AND (state != 'cancelled' OR error IS NULL OR error != 'emptied')
+AND (type NOT IN :types OR state = 'failed')
+ORDER BY COALESCE(finished_at, created_at) DESC LIMIT :max_rows;
+
+groupCounts:
+SELECT type, state, COUNT(*) AS n FROM media_job
+WHERE type IN :types AND (state IN ('queued', 'running') OR COALESCE(finished_at, 0) >= :since)
+GROUP BY type, state;
+
+-- Phase 261 (FR-261-10) — the Checks card's "queued" per file: this title's waiting/running file checks.
+activeFileChecksForItem:
+SELECT dedupe_key, state FROM media_job WHERE media_id = :media_id AND type IN :types AND state IN ('queued', 'running');
+
+-- The expanded group: its waiting rows in claim order, or its latest finished rows.
+listByTypeQueued:
+SELECT * FROM media_job WHERE type = :type AND state = 'queued'
+ORDER BY priority DESC, created_at ASC, rowid ASC LIMIT :max_rows;
+
+listByTypeRunning:
+SELECT * FROM media_job WHERE type = :type AND state = 'running' ORDER BY started_at ASC;
+
+listByTypeFinished:
+SELECT * FROM media_job WHERE type = :type AND state IN ('done', 'failed', 'cancelled') AND (error IS NULL OR error != 'emptied')
+ORDER BY COALESCE(finished_at, created_at) DESC LIMIT :max_rows;
 
 findById:
 SELECT * FROM media_job WHERE id = :id;

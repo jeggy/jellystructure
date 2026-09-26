@@ -64,7 +64,40 @@ data class ScanConfig(
     // proceeds (FR-178-4). Default true: a single-user household and a many-viewer one want opposite
     // answers, but "don't compete with the TV for disk" is the safer default either way.
     @SerialName("defer_while_playing") val deferWhilePlaying: Boolean = true,
+    // Phase 261 (FR-261-4, dev review item 8) — the two file-check steps are added to an existing pipeline
+    // ONCE, on the first boot after this lands (`behavior.verify_files = false` adds them disabled). Server-
+    // owned: a step the operator later removes must not come back on the next boot, and a Settings save
+    // never carries this (ConfigRoutes keeps the stored value).
+    @SerialName("file_check_steps_seeded") val fileCheckStepsSeeded: Boolean = false,
 )
+
+/** Phase 261 (FR-261-4/6) — the two file checks as pipeline steps, and the defaults that respect the disk:
+ *  a whole-file read of the library is 200–300 GB, a tail probe ~15–60 MB per file. [PipelineStep]'s own
+ *  defaults (weekly/monthly/6months) are scan_files'; a file step never takes them. */
+object FileCheckSteps {
+    const val VERIFY = "verify_files"
+    const val LENGTHS = "check_track_lengths"
+    val ALL = listOf(VERIFY, LENGTHS)
+
+    fun defaultStep(step: String, enabled: Boolean = true): PipelineStep = when (step) {
+        VERIFY -> PipelineStep(step = VERIFY, enabled = enabled, recheckUnchanged = true,
+            refreshThisYear = "5years", refresh1To5y = "5years", refreshOlder = "5years")
+        else -> PipelineStep(step = LENGTHS, enabled = enabled, recheckUnchanged = true,
+            refreshThisYear = "yearly", refresh1To5y = "2years", refreshOlder = "5years")
+    }
+
+    /** The one-time seed: both steps added (enabled per the retired `behavior.verify_files`) ahead of any
+     *  trailing wait/notify steps, which belong at a run's end. An empty pipeline is left empty — it means
+     *  "use the built-in default", which carries the file steps itself ([dev.jellystructure.media.effectivePipeline]). */
+    fun seed(pipeline: List<PipelineStep>, enabled: Boolean): List<PipelineStep> {
+        if (pipeline.isEmpty()) return pipeline
+        val missing = ALL.filter { s -> pipeline.none { it.step == s } }.map { defaultStep(it, enabled) }
+        if (missing.isEmpty()) return pipeline
+        var at = pipeline.size
+        while (at > 1 && pipeline[at - 1].step in setOf("wait", "notify")) at--
+        return pipeline.subList(0, at) + missing + pipeline.subList(at, pipeline.size)
+    }
+}
 
 @Serializable
 data class PipelineStep(
@@ -258,6 +291,8 @@ data class Behavior(
     @SerialName("job_workers") val jobWorkers: Int = 2,
     // Phase 254 (FR-254-5) — read every video file end to end once (and again whenever it changes), in
     // the background, playback-deferred, so damage past the first Cluster is found without being asked.
+    // Phase 261 (FR-261-4) — RETIRED: read once, at the first boot after 261, to decide whether the two
+    // seeded file-check pipeline steps start enabled ([FileCheckSteps.seed]); ignored after that.
     @SerialName("verify_files") val verifyFiles: Boolean = true,
     @SerialName("scan_threads") val scanThreads: Int = 4,
     @SerialName("scan_interval_hours") val scanIntervalHours: Int = 0,

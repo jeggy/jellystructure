@@ -36,6 +36,9 @@ data class MediaJobParams(
     // explicit "detect again" in the segment editor — which per the phase's invariant must never be
     // silently deferred.
     val deferWhilePlaying: Boolean = false,
+    // Phase 261 (FR-261-1) — verify_file / check_track_lengths: the one file this row checks (media_id is
+    // its title, so the row links to it).
+    val filePath: String? = null,
 
     // Phase 201 amendment (2026-09-13) — mkv_layout_repair (the media lane): every broken file's path,
     // repaired one at a time in this order so progress (filesDone/fileCount) means something. Unlike

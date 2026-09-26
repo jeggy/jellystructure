@@ -287,24 +287,13 @@ fun main() = runBlocking {
     dev.jellystructure.media.FileDamage.service = fileIntegrity
     // Phase 255 — a track that stops before the file does: the tail probe, its table, and the two Triage types.
     val trackCoverage = dev.jellystructure.media.TrackCoverageService(db, fileIntegrity)
+    // Phase 261 (FR-261-9) — the last run of each pipeline step per title, behind the title page's Checks card.
+    val stepRuns = dev.jellystructure.media.StepRunStore(db)
     dev.jellystructure.media.TrackCoverageFlags.service = trackCoverage
-    val mediaJobQueue = dev.jellystructure.media.MediaJobQueue(db, mediaStore, broadcaster, jellyfinClient, configStore, mediaHistory, seedingGuard, arrRescan, rootScope, mediaSegmentStore, fingerprintService, artworkService = imageProxyService, fileIntegrity = fileIntegrity, trackCoverage = trackCoverage)
+    val mediaJobQueue = dev.jellystructure.media.MediaJobQueue(db, mediaStore, broadcaster, jellyfinClient, configStore, mediaHistory, seedingGuard, arrRescan, rootScope, mediaSegmentStore, fingerprintService, artworkService = imageProxyService, fileIntegrity = fileIntegrity, trackCoverage = trackCoverage, stepRuns = stepRuns)
     mediaJobQueue.start()
-    // Phase 254 (FR-254-5) — keep a bounded verification slice queued while anything is unchecked. A
-    // file that changes (new download, an edit) turns unchecked by itself and is picked up within one
-    // interval. Deduped, playback-deferred, and a no-op once every file has been read.
-    rootScope.launch(dev.jellystructure.ops.GateClass.BACKGROUND) {
-        kotlinx.coroutines.delay(5 * 60_000L)   // let boot-time work (scan, presize, waveforms) go first
-        while (true) {
-            runCatching { mediaJobQueue.enqueueIntegritySweep() }
-                .onFailure { Logger.warn("Phase 254 verification sweep could not be queued: ${it.message}", "integrity") }
-            // Phase 255 (FR-255-5) — queued after 254's, on the same lane, so a cold library is read once before
-            // its tails are probed (dev review, open question 1).
-            runCatching { mediaJobQueue.enqueueTrackCoverageSweep() }
-                .onFailure { Logger.warn("Phase 255 track-coverage sweep could not be queued: ${it.message}", "integrity") }
-            kotlinx.coroutines.delay(15 * 60_000L)
-        }
-    }
+    // Phase 254/255's 15-minute sweep loop is gone (Phase 261, FR-261-4): the two file checks are pipeline
+    // steps (`verify_files`, `check_track_lengths`) that queue one row per due file on their own cadence.
     // Phase 220 (FR-220-4) — once, in the background, until the marker exists: every served variant for
     // the existing library, so the first viewer to scroll a season never pays for it on the request path.
     rootScope.launch(dev.jellystructure.ops.GateClass.BACKGROUND) { runCatching { mediaJobQueue.enqueuePresizeBackfill() } }

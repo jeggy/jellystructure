@@ -1,0 +1,19 @@
+-- Phase 261 (FR-261-9) — the LAST run of each pipeline step for each title: when, and what came of it
+-- (ok · changed · skipped · failed, with why). Written from the step pool and, for the enqueue-only steps,
+-- when their queue job finishes. The two file steps have no rows here: their per-file tables are the one
+-- source (dev review item 7), and `scan_files` reads media.last_examined_at.
+CREATE TABLE item_step_run (
+    item_id TEXT NOT NULL,
+    step TEXT NOT NULL,
+    ran_at INTEGER NOT NULL,
+    outcome TEXT NOT NULL,
+    detail TEXT,
+    PRIMARY KEY (item_id, step)
+);
+
+put:
+INSERT OR REPLACE INTO item_step_run(item_id, step, ran_at, outcome, detail)
+VALUES (:item_id, :step, :ran_at, :outcome, :detail);
+
+forItem:
+SELECT * FROM item_step_run WHERE item_id = :item_id;

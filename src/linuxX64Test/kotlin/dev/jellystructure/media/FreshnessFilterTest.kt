@@ -24,6 +24,36 @@ class FreshnessFilterTest {
         assertEquals(30 * DAY, cadenceMs("bogus"))  // unrecognized → default monthly
     }
 
+    // Phase 261 (FR-261-5, acceptance 1) — the two longer cadences the file checks default to.
+    @Test
+    fun `cadenceMs knows 2years and 5years`() {
+        assertEquals(2 * 365 * DAY, cadenceMs("2years"))
+        assertEquals(5 * 365 * DAY, cadenceMs("5years"))
+    }
+
+    // Phase 261 (FR-261-7/10, dev review item 6) — the card's "next due" and the scheduler's "is it due" are
+    // one rule: due exactly from nextDueMs on, never a millisecond before, on every tier and the airing floor.
+    @Test
+    fun `isDueForRecheck turns true exactly at nextDueMs`() {
+        val now = 1_000_000L * DAY
+        for (s in listOf(step(), step(thisYear = "never", oneToFive = "5years", older = "2years"))) {
+            for (year in listOf(2026, 2023, 2001)) for (airing in listOf(false, true)) {
+                val last = now - 400 * DAY
+                val next = nextDueMs(last, year, 2026, s, airing)
+                if (next == null) {
+                    assertEquals(false, isDueForRecheck(now, last, year, 2026, s, airing), "never → never due ($year, airing=$airing)")
+                    continue
+                }
+                assertEquals(false, isDueForRecheck(next - 1, last, year, 2026, s, airing), "a millisecond early ($year, airing=$airing)")
+                assertEquals(true, isDueForRecheck(next, last, year, 2026, s, airing), "exactly at next due ($year, airing=$airing)")
+            }
+        }
+        // `never` on the this-year tier: no date at all unless airing, whose floor is a day.
+        val never = step(thisYear = "never")
+        assertEquals(null, nextDueMs(0L, 2026, 2026, never))
+        assertEquals(DAY, nextDueMs(0L, 2026, 2026, never, isActivelyAiring = true))
+    }
+
     @Test
     fun `this-year release uses the this-year tier`() {
         val s = step(thisYear = "daily")

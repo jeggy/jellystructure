@@ -25,3 +25,12 @@ SELECT * FROM file_integrity WHERE damage_count > 0;
 
 remove:
 DELETE FROM file_integrity WHERE path = :path;
+
+-- Phase 261 (dev review item 1) — the Jobs view's "N findings today": read from the results, not the job rows
+-- (a check succeeds whether or not the file is damaged).
+countFindingsSince:
+SELECT COUNT(*) FROM file_integrity WHERE checked_at >= :since AND damage_count > 0;
+
+-- Phase 261 (FR-261-10) — one file's stored result, for the title page's Checks card.
+byPath:
+SELECT * FROM file_integrity WHERE path = :path;

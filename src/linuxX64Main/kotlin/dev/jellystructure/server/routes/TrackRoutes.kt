@@ -771,20 +771,29 @@ fun Route.trackRoutes(
         call.respond(service.statusFor(item))
     }
 
-    // Phase 254 (FR-254-6) — an operator's "Check now": this title's unchecked files (every file with
-    // ?force=true), queued on the segments queue and never playback-deferred. Phase 255 (FR-255-6): one
-    // button, both checks — a file unchecked by either is included, and the job runs both.
+    // Phase 254 (FR-254-6) — an operator's "Check now", per file since Phase 261 (FR-261-1): each check takes
+    // the files it has no current result for (every file with ?force=true), first in the segments lane and
+    // never playback-deferred; a waiting cadence row for the same file is raised rather than duplicated.
+    // ?check=verify|lengths narrows it to one check (the Checks card's ↻); absent = both, as 255 made it.
     post("/media/{mediaId}/health/integrity/check") {
         val mediaId = call.parameters["mediaId"] ?: return@post call.respond(HttpStatusCode.BadRequest)
         val item = store.resolve(mediaId) ?: return@post call.respond(HttpStatusCode.NotFound)
-        val service = dev.jellystructure.media.FileDamage.service ?: return@post call.respond(HttpStatusCode.ServiceUnavailable)
-        val coverage = dev.jellystructure.media.TrackCoverageFlags.service
-        val all = service.videoPaths(listOf(item))
-        val paths = if (call.request.queryParameters["force"] == "true") all
-        else all.filter { service.resultFor(it).state == dev.jellystructure.media.FileIntegrityState.UNCHECKED || coverage?.resultFor(it)?.state == dev.jellystructure.media.TrackCoverageState.UNCHECKED }
-        if (paths.isEmpty()) return@post call.respond(mapOf("jobId" to null, "files" to 0))
-        val r = mediaJobQueue.enqueueIntegrityTitle(item, paths)
-        call.respond(HttpStatusCode.Accepted, mapOf("jobId" to r.snapshot.id, "files" to paths.size))
+        dev.jellystructure.media.FileDamage.service ?: return@post call.respond(HttpStatusCode.ServiceUnavailable)
+        val types = when (call.request.queryParameters["check"]) {
+            "verify" -> listOf(dev.jellystructure.media.FileCheckSchedule.VERIFY_JOB)
+            "lengths" -> listOf(dev.jellystructure.media.FileCheckSchedule.LENGTHS_JOB)
+            else -> dev.jellystructure.media.FileCheckSchedule.JOB_TYPES
+        }
+        val r = mediaJobQueue.enqueueTitleChecks(item, force = call.request.queryParameters["force"] == "true", jobTypes = types)
+        call.respond(if (r.queued + r.promoted > 0) HttpStatusCode.Accepted else HttpStatusCode.OK, r)
+    }
+
+    // Phase 261 (FR-261-10/11) — the title page's Checks card: every enabled step's last run, outcome and
+    // next due for this title, the two file steps with their files. Stored results + one `stat` per file.
+    get("/media/{mediaId}/checks") {
+        val mediaId = call.parameters["mediaId"] ?: return@get call.respond(HttpStatusCode.BadRequest)
+        val item = store.resolve(mediaId) ?: return@get call.respond(HttpStatusCode.NotFound)
+        call.respond(mediaJobQueue.titleChecks(item, configStore.current))
     }
 
     // Phase 254 (FR-254-10/11) — the repair, always an operator's click. `lossy=false` replaces each

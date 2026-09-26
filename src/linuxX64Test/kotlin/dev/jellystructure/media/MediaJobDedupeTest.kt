@@ -39,7 +39,7 @@ class MediaJobDedupeTest {
         db.mediaJobQueries.insert(
             id = id, type = "segments_season", media_id = "some-series", label = "Some Series S01",
             params = "{}", state = "queued", enqueued_by = "admin", created_at = dev.jellystructure.nowEpochSec(),
-            file_count = 8, lane = "segments", dedupe_key = dedupeKey,
+            file_count = 8, lane = "segments", dedupe_key = dedupeKey, defer_while_playing = 0, priority = 0,
         )
     }
 
@@ -83,12 +83,12 @@ class MediaJobDedupeTest {
         db.mediaJobQueries.insert(
             id = "mj-a", type = "reorder", media_id = "movie-1", label = "A Movie",
             params = "{}", state = "queued", enqueued_by = "admin", created_at = dev.jellystructure.nowEpochSec(),
-            file_count = 1, lane = "media", dedupe_key = null,
+            file_count = 1, lane = "media", dedupe_key = null, defer_while_playing = 0, priority = 0,
         )
         db.mediaJobQueries.insert(
             id = "mj-b", type = "reorder", media_id = "movie-1", label = "A Movie",
             params = "{}", state = "queued", enqueued_by = "admin", created_at = dev.jellystructure.nowEpochSec(),
-            file_count = 1, lane = "media", dedupe_key = null,
+            file_count = 1, lane = "media", dedupe_key = null, defer_while_playing = 0, priority = 0,
         )
         kotlin.test.assertEquals(2, db.mediaJobQueries.listQueuedByLane("media").executeAsList().size)
     }

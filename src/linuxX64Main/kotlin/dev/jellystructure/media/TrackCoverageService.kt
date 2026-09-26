@@ -97,6 +97,14 @@ class TrackCoverageService(private val db: JellystructureDb, private val integri
 
     fun rowsByPath(): Map<String, dev.jellystructure.db.File_track_coverage> = q.all().executeAsList().associateBy { it.path }
 
+    /** Phase 261 (FR-261-10) — one file's stored row, current or not (the caller applies the currency rule). */
+    fun rowFor(path: String): dev.jellystructure.db.File_track_coverage? = q.byPath(path).executeAsOneOrNull()
+
+    /** Phase 261 — a stored row's findings in one line for the Checks card, in the advice's own words. */
+    fun findingsSummary(row: dev.jellystructure.db.File_track_coverage): String? =
+        runCatching { json.decodeFromString(findingsSer, row.findings) }.getOrDefault(emptyList())
+            .map { TrackCoverageAdvice.advise(it, row.path, null).what }.distinct().joinToString(" · ").ifEmpty { null }
+
     fun resultFor(path: String, rows: Map<String, dev.jellystructure.db.File_track_coverage> = rowsByPath()): CoverageResult {
         val row = rows[path] ?: return CoverageResult(TrackCoverageState.UNCHECKED)
         val stamp = FileIntegrityService.stampOf(path) ?: return CoverageResult(TrackCoverageState.UNCHECKED)
@@ -110,16 +118,6 @@ class TrackCoverageService(private val db: JellystructureDb, private val integri
         .filter { row -> FileIntegrityService.stampOf(row.path)?.let { FileIntegrityService.isCurrent(row.size, row.mtime, it) } == true }
         .associate { row -> row.path to runCatching { json.decodeFromString(findingsSer, row.findings) }.getOrDefault(emptyList()) }
         .filterValues { it.isNotEmpty() }
-
-    /** FR-255-5 — the sweep's worklist: unchecked files, most recently modified first. */
-    fun uncheckedMostRecentFirst(items: List<MediaItem>): List<String> {
-        val rows = rowsByPath()
-        return integrity.videoPaths(items).mapNotNull { path ->
-            val stamp = FileIntegrityService.stampOf(path) ?: return@mapNotNull null
-            val row = rows[path]
-            if (row != null && FileIntegrityService.isCurrent(row.size, row.mtime, stamp)) null else path to stamp.mtime
-        }.sortedByDescending { it.second }.map { it.first }
-    }
 
     /** FR-255-3 — one coverage check, persisted. Null when the file cannot be stat-ed or probed. */
     suspend fun check(path: String): CoverageResult? {

@@ -105,22 +105,14 @@ class FileIntegrityService(private val db: JellystructureDb, private val seeding
 
     fun rowsByPath(): Map<String, dev.jellystructure.db.File_integrity> = q.all().executeAsList().associateBy { it.path }
 
+    /** Phase 261 (FR-261-10) — one file's stored row, current or not (the caller applies [isCurrent]). */
+    fun rowsFor(path: String): dev.jellystructure.db.File_integrity? = q.byPath(path).executeAsOneOrNull()
+
     /** FR-254-7 — currently-damaged paths: a stored damaged row that still describes the file on disk.
      *  Cheap: one query plus one `stat` per damaged row, never a file read. */
     fun damagedPaths(): Set<String> = q.damaged().executeAsList()
         .filter { row -> stampOf(row.path)?.let { isCurrent(row.size, row.mtime, it) } == true }
         .mapTo(mutableSetOf()) { it.path }
-
-    /** FR-254-5 — the sweep's worklist: unchecked files, most recently modified first (every file
-     *  jellystructure has rewritten carries a fresh mtime, so its own blast radius goes first). */
-    fun uncheckedMostRecentFirst(items: List<MediaItem>): List<String> {
-        val rows = rowsByPath()
-        return videoPaths(items).mapNotNull { path ->
-            val stamp = stampOf(path) ?: return@mapNotNull null
-            val row = rows[path]
-            if (row != null && isCurrent(row.size, row.mtime, stamp)) null else path to stamp.mtime
-        }.sortedByDescending { it.second }.map { it.first }
-    }
 
     /** FR-254-1 — one deep check, persisted. Returns null when the file cannot even be stat-ed. */
     suspend fun check(path: String): IntegrityResult? {

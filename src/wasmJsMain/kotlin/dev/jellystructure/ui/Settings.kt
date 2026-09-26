@@ -825,7 +825,9 @@ private var fetchImages = true
 private var tellJellyfin = true
 private var scanWorkers = 1
 private var jobWorkers = 2
-// Phase 254 — no control yet (TOML only); carried through so a Settings save cannot reset it.
+// Phase 254 — no control (TOML only). Phase 261 retired it: read once, at the first boot after 261, to decide
+// whether the seeded verify_files / check_track_lengths pipeline steps start on. Still carried through so a
+// Settings save round-trips the file unchanged.
 private var verifyFiles = true
 private var scanThreads = 4
 private var scanEpisodeCap = 0
@@ -1742,7 +1744,6 @@ private fun buildToml(c: AppConfig): String = buildString {
     appendLine("tell_jellyfin = ${c.behavior.tellJellyfin}")
     appendLine("scan_workers = ${c.behavior.scanWorkers}")
     appendLine("job_workers = ${c.behavior.jobWorkers}")
-    appendLine("verify_files = ${c.behavior.verifyFiles}")
     appendLine("scan_threads = ${c.behavior.scanThreads}")
     appendLine("tv_image_cache_mb = ${c.behavior.tvImageCacheMb}")
     if (c.scanSchedule.isNotBlank()) {
@@ -1755,7 +1756,8 @@ private fun buildToml(c: AppConfig): String = buildString {
         appendLine("[[scan.pipeline]]")
         appendLine("step = \"${step.step}\"")
         if (!step.enabled) appendLine("enabled = false")
-        if (step.step == "scan_files") {
+        // Phase 261 (acceptance 3) — the two file-check steps carry their own three-tier cadence too.
+        if (step.step == "scan_files" || step.step in FILE_CHECK_STEPS) {
             appendLine("recheck_unchanged = ${step.recheckUnchanged}")
             if (step.recheckUnchanged) {
                 appendLine("refresh_this_year = \"${step.refreshThisYear}\"")
@@ -2609,6 +2611,8 @@ private const val PIPE_NOTIFY_IC="""<svg viewBox="0 0 16 16" fill="none" stroke=
 private const val PIPE_WAIT_IC = """<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8.8" r="5.1"/><line x1="8" y1="8.8" x2="8" y2="5.8"/><line x1="8" y1="8.8" x2="10" y2="9.8"/><line x1="6.2" y1="1.9" x2="9.8" y2="1.9"/></svg>"""
 private const val PIPE_IMDB_IC = """<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1.6 9.6 5.9l4.5.2-3.6 2.8 1.3 4.4L8 10.6l-3.8 2.7 1.3-4.4-3.6-2.8 4.5-.2Z"/></svg>"""
 private const val PIPE_SEG_IC  = """<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3.2v9.6l6-4.8Z"/><line x1="11" y1="3.2" x2="11" y2="12.8"/><line x1="13.4" y1="3.2" x2="13.4" y2="12.8"/></svg>"""
+private const val PIPE_VERIFY_IC = """<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1.8 13.4 4v4c0 3.2-2.3 5.4-5.4 6.3C4.9 13.4 2.6 11.2 2.6 8V4Z"/><polyline points="5.4,8.2 7.3,10 10.8,6.4"/></svg>"""
+private const val PIPE_LENGTHS_IC = """<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><line x1="2" y1="4.6" x2="14" y2="4.6"/><line x1="2" y1="8" x2="9.6" y2="8"/><line x1="2" y1="11.4" x2="14" y2="11.4"/><line x1="12" y1="6.6" x2="12" y2="9.4"/></svg>"""
 private const val PIPE_SUB_IC  = """<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="1.6" y="3.6" width="12.8" height="8.8" rx="1.6"/><line x1="4" y1="7" x2="7" y2="7"/><line x1="4" y1="9.4" x2="9.4" y2="9.4"/><line x1="9" y1="7" x2="12" y2="7"/></svg>"""
 
 private val PIPE_BLOCKS = mapOf(
@@ -2622,13 +2626,26 @@ private val PIPE_BLOCKS = mapOf(
     "detect_drift"  to PipeBlockDef("Detect drift",              "Compare Jellyfin ⇄ NFO and flag differences.",          "#ff6f61", PIPE_DRIFT_IC),
     "sync_imdb_ratings" to PipeBlockDef("Sync IMDb ratings",     "Refresh aggregate rating · votes from imdb.com.",    "#f5c518", PIPE_IMDB_IC),
     "prewarm_subtitles" to PipeBlockDef("Pre-warm subtitles",    "Ask Jellyfin to extract embedded text subtitles ahead of playback (Phase 179).", "#6fd0c8", PIPE_SUB_IC),
+    // Phase 261 (FR-261-4) — the two file checks, one queue job per due file.
+    "verify_files"  to PipeBlockDef("Verify video files",        "Read each file end to end for damage a player would hit mid-film (phase 254).", "#5fbf6a", PIPE_VERIFY_IC),
+    "check_track_lengths" to PipeBlockDef("Check track lengths", "Find audio/video tracks that stop before the file does (phase 255).",           "#8fa8e8", PIPE_LENGTHS_IC),
     "notify"        to PipeBlockDef("Send notification",         "Ping your webhook when the run reaches here.",          "#e0639a", PIPE_NOTIFY_IC),
     "wait"          to PipeBlockDef("Wait",                      "Pause before the next step (let Jellyfin settle).",     "#9aa0b4", PIPE_WAIT_IC),
 )
-private val PIPE_PALETTE = listOf("pull_tmdb","fetch_artwork","detect_segments","write_nfo","sync_jellyfin","rescan_arr","detect_drift","sync_imdb_ratings","prewarm_subtitles","wait","notify")
-private val PIPE_SHORT   = mapOf("scan_files" to "Scan","pull_tmdb" to "TMDB","fetch_artwork" to "Artwork","detect_segments" to "Segments","write_nfo" to "NFO","sync_jellyfin" to "Jellyfin","rescan_arr" to "*arr","detect_drift" to "Drift","sync_imdb_ratings" to "IMDb","prewarm_subtitles" to "Subtitles","notify" to "Notify","wait" to "Wait")
-private val CAD_VALS     = listOf("daily","weekly","monthly","6months","yearly","never")
-private val CAD_LABELS   = listOf("every day","every week","every month","every 6 months","every year","never")
+private val PIPE_PALETTE = listOf("pull_tmdb","fetch_artwork","detect_segments","write_nfo","sync_jellyfin","rescan_arr","detect_drift","sync_imdb_ratings","prewarm_subtitles","verify_files","check_track_lengths","wait","notify")
+private val FILE_CHECK_STEPS = setOf("verify_files", "check_track_lengths")
+private val PIPE_SHORT   = mapOf("scan_files" to "Scan","pull_tmdb" to "TMDB","fetch_artwork" to "Artwork","detect_segments" to "Segments","write_nfo" to "NFO","sync_jellyfin" to "Jellyfin","rescan_arr" to "*arr","detect_drift" to "Drift","sync_imdb_ratings" to "IMDb","prewarm_subtitles" to "Subtitles","verify_files" to "Verify","check_track_lengths" to "Lengths","notify" to "Notify","wait" to "Wait")
+// Phase 261 (FR-261-5) — 2years/5years exist for every step; the file checks default to them.
+private val CAD_VALS     = listOf("daily","weekly","monthly","6months","yearly","2years","5years","never")
+private val CAD_LABELS   = listOf("every day","every week","every month","every 6 months","every year","every 2 years","every 5 years","never")
+
+/** Phase 261 (FR-261-6) — a step added from the palette takes its own defaults: the file checks' cadence
+ *  respects the disk (a whole-file read of the library is 200–300 GB), never scan_files' weekly/monthly. */
+private fun defaultPipelineStep(key: String): PipelineStep = when (key) {
+    "verify_files" -> PipelineStep(step = key, recheckUnchanged = true, refreshThisYear = "5years", refresh1To5y = "5years", refreshOlder = "5years")
+    "check_track_lengths" -> PipelineStep(step = key, recheckUnchanged = true, refreshThisYear = "yearly", refresh1To5y = "2years", refreshOlder = "5years")
+    else -> PipelineStep(step = key)
+}
 private val WAIT_MINS    = listOf(5, 10, 15, 30, 60)
 
 // Top-level single-expression helpers for Kotlin/WASM js() constraints
@@ -2797,6 +2814,8 @@ private fun showPipelineRunDialog(full: Boolean, saved: List<PipelineStep>, hasU
             locked -> """<div class="muted" style="font-size:.76rem;margin-top:3px;">Always runs — file discovery can't be skipped.</div>"""
             // FR-PIPE1-3: the whole point of the dialog — say plainly why this one is usually safe to drop.
             step.step == "detect_segments" -> """<div style="font-size:.76rem;margin-top:3px;color:var(--warn);">Usually safe to skip — by far the slowest step (hours; it decodes each episode), and it only powers Skip&nbsp;Intro / Skip&nbsp;Credits. Already-detected markers are kept.</div>"""
+            // Phase 261 (FR-261-8) — what unticking one of the file steps actually skips.
+            step.step in FILE_CHECK_STEPS -> """<div class="muted" style="font-size:.76rem;margin-top:3px;">Only queues the files that are due; the reading happens on the segments queue. Unticked, nothing is queued this run.</div>"""
             else -> ""
         }
         """
@@ -2937,6 +2956,7 @@ private fun pipeStepEl(step: PipelineStep, idx: Int): Element {
         "scan_files"                      -> opts.appendChild(pipeScanCfgEl(step, idx))
         "pull_tmdb", "fetch_artwork"      -> opts.appendChild(pipeScopeEl(step, idx))
         "detect_segments"                 -> opts.appendChild(pipeSegmentsCfgEl(step, idx))
+        "verify_files", "check_track_lengths" -> opts.appendChild(pipeFileCheckCfgEl(step, idx))
         "write_nfo"                       -> opts.appendChild(pipeOverwriteEl(step, idx))
         "notify"                          -> opts.appendChild(pipeNotifyEl(step, idx))
         "wait"                            -> opts.appendChild(pipeWaitEl(step, idx))
@@ -2975,21 +2995,41 @@ private fun movePipelineStep(from: Int, to: Int) {
     renderPipeline()
 }
 
-private fun pipeScanCfgEl(step: PipelineStep, idx: Int): Element {
+private fun pipeScanCfgEl(step: PipelineStep, idx: Int): Element = pipeCadenceCfgEl(
+    step, idx,
+    headText = "Refresh unchanged titles on a schedule",
+    subText = "Re-sync metadata & artwork for titles whose files never change — often for new releases, rarely for old catalogue.",
+    noteHtml = "<b>How it works:</b> Jellystructure stores each title's last-checked date and re-processes only titles whose interval is due — new &amp; changed files are always processed immediately. This now governs every scan trigger, not just a scheduled/manual pipeline run — including the Dashboard's <b>Scan library</b> button (its split-button menu has a <b>Scan library (full rescan)</b> option to bypass this for one run).",
+)
+
+/** Phase 261 (FR-261-4) — the file checks' block: the same toggle and three-tier table as scan_files', with
+ *  their own words. Off = new and changed files only; a file with a finding is never re-read by the cadence. */
+private fun pipeFileCheckCfgEl(step: PipelineStep, idx: Int): Element = pipeCadenceCfgEl(
+    step, idx,
+    headText = "Re-check unchanged files on a schedule",
+    subText = if (step.step == "verify_files") "A whole-file read of the library is 200–300 GB — every 5 years is a sensible default."
+        else "A tail probe reads ~15–60 MB per file.",
+    noteHtml = "<b>How it works:</b> new &amp; changed files are always checked, the moment a pipeline run sees them. " +
+        "An unchanged, clean file is checked again once its release-age interval has passed. A file with a finding stays flagged " +
+        "until it changes or you re-run it from its title page. Each file is its own job on the segments queue (Activity ▸ Jobs), " +
+        "queued behind intro &amp; credits detection and paused while a TV plays.",
+)
+
+private fun pipeCadenceCfgEl(step: PipelineStep, idx: Int, headText: String, subText: String, noteHtml: String): Element {
     val year = 2026
     val box  = document.createElement("div") as HTMLElement
     box.className = "scan-cfg" + (if (step.recheckUnchanged) "" else " off")
     val head = document.createElement("label"); head.className = "sc-head"
     val tog  = document.createElement("span")
     tog.className = "mini-toggle" + (if (step.recheckUnchanged) " on" else "")
-    val lbl = document.createElement("b"); lbl.textContent = "Refresh unchanged titles on a schedule"
+    val lbl = document.createElement("b"); lbl.textContent = headText
     head.appendChild(tog); head.appendChild(lbl)
     head.addEventListener("click") {
         pipelineSteps[idx] = pipelineSteps[idx].copy(recheckUnchanged = !pipelineSteps[idx].recheckUnchanged)
         renderPipeline()
     }
     val sub  = document.createElement("div"); sub.className = "sc-sub"
-    sub.textContent = "Re-sync metadata & artwork for titles whose files never change — often for new releases, rarely for old catalogue."
+    sub.textContent = subText
     val tbl  = document.createElement("div"); tbl.className = "fresh-tbl"
     val hd   = document.createElement("div"); hd.className = "fresh-hd"
     val h1   = document.createElement("span"); h1.textContent = "Release age"
@@ -3033,7 +3073,7 @@ private fun pipeScanCfgEl(step: PipelineStep, idx: Int): Element {
         cell.appendChild(cad); tbl.appendChild(age); tbl.appendChild(cell)
     }
     val note = document.createElement("div"); note.className = "sc-state"
-    note.innerHTML = "<b>How it works:</b> Jellystructure stores each title's last-checked date and re-processes only titles whose interval is due — new &amp; changed files are always processed immediately. This now governs every scan trigger, not just a scheduled/manual pipeline run — including the Dashboard's <b>Scan library</b> button (its split-button menu has a <b>Scan library (full rescan)</b> option to bypass this for one run)."
+    note.innerHTML = noteHtml
     box.appendChild(head); box.appendChild(sub); box.appendChild(tbl); box.appendChild(note)
     return box
 }
@@ -3250,7 +3290,7 @@ private fun wirePipelineBuilder(scope: CoroutineScope) {
         item.appendChild(ic); item.appendChild(info)
         item.addEventListener("click") {
             if (pipeInsertAt < 0) return@addEventListener
-            pipelineSteps.add(pipeInsertAt, PipelineStep(step = key))
+            pipelineSteps.add(pipeInsertAt, defaultPipelineStep(key))
             closePipelinePalette()
             renderPipeline()
         }
