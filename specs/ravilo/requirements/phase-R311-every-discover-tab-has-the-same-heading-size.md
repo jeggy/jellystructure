@@ -5,11 +5,11 @@
 
 ## Status
 
-`Planned` — written 2026-09-26, not dev-reviewed. Client only (`ravilo-ui`: TV, phone, web) plus one
-string key removed. **The open question was decided the same day**: the owner handed the calls over
-(*"You just decide for me. We want all best solutions for everything"*), so the heading's words change
-too (FR-R311-3). **Numbering:** verified against `STATUS.md` the same day — Ravilo taken through
-**R307**.
+`Planned` — written 2026-09-26, **dev-reviewed 2026-09-26** against `main` `0e5e434f` (see *Dev review*
+at the end). Client only (`ravilo-ui`: TV, phone, web) plus one string key removed. **The open question
+was decided the same day**: the owner handed the calls over (*"You just decide for me. We want all best
+solutions for everything"*), so the heading's words change too (FR-R311-3). **Numbering:** verified
+against `STATUS.md` the same day — Ravilo taken through **R307**.
 
 ## What is wrong
 
@@ -75,3 +75,18 @@ is where the next stale translation hides.
    repeats the chip that is highlighted just below it, and on Coming Soon it said *Komandi* above a chip
    saying *Kemur skjótt* (R312): two words for one tab, stacked. The mockup has always drawn one
    heading, and a heading that never changes is the other half of "the frame stands still".
+
+## Dev review (2026-09-26, against `main` `0e5e434f`)
+
+1. **The whole change is in `DiscoverScreen.kt`.** The conditional size is at `:143`. The title comes
+   from `discoverHeaderTitle(segment)` (`:243-247`), which becomes a single `str("nav.discover")` at the
+   call site; the function goes. The subtitle function (`:250-254`) stays. The phone renders the same
+   frame, so no handset branch is needed.
+2. **`nav.upcoming` has exactly one reader:** `DiscoverScreen.kt:244`. Checked across `ravilo-ui`,
+   `ravilo-receiver-core`, `ravilo-screen`, the cast receiver and the scripts. Delete it from `en.json`,
+   `da.json` and `fo.json` in the same commit, and run `check-i18n-spelling.sh --update-lexicon`. Keys
+   are looked up by string, so nothing else refers to it.
+3. **FR-R311-2 needs no new code.** One size and one text is what keeps the frame still. The acceptance
+   is a device check (the TV and the Pixel 9), plus the web.
+
+**Net effect.** One file, three lines of Kotlin, one key removed in three files, the lexicon regenerated.
