@@ -6,8 +6,9 @@
 
 ## Status
 
-`Planned` — written 2026-09-26, not dev-reviewed. Client (`ravilo-ui`), one server-side payload trim, one
-admin copy fix. **Numbering:** verified against `STATUS.md` the same day — Ravilo taken through **R313**.
+`Planned` — written 2026-09-26, **dev-reviewed 2026-09-26** against `main` `0e5e434f` (see *Dev review*
+at the end). Client (`ravilo-ui`), one server-side payload trim, one admin copy fix. **Numbering:**
+verified against `STATUS.md` the same day — Ravilo taken through **R313**.
 
 Completes **R254** (row-open is TV-only) and **R298** (no focus visuals on a handset). Both stopped
 halfway on the platforms this phase is about.
@@ -104,3 +105,31 @@ feed serves all of them.
 4. `/api/tv/home` with the Pixel 9's token: no `focus_detail` object on any card, about 20 KB on the wire.
    With a TV's token: unchanged.
 5. The admin card reads *TVs only* and no longer promises the status line on a phone or the web.
+
+## Dev review (2026-09-26, against `main` `0e5e434f`)
+
+Five items, no blocker.
+
+1. **The client change is one line and a test file.** `effectiveFocusDetailMode`
+   (`focus/FocusDetailReducedMotion.kt:24-28`) becomes `!isTv -> "none"`, then the reduced-motion rule.
+   The `handset` parameter becomes redundant (a handset is never a TV), so drop it; both call sites
+   (`HomeScreen.kt:225`, `:463`) stop passing `LocalHandset.current` and keep calling the one function.
+   `FocusDetailReducedMotionTest` has cases that assert `line` for `isTv = false` (`:33`); they flip to
+   `none`.
+2. **The platform is on every request.** `validateDeviceToken(token, appVersion, platform)` refreshes
+   `DeviceData.platform` from the request's `X-Ravilo-Platform` (`RaviloDeviceService.kt:198-208`,
+   `recordAppInfo`). Android sends `tv` or `phone` from the same `uiMode` test as `isTvPlatform`
+   (`RaviloRootActuals.kt:53`); the web sends `web`. So the server's platform and the client's
+   `isTvPlatform` agree.
+3. **Where the strip goes.** `HomeFeedService.getHomeFeed(device)` (`:174`) returns the cached feed;
+   facts are attached inside the cached build (`:267`, `attachFocusDetail`). Strip them **after** the
+   cache read: `if (device.platform == "phone" || device.platform == "web") feed.withoutFocusFacts()`, a
+   `copy` over rows and items. The cache key is untouched (R233 FR-R233-5). Channel feeds carry no facts
+   (R240's scope), so nothing else changes.
+4. **The admin copy** is `RaviloConfig.kt:2474-2488`: the card's subtitle gains *TVs only*, and the
+   *row opens* caption's *"a phone or the web app shows the status line instead"* goes.
+5. **A regression test on the server:** one cached feed, three reads (`tv`, `phone`, no platform). Only
+   the `phone` read lacks facts, and the cache is built once.
+
+**Net effect.** One rule, one post-cache projection, two lines of admin copy, tests. No DTO change: the
+facts field is already optional.
