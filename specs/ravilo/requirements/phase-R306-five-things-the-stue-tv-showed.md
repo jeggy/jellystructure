@@ -43,8 +43,8 @@ built the same day and seen on the stue TV** (local release build, prod on a loc
   sits in an inner column carrying today's `fillMaxWidth(0.6f)` and gutter padding unchanged; the row pads
   by the gutter outside `focusBleedScroll`. On the stue TV, film page, nothing focused: **Play Again,
   Watched, My List and Trailer all on screen and whole**; Right ×3 lands on *Trailer* and the row does not
-  move; the synopsis and R222's note break on the same words as before; the series page likewise. Not seen
-  on the Pixel 9 (off adb after its battery died) — by construction its row is as wide as before.
+  move; the synopsis and R222's note break on the same words as before; the series page likewise. On the Pixel 9
+  (debug build) the film row starts on the text's edge and still scrolls: a swipe brings *Trailer* in whole.
 
 ## What is wrong
 
