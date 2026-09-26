@@ -54,6 +54,7 @@ import kotlinx.coroutines.launch
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import dev.jellystructure.ravilo.ui.components.focusBleedScroll
 import dev.jellystructure.ravilo.ui.components.AppBar
 import dev.jellystructure.ravilo.ui.components.AudioSubtitleFlagLine
 import dev.jellystructure.ravilo.ui.components.ButtonStyle
@@ -300,7 +301,10 @@ private fun SeriesDetailLoaded(
         detail.seasons.associate { season -> season.index to season.episodes.count { ep -> overlay[ep.id]?.played == true } }
     }
     val resumeEpId: String? = remember(allEps, overlay) {
-        allEps.firstOrNull { ep -> overlay[ep.id].let { ps -> ps != null && !ps.played && ps.resumeMs > 0 } }?.id
+        // R306 (FR-R306-5) — the episode this series' Continue Watching tile shows, when the server names
+        // one of this series' episodes: R219 picks it by most recent activity, and the page must agree.
+        overlay[detail.card.id]?.continueEpisodeId?.takeIf { cid -> allEps.any { it.id == cid } }
+            ?: allEps.firstOrNull { ep -> overlay[ep.id].let { ps -> ps != null && !ps.played && ps.resumeMs > 0 } }?.id
             ?: allEps.firstOrNull { ep -> overlay[ep.id]?.played != true }?.id
             // Bug fix: a fully-watched series used to fall through to `lastOrNull()` — the play button
             // showed the hard-coded "Play · E1" label (below) but actually launched the *last* episode
@@ -454,9 +458,11 @@ private fun SeriesDetailLoaded(
                         )
                     }
                     // Resume kicker: derived from overlay; always reserves a line so synopsis doesn't shift
-                    val resumeEpEntry = if (overlayLoaded) allEps.firstOrNull { ep ->
-                        overlay[ep.id].let { ps -> ps != null && !ps.played && ps.resumeMs > 0 }
-                    } else null
+                    // R306 (FR-R306-5) — the same episode the Resume button plays when Continue Watching names one.
+                    val resumeEpEntry = if (overlayLoaded) (
+                        overlay[detail.card.id]?.continueEpisodeId?.let { cid -> allEps.firstOrNull { it.id == cid } }
+                            ?: allEps.firstOrNull { ep -> overlay[ep.id].let { ps -> ps != null && !ps.played && ps.resumeMs > 0 } }
+                    ) else null
                     val resumeKicker = resumeEpEntry?.let { ep ->
                         val sIdx = detail.seasons.indexOfFirst { s -> s.episodes.any { it.id == ep.id } }
                         val sNum = detail.seasons.getOrNull(sIdx)?.index
@@ -508,7 +514,8 @@ private fun SeriesDetailLoaded(
                             // allowed to scroll. horizontalScroll removes the clamp — every button always
                             // renders at its full natural size; if there ever isn't room, the row scrolls
                             // (D-pad focus brings the target into view) instead of corrupting layout.
-                            .horizontalScroll(rememberScrollState())
+                            // R306 (FR-R306-1) — …which clips at its own edge, so the focused button's growth is given room.
+                            .focusBleedScroll(rememberScrollState())
                             .onFocusChanged {
                                 // R72: focusing Play/Resume reframes the full backdrop. R115: only when the
                                 // hero is actually scrolled — on open the list is already at the top (offset 0),

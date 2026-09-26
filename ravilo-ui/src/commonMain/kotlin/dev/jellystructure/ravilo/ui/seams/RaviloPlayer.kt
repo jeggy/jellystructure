@@ -101,8 +101,14 @@ expect class RaviloPlayer() {
     val positionMs: Long
     val durationMs: Long
     val bufferedMs: Long
+    /** R306 (FR-R306-4) — the viewer wants it playing: true through a buffer, false once paused, ended or
+     *  failed. Every player surface reads this as "not paused" (the glyph, OK, the paused report). */
     val isPlaying: Boolean
     val isEnded: Boolean
+
+    /** R306 (FR-R306-3) — the engine hit a fatal error on the current load (reset by every [load]); the
+     *  session store turns it into R237's error card instead of leaving R218's spinner up forever. */
+    val playbackFailed: Boolean
 
     /** R218 (FR-R218-1) — false from [load] until the first frame of THIS item actually renders; resets
      *  on every [load] call (unlike [qoeSnapshot]'s counters, which deliberately persist across a

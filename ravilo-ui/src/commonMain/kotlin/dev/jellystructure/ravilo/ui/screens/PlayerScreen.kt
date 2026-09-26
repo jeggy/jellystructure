@@ -877,6 +877,7 @@ fun PlayerScreen(
             durationProvider = { durationMs },
             qoeSnapshotProvider = { player.qoeSnapshot() },  // R216 (FR-R216-4)
             startupMsProvider = { bk.measuredStartupMs },
+            failedProvider = { player.playbackFailed },   // R306 (FR-R306-3)
         )
     }
 

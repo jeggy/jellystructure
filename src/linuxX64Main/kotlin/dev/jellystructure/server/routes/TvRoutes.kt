@@ -560,7 +560,7 @@ fun Route.tvRoutes(
             call.respond(HttpStatusCode.BadRequest, mapOf("error" to "ids required")); return@get
         }
         val ids = raw.split(",").map { it.trim() }.filter { it.isNotBlank() }
-        val result: Map<String, CardPlayState> = detailService.getPlaystate(device, ids)
+        val result: Map<String, CardPlayState> = withContinueEpisodes(detailService.getPlaystate(device, ids), ids, homeFeedService.continueEpisodes(device))
         call.respond(result)
     }
 
@@ -1308,4 +1308,21 @@ fun Route.tvRoutes(
         )
         call.respond(mapOf("status" to "ok"))
     }
+}
+
+/**
+ * R306 (FR-R306-5) — [continueEpisodes] (series → the episode its Continue Watching entry points at) laid
+ * over the playstate answer, on the series' own entry and only for a series that was asked for; a series
+ * with no playstate of its own still gets an entry carrying just that.
+ */
+internal fun withContinueEpisodes(
+    playstate: Map<String, CardPlayState>,
+    askedIds: List<String>,
+    continueEpisodes: Map<String, String>,
+): Map<String, CardPlayState> {
+    val hits = askedIds.mapNotNull { id -> continueEpisodes[id]?.let { id to it } }
+    if (hits.isEmpty()) return playstate
+    val out = playstate.toMutableMap()
+    for ((id, ep) in hits) out[id] = (out[id] ?: CardPlayState()).copy(continueEpisodeId = ep)
+    return out
 }

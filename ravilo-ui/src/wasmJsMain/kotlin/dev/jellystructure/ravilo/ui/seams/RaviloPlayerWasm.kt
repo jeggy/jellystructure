@@ -164,6 +164,8 @@ actual class RaviloPlayer actual constructor() {
         return if (buf.length > 0) (buf.end(buf.length - 1) * 1000).toLong() else 0L
     }
     actual val isPlaying: Boolean get() = !video.paused && !video.ended
+    // R306 (FR-R306-3) — a media error on the current source; a new src clears it.
+    actual val playbackFailed: Boolean get() = video.error != null
     actual val isEnded: Boolean get() = video.ended
     // R218 (FR-R218-6) — "the wasm player needs its own waiting/playing wiring; where it cannot, falls
     // back to moment A's behaviour rather than inventing one." No `waiting`/`playing`/`seeking` event

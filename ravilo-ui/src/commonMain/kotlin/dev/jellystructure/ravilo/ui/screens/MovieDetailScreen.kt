@@ -48,6 +48,7 @@ import kotlinx.coroutines.launch
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import dev.jellystructure.ravilo.ui.components.focusBleedScroll
 import dev.jellystructure.ravilo.ui.components.AppBar
 import dev.jellystructure.ravilo.ui.components.AudioSubtitleFlagLine
 import dev.jellystructure.ravilo.ui.components.ButtonStyle
@@ -295,7 +296,8 @@ private fun MovieDetailLoaded(
                             // being allowed to scroll. horizontalScroll removes the clamp — every button
                             // always renders at its full natural size; if there ever isn't room, the row
                             // scrolls (D-pad focus brings the target into view) instead of corrupting layout.
-                            .horizontalScroll(rememberScrollState())
+                            // R306 (FR-R306-1) — …which clips at its own edge, so the focused button's growth is given room.
+                            .focusBleedScroll(rememberScrollState())
                             .onFocusChanged {
                                 // R72: focusing Play/Resume reframes the full backdrop. R115: only when the
                                 // hero is actually scrolled — on open the list is already at the top (offset 0),

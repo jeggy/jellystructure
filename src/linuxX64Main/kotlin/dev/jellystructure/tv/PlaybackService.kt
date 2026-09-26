@@ -484,9 +484,15 @@ class PlaybackService(
 
         // Resolve resume position from Jellyfin user-data
         val itemDetail = jellyfinClient.getItemDetail(jellyfinBase, token, device.jellyfinUserId, jellyfinId)
-        val startPositionTicks = startPositionMsOverride?.coerceAtLeast(0L)?.let { it * TICKS_PER_MS }
-            ?: (itemDetail?.userData?.playbackPositionTicks ?: 0L)
+        // R306 (FR-R306-2) — a Played item starts at 0: the detail page says *Play Again* for it, and R185
+        // already rules that Played wins over whatever position Jellyfin left on it. The client's own
+        // position (R292's return from the background) still wins over both.
+        val saved = itemDetail?.userData
+        val startPositionTicks = resolveStartPositionTicks(startPositionMsOverride, saved)
         val startPositionMs = startPositionTicks / TICKS_PER_MS
+        val ignoredPositionTicks = saved?.takeIf { it.played }?.playbackPositionTicks?.takeIf { it > 0 }
+        if (startPositionMsOverride == null && ignoredPositionTicks != null)
+            Logger.info("playback start: device=${device.deviceId} item=$jellyfinId from 0 — played, so Jellyfin's ${ignoredPositionTicks / TICKS_PER_MS}ms is not a resume point (R306)", "tv")
         // R292 — one line per return, so a return that landed at the wrong place is readable from the log.
         if (startPositionMsOverride != null) Logger.info("playback start: device=${device.deviceId} item=$jellyfinId cut at ${startPositionMs}ms (the client's own position; Jellyfin held ${(itemDetail?.userData?.playbackPositionTicks ?: 0L) / TICKS_PER_MS}ms)", "tv")
 
@@ -1269,3 +1275,12 @@ private fun nowMs(): Long = memScoped {
     clock_gettime(CLOCK_REALTIME, ts.ptr)
     ts.tv_sec * 1000L + ts.tv_nsec / 1_000_000L
 }
+
+/**
+ * R306 (FR-R306-2) — where a start begins: the client's own position when it sends one (R292's return from
+ * the background), else Jellyfin's saved position — except on a Played item, which starts at 0 (R185:
+ * Played wins over a leaked position; the page says *Play Again*).
+ */
+internal fun resolveStartPositionTicks(overrideMs: Long?, saved: dev.jellystructure.auth.JellyfinUserData?): Long =
+    overrideMs?.coerceAtLeast(0L)?.let { it * TICKS_PER_MS }
+        ?: if (saved?.played == true) 0L else (saved?.playbackPositionTicks ?: 0L)

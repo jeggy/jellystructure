@@ -57,6 +57,18 @@ sealed class PlayerSessionState {
 internal fun classifyStartFailure(t: Throwable?): FailureClass = classifyLoadFailure(t)
 
 private const val PROGRESS_INTERVAL_MS = 10_000L
+// R306 (FR-R306-3) — how often the store looks at the player's fatal-error flag.
+internal const val FAILURE_POLL_MS = 500L
+
+/** R306 (FR-R306-3) — fires on the first failure seen *after* the flag was seen clear: a flag still set from
+ *  the stream before this one (the player clears it on load, a moment after Ready) never counts. */
+internal class FailureLatch {
+    private var armed = false
+    fun observe(failed: Boolean): Boolean {
+        if (!failed) { armed = true; return false }
+        return armed
+    }
+}
 // R216 (FR-R216-4) — "a long-session interval" for QoE reporting so an abandoned/crashed session isn't
 // lost entirely; 60 heartbeat ticks × PROGRESS_INTERVAL_MS = 10 minutes.
 private const val QOE_REPORT_EVERY_N_TICKS = 60
@@ -75,6 +87,9 @@ class PlayerStore(private val apiClient: TvApiClient) {
     val state: StateFlow<PlayerSessionState> = _state.asStateFlow()
 
     private var progressJob: Job? = null
+    // R306 (FR-R306-3) — watches the player for a fatal error while the session is Ready.
+    private var failureWatchJob: Job? = null
+    private var failedProvider: () -> Boolean = { false }
     private var currentItemId: String? = null
     // Kept so close() can still report a final position (and take the same ≥90% mark-played decision)
     // if the owner tore the store down without calling stopSession() itself — which also makes the two
@@ -108,7 +123,12 @@ class PlayerStore(private val apiClient: TvApiClient) {
         durationProvider: () -> Long = { 0L },
         qoeSnapshotProvider: () -> PlayerQoeSnapshot = { PlayerQoeSnapshot() },
         startupMsProvider: () -> Long? = { null },
+        // R306 (FR-R306-3) — the player's fatal-error flag. Null keeps the one a previous start gave (R237's
+        // Retry re-starts without it, and must still be watched).
+        failedProvider: (() -> Boolean)? = null,
     ) {
+        failedProvider?.let { this.failedProvider = it }
+        failureWatchJob?.cancel()
         currentItemId = itemId
         this.positionProvider = positionProvider
         this.durationProvider = durationProvider
@@ -203,6 +223,7 @@ class PlayerStore(private val apiClient: TvApiClient) {
                     qoeDirectPlay = ticket.directPlay
                     startHeartbeat(itemId, positionProvider, isPausedProvider)
                     _state.value = PlayerSessionState.Ready(ticket.onThisServer())
+                    startFailureWatch()
                     return@launch
                 }
                 val cause = result.exceptionOrNull()
@@ -264,6 +285,8 @@ class PlayerStore(private val apiClient: TvApiClient) {
     fun stopSession(positionMs: Long, durationMs: Long = 0L) {
         progressJob?.cancel()
         progressJob = null
+        failureWatchJob?.cancel()
+        failureWatchJob = null
         val itemId = currentItemId ?: return
         currentItemId = null
         // R216 (FR-R216-4) — "posted once at session end". Reads the snapshot before the provider is
@@ -385,6 +408,27 @@ class PlayerStore(private val apiClient: TvApiClient) {
         exitScope.launch {
             runCatching { apiClient.markPlayed(itemId, watched = true) }
             WatchedBus.publish(mapOf(itemId to CardPlayState(played = true, playedPct = 1f)))  // R147
+        }
+    }
+
+    /**
+     * R306 (FR-R306-3) — a fatal error after the stream started (an engine error, not a wait) becomes R237's
+     * error state, generic kind: *"Something went wrong"*, Retry and Back — never R218's spinner forever.
+     * The watch arms only after it has seen the flag clear, so a flag left from the stream before this one
+     * (the player resets it on load, which follows this Ready) can never count.
+     */
+    private fun startFailureWatch() {
+        failureWatchJob?.cancel()
+        val failed = failedProvider
+        failureWatchJob = scope.launch {
+            val latch = FailureLatch()
+            while (isActive && _state.value is PlayerSessionState.Ready) {
+                delay(FAILURE_POLL_MS)
+                if (latch.observe(failed())) {
+                    _state.value = PlayerSessionState.Error("The player failed after the stream started", LoadErrorKind.GENERIC)
+                    break
+                }
+            }
         }
     }
 

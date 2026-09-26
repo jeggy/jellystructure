@@ -787,6 +787,11 @@ class HomeFeedService(
      * belong to a broader scope than the viewer currently has — treated as unknown (empty) rather than
      * risked, self-healing on the next background cycle rather than retried live.
      */
+    /** R306 (FR-R306-5) — series jellyfinId → the episode its Continue Watching entry points at, from the
+     *  same cached canonical list every row reads (a pure cache read, like [canonicalContinueList]). */
+    fun continueEpisodes(device: DeviceData): Map<String, String> =
+        canonicalContinueList(device).mapNotNull { e -> e.mediaItem.jellyfinId?.let { sid -> e.episodeId?.let { sid to it } } }.toMap()
+
     private fun canonicalContinueList(device: DeviceData): List<ContinueEntry> {
         val cached = continueListCache[device.jellyfinUserId] ?: return emptyList()
         val allowedHash = (device.allowedLibraries.hashCode() * 31 + device.allowedTags.hashCode()) * 31 + device.blockedTags.hashCode()
@@ -868,7 +873,9 @@ class HomeFeedService(
     /** R219 — one canonical, uncapped, unfiltered-by-channel Continue Watching entry: [mediaItem] (so a
      *  caller can channel-filter via [MediaItem.matchesChannel] without a second lookup), the [card] to
      *  display, and [lastActivityAt] (§4's sort key — the same value §3's conflict rule picked). */
-    private data class ContinueEntry(val mediaItem: MediaItem, val card: MediaCard, val lastActivityAt: Long)
+    // R306 (FR-R306-5) — [episodeId] is the episode the entry is about (its in-progress episode or its
+    // next-up), null for a film; the series page resumes that same episode.
+    private data class ContinueEntry(val mediaItem: MediaItem, val card: MediaCard, val lastActivityAt: Long, val episodeId: String? = null)
 
     /** R187's total/cap split, still needed at each capped view (Home row, channel row): [total] is the
      *  pre-cap match count, for [Row.seedTotalCount] (FR-R219-5) — `cards.size` alone would be wrong for
@@ -956,7 +963,7 @@ class HomeFeedService(
 
         // §2(a) / resume candidate — one per title, the MOST RECENT in-progress episode if several
         // (FR-R219-4: e.g. Tellytots shows S1E5/88%, never a stale S1E3).
-        data class ResumeCandidate(val mediaItem: MediaItem, val card: MediaCard, val ts: Long)
+        data class ResumeCandidate(val mediaItem: MediaItem, val card: MediaCard, val ts: Long, val episodeId: String? = null)
         val resumeByKey = LinkedHashMap<String, ResumeCandidate>()
         for (play in resumeSorted) {
             // R185 — an item flagged Played is never resurrected as in-progress, whatever a leaked
@@ -972,11 +979,11 @@ class HomeFeedService(
             // Jellyfin's own IndexNumber/ParentIndexNumber parse fails on the file's name.
             val (s, e) = resolvedEpisodeNumbers(mediaItem, play.id, play.seasonNumber, play.episodeNumber)
             val ts = play.userData?.lastPlayedDate?.let { dev.jellystructure.util.isoToEpochSeconds(it) } ?: 0L
-            resumeByKey[key] = ResumeCandidate(mediaItem, mediaItem.toMediaCard(progressPct = pct, seasonNumber = s, episodeNumber = e), ts)
+            resumeByKey[key] = ResumeCandidate(mediaItem, mediaItem.toMediaCard(progressPct = pct, seasonNumber = s, episodeNumber = e), ts, play.id.takeIf { play.seriesId != null })
         }
 
         // "Something left to watch" half of §2 — next-up candidate per title.
-        data class NextUpCandidate(val mediaItem: MediaItem, val card: MediaCard)
+        data class NextUpCandidate(val mediaItem: MediaItem, val card: MediaCard, val episodeId: String? = null)
         val nextUpByKey = LinkedHashMap<String, NextUpCandidate>()
         for (play in nextUpItems) {
             val key = play.seriesId ?: play.id
@@ -984,7 +991,7 @@ class HomeFeedService(
             val mediaItem = byJellyfinId[key] ?: continue
             val (s, e) = resolvedEpisodeNumbers(mediaItem, play.id, play.seasonNumber, play.episodeNumber)
             val label = if (s != null && e != null) "S${s}E${e} · ${play.name}" else play.name
-            nextUpByKey[key] = NextUpCandidate(mediaItem, mediaItem.toMediaCard(nextUpLabel = label, seasonNumber = s, episodeNumber = e))
+            nextUpByKey[key] = NextUpCandidate(mediaItem, mediaItem.toMediaCard(nextUpLabel = label, seasonNumber = s, episodeNumber = e), play.id.takeIf { play.seriesId != null })
         }
 
         // §2 membership: "genuinely started" (a: resume, b: finished, c: touched within the window) AND
@@ -1004,9 +1011,9 @@ class HomeFeedService(
             val finishedTs = lastFinishedByKey[key]
             when {
                 resume != null && nextUp != null && finishedTs != null && finishedTs > resume.ts ->
-                    ContinueEntry(nextUp.mediaItem, nextUp.card, finishedTs)
-                resume != null -> ContinueEntry(resume.mediaItem, resume.card, resume.ts)
-                nextUp != null -> ContinueEntry(nextUp.mediaItem, nextUp.card, finishedTs ?: lastTouchedByKey[key] ?: 0L)
+                    ContinueEntry(nextUp.mediaItem, nextUp.card, finishedTs, nextUp.episodeId)
+                resume != null -> ContinueEntry(resume.mediaItem, resume.card, resume.ts, resume.episodeId)
+                nextUp != null -> ContinueEntry(nextUp.mediaItem, nextUp.card, finishedTs ?: lastTouchedByKey[key] ?: 0L, nextUp.episodeId)
                 else -> null  // unreachable — candidateKeys already required resume or nextUp present
             }
         }

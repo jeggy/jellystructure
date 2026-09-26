@@ -148,6 +148,7 @@ actual class RaviloPlayer actual constructor() {
         releasedForBackground = true
         _hasRenderedFirstFrame = false
         _isBuffering = false
+        _playbackFailed = false
         _isSeeking = false
         _videoSize.value = VideoSize.UNKNOWN
         e.release()
@@ -196,6 +197,8 @@ actual class RaviloPlayer actual constructor() {
     // qoe* fields (read from PlayerScreen's poll loop, written from Media3's analytics thread).
     @Volatile private var _hasRenderedFirstFrame = false
     @Volatile private var _isBuffering = false
+    // R306 (FR-R306-3) — a fatal engine error on THIS load; reset by every load and engine release.
+    @Volatile private var _playbackFailed = false
     @Volatile private var _isSeeking = false
 
     private val qoeListener = object : AnalyticsListener {
@@ -219,6 +222,9 @@ actual class RaviloPlayer actual constructor() {
                 qoeSuppressNextBuffering = true
                 _isSeeking = true
             }
+        }
+        override fun onPlayerError(eventTime: AnalyticsListener.EventTime, error: androidx.media3.common.PlaybackException) {
+            _playbackFailed = true
         }
         override fun onPlaybackStateChanged(eventTime: AnalyticsListener.EventTime, state: Int) {
             when (state) {
@@ -293,6 +299,7 @@ actual class RaviloPlayer actual constructor() {
         // and the qoe* counters above deliberately don't.
         _hasRenderedFirstFrame = false
         _isBuffering = false
+        _playbackFailed = false
         _isSeeking = false
         val subConfigs = subtitles.mapNotNull { sub ->
             val url = sub.url ?: return@mapNotNull null
@@ -489,7 +496,11 @@ actual class RaviloPlayer actual constructor() {
     actual val positionMs: Long get() = engine?.currentPosition?.coerceAtLeast(0) ?: 0L
     actual val durationMs: Long get() = engine?.duration?.let { if (it == C.TIME_UNSET) 0L else it.coerceAtLeast(0) } ?: 0L
     actual val bufferedMs: Long get() = engine?.bufferedPosition?.coerceAtLeast(0) ?: 0L
-    actual val isPlaying: Boolean get() = engine?.isPlaying == true
+    // R306 (FR-R306-4) — *wants to play*, as the web's `!video.paused` already is: Media3's own isPlaying
+    // is false while buffering, which flipped the Pause glyph to ▶, made OK during a buffer call play()
+    // and reported the session paused. Buffering is `isBuffering`'s to say (R218).
+    actual val isPlaying: Boolean get() = engine?.let { it.playWhenReady && it.playbackState != Player.STATE_ENDED && it.playbackState != Player.STATE_IDLE } == true
+    actual val playbackFailed: Boolean get() = _playbackFailed
     actual val isEnded: Boolean get() = engine?.playbackState == Player.STATE_ENDED
     actual val hasRenderedFirstFrame: Boolean get() = _hasRenderedFirstFrame
     actual val isBuffering: Boolean get() = _isBuffering

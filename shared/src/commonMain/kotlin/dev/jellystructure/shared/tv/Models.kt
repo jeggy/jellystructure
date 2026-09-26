@@ -495,6 +495,9 @@ data class CardPlayState(
     // Bug fix — "My List": carried on the same playstate overlay as `played` (same Jellyfin UserData
     // bulk fetch, no extra round trip) so the detail screens' "+ My List" button has real state.
     val favorite: Boolean = false,
+    /** R306 (FR-R306-5) — on a series' own entry only: the episode that series' Continue Watching entry
+     *  points at (in progress, or next up), so its page resumes what the row shows. Absent otherwise. */
+    @SerialName("continue_episode_id") val continueEpisodeId: String? = null,
 )
 
 /** Phase 150: the client-facing mirror of `dev.jellystructure.model.Stinger` — a mid/post-credits
