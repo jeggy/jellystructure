@@ -6,8 +6,9 @@
 
 ## Status
 
-`Planned` — written 2026-09-26, not dev-reviewed. Admin frontend plus one route change and one small
-new route. **Numbering:** verified against `STATUS.md` the same day — admin taken through **264**.
+`Planned` — written 2026-09-26, **dev-reviewed 2026-09-26** against `main` `0e5e434f` (see *Dev review*
+at the end). Admin frontend plus one route change and one small new route. **Numbering:** verified
+against `STATUS.md` the same day — admin taken through **264**.
 
 Extends **Phase 154** (the pre-run dialog, FR-PIPE1-1…8) from one page to every manual full run.
 
@@ -105,3 +106,42 @@ it runs every step, and `scan_files` in the body is ignored.
    actually runs (today it would list none).
 5. `curl -X POST /api/scan` with no body starts a full run exactly as today.
 6. `scan-fixture.spec.ts` and the new e2e case pass in CI.
+
+## Dev review (2026-09-26, against `main` `0e5e434f`)
+
+The call sites and routes are where the spec says. Seven items.
+
+1. **The five triggers.** Library: `#scan-btn` / `#scan-full` click handlers (`Library.kt:300`, `:303`)
+   → `MediaApi.startScan(full)` (`:444`). Dashboard: `#dash-scan` / `#dash-scan-full` (`Dashboard.kt:98`,
+   `:101`) → `:373`, which also carries the **resume** path (`if (resume) MediaApi.resumeScan()`). Resume
+   stays dialog-free, per the non-goal. The palette's *Start full scan* (`Shell.kt:258-263`). The buttons'
+   running-state code (`Library.kt:538-554`, `Dashboard.kt:473-482`) is untouched.
+2. **What moves.** `showPipelineRunDialog` (`Settings.kt:2798`), `PIPE_SKIP_KEY`, `PIPE_BLOCKS` (`:2618`),
+   `FILE_CHECK_STEPS` (`:2636`) and `PIPE_SHORT` (`:2637`) are all `private` to `Settings.kt`. They become
+   `internal` in `ui/PipelineRunDialog.kt`. The dialog keeps its `hasUnsavedEdits` parameter; only
+   Settings' call site (`:3246`) ever passes `true`.
+3. **The plan is one function, used twice.** `runPipeline` builds the step list Activity shows as
+   `listOf("scan_files") + pipeline.filter { it.step != "scan_files" }` (`PipelineEngine.kt:220`), over
+   `effectivePipeline(config)` (`:130`) minus the skips (`MediaRoutes.kt:2347`). Extract that ordering into
+   one pure function. `runPipeline` calls it, and `GET /api/pipeline/plan` answers it. Then the dialog, the
+   chips and the run cannot list different steps. The response is a `@Serializable` list of
+   `{step, scope}`: the route file's own note (`MediaRoutes.kt:2079`) records what a mixed-type `mapOf`
+   does to serialization.
+4. **The dialog takes the plan, not the config.** Its `saved: List<PipelineStep>` parameter becomes the
+   plan answer. Settings still fetches the saved config (`ConfigApi.get()`), but only to compare against
+   its edit buffer for the unsaved-edits note.
+5. **One body parser for both routes.** `PipelineRunRequest` (`MediaRoutes.kt:133`) and its defensive
+   receive (`:2071`) become a small helper that both `POST /api/scan` (`:2031`) and `/pipeline/run` call.
+   `/scan` then passes `skipSteps` to `launchScanRun`, which already takes it (`:2343`) and already writes
+   the *· skipped: …* descriptor (`:2352`). `MediaApi.startScan` (`MediaApi.kt:445`) gains the same
+   `setBody` as `runPipeline` (`:458-462`).
+6. **FR-265-6 reads the plan's length.** A plan of exactly `["scan_files"]` means start at once.
+   `effectivePipeline` falls back to the built-in default only when *no* step is enabled, so this case
+   means an operator enabled `scan_files` alone.
+7. **The e2e change is one click.** `scan-fixture.spec.ts:106` clicks *Scan library* by text; it then
+   presses `#prun-go`. `scan-replace.spec.ts:81` posts to `/api/scan` directly and is unaffected (item 5
+   keeps the bodyless call working).
+
+**Net effect.** One file moved out of `Settings.kt`, three call sites wrapped, one helper shared by two
+routes, one small GET route, one `MediaApi` parameter, one e2e click plus the new case. No migration, no
+config change.
