@@ -2834,8 +2834,10 @@ internal fun TrackPicker(
     }
 }
 
-/** R291 — long enough that sweeping past a row warms nothing, short enough to finish before a deliberate OK. */
-private const val AUDIO_WARM_DWELL_MS = 500L
+/** R291 — long enough that sweeping past a row warms nothing (a remote's key repeat is 100–200 ms a step),
+ *  short enough to finish before a deliberate OK. 2026-09-26: 500 → 250 ms once a warm became cheap on the
+ *  server (a warm-only job stops 3 segments ahead); on the stue TV a warmed switch froze 310–400 ms, a cold one 1.46 s. */
+private const val AUDIO_WARM_DWELL_MS = 250L
 
 /** R291 — the ticket audio position OK would switch to on the focused row, or null when OK does not switch
  *  (a subtitle tab, or a language holding several versions, whose OK opens level 2). */

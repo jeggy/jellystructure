@@ -5,9 +5,10 @@
 
 ## Status
 
-`⚠ Partial` — **2026-09-26 evening: mechanism 1 rebuilt on jellystructure's own renditions, verified on the Pixel 9**
-(598–907 ms per switch, the picked track mapped, the picture never stops; see *Build + device measurement,
-2026-09-26 evening*) — the stue TV is the last check before the Android switch goes on. Earlier the same day:
+`⚠ Partial` — **2026-09-26 evening: on for Android (TV and phone), on jellystructure's own renditions.** Pixel 9
+598–907 ms a switch, stue TV 310–400 ms warmed / 1.46 s cold, back to the carried track instantly, the picture
+never stops (see *Build + device measurement, 2026-09-26 evening*). ⚠ GAP: the web player and the cast
+receiver still restream (FR-R291-4). Earlier the same day:
 **mechanism 1 cannot use Jellyfin as the rendition source** (its audio-only job
 never maps the requested track; see *Device measurement, 2026-09-26 afternoon*). **FR-R291-1 built 2026-09-25** from the dev review below (items 1 and 2); **FR-R291-2/3 not
 built**: the mechanism is chosen after FR-R291-3's remaining measurements (the video variant's PTS at the same
@@ -201,8 +202,26 @@ are AC3):
 
 No video load was cancelled or repeated across the four switches: the picture never stopped. Back stopped all
 three rendition jobs (`stopped (playback stopped)`), removed their folders, and left no ffmpeg in the container.
-Still to see: the stue TV (D-pad picker with the warm) before the switch goes on for a release — the owner's
-rule since 2026-09-25 is that an audio path is seen on a set before it reaches the household.
+**Then the stue TV** (owner: *"Just take over stue tv"*; a local release build of this branch with the switch
+on, installed and AOT-compiled; timings from the TV's own media session, polled every ~100 ms), the same film,
+starting on the carried English:
+
+| Switch | Frozen picture (BUFFERING → PLAYING) |
+|---|---|
+| English (carried) → Spanish, focus rested 2.5 s (warmed) | **~310 ms** |
+| Spanish → French — rendition to rendition, this morning's endless stall | **~400 ms**, and played on |
+| French → Italian, OK 150 ms after landing (cold) | **~1.46 s** |
+| Italian → English (carried) | **no pause at all** |
+
+Back stopped all three jobs and left no ffmpeg in the container. **The switch is on** (`switchesHlsAudioRenditions()
+= true`). Two changes from what the TV showed: a warm-only job stops **3 segments** ahead (a warm is one request
+the viewer may never follow, and every audio segment of an interleaved 80 Mbps file is read with the video
+around it — the 2-minute run-ahead cost ~1.2 GB of disk per warm); a job reading for playback runs **1 minute**
+ahead (was 2). With warms that cheap, the picker's dwell before a warm is **250 ms** (was 500 ms): sweeping past
+rows still warms nothing, and a deliberate OK lands on a segment already made.
+
+**Still restreams:** the web player (`ravilo-web`, hls.js) and the cast receiver / screen don't declare
+`hls_audio_renditions` yet (FR-R291-4).
 
 ## What happens today
 

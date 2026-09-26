@@ -94,9 +94,10 @@ internal fun renditionCommand(src: RenditionSource, codec: String, startSegment:
  * segment and kept going only as far as the player is likely to need.
  *
  * A job starts at the requested segment and runs forward at 5–7× real time (TrueHD/AC3 → AAC 5.1, measured in
- * the production container: first segment 0.6–0.8 s cold). It is paused (SIGSTOP) once it is [PAUSE_AHEAD]
- * segments ahead of the last request and resumed when requests close in, so a two-hour film is not encoded
- * whole for a viewer who listens for a minute. A request outside what the job can reach soon (a seek) replaces
+ * the production container: first segment 0.6–0.8 s cold). It is paused (SIGSTOP) once it is
+ * [renditionPauseAhead] segments ahead of the last request and resumed when requests close in, so a two-hour
+ * film is not encoded whole for a viewer who listens for a minute — and a picker's warm, one request that may
+ * never be followed, reads only a few segments of an 80 Mbps file, not a minute of it. A request outside what the job can reach soon (a seek) replaces
  * it with one starting there. Idle for [IDLE_MS], or stopped with its playback (phase 180), it is killed and
  * its segments deleted; old segments go as the player passes them.
  */
@@ -110,6 +111,7 @@ class AudioRenditionJobs(private val root: String = "/tmp/js-renditions") {
         @Volatile var highest = startSegment - 1
         @Volatile var lastRequest = startSegment
         @Volatile var lastRequestAtMs = nowMs()
+        @Volatile var requests = 0
     }
 
     private val mutex = Mutex()
@@ -142,6 +144,7 @@ class AudioRenditionJobs(private val root: String = "/tmp/js-renditions") {
             }
             j.lastRequest = k
             j.lastRequestAtMs = nowMs()
+            j.requests++
             if (j.paused && j.highest - k < RESUME_AHEAD && j.pid > 0) { platform.posix.kill(j.pid, SIGCONT); j.paused = false }
             j
         }
@@ -185,7 +188,7 @@ class AudioRenditionJobs(private val root: String = "/tmp/js-renditions") {
                 while (fgets(buf, 512, pipe) != null) {
                     if (!buf.toKString().startsWith("progress=")) continue
                     refresh(job)
-                    if (!job.paused && !job.stopped && job.highest - job.lastRequest > PAUSE_AHEAD && job.pid > 0) {
+                    if (!job.paused && !job.stopped && job.highest - job.lastRequest > renditionPauseAhead(job.requests) && job.pid > 0) {
                         job.paused = true
                         platform.posix.kill(job.pid, SIGSTOP)
                     }
@@ -225,13 +228,20 @@ class AudioRenditionJobs(private val root: String = "/tmp/js-renditions") {
 
     companion object {
         const val MAX_JOBS = 8
-        const val PAUSE_AHEAD = 40         // 2 min of audio ahead of the last request: stop encoding
-        const val RESUME_AHEAD = 20        // requests within 1 min of what exists: encode on
+        const val PAUSE_AHEAD = 20         // 1 min of audio ahead of the last request: stop encoding
+        const val WARM_AHEAD = 3           // …or 9 s, while the job has served only the picker's warm
+        const val RESUME_AHEAD = 10        // requests within 30 s of what exists: encode on
         const val REACH_AHEAD = 10         // a request up to 30 s past what exists waits for this job
         const val DROP_BEHIND = 20         // a segment 1 min behind the request is deleted
         const val SEGMENT_WAIT_MS = 15_000L
         const val IDLE_MS = 90_000L
     }
 }
+
+/** R291 — how far a job may run ahead of its last request: a few segments while it has served only one request
+ *  (the picker's warm — the viewer may never pick it), a minute once playback is reading it. Every segment of
+ *  an interleaved file is read with the video around it (80 Mbps here), so this is disk, not just CPU. */
+internal fun renditionPauseAhead(requestsServed: Int): Int =
+    if (requestsServed < 2) AudioRenditionJobs.WARM_AHEAD else AudioRenditionJobs.PAUSE_AHEAD
 
 private fun nowMs(): Long = Clock.System.now().toEpochMilliseconds()

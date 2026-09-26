@@ -117,4 +117,12 @@ class AudioRenditionsTest {
         assertNull(r.master("not-an-id"))
         assertNull(r.segment(streamId, 1, 20), "past the end of the file")
     }
+
+    @Test
+    fun `a warm-only job stays a few segments ahead and playback a minute`() {
+        assertEquals(3, renditionPauseAhead(0))
+        assertEquals(3, renditionPauseAhead(1), "one request is the picker's warm: the viewer may never pick it")
+        assertEquals(20, renditionPauseAhead(2))
+        assertTrue(AudioRenditionJobs.RESUME_AHEAD < AudioRenditionJobs.PAUSE_AHEAD)
+    }
 }

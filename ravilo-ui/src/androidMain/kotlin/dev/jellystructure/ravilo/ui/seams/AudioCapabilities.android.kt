@@ -24,10 +24,10 @@ actual fun supportedVideoCodecs(): List<String> = BASE_VIDEO_CODECS
 actual fun playsHlsForAirPlay(): Boolean = false
 
 /**
- * R291 — Media3 plays a master's EXT-X-MEDIA audio renditions and switches them by track selection, and
- * the whole path is built. **Off, and must stay off while the renditions come from Jellyfin** (2026-09-26,
- * Pixel 9 debug build): Jellyfin's `/Audio/{id}/main.m3u8` never maps the requested track — every rendition
- * job encoded the file's default audio (ffmpeg "Stream mapping: #0:1 -> aac") plus a stray subtitle stream,
- * so a pick changed nothing audible, and one pick returned empty segments and buffered for ever. See the spec.
+ * R291 — Media3 plays a master's EXT-X-MEDIA audio renditions and switches them by track selection. **On since
+ * 2026-09-26**, with the renditions made by jellystructure itself (Jellyfin's audio endpoint never maps the
+ * picked track). Seen on both device kinds against prod: the Pixel 9 598–907 ms a switch (touch, no warm), the
+ * stue TV 310–400 ms with the picker's warm and 1.46 s without; back to the carried track, no pause at all; the
+ * picture never stops.
  */
-actual fun switchesHlsAudioRenditions(): Boolean = false
+actual fun switchesHlsAudioRenditions(): Boolean = true
