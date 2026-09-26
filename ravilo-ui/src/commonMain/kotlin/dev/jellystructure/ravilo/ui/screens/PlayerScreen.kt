@@ -98,6 +98,7 @@ import dev.jellystructure.ravilo.ui.i18n.LocalLang
 import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.i18n.t
 import dev.jellystructure.ravilo.ui.seams.PlayerAudioTrack
+import dev.jellystructure.ravilo.ui.seams.warmAudioRendition
 import dev.jellystructure.ravilo.ui.seams.PlayerSubtitleTrack
 import dev.jellystructure.ravilo.ui.seams.PlayerChromeActions
 import dev.jellystructure.ravilo.ui.seams.PlayerChromeBridge
@@ -2768,6 +2769,16 @@ internal fun TrackPicker(
             LaunchedEffect(focusedIdx) {
                 listState.revealPickerRow(headerItems + focusedIdx.coerceIn(0, lastIdx), headerItems + lastIdx)
             }
+            // R291 (FR-R291-2) — the audio row the D-pad rests on is warmed, so picking it finds its first
+            // segment encoded. Only a row whose OK switches outright: a single-version language, or a
+            // version at level 2 — never the playing track, never a subtitle, never on a touch sheet.
+            if (!handset) LaunchedEffect(pickerTab, pickerLevel, pickerIdx, pickerVersionIdx) {
+                val target = audioWarmTarget(pickerTab, pickerLevel, audioGroups.getOrNull(pickerIdx), pickerVersionIdx)
+                if (target != null && target != selectedAudio) {
+                    delay(AUDIO_WARM_DWELL_MS)
+                    warmAudioRendition(target)
+                }
+            }
 
             LazyColumn(
                 state = listState,
@@ -2820,6 +2831,18 @@ internal fun TrackPicker(
             extraRow?.invoke()
         }
     }
+}
+
+/** R291 — long enough that sweeping past a row warms nothing, short enough to finish before a deliberate OK. */
+private const val AUDIO_WARM_DWELL_MS = 500L
+
+/** R291 — the ticket audio position OK would switch to on the focused row, or null when OK does not switch
+ *  (a subtitle tab, or a language holding several versions, whose OK opens level 2). */
+internal fun audioWarmTarget(pickerTab: Int, pickerLevel: Int, group: PickerLanguage?, pickerVersionIdx: Int): Int? = when {
+    pickerTab != 0 || group == null -> null
+    pickerLevel == 1 -> group.versions.getOrNull(pickerVersionIdx)?.flatIndex
+    group.versions.size == 1 -> group.versions[0].flatIndex
+    else -> null
 }
 
 /** §B — level 2's header bar: the flag sits ONCE here (never repeated per version row), with the

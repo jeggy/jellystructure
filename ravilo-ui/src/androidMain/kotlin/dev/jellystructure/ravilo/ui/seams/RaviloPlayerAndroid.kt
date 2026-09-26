@@ -287,6 +287,7 @@ actual class RaviloPlayer actual constructor() {
     private var audioMeta: List<AudioTrack> = emptyList()
 
     actual fun load(streamUrl: String, startPositionMs: Long, subtitles: List<SubTrack>, audio: List<AudioTrack>, title: String, subtitle: String?, artworkUrl: String?) {
+        activeRaviloPlayer = this
         audioMeta = audio
         // R218 — a new item is its own cold start; see these fields' own doc for why they reset here
         // and the qoe* counters above deliberately don't.
@@ -407,6 +408,13 @@ actual class RaviloPlayer actual constructor() {
         }
     }
 
+    /** R291 — see [warmAudioRendition]. Reads the parsed master and the playhead here, on the player's thread. */
+    internal fun warmAudioRendition(index: Int) {
+        val exo = engine ?: return
+        val manifest = exo.currentManifest as? androidx.media3.exoplayer.hls.HlsManifest ?: return
+        AudioRenditionWarmer.warm(manifest, index, exo.currentPosition)
+    }
+
     actual fun selectSubtitleTrack(index: Int) {
         val exo = engine ?: return
         if (index < 0) {
@@ -433,6 +441,7 @@ actual class RaviloPlayer actual constructor() {
     }
 
     actual fun release() {
+        if (activeRaviloPlayer === this) activeRaviloPlayer = null
         releaseEngine()
         releasedForBackground = false   // the screen is gone; nothing will rebuild this
     }
