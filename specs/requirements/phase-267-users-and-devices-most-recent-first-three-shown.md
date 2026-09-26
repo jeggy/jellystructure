@@ -8,9 +8,10 @@
 
 ## Status
 
-`Planned` — written 2026-09-26, not dev-reviewed. One route (`GET /api/tv/admin/overview`) and the admin
-page (`RaviloUsers.kt`, plus `design/app/ravilo-users.html` on the design side). **Numbering:** verified
-against `STATUS.md` the same day — admin taken through **266**.
+`Planned` — written 2026-09-26, **dev-reviewed 2026-09-26** against `main` `0e5e434f` (see *Dev review*
+at the end). One route (`GET /api/tv/admin/overview`) and the admin page (`RaviloUsers.kt`, plus
+`design/app/ravilo-users.html` on the design side). **Numbering:** verified against `STATUS.md` the same
+day — admin taken through **266**.
 
 ## What is there today, measured
 
@@ -90,3 +91,34 @@ devices first), unless more than three are connected at once, and then the colla
 3. Open the list, revoke the fifth device: the list re-renders still open, now with eleven devices.
 4. The user who used Ravilo most recently is the first card.
 5. A user with two devices shows both and no *"+ N"* line.
+
+## Dev review (2026-09-26, against `main` `0e5e434f`)
+
+The measurements hold. Five items.
+
+1. **Where each order comes from today.**
+   - Devices: `getAllDevices` is `ORDER BY jellyfin_user_id, last_seen DESC` (`RaviloDevice.sq:93-94`),
+     and the route's per-user `filter` (`TvRoutes.kt:958`) keeps it.
+   - Web sessions: `getAll` is `SELECT * FROM session` (`Session.sq:32-33`), which has **no** order at all.
+   - Users: `(allDevices.map { uid } + allSessions.map { uid }).distinct()` (`TvRoutes.kt:957`), which
+     follows the hex id.
+
+   Put all three rules in one pure function in the route's file (`overviewOrder(...)`) and unit-test it
+   in `linuxX64Test`. Leave the SQL as it is.
+2. **"Connected" is cheap and already on the row.** `tvEventBus?.isConnected(d.deviceId)` is computed per
+   device when the overview is built (`TvRoutes.kt:989`), so it can lead the sort without a new query.
+   `last_seen` is debounced to once a minute (`RaviloDeviceService.kt:17`, `:203-205`), which is why a
+   connected, idle TV needs the *connected* rule to rank first.
+3. **The page.** Device rows are one `joinToString` (`RaviloUsers.kt:252-278`) and session rows another
+   (`:280-292`). Rows after the third get a hidden class, and one toggle line follows them. The open set
+   is `private val expandedDeviceUsers = mutableSetOf<String>()` (plus one for sessions), the same
+   pattern as `Activity.kt:666`. The re-render paths (`refreshUsersList` after *Refresh* `:60`, *Revoke*
+   `:333`, session revoke `:349`, *Sign out everywhere* `:362`) read it, so an open list stays open.
+4. **Copy and look.** Your words: *+ N devices* / *Show less*. The design mockup already has the same
+   control for *Recently watched* (`design/app/ravilo-users.html:112`, `:203-207`, *Show N more ▾ /
+   Show less ▴*). Reuse its button class so the two expanders on one card look the same.
+5. **FR-267-5's "+ N devices · 1 connected"** only happens when four or more devices of one user are
+   connected at once. Keep it, since it costs one count, but acceptance does not need to stage it.
+
+**Net effect.** One pure ordering function in the route, two hidden-row blocks and a toggle on the page,
+one in-memory set. No schema, no DTO change.
