@@ -427,6 +427,16 @@ private fun connectDashScanSocket(scope: CoroutineScope, baseCount: Int = 0) {
         }
     }
 
+    // Phase 178 amendment (2026-09-26) — a manual run defers within a millisecond of POST /scan, before
+    // this socket is listening, and JobEvent.Deferred is broadcast only once. Catch up from the polled
+    // status the moment the socket opens, so the page that started the run shows "Paused" and Run anyway.
+    ws.onopen = { _: Event ->
+        scope.launch {
+            val st = MediaApi.scanStatus()
+            if (dashScanSocket == ws && st?.status == "RUNNING" && st.deferred) renderDashDeferredBanner(scope, st.deferredDevices, st.jobId ?: "")
+        }
+    }
+
     ws.onclose = { _: Event ->
         if (dashScanSocket == ws) dashScanSocket = null
     }

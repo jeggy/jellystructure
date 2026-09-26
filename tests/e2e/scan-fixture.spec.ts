@@ -51,6 +51,13 @@ async function login(page: Page) {
 
 async function waitForScanComplete(page: Page) {
   await expect(page.locator('#dash-scan')).toBeDisabled({ timeout: 10_000 });
+  // cast-receiver.spec.ts runs just before this file and leaves a Chromecast session inside the
+  // playback tracker's 120 s grace window, and since phase 213 (FR-213-6) a manual run waits for a
+  // playing TV too — so this scan could sit "Paused — TV is watching" for exactly as long as the wait
+  // below allows, and fail on a slow runner (seen 2026-09-26). Press the product's own override, as an
+  // operator would; a run that never defers never shows the button.
+  const runAnyway = page.locator('#run-anyway-btn');
+  await runAnyway.waitFor({ state: 'visible', timeout: 5_000 }).then(() => runAnyway.click(), () => {});
   await expect(page.locator('#dash-scan')).toBeEnabled({ timeout: 120_000 });
   await expect(page.locator('#dash-scan')).toHaveText('▶ Scan library');
 }
