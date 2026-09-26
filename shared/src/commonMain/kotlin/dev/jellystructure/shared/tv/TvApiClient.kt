@@ -39,7 +39,7 @@ class TvApiClient(
     val baseUrl: String,
     private val deviceToken: () -> String?,
     private val wsClient: HttpClient = client,
-    private val json: Json = Json { ignoreUnknownKeys = true; isLenient = true },
+    private val json: Json = RaviloWireJson,   // R318 — unknown enum values fall back, never fail the payload
     // R252 (FR-R252-2) — which kind of client this is, stated on every request: tv · phone · web ·
     // tizen · cast. Each entry point passes its own; the version is never passed (see identify()).
     private val platform: String = "unknown",
@@ -153,6 +153,15 @@ class TvApiClient(
      *  R219 (FR-R219-6) — [channelId], when set, mirrors the originating row's own configured scope
      *  (server-decided; the client just forwards the id it's already standing in — see
      *  HomeFeedService.continueWatchingAll's doc comment for the exact rule). */
+    /** R318 (FR-R318-2b) — the Recommended row's *See all*: the viewer's still-eligible list (Phase 269),
+     *  in its own order, as browse cards. [channelId] keeps it to that channel's titles, as the row is. */
+    suspend fun recommendations(channelId: String? = null): SeededBrowseResponse {
+        val url = if (channelId != null) "$baseUrl/api/tv/recommendations?channel=$channelId" else "$baseUrl/api/tv/recommendations"
+        val r = client.get(url) { auth() }
+        r.assertSuccess()
+        return json.decodeFromString<SeededBrowseResponse>(r.bodyAsText())
+    }
+
     suspend fun continueAll(channelId: String? = null): List<MediaCard> {
         val url = if (channelId != null) "$baseUrl/api/tv/continue/all?channel=$channelId" else "$baseUrl/api/tv/continue/all"
         val r = client.get(url) { auth() }

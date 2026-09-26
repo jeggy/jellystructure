@@ -84,7 +84,9 @@ import org.jetbrains.compose.resources.painterResource
 // ─── R187 (FR-RV-BROWSE1) — the generic browse page ────────────────────────────
 
 enum class BrowseFacetKey { GENRE, TYPE, MATURITY, YEAR, WATCHED, AUDIO, CHANNEL, QUALITY }
-enum class SortField { RECENT, TITLE, YEAR, MATURITY, IMDB }
+/** R318 (FR-R318-2b) — [SOURCE] is the server's own order (the Recommended list's rank), offered only on
+ *  a page whose store is source-ordered, and labelled with the page's own title (no new string). */
+enum class SortField { SOURCE, RECENT, TITLE, YEAR, MATURITY, IMDB }
 enum class SortDir { ASC, DESC }
 
 /** R253 (FR-R253-2) — 225's served `sort_by`/`sort_descending` onto the page's existing (field, direction)
@@ -99,6 +101,7 @@ fun initialBrowseSort(sortBy: String?, descending: Boolean?): Pair<SortField, So
  *  sort) — e.g. Year defaults to newest-first (DESC), Title to A-Z (ASC). Re-selecting the already-
  *  active field flips [SortDir] instead of resetting to this default. */
 private fun defaultDirFor(field: SortField): SortDir = when (field) {
+    SortField.SOURCE -> SortDir.DESC
     SortField.RECENT -> SortDir.DESC
     SortField.TITLE -> SortDir.ASC
     SortField.YEAR -> SortDir.DESC
@@ -144,6 +147,11 @@ class SeededBrowseStore(
     val channelId: String? = null,
     // R253 (FR-R253-2) — the (field, direction) the page OPENS in; the viewer's Sort control is untouched.
     initialSort: Pair<SortField, SortDir> = SortField.RECENT to defaultDirFor(SortField.RECENT),
+    /** R318 (FR-R318-2b) — the Recommended row's *See all*: fetched from `GET /api/tv/recommendations`
+     *  (with [channelId] when the row was on a channel page), opened in the list's own order, and the
+     *  Sort control offers that order first, labelled [sourceLabel] (the row's title). */
+    val recommendations: Boolean = false,
+    val sourceLabel: String? = null,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val _state = MutableStateFlow<SeededBrowseState>(SeededBrowseState.Loading)
@@ -204,7 +212,9 @@ class SeededBrowseStore(
         }
         loadJob = scope.launch {
             _state.value = runCatching {
-                if (continueWatching) {
+                if (recommendations) {
+                    SeededBrowseState.Loaded(apiClient.recommendations(channelId).items)
+                } else if (continueWatching) {
                     val items = apiClient.continueAll(channelId)
                     SeededBrowseState.Loaded(items.map { BrowseCard(card = it) })
                 } else {
@@ -312,12 +322,17 @@ private fun SeededBrowseStore.toggle(key: BrowseFacetKey, value: String) {
     }
 }
 
-private fun sortedFiltered(store: SeededBrowseStore, all: List<BrowseCard>): List<BrowseCard> {
-    val filtered = all.filter { store.matches(it, null) }
+private fun sortedFiltered(store: SeededBrowseStore, all: List<BrowseCard>): List<BrowseCard> =
+    browseOrder(all.filter { store.matches(it, null) }, store.sortField, store.sortDir)
+
+/** The page's ordering, pure (R318: testable without a store). */
+internal fun browseOrder(filtered: List<BrowseCard>, field: SortField, dir: SortDir): List<BrowseCard> {
     // ASC ordering per field; RECENT's "ascending" base is the server's own newest-first order, so
     // ASC there reads as oldest-first and DESC (the default) as newest-first — both real orders, not
     // one arbitrary order plus its reverse-for-the-sake-of-it.
-    val ascending = when (store.sortField) {
+    val ascending = when (field) {
+        // R318 — the server's order is best-first, so like RECENT its "ascending" base is the reverse.
+        SortField.SOURCE -> filtered.asReversed()
         SortField.RECENT -> filtered.asReversed()
         // R253 (FR-R253-3) — the SAME key the server lines the row up by (Jellyfin's SortName, else the
         // title), so the row and its page cannot file *The Bear* in two different places.
@@ -326,7 +341,7 @@ private fun sortedFiltered(store: SeededBrowseStore, all: List<BrowseCard>): Lis
         SortField.MATURITY -> filtered.sortedBy { it.card.ageRating }
         SortField.IMDB -> filtered.sortedBy { it.imdbRating?.aggregateRating ?: -1.0 }
     }
-    return if (store.sortDir == SortDir.DESC) ascending.asReversed() else ascending
+    return if (dir == SortDir.DESC) ascending.asReversed() else ascending
 }
 
 /**
@@ -615,7 +630,7 @@ private fun FacetBar(
             ) {
                 val dirArrow = if (store.sortDir == SortDir.DESC) "▼" else "▲"
                 Text(
-                    str("browse.sort") + ": " + sortLabel(store.sortField) + " " + dirArrow,
+                    str("browse.sort") + ": " + sortLabel(store.sortField, store.sourceLabel) + " " + dirArrow,
                     color = if (focused) colors.text else colors.textSecondary, fontSize = 14.sp, fontFamily = Sora,
                 )
             }
@@ -643,7 +658,8 @@ private fun facetLabel(key: BrowseFacetKey): String = when (key) {
 }
 
 @Composable
-private fun sortLabel(field: SortField): String = when (field) {
+private fun sortLabel(field: SortField, sourceLabel: String?): String = when (field) {
+    SortField.SOURCE -> sourceLabel.orEmpty()   // R318 — the page's own title; never a new string
     SortField.RECENT -> str("browse.sort.recent"); SortField.TITLE -> str("browse.sort.title")
     SortField.YEAR -> str("browse.sort.year")
     SortField.MATURITY -> str("browse.sort.maturity"); SortField.IMDB -> str("browse.sort.imdb")
@@ -653,6 +669,7 @@ private fun sortLabel(field: SortField): String = when (field) {
  *  (e.g. "Newest first" / "Oldest first", "A–Z" / "Z–A") so the arrow isn't the only cue. */
 @Composable
 private fun sortDirLabel(field: SortField, dir: SortDir): String = when (field) {
+    SortField.SOURCE -> if (dir == SortDir.DESC) str("browse.sort.high_first") else str("browse.sort.low_first")
     SortField.TITLE -> if (dir == SortDir.ASC) str("browse.sort.az") else str("browse.sort.za")
     SortField.RECENT -> if (dir == SortDir.DESC) str("browse.sort.newest") else str("browse.sort.oldest")
     SortField.YEAR -> if (dir == SortDir.DESC) str("browse.sort.newest") else str("browse.sort.oldest")
@@ -826,7 +843,8 @@ private fun SortPopover(store: SeededBrowseStore, onClose: () -> Unit) {
     LaunchedEffect(Unit) { runCatching { firstFR.requestFocus() } }
     Box(Modifier.padding(horizontal = raviloHPad).dpadFocusable(onBack = onClose)) {
         Column(Modifier.width(260.dp).background(colors.surfaceVariant, RoundedCornerShape(12.dp)).padding(12.dp)) {
-            SortField.entries.forEachIndexed { i, opt ->
+            // R318 — the list's own order exists only on a source-ordered page.
+            SortField.entries.filter { it != SortField.SOURCE || store.recommendations }.forEachIndexed { i, opt ->
                 var focused by rememberFocusVisual()
                 val active = store.sortField == opt
                 Row(
@@ -854,7 +872,7 @@ private fun SortPopover(store: SeededBrowseStore, onClose: () -> Unit) {
                         if (active) Text("✓", color = colors.accent, fontSize = 14.sp)
                     }
                     Column(Modifier.weight(1f)) {
-                        Text(sortLabel(opt), color = colors.text, fontSize = 14.sp, fontFamily = Sora)
+                        Text(sortLabel(opt, store.sourceLabel), color = colors.text, fontSize = 14.sp, fontFamily = Sora)
                         Text(
                             sortDirLabel(opt, if (active) store.sortDir else defaultDirFor(opt)),
                             color = colors.textSecondary, fontSize = 12.sp, fontFamily = Sora,

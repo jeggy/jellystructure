@@ -10,7 +10,7 @@ import kotlinx.serialization.Serializable
 @Serializable
 data class RequestEntry(
     val tmdbId: Int,
-    val mediaKind: MediaKind,
+    val mediaKind: MediaKind = MediaKind.MOVIE,  // R318 (FR-R318-1) — a default, so an unknown value from a newer server falls back instead of failing the payload
     val title: String,
     val year: Int? = null,
     val genre: String? = null,

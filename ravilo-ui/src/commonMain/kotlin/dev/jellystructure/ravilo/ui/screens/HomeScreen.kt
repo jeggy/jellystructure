@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.shared.tv.offersSeeAll
 import dev.jellystructure.ravilo.ui.theme.LocalHandset
 import dev.jellystructure.ravilo.ui.focus.rememberFocusVisual
 import androidx.compose.runtime.getValue
@@ -469,7 +470,7 @@ private fun ContentRowItem(
     // only when there's more than a screen's worth AND the row has something to resolve into: CONTINUE
     // has its own dedicated seed-less path (still navigable, HomeFeedService.continueWatchingAll),
     // everything else needs Row.seedQuery.
-    val canSeeAll = row.items.size > 8 && (row.kind == RowKind.CONTINUE || row.seedQuery != null || row.seedMediaKind != null)
+    val canSeeAll = row.offersSeeAll()   // R187 / R318 — the one rule, in shared
 
     // Phase R240 — this row's own slice of the shared FocusDetailController state.
     val fd by store.focusDetail.current.collectAsState()

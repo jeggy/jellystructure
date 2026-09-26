@@ -94,7 +94,7 @@ class CastController(
     /** The phone's own device name — the receiver's row is named after the Chromecast, not this. */
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-    private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
+    private val json = dev.jellystructure.shared.tv.RaviloWireJsonWithDefaults   // R318
     // Snapshot state, not plain fields: the sheet's route listener keys on [appId], and a plain field
     // set after the config loads never recomposed it — the passive listener then only registered once
     // the sheet was opened, so the SDK could not resume a session at start-up.

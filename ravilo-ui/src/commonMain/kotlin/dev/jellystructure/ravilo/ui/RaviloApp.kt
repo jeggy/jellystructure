@@ -246,8 +246,11 @@ private sealed class Dest {
         val sortBy: String? = null,
         val sortDescending: Boolean? = null,
         /** R219 (FR-R219-6) — set only alongside [continueWatching] == true, when reached from a
-         *  channel's own Continue row; forwarded to [SeededBrowseStore] unchanged. */
+         *  channel's own Continue row; forwarded to [SeededBrowseStore] unchanged. R318: also set for a
+         *  channel's Recommended row. */
         val channelId: String? = null,
+        /** R318 (FR-R318-2b) — the Recommended row's See all (see [SeededBrowseStore.recommendations]). */
+        val recommendations: Boolean = false,
     ) : Dest()
     /** R277 — [focusInput] is set by tapping the bottom bar's Search item while Search is already
      *  showing, and is consumed by the screen (replaceTop with it cleared) so the next tap sets a
@@ -1097,6 +1100,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                             title = row.title, breadcrumb = homeLabel,
                             continueWatching = row.kind == RowKind.CONTINUE, displayName = dest.displayName,
                             sortBy = row.sortBy, sortDescending = row.sortDescending,   // R253
+                            recommendations = row.recommendations,   // R318
                         ))
                     },
                     onLiveTvChannelSelect = { ch -> push(Dest.LiveTv(ch.channelId, dest.displayName)) },
@@ -1134,7 +1138,8 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                             // R219 (FR-R219-6) — dest.channel was already in scope here and simply
                             // unused for this case; only meaningful for the Continue row (a non-Continue
                             // row's seedQuery is already channel-aware via withChannelSeed server-side).
-                            channelId = if (row.kind == RowKind.CONTINUE) dest.channel.id else null,
+                            channelId = if (row.kind == RowKind.CONTINUE || row.recommendations) dest.channel.id else null,
+                            recommendations = row.recommendations,   // R318
                         ))
                     },
                 )
@@ -1144,9 +1149,12 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                 // R219 (FR-R219-6): channelId is part of the key too — Home's and a channel's Continue
                 // See-all otherwise share the same title ("Continue Watching") and would wrongly reuse
                 // each other's cached store/result.
-                val storeKey = "seededBrowse:${dest.displayName}:${dest.title}:${dest.continueWatching}:${dest.channelId}"
+                val storeKey = "seededBrowse:${dest.displayName}:${dest.title}:${dest.continueWatching}:${dest.channelId}:${dest.recommendations}"
                 val store = keptStore(storeKey) {
-                    SeededBrowseStore(apiClient, dest.seedQuery, dest.seedMediaKind, dest.continueWatching, dest.personTmdbId, dest.channelId, initialSort = dev.jellystructure.ravilo.ui.screens.initialBrowseSort(dest.sortBy, dest.sortDescending))
+                    SeededBrowseStore(apiClient, dest.seedQuery, dest.seedMediaKind, dest.continueWatching, dest.personTmdbId, dest.channelId,
+                        initialSort = if (dest.recommendations) dev.jellystructure.ravilo.ui.screens.SortField.SOURCE to dev.jellystructure.ravilo.ui.screens.SortDir.DESC
+                            else dev.jellystructure.ravilo.ui.screens.initialBrowseSort(dest.sortBy, dest.sortDescending),
+                        recommendations = dest.recommendations, sourceLabel = dest.title)
                 }
                 SeededBrowseScreen(
                     store = store,

@@ -88,7 +88,7 @@ class RaviloCastOptionsProvider : OptionsProvider {
     }
 }
 
-private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
+private val json = dev.jellystructure.shared.tv.RaviloWireJsonWithDefaults   // R318
 
 /** One sender per process — the SDK's `CastContext` is itself a singleton. */
 private object CastSenderHolder {

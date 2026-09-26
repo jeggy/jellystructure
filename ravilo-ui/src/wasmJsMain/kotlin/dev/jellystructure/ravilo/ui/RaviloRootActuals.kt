@@ -37,7 +37,7 @@ actual fun createTvApiClient(baseUrl: String, deviceTokenProvider: () -> String?
     imageLoaderInit // ensure loader is configured before any image request
     val httpClient = HttpClient(Js) {
         install(ContentNegotiation) {
-            json(Json { ignoreUnknownKeys = true; isLenient = true })
+            json(dev.jellystructure.shared.tv.RaviloWireJson)   // R318
         }
         install(WebSockets) // live config push (R33)
         // Bug fix (Android originally): no HttpTimeout plugin meant no client-side bound at all on a

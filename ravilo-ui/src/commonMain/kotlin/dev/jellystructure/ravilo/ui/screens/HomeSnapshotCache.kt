@@ -32,7 +32,8 @@ const val HOME_SNAPSHOT_STALE_AFTER_MS: Long = 7L * 24 * 60 * 60 * 1000
  *  than ever writing something this large. */
 const val HOME_SNAPSHOT_MAX_BYTES: Long = 2L * 1024 * 1024
 
-internal val homeSnapshotJson = Json { ignoreUnknownKeys = true }
+// R318 — a stored feed is server data too: a snapshot written by a newer build must not fail to load.
+internal val homeSnapshotJson = dev.jellystructure.shared.tv.RaviloWireJson
 
 /** Pure staleness check (FR-RV-R212-4), factored out of the platform actuals so it's unit-testable
  *  from commonTest without needing an actual `load()`/file system. `nowEpochMs` is a parameter

@@ -70,7 +70,7 @@ class PlayerResumeStore(initialJson: String, private val persist: (String) -> Un
     fun consumeRestored(): Boolean = restoredPending.also { restoredPending = false }
 
     companion object {
-        private val json = Json { ignoreUnknownKeys = true; isLenient = true; encodeDefaults = true }
+        private val json = dev.jellystructure.shared.tv.RaviloWireJsonWithDefaults   // R318
         fun decode(s: String): ResumeRecord? = s.takeIf { it.isNotBlank() }?.let { runCatching { json.decodeFromString(ResumeRecord.serializer(), it) }.getOrNull() }
     }
 }

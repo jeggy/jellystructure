@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.shared.tv.offersSeeAll
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.getValue
 import dev.jellystructure.ravilo.ui.components.LoadErrorState
@@ -244,7 +245,7 @@ fun ChannelScreen(
                             items(nonEmpty.size, key = { ri -> nonEmpty[ri].id }) { ri ->
                                 val row = nonEmpty[ri]
                                 // R187 (FR-RV-BROWSE1-1) — see HomeScreen's ContentRowItem for the same check.
-                                val canSeeAll = row.items.size > 8 && (row.kind == RowKind.CONTINUE || row.seedQuery != null || row.seedMediaKind != null)
+                                val canSeeAll = row.offersSeeAll()   // R187 / R318
                                 val rowVariant = if (row.kind == RowKind.CONTINUE) TileVariant.LANDSCAPE
                                                   else s.feed.tileShape.toTileVariant()
                                 Spacer(Modifier.height(RaviloDimens.rowGap))

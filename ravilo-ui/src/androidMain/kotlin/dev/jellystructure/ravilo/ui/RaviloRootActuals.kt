@@ -39,7 +39,7 @@ actual fun createTvApiClient(baseUrl: String, deviceTokenProvider: () -> String?
     // to open one.
     val restClient = HttpClient(Android) {
         install(ContentNegotiation) {
-            json(Json { ignoreUnknownKeys = true; isLenient = true })
+            json(dev.jellystructure.shared.tv.RaviloWireJson)   // R318
         }
         install(HttpTimeout, httpTimeoutConfig)
     }

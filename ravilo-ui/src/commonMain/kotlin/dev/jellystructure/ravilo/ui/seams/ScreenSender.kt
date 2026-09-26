@@ -127,7 +127,7 @@ class ScreenSender(private val api: TvApiClient) : CastSender {
     }
 
     private companion object {
-        val screenCommandJson = Json { ignoreUnknownKeys = true }
+        val screenCommandJson = dev.jellystructure.shared.tv.RaviloWireJson   // R318
     }
 }
 

@@ -4,8 +4,8 @@
 
 ## Status
 
-`Planned` — written 2026-09-26, **dev-reviewed 2026-09-26** against `main` `0e5e434f` (see *Dev review*
-at the end). Client (`ravilo-ui`, `shared`'s DTOs): TV, phone, web. **Numbering:** verified against
+`✓ Built` 2026-09-26, not yet on a device (see *Build notes* at the end). Written 2026-09-26,
+**dev-reviewed 2026-09-26** against `main` `0e5e434f` (see *Dev review*). Client (`ravilo-ui`, `shared`'s DTOs): TV, phone, web. **Numbering:** verified against
 `STATUS.md` the same day — Ravilo taken through **R317**.
 
 ## Why the client needs a phase at all
@@ -112,3 +112,51 @@ opens lists the recommendations in rank order.
 
 **Net effect.** One shared `Json`, about eight call sites pointed at it, two defaults, one enum value,
 tests.
+
+## Build notes (2026-09-26)
+
+Built on `main` after Phase 269 (`6e4e6c65`).
+
+1. **One `Json`.** `RaviloWireJson` (`shared/.../RaviloWireJson.kt`: `ignoreUnknownKeys`, `isLenient`,
+   `coerceInputValues`), plus `RaviloWireJsonWithDefaults` for the app's own records. It is used by every
+   site in the dev review:
+   - `TvApiClient`'s default;
+   - both content-negotiation clients (Android and web);
+   - the Home snapshot cache;
+   - the screen-command decoder;
+   - `CastController`, `PlayerResume` and `CastSenderAndroid`.
+
+   `ravilo-screen` (the receiver-only TV app) does not depend on `shared` and keeps its own `Json`; it
+   decodes only its own events, and Tizen work is paused.
+2. **Defaults for every server-sent enum field that had none**, not only the two the dev review named. A
+   field without a default is the one `coerceInputValues` cannot rescue:
+   - `Row.kind`, `RowConfig.kind` → `CUSTOM`;
+   - `Channel.style` → `TEXT`;
+   - `MediaCard.kind`, `RequestEntry.mediaKind`, `UpcomingItem.kind`, the acquisition record's
+     `mediaKind` → `MOVIE`;
+   - `UpcomingItem.status` → `MONITORED`;
+   - the acquisition event's `status` → `NOT_REQUESTED`;
+   - `SeerrFeed.kind` / `endpoint` → `MIXED` / `MOVIES_POPULAR`;
+   - `RemoteDevice.kind` → `TV`.
+3. **Lists of enums:** `LenientListSerializer` drops an element that does not decode and keeps the rest.
+   No server-sent field uses it yet (dev review item 3); it is tested on a test-only type.
+4. **`RECOMMENDED`** is in `RowKind` (added with 269). The app draws a row by comparing to `CONTINUE`
+   only, so it renders like any content row.
+5. ***See all*:**
+   - One rule, `Row.offersSeeAll()` in `shared`: R187's (a seeded or Continue row past eight titles), or a
+     `recommendations` row whose `seedTotalCount` is more than it shows. Home and a channel page both use
+     it.
+   - It opens `SeededBrowseScreen` with a store fetching `GET /api/tv/recommendations` (with `channel=`
+     from a channel page).
+   - The page opens in the list's order: `SortField.SOURCE`, labelled with the page's own title (the
+     admin's row title), offered only on such a page.
+   - Its direction labels reuse *Highest first* / *Lowest first*. **No new strings.**
+6. **Tests:**
+   - `RaviloWireJsonTest` (`shared`, 4): an unknown row kind → `CUSTOM` with the rest of the feed, an
+     unknown channel style and tile shape too; an unknown skin → the default with every other setting
+     kept, and `RECOMMENDED` known; an unknown list element dropped; the *See all* rule.
+   - `BrowseSourceOrderTest` (`ravilo-ui`, 3): the page's source order, its reverse, and another sort on
+     the same list.
+
+**Not done here:** acceptance 1–2 on devices. The Pixel 9 check follows the deploy. **The TVs are not to be
+touched in this round** (owner, 2026-09-26), so the TV half of acceptance 2 is the owner's.
