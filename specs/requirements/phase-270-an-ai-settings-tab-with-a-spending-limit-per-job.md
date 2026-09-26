@@ -8,10 +8,11 @@
 
 ## Status
 
-`Planned` — written 2026-09-26, not dev-reviewed. Backend (a provider client, a job runner, a usage ledger)
-and the admin (a new Settings tab). It sits **on top of Phase 269**: with AI off, or when a limit is
-reached, 269's standard list is what every viewer gets, unchanged. **Numbering:** verified against
-`STATUS.md` the same day — admin taken through **269**.
+`Planned` — written 2026-09-26, **dev-reviewed 2026-09-26** against `main` `0e5e434f` (see *Dev review*
+at the end). Backend (a provider client, a job runner, a usage ledger) and the admin (a new Settings
+tab). It sits **on top of Phase 269**: with AI off, or when a limit is reached, 269's standard list is
+what every viewer gets, unchanged. **Numbering:** verified against `STATUS.md` the same day — admin
+taken through **269**.
 
 Facts about the Claude API below come from Anthropic's API reference as bundled with Claude Code (model
 table cached 2026-06-24). Prices must be re-checked before this ships (FR-270-6).
@@ -145,4 +146,54 @@ a mocked Anthropic.
    the lists are 269's.
 4. Turn on *Theme tags*: every title without keywords gains themes, and the card's spend matches the
    ledger.
-5. Turn AI off: no request reaches Anthropic (the server's outbound log shows none) and Ravilo is unchanged.
+5. Turn AI off: no request reaches Anthropic (proved by the dev review's item 8 test) and Ravilo is
+   unchanged.
+
+## Dev review (2026-09-26, against `main` `0e5e434f`)
+
+Buildable as written, with two corrections (items 1 and 8). Nine items.
+
+1. **Correction: the key is never read back, so the hint is its own route.** `GET /api/config` replaces
+   every non-blank secret with the `##KEEP##` sentinel, and `PUT` restores it (`ConfigRoutes.kt:81-87`,
+   `:191`). The AI key joins that list. FR-270-1's *last four characters* therefore come from a new
+   `GET /api/ai/status`: key hint `…abcd`, per job *spent this month*, the last run's line, and the
+   pending batch if any. It never returns the key. The config shape is a new `AiConfig` beside `ApiKeys`
+   (`AppConfig.kt:253`): `enabled`, `provider`, `apiKey`, and `jobs: Map<String, AiJobConfig(enabled,
+   model, effort, monthlyLimitUsd)>`.
+2. **The tab.** `SETTINGS_TABS` (`Settings.kt:780`) gains `"ai"`. The page is built like its siblings
+   from `wf.css` components. There is no design mockup for it, so it is built from this spec, and
+   `design/app/settings.html` can follow.
+3. **Outbound.** Through `OutboundHttp` on `GateClass.BACKGROUND`, like every background fetch
+   (Phase 182), with the same Ktor client TMDB uses. Headers `x-api-key` and
+   `anthropic-version: 2023-06-01`. A 429 or 5xx on create or poll backs off (Phase 183's jittered
+   exponential backoff).
+4. **The batch lifecycle.**
+   - `POST /v1/messages/batches` returns the batch id.
+   - Poll `GET /v1/messages/batches/{id}` every five minutes until `processing_status` is `ended`.
+   - Stream the `results_url` JSONL line by line, one result per `custom_id`, each `succeeded`,
+     `errored`, `canceled` or `expired`.
+
+   Migration **55** (after 269's 54) creates `ai_batch (id, job, submitted_at, status, request_count)`
+   and `ai_usage (job, month, model, requests, input_tokens, output_tokens, cache_write_tokens,
+   cache_read_tokens, cost_micro_usd)`. At boot, `submitted` rows resume polling.
+5. **Validation (FR-270-4) is a pure function per job,** unit-tested with a foreign id, a repeat, 18
+   picks, `refusal`, and `max_tokens`. On `claude-opus-5` a refusal is not routed to a fallback model:
+   falling back to 269's list is the right outcome for a ranking.
+6. **The price table is code, dated.** An `AiPricing` object holds input/output rates per model (Opus 5
+   $5/$25, Sonnet 5 $2/$10, Haiku 4.5 $1/$5 per MTok, *as of 2026-06-24*), plus ×0.5 batch, ×1.25
+   cache write (5-minute TTL) and ×0.1 cache read. It is re-checked against Anthropic's pricing page
+   before release, and the tab shows its date.
+7. **The worst-case estimate (FR-270-6) needs no extra call.** Input is the serialised prompt's
+   characters ÷ 3 (conservative for these prompts), and output is `max_tokens` × requests (re-rank
+   4,000, themes 600). It errs high on purpose; the ledger corrects the running total after each batch.
+   `count_tokens` stays available if the estimate turns out too loose.
+8. **Correction to acceptance 5.** There is no outbound request log to read. Prove *off* with a test
+   instead: with AI off, running both jobs against a mocked Anthropic that fails on any request passes,
+   and no `ai_batch` row appears.
+9. **The seam with 269.** `RecommendationService` exposes `shortlist(viewer, 60)` and
+   `applyAiOrder(viewer, picks)`. The AI job never scores, filters or stores titles itself; 269 stays
+   the only author of a list.
+
+**Net effect.** A small Anthropic client, a batch runner with resume, migration 55, a price table, two job
+definitions with pure validators, one status route, one Settings tab. Nothing changes for viewers while
+it is off.
