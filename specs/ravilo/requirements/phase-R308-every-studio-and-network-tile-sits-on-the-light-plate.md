@@ -8,11 +8,11 @@
 
 ## Status
 
-`Planned` — written 2026-09-26, not dev-reviewed. Client (`ravilo-ui`, every platform: TV, phone, web)
-plus one backend judgement that extends Phase 232. **Every open question decided the same day**: the
-owner handed the calls over (*"You just decide for me. We want all best solutions for everything"*).
-See *Decisions* at the end. **Numbering:** verified against `STATUS.md` the same
-day — Ravilo taken through **R307**.
+`Planned` — written 2026-09-26, **dev-reviewed 2026-09-26** against `main` `0e5e434f` (see *Dev review*
+at the end). Client (`ravilo-ui`, every platform: TV, phone, web) plus one backend judgement that
+extends Phase 232. **Every open question decided the same day**: the owner handed the calls over (*"You
+just decide for me. We want all best solutions for everything"*). See *Decisions* at the end.
+**Numbering:** verified against `STATUS.md` the same day — Ravilo taken through **R307**.
 
 Supersedes, for the Studios and Networks walls only: **R243 FR-R243-2**'s "a wordmark tile sets the name
 on the dark card", **R257 FR-R257-3**'s "a wordmark tile keeps the dark card", and **R259 FR-R259-5**'s
@@ -180,3 +180,43 @@ size.
 3. **Genres keep their dark cards.** The plate exists because captured logos are drawn for a light page.
    Genres have no logos, so a light plate would only put dark text on light for no reason. It also keeps
    the two kinds of wall visibly distinct: brands on plates, categories as words.
+
+## Dev review (2026-09-26, against `main` `0e5e434f`)
+
+The rule is confirmed on the server's own tool. Five items.
+
+1. **Re-run with ffmpeg, the way the server will run it: the same four.** `format=rgba,premultiply=
+   inplace=1,scale=w=128:h=128:force_original_aspect_ratio=decrease:flags=area,unpremultiply=inplace=1`
+   over all 221 production logos re-inks Channel 4 (`lost` 0.99, `opaque` 0.30) and the three white studio
+   logos (1.00/0.48, 0.99/0.13, 0.67/0.20). The nearest misses are the silhouettes (0.61–0.72 lost, 0.48–
+   0.54 opaque) and the solid boxes (opaque 0.76–1.00). Production's ffmpeg (5.1.9 in the container) has
+   both filters.
+2. **The raw frame needs fixed dimensions.** `rawRgbaThumb` (`FfmpegRunner.kt:297`) relies on a fixed
+   `32×32`. With the aspect kept, the output size varies, so compute it in Kotlin from the source size and
+   pass it explicitly (`scale=W:H`, `W = 128`, `H = max(1, round(h × 128 / w))`, the other way round for a
+   tall logo). The byte count is then known. Do not pad to a square: padding changes the `opaque`
+   fraction the thresholds were measured on.
+3. **Where it runs.** `LogoDownloader`'s background ink pass (`LogoDownloader.kt:57-81`) gains the
+   second verdict in the same loop: one more ffmpeg run per logo, ever, and a `<slug>.reink` sidecar
+   (`1`/`0`), invalidated with the `.ink` one when a logo is replaced (FR-232-4). The pure function
+   `logoReinkOf(rgba, w, h)` sits beside `logoInkOf` in `commonMain/.../media/LogoInk.kt`.
+4. **The wire and the tile.** `FacetItem` (`Models.kt:1548`) gains
+   `@SerialName("logo_reink") val logoReink: Boolean? = null`, set only when true, passed through
+   `FacetsAcc.toFacets` (`BrowseService.kt:293-299`) next to `logoInk`. In `TaxonomyTile`
+   (`TaxonomyScreen.kt`), for studios and networks:
+   - the `.background(...)` rule becomes the plate unconditionally;
+   - the wordmark's `color = colors.text` becomes one fixed ink constant (for example `0xFF1B1E2B`)
+     beside `TAXO_LOGO_PLATE`;
+   - the logo is drawn with `ColorFilter.tint(ink)` when `logoReink == true`. `RemoteImage`
+     (`seams/ImageLoader.kt:26`) takes no `colorFilter` today, so it gains an optional
+     `colorFilter: ColorFilter? = null` passed to its `AsyncImage`, the same filter `TitleLogo.kt:87`
+     applies to an `Image`. Every existing caller is unchanged.
+
+   Genres keep `colors.surfaceVariant`. The name and count captions under the card sit on the page, not
+   the plate, and keep their colours.
+5. **Tests.** `logoReinkOf` gets the synthetic cases, plus the four production re-inks and three misses,
+   as small RGBA fixtures rendered with item 1's filter chain and committed. The fixtures are generic
+   (strokes, shapes, colours); no production logo file enters the repository.
+
+**Net effect.** One pure function, one extra ffmpeg run per logo (once), one sidecar, one DTO field, and
+the tile's background, ink and tint. No migration.
