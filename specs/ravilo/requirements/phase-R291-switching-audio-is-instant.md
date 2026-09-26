@@ -77,6 +77,49 @@ Built after the measurements below (item 4 first, as the review asked):
   requests use Media3's default user agent, so a prefetch with that same agent lands in the same
   Jellyfin job.
 
+### Device measurement (2026-09-26, stue TV, switch on)
+
+Local release build `1.39-5-g830052c0-dirty` with `switchesHlsAudioRenditions() = true`, prod backend v1.39,
+a 2025 4K Dolby Vision REMUX at 80.7 Mbps with six audio tracks (English TrueHD 7.1 + commentary, and
+Spanish/French/Italian/Russian AC3 5.1) — above the set's 54 Mbps (0.9 × 60) ceiling, so it transcodes.
+
+- **The path works end to end.** The backend logged `audio renditions=6 (R291)` on the start; the picker
+  listed the five languages (English as two versions), each pick was ticked and the Audio pill took the new
+  flag; Jellyfin started one audio-only job per new language, **0.4 s after the pick** (the TV clock runs
+  1.517 s behind the server's; corrected).
+- **A switch to a rendition that is not yet encoding freezes the picture:** the player's session state goes
+  `PLAYING → BUFFERING` at the pick and back with the playhead unchanged — **1.10 s** (Italian), **1.32 s**
+  (French), ~2 s (Spanish, the first; upper bound 2.5 s). A screen recording at 4 fps shows the picker
+  closing and **R218's stall spinner in the Pause button's place for ~1.25 s** (French). So FR-R291-2 —
+  *within about a second, no loader* — is **not met yet**: the freeze is the first audio-only segment's
+  encode, as predicted.
+- **Back to the audio the video already carries (muxed English) is seamless:** no BUFFERING at all.
+- **Teardown holds:** Back stopped the video job and the live Italian rendition job (00:26:18 and 00:26:20,
+  zero Jellyfin ffmpeg left); the French job had already been ended by Jellyfin's own idle timeout, ~1 min
+  after it was switched away from.
+- **Found: an AC3 carried track breaks every switch.** The second start carried the remembered Italian AC3
+  track; Jellyfin **copied** it into the video (`-codec:a:0 copy`, the variant's CODECS `ac-3`), while the
+  renditions were asked for as AAC. An `EXT-X-MEDIA` tag has no CODECS of its own, so Media3 gives every
+  rendition the variant's audio format: the first switch failed with *"Unable to bind a sample queue to
+  TrackGroup with MIME type audio/ac3"*. The first session had only worked because its carried track was
+  TrueHD, which Jellyfin re-encodes to AAC. **Fix:** `composeMaster` asks for each rendition in the codec
+  the variant's audio is in (`renditionAudioCodec`: `mp4a` → aac, `ac-3` → ac3, `ec-3` → eac3, MP3 → mp3,
+  anything else aac); `AudioRenditionsTest` (5). Not yet seen on the TV at the time of writing.
+- **Seen on the way, not R291's:** after that source error the player sat on a black screen with a spinner
+  and no sentence (state `ERROR`, no retry) — a mid-playback failure has no R237 treatment; and *Play Again*
+  on a watched film started at the previous stop point (`-ss 00:08:57`), not at 0.
+- **The warm, built (dev review item 5):** the picker warms the audio row its focus has rested on for
+  500 ms — only a row whose OK switches outright (a single-version language, or a version at level 2),
+  never the playing track or a subtitle (`audioWarmTarget`, `AudioWarmTargetTest` (3)). The Android player
+  fetches that rendition's segment at the playhead through `DefaultHttpDataSource` — the class and user
+  agent Media3 loads the stream with, so the request lands in the job the switch reads from — one at a
+  time, a stale warm dropped, a rendition not re-warmed within 20 s. Web: no-op.
+  **Measured, on a film whose carried track Jellyfin re-encodes to AAC:** the warm had its segment ready in
+  1.8–2.2 s; the switch after it froze for **510 ms** and **210 ms** (cold: 1.10–2 s). In a 6 fps screen
+  recording of the second, **no stall spinner** — the Pause glyph shows ▶ for ~0.3–0.5 s while the new
+  audio buffers (the button follows *is playing*, not *wants to play*), and the picture keeps moving.
+  Switching back to the muxed track: no BUFFERING at all.
+
 ## What happens today
 
 On **direct play** switching audio is already instant: every track is in the file and ExoPlayer selects

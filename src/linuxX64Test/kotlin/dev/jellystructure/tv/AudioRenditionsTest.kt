@@ -55,6 +55,20 @@ class AudioRenditionsTest {
     }
 
     @Test
+    fun `renditions are asked for in the codec the variant's audio is in`() {
+        // Measured on the stue TV 2026-09-26: a carried AC3 track is copied (`ac-3`), and AAC renditions
+        // beside it failed the first switch ("Unable to bind a sample queue to TrackGroup with MIME type audio/ac3").
+        val ac3 = jellyfinMaster.replace("mp4a.40.2", "ac-3")
+        assertEquals("ac3", renditionAudioCodec(ac3))
+        assertEquals("eac3", renditionAudioCodec(jellyfinMaster.replace("mp4a.40.2", "ec-3")))
+        assertEquals("aac", renditionAudioCodec(jellyfinMaster))
+        assertEquals("mp3", renditionAudioCodec(jellyfinMaster.replace("mp4a.40.2", "mp4a.40.34")))
+        assertEquals("aac", renditionAudioCodec(jellyfinMaster.replace(",mp4a.40.2", "")), "no audio codec at all")
+        val m = composeMaster(ac3, "https://jf.example/videos/abc/", listOf(rendition(0, null), rendition(1, "https://x/Audio?AudioStreamIndex=2&apikey=t")))
+        assertContains(m, "URI=\"https://x/Audio?AudioStreamIndex=2&apikey=t&AudioCodec=ac3\"")
+    }
+
+    @Test
     fun `a single track or an unknown carried track registers nothing`() = runBlocking {
         val r = AudioRenditions { null }
         val id = JellyfinDeviceIdentity(deviceId = "dev", deviceName = "TV")
@@ -73,6 +87,7 @@ class AudioRenditionsTest {
         assertContains(m, "PlaySessionId=Pa2"); assertContains(m, "PlaySessionId=Pa3")
         assertFalse(m.contains("PlaySessionId=Pa1"), "the carried track is the video job's own audio — no job of its own")
         assertContains(m, "https://jf/Audio/abc/main.m3u8?MediaSourceId=ms&AudioStreamIndex=2")
+        assertContains(m, "&AudioCodec=aac\"", message = "the variant's audio is mp4a, so the renditions are AAC")
         assertEquals(listOf("Pa2", "Pa3"), r.sessionsFor("P"))
         assertEquals(emptyList(), r.sessionsFor("P"), "forgotten once handed over")
         assertNull(r.master("not-an-id"))

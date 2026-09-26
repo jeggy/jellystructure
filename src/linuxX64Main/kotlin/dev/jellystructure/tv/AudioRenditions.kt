@@ -62,7 +62,7 @@ class AudioRenditions(private val fetchPlaylist: suspend (String) -> String?) {
         val renditions = audio.mapIndexed { pos, a ->
             val uri = if (pos == carried) null else withJellyfinToken(
                 "$jellyfinBase/Audio/$jellyfinId/main.m3u8?MediaSourceId=${mediaSourceId.encodeURLParameter()}" +
-                    "&AudioStreamIndex=${a.index}&AudioCodec=aac&SegmentContainer=ts&MaxAudioChannels=6" +
+                    "&AudioStreamIndex=${a.index}&SegmentContainer=ts&MaxAudioChannels=6" +
                     "&PlaySessionId=${renditionSession(jellyfinPlaySessionId, a.index).encodeURLParameter()}" +
                     "&DeviceId=${identity.deviceId.encodeURLParameter()}",
                 token,
@@ -109,16 +109,24 @@ internal fun variantBaseOf(masterUrl: String): String = masterUrl.substringBefor
  * AUTOSELECT=NO so no player swaps track on its own by the device's locale. NAME is `a{position} {label}`:
  * unique (a player merges renditions that share a NAME) and a stable key the player maps back to the
  * ticket's audio position.
+ *
+ * Every rendition is asked for in the codec the variant's own audio is in ([renditionAudioCodec]).
+ * An `EXT-X-MEDIA` tag has no CODECS of its own, so a player takes every rendition's format from the
+ * variant's CODECS — measured on the stue TV 2026-09-26: a start that carried an AC3 track (Jellyfin copies
+ * it, `ac-3`) with AAC renditions failed the first switch with Media3's *"Unable to bind a sample queue to
+ * TrackGroup with MIME type audio/ac3"*. Starts whose carried track Jellyfin re-encodes (TrueHD, DTS →
+ * `mp4a`) had worked only because they happened to agree.
  */
 internal fun composeMaster(jellyfinMaster: String, variantBase: String, renditions: List<AudioRenditions.Rendition>): String {
     fun abs(uri: String) = if (uri.startsWith("http://") || uri.startsWith("https://")) uri else variantBase + uri.removePrefix("/")
     fun quoted(s: String) = s.replace('"', '\'').replace('\n', ' ').replace('\r', ' ')
+    val codec = renditionAudioCodec(jellyfinMaster)
     val out = StringBuilder("#EXTM3U\n")
     for (r in renditions) {
         out.append("#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"aud\",NAME=\"").append(quoted("a${r.position} ${r.label ?: r.language ?: ""}".trim())).append('"')
         r.language?.takeIf { it.isNotBlank() }?.let { out.append(",LANGUAGE=\"").append(quoted(it)).append('"') }
         if (r.uri == null) out.append(",DEFAULT=YES,AUTOSELECT=YES")
-        else out.append(",DEFAULT=NO,AUTOSELECT=NO,URI=\"").append(quoted(r.uri)).append('"')
+        else out.append(",DEFAULT=NO,AUTOSELECT=NO,URI=\"").append(quoted("${r.uri}&AudioCodec=$codec")).append('"')
         out.append('\n')
     }
     for (line in jellyfinMaster.lines()) {
@@ -130,4 +138,20 @@ internal fun composeMaster(jellyfinMaster: String, variantBase: String, renditio
         }
     }
     return out.toString()
+}
+
+/**
+ * The Jellyfin `AudioCodec` that matches the audio in the variant's CODECS — the codecs Jellyfin puts in a
+ * TS segment: `mp4a.40.34` (MP3) · `mp4a` (AAC) · `ac-3` · `ec-3`. Anything else, or no audio codec at all,
+ * is asked for as AAC, which is what Jellyfin re-encodes to when it cannot copy.
+ */
+internal fun renditionAudioCodec(jellyfinMaster: String): String {
+    val codecs = Regex("CODECS=\"([^\"]*)\"").find(jellyfinMaster.lines().firstOrNull { it.startsWith("#EXT-X-STREAM-INF:") } ?: "")
+        ?.groupValues?.get(1)?.split(',')?.map { it.trim().lowercase() } ?: emptyList()
+    return when {
+        codecs.any { it == "mp4a.40.34" || it == "mp4a.6b" } -> "mp3"
+        codecs.any { it == "ac-3" } -> "ac3"
+        codecs.any { it == "ec-3" } -> "eac3"
+        else -> "aac"
+    }
 }
