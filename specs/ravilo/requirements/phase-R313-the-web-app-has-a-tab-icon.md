@@ -5,9 +5,9 @@
 
 ## Status
 
-`Planned` — written 2026-09-26, not dev-reviewed. `ravilo-web` resources only; no Kotlin, no route, no
-backend change. **Numbering:** verified against `STATUS.md` the same day — Ravilo taken through
-**R312**.
+`Planned` — written 2026-09-26, **dev-reviewed 2026-09-26** against `main` `0e5e434f` (see *Dev review*
+at the end). `ravilo-web` resources only; no Kotlin, no route, no backend change. **Numbering:**
+verified against `STATUS.md` the same day — Ravilo taken through **R312**.
 
 ## What is wrong, measured
 
@@ -58,3 +58,20 @@ precaches the shell's icons (R263), the two new files join that list.
    history.
 2. The web app's `/favicon.ico` → `200`.
 3. The installed web app (iPhone, Pixel 9) is unchanged.
+
+## Dev review (2026-09-26, against `main` `0e5e434f`)
+
+1. **Both origins serve it with no code.** The `ravilo-web` container's `web-static-server` serves any
+   file in its bundle, and the backend's `get("/tv/{...}")` hands `/tv/*` to the same bundle
+   (`Server.kt:756-759`). A relative `href="favicon.svg"` resolves under both. The browser's own
+   `/favicon.ico` request goes to each origin's root: the `ravilo-web` container answers it from the
+   bundle, and on the backend origin it gets 264's admin icon.
+2. **The service worker picks the files up by itself.** `sw.js`'s precache manifest is generated at build
+   time from every file in the dist except `sw.js` and `runtime-config.js`
+   (`ravilo-web/build.gradle.kts:87-122`), so the new icons join it with no edit.
+3. **The SVG** is `design/ravilo/assets/brand/ravilo-mark.svg`'s paths inside a rounded `#000B25` square
+   with the same inset as `icon-192.png`. Rasterise the `.ico` once and commit it (as in 264).
+4. **The e2e case** fits `tests/e2e/ravilo-web-headers.spec.ts`, which already fetches the web bundle's
+   files and checks their headers.
+
+**Net effect.** Three resource files and two `<link>` lines. Nothing else.
