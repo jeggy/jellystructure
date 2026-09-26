@@ -4,8 +4,9 @@
 
 ## Status
 
-`Planned` — written 2026-09-26, not dev-reviewed. Client (`ravilo-ui`, `shared`'s DTOs): TV, phone, web.
-**Numbering:** verified against `STATUS.md` the same day — Ravilo taken through **R317**.
+`Planned` — written 2026-09-26, **dev-reviewed 2026-09-26** against `main` `0e5e434f` (see *Dev review*
+at the end). Client (`ravilo-ui`, `shared`'s DTOs): TV, phone, web. **Numbering:** verified against
+`STATUS.md` the same day — Ravilo taken through **R317**.
 
 ## Why the client needs a phase at all
 
@@ -74,3 +75,29 @@ A `RECOMMENDED` row renders with no *See all* tile.
 2. With Phase 269 live, the *Recommended* row shows 20 tiles and no *See all*, on the TV, the phone and
    the web.
 3. FR-R318-3's decode tests pass.
+
+## Dev review (2026-09-26, against `main` `0e5e434f`)
+
+1. **Several decoders, one fix.** Server payloads are decoded through several `Json` instances:
+   - `TvApiClient`'s own (`TvApiClient.kt:42`, used with `decodeFromString`, e.g. `getConfig` `:417-421`);
+   - the content-negotiation clients' (`androidMain/.../RaviloRootActuals.kt:42`,
+     `wasmJsMain/.../RaviloRootActuals.kt:40`);
+   - the Home snapshot cache's (`HomeSnapshotCache.kt:35`), which reads a stored `HomeFeed` back;
+   - and the cast, screen and resume decoders (`Cast.kt:97`, `ScreenSender.kt:130`,
+     `PlayerResume.kt:73`, `CastSenderAndroid.kt:91`).
+
+   Define one `RaviloWireJson` in `shared` with `ignoreUnknownKeys`, `isLenient` and
+   `coerceInputValues`, and use it at every site that decodes server data. A single missed site is where
+   the next new value would break something.
+2. **Defaults.** `Row.kind` (`Models.kt:418`) and `Channel.style` (`:408`) have none today; they get
+   `CUSTOM` and `TEXT`. Every other server-sent enum already has a default (`Models.kt:450`, `:900`,
+   `:908`, `:1009-1021`), so `coerceInputValues` covers them as soon as it is on.
+3. **Enums in lists.** None are server-sent today: `List<RowKind>` or similar does not occur in the
+   payloads. Keep FR-R318-1's list rule as a requirement for the next such field, and test it with a
+   small lenient serializer on a test-only type rather than inventing a production field.
+4. **The *See all* rule** is `HomeScreen.kt:472` (`row.kind == CONTINUE || seedQuery != null ||
+   seedMediaKind != null`). `RECOMMENDED` matches none of them, so it needs no change, only a test.
+5. **Ship it early.** It protects every later enum addition, so it should reach the stores before 269.
+
+**Net effect.** One shared `Json`, about eight call sites pointed at it, two defaults, one enum value,
+tests.
