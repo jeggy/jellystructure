@@ -1,3 +1,5 @@
+@file:OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
+
 package dev.jellystructure.shared.tv
 
 import kotlinx.serialization.SerialName
@@ -22,7 +24,7 @@ enum class UpcomingStatus { MONITORED, DOWNLOADING, AVAILABLE, MISSING }
 @Serializable
 data class UpcomingItem(
     val id: String,
-    val kind: MediaKind = MediaKind.MOVIE,   // MOVIE | SERIES — client shows "Movie" / "Episode". R318: defaulted
+    @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.ALWAYS) val kind: MediaKind = MediaKind.MOVIE,   // MOVIE | SERIES — client shows "Movie" / "Episode". R318: defaulted
     val title: String,
     val year: Int? = null,
     val genre: String? = null,
@@ -40,7 +42,7 @@ data class UpcomingItem(
     @SerialName("release_type") val releaseType: String? = null,
     /** Series only. */
     val network: String? = null,
-    val status: UpcomingStatus = UpcomingStatus.MONITORED,  // R318 (FR-R318-1) — a default, so an unknown value from a newer server falls back instead of failing the payload
+    @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.ALWAYS) val status: UpcomingStatus = UpcomingStatus.MONITORED,  // R318 (FR-R318-1) — a default, so an unknown value from a newer server falls back instead of failing the payload
     /** 0-100, only meaningful when [status] == DOWNLOADING. */
     val progress: Int? = null,
     val synopsis: String? = null,

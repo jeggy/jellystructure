@@ -1,3 +1,5 @@
+@file:OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
+
 package dev.jellystructure.shared.tv
 
 import kotlinx.serialization.Serializable
@@ -30,7 +32,7 @@ data class AcquisitionFlags(
 data class AcquisitionEpisodeRec(
     val season: Int,
     val episode: Int,
-    val status: AcquisitionStatus = AcquisitionStatus.NOT_REQUESTED,  // R318 (FR-R318-1) — a default, so an unknown value from a newer server falls back instead of failing the payload
+    @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.ALWAYS) val status: AcquisitionStatus = AcquisitionStatus.NOT_REQUESTED,  // R318 (FR-R318-1) — a default, so an unknown value from a newer server falls back instead of failing the payload
     val progress: Int = 0,
 )
 
@@ -43,7 +45,7 @@ data class AcquisitionEpisodeRec(
 @Serializable
 data class AcquisitionRecord(
     val itemKey: String,                              // JS item id, else "tmdb:<id>"
-    val mediaKind: MediaKind = MediaKind.MOVIE,       // shared {MOVIE, SERIES}. R318: defaulted
+    @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.ALWAYS) val mediaKind: MediaKind = MediaKind.MOVIE,       // shared {MOVIE, SERIES}. R318: defaulted
     val status: AcquisitionStatus = AcquisitionStatus.NOT_REQUESTED,
     val tmdbId: Int? = null,
     val title: String = "",

@@ -53,3 +53,26 @@ class RaviloWireJsonTest {
         assertFalse(rec.copy(recommendations = false).offersSeeAll(), "an app before R318 saw a CUSTOM row with no seed: no See all")
     }
 }
+
+/** R318 hotfix (2026-09-26) — a field given a default for lenient READING must still be WRITTEN when it
+ *  equals that default: the server encodes without `encodeDefaults`, and every app installed before R318
+ *  has these fields as required. v1.41 omitted them and Home failed to load on those apps. */
+class RaviloWireEncodeTest {
+    private val serverLike = kotlinx.serialization.json.Json { }   // encodeDefaults = false, like the server
+
+    @Test
+    fun fieldsDefaultedForReadingAreAlwaysWritten() {
+        val card = MediaCard(id = "m", kind = MediaKind.MOVIE, title = "m", year = null, genre = null, rating = null, posterUrl = null, backdropUrl = null)
+        val feed = HomeFeed(
+            heroes = emptyList(),
+            channels = listOf(Channel(id = "c", name = "C", logoUrl = null, style = ChannelStyle.TEXT, brandColor = null)),
+            rows = listOf(Row(id = "r", title = "R", kind = RowKind.CUSTOM, items = listOf(card))),
+        )
+        val wire = serverLike.encodeToString(HomeFeed.serializer(), feed)
+        assertTrue(""""kind":"CUSTOM"""" in wire, wire)
+        assertTrue(""""kind":"MOVIE"""" in wire, wire)
+        assertTrue(""""style":"TEXT"""" in wire, wire)
+        val cfg = serverLike.encodeToString(RaviloConfig.serializer(), RaviloConfig(rows = listOf(RowConfig(id = "x", kind = RowKind.CUSTOM))))
+        assertTrue(""""kind":"CUSTOM"""" in cfg, cfg)
+    }
+}

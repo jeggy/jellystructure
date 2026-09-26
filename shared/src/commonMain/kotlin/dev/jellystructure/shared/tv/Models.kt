@@ -1,3 +1,5 @@
+@file:OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
+
 package dev.jellystructure.shared.tv
 
 import kotlinx.serialization.SerialName
@@ -283,7 +285,7 @@ data class PlaybackState(
 @Serializable
 data class MediaCard(
     val id: String,
-    val kind: MediaKind = MediaKind.MOVIE,  // R318 (FR-R318-1) — a default, so an unknown value from a newer server falls back instead of failing the payload
+    @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.ALWAYS) val kind: MediaKind = MediaKind.MOVIE,  // R318 (FR-R318-1) — a default, so an unknown value from a newer server falls back instead of failing the payload
     val title: String,
     val year: Int?,
     val genre: String?,
@@ -410,7 +412,7 @@ data class Channel(
     val id: String,
     val name: String,
     @SerialName("logo_url") val logoUrl: String?,
-    val style: ChannelStyle = ChannelStyle.TEXT,  // R318 (FR-R318-1) — a default, so an unknown value from a newer server falls back instead of failing the payload
+    @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.ALWAYS) val style: ChannelStyle = ChannelStyle.TEXT,  // R318 (FR-R318-1) — a default, so an unknown value from a newer server falls back instead of failing the payload
     @SerialName("brand_color") val brandColor: String?,
     @SerialName("padding_logo") val paddingLogo: ChannelButtonPadding? = null,
     @SerialName("padding_text") val paddingText: ChannelButtonPadding? = null,
@@ -420,7 +422,7 @@ data class Channel(
 data class Row(
     val id: String,
     val title: String,
-    val kind: RowKind = RowKind.CUSTOM,  // R318 (FR-R318-1) — a default, so an unknown value from a newer server falls back instead of failing the payload
+    @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.ALWAYS) val kind: RowKind = RowKind.CUSTOM,  // R318 (FR-R318-1) — a default, so an unknown value from a newer server falls back instead of failing the payload
     val items: List<MediaCard>,
     /** R187 — this row's resolvable seed for a "→ See all" browse page: the same condition tree
      *  (already ANDed with the channel's own query when this row is channel-scoped) the server used to
@@ -992,7 +994,7 @@ data class AccountPasswordResult(
 @Serializable
 data class RowConfig(
     val id: String,
-    val kind: RowKind = RowKind.CUSTOM,  // R318 (FR-R318-1) — a default, so an unknown value from a newer server falls back instead of failing the payload
+    @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.ALWAYS) val kind: RowKind = RowKind.CUSTOM,  // R318 (FR-R318-1) — a default, so an unknown value from a newer server falls back instead of failing the payload
     val title: String? = null,
     val enabled: Boolean = true,
     val order: Int = 0,
@@ -1178,8 +1180,8 @@ data class DiscoverConfig(
 @Serializable
 data class SeerrFeed(
     val id: String,
-    val kind: SeerrFeedKind = SeerrFeedKind.MIXED,  // R318 (FR-R318-1) — a default, so an unknown value from a newer server falls back instead of failing the payload
-    val endpoint: SeerrDiscoverEndpoint = SeerrDiscoverEndpoint.MOVIES_POPULAR,
+    @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.ALWAYS) val kind: SeerrFeedKind = SeerrFeedKind.MIXED,  // R318 (FR-R318-1) — a default, so an unknown value from a newer server falls back instead of failing the payload
+    @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.ALWAYS) val endpoint: SeerrDiscoverEndpoint = SeerrDiscoverEndpoint.MOVIES_POPULAR,
     val param: String? = null,   // genre id / studio id / network id / ISO-639-1 language code
     val name: String,
     val visible: Boolean = true,
@@ -1434,7 +1436,7 @@ fun deviceKindOf(raw: String): DeviceKind = when (raw) {
 data class RemoteDevice(
     @SerialName("device_id") val deviceId: String,
     val name: String,
-    val kind: DeviceKind = DeviceKind.TV,  // R318 (FR-R318-1) — a default, so an unknown value from a newer server falls back instead of failing the payload
+    @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.ALWAYS) val kind: DeviceKind = DeviceKind.TV,  // R318 (FR-R318-1) — a default, so an unknown value from a newer server falls back instead of failing the payload
     val platform: String? = null,
     /** Renamed from `connected` (FR-236-3) — kept as the same boolean a Home Assistant integration
      *  written against phase 111 already reads under the old name via [connected]. */

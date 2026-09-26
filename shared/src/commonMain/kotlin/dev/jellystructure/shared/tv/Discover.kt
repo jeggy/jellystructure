@@ -1,3 +1,5 @@
+@file:OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
+
 package dev.jellystructure.shared.tv
 
 import kotlinx.serialization.Serializable
@@ -10,7 +12,7 @@ import kotlinx.serialization.Serializable
 @Serializable
 data class RequestEntry(
     val tmdbId: Int,
-    val mediaKind: MediaKind = MediaKind.MOVIE,  // R318 (FR-R318-1) — a default, so an unknown value from a newer server falls back instead of failing the payload
+    @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.ALWAYS) val mediaKind: MediaKind = MediaKind.MOVIE,  // R318 (FR-R318-1) — a default, so an unknown value from a newer server falls back instead of failing the payload
     val title: String,
     val year: Int? = null,
     val genre: String? = null,
