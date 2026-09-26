@@ -7,10 +7,11 @@
 
 ## Status
 
-`Planned` — written 2026-09-26, not dev-reviewed. Client (`ravilo-ui`: TV, phone, web) plus one small
-additive backend answer. **Every choice decided the same day**: the owner handed the calls over (*"You
-just decide for me. We want all best solutions for everything"*). See *Decisions* at the end.
-**Numbering:** verified against `STATUS.md` the same day — Ravilo taken through **R307**.
+`Planned` — written 2026-09-26, **dev-reviewed 2026-09-26** against `main` `0e5e434f` (see *Dev review*
+at the end). Client (`ravilo-ui`: TV, phone, web) plus one small additive backend answer. **Every choice
+decided the same day**: the owner handed the calls over (*"You just decide for me. We want all best
+solutions for everything"*). See *Decisions* at the end. **Numbering:** verified against `STATUS.md` the
+same day — Ravilo taken through **R307**.
 
 Supersedes **R243 FR-R243-1**'s "the three taxonomy segments are never gated". It also supersedes
 **R268**'s consequence that Discover *"always lands on Networks now"*. R268's own rule (one declared
@@ -126,3 +127,36 @@ device.
    the item and one sentence, so the TV's top bar and the phone's five-item bottom bar never change
    shape (R267's geometry, R170's fixed tabs). A nav item that comes and goes with the library would
    move every item after it under the viewer's thumb.
+
+## Dev review (2026-09-26, against `main` `0e5e434f`)
+
+Every seam named is where the spec says. Six items.
+
+1. **The server route.** `get("/tv/facets")` (`TvRoutes.kt:617-621`) matches that path exactly, so
+   `get("/tv/facets/summary")` sits beside it without shadowing. It answers from
+   `browseService.facets(device, null)`, the same cached `FacetsEntry` (`BrowseService.kt:257-271`): three
+   list sizes in a `@Serializable` class (`networks`, `studios`, `genres`). No new computation, no new
+   cache.
+2. **The client fetch.** `HomeStore` fetches its two Discover flags in `refreshDiscoverAvailable` /
+   `refreshUpcomingAvailable` (`HomeStore.kt:177-183`), called from the three load and refresh paths
+   (`:141-142`, `:153-154`, `:210-211`). A third, `refreshTaxonomyWalls`, sits beside them and exposes a
+   `StateFlow<Set<DiscoverSegment>?>`. `null` means *no answer* (404 or failure), and FR-R310-3 then
+   shows all three.
+3. **One filter, as R268 requires.** `discoverSegments(upcomingAvailable, discoverAvailable)`
+   (`NavItems.kt:100-107`) gains the walls set, and its `else -> seg in TAXONOMY_SEGMENTS` becomes
+   *in the walls set, or no answer*. `defaultDiscoverSegment` and `nextDiscoverSegment` keep deriving from
+   it (`:120-129`).
+4. **The nullable landing.** `Dest.Discover.segment` (`RaviloApp.kt:264`) becomes `DiscoverSegment?`.
+   `defaultDiscoverSegment` has **nine** call sites in `RaviloApp.kt` (`:1077`, `:1122`, `:1166`, `:1260`,
+   `:1279`, `:1419`, `:1468`, `:1591`, `:1746`). They keep calling it; only the type widens.
+   `DiscoverScreen` (`DiscoverScreen.kt:60`) renders FR-R243-8's sentence in the content region for
+   `null`.
+5. **A wall vanishing while open (FR-R310-4)** is handled once, in `RaviloApp`'s `is Dest.Discover`
+   branch (`:1308`): when `dest.segment !in segs`, `replaceTop(Dest.Discover(name, segs.firstOrNull(),
+   focusSegment = true))`. That is the same `replaceTop` a chip press uses (no slide).
+6. **Tests.** `DiscoverSegmentOrderTest` (`ravilo-ui/src/commonTest/.../DiscoverSegmentOrderTest.kt`)
+   gains FR-R310-7's cases. The backend test compares the summary to `facets(device, null)`'s list sizes
+   for a scoped device and an unscoped one.
+
+**Net effect.** One small route, one fetch beside two existing ones, one filter parameter, one nullable
+type, one re-selection effect. No new cache.
