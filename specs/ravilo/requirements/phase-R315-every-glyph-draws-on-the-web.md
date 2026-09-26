@@ -5,9 +5,10 @@
 
 ## Status
 
-`Planned` — written 2026-09-26, not dev-reviewed. Client (`ravilo-ui`, every platform for the drawn
-icons; the web for the fallback font) plus one check script. **Numbering:** verified against `STATUS.md`
-the same day — Ravilo taken through **R314**.
+`Planned` — written 2026-09-26, **dev-reviewed 2026-09-26** against `main` `0e5e434f` (see *Dev review*
+at the end). Client (`ravilo-ui`, every platform for the drawn icons; the web for the fallback font)
+plus one check script. **Numbering:** verified against `STATUS.md` the same day — Ravilo taken through
+**R314**.
 
 ## Why it happens, measured
 
@@ -118,3 +119,42 @@ control (close, settings, language).
 3. The Pixel 9 and the stue TV: every icon looks as it did, now drawn rather than typed.
 4. `check-web-glyphs.sh` passes on the result, and fails when a `⚑` is added to a string.
 5. The fallback font file is under 300 KB, and the web app's first load grows by no more than that.
+
+## Dev review (2026-09-26, against `main` `0e5e434f`)
+
+The cause is confirmed by the framework's own documentation, and the fix is the documented one. Six
+items.
+
+1. **Why the boxes: Compose Multiplatform 1.9.3.** JetBrains' web-resources documentation: *automatic*
+   font fallback on web (Noto subsets downloaded on demand) starts with **Compose Multiplatform 1.12.0**.
+   Before that, a character missing from the loaded fonts is drawn as tofu. This project is on
+   `compose-multiplatform = "1.9.3"` (`gradle/libs.versions.toml:14`). The same page gives the control
+   this spec uses: *"specify it manually with the `FontFamily.Resolver.preload()` method"*
+   (the preload API arrived in 1.8.0). So FR-R315-2 is the supported route on 1.9.3, and it stays right
+   after an upgrade: a preloaded font wins over the automatic download, which would otherwise fetch fonts
+   from a third party at runtime (the admin self-hosts its fonts for the same reason, FR-167-3).
+2. **Where to preload.** In the web entry (`ravilo-ui/src/wasmJsMain/.../RaviloRootActuals.kt`), before
+   the first composition that draws text: `preloadFont(Res.font.fallback)` (Compose resources) and
+   `LocalFontFamilyResolver.current.preload(FontFamily(fallback))` inside the root. Android does not call
+   it.
+3. **The glyph set (FR-R315-1)** follows the existing drawn glyphs' shape. `PlayPauseGlyph`
+   (`components/Cast.kt:433`) and `SkipGlyph` (`PlayerHandsetChrome.kt:306`) are `Canvas`-based
+   composables taking a tint and a size. Put the new set in one file (`components/Glyphs.kt`). The call
+   sites are the literals the spec's table counts: `EpisodeCard.kt` and `MultiEpisodeCard.kt` (✓),
+   `InstallCard.kt`, `ScreensSheet.kt`, `SeededBrowseScreen.kt` and `TrailerOverlay.kt` (✕, ▲, ▼, ◂, ▸),
+   `ImdbChip.kt`, `PlayerScreen.kt` and `RequestScreen.kt` (★), `LibraryTypePill.kt` (︿ ﹀),
+   `ProfilePickerScreen.kt` (⚙), `ProfileScreen.kt` (✎), `ServerMessageHost.kt` (✉) and
+   `RequestLanguagePicker.kt` (🌐).
+4. **The subset.** `pyftsubset` (fontTools), with `--layout-features='*'` so Arabic and Indic shaping
+   survives, over Noto Sans Symbols 2, Noto Sans Math and one Noto family per script in
+   `LanguageIdentity.kt`, merged into one file with `fontTools.merge`. CJK needs only the six ideographs
+   and three Hangul syllables in the three names, so the CJK part is a few kilobytes. The build script is
+   committed; fontTools is needed only to regenerate, never to build.
+5. **The guard reads `cmap` itself.** `scripts/check-web-glyphs.sh` (a Python helper, like
+   `check_i18n_spelling.py`) parses the `cmap` tables of the three `.ttf`s without fontTools: format 4
+   and 12 subtables are a short reader. It runs beside `check-ravilo-strings.sh`.
+6. **The size budget (acceptance 5) is realistic.** Symbols plus about 25 scripts' worth of 248 short
+   names come to tens of kilobytes. 300 KB is a ceiling, not a target.
+
+**Net effect.** One glyph file and about fifteen call-site swaps, one generated font plus its build script
+and licence, one preload in the web entry, one check script. No change on Android beyond the drawn icons.
