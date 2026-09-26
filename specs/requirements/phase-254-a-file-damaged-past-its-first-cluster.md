@@ -7,6 +7,12 @@ still not working properly. Something going on with their files. And when openin
 does not report anything — why is that?"* Spec first, then code. **Not deployed, not dev-reviewed, and
 no production file has been touched** — acceptance 4 needs a release and an operator's click.
 
+**Amended by phase 263 (2026-09-26):** FR-254-10's carry-over by stream index mislabelled audio whenever the
+library's tracks are not in the source's order (33 of 36 damaged production files with a source), and all three
+of its checks passed on the wrong file. The copy now pairs tracks by their packets and maps the source in the
+library's order; check 2 is a per-stream `streamhash`, not a packet count. See
+`phase-263-a-replacement-matches-tracks-by-content.md`.
+
 ### Build (2026-09-21)
 
 - `FileIntegrity` + `FileRepairPlan` (commonMain, pure) · `FileIntegrityService` + `FileDamage`
