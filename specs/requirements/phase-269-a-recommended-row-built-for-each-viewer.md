@@ -10,10 +10,11 @@
 
 ## Status
 
-`Planned` — written 2026-09-26, not dev-reviewed. Backend (the metadata, the engine, the job, the row) and
-the admin (row editor, Users & devices). The client half is **R318**. The optional AI layer on top is
-**Phase 270**; this phase stands on its own without it. **Numbering:** verified against `STATUS.md` the
-same day — admin taken through **268**.
+`Planned` — written 2026-09-26, **dev-reviewed 2026-09-26** against `main` `0e5e434f` (see *Dev review*
+at the end). Backend (the metadata, the engine, the job, the row) and the admin (row editor, Users &
+devices). The client half is **R318**. The optional AI layer on top is **Phase 270**; this phase stands
+on its own without it. **Numbering:** verified against `STATUS.md` the same day — admin taken through
+**268**.
 
 ## What there is to build on, measured on production 2026-09-26
 
@@ -200,3 +201,54 @@ party by this phase.
 4. A kids profile's row has only titles that profile can see.
 5. An app installed before this phase shows the row as an ordinary row, and Home and Settings still load.
 6. *Users & devices* lists each viewer's 20 with a reason each.
+
+## Dev review (2026-09-26, against `main` `0e5e434f`)
+
+The foundations are where the spec says. Eight items, two of them corrections.
+
+1. **The wire mapping has exactly two exits.** Home and channel rows are built in `HomeFeedService`. The
+   recommended row is constructed there with `kind = RowKind.CUSTOM`, so the server never builds a
+   `Row` with the new kind. The TVs' config is `raviloConfigService.getConfig(userId)` at
+   `TvRoutes.kt:800`; wrap that response in a `forClients()` that maps `RECOMMENDED` → `CUSTOM` in its
+   rows and channel rows. The admin's own config route must keep `RECOMMENDED`, or the editor would
+   save the row back as `CUSTOM`. Test both routes' JSON with the client's `Json` (`TvApiClient.kt:42`).
+2. **Correction to FR-269-3: `append_to_response` on the first attempt only.** `pull_tmdb` reaches
+   details through `getMovieDetailsLocalized` / `getTvDetailsLocalized` (`Scanner.kt:345`, `:845`, `:926`,
+   `:1129`), which call `getMovieDetails` (`TmdbClient.kt:573`) **once per language** until one fits. So
+   the extras ride the chain's first request only, and are kept from whichever response carries them.
+   Keywords and the recommendations' ids do not depend on the language. The details cache
+   (`detailsCache`, keyed by id) caches the base call only; the extras are parsed and stored on the item,
+   not re-cached.
+3. **The backfill trigger is `null`, not empty.** `TitleChecks` decides whether `pull_tmdb` applies to an
+   item (`TitleChecks.kt:122`: `scope == "all" || tmdbId == null`). Add `|| item.keywords == null`.
+   `null` means *never fetched*, `[]` means *TMDB has none*, so a title with no keywords is not fetched
+   forever.
+4. **Correction to FR-269-4: history comes through `PlaystateCache`'s own pattern.** One recently seen
+   device per user, `jellyfinClient.tvToken(base, device, adminToken)` (`PlaystateCache.kt:91-95`,
+   `:131-133`), then `getRecentlyPlayedAll(base, token, userId)` (`JellyfinClient.kt:787`, already on
+   Jellyfin 12.1's `/Items?userId=` shape since Phase 208). That device also carries the user's
+   visibility scope. A user not seen in 30 days gets no rebuild, and never opens a Home to see one.
+5. **The "finished something" trigger.** `PlaystateCache.refreshOne` replaces a user's map (`:109-140`).
+   Compare old and new `played` flags there: any newly played id marks that user stale. Ravilo's own stop
+   already calls `refreshOne` through `HomeFeedService.invalidatePlaystate`, so a Ravilo finish is seen
+   at once, and any other client's within a 20 s cycle. A per-user debounced job then runs within ten
+   minutes.
+6. **The step.** `build_recommendations` joins `PipelineEngine`'s step dispatch (`:472`, `:539` show the
+   pattern), `PipelineStepPool`'s concurrency map (`:239`, one worker), and the admin's `PIPE_BLOCKS` /
+   `PIPE_SHORT` (`Settings.kt:2618`, `:2637`, moving with 265) and Activity's `stepLabel`. It is a whole-
+   library step, not per item: it runs once per pipeline run, at most once per `cadence` (default
+   daily). Its last run is the newest `built_at` in `starter_list` (item 7), which every run writes, so
+   no separate state is kept. `scan_state` holds only the current run and is not the place for it.
+7. **Storage.** Migration **54** (`53.sqm` is the latest) creates `recommendation` with PK
+   `(user_id, scope_hash, rank)`, an index on `(user_id, scope_hash)`, and a `starter_list` table keyed
+   on `scope_hash`. `scope_hash` is the same hash `BrowseService.facets` keys its cache on (library
+   allow-list, allowed and blocked tags, `BrowseService.kt:260`), so one definition of "scope" serves both.
+8. **`RowKind` is shared.** Adding `RECOMMENDED` to `RowKind` (`Models.kt:10`) also changes the apps'
+   enum. That is harmless for them only after R318, and irrelevant before it, because item 1 never sends
+   it. The admin editor (`RaviloConfig.kt`, the row list and its add menu) gets the kind, its fixed count
+   and the note that it takes no conditions or order.
+
+**Net effect.** A new service (`RecommendationService`: signals, scoring, starter list), one pipeline
+step, one stale-marking hook in `PlaystateCache`, migration 54, four stored item fields from one TMDB
+parameter, the row in `HomeFeedService`, one response mapping, and two admin additions (editor kind,
+*Recommended for*). No change to the apps beyond R318.
