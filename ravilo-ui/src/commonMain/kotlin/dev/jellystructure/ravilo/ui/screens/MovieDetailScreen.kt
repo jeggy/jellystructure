@@ -48,6 +48,7 @@ import kotlinx.coroutines.launch
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import dev.jellystructure.ravilo.ui.components.DetailMetaFlow
 import dev.jellystructure.ravilo.ui.components.focusBleedScroll
 import dev.jellystructure.ravilo.ui.components.AppBar
 import dev.jellystructure.ravilo.ui.components.AudioSubtitleFlagLine
@@ -226,35 +227,33 @@ private fun MovieDetailLoaded(
                             title = detail.card.title,
                             logoModifier = Modifier.height(80.dp).widthIn(max = 360.dp),
                         )
-                        val meta = remember(detail.card.year, detail.runtime, detail.card.genre) {
+                        // R307 (FR-R307-2) — no genre when R221's genre row below already says it.
+                        val meta = remember(detail.card.year, detail.runtime, detail.card.genre, detail.genres) {
                             listOfNotNull(
                                 detail.card.year?.toString(),
                                 if (detail.runtime > 0) "${detail.runtime} min" else null,
-                                detail.card.genre,
+                                detail.card.genre.takeIf { detail.genres.isEmpty() },
                             ).joinToString(" · ")
                         }
                         if (meta.isNotEmpty() || detail.ratingBadge != null || detail.imdbRating != null) {
                             Spacer(Modifier.height(8.dp))
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                if (meta.isNotEmpty()) Text(meta, color = colors.textSecondary, fontSize = 15.sp)
+                            // R307 (FR-R307-1) — a flow, not a Row: on a phone a whole piece moves to the next
+                            // line instead of the last one wrapping inside itself ("Watc / hed").
+                            DetailMetaFlow {
+                                if (meta.isNotEmpty()) Text(meta, color = colors.textSecondary, fontSize = 15.sp, maxLines = 1, softWrap = false)
                                 // Phase 106/R153: server-resolved age-rating badge.
-                                if (detail.ratingBadge != null) {
-                                    if (meta.isNotEmpty()) Spacer(Modifier.width(10.dp))
-                                    CertBadge(detail.ratingBadge)
-                                }
+                                if (detail.ratingBadge != null) CertBadge(detail.ratingBadge)
                                 // R164: server-pushed IMDb rating chip, after the certification badge.
-                                if (detail.imdbRating != null) {
-                                    if (meta.isNotEmpty() || detail.ratingBadge != null) Spacer(Modifier.width(10.dp))
-                                    ImdbChip(detail.imdbRating)
-                                }
+                                if (detail.imdbRating != null) ImdbChip(detail.imdbRating)
                                 // R142: ✓ Watched chip when the movie is played.
                                 if (overlay[detail.card.id]?.played == true) {
-                                    Spacer(Modifier.width(10.dp))
                                     Text(
                                         "✓ ${str("action.watched")}",
                                         color = colors.badgeWatched,
                                         fontSize = 14.sp,
                                         fontWeight = FontWeight.SemiBold,
+                                        maxLines = 1,
+                                        softWrap = false,
                                     )
                                 }
                             }
