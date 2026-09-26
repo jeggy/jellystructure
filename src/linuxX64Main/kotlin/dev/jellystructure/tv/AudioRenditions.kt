@@ -1,9 +1,6 @@
 package dev.jellystructure.tv
 
-import dev.jellystructure.auth.JellyfinDeviceIdentity
-import dev.jellystructure.auth.withJellyfinToken
 import dev.jellystructure.shared.tv.AudioTrack
-import io.ktor.http.encodeURLParameter
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlin.random.Random
@@ -13,91 +10,99 @@ import kotlin.time.Clock
  * R291 (FR-R291-2, mechanism 1) — every audio track of a transcode as an HLS rendition, so a player that
  * can switch renditions changes audio without a new stream.
  *
- * Jellyfin's HLS transcode carries one audio track, but it serves any audio track of the file on its own
- * (`/Audio/{id}/main.m3u8?AudioStreamIndex=N`, measured 2026-09-24). This composes the master playlist
- * Jellyfin cannot: its own video variant — with the audio the transcode already carries, muxed, as the
- * default rendition — plus one `EXT-X-MEDIA TYPE=AUDIO` per other track pointing at that audio-only
- * playlist. Only a rendition the player selects is ever fetched, so an unused track costs nothing.
+ * Jellyfin's HLS transcode carries one audio track. This composes the master playlist Jellyfin cannot: its
+ * own video variant — with the audio the transcode already carries, muxed, as the default rendition — plus
+ * one `EXT-X-MEDIA TYPE=AUDIO` per other track. Only a rendition the player selects is ever fetched, so an
+ * unused track costs nothing.
  *
- * Two facts, measured on the household Jellyfin 12.1 before any of this was written:
- *  - **Each rendition needs its own `PlaySessionId`.** Jellyfin keys a job's output on media path · user
- *    agent · device · play session; an audio request under the video's own session is served the video
- *    job's segment. And one `DELETE /Videos/ActiveEncodings` stops one job, so [sessionsFor] hands phase
- *    180's teardown every rendition session it minted, to stop one by one.
- *  - The audio-only renditions run +9.957 s from media time against the video's +10.000 s, a constant
- *    43 ms lead — two AAC frames — inside lip-sync tolerance.
+ * **The renditions are this server's own (2026-09-26).** They used to point at Jellyfin's
+ * `/Audio/{id}/main.m3u8?AudioStreamIndex=N`, and that endpoint never maps the requested track: every
+ * rendition job encoded the file's default audio (measured on the Pixel 9 and in Jellyfin's ffmpeg logs;
+ * its source reads `mapArgs = state.IsOutputVideo ? … : string.Empty`). So each rendition is now
+ * `audio/{position}/main.m3u8` next to the master, made by [AudioRenditionJobs] from the file on this
+ * server's disk with the track mapped — relative, so it resolves against the address the player already
+ * uses, and under the same capability id (see below).
  *
- * The playlist itself is served from `GET /api/tv/stream/{id}/master.m3u8` (a player cannot attach a
- * device token to an HLS fetch, so the id is the capability: 128 random bits, living as long as the
- * ticket). Everything it lists is Jellyfin's own URL, carrying Jellyfin's credential exactly as the
- * ticket's `hls_url` already does — no new exposure.
+ * The playlists are served from `GET /api/tv/stream/{id}/…` (a player cannot attach a device token to an
+ * HLS fetch, so the id is the capability: 128 random bits, living as long as the ticket).
  */
 class AudioRenditions(private val fetchPlaylist: suspend (String) -> String?) {
-    data class Rendition(val position: Int, val streamIndex: Int, val label: String?, val language: String?, val uri: String?)
-    private class Entry(val jellyfinMasterUrl: String, val renditions: List<Rendition>, val expiresAt: Long)
+    data class Rendition(val position: Int, val streamIndex: Int, val label: String?, val language: String?, val uri: String?, val channels: Int? = null)
+    private class Entry(val jellyfinMasterUrl: String, val renditions: List<Rendition>, val expiresAt: Long, val filePath: String, val durationMs: Long) {
+        // The codec the video variant's own audio is in, read from Jellyfin's master when it is first composed.
+        var codec: String = "aac"
+    }
 
     private val mutex = Mutex()
     private val entries = mutableMapOf<String, Entry>()
-    private val sessionsByPlay = mutableMapOf<String, List<String>>()
+    private val streamsByPlay = mutableMapOf<String, List<String>>()
+    private val jobs by lazy { AudioRenditionJobs() }
 
     /**
      * Registers a master for one transcode; null when there is nothing to switch between (one audio
      * track, or the carried track is unknown), in which case the ticket keeps Jellyfin's own URL.
-     * [jellyfinMasterUrl] is the absolute TranscodingUrl; [carriedIndex] the audio stream it carries.
+     * [jellyfinMasterUrl] is the absolute TranscodingUrl; [carriedIndex] the audio stream it carries;
+     * [filePath] and [durationMs] the file on this server's disk the renditions are made from.
      */
     suspend fun register(
-        jellyfinBase: String,
-        jellyfinId: String,
-        mediaSourceId: String,
-        token: String,
-        identity: JellyfinDeviceIdentity,
         jellyfinPlaySessionId: String,
         jellyfinMasterUrl: String,
         audio: List<AudioTrack>,
         carriedIndex: Int?,
         expiresAt: Long,
+        filePath: String,
+        durationMs: Long,
     ): String? {
-        if (audio.size < 2 || carriedIndex == null) return null
+        if (audio.size < 2 || carriedIndex == null || durationMs <= 0) return null
         val carried = audio.indexOfFirst { it.index == carriedIndex }.takeIf { it >= 0 } ?: return null
         val renditions = audio.mapIndexed { pos, a ->
-            val uri = if (pos == carried) null else withJellyfinToken(
-                "$jellyfinBase/Audio/$jellyfinId/main.m3u8?MediaSourceId=${mediaSourceId.encodeURLParameter()}" +
-                    "&AudioStreamIndex=${a.index}&SegmentContainer=ts&MaxAudioChannels=6" +
-                    "&PlaySessionId=${renditionSession(jellyfinPlaySessionId, a.index).encodeURLParameter()}" +
-                    "&DeviceId=${identity.deviceId.encodeURLParameter()}",
-                token,
-            )
-            Rendition(pos, a.index, a.label, a.language, uri)
+            Rendition(pos, a.index, a.label, a.language, if (pos == carried) null else "audio/$pos/main.m3u8", a.channels)
         }
         val id = randomId()
         mutex.withLock {
             val now = nowMs()
             entries.entries.removeAll { it.value.expiresAt < now }
-            entries[id] = Entry(jellyfinMasterUrl, renditions, expiresAt)
-            sessionsByPlay[jellyfinPlaySessionId] =
-                ((sessionsByPlay[jellyfinPlaySessionId] ?: emptyList()) + renditions.filter { it.uri != null }.map { renditionSession(jellyfinPlaySessionId, it.streamIndex) }).distinct()
+            entries[id] = Entry(jellyfinMasterUrl, renditions, expiresAt, filePath, durationMs)
+            streamsByPlay[jellyfinPlaySessionId] = ((streamsByPlay[jellyfinPlaySessionId] ?: emptyList()) + id).distinct()
         }
         return id
     }
 
     /** The composed master for [id], or null when it is unknown, expired, or Jellyfin's own is unreachable. */
     suspend fun master(id: String): String? {
-        val e = mutex.withLock { entries[id]?.takeIf { it.expiresAt >= nowMs() } } ?: return null
+        val e = entry(id) ?: return null
         val jellyfin = fetchPlaylist(e.jellyfinMasterUrl) ?: return null
+        e.codec = renditionAudioCodec(jellyfin)
         return composeMaster(jellyfin, variantBaseOf(e.jellyfinMasterUrl), e.renditions)
     }
 
-    /** Phase 180 — every rendition session minted for [jellyfinPlaySessionId], forgotten as it is handed over. */
-    suspend fun sessionsFor(jellyfinPlaySessionId: String): List<String> =
-        mutex.withLock { sessionsByPlay.remove(jellyfinPlaySessionId) ?: emptyList() }
+    /** One rendition's playlist: the whole file in 3 s segments; null for an unknown id or the carried track. */
+    suspend fun playlist(id: String, position: Int): String? {
+        val e = entry(id) ?: return null
+        if (e.renditions.getOrNull(position)?.uri == null) return null
+        return renditionPlaylist(e.durationMs)
+    }
+
+    /** One segment of one rendition, made on demand; null when unknown or it could not be made in time. */
+    suspend fun segment(id: String, position: Int, segment: Int): ByteArray? {
+        val e = entry(id) ?: return null
+        val r = e.renditions.getOrNull(position)?.takeIf { it.uri != null } ?: return null
+        if (segment < 0 || segment * RENDITION_SEGMENT_MS >= e.durationMs) return null
+        return jobs.segment("$id:$position", RenditionSource(e.filePath, r.streamIndex, r.channels, e.durationMs), e.codec, segment)
+    }
+
+    /** Phase 180 — stop every rendition job of every stream registered under [jellyfinPlaySessionId]. */
+    suspend fun stopFor(jellyfinPlaySessionId: String) {
+        val ids = mutex.withLock { streamsByPlay.remove(jellyfinPlaySessionId) } ?: return
+        ids.forEach { jobs.stopStream(it) }
+    }
+
+    private suspend fun entry(id: String): Entry? = mutex.withLock { entries[id]?.takeIf { it.expiresAt >= nowMs() } }
 
     private fun randomId(): String = buildString { repeat(32) { append("0123456789abcdef"[Random.nextInt(16)]) } }
 }
 
 private fun nowMs(): Long = Clock.System.now().toEpochMilliseconds()
-
-/** A rendition's own play session: the video's, suffixed — unique per track, and readable in Jellyfin's logs. */
-internal fun renditionSession(jellyfinPlaySessionId: String, streamIndex: Int) = "${jellyfinPlaySessionId}a$streamIndex"
 
 /** The directory a relative URI in Jellyfin's master resolves against: `…/videos/{id}/`. */
 internal fun variantBaseOf(masterUrl: String): String = masterUrl.substringBefore('?').substringBeforeLast('/') + "/"
@@ -110,7 +115,8 @@ internal fun variantBaseOf(masterUrl: String): String = masterUrl.substringBefor
  * unique (a player merges renditions that share a NAME) and a stable key the player maps back to the
  * ticket's audio position.
  *
- * Every rendition is asked for in the codec the variant's own audio is in ([renditionAudioCodec]).
+ * Every rendition is made in the codec the variant's own audio is in ([renditionAudioCodec], recorded by
+ * [AudioRenditions.master] for [AudioRenditionJobs]).
  * An `EXT-X-MEDIA` tag has no CODECS of its own, so a player takes every rendition's format from the
  * variant's CODECS — measured on the stue TV 2026-09-26: a start that carried an AC3 track (Jellyfin copies
  * it, `ac-3`) with AAC renditions failed the first switch with Media3's *"Unable to bind a sample queue to
@@ -120,13 +126,12 @@ internal fun variantBaseOf(masterUrl: String): String = masterUrl.substringBefor
 internal fun composeMaster(jellyfinMaster: String, variantBase: String, renditions: List<AudioRenditions.Rendition>): String {
     fun abs(uri: String) = if (uri.startsWith("http://") || uri.startsWith("https://")) uri else variantBase + uri.removePrefix("/")
     fun quoted(s: String) = s.replace('"', '\'').replace('\n', ' ').replace('\r', ' ')
-    val codec = renditionAudioCodec(jellyfinMaster)
     val out = StringBuilder("#EXTM3U\n")
     for (r in renditions) {
         out.append("#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"aud\",NAME=\"").append(quoted("a${r.position} ${r.label ?: r.language ?: ""}".trim())).append('"')
         r.language?.takeIf { it.isNotBlank() }?.let { out.append(",LANGUAGE=\"").append(quoted(it)).append('"') }
         if (r.uri == null) out.append(",DEFAULT=YES,AUTOSELECT=YES")
-        else out.append(",DEFAULT=NO,AUTOSELECT=NO,URI=\"").append(quoted("${r.uri}&AudioCodec=$codec")).append('"')
+        else out.append(",DEFAULT=NO,AUTOSELECT=NO,URI=\"").append(quoted(r.uri)).append('"')
         out.append('\n')
     }
     for (line in jellyfinMaster.lines()) {

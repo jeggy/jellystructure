@@ -1,6 +1,5 @@
 package dev.jellystructure.tv
 
-import dev.jellystructure.auth.JellyfinDeviceIdentity
 import dev.jellystructure.shared.tv.AudioTrack
 import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
@@ -12,8 +11,8 @@ import kotlin.test.assertTrue
 
 /**
  * R291 (FR-R291-2) — the composed master: Jellyfin's own variant with its muxed audio as the one default
- * rendition, every other audio track as an audio-only rendition on its OWN play session, and every one
- * of those sessions handed to phase 180's teardown (one DELETE stops one job — measured).
+ * rendition, and every other audio track as an audio-only rendition this server makes itself — with the
+ * track mapped, which Jellyfin's audio endpoint never does (2026-09-26).
  */
 class AudioRenditionsTest {
     private val jellyfinMaster = """
@@ -32,7 +31,7 @@ class AudioRenditionsTest {
 
     @Test
     fun `the variant joins the audio group and becomes absolute`() {
-        val m = composeMaster(jellyfinMaster, "https://jf.example/videos/abc/", listOf(rendition(0, null), rendition(1, "https://jf.example/Audio/abc/main.m3u8?AudioStreamIndex=2")))
+        val m = composeMaster(jellyfinMaster, "https://jf.example/videos/abc/", listOf(rendition(0, null), rendition(1, "audio/1/main.m3u8")))
         val lines = m.lines()
         assertEquals("#EXTM3U", lines.first())
         val inf = lines.first { it.startsWith("#EXT-X-STREAM-INF:") }
@@ -55,7 +54,7 @@ class AudioRenditionsTest {
     }
 
     @Test
-    fun `renditions are asked for in the codec the variant's audio is in`() {
+    fun `renditions are made in the codec the variant's audio is in`() = runBlocking {
         // Measured on the stue TV 2026-09-26: a carried AC3 track is copied (`ac-3`), and AAC renditions
         // beside it failed the first switch ("Unable to bind a sample queue to TrackGroup with MIME type audio/ac3").
         val ac3 = jellyfinMaster.replace("mp4a.40.2", "ac-3")
@@ -64,32 +63,58 @@ class AudioRenditionsTest {
         assertEquals("aac", renditionAudioCodec(jellyfinMaster))
         assertEquals("mp3", renditionAudioCodec(jellyfinMaster.replace("mp4a.40.2", "mp4a.40.34")))
         assertEquals("aac", renditionAudioCodec(jellyfinMaster.replace(",mp4a.40.2", "")), "no audio codec at all")
-        val m = composeMaster(ac3, "https://jf.example/videos/abc/", listOf(rendition(0, null), rendition(1, "https://x/Audio?AudioStreamIndex=2&apikey=t")))
-        assertContains(m, "URI=\"https://x/Audio?AudioStreamIndex=2&apikey=t&AudioCodec=ac3\"")
+        assertContains(renditionCommand(src(2, 6), "ac3", 10, "/d"), "-c:a ac3 -b:a 640k -ac 6 ")
+        assertContains(renditionCommand(src(2, 2), "aac", 10, "/d"), "-c:a aac -b:a 192k -ac 2 ")
+        assertContains(renditionCommand(src(1, 8), "aac", 10, "/d"), "-c:a aac -b:a 640k -ac 6 ", message = "7.1 is folded to 5.1")
+        assertContains(renditionCommand(src(2, 6), "mp3", 10, "/d"), "-c:a libmp3lame -b:a 320k -ac 2 ")
+    }
+
+    private fun src(stream: Int, channels: Int?) = RenditionSource("/mnt/media/it's a film.mkv", stream, channels, 6_756_352)
+
+    @Test
+    fun `a rendition job maps the picked track and nothing else — on Jellyfin's timing`() {
+        // 2026-09-26: Jellyfin's audio-only job had no -map at all — ffmpeg took the track with the most
+        // channels (English TrueHD) whatever was asked, plus a subtitle stream that cut empty segments.
+        val cmd = renditionCommand(src(2, 6), "aac", 100, "/tmp/js-renditions/x")
+        assertContains(cmd, "-ss 300.000 -i '/mnt/media/it'\\''s a film.mkv' -map 0:2 -sn -dn -vn ")
+        assertContains(cmd, "-copyts -avoid_negative_ts disabled")
+        assertContains(cmd, "-f hls -max_delay 5000000 -hls_time 3 -hls_segment_type mpegts -hls_flags temp_file -start_number 100 ")
+        assertContains(cmd, "-hls_segment_filename '/tmp/js-renditions/x/s%d.ts'")
+        assertFalse(cmd.contains(" -t "), "with -copyts an output -t counts from the copied timestamps and stops at once (measured)")
+    }
+
+    @Test
+    fun `a rendition playlist is the whole file in 3 s segments`() {
+        val p = renditionPlaylist(7_500)
+        assertEquals(listOf("#EXTINF:3.000,", "0.ts", "#EXTINF:3.000,", "1.ts", "#EXTINF:1.500,", "2.ts"), p.lines().filter { it.startsWith("#EXTINF") || it.endsWith(".ts") })
+        assertContains(p, "#EXT-X-PLAYLIST-TYPE:VOD")
+        assertTrue(p.trimEnd().endsWith("#EXT-X-ENDLIST"))
+        assertEquals(2253, renditionPlaylist(6_756_352).lines().count { it.endsWith(".ts") }, "Now You See Me: 1:52:36.352")
     }
 
     @Test
     fun `a single track or an unknown carried track registers nothing`() = runBlocking {
         val r = AudioRenditions { null }
-        val id = JellyfinDeviceIdentity(deviceId = "dev", deviceName = "TV")
-        assertNull(r.register("https://jf", "abc", "ms", "tok", id, "P", "https://jf/videos/abc/master.m3u8", audio.take(1), 1, kotlin.time.Clock.System.now().toEpochMilliseconds() + 60_000))
-        assertNull(r.register("https://jf", "abc", "ms", "tok", id, "P", "https://jf/videos/abc/master.m3u8", audio, 9, kotlin.time.Clock.System.now().toEpochMilliseconds() + 60_000))
+        val later = kotlin.time.Clock.System.now().toEpochMilliseconds() + 60_000
+        assertNull(r.register("P", "https://jf/videos/abc/master.m3u8", audio.take(1), 1, later, "/m/f.mkv", 60_000))
+        assertNull(r.register("P", "https://jf/videos/abc/master.m3u8", audio, 9, later, "/m/f.mkv", 60_000))
+        assertNull(r.register("P", "https://jf/videos/abc/master.m3u8", audio, 1, later, "/m/f.mkv", 0), "no length, no playlist")
     }
 
     @Test
-    fun `each rendition has its own play session and teardown gets every one of them once`() = runBlocking {
+    fun `the renditions are this server's own — next to the master`() = runBlocking {
         var fetched: String? = null
-        val r = AudioRenditions { url -> fetched = url; jellyfinMaster }
-        val identity = JellyfinDeviceIdentity(deviceId = "dev", deviceName = "TV")
-        val streamId = r.register("https://jf", "abc", "ms", "tok", identity, "P", "https://jf/videos/abc/master.m3u8?ApiKey=tok", audio, 1, kotlin.time.Clock.System.now().toEpochMilliseconds() + 60_000)!!
+        val r = AudioRenditions { url -> fetched = url; jellyfinMaster.replace("mp4a.40.2", "ac-3") }
+        val later = kotlin.time.Clock.System.now().toEpochMilliseconds() + 60_000
+        val streamId = r.register("P", "https://jf/videos/abc/master.m3u8?ApiKey=tok", audio, 1, later, "/m/f.mkv", 60_000)!!
         val m = r.master(streamId)!!
         assertEquals("https://jf/videos/abc/master.m3u8?ApiKey=tok", fetched)
-        assertContains(m, "PlaySessionId=Pa2"); assertContains(m, "PlaySessionId=Pa3")
-        assertFalse(m.contains("PlaySessionId=Pa1"), "the carried track is the video job's own audio — no job of its own")
-        assertContains(m, "https://jf/Audio/abc/main.m3u8?MediaSourceId=ms&AudioStreamIndex=2")
-        assertContains(m, "&AudioCodec=aac\"", message = "the variant's audio is mp4a, so the renditions are AAC")
-        assertEquals(listOf("Pa2", "Pa3"), r.sessionsFor("P"))
-        assertEquals(emptyList(), r.sessionsFor("P"), "forgotten once handed over")
+        assertContains(m, "URI=\"audio/1/main.m3u8\""); assertContains(m, "URI=\"audio/2/main.m3u8\"")
+        assertFalse(m.contains("/Audio/"), "never Jellyfin's audio endpoint")
+        assertNull(r.playlist(streamId, 0), "the carried track is the video's own audio — no playlist of its own")
+        assertEquals(20, r.playlist(streamId, 1)!!.lines().count { it.endsWith(".ts") })
+        assertNull(r.playlist(streamId, 7))
         assertNull(r.master("not-an-id"))
+        assertNull(r.segment(streamId, 1, 20), "past the end of the file")
     }
 }

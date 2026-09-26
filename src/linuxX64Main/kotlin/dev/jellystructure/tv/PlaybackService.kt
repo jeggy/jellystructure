@@ -4,6 +4,7 @@ import dev.jellystructure.auth.DeviceData
 import dev.jellystructure.auth.JellyfinClient
 import dev.jellystructure.auth.JellyfinDeviceIdentity
 import dev.jellystructure.config.ConfigStore
+import dev.jellystructure.model.fileDurationMs
 import dev.jellystructure.auth.JellyfinItemDetail
 import dev.jellystructure.auth.TokenCheck
 import dev.jellystructure.auth.TokenCheckResult
@@ -342,15 +343,14 @@ class PlaybackService(
 ) {
     private val writer: PlaybackWriter? = writerScope?.let { PlaybackWriter(it, JellyfinSink()) }
 
-    /** R291 (FR-R291-2) — the composed masters behind `/api/tv/stream/{id}/master.m3u8`, and the audio
-     *  rendition sessions phase 180's teardown must stop one by one. */
+    /** R291 (FR-R291-2) — the composed masters behind `/api/tv/stream/{id}/master.m3u8`, this server's own
+     *  audio renditions beside them, and the jobs phase 180's teardown stops with the playback. */
     val audioRenditions = AudioRenditions(jellyfinClient::fetchPlaylist)
 
-    /** Phase 180 + R291 — releases the encode AND every audio rendition job minted for it: one
-     *  `DELETE /Videos/ActiveEncodings` stops one job (measured), so each rendition by its own session. */
+    /** Phase 180 + R291 — releases the encode AND this server's audio rendition jobs for it. */
     private suspend fun releaseEncodes(jellyfinBase: String, token: String, identity: JellyfinDeviceIdentity, jellyfinPlaySessionId: String) {
         jellyfinClient.stopActiveEncoding(jellyfinBase, token, identity, jellyfinPlaySessionId)
-        for (s in audioRenditions.sessionsFor(jellyfinPlaySessionId)) jellyfinClient.stopActiveEncoding(jellyfinBase, token, identity, s)
+        audioRenditions.stopFor(jellyfinPlaySessionId)
     }
 
     /**
@@ -365,13 +365,23 @@ class PlaybackService(
     ): StreamTicket {
         if (ticket.directPlay || capabilities?.hlsAudioRenditions != true || jellyfinPlaySessionId == null || abandoned) return ticket
         val master = ticket.hlsUrl ?: return ticket
+        // The renditions are made from the file on THIS server's disk (see AudioRenditions): none without it.
+        val (filePath, durationMs) = localFileOf(jellyfinId) ?: return ticket
         val id = audioRenditions.register(
-            jellyfinBase, jellyfinId, mediaSourceId = jellyfinId, token = token, identity = identity,
             jellyfinPlaySessionId = jellyfinPlaySessionId, jellyfinMasterUrl = master,
             audio = ticket.audio, carriedIndex = ticket.audioStreamIndex, expiresAt = ticket.expiresAt,
+            filePath = filePath, durationMs = durationMs ?: 0L,
         ) ?: return ticket
         Logger.info("playback: item=$jellyfinId audio renditions=${ticket.audio.size} (R291)", "tv")
         return ticket.copy(hlsUrl = "/api/tv/stream/$id/master.m3u8", audioRenditions = true)
+    }
+
+    /** R291 — the file on this server's disk behind a Jellyfin id (a movie, or one series' episode), and its
+     *  length; the same top-level-or-episode lookup [requireVisible] does. */
+    private suspend fun localFileOf(jellyfinId: String): Pair<String, Long?>? {
+        mediaStore.resolveByJellyfinId(jellyfinId)?.takeIf { it.episodes.isEmpty() }?.let { return it.path to it.tracks.fileDurationMs() }
+        val ep = mediaStore.allItems().firstNotNullOfOrNull { series -> series.episodes.firstOrNull { it.jellyfinId == jellyfinId } } ?: return null
+        return ep.path to ep.tracks.fileDurationMs()
     }
 
     /** R248 — true when stops are queued on the [PlaybackWriter] (production): the Home-feed

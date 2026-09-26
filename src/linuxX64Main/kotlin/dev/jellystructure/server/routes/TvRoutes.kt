@@ -40,6 +40,7 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.server.request.receive
 import io.ktor.server.response.respond
 import io.ktor.server.response.respondText
+import io.ktor.server.response.respondBytes
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.delete
 import io.ktor.server.routing.get
@@ -1214,6 +1215,21 @@ fun Route.tvRoutes(
         val id = call.parameters["id"] ?: return@get call.respond(HttpStatusCode.NotFound)
         val text = playbackService.audioRenditions.master(id) ?: return@get call.respond(HttpStatusCode.NotFound)
         call.respondText(text, ContentType.parse("application/vnd.apple.mpegurl"))
+    }
+    // R291 (2026-09-26) — this server's own audio renditions (Jellyfin's audio endpoint cannot map a track):
+    // one track's playlist, and its segments made on demand. Same capability id as the master.
+    get("/tv/stream/{id}/audio/{pos}/main.m3u8") {
+        val id = call.parameters["id"] ?: return@get call.respond(HttpStatusCode.NotFound)
+        val pos = call.parameters["pos"]?.toIntOrNull() ?: return@get call.respond(HttpStatusCode.NotFound)
+        val text = playbackService.audioRenditions.playlist(id, pos) ?: return@get call.respond(HttpStatusCode.NotFound)
+        call.respondText(text, ContentType.parse("application/vnd.apple.mpegurl"))
+    }
+    get("/tv/stream/{id}/audio/{pos}/{seg}.ts") {
+        val id = call.parameters["id"] ?: return@get call.respond(HttpStatusCode.NotFound)
+        val pos = call.parameters["pos"]?.toIntOrNull() ?: return@get call.respond(HttpStatusCode.NotFound)
+        val seg = call.parameters["seg"]?.toIntOrNull() ?: return@get call.respond(HttpStatusCode.NotFound)
+        val bytes = playbackService.audioRenditions.segment(id, pos, seg) ?: return@get call.respond(HttpStatusCode.NotFound)
+        call.respondBytes(bytes, ContentType.parse("video/mp2t"))
     }
 
     get("/tv/image/{itemId}/{type}") {
