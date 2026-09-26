@@ -231,6 +231,12 @@ data class MediaItem(
     val overview: String?,
     val genres: List<String> = emptyList(),
     val tmdbGenres: List<String> = emptyList(),  // Phase 94: TMDB's raw genre baseline (written only by scan/sync). User provenance is derived: added = genres − tmdbGenres, removed = tmdbGenres − genres.
+    /** Phase 271 (FR-271-1) — the TMDB genre id of each entry in [genres], aligned by index; null for a
+     *  genre the admin added by hand that names no TMDB genre. Never set by hand: MediaStore derives it
+     *  on every write (`GenreCatalog.normalize`), so an edit to [genres] can't leave it out of step. */
+    val genreIds: List<Int?> = emptyList(),
+    /** Phase 271 — TMDB's ids for [tmdbGenres], aligned by index (both come from one details response). */
+    val tmdbGenreIds: List<Int?> = emptyList(),
     val missingFromSource: Boolean = false,  // Phase 95: set when a scan no longer finds this item in Jellyfin. The scanner never deletes — it flags so the item surfaces in Triage for the admin to act on.
     val missingSince: Long? = null,          // Phase 95: epoch-seconds when first detected missing (for the triage subline).
     val tags: List<String> = emptyList(),

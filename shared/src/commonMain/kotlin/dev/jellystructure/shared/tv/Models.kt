@@ -361,6 +361,8 @@ data class BrowseCard(
     @SerialName("imdb_rating") val imdbRating: TvImdbRating? = null,
     /** R253 (FR-R253-3) — Jellyfin's `SortName` (225 FR-225-3); null until the item's next scan. Browse-only, like [imdbRating]. */
     @SerialName("sort_name") val sortName: String? = null,
+    /** Phase 271 (FR-271-5) — the TMDB id of each of [genres], aligned; null for a genre added by hand. */
+    @SerialName("genre_ids") val genreIds: List<Int?> = emptyList(),
 )
 
 /** Request body for the seeded-browse endpoints — the row's (channel-ANDed) [Row.seedQuery] plus the
@@ -640,6 +642,8 @@ data class MovieDetail(
      *  same reasoning as [BrowseCard.genres]/R164's IMDb-rating precedent: every other card-consuming
      *  surface (Home rows, search, Continue Watching) would pay for a field only the detail page renders. */
     val genres: List<String> = emptyList(),
+    /** Phase 271 (FR-271-5) — the TMDB id of each of [genres], aligned; null for a genre added by hand. */
+    @SerialName("genre_ids") val genreIds: List<Int?> = emptyList(),
     /** R222 (Phase 185 FR-185-5): resolved server-side, for the requesting device, from this movie's own
      *  file. Null ⇒ render nothing. See [Episode.playbackNote]'s doc — same field, same contract; a
      *  series carries it per-episode instead of here (FR-R222-5: a ceiling is per device, a bitrate is
@@ -676,6 +680,8 @@ data class SeriesDetail(
     /** R221 — every genre, in TMDB's own order. See [MovieDetail.genres]'s doc for why this lives here
      *  and not on [MediaCard]. */
     val genres: List<String> = emptyList(),
+    /** Phase 271 (FR-271-5) — see [MovieDetail.genreIds]. */
+    @SerialName("genre_ids") val genreIds: List<Int?> = emptyList(),
 )
 
 // ─── Search ───────────────────────────────────────────────────────────────────
@@ -1552,6 +1558,10 @@ data class FacetItem(
     /** Phase 232 — `"light"` | `"dark"`: the ink the logo is drawn in, so the client can pick a ground it
      *  is visible on (R259). Present only with [logoUrl] and only once judged; absent = unknown. */
     @kotlinx.serialization.SerialName("logo_ink") val logoInk: String? = null,
+    /** Phase 271 (FR-271-4) — genres only: the TMDB genre id this entry counts, whose [name] is its label
+     *  in the viewer's app language. Absent for a genre added by hand and for every other facet. Additive:
+     *  an installed app ignores it and keeps sending [name], which the server resolves in any language. */
+    val id: Int? = null,
 )
 
 /**

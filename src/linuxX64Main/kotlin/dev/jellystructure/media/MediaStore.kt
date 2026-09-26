@@ -296,6 +296,29 @@ class MediaStore(
         Logger.info("MediaStore: backfilled createdAt/updatedAt for ${toBackfill.size} rows")
     }
 
+    /**
+     * Phase 271 (FR-271-6) — maps every stored genre name to its id: each row whose `genreIds` /
+     * `tmdbGenreIds` differ from what [GenreCatalog.normalize] derives now (a pre-271 row, or a name
+     * written before its language's genre list was fetched). ONE transaction and at most ONE feed bump,
+     * never a write per title — a per-title write would discard every viewer's Home feed each time
+     * (Phase 204, and 268's dev review). [labelsChanged] = the catalog learned new labels, which changes
+     * what a cached feed or facet list says even when no row changes, so it bumps the feed on its own.
+     * Returns how many rows were rewritten.
+     */
+    suspend fun normalizeGenres(labelsChanged: Boolean = false): Int {
+        val changed = allItems().mapNotNull { item -> GenreCatalog.normalize(item).takeIf { it != item } }
+        if (changed.isNotEmpty()) {
+            // Not stampTimestamps: ids derived from names already stored are not a content edit, and must
+            // not make hundreds of titles look freshly updated.
+            db.transaction { for (item in changed) upsertItemDbOnly(item, examined = false) }
+            allItemsMutex.withLock { allItemsCache = null }
+            jellyfinIdIndex.value = null
+            genreIndexCache.value = null
+        }
+        if (changed.isNotEmpty() || labelsChanged) feedVersionAtomic.incrementAndGet()
+        return changed.size
+    }
+
     /** Phase 196 — epoch ms of the last completed examination of this item's files; see [lastExaminedMap]. */
     fun lastExaminedAt(id: String): Long? = lastExaminedLock.withLock { lastExaminedMap[id] }
 
@@ -387,7 +410,7 @@ class MediaStore(
                 merged = merged.copy(addedAt = listOfNotNull(freshAdded, old?.addedAt).maxOrNull())
                 // Phase 196: scan output, and deleteAll above means there is no stored value to carry
                 // forward anyway — this is a genuine examination.
-                upsertItemDbOnly(merged, examined = true)
+                upsertItemDbOnly(GenreCatalog.normalize(merged), examined = true)  // Phase 271
             }
         }
         // Phase 204 — this is a wholesale delete-all + reinsert (see the comment above), not the
@@ -503,7 +526,12 @@ class MediaStore(
             } else {
                 if (studios.isNotEmpty()) result = result.filter { item -> studios.any { s -> item.studio.equals(s, ignoreCase = true) || item.secondaryStudios.any { it.equals(s, ignoreCase = true) } } }
                 if (networks.isNotEmpty()) result = result.filter { item -> networks.any { n -> item.network.equals(n, ignoreCase = true) } }
-                if (genres.isNotEmpty()) result = result.filter { item -> genres.any { g -> item.genres.any { it.equals(g, ignoreCase = true) } } }
+                // Phase 271 (FR-271-4) — by genre identity, so `Comedy` also finds a title whose metadata
+                // came in Danish (`Komedie`); a `#35` value (the Metadata page's link) works the same way.
+                if (genres.isNotEmpty()) {
+                    val wanted = genres.mapTo(HashSet()) { GenreCatalog.keyOf(it) }
+                    result = result.filter { item -> GenreCatalog.keys(item).any { it in wanted } }
+                }
                 if (audioLangs.isNotEmpty() || trackTitle != null || audioCodec != null || untaggedAudio) {
                     result = result.filter { item -> item.matchesAudioFilter(audioLangs, trackTitle, audioCodec, untaggedAudio) }
                 }
@@ -659,7 +687,7 @@ class MediaStore(
         if (source.genres.isEmpty()) return emptyList()
         val index = genreIndexCache.value ?: buildGenreIndex().also { genreIndexCache.value = it }
         val byId = LinkedHashMap<String, MediaItem>()
-        for (g in source.genres) {
+        for (g in GenreCatalog.keys(source)) {  // Phase 271 — by identity, whatever language the names are in
             val bucket = index[g] ?: continue
             for (item in bucket) if (item.id != source.id && item.id !in byId) byId[item.id] = item
         }
@@ -669,7 +697,7 @@ class MediaStore(
     private suspend fun buildGenreIndex(): Map<String, List<MediaItem>> {
         val map = HashMap<String, MutableList<MediaItem>>()
         for (item in allItems()) {
-            for (g in item.genres) map.getOrPut(g) { mutableListOf() }.add(item)
+            for (g in GenreCatalog.keys(item)) map.getOrPut(g) { mutableListOf() }.add(item)
         }
         return map
     }
@@ -743,6 +771,10 @@ class MediaStore(
             merged = merged.copy(titlesByLang = existing.titlesByLang + item.titlesByLang)
         }
         merged = merged.copy(episodes = stampEpisodeCreatedAt(merged.episodes, old?.episodes))
+        // Phase 271 (FR-271-1) — genreIds re-derived from genres on every write, BEFORE the content
+        // comparison below: a scan item carries whatever ids its `copy` inherited, and comparing that
+        // against the stored (normalised) row would read as a change and cost every viewer a Home rebuild.
+        merged = GenreCatalog.normalize(merged)
         val (stamped, changed) = stampTimestamps(merged, old)
         merged = stamped
         // Phase 153: Scanner never sets these — a fresh scan left them null every cycle, which broke
@@ -813,6 +845,7 @@ class MediaStore(
         if (respectJsTags) merged = preserveJsTags(merged, existing, jsTagStore.nameSet())
         if (respectJellyfinLocks) merged = preserveJellyfinLockState(merged, existing)
         merged = merged.copy(episodes = stampEpisodeCreatedAt(merged.episodes, existing?.episodes))
+        merged = GenreCatalog.normalize(merged)  // Phase 271 — see addOrUpdate
         val (stamped, changed) = stampTimestamps(merged, existing)
         merged = stamped
         upsertItem(merged, examined)
@@ -913,7 +946,9 @@ class MediaStore(
     private fun buildMetaFacetsFrom(items: List<MediaItem>): MetaFacets {
         val studioCounts  = mutableMapOf<String, Int>()
         val networkCounts = mutableMapOf<String, Int>()
+        // Phase 271 (FR-271-4) — keyed by genre identity; the admin reads English (FR-271-3).
         val genreCounts   = mutableMapOf<String, Int>()
+        val genreNames    = mutableMapOf<String, String>()
         val tagCounts     = mutableMapOf<String, Int>()
         val ageRatingCounts = mutableMapOf<String, Int>()
         val cascade = ageRatingCascade()
@@ -928,7 +963,11 @@ class MediaStore(
         for (item in items) {
             (listOfNotNull(item.studio) + item.secondaryStudios).distinct().forEach { s -> studioCounts[s] = (studioCounts[s] ?: 0) + 1 }
             item.network?.let { n -> networkCounts[n] = (networkCounts[n] ?: 0) + 1 }
-            item.genres.forEach { g -> genreCounts[g] = (genreCounts[g] ?: 0) + 1 }
+            GenreCatalog.refs(item).forEach { r ->
+                val k = GenreCatalog.keyFor(r.id, r.name)
+                genreCounts[k] = (genreCounts[k] ?: 0) + 1
+                if (k !in genreNames) genreNames[k] = r.id?.let { GenreCatalog.label(it, GenreCatalog.ENGLISH) } ?: r.name
+            }
             item.tags.forEach   { t -> tagCounts[t]   = (tagCounts[t]   ?: 0) + 1 }
             CertificationResolver.resolve(cascade, item.certifications)?.let { cert ->
                 ageRatingCounts[cert.code] = (ageRatingCounts[cert.code] ?: 0) + 1
@@ -949,7 +988,7 @@ class MediaStore(
         return MetaFacets(
             studios  = studioCounts.entries.sortedByDescending { it.value }.map { TrackFacetItem(it.key, it.value) },
             networks = networkCounts.entries.sortedByDescending { it.value }.map { TrackFacetItem(it.key, it.value) },
-            genres   = genreCounts.entries.sortedByDescending { it.value }.map { TrackFacetItem(it.key, it.value) },
+            genres   = genreCounts.entries.sortedByDescending { it.value }.map { TrackFacetItem(genreNames[it.key] ?: it.key, it.value) },
             tags     = tagCounts.entries
                 .map { TrackFacetItem(it.key, it.value, tagColors[it.key.lowercase()]) }
                 .sortedWith(compareBy({ it.color == null }, { -it.count })),

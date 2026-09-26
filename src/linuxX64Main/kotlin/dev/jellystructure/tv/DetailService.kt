@@ -1,5 +1,6 @@
 package dev.jellystructure.tv
 
+import dev.jellystructure.media.GenreCatalog
 import dev.jellystructure.model.SegmentPositionRules
 import dev.jellystructure.auth.DeviceData
 import dev.jellystructure.auth.JellyfinClient
@@ -57,6 +58,9 @@ class DetailService(
     // Phase 185 (FR-185-5) — playbackNote resolution.
     private val raviloDeviceService: RaviloDeviceService,
     private val playbackStartSampleStore: PlaybackStartSampleStore,
+    // Phase 271 (FR-271-3) — the viewer's Ravilo app language (per-viewer `ui_language`, else the
+    // household's), by Jellyfin user id. Defaults to none, i.e. English, for tests.
+    private val appLanguage: (String) -> String? = { null },
 ) {
     /** Phase 232 (FR-232-5) — set by Main; null in tests (= every logo's ink unknown). */
     var clearlogoInk: dev.jellystructure.media.ClearlogoInk? = null
@@ -66,6 +70,7 @@ class DetailService(
         // Phase 142: a blocked item's detail returns 404 (as if absent) rather than leaking metadata —
         // defense-in-depth, since the user's own token would 403 the stream anyway.
         if (!item.visibleTo(device)) return null
+        val lang = appLanguage(device.jellyfinUserId)  // Phase 271
 
         // R82: audio/sub languages from local scanned tracks; R83: runtime from local model.
         val movieAudioLangs = item.tracks
@@ -85,11 +90,11 @@ class DetailService(
             startSampleStore = playbackStartSampleStore,
         )
         return MovieDetail(
-            card               = item.toMediaCard(),
+            card               = item.toMediaCard(lang, withTitle = true),
             synopsis           = item.overview,
             runtime            = item.runtime ?: 0,
             cast               = castFrom(item),
-            related            = hydrateRelated(device, mediaStore.relatedByGenre(item, RELATED_LIMIT).filter { it.visibleTo(device) }.map { it.toMediaCard() }.distinctBy { it.id }),
+            related            = hydrateRelated(device, mediaStore.relatedByGenre(item, RELATED_LIMIT).filter { it.visibleTo(device) }.map { it.toMediaCard(lang) }.distinctBy { it.id }),
             playback           = null,  // R83: hydrated by /api/tv/playstate (R84 overlays it)
             audioLanguages     = movieAudioLangs,
             subtitleLanguages  = movieSubLangs,
@@ -100,7 +105,10 @@ class DetailService(
             imdbRating         = item.tvImdbRating(),  // Phase 131
             originalLanguage   = item.originalLanguage,  // R181 — player's "Dubbed" audio badge
             segments           = toTv(item.id, "", 0, item.segments.stinger),  // Phase 150/163
-            genres             = item.genres,  // R221 — TMDB's own order preserved (see Models.kt doc)
+            // R221 — TMDB's own order. Phase 271 (FR-271-3) — one label per genre, the title's own
+            // languages consulted (this page is about one title).
+            genres             = GenreCatalog.displayNames(item, lang, withTitle = true),
+            genreIds           = GenreCatalog.displayIds(item),
             playbackNote       = playbackNote,  // R222 (Phase 185)
         )
     }
@@ -109,6 +117,7 @@ class DetailService(
         val item = mediaStore.resolveByJellyfinId(jellyfinId) ?: return null
         // Phase 142: see the matching check in getMovieDetail.
         if (!item.visibleTo(device)) return null
+        val lang = appLanguage(device.jellyfinUserId)  // Phase 271
 
         // Bug fix (Ravilo auto-play-next loop): a library can legitimately contain two FILES that both
         // parse to the same S__E__ (a folder extracted twice, or two mislabelled release files). The
@@ -196,11 +205,11 @@ class DetailService(
             else null
         } else null
         return SeriesDetail(
-            card              = item.toMediaCard(),
+            card              = item.toMediaCard(lang, withTitle = true),
             synopsis          = item.overview,
             seasons           = seasons,
             cast              = castFrom(item),
-            related           = hydrateRelated(device, mediaStore.relatedByGenre(item, RELATED_LIMIT).filter { it.visibleTo(device) }.map { it.toMediaCard() }.distinctBy { it.id }),
+            related           = hydrateRelated(device, mediaStore.relatedByGenre(item, RELATED_LIMIT).filter { it.visibleTo(device) }.map { it.toMediaCard(lang) }.distinctBy { it.id }),
             progress          = null,  // R83: hydrated by /api/tv/playstate (R84 overlays it)
             audioLanguages    = seriesAudioLangs,
             subtitleLanguages = seriesSubLangs,
@@ -211,7 +220,8 @@ class DetailService(
             trailer           = item.tvTrailer(),  // Phase 130
             imdbRating        = item.tvImdbRating(),  // Phase 131
             originalLanguage  = item.originalLanguage,  // R181 — player's "Dubbed" audio badge
-            genres            = item.genres,  // R221 — TMDB's own order preserved (see Models.kt doc)
+            genres            = GenreCatalog.displayNames(item, lang, withTitle = true),  // R221 / Phase 271
+            genreIds          = GenreCatalog.displayIds(item),
         )
     }
 
@@ -250,7 +260,7 @@ class DetailService(
         return cards.map { it.withPlaystate(ps) }
     }
 
-    private fun MediaItem.toMediaCard(): MediaCard {
+    private fun MediaItem.toMediaCard(lang: String?, withTitle: Boolean = false): MediaCard {
         val jId = jellyfinId
         val sonarrEnabled = configStore.current.sonarr?.enabled == true
         return MediaCard(
@@ -262,7 +272,7 @@ class DetailService(
             },
             title = title,
             year = year,
-            genre = genres.firstOrNull(),
+            genre = GenreCatalog.displayNames(this, lang, withTitle).firstOrNull(),  // Phase 271
             rating = ratingBadge()?.code,  // Phase 106
             ageRating = CertificationResolver.normalizedAge(configStore.current.metadata.ageRatingCascade, configStore.current.metadata.ageRatingMap, certifications),  // Phase 155
             posterUrl = RaviloImageUrl.poster(id, artwork.assetVersion(this, "poster")),     // R133/R214

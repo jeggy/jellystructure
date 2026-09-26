@@ -1,0 +1,41 @@
+-- Phase 271 (FR-271-2) — every label TMDB has given us for a genre id, one row per (id, language). Filled
+-- from every TMDB details response (its genres in the language that response was requested in) and from
+-- TMDB's own genre lists, fetched weekly per language in use. Language is the bare ISO-639-1 code.
+CREATE TABLE genre_label (
+    genre_id INTEGER NOT NULL,
+    language TEXT NOT NULL,
+    label TEXT NOT NULL,
+    PRIMARY KEY (genre_id, language)
+);
+
+-- Which of TMDB's two genre lists (movie, tv) an id belongs to. Only consulted when one label names two
+-- ids, to prefer the id of the title's own kind.
+CREATE TABLE genre_kind (
+    genre_id INTEGER NOT NULL,
+    kind TEXT NOT NULL,
+    PRIMARY KEY (genre_id, kind)
+);
+
+-- When each language's genre lists were last fetched (epoch seconds) — the weekly refresh's clock.
+CREATE TABLE genre_list_fetch (
+    language TEXT NOT NULL PRIMARY KEY,
+    fetched_at INTEGER NOT NULL
+);
+
+allLabels:
+SELECT genre_id, language, label FROM genre_label;
+
+allKinds:
+SELECT genre_id, kind FROM genre_kind;
+
+putLabel:
+INSERT OR REPLACE INTO genre_label(genre_id, language, label) VALUES (:genre_id, :language, :label);
+
+putKind:
+INSERT OR IGNORE INTO genre_kind(genre_id, kind) VALUES (:genre_id, :kind);
+
+allListFetches:
+SELECT language, fetched_at FROM genre_list_fetch;
+
+putListFetch:
+INSERT OR REPLACE INTO genre_list_fetch(language, fetched_at) VALUES (:language, :fetched_at);

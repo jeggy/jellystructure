@@ -1,5 +1,6 @@
 package dev.jellystructure.server.routes
 
+import dev.jellystructure.media.GenreCatalog
 import dev.jellystructure.server.respondCachedBytes
 import dev.jellystructure.config.AppConfig
 import dev.jellystructure.config.ConfigStore
@@ -34,7 +35,17 @@ data class MetadataEntry(
     val tmdbId: Int? = null,
     val logoPath: String? = null,
     val hasLogo: Boolean = false,
+    /** Phase 271 (FR-271-8) — genres only: every label the catalog holds for this genre (grouped by text,
+     *  with the languages that use it and how many titles carry that exact name today). */
+    val labels: List<GenreLabelEntry> = emptyList(),
+    /** Phase 271 — genres only: a genre an admin typed by hand, naming no TMDB genre. */
+    val handAdded: Boolean = false,
 )
+
+/** Phase 271 (FR-271-8) — one label of a genre: its text, the languages it is that genre's name in (sorted,
+ *  English first), and how many titles store exactly this name. */
+@Serializable
+data class GenreLabelEntry(val label: String, val languages: List<String>, val titles: Int = 0)
 
 @Serializable
 data class LogoFetchResult(val ok: Boolean, val cached: Boolean, val detail: String? = null)
@@ -232,14 +243,47 @@ fun Route.metadataRoutes(store: MediaStore, tagStore: JsTagStore, logoDownloader
 
         get("/genres") {
             val sort = call.request.queryParameters["sort"] ?: "count"
-            // Phase 216 (FR-216-9) — same TaxonomyKey grouping as studios/networks above.
-            val counter = TaxonomyKey.Counter()
+            // Phase 271 (FR-271-8) — one entry per genre ID, whatever language each title's names came
+            // in, named in English (the admin's language, FR-271-3), with every label the catalog holds
+            // beneath it. A hand-added genre keeps Phase 216's TaxonomyKey grouping, listed after.
+            val idCounts = LinkedHashMap<Int, Int>()
+            val nameTitles = HashMap<Pair<Int, String>, Int>()     // (id, key(stored name)) → titles
+            val nameSpelling = HashMap<Pair<Int, String>, String>() // (id, key(stored name)) → as stored
+            val handAdded = TaxonomyKey.Counter()
             for (item in store.allItems()) {
-                item.genres.distinctBy { TaxonomyKey.key(it) }.forEach { counter.add(it) }
+                for (r in GenreCatalog.refs(item)) {
+                    if (r.id == null) { handAdded.add(r.name); continue }
+                    idCounts[r.id] = (idCounts[r.id] ?: 0) + 1
+                    val k = r.id to TaxonomyKey.key(r.name)
+                    nameTitles[k] = (nameTitles[k] ?: 0) + 1
+                    nameSpelling.getOrPut(k) { TaxonomyKey.display(r.name) }
+                }
             }
-            val entries = counter.entries().map { MetadataEntry(name = it.name, count = it.count) }
-            val sorted = if (sort == "name") entries.sortedBy { it.name.lowercase() } else entries.sortedByDescending { it.count }
-            call.respond(sorted)
+            val tmdbEntries = idCounts.map { (id, count) ->
+                val byLabel = LinkedHashMap<String, MutableList<String>>()
+                for ((lang, label) in GenreCatalog.labelsOf(id)) byLabel.getOrPut(label) { mutableListOf() }.add(lang)
+                // A name a title stores that the catalog has no language for (a list not fetched yet)
+                // still shows, so the page never hides a spelling that is really in the library.
+                for (key in nameTitles.keys) if (key.first == id && byLabel.keys.none { TaxonomyKey.key(it) == key.second }) {
+                    byLabel.getOrPut(nameSpelling.getValue(key)) { mutableListOf() }
+                }
+                val labels = byLabel.map { (label, langs) ->
+                    GenreLabelEntry(
+                        label = label,
+                        languages = langs.sortedWith(compareBy({ it != GenreCatalog.ENGLISH }, { it })),
+                        titles = nameTitles[id to TaxonomyKey.key(label)] ?: 0,
+                    )
+                }.sortedWith(compareBy({ GenreCatalog.ENGLISH !in it.languages }, { -it.titles }, { it.label.lowercase() }))
+                MetadataEntry(
+                    name = GenreCatalog.label(id, GenreCatalog.ENGLISH) ?: labels.firstOrNull()?.label ?: "#$id",
+                    count = count,
+                    tmdbId = id,
+                    labels = labels,
+                )
+            }
+            val handEntries = handAdded.entries().map { MetadataEntry(name = it.name, count = it.count, handAdded = true) }
+            fun List<MetadataEntry>.sorted() = if (sort == "name") sortedBy { it.name.lowercase() } else sortedByDescending { it.count }
+            call.respond(tmdbEntries.sorted() + handEntries.sorted())
         }
 
         get("/tags") {

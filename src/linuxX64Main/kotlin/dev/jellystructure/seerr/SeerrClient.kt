@@ -118,7 +118,7 @@ data class SeerrRequestResult(
 data class SeerrUser(val id: Int = 0)
 
 @Serializable
-data class SeerrGenre(val name: String = "")
+data class SeerrGenre(val name: String = "", val id: Int? = null)  // Phase 271 — TMDB's genre id
 
 @Serializable
 data class SeerrCastMember(val id: Int = 0, val name: String = "", val character: String = "", val profilePath: String? = null)

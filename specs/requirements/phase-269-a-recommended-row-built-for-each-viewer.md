@@ -280,7 +280,7 @@ The foundations are where the spec says. Eight items, two of them corrections.
    library step, not per item: it runs once per pipeline run, at most once per `cadence` (default
    daily). Its last run is the newest `built_at` in `starter_list` (item 7), which every run writes, so
    no separate state is kept. `scan_state` holds only the current run and is not the place for it.
-7. **Storage.** Migration **54** (`53.sqm` is the latest) creates `recommendation` with PK
+7. **Storage.** Migration **55** (271 took 54 for `genre_label`) creates `recommendation` with PK
    `(user_id, scope_hash, rank)`, an index on `(user_id, scope_hash)`, and a `starter_list` table keyed
    on `scope_hash`. `scope_hash` is the same hash `BrowseService.facets` keys its cache on (library
    allow-list, allowed and blocked tags, `BrowseService.kt:260`), so one definition of "scope" serves both.
@@ -290,6 +290,6 @@ The foundations are where the spec says. Eight items, two of them corrections.
    and the note that it takes no conditions or order.
 
 **Net effect.** A new service (`RecommendationService`: signals, scoring, starter list), one pipeline
-step, one stale-marking hook in `PlaystateCache`, migration 54, four stored item fields from one TMDB
+step, one stale-marking hook in `PlaystateCache`, migration 55, four stored item fields from one TMDB
 parameter, the row in `HomeFeedService`, one response mapping, and two admin additions (editor kind,
 *Recommended for*). No change to the apps beyond R318.

@@ -76,7 +76,9 @@ object ConditionEvaluator {
                     // with, so a value's count and its seeded grid cannot disagree over a spelling.
                     studio         = (listOfNotNull(item.studio) + item.secondaryStudios).mapTo(HashSet()) { TaxonomyKey.key(it) },
                     network        = setOfNotNull(item.network?.let { TaxonomyKey.key(it) }),
-                    genres         = item.genres.mapTo(HashSet()) { TaxonomyKey.key(it) },
+                    // Phase 271 (FR-271-4) — by genre identity (`#35`), so a filter saved as `Komedie`
+                    // matches a comedy whose metadata came in English; a hand-added genre keeps its name key.
+                    genres         = dev.jellystructure.media.GenreCatalog.keys(item),
                     tags           = item.tags.mapTo(HashSet()) { TaxonomyKey.key(it) },
                     audioLanguages = audio.mapTo(HashSet()) { it.language?.lowercase() ?: "untagged" },
                     audioCodecs    = audio.mapTo(HashSet()) { it.codec.lowercase() },
@@ -115,7 +117,7 @@ object ConditionEvaluator {
         return when (c.facet) {
             "studio"         -> setMatch(facets.studio, taxoVals, c.op)
             "network"        -> setMatch(facets.network, taxoVals, c.op)
-            "genre"          -> setMatch(facets.genres, taxoVals, c.op)
+            "genre"          -> setMatch(facets.genres, c.values.map { dev.jellystructure.media.GenreCatalog.keyOf(it, item.kind) }, c.op)
             "tag"            -> setMatch(facets.tags, taxoVals, c.op)
             "audio_language" -> setMatch(facets.audioLanguages, vals, c.op)
             "audio_codec"    -> setMatch(facets.audioCodecs, vals, c.op)

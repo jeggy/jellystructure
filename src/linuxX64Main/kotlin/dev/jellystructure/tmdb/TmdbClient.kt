@@ -1,5 +1,6 @@
 package dev.jellystructure.tmdb
 
+import dev.jellystructure.media.GenreCatalog
 import dev.jellystructure.config.ConfigStore
 import dev.jellystructure.log.Logger
 import dev.jellystructure.ops.SpinLock
@@ -175,6 +176,14 @@ data class TmdbMovieDetails(
 
 @Serializable
 data class TmdbGenre(val id: Int, val name: String)
+
+/** Phase 271 (FR-271-2) — one entry of `/genre/{movie,tv}/list`. `name` is null where TMDB has no
+ *  translation in the requested language (every Faroese genre, measured 2026-09-26). */
+@Serializable
+data class TmdbGenreListItem(val id: Int, val name: String? = null)
+
+@Serializable
+data class TmdbGenreListResponse(val genres: List<TmdbGenreListItem> = emptyList())
 
 @Serializable
 data class TmdbCompany(
@@ -581,6 +590,7 @@ class TmdbClient(
             }
             val details = response.body<TmdbMovieDetails>()
             if (language == null) cacheLock.withLock { detailsCache[tmdbId] = details }
+            GenreCatalog.observeIds(GenreCatalog.KIND_MOVIE, details.genres.map { it.id })  // Phase 271
             details
         }
         if (result.isFailure) Logger.warn("TMDB details failed for id=$tmdbId lang=$language: ${result.exceptionOrNull()?.message}")
@@ -619,6 +629,25 @@ class TmdbClient(
         return getMovieDetails(tmdbId)?.let { Localized(it, null) }
     }
 
+    /**
+     * Phase 271 (FR-271-2) — TMDB's genre list for [kind] (`movie` or `tv`) in [language]: every genre id
+     * with its name in that language. Null on any failure, so a refresh never records a half answer.
+     */
+    suspend fun getGenreList(kind: String, language: String): List<TmdbGenreListItem>? {
+        val key = apiKey()
+        if (key.isBlank()) return null
+        val result = runCatching {
+            val response = httpGet("$baseUrl/genre/$kind/list") {
+                parameter("api_key", key)
+                parameter("language", language)
+            }
+            if (response.status != HttpStatusCode.OK) return null
+            response.body<TmdbGenreListResponse>().genres
+        }
+        if (result.isFailure) Logger.warn("TMDB genre list failed kind=$kind lang=$language: ${result.exceptionOrNull()?.message}", "tmdb")
+        return result.getOrNull()
+    }
+
     suspend fun searchTv(title: String, year: Int?): TmdbTvSearchResult? {
         val key = apiKey()
         if (key.isBlank()) return null
@@ -642,7 +671,9 @@ class TmdbClient(
                 parameter("api_key", key)
                 if (!language.isNullOrBlank()) parameter("language", language)
             }
-            response.body<TmdbTvDetails>()
+            response.body<TmdbTvDetails>().also { d ->
+                GenreCatalog.observeIds(GenreCatalog.KIND_TV, d.genres.map { it.id })  // Phase 271
+            }
         }
         if (result.isFailure) Logger.warn("TMDB TV details failed for id=$tmdbId lang=$language: ${result.exceptionOrNull()?.message}")
         return result.getOrNull()

@@ -1,5 +1,6 @@
 package dev.jellystructure.seerr
 
+import dev.jellystructure.media.GenreCatalog
 import dev.jellystructure.arr.AcquisitionService
 import dev.jellystructure.arr.RequestLanguageService
 import dev.jellystructure.config.ConfigStore
@@ -179,19 +180,22 @@ class SeerrDiscoverService(
         val seerr = seerr() ?: return null
         val libByTmdb = libraryByTmdbId()
         val viewerDefault = userId?.let { raviloConfigService.getBehaviourOverlay(it).requestLanguage }
+        // Phase 271 — genres in the viewer's app language (Seerr answers in its own locale).
+        val appLang = userId?.let { raviloConfigService.getConfig(it).uiLanguage }
+        fun List<SeerrGenre>.labelled() = map { g -> g.id?.let { GenreCatalog.label(it, appLang) } ?: g.name }
         val (languages, defaultLanguage) = requestLanguageService?.optionsFor(viewerDefault, isKids) ?: (emptyList<dev.jellystructure.shared.tv.RequestLanguageOption>() to null)
         return if (mediaType == "tv") {
             val d = seerrClient.tvDetails(seerr.url, seerr.apiKey, tmdbId) ?: return null
             val entry = RequestEntry(
                 tmdbId = d.id, mediaKind = MediaKind.SERIES, title = d.name,
-                year = d.firstAirDate?.take(4)?.toIntOrNull(), genre = d.genres.firstOrNull()?.name,
+                year = d.firstAirDate?.take(4)?.toIntOrNull(), genre = d.genres.labelled().firstOrNull(),
                 rating = formatRating(d.voteAverage), posterPath = d.posterPath, backdropPath = d.backdropPath,
                 overview = d.overview,
             )
             DiscoverDetail(
                 entry = entry,
                 acquisition = acquisitionFor(tmdbId, MediaKind.SERIES, d.title(), d.mediaInfo, libByTmdb),
-                genres = d.genres.map { it.name },
+                genres = d.genres.labelled(),
                 runtime = d.episodeRunTime.firstOrNull(),
                 isSeries = true,
                 cast = d.credits.cast.map(::toPerson),
@@ -202,14 +206,14 @@ class SeerrDiscoverService(
             val d = seerrClient.movieDetails(seerr.url, seerr.apiKey, tmdbId) ?: return null
             val entry = RequestEntry(
                 tmdbId = d.id, mediaKind = MediaKind.MOVIE, title = d.title,
-                year = d.releaseDate?.take(4)?.toIntOrNull(), genre = d.genres.firstOrNull()?.name,
+                year = d.releaseDate?.take(4)?.toIntOrNull(), genre = d.genres.labelled().firstOrNull(),
                 rating = formatRating(d.voteAverage), posterPath = d.posterPath, backdropPath = d.backdropPath,
                 overview = d.overview,
             )
             DiscoverDetail(
                 entry = entry,
                 acquisition = acquisitionFor(tmdbId, MediaKind.MOVIE, d.title, d.mediaInfo, libByTmdb),
-                genres = d.genres.map { it.name },
+                genres = d.genres.labelled(),
                 runtime = d.runtime,
                 isSeries = false,
                 cast = d.credits.cast.map(::toPerson),

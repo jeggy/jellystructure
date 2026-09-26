@@ -173,7 +173,7 @@ Buildable as written, with two corrections (items 1 and 8). Nine items.
    - Stream the `results_url` JSONL line by line, one result per `custom_id`, each `succeeded`,
      `errored`, `canceled` or `expired`.
 
-   Migration **55** (after 269's 54) creates `ai_batch (id, job, submitted_at, status, request_count)`
+   Migration **56** (after 271's 54 and 269's 55) creates `ai_batch (id, job, submitted_at, status, request_count)`
    and `ai_usage (job, month, model, requests, input_tokens, output_tokens, cache_write_tokens,
    cache_read_tokens, cost_micro_usd)`. At boot, `submitted` rows resume polling.
 5. **Validation (FR-270-4) is a pure function per job,** unit-tested with a foreign id, a repeat, 18
@@ -194,6 +194,6 @@ Buildable as written, with two corrections (items 1 and 8). Nine items.
    `applyAiOrder(viewer, picks)`. The AI job never scores, filters or stores titles itself; 269 stays
    the only author of a list.
 
-**Net effect.** A small Anthropic client, a batch runner with resume, migration 55, a price table, two job
+**Net effect.** A small Anthropic client, a batch runner with resume, migration 56, a price table, two job
 definitions with pure validators, one status route, one Settings tab. Nothing changes for viewers while
 it is off.

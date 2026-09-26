@@ -4,6 +4,7 @@ import dev.jellystructure.auth.DeviceData
 import dev.jellystructure.auth.JellyfinClient
 import dev.jellystructure.config.ConfigStore
 import dev.jellystructure.media.ArtworkDownloader
+import dev.jellystructure.media.GenreCatalog
 import dev.jellystructure.media.LogoDownloader
 import dev.jellystructure.media.MediaStore
 import dev.jellystructure.model.MediaItem
@@ -105,11 +106,15 @@ class BrowseService(
             .sortedByDescending { it.recencyKey() }
 
         val ps = PlaystateCache.get(device.jellyfinUserId)
+        // Phase 271 (FR-271-3/5) — the viewer's app language, without the title step: the browse page
+        // counts and filters genres across these cards itself, so one genre must read the same on each.
+        val lang = cfg.uiLanguage
 
         val items = matched.map { item ->
             BrowseCard(
-                card = item.toMediaCard().withPlaystate(ps),
-                genres = item.genres,
+                card = item.toMediaCard(lang).withPlaystate(ps),
+                genres = GenreCatalog.displayNames(item, lang, withTitle = false),
+                genreIds = GenreCatalog.displayIds(item),
                 audioLanguages = item.audioLanguages(),
                 quality = item.qualityLabel(),
                 channels = channels.filter { ch -> ConditionEvaluator.matches(item, ch.effectiveQuery(), heroIds, cascade) }.map { it.id },
@@ -184,9 +189,12 @@ class BrowseService(
 
         // Phase 216 (FR-216-9) — the four taxonomy predicates compare under TaxonomyKey, the same
         // resolver facets() counts with, so a tile's count and its grid cannot disagree over a spelling.
+        // Phase 271 (FR-271-4) — genres by identity: an installed app sends a genre NAME, in whatever
+        // language its facet list or detail page showed it, and it resolves to the id here.
+        val wantedGenres = genres.mapTo(HashSet()) { GenreCatalog.keyOf(it) }
         val filtered = all
             .let { items -> if (mediaKind != null) items.filter { it.kind == mediaKind } else items }
-            .let { items -> if (genres.isNotEmpty())   items.filter { i -> genres.any   { g -> i.genres.any  { TaxonomyKey.matches(it, g) } } } else items }
+            .let { items -> if (wantedGenres.isNotEmpty()) items.filter { i -> GenreCatalog.keys(i).any { it in wantedGenres } } else items }
             .let { items -> if (studios.isNotEmpty())  items.filter { i -> studios.any  { s -> TaxonomyKey.matches(i.studio, s) || i.secondaryStudios.any { TaxonomyKey.matches(it, s) } } } else items }
             .let { items -> if (networks.isNotEmpty()) items.filter { i -> networks.any { n -> TaxonomyKey.matches(i.network, n) } } else items }
             .let { items -> if (tags.isNotEmpty())     items.filter { i -> tags.any     { t -> i.tags.any    { TaxonomyKey.matches(it, t) } } } else items }
@@ -197,9 +205,10 @@ class BrowseService(
             else    -> filtered.sortedByDescending { it.recencyKey() }
         }
 
+        val lang = raviloConfigService.getConfig(device.jellyfinUserId).uiLanguage
         val cards = (if (pageSize == null) sorted
                      else sorted.drop((page - 1) * pageSize).take(pageSize))
-            .map { it.toMediaCard() }
+            .map { it.toMediaCard(lang) }
             .distinctBy { it.id }
 
         // Phase 205 (FR-205-1) — PlaystateCache read, no Jellyfin call (see browseByQuery's doc above).
@@ -210,13 +219,14 @@ class BrowseService(
     /** Multi-language search: matches title, originalTitle, and every titlesByLang value. */
     suspend fun search(device: DeviceData, query: String): SearchResults {
         val all = mediaStore.liveItems(device)
+        val lang = raviloConfigService.getConfig(device.jellyfinUserId).uiLanguage
 
         // Bug fix: a 1-char query used to trigger the same full-library contains-scan as any other
         // query, with no min-length guard — fall back to the same suggestions path as a blank query.
         val cards = if (query.isBlank() || query.length < MIN_SEARCH_LEN) {
             all.sortedByDescending { it.recencyKey() }
                 .take(SEARCH_SUGGESTION_LIMIT)
-                .map { it.toMediaCard() }
+                .map { it.toMediaCard(lang) }
                 .distinctBy { it.id }
         } else {
             val q = query.lowercase()
@@ -226,7 +236,7 @@ class BrowseService(
                 item.titlesByLang.values.any { it.lowercase().contains(q) }
             }.sortedByDescending { it.recencyKey() }
                 .take(100)
-                .map { it.toMediaCard() }
+                .map { it.toMediaCard(lang) }
                 .distinctBy { it.id }
                 .toList()
         }
@@ -262,17 +272,42 @@ class BrowseService(
         val entry = facetsCache[userId]?.takeIf {
             it.feedVer == feedVer && it.allowedHash == allowedHash && (now - it.builtAt) < FACETS_TTL_MS
         } ?: buildFacets(device).also { facetsCache[userId] = FacetsEntry(it.all, it.movie, it.series, it.music, now, feedVer, allowedHash) }
-        return when (kind) {
+        val slice = when (kind) {
             "movie"       -> entry.movie
             "series"      -> entry.series
             MUSIC_KIND    -> entry.music
             else          -> entry.all
         }
+        // Phase 271 (FR-271-5) — genre labels for this viewer's app language, applied AFTER the cache
+        // read so the cache is never keyed by language.
+        return slice.withGenreLabels(raviloConfigService.getConfig(userId).uiLanguage)
+    }
+
+    private fun BrowseFacets.withGenreLabels(lang: String?): BrowseFacets = copy(
+        genres = genres.map { f -> f.id?.let { id -> GenreCatalog.label(id, lang) }?.let { f.copy(name = it) } ?: f }
+            .sortedWith(compareByDescending<FacetItem> { it.count }.thenBy { it.name.lowercase() }),
+    )
+
+    /** Phase 271 (FR-271-4) — genres counted by id (one tile per genre, 24 not 41), a hand-added genre by
+     *  its name under [TaxonomyKey] as before. A title counts once per genre, however many of its names
+     *  say it. The cached name is the English label; [withGenreLabels] relabels per viewer. */
+    private class GenreCounter {
+        private val byId = LinkedHashMap<Int, Int>()
+        private val named = TaxonomyKey.Counter()
+        fun add(item: MediaItem) {
+            for (r in GenreCatalog.refs(item)) {
+                if (r.id != null) byId[r.id] = (byId[r.id] ?: 0) + 1 else named.add(r.name)
+            }
+        }
+        fun items(): List<FacetItem> =
+            (byId.map { (id, n) -> FacetItem(GenreCatalog.label(id, GenreCatalog.ENGLISH) ?: "#$id", n, id = id) } +
+                named.entries().map { FacetItem(it.name, it.count) })
+                .sortedWith(compareByDescending<FacetItem> { it.count }.thenBy { it.name.lowercase() })
     }
 
     /** One accumulator per kind slice; [add] is called once per item for the slice(s) it belongs to. */
     private class FacetsAcc {
-        val genres = TaxonomyKey.Counter(); val studios = TaxonomyKey.Counter()
+        val genres = GenreCounter(); val studios = TaxonomyKey.Counter()
         val networks = TaxonomyKey.Counter(); val tags = TaxonomyKey.Counter()
         var library = 0
         var genreTitles = 0; var studioTitles = 0; var networkTitles = 0; var tagTitles = 0
@@ -280,7 +315,7 @@ class BrowseService(
         fun add(item: MediaItem) {
             library++
             if (item.genres.any { it.isNotBlank() }) genreTitles++
-            item.genres.forEach { genres.add(it) }
+            genres.add(item)
             val studioValues = (listOfNotNull(item.studio) + item.secondaryStudios).filter { it.isNotBlank() }
             if (studioValues.isNotEmpty()) studioTitles++
             // distinct under the key, so a film credited to `HBO` and `hbo` counts once for HBO
@@ -291,7 +326,7 @@ class BrowseService(
         }
 
         fun toFacets(scoped: Boolean, logoUrl: (String, String) -> String?, logoInk: (String, String) -> String?): BrowseFacets = BrowseFacets(
-            genres   = genres.entries().map { FacetItem(it.name, it.count) },
+            genres   = genres.items(),
             studios  = studios.entries().map { FacetItem(it.name, it.count, logoUrl("studios", it.name), logoInk("studios", it.name)) },
             networks = networks.entries().map { FacetItem(it.name, it.count, logoUrl("networks", it.name), logoInk("networks", it.name)) },
             tags     = tags.entries().map { FacetItem(it.name, it.count) },
@@ -336,7 +371,7 @@ class BrowseService(
         return FacetsEntry(all.facets(), movie.facets(), series.facets(), music.facets(), 0L, 0L, 0)
     }
 
-    private fun MediaItem.toMediaCard(): MediaCard {
+    private fun MediaItem.toMediaCard(lang: String?): MediaCard {
         val jId = jellyfinId
         val sonarrEnabled = configStore.current.sonarr?.enabled == true
         return MediaCard(
@@ -348,7 +383,7 @@ class BrowseService(
             },
             title = title,
             year = year,
-            genre = genres.firstOrNull(),
+            genre = GenreCatalog.displayNames(this, lang, withTitle = false).firstOrNull(),  // Phase 271
             rating = CertificationResolver.resolve(configStore.current.metadata.ageRatingCascade, certifications)?.code,
             ageRating = CertificationResolver.normalizedAge(configStore.current.metadata.ageRatingCascade, configStore.current.metadata.ageRatingMap, certifications),
             posterUrl = RaviloImageUrl.poster(id, artwork.assetVersion(this, "poster")),     // R133/R214

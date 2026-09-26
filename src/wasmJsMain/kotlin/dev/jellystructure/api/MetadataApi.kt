@@ -19,7 +19,14 @@ data class MetadataEntry(
     val tmdbId: Int? = null,
     val logoPath: String? = null,
     val hasLogo: Boolean = false,
+    /** Phase 271 (FR-271-8) — genres only; see the server's `MetadataEntry`. */
+    val labels: List<GenreLabelEntry> = emptyList(),
+    val handAdded: Boolean = false,
 )
+
+/** Phase 271 (FR-271-8) — one label of a genre, the languages it is used in, and how many titles store it. */
+@Serializable
+data class GenreLabelEntry(val label: String, val languages: List<String> = emptyList(), val titles: Int = 0)
 
 @Serializable
 data class BatchLogoResult(val fetched: Int, val skipped: Int, val failed: Int)

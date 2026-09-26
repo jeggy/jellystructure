@@ -1,0 +1,18 @@
+-- Phase 271 (FR-271-2) — genre labels per language. Must stay byte-for-byte in sync with GenreLabel.sq.
+CREATE TABLE genre_label (
+    genre_id INTEGER NOT NULL,
+    language TEXT NOT NULL,
+    label TEXT NOT NULL,
+    PRIMARY KEY (genre_id, language)
+);
+
+CREATE TABLE genre_kind (
+    genre_id INTEGER NOT NULL,
+    kind TEXT NOT NULL,
+    PRIMARY KEY (genre_id, kind)
+);
+
+CREATE TABLE genre_list_fetch (
+    language TEXT NOT NULL PRIMARY KEY,
+    fetched_at INTEGER NOT NULL
+);

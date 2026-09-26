@@ -8,7 +8,8 @@
 
 ## Status
 
-`Planned` — written 2026-09-26, not dev-reviewed. Backend (storage, labels, resolution) and every surface
+`✓ Built` 2026-09-26, **not deployed** (see *Build notes* at the end; acceptance on production waits
+for a release). Written 2026-09-26. Backend (storage, labels, resolution) and every surface
 that shows or filters by a genre. Ravilo's apps need no change: the server hands them labels already
 resolved. **Built together with Phase 269** (owner, 2026-09-26: *"lets make this part of this"*), and
 before it, because 269's recommendations score on genre ids. **Numbering:** verified against
@@ -141,3 +142,78 @@ itself (render-never-compute).
 6. An app installed before this phase shows the corrected labels and counts, with no update.
 7. Metadata → Genres in the admin: one *Comedy* entry with its total count and *da Komedie · it
    Commedia* listed beneath it. Its link opens the Library with every comedy.
+
+## Build notes (2026-09-26)
+
+Built on `main` after `39e6e8af`, the same day, before Phase 269. Every requirement is in; where the build
+differs from the text above, the build is recorded here.
+
+1. **Labels come from TMDB's genre lists only, never from a details response** (changes FR-271-2's first
+   source). Measured 2026-09-26: `/movie/{id}?language=fo` answers *Comedy*, *Family*: TMDB falls back to
+   English where it has no translation. `/genre/movie/list?language=fo` answers `name: null`. Recording from
+   details would file English names as Faroese, and a Faroese viewer would see *Comedy* on a Danish title,
+   which is the opposite of FR-271-3. A details response still records which ids exist and which list
+   (`movie`, `tv`) they belong to (`genre_kind`), used only when one label names two ids.
+2. **Storage.** Migration **54**: `genre_label (genre_id, language, label)`, `genre_kind (genre_id, kind)`,
+   `genre_list_fetch (language, fetched_at)`. So 269 takes 55 and 270 takes 56 (both specs updated).
+   `MediaItem.genreIds` / `tmdbGenreIds` are `List<Int?>`, **aligned by index** with `genres` /
+   `tmdbGenres`, null for a genre added by hand.
+3. **`genreIds` is never written by hand.** `MediaStore` derives it on every write
+   (`GenreCatalog.normalize`) **before** the content comparison (Phase 204). Otherwise a scan's `copy`
+   carrying stale ids would read as a change and rebuild every viewer's Home. The title's own TMDB pairing
+   (`tmdbGenres[i]` ↔ `tmdbGenreIds[i]`, one details response) wins over the label table, so a genre whose
+   language list has not been fetched yet still gets its id. The scanner stores `tmdbGenreIds` at all nine
+   sites that store `tmdbGenres`. The clear-match (174) and history-revert paths carry them too.
+4. **The weekly refresh** (`GenreListRefresher`, started from `Main.kt`, BACKGROUND class): wakes every
+   6 h, fetches both lists for each language whose last fetch is over 7 days old. The languages are:
+   - English, the three app languages;
+   - the global and per-library fallback languages;
+   - every title's resolved, original and hand-set metadata language;
+   - every audio-track language, which is exactly the set the scanner's language-priority chains can have
+     asked TMDB in.
+
+   A new language waits at most 6 h. After a pass that learnt anything, `MediaStore.normalizeGenres` maps
+   stored names to ids in **one transaction with one feed bump** (FR-271-6). It does not stamp `updatedAt`,
+   since ids derived from names already stored are not an edit.
+5. **Matching** (FR-271-4) goes through one identity, `GenreCatalog.keys(item)` / `keyOf(value)`: `#35`
+   for a TMDB genre, the Phase 216 `TaxonomyKey` of the name for a hand-added one. Used by:
+   `ConditionEvaluator` (saved row and channel filters); `BrowseService.browse` (installed apps' `genres=`
+   names, in any language); `MediaStore.list` (the admin Library); `metaFacets` (admin, English names);
+   `relatedByGenre`; and the legacy `filterGenre` channel field. The legacy substring `GENRE` row matches
+   every label of a title's genres in any language. `#35` is accepted as a value too.
+6. **Labels per viewer** (FR-271-5). One detail per surface:
+   - **Detail pages**: the full rule. The title's languages are its hand-set metadata language, then its
+     resolved language, then its original language. The detail card's `genre` matches.
+   - **Browse cards, facets, search cards**: the rule without the title step, from the viewer's resolved
+     `uiLanguage`. Facets are cached in English and relabelled **after** the cache read, then re-sorted.
+   - **Home, channel pages, *See all* for Continue Watching**: built and cached in English and relabelled
+     per request by `GenreLabels.kt` (English label → id → the viewer's label, one map lookup per card).
+     This also covers cards built outside any viewer's context (the shared Continue list) and R240's
+     focus-detail facts.
+   - **Coming Soon details and Seerr's Request details** show the viewer's labels by TMDB id.
+     `SeerrGenre` gains its `id`.
+7. **The admin's Metadata → Genres** (FR-271-8): one card per genre id, named in English, with its total.
+   Beneath it, every label the catalog holds, grouped by text, with the languages that use it and how many
+   titles store that exact name. A label no title stores is dimmed. A stored name the catalog has no
+   language for yet still shows. Hand-added genres follow, marked *Added by hand*. The link filters the
+   Library by the English name, which resolves to the id. The page's search matches every label, so typing
+   *Komedie* finds *Comedy*.
+8. **Provenance merge by identity** (Phase 94): a genre the admin removed stays removed, and one added
+   survives, even when a re-sync fetched the title in another language and the same genres came back under
+   other names (`GenreCatalog.mergeUserGenres`).
+9. **Backwards compatibility** (owner, 2026-09-26: *"we need to be backwards compatible for a while with
+   our apis"*). Every wire change is additive with a default: `FacetItem.id`, `BrowseCard.genre_ids`,
+   `MovieDetail.genre_ids`, `SeriesDetail.genre_ids`. No field changed meaning. An installed app keeps
+   sending genre names and gets id matching through them. An app built with these models reads an older
+   server's payloads unchanged. The admin route `GET /api/metadata/genres` keeps its list shape, with two
+   fields added.
+10. **Tests.** `GenreCatalogTest` (9) covers: the four label steps; the Faroese viewer on a Danish and an
+    English title; any-language name resolution; a *Komedie* filter matching an English comedy; the merge
+    across a language switch; the title's own pairing; `normalize` idempotence; `relabel`; and the backfill
+    as one batch and one bump, with no bump on a stale-ids rewrite. `GenreIdBrowseTest` (3) covers: one
+    tile per genre with grid counts that agree; old-app names in Danish and Italian; a Danish viewer's wall
+    and cards with the cache not keyed by language; Home's relabel. Full `linuxX64Test` green;
+    `compileKotlinWasmJs` and `:ravilo-ui:compileKotlinWasmJs` green.
+
+**Not done here:** deploying, and the acceptance checks on production (they need a release and a restart,
+which need the owner's go-ahead).

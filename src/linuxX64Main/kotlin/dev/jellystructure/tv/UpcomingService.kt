@@ -1,5 +1,6 @@
 package dev.jellystructure.tv
 
+import dev.jellystructure.media.GenreCatalog
 import dev.jellystructure.arr.ArrCalendarEpisode
 import dev.jellystructure.arr.ArrCalendarImage
 import dev.jellystructure.arr.ArrCalendarMovie
@@ -41,6 +42,8 @@ class UpcomingService(
     private val mediaStore: MediaStore,
     private val tmdbClient: TmdbClient,
     private val artwork: ArtworkDownloader,
+    // Phase 271 (FR-271-3) — the viewer's Ravilo app language by Jellyfin user id; none = English.
+    private val appLanguage: (String) -> String? = { null },
 ) {
     /** R167 — the tmdb/tvdb id behind one feed item, kept alongside the cache so [getDetail] can do
      *  a live TMDB enrichment (genres/runtime/cast) without a second *arr round-trip. */
@@ -95,12 +98,12 @@ class UpcomingService(
         if (tmdbId != null) {
             if (key?.isSeries == true) {
                 val det = runCatching { tmdbClient.getTvDetails(tmdbId) }.getOrNull()
-                genres = det?.genres?.map { it.name } ?: emptyList()
+                genres = det?.genres?.map { GenreCatalog.label(it.id, appLanguage(device.jellyfinUserId)) ?: it.name } ?: emptyList()
                 runtime = det?.episodeRunTime?.firstOrNull()
                 cast = runCatching { tmdbClient.getTvCredits(tmdbId) }.getOrNull()?.map { it.toPerson() } ?: emptyList()
             } else {
                 val det = runCatching { tmdbClient.getMovieDetails(tmdbId) }.getOrNull()
-                genres = det?.genres?.map { it.name } ?: emptyList()
+                genres = det?.genres?.map { GenreCatalog.label(it.id, appLanguage(device.jellyfinUserId)) ?: it.name } ?: emptyList()
                 runtime = det?.runtime
                 cast = runCatching { tmdbClient.getMovieCredits(tmdbId) }.getOrNull()?.map { it.toPerson() } ?: emptyList()
             }

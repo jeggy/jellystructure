@@ -1,5 +1,6 @@
 package dev.jellystructure.tv
 
+import dev.jellystructure.media.GenreCatalog
 import dev.jellystructure.auth.DeviceData
 import dev.jellystructure.auth.JellyfinClient
 import dev.jellystructure.config.ConfigStore
@@ -197,7 +198,7 @@ class HomeFeedService(
             }
         }
         val playstateDeferred = async { PlaystateCache.get(userId) }
-        applyPlaystate(feedDeferred.await(), playstateDeferred.await())
+        applyPlaystate(feedDeferred.await(), playstateDeferred.await()).withGenreLabels(config.uiLanguage)  // Phase 271
     }
 
     /**
@@ -315,7 +316,8 @@ class HomeFeedService(
             runtimeMinutes = if (!isSeries) runtime else null,
             ratingBadge = cert?.let { RatingBadge(region = it.region, code = it.code, tier = it.tier, fallback = it.fallback) },
             imdbRating = imdbRating?.let { dev.jellystructure.shared.tv.TvImdbRating(aggregateRating = it.aggregateRating, voteCount = it.voteCount) },
-            genres = genres,
+            // Phase 271 — English here; relabelled per viewer after the cache read (GenreLabels.kt).
+            genres = GenreCatalog.displayNames(this, GenreCatalog.ENGLISH, withTitle = false),
             audioLanguages = allTracks.filter { it.kind == dev.jellystructure.model.TrackKind.AUDIO }
                 .mapNotNull { it.language?.lowercase()?.takeIf { l -> l.isNotBlank() } }.distinct(),
             subtitleLanguages = allTracks.filter { it.kind == dev.jellystructure.model.TrackKind.SUBTITLE }
@@ -344,7 +346,7 @@ class HomeFeedService(
             autoAdvanceSeconds = config.autoAdvanceSeconds,
             tileShape = config.tileShape,
             portraitHeroHeightPct = config.portrait?.heroHeightPct,
-        ), PlaystateCache.get(device.jellyfinUserId))
+        ), PlaystateCache.get(device.jellyfinUserId)).withGenreLabels(config.uiLanguage)  // Phase 271
     }
 
     /** Phase 206 (FR-206-4) — see [channelContentCache]'s own doc. Same shape as [channelRail]. */
@@ -685,7 +687,9 @@ class HomeFeedService(
     // exactly like the pre-Phase-206 code already did; defaults to resolving it here for a one-off caller.
     private fun matchesConfiguredRow(item: MediaItem, rowCfg: RowConfig, heroIds: Set<String>, ageRatingCascade: List<String>, resolvedQuery: ConditionGroup? = null): Boolean =
         when (rowCfg.kind) {
-            RowKind.GENRE -> genreTermsOf(rowCfg).let { terms -> terms.isEmpty() || item.genres.any { g -> terms.any { t -> g.lowercase().contains(t) } } }
+            // Phase 271 — every label of the title's genres, in any language, so a saved term matches
+            // whatever language the title's own names came in.
+            RowKind.GENRE -> genreTermsOf(rowCfg).let { terms -> terms.isEmpty() || GenreCatalog.allLabelsOf(item).any { g -> terms.any { t -> g.lowercase().contains(t) } } }
             RowKind.CUSTOM -> ConditionEvaluator.matches(item, resolvedQuery ?: rowCfg.effectiveQuery(), heroIds, ageRatingCascade) && when (rowCfg.mediaKind) {
                 "MOVIE" -> item.kind == MediaKind.MOVIE
                 "SERIES" -> item.kind == MediaKind.TV_SHOW
@@ -722,7 +726,7 @@ class HomeFeedService(
                 // for exactly this row's real membership, not an approximation of the substring rule.
                 val genreTerms = genreTermsOf(rowCfg)
                 val matchedGenreValues = all.asSequence()
-                    .flatMap { it.genres }
+                    .flatMap { GenreCatalog.allLabelsOf(it) }
                     .filter { g -> genreTerms.isEmpty() || genreTerms.any { t -> g.lowercase().contains(t) } }
                     .distinct().toList()
                 val seed = withChannelSeed(channelFilter, ConditionGroup(QueryJoin.AND, children = listOf(
@@ -770,7 +774,7 @@ class HomeFeedService(
             val heroIds = config.heroes.map { it.itemId }.toSet()
             canonical.filter { it.mediaItem.matchesChannel(channelCfg, heroIds) }
         } else canonical
-        return scoped.map { it.card }
+        return scoped.map { it.card.withGenreLabels(config.uiLanguage) }  // Phase 271
     }
 
     /**
@@ -1059,7 +1063,7 @@ class HomeFeedService(
             },
             title = title,
             year = year,
-            genre = genres.firstOrNull(),
+            genre = GenreCatalog.displayNames(this, GenreCatalog.ENGLISH, withTitle = false).firstOrNull(),  // Phase 271
             rating = CertificationResolver.resolve(configStore.current.metadata.ageRatingCascade, certifications)?.code,
             ageRating = CertificationResolver.normalizedAge(configStore.current.metadata.ageRatingCascade, configStore.current.metadata.ageRatingMap, certifications),
             posterUrl = RaviloImageUrl.poster(id, artwork.assetVersion(this, "poster")),     // R133/R214
@@ -1085,7 +1089,7 @@ class HomeFeedService(
         if (query.isLive()) return ConditionEvaluator.matches(this, query, heroIds, configStore.current.metadata.ageRatingCascade)
         if (ch.filterNetwork != null && network.equals(ch.filterNetwork, ignoreCase = true)) return true
         if (ch.filterStudio  != null && studio.equals(ch.filterStudio,  ignoreCase = true)) return true
-        if (ch.filterGenre   != null && genres.any { it.equals(ch.filterGenre, ignoreCase = true) }) return true
+        ch.filterGenre?.let { g -> if (GenreCatalog.keyOf(g, kind) in GenreCatalog.keys(this)) return true }  // Phase 271
         if (ch.filterTag     != null && tags.any { it.equals(ch.filterTag, ignoreCase = true) }) return true
         return false
     }

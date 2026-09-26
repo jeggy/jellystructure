@@ -189,13 +189,37 @@ private fun wireLogoFetch(container: Element, scope: CoroutineScope, kind: Strin
     }
 }
 
+// Phase 271 (FR-271-8) — one entry per genre id (the server groups; this only draws): its English name
+// and total, and beneath it every label the catalog holds, with the languages that use it and how many
+// titles store exactly that name. The link filters the Library by the English name, which the server
+// resolves to the id, so it lists the genre's titles whatever language their metadata came in.
 private fun renderGenreChips(entries: List<MetadataEntry>): String {
     if (entries.isEmpty()) return """<p class="muted tiny">No genres found.</p>"""
+    fun esc(v: String) = v.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;")
     return buildString {
-        append("""<div style="display:flex;flex-wrap:wrap;gap:8px">""")
+        append("""<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px">""")
         for (e in entries) {
             val encoded = dev.jellystructure.encodeURIComponent(e.name)
-            append("""<a href="#/library?genres=$encoded" data-filter-name="${e.name.lowercase()}" style="text-decoration:none"><span style="display:inline-flex;align-items:center;gap:6px;padding:6px 14px;border-radius:99px;background:var(--fill-3);border:1px solid var(--line-2);font-size:.85rem;color:var(--ink);cursor:pointer;transition:background .12s,border-color .12s" onmouseover="this.style.background='var(--hi-soft)';this.style.borderColor='var(--hi)'" onmouseout="this.style.background='var(--fill-3)';this.style.borderColor='var(--line-2)'">${e.name}<span style="font-size:.75rem;color:var(--ink-soft)">${e.count}</span></span></a>""")
+            val filterName = esc((listOf(e.name) + e.labels.map { it.label }).joinToString(" ").lowercase())
+            append("""<a href="#/library?genres=$encoded" data-filter-name="$filterName" style="display:flex;flex-direction:column;gap:8px;padding:12px 14px;text-decoration:none;border-radius:var(--radius-s);background:var(--card-bg);border:var(--card-bd);box-shadow:var(--shadow-s);color:var(--ink);transition:box-shadow .15s,border-color .15s" onmouseover="this.style.boxShadow='var(--shadow)';this.style.borderColor='var(--hi)'" onmouseout="this.style.boxShadow='var(--shadow-s)';this.style.borderColor=''">""")
+            append("""<span style="display:flex;align-items:baseline;justify-content:space-between;gap:8px"><span style="font-size:.9rem;font-weight:600">${esc(e.name)}</span><span class="tiny muted">${e.count} titles</span></span>""")
+            if (e.handAdded) {
+                append("""<span class="tiny muted">Added by hand · not a TMDB genre</span>""")
+            } else if (e.labels.isNotEmpty()) {
+                append("""<span style="display:flex;flex-wrap:wrap;gap:6px">""")
+                for (l in e.labels) {
+                    val langs = l.languages.joinToString(" · ")
+                    val tip = if (l.titles > 0) "${l.titles} title${if (l.titles == 1) "" else "s"} store this name" else "No title stores this name"
+                    val dim = if (l.titles == 0) "opacity:.62;" else ""
+                    append("""<span title="${esc(tip)}" style="${dim}display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:99px;background:var(--fill-3);border:1px solid var(--line-2);font-size:.78rem">""")
+                    if (langs.isNotEmpty()) append("""<span style="font-family:var(--mono,monospace);font-size:.68rem;color:var(--ink-soft)">${esc(langs)}</span>""")
+                    append(esc(l.label))
+                    if (l.titles > 0) append("""<span style="font-size:.7rem;color:var(--ink-soft)">${l.titles}</span>""")
+                    append("</span>")
+                }
+                append("</span>")
+            }
+            append("</a>")
         }
         append("</div>")
         append("""<p id="metadata-filter-empty" class="muted tiny" style="display:none;margin-top:16px">No matches.</p>""")

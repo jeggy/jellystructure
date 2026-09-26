@@ -224,14 +224,14 @@ class Scanner(
      * Phase 94: genre provenance. TMDB owns genres it sets, but the user's edits are sticky across a
      * re-sync. Derived from the stored baseline [MediaItem.tmdbGenres]: genres the user added (not in the
      * baseline) survive, genres the user removed (in the baseline, gone from `genres`) stay gone, and
-     * everything else follows fresh TMDB. Caller must also set `tmdbGenres = newTmdb`.
+     * everything else follows fresh TMDB. Caller must also set `tmdbGenres`/`tmdbGenreIds` from [fresh].
+     *
+     * Phase 271 — compared by genre id, not spelling ([GenreCatalog.mergeUserGenres]): a re-sync that
+     * fetched the title in another language brings the same genres back under other names, and a removal
+     * keyed on the old name would otherwise quietly come undone.
      */
-    private fun mergeUserGenres(prior: MediaItem, newTmdb: List<String>): List<String> {
-        val baseline = prior.tmdbGenres
-        val userAdded = prior.genres.filterNot { it in baseline }
-        val userRemoved = baseline.filterNot { it in prior.genres }
-        return (newTmdb.filterNot { it in userRemoved } + userAdded).distinct()
-    }
+    private fun mergeUserGenres(prior: MediaItem, fresh: List<dev.jellystructure.tmdb.TmdbGenre>): List<String> =
+        GenreCatalog.mergeUserGenres(prior, fresh.map { it.id to it.name })
     /** Processes a single Jellyfin item end-to-end. Used by the worker pool and the sequential scan. */
     suspend fun scanItem(jItem: JellyfinItem): MediaItem? {
         val config = configStore.current
@@ -409,6 +409,7 @@ class Scanner(
             overview = details?.overview?.takeIf { it.isNotBlank() },
             genres = details?.genres?.map { it.name } ?: emptyList(),
             tmdbGenres = details?.genres?.map { it.name } ?: emptyList(),  // Phase 94: baseline = TMDB list (fresh scan, no user edits yet)
+            tmdbGenreIds = details?.genres?.map { it.id } ?: emptyList(),  // Phase 271 (FR-271-1)
             studio = primaryCompany?.name,
             studioTmdbId = primaryCompany?.id,
             studioLogoPath = primaryCompany?.logoPath,
@@ -501,6 +502,7 @@ class Scanner(
             overview = details?.overview?.takeIf { it.isNotBlank() },
             genres = details?.genres?.map { it.name } ?: emptyList(),
             tmdbGenres = details?.genres?.map { it.name } ?: emptyList(),
+            tmdbGenreIds = details?.genres?.map { it.id } ?: emptyList(),  // Phase 271 (FR-271-1)
             studio = primaryCompany?.name,
             studioTmdbId = primaryCompany?.id,
             studioLogoPath = primaryCompany?.logoPath,
@@ -804,6 +806,7 @@ class Scanner(
                 overview = mixDetails?.overview?.takeIf { it.isNotBlank() },
                 genres = mixDetails?.genres?.map { it.name } ?: emptyList(),
                 tmdbGenres = mixDetails?.genres?.map { it.name } ?: emptyList(),  // Phase 94: baseline (fresh scan)
+                tmdbGenreIds = mixDetails?.genres?.map { it.id } ?: emptyList(),  // Phase 271 (FR-271-1)
                 network = mixNetwork?.name,
                 networkTmdbId = mixNetwork?.id,
                 networkLogoPath = mixNetwork?.logoPath,
@@ -870,6 +873,7 @@ class Scanner(
             overview = details?.overview?.takeIf { it.isNotBlank() },
             genres = details?.genres?.map { it.name } ?: emptyList(),
             tmdbGenres = details?.genres?.map { it.name } ?: emptyList(),  // Phase 94: baseline = TMDB list (fresh scan, no user edits yet)
+            tmdbGenreIds = details?.genres?.map { it.id } ?: emptyList(),  // Phase 271 (FR-271-1)
             network = details?.networks?.firstOrNull()?.name,
             networkTmdbId = details?.networks?.firstOrNull()?.id,
             networkLogoPath = details?.networks?.firstOrNull()?.logoPath,
@@ -947,8 +951,9 @@ class Scanner(
             posterPath = details.posterPath,
             backdropPath = details.backdropPath,
             overview = details.overview.takeIf { it.isNotBlank() },
-            genres = mergeUserGenres(item, details.genres.map { it.name }),  // Phase 94: keep user genre edits across sync
+            genres = mergeUserGenres(item, details.genres),  // Phase 94: keep user genre edits across sync
             tmdbGenres = details.genres.map { it.name },
+            tmdbGenreIds = details.genres.map { it.id },  // Phase 271 (FR-271-1)
             studio = primaryCompany?.name,
             studioTmdbId = primaryCompany?.id,
             studioLogoPath = primaryCompany?.logoPath,
@@ -1149,8 +1154,9 @@ class Scanner(
             posterPath = updatedDetails?.posterPath ?: item.posterPath,
             backdropPath = updatedDetails?.backdropPath ?: item.backdropPath,
             overview = updatedDetails?.overview?.takeIf { it.isNotBlank() } ?: item.overview,
-            genres = updatedDetails?.genres?.map { it.name }?.let { mergeUserGenres(item, it) } ?: item.genres,  // Phase 94
+            genres = updatedDetails?.genres?.let { mergeUserGenres(item, it) } ?: item.genres,  // Phase 94
             tmdbGenres = updatedDetails?.genres?.map { it.name } ?: item.tmdbGenres,
+            tmdbGenreIds = updatedDetails?.genres?.map { it.id } ?: item.tmdbGenreIds,  // Phase 271 (FR-271-1)
             network = syncNetwork?.name ?: item.network,
             networkTmdbId = syncNetwork?.id ?: item.networkTmdbId,
             networkLogoPath = syncNetwork?.logoPath ?: item.networkLogoPath,
@@ -1290,8 +1296,9 @@ class Scanner(
                     posterPath = details.posterPath,
                     backdropPath = details.backdropPath,
                     overview = details.overview.takeIf { it.isNotBlank() },
-                    genres = mergeUserGenres(item, details.genres.map { it.name }),  // Phase 94: keep user genre edits across sync
+                    genres = mergeUserGenres(item, details.genres),  // Phase 94: keep user genre edits across sync
                     tmdbGenres = details.genres.map { it.name },
+                    tmdbGenreIds = details.genres.map { it.id },  // Phase 271 (FR-271-1)
                     studio = rescanCompany?.name,
                     studioTmdbId = rescanCompany?.id,
                     studioLogoPath = rescanCompany?.logoPath,
@@ -1362,8 +1369,9 @@ class Scanner(
                     posterPath = details.posterPath,
                     backdropPath = details.backdropPath,
                     overview = details.overview.takeIf { it.isNotBlank() },
-                    genres = mergeUserGenres(item, details.genres.map { it.name }),  // Phase 94: keep user genre edits across sync
+                    genres = mergeUserGenres(item, details.genres),  // Phase 94: keep user genre edits across sync
                     tmdbGenres = details.genres.map { it.name },
+                    tmdbGenreIds = details.genres.map { it.id },  // Phase 271 (FR-271-1)
                     network = rescanNetwork?.name ?: item.network,
                     networkTmdbId = rescanNetwork?.id ?: item.networkTmdbId,
                     networkLogoPath = rescanNetwork?.logoPath ?: item.networkLogoPath,
@@ -1405,6 +1413,7 @@ class Scanner(
                         overview = details.overview.takeIf { it.isNotBlank() },
                         genres = details.genres.map { it.name },
                         tmdbGenres = details.genres.map { it.name },
+                        tmdbGenreIds = details.genres.map { it.id },  // Phase 271 (FR-271-1)
                         studio = rescanCompany?.name,
                         studioTmdbId = rescanCompany?.id,
                         studioLogoPath = rescanCompany?.logoPath,

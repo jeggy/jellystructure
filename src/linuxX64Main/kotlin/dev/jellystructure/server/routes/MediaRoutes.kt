@@ -456,6 +456,7 @@ fun Route.mediaRoutes(
                             overview = snap.overview,
                             genres = snap.genres,
                             tmdbGenres = snap.tmdbGenres,
+                            tmdbGenreIds = snap.tmdbGenreIds,  // Phase 271
                             studio = snap.studio,
                             studioTmdbId = snap.studioTmdbId,
                             studioLogoPath = snap.studioLogoPath,

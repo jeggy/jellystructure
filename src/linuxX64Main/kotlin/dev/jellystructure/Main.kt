@@ -115,6 +115,9 @@ fun main() = runBlocking {
     val imdbClient = dev.jellystructure.imdb.ImdbClient(dataDir)  // Phase 131/158
     val jsTagStore = dev.jellystructure.media.JsTagStore("$dataDir/js-tags.json")
     jsTagStore.load()
+    // Phase 271 — genre labels into memory BEFORE the store loads, so every write from here on derives
+    // its genre ids against what is already known.
+    dev.jellystructure.media.GenreCatalog.attach(db)
     val mediaStore = MediaStore(db, jsTagStore, configStore)
     mediaStore.load()
     // Phase 163 (Intro & credits editor) — one row per (item, episode, kind), replacing the old flat
@@ -245,7 +248,8 @@ fun main() = runBlocking {
     rootScope.launch(dev.jellystructure.ops.GateClass.BACKGROUND) { runCatching { logoDownloader.computeMissingInk() } }
     // Phase 185 (FR-185-4) — needed by DetailService below, for playbackNote resolution.
     val playbackStartSampleStore = dev.jellystructure.tv.PlaybackStartSampleStore(db)
-    val detailService = DetailService(mediaStore, jellyfinClient, configStore, artworkDownloader, mediaSegmentStore, raviloDeviceService, playbackStartSampleStore)
+    val detailService = DetailService(mediaStore, jellyfinClient, configStore, artworkDownloader, mediaSegmentStore, raviloDeviceService, playbackStartSampleStore,
+        appLanguage = { userId -> raviloConfigService.getConfig(userId).uiLanguage })  // Phase 271
     // Phase 232 (FR-232-5) — title clearlogo ink: in memory, judged in the background, warmed once at boot.
     val clearlogoInk = dev.jellystructure.media.ClearlogoInk(rootScope, dataDir)
     detailService.clearlogoInk = clearlogoInk
@@ -278,7 +282,8 @@ fun main() = runBlocking {
     val bazarrClient = dev.jellystructure.bazarr.BazarrClient()
     val arrRescan = ArrRescanService(configStore, arrClient, rootScope)
     val sonarrEnrich = SonarrEnrichService(mediaStore, arrClient, configStore)
-    val upcomingService = dev.jellystructure.tv.UpcomingService(configStore, arrClient, mediaStore, tmdbClient, artworkDownloader)
+    val upcomingService = dev.jellystructure.tv.UpcomingService(configStore, arrClient, mediaStore, tmdbClient, artworkDownloader,
+        appLanguage = { userId -> raviloConfigService.getConfig(userId).uiLanguage })  // Phase 271
     // Phase 109: single-worker persistent queue for heavy media edits (ffmpeg remuxes) — see the class
     // doc for why enqueue-then-drain replaces running ffmpeg inline on the request thread.
     // Phase 254 — deep checks + replace-from-source repairs. One instance: the queue runs the jobs,
@@ -305,6 +310,17 @@ fun main() = runBlocking {
         runCatching { mediaJobQueue.enqueueWaveformBackfill() }
             .onFailure { Logger.warn("Phase 222 waveform backfill could not be queued: ${it.message}", "media") }
     }
+    // Phase 271 (FR-271-2/6) — TMDB's genre lists, weekly per language in use; then every stored genre
+    // name mapped to its id in one batched write. The first pass at startup does the one-time backfill.
+    val genreListRefresher = dev.jellystructure.media.GenreListRefresher(tmdbClient, mediaStore, configStore, db)
+    rootScope.launch(dev.jellystructure.ops.GateClass.BACKGROUND) {
+        while (true) {
+            runCatching { genreListRefresher.refreshDue(platform.posix.time(null)) }
+                .onFailure { Logger.warn("Genre list refresh failed: ${it.message}", "tmdb") }
+            kotlinx.coroutines.delay(dev.jellystructure.media.GenreListRefresher.CHECK_INTERVAL_MS)
+        }
+    }
+
     // Phase 243 (FR-243-2) — keep the connected Jellyfin's version fresh on its own.
     //
     // Found by deploying it: `testConnection` (the only thing that latches the version) is called
