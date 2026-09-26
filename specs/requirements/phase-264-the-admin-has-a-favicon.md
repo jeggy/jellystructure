@@ -4,10 +4,11 @@
 
 ## Status
 
-`Planned` — written 2026-09-26, not dev-reviewed. Frontend resources and build only; no route, no
-config, no backend logic. **Open questions decided the same day**: the owner handed the calls over
-(*"You just decide for me. We want all best solutions for everything"*). See *Decisions* at the end.
-**Numbering:** verified against `STATUS.md` the same day — admin taken through **263**.
+`Planned` — written 2026-09-26, **dev-reviewed 2026-09-26** against `main` `0e5e434f` (see *Dev review*
+at the end). Frontend resources and build only; no route, no config, no backend logic. **Open questions
+decided the same day**: the owner handed the calls over (*"You just decide for me. We want all best
+solutions for everything"*). See *Decisions* at the end. **Numbering:** verified against `STATUS.md` the
+same day — admin taken through **263**.
 
 ## What is wrong, measured
 
@@ -93,3 +94,29 @@ site container is a deploy, asked for like any other.
    was an exploration step, and the logo exploration's asset set is built on Quartet Play.
 2. **Ravilo's web app gets a tab icon, as its own phase (R313).** It needs the Ravilo mark, not this
    one, and it ships in the `ravilo-web` image, not the backend's.
+
+## Dev review (2026-09-26, against `main` `0e5e434f`)
+
+Every path the spec names is where it says. Four items, no blocker.
+
+1. **No auth change is needed.** `AuthPlugin` lets every non-`/api/` path through (`AuthPlugin.kt:120`),
+   and the admin SPA's catch-all `get("{...}")` (`Server.kt:763`) hands any path to `serveFrontendFile`,
+   which serves an existing file before its FR-235-3 404 (`Server.kt:838-849`). So `/favicon.ico` and the
+   icons load on the login screen without a session, the moment the files are in the bundle.
+2. **The dev bundle is the only place that needs a code line.** `syncDesignAssets` copies exactly
+   `include("index.html")` from `wasm/packages/jellystructure/kotlin` (`build.gradle.kts:281-283`). Add
+   the three icon names there. The production bundle (`wasmJsBrowserDistribution`) already carries every
+   processed resource, and `index.html` is in `build/dist/wasmJs/productionExecutable` today, so the
+   Dockerfile's `COPY … productionExecutable/ /app/frontend/` (`Dockerfile:97`) picks them up unchanged.
+3. **Rasterise once, commit the results.** The `.ico` (16+32) and the 180 px PNG are generated from the
+   SVG with the host's ImageMagick/`rsvg-convert` (the SVG raster pipeline already used for the Ravilo
+   brand assets) and committed. The build gains no tool.
+4. **Where the e2e check goes:** `tests/e2e/auth.spec.ts` already loads the login page unauthenticated.
+   The icon assertions belong there, before any login, which also proves item 1.
+
+The info site (FR-264-6) is not in this repository. Its change is to `index.html`, `ravilo.html`,
+`privacy.html` and `Dockerfile` in the deployment directory, and ships with the next site rebuild, which
+is a deploy to ask for.
+
+**Net effect.** Three files in `src/wasmJsMain/resources/`, three `<link>` lines, one `include` list, one
+e2e block. No Kotlin, no route, no config.
