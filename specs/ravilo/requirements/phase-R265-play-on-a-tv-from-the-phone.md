@@ -117,6 +117,32 @@ no longer shows *Casting to* with a hole where the name should be. **Result:** o
 rejoined the TV with the mini bar live; two later ones did not — the SDK logs *resuming session* and
 never reaches its route wait. The saved route is a group route, which may be why. Left open here.
 
+**2026-09-26 — the cause, on the Pixel 9 casting to the stue TV.** The "process death" was never only a
+death: `am kill` is followed within a second by *"Scheduling restart of crashed service … Cast
+ReconnectionService"*, a new process *"for started-service"*, and a **background** *resuming session* — which
+Android's cached-app freezer then freezes ten seconds later (`freezing <pid>`), so it can never finish.
+What happens next depends on when the app is opened:
+- **Opened ~4 s after the kill** (the resume still live): on `onAppEnteredForeground` the SDK logs
+  *End session* for the old session, then *resuming session* — and because the options set
+  `setStopReceiverApplicationWhenEndingSession(true)`, **that end stopped the receiver: the TV fell back to
+  its own launcher.** Nothing of ours ran; our `onSessionResumed` never fired.
+- **Opened ~50 s after** (the background resume frozen and abandoned): the foreground resume reached
+  *onWaitingRouteSelected* on the saved `…-groupRoute`, and the phone rejoined — mini bar *Playing on Stue
+  TV*, the TV playing on. So the group route is not the obstacle.
+
+**Built, and only half a fix (2026-09-26):** `setEnableReconnectionService(false)` plus
+`setStopReceiverApplicationWhenEndingSession(false)`. With both, a kill leaves **no** background process and
+**the TV plays on** — the destructive half is gone (verified: killed, reopened after 4 s, the TV kept playing).
+But the phone did **not** rejoin, and the SDK logged no resume attempt at all: its resume only ever ran in
+the process the reconnection service had restarted. So the rejoin has to be Ravilo's own — at start-up,
+re-select the route of a cast the backend says is still playing this viewer's title, exactly what a tap on
+that row in the sheet does (which rejoined the running receiver and rebuilt the mini bar from it, same
+session). **Open:** the backend's *Chromecast via Ravilo · Stue TV* device read *Offline · last seen
+Thursday* while its receiver was playing, so "the backend says" needs the receiver to keep that device
+current first. Selecting a route when the receiver is no longer ours would **launch** Ravilo on the TV, so
+the decision must never be guessed from the phone's own memory. Stopped here because the Pixel ran down to
+1 % battery.
+
 **R305 was found by this test:** the relaunch after a process death killed the app outright (see R305).
 
 ### Built 2026-09-25 — the screens capability the phone never received, and AirPlay on the web
