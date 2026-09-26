@@ -43,13 +43,19 @@ of kinds) must not fail the list either: the element is dropped. That needs a le
 
 **FR-R318-2 — `RECOMMENDED` is known, and drawn like any content row.** `RowKind` gains `RECOMMENDED`, so an
 app with this phase would read it even if a later server sent it as it is. It is drawn exactly like a
-`CUSTOM` row:
+`CUSTOM` row: the same tiles and focus behaviour (R240's focus detail applies as on any Home row), and
+the title the server sends (the admin's text, 269 FR-269-1). No new string: a row's title is the
+admin's, like every other row.
 
-- the same tiles and focus behaviour (R240's focus detail applies as on any Home row);
-- **no *See all***, because there is no query behind it and the 20 are the whole list;
-- the title the server sends (the admin's text, 269 FR-269-1).
-
-No new string: a row's title is the admin's, like every other row.
+**FR-R318-2b — *See all* opens the viewer's whole list.** Owner, 2026-09-26: the row shows its 20 or 30,
+*"and then a view all like the other rows."* The server marks the row with an additive
+`recommendations: true` (269 FR-269-2 still sends it as `CUSTOM`, so an installed app draws it with no
+*See all*, as today). An app with this phase shows *See all* on such a row when it has more titles than
+the row shows. It opens the ordinary browse page, backed by a new
+`GET /api/tv/recommendations` that answers the viewer's still-eligible list (up to 50) as `BrowseCard`s,
+in rank order. The page opens in **that order**. Its sort control offers it first, labelled with the
+page's own title (the row's title, the admin's text), so it needs no new string, and the page's other
+sorts and filters work on the 50 as on any browse page.
 
 **FR-R318-3 — Tests.** Decode, with the app's own `Json`:
 
@@ -57,7 +63,8 @@ No new string: a row's title is the admin's, like every other row.
 - a config with `skin: "SOMETHING_NEW"` → the default skin, every other field intact;
 - a list with one unknown element → the rest of the list.
 
-A `RECOMMENDED` row renders with no *See all* tile.
+A `recommendations: true` row with more titles than it shows renders a *See all* tile, and the page it
+opens lists the recommendations in rank order.
 
 ## Non-goals
 
@@ -72,8 +79,9 @@ A `RECOMMENDED` row renders with no *See all* tile.
 
 1. A backend test build sends one row with an unknown kind: Home loads on the Pixel 9 and the TV, and the
    row shows as a plain row.
-2. With Phase 269 live, the *Recommended* row shows 20 tiles and no *See all*, on the TV, the phone and
-   the web.
+2. With Phase 269 live, the *Recommended* row shows its 20 (the row's limit) and a *See all* that opens
+   all 50 in the recommended order, on the TV, the phone and the web. An app from before this phase
+   shows the same row with no *See all*.
 3. FR-R318-3's decode tests pass.
 
 ## Dev review (2026-09-26, against `main` `0e5e434f`)
@@ -96,7 +104,10 @@ A `RECOMMENDED` row renders with no *See all* tile.
    payloads. Keep FR-R318-1's list rule as a requirement for the next such field, and test it with a
    small lenient serializer on a test-only type rather than inventing a production field.
 4. **The *See all* rule** is `HomeScreen.kt:472` (`row.kind == CONTINUE || seedQuery != null ||
-   seedMediaKind != null`). `RECOMMENDED` matches none of them, so it needs no change, only a test.
+   seedMediaKind != null`). It gains `|| row.recommendations`. The page is `SeededBrowseScreen` with a
+   store whose fetch is `GET /api/tv/recommendations` instead of `browseByQuery`, the same way the
+   Library tab builds its own store (`RaviloApp.kt:1200-1202`); `SortField` gains `SOURCE` (the server's
+   order), labelled with the page title.
 5. **Ship it early.** It protects every later enum addition, so it should reach the stores before 269.
 
 **Net effect.** One shared `Json`, about eight call sites pointed at it, two defaults, one enum value,

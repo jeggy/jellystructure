@@ -21,9 +21,9 @@ table cached 2026-06-24). Prices must be re-checked before this ships (FR-270-6)
 
 1. **Re-rank (per viewer).** 269 scores the library with arithmetic over metadata. It is good at *what
    is similar*, and blind to things a language model reads easily from a synopsis: tone, audience, "the
-   same kind of evening". The AI gets 269's **top 60** for a viewer plus a compact view of what they
-   watched, and returns the **20** it would show, with a short reason each. It never adds a title of its
-   own: it re-orders a shortlist the engine already judged eligible.
+   same kind of evening". The AI gets 269's **top 100** for a viewer plus a compact view of what they
+   watched, and returns the **50** it would keep, in order, with a short reason each. It never adds a
+   title of its own: it re-orders a shortlist the engine already judged eligible.
 2. **Theme tags (per title, once).** TMDB keywords are thin or missing on local and regional titles,
    such as the household's Faroese and Danish television. For those, the AI reads the synopsis once and
    writes 5–8 theme tags, stored on the title as one more feature for 269's similarity. It runs once per
@@ -77,7 +77,7 @@ Results are read by `custom_id`, never by position.
 **FR-270-4 — Nothing trusted blindly.**
 
 - A re-rank answer is accepted only if every id is in that viewer's shortlist, none repeats, and there
-  are 20. Short answers are topped up from 269's order. Anything else is discarded.
+  are 50. Short answers are topped up from 269's order. Anything else is discarded.
 - `stop_reason` is checked before the content is read: `refusal` or `max_tokens` means the viewer keeps
   269's list.
 - A batch that fails or expires keeps every viewer on 269's list, and the card says so.
@@ -108,11 +108,11 @@ runs once there are any, and a documented starting assumption before that:
 
 | Job | Assumption | Opus 5 | Sonnet 5 | Haiku 4.5 |
 |---|---|---|---|---|
-| Re-rank, per viewer | ~7k input, ~3k output (incl. thinking) | ≈ $0.055 | ≈ $0.022 | ≈ $0.011 |
-| Re-rank, 4 viewers daily | 120 runs a month | ≈ $6.60 | ≈ $2.60 | ≈ $1.30 |
+| Re-rank, per viewer | ~12k input (100 candidates), ~5k output (50 picks, incl. thinking) | ≈ $0.093 | ≈ $0.037 | ≈ $0.019 |
+| Re-rank, 4 viewers weekly | ~17 runs a month | ≈ $1.60 | ≈ $0.65 | ≈ $0.32 |
 | Themes, once over 528 titles | ~0.5k in, ~0.15k out each | ≈ $1.70 | ≈ $0.70 | ≈ $0.35 |
 
-All figures are batch prices, before cache savings. A re-rank runs on 269's **daily** build and on a
+All figures are batch prices, before cache savings. A re-rank runs on 269's **weekly** build and on a
 viewer's first build, not on every finish-triggered rebuild: those keep the AI's last order, filtered and
 topped up by 269 (FR-269-7).
 
@@ -185,12 +185,12 @@ Buildable as written, with two corrections (items 1 and 8). Nine items.
    before release, and the tab shows its date.
 7. **The worst-case estimate (FR-270-6) needs no extra call.** Input is the serialised prompt's
    characters ÷ 3 (conservative for these prompts), and output is `max_tokens` × requests (re-rank
-   4,000, themes 600). It errs high on purpose; the ledger corrects the running total after each batch.
+   8,000, themes 600). It errs high on purpose; the ledger corrects the running total after each batch.
    `count_tokens` stays available if the estimate turns out too loose.
 8. **Correction to acceptance 5.** There is no outbound request log to read. Prove *off* with a test
    instead: with AI off, running both jobs against a mocked Anthropic that fails on any request passes,
    and no `ai_batch` row appears.
-9. **The seam with 269.** `RecommendationService` exposes `shortlist(viewer, 60)` and
+9. **The seam with 269.** `RecommendationService` exposes `shortlist(viewer, 100)` and
    `applyAiOrder(viewer, picks)`. The AI job never scores, filters or stores titles itself; 269 stays
    the only author of a list.
 
