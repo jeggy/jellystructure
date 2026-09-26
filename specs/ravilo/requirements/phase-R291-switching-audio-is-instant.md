@@ -5,7 +5,8 @@
 
 ## Status
 
-`⚠ Partial` — **FR-R291-1 built 2026-09-25** from the dev review below (items 1 and 2); **FR-R291-2/3 not
+`⚠ Partial` — **2026-09-26: mechanism 1 cannot use Jellyfin as the rendition source** (its audio-only job
+never maps the requested track; see *Device measurement, 2026-09-26 afternoon*). **FR-R291-1 built 2026-09-25** from the dev review below (items 1 and 2); **FR-R291-2/3 not
 built**: the mechanism is chosen after FR-R291-3's remaining measurements (the video variant's PTS at the same
 segment index — one 4K software encode — and item 4's `PlaySessionId` question), which need a quiet window on
 the household's Jellyfin and are not this session's to spend. `Planned` when written 2026-09-24 from the
@@ -135,6 +136,40 @@ Spanish/French/Italian/Russian AC3 5.1) — above the set's 54 Mbps (0.9 × 60) 
   The earlier switches that worked may simply have landed while the playhead's segment still existed.
   **Until that is understood the switch stays `false`**: the committed build keeps R284's restream, and the
   stue TV was put back on a build with it off the same morning.
+
+### Device measurement (2026-09-26 afternoon, Pixel 9 debug build) — the renditions were never the picked track
+
+A debuggable build now logs every load the player makes (`DebugLoadLogger`, tag `R291`; bound only when the
+app is debuggable). With the switch on, the same film on the Pixel 9 against prod `v1.39-18-gb41adec5`: the
+start transcoded (4K HEVC → H.264, 3.003 s segments, English TrueHD carried as AAC), `audio renditions=6`.
+
+- **English → Spanish:** BUFFERING 1.59 s (no warm on a touch pick), then READY; Spanish segments ~265 KB each;
+  the video buffer was **kept** (video segment 94 followed 93, no reload). So the "video buffer thrown away,
+  deleted segment re-requested" theory for the stue-TV stall is **not** what happens on a rendition switch.
+- **Spanish → French: the stall, reproduced.** The French segments came back **0 B, 2 444 B, 2 820 B …** —
+  every segment from 91 to 108 in about a second, none with a single audio sample — and the player sat in
+  BUFFERING with its buffered position frozen at the playhead until Back.
+- **The cause is Jellyfin's audio-only job, and it is worse than the stall.** Jellyfin's ffmpeg log for every
+  rendition job — the Spanish and French ones here, and both of the stue TV's this morning — reads:
+
+  ```
+  Stream mapping:
+    Stream #0:1 -> #0:0 (truehd (native) -> aac (libfdk_aac))
+    Stream #0:7 -> #0:1 (subrip (srt) -> webvtt (native))
+  ```
+
+  Stream #0:1 is the **English TrueHD** track, whatever `AudioStreamIndex` asked for; #0:7 is a subtitle
+  stream nobody asked for (the job writes `.vtt` segments beside the audio). The command has no `-map` at all,
+  and Jellyfin's source says why: `var mapArgs = state.IsOutputVideo ? _encodingHelper.GetMapArgs(state) :
+  string.Empty;` (`DynamicHlsController`) — an audio-only request is never mapped, so ffmpeg takes its own
+  default (the audio stream with the most channels, and the first subtitle). **No request parameter changes
+  that.** Every "switch" measured on 2026-09-25/26 therefore played the same English audio; the timings
+  were real, the language never changed. (2026-09-24's cross-correlation *"content yes"* could not tell:
+  dubs share the music-and-effects bed.) The empty French segments fit the stray subtitle stream: with
+  `-copyts` and a sparse subtitle track in the HLS muxer, the job cut ~190 empty segments in 15 s.
+- **So mechanism 1, with Jellyfin as the rendition source, cannot work.** The switch stays `false`. What would
+  work is the spec's own fallback — **jellystructure serves each rendition itself** (its own ffmpeg with
+  `-map 0:<index>`, the video's +10.000 s offset, `-sn`), or mechanism 3 (swap behind the picture).
 
 ## What happens today
 

@@ -116,6 +116,10 @@ actual class RaviloPlayer actual constructor() {
     private fun bindEngine(player: ExoPlayer) {
         player.addListener(videoSizeListener)
         player.addAnalyticsListener(qoeListener)
+        // R291 — a debuggable build logs every load (tag R291); a release build binds nothing extra.
+        if ((ctx.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
+            player.addAnalyticsListener(DebugLoadLogger { player.currentPosition to player.bufferedPosition })
+        }
         player.addListener(cueListener)
         currentSurfaceView?.let { player.setVideoSurfaceView(it) }
         if (RaviloAppContext.isTelevision && mediaSessionRef == null) {

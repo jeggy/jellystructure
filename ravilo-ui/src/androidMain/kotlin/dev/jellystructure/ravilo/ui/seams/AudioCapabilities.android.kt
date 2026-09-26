@@ -25,8 +25,9 @@ actual fun playsHlsForAirPlay(): Boolean = false
 
 /**
  * R291 — Media3 plays a master's EXT-X-MEDIA audio renditions and switches them by track selection, and
- * the whole path is built. **Off until it has been seen on a TV** (owner, 2026-09-25: no devices for now):
- * a release reaches the closed-testing household, and an audio path nobody has played on a set is not
- * something to hand them. Turning this to `true` is the one change the device measurement needs.
+ * the whole path is built. **Off, and must stay off while the renditions come from Jellyfin** (2026-09-26,
+ * Pixel 9 debug build): Jellyfin's `/Audio/{id}/main.m3u8` never maps the requested track — every rendition
+ * job encoded the file's default audio (ffmpeg "Stream mapping: #0:1 -> aac") plus a stray subtitle stream,
+ * so a pick changed nothing audible, and one pick returned empty segments and buffered for ever. See the spec.
  */
 actual fun switchesHlsAudioRenditions(): Boolean = false
