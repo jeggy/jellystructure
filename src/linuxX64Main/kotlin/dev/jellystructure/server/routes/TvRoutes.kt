@@ -1,5 +1,6 @@
 package dev.jellystructure.server.routes
 
+import dev.jellystructure.tv.forClients
 import dev.jellystructure.server.respondCachedBytes
 import io.ktor.server.plugins.origin
 import dev.jellystructure.auth.DeviceKey
@@ -275,6 +276,18 @@ private data class TvDiscoverRequest(
 
 @Serializable
 private data class ChangeRequestLanguageBody(val language: String)
+
+/** Phase 269 (FR-269-9) — one viewer's stored Recommended list as the admin reads it. */
+@Serializable
+private data class RecommendationsView(
+    val builtAt: Long? = null,
+    val source: String? = null,
+    val lastFullBuild: Long? = null,
+    val items: List<RecommendationEntryDto> = emptyList(),
+)
+
+@Serializable
+private data class RecommendationEntryDto(val rank: Int, val title: String, val year: Int? = null, val kind: String, val reason: String)
 
 fun Route.tvRoutes(
     deviceService: RaviloDeviceService,
@@ -592,6 +605,15 @@ fun Route.tvRoutes(
         call.respond(homeFeedService.continueWatchingAll(device, channelId))
     }
 
+    // Phase 269 (FR-269-2/7) — the Recommended row's *See all* (R318): the viewer's still-eligible list,
+    // up to 50, in its own order, as the browse page's cards. `channel=` keeps it to that channel's titles,
+    // as the row on that channel page is. Empty (not an error) before the first build.
+    get("/tv/recommendations") {
+        val device = call.attributes[DeviceKey]
+        val channelId = call.request.queryParameters["channel"]
+        call.respond(browseService.recommendationCards(device, homeFeedService.recommendedItems(device, channelId)))
+    }
+
     // R187 — the "→ See all" browse page's seed resolver: POST (not GET) because the seed is a
     // ConditionGroup tree, not flat query params. Returns the FULL matching set — see
     // BrowseService.browseByQuery's doc comment for why no pagination/narrowed-facets round trip.
@@ -797,7 +819,8 @@ fun Route.tvRoutes(
     // ── Per-user config ──────────────────────────────────────────────────────
     get("/tv/config") {
         val device = call.attributes[DeviceKey]
-        call.respond(raviloConfigService.getConfig(device.jellyfinUserId))
+        // Phase 269 (FR-269-2) — a Recommended row goes out as CUSTOM: installed apps decode RowKind strictly.
+        call.respond(raviloConfigService.getConfig(device.jellyfinUserId).forClients())
     }
 
     // R141: degrade-to-poll fallback — client polls this when the WS is down (or as a safety net).
@@ -1083,6 +1106,51 @@ fun Route.tvRoutes(
         deviceService.deleteAllForUser(userId)
         sessionService.revokeAllForUser(userId)
         call.respond(mapOf("ok" to true))
+    }
+
+    // Phase 269 (FR-269-9) — "Recommended for {name}": the stored list (the newest build), each with its
+    // reason in words. Reads the database only; Rebuild now is the one action.
+    suspend fun recommendationsView(userId: String): RecommendationsView {
+        val service = dev.jellystructure.tv.RecommendationService.current ?: return RecommendationsView()
+        val rows = service.storedFor(userId)
+        val newest = rows.firstOrNull() ?: return RecommendationsView(lastFullBuild = service.lastBuiltAt())
+        val current = rows.filter { it.scope_key == newest.scope_key }.sortedBy { it.rank }
+        suspend fun titleOf(jellyfinId: String?): String? = jellyfinId?.let { mediaStore?.resolveByJellyfinId(it)?.title }
+        return RecommendationsView(
+            builtAt = newest.built_at,
+            source = newest.source,
+            lastFullBuild = service.lastBuiltAt(),
+            items = current.mapNotNull { r ->
+                val item = mediaStore?.resolveByJellyfinId(r.item_id) ?: return@mapNotNull null
+                val reason = when (r.reason_code) {
+                    dev.jellystructure.tv.RecommendationEngine.REASON_WATCHED -> titleOf(r.reason_item_id)?.let { "because you watched $it" } ?: "like what you watch"
+                    dev.jellystructure.tv.RecommendationEngine.REASON_HOUSEHOLD -> "liked in your household"
+                    dev.jellystructure.tv.RecommendationEngine.REASON_RATED -> "highly rated"
+                    else -> "new in the library"
+                }
+                RecommendationEntryDto(r.rank.toInt() + 1, item.title, item.year, item.kind.name, reason)
+            },
+        )
+    }
+
+    get("/tv/admin/users/{userId}/recommendations") {
+        runCatching { call.attributes[SessionKey] }.getOrNull()
+            ?: return@get call.respond(HttpStatusCode.Unauthorized, mapOf("error" to "Not logged in"))
+        val userId = call.parameters["userId"] ?: return@get call.respond(HttpStatusCode.BadRequest)
+        call.respond(recommendationsView(userId))
+    }
+
+    post("/tv/admin/users/{userId}/recommendations/rebuild") {
+        runCatching { call.attributes[SessionKey] }.getOrNull()
+            ?: return@post call.respond(HttpStatusCode.Unauthorized, mapOf("error" to "Not logged in"))
+        val userId = call.parameters["userId"] ?: return@post call.respond(HttpStatusCode.BadRequest)
+        val service = dev.jellystructure.tv.RecommendationService.current
+            ?: return@post call.respond(HttpStatusCode.ServiceUnavailable, mapOf("error" to "Recommendations are not running"))
+        // The viewer's most recently seen device carries their visibility scope and their Jellyfin token.
+        val device = deviceService.allDevices().filter { it.jellyfinUserId == userId }.maxByOrNull { it.lastSeen }
+            ?: return@post call.respond(HttpStatusCode.NotFound, mapOf("error" to "This user has no Ravilo device yet"))
+        if (!service.rebuildViewer(device)) return@post call.respond(HttpStatusCode.BadGateway, mapOf("error" to "Couldn't read this user's history from Jellyfin"))
+        call.respond(recommendationsView(userId))
     }
 
     // Phase 143 (design addendum) — "Recently watched": the one section of the overview that must read

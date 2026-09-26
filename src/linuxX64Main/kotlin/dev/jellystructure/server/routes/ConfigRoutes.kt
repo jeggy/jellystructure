@@ -190,7 +190,7 @@ fun Route.configureConfigRoutes(
         val stored = configStore.current
         // Blank secrets arrive as the "##KEEP##" sentinel — preserve the stored value rather than wipe it.
         // Phase 261 — the file-check seed marker is server-owned; the Settings model does not carry it.
-        var config = received.copy(scan = received.scan.copy(fileCheckStepsSeeded = stored.scan.fileCheckStepsSeeded))
+        var config = received.copy(scan = received.scan.copy(fileCheckStepsSeeded = stored.scan.fileCheckStepsSeeded, recommendationsStepSeeded = stored.scan.recommendationsStepSeeded))
         if (received.apiKeys.jellyfinToken == "##KEEP##") {
             config = config.copy(apiKeys = config.apiKeys.copy(jellyfinToken = stored.apiKeys.jellyfinToken))
         }

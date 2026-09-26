@@ -254,6 +254,12 @@ fun main() = runBlocking {
     val clearlogoInk = dev.jellystructure.media.ClearlogoInk(rootScope, dataDir)
     detailService.clearlogoInk = clearlogoInk
     homeFeedService.clearlogoInk = clearlogoInk
+    // Phase 269 — each viewer's Recommended list: built in the background, read by the Home row.
+    val recommendationService = dev.jellystructure.tv.RecommendationService(db, mediaStore, jellyfinClient, configStore, raviloDeviceService)
+    homeFeedService.recommendations = recommendationService
+    dev.jellystructure.tv.PlaystateCache.onNewlyPlayed = { device -> recommendationService.markStale(device) }
+    dev.jellystructure.tv.RecommendationService.current = recommendationService
+    recommendationService.start(rootScope)
     rootScope.launch(dev.jellystructure.ops.GateClass.BACKGROUND) { runCatching { clearlogoInk.warm(mediaStore.allItems()) } }
     val playbackQoeStore = dev.jellystructure.tv.PlaybackQoeStore(db)
     val playbackService = PlaybackService(mediaStore, jellyfinClient, configStore, playbackQoeStore, playbackStartSampleStore, raviloDeviceService, castService, writerScope = rootScope)

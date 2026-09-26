@@ -1096,6 +1096,10 @@ private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx
     val newlyShow = chSys.newly.show; val newlyMerge = chSys.newly.merge
     val rowsCustomItems = c.rows?.items ?: emptyList()
     val chRowsListHtml = rowsCustomItems.mapIndexed { i, r ->
+        if (r.kind == RowKind.RECOMMENDED) {
+            val name = r.title?.takeIf { it.isNotBlank() } ?: defaultRowTitle(r.kind)
+            return@mapIndexed """<div class="cfg-row" style="margin-bottom:6px"><span class="badge ok" style="flex:none;font-size:.65rem">for you</span><div style="flex:1;min-width:0"><input class="input" style="width:100%;max-width:220px;font-size:.84rem;padding:3px 8px;height:auto" placeholder="Row title" value="${name.htmlEsc()}" data-row-ch-title="$i"><div class="src" style="margin-top:3px">${recommendedRowSource(r, "data-row-ch-limit=\"$i\"")} &middot; only this collection's titles</div></div><button class="btn sm ghost" data-row-ch-del="$i" style="color:var(--bad)">&#x2715;</button></div>"""
+        }
         val eq = r.effectiveQuery()
         val condSrc = if (eq.isLive()) groupSummary(eq.toWbGroup(), top = true) else "No filter — shows all media"
         val name = r.title?.takeIf { it.isNotBlank() } ?: "Custom row"
@@ -1247,6 +1251,7 @@ private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx
             <div style="font-size:.7rem;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-soft);margin-bottom:8px">Filter rows</div>
             <div id="ch-rows-list" style="margin-bottom:8px">$chRowsListHtml</div>
             <button id="ch-rows-add" class="btn sm ghost">+ Add row</button>
+            ${if (rowsCustomItems.none { it.kind == RowKind.RECOMMENDED }) """<button id="ch-rows-add-rec" class="btn sm ghost">+ Recommended for you</button>""" else ""}
             <!-- R87: row-coverage gap panel (filled async by renderCoverage) -->
             <div id="ch-rows-coverage" style="margin-top:14px"></div>
           </div>
@@ -1546,6 +1551,16 @@ private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx
     // so results are pre-scoped to the channel filter (and rendered read-only, not just narrowed).
     fun chBaseQuery(): ConditionGroup? = currentConfig.channels.getOrNull(idx)?.editorQuery()?.takeIf { it.isLive() }
 
+    // Phase 269 — a collection's own Recommended row: the viewer's list, kept to this collection's titles.
+    container.querySelector("#ch-rows-add-rec")?.addEventListener("click") { _ ->
+        val list = currentConfig.channels.toMutableList()
+        val cur = list[idx]
+        val existing = cur.rows ?: ChannelRowsConfig(mode = "custom")
+        val newRow = RowConfig(id = genId("row"), kind = RowKind.RECOMMENDED, title = defaultRowTitle(RowKind.RECOMMENDED), limit = RECOMMENDED_DEFAULT_SHOWN)
+        list[idx] = cur.copy(rows = existing.copy(mode = "custom", items = existing.items + newRow))
+        currentConfig = currentConfig.copy(channels = list)
+        reRenderChannelRows()
+    }
     // R59/R60: "Add row" for channel custom rows
     container.querySelector("#ch-rows-add")?.addEventListener("click") { _ ->
         openWorkbench(scope, "New row — ${c.name.ifBlank { "Collection" }}", viewer = currentUserId,
@@ -1604,6 +1619,16 @@ private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx
             val cur = list[idx]
             val items = cur.rows?.items?.toMutableList() ?: return@addEventListener
             items[ri] = items[ri].copy(title = input.value.ifBlank { null })
+            list[idx] = cur.copy(rows = cur.rows!!.copy(items = items))
+            currentConfig = currentConfig.copy(channels = list)
+        }
+        // Phase 269 — a Recommended row's shown count.
+        container.querySelector("[data-row-ch-limit='$ri']")?.addEventListener("change") { _ ->
+            val sel = container.querySelector("[data-row-ch-limit='$ri']") as? HTMLSelectElement ?: return@addEventListener
+            val list = currentConfig.channels.toMutableList()
+            val cur = list[idx]
+            val items = cur.rows?.items?.toMutableList() ?: return@addEventListener
+            items[ri] = items[ri].copy(limit = sel.value.toIntOrNull())
             list[idx] = cur.copy(rows = cur.rows!!.copy(items = items))
             currentConfig = currentConfig.copy(channels = list)
         }
@@ -1821,6 +1846,17 @@ private fun renderFilterSummary(container: Element, channelIdx: Int) {
 
 private fun RowKind.isSystem() = this == RowKind.CONTINUE || this == RowKind.NEWLY_ADDED
 
+/** Phase 269 (FR-269-1) — the Recommended row's default size; the stored list is 50, *See all* shows them. */
+private const val RECOMMENDED_DEFAULT_SHOWN = 20
+private val RECOMMENDED_SHOWN_OPTIONS = listOf(10, 15, 20, 25, 30)
+
+/** Phase 269 — the row's one line: what it is, how many it shows, and why it has no filter or order. */
+private fun recommendedRowSource(r: RowConfig, limitAttr: String): String {
+    val shown = r.limit ?: RECOMMENDED_DEFAULT_SHOWN
+    val opts = RECOMMENDED_SHOWN_OPTIONS.joinToString("") { n -> """<option value="$n"${if (n == shown) " selected" else ""}>$n</option>""" }
+    return """Each viewer's own list, rebuilt in the background &middot; shows <select $limitAttr style="font-size:.78rem;padding:0 4px">$opts</select> of 50 (<i>See all</i> shows the rest) &middot; no filter or order: the list <i>is</i> the order"""
+}
+
 private fun systemRowSource(r: RowConfig): String = when (r.kind) {
     RowKind.CONTINUE -> "Continue + Next Up, merged"
     RowKind.NEWLY_ADDED -> when (r.mediaKind) {
@@ -1897,6 +1933,9 @@ private fun renderRows(container: Element) {
             val srcLine = systemRowSource(r)
             val name = r.title?.takeIf { it.isNotBlank() } ?: defaultRowTitle(r.kind, r.mediaKind)
             """<div class="cfg-row" draggable="true" data-row-i="$i" style="${rowOpacity}transition:opacity .2s"><span class="grab" style="cursor:grab;user-select:none;flex-shrink:0">&#x2807;</span><span class="badge ok" style="flex:none;font-size:.65rem">system</span><div style="flex:1;min-width:0"><div class="nm">${name.htmlEsc()}</div>${if (srcLine.isNotEmpty()) """<div class="src">${srcLine.htmlEsc()}</div>""" else ""}</div>$toggleHtml</div>"""
+        } else if (r.kind == RowKind.RECOMMENDED) {
+            val name = r.title?.takeIf { it.isNotBlank() } ?: defaultRowTitle(r.kind)
+            """<div class="cfg-row" draggable="true" data-row-i="$i" style="${rowOpacity}transition:opacity .2s"><span class="grab" style="cursor:grab;user-select:none;flex-shrink:0">&#x2807;</span><span class="badge ok" style="flex:none;font-size:.65rem">for you</span><div style="flex:1;min-width:0"><input class="input" style="width:100%;max-width:200px;font-size:.84rem;padding:3px 8px;height:auto" placeholder="Row title" value="${name.htmlEsc()}" data-row-title="$i"><div class="src" style="margin-top:3px">${recommendedRowSource(r, "data-row-limit=\"$i\"")}</div></div>$toggleHtml<button class="btn sm ghost" data-row-del="$i" style="color:var(--bad)">&#x2715;</button></div>"""
         } else {
             val badgeLabel = if (r.kind == RowKind.GENRE) "genre" else "filter"
             val eq = r.effectiveQuery()
@@ -1921,6 +1960,7 @@ private fun renderRows(container: Element) {
           </div>
           <div id="row-list">$rows</div>
           <button id="row-add" class="btn sm ghost" style="margin-top:6px">+ Add row</button>
+          ${if (currentConfig.rows.none { it.kind == RowKind.RECOMMENDED }) """<button id="row-add-rec" class="btn sm ghost" style="margin-top:6px" title="Each viewer's own list, built in the background from what they watch">+ Recommended for you</button>""" else ""}
           ${if (liveTvHomeAvailable) """
           <label style="display:flex;align-items:center;gap:10px;font-size:.85rem;margin-top:14px;padding-top:14px;border-top:1px solid var(--line)">
             <input type="checkbox" id="livetv-home-collection"${if (placement.showCollection) " checked" else ""}>
@@ -1945,6 +1985,13 @@ private fun renderRows(container: Element) {
     sect.querySelector("#merge-newly-added")?.addEventListener("change") { _ ->
         val checked = (sect.querySelector("#merge-newly-added") as? HTMLInputElement)?.checked ?: false
         structural(container, { currentConfig = currentConfig.copy(mergeNewlyAdded = checked) }, ::renderRows)
+    }
+    // Phase 269 (FR-269-1) — the Recommended row: no workbench, it takes no conditions, sort or hand-picks.
+    sect.querySelector("#row-add-rec")?.addEventListener("click") { _ ->
+        structural(container, {
+            currentConfig = currentConfig.copy(rows = currentConfig.rows +
+                RowConfig(id = genId("row"), kind = RowKind.RECOMMENDED, title = defaultRowTitle(RowKind.RECOMMENDED), limit = RECOMMENDED_DEFAULT_SHOWN))
+        }, ::renderRows)
     }
     sect.querySelector("#row-add")?.addEventListener("click") { _ ->
         val scope = rcScope ?: return@addEventListener
@@ -2663,6 +2710,7 @@ private fun defaultRowTitle(kind: RowKind, mediaKind: String? = null) = when (ki
     }
     RowKind.GENRE       -> "Genre"
     RowKind.CUSTOM      -> "Custom"
+    RowKind.RECOMMENDED -> "Recommended for you"
 }
 
 private fun previewRowTitles(cfg: RaviloConfig): List<String> {
@@ -2770,7 +2818,8 @@ private fun collectConfig(container: Element) {
                 val titleEl = q("data-row-title") as? HTMLInputElement
                 val title   = if (titleEl != null) titleEl.value.trim().ifEmpty { null } else existing.title
                 val enabled = (q("data-row-enabled") as? HTMLInputElement)?.checked ?: existing.enabled
-                existing.copy(title = title, enabled = enabled)
+                val limit = (q("data-row-limit") as? HTMLSelectElement)?.value?.toIntOrNull() ?: existing.limit  // Phase 269
+                existing.copy(title = title, enabled = enabled, limit = limit)
             }
         }
     }.mapIndexed { j, r -> r.copy(order = j) }

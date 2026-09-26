@@ -410,6 +410,43 @@ data class TmdbMovieKeywordsResponse(val keywords: List<TmdbKeyword> = emptyList
 @Serializable
 data class TmdbTvKeywordsResponse(val results: List<TmdbKeyword> = emptyList())
 
+/** Phase 269 (FR-269-3) — the recommendation signals, from one details request with
+ *  `append_to_response=keywords,recommendations` (no language: none of it depends on one). A film's
+ *  keywords arrive as `keywords.keywords`, a series' as `keywords.results`. */
+@Serializable
+data class TmdbSignalsResponse(
+    @SerialName("vote_count") val voteCount: Int? = null,
+    @SerialName("vote_average") val voteAverage: Double? = null,
+    @SerialName("belongs_to_collection") val collection: TmdbCollectionRef? = null,
+    val keywords: TmdbKeywordsBlock? = null,
+    val recommendations: TmdbRecommendationPage? = null,
+)
+
+@Serializable
+data class TmdbCollectionRef(val id: Int, val name: String = "")
+
+@Serializable
+data class TmdbKeywordsBlock(val keywords: List<TmdbKeyword> = emptyList(), val results: List<TmdbKeyword> = emptyList())
+
+@Serializable
+data class TmdbRecommendationPage(
+    val results: List<TmdbIdOnly> = emptyList(),
+    @SerialName("total_pages") val totalPages: Int = 0,
+)
+
+@Serializable
+data class TmdbIdOnly(val id: Int)
+
+/** Phase 269 — what [TmdbClient.getRecommendationSignals] returns. */
+data class TmdbSignals(
+    val keywords: List<TmdbKeyword>,
+    val recommendations: List<Int>,
+    val collectionId: Int?,
+    val collectionName: String?,
+    val voteCount: Int?,
+    val voteAverage: Double?,
+)
+
 @Serializable
 data class TmdbExternalIds(
     @SerialName("tvdb_id") val tvdbId: Int? = null,
@@ -471,6 +508,9 @@ data class TmdbContentRatingEntry(
 
 @Serializable
 data class TmdbContentRatingsResponse(val results: List<TmdbContentRatingEntry> = emptyList())
+
+/** Phase 269 (FR-269-3) — TMDB recommendation pages kept per title (20 each; owner: "the more the better"). */
+const val RECOMMENDATION_PAGES = 3
 
 class TmdbClient(
     private val configStore: ConfigStore,
@@ -1071,6 +1111,48 @@ class TmdbClient(
     suspend fun getTvImages(tmdbId: Int): TmdbImagesResponse? = getImages("tv/$tmdbId")
 
     // --- TMDB keywords → non-JS tags. Not language-localized; returns canonical names. ---
+    /**
+     * Phase 269 (FR-269-3) — keywords, TMDB's recommendations (pages 1–3), collection and vote count for
+     * one title. Page 1 and everything else ride one details request (`append_to_response`); pages 2 and 3
+     * are one request each, only when TMDB has them. This replaces the keywords request the re-pull paths
+     * already made for tags, so the cost over before is the two extra pages. Null when the first request
+     * fails, so a caller keeps what it had rather than storing "TMDB has none".
+     */
+    suspend fun getRecommendationSignals(tmdbId: Int, isMovie: Boolean): TmdbSignals? {
+        val key = apiKey()
+        if (key.isBlank()) return null
+        val kind = if (isMovie) "movie" else "tv"
+        val first = runCatching {
+            val response = httpGet("$baseUrl/$kind/$tmdbId") {
+                parameter("api_key", key)
+                parameter("append_to_response", "keywords,recommendations")
+            }
+            if (response.status != HttpStatusCode.OK) return null
+            response.body<TmdbSignalsResponse>()
+        }.onFailure { Logger.warn("TMDB signals failed for $kind id=$tmdbId: ${it.message}", "tmdb") }.getOrNull() ?: return null
+        val recs = first.recommendations?.results?.map { it.id }.orEmpty().toMutableList()
+        val pages = (first.recommendations?.totalPages ?: 0).coerceAtMost(RECOMMENDATION_PAGES)
+        for (page in 2..pages) {
+            val more = runCatching {
+                val response = httpGet("$baseUrl/$kind/$tmdbId/recommendations") {
+                    parameter("api_key", key)
+                    parameter("page", page)
+                }
+                if (response.status != HttpStatusCode.OK) null else response.body<TmdbRecommendationPage>().results.map { it.id }
+            }.getOrNull() ?: break
+            recs += more
+        }
+        val keywords = first.keywords?.let { it.keywords.ifEmpty { it.results } }.orEmpty()
+        return TmdbSignals(
+            keywords = keywords,
+            recommendations = recs.distinct().filter { it != tmdbId },
+            collectionId = first.collection?.id,
+            collectionName = first.collection?.name?.takeIf { it.isNotBlank() },
+            voteCount = first.voteCount,
+            voteAverage = first.voteAverage,
+        )
+    }
+
     suspend fun getMovieKeywords(tmdbId: Int): List<String> {
         val key = apiKey()
         if (key.isBlank()) return emptyList()

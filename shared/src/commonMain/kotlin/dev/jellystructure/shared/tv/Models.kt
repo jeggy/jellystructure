@@ -7,7 +7,10 @@ import kotlinx.serialization.json.JsonObject
 // ─── Enums ────────────────────────────────────────────────────────────────────
 
 enum class MediaKind { MOVIE, SERIES, MUSIC_VIDEO }
-enum class RowKind { CONTINUE, NEWLY_ADDED, GENRE, CUSTOM }
+/** Phase 269 — [RECOMMENDED] is configured in the admin but NEVER sent to an app as such: the server
+ *  sends that row as [CUSTOM] with [Row.recommendations] (installed apps decode this enum strictly, and a
+ *  value they do not know would fail Home and Settings). Only the admin's own config route carries it. */
+enum class RowKind { CONTINUE, NEWLY_ADDED, GENRE, CUSTOM, RECOMMENDED }
 enum class ChannelStyle { LOGO, TEXT }
 enum class TileShape { POSTER, LANDSCAPE, SQUARE }
 enum class Skin { AURORA, MIDNIGHT, NOIR }
@@ -440,6 +443,10 @@ data class Row(
      *  a row is actually truncated (ROW_ITEM_LIMIT), which is exactly when a See-all count needs to be
      *  right. Null alongside a null [seedQuery]/[seedMediaKind] (nothing to count beyond [items]). */
     val seedTotalCount: Int? = null,
+    /** Phase 269 (FR-269-2) — this row is the viewer's *Recommended* row, sent as [RowKind.CUSTOM] with no
+     *  seed so an installed app draws it as a plain row. An app with R318 opens its *See all* from
+     *  `GET /api/tv/recommendations` (with `channel=` when the row is on a channel page). */
+    val recommendations: Boolean = false,
 )
 
 @Serializable

@@ -1769,6 +1769,7 @@ private fun buildToml(c: AppConfig): String = buildString {
         if (step.step == "write_nfo") appendLine("overwrite = ${step.overwrite}")
         if (step.step == "notify") appendLine("on = \"${step.on}\"")
         if (step.step == "wait") appendLine("minutes = ${step.minutes}")
+        if (step.step == "build_recommendations") appendLine("rebuild_every = \"${step.rebuildEvery}\"")  // Phase 269
     }
     if (c.behavior.notificationsWebhook.isNotBlank()) {
         appendLine()
@@ -2613,6 +2614,7 @@ private const val PIPE_IMDB_IC = """<svg viewBox="0 0 16 16" fill="none" stroke=
 private const val PIPE_SEG_IC  = """<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3.2v9.6l6-4.8Z"/><line x1="11" y1="3.2" x2="11" y2="12.8"/><line x1="13.4" y1="3.2" x2="13.4" y2="12.8"/></svg>"""
 private const val PIPE_VERIFY_IC = """<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1.8 13.4 4v4c0 3.2-2.3 5.4-5.4 6.3C4.9 13.4 2.6 11.2 2.6 8V4Z"/><polyline points="5.4,8.2 7.3,10 10.8,6.4"/></svg>"""
 private const val PIPE_LENGTHS_IC = """<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><line x1="2" y1="4.6" x2="14" y2="4.6"/><line x1="2" y1="8" x2="9.6" y2="8"/><line x1="2" y1="11.4" x2="14" y2="11.4"/><line x1="12" y1="6.6" x2="12" y2="9.4"/></svg>"""
+private const val PIPE_REC_IC  = """<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 13.6s-5.4-3.2-5.4-7A2.9 2.9 0 0 1 8 5a2.9 2.9 0 0 1 5.4 1.6c0 3.8-5.4 7-5.4 7Z"/></svg>"""
 private const val PIPE_SUB_IC  = """<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="1.6" y="3.6" width="12.8" height="8.8" rx="1.6"/><line x1="4" y1="7" x2="7" y2="7"/><line x1="4" y1="9.4" x2="9.4" y2="9.4"/><line x1="9" y1="7" x2="12" y2="7"/></svg>"""
 
 private val PIPE_BLOCKS = mapOf(
@@ -2629,12 +2631,14 @@ private val PIPE_BLOCKS = mapOf(
     // Phase 261 (FR-261-4) — the two file checks, one queue job per due file.
     "verify_files"  to PipeBlockDef("Verify video files",        "Read each file end to end for damage a player would hit mid-film (phase 254).", "#5fbf6a", PIPE_VERIFY_IC),
     "check_track_lengths" to PipeBlockDef("Check track lengths", "Find audio/video tracks that stop before the file does (phase 255).",           "#8fa8e8", PIPE_LENGTHS_IC),
+    // Phase 269 (FR-269-8) — a whole-library step: every viewer's Recommended list, on its own cadence.
+    "build_recommendations" to PipeBlockDef("Build recommendations", "Each viewer's Recommended list, from what they watch in Jellyfin (phase 269).", "#e86f9a", PIPE_REC_IC),
     "notify"        to PipeBlockDef("Send notification",         "Ping your webhook when the run reaches here.",          "#e0639a", PIPE_NOTIFY_IC),
     "wait"          to PipeBlockDef("Wait",                      "Pause before the next step (let Jellyfin settle).",     "#9aa0b4", PIPE_WAIT_IC),
 )
-private val PIPE_PALETTE = listOf("pull_tmdb","fetch_artwork","detect_segments","write_nfo","sync_jellyfin","rescan_arr","detect_drift","sync_imdb_ratings","prewarm_subtitles","verify_files","check_track_lengths","wait","notify")
+private val PIPE_PALETTE = listOf("pull_tmdb","fetch_artwork","detect_segments","write_nfo","sync_jellyfin","rescan_arr","detect_drift","sync_imdb_ratings","prewarm_subtitles","verify_files","check_track_lengths","build_recommendations","wait","notify")
 private val FILE_CHECK_STEPS = setOf("verify_files", "check_track_lengths")
-private val PIPE_SHORT   = mapOf("scan_files" to "Scan","pull_tmdb" to "TMDB","fetch_artwork" to "Artwork","detect_segments" to "Segments","write_nfo" to "NFO","sync_jellyfin" to "Jellyfin","rescan_arr" to "*arr","detect_drift" to "Drift","sync_imdb_ratings" to "IMDb","prewarm_subtitles" to "Subtitles","verify_files" to "Verify","check_track_lengths" to "Lengths","notify" to "Notify","wait" to "Wait")
+private val PIPE_SHORT   = mapOf("scan_files" to "Scan","pull_tmdb" to "TMDB","fetch_artwork" to "Artwork","detect_segments" to "Segments","write_nfo" to "NFO","sync_jellyfin" to "Jellyfin","rescan_arr" to "*arr","detect_drift" to "Drift","sync_imdb_ratings" to "IMDb","prewarm_subtitles" to "Subtitles","verify_files" to "Verify","check_track_lengths" to "Lengths","build_recommendations" to "For you","notify" to "Notify","wait" to "Wait")
 // Phase 261 (FR-261-5) — 2years/5years exist for every step; the file checks default to them.
 private val CAD_VALS     = listOf("daily","weekly","monthly","6months","yearly","2years","5years","never")
 private val CAD_LABELS   = listOf("every day","every week","every month","every 6 months","every year","every 2 years","every 5 years","never")
@@ -2960,6 +2964,7 @@ private fun pipeStepEl(step: PipelineStep, idx: Int): Element {
         "write_nfo"                       -> opts.appendChild(pipeOverwriteEl(step, idx))
         "notify"                          -> opts.appendChild(pipeNotifyEl(step, idx))
         "wait"                            -> opts.appendChild(pipeWaitEl(step, idx))
+        "build_recommendations"           -> opts.appendChild(pipeRebuildEveryEl(step, idx))
     }
     body.appendChild(row1); body.appendChild(sub)
     if (opts.childNodes.length > 0) body.appendChild(opts)
@@ -3158,6 +3163,19 @@ private fun pipeNotifyEl(step: PipelineStep, idx: Int): Element {
         if (step.on == v) s.classList.add("on")
         val capturedV = v
         s.addEventListener("click") { pipelineSteps[idx] = pipelineSteps[idx].copy(on = capturedV); renderPipeline() }
+        el.appendChild(s)
+    }
+    return el
+}
+
+/** Phase 269 — how often `build_recommendations` really rebuilds; a run in between reports "not due". A
+ *  viewer who finishes something is rebuilt within minutes regardless. */
+private fun pipeRebuildEveryEl(step: PipelineStep, idx: Int): Element {
+    val el = document.createElement("span") as HTMLElement; el.className = "opt-seg"
+    listOf("weekly" to "Every week", "daily" to "Every day").forEach { (v, label) ->
+        val s = document.createElement("span"); s.textContent = label
+        if (step.rebuildEvery == v) s.classList.add("on")
+        s.addEventListener("click") { pipelineSteps[idx] = pipelineSteps[idx].copy(rebuildEvery = v); renderPipeline() }
         el.appendChild(s)
     }
     return el

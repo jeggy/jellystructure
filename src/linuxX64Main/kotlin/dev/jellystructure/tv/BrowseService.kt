@@ -85,7 +85,6 @@ class BrowseService(
         val cfg = raviloConfigService.getConfig(device.jellyfinUserId)
         val heroIds = cfg.heroes.map { it.itemId }.toSet()
         val cascade = configStore.current.metadata.ageRatingCascade
-        val channels = cfg.channels.filter { it.enabled }
 
         val all = allDeferred.await()
         val kindFiltered = when (mediaKind) {
@@ -105,12 +104,24 @@ class BrowseService(
             else kindFiltered.filter { ConditionEvaluator.matches(it, query, heroIds, cascade) })
             .sortedByDescending { it.recencyKey() }
 
+        SeededBrowseResponse(items = browseCards(device, matched, cfg), total = matched.size)
+    }
+
+    /** Phase 269 (FR-269-2/7) — the Recommended row's *See all*: [items] (already the viewer's
+     *  still-eligible list, in its order) as browse cards, never re-sorted. */
+    fun recommendationCards(device: DeviceData, items: List<MediaItem>): SeededBrowseResponse =
+        SeededBrowseResponse(items = browseCards(device, items, raviloConfigService.getConfig(device.jellyfinUserId)), total = items.size)
+
+    private fun browseCards(device: DeviceData, matched: List<MediaItem>, cfg: dev.jellystructure.shared.tv.RaviloConfig): List<BrowseCard> {
+        val heroIds = cfg.heroes.map { it.itemId }.toSet()
+        val cascade = configStore.current.metadata.ageRatingCascade
+        val channels = cfg.channels.filter { it.enabled }
         val ps = PlaystateCache.get(device.jellyfinUserId)
         // Phase 271 (FR-271-3/5) — the viewer's app language, without the title step: the browse page
         // counts and filters genres across these cards itself, so one genre must read the same on each.
         val lang = cfg.uiLanguage
 
-        val items = matched.map { item ->
+        return matched.map { item ->
             BrowseCard(
                 card = item.toMediaCard(lang).withPlaystate(ps),
                 genres = GenreCatalog.displayNames(item, lang, withTitle = false),
@@ -122,7 +133,6 @@ class BrowseService(
                 sortName = item.sortName,   // R253 (FR-R253-3)
             )
         }
-        SeededBrowseResponse(items = items, total = items.size)
     }
 
     /** R187 (Quality facet) — the best (largest, since a scan only probes one file per episode/movie

@@ -210,6 +210,33 @@ private suspend fun loadUserHistory(userId: String, reset: Boolean) {
     moreBtn?.style?.display = if (page.hasMore) "inline-block" else "none"
 }
 
+/** Phase 269 (FR-269-9) — one viewer's list: when it was built and by what, then each title with its
+ *  reason in words, and *Rebuild now*. */
+private suspend fun loadRecommendations(scope: CoroutineScope, userId: String, rebuild: Boolean) {
+    val bodyEl = document.getElementById("recs-body-$userId") as? HTMLElement ?: return
+    val result = runCatching {
+        if (rebuild) dev.jellystructure.api.RaviloApi.rebuildRecommendations(userId)
+        else dev.jellystructure.api.RaviloApi.getRecommendations(userId)
+    }
+    val view = result.getOrNull()
+    if (view == null) {
+        val msg = result.exceptionOrNull()?.message ?: "Couldn't load recommendations."
+        bodyEl.innerHTML = """<span class="tiny" style="color:var(--bad)">${msg.esc()}</span> <button class="btn sm ghost users-recs-rebuild" data-user="$userId">Rebuild now</button>"""
+    } else {
+        val head = if (view.builtAt == null) "Not built yet — a first visit shows the household's starter list."
+            else "Built ${formatHistoryTs(view.builtAt)} · ${if (view.source == "ai") "re-ranked by AI" else "standard"} · ${view.items.size} titles"
+        val rows = view.items.joinToString("") { e ->
+            val year = e.year?.let { " ($it)" } ?: ""
+            """<div class="tiny" style="padding:4px 0;border-top:1px solid var(--line)"><span class="muted">${e.rank}.</span> <b>${e.title.esc()}</b>$year · <span class="muted">${e.reason.esc()}</span></div>"""
+        }
+        bodyEl.innerHTML = """<div class="row center tiny" style="gap:8px;margin-bottom:4px"><span class="muted">${head.esc()}</span><span class="spacer"></span><button class="btn sm ghost users-recs-rebuild" data-user="$userId">Rebuild now</button></div>$rows"""
+    }
+    (bodyEl.querySelector(".users-recs-rebuild") as? HTMLElement)?.addEventListener("click") {
+        bodyEl.innerHTML = """<span class="tiny muted">Rebuilding…</span>"""
+        scope.launch { loadRecommendations(scope, userId, rebuild = true) }
+    }
+}
+
 private suspend fun refreshUsersList(scope: CoroutineScope) {
     val listEl = document.getElementById("users-list") as? HTMLElement ?: return
     val users = runCatching { dev.jellystructure.api.RaviloApi.getOverview() }.getOrNull()
@@ -306,6 +333,10 @@ private suspend fun refreshUsersList(scope: CoroutineScope) {
                <button id="history-more-${u.userId}" class="btn sm ghost users-history-more" data-user="${u.userId}" style="display:none;margin-top:6px">Show more</button>
                <div id="history-footer-${u.userId}" class="tiny muted" style="display:none;margin-top:6px">Full history lives in Jellyfin.</div>
              </div>
+             <div style="margin-top:8px">
+               <button class="tiny users-recs-toggle" data-user="${u.userId}" data-name="${u.username.esc()}" style="background:none;border:none;color:var(--acc-ink);cursor:pointer;padding:0">Recommended for ${u.username.esc()} ▾</button>
+               <div id="recs-body-${u.userId}" style="display:none;margin-top:6px"></div>
+             </div>
            </div>"""
     }
 
@@ -387,6 +418,25 @@ private suspend fun refreshUsersList(scope: CoroutineScope) {
                     bodyEl.style.display = "none"
                     footerEl?.style?.display = "none"
                     btn.textContent = "Recently watched ▾"
+                }
+            }
+        }
+    }
+    // Phase 269 (FR-269-9) — "Recommended for {name}": lazy like the history, one user at a time. Reads
+    // the stored list (the database, never Jellyfin); *Rebuild now* is the one action.
+    listEl.querySelectorAll(".users-recs-toggle").let { nodes ->
+        for (i in 0 until nodes.length) {
+            val btn = nodes.item(i) as? HTMLElement ?: continue
+            btn.addEventListener("click") {
+                val userId = btn.getAttribute("data-user") ?: return@addEventListener
+                val name = btn.getAttribute("data-name") ?: ""
+                val bodyEl = document.getElementById("recs-body-$userId") as? HTMLElement ?: return@addEventListener
+                val open = bodyEl.style.display == "none"
+                bodyEl.style.display = if (open) "block" else "none"
+                btn.innerHTML = "Recommended for $name ${if (open) "▴" else "▾"}"
+                if (open && bodyEl.innerHTML.isBlank()) {
+                    bodyEl.innerHTML = """<span class="tiny muted">Loading…</span>"""
+                    scope.launch { loadRecommendations(scope, userId, rebuild = false) }
                 }
             }
         }

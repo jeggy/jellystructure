@@ -334,7 +334,28 @@ data class MediaItem(
     /** Phase 184: epoch seconds [metadataLanguage] was last set — null whenever the field itself is
      *  null. Powers the admin card's "chosen 3 days ago" band; carried forward by the same guard. */
     val metadataLanguageSetAt: Long? = null,
+    /** Phase 269 (FR-269-3) — TMDB's keywords (themes: *heist*, *time travel*), id and name. `null` =
+     *  never fetched (the backfill trigger, dev review item 3); empty = TMDB has none. */
+    val keywords: List<Keyword>? = null,
+    /** Phase 269 (FR-269-3) — TMDB's own recommendations for this title, pages 1–3 in TMDB's order, as
+     *  TMDB ids of the same kind. `null` = never fetched. */
+    val tmdbRecommendations: List<Int>? = null,
+    /** Phase 269 — a film's franchise (TMDB `belongs_to_collection`). */
+    val collectionId: Int? = null,
+    val collectionName: String? = null,
+    /** Phase 269 — TMDB's own vote count and average, for the quality prior where IMDb has no rating. */
+    val tmdbVoteCount: Int? = null,
+    val tmdbVoteAverage: Double? = null,
 )
+
+/** Phase 269 (dev review item 3) — a matched film or series whose recommendation signals were never
+ *  fetched: `pull_tmdb`'s "missing" scope treats it as missing for one pass. Music videos have none. */
+fun MediaItem.needsRecommendationSignals(): Boolean =
+    tmdbId != null && keywords == null && kind != MediaKind.MUSIC_VIDEO
+
+/** Phase 269 — one TMDB keyword. */
+@Serializable
+data class Keyword(val id: Int, val name: String)
 
 /** Phase 108: the sort key every "recently added" surface uses (Ravilo's Newly Added, Browse default,
  *  the admin Library default sort, related-by-genre). Movies sort by their own createdAt; a series

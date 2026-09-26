@@ -282,4 +282,27 @@ object RaviloApi {
     suspend fun getHistory(userId: String, offset: Int = 0): WatchHistoryPage =
         httpClient.get("/api/tv/admin/users/$userId/history") { parameter("offset", offset) }.body()
 
+    /** Phase 269 (FR-269-9) — one viewer's stored Recommended list, with reasons. */
+    suspend fun getRecommendations(userId: String): RecommendationsView =
+        httpClient.get("/api/tv/admin/users/$userId/recommendations").body()
+
+    /** Phase 269 — rebuild one viewer's list now; answers the rebuilt list. Throws on a non-2xx. */
+    suspend fun rebuildRecommendations(userId: String): RecommendationsView {
+        val r = httpClient.post("/api/tv/admin/users/$userId/recommendations/rebuild")
+        if (!r.status.isSuccess()) error(runCatching { r.body<Map<String, String>>()["error"] }.getOrNull() ?: "HTTP ${r.status.value}")
+        return r.body()
+    }
+
 }
+
+/** Phase 269 (FR-269-9) — mirrors the server's view of one viewer's stored list. */
+@kotlinx.serialization.Serializable
+data class RecommendationsView(
+    val builtAt: Long? = null,
+    val source: String? = null,
+    val lastFullBuild: Long? = null,
+    val items: List<RecommendationEntryDto> = emptyList(),
+)
+
+@kotlinx.serialization.Serializable
+data class RecommendationEntryDto(val rank: Int, val title: String, val year: Int? = null, val kind: String = "", val reason: String = "")

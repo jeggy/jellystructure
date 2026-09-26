@@ -206,6 +206,8 @@ data class JellyfinUserData(
     // response (bulk playstate + item detail) but was never modeled, so the detail screens' "+ My
     // List" button had no state to read and was never wired to write it either.
     @SerialName("IsFavorite") val isFavorite: Boolean = false,
+    /** Phase 269 (FR-269-4) — how many times this viewer played it; > 1 is a rewatch. */
+    @SerialName("PlayCount") val playCount: Int = 0,
 )
 
 @Serializable

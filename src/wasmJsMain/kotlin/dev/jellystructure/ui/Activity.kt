@@ -1240,6 +1240,7 @@ private fun stepLabel(step: String): String = when (step) {
     "pull_tmdb" -> "TMDB"
     "fetch_artwork" -> "Artwork"
     "sync_imdb_ratings" -> "IMDb"
+    "build_recommendations" -> "Recommendations"  // Phase 269
     "rescan_arr" -> "*arr"
     "write_nfo" -> "NFO"
     "sync_jellyfin" -> "Jellyfin"

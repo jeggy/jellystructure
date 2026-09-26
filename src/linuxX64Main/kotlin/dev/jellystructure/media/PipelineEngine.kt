@@ -14,6 +14,7 @@ import dev.jellystructure.jobs.WsBroadcaster
 import dev.jellystructure.log.Logger
 import dev.jellystructure.log.RunContext
 import dev.jellystructure.model.MediaItem
+import dev.jellystructure.model.needsRecommendationSignals
 import dev.jellystructure.nfo.NfoWriter
 import dev.jellystructure.nowEpochSec
 import dev.jellystructure.server.routes.fireWebhook
@@ -135,6 +136,7 @@ fun effectivePipeline(cfg: AppConfig): List<PipelineStep> =
             if (cfg.behavior.fetchImages) add(PipelineStep(step = "fetch_artwork"))
             // Phase 261 (FR-261-4) — the built-in pipeline checks files too, on their own cadence.
             FileCheckSteps.ALL.forEach { add(FileCheckSteps.defaultStep(it)) }
+            add(PipelineStep(step = dev.jellystructure.config.RecommendationsStep.STEP))  // Phase 269
         }
     }
 
@@ -330,6 +332,8 @@ suspend fun runPipeline(
         // A per-webhook 5-minute wait, or a notify firing on every single realtime ingest, would be
         // actively wrong — not just unimplemented — so these are explicitly excluded for SingleItem.
         if (target is RunTarget.SingleItem && (step.step == "wait" || step.step == "notify")) continue
+        // Phase 269 — a whole-library step; one new download is no reason to rebuild every viewer.
+        if (target is RunTarget.SingleItem && step.step == dev.jellystructure.config.RecommendationsStep.STEP) continue
         // Phase 214 (FR-214-2) — a per-step stop requested for a PREVIOUS step must never leak into this
         // one: reset right before each step starts, not once at the run's own start.
         scanTracker.resetStepStop()
@@ -337,8 +341,10 @@ suspend fun runPipeline(
         Logger.info("Pipeline step: ${step.step}")
         when (step.step) {
             "pull_tmdb" -> {
+                // Phase 269 (dev review item 3) — "missing" also means "recommendation signals never
+                // fetched" (`keywords == null`; `[]` is TMDB having none), for one pass per title.
                 val toProcess = if (step.scope == "all") workingSet
-                    else workingSet.filter { it.tmdbId == null }
+                    else workingSet.filter { it.tmdbId == null || it.needsRecommendationSignals() }
                 Logger.info("pull_tmdb: ${toProcess.size} items (scope=${step.scope})")
                 runPipelineStepPool(
                     jobId, step.step, toProcess, { pipelineStepConcurrency(step.step, configStore.current.behavior.scanWorkers) },
@@ -565,6 +571,26 @@ suspend fun runPipeline(
                     (if (pass.alreadyQueued > 0) " · ${pass.alreadyQueued} already queued" else "") +
                     (if (pass.stoppedEarly) " — stopped early" else "")
                 Logger.info("${step.step}: $summary", "pipeline")
+                broadcaster.broadcast(JobEvent.StepFinished(jobId, step.step, summary))
+            }
+            dev.jellystructure.config.RecommendationsStep.STEP -> {
+                // Phase 269 (FR-269-8 (1), dev review item 6) — once per run, at most once per cadence. The
+                // last build is the newest `starter_list.built_at`, which every full build writes.
+                scanTracker.setActiveStep(step.step)
+                broadcaster.broadcast(JobEvent.StepStarted(jobId, step.step, 1))
+                val service = dev.jellystructure.tv.RecommendationService.current
+                val every = dev.jellystructure.config.RecommendationsStep.CADENCES[step.rebuildEvery]
+                    ?: dev.jellystructure.config.RecommendationsStep.CADENCES.getValue(dev.jellystructure.config.RecommendationsStep.DEFAULT_CADENCE)
+                val last = service?.lastBuiltAt()
+                val now = dev.jellystructure.tv.RecommendationService.nowSec()
+                val summary = when {
+                    service == null -> "not available"
+                    // An hour's slack, so a weekly run at the same time each week is not "not due" by minutes.
+                    last != null && now - last < every - 3600 -> "not due — built ${(now - last) / 3600} h ago, rebuilt ${step.rebuildEvery}"
+                    else -> runCatching { "rebuilt: " + service.buildAll() }
+                        .getOrElse { Logger.warn("build_recommendations failed: ${it.message}", "pipeline"); "failed: ${it.message}" }
+                }
+                Logger.info("build_recommendations: $summary", "pipeline")
                 broadcaster.broadcast(JobEvent.StepFinished(jobId, step.step, summary))
             }
             "wait" -> {

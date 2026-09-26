@@ -59,6 +59,13 @@ object PlaystateCache {
 
     fun get(userId: String): Map<String, CardPlayState> = data[userId].orEmpty()
 
+    /** Phase 269 (FR-269-8 (2), dev review item 5) — called when a refresh sees a title newly played by
+     *  this viewer, whichever client played it; set by Main to mark their recommendations stale. */
+    var onNewlyPlayed: ((DeviceData) -> Unit)? = null
+
+    /** Test seam: one user's map, as a refresh would have left it. */
+    internal fun replaceForTest(userId: String, map: Map<String, CardPlayState>) { data = data + (userId to map) }
+
     /** Called once from `Main.kt` at boot. */
     fun start(
         scope: CoroutineScope,
@@ -146,8 +153,14 @@ object PlaystateCache {
             return false
         }
         lastSuccessAt = lastSuccessAt + (device.jellyfinUserId to nowMs())
+        val previous = data[device.jellyfinUserId]
         // Phase 230 (FR-230-1) — MERGE: a cycle now carries a slice, not the whole catalog.
         data = data + (device.jellyfinUserId to (data[device.jellyfinUserId].orEmpty() + ps))
+        // Phase 269 — a first (cold) map says nothing about what changed; after that, any id now played
+        // that was not before is a finish.
+        if (previous != null && ps.any { (id, st) -> st.played && previous[id]?.played != true }) {
+            runCatching { onNewlyPlayed?.invoke(device) }
+        }
         // R176 — patch any already-open Home/Browse/Search screen on another of this user's devices,
         // same push HomeFeedService's own playstateFor used to fire on a fresh live fetch.
         if (ps.isNotEmpty()) tvEventBus?.notifyPlaystateChanged(device.jellyfinUserId, json.encodeToString(ps))

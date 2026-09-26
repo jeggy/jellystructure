@@ -10,8 +10,8 @@
 
 ## Status
 
-`Planned` — written 2026-09-26, **dev-reviewed 2026-09-26** against `main` `0e5e434f` (see *Dev review*
-at the end). Backend (the metadata, the engine, the job, the row) and the admin (row editor, Users &
+`✓ Built` 2026-09-26, **not deployed** (see *Build notes* at the end). Written 2026-09-26,
+**dev-reviewed 2026-09-26** against `main` `0e5e434f` (see *Dev review*). Backend (the metadata, the engine, the job, the row) and the admin (row editor, Users &
 devices). The client half is **R318**. The optional AI layer on top is **Phase 270**; this phase stands
 on its own without it. **Numbering:** verified against `STATUS.md` the same day — admin taken through
 **268**.
@@ -293,3 +293,91 @@ The foundations are where the spec says. Eight items, two of them corrections.
 step, one stale-marking hook in `PlaystateCache`, migration 55, four stored item fields from one TMDB
 parameter, the row in `HomeFeedService`, one response mapping, and two admin additions (editor kind,
 *Recommended for*). No change to the apps beyond R318.
+
+## Build notes (2026-09-26)
+
+Built on `main` after Phase 271 (`84d2dbdd`), the same day. Where the build differs from the text or the
+dev review above, the build is recorded here.
+
+1. **The TMDB signals ride a request that was already made.** The re-pull paths (`syncMovie`,
+   `syncSeriesEpisodes`, `rescanMetadata` for films and series) already made a request of their own for
+   keywords (they become tags). It is replaced by one details request with no language and
+   `append_to_response=keywords,recommendations`. That request answers keywords, page 1, the collection and
+   the vote count. Pages 2–3 follow only when TMDB has them (`TmdbClient.getRecommendationSignals`).
+   - The cost over before is the two pages, as measured in FR-269-3.
+   - The localized chain is untouched, so the dev review's item 2 was not needed.
+   - A failed request keeps what the title had, and the old keywords request is its fallback for tags.
+   - TMDB's own vote average is stored too, as the quality prior's fallback where IMDb has no rating.
+   - Phase 174's *Clear TMDB match* clears all six fields.
+2. **The backfill** is `needsRecommendationSignals()` (`tmdbId != null && keywords == null`, not music
+   videos), in `pull_tmdb`'s *missing* scope and on the title's Checks card (dev review item 3).
+3. **Storage.** Migration **55**: `recommendation` (PK `user_id, scope_key, rank`) and `starter_list`
+   (PK `scope_key, rank`, 200 kept per scope).
+   - `scope_key` is an FNV-1a hash of a sorted canonical string of the library allow-list and the tag
+     policy. It is not a set's `hashCode()`, because a stored key must survive a restart.
+   - Item ids are Jellyfin ids (what a card carries, and stable across a slug rename).
+4. **What is never recommended**: anything the viewer finished or started (a series with any watched
+   episode: a half-watched series is Continue Watching's job), anything in progress, anything in *My List*
+   (already chosen), a weak negative, a title below the quality floor, and anything the viewer cannot see.
+   The floor applies to TMDB's vote too where there is no IMDb rating.
+5. **Scoring**: the prototype's weights, unchanged.
+   - Features, each by family weight × ln(N / titles carrying it): genres by id, keywords, the first five
+     billed cast, directors/creators, studio (films), network, **collection** (weight 1.5, not in the
+     prototype), original language, decade.
+   - Score = cosine + 0.25 · min(1, TMDB-edge / 1.5) + 0.12 · quality + 0.05 if added in the last 30 days.
+   - A title needs a cosine of at least 0.02, or a TMDB edge, to be "like what you watch". The rest of the
+     50 comes from the starter list.
+   - The reason item is the watched title with the strongest TMDB edge, else the most similar watched title.
+   - Diversity relaxes rather than cutting the list short: the run rule first, then the half rule; the
+     collection limit never relaxes.
+6. **Triggers.**
+   - `PlaystateCache.refreshOne` compares played flags against the user's previous map (never on the
+     first, cold map). Any newly played id marks the viewer stale.
+   - A loop polling every 60 s rebuilds a viewer once they have been quiet for two minutes, so an evening
+     of episodes is one rebuild, and a finish shows within about three minutes.
+   - At boot, if nothing was ever built, one full build runs.
+   - All builds are serialized on one lock, on the BACKGROUND gate class.
+7. **The pipeline step** `build_recommendations`:
+   - `rebuild_every = daily | weekly` (default weekly), with an hour's slack so a weekly run at the same
+     time is never "not due" by minutes.
+   - Seeded once into a configured pipeline (`scan.recommendations_step_seeded`, kept by a Settings save,
+     like 261's file steps), and part of the built-in default.
+   - Skipped for a single-item run, and left off a title's Checks card (it is done to the library, not to
+     a title).
+   - Admin pipeline block *Build recommendations* with a week/day toggle. Activity label *Recommendations*.
+8. **Home.**
+   - The row serves the stored list, still-eligible, kept to the page's titles (a channel's own on a
+     channel page), cut to the row's `limit` (default **20**, choices 10–30).
+   - `seedTotalCount` is the eligible count, and `recommendations: true` marks it for R318.
+   - The Home and channel caches include the viewer's list version, so a rebuilt list never waits out a
+     cached feed.
+   - *See all* is `GET /api/tv/recommendations[?channel=]`, answering the browse page's
+     `SeededBrowseResponse` in the list's own order.
+9. **`/api/tv/config`** goes through `forClients()`: `RECOMMENDED` → `CUSTOM` in Home's rows, a channel's
+   rows, and every `content_row` reference inside a condition tree. The admin's route is untouched.
+10. **Admin.**
+    - Layout editor: *+ Recommended for you* (one per list, Home and a collection's own rows). The row
+      shows its badge, its title, *shows N of 50*, and says it has no filter or order. It has no *Edit
+      filter*.
+    - Users & devices: *Recommended for {name}* (lazy, like *Recently watched*) shows when the list was
+      built and by what, the titles with their reasons in words, and *Rebuild now*.
+    - Routes: `GET /api/tv/admin/users/{id}/recommendations`, `POST …/rebuild`.
+    - **Not built: *Preview as {viewer}*** in the editor. The editor's preview is a schematic of row
+      titles, not of cards, so a viewer's list has nothing to draw there; Users & devices is where it is
+      read.
+11. **Backwards compatibility** (owner, 2026-09-26). `RowKind.RECOMMENDED` never leaves the server on
+    `/api/tv/**`. Every new field is additive with a default (`Row.recommendations`, the item's six
+    signal fields, `PipelineStep.rebuild_every`, `JellyfinUserData.PlayCount`), and the new routes are
+    new paths. A test decodes the config with the enum an installed app knows.
+12. **Tests.**
+    - `RecommendationEngineTest` (8): decay and the weak negative, rewatch and favourite; no history → 50;
+      three watched → 50 that lead with the similar family and a TMDB edge; determinism under reordered
+      input; every eligibility rule, including the floor and hidden titles; diversity; the household
+      starter; a stable scope key.
+    - `RecommendationServiceTest` (3): 50 per viewer, each their own; the request-time skip; the wire
+      mapping.
+    - `HomeFeedRecommendedRowTest` (1): the row on Home as CUSTOM + `recommendations`, its limit, See all's
+      count, and a rebuild replacing a cached feed.
+
+**Not done here:** deploying, running the first build against production, and acceptance 1–6 on the TVs
+(a release, a restart and the owner's go-ahead). The client half (See all, tolerant enums) is R318.

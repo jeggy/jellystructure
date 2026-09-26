@@ -69,7 +69,27 @@ data class ScanConfig(
     // owned: a step the operator later removes must not come back on the next boot, and a Settings save
     // never carries this (ConfigRoutes keeps the stored value).
     @SerialName("file_check_steps_seeded") val fileCheckStepsSeeded: Boolean = false,
+    // Phase 269 (FR-269-8) — `build_recommendations` is added to an existing pipeline ONCE, the same way
+    // and for the same reason as the file checks above. Server-owned; a Settings save keeps the stored value.
+    @SerialName("recommendations_step_seeded") val recommendationsStepSeeded: Boolean = false,
 )
+
+/** Phase 269 (FR-269-8) — the whole-library step that rebuilds every viewer's Recommended list. */
+object RecommendationsStep {
+    const val STEP = "build_recommendations"
+    /** How often a run actually rebuilds; between times the step reports "not due". */
+    val CADENCES = mapOf("daily" to 86_400L, "weekly" to 7 * 86_400L)
+    const val DEFAULT_CADENCE = "weekly"
+
+    /** The one-time seed: added (enabled) ahead of any trailing wait/notify steps. An empty pipeline
+     *  means the built-in default, which carries it itself. */
+    fun seed(pipeline: List<PipelineStep>): List<PipelineStep> {
+        if (pipeline.isEmpty() || pipeline.any { it.step == STEP }) return pipeline
+        var at = pipeline.size
+        while (at > 1 && pipeline[at - 1].step in setOf("wait", "notify")) at--
+        return pipeline.subList(0, at) + PipelineStep(step = STEP) + pipeline.subList(at, pipeline.size)
+    }
+}
 
 /** Phase 261 (FR-261-4/6) — the two file checks as pipeline steps, and the defaults that respect the disk:
  *  a whole-file read of the library is 200–300 GB, a tail probe ~15–60 MB per file. [PipelineStep]'s own
@@ -124,6 +144,8 @@ data class PipelineStep(
     @SerialName("detect_fingerprint") val detectFingerprint: Boolean = false,
     @SerialName("trust_stinger_tags") val trustStingerTags: Boolean = true,
     @SerialName("chapter_keywords") val chapterKeywords: List<String> = emptyList(),
+    // Phase 269 — build_recommendations: how often a run really rebuilds (`daily` | `weekly`).
+    @SerialName("rebuild_every") val rebuildEvery: String = RecommendationsStep.DEFAULT_CADENCE,
 )
 
 // Phase 136 — Jellyseerr/Overseerr connection. Mirrors ArrConfig's shape (Phase 54) so the Settings UI,

@@ -75,6 +75,9 @@ private const val CONTINUE_COLD_RETRY_MS = 5_000L
 private const val RECENTLY_SEEN_WINDOW_MS = 30L * 24 * 3_600_000L
 private const val REFRESH_STAGGER_MS = 500L
 
+/** Phase 269 (FR-269-1) — a *Recommended* row with no limit set shows this many (the list holds 50). */
+private const val RECOMMENDED_ROW_DEFAULT = 20
+
 class HomeFeedService(
     private val mediaStore: MediaStore,
     private val configService: RaviloConfigService,
@@ -85,6 +88,8 @@ class HomeFeedService(
 ) {
     /** Phase 232 (FR-232-5) — set by Main; null in tests (= every logo's ink unknown). */
     var clearlogoInk: dev.jellystructure.media.ClearlogoInk? = null
+    /** Phase 269 — set by Main; null in tests (= no *Recommended* row is ever built). */
+    var recommendations: RecommendationService? = null
     private val json = Json { encodeDefaults = true }
 
     // Phase R86-A: stale-while-revalidate home feed cache per Jellyfin user.
@@ -117,6 +122,10 @@ class HomeFeedService(
      *  fetches as (item, progress %, last activity). `null` result = a failed build, exactly as R231 defines it. */
     internal var continueSourceForTest: (suspend (DeviceData) -> List<Triple<MediaItem, Float, Long>>?)? = null
     private fun continueStamp(userId: String): Long = continueListCache[userId]?.stamp ?: 0L
+    /** Phase 269 — the cached feed also holds the viewer's *Recommended* row, so a rebuild of their list
+     *  must discard it like a new Continue list does. Both stamps only ever grow, so their sum changes
+     *  whenever either does. */
+    private fun rowStamp(userId: String): Long = continueStamp(userId) + (recommendations?.versionFor(userId) ?: 0L)
     private val continueListCache = HashMap<String, ContinueListEntry>()
     /** Phase 219 (FR-219-4) — the age of each user's last successful Continue Watching build, for /api/health. */
     fun continueRefreshAges(): Map<String, Long> { val now = nowMs(); return continueListCache.mapValues { now - it.value.builtAt } }
@@ -181,7 +190,7 @@ class HomeFeedService(
         val now = nowMs()
 
         // Phase 229 — read BEFORE the build: a list that lands mid-build leaves this entry already stale.
-        val contStamp = continueStamp(userId)
+        val contStamp = rowStamp(userId)
         val cachedStructural = feedCache[userId]?.takeIf {
             it.feedVer == feedVer && it.cfgHash == cfgHash && it.allowedHash == allowedHash && it.continueStamp == contStamp && (now - it.builtAt) < FEED_TTL_MS
         }
@@ -363,7 +372,7 @@ class HomeFeedService(
         val allowedHash = (device.allowedLibraries.hashCode() * 31 + device.allowedTags.hashCode()) * 31 + device.blockedTags.hashCode()
         val now = nowMs()
         val cacheKey = userId to channelCfg.id
-        val contStamp = continueStamp(userId)  // Phase 229 (FR-229-3)
+        val contStamp = rowStamp(userId)  // Phase 229 (FR-229-3), Phase 269
         channelContentCache[cacheKey]?.takeIf {
             it.feedVer == feedVer && it.cfgHash == cfgHash && it.allowedHash == allowedHash && it.continueStamp == contStamp && (now - it.builtAt) < FEED_TTL_MS
         }?.let { return it.heroes to it.rows }
@@ -521,7 +530,10 @@ class HomeFeedService(
             val sys = channelRows.system
             if (sys.cont.show && continueRowNonEmpty()) return true
             if (sys.newly.show) return true  // filtered already known non-empty above; addNewlyAddedRows applies no further per-item filter
-            return channelRows.items.filter { it.enabled }.any { rowCfg -> filtered.any { matchesConfiguredRow(it, rowCfg, heroIds, cascade) } }
+            return channelRows.items.filter { it.enabled }.any { rowCfg ->
+                if (rowCfg.kind == RowKind.RECOMMENDED) recommendedIn(device, filtered).isNotEmpty()
+                else filtered.any { matchesConfiguredRow(it, rowCfg, heroIds, cascade) }
+            }
         }
 
         // merge-mode injects a merged Newly Added row purely off the config.mergeNewlyAdded flag,
@@ -538,6 +550,7 @@ class HomeFeedService(
                     else -> true  // null mediaKind splits into Movies/Series; filtered non-empty ⇒ at least one exists
                 }
                 RowKind.GENRE, RowKind.CUSTOM -> filtered.any { matchesConfiguredRow(it, rowCfg, heroIds, cascade) }
+                RowKind.RECOMMENDED -> recommendedIn(device, filtered).isNotEmpty()
             }
         }
     }
@@ -576,7 +589,9 @@ class HomeFeedService(
                 addNewlyAddedRows(result, all, merge = sys.newly.merge)
             }
             for (rowCfg in channelRows.items.filter { it.enabled }.sortedBy { it.order }) {
-                buildFilterRow(rowCfg, all, heroIds, channelFilter)?.let { result.add(it) }
+                val row = if (rowCfg.kind == RowKind.RECOMMENDED) buildRecommendedRow(rowCfg, device, all, channelFilter)
+                    else buildFilterRow(rowCfg, all, heroIds, channelFilter)
+                row?.let { result.add(it) }
             }
             return result
         }
@@ -619,6 +634,7 @@ class HomeFeedService(
                 }
 
                 RowKind.GENRE, RowKind.CUSTOM -> buildFilterRow(rowCfg, all, heroIds, channelFilter)?.let { result.add(it) }
+                RowKind.RECOMMENDED -> buildRecommendedRow(rowCfg, device, all, channelFilter)?.let { result.add(it) }
             }
         }
 
@@ -698,6 +714,41 @@ class HomeFeedService(
             }
             else -> false  // CONTINUE/NEWLY_ADDED: different data source / no per-item query, handled by their own callers
         }
+
+    /**
+     * Phase 269 (FR-269-1/2/7) — the viewer's stored list, still-eligible, kept to [all] (on a channel
+     * page that is the channel's own titles, the way R233 scopes the system rows), in the list's order.
+     */
+    private fun recommendedIn(device: DeviceData, all: List<MediaItem>): List<MediaItem> {
+        val service = recommendations ?: return emptyList()
+        return service.servedFor(device, all)
+    }
+
+    /** Phase 269 (FR-269-2) — the Recommended row's *See all*: the same list the row shows (kept to the
+     *  channel when [channelId] names one, as the row on that channel page is), in full. */
+    suspend fun recommendedItems(device: DeviceData, channelId: String?): List<MediaItem> {
+        val service = recommendations ?: return emptyList()
+        val config = configService.getConfig(device.jellyfinUserId)
+        val visible = mediaStore.liveItems(device)
+        val ch = channelId?.let { id -> config.channels.find { it.id == id } }
+        val scoped = if (ch == null) visible else {
+            val heroIds = config.heroes.map { it.itemId }.toSet()
+            visible.filter { it.matchesChannel(ch, heroIds) }
+        }
+        return service.servedFor(device, scoped)
+    }
+
+    /** Phase 269 — the row. Sent as CUSTOM with no seed, so an installed app draws a plain row with no
+     *  *See all*; `recommendations = true` lets an app with R318 open all of them. */
+    private fun buildRecommendedRow(rowCfg: RowConfig, device: DeviceData, all: List<MediaItem>, channelFilter: ChannelConfig?): Row? {
+        val items = recommendedIn(device, all)
+        val cards = items.take(rowCfg.limit ?: RECOMMENDED_ROW_DEFAULT).mapNotNull { it.toMediaCardOrNull() }.distinctBy { it.id }
+        if (cards.isEmpty()) return null
+        return Row(
+            rowCfg.id, rowCfg.title ?: "Recommended for you", RowKind.CUSTOM, cards,
+            seedTotalCount = items.size, recommendations = true,
+        )
+    }
 
     /** Phase 225 (FR-225-2) — every row is lined up HERE and nowhere else, through the shared [RowOrder]
      *  (the admin editor previews with the same function). [rowCfg] null = a system row: today's order,

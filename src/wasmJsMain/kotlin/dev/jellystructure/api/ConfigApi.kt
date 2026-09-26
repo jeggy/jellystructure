@@ -109,6 +109,8 @@ data class PipelineStep(
     @SerialName("detect_fingerprint") val detectFingerprint: Boolean = false,
     @SerialName("trust_stinger_tags") val trustStingerTags: Boolean = true,
     @SerialName("chapter_keywords") val chapterKeywords: List<String> = emptyList(),
+    // Phase 269 — build_recommendations: how often a run really rebuilds (`daily` | `weekly`).
+    @SerialName("rebuild_every") val rebuildEvery: String = "weekly",
 )
 
 @Serializable

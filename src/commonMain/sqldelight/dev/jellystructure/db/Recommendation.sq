@@ -1,0 +1,54 @@
+-- Phase 269 (FR-269-7) — each viewer's recommendations, built in the background and never on a request.
+-- Keyed per viewer AND visibility scope (the library allow-list and tag policy), because what a viewer may
+-- see decides what they may be recommended. `scope_key` is `RecommendationEngine.scopeKey`. Ids are
+-- Jellyfin item ids (what a card carries). `reason_code`: watched · household · rated · new;
+-- `reason_item_id`: the title behind "because you watched …". `source`: standard (or 270's ai).
+CREATE TABLE recommendation (
+    user_id TEXT NOT NULL,
+    scope_key TEXT NOT NULL,
+    rank INTEGER NOT NULL,
+    item_id TEXT NOT NULL,
+    score REAL NOT NULL,
+    reason_code TEXT NOT NULL,
+    reason_item_id TEXT,
+    source TEXT NOT NULL,
+    built_at INTEGER NOT NULL,
+    PRIMARY KEY (user_id, scope_key, rank)
+);
+
+-- FR-269-6 — per visibility scope: what the household watches, then the best rated, then the newest.
+-- A first visit is served from here, and a short personal list is topped up from it.
+CREATE TABLE starter_list (
+    scope_key TEXT NOT NULL,
+    rank INTEGER NOT NULL,
+    item_id TEXT NOT NULL,
+    reason_code TEXT NOT NULL,
+    built_at INTEGER NOT NULL,
+    PRIMARY KEY (scope_key, rank)
+);
+
+forViewer:
+SELECT * FROM recommendation WHERE user_id = :user_id AND scope_key = :scope_key ORDER BY rank;
+
+forUser:
+SELECT * FROM recommendation WHERE user_id = :user_id ORDER BY built_at DESC, rank;
+
+deleteViewer:
+DELETE FROM recommendation WHERE user_id = :user_id AND scope_key = :scope_key;
+
+putRecommendation:
+INSERT OR REPLACE INTO recommendation(user_id, scope_key, rank, item_id, score, reason_code, reason_item_id, source, built_at)
+VALUES (:user_id, :scope_key, :rank, :item_id, :score, :reason_code, :reason_item_id, :source, :built_at);
+
+starterFor:
+SELECT * FROM starter_list WHERE scope_key = :scope_key ORDER BY rank;
+
+deleteStarter:
+DELETE FROM starter_list WHERE scope_key = :scope_key;
+
+putStarter:
+INSERT OR REPLACE INTO starter_list(scope_key, rank, item_id, reason_code, built_at)
+VALUES (:scope_key, :rank, :item_id, :reason_code, :built_at);
+
+lastStarterBuild:
+SELECT MAX(built_at) AS built FROM starter_list;

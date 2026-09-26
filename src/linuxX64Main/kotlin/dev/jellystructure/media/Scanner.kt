@@ -232,6 +232,17 @@ class Scanner(
      */
     private fun mergeUserGenres(prior: MediaItem, fresh: List<dev.jellystructure.tmdb.TmdbGenre>): List<String> =
         GenreCatalog.mergeUserGenres(prior, fresh.map { it.id to it.name })
+
+    /** Phase 269 (FR-269-3) — the recommendation signals onto the item; a failed fetch (null) keeps
+     *  whatever it had, so a transient error never reads as "TMDB has no keywords". */
+    private fun MediaItem.withSignals(s: dev.jellystructure.tmdb.TmdbSignals?): MediaItem = if (s == null) this else copy(
+        keywords = s.keywords.map { dev.jellystructure.model.Keyword(it.id, it.name) },
+        tmdbRecommendations = s.recommendations,
+        collectionId = s.collectionId,
+        collectionName = s.collectionName,
+        tmdbVoteCount = s.voteCount,
+        tmdbVoteAverage = s.voteAverage,
+    )
     /** Processes a single Jellyfin item end-to-end. Used by the worker pool and the sequential scan. */
     suspend fun scanItem(jItem: JellyfinItem): MediaItem? {
         val config = configStore.current
@@ -932,7 +943,11 @@ class Scanner(
         val resolvedLang = localized.language ?: langPriority.lastOrNull()
         val issueCount = tracks.count { (it.kind == TrackKind.AUDIO || it.kind == TrackKind.SUBTITLE) && it.language == null }
         val primaryCompany = details.productionCompanies.firstOrNull()
-        val tmdbTags = tmdb.getMovieKeywords(details.id)
+        // Phase 269 (FR-269-3) — keywords (also the tags below), TMDB's recommendations, collection and
+        // vote count in one request plus the recommendation pages; the old keywords-only request is the
+        // fallback when it fails.
+        val signals = tmdb.getRecommendationSignals(details.id, isMovie = true)
+        val tmdbTags = signals?.keywords?.map { it.name } ?: tmdb.getMovieKeywords(details.id)
         // Phase 150 (FR-SEG1-6): "Trust TMDB stinger tags" toggle, defaulting to trust when the
         // detect_segments step isn't configured at all (matches PipelineStep.trustStingerTags' own default).
         val trustStingers = config.scan.pipeline.firstOrNull { it.step == "detect_segments" }?.trustStingerTags != false
@@ -972,7 +987,7 @@ class Scanner(
             // Phase 150: same never-touch-a-manual-record / only-add-never-clear rule as rescanMetadata.
             segments = if (item.segments.manuallyConfirmed) item.segments
                        else item.segments.copy(stinger = syncStinger ?: item.segments.stinger),
-        )
+        ).withSignals(signals)
     }
 
     /** Re-probes every episode file on disk and re-fetches TMDB for a TV series. */
@@ -1137,7 +1152,8 @@ class Scanner(
         }
         val syncNetwork = updatedDetails?.networks?.firstOrNull()
         val syncSeriesFinalId = updatedDetails?.id ?: seriesTmdbId
-        val tmdbTags = syncSeriesFinalId?.let { tmdb.getTvKeywords(it) } ?: emptyList()
+        val signals = syncSeriesFinalId?.let { tmdb.getRecommendationSignals(it, isMovie = false) }  // Phase 269
+        val tmdbTags = signals?.keywords?.map { it.name } ?: syncSeriesFinalId?.let { tmdb.getTvKeywords(it) } ?: emptyList()
         val syncSeriesExtIds = syncSeriesFinalId?.let { tmdb.getExternalIds(it, isMovie = false) }
         val syncSeriesCertifications = syncSeriesFinalId?.let { tmdb.getTvCertifications(it) } ?: emptyMap()
         val syncSeriesTrailer = syncSeriesFinalId?.let { buildTrailer(tmdb.getTvVideos(it, updatedDetails?.originalLanguage.orEmpty())) }
@@ -1171,7 +1187,7 @@ class Scanner(
             certifications = syncSeriesCertifications.ifEmpty { item.certifications },
             trailer = syncSeriesTrailer,
             libraryId = lib?.jellyfinId?.ifBlank { null } ?: item.libraryId,   // Phase 142: self-heal
-        )
+        ).withSignals(signals)
     }
 
     /** Re-syncs episodes of a specific season. probeFiles=true re-runs ffprobe on each file. */
@@ -1279,7 +1295,8 @@ class Scanner(
                 val resolvedLang = LanguageResolver.resolve(sourceTracks, fallback, available).language
                     ?: localized.language
                 val rescanCompany = details.productionCompanies.firstOrNull()
-                val rescanTmdbTags = tmdb.getMovieKeywords(details.id)
+                val signals = tmdb.getRecommendationSignals(details.id, isMovie = true)  // Phase 269 (FR-269-3)
+                val rescanTmdbTags = signals?.keywords?.map { it.name } ?: tmdb.getMovieKeywords(details.id)
                 // Phase 150 (FR-SEG1-6): same raw keyword-name list mergeRepullTags flattens into `tags`
                 // below — no second TMDB request. Movies only (a series' top-level `segments` isn't used;
                 // each episode carries its own — see SegmentMarkers' doc comment).
@@ -1317,7 +1334,7 @@ class Scanner(
                     // than a stale one).
                     segments = if (item.segments.manuallyConfirmed) item.segments
                                else item.segments.copy(stinger = rescanStinger ?: item.segments.stinger),
-                )
+                ).withSignals(signals)
             }
             MediaKind.TV_SHOW -> {
                 val tmdbId = item.tmdbId ?: tmdb.searchTv(item.title, item.year)?.id
@@ -1352,7 +1369,8 @@ class Scanner(
                     } else ep
                 }
                 val rescanNetwork = details.networks.firstOrNull()
-                val rescanTmdbTags = tmdb.getTvKeywords(details.id)
+                val signals = tmdb.getRecommendationSignals(details.id, isMovie = false)  // Phase 269 (FR-269-3)
+                val rescanTmdbTags = signals?.keywords?.map { it.name } ?: tmdb.getTvKeywords(details.id)
                 val rescanTvExtIds = tmdb.getExternalIds(details.id, isMovie = false)
                 val rescanTvCertifications = tmdb.getTvCertifications(details.id)
                 val rescanTvTrailer = buildTrailer(tmdb.getTvVideos(details.id, details.originalLanguage))
@@ -1384,7 +1402,7 @@ class Scanner(
                     certifications = rescanTvCertifications.ifEmpty { item.certifications },
                     trailer = rescanTvTrailer,
                     libraryId = lib?.jellyfinId?.ifBlank { null } ?: item.libraryId,   // Phase 142: self-heal
-                )
+                ).withSignals(signals)
             }
             // Phase 171: reverses Phase 168's "never TMDB, ever" call — a concert-film/live-DVD music
             // video CAN have a real TMDB movie entry (reported live: TMDB 25352 for "Vesper: ORBIT -

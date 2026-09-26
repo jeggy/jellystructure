@@ -1,0 +1,22 @@
+-- Phase 269 (FR-269-7) — recommendations. Must stay byte-for-byte in sync with Recommendation.sq.
+CREATE TABLE recommendation (
+    user_id TEXT NOT NULL,
+    scope_key TEXT NOT NULL,
+    rank INTEGER NOT NULL,
+    item_id TEXT NOT NULL,
+    score REAL NOT NULL,
+    reason_code TEXT NOT NULL,
+    reason_item_id TEXT,
+    source TEXT NOT NULL,
+    built_at INTEGER NOT NULL,
+    PRIMARY KEY (user_id, scope_key, rank)
+);
+
+CREATE TABLE starter_list (
+    scope_key TEXT NOT NULL,
+    rank INTEGER NOT NULL,
+    item_id TEXT NOT NULL,
+    reason_code TEXT NOT NULL,
+    built_at INTEGER NOT NULL,
+    PRIMARY KEY (scope_key, rank)
+);

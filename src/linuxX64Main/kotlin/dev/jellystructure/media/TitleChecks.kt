@@ -5,6 +5,7 @@ import dev.jellystructure.config.FileCheckSteps
 import dev.jellystructure.config.PipelineStep
 import dev.jellystructure.db.JellystructureDb
 import dev.jellystructure.model.MediaItem
+import dev.jellystructure.model.needsRecommendationSignals
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
@@ -63,9 +64,10 @@ class TitleChecks(
         val nowMs = store.nowMs()
         val currentYear = yearFromEpochMs(nowMs)
         val configured = config.scan.pipeline.ifEmpty { effectivePipeline(config) }
-        // OQ2 — the card lists what is done TO this title; `wait` and `notify` are not.
+        // OQ2 — the card lists what is done TO this title; `wait`, `notify` and the whole-library
+        // `build_recommendations` (Phase 269) are not.
         val steps = (listOf(configured.firstOrNull { it.step == "scan_files" } ?: PipelineStep(step = "scan_files")) +
-            configured.filter { it.step != "scan_files" && it.step !in setOf("wait", "notify") })
+            configured.filter { it.step != "scan_files" && it.step !in setOf("wait", "notify", dev.jellystructure.config.RecommendationsStep.STEP) })
             .distinctBy { it.step }
         val scanStep = steps.first()
         val runs = stepRuns?.forItem(item.id) ?: emptyMap()
@@ -104,7 +106,7 @@ class TitleChecks(
                         off() -> "off"
                         step.step == "sync_jellyfin" -> "when its NFO changes"
                         step.step == "detect_segments" && step.scope != "all" -> "when a marker is missing"
-                        step.step == "pull_tmdb" && step.scope != "all" && item.tmdbId != null -> "only while unmatched"
+                        step.step == "pull_tmdb" && step.scope != "all" && item.tmdbId != null && !item.needsRecommendationSignals() -> "only while unmatched"
                         step.step == "fetch_artwork" && step.scope != "all" -> "when artwork is missing"
                         step.step == "sync_imdb_ratings" && item.imdbId.isNullOrBlank() -> "no IMDb id"
                         nextScanText == "every run" || nextScanText == "never" -> nextScanText
@@ -119,7 +121,7 @@ class TitleChecks(
     private fun dueWithScan(step: PipelineStep, item: MediaItem): Boolean = when (step.step) {
         "sync_jellyfin" -> false
         "detect_segments", "fetch_artwork" -> step.scope == "all"
-        "pull_tmdb" -> step.scope == "all" || item.tmdbId == null
+        "pull_tmdb" -> step.scope == "all" || item.tmdbId == null || item.needsRecommendationSignals()  // Phase 269
         "sync_imdb_ratings" -> !item.imdbId.isNullOrBlank()
         else -> true
     }

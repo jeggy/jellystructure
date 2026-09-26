@@ -32,7 +32,7 @@ class ConfigStore(private val filePath: String) {
             _config = toml.decodeFromString(AppConfig.serializer(), content)
         }
         if (result.isFailure) Logger.warn("Failed to parse config, using defaults: ${result.exceptionOrNull()?.message}")
-        else { fixAgeRatingMapKeys(); adoptNestedPublicUrl(); seedFileCheckSteps() }
+        else { fixAgeRatingMapKeys(); adoptNestedPublicUrl(); seedFileCheckSteps(); seedRecommendationsStep() }
     }
 
     /** Phase 261 (FR-261-4, dev review item 8) — once: add `verify_files` / `check_track_lengths` to the
@@ -53,6 +53,21 @@ class ConfigStore(private val filePath: String) {
                     _config.behavior.verifyFiles -> "added"
                     else -> "added, disabled (verify_files = false)"
                 },
+            "config",
+        )
+    }
+
+    /** Phase 269 (FR-269-8) — once: add `build_recommendations` to the operator's pipeline, then remember
+     *  it was done so a step the operator removes stays removed. Same shape as [seedFileCheckSteps]. */
+    private suspend fun seedRecommendationsStep() {
+        val scan = _config.scan
+        if (scan.recommendationsStepSeeded) return
+        val seeded = RecommendationsStep.seed(scan.pipeline)
+        _config = _config.copy(scan = scan.copy(pipeline = seeded, recommendationsStepSeeded = true))
+        persist()
+        Logger.info(
+            "Config: recommendations are built by a pipeline step now — ${RecommendationsStep.STEP} " +
+                if (seeded.size == scan.pipeline.size) "(already in the pipeline, or the built-in default)" else "added",
             "config",
         )
     }
