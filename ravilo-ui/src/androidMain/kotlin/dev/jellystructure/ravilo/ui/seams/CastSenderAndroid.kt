@@ -64,7 +64,15 @@ class RaviloCastOptionsProvider : OptionsProvider {
             // playing (seen on the Pixel 9 against the soveværelse TV).
             .setReceiverApplicationId(lastAppId(context) ?: PLACEHOLDER_APP_ID)
             .setCastMediaOptions(media)
-            .setStopReceiverApplicationWhenEndingSession(true)
+            // R265 (2026-09-26, Pixel 9 → stue TV): with the reconnection service on, killing the app
+            // restarted it in the background at once to resume the session — and Android's freezer froze
+            // that half-done resume. Opened again seconds later, the SDK ended the stuck session, and with
+            // stop-on-end that STOPPED THE TV. No background service (R293: off screen holds nothing
+            // open): the one foreground resume at start-up is the reconnect, and it rejoins.
+            .setEnableReconnectionService(false)
+            // An end the SDK decides on its own must leave the TV playing (FR-R245-5: the TV keeps going
+            // when the phone does not). Stop casting still stops it — stop() passes `true` explicitly.
+            .setStopReceiverApplicationWhenEndingSession(false)
             .build()
     }
     override fun getAdditionalSessionProviders(context: Context): List<SessionProvider>? = null
