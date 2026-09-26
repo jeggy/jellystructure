@@ -197,6 +197,22 @@ Compiles clean (`compileKotlinLinuxX64`, `compileKotlinWasmJs`). **Not yet live/
 backend restart or deploy has happened for this fix; the diagnosis above came from reading prod's existing
 logs, not from reproducing against the patched build.
 
+## Amendment (2026-09-26) — the Dashboard that started the run missed its own deferral
+
+Found by phase 263's e2e run, not in production. Since phase 213 (FR-213-6) a manual run defers too, and
+`awaitPlaybackClear` runs within a millisecond of `POST /scan` returning — before the Dashboard that
+clicked the button has opened its `/ws` socket (`connectDashScanSocket`). `JobEvent.Deferred` is
+broadcast once, into no socket, and the 2026-09-05 fix only reconstructs it on a page *load*. So the
+page that started the scan showed "Scanning — items appear in Library as they are processed" for the
+whole deferral (measured: 110 s, a test Chromecast session inside the tracker's 120 s grace), with no
+"Paused — TV is watching" and no **Run anyway** — bug 2 above, on the one path it did not cover.
+
+**Fix.** When the Dashboard's scan socket opens, it reads `GET /scan/status` once and renders the
+paused banner if the run is already deferred: a catch-up for whatever was broadcast before the socket
+was listening. A deferral that starts after the socket opens still arrives live. The fixture suite's
+scan waits press **Run anyway** when it appears (as an operator would), since `cast-receiver.spec.ts`
+leaves exactly such a session behind it.
+
 ## Open questions
 
 1. **Is 120s the right grace window?** Long enough to bridge auto-advance between episodes, short enough
