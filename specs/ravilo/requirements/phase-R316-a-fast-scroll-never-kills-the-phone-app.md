@@ -6,9 +6,10 @@
 
 ## Status
 
-`Planned` — written 2026-09-26, not dev-reviewed. **Reproduced on the Pixel 9 the same day** (debug build
-1.39-19). Android client (`ravilo-ui` androidMain, both the phone and TV apps) plus one backend change.
-**Numbering:** verified against `STATUS.md` the same day — Ravilo taken through **R315**.
+`Planned` — written 2026-09-26, **dev-reviewed 2026-09-26** against `main` `0e5e434f` (see *Dev review*
+at the end). **Reproduced on the Pixel 9 the same day** (debug build 1.39-19). Android client
+(`ravilo-ui` androidMain, both the phone and TV apps) plus one backend change. **Numbering:** verified
+against `STATUS.md` the same day — Ravilo taken through **R315**.
 
 ## Evidence
 
@@ -122,3 +123,42 @@ a release that touches networking.
    load times.
 4. `curl -H 'Accept-Encoding: gzip'` on a poster URL: no `Content-Encoding: gzip`. On `/api/tv/home`:
    still gzipped.
+
+## Dev review (2026-09-26, against `main` `0e5e434f`)
+
+The reproduction and the stack pin the cause. Six items.
+
+1. **What exists today.** No OkHttp in the build (`gradle/libs.versions.toml` has `ktor-client-android`
+   `:49` and Media3, which fetches media through its own data source and is unaffected). REST is
+   `HttpClient(Android)` (`androidMain/.../RaviloRootActuals.kt:39-44`), and the events socket is
+   `HttpClient(CIO)` (`:47-50`). Coil gets its fetcher from `coil-network-ktor3`, declared in
+   **`commonMain`** (`ravilo-ui/build.gradle.kts:63`), so Android loads it too, and it builds a default
+   `HttpClient()` from the classpath.
+2. **The dependency change.**
+   - Add `ktor-client-okhttp` (same Ktor version) and `coil-network-okhttp` (Coil 3.2.0) to
+     `androidMain`.
+   - **Move `coil-network-ktor3` from `commonMain` to `wasmJsMain`.** The web root sets its own loader
+     (`wasmJsMain/.../RaviloRootActuals.kt:27`) and keeps the Ktor fetcher, which is right in a browser.
+     Android then has no Ktor fetcher on its classpath to be discovered.
+
+   OkHttp 4.x supports the app's minimum SDK (24). Okio is already present through Coil. OkHttp ships
+   its own R8 rules.
+3. **One `OkHttpClient`, shared.** Build it once (`RaviloAppContext`, which already owns the image
+   loader). Pass it to `HttpClient(OkHttp) { engine { preconfigured = shared } }` for REST, and to
+   `OkHttpNetworkFetcherFactory(callFactory = { shared })` in the `ImageLoader.Builder`
+   (`RaviloAppContext.kt:18-33`), next to the `SvgDecoder` already added there. Set
+   `serviceLoaderEnabled(false)` on the builder, so no component is picked up from the classpath
+   (FR-R316-2). The `HttpTimeout` settings move onto the Ktor client unchanged.
+4. **R305 stays.** `DetachedCalls` (`shared/.../DetachedHttp.kt`) keeps REST cancellation off the main
+   thread. With OkHttp it is belt and braces rather than the only defence.
+5. **The server half.** `installGzipCompression` (`server/GzipCompression.kt:44-60`) gains a content-type
+   check before compressing: skip `image/jpeg|png|webp|gif|avif`, `video/*`, `audio/*`,
+   `application/zip|gzip`. The content type is on `original.contentType`. `/api/tv/image/*` answers
+   `image/jpeg` today (checked on production), so posters and stills stop being gzipped.
+6. **The check is a device check.** No emulator reproduces the timing reliably, and the unit suite
+   cannot. FR-R316-3's fling script (the reproduction above) runs on the Pixel 9 against a debug and a
+   release build, with `dumpsys dropbox --print data_app_crash` read before and after. FR-R316-5's
+   release step can run the same script against whichever device the release check uses.
+
+**Net effect.** Two dependencies added and one moved, one shared client built in one place, one
+`ImageLoader` line, one content-type check on the server. No change to screens.
