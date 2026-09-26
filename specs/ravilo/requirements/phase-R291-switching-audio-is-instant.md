@@ -119,6 +119,22 @@ Spanish/French/Italian/Russian AC3 5.1) — above the set's 54 Mbps (0.9 × 60) 
   recording of the second, **no stall spinner** — the Pause glyph shows ▶ for ~0.3–0.5 s while the new
   audio buffers (the button follows *is playing*, not *wants to play*), and the picture keeps moving.
   Switching back to the muxed track: no BUFFERING at all.
+- **The AC3 fix, seen on the TV (2026-09-26 11:37, prod on a local build of `28a1f082`):** the same film,
+  started on the remembered French AC3 (copied, CODECS `ac-3`); the warm started the Spanish rendition as
+  `-acodec ac3` (segment ready in 1.1 s) and the switch froze for **522 ms** and played on — where the same
+  switch had failed with the source error before.
+- **⚠ Then a stall that never ends — the reason the switch stays off.** Next, English (TrueHD, a rendition
+  encoded to AC3 6ch): warmed in 655 ms, picked, and the player went `BUFFERING` and **never came back** —
+  no error, the frozen frame behind R218's spinner for minutes. Jellyfin's log shows the player **stopped
+  requesting anything** at the pick: its idle timer killed the video job 61 s later, then both renditions.
+  The player's buffered position after the pick equalled the playhead, i.e. **the video buffer was thrown
+  away too** and had to be re-fetched from the playhead — and by then Jellyfin, with *Delete segments* on,
+  held only the video job's newest segments (280–287 while the playhead was at 216). A request for a
+  segment the job counts as done but whose file is gone waits; nothing else is asked for. Not proven — a
+  release build logs nothing from Media3; the Pixel 9's debug build is where to see which request hangs.
+  The earlier switches that worked may simply have landed while the playhead's segment still existed.
+  **Until that is understood the switch stays `false`**: the committed build keeps R284's restream, and the
+  stue TV was put back on a build with it off the same morning.
 
 ## What happens today
 
