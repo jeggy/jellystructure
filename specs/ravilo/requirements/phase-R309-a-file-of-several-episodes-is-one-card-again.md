@@ -10,9 +10,11 @@
 
 `Planned` — written 2026-09-26, not dev-reviewed. **A regression of Phase 149 / R179**, not a new
 design: nothing new is drawn, and the combined card, the triptych and the copy all still exist in the
-code. Needs **both halves**: backend (`DetailService`) and client (`SeriesDetailScreen`). Either alone
-still shows one card per file (see FR-R309-2). **Numbering:** verified against `STATUS.md` the same
-day — Ravilo taken through **R307**.
+code. Needs **both halves**: backend (`DetailService`, `HomeFeedService`) and client
+(`SeriesDetailScreen`, `HomeScreen`). Either alone still shows one card per file (see FR-R309-2). **Open
+questions decided the same day**: the owner handed the calls over (*"You just decide for me. We want all
+best solutions for everything"*). See *Decisions* at the end. **Numbering:** verified against
+`STATUS.md` the same day — Ravilo taken through **R307**.
 
 ## What is wrong, measured
 
@@ -103,12 +105,29 @@ drawn and no string is added.
 **FR-R309-6 — A regression test on each side, in production's exact shape.** Three `TvEpisode`s with one
 id, one `file`, `part_count` 3 and `part_index` 0/1/2. Server: `getSeriesDetail` over a series whose
 parts share a `jellyfinId` returns all three. Client: `episodeGroups` returns one group of three, and
-still returns one group for two files claiming one id (the loop fix's own case, kept as a test).
+still returns one group for two files claiming one id (the loop fix's own case, kept as a test). Home:
+a resume candidate on a 3-in-1 file carries `episode_number` 1 and `episode_number_end` 3, and a lone
+episode carries no `episode_number_end`.
+
+**FR-R309-7 — Continue Watching and Next Up name the range too.** The Home tile for a multi-episode
+file reads *S1:E1–3*, not *S1:E1* (R113's on-image badge, `HomeScreen.kt`), and Next Up's label reads
+*S1E1–3 · …*. The backend already has what it needs when it builds these cards (`HomeFeedService`'s
+resume and next-up candidates): the played item's Jellyfin id and the scanned series. The contained
+episodes are the scanned episodes carrying that id, the same set FR-R309-1 keeps together.
+
+- `MediaCard` gains an additive `episode_number_end`. It is present only when the card's file holds
+  more than one episode, and it is the highest contained episode number. `episode_number` stays the
+  lowest.
+- The client draws `S{season}:E{episode}–{episode_number_end}` when the field is present, and the badge
+  exactly as today when it is absent. An app installed before this phase ignores the field and keeps
+  *S1:E1*.
+- Next Up's label is composed server-side today (`"S${s}E${e} · ${play.name}"`), so the server writes
+  the range into it.
+- The same helper resolves the range for both candidates, and for R199's fallback numbering too, so a
+  tile, its Next Up label and the series page never disagree about which episodes a file holds.
 
 ## Non-goals
 
-- **Continue Watching / Next Up tiles** for such a file read *S1:E1* (`HomeScreen.kt`, the card's
-  `seasonNumber`/`episodeNumber` from the Jellyfin item). See open question 1.
 - **Per-episode watched state inside a file** (R179 §C2's "finishing a chapter marks that episode
   watched"). It was never built, and none of the affected files has chapters (Johnny Bravo's: zero).
 - **The combined runtime vs the file's real length.** The sum of TMDB runtimes is what R179 drew: 21m
@@ -128,12 +147,15 @@ still returns one group for two files claiming one id (the loop fix's own case, 
 5. The auto-play-next loop does not return: a season with two files claiming one episode still shows one
    slot for it, and the next-up card after it names the next file (the loop fix's own test passes).
 6. The other six series with multi-episode files show one card per file on their series pages.
+7. Leave the first file half watched: Continue Watching on Home shows *S1:E1–3* on the tile, and Next Up
+   (after finishing it) names *S1E4–6*.
 
-## Open questions
+## Decisions (2026-09-26, delegated by the owner)
 
-1. **Should Continue Watching name the range too** (*S1:E1–3*)? The backend knows `part_count` for the
-   file. **Lean: yes, as its own small phase**, because the Home card is fed from the Jellyfin item, not
-   from the scanned episodes, and that is a different path.
-2. **How did this ship unseen for two months?** The combined card has no test that feeds it production's
-   id shape. FR-R309-6 closes that. Worth asking in dev review whether R179 needs an entry in the device
-   sweep list.
+1. **Continue Watching and Next Up name the range, in this phase** (FR-R309-7). The file is one thing
+   everywhere it is named, or the Home tile contradicts the series page it opens. The fix is one
+   additive field and one helper, because the backend already holds the scanned episodes when it builds
+   the card.
+2. **The guard against this happening again is FR-R309-6's tests**, built from production's exact id
+   shape (several episodes, one id, one file). They fail on today's code on both sides, which no test
+   did for two months. No device-sweep entry is added: a unit test in CI catches this before a release.

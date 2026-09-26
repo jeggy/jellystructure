@@ -9,7 +9,9 @@
 ## Status
 
 `Planned` — written 2026-09-26, not dev-reviewed. Client (`ravilo-ui`, every platform: TV, phone, web)
-plus one backend judgement that extends Phase 232. **Numbering:** verified against `STATUS.md` the same
+plus one backend judgement that extends Phase 232. **Every open question decided the same day**: the
+owner handed the calls over (*"You just decide for me. We want all best solutions for everything"*).
+See *Decisions* at the end. **Numbering:** verified against `STATUS.md` the same
 day — Ravilo taken through **R307**.
 
 Supersedes, for the Studios and Networks walls only: **R243 FR-R243-2**'s "a wordmark tile sets the name
@@ -42,7 +44,7 @@ the two all the way down, because three studios in four have no logo file (TMDB 
 The 16 logos judged light were rendered on the plate as they are, and again re-inked in dark ink
 (scratch renders, 2026-09-26):
 
-- **13 read correctly on the plate exactly as they are.** Most are *coloured*, not white: 232's rule
+- **12 read correctly on the plate exactly as they are.** Most are *coloured*, not white: 232's rule
   says `light` for any alpha-weighted mean luminance above 0.6, so saturated yellow, lime, green and
   bright blue all count (Channel 5, BBC Three, CBeebies, Hulu, KiKa, TV 2 Fri). The rest are white or
   pale shapes that bring their own outline or body (TV3's sphere, a ghost, a sticker-shaped emblem, a 3D
@@ -55,7 +57,7 @@ The 16 logos judged light were rendered on the plate as they are, and again re-i
   lettering gone, the sticker emblem became a blob, the 3D wordmark a block, TV3 a black disc. This is
   why FR-232-5a already never tints a mostly opaque title logo.
 - **Channel 4** (pale green strokes on transparency) reads on the plate as it is, but weakly; re-inked it
-  reads cleanly. See open question 1.
+  reads cleanly. Decided: re-ink it (decision 1).
 
 So the plate needs a verdict narrower than 232's `light`: *this logo is light, unsaturated ink on
 transparency, and only re-inking it can make it visible*. The client cannot make that judgement (it
@@ -89,26 +91,39 @@ under `artwork/studios` and `artwork/networks`, one extra verdict, computed with
 request path, one ffmpeg run per logo **ever**, persisted beside the logo, re-judged when the logo is
 replaced (FR-232-4). Missing verdicts are filled by the same boot-time background pass
 (`GateClass.BACKGROUND`), never inside `/api/tv/facets`. The rule is a pure function in `commonMain`
-beside `logoInkOf` and `clearlogoInkOf`, unit-tested. A logo is re-inked only when **both** hold:
+beside `logoInkOf` and `clearlogoInkOf`, unit-tested.
 
-- **Most of its ink would be lost on the plate:** a large share of the alpha-weighted visible pixels is
-  both light and unsaturated, so it has neither the luminance contrast nor the hue to show against
-  `#E8EAF0`. A saturated light colour (yellow, lime, cyan) is not lost, because it reads by hue (Channel
-  5's yellow is 0.86 mean luminance and reads fine).
-- **It is ink on transparency, not a shape of its own:** its opaque fraction is low. A logo with an
-  opaque body is never re-inked, because it would become a silhouette (FR-232-5a's reason, restated).
+The rule is about **legibility on this plate**, not about the ink's colour:
 
-Thresholds are chosen the way 232 chose its own: by running the rule over production's logos before it
-ships, and recording the result here. **Expected on production today:** exactly the three studio logos
-described above are re-inked; none of the other 13 light-ink logos, and none of the 205 dark-ink logos.
+- A visible pixel (alpha > 16) is **lost on the plate** when its WCAG contrast against `#E8EAF0` is below
+  **1.6 : 1** *and* its saturation (HSV, `(max − min) / max`) is below **0.5**. It has neither the
+  lightness difference nor the hue to show. Saturated light colours are not lost: Channel 5's yellow,
+  BBC Three's lime and Hulu's green read by hue.
+- `lost` = the alpha-weighted share of lost pixels. `opaque` = the share of all pixels with
+  alpha > 240.
+- **Re-ink when** `lost ≥ 0.95` and `opaque ≤ 0.90`: essentially all of the ink vanishes, and the logo is
+  not a solid block. A block would become a dark rectangle; 232 already treats it as bringing its own
+  ground.
+- **or when** `lost ≥ 0.60` and `opaque ≤ 0.30`: most of the ink vanishes, and it is thin ink on
+  transparency. This clause is what separates a white wordmark beside a coloured emblem, which is
+  re-inked, from a white shape with its own outline or body (a ghost, a sticker emblem, a 3D block
+  wordmark, a sphere), which would turn into a silhouette and is left alone.
 
-⚠ **Measure on a thumbnail that keeps thin strokes.** `FfmpegRunner.rawRgbaThumb` squashes the logo to
+**Run over all 221 production logos on 2026-09-26 (scratch script), this re-inks exactly four:**
+Channel 4 (`lost` 1.00, `opaque` 0.30) and the three white studio logos (1.00/0.48, 0.99/0.13,
+0.66/0.21). No dark-ink logo is caught, and neither is any of the other 12 light-ink ones. The nearest
+misses are the white shapes that must not be tinted, at `lost` 0.61–0.71 with `opaque` 0.48–0.54.
+FR-R308-7's test pins those numbers.
+
+⚠ **Measure on the thumbnail the rule was measured on.** Those numbers come from an aspect-keeping,
+alpha-correct resize to 128 px on the long side. `FfmpegRunner.rawRgbaThumb` squashes the logo to
 32 × 32 (aspect not kept) with `flags=area`, which averages each channel without weighting by alpha, so
 the colour of the transparent pixels bleeds into the strokes. A pure-white wordmark measures a mean
 luminance of **0.92** at full size, **0.89** at 128 px, **0.84** at 64 px, but only **0.74** at 32 px.
-232's `light` line (0.6) survives that. A rule about *white* ink does not. Use a larger, aspect-keeping
-thumbnail for this verdict (for example 128 px wide), or a premultiplied scale. Either way it is still
-one ffmpeg run, and still no PNG decoder in the backend.
+232's `light` line (0.6) survives that. This rule does not. Give this verdict its own ffmpeg render:
+`scale=128:-1` (or `-1:128` for a tall logo) on premultiplied alpha, e.g. `premultiply=inplace=1` before
+the scale and `unpremultiply=inplace=1` after. It is still one ffmpeg run, and still no PNG decoder in
+the backend.
 
 **FR-R308-5 — One additive wire field; `logo_ink` is left exactly as it is.** `FacetItem` gains
 `logo_reink: true`, present only on a logo the server has judged to re-ink and absent otherwise (absent =
@@ -120,12 +135,18 @@ reads" is how v1.31 broke an installed TV.
 
 **FR-R308-6 — Genres are not part of this.** The Genres wall has no logos and keeps its dark wordmark
 cards. It is a different wall (3-up on the phone, shorter cards) and the owner named Networks and
-Studios.
+Studios (decision 3).
+
+**FR-R308-7 — Tests.** The verdict on synthetic rasters: white strokes on transparency → re-ink; a
+white opaque shape with a dark outline → not; saturated yellow strokes → not; pale unsaturated green
+strokes → re-ink; black strokes → not; an opaque white rectangle → not; nothing visible → not. Plus the
+four production re-inks and the three nearest misses above, as fixtures, at the rule's own thumbnail
+size.
 
 ## Non-goals
 
 - The plate colour itself. The owner calls today's plate "the white colour", and it stays `#E8EAF0`
-  (open question 2).
+  (decision 2).
 - Title clearlogos (232 FR-232-5, R259 FR-R259-6), the admin Metadata page (192's checkerboard), and
   choosing or uploading a different logo for a studio or network. There is no such control today.
 - `design/ravilo/ravilo.css`'s `.taxo-card` rule, which still gives a wordmark tile the dark card. That
@@ -134,28 +155,28 @@ Studios.
 ## Acceptance
 
 1. On the TV, Discover → Networks: every tile's card is the light plate. Channel 5, BBC Three, CBeebies,
-   Hulu, KiKa, TV 2 Fri and TV3 are drawn in their own colours on it. The one network without a logo
-   shows its name in dark ink on the plate, with its count beneath.
+   Hulu, KiKa, TV 2 Fri and TV3 are drawn in their own colours on it, and Channel 4 in the dark ink. The
+   one network without a logo shows its name in dark ink on the plate, with its count beneath.
 2. Discover → Studios, scrolled top to bottom: no dark card anywhere; every no-logo tile has its name in
    dark ink; the three white logos are drawn in dark ink and readable; no logo has turned into a solid
    silhouette.
 3. The same two walls on the phone and in the web app. Focus (TV) and press (phone) look as they do today.
-4. `/api/tv/facets` on production: `logo_reink: true` on exactly the three studio logos above; every
-   `logo_ink` value is unchanged from before the phase.
+4. `/api/tv/facets` on production: `logo_reink: true` on exactly four logos (Channel 4 and the three
+   studio logos above); every `logo_ink` value is unchanged from before the phase.
 5. An app installed before this phase, against the new backend, draws both walls exactly as it does
    today.
-6. Unit tests for the verdict, on synthetic rasters: white strokes on transparency → re-ink; a white
-   opaque shape with a dark outline → not; saturated yellow strokes → not; black strokes → not; an
-   opaque rectangle → not; nothing visible → not. Plus the three production cases, measured at the
-   thumbnail size the rule actually uses.
+6. FR-R308-7's tests pass.
 
-## Open questions
+## Decisions (2026-09-26, delegated by the owner)
 
-1. **Channel 4.** Pale green strokes on transparency: visible on the plate as they are, but weak.
-   Re-inking reads better, but takes the brand colour away. The rule as written leaves it alone (it has
-   hue). **Lean: leave it**; re-ink only what would otherwise vanish.
-2. **Pure white instead of `#E8EAF0`?** The owner says "white". Today's plate is a cool off-white,
-   chosen in R257 so a logo tile did not glare on a dark TV page. **Lean: keep the plate**, since it is
-   the colour the owner is pointing at as the one to use everywhere.
-3. **Should Genres follow for uniformity?** Lean no (FR-R308-6). It is one line to change if the owner
-   wants it.
+1. **Channel 4 is re-inked.** Pale green strokes on transparency are visible on the plate, but only
+   just: every visible pixel is below 1.6 : 1 against the plate, with not enough hue to make up for it,
+   on a screen read from across a room. The rule re-inks anything the plate cannot show, and the logo's
+   shape carries the brand. Colour is kept everywhere it reads (Channel 5, BBC Three, CBeebies, Hulu,
+   KiKa, TV 2 Fri, TV3).
+2. **The plate stays `#E8EAF0`.** It is the colour the owner pointed at as "the white colour" to use
+   everywhere, and an off-white glares less than pure white on a dark TV page. With every tile on a
+   plate, the whole wall is plates, which makes that matter more, not less.
+3. **Genres keep their dark cards.** The plate exists because captured logos are drawn for a light page.
+   Genres have no logos, so a light plate would only put dark text on light for no reason. It also keeps
+   the two kinds of wall visibly distinct: brands on plates, categories as words.

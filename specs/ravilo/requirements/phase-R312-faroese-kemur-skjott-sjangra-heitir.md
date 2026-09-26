@@ -9,9 +9,11 @@
 
 ## Status
 
-`Planned` — written 2026-09-26, not dev-reviewed. **Strings only:** `i18n/fo.json`, the regenerated
-`i18n/lexicon/fo.txt`, and one entry in `scripts/check_i18n_spelling.py`. No key added, removed or
-renamed, no placeholder changed, and `en.json` and `da.json` untouched. Every client (TV, phone, web,
+`Planned` — written 2026-09-26, not dev-reviewed. **Strings only:** `i18n/fo.json`, one dead key
+removed from all three languages, the regenerated lexicons, and one entry in
+`scripts/check_i18n_spelling.py`. No key added or renamed, and no placeholder changed. **Open questions
+decided the same day**: the owner handed the calls over (*"You just decide for me. We want all best
+solutions for everything"*). See *Decisions* at the end. Every client (TV, phone, web,
 Chromecast receiver, the Tizen receiver) reads the same table (R279), so this reaches all of them.
 **Numbering:** verified against `STATUS.md` the same day — Ravilo taken through **R307**.
 
@@ -29,7 +31,8 @@ changes the chip's wording and adds the plural.
 
 `Kemur skjótt` is already the file's phrase for the same idea: `sonarr.upcoming` (R149's key) says it,
 though no current client draws that key. `nav.upcoming` (`Komandi`), the heading on the Coming Soon tab,
-is not part of the owner's note and stays (see open question 2).
+is not part of the owner's note. R311 replaces that heading with *Uppdaga* on every tab and deletes
+the key, so no *Komandi* is left above the chip (decision 2).
 
 ### 2. Genre — `sjangra`, `sjangrur`
 
@@ -63,19 +66,22 @@ changes. `browse.titles` is included although the owner named the walls: selecti
 grid, and a wall that says *26 heitir* must not open a page that says *26 heiti*. That is R288's own
 rule, one word used one way through the whole file.
 
-`lib.count` (`{n} heiti`) is left alone: no client reads it, and it has no singular to pair with. See
-open question 3.
+`lib.count` (`{n} heiti` / `{n} titles` / `{n} titler`) is **deleted from all three files**. It was
+added for R267's Library dropdown, which ended up printing a bare number (`LibraryTypePill.kt`), so no
+client has ever read it. It has no singular to pair with, so it could only ever go stale. That is
+exactly what it did: it is the one title count this phase would otherwise have left saying *heiti*.
 
 ## Requirements
 
-**FR-R312-1 — The nine strings above, exactly.** Placeholders unchanged (`{n}`, `{count}`), so
-`generateRaviloStrings` accepts the file as it is.
+**FR-R312-1 — The nine strings above, exactly, and `lib.count` deleted.** Placeholders unchanged
+(`{n}`, `{count}`), so `generateRaviloStrings` accepts the files as they are. Before the deletion, one
+`grep` confirms `lib.count` has no reader in any client or script.
 
-**FR-R312-2 — The lexicon is regenerated and committed with the strings.**
-`scripts/check-i18n-spelling.sh --update-lexicon` rewrites `i18n/lexicon/fo.txt` from the strings in
-use. It gains `sjangra`, `sjangru`, `sjangrur` and `heitir` and drops `sjanra`, `sjanru` and
-`sjanrur`. It is committed **in the same commit** as `fo.json`, so the diff shows the spellings as a
-decision (the i18n README's rule).
+**FR-R312-2 — The lexicons are regenerated and committed with the strings.**
+`scripts/check-i18n-spelling.sh --update-lexicon` rewrites `i18n/lexicon/fo.txt` (and `da.txt`, for the
+deleted `lib.count`) from the strings in use. It gains `sjangra`, `sjangru`, `sjangrur` and `heitir` and
+drops `sjanra`, `sjanru` and `sjanrur`. It is committed **in the same commit** as `fo.json`, so the diff
+shows the spellings as a decision (the i18n README's rule).
 
 **FR-R312-3 — The old genre word is kept out.** `sjanra`, `sjanru` and `sjanrur` are added to the
 Faroese `DISCOURAGED` list in `scripts/check_i18n_spelling.py`, with the owner's reason, the way
@@ -87,7 +93,8 @@ the check instead of slipping back in.
 
 ## Non-goals
 
-- Danish and English. The owner's note is about Faroese.
+- Danish and English wording. The owner's note is about Faroese; the only change to `da.json` and
+  `en.json` is the dead key's deletion.
 - `design/ravilo/ravilo-i18n.js`, the mockup's own copy, which still says `Sjanrur` and
   `Komandi skjótt`. The shipped table wins wherever the two differ (R279). The design project follows
   on its next pass.
@@ -105,14 +112,15 @@ the check instead of slipping back in.
    The browse page's filter reads *Sjangra*.
 4. The same on the phone and in the web app. The spelling check fails if `sjanrur` is put back.
 
-## Open questions
+## Decisions (2026-09-26, delegated by the owner)
 
-1. **`heitir` or `heiti`?** Dictionaries give *heiti* as a neuter noun with an unchanged plural
-   (*eitt heiti, tvey heiti*), the same as *epli*. The owner asked for *heitir*, and this phase writes
-   what the owner asked. Worth one confirmation before it ships, since it becomes the file's word for
-   every count of titles.
-2. **Should the Coming Soon tab's heading (`nav.upcoming`, *Komandi*) also read *Kemur skjótt*?** It
-   sits directly above the chip. R311 open question 1 asks whether that heading should read *Uppdaga*
-   on every tab, as the mockup draws it, and if so this question goes away.
-3. **Delete `lib.count`?** No client reads it. Removing a key is a separate, deliberate change to all
-   three languages. **Lean: leave it for the next i18n sweep.**
+1. **`heitir` is right, and it is what ships.** Wiktionary's Faroese entry for the neuter noun *heiti*
+   gives the indefinite plural as *heiti, heitir*, both accepted (checked, not assumed: the first draft
+   of this spec doubted it). Of the two, *heitir* is the one that reads as plural at a
+   glance, which is the owner's point: *26 heiti* looks like a singular. The singular keys keep *1
+   heiti*.
+2. **The Coming Soon heading question is answered by R311.** The heading reads *Uppdaga* on every tab,
+   and `nav.upcoming` is deleted there, together with its last reader. It is not deleted here, because
+   this phase may ship first and the key still has a reader until R311 does.
+3. **`lib.count` is deleted here**, in all three languages (see above). It has no reader, it has already
+   gone stale once, and this is the strings phase that regenerates the lexicons anyway.

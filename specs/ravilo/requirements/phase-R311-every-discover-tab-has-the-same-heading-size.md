@@ -5,8 +5,10 @@
 
 ## Status
 
-`Planned` — written 2026-09-26, not dev-reviewed. Client only (`ravilo-ui`: TV, phone, web), a
-one-value change. **Numbering:** verified against `STATUS.md` the same day — Ravilo taken through
+`Planned` — written 2026-09-26, not dev-reviewed. Client only (`ravilo-ui`: TV, phone, web) plus one
+string key removed. **The open question was decided the same day**: the owner handed the calls over
+(*"You just decide for me. We want all best solutions for everything"*), so the heading's words change
+too (FR-R311-3). **Numbering:** verified against `STATUS.md` the same day — Ravilo taken through
 **R307**.
 
 ## What is wrong
@@ -45,23 +47,31 @@ value to change if the size is ever revisited.
 subtitle and the segment bar exactly where they were, on the TV, the phone and the web app. This is the
 acceptance of R262 FR-R262-1, restated for the header's height.
 
+**FR-R311-3 — The heading reads *Discover* on every tab.** The heading is the page's name,
+`nav.discover` (*Discover* / *Opdag* / *Uppdaga*), whichever chip is selected. The subtitle beneath it
+keeps saying what the selected tab holds (`up.subtitle`, `request.sub`, `tx.sub_*`, unchanged). This is
+how the mockup draws every tab (`dischead-row h1` and `uphead-row h1` both read `nav_discover`). With the
+size fixed, the heading becomes one thing that never changes on a chip press, as FR-R262-1 means the
+frame to be. `discoverHeaderTitle` goes. It was the only reader of `nav.upcoming` (checked across every
+client, 2026-09-26), so the key is deleted from `en.json`, `da.json` and `fo.json` in the same commit,
+and `i18n/lexicon/*.txt` is regenerated with it (`check-i18n-spelling.sh --update-lexicon`). A dead key
+is where the next stale translation hides.
+
 ## Non-goals
 
-- **The heading's text.** Coming Soon's heading reads `nav.upcoming` (*Upcoming* / *Kommende* /
-  *Komandi*), Request's reads `seg.request`, and the walls' read `nav.discover`, while the mockup titles
-  every tab *Discover* and lets the subtitle change. The owner raised only the size. See open
-  question 1. The Faroese chip label *Komandi skjótt* is corrected separately, in R312.
-- The subtitle, the segment bar, the Seerr pill.
+- The subtitle's text, the segment bar, the Seerr pill. The Faroese chip label *Komandi skjótt* is
+  corrected separately, in R312.
 
 ## Acceptance
 
-1. On the TV, move along the segment bar from Networks to Request and back: the heading is the same size
-   on every tab, and nothing above or below the chips moves. The chip under focus stays where it was.
+1. On the TV, move along the segment bar from Networks to Request and back: the heading reads
+   *Discover* (*Uppdaga* in Faroese) at the same size on every tab, only the subtitle changes, and
+   nothing above or below the chips moves. The chip under focus stays where it was.
 2. The same on the phone's Discover page and in the web app.
 
-## Open questions
+## Decisions (2026-09-26, delegated by the owner)
 
-1. **Should the heading read *Discover* on every tab, as the mockup draws it?** Today it changes word
-   with the tab (*Upcoming*, *Request*, *Discover*), which repeats the chip that is already highlighted
-   just below. **Lean: yes, but only if the owner wants it.** It is a copy change, not the size fix
-   asked for.
+1. **The heading reads *Discover* on every tab** (FR-R311-3). A heading that changes word with the tab
+   repeats the chip that is highlighted just below it, and on Coming Soon it said *Komandi* above a chip
+   saying *Kemur skjótt* (R312): two words for one tab, stacked. The mockup has always drawn one
+   heading, and a heading that never changes is the other half of "the frame stands still".

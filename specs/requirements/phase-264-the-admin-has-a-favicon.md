@@ -5,8 +5,9 @@
 ## Status
 
 `Planned` — written 2026-09-26, not dev-reviewed. Frontend resources and build only; no route, no
-config, no backend logic. **Numbering:** verified against `STATUS.md` the same day — admin taken through
-**263**.
+config, no backend logic. **Open questions decided the same day**: the owner handed the calls over
+(*"You just decide for me. We want all best solutions for everything"*). See *Decisions* at the end.
+**Numbering:** verified against `STATUS.md` the same day — admin taken through **263**.
 
 ## What is wrong, measured
 
@@ -60,12 +61,19 @@ unchanged one costs a 304.
 **FR-264-5 — An e2e check.** One Playwright assertion in the existing admin suite: the page's
 `link[rel=icon]` resolves `200 image/svg+xml`, and `GET /favicon.ico` answers `200 image/x-icon`.
 
+**FR-264-6 — The public info site draws the same mark.** The info site (three pages: overview, Ravilo,
+privacy) has a favicon, an inline data URI, but it and the nav logo on all three pages draw the **plain
+Quartet**, from before the play triangle was added. So the product has two logos. The info site takes
+the same `favicon.svg` / `favicon.ico` / `apple-touch-icon.png` as FR-264-1 (served as files, no longer
+inlined) and the Quartet Play drawing in its nav mark. It lives in the deployment directory beside the
+compose file, outside this repository. Its `Dockerfile` copies named files only
+(`index.html ravilo.html privacy.html` and `assets/`), so the COPY line must also name the three icon
+files, or `/favicon.ico` stays a 404 there too. Its change ships with that directory, and rebuilding the
+site container is a deploy, asked for like any other.
+
 ## Non-goals
 
-- **The public info site.** It lives outside this repository, already has a favicon (an inline data
-  URI), and draws the older plain Quartet mark without the play triangle. See open question 1.
-- **Ravilo's web app.** It has a manifest, `icon-192/512` and an `apple-touch-icon`, but no
-  `rel="icon"`. See open question 2.
+- **Ravilo's web app** has no tab icon either, but it is a different product with its own mark: R313.
 - A PWA manifest or theme colour for the admin. It is not installable and nothing asks for that.
 
 ## Acceptance
@@ -76,12 +84,12 @@ unchanged one costs a 304.
 3. On an iPhone, *Add to Home Screen* on the admin gives the tile on an opaque ground, not a screenshot
    of the page.
 4. A dev run (`runDev`) serves the same icons as the Docker image.
+5. The public info site, after its rebuild: the same tile in the tab on all three pages, and the nav logo
+   has the play triangle.
 
-## Open questions
+## Decisions (2026-09-26, delegated by the owner)
 
-1. **Should the public info site move to the Quartet Play mark too?** Its nav logo and favicon still draw
-   the plain Quartet from before the play triangle was added. **Lean: yes**, but it is a change outside
-   this repository.
-2. **Should Ravilo's web app get a tab icon while this is open?** A browser tab showing Ravilo has none
-   today. It would take one line and the existing `icon-192.png`. **Lean: yes, as a one-line R-phase.**
-   It is kept out of this one because it is a different product.
+1. **The public info site moves to Quartet Play** (FR-264-6). One product, one mark: the plain Quartet
+   was an exploration step, and the logo exploration's asset set is built on Quartet Play.
+2. **Ravilo's web app gets a tab icon, as its own phase (R313).** It needs the Ravilo mark, not this
+   one, and it ships in the `ravilo-web` image, not the backend's.

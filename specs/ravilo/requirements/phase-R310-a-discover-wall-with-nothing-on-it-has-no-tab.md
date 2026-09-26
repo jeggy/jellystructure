@@ -8,8 +8,9 @@
 ## Status
 
 `Planned` — written 2026-09-26, not dev-reviewed. Client (`ravilo-ui`: TV, phone, web) plus one small
-additive backend answer. **Numbering:** verified against `STATUS.md` the same day — Ravilo taken
-through **R307**.
+additive backend answer. **Every choice decided the same day**: the owner handed the calls over (*"You
+just decide for me. We want all best solutions for everything"*). See *Decisions* at the end.
+**Numbering:** verified against `STATUS.md` the same day — Ravilo taken through **R307**.
 
 Supersedes **R243 FR-R243-1**'s "the three taxonomy segments are never gated". It also supersedes
 **R268**'s consequence that Discover *"always lands on Networks now"*. R268's own rule (one declared
@@ -50,21 +51,19 @@ of `discoverSegments`". With no networks it lands on Studios, with neither on Ge
 then Request. The same list drives the Discover nav button's "step to the next segment"
 (`nextDiscoverSegment`), so a hidden wall is never stepped to either.
 
-**FR-R310-3 — The bar knows before it is drawn: a small answer, fetched with the other two.** The
-server answers which walls hold anything for this device, next to the two flags `HomeStore` already
-fetches at Home load and on every live-config refresh (R33). **Lean:** a summary form of the facets
-route, e.g. `GET /api/tv/facets?summary=true` → `{"networks": 66, "studios": 573, "genres": 41}`, the
-three value counts only. It is read from the **same per-viewer facets cache** (`BrowseService.facets`,
+**FR-R310-3 — The bar knows before it is drawn: a small answer, fetched with the other two.** A new
+route answers which walls hold anything for this device:
+`GET /api/tv/facets/summary` → `{"networks": 66, "studios": 573, "genres": 41}`, the three value counts
+and nothing else. It is read from the **same per-viewer facets cache** (`BrowseService.facets`,
 keyed on the user and their visibility scope) that fills the walls, so a chip and its wall cannot
-disagree. The client shows a wall when its count is above zero. It does no other arithmetic.
+disagree. `HomeStore` fetches it beside the two flags it already fetches (`refreshDiscoverAvailable`,
+`refreshUpcomingAvailable`), on Home load and on every refresh. The client shows a wall when its count
+is above zero and does no other arithmetic.
 
-- *Rejected:* prefetching the full `/api/tv/facets` at Home. Production's is **123 KB**, most of it the
-  2 432 tags the walls never draw, on every Home load of a TV whose cold start took four phases
-  (R210–R213).
-- *Alternative for dev review:* an additive field on the Home feed. That saves the request but touches
-  the Home payload and its cache.
-- **An older backend answers nothing here.** Then the client keeps today's behaviour, all three walls
-  shown, so a new app on an old server loses nothing.
+**An older backend** has no such route and answers 404. It is a separate path rather than a query
+parameter on `/api/tv/facets` because an old server would ignore the parameter and answer the full
+facets object, whose `networks` is a list, not a count. The client treats a 404 or any failure as "no
+answer" and keeps today's behaviour, all three walls shown. A new app on an old server loses nothing.
 
 **FR-R310-4 — A change while Discover is open.** The answer can change: a scan adds studios, or the
 admin narrows a viewer's libraries. When it is refreshed (Home load, live-config push), the bar
@@ -76,8 +75,9 @@ segment is handled. A wall that gains values appears in its declared place, and 
 values, no Sonarr/Radarr, no Seerr), the Discover item stays in both navigation bars. The TV's top bar
 and R267's five-item phone bar keep their geometry. Discover opens with no chips and FR-R243-8's
 existing sentence in the content region. `defaultDiscoverSegment` must not call `.first()` on an empty
-list: today that cannot happen, and this phase is what makes it reachable. **Lean:** the landing segment
-becomes nullable and the frame renders the empty sentence for `null`.
+list: today that cannot happen, and this phase is what makes it reachable. The landing segment
+becomes nullable (`Dest.Discover.segment: DiscoverSegment?`), and the frame renders the empty sentence
+for `null`.
 
 **FR-R310-6 — The wall's own empty sentence stays.** FR-R243-8's *"Nothing here for this profile yet"*
 remains for the one case the gate cannot rule out: the summary said yes, and the wall loaded empty
@@ -113,3 +113,16 @@ device.
    no chip is left that opens a *"0 networks"* page.
 5. The same on the phone's Discover tab and in the web app.
 6. A new app against a backend without the summary: all three walls shown, as today.
+
+## Decisions (2026-09-26, delegated by the owner)
+
+1. **The summary route, not the Home feed and not a prefetch.** Prefetching the full facets at Home would
+   cost 123 KB on every Home load, most of it 2 432 tags the walls never draw, on a TV whose cold start
+   took four phases (R210–R213). An additive field on the Home feed saves one small request but ties
+   the gate to the Home payload's own cache, which is keyed and invalidated for different reasons. That
+   is how two surfaces come to disagree. The summary is answered from the very cache the walls are
+   drawn from, and it follows the pattern `HomeStore` already uses for Discover's other two gates.
+2. **Discover never disappears from the navigation.** A household with nothing to discover still gets
+   the item and one sentence, so the TV's top bar and the phone's five-item bottom bar never change
+   shape (R267's geometry, R170's fixed tabs). A nav item that comes and goes with the library would
+   move every item after it under the viewer's thumb.
