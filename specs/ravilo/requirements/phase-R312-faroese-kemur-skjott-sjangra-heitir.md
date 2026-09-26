@@ -9,13 +9,14 @@
 
 ## Status
 
-`Planned` — written 2026-09-26, not dev-reviewed. **Strings only:** `i18n/fo.json`, one dead key
-removed from all three languages, the regenerated lexicons, and one entry in
-`scripts/check_i18n_spelling.py`. No key added or renamed, and no placeholder changed. **Open questions
-decided the same day**: the owner handed the calls over (*"You just decide for me. We want all best
-solutions for everything"*). See *Decisions* at the end. Every client (TV, phone, web,
-Chromecast receiver, the Tizen receiver) reads the same table (R279), so this reaches all of them.
-**Numbering:** verified against `STATUS.md` the same day — Ravilo taken through **R307**.
+`Planned` — written 2026-09-26, **dev-reviewed 2026-09-26** against `main` `0e5e434f` (see *Dev review*
+at the end). **Strings only:** `i18n/fo.json`, one dead key removed from all three languages, the
+regenerated lexicons, and one entry in `scripts/check_i18n_spelling.py`. No key added or renamed, and no
+placeholder changed. **Open questions decided the same day**: the owner handed the calls over (*"You
+just decide for me. We want all best solutions for everything"*). See *Decisions* at the end. Every
+client (TV, phone, web, Chromecast receiver, the Tizen receiver) reads the same table (R279), so this
+reaches all of them. **Numbering:** verified against `STATUS.md` the same day — Ravilo taken through
+**R307**.
 
 Amends **R288** (*Faroese says what it means*): its FR-R288-2 turned `Comandi skjótt` into
 `Komandi skjótt`, and its term table fixed *title* as `heiti`. The owner's word stands on both; this
@@ -124,3 +125,23 @@ the check instead of slipping back in.
    this phase may ship first and the key still has a reader until R311 does.
 3. **`lib.count` is deleted here**, in all three languages (see above). It has no reader, it has already
    gone stale once, and this is the strings phase that regenerates the lexicons anyway.
+
+## Dev review (2026-09-26, against `main` `0e5e434f`)
+
+1. **The keys are where the tables say.** `fo.json`: `seg.coming` `:61`, `seg.genres` `:68`,
+   `tx.sub_genres` `:71`, `tx.n_genres` `:74`, `tx.titles` `:75`, `detail.genre` / `detail.genres`
+   `:170-171`, `browse.titles` `:220`, `browse.facet.genre` `:223`. `lib.count` is `:22` in all three
+   files, and no Kotlin, JavaScript or script reads it (checked 2026-09-26; R267's dropdown prints a bare
+   number, `LibraryTypePill.kt:143`).
+2. **The code already picks singular and plural.** `titleCountLabel` (`TaxonomyScreen.kt:209-210`),
+   `BrowseScreen.kt:291-292` and `SeededBrowseScreen.kt:429` choose `_one` for exactly one. No code
+   changes.
+3. **The spelling guard.** `DISCOURAGED["fo"]` (`scripts/check_i18n_spelling.py:27-37`) takes
+   `sjanra`, `sjanru` and `sjanrur` with one reason string. `--update-lexicon` rewrites each lexicon from
+   the words in use (`:191-199`), so the old forms drop out by themselves, and `da.txt` loses `titler`
+   only if no other Danish string uses it.
+4. **Independent of R311.** R311 deletes `nav.upcoming`; this phase deletes `lib.count`. They touch
+   different keys and can land in either order. The lexicon regeneration in the second one absorbs the
+   first.
+
+**Net effect.** Nine values, one key removed, three `DISCOURAGED` entries, the lexicons regenerated.
