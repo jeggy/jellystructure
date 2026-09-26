@@ -27,6 +27,15 @@ has never run on production (no `file_replace_from_source` row in `media_job`, n
   position holding the library's own track and the library's labels in place — while 254's `-map 0`
   plan, judged by the same position check, fails at 5 of 7 positions on every one. The swap never ran.
 - 30 unit tests (16 pairing, 14 file integrity); `compileKotlinLinuxX64` and `compileKotlinWasmJs` clean.
+- **End to end in CI** (`tests/e2e/scan-replace.spec.ts`, added the same day): a new fixture — a damaged
+  library file reordered and relabelled against its clean seeding copy — a new `tests/mock-qbittorrent`
+  (the stack had no qBittorrent, so 254's replace path had never run outside production), and the real
+  backend taking it through the deep check, the plan endpoint, the title page's row, and the replace job,
+  then per-stream `streamhash`es of the resulting file against the source. Passed locally against the
+  built image, with the ten app-only specs around it.
+- **Found by that run and fixed separately** (phase 178, amendment 2026-09-26): the Dashboard that started
+  a manual scan never showed "Paused — TV is watching" when the run deferred at once, because the event
+  fired before its socket was open.
 
 ## What is wrong, measured 2026-09-26
 

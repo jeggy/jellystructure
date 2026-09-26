@@ -3,7 +3,7 @@
 #   ./scripts/build-fixtures.sh
 #   docker compose -f docker-compose.test.yml up --build --abort-on-container-exit
 #
-# No external secrets needed — all API calls go to the bundled mocks (Jellyfin, TMDB, Bazarr).
+# No external secrets needed — all API calls go to the bundled mocks (Jellyfin, TMDB, Bazarr, qBittorrent).
 # Optional env overrides:
 #   FIXTURE_DIR      — path to fixture MKVs on the host (default: /tmp/jellystructure-fixtures)
 #   JELLYFIN_USER    — Jellyfin admin username used by Playwright login test (default: admin)
@@ -65,6 +65,24 @@ services:
     networks:
       - testnet
 
+  # Phase 263 — the torrent list phase 254's "Replace from clean copy" searches for a damaged file's clean
+  # copy. Before it the stack had no qBittorrent, so that path had never run outside a production library.
+  qbittorrent-mock:
+    image: node:20-alpine
+    command: node /mock/server.js
+    volumes:
+      - ./tests/mock-qbittorrent:/mock:ro
+    environment:
+      PORT: 8080
+      MEDIA_ROOT: /media
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/api/v2/app/version"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+    networks:
+      - testnet
+
   app:
     build:
       context: .
@@ -115,6 +133,8 @@ services:
       tmdb-mock:
         condition: service_healthy
       bazarr-mock:
+        condition: service_healthy
+      qbittorrent-mock:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:9505/api/health"]

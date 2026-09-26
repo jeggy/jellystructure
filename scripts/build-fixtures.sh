@@ -147,12 +147,52 @@ ffmpeg -y \
 rm -rf "$TMP"
 log "  → $BF_DIR/Season 01/ (S01E01=eng, S01E02=dan, S01E03=fao — mixed language)"
 
+# ─── fixture 5: Two Tongues (2021) — damaged, reordered, with a clean seeding copy ─
+# Phase 263. The library copy is the seeding copy with its audio reordered and relabelled the way this
+# household's library is (Danish first and default; the release is English first), then damaged
+# mid-file: a Cluster's size field overwritten, which the demuxer reports exactly as it reported the real
+# files ("Element at … exceeds containing master element"). The seeding copy sits outside every library
+# root at the path tests/mock-qbittorrent reports as a torrent's content path, same basename, its own
+# inode. Each audio track is a different tone, so no two tracks share a packet. Replacing the file must
+# put the seeding copy's Danish track under the Danish label — phase 254 put its English one there.
+log "Building: Two Tongues (2021) — damaged, reordered, clean seeding copy"
+TT_NAME="Two Tongues (2021).mkv"
+TT_DIR="$FIXTURE_DIR/movies/Two Tongues (2021)"
+TT_SEED="$FIXTURE_DIR/seeding/Two.Tongues.2021.1080p"
+mkdir -p "$TT_DIR" "$TT_SEED"
+TMP=$(mktemp -d)
+printf '1\n00:00:01,000 --> 00:00:04,000\nHello\n\n2\n00:00:08,000 --> 00:00:12,000\nAgain\n\n3\n00:00:15,000 --> 00:00:18,000\nBye\n' > "$TMP/eng.srt"
+ffmpeg -y -loglevel error \
+  -f lavfi -i "testsrc=s=320x180:r=24:d=20" \
+  -f lavfi -i "sine=frequency=440:d=20" -f lavfi -i "sine=frequency=550:d=20" -f lavfi -i "sine=frequency=660:d=20" \
+  -i "$TMP/eng.srt" \
+  -map 0:v -map 1:a -map 2:a -map 3:a -map 4:s -c:v mpeg4 -q:v 5 -c:a ac3 -b:a 96k -c:s srt \
+  -metadata:s:a:0 language=eng -metadata:s:a:1 language=dan -metadata:s:a:2 language=swe -metadata:s:s:0 language=eng \
+  -disposition:a:0 default -disposition:a:1 0 -disposition:a:2 0 \
+  -cluster_time_limit 1000 "$TT_SEED/$TT_NAME"
+ffmpeg -y -loglevel error -i "$TT_SEED/$TT_NAME" \
+  -map 0:0 -map 0:2 -map 0:3 -map 0:1 -map 0:4 -c copy \
+  -metadata:s:1 language=dan -metadata:s:2 language=swe -metadata:s:3 language=eng \
+  -disposition:1 default -disposition:2 0 -disposition:3 0 \
+  -cluster_time_limit 1000 "$TT_DIR/$TT_NAME"
+# The middle Cluster's size becomes absurd: everything up to the next Cluster is lost (~1 s of 20).
+mapfile -t TT_CLUSTERS < <(LC_ALL=C grep -obUaP '\x1f\x43\xb6\x75' "$TT_DIR/$TT_NAME" | cut -d: -f1)
+TT_MID=${TT_CLUSTERS[$(( ${#TT_CLUSTERS[@]} / 2 ))]}
+printf '\x01\x7f\xff\xff\xff\xff\xff\xf0' | dd of="$TT_DIR/$TT_NAME" bs=1 seek=$((TT_MID + 4)) conv=notrunc status=none
+if [ -z "$(ffmpeg -nostdin -v error -i "$TT_DIR/$TT_NAME" -map 0 -c copy -f null - 2>&1 | grep 'matroska,webm')" ]; then
+  echo "ERROR: Two Tongues library copy did not come out damaged"; exit 1
+fi
+rm -rf "$TMP"
+log "  → $TT_DIR/$TT_NAME (dan/swe/eng, damaged at byte $TT_MID)"
+log "  → $TT_SEED/$TT_NAME (eng/dan/swe, clean)"
+
 log ""
 log "Fixtures ready in $FIXTURE_DIR"
 log "  movies/Sintel (2010)/Sintel (2010).mkv        — wrong fra default (must be fixed to eng)"
 log "  movies/Big Buck Bunny (2008)/...mkv            — untagged tracks (→ triage)"
 log "  tv/Tears of Steel/Season 01/...mkv (3 files)  — uniform eng"
 log "  tv/Babel Fish/Season 01/...mkv (3 files)      — mixed eng/dan/fao (languageMix=true)"
+log "  movies/Two Tongues (2021)/...mkv              — damaged, reordered; clean copy under seeding/ (phase 263)"
 log ""
 log "Verify with:"
 log "  ffprobe -v quiet -print_format json -show_streams '$SINTEL_DIR/Sintel (2010).mkv' | grep -E 'language|disposition'"

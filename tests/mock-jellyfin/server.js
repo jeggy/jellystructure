@@ -122,6 +122,15 @@ const ITEMS = [
     Path: `${MEDIA_ROOT}/tv/Babel Fish`,
     ProviderIds: {},
   },
+  // Phase 263 — damaged, its tracks reordered against its clean seeding copy (scripts/build-fixtures.sh).
+  {
+    Id: "twotongues-id",
+    Name: "Two Tongues",
+    Type: "Movie",
+    ProductionYear: 2021,
+    Path: `${MEDIA_ROOT}/movies/Two Tongues (2021)/Two Tongues (2021).mkv`,
+    ProviderIds: {},
+  },
 ];
 
 // R285 CI (2026-09-24) — ONE item that negotiates like a real transcode, so the receiver's track paths

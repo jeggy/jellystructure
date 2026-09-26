@@ -48,6 +48,12 @@ scan_schedule = ""
     local_path = "/media/tv"
     skip = false
 
+[qbittorrent]
+    url = "http://qbittorrent-mock:8080"
+    username = "admin"
+    password = "adminadmin"
+    enabled = true
+
 [chromecast]
     enabled = true
     app_id = "E2ECAF00"
