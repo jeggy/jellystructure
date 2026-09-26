@@ -8,13 +8,13 @@
 
 ## Status
 
-`Planned` — written 2026-09-26, not dev-reviewed. **A regression of Phase 149 / R179**, not a new
-design: nothing new is drawn, and the combined card, the triptych and the copy all still exist in the
-code. Needs **both halves**: backend (`DetailService`, `HomeFeedService`) and client
-(`SeriesDetailScreen`, `HomeScreen`). Either alone still shows one card per file (see FR-R309-2). **Open
-questions decided the same day**: the owner handed the calls over (*"You just decide for me. We want all
-best solutions for everything"*). See *Decisions* at the end. **Numbering:** verified against
-`STATUS.md` the same day — Ravilo taken through **R307**.
+`Planned` — written 2026-09-26, **dev-reviewed 2026-09-26** against `main` `0e5e434f` (see *Dev review*
+at the end). **A regression of Phase 149 / R179**, not a new design: nothing new is drawn, and the
+combined card, the triptych and the copy all still exist in the code. Needs **both halves**: backend
+(`DetailService`, `HomeFeedService`) and client (`SeriesDetailScreen`, `HomeScreen`). Either alone still
+shows one card per file (see FR-R309-2). **Open questions decided the same day**: the owner handed the
+calls over (*"You just decide for me. We want all best solutions for everything"*). See *Decisions* at
+the end. **Numbering:** verified against `STATUS.md` the same day — Ravilo taken through **R307**.
 
 ## What is wrong, measured
 
@@ -159,3 +159,36 @@ episodes are the scanned episodes carrying that id, the same set FR-R309-1 keeps
 2. **The guard against this happening again is FR-R309-6's tests**, built from production's exact id
    shape (several episodes, one id, one file). They fail on today's code on both sides, which no test
    did for two months. No device-sweep entry is added: a unit test in CI catches this before a release.
+
+## Dev review (2026-09-26, against `main` `0e5e434f`)
+
+The two dedupes are the only ones, and the live payload is exactly what the code produces. Six items.
+
+1. **Server.** `episodes = tvEpisodes.distinctBy { it.id }` (`DetailService.kt:173`) becomes one pure
+   function, `oneIdPerFile(episodes)`. Walk the season in episode order, remember the file each id first
+   came from, and drop an entry only when its id is already owned by a **different** file. Unit-test it
+   in `linuxX64Test` with production's shape (three entries, one id, one `file`) and the loop fix's case
+   (two files, one id).
+2. **Client.** `episodeGroups` (`SeriesDetailScreen.kt:175-183`) is the only client dedupe:
+   `episodes.distinctBy { it.id }.groupBy { file }`. It becomes group-by-file first, then drop a whole
+   group whose id an earlier group already owns. Everything downstream already goes through
+   `episodeGroups`: the rail (`:748`), `buildEpisodeContext` (`:199`) and the player's episode list
+   (`:216-236`).
+3. **The player's title.** `episodeDisplayTitle` (`:163-166`) is a plain function, which is why it
+   hard-codes English. The non-composable lookup exists: `t(key, lang, vars)` (`i18n/Strings.kt:18`).
+   Pass the viewer's `lang` into `buildEpisodeContext` from its composable callers (`LocalLang.current`)
+   and use `t("up.episodes_range", lang, mapOf("a" to …, "b" to …))`.
+4. **The Resume label** is built at `:593-597` (`"S${s}E${e}"`). Use `episodeGroupRange` (`:150-156`),
+   the same helper the kicker uses, so the two cannot disagree.
+5. **Continue Watching and Next Up (FR-R309-7).** `resolvedEpisodeNumbers` (`HomeFeedService.kt:1033-
+   1037`) already finds the scanned episode by the played item's Jellyfin id. Return the highest
+   `episodeNumber` among `mediaItem.episodes` sharing that id as the end of the range. Carry it on
+   `MediaCard` as `@SerialName("episode_number_end") val episodeNumberEnd: Int? = null` (beside `:294-295`),
+   used by the resume candidate (`:982`) and in the next-up label (`:993-994`). The client's badge is
+   `HomeScreen.kt:602-603`.
+6. **One release for both halves.** A backend alone changes nothing on installed apps (item 2), and an
+   app alone receives one entry per file (item 1). Ship the backend first (harmless alone), then the app
+   release. The acceptance runs after both.
+
+**Net effect.** One pure function on each side, a `lang` parameter, one helper reused, one additive
+`MediaCard` field, the badge and label. No migration.
