@@ -7,9 +7,9 @@
 
 ## Status
 
-`Planned` — written 2026-09-26, not dev-reviewed. Admin frontend only (`MediaDetail.kt`'s artwork tab and
-its inline stylesheet). **Numbering:** verified against `STATUS.md` the same day — admin taken through
-**265**.
+`Planned` — written 2026-09-26, **dev-reviewed 2026-09-26** against `main` `0e5e434f` (see *Dev review*
+at the end). Admin frontend only (`MediaDetail.kt`'s artwork tab and its inline stylesheet).
+**Numbering:** verified against `STATUS.md` the same day — admin taken through **265**.
 
 ## Reproduced on production, safely
 
@@ -87,3 +87,32 @@ for a poster, so the fix for one shape cannot break the other.
    does today.
 4. On a touch device the ⤢ button is visible without hovering, and tapping it opens the lightbox.
 5. FR-266-5's test passes and fails when the info bar is put back over the button.
+
+## Dev review (2026-09-26, against `main` `0e5e434f`)
+
+The reproduction matches the code line for line. Five items.
+
+1. **Where it lives.** Candidate cards are built in `renderArtGallery` (`MediaDetail.kt:3638-3651`: the
+   `⤢` button at `:3644`, *before* `.art-card-meta` at `:3645`, so the bar paints over it). The card's
+   click handler is at `:3719-3744`, with the one-level check at `:3724`
+   (`ev.target.classList.contains("art-zoom")`), and the button's own handler at `:3747-3755`. The
+   styles are inline in `injectArtworkStyles()` (`:3939`): `.art-zoom` `:3984`, its hover reveal `:3983`,
+   `.art-card-meta` `:3987`. No design stylesheet is involved, so `check-css-scoping.sh` is unaffected.
+2. **When it started.** `ArtTarget("clearlogo", …, "4 / 1")` (`:3422`) replaced `"16 / 9"` in `449b1e86`,
+   Phase 192's build, committed under the 194/R237 spec message. That is also why the history is hard
+   to find.
+3. **FR-266-2 has one clean shape.** Put the image in its own box with the target's aspect ratio, and the
+   pills in a normal-flow row **below** that box, whenever the card is short. "Short" is decided when the
+   gallery renders: the aspect ratio is known, so it is `height = column width ÷ ratio` against a
+   threshold of about 90 px. Nothing is measured after layout. Posters (2:3) and 16:9 targets keep the
+   overlay. The zoom button gets `z-index: 2` inside the image box (FR-266-1).
+4. **FR-266-3's guard:** `(ev.target as? Element)?.closest(".art-zoom, button") != null → return`. It
+   covers the icon, any future child element, and any future control in the card.
+5. **The e2e needs the mock to serve images.** `tests/mock-tmdb/server.js` answers `/search/*`,
+   `/movie/{id}` and `/tv/{id}` only. Add `/movie/{id}/images` (two posters, two logos, `file_path`
+   only). The thumbnails point at the real image CDN and will not load in CI, but the cards still lay
+   out by `aspect-ratio`, which is all the test needs. Assert with `page.on('request')` that no
+   `/artwork/candidates/save` was sent.
+
+**Net effect.** One render function's markup, one handler's guard, a few inline CSS rules, one mock
+route, one e2e file. No backend change.
