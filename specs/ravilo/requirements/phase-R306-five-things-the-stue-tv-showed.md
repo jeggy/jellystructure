@@ -12,9 +12,9 @@
 
 ## Status
 
-`⚠ Partial` — written 2026-09-26 from the device pass, not dev-reviewed. **FR-R306-1, -2, -3, -4 and -5
+`✓ Built` — written 2026-09-26 from the device pass, not dev-reviewed. **FR-R306-1, -2, -3, -4 and -5
 built the same day and seen on the stue TV** (local release build, prod on a local backend build).
-**FR-R306-1b is not built — the owner said "not yet".**
+**FR-R306-1b built later the same day** at the owner's go-ahead (*"Lets implement that trailer spec"*).
 
 ### Build (2026-09-26)
 
@@ -39,6 +39,12 @@ built the same day and seen on the stue TV** (local release build, prod on a loc
   kicker, missed at first, still said S13E14 under *Resume · S13E19*). On the TV: tile **S13:E19**, kicker
   **S13E19 · Afsnit 19**, button **Resume · S13E19**.
 - Checks: backend suite 522/522; dex guard 245/250 unchanged; `compileKotlinWasmJs` clean.
+- **FR-1b — the row spans the page.** The hero column is full width with only its bottom padding; the text
+  sits in an inner column carrying today's `fillMaxWidth(0.6f)` and gutter padding unchanged; the row pads
+  by the gutter outside `focusBleedScroll`. On the stue TV, film page, nothing focused: **Play Again,
+  Watched, My List and Trailer all on screen and whole**; Right ×3 lands on *Trailer* and the row does not
+  move; the synopsis and R222's note break on the same words as before; the series page likewise. Not seen
+  on the Pixel 9 (off adb after its battery died) — by construction its row is as wide as before.
 
 ## What is wrong
 

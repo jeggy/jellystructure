@@ -387,119 +387,128 @@ private fun SeriesDetailLoaded(
                     Box(modifier = Modifier.matchParentSize().background(colors.surfaceVariant))
                 }
                 DetailHeroScrims()  // R257 (FR-R257-4) — tint + head band + floor, shared with Home's hero
+                // R306 (FR-R306-1b) — the hero spans the page between nothing but its bottom padding: the
+                // text keeps exactly its column (the inner Column below), and the action row takes the
+                // page's width, as `.dactions` does in the mockup — on a TV every button is on screen.
                 Column(
                     modifier = Modifier
                         .align(Alignment.BottomStart)
-                        // R145: full width on a phone (TV 60% column wastes a narrow screen); TV unchanged.
-                        .fillMaxWidth(if (LocalCompact.current) 1f else 0.6f)
-                        .padding(start = raviloHPad, bottom = 44.dp, end = raviloHPad),
+                        .fillMaxWidth()
+                        .padding(bottom = 44.dp),
                 ) {
-                    // R130: clearlogo when it loads, else the title as readable text.
-                    TitleLogoOrText(
-                        logoUrl = detail.logoUrl, logoInk = detail.logoInk,
-                        title = detail.card.title,
-                        logoModifier = Modifier.height(80.dp).widthIn(max = 360.dp),
-                    )
-                    val meta = remember(detail.card.year, detail.card.genre) {
-                        listOfNotNull(detail.card.year?.toString(), detail.card.genre).joinToString(" · ")
-                    }
-                    if (meta.isNotEmpty() || detail.ratingBadge != null || detail.imdbRating != null) {
-                        Spacer(Modifier.height(8.dp))
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            if (meta.isNotEmpty()) Text(meta, color = colors.textSecondary, fontSize = 15.sp)
-                            // Phase 106/R153: server-resolved age-rating badge.
-                            if (detail.ratingBadge != null) {
-                                if (meta.isNotEmpty()) Spacer(Modifier.width(10.dp))
-                                CertBadge(detail.ratingBadge)
-                            }
-                            // R164: server-pushed IMDb rating chip (show-level), after the cert badge.
-                            if (detail.imdbRating != null) {
-                                if (meta.isNotEmpty() || detail.ratingBadge != null) Spacer(Modifier.width(10.dp))
-                                ImdbChip(detail.imdbRating)
+                    Column(
+                        modifier = Modifier
+                            // R145: full width on a phone (TV 60% column wastes a narrow screen); TV unchanged.
+                            .fillMaxWidth(if (LocalCompact.current) 1f else 0.6f)
+                            .padding(start = raviloHPad, end = raviloHPad),
+                    ) {
+                        // R130: clearlogo when it loads, else the title as readable text.
+                        TitleLogoOrText(
+                            logoUrl = detail.logoUrl, logoInk = detail.logoInk,
+                            title = detail.card.title,
+                            logoModifier = Modifier.height(80.dp).widthIn(max = 360.dp),
+                        )
+                        val meta = remember(detail.card.year, detail.card.genre) {
+                            listOfNotNull(detail.card.year?.toString(), detail.card.genre).joinToString(" · ")
+                        }
+                        if (meta.isNotEmpty() || detail.ratingBadge != null || detail.imdbRating != null) {
+                            Spacer(Modifier.height(8.dp))
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                if (meta.isNotEmpty()) Text(meta, color = colors.textSecondary, fontSize = 15.sp)
+                                // Phase 106/R153: server-resolved age-rating badge.
+                                if (detail.ratingBadge != null) {
+                                    if (meta.isNotEmpty()) Spacer(Modifier.width(10.dp))
+                                    CertBadge(detail.ratingBadge)
+                                }
+                                // R164: server-pushed IMDb rating chip (show-level), after the cert badge.
+                                if (detail.imdbRating != null) {
+                                    if (meta.isNotEmpty() || detail.ratingBadge != null) Spacer(Modifier.width(10.dp))
+                                    ImdbChip(detail.imdbRating)
+                                }
                             }
                         }
-                    }
-                    if (detail.genres.isNotEmpty()) {
-                        Spacer(Modifier.height(10.dp))
-                        GenreChipRow(
-                            genres = detail.genres,
-                            onGenreSelect = onGenreSelect?.let { cb -> { values: List<String> -> cb(values, detail.card.title) } },
-                            entryFocusRequester = genreFR,
-                            onUp = goToNavBar,
-                            onDown = { if (detail.synopsis != null) runCatching { synopsisFR.requestFocus() } else runCatching { playFR.requestFocus() } },
-                        )
-                    }
-                    if (detail.audioLanguages.isNotEmpty() || detail.subtitleLanguages.isNotEmpty()) {
-                        Spacer(Modifier.height(8.dp))
-                        AudioSubtitleFlagLine(detail.audioLanguages, detail.subtitleLanguages)  // R134: one line
-                    }
-                    // R84: reserve the watched-count line from first paint; fade in when overlay lands
-                    // (no-flicker rule: the text line occupies space even before overlay arrives).
-                    val progressAlpha by animateFloatAsState(
-                        targetValue = if (overlayLoaded && allEps.isNotEmpty()) 1f else 0f,
-                        label = "watchedCountAlpha",
-                    )
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        text = str("detail.episodes_watched", mapOf("watched" to watchedCount.toString(), "total" to allEps.size.toString())),
-                        color = colors.textDim,
-                        fontSize = 13.sp,
-                        modifier = Modifier.alpha(progressAlpha),
-                    )
-                    detail.synopsis?.let {
-                        Spacer(Modifier.height(10.dp))
-                        DetailSynopsis(   // R135: focusable; SELECT expands the full text inline
-                            text = it,
-                            collapsedMaxLines = 2,
-                            focusRequester = synopsisFR,
-                            // R221: Up from synopsis reaches the genre row (its lead chip) when present.
-                            onUp = { if (detail.genres.isNotEmpty()) runCatching { genreFR.requestFocus() } else goToNavBar() },
-                            onDown = { runCatching { playFR.requestFocus() } },
-                        )
-                    }
-                    // Resume kicker: derived from overlay; always reserves a line so synopsis doesn't shift
-                    // R306 (FR-R306-5) — the same episode the Resume button plays when Continue Watching names one.
-                    val resumeEpEntry = if (overlayLoaded) (
-                        overlay[detail.card.id]?.continueEpisodeId?.let { cid -> allEps.firstOrNull { it.id == cid } }
-                            ?: allEps.firstOrNull { ep -> overlay[ep.id].let { ps -> ps != null && !ps.played && ps.resumeMs > 0 } }
-                    ) else null
-                    val resumeKicker = resumeEpEntry?.let { ep ->
-                        val sIdx = detail.seasons.indexOfFirst { s -> s.episodes.any { it.id == ep.id } }
-                        val sNum = detail.seasons.getOrNull(sIdx)?.index
-                        if (sNum != null) "S${sNum}E${ep.episodeNumber} · ${ep.title}" else ep.title
-                    }
-                    val kickerAlpha by animateFloatAsState(
-                        targetValue = if (resumeKicker != null) 1f else 0f,
-                        label = "resumeKickerAlpha",
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    Text(
-                        text = resumeKicker ?: "",
-                        color = colors.accent,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier.alpha(kickerAlpha),
-                    )
-                    // R149: next-airing line — in the hero, beside the resume/up-next kicker above the
-                    // fold (design's .dnext-row), not below the season picker. No source attribution.
-                    detail.nextAiring?.let { na ->
-                        Spacer(Modifier.height(6.dp))
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Box(modifier = Modifier.size(6.dp).background(colors.accent, CircleShape))
-                            Spacer(Modifier.width(8.dp))
-                            Text(
-                                text = buildString {
-                                    append(str("sonarr.next_ep"))
-                                    append(" · S${na.season.toString().padStart(2, '0')}E${na.episode.toString().padStart(2, '0')}")
-                                    if (!na.title.isNullOrBlank()) append(" “${na.title}”")
-                                    append(" · ")
-                                    append(str("sonarr.airs"))
-                                    append(" ${na.airDate}")
-                                },
-                                color = colors.textSecondary,
-                                fontSize = 13.sp,
-                                fontFamily = sora,
+                        if (detail.genres.isNotEmpty()) {
+                            Spacer(Modifier.height(10.dp))
+                            GenreChipRow(
+                                genres = detail.genres,
+                                onGenreSelect = onGenreSelect?.let { cb -> { values: List<String> -> cb(values, detail.card.title) } },
+                                entryFocusRequester = genreFR,
+                                onUp = goToNavBar,
+                                onDown = { if (detail.synopsis != null) runCatching { synopsisFR.requestFocus() } else runCatching { playFR.requestFocus() } },
                             )
+                        }
+                        if (detail.audioLanguages.isNotEmpty() || detail.subtitleLanguages.isNotEmpty()) {
+                            Spacer(Modifier.height(8.dp))
+                            AudioSubtitleFlagLine(detail.audioLanguages, detail.subtitleLanguages)  // R134: one line
+                        }
+                        // R84: reserve the watched-count line from first paint; fade in when overlay lands
+                        // (no-flicker rule: the text line occupies space even before overlay arrives).
+                        val progressAlpha by animateFloatAsState(
+                            targetValue = if (overlayLoaded && allEps.isNotEmpty()) 1f else 0f,
+                            label = "watchedCountAlpha",
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = str("detail.episodes_watched", mapOf("watched" to watchedCount.toString(), "total" to allEps.size.toString())),
+                            color = colors.textDim,
+                            fontSize = 13.sp,
+                            modifier = Modifier.alpha(progressAlpha),
+                        )
+                        detail.synopsis?.let {
+                            Spacer(Modifier.height(10.dp))
+                            DetailSynopsis(   // R135: focusable; SELECT expands the full text inline
+                                text = it,
+                                collapsedMaxLines = 2,
+                                focusRequester = synopsisFR,
+                                // R221: Up from synopsis reaches the genre row (its lead chip) when present.
+                                onUp = { if (detail.genres.isNotEmpty()) runCatching { genreFR.requestFocus() } else goToNavBar() },
+                                onDown = { runCatching { playFR.requestFocus() } },
+                            )
+                        }
+                        // Resume kicker: derived from overlay; always reserves a line so synopsis doesn't shift
+                        // R306 (FR-R306-5) — the same episode the Resume button plays when Continue Watching names one.
+                        val resumeEpEntry = if (overlayLoaded) (
+                            overlay[detail.card.id]?.continueEpisodeId?.let { cid -> allEps.firstOrNull { it.id == cid } }
+                                ?: allEps.firstOrNull { ep -> overlay[ep.id].let { ps -> ps != null && !ps.played && ps.resumeMs > 0 } }
+                        ) else null
+                        val resumeKicker = resumeEpEntry?.let { ep ->
+                            val sIdx = detail.seasons.indexOfFirst { s -> s.episodes.any { it.id == ep.id } }
+                            val sNum = detail.seasons.getOrNull(sIdx)?.index
+                            if (sNum != null) "S${sNum}E${ep.episodeNumber} · ${ep.title}" else ep.title
+                        }
+                        val kickerAlpha by animateFloatAsState(
+                            targetValue = if (resumeKicker != null) 1f else 0f,
+                            label = "resumeKickerAlpha",
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            text = resumeKicker ?: "",
+                            color = colors.accent,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.alpha(kickerAlpha),
+                        )
+                        // R149: next-airing line — in the hero, beside the resume/up-next kicker above the
+                        // fold (design's .dnext-row), not below the season picker. No source attribution.
+                        detail.nextAiring?.let { na ->
+                            Spacer(Modifier.height(6.dp))
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(modifier = Modifier.size(6.dp).background(colors.accent, CircleShape))
+                                Spacer(Modifier.width(8.dp))
+                                Text(
+                                    text = buildString {
+                                        append(str("sonarr.next_ep"))
+                                        append(" · S${na.season.toString().padStart(2, '0')}E${na.episode.toString().padStart(2, '0')}")
+                                        if (!na.title.isNullOrBlank()) append(" “${na.title}”")
+                                        append(" · ")
+                                        append(str("sonarr.airs"))
+                                        append(" ${na.airDate}")
+                                    },
+                                    color = colors.textSecondary,
+                                    fontSize = 13.sp,
+                                    fontFamily = sora,
+                                )
+                            }
                         }
                     }
                     Spacer(Modifier.height(18.dp))
@@ -507,14 +516,12 @@ private fun SeriesDetailLoaded(
                         // R72: scroll(UserInput) wins over bring-into-view (Default priority) so
                         // focusing Play/Resume reliably reframes the full backdrop.
                         modifier = Modifier
-                            // Bug fix: this Row lives inside the hero's 60%-width column; once Play +
-                            // My List + Trailer's combined natural width exceeded that column, the Row
-                            // got clamped to the column's maxWidth and the LAST button (Trailer) ended up
-                            // squeezed into an unreadable sliver instead of the whole row simply being
-                            // allowed to scroll. horizontalScroll removes the clamp — every button always
-                            // renders at its full natural size; if there ever isn't room, the row scrolls
-                            // (D-pad focus brings the target into view) instead of corrupting layout.
-                            // R306 (FR-R306-1) — …which clips at its own edge, so the focused button's growth is given room.
+                            // R306 (FR-R306-1b) — the row spans the page between the gutters (on a TV every
+                            // button fits and it never scrolls). The scroll stays for a narrow screen, where
+                            // the buttons outgrow the width: every button keeps its natural size and D-pad
+                            // focus brings the target into view. The gutter padding sits OUTSIDE the bleed
+                            // (FR-R306-1), which reaches into it so a focused button's growth is never cut.
+                            .padding(horizontal = raviloHPad)
                             .focusBleedScroll(rememberScrollState())
                             .onFocusChanged {
                                 // R72: focusing Play/Resume reframes the full backdrop. R115: only when the

@@ -204,99 +204,106 @@ private fun MovieDetailLoaded(
                     Box(modifier = Modifier.matchParentSize().background(colors.surfaceVariant))
                 }
                 DetailHeroScrims()  // R257 (FR-R257-4) — tint + head band + floor, shared with Home's hero
+                // R306 (FR-R306-1b) — the hero spans the page between nothing but its bottom padding: the
+                // text keeps exactly its column (the inner Column below), and the action row takes the
+                // page's width, as `.dactions` does in the mockup — on a TV every button is on screen.
                 Column(
                     modifier = Modifier
                         .align(Alignment.BottomStart)
-                        // R145: full width on a phone (the TV 60% column wastes a narrow screen and
-                        // wraps/cuts the title, flags, synopsis and buttons); TV keeps the 60% column.
-                        .fillMaxWidth(if (LocalCompact.current) 1f else 0.6f)
-                        .padding(start = raviloHPad, bottom = 44.dp, end = raviloHPad),
+                        .fillMaxWidth()
+                        .padding(bottom = 44.dp),
                 ) {
-                    // R130: clearlogo when it loads, else the title as readable text.
-                    TitleLogoOrText(
-                        logoUrl = detail.logoUrl, logoInk = detail.logoInk,
-                        title = detail.card.title,
-                        logoModifier = Modifier.height(80.dp).widthIn(max = 360.dp),
-                    )
-                    val meta = remember(detail.card.year, detail.runtime, detail.card.genre) {
-                        listOfNotNull(
-                            detail.card.year?.toString(),
-                            if (detail.runtime > 0) "${detail.runtime} min" else null,
-                            detail.card.genre,
-                        ).joinToString(" · ")
-                    }
-                    if (meta.isNotEmpty() || detail.ratingBadge != null || detail.imdbRating != null) {
-                        Spacer(Modifier.height(8.dp))
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            if (meta.isNotEmpty()) Text(meta, color = colors.textSecondary, fontSize = 15.sp)
-                            // Phase 106/R153: server-resolved age-rating badge.
-                            if (detail.ratingBadge != null) {
-                                if (meta.isNotEmpty()) Spacer(Modifier.width(10.dp))
-                                CertBadge(detail.ratingBadge)
-                            }
-                            // R164: server-pushed IMDb rating chip, after the certification badge.
-                            if (detail.imdbRating != null) {
-                                if (meta.isNotEmpty() || detail.ratingBadge != null) Spacer(Modifier.width(10.dp))
-                                ImdbChip(detail.imdbRating)
-                            }
-                            // R142: ✓ Watched chip when the movie is played.
-                            if (overlay[detail.card.id]?.played == true) {
-                                Spacer(Modifier.width(10.dp))
-                                Text(
-                                    "✓ ${str("action.watched")}",
-                                    color = colors.badgeWatched,
-                                    fontSize = 14.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                )
+                    Column(
+                        modifier = Modifier
+                            // R145: full width on a phone (the TV 60% column wastes a narrow screen and
+                            // wraps/cuts the title, flags, synopsis and buttons); TV keeps the 60% column.
+                            .fillMaxWidth(if (LocalCompact.current) 1f else 0.6f)
+                            .padding(start = raviloHPad, end = raviloHPad),
+                    ) {
+                        // R130: clearlogo when it loads, else the title as readable text.
+                        TitleLogoOrText(
+                            logoUrl = detail.logoUrl, logoInk = detail.logoInk,
+                            title = detail.card.title,
+                            logoModifier = Modifier.height(80.dp).widthIn(max = 360.dp),
+                        )
+                        val meta = remember(detail.card.year, detail.runtime, detail.card.genre) {
+                            listOfNotNull(
+                                detail.card.year?.toString(),
+                                if (detail.runtime > 0) "${detail.runtime} min" else null,
+                                detail.card.genre,
+                            ).joinToString(" · ")
+                        }
+                        if (meta.isNotEmpty() || detail.ratingBadge != null || detail.imdbRating != null) {
+                            Spacer(Modifier.height(8.dp))
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                if (meta.isNotEmpty()) Text(meta, color = colors.textSecondary, fontSize = 15.sp)
+                                // Phase 106/R153: server-resolved age-rating badge.
+                                if (detail.ratingBadge != null) {
+                                    if (meta.isNotEmpty()) Spacer(Modifier.width(10.dp))
+                                    CertBadge(detail.ratingBadge)
+                                }
+                                // R164: server-pushed IMDb rating chip, after the certification badge.
+                                if (detail.imdbRating != null) {
+                                    if (meta.isNotEmpty() || detail.ratingBadge != null) Spacer(Modifier.width(10.dp))
+                                    ImdbChip(detail.imdbRating)
+                                }
+                                // R142: ✓ Watched chip when the movie is played.
+                                if (overlay[detail.card.id]?.played == true) {
+                                    Spacer(Modifier.width(10.dp))
+                                    Text(
+                                        "✓ ${str("action.watched")}",
+                                        color = colors.badgeWatched,
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                    )
+                                }
                             }
                         }
-                    }
-                    if (detail.genres.isNotEmpty()) {
-                        Spacer(Modifier.height(10.dp))
-                        GenreChipRow(
-                            genres = detail.genres,
-                            onGenreSelect = onGenreSelect?.let { cb -> { values: List<String> -> cb(values, detail.card.title) } },
-                            entryFocusRequester = genreFR,
-                            onUp = goToNavBar,
-                            onDown = { if (detail.synopsis != null) runCatching { synopsisFR.requestFocus() } else runCatching { playFR.requestFocus() } },
-                        )
-                    }
-                    if (detail.audioLanguages.isNotEmpty() || detail.subtitleLanguages.isNotEmpty()) {
-                        Spacer(Modifier.height(8.dp))
-                        AudioSubtitleFlagLine(detail.audioLanguages, detail.subtitleLanguages)  // R134: one line
-                    }
-                    detail.synopsis?.let {
-                        Spacer(Modifier.height(10.dp))
-                        DetailSynopsis(   // R135: focusable; SELECT expands the full text inline
-                            text = it,
-                            collapsedMaxLines = 3,
-                            focusRequester = synopsisFR,
-                            // R221: Up from synopsis reaches the genre row (its lead chip) when present,
-                            // preserving the existing title → genres → synopsis → actions order.
-                            onUp = { if (detail.genres.isNotEmpty()) runCatching { genreFR.requestFocus() } else goToNavBar() },
-                            onDown = { runCatching { playFR.requestFocus() } },
-                        )
-                    }
-                    // R222 (Phase 185, FR-R222-4) — directly above the actions, never the meta row: a
-                    // fact about tonight, not about the film. Play must not move — this takes its own
-                    // slot and never reflows the button row below it.
-                    detail.playbackNote?.let {
-                        Spacer(Modifier.height(10.dp))
-                        PlaybackNoteLine(note = it, compact = LocalCompact.current)
+                        if (detail.genres.isNotEmpty()) {
+                            Spacer(Modifier.height(10.dp))
+                            GenreChipRow(
+                                genres = detail.genres,
+                                onGenreSelect = onGenreSelect?.let { cb -> { values: List<String> -> cb(values, detail.card.title) } },
+                                entryFocusRequester = genreFR,
+                                onUp = goToNavBar,
+                                onDown = { if (detail.synopsis != null) runCatching { synopsisFR.requestFocus() } else runCatching { playFR.requestFocus() } },
+                            )
+                        }
+                        if (detail.audioLanguages.isNotEmpty() || detail.subtitleLanguages.isNotEmpty()) {
+                            Spacer(Modifier.height(8.dp))
+                            AudioSubtitleFlagLine(detail.audioLanguages, detail.subtitleLanguages)  // R134: one line
+                        }
+                        detail.synopsis?.let {
+                            Spacer(Modifier.height(10.dp))
+                            DetailSynopsis(   // R135: focusable; SELECT expands the full text inline
+                                text = it,
+                                collapsedMaxLines = 3,
+                                focusRequester = synopsisFR,
+                                // R221: Up from synopsis reaches the genre row (its lead chip) when present,
+                                // preserving the existing title → genres → synopsis → actions order.
+                                onUp = { if (detail.genres.isNotEmpty()) runCatching { genreFR.requestFocus() } else goToNavBar() },
+                                onDown = { runCatching { playFR.requestFocus() } },
+                            )
+                        }
+                        // R222 (Phase 185, FR-R222-4) — directly above the actions, never the meta row: a
+                        // fact about tonight, not about the film. Play must not move — this takes its own
+                        // slot and never reflows the button row below it.
+                        detail.playbackNote?.let {
+                            Spacer(Modifier.height(10.dp))
+                            PlaybackNoteLine(note = it, compact = LocalCompact.current)
+                        }
                     }
                     Spacer(Modifier.height(18.dp))
                     Row(
                         // R72: scroll(UserInput) wins over bring-into-view (Default priority) so
                         // focusing Play/Resume reliably reframes the full backdrop.
                         modifier = Modifier
-                            // Bug fix: this Row lives inside the hero's 60%-width column; once Play +
-                            // Watched + My List + Trailer's combined natural width exceeded that column,
-                            // the Row got clamped to the column's maxWidth and the LAST button (Trailer)
-                            // ended up squeezed into an unreadable sliver instead of the whole row simply
-                            // being allowed to scroll. horizontalScroll removes the clamp — every button
-                            // always renders at its full natural size; if there ever isn't room, the row
-                            // scrolls (D-pad focus brings the target into view) instead of corrupting layout.
-                            // R306 (FR-R306-1) — …which clips at its own edge, so the focused button's growth is given room.
+                            // R306 (FR-R306-1b) — the row spans the page between the gutters (on a TV every
+                            // button fits and it never scrolls). The scroll stays for a narrow screen, where
+                            // the buttons outgrow the width: every button keeps its natural size and D-pad
+                            // focus brings the target into view. The gutter padding sits OUTSIDE the bleed
+                            // (FR-R306-1), which reaches into it so a focused button's growth is never cut.
+                            .padding(horizontal = raviloHPad)
                             .focusBleedScroll(rememberScrollState())
                             .onFocusChanged {
                                 // R72: focusing Play/Resume reframes the full backdrop. R115: only when the
