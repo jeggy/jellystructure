@@ -7,9 +7,10 @@
 
 ## Status
 
-`Planned` — written 2026-09-26, not dev-reviewed. Backend (the model, the scanner, a backfill, the sorts)
-and the admin frontend. The Ravilo half is **R317**, which reads what this phase stores. **Numbering:**
-verified against `STATUS.md` the same day — admin taken through **267**.
+`Planned` — written 2026-09-26, **dev-reviewed 2026-09-26** against `main` `0e5e434f` (see *Dev review*
+at the end). Backend (the model, the scanner, a backfill, the sorts) and the admin frontend. The Ravilo
+half is **R317**, which reads what this phase stores. **Numbering:** verified against `STATUS.md` the
+same day — admin taken through **267**.
 
 ## What is there today
 
@@ -95,3 +96,39 @@ directions with unknowns last. `RowOrder` with `size` in both directions, and th
 3. A content row set to *Size · largest first* shows the largest matching titles on the TV, and the row
    editor's preview shows the same order.
 4. A title whose file is replaced shows its new size after the replacement, without a manual scan.
+
+## Dev review (2026-09-26, against `main` `0e5e434f`)
+
+The design holds. One correction (item 3); the rest places the work.
+
+1. **Stat without opening.** `SystemFileSystem.metadataOrNull(Path(p))?.size` is already the idiom
+   (`RaviloArtworkService.kt:241`, `ClearlogoInk.kt:39`). It opens no descriptor, so Phase 134's FD
+   hygiene does not apply. Episodes are built at `Scanner.kt` `:697-722` (`scanSeries`) and `:1060-1091`
+   (`syncSeriesEpisodes`); films and music videos at `:400`, `:495`, `:796` and `:863`. Each takes a size
+   there. `Episode` and `MediaItem` (`model/Media.kt`) each gain `fileSizeBytes: Long? = null` (the file's
+   own size; on a `MediaItem`, the film's or music video's file). It is additive to the stored JSON blob,
+   and named apart from the title's derived `sizeBytes()` so the two cannot be confused. `sizeBytes()`
+   lives beside `recencyKey()` (`Media.kt:337`) in `commonMain`, so the backend, the admin (`wasmJs`) and
+   `RowOrder` (`shared`) all call the same code.
+2. **Paths are already local.** Stored `Episode.path` and `MediaItem.path` are the local mount paths
+   (production: `/mnt/series/...`, `/mnt/media/...`), so no Jellyfin-path translation is needed.
+3. **The backfill must be one write, not 528.** Every item write bumps `libraryVersion`, and a write that
+   changes content bumps `feedVersion` (`MediaStore.kt:127-143`, Phase 204), which discards the assembled
+   Home feed for every viewer. 528 single writes at boot would do that 528 times in a second. Add one
+   `MediaStore.setFileSizes(sizes: Map<path, Long>)`: it patches every affected item in **one**
+   `db.transaction { }` and bumps each version **once**. The scanner needs nothing special, because it
+   records sizes inside writes it already makes. The 254 replace and 263 repair jobs update the file's
+   size in the write they already make after the swap.
+4. **The sort sites.** The admin Library is `MediaStore`'s page sort (`MediaStore.kt:526-531`) and its
+   `#lib-sort` options (`Library.kt:214-218`). The URL keeps `sort=` (`Library.kt:129`, `:151`).
+   Content rows: `RowOrder` gains a `size: (T) -> Long?` selector and `"size"` in `KEYS`
+   (`RowOrder.kt:17`); `problem()`'s message and `directionWords()` learn it. Its three callers pass
+   `{ it.sizeBytes() }`: `HomeFeedService.kt:701-704`, `WorkbenchOrder.kt:60-62`, and the validator's
+   route. The editor's preview gets items from `MediaApi.list` (`Workbench.kt:729-738`), and those
+   `MediaItem`s carry the sizes (item 1), so the preview needs no new request.
+5. **`BrowseCard.size_bytes`** is filled where `BrowseService` builds `BrowseCard`s, from `sizeBytes()`,
+   and is absent when unknown.
+
+**Net effect.** Two model fields and one function, a stat at four scanner sites, one batched store
+method plus the boot pass, two sort sites, one `RowOrder` selector, one DTO field, the admin's size
+lines. No migration: the size rides the item's JSON.
