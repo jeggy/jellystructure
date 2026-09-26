@@ -936,11 +936,31 @@ object MediaApi {
         val firstDamage: String? = null,
         val checkedAt: Long? = null,
         val sourcePath: String? = null,    // the clean copy the server found, if any
-        val command: String? = null,       // what the repair job runs, for copy-and-paste
+        val command: String? = null,       // the lossy remux, for a file with no clean copy; a replacement's is asked for per file (263)
     )
 
     @Serializable
     data class FileIntegrityStatus(val total: Int = 0, val clean: Int = 0, val unchecked: Int = 0, val files: List<FileIntegrityFile> = emptyList())
+
+    // Phase 263 (FR-263-6) — one file's replacement, worked out on request: which source track goes under
+    // each library track's label, and the command — or why there is none.
+    @Serializable
+    data class TrackPair(
+        val libraryIndex: Int, val sourceIndex: Int, val kind: String, val language: String,
+        val by: String, val matched: Int = 0, val window: Int = 0, val identicalTo: List<Int> = emptyList(),
+    )
+
+    @Serializable
+    data class FileRepairPlan(
+        val path: String, val sourcePath: String? = null, val command: String? = null, val refusal: String? = null,
+        val pairs: List<TrackPair> = emptyList(),
+    )
+
+    suspend fun fileRepairPlan(id: String, path: String): FileRepairPlan? = runCatching {
+        val response = httpClient.get("/api/media/$id/health/integrity/plan?path=${path.encodeURL()}")
+        if (response.status.value !in 200..299) return@runCatching null
+        response.body<FileRepairPlan>()
+    }.getOrNull()
 
     suspend fun fileIntegrityStatus(id: String): FileIntegrityStatus? = runCatching {
         httpClient.get("/api/media/$id/health/integrity").body<FileIntegrityStatus>()

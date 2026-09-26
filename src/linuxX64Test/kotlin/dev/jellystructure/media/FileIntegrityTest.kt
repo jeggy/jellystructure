@@ -2,6 +2,7 @@ package dev.jellystructure.media
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
@@ -67,6 +68,8 @@ class FileIntegrityTest {
             StreamFlags(1, "dan", "Dansk", listOf("default")),
             StreamFlags(2, "eng", "SDH", listOf("forced", "hearing_impaired")),
         ),
+        // Phase 263 — the source holds the library's tracks 1 and 2 the other way round.
+        pairs = listOf(TrackPair(0, 0, PairedBy.CONTENT), TrackPair(1, 2, PairedBy.CONTENT), TrackPair(2, 1, PairedBy.LABEL)),
     )
 
     @Test
@@ -86,9 +89,55 @@ class FileIntegrityTest {
     @Test
     fun `the source is only ever read`() {
         val src = "'${plan.sourcePath}'"
-        assertEquals(1, Regex(Regex.escape(src)).findAll(plan.snippet).count())
-        assertTrue("-i $src" in plan.copyCommand)
+        val uses = Regex(Regex.escape(src)).findAll(plan.snippet).toList()
+        assertEquals(2, uses.size)   // the copy, and the hash pass the new file is compared against
+        assertTrue(uses.all { plan.snippet.substring(0, it.range.first).endsWith("-i ") })
         assertFalse(plan.sourcePath in plan.swapCommand)
+    }
+
+    // FR-263-4
+    @Test
+    fun `the source is mapped in the library's order - never -map 0 - and flags go by output position`() {
+        assertTrue("-i '${plan.sourcePath}' -map 0:0 -map 0:2 -map 0:1 -c copy" in plan.copyCommand)
+        assertFalse(Regex("-map 0 ").containsMatchIn(plan.copyCommand))
+        assertTrue("-disposition:1 default -metadata:s:1 'language=dan'" in plan.copyCommand)
+        assertTrue("-disposition:2 forced+hearing_impaired -metadata:s:2 'language=eng'" in plan.copyCommand)
+    }
+
+    // FR-263-5/7
+    @Test
+    fun `the new file is hashed against the source under the same maps - before the swap`() {
+        assertTrue("-map 0:0 -map 0:2 -map 0:1 -c copy -f streamhash" in plan.sourceHashCommand)
+        assertTrue("'${plan.tmpPath.replace("'", "'\\''")}' -map 0 -c copy -f streamhash" in plan.newHashCommand)
+        val compare = plan.snippet.indexOf("= \"\$(${plan.newHashCommand}")
+        assertTrue(compare > plan.snippet.indexOf(plan.sourceHashCommand))
+        assertTrue(compare in 0 until plan.snippet.indexOf(plan.swapCommand))
+    }
+
+    // FR-263-8
+    @Test
+    fun `an identical group is proved identical across the whole file before the swap`() {
+        val grouped = FileRepairPlan(
+            "/l/a.mkv", "/s/a.mkv", "/q/a.mkv",
+            listOf(StreamFlags(0, "und", "", emptyList()), StreamFlags(1, "dan", "", emptyList()), StreamFlags(2, "swe", "", emptyList())),
+            listOf(TrackPair(0, 0, PairedBy.CONTENT), TrackPair(1, 2, PairedBy.IDENTICAL, identicalTo = listOf(1)), TrackPair(2, 1, PairedBy.IDENTICAL, identicalTo = listOf(2))),
+        )
+        assertEquals(listOf(listOf(1, 2)), grouped.identicalGroups)
+        assertEquals(listOf(2, 1), grouped.positionsOf(listOf(1, 2)))
+        val proof = grouped.snippet.indexOf("-i '/s/a.mkv' -map 0:1 -map 0:2 -c copy -f streamhash")
+        assertTrue(proof in 0 until grouped.snippet.indexOf(grouped.swapCommand))
+        assertTrue("| sort -u | wc -l)\" -eq 1 ]" in grouped.snippet)
+        assertTrue(plan.identicalGroups.isEmpty())
+    }
+
+    @Test
+    fun `a plan without one pair per library track in library order cannot be built`() {
+        assertFailsWith<IllegalArgumentException> {
+            FileRepairPlan("/l.mkv", "/s.mkv", "/q.mkv", listOf(StreamFlags(0, "und", "", emptyList()), StreamFlags(1, "dan", "", emptyList())), listOf(TrackPair(0, 0, PairedBy.CONTENT)))
+        }
+        assertFailsWith<IllegalArgumentException> {
+            FileRepairPlan("/l.mkv", "/s.mkv", "/q.mkv", listOf(StreamFlags(0, "und", "", emptyList()), StreamFlags(1, "dan", "", emptyList())), listOf(TrackPair(1, 1, PairedBy.CONTENT), TrackPair(0, 0, PairedBy.CONTENT)))
+        }
     }
 
     @Test

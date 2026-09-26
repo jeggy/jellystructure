@@ -67,15 +67,42 @@ data class FileIntegrityFileDto(
 @Serializable
 data class FileIntegrityStatusDto(val total: Int, val clean: Int, val unchecked: Int, val files: List<FileIntegrityFileDto>)
 
+/** Phase 263 (FR-263-6) — one library track and the source track the replacement will put under its
+ *  label, with what decided it. */
+@Serializable
+data class TrackPairDto(
+    val libraryIndex: Int,
+    val sourceIndex: Int,
+    val kind: String,
+    val language: String,
+    /** "content" · "identical" (the label chose among source tracks identical in the window) · "label". */
+    val by: String,
+    val matched: Int = 0,
+    val window: Int = 0,
+    val identicalTo: List<Int> = emptyList(),
+)
+
+/** Phase 263 (FR-263-6) — one damaged file's replacement, worked out when the operator opens it: the
+ *  command the job would run, or the sentence saying why there is none. */
+@Serializable
+data class FileRepairPlanDto(
+    val path: String,
+    val sourcePath: String? = null,
+    val command: String? = null,
+    val refusal: String? = null,
+    val pairs: List<TrackPairDto> = emptyList(),
+)
+
 @Serializable
 private data class ProbeStreams(val streams: List<ProbeStream> = emptyList())
 
 @Serializable
 private data class ProbeStream(
     val index: Int,
+    @SerialName("codec_type") val codecType: String = "",
+    @SerialName("codec_name") val codecName: String = "",
     val disposition: Map<String, Int> = emptyMap(),
     val tags: Map<String, String> = emptyMap(),
-    @SerialName("nb_read_packets") val packets: String? = null,
 )
 
 /**
@@ -157,11 +184,9 @@ class FileIntegrityService(private val db: JellystructureDb, private val seeding
             FileIntegrityFileDto(
                 path = path, state = r.state.name.lowercase(), damageCount = r.damageCount, firstDamage = r.firstDamage,
                 checkedAt = r.checkedAt, sourcePath = source,
-                command = when {
-                    r.state != FileIntegrityState.DAMAGED -> null
-                    source != null -> planFor(path, source, config)?.snippet
-                    else -> TrackCommandBuilder.ffmpegRepairTracksLayout(path)
-                },
+                // Phase 263 (FR-263-6): a replacement's command needs its tracks paired, which reads both
+                // files — it is asked for per file ([repairPlanFor]), never while this page loads.
+                command = if (r.state == FileIntegrityState.DAMAGED && source == null) TrackCommandBuilder.ffmpegRepairTracksLayout(path) else null,
             )
         }
         return FileIntegrityStatusDto(
@@ -189,34 +214,90 @@ class FileIntegrityService(private val db: JellystructureDb, private val seeding
             .firstOrNull { cand -> stampOf(cand)?.let { it.device != lib.device || it.inode != lib.inode } == true }
     }
 
-    suspend fun planFor(libraryPath: String, sourcePath: String, config: AppConfig): FileRepairPlan? {
-        val flags = streamFlags(libraryPath) ?: return null
-        return FileRepairPlan(libraryPath, sourcePath, quarantinePathFor(libraryPath, config), flags)
+    /** Phase 263 — a replacement worked out: the plan, or the sentence saying why there is none; plus the
+     *  library copy's tracks and its first two minutes of packets, which the job checks the result against. */
+    private class Planning(
+        val plan: FileRepairPlan?,
+        val refusal: String?,
+        val library: List<StreamShape> = emptyList(),
+        val libraryWindow: Map<Int, Map<String, Int>> = emptyMap(),
+    )
+
+    /** FR-263-1..4 — pair every library track with its source track by content, then build the plan in
+     *  the library's order. [interactive] = a page is waiting (the request gate), else the job's lane. */
+    private suspend fun planning(libraryPath: String, sourcePath: String, config: AppConfig, interactive: Boolean): Planning {
+        val library = streamShapes(libraryPath, interactive) ?: return Planning(null, "Couldn't read the library file's tracks")
+        val source = streamShapes(sourcePath, interactive) ?: return Planning(null, "Couldn't read the source copy's tracks")
+        val libraryWindow = windowPackets(libraryPath, interactive) ?: return Planning(null, "Couldn't read the library file's first two minutes")
+        val sourceWindow = windowPackets(sourcePath, interactive) ?: return Planning(null, "Couldn't read the source copy's first two minutes")
+        return when (val pairing = TrackPairer.pair(library, source, libraryWindow, sourceWindow)) {
+            is TrackPairing.Refused -> Planning(null, pairing.reason, library, libraryWindow)
+            is TrackPairing.Paired -> Planning(
+                FileRepairPlan(libraryPath, sourcePath, quarantinePathFor(libraryPath, config), library.map { it.flags }, pairing.pairs),
+                null, library, libraryWindow,
+            )
+        }
+    }
+
+    /** FR-263-6 — one damaged file's replacement for the page, worked out when the operator opens it. */
+    suspend fun repairPlanFor(libraryPath: String, config: AppConfig): FileRepairPlanDto {
+        val source = findSourceCandidate(libraryPath, config) ?: return FileRepairPlanDto(libraryPath, refusal = "No clean copy found in qBittorrent")
+        val p = try {
+            planning(libraryPath, source, config, interactive = true)
+        } catch (e: dev.jellystructure.ops.ProcessGate.GateTimeoutException) {
+            return FileRepairPlanDto(libraryPath, source, refusal = "The server is busy — open this again in a moment")
+        }
+        val plan = p.plan ?: return FileRepairPlanDto(libraryPath, source, refusal = p.refusal)
+        val byIndex = p.library.associateBy { it.index }
+        return FileRepairPlanDto(
+            libraryPath, source, plan.snippet,
+            pairs = plan.pairs.map { pair ->
+                val s = byIndex.getValue(pair.libraryIndex)
+                TrackPairDto(pair.libraryIndex, pair.sourceIndex, s.codecType, s.flags.language, pair.by.name.lowercase(), pair.matched, pair.window, pair.identicalTo)
+            },
+        )
     }
 
     /** FR-254-10 — replace, verified, reversible. Returns null on success, else the sentence saying
-     *  which step refused; on any refusal the library file is untouched and the temp file is gone. */
+     *  which step refused; on any refusal the library file is untouched and the temp file is gone.
+     *  Phase 263: the source is mapped in the library's order (FR-263-4) and the result is checked by what
+     *  its tracks carry, not by what they are called (FR-263-5). */
     suspend fun replaceFromSource(libraryPath: String, config: AppConfig): String? = MediaFileLock.withLock(libraryPath) {
         val source = findSourceCandidate(libraryPath, config) ?: return@withLock "No clean copy found in qBittorrent"
-        val sourceDamage = demuxDamage(source) ?: return@withLock "Couldn't read the source copy"
-        if (sourceDamage.isNotEmpty()) return@withLock "The copy in qBittorrent is damaged too"
-        val oldFlags = streamFlags(libraryPath) ?: return@withLock "Couldn't read the library file's tracks"
-        val sourceFlags = streamFlags(source) ?: return@withLock "Couldn't read the source copy's tracks"
-        if (oldFlags.size != sourceFlags.size) return@withLock "The source has a different number of tracks (${sourceFlags.size} vs ${oldFlags.size})"
-        val plan = FileRepairPlan(libraryPath, source, quarantinePathFor(libraryPath, config), oldFlags)
+        val planning = planning(libraryPath, source, config, interactive = false)
+        val plan = planning.plan ?: return@withLock planning.refusal ?: "Couldn't work out which track is which"
+        val oldFlags = planning.library.map { it.flags }
+
+        // The source under the plan's maps: its deep check (FR-254-9) and its per-stream hashes, one pass.
+        val want = hashPass(plan.sourceHashCommand) ?: return@withLock "Couldn't read the source copy"
+        if (want.damage.isNotEmpty()) return@withLock "The copy in qBittorrent is damaged too"
+        if (want.hashes.size != plan.pairs.size) return@withLock "Couldn't hash the source copy's tracks"
+        // FR-263-8 — a label chose among these because the first two minutes could not; that is only
+        // harmless if they are the same track all the way through.
+        for (group in plan.identicalGroups) {
+            if (plan.positionsOf(group).map { want.hashes[it] }.distinct().size != 1) {
+                return@withLock "Source tracks ${group.joinToString(", ")} are identical for the first two minutes but not after — can't tell which is which"
+            }
+        }
 
         fun refuse(why: String): String { platform.posix.remove(plan.tmpPath); return why }
         if (!run(plan.copyCommand)) return@withLock refuse("ffmpeg couldn't copy the source")
-        val tmpDamage = demuxDamage(plan.tmpPath) ?: return@withLock refuse("Couldn't verify the new file")
-        if (tmpDamage.isNotEmpty()) return@withLock refuse("The new file did not verify clean")
-        val want = packetCounts(source)
-        if (want == null || want != packetCounts(plan.tmpPath)) return@withLock refuse("The new file's packet counts differ from the source's")
+        val got = hashPass(plan.newHashCommand) ?: return@withLock refuse("Couldn't verify the new file")
+        if (got.damage.isNotEmpty()) return@withLock refuse("The new file did not verify clean")
+        if (got.hashes != want.hashes) return@withLock refuse("The new file's tracks are not the source's tracks in the planned order")
         if (streamFlags(plan.tmpPath) != oldFlags) return@withLock refuse("The new file's track flags differ from the library copy's")
+        val newWindow = windowPackets(plan.tmpPath, interactive = false) ?: return@withLock refuse("Couldn't read the new file's first two minutes")
+        val wrong = TrackPairer.positionsNotHolding(planning.libraryWindow, newWindow)
+        if (wrong.isNotEmpty()) return@withLock refuse("Track${if (wrong.size != 1) "s" else ""} ${wrong.joinToString(", ")} of the new file don't hold what the library copy held there")
         if (!run(plan.swapCommand)) return@withLock refuse("Couldn't move the damaged file to ${plan.quarantinePath}")
 
         stampOf(libraryPath)?.let { q.put(libraryPath, it.size, it.mtime, nowEpochSec(), 0, null) }
         FileDamage.bump()
-        Logger.info("replaced $libraryPath from $source; damaged original kept at ${plan.quarantinePath}", "integrity")
+        Logger.info(
+            "replaced $libraryPath from $source; damaged original kept at ${plan.quarantinePath}; tracks " +
+                plan.pairs.joinToString(" ") { "${it.libraryIndex}←${it.sourceIndex}${if (it.by == PairedBy.CONTENT) "" else "(${it.by.name.lowercase()})"}" },
+            "integrity",
+        )
         null
     }
 
@@ -230,22 +311,53 @@ class FileIntegrityService(private val db: JellystructureDb, private val seeding
         return if (stampOf(base) == null) base else "$base.${nowEpochSec()}"
     }
 
-    private suspend fun streamFlags(path: String): List<StreamFlags>? = probe(path, countPackets = false)?.map { s ->
-        StreamFlags(
-            index = s.index,
-            language = s.tags.entries.firstOrNull { it.key.equals("language", true) }?.value ?: "und",
-            title = s.tags.entries.firstOrNull { it.key.equals("title", true) }?.value ?: "",
-            dispositions = CARRIED_DISPOSITIONS.filter { (s.disposition[it] ?: 0) != 0 },
+    private suspend fun streamFlags(path: String): List<StreamFlags>? = streamShapes(path, interactive = false)?.map { it.flags }
+
+    private suspend fun streamShapes(path: String, interactive: Boolean): List<StreamShape>? = probe(path, interactive)?.map { s ->
+        fun tag(name: String) = s.tags.entries.firstOrNull { it.key.equals(name, true) }?.value
+        StreamShape(
+            flags = StreamFlags(
+                index = s.index,
+                language = tag("language") ?: "und",
+                title = tag("title") ?: "",
+                dispositions = CARRIED_DISPOSITIONS.filter { (s.disposition[it] ?: 0) != 0 },
+            ),
+            codecType = s.codecType,
+            codecName = s.codecName,
+            filename = tag("filename") ?: "",
         )
     }
 
-    private suspend fun packetCounts(path: String): List<String?>? = probe(path, countPackets = true)?.map { it.packets }
-
-    private suspend fun probe(path: String, countPackets: Boolean): List<ProbeStream>? {
-        val cmd = "nice -n 19 ffprobe -v quiet ${if (countPackets) "-count_packets " else ""}-show_streams -of json '${FileIntegrity.esc(path)}' 2>/dev/null"
-        val out = dev.jellystructure.ops.SegmentProcessGate.withPermit { capture(cmd) } ?: return null
+    private suspend fun probe(path: String, interactive: Boolean): List<ProbeStream>? {
+        val cmd = "nice -n 19 ffprobe -v quiet -show_streams -of json '${FileIntegrity.esc(path)}' 2>/dev/null"
+        val out = gated(interactive) { capture(cmd) } ?: return null
         return runCatching { json.decodeFromString(ProbeStreams.serializer(), out).streams }.getOrNull()?.takeIf { it.isNotEmpty() }
     }
+
+    /** Phase 263 (FR-263-1) — the first two minutes of [path] as per-packet hashes; null when nothing
+     *  could be read (an empty window can pair nothing, and must not read as "no packets to compare"). */
+    private suspend fun windowPackets(path: String, interactive: Boolean): Map<Int, Map<String, Int>>? =
+        gated(interactive) { capture(TrackPairer.windowCommand(path)) }?.let(TrackPairer::packets)?.takeIf { it.isNotEmpty() }
+
+    private class HashPass(val damage: List<String>, val hashes: Map<Int, String>)
+
+    /** Phase 263 (FR-263-5) — one `streamhash` pass: the file's damage lines and its per-stream hashes.
+     *  Same exit handling as [demuxDamage]: 126/127 (no ffmpeg) is null, never a clean empty result. */
+    private suspend fun hashPass(cmd: String): HashPass? {
+        val out = dev.jellystructure.ops.SegmentProcessGate.withPermit { capture("$cmd; echo JS_EXIT=\$?") } ?: return null
+        val exit = out.substringAfterLast("JS_EXIT=", "").trim().toIntOrNull() ?: return null
+        val body = out.substringBeforeLast("JS_EXIT=")
+        return when (exit) {
+            0 -> HashPass(FileIntegrity.damageLines(body), TrackPairer.streamHashes(body))
+            126, 127 -> null
+            else -> HashPass(FileIntegrity.damageLines(body).ifEmpty { listOf("ffmpeg exited $exit") }, emptyMap())
+        }
+    }
+
+    /** A page waiting on the answer takes the request gate (its reserved slots, a bounded wait); the
+     *  job takes the segments lane's own pool, like every other read here. */
+    private suspend fun <T> gated(interactive: Boolean, block: suspend () -> T): T =
+        if (interactive) dev.jellystructure.ops.ProcessGate.withPermit(block) else dev.jellystructure.ops.SegmentProcessGate.withPermit(block)
 
     private suspend fun run(cmd: String): Boolean =
         dev.jellystructure.ops.SegmentProcessGate.withPermit { capture("( $cmd ) >/dev/null 2>&1 && echo JS_OK") }?.contains("JS_OK") == true

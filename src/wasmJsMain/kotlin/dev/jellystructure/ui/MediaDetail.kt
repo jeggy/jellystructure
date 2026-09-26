@@ -3040,15 +3040,16 @@ private suspend fun loadFileIntegrity(item: MediaItem, scope: CoroutineScope) {
     val isTvShow = item.kind == MediaKind.TV_SHOW
     val what = if (isTvShow) "${damaged.size} episode${if (damaged.size != 1) "s" else ""} in this series ${if (damaged.size != 1) "are" else "is"} damaged part-way through"
     else "This file is damaged part-way through"
-    val rows = damaged.joinToString("") { f ->
-        """<details style="margin-top:6px;">
+    val rows = damaged.withIndex().joinToString("") { (i, f) ->
+        """<details id="integrity-row-$i" style="margin-top:6px;">
              <summary style="cursor:pointer;font-size:.8rem;"><b>${label(f.path).esc()}</b>
                <span class="muted"> · ${f.damageCount} unreadable spot${if (f.damageCount != 1) "s" else ""} · ${if (f.sourcePath != null) "clean copy found" else "no clean copy found"}</span></summary>
              <div class="tiny muted" style="margin:4px 0 2px;line-height:1.6;">
                ${(f.firstDamage ?: "").esc()}
                ${if (f.sourcePath != null) "<br>Clean copy: <code>${f.sourcePath.esc()}</code>" else ""}
              </div>
-             ${f.command?.let { permCopyBlock(it, if (f.sourcePath != null) null else "LOSSY: discards what it cannot read") } ?: ""}
+             ${if (f.sourcePath != null) """<div id="integrity-plan-$i" class="tiny muted" style="margin:4px 0 2px;">Matching the tracks…</div>"""
+               else f.command?.let { permCopyBlock(it, "LOSSY: discards what it cannot read") } ?: ""}
            </details>"""
     }
     banner.innerHTML = """
@@ -3060,7 +3061,7 @@ private suspend fun loadFileIntegrity(item: MediaItem, scope: CoroutineScope) {
           Reading ${if (isTvShow) "these files" else "it"} end to end found spots that cannot be read: data in the middle of the file was overwritten.
           The start of the file is fine, which is why nothing else on this page looks wrong and why Jellyfin still lists it —
           a viewer gets a stall, a skip or a smeared picture part-way through.
-          ${if (withSource.isNotEmpty()) "qBittorrent is still seeding a clean copy of ${withSource.size} of ${damaged.size}. Replacing copies it over the damaged file, keeps your track languages, titles and default/forced flags, verifies the result, and moves the damaged file to <code>.js-quarantine</code> instead of deleting it." else ""}
+          ${if (withSource.isNotEmpty()) "qBittorrent is still seeding a clean copy of ${withSource.size} of ${damaged.size}. Replacing copies it over the damaged file in your track order — each of your tracks matched to the copy's by what it contains, not by its position or its label — keeps your track languages, titles and default/forced flags, verifies the result, and moves the damaged file to <code>.js-quarantine</code> instead of deleting it." else ""}
           ${if (noSource.isNotEmpty()) "${noSource.size} ${if (noSource.size != 1) "have" else "has"} no clean copy jellystructure can find: re-download ${if (noSource.size != 1) "them" else "it"} in Sonarr/Radarr (delete the file, search again), or make ${if (noSource.size != 1) "them" else "it"} playable by discarding the damaged moments — that loss is permanent." else ""}
         </div>
         <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">
@@ -3088,6 +3089,41 @@ private suspend fun loadFileIntegrity(item: MediaItem, scope: CoroutineScope) {
     }
     wire("integrity-replace-btn", withSource, lossy = false)
     wire("integrity-lossy-btn", noSource, lossy = true)
+
+    // Phase 263 (FR-263-6) — a replacement's command needs the tracks paired, which reads both files, so a
+    // row asks for it the first time it is opened. The pairing is shown with it: the operator can see which
+    // of the copy's tracks goes under each of their labels before running anything.
+    damaged.withIndex().filter { it.value.sourcePath != null }.forEach { (i, f) ->
+        val row = document.getElementById("integrity-row-$i") ?: return@forEach
+        var asked = false
+        row.addEventListener("toggle") {
+            if (asked || row.getAttribute("open") == null) return@addEventListener
+            asked = true
+            scope.launch {
+                val slot = document.getElementById("integrity-plan-$i") as? HTMLElement ?: return@launch
+                val plan = MediaApi.fileRepairPlan(item.id, f.path)
+                slot.innerHTML = when {
+                    plan == null -> "Couldn't reach the server to match the tracks."
+                    plan.command == null -> """<span style="color:var(--bad);">Not safe to replace: ${(plan.refusal ?: "the tracks could not be matched").esc()}.</span>"""
+                    else -> {
+                        val pairs = plan.pairs.filter { it.kind != "video" }.joinToString(" · ") { p ->
+                            "<code>${p.libraryIndex} ${p.language.esc()} ← ${p.sourceIndex}</code>" + when (p.by) {
+                                "label" -> """<span title="Nothing to compare in the first two minutes — matched by its label">*</span>"""
+                                "identical" -> """<span title="The copy's tracks ${(p.identicalTo + p.sourceIndex).sorted().joinToString(", ")} are the same bytes in the first two minutes — the replacement checks they are the same all the way through">≡</span>"""
+                                else -> ""
+                            }
+                        }
+                        val notes = listOfNotNull(
+                            "* by label: nothing to compare in the first two minutes".takeIf { plan.pairs.any { it.by == "label" } },
+                            "≡ the copy holds this track more than once, byte for byte — checked across the whole file before anything is replaced".takeIf { plan.pairs.any { it.by == "identical" } },
+                        )
+                        """Your tracks ← the clean copy's, matched by what they contain: $pairs${if (notes.isNotEmpty()) " <span>(${notes.joinToString("; ")})</span>" else ""}""" +
+                            permCopyBlock(plan.command)
+                    }
+                }
+            }
+        }
+    }
 }
 
 // Phase 255 (FR-255-8/9) — a track that stops before the file does, beside phase 254's banner and never

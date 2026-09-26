@@ -762,6 +762,18 @@ fun Route.trackRoutes(
         call.respond(service.statusFor(item, configStore.current))
     }
 
+    // Phase 263 (FR-263-6) — one damaged file's replacement, asked for when the operator opens its row:
+    // the command the job would run (tracks paired by content, which reads the first two minutes of the
+    // library copy and of its source) or the sentence saying why there is none. Only this title's files.
+    get("/media/{mediaId}/health/integrity/plan") {
+        val mediaId = call.parameters["mediaId"] ?: return@get call.respond(HttpStatusCode.BadRequest)
+        val path = call.request.queryParameters["path"] ?: return@get call.respond(HttpStatusCode.BadRequest)
+        val item = store.resolve(mediaId) ?: return@get call.respond(HttpStatusCode.NotFound)
+        val service = dev.jellystructure.media.FileDamage.service ?: return@get call.respond(HttpStatusCode.ServiceUnavailable)
+        if (path !in service.videoPaths(listOf(item))) return@get call.respond(HttpStatusCode.NotFound)
+        call.respond(service.repairPlanFor(path, configStore.current))
+    }
+
     // Phase 255 (FR-255-8, dev review item 4) — this title's track-coverage state, per file, each finding
     // with its advice. Stored results + one `stat` per file; never reads a media file on the request path.
     get("/media/{mediaId}/health/tracks") {
