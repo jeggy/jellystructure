@@ -233,5 +233,12 @@
   });
 })();
 </script>
+<script>
+  // music brief §E3 — one sentence per user: whether their Jellyfin policy grants the music library,
+  // so the admin can see why a phone shows no music mode.
+  document.querySelectorAll('.usr-access').forEach((el, i) => el.insertAdjacentHTML('beforeend', i === 0
+    ? '<span class="chip" title="Ravilo on this user\'s phone offers Switch to music">Music: yes</span>'
+    : '<span class="chip" style="opacity:.7" title="No switch on this user\'s phone — the Musik library is not in their Jellyfin access">Music: no library access</span>'));
+</script>
 </body>
 </html>

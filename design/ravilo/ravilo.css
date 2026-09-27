@@ -189,10 +189,6 @@ body { font-family: 'Sora', sans-serif; }
 .signin-err { display: flex; align-items: center; gap: 10px; background: rgba(245,102,122,.12); border: 1px solid rgba(245,102,122,.42); color: #f5667a; border-radius: 12px; padding: 12px 16px; font-size: 17px; margin: -4px 0 18px; }
 .signin-panel .actions { display: flex; gap: 14px; justify-content: flex-end; margin-top: 6px; }
 .login-wrap { display: flex; flex-direction: column; align-items: center; gap: 26px; }
-.login-kbd { display: flex; flex-direction: column; align-items: center; }
-.login-kbd .kbd-row { display: flex; gap: 10px; margin-bottom: 10px; justify-content: center; }
-.login-kbd .key { min-width: 54px; height: 54px; font-size: 20px; border-radius: 10px; }
-.login-kbd .key.wide { min-width: 132px; font-size: 17px; }
 
 /* ---- IMDb rating chip (detail hero — R164) ---- */
 .imdb { display: inline-flex; align-items: center; gap: 8px; }
@@ -1140,3 +1136,30 @@ body.fd-line #chrome { bottom: 122px; }
 .fact .k { font-size: 13px; font-weight: 600; letter-spacing: 1.8px; text-transform: uppercase; color: var(--ink-dim); }
 .fact .v { font-size: 20px; color: var(--ink); margin-top: 5px; font-weight: 500; }
 
+
+/* ---- Owner decision 2 (audit 2026-09-27): the TV never draws a keyboard. Search, sign-in and change-password
+   are native fields on the platform's IME; this band is a fenced stand-in for it, not a Ravilo surface. ---- */
+.sys-ime { margin: 0 64px 30px; height: 120px; border-radius: 14px; background: #1b1d22; border: 1px dashed rgba(255,255,255,.14); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; }
+.sys-ime b { font-family: 'Space Grotesk', sans-serif; font-size: 16px; letter-spacing: 3px; text-transform: uppercase; color: #6b7290; }
+.sys-ime i { font-style: normal; font-size: 17px; color: #8b91a8; }
+.login-wrap .sys-ime { margin: 0; width: 760px; }
+.searchbar.focused { border-color: var(--ring); box-shadow: 0 0 0 4px var(--ring); }
+.searchbar .cursor { display: inline-block; width: 2px; height: 28px; background: var(--accent); margin-left: 3px; vertical-align: -4px; animation: blink 1s step-end infinite; }
+/* ---- TV Settings ▸ Playback (as built) + Account ▸ Sign out (R191) ---- */
+.set-tog { flex-direction: row; gap: 14px; min-width: 0; }
+.set-tog .lang-endo { font-size: 20px; }
+.tog-sw { width: 44px; height: 26px; border-radius: 13px; background: rgba(255,255,255,.18); position: relative; flex: none; transition: background .15s; }
+.tog-sw::after { content: ''; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: #fff; transition: transform .15s; }
+.set-tog.cur .tog-sw { background: var(--accent); }
+.set-tog.cur .tog-sw::after { transform: translateX(18px); }
+.set-acct-btns { display: flex; gap: 14px; justify-content: center; }
+
+/* ---- R308 (built 2026-09-27): EVERY Studios and Networks tile sits on the light plate — logo or not, any ink,
+   every skin. A name with no logo is set in the plate's dark ink; a logo the server judged lost on the plate
+   (logo_reink) is drawn source-in in that ink. Genres keep their dark wordmark cards (FR-R308-6). ---- */
+.taxo:not(.genre) .taxo-card, .taxo.focused:not(.genre) .taxo-card { background: #E8EAF0; }
+.taxo:not(.genre) .taxo-wm { color: #1B1E2B; }
+.taxo-logo.reink { filter: brightness(0) invert(9%) sepia(12%) saturate(1400%) hue-rotate(195deg); }
+
+/* browse sort, as built: a field and its direction in words */
+.bpop .opt .osub, .opt .osub { margin-left: auto; padding-left: 18px; font-size: 16px; color: var(--ink-dim); font-weight: 500; }

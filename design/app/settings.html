@@ -330,6 +330,31 @@
           <span class="hint" id="pub-hint">How Jellystructure is reached <b>from outside your network</b> — scheme and host only, no trailing slash. Checked from outside, just now. Used by the Chromecast receiver.</span></div>
       </div>
 
+      <!-- MUSIC PROVIDERS (music brief §E2) — H5 decides Connections (lean) or Download tools; the
+           round-1 panel moves it live. Each provider is named: the admin registers with them. -->
+      <div class="card set-section" id="sect-musicprov" data-tab="connections">
+        <div class="row center"><h3 style="font-size:1.05rem;margin:0;">Metadata providers</h3><span class="badge info" style="margin-left:8px;">Musik · Bøger</span><span class="spacer"></span><span class="btn sm ghost" id="mp-testall">Test all</span></div>
+        <div class="tiny muted" style="margin:8px 0 12px;line-height:1.6;">Where the music and audiobook libraries' metadata comes from (films and series keep TMDB, above). For music MusicBrainz is the source of truth; for audiobooks the files and what you type come first, and these only <b>suggest</b>.</div>
+        <div class="mp-grp">Music</div>
+        <div class="mp-row"><div class="mp-h"><span class="dot ok"></span><b>MusicBrainz</b><span class="tiny muted">metadata · no key</span><span class="spacer"></span><span class="tiny muted">last call 03:04 · 200</span><span class="btn sm ghost" data-mptest="MusicBrainz">Test</span></div>
+          <div class="field" style="margin:8px 0 0;max-width:420px;"><label>Contact</label><div class="input mono">admin@example.org</div><span class="hint">MusicBrainz requires a contact in the request header — an e-mail or a URL. Rate: <b>1 request per second</b> — MusicBrainz's rule, not a setting.</span></div></div>
+        <div class="mp-row"><div class="mp-h"><span class="dot ok"></span><b>Cover Art Archive</b><span class="tiny muted">album covers · nothing to configure</span><span class="spacer"></span><span class="tiny muted">26 covers fetched this run</span><span class="btn sm ghost" data-mptest="Cover Art Archive">Test</span></div></div>
+        <div class="mp-row"><div class="mp-h"><span class="dot ok" id="mp-ac-dot"></span><b>AcoustID</b><span class="tiny muted">identify by sound · optional</span><span class="spacer"></span><span class="btn sm ghost" data-mptest="AcoustID">Test</span></div>
+          <div class="field" style="margin:8px 0 0;max-width:420px;"><label>Client key</label><div class="input mono">••••••••k2Qp</div><span class="hint">Identifies a track by its sound when the tags are not enough. Free — <a href="https://acoustid.org/new-application" target="_blank" rel="noopener">acoustid.org/new-application</a>. Without it, <i>Find match…</i> says how to add one instead of offering the fingerprint.</span></div></div>
+        <div class="mp-row"><div class="mp-h"><span class="dot warn"></span><b>fanart.tv</b><span class="tiny muted">artist pictures and logos · optional</span><span class="spacer"></span><span class="btn sm ghost" data-mptest="fanart.tv">Test</span></div>
+          <div class="field" style="margin:8px 0 0;max-width:420px;"><label>API key (project key)</label><div class="input mono muted">not set</div><span class="hint">Without a key, artist pictures come from <b>Wikimedia Commons</b> only — which is why 2 artists have no picture.</span></div></div>
+        <div class="mp-row"><div class="mp-h"><span class="dot ok"></span><b>Lyrics · LRCLIB</b><span class="tiny muted">synced and plain lyrics · no key</span><span class="spacer"></span><span class="muted tiny">Fetch lyrics</span><span class="toggle on" id="mp-lyrics"></span></div>
+          <div class="tiny muted" style="margin-top:6px;" id="mp-lyrics-hint">Adds a <span class="mono">fetch_lyrics</span> step to each run and saves a <span class="mono">.lrc</span> beside the track — Jellyfin already saves lyrics with media for this library.</div></div>
+        <!-- part 2 (admin brief §M4) — audiobook suggestion providers + the tag-writing switch -->
+        <div class="mp-grp">Audiobooks · suggestions only</div>
+        <div class="mp-row"><div class="mp-h"><span class="dot ok"></span><b>iTunes</b><span class="tiny muted">no key · no narrators</span><span class="spacer"></span><span class="tiny muted">Store</span><span class="select" style="width:auto;min-width:70px"><span>DK</span></span><span class="btn sm ghost" data-mptest="iTunes">Test</span></div><div class="tiny muted" style="margin-top:6px">DK · NO · SE · GB · US. Covers at 600 px. There is no Faroese store.</div></div>
+        <div class="mp-row"><div class="mp-h"><span class="dot ok"></span><b>Google Books</b><span class="tiny muted">book data, not audiobook data</span><span class="spacer"></span><span class="btn sm ghost" data-mptest="Google Books">Test</span></div>
+          <div class="field" style="margin:8px 0 0;max-width:420px;"><label>API key</label><div class="input mono">••••••••Xw4c</div><span class="hint">Required in practice — without a key the shared quota is always used up, so the provider is skipped and this row says so.</span></div></div>
+        <div class="mp-row"><div class="mp-h"><span class="dot ok"></span><b>Open Library</b><span class="tiny muted">nothing to configure · bibliographic only</span><span class="spacer"></span><span class="btn sm ghost" data-mptest="Open Library">Test</span></div></div>
+        <div class="mp-row"><div class="mp-h"><span class="dot ok"></span><b>Audnexus</b><span class="tiny muted">narrators · series · no key</span><span class="spacer"></span><span class="tiny muted">Region</span><span class="select" style="width:auto;min-width:70px"><span>uk</span></span><span class="btn sm ghost" data-mptest="Audnexus">Test</span></div><div class="tiny muted" style="margin-top:6px">Covers the titles Audible sells — English and the big European languages. au · ca · de · es · fr · in · it · jp · us · uk; no Danish store.</div></div>
+        <div class="mp-row" id="ab-tagrow"><div class="mp-h"><b>Write tags into audiobook files</b><span class="spacer"></span><span class="muted tiny" id="ab-tag-st">off</span><span class="toggle" id="ab-tagw"></span></div><div class="tiny muted" style="margin-top:6px;line-height:1.6">The only way Jellyfin’s own apps show a narrator or a description — Jellyfin reads no metadata file for audiobooks. When on, <b>Save</b> on a book writes title, author, narrator and description into every part. Ravilo doesn’t need it. Files seeding in qBittorrent are skipped.</div></div>
+      </div>
+
       <!-- CHROMECAST (phase 218) — the card IS the registration. jellystructure
            serves the receiver at /cast/ and each installation registers its own
            Cast application with Google; Google is named here, and only here,
@@ -798,6 +823,46 @@
               </div>
             </div>
           </div>
+          <!-- music brief §E1: the music library's card. No language cascade for music, so no fallback field. -->
+          <div class="box flat" style="padding:13px 15px;" id="mu-libcard">
+            <div class="row center" style="gap:9px;"><b>Musik</b><span class="badge info">music</span><span class="spacer"></span><span class="muted tiny">skip</span><span class="toggle"></span></div>
+            <div class="row" style="margin-top:11px;gap:12px;flex-wrap:wrap;">
+              <div class="field fill" style="margin:0;min-width:190px;"><label>jellyfin_path</label><div class="input mono">/media/music</div></div>
+              <div class="field fill" style="margin:0;min-width:190px;"><label>local_path</label><div class="input mono">/mnt/media/jellyfin/music</div></div>
+            </div>
+            <div class="tiny" style="margin-top:9px;color:var(--ink-soft);">Metadata: <b>MusicBrainz</b> · Covers: <b>Cover Art Archive</b> · Artist images: <b>fanart.tv</b> · Lyrics: <b>LRCLIB</b> — <a href="settings.html?tab=connections#sect-musicprov" id="mu-provlink">Music providers</a></div>
+            <div class="row center" style="margin-top:9px;gap:7px;flex-wrap:wrap;"><span class="badge ok">match prefix ✓</span><span class="tiny muted mono">/media/music → /mnt/media/jellyfin/music · 60 tracks · 30 albums · 23 artists</span><span class="spacer"></span><a class="btn sm ghost" href="library.html?kind=music">Open in Library</a><span class="btn sm ghost lib-scan">Scan</span></div>
+            <div class="tiny muted" style="margin-top:6px;">Not the <b>Musik Videoer</b> library — music videos are films and keep their own card.</div>
+            <div class="jfa-lib">
+              <hr class="dash" style="margin:12px 0 2px;">
+              <div class="row center" style="gap:8px;flex-wrap:wrap;"><b class="tiny">Advisor</b><span class="badge bad">1 finding</span><span class="spacer"></span><span class="tiny muted">online fetchers off · NFO reader on · LUFS scan on — all as they should be</span></div>
+              <div class="jfa">
+                <div class="jfa-h"><span class="jfa-kind jf">Jellyfin</span><span class="jfa-label" style="color:var(--bad)">Jellyfin writes its own NFO files for this library</span><span class="jfa-now" style="background:var(--bad-soft);border-color:rgba(214,69,65,.4)">MetadataSavers: Nfo</span></div>
+                <div class="jfa-body">Jellyfin will <b>overwrite the album.nfo and artist.nfo Jellystructure writes</b> — every match, genre and cover choice made here would be replaced by Jellyfin's own copy on its next save. It already happened once: <a href="album.html?a=salt-on-the-window">Salt on the Window</a> drifted at 03:12.</div>
+                <div class="jfa-do"><span class="jfa-path">Dashboard → Libraries → Musik → Manage library → Metadata savers</span> → untick <b>Nfo</b></div>
+                <div class="jfa-lose"><b>You lose:</b> nothing — Jellyfin keeps <i>reading</i> the NFO files (its NFO reader stays on); only its own writing stops.</div>
+              </div>
+            </div>
+          </div>
+          <!-- admin brief §M4: the books library. No NFO, no language cascade; the files, then you. -->
+          <div class="box flat" style="padding:13px 15px;" id="ab-libcard">
+            <div class="row center" style="gap:9px;"><b>Bøger</b><span class="badge info">books</span><span class="spacer"></span><span class="muted tiny">skip</span><span class="toggle"></span></div>
+            <div class="row" style="margin-top:11px;gap:12px;flex-wrap:wrap;">
+              <div class="field fill" style="margin:0;min-width:190px;"><label>jellyfin_path</label><div class="input mono">/media/books</div></div>
+              <div class="field fill" style="margin:0;min-width:190px;"><label>local_path</label><div class="input mono">/mnt/media/jellyfin/books</div></div>
+            </div>
+            <div class="tiny" style="margin-top:9px;color:var(--ink-soft);">Metadata: <b>the files, then you</b> · Suggestions: <b>iTunes · Open Library · Audnexus · Google Books</b> — <a href="settings.html?tab=connections#sect-musicprov">Metadata providers</a></div>
+            <div class="row center" style="margin-top:9px;gap:7px;flex-wrap:wrap;"><span class="badge ok">match prefix ✓</span><span class="tiny muted mono">/media/books → /mnt/media/jellyfin/books · 14 audiobook files → 1 book · 0 ebooks</span><span class="spacer"></span><a class="btn sm ghost" href="library.html?kind=books">Open in Library</a><span class="btn sm ghost lib-scan">Scan</span></div>
+            <div class="tiny muted" style="margin-top:6px;">Jellyfin makes one item per file; the folder is grouped into a book here. Ebooks in this library are ignored — Ravilo has no reader.</div>
+            <div class="jfa-lib">
+              <hr class="dash" style="margin:12px 0 2px;">
+              <div class="row center" style="gap:8px;flex-wrap:wrap;"><b class="tiny">Advisor</b><span class="badge info">1 note</span><span class="spacer"></span><span class="tiny muted">online fetchers off — as they should be</span></div>
+              <div class="jfa">
+                <div class="jfa-h"><span class="jfa-kind jf">Jellyfin</span><span class="jfa-label">Save artwork into media folders</span><span class="jfa-now" style="background:var(--fill-3);border-color:var(--line-2)">SaveLocalMetadata: on</span></div>
+                <div class="jfa-body">Harmless for audio — Jellyfin has no metadata file for audiobooks to write, so nothing of ours is overwritten. Listed so it isn’t a surprise if a <span class="mono">folder.jpg</span> appears.</div>
+              </div>
+            </div>
+          </div>
           <div class="box flat" style="padding:13px 15px;opacity:.6;">
             <div class="row center" style="gap:9px;"><b>4K Movies</b><span class="badge info">movies</span><span class="chip" style="font-size:.64rem;">skipped</span><span class="spacer"></span><span class="muted tiny">skip</span><span class="toggle on"></span></div>
             <!-- Phase 212 FR-212-6 / FR-212-8 — a skipped library has no local_path, so its storage
@@ -1092,6 +1157,46 @@
 <div class="blk-pal" id="blk-pal"><div class="pl-h">Add a step</div><div id="blk-list"></div></div>
 
 <script src="app-shell.js"></script>
+<script src="music-qs.js"></script>
+<style>
+.mp-row{padding:12px 2px;border-top:1px dashed var(--line)}
+.mp-row:first-of-type{border-top:none}
+.mp-h{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.mp-grp{font-size:.66rem;text-transform:uppercase;letter-spacing:.1em;color:var(--ink-soft);font-weight:700;margin:14px 0 2px}
+</style>
+<div id="mu-qs-set" style="display:none"></div>
+<script>
+(function () {
+  function toast(m){ const t=document.createElement('div'); t.className='toast'; t.textContent=m; document.body.appendChild(t); setTimeout(()=>t.remove(),1900); }
+  document.querySelectorAll('[data-mptest]').forEach(b => b.addEventListener('click', () => toast(b.dataset.mptest + ' · reachable')));
+  document.getElementById('ab-tagw').addEventListener('click', () => setTimeout(() => { const on = document.getElementById('ab-tagw').classList.contains('on'); localStorage.setItem('js-ab-tagwrite', on ? '1' : '0'); document.getElementById('ab-tag-st').textContent = on ? 'on' : 'off'; toast(on ? 'Tag writing on — Save on a book now writes into its files' : 'Tag writing off — the files are left alone'); }, 0));
+  document.getElementById('mp-testall').addEventListener('click', () => toast('MusicBrainz 200 · Cover Art Archive 307 · AcoustID ok · fanart.tv no key · LRCLIB 200'));
+  const card = document.getElementById('sect-musicprov'), conn = document.getElementById('sect-connections'), baz = document.getElementById('sect-bazarr');
+  function place() {
+    if (!window.MusicQ) return;
+    const where = MusicQ.get('prov');
+    if (where === 'downloads') { card.dataset.tab = 'downloads'; baz.after(card); } else { card.dataset.tab = 'connections'; conn.after(card); }
+    const act = document.querySelector('.navitem.active[data-tab]');
+    card.classList.toggle('tab-show', !!act && act.dataset.tab === card.dataset.tab);
+    document.getElementById('mu-provlink').href = 'settings.html?tab=' + card.dataset.tab + '#sect-musicprov';
+    const ly = document.getElementById('mp-lyrics'); ly.classList.toggle('on', MusicQ.get('lyrics') === 'on');
+    document.getElementById('ab-tagrow').style.display = MusicQ.get('abtags') === 'draw' ? '' : 'none';
+    const tw = localStorage.getItem('js-ab-tagwrite') === '1';
+    document.getElementById('ab-tagw').classList.toggle('on', tw); document.getElementById('ab-tag-st').textContent = tw ? 'on' : 'off';
+    document.getElementById('mp-lyrics-hint').innerHTML = MusicQ.get('lyrics') === 'on'
+      ? 'On by default. Adds a <span class="mono">fetch_lyrics</span> step to each run and saves a <span class="mono">.lrc</span> beside the track — Jellyfin already saves lyrics with media for this library.'
+      : 'Off by default — nothing is fetched and the run has no <span class="mono">fetch_lyrics</span> step until this is on.';
+  }
+  // the round-1 panel sits at the foot of whichever tab holds the card
+  const qs = document.getElementById('mu-qs-set');
+  function placeQs() { qs.style.display = card.classList.contains('tab-show') || document.querySelector('#mu-libcard') && document.getElementById('sect-library').classList.contains('tab-show') ? '' : 'none'; }
+  document.querySelector('#sect-library').parentNode.appendChild(qs);
+  if (window.MusicQ) { MusicQ.mount(qs, 'settings'); MusicQ.on(() => { place(); placeQs(); }); }
+  document.querySelectorAll('.navitem[data-tab]').forEach(t => t.addEventListener('click', () => setTimeout(() => { place(); placeQs(); }, 0)));
+  setTimeout(() => { place(); placeQs(); }, 0);
+  if (location.hash === '#mu-libcard' || location.hash === '#sect-musicprov') setTimeout(() => { const el = document.querySelector(location.hash); if (el) window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY - 20 }); }, 60);
+})();
+</script>
 <script>
 (function () {
   const tabs = document.querySelectorAll('.navitem[data-tab]');

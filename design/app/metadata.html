@@ -8,6 +8,7 @@
 <link rel="stylesheet" href="app.css">
 <link rel="stylesheet" href="metadata.css">
 <link rel="stylesheet" href="detail.css">
+<link rel="stylesheet" href="music.css">
 </head>
 <body class="wf-body app-body">
 
@@ -23,6 +24,7 @@
     <span class="on" data-tab="studios">Studios</span>
     <span data-tab="networks">Networks</span>
     <span data-tab="genres">Genres</span>
+    <span data-tab="musicgenres" id="tab-mg">Music genres</span>
     <span data-tab="tags">Tags</span>
     <span data-tab="ages">Age ratings</span>
     <span data-tab="trackers">Trackers</span>
@@ -67,6 +69,10 @@
       <a class="chip genre-chip" href="library.html">Documentary <span class="badge info" style="margin-left:4px;">44</span></a>
     </div>
   </div>
+
+  <!-- MUSIC GENRES (music brief §D) — MusicBrainz's genres, their own id space; never merged with TMDB's.
+       H3: own tab (lean) or a segment inside Genres — music-qs switches it; the wall is the same either way. -->
+  <div class="tabpanel" data-panel="musicgenres" style="display:none;"><div id="mg-wall"></div></div>
 
   <!-- TAGS -->
   <div class="tabpanel" data-panel="tags" style="display:none;">
@@ -197,6 +203,31 @@
 </div>
 
 <script src="app-shell.js"></script>
+<script src="music-data.js"></script>
+<script src="music-qs.js"></script>
+<script>
+(function () {
+  const M = window.MUSIC, gp = document.querySelector('[data-panel="genres"]'), mp = document.querySelector('[data-panel="musicgenres"]'), wall = document.getElementById('mg-wall');
+  const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const G = M.genres();
+  wall.innerHTML = '<div class="row center" style="margin-bottom:14px;gap:8px;flex-wrap:wrap"><span class="muted tiny">' + G.length + ' music genres · from MusicBrainz’s votes (and the files’ own tags until an album is matched) · no logos — MusicBrainz genres have none</span></div>'
+    + '<div class="pill-row">' + G.map(g => '<a class="chip genre-chip" href="library.html?kind=music">' + esc(g.name) + ' <span class="badge info" style="margin-left:4px;">' + g.albums + (g.albums === 1 ? ' album' : ' albums') + ' · ' + g.songs + (g.songs === 1 ? ' song' : ' songs') + '</span></a>').join('') + '</div>'
+    + '<div class="tiny muted" style="margin-top:14px;line-height:1.6;max-width:720px">A film’s <i>Comedy</i> and an album’s <i>comedy rock</i> are different ids from different providers, so these never merge into the Genres tab. Names are MusicBrainz’s English ones.</div>';
+  const seg = document.createElement('div'); seg.className = 'row center'; seg.style.cssText = 'margin-bottom:14px;gap:10px'; seg.innerHTML = '<span class="seg" id="mg-seg"><span class="on" data-mg="film">Films &amp; series</span><span data-mg="music">Music</span></span>';
+  const filmBits = [...gp.children];
+  seg.addEventListener('click', e => { const b = e.target.closest('[data-mg]'); if (!b) return; [...seg.querySelectorAll('[data-mg]')].forEach(x => x.classList.toggle('on', x === b));
+    const m = b.dataset.mg === 'music'; filmBits.forEach(x => x.style.display = m ? 'none' : ''); wall.style.display = m ? '' : 'none'; });
+  function place() {
+    const asTab = MusicQ.get('genres') === 'tab';
+    document.getElementById('tab-mg').style.display = asTab ? '' : 'none';
+    if (asTab) { mp.appendChild(wall); wall.style.display = ''; seg.remove(); filmBits.forEach(x => x.style.display = ''); }
+    else { gp.prepend(seg); gp.appendChild(wall); const m = seg.querySelector('.on').dataset.mg === 'music'; wall.style.display = m ? '' : 'none'; filmBits.forEach(x => x.style.display = m ? 'none' : '');
+      if (/tab=musicgenres/.test(location.hash)) location.hash = 'tab=genres'; }
+  }
+  const qs = document.createElement('div'); document.querySelector('main').appendChild(qs);
+  MusicQ.mount(qs, 'metadata'); MusicQ.on(place); place();
+})();
+</script>
 <script>
 (function () {
   const tabbar = document.getElementById('tabbar');

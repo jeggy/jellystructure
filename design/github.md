@@ -1,9 +1,63 @@
 repo: jeggy/jellystructure
 branch: main
 path: specs/   (plus root STATUS.md — both mirrored read-only from the repo); presentation/ (full mirror, ours to build on); design/ (our export — now confirmed to flow BOTH ways, see 2026-09-15)
-tree: main @ `348d3bbbdffa` (2026-09-24 pull, 23:56 — head of `main`; resolved tree hash, not a commit)
+tree: main @ `93a85693c367` (2026-09-27 pull, 17:53 — head of `main`; resolved tree hash, not a commit)
 
-## Last sync (2026-09-24, 23:56 — pull: 88 upstream-edited specs/reports + STATUS.md; our 259 · 260 · R303 · R304 and the four designs kept)
+## Last sync (2026-09-28 — no repo I/O beyond a numbering check: specs 275–281 · R321–R323 written)
+date: 2026-09-27T22:58:04Z
+direction: none (numbering verified on `main` `f8bdaab4`: admin through 273, Ravilo through R319; 274/R320 ours, pending).
+### Updated in this project
+- Specs 275–281 (music + audiobooks, admin) and R321–R323 (listening mode, player, audiobooks) — all pending export.
+
+## Previous sync (2026-09-27, 20:16 — pull: part 2 audiobooks; drawn)
+date: 2026-09-27T20:16:26Z
+direction: pull (repo → this project), then design work. `github_compare dac8833084ec...main`: 5 files.
+- **Pulled:** both music briefs (§M added, bar lean amended), `research-reports/audiobooks-library-and-player-2026-09-27.md` (new), `research-reports/music-library-and-player-2026-09-27.md`, `research-reports/README.md`, `STATUS.md`.
+### Updated in this project
+- Admin: Audiobooks kind, `audiobook.html`, `author.html`, Metadata providers card + tag-writing switch, books library card, triage.
+- Phone: Audiobooks tab, shelf, Book page, book player + sheets, book mini bar, Listening settings, §M7 panel, strings.
+
+## Previous sync (2026-09-27, 19:33 — pull: the two music design briefs + research; round 1 drawn)
+date: 2026-09-27T19:33:06Z
+direction: pull (repo → this project), then design work.
+- **Pulled:** `specs/design-brief-music-in-the-admin-2026-09-27.md`, `specs/ravilo/design-brief-music-player-on-the-phone-2026-09-27.md`, `specs/research-reports/music-library-and-player-2026-09-27.md`, `STATUS.md`.
+### Updated in this project
+- Admin: Library Music kind, new `album.html` / `artist.html`, Settings/Activity/Dashboard/Metadata music pieces, §H panel.
+- Phone: music mode in `Ravilo Mobile.html` (switch, bar, pages, Now playing, mini bar, sheets), §J panel, strings × en/da/fo.
+
+## Previous sync (2026-09-27, 19:30 — no repo I/O: the owner's answers; 274 + R320 written)
+date: 2026-09-27T19:30:00Z
+direction: none — design and spec work on top of the 19:08 pull. Nothing fetched, nothing exported.
+### Updated in this project
+- `specs/requirements/phase-274-films-we-dont-have-yet-suggestions-from-seerr.md` and `specs/ravilo/requirements/phase-R320-suggested-for-you-request-row.md` (`Planned`, pending export). Next free: 275 / R321.
+- `app/suggestions.*` carry the decisions (Seerr blacklist, AI-generated clusters with fallback).
+
+## Previous sync (2026-09-27, 19:08 — pull: the suggested-films design brief; round 1 drawn)
+date: 2026-09-27T19:08:00Z
+direction: pull (repo → this project), then design work. `github_compare 93a85693c367...main`: 2 files, one of them a spec-side file.
+- **Pulled:** `specs/ravilo/design-brief-suggested-movies-from-seerr-2026-09-27.md`, `STATUS.md`.
+### Updated in this project
+- New `app/suggestions.html` (+ data/js), a sidebar entry and a Dashboard card; *Suggested for you* in Ravilo config ▸ Request.
+- The feed added to the TV/phone mock data; one new viewer string `rq_suggested`.
+
+## Previous sync (2026-09-27, 18:08 — pull: 59 specs + STATUS.md + 5 mockups; the design brought in line with the 2026-09-27 audit)
+date: 2026-09-27T18:08:00Z
+direction: pull (repo → this project), then design work. Drift found by **git blob SHA-1** against the tree's blob ids
+for every mirror file and every built mockup.
+- **Specs pulled:** admin 178 · 221 · 236 · 237 · 247–250 · 254–256 · 258 · **259 · 260** (ours, dev-reviewed) + new
+  **261–273**; Ravilo R180 · R187 · R264–R267 · R269 · R270 · R272 · R274 · R277 · R290–R293 · **R303 · R304** + new
+  **R305–R319**; `STATUS.md`; research README + the new design-vs-implementation audit. **Next free: 274 / R320.**
+- **Mockups pulled back (repo newer):** `app/wf.css`, `app/ravilo-users.html`, `app/ravilo-config.html`,
+  `ravilo/livetv-data.js`, `ravilo/ravilo-livetv-data.js`. Every other built mockup matched `design/` byte for byte.
+- **The document the owner linked** (a claude.ai artifact) could not be opened from here; the audit report in
+  `specs/research-reports/` dated the same day was used as that document.
+### Updated in this project
+- The TV and phone mockups follow the audit's five owner decisions (strings, no drawn keyboards, phone Library grid,
+  phone Settings row, `S01E05`).
+- Drawn: R308 plates, R310 empty walls, sort with direction + Size, R291 badges, R191 sign-out, TV Playback toggles.
+- Removed: viewer-facing *Jellyfin*, the worded seek, chart-era and *Mark all* remnants, the phone subtitle jargon.
+
+## Previous sync (2026-09-24, 23:56 — pull: 88 upstream-edited specs/reports + STATUS.md; our 259 · 260 · R303 · R304 and the four designs kept)
 date: 2026-09-24T23:56:50Z
 direction: pull (repo → this project). Drift found by a full `specs/` tree scan at `main` and a byte-size diff
 against every local mirror file (history was rewritten again, so compare is noise).
@@ -35,7 +89,8 @@ plus a byte-size comparison of every mockup against `design/` on `main`.
   mostly built, 4 research reports (Jellyfin 12.1 audit, unauthenticated-media upstream report, FOSS cast sender,
   tracks-at-end MKV), the root + Ravilo constitutions/plans, and a fresh `STATUS.md`. **Next free: 259 / R303.**
 - **Repo-side mockup edits adopted (11 files):** the dev team replaced every real show title with a fictional one
-  (the map itself is deliberately written down nowhere in the tree — `scripts/check-deanonymization.sh` holds hashes only) and removed `ravilo-player.js`'s delivery pill
+  (Severance → *Offboarding*, Bluey → *Ruffy*, Klovn → *Fjollerne*, Silicon Valley → *Server Farm*, Red Notice →
+  *Blue Warrant*, KPop Demon Hunters → *JRock Ghost Chasers*…) and removed `ravilo-player.js`'s delivery pill
   (R180). The sweep had missed 13 of our files; the same map was applied to them.
 - **Built to match what shipped:** `Ravilo Mobile.html` — R274's 74 dp bar (36 dp pill, 28 dp glyphs), R278's bar on
   pushed pages (account screens stop above it, any item leaves them), R277's Search (no keyboard on arrival, re-tap
@@ -614,7 +669,7 @@ direction: pull (repo → this project) — 31 commits since the 2026-09-02 sync
   because R216/R183 force an AVC transcode target, so a single column would silently record the wrong
   codec's ceiling for an HEVC file. **Open question 1 answered on-device 2026-09-02**: R216 has been live on
   the stue TV since 2026-08-30 (105 `playback_qoe` rows carrying its fields, `direct_play=0` on heavy
-  sessions, `dropped_frames=0` throughout) — the *Till Daybreak* stutter was a Wholphin session, architecturally
+  sessions, `dropped_frames=0` throughout) — the *Until Dawn* stutter was a Wholphin session, architecturally
   unreachable by any of this. Through Ravilo the file re-encodes and starts slowly; it does not stutter.
   `slow_lead`/`slow_tail_measured`/`slow_tail_expected` are the right copy, unblocked for translation.
   `basis: "measured"` is reachable in practice now (timer built) but unreached on any real device yet —
@@ -654,7 +709,7 @@ direction: pull (repo → this project) — 31 commits since the 2026-09-02 sync
 date: 2026-09-02T07:25:03Z
 direction: pull (repo → this project) — one research report, then a design pass
 - **Pulled `specs/research-reports/ravilo-per-device-decode-ceiling-warning-2026-09-02.md`** (new repo-side,
-  19 KB). Triggered by *Till Daybreak (2025)* — a 82 Mbps 4K DV/HDR10+ REMUX — stuttering on stue TV and
+  19 KB). Triggered by *Until Dawn (2025)* — a 82 Mbps 4K DV/HDR10+ REMUX — stuttering on stue TV and
   being abandoned mid-watch, the third stutter on that TV in three weeks. Owner's proposal: record what
   bitrate each device can take and warn on the Ravilo detail page before Play.
 - **What the report establishes:** the *measuring* half already exists (Phase 177 + R216, 2026-08-28 —
@@ -729,7 +784,7 @@ direction: pull (repo → this project)
     presentation with no new copy or visual language. Build note admits that signal is **not wired**
     (open question 7) — so a viewer can still see several seconds of frozen black frame with no chrome.
   - **181 — converge on Jellyfin's library, don't predict it** (partially implemented; FR-181-2 built).
-    Fjollerne S11E07 missing for 15h: premiere-year freshness bucketing filed a currently-airing 2005 show as
+    Klovn S11E07 missing for 15h: premiere-year freshness bucketing filed a currently-airing 2005 show as
     monthly-archive (9 of 16 provably-airing series were starved), nothing ever compared our item set to
     Jellyfin's, and the Jellyfin-based realtime ingest has delivered **nothing, ever** since phase 165
     (the WS listener subscribes to nothing and `LibraryChanged` is never sent — dead code reporting

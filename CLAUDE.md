@@ -36,6 +36,53 @@ GitHub is the **source of truth**; we layer designs on top of it.
 - `specs/research-reports/` — dated deep-dives (research, not spec; may go stale).
 
 ## Where the work stands (read the repo `STATUS.md` for the live table)
+- **2026-09-28 — the music + audiobooks round is spec'd: 275–281 · R321–R323. Next free: 282 / R324.** All `Planned`, not dev-reviewed, **pending export** (numbers verified free on `main` `f8bdaab4`; the research's ladder 274–280 / R320–R324 moved up one because 274/R320 went to Seerr suggestions). Admin: **275** music library (tables, `scan_music`, ACL, NFO-saver advisor, health) · **276** MusicBrainz (paced client, ladder + AcoustID, Find match…, lock/clear, genres, the providers card) · **277** covers, artist images, `album.nfo`/`artist.nfo`, lyrics, drift, artist Videos · **278** the admin UI (Music kind, Album, Artist, Convert…, Settings/Activity/Dashboard/Metadata/dock) · **279** `/api/tv/music/**` · **280** audiobooks library (folder = book, parts, our progress store, flags) · **281** a book's facts (files → admin → suggestions, Parts/Chapters/Listeners, tag-writing switch, author page, the phone's book paths). Ravilo: **R321** listening mode (switch, the owner's *Listen · Browse(+Search) · Playing · Queue* bar, pages) · **R322** the player (service, Playing tab, last-played-paused, lyrics, queue, mini bar, lock screen) · **R323** audiobooks (shelf as a Browse chip, book page, book player with speed/sleep/chapters/bookmarks). Every unanswered round-1 question is recorded with its lean. **Open for the owner:** Continue listening is two taps deep under the chosen bar (lean: a Listen row, R323 FR-R323-2, not drawn); the Queue tab duplicates Now playing's queue button (lean: drop the button). Web app and playlist editing/mixes are later phases, unnumbered.
+- **2026-09-27 (music round 1 · part 2 audiobooks) — synced `main` (5 files: both briefs gained §M, new `research-reports/audiobooks-library-and-player-2026-09-27.md`, the music report's §6.7) and drew part 2 into the main mockups. Still no spec; next free 275 / R321 (verify first).**
+  - **Admin:** `audiobook-data.js` (the household's one book: 14 MP3 parts, part 6 missing, no cover/narrator; plus 3 preview-only extras); Library **Audiobooks** kind (`audiobook-library.js`, Books · Authors · Series-when-present, facets, one/many/empty); new **`audiobook.html`** (+`audiobook.js`: Details editor with the Suggestions rail — four empty cards first —, Parts with the 5-minute line and the gap row, drag reorder, Chapters, Artwork, Listeners, History, no NFO tab) and **`author.html`**; Settings card renamed **Metadata providers** (+ iTunes · Google Books · Open Library · Audnexus rows, the *Write tags into audiobook files* switch, localStorage `js-ab-tagwrite`) and a **Bøger** library card; Dashboard tile + four attention entries; two dock entries. §M6's four questions joined the shared panel (`music-qs.js`).
+  - **Phone:** `mobile/ravilo-books.js` — the bar lean is now Home · Library · Search · **Audiobooks** (J2 option *a′* keeps Playlists fourth; Playlists is a Library chip under *a*); the mode card reads *Music & audiobooks*; the shelf (Continue listening card with ring + *left*, All books, Authors/Series chips only in "many"), the Book page, the **book Now playing** (chapter seek + book hairline, ±30 s with long-press, speed chip — the only speed in the app —, sleep, chapters/bookmarks sheet, finished, failure), the book mini bar (−30 s · play/pause), Settings ▸ *Listening*. §M7 + book states in the review panel. Strings §M6 × en/da/fo.
+  - **Owner, same evening — the music bar is (c) with Now playing in the middle:** *Listen · Browse · **Playing** · Queue · Profile* (J2 `cnp`, the default; `ravilo-music-q` migrates once via `v4`) — **Search merged into Browse** (the field sits above Browse's chips; a query swaps the chips' content for results; re-tapping Browse focuses the field), so Playing is centred. The six-item *… · Search · Queue* is kept as `cnp6`. The **Playing** tab is the Now-playing screen as a page with the bar under it (no close chevron, no swipe-down); nothing playing ⇒ the last-played song loaded **paused** where it was left; the mini bar opens that tab. Audiobooks and Playlists are Browse chips in this layout. The intermediate *Home · Library(+Search) · Now playing · Audiobooks* (`np`, Search merged into Library) is kept as an option.
+  - Artist **Videos** row (phase 2) was already drawn on both sides.
+- **2026-09-27 (music round 1) — pulled the two music design briefs + the research report; round 1 drawn into the main mockups. No spec yet; next free still 275 / R321 (verify on `main` first).**
+  - **Admin (`app/`):** shared stand-in data `music-data.js` (60 tracks · 30 albums · 23 artists · 38 WMA, all fictional, "after the first run": 27 matched · 2 need you · 1 unmatched · 4 without a cover); `music.css` (`mu-*`); Library gains a **Music** kind (`music-library.js`: Albums · Artists · Songs, facets, bulk actions, 4 fenced states; `?kind=music`); new **`album.html`** (+`album.js`: pagebar, match chip, Find match… panel with candidates/releases/AcoustID, Tracks with gaps, Artwork, Genres, NFO, History; fence links one album per state) and **`artist.html`** (+`artist.js`); Settings → Musik library card with the `--bad` NFO-saver finding + a **Music providers** card; Activity steps/pacing/summary/optional music lane; Dashboard Music tile + four attention entries; Metadata **Music genres**; Users & devices *Music: yes/no*; five triage entries in `app-shell.js`.
+  - **§H's seven questions** are one shared panel (`music-qs.js`, localStorage `js-music-q`) at the foot of every music page; picks switch the pages live, leans marked.
+  - **Phone (`ravilo/Ravilo Mobile.html`):** music mode in `mobile/ravilo-music.js` (switch · bar · Home/Library/Album/Artist/Search/Playlists) + `mobile/ravilo-music-player.js` (Now playing ×3 directions, lyrics, queue sheet with drag/swipe, ⋯ menu, mini bar incl. stacked-under-cast and on video pages, landscape) + `mobile/ravilo-music.css`; host hooks are one-liners marked in the host (`window.RaviloHost`). **§J's seven questions + unreachable states** live in a review panel beside the phone (localStorage `ravilo-music-q`, mode in `ravilo-mode`). Strings §I × en/da/fo in `ravilo-i18n.js`. The phone Library's "Music" (music **videos**) now says *Music videos*. Settings → Theme now actually reskins (Midnight/Noir tokens were missing on this frame).
+- **2026-09-27 (latest) — the owner answered the seven questions; specs written: **274** (admin) + **R320** (the Ravilo row). Next free: 275 / R321.** Both `Planned`, not dev-reviewed, **pending export** (numbers verified free on `main` `e437def3`).
+  - **Decisions:** Q1 the admin's own Seerr user (viewer in the note) · Q2 *Download* · Q3 20 of 50 + *Show more* · **Q4 yes — No thanks also writes Seerr's blacklist**, Undo/Bring back remove it, the build skips anything on the blacklist whoever put it there, and every Request feed filters it server-side (FR-274-16) · Q5 names · **Q6 yes** — series weigh the clusters (a tenth of a film per finished episode, capped at three films per series), never candidates · **Q7 clusters generated by AI every build** — a new AI job *Suggestion clusters* (`[ai.clusters]`, own limit, 272's queue), a pure validator, **shares counted by the server not the model**, the fixed six as the deterministic fallback, and the page says which it shows.
+  - **Mockup updated:** the questions panel is now *Decided* with a clusters preview (AI · AI off · Limit reached · Bad answer); AI-named clusters (*Folk and coastal horror* …); a *Grouped by AI this build* line; the blacklist sentence under the reasons; Dismissed lists a title *Blacklisted in Seerr* directly.
+- **2026-09-27 (later) — sync + round 1 drawn: *Suggested films from Seerr*.** Pulled `specs/ravilo/design-brief-suggested-movies-from-seerr-2026-09-27.md` (the only spec-side change on `main` since the earlier pull) and `STATUS.md`. **No spec written yet** — the brief takes the next free admin number (274) once the round-1 picks come back.
+  - **New: `app/suggestions.html`** (+ `suggestions-data.js`, `suggestions.js`), a page of its own — **moved (owner, same day) to the top of the sidebar, between Library and Activity** (FR-274-8a) — absent without Seerr. Header (built-when · *N shown of 50* · *Dismissed (n)* · *Rebuild now*), a *built from 112 finished films* strip naming each viewer's share (Olivar: *nothing finished yet*), six buckets in volume order headed by their evidence (*the household finished 36 horror films*), tiles with the **because** line, a *2 viewers* chip, the franchise note, age rating, and every state: **Requested → Approved → Downloading → In the library**. **No thanks** opens a reason picker on the tile (four reasons, each saying what it does to the next build; *Other* adds a note), removes it with a 6 s *Undo*; the **Dismissed** view has *Bring back*. PREVIEW fence: *Seerr unreachable* (banner, Download disabled with its reason), *First build*, *No history yet*, *Nothing new*. **Q1–Q5 drawn as marked options (lean marked) that switch the page live**; Q6/Q7 recorded.
+  - **Dashboard card** in `app/index.html` (*16 films waiting · 3 new since Tuesday*). **Ravilo config ▸ Request:** *Suggested for you* in the Add-row catalogue (*From this viewer's watching*, no parameter) and in the feed list with the schematic-preview note.
+  - **Viewer side: confirmed nothing new is needed.** The feed is one more Request row (`ravilo-data.js` `suggested`, first in Eyð's lists), rendered by the existing tile and request detail on the TV and phone. One new string, `rq_suggested` (*Suggested for you* · *Forslag til dig* · *Uppskot til tín* — da/fo drafts).
+- **2026-09-27 — sync: our four came back built, `main` added 261–273 / R305–R319, and the mockups were brought in
+  line with the design-vs-implementation audit. Next free: 274 / R320.**
+  - **Pulled (by blob hash):** 27 admin specs (14 edited incl. our 259/260 dev-reviewed, 13 new: 261–273), 32 Ravilo (17
+    edited incl. R303/R304, 15 new: R305–R319), `STATUS.md`, the research README and the new
+    `research-reports/ravilo-design-vs-implementation-audit-2026-09-27.md`. Repo-side mockup edits adopted:
+    `app/wf.css` (259/260/256's served CSS), `app/ravilo-users.html` (256's unstable line, Bedroom TV behind),
+    `app/ravilo-config.html` (R314: focus detail is TVs only), `livetv-data.js` ×2 (title sweep: *Mesterholdet*).
+  - **The audit's owner decisions, applied to the design:** (1) the shipped `i18n/*.json` wins and a mismatch is
+    accepted — but `STR.en` held 22 Faroese values from our 09-24 pull; restored to English and moved to `STR.fo`;
+    (2) **no drawn keyboard anywhere** — TV search, sign-in and change password now show a fenced *the TV's own keyboard*
+    band (the receiver app already did); (3) the **phone Library is R187's browse grid** (facet bar + grid, titled
+    *Library*); (4) the **phone Profile keeps a Settings row** (Theme + Playback) and App language loses *this phone
+    only* (answers R304 OQ1: `ui_language` is per viewer); (5) episodes are **`S01E05` everywhere**, ranges
+    `S01E01–E03` (`epCode()` in `ravilo-app.js`).
+  - **Also fixed from the audit:** no *Jellyfin* in any viewer string (sign-in, toasts, the Settings account line);
+    the seek is wordless (a small spinner by the timestamp, R218 moment D); next-up at 20 s; the chart-era kicker,
+    trend badges, Season *Mark all* and the dead `openOverlay()` removed; the phone *Request* tab is Seerr feed rows,
+    not a numbered Top 10; the phone subtitle sheet speaks R180's plain words (*Signs only*, *Sound described*); the
+    phone rail is three items (Episodes only where there is no Next).
+  - **Built-and-never-drawn, now drawn:** R308 (every Studios/Networks tile on the `#E8EAF0` plate, TV + phone),
+    R310 (an empty wall has no chip; `?emptywalls=` previews it, and *nothing at all* opens with one sentence),
+    browse sort as field + direction in words with **Size** (R317), R291's *Now showing* badge and switch hint,
+    R191's per-profile **Sign out** (menu + Settings, with confirmation), TV Settings ▸ **Playback** toggles.
+  - **Still owed (not drawn):** the web install card / update toast / favicon in `Ravilo Mobile.html` (only in
+    *Play on a TV - Directions* §A), R280's page errors, R300 portrait captions, R309 range labels, R318's
+    *Recommended* sort, the stale-content banner, 236 §D's screens table. **Needs an owner call:** the About section
+    (never spec'd — spec it or delete it), the tile quality badge, a viewer *Cast or crew* facet, whether search
+    matches genres.
+  - ⚠ The repo's root `CLAUDE.md` differs from ours by hash; ours was kept (it is design-owned and exported by us) —
+    check it has no dev-side edits before the next export.
 - **2026-09-25 — four owner asks drawn into the full mockups, then spec'd: 259 · 260 · R303 · R304. Next free: 261 / R305.**
   - **Specs (all `Planned`, not dev-reviewed, pending export; numbers verified free on `main` the same day):**
     **259** device version history · **260** empty a job queue · **R303** the player says what is playing, top
@@ -959,14 +1006,15 @@ GitHub is the **source of truth**; we layer designs on top of it.
     line worth keeping for the talk: this is the same failure shape as R202 — *shipped code not matching
     its own documented invariant* — caught by re-reading the owning phase's spec against the code.
   - **R232 — series detail & player D-pad polish** (✓ Built 2026-09-04, live-tested on stue TV against
-    Fjollerne, not dev-reviewed). Player Right past the last transport control teleported focus to the
+    Klovn, not dev-reviewed). Player Right past the last transport control teleported focus to the
     top-bar Back button; Down from the hero landed the season row clipped under the overlay AppBar; and
     the first Down press only *looked* like it focused a season pill — the scroll and the focus request
     ran as concurrent coroutines and R84's async playstate overlay ate the 30-frame retry budget, so real
     focus stayed on the hero with no visual cue. Now sequenced (await the scroll, then request focus).
     **No mockup change** — focus behaviour, not layout.
   - **R233 — a system row shows what is available where it is shown** (Planned, design-authored
-    2026-09-04 with the owner). Standing inside Thriller / Gyser, Continue Watching led with *Three and a Half Uncles*, *Fjollerne* and *Lort Sker* while Newly Added directly below it was correctly filtered —
+    2026-09-04 with the owner). Standing inside Thriller / Gyser, Continue Watching led with *Two and a
+    Half Men*, *Klovn* and *Sjit Happens* while Newly Added directly below it was correctly filtered —
     two system rows on one page disagreeing about what page they were on. Partially reverses R202 and
     R219 §5: both system rows are always scoped to the surface they render on, in **both** row-list
     modes, and the per-channel `scope` field is retired (no live channel sets it). Guard requirement
@@ -1081,7 +1129,7 @@ GitHub is the **source of truth**; we layer designs on top of it.
     is reachable in practice, not just implemented-but-dead. **Open question 1 is answered, on-device,
     for good:** R216 has been live on the stue TV since **2026-08-30** — 105 `playback_qoe` rows carry its
     fields, heavy 2026-09-01 sessions show `direct_play=0` (transcode fallback firing) and
-    `dropped_frames=0` throughout. The *Till Daybreak* stutter that started this whole thread was a
+    `dropped_frames=0` throughout. The *Until Dawn* stutter that started this whole thread was a
     **Wholphin** session, architecturally unreachable by any of this. Through Ravilo the file re-encodes
     and starts slowly — it does not stutter — so `slow_lead`/`slow_tail_measured`/`slow_tail_expected` are
     the right copy, translation unblocked. `basis: "measured"` is still unreached on any real device
@@ -1122,7 +1170,7 @@ GitHub is the **source of truth**; we layer designs on top of it.
 - **2026-08-31 sync — both our 2026-08-28 specs shipped, and 5 new dev-authored specs landed.**
   Next unassigned numbers: **184 / R221**.
   - **R218 (player loading & buffering) is `Implemented`** — built the day it was spec'd, Android/Compose
-    only, **on-device verified 2026-08-29** (stue TV, Offboarding S2E4 resume). **Phase 180 (session
+    only, **on-device verified 2026-08-29** (stue TV, Severance S2E4 resume). **Phase 180 (session
     teardown) is `✓ Done`** — the Jellyfin stop call was confirmed against 10.11.11's OpenAPI before any
     code was written (the open question we flagged), and verified live against a real forced 4K/DV/HDR
     NVENC transcode.
@@ -1143,7 +1191,7 @@ GitHub is the **source of truth**; we layer designs on top of it.
     change. **Drawn here 2026-08-31** as frame **E** on
     `ravilo/Player Loading and Buffering - Directions.html` — R218's stall treatment verbatim, new trigger.
   - **181 — converge on Jellyfin's library, don't predict it** (FR-181-2 built; the rest `Planned`).
-    Fjollerne S11E07 sat in Jellyfin for 15 h unnoticed: premiere-year freshness bucketing files a
+    Klovn S11E07 sat in Jellyfin for 15 h unnoticed: premiere-year freshness bucketing files a
     currently-airing 2005 show as monthly archive (9 of 16 provably-airing series were starved — now fixed
     via `sonarrNextAiringDate`), nothing ever compares our item set against Jellyfin's, and the
     Jellyfin-based realtime ingest has delivered **nothing, ever** since phase 165 (the WS listener
@@ -1171,7 +1219,7 @@ GitHub is the **source of truth**; we layer designs on top of it.
     drawn; the **Capacity** card stays as read-only reporting; FR-182-9's banner was **dropped** (see
     above). Everything else is backend/platform. Nothing exported to the repo yet.
 - **2026-09-02 — research pulled, design pass done, no spec yet.** New repo report
-  `specs/research-reports/ravilo-per-device-decode-ceiling-warning-2026-09-02.md`: *Till Daybreak (2025)*, an
+  `specs/research-reports/ravilo-per-device-decode-ceiling-warning-2026-09-02.md`: *Until Dawn (2025)*, an
   82 Mbps 4K DV/HDR10+ REMUX, stuttered on stue TV (decoder rated 60 Mbps) and was abandoned — third
   stutter on that TV in three weeks. The owner wants a per-device "this might not play well" warning on the
   Ravilo detail page. The report finds the measuring half already shipped (**177 + R216**) but three
@@ -1234,7 +1282,7 @@ GitHub is the **source of truth**; we layer designs on top of it.
 - **2026-09-01 — two design-authored specs written, both `Planned`, neither dev-reviewed.**
   Next unassigned numbers: **185 / R222**.
   - **184 — choose the TMDB metadata language for a single title** (`specs/requirements/phase-184-choose-metadata-language.md`).
-    열배's Korean first audio track makes the resolver fetch Korean metadata — correct by the rules,
+    올드보이's Korean first audio track makes the resolver fetch Korean metadata — correct by the rules,
     wrong for this house. Adds a nullable `metadataLanguage` consulted **above** the resolver (the
     cascade is not modified and its trace stays on screen, dimmed, after a choice), a picker offering
     only what TMDB actually holds for the title with per-language coverage (title · overview · poster
@@ -1346,7 +1394,7 @@ GitHub is the **source of truth**; we layer designs on top of it.
     parse fails (found immediately after deploying R198). **R200/R201** fix the same underlying focus-
     bridge failure shape (a `FocusRequester` never attached because its target composable was off-
     screen/torn down) — R200 in content-row back-return restore (could permanently strand Down-nav,
-    only an app restart recovered), R201 in the season picker (Fjollerne's 11-season, fully-watched case
+    only an app restart recovered), R201 in the season picker (Klovn's 11-season, fully-watched case
     auto-selected the last season, which the picker never scrolled itself to reach). **R202** is the
     project's own case-study bug: a misleading code comment attributed an inherit-mode channel's missing
     Continue Watching row to R59; the user pushed back, `git log -S` traced it to an R05 leftover R143

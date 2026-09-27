@@ -23,7 +23,7 @@
           syn: 'A decommissioned war machine hides in a border town, until the soldiers who built it come looking.' },
         { ...T('Midnight Sun Patrol', 2022, 'Action · Crime', '16', 'series'), tagline: 'HBO Original', badge: 'New Season',
           syn: 'Above the Arctic Circle, a small-town patrol works cases the daylight never lets them forget.' },
-        { ...T('Phantom Circuit', 2023, 'Thriller · Mystery', '16', 'film'), tagline: 'Featured', badge: 'Top 10',
+        { ...T('Phantom Circuit', 2023, 'Thriller · Mystery', '16', 'film'), tagline: 'Featured', badge: '4K',
           syn: 'A hardware hacker traces a ghost signal through the city grid and finds someone is tracing her back.' },
       ] },
     { id: 'paramount',name: 'Paramount+',wm: 'Paramount+',bg: 'linear-gradient(135deg,#0064ff,#00204d)' },
@@ -127,7 +127,7 @@
     { ...T('Cosmos Laundromat', 2015, 'Sci-Fi · Adventure', '12', 'film'), tagline: 'Featured Film',
       syn: 'On a desolate island, a suicidal sheep named Franck meets a salesman who offers him the gift — and curse — of a lifetime.', badge: '4K' },
     { ...T('Havets Hjarta', 2022, 'Drama', '12', 'series'), tagline: 'Dansk TV',
-      syn: 'Three generations of a trawler family weather the slow collapse of the herring that built their harbour town.', badge: 'Top 10' },
+      syn: 'Three generations of a trawler family weather the slow collapse of the herring that built their harbour town.', badge: 'New Season' },
     { ...T('Hraðar Ljós', 2024, 'Thriller', '16', 'film'), tagline: 'Ravilo Premiere',
       syn: 'A night-shift paramedic in Tórshavn races a ticking clock when a routine call turns into something far darker.', badge: 'Premiere' },
     { ...T('Spring', 2019, 'Animation · Family', '7', 'film'), tagline: 'Featured Film',
@@ -151,12 +151,12 @@
   // continue watching (merged Continue + Next Up)
   const continueItems = [
     { ...T('Big Buck Bunny', 2008, 'Animation', 'G', 'film'), grad: BUNNY, image: BBB_IMG, ep: '4 min left', pct: 68 },
-    { ...T('Nordvest', 2023, 'Crime', '16', 'series'), ep: 'S1:E4 · 22 min left', pct: 62 },
-    { ...T('Havets Hjarta', 2022, 'Drama', '12', 'series'), ep: 'S2:E1 · Next up', pct: 0, next: true },
+    { ...T('Nordvest', 2023, 'Crime', '16', 'series'), ep: 'S01E04 · 22 min left', pct: 62 },
+    { ...T('Havets Hjarta', 2022, 'Drama', '12', 'series'), ep: 'S02E01 · Next up', pct: 0, next: true },
     { ...T('Cosmos Laundromat', 2015, 'Sci-Fi', '12', 'film'), ep: '12 min left', pct: 78 },
-    { ...T('Fjollerne i Nord', 2020, 'Comedy', '12', 'series'), ep: 'S3:E7 · 18 min left', pct: 41 },
+    { ...T('Fjollerne i Nord', 2020, 'Comedy', '12', 'series'), ep: 'S03E07 · 18 min left', pct: 41 },
     { ...T('Havets Folk', 2021, 'Documentary', '7', 'film'), ep: '34 min left', pct: 25 },
-    { ...T('Arvur', 2023, 'Drama', '16', 'series'), ep: 'S1:E2 · Next up', pct: 0, next: true },
+    { ...T('Arvur', 2023, 'Drama', '16', 'series'), ep: 'S01E02 · Next up', pct: 0, next: true },
     { ...T('Jarnvegur', 2022, 'Action', '16', 'film'), ep: '47 min left', pct: 12 },
   ];
 
@@ -262,7 +262,7 @@
   // Ravilo users on this TV — each is a Jellyfin user with a cached device token (per the
   // pairing model). The client keeps several so switching is instant. "isAdmin" mirrors Jellyfin.
   const profiles = [
-    { id: 'eyd',    name: 'Eyð',    initials: 'ER', color: 'linear-gradient(145deg,#7b6ef0,#3fb6f5)', signedIn: true,  isAdmin: true,  kid: false, lang: 'fo', discover: { enabled: true, lists: ['mov-dk', 'tv-dk', 'mov-global', 'noneng', 'alltime'] } },
+    { id: 'eyd',    name: 'Eyð',    initials: 'ER', color: 'linear-gradient(145deg,#7b6ef0,#3fb6f5)', signedIn: true,  isAdmin: true,  kid: false, lang: 'fo', discover: { enabled: true, lists: ['suggested', 'mov-dk', 'tv-dk', 'mov-global', 'noneng', 'alltime'] } },
     { id: 'olivar', name: 'Olivar', initials: 'OL', color: 'linear-gradient(145deg,#19d6c6,#2a8cf0)', signedIn: true,  isAdmin: false, kid: false, lang: 'en', discover: { enabled: true, lists: ['mov-global', 'noneng', 'alltime'] } },
     { id: 'marjun', name: 'Marjun', initials: 'MJ', color: 'linear-gradient(145deg,#f5b542,#e0792f)', signedIn: true,  isAdmin: false, kid: false, lang: 'da', discover: { enabled: false, lists: [] } },
     { id: 'kids',   name: 'Kids',   initials: '★',  color: 'linear-gradient(145deg,#e0639a,#b15cd0)', signedIn: true,  isAdmin: false, kid: true,  lang: 'fo', discover: { enabled: false, lists: [] } },
@@ -426,6 +426,17 @@
   ];
   const discover = { config, sources, lists: discoverLists };
 
+  // Design brief 2026-09-27 — "Suggested for you" is one more Request feed: films the household doesn't have,
+  // built per viewer from what they finished. It renders like any other feed; nothing new on the viewer side.
+  discoverLists.splice(1, 0, { id: 'suggested', title: 'Suggested for you', i18n: 'rq_suggested', scope: 'viewer', category: 'film', note: '', items: [
+    D('Pebble and the Moonfox', 2016, 'Animation', '7', 'film', { status: 'none', syn: 'A girl and a fox made of moonlight have one night to return the moon to the sky.' }),
+    D('Night Ferry to Hirtshals', 2018, 'Thriller', '15', 'film', { status: 'requested', syn: 'On the last crossing of the season, a steward notices a passenger no one checked in.' }),
+    D('The Hollow Tide', 1978, 'Horror', '15', 'film', { status: 'downloading', progress: 64, syn: 'A lighthouse crew stops answering the radio, and the relief boat finds the lamp still turning.' }),
+    D('Lamplighter', 2013, 'Horror', '15', 'film', { status: 'none' }),
+    D('Orbit Debt', 2020, 'Sci-Fi', '12', 'film', { status: 'none' }),
+    D('Grey Parish', 2001, 'Horror', '15', 'film', { status: 'none' }),
+    D('Relay', 2015, 'Sci-Fi', '12', 'film', { status: 'none' }),
+  ] });
   // ---------- watched-state store (R07) ----------
   // In production this is the per-Jellyfin-user PlaybackState merged onto metadata
   // (GET /api/tv/movie|series/…). Here it's a deterministic seed the client reads; marking
@@ -501,44 +512,44 @@
   }
   const upcoming = [
     // ---- today (offset 0) ----
-    U(0, { title: 'Arvur', year: 2023, genre: 'Drama', rating: '16', kind: 'series', ep: 'S2:E1', epTitle: 'Nýggj Spor', time: '20:30', source: 'sonarr', network: 'Viaplay', status: 'downloading', progress: 62,
+    U(0, { title: 'Arvur', year: 2023, genre: 'Drama', rating: '16', kind: 'series', ep: 'S02E01', epTitle: 'Nýggj Spor', time: '20:30', source: 'sonarr', network: 'Viaplay', status: 'downloading', progress: 62,
       syn: 'The estate reopens old wounds as the eldest sibling returns to bury the family’s last secret — and its last debt.' }),
     U(0, { title: 'Hraðar Ljós II', year: 2025, genre: 'Thriller', rating: '16', kind: 'film', source: 'radarr', release: 'Digital Release', status: 'downloading', progress: 38,
       syn: 'The Tórshavn night shift returns. One paramedic, one impossible call, and a city that never quite goes dark.' }),
     // ---- tomorrow (1) ----
-    U(1, { title: 'Nordvest', year: 2023, genre: 'Crime', rating: '16', kind: 'series', ep: 'S3:E1', epTitle: 'Heimferð', time: '20:00', source: 'sonarr', network: 'Kringvarp', status: 'monitored',
+    U(1, { title: 'Nordvest', year: 2023, genre: 'Crime', rating: '16', kind: 'series', ep: 'S03E01', epTitle: 'Heimferð', time: '20:00', source: 'sonarr', network: 'Kringvarp', status: 'monitored',
       syn: 'Detective Sigrun Restorff is called back to Hvalvík a third time — and the tide brings up a name she buried herself.' }),
     // ---- 2 ----
-    U(2, { title: 'Havets Hjarta', year: 2022, genre: 'Drama', rating: '12', kind: 'series', ep: 'S3:E6', epTitle: 'Brotsjór', time: '21:00', source: 'sonarr', network: 'Dansk TV', status: 'monitored',
+    U(2, { title: 'Havets Hjarta', year: 2022, genre: 'Drama', rating: '12', kind: 'series', ep: 'S03E06', epTitle: 'Brotsjór', time: '21:00', source: 'sonarr', network: 'Dansk TV', status: 'monitored',
       syn: 'The trawler family faces the storm that the whole harbour has feared since the herring first thinned.' }),
     U(2, { title: 'Carry-On', year: 2024, genre: 'Thriller', rating: '16', kind: 'film', source: 'radarr', release: 'Digital Release', status: 'downloading', progress: 47,
       syn: 'A young TSA officer is blackmailed into letting a dangerous package slip onto a Christmas Eve flight.' }),
     // ---- 3 ----
-    U(3, { title: 'Frostbarn', year: 2024, genre: 'Crime', rating: '16', kind: 'series', ep: 'S1:E3', epTitle: 'Ísvøk', time: '22:00', source: 'sonarr', network: 'Kringvarp', status: 'monitored',
+    U(3, { title: 'Frostbarn', year: 2024, genre: 'Crime', rating: '16', kind: 'series', ep: 'S01E03', epTitle: 'Ísvøk', time: '22:00', source: 'sonarr', network: 'Kringvarp', status: 'monitored',
       syn: 'A frozen fjord gives up a child’s coat and no child. The town closes ranks; the ice does not.' }),
     U(3, { title: 'Spring: Return', year: 2025, genre: 'Animation · Family', rating: '7', kind: 'film', source: 'radarr', release: 'Digital Release', status: 'announced',
       syn: 'The shepherd girl and her dog climb higher than the seasons have ever reached — a wordless animated wonder returns.' }),
     // ---- 4 ----
-    U(4, { title: 'Glasberget', year: 2024, genre: 'Drama', rating: '16', kind: 'series', ep: 'S2:E1', epTitle: 'Sprekk', time: '20:00', source: 'sonarr', network: 'SVT', status: 'monitored',
+    U(4, { title: 'Glasberget', year: 2024, genre: 'Drama', rating: '16', kind: 'series', ep: 'S02E01', epTitle: 'Sprekk', time: '20:00', source: 'sonarr', network: 'SVT', status: 'monitored',
       syn: 'Everything cracks at once, and the family must choose which piece of the glass mountain to save.' }),
     U(4, { title: 'JRock Ghost Chasers', year: 2025, genre: 'Animation', rating: '7', kind: 'film', source: 'radarr', release: 'Digital Release', status: 'announced',
       syn: 'A chart-topping trio moonlights as a demon-slaying squad, protecting their fans from the underworld between shows.' }),
     // ---- 5 ----
-    U(5, { title: 'Mýrin', year: 2021, genre: 'Crime', rating: '16', kind: 'series', ep: 'S2:E1', epTitle: 'Aftur í Myrkri', time: '21:30', source: 'sonarr', network: 'Netflix', status: 'available',
+    U(5, { title: 'Mýrin', year: 2021, genre: 'Crime', rating: '16', kind: 'series', ep: 'S02E01', epTitle: 'Aftur í Myrkri', time: '21:30', source: 'sonarr', network: 'Netflix', status: 'available',
       syn: 'The bog keeps its dead well. When it gives one back, the case it reopens is one nobody wanted solved.' }),
     // ---- 6 ----
-    U(6, { title: 'Tórshavn 1918', year: 2021, genre: 'Drama', rating: '12', kind: 'series', ep: 'S2:E1', epTitle: 'Spanska Sótt', time: '20:00', source: 'sonarr', network: 'Kringvarp', status: 'monitored',
+    U(6, { title: 'Tórshavn 1918', year: 2021, genre: 'Drama', rating: '12', kind: 'series', ep: 'S02E01', epTitle: 'Spanska Sótt', time: '20:00', source: 'sonarr', network: 'Kringvarp', status: 'monitored',
       syn: 'A century on, the harbour town relives the winter the influenza came ashore with the mail boat.' }),
     U(6, { title: 'Troll 2', year: 2025, genre: 'Action · Fantasy', rating: '12', kind: 'film', source: 'radarr', release: 'In Cinemas', status: 'announced',
       syn: 'The mountain wakes again. This time the legends march south — and the palaeontologist who believed them is out of time.' }),
     // ---- 7 ----
-    U(7, { title: 'Arvur', year: 2023, genre: 'Drama', rating: '16', kind: 'series', ep: 'S2:E2', epTitle: 'Skuld', time: '20:30', source: 'sonarr', network: 'Viaplay', status: 'monitored' }),
+    U(7, { title: 'Arvur', year: 2023, genre: 'Drama', rating: '16', kind: 'series', ep: 'S02E02', epTitle: 'Skuld', time: '20:30', source: 'sonarr', network: 'Viaplay', status: 'monitored' }),
     U(7, { title: 'Cosmos Laundromat', year: 2015, genre: 'Sci-Fi · Adventure', rating: '12', kind: 'film', source: 'radarr', release: 'Physical Release', status: 'available',
       syn: 'On a desolate island, a suicidal sheep named Franck meets a salesman who offers him the gift — and curse — of a lifetime.' }),
     // ---- 8 ----
-    U(8, { title: 'Nordvest', year: 2023, genre: 'Crime', rating: '16', kind: 'series', ep: 'S3:E2', epTitle: 'Toka', time: '20:00', source: 'sonarr', network: 'Kringvarp', status: 'monitored' }),
+    U(8, { title: 'Nordvest', year: 2023, genre: 'Crime', rating: '16', kind: 'series', ep: 'S03E02', epTitle: 'Toka', time: '20:00', source: 'sonarr', network: 'Kringvarp', status: 'monitored' }),
     // ---- 9 ----
-    U(9, { title: 'Havets Hjarta', year: 2022, genre: 'Drama', rating: '12', kind: 'series', ep: 'S3:E7', epTitle: 'Logn', time: '21:00', source: 'sonarr', network: 'Dansk TV', status: 'monitored' }),
+    U(9, { title: 'Havets Hjarta', year: 2022, genre: 'Drama', rating: '12', kind: 'series', ep: 'S03E07', epTitle: 'Logn', time: '21:00', source: 'sonarr', network: 'Dansk TV', status: 'monitored' }),
     U(9, { title: 'Society of the Snow', year: 2023, genre: 'Drama', rating: '16', kind: 'film', source: 'radarr', release: 'Physical Release', status: 'announced',
       syn: 'The survivors of a 1972 Andes crash endure 72 days in the high cordillera, bound by an impossible pact to stay alive.' }),
     // ---- 10 & 11 have nothing scheduled (gap) ----
@@ -552,7 +563,7 @@
   const overdue = [
     U(-2,  { title: 'The Gray Man', year: 2022, genre: 'Action', rating: '16', kind: 'film', source: 'radarr', release: 'Digital Release', status: 'missing',
       syn: 'A CIA mercenary uncovers the agency’s dirty secrets and becomes the target of a global manhunt led by a former colleague.' }),
-    U(-4,  { title: 'Frostbarn', year: 2024, genre: 'Crime', rating: '16', kind: 'series', ep: 'S1:E1', epTitle: 'Kaldi Fjørður', time: '22:00', source: 'sonarr', network: 'Kringvarp', status: 'missing',
+    U(-4,  { title: 'Frostbarn', year: 2024, genre: 'Crime', rating: '16', kind: 'series', ep: 'S01E01', epTitle: 'Kaldi Fjørður', time: '22:00', source: 'sonarr', network: 'Kringvarp', status: 'missing',
       syn: 'The season opener nobody grabbed — the fjord freezes over, and the first body surfaces beneath the ice.' }),
     U(-8,  { title: 'Damsel', year: 2024, genre: 'Fantasy', rating: '12', kind: 'film', source: 'radarr', release: 'Digital Release', status: 'missing',
       syn: 'A dutiful maiden discovers her royal marriage is a sacrifice — and the only way out is down, into the dragon’s lair.' }),
@@ -626,9 +637,9 @@
   const PLAY_NOTES = {
     'Cosmos Laundromat':  { device: 'Bedroom TV', basis: 'measured', seconds: 20 },
     'Iron Veil':          { device: 'Bedroom TV', basis: 'expected' },
-    'Nordvest|S1E8':      { device: 'Bedroom TV', basis: 'measured', seconds: 25 },
-    'Nordvest|S2E1':      { device: 'Bedroom TV', basis: 'measured', seconds: 15 },
-    'Nordvest|S2E6':      { device: 'Bedroom TV', basis: 'expected' },
+    'Nordvest|S01E08':      { device: 'Bedroom TV', basis: 'measured', seconds: 25 },
+    'Nordvest|S02E01':      { device: 'Bedroom TV', basis: 'measured', seconds: 15 },
+    'Nordvest|S02E06':      { device: 'Bedroom TV', basis: 'expected' },
   };
   // `season` is 0-based (as the UI carries it); `ep` is the episode object, or omitted for a film.
   function playbackNoteFor(item, season, ep) {
@@ -843,6 +854,9 @@
   const TAXO_LOGOS = {          // only brands with a real logo file; see taxoTile()
     'Dansk TV': 'assets/brand/dansk-tv-logo.svg',
   };
+  // R308 FR-R308-4/5: the server's verdict that a logo is lost on the light plate (white or pale, unsaturated
+  // ink) and must be drawn in the plate's dark ink. Dansk TV's file is white strokes on transparency.
+  const TAXO_REINK = { 'Dansk TV': true };
   // normalized age (0–18) — jellystructure's Metadata → Age ratings mapping. No rating ⇒ 18
   // (155 FR-AGE1-2), which is why an unrated title is never counted for a kids profile.
   function normAge(item) { if (!item || !item.rating) return 18; return item.rating === 'G' ? 0 : (parseInt(item.rating, 10) || 18); }
@@ -871,7 +885,7 @@
   function taxonomy(kind, user) {
     const counts = new Map();
     libraryFor(user).forEach(it => taxoValues(it, kind).forEach(nm => counts.set(nm, (counts.get(nm) || 0) + 1)));
-    return Array.from(counts.keys()).map(name => ({ name: name, count: counts.get(name), kind: kind, logo: TAXO_LOGOS[name] || '' }))
+    return Array.from(counts.keys()).map(name => ({ name: name, count: counts.get(name), kind: kind, logo: TAXO_LOGOS[name] || '', logoReink: kind !== 'genres' && !!TAXO_REINK[name] }))
       .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
   }
   // titles counted once, not the sum of the groups: a title on two networks is still one title.

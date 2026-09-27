@@ -6,6 +6,8 @@
 <title>Jellystructure — Activity</title>
 <link rel="stylesheet" href="wf.css">
 <link rel="stylesheet" href="app.css">
+<link rel="stylesheet" href="music.css">
+<style>.stepchip.mu{border-style:dashed}.stepchip.mu::after{content:'♪';font-family:system-ui,sans-serif;font-size:.7rem;color:var(--ink-dim)}</style>
 <style>
   .fchip { cursor: pointer; }
   .fchip.on { background: var(--hi); color: #fff; border-color: transparent; }
@@ -169,23 +171,28 @@
   <div class="card" style="margin-bottom:14px;" id="stepstrip">
     <div class="row center" style="flex-wrap:wrap;gap:8px;">
       <h4 style="margin:0;">Steps</h4>
-      <span class="muted tiny">run #2847 · step 2 of 9</span>
+      <span class="muted tiny" id="st-count">run #2847 · step 3 of 14</span>
       <span class="spacer"></span>
       <span class="btn sm bad" id="stop-step-btn">Stop this step</span>
     </div>
     <hr class="dash" style="margin:10px 0;">
     <div class="steps">
       <span class="stepchip done"><span class="si">✓</span>scan_files</span>
+      <span class="stepchip done mu" title="Music brief §F — its own lane inside scan_files' run"><span class="si">✓</span>scan_music</span>
       <span class="stepchip run"><span class="si">▸</span>pull_tmdb</span>
+      <span class="stepchip mu">match_musicbrainz</span>
       <span class="stepchip">fetch_artwork</span>
+      <span class="stepchip mu">fetch_music_artwork</span>
       <span class="stepchip">write_nfo</span>
+      <span class="stepchip mu">write_music_nfo</span>
+      <span class="stepchip mu" id="st-lyrics">fetch_lyrics</span>
       <span class="stepchip">sync_jellyfin</span>
       <span class="stepchip">detect_segments<span class="enq">enqueues</span></span>
       <span class="stepchip">prewarm_subtitles<span class="enq">enqueues</span></span>
       <span class="stepchip">detect_drift</span>
       <span class="stepchip">notify</span>
     </div>
-    <div class="tiny muted" style="margin-top:10px;line-height:1.6;">Stopping <b class="mono">pull_tmdb</b> ends that step only — the run moves on to <b class="mono">fetch_artwork</b>. Whole-run <b>Stop scan</b> is in the pagebar. The two <span class="mono">enqueues</span> steps hand their work to a queue and return, so they finish instantly and are stopped from <b>Jobs &amp; workers</b> instead.</div>
+    <div class="tiny muted" style="margin-top:10px;line-height:1.6;">Stopping <b class="mono">pull_tmdb</b> ends that step only — the run moves on to <b class="mono">match_musicbrainz</b>. Whole-run <b>Stop scan</b> is in the pagebar. The two <span class="mono">enqueues</span> steps hand their work to a queue and return, so they finish instantly and are stopped from <b>Jobs &amp; workers</b> instead.</div>
     <!-- FR-214-3 — a stop that touches work already delegated to Jellyfin must say so, at the moment it
          is pressed, in the confirmation itself. The count is the in-flight subtitle extractions at that
          instant (static, not a countdown — Phase 213 bounds it to 0 or 1). At zero this does not render
@@ -285,7 +292,27 @@
       </div>
       <span class="badge ok">healthy</span>
     </div>
+    <!-- music brief §F: MusicBrainz's ceiling is fixed by MusicBrainz, not learned -->
+    <div class="paced">
+      <span class="paced-host">MusicBrainz</span>
+      <div class="paced-nums">
+        <span>now <b>1.0/s</b></span>
+        <span>ceiling <b>1.0/s</b> <span class="muted">· fixed by MusicBrainz</span></span>
+        <span>refused <b>0</b> in the last minute</span>
+      </div>
+      <span class="badge ok">healthy</span>
+    </div>
+    <div class="paced">
+      <span class="paced-host">AcoustID</span>
+      <div class="paced-nums">
+        <span>now <b>0.4/s</b></span>
+        <span>ceiling <b>3.0/s</b></span>
+        <span>refused <b>0</b></span>
+      </div>
+      <span class="badge ok">healthy</span>
+    </div>
     <hr class="dash" style="margin:2px 0 10px;">
+    <div class="tiny" style="line-height:1.6;margin-bottom:8px;"><b>Music</b> — <a href="library.html?kind=music">30 albums</a> · 27 matched · <b style="color:var(--warn)">3 need you</b> · 26 covers fetched · <b style="color:var(--warn)">4 without a cover</b><span id="sum-lyrics"> · 9 songs with lyrics</span></div>
     <div class="tiny" style="line-height:1.6;color:var(--ink-soft);"><b style="color:var(--warn)">12 fields not fetched: TMDB rate limit</b> — across 5 episodes of <b>Fjollerne</b>, TMDB stopped answering before the title, overview or cast came back. Those episodes were written with what we already had, not with blanks.</div>
   </div>
 
@@ -433,6 +460,17 @@
         </div>
         <span class="lane-end"><span class="chip"><b class="lane-n">41</b> queued</span><span class="btn sm ghost lane-empty">Empty</span></span>
       </div>
+      <!-- music brief §F: only if 213's lane list gains a music lane (a dev decision) — drawn both ways -->
+      <div class="lane" data-lane="music" id="mu-lane" hidden>
+        <span class="lane-name"><span class="occ on"></span>music</span>
+        <div class="lane-body">
+          <b class="tiny">Matching · Low Tide Radio — Harbour Lights</b>
+          <div class="lane-kinds">match_album · fetch_cover · fingerprint · convert_audio</div>
+          <div class="lane-note">Paced by MusicBrainz's one request a second, so this lane is slow by design — on its own it never holds up a film's re-order.</div>
+        </div>
+        <span class="lane-end"><span class="chip"><b>2</b> queued</span></span>
+      </div>
+      <div class="mu-fence" style="margin:10px 0 0;"><span class="fl">Preview · mockup only</span><span class="seg" id="mu-lanes"><span class="on" data-ml="0">Music runs in the existing lanes</span><span data-ml="1">A music lane of its own</span></span><span class="tiny muted">a dev decision (213); with no lane of its own, music matching rides the <b>media</b> lane.</span></div>
       <hr class="dash" style="margin:2px 0 10px;">
       <div class="tiny" style="line-height:1.6;color:var(--ink-soft);">A subtitle pre-warm asks <b>Jellyfin</b> to extract a track, and that ffmpeg reads the whole file — inside Jellyfin's own container, where none of the gates on the <b>Capacity</b> card can see it. That is why this queue exists and why it runs one at a time: the count of outstanding requests is the only number jellystructure can honestly report about it.</div>
     </div>
@@ -472,6 +510,19 @@
 </main>
 
 <script src="app-shell.js"></script>
+<script src="music-qs.js"></script>
+<script>
+(function () {
+  const main = document.querySelector('main'), qs = document.createElement('div'); main.appendChild(qs);
+  document.getElementById('mu-lanes').addEventListener('click', e => { const b = e.target.closest('[data-ml]'); if (!b) return;
+    [...b.parentNode.children].forEach(x => x.classList.toggle('on', x === b)); document.getElementById('mu-lane').hidden = b.dataset.ml !== '1'; });
+  function paint() { const on = MusicQ.get('lyrics') === 'on';
+    document.getElementById('st-lyrics').style.display = on ? '' : 'none';
+    document.getElementById('st-count').textContent = 'run #2847 · step 3 of ' + (on ? 14 : 13);
+    document.getElementById('sum-lyrics').style.display = on ? '' : 'none'; }
+  MusicQ.mount(qs, 'activity'); MusicQ.on(paint); paint();
+})();
+</script>
 <script>
 (function () {
   // gently animate the ffmpeg line + bars so "live" reads as live

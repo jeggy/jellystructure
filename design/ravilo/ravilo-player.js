@@ -11,7 +11,7 @@
    window.initRaviloPlayer(stage, { restoreFocus, flash }) -> { open, close, isOpen }
    ============================================================ */
 (function () {
-  const NEXTUP_AT = 34;     // seconds remaining → next-up card appears
+  const NEXTUP_AT = 20;     // seconds remaining → next-up card appears (R111; the app shows it at 20 s)
   const COUNTDOWN = 8;      // next-up auto-advance countdown
   const HIDE_MS = 3600;     // auto-hide chrome after inactivity while playing
   const SKIP_BACK = 10, SKIP_FWD = 30;   // -10s / +30s
@@ -401,10 +401,13 @@
     /* ---------- scrubbing ---------- */
     function beginScrub() { if (scrubbing) return; scrubbing = true; scrubPos = pos; els.barWrap.classList.add('scrubbing'); showChrome(); paintTime(); }
     function scrub(dir) { beginScrub(); const step = Math.max(5, Math.round(ctx.duration * 0.012)); scrubPos = Math.max(0, Math.min(ctx.duration, scrubPos + dir * step)); paintTime(); }
+    let seekTimer = null;
     function commitScrub() {
       if (!scrubbing) return;
       const to = scrubPos; scrubbing = false; els.barWrap.classList.remove('scrubbing');
-      buffer(550, PT('pl_seeking', 'Seeking…'), () => { pos = to; ended = false; paintTime(); paintFrame(pos); if (playing) startTick(); });
+      // R218 moment D: a seek has no overlay and no words — only a small spinner beside the timestamp.
+      root.classList.add('seeking'); stopTick();
+      clearTimeout(seekTimer); seekTimer = setTimeout(() => { root.classList.remove('seeking'); pos = to; ended = false; paintTime(); paintFrame(pos); if (playing) startTick(); }, 550);
       paintTime();
     }
     function skip(sec) {
@@ -476,16 +479,17 @@
                ${rgn ? `<span class="fi fi-${o.region} pl-rgn"></span>` : '<span class="pl-rgn ghost"></span>'}
                <span class="ol"><span class="on2">${plVarName(g, o)}</span>` +
                plBadges(Object.assign({}, o, ord ? { note: `Version ${n + 1} of ${g.items.length}` } : {}), isAudio) +
+               (x.i === selIdx ? `<span class="pl-chip now">${PT('pl_now_showing', 'Now showing')}</span>` : '') +
                `<span class="pl-vh">${plBlurb(o)}</span></span></div>`;
           }).join('');
       } else {
-        els.pickCols.innerHTML = groups.map((g, n) => {
+        els.pickCols.innerHTML = (isAudio ? `<div class="pl-swhint">${PT('pl_switch_hint', 'Select one to switch instantly')}</div>` : '') + groups.map((g, n) => {
           const multi = g.items.length > 1;
           const isSel = g.items.some(x => x.i === selIdx);
           return `<div class="pl-opt foc${isSel ? ' sel' : ''}${n === pickIdx ? ' focused' : ''}" data-oi="${n}">
              <span class="tick">✓</span>
              ${plFlag(g.items[0].o)}
-             <span class="ol"><span class="on2">${g.label}</span>${multi ? '' : plBadges(g.items[0].o, isAudio)}</span>
+             <span class="ol"><span class="on2">${g.label}</span>${multi ? '' : plBadges(g.items[0].o, isAudio)}${isSel ? `<span class="pl-chip now">${PT('pl_now_showing', 'Now showing')}</span>` : ''}</span>
              ${multi ? `<span class="pl-more">${g.items.length} versions ›</span>` : ''}
            </div>`;
         }).join('');

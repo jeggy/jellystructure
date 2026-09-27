@@ -172,7 +172,7 @@
   // ---- R222: per-device slow-start note. Three strings, split so the lead sentence can be
   // emphasised structurally instead of with markup inside a translatable string. ----
   Object.assign(STR.en, { slow_lead: 'Slow to start on {device}.', slow_tail_expected: 'Give it a moment after you press play.',
-    slow_tail_measured: 'Seinastu ferðirnar tók tað umleið {n} sekund.', this_tv: 'this TV', this_phone: 'this phone' });
+    slow_tail_measured: 'The last few times it took about {n} seconds.', this_tv: 'this TV', this_phone: 'this phone' });
   Object.assign(STR.da, { slow_lead: 'Langsom at starte p\u00e5 {device}.', slow_tail_expected: 'Giv den et \u00f8jeblik, n\u00e5r du trykker afspil.',
     slow_tail_measured: 'De sidste par gange tog det omkring {n} sekunder.', this_tv: 'dette tv', this_phone: 'denne telefon' });
   Object.assign(STR.fo, { slow_lead: 'Seint at byrja \u00e1 {device}.', slow_tail_expected: 'Gev t\u00ed eitt eygnabrag\u00f0, t\u00e1 t\u00fa tr\u00fdstir sp\u00e6l.',
@@ -180,7 +180,7 @@
 
   // ---- Focus detail (the plate) + the detail page's About section. ----
   Object.assign(STR.en, {
-    fd_audio: 'Audio', fd_subs: 'Subs', fd_nodesc: 'Eingin lýsing enn', fd_min_left: '{n} min left',
+    fd_audio: 'Audio', fd_subs: 'Subs', fd_nodesc: 'No description yet', fd_min_left: '{n} min left',
     about: 'About', about_sub: 'From your library \u00b7 scanned by Jellystructure',
     fact_runtime: 'Runtime', fact_per_ep: '{n} min per episode', fact_min: '{n} min',
     fact_first_aired: 'First aired', fact_released: 'Released', fact_director: 'Director',
@@ -198,7 +198,7 @@
     fact_added: 'I dit bibliotek siden',
   });
   Object.assign(STR.fo, {
-    fd_audio: 'Lj\u00f3\u00f0', fd_subs: 'Undirtekst', fd_nodesc: 'Onki umr\u00f8\u00f0ur enn', fd_min_left: '{n} min eftir',
+    fd_audio: 'Lj\u00f3\u00f0', fd_subs: 'Undirtekst', fd_nodesc: 'Eingin lýsing enn', fd_min_left: '{n} min eftir',
     about: 'Um', about_sub: '\u00dar t\u00ednum savni \u00b7 skanna\u00f0 av Jellystructure',
     fact_runtime: 'Longd', fact_per_ep: '{n} min hv\u00f8rt part', fact_min: '{n} min',
     fact_first_aired: 'Fyrst v\u00edst', fact_released: '\u00datgivi\u00f0', fact_director: 'Leikstj\u00f3ri',
@@ -212,34 +212,30 @@
     mark_watched: 'Mark Watched', watched: 'Watched', play_again: 'Play Again',
     mark_all_watched: 'Mark all watched', mark_all_unwatched: 'Mark all unwatched',
     watched_of: '{w} of {n} watched',
-    toast_marked_watched: '\u2713 Marked watched \u00b7 synced to Jellyfin',
-    toast_marked_unwatched: 'Marked unwatched \u00b7 synced to Jellyfin',
-    toast_all_watched: '\u2713 Season marked watched \u00b7 synced to Jellyfin',
-    toast_all_unwatched: 'Season marked unwatched \u00b7 synced to Jellyfin',
+    toast_marked_watched: '\u2713 Marked watched',
+    toast_marked_unwatched: 'Marked unwatched',
   });
   Object.assign(STR.da, {
     mark_watched: 'Mark\u00e9r som set', watched: 'Set', play_again: 'Afspil igen',
     mark_all_watched: 'Mark\u00e9r alle som set', mark_all_unwatched: 'Mark\u00e9r alle som uset',
     watched_of: '{w} af {n} set',
-    toast_marked_watched: '\u2713 Markeret som set \u00b7 synket til Jellyfin',
-    toast_marked_unwatched: 'Markeret som uset \u00b7 synket til Jellyfin',
-    toast_all_watched: '\u2713 S\u00e6son markeret som set \u00b7 synket til Jellyfin',
-    toast_all_unwatched: 'S\u00e6son markeret som uset \u00b7 synket til Jellyfin',
+    toast_marked_watched: '\u2713 Markeret som set',
+    toast_marked_unwatched: 'Markeret som uset',
   });
   // ---- Profile menu + Discover tabs (nav restructure) ----
-  Object.assign(STR.en, { nav_discover: 'Discover', pm_switch: 'Switch', pm_continue: 'Continue Watching', pm_settings: 'Stillingar', pm_unpair: 'Loys hetta sjónvarpið', seg_coming: 'Komandi skjótt', seg_request: 'Umbøn', request_sub: 'Browse the catalogue and request what is missing', search_seerr: 'Search Seerr' });
+  Object.assign(STR.en, { nav_discover: 'Discover', pm_switch: 'Switch', pm_continue: 'Continue Watching', pm_settings: 'Settings', pm_unpair: 'Unpair this TV', seg_coming: 'Coming Soon', seg_request: 'Request', request_sub: 'Browse the catalogue and request what is missing', search_seerr: 'Search Seerr' });
   Object.assign(STR.da, { nav_discover: 'Opdag', pm_switch: 'Skift', pm_continue: 'Fortsæt', pm_settings: 'Indstillinger', pm_unpair: 'Frakobl dette TV', seg_coming: 'Kommende', seg_request: 'Anmod', request_sub: 'Gennemse kataloget og anmod om det, der mangler', search_seerr: 'Søg i Seerr' });
-  Object.assign(STR.fo, { nav_discover: 'Uppdaga', pm_switch: 'Skift', pm_continue: 'Hald fram', pm_settings: 'Innstillingar', pm_unpair: 'Frákopla sjónvarp', seg_coming: 'Kemur', seg_request: 'Bið', request_sub: 'Kaga í savninum og bið um tað, sum vantar', search_seerr: 'Leita í Seerr' });
+  Object.assign(STR.fo, { nav_discover: 'Uppdaga', pm_switch: 'Skift', pm_continue: 'Hald fram', pm_settings: 'Stillingar', pm_unpair: 'Loys hetta sjónvarpið', seg_coming: 'Komandi skjótt', seg_request: 'Umbøn', request_sub: 'Kaga í savninum og bið um tað, sum vantar', search_seerr: 'Leita í Seerr' });
 
   // ---- Upcoming calendar ----
   Object.assign(STR.en, {
-    nav_upcoming: 'Komandi', upcoming_sub: 'New episodes & movie premieres, coming soon',
-    up_today: 'Today', up_tomorrow: 'Tomorrow', up_all: 'Alt', up_series: 'Seriur', up_movies: 'Movies',
+    nav_upcoming: 'Coming Soon', upcoming_sub: 'New episodes & movie premieres, coming soon',
+    up_today: 'Today', up_tomorrow: 'Tomorrow', up_all: 'All', up_series: 'Series', up_movies: 'Movies',
     up_release: '{n} release', up_releases: '{n} releases', up_nothing: 'Nothing scheduled',
-    up_airs_in: 'Kemur út um {n} dagar', up_airs_today: 'Kemur út í dag', up_airs_tomorrow: 'Kemur út í morgin',
+    up_airs_in: 'Airs in {n} days', up_airs_today: 'Airs today', up_airs_tomorrow: 'Airs tomorrow',
     up_schedule: 'Schedule', up_airdate: 'Air date', up_airtime: 'Air time', up_release_type: 'Release',
     up_network: 'Network', up_studio: 'Studio', up_monitored: 'Monitored', up_unmonitored: 'Not monitored',
-    up_quality: 'Quality', up_arriving: 'Arriving soon', up_episode: 'Partur', up_movie: 'Movie', up_new_episode: 'Nýggjur partur', up_premiere: 'Premiere', up_reldate: 'Release date',
+    up_quality: 'Quality', up_arriving: 'Arriving soon', up_episode: 'Episode', up_movie: 'Movie', up_new_episode: 'New episode', up_premiere: 'Premiere', up_reldate: 'Release date',
   });
   Object.assign(STR.da, {
     nav_upcoming: 'Kommende', upcoming_sub: 'Nye afsnit & filmpremierer, kommer snart',
@@ -249,10 +245,10 @@
     set_reminder: 'Mind mig', go_to_series: 'G\u00e5 til serie',
   });
   Object.assign(STR.fo, {
-    nav_upcoming: 'Kemur', upcoming_sub: 'Nýggjar tættir & filmar, koma skjótt',
-    up_episode: 'Táttur', up_movie: 'Filmur', up_new_episode: 'Nýggjur táttur', up_premiere: 'Frumsýning', up_arriving: 'Kemur skjótt', up_reldate: 'Útgevudato', up_quality: 'Góðska',
-    up_today: '\u00cd dag', up_tomorrow: '\u00cd morgin', up_all: '\u00d8ll', up_series: 'S\u00f8gur', up_movies: 'Filmar',
-    up_airs_today: 'Verður sendur \u00ed dag', up_airs_tomorrow: 'Verður sendur \u00ed morgin', up_airs_in: 'Verður sendur um {n} dagar',
+    nav_upcoming: 'Komandi', upcoming_sub: 'Nýggjar tættir & filmar, koma skjótt',
+    up_episode: 'Partur', up_movie: 'Filmur', up_new_episode: 'Nýggjur partur', up_premiere: 'Frumsýning', up_arriving: 'Kemur skjótt', up_reldate: 'Útgevudato', up_quality: 'Góðska',
+    up_today: '\u00cd dag', up_tomorrow: '\u00cd morgin', up_all: 'Alt', up_series: 'Seriur', up_movies: 'Filmar',
+    up_airs_today: 'Kemur út í dag', up_airs_tomorrow: 'Kemur út í morgin', up_airs_in: 'Kemur út um {n} dagar',
     set_reminder: 'Minn meg', go_to_series: 'Far til s\u00f8gu',
   });
 
@@ -260,17 +256,15 @@
     mark_watched: 'Merk sum s\u00e6tt', watched: 'S\u00e6tt', play_again: 'Sp\u00e6l aftur',
     mark_all_watched: 'Merk \u00f8ll sum s\u00e6dd', mark_all_unwatched: 'Merk \u00f8ll sum \u00f3s\u00e6dd',
     watched_of: '{w} av {n} s\u00e6dd',
-    toast_marked_watched: '\u2713 Merkt sum s\u00e6tt \u00b7 samstillt vi\u00f0 Jellyfin',
-    toast_marked_unwatched: 'Merkt sum \u00f3s\u00e6tt \u00b7 samstillt vi\u00f0 Jellyfin',
-    toast_all_watched: '\u2713 \u00c1rst\u00ed\u00f0 merkt sum s\u00e6dd \u00b7 samstillt vi\u00f0 Jellyfin',
-    toast_all_unwatched: '\u00c1rst\u00ed\u00f0 merkt sum \u00f3s\u00e6dd \u00b7 samstillt vi\u00f0 Jellyfin',
+    toast_marked_watched: '\u2713 Merkt sum s\u00e6tt',
+    toast_marked_unwatched: 'Merkt sum \u00f3s\u00e6tt',
   });
 
   // ---- Upcoming: available + missing/overdue ----
   Object.assign(STR.en, {
-    up_available: 'Already available', up_missing: 'Manglar', up_due: 'Was due',
-    up_missing_title: 'Manglar í savninum tínum', up_missing_sub: 'Released, but not downloaded yet',
-    up_aired_ago: 'Kom út fyri {n} døgum síðan', up_released_ago: 'Varð útgivið fyri {n} døgum síðan',
+    up_available: 'Already available', up_missing: 'Missing', up_due: 'Was due',
+    up_missing_title: 'Missing from your library', up_missing_sub: 'Released, but not downloaded yet',
+    up_aired_ago: 'Aired {n} days ago', up_released_ago: 'Released {n} days ago',
     up_aired_yest: 'Aired yesterday', up_released_yest: 'Released yesterday',
   });
   Object.assign(STR.da, {
@@ -280,9 +274,9 @@
     up_aired_yest: 'Sendt i g\u00e5r', up_released_yest: 'Udgivet i g\u00e5r',
   });
   Object.assign(STR.fo, {
-    up_available: 'Longu t\u00f8kt', up_missing: 'Vantar', up_due: 'Skuldi komi\u00f0',
-    up_missing_title: 'Vantar \u00ed savninum', up_missing_sub: 'Givi\u00f0 \u00fat, men ikki heinta\u00f0 enn',
-    up_aired_ago: 'Sent fyri {n} d\u00f8gum s\u00ed\u00f0ani', up_released_ago: 'Givi\u00f0 \u00fat fyri {n} d\u00f8gum s\u00ed\u00f0ani',
+    up_available: 'Longu t\u00f8kt', up_missing: 'Manglar', up_due: 'Skuldi komi\u00f0',
+    up_missing_title: 'Manglar í savninum tínum', up_missing_sub: 'Givi\u00f0 \u00fat, men ikki heinta\u00f0 enn',
+    up_aired_ago: 'Kom út fyri {n} døgum síðan', up_released_ago: 'Varð útgivið fyri {n} døgum síðan',
     up_aired_yest: 'Sent \u00ed gj\u00e1r', up_released_yest: 'Givi\u00f0 \u00fat \u00ed gj\u00e1r',
   });
 
@@ -351,7 +345,7 @@
     pl_sign_in: 'Sign in', pl_retry: 'Try again', pl_back: 'Back',
   });
   Object.assign(STR.da, {
-    pl_loading: 'Indl\u00e6der\u2026', pl_seeking: 'S\u00f8ger\u2026', pl_still: 'Pr\u00f8ver stadig\u2026',
+    pl_loading: 'Indl\u00e6ser\u2026', pl_seeking: 'S\u00f8ger\u2026', pl_still: 'Pr\u00f8ver stadig\u2026',
     pl_err_reauth_h: 'Dette tv skal logge ind igen',
     pl_err_reauth_b: 'Log ind igen p\u00e5 dette tv for at se videre.',
     pl_err_forbidden_h: 'Ikke tilg\u00e6ngelig p\u00e5 denne profil',
@@ -375,37 +369,37 @@
 
   // ---- R175: username/password login (replaces the pairing code) ----
   Object.assign(STR.en, {
-    login_title: 'Sign in to Jellyfin', login_sub: 'Use your Jellyfin username and password. Each person signs in once \u2014 their profile stays on this TV.',
+    login_title: 'Sign in', login_sub: 'Use your username and password. Each person signs in once \u2014 their profile stays on this TV.',
     login_user: 'Username', login_pass: 'Password', login_btn: 'Sign in', login_busy: 'Signing in\u2026',
-    login_err_user: 'Enter your Jellyfin username.', login_err_pass: 'Enter your password.',
+    login_err_user: 'Enter your username.', login_err_pass: 'Enter your password.',
     login_err_cred: 'Wrong username or password \u2014 check them and try again.',
     key_shift: '\u21e7 Shift', key_space: 'Space', key_del: '\u232b Delete',
   });
   Object.assign(STR.da, {
-    login_title: 'Log ind p\u00e5 Jellyfin', login_sub: 'Brug dit Jellyfin-brugernavn og din adgangskode. Hver person logger ind \u00e9n gang \u2014 profilen bliver p\u00e5 dette tv.',
+    login_title: 'Log ind', login_sub: 'Brug dit brugernavn og din adgangskode. Hver person logger ind \u00e9n gang \u2014 profilen bliver p\u00e5 dette tv.',
     login_user: 'Brugernavn', login_pass: 'Adgangskode', login_btn: 'Log ind', login_busy: 'Logger ind\u2026',
-    login_err_user: 'Indtast dit Jellyfin-brugernavn.', login_err_pass: 'Indtast din adgangskode.',
+    login_err_user: 'Indtast dit brugernavn.', login_err_pass: 'Indtast din adgangskode.',
     login_err_cred: 'Forkert brugernavn eller adgangskode \u2014 tjek dem og pr\u00f8v igen.',
     key_shift: '\u21e7 Skift', key_space: 'Mellemrum', key_del: '\u232b Slet',
   });
   Object.assign(STR.fo, {
-    login_title: 'Rita inn \u00e1 Jellyfin', login_sub: 'Br\u00faka t\u00edtt Jellyfin-br\u00fakaranavn og loyniord. Hv\u00f8r persónur ritar inn eina fer\u00f0 \u2014 vangamyndin ver\u00f0ur verandi \u00e1 hesum sj\u00f3nvarpi.',
+    login_title: 'Rita inn', login_sub: 'Br\u00faka t\u00edtt br\u00fakaranavn og loyniord. Hv\u00f8r persónur ritar inn eina fer\u00f0 \u2014 vangamyndin ver\u00f0ur verandi \u00e1 hesum sj\u00f3nvarpi.',
     login_user: 'Br\u00fakaranavn', login_pass: 'Loyniord', login_btn: 'Rita inn', login_busy: 'Ritar inn\u2026',
-    login_err_user: 'Skriva t\u00edtt Jellyfin-br\u00fakaranavn.', login_err_pass: 'Skriva t\u00edtt loyniord.',
+    login_err_user: 'Skriva t\u00edtt br\u00fakaranavn.', login_err_pass: 'Skriva t\u00edtt loyniord.',
     login_err_cred: 'Skeivt br\u00fakaranavn ella loyniord \u2014 kanna tey og royn aftur.',
     key_shift: '\u21e7 Skift', key_space: 'Millumr\u00fam', key_del: '\u232b Strika',
   });
 
   // ---- Discover → library taxonomies (Studios / Networks / Genres) ----
   Object.assign(STR.en, {
-    seg_studios: 'Studios', seg_networks: 'Sjónvarpsrásir', seg_genres: 'Genres',
+    seg_studios: 'Studios', seg_networks: 'Networks', seg_genres: 'Genres',
     tx_sub_studios: 'Films in your library, by studio',
-    tx_sub_networks: 'Seriur í tínum savni, eftir sjónvarpsrás',
+    tx_sub_networks: 'Series in your library, by network',
     tx_sub_genres: 'Everything in your library, by genre',
-    tx_n_studios: '{n} studios', tx_n_networks: '{n} sjónvarpsrásir', tx_n_genres: '{n} genres',
+    tx_n_studios: '{n} studios', tx_n_networks: '{n} networks', tx_n_genres: '{n} genres',
     tx_titles: '{n} titles', tx_title_one: '1 title',
     tx_kid_note: 'counting only what this profile can watch',
-    tx_empty: 'Einki til henda vanga enn',
+    tx_empty: 'Nothing for this profile yet',
   });
   Object.assign(STR.da, {
     seg_studios: 'Studier', seg_networks: 'Stationer', seg_genres: 'Genrer',
@@ -418,15 +412,128 @@
     tx_empty: 'Ingenting til denne profil endnu',
   });
   Object.assign(STR.fo, {
-    seg_studios: 'Studio', seg_networks: 'St\u00f8\u00f0ir', seg_genres: 'Sjanrur',
+    seg_studios: 'Studio', seg_networks: 'Sjónvarpsrásir', seg_genres: 'Sjangrur',
     tx_sub_studios: 'Filmar \u00ed t\u00ednum savni, eftir studio',
-    tx_sub_networks: 'S\u00f8gur \u00ed t\u00ednum savni, eftir st\u00f8\u00f0',
+    tx_sub_networks: 'Seriur í tínum savni, eftir sjónvarpsrás',
     tx_sub_genres: 'Alt \u00ed t\u00ednum savni, eftir sjanru',
-    tx_n_studios: '{n} studio', tx_n_networks: '{n} st\u00f8\u00f0ir', tx_n_genres: '{n} sjanrur',
+    tx_n_studios: '{n} studio', tx_n_networks: '{n} sjónvarpsrásir', tx_n_genres: '{n} sjangrur',
     tx_titles: '{n} heiti', tx_title_one: '1 heiti',
     tx_kid_note: 'teljir bert ta\u00f0, hendan vangamyndin kann s\u00edggja',
-    tx_empty: 'Einki til hesa vangamynd enn',
+    tx_empty: 'Einki til henda vanga enn',
   });
+
+  // ---- Taken from the shipped i18n/*.json (audit 2026-09-27): R191 sign out, Settings ▸ Playback, R291 badges, sort ----
+  Object.assign(STR.en, { pm_sign_out: 'Sign out', so_confirm: 'Sign out of {name}?', so_desc: 'You\u2019ll need your username and password to sign back in as {name} on this TV. Other signed-in profiles on this TV aren\u2019t affected.', so_yes: 'Yes, sign out',
+    set_playback: 'Playback', set_show_progress: 'Show progress on Continue Watching', set_autoplay_next: 'Autoplay next episode',
+    pl_now_showing: 'Now showing', pl_last_used: 'Last used', pl_switch_hint: 'Select one to switch instantly',
+    sort_title: 'Title', sort_size: 'Size', sort_largest: 'Largest first', sort_smallest: 'Smallest first', sort_newest: 'Newest first', sort_oldest: 'Oldest first', sort_az: 'A\u2013Z', sort_za: 'Z\u2013A', sort_high: 'Highest first', sort_low: 'Lowest first', sort_recommended: 'Recommended' });
+  Object.assign(STR.da, { pm_sign_out: 'Log ud', so_confirm: 'Log {name} ud?', so_desc: 'Du skal bruge dit brugernavn og kodeord for at logge ind igen som {name} p\u00e5 dette TV. Andre tilmeldte profiler p\u00e5 dette TV p\u00e5virkes ikke.', so_yes: 'Ja, log ud',
+    set_playback: 'Afspilning', set_show_progress: 'Vis fremgang p\u00e5 Forts\u00e6t med at se', set_autoplay_next: 'Afspil n\u00e6ste episode automatisk',
+    pl_now_showing: 'Vises nu', pl_last_used: 'Sidst brugt',
+    sort_title: 'Titel', sort_size: 'St\u00f8rrelse', sort_largest: 'St\u00f8rste f\u00f8rst', sort_smallest: 'Mindste f\u00f8rst', sort_newest: 'Nyeste f\u00f8rst', sort_oldest: '\u00c6ldste f\u00f8rst', sort_az: 'A\u2013\u00c5', sort_za: '\u00c5\u2013A', sort_high: 'H\u00f8jeste f\u00f8rst', sort_low: 'Laveste f\u00f8rst' });
+  Object.assign(STR.fo, { pm_sign_out: 'Rita \u00fat', so_confirm: 'Rita {name} \u00fat?', so_desc: 'T\u00fa skalt br\u00faka t\u00edtt br\u00fakaranavn og loyniord\u00f0 fyri at rita inn aftur sum {name} \u00e1 hesum sj\u00f3nvarpinum. A\u00f0rir innrita\u00f0ir vangar \u00e1 hesum sj\u00f3nvarpinum ver\u00f0a ikki \u00e1virka\u00f0ir.', so_yes: 'Ja, rita \u00fat',
+    set_playback: 'Sp\u00e6ling', set_show_progress: 'V\u00eds framgongd \u00e1 Halt fram at s\u00edggja', set_autoplay_next: 'Sp\u00e6l n\u00e6sta part sj\u00e1lvvirkandi',
+    pl_now_showing: 'V\u00edsir n\u00fa', pl_last_used: 'Br\u00fakt seinast',
+    sort_title: 'Heiti', sort_size: 'St\u00f8dd', sort_largest: 'St\u00f8rst fyrst', sort_smallest: 'Minst fyrst', sort_newest: 'N\u00fdggjast fyrst', sort_oldest: 'Elst fyrst', sort_az: 'A\u2013\u00c1', sort_za: '\u00c1\u2013A', sort_high: 'H\u00e6gst fyrst', sort_low: 'L\u00e6gst fyrst' });
+
+  // design brief 2026-09-27: the Suggested-for-you feed's default title — the only new viewer string
+  Object.assign(STR.en, { rq_suggested: 'Suggested for you' });
+  Object.assign(STR.da, { rq_suggested: 'Forslag til dig' });
+  Object.assign(STR.fo, { rq_suggested: 'Uppskot til tín' });
+
+  // design brief 2026-09-27 (phone music mode) §I — drafts; the shipped table wins where a key exists.
+  // Keys beyond §I (sub-captions, the (b)/(c) bar labels, a few page words) are marked in the brief's own shape.
+  Object.assign(STR.en, {
+    'mode.music': 'Music', 'mode.video': 'Films & series', 'mode.switch_music': 'Switch to music', 'mode.switch_video': 'Back to films & series',
+    'mode.video_sub': 'Home · Library · Search · Discover', 'mode.music_sub': 'Home · Library · Search · Playlists', 'mode.label': 'This phone',
+    'mnav.home': 'Home', 'mnav.library': 'Library', 'mnav.search': 'Search', 'mnav.playlists': 'Playlists',
+    'mnav.albums': 'Albums', 'mnav.artists': 'Artists', 'mnav.listen': 'Listen', 'mnav.browse': 'Browse', 'mnav.queue': 'Queue',
+    'mlib.albums': 'Albums', 'mlib.artists': 'Artists', 'mlib.songs': 'Songs', 'mlib.genres': 'Genres',
+    'mhome.recent_albums': 'Recently added', 'mhome.recent_played': 'Recently played', 'mhome.artists': 'Artists', 'mhome.mix': 'A mix from your library', 'mhome.empty': 'Nothing filed as music yet',
+    'music.play': 'Play', 'music.shuffle': 'Shuffle', 'music.play_all': 'Play all', 'music.songs_n': '{n} songs', 'music.songs_one': '1 song', 'music.albums_n': '{n} albums', 'music.albums_one': '1 album',
+    'music.now_playing': 'Now playing', 'music.up_next': 'Up next', 'music.queue': 'Queue', 'music.queue_left': '{n} songs · {t} left', 'music.clear_queue': 'Clear queue',
+    'music.play_next': 'Play next', 'music.add_queue': 'Add to queue', 'music.add_playlist': 'Add to playlist…', 'music.go_album': 'Go to album', 'music.go_artist': 'Go to artist',
+    'music.lyrics': 'Lyrics', 'music.repeat_off': 'Repeat off', 'music.repeat_all': 'Repeat', 'music.repeat_one': 'Repeat one', 'music.more_from': 'More from {artist}',
+    'music.no_playlists': 'No playlists yet', 'music.no_playlists_hint': 'Add a song to a playlist from its ⋯ menu', 'music.new_playlist': 'New playlist',
+    'music.type.live': 'Live', 'music.type.compilation': 'Compilation', 'music.type.single': 'Single', 'music.type.ep': 'EP', 'music.type.soundtrack': 'Soundtrack', 'music.stop': 'Stop',
+    'music.see_all': 'See all', 'music.more': 'More', 'music.videos': 'Videos', 'music.singles': 'Singles & EPs', 'music.compilations': 'Compilations', 'music.albums': 'Albums', 'music.top_songs': 'Songs',
+    'music.search_ph': 'Search music', 'music.no_results': 'Nothing matches “{q}”', 'music.playing_on': 'Playing on {d}', 'music.from': 'Playing from {x}',
+    'music.even_volume': 'Even out volume', 'music.even_volume_sub': 'Songs from different albums play at the same loudness',
+    'music.fail_t': 'Couldn’t play this', 'music.fail_p': 'Try again, or skip to the next song.', 'music.try_again': 'Try again', 'music.skip': 'Skip',
+    'music.sort': 'Sort', 'music.sort_added': 'Recently added', 'music.sort_az': 'A–Z', 'music.sort_year': 'Year', 'music.sort_played': 'Most played', 'music.name': 'Name', 'music.create': 'Create',
+  });
+  Object.assign(STR.da, {
+    'mode.music': 'Musik', 'mode.video': 'Film og serier', 'mode.switch_music': 'Skift til musik', 'mode.switch_video': 'Tilbage til film og serier',
+    'mode.video_sub': 'Hjem · Bibliotek · Søg · Opdag', 'mode.music_sub': 'Hjem · Bibliotek · Søg · Playlister', 'mode.label': 'Denne telefon',
+    'mnav.home': 'Hjem', 'mnav.library': 'Bibliotek', 'mnav.search': 'Søg', 'mnav.playlists': 'Playlister',
+    'mnav.albums': 'Album', 'mnav.artists': 'Kunstnere', 'mnav.listen': 'Lyt', 'mnav.browse': 'Gennemse', 'mnav.queue': 'Kø',
+    'mlib.albums': 'Album', 'mlib.artists': 'Kunstnere', 'mlib.songs': 'Sange', 'mlib.genres': 'Genrer',
+    'mhome.recent_albums': 'Senest tilføjet', 'mhome.recent_played': 'Senest afspillet', 'mhome.artists': 'Kunstnere', 'mhome.mix': 'Et miks fra dit bibliotek', 'mhome.empty': 'Ingen musik endnu',
+    'music.play': 'Afspil', 'music.shuffle': 'Bland', 'music.play_all': 'Afspil alle', 'music.songs_n': '{n} sange', 'music.songs_one': '1 sang', 'music.albums_n': '{n} album', 'music.albums_one': '1 album',
+    'music.now_playing': 'Afspiller nu', 'music.up_next': 'Næste', 'music.queue': 'Kø', 'music.queue_left': '{n} sange · {t} tilbage', 'music.clear_queue': 'Ryd kø',
+    'music.play_next': 'Afspil som næste', 'music.add_queue': 'Føj til kø', 'music.add_playlist': 'Føj til playliste…', 'music.go_album': 'Gå til album', 'music.go_artist': 'Gå til kunstner',
+    'music.lyrics': 'Sangtekst', 'music.repeat_off': 'Gentag fra', 'music.repeat_all': 'Gentag', 'music.repeat_one': 'Gentag én', 'music.more_from': 'Mere fra {artist}',
+    'music.no_playlists': 'Ingen playlister endnu', 'music.no_playlists_hint': 'Føj en sang til en playliste fra dens ⋯-menu', 'music.new_playlist': 'Ny playliste',
+    'music.type.live': 'Live', 'music.type.compilation': 'Opsamling', 'music.type.single': 'Single', 'music.type.ep': 'EP', 'music.type.soundtrack': 'Soundtrack', 'music.stop': 'Stop',
+    'music.see_all': 'Se alle', 'music.more': 'Mere', 'music.videos': 'Videoer', 'music.singles': 'Singler og EP’er', 'music.compilations': 'Opsamlinger', 'music.albums': 'Album', 'music.top_songs': 'Sange',
+    'music.search_ph': 'Søg i musik', 'music.no_results': 'Intet matcher “{q}”', 'music.playing_on': 'Afspiller på {d}', 'music.from': 'Afspiller fra {x}',
+    'music.even_volume': 'Udjævn lydstyrken', 'music.even_volume_sub': 'Sange fra forskellige album spiller lige højt',
+    'music.fail_t': 'Kunne ikke afspille', 'music.fail_p': 'Prøv igen, eller spring til næste sang.', 'music.try_again': 'Prøv igen', 'music.skip': 'Spring over',
+    'music.sort': 'Sortér', 'music.sort_added': 'Senest tilføjet', 'music.sort_az': 'A–Å', 'music.sort_year': 'År', 'music.sort_played': 'Mest afspillet', 'music.name': 'Navn', 'music.create': 'Opret',
+  });
+  Object.assign(STR.fo, {
+    'mode.music': 'Tónleikur', 'mode.video': 'Filmar og seriur', 'mode.switch_music': 'Skift til tónleik', 'mode.switch_video': 'Aftur til filmar og seriur',
+    'mode.video_sub': 'Heim · Savn · Leita · Uppdaga', 'mode.music_sub': 'Heim · Savn · Leita · Spælilistar', 'mode.label': 'Hendan telefonin',
+    'mnav.home': 'Heim', 'mnav.library': 'Savn', 'mnav.search': 'Leita', 'mnav.playlists': 'Spælilistar',
+    'mnav.albums': 'Fløgur', 'mnav.artists': 'Tónleikarar', 'mnav.listen': 'Lurta', 'mnav.browse': 'Kaga', 'mnav.queue': 'Bíðirøð',
+    'mlib.albums': 'Fløgur', 'mlib.artists': 'Tónleikarar', 'mlib.songs': 'Løg', 'mlib.genres': 'Sjangrur',
+    'mhome.recent_albums': 'Nýliga lagt afturat', 'mhome.recent_played': 'Nýliga spælt', 'mhome.artists': 'Tónleikarar', 'mhome.mix': 'Ein blanda úr tínum savni', 'mhome.empty': 'Eingin tónleikur enn',
+    'music.play': 'Spæl', 'music.shuffle': 'Blanda', 'music.play_all': 'Spæl øll', 'music.songs_n': '{n} løg', 'music.songs_one': '1 lag', 'music.albums_n': '{n} fløgur', 'music.albums_one': '1 fløga',
+    'music.now_playing': 'Spælir nú', 'music.up_next': 'Næst', 'music.queue': 'Bíðirøð', 'music.queue_left': '{n} løg · {t} eftir', 'music.clear_queue': 'Tøm bíðirøð',
+    'music.play_next': 'Spæl sum næst', 'music.add_queue': 'Legg í bíðirøð', 'music.add_playlist': 'Legg í spælilista…', 'music.go_album': 'Far til fløgu', 'music.go_artist': 'Far til tónleikara',
+    'music.lyrics': 'Tekstur', 'music.repeat_off': 'Endurtak av', 'music.repeat_all': 'Endurtak', 'music.repeat_one': 'Endurtak eitt', 'music.more_from': 'Meira frá {artist}',
+    'music.no_playlists': 'Ongir spælilistar enn', 'music.no_playlists_hint': 'Legg eitt lag í ein spælilista úr ⋯-valmyndini', 'music.new_playlist': 'Nýggjur spælilisti',
+    'music.type.live': 'Livandi', 'music.type.compilation': 'Savn', 'music.type.single': 'Single', 'music.type.ep': 'EP', 'music.type.soundtrack': 'Filmstónleikur', 'music.stop': 'Steðga',
+    'music.see_all': 'Sí øll', 'music.more': 'Meira', 'music.videos': 'Sjónbond', 'music.singles': 'Singlar og EP', 'music.compilations': 'Savnsfløgur', 'music.albums': 'Fløgur', 'music.top_songs': 'Løg',
+    'music.search_ph': 'Leita í tónleiki', 'music.no_results': 'Einki samsvarar “{q}”', 'music.playing_on': 'Spælir á {d}', 'music.from': 'Spælir úr {x}',
+    'music.even_volume': 'Javna ljóðstyrkin', 'music.even_volume_sub': 'Løg úr ymsum fløgum spæla líka hart',
+    'music.fail_t': 'Kundi ikki spæla hetta', 'music.fail_p': 'Royn aftur, ella leyp til næsta lag.', 'music.try_again': 'Royn aftur', 'music.skip': 'Leyp um',
+    'music.sort': 'Rað', 'music.sort_added': 'Nýliga lagt afturat', 'music.sort_az': 'A–Ø', 'music.sort_year': 'Ár', 'music.sort_played': 'Mest spælt', 'music.name': 'Navn', 'music.create': 'Stovna',
+  });
+
+  // part 2 — audiobooks (§M6 drafts; a few page words beyond §M6 are added in the same shape)
+  Object.assign(STR.en, { 'mnav.audiobooks': 'Audiobooks', 'mode.music_books': 'Music & audiobooks', 'mlib.playlists': 'Playlists',
+    'ab.continue': 'Continue listening', 'ab.continue_from': 'Continue · {t}', 'ab.start': 'Start', 'ab.start_over': 'Start over', 'ab.left': '{t} left', 'ab.read_by': 'Read by {narrator}',
+    'ab.chapters_n': '{n} chapters', 'ab.chapter_n': 'Chapter {n}', 'ab.part_of': 'Part {n} of {m}', 'ab.book_of': 'Book {n} of {m}', 'ab.authors': 'Authors', 'ab.series': 'Series',
+    'ab.finished': 'Finished', 'ab.mark_finished': 'Mark as finished', 'ab.speed': 'Speed', 'ab.sleep': 'Sleep timer', 'ab.sleep_end_chapter': 'End of chapter', 'ab.sleep_min': '{n} min',
+    'ab.bookmark_add': 'Add bookmark', 'ab.bookmarks': 'Bookmarks', 'ab.skip_back': '30 s back', 'ab.skip_fwd': '30 s forward', 'ab.skip_silence': 'Skip silences in audiobooks', 'ab.empty': 'Nothing filed as audiobooks yet',
+    'ab.all_books': 'All books', 'ab.books_n': '{n} books', 'ab.books_one': '1 book', 'ab.chapters': 'Chapters', 'ab.go_author': 'Go to author', 'ab.off': 'Off', 'ab.note': 'Note (optional)', 'ab.note_ph': 'What happens here', 'ab.save': 'Save',
+    'ab.bookmark_added': 'Bookmark added', 'ab.no_bookmarks': 'No bookmarks yet. Tap the bookmark on the player to add one.', 'ab.sort_title': 'Title', 'ab.sort_author': 'Author', 'ab.sort_series': 'Series',
+    'ab.listening': 'Listening', 'ab.skip_silence_sub': 'Long pauses in a recording are shortened', 'ab.sleep_fade': 'Sleep timer fade', 'ab.sleep_fade_sub': 'The last 10 seconds get quieter before it stops',
+    'ab.speed_note': 'Remembered for this book only.', 'ab.sleep_fade_note': 'The last 10 seconds fade out.', 'ab.fail_p': 'Try again. Your place in the book is kept.', 'ab.close': 'Close' });
+  Object.assign(STR.da, { 'mnav.audiobooks': 'Lydbøger', 'mode.music_books': 'Musik og lydbøger', 'mlib.playlists': 'Playlister',
+    'ab.continue': 'Fortsæt med at lytte', 'ab.continue_from': 'Fortsæt · {t}', 'ab.start': 'Start', 'ab.start_over': 'Start forfra', 'ab.left': '{t} tilbage', 'ab.read_by': 'Indlæst af {narrator}',
+    'ab.chapters_n': '{n} kapitler', 'ab.chapter_n': 'Kapitel {n}', 'ab.part_of': 'Del {n} af {m}', 'ab.book_of': 'Bog {n} af {m}', 'ab.authors': 'Forfattere', 'ab.series': 'Serier',
+    'ab.finished': 'Færdig', 'ab.mark_finished': 'Markér som færdig', 'ab.speed': 'Hastighed', 'ab.sleep': 'Sleep-timer', 'ab.sleep_end_chapter': 'Kapitlets slutning', 'ab.sleep_min': '{n} min',
+    'ab.bookmark_add': 'Tilføj bogmærke', 'ab.bookmarks': 'Bogmærker', 'ab.skip_back': '30 sek. tilbage', 'ab.skip_fwd': '30 sek. frem', 'ab.skip_silence': 'Spring over pauser i lydbøger', 'ab.empty': 'Ingen lydbøger endnu',
+    'ab.all_books': 'Alle bøger', 'ab.books_n': '{n} bøger', 'ab.books_one': '1 bog', 'ab.chapters': 'Kapitler', 'ab.go_author': 'Gå til forfatter', 'ab.off': 'Fra', 'ab.note': 'Note (valgfri)', 'ab.note_ph': 'Hvad der sker her', 'ab.save': 'Gem',
+    'ab.bookmark_added': 'Bogmærke tilføjet', 'ab.no_bookmarks': 'Ingen bogmærker endnu. Tryk på bogmærket i afspilleren for at tilføje et.', 'ab.sort_title': 'Titel', 'ab.sort_author': 'Forfatter', 'ab.sort_series': 'Serie',
+    'ab.listening': 'Lytning', 'ab.skip_silence_sub': 'Lange pauser i en indspilning forkortes', 'ab.sleep_fade': 'Sleep-timer toner ud', 'ab.sleep_fade_sub': 'De sidste 10 sekunder bliver stille før stop',
+    'ab.speed_note': 'Huskes kun for denne bog.', 'ab.sleep_fade_note': 'De sidste 10 sekunder toner ud.', 'ab.fail_p': 'Prøv igen. Dit sted i bogen gemmes.', 'ab.close': 'Luk' });
+  Object.assign(STR.fo, { 'mnav.audiobooks': 'Ljóðbøkur', 'mode.music_books': 'Tónleikur og ljóðbøkur', 'mlib.playlists': 'Spælilistar',
+    'ab.continue': 'Hald fram at lurta', 'ab.continue_from': 'Hald fram · {t}', 'ab.start': 'Byrja', 'ab.start_over': 'Byrja av nýggjum', 'ab.left': '{t} eftir', 'ab.read_by': 'Lisin av {narrator}',
+    'ab.chapters_n': '{n} kapitlar', 'ab.chapter_n': 'Kapittul {n}', 'ab.part_of': 'Partur {n} av {m}', 'ab.book_of': 'Bók {n} av {m}', 'ab.authors': 'Høvundar', 'ab.series': 'Røðir',
+    'ab.finished': 'Liðugt', 'ab.mark_finished': 'Merk sum liðugt', 'ab.speed': 'Ferð', 'ab.sleep': 'Svøvnur', 'ab.sleep_end_chapter': 'Enda á kapitli', 'ab.sleep_min': '{n} min',
+    'ab.bookmark_add': 'Legg bókamerki afturat', 'ab.bookmarks': 'Bókamerki', 'ab.skip_back': '30 sek. aftur', 'ab.skip_fwd': '30 sek. fram', 'ab.skip_silence': 'Leyp um tøgn í ljóðbókum', 'ab.empty': 'Ongar ljóðbøkur enn',
+    'ab.all_books': 'Allar bøkur', 'ab.books_n': '{n} bøkur', 'ab.books_one': '1 bók', 'ab.chapters': 'Kapitlar', 'ab.go_author': 'Far til høvund', 'ab.off': 'Av', 'ab.note': 'Viðmerking (valfrí)', 'ab.note_ph': 'Hvat hendir her', 'ab.save': 'Goym',
+    'ab.bookmark_added': 'Bókamerki lagt afturat', 'ab.no_bookmarks': 'Eingi bókamerki enn. Trýst á bókamerkið í spælaranum.', 'ab.sort_title': 'Heiti', 'ab.sort_author': 'Høvundur', 'ab.sort_series': 'Røð',
+    'ab.listening': 'Lurting', 'ab.skip_silence_sub': 'Long steðg í eini upptøku verða stytt', 'ab.sleep_fade': 'Svøvnur tonar út', 'ab.sleep_fade_sub': 'Tær seinastu 10 sekundirnar verða lágari',
+    'ab.speed_note': 'Minst bert fyri hesa bókina.', 'ab.sleep_fade_note': 'Tær seinastu 10 sekundirnar tona út.', 'ab.fail_p': 'Royn aftur. Staðið í bókini verður goymt.', 'ab.close': 'Lat aftur' });
+
+  // owner, 2026-09-27 — the Now playing tab (Search merged into Library)
+  Object.assign(STR.en, { 'mnav.now': 'Now playing', 'mnav.now_short': 'Playing', 'music.nothing_played': 'Nothing played yet' });
+  Object.assign(STR.da, { 'mnav.now': 'Afspiller nu', 'mnav.now_short': 'Afspiller', 'music.nothing_played': 'Intet afspillet endnu' });
+  Object.assign(STR.fo, { 'mnav.now': 'Spælir nú', 'mnav.now_short': 'Spælir', 'music.nothing_played': 'Einki spælt enn' });
 
   let lang = 'en';
   window.RAVILO_I18N = STR;

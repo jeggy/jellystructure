@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jellystructure — Artist</title>
+<link rel="stylesheet" href="wf.css">
+<link rel="stylesheet" href="app.css">
+<link rel="stylesheet" href="detail.css">
+<link rel="stylesheet" href="music.css">
+<style>a{color:var(--hi)}a:hover{color:var(--acc-ink)}</style>
+</head>
+<body class="wf-body app-body">
+<main class="app-main2 wide" data-page="library" data-screen-label="Artist detail">
+<div class="backrow"><a class="btn sm ghost" href="library.html?kind=music&amp;mview=artists">‹ Library</a><span class="crumb" id="ar-crumb"></span></div>
+<div id="ar-fence"></div>
+<div class="pagebar" id="ar-bar"></div>
+<div id="ar-head"></div>
+<div class="tabs2" id="tabbar"><span data-tab="overview">Overview</span><span data-tab="artwork">Artwork</span><span data-tab="genres">Genres</span><span data-tab="nfo">NFO (raw)</span><span data-tab="history">History</span></div>
+<div id="ar-panel"></div>
+<div id="ar-qs"></div>
+</main>
+<script src="app-shell.js"></script>
+<script src="music-data.js"></script>
+<script src="music-qs.js"></script>
+<script src="artist.js"></script>
+</body>
+</html>

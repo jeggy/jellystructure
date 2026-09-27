@@ -63,6 +63,7 @@
       <div class="pm-row foc" data-pm="mylist"><span class="pm-ic">＋</span> ${t('nav_mylist')}</div>
       <div class="pm-row foc" data-pm="adduser"><span class="pm-ic">＋</span> ${t('add_user')}</div>
       <div class="pm-row foc" data-pm="settings"><span class="pm-ic">⚙</span> ${t('pm_settings')}</div>
+      <div class="pm-row foc" data-pm="signout"><span class="pm-ic">⇥</span> ${t('pm_sign_out')}</div>
       <div class="pm-row foc" data-pm="unpair"><span class="pm-ic">⏏</span> ${t('pm_unpair')}</div>`;
     stage.appendChild(profmenu);
     function pmItems() { return [...profmenu.querySelectorAll('.foc')]; }
@@ -82,6 +83,10 @@
       i = Math.max(0, Math.min(its.length - 1, i + dr));
       its.forEach(e => e.classList.remove('focused')); its[i].classList.add('focused');
     }
+    // Owner decision 5 (2026-09-27 audit): episodes are written S01E05, always — zero-padded, no colon,
+    // no spaces. A file of several episodes is S01E01–E03 (admin phase 149's form).
+    function epCode(s, e, e2) { const p = n => String(n).padStart(2, '0'); return 'S' + p(s) + 'E' + p(e) + (e2 != null && e2 !== e ? '–E' + p(e2) : ''); }
+    window.__raviloEpCode = epCode;
     function activateProfMenu() {
       const f = profmenu.querySelector('.foc.focused'); if (!f) return;
       const a = f.dataset.pm; closeProfMenu();
@@ -89,6 +94,7 @@
       else if (a === 'adduser') openSignin();
       else if (a === 'settings') openSettings();
       else if (a === 'switch') openProfiles('switch');
+      else if (a === 'signout') { soBack = 'menu'; renderSignoutConfirm(); prof.style.display = 'flex'; }
       else if (a === 'unpair') { renderUnpairConfirm(); prof.style.display = 'flex'; }
     }
     profmenu.addEventListener('click', e => { e.stopPropagation(); const r = e.target.closest('.foc'); if (!r) return; pmItems().forEach(x => x.classList.remove('focused')); r.classList.add('focused'); activateProfMenu(); });
@@ -215,13 +221,13 @@
         // episode's own: S:E, name, runtime. The kicker stays empty rather than saying it twice.
         type: 'episode', kicker: '', title: e.title,
         showName: seriesItem.title, logo: (R.artFor && R.artFor(seriesItem).logo) || '', logoInk: seriesItem.logoInk || null,
-        sub2: `S${season + 1}:E${e.n} · ${e.dur} · <b>${seriesItem.rating}+</b>`,
+        sub2: `${epCode(season + 1, e.n)} · ${e.dur} · <b>${seriesItem.rating}+</b>`,
         duration: dur, position: resume,
         resumeNote: resume ? Math.round((dur - resume) / 60) + ' min left' : null,
         frames: null, grad: e.grad,
         stream: streamFor(seriesItem), audio: ts.audio, subs: ts.subs, audioDefault: ts.audioDefault, subsDefault: ts.subsDefault,
         sampleSub: SAMPLE_FO,
-        nextMeta: hasNext ? { ep: `S${season + 1}:E${eps[ni].n}`, title: eps[ni].title, desc: eps[ni].desc, grad: eps[ni].grad } : null,
+        nextMeta: hasNext ? { ep: epCode(season + 1, eps[ni].n), title: eps[ni].title, desc: eps[ni].desc, grad: eps[ni].grad } : null,
         resolveNext: hasNext ? () => episodeCtx(seriesItem, season, eps, ni) : null,
         seasonLabel: 'Season ' + (season + 1),
         epIndex: idx,
@@ -257,7 +263,7 @@
         if (view.type === 'home') startHero();
         if (reRender) { renderDetail(view.item); setTimeout(() => { const ai = rows().findIndex(r => r.classList.contains('dactions')); focusRC(ai > 0 ? ai : 1, 0); }, 24); }
         else { const all = rows(); const its = items(all[cur.r] || all[0]); if (its[cur.c]) focusEl(its[cur.c]); else focusRowByIndex(0); }
-        if (info) flash(nowWatched ? t('toast_marked_watched') : '✓ Progress saved — jellystructure → Jellyfin');
+        if (info) flash(nowWatched ? t('toast_marked_watched') : '✓ Progress saved');
       },
     });
 
@@ -749,16 +755,16 @@
 
       let playLabel, upNote = '';
       if (isSeries) {
-        if (prog.watched === 0 && !rState.pct) playLabel = t('play') + ' · E1';
-        else if (rState.pct > 0 && rState.pct < 100) { playLabel = t('resume') + ` · E${rEp.n}`; upNote = `Resume S${season + 1} · E${rEp.n} “${rEp.title}” · ${minsLeftPct(rEp, rState.pct)} min left`; }
-        else { playLabel = t('play') + ` · E${rEp.n}`; upNote = `Up next · S${season + 1} · E${rEp.n} “${rEp.title}”`; }
+        if (prog.watched === 0 && !rState.pct) playLabel = t('play') + ' · ' + epCode(season + 1, 1);
+        else if (rState.pct > 0 && rState.pct < 100) { playLabel = t('resume') + ` · ${epCode(season + 1, rEp.n)}`; upNote = `Resume ${epCode(season + 1, rEp.n)} “${rEp.title}” · ${minsLeftPct(rEp, rState.pct)} min left`; }
+        else { playLabel = t('play') + ` · ${epCode(season + 1, rEp.n)}`; upNote = `Up next · ${epCode(season + 1, rEp.n)} “${rEp.title}”`; }
       } else {
         const mp = wItem.pct || item.pct || 0;
         const mLeft = Math.max(1, Math.round(durFor(item) * (1 - mp / 100) / 60));
         playLabel = wItem.watched ? t('play_again') : ((mp > 0 && mp < 100) ? t('resume') + ` · ${mLeft} min left` : t('play'));
       }
 
-      const nextAirHTML = nextAir ? `<div class="dnext air"><span class="dnext-dot"></span>${t('next_ep')} · S${nextAir.season}:E${nextAir.ep}${nextAir.title ? ` “${nextAir.title}”` : ''} · ${t('airs')} ${epAirLabel(nextAir.date)}</div>` : '';
+      const nextAirHTML = nextAir ? `<div class="dnext air"><span class="dnext-dot"></span>${t('next_ep')} · ${epCode(nextAir.season, nextAir.ep)}${nextAir.title ? ` “${nextAir.title}”` : ''} · ${t('airs')} ${epAirLabel(nextAir.date)}</div>` : '';
       const rating = R.ratingFor(item);
       const certHTML = rating ? `<span class="cert lvl-${rating.tier}" title="${esc(rating.regionName)} · ${esc(rating.system)}${rating.fallback ? ' (fallback)' : ''}"><span class="cert-rg">${rating.region}</span><span class="cert-code">${esc(rating.code)}</span></span>` : '';
       const dhero = el('div', 'dhero');
@@ -769,7 +775,7 @@
           <div class="hero-meta"><span class="tag">${item.badge || 'HD'}</span><span>${item.year}</span>${certHTML}${imdbHTML(item)}${wItem.watched ? `<span class="dmeta-watched">✓ ${t('watched')}</span>` : ''}</div>
           ${genreRowHTML(item)}
           ${audioFlagsHTML(item)}
-          <div class="dsyn-block focus-row"><div class="hero-syn dsyn foc" data-syn="1">${(R.synFor && R.synFor(item)) || item.syn || 'A standout from your Ravilo library — streamed from Jellyfin, organised by Jellystructure.'}</div><span class="syn-toggle">▾ more</span></div>
+          <div class="dsyn-block focus-row"><div class="hero-syn dsyn foc" data-syn="1">${(R.synFor && R.synFor(item)) || item.syn || t('fd_nodesc')}</div><span class="syn-toggle">▾ more</span></div>
           ${(upNote || nextAirHTML) ? `<div class="dnext-row">${upNote ? `<div class="dnext"><span class="dnext-dot"></span>${upNote}</div>` : ''}${nextAirHTML}</div>` : ''}
           ${playNoteHTML(item)}
           <div class="dactions focus-row">
@@ -848,12 +854,6 @@
       return sel.map(id => byId[id]).filter(Boolean);
     }
     function activeSource() { return (R.discover.sources || []).find(s => s.enabled) || R.discover.sources[0]; }
-    function trendBadge(it) {
-      if (it.trend === 'new') return `<span class="rtrend new">${t('new_this_week')}</span>`;
-      if (it.trend === 'up') return `<span class="rtrend up">▲</span>`;
-      if (it.trend === 'down') return `<span class="rtrend down">▼</span>`;
-      return `<span class="rtrend same">=</span>`;
-    }
     function fetchShort(it) {
       if (it.kind === 'series' && it.epsTotal != null) { let s = (it.epsDone || 0) + '/' + it.epsTotal; if (it.stalled) s += ' · ' + t('stalled'); return s; }
       let s = (it.progress || 0) + '%'; if (it.stalled) s += ' · ' + t('stalled'); else if (it.metadata) s += ' · ' + t('starting'); return s;
@@ -885,7 +885,7 @@
     }
     function discoverRow(list) {
       const r = el('div', 'crow drow');
-      r.innerHTML = `<div class="crow-head"><h2>${list.title}</h2></div>`;
+      r.innerHTML = `<div class="crow-head"><h2>${list.i18n ? t(list.i18n) : list.title}</h2></div>`;
       const track = el('div', 'track focus-row');
       list.items.forEach(it => track.appendChild(rankTile(it, list)));
       r.appendChild(track);
@@ -900,10 +900,18 @@
     const TAXO_TABS = ['networks', 'studios', 'genres'];
     const SEG_ORDER = ['networks', 'studios', 'genres', 'coming', 'request'];
     const SEG_LABEL = { coming: 'seg_coming', request: 'seg_request', studios: 'seg_studios', networks: 'seg_networks', genres: 'seg_genres' };
+    // R310: a library wall with no values FOR THIS VIEWER has no chip (the server's facets summary says so;
+    // here, the profile-scoped R.taxonomy). Mockup-only: ?emptywalls=networks,studios,genres empties walls.
+    const EMPTY_WALLS = (new URLSearchParams(location.search).get('emptywalls') || '').split(',').filter(Boolean);
+    function wallHasValues(kind) {
+      if (EMPTY_WALLS.indexOf(kind) >= 0) return false;
+      return !R.taxonomy || R.taxonomy(kind, currentUser()).length > 0;
+    }
     function discTabs() {
       return SEG_ORDER.filter(s =>
-        s === 'coming' ? upcomingEnabled() : s === 'request' ? seerrEnabled() : true);
+        s === 'coming' ? upcomingEnabled() : s === 'request' ? seerrEnabled() : wallHasValues(s));
     }
+    function discDest(d) { return !d ? { type: 'taxonomy', taxo: null } : d === 'coming' ? { type: 'upcoming' } : d === 'request' ? { type: 'discover' } : { type: 'taxonomy', taxo: d }; }
     function discSegment(active) {
       const seg = el('div', 'discseg');
       seg.innerHTML = discTabs().map(tab =>
@@ -946,15 +954,22 @@
       // Only a handful of brands ship a logo file, so the name set as a wordmark is the
       // designed state — and then the caption does not repeat it: a logo tile needs the
       // name beneath, a wordmark tile already is the name.
-      const mark = e.logo ? `<img class="taxo-logo" src="${e.logo}" alt="${esc(e.name)}">` : `<span class="taxo-wm">${esc(e.name)}</span>`;
+      const mark = e.logo ? `<img class="taxo-logo${e.kind !== 'genres' && (e.logoReink || e.logoInk === 'light') ? ' reink' : ''}" src="${e.logo}" alt="${esc(e.name)}">` : `<span class="taxo-wm">${esc(e.name)}</span>`;
       const nm = e.logo ? `<span class="taxo-nm">${esc(e.name)}</span>` : '';
       tl.innerHTML = `<div class="taxo-card">${mark}</div><div class="taxo-cap">${nm}<span class="taxo-ct">${countLabel(e.count)}</span></div>`;
       return tl;
     }
     function renderTaxonomy(v) {
       stopHero(); scroll.innerHTML = '';
-      const kind = TAXO_TABS.indexOf(v.taxo) >= 0 ? v.taxo : 'studios';
       const u = currentUser();
+      if (!v.taxo) {   // R310 FR-R310-5: nothing at all to discover still opens — no chips, one sentence
+        const w0 = el('div', 'discoverscreen taxoscreen');
+        w0.innerHTML = `<div class="dischead"><div class="dischead-row"><h1>${t('nav_discover')}</h1></div></div><div class="taxogrid"><div class="taxo-empty">${t('tx_empty')}</div></div><div class="screen-end"></div>`;
+        scroll.appendChild(w0);
+        appbar.querySelectorAll('.navitem').forEach(n => n.classList.toggle('cur', n.dataset.nav === 'discover'));
+        return;
+      }
+      const kind = TAXO_TABS.indexOf(v.taxo) >= 0 ? v.taxo : 'studios';
       const list = R.taxonomy ? R.taxonomy(kind, u) : [];
       const sum = R.taxonomySummary ? R.taxonomySummary(kind, u) : { groups: list.length, titles: 0 };
       const wrap = el('div', 'discoverscreen taxoscreen');
@@ -1085,10 +1100,10 @@
         <div class="ddt-hero">
           <div class="ddt-bg"><div class="grad" style="position:absolute;inset:0;background:${it.grad}"></div><div class="hero-noise"></div><div class="ddt-scrim"></div></div>
           <div class="ddt-body">
-            <div class="ddt-kicker"><span class="ddt-srcwm" style="background:${src.accent}">${src.wm}</span>${src.name} ${t('via_source', { src: src.via })}<span class="ddt-rank">${t('rank_in', { n: it.rank, region })}</span></div>
+            <div class="ddt-kicker">${it.kind === 'series' ? t('up_series') : t('up_movies')} · ${t('seg_request')}</div>
             <div class="ddt-title">${it.title}</div>
             <div class="hero-meta"><span class="tag">${it.rating}+</span><span>${it.year}</span><span>${genresOf(it).slice(0, 2).join(' · ')}</span><span>${it.kind === 'series' ? 'Series' : 'Film'}</span>${statusLine}</div>
-            <div class="hero-syn">${it.syn || 'Trending on ' + src.name + ' right now. Not yet in your library — request it and it will be added and organised automatically.'}</div>
+            <div class="hero-syn">${it.syn || 'Not in your library yet — request it and it arrives here on its own.'}</div>
             ${discoverActions(it)}
           </div>
         </div>
@@ -1329,21 +1344,21 @@
         }
       } else buildGridRows(container, items);
     }
+    function searchQHTML(v) { return v.query ? esc(v.query) + '<span class="cursor"></span>' : '<i>' + (v.seerr ? 'Search Seerr — films, series…' : 'Search movies &amp; series…') + '</i>'; }
+    function sysIme() { return '<div class="sys-ime"><b>The TV’s own keyboard</b><i>raised by the focused field — Ravilo draws no keyboard of its own</i></div>'; }
+    function paintSearch() {
+      const q = scroll.querySelector('.sq'); if (!q) return;
+      q.innerHTML = searchQHTML(view);
+      scroll.querySelector('.sres-h').textContent = view.query.trim() ? 'Results' : 'Suggestions';
+      renderSearchResults(scroll.querySelector('.sresults'), searchFilter(view.query));
+    }
     function renderSearch(v) {
       stopHero(); scroll.innerHTML = '';
       v.query = v.query || '';
       const wrap = el('div', 'searchscreen');
-      wrap.innerHTML = `<div class="searchbar"><span class="sic">⌕</span><span class="sq">${v.query ? esc(v.query) : '<i>' + (v.seerr ? 'Search Seerr — films, series…' : 'Search movies &amp; series…') + '</i>'}</span></div>`;
-      const kb = el('div', 'keyboard');
-      ['ABCDEFGHIJ', 'KLMNOPQRST', 'UVWXYZ0123', '456789'].forEach(rk => {
-        const kr = el('div', 'kbd-row focus-row');
-        rk.split('').forEach(ch => { const k = el('div', 'key foc'); k._key = ch; k.textContent = ch; kr.appendChild(k); });
-        kb.appendChild(kr);
-      });
-      const kr2 = el('div', 'kbd-row focus-row');
-      [['space', 'Space'], ['del', '⌫ Delete'], ['clear', 'Clear']].forEach(([a, l]) => { const k = el('div', 'key wide foc'); k._key = a; k.textContent = l; kr2.appendChild(k); });
-      kb.appendChild(kr2);
-      wrap.appendChild(kb);
+      // Owner decision 2 (2026-09-27): always the system keyboard. The field is a native input the TV's own
+      // IME types into (R277 raises it on entry); the band below is the platform's, a fenced stand-in only.
+      wrap.innerHTML = `<div class="focus-row"><div class="searchbar foc" data-sfield="1"><span class="sic">⌕</span><span class="sq">${searchQHTML(v)}</span></div></div>${sysIme()}`;
       wrap.appendChild(el('div', 'gridhead small', `<h2 class="sres-h">${v.query ? 'Results' : 'Suggestions'}</h2>`));
       const res = el('div', 'pgrid sresults'); renderSearchResults(res, searchFilter(v.query)); wrap.appendChild(res);
       wrap.appendChild(el('div', 'screen-end'));
@@ -1373,14 +1388,6 @@
       flash(!ws.watched ? t('toast_marked_watched') : t('toast_marked_unwatched'));
       renderDetail(item); refocusSel('[data-mark]');
     }
-    function toggleSeasonWatched(item, season) {
-      const eps = R.episodesFor(item, season);
-      const allW = eps.map(e => W.epState(item.title, season, e.n, e.pct)).every(s => s.watched);
-      eps.forEach(e => W.setEpWatched(item.title, season, e.n, !allW));
-      syncSeriesItemState(item, season);
-      flash(!allW ? t('toast_all_watched') : t('toast_all_unwatched'));
-      renderDetail(item); refocusSel('[data-markall]');
-    }
     function toggleEpisodeWatched(item, season, n, idx) {
       const eps = R.episodesFor(item, season);
       const e = eps.find(x => x.n === n) || eps[idx];
@@ -1394,7 +1401,7 @@
       const allW = u.eps.every(e => W.epState(item.title, season, e.n, e.pct).watched);
       u.eps.forEach(e => W.setEpWatched(item.title, season, e.n, !allW));
       syncSeriesItemState(item, season);
-      flash(!allW ? t('toast_all_watched') : t('toast_all_unwatched'));
+      flash(!allW ? t('toast_marked_watched') : t('toast_marked_unwatched'));
       renderDetail(item); refocusSel('.ep-done[data-epidx="' + u.idxs[0] + '"]');
     }
 
@@ -1576,9 +1583,9 @@
         else if (f.dataset.nav === 'movies') go({ type: 'browse', kind: 'film', title: t('nav_movies'), nav: 'movies' });
         else if (f.dataset.nav === 'series') go({ type: 'browse', kind: 'series', title: t('nav_series'), nav: 'series' });
         else if (f.dataset.nav === 'top10') go({ type: 'discover' });
-        // R268 FR-R268-2: Discover opens on the FIRST AVAILABLE chip, and a taxonomy tab can never
-        // be gated off — so entry is always Networks, on every household, gated or not.
-        else if (f.dataset.nav === 'discover') go({ type: 'taxonomy', taxo: discTabs()[0] });
+        // R268 FR-R268-2 + R310 FR-R310-2: Discover opens on the first chip that is LEFT — Networks when it
+        // has values, else Studios, Genres, Coming Soon, Request; with none at all, no chips and one sentence.
+        else if (f.dataset.nav === 'discover') go(discDest(discTabs()[0]));
         else if (f.dataset.nav === 'upcoming') go({ type: 'upcoming' });
         else if (f.dataset.nav === 'mylist') go({ type: 'grid', kind: 'mylist', title: 'My List', nav: 'mylist' });
         else if (f.dataset.nav === 'profile') openProfMenu();
@@ -1588,7 +1595,7 @@
       if (f._livech) { liveTV.tune(f._livech.id, { type: 'home' }); return; }
       if (f.dataset.disctab) {
         const d = f.dataset.disctab;
-        go(d === 'coming' ? { type: 'upcoming' } : d === 'request' ? { type: 'discover' } : { type: 'taxonomy', taxo: d });
+        go(discDest(d));
         return;
       }
       // a taxonomy tile opens the browse grid seeded to that studio / network / genre —
@@ -1611,6 +1618,7 @@
         scroll.querySelectorAll('.gchip').forEach(x => x.classList.toggle('cur', x === f));
         return;
       }
+      if (f.dataset.sfield) return;
       if (f._key) {
         if (f._key === 'del') view.query = view.query.slice(0, -1);
         else if (f._key === 'clear') view.query = '';
@@ -1625,7 +1633,6 @@
       if (f.dataset.syn) { const exp = f.classList.toggle('expanded'); const tg = f.parentElement.querySelector('.syn-toggle'); if (tg) tg.textContent = exp ? '▴ less' : '▾ more'; return; }
       if (f.dataset.play) { playItem(view.item, view.season || 0); return; }
       if (f.dataset.mark) { toggleItemWatched(view.item); return; }
-      if (f.dataset.markall) { toggleSeasonWatched(view.item, view.season || 0); return; }
       if (f._epfile) { toggleFileWatched(view.item, view.season || 0, f._epfile); return; }
       if (f._epdone) { toggleEpisodeWatched(view.item, view.season || 0, f._epn, f._epidx); return; }
       if (f.dataset.trailer) { openTrailer(view.item); return; }
@@ -1698,17 +1705,7 @@
     }
     function cap(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
 
-    /* ---- overlay ---- */
-    function openOverlay(item) {
-      overlay._item = item;
-      overlay.querySelector('.art .grad').style.background = item.grad;
-      overlay.querySelector('h2').textContent = item.title;
-      overlay.querySelector('.m').innerHTML = `<span class="rt" style="border:1px solid var(--line);padding:2px 8px;border-radius:6px">${item.rating}+</span><span>${item.year}</span><span>${item.genre}</span><span>${item.kind === 'series' ? 'Series' : 'Film'}</span>`;
-      overlay.querySelector('p').textContent = (R.synFor && R.synFor(item)) || item.syn || 'A standout from your Ravilo library — pulled live from Jellyfin, organised by Jellystructure.';
-      overlay.querySelectorAll('.foc').forEach(e => e.classList.remove('focused'));
-      overlay.querySelector('[data-ov="play"]').classList.add('focused');
-      overlay.classList.add('on'); stopHero();
-    }
+    /* ---- overlay (the quick Play / My List sheet is retired; openOverlay() was never called) ---- */
     function closeOverlay() { overlay.classList.remove('on'); if (view.type === 'home') startHero(); }
 
     /* ---- trailer overlay (TMDB YouTube/Vimeo embed, fullscreen — R163) ----
@@ -1881,6 +1878,13 @@
 
     /* ---- input ---- */
     if (interactive) {
+      // search: a hardware keyboard stands in for the TV's IME in this mockup
+      window.addEventListener('keydown', e => {
+        if (!view || view.type !== 'search' || prof.style.display !== 'none') return;
+        const k = e.key;
+        if (k.length === 1 && k !== ' ' && !e.metaKey && !e.ctrlKey && !e.altKey) { e.preventDefault(); e.stopImmediatePropagation(); view.query += k; paintSearch(); return; }
+        if (k === 'Backspace' && view.query) { e.preventDefault(); e.stopImmediatePropagation(); view.query = view.query.slice(0, -1); paintSearch(); }
+      }, true);
       window.addEventListener('keydown', e => {
         const k = e.key;
         if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Enter', 'Backspace', 'Escape', ' '].includes(k)) e.preventDefault();
@@ -1968,7 +1972,7 @@
           '<div class="prof foc" data-pid="__add"><div class="pic add">＋</div><div class="nm">' + t('add_user') + '</div></div>' +
           (pMode === 'switch' ? '<div class="prof foc" data-pid="__settings"><div class="pic settings">⚙</div><div class="nm">' + t('settings') + '</div></div>' : '') +
         '</div>' +
-        (pMode === 'switch' ? '<div class="ft"><span class="btn ghost foc" data-pid="__close">' + t('cancel') + '</span></div>' : '<div class="ft"><span class="tiny" style="color:var(--ink-dim);font-size:15px;">' + t('profiles_hint') + '</span></div>');
+        (pMode === 'switch' ? '<div class="ft"><span class="btn ghost foc" data-pid="__close">' + t('cancel') + '</span></div>' : '');
       pTiles = [...prof.querySelectorAll('.foc')];
       pIdx = Math.min(pIdx, pTiles.length - 1);
       paintP();
@@ -2019,6 +2023,30 @@
         label: f.photo ? '<img class="av-img" src="' + f.photo + '" alt="">' : esc(f.label) };
     }
 
+    // TV Settings ▸ Playback, as built: two per-profile switches (the mock keeps them in memory)
+    const playPrefs = { progress: true, autoplay: true };
+    function setTog(k, label) { return '<div class="lang-chip set-tog foc' + (playPrefs[k] ? ' cur' : '') + '" data-pid="__tog:' + k + '"><span class="tog-sw"></span><span class="lang-endo">' + label + '</span></div>'; }
+    // R191: sign out ONE profile, behind a confirmation. Everyone else on this TV stays signed in.
+    let soBack = 'settings';
+    function renderSignoutConfirm() {
+      pMode = 'signout';
+      const u = currentUser() || {}; const nm = esc(u.name || '');
+      prof.className = 'profiles switch';
+      prof.innerHTML =
+        '<div class="signin-panel"><h3>' + t('so_confirm', { name: nm }) + '</h3>' +
+        '<div class="sub">' + t('so_desc', { name: nm }).replace('{name}', nm) + '</div>' +
+        '<div class="row center" style="gap:14px;justify-content:center;display:flex;margin-top:6px;">' +
+          '<span class="btn ghost foc" data-pid="__close">' + t('cancel') + '</span>' +
+          '<span class="btn danger foc" data-pid="__signout-confirm"><span class="ic">⇥</span> ' + t('so_yes') + '</span>' +
+        '</div></div>';
+      pTiles = [...prof.querySelectorAll('.foc')]; pIdx = 0; paintP();
+    }
+    function doSignout() {
+      const u = currentUser(); if (u) u.signedIn = false;
+      try { localStorage.removeItem(PKEY); } catch (e) {}
+      const left = profiles.filter(p => p.signedIn);
+      if (left.length) openProfiles('gate'); else openSignin();
+    }
     function openSettings() { pMode = 'settings'; pIdx = 0; renderSettings(); prof.style.display = 'flex'; }
     function renderSettings() {
       prof.className = 'profiles switch settings-panel';
@@ -2034,10 +2062,12 @@
         '<h2>' + t('settings') + '</h2>' +
         '<div class="set-sec"><div class="prof-langs-h">' + t('theme') + '</div><div class="lang-row">' + themeChips + '</div></div>' +
         langSectionHTML() +
+        '<div class="set-sec"><div class="prof-langs-h">' + t('set_playback') + '</div><div class="lang-row">' + setTog('progress', t('set_show_progress')) + setTog('autoplay', t('set_autoplay_next')) + '</div></div>' +
         '<div class="set-sec set-acct"><div class="prof-langs-h">' + t('account') + '</div>' +
           '<div class="set-who"><span class="' + ua.cls + '" style="' + ua.style + '">' + ua.label + '</span>' +
-            '<div><div class="who-name">' + esc(u.name || '') + '</div><div class="who-sub">' + (u.isAdmin ? t('admin') + ' · ' : '') + 'jellyfin</div></div></div>' +
-          '<div class="btn foc" data-pid="__pw"><span class="ic">🔑</span> ' + t('pw_change') + '</div></div>' +
+            '<div><div class="who-name">' + esc(u.name || '') + '</div><div class="who-sub">' + (u.isAdmin ? t('admin') : t('signed_in_as', { name: esc(u.name || '') })) + '</div></div></div>' +
+          '<div class="set-acct-btns"><div class="btn foc" data-pid="__pw"><span class="ic">🔑</span> ' + t('pw_change') + '</div>' +
+          '<div class="btn foc" data-pid="__signout"><span class="ic">⇥</span> ' + t('pm_sign_out') + '</div></div></div>' +
         '<div class="set-sec set-danger"><div class="prof-langs-h">' + t('unpair') + '</div>' +
           '<div class="set-danger-desc">' + t('unpair_desc') + '</div>' +
           '<div class="btn danger foc" data-pid="__logout"><span class="ic">⏻</span> ' + t('unpair') + '</div></div>' +
@@ -2071,7 +2101,7 @@
         '</div></div>';
       pTiles = [...prof.querySelectorAll('.foc')]; pIdx = 0; paintP();
     }
-    /* ---- change your own password (every platform; TV reuses R175's on-screen keyboard) ----
+    /* ---- change your own password (every platform; on a TV the system keyboard types — owner decision 2) ----
        Three fields, per the owner's pick: current + new + repeat. Own password only — there is
        no way to reach another profile's from here. The real thing proxies to Jellyfin the same
        way Phase 141's login does; the mock validates locally and treats "wrong" as a bad
@@ -2107,17 +2137,7 @@
               '<span class="btn primary foc" data-pid="__pwsave">' + (pwBusy ? '<span class="spin"></span> ' + t('pw_busy') : t('pw_save')) + '</span>' +
             '</div>' +
           '</div>' +
-          '<div class="login-kbd">' +
-            sgKeyRow('1234567890') +
-            sgKeyRow('qwertyuiop') +
-            sgKeyRow('asdfghjkl-') +
-            sgKeyRow('zxcvbnm._@') +
-            '<div class="kbd-row">' +
-              '<div class="key wide foc" data-pid="__kb:shift">' + t('key_shift') + '</div>' +
-              '<div class="key wide foc" data-pid="__kb:space">' + t('key_space') + '</div>' +
-              '<div class="key wide foc" data-pid="__kb:del">' + t('key_del') + '</div>' +
-            '</div>' +
-          '</div>' +
+          sysIme() +
         '</div>';
       pTiles = [...prof.querySelectorAll('.foc')];
       if (pIdx >= pTiles.length) pIdx = 0;
@@ -2167,8 +2187,11 @@
       if (pid && pid.indexOf('__theme:') === 0) { setSkin(pid.slice(8)); return; }
       if (pid && pid.indexOf('__lang:') === 0) { setUserLang(pid.slice(7)); return; }
       if (pid === '__logout') { renderUnpairConfirm(); return; }
+      if (pid === '__signout') { soBack = 'settings'; renderSignoutConfirm(); return; }
+      if (pid === '__signout-confirm') { doSignout(); return; }
+      if (pid && pid.indexOf('__tog:') === 0) { const k = pid.slice(6); playPrefs[k] = !playPrefs[k]; renderSettings(); return; }
       if (pid === '__logout-confirm') { doLogout(); return; }
-      if (pid === '__close') { if (pMode === 'unpair') { openSettings(); return; } if (pMode === 'pw') { openSettings(); return; } if (pMode === 'settings') { openProfiles('switch'); return; } if (pMode === 'signin') { openProfiles(sgBack); return; } closeProfiles(); return; }
+      if (pid === '__close') { if (pMode === 'signout') { if (soBack === 'menu') closeProfiles(); else openSettings(); return; } if (pMode === 'unpair') { openSettings(); return; } if (pMode === 'pw') { openSettings(); return; } if (pMode === 'settings') { openProfiles('switch'); return; } if (pMode === 'signin') { openProfiles(sgBack); return; } closeProfiles(); return; }
       if (pid === '__pw') { openPassword(); return; }
       if (pid === '__pwsave') { pwSubmit(); return; }
       if (pid && pid.indexOf('__pwf:') === 0) { pwField = pid.slice(6); pwPaintFields(); return; }
@@ -2181,7 +2204,7 @@
       go({ type: 'home' }); setTimeout(() => focusRC(0, 0), 30);
       flash(t('signed_in_as', { name: p.name }));
     }
-    // sign-in (R175): username + password entered on the TV, proxied to Jellyfin via
+    // sign-in (R175): username + password typed with the TV's own keyboard, proxied via
     // POST /api/tv/login (Phase 141). No pairing code, no polling — each success appends a profile.
     let sgUser = '', sgPass = '', sgField = 'user', sgShift = false, sgErr = null, sgBusy = false, sgBack = 'gate';
     const SG_COLORS = ['linear-gradient(135deg,#7b6ef0,#3fb6f5)', 'linear-gradient(135deg,#19d6c6,#2a8cf0)', 'linear-gradient(135deg,#f5b542,#e0792f)', 'linear-gradient(135deg,#e0567a,#7b6ef0)'];
@@ -2221,17 +2244,7 @@
               '<span class="btn primary foc" data-pid="__login">' + (sgBusy ? '<span class="spin"></span> ' + t('login_busy') : t('login_btn')) + '</span>' +
             '</div>' +
           '</div>' +
-          '<div class="login-kbd">' +
-            sgKeyRow('1234567890') +
-            sgKeyRow('qwertyuiop') +
-            sgKeyRow('asdfghjkl-') +
-            sgKeyRow('zxcvbnm._@') +
-            '<div class="kbd-row">' +
-              '<div class="key wide foc" data-pid="__kb:shift">' + t('key_shift') + '</div>' +
-              '<div class="key wide foc" data-pid="__kb:space">' + t('key_space') + '</div>' +
-              '<div class="key wide foc" data-pid="__kb:del">' + t('key_del') + '</div>' +
-            '</div>' +
-          '</div>' +
+          sysIme() +
         '</div>';
       pTiles = [...prof.querySelectorAll('.foc')];
       if (pIdx >= pTiles.length) pIdx = 0;
@@ -2293,7 +2306,7 @@
       }
       if (!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Enter',' ','Backspace','Escape'].includes(k)) return;
       e.preventDefault(); e.stopImmediatePropagation();
-      if (k === 'Backspace' || k === 'Escape') { if (pMode === 'unpair') { openSettings(); return; } if (pMode === 'pw') { openSettings(); return; } if (pMode === 'settings') { openProfiles('switch'); return; } if (pMode === 'signin') { openProfiles(sgBack); return; } if (pMode === 'switch') closeProfiles(); return; }
+      if (k === 'Backspace' || k === 'Escape') { if (pMode === 'signout') { if (soBack === 'menu') closeProfiles(); else openSettings(); return; } if (pMode === 'unpair') { openSettings(); return; } if (pMode === 'pw') { openSettings(); return; } if (pMode === 'settings') { openProfiles('switch'); return; } if (pMode === 'signin') { openProfiles(sgBack); return; } if (pMode === 'switch') closeProfiles(); return; }
       if (k === 'Enter' || k === ' ') { const t = pTiles[pIdx]; if (t) pickProfile(t.dataset.pid); return; }
       if (k === 'ArrowRight') movePidx('right');
       else if (k === 'ArrowLeft') movePidx('left');

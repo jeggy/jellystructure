@@ -8,6 +8,7 @@
 <link rel="stylesheet" href="app.css">
 <link rel="stylesheet" href="ravilo-builders.css">
 <link rel="stylesheet" href="../flags.css">
+<link rel="stylesheet" href="music.css">
 <style>
   .filterbar { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; margin-bottom: 12px; }
   .fchip { cursor: pointer; }
@@ -87,8 +88,13 @@
     <span class="searchwrap" id="searchwrap">
       <input class="input" id="lib-search" placeholder="⌕ search title…" style="width:240px;" autocomplete="off">
     </span>
-    <span class="seg" id="kindseg"><span class="on" data-kind="movies">Movies</span><span data-kind="tv">TV</span><span data-kind="mv">Music videos</span></span>
+    <span class="seg" id="kindseg"><span class="on" data-kind="movies">Movies</span><span data-kind="tv">TV</span><span data-kind="mv">Music videos</span><span data-kind="music">Music</span><span data-kind="books">Audiobooks</span></span>
   </div>
+  <!-- admin music brief §A: a fourth kind — Albums · Artists · Songs; music-library.js renders it -->
+  <div id="mu-lib" hidden></div>
+  <!-- admin brief §M1: the Audiobooks kind — Books · Authors · Series; audiobook-library.js renders it -->
+  <div id="ab-lib" hidden></div>
+  <div id="film-lib">
   <p class="page-sub">Everything Jellystructure manages — and the bridge to Ravilo. Build a <b>filter</b> with the same workbench used for TV rows &amp; channels, then save it straight into a viewer's layout, or feature any title in their hero carousel.</p>
 
   <div class="filterbar">
@@ -135,12 +141,18 @@
   </div>
   <div id="lib-end" class="lib-end tiny muted" hidden>You’ve reached the end · <span id="lib-end-n"></span></div>
   <div id="lib-sentinel" aria-hidden="true" style="height:1px;"></div>
+  </div>
 </main>
 
 <div id="cf-modal-root"></div>
 
 <script src="app-shell.js"></script>
 <script src="ravilo-builders.js"></script>
+<script src="music-data.js"></script>
+<script src="music-qs.js"></script>
+<script src="music-library.js"></script>
+<script src="audiobook-data.js"></script>
+<script src="audiobook-library.js"></script>
 <script>
 (function () {
   const RB = window.RaviloBuilders;
@@ -377,6 +389,12 @@
   kindseg.addEventListener('click', e => {
     const s = e.target.closest('[data-kind]'); if (!s) return;
     [...kindseg.children].forEach(x => x.classList.toggle('on', x === s));
+    const isMusic = s.dataset.kind === 'music', isBooks = s.dataset.kind === 'books';
+    document.getElementById('film-lib').hidden = isMusic || isBooks;
+    si.placeholder = isMusic ? '⌕ search album, artist, song…' : isBooks ? '⌕ search title, author, narrator…' : '⌕ search title…';
+    if (window.MusicLib) { MusicLib.show(isMusic); if (isMusic) MusicLib.search(si.value); }
+    if (window.BookLib) { BookLib.show(isBooks); if (isBooks) BookLib.search(si.value); }
+    if (isMusic || isBooks) return;
     kind = s.dataset.kind === 'tv' ? 'series' : s.dataset.kind === 'mv' ? 'musicvideo' : 'movie';
     renderAll();
   });
@@ -388,7 +406,7 @@
 
   // search
   const sw = document.getElementById('searchwrap'), si = document.getElementById('lib-search');
-  si.addEventListener('input', () => { search = si.value; renderGrid(); syncClear(); });
+  si.addEventListener('input', () => { if (document.getElementById('film-lib').hidden) { if (window.MusicLib) MusicLib.search(si.value); if (window.BookLib) BookLib.search(si.value); return; } search = si.value; renderGrid(); syncClear(); });
 
   // local toast (also used by the shared builder via window.__toast)
   function toast(msg) { const t = document.createElement('div'); t.className = 'toast'; t.textContent = msg; document.body.appendChild(t); setTimeout(() => t.remove(), 1900); }
@@ -417,6 +435,7 @@
   } catch (e) {}
 
   renderAll();
+  try { const k = new URLSearchParams(location.search).get('kind'); if (k === 'music' || k === 'books') kindseg.querySelector('[data-kind="' + k + '"]').click(); } catch (e) {}
 })();
 </script>
 </body>

@@ -218,6 +218,25 @@
   .txcard{ height:78px; border-radius:13px; border:1px solid var(--line); background:rgba(255,255,255,.055);
     display:flex; align-items:center; justify-content:center; padding:0 12px; overflow:hidden; }
   .txwall.gen .txcard{ height:58px; }
+  /* R308: every Studios and Networks tile on the light plate, a no-logo name in the plate's dark ink */
+  .txwall:not(.gen) .txcard{ background:#E8EAF0; border-color:transparent; }
+  .txwall:not(.gen) .txwm{ color:#1B1E2B; }
+  .txwall:not(.gen) .txc:active .txcard{ background:#dfe2ea; border-color:var(--accent); }
+  .txlogo.reink{ filter:brightness(0) invert(9%) sepia(12%) saturate(1400%) hue-rotate(195deg); }
+  /* Library as built: R187's facet bar over the grid */
+  .lbfbar{ display:flex; gap:8px; overflow-x:auto; padding:0 18px 12px; scrollbar-width:none; }
+  .lbfbar::-webkit-scrollbar{ display:none; }
+  .lbf{ flex:none; height:36px; padding:0 13px; border-radius:18px; border:1px solid var(--line); background:rgba(255,255,255,.05); color:var(--ink); font:500 13px Sora,sans-serif; display:flex; align-items:center; gap:5px; cursor:pointer; }
+  .lbf svg{ width:14px; height:14px; fill:none; stroke:var(--ink-dim); stroke-width:2; }
+  .lbf .lb{ color:var(--ink-dim); margin-right:3px; }
+  /* phone Settings */
+  .ph-skins{ display:flex; gap:8px; }
+  .ph-skins button{ flex:1; height:44px; border-radius:12px; border:1px solid var(--line); background:rgba(255,255,255,.04); color:var(--ink); font:600 14px Sora,sans-serif; cursor:pointer; }
+  .ph-skins button.on{ border-color:var(--accent); background:color-mix(in oklab, var(--accent) 16%, transparent); }
+  .ph-sw{ margin-left:auto; width:44px; height:26px; border-radius:13px; background:rgba(255,255,255,.18); position:relative; flex:none; }
+  .ph-sw::after{ content:''; position:absolute; top:3px; left:3px; width:20px; height:20px; border-radius:50%; background:#fff; transition:transform .15s; }
+  .ph-sw.on{ background:var(--accent); }
+  .ph-sw.on::after{ transform:translateX(18px); }
   .txc:active .txcard{ border-color:var(--accent); background:rgba(255,255,255,.1); }
   .txwm{ font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:16px; line-height:1.08; text-align:center; letter-spacing:-.3px; text-wrap:balance; }
   .txwall.gen .txwm{ font-size:13.5px; }
@@ -446,6 +465,8 @@
 
   .label{ position:absolute; bottom:-30px; left:0; right:0; text-align:center; color:#54596b; font-size:12px; font-family:'Space Grotesk',sans-serif; letter-spacing:.05em; }
 </style>
+<!-- design brief 2026-09-27 — music mode (switch · bar · pages · player). Every class is mu-. -->
+<link rel="stylesheet" href="mobile/ravilo-music.css">
 </head>
 <body>
 <div id="fit">
@@ -557,7 +578,7 @@
         <div class="mp-bot">
           <div class="mp-rail">
             <button class="it" id="mpSubsBtn"><span class="c"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M7 14h4M14 14h3"/></svg></span><span class="l">Subtitles</span></button>
-            <button class="it" id="mpEpsBtn"><span class="c"><svg viewBox="0 0 24 24"><path d="M4 6h10M4 12h10M4 18h7"/><path d="M17 9l4 3-4 3z"/></svg></span><span class="l">Episodes</span></button>
+            <button class="it" id="mpEpsBtn" hidden><span class="c"><svg viewBox="0 0 24 24"><path d="M4 6h10M4 12h10M4 18h7"/><path d="M17 9l4 3-4 3z"/></svg></span><span class="l">Episodes</span></button>
             <button class="it" id="mpNextBtn"><span class="c"><svg viewBox="0 0 24 24"><path d="M5 6l9 6-9 6z"/><path d="M19 6v12"/></svg></span><span class="l">Next</span></button>
             <button class="it" id="mpLockBtn"><span class="c"><svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2.2"/><path d="M8.5 11V8.5a3.5 3.5 0 0 1 7 0V11"/></svg></span><span class="l">Lock</span></button>
           </div>
@@ -676,10 +697,14 @@
      household. The strip scrolls — five chips do not fit a portrait phone. */
   const SEG_ORDER = ['networks', 'studios', 'genres', 'coming', 'request'];
   const SEG_LABEL = { networks:'Networks', studios:'Studios', genres:'Genres', coming:'Coming Soon', request:'Request' };
+  // R310: a library wall with no values for this viewer has no chip; Discover lands on the first chip left.
+  // Mockup-only: ?emptywalls=networks,studios empties those walls.
+  const EMPTY_WALLS = (new URLSearchParams(location.search).get('emptywalls') || '').split(',').filter(Boolean);
+  const wallHas = s => { if(EMPTY_WALLS.indexOf(s) >= 0) return false; let who = null; try { who = me; } catch(e){} return !R.taxonomy || R.taxonomy(s, who).length > 0; };
   const segAvailable = s => s==='coming' ? !!(R.config && (R.config.sonarr || R.config.radarr))
-                          : s==='request' ? !!(R.config && R.config.seerr) : true;
+                          : s==='request' ? !!(R.config && R.config.seerr) : wallHas(s);
   const discSegs = () => SEG_ORDER.filter(segAvailable);
-  let discSeg = discSegs()[0];   // always Networks: a taxonomy tab cannot be gated off
+  let discSeg = discSegs()[0];   // the first chip left (R310 FR-R310-2); undefined = nothing to discover
   const discSegHTML = active => '<div class="tabs discsegs">'
     + discSegs().map(s=>'<div class="tab'+(s===active?' on':'')+'" data-discseg="'+s+'">'+SEG_LABEL[s]+'</div>').join('')
     + '</div>';
@@ -690,7 +715,11 @@
   function fit(){
     const ph = document.querySelector('.phone');
     const ios = ph.classList.contains('ios');
-    const s = Math.min(window.innerWidth/(ios?433:452), (window.innerHeight-152)/(ios?918:981), 1);
+    // the music round's review panel takes the right edge when open; the frame size is measured so
+    // the landscape preview (.phone.land) fits too. Same numbers as before for both portrait bezels.
+    const pw = document.body.classList.contains('muq-open') && window.innerWidth > 1000 ? 380 : 0;
+    void ios;
+    const s = Math.min((window.innerWidth - pw)/(ph.offsetWidth+40), (window.innerHeight-152)/(ph.offsetHeight+66), 1);
     ph.style.transform = 'scale('+s+')';
     // The device picker swaps the bezel (412×915 ↔ 393×852), which changes the nav's width — the
     // pill's offset is measured, so it has to be re-measured here or it stays where the previous
@@ -775,7 +804,8 @@
     { id:'all',    label:'All' },
     { id:'movies', label:'Movies', kind:'film' },
     { id:'series', label:'Series', kind:'series' },
-    { id:'music',  label:'Music',  kind:'music' },
+    // music VIDEOS (phase 172) — renamed from "Music" now that music itself is a mode of its own (brief 2026-09-27)
+    { id:'music',  label:'Music videos',  kind:'music' },
   ];
   let libKind = 'all', libOpen = false;
   function libRows(){
@@ -800,13 +830,32 @@
           + esc(k.label) + ' <span class="ct">' + libCount(k.id) + '</span><span class="tk">✓</span></button>').join('')
       + '</div>';
   }
+  /* Owner decision 3 (2026-09-27 audit): the phone Library as BUILT — R187's browse grid with its facet bar,
+     titled Library (R267 FR-5b), not Home-style rows. The type pill above still picks the kind. */
+  const LIB_SORTS = [['Recently added','Newest first'],['Recently added','Oldest first'],['Title','A–Z'],['Title','Z–A'],['Size','Largest first'],['Release year','Newest first']];
+  let libSort = 0;
+  function libItems(){
+    const k = (LIB_KINDS.find(x=>x.id===libKind)||{}).kind;
+    let items = (R.libraryFor ? R.libraryFor(me) : []).filter(i => !k || i.kind===k);
+    const [f, way] = LIB_SORTS[libSort];
+    const sz = it => { let h = 0; for (const c of it.title) h = (h*31 + c.charCodeAt(0)) >>> 0; return (it.kind==='series'?40:4) + h % 60; };
+    if(f==='Title') items = items.slice().sort((a,b)=>a.title.localeCompare(b.title));
+    else if(f==='Size') items = items.slice().sort((a,b)=>sz(b)-sz(a));
+    else if(f==='Release year') items = items.slice().sort((a,b)=>(b.year||0)-(a.year||0));
+    if(way==='Z–A' || way==='Oldest first') items = items.slice().reverse();
+    return items;
+  }
   function renderLibrary(){
     const cur = LIB_KINDS.find(x=>x.id===libKind) || LIB_KINDS[0];
-    const rows = libRows(), n = libCount(libKind);
-    app.innerHTML = '<div class="libmeta">' + countLabel(n) + ' · ' + esc(cur.label.toLowerCase())
-      + (me && me.kid ? ' · only what this profile can watch' : '') + '</div>'
-      + (rows.length ? rows.map(rowHTML).join('')
-          : '<div class="txmeta" style="padding-top:18px;">Nothing filed as ' + esc(cur.label.toLowerCase()) + ' yet</div>')
+    const items = libItems();
+    const [f, way] = LIB_SORTS[libSort];
+    app.innerHTML = '<div class="row" style="margin-top:4px;"><h3>Library<span class="more" style="cursor:default">'+countLabel(items.length)+'</span></h3></div>'
+      + '<div class="lbfbar">'
+      +   ['Genre','Year','Watched','Audio','Maturity'].map(x=>'<button class="lbf">'+x+' <svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>').join('')
+      +   '<button class="lbf sort" data-libsort="1"><span class="lb">Sort</span>'+esc(f)+' · '+esc(way)+'</button>'
+      + '</div>'
+      + (items.length ? '<div class="txgrid">'+items.map(tile).join('')+'</div>'
+          : '<div class="txmeta" style="padding-top:18px;">'+(cur.id==='music' ? 'No music videos yet' : 'Nothing here for this profile yet')+'</div>')
       + '<div style="height:30px;"></div>';
   }
 
@@ -815,17 +864,14 @@
     const list = R.discover.lists[0];
     const statusClass = s => s==='available'?'avail':(s==='downloading'||s==='fetching'?'fetch':'none');
     const statusText = it => it.status==='available'?'In library':(it.status==='downloading'||it.status==='fetching'?'Fetching…':'Not in library');
+    // As built: Seerr's feeds, one row each, with the request status on the tile — no ranks, no view counts,
+    // no source wordmark (the chart era, phases 136/137, is retired).
+    void list; void statusClass;
     app.innerHTML = discSegHTML('request')
-      + '<div class="row" style="margin-top:0;"><h3 style="padding-bottom:4px;">'+esc(list.title)+'</h3>'
-      + '<div class="tiny" style="padding:0 18px 6px;color:var(--ink-dim);font-size:12px;">'+esc(list.note||'')+'</div></div>'
-      + '<div class="t10">'
-      + list.items.slice(0,10).map((it,i)=>'<div class="t10row" data-title="'+esc(it.title)+'">'
-          + '<div class="t10num">'+(i+1)+'</div>'
-          + '<div class="t10p" style="background:'+it.grad+';">'+esc(it.initials)+'</div>'
-          + '<div class="t10b"><div class="nm">'+esc(it.title)+'</div>'
-          + '<div class="mt">'+esc(String(it.year))+' · '+esc(it.genre)+(it.views?' · '+esc(it.views):'')+'</div>'
-          + '<span class="st '+statusClass(it.status)+'"><span class="dot"></span>'+statusText(it)+'</span></div></div>').join('')
-      + '</div><div style="height:30px;"></div>';
+      + (R.discover.lists || []).map(l => '<div class="row"><h3>'+esc(l.title)+'</h3><div class="track">'
+          + l.items.map(it => tile(Object.assign({}, it, { badge: it.status==='available' ? '✓ '+statusText(it) : (it.status==='downloading'||it.status==='fetching' ? statusText(it) : null) }))).join('')
+          + '</div></div>').join('')
+      + '<div style="height:30px;"></div>';
   }
 
   /* Coming Soon (R160/R188) — the merged Sonarr/Radarr calendar, grouped by day, with the
@@ -873,7 +919,7 @@
     html += '<div class="txwall'+(kind==='genres'?' gen':'')+'">'
       + list.map(e=>'<div class="txc" data-tx="'+esc(e.name)+'">'
           + '<div class="txcard">'+(e.logo
-              ? '<img class="txlogo" src="'+esc(e.logo)+'" alt="'+esc(e.name)+'">'
+              ? '<img class="txlogo'+(kind!=='genres' && (e.logoReink || e.logoInk==='light') ? ' reink' : '')+'" src="'+esc(e.logo)+'" alt="'+esc(e.name)+'">'
               : '<span class="txwm">'+esc(e.name)+'</span>')+'</div>'
           + '<div class="txcap">'+(e.logo?'<span class="txnm">'+esc(e.name)+'</span>':'')
           + '<span class="txct">'+countLabel(e.count)+'</span></div></div>').join('')
@@ -958,12 +1004,15 @@
   if(window.ResizeObserver) new ResizeObserver(() => paintNav()).observe(document.getElementById('bnav'));
 
   function render(){
+    if(window.RaviloMusic && RaviloMusic.handles(tab)){ paintNav(); paintLibSlot(); scroll.scrollTop = 0; RaviloMusic.render(tab); return; }
     paintNav();
     paintLibSlot();
     document.querySelectorAll('#bnav .bn').forEach(t=>t.classList.toggle('on', t.dataset.tab===tab));
     scroll.scrollTop = 0;
     if(tab==='discover'){
-      if(TAXO_TABS.indexOf(discSeg) >= 0) { if(txsel) renderTaxoList(discSeg, txsel); else renderTaxo(discSeg); }
+      if(discSegs().indexOf(discSeg) < 0) discSeg = discSegs()[0];   // R310 FR-R310-4: a chip that left moves you on
+      if(!discSeg) app.innerHTML = '<div class="txmeta" style="padding-top:20px;">Nothing here for this profile yet</div>';   // FR-R310-5
+      else if(TAXO_TABS.indexOf(discSeg) >= 0) { if(txsel) renderTaxoList(discSeg, txsel); else renderTaxo(discSeg); }
       else if(discSeg === 'coming') renderComing();
       else renderRequest();
       paintSegScroll();
@@ -1165,7 +1214,8 @@
     const fromPushed = acct.classList.contains('on');
     if(fromPushed) closeAcct();
     const again = next === tab && !fromPushed;
-    if(again && next === 'discover'){ discSeg = discSegs()[0]; txsel = null; render(); }
+    if(again && window.RaviloMusic && RaviloMusic.reselect(next)){ /* music: Library steps its chips, Search focuses */ }
+    else if(again && next === 'discover'){ discSeg = discSegs()[0]; txsel = null; render(); }
     else if(again && next === 'search'){ focusSearch(); }
     else if(again && next === 'library'){ libOpen = false; render(); }
     else if(!again){ tab = next; txsel = null; libOpen = false; render(); }
@@ -1193,9 +1243,11 @@
       if(a==='photo') openAcct(profileHTML());
       else if(a==='password') openAcct(passwordHTML(null));
       else if(a==='lang') openAcct(langHTML());
+      else if(a==='settings') openAcct(settingsHTML());
       else if(a==='mylist') openAcct(myListHTML());
       else if(a==='signout') openSheet(true);
       return; }
+    if(e.target.closest('[data-libsort]')){ libSort = (libSort + 1) % LIB_SORTS.length; renderLibrary(); return; }
     const ds = e.target.closest('[data-discseg]'); if(ds){ discSeg=ds.dataset.discseg; txsel=null; render(); return; }
     const tb = e.target.closest('[data-txback]'); if(tb){ txsel=null; render(); return; }
     const tx = e.target.closest('[data-tx]'); if(tx){ txsel=tx.dataset.tx; render(); return; }
@@ -1262,6 +1314,7 @@
   /* ---- the Profile page ---- */
   let pftNote = null;
   const PF_IC = {
+    gear:  '<svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.8v2.6M12 18.6v2.6M4.2 7.5l2.2 1.3M17.6 15.2l2.2 1.3M4.2 16.5l2.2-1.3M17.6 8.8l2.2-1.3"/></svg>',
     photo: '<svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="9" r="4"/><path d="M4.5 20a7.5 7.5 0 0 1 15 0"/></svg>',
     lang:  '<svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.6-3.8-9S9.5 5.6 12 3z"/></svg>',
     key:   '<svg class="ic" viewBox="0 0 24 24"><circle cx="8" cy="14" r="4"/><path d="M11 11l9-9M16 6l3 3"/></svg>',
@@ -1279,6 +1332,7 @@
       +     (f.photo ? '<img class="av-img" src="'+f.photo+'" alt="">' : esc(f.label)) + '<span class="ed">'+PF_IC.pen+'</span></button>'
       +   '<div><div class="pft-nm">'+esc(ME.name)+'</div><div class="pft-sub">Admin</div></div>'
       + '</div></div>'
+      + (window.RaviloMusic ? RaviloMusic.profileTop() : '')
       + (pftNote ? '<div class="pft" style="margin-top:14px"><div class="pf-note ok">✓ <span>'+esc(pftNote)+'</span></div></div>' : '')
       + '<div class="row"><h3>My List'+(list.length ? '<span style="font-family:Sora,sans-serif;font-size:12px;font-weight:500;color:var(--ink-dim)">'+list.length+'</span><span class="more" data-pf="mylist">See all ›</span>' : '')+'</h3>'
       +   (list.length ? '<div class="track">'+list.map(tile).join('')+'</div>'
@@ -1286,8 +1340,10 @@
       + '</div>'
       + '<div class="pft"><div class="acct-sec" style="margin-top:26px">Account</div>'
       +   '<div class="pft-grp">'
-      +     '<button class="pft-row" data-pf="lang">'+PF_IC.lang+'<span>App language<div class="rsub">'+LANGS[pfLang]+' · this phone only</div></span>'+PF_IC.chev+'</button>'
-      +     '<button class="pft-row" data-pf="password">'+PF_IC.key+'<span>Change password<div class="rsub">Used when you sign in</div></span>'+PF_IC.chev+'</button>'
+      +     '<button class="pft-row" data-pf="lang">'+PF_IC.lang+'<span>App language<div class="rsub">'+LANGS[pfLang]+'</div></span>'+PF_IC.chev+'</button>'
+      +     (window.RaviloMusic ? RaviloMusic.profileRow() : '')
+      +     '<button class="pft-row" data-pf="password">'+PF_IC.key+'<span>Change password</span>'+PF_IC.chev+'</button>'
+      +     '<button class="pft-row" data-pf="settings">'+PF_IC.gear+'<span>Settings</span>'+PF_IC.chev+'</button>'
       +   '</div>'
       +   '<button class="pft-out" data-pf="signout">'+PF_IC.out+'Sign out</button>'
       +   '<div class="pft-ver">Ravilo <b>1.38</b> · signed in to ravilo.mit-hus.dk</div>'
@@ -1299,6 +1355,20 @@
   // the profile), and not the server's — a household can read Danish on one phone and English on another.
   const LANGS = { en:'English', da:'Dansk', fo:'Føroyskt' };
   let pfLang = 'en';
+  /* Owner decision 4 (2026-09-27): the phone keeps a Settings row, as built (dev review item 2 of R304):
+     the skin and the playback switches live there. */
+  const phPrefs = { autoplay:true, progress:true };
+  function settingsHTML(){
+    const skin = document.documentElement.getAttribute('data-skin') || 'aurora';
+    const tog = (k, label) => '<button class="pft-row" data-acct="tog:'+k+'"><span>'+label+'</span><span class="ph-sw'+(phPrefs[k]?' on':'')+'"></span></button>';
+    return '<div class="acct-bar"><button data-acct="back-settings">‹</button><h2>Settings</h2></div>'
+      + '<div class="pft"><div class="acct-sec">Theme</div><div class="ph-skins">'
+      +   [['aurora','Aurora'],['midnight','Midnight'],['noir','Noir']].map(x=>'<button data-acct="skin:'+x[0]+'" class="'+(x[0]===skin?'on':'')+'">'+x[1]+'</button>').join('')
+      + '</div><div class="acct-sec" style="margin-top:22px">Playback</div><div class="pft-grp">'
+      +   tog('progress','Show progress on Continue Watching') + tog('autoplay','Autoplay next episode')
+      +   (window.RaviloMusic ? RaviloMusic.settingsRows() : '')
+      + '</div></div>';
+  }
   function langHTML(){
     return '<div class="acct-bar"><button data-acct="back">‹</button><h2>App language</h2></div>'
       + '<div class="pft" style="padding-top:6px"><div class="pft-grp">'
@@ -1338,6 +1408,7 @@
   pmSheet.addEventListener('click', e=>{
     const b = e.target.closest('[data-pm]'); if(!b) return;
     const a = b.dataset.pm; openSheet(false);
+    if(a==='signout-go' && window.RaviloMusic) RaviloMusic.signOut();   // sign-out clears the mode
     if(a==='signout-go') phToast('Signed out · the sign-in screen would open here');
   });
   acct.addEventListener('click', e=>{
@@ -1345,6 +1416,8 @@
     const a = b.dataset.acct;
     if(a==='back'){ closeAcct(); if(tab==='profile') renderProfile(); }
     else if(a==='back-settings'){ closeAcct(); if(tab==='profile') renderProfile(); }
+    else if(a.indexOf('skin:')===0){ document.documentElement.setAttribute('data-skin', a.slice(5)); acctInner.innerHTML = settingsHTML(); }
+    else if(a.indexOf('tog:')===0){ const k = a.slice(4); phPrefs[k] = !phPrefs[k]; acctInner.innerHTML = settingsHTML(); }
     else if(a==='profile') openAcct(profileHTML());
     else if(a==='password') openAcct(passwordHTML(null));
     else if(a==='choose') document.getElementById('pfFile').click();
@@ -1361,7 +1434,7 @@
   });
   acct.addEventListener('click', e=>{
     const lg = e.target.closest('[data-lang]');
-    if(lg){ pfLang = lg.dataset.lang; closeAcct(); pftNote = 'App language: ' + LANGS[pfLang] + '.'; render(); return; }
+    if(lg){ pfLang = lg.dataset.lang; if(window.setRaviloLang) setRaviloLang(pfLang); if(window.RaviloMusic) RaviloMusic.onLang(); closeAcct(); pftNote = 'App language: ' + LANGS[pfLang] + '.'; render(); return; }
     const t = e.target.closest('[data-title]'); if(!t || !acct.contains(t)) return;
     closeAcct(); openDetail(t.dataset.title);
   });
@@ -1401,7 +1474,7 @@
      playing row that is tappable; someone else's is busy and must never be hijacked (236's 409). */
   const SCREENS = [
     { name:'Stovan',            kind:'tv',   nearby:true,  state:'ready' },
-    { name:'Køkið',             kind:'tv',   nearby:true,  state:'playing', title:'Ruffy · S3 E12', mine:true },
+    { name:'Køkið',             kind:'tv',   nearby:true,  state:'playing', title:'Ruffy · S03E12', mine:true },
     { name:'Barnarúmið',        kind:'tv',   nearby:false, state:'busy',    user:'Eydun' },
     { name:'Summarhúsið',       kind:'tv',   nearby:false, state:'offline', when:'Tuesday' },
     { name:'Stovan Chromecast', kind:'cast', nearby:false, state:'ready', androidOnly:true }
@@ -1412,10 +1485,10 @@
 
   const SUBS = [
     { off:true, nm:'Off' },
-    { nm:'Føroyskt', cc:'fo', vers:[{nm:'Føroyskt', sub:'Full dialogue · sidecar'},{nm:'Føroyskt', bdg:'signs', sub:'Signs and on-screen text only'}] },
-    { nm:'Dansk', cc:'dk', vers:[{nm:'Dansk', sub:'Full dialogue · embedded'},{nm:'Dansk', bdg:'SDH', sub:'Includes sound descriptions'},{nm:'Dansk', bdg:'forced', sub:'Only for other languages spoken'}] },
-    { nm:'English', cc:'gb', vers:[{nm:'English', sub:'Full dialogue · embedded'},{nm:'English', bdg:'SDH', sub:'Includes sound descriptions'},{nm:'English', bdg:'forced', sub:'Only for other languages spoken'},{nm:'English', bdg:'signs', sub:'Signs and on-screen text only'}] },
-    { nm:'Íslenska', cc:'is', vers:[{nm:'Íslenska', sub:'Full dialogue · sidecar'}] }
+    { nm:'Føroyskt', cc:'fo', vers:[{nm:'Føroyskt', sub:'The full version of everything spoken.'},{nm:'Føroyskt', bdg:'Signs only', sub:'Only the on-screen text and foreign lines.'}] },
+    { nm:'Dansk', cc:'dk', vers:[{nm:'Dansk', sub:'The full version of everything spoken.'},{nm:'Dansk', bdg:'Sound described', sub:'Adds speaker names and sound-effect notes.'},{nm:'Dansk', bdg:'Signs only', sub:'Only the on-screen text and foreign lines.'}] },
+    { nm:'English', cc:'gb', vers:[{nm:'English', sub:'The full version of everything spoken.'},{nm:'English', bdg:'Sound described', sub:'Adds speaker names and sound-effect notes.'},{nm:'English', bdg:'Signs only', sub:'Only the on-screen text and foreign lines.'}] },
+    { nm:'Íslenska', cc:'is', vers:[{nm:'Íslenska', sub:'The full version of everything spoken.'}] }
   ];
   const AUDIO = [
     { nm:'Dansk', cc:'dk', vers:[{nm:'Dansk', sub:'Surround'},{nm:'Dansk', sub:'Stereo'}] },
@@ -1501,13 +1574,14 @@
 
   /* ---- open / close ---- */
   function openPlayer(title){
+    if(window.RaviloMusic) RaviloMusic.onVideoStart();   // starting a video stops the music; switching mode does not
     const it = findItem(title) || {};
     S.title = it.title || title; S.kind = it.kind || 'movie';
     S.ep = S.kind === 'series' ? 7 : null;
     S.art = STILLS[(S.title.length) % STILLS.length];
     S.pos = 862; S.dur = 2280; S.playing = true; S.locked = false; S.buffering = true;
     $('mpArt').src = S.art;
-    $('mpKick').textContent = S.kind === 'series' ? 'S2 · E' + S.ep : (it.year ? String(it.year) : 'Film');
+    $('mpKick').textContent = S.kind === 'series' ? 'S02E' + String(S.ep).padStart(2, '0') : (it.year ? String(it.year) : 'Film');
     const logo = (R.artFor ? R.artFor(it).logo : it.logo) || '';
     const ident = $('mpIdent'), lg = $('mpLogo');
     const showName = () => { lg.removeAttribute('src'); $('mpShow').textContent = S.kind === 'series' ? S.title : ''; ident.className = 'mp-ident' + (S.kind === 'series' ? ' name' : ''); };
@@ -1597,11 +1671,11 @@
       if(id === 'mpFwd30'){ S.pos = Math.min(S.dur, S.pos + 30); paint(); showChrome(); return; }
       if(id === 'mpSubsBtn'){ S.tab = 'subs'; openSheetHTML('picker', pickerHTML('local')); return; }
       if(id === 'mpEpsBtn'){ openSheetHTML('eps', episodesHTMLSheet()); return; }
-      if(id === 'mpNextBtn'){ S.ep = (S.ep || 7) + 1; S.pos = 0; $('mpKick').textContent = S.title + ' · S2 E' + S.ep; $('mpTitle').textContent = 'Bitter Honey'; paint(); showChrome(); return; }
+      if(id === 'mpNextBtn'){ S.ep = (S.ep || 7) + 1; S.pos = 0; $('mpKick').textContent = 'S02E' + String(S.ep).padStart(2, '0'); $('mpTitle').textContent = 'Bitter Honey'; paint(); showChrome(); return; }
       if(id === 'mpLockBtn'){ S.locked = true; mp.classList.add('lock'); clearTimeout(hideTimer); paint(); return; }
       if(id === 'mpUnlock'){ $('mpLockNote').classList.add('on'); setTimeout(()=>$('mpLockNote').classList.remove('on'), 1200); return; }
       if(id === 'mpSkip'){ S.pos = 92; paint(); showChrome(); return; }
-      if(id === 'mpNupGo'){ S.ep = (S.ep || 7) + 1; S.pos = 0; $('mpTitle').textContent = 'Bitter Honey'; $('mpKick').textContent = 'S2 · E' + S.ep; paint(); return; }
+      if(id === 'mpNupGo'){ S.ep = (S.ep || 7) + 1; S.pos = 0; $('mpTitle').textContent = 'Bitter Honey'; $('mpKick').textContent = 'S02E' + String(S.ep).padStart(2, '0'); paint(); return; }
       if(id === 'mpNupNo'){ S.dur = S.pos + 600; paint(); return; }
       if(id === 'mpCast'){ openScreensSheet(); return; }
       if(id === 'mpRotate'){ $('mpToast').textContent = 'Rotate to full screen'; $('mpToast').classList.add('on'); setTimeout(()=>$('mpToast').classList.remove('on'), 900); return; }
@@ -1621,7 +1695,7 @@
       if(b.dataset.subver !== undefined){ const p = b.dataset.subver.split(':'); S.sub = +p[0]; S.ver = +p[1]; closeSheet(); return; }
       if(b.dataset.audlang !== undefined){ S.aud = +b.dataset.audlang; closeSheet(); return; }
       if(b.dataset.subsize !== undefined){ S.size = b.dataset.subsize; openSheetHTML('size', sizeHTML()); paint(); return; }
-      if(b.dataset.ep !== undefined){ S.ep = +b.dataset.ep; S.pos = 0; $('mpKick').textContent = S.title + ' · S2 E' + S.ep; closeSheet(); return; }
+      if(b.dataset.ep !== undefined){ S.ep = +b.dataset.ep; S.pos = 0; $('mpKick').textContent = 'S02E' + String(S.ep).padStart(2, '0'); closeSheet(); return; }
       return;
     }
     if(inSheet) return;
@@ -1967,8 +2041,19 @@
 
   paintCast(); startTick();
 
+  /* the music mode's hooks (ravilo-music*.js) — the host owns tab, render and the page chrome */
+  window.RaviloHost = {
+    get tab(){ return tab; }, setTab(tb){ tab = tb; }, render, paintNav, app, scroll, esc, phToast, closeAcct,
+    openPlayer: tl => { closeDetail(); openPlayer(tl); },
+  };
+
   render();
 })();
 </script>
+<script src="../app/music-data.js"></script>
+<script src="mobile/ravilo-music.js"></script>
+<script src="mobile/ravilo-music-player.js"></script>
+<script src="../app/audiobook-data.js"></script>
+<script src="mobile/ravilo-books.js"></script>
 </body>
 </html>

@@ -68,10 +68,20 @@
       ];
       return v && v.kind ? d.filter(f => f.id !== 'type') : d;   // Movies/Series pages fix the type
     }
+    // As built (R317 / 268 + the direction flip): one entry per FIELD, each with a direction. Choosing the
+    // field already in use flips it; the sub-label says which way in words (never asc/desc).
     const SORTS = () => [
-      ['added', t('br_s_added')], ['az', 'A–Z'], ['za', 'Z–A'],
-      ['year', t('br_s_year')], ['maturity', t('br_s_maturity')], ['imdb', t('br_s_imdb')],
+      ['added', t('br_s_added'), ['sort_newest', 'sort_oldest']],
+      ['title', t('sort_title'), ['sort_az', 'sort_za']],
+      ['year', t('br_s_year'), ['sort_newest', 'sort_oldest']],
+      ['maturity', t('br_s_maturity'), ['sort_low', 'sort_high']],
+      ['imdb', t('br_s_imdb'), ['sort_high', 'sort_low']],
+      ['size', t('sort_size'), ['sort_largest', 'sort_smallest']],
     ];
+    function sortDef() { return SORTS().find(x => x[0] === v.sort) || SORTS()[0]; }
+    function sortWay() { return t(sortDef()[2][v.sortRev ? 1 : 0]); }
+    // the mock has no file sizes, so one is derived per title (stable across reloads)
+    function sizeOf(it) { let h = 0; for (const c of it.title) h = (h * 31 + c.charCodeAt(0)) >>> 0; return (it.kind === 'series' ? 40 : 4) + h % 60; }
 
     /* ---- seed + filtering ---- */
     // person mode: everything featuring this cast/crew member. Production seeds this from a
@@ -129,12 +139,12 @@
     function filtered() {
       let r = seed().filter(it => matches(it, null));
       const im = it => { const x = R.imdbFor(it); return x ? x.rating : 0; };
-      if (v.sort === 'az') r = r.slice().sort((a, b) => a.title.localeCompare(b.title));
-      else if (v.sort === 'za') r = r.slice().sort((a, b) => b.title.localeCompare(a.title));
+      if (v.sort === 'title') r = r.slice().sort((a, b) => a.title.localeCompare(b.title));
       else if (v.sort === 'year') r = r.slice().sort((a, b) => (b.year || 0) - (a.year || 0));
       else if (v.sort === 'maturity') r = r.slice().sort((a, b) => normAge(a) - normAge(b) || a.title.localeCompare(b.title));
       else if (v.sort === 'imdb') r = r.slice().sort((a, b) => im(b) - im(a));
-      return r;   // 'added' = seed order (library feed arrives newest-first)
+      else if (v.sort === 'size') r = r.slice().sort((a, b) => sizeOf(b) - sizeOf(a));
+      return v.sortRev ? r.slice().reverse() : r;   // 'added' = seed order (library feed arrives newest-first)
     }
     // popover values for one facet: count against seed with all OTHER facets applied;
     // ordered by count desc, ties alphabetical (A–Z)
@@ -153,6 +163,7 @@
     /* ---- render ---- */
     function render(view) {
       v = view; v.filters = v.filters || {}; v.sort = v.sort || 'added';
+      if (v.sort === 'az' || v.sort === 'za') { v.sortRev = v.sort === 'za'; v.sort = 'title'; }
       stopHero(); closePop(); scroll.innerHTML = '';
       const title = v.person ? v.person.n
         : v.taxo ? v.taxo.name
@@ -219,7 +230,7 @@
       if (activeCount()) { const r = el('div', 'facet reset foc', `✕ ${t('br_reset')}`); r._facetreset = 1; fbar.appendChild(r); }
       const s = el('div', 'fsort foc');
       s._sortbtn = 1;
-      s.innerHTML = `<span class="lb">${t('br_sort')}</span>${esc(SORTS().find(x => x[0] === v.sort)[1])} ▾`;
+      s.innerHTML = `<span class="lb">${t('br_sort')}</span>${esc(sortDef()[1])} <span class="lb">· ${esc(sortWay())}</span> ▾`;
       fbar.appendChild(s);
     }
     function refreshGrid() {
@@ -264,9 +275,9 @@
     function buildPopContents() {
       const p = pop.el;
       if (pop.kind === 'sort') {
-        pop.opts = SORTS().map(([id, label]) => ({ id, label, on: v.sort === id }));
+        pop.opts = SORTS().map(([id, label, ways]) => ({ id, label, ways, on: v.sort === id }));
         p.innerHTML = `<div class="ph">${t('br_sort')}</div>` + pop.opts.map((o, i) =>
-          `<div class="opt${o.on ? ' on' : ''}${i === pop.idx ? ' focused' : ''}" data-pidx="${i}"><span class="box round">${o.on ? '●' : ''}</span>${esc(o.label)}</div>`).join('');
+          `<div class="opt${o.on ? ' on' : ''}${i === pop.idx ? ' focused' : ''}" data-pidx="${i}"><span class="box round">${o.on ? '●' : ''}</span>${esc(o.label)}<span class="osub">${esc(t(o.ways[o.on && v.sortRev ? 1 : 0]))}${o.on ? ' ⇅' : ''}</span></div>`).join('');
       } else if (facetDefs().find(d => d.id === pop.facetId && d.range)) {
         // range picker: two rows (From / Up to) + ladder viz; ◂ ▸ adjusts, OK closes
         const def = facetDefs().find(d => d.id === pop.facetId);
@@ -330,7 +341,8 @@
     function popChoose() {
       if (pop.range) { closePopAndBar(); return; }   // OK confirms the range
       if (pop.kind === 'sort') {
-        v.sort = pop.opts[pop.idx].id;
+        const id = pop.opts[pop.idx].id;
+        if (id === v.sort) v.sortRev = !v.sortRev; else { v.sort = id; v.sortRev = false; }
         closePopAndBar(); refreshGrid();
         return;
       }

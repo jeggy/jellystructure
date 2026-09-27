@@ -32,6 +32,7 @@
     menu:      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/></svg>',
     ravilo:    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="12.5" rx="2"/><path d="M10 8.5l4.5 2.75L10 14z" fill="currentColor" stroke="none"/><line x1="8.5" y1="20" x2="15.5" y2="20" stroke-linecap="round"/></svg>',
     livetv:    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M8 3.5 12 6l4-2.5" stroke-linecap="round"/></svg>',
+    sugg:      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="12" height="15" rx="2"/><path d="M19 3.5v5M16.5 6h5"/><path d="M7.5 10h4M7.5 13.5h4"/></svg>',
     requests:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4h14v16l-7-4-7 4z"/><path d="M12 8v5M9.5 10.5h5"/></svg>',
     prefs:     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><line x1="6" y1="4" x2="6" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/><line x1="18" y1="4" x2="18" y2="20"/><circle cx="6" cy="9" r="2.3" fill="var(--fill-2)"/><circle cx="12" cy="15" r="2.3" fill="var(--fill-2)"/><circle cx="18" cy="8" r="2.3" fill="var(--fill-2)"/></svg>',
     users:     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 19a5.5 5.5 0 0 1 11 0"/><path d="M16 5.3a3.2 3.2 0 0 1 0 6M18.6 19a5.5 5.5 0 0 0-3-4.9"/></svg>',
@@ -58,6 +59,8 @@
   const NAV = [
     { href: 'index.html',    label: 'Dashboard', icon: 'dashboard', page: 'dashboard' },
     { href: 'library.html',  label: 'Library',   icon: 'library',   page: 'library'   },
+    // Phase 274: only while Seerr is connected — absent otherwise, never greyed
+    { href: 'suggestions.html', label: 'Suggestions', icon: 'sugg', page: 'suggestions' },
     { href: 'activity.html', label: 'Activity',  icon: 'activity',  page: 'activity'  },
     { group: 'Setup' },
     { href: 'metadata.html', label: 'Metadata',  icon: 'metadata',  page: 'metadata'  },
@@ -82,6 +85,15 @@
     { title: 'Caminandes 2',   sub: 'missing poster artwork', href: 'media.html' },
     { title: 'Server Farm', sub: 'S01 · cover art muxed as video — playback-hostile, repairable', href: 'series.html' },
     { title: 'The Daily Show', sub: 'no longer in Jellyfin — kept, flagged for triage', href: 'series.html' },
+    // music brief §G — the music triage types
+    { title: 'Low Tide Radio', sub: 'album · 3 candidates, no clear winner — Choose…', href: 'album.html?a=low-tide-radio&find=1' },
+    { title: 'Summer Hits 2004', sub: 'album · 3 compilations share this name — Choose…', href: 'album.html?a=summer-hits-2004&find=1' },
+    { title: 'Kvøld', sub: 'album · no MusicBrainz match — Find match…', href: 'album.html?a=kvold&find=1' },
+    { title: 'Foghorn Lullabies', sub: 'album · no cover on the Cover Art Archive — Upload', href: 'album.html?a=foghorn-lullabies&tab=artwork' },
+    { title: 'Skerry', sub: 'artist · no picture — Choose… / Upload', href: 'artist.html?ar=skerry&tab=artwork' },
+    // admin brief §M5 — audiobook triage (the household's one book)
+    { title: 'Vinterfærgen', sub: 'audiobook · part 6 is not in the folder', href: 'audiobook.html?b=vinterfaergen&tab=parts' },
+    { title: 'Vinterfærgen', sub: 'audiobook · no cover — Upload', href: 'audiobook.html?b=vinterfaergen&tab=artwork' },
   ];
   const ATTN_TOTAL = 214;
 

@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jellystructure — Author</title>
+<link rel="stylesheet" href="wf.css">
+<link rel="stylesheet" href="app.css">
+<link rel="stylesheet" href="detail.css">
+<link rel="stylesheet" href="music.css">
+<style>a{color:var(--hi)}a:hover{color:var(--acc-ink)}</style>
+</head>
+<body class="wf-body app-body">
+<main class="app-main2 wide" data-page="library" data-screen-label="Author detail">
+<div class="backrow"><a class="btn sm ghost" href="library.html?kind=books">‹ Library</a><span class="crumb" id="au-crumb"></span></div>
+<div id="au-fence"></div>
+<div class="pagebar" id="au-bar"></div>
+<div id="au-head"></div>
+<div class="tabs2" id="tabbar"><span data-tab="overview" class="on">Overview</span><span data-tab="artwork">Artwork</span><span data-tab="history">History</span></div>
+<div id="au-panel"></div>
+<div id="au-qs"></div>
+</main>
+<script src="app-shell.js"></script>
+<script src="music-data.js"></script>
+<script src="audiobook-data.js"></script>
+<script src="music-qs.js"></script>
+<script>
+(function () {
+  const B = window.BOOKS, M = window.MUSIC, $ = id => document.getElementById(id);
+  const esc = s => (s == null ? '' : String(s)).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const P = new URLSearchParams(location.search), A = B.author(P.get('au')) || B.author('ingrid-lykke');
+  let tab = 'overview', bio = A.bio, editing = false, img = A.image;
+  const extras = P.get('many') === '1' || A.id !== 'ingrid-lykke';
+  const books = (extras ? B.all : [B.household]).filter(b => b.authors.indexOf(A.id) >= 0);
+  function toast(m) { const t = document.createElement('div'); t.className = 'toast'; t.textContent = m; document.body.appendChild(t); setTimeout(() => t.remove(), 2000); }
+  $('au-fence').innerHTML = '<div class="mu-fence"><span class="fl">Preview · mockup only</span><span class="seg"><a href="author.html?au=ingrid-lykke" class="' + (A.id === 'ingrid-lykke' && !extras ? 'on' : '') + '">The household’s author · one book</a><a href="author.html?au=ingrid-lykke&amp;many=1" class="' + (A.id === 'ingrid-lykke' && extras ? 'on' : '') + '">Same author, more books</a><a href="author.html?au=anna-berg" class="' + (A.id === 'anna-berg' ? 'on' : '') + '">A series · a biography</a></span></div>';
+  $('au-bar').innerHTML = '<h1>' + esc(A.name) + '</h1><span class="spacer"></span><span class="split"><span class="btn primary" data-a="save">Save</span></span>';
+  $('au-crumb').innerHTML = '<a href="library.html?kind=books">Audiobooks</a> / Authors / ' + esc(A.name);
+  function head() {
+    $('au-head').innerHTML = '<div class="mu-pb"><div class="mu-circ" style="width:160px;' + (img ? M.artistStyle({ hue: A.hue }) : M.wordmarkStyle(A.name)) + '">' + (img ? '' : esc(M.initials(A.name)) + '<i class="mu-nocov"></i>') + '</div><div><div class="mu-mono tiny muted">' + esc(A.sort) + '</div><div class="mu-pbm"><span>' + (books.length === 1 ? '1 book' : books.length + ' books') + ' in the library</span></div>'
+      + (!img ? '<div class="tiny" style="margin-top:10px;color:var(--warn)">No picture — <a href="#" data-go="artwork">choose one in Artwork</a>.</div>' : '') + '</div></div>';
+  }
+  function cell(b) { return '<a class="mu-cell" href="audiobook.html?b=' + b.id + '"><div class="mu-cov" style="' + (b.cover ? B.coverStyle(b) : B.wordmarkStyle(b)) + '">' + (b.cover ? '' : '<span class="mu-wm">' + esc(b.title) + '</span><i class="mu-nocov"></i>') + '</div><div class="ttl">' + (b.series ? '<span class="muted">' + b.series.n + ' · </span>' : '') + esc(b.title) + '</div><div class="yr">' + b.year + ' · ' + B.fmtH(b.len) + '</div></a>'; }
+  function overview() {
+    const bioH = editing ? '<textarea class="mu-bio" id="au-bio" style="width:100%;min-height:110px;font:inherit;padding:10px 12px;border-radius:10px;border:1px solid var(--line-2);background:var(--fill-2);color:var(--ink)">' + esc(bio) + '</textarea><div class="row" style="gap:8px;margin-top:8px"><span class="btn sm primary" data-a="biosave">Save</span><span class="btn sm ghost" data-a="biocancel">Cancel</span></div>'
+      : bio ? '<div class="mu-bio">' + esc(bio) + '</div><div class="tiny muted" style="margin-top:6px">' + (A.id === 'anna-berg' ? 'Suggested by Open Library, accepted' : 'Typed here') + ' · <a href="#" data-a="bioedit">Edit</a></div>'
+      : '<div class="tiny muted">No biography — none of the providers has one. <a href="#" data-a="bioedit">Write one</a>.' + (A.id === 'ingrid-lykke' ? ' <span class="chip" style="font-size:.7rem;margin-left:6px">Suggestion · Open Library knows 17 works by this author, no biography</span>' : '') + '</div>';
+    const useSeries = window.MusicQ && MusicQ.get('abseries') === 'view';
+    const groups = {}; books.forEach(b => { const g = useSeries && b.series ? b.series.name : ''; (groups[g] = groups[g] || []).push(b); });
+    return '<div class="mu-sec">Biography</div>' + bioH + Object.keys(groups).sort((a, b) => (a ? 0 : 1) - (b ? 0 : 1)).map(g => '<div class="mu-sec">' + (g ? esc(g) : 'Books') + '</div><div class="mu-grid">' + groups[g].map(cell).join('') + '</div>').join('');
+  }
+  function artwork() {
+    const C = [['iTunes', 'artist image · 600 px'], ['Open Library', 'author photo · -L'], ['Wikimedia Commons', 'CC BY-SA 4.0 · credited']];
+    return '<div class="mu-sec">Currently in use</div><div class="mu-art">' + (img ? '<div class="mu-aw use"><div class="im" style="' + M.artistStyle({ hue: A.hue }) + ';border-radius:50%"></div><div class="cap"><b>author.jpg</b></div></div>' : '<div class="mu-aw"><div class="im" style="display:flex;align-items:center;justify-content:center"><span class="tiny" style="color:var(--warn);font-weight:600">no picture</span></div></div>') + '</div>'
+      + '<div class="mu-sec">Candidates</div>' + (A.id === 'per-holm' ? '<div class="tiny muted">None found. Upload one.</div>' : '<div class="mu-art">' + C.slice(0, A.id === 'ingrid-lykke' ? 2 : 3).map((c, i) => '<div class="mu-aw"><div class="im" style="' + M.artistStyle({ hue: (A.hue + i * 50) % 360 }) + '"></div><div class="cap"><b>' + c[0] + '</b><span class="d">' + c[1] + '</span><span class="btn sm ghost" style="margin-left:auto" data-a="use">Use</span></div></div>').join('') + '</div>');
+  }
+  function panel() {
+    document.querySelectorAll('#tabbar [data-tab]').forEach(t => t.classList.toggle('on', t.dataset.tab === tab));
+    $('au-panel').innerHTML = tab === 'artwork' ? artwork() : tab === 'history' ? '<div class="mu-hist"><div class="mu-hi"><span class="ts">2026-09-23 21:40</span><span>Scanned from Jellyfin · the author tag on ' + books.reduce((s, b) => s + b.parts.length, 0) + ' files</span></div></div>' : overview();
+  }
+  document.addEventListener('click', e => {
+    const t = e.target.closest('#tabbar [data-tab]'); if (t) { tab = t.dataset.tab; panel(); return; }
+    const g = e.target.closest('[data-go]'); if (g) { e.preventDefault(); tab = g.dataset.go; panel(); return; }
+    const a = e.target.closest('[data-a]'); if (!a) return; e.preventDefault();
+    const k = a.dataset.a;
+    if (k === 'bioedit') { editing = true; panel(); } else if (k === 'biocancel') { editing = false; panel(); }
+    else if (k === 'biosave') { bio = $('au-bio').value.trim(); editing = false; panel(); toast('Saved'); }
+    else if (k === 'use') { img = true; head(); panel(); toast('author.jpg written'); }
+    else if (k === 'save') toast('Saved');
+  });
+  if (window.MusicQ) { MusicQ.mount($('au-qs'), 'author'); MusicQ.on(panel); }
+  head(); panel();
+})();
+</script>
+</body>
+</html>
