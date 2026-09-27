@@ -95,13 +95,16 @@ fun renderDashboard(container: Element, scope: CoroutineScope) {
     document.getElementById("dash-browse")?.addEventListener("click") {
         App.navigate("/library")
     }
+    // Phase 265 (FR-265-2) — both faces open the pre-run dialog. Resume stays dialog-free: it continues the
+    // cancelled run with that run's own plan.
     document.getElementById("dash-scan")?.addEventListener("click") {
-        scope.launch { triggerDashboardScan(scope, resume = false) }
+        if ((document.getElementById("dash-scan") as? HTMLButtonElement)?.disabled == true) return@addEventListener
+        openPipelineRunDialog(scope, "Scan library", full = false) { skip -> triggerDashboardScan(scope, resume = false, skipSteps = skip) }
     }
     document.getElementById("dash-scan-full")?.addEventListener("click") { e ->
         if ((e.currentTarget as? HTMLElement)?.hasAttribute("disabled") == true) return@addEventListener
         (document.getElementById("dash-scan-split") as? HTMLElement)?.classList?.remove("open")
-        scope.launch { triggerDashboardScan(scope, resume = false, full = true) }
+        openPipelineRunDialog(scope, "Scan library (full rescan)", full = true) { skip -> triggerDashboardScan(scope, resume = false, full = true, skipSteps = skip) }
     }
     (document.getElementById("dash-scan-split") as? HTMLElement)?.querySelector(".menu-btn")?.let { caret ->
         (caret as? HTMLElement)?.addEventListener("click") { e ->
@@ -366,16 +369,17 @@ private suspend fun loadRecentActivity() {
     }
 }
 
-private suspend fun triggerDashboardScan(scope: CoroutineScope, resume: Boolean, full: Boolean = false) {
+private suspend fun triggerDashboardScan(scope: CoroutineScope, resume: Boolean, full: Boolean = false, skipSteps: List<String> = emptyList()) {
     val btn = document.getElementById("dash-scan") as? HTMLButtonElement ?: return
     if (btn.disabled) return
 
-    val started = if (resume) MediaApi.resumeScan() else MediaApi.startScan(full)
+    val started = if (resume) MediaApi.resumeScan() else MediaApi.startScan(full, skipSteps)
     if (!started) {
         val banner = document.getElementById("dash-scan-banner") as? HTMLElement ?: return
         banner.innerHTML = """<span class="badge bad">Scan failed to start — check server connection.</span>"""
         return
     }
+    if (!resume) showPipelineToast((if (full) "Full scan started" else "Scan started") + skippedSuffix(skipSteps))
     val status = MediaApi.scanStatus()
     setDashScanRunning(status?.processedCount ?: 0)
     connectDashScanSocket(scope, baseCount = status?.processedCount ?: 0)

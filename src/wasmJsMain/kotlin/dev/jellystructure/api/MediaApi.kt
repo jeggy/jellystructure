@@ -273,6 +273,10 @@ private data class FacetReq(val match: String = "ALL", val conditions: List<Cond
 @Serializable
 private data class PipelineRunReq(val skipSteps: List<String> = emptyList())
 
+/** Phase 265 (FR-265-5) — one row of `GET /api/pipeline/plan`. */
+@Serializable
+data class PipelinePlanStep(val step: String, val scope: String = "missing")
+
 @Serializable
 data class BatchCountRequest(
     val index: Int,
@@ -442,10 +446,21 @@ object MediaApi {
     // Phase 175: this trigger now honors the freshness/cooldown filter like every other one (previously
     // it always processed the whole library unconditionally). full=true bypasses it for this one run —
     // "Scan library (full rescan)" in the Dashboard's split button.
-    suspend fun startScan(full: Boolean = false): Boolean = runCatching {
-        val response = httpClient.post(if (full) "/api/scan?full=true" else "/api/scan")
+    // Phase 265 (FR-265-4): [skipSteps] is the pre-run dialog's one-run skip, sent exactly as runPipeline
+    // sends it; the server parses both routes' bodies with one helper and ignores "scan_files".
+    suspend fun startScan(full: Boolean = false, skipSteps: List<String> = emptyList()): Boolean = runCatching {
+        val response = httpClient.post(if (full) "/api/scan?full=true" else "/api/scan") {
+            contentType(ContentType.Application.Json)
+            setBody(PipelineRunReq(skipSteps))
+        }
         response.status == HttpStatusCode.Accepted
     }.getOrDefault(false)
+
+    /** Phase 265 (FR-265-5) — the steps a manual run will execute, in order; null when it can't be read. */
+    suspend fun pipelinePlan(): List<PipelinePlanStep>? = runCatching {
+        val response = httpClient.get("/api/pipeline/plan")
+        if (response.status == HttpStatusCode.OK) response.body<List<PipelinePlanStep>>() else null
+    }.getOrNull()
 
     // 93c: run the composed automation (the saved scan pipeline) on demand — all enabled steps,
     // not just file discovery like startScan(). Conflict is distinguished from a genuine failure so the

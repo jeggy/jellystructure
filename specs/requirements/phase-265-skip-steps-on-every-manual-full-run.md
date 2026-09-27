@@ -6,7 +6,7 @@
 
 ## Status
 
-`Planned` — written 2026-09-26, **dev-reviewed 2026-09-26** against `main` `0e5e434f` (see *Dev review*
+`✓ Built` 2026-09-27 (see *Build notes* at the end). Written 2026-09-26, **dev-reviewed 2026-09-26** against `main` `0e5e434f` (see *Dev review*
 at the end). Admin frontend plus one route change and one small new route. **Numbering:** verified
 against `STATUS.md` the same day — admin taken through **264**.
 
@@ -145,3 +145,27 @@ The call sites and routes are where the spec says. Seven items.
 **Net effect.** One file moved out of `Settings.kt`, three call sites wrapped, one helper shared by two
 routes, one small GET route, one `MediaApi` parameter, one e2e click plus the new case. No migration, no
 config change.
+
+## Build notes (2026-09-27)
+
+1. **One file.** `ui/PipelineRunDialog.kt` holds `PipeBlockDef`, `PIPE_BLOCKS`, `FILE_CHECK_STEPS`,
+   `PIPE_SHORT`, `PIPE_SKIP_KEY`, the dialog, `skippedSuffix` and the toast, all moved out of `Settings.kt`
+   unchanged except the dialog's input. `openPipelineRunDialog(scope, title, full, hasUnsavedEdits,
+   onStart)` is the one way in: it reads `GET /api/pipeline/plan`, starts at once when the plan is
+   discovery alone (FR-265-6), and starts **nothing** when the plan cannot be read (a blind start would
+   skip the preview the operator asked to see).
+2. **Five triggers.** Settings' two faces (titles unchanged; the saved config is still fetched, only for
+   the unsaved-edits note), Library's two, Dashboard's two (resume stays direct), and the palette's
+   *Start full scan*. Library and Dashboard now toast *Scan started · skipped …* / *Full scan started* on
+   a start; they showed nothing before.
+3. **Server.** `media/PipelinePlan.kt`: `planOrder` (discovery first, then the configured order), which
+   `runPipeline` now uses for its step plan; `pipelinePlan(cfg)` over `effectivePipeline`; and
+   `parseSkipSteps(body)`, which both `POST /api/scan` and `POST /api/pipeline/run` call on the raw body
+   (no body, `{}`, junk or `null` = no skip; `scan_files` dropped). `GET /api/pipeline/plan` answers
+   `[{step, scope}]`.
+4. **Tests.** `PipelinePlanTest` (6): the empty-pipeline default, order and enabled-only, discovery added
+   when unlisted, the discovery-only plan, the skip body, and every bodyless/junk shape. E2E:
+   `scan-fixture.spec.ts` presses `#prun-go`; a new case opens the dialog from Library, checks it lists
+   the plan (discovery locked), unticks `verify_files` (the test config has no pipeline, so its plan is
+   the built-in default, which has no `detect_segments`), and asserts the run's step plan leaves it out
+   and its log line reads *· skipped: verify_files*.

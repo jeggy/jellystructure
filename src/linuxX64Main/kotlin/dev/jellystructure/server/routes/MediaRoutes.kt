@@ -25,6 +25,8 @@ import dev.jellystructure.media.ProbeDiagnosis
 import dev.jellystructure.media.LogoDownloader
 import dev.jellystructure.media.MediaHistory
 import dev.jellystructure.media.MediaStore
+import dev.jellystructure.media.parseSkipSteps
+import dev.jellystructure.media.pipelinePlanRows
 import dev.jellystructure.media.MkvpropeditRunner
 import dev.jellystructure.media.PipelineDeps
 import dev.jellystructure.media.PipelineStepOps
@@ -57,6 +59,7 @@ import io.ktor.http.content.PartData
 import io.ktor.http.content.forEachPart
 import io.ktor.server.request.receive
 import io.ktor.server.request.receiveMultipart
+import io.ktor.server.request.receiveText
 import io.ktor.server.response.respond
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.Route
@@ -126,11 +129,6 @@ private data class ArtworkCandidatesResponse(
 
 @Serializable
 private data class SaveCandidateRequest(val asset: String = "", val source: String)
-
-/** Phase 154 — per-run step skip from the pre-run dialog (`POST /api/pipeline/run`). Defaulted so a
- *  bodyless call behaves exactly as before this phase. Never persisted; see FR-PIPE1-6. */
-@Serializable
-private data class PipelineRunRequest(val skipSteps: List<String> = emptyList())
 
 // Wire shape for GET /api/media/{id}/episodes/stills — mirrors the frontend's EpisodeStillStatus.
 // Phase 149: episodeNumber disambiguates entries sharing a filename (a multi-episode file) — the
@@ -2048,9 +2046,16 @@ fun Route.mediaRoutes(
         // Phase 175 — honors the freshness/cooldown filter like every other trigger (previously it
         // always processed the whole library unconditionally). `?full=true` bypasses it.
         val full = call.request.queryParameters["full"] == "true"
+        // Phase 265 (FR-265-4): the same optional one-run skip as /pipeline/run, through the same parser.
+        val skipSteps = parseSkipSteps(runCatching { call.receiveText() }.getOrDefault(""))
         val jobId = scanTracker.startNew()
-        launchScanRun(jobId, "manual", scanTracker, appScope, configStore, pipelineDeps, libraryId = libraryId, full = full)
+        launchScanRun(jobId, "manual", scanTracker, appScope, configStore, pipelineDeps, libraryId = libraryId, full = full, skipSteps = skipSteps)
         call.respond(HttpStatusCode.Accepted, mapOf("status" to "started", "library" to (libraryId ?: "all")))
+    }
+
+    // Phase 265 (FR-265-5) — what a manual run would execute right now, in order: the pre-run dialog's list.
+    get("/pipeline/plan") {
+        call.respond(pipelinePlanRows(configStore.current))
     }
 
     // Phase 93c / 175 — runs through the exact same launchScanRun() every other trigger uses now
@@ -2069,8 +2074,7 @@ fun Route.mediaRoutes(
         // a ONE-RUN filter — nothing is written to config, and the scheduled path never sees it.
         // scan_files is never skippable: runPipeline runs discovery regardless of whether it's in the
         // list (its own default-PipelineStep fallback), so honouring it here would be a lie (FR-PIPE1-4).
-        val skipSteps = runCatching { call.receive<PipelineRunRequest>() }.getOrDefault(PipelineRunRequest())
-            .skipSteps.filterNot { it == "scan_files" }.toSet()
+        val skipSteps = parseSkipSteps(runCatching { call.receiveText() }.getOrDefault(""))   // Phase 265 — one parser for both routes
         val jobId = scanTracker.startNew()
         val pipeline = launchScanRun(jobId, "manual", scanTracker, appScope, configStore, pipelineDeps, full = full, skipSteps = skipSteps)
         // Bug fix (2026-07-03): mapOf("status" to "started", "steps" to pipeline.size) mixes a

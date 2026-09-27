@@ -104,6 +104,8 @@ test.describe.serial("Fixture suite", () => {
   test("scan detects Sintel and track order fixes default from fra to eng", async () => {
     // Trigger scan
     await page.click('button:has-text("▶ Scan library"), button:has-text("Scan library")');
+    // Phase 265 (FR-265-8) — the button opens the pre-run dialog; the run starts on *Start run*.
+    await page.click('#prun-go');
     await waitForScanComplete(page);
 
     // Navigate to Library
@@ -188,6 +190,44 @@ test.describe.serial("Fixture suite", () => {
     await expect(page.locator('.ep-toggle-row')).toHaveCount(3, { timeout: 10_000 });
     await expect(page.locator('.ep-toggle-row').first()).toContainText('S01E01');
     await expect(page.locator('.ep-toggle-row').nth(2)).toContainText('S01E03');
+  });
+
+  // Phase 265 (FR-265-2/4/5/8, acceptance 1) — Library's *Scan library* opens the same pre-run dialog as
+  // Settings, listing the server's plan; an unticked step is skipped for this run and the run says so. The
+  // test config has no pipeline, so the plan is the built-in default: there is no detect_segments to untick,
+  // and verify_files stands in for it.
+  test("Library's Scan library opens the pre-run dialog, and an unticked step is skipped", async () => {
+    await page.goto("/#/library");
+    await expect(page.locator('#scan-btn')).toBeEnabled({ timeout: 30_000 });
+    await page.click('#scan-btn');
+    const dialog = page.locator('.modal-back.open');
+    await expect(dialog.locator('h3')).toHaveText('Scan library');
+    const plan = await (await page.request.get('/api/pipeline/plan')).json() as Array<{ step: string }>;
+    expect(plan[0].step).toBe('scan_files');
+    await expect(dialog.locator('input[data-step]')).toHaveCount(plan.length);
+    await expect(dialog.locator('input[data-step="scan_files"]')).toBeDisabled();
+    await dialog.locator('input[data-step="verify_files"]').uncheck();
+    await page.click('#prun-go');
+    await expect(dialog).toHaveCount(0);
+
+    // The run's plan (Activity's chips) leaves the step out, and its descriptor names the skip.
+    await expect.poll(async () => {
+      const st = await (await page.request.get('/api/scan/status')).json();
+      return st.running ? (st.stepPlan as string[]).join(',') : 'idle';
+    }, { timeout: 15_000 }).not.toBe('idle');
+    const running = await (await page.request.get('/api/scan/status')).json();
+    expect(running.stepPlan).not.toContain('verify_files');
+    await expect.poll(async () =>
+      JSON.stringify(await (await page.request.get('/api/activity/log?category=scan&pageSize=500')).json()),
+      { timeout: 30_000 }).toContain('skipped: verify_files');
+
+    // Let it finish before the next test; a cast session left by an earlier spec may defer it (see
+    // waitForScanComplete), so press the product's own override the way an operator would.
+    await expect.poll(async () => {
+      const st = await (await page.request.get('/api/scan/status')).json();
+      if (st.running && st.deferred && st.jobId) await page.request.post(`/api/pipeline/${st.jobId}/run-anyway`);
+      return st.running;
+    }, { timeout: 180_000, intervals: [2_000] }).toBe(false);
   });
 
   // Written assuming any language mix disables NFO writes and shows specific badge text

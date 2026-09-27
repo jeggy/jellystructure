@@ -219,7 +219,7 @@ suspend fun runPipeline(
         }
     }
 
-    val orderedSteps = listOf("scan_files") + pipeline.filter { it.step != "scan_files" }.map { it.step }
+    val orderedSteps = planOrder(pipeline).map { it.step }   // Phase 265 — the same order GET /api/pipeline/plan answers
     scanTracker.setStepPlan(orderedSteps)
     broadcaster.broadcast(JobEvent.PipelinePlan(jobId, orderedSteps))
     scanTracker.setActiveStep("scan_files")

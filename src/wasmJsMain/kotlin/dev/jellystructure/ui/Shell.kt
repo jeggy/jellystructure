@@ -259,7 +259,13 @@ private fun buildPaletteCommands(): List<PaletteCmd> = listOf(
         // Phase 175: startScan() now honors the freshness/cooldown filter by default — this command's
         // own label promises a FULL rescan, so it must pass full=true or it'd silently stop doing what
         // it says the moment the cooldown is turned on.
-        MainScope().launch { MediaApi.startScan(full = true) }
+        // Phase 265 (FR-265-3): the same run as the buttons, so it opens the same pre-run dialog.
+        openPipelineRunDialog(MainScope(), "Start full scan", full = true) { skip ->
+            showPipelineToast(
+                if (MediaApi.startScan(full = true, skipSteps = skip)) "Full scan started" + skippedSuffix(skip)
+                else "Scan is already running or failed to start"
+            )
+        }
     },
     PaletteCmd("Triage: next item", "n key") {
         if (triageDockItems.isNotEmpty()) {
