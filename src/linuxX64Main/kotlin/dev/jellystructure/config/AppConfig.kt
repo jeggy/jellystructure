@@ -156,8 +156,10 @@ object FileCheckSteps {
     fun defaultStep(step: String, enabled: Boolean = true): PipelineStep = when (step) {
         VERIFY -> PipelineStep(step = VERIFY, enabled = enabled, recheckUnchanged = true,
             refreshThisYear = "5years", refresh1To5y = "5years", refreshOlder = "5years")
+        // FR-273-8: weekly for everything. Cheap: references are stored per video size and mtime, so an unchanged
+        // file is re-judged from two stored cue tracks and never decoded again.
         SUBTITLES -> PipelineStep(step = SUBTITLES, enabled = enabled, recheckUnchanged = true,
-            refreshThisYear = "monthly", refresh1To5y = "monthly", refreshOlder = "monthly")
+            refreshThisYear = "weekly", refresh1To5y = "weekly", refreshOlder = "weekly")
         else -> PipelineStep(step = LENGTHS, enabled = enabled, recheckUnchanged = true,
             refreshThisYear = "yearly", refresh1To5y = "2years", refreshOlder = "5years")
     }

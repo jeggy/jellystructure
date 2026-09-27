@@ -84,6 +84,12 @@ All tracks the source exposes remain individually selectable rows — the friend
 drop, hide behind a "more" affordance, or silently merge tracks (e.g. two Danish subtitle variants stay as
 two rows: `Dansk` and `Dansk · Signs only`). Straightforward to read, but lossless.
 
+> **Narrowed by phase 273 (FR-273-17), 2026-09-27.** "Every track" means every track that belongs to the video. A
+> sidecar subtitle the server has checked and found to be for another video, timed for a longer cut, or off by
+> 2 s or more is left out of the list the server sends (so it never reaches this picker, the default or the
+> remembered choice) until it checks in sync. Picker behaviour is unchanged: it still shows every track it is
+> given. On *Only report* nothing is left out.
+
 #### FR-RV-ASP1-5 — Off row and no-flag tracks
 The **Subtitles** tab starts with an **Off** row (a crossed-out subtitle glyph in the flag slot, not a
 country flag). A track with **no meaningful language** (a commentary, or an unlabelled track) shows a

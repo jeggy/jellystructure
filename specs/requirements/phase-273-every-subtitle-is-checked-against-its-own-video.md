@@ -10,7 +10,9 @@
 
 ## Status
 
-`Planned` — written 2026-09-27 from two research passes the same day (a single animated series, then every
+`✓ Built` 2026-09-27, **not deployed** (commits `fd1d09ae` → the build-notes commit; see *Build notes* at the
+end). Acceptance 1, the read-only *Only report* run on production, waits for a deploy the owner approves.
+`Planned` when written 2026-09-27 from two research passes the same day (a single animated series, then every
 sidecar in the production library; the reports are private because they name library titles). The owner
 answered the open questions the same day (see *Owner decisions*). **Dev-reviewed 2026-09-27** against `main`
 `0766a76b`: buildable, three corrections folded into the text below (see *Dev review* at the end). Backend (a check, a hook, a Bazarr steering loop, an advisor) and admin (verdicts on the title
@@ -579,3 +581,91 @@ marked, from read-only calls to the production Bazarr. Nothing was written to Ba
 steering loop over Bazarr's own API, one advisor, migration 58, and one shared rule for which subtitles a viewer
 sees. No Ravilo client change, and nothing written to Bazarr or Jellyfin except what the admin applies or a
 verdict requires.
+
+## Build notes (2026-09-27)
+
+Built on `main` the same day, after the dev review (`fd1d09ae`, `11917d61`, `b9fb3048`, `f858ccdd`, `70108439`,
+`58e291d3`). Every requirement is in. Where the build differs from the text above or from the dev review's code
+map, the build is recorded here.
+
+1. **Where things live.** The check is backend-only, so it went to `linuxX64Main/…/subtitles/` rather than
+   commonMain: `CueParser.kt` (SRT with BOM/CRLF, WebVTT with cue settings, ASS by its `Format:` line;
+   `.sub`/`.idx` skipped), `SubtitleTiming.kt` (10 Hz masks, a radix-2 FFT with one plan per check, since a
+   shared twiddle cache was not thread-safe), `SubtitleVerdict.kt` (the thresholds and the offered rule as pure
+   functions), `SpeechTrack.kt`, `SubtitleReferences.kt` (the dev review's `SubtitleReferenceStore`),
+   `SubtitleCheckService.kt`, `SubtitleVerdicts.kt` (the one offered predicate). Bazarr: `bazarr/BazarrSteering.kt`,
+   `bazarr/SubtitleHook.kt`, `advisor/BazarrAdvisorService.kt`; routes in `server/routes/SubtitleCheckRoutes.kt`
+   (the hook route sits there rather than in `WebhookRoutes.kt`, with the same secret check and
+   `recordArrHit("bazarr")`; `/api/webhooks/` was already the open prefix).
+2. **The fit (FR-273-4), as calibrated.** Retiming is `t' = t × scale + shift`, searched at five scales (1,
+   25/23.976, 23.976/25, 1.001, 1/1.001) over ±120 s. Subtitle-reference thresholds are the spec's. **Mid-file
+   chunks are 3 minutes, not 5**, and on the production cue timings the chunk test gave false positives until
+   three rules were added: median-of-3 smoothing; a chunk counts only when it beats the global fit by 20%; and a
+   chunk whose best lag sits on the ±10 s search edge is ignored. A straight line
+   through the chunk shifts decides between the two outcomes: a residual over 1 s is `off_mid_file`, otherwise
+   the drift is linear and the sync is sent with `gss`. A throwaway port check (not committed; it reads
+   production cue timings) ran these verdicts over the production sidecars with an embedded reference and agreed
+   with the research's verdicts on **937 of 944**. The animated series' 34 cases are not pinned in a test,
+   because they would name the title (dev review item 3). Synthetic cases cover each verdict.
+3. **Speech track (FR-273-5): its own decode, not folded into 222's.** `FfmpegRunner.computeSpeechTrack` decodes
+   one audio stream (the title's original language, else the first) as stereo 16 kHz through a 200–3500 Hz band
+   and feeds a `SpeechAccumulator`: per 100 ms, the share of frames where mid beats side by 10 dB and loudness is
+   above the file's 40th percentile. 222's waveform path is untouched. The decode runs only for a file that
+   needs a speech track, on the segments lane, deferred while a TV plays. Mono audio is `cant_tell · mono_audio`.
+   References (embedded or speech) are stored per video size and mtime, including "this file has none", so an
+   unchanged file is never fetched or decoded twice.
+4. **Embedded reference (FR-273-6).** `JellyfinClient.fetchSubtitleText` returns the body that
+   `warmSubtitleExtraction` used to drop. `prewarm_subtitles` passes it to `SubtitleReferences`, which keeps the
+   first stream that qualifies (≥ 3 cues a minute, not forced) and fetches at most 3 streams for a file with a
+   sidecar and no stored reference.
+5. **The step (FR-273-8).** `check_subtitles` is a 261 file-check step on the segments lane, dedupe key
+   `subs:<video path>`, placed after `prewarm_subtitles`, **weekly** for every age bucket. A file is due when its
+   sidecar set (path, size, mtime) or the video changed. A hook call checks inline from stored references; a
+   check that needs a fetch or a decode is queued as a job instead. An existing install gets the step once through
+   `scan.subtitle_check_seeded`.
+6. **Config.** `[subtitle_check]` with `action` (`fix` · `ask` · `report`), `daily_download_budget` (100, 0–1000)
+   and `bazarr_reach_url`, not `bazarr.check_action`. It has its own route (`GET`/`PUT /api/subtitles/settings`),
+   and a Settings save keeps the stored block, so an older Settings page cannot reset the switch. A new install
+   starts on `fix`; an existing one is seeded to `report` once.
+7. **Steering (FR-273-11 to 16), as built.** In one pass per video: restore first (FR-273-15; a settled copy
+   older than the video is dropped, never restored), then per verdict. `off`: sync with `s:N` from the track's
+   specifier (only `s:0`–`s:9`), else an in-sync sibling's path, else `a:N`. `max_offset_seconds` is the first
+   of 60/120/300/600 above the shift, `no_fix_framerate=false` when the scale is not 1, and `gss` when the drift
+   is linear. A sync is judged by a check made after it, and one still off is replaced. `off_mid_file`,
+   `not_this_video` and `longer_video` are replaced through the blacklist, at most 3 rounds a day and within
+   the budget. `other_episode` is uploaded to the episode it belongs to, then replaced. Once the day's 3
+   blacklist rounds are spent, FR-273-14 applies: when two or more episodes of the season carry the same shift
+   (episode N holds N+k's subtitle), the best untried candidate of episode N−k is downloaded onto this one;
+   with no such pattern, or none left, the wrong file is removed. Every action on a file's content is keyed by
+   its content hash, so nothing is done twice to the same file. A verdict from the speech track only ever
+   proposes.
+8. **Jellyfin (dev review item 1).** A hook call sends the new sidecar's path (`Created`) and a change
+   jellystructure causes sends the video's path (`Modified`) to `Library/Media/Updated`, under the library's
+   `jellyfin_path` mapping. Both are followed at once by a `ValidationOnly` refresh of the one item, not a minute
+   later. `notifyLibraryMediaUpdated` gained an optional update type. **Unverified:** which of the two calls makes
+   Jellyfin 12.1 list a new external subtitle and drop a deleted one. The demo-Jellyfin check was not run.
+9. **Phase 157 defects found and fixed on the way.** The manual provider search decoded a bare list and boolean
+   fields, where Bazarr answers a `data` envelope with string booleans; history rows carry `language` as an
+   object; a manual episode download did not send `seriesid`. All three were silent failures of 157's per-title
+   Bazarr actions.
+10. **Admin.** Settings → Download tools → Bazarr carries the switch, the budget, the reach address, the
+    post-processing command (with Copy; the secret reaches only a signed-in admin, as 165's status does), whether
+    Bazarr has called, the advisor with *Apply in Bazarr*, and, while on *Only report*, **what *Fix it* would do
+    with the verdicts so far** (dev review item 8; `fix_would` on `/api/subtitles/summary`, from the same
+    first-action rule the steering loop uses). Dashboard: fit counts, not offered, mode, downloads against the
+    budget, last call, *Needs your OK*; the Bazarr advisor beside Jellyfin's. The title page has a *Do the
+    subtitles fit?* card on both tabs, plus verdict chips on the movie's sidecar rows, a SUBTITLES strip without
+    hidden sidecars, and *No right subtitle found yet · N tried* for a language left empty (FR-273-23). **Not
+    shown:** FR-273-23's *Bazarr looks again in 6 h*, because jellystructure does not read Bazarr's search
+    schedule.
+11. **R180.** FR-RV-ASP1-4 carries a note narrowing "every track" to tracks that belong to the video.
+12. **Tests.** 682 pass (`linuxX64Test`). New: `SubtitleTimingTest` (13: parsers, the FFT against a direct
+    correlation, every verdict on synthetic shifts, PAL speed, a splice, another episode, a longer cut, speech,
+    a thin embedded track, the offered rule), `SubtitleCheckServiceTest` (5), `BazarrSteeringTest` (6, against
+    a fake Bazarr: sync and blacklist once, ask then approve, report does nothing and says what *Fix it* would
+    do, no budget, restore after a blind upgrade, a move to the right episode) and `BazarrAdvisorTest` (3).
+    Migration 58 passes `verifyCommonMainJellystructureDbMigration`; the admin compiles.
+
+**Still open, all needing the owner:** deploy, then acceptance 1 (the *Only report* run on production, read-only),
+then the switch to *Fix it*; the demo-Jellyfin check in item 8; and a Pixel 9 check in HLS mode that a hidden
+sidecar is not in the picker (dev review item 2).
