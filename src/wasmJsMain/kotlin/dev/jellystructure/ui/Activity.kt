@@ -170,6 +170,14 @@ fun renderActivity(container: Element, scope: CoroutineScope, query: Map<String,
               <div class="row center" style="gap:10px;flex-wrap:wrap;" id="jobs-worker-line-subtitles"><span class="muted tiny">Loading…</span></div>
             </div>
           </div>
+          <!-- Phase 272 (FR-272-8..15) — AI work: what waits, what is out at Anthropic, and the last five batches. -->
+          <div class="card" id="ai-card" style="margin-bottom:14px;display:none;">
+            <div class="row center" style="gap:10px;flex-wrap:wrap;"><h4 style="margin:0;">AI · sent to Anthropic</h4><span class="spacer"></span><span class="muted tiny">runs at Anthropic — no worker here is busy</span></div>
+            <hr class="dash" style="margin:10px 0;">
+            <div id="ai-jobs-body"></div>
+            <div id="ai-history"></div>
+            <div id="ai-conv" style="display:none;margin-top:12px;"></div>
+          </div>
           <div class="card" id="jobs-running-card" style="margin-bottom:14px;display:none;">
             <div class="row center"><h4 style="margin:0;">Running now</h4></div>
             <hr class="dash" style="margin:10px 0;">
@@ -629,6 +637,8 @@ private fun Double.formatRate(): String {
 }
 
 private suspend fun refreshJobsPanel(container: Element) {
+    // Phase 272 — the AI card reads the database only (never Anthropic), so it polls with the lanes.
+    dev.jellystructure.api.AiApi.jobs()?.let { renderAiCard(container, it) }
     val summary = MediaApi.getJobsSummary()
     if (summary != null) renderJobsPanel(container, summary)
 }
@@ -796,13 +806,190 @@ private fun wireEmptyPanel(container: Element) {
     }
 }
 
+// ─── Phase 272 — the AI card ──────────────────────────────────────────────────
+
+/** Waiting AI requests plus batches out, for the tab badge (FR-272-11). */
+private var aiInFlight = 0
+/** What the card last drew, so a two-second poll that changed nothing redraws nothing (the minute is part of
+ *  it, for the "4m ago"). The conversations panel is never redrawn by the poll at all: it is filled on a click. */
+private var aiJobsSig = ""
+private var aiHistorySig = ""
+/** Which batch the conversations panel shows. */
+private var aiOpenBatch: String? = null
+
+private fun usdOf(micro: Long): String {
+    val cents = (micro + 5_000) / 10_000
+    return "$" + (cents / 100) + "." + (cents % 100).toString().padStart(2, '0')
+}
+
+private fun clockOf(epochSec: Long): String = dev.jellystructure.formatClock(epochSec.toString())
+
+private fun jobNoun(job: String, n: Long): String = (if (job == "rerank") "viewer" else "title") + if (n == 1L) "" else "s"
+
+private fun renderAiCard(container: Element, v: dev.jellystructure.api.AiJobsView) {
+    val card = container.querySelector("#ai-card") as? HTMLElement ?: return
+    wireAiCard(container, card)
+    aiInFlight = v.jobs.sumOf { it.waiting.size + (if (it.out != null) 1 else 0) }
+    val anything = v.enabled || v.history.isNotEmpty() || aiInFlight > 0
+    card.style.display = if (anything) "" else "none"
+    if (!anything) return
+
+    val minute = (nowMs() / 60_000).toLong()
+    val jobsSig = v.jobs.toString() + minute
+    if (jobsSig != aiJobsSig) {
+        aiJobsSig = jobsSig
+        (card.querySelector("#ai-jobs-body") as? HTMLElement)?.innerHTML = v.jobs.joinToString("""<hr class="dash" style="margin:10px 0;">""") { aiJobHtml(it) }
+    }
+    val historySig = v.history.toString()
+    if (historySig != aiHistorySig) {
+        aiHistorySig = historySig
+        (card.querySelector("#ai-history") as? HTMLElement)?.innerHTML = if (v.history.isEmpty()) "" else """
+            <hr class="dash" style="margin:12px 0 8px;">
+            <div class="row center" style="gap:10px;"><b>History</b><span class="tiny muted">the last five batches — what was sent, and what came back</span></div>
+            ${v.history.joinToString("") { aiHistoryHtml(it) }}"""
+    }
+}
+
+private fun aiJobHtml(j: dev.jellystructure.api.AiJobView): String = buildString {
+    val out = j.out
+    val state = when {
+        !j.on -> """<span class="badge">off</span>"""
+        out != null -> """<span class="badge warn">waiting on Anthropic</span>"""
+        else -> """<span class="badge">idle</span>"""
+    }
+    append("""<div class="row center" style="gap:10px;flex-wrap:wrap;">
+        <span class="wk-dot ${if (out != null) "busy" else "idle"}"></span><b>${j.label.esc()}</b> $state
+        <span class="muted tiny">${j.modelLabel.esc()}</span>
+        <span class="spacer"></span>
+        <span class="chip"><b>${j.waiting.size}</b> waiting</span>
+        <span class="chip"><b>${if (out != null) 1 else 0}</b> batch out</span>
+        <span class="chip">${usdOf(j.spentMicroUsd)} of ${usdOf(j.limitMicroUsd)} this month</span>
+      </div>""")
+    j.heldBack?.let { append("""<div class="tiny" style="color:var(--warn);margin-top:6px;">${it.esc()}</div>""") }
+    if (out != null) {
+        val counts = listOf("processing", "succeeded", "errored", "canceled", "expired")
+            .mapNotNull { k -> out.counts[k]?.takeIf { it > 0 || k == "processing" }?.let { "$it ${if (k == "canceled") "cancelled" else k}" } }
+            .joinToString(" · ").ifEmpty { "no word from Anthropic yet" }
+        val action = if (out.cancelling) """<span class="tiny muted">cancelling — Anthropic finishes what it started</span>"""
+            else """<span class="btn sm bad ai-cancel" data-batch="${out.id.esc()}">Cancel at Anthropic</span>"""
+        append("""<div class="jobrow" style="margin-top:8px;">
+            <span class="jq-ic" style="color:var(--warn);">⧗</span>
+            <div class="jq-main"><div class="jq-title">${out.requests} ${jobNoun(j.job, out.requests)} · sent ${clockOf(out.sentAt)} (${dev.jellystructure.formatRelativeAgo(out.sentAt.toString())})</div>
+              <div class="jq-sub">Anthropic: $counts · looked at every minute</div></div>
+            <span class="btn sm ghost ai-open" data-batch="${out.id.esc()}">What was sent</span>
+            $action
+          </div>""")
+    }
+    val shown = j.waiting.take(AI_WAITING_SHOWN)
+    shown.forEachIndexed { i, q ->
+        append("""<div class="jobrow">
+            <span class="jq-pos">${i + 1}</span>
+            <div class="jq-main"><div class="jq-title">${q.label.esc()}</div><div class="jq-sub">${q.reason.esc()} · queued by ${q.by.esc()} · ${clockOf(q.queuedAt)}${if (out != null) " · goes when the batch out is read" else ""}</div></div>
+            <span class="badge">waiting</span>
+            <span class="btn sm ghost ai-remove" data-id="${q.id}">Remove</span>
+          </div>""")
+    }
+    if (j.waiting.size > shown.size) append("""<div class="tiny muted" style="padding:6px 0 0 34px;">and ${j.waiting.size - shown.size} more</div>""")
+}
+
+private fun aiHistoryHtml(h: dev.jellystructure.api.AiHistory): String {
+    val ok = h.outcome?.startsWith("ran") == true
+    val ic = if (ok) """<span class="jq-ic ok">✓</span>""" else """<span class="jq-ic bad">✗</span>"""
+    val took = h.endedAt?.let { e -> " · read ${clockOf(e)} · took ${formatRemaining((e - h.sentAt).coerceAtLeast(0) * 1000.0)}" } ?: ""
+    val open = if (h.hasTranscripts) """<span class="btn sm ghost ai-open" data-batch="${h.id.esc()}">Conversations</span>"""
+        else """<span class="tiny muted">no conversation kept</span>"""
+    val jobName = if (h.job == "rerank") "Re-rank" else "Theme tags"
+    return """<div class="jobrow">
+        $ic
+        <div class="jq-main"><div class="jq-title">$jobName · ${h.requests} ${jobNoun(h.job, h.requests)} · ${h.modelLabel.esc()}</div>
+          <div class="jq-sub">sent ${clockOf(h.sentAt)}$took · ${(h.outcome ?: "—").esc()}</div></div>
+        $open
+      </div>"""
+}
+
+private const val AI_WAITING_SHOWN = 5
+
+/** One click listener on the card for every button the poll redraws (Remove · Cancel · Conversations). */
+private fun wireAiCard(container: Element, card: HTMLElement) {
+    if (card.getAttribute("data-wired") == "1") return
+    card.setAttribute("data-wired", "1")
+    card.addEventListener("click") { ev ->
+        val target = ev.target as? Element ?: return@addEventListener
+        val btn = target.closest(".ai-remove, .ai-cancel, .ai-open, .ai-conv-close") as? HTMLElement ?: return@addEventListener
+        val scope = activityScope ?: return@addEventListener
+        when {
+            btn.classList.contains("ai-remove") -> {
+                val id = btn.getAttribute("data-id")?.toLongOrNull() ?: return@addEventListener
+                btn.textContent = "Removing…"
+                scope.launch {
+                    dev.jellystructure.api.AiApi.removeQueued(id)?.let { jobsToast(it) }
+                    aiJobsSig = ""; refreshJobsPanel(container)
+                }
+            }
+            btn.classList.contains("ai-cancel") -> {
+                val id = btn.getAttribute("data-batch") ?: return@addEventListener
+                btn.textContent = "Cancelling…"
+                scope.launch {
+                    dev.jellystructure.api.AiApi.cancel(id)?.let { jobsToast(it) }
+                    aiJobsSig = ""; refreshJobsPanel(container)
+                }
+            }
+            btn.classList.contains("ai-conv-close") -> {
+                aiOpenBatch = null
+                (card.querySelector("#ai-conv") as? HTMLElement)?.style?.display = "none"
+            }
+            else -> {
+                val id = btn.getAttribute("data-batch") ?: return@addEventListener
+                scope.launch { openAiConversation(card, id) }
+            }
+        }
+    }
+}
+
+/** FR-272-15 — one batch's requests; each opens to System · Sent · Answer and what was applied. */
+private suspend fun openAiConversation(card: HTMLElement, batchId: String) {
+    val panel = card.querySelector("#ai-conv") as? HTMLElement ?: return
+    aiOpenBatch = batchId
+    panel.style.display = ""
+    panel.innerHTML = """<span class="tiny muted">Loading…</span>"""
+    val d = dev.jellystructure.api.AiApi.batch(batchId)
+    if (aiOpenBatch != batchId) return
+    if (d == null) {
+        panel.innerHTML = """<span class="tiny" style="color:var(--bad)">This batch is no longer kept — only the last five are.</span>"""
+        return
+    }
+    val b = d.batch
+    val jobName = if (b.job == "rerank") "Re-rank" else "Theme tags"
+    val pre = "white-space:pre-wrap;word-break:break-word;max-height:320px;overflow:auto;background:var(--fill-2);padding:10px;border-radius:8px;margin:4px 0 10px;font-size:.74rem;"
+    val rows = d.requests.joinToString("") { r ->
+        val used = r.verdict?.startsWith("used") == true
+        val verdict = r.verdict ?: "waiting for the answer"
+        val meta = if (r.answer == null && r.resultType == null) "" else " · ${r.inputTokens} in / ${r.outputTokens} out · ${usdOf(r.costMicroUsd)}"
+        """<details style="border-top:1px solid var(--line);padding:6px 0;">
+            <summary style="cursor:pointer;"><b>${r.label.esc()}</b> · <span style="color:${if (used) "var(--ok)" else if (r.verdict == null) "var(--ink-soft)" else "var(--warn)"}">${verdict.esc()}</span><span class="tiny muted">$meta</span></summary>
+            <div class="tiny muted" style="margin-top:6px;">${r.model.esc()}${if (r.effort.isNotEmpty()) " · effort " + r.effort.esc() else ""}${r.stopReason?.let { " · stop: " + it.esc() } ?: ""}</div>
+            ${r.readable?.let { """<div class="tiny" style="margin-top:6px;"><b>What was applied</b></div><pre class="mono" style="$pre">${it.esc()}</pre>""" } ?: ""}
+            <div class="tiny" style="margin-top:6px;"><b>System</b></div><pre class="mono" style="$pre">${r.system.esc()}</pre>
+            <div class="tiny"><b>Sent</b></div><pre class="mono" style="$pre">${r.sent.esc()}</pre>
+            <div class="tiny"><b>Answer</b></div><pre class="mono" style="$pre">${r.answer?.let { dev.jellystructure.prettyJson(it).esc() } ?: "waiting for the answer"}</pre>
+          </details>"""
+    }
+    panel.innerHTML = """<div class="row center" style="gap:10px;flex-wrap:wrap;">
+        <b>$jobName · sent ${clockOf(b.sentAt)} · ${b.requests} ${jobNoun(b.job, b.requests)}</b>
+        <span class="tiny muted">${b.modelLabel.esc()}${b.outcome?.let { " · " + it.esc() } ?: " · still out"}</span>
+        <span class="spacer"></span><span class="btn sm ghost ai-conv-close">Close</span>
+      </div>
+      <div class="tiny muted" style="margin:4px 0 6px;">Exactly what left the house and exactly what came back. The names here are for you — a request carries no name, no user id and no device.</div>
+      ${rows.ifEmpty { """<span class="tiny muted">No conversation was kept for this batch.</span>""" }}"""
+}
+
 private fun renderJobsPanel(container: Element, s: dev.jellystructure.api.JobsSummary) {
     lastJobsSummary = s   // Phase 260
     wireEmptyPanel(container)
     val groupWaiting = s.groups.sumOf { it.waiting }   // Phase 261 — per-file rows are counted, not listed
     (container.querySelector("#qe-open-all") as? HTMLElement)?.style?.display = if (s.queued.isEmpty() && groupWaiting == 0) "none" else ""
     (container.querySelector("#jobs-count-badge") as? HTMLElement)?.let {
-        val n = s.queued.size + groupWaiting + s.running.size
+        val n = s.queued.size + groupWaiting + s.running.size + aiInFlight   // Phase 272 (FR-272-11)
         it.textContent = n.toString()
         it.style.display = if (n > 0) "" else "none"
     }

@@ -95,15 +95,25 @@ class AiJobsTest {
         assertFalse(AiPricing.wouldPassLimit(spentMicroUsd = 4_700_000, worstCaseMicroUsd = 200_000, limitUsd = 5.0))
     }
 
+    /** Phase 272 — queue then send, as `afterBuild` does. */
+    private suspend fun submit(j: AiJobs, vararg inputs: AiJobs.RerankInput) {
+        j.enqueueRerank(inputs.toList(), "weekly build", AiJobs.BY_SYSTEM)
+        j.sendQueued()
+    }
+
+    private fun viewer(u: String, n: Int = 10) = AiJobs.RerankInput(u, "s1", (1..n).map { "jf$it" }, listOf("jf1"), label = "Viewer $u")
+
     @Test
-    fun `a batch that would pass the limit is not sent and the run says so`() = runBlocking {
+    fun `a request that would pass the limit is not sent and stays waiting with the reason`() = runBlocking {
         enable(limit = 0.01)
         val t = FakeTransport { _, _, _ -> error("nothing may be sent") }
-        val sent = jobs(t).submitRerank(listOf(AiJobs.RerankInput("u1", "s1", (1..10).map { "jf$it" }, listOf("jf1"))))
-        assertFalse(sent)
+        val j = jobs(t)
+        submit(j, viewer("u1"))
         assertTrue(t.calls.isEmpty())
         assertEquals(0L, db.aiQueries.countBatches().executeAsOne())
-        assertTrue(db.aiQueries.runFor(AiRequests.RERANK_JOB).executeAsOne().line.startsWith("skipped: limit reached"))
+        val view = j.jobsView().jobs.first { it.job == AiRequests.RERANK_JOB }
+        assertEquals(1, view.waiting.size)
+        assertTrue(view.heldBack!!.startsWith("1 waiting — this month's limit"), view.heldBack)
     }
 
     // ─── Validation (FR-270-4, dev review item 5) ─────────────────────────────
@@ -176,8 +186,14 @@ class AiJobsTest {
             }
         }
         // Before the "restart": the batch is sent and recorded.
-        assertTrue(jobs(t).submitRerank(listOf(AiJobs.RerankInput("u1", "s1", (1..10).map { "jf$it" }, listOf("jf9")))))
+        submit(jobs(t), AiJobs.RerankInput("u1", "s1", (1..10).map { "jf$it" }, listOf("jf9"), label = "Viewer one"))
         assertEquals(1, db.aiQueries.pendingBatches().executeAsList().size)
+        // Phase 272 (FR-272-13) — the conversation is kept from the moment it is sent: the prompt, no answer yet.
+        val waitingDetail = jobs(t).batchDetail("msgbatch_1")!!.requests.single()
+        assertEquals("Viewer one", waitingDetail.label)
+        assertTrue(waitingDetail.system.startsWith("You help a household media server"))
+        assertTrue(waitingDetail.sent.contains("Shortlist:\nt1 | Film 1 (2001)"), waitingDetail.sent)
+        assertNull(waitingDetail.answer)
 
         // After it: a NEW runner over the same database finds the batch and applies it.
         val applied = ArrayList<Pair<String, List<String>>>()
@@ -189,6 +205,14 @@ class AiJobsTest {
         assertTrue(db.aiQueries.pendingBatches().executeAsList().isEmpty())
         // 1k in + 2k out on Opus 5, batch price: 1000 × 2.5 + 2000 × 12.5 micro-dollars.
         assertEquals(27_500L, after.spentThisMonth(AiRequests.RERANK_JOB))
+        // FR-272-13/14 — the answer, the verdict in words and the picks with their titles.
+        val read = after.batchDetail("msgbatch_1")!!
+        assertEquals("ran · 1 viewer · $0.03", read.batch.outcome)
+        val tr = read.requests.single()
+        assertEquals("used · 2 picks, 8 topped up", tr.verdict)
+        assertTrue(tr.answer!!.contains("\"t3\""))
+        assertEquals("1. Film 3 (2003) — because", tr.readable!!.lines().first())
+        assertEquals(27_500L, tr.costMicroUsd)
 
         // Polling again reads nothing twice.
         val callsBefore = t.calls.size
@@ -224,7 +248,7 @@ class AiJobsTest {
         enable(rerank = true, themes = true, on = false)
         val t = FakeTransport { _, _, _ -> error("AI is off: nothing may be sent") }
         val j = jobs(t, (1..10).map { film(it, keywords = false) })
-        j.afterBuild(listOf(AiJobs.RerankInput("u1", "s1", (1..10).map { "jf$it" }, emptyList())))
+        j.afterBuild(listOf(AiJobs.RerankInput("u1", "s1", (1..10).map { "jf$it" }, emptyList())), "weekly build", AiJobs.BY_SYSTEM)
         j.pollPending()
         assertTrue(t.calls.isEmpty())
         assertEquals(0L, db.aiQueries.countBatches().executeAsOne())
@@ -246,10 +270,218 @@ class AiJobsTest {
             else AnthropicClient.Response(200, """{"id":"b1","processing_status":"in_progress"}""")
         }
         val lib = listOf(film(1), film(2, keywords = false), film(3, keywords = false))
-        assertTrue(jobs(t, lib).submitThemes())
+        val j = jobs(t, lib)
+        assertEquals(2, j.enqueueThemes())
+        j.sendQueued()
         assertEquals(2, (bodies[0]["requests"] as kotlinx.serialization.json.JsonArray).size)
-        // One batch out per job at a time: a second run while the first is pending sends nothing.
-        assertFalse(jobs(t, lib).submitThemes())
+        // Both titles are out: a second pass queues nothing and sends nothing.
+        assertEquals(0, jobs(t, lib).enqueueThemes())
+        jobs(t, lib).sendQueued()
         assertEquals(1, bodies.size)
+    }
+
+    // ─── Phase 272 — the queue ────────────────────────────────────────────────
+
+    /** A stand-in Anthropic that numbers batches b1, b2…, keeps each one's custom ids, answers every re-rank
+     *  with picks t2, t1, and reports a batch ended once [ended] holds its id. */
+    private class FakeAnthropic {
+        val created = ArrayList<List<String>>()
+        val bodies = ArrayList<String>()
+        val ended = HashSet<String>()
+        val cancelled = ArrayList<String>()
+        var canceledIds = emptySet<String>()
+        val transport = FakeTransport { method, url, body ->
+            when {
+                method == "POST" && url.endsWith("/cancel") -> {
+                    cancelled += url.substringAfter("/batches/").substringBefore("/cancel")
+                    AnthropicClient.Response(200, """{"id":"${cancelled.last()}","processing_status":"canceling"}""")
+                }
+                method == "POST" -> {
+                    bodies += body!!
+                    val reqs = Json.parseToJsonElement(body).jsonObject["requests"] as kotlinx.serialization.json.JsonArray
+                    created += reqs.map { it.jsonObject["custom_id"].toString().trim('"') }
+                    AnthropicClient.Response(200, """{"id":"b${created.size}","processing_status":"in_progress"}""")
+                }
+                url.endsWith("/results") -> {
+                    val id = url.substringAfter("/batches/").substringBefore("/results")
+                    val n = id.removePrefix("b").toInt()
+                    AnthropicClient.Response(200, created[n - 1].joinToString("\n") { cid ->
+                        if (cid in canceledIds) """{"custom_id":"$cid","result":{"type":"canceled"}}"""
+                        else """{"custom_id":"$cid","result":{"type":"succeeded","message":{"content":[{"type":"text","text":"{\"picks\":[{\"id\":\"t2\",\"reason\":\"r\"},{\"id\":\"t1\",\"reason\":\"r\"}]}"}],"stop_reason":"end_turn","usage":{"input_tokens":100,"output_tokens":100}}}}"""
+                    })
+                }
+                else -> {
+                    val id = url.substringAfterLast("/")
+                    val status = if (id in ended) "ended" else "in_progress"
+                    AnthropicClient.Response(200, """{"id":"$id","processing_status":"$status","request_counts":{"processing":1,"succeeded":0,"errored":0,"canceled":0,"expired":0},"results_url":"https://api.anthropic.com/v1/messages/batches/$id/results"}""")
+                }
+            }
+        }
+    }
+
+    @Test
+    fun `a request made while a batch is out waits and goes the moment that batch is read`() = runBlocking {
+        enable()
+        val a = FakeAnthropic()
+        val applied = ArrayList<String>()
+        val j = jobs(a.transport).also { it.rerankSink = AiJobs.RerankSink { u, _, _ -> applied += u } }
+        submit(j, viewer("u1"))
+        assertEquals(1, a.created.size)
+        assertEquals("out", j.pendingFor("u1")!!.state)
+
+        // The admin's Rebuild now for a second viewer while b1 is out: queued, not dropped (Today, 4).
+        j.enqueueRerank(listOf(viewer("u2")), "Rebuild now", "admin")
+        j.sendQueued()
+        assertEquals(1, a.created.size)
+        val waiting = j.jobsView().jobs.first { it.job == AiRequests.RERANK_JOB }.waiting.single()
+        assertEquals("Viewer u2", waiting.label)
+        assertEquals("Rebuild now", waiting.reason)
+        assertEquals("admin", waiting.by)
+        assertEquals("waiting", j.pendingFor("u2")!!.state)
+
+        // Still out: the poll keeps Anthropic's counts and sends nothing.
+        j.pollPending()
+        assertEquals(1, a.created.size)
+        assertEquals(1L, j.jobsView().jobs.first { it.job == AiRequests.RERANK_JOB }.out!!.counts["processing"])
+
+        // b1 ends: it is read, and u2 goes in the same poll.
+        a.ended += "b1"
+        j.pollPending()
+        assertEquals(listOf("u1"), applied)
+        assertEquals(2, a.created.size)
+        assertEquals("out", j.pendingFor("u2")!!.state)
+        assertNull(j.pendingFor("u1"))
+        a.ended += "b2"
+        j.pollPending()
+        assertEquals(listOf("u1", "u2"), applied)
+    }
+
+    @Test
+    fun `queuing a viewer who is already waiting replaces the request with the newer shortlist`() = runBlocking {
+        enable(limit = 0.0)   // nothing is sent: the queue is only looked at
+        val j = jobs(FakeTransport { _, _, _ -> error("nothing may be sent") })
+        j.enqueueRerank(listOf(viewer("u1", n = 5)), "weekly build", AiJobs.BY_SYSTEM)
+        j.enqueueRerank(listOf(viewer("u1", n = 8)), "Rebuild now", "admin")
+        val rows = db.aiQueries.waitingFor(AiRequests.RERANK_JOB).executeAsList()
+        assertEquals(1, rows.size)
+        assertEquals("Rebuild now", rows[0].reason)
+        assertTrue(rows[0].payload.contains("\"jf8\""))
+    }
+
+    @Test
+    fun `the monthly limit takes the oldest requests that fit and leaves the rest waiting`() = runBlocking {
+        // Opus 5's worst case for one re-rank is about $0.10 (8 000 output tokens at the batch price).
+        enable(limit = 0.15)
+        val a = FakeAnthropic()
+        val j = jobs(a.transport)
+        j.enqueueRerank(listOf(viewer("u1"), viewer("u2"), viewer("u3")), "weekly build", AiJobs.BY_SYSTEM)
+        j.sendQueued()
+        assertEquals(listOf(1), a.created.map { it.size })
+        val view = j.jobsView().jobs.first { it.job == AiRequests.RERANK_JOB }
+        assertEquals(listOf("Viewer u2", "Viewer u3"), view.waiting.map { it.label })
+        assertTrue(view.heldBack!!.startsWith("2 waiting — this month's limit:"), view.heldBack)
+    }
+
+    @Test
+    fun `raising the limit sends what was held back without another click`() = runBlocking {
+        enable(limit = 0.01)
+        val a = FakeAnthropic()
+        val j = jobs(a.transport)
+        j.enqueueRerank(listOf(viewer("u1"), viewer("u2"), viewer("u3")), "weekly build", AiJobs.BY_SYSTEM)
+        j.sendQueued()
+        assertTrue(a.created.isEmpty())
+        enable(limit = 5.0)
+        j.sendQueued()   // the runner's minute tick does this
+        assertEquals(listOf(3), a.created.map { it.size })
+        assertNull(j.jobsView().jobs.first { it.job == AiRequests.RERANK_JOB }.heldBack)
+    }
+
+    @Test
+    fun `only the five newest batches keep their record and conversations`() = runBlocking {
+        enable()
+        val a = FakeAnthropic()
+        val j = jobs(a.transport)
+        for (n in 1..6) {
+            submit(j, viewer("u$n"))
+            a.ended += "b$n"
+            j.pollPending()
+        }
+        val history = j.jobsView().history
+        assertEquals(AiJobs.HISTORY, history.size)
+        assertFalse(history.any { it.id == "b1" })
+        assertNull(j.batchDetail("b1"))
+        assertEquals(0, db.aiQueries.transcriptsFor("b1").executeAsList().size)
+        assertEquals(1, j.batchDetail("b6")!!.requests.size)
+    }
+
+    @Test
+    fun `a cancel is sent to Anthropic and what was produced is still applied and paid for`() = runBlocking {
+        enable()
+        val a = FakeAnthropic()
+        val applied = ArrayList<String>()
+        val j = jobs(a.transport).also { it.rerankSink = AiJobs.RerankSink { u, _, _ -> applied += u } }
+        submit(j, viewer("u1"), viewer("u2"))
+        assertEquals(AiJobs.Cancel.SENT, j.cancel("b1"))
+        assertEquals(listOf("b1"), a.cancelled)
+        assertTrue(j.jobsView().jobs.first { it.job == AiRequests.RERANK_JOB }.out!!.cancelling)
+
+        a.canceledIds = setOf(a.created[0][1])
+        a.ended += "b1"
+        j.pollPending()
+        assertEquals(1, applied.size)
+        assertEquals("ran · 1 viewer · $0.00 · 1 kept the standard list", j.batchDetail("b1")!!.batch.outcome)
+        assertTrue(j.spentThisMonth(AiRequests.RERANK_JOB) > 0)
+        assertTrue(j.batchDetail("b1")!!.requests.any { it.verdict == "kept the standard list — cancelled" })
+        assertEquals(AiJobs.Cancel.ENDED, j.cancel("b1"))
+        assertEquals(AiJobs.Cancel.NOT_FOUND, j.cancel("nope"))
+    }
+
+    @Test
+    fun `what is sent for a viewer is exactly what 270 sends`() = runBlocking {
+        enable()
+        val a = FakeAnthropic()
+        val lib = (1..10).map { film(it) }
+        submit(jobs(a.transport, lib), viewer("u1"))
+        val sent = (Json.parseToJsonElement(a.bodies.single()).jsonObject["requests"] as kotlinx.serialization.json.JsonArray).single()
+        val expected = AiRequests.rerankRequest(AiJobs.opaqueId("r", "u1|s1"), "claude-opus-5", "medium", lib, listOf(lib[0]))
+        assertEquals(expected, sent)
+        assertFalse(sent.toString().contains("Viewer u1"))   // the admin's label never leaves the house
+    }
+
+    @Test
+    fun `with the re-rank job off a viewer has nothing pending and nothing is queued`() = runBlocking {
+        enable(rerank = false)
+        val j = jobs(FakeTransport { _, _, _ -> error("nothing may be sent") })
+        assertEquals(0, j.enqueueRerank(listOf(viewer("u1")), "Rebuild now", "admin"))
+        assertNull(j.pendingFor("u1"))
+    }
+
+    @Test
+    fun `a verdict says why an answer was not used`() {
+        assertEquals("an id not on the shortlist (t999)", AiRequests.judgeRerank(answer(listOf("t1", "t999")), shortlist).why)
+        assertEquals("a title picked twice (t1)", AiRequests.judgeRerank(answer(listOf("t1", "t2", "t1")), shortlist).why)
+        assertEquals("stopped at the output limit", AiRequests.judgeRerank(answer(listOf("t1"), stop = "max_tokens"), shortlist).why)
+        assertEquals("refused", AiRequests.judgeRerank(answer(listOf("t1"), stop = "refusal"), shortlist).why)
+        assertEquals("not valid JSON", AiRequests.judgeRerank(AiRequests.Result("c", "succeeded", "end_turn", "{not json", null), shortlist).why)
+        assertEquals("expired", AiRequests.judgeRerank(answer(listOf("t1"), type = "expired"), shortlist).why)
+        assertEquals("more than 50 picks (51)", AiRequests.judgeRerank(answer((1..51).map { "t$it" }), shortlist).why)
+        val errored = AiRequests.parseResult(Json.parseToJsonElement(
+            """{"custom_id":"c","result":{"type":"errored","error":{"type":"error","error":{"type":"invalid_request_error","message":"bad model"}}}}""",
+        ).jsonObject)!!
+        assertEquals("errored — invalid_request_error: bad model", AiRequests.judgeRerank(errored, shortlist).why)
+        assertEquals("used · 2 picks, 48 topped up", AiRequests.judgeRerank(answer(listOf("t1", "t2")), shortlist).why)
+    }
+
+    // ─── Phase 272 (FR-272-7) — a run started by hand builds ──────────────────
+
+    @Test
+    fun `a run started by hand is always due and a scheduled one keeps the cadence`() {
+        val week = dev.jellystructure.config.RecommendationsStep.CADENCES.getValue("weekly")
+        val now = 1_790_000_000L
+        val builtYesterday = now - 86_400
+        assertTrue(dev.jellystructure.config.RecommendationsStep.notDue(builtYesterday, now, week, byHand = false))
+        assertFalse(dev.jellystructure.config.RecommendationsStep.notDue(builtYesterday, now, week, byHand = true))
+        assertFalse(dev.jellystructure.config.RecommendationsStep.notDue(null, now, week, byHand = false))
+        assertFalse(dev.jellystructure.config.RecommendationsStep.notDue(now - week, now, week, byHand = false))
     }
 }

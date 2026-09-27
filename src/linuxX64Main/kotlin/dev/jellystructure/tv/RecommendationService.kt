@@ -58,16 +58,17 @@ class RecommendationService(
     /** Theme tags per title from 270's theme job, one more feature for similarity. Set by Main. */
     var themes: () -> Map<String, List<String>> = { emptyMap() }
 
-    /** Called with each built viewer's shortlist after a full build and after a viewer's FIRST build (270's
-     *  re-rank runs then, not on every finish-triggered rebuild). Set by Main; null = no AI. */
-    var afterBuild: (suspend (List<dev.jellystructure.ai.AiJobs.RerankInput>) -> Unit)? = null
+    /** Called with each built viewer's shortlist after a full build, after a viewer's FIRST build (270's re-rank
+     *  runs then, not on every finish-triggered rebuild) and after the admin's *Rebuild now* — with why and by
+     *  whom, for the AI queue (Phase 272). Set by Main; null = no AI. */
+    var afterBuild: (suspend (List<dev.jellystructure.ai.AiJobs.RerankInput>, String, String) -> Unit)? = null
     private val aiAskedAt = HashMap<String, Long>()
 
     fun start(scope: CoroutineScope) {
         scope.launch(GateClass.BACKGROUND) {
             // Nothing built yet (a fresh install, or the first boot with this phase): build once now, so a
             // first Home is personal as soon as possible rather than after the next scheduled run.
-            if (lastBuiltAt() == null) runCatching { buildAll() }.onFailure { Logger.warn("Recommendations: first build failed: ${it.message}", "tv") }
+            if (lastBuiltAt() == null) runCatching { buildAll(REASON_FIRST) }.onFailure { Logger.warn("Recommendations: first build failed: ${it.message}", "tv") }
             while (true) {
                 delay(STALE_POLL_MS)
                 runCatching { rebuildStale() }.onFailure { Logger.warn("Recommendations: rebuild failed: ${it.message}", "tv") }
@@ -93,8 +94,8 @@ class RecommendationService(
         for (device in due) rebuildViewer(device)
     }
 
-    /** One viewer, now (the admin's *Rebuild now*, and the stale path). */
-    suspend fun rebuildViewer(device: DeviceData): Boolean {
+    /** One viewer, now (the admin's *Rebuild now*, with [by] the admin's name, and the stale path). */
+    suspend fun rebuildViewer(device: DeviceData, by: String? = null): Boolean {
         val input = buildLock.withLock {
             val library = mediaStore.liveItems()
             val history = historyOf(device) ?: return false
@@ -109,10 +110,13 @@ class RecommendationService(
         // Phase 270 (FR-270-7) — a viewer's FIRST build is re-ranked too: no AI order yet for them, and not
         // asked in the last day (so an answer that failed validation is not paid for on every finish).
         val hook = afterBuild
-        if (hook != null && db.aiQueries.orderFor(input.userId, input.scope).executeAsList().isEmpty()) {
+        if (hook != null && by != null) {
+            // Phase 272 (FR-272-6) — the admin asked: always queue a re-rank, even over an existing AI order.
+            runCatching { hook(listOf(input), REASON_BY_HAND, by) }.onFailure { Logger.warn("Recommendations: AI re-rank not queued: ${it.message}", "tv") }
+        } else if (hook != null && db.aiQueries.orderFor(input.userId, input.scope).executeAsList().isEmpty()) {
             val now = nowSec()
             val ask = staleLock.withLock { (now - (aiAskedAt[input.userId] ?: 0L) > AI_RETRY_SEC).also { if (it) aiAskedAt[input.userId] = now } }
-            if (ask) runCatching { hook(listOf(input)) }.onFailure { Logger.warn("Recommendations: AI re-rank not sent: ${it.message}", "tv") }
+            if (ask) runCatching { hook(listOf(input), REASON_FIRST, dev.jellystructure.ai.AiJobs.BY_SYSTEM) }.onFailure { Logger.warn("Recommendations: AI re-rank not queued: ${it.message}", "tv") }
         }
         return true
     }
@@ -122,11 +126,11 @@ class RecommendationService(
      * once and used twice: the anonymous household counts for the starter lists (FR-269-10: only within
      * one scope), then each viewer's own list. Returns a one-line summary for the pipeline step.
      */
-    suspend fun buildAll(): String {
+    suspend fun buildAll(reason: String = REASON_WEEKLY): String {
         val inputs = ArrayList<dev.jellystructure.ai.AiJobs.RerankInput>()
         val summary = buildAllLocked(inputs)
         // Phase 270 — the weekly build is when the AI re-ranks every viewer (and tags untagged titles).
-        afterBuild?.let { hook -> runCatching { hook(inputs) }.onFailure { Logger.warn("Recommendations: AI jobs not sent: ${it.message}", "tv") } }
+        afterBuild?.let { hook -> runCatching { hook(inputs, reason, dev.jellystructure.ai.AiJobs.BY_SYSTEM) }.onFailure { Logger.warn("Recommendations: AI jobs not queued: ${it.message}", "tv") } }
         return summary
     }
 
@@ -181,7 +185,7 @@ class RecommendationService(
         }
         versionLock.withLock { versions[device.jellyfinUserId] = (versions[device.jellyfinUserId] ?: 0L) + 1 }
         val watched = history.played.mapNotNull { p -> (byJf[p.seriesId ?: p.id] ?: byJf[p.id])?.jellyfinId }.distinct()
-        return dev.jellystructure.ai.AiJobs.RerankInput(device.jellyfinUserId, scope, shortlist.map { it.jellyfinId }, watched)
+        return dev.jellystructure.ai.AiJobs.RerankInput(device.jellyfinUserId, scope, shortlist.map { it.jellyfinId }, watched, label = device.jellyfinUsername)
     }
 
     /**
@@ -284,6 +288,11 @@ class RecommendationService(
         var current: RecommendationService? = null
         const val SOURCE_STANDARD = "standard"
         const val SOURCE_AI = "ai"
+        /** Phase 272 — why a re-rank was queued, as the Activity card says it. */
+        const val REASON_WEEKLY = "weekly build"
+        const val REASON_RUN_BY_HAND = "run started by hand"
+        const val REASON_FIRST = "first build"
+        const val REASON_BY_HAND = "Rebuild now"
         /** Phase 270 — a viewer without an AI order is asked again at most once a day. */
         private const val AI_RETRY_SEC = 24L * 3_600
         private const val STALE_POLL_MS = 60_000L

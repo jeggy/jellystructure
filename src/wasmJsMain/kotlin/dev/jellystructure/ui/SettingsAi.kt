@@ -184,8 +184,13 @@ private fun renderAiJob(key: String) {
     val limit = input("ai-$key-limit")?.value?.toDoubleOrNull()
     (document.getElementById("ai-$key-spent") as? HTMLElement)?.textContent =
         "Spent this month: ${usd(job.spentThisMonthMicroUsd)}" + (limit?.let { " of ${usd((it * 1_000_000).toLong())}" } ?: "") +
-            (if (job.pending) " · a batch is out, waiting for Anthropic" else "")
-    (document.getElementById("ai-$key-last") as? HTMLElement)?.textContent = "Last run: " + (job.lastRun ?: "never")
+            (if (job.pending) " · a batch is out, waiting for Anthropic" else "") +
+            // Phase 272 — what waits (and why, if the limit held it back); the Activity card has the rest.
+            (if (job.waiting > 0) " · ${job.waiting} waiting (Activity ▸ Jobs & workers)" else "") +
+            (job.heldBack?.let { " · $it" } ?: "")
+    // Phase 272 (FR-272-17) — the time is the browser's own; the server sends the instant, not a clock string.
+    (document.getElementById("ai-$key-last") as? HTMLElement)?.textContent =
+        "Last run: " + (job.lastRunAt?.let { dev.jellystructure.formatClock(it.toString()) + " · " } ?: "") + (job.lastRun ?: "never")
     (document.getElementById("ai-$key-estimate") as? HTMLElement)?.textContent =
         job.estimateMicroUsd[modelId]?.let { "A month at these settings: about ${usd(it)} (${job.estimateBasis})" } ?: ""
 }

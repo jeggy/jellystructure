@@ -17,11 +17,14 @@ fun planOrder(pipeline: List<PipelineStep>): List<PipelineStep> =
 
 fun pipelinePlan(cfg: AppConfig): List<PipelineStep> = planOrder(effectivePipeline(cfg))
 
-/** One row of `GET /api/pipeline/plan`. */
+/** One row of `GET /api/pipeline/plan`. [rebuildEvery] is `build_recommendations`' scheduled cadence, so the
+ *  dialog can say a run started by hand builds now (Phase 272, FR-272-7); null for every other step. */
 @Serializable
-data class PipelinePlanStep(val step: String, val scope: String)
+data class PipelinePlanStep(val step: String, val scope: String, val rebuildEvery: String? = null)
 
-fun pipelinePlanRows(cfg: AppConfig): List<PipelinePlanStep> = pipelinePlan(cfg).map { PipelinePlanStep(it.step, it.scope) }
+fun pipelinePlanRows(cfg: AppConfig): List<PipelinePlanStep> = pipelinePlan(cfg).map {
+    PipelinePlanStep(it.step, it.scope, if (it.step == dev.jellystructure.config.RecommendationsStep.STEP) it.rebuildEvery else null)
+}
 
 /** Phase 154 — the pre-run dialog's one-run skip. Defaulted so a bodyless call behaves as it always did. */
 @Serializable

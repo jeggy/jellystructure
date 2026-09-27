@@ -172,6 +172,9 @@ suspend fun runPipeline(
     // and the fetch_artwork step; detect_segments defers separately at its own queue (see
     // MediaJobParams.deferWhilePlaying / MediaJobQueue.segmentsWorkerLoop).
     deferEligible: Boolean = false,
+    // Phase 272 (FR-272-7) — a run someone started (the pre-run dialog, *Run pipeline*): the whole-library
+    // recommendations step then builds whatever its cadence says. Scheduled and startup runs keep the cadence.
+    byHand: Boolean = false,
 ): List<MediaItem> {
     val store = deps.store
     val scanner = deps.scanner
@@ -595,8 +598,9 @@ suspend fun runPipeline(
                 val now = dev.jellystructure.tv.RecommendationService.nowSec()
                 val summary = when {
                     service == null -> "not available"
-                    // An hour's slack, so a weekly run at the same time each week is not "not due" by minutes.
-                    last != null && now - last < every - 3600 -> "not due — built ${(now - last) / 3600} h ago, rebuilt ${step.rebuildEvery}"
+                    dev.jellystructure.config.RecommendationsStep.notDue(last, now, every, byHand) -> "not due — built ${(now - (last ?: now)) / 3600} h ago, rebuilt ${step.rebuildEvery}"
+                    byHand -> runCatching { "rebuilt (started by hand): " + service.buildAll(dev.jellystructure.tv.RecommendationService.REASON_RUN_BY_HAND) }
+                        .getOrElse { Logger.warn("build_recommendations failed: ${it.message}", "pipeline"); "failed: ${it.message}" }
                     else -> runCatching { "rebuilt: " + service.buildAll() }
                         .getOrElse { Logger.warn("build_recommendations failed: ${it.message}", "pipeline"); "failed: ${it.message}" }
                 }

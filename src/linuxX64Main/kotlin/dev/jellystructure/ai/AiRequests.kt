@@ -183,7 +183,8 @@ object AiRequests {
 
     // ─── Reading results (FR-270-4) ───────────────────────────────────────────
 
-    data class Result(val customId: String, val type: String, val stopReason: String?, val text: String?, val usage: AiPricing.Usage?)
+    /** [error] is Phase 272's: an `errored` result's own error type and message, for the verdict. */
+    data class Result(val customId: String, val type: String, val stopReason: String?, val text: String?, val usage: AiPricing.Usage?, val error: String? = null)
 
     /** One line of a batch's results: `{custom_id, result: {type, message?}}`. */
     fun parseResult(line: JsonObject): Result? {
@@ -198,7 +199,27 @@ object AiRequests {
         val u = message?.get("usage") as? JsonObject
         fun n(k: String) = u?.get(k)?.jsonPrimitive?.longOrNull ?: 0L
         val usage = u?.let { AiPricing.Usage(n("input_tokens"), n("output_tokens"), n("cache_creation_input_tokens"), n("cache_read_input_tokens")) }
-        return Result(customId, type, message?.get("stop_reason")?.jsonPrimitive?.contentOrNull, text, usage)
+        // An errored line nests the API error: {"type":"errored","error":{"type":"error","error":{"type":…,"message":…}}}.
+        val err = (result["error"] as? JsonObject)?.let { e -> (e["error"] as? JsonObject) ?: e }
+        val error = err?.let { e ->
+            listOfNotNull(e["type"]?.jsonPrimitive?.contentOrNull, e["message"]?.jsonPrimitive?.contentOrNull).joinToString(": ").take(200)
+        }?.takeIf { it.isNotEmpty() }
+        return Result(customId, type, message?.get("stop_reason")?.jsonPrimitive?.contentOrNull, text, usage, error)
+    }
+
+    /** Phase 272 (FR-272-14) — an answer and what became of it, in words: *used · …* or why it was not used. */
+    data class Judged<T>(val value: T?, val why: String)
+
+    /** Why a result cannot be read at all, before its content is looked at; null when it can. */
+    private fun unreadable(r: Result): String? = when {
+        r.type == "expired" -> "expired"
+        r.type == "canceled" -> "cancelled"
+        r.type == "errored" -> "errored" + (r.error?.let { " — $it" } ?: "")
+        r.type != "succeeded" -> r.type
+        r.stopReason == "refusal" -> "refused"
+        r.stopReason == "max_tokens" -> "stopped at the output limit"
+        r.text == null -> "no answer text"
+        else -> null
     }
 
     data class Pick(val jellyfinId: String, val reason: String)
@@ -209,34 +230,52 @@ object AiRequests {
      * at most [RERANK_KEEP]. A short answer is topped up from 269's own order. Anything else is `null`, and
      * the viewer keeps 269's list. [shortlist] is 269's order: short id `t(n)` is `shortlist[n-1]`.
      */
-    fun validateRerank(r: Result, shortlist: List<String>): List<Pick>? {
-        if (r.type != "succeeded" || r.stopReason in setOf("refusal", "max_tokens")) return null
-        val picks = runCatching { json.parseToJsonElement(r.text ?: return null).jsonObject["picks"]!!.jsonArray }.getOrNull() ?: return null
-        if (picks.size > RERANK_KEEP) return null
+    fun validateRerank(r: Result, shortlist: List<String>): List<Pick>? = judgeRerank(r, shortlist).value
+
+    /** [validateRerank] with the reason (Phase 272): what it accepts is unchanged. */
+    fun judgeRerank(r: Result, shortlist: List<String>): Judged<List<Pick>> {
+        unreadable(r)?.let { return Judged(null, it) }
+        val root = runCatching { json.parseToJsonElement(r.text!!) }.getOrNull() ?: return Judged(null, "not valid JSON")
+        val picks = ((root as? JsonObject)?.get("picks") as? JsonArray) ?: return Judged(null, "not in the expected form")
+        if (picks.size > RERANK_KEEP) return Judged(null, "more than $RERANK_KEEP picks (${picks.size})")
         val out = ArrayList<Pick>()
         val seen = HashSet<String>()
         for (p in picks) {
-            val o = p as? JsonObject ?: return null
-            val shortId = o["id"]?.jsonPrimitive?.contentOrNull ?: return null
-            val n = shortId.removePrefix("t").toIntOrNull() ?: return null
-            val id = shortlist.getOrNull(n - 1) ?: return null
-            if (!seen.add(id)) return null
-            out += Pick(id, o["reason"]?.jsonPrimitive?.contentOrNull.orEmpty().trim().take(160))
+            val o = p as? JsonObject ?: return Judged(null, "not in the expected form")
+            val shortId = (o["id"] as? JsonPrimitive)?.contentOrNull ?: return Judged(null, "not in the expected form")
+            val n = shortId.removePrefix("t").toIntOrNull()
+            val id = n?.let { shortlist.getOrNull(it - 1) } ?: return Judged(null, "an id not on the shortlist ($shortId)")
+            if (!seen.add(id)) return Judged(null, "a title picked twice ($shortId)")
+            out += Pick(id, (o["reason"] as? JsonPrimitive)?.contentOrNull.orEmpty().trim().take(160))
         }
+        val answered = out.size
         for (id in shortlist) {
             if (out.size >= RERANK_KEEP) break
             if (seen.add(id)) out += Pick(id, "")
         }
-        return out
+        val topped = out.size - answered
+        return Judged(out, "used · $answered pick${if (answered == 1) "" else "s"}" + (if (topped > 0) ", $topped topped up" else ""))
     }
 
     /** FR-270-4 — theme tags: lower-cased, trimmed, de-duplicated, at most [MAX_THEMES]. `null` = no answer. */
-    fun validateThemes(r: Result): List<String>? {
-        if (r.type != "succeeded" || r.stopReason in setOf("refusal", "max_tokens")) return null
-        val arr = runCatching { json.parseToJsonElement(r.text ?: return null).jsonObject["themes"]!!.jsonArray }.getOrNull() ?: return null
-        return arr.mapNotNull { (it as? JsonPrimitive)?.contentOrNull?.trim()?.lowercase()?.takeIf { s -> s.isNotEmpty() && s.length <= 40 } }
+    fun validateThemes(r: Result): List<String>? = judgeThemes(r).value
+
+    /** [validateThemes] with the reason (Phase 272). */
+    fun judgeThemes(r: Result): Judged<List<String>> {
+        unreadable(r)?.let { return Judged(null, it) }
+        val root = runCatching { json.parseToJsonElement(r.text!!) }.getOrNull() ?: return Judged(null, "not valid JSON")
+        val arr = ((root as? JsonObject)?.get("themes") as? JsonArray) ?: return Judged(null, "not in the expected form")
+        val themes = arr.mapNotNull { (it as? JsonPrimitive)?.contentOrNull?.trim()?.lowercase()?.takeIf { s -> s.isNotEmpty() && s.length <= 40 } }
             .distinct().take(MAX_THEMES)
+        return Judged(themes, "used · ${themes.size} theme${if (themes.size == 1) "" else "s"}")
     }
+
+    /** Phase 272 (FR-272-13) — the system prompt and the user message a request carries, as sent. */
+    fun systemOf(request: JsonObject): String =
+        ((request["params"] as? JsonObject)?.get("system") as? JsonArray)?.firstOrNull()?.let { (it as? JsonObject)?.get("text") as? JsonPrimitive }?.contentOrNull.orEmpty()
+
+    fun sentOf(request: JsonObject): String =
+        ((request["params"] as? JsonObject)?.get("messages") as? JsonArray)?.firstOrNull()?.let { (it as? JsonObject)?.get("content") as? JsonPrimitive }?.contentOrNull.orEmpty()
 
     fun requestsJson(requests: List<JsonObject>): String = JsonArray(requests).toString()
 }

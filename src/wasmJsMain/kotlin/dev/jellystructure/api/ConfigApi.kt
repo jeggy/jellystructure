@@ -1,6 +1,7 @@
 package dev.jellystructure.api
 
 import io.ktor.client.call.body
+import io.ktor.client.request.delete
 import io.ktor.client.request.get
 import io.ktor.client.request.post
 import io.ktor.client.request.put
@@ -201,6 +202,8 @@ data class AiJobStatus(
     val lastRun: String? = null,
     val lastRunAt: Long? = null,
     val pending: Boolean = false,
+    val waiting: Long = 0,           // Phase 272
+    val heldBack: String? = null,    // Phase 272 — why what waits was not sent (the monthly limit)
     val estimateMicroUsd: Map<String, Long> = emptyMap(),
     val estimateBasis: String = "",
 )
@@ -220,7 +223,61 @@ data class AiKeyTest(val result: String = "", val detail: String = "")
 @Serializable
 private data class AiKeyTestRequest(@SerialName("api_key") val apiKey: String)
 
+/** Phase 272 — `GET /api/ai/jobs`: the queue, the batches out and the last five batches (Activity's AI card). */
+@Serializable
+data class AiQueued(val id: Long = 0, val label: String = "", val reason: String = "", val by: String = "", val queuedAt: Long = 0)
+
+@Serializable
+data class AiOut(val id: String = "", val sentAt: Long = 0, val requests: Long = 0, val counts: Map<String, Long> = emptyMap(), val cancelling: Boolean = false)
+
+@Serializable
+data class AiJobView(
+    val job: String = "", val label: String = "", val on: Boolean = false, val model: String = "", val modelLabel: String = "",
+    val spentMicroUsd: Long = 0, val limitMicroUsd: Long = 0,
+    val waiting: List<AiQueued> = emptyList(), val heldBack: String? = null, val out: AiOut? = null,
+)
+
+@Serializable
+data class AiHistory(
+    val id: String = "", val job: String = "", val model: String = "", val modelLabel: String = "", val sentAt: Long = 0, val endedAt: Long? = null,
+    val requests: Long = 0, val outcome: String? = null, val costMicroUsd: Long? = null, val hasTranscripts: Boolean = false,
+)
+
+@Serializable
+data class AiJobsView(val enabled: Boolean = false, val jobs: List<AiJobView> = emptyList(), val history: List<AiHistory> = emptyList())
+
+@Serializable
+data class AiTranscript(
+    val label: String = "", val model: String = "", val effort: String = "", val system: String = "", val sent: String = "",
+    val answer: String? = null, val resultType: String? = null, val stopReason: String? = null, val verdict: String? = null,
+    val readable: String? = null, val inputTokens: Long = 0, val outputTokens: Long = 0, val costMicroUsd: Long = 0,
+)
+
+@Serializable
+data class AiBatchDetail(val batch: AiHistory = AiHistory(), val requests: List<AiTranscript> = emptyList())
+
 object AiApi {
+    suspend fun jobs(): AiJobsView? = runCatching {
+        val r = httpClient.get("/api/ai/jobs")
+        if (r.status == HttpStatusCode.OK) r.body<AiJobsView>() else null
+    }.getOrNull()
+
+    suspend fun batch(id: String): AiBatchDetail? = runCatching {
+        val r = httpClient.get("/api/ai/batches/$id")
+        if (r.status == HttpStatusCode.OK) r.body<AiBatchDetail>() else null
+    }.getOrNull()
+
+    /** null = done; else the server's reason. */
+    suspend fun removeQueued(id: Long): String? = runCatching {
+        val r = httpClient.delete("/api/ai/queue/$id")
+        if (r.status == HttpStatusCode.OK) null else runCatching { r.body<Map<String, String>>()["error"] }.getOrNull() ?: "HTTP ${r.status.value}"
+    }.getOrElse { it.message ?: "Couldn't reach the server" }
+
+    suspend fun cancel(id: String): String? = runCatching {
+        val r = httpClient.post("/api/ai/batches/$id/cancel")
+        if (r.status == HttpStatusCode.OK) null else runCatching { r.body<Map<String, String>>()["error"] }.getOrNull() ?: "HTTP ${r.status.value}"
+    }.getOrElse { it.message ?: "Couldn't reach the server" }
+
     suspend fun status(): AiStatus? = runCatching {
         val r = httpClient.get("/api/ai/status")
         if (r.status == HttpStatusCode.OK) r.body<AiStatus>() else null

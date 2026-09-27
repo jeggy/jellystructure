@@ -285,6 +285,8 @@ private data class RecommendationsView(
     val source: String? = null,
     val lastFullBuild: Long? = null,
     val items: List<RecommendationEntryDto> = emptyList(),
+    // Phase 272 (FR-272-12) — this viewer's re-rank still waiting or out at Anthropic; null when none (or AI off).
+    val aiPending: dev.jellystructure.ai.AiJobs.ViewerPending? = null,
 )
 
 @Serializable
@@ -1134,7 +1136,8 @@ fun Route.tvRoutes(
     suspend fun recommendationsView(userId: String): RecommendationsView {
         val service = dev.jellystructure.tv.RecommendationService.current ?: return RecommendationsView()
         val rows = service.storedFor(userId)
-        val newest = rows.firstOrNull() ?: return RecommendationsView(lastFullBuild = service.lastBuiltAt())
+        val aiPending = dev.jellystructure.ai.AiJobs.current?.pendingFor(userId)
+        val newest = rows.firstOrNull() ?: return RecommendationsView(lastFullBuild = service.lastBuiltAt(), aiPending = aiPending)
         val current = rows.filter { it.scope_key == newest.scope_key }.sortedBy { it.rank }
         suspend fun titleOf(jellyfinId: String?): String? = jellyfinId?.let { mediaStore?.resolveByJellyfinId(it)?.title }
         // Phase 270 (FR-270-4) — an AI-ordered title shows the AI's own reason (the admin's eyes only).
@@ -1154,6 +1157,7 @@ fun Route.tvRoutes(
                 }
                 RecommendationEntryDto(r.rank.toInt() + 1, item.title, item.year, item.kind.name, reason)
             },
+            aiPending = aiPending,
         )
     }
 
@@ -1173,7 +1177,8 @@ fun Route.tvRoutes(
         // The viewer's most recently seen device carries their visibility scope and their Jellyfin token.
         val device = deviceService.allDevices().filter { it.jellyfinUserId == userId }.maxByOrNull { it.lastSeen }
             ?: return@post call.respond(HttpStatusCode.NotFound, mapOf("error" to "This user has no Ravilo device yet"))
-        if (!service.rebuildViewer(device)) return@post call.respond(HttpStatusCode.BadGateway, mapOf("error" to "Couldn't read this user's history from Jellyfin"))
+        val admin = runCatching { call.attributes[SessionKey].jellyfinUsername }.getOrNull()?.ifBlank { null } ?: "an admin"
+        if (!service.rebuildViewer(device, by = admin)) return@post call.respond(HttpStatusCode.BadGateway, mapOf("error" to "Couldn't read this user's history from Jellyfin"))
         call.respond(recommendationsView(userId))
     }
 

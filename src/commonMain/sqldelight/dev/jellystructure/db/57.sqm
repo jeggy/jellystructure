@@ -1,0 +1,38 @@
+-- Phase 272 (FR-272-1/10/13) — the AI queue, what a batch ended as, and the last five batches' conversations.
+-- Must stay in sync with Ai.sq.
+ALTER TABLE ai_batch ADD COLUMN ended_at INTEGER;
+ALTER TABLE ai_batch ADD COLUMN outcome TEXT;
+ALTER TABLE ai_batch ADD COLUMN cost_micro_usd INTEGER;
+ALTER TABLE ai_batch ADD COLUMN counts TEXT;
+ALTER TABLE ai_batch ADD COLUMN cancelling INTEGER NOT NULL DEFAULT 0;
+
+CREATE TABLE ai_queue (
+    id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    job TEXT NOT NULL,
+    subject TEXT NOT NULL,
+    label TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    queued_by TEXT NOT NULL,
+    payload TEXT NOT NULL,
+    queued_at INTEGER NOT NULL,
+    UNIQUE (job, subject)
+);
+
+CREATE TABLE ai_transcript (
+    batch_id TEXT NOT NULL,
+    custom_id TEXT NOT NULL,
+    label TEXT NOT NULL,
+    model TEXT NOT NULL,
+    effort TEXT NOT NULL,
+    system_prompt TEXT NOT NULL,
+    sent TEXT NOT NULL,
+    answer TEXT,
+    result_type TEXT,
+    stop_reason TEXT,
+    verdict TEXT,
+    readable TEXT,
+    input_tokens INTEGER NOT NULL DEFAULT 0,
+    output_tokens INTEGER NOT NULL DEFAULT 0,
+    cost_micro_usd INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (batch_id, custom_id)
+);

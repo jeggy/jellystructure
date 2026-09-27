@@ -275,7 +275,7 @@ private data class PipelineRunReq(val skipSteps: List<String> = emptyList())
 
 /** Phase 265 (FR-265-5) — one row of `GET /api/pipeline/plan`. */
 @Serializable
-data class PipelinePlanStep(val step: String, val scope: String = "missing")
+data class PipelinePlanStep(val step: String, val scope: String = "missing", val rebuildEvery: String? = null)
 
 @Serializable
 data class BatchCountRequest(

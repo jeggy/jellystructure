@@ -11,9 +11,11 @@ import io.ktor.http.contentType
 import kotlinx.coroutines.delay
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.longOrNull
 import kotlin.random.Random
 
 /**
@@ -43,7 +45,8 @@ class AnthropicClient(private val transport: Transport = KtorTransport()) {
         }
     }
 
-    data class Batch(val id: String, val processingStatus: String, val resultsUrl: String?)
+    /** [counts] is Anthropic's `request_counts` (processing · succeeded · errored · canceled · expired), Phase 272. */
+    data class Batch(val id: String, val processingStatus: String, val resultsUrl: String?, val counts: Map<String, Long> = emptyMap())
 
     /** `POST /v1/messages/batches` with [requestsJson] (a JSON array of `{custom_id, params}`). */
     suspend fun createBatch(apiKey: String, requestsJson: String): Batch =
@@ -52,6 +55,11 @@ class AnthropicClient(private val transport: Transport = KtorTransport()) {
     /** `GET /v1/messages/batches/{id}`: `processing_status` is `in_progress`, `canceling` or `ended`. */
     suspend fun getBatch(apiKey: String, id: String): Batch =
         parseBatch(withBackoff { transport.get("$BASE/v1/messages/batches/$id", apiKey) })
+
+    /** Phase 272 (FR-272-10) — `POST /v1/messages/batches/{id}/cancel` (no body): Anthropic stops what it has
+     *  not started; the batch then ends as usual and its results say which requests were cancelled. */
+    suspend fun cancelBatch(apiKey: String, id: String): Batch =
+        parseBatch(withBackoff { transport.post("$BASE/v1/messages/batches/$id/cancel", apiKey, "") })
 
     /** The batch's results: one JSON object per line, each with its `custom_id` (never read by position). */
     suspend fun results(apiKey: String, resultsUrl: String): List<JsonObject> =
@@ -69,6 +77,7 @@ class AnthropicClient(private val transport: Transport = KtorTransport()) {
             id = o["id"]!!.jsonPrimitive.content,
             processingStatus = o["processing_status"]?.jsonPrimitive?.contentOrNull ?: "in_progress",
             resultsUrl = o["results_url"]?.jsonPrimitive?.contentOrNull,
+            counts = (o["request_counts"] as? JsonObject)?.mapNotNull { (k, v) -> (v as? JsonPrimitive)?.longOrNull?.let { k to it } }?.toMap().orEmpty(),
         )
     }
 
@@ -96,8 +105,11 @@ class AnthropicClient(private val transport: Transport = KtorTransport()) {
         override suspend fun post(url: String, apiKey: String, body: String): Response = OutboundHttp.withPermit {
             val r = OutboundHttp.client.post(url) {
                 headers(apiKey)
-                contentType(ContentType.Application.Json)
-                setBody(body)
+                // A cancel carries no body at all (Phase 272).
+                if (body.isNotEmpty()) {
+                    contentType(ContentType.Application.Json)
+                    setBody(body)
+                }
             }
             Response(r.status.value, r.bodyAsText())
         }

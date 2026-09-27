@@ -229,7 +229,18 @@ private suspend fun loadRecommendations(scope: CoroutineScope, userId: String, r
             val year = e.year?.let { " ($it)" } ?: ""
             """<div class="tiny" style="padding:4px 0;border-top:1px solid var(--line)"><span class="muted">${e.rank}.</span> <b>${e.title.esc()}</b>$year · <span class="muted">${e.reason.esc()}</span></div>"""
         }
-        bodyEl.innerHTML = """<div class="row center tiny" style="gap:8px;margin-bottom:4px"><span class="muted">${head.esc()}</span><span class="spacer"></span><button class="btn sm ghost users-recs-rebuild" data-user="$userId">Rebuild now</button></div>$rows"""
+        // Phase 272 (FR-272-12) — *Rebuild now* is not finished while the AI re-rank is still out.
+        val pending = view.aiPending?.let { p ->
+            val at = dev.jellystructure.formatClock(p.since.toString())
+            val what = if (p.state == "out") "AI re-rank waiting for Anthropic since $at" else "AI re-rank queued since $at — it goes when the batch out is read"
+            """<div class="tiny" style="color:var(--warn);margin-bottom:4px">${what.esc()} — <a href="#/activity?view=jobs" style="color:var(--acc-ink)">Activity ▸ Jobs &amp; workers</a></div>"""
+        } ?: ""
+        bodyEl.innerHTML = """<div class="row center tiny" style="gap:8px;margin-bottom:4px"><span class="muted">${head.esc()}</span><span class="spacer"></span><button class="btn sm ghost users-recs-rebuild" data-user="$userId">Rebuild now</button></div>$pending$rows"""
+        // While it is out, look again every 30 s so the list turns into the AI's order by itself when it lands.
+        if (view.aiPending != null) scope.launch {
+            kotlinx.coroutines.delay(30_000)
+            if (document.getElementById("recs-body-$userId") === bodyEl && bodyEl.isConnected) loadRecommendations(scope, userId, rebuild = false)
+        }
     }
     (bodyEl.querySelector(".users-recs-rebuild") as? HTMLElement)?.addEventListener("click") {
         bodyEl.innerHTML = """<span class="tiny muted">Rebuilding…</span>"""

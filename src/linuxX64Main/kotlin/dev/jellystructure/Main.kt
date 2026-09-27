@@ -263,7 +263,7 @@ fun main() = runBlocking {
     val aiJobs = dev.jellystructure.ai.AiJobs(db, configStore, library = { mediaStore.liveItems() })
     aiJobs.rerankSink = dev.jellystructure.ai.AiJobs.RerankSink { u, s, picks -> recommendationService.applyAiOrder(u, s, picks) }
     recommendationService.themes = { aiJobs.themes() }
-    recommendationService.afterBuild = { inputs -> aiJobs.afterBuild(inputs) }
+    recommendationService.afterBuild = { inputs, reason, by -> aiJobs.afterBuild(inputs, reason, by) }
     dev.jellystructure.ai.AiJobs.current = aiJobs
     dev.jellystructure.ai.AiJobs.viewerCount = { recommendationService.viewerCount() }
     aiJobs.start(rootScope)

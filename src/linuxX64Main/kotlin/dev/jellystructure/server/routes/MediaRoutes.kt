@@ -2375,7 +2375,7 @@ internal fun launchScanRun(
             if (runsPipeline) (if (full) "full" else "normal") else null,
             startMsg, scanTracker,
         ) {
-            runPipeline(RunTarget.Library(libraryId, resumeSkipIds), pipeline, jobId, scanTracker, pipelineDeps, fullRun = full, deferEligible = deferEligible)
+            runPipeline(RunTarget.Library(libraryId, resumeSkipIds), pipeline, jobId, scanTracker, pipelineDeps, fullRun = full, deferEligible = deferEligible, byHand = triggerKind == "manual")
         }
     }
     scanTracker.attachJob(job)

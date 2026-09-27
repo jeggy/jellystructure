@@ -92,6 +92,8 @@ private fun showPipelineRunDialog(title: String, full: Boolean, plan: List<Pipel
             step.step == "detect_segments" -> """<div style="font-size:.76rem;margin-top:3px;color:var(--warn);">Usually safe to skip — by far the slowest step (hours; it decodes each episode), and it only powers Skip&nbsp;Intro / Skip&nbsp;Credits. Already-detected markers are kept.</div>"""
             // Phase 261 (FR-261-8) — what unticking one of the file steps actually skips.
             step.step in FILE_CHECK_STEPS -> """<div class="muted" style="font-size:.76rem;margin-top:3px;">Only queues the files that are due; the reading happens on the segments queue. Unticked, nothing is queued this run.</div>"""
+            // Phase 272 (FR-272-7) — a run started here builds whatever the schedule says.
+            step.step == "build_recommendations" -> """<div class="muted" style="font-size:.76rem;margin-top:3px;">Rebuilds now — the scheduled run rebuilds ${(step.rebuildEvery ?: "weekly").esc()}. With AI re-ranking on, every viewer is then queued for it (Activity ▸ Jobs &amp; workers).</div>"""
             else -> ""
         }
         """

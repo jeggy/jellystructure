@@ -34,6 +34,19 @@ internal fun formatFullDateTime(epochSecStr: String): String = js("""(function()
     return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())+' '+p(d.getHours())+':'+p(d.getMinutes());
 })()""")
 
+// Phase 272 (FR-272-17): "HH:mm" today, else "MMM d, HH:mm" — always in the browser's own zone, so a server
+// whose container runs in UTC never shows the admin a time two hours off.
+internal fun formatClock(epochSecStr: String): String = js("""(function(){
+    var d=new Date(parseFloat(epochSecStr)*1000);
+    var n=new Date();
+    var same=d.getFullYear()===n.getFullYear()&&d.getMonth()===n.getMonth()&&d.getDate()===n.getDate();
+    var t={hour:'2-digit',minute:'2-digit',hour12:false};
+    return same?d.toLocaleTimeString([],t):d.toLocaleString([],{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',hour12:false});
+})()""")
+
+// Phase 272 (FR-272-15): a model's JSON answer indented for reading; anything that is not JSON as it came.
+internal fun prettyJson(text: String): String = js("""(function(){ try { return JSON.stringify(JSON.parse(text), null, 2); } catch (e) { return text; } })()""")
+
 // Phase 108: relative "2y ago" / "4d ago" / "just now" hint for a stored epoch-seconds value.
 internal fun formatRelativeAgo(epochSecStr: String): String = js("""(function(){
     var diffSec = (Date.now()/1000) - parseFloat(epochSecStr);

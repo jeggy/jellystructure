@@ -103,6 +103,10 @@ object RecommendationsStep {
     const val STEP = "build_recommendations"
     /** How often a run actually rebuilds; between times the step reports "not due". */
     val CADENCES = mapOf("daily" to 86_400L, "weekly" to 7 * 86_400L)
+
+    /** The step's cadence rule: built less than [every] ago (an hour's slack, so a weekly run at the same time
+     *  each week is not "not due" by minutes). A run started by hand is always due (Phase 272, FR-272-7). */
+    fun notDue(last: Long?, now: Long, every: Long, byHand: Boolean): Boolean = !byHand && last != null && now - last < every - 3600
     const val DEFAULT_CADENCE = "weekly"
 
     /** The one-time seed: added (enabled) ahead of any trailing wait/notify steps. An empty pipeline

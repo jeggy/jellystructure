@@ -6,7 +6,50 @@ CREATE TABLE ai_batch (
     model TEXT NOT NULL,
     submitted_at INTEGER NOT NULL,
     status TEXT NOT NULL,
-    request_count INTEGER NOT NULL
+    request_count INTEGER NOT NULL,
+    -- Phase 272 (FR-272-10/15) — when it was read, what it ended as, what it cost, Anthropic's last
+    -- request_counts (JSON), and whether a cancel was asked for.
+    ended_at INTEGER,
+    outcome TEXT,
+    cost_micro_usd INTEGER,
+    counts TEXT,
+    cancelling INTEGER NOT NULL DEFAULT 0
+);
+
+-- Phase 272 (FR-272-1/2) — a request waiting to be sent: one row per (job, subject), newest wins. The subject
+-- is a viewer and scope for a re-rank, a title for themes; `payload` is what the request is built from when
+-- it is sent, and `label` is for the admin only (never part of a request).
+CREATE TABLE ai_queue (
+    id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    job TEXT NOT NULL,
+    subject TEXT NOT NULL,
+    label TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    queued_by TEXT NOT NULL,
+    payload TEXT NOT NULL,
+    queued_at INTEGER NOT NULL,
+    UNIQUE (job, subject)
+);
+
+-- Phase 272 (FR-272-13) — the last five batches' conversations: exactly what was sent, exactly what came
+-- back, and the verdict in words.
+CREATE TABLE ai_transcript (
+    batch_id TEXT NOT NULL,
+    custom_id TEXT NOT NULL,
+    label TEXT NOT NULL,
+    model TEXT NOT NULL,
+    effort TEXT NOT NULL,
+    system_prompt TEXT NOT NULL,
+    sent TEXT NOT NULL,
+    answer TEXT,
+    result_type TEXT,
+    stop_reason TEXT,
+    verdict TEXT,
+    readable TEXT,
+    input_tokens INTEGER NOT NULL DEFAULT 0,
+    output_tokens INTEGER NOT NULL DEFAULT 0,
+    cost_micro_usd INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (batch_id, custom_id)
 );
 
 -- One request inside a batch: its opaque custom_id and what the result needs to be applied (for a
@@ -118,3 +161,57 @@ INSERT OR REPLACE INTO ai_order(user_id, scope_key, rank, item_id, reason, order
 
 orderFor:
 SELECT * FROM ai_order WHERE user_id = :user_id AND scope_key = :scope_key ORDER BY rank;
+
+-- ─── Phase 272 — the queue, the batch's end, and the conversations ──────────
+
+enqueue:
+INSERT OR REPLACE INTO ai_queue(job, subject, label, reason, queued_by, payload, queued_at)
+VALUES (:job, :subject, :label, :reason, :queued_by, :payload, :queued_at);
+
+waitingFor:
+SELECT * FROM ai_queue WHERE job = :job ORDER BY queued_at, id;
+
+queuedById:
+SELECT * FROM ai_queue WHERE id = :id;
+
+deleteQueued:
+DELETE FROM ai_queue WHERE id = :id;
+
+queuedForSubjectPrefix:
+SELECT * FROM ai_queue WHERE job = :job AND subject LIKE :prefix ORDER BY queued_at DESC LIMIT 1;
+
+countQueued:
+SELECT COUNT(*) FROM ai_queue;
+
+batchById:
+SELECT * FROM ai_batch WHERE id = :id;
+
+setBatchCounts:
+UPDATE ai_batch SET counts = :counts WHERE id = :id;
+
+setBatchCancelling:
+UPDATE ai_batch SET cancelling = 1 WHERE id = :id;
+
+setBatchEnded:
+UPDATE ai_batch SET status = :status, ended_at = :ended_at, outcome = :outcome, cost_micro_usd = :cost_micro_usd WHERE id = :id;
+
+endedBatches:
+SELECT * FROM ai_batch WHERE status <> 'submitted' ORDER BY submitted_at DESC, id DESC;
+
+deleteBatch:
+DELETE FROM ai_batch WHERE id = :id;
+
+insertTranscript:
+INSERT OR REPLACE INTO ai_transcript(batch_id, custom_id, label, model, effort, system_prompt, sent, answer, result_type, stop_reason, verdict, readable, input_tokens, output_tokens, cost_micro_usd)
+VALUES (:batch_id, :custom_id, :label, :model, :effort, :system_prompt, :sent, NULL, NULL, NULL, NULL, NULL, 0, 0, 0);
+
+setTranscriptAnswer:
+UPDATE ai_transcript SET answer = :answer, result_type = :result_type, stop_reason = :stop_reason, verdict = :verdict, readable = :readable,
+    input_tokens = :input_tokens, output_tokens = :output_tokens, cost_micro_usd = :cost_micro_usd
+WHERE batch_id = :batch_id AND custom_id = :custom_id;
+
+transcriptsFor:
+SELECT * FROM ai_transcript WHERE batch_id = :batch_id ORDER BY label, custom_id;
+
+deleteTranscripts:
+DELETE FROM ai_transcript WHERE batch_id = :batch_id;

@@ -302,7 +302,12 @@ data class RecommendationsView(
     val source: String? = null,
     val lastFullBuild: Long? = null,
     val items: List<RecommendationEntryDto> = emptyList(),
+    val aiPending: AiViewerPending? = null,   // Phase 272 (FR-272-12)
 )
+
+/** Phase 272 — this viewer's AI re-rank still `waiting` (queued) or `out` (at Anthropic), since when. */
+@kotlinx.serialization.Serializable
+data class AiViewerPending(val state: String = "", val since: Long = 0)
 
 @kotlinx.serialization.Serializable
 data class RecommendationEntryDto(val rank: Int, val title: String, val year: Int? = null, val kind: String = "", val reason: String = "")
