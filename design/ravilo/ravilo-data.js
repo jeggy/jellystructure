@@ -644,7 +644,9 @@
   // `season` is 0-based (as the UI carries it); `ep` is the episode object, or omitted for a film.
   function playbackNoteFor(item, season, ep) {
     if (!item || !item.title) return null;
-    const key = ep ? item.title + '|S' + ((season || 0) + 1) + 'E' + ep.n : item.title;
+    // S01E05 form (owner, 2026-09-27) — the PLAY_NOTES keys were renamed to it by the 2026-09-28 design sync,
+    // which left this builder on the old `S1E8` form, so no episode note rendered. Fenced in check-mobile-css.sh.
+    const key = ep ? item.title + '|S' + String((season || 0) + 1).padStart(2, '0') + 'E' + String(ep.n).padStart(2, '0') : item.title;
     const n = PLAY_NOTES[key];
     return n ? Object.assign({}, n) : null;
   }
